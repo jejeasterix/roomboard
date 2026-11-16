@@ -1,0 +1,7 @@
+target/
+node_modules/
+dist/
+apps/web/dist-proto/
+apps/web/src/wasm/
+apps/desktop/src-tauri/gen/
+*.log

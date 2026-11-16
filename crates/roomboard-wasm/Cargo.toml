@@ -1,0 +1,14 @@
+[package]
+name = "roomboard-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+roomboard-core = { path = "../roomboard-core" }
+wasm-bindgen = "=0.2.130"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"

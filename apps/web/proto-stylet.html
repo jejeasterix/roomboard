@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RoomBoard — banc du stylet</title>
+    <style>
+      html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; color: #1a1a1a; }
+      body { display: flex; flex-direction: column; }
+      #barre { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; padding: 0.5rem 0.75rem; background: #f2f2f2; border-bottom: 1px solid #ccc; }
+      #barre label { display: flex; gap: 0.35rem; align-items: center; }
+      #barre button { font: inherit; padding: 0.35rem 0.8rem; }
+      #stage { position: relative; flex: 1; min-height: 0; background: #fff; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+      #bas { display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem; padding: 0.5rem 0.75rem; background: #fafafa; border-top: 1px solid #ccc; }
+      #panneau { margin: 0; white-space: pre-wrap; font: 13px ui-monospace, monospace; }
+      #json { width: 100%; height: 6.5rem; box-sizing: border-box; font: 11px ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <div id="barre">
+      <strong>Banc du stylet</strong>
+      <label><input type="checkbox" id="opt-coalesced" checked /> fusionnés</label>
+      <label><input type="checkbox" id="opt-predicted" checked /> prédits</label>
+      <label><input type="checkbox" id="opt-raw" /> pointerrawupdate</label>
+      <label><input type="checkbox" id="opt-desync" checked /> desynchronized</label>
+      <label><input type="checkbox" id="opt-inktrail" /> traînée déléguée (navigator.ink)</label>
+      <button type="button" id="btn-effacer">Effacer</button>
+      <button type="button" id="btn-zero">Remettre les mesures à zéro</button>
+      <button type="button" id="btn-telecharger">Télécharger le JSON</button>
+      <button type="button" id="btn-copier">Copier le JSON</button>
+      <span id="etat" aria-live="polite"></span>
+    </div>
+    <div id="stage"></div>
+    <div id="bas">
+      <pre id="panneau"></pre>
+      <textarea id="json" readonly placeholder="JSON exporté (roomboard-stylet/1)"></textarea>
+    </div>
+    <script type="module" src="/src/proto/stylet.ts"></script>
+  </body>
+</html>

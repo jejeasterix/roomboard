@@ -1,0 +1,12 @@
+[package]
+name = "roomboard-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+yrs = "0.28"
+freedraw = "1.0.4"
+zip = { version = "9.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

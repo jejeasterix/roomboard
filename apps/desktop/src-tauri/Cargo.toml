@@ -1,0 +1,11 @@
+[package]
+name = "roomboard-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "LicenseRef-PolyForm-Shield-1.0.0"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

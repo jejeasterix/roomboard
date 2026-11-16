@@ -1,0 +1,12 @@
+{
+  "name": "@roomboard/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "test": "echo \"no tests\""
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

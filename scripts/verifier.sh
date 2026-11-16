@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Vérification complète de RoomBoard. src-tauri est exclu du workspace Cargo
+# (build ~7,5 Go de RAM) : il n'est ni dans clippy ni dans cargo test ici.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+WASM_OUT=apps/web/src/wasm
+
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+
+bash scripts/tests/controle-wasm-bindgen.test.sh
+bash scripts/controle-wasm-bindgen.sh Cargo.lock
+cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
+rm -rf "$WASM_OUT"
+wasm-bindgen --target web --out-dir "$WASM_OUT" \
+  target/wasm32-unknown-unknown/release/roomboard_wasm.wasm
+
+pnpm install --frozen-lockfile
+# Contrat du vrai module (D33) : exigé ici, il échoue au lieu de se sauter si le .wasm manque.
+ROOMBOARD_WASM_REQUIRED=1 pnpm -r test
+pnpm --filter @roomboard/web build
+
+# Taille du module que la page charge (H2-13) : l'asset émis par vite, copie de la sortie de wasm-bindgen.
+mapfile -t wasm_page < <(find apps/web/dist/assets -name 'roomboard_wasm_bg*.wasm')
+if [ "${#wasm_page[@]}" -ne 1 ]; then
+  echo "verifier.sh : un seul module Wasm attendu dans apps/web/dist/assets (${#wasm_page[@]} trouvés)" >&2
+  exit 1
+fi
+taille=$(wc -c < "${wasm_page[0]}" | tr -d ' ')
+echo "module Wasm : $taille octets (${wasm_page[0]})"
+if [ "$taille" -gt 1572864 ]; then
+  echo "verifier.sh : module Wasm trop gros ($taille octets > 1,5 Mo, H2-13)" >&2
+  exit 1
+fi
+
+
+# Banc du stylet (cadrage D29) : un seul fichier HTML, aucune ressource externe (ouvrable en file://).
+pnpm --filter @roomboard/web build:proto
+proto=apps/web/dist-proto/proto-stylet.html
+if [ "$(find apps/web/dist-proto -type f | wc -l)" -ne 1 ] || [ ! -f "$proto" ]; then
+  echo "verifier.sh : dist-proto doit contenir le seul fichier $proto" >&2
+  exit 1
+fi
+if grep -Eq '<script[^>]*\ssrc=|<link[^>]*stylesheet' "$proto"; then
+  echo "verifier.sh : le prototype charge une ressource externe" >&2
+  exit 1
+fi
+echo "verifier.sh : prototype en fichier unique OK"
+echo "verifier.sh : OK"
