@@ -157,8 +157,9 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::Command;
+    use crate::commands::{Command, EraseMode};
     use crate::element::StrokeStyle;
+    use crate::ink::outline::{outline as ink_outline, InkStyle};
 
     fn pen() -> StrokeStyle {
         StrokeStyle {
@@ -319,6 +320,103 @@ mod tests {
         assert_eq!(n.since(), 0);
     }
 
+    #[test]
+    fn hit_test_path_computes_each_outline_once() {
+        let (d, p, a, _b) = setup();
+        let before = d.outline_cache_misses();
+        let path = [150.0, 90.0, 150.0, 110.0];
+        assert_eq!(d.hit_test_path(&p, &path, 3.0), vec![a.clone()]);
+        assert_eq!(d.outline_cache_misses() - before, 2, "un calcul par trait au premier appel");
+        for _ in 0..5 {
+            assert_eq!(d.hit_test_path(&p, &path, 3.0), vec![a.clone()]);
+        }
+        assert_eq!(
+            d.outline_cache_misses() - before,
+            2,
+            "aucun recalcul aux appels suivants (aperçu D38 à chaque image)"
+        );
+    }
+
+    #[test]
+    fn outline_hit_test_and_bounds_share_the_cache() {
+        let (d, p, a, b) = setup();
+        let o = d.outline(&a).expect("contour");
+        let _ = d.outline(&b);
+        let m = d.outline_cache_misses();
+        assert_eq!(m, 2);
+        let _ = d.hit_test(&p, 300.0, 100.0, 2.0);
+        let _ = d.ids_in_rect(
+            &p,
+            Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 1000.0,
+                y1: 1000.0,
+            },
+        );
+        let _ = d.bounds(&[a.clone(), b]);
+        assert_eq!(d.outline_cache_misses(), m, "rendu, collision et boîte lisent le même cache");
+        let pts = d.stroke_points(&a).expect("points");
+        let exact = ink_outline(&pts, &InkStyle { width: 4.0 });
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        assert_eq!(bits(&o), bits(&exact), "le cache rend le contour exact (bit à bit)");
+    }
+
+    #[test]
+    fn cache_follows_partial_erase_and_undo_redo() {
+        let (mut d, p, a, _b) = setup();
+        let left_probe = [150.0, 90.0, 150.0, 110.0];
+        let cut_probe = [200.0, 95.0, 200.0, 105.0];
+        assert_eq!(d.hit_test_path(&p, &left_probe, 3.0), vec![a.clone()]);
+        assert_eq!(d.hit_test_path(&p, &cut_probe, 1.0), vec![a.clone()]);
+        let ch = d
+            .apply(Command::Erase {
+                page: p.clone(),
+                path: vec![200.0, 80.0, 200.0, 120.0],
+                radius: 5.0,
+                mode: EraseMode::Partial,
+            })
+            .expect("gomme partielle");
+        assert_eq!(ch.removed, vec![a.clone()]);
+        assert_eq!(ch.ids.len(), 2, "a coupé en deux morceaux");
+        let left = d.hit_test_path(&p, &left_probe, 3.0);
+        assert_eq!(left.len(), 1);
+        assert!(ch.ids.contains(&left[0]), "le morceau gauche, jamais l'ancien trait : {left:?}");
+        assert!(d.hit_test_path(&p, &cut_probe, 1.0).is_empty(), "plus rien sous la coupe");
+        assert!(d.undo());
+        assert_eq!(d.hit_test_path(&p, &left_probe, 3.0), vec![a.clone()]);
+        assert_eq!(d.hit_test_path(&p, &cut_probe, 1.0), vec![a.clone()], "annuler : le trait entier revient");
+        assert!(d.redo());
+        assert!(d.hit_test_path(&p, &cut_probe, 1.0).is_empty(), "rétablir : la coupe revient");
+    }
+
+    #[test]
+    fn removed_ids_leave_the_cache() {
+        let (mut d, p, a, _b) = setup();
+        let _ = d.hit_test_path(&p, &[0.0, 0.0, 1000.0, 1000.0], 3.0);
+        assert_eq!(d.outline_cache_len(), 2);
+        d.apply(Command::Delete { ids: vec![a] }).expect("suppression");
+        assert_eq!(d.outline_cache_len(), 1);
+    }
+
+    #[test]
+    fn object_erase_uses_the_cache() {
+        let (mut d, p, a, _b) = setup();
+        let path = vec![150.0, 90.0, 150.0, 110.0];
+        let _ = d.hit_test_path(&p, &path, 3.0);
+        let m = d.outline_cache_misses();
+        let ch = d
+            .apply(Command::Erase {
+                page: p.clone(),
+                path,
+                radius: 3.0,
+                mode: EraseMode::Object,
+            })
+            .expect("gomme d'objet");
+        assert_eq!(ch.removed, vec![a]);
+        assert_eq!(d.outline_cache_misses(), m, "la commande reprend les contours de l'aperçu");
+    }
+
     /// Mesure (relecture T12) : `hit_test_path` recalcule le contour de chaque trait à chaque appel. Non optimisé au
     /// lot 2 ; `cargo test -p roomboard-core --lib -- --ignored --nocapture hit_test_path_cost` affiche le temps.
     #[test]
@@ -340,10 +438,14 @@ mod tests {
         }
         let start = std::time::Instant::now();
         let hits = d.hit_test_path(&p, &[50.0, 0.0, 50.0, 1000.0], 5.0);
+        let first = start.elapsed();
+        let start = std::time::Instant::now();
+        let again = d.hit_test_path(&p, &[60.0, 0.0, 60.0, 1000.0], 5.0);
         eprintln!(
-            "hit_test_path, 1000 traits : {:?} ({} touchés)",
+            "hit_test_path, 1000 traits : premier appel {first:?} ({} touchés), suivant {:?} ({} touchés)",
+            hits.len(),
             start.elapsed(),
-            hits.len()
+            again.len()
         );
     }
 }

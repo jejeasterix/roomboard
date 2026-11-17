@@ -450,6 +450,81 @@ mod tests {
         ));
     }
 
+    fn stroke(d: &mut Document, page: &str, y: f32) -> String {
+        let points: Vec<f32> = (0..=20)
+            .flat_map(|i| [100.0 + i as f32 * 10.0, y, 0.5])
+            .collect();
+        d.apply(crate::commands::Command::CommitStroke {
+            page: page.to_string(),
+            points,
+            style: crate::element::StrokeStyle {
+                color: "#000000".into(),
+                width: 4.0,
+            },
+        })
+        .expect("commit")
+        .ids[0]
+            .clone()
+    }
+
+    /// Second patron écarté (T17) : une clé par id seul rendrait l'ancien contour à une autre largeur ou à un autre
+    /// nombre de points. L'entrée garde les deux ; un écart force le recalcul, exact au bit près.
+    #[test]
+    fn cached_outline_recomputes_when_width_or_point_count_differ() {
+        use crate::ink::outline::{outline as ink_outline, InkStyle};
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = stroke(&mut d, &p, 100.0);
+        let pts = d.stroke_points(&a).expect("points");
+        let thin = StrokeStyle {
+            color: "#000000".into(),
+            width: 4.0,
+        };
+        let thick = StrokeStyle {
+            color: "#000000".into(),
+            width: 12.0,
+        };
+        let m = d.outline_cache_misses();
+        let o4 = d.cached_outline(&a, &thin, &pts);
+        assert_eq!(d.outline_cache_misses(), m + 1);
+        let o4_again = d.cached_outline(&a, &thin, &pts);
+        assert_eq!(d.outline_cache_misses(), m + 1, "même clé : servi du cache");
+        assert_eq!(bits(&o4_again), bits(&o4));
+        let o12 = d.cached_outline(&a, &thick, &pts);
+        assert_eq!(d.outline_cache_misses(), m + 2, "autre largeur : recalcul");
+        assert_eq!(bits(&o12), bits(&ink_outline(&pts, &InkStyle { width: 12.0 })));
+        let short = &pts[..pts.len() - 5];
+        let o_short = d.cached_outline(&a, &thick, short);
+        assert_eq!(d.outline_cache_misses(), m + 3, "autre nombre de points : recalcul");
+        assert_eq!(bits(&o_short), bits(&ink_outline(short, &InkStyle { width: 12.0 })));
+        assert_eq!(d.outline_cache_len(), 1, "une entrée par id");
+    }
+
+    /// Le cache ne se vide pas à l'annulation (patron écarté : `outlines.clear()` de la liaison à chaque annuler ou
+    /// rétablir) : un trait que l'étape ne touche pas n'est jamais recalculé.
+    #[test]
+    fn undo_and_redo_keep_untouched_outlines() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = stroke(&mut d, &p, 100.0);
+        assert!(d.outline(&a).is_some());
+        let m = d.outline_cache_misses();
+        let b = stroke(&mut d, &p, 300.0);
+        assert!(d.undo());
+        assert!(d.outline(&a).is_some());
+        assert!(d.outline(&b).is_none(), "b annulé");
+        assert_eq!(d.outline_cache_misses(), m, "annuler : a n'est pas recalculé");
+        assert!(d.redo());
+        assert!(d.outline(&a).is_some());
+        assert!(d.outline(&b).is_some());
+        assert_eq!(
+            d.outline_cache_misses(),
+            m + 1,
+            "rétablir : seul b est calculé, une fois"
+        );
+    }
+
     #[test]
     fn invert_undoes_a_translation_and_scale() {
         let t = [2.0, 0.0, 0.0, 2.0, 10.0, 20.0];
