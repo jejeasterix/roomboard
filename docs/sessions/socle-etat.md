@@ -3,7 +3,7 @@
 Statut : arrêté entre deux lots (OC65 : lot 3 clos avant l'essai ENI de jeudi 2026-11-19 ; reprise ci-dessous)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
-Avancement : 3/5 lots clos — clos : 1, 2, 3 · à faire : 3b (après jeudi), 4, 5
+Avancement : 3/6 lots clos — clos : 1, 2, 3 · à faire : 3b (après jeudi), 4, 5
 Étage : 3 (entre deux lots) — depuis 2026-11-17 23:00
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot3   Base : origin/main @ c2d7d0d (dépôt public jejeasterix/roomboard ; l'ancien worktree feat/socle et le dépôt roomboard-prive ne servent plus à ce chantier)
@@ -84,6 +84,7 @@ Paquet Linux Tauri construit à 12:08 : `RoomBoard_0.1.0_amd64.deb`, 3,07 Mo, 2 
 Relecture 11:25 : 1 bloquant (canvas déformé quand le panneau grandit : encre 26 px au-dessus de la pointe à 1200×800), 4 importants, mineurs → T6c. T6c mergée : le fichier docs/essais/proto-stylet.html est corrigé et sert à l'essai ENI. Lot 1 clos (fin de lot faite, sans simplification séparée : T6c a fait emitClose/pressureOf).
 
 ## Constats d'architecture
+mineur · banc · apps/web/src/app/banc.ts:99 · le panneau ne résume que les 600 dernières images sans le dire (l'export JSON garde tout) ; `banc.test.ts` ne distingue pas `slice(-n)` de `slice(0, n)` → à reprendre au lot 3b.
 anti-refactorisation · duplication · apps/web/src/app/banc.ts, apps/web/src/main.ts · `fmt`, export JSON et suivi du devicePixelRatio recopiés de `proto/stylet.ts` (non exportés : pas nette) → les sortir dans un petit module au lot 5.
 performance · moteur · apps/web/src/engine/engine.ts · `frameDurations()` copie toute la liste, jamais vidée (banc borné à 600 images par T28 ; plafond à poser dans le moteur).
 robustesse · cœur/query · `hit_test_path` ne vérifie pas que le chemin est fini (point infini → `sample_path` sans fin, déduit du code, non exécuté).
