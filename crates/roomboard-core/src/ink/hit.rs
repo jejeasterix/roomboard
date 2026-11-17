@@ -96,15 +96,49 @@ pub fn path_hits_outline(poly: &[f32], path: &[f32], radius: f32) -> bool {
     path_hits_outline_by(poly, path, radius, |x, y| hit_outline(poly, x, y, radius))
 }
 
+/// Boîte (x0, y0, x1, y1) de paires x, y ; `None` si vide ou si une coordonnée n'est pas finie.
+fn finite_box(pairs: &[f32]) -> Option<[f32; 4]> {
+    let mut b: Option<[f32; 4]> = None;
+    for c in pairs.as_chunks::<2>().0 {
+        if !(c[0].is_finite() && c[1].is_finite()) {
+            return None;
+        }
+        b = Some(match b {
+            Some([x0, y0, x1, y1]) => [x0.min(c[0]), y0.min(c[1]), x1.max(c[0]), y1.max(c[1])],
+            None => [c[0], c[1], c[0], c[1]],
+        });
+    }
+    b
+}
+
 /// `path_hits_outline` avec le test de point en paramètre (les tests comptent les points testés).
+///
+/// Préfiltre exact (D38 : aperçu à chaque image ; DA7 : même résultat qu'un test de chaque point) : un point à plus
+/// de `radius` de la boîte du contour n'est ni dedans ni à `radius` d'une arête. La boîte est élargie du rayon plus
+/// une marge d'arrondi ; un contour sans boîte finie (séparateur NaN, où la règle pair-impair peut dire « dedans »
+/// hors de la boîte), un chemin non fini ou un rayon non fini gardent le test de chaque point.
 fn path_hits_outline_by(
-    _poly: &[f32],
+    poly: &[f32],
     path: &[f32],
     radius: f32,
     mut test: impl FnMut(f32, f32) -> bool,
 ) -> bool {
-    sample_path(path, (radius / 2.0).max(0.25))
+    let step = (radius / 2.0).max(0.25);
+    let (Some([x0, y0, x1, y1]), Some([px0, py0, px1, py1]), true) =
+        (finite_box(poly), finite_box(path), radius.is_finite())
+    else {
+        return sample_path(path, step).into_iter().any(|(x, y)| test(x, y));
+    };
+    let reach = radius.max(0.0);
+    let extent = x0.abs().max(y0.abs()).max(x1.abs()).max(y1.abs());
+    let pad = reach + (reach + extent) * 1e-4 + 1e-3;
+    let (x0, y0, x1, y1) = (x0 - pad, y0 - pad, x1 + pad, y1 + pad);
+    if px1 < x0 || px0 > x1 || py1 < y0 || py0 > y1 {
+        return false;
+    }
+    sample_path(path, step)
         .into_iter()
+        .filter(|&(x, y)| x >= x0 && x <= x1 && y >= y0 && y <= y1)
         .any(|(x, y)| test(x, y))
 }
 
@@ -180,14 +214,20 @@ mod tests {
     fn far_path_tests_no_sample() {
         let (hit, n) = tested(&SQUARE, &[100.0, 100.0, 200.0, 100.0], 2.0);
         assert!(!hit);
-        assert_eq!(n, 0, "contour loin du chemin : écarté par sa boîte, aucun point testé");
+        assert_eq!(
+            n, 0,
+            "contour loin du chemin : écarté par sa boîte, aucun point testé"
+        );
     }
 
     #[test]
     fn long_path_tests_only_samples_near_the_outline() {
         let (hit, n) = tested(&SQUARE, &[5.0, -1000.0, 5.0, 1000.0], 2.0);
         assert!(hit);
-        assert!(n <= 4, "seuls les points proches de la boîte sont testés : {n}");
+        assert!(
+            n <= 4,
+            "seuls les points proches de la boîte sont testés : {n}"
+        );
     }
 
     /// DA7 : le préfiltre ne change aucun résultat (aperçu et commande passent par `path_hits_outline`). Bords à
