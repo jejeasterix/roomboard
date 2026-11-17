@@ -93,9 +93,19 @@ pub fn hit_outline(poly: &[f32], x: f32, y: f32, tol: f32) -> bool {
 
 /// Le chemin de la gomme d'objet (paires x, y) touche-t-il le contour, à `radius` près ?
 pub fn path_hits_outline(poly: &[f32], path: &[f32], radius: f32) -> bool {
+    path_hits_outline_by(poly, path, radius, |x, y| hit_outline(poly, x, y, radius))
+}
+
+/// `path_hits_outline` avec le test de point en paramètre (les tests comptent les points testés).
+fn path_hits_outline_by(
+    _poly: &[f32],
+    path: &[f32],
+    radius: f32,
+    mut test: impl FnMut(f32, f32) -> bool,
+) -> bool {
     sample_path(path, (radius / 2.0).max(0.25))
         .into_iter()
-        .any(|(x, y)| hit_outline(poly, x, y, radius))
+        .any(|(x, y)| test(x, y))
 }
 
 #[cfg(test)]
@@ -148,5 +158,71 @@ mod tests {
     #[test]
     fn path_far_from_outline_misses() {
         assert!(!path_hits_outline(&SQUARE, &[-20.0, 50.0, 30.0, 50.0], 1.0));
+    }
+
+    /// Référence sans préfiltre : chaque point échantillonné testé contre le contour.
+    fn naive(poly: &[f32], path: &[f32], radius: f32) -> bool {
+        sample_path(path, (radius / 2.0).max(0.25))
+            .into_iter()
+            .any(|(x, y)| hit_outline(poly, x, y, radius))
+    }
+
+    fn tested(poly: &[f32], path: &[f32], radius: f32) -> (bool, usize) {
+        let mut n = 0;
+        let hit = path_hits_outline_by(poly, path, radius, |x, y| {
+            n += 1;
+            hit_outline(poly, x, y, radius)
+        });
+        (hit, n)
+    }
+
+    #[test]
+    fn far_path_tests_no_sample() {
+        let (hit, n) = tested(&SQUARE, &[100.0, 100.0, 200.0, 100.0], 2.0);
+        assert!(!hit);
+        assert_eq!(n, 0, "contour loin du chemin : écarté par sa boîte, aucun point testé");
+    }
+
+    #[test]
+    fn long_path_tests_only_samples_near_the_outline() {
+        let (hit, n) = tested(&SQUARE, &[5.0, -1000.0, 5.0, 1000.0], 2.0);
+        assert!(hit);
+        assert!(n <= 4, "seuls les points proches de la boîte sont testés : {n}");
+    }
+
+    /// DA7 : le préfiltre ne change aucun résultat (aperçu et commande passent par `path_hits_outline`). Bords à
+    /// distance exacte du rayon, rayons nul, négatif ou NaN, contour vide, réduit à un point, ou ouvert par un
+    /// séparateur NaN (la règle pair-impair dit alors « dedans » hors de la boîte).
+    #[test]
+    fn prefilter_keeps_the_result() {
+        let triangle = [0.0, 0.0, 20.0, 0.0, 10.0, 15.0];
+        let open = [0.0, 0.0, 10.0, 0.0, 10.0, 10.0, f32::NAN, f32::NAN];
+        assert!(naive(&open, &[-60.0, 5.0, -40.0, 5.0], 1.0));
+        let polys: [&[f32]; 5] = [&SQUARE, &triangle, &open, &[3.0, 3.0], &[]];
+        let mut cases = 0;
+        for poly in polys {
+            for radius in [0.5, 2.0, 3.0, 0.0, -1.0, f32::NAN] {
+                for off in [
+                    -30.0, -12.5, -12.0, -11.0, -2.0, -0.5, 0.0, 5.0, 10.5, 12.0, 12.5, 14.0, 40.0,
+                ] {
+                    for path in [
+                        vec![off, -50.0, off, 50.0],
+                        vec![-50.0, off, 50.0, off],
+                        vec![-60.0, off, -40.0, off],
+                        vec![off, off, off + 3.0, off + 4.0],
+                        vec![off - 20.0, off + 20.0, off + 20.0, off - 20.0],
+                        vec![off, off],
+                    ] {
+                        assert_eq!(
+                            path_hits_outline(poly, &path, radius),
+                            naive(poly, &path, radius),
+                            "{poly:?} {path:?} r = {radius}"
+                        );
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(cases, 5 * 6 * 13 * 6);
     }
 }
