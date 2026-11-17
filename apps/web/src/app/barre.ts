@@ -44,6 +44,7 @@ export function mountBar(
   }
   const status = root.ownerDocument.getElementById("etat") ?? root.appendChild(document.createElement("span"));
   status.id = "etat";
+  root.append(status); // après les boutons : un message d'erreur long ne les pousse pas (déplace #etat s'il précède)
   status.setAttribute("role", "status");
   const paint = (s: EngineState): void => {
     for (const b of barModel(s)) {

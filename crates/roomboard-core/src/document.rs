@@ -200,6 +200,7 @@ impl Document {
     pub fn undo(&mut self) -> bool {
         let done = self.history.undo();
         if done {
+            self.retain_present_outlines();
             self.bump();
         }
         done
@@ -208,6 +209,7 @@ impl Document {
     pub fn redo(&mut self) -> bool {
         let done = self.history.redo();
         if done {
+            self.retain_present_outlines();
             self.bump();
         }
         done
@@ -297,6 +299,18 @@ impl Document {
         for id in removed {
             cache.remove(id);
         }
+    }
+
+    /// Après annuler ou rétablir : ne garde que les contours des traits encore présents (mémoire bornée).
+    fn retain_present_outlines(&self) {
+        let present: std::collections::HashSet<String> = self
+            .page_ids()
+            .iter()
+            .flat_map(|p| self.element_ids(p))
+            .collect();
+        self.outlines
+            .borrow_mut()
+            .retain(|id, _| present.contains(id));
     }
 
     /// Contours calculés depuis la création du document (mesure du cache).
@@ -601,6 +615,21 @@ mod tests {
             m + 1,
             "rétablir : seul b est calculé, une fois"
         );
+    }
+
+    /// Annuler ou rétablir ne laisse pas dans le cache le contour d'un trait qui n'existe plus.
+    #[test]
+    fn undo_drops_the_outline_of_the_undone_stroke() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = stroke(&mut d, &p, 100.0);
+        assert!(d.outline(&a).is_some());
+        assert_eq!(d.outline_cache_len(), 1);
+        assert!(d.undo());
+        assert_eq!(d.outline_cache_len(), 0, "trait annulé : plus en cache");
+        assert!(d.redo());
+        assert!(d.outline(&a).is_some());
+        assert_eq!(d.outline_cache_len(), 1);
     }
 
     #[test]
