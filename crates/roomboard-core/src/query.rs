@@ -1,5 +1,9 @@
 //! Lectures sans écriture (D10, D38) : entrées en coordonnées monde ; points et contours rendus dans le repère local
-//! de l'élément (placés par `transform`). Aucune lecture n'ouvre de transaction d'écriture.
+//! de l'élément (placés par `transform`). Aucune lecture n'ouvre de transaction d'écriture. Les contours viennent du
+//! cache du document (`Document::cached_outline`) : calculés une fois par trait, partagés par le rendu, la collision
+//! et la gomme d'objet (constat du lot 2 : 194 ms pour 1 000 traits sans cache).
+
+use std::rc::Rc;
 
 use yrs::{Array, Map, Out};
 
@@ -7,7 +11,6 @@ use crate::commands::{read_stroke, world_to_local_path};
 use crate::document::Document;
 use crate::element::{apply_transform, invert, out_string, Transform};
 use crate::ink::hit::{hit_outline, path_hits_outline};
-use crate::ink::outline::{outline as ink_outline, InkStyle};
 use crate::ink::points::InkPoint;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
@@ -36,7 +39,7 @@ impl Bounds {
 struct StrokeGeom {
     id: String,
     transform: Transform,
-    outline: Vec<f32>,
+    outline: Rc<[f32]>,
 }
 
 /// Boîte monde d'un contour local ; les sommets non finis (séparateurs éventuels) sont ignorés.
@@ -71,11 +74,10 @@ impl Document {
         let txn = self.read();
         let found = self.find_element(&txn, id)?;
         let (_, style, pts) = read_stroke(&txn, &found.element)?;
-        Some(ink_outline(&pts, &InkStyle { width: style.width }))
+        Some(self.cached_outline(id, &style, &pts).to_vec())
     }
 
-    /// Traits de la page, du dessous vers le dessus. Recalcule chaque contour à chaque appel (coût mesuré par
-    /// `hit_test_path_cost_for_thousand_strokes`, non optimisé au lot 2).
+    /// Traits de la page, du dessous vers le dessus ; contours pris dans le cache du document.
     fn stroke_geoms(&self, page: &str) -> Vec<StrokeGeom> {
         let txn = self.read();
         let Some(elements) = self.page_elements(&txn, page) else {
@@ -87,10 +89,12 @@ impl Document {
             let Some((transform, style, pts)) = read_stroke(&txn, &e) else {
                 continue;
             };
+            let id = out_string(e.get(&txn, "id")).unwrap_or_default();
+            let outline = self.cached_outline(&id, &style, &pts);
             out.push(StrokeGeom {
-                id: out_string(e.get(&txn, "id")).unwrap_or_default(),
+                id,
                 transform,
-                outline: ink_outline(&pts, &InkStyle { width: style.width }),
+                outline,
             });
         }
         out
@@ -142,8 +146,7 @@ impl Document {
             let Some((t, style, pts)) = read_stroke(&txn, &found.element) else {
                 continue;
             };
-            if let Some(b) = world_bounds(&t, &ink_outline(&pts, &InkStyle { width: style.width }))
-            {
+            if let Some(b) = world_bounds(&t, &self.cached_outline(id, &style, &pts)) {
                 acc = Some(match acc {
                     Some(a) => a.union(b),
                     None => b,
@@ -326,7 +329,11 @@ mod tests {
         let before = d.outline_cache_misses();
         let path = [150.0, 90.0, 150.0, 110.0];
         assert_eq!(d.hit_test_path(&p, &path, 3.0), vec![a.clone()]);
-        assert_eq!(d.outline_cache_misses() - before, 2, "un calcul par trait au premier appel");
+        assert_eq!(
+            d.outline_cache_misses() - before,
+            2,
+            "un calcul par trait au premier appel"
+        );
         for _ in 0..5 {
             assert_eq!(d.hit_test_path(&p, &path, 3.0), vec![a.clone()]);
         }
@@ -355,11 +362,19 @@ mod tests {
             },
         );
         let _ = d.bounds(&[a.clone(), b]);
-        assert_eq!(d.outline_cache_misses(), m, "rendu, collision et boîte lisent le même cache");
+        assert_eq!(
+            d.outline_cache_misses(),
+            m,
+            "rendu, collision et boîte lisent le même cache"
+        );
         let pts = d.stroke_points(&a).expect("points");
         let exact = ink_outline(&pts, &InkStyle { width: 4.0 });
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
-        assert_eq!(bits(&o), bits(&exact), "le cache rend le contour exact (bit à bit)");
+        assert_eq!(
+            bits(&o),
+            bits(&exact),
+            "le cache rend le contour exact (bit à bit)"
+        );
     }
 
     #[test]
@@ -381,13 +396,26 @@ mod tests {
         assert_eq!(ch.ids.len(), 2, "a coupé en deux morceaux");
         let left = d.hit_test_path(&p, &left_probe, 3.0);
         assert_eq!(left.len(), 1);
-        assert!(ch.ids.contains(&left[0]), "le morceau gauche, jamais l'ancien trait : {left:?}");
-        assert!(d.hit_test_path(&p, &cut_probe, 1.0).is_empty(), "plus rien sous la coupe");
+        assert!(
+            ch.ids.contains(&left[0]),
+            "le morceau gauche, jamais l'ancien trait : {left:?}"
+        );
+        assert!(
+            d.hit_test_path(&p, &cut_probe, 1.0).is_empty(),
+            "plus rien sous la coupe"
+        );
         assert!(d.undo());
         assert_eq!(d.hit_test_path(&p, &left_probe, 3.0), vec![a.clone()]);
-        assert_eq!(d.hit_test_path(&p, &cut_probe, 1.0), vec![a.clone()], "annuler : le trait entier revient");
+        assert_eq!(
+            d.hit_test_path(&p, &cut_probe, 1.0),
+            vec![a.clone()],
+            "annuler : le trait entier revient"
+        );
         assert!(d.redo());
-        assert!(d.hit_test_path(&p, &cut_probe, 1.0).is_empty(), "rétablir : la coupe revient");
+        assert!(
+            d.hit_test_path(&p, &cut_probe, 1.0).is_empty(),
+            "rétablir : la coupe revient"
+        );
     }
 
     #[test]
@@ -395,7 +423,8 @@ mod tests {
         let (mut d, p, a, _b) = setup();
         let _ = d.hit_test_path(&p, &[0.0, 0.0, 1000.0, 1000.0], 3.0);
         assert_eq!(d.outline_cache_len(), 2);
-        d.apply(Command::Delete { ids: vec![a] }).expect("suppression");
+        d.apply(Command::Delete { ids: vec![a] })
+            .expect("suppression");
         assert_eq!(d.outline_cache_len(), 1);
     }
 
@@ -414,11 +443,15 @@ mod tests {
             })
             .expect("gomme d'objet");
         assert_eq!(ch.removed, vec![a]);
-        assert_eq!(d.outline_cache_misses(), m, "la commande reprend les contours de l'aperçu");
+        assert_eq!(
+            d.outline_cache_misses(),
+            m,
+            "la commande reprend les contours de l'aperçu"
+        );
     }
 
-    /// Mesure (relecture T12) : `hit_test_path` recalcule le contour de chaque trait à chaque appel. Non optimisé au
-    /// lot 2 ; `cargo test -p roomboard-core --lib -- --ignored --nocapture hit_test_path_cost` affiche le temps.
+    /// Mesure (relecture T12, cache T17) : premier appel (contours calculés) et suivant (servis par le cache) ;
+    /// `cargo test -p roomboard-core --release --lib -- --ignored --nocapture hit_test_path_cost` affiche les temps.
     #[test]
     #[ignore = "mesure de coût, lancée à la main"]
     fn hit_test_path_cost_for_thousand_strokes() {
