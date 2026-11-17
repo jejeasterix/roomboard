@@ -11,7 +11,6 @@ use crate::element::{
 };
 use crate::ink::erase::erase;
 use crate::ink::hit::path_hits_outline;
-use crate::ink::outline::{outline, InkStyle};
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,7 +155,7 @@ struct Target {
 
 impl Document {
     pub fn apply(&mut self, cmd: Command) -> Result<Change, CommandError> {
-        match cmd {
+        let change = match cmd {
             Command::AddPage { after } => self.cmd_add_page(after.as_deref()),
             Command::RemovePage { page } => self.cmd_remove_page(&page),
             Command::CommitStroke {
@@ -171,7 +170,9 @@ impl Document {
                 mode,
             } => self.cmd_erase(&page, &path, radius, mode),
             Command::Delete { ids } => self.cmd_delete(&ids),
-        }
+        }?;
+        self.forget_outlines(&change.removed);
+        Ok(change)
     }
 
     fn done(&mut self, mut change: Change) -> Change {
@@ -286,15 +287,15 @@ impl Document {
                 let Some(local_path) = world_to_local_path(&transform, path) else {
                     continue;
                 };
+                let id = out_string(e.get(&txn, "id")).unwrap_or_default();
                 let pieces = match mode {
                     EraseMode::Partial => erase(&pts, style.width / 2.0, &local_path, radius),
                     EraseMode::Object => {
-                        let poly = outline(&pts, &InkStyle { width: style.width });
+                        let poly = self.cached_outline(&id, &style, &pts);
                         path_hits_outline(&poly, &local_path, radius).then(Vec::new)
                     }
                 };
                 if let Some(pieces) = pieces {
-                    let id = out_string(e.get(&txn, "id")).unwrap_or_default();
                     cuts.push(Cut {
                         index: i as u32,
                         id,
