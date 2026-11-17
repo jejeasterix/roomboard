@@ -405,9 +405,9 @@ mod tests {
             .clone();
         let first = d.outline(&id).expect("contour");
         assert!(!first.is_empty());
-        let misses = d.outline_cache_misses();
+        let misses = d.core.outline_cache_misses();
         assert_eq!(d.outline(&id), Some(first));
-        assert_eq!(d.outline_cache_misses(), misses, "second appel servi du cache");
+        assert_eq!(d.core.outline_cache_misses(), misses, "second appel servi du cache");
     }
 
     #[test]
