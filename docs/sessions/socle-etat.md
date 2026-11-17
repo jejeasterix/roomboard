@@ -1,18 +1,21 @@
 # État — socle
 
-Statut : arrêté (arrêt ferme 13:15 de la session OC26 ; lots 1 et 2 clos, reprise ci-dessous)
+Statut : en cours (OC65, lot 3 avancé avant l'essai ENI de jeudi 2026-11-19 ; arrêt ferme 01:30)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
 Avancement : 2/5 lots clos — clos : 1, 2 · à faire : 3, 4, 5
-Étage : 3 (vague 2) — depuis 2026-11-16 11:08
+Étage : 3 — depuis 2026-11-17 22:05
+Lot : 3 « Moteur d'interaction » — 0/10 tâches terminées — depuis 2026-11-17 22:05
 Questions à Jérôme : —
-Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle   Base : origin/main @ 8769699
-Branche principale locale au lancement : 8769699
-Cadrage : docs/plans/socle-cadrage.md   Plan(s) : docs/plans/socle-PLAN.md (maître), docs/plans/socle-lot1-PLAN.md (lot 1), docs/plans/socle-lot2-PLAN.md (lot 2, T7-T16, 6 vagues : T7+T8 ; T9+T10 ; T11+T13 ; T12 ; T14+T15 ; T16)
+Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot3   Base : origin/main @ c2d7d0d (dépôt public jejeasterix/roomboard ; l'ancien worktree feat/socle et le dépôt roomboard-prive ne servent plus à ce chantier)
+Branche principale locale au lancement : c2d7d0d
+Cadrage : docs/plans/socle-cadrage.md   Plan(s) : docs/plans/socle-PLAN.md (maître), docs/plans/socle-lot1-PLAN.md (lot 1), docs/plans/socle-lot2-PLAN.md (lot 2, T7-T16), docs/plans/socle-lot3-PLAN.md (lot 3, T17-T26, 4 vagues : T17+T18+T26 ; T19+T20+T23 ; T21+T22+T25 ; T24)
 
 ## Référence
 Squelette T0 mergé (b3f7489) : `scripts/verifier.sh` rc=0 — Rust 6 tests (core 4, wasm 2), Vitest 2, build web OK, rejoué par l'orchestrateur.
 Build Tauri .deb (T0) : 3 min 54, pic 1,35 Go.
+
+Référence lot 3 (c2d7d0d, 22:00) : verifier.sh rc=0 en 1 min 15 — Rust 106+3+3+14 (1 ignoré), web 8 fichiers / 112 tests.
 
 ## Compteurs
 contre-relecture cadrage 1/2 (second tour sauté : arrêt ferme 13:15) · relecture plan lot 1 : 1/3 faite (1 bloquant fiche ENI corrigé par l'orchestrateur ; essais Windows/macOS ajoutés à la fiche ; 2 mineurs de mesure → T6b)
@@ -35,6 +38,21 @@ docs/plans/socle-cadrage.md — 39 décisions, 5 lots, scénarios S1 (ENI) à S5
 ## Tâches (lot 2)
 T7 terminée (d1de245 ; deps_smoke 3/3, zip en wasm32 OK) · T8 terminée (74308f8 ; fake-core 9/9 ; écart : distToSegment dans la fausse gomme) · T9 terminée (81b84d8 ; core --lib 23/23, noms vus ; 3 mutations rouges) · T10 terminée (d491a22 ; ink:: 22/22, noms vus ; 2 tests ajoutés qui rougissent sous le patron interdit) · T11 terminée (b53b708 ; hit+erase 15/15, noms vus ; mutations raisonnées, non jouées) · T13 terminée (e638b95 ; format:: 16/16, mutation de date rouge ; contrôle de schéma inatteignable en v1, noté) · T12 terminée (20b94a8 ; commands+query 27 verts, 1 ignoré ; 3 tests ajoutés qui rougissent sous mutation) · cœur fusionné : 103 tests · T14 terminée (8665454 ; scenarios 3/3 ; mutation « page après History » rouge) · T15 terminée (98d4f06 ; roomboard-wasm 14/14 ; 4 tests ajoutés sous mutation ; .wasm servi ~1,30 Mo) · T16 terminée (cb6c266 ; contrat 17/17 sur le vrai .wasm, aucun sauté ; module Wasm 1 327 518 octets ; fake-core aligné sur les messages du cœur).
 Preuve du lot 2 (orchestrateur, 12:05, feat/socle) : verifier.sh rc=0 — Rust 103+3+3+14 = 123 tests (1 ignoré : mesure), web 8 fichiers / 96 tests. Relecture du plan lot 2 : tour 1/3 faite, aucun bloquant. Reprises : preuves T9/T10/T12 rejouées par grep des noms `^test … ok$` (orchestrateur) ; T13 `save_is_deterministic` doit vérifier la date 1980-01-01 des entrées ; T14 mutation temporaire pour prouver le rouge ; D37 « dernière page » → `Err(LastPage)` levée côté JS (écart à déclarer, lot 3 l'attrape) ; T12 contours recalculés à chaque `hit_test_path` (à mesurer au lot 3) ; T15 télécharge serde-wasm-bindgen (réseau).
+
+## Tâches (lot 3)
+Décision de Jérôme, 2026-11-17, à « Veux-tu que la VM code le tracé (début du lot 3) avant jeudi, pour que les deux applis servent aussi à l'essai ? » : « Oui, avant jeudi ». Échelon 1 de DA9 ; barre minimale DOM dans main.ts (remplacée au lot 5).
+| id | dépend | worktree | état | essais | dernier commit vert | preuve rejouée |
+|----|--------|----------|------|--------|---------------------|----------------|
+| T17 | — | socle--T17 | à faire | 0/3 | — | — |
+| T18 | — | socle--T18 | à faire | 0/3 | — | — |
+| T26 | — | socle--T26 | à faire | 0/3 | — | — |
+| T19 | T18 | — | à faire | 0/3 | — | — |
+| T20 | T18 | — | à faire | 0/3 | — | — |
+| T23 | T18 | — | à faire | 0/3 | — | — |
+| T21 | T18 | — | à faire | 0/3 | — | — |
+| T22 | T18 | — | à faire | 0/3 | — | — |
+| T25 | — | — | à faire | 0/3 | — | — |
+| T24 | toutes | — | à faire | 0/3 | — | — |
 
 ## Scénarios et captures
 S1 (VM, partie automatique) — réussi 11:20 : Chromium headless, trait souris, 42 points, retard p95 17,4 ms, 0 erreur · capture docs/essais/proto-stylet-essai-vm.png. Partie ENI : avec Jérôme cet après-midi (docs/essais/eni-stylet.md).
