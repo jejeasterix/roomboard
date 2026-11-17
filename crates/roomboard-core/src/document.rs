@@ -1,5 +1,9 @@
 //! Document CRDT (yrs), schéma D2 : racine `meta` {schema}, racine `pages` = tableau de pages `Y.Map`
 //! {id, width, height, background, elements: Y.Array de Y.Map}. L'ordre de `elements` est l'ordre d'empilement.
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use yrs::updates::decoder::Decode;
 use yrs::{
     Array, ArrayPrelim, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
@@ -7,10 +11,12 @@ use yrs::{
 };
 
 use crate::element::{
-    out_f64, out_string, out_transform, read_style, ElementView, PageView, DEFAULT_BACKGROUND,
-    PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    out_f64, out_string, out_transform, read_style, ElementView, PageView, StrokeStyle,
+    DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
+use crate::ink::outline::{outline as ink_outline, InkStyle};
+use crate::ink::points::InkPoint;
 
 /// Origine des transactions d'un geste local : seules celles-ci s'annulent (D11).
 pub const LOCAL: &str = "local";
@@ -21,12 +27,22 @@ pub enum DecodeError {
     Schema { found: Option<f64> },
 }
 
+/// Contour local d'un trait en cache (D7, DA7). Les points d'un trait sont immuables (DA4) ; la largeur et le nombre
+/// de points gardent quand même l'entrée : un écart force le recalcul.
+struct CachedOutline {
+    width_bits: u32,
+    points: usize,
+    outline: Rc<[f32]>,
+}
+
 pub struct Document {
     doc: Doc,
     meta: MapRef,
     pages: ArrayRef,
     history: History,
     version: u64,
+    outlines: RefCell<HashMap<String, CachedOutline>>,
+    outline_misses: Cell<u64>,
 }
 
 #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
@@ -78,6 +94,8 @@ impl Document {
             pages,
             history,
             version: 0,
+            outlines: RefCell::new(HashMap::new()),
+            outline_misses: Cell::new(0),
         }
     }
 
@@ -182,6 +200,7 @@ impl Document {
     pub fn undo(&mut self) -> bool {
         let done = self.history.undo();
         if done {
+            self.retain_present_outlines();
             self.bump();
         }
         done
@@ -190,6 +209,7 @@ impl Document {
     pub fn redo(&mut self) -> bool {
         let done = self.history.redo();
         if done {
+            self.retain_present_outlines();
             self.bump();
         }
         done
@@ -243,6 +263,64 @@ impl Document {
     pub(crate) fn bump(&mut self) -> u64 {
         self.version += 1;
         self.version
+    }
+
+    /// Contour local d'un trait, calculé une fois par (id, largeur, nombre de points) puis servi depuis le cache :
+    /// rendu, collision et gomme d'objet voient le même polygone (DA7) sans le recalculer à chaque image (D38).
+    pub(crate) fn cached_outline(
+        &self,
+        id: &str,
+        style: &StrokeStyle,
+        pts: &[InkPoint],
+    ) -> Rc<[f32]> {
+        let width_bits = style.width.to_bits();
+        if let Some(c) = self.outlines.borrow().get(id) {
+            if c.width_bits == width_bits && c.points == pts.len() {
+                return Rc::clone(&c.outline);
+            }
+        }
+        self.outline_misses.set(self.outline_misses.get() + 1);
+        let outline: Rc<[f32]> = ink_outline(pts, &InkStyle { width: style.width }).into();
+        self.outlines.borrow_mut().insert(
+            id.to_string(),
+            CachedOutline {
+                width_bits,
+                points: pts.len(),
+                outline: Rc::clone(&outline),
+            },
+        );
+        outline
+    }
+
+    /// Oublie les contours des ids retirés par une commande (mémoire bornée aux traits présents ; un trait rendu par
+    /// annuler est recalculé une fois).
+    pub(crate) fn forget_outlines(&self, removed: &[String]) {
+        let mut cache = self.outlines.borrow_mut();
+        for id in removed {
+            cache.remove(id);
+        }
+    }
+
+    /// Après annuler ou rétablir : ne garde que les contours des traits encore présents (mémoire bornée).
+    fn retain_present_outlines(&self) {
+        let present: std::collections::HashSet<String> = self
+            .page_ids()
+            .iter()
+            .flat_map(|p| self.element_ids(p))
+            .collect();
+        self.outlines
+            .borrow_mut()
+            .retain(|id, _| present.contains(id));
+    }
+
+    /// Contours calculés depuis la création du document (mesure du cache).
+    pub fn outline_cache_misses(&self) -> u64 {
+        self.outline_misses.get()
+    }
+
+    /// Contours actuellement en cache.
+    pub fn outline_cache_len(&self) -> usize {
+        self.outlines.borrow().len()
     }
 
     #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
@@ -448,6 +526,110 @@ mod tests {
             Document::from_update_v1(&bytes),
             Err(DecodeError::Schema { found: Some(f) }) if f == 2.0
         ));
+    }
+
+    fn stroke(d: &mut Document, page: &str, y: f32) -> String {
+        let points: Vec<f32> = (0..=20)
+            .flat_map(|i| [100.0 + i as f32 * 10.0, y, 0.5])
+            .collect();
+        d.apply(crate::commands::Command::CommitStroke {
+            page: page.to_string(),
+            points,
+            style: crate::element::StrokeStyle {
+                color: "#000000".into(),
+                width: 4.0,
+            },
+        })
+        .expect("commit")
+        .ids[0]
+            .clone()
+    }
+
+    /// Second patron écarté (T17) : une clé par id seul rendrait l'ancien contour à une autre largeur ou à un autre
+    /// nombre de points. L'entrée garde les deux ; un écart force le recalcul, exact au bit près.
+    #[test]
+    fn cached_outline_recomputes_when_width_or_point_count_differ() {
+        use crate::ink::outline::{outline as ink_outline, InkStyle};
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = stroke(&mut d, &p, 100.0);
+        let pts = d.stroke_points(&a).expect("points");
+        let thin = StrokeStyle {
+            color: "#000000".into(),
+            width: 4.0,
+        };
+        let thick = StrokeStyle {
+            color: "#000000".into(),
+            width: 12.0,
+        };
+        let m = d.outline_cache_misses();
+        let o4 = d.cached_outline(&a, &thin, &pts);
+        assert_eq!(d.outline_cache_misses(), m + 1);
+        let o4_again = d.cached_outline(&a, &thin, &pts);
+        assert_eq!(d.outline_cache_misses(), m + 1, "même clé : servi du cache");
+        assert_eq!(bits(&o4_again), bits(&o4));
+        let o12 = d.cached_outline(&a, &thick, &pts);
+        assert_eq!(d.outline_cache_misses(), m + 2, "autre largeur : recalcul");
+        assert_eq!(
+            bits(&o12),
+            bits(&ink_outline(&pts, &InkStyle { width: 12.0 }))
+        );
+        let short = &pts[..pts.len() - 5];
+        let o_short = d.cached_outline(&a, &thick, short);
+        assert_eq!(
+            d.outline_cache_misses(),
+            m + 3,
+            "autre nombre de points : recalcul"
+        );
+        assert_eq!(
+            bits(&o_short),
+            bits(&ink_outline(short, &InkStyle { width: 12.0 }))
+        );
+        assert_eq!(d.outline_cache_len(), 1, "une entrée par id");
+    }
+
+    /// Le cache ne se vide pas à l'annulation (patron écarté : `outlines.clear()` de la liaison à chaque annuler ou
+    /// rétablir) : un trait que l'étape ne touche pas n'est jamais recalculé.
+    #[test]
+    fn undo_and_redo_keep_untouched_outlines() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = stroke(&mut d, &p, 100.0);
+        assert!(d.outline(&a).is_some());
+        let m = d.outline_cache_misses();
+        let b = stroke(&mut d, &p, 300.0);
+        assert!(d.undo());
+        assert!(d.outline(&a).is_some());
+        assert!(d.outline(&b).is_none(), "b annulé");
+        assert_eq!(
+            d.outline_cache_misses(),
+            m,
+            "annuler : a n'est pas recalculé"
+        );
+        assert!(d.redo());
+        assert!(d.outline(&a).is_some());
+        assert!(d.outline(&b).is_some());
+        assert_eq!(
+            d.outline_cache_misses(),
+            m + 1,
+            "rétablir : seul b est calculé, une fois"
+        );
+    }
+
+    /// Annuler ou rétablir ne laisse pas dans le cache le contour d'un trait qui n'existe plus.
+    #[test]
+    fn undo_drops_the_outline_of_the_undone_stroke() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = stroke(&mut d, &p, 100.0);
+        assert!(d.outline(&a).is_some());
+        assert_eq!(d.outline_cache_len(), 1);
+        assert!(d.undo());
+        assert_eq!(d.outline_cache_len(), 0, "trait annulé : plus en cache");
+        assert!(d.redo());
+        assert!(d.outline(&a).is_some());
+        assert_eq!(d.outline_cache_len(), 1);
     }
 
     #[test]

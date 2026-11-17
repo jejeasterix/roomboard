@@ -1,7 +1,6 @@
 //! Liaison wasm-bindgen du cœur RoomBoard (DA5, D10). Une méthode par commande ; objets (Change, ElementView,
 //! Bounds, capacités) par serde-wasm-bindgen ; points et contours en Float32Array. Chaque méthode exposée délègue à
 //! une méthode `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
@@ -74,7 +73,6 @@ pub fn capabilities(platform: &str) -> Result<JsValue, JsError> {
 pub struct Document {
     core: CoreDocument,
     created: Option<String>,
-    outlines: HashMap<String, Vec<f32>>,
 }
 
 #[wasm_bindgen]
@@ -165,14 +163,9 @@ impl Document {
         self.core.stroke_points(id).map(|p| to_flat(&p))
     }
 
-    /// Contour local, mis en cache par id (les points d'un élément sont immuables, DA4).
-    pub fn outline(&mut self, id: &str) -> Option<Vec<f32>> {
-        if let Some(o) = self.outlines.get(id) {
-            return Some(o.clone());
-        }
-        let o = self.core.outline(id)?;
-        self.outlines.insert(id.to_string(), o.clone());
-        Some(o)
+    /// Contour local, mis en cache par le cœur (`Document::cached_outline`, partagé avec la collision).
+    pub fn outline(&self, id: &str) -> Option<Vec<f32>> {
+        self.core.outline(id)
     }
 
     pub fn hit_test(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<String> {
@@ -217,23 +210,11 @@ impl Document {
 
 impl Document {
     fn wrap(core: CoreDocument, created: Option<String>) -> Document {
-        Document {
-            core,
-            created,
-            outlines: HashMap::new(),
-        }
-    }
-
-    fn forget(&mut self, change: &Change) {
-        for id in &change.removed {
-            self.outlines.remove(id);
-        }
+        Document { core, created }
     }
 
     fn run(&mut self, cmd: Command) -> Result<Change, CommandError> {
-        let change = self.core.apply(cmd)?;
-        self.forget(&change);
-        Ok(change)
+        self.core.apply(cmd)
     }
 
     pub fn load_inner(bytes: &[u8]) -> Result<Document, FormatError> {
@@ -310,9 +291,6 @@ impl Document {
     /// `full = true` (tout invalider) seulement si une étape a été défaite.
     pub fn undo_inner(&mut self) -> Change {
         let full = self.core.undo();
-        if full {
-            self.outlines.clear();
-        }
         Change {
             full,
             version: self.core.version(),
@@ -323,9 +301,6 @@ impl Document {
     /// `full = true` (tout invalider) seulement si une étape a été refaite.
     pub fn redo_inner(&mut self) -> Change {
         let full = self.core.redo();
-        if full {
-            self.outlines.clear();
-        }
         Change {
             full,
             version: self.core.version(),
@@ -430,7 +405,13 @@ mod tests {
             .clone();
         let first = d.outline(&id).expect("contour");
         assert!(!first.is_empty());
+        let misses = d.core.outline_cache_misses();
         assert_eq!(d.outline(&id), Some(first));
+        assert_eq!(
+            d.core.outline_cache_misses(),
+            misses,
+            "second appel servi du cache"
+        );
     }
 
     #[test]

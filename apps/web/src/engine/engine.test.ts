@@ -1,0 +1,278 @@
+import { describe, expect, it } from "vitest";
+import type { Change, StrokeStyle } from "../core/api";
+import { fakeCore } from "../core/fake-core";
+import type { FrameLoopDeps } from "../proto/frame-loop";
+import type { Camera } from "./camera";
+import { createEngine, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
+import type { CloseReason } from "./input/gesture";
+import type { KeyLike } from "./input/keys";
+import type { InputSample } from "./input/sampler";
+import type { LiveLayer, PageView, Renderer } from "./render/renderer";
+import type { GestureTool, ToolContext } from "./tools/tool";
+
+class Frames implements FrameLoopDeps {
+  private next = 1;
+  private readonly queue = new Map<number, (ts: number) => void>();
+  t = 0;
+  requestFrame(cb: (ts: number) => void): number {
+    const id = this.next++;
+    this.queue.set(id, cb);
+    return id;
+  }
+  cancelFrame(id: number): void {
+    this.queue.delete(id);
+  }
+  now(): number {
+    return this.t;
+  }
+  pending(): number {
+    return this.queue.size;
+  }
+  tick(): void {
+    this.t += 16;
+    const cbs = [...this.queue.values()];
+    this.queue.clear();
+    for (const cb of cbs) cb(this.t);
+  }
+}
+
+class FakeRenderer implements Renderer {
+  readonly scenes: { page: PageView; camera: Camera; hidden: string[] }[] = [];
+  readonly lives: LiveLayer[] = [];
+  readonly sizes: number[][] = [];
+  readonly changes: Change[] = [];
+  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>): void {
+    this.scenes.push({ page, camera, hidden: [...hidden] });
+  }
+  drawLive(live: LiveLayer): void {
+    this.lives.push(live);
+  }
+  resize(width: number, height: number, dpr: number): void {
+    this.sizes.push([width, height, dpr]);
+  }
+  invalidate(change: Change): void {
+    this.changes.push(change);
+  }
+}
+
+const PEN: StrokeStyle = { color: "#000000", width: 4 };
+const sample: InputSample = { x: 1, y: 2, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 };
+
+interface FakeTool extends GestureTool {
+  hide(ids: string[]): void;
+}
+
+/** Faux outil : journalise ; le faux stylo écrit un trait au relâché "end" (comme T21). */
+function fakeTool(name: "pen" | "eraser", log: string[], ctx: ToolContext): FakeTool {
+  const active = new Set<number>();
+  let hidden: ReadonlySet<string> = new Set<string>();
+  return {
+    hide(ids) {
+      hidden = new Set(ids);
+    },
+    begin(id) {
+      active.add(id);
+      log.push(`${name}.begin ${id}`);
+    },
+    extend(id) {
+      log.push(`${name}.extend ${id}`);
+    },
+    frame() {
+      log.push(`${name}.frame`);
+    },
+    close(id: number, how: CloseReason) {
+      active.delete(id);
+      log.push(`${name}.close ${id} ${how}`);
+      if (name === "pen" && how === "end") {
+        ctx.run({ type: "CommitStroke", page: ctx.page(), points: new Float32Array([10, 10, 0.5, 20, 20, 0.5]), style: PEN });
+      }
+    },
+    live: () => ({ strokes: [], erasers: [], hidden }),
+    active: () => active.size > 0,
+  };
+}
+
+function setup() {
+  const doc = fakeCore.blank();
+  const frames = new Frames();
+  const renderer = new FakeRenderer();
+  const log: string[] = [];
+  const made = new Map<string, FakeTool>();
+  const tools: ToolFactories = {
+    pen: (ctx) => {
+      const t = fakeTool("pen", log, ctx);
+      made.set("pen", t);
+      return t;
+    },
+    eraser: (ctx) => {
+      const t = fakeTool("eraser", log, ctx);
+      made.set("eraser", t);
+      return t;
+    },
+  };
+  const engine = createEngine({ doc, renderer, frames, tools });
+  const tool = (n: string): FakeTool => {
+    const t = made.get(n);
+    if (!t) throw new Error(`outil absent : ${n}`);
+    return t;
+  };
+  return { doc, frames, renderer, log, engine, tool };
+}
+
+const key = (k: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
+  key: k,
+  ctrlKey: false,
+  metaKey: false,
+  shiftKey: false,
+  altKey: false,
+  isComposing: false,
+  target: null,
+  ...mods,
+});
+
+describe("createEngine", () => {
+  it("démarre sur la première page : rien à annuler, aucune erreur, outil stylo", () => {
+    const { doc, engine } = setup();
+    expect(engine.state()).toMatchObject({
+      tool: "pen",
+      eraserMode: "partial",
+      canUndo: false,
+      canRedo: false,
+      elementCount: 0,
+      error: null,
+    });
+    expect(engine.state().page).toBe(doc.pageIds()[0]);
+  });
+
+  it("resize : rendu redimensionné, caméra ajustée à la page une seule fois", () => {
+    const { engine, renderer } = setup();
+    engine.resize(1280, 720, 2);
+    const fitted = engine.camera();
+    expect(fitted.zoom).toBeCloseTo((1280 / 1920) * 0.95);
+    engine.view.panBy(10, 0);
+    engine.resize(1000, 700, 2);
+    expect(engine.camera().tx).toBeCloseTo(fitted.tx + 10);
+    expect(renderer.sizes).toEqual([
+      [1280, 720, 2],
+      [1000, 700, 2],
+    ]);
+  });
+
+  it("sink : le geste va à l'outil demandé par le routeur, la boucle d'image démarre", () => {
+    const { engine, log, frames } = setup();
+    engine.sink.begin(1, "eraser", [sample]);
+    engine.sink.extend(1, [sample], []);
+    expect(log).toEqual(["eraser.begin 1", "eraser.extend 1"]);
+    expect(frames.pending()).toBe(1);
+  });
+
+  it("une image : frame des outils, scène si sale, couche vive, onLiveDrawn", () => {
+    const { engine, renderer, frames, log } = setup();
+    const drawn: number[] = [];
+    engine.onLiveDrawn((now) => drawn.push(now));
+    engine.sink.begin(1, "pen", [sample]);
+    frames.tick();
+    expect(log).toEqual(["pen.begin 1", "pen.frame", "eraser.frame"]);
+    expect(renderer.scenes).toHaveLength(1);
+    expect(renderer.lives).toHaveLength(1);
+    expect(drawn).toEqual([16]);
+    frames.tick();
+    expect(renderer.scenes).toHaveLength(1);
+    expect(renderer.lives).toHaveLength(2);
+  });
+
+  it("fin du geste : une écriture, scène redessinée avec l'élément, état émis, boucle arrêtée", () => {
+    const { engine, renderer, frames } = setup();
+    const states: boolean[] = [];
+    engine.onState((s) => states.push(s.canUndo));
+    engine.sink.begin(1, "pen", [sample]);
+    frames.tick();
+    engine.sink.close(1, "end");
+    expect(states).toEqual([true]);
+    expect(engine.state().elementCount).toBe(1);
+    expect(renderer.changes).toHaveLength(1);
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page.elementIds).toHaveLength(1);
+    expect(frames.pending()).toBe(0);
+  });
+
+  it("Err(LastPage) attrapé : run rend null, message dans l'état, rien ne lève", () => {
+    const { engine } = setup();
+    const errors: (string | null)[] = [];
+    engine.onState((s) => errors.push(s.error));
+    let result: Change | null | undefined;
+    expect(() => {
+      result = engine.run({ type: "RemovePage", page: engine.state().page });
+    }).not.toThrow();
+    expect(result).toBeNull();
+    expect(errors).toEqual(["la dernière page ne se supprime pas"]);
+    expect(engine.state().error).toBe("la dernière page ne se supprime pas");
+  });
+
+  it("l'erreur s'efface à la commande réussie suivante", () => {
+    const { engine } = setup();
+    engine.run({ type: "RemovePage", page: engine.state().page });
+    const ok = engine.run({ type: "CommitStroke", page: engine.state().page, points: new Float32Array([1, 1, 0.5]), style: PEN });
+    expect(ok?.ids).toHaveLength(1);
+    expect(engine.state().error).toBeNull();
+  });
+
+  it("Ctrl+Z annule, Ctrl+Y et Ctrl+Maj+Z rétablissent ; invalidation complète", () => {
+    const { engine, renderer } = setup();
+    engine.sink.begin(1, "pen", [sample]);
+    engine.sink.close(1, "end");
+    expect(engine.key(key("z", { ctrlKey: true }))).toBe(true);
+    expect(engine.state()).toMatchObject({ elementCount: 0, canUndo: false, canRedo: true });
+    expect(renderer.changes.at(-1)?.full).toBe(true);
+    expect(engine.key(key("y", { ctrlKey: true }))).toBe(true);
+    expect(engine.state().elementCount).toBe(1);
+    engine.key(key("z", { ctrlKey: true }));
+    expect(engine.key(key("Z", { ctrlKey: true, shiftKey: true }))).toBe(true);
+    expect(engine.state().elementCount).toBe(1);
+    expect(engine.key(key("a", { ctrlKey: true }))).toBe(false);
+  });
+
+  it("Ctrl+Z sur un document neuf : rien, aucune erreur, la page initiale reste (D37)", () => {
+    const { engine, doc } = setup();
+    expect(engine.key(key("z", { ctrlKey: true }))).toBe(true);
+    expect(doc.pageIds()).toHaveLength(1);
+    expect(engine.state().error).toBeNull();
+  });
+
+  it("molette : défilement ; Ctrl+molette : zoom autour du pointeur", () => {
+    const { engine } = setup();
+    engine.wheel({ x: 0, y: 0, deltaX: 10, deltaY: 100, ctrlKey: false });
+    expect(engine.camera()).toEqual({ zoom: 1, tx: -10, ty: -100 });
+    engine.wheel({ x: 50, y: 50, deltaX: 0, deltaY: -100, ctrlKey: true });
+    expect(engine.camera().zoom).toBeCloseTo(Math.exp(100 * WHEEL_ZOOM_SPEED));
+  });
+
+  it("masquage d'aperçu : la scène est redessinée quand l'ensemble masqué change", () => {
+    const { engine, renderer, frames, tool } = setup();
+    engine.sink.begin(1, "eraser", [sample]);
+    frames.tick();
+    tool("eraser").hide(["x"]);
+    frames.tick();
+    expect(renderer.scenes.map((s) => s.hidden)).toEqual([[], ["x"]]);
+    frames.tick();
+    expect(renderer.scenes).toHaveLength(2);
+  });
+
+  it("view : pincement et défilement déplacent la caméra et redessinent la scène", () => {
+    const { engine, renderer, frames } = setup();
+    engine.view.zoomAt(0, 0, 2);
+    engine.view.panBy(5, 5);
+    frames.tick();
+    expect(engine.camera()).toEqual({ zoom: 2, tx: 5, ty: 5 });
+    expect(renderer.scenes.at(-1)?.camera).toEqual({ zoom: 2, tx: 5, ty: 5 });
+    expect(frames.pending()).toBe(0);
+  });
+
+  it("dispose : les gestes en cours sont fermés sans écriture (abort), la boucle s'arrête", () => {
+    const { engine, log, frames } = setup();
+    engine.sink.begin(1, "pen", [sample]);
+    engine.dispose();
+    expect(log).toContain("pen.close 1 abort");
+    expect(frames.pending()).toBe(0);
+  });
+});
