@@ -5,7 +5,8 @@ import {
   effectiveOptions,
   penPressureNote,
   sumCounters,
-  type BenchOptions, type BenchReport, type Counters, type Support } from "../engine/input/stats";
+  type BenchOptions, type BenchReport, type Counters } from "../engine/input/stats";
+import { detectSupport } from "../engine/input/support";
 import { createFrameLoop } from "./frame-loop";
 import { drawPredicted, drawSegments, widthFor } from "./polyline";
 import { createRecorder } from "./recorder";
@@ -26,19 +27,6 @@ function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
   if (!found) throw new Error(`élément absent : #${id}`);
   return found as T;
-}
-
-function detectSupport(): Support {
-  const proto = typeof PointerEvent === "undefined" ? null : PointerEvent.prototype;
-  const probe = document.createElement("canvas").getContext("2d", { desynchronized: true });
-  return {
-    coalesced: proto !== null && "getCoalescedEvents" in proto,
-    predicted: proto !== null && "getPredictedEvents" in proto,
-    desynchronized: probe?.getContextAttributes().desynchronized === true,
-    inkPresenter: "ink" in navigator,
-    pointerRawUpdate: "onpointerrawupdate" in window,
-    secureContext: window.isSecureContext,
-  };
 }
 
 const stage = el<HTMLDivElement>("stage");
