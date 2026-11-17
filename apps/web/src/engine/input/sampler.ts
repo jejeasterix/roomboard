@@ -152,6 +152,8 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
   const onDown = (ev: Event): void => {
     const e = ev as unknown as PointerLike;
     if (active.has(e.pointerId)) return;
+    // T27 : à la souris, seul le bouton gauche trace (milieu, droit, autres : aucun geste).
+    if (e.pointerType === "mouse" && (e.buttons & 1) === 0) return;
     if (e.pointerType === "touch" && penInContact()) {
       touchIgnored++;
       return;
