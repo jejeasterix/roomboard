@@ -5,9 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RoomBoard</title>
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; }
-      #stage { position: relative; width: 100vw; height: 100vh; }
-      #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+      html, body { margin: 0; height: 100%; overflow: hidden; font: 15px system-ui, sans-serif; }
+      #stage { position: relative; width: 100vw; height: 100vh; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
+      #barre { position: absolute; top: 8px; left: 8px; z-index: 2; display: flex; gap: 6px; align-items: center; user-select: none; -webkit-user-select: none; }
+      #barre button { min-width: 44px; min-height: 44px; padding: 0 14px; font: inherit; border: 1px solid #a1a1aa; border-radius: 8px; background: #ffffff; color: #18181b; }
+      #barre button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+      #barre button:disabled { opacity: 0.4; }
+      #etat { margin-left: 8px; color: #b91c1c; }
     </style>
   </head>
   <body>
@@ -15,6 +20,7 @@
       <canvas id="scene"></canvas>
       <canvas id="interaction"></canvas>
     </div>
+    <div id="barre" role="toolbar" aria-label="Outils"><span id="etat" role="status"></span></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
