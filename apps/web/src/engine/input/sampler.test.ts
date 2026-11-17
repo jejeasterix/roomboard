@@ -379,3 +379,34 @@ describe("corrections de la relecture du lot 1 (T6c)", () => {
     expect(pressureOf("touch", 1)).toBe(0.5);
   });
 });
+
+describe("souris : seul le bouton gauche trace (T27)", () => {
+  const sansGeste = (buttons: number): void => {
+    const surface = new FakeSurface();
+    const sampler = createSampler(surface, ALL);
+    const out = record(sampler);
+    surface.fire("pointerdown", { pointerId: 1, pointerType: "mouse", buttons });
+    surface.fire("pointermove", { pointerId: 1, pointerType: "mouse", buttons, clientX: 30, clientY: 40 });
+    surface.fire("pointerup", { pointerId: 1, pointerType: "mouse", buttons: 0 });
+    expect(out).toEqual([]);
+    expect(surface.captured).toEqual([]);
+    expect(sampler.stats().gestures).toBe(0);
+  };
+
+  it("souris au bouton du milieu : aucun geste", () => {
+    sansGeste(4);
+  });
+
+  it("souris au bouton droit : aucun geste", () => {
+    sansGeste(2);
+  });
+
+  it("souris au bouton gauche : trace comme avant", () => {
+    const surface = new FakeSurface();
+    const out = record(createSampler(surface, ALL));
+    surface.fire("pointerdown", { pointerId: 1, pointerType: "mouse", buttons: 1 });
+    surface.fire("pointermove", { pointerId: 1, pointerType: "mouse", buttons: 1, clientX: 30, clientY: 40 });
+    surface.fire("pointerup", { pointerId: 1, pointerType: "mouse", buttons: 0 });
+    expect(out.map((g) => g.kind)).toEqual(["start", "move", "end"]);
+  });
+});
