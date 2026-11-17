@@ -29,7 +29,8 @@ export interface AppBenchReport extends BenchReport {
 }
 
 export interface AppBench {
-  report(): AppBenchReport;
+  /** `recentFrames` : ne retient que les N dernières durées d'image (résumé du panneau) ; sans argument, tout (export). */
+  report(recentFrames?: number): AppBenchReport;
   dispose(): void;
 }
 
@@ -38,12 +39,12 @@ export function createAppBench(deps: AppBenchDeps): AppBench {
   const offGesture = deps.sampler.onGesture((g) => recorder.handle(g));
   const offDrawn = deps.onLiveDrawn((now) => recorder.markDrawn(now));
   return {
-    report: () => ({
+    report: (recentFrames) => ({
       ...buildReport({
         createdAt: deps.now(),
         environment: deps.environment,
         counters: deps.sampler.stats(),
-        frameDurations: deps.frameDurations(),
+        frameDurations: recentFrames === undefined ? deps.frameDurations() : deps.frameDurations().slice(-recentFrames),
         strokes: recorder.strokes(),
       }),
       geometry: "freedraw",
@@ -55,6 +56,9 @@ export function createAppBench(deps: AppBenchDeps): AppBench {
     },
   };
 }
+
+/** Images retenues pour le résumé affiché toutes les 500 ms : le travail (tris p50/p95) reste borné au fil de la séance. */
+export const PANEL_RECENT_FRAMES = 600;
 
 const fmt = (v: number | null | undefined, digits = 1): string =>
   v === null || v === undefined ? "—" : v.toFixed(digits);
@@ -86,7 +90,7 @@ export function mountBenchPanel(bench: AppBench, host: HTMLElement = document.bo
   box.append(pre, button);
   host.append(box);
   const paint = (): void => {
-    const r = bench.report();
+    const r = bench.report(PANEL_RECENT_FRAMES);
     const t = r.totals;
     pre.textContent = [
       `Banc (géométrie du produit, cœur ${r.coreVersion})`,

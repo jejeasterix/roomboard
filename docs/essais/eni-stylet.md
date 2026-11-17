@@ -110,12 +110,15 @@ Ce qui change depuis le banc du 16 : l'encre est celle du produit (contour `free
 (`apps/web/dist`, servie en http : le Wasm ne se charge pas en `file://`) ou la coque Tauri. La barre (Stylo, Gomme,
 Annuler, Rétablir) est provisoire : l'interface complète arrive au lot 5.
 
+0. Doigt d'abord, page rechargée (ou coque relancée) et sans aucun stylet posé : le doigt trace, et deux doigts posés
+   ensemble (moins de 150 ms) ne tracent pas, la vue se pince. Dès que le stylet a touché l'écran une première fois, le
+   doigt ne trace plus : il déplace la vue, et deux doigts la pincent (D18). Pour revoir le doigt qui trace, recharger la page.
 1. Stylet : écrire « Bonjour la classe » en appuyant plus ou moins fort : l'épaisseur suit la pression.
 2. Gomme (bouton « Gomme », ou bouton gomme du stylet) : passer en travers d'un mot ; au relâché, l'encre touchée
    disparaît, le reste des traits demeure.
 3. Ctrl+Z, puis Ctrl+Y (ou Ctrl+Maj+Z), puis les boutons « Annuler » et « Rétablir ».
-4. Doigt avant tout stylet : il trace. Deux doigts posés ensemble (moins de 150 ms) : aucun trait, la vue se pince.
-   Après un trait au stylet : un doigt déplace la vue, deux doigts pincent.
+4. Après le stylet (étape 1 faite, page non rechargée) : un doigt déplace la vue, deux doigts pincent ; le doigt ne
+   trace plus (D18). Le doigt qui trace se vérifie à l'étape 0, avant tout stylet.
 5. Paume posée en écrivant au stylet : aucun trait de paume.
 6. Molette : la vue défile ; Ctrl+molette : zoom autour du pointeur.
 7. Banc : ouvrir la même adresse suivie de `?banc`, écrire comme le 16, « Télécharger le JSON »

@@ -30,6 +30,10 @@ const gest = (kind: GestureEvent["kind"], samples: InputSample[] = []): GestureE
 });
 
 function setup() {
+  return setupWith([16, 17, 30]);
+}
+
+function setupWith(durations: number[]) {
   const gestureCbs = new Set<(g: GestureEvent) => void>();
   const drawnCbs = new Set<(now: number) => void>();
   const sampler: Pick<Sampler, "onGesture" | "stats"> = {
@@ -49,7 +53,7 @@ function setup() {
         drawnCbs.delete(cb);
       };
     },
-    frameDurations: () => [16, 17, 30],
+    frameDurations: () => durations,
     options: { coalesced: true, predicted: true, raw: false, desynchronized: true, inkTrail: false },
     environment: ENV,
     coreVersion: "0.1.0",
@@ -61,7 +65,7 @@ function setup() {
   const draw = (now: number): void => {
     for (const cb of drawnCbs) cb(now);
   };
-  return { bench: createAppBench(deps), fire, draw, gestureCbs, drawnCbs };
+  return { deps, bench: createAppBench(deps), fire, draw, gestureCbs, drawnCbs };
 }
 
 describe("createAppBench", () => {
@@ -87,6 +91,13 @@ describe("createAppBench", () => {
     expect(strokes[0]?.points).toBe(3);
     expect(strokes[0]?.pointerType).toBe("pen");
     expect(bench.report().totals.penLatencyP95).toBe(20);
+  });
+
+  it("report(n) : résumé borné aux n dernières images ; sans argument, toutes (export)", () => {
+    const { deps, bench } = setupWith(Array.from({ length: 1000 }, (_, i) => 10 + (i % 5)));
+    expect(deps).toBeDefined();
+    expect(bench.report(100).frames?.count).toBe(100);
+    expect(bench.report().frames?.count).toBe(1000);
   });
 
   it("dispose : désabonné du moteur et de l'échantillonneur", () => {
