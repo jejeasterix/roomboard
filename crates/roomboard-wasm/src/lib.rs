@@ -407,7 +407,11 @@ mod tests {
         assert!(!first.is_empty());
         let misses = d.core.outline_cache_misses();
         assert_eq!(d.outline(&id), Some(first));
-        assert_eq!(d.core.outline_cache_misses(), misses, "second appel servi du cache");
+        assert_eq!(
+            d.core.outline_cache_misses(),
+            misses,
+            "second appel servi du cache"
+        );
     }
 
     #[test]

@@ -308,7 +308,9 @@ impl Document {
             .iter()
             .flat_map(|p| self.element_ids(p))
             .collect();
-        self.outlines.borrow_mut().retain(|id, _| present.contains(id));
+        self.outlines
+            .borrow_mut()
+            .retain(|id, _| present.contains(id));
     }
 
     /// Contours calculés depuis la création du document (mesure du cache).
