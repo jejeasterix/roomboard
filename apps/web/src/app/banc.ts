@@ -20,12 +20,16 @@ export interface AppBenchDeps {
   readonly options: BenchOptions;
   readonly environment: Environment;
   readonly coreVersion: string;
+  /** État effectif des échelons de DA9 (forme `echelonsTag`, engine/settings.ts), lu à chaque rapport. */
+  echelons(): string;
   now(): string;
 }
 
 export interface AppBenchReport extends BenchReport {
   readonly geometry: "freedraw";
   readonly coreVersion: string;
+  /** Échelons qui tournaient pendant la mesure, par exemple `2:off,3:on,4:repli`. */
+  readonly echelons: string;
 }
 
 export interface AppBench {
@@ -49,6 +53,7 @@ export function createAppBench(deps: AppBenchDeps): AppBench {
       }),
       geometry: "freedraw",
       coreVersion: deps.coreVersion,
+      echelons: deps.echelons(),
     }),
     dispose() {
       offGesture();
@@ -67,7 +72,7 @@ const fmt = (v: number | null | undefined, digits = 1): string =>
 export function panelText(r: AppBenchReport): string {
   const t = r.totals;
   return [
-    `Banc (géométrie du produit, cœur ${r.coreVersion})`,
+    `Banc (géométrie du produit, cœur ${r.coreVersion}, échelons ${r.echelons})`,
     `Traits ${t.strokes} (stylet ${t.penStrokes}) · pression stylet ${fmt(t.penPressure?.min, 2)}–${fmt(t.penPressure?.max, 2)}`,
     `Retard interne p50 ${fmt(t.latencyP50)} / p95 ${fmt(t.latencyP95)} ms`,
     `Images ${r.frames?.count ?? 0} (les ${PANEL_RECENT_FRAMES} dernières images au plus), p95 ${fmt(r.frames?.p95)} ms, > 25 ms ${fmt(r.frames ? r.frames.overBudgetShare * 100 : null)} %`,
