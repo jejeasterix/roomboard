@@ -14,14 +14,26 @@ export interface FrameLoop {
   clear(): void;
 }
 
-export function createFrameLoop(deps: FrameLoopDeps, onFrame: (now: number) => void): FrameLoop {
+/**
+ * `maxDurations` : au plus N durées gardées, les plus récentes (retrait par paquets : coût amorti constant, jamais plus
+ * de 2 × N en mémoire). Absent, nul, négatif ou non fini : toutes (banc du lot 1).
+ */
+export function createFrameLoop(
+  deps: FrameLoopDeps,
+  onFrame: (now: number) => void,
+  maxDurations: number = Number.POSITIVE_INFINITY,
+): FrameLoop {
+  const cap = Number.isFinite(maxDurations) && maxDurations >= 1 ? Math.floor(maxDurations) : Number.POSITIVE_INFINITY;
   let id: number | null = null;
   let last: number | null = null;
   let measured: number[] = [];
 
   const tick = (): void => {
     const now = deps.now();
-    if (last !== null) measured.push(now - last);
+    if (last !== null) {
+      measured.push(now - last);
+      if (measured.length > 2 * cap) measured.splice(0, measured.length - cap);
+    }
     last = now;
     id = deps.requestFrame(tick);
     onFrame(now);
@@ -39,7 +51,7 @@ export function createFrameLoop(deps: FrameLoopDeps, onFrame: (now: number) => v
       last = null;
     },
     running: () => id !== null,
-    durations: () => measured.slice(),
+    durations: () => (measured.length > cap ? measured.slice(-cap) : measured.slice()),
     clear() {
       measured = [];
     },
