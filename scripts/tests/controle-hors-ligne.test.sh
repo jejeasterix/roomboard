@@ -59,4 +59,37 @@ if node "$script" "$tmp/vide" "$tmp/bonne.json" > "$tmp/out" 2>&1; then echec "c
 grep -q "aucun fichier texte" "$tmp/out" || echec "cas 6 : message absent"
 cas=$((cas + 1))
 
-echo "controle-hors-ligne.test.sh : $cas cas OK"
+csp() { printf '{ "app": { "security": { "csp": { "default-src": "'"'"'self'"'"'", "script-src": "'"'"'self'"'"' '"'"'wasm-unsafe-eval'"'"'", %s } } } }\n' "$2" > "$tmp/$1.json"; }
+csp hote-nu '"connect-src": "'"'"'self'"'"' api.example.com *.example.com"'
+printf '{ "app": { "security": { "csp": { "default-src": "'"'"'self'"'"'", "script-src": "'"'"'self'"'"' '"'"'wasm-unsafe-eval'"'"' data: blob:" } } } }\n' > "$tmp/script-data.json"
+printf '{ "app": { "security": { "csp": { "default-src": "'"'"'self'"'"'", "script-src": "'"'"'self'"'"' '"'"'wasm-unsafe-eval'"'"'", "script-src-elem": "'"'"'unsafe-inline'"'"'" } } } }\n' > "$tmp/script-elem.json"
+csp ipc-ailleurs '"img-src": "'"'"'self'"'"' ipc:"'
+csp locaux '"connect-src": "'"'"'self'"'"' ipc: http://ipc.localhost *.localhost 127.0.0.1 localhost:1420", "img-src": "'"'"'self'"'"' data: blob:"'
+cp -r "$tmp/propre" "$tmp/proto"
+echo '@import url(//fonts.googleapis.com/css2?family=Inter);' > "$tmp/proto/assets/style.css"
+cp -r "$tmp/propre" "$tmp/majuscules"
+echo 'const u = "HTTPS://CDN.EXAMPLE.COM/x.js";' > "$tmp/majuscules/assets/b.js"
+cp -r "$tmp/propre" "$tmp/nip"
+echo 'const u = "https://127.0.0.1.nip.io/x";' > "$tmp/nip/assets/c.js"
+
+refuse() { # nom dist conf motif
+  if node "$script" "$2" "$3" > "$tmp/out" 2>&1; then echec "cas $1 : accepté"; fi
+  grep -q -- "$4" "$tmp/out" || echec "cas $1 : message sans « $4 » ($(cat "$tmp/out"))"
+  cas=$((cas + 1))
+}
+# 7. hôte nu dans la CSP (sans schéma) → 1
+refuse 7 "$tmp/propre" "$tmp/hote-nu.json" "api.example.com"
+# 8. script-src avec data: blob: → 1 ; script-src-elem 'unsafe-inline' → 1
+refuse 8 "$tmp/propre" "$tmp/script-data.json" "script-src"
+refuse 9 "$tmp/propre" "$tmp/script-elem.json" "script-src-elem"
+# 10. ipc: hors connect-src → 1
+refuse 10 "$tmp/propre" "$tmp/ipc-ailleurs.json" "img-src"
+# 11. sources locales (ipc:, *.localhost, 127.0.0.1, localhost:port, data:/blob: en img-src) → 0
+node "$script" "$tmp/propre" "$tmp/locaux.json" > "$tmp/out" 2>&1 || echec "cas 11 : refusé ($(cat "$tmp/out"))"
+cas=$((cas + 1))
+# 12-14. dist : //hôte, majuscules, 127.0.0.1.nip.io → 1
+refuse 12 "$tmp/proto" "$tmp/bonne.json" "fonts.googleapis.com"
+refuse 13 "$tmp/majuscules" "$tmp/bonne.json" "cdn.example.com"
+refuse 14 "$tmp/nip" "$tmp/bonne.json" "127.0.0.1.nip.io"
+
+echo "controle-hors-ligne.test.sh" : $cas cas OK"
