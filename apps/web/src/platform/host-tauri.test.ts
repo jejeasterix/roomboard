@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SaveTarget } from "./files";
 import {
   baseName,
   createTauriHost,
+  DROPPED_EVENT,
+  grantedFile,
+  launchFiles,
+  onQuitRequested,
+  QUIT_EVENT,
+  quitApp,
+  READ_CHUNK,
+  type TauriIpc,
   createTauriShell,
   type CloseEventLike,
   type TauriDialog,
@@ -204,5 +212,93 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     createTauriShell(f.dialog, f.win, () => { throw new Error("confirm bloqué"); }).guardClose(() => true, "Abandonner ?");
     await f.tick();
     expect(await f.close()).toBe(true);
+  });
+});
+
+describe("coque : dépôt, lancement, sortie (T86)", () => {
+  type Cb = (e: { payload: unknown }) => void;
+  function ipcFake(sizes: Record<string, number>) {
+    const listeners = new Map<string, Cb>();
+    const reads: Array<{ path: string; offset: number; len: number }> = [];
+    const ipc: TauriIpc = {
+      async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+        if (cmd === "granted_file_size") return sizes[args!["path"] as string] as T;
+        if (cmd === "read_granted_file") {
+          const { path, offset, len } = args as { path: string; offset: number; len: number };
+          reads.push({ path, offset, len });
+          const n = Math.max(0, Math.min(len, sizes[path]! - offset));
+          return new Uint8Array(n).buffer as T;
+        }
+        if (cmd === "launch_files") return ["/tmp/l1.roomboard", "/tmp/l2.roomboard"] as T;
+        if (cmd === "quit_app") return undefined as T;
+        throw new Error(cmd);
+      },
+      async listen(event, cb) {
+        listeners.set(event, cb as Cb);
+        return () => void listeners.delete(event);
+      },
+    };
+    return { ipc, listeners, reads };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const host = (ipc: TauriIpc | null, dpr = 1) => createTauriHost({} as never, {} as never, ipc, () => dpr);
+
+  it("dépôt dans la coque : lecture par morceaux", async () => {
+    const f = ipcFake({ "/tmp/a.roomboard": READ_CHUNK + 3 });
+    const handler = vi.fn();
+    const off = host(f.ipc, 2).onDrop(handler);
+    await tick();
+    f.listeners.get(DROPPED_EVENT)!({ payload: { paths: ["/tmp/a.roomboard"], position: { x: 200, y: 100 } } });
+    await tick();
+    const [files, at] = handler.mock.calls[0]!;
+    expect(files[0].name).toBe("a.roomboard");
+    expect(files[0].path).toBe("/tmp/a.roomboard");
+    expect(files[0].size).toBe(READ_CHUNK + 3);
+    expect(at).toEqual({ x: 100, y: 50 });
+    const blob: Blob = await files[0].blob();
+    expect(blob.size).toBe(READ_CHUNK + 3);
+    expect(f.reads).toEqual([
+      { path: "/tmp/a.roomboard", offset: 0, len: READ_CHUNK },
+      { path: "/tmp/a.roomboard", offset: READ_CHUNK, len: READ_CHUNK },
+    ]);
+    off();
+    await tick();
+    expect(f.listeners.has(DROPPED_EVENT)).toBe(false);
+  });
+
+  it("fichier de exactement READ_CHUNK octets : troisième appel à 0 octet", async () => {
+    const f = ipcFake({ "/tmp/b": READ_CHUNK });
+    const blob = await grantedFile(f.ipc, "/tmp/b", READ_CHUNK).blob();
+    expect(blob.size).toBe(READ_CHUNK);
+    expect(f.reads.map((r) => r.offset)).toEqual([0, READ_CHUNK]);
+  });
+
+  it("position null : at null", async () => {
+    const f = ipcFake({ "/tmp/a.roomboard": 1 });
+    const handler = vi.fn();
+    host(f.ipc).onDrop(handler);
+    await tick();
+    f.listeners.get(DROPPED_EVENT)!({ payload: { paths: ["/tmp/a.roomboard"], position: null } });
+    await tick();
+    expect(handler.mock.calls[0]![1]).toBeNull();
+  });
+
+  it("sans ipc : onDrop no-op", () => {
+    expect(() => host(null).onDrop(vi.fn())()).not.toThrow();
+  });
+
+  it("launchFiles : un DroppedFile par chemin", async () => {
+    const f = ipcFake({ "/tmp/l1.roomboard": 5, "/tmp/l2.roomboard": 6 });
+    const files = await launchFiles(f.ipc);
+    expect(files.map((x) => [x.name, x.size])).toEqual([["l1.roomboard", 5], ["l2.roomboard", 6]]);
+  });
+
+  it("onQuitRequested écoute QUIT_EVENT ; quitApp invoque quit_app", async () => {
+    const f = ipcFake({});
+    const cb = vi.fn();
+    await onQuitRequested(f.ipc, cb);
+    f.listeners.get(QUIT_EVENT)!({ payload: null });
+    expect(cb).toHaveBeenCalledTimes(1);
+    await expect(quitApp(f.ipc)).resolves.toBeUndefined();
   });
 });
