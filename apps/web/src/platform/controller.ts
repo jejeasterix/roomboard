@@ -24,7 +24,7 @@ export interface FileKey {
   readonly metaKey: boolean;
   readonly shiftKey: boolean;
   readonly altKey: boolean;
-  /** Répétition d'une touche tenue : ignorée (Ctrl+S tenu ne relance pas dix téléchargements). */
+  /** Répétition d'une touche tenue : prise par `key` mais sans relancer la commande (Ctrl+S tenu : un seul téléchargement). */
   readonly repeat?: boolean;
 }
 
@@ -44,14 +44,20 @@ export interface FileControllerDeps {
 
 export interface FileController {
   run(cmd: FileCommand): Promise<boolean>;
+  /**
+   * Raccourci de fichier (comme `Engine.key`) : vrai si la touche est prise, la page appelle alors preventDefault,
+   * répétition comprise ; la commande n'est lancée qu'au premier appui, jamais sur une touche tenue.
+   */
+  key(e: FileKey): boolean;
   isDirty(): boolean;
   name(): string;
   onChange(cb: () => void): () => void;
   dispose(): void;
 }
 
+/** Reconnaît le raccourci sans tenir compte de `repeat` : la répétition se filtre dans `FileController.key`. */
 export function fileCommandOf(e: FileKey): FileCommand | null {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.repeat === true) return null;
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
   const k = e.key.toLowerCase();
   if (k === "s") return e.shiftKey ? "saveAs" : "save";
   if (e.shiftKey) return null;
@@ -69,7 +75,7 @@ export function messageOf(e: unknown): string {
 }
 
 export function createFileController(d: FileControllerDeps): FileController {
-  let saved = d.versions.state().version;
+  let savedVersion = d.versions.state().version;
   let target: SaveTarget | null = d.opened?.target ?? null;
   let name = d.opened?.name ?? UNTITLED;
   let leaving = false;
@@ -77,7 +83,7 @@ export function createFileController(d: FileControllerDeps): FileController {
   let lastTitle = "";
   const listeners = new Set<() => void>();
 
-  const isDirty = (): boolean => d.versions.state().version !== saved;
+  const isDirty = (): boolean => d.versions.state().version !== savedVersion;
   const changed = (): void => {
     const title = titleOf(name, isDirty());
     if (title !== lastTitle) {
@@ -114,7 +120,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     if (result === null) return false;
     target = result;
     name = result.name;
-    saved = version;
+    savedVersion = version;
     changed();
     return true;
   }
@@ -143,7 +149,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     return true;
   }
 
-  async function fresh(): Promise<boolean> {
+  async function newDocument(): Promise<boolean> {
     if (!(await discardOk())) return false;
     await d.pending.clear().catch(() => undefined);
     leave();
@@ -154,18 +160,26 @@ export function createFileController(d: FileControllerDeps): FileController {
   const stopClose = d.shell.guardClose(() => !leaving && isDirty(), DISCARD_MESSAGE);
   changed();
 
+  async function run(cmd: FileCommand): Promise<boolean> {
+    if (busy || leaving) return false;
+    busy = true;
+    try {
+      if (cmd === "save") return await save(false);
+      if (cmd === "saveAs") return await save(true);
+      if (cmd === "open") return await open();
+      return await newDocument();
+    } finally {
+      busy = false;
+    }
+  }
+
   return {
-    async run(cmd) {
-      if (busy || leaving) return false;
-      busy = true;
-      try {
-        if (cmd === "save") return await save(false);
-        if (cmd === "saveAs") return await save(true);
-        if (cmd === "open") return await open();
-        return await fresh();
-      } finally {
-        busy = false;
-      }
+    run,
+    key(e) {
+      const cmd = fileCommandOf(e);
+      if (cmd === null) return false;
+      if (e.repeat !== true) void run(cmd);
+      return true;
     },
     isDirty,
     name: () => name,
