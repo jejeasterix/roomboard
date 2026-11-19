@@ -241,7 +241,9 @@ async function run(browser, port, mode, { captures, tmp }) {
     await ready();
     check((await elements()) === 1 && (await ink(FIRST_BOX)) > 0, "fichier rouvert : le trait revient aux mêmes coordonnées");
   }
-  check((await attr("data-fichier")) === "Sans titre.roomboard" && (await attr("data-modifie")) === "0", "nom repris, non modifié");
+  // Le nom vient du fichier rouvert : le fichier du repli est enregistré sous `<mode>.roomboard` par l'essai.
+  const reopened = mode === "fsa" ? "Sans titre.roomboard" : `${mode}.roomboard`;
+  check((await attr("data-fichier")) === reopened && (await attr("data-modifie")) === "0", `nom repris (« ${reopened} »), non modifié`);
   if (captures && mode !== "detection") {
     await page.screenshot({ path: join(ROOT, "docs", "essais", `fichiers-lot5a-${mode}.png`) });
     console.log(`capture docs/essais/fichiers-lot5a-${mode}.png`);
