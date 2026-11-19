@@ -25,7 +25,7 @@ import {
   resolvePrediction,
   type EffectiveEchelons,
 } from "./engine/settings";
-import { textFont, type Measure } from "./engine/text-layout";
+import { measureWith, type Measure } from "./engine/text-layout";
 import { createEraserTool } from "./engine/tools/eraser";
 import { createPenTool } from "./engine/tools/pen";
 import { createSelectTool } from "./engine/tools/select";
@@ -68,11 +68,7 @@ async function start(): Promise<void> {
   );
   // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
   const measureCtx = document.createElement("canvas").getContext("2d");
-  const measure: Measure = (s, size) => {
-    if (!measureCtx) return s.length * size * 0.6;
-    measureCtx.font = textFont(size);
-    return measureCtx.measureText(s).width;
-  };
+  const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
   // Zone de saisie hors de #stage (CL4-2) ; l'outil Texte est créé par le moteur, après elle.
   let textTool: TextTool | null = null;
   const editor = createTextEditor(document.body, () => textTool);

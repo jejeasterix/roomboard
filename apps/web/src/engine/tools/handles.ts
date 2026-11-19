@@ -1,5 +1,6 @@
 /** Poignées de redimensionnement (D15, CL4-11) et matrices de déplacement, partagées par l'outil Sélection et le rendu. */
 import type { Bounds, Matrix } from "../../core/api";
+import { isIdentity, translateMatrix } from "../../core/shapes";
 
 export type HandleId = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 export const HANDLE_IDS: readonly HandleId[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
@@ -43,10 +44,7 @@ export function hitHandle(b: Bounds, x: number, y: number, reach: number, skip?:
   return best;
 }
 
-export const translateMatrix = (dx: number, dy: number): Matrix => [1, 0, 0, 1, dx, dy];
-
-export const isIdentity = (m: Matrix): boolean =>
-  m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 1 && m[4] === 0 && m[5] === 0;
+export { isIdentity, translateMatrix };
 
 function clampScale(s: number): number {
   if (!Number.isFinite(s)) return 1;

@@ -20,7 +20,7 @@ import type {
   StrokeStyle,
   TextData,
 } from "./api";
-import { applyMatrix, boxPolygon, composeMatrix, normalizeShape, shapePolygon } from "./shapes";
+import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
 interface FakeElement {
   readonly id: string;
@@ -47,10 +47,8 @@ const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
 const clone = (s: State): State => ({ pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements] })) });
-const translate = (x: number, y: number): Matrix => [1, 0, 0, 1, x, y];
 /** Matrice de `Transform`, donnée ou composée : six nombres finis, |dét| ≥ 1e-12 (même règle que le cœur). */
 const validMatrix = (m: Matrix): boolean => m.every((v) => Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) >= 1e-12;
-const isIdentity = (m: Matrix): boolean => m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 1 && m[4] === 0 && m[5] === 0;
 
 function toLocal(points: Float32Array): { x0: number; y0: number; local: Float32Array } {
   const x0 = points[0] ?? 0;

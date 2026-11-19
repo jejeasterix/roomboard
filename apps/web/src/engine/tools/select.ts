@@ -6,6 +6,7 @@
  * rien (D39) ; un clic sans glisser (< 2 px écran) non plus. Un seul pointeur à la fois (CL4-14).
  */
 import type { Bounds, Matrix } from "../../core/api";
+import { IDENTITY_MATRIX } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
@@ -41,7 +42,6 @@ interface Drag {
 }
 
 const NONE: ReadonlySet<string> = new Set<string>();
-const IDENT: Matrix = [1, 0, 0, 1, 0, 0];
 const norm = (ax: number, ay: number, bx: number, by: number): Bounds => ({
   x0: Math.min(ax, bx),
   y0: Math.min(ay, by),
@@ -78,13 +78,13 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
 
   /** Matrice provisoire du glisser ; identité tant que le seuil n'est pas franchi. */
   const matrixOf = (d: Drag): Matrix => {
-    if (!moved(d)) return IDENT;
+    if (!moved(d)) return IDENTITY_MATRIX;
     if (d.mode === "move") return translateMatrix(d.x - d.x0, d.y - d.y0);
     if (d.mode === "resize" && d.base && d.handle) {
       const [gx, gy] = handlePoint(d.base, d.handle);
       return resizeMatrix(d.base, d.handle, gx + d.x - d.x0, gy + d.y - d.y0, ctx.shift?.() === true);
     }
-    return IDENT;
+    return IDENTITY_MATRIX;
   };
 
   const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds } = {}): void => {
@@ -162,7 +162,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       }
       if (selection.length === 0) return { strokes: [], erasers: [], hidden: NONE };
       const bounds = ctx.doc.bounds(selection);
-      const m = d && (d.mode === "move" || d.mode === "resize") ? matrixOf(d) : IDENT;
+      const m = d && (d.mode === "move" || d.mode === "resize") ? matrixOf(d) : IDENTITY_MATRIX;
       const dragging = !isIdentity(m);
       const overlay: EditOverlay = {
         ...EMPTY_OVERLAY,

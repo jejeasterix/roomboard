@@ -7,7 +7,7 @@ import type { Bounds, Change, ElementView, Matrix, ShapeData, StrokeStyle, TextD
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
-import { layoutText, textFont, TEXT_LINE_HEIGHT, type Measure } from "../text-layout";
+import { layoutText, measureWith, textFont, TEXT_LINE_HEIGHT } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
@@ -236,11 +236,7 @@ export class Canvas2DRenderer implements Renderer {
     const key = `${t.size}|${t.boxWidth}|${t.content}`;
     const cached = this.textLines.get(id);
     if (cached && cached.key === key) return cached.lines;
-    const measure: Measure = (s, size) => {
-      ctx.font = textFont(size);
-      return ctx.measureText(s).width;
-    };
-    const lines = layoutText(t.content, t.size, t.boxWidth, measure);
+    const lines = layoutText(t.content, t.size, t.boxWidth, measureWith(ctx));
     this.textLines.set(id, { key, lines });
     return lines;
   }

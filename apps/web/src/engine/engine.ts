@@ -280,13 +280,18 @@ export function createEngine(deps: EngineDeps): Engine {
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
 
+  /** Exécute un geste ; `emit()` si la sélection a changé. */
+  const emitIfSelectionChanged = (run: () => void): void => {
+    const before = selectTool.selection().join("\n");
+    run();
+    if (selectTool.selection().join("\n") !== before) emit();
+  };
+
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
       const g = tools[t];
       owner.set(pointerId, g);
-      const before = selectTool.selection().join("\n");
-      g.begin(pointerId, samples);
-      if (selectTool.selection().join("\n") !== before) emit();
+      emitIfSelectionChanged(() => g.begin(pointerId, samples));
       loop.start();
     },
     extend(pointerId, samples, predicted) {
@@ -296,9 +301,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const g = owner.get(pointerId);
       if (!g) return;
       owner.delete(pointerId);
-      const before = selectTool.selection().join("\n");
-      g.close(pointerId, how);
-      if (selectTool.selection().join("\n") !== before) emit();
+      emitIfSelectionChanged(() => g.close(pointerId, how));
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
     },
   };
