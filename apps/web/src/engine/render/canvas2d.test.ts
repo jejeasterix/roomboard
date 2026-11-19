@@ -152,6 +152,7 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
 
   it("gomme partielle : fond de page puis pourtour repeints le long du chemin, largeur 2 × (rayon + demi-épaisseur du stylo)", () => {
     const { r, live } = make({});
+    r.resize(100, 100, 1);
     r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
     expect(live.log.filter((l) => l === "clip")).toHaveLength(2);

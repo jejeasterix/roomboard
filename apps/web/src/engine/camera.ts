@@ -46,3 +46,10 @@ export function fitPage(
   const zoom = clampZoom(Math.min(viewW / pageW, viewH / pageH) * margin);
   return { zoom, tx: (viewW - pageW * zoom) / 2, ty: (viewH - pageH * zoom) / 2 };
 }
+
+/** « Ajuster la page » (D5 amendée, CL5b-7) : largeur de page × margin, centrée ; haut de page à `top` px. */
+export function fitWidth(viewW: number, viewH: number, pageW: number = PAGE_WIDTH, margin = 0.95, top = 16): Camera {
+  if (!(viewW > 0) || !(viewH > 0)) return IDENTITY;
+  const zoom = clampZoom((viewW / pageW) * margin);
+  return { zoom, tx: (viewW - pageW * zoom) / 2, ty: top };
+}
