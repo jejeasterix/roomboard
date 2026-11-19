@@ -10,6 +10,7 @@
 //         node scripts/essais/s2-navigateur.mjs --lot3b [--captures]   (docs/essais/s2-lot3b-<réglage>.png)
 import { existsSync, readdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
@@ -215,6 +216,7 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     check((await pressed("hand")) === "true", "outil main choisi dans la barre");
     await drag([[700, 620], [550, 620]]);
     check((await elements()) === 5 && (await ink(LEFT)) > 0, "outil main : la vue suit le glisser, aucun trait");
+    await click("pen"); // outil Stylo : sans lui, l'outil Main masquerait une régression T27 (le milieu tracerait)
     await page.mouse.move(550, 620);
     await page.mouse.down({ button: "middle" });
     await page.mouse.move(700, 620, { steps: 8 });
@@ -243,6 +245,13 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
 
 async function main() {
   const argv = process.argv.slice(2);
+  let sha = "inconnu";
+  try {
+    sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+  } catch {
+    // hors dépôt git : la ligne le dit
+  }
+  console.log(`sha ${sha}`);
   const lot3b = argv.includes("--lot3b");
   const label = lot3b ? "S2 lot 3b" : "S2 lot 3";
   if (!existsSync(join(DIST, "index.html"))) {

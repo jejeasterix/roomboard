@@ -5,10 +5,7 @@
  * la fenêtre se voit au premier mouvement de retour (`buttons` sans le bit du milieu).
  */
 import type { ViewSink } from "./gesture";
-import type { PointerLike, PointerSurface } from "./sampler";
-
-const LEFT = 1;
-const MIDDLE = 4;
+import { BUTTON_LEFT, BUTTON_MIDDLE, type PointerLike, type PointerSurface } from "./sampler";
 
 export interface MiddlePan {
   dispose(): void;
@@ -20,7 +17,7 @@ export function createMiddlePan(surface: PointerSurface, view: ViewSink): Middle
   const onDown = (ev: Event): void => {
     const e = ev as unknown as PointerLike;
     if (drag !== null || e.pointerType !== "mouse") return;
-    if ((e.buttons & MIDDLE) === 0 || (e.buttons & LEFT) !== 0) return;
+    if ((e.buttons & BUTTON_MIDDLE) === 0 || (e.buttons & BUTTON_LEFT) !== 0) return;
     e.preventDefault(); // pas de défilement automatique du bouton du milieu
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
   };
@@ -28,7 +25,7 @@ export function createMiddlePan(surface: PointerSurface, view: ViewSink): Middle
   const onMove = (ev: Event): void => {
     const e = ev as unknown as PointerLike;
     if (drag === null || e.pointerId !== drag.id) return;
-    if ((e.buttons & MIDDLE) === 0) {
+    if ((e.buttons & BUTTON_MIDDLE) === 0) {
       drag = null;
       return;
     }

@@ -5,7 +5,7 @@
  * 150 ms du premier annule le trait commencé (rien d'écrit) et passe en pincement. L'outil d'un geste est fixé au début.
  * Outil main ou espace tenu : tout geste déplace la vue (D17).
  */
-import type { CloseReason, GestureSink, ToolChoice, ViewSink } from "./gesture";
+import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./gesture";
 import type { GestureEvent, InputSample } from "./sampler";
 
 export const SECOND_FINGER_MS = 150;
@@ -30,12 +30,18 @@ export interface RouterDeps {
 export interface Router {
   handle(g: GestureEvent): void;
   penSeen(): boolean;
+  /**
+   * Rôle du geste en cours de ce pointeur : "ink" (trace), "erase" (gomme), "view" (déplacement ou pincement de la vue),
+   * null (inconnu, ignoré, annulé ou fini). Source unique pour la traînée déléguée (échelon 3).
+   */
+  roleOf(pointerId: number): "ink" | "erase" | "view" | null;
 }
 
 type Role = "draw" | "pan" | "pinch" | "ignored";
 
 interface Track {
   role: Role;
+  tool: DrawTool;
   readonly pointerType: string;
   readonly startT: number;
   x: number;
@@ -61,7 +67,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
   const onStart = (g: GestureEvent): void => {
     const s = g.samples[0];
     if (!s) return;
-    const track: Track = { role: "ignored", pointerType: g.pointerType, startT: s.t, x: s.x, y: s.y };
+    const track: Track = { role: "ignored", tool: "pen", pointerType: g.pointerType, startT: s.t, x: s.x, y: s.y };
     tracks.set(g.pointerId, track);
     if (g.pointerType === "pen") seenPen = true;
     const tool = deps.currentTool();
@@ -72,7 +78,8 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
         return;
       }
       track.role = "draw";
-      deps.gestures.begin(g.pointerId, g.eraserButton ? "eraser" : tool, g.samples);
+      track.tool = g.eraserButton ? "eraser" : tool;
+      deps.gestures.begin(g.pointerId, track.tool, g.samples);
       return;
     }
     if (pinchPair()) return; // troisième doigt : ignoré
@@ -95,6 +102,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       return;
     }
     track.role = "draw";
+    track.tool = tool;
     deps.gestures.begin(g.pointerId, tool, g.samples);
   };
 
@@ -145,5 +153,11 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       else onClose(g);
     },
     penSeen: () => seenPen,
+    roleOf(pointerId) {
+      const t = tracks.get(pointerId);
+      if (!t) return null;
+      if (t.role === "draw") return t.tool === "eraser" ? "erase" : "ink";
+      return t.role === "pan" || t.role === "pinch" ? "view" : null;
+    },
   };
 }
