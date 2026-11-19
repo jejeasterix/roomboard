@@ -1714,4 +1714,23 @@ pub(crate) mod tests {
         d.apply(text_cmd(&p, Some(id), "")).expect("vider");
         assert_eq!(n.since(), 3, "vider : une transaction");
     }
+
+    /// T65 : rang 1 à 1e200 partout, déterminant NaN (inf - inf) ; refusée comme par la fausse liaison.
+    #[test]
+    fn rank_one_huge_matrix_is_refused() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let a = commit(&mut d, &p, hline(0.0));
+        let n = writes(&d);
+        let before = d.element(&a).expect("a").transform;
+        assert_eq!(
+            d.apply(Command::Transform {
+                ids: vec![a.clone()],
+                matrix: [1e200; 6]
+            }),
+            Err(CommandError::BadMatrix)
+        );
+        assert_eq!(d.element(&a).expect("a").transform, before);
+        assert_eq!(n.since(), 0);
+    }
 }
