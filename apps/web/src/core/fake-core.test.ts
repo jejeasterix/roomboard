@@ -91,3 +91,161 @@ describe("fakeCore", () => {
     b.free();
   });
 });
+
+describe("fakeCore — lot 4 (formes, texte, Transform)", () => {
+  const pen = { color: "#000000", width: 4 };
+  const setup = () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0] ?? "";
+    const rect = (x0: number, y0: number, x1: number, y1: number): string =>
+      d.apply({ type: "AddShape", page: p, shape: "rect", x0, y0, x1, y1, style: pen, fill: null }).ids[0] ?? "";
+    const text = (content: string, id: string | null = null) =>
+      d.apply({ type: "SetText", page: p, id, x: 100, y: 200, content, color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+    const errorOf = (f: () => unknown): string => {
+      try {
+        f();
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+      return "aucune erreur";
+    };
+    return { d, p, rect, text, errorOf };
+  };
+
+  it("AddShape normalise les coins et s'annule en une étape", () => {
+    const { d, p, rect } = setup();
+    const id = rect(300, 200, 100, 50);
+    expect(d.element(id)).toEqual({
+      id,
+      kind: "shape",
+      transform: [1, 0, 0, 1, 100, 50],
+      style: pen,
+      shape: { shape: "rect", w: 200, h: 150, fill: null },
+    });
+    d.undo();
+    expect(d.elementIds(p)).toEqual([]);
+  });
+
+  it("AddShape refuse des coins non finis et une épaisseur nulle, sans étape", () => {
+    const { d, p, errorOf } = setup();
+    expect(errorOf(() => d.apply({ type: "AddShape", page: p, shape: "line", x0: Number.NaN, y0: 0, x1: 1, y1: 1, style: pen, fill: null })))
+      .toBe("forme invalide (rect, ellipse, line ou arrow, coins finis attendus)");
+    expect(errorOf(() => d.apply({ type: "AddShape", page: p, shape: "line", x0: 0, y0: 0, x1: 1, y1: 1, style: { color: "#000000", width: 0 }, fill: null })))
+      .toBe("épaisseur de trait invalide (nombre fini > 0 attendu)");
+    expect(d.canUndo()).toBe(false);
+  });
+
+  it("SetText crée, remplace, retire ; inchangé = aucune étape", () => {
+    const { d, p, text } = setup();
+    expect(text("").ids).toEqual([]);
+    const id = text("Bonjour").ids[0] ?? "";
+    expect(d.element(id)).toEqual({
+      id,
+      kind: "text",
+      transform: [1, 0, 0, 1, 100, 200],
+      style: { color: "#000000", width: 0 },
+      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45 },
+    });
+    const v = d.version();
+    expect(text("Bonjour", id).version).toBe(v);
+    expect(text("Bonsoir", id).ids).toEqual([id]);
+    expect(d.element(id)?.kind === "text" && d.element(id)).toMatchObject({ text: { content: "Bonsoir" } });
+    expect(text("", id).removed).toEqual([id]);
+    expect(d.elementIds(p)).toEqual([]);
+    d.undo();
+    d.undo();
+    expect(d.element(id)).toMatchObject({ text: { content: "Bonjour" } });
+  });
+
+  it("SetText : élément inconnu, texte invalide", () => {
+    const { d, text, errorOf } = setup();
+    expect(errorOf(() => text("x", "absent"))).toBe("élément inconnu : absent");
+    const p = d.pageIds()[0] ?? "";
+    expect(errorOf(() => d.apply({ type: "SetText", page: p, id: null, x: 0, y: 0, content: "x", color: "#000000", size: 0, boxWidth: 600, boxHeight: 45 })))
+      .toBe("texte invalide (taille et boîte finies > 0 attendues)");
+  });
+
+  it("Transform compose à gauche et ignore les ids inconnus", () => {
+    const { d, p, rect } = setup();
+    const a = rect(100, 100, 200, 200);
+    const b = rect(400, 100, 500, 200);
+    const c = d.apply({ type: "Transform", ids: [b, "absent", a, a], matrix: [2, 0, 0, 2, 0, 0] });
+    expect(c.ids).toEqual([a, b].sort());
+    expect(c.pages).toEqual([p]);
+    d.apply({ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 10, 0] });
+    expect(d.element(a)?.transform).toEqual([2, 0, 0, 2, 210, 200]);
+    const v = d.version();
+    expect(d.apply({ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 0, 0] }).version).toBe(v);
+    expect(d.apply({ type: "Transform", ids: ["absent"], matrix: [1, 0, 0, 1, 5, 5] }).ids).toEqual([]);
+    d.undo();
+    expect(d.element(a)?.transform).toEqual([2, 0, 0, 2, 200, 200]);
+  });
+
+  it("Transform refuse une matrice non inversible ou non finie", () => {
+    const { d, rect, errorOf } = setup();
+    const a = rect(100, 100, 200, 200);
+    for (const matrix of [[0, 0, 0, 0, 0, 0], [1, 2, 2, 4, 0, 0], [Number.NaN, 0, 0, 1, 0, 0]] as const) {
+      expect(errorOf(() => d.apply({ type: "Transform", ids: [a], matrix }))).toBe("matrice invalide (six nombres finis, inversible)");
+    }
+  });
+
+  it("formes et textes : hitTest sur la surface, idsInRect et bounds ; hitTestPath et Erase les ignorent", () => {
+    const { d, p, rect, text } = setup();
+    const r = rect(600, 600, 800, 700);
+    const t = text("Bonjour").ids[0] ?? "";
+    expect(d.hitTest(p, 700, 650, 1)).toBe(r);
+    expect(d.hitTest(p, 300, 220, 1)).toBe(t);
+    expect(d.hitTest(p, 900, 650, 1)).toBeNull();
+    expect(d.bounds([r])).toEqual({ x0: 598, y0: 598, x1: 802, y1: 702 });
+    expect(d.bounds([t])).toEqual({ x0: 100, y0: 200, x1: 700, y1: 245 });
+    expect(d.idsInRect(p, { x0: 590, y0: 590, x1: 810, y1: 710 })).toEqual([r]);
+    expect(d.hitTestPath(p, new Float32Array([600, 650, 800, 650]), 10)).toEqual([]);
+    expect(d.apply({ type: "Erase", page: p, path: new Float32Array([600, 650, 800, 650]), radius: 10, mode: "object" }).removed).toEqual([]);
+  });
+
+  it("save puis load garde formes, textes et matrices", () => {
+    const { d, p, rect, text } = setup();
+    const r = rect(100, 100, 200, 200);
+    const t = text("Bonjour").ids[0] ?? "";
+    d.apply({ type: "Transform", ids: [r], matrix: [1, 0, 0, 1, 50, 0] });
+    const e = fakeCore.load(d.save("2026-11-19T21:00:00Z", "0.1.0"));
+    expect(e.elementIds(p)).toEqual([r, t]);
+    expect(e.element(r)).toEqual(d.element(r));
+    expect(e.element(t)).toEqual(d.element(t));
+  });
+
+  // Test qui discrimine le patron écarté (x0, y0 à côté de la matrice) : sous une échelle, une lecture qui n'ajoute
+  // que des décalages place le trait et la forme à leur ancienne place, ou à mi-chemin si seule la translation suit.
+  // Toute lecture passe par la matrice, comme `query.rs` du cœur (point monde ramené en local, bornes monde du contour).
+  it("Transform à l'échelle : hitTest, hitTestPath, Erase, idsInRect et bounds lisent la matrice", () => {
+    const { d, p, rect } = setup();
+    const s = d.apply({ type: "CommitStroke", page: p, points: new Float32Array([100, 100, 0.5, 200, 100, 0.5]), style: pen }).ids[0] ?? "";
+    const r = rect(100, 300, 200, 400);
+    d.apply({ type: "Transform", ids: [s, r], matrix: [2, 0, 0, 2, 0, 0] });
+    expect(d.element(s)?.transform).toEqual([2, 0, 0, 2, 200, 200]);
+    // Trait : monde (200, 200)-(400, 200) ; sa place d'avant, (100, 100)-(200, 100), est vide.
+    expect(d.hitTest(p, 400, 200, 1)).toBe(s);
+    expect(d.hitTest(p, 200, 100, 1)).toBeNull();
+    expect(d.hitTestPath(p, new Float32Array([400, 190, 400, 210]), 3)).toEqual([s]);
+    expect(d.hitTestPath(p, new Float32Array([200, 90, 200, 110]), 3)).toEqual([]);
+    const bs = d.bounds([s]);
+    expect(bs?.x0).toBeGreaterThan(190);
+    expect(bs?.x0).toBeLessThan(200);
+    expect(bs?.x1).toBeGreaterThan(400);
+    expect(bs?.x1).toBeLessThan(410);
+    expect(bs?.y0).toBeGreaterThan(190);
+    expect(bs?.y1).toBeLessThan(210);
+    // Forme : boîte locale (-2, -2)-(102, 102) mise à l'échelle 2 puis placée en (200, 600).
+    expect(d.hitTest(p, 390, 790, 1)).toBe(r);
+    expect(d.hitTest(p, 150, 350, 1)).toBeNull();
+    expect(d.bounds([r])).toEqual({ x0: 196, y0: 596, x1: 404, y1: 804 });
+    expect(d.idsInRect(p, { x0: 0, y0: 0, x1: 250, y1: 450 })).toEqual([]);
+    expect(d.idsInRect(p, { x0: 190, y0: 190, x1: 410, y1: 810 })).toEqual([s, r]);
+    // La gomme d'objet suit aussi la matrice ; annuler rend le trait à sa place d'avant.
+    expect(d.apply({ type: "Erase", page: p, path: new Float32Array([400, 190, 400, 210]), radius: 3, mode: "object" }).removed).toEqual([s]);
+    d.undo();
+    d.undo();
+    expect(d.hitTest(p, 200, 100, 1)).toBe(s);
+    expect(d.bounds([r])).toEqual({ x0: 98, y0: 298, x1: 202, y1: 402 });
+  });
+});
