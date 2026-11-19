@@ -1,13 +1,14 @@
 # État — socle
 
-Statut : arrêté entre deux lots — lot 4 clos (OD17 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
+Statut : en cours — lot 5b (OD33, lancé 2026-11-20 00:19, arrêt ferme 04:19) ; lot 4 clos (OD17 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
 Avancement : 5/6 lots clos — clos : 1, 2, 3, 3b, 4 (et 5a) · à faire : 5b
-Étage : 3 (entre deux lots) — depuis 2026-11-20 00:15
+Étage : 2 (plan du lot 5b) — depuis 2026-11-20 00:21
+Lot : 5b « interface SolidJS, barre en profils, barre des pages » — plan en cours — depuis 2026-11-20 00:21
 Avancement lot 5a (OD19) : clos — 12/12 tâches (T70-T81) ; prochaine tâche : plan du lot 5b (lot 4 fusionné)
 Questions à Jérôme : —
-Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot4   Base : origin/main @ 5341564 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
+Worktree : /home/adminjd/projets/roomboard-wt/socle-lot5b   Branche : feat/socle-lot5b   Base : origin/main @ d71eda3 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
 Branche principale locale au lancement : 5341564 (lot 4)
 Cadrage : docs/plans/socle-cadrage.md   Plan(s) : docs/plans/socle-PLAN.md (maître), docs/plans/socle-lot1-PLAN.md (lot 1), docs/plans/socle-lot2-PLAN.md (lot 2, T7-T16), docs/plans/socle-lot3-PLAN.md (lot 3, T17-T26, 4 vagues : T17+T18+T26 ; T19+T20+T23 ; T21+T22+T25 ; T24)
 
