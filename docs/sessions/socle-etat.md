@@ -5,7 +5,7 @@ Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
 Avancement : 3/6 lots clos — clos : 1, 2, 3 · en cours : 3b · à faire : 4, 5
 Étage : 3 — depuis 2026-11-19 18:45
-Lot : 3b « Fin du moteur » — plan à écrire — depuis 2026-11-19 18:45
+Lot : 3b « Fin du moteur » — 0/12 tâches terminées — depuis 2026-11-19 18:45
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot3b   Base : origin/main @ 37b5af3 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
 Branche principale locale au lancement : 37b5af3 (lot 3b)
@@ -45,6 +45,11 @@ Relecture du plan : 1/3, aucun bloquant ; 2 importants (coque Tauri non prouvée
 T17 terminée (essai 2/3 ; cache des contours dans le cœur + préfiltre par boîte dans `ink/hit.rs` ; mesure release 1 000 traits touchés : 14,3 ms puis 10,1 ms, rejouée 22:58) · T18 terminée (camera 7, keys 9) · T26 terminée (banc 3) · T25 terminée (script S2, rouge attendu avant T24) · T19 terminée (canvas2d 11) · T20 terminée (router 14) · T23 terminée (engine 13, `Err(LastPage)` attrapé) · T21 terminée (pen 10) · T22 terminée (eraser 7) · T24 terminée (barre 3, S2 16 ok) · T27 terminée (souris : bouton gauche seul, sampler 26) · T28 terminée (correctifs de fin de lot : fiche ENI doigt avant stylet, `#etat` après les boutons, banc borné, cache retenu après annuler/rétablir, test du cache wasm renforcé) · T29 terminée (diagnostic coque : artefact Broadway, capture).
 Preuve du lot 3 (orchestrateur, tête 28d8303 + capture) : verifier.sh rc=0 — Rust 117+3+3+14 (1 ignoré : mesure), web 194 tests ; S2 Chromium 16 `ok —`, `S2 lot 3 : OK`, code 0.
 Fin de lot : double relecture (conformité ; qualité web ; qualité cœur) sans bloquant ; 1 majeur (fiche ENI) et mineurs corrigés par T28 ; duplication avec le prototype (`fmt`, export JSON, suivi du DPR) consignée, non nette.
+
+## Tâches (lot 3b)
+Plan : docs/plans/socle-lot3b-PLAN.md (T30-T41, vagues : 1 = T30, T33, T34, T37 · 2 = T31, T32, T35, T36 · 3 = T38, T39 · 4 = T40 · 5 = T41 orchestrateur). Relecture du plan 1/1 : aucun bloquant ; 1 majeur (banc sans état des échelons → T40) et 2 mineurs (T41 contraintes, T36 mutation jouée) corrigés par le planificateur.
+Référence lot 3b (37b5af3, 19:20) : verifier.sh rc=0 en 1 min 23, pic 0,59 Go — Rust 117+3+3+14 (1 ignoré), web 194 tests.
+Réglages : É2 `prediction` auto|on|off défaut auto (S1, OC56 : prédits natifs, p95 17,4 / 17,1 ms) · É3 `inkTrail` on|off défaut off (OC56 : 0 % d'images > 25 ms sans elle) · É4 `webgl` on|off défaut off, repli Canvas 2D (S1, OC56, OC66) · paume `palm` strict|lenient défaut strict (écart T1) · doigt `finger` pan|draw défaut pan (D18).
 
 ## Scénarios et captures
 S2 lot 3 (VM, 22:31, Chromium headless) — réussi : 3 traits souris, gomme en travers du 2e (4 traits), Ctrl+Z (3), Ctrl+Y (4), Ctrl+Maj+Z, boutons ; capture docs/essais/s2-lot3-vm.png (page blanche, 3 traits, le 2e coupé au milieu, barre avec Gomme pressée).
@@ -90,6 +95,9 @@ anti-refactorisation · duplication · apps/web/src/app/banc.ts, apps/web/src/ma
 performance · moteur · apps/web/src/engine/engine.ts · `frameDurations()` copie toute la liste, jamais vidée (banc borné à 600 images par T28 ; plafond à poser dans le moteur).
 robustesse · cœur/query · `hit_test_path` ne vérifie pas que le chemin est fini (point infini → `sample_path` sans fin, déduit du code, non exécuté).
 performance · cœur/query · crates/roomboard-core/src/query.rs · `hit_test_path` recalcule le contour freedraw de chaque trait : 194 ms (release) pour 1 000 traits touchés, au-delà d'une image ; D38 l'appelle à chaque image pour la gomme d'objet → cache des contours dans le cœur à prévoir au lot 3.
+
+mineur · lot 3b T37 · seule la poussée native du contour est mesurée ; la copie Wasm → page ne l'est pas (HL3b-9), à voir au banc samedi.
+anti-refactorisation · duplication · apps/web/src/engine/render/ink-trail.ts · types `InkLike`/`InkPresenterLike` recopiés de `proto/stylet.ts` (non net) → lot 5, avec le module commun du banc.
 
 ## Pièges trouvés
 - GTK Broadway : `gdk_screen_get_resolution()` rend −1, WebKitGTK en tire un devicePixelRatio négatif (page hors champ) ; `broadwayd` plante si on tue un client : fermer la fenêtre par son ✕.

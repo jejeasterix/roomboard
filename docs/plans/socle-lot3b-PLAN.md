@@ -71,7 +71,7 @@ HL3b-2).
 | T37 | Mesure de la copie du contour au-delà de 2 000 points | — | crates/roomboard-core/src/ink/builder.rs | isolé | implementeur-tdd | `cargo test -p roomboard-core --release --lib -- --ignored --nocapture long_stroke_push_cost` : `1 passed`, trois lignes `Mesure :` (2 000, 5 000, 10 000 points), p95 à 10 000 ≤ 4 ms ; `verifier.sh : OK` | S2 | #tache-t37 |
 | T38 | Moteur : outil main, espace, caméra par page, plafond des images | T35, T36 | apps/web/src/engine/engine.ts, apps/web/src/engine/engine.test.ts, apps/web/src/engine/input/keys.ts, apps/web/src/engine/input/keys.test.ts | isolé | implementeur-tdd | vitest `engine.test.ts` + `keys.test.ts` : `Tests  34 passed (34)`, `caméra par page : chaque page garde sa vue` et `releaseKeys : espace relâché à la perte du focus` présents ; `verifier.sh : OK` | S2 | #tache-t38 |
 | T39 | Script S2 lot 3b (quatre passages) et fiche « comparer les réglages » | — | scripts/essais/s2-navigateur.mjs, docs/essais/eni-stylet.md | isolé | implementeur-tdd | `node scripts/essais/s2-navigateur.mjs` : 16 `ok —`, `S2 lot 3 : OK`, code 0 ; `node scripts/essais/s2-navigateur.mjs --lot3b` : code 1, `S2 lot 3b : ÉCHEC — [defaut] #stage[data-echelons] absent` (rouge attendu avant T40) ; `verifier.sh : OK` | S2 | #tache-t39 |
-| T40 | Amorce et barre : réglages branchés, S2 lot 3b vert, captures | T30, T31, T32, T33, T34, T35, T36, T38, T39 | apps/web/src/main.ts, apps/web/index.html, apps/web/src/app/barre.ts, apps/web/src/app/barre.test.ts, docs/essais/s2-lot3b-defaut.png, docs/essais/s2-lot3b-2.png, docs/essais/s2-lot3b-3.png, docs/essais/s2-lot3b-4.png | isolé | implementeur-tdd | vitest `barre.test.ts` : `Tests  10 passed (10)` ; `node scripts/essais/s2-navigateur.mjs` : `S2 lot 3 : OK` ; `node scripts/essais/s2-navigateur.mjs --lot3b --captures` : 4 lignes `S2 lot 3b [...] : OK` puis `S2 lot 3b : OK (4 passages)`, code 0, 4 captures ; `verifier.sh : OK` | S2 | #tache-t40 |
+| T40 | Amorce et barre : réglages branchés, échelons dans le rapport du banc, S2 lot 3b vert, captures | T30, T31, T32, T33, T34, T35, T36, T38, T39 | apps/web/src/main.ts, apps/web/index.html, apps/web/src/app/barre.ts, apps/web/src/app/barre.test.ts, apps/web/src/app/banc.ts, apps/web/src/app/banc.test.ts, docs/essais/s2-lot3b-defaut.png, docs/essais/s2-lot3b-2.png, docs/essais/s2-lot3b-3.png, docs/essais/s2-lot3b-4.png | isolé | implementeur-tdd | vitest `barre.test.ts` + `banc.test.ts` : `Tests  17 passed (17)`, `rapport : réglages effectifs des échelons, lus au moment du rapport` présent ; `node scripts/essais/s2-navigateur.mjs` : `S2 lot 3 : OK` ; `node scripts/essais/s2-navigateur.mjs --lot3b --captures` : 4 lignes `S2 lot 3b [...] : OK` puis `S2 lot 3b : OK (4 passages)`, code 0, 4 captures ; `verifier.sh : OK` | S2 | #tache-t40 |
 | T41 | Coque Linux : build Tauri après le build web, la coque trace | T40 | docs/essais/coque-linux-lot3b.png | isolé | orchestrateur | `verifier.sh : OK` puis `CARGO_BUILD_JOBS=2 … tauri build` : paquet `.deb` produit ; capture de la coque qui trace et annule | S5 (partie Linux) | #tache-t41 |
 
 **Vagues** (aucune tâche d'une vague ne touche un fichier d'une autre ; trois places de tests par sujet, la quatrième
@@ -103,7 +103,7 @@ en mode `--lot3b` tant que T40 n'est pas fusionnée (c'est sa preuve). T40 rejou
 | `apps/web/src/engine/input/gesture.ts` | T35 | `ToolChoice = DrawTool \| "hand"` |
 | `apps/web/src/engine/input/router.ts` (+ test) | T35 | `RouterDeps.currentTool(): ToolChoice`, `RouterDeps.panHeld?()` |
 | `apps/web/src/proto/frame-loop.ts` (+ test) | T36 | `createFrameLoop(deps, onFrame, maxDurations?)` |
-| `apps/web/src/app/banc.ts` (+ test) | T36 | `panelText` ; résumé « les 600 dernières images au plus » |
+| `apps/web/src/app/banc.ts` (+ test) | T36, T40 | `panelText` ; résumé « les 600 dernières images au plus » (T36) ; `AppBenchDeps.echelons`, champ `echelons` du rapport et de la première ligne du panneau (T40) |
 | `crates/roomboard-core/src/ink/builder.rs` | T37 | test de mesure `long_stroke_push_cost` (seuil écrit) |
 | `apps/web/src/engine/engine.ts` (+ test) | T38 | `ToolChoice`, `keyUp`, `releaseKeys`, `panHeld`, `showPage`, `ENGINE_FRAME_HISTORY` |
 | `apps/web/src/engine/input/keys.ts` (+ test) | T38 | `isPanKey` |
@@ -2746,7 +2746,20 @@ type AppBenchDeps } from "./banc";`, et à la fin du `describe("createAppBench",
 
 - [ ] **2. Lancer, voir rouge.** Commande du § Test → `maxDurations : …` rend 7 durées au lieu de 3 ;
   `panelText` n'est pas exporté (`panelText is not a function`). `report(n) garde …` passe déjà (le code fait
-  `slice(-n)`) : il fige ce comportement, la mutation `slice(0, n)` le ferait échouer (à dire dans le rapport).
+  `slice(-n)`) : il fige ce comportement. Le prouver à l'étape 2 bis.
+
+- [ ] **2 bis. Jouer la mutation `slice(0, n)` et la voir rouge, puis la retirer.** Avant toute modification de
+  `banc.ts` :
+
+```bash
+cd "$WT" && sed -i 's/deps.frameDurations().slice(-recentFrames)/deps.frameDurations().slice(0, recentFrames)/' apps/web/src/app/banc.ts && grep -c "slice(0, recentFrames)" apps/web/src/app/banc.ts
+cd "$WT/apps/web" && pnpm exec vitest run src/app/banc.test.ts -t "report(n) garde les n dernières images" 2>&1 | tail -15
+cd "$WT" && sed -i 's/deps.frameDurations().slice(0, recentFrames)/deps.frameDurations().slice(-recentFrames)/' apps/web/src/app/banc.ts && git diff --quiet -- apps/web/src/app/banc.ts && echo banc-intact
+```
+
+  Attendu : `1` (mutation posée) ; `FAIL` sur `report(n) garde les n dernières images, pas les n premières` (`p50`
+  10 reçu au lieu de 40), `1 failed` ; puis `banc-intact` (`git diff` vide sur `banc.ts`). Recopier dans le rapport
+  la ligne `FAIL` et `banc-intact`. Sans le rouge, le test ne distingue rien : s'arrêter et le rapporter.
 
 - [ ] **3. Borner la boucle.** `apps/web/src/proto/frame-loop.ts`, `createFrameLoop` devient :
 
@@ -3849,17 +3862,19 @@ cd "$WT" && git commit --author="jejeasterix <jejeasterix@users.noreply.github.c
 ---
 
 <a id="tache-t40"></a>
-### Tâche T40 — Amorce et barre : réglages branchés, S2 lot 3b vert, captures
+### Tâche T40 — Amorce et barre : réglages branchés, échelons dans le rapport du banc, S2 lot 3b vert, captures
 
 **Objectif.** Brancher le lot dans l'application : l'amorce lit les réglages de l'adresse (T30), choisit le rendu
 (T33), décore le puits des gestes par la prédiction (T31), branche la traînée (T32), le bouton du milieu et la paume
 (T34), l'outil main et l'espace (T35, T38), et publie l'état effectif des échelons (`#stage[data-echelons]`). La barre
 gagne l'outil « Main » et le bouton « Gomme : partielle / objet » (D38) ; une seconde ligne (`#reglages`) montre et
 bascule les réglages (doigt, paume, échelons 2 à 4), avec les notes du démarrage (adresse mal écrite, repli WebGL2).
-Rejouer S2 (lot 3, puis lot 3b quatre passages) et poser les captures. Scénario : S2.
+Le rapport du banc (`?banc`, export JSON et panneau) dit quels échelons tournaient (`echelons`, forme `echelonsTag`) :
+sans lui, un JSON de samedi ne se rattache à aucun réglage. Rejouer S2 (lot 3, puis lot 3b quatre passages) et poser les captures. Scénario : S2.
 
 **Fichiers.** Remplacer `apps/web/src/main.ts`, `apps/web/index.html`, `apps/web/src/app/barre.ts`,
-`apps/web/src/app/barre.test.ts` (textes complets ci-dessous). Créer `docs/essais/s2-lot3b-defaut.png`,
+`apps/web/src/app/barre.test.ts` (textes complets ci-dessous). Modifier `apps/web/src/app/banc.ts` et
+`apps/web/src/app/banc.test.ts` (état T36 : `panelText` exporté). Créer `docs/essais/s2-lot3b-defaut.png`,
 `docs/essais/s2-lot3b-2.png`, `docs/essais/s2-lot3b-3.png`, `docs/essais/s2-lot3b-4.png` (par le script).
 
 **Interfaces.**
@@ -3874,7 +3889,10 @@ Rejouer S2 (lot 3, puis lot 3b quatre passages) et poser les captures. Scénario
   (étendus) ; `apps/web/src/app/barre.ts` — `barModel`, `mountBar` (étendus), `toolbar.ts` `toolbar` (libellés) ;
   `apps/web/src/engine/input/sampler.ts` `createSampler` ; `apps/web/src/engine/input/router.ts` `createRouter`,
   `SECOND_FINGER_MS`, `RouterOptions` ; `apps/web/src/engine/input/support.ts` `detectSupport` ;
-  `scripts/essais/s2-navigateur.mjs` (T39).
+  `scripts/essais/s2-navigateur.mjs` (T39) ; `apps/web/src/app/banc.ts` — `createAppBench`, `AppBenchDeps`,
+  `AppBenchReport`, `panelText` (T36, étendus).
+- Produit (`banc.ts`) : `AppBenchDeps.echelons(): string` (lu à chaque rapport) ; `AppBenchReport.echelons: string` ;
+  première ligne de `panelText` : `Banc (géométrie du produit, cœur <v>, échelons <tag>)` (toujours quatre lignes).
 - Produit : `type BarAction = ToolChoice | "eraser-mode" | "undo" | "redo"` ; `barModel(s: EngineState): BarButton[]`
   (six boutons) ; `mountBar(root, engine: Pick<Engine, "setTool" | "setEraserMode" | "undo" | "redo" | "state" | "onState">)` ;
   `interface SettingButton { readonly key: SettingKey; readonly label: string; readonly reload: boolean }` ;
@@ -3884,8 +3902,9 @@ Rejouer S2 (lot 3, puis lot 3b quatre passages) et poser les captures. Scénario
   `#reglages button[data-reglage=<clé>]`, `#echelons-notes`, `#stage[data-echelons]`.
 
 **Test et commande bornée.**
-1. `cd "$WT/apps/web" && pnpm exec vitest run src/app/barre.test.ts --reporter=verbose 2>&1 | tail -20` →
-   `Tests  10 passed (10)` ; noms `six boutons : stylo, gomme, main, mode de gomme, annuler, rétablir ; libellés de
+1. `cd "$WT/apps/web" && pnpm exec vitest run src/app/barre.test.ts src/app/banc.test.ts --reporter=verbose 2>&1 | tail -30` →
+   `Tests  17 passed (17)` (barre 10, banc 7) ; noms `rapport : réglages effectifs des échelons, lus au moment du
+   rapport`, `six boutons : stylo, gomme, main, mode de gomme, annuler, rétablir ; libellés de
    toolbar.ts`, `É4 : un clic recharge avec ?echelons=4:on et garde ?banc` et `notes du démarrage affichées après les
    boutons (adresse mal écrite, repli WebGL2)` présents.
 2. `verifier.sh` (jeton) → `verifier.sh : OK` (construit `apps/web/dist`).
@@ -3911,14 +3930,15 @@ Rétablir », seconde ligne « Doigt : vue · Paume : stricte · É2 prédiction
 **Contraintes (recopiées de « Global Constraints »).** Jamais `git add -A`, `git add .`, `git commit -a` : fichiers ajoutés un par un ; pas de `--force` ; aucun `git tag`, aucune release ; aucun workflow GitHub Actions (`.github/workflows/` non touché) ; un seul build Tauri à la fois, aucun build Android (aucun dans cette tâche) ; tests par `scripts/verifier.sh` avec `PATH=$HOME/.cargo/bin:$PATH` sous le jeton `node ~/.claude/scripts/chaine/jeton.cjs --nom tests --proprietaire socle/T40 --places-par-sujet 3 --commande "cd $WT && PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh 2>&1 | tail -30"` (commandes ciblées sous le même jeton) ; relecteurs au premier plan (`run_in_background: false`) ; commit d'auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais terminé par la ligne exacte `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`, quel que soit le modèle qui exécute ; aucun seuil baissé, aucun test désactivé, sauté (`.skip`, `.todo`, `#[ignore]` hors test de mesure) ni affaibli ; dépôt public : aucun secret ni chemin personnel hors dépôt dans un fichier commité ; `$WT` = dossier donné par l'orchestrateur (défaut `/home/adminjd/projets/roomboard-wt/socle--T40`), worktree neuf : `cd "$WT" && pnpm install --frozen-lockfile` d'abord, `verifier.sh` une fois avant de juger une erreur de type sur `./wasm/roomboard_wasm` ; `apps/web/src/core/api.ts` figé ; rien n'est écrit dans le document avant le relâché (D38) ; moteur sans framework ni global du DOM (exceptions : `render/canvas2d.ts`, `input/support.ts`, méthodes des canvas reçus dans `render/select.ts` ; `URLSearchParams` admis dans `settings.ts`) ; le chemin de l'encre ne traverse jamais la frontière page ↔ Rust natif (aucun appel Tauri dans le moteur, échelon 6 interdit, échelon 5 au lot 5) ; chaque réglage a un test allumé et un test éteint ; cœur : aucune horloge ni dépendance au navigateur hors tests, `cargo fmt` et `clippy -D warnings` passent ; TypeScript strict (`noUncheckedIndexedAccess`) : aucun `any`, aucun `!` sur un index, `as unknown as` réservé aux faux objets des tests et aux événements de `PointerSurface`.
 
 **Interdits.** Ne pas toucher le moteur, le routeur, l'échantillonneur, le rendu ni les réglages (T30 à T38 figés :
-les consommer tels quels). Ne pas toucher `toolbar.ts` (DA10 au lot 5) ni `api.ts`. Ne pas modifier le script S2. Les
+les consommer tels quels) ; dans `banc.ts`, seulement le champ `echelons` (le reste de T36 inchangé), les 6 tests de
+`banc.test.ts` gardés. Ne pas toucher `toolbar.ts` (DA10 au lot 5) ni `api.ts`. Ne pas modifier le script S2. Les
 tests de la barre changent d'attendu parce que la barre gagne deux boutons : leurs contrôles (libellés de
 `toolbar.ts`, outil pressé, annuler et rétablir désactivés, `#etat` après les boutons) restent tous, étendus.
 `touch-action: none` et les deux canvas de `index.html` gardés.
 
-**Terminé quand.** 10 tests verts, `verifier.sh : OK`, `S2 lot 3 : OK`, `S2 lot 3b : OK (4 passages)`, quatre
+**Terminé quand.** 17 tests verts, `verifier.sh : OK`, `S2 lot 3 : OK`, `S2 lot 3b : OK (4 passages)`, quatre
 captures commitées et décrites, rapport avec `Réutilisation : appelé createSampler, createRouter, detectSupport,
-barModel / mountBar (étendus), s2-navigateur.mjs` et les quatre valeurs `réglages effectifs`.
+barModel / mountBar, createAppBench / panelText (étendus), s2-navigateur.mjs` et les quatre valeurs `réglages effectifs`.
 
 **Étapes.**
 
@@ -4132,8 +4152,31 @@ describe("mountSettings", () => {
 });
 ```
 
+Dans `apps/web/src/app/banc.test.ts`, ajouter dans l'objet `deps` de `setupWith`, après `coreVersion: "0.1.0",` :
+
+```ts
+    echelons: () => "2:off,3:off,4:off",
+```
+
+et à la fin du `describe("createAppBench", …)` :
+
+```ts
+  it("rapport : réglages effectifs des échelons, lus au moment du rapport", () => {
+    let tag = "2:off,3:off,4:off";
+    const { deps } = setup();
+    const bench = createAppBench({ ...deps, echelons: () => tag });
+    expect(bench.report().echelons).toBe("2:off,3:off,4:off");
+    tag = "2:on,3:off,4:repli";
+    expect(bench.report().echelons).toBe("2:on,3:off,4:repli");
+    const text = panelText(bench.report(PANEL_RECENT_FRAMES));
+    expect(text.split("\n")).toHaveLength(4);
+    expect(text.split("\n")[0]).toBe("Banc (géométrie du produit, cœur 0.1.0, échelons 2:on,3:off,4:repli)");
+  });
+```
+
 - [ ] **2. Lancer, voir rouge.** Commande 1 du § Test → `mountSettings` et `settingsModel` absents, quatre boutons au
-  lieu de six.
+  lieu de six ; `rapport : réglages effectifs …` échoue (`echelons` reçu `undefined`, première ligne sans
+  « échelons »).
 
 - [ ] **3. Remplacer la barre.** `apps/web/src/app/barre.ts` :
 
@@ -4281,7 +4324,34 @@ export function mountSettings(root: HTMLElement, deps: SettingsBarDeps): () => v
 }
 ```
 
-- [ ] **4. Lancer, voir vert.** Commande 1 du § Test → `Tests  10 passed (10)`, les trois noms présents.
+- [ ] **3 bis. Échelons dans le rapport du banc.** Dans `apps/web/src/app/banc.ts` : ajouter à `AppBenchDeps`, après
+  `readonly coreVersion: string;` :
+
+```ts
+  /** État effectif des échelons de DA9 (forme `echelonsTag`, engine/settings.ts), lu à chaque rapport. */
+  echelons(): string;
+```
+
+à `AppBenchReport`, après `readonly coreVersion: string;` :
+
+```ts
+  /** Échelons qui tournaient pendant la mesure, par exemple `2:off,3:on,4:repli`. */
+  readonly echelons: string;
+```
+
+dans `report`, après `coreVersion: deps.coreVersion,` :
+
+```ts
+      echelons: deps.echelons(),
+```
+
+et la première ligne de `panelText` devient :
+
+```ts
+    `Banc (géométrie du produit, cœur ${r.coreVersion}, échelons ${r.echelons})`,
+```
+
+- [ ] **4. Lancer, voir vert.** Commande 1 du § Test → `Tests  17 passed (17)`, les quatre noms présents.
 
 - [ ] **5. Remplacer la page.** `apps/web/index.html` :
 
@@ -4524,6 +4594,7 @@ async function start(): Promise<void> {
           support,
         },
         coreVersion: core.version(),
+        echelons: () => echelonsTag(effective()),
         now: () => new Date().toISOString(),
       }),
     );
@@ -4553,7 +4624,7 @@ start().catch((e: unknown) => {
 - [ ] **10. Commit.**
 
 ```bash
-cd "$WT" && git add apps/web/src/main.ts apps/web/index.html apps/web/src/app/barre.ts apps/web/src/app/barre.test.ts docs/essais/s2-lot3b-defaut.png docs/essais/s2-lot3b-2.png docs/essais/s2-lot3b-3.png docs/essais/s2-lot3b-4.png
+cd "$WT" && git add apps/web/src/main.ts apps/web/index.html apps/web/src/app/barre.ts apps/web/src/app/barre.test.ts apps/web/src/app/banc.ts apps/web/src/app/banc.test.ts docs/essais/s2-lot3b-defaut.png docs/essais/s2-lot3b-2.png docs/essais/s2-lot3b-3.png docs/essais/s2-lot3b-4.png
 cd "$WT" && git commit --author="jejeasterix <jejeasterix@users.noreply.github.com>" -m "feat(app): wire engine settings, hand tool and object eraser into the minimal bar; S2 lot 3b green" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -4576,8 +4647,7 @@ Réutilise : méthode de T29 du lot 3 (shim `LD_PRELOAD` qui force un DPI de 96 
 `devicePixelRatio` négatif de Broadway sort la page du champ).
 
 **Commandes et preuve.**
-1. `cd /home/adminjd/projets/roomboard-wt/socle && PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh 2>&1 | tail -30`
-   → `verifier.sh : OK`.
+1. `verifier.sh` sous le jeton (§ Contraintes) → `verifier.sh : OK`.
 2. Vérifier qu'aucun autre build Tauri ne tourne : `pgrep -fa "tauri build" || echo aucun` → `aucun`.
 3. `cd /home/adminjd/projets/roomboard-wt/socle && CARGO_BUILD_JOBS=2 PATH=$HOME/.cargo/bin:$PATH pnpm --filter @roomboard/desktop tauri build 2>&1 | tail -15`
    → fin sans `error`, paquet `.deb` listé sous `target/release/bundle/deb/` (lot 3 : 10 min 17, pic 1,29 Go).
@@ -4585,11 +4655,7 @@ Réutilise : méthode de T29 du lot 3 (shim `LD_PRELOAD` qui force un DPI de 96 
    capturer la fenêtre dans `docs/essais/coque-linux-lot3b.png`. Fermer par le ✕ de la fenêtre (piège : `broadwayd`
    plante si on tue un client).
 
-**Contraintes (recopiées de « Global Constraints »).** Un seul build Tauri à la fois, aucun build Android ; jamais
-`git add -A`, `git add .`, `git commit -a` ; pas de `--force` ; aucun `git tag`, aucune release ; aucun workflow
-GitHub Actions ; dépôt public : le shim DPI et ses chemins restent hors dépôt ; commit d'auteur
-`jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais terminé par
-`Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; relecteurs au premier plan (`run_in_background: false`).
+**Contraintes (recopiées de « Global Constraints »).** Jamais `git add -A`, `git add .`, `git commit -a` : fichiers ajoutés un par un ; pas de `--force` ; aucun `git tag`, aucune release ; aucun workflow GitHub Actions (`.github/workflows/` non touché) ; un seul build Tauri à la fois (celui de cette tâche, `CARGO_BUILD_JOBS=2`), aucun build Android ; tests par `scripts/verifier.sh` avec `PATH=$HOME/.cargo/bin:$PATH` sous le jeton `node ~/.claude/scripts/chaine/jeton.cjs --nom tests --proprietaire socle/T41 --places-par-sujet 3 --commande "cd /home/adminjd/projets/roomboard-wt/socle && PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh 2>&1 | tail -30"` (le build Tauri passe après, une fois le jeton rendu) ; relecteurs au premier plan (`run_in_background: false`) ; commit d'auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais terminé par la ligne exacte `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; aucun seuil baissé, aucun test désactivé, sauté (`.skip`, `.todo`, `#[ignore]` hors test de mesure) ni affaibli ; dépôt public : aucun secret ni chemin personnel hors dépôt dans un fichier commité (le shim DPI de T29 et ses chemins restent hors dépôt) ; `$WT` = `/home/adminjd/projets/roomboard-wt/socle` (branche du lot) ; `apps/web/src/core/api.ts` figé ; rien n'est écrit dans le document avant le relâché (D38) ; moteur sans framework ni global du DOM (exceptions : `render/canvas2d.ts`, `input/support.ts`, méthodes des canvas reçus dans `render/select.ts` ; `URLSearchParams` admis dans `settings.ts`) ; le chemin de l'encre ne traverse jamais la frontière page ↔ Rust natif (aucun appel Tauri dans le moteur, échelon 6 interdit, échelon 5 au lot 5) ; chaque réglage a un test allumé et un test éteint ; cœur : aucune horloge ni dépendance au navigateur hors tests, `cargo fmt` et `clippy -D warnings` passent ; TypeScript strict (`noUncheckedIndexedAccess`) : aucun `any`, aucun `!` sur un index, `as unknown as` réservé aux faux objets des tests et aux événements de `PointerSurface`.
 
 **Interdits.** Aucune modification de `apps/desktop` ni de l'application pour faire passer la coque ; un défaut vu ici
 devient une tâche ou un constat. Pas d'essai sur un vrai X11 ou Wayland exigé (non disponible sur la VM : le dire).
