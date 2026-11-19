@@ -1004,7 +1004,7 @@ pub(crate) mod tests {
         assert!(!d.can_undo());
     }
 
-    use crate::element::{ShapeView, IDENTITY};
+    use crate::element::{ShapeView, TextView, IDENTITY};
     use crate::shape::ShapeKind;
 
     fn rect(page: &str, corners: [f64; 4]) -> Command {
@@ -1230,5 +1230,161 @@ pub(crate) mod tests {
             CommandError::BadMatrix.to_string(),
             "matrice invalide (six nombres finis, inversible)"
         );
+    }
+
+    fn text_cmd(page: &str, id: Option<String>, content: &str) -> Command {
+        Command::SetText {
+            page: page.into(),
+            id,
+            x: 100.0,
+            y: 200.0,
+            content: content.into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        }
+    }
+
+    #[test]
+    fn set_text_creates_text_in_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let c = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte");
+        assert_eq!(c.pages, vec![p.clone()]);
+        let e = d.element(&c.ids[0]).expect("élément");
+        assert_eq!(e.kind, "text");
+        assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 200.0]);
+        assert_eq!(
+            e.style,
+            StrokeStyle {
+                color: "#000000".into(),
+                width: 0.0
+            }
+        );
+        assert_eq!(
+            e.text,
+            Some(TextView {
+                content: "Bonjour".into(),
+                size: 36.0,
+                box_width: 600.0,
+                box_height: 45.0
+            })
+        );
+        assert_eq!(e.shape, None);
+        assert!(d.undo());
+        assert!(d.element_ids(&p).is_empty());
+    }
+
+    #[test]
+    fn set_text_replaces_content_in_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        let c = d
+            .apply(text_cmd(&p, Some(id.clone()), "Bonsoir"))
+            .expect("remplacer");
+        assert_eq!(c.ids, vec![id.clone()]);
+        assert_eq!(
+            d.element(&id).and_then(|e| e.text).map(|t| t.content),
+            Some("Bonsoir".into())
+        );
+        assert!(d.undo());
+        assert_eq!(
+            d.element(&id).and_then(|e| e.text).map(|t| t.content),
+            Some("Bonjour".into())
+        );
+    }
+
+    /// Discrimine le patron écarté (transaction d'écriture ouverte avant de savoir si `SetText` a un effet) : une
+    /// transaction vide n'ajoute aucune étape d'annulation, donc un test d'historique resterait vert ; seul le
+    /// compteur `writes` la voit (D38).
+    #[test]
+    fn set_text_unchanged_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        let n = writes(&d);
+        let v = d.version();
+        let c = d.apply(text_cmd(&p, Some(id), "Bonjour")).expect("inchangé");
+        assert!(c.ids.is_empty() && c.removed.is_empty());
+        let c = d.apply(text_cmd(&p, None, "")).expect("boîte neuve vide");
+        assert!(c.ids.is_empty() && c.pages.is_empty());
+        assert_eq!(d.version(), v);
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn set_text_empty_removes_existing() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        let c = d
+            .apply(text_cmd(&p, Some(id.clone()), ""))
+            .expect("vider");
+        assert_eq!(c.removed, vec![id.clone()]);
+        assert_eq!(c.pages, vec![p.clone()]);
+        assert!(d.element_ids(&p).is_empty());
+        assert!(d.undo());
+        assert_eq!(d.element_ids(&p), vec![id]);
+    }
+
+    #[test]
+    fn set_text_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let stroke = commit(&mut d, &p, hline(100.0));
+        let n = writes(&d);
+        let mut tiny = text_cmd(&p, None, "x");
+        if let Command::SetText { size, .. } = &mut tiny {
+            *size = 0.0;
+        }
+        assert_eq!(d.apply(tiny), Err(CommandError::BadText));
+        let mut nan = text_cmd(&p, None, "x");
+        if let Command::SetText { box_height, .. } = &mut nan {
+            *box_height = f64::NAN;
+        }
+        assert_eq!(d.apply(nan), Err(CommandError::BadText));
+        assert_eq!(
+            d.apply(text_cmd(&p, Some("absent".into()), "x")),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+        assert_eq!(
+            d.apply(text_cmd(&p, Some(stroke.clone()), "x")),
+            Err(CommandError::UnknownElement(stroke))
+        );
+        assert_eq!(
+            d.apply(text_cmd("absente", None, "x")),
+            Err(CommandError::UnknownPage("absente".into()))
+        );
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn set_text_errors_have_readable_messages() {
+        assert_eq!(
+            CommandError::BadText.to_string(),
+            "texte invalide (taille et boîte finies > 0 attendues)"
+        );
+        assert_eq!(
+            CommandError::UnknownElement("x".into()).to_string(),
+            "élément inconnu : x"
+        );
+    }
+
+    /// Garde l'interdit « plus d'une transaction par `SetText` » : une étape d'annulation ne prouve pas une seule
+    /// transaction, seul le compteur `writes` les compte.
+    #[test]
+    fn set_text_each_effect_is_one_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        assert_eq!(n.since(), 1, "créer : une transaction");
+        d.apply(text_cmd(&p, Some(id.clone()), "Bonsoir"))
+            .expect("remplacer");
+        assert_eq!(n.since(), 2, "remplacer : une transaction");
+        d.apply(text_cmd(&p, Some(id), "")).expect("vider");
+        assert_eq!(n.since(), 3, "vider : une transaction");
     }
 }

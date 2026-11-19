@@ -599,4 +599,35 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn hit_test_and_bounds_include_text() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .apply(Command::SetText {
+                page: p.clone(),
+                id: None,
+                x: 100.0,
+                y: 200.0,
+                content: "Bonjour".into(),
+                color: "#000000".into(),
+                size: 36.0,
+                box_width: 600.0,
+                box_height: 45.0,
+            })
+            .expect("texte")
+            .ids[0]
+            .clone();
+        assert_eq!(d.hit_test(&p, 300.0, 220.0, 1.0), Some(id.clone()));
+        assert_eq!(
+            d.bounds(&[id]),
+            Some(Bounds {
+                x0: 100.0,
+                y0: 200.0,
+                x1: 700.0,
+                y1: 245.0
+            })
+        );
+    }
 }
