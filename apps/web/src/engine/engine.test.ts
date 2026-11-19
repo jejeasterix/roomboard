@@ -359,4 +359,93 @@ describe("createEngine", () => {
     for (let i = 0; i < 3700; i++) frames.tick();
     expect(engine.frameDurations()).toHaveLength(3600);
   });
+
+  it("addPage : insère après la page montrée et la montre", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    expect(engine.addPage()).toBe(true);
+    const [, p2] = doc.pageIds();
+    expect(engine.state()).toMatchObject({ page: p2, pageIndex: 1, pageCount: 2 });
+    expect(engine.prevPage()).toBe(true);
+    expect(engine.state().page).toBe(p1);
+    expect(engine.addPage()).toBe(true);
+    const ids = doc.pageIds();
+    expect(ids).toHaveLength(3);
+    expect(ids[2]).toBe(p2);
+    expect(engine.state()).toMatchObject({ page: ids[1], pageIndex: 1 });
+  });
+
+  it("removePage de la page montrée : la précédente est montrée (CL4-9)", () => {
+    const { doc, engine } = setup();
+    engine.addPage();
+    engine.addPage();
+    const [p1, p2, p3] = doc.pageIds();
+    engine.showPage(p2 ?? "");
+    expect(engine.removePage()).toBe(true);
+    expect(doc.pageIds()).toEqual([p1, p3]);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 0, pageCount: 2, error: null });
+  });
+
+  it("removePage de la première page : la nouvelle première est montrée", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    engine.showPage(p1);
+    expect(engine.removePage()).toBe(true);
+    expect(engine.state().page).toBe(doc.pageIds()[0]);
+    expect(engine.state().pageCount).toBe(1);
+  });
+
+  it("removePage sur la dernière page : refus dans l'état, rien ne change (D37)", () => {
+    const { engine } = setup();
+    const p = engine.state().page;
+    expect(engine.removePage()).toBe(false);
+    expect(engine.state()).toMatchObject({ page: p, pageCount: 1, error: "la dernière page ne se supprime pas" });
+  });
+
+  it("annuler l'ajout montre la page précédente, rétablir la remontre", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    const p2 = engine.state().page;
+    engine.undo();
+    expect(doc.pageIds()).toEqual([p1]);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 0, pageCount: 1, error: null });
+    engine.redo();
+    expect(engine.state()).toMatchObject({ page: p2, pageIndex: 1, pageCount: 2 });
+  });
+
+  it("annuler le retrait remontre la page avec ses éléments", () => {
+    const { engine } = setup();
+    engine.addPage();
+    const p2 = engine.state().page;
+    engine.run({ type: "CommitStroke", page: p2, points: new Float32Array([10, 10, 0.5, 20, 20, 0.5]), style: PEN });
+    engine.removePage();
+    expect(engine.state().page).not.toBe(p2);
+    engine.undo();
+    expect(engine.state()).toMatchObject({ page: p2, elementCount: 1 });
+  });
+
+  it("retirer une page garde sa caméra : annuler le retrait rend sa vue", () => {
+    const { engine } = setup();
+    engine.resize(1280, 720, 1);
+    engine.addPage();
+    engine.view.panBy(40, 0);
+    const cam = engine.camera();
+    engine.removePage();
+    engine.undo();
+    expect(engine.camera()).toEqual(cam);
+  });
+
+  it("nextPage et prevPage s'arrêtent aux bords", () => {
+    const { engine } = setup();
+    expect(engine.nextPage()).toBe(false);
+    expect(engine.prevPage()).toBe(false);
+    engine.addPage();
+    expect(engine.nextPage()).toBe(false);
+    expect(engine.prevPage()).toBe(true);
+    expect(engine.prevPage()).toBe(false);
+    expect(engine.nextPage()).toBe(true);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, selection: [], selectionBounds: null });
+  });
 });
