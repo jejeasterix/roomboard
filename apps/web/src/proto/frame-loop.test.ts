@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFrameLoop, type FrameLoopDeps } from "./frame-loop";
 
 function fakeClock() {
@@ -109,6 +109,21 @@ describe("createFrameLoop", () => {
       loop.start();
       for (let i = 0; i < 10; i++) clock.advance(16);
       expect(loop.durations()).toHaveLength(9);
+    }
+  });
+
+  it("borne mémoire : le tableau interne est élagué par paquets (splice), jamais plus de 2 × N", () => {
+    const clock = fakeClock();
+    const loop = createFrameLoop(clock.deps, () => {}, 3);
+    const splice = vi.spyOn(Array.prototype, "splice");
+    try {
+      loop.start();
+      for (let i = 0; i < 4; i++) clock.advance(16); // 3 durées : sous 2 × N, aucun élagage
+      expect(splice).not.toHaveBeenCalled();
+      for (let i = 0; i < 20; i++) clock.advance(16);
+      expect(splice).toHaveBeenCalled();
+    } finally {
+      splice.mockRestore();
     }
   });
 });
