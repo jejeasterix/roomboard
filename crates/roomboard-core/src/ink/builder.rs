@@ -203,4 +203,44 @@ mod tests {
             }
         }
     }
+
+    /// Mesure (constat des lots 2 et 3, lot 3b T37) : coût d'un `push` d'une image (4 points) sur un trait déjà long,
+    /// copie du contour entier comprise (le `Vec<f32>` rendu est celui que la liaison copie vers la page). Seuil écrit :
+    /// p95 ≤ 4 ms en release native à 10 000 points, soit environ 8 ms en Wasm, la moitié d'une image de 16 ms.
+    /// `cargo test -p roomboard-core --release --lib -- --ignored --nocapture long_stroke_push_cost`
+    #[test]
+    #[ignore = "mesure de coût, lancée à la main en release"]
+    fn long_stroke_push_cost() {
+        const FRAME: usize = 4;
+        const SAMPLES: usize = 200;
+        let mut p95_at_10k = f64::MAX;
+        for n in [2_000_usize, 5_000, 10_000] {
+            let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+            let all: Vec<f32> = (0..n + FRAME * SAMPLES)
+                .flat_map(|i| [i as f32 * 2.0, (i as f32 * 0.05).sin() * 40.0, 0.5])
+                .collect();
+            for chunk in all[..n * 3].chunks(FRAME * 3) {
+                b.push(chunk);
+            }
+            let mut times: Vec<f64> = Vec::with_capacity(SAMPLES);
+            let mut len = 0;
+            for chunk in all[n * 3..].chunks(FRAME * 3) {
+                let start = std::time::Instant::now();
+                let out = b.push(chunk);
+                times.push(start.elapsed().as_secs_f64() * 1000.0);
+                len = out.len();
+            }
+            times.sort_by(f64::total_cmp);
+            let p50 = times[times.len() / 2];
+            let p95 = times[times.len() * 95 / 100];
+            eprintln!("Mesure : {n} points, contour {len} flottants, push p50 {p50:.3} ms, p95 {p95:.3} ms");
+            if n == 10_000 {
+                p95_at_10k = p95;
+            }
+        }
+        assert!(
+            p95_at_10k <= 4.0,
+            "push à 10 000 points : p95 {p95_at_10k:.3} ms > 4 ms (seuil du lot 3b, HL3b-9)"
+        );
+    }
 }
