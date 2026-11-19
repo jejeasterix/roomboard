@@ -596,7 +596,8 @@ mod tests {
         );
         assert_eq!(d.hit_test(&p, 412.0, 100.0, 6.0), Some(big.clone()));
         assert_eq!(d.hit_test(&p, 428.0, 100.0, 6.0), None, "20 du bord à ×4");
-        d.apply(Command::Delete { ids: vec![big] }).expect("retrait");
+        d.apply(Command::Delete { ids: vec![big] })
+            .expect("retrait");
         let thin = scaled(
             &mut d,
             &p,
@@ -610,7 +611,8 @@ mod tests {
             "ligne à ×0,05 prise à 2,9"
         );
         assert_eq!(d.hit_test(&p, 25.0, 10.0, 6.0), None);
-        d.apply(Command::Delete { ids: vec![thin] }).expect("retrait");
+        d.apply(Command::Delete { ids: vec![thin] })
+            .expect("retrait");
         let flat = scaled(
             &mut d,
             &p,
@@ -639,8 +641,12 @@ mod tests {
         let arrow = scaled(&mut d, &p, ShapeKind::Arrow, [0.0, 0.0, 100.0, 0.0], one);
         assert_eq!(d.hit_test(&p, 90.0, 4.5, 0.1), Some(arrow.clone()));
         let b = d.bounds(std::slice::from_ref(&arrow)).expect("bornes");
-        assert!(b.y1 > 5.0 && b.y1 < 5.2 && b.y0 < -5.0 && b.y0 > -5.2, "{b:?}");
-        d.apply(Command::Delete { ids: vec![arrow] }).expect("retrait");
+        assert!(
+            b.y1 > 5.0 && b.y1 < 5.2 && b.y0 < -5.0 && b.y0 > -5.2,
+            "{b:?}"
+        );
+        d.apply(Command::Delete { ids: vec![arrow] })
+            .expect("retrait");
         let ellipse = scaled(&mut d, &p, ShapeKind::Ellipse, [0.0, 0.0, 100.0, 50.0], one);
         assert_eq!(d.hit_test(&p, 1.0, 1.0, 1.0), None, "coin de la boîte");
         assert_eq!(d.hit_test(&p, 50.0, 25.0, 1.0), Some(ellipse.clone()));
