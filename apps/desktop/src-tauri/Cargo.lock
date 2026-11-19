@@ -2590,12 +2590,18 @@ dependencies = [
 name = "roomboard-desktop"
 version = "0.1.0"
 dependencies = [
+ "roomboard-shell",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
 ]
+
+[[package]]
+name = "roomboard-shell"
+version = "0.1.0"
 
 [[package]]
 name = "rustc-hash"
