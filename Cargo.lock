@@ -330,6 +330,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "roomboard-shell"
+version = "0.1.0"
+
+[[package]]
 name = "roomboard-wasm"
 version = "0.1.0"
 dependencies = [
