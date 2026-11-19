@@ -90,12 +90,11 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       const zoom = ctx.camera().zoom;
       const shift = ctx.shift?.() === true;
       const frame = selection.length > 0 ? ctx.doc.bounds(selection) : null;
-      if (frame && !shift) {
-        const h = hitHandle(frame, x, y, HANDLE_GRAB_PX / zoom);
-        if (h) {
-          startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
-          return;
-        }
+      // Poignée cherchée avant hitTest, Maj tenue ou non : Maj sur une poignée = proportions (D15, CL4-11).
+      const h = frame ? hitHandle(frame, x, y, HANDLE_GRAB_PX / zoom) : null;
+      if (frame && h) {
+        startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
+        return;
       }
       const hit = ctx.doc.hitTest(ctx.page(), x, y, SELECT_TOL_PX / zoom);
       if (hit !== null) {
