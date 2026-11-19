@@ -632,6 +632,88 @@ mod tests {
         );
     }
 
+    /// Trait horizontal y = 0, x de 100 à 500 (un point tous les 10), épaisseur 4, puis la matrice `m`.
+    fn scaled_stroke(m: Transform) -> (Document, String, String) {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let pts: Vec<f32> = (0..=40)
+            .flat_map(|i| [100.0 + i as f32 * 10.0, 0.0, 0.5])
+            .collect();
+        let id = d
+            .apply(Command::CommitStroke {
+                page: p.clone(),
+                points: pts,
+                style: pen(),
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: m,
+        })
+        .expect("échelle");
+        (d, p, id)
+    }
+
+    /// T63 : le rayon de `hit_test_path` et de la gomme (d'objet et partielle) est en unités monde, l'épaisseur du trait
+    /// suit sa matrice. Le patron écarté (chemin ramené en local, rayon appliqué en local) mordrait à 20 du trait à ×4
+    /// (5 en local) et raterait le trait à 4 à ×0,05 (80 en local).
+    #[test]
+    fn eraser_radius_is_in_world_units_under_scale() {
+        let cases: [(Transform, f32, f32, f32); 2] = [
+            ([4.0, 0.0, 0.0, 4.0, 0.0, 0.0], 1200.0, 9.0, 20.0),
+            ([0.05, 0.0, 0.0, 0.05, 0.0, 0.0], 15.0, 4.0, 6.0),
+        ];
+        for (m, x, near, far) in cases {
+            for (y, touched) in [(near, true), (far, false)] {
+                let (d, p, id) = scaled_stroke(m);
+                let want = if touched { vec![id.clone()] } else { vec![] };
+                assert_eq!(d.hit_test_path(&p, &[x, y], 5.0), want, "hit_test_path ×{} à {y}", m[0]);
+                for mode in [EraseMode::Object, EraseMode::Partial] {
+                    let (mut d, p, id) = scaled_stroke(m);
+                    let c = d
+                        .apply(Command::Erase {
+                            page: p,
+                            path: vec![x, y],
+                            radius: 5.0,
+                            mode,
+                        })
+                        .expect("gomme");
+                    let want = if touched { vec![id] } else { vec![] };
+                    assert_eq!(c.removed, want, "Erase ×{} à {y}", m[0]);
+                }
+            }
+        }
+    }
+
+    /// T63 : sous une matrice anisotrope, aucun rayon local n'est exact ; `hit_test_path` mesure en monde, sur le contour
+    /// porté en monde (comme `hit_test`). Trait à [4, 0, 0, 0,25] : demi-épaisseur monde verticale ≤ 0,5. Diviser le rayon
+    /// par la racine du déterminant (1) ou par la plus grande valeur singulière raterait le trait à 5 ; la gomme partielle
+    /// coupe avec la plus petite demi-épaisseur monde (0,25 × 2) : touché à 5, pas à 5,6.
+    #[test]
+    fn eraser_measures_in_world_under_anisotropic_scale() {
+        let m = [4.0, 0.0, 0.0, 0.25, 0.0, 0.0];
+        let (d, p, id) = scaled_stroke(m);
+        assert_eq!(d.hit_test_path(&p, &[1200.0, 5.0], 5.0), vec![id.clone()]);
+        assert_eq!(d.hit_test_path(&p, &[1200.0, 5.6], 5.0), Vec::<String>::new());
+        for (y, touched) in [(5.0, true), (5.6, false)] {
+            let (mut d, p, id) = scaled_stroke(m);
+            let c = d
+                .apply(Command::Erase {
+                    page: p,
+                    path: vec![1200.0, y],
+                    radius: 5.0,
+                    mode: EraseMode::Partial,
+                })
+                .expect("gomme");
+            assert_eq!(c.removed.is_empty(), !touched, "partielle à {y}");
+            if touched {
+                assert_eq!(c.removed, vec![id]);
+            }
+        }
+    }
+
     /// Constats 4 et 5 de T60 : la pointe de flèche est prise et bornée, l'ellipse n'est plus sa boîte.
     #[test]
     fn hit_test_and_bounds_follow_arrow_head_and_ellipse() {

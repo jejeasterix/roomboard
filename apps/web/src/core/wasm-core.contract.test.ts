@@ -405,6 +405,44 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     d.free();
   });
 
+  // T63 : le rayon de la gomme (`hitTestPath`, `Erase` d'objet et partielle) est en unités monde, et l'épaisseur d'un
+  // trait transformé suit sa matrice (la fausse liaison suit le contour transformé du cœur). Trait `hline(0)` : centre
+  // (100..500, 0), un point tous les 10, épaisseur 4. Discrimine le patron écarté (chemin ramené en local, rayon
+  // appliqué en local) : à ×4 il mordrait à 20 du trait (5 en local), à ×0,05 il raterait le trait à 4 (80 en local) ;
+  // et l'ancienne fausse liaison (`radius + width / 2`, épaisseur non mise à l'échelle) raterait le trait à 9 à ×4 et
+  // le prendrait à 6 à ×0,05.
+  it("gomme et hitTestPath : rayon en unités monde, épaisseur mise à l'échelle sur un trait transformé (×4, ×0,05)", () => {
+    // [matrice, x monde au-dessus d'un point du trait, distance touchée, distance non touchée], rayon 5.
+    const cases: [Matrix, number, number, number][] = [
+      // ×4 : centre (400..2000, 0), demi-épaisseur monde 8 : touché à moins de 5 + 8 = 13.
+      [[4, 0, 0, 4, 0, 0], 1200, 9, 20],
+      // ×0,05 : centre (5..25, 0), demi-épaisseur monde 0,1 : touché à moins de 5,1.
+      [[0.05, 0, 0, 0.05, 0, 0], 15, 4, 6],
+    ];
+    const fresh = (m: Matrix): { d: CoreDocument; p: string; id: string } => {
+      const d = f.blank();
+      const p = first(d);
+      const id = commit(d, p, 0);
+      d.apply({ type: "Transform", ids: [id], matrix: m });
+      return { d, p, id };
+    };
+    for (const [m, x, near, far] of cases) {
+      for (const [y, touched] of [[near, true], [far, false]] as const) {
+        const probe = new Float32Array([x, y]);
+        const label = `×${m[0]} à ${y}`;
+        const h = fresh(m);
+        expect(h.d.hitTestPath(h.p, probe, 5), `hitTestPath ${label}`).toEqual(touched ? [h.id] : []);
+        h.d.free();
+        for (const mode of ["object", "partial"] as const) {
+          const e = fresh(m);
+          const c = e.d.apply({ type: "Erase", page: e.p, path: probe, radius: 5, mode });
+          expect(c.removed, `Erase ${mode} ${label}`).toEqual(touched ? [e.id] : []);
+          e.d.free();
+        }
+      }
+    }
+  });
+
   // Constats 2 et 3 de T60 : la matrice composée (pas seulement `matrix`) et la géométrie tirée des coins (pas seulement
   // les coins) sont contrôlées ; refus sans étape, la commande entière.
   it("Transform : matrice composée infinie ou presque singulière refusée ; AddShape : w, h, tx, ty non finis en f32 refusés", () => {
