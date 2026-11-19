@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { Change, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import type { FrameLoopDeps } from "../proto/frame-loop";
-import type { Camera } from "./camera";
-import { createEngine, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
+import { fitPage, type Camera } from "./camera";
+import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
@@ -274,5 +274,89 @@ describe("createEngine", () => {
     engine.dispose();
     expect(log).toContain("pen.close 1 abort");
     expect(frames.pending()).toBe(0);
+  });
+
+  it("outil main : setTool('hand') dans l'état et dans tool()", () => {
+    const { engine } = setup();
+    const seen: string[] = [];
+    engine.onState((s) => seen.push(s.tool));
+    engine.setTool("hand");
+    expect(engine.tool()).toBe("hand");
+    expect(seen).toEqual(["hand"]);
+  });
+
+  it("espace : keydown tient la vue (panHeld), keyup la rend ; les deux demandent preventDefault", () => {
+    const { engine } = setup();
+    expect(engine.panHeld()).toBe(false);
+    expect(engine.key(key(" "))).toBe(true);
+    expect(engine.panHeld()).toBe(true);
+    expect(engine.key(key(" "))).toBe(true);
+    expect(engine.keyUp(key(" "))).toBe(true);
+    expect(engine.panHeld()).toBe(false);
+    expect(engine.keyUp(key(" "))).toBe(false);
+    expect(engine.keyUp(key("z"))).toBe(false);
+  });
+
+  it("espace dans un champ de saisie : rien, la touche reste au champ", () => {
+    const { engine } = setup();
+    expect(engine.key(key(" ", { target: { tagName: "INPUT" } }))).toBe(false);
+    expect(engine.panHeld()).toBe(false);
+    expect(engine.keyUp(key(" ", { target: { tagName: "INPUT" } }))).toBe(false);
+  });
+
+  it("releaseKeys : espace relâché à la perte du focus", () => {
+    const { engine } = setup();
+    engine.key(key(" "));
+    engine.releaseKeys();
+    expect(engine.panHeld()).toBe(false);
+  });
+
+  it("caméra par page : chaque page garde sa vue", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    expect(engine.run({ type: "AddPage", after: p1 })).not.toBeNull();
+    const p2 = doc.pageIds().find((id) => id !== p1) ?? "";
+    engine.resize(1280, 720, 1);
+    engine.view.panBy(100, 0);
+    const cam1: Camera = engine.camera();
+    expect(engine.showPage(p2)).toBe(true);
+    expect(engine.state().page).toBe(p2);
+    expect(engine.camera()).toEqual(fitPage(1280, 720));
+    engine.view.zoomAt(0, 0, 2);
+    const cam2 = engine.camera();
+    expect(engine.showPage(p1)).toBe(true);
+    expect(engine.camera()).toEqual(cam1);
+    expect(engine.showPage(p2)).toBe(true);
+    expect(engine.camera()).toEqual(cam2);
+  });
+
+  it("showPage d'une page inconnue : false, rien ne change", () => {
+    const { engine } = setup();
+    const before = engine.state();
+    const cam = engine.camera();
+    expect(engine.showPage("inconnue")).toBe(false);
+    expect(engine.state()).toEqual(before);
+    expect(engine.camera()).toBe(cam);
+  });
+
+  it("showPage ferme les gestes en cours sans écriture (abort) et redessine la page montrée", () => {
+    const { doc, engine, log, frames, renderer } = setup();
+    const p1 = engine.state().page;
+    engine.run({ type: "AddPage", after: p1 });
+    const p2 = doc.pageIds().find((id) => id !== p1) ?? "";
+    engine.sink.begin(1, "pen", [sample]);
+    expect(engine.showPage(p2)).toBe(true);
+    expect(log).toContain("pen.close 1 abort");
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page.id).toBe(p2);
+    expect(doc.elementIds(p1)).toEqual([]);
+  });
+
+  it("frameDurations plafonné à 3 600 images (ENGINE_FRAME_HISTORY)", () => {
+    const { engine, frames } = setup();
+    expect(ENGINE_FRAME_HISTORY).toBe(3600);
+    engine.sink.begin(1, "pen", [sample]);
+    for (let i = 0; i < 3700; i++) frames.tick();
+    expect(engine.frameDurations()).toHaveLength(3600);
   });
 });
