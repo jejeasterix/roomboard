@@ -38,22 +38,27 @@ interface FakeEl {
   remove(): void;
 }
 
-function fakeDocument() {
+function fakeDocument(o: { clickThrows?: boolean } = {}) {
   const appended: FakeEl[] = [];
+  const win = { listeners: new Map<string, () => void>() };
   const doc = {
     createElement(tag: string): FakeEl {
       const el: FakeEl = {
         tag, type: "", accept: "", href: "", download: "", style: { display: "" }, files: null,
         listeners: new Map(), clicked: 0, removed: false,
         addEventListener(t, cb) { el.listeners.set(t, cb); },
-        click() { el.clicked += 1; },
+        click() { el.clicked += 1; if (o.clickThrows && tag === "input") throw new Error("click refusé"); },
         remove() { el.removed = true; },
       };
       return el;
     },
     body: { append(el: FakeEl) { appended.push(el); } },
+    defaultView: {
+      addEventListener(t: string, cb: () => void) { win.listeners.set(t, cb); },
+      removeEventListener(t: string, cb: () => void) { if (win.listeners.get(t) === cb) win.listeners.delete(t); },
+    },
   };
-  return { doc: doc as unknown as Document, appended };
+  return { doc: doc as unknown as Document, appended, win };
 }
 
 const ask: SaveTarget = { kind: "ask", name: "Sans titre.roomboard" };
@@ -132,5 +137,65 @@ describe("hôte de repli (téléchargement et <input type=file>)", () => {
     for (const cb of later) cb();
     expect(revoked).toEqual(["blob:x"]);
     expect([blobs[0]?.type, blobs[0]?.size]).toEqual(["application/x-roomboard", 3]);
+  });
+
+  function fakeSchedule() {
+    const jobs: Array<{ cb: () => void; ms: number; cancelled: boolean }> = [];
+    const schedule = (cb: () => void, ms: number): (() => void) => {
+      const j = { cb, ms, cancelled: false };
+      jobs.push(j);
+      return () => { j.cancelled = true; };
+    };
+    const run = (): void => { for (const j of jobs) if (!j.cancelled) j.cb(); };
+    return { schedule, jobs, run };
+  }
+  const later = (): void => undefined;
+
+  it("T79 : navigateur sans cancel : retour du focus sans change → annulation après le délai, input retiré, écouteurs retirés", async () => {
+    const { doc, appended, win } = fakeDocument();
+    const t = fakeSchedule();
+    const picked = browserFallbackDeps(doc, urls, later, t.schedule).pickFile(FALLBACK_ACCEPT);
+    expect(appended[0]?.removed).toBe(false);
+    win.listeners.get("focus")?.();
+    expect(t.jobs).toHaveLength(1);
+    expect(t.jobs[0]?.ms).toBeGreaterThan(0);
+    t.run();
+    expect(await picked).toBeNull();
+    expect(appended[0]?.removed).toBe(true);
+    expect(win.listeners.size).toBe(0);
+  });
+
+  it("T79 : focus puis change dans le délai : le fichier est rendu, le minuteur annulé", async () => {
+    const { doc, appended, win } = fakeDocument();
+    const t = fakeSchedule();
+    const picked = browserFallbackDeps(doc, urls, later, t.schedule).pickFile(FALLBACK_ACCEPT);
+    win.listeners.get("focus")?.();
+    const input = appended[0];
+    if (!input) throw new Error("aucun input");
+    input.files = [{ name: "cours.roomboard", arrayBuffer: async () => new Uint8Array([7]).buffer }];
+    input.listeners.get("change")?.();
+    t.run();
+    expect((await picked)?.name).toBe("cours.roomboard");
+    expect(win.listeners.size).toBe(0);
+    expect(t.jobs.every((j) => j.cancelled)).toBe(true);
+  });
+
+  it("T79 : click() refusé : le sélecteur rejette, l'input est retiré, aucun écouteur ne reste", async () => {
+    const { doc, appended, win } = fakeDocument({ clickThrows: true });
+    const t = fakeSchedule();
+    await expect(browserFallbackDeps(doc, urls, later, t.schedule).pickFile(FALLBACK_ACCEPT)).rejects.toThrow("click refusé");
+    expect(appended[0]?.removed).toBe(true);
+    expect(win.listeners.size).toBe(0);
+  });
+
+  it("T79 : cancel après un focus : réglé une seule fois, le minuteur annulé", async () => {
+    const { doc, appended, win } = fakeDocument();
+    const t = fakeSchedule();
+    const picked = browserFallbackDeps(doc, urls, later, t.schedule).pickFile(FALLBACK_ACCEPT);
+    win.listeners.get("focus")?.();
+    appended[0]?.listeners.get("cancel")?.();
+    expect(await picked).toBeNull();
+    expect(t.jobs.every((j) => j.cancelled)).toBe(true);
+    expect(win.listeners.size).toBe(0);
   });
 });

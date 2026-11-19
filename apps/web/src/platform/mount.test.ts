@@ -94,4 +94,32 @@ describe("raccourcis de fichier de l'amorce", () => {
     expect(prevented).toBe(3);
     expect(pickers).toBe(1);
   });
+
+  it("T79 : dispose retire l'écouteur keydown (et la garde du contrôleur)", async () => {
+    const added: Array<[string, unknown]> = [];
+    const removed: Array<[string, unknown]> = [];
+    const w = {
+      indexedDB: undefined,
+      location: { search: "", reload: () => undefined },
+      document: { title: "" },
+      confirm: () => true,
+      alert: () => undefined,
+      addEventListener: (t: string, cb: unknown) => {
+        added.push([t, cb]);
+      },
+      removeEventListener: (t: string, cb: unknown) => {
+        removed.push([t, cb]);
+      },
+      showOpenFilePicker: async () => [],
+      showSaveFilePicker: async () => [],
+    };
+    const prepared = await prepareFiles(fakeCore, w as unknown as Window);
+    const engine = { state: () => ({ version: 0 }), onState: () => () => undefined };
+    const ctl = await prepared.mount(engine, { dataset: {} } as unknown as HTMLElement);
+    const keydown = added.find(([t]) => t === "keydown")?.[1];
+    expect(keydown).toBeDefined();
+    expect(removed.some(([t, cb]) => t === "keydown" && cb === keydown)).toBe(false);
+    ctl.dispose();
+    expect(removed.some(([t, cb]) => t === "keydown" && cb === keydown)).toBe(true);
+  });
 });

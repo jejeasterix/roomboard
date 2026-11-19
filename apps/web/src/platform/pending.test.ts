@@ -1,6 +1,6 @@
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
-import type { FileHandleLike, PendingOpen } from "./files";
+import { hasErrorName, type FileHandleLike, type PendingOpen } from "./files";
 import { createIdbPendingStore, createMemoryPendingStore, createUnavailablePendingStore, isDataClone } from "./pending";
 
 const file = (target: PendingOpen["target"]): PendingOpen => ({
@@ -75,5 +75,59 @@ describe("fichier ouvert en attente (IndexedDB)", () => {
     expect(isDataClone(Object.assign(new Error("x"), { name: "DataCloneError" }))).toBe(true);
     expect(isDataClone(new Error("x"))).toBe(false);
     expect(isDataClone("DataCloneError")).toBe(false);
+  });
+
+  it("T79 : une ouverture de base refusée n'est pas gardée : l'appel suivant réessaie", async () => {
+    const real = new IDBFactory();
+    let calls = 0;
+    const flaky = {
+      open(n: string, v?: number) {
+        calls += 1;
+        if (calls > 1) return real.open(n, v);
+        const r = {} as { error: Error; onerror?: () => void };
+        r.error = new Error("base bloquée");
+        queueMicrotask(() => r.onerror?.());
+        return r;
+      },
+    } as unknown as IDBFactory;
+    const store = createIdbPendingStore(flaky);
+    await expect(store.take()).rejects.toThrow("base bloquée");
+    expect(await store.take()).toBeNull();
+    expect(calls).toBe(2);
+  });
+
+  it("T79 : lecture refusée dans take : un seul rejet, celui de la lecture (la transaction n'en laisse pas un second non géré)", async () => {
+    const boom = new Error("lecture refusée");
+    const req = {} as { error: Error; onerror?: () => void };
+    const tx = {} as { error: Error; onabort?: () => void; objectStore(): unknown };
+    tx.objectStore = () => ({
+      get: () => {
+        queueMicrotask(() => {
+          req.error = boom;
+          req.onerror?.();
+          tx.error = boom;
+          tx.onabort?.();
+        });
+        return req;
+      },
+      delete: () => undefined,
+    });
+    const db = { transaction: () => tx };
+    const factory = {
+      open() {
+        const r = {} as { result: unknown; onsuccess?: () => void };
+        r.result = db;
+        queueMicrotask(() => r.onsuccess?.());
+        return r;
+      },
+    } as unknown as IDBFactory;
+    await expect(createIdbPendingStore(factory).take()).rejects.toThrow("lecture refusée");
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
+  it("T79 : hasErrorName reconnaît le nom d'erreur demandé seulement", () => {
+    expect(hasErrorName(Object.assign(new Error("x"), { name: "AbortError" }), "AbortError")).toBe(true);
+    expect(hasErrorName(new Error("x"), "AbortError")).toBe(false);
+    expect(hasErrorName(null, "AbortError")).toBe(false);
   });
 });

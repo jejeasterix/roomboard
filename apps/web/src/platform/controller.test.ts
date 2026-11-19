@@ -411,4 +411,52 @@ describe("contrôleur des fichiers (D26)", () => {
     t.ctl.dispose();
     expect([t.versions.listeners(), t.s.log.stopped]).toEqual([0, 1]);
   });
+
+  it("T79 : notify qui rejette pendant Ctrl+S : aucun rejet non géré, la commande rend false", async () => {
+    const t = setup();
+    t.h.onSave(new Error("disque plein"));
+    t.s.shell.notify = async () => {
+      throw new Error("boîte indisponible");
+    };
+    stroke(t.doc, t.versions);
+    expect(t.ctl.key(k("s", { ctrlKey: true }))).toBe(true);
+    await flush();
+    expect(await t.ctl.run("save")).toBe(false);
+    expect(t.ctl.isDirty()).toBe(true);
+  });
+
+  it("T79 : confirm qui rejette pendant Ctrl+N : aucun rejet non géré, rien n'est rechargé", async () => {
+    const t = setup();
+    stroke(t.doc, t.versions);
+    t.s.shell.confirm = async () => {
+      throw new Error("boîte indisponible");
+    };
+    expect(t.ctl.key(k("n", { ctrlKey: true }))).toBe(true);
+    await flush();
+    expect(await t.ctl.run("new")).toBe(false);
+    expect(t.reloads()).toBe(0);
+  });
+
+  it("T79 : le rechargement voulu retire la garde de fermeture avant reload, une seule fois (dispose compris)", async () => {
+    const t = setup();
+    let stoppedAtReload = -1;
+    const ctl = createFileController({
+      core: fakeCore,
+      doc: t.doc,
+      versions: t.versions,
+      host: t.h.host,
+      shell: t.s.shell,
+      pending: t.pending,
+      opened: null,
+      reload: () => {
+        stoppedAtReload = t.s.log.stopped;
+      },
+      now: () => "2026-11-19T00:00:00.000Z",
+      appVersion: APP_VERSION,
+    });
+    expect(await ctl.run("new")).toBe(true);
+    expect(stoppedAtReload).toBe(1);
+    ctl.dispose();
+    expect(t.s.log.stopped).toBe(1);
+  });
 });

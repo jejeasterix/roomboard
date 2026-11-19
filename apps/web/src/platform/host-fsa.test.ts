@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { FileHandleLike, PermissionLike, SaveTarget, WritableLike } from "./files";
 import { createFsaHost, FSA_TYPES, type FsaWindow } from "./host-fsa";
 
-interface Disk { files: Map<string, Uint8Array>; writes: string[]; aborted: number }
-const newDisk = (): Disk => ({ files: new Map(), writes: [], aborted: 0 });
+interface Disk { files: Map<string, Uint8Array>; writes: string[]; aborted: number; requests: number }
+const newDisk = (): Disk => ({ files: new Map(), writes: [], aborted: 0, requests: 0 });
 
-function handle(disk: Disk, name: string, o: { permission?: PermissionLike; failWrite?: boolean } = {}): FileHandleLike {
+function handle(disk: Disk, name: string, o: { permission?: PermissionLike; request?: PermissionLike; failQuery?: boolean; failWrite?: boolean } = {}): FileHandleLike {
   return {
     kind: "file",
     name,
@@ -30,10 +30,12 @@ function handle(disk: Disk, name: string, o: { permission?: PermissionLike; fail
       };
     },
     async queryPermission() {
+      if (o.failQuery) throw new Error("poignée périmée");
       return o.permission ?? "granted";
     },
     async requestPermission() {
-      return o.permission ?? "granted";
+      disk.requests += 1;
+      return o.request ?? o.permission ?? "granted";
     },
   };
 }
@@ -136,5 +138,31 @@ describe("hôte Chromium (File System Access)", () => {
     expect(w.calls.save.map((c) => c.suggestedName)).toEqual(["cours.roomboard", "cours.roomboard"]);
     expect(w.calls.save[0]?.types).toEqual(FSA_TYPES);
     expect(FSA_TYPES).toEqual([{ description: "Document RoomBoard", accept: { "application/x-roomboard": [".roomboard"] } }]);
+  });
+
+  it("T79 : permission « prompt » puis « granted » : requestPermission est appelée, la poignée est réécrite sans boîte", async () => {
+    const disk = newDisk();
+    const w = fsaWindow(disk);
+    const h = handle(disk, "cours.roomboard", { permission: "prompt", request: "granted" });
+    const saved = await createFsaHost(w).save(bytes, { kind: "fsa", name: "cours.roomboard", handle: h });
+    expect(saved?.kind === "fsa" && saved.handle === h).toBe(true);
+    expect([disk.requests, w.calls.save.length, disk.writes]).toEqual([1, 0, ["cours.roomboard"]]);
+  });
+
+  it("T79 : permission « prompt » puis « denied » : la boîte d'enregistrement s'ouvre, la poignée n'est pas écrite", async () => {
+    const disk = newDisk();
+    const w = fsaWindow(disk, { saveAs: "autre.roomboard" });
+    const h = handle(disk, "cours.roomboard", { permission: "prompt", request: "denied" });
+    const saved = await createFsaHost(w).save(bytes, { kind: "fsa", name: "cours.roomboard", handle: h });
+    expect([disk.requests, w.calls.save.length, saved?.name]).toEqual([1, 1, "autre.roomboard"]);
+    expect(disk.writes).toEqual(["autre.roomboard"]);
+  });
+
+  it("T79 : queryPermission qui lève (poignée périmée) : la boîte d'enregistrement s'ouvre", async () => {
+    const disk = newDisk();
+    const w = fsaWindow(disk, { saveAs: "autre.roomboard" });
+    const h = handle(disk, "cours.roomboard", { failQuery: true });
+    const saved = await createFsaHost(w).save(bytes, { kind: "fsa", name: "cours.roomboard", handle: h });
+    expect([disk.requests, w.calls.save.length, saved?.name]).toEqual([0, 1, "autre.roomboard"]);
   });
 });
