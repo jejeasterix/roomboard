@@ -165,4 +165,16 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     expect(baseName("/home/j/a.roomboard")).toBe("a.roomboard");
     expect(baseName("seul.roomboard")).toBe("seul.roomboard");
   });
+
+  it("T79 : fermeture, boîte en erreur : la fenêtre reste ouverte (document gardé) et l'erreur est notifiée", async () => {
+    const f = fakes();
+    f.dialog.ask = async () => {
+      throw new Error("boîte indisponible");
+    };
+    createTauriShell(f.dialog, f.win).guardClose(() => true, "Abandonner ?");
+    await f.tick();
+    expect(await f.close()).toBe(true);
+    expect(f.calls.message).toHaveLength(1);
+    expect(f.calls.message[0]?.[0]).toContain("boîte indisponible");
+  });
 });

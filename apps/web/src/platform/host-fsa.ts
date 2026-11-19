@@ -4,6 +4,7 @@
  */
 import {
   ensureExtension,
+  hasErrorName,
   ROOMBOARD_EXTENSION,
   ROOMBOARD_MIME,
   type FileHandleLike,
@@ -27,7 +28,7 @@ export const FSA_TYPES: readonly PickerType[] = [
 ];
 
 export function isAbort(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { name?: unknown }).name === "AbortError";
+  return hasErrorName(e, "AbortError");
 }
 
 async function writable(handle: FileHandleLike): Promise<boolean> {

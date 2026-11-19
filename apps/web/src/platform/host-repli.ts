@@ -47,43 +47,73 @@ export function createFallbackHost(d: FallbackDeps): FileHost {
   };
 }
 
+/** Planifie `cb` dans `ms` ms ; rend l'annulation. */
+export type Schedule = (cb: () => void, ms: number) => () => void;
+
+/** Délai entre le retour du focus sur la page et l'annulation : le `change` d'un vrai choix arrive avant. */
+const FOCUS_CANCEL_MS = 1000;
+
+const timeoutSchedule: Schedule = (cb, ms) => {
+  const id = setTimeout(cb, ms);
+  return () => {
+    clearTimeout(id);
+  };
+};
+
 export function browserFallbackDeps(
   doc: Document,
   urls: UrlApi,
   later: (cb: () => void) => void = (cb) => {
     setTimeout(cb, REVOKE_MS);
   },
+  schedule: Schedule = timeoutSchedule,
 ): FallbackDeps {
   return {
+    /**
+     * Se règle toujours : `change`, `cancel`, ou, pour les navigateurs sans `cancel` (Safari < 16.4, Firefox < 91,
+     * Chrome < 113) et le `click()` sans effet, le retour du focus (ou un geste) sur la page sans `change` dans le
+     * délai. `click()` qui lève : rejet. Dans tous les cas l'input est retiré du DOM et les écouteurs aussi.
+     */
     pickFile(accept: string): Promise<PickedFile | null> {
       return new Promise((resolve, reject) => {
         const input = doc.createElement("input");
         input.type = "file";
         input.accept = accept;
         input.style.display = "none";
-        input.addEventListener(
-          "change",
-          () => {
-            const file = input.files?.[0];
-            input.remove();
-            if (!file) {
-              resolve(null);
-              return;
-            }
-            file.arrayBuffer().then((b) => resolve({ name: file.name, bytes: new Uint8Array(b) }), reject);
-          },
-          { once: true },
-        );
-        input.addEventListener(
-          "cancel",
-          () => {
-            input.remove();
-            resolve(null);
-          },
-          { once: true },
-        );
+        const view = doc.defaultView;
+        let settled = false;
+        let cancelTimer: (() => void) | null = null;
+        const back = (): void => {
+          if (settled || cancelTimer !== null) return;
+          cancelTimer = schedule(() => settle(() => resolve(null)), FOCUS_CANCEL_MS);
+        };
+        const settle = (then: () => void): void => {
+          if (settled) return;
+          settled = true;
+          cancelTimer?.();
+          view?.removeEventListener("focus", back);
+          view?.removeEventListener("pointerdown", back);
+          input.remove();
+          then();
+        };
+        input.addEventListener("change", () => {
+          const file = input.files?.[0];
+          settle(() => {
+            if (!file) resolve(null);
+            else file.arrayBuffer().then((b) => resolve({ name: file.name, bytes: new Uint8Array(b) }), reject);
+          });
+        });
+        input.addEventListener("cancel", () => {
+          settle(() => resolve(null));
+        });
+        view?.addEventListener("focus", back);
+        view?.addEventListener("pointerdown", back);
         doc.body.append(input);
-        input.click();
+        try {
+          input.click();
+        } catch (e) {
+          settle(() => reject(e instanceof Error ? e : new Error(String(e))));
+        }
       });
     },
     download(name: string, bytes: Uint8Array, mime: string): void {

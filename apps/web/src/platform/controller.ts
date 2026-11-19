@@ -96,8 +96,15 @@ export function createFileController(d: FileControllerDeps): FileController {
     await d.shell.notify(`${prefix} : ${messageOf(e)}`);
     return false;
   };
+  let stopClose: (() => void) | null = null;
+  const unguard = (): void => {
+    const stop = stopClose;
+    stopClose = null;
+    stop?.();
+  };
   const leave = (): void => {
     leaving = true;
+    unguard(); // Tauri : sans cela la garde de fermeture survit au rechargement voulu
     d.reload();
   };
   const discardOk = async (): Promise<boolean> => !isDirty() || d.shell.confirm(DISCARD_MESSAGE);
@@ -157,7 +164,7 @@ export function createFileController(d: FileControllerDeps): FileController {
   }
 
   const stopState = d.versions.onState(() => changed());
-  const stopClose = d.shell.guardClose(() => !leaving && isDirty(), DISCARD_MESSAGE);
+  stopClose = d.shell.guardClose(() => !leaving && isDirty(), DISCARD_MESSAGE);
   changed();
 
   async function run(cmd: FileCommand): Promise<boolean> {
@@ -168,6 +175,10 @@ export function createFileController(d: FileControllerDeps): FileController {
       if (cmd === "saveAs") return await save(true);
       if (cmd === "open") return await open();
       return await newDocument();
+    } catch (e) {
+      // notify ou confirm a lui-même échoué : rien d'autre à tenter, on ne laisse pas de rejet non géré.
+      console.warn(`RoomBoard : commande de fichier abandonnée (${messageOf(e)})`);
+      return false;
     } finally {
       busy = false;
     }
@@ -178,7 +189,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     key(e) {
       const cmd = fileCommandOf(e);
       if (cmd === null) return false;
-      if (e.repeat !== true) void run(cmd);
+      if (e.repeat !== true) void run(cmd); // `run` ne rejette jamais
       return true;
     },
     isDirty,
@@ -191,7 +202,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     },
     dispose() {
       stopState();
-      stopClose();
+      unguard();
       listeners.clear();
     },
   };
