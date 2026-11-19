@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPanKey, keyAction, type KeyLike } from "./keys";
+import { editAction, isPanKey, keyAction, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -64,5 +64,21 @@ describe("isPanKey (D17 : espace + glisser)", () => {
   it("autre touche : non", () => {
     expect(isPanKey(k("a"))).toBe(false);
     expect(isPanKey(k("Spacebar"))).toBe(false);
+  });
+});
+
+describe("editAction (D12, CL4-10)", () => {
+  it("Suppr et Retour arrière suppriment, Échap vide", () => {
+    expect(editAction(k("Delete"))).toBe("delete");
+    expect(editAction(k("Backspace"))).toBe("delete");
+    expect(editAction(k("Escape"))).toBe("escape");
+    expect(editAction(k("a"))).toBeNull();
+  });
+  it("rien dans un champ, pendant une composition, avec Ctrl, Cmd ou Alt", () => {
+    expect(editAction(k("Delete", { target: { tagName: "TEXTAREA" } }))).toBeNull();
+    expect(editAction(k("Escape", { isComposing: true }))).toBeNull();
+    expect(editAction(k("Delete", { ctrlKey: true }))).toBeNull();
+    expect(editAction(k("Delete", { metaKey: true }))).toBeNull();
+    expect(editAction(k("Delete", { altKey: true }))).toBeNull();
   });
 });
