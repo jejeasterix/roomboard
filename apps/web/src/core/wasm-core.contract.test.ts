@@ -443,6 +443,24 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     d.free();
   });
 
+  // Constats 4 et 5 de T60 : la pointe de flèche entre dans la collision et les bornes ; l'ellipse n'est plus sa boîte.
+  it("hitTest et bounds : pointe de flèche prise et bornée, coin de la boîte d'une ellipse hors de l'ellipse", () => {
+    const d = f.blank();
+    const p = first(d);
+    const arrow = shape(d, p, "arrow", [0, 0, 100, 0]);
+    expect(d.hitTest(p, 90, 4.5, 0.1)).toBe(arrow);
+    expect(d.hitTest(p, 50, 4.5, 0.1)).toBeNull();
+    const b = d.bounds([arrow]);
+    expect(b?.y1).toBeCloseTo(12 * Math.sin((25 * Math.PI) / 180), 4);
+    expect(b?.y0).toBeCloseTo(-12 * Math.sin((25 * Math.PI) / 180), 4);
+    d.apply({ type: "Delete", ids: [arrow] });
+    const ellipse = shape(d, p, "ellipse", [0, 0, 100, 50]);
+    expect(d.hitTest(p, 1, 1, 1)).toBeNull();
+    expect(d.hitTest(p, 50, 25, 1)).toBe(ellipse);
+    expect(d.bounds([ellipse])).toEqual({ x0: -2, y0: -2, x1: 102, y1: 52 });
+    d.free();
+  });
+
   it("save puis load garde formes, textes et matrices", () => {
     const d = f.blank();
     const p = first(d);

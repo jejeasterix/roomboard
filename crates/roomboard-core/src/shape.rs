@@ -35,6 +35,9 @@ impl ShapeKind {
     }
 }
 
+/// Sommets du polygone inscrit d'une ellipse (CL4-7, constat 5 de T60) ; même nombre dans `shapes.ts`.
+pub const ELLIPSE_VERTICES: usize = 64;
+
 /// (tx, ty, w, h) depuis les deux coins du geste (monde).
 pub fn normalize(kind: ShapeKind, x0: f64, y0: f64, x1: f64, y1: f64) -> (f64, f64, f64, f64) {
     if kind.is_segment() {
@@ -148,5 +151,58 @@ mod tests {
             8,
             "segment nul : carré autour du point"
         );
+    }
+
+    fn vertices(p: &[f32]) -> Vec<(f64, f64)> {
+        p.as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| (f64::from(c[0]), f64::from(c[1])))
+            .collect()
+    }
+
+    /// Constat 4 de T60 : les extrémités des ailes dessinées (`canvas2d.ts`, `arrowHead` : longueur max(12, 3 ×
+    /// épaisseur), ±25° derrière la fin) sont des sommets du polygone ; la ligne et la flèche nulle n'en ont pas.
+    #[test]
+    fn polygon_of_arrow_includes_its_wing_ends() {
+        let p = shape_polygon(ShapeKind::Arrow, 100.0, 0.0, 4.0);
+        let v = vertices(&p);
+        let (lx, ly) = (100.0 - 12.0 * 25f64.to_radians().cos(), 12.0 * 25f64.to_radians().sin());
+        for (wx, wy) in [(lx, ly), (lx, -ly)] {
+            assert!(
+                v.iter().any(|(x, y)| (x - wx).abs() < 1e-4 && (y - wy).abs() < 1e-4),
+                "aile ({wx}, {wy}) absente de {v:?}"
+            );
+        }
+        assert!(crate::ink::hit::point_in_polygon(&p, 90.0, 4.5));
+        assert!(!crate::ink::hit::point_in_polygon(&p, 50.0, 4.5));
+        let thick = vertices(&shape_polygon(ShapeKind::Arrow, 0.0, 200.0, 10.0));
+        assert!(
+            thick
+                .iter()
+                .any(|(x, y)| (x - 30.0 * 25f64.to_radians().sin()).abs() < 1e-4
+                    && (y - (200.0 - 30.0 * 25f64.to_radians().cos())).abs() < 1e-4),
+            "longueur 3 × épaisseur : {thick:?}"
+        );
+        assert_eq!(shape_polygon(ShapeKind::Line, 100.0, 0.0, 4.0).len(), 8);
+        assert_eq!(shape_polygon(ShapeKind::Arrow, 0.0, 0.0, 4.0).len(), 8);
+    }
+
+    /// Constat 5 de T60 (HL4-4, CL4-7 « surface de l'ellipse ») : polygone inscrit de `ELLIPSE_VERTICES` sommets sur
+    /// l'ellipse élargie ; les coins de la boîte n'en sont plus, les extrêmes (bornes) restent exacts.
+    #[test]
+    fn polygon_of_ellipse_follows_the_ellipse() {
+        let p = shape_polygon(ShapeKind::Ellipse, 100.0, 50.0, 4.0);
+        assert_eq!(p.len(), 2 * ELLIPSE_VERTICES);
+        let v = vertices(&p);
+        for (x, y) in &v {
+            let r = ((x - 50.0) / 52.0).powi(2) + ((y - 25.0) / 27.0).powi(2);
+            assert!((r - 1.0).abs() < 1e-5, "({x}, {y}) hors de l'ellipse : {r}");
+        }
+        let (x0, x1) = v.iter().fold((f64::MAX, f64::MIN), |(a, b), (x, _)| (a.min(*x), b.max(*x)));
+        let (y0, y1) = v.iter().fold((f64::MAX, f64::MIN), |(a, b), (_, y)| (a.min(*y), b.max(*y)));
+        assert_eq!((x0, y0, x1, y1), (-2.0, -2.0, 102.0, 52.0));
+        assert!(crate::ink::hit::point_in_polygon(&p, 50.0, 25.0));
+        assert!(!crate::ink::hit::hit_outline(&p, 1.0, 1.0, 1.0), "coin de la boîte");
     }
 }

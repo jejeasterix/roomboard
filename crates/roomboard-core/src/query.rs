@@ -630,6 +630,31 @@ mod tests {
         );
     }
 
+    /// Constats 4 et 5 de T60 : la pointe de flèche est prise et bornée, l'ellipse n'est plus sa boîte.
+    #[test]
+    fn hit_test_and_bounds_follow_arrow_head_and_ellipse() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let one = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let arrow = scaled(&mut d, &p, ShapeKind::Arrow, [0.0, 0.0, 100.0, 0.0], one);
+        assert_eq!(d.hit_test(&p, 90.0, 4.5, 0.1), Some(arrow.clone()));
+        let b = d.bounds(std::slice::from_ref(&arrow)).expect("bornes");
+        assert!(b.y1 > 5.0 && b.y1 < 5.2 && b.y0 < -5.0 && b.y0 > -5.2, "{b:?}");
+        d.apply(Command::Delete { ids: vec![arrow] }).expect("retrait");
+        let ellipse = scaled(&mut d, &p, ShapeKind::Ellipse, [0.0, 0.0, 100.0, 50.0], one);
+        assert_eq!(d.hit_test(&p, 1.0, 1.0, 1.0), None, "coin de la boîte");
+        assert_eq!(d.hit_test(&p, 50.0, 25.0, 1.0), Some(ellipse.clone()));
+        assert_eq!(
+            d.bounds(&[ellipse]),
+            Some(Bounds {
+                x0: -2.0,
+                y0: -2.0,
+                x1: 102.0,
+                y1: 52.0
+            })
+        );
+    }
+
     #[test]
     fn ids_in_rect_and_bounds_include_shapes() {
         let mut d = Document::blank();

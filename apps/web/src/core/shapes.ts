@@ -5,6 +5,8 @@ export const SHAPE_KINDS: readonly ShapeKind[] = ["rect", "ellipse", "line", "ar
 export const isShapeKind = (s: string): s is ShapeKind => (SHAPE_KINDS as readonly string[]).includes(s);
 export const isSegment = (k: ShapeKind): boolean => k === "line" || k === "arrow";
 export const IDENTITY_MATRIX: Matrix = [1, 0, 0, 1, 0, 0];
+/** Sommets du polygone inscrit d'une ellipse (CL4-7, constat 5 de T60) : `ELLIPSE_VERTICES` de `shape.rs`. */
+export const ELLIPSE_VERTICES = 64;
 
 export interface ShapeGeometry {
   readonly tx: number;
