@@ -59,12 +59,17 @@ if node "$script" "$tmp/vide" "$tmp/bonne.json" > "$tmp/out" 2>&1; then echec "c
 grep -q "aucun fichier texte" "$tmp/out" || echec "cas 6 : message absent"
 cas=$((cas + 1))
 
-csp() { printf '{ "app": { "security": { "csp": { "default-src": "'"'"'self'"'"'", "script-src": "'"'"'self'"'"' '"'"'wasm-unsafe-eval'"'"'", %s } } } }\n' "$2" > "$tmp/$1.json"; }
-csp hote-nu '"connect-src": "'"'"'self'"'"' api.example.com *.example.com"'
-printf '{ "app": { "security": { "csp": { "default-src": "'"'"'self'"'"'", "script-src": "'"'"'self'"'"' '"'"'wasm-unsafe-eval'"'"' data: blob:" } } } }\n' > "$tmp/script-data.json"
-printf '{ "app": { "security": { "csp": { "default-src": "'"'"'self'"'"'", "script-src": "'"'"'self'"'"' '"'"'wasm-unsafe-eval'"'"'", "script-src-elem": "'"'"'unsafe-inline'"'"'" } } } }\n' > "$tmp/script-elem.json"
-csp ipc-ailleurs '"img-src": "'"'"'self'"'"' ipc:"'
-csp locaux '"connect-src": "'"'"'self'"'"' ipc: http://ipc.localhost *.localhost 127.0.0.1 localhost:1420", "img-src": "'"'"'self'"'"' data: blob:"'
+conf() { # nom, directives JSON supplémentaires
+  cat > "$tmp/$1.json" <<EOT
+{ "app": { "security": { "csp": { "default-src": "'self'", $2 } } } }
+EOT
+}
+S="'self'"; W="'wasm-unsafe-eval'"
+conf hote-nu "\"script-src\": \"$S $W\", \"connect-src\": \"$S api.example.com *.example.com\""
+conf script-data "\"script-src\": \"$S $W data: blob:\""
+conf script-elem "\"script-src\": \"$S $W\", \"script-src-elem\": \"'unsafe-inline'\""
+conf ipc-ailleurs "\"script-src\": \"$S $W\", \"img-src\": \"$S ipc:\""
+conf locaux "\"script-src\": \"$S $W\", \"connect-src\": \"$S ipc: http://ipc.localhost *.localhost 127.0.0.1 localhost:1420\", \"img-src\": \"$S data: blob:\""
 cp -r "$tmp/propre" "$tmp/proto"
 echo '@import url(//fonts.googleapis.com/css2?family=Inter);' > "$tmp/proto/assets/style.css"
 cp -r "$tmp/propre" "$tmp/majuscules"
@@ -92,4 +97,4 @@ refuse 12 "$tmp/proto" "$tmp/bonne.json" "fonts.googleapis.com"
 refuse 13 "$tmp/majuscules" "$tmp/bonne.json" "cdn.example.com"
 refuse 14 "$tmp/nip" "$tmp/bonne.json" "127.0.0.1.nip.io"
 
-echo "controle-hors-ligne.test.sh" : $cas cas OK"
+echo "controle-hors-ligne.test.sh : $cas cas OK"
