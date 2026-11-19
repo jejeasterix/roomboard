@@ -74,7 +74,8 @@ pub fn apply_transform(t: &Transform, x: f64, y: f64) -> (f64, f64) {
 
 pub fn invert(t: &Transform) -> Option<Transform> {
     let det = t[0] * t[3] - t[1] * t[2];
-    if det.abs() < 1e-12 {
+    // NaN explicite : un déterminant NaN (rang 1 à 1e200, inf - inf) est refusé, comme par la fausse liaison.
+    if det.is_nan() || det.abs() < 1e-12 {
         return None;
     }
     let (a, b, c, d) = (t[3] / det, -t[1] / det, -t[2] / det, t[0] / det);

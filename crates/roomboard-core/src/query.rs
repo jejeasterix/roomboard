@@ -732,6 +732,35 @@ mod tests {
         }
     }
 
+    /// T65 : la gomme partielle sous échelle anisotrope ramène les morceaux en local par `inv` ; leur position MONDE
+    /// reste celle du trait d'origine (un oubli de `inv` les porterait à ×4 en x). Trait monde x de 400 à 2000, gommé
+    /// en 1200 (rayon 5) : le morceau de gauche finit près de 1195, celui de droite commence près de 1205.
+    #[test]
+    fn partial_erase_keeps_pieces_in_place_under_anisotropic_scale() {
+        let (mut d, p, id) = scaled_stroke([4.0, 0.0, 0.0, 0.25, 0.0, 0.0]);
+        let c = d
+            .apply(Command::Erase {
+                page: p,
+                path: vec![1200.0, 0.0],
+                radius: 5.0,
+                mode: EraseMode::Partial,
+            })
+            .expect("gomme");
+        assert_eq!(c.removed, vec![id]);
+        assert_eq!(c.ids.len(), 2, "deux morceaux");
+        let mut bs: Vec<Bounds> = c
+            .ids
+            .iter()
+            .map(|i| d.bounds(std::slice::from_ref(i)).expect("bornes"))
+            .collect();
+        bs.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap());
+        let (left, right) = (&bs[0], &bs[1]);
+        assert!((left.x0 - 400.0).abs() < 10.0, "{left:?}");
+        assert!((left.x1 - 1195.0).abs() < 10.0, "{left:?}");
+        assert!((right.x0 - 1205.0).abs() < 10.0, "{right:?}");
+        assert!((right.x1 - 2000.0).abs() < 10.0, "{right:?}");
+    }
+
     /// Constats 4 et 5 de T60 : la pointe de flèche est prise et bornée, l'ellipse n'est plus sa boîte.
     #[test]
     fn hit_test_and_bounds_follow_arrow_head_and_ellipse() {

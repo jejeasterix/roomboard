@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrowHead } from "../engine/render/canvas2d";
-import { applyMatrix, boxPolygon, composeMatrix, ELLIPSE_VERTICES, isShapeKind, normalizeShape, shapePolygon } from "./shapes";
+import { applyMatrix, arrowWings, boxPolygon, composeMatrix, ELLIPSE_VERTICES, isShapeKind, normalizeShape, shapePolygon } from "./shapes";
 
 describe("shapes (miroir de shape.rs)", () => {
   it("normalizeShape : rectangle et ellipse au coin haut-gauche, tailles positives", () => {
@@ -35,7 +34,7 @@ describe("shapes (miroir de shape.rs)", () => {
   });
 });
 
-// Constats 4 et 5 de T60 : miroir de `shape.rs` ; les ailes sont celles que le rendu dessine (`arrowHead`).
+// Constats 4 et 5 de T60 : miroir de `shape.rs` ; les ailes sont celles de `arrowWings`, que le rendu dessine.
 describe("shapePolygon : pointe de flèche et ellipse (T60)", () => {
   const pairs = (p: number[]): [number, number][] => {
     const out: [number, number][] = [];
@@ -44,9 +43,22 @@ describe("shapePolygon : pointe de flèche et ellipse (T60)", () => {
   };
   const has = (p: number[], x: number, y: number): boolean => pairs(p).some(([a, b]) => Math.abs(a - x) < 1e-9 && Math.abs(b - y) < 1e-9);
 
-  it("les extrémités des ailes dessinées sont des sommets du polygone de la flèche", () => {
+  it("arrowWings : ailes à ±25° derrière la fin, longueur max(12, 3 × épaisseur)", () => {
+    const [x1, y1, x2, y2] = arrowWings(100, 0, 4) ?? [];
+    const l = 12;
+    const a = (25 * Math.PI) / 180;
+    expect(x1).toBeCloseTo(100 - l * Math.cos(a), 9);
+    expect(y1).toBeCloseTo(-l * Math.sin(a), 9);
+    expect(x2).toBeCloseTo(100 - l * Math.cos(a), 9);
+    expect(y2).toBeCloseTo(l * Math.sin(a), 9);
+    const [, , u, v] = arrowWings(0, 50, 10) ?? [];
+    expect(Math.hypot((u ?? 0) - 0, (v ?? 0) - 50)).toBeCloseTo(30, 9);
+    expect(arrowWings(0, 0, 4)).toBeNull();
+  });
+
+  it("les extrémités des ailes sont des sommets du polygone de la flèche", () => {
     for (const [w, h, width] of [[100, 0, 4], [0, 200, 10], [-200, -150, 4], [3, 4, 1]] as const) {
-      const head = arrowHead(w, h, width);
+      const head = arrowWings(w, h, width);
       if (head === null) throw new Error("pointe attendue");
       const p = shapePolygon("arrow", w, h, width);
       expect(has(p, head[0], head[1]), `aile 1 de ${w}, ${h}`).toBe(true);
