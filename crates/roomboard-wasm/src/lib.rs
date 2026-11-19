@@ -485,6 +485,71 @@ mod tests {
         );
     }
 
+    // Lot 4 (T54) : les trois commandes neuves par leurs `_inner`.
+
+    #[test]
+    fn add_shape_inner_reads_back_shape() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let c = d
+            .add_shape_inner(&p, "ellipse", [10.0, 10.0, 30.0, 5.0], "#000000", 4.0, None)
+            .expect("forme");
+        let e = d.core.element(&c.ids[0]).expect("élément");
+        assert_eq!(e.kind, "shape");
+        assert_eq!(
+            e.shape.map(|s| (s.shape, s.w, s.h, s.fill)),
+            Some(("ellipse".to_string(), 20.0, 5.0, None))
+        );
+    }
+
+    #[test]
+    fn add_shape_inner_unknown_kind_is_bad_shape() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        assert_eq!(
+            d.add_shape_inner(&p, "triangle", [0.0, 0.0, 1.0, 1.0], "#000000", 4.0, None),
+            Err(CommandError::BadShape)
+        );
+    }
+
+    #[test]
+    fn set_text_inner_creates_and_removes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .set_text_inner(&p, None, [100.0, 200.0], "Bonjour", "#000000", 36.0, [600.0, 45.0])
+            .expect("texte")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            d.core.element(&id).and_then(|e| e.text).map(|t| t.content),
+            Some("Bonjour".into())
+        );
+        let c = d
+            .set_text_inner(&p, Some(id.clone()), [0.0, 0.0], "", "#000000", 36.0, [600.0, 45.0])
+            .expect("vider");
+        assert_eq!(c.removed, vec![id]);
+    }
+
+    #[test]
+    fn transform_inner_checks_length() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .commit_stroke_inner(&p, &hline(100.0), "#000000", 4.0)
+            .expect("trait")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            d.transform_inner(vec![id.clone()], &[1.0, 0.0, 0.0, 1.0]),
+            Err(CommandError::BadMatrix)
+        );
+        let c = d
+            .transform_inner(vec![id.clone()], &[1.0, 0.0, 0.0, 1.0, 10.0, 0.0])
+            .expect("translation");
+        assert_eq!(c.ids, vec![id]);
+    }
+
     /// Chaque nom désigne sa plateforme (un repli sur `Web` passerait `parse_platform_knows_six_names`).
     #[test]
     fn parse_platform_maps_each_name() {
