@@ -7,7 +7,7 @@ use yrs::{
     TextRef,
 };
 
-use crate::document::{insert_page, Document};
+use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
     apply_transform, compose, invert, out_bytes, out_f64, out_string, out_transform, read_style,
     style_fields, transform_to_any, StrokeStyle, Transform, IDENTITY,
@@ -283,7 +283,7 @@ fn erase_stroke(
 }
 
 /// Rayon de gomme ou épaisseur de trait : fini et strictement positif (NaN refusé).
-fn positive(v: f32) -> bool {
+fn positive(v: f64) -> bool {
     v.is_finite() && v > 0.0
 }
 
@@ -319,6 +319,14 @@ struct Cut {
     pieces: Vec<Vec<InkPoint>>,
 }
 
+/// Les chaînes données, triées et sans doublon.
+fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
+    let mut v: Vec<String> = items.collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
 struct Target {
     elements: ArrayRef,
     index: u32,
@@ -327,6 +335,21 @@ struct Target {
 }
 
 impl Document {
+    /// Éléments trouvés pour des ids dédoublonnés (ordre des ids) ; ids inconnus ignorés.
+    fn find_unique<T: ReadTxn>(&self, txn: &T, ids: &[String]) -> Vec<(String, FoundElement)> {
+        let unique: BTreeSet<&String> = ids.iter().collect();
+        unique
+            .into_iter()
+            .filter_map(|id| Some((id.clone(), self.find_element(txn, id)?)))
+            .collect()
+    }
+
+    fn page_elements_or_err(&self, page: &str) -> Result<ArrayRef, CommandError> {
+        let txn = self.read();
+        self.page_elements(&txn, page)
+            .ok_or_else(|| CommandError::UnknownPage(page.to_string()))
+    }
+
     pub fn apply(&mut self, cmd: Command) -> Result<Change, CommandError> {
         let change = match cmd {
             Command::AddPage { after } => self.cmd_add_page(after.as_deref()),
@@ -398,14 +421,10 @@ impl Document {
         if [tx, ty, w, h].iter().any(|v| !(*v as f32).is_finite()) {
             return Err(CommandError::BadShape);
         }
-        if !positive(style.width) {
+        if !positive(f64::from(style.width)) {
             return Err(CommandError::BadWidth);
         }
-        let elements = {
-            let txn = self.read();
-            self.page_elements(&txn, page)
-        }
-        .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        let elements = self.page_elements_or_err(page)?;
         let id = yrs::uuid_v4().to_string();
         let mut fields: Vec<(&str, In)> = vec![
             ("id", In::from(id.as_str())),
@@ -440,15 +459,13 @@ impl Document {
         if !valid_matrix(m) {
             return Err(CommandError::BadMatrix);
         }
-        let unique: BTreeSet<&String> = ids.iter().collect();
         let targets: Vec<(MapRef, Transform, String, String)> = {
             let txn = self.read();
-            unique
+            self.find_unique(&txn, ids)
                 .into_iter()
-                .filter_map(|id| {
-                    let f = self.find_element(&txn, id)?;
+                .filter_map(|(id, f)| {
                     let t = out_transform(f.element.get(&txn, "transform"))?;
-                    Some((f.element, t, f.page_id, id.clone()))
+                    Some((f.element, t, f.page_id, id))
                 })
                 .collect()
         };
@@ -467,9 +484,7 @@ impl Document {
                 e.insert(&mut txn, "transform", transform_to_any(c));
             }
         }
-        let mut pages: Vec<String> = targets.iter().map(|t| t.2.clone()).collect();
-        pages.sort();
-        pages.dedup();
+        let pages = sorted_unique(targets.iter().map(|t| t.2.clone()));
         let ids = targets.into_iter().map(|t| t.3).collect();
         Ok(self.done(Change {
             pages,
@@ -482,10 +497,9 @@ impl Document {
     /// écriture ; boîte neuve vide ou texte inchangé : aucune transaction (CL4-6, D38) ; texte existant vidé : élément
     /// retiré. Comme `cmd_erase` : plan sous une lecture fermée, puis au plus une écriture.
     fn cmd_set_text(&mut self, t: TextInput<'_>) -> Result<Change, CommandError> {
-        let finite_pos = |v: f64| v.is_finite() && v > 0.0;
-        if !positive(t.size)
-            || !finite_pos(t.box_width)
-            || !finite_pos(t.box_height)
+        if !positive(f64::from(t.size))
+            || !positive(t.box_width)
+            || !positive(t.box_height)
             || !t.x.is_finite()
             || !t.y.is_finite()
         {
@@ -539,11 +553,7 @@ impl Document {
     }
 
     fn insert_text(&mut self, t: &TextInput<'_>) -> Result<Change, CommandError> {
-        let elements = {
-            let txn = self.read();
-            self.page_elements(&txn, t.page)
-        }
-        .ok_or_else(|| CommandError::UnknownPage(t.page.to_string()))?;
+        let elements = self.page_elements_or_err(t.page)?;
         if t.content.is_empty() {
             return Ok(self.unchanged());
         }
@@ -632,14 +642,10 @@ impl Document {
         if flat.len() < 3 || !flat.len().is_multiple_of(3) || flat.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
         }
-        if !positive(style.width) {
+        if !positive(f64::from(style.width)) {
             return Err(CommandError::BadWidth);
         }
-        let elements = {
-            let txn = self.read();
-            self.page_elements(&txn, page)
-        }
-        .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        let elements = self.page_elements_or_err(page)?;
         let (local, (ox, oy)) = to_local(&dedup(&from_flat(flat)));
         let id = yrs::uuid_v4().to_string();
         {
@@ -666,7 +672,7 @@ impl Document {
         if path.len() < 2 || !path.len().is_multiple_of(2) || path.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
         }
-        if !positive(radius) {
+        if !positive(f64::from(radius)) {
             return Err(CommandError::BadRadius);
         }
         // 1. Plan, sous une transaction de lecture, fermée avant toute écriture.
@@ -733,18 +739,15 @@ impl Document {
     }
 
     fn cmd_delete(&mut self, ids: &[String]) -> Result<Change, CommandError> {
-        let unique: BTreeSet<&String> = ids.iter().collect();
         let mut targets: Vec<Target> = {
             let txn = self.read();
-            unique
+            self.find_unique(&txn, ids)
                 .into_iter()
-                .filter_map(|id| {
-                    self.find_element(&txn, id).map(|f| Target {
-                        elements: f.elements,
-                        index: f.index,
-                        page: f.page_id,
-                        id: id.clone(),
-                    })
+                .map(|(id, f)| Target {
+                    elements: f.elements,
+                    index: f.index,
+                    page: f.page_id,
+                    id,
                 })
                 .collect()
         };
@@ -759,9 +762,7 @@ impl Document {
                 t.elements.remove(&mut txn, t.index);
             }
         }
-        let mut pages: Vec<String> = targets.iter().map(|t| t.page.clone()).collect();
-        pages.sort();
-        pages.dedup();
+        let pages = sorted_unique(targets.iter().map(|t| t.page.clone()));
         let removed = targets.into_iter().map(|t| t.id).collect();
         Ok(self.done(Change {
             pages,

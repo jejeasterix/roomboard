@@ -13,6 +13,14 @@ export const textFont = (size: number): string => `${size}px ${TEXT_FONT_FAMILY}
 /** Largeur d'un texte à une taille, en unités monde (= px CSS de la police à cette taille). */
 export type Measure = (text: string, size: number) => number;
 
+/** Mesure par un contexte 2D : la même police que le rendu, puis `measureText`. */
+export const measureWith =
+  (ctx: CanvasRenderingContext2D): Measure =>
+  (text, size) => {
+    ctx.font = textFont(size);
+    return ctx.measureText(text).width;
+  };
+
 export function layoutText(content: string, size: number, boxWidth: number, measure: Measure): string[] {
   const out: string[] = [];
   for (const para of content.split("\n")) {
