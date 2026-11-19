@@ -4,7 +4,7 @@
  * au relâché (D38) ; toute erreur du cœur (dernière page, points invalides…) est attrapée et rendue dans l'état.
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
-import type { Change, Command, CoreDocument, EraseMode, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, CoreDocument, EraseMode, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitPage, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
@@ -18,6 +18,12 @@ export interface EngineState {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly page: string;
+  /** Rang de la page montrée (0 = première) et nombre de pages (D16 : compteur « 3 / 7 »). */
+  readonly pageIndex: number;
+  readonly pageCount: number;
+  /** Éléments sélectionnés (outil Sélection, T55) et leur boîte monde ; vides tant que la sélection n'est pas branchée. */
+  readonly selection: readonly string[];
+  readonly selectionBounds: Bounds | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -65,6 +71,12 @@ export interface Engine {
   panHeld(): boolean;
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
+  /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
+  addPage(): boolean;
+  /** Retire la page montrée, montre la précédente (CL4-9) ; dernière page : refus du cœur dans l'état (D37). */
+  removePage(): boolean;
+  nextPage(): boolean;
+  prevPage(): boolean;
   wheel(e: WheelInput): void;
   resize(width: number, height: number, dpr: number): void;
   camera(): Camera;
@@ -90,6 +102,7 @@ export function createEngine(deps: EngineDeps): Engine {
   const first = doc.pageIds()[0];
   if (first === undefined) throw new Error("document sans page");
   let pageId: string = first;
+  let lastIndex = 0;
   const style = deps.penStyle ?? DEFAULT_PEN_STYLE;
   let camera: Camera = IDENTITY;
   /** Caméra de chaque page quittée (D17 : par page, dans l'interface, jamais dans le document). */
@@ -109,12 +122,17 @@ export function createEngine(deps: EngineDeps): Engine {
   const owner = new Map<number, GestureTool>();
 
   function state(): EngineState {
+    const ids = doc.pageIds();
     return {
       tool,
       eraserMode,
       canUndo: doc.canUndo(),
       canRedo: doc.canRedo(),
       page: pageId,
+      pageIndex: ids.indexOf(pageId),
+      pageCount: ids.length,
+      selection: [],
+      selectionBounds: null,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -131,7 +149,52 @@ export function createEngine(deps: EngineDeps): Engine {
     loop.start();
   }
 
+  function closeAll(how: CloseReason): void {
+    for (const [id, g] of owner) g.close(id, how);
+    owner.clear();
+  }
+
+  /** Montre une page : gestes abandonnés, caméra de la page quittée gardée (D17, HL3b-7), ajustée si jamais vue. */
+  function switchTo(id: string): void {
+    closeAll("abort");
+    cameras.set(pageId, camera);
+    pageId = id;
+    lastIndex = doc.pageIds().indexOf(id);
+    const saved = cameras.get(id);
+    if (saved) {
+      camera = saved;
+    } else if (viewW > 0 && viewH > 0) {
+      camera = fitPage(viewW, viewH);
+      fitted.add(id);
+    } else {
+      camera = IDENTITY;
+    }
+    requestScene();
+  }
+
+  /**
+   * Après une écriture ou annuler / rétablir (CL4-9) : une page apparue est montrée si `showAppeared` ; la page montrée
+   * disparue laisse la précédente (la première si c'était la première).
+   */
+  function followPages(before: readonly string[], showAppeared: boolean): void {
+    const after = doc.pageIds();
+    if (showAppeared) {
+      const appeared = after.find((id) => !before.includes(id));
+      if (appeared !== undefined) {
+        switchTo(appeared);
+        return;
+      }
+    }
+    if (!after.includes(pageId)) {
+      const next = after[Math.min(Math.max(0, lastIndex - 1), after.length - 1)];
+      if (next !== undefined) switchTo(next);
+      return;
+    }
+    lastIndex = after.indexOf(pageId);
+  }
+
   function run(cmd: Command): Change | null {
+    const before = doc.pageIds();
     let change: Change;
     try {
       change = doc.apply(cmd);
@@ -142,22 +205,20 @@ export function createEngine(deps: EngineDeps): Engine {
     }
     renderer.invalidate(change);
     error = null;
+    followPages(before, false);
     requestScene();
     emit();
     return change;
   }
 
   function history(which: KeyAction): void {
+    const before = doc.pageIds();
     const change = which === "undo" ? doc.undo() : doc.redo();
     renderer.invalidate(change);
     error = null;
+    followPages(before, true);
     requestScene();
     emit();
-  }
-
-  function closeAll(how: CloseReason): void {
-    for (const [id, g] of owner) g.close(id, how);
-    owner.clear();
   }
 
   const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run };
@@ -214,7 +275,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
   };
 
-  return {
+  const engine: Engine = {
     sink,
     view,
     tool: () => tool,
@@ -251,21 +312,28 @@ export function createEngine(deps: EngineDeps): Engine {
     showPage(id) {
       if (id === pageId) return true;
       if (!doc.pageIds().includes(id)) return false;
-      closeAll("abort");
-      cameras.set(pageId, camera);
-      pageId = id;
-      const saved = cameras.get(id);
-      if (saved) {
-        camera = saved;
-      } else if (viewW > 0 && viewH > 0) {
-        camera = fitPage(viewW, viewH);
-        fitted.add(id);
-      } else {
-        camera = IDENTITY;
-      }
-      requestScene();
+      switchTo(id);
       emit();
       return true;
+    },
+    addPage() {
+      const id = run({ type: "AddPage", after: pageId })?.pages[0];
+      if (id === undefined) return false;
+      return engine.showPage(id);
+    },
+    removePage() {
+      return run({ type: "RemovePage", page: pageId }) !== null;
+    },
+    nextPage() {
+      const ids = doc.pageIds();
+      const next = ids[ids.indexOf(pageId) + 1];
+      return next !== undefined && engine.showPage(next);
+    },
+    prevPage() {
+      const ids = doc.pageIds();
+      const i = ids.indexOf(pageId);
+      const prev = i > 0 ? ids[i - 1] : undefined;
+      return prev !== undefined && engine.showPage(prev);
     },
     wheel(e) {
       if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
@@ -303,4 +371,5 @@ export function createEngine(deps: EngineDeps): Engine {
       drawnListeners.clear();
     },
   };
+  return engine;
 }
