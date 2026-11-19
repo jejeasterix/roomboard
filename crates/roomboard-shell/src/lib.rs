@@ -1,6 +1,109 @@
 //! Logique de la coque testable sans Tauri (lot 5b, CL5b-13, CL5b-14) : fichiers accordés à la page (dépôt,
 //! lancement), lecture bornée par morceaux, fichiers passés au lancement. Égalité stricte de chemins canoniques de
 //! fichiers : jamais un dossier, jamais une recherche par préfixe (contrairement à la portée de tauri-plugin-fs).
+use std::collections::HashSet;
+use std::fmt;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
+pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
+/// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
+pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard"];
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReadError {
+    NotGranted,
+    TooLarge,
+    Io(String),
+}
+
+impl fmt::Display for ReadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReadError::NotGranted => write!(f, "fichier non accordé"),
+            ReadError::TooLarge => write!(f, "lecture trop grande (8 Mio au plus)"),
+            ReadError::Io(e) => write!(f, "lecture impossible : {e}"),
+        }
+    }
+}
+
+/// Ensemble des chemins canoniques de fichiers ordinaires que la page peut lire.
+#[derive(Default)]
+pub struct GrantedPaths {
+    paths: Mutex<HashSet<PathBuf>>,
+}
+
+impl GrantedPaths {
+    /// Accorde les fichiers ordinaires de `paths` et rend leurs chemins canoniques ; dossiers et absents ignorés.
+    pub fn grant<I: IntoIterator<Item = PathBuf>>(&self, paths: I) -> Vec<PathBuf> {
+        let mut set = self.paths.lock().unwrap_or_else(|e| e.into_inner());
+        let mut kept = Vec::new();
+        for p in paths {
+            let Ok(c) = p.canonicalize() else { continue };
+            if !c.is_file() {
+                continue;
+            }
+            set.insert(c.clone());
+            kept.push(c);
+        }
+        kept
+    }
+
+    /// Chemin canonique de `path` s'il est accordé (égalité stricte, aucune recherche par préfixe).
+    pub fn granted_path(&self, path: &Path) -> Option<PathBuf> {
+        let c = path.canonicalize().ok()?;
+        self.paths
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(&c)
+            .then_some(c)
+    }
+}
+
+fn io(e: std::io::Error) -> ReadError {
+    ReadError::Io(e.to_string())
+}
+
+/// Lit au plus `len` octets à partir de `offset` dans un fichier accordé ; ouvre le chemin canonique vérifié, pas
+/// le chemin reçu.
+pub fn read_granted(
+    g: &GrantedPaths,
+    path: &Path,
+    offset: u64,
+    len: u64,
+) -> Result<Vec<u8>, ReadError> {
+    if len > MAX_CHUNK {
+        return Err(ReadError::TooLarge);
+    }
+    let c = g.granted_path(path).ok_or(ReadError::NotGranted)?;
+    let mut f = File::open(&c).map_err(io)?;
+    f.seek(SeekFrom::Start(offset)).map_err(io)?;
+    let mut buf = Vec::new();
+    f.take(len).read_to_end(&mut buf).map_err(io)?;
+    Ok(buf)
+}
+
+/// Taille d'un fichier accordé.
+pub fn size_granted(g: &GrantedPaths, path: &Path) -> Result<u64, ReadError> {
+    let c = g.granted_path(path).ok_or(ReadError::NotGranted)?;
+    std::fs::metadata(&c).map(|m| m.len()).map_err(io)
+}
+
+/// Arguments du lancement (sans le programme) dont l'extension est associée ; options (`-…`) ignorées.
+pub fn launch_paths<I: IntoIterator<Item = String>>(args: I, extensions: &[&str]) -> Vec<PathBuf> {
+    args.into_iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(PathBuf::from)
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
+        })
+        .collect()
+}
 
 #[cfg(test)]
 mod tests {
@@ -30,7 +133,10 @@ mod tests {
         let d = dir("refused");
         let f = d.join("b.roomboard");
         fs::write(&f, b"x").unwrap();
-        assert_eq!(read_granted(&GrantedPaths::default(), &f, 0, 1), Err(ReadError::NotGranted));
+        assert_eq!(
+            read_granted(&GrantedPaths::default(), &f, 0, 1),
+            Err(ReadError::NotGranted)
+        );
     }
 
     /// Distingue le patron interdit (portée par dossier de tauri-plugin-fs, `scope_dropped_paths`) : un dossier
@@ -66,7 +172,10 @@ mod tests {
         fs::write(&f, b"x").unwrap();
         let g = GrantedPaths::default();
         g.grant([f.clone()]);
-        assert_eq!(read_granted(&g, &f, 0, MAX_CHUNK + 1), Err(ReadError::TooLarge));
+        assert_eq!(
+            read_granted(&g, &f, 0, MAX_CHUNK + 1),
+            Err(ReadError::TooLarge)
+        );
         assert_eq!(read_granted(&g, &f, 0, MAX_CHUNK).unwrap(), b"x");
     }
 
@@ -88,7 +197,10 @@ mod tests {
         fs::write(&f, b"ok").unwrap();
         let g = GrantedPaths::default();
         g.grant([f.clone()]);
-        assert_eq!(read_granted(&g, &d.join("x").join("..").join("f.roomboard"), 0, 2).unwrap(), b"ok");
+        assert_eq!(
+            read_granted(&g, &d.join("x").join("..").join("f.roomboard"), 0, 2).unwrap(),
+            b"ok"
+        );
     }
 
     #[cfg(unix)]
@@ -134,7 +246,10 @@ mod tests {
         let g = GrantedPaths::default();
         g.grant([f.clone()]);
         assert_eq!(size_granted(&g, &f), Ok(5));
-        assert_eq!(size_granted(&GrantedPaths::default(), &f), Err(ReadError::NotGranted));
+        assert_eq!(
+            size_granted(&GrantedPaths::default(), &f),
+            Err(ReadError::NotGranted)
+        );
     }
 
     #[test]
@@ -147,10 +262,19 @@ mod tests {
 
     #[test]
     fn launch_paths_keeps_associated_extensions() {
-        let args = ["--flag", "/x/Cours.RoomBoard", "/x/photo.png", "/x/b.roomboard"].map(String::from);
+        let args = [
+            "--flag",
+            "/x/Cours.RoomBoard",
+            "/x/photo.png",
+            "/x/b.roomboard",
+        ]
+        .map(String::from);
         assert_eq!(
             launch_paths(args, ASSOCIATED_EXTENSIONS),
-            vec![PathBuf::from("/x/Cours.RoomBoard"), PathBuf::from("/x/b.roomboard")]
+            vec![
+                PathBuf::from("/x/Cours.RoomBoard"),
+                PathBuf::from("/x/b.roomboard")
+            ]
         );
     }
 }
