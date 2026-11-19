@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EngineState } from "../engine/engine";
 import { createSettingsStore, DEFAULT_SETTINGS, type EffectiveEchelons } from "../engine/settings";
-import { barModel, mountBar, mountSettings, settingsModel } from "./barre";
+import { barModel, editionModel, mountBar, mountEdition, mountSettings, pagesLabel, settingsModel, stageTags } from "./barre";
 
 const base: EngineState = {
   tool: "pen",
@@ -205,5 +205,85 @@ describe("mountSettings", () => {
     const last = root.children.at(-1);
     expect(last?.id).toBe("echelons-notes");
     expect(last?.textContent).toBe("échelon inconnu : 7");
+  });
+});
+
+describe("ligne d'édition (CL4-13)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("editionModel : six outils puis quatre actions de page ; libellés", () => {
+    expect(editionModel(base).map((b) => [b.action, b.label])).toEqual([
+      ["select", "Sélection"],
+      ["rect", "Rectangle"],
+      ["ellipse", "Ellipse"],
+      ["line", "Ligne"],
+      ["arrow", "Flèche"],
+      ["text", "Texte"],
+      ["page-prev", "Page précédente"],
+      ["page-next", "Page suivante"],
+      ["page-add", "Ajouter une page"],
+      ["page-remove", "Retirer la page"],
+    ]);
+    expect(editionModel({ ...base, tool: "ellipse" }).map((b) => b.pressed)).toEqual([
+      false, false, true, false, false, false, null, null, null, null,
+    ]);
+  });
+
+  it("editionModel : bords de page et dernière page désactivés", () => {
+    const dis = (s: EngineState) => editionModel(s).slice(6).map((b) => b.disabled);
+    expect(dis({ ...base, pageIndex: 0, pageCount: 1 })).toEqual([true, true, false, true]);
+    expect(dis({ ...base, pageIndex: 0, pageCount: 3 })).toEqual([true, false, false, false]);
+    expect(dis({ ...base, pageIndex: 1, pageCount: 3 })).toEqual([false, false, false, false]);
+    expect(dis({ ...base, pageIndex: 2, pageCount: 3 })).toEqual([false, true, false, false]);
+  });
+
+  it("stageTags : page, sélection, boîte au dixième, outil ; pagesLabel", () => {
+    const s: EngineState = {
+      ...base,
+      tool: "select",
+      pageIndex: 1,
+      pageCount: 3,
+      selection: ["a", "b"],
+      selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
+    };
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen" });
+    expect(pagesLabel(s)).toBe("2 / 3");
+  });
+
+  it("mountEdition : boutons puis compteur #pages ; un clic appelle le moteur", () => {
+    const root = new FakeNode(NONE);
+    vi.stubGlobal("document", { createElement: () => new FakeNode(NONE) });
+    const calls: string[] = [];
+    const state: EngineState = { ...base, pageIndex: 0, pageCount: 2 };
+    mountEdition(root as unknown as HTMLElement, {
+      setTool: (t) => calls.push(`tool ${t}`),
+      addPage: () => {
+        calls.push("add");
+        return true;
+      },
+      removePage: () => {
+        calls.push("remove");
+        return true;
+      },
+      nextPage: () => {
+        calls.push("next");
+        return true;
+      },
+      prevPage: () => {
+        calls.push("prev");
+        return true;
+      },
+      state: () => state,
+      onState: () => () => {},
+    });
+    expect(root.children.map((c) => c.dataset["action"] ?? c.id)).toEqual([
+      "select", "rect", "ellipse", "line", "arrow", "text", "page-prev", "page-next", "page-add", "page-remove", "pages",
+    ]);
+    expect(root.children.at(-1)?.textContent).toBe("1 / 2");
+    for (const a of ["rect", "text", "page-add", "page-next", "page-prev", "page-remove"]) {
+      root.children.find((c) => c.dataset["action"] === a)?.click();
+    }
+    expect(calls).toEqual(["tool rect", "tool text", "add", "next", "prev", "remove"]);
   });
 });
