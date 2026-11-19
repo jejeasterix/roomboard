@@ -10,9 +10,10 @@ use yrs::{
     Transact, Transaction, TransactionMut, Update,
 };
 
+use crate::commands::{read_shape, read_text};
 use crate::element::{
-    out_f64, out_string, out_transform, read_style, ElementView, PageView, StrokeStyle,
-    DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    out_f64, out_string, out_transform, read_style, ElementView, PageView, ShapeView, StrokeStyle,
+    TextView, DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
@@ -180,11 +181,42 @@ impl Document {
         let txn = self.doc.transact();
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
+        let kind = out_string(e.get(&txn, "kind"))?;
+        let transform = out_transform(e.get(&txn, "transform"))?;
+        let (style, shape, text) = match kind.as_str() {
+            "shape" => {
+                let s = read_shape(&txn, e)?;
+                let view = ShapeView {
+                    shape: s.kind.as_str().to_string(),
+                    w: s.w,
+                    h: s.h,
+                    fill: s.fill,
+                };
+                (s.style, Some(view), None)
+            }
+            "text" => {
+                let t = read_text(&txn, e)?;
+                let view = TextView {
+                    content: t.content,
+                    size: t.size,
+                    box_width: t.box_width,
+                    box_height: t.box_height,
+                };
+                let style = StrokeStyle {
+                    color: t.color,
+                    width: 0.0,
+                };
+                (style, None, Some(view))
+            }
+            _ => (read_style(&txn, e)?, None, None),
+        };
         Some(ElementView {
             id: id.to_string(),
-            kind: out_string(e.get(&txn, "kind"))?,
-            transform: out_transform(e.get(&txn, "transform"))?,
-            style: read_style(&txn, e)?,
+            kind,
+            transform,
+            style,
+            shape,
+            text,
         })
     }
 

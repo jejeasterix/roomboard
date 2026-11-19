@@ -7,7 +7,10 @@ import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactorie
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
+import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { LiveLayer, PageView, Renderer } from "./render/renderer";
+import { createSelectTool } from "./tools/select";
+import { createShapeTool } from "./tools/shape";
 import type { GestureTool, ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
@@ -41,8 +44,10 @@ class FakeRenderer implements Renderer {
   readonly lives: LiveLayer[] = [];
   readonly sizes: number[][] = [];
   readonly changes: Change[] = [];
-  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>): void {
+  readonly overlays: (EditOverlay | undefined)[] = [];
+  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay?: EditOverlay): void {
     this.scenes.push({ page, camera, hidden: [...hidden] });
+    this.overlays.push(overlay);
   }
   drawLive(live: LiveLayer): void {
     this.lives.push(live);
@@ -358,5 +363,264 @@ describe("createEngine", () => {
     engine.sink.begin(1, "pen", [sample]);
     for (let i = 0; i < 3700; i++) frames.tick();
     expect(engine.frameDurations()).toHaveLength(3600);
+  });
+
+  it("addPage : insère après la page montrée et la montre", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    expect(engine.addPage()).toBe(true);
+    const [, p2] = doc.pageIds();
+    expect(engine.state()).toMatchObject({ page: p2, pageIndex: 1, pageCount: 2 });
+    expect(engine.prevPage()).toBe(true);
+    expect(engine.state().page).toBe(p1);
+    expect(engine.addPage()).toBe(true);
+    const ids = doc.pageIds();
+    expect(ids).toHaveLength(3);
+    expect(ids[2]).toBe(p2);
+    expect(engine.state()).toMatchObject({ page: ids[1], pageIndex: 1 });
+  });
+
+  it("removePage de la page montrée : la précédente est montrée (CL4-9)", () => {
+    const { doc, engine } = setup();
+    engine.addPage();
+    engine.addPage();
+    const [p1, p2, p3] = doc.pageIds();
+    engine.showPage(p2 ?? "");
+    expect(engine.removePage()).toBe(true);
+    expect(doc.pageIds()).toEqual([p1, p3]);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 0, pageCount: 2, error: null });
+  });
+
+  it("removePage de la première page : la nouvelle première est montrée", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    engine.showPage(p1);
+    expect(engine.removePage()).toBe(true);
+    expect(engine.state().page).toBe(doc.pageIds()[0]);
+    expect(engine.state().pageCount).toBe(1);
+  });
+
+  it("removePage sur la dernière page : refus dans l'état, rien ne change (D37)", () => {
+    const { engine } = setup();
+    const p = engine.state().page;
+    expect(engine.removePage()).toBe(false);
+    expect(engine.state()).toMatchObject({ page: p, pageCount: 1, error: "la dernière page ne se supprime pas" });
+  });
+
+  it("annuler l'ajout montre la page précédente, rétablir la remontre", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    const p2 = engine.state().page;
+    engine.undo();
+    expect(doc.pageIds()).toEqual([p1]);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 0, pageCount: 1, error: null });
+    engine.redo();
+    expect(engine.state()).toMatchObject({ page: p2, pageIndex: 1, pageCount: 2 });
+  });
+
+  it("annuler le retrait remontre la page avec ses éléments", () => {
+    const { engine } = setup();
+    engine.addPage();
+    const p2 = engine.state().page;
+    engine.run({ type: "CommitStroke", page: p2, points: new Float32Array([10, 10, 0.5, 20, 20, 0.5]), style: PEN });
+    engine.removePage();
+    expect(engine.state().page).not.toBe(p2);
+    engine.undo();
+    expect(engine.state()).toMatchObject({ page: p2, elementCount: 1 });
+  });
+
+  it("retirer une page garde sa caméra : annuler le retrait rend sa vue", () => {
+    const { engine } = setup();
+    engine.resize(1280, 720, 1);
+    engine.addPage();
+    engine.view.panBy(40, 0);
+    const cam = engine.camera();
+    engine.removePage();
+    engine.undo();
+    expect(engine.camera()).toEqual(cam);
+  });
+
+  it("nextPage et prevPage s'arrêtent aux bords", () => {
+    const { engine } = setup();
+    expect(engine.nextPage()).toBe(false);
+    expect(engine.prevPage()).toBe(false);
+    engine.addPage();
+    expect(engine.nextPage()).toBe(false);
+    expect(engine.prevPage()).toBe(true);
+    expect(engine.prevPage()).toBe(false);
+    expect(engine.nextPage()).toBe(true);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, selection: [], selectionBounds: null });
+  });
+
+  function editSetup() {
+    const doc = fakeCore.blank();
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    const leaves: string[] = [];
+    let select: ReturnType<typeof createSelectTool> | null = null;
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", [], ctx),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => {
+        const s = createSelectTool(ctx);
+        const leave = s.leave?.bind(s);
+        select = { ...s, leave: (r) => { leaves.push(`select ${r}`); leave?.(r); } };
+        return select;
+      },
+      shape: (ctx, kind, style) => createShapeTool(ctx, kind, style),
+    };
+    const engine = createEngine({ doc, renderer, frames, tools });
+    const page = engine.state().page;
+    const rect = (x0: number, y0: number, x1: number, y1: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0, y0, x1, y1, style: PEN, fill: null }).ids[0] ?? "";
+    const sel = () => {
+      if (!select) throw new Error("outil Sélection absent");
+      return select;
+    };
+    return { doc, frames, renderer, engine, page, rect, sel, leaves };
+  }
+
+  it("outils d'édition absents : outils inertes, sélection vide", () => {
+    const { engine } = setup();
+    engine.setTool("select");
+    expect(() => {
+      engine.sink.begin(1, "select", [sample]);
+      engine.sink.close(1, "end");
+      engine.sink.begin(2, "text", [sample]);
+      engine.sink.close(2, "end");
+    }).not.toThrow();
+    expect(engine.state()).toMatchObject({ tool: "select", selection: [], selectionBounds: null });
+  });
+
+  it("le geste d'une forme va à l'outil de la forme : une AddShape au relâché", () => {
+    const { engine, doc, page } = editSetup();
+    engine.sink.begin(1, "ellipse", [{ ...sample, x: 10, y: 10 }]);
+    engine.sink.extend(1, [{ ...sample, x: 110, y: 60 }], []);
+    engine.sink.close(1, "end");
+    const id = doc.elementIds(page)[0] ?? "";
+    expect(doc.element(id)).toMatchObject({ kind: "shape", shape: { shape: "ellipse", w: 100, h: 50 } });
+  });
+
+  it("calque d'édition : passé à drawScene, scène redessinée quand il change", () => {
+    const { engine, frames, renderer, rect, sel } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    sel().setSelection([a]);
+    engine.view.panBy(0, 0);
+    frames.tick();
+    expect(renderer.overlays.at(-1)).toMatchObject({ handles: true, frame: { x0: 98, y0: 98, x1: 202, y1: 202 } });
+    const n = renderer.scenes.length;
+    sel().setSelection([]);
+    engine.sink.begin(1, "select", [{ ...sample, x: 500, y: 500 }]);
+    frames.tick();
+    expect(renderer.scenes.length).toBe(n + 1);
+    expect(renderer.overlays.at(-1)).toMatchObject({ band: { x0: 500, y0: 500, x1: 500, y1: 500 } });
+    expect(renderer.overlays.at(-1)).not.toBe(EMPTY_OVERLAY);
+  });
+
+  it("Suppr supprime la sélection en une étape ; annuler la rend", () => {
+    const { engine, doc, page, rect, sel } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    const b = rect(400, 100, 500, 200);
+    sel().setSelection([a, b]);
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([]);
+    expect(engine.state().selection).toEqual([]);
+    engine.undo();
+    expect(doc.elementIds(page)).toEqual([a, b]);
+  });
+
+  it("Suppr ou Échap sans sélection : touche laissée à la page ; Suppr dans un champ : rien", () => {
+    const { engine, doc, page, rect, sel } = editSetup();
+    expect(engine.key(key("Delete"))).toBe(false);
+    expect(engine.key(key("Escape"))).toBe(false);
+    const a = rect(100, 100, 200, 200);
+    sel().setSelection([a]);
+    expect(engine.key(key("Delete", { target: { tagName: "TEXTAREA" } }))).toBe(false);
+    expect(doc.elementIds(page)).toEqual([a]);
+  });
+
+  it("Échap vide la sélection sans écrire", () => {
+    const { engine, doc, rect, sel } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    sel().setSelection([a]);
+    const v = doc.version();
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(engine.state().selection).toEqual([]);
+    expect(doc.version()).toBe(v);
+  });
+
+  it("changer d'outil ou de page fait quitter l'outil (leave) et vide la sélection", () => {
+    const { engine, rect, sel, leaves } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    engine.setTool("select");
+    sel().setSelection([a]);
+    engine.setTool("pen");
+    expect(leaves).toContain("select tool");
+    expect(engine.state().selection).toEqual([]);
+    sel().setSelection([a]);
+    engine.addPage();
+    expect(leaves).toContain("select page");
+    expect(engine.state().selection).toEqual([]);
+  });
+
+  it("Maj suivie : ctx.shift() vrai entre keydown et keyup, faux après releaseKeys ; la touche n'est pas prise", () => {
+    let seen: ToolContext | null = null;
+    const doc = fakeCore.blank();
+    const engine = createEngine({
+      doc,
+      renderer: new FakeRenderer(),
+      frames: new Frames(),
+      tools: {
+        pen: (ctx) => {
+          seen = ctx;
+          return fakeTool("pen", [], ctx);
+        },
+        eraser: (ctx) => fakeTool("eraser", [], ctx),
+      },
+    });
+    const shift = (): boolean => (seen as ToolContext | null)?.shift?.() === true;
+    expect(engine.key(key("Shift", { shiftKey: true }))).toBe(false);
+    expect(shift()).toBe(true);
+    expect(engine.keyUp(key("Shift"))).toBe(false);
+    expect(shift()).toBe(false);
+    engine.key(key("Shift", { shiftKey: true }));
+    engine.releaseKeys();
+    expect(shift()).toBe(false);
+  });
+
+  it("ctx.requestFrame() redessine la scène (outil à l'arrêt)", () => {
+    let seen: ToolContext | null = null;
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    createEngine({
+      doc: fakeCore.blank(),
+      renderer,
+      frames,
+      tools: {
+        pen: (ctx) => {
+          seen = ctx;
+          return fakeTool("pen", [], ctx);
+        },
+        eraser: (ctx) => fakeTool("eraser", [], ctx),
+      },
+    });
+    frames.tick();
+    const n = renderer.scenes.length;
+    (seen as ToolContext | null)?.requestFrame?.();
+    frames.tick();
+    expect(renderer.scenes.length).toBe(n + 1);
+  });
+
+  it("état : sélection et boîte de la sélection ; un geste de sélection émet l'état", () => {
+    const { engine, rect } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    const states: number[] = [];
+    engine.onState((s) => states.push(s.selection.length));
+    engine.sink.begin(1, "select", [{ ...sample, x: 150, y: 150 }]);
+    engine.sink.close(1, "end");
+    expect(states).toEqual([1]);
+    expect(engine.state()).toMatchObject({ selection: [a], selectionBounds: { x0: 98, y0: 98, x1: 202, y1: 202 } });
   });
 });

@@ -2,6 +2,7 @@
 // une dérive de forme entre Rust et TS lève une erreur au lieu de passer sous un `as`.
 import type { Bounds, Change, Command, CoreDocument, CoreFactory, ElementView, Matrix, StrokeBuilderApi, StrokeStyle } from "./api";
 import type * as Wasm from "../wasm/roomboard_wasm";
+import { isShapeKind } from "./shapes";
 
 export type WasmModule = Pick<typeof Wasm, "Document" | "StrokeBuilder" | "version">;
 
@@ -22,7 +23,7 @@ export function toElementView(v: unknown): ElementView | null {
   if (v === null || v === undefined) return null;
   if (!isRecord(v)) throw new Error("ElementView invalide");
   const { id, kind, transform, style } = v;
-  if (typeof id !== "string" || kind !== "stroke" || !isNumbers(transform) || transform.length !== 6 || !isRecord(style)) {
+  if (typeof id !== "string" || !isNumbers(transform) || transform.length !== 6 || !isRecord(style)) {
     throw new Error("ElementView invalide");
   }
   const [a, b, c, d, e, f] = transform;
@@ -31,8 +32,28 @@ export function toElementView(v: unknown): ElementView | null {
   }
   const { color, width } = style;
   if (typeof color !== "string" || typeof width !== "number") throw new Error("ElementView invalide");
-  const matrix: Matrix = [a, b, c, d, e, f];
-  return { id, kind, transform: matrix, style: { color, width } };
+  const base = { id, transform: [a, b, c, d, e, f] as Matrix, style: { color, width } };
+  if (kind === "stroke") return { ...base, kind };
+  if (kind === "shape") {
+    const s = v["shape"];
+    if (!isRecord(s)) throw new Error("ElementView invalide");
+    const { shape, w, h, fill } = s;
+    if (typeof shape !== "string" || !isShapeKind(shape) || typeof w !== "number" || typeof h !== "number") {
+      throw new Error("ElementView invalide");
+    }
+    if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error("ElementView invalide");
+    return { ...base, kind, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null } };
+  }
+  if (kind === "text") {
+    const t = v["text"];
+    if (!isRecord(t)) throw new Error("ElementView invalide");
+    const { content, size, boxWidth, boxHeight } = t;
+    if (typeof content !== "string" || typeof size !== "number" || typeof boxWidth !== "number" || typeof boxHeight !== "number") {
+      throw new Error("ElementView invalide");
+    }
+    return { ...base, kind, text: { content, size, boxWidth, boxHeight } };
+  }
+  throw new Error("ElementView invalide");
 }
 
 export function toBounds(v: unknown): Bounds | null {
@@ -58,6 +79,17 @@ class WasmCoreDocument implements CoreDocument {
       case "CommitStroke": return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width));
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
+      case "AddShape":
+        return toChange(
+          this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined),
+        );
+      case "SetText":
+        // Avec un id, `page`, `x` et `y` ne placent rien (la position passe par Transform), comme la fausse liaison.
+        return toChange(
+          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight),
+        );
+      case "Transform":
+        return toChange(this.d.transform([...cmd.ids], new Float64Array(cmd.matrix)));
     }
   }
 

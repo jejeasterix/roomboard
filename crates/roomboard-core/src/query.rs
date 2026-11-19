@@ -5,13 +5,14 @@
 
 use std::rc::Rc;
 
-use yrs::{Array, Map, Out};
+use yrs::{Array, Map, MapRef, Out, ReadTxn};
 
-use crate::commands::{read_stroke, world_to_local_path};
+use crate::commands::{read_shape, read_stroke, read_text, similarity_scale, world_to_local_path};
 use crate::document::Document;
-use crate::element::{apply_transform, invert, out_string, Transform};
+use crate::element::{apply_transform, out_string, out_transform, Transform};
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
+use crate::shape::{box_polygon, shape_polygon};
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Bounds {
@@ -36,7 +37,7 @@ impl Bounds {
     }
 }
 
-struct StrokeGeom {
+struct Geom {
     id: String,
     transform: Transform,
     outline: Rc<[f32]>,
@@ -63,6 +64,33 @@ fn world_bounds(t: &Transform, poly: &[f32]) -> Option<Bounds> {
         })
 }
 
+/// Contour local porté en monde ; les sommets non finis (séparateurs) sont recopiés tels quels, pour que la règle
+/// pair-impair et la distance aux arêtes les traitent comme dans le repère local.
+fn world_outline(t: &Transform, poly: &[f32]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(poly.len());
+    for c in poly.as_chunks::<2>().0 {
+        if c[0].is_finite() && c[1].is_finite() {
+            let (x, y) = apply_transform(t, f64::from(c[0]), f64::from(c[1]));
+            out.extend([x as f32, y as f32]);
+        } else {
+            out.extend(c);
+        }
+    }
+    out
+}
+
+/// Le chemin monde de la gomme touche-t-il le trait (contour local `outline` placé par `t`) à `radius` monde près (T63) ?
+/// Similitude de facteur s : chemin ramené en local, rayon r / s, exact, sur le contour en cache (T17) sans le recopier
+/// (mesure du banc de `hit_test_path` inchangée). Autre matrice (échelle anisotrope, cisaillement), où aucun rayon local
+/// n'est exact : le contour est porté en monde et la distance s'y mesure, comme `hit_test` (constat 1 de T60).
+pub(crate) fn path_hits_stroke(t: &Transform, outline: &[f32], path: &[f32], radius: f32) -> bool {
+    match similarity_scale(t) {
+        Some(s) => world_to_local_path(t, path)
+            .is_some_and(|lp| path_hits_outline(outline, &lp, (f64::from(radius) / s) as f32)),
+        None => path_hits_outline(&world_outline(t, outline), path, radius),
+    }
+}
+
 impl Document {
     pub fn stroke_points(&self, id: &str) -> Option<Vec<InkPoint>> {
         let txn = self.read();
@@ -77,58 +105,85 @@ impl Document {
         Some(self.cached_outline(id, &style, &pts).to_vec())
     }
 
-    /// Traits de la page, du dessous vers le dessus ; contours pris dans le cache du document.
-    fn stroke_geoms(&self, page: &str) -> Vec<StrokeGeom> {
-        let txn = self.read();
-        let Some(elements) = self.page_elements(&txn, page) else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        for o in elements.iter(&txn) {
-            let Out::YMap(e) = o else { continue };
-            let Some((transform, style, pts)) = read_stroke(&txn, &e) else {
-                continue;
-            };
-            let id = out_string(e.get(&txn, "id")).unwrap_or_default();
+    /// Géométrie locale d'un élément pour la collision et les bornes : contour en cache (trait), polygone (forme),
+    /// boîte (texte).
+    fn element_geom<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Geom> {
+        let id = out_string(e.get(txn, "id")).unwrap_or_default();
+        if let Some((transform, style, pts)) = read_stroke(txn, e) {
             let outline = self.cached_outline(&id, &style, &pts);
-            out.push(StrokeGeom {
+            return Some(Geom {
                 id,
                 transform,
                 outline,
             });
         }
-        out
+        let transform = out_transform(e.get(txn, "transform"))?;
+        if let Some(t) = read_text(txn, e) {
+            return Some(Geom {
+                id,
+                transform,
+                outline: box_polygon(t.box_width, t.box_height).into(),
+            });
+        }
+        let s = read_shape(txn, e)?;
+        Some(Geom {
+            id,
+            transform,
+            outline: shape_polygon(s.kind, s.w, s.h, s.style.width).into(),
+        })
     }
 
-    /// Élément le plus haut sous (x, y) monde, à `tol` près.
+    /// Éléments de la page, du dessous vers le dessus ; `strokes_only` : traits seuls (gomme, D12).
+    fn geoms(&self, page: &str, strokes_only: bool) -> Vec<Geom> {
+        let txn = self.read();
+        let Some(elements) = self.page_elements(&txn, page) else {
+            return Vec::new();
+        };
+        elements
+            .iter(&txn)
+            .filter_map(|o| match o {
+                Out::YMap(e) => Some(e),
+                _ => None,
+            })
+            .filter(|e| {
+                !strokes_only || out_string(e.get(&txn, "kind")).as_deref() == Some("stroke")
+            })
+            .filter_map(|e| self.element_geom(&txn, &e))
+            .collect()
+    }
+
+    /// Élément le plus haut sous (x, y) monde, à `tol` près, `tol` en unités monde comme dans la fausse liaison
+    /// (constat 1 de T60) : le contour est porté en monde et la distance aux arêtes s'y mesure, exacte pour toute
+    /// matrice (échelle anisotrope, cisaillement), là où diviser `tol` par un seul facteur d'échelle ne l'est pas. Le
+    /// test « dedans » (pair-impair) ne dépend pas du repère.
     pub fn hit_test(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<String> {
-        self.stroke_geoms(page)
+        self.geoms(page, false)
             .into_iter()
             .rev()
             .find(|g| {
-                invert(&g.transform).is_some_and(|inv| {
-                    let (lx, ly) = apply_transform(&inv, x, y);
-                    hit_outline(&g.outline, lx as f32, ly as f32, tol)
-                })
+                hit_outline(
+                    &world_outline(&g.transform, &g.outline),
+                    x as f32,
+                    y as f32,
+                    tol,
+                )
             })
             .map(|g| g.id)
     }
 
-    /// Traits touchés par un chemin (gomme d'objet, aperçu D38), dans l'ordre d'empilement.
+    /// Traits touchés par un chemin (gomme d'objet, aperçu D38), dans l'ordre d'empilement ; chemin et `radius` en
+    /// unités monde (T63), comme `Erase`.
     pub fn hit_test_path(&self, page: &str, path: &[f32], radius: f32) -> Vec<String> {
-        self.stroke_geoms(page)
+        self.geoms(page, true)
             .into_iter()
-            .filter(|g| {
-                world_to_local_path(&g.transform, path)
-                    .is_some_and(|lp| path_hits_outline(&g.outline, &lp, radius))
-            })
+            .filter(|g| path_hits_stroke(&g.transform, &g.outline, path, radius))
             .map(|g| g.id)
             .collect()
     }
 
     /// Éléments entièrement inclus dans le rectangle monde (D15).
     pub fn ids_in_rect(&self, page: &str, rect: Bounds) -> Vec<String> {
-        self.stroke_geoms(page)
+        self.geoms(page, false)
             .into_iter()
             .filter(|g| world_bounds(&g.transform, &g.outline).is_some_and(|b| rect.contains(&b)))
             .map(|g| g.id)
@@ -143,10 +198,10 @@ impl Document {
             let Some(found) = self.find_element(&txn, id) else {
                 continue;
             };
-            let Some((t, style, pts)) = read_stroke(&txn, &found.element) else {
+            let Some(g) = self.element_geom(&txn, &found.element) else {
                 continue;
             };
-            if let Some(b) = world_bounds(&t, &self.cached_outline(id, &style, &pts)) {
+            if let Some(b) = world_bounds(&g.transform, &g.outline) {
                 acc = Some(match acc {
                     Some(a) => a.union(b),
                     None => b,
@@ -479,6 +534,360 @@ mod tests {
             hits.len(),
             start.elapsed(),
             again.len()
+        );
+    }
+
+    use crate::shape::ShapeKind;
+
+    fn rect_at(d: &mut Document, p: &str, c: [f64; 4]) -> String {
+        d.apply(Command::AddShape {
+            page: p.into(),
+            shape: ShapeKind::Rect,
+            x0: c[0],
+            y0: c[1],
+            x1: c[2],
+            y1: c[3],
+            style: pen(),
+            fill: None,
+        })
+        .expect("rect")
+        .ids[0]
+            .clone()
+    }
+
+    #[test]
+    fn hit_test_finds_shape_interior() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        assert_eq!(
+            d.hit_test(&p, 700.0, 650.0, 1.0),
+            Some(id),
+            "intérieur sans remplissage (CL4-7)"
+        );
+        assert_eq!(d.hit_test(&p, 900.0, 650.0, 1.0), None);
+    }
+
+    fn scaled(d: &mut Document, p: &str, kind: ShapeKind, c: [f64; 4], m: Transform) -> String {
+        let id = d
+            .apply(Command::AddShape {
+                page: p.into(),
+                shape: kind,
+                x0: c[0],
+                y0: c[1],
+                x1: c[2],
+                y1: c[3],
+                style: pen(),
+                fill: None,
+            })
+            .expect("forme")
+            .ids[0]
+            .clone();
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: m,
+        })
+        .expect("échelle");
+        id
+    }
+
+    /// Constat 1 de T60 : `tol` est en unités monde, comme dans la fausse liaison. Le patron écarté (point ramené en
+    /// local, `tol` appliquée en local) prendrait le clic à 20 du bord à ×4 et raterait la ligne à 2,9 à ×0,05.
+    #[test]
+    fn hit_test_tolerance_is_in_world_units_under_scale() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let big = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Rect,
+            [0.0, 0.0, 100.0, 50.0],
+            [4.0, 0.0, 0.0, 4.0, 0.0, 0.0],
+        );
+        assert_eq!(d.hit_test(&p, 412.0, 100.0, 6.0), Some(big.clone()));
+        assert_eq!(d.hit_test(&p, 428.0, 100.0, 6.0), None, "20 du bord à ×4");
+        d.apply(Command::Delete { ids: vec![big] })
+            .expect("retrait");
+        let thin = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Line,
+            [0.0, 0.0, 1000.0, 0.0],
+            [0.05, 0.0, 0.0, 0.05, 0.0, 0.0],
+        );
+        assert_eq!(
+            d.hit_test(&p, 25.0, 3.0, 6.0),
+            Some(thin.clone()),
+            "ligne à ×0,05 prise à 2,9"
+        );
+        assert_eq!(d.hit_test(&p, 25.0, 10.0, 6.0), None);
+        d.apply(Command::Delete { ids: vec![thin] })
+            .expect("retrait");
+        let flat = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Rect,
+            [0.0, 0.0, 100.0, 50.0],
+            [4.0, 0.0, 0.0, 0.25, 0.0, 0.0],
+        );
+        assert_eq!(
+            d.hit_test(&p, 200.0, 18.0, 6.0),
+            Some(flat.clone()),
+            "anisotrope : 5 au-dessus du bord monde"
+        );
+        assert_eq!(
+            d.hit_test(&p, 428.0, 6.0, 6.0),
+            None,
+            "anisotrope : 20 à droite"
+        );
+    }
+
+    /// Trait horizontal y = 0, x de 100 à 500 (un point tous les 10), épaisseur 4, puis la matrice `m`.
+    fn scaled_stroke(m: Transform) -> (Document, String, String) {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let pts: Vec<f32> = (0..=40)
+            .flat_map(|i| [100.0 + i as f32 * 10.0, 0.0, 0.5])
+            .collect();
+        let id = d
+            .apply(Command::CommitStroke {
+                page: p.clone(),
+                points: pts,
+                style: pen(),
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: m,
+        })
+        .expect("échelle");
+        (d, p, id)
+    }
+
+    /// T63 : le rayon de `hit_test_path` et de la gomme (d'objet et partielle) est en unités monde, l'épaisseur du trait
+    /// suit sa matrice. Le patron écarté (chemin ramené en local, rayon appliqué en local) mordrait à 20 du trait à ×4
+    /// (5 en local) et raterait le trait à 4 à ×0,05 (80 en local).
+    #[test]
+    fn eraser_radius_is_in_world_units_under_scale() {
+        let cases: [(Transform, f32, f32, f32); 2] = [
+            ([4.0, 0.0, 0.0, 4.0, 0.0, 0.0], 1200.0, 9.0, 20.0),
+            ([0.05, 0.0, 0.0, 0.05, 0.0, 0.0], 15.0, 4.0, 6.0),
+        ];
+        for (m, x, near, far) in cases {
+            for (y, touched) in [(near, true), (far, false)] {
+                let (d, p, id) = scaled_stroke(m);
+                let want = if touched { vec![id.clone()] } else { vec![] };
+                assert_eq!(
+                    d.hit_test_path(&p, &[x, y], 5.0),
+                    want,
+                    "hit_test_path ×{} à {y}",
+                    m[0]
+                );
+                for mode in [EraseMode::Object, EraseMode::Partial] {
+                    let (mut d, p, id) = scaled_stroke(m);
+                    let c = d
+                        .apply(Command::Erase {
+                            page: p,
+                            path: vec![x, y],
+                            radius: 5.0,
+                            mode,
+                        })
+                        .expect("gomme");
+                    let want = if touched { vec![id] } else { vec![] };
+                    assert_eq!(c.removed, want, "Erase ×{} à {y}", m[0]);
+                }
+            }
+        }
+    }
+
+    /// T63 : sous une matrice anisotrope, aucun rayon local n'est exact ; `hit_test_path` mesure en monde, sur le contour
+    /// porté en monde (comme `hit_test`). Trait à [4, 0, 0, 0,25] : demi-épaisseur monde verticale ≤ 0,5. Diviser le rayon
+    /// par la racine du déterminant (1) ou par la plus grande valeur singulière raterait le trait à 5 ; la gomme partielle
+    /// coupe avec la plus petite demi-épaisseur monde (0,25 × 2) : touché à 5, pas à 5,6.
+    #[test]
+    fn eraser_measures_in_world_under_anisotropic_scale() {
+        let m = [4.0, 0.0, 0.0, 0.25, 0.0, 0.0];
+        let (d, p, id) = scaled_stroke(m);
+        assert_eq!(d.hit_test_path(&p, &[1200.0, 5.0], 5.0), vec![id.clone()]);
+        assert_eq!(
+            d.hit_test_path(&p, &[1200.0, 5.6], 5.0),
+            Vec::<String>::new()
+        );
+        for (y, touched) in [(5.0, true), (5.6, false)] {
+            let (mut d, p, id) = scaled_stroke(m);
+            let c = d
+                .apply(Command::Erase {
+                    page: p,
+                    path: vec![1200.0, y],
+                    radius: 5.0,
+                    mode: EraseMode::Partial,
+                })
+                .expect("gomme");
+            assert_eq!(c.removed.is_empty(), !touched, "partielle à {y}");
+            if touched {
+                assert_eq!(c.removed, vec![id]);
+            }
+        }
+    }
+
+    /// T65 : la gomme partielle sous échelle anisotrope ramène les morceaux en local par `inv` ; leur position MONDE
+    /// reste celle du trait d'origine (un oubli de `inv` les porterait à ×4 en x). Trait monde x de 400 à 2000, gommé
+    /// en 1200 (rayon 5) : le morceau de gauche finit près de 1195, celui de droite commence près de 1205.
+    #[test]
+    fn partial_erase_keeps_pieces_in_place_under_anisotropic_scale() {
+        let (mut d, p, id) = scaled_stroke([4.0, 0.0, 0.0, 0.25, 0.0, 0.0]);
+        let c = d
+            .apply(Command::Erase {
+                page: p,
+                path: vec![1200.0, 0.0],
+                radius: 5.0,
+                mode: EraseMode::Partial,
+            })
+            .expect("gomme");
+        assert_eq!(c.removed, vec![id]);
+        assert_eq!(c.ids.len(), 2, "deux morceaux");
+        let mut bs: Vec<Bounds> = c
+            .ids
+            .iter()
+            .map(|i| d.bounds(std::slice::from_ref(i)).expect("bornes"))
+            .collect();
+        bs.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap());
+        let (left, right) = (&bs[0], &bs[1]);
+        assert!((left.x0 - 400.0).abs() < 10.0, "{left:?}");
+        assert!((left.x1 - 1195.0).abs() < 10.0, "{left:?}");
+        assert!((right.x0 - 1205.0).abs() < 10.0, "{right:?}");
+        assert!((right.x1 - 2000.0).abs() < 10.0, "{right:?}");
+    }
+
+    /// Constats 4 et 5 de T60 : la pointe de flèche est prise et bornée, l'ellipse n'est plus sa boîte.
+    #[test]
+    fn hit_test_and_bounds_follow_arrow_head_and_ellipse() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let one = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let arrow = scaled(&mut d, &p, ShapeKind::Arrow, [0.0, 0.0, 100.0, 0.0], one);
+        assert_eq!(d.hit_test(&p, 90.0, 4.5, 0.1), Some(arrow.clone()));
+        let b = d.bounds(std::slice::from_ref(&arrow)).expect("bornes");
+        assert!(
+            b.y1 > 5.0 && b.y1 < 5.2 && b.y0 < -5.0 && b.y0 > -5.2,
+            "{b:?}"
+        );
+        d.apply(Command::Delete { ids: vec![arrow] })
+            .expect("retrait");
+        let ellipse = scaled(&mut d, &p, ShapeKind::Ellipse, [0.0, 0.0, 100.0, 50.0], one);
+        assert_eq!(d.hit_test(&p, 1.0, 1.0, 1.0), None, "coin de la boîte");
+        assert_eq!(d.hit_test(&p, 50.0, 25.0, 1.0), Some(ellipse.clone()));
+        assert_eq!(
+            d.bounds(&[ellipse]),
+            Some(Bounds {
+                x0: -2.0,
+                y0: -2.0,
+                x1: 102.0,
+                y1: 52.0
+            })
+        );
+    }
+
+    #[test]
+    fn ids_in_rect_and_bounds_include_shapes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        assert_eq!(
+            d.bounds(std::slice::from_ref(&id)),
+            Some(Bounds {
+                x0: 598.0,
+                y0: 598.0,
+                x1: 802.0,
+                y1: 702.0
+            })
+        );
+        assert_eq!(
+            d.ids_in_rect(
+                &p,
+                Bounds {
+                    x0: 590.0,
+                    y0: 590.0,
+                    x1: 810.0,
+                    y1: 710.0
+                }
+            ),
+            vec![id]
+        );
+        assert!(d
+            .ids_in_rect(
+                &p,
+                Bounds {
+                    x0: 600.0,
+                    y0: 600.0,
+                    x1: 810.0,
+                    y1: 710.0
+                }
+            )
+            .is_empty());
+    }
+
+    #[test]
+    fn hit_test_path_ignores_shapes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        assert!(d
+            .hit_test_path(&p, &[600.0, 650.0, 800.0, 650.0], 10.0)
+            .is_empty());
+    }
+
+    #[test]
+    fn bounds_follow_transform() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: [2.0, 0.0, 0.0, 2.0, 0.0, 0.0],
+        })
+        .expect("échelle");
+        assert_eq!(
+            d.bounds(&[id]),
+            Some(Bounds {
+                x0: 1196.0,
+                y0: 1196.0,
+                x1: 1604.0,
+                y1: 1404.0
+            })
+        );
+    }
+
+    #[test]
+    fn hit_test_and_bounds_include_text() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .apply(Command::SetText {
+                page: p.clone(),
+                id: None,
+                x: 100.0,
+                y: 200.0,
+                content: "Bonjour".into(),
+                color: "#000000".into(),
+                size: 36.0,
+                box_width: 600.0,
+                box_height: 45.0,
+            })
+            .expect("texte")
+            .ids[0]
+            .clone();
+        assert_eq!(d.hit_test(&p, 300.0, 220.0, 1.0), Some(id.clone()));
+        assert_eq!(
+            d.bounds(&[id]),
+            Some(Bounds {
+                x0: 100.0,
+                y0: 200.0,
+                x1: 700.0,
+                y1: 245.0
+            })
         );
     }
 }

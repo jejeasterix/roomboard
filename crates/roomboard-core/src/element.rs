@@ -27,11 +27,45 @@ pub struct PageView {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ShapeView {
+    pub shape: String,
+    pub w: f64,
+    pub h: f64,
+    pub fill: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ElementView {
     pub id: String,
     pub kind: String,
     pub transform: Transform,
     pub style: StrokeStyle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<ShapeView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<TextView>,
+}
+
+/// Texte d'un élément (D14) ; le contenu vient du `Y.Text` de l'élément.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextView {
+    pub content: String,
+    pub size: f32,
+    pub box_width: f64,
+    pub box_height: f64,
+}
+
+/// `m ∘ t` : applique `t` puis `m` (Transform du lot 4, CL4-8).
+pub fn compose(m: &Transform, t: &Transform) -> Transform {
+    [
+        m[0] * t[0] + m[2] * t[1],
+        m[1] * t[0] + m[3] * t[1],
+        m[0] * t[2] + m[2] * t[3],
+        m[1] * t[2] + m[3] * t[3],
+        m[0] * t[4] + m[2] * t[5] + m[4],
+        m[1] * t[4] + m[3] * t[5] + m[5],
+    ]
 }
 
 pub fn apply_transform(t: &Transform, x: f64, y: f64) -> (f64, f64) {
@@ -40,7 +74,8 @@ pub fn apply_transform(t: &Transform, x: f64, y: f64) -> (f64, f64) {
 
 pub fn invert(t: &Transform) -> Option<Transform> {
     let det = t[0] * t[3] - t[1] * t[2];
-    if det.abs() < 1e-12 {
+    // NaN explicite : un déterminant NaN (rang 1 à 1e200, inf - inf) est refusé, comme par la fausse liaison.
+    if det.is_nan() || det.abs() < 1e-12 {
         return None;
     }
     let (a, b, c, d) = (t[3] / det, -t[1] / det, -t[2] / det, t[0] / det);

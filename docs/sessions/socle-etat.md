@@ -1,14 +1,14 @@
 # État — socle
 
-Statut : arrêté entre deux lots — lot 3b clos (OD4 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
+Statut : arrêté entre deux lots — lot 4 clos (OD17 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
-Avancement : 4/6 lots clos — clos : 1, 2, 3, 3b · à faire : 4, 5
-Avancement lot 5a (OD19) : clos — 12/12 tâches (T70-T81) ; prochaine tâche : plan du lot 5b après la fusion du lot 4
-Étage : 3 (entre deux lots) — depuis 2026-11-19 21:00
+Avancement : 5/6 lots clos — clos : 1, 2, 3, 3b, 4 (et 5a) · à faire : 5b
+Étage : 3 (entre deux lots) — depuis 2026-11-20 00:15
+Avancement lot 5a (OD19) : clos — 12/12 tâches (T70-T81) ; prochaine tâche : plan du lot 5b (lot 4 fusionné)
 Questions à Jérôme : —
-Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot3b   Base : origin/main @ 37b5af3 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
-Branche principale locale au lancement : 37b5af3 (lot 3b)
+Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot4   Base : origin/main @ 5341564 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
+Branche principale locale au lancement : 5341564 (lot 4)
 Cadrage : docs/plans/socle-cadrage.md   Plan(s) : docs/plans/socle-PLAN.md (maître), docs/plans/socle-lot1-PLAN.md (lot 1), docs/plans/socle-lot2-PLAN.md (lot 2, T7-T16), docs/plans/socle-lot3-PLAN.md (lot 3, T17-T26, 4 vagues : T17+T18+T26 ; T19+T20+T23 ; T21+T22+T25 ; T24)
 
 ## Référence
@@ -56,6 +56,12 @@ Fin de lot : relectures conformité + qualité (rendu ; entrées) sans bloquant,
 Preuve du lot 3b (orchestrateur, tête bc4111e) : verifier.sh rc=0 — Rust 117+3+3+14 (2 ignorés : mesures), web 23 fichiers / 319 tests ; S2 lot 3 16 `ok`, `S2 lot 3 : OK` ; S2 lot 3b `OK (4 passages)` (réglages effectifs 2:off,3:off,4:off · 2:on · 3:on · 4:on ; WebGL2 par SwiftShader, repli prouvé par Vitest seulement) ; captures docs/essais/s2-lot3b-{defaut,2,3,4}.png.
 Coque Linux : build release complet 19 min 25 (CARGO_BUILD_JOBS=2, pic 1,32 Go RSS, .deb 3,2 Mo) ; reconstruction avec le web final 58 s (pic 0,79 Go) ; sous Broadway (shim DPI 96, hors dépôt) la coque trace, gomme, annule ; barre à deux lignes visible ; capture docs/essais/coque-linux-lot3b.png.
 
+## Tâches (lot 4)
+Plan : docs/plans/socle-lot4-PLAN.md (T45-T59 ; vagues : 1 = T45-T48 · 2 = T49-T53 · 3 = T54-T57 · 4 = T58, T59). Premier planificateur mort à mi-écriture (processus arrêté vers 22:00) : sections T56-T59 écrites par un second (2cab00e). Relecture du plan 1/3, menée en parallèle de la vague 1 (temps compté) : aucun bloquant ; 1 majeur (T51 : Maj tenue avant une poignée → corrigé dans le prompt de T51, test ajouté) ; mineurs : ellipse prise sur toute sa boîte (fermé par T60), `commun.mjs` recopie S2 (constat, lot 5), comptes de T45.
+Référence lot 4 (5341564, 22:05) : verifier.sh rc=0 en 1 min 46, pic 0,59 Go — web 24 fichiers / 319 tests.
+T45 cœur Transform/AddShape (44ba12a) · T46 contrat TS, fausse liaison, calque (4c5470f ; concepteur-critique, mutation « translation seule » rouge) · T47 pages (7034866) · T48 mise en lignes, poignées (1a3f7ab) · T49 SetText Y.Text, S3/S4 cœur (6bd9659 ; concepteur-critique) · T50 rendu formes/texte/calque (89b8d22) · T51 sélection (aab3b96) · T52 formes (44d901f) · T53 texte + IME (da7be85 ; concepteur-critique, mutation `composing` rouge) · T54 liaison Wasm (e0a1424 ; concepteur-critique, contrat 48) · T55 moteur branché (c96a162) · T56 zone de saisie (134d69a) · T57 script S3/S4 (c82b40a) · T58 barre `#edition`, S3/S4 vert (9229524) · T59 fiche ENI (468d8d4). Toutes : 1 essai, preuves rejouées par l'orchestrateur sur la tête de chaque vague.
+Fin de lot, tour 1 (4 relecteurs : conformité ; qualité cœur ; qualité contrat/outils ; qualité moteur/app) : aucun bloquant, 5 majeurs (script S3/S4 affaibli par T58 ; prise par l'intérieur abandonnée ; texte remis en lignes à chaque image ; poignées sur petite sélection ; tolérance de collision monde/local) → T60 (géométrie, parité, flèche, ellipse, matrices composées), T61 (cache des lignes, poignées, texte inchangé, emoji, zoom 2), T62 (mousedown seulement pour l'outil Texte : Entrée redéclenchait « Ajouter une page » ; script S3/S4 remis au niveau du plan, 60 `ok`), T63 (gomme et hitTestPath en unités monde ; banc 1 000 traits 12,8-17,7 ms contre 10,4-19,2 avant).
+Tour 2 (conformité ; qualité) : constats du tour 1 fermés sauf 2 majeurs (poignées : axes inversés et coins sur petit cadre ; texte relu sans changement invisible faute d'image redemandée) → T64 (hitHandle partagé, `requestFrame`, script 68 `ok`, texte « Bonjour »), T65 (déterminant NaN refusé, gomme partielle anisotrope testée, alias arrowHead retiré). T66 simplification (fd71d8e ; tests inchangés). Deux tours de correctifs : borne atteinte.
 ## Tâches (lot 5a)
 Plan : docs/plans/socle-lot5a-PLAN.md (T70-T78, vagues : 1 = T70, T71 · 2 = T72-T76 · 3 = T77 · fin = T78 orchestrateur ; T79-T81 correctifs de fin de lot). Lot 5 découpé en 5a (fichiers et coque) et 5b (SolidJS, barre en profils, barre des pages, Playwright `--e2e`, association `.roomboard`, Cmd+Q macOS) dans socle-PLAN.md. Mené par OD19 sur `feat/socle-lot5a`, en parallèle du lot 4 (OD17) ; aucun fichier sous `engine/` ni `ui/`.
 Référence (5341564, 21:15) : verifier.sh rc=0 en 5 min 18 — Rust 117+3+3+14 (2 ignorés), web 24 fichiers / 319 tests.
@@ -65,6 +71,10 @@ Choix tranchés (plan, « Choix tranchés ») : Ouvrir recharge la page (fichier
 Fin de lot : double relecture (conformité ; qualité web ; qualité coque et scripts) sans bloquant, 3 majeurs + 15 mineurs fermés par T79/T80 ; tour 2 sans majeur, 3 mineurs + 1 simplification fermés par T81. Consigné : carte d'impact du cadrage non complétée des fichiers neufs de `platform/` (le plan les porte) ; `serve`/`loadPlaywright` recopiés de s2-navigateur.mjs (mise en commun au 5b).
 Preuve du lot 5a : voir « Scénarios et captures (lot 5a) ».
 Correctif après fusion (PR #5, signalé par le cadrage de l'usage OD21, U24) : `plugins.fs.scopeDroppedPaths: false` dans `tauri.conf.json` (tauri-plugin-fs 2.7.1 ajoutait tout chemin déposé à sa portée, dossiers compris : lisible et inscriptible par la page) ; exigé par `controle-hors-ligne.mjs` dans `verifier.sh` (16 cas). Le dépôt réel d'un dossier n'est pas jouable sous Broadway : à essayer au lot 5b (HU2-13).
+
+Preuve du lot 4 (orchestrateur, tête df81224 après fusion de origin/main = lot 5a) : verifier.sh rc=0, `verifier.sh : OK` — Rust cœur 152 (2 ignorés : mesures), web 552 tests ; S2 lot 3 `OK` ; S2 lot 3b `OK (4 passages)` ; S3/S4 lot 4 `OK` (68 `ok —`, IME par CDP `Input.imeSetComposition`, 6 `non couvert —`) ; Fichiers lot 5a `OK (3 modes)`. Captures docs/essais/s34-lot4-{selection,forme-texte,pages}.png.
+Coque Linux lot 4 : build release avec cache 4 min 32 (CARGO_BUILD_JOBS=2, pic 1,41 Go RSS, .deb 3,53 Mio) ; chauffe avant fusion 14 min 47 (pic 1,25 Go). Sous Broadway (shim DPI 96, hors dépôt) : page ouverte, barre `#edition`, trait, rectangle, sélection + déplacement, texte « Bonjour », Ajouter une page (2 / 2), Ctrl+Z (1 / 1) ; fermeture par ✕ avec la question « modifications non enregistrées » (lot 5a). Capture docs/essais/coque-linux-lot4.png. À voir : la 3e ligne de barre recouvre le haut du canvas (Broadway ou réel : non tranché ; barre remplacée au lot 5b).
+Fusion de origin/main (lot 5a, 1bdca2a) dans la branche : 2 conflits (imports de main.ts ; ce fichier) résolus en gardant les deux côtés.
 
 ## Scénarios et captures (lot 5a)
 Essai fichiers au navigateur (VM, Chromium headless, `scripts/essais/fichiers-navigateur.mjs`, CSP de la coque en en-tête) : `Fichiers lot 5a : OK (3 modes)` (détection, fsa, repli) — tracer, Ctrl+S, recharger (page vide), ouvrir : même empreinte des pixels d'encre, nom repris, aucune requête hors de 127.0.0.1 ; captures docs/essais/fichiers-lot5a-{repli,fsa}.png. S2 lot 3 OK ; S2 lot 3b OK (4 passages).
@@ -83,6 +93,9 @@ S1 (VM, partie automatique) — réussi 11:20 : Chromium headless, trait souris,
 - T1 : quand le stylet se pose, tout geste `touch` actif est annulé (`cancelTouches`), lecture stricte de D18 ; le plan laissait tracer une paume posée avant le stylet.
 
 ## Hypothèses à revoir
+HL4-1 : la `<textarea>` coupe ses lignes à quelques pixels près de `layoutText` (même police, même largeur).
+HL4-3 : IME jouée seulement dans Chromium headless par CDP `Input.imeSetComposition` ; ni IME réelle Windows/macOS/Android, ni fenêtre de candidats, ni WebKit.
+HL4-2 caduque (T60 : tolérance en unités monde des deux côtés) ; HL4-4 fermée (T60 : ellipse en polygone de 64 sommets, pointe de flèche dans le polygone).
 Voir le cadrage § 4 (dont H1-9 : pas de CI tant qu'aucun runner n'est enregistré pour ce dépôt).
 H2-13b Profil release `opt-level="s"` + `lto` exigé par le plan : grossit le .wasm de 22 808 octets (+1,7 %) ; à retirer ou essayer `"z"`.
 
@@ -90,7 +103,7 @@ H2-13b Profil release `opt-level="s"` + `lto` exigé par le plan : grossit le .w
 ouvertes : — · passées : —
 
 ## Reprise (prochaine tâche)
-0. **Prochaine tâche du plan : écrire le plan du lot 4** (`docs/plans/socle-lot4-PLAN.md`, planificateur) depuis la ligne 4 de `socle-PLAN.md` (sélection, déplacer, redimensionner, formes, texte IME, pages) et le cadrage ; y reprendre HL3b-7 (retirer la page affichée, caméra par page).
+0. **Prochaine tâche du plan : écrire le plan du lot 5b** (`docs/plans/socle-lot5b-PLAN.md`, planificateur) : SolidJS (DA1), barre en profils (DA10) qui remplace les barres DOM `#outils`/`#reglages`/`#edition`, barre des pages ; y reprendre les constats d'architecture du lot 4 (module commun des scripts d'essai, `Intl.Segmenter`, sélection après Suppr + Ctrl+Z, zone de texte qui suit le zoom CL4-15).
 1. Essai ENI du samedi 2026-11-21 (vérification, plus un préalable) : `docs/essais/eni-stylet.md`, § « Lot 3b : comparer les réglages » ; selon le verdict, changer un défaut dans `apps/web/src/engine/settings.ts` (un seul endroit) et revoir H2-12.
 2. Essais de plateforme non bloquants : Windows (Edge, WebView2) par la file du PC, confiés par le pilote ; macOS (Safari, Chrome) ; Android en attente de KVM. Rien de mesuré sous WebKit ni au vrai stylet.
 3. Runner self-hosted `[self-hosted, linux, vm]` à enregistrer avant toute CI.
@@ -109,6 +122,13 @@ Paquet Linux Tauri construit à 12:08 : `RoomBoard_0.1.0_amd64.deb`, 3,07 Mo, 2 
 Relecture 11:25 : 1 bloquant (canvas déformé quand le panneau grandit : encre 26 px au-dessus de la pointe à 1200×800), 4 importants, mineurs → T6c. T6c mergée : le fichier docs/essais/proto-stylet.html est corrigé et sert à l'essai ENI. Lot 1 clos (fin de lot faite, sans simplification séparée : T6c a fait emitClose/pressureOf).
 
 ## Constats d'architecture
+mineur · lot 4 · apps/web/src/core/fake-core.ts · `strokeHalfWidth` prend la plus petite valeur singulière : sous une échelle anisotrope, la fausse liaison diffère du cœur (contour exact) pour bounds, hitTestPath, gomme d'objet ; le contrat ne couvre que les similitudes.
+mineur · lot 4 · crates/roomboard-core/src/query.rs · `hit_test` recopie chaque contour en monde à chaque appel (allocation par élément, même en identité) alors que `path_hits_stroke` a une voie directe pour les similitudes : deux stratégies ; non mesuré.
+mineur · lot 4 · apps/web/src/engine/text-layout.ts · coupe par point de code : drapeaux, séquences ZWJ et teintes encore coupés (`Intl.Segmenter` au lot 5).
+mineur · lot 4 · Suppr puis Ctrl+Z : la sélection n'est pas rendue (comportement du moteur, à trancher au lot 5).
+mineur · lot 4 · `set_text_inner` (wasm) garde `#[allow(clippy::too_many_arguments)]` (10 arguments sinon).
+anti-refactorisation · duplication · apps/web/src/app/barre.ts · `mountEdition` reprend la boucle de `mountBar` (non net : barre remplacée au lot 5).
+anti-refactorisation · duplication · scripts/essais/commun.mjs · reprend `loadPlaywright`, `serve`, `ink` de `s2-navigateur.mjs` sans migrer S2 → lot 5.
 mineur · banc · apps/web/src/app/banc.ts:99 · le panneau ne résume que les 600 dernières images sans le dire (l'export JSON garde tout) ; `banc.test.ts` ne distingue pas `slice(-n)` de `slice(0, n)` → à reprendre au lot 3b.
 anti-refactorisation · duplication · apps/web/src/app/banc.ts, apps/web/src/main.ts · `fmt`, export JSON et suivi du devicePixelRatio recopiés de `proto/stylet.ts` (non exportés : pas nette) → les sortir dans un petit module au lot 5.
 performance · moteur · apps/web/src/engine/engine.ts · `frameDurations()` copie toute la liste, jamais vidée (banc borné à 600 images par T28 ; plafond à poser dans le moteur).
@@ -122,6 +142,7 @@ mineur · lot 3b · `badColors` et `lost` (WebGL2) ne sont lus par aucune barre 
 mineur · lot 3b · perte et restauration du contexte WebGL2 testées sur faux contexte seulement.
 
 ## Pièges trouvés
+- 2026-11-19 22:20 : un worktree `roomboard-wt/socle-lot5a` (branche `feat/socle-lot5a` @ 5341564) existe, créé hors de cette session : ne pas y toucher ; attention au rebase si un lot 5a est fusionné avant le lot 4.
 - Orchestrateur en `claude -p` : un sous-agent qui lance sa suite en `run_in_background` et finit son tour n'est jamais réveillé (T30, T37 du lot 3b) : exiger le premier plan avec `timeout: 600000`.
 - GTK Broadway : `gdk_screen_get_resolution()` rend −1, WebKitGTK en tire un devicePixelRatio négatif (page hors champ) ; `broadwayd` plante si on tue un client : fermer la fenêtre par son ✕.
 - Le garde-arrêt refuse `kill` sur un processus lancé détaché (`&` dans un sous-shell) : lancer en `run_in_background`.

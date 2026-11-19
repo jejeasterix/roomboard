@@ -1,10 +1,12 @@
 /**
+ * Lot 4 : outils d'édition, zone de saisie du texte, ligne `#edition` ; attributs du scénario S3/S4 sur `#stage`.
  * Amorce de l'application (lot 3, étendue au lot 3b) : cœur Wasm, moteur d'interaction, barre minimale en DOM simple
  * (remplacée au lot 5 par l'interface SolidJS). Réglages du moteur lus dans l'adresse (`?echelons=`, `?paume=`,
  * `?doigt=`, engine/settings.ts) puis changés par la barre ; état effectif publié dans `#stage[data-echelons]` (S2).
  * `?banc` ajoute le banc du lot 1 rejoué (géométrie du produit).
  */
-import { mountBar, mountSettings } from "./app/barre";
+import { mountBar, mountEdition, mountSettings, stageTags } from "./app/barre";
+import { createTextEditor } from "./app/text-editor";
 import { createWasmCore } from "./core/wasm-core";
 import { createEngine, DEFAULT_PEN_STYLE, type EngineState } from "./engine/engine";
 import type { KeyLike } from "./engine/input/keys";
@@ -23,8 +25,12 @@ import {
   resolvePrediction,
   type EffectiveEchelons,
 } from "./engine/settings";
+import { measureWith, type Measure } from "./engine/text-layout";
 import { createEraserTool } from "./engine/tools/eraser";
 import { createPenTool } from "./engine/tools/pen";
+import { createSelectTool } from "./engine/tools/select";
+import { createShapeTool } from "./engine/tools/shape";
+import { createTextTool, type TextTool } from "./engine/tools/text";
 import { prepareFiles } from "./platform/mount";
 import init, * as wasm from "./wasm/roomboard_wasm";
 
@@ -63,6 +69,12 @@ async function start(): Promise<void> {
     doc,
     parsed.settings.webgl === "on",
   );
+  // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
+  // Zone de saisie hors de #stage (CL4-2) ; l'outil Texte est créé par le moteur, après elle.
+  let textTool: TextTool | null = null;
+  const editor = createTextEditor(document.body, () => textTool);
   const engine = createEngine({
     doc,
     renderer: choice.renderer,
@@ -71,7 +83,16 @@ async function start(): Promise<void> {
       cancelFrame: (id) => cancelAnimationFrame(id),
       now: () => performance.now(),
     },
-    tools: { pen: createPenTool, eraser: createEraserTool },
+    tools: {
+      pen: createPenTool,
+      eraser: createEraserTool,
+      select: createSelectTool,
+      shape: createShapeTool,
+      text: (ctx, style) => {
+        textTool = createTextTool(ctx, editor, style, measure);
+        return textTool;
+      },
+    },
   });
 
   // Échelon 1 de DA9 : fusionnés et prédits ; pointerrawupdate coupé (pas de prédits sous Chromium avec lui).
@@ -102,6 +123,12 @@ async function start(): Promise<void> {
   });
   sampler.onGesture((g) => router.handle(g));
   createMiddlePan(stage, engine.view);
+  // Outil Texte seulement : sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page, et la zone de
+  // saisie, tout juste ouverte, le perdrait et validerait aussitôt une boîte vide. Avec les autres outils on laisse le
+  // mousedown faire son travail : le dernier bouton cliqué perd le focus (Entrée ne le redéclenche plus).
+  stage.addEventListener("mousedown", (e) => {
+    if (engine.tool() === "text") e.preventDefault();
+  });
 
   // Échelon 3 : traînée déléguée, seulement pour un geste qui trace au stylo.
   const trail = await attachInkTrail({
@@ -166,6 +193,11 @@ async function start(): Promise<void> {
   const mark = (s: EngineState): void => {
     stage.dataset["elements"] = String(s.elementCount);
     stage.dataset["version"] = String(s.version);
+    const tags = stageTags(s);
+    stage.dataset["page"] = tags.page;
+    stage.dataset["selection"] = tags.selection;
+    stage.dataset["bounds"] = tags.bounds;
+    stage.dataset["tool"] = tags.tool;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
@@ -176,6 +208,7 @@ async function start(): Promise<void> {
   markEchelons();
   settings.onChange(markEchelons);
   mountBar(el<HTMLDivElement>("barre"), engine);
+  mountEdition(el<HTMLDivElement>("edition"), engine);
   mountSettings(el<HTMLDivElement>("reglages"), {
     store: settings,
     effective,

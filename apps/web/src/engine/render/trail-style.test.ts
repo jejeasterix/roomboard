@@ -17,4 +17,9 @@ describe("trailStyleFor (câblage styleFor vers roleOf)", () => {
     expect(f(ev(99))).toBeNull();
     expect(asked).toEqual([7, 7, 8, 9, 99]);
   });
+
+  it("rôle edit : aucune traînée", () => {
+    const style = trailStyleFor(() => "edit", { color: "#000000", width: 4 }, () => 1);
+    expect(style(ev(1))).toBeNull();
+  });
 });

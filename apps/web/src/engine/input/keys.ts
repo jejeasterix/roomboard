@@ -32,3 +32,13 @@ export function keyAction(e: KeyLike): KeyAction | null {
   if (key === "y" && !e.shiftKey) return "redo";
   return null;
 }
+
+export type EditAction = "delete" | "escape";
+
+/** Suppr / Retour arrière (supprimer la sélection, D12) et Échap (la vider), hors champ, hors composition, sans modificateur. */
+export function editAction(e: KeyLike): EditAction | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (e.key === "Delete" || e.key === "Backspace") return "delete";
+  if (e.key === "Escape") return "escape";
+  return null;
+}

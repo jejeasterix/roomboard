@@ -4,13 +4,16 @@
  * au relâché (D38) ; toute erreur du cœur (dernière page, points invalides…) est attrapée et rendue dans l'état.
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
-import type { Change, Command, CoreDocument, EraseMode, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, CoreDocument, EraseMode, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitPage, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
-import { isPanKey, keyAction, type KeyAction, type KeyLike } from "./input/keys";
+import { editAction, isPanKey, keyAction, type KeyAction, type KeyLike } from "./input/keys";
+import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { Renderer } from "./render/renderer";
-import type { GestureTool, LivePart, ToolContext } from "./tools/tool";
+import { DEFAULT_TEXT_SIZE } from "./text-layout";
+import type { TextStyle, TextTool } from "./tools/text";
+import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type ToolContext } from "./tools/tool";
 
 export interface EngineState {
   readonly tool: ToolChoice;
@@ -18,6 +21,12 @@ export interface EngineState {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly page: string;
+  /** Rang de la page montrée (0 = première) et nombre de pages (D16 : compteur « 3 / 7 »). */
+  readonly pageIndex: number;
+  readonly pageCount: number;
+  /** Éléments sélectionnés (outil Sélection, T55) et leur boîte monde ; vides tant que la sélection n'est pas branchée. */
+  readonly selection: readonly string[];
+  readonly selectionBounds: Bounds | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -36,6 +45,10 @@ export interface WheelInput {
 export interface ToolFactories {
   pen(ctx: ToolContext, style: () => StrokeStyle): GestureTool;
   eraser(ctx: ToolContext, mode: () => EraseMode): GestureTool;
+  /** Outils d'édition (lot 4) ; absents : outils inertes (tests du moteur, amorce partielle). */
+  select?(ctx: ToolContext): SelectionTool;
+  shape?(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle): GestureTool;
+  text?(ctx: ToolContext, style: () => TextStyle): TextTool;
 }
 
 export interface EngineDeps {
@@ -65,6 +78,12 @@ export interface Engine {
   panHeld(): boolean;
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
+  /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
+  addPage(): boolean;
+  /** Retire la page montrée, montre la précédente (CL4-9) ; dernière page : refus du cœur dans l'état (D37). */
+  removePage(): boolean;
+  nextPage(): boolean;
+  prevPage(): boolean;
   wheel(e: WheelInput): void;
   resize(width: number, height: number, dpr: number): void;
   camera(): Camera;
@@ -85,11 +104,20 @@ export const ENGINE_FRAME_HISTORY = 3600;
 const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
   a.size === b.size && [...a].every((x) => b.has(x));
 
+function inertTool(): GestureTool {
+  return { begin() {}, extend() {}, frame() {}, close() {}, live: () => NO_LIVE, active: () => false };
+}
+
+function inertSelection(): SelectionTool {
+  return { ...inertTool(), selection: () => [], setSelection() {}, prune() {} };
+}
+
 export function createEngine(deps: EngineDeps): Engine {
   const { doc, renderer } = deps;
   const first = doc.pageIds()[0];
   if (first === undefined) throw new Error("document sans page");
   let pageId: string = first;
+  let lastIndex = 0;
   const style = deps.penStyle ?? DEFAULT_PEN_STYLE;
   let camera: Camera = IDENTITY;
   /** Caméra de chaque page quittée (D17 : par page, dans l'interface, jamais dans le document). */
@@ -100,6 +128,8 @@ export function createEngine(deps: EngineDeps): Engine {
   let viewH = 0;
   let tool: ToolChoice = "pen";
   let spaceHeld = false;
+  let shiftHeld = false;
+  let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
   let sceneDirty = true;
@@ -109,12 +139,17 @@ export function createEngine(deps: EngineDeps): Engine {
   const owner = new Map<number, GestureTool>();
 
   function state(): EngineState {
+    const ids = doc.pageIds();
     return {
       tool,
       eraserMode,
       canUndo: doc.canUndo(),
       canRedo: doc.canRedo(),
       page: pageId,
+      pageIndex: ids.indexOf(pageId),
+      pageCount: ids.length,
+      selection: [...selectTool.selection()],
+      selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -131,7 +166,53 @@ export function createEngine(deps: EngineDeps): Engine {
     loop.start();
   }
 
+  function closeAll(how: CloseReason): void {
+    for (const [id, g] of owner) g.close(id, how);
+    owner.clear();
+  }
+
+  /** Montre une page : gestes abandonnés, caméra de la page quittée gardée (D17, HL3b-7), ajustée si jamais vue. */
+  function switchTo(id: string): void {
+    closeAll("abort");
+    leaveAll("page");
+    cameras.set(pageId, camera);
+    pageId = id;
+    lastIndex = doc.pageIds().indexOf(id);
+    const saved = cameras.get(id);
+    if (saved) {
+      camera = saved;
+    } else if (viewW > 0 && viewH > 0) {
+      camera = fitPage(viewW, viewH);
+      fitted.add(id);
+    } else {
+      camera = IDENTITY;
+    }
+    requestScene();
+  }
+
+  /**
+   * Après une écriture ou annuler / rétablir (CL4-9) : une page apparue est montrée si `showAppeared` ; la page montrée
+   * disparue laisse la précédente (la première si c'était la première).
+   */
+  function followPages(before: readonly string[], showAppeared: boolean): void {
+    const after = doc.pageIds();
+    if (showAppeared) {
+      const appeared = after.find((id) => !before.includes(id));
+      if (appeared !== undefined) {
+        switchTo(appeared);
+        return;
+      }
+    }
+    if (!after.includes(pageId)) {
+      const next = after[Math.min(Math.max(0, lastIndex - 1), after.length - 1)];
+      if (next !== undefined) switchTo(next);
+      return;
+    }
+    lastIndex = after.indexOf(pageId);
+  }
+
   function run(cmd: Command): Change | null {
+    const before = doc.pageIds();
     let change: Change;
     try {
       change = doc.apply(cmd);
@@ -142,40 +223,55 @@ export function createEngine(deps: EngineDeps): Engine {
     }
     renderer.invalidate(change);
     error = null;
+    followPages(before, false);
+    selectTool.prune();
     requestScene();
     emit();
     return change;
   }
 
   function history(which: KeyAction): void {
+    const before = doc.pageIds();
     const change = which === "undo" ? doc.undo() : doc.redo();
     renderer.invalidate(change);
     error = null;
+    followPages(before, true);
+    selectTool.prune();
     requestScene();
     emit();
   }
 
-  function closeAll(how: CloseReason): void {
-    for (const [id, g] of owner) g.close(id, how);
-    owner.clear();
-  }
-
-  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run };
+  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run, shift: () => shiftHeld, requestFrame: requestScene };
+  const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
+  const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => style),
     eraser: deps.tools.eraser(ctx, () => eraserMode),
+    select: selectTool,
+    rect: shapeTool("rect"),
+    ellipse: shapeTool("ellipse"),
+    line: shapeTool("line"),
+    arrow: shapeTool("arrow"),
+    text: deps.tools.text?.(ctx, () => ({ color: style.color, size: DEFAULT_TEXT_SIZE })) ?? inertTool(),
   };
-  const toolList: readonly GestureTool[] = [tools.pen, tools.eraser];
+  const toolList: readonly GestureTool[] = Object.values(tools);
+
+  function leaveAll(reason: LeaveReason): void {
+    for (const t of toolList) t.leave?.(reason);
+  }
 
   function frame(now: number): void {
     for (const t of toolList) t.frame();
     const parts: LivePart[] = toolList.map((t) => t.live());
     const hidden = new Set<string>();
     for (const p of parts) for (const id of p.hidden) hidden.add(id);
-    if (sceneDirty || !sameSet(hidden, lastHidden)) {
-      renderer.drawScene({ id: pageId, elementIds: doc.elementIds(pageId) }, camera, hidden);
+    const overlay = mergeOverlays(parts.map((p) => p.overlay));
+    const key = overlayKey(overlay);
+    if (sceneDirty || !sameSet(hidden, lastHidden) || key !== lastOverlay) {
+      renderer.drawScene({ id: pageId, elementIds: doc.elementIds(pageId) }, camera, hidden, overlay);
       sceneDirty = false;
       lastHidden = hidden;
+      lastOverlay = key;
     }
     renderer.drawLive({ strokes: parts.flatMap((p) => p.strokes), erasers: parts.flatMap((p) => p.erasers) }, camera);
     for (const cb of drawnListeners) cb(now);
@@ -184,11 +280,18 @@ export function createEngine(deps: EngineDeps): Engine {
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
 
+  /** Exécute un geste ; `emit()` si la sélection a changé. */
+  const emitIfSelectionChanged = (run: () => void): void => {
+    const before = selectTool.selection().join("\n");
+    run();
+    if (selectTool.selection().join("\n") !== before) emit();
+  };
+
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
       const g = tools[t];
       owner.set(pointerId, g);
-      g.begin(pointerId, samples);
+      emitIfSelectionChanged(() => g.begin(pointerId, samples));
       loop.start();
     },
     extend(pointerId, samples, predicted) {
@@ -198,7 +301,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const g = owner.get(pointerId);
       if (!g) return;
       owner.delete(pointerId);
-      g.close(pointerId, how);
+      emitIfSelectionChanged(() => g.close(pointerId, how));
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
     },
   };
@@ -214,12 +317,16 @@ export function createEngine(deps: EngineDeps): Engine {
     },
   };
 
-  return {
+  const engine: Engine = {
     sink,
     view,
     tool: () => tool,
     setTool(t) {
-      tool = t;
+      if (t !== tool) {
+        leaveAll("tool");
+        tool = t;
+        requestScene();
+      }
       emit();
     },
     setEraserMode(m) {
@@ -230,8 +337,22 @@ export function createEngine(deps: EngineDeps): Engine {
     undo: () => history("undo"),
     redo: () => history("redo"),
     key(e) {
+      if (e.key === "Shift") {
+        shiftHeld = true;
+        return false;
+      }
       if (isPanKey(e)) {
         spaceHeld = true;
+        return true;
+      }
+      const edit = editAction(e);
+      if (edit !== null) {
+        const sel = selectTool.selection();
+        if (sel.length === 0) return false;
+        if (edit === "delete") run({ type: "Delete", ids: [...sel] });
+        selectTool.setSelection([]);
+        requestScene();
+        emit();
         return true;
       }
       const action = keyAction(e);
@@ -240,32 +361,45 @@ export function createEngine(deps: EngineDeps): Engine {
       return true;
     },
     keyUp(e) {
+      if (e.key === "Shift") {
+        shiftHeld = false;
+        return false;
+      }
       if (e.key !== " " || !spaceHeld) return false;
       spaceHeld = false;
       return true;
     },
     releaseKeys() {
       spaceHeld = false;
+      shiftHeld = false;
     },
     panHeld: () => spaceHeld,
     showPage(id) {
       if (id === pageId) return true;
       if (!doc.pageIds().includes(id)) return false;
-      closeAll("abort");
-      cameras.set(pageId, camera);
-      pageId = id;
-      const saved = cameras.get(id);
-      if (saved) {
-        camera = saved;
-      } else if (viewW > 0 && viewH > 0) {
-        camera = fitPage(viewW, viewH);
-        fitted.add(id);
-      } else {
-        camera = IDENTITY;
-      }
-      requestScene();
+      switchTo(id);
       emit();
       return true;
+    },
+    addPage() {
+      const id = run({ type: "AddPage", after: pageId })?.pages[0];
+      if (id === undefined) return false;
+      return engine.showPage(id);
+    },
+    removePage() {
+      leaveAll("page"); // texte ouvert validé sur la page encore présente, sélection vidée
+      return run({ type: "RemovePage", page: pageId }) !== null;
+    },
+    nextPage() {
+      const ids = doc.pageIds();
+      const next = ids[ids.indexOf(pageId) + 1];
+      return next !== undefined && engine.showPage(next);
+    },
+    prevPage() {
+      const ids = doc.pageIds();
+      const i = ids.indexOf(pageId);
+      const prev = i > 0 ? ids[i - 1] : undefined;
+      return prev !== undefined && engine.showPage(prev);
     },
     wheel(e) {
       if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
@@ -303,4 +437,5 @@ export function createEngine(deps: EngineDeps): Engine {
       drawnListeners.clear();
     },
   };
+  return engine;
 }

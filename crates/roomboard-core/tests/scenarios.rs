@@ -1,8 +1,10 @@
-//! Scénarios S2 et S3 du cadrage, au niveau du cœur (sans interface).
+//! Scénarios S2, S3 et S4 du cadrage, au niveau du cœur (sans interface).
 use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
 use roomboard_core::element::StrokeStyle;
 use roomboard_core::format::{load, save, SaveMeta};
+use roomboard_core::query::Bounds;
+use roomboard_core::shape::ShapeKind;
 
 fn pen() -> StrokeStyle {
     StrokeStyle {
@@ -115,4 +117,121 @@ fn s3_last_page_cannot_be_removed() {
         Err(CommandError::LastPage)
     );
     assert_eq!(d.page_count(), 1);
+}
+
+#[test]
+fn s3_text_stroke_shape_survive_save_load() {
+    let mut d = Document::blank();
+    let p1 = d.page_ids()[0].clone();
+    let p2 = d
+        .apply(Command::AddPage {
+            after: Some(p1.clone()),
+        })
+        .expect("p2")
+        .pages[0]
+        .clone();
+    let p3 = d
+        .apply(Command::AddPage {
+            after: Some(p2.clone()),
+        })
+        .expect("p3")
+        .pages[0]
+        .clone();
+    let t = d
+        .apply(Command::SetText {
+            page: p1.clone(),
+            id: None,
+            x: 200.0,
+            y: 300.0,
+            content: "Bonjour".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        })
+        .expect("texte")
+        .ids[0]
+        .clone();
+    let s = commit(&mut d, &p2, hline(500.0));
+    let r = d
+        .apply(Command::AddShape {
+            page: p3.clone(),
+            shape: ShapeKind::Rect,
+            x0: 100.0,
+            y0: 100.0,
+            x1: 400.0,
+            y1: 300.0,
+            style: pen(),
+            fill: None,
+        })
+        .expect("rect")
+        .ids[0]
+        .clone();
+
+    let mut e = load(&save(&d, &meta()).expect("save")).expect("load");
+    assert_eq!(e.page_ids(), vec![p1.clone(), p2.clone(), p3.clone()]);
+    assert_eq!(e.element_ids(&p1), vec![t.clone()]);
+    assert_eq!(e.element_ids(&p2), vec![s.clone()]);
+    assert_eq!(e.element_ids(&p3), vec![r.clone()]);
+    for id in [&t, &s, &r] {
+        assert_eq!(e.element(id), d.element(id), "élément {id}");
+    }
+    assert_eq!(
+        e.element(&t).and_then(|v| v.text).map(|x| x.content),
+        Some("Bonjour".to_string())
+    );
+    e.apply(Command::RemovePage { page: p2.clone() })
+        .expect("retrait");
+    assert!(e.undo());
+    assert_eq!(e.element_ids(&p2), vec![s]);
+}
+
+#[test]
+fn s4_transform_two_elements_then_undo_twice() {
+    let mut d = Document::blank();
+    let p = d.page_ids()[0].clone();
+    commit(&mut d, &p, hline(100.0));
+    d.apply(Command::AddShape {
+        page: p.clone(),
+        shape: ShapeKind::Rect,
+        x0: 600.0,
+        y0: 600.0,
+        x1: 800.0,
+        y1: 700.0,
+        style: pen(),
+        fill: None,
+    })
+    .expect("rect");
+    let ids = d.ids_in_rect(
+        &p,
+        Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1000.0,
+            y1: 1000.0,
+        },
+    );
+    assert_eq!(ids.len(), 2);
+    let start = d.bounds(&ids).expect("bornes");
+    d.apply(Command::Transform {
+        ids: ids.clone(),
+        matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 0.0],
+    })
+    .expect("déplacer");
+    let moved = d.bounds(&ids).expect("bornes");
+    assert!((moved.x0 - start.x0 - 100.0).abs() < 1e-6);
+    d.apply(Command::Transform {
+        ids: ids.clone(),
+        matrix: [2.0, 0.0, 0.0, 2.0, -moved.x0, -moved.y0],
+    })
+    .expect("agrandir");
+    let big = d.bounds(&ids).expect("bornes");
+    assert!(((big.x1 - big.x0) - 2.0 * (moved.x1 - moved.x0)).abs() < 1e-6);
+    assert!(d.undo());
+    assert!(d.undo());
+    assert_eq!(
+        d.bounds(&ids),
+        Some(start),
+        "deux annulations : état de départ (une étape par geste)"
+    );
 }

@@ -1,7 +1,7 @@
 /** Style de la traînée déléguée : seul un geste que le routeur a classé « ink » en reçoit un (le routeur décide, rien n'est recopié). */
 import type { InkTrailStyle, TrailEvent } from "./ink-trail";
 
-export type TrailRole = "ink" | "erase" | "view" | null;
+export type TrailRole = "ink" | "erase" | "edit" | "view" | null;
 
 export function trailStyleFor(
   roleOf: (pointerId: number) => TrailRole,

@@ -34,7 +34,7 @@ export interface Router {
    * Rôle du geste en cours de ce pointeur : "ink" (trace), "erase" (gomme), "view" (déplacement ou pincement de la vue),
    * null (inconnu, ignoré, annulé ou fini). Source unique pour la traînée déléguée (échelon 3).
    */
-  roleOf(pointerId: number): "ink" | "erase" | "view" | null;
+  roleOf(pointerId: number): "ink" | "erase" | "edit" | "view" | null;
 }
 
 type Role = "draw" | "pan" | "pinch" | "ignored";
@@ -156,7 +156,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     roleOf(pointerId) {
       const t = tracks.get(pointerId);
       if (!t) return null;
-      if (t.role === "draw") return t.tool === "eraser" ? "erase" : "ink";
+      if (t.role === "draw") return t.tool === "eraser" ? "erase" : t.tool === "pen" ? "ink" : "edit";
       return t.role === "pan" || t.role === "pinch" ? "view" : null;
     },
   };

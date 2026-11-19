@@ -259,6 +259,14 @@ describe("createRouter (D18)", () => {
       expect(gum.router.roleOf(1)).toBe("erase");
     });
 
+    it("roleOf : edit pour sélection, formes et texte ; ink pour le stylo seulement", () => {
+      for (const [tool, want] of [["select", "edit"], ["rect", "edit"], ["arrow", "edit"], ["text", "edit"], ["pen", "ink"], ["eraser", "erase"]] as const) {
+        const { router } = setupTool(() => tool);
+        router.handle(ev("start", 7, "mouse", [s(1, 1, 0)]));
+        expect(router.roleOf(7)).toBe(want);
+      }
+    });
+
     it("pincement à deux doigts sans stylet : le premier doigt (ink) passe à view, le second est view", () => {
       const { router } = setupTool(() => "pen");
       router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));

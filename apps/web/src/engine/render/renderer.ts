@@ -1,6 +1,7 @@
 /** Rendu derrière une interface (DA2, D19) : Canvas 2D au socle ; WebGL2 pourra remplacer l'implémentation (DA9). */
 import type { Change, CoreDocument, EraseMode } from "../../core/api";
 import type { Camera } from "../camera";
+import type { EditOverlay } from "./overlay";
 
 export interface PageView {
   readonly id: string;
@@ -35,8 +36,11 @@ export const EMPTY_LIVE: LiveLayer = { strokes: [], erasers: [] };
 export type SceneSource = Pick<CoreDocument, "element" | "outline">;
 
 export interface Renderer {
-  /** Scène fixe : pourtour, cadre de page, éléments sauf `hidden` (masqués pendant un aperçu, D38). */
-  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>): void;
+  /**
+   * Scène fixe : pourtour, cadre de page, éléments sauf `hidden` (masqués pendant un aperçu, D38), puis le calque
+   * d'édition (fantômes, formes en cours, sélection : CL4-1). `overlay` absent : rien.
+   */
+  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay?: EditOverlay): void;
   /** Canvas d'interaction : effacé puis redessiné à chaque image. */
   drawLive(live: LiveLayer, camera: Camera): void;
   /** Taille de la zone en px CSS et devicePixelRatio. */

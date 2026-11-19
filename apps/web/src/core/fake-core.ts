@@ -3,13 +3,43 @@
 //
 // Écart assumé, exclu du contrat commun : la gomme partielle (`Erase`, `mode: "partial"`) ne coupe pas. Elle retire
 // en entier chaque trait touché (comme la gomme d'objet) et rend `ids: []`, là où le cœur remplace le trait par ses
-// morceaux restants (`ids` = les morceaux, `removed` = le trait coupé). Le test de « touché » est lui aussi grossier :
-// distance des seuls points du trait au chemin, sans contour ni pression.
-import type { Bounds, Change, Command, CoreDocument, CoreFactory, ElementView, StrokeBuilderApi, StrokeStyle } from "./api";
+// morceaux restants (`ids` = les morceaux, `removed` = le trait coupé). Le test de « touché » d'un trait est lui aussi
+// grossier : distance des seuls points du trait au chemin, sans contour ni pression.
+// Lot 4 : chaque élément porte sa matrice (`Transform` la compose à gauche, comme le cœur) ; formes et textes suivent
+// les polygones de `shapes.ts` (miroir de `shape.rs`) : même collision et mêmes bornes que le cœur.
+import type {
+  Bounds,
+  Change,
+  Command,
+  CoreDocument,
+  CoreFactory,
+  ElementView,
+  Matrix,
+  ShapeData,
+  StrokeBuilderApi,
+  StrokeStyle,
+  TextData,
+} from "./api";
+import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
-interface FakeStroke { readonly id: string; readonly x0: number; readonly y0: number; readonly local: Float32Array; readonly style: StrokeStyle }
-interface FakePage { readonly id: string; readonly elements: FakeStroke[] }
+interface FakeElement {
+  readonly id: string;
+  readonly transform: Matrix;
+  readonly style: StrokeStyle;
+  /** Trait : triplets x, y, pression locaux. */
+  readonly local?: Float32Array;
+  readonly shape?: ShapeData;
+  readonly text?: TextData;
+}
+interface FakePage { readonly id: string; readonly elements: FakeElement[] }
 interface State { readonly pages: FakePage[] }
+
+const MESSAGES = {
+  badShape: "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)",
+  badMatrix: "matrice invalide (six nombres finis, inversible)",
+  badText: "texte invalide (taille et boîte finies > 0 attendues)",
+  badWidth: "épaisseur de trait invalide (nombre fini > 0 attendu)",
+} as const;
 
 let counter = 0;
 const newId = (): string => `fake-${++counter}`;
@@ -17,6 +47,8 @@ const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
 const clone = (s: State): State => ({ pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements] })) });
+/** Matrice de `Transform`, donnée ou composée : six nombres finis, |dét| ≥ 1e-12 (même règle que le cœur). */
+const validMatrix = (m: Matrix): boolean => m.every((v) => Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) >= 1e-12;
 
 function toLocal(points: Float32Array): { x0: number; y0: number; local: Float32Array } {
   const x0 = points[0] ?? 0;
@@ -38,11 +70,31 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
   return Math.hypot(px - (ax + u * dx), py - (ay + u * dy));
 }
 
-function strokeTouches(s: FakeStroke, path: Float32Array, radius: number): boolean {
-  for (let i = 0; i + 2 < s.local.length; i += 3) {
-    const x = (s.local[i] ?? 0) + s.x0;
-    const y = (s.local[i + 1] ?? 0) + s.y0;
-    const reach = radius + s.style.width / 2;
+/** Points monde d'un trait (vide pour une forme ou un texte). */
+function worldPoints(e: FakeElement): [number, number][] {
+  const out: [number, number][] = [];
+  const l = e.local;
+  if (!l) return out;
+  for (let i = 0; i + 2 < l.length; i += 3) out.push(applyMatrix(e.transform, l[i] ?? 0, l[i + 1] ?? 0));
+  return out;
+}
+
+/** Plus petite valeur singulière de la partie linéaire de `m` : facteur exact d'une similitude (même règle que le cœur). */
+function minSingular(m: Matrix): number {
+  const f = m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3];
+  const det = Math.abs(m[0] * m[3] - m[1] * m[2]);
+  const max = Math.sqrt((f + Math.sqrt(Math.max(0, f * f - 4 * det * det))) / 2);
+  return max > 0 ? det / max : 0;
+}
+
+/** Demi-épaisseur monde d'un trait (T63) : le cœur porte son contour par la matrice ; ici, mesurée sur les points monde,
+ *  elle est mise à l'échelle (exacte sous une similitude ; sinon la plus petite, comme la gomme partielle du cœur). */
+const strokeHalfWidth = (e: FakeElement): number => (e.style.width / 2) * minSingular(e.transform);
+
+/** Le chemin touche-t-il le trait ? Chemin et `radius` en unités monde, épaisseur à l'échelle du trait (T63). */
+function strokeTouches(e: FakeElement, path: Float32Array, radius: number): boolean {
+  const reach = radius + strokeHalfWidth(e);
+  for (const [x, y] of worldPoints(e)) {
     for (let j = 0; j + 1 < path.length; j += 2) {
       const ax = path[j] ?? 0;
       const ay = path[j + 1] ?? 0;
@@ -54,11 +106,41 @@ function strokeTouches(s: FakeStroke, path: Float32Array, radius: number): boole
   return false;
 }
 
+/** Polygone monde (x, y alternés) d'une forme ou d'un texte ; null pour un trait. */
+function worldPolygon(e: FakeElement): number[] | null {
+  const local = e.shape
+    ? shapePolygon(e.shape.shape, e.shape.w, e.shape.h, e.style.width)
+    : e.text
+      ? boxPolygon(e.text.boxWidth, e.text.boxHeight)
+      : null;
+  if (!local) return null;
+  const out: number[] = [];
+  for (let i = 0; i + 1 < local.length; i += 2) out.push(...applyMatrix(e.transform, local[i] ?? 0, local[i + 1] ?? 0));
+  return out;
+}
+
+function polygonHit(poly: number[], x: number, y: number, tol: number): boolean {
+  const n = poly.length / 2;
+  let inside = false;
+  let edge = Number.POSITIVE_INFINITY;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = poly[2 * i] ?? 0;
+    const yi = poly[2 * i + 1] ?? 0;
+    const xj = poly[2 * j] ?? 0;
+    const yj = poly[2 * j + 1] ?? 0;
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    edge = Math.min(edge, distToSegment(x, y, xi, yi, xj, yj));
+  }
+  return inside || edge <= tol;
+}
+
 function polyOutline(points: Float32Array, dx: number, dy: number): Float32Array {
   const out: number[] = [];
   for (let i = 0; i + 2 < points.length; i += 3) out.push((points[i] ?? 0) + dx, (points[i + 1] ?? 0) + dy);
   return new Float32Array(out);
 }
+
+interface Found { readonly page: FakePage; readonly index: number; readonly element: FakeElement }
 
 class FakeDocument implements CoreDocument {
   private state: State;
@@ -76,12 +158,17 @@ class FakeDocument implements CoreDocument {
     return p;
   }
 
-  private stroke(id: string): FakeStroke | undefined {
-    for (const p of this.state.pages) {
-      const s = p.elements.find((e) => e.id === id);
-      if (s) return s;
+  private find(id: string): Found | undefined {
+    for (const page of this.state.pages) {
+      const index = page.elements.findIndex((e) => e.id === id);
+      const element = page.elements[index];
+      if (element) return { page, index, element };
     }
     return undefined;
+  }
+
+  private unchanged(): Change {
+    return { pages: [], ids: [], removed: [], full: false, version: this.ver };
   }
 
   private step(mutate: (s: State) => Omit<Change, "version" | "full">): Change {
@@ -123,20 +210,22 @@ class FakeDocument implements CoreDocument {
         if (cmd.points.length < 3 || cmd.points.length % 3 !== 0 || !cmd.points.every((v) => Number.isFinite(v))) {
           throw new Error("points invalides");
         }
-        if (!positive(cmd.style.width)) throw new Error("épaisseur de trait invalide (nombre fini > 0 attendu)");
+        if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
         this.page(cmd.page);
         return this.step((s) => {
           const id = newId();
           const { x0, y0, local } = toLocal(cmd.points);
-          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, x0, y0, local, style: cmd.style });
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style });
           return { pages: [cmd.page], ids: [id], removed: [] };
         });
       }
       case "Erase": {
         if (!finitePath(cmd.path)) throw new Error("points invalides");
         if (!positive(cmd.radius)) throw new Error("rayon de gomme invalide (nombre fini > 0 attendu)");
-        const hit = this.page(cmd.page).elements.filter((e) => strokeTouches(e, cmd.path, cmd.radius)).map((e) => e.id);
-        if (hit.length === 0) return { pages: [], ids: [], removed: [], full: false, version: this.ver };
+        const hit = this.page(cmd.page).elements
+          .filter((e) => e.local !== undefined && strokeTouches(e, cmd.path, cmd.radius))
+          .map((e) => e.id);
+        if (hit.length === 0) return this.unchanged();
         return this.step((s) => {
           const p = s.pages.find((q) => q.id === cmd.page);
           if (p) p.elements.splice(0, p.elements.length, ...p.elements.filter((e) => !hit.includes(e.id)));
@@ -146,35 +235,117 @@ class FakeDocument implements CoreDocument {
       case "Delete": {
         // Comme le cœur : ids inconnus ignorés, doublons fusionnés, `pages` = pages touchées triées ; rien de trouvé =
         // aucune étape (D38).
-        const removed = [...new Set(cmd.ids)].filter((id) => this.stroke(id) !== undefined);
+        const removed = [...new Set(cmd.ids)].filter((id) => this.find(id) !== undefined);
         const pages = this.state.pages.filter((p) => p.elements.some((e) => removed.includes(e.id))).map((p) => p.id).sort();
         return this.step((s) => {
           for (const p of s.pages) p.elements.splice(0, p.elements.length, ...p.elements.filter((e) => !removed.includes(e.id)));
           return { pages, ids: [], removed };
         });
       }
+      case "AddShape": {
+        if (![cmd.x0, cmd.y0, cmd.x1, cmd.y1].every((v) => Number.isFinite(v))) throw new Error(MESSAGES.badShape);
+        // Comme le cœur (constat 3 de T60) : la géométrie tirée des coins doit rester finie en f32.
+        const g = normalizeShape(cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
+        if (![g.tx, g.ty, g.w, g.h].every((v) => Number.isFinite(Math.fround(v)))) throw new Error(MESSAGES.badShape);
+        if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
+        this.page(cmd.page);
+        return this.step((s) => {
+          const id = newId();
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({
+            id,
+            transform: translate(g.tx, g.ty),
+            style: cmd.style,
+            shape: { shape: cmd.shape, w: g.w, h: g.h, fill: cmd.fill },
+          });
+          return { pages: [cmd.page], ids: [id], removed: [] };
+        });
+      }
+      case "SetText": {
+        // Même ordre que le cœur : texte invalide, puis page ou élément inconnu, puis contenu vide, puis inchangé.
+        if (!positive(cmd.size) || !positive(cmd.boxWidth) || !positive(cmd.boxHeight) || !Number.isFinite(cmd.x) || !Number.isFinite(cmd.y)) {
+          throw new Error(MESSAGES.badText);
+        }
+        const text: TextData = { content: cmd.content, size: cmd.size, boxWidth: cmd.boxWidth, boxHeight: cmd.boxHeight };
+        const style: StrokeStyle = { color: cmd.color, width: 0 };
+        if (cmd.id === null) {
+          this.page(cmd.page);
+          if (cmd.content === "") return this.unchanged();
+          return this.step((s) => {
+            const id = newId();
+            s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(cmd.x, cmd.y), style, text });
+            return { pages: [cmd.page], ids: [id], removed: [] };
+          });
+        }
+        const id = cmd.id;
+        const found = this.find(id);
+        if (!found || !found.element.text) throw new Error(`élément inconnu : ${id}`);
+        const pageId = found.page.id;
+        if (cmd.content === "") {
+          return this.step((s) => {
+            const p = s.pages.find((q) => q.id === pageId);
+            if (p) p.elements.splice(p.elements.findIndex((e) => e.id === id), 1);
+            return { pages: [pageId], ids: [], removed: [id] };
+          });
+        }
+        const t = found.element.text;
+        if (t.content === text.content && t.size === text.size && t.boxWidth === text.boxWidth && t.boxHeight === text.boxHeight && found.element.style.color === cmd.color) {
+          return this.unchanged();
+        }
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
+          const old = p?.elements[i];
+          if (p && old) p.elements[i] = { ...old, style, text };
+          return { pages: [pageId], ids: [id], removed: [] };
+        });
+      }
+      case "Transform": {
+        const m = cmd.matrix;
+        if (!validMatrix(m)) throw new Error(MESSAGES.badMatrix);
+        const ids = [...new Set(cmd.ids)].filter((id) => this.find(id) !== undefined).sort();
+        if (ids.length === 0 || isIdentity(m)) return this.unchanged();
+        // Comme le cœur (constat 2 de T60) : chaque matrice composée suit la règle de `m`, avant toute étape.
+        const composed = new Map(ids.map((id) => [id, composeMatrix(m, this.find(id)?.element.transform ?? m)]));
+        if (![...composed.values()].every(validMatrix)) throw new Error(MESSAGES.badMatrix);
+        const pages = [...new Set(ids.map((id) => this.find(id)?.page.id ?? ""))].sort();
+        return this.step((s) => {
+          for (const p of s.pages) {
+            p.elements.forEach((e, i) => {
+              const t = composed.get(e.id);
+              if (t) p.elements[i] = { ...e, transform: t };
+            });
+          }
+          return { pages, ids, removed: [] };
+        });
+      }
     }
   }
 
   element(id: string): ElementView | null {
-    const s = this.stroke(id);
-    return s ? { id, kind: "stroke", transform: [1, 0, 0, 1, s.x0, s.y0], style: s.style } : null;
+    const e = this.find(id)?.element;
+    if (!e) return null;
+    const base = { id, transform: e.transform, style: e.style };
+    if (e.shape) return { ...base, kind: "shape", shape: e.shape };
+    if (e.text) return { ...base, kind: "text", text: e.text };
+    return { ...base, kind: "stroke" };
   }
-  points(id: string): Float32Array | null { return this.stroke(id)?.local ?? null; }
+  points(id: string): Float32Array | null { return this.find(id)?.element.local ?? null; }
   outline(id: string): Float32Array | null {
-    const s = this.stroke(id);
-    return s ? polyOutline(s.local, 0, 0) : null;
+    const l = this.find(id)?.element.local;
+    return l ? polyOutline(l, 0, 0) : null;
   }
   hitTest(page: string, x: number, y: number, tol: number): string | null {
     const els = this.page(page).elements;
     for (let i = els.length - 1; i >= 0; i--) {
       const e = els[i];
-      if (e && strokeTouches(e, new Float32Array([x, y]), tol)) return e.id;
+      if (!e) continue;
+      const poly = worldPolygon(e);
+      if (poly ? polygonHit(poly, x, y, tol) : strokeTouches(e, new Float32Array([x, y]), tol)) return e.id;
     }
     return null;
   }
   hitTestPath(page: string, path: Float32Array, radius: number): string[] {
-    return this.page(page).elements.filter((e) => strokeTouches(e, path, radius)).map((e) => e.id);
+    return this.page(page).elements.filter((e) => e.local !== undefined && strokeTouches(e, path, radius)).map((e) => e.id);
   }
   idsInRect(page: string, r: Bounds): string[] {
     return this.page(page).elements.filter((e) => {
@@ -184,30 +355,34 @@ class FakeDocument implements CoreDocument {
   }
   bounds(ids: readonly string[]): Bounds | null {
     let b: Bounds | null = null;
+    const add = (x0: number, y0: number, x1: number, y1: number): void => {
+      b = b === null
+        ? { x0, y0, x1, y1 }
+        : { x0: Math.min(b.x0, x0), y0: Math.min(b.y0, y0), x1: Math.max(b.x1, x1), y1: Math.max(b.y1, y1) };
+    };
     for (const id of ids) {
-      const s = this.stroke(id);
-      if (!s) continue;
-      for (let i = 0; i + 2 < s.local.length; i += 3) {
-        const x = (s.local[i] ?? 0) + s.x0;
-        const y = (s.local[i + 1] ?? 0) + s.y0;
-        const h = s.style.width / 2;
-        b = b === null
-          ? { x0: x - h, y0: y - h, x1: x + h, y1: y + h }
-          : { x0: Math.min(b.x0, x - h), y0: Math.min(b.y0, y - h), x1: Math.max(b.x1, x + h), y1: Math.max(b.y1, y + h) };
+      const e = this.find(id)?.element;
+      if (!e) continue;
+      const poly = worldPolygon(e);
+      if (poly) {
+        for (let i = 0; i + 1 < poly.length; i += 2) add(poly[i] ?? 0, poly[i + 1] ?? 0, poly[i] ?? 0, poly[i + 1] ?? 0);
+        continue;
       }
+      const h = strokeHalfWidth(e);
+      for (const [x, y] of worldPoints(e)) add(x - h, y - h, x + h, y + h);
     }
     return b;
   }
   undo(): Change {
     const prev = this.undoStack.pop();
-    if (!prev) return { pages: [], ids: [], removed: [], full: false, version: this.ver };
+    if (!prev) return this.unchanged();
     this.redoStack.push(this.state);
     this.state = prev;
     return { pages: [], ids: [], removed: [], full: true, version: ++this.ver };
   }
   redo(): Change {
     const next = this.redoStack.pop();
-    if (!next) return { pages: [], ids: [], removed: [], full: false, version: this.ver };
+    if (!next) return this.unchanged();
     this.undoStack.push(this.state);
     this.state = next;
     return { pages: [], ids: [], removed: [], full: true, version: ++this.ver };
@@ -218,7 +393,14 @@ class FakeDocument implements CoreDocument {
   save(now: string, appVersion: string): Uint8Array {
     const json = JSON.stringify({ now, appVersion, pages: this.state.pages.map((p) => ({
       id: p.id,
-      elements: p.elements.map((e) => ({ id: e.id, x0: e.x0, y0: e.y0, local: Array.from(e.local), style: e.style })),
+      elements: p.elements.map((e) => ({
+        id: e.id,
+        transform: [...e.transform],
+        style: e.style,
+        ...(e.local ? { local: Array.from(e.local) } : {}),
+        ...(e.shape ? { shape: e.shape } : {}),
+        ...(e.text ? { text: e.text } : {}),
+      })),
     })) });
     return new TextEncoder().encode(json);
   }
@@ -234,8 +416,15 @@ class FakeDocument implements CoreDocument {
   free(): void { /* rien à libérer */ }
 }
 
-interface SavedStroke { id: string; x0: number; y0: number; local: number[]; style: StrokeStyle }
-interface SavedPage { id: string; elements: SavedStroke[] }
+interface SavedElement {
+  id: string;
+  transform: [number, number, number, number, number, number];
+  style: StrokeStyle;
+  local?: number[];
+  shape?: ShapeData;
+  text?: TextData;
+}
+interface SavedPage { id: string; elements: SavedElement[] }
 
 export const fakeCore: CoreFactory = {
   blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [] }] }),
@@ -253,7 +442,14 @@ export const fakeCore: CoreFactory = {
     }
     const pages = (raw.pages as SavedPage[]).map((p) => ({
       id: p.id,
-      elements: p.elements.map((e) => ({ id: e.id, x0: e.x0, y0: e.y0, local: new Float32Array(e.local), style: e.style })),
+      elements: p.elements.map((e): FakeElement => ({
+        id: e.id,
+        transform: e.transform,
+        style: e.style,
+        ...(e.local ? { local: new Float32Array(e.local) } : {}),
+        ...(e.shape ? { shape: e.shape } : {}),
+        ...(e.text ? { text: e.text } : {}),
+      })),
     }));
     return new FakeDocument({ pages });
   },
