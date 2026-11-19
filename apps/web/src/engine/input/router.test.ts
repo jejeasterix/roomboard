@@ -236,4 +236,65 @@ describe("createRouter (D18)", () => {
     router.handle(ev("start", 4, "touch", [s(0, 0, 200)]));
     expect(log).toEqual(["begin 4 pen 1"]);
   });
+  it("espace tenu, aucun stylet vu : un doigt déplace la vue au lieu de tracer", () => {
+    const { router, log } = setupTool(() => "pen", () => true);
+    router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+    router.handle(ev("move", 1, "touch", [s(3, 2, 5)]));
+    router.handle(ev("end", 1, "touch", []));
+    expect(log).toEqual(["pan 3 2"]);
+  });
+
+  describe("roleOf : le rôle du geste en cours, lu par la traînée déléguée (échelon 3)", () => {
+    it("stylet : ink ; gomme (outil ou bouton du stylet) : erase ; inconnu ou fini : null", () => {
+      const { router } = setupTool(() => "pen");
+      expect(router.roleOf(9)).toBeNull();
+      router.handle(ev("start", 1, "pen", [s(0, 0, 0)]));
+      router.handle(ev("start", 2, "pen", [s(0, 0, 0)], { eraserButton: true }));
+      expect(router.roleOf(1)).toBe("ink");
+      expect(router.roleOf(2)).toBe("erase");
+      router.handle(ev("end", 1, "pen", []));
+      expect(router.roleOf(1)).toBeNull();
+      const gum = setupTool(() => "eraser");
+      gum.router.handle(ev("start", 1, "mouse", [s(0, 0, 0)]));
+      expect(gum.router.roleOf(1)).toBe("erase");
+    });
+
+    it("pincement à deux doigts sans stylet : le premier doigt (ink) passe à view, le second est view", () => {
+      const { router } = setupTool(() => "pen");
+      router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+      expect(router.roleOf(1)).toBe("ink");
+      router.handle(ev("start", 2, "touch", [s(50, 0, SECOND_FINGER_MS - 10)]));
+      expect(router.roleOf(1)).toBe("view");
+      expect(router.roleOf(2)).toBe("view");
+    });
+
+    it("second doigt tardif : null, le premier garde ink", () => {
+      const { router } = setupTool(() => "pen");
+      router.handle(ev("start", 1, "touch", [s(0, 0, 0)]));
+      router.handle(ev("start", 2, "touch", [s(50, 0, SECOND_FINGER_MS + 50)]));
+      expect(router.roleOf(1)).toBe("ink");
+      expect(router.roleOf(2)).toBeNull();
+    });
+
+    it("paume annulée pendant que le stylet touche : null (aucune traînée pour elle)", () => {
+      const { router } = setupTool(() => "pen", () => false, { ...DEFAULT_ROUTER_OPTIONS, fingerPansAfterPen: false });
+      router.handle(ev("start", 3, "touch", [s(0, 0, 0)]));
+      router.handle(ev("start", 1, "pen", [s(10, 10, 5)]));
+      router.handle(ev("cancel", 3, "touch", [], { palm: true }));
+      expect(router.roleOf(3)).toBeNull();
+      expect(router.roleOf(1)).toBe("ink");
+      // un doigt posé alors que le stylet touche n'arrive jamais au routeur (échantillonneur) : inconnu
+      expect(router.roleOf(4)).toBeNull();
+    });
+
+    it("espace relâché pendant un glisser de vue : view jusqu'au relâché", () => {
+      let held = true;
+      const { router } = setupTool(() => "pen", () => held);
+      router.handle(ev("start", 1, "mouse", [s(0, 0, 0)]));
+      held = false;
+      expect(router.roleOf(1)).toBe("view");
+      router.handle(ev("end", 1, "mouse", []));
+      expect(router.roleOf(1)).toBeNull();
+    });
+  });
 });

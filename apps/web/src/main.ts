@@ -13,7 +13,7 @@ import { withLinearPrediction } from "./engine/input/predict";
 import { createRouter, SECOND_FINGER_MS, type RouterOptions } from "./engine/input/router";
 import { createSampler, type SamplerOptions } from "./engine/input/sampler";
 import { detectSupport } from "./engine/input/support";
-import { attachInkTrail, type InkLike } from "./engine/render/ink-trail";
+import { attachInkTrail, type InkLike, type TrailEvent } from "./engine/render/ink-trail";
 import { chooseRenderer } from "./engine/render/select";
 import {
   createSettingsStore,
@@ -25,9 +25,6 @@ import {
 import { createEraserTool } from "./engine/tools/eraser";
 import { createPenTool } from "./engine/tools/pen";
 import init, * as wasm from "./wasm/roomboard_wasm";
-
-/** Bit du bouton gomme du stylet dans `PointerEvent.buttons`. */
-const ERASER_BUTTON = 32;
 
 function el<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -108,10 +105,10 @@ async function start(): Promise<void> {
     ink: (navigator as Navigator & { ink?: InkLike }).ink,
     area: el<HTMLCanvasElement>("interaction"),
     surface: stage,
+    // Le routeur est l'unique décideur : la traînée ne suit que les gestes qu'il a classés « ink » (aucune règle recopiée).
+    // L'événement réel est un PointerEvent : `pointerId` y est, même si TrailEvent (render/, T42) ne le déclare pas.
     styleFor: (e) => {
-      if (engine.tool() !== "pen" || engine.panHeld() || (e.buttons & ERASER_BUTTON) !== 0) return null;
-      if (e.pointerType === "mouse" && (e.buttons & 1) === 0) return null;
-      if (e.pointerType === "touch" && router.penSeen() && settings.get().finger === "pan") return null;
+      if (router.roleOf((e as TrailEvent & { pointerId: number }).pointerId) !== "ink") return null;
       return { color: DEFAULT_PEN_STYLE.color, diameter: DEFAULT_PEN_STYLE.width * engine.camera().zoom };
     },
   });
@@ -140,6 +137,8 @@ async function start(): Promise<void> {
   fit();
   watchDpr();
 
+  // Choix assumé (fiche ENI) : l'espace est pris même quand un bouton de la barre a le focus, donc il n'active plus les
+  // boutons ; sans cela, « espace + glisser » casserait après un clic dans la barre.
   window.addEventListener("keydown", (e) => {
     if (engine.key(keyOf(e))) e.preventDefault();
   });
@@ -194,7 +193,13 @@ async function start(): Promise<void> {
         sampler,
         onLiveDrawn: (cb) => engine.onLiveDrawn(cb),
         frameDurations: () => engine.frameDurations(),
-        options: { coalesced: true, predicted: true, raw: false, desynchronized: true, inkTrail: trail.status === "on" },
+        options: {
+          coalesced: samplerOptions.coalesced,
+          predicted: samplerOptions.predicted,
+          raw: samplerOptions.raw,
+          desynchronized: true,
+          inkTrail: trail.status === "on",
+        },
         environment: {
           userAgent: navigator.userAgent,
           devicePixelRatio: window.devicePixelRatio || 1,

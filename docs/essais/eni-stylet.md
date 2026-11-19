@@ -132,7 +132,7 @@ Verdict : le ressenti de Jérôme (« le trait suit la pointe »), comme le 16 (
 
 Le lot 3b a été livré sans attendre l'essai (décision de Jérôme, 2026-11-19 : « oui fait le avancé en autonomie même
 si je n'ai pas fais les tests ») : chaque échelon de DA9 est un réglage, éteint par défaut tant que rien de mesuré ne
-le demande (S1, OC56, OC66). L'essai ENI du samedi 21 novembre vérifie ces défauts. Ouvrir la même adresse que
+le demande (S1, OC56, OC66), sauf l'échelon 2 (`auto` : allumé sous WebKit, où le navigateur ne donne aucun point prédit). L'essai ENI du samedi 21 novembre vérifie ces défauts. Ouvrir la même adresse que
 l'application, suivie du réglage ; la seconde ligne de la barre montre l'état effectif et bascule chaque réglage (les
 échelons 3 et 4 rechargent la page : le dessin en cours est perdu).
 
@@ -142,10 +142,10 @@ l'application, suivie du réglage ; la seconde ligne de la barre montre l'état 
 | É2 prédiction TS | `?echelons=2` | La queue devant la pointe colle-t-elle mieux, ou dépasse-t-elle dans les virages ? |
 | É3 traînée `navigator.ink` | `?echelons=3` | Sous Edge Windows, la pointe dessinée par le système rattrape-t-elle le stylet ? « sans effet » dans la barre : l'API manque. |
 | É4 WebGL2 | `?echelons=4` | Traits longs et rapides : moins de saccades ? « repli Canvas 2D » dans la barre : WebGL2 manque. |
-| paume souple | `?paume=souple` | Paume posée avant le stylet : son trait continue-t-il (attendu : oui en souple, non par défaut) ? |
+| paume souple | `?paume=souple&doigt=trace` | Paume posée avant le stylet : son trait continue-t-il (attendu : oui en souple, non par défaut) ? Sans `doigt=trace`, une fois le stylet vu la paume déplace la vue (réglage par défaut : le doigt déplace la vue), donc aucun trait de paume à voir. |
 | doigt qui trace | `?doigt=trace` | Après le stylet, le doigt trace au lieu de déplacer la vue ; le bouton « Doigt » de la barre bascule à chaud. |
 
 Combiner : `?echelons=2,4`. Tout éteindre : `?echelons=aucun`. Avec le banc : `?banc&echelons=4`. Le panneau du banc
 résume les 600 dernières images ; l'export JSON garde les 3 600 dernières que le moteur retient.
-Nouveautés à essayer en passant : outil « Main », barre d'espace + glisser, bouton du milieu de la souris (la vue suit,
+Nouveautés à essayer en passant : outil « Main », barre d'espace + glisser (l'espace est pris même quand un bouton de la barre a le focus : il n'active donc plus les boutons, choix voulu pour que « espace + glisser » marche après un clic dans la barre), bouton du milieu de la souris (la vue suit,
 rien ne trace) ; bouton « Gomme : partielle / objet » (en gomme d'objet, un passage retire le trait entier).
