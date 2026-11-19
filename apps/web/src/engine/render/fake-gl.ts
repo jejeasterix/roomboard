@@ -11,11 +11,24 @@ export interface FakeDraw {
   readonly rgba: readonly number[];
 }
 
+export interface FakeEvent {
+  readonly type: string;
+  defaultPrevented: boolean;
+  preventDefault(): void;
+}
+
 export class FakeGL {
-  readonly canvas = { width: 0, height: 0 };
+  /** Canvas factice : taille + écouteurs (méthodes non énumérables pour que `toEqual({ width, height })` reste vrai). */
+  readonly canvas: { width: number; height: number } = this.makeCanvas();
+  private readonly listeners = new Map<string, ((e: FakeEvent) => void)[]>();
+  /** Vrai si `getExtension("WEBGL_lose_context")` rend l'extension. */
+  loseContextAvailable = true;
   readonly log: string[] = [];
   readonly draws: FakeDraw[] = [];
   compileOk = true;
+  /** Si renseigné : seul ce compile (0 = sommet, 1 = fragment) est refusé, `compileOk` étant ignoré. */
+  failCompileAt: number | null = null;
+  private compiles = 0;
   linkOk = true;
   readonly VERTEX_SHADER = 0x8b31;
   readonly FRAGMENT_SHADER = 0x8b30;
@@ -49,19 +62,64 @@ export class FakeGL {
   private scissorOn = false;
   private rgba: readonly number[] = [];
 
+  private makeCanvas(): { width: number; height: number } {
+    const canvas = { width: 0, height: 0 };
+    Object.defineProperty(canvas, "addEventListener", {
+      value: (type: string, cb: (e: FakeEvent) => void) => {
+        const list = this.listeners.get(type) ?? [];
+        list.push(cb);
+        this.listeners.set(type, list);
+      },
+    });
+    Object.defineProperty(canvas, "removeEventListener", {
+      value: (type: string, cb: (e: FakeEvent) => void) => {
+        this.listeners.set(type, (this.listeners.get(type) ?? []).filter((x) => x !== cb));
+      },
+    });
+    return canvas;
+  }
+
+  /** Simule un évènement du canvas (`webglcontextlost`, `webglcontextrestored`) ; rend l'évènement vu des écouteurs. */
+  fire(type: string): FakeEvent {
+    const e: FakeEvent = {
+      type,
+      defaultPrevented: false,
+      preventDefault() {
+        e.defaultPrevented = true;
+      },
+    };
+    for (const cb of this.listeners.get(type) ?? []) cb(e);
+    return e;
+  }
+
+  getExtension(name: string): { loseContext(): void } | null {
+    if (name !== "WEBGL_lose_context" || !this.loseContextAvailable) return null;
+    return { loseContext: () => this.log.push("loseContext") };
+  }
   createShader(): object {
+    this.log.push("createShader");
     return {};
   }
   shaderSource(): void {}
   compileShader(): void {}
   getShaderParameter(): boolean {
-    return this.compileOk;
+    const nth = this.compiles++;
+    return this.failCompileAt === null ? this.compileOk : nth !== this.failCompileAt;
   }
   getShaderInfoLog(): string {
     return "erreur de compilation simulée";
   }
-  deleteShader(): void {}
+  deleteShader(): void {
+    this.log.push("deleteShader");
+  }
+  detachShader(): void {
+    this.log.push("detachShader");
+  }
+  deleteProgram(): void {
+    this.log.push("deleteProgram");
+  }
   createProgram(): object {
+    this.log.push("createProgram");
     return {};
   }
   attachShader(): void {}
