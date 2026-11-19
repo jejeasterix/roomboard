@@ -85,4 +85,30 @@ describe("createFrameLoop", () => {
     loop.clear();
     expect(loop.durations()).toEqual([]);
   });
+
+  it("maxDurations : seules les N dernières durées, dans l'ordre", () => {
+    const clock = fakeClock();
+    const loop = createFrameLoop(clock.deps, () => {}, 3);
+    loop.start();
+    for (const ms of [10, 11, 12, 13, 14, 15, 16, 17]) clock.advance(ms);
+    expect(loop.durations()).toEqual([15, 16, 17]);
+  });
+
+  it("sans borne : toutes les durées (banc du lot 1)", () => {
+    const clock = fakeClock();
+    const loop = createFrameLoop(clock.deps, () => {});
+    loop.start();
+    for (let i = 0; i < 1000; i++) clock.advance(16);
+    expect(loop.durations()).toHaveLength(999);
+  });
+
+  it("borne invalide (0, négative, NaN) : sans borne", () => {
+    for (const max of [0, -5, Number.NaN]) {
+      const clock = fakeClock();
+      const loop = createFrameLoop(clock.deps, () => {}, max);
+      loop.start();
+      for (let i = 0; i < 10; i++) clock.advance(16);
+      expect(loop.durations()).toHaveLength(9);
+    }
+  });
 });
