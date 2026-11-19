@@ -1,5 +1,5 @@
 // Outils communs des scripts d'essai au navigateur (lot 4, T57). Repris à l'identique de s2-navigateur.mjs
-// (même cache npx, même PLAYWRIGHT_MODULE, mêmes types MIME) ; s2 n'est pas migré (lot 5).
+// (même cache npx, même PLAYWRIGHT_MODULE, mêmes types MIME) . Migrés : s2, fichiers (lot 5b, T85) et s34.
 import { existsSync, readdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -33,7 +33,8 @@ export async function loadPlaywright() {
   return found ? import(pathToFileURL(found).href) : null;
 }
 
-export function serve() {
+/** `headers` : en-têtes ajoutés à chaque réponse 200 (ex. la CSP de la coque). */
+export function serve({ headers = {} } = {}) {
   const server = createServer(async (req, res) => {
     try {
       const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
@@ -45,7 +46,7 @@ export function serve() {
       }
       const target = (await stat(file)).isDirectory() ? join(file, "index.html") : file;
       const body = await readFile(target);
-      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
+      res.writeHead(200, { ...headers, "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
     } catch {
       res.writeHead(404).end();
     }
