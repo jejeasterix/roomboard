@@ -96,12 +96,7 @@ function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeSt
 }
 
 /** Texte (D14, CL4-4) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutText`). */
-function paintText(ctx: CanvasRenderingContext2D, t: TextData, color: string): void {
-  const measure: Measure = (s, size) => {
-    ctx.font = textFont(size);
-    return ctx.measureText(s).width;
-  };
-  const lines = layoutText(t.content, t.size, t.boxWidth, measure);
+function paintText(ctx: CanvasRenderingContext2D, t: TextData, color: string, lines: readonly string[]): void {
   ctx.font = textFont(t.size);
   ctx.fillStyle = color;
   ctx.textBaseline = "top";
@@ -110,6 +105,8 @@ function paintText(ctx: CanvasRenderingContext2D, t: TextData, color: string): v
 
 export class Canvas2DRenderer implements Renderer {
   private readonly paths = new Map<string, Path2D | null>();
+  /** Lignes des textes par id (clé : contenu, taille, largeur de boîte), invalidées par `Change` comme `paths`. */
+  private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly string[] }>();
   private readonly makePath: () => Path2D;
   private sx = 1;
   private sy = 1;
@@ -166,7 +163,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "shape") {
       paintShape(ctx, el.shape, el.style);
     } else if (el.kind === "text") {
-      paintText(ctx, el.text, el.style.color);
+      paintText(ctx, el.text, el.style.color, this.linesOf(ctx, el.id, el.text));
     }
     ctx.restore();
   }
@@ -236,10 +233,26 @@ export class Canvas2DRenderer implements Renderer {
   invalidate(change: Change): void {
     if (change.full) {
       this.paths.clear();
+      this.textLines.clear();
       return;
     }
-    for (const id of change.ids) this.paths.delete(id);
-    for (const id of change.removed) this.paths.delete(id);
+    for (const id of [...change.ids, ...change.removed]) {
+      this.paths.delete(id);
+      this.textLines.delete(id);
+    }
+  }
+
+  private linesOf(ctx: CanvasRenderingContext2D, id: string, t: TextData): readonly string[] {
+    const key = `${t.size}|${t.boxWidth}|${t.content}`;
+    const cached = this.textLines.get(id);
+    if (cached && cached.key === key) return cached.lines;
+    const measure: Measure = (s, size) => {
+      ctx.font = textFont(size);
+      return ctx.measureText(s).width;
+    };
+    const lines = layoutText(t.content, t.size, t.boxWidth, measure);
+    this.textLines.set(id, { key, lines });
+    return lines;
   }
 
   private setView(ctx: CanvasRenderingContext2D, c: Camera): void {

@@ -1,6 +1,6 @@
 /**
  * Mise en lignes du texte (D14, CL4-4, CL4-5) : une seule implémentation pour la hauteur de boîte envoyée au cœur
- * (outil Texte) et pour le rendu (Canvas 2D). Coupure gloutonne aux espaces, mot trop long coupé par caractères.
+ * (outil Texte) et pour le rendu (Canvas 2D). Coupure gloutonne aux espaces, mot trop long coupé par points de code.
  */
 export const TEXT_FONT_FAMILY = '"Atkinson Hyperlegible", system-ui, sans-serif';
 export const TEXT_SIZES: readonly number[] = [24, 36, 48, 72];
@@ -27,10 +27,17 @@ export function layoutText(content: string, size: number, boxWidth: number, meas
         line = /^\s+$/.test(token) ? "" : token;
       }
       while (line.trimEnd().length > 1 && measure(line.trimEnd(), size) > boxWidth) {
-        let cut = line.length - 1;
-        while (cut > 1 && measure(line.slice(0, cut), size) > boxWidth) cut--;
-        out.push(line.slice(0, cut));
-        line = line.slice(cut);
+        // par point de code (jamais au milieu d'un emoji) ; recherche dichotomique : la largeur croît avec le préfixe
+        const points = Array.from(line);
+        let lo = 1;
+        let hi = points.length - 1;
+        while (lo < hi) {
+          const mid = Math.ceil((lo + hi) / 2);
+          if (measure(points.slice(0, mid).join(""), size) > boxWidth) hi = mid - 1;
+          else lo = mid;
+        }
+        out.push(points.slice(0, lo).join(""));
+        line = points.slice(lo).join("");
       }
     }
     out.push(line.trimEnd());

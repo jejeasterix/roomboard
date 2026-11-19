@@ -13,7 +13,7 @@ import { EMPTY_OVERLAY, type EditOverlay } from "../render/overlay";
 import {
   HANDLE_GRAB_PX,
   handlePoint,
-  hitHandle,
+  handlesOf,
   isIdentity,
   resizeMatrix,
   transformBounds,
@@ -48,6 +48,29 @@ const norm = (ax: number, ay: number, bx: number, by: number): Bounds => ({
   x1: Math.max(ax, bx),
   y1: Math.max(ay, by),
 });
+
+/**
+ * Poignée prise par un appui (portée `reach` en unités monde, bord exclu). Sur un cadre dont un côté écran est plus
+ * petit que deux fois la zone de prise, les poignées de milieu de ces côtés sont écartées : elles couvriraient le
+ * centre et l'appui déplacerait au lieu de redimensionner (CL4-11).
+ */
+function grabbedHandle(frame: Bounds, x: number, y: number, zoom: number): HandleId | null {
+  const reach = HANDLE_GRAB_PX / zoom;
+  const narrow = (frame.x1 - frame.x0) * zoom <= 2 * HANDLE_GRAB_PX;
+  const short = (frame.y1 - frame.y0) * zoom <= 2 * HANDLE_GRAB_PX;
+  let best: HandleId | null = null;
+  let bestD = reach;
+  for (const h of handlesOf(frame)) {
+    if (narrow && (h.id === "n" || h.id === "s")) continue;
+    if (short && (h.id === "e" || h.id === "w")) continue;
+    const d = Math.max(Math.abs(h.x - x), Math.abs(h.y - y));
+    if (d < bestD) {
+      best = h.id;
+      bestD = d;
+    }
+  }
+  return best;
+}
 
 export function createSelectTool(ctx: ToolContext): SelectionTool {
   let selection: string[] = [];
@@ -91,7 +114,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       const shift = ctx.shift?.() === true;
       const frame = selection.length > 0 ? ctx.doc.bounds(selection) : null;
       // Poignée cherchée avant hitTest, Maj tenue ou non : Maj sur une poignée = proportions (D15, CL4-11).
-      const h = frame ? hitHandle(frame, x, y, HANDLE_GRAB_PX / zoom) : null;
+      const h = frame ? grabbedHandle(frame, x, y, zoom) : null;
       if (frame && h) {
         startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
         return;
