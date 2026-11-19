@@ -124,9 +124,12 @@ async function start(): Promise<void> {
   });
   sampler.onGesture((g) => router.handle(g));
   createMiddlePan(stage, engine.view);
-  // Sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page : la zone de saisie, tout juste
-  // ouverte par l'outil Texte, le perdrait et validerait aussitôt une boîte vide.
-  stage.addEventListener("mousedown", (e) => e.preventDefault());
+  // Outil Texte seulement : sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page, et la zone de
+  // saisie, tout juste ouverte, le perdrait et validerait aussitôt une boîte vide. Avec les autres outils on laisse le
+  // mousedown faire son travail : le dernier bouton cliqué perd le focus (Entrée ne le redéclenche plus).
+  stage.addEventListener("mousedown", (e) => {
+    if (engine.tool() === "text") e.preventDefault();
+  });
 
   // Échelon 3 : traînée déléguée, seulement pour un geste qui trace au stylo.
   const trail = await attachInkTrail({

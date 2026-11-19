@@ -14,7 +14,7 @@ import { DIST, ROOT, Echec, frames, gitSha, inkIn, loadPlaywright, serve } from 
 
 const LABEL = "S3/S4 lot 4";
 const NON_COUVERT = [
-  "enregistrer puis rouvrir (S3) : couvert par le cœur, s3_text_stroke_shape_survive_save_load (T49) ; fichier au lot 6",
+  "enregistrer puis rouvrir (S3) : couvert par le cœur, s3_text_stroke_shape_survive_save_load (T49) ; fichier au lot 5",
   "zoom à 200 % par Ctrl+molette puis trait aux coordonnées monde (S4) : tests du moteur (lot 3b), pas rejoué ici",
   "profil de barre essai-simple (S4) : lot 5",
   "WebKit (S4) : Playwright WebKit non posé sur la VM ; essai sur le Mac",
@@ -55,6 +55,22 @@ async function scenario(page, url, captures) {
     await page.keyboard.press("Control+z");
     await frames(page);
   };
+  const redo = async () => {
+    await page.keyboard.press("Control+y");
+    await frames(page);
+  };
+  const editorOpen = () => page.isVisible("#texte-edition");
+  // Relit le contenu d'un texte écrit : l'outil Texte, au clic sur lui, rouvre la zone avec son contenu ; Échap referme sans écrire.
+  const readText = async (x, y, expected, msg) => {
+    await click("text");
+    await page.mouse.click(x, y);
+    await frames(page);
+    check(await editorOpen(), "clic sur un texte écrit : la zone se rouvre");
+    check((await page.inputValue("#texte-edition")) === expected, msg);
+    await page.keyboard.press("Escape");
+    await frames(page);
+    check(!(await editorOpen()), "Échap : la zone se referme");
+  };
   const shot = async (name) => {
     if (!captures) return;
     const path = join(ROOT, "docs", "essais", `s34-lot4-${name}.png`);
@@ -74,48 +90,87 @@ async function scenario(page, url, captures) {
   for (const t of ["page-prev", "page-next", "page-add", "page-remove"]) if (!(await edit(t))) missingPages.push(t);
   if (missingPages.length > 0) throw new Echec(`boutons absents : ${missingPages.join(", ")}`);
 
-  // Pages : deux ajouts.
+  // Pages : deux ajouts, Ctrl+Z puis Ctrl+Y.
   check((await pageTag()) === "1/1", "départ : page 1/1");
   await click("page-add");
   await click("page-add");
   check((await pageTag()) === "3/3", "deux pages ajoutées : on est sur la page 3/3");
   check(((await page.textContent("#pages")) ?? "").replace(/\s/g, "") === "3/3", "compteur #pages : 3 / 3");
+  await undo();
+  check((await pageTag()) === "2/2", "Ctrl+Z : l'ajout est annulé, la page précédente est montrée (2/2)");
+  await redo();
+  check((await pageTag()) === "3/3", "Ctrl+Y : la page ajoutée revient et est montrée (3/3)");
   await click("page-prev");
   await click("page-prev");
   check((await pageTag()) === "1/3", "retour à la page 1/3");
 
-  // Page 1 : texte par IME simulée.
+  // Page 1 : texte par IME simulée (composition « ni »).
   await click("text");
   await page.mouse.click(300, 300);
   await frames(page);
   const area = await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
+  check(await editorOpen(), "outil Texte : la zone de saisie s'ouvre au clic");
+  check((await page.evaluate(() => document.activeElement?.id)) === "texte-edition", "la zone de saisie a le focus");
   await area.focus();
-  let imeMode = "CDP";
+  await page.evaluate(() => {
+    window.__ime = [];
+    window.__elementsAtEnd = null;
+    // Phase de capture sur window : passe avant les écouteurs de la zone de saisie (donc avant toute écriture).
+    window.addEventListener("compositionstart", () => window.__ime.push("compositionstart"), true);
+    window.addEventListener(
+      "compositionend",
+      () => {
+        window.__ime.push("compositionend");
+        window.__elementsAtEnd = document.getElementById("stage").dataset.elements;
+      },
+      true,
+    );
+  });
+  const ime = () => page.evaluate(() => window.__ime);
   const cdp = await page.context().newCDPSession(page);
+  let imeMode = "CDP Input.imeSetComposition";
   try {
     await cdp.send("Input.imeSetComposition", { text: "ni", selectionStart: 2, selectionEnd: 2 });
-    await frames(page);
-    check((await page.$eval("#texte-edition", (t) => t.value)) !== "bonjour", "composition en cours");
-    check((await elements()) === 0, "pendant la composition : rien d'écrit dans le document");
-    await cdp.send("Input.insertText", { text: "bonjour" });
   } catch {
     imeMode = "synthétique";
+  }
+  await frames(page);
+  if (imeMode.startsWith("CDP") && !(await ime()).includes("compositionstart")) imeMode = "synthétique";
+  if (imeMode === "synthétique") {
     await page.$eval("#texte-edition", (t) => {
-      t.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      t.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+      t.value = "ni";
       t.dispatchEvent(new CompositionEvent("compositionupdate", { bubbles: true, data: "ni" }));
     });
-    check((await elements()) === 0, "pendant la composition (synthétique) : rien d'écrit");
-    await page.$eval("#texte-edition", (t) => {
-      t.value = "bonjour";
-      t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "bonjour" }));
-      t.dispatchEvent(new InputEvent("input", { bubbles: true, data: "bonjour", inputType: "insertCompositionText" }));
-    });
+    await frames(page);
   }
   console.log(`IME : ${imeMode}`);
+  check((await ime()).includes("compositionstart"), "compositionstart vu : la composition a eu lieu");
+  check((await page.inputValue("#texte-edition")) === "ni", "pendant la composition : la zone porte « ni »");
+  check((await elements()) === 0, "pendant la composition : rien d'écrit dans le document");
+  await page.$eval("#texte-edition", (t) =>
+    t.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true })),
+  );
   await frames(page);
-  await page.mouse.click(900, 600); // clic ailleurs : valide le texte
+  check((await elements()) === 0 && (await editorOpen()), "Échap pendant la composition : laissé à l'IME (rien d'écrit, zone ouverte)");
+  await page.mouse.click(900, 600); // validation demandée pendant la composition
   await frames(page);
-  check((await elements()) === 1, "page 1 : le texte est écrit (un élément)");
+  check((await elements()) === 0 && (await editorOpen()), "clic ailleurs pendant la composition : rien n'est écrit avant compositionend");
+  if (imeMode === "synthétique") {
+    await page.$eval("#texte-edition", (t) => t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "ni" })));
+  } else {
+    await cdp.send("Input.insertText", { text: "ni" }); // la composition se valide : compositionend
+  }
+  await frames(page);
+  check((await ime()).includes("compositionend"), "compositionend vu");
+  check((await page.evaluate(() => window.__elementsAtEnd)) === "0", "rien n'était écrit au moment de compositionend");
+  check((await elements()) === 1 && !(await editorOpen()), "après compositionend : le texte est écrit, la zone fermée");
+  check((await inkIn(page, [296, 296, 340, 330])) > 0, "le texte est peint sur la scène");
+  await readText(310, 310, "ni", "contenu du texte écrit : « ni »");
+  await undo();
+  check((await elements()) === 0, "Ctrl+Z : le texte part (une étape)");
+  await redo();
+  check((await elements()) === 1, "Ctrl+Y : le texte revient");
 
   // Page 2 : un trait.
   await click("page-next");
@@ -132,6 +187,11 @@ async function scenario(page, url, captures) {
   check((await elements()) === 0, "page 3 : vide au départ");
   await click("rect");
   await drag([[200, 200], [320, 280]]);
+  check((await elements()) === 1, "rectangle posé au relâché");
+  await undo();
+  check((await elements()) === 0, "Ctrl+Z : le rectangle part (une étape)");
+  await redo();
+  check((await elements()) === 1, "Ctrl+Y : le rectangle revient");
   await click("ellipse");
   await drag([[400, 200], [520, 280]]);
   await click("line");
@@ -148,6 +208,8 @@ async function scenario(page, url, captures) {
   await page.mouse.click(900, 600); // clic ailleurs : valide
   await frames(page);
   check((await elements()) === 5, "page 3 : second texte validé par un clic ailleurs (cinq éléments)");
+  check(!(await editorOpen()), "la zone de texte est fermée après le clic ailleurs");
+  await readText(710, 310, "note", "contenu du second texte : « note »");
   await shot("forme-texte");
 
   // Sélection au rectangle : deux formes (rectangle et ellipse).
@@ -163,24 +225,35 @@ async function scenario(page, url, captures) {
   await frames(page);
   check((await nSel()) === 0, "Échap : sélection vidée");
 
-  // Re-sélection, déplacement, agrandissement, suppression.
+  // Re-sélection, déplacement de 100 px écran par l'INTÉRIEUR du rectangle (vide), agrandissement, suppression.
   await drag([[180, 180], [540, 300]]);
   const b0 = await bounds();
   check(b0.length === 4 && b0.every(Number.isFinite), "bornes de la sélection lues");
-  await drag([[260, 200], [310, 250]]); // le bord haut du rectangle : les formes ne sont pas pleines, le test de prise suit le contour
+  // Bornes en unités de page, gestes en px écran : k (unités par px) se lit d'abord sur la largeur de la sélection
+  // (320 px écran, épaisseur du trait en plus), puis sert à demander un déplacement de 100 unités.
+  const kEstimate = (b0[2] - b0[0]) / 320;
+  const px = 100 / kEstimate;
+  await drag([[260, 240], [260 + px / 2, 240], [260 + px, 240]]);
   const b1 = await bounds();
-  // Les bornes sont en unités de page, les gestes en pixels écran : l'échelle se lit sur la sélection (rectangle et
-  // ellipse couvrent 320 px écran de large : de x = 200 à x = 520).
-  const zoom = (b0[2] - b0[0]) / 320;
-  check(
-    Math.abs(b1[0] - b0[0] - 50 * zoom) < 4 && Math.abs(b1[1] - b0[1] - 50 * zoom) < 4,
-    "déplacer : la sélection suit (+50 px écran, +50 px écran)",
-  );
+  const dx = b1[0] - b0[0];
+  const k = dx / px; // zoom déduit du geste lui-même
+  console.log(`zoom déduit : ${k.toFixed(4)} unité par px (${px.toFixed(1)} px écran = ${dx.toFixed(1)} unités)`);
+  check(Math.abs(dx - 100) < 2, `déplacer : la sélection suit de 100 unités (${dx.toFixed(1)}, tolérance 2)`);
+  check(Math.abs(b1[1] - b0[1]) < 2 && (await nSel()) === 2, "déplacer : pas de dérive verticale, sélection gardée");
+  check(Math.abs(kEstimate - k) / k < 0.03, "zoom déduit cohérent avec la largeur de la sélection (320 px écran)");
   const w1 = b1[2] - b1[0];
-  await drag([[570, 330], [890, 410]]); // poignée du coin bas droit (écran : 570, 330 après le déplacement), largeur et hauteur ×2
+  const h1 = b1[3] - b1[1];
+  const cx = 520 + px;
+  await drag([[cx, 280], [cx + 160, 320], [cx + 320, 360]]); // coin bas droit de l'union déplacée ; largeur et hauteur ×2
   const b2 = await bounds();
-  // Les bornes comptent l'épaisseur du trait (quelques unités fixes) : le rapport tient à 1,5 % près, pas à l'unité.
-  check(Math.abs((b2[2] - b2[0]) / w1 - 2) < 0.03, "agrandir x2 par la poignée de coin");
+  const w2 = b2[2] - b2[0];
+  const h2 = b2[3] - b2[1];
+  // Les bornes sont élargies par l'épaisseur du trait (fixe) : géométrie 320 px × 80 px écran, doublée.
+  const wantW = 1 + (320 * k) / w1;
+  const wantH = 1 + (80 * k) / h1;
+  check(Math.abs(w2 / w1 - wantW) < 1e-3, `agrandir : largeur ×${(w2 / w1).toFixed(4)} (attendu ×${wantW.toFixed(4)})`);
+  check(Math.abs(h2 / h1 - wantH) < 1e-3, `agrandir : hauteur ×${(h2 / h1).toFixed(4)} (attendu ×${wantH.toFixed(4)})`);
+  check(Math.abs(b2[0] - b1[0]) < 0.2 && Math.abs(b2[1] - b1[1]) < 0.2, "agrandir : le coin opposé reste fixe");
   await shot("selection");
   const before = await elements();
   await page.keyboard.press("Delete");
@@ -192,13 +265,13 @@ async function scenario(page, url, captures) {
   check((await elements()) === before, "Ctrl+Z annule la suppression");
   // La sélection se vide avec la suppression (elle ne revient pas avec Ctrl+Z) : on resélectionne pour mesurer.
   await undo();
-  await drag([[230, 230], [600, 350]]);
+  await drag([[180 + px, 180], [540 + px + 100, 300]]);
   const b21 = await bounds();
-  check(Math.abs(b21[2] - b21[0] - w1) < 3, "Ctrl+Z annule l'agrandissement");
+  check(Math.abs(b21[2] - b21[0] - w1) < 0.3 && Math.abs(b21[3] - b21[1] - h1) < 0.3, "Ctrl+Z annule l'agrandissement");
   await undo();
   await drag([[180, 180], [540, 300]]);
   const b3 = await bounds();
-  check(Math.abs(b3[0] - b0[0]) < 2, "Ctrl+Z annule le déplacement");
+  check(Math.abs(b3[0] - b0[0]) < 0.2 && Math.abs(b3[1] - b0[1]) < 0.2, "Ctrl+Z annule le déplacement");
 
   // Retrait de pages.
   await click("page-prev");
@@ -213,6 +286,17 @@ async function scenario(page, url, captures) {
   check((await pageTag()) === "1/1", "deux retraits : une seule page");
   check(await (await edit("page-remove")).isDisabled(), "la dernière page ne se retire pas");
   await shot("pages"); // une page, « 1 / 1 », « Retirer la page » grisé
+
+  // Le dernier bouton cliqué ne garde pas le focus : Entrée ne le redéclenche pas (outil autre que Texte).
+  await click("page-add");
+  check((await pageTag()) === "2/2", "Ajouter une page : page 2/2");
+  await (await page.$('#barre button[data-action="pen"]')).click();
+  await click("page-add");
+  check((await pageTag()) === "3/3", "Ajouter une page : page 3/3");
+  await drag([[400, 350], [700, 400]]);
+  await page.keyboard.press("Enter");
+  await frames(page);
+  check((await pageTag()) === "3/3", "Entrée après un trait : le compteur ne bouge pas (3/3)");
 
   for (const n of NON_COUVERT) console.log(`non couvert — ${n}`);
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
