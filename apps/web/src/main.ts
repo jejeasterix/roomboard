@@ -13,7 +13,8 @@ import { withLinearPrediction } from "./engine/input/predict";
 import { createRouter, SECOND_FINGER_MS, type RouterOptions } from "./engine/input/router";
 import { createSampler, type SamplerOptions } from "./engine/input/sampler";
 import { detectSupport } from "./engine/input/support";
-import { attachInkTrail, type InkLike, type TrailEvent } from "./engine/render/ink-trail";
+import { attachInkTrail, type InkLike } from "./engine/render/ink-trail";
+import { trailStyleFor } from "./engine/render/trail-style";
 import { chooseRenderer } from "./engine/render/select";
 import {
   createSettingsStore,
@@ -106,11 +107,7 @@ async function start(): Promise<void> {
     area: el<HTMLCanvasElement>("interaction"),
     surface: stage,
     // Le routeur est l'unique décideur : la traînée ne suit que les gestes qu'il a classés « ink » (aucune règle recopiée).
-    // L'événement réel est un PointerEvent : `pointerId` y est, même si TrailEvent (render/, T42) ne le déclare pas.
-    styleFor: (e) => {
-      if (router.roleOf((e as TrailEvent & { pointerId: number }).pointerId) !== "ink") return null;
-      return { color: DEFAULT_PEN_STYLE.color, diameter: DEFAULT_PEN_STYLE.width * engine.camera().zoom };
-    },
+    styleFor: trailStyleFor(router.roleOf, DEFAULT_PEN_STYLE, () => engine.camera().zoom),
   });
   const effective = (): EffectiveEchelons => ({
     prediction: prediction(),

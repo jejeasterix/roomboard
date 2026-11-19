@@ -24,7 +24,6 @@ export function tryParseColor(css: string): Rgba | null {
   const hexMatch = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(s);
   const hex = hexMatch?.[1];
   if (hex !== undefined) {
-    if (hex.length === 5 || hex.length === 7) return null;
     const full = hex.length <= 4 ? [...hex].map((c) => c + c).join("") : hex;
     const n = Number.parseInt(full, 16);
     if (full.length === 8) {
@@ -36,7 +35,9 @@ export function tryParseColor(css: string): Rgba | null {
   if (m === null) return null;
   const ch = (v: string | undefined): number => clamp01(Number(v) / 255);
   const alpha = m[4] === undefined ? 1 : clamp01(m[5] === "%" ? Number(m[4]) / 100 : Number(m[4]));
-  return [ch(m[1]), ch(m[2]), ch(m[3]), alpha];
+  const out: Rgba = [ch(m[1]), ch(m[2]), ch(m[3]), alpha];
+  // `1.2.3` ou `.` passent le motif mais ne sont pas des nombres : refusés, jamais un NaN dans l'uniform.
+  return out.every(Number.isFinite) ? out : null;
 }
 
 /** Voir `tryParseColor` ; écriture inconnue : noir opaque (l'appelant peut le signaler avec `tryParseColor`). */
@@ -201,6 +202,7 @@ function link(gl: WebGL2RenderingContext): WebGLProgram {
     throw e;
   }
   const program = gl.createProgram();
+  let failed = true;
   try {
     if (!program) throw new Error("WebGL2 : programme non créé");
     gl.attachShader(program, vs);
@@ -210,13 +212,15 @@ function link(gl: WebGL2RenderingContext): WebGLProgram {
       const log = gl.getProgramInfoLog(program) ?? "";
       throw new Error(`WebGL2 : programme refusé ${log}`.trim());
     }
+    failed = false;
   } catch (e) {
-    if (program) gl.deleteProgram(program);
     throw e;
   } finally {
+    // Détacher avant de supprimer le programme : détacher d'un programme supprimé est une erreur WebGL (INVALID_VALUE).
     if (program) {
       gl.detachShader(program, vs);
       gl.detachShader(program, fs);
+      if (failed) gl.deleteProgram(program);
     }
     gl.deleteShader(vs);
     gl.deleteShader(fs);

@@ -78,8 +78,8 @@ describe("attachInkTrail (échelon 3)", () => {
     const t = await attachInkTrail(deps);
     expect(t.status).toBe("on");
     expect(asked).toEqual([AREA]);
-    surface.move({ pointerType: "pen", buttons: 1 });
-    surface.move({ pointerType: "mouse", buttons: 1 });
+    surface.move({ pointerId: 1, pointerType: "pen", buttons: 1 });
+    surface.move({ pointerId: 1, pointerType: "mouse", buttons: 1 });
     expect(updates).toEqual([STYLE, STYLE]);
   });
 
@@ -87,16 +87,16 @@ describe("attachInkTrail (échelon 3)", () => {
     let style: InkTrailStyle | null = null;
     const { deps, surface, updates } = setup({ styleFor: () => style });
     await attachInkTrail(deps);
-    surface.move({ pointerType: "pen", buttons: 1 });
+    surface.move({ pointerId: 1, pointerType: "pen", buttons: 1 });
     style = { color: "#000000", diameter: 0 };
-    surface.move({ pointerType: "pen", buttons: 1 });
+    surface.move({ pointerId: 1, pointerType: "pen", buttons: 1 });
     expect(updates).toEqual([]);
   });
 
   it("pointeur levé (buttons 0) : aucune mise à jour", async () => {
     const { deps, surface, updates } = setup();
     await attachInkTrail(deps);
-    surface.move({ pointerType: "pen", buttons: 0 });
+    surface.move({ pointerId: 1, pointerType: "pen", buttons: 0 });
     expect(updates).toEqual([]);
   });
 
@@ -111,7 +111,7 @@ describe("attachInkTrail (échelon 3)", () => {
       },
     });
     const t = await attachInkTrail(deps);
-    expect(() => surface.move({ pointerType: "pen", buttons: 1 })).not.toThrow();
+    expect(() => surface.move({ pointerId: 1, pointerType: "pen", buttons: 1 })).not.toThrow();
     expect(t.failures()).toBe(1);
   });
 

@@ -204,6 +204,44 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
     expect(gl.log.filter((l) => l === "deleteShader")).toHaveLength(2);
   });
 
+  it("édition de liens ratée : aucun shader détaché d'un programme déjà supprimé", () => {
+    class StrictGL extends FakeGL {
+      readonly deleted = new Set<object>();
+      readonly errors: string[] = [];
+      override createProgram(): object {
+        return super.createProgram();
+      }
+      override deleteProgram(p?: object): void {
+        super.deleteProgram();
+        if (p) this.deleted.add(p);
+      }
+      override detachShader(p?: object): void {
+        super.detachShader();
+        if (p && this.deleted.has(p)) this.errors.push("INVALID_VALUE");
+      }
+    }
+    const gl = new StrictGL();
+    gl.linkOk = false;
+    expect(() => new WebGL2LiveRenderer(new FakeScene(), asGL(gl))).toThrow(/programme refusé/);
+    expect(gl.errors).toEqual([]);
+    expect(gl.log.filter((l) => l === "detachShader")).toHaveLength(2);
+    expect(gl.log.filter((l) => l === "deleteProgram")).toHaveLength(1);
+  });
+
+  it("tryParseColor : un canal qui n'est pas un nombre (1.2.3, .) est refusé", () => {
+    expect(tryParseColor("rgb(1.2.3,0,0)")).toBeNull();
+    expect(tryParseColor("rgb(.,0,0)")).toBeNull();
+    expect(tryParseColor("rgba(0,0,0,1.2.3)")).toBeNull();
+    expect(tryParseColor("rgb(12.5, 0, 0)")).not.toBeNull();
+  });
+
+  it("couleur à canal non numérique : noir, signalée dans badColors, jamais NaN dans l'uniform", () => {
+    const { gl, r } = make();
+    r.drawLive({ strokes: [{ outline: U, predicted: new Float32Array(0), color: "rgb(1.2.3,0,0)", width: 4 }], erasers: [] }, IDENTITY);
+    expect([...r.badColors]).toEqual(["rgb(1.2.3,0,0)"]);
+    expect(gl.draws[1]?.rgba).toEqual(f32([0, 0, 0, 1]));
+  });
+
   it("shader de fragment refusé : le shader de sommet déjà compilé est supprimé", () => {
     const gl = new FakeGL();
     gl.failCompileAt = 1;
