@@ -30,6 +30,11 @@ export interface SamplerOptions {
   readonly coalesced: boolean;
   readonly predicted: boolean;
   readonly raw: boolean;
+  /**
+   * Paume posée avant le stylet (D18, réglage « paume ») : absent ou vrai = son geste est annulé quand le stylet touche
+   * (écart accepté T1) ; faux = il continue. Lu à chaque pose du stylet : la page peut passer un accesseur.
+   */
+  readonly cancelTouchesOnPen?: boolean;
 }
 
 export interface SamplerStats {
@@ -158,7 +163,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
       touchIgnored++;
       return;
     }
-    if (e.pointerType === "pen") cancelTouches();
+    if (e.pointerType === "pen" && opts.cancelTouchesOnPen !== false) cancelTouches();
     try {
       target.setPointerCapture(e.pointerId);
     } catch {

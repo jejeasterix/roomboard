@@ -348,6 +348,58 @@ describe("createSampler", () => {
     sampler.dispose();
     expect(out.filter((g) => g.kind === "cancel")).toHaveLength(2);
   });
+  it("paume stricte explicite (cancelTouchesOnPen: true) : même effet que le défaut", () => {
+    const surface = new FakeSurface();
+    const out = record(createSampler(surface, { ...ALL, cancelTouchesOnPen: true }));
+    surface.fire("pointerdown", { pointerId: 2, pointerType: "touch" });
+    surface.fire("pointerdown", { pointerId: 1, pointerType: "pen" });
+    expect(out.map((g) => `${g.kind}:${g.pointerId}${g.palm === true ? ":palm" : ""}`)).toEqual([
+      "start:2",
+      "cancel:2:palm",
+      "start:1",
+    ]);
+  });
+
+  it("paume souple (cancelTouchesOnPen: false) : le contact posé avant le stylet continue de tracer", () => {
+    const surface = new FakeSurface();
+    const sampler = createSampler(surface, { ...ALL, cancelTouchesOnPen: false });
+    const out = record(sampler);
+    surface.fire("pointerdown", { pointerId: 2, pointerType: "touch" });
+    surface.fire("pointerdown", { pointerId: 1, pointerType: "pen" });
+    surface.fire("pointermove", { pointerId: 2, pointerType: "touch" });
+    surface.fire("pointerup", { pointerId: 2, pointerType: "touch" });
+    expect(out.map((g) => `${g.kind}:${g.pointerId}`)).toEqual(["start:2", "start:1", "move:2", "end:2"]);
+    expect(sampler.stats().touchIgnored).toBe(0);
+  });
+
+  it("paume souple : un contact posé pendant que le stylet touche reste ignoré (D18)", () => {
+    const surface = new FakeSurface();
+    const sampler = createSampler(surface, { ...ALL, cancelTouchesOnPen: false });
+    const out = record(sampler);
+    surface.fire("pointerdown", { pointerId: 1, pointerType: "pen" });
+    surface.fire("pointerdown", { pointerId: 2, pointerType: "touch" });
+    surface.fire("pointermove", { pointerId: 2, pointerType: "touch" });
+    expect(out.map((g) => `${g.kind}:${g.pointerId}`)).toEqual(["start:1"]);
+    expect(sampler.stats().touchIgnored).toBe(1);
+  });
+
+  it("réglage de la paume lu à chaque pose du stylet (accesseur de la page)", () => {
+    let strict = false;
+    const opts: SamplerOptions = {
+      ...ALL,
+      get cancelTouchesOnPen() {
+        return strict;
+      },
+    };
+    const surface = new FakeSurface();
+    const out = record(createSampler(surface, opts));
+    surface.fire("pointerdown", { pointerId: 2, pointerType: "touch" });
+    surface.fire("pointerdown", { pointerId: 1, pointerType: "pen" });
+    surface.fire("pointerup", { pointerId: 1 });
+    strict = true;
+    surface.fire("pointerdown", { pointerId: 3, pointerType: "pen" });
+    expect(out.map((g) => `${g.kind}:${g.pointerId}`)).toEqual(["start:2", "start:1", "end:1", "cancel:2", "start:3"]);
+  });
 });
 
 describe("corrections de la relecture du lot 1 (T6c)", () => {
