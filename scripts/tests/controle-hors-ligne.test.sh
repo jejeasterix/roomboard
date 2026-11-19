@@ -22,7 +22,7 @@ cat > "$tmp/bonne.json" <<'EOT'
   "default-src": "'self'",
   "script-src": "'self' 'wasm-unsafe-eval'",
   "connect-src": "'self' ipc: http://ipc.localhost"
-} } } }
+} } }, "plugins": { "fs": { "scopeDroppedPaths": false } } }
 EOT
 cat > "$tmp/nulle.json" <<'EOT'
 { "app": { "security": { "csp": null } } }
@@ -61,7 +61,7 @@ cas=$((cas + 1))
 
 conf() { # nom, directives JSON supplémentaires
   cat > "$tmp/$1.json" <<EOT
-{ "app": { "security": { "csp": { "default-src": "'self'", $2 } } } }
+{ "app": { "security": { "csp": { "default-src": "'self'", $2 } } }, "plugins": { "fs": { "scopeDroppedPaths": false } } }
 EOT
 }
 S="'self'"; W="'wasm-unsafe-eval'"
@@ -96,5 +96,12 @@ cas=$((cas + 1))
 refuse 12 "$tmp/proto" "$tmp/bonne.json" "fonts.googleapis.com"
 refuse 13 "$tmp/majuscules" "$tmp/bonne.json" "cdn.example.com"
 refuse 14 "$tmp/nip" "$tmp/bonne.json" "127.0.0.1.nip.io"
+
+# 15-16. portée fs des dépôts (tauri-plugin-fs, scopeDroppedPaths vrai par défaut : un dossier déposé devient
+# lisible et inscriptible par la page) : absente → 1 ; vraie → 1
+python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); del c["plugins"]; json.dump(c,open(sys.argv[2],"w"))' "$tmp/bonne.json" "$tmp/sans-portee.json"
+python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); c["plugins"]["fs"]["scopeDroppedPaths"]=True; json.dump(c,open(sys.argv[2],"w"))' "$tmp/bonne.json" "$tmp/portee-vraie.json"
+refuse 15 "$tmp/propre" "$tmp/sans-portee.json" "scopeDroppedPaths"
+refuse 16 "$tmp/propre" "$tmp/portee-vraie.json" "scopeDroppedPaths"
 
 echo "controle-hors-ligne.test.sh : $cas cas OK"

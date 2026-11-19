@@ -24,6 +24,9 @@
       "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
+  "plugins": {
+    "fs": { "scopeDroppedPaths": false }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
