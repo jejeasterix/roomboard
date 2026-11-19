@@ -21,6 +21,12 @@ describe("mise en lignes du texte (CL4-4)", () => {
     expect(layoutText("abcdefgh", 36, 300, wide)).toEqual(["abc", "def", "gh"]);
   });
 
+  it("un mot trop long est coupé par point de code : un emoji n'est jamais scindé", () => {
+    const lines = layoutText("😀😀😀😀😀", 36, 300, wide); // « wide » mesure en unités UTF-16 : un emoji vaut 200
+    expect(lines).toEqual(["😀", "😀", "😀", "😀", "😀"]);
+    expect(lines.join("")).toBe("😀😀😀😀😀");
+  });
+
   it("texte vide : une ligne vide", () => {
     expect(layoutText("", 36, 600, wide)).toEqual([""]);
   });
