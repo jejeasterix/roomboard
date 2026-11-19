@@ -13,8 +13,8 @@ use crate::element::{
     style_fields, transform_to_any, StrokeStyle, Transform, IDENTITY,
 };
 use crate::ink::erase::erase;
-use crate::ink::hit::path_hits_outline;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
+use crate::query::path_hits_stroke;
 use crate::shape::{normalize, ShapeKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -216,6 +216,68 @@ pub(crate) fn world_to_local_path(t: &Transform, path: &[f32]) -> Option<Vec<f32
                 let (x, y) = apply_transform(&inv, f64::from(c[0]), f64::from(c[1]));
                 [x as f32, y as f32]
             })
+            .collect(),
+    )
+}
+
+/// Facteur d'échelle d'une similitude (rotation, échelle uniforme, symétrie éventuelle), `None` pour toute autre matrice
+/// (T63). Sous une similitude de facteur s, toute distance monde vaut s fois la distance locale : un rayon monde r se
+/// mesure exactement en local comme r / s. Tolérance relative 1e-9 : une similitude composée garde ses arrondis.
+pub(crate) fn similarity_scale(t: &Transform) -> Option<f64> {
+    let [a, b, c, d, _, _] = *t;
+    let s = a.hypot(b);
+    let eps = 1e-9 * s.max(c.hypot(d));
+    let direct = (a - d).abs() <= eps && (b + c).abs() <= eps;
+    let mirror = (a + d).abs() <= eps && (b - c).abs() <= eps;
+    (s.is_finite() && s > 0.0 && (direct || mirror)).then_some(s)
+}
+
+/// Plus petite valeur singulière de la partie linéaire de `t` : le plus fort rétrécissement d'une longueur locale
+/// (égale au facteur d'une similitude).
+fn min_singular(t: &Transform) -> f64 {
+    let [a, b, c, d, _, _] = *t;
+    let f = a * a + b * b + c * c + d * d;
+    let det = (a * d - b * c).abs();
+    let max = ((f + (f * f - 4.0 * det * det).max(0.0).sqrt()) / 2.0).sqrt();
+    if max > 0.0 {
+        det / max
+    } else {
+        0.0
+    }
+}
+
+/// Gomme partielle d'un trait placé par `t`, chemin et rayon en unités monde (T63). Similitude de facteur s : mesure en
+/// local, rayon r / s, demi-épaisseur locale inchangée (distance monde ≤ r + s · demi-épaisseur, exact ; points gardés
+/// tels quels). Autre matrice, où aucun rayon local n'est exact : la ligne médiane est portée en monde et coupée là, avec
+/// la plus petite demi-épaisseur monde (plus petite valeur singulière : la gomme ne coupe jamais plus loin que le trait
+/// affiché), puis les morceaux reviennent en local (une application affine garde les interpolations).
+fn erase_stroke(
+    t: &Transform,
+    pts: &[InkPoint],
+    half_width: f32,
+    path: &[f32],
+    radius: f32,
+) -> Option<Vec<Vec<InkPoint>>> {
+    if let Some(s) = similarity_scale(t) {
+        let local_path = world_to_local_path(t, path)?;
+        return erase(pts, half_width, &local_path, (f64::from(radius) / s) as f32);
+    }
+    let inv = invert(t)?;
+    let map = |m: &Transform, p: &InkPoint| {
+        let (x, y) = apply_transform(m, f64::from(p.x), f64::from(p.y));
+        InkPoint {
+            x: x as f32,
+            y: y as f32,
+            pressure: p.pressure,
+        }
+    };
+    let world: Vec<InkPoint> = pts.iter().map(|p| map(t, p)).collect();
+    let half = (f64::from(half_width) * min_singular(t)) as f32;
+    let pieces = erase(&world, half, path, radius)?;
+    Some(
+        pieces
+            .into_iter()
+            .map(|piece| piece.iter().map(|p| map(&inv, p)).collect())
             .collect(),
     )
 }
@@ -619,15 +681,16 @@ impl Document {
                 let Some((transform, style, pts)) = read_stroke(&txn, &e) else {
                     continue;
                 };
-                let Some(local_path) = world_to_local_path(&transform, path) else {
-                    continue;
-                };
                 let id = out_string(e.get(&txn, "id")).unwrap_or_default();
+                // Chemin et rayon en unités monde (T63) : la conversion vers le repère du trait est faite par
+                // `erase_stroke` et `path_hits_stroke`, jamais en appliquant le rayon tel quel en local.
                 let pieces = match mode {
-                    EraseMode::Partial => erase(&pts, style.width / 2.0, &local_path, radius),
+                    EraseMode::Partial => {
+                        erase_stroke(&transform, &pts, style.width / 2.0, path, radius)
+                    }
                     EraseMode::Object => {
                         let poly = self.cached_outline(&id, &style, &pts);
-                        path_hits_outline(&poly, &local_path, radius).then(Vec::new)
+                        path_hits_stroke(&transform, &poly, path, radius).then(Vec::new)
                     }
                 };
                 if let Some(pieces) = pieces {

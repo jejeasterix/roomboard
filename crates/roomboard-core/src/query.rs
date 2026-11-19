@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use yrs::{Array, Map, MapRef, Out, ReadTxn};
 
-use crate::commands::{read_shape, read_stroke, read_text, world_to_local_path};
+use crate::commands::{read_shape, read_stroke, read_text, similarity_scale, world_to_local_path};
 use crate::document::Document;
 use crate::element::{apply_transform, out_string, out_transform, Transform};
 use crate::ink::hit::{hit_outline, path_hits_outline};
@@ -77,6 +77,18 @@ fn world_outline(t: &Transform, poly: &[f32]) -> Vec<f32> {
         }
     }
     out
+}
+
+/// Le chemin monde de la gomme touche-t-il le trait (contour local `outline` placé par `t`) à `radius` monde près (T63) ?
+/// Similitude de facteur s : chemin ramené en local, rayon r / s, exact, sur le contour en cache (T17) sans le recopier
+/// (mesure du banc de `hit_test_path` inchangée). Autre matrice (échelle anisotrope, cisaillement), où aucun rayon local
+/// n'est exact : le contour est porté en monde et la distance s'y mesure, comme `hit_test` (constat 1 de T60).
+pub(crate) fn path_hits_stroke(t: &Transform, outline: &[f32], path: &[f32], radius: f32) -> bool {
+    match similarity_scale(t) {
+        Some(s) => world_to_local_path(t, path)
+            .is_some_and(|lp| path_hits_outline(outline, &lp, (f64::from(radius) / s) as f32)),
+        None => path_hits_outline(&world_outline(t, outline), path, radius),
+    }
 }
 
 impl Document {
@@ -159,14 +171,12 @@ impl Document {
             .map(|g| g.id)
     }
 
-    /// Traits touchés par un chemin (gomme d'objet, aperçu D38), dans l'ordre d'empilement.
+    /// Traits touchés par un chemin (gomme d'objet, aperçu D38), dans l'ordre d'empilement ; chemin et `radius` en
+    /// unités monde (T63), comme `Erase`.
     pub fn hit_test_path(&self, page: &str, path: &[f32], radius: f32) -> Vec<String> {
         self.geoms(page, true)
             .into_iter()
-            .filter(|g| {
-                world_to_local_path(&g.transform, path)
-                    .is_some_and(|lp| path_hits_outline(&g.outline, &lp, radius))
-            })
+            .filter(|g| path_hits_stroke(&g.transform, &g.outline, path, radius))
             .map(|g| g.id)
             .collect()
     }
@@ -630,6 +640,96 @@ mod tests {
             None,
             "anisotrope : 20 à droite"
         );
+    }
+
+    /// Trait horizontal y = 0, x de 100 à 500 (un point tous les 10), épaisseur 4, puis la matrice `m`.
+    fn scaled_stroke(m: Transform) -> (Document, String, String) {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let pts: Vec<f32> = (0..=40)
+            .flat_map(|i| [100.0 + i as f32 * 10.0, 0.0, 0.5])
+            .collect();
+        let id = d
+            .apply(Command::CommitStroke {
+                page: p.clone(),
+                points: pts,
+                style: pen(),
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: m,
+        })
+        .expect("échelle");
+        (d, p, id)
+    }
+
+    /// T63 : le rayon de `hit_test_path` et de la gomme (d'objet et partielle) est en unités monde, l'épaisseur du trait
+    /// suit sa matrice. Le patron écarté (chemin ramené en local, rayon appliqué en local) mordrait à 20 du trait à ×4
+    /// (5 en local) et raterait le trait à 4 à ×0,05 (80 en local).
+    #[test]
+    fn eraser_radius_is_in_world_units_under_scale() {
+        let cases: [(Transform, f32, f32, f32); 2] = [
+            ([4.0, 0.0, 0.0, 4.0, 0.0, 0.0], 1200.0, 9.0, 20.0),
+            ([0.05, 0.0, 0.0, 0.05, 0.0, 0.0], 15.0, 4.0, 6.0),
+        ];
+        for (m, x, near, far) in cases {
+            for (y, touched) in [(near, true), (far, false)] {
+                let (d, p, id) = scaled_stroke(m);
+                let want = if touched { vec![id.clone()] } else { vec![] };
+                assert_eq!(
+                    d.hit_test_path(&p, &[x, y], 5.0),
+                    want,
+                    "hit_test_path ×{} à {y}",
+                    m[0]
+                );
+                for mode in [EraseMode::Object, EraseMode::Partial] {
+                    let (mut d, p, id) = scaled_stroke(m);
+                    let c = d
+                        .apply(Command::Erase {
+                            page: p,
+                            path: vec![x, y],
+                            radius: 5.0,
+                            mode,
+                        })
+                        .expect("gomme");
+                    let want = if touched { vec![id] } else { vec![] };
+                    assert_eq!(c.removed, want, "Erase ×{} à {y}", m[0]);
+                }
+            }
+        }
+    }
+
+    /// T63 : sous une matrice anisotrope, aucun rayon local n'est exact ; `hit_test_path` mesure en monde, sur le contour
+    /// porté en monde (comme `hit_test`). Trait à [4, 0, 0, 0,25] : demi-épaisseur monde verticale ≤ 0,5. Diviser le rayon
+    /// par la racine du déterminant (1) ou par la plus grande valeur singulière raterait le trait à 5 ; la gomme partielle
+    /// coupe avec la plus petite demi-épaisseur monde (0,25 × 2) : touché à 5, pas à 5,6.
+    #[test]
+    fn eraser_measures_in_world_under_anisotropic_scale() {
+        let m = [4.0, 0.0, 0.0, 0.25, 0.0, 0.0];
+        let (d, p, id) = scaled_stroke(m);
+        assert_eq!(d.hit_test_path(&p, &[1200.0, 5.0], 5.0), vec![id.clone()]);
+        assert_eq!(
+            d.hit_test_path(&p, &[1200.0, 5.6], 5.0),
+            Vec::<String>::new()
+        );
+        for (y, touched) in [(5.0, true), (5.6, false)] {
+            let (mut d, p, id) = scaled_stroke(m);
+            let c = d
+                .apply(Command::Erase {
+                    page: p,
+                    path: vec![1200.0, y],
+                    radius: 5.0,
+                    mode: EraseMode::Partial,
+                })
+                .expect("gomme");
+            assert_eq!(c.removed.is_empty(), !touched, "partielle à {y}");
+            if touched {
+                assert_eq!(c.removed, vec![id]);
+            }
+        }
     }
 
     /// Constats 4 et 5 de T60 : la pointe de flèche est prise et bornée, l'ellipse n'est plus sa boîte.

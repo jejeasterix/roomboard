@@ -81,8 +81,21 @@ function worldPoints(e: FakeElement): [number, number][] {
   return out;
 }
 
+/** Plus petite valeur singulière de la partie linéaire de `m` : facteur exact d'une similitude (même règle que le cœur). */
+function minSingular(m: Matrix): number {
+  const f = m[0] * m[0] + m[1] * m[1] + m[2] * m[2] + m[3] * m[3];
+  const det = Math.abs(m[0] * m[3] - m[1] * m[2]);
+  const max = Math.sqrt((f + Math.sqrt(Math.max(0, f * f - 4 * det * det))) / 2);
+  return max > 0 ? det / max : 0;
+}
+
+/** Demi-épaisseur monde d'un trait (T63) : le cœur porte son contour par la matrice ; ici, mesurée sur les points monde,
+ *  elle est mise à l'échelle (exacte sous une similitude ; sinon la plus petite, comme la gomme partielle du cœur). */
+const strokeHalfWidth = (e: FakeElement): number => (e.style.width / 2) * minSingular(e.transform);
+
+/** Le chemin touche-t-il le trait ? Chemin et `radius` en unités monde, épaisseur à l'échelle du trait (T63). */
 function strokeTouches(e: FakeElement, path: Float32Array, radius: number): boolean {
-  const reach = radius + e.style.width / 2;
+  const reach = radius + strokeHalfWidth(e);
   for (const [x, y] of worldPoints(e)) {
     for (let j = 0; j + 1 < path.length; j += 2) {
       const ax = path[j] ?? 0;
@@ -357,7 +370,7 @@ class FakeDocument implements CoreDocument {
         for (let i = 0; i + 1 < poly.length; i += 2) add(poly[i] ?? 0, poly[i + 1] ?? 0, poly[i] ?? 0, poly[i + 1] ?? 0);
         continue;
       }
-      const h = e.style.width / 2;
+      const h = strokeHalfWidth(e);
       for (const [x, y] of worldPoints(e)) add(x - h, y - h, x + h, y + h);
     }
     return b;

@@ -4,7 +4,7 @@
  * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c).
  */
 import type { Bounds, Change, ElementView, Matrix, ShapeData, StrokeStyle, TextData } from "../../core/api";
-import { normalizeShape } from "../../core/shapes";
+import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
 import { layoutText, textFont, TEXT_LINE_HEIGHT, type Measure } from "../text-layout";
@@ -53,15 +53,9 @@ export const SELECTION_COLOR = "#1e3a8a";
 export const BAND_FILL = "rgba(30, 58, 138, 0.08)";
 export const HANDLE_FILL = "#ffffff";
 
-/** Pointe de flèche (D13) : deux branches de longueur max(12, 3 × épaisseur) à ±25° derrière la fin du segment. */
-export function arrowHead(w: number, h: number, width: number): [number, number, number, number] | null {
-  const len = Math.hypot(w, h);
-  if (len < 1e-9) return null;
-  const l = Math.max(12, 3 * width);
-  const back = Math.atan2(-h, -w);
-  const a = (25 * Math.PI) / 180;
-  return [w + l * Math.cos(back + a), h + l * Math.sin(back + a), w + l * Math.cos(back - a), h + l * Math.sin(back - a)];
-}
+/** Pointe de flèche (D13) : deux branches de longueur max(12, 3 × épaisseur) à ±25° derrière la fin du segment ; un seul
+ *  calcul, `arrowWings`, partagé avec le polygone de collision et de bornes (`shapePolygon`). */
+export const arrowHead = arrowWings;
 
 /** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)). */
 export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number): void {
