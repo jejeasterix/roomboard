@@ -3,6 +3,8 @@ import {
   ACTION_TABLE, CAPABILITY_KEYS, parseProfile, resetItemOptions, resetPresets, resolveStartMode, serializeProfile,
   TOOL_TABLE, toolbar, validateToolbar, visibleItems, type Profile, type RuntimeCapabilities, type ToolDef,
 } from "./toolbar";
+import profilesSource from "./toolbar-profiles.ts?raw";
+import toolbarSource from "./toolbar.ts?raw";
 
 describe("toolbar", () => {
   it("la barre par défaut est valide", () => {
@@ -168,6 +170,14 @@ describe("profil de barre (T83, usage § 8)", () => {
       expect(ACTION_TABLE[a], a).toBeDefined();
     }
     expect(CAPABILITY_KEYS).toEqual(["desktopAnnotation", "multiWindow", "dropPaths", "officeConverter"]);
+  });
+
+  it("source : ToolId ouvert, aucun switch, ni localStorage ni DOM (usage § 8 points 3 et 7)", () => {
+    expect(toolbarSource).toMatch(/export type ToolId = string;/);
+    for (const src of [toolbarSource, profilesSource]) {
+      expect(src).not.toMatch(/\bswitch\s*\(/);
+      expect(src).not.toMatch(/\blocalStorage\b|\bdocument\.[a-z]|\bwindow\.[a-z]/);
+    }
   });
 
   it("aller-retour : parse(serialize(p)) = p", () => {
