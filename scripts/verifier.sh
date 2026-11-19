@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Vérification complète de RoomBoard. src-tauri est exclu du workspace Cargo
-# (build ~7,5 Go de RAM) : il n'est ni dans clippy ni dans cargo test ici.
+# (build ~7,5 Go de RAM) : il n'est ni dans clippy ni dans cargo test ici, sa CSP est contrôlée.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,6 +12,7 @@ cargo test --workspace
 
 bash scripts/tests/controle-wasm-bindgen.test.sh
 bash scripts/controle-wasm-bindgen.sh Cargo.lock
+bash scripts/tests/controle-hors-ligne.test.sh
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
 rm -rf "$WASM_OUT"
 wasm-bindgen --target web --out-dir "$WASM_OUT" \
@@ -35,6 +36,8 @@ if [ "$taille" -gt 1572864 ]; then
   exit 1
 fi
 
+# Hors ligne (cadrage D27) : aucun hôte distant dans l'application construite, CSP stricte de la coque.
+node scripts/controle-hors-ligne.mjs apps/web/dist apps/desktop/src-tauri/tauri.conf.json
 
 # Banc du stylet (cadrage D29) : un seul fichier HTML, aucune ressource externe (ouvrable en file://).
 pnpm --filter @roomboard/web build:proto
