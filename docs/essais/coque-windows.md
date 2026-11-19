@@ -36,7 +36,9 @@ Attendu : la sortie montre `Running beforeBuildCommand`, puis un installeur sous
 | 8 | relancer, Ctrl+O, choisir `essai-5a.roomboard` | les traits enregistrés au geste 5 reviennent, aux mêmes places |
 | 9 | tracer, Ctrl+S | **aucune boîte** (fichier rouvert, chemin gardé) ; l'heure de modification change |
 | 10 | tracer, fermer par ✕ | la question revient ; **Non** : la fenêtre reste |
-| 11 | Ctrl+O sur un fichier texte renommé `faux.roomboard` | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
+| 11 | Ctrl+O sur `faux.roomboard` (le créer d'abord : `Set-Content -Path "$env:USERPROFILE\Documents\faux.roomboard" -Value "pas un zip"` sous PowerShell) | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
+| 12 | tracer un trait, puis Ctrl+N | question « Le document a des modifications non enregistrées. Les abandonner ? » ; **Non** : le trait reste ; Ctrl+N de nouveau, **Oui** : page vide, titre `Sans titre.roomboard — RoomBoard` |
+| 13 | fermer la coque, couper le réseau (Wi-Fi coupé, câble débranché), relancer | la coque démarre, la page s'affiche, on trace et on enregistre (Ctrl+S) sans erreur ni écran blanc ; noter tout message |
 
 ## 4. Même parcours dans Edge (File System Access)
 ```powershell

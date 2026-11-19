@@ -10,7 +10,7 @@
 // Tous : aucune requête hors de 127.0.0.1 (D27). Hors de scripts/verifier.sh : exige Playwright (cache npx).
 // `serve` et `loadPlaywright` recopiés de scripts/essais/s2-navigateur.mjs (non exportés ; mis en commun au lot 5b).
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/fichiers-navigateur.mjs [--captures]
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -49,7 +49,15 @@ async function loadPlaywright() {
   return found ? import(pathToFileURL(found).href) : null;
 }
 
+/** CSP de la coque (tauri.conf.json), envoyée telle quelle par le serveur d'essai : un défaut de CSP se voit ici. */
+function coqueCsp() {
+  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
+  const csp = conf.app.security.csp;
+  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
+}
+
 function serve() {
+  const csp = coqueCsp();
   const server = createServer(async (req, res) => {
     try {
       const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
@@ -61,7 +69,7 @@ function serve() {
       }
       const target = (await stat(file)).isDirectory() ? join(file, "index.html") : file;
       const body = await readFile(target);
-      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
+      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream", "content-security-policy": csp }).end(body);
     } catch {
       res.writeHead(404).end();
     }
@@ -187,6 +195,22 @@ async function run(browser, port, mode, { captures, tmp }) {
       },
       box,
     );
+  // Signature de toute la scène : masque d'encre (même seuil) condensé en empreinte FNV-1a + nombre de pixels d'encre.
+  // Égale avant enregistrement et après réouverture = mêmes traits aux mêmes coordonnées (S2), pas seulement « de l'encre ».
+  const signature = () =>
+    page.$eval("#scene", (c) => {
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let h = 2166136261;
+      let n = 0;
+      for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+        if (d[i] + d[i + 1] + d[i + 2] < 300) {
+          n++;
+          h = Math.imul(h ^ p, 16777619) >>> 0;
+        }
+      }
+      return `${c.width}x${c.height}:${n}:${h}`;
+    });
+  let before = "";
   const waitDialog = async (type) => {
     for (let i = 0; i < 50 && !dialogs.some((d) => d.type === type); i++) await new Promise((r) => setTimeout(r, 100));
     return dialogs.find((d) => d.type === type);
@@ -210,6 +234,7 @@ async function run(browser, port, mode, { captures, tmp }) {
     const s = await page.evaluate(() => JSON.parse(sessionStorage.getItem("faux-fsa")));
     check(s.save === 1 && s.writes === 2, `Ctrl+S deux fois : une seule boîte, deux écritures sur la même poignée (save=${s.save}, writes=${s.writes})`);
     check(s.suggested === "Sans titre.roomboard", "nom proposé « Sans titre.roomboard »");
+    before = await signature();
     await page.reload();
     await ready();
     check((await elements()) === 0, "rechargé : page vide");
@@ -219,6 +244,8 @@ async function run(browser, port, mode, { captures, tmp }) {
     await ready();
     check((await elements()) === 2, "fichier rouvert : les deux traits reviennent");
     check((await ink(FIRST_BOX)) > 0 && (await ink(SECOND_BOX)) > 0, "encre aux mêmes coordonnées (y = 300 et 420)");
+    const after = await signature();
+    check(after === before && !before.includes(":0:"), `scène identique pixel pour pixel avant enregistrement et après réouverture (${after})`);
   } else {
     const dl = page.waitForEvent("download");
     await page.keyboard.press("Control+s");
@@ -229,6 +256,7 @@ async function run(browser, port, mode, { captures, tmp }) {
     check(download.suggestedFilename() === "Sans titre.roomboard", "téléchargement « Sans titre.roomboard » intercepté");
     check(bytes.length > 0 && bytes[0] === 0x50 && bytes[1] === 0x4b, `fichier ZIP (${bytes.length} octets, « PK »)`);
     await clean();
+    before = await signature();
     check(!(await page.title()).startsWith("• "), "enregistré : titre sans « • »");
     await page.reload();
     await ready();
@@ -240,6 +268,8 @@ async function run(browser, port, mode, { captures, tmp }) {
     await nav;
     await ready();
     check((await elements()) === 1 && (await ink(FIRST_BOX)) > 0, "fichier rouvert : le trait revient aux mêmes coordonnées");
+    const after = await signature();
+    check(after === before && !before.includes(":0:"), `scène identique pixel pour pixel avant enregistrement et après réouverture (${after})`);
   }
   // Le nom vient du fichier rouvert : le fichier du repli est enregistré sous `<mode>.roomboard` par l'essai.
   const reopened = mode === "fsa" ? "Sans titre.roomboard" : `${mode}.roomboard`;
