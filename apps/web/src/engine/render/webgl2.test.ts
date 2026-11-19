@@ -8,6 +8,7 @@ import {
   pageScissor,
   parseColor,
   splitPolygons,
+  tryParseColor,
   thickPolyline,
   viewTransform,
   WebGL2LiveRenderer,
@@ -47,6 +48,21 @@ describe("géométrie WebGL2 (échelon 4)", () => {
     expect(parseColor("#ff8000")).toEqual([1, 128 / 255, 0, 1]);
     expect(parseColor("#F00")).toEqual([1, 0, 0, 1]);
     expect(parseColor("rouge")).toEqual([0, 0, 0, 1]);
+  });
+
+  it("parseColor : #rrggbbaa, #rgba, rgb() et rgba() (alpha en nombre ou en pourcentage)", () => {
+    expect(parseColor("#ff000080")).toEqual([1, 0, 0, 128 / 255]);
+    expect(parseColor("#f008")).toEqual([1, 0, 0, 136 / 255]);
+    expect(parseColor("rgb(255, 128, 0)")).toEqual([1, 128 / 255, 0, 1]);
+    expect(parseColor("rgba(0,0,255,0.5)")).toEqual([0, 0, 1, 0.5]);
+    expect(parseColor("RGBA( 0 , 0 , 255 , 50% )")).toEqual([0, 0, 1, 0.5]);
+    expect(parseColor("rgb(300, -5, 0)")).toEqual([1, 0, 0, 1]);
+  });
+
+  it("tryParseColor : null pour une écriture inconnue", () => {
+    expect(tryParseColor("hsl(10, 50%, 50%)")).toBeNull();
+    expect(tryParseColor("rouge")).toBeNull();
+    expect(tryParseColor("#ff0000")).toEqual([1, 0, 0, 1]);
   });
 
   it("viewTransform : coins du tampon en coins de découpe", () => {
@@ -149,6 +165,81 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
     r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set<string>());
     r.invalidate({ pages: [], ids: [], removed: [], full: true, version: 7 });
     expect(scene.log).toEqual(["resize 200,100,1", "scene p", "invalidate 7"]);
+  });
+
+  it("remise à zéro du stencil : le rectangle couvrant remet le compte à ZERO (stencilOp ZERO ZERO ZERO)", () => {
+    const { gl, r } = make();
+    r.drawLive(stroke(U), IDENTITY);
+    expect(gl.log).toContain(`stencilOp ${gl.ZERO} ${gl.ZERO} ${gl.ZERO}`);
+    expect(gl.log).not.toContain(`stencilOp ${gl.KEEP} ${gl.KEEP} ${gl.KEEP}`);
+  });
+
+  it("couleur non reconnue : noir en direct, mais signalée dans badColors", () => {
+    const { gl, r } = make();
+    expect(r.badColors.size).toBe(0);
+    r.drawLive({ strokes: [{ outline: U, predicted: new Float32Array(0), color: "teal", width: 4 }], erasers: [] }, IDENTITY);
+    expect(gl.draws[1]?.rgba).toEqual([0, 0, 0, 1]);
+    expect([...r.badColors]).toEqual(["teal"]);
+  });
+
+  it("couleur rgba : alpha transmis au dessin", () => {
+    const { gl, r } = make();
+    r.drawLive({ strokes: [{ outline: U, predicted: new Float32Array(0), color: "rgba(255,0,0,0.5)", width: 4 }], erasers: [] }, IDENTITY);
+    expect(gl.draws[1]?.rgba).toEqual(f32([1, 0, 0, 0.5]));
+    expect(r.badColors.size).toBe(0);
+  });
+
+  it("édition de liens réussie : shaders détachés puis supprimés, programme gardé", () => {
+    const { gl } = make();
+    expect(gl.log.filter((l) => l === "detachShader")).toHaveLength(2);
+    expect(gl.log.filter((l) => l === "deleteShader")).toHaveLength(2);
+    expect(gl.log).not.toContain("deleteProgram");
+  });
+
+  it("édition de liens ratée : le constructeur lève, programme et shaders supprimés", () => {
+    const gl = new FakeGL();
+    gl.linkOk = false;
+    expect(() => new WebGL2LiveRenderer(new FakeScene(), asGL(gl))).toThrow(/^WebGL2 : programme refusé/);
+    expect(gl.log.filter((l) => l === "deleteProgram")).toHaveLength(1);
+    expect(gl.log.filter((l) => l === "deleteShader")).toHaveLength(2);
+  });
+
+  it("shader de fragment refusé : le shader de sommet déjà compilé est supprimé", () => {
+    const gl = new FakeGL();
+    gl.failCompileAt = 1;
+    expect(() => new WebGL2LiveRenderer(new FakeScene(), asGL(gl))).toThrow(/shader refusé/);
+    expect(gl.log.filter((l) => l === "deleteShader")).toHaveLength(2);
+  });
+
+  it("perte de contexte : preventDefault, lost vrai, drawLive ne lève pas et ne dessine rien", () => {
+    const { gl, r } = make();
+    expect(r.lost).toBe(false);
+    const e = gl.fire("webglcontextlost");
+    expect(e.defaultPrevented).toBe(true);
+    expect(r.lost).toBe(true);
+    expect(() => r.drawLive(stroke(U), IDENTITY)).not.toThrow();
+    expect(gl.draws).toEqual([]);
+  });
+
+  it("contexte restauré : programme et tampons recréés, viewport rétabli, l'encre vive revient", () => {
+    const { gl, r } = make();
+    gl.fire("webglcontextlost");
+    gl.log.length = 0;
+    gl.fire("webglcontextrestored");
+    expect(r.lost).toBe(false);
+    expect(gl.log).toContain("createProgram");
+    expect(gl.log).toContain("viewport 0,0,200,100");
+    r.drawLive(stroke(U), IDENTITY);
+    expect(gl.draws.map((d) => d.mode)).toEqual([gl.TRIANGLE_FAN, gl.TRIANGLE_STRIP]);
+  });
+
+  it("restauration qui échoue : reste perdu, sans lever", () => {
+    const { gl, r } = make();
+    gl.fire("webglcontextlost");
+    gl.compileOk = false;
+    expect(() => gl.fire("webglcontextrestored")).not.toThrow();
+    expect(r.lost).toBe(true);
+    expect(() => r.drawLive(stroke(U), IDENTITY)).not.toThrow();
   });
 
   it("shader refusé : le constructeur lève une Error WebGL2", () => {
