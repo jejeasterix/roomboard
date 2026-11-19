@@ -1,12 +1,11 @@
 # État — socle
 
-Statut : en cours — lot 4 (OD17 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
+Statut : arrêté entre deux lots — lot 4 clos (OD17 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
-Avancement : 4/6 lots clos — clos : 1, 2, 3, 3b · à faire : 4, 5
-Étage : 3 — depuis 2026-11-19 22:10
-Lot : 4 « Outils d'édition » — 22/22 tâches terminées (T45-T66) — depuis 2026-11-19 22:10
-Avancement lot 5a (OD19) : clos — 12/12 tâches (T70-T81) ; prochaine tâche : plan du lot 5b après la fusion du lot 4
+Avancement : 5/6 lots clos — clos : 1, 2, 3, 3b, 4 (et 5a) · à faire : 5b
+Étage : 3 (entre deux lots) — depuis 2026-11-20 00:15
+Avancement lot 5a (OD19) : clos — 12/12 tâches (T70-T81) ; prochaine tâche : plan du lot 5b (lot 4 fusionné)
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot4   Base : origin/main @ 5341564 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
 Branche principale locale au lancement : 5341564 (lot 4)
@@ -72,6 +71,10 @@ Choix tranchés (plan, « Choix tranchés ») : Ouvrir recharge la page (fichier
 Fin de lot : double relecture (conformité ; qualité web ; qualité coque et scripts) sans bloquant, 3 majeurs + 15 mineurs fermés par T79/T80 ; tour 2 sans majeur, 3 mineurs + 1 simplification fermés par T81. Consigné : carte d'impact du cadrage non complétée des fichiers neufs de `platform/` (le plan les porte) ; `serve`/`loadPlaywright` recopiés de s2-navigateur.mjs (mise en commun au 5b).
 Preuve du lot 5a : voir « Scénarios et captures (lot 5a) ».
 
+Preuve du lot 4 (orchestrateur, tête df81224 après fusion de origin/main = lot 5a) : verifier.sh rc=0, `verifier.sh : OK` — Rust cœur 152 (2 ignorés : mesures), web 552 tests ; S2 lot 3 `OK` ; S2 lot 3b `OK (4 passages)` ; S3/S4 lot 4 `OK` (68 `ok —`, IME par CDP `Input.imeSetComposition`, 6 `non couvert —`) ; Fichiers lot 5a `OK (3 modes)`. Captures docs/essais/s34-lot4-{selection,forme-texte,pages}.png.
+Coque Linux lot 4 : build release avec cache 4 min 32 (CARGO_BUILD_JOBS=2, pic 1,41 Go RSS, .deb 3,53 Mio) ; chauffe avant fusion 14 min 47 (pic 1,25 Go). Sous Broadway (shim DPI 96, hors dépôt) : page ouverte, barre `#edition`, trait, rectangle, sélection + déplacement, texte « Bonjour », Ajouter une page (2 / 2), Ctrl+Z (1 / 1) ; fermeture par ✕ avec la question « modifications non enregistrées » (lot 5a). Capture docs/essais/coque-linux-lot4.png. À voir : la 3e ligne de barre recouvre le haut du canvas (Broadway ou réel : non tranché ; barre remplacée au lot 5b).
+Fusion de origin/main (lot 5a, 1bdca2a) dans la branche : 2 conflits (imports de main.ts ; ce fichier) résolus en gardant les deux côtés.
+
 ## Scénarios et captures (lot 5a)
 Essai fichiers au navigateur (VM, Chromium headless, `scripts/essais/fichiers-navigateur.mjs`, CSP de la coque en en-tête) : `Fichiers lot 5a : OK (3 modes)` (détection, fsa, repli) — tracer, Ctrl+S, recharger (page vide), ouvrir : même empreinte des pixels d'encre, nom repris, aucune requête hors de 127.0.0.1 ; captures docs/essais/fichiers-lot5a-{repli,fsa}.png. S2 lot 3 OK ; S2 lot 3b OK (4 passages).
 Coque Linux (VM) : build release à froid 20 min 24 (CARGO_BUILD_JOBS=2, pic 1,44 Go RSS, .deb 3,51 Mio) ; reconstruction avec le web corrigé 2 min (pic 1,47 Go). Sous Broadway (shim DPI 96, hors dépôt) les 9 gestes de T78 réussissent : boîte GTK d'enregistrement, ZIP écrit, Ctrl+S sans boîte (date changée), ✕ → question, « No » garde la fenêtre, Ctrl+O → question puis rechargement avec les traits enregistrés, Ctrl+S sans boîte sur le chemin restauré, la question revient, document propre → fermeture sans question ; capture docs/essais/coque-linux-lot5a.png (question de fermeture sur la fenêtre). Non vérifié : un clic juste avant Ctrl+S a laissé le titre « modifié » au premier Ctrl+S (comportement prudent attendu si le trait est arrivé après la lecture de la version).
@@ -99,7 +102,7 @@ H2-13b Profil release `opt-level="s"` + `lto` exigé par le plan : grossit le .w
 ouvertes : — · passées : —
 
 ## Reprise (prochaine tâche)
-0. **Prochaine tâche du plan : écrire le plan du lot 4** (`docs/plans/socle-lot4-PLAN.md`, planificateur) depuis la ligne 4 de `socle-PLAN.md` (sélection, déplacer, redimensionner, formes, texte IME, pages) et le cadrage ; y reprendre HL3b-7 (retirer la page affichée, caméra par page).
+0. **Prochaine tâche du plan : écrire le plan du lot 5b** (`docs/plans/socle-lot5b-PLAN.md`, planificateur) : SolidJS (DA1), barre en profils (DA10) qui remplace les barres DOM `#outils`/`#reglages`/`#edition`, barre des pages ; y reprendre les constats d'architecture du lot 4 (module commun des scripts d'essai, `Intl.Segmenter`, sélection après Suppr + Ctrl+Z, zone de texte qui suit le zoom CL4-15).
 1. Essai ENI du samedi 2026-11-21 (vérification, plus un préalable) : `docs/essais/eni-stylet.md`, § « Lot 3b : comparer les réglages » ; selon le verdict, changer un défaut dans `apps/web/src/engine/settings.ts` (un seul endroit) et revoir H2-12.
 2. Essais de plateforme non bloquants : Windows (Edge, WebView2) par la file du PC, confiés par le pilote ; macOS (Safari, Chrome) ; Android en attente de KVM. Rien de mesuré sous WebKit ni au vrai stylet.
 3. Runner self-hosted `[self-hosted, linux, vm]` à enregistrer avant toute CI.
