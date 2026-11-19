@@ -177,4 +177,33 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     expect(f.calls.message).toHaveLength(1);
     expect(f.calls.message[0]?.[0]).toContain("boîte indisponible");
   });
+
+  it("T81 : ask et message rejettent tous deux : repli sur confirm de la page, vrai → la fenêtre se ferme", async () => {
+    const f = fakes();
+    f.dialog.ask = async () => { throw new Error("boîte indisponible"); };
+    f.dialog.message = async () => { throw new Error("boîte indisponible"); };
+    const asked: string[] = [];
+    createTauriShell(f.dialog, f.win, (m) => { asked.push(m); return true; }).guardClose(() => true, "Abandonner ?");
+    await f.tick();
+    expect(await f.close()).toBe(false);
+    expect(asked).toEqual(["Abandonner ?"]);
+  });
+
+  it("T81 : ask et message rejettent, confirm de la page répond faux : la fenêtre reste ouverte", async () => {
+    const f = fakes();
+    f.dialog.ask = async () => { throw new Error("boîte indisponible"); };
+    f.dialog.message = async () => { throw new Error("boîte indisponible"); };
+    createTauriShell(f.dialog, f.win, () => false).guardClose(() => true, "Abandonner ?");
+    await f.tick();
+    expect(await f.close()).toBe(true);
+  });
+
+  it("T81 : ask, message et confirm rejettent : la fenêtre reste ouverte, sans rejet non géré", async () => {
+    const f = fakes();
+    f.dialog.ask = async () => { throw new Error("boîte indisponible"); };
+    f.dialog.message = async () => { throw new Error("boîte indisponible"); };
+    createTauriShell(f.dialog, f.win, () => { throw new Error("confirm bloqué"); }).guardClose(() => true, "Abandonner ?");
+    await f.tick();
+    expect(await f.close()).toBe(true);
+  });
 });
