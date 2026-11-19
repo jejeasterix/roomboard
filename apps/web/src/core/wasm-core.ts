@@ -80,9 +80,16 @@ class WasmCoreDocument implements CoreDocument {
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
       case "AddShape":
+        return toChange(
+          this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined),
+        );
       case "SetText":
+        // Avec un id, `page`, `x` et `y` ne placent rien (la position passe par Transform), comme la fausse liaison.
+        return toChange(
+          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight),
+        );
       case "Transform":
-        throw new Error(`commande non liée avant T54 : ${cmd.type}`);
+        return toChange(this.d.transform([...cmd.ids], new Float64Array(cmd.matrix)));
     }
   }
 

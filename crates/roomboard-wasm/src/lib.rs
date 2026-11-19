@@ -6,12 +6,13 @@ use std::fmt::Display;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{Change, Command, CommandError, EraseMode};
 use roomboard_core::document::Document as CoreDocument;
-use roomboard_core::element::StrokeStyle;
+use roomboard_core::element::{StrokeStyle, Transform};
 use roomboard_core::format::{self, FormatError, SaveMeta};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
 use roomboard_core::query::Bounds;
+use roomboard_core::shape::ShapeKind;
 use wasm_bindgen::prelude::*;
 
 /// Version du cœur, pour vérifier que le module Wasm est chargé.
@@ -152,6 +153,61 @@ impl Document {
         to_js(&self.delete_inner(ids).map_err(cmd_err)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_shape(
+        &mut self,
+        page: &str,
+        shape: &str,
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        color: &str,
+        width: f32,
+        fill: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .add_shape_inner(page, shape, [x0, y0, x1, y1], color, width, fill)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Avec un `id`, `page`, `x` et `y` ne placent rien (la position passe par `transform`) ; `x` et `y` restent
+    /// contrôlés finis par le cœur.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_text(
+        &mut self,
+        page: &str,
+        id: Option<String>,
+        x: f64,
+        y: f64,
+        content: &str,
+        color: &str,
+        size: f32,
+        box_width: f64,
+        box_height: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_text_inner(
+                    page,
+                    id,
+                    [x, y],
+                    content,
+                    color,
+                    size,
+                    [box_width, box_height],
+                )
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
+    pub fn transform(&mut self, ids: Vec<String>, matrix: &[f64]) -> Result<JsValue, JsError> {
+        to_js(&self.transform_inner(ids, matrix).map_err(cmd_err)?)
+    }
+
     pub fn element(&self, id: &str) -> Result<JsValue, JsError> {
         match self.core.element(id) {
             Some(e) => to_js(&e),
@@ -286,6 +342,67 @@ impl Document {
 
     pub fn delete_inner(&mut self, ids: Vec<String>) -> Result<Change, CommandError> {
         self.run(Command::Delete { ids })
+    }
+
+    /// Nom de forme inconnu : `BadShape`, comme des coins non finis.
+    pub fn add_shape_inner(
+        &mut self,
+        page: &str,
+        shape: &str,
+        corners: [f64; 4],
+        color: &str,
+        width: f32,
+        fill: Option<String>,
+    ) -> Result<Change, CommandError> {
+        let shape = ShapeKind::parse(shape).ok_or(CommandError::BadShape)?;
+        let [x0, y0, x1, y1] = corners;
+        self.run(Command::AddShape {
+            page: page.to_string(),
+            shape,
+            x0,
+            y0,
+            x1,
+            y1,
+            style: StrokeStyle {
+                color: color.to_string(),
+                width,
+            },
+            fill,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_text_inner(
+        &mut self,
+        page: &str,
+        id: Option<String>,
+        at: [f64; 2],
+        content: &str,
+        color: &str,
+        size: f32,
+        boxes: [f64; 2],
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetText {
+            page: page.to_string(),
+            id,
+            x: at[0],
+            y: at[1],
+            content: content.to_string(),
+            color: color.to_string(),
+            size,
+            box_width: boxes[0],
+            box_height: boxes[1],
+        })
+    }
+
+    /// Longueur différente de 6 : `BadMatrix`, comme une matrice non finie ou non inversible.
+    pub fn transform_inner(
+        &mut self,
+        ids: Vec<String>,
+        matrix: &[f64],
+    ) -> Result<Change, CommandError> {
+        let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        self.run(Command::Transform { ids, matrix: m })
     }
 
     /// `full = true` (tout invalider) seulement si une étape a été défaite.
@@ -517,7 +634,15 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = d
-            .set_text_inner(&p, None, [100.0, 200.0], "Bonjour", "#000000", 36.0, [600.0, 45.0])
+            .set_text_inner(
+                &p,
+                None,
+                [100.0, 200.0],
+                "Bonjour",
+                "#000000",
+                36.0,
+                [600.0, 45.0],
+            )
             .expect("texte")
             .ids[0]
             .clone();
@@ -526,7 +651,15 @@ mod tests {
             Some("Bonjour".into())
         );
         let c = d
-            .set_text_inner(&p, Some(id.clone()), [0.0, 0.0], "", "#000000", 36.0, [600.0, 45.0])
+            .set_text_inner(
+                &p,
+                Some(id.clone()),
+                [0.0, 0.0],
+                "",
+                "#000000",
+                36.0,
+                [600.0, 45.0],
+            )
             .expect("vider");
         assert_eq!(c.removed, vec![id]);
     }
