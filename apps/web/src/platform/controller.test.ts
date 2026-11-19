@@ -125,7 +125,7 @@ function memoryPending(): PendingStore & { value: PendingOpen | null; cleared: n
   return p;
 }
 
-function setup(o: { opened?: FileControllerDeps["opened"]; answer?: boolean } = {}) {
+function setup(o: { opened?: FileControllerDeps["opened"]; answer?: boolean; docSave?: CoreDocument["save"] } = {}) {
   const doc = fakeCore.blank();
   const versions = versionsOf(doc);
   const h = memoryHost();
@@ -134,7 +134,7 @@ function setup(o: { opened?: FileControllerDeps["opened"]; answer?: boolean } = 
   let reloads = 0;
   const ctl = createFileController({
     core: fakeCore,
-    doc,
+    doc: o.docSave ? { save: o.docSave } : doc,
     versions,
     host: h.host,
     shell: s.shell,
@@ -151,6 +151,10 @@ function setup(o: { opened?: FileControllerDeps["opened"]; answer?: boolean } = 
 
 const pageOf = (d: CoreDocument): string => d.pageIds()[0] ?? "";
 const pointsOf = (d: CoreDocument): number[][] => d.elementIds(pageOf(d)).map((id) => Array.from(d.points(id) ?? []));
+const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat: boolean }> = {}) => ({
+  key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...m,
+});
+const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe("contrôleur des fichiers (D26)", () => {
   it("aller-retour : enregistrer puis ouvrir met en attente les mêmes octets ; le document rechargé a les mêmes traits", async () => {
@@ -280,10 +284,7 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.s.guard()).toBe(false);
   });
 
-  it("raccourcis : Ctrl+S, Ctrl+Maj+S, Ctrl+O, Ctrl+N, Cmd+S ; Alt, touche tenue ou sans Ctrl : rien", () => {
-    const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat: boolean }> = {}) => ({
-      key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...m,
-    });
+  it("raccourcis : Ctrl+S, Ctrl+Maj+S, Ctrl+O, Ctrl+N, Cmd+S, touche tenue comprise ; Alt ou sans Ctrl : rien", () => {
     expect(fileCommandOf(k("s", { ctrlKey: true }))).toBe("save");
     expect(fileCommandOf(k("S", { ctrlKey: true, shiftKey: true }))).toBe("saveAs");
     expect(fileCommandOf(k("o", { ctrlKey: true }))).toBe("open");
@@ -293,9 +294,84 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(fileCommandOf(k("s", { ctrlKey: true, altKey: true }))).toBeNull();
     expect(fileCommandOf(k("z", { ctrlKey: true }))).toBeNull();
     expect(fileCommandOf(k("O", { ctrlKey: true, shiftKey: true }))).toBeNull();
-    expect(fileCommandOf(k("s", { ctrlKey: true, repeat: true }))).toBeNull();
-    expect(fileCommandOf(k("o", { metaKey: true, repeat: true }))).toBeNull();
-    expect(fileCommandOf(k("s", { ctrlKey: true, repeat: false }))).toBe("save");
+    // Reconnue même tenue : la page doit pouvoir appeler preventDefault (sinon le navigateur ouvre « Enregistrer sous »).
+    expect(fileCommandOf(k("s", { ctrlKey: true, repeat: true }))).toBe("save");
+    expect(fileCommandOf(k("o", { metaKey: true, repeat: true }))).toBe("open");
+  });
+
+  it("touche tenue : prise par le contrôleur (preventDefault), aucune commande relancée ; autre touche : laissée", async () => {
+    const t = setup();
+    expect(t.ctl.key(k("s", { ctrlKey: true, repeat: true }))).toBe(true);
+    expect(t.ctl.key(k("o", { metaKey: true, repeat: true }))).toBe(true);
+    expect([t.h.calls.save.length, t.h.calls.open]).toEqual([0, 0]);
+    expect(t.ctl.key(k("z", { ctrlKey: true }))).toBe(false);
+    expect(t.ctl.key(k("s"))).toBe(false);
+    expect(t.ctl.key(k("s", { ctrlKey: true }))).toBe(true);
+    expect(t.h.calls.save).toEqual([{ kind: "ask", name: "Sans titre.roomboard" }]);
+    await flush();
+    expect(t.ctl.key(k("s", { ctrlKey: true, repeat: true }))).toBe(true);
+    expect(t.h.calls.save.length).toBe(1);
+  });
+
+  it("nouveau refusé : rien n'est vidé ni rechargé, le document reste modifié", async () => {
+    const t = setup({ answer: false });
+    stroke(t.doc, t.versions);
+    expect(await t.ctl.run("new")).toBe(false);
+    expect([t.s.log.confirms, t.pending.cleared, t.reloads(), t.ctl.isDirty(), t.s.guard()]).toEqual([
+      [DISCARD_MESSAGE],
+      0,
+      0,
+      true,
+      true,
+    ]);
+  });
+
+  it("sérialisation impossible : message, l'hôte n'est pas appelé, reste modifié", async () => {
+    const t = setup({
+      docSave: () => {
+        throw new Error("mémoire épuisée");
+      },
+    });
+    stroke(t.doc, t.versions);
+    expect(await t.ctl.run("save")).toBe(false);
+    expect(t.s.log.notes).toEqual(["Enregistrement impossible : mémoire épuisée"]);
+    expect([t.h.calls.save.length, t.ctl.isDirty()]).toEqual([0, true]);
+  });
+
+  it("mise en attente impossible : message, aucun rechargement, la fermeture reste gardée", async () => {
+    const t = setup();
+    stroke(t.doc, t.versions);
+    t.pending.put = async () => {
+      throw new Error("quota dépassé");
+    };
+    t.h.onOpen({ name: "a.roomboard", bytes: fakeCore.blank().save("x", "y"), target: { kind: "download", name: "a.roomboard" } });
+    expect(await t.ctl.run("open")).toBe(false);
+    expect(t.s.log.notes).toEqual(["Ouverture impossible (a.roomboard) : quota dépassé"]);
+    expect([t.reloads(), t.s.guard()]).toEqual([0, true]);
+    t.h.onOpen(null);
+    expect(await t.ctl.run("open")).toBe(false);
+    expect(t.h.calls.open).toBe(2);
+  });
+
+  it("nouveau : l'attente qu'on ne peut vider n'empêche pas le rechargement", async () => {
+    const t = setup();
+    t.pending.clear = async () => {
+      throw new Error("base fermée");
+    };
+    expect(await t.ctl.run("new")).toBe(true);
+    expect([t.reloads(), t.s.log.notes]).toEqual([1, []]);
+  });
+
+  it("enregistrer puis annuler : le document reste modifié (version monotone, pas canUndo)", async () => {
+    const t = setup();
+    stroke(t.doc, t.versions);
+    await t.ctl.run("save");
+    expect(t.ctl.isDirty()).toBe(false);
+    t.doc.undo();
+    t.versions.bump();
+    expect(t.doc.canUndo()).toBe(false);
+    expect(t.ctl.isDirty()).toBe(true);
+    expect(t.s.log.titles.at(-1)).toBe("• Sans titre.roomboard — RoomBoard");
   });
 
   it("nouveau : demande si modifié, vide l'attente, recharge ; document propre : sans question", async () => {
