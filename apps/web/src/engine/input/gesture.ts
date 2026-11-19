@@ -20,3 +20,6 @@ export interface ViewSink {
   panBy(dx: number, dy: number): void;
   zoomAt(x: number, y: number, factor: number): void;
 }
+
+/** Outil choisi dans la barre : un outil de dessin, ou la main (D17) qui fait de tout geste un déplacement de vue. */
+export type ToolChoice = DrawTool | "hand";
