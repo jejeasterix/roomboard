@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { CoreDocument, CoreFactory, ShapeKind } from "./api";
+import type { CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
 import { createWasmCore, toBounds, toChange, toElementView, type WasmModule } from "./wasm-core";
@@ -402,6 +402,44 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     d.apply({ type: "Transform", ids: [flat], matrix: [4, 0, 0, 0.25, 0, 0] });
     expect(d.hitTest(p, 200, 18, 6)).toBe(flat);
     expect(d.hitTest(p, 428, 6, 6)).toBeNull();
+    d.free();
+  });
+
+  // Constats 2 et 3 de T60 : la matrice composée (pas seulement `matrix`) et la géométrie tirée des coins (pas seulement
+  // les coins) sont contrôlées ; refus sans étape, la commande entière.
+  it("Transform : matrice composée infinie ou presque singulière refusée ; AddShape : w, h, tx, ty non finis en f32 refusés", () => {
+    const d = f.blank();
+    const p = first(d);
+    const badMatrix = "matrice invalide (six nombres finis, inversible)";
+    const badShape = "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)";
+    const a = commit(d, p, 100);
+    const b = commit(d, p, 300);
+    const huge: Matrix = [1e200, 0, 0, 1e200, 0, 0];
+    d.apply({ type: "Transform", ids: [a], matrix: huge });
+    const aHuge = d.element(a)?.transform;
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "Transform", ids: [a], matrix: huge }))).toBe(badMatrix);
+    });
+    expect(d.element(a)?.transform).toEqual(aHuge);
+    const small: Matrix = [0.05, 0, 0, 0.05, 0, 0];
+    for (let i = 0; i < 4; i++) d.apply({ type: "Transform", ids: [b], matrix: small });
+    const b4 = d.element(b)?.transform;
+    const fresh = commit(d, p, 500);
+    const fresh0 = d.element(fresh)?.transform;
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "Transform", ids: [fresh, b], matrix: small }))).toBe(badMatrix);
+    });
+    expect(d.element(b)?.transform).toEqual(b4);
+    expect(d.element(fresh)?.transform).toEqual(fresh0);
+    const add = (kind: ShapeKind, c: Corners) => (): unknown =>
+      d.apply({ type: "AddShape", page: p, shape: kind, x0: c[0], y0: c[1], x1: c[2], y1: c[3], style: pen, fill: null });
+    unchanged(d, () => {
+      expect(messageOf(add("rect", [-1e308, 0, 1e308, 10]))).toBe(badShape);
+      expect(messageOf(add("rect", [0, 0, 1e39, 10]))).toBe(badShape);
+      expect(messageOf(add("ellipse", [0, -1e39, 10, 0]))).toBe(badShape);
+      expect(messageOf(add("rect", [1e39, 0, 1e39, 10]))).toBe(badShape);
+      expect(messageOf(add("line", [0, 0, 1e39, 0]))).toBe(badShape);
+    });
     d.free();
   });
 

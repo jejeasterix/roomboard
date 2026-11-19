@@ -1337,6 +1337,79 @@ pub(crate) mod tests {
         assert_eq!(n.since(), 0);
     }
 
+    /// Constat 3 de T60 : coins finis mais `w`, `h`, `tx` ou `ty` tirés non finis en f32 : BadShape, aucune écriture.
+    #[test]
+    fn add_shape_rejects_derived_geometry_not_finite_in_f32() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let mut line = rect(&p, [0.0, 0.0, 1e39, 0.0]);
+        if let Command::AddShape { shape, .. } = &mut line {
+            *shape = crate::shape::ShapeKind::Line;
+        }
+        for c in [
+            rect(&p, [-1e308, 0.0, 1e308, 10.0]),
+            rect(&p, [0.0, 0.0, 1e39, 10.0]),
+            rect(&p, [0.0, -1e39, 10.0, 0.0]),
+            rect(&p, [1e39, 0.0, 1e39, 10.0]),
+            line,
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadShape));
+        }
+        assert_eq!(n.since(), 0);
+        assert!(d.element_ids(&p).is_empty());
+    }
+
+    /// Constat 2 de T60 : chaque matrice composée est contrôlée (finie, |dét| ≥ 1e-12), toute la commande refusée sinon.
+    #[test]
+    fn transform_rejects_composed_matrix_overflow_or_collapse() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0));
+        let b = commit(&mut d, &p, hline(300.0));
+        let huge = [1e200, 0.0, 0.0, 1e200, 0.0, 0.0];
+        d.apply(Command::Transform {
+            ids: vec![a.clone()],
+            matrix: huge,
+        })
+        .expect("première, composée finie");
+        let n = writes(&d);
+        let before = d.element(&a).expect("a").transform;
+        assert_eq!(
+            d.apply(Command::Transform {
+                ids: vec![a.clone()],
+                matrix: huge
+            }),
+            Err(CommandError::BadMatrix),
+            "seconde : composée infinie"
+        );
+        assert_eq!(d.element(&a).expect("a").transform, before);
+        assert_eq!(n.since(), 0);
+        let small = [0.05, 0.0, 0.0, 0.05, 0.0, 0.0];
+        for _ in 0..4 {
+            d.apply(Command::Transform {
+                ids: vec![b.clone()],
+                matrix: small,
+            })
+            .expect("dét ≥ 1e-12");
+        }
+        let b4 = d.element(&b).expect("b").transform;
+        let fresh = commit(&mut d, &p, hline(500.0));
+        let fresh0 = d.element(&fresh).expect("neuf").transform;
+        let n2 = writes(&d);
+        assert_eq!(
+            d.apply(Command::Transform {
+                ids: vec![fresh.clone(), b.clone()],
+                matrix: small
+            }),
+            Err(CommandError::BadMatrix),
+            "cinquième réduction : dét < 1e-12, la commande entière est refusée"
+        );
+        assert_eq!(d.element(&b).expect("b").transform, b4);
+        assert_eq!(d.element(&fresh).expect("neuf").transform, fresh0);
+        assert_eq!(n2.since(), 0);
+    }
+
     #[test]
     fn erase_and_delete_on_shapes() {
         let mut d = Document::blank();
