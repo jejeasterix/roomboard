@@ -13,14 +13,20 @@ export type KeyAction = "undo" | "redo";
 
 const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
+/** Cible d'édition (champ, zone éditable) : ses touches lui appartiennent. Un bouton n'en est pas une. */
+const inEditable = (t: KeyLike["target"]): boolean =>
+  t !== null && (t.isContentEditable === true || (t.tagName !== undefined && EDITABLE.has(t.tagName.toUpperCase())));
+
+/** Barre d'espace sans Ctrl, Cmd ni Alt, hors champ de saisie et hors composition IME (D17 : espace + glisser). */
+export function isPanKey(e: KeyLike): boolean {
+  return e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && !inEditable(e.target);
+}
+
 export function keyAction(e: KeyLike): KeyAction | null {
   // Composition IME : la touche appartient à l'IME (D14). Alt Gr = Ctrl+Alt sous Windows : un caractère, pas un raccourci.
   if (e.isComposing || e.altKey) return null;
   if (!(e.ctrlKey || e.metaKey)) return null;
-  const t = e.target;
-  if (t !== null && (t.isContentEditable === true || (t.tagName !== undefined && EDITABLE.has(t.tagName.toUpperCase())))) {
-    return null;
-  }
+  if (inEditable(e.target)) return null;
   const key = e.key.toLowerCase();
   if (key === "z") return e.shiftKey ? "redo" : "undo";
   if (key === "y" && !e.shiftKey) return "redo";

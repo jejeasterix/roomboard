@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GestureEvent, InputSample, Sampler, SamplerStats } from "../engine/input/sampler";
 import { REPORT_FORMAT, type Environment } from "../engine/input/stats";
-import { createAppBench, type AppBenchDeps } from "./banc";
+import { createAppBench, panelText, PANEL_RECENT_FRAMES, type AppBenchDeps } from "./banc";
 
 const ENV: Environment = {
   userAgent: "test",
@@ -57,6 +57,7 @@ function setupWith(durations: number[]) {
     options: { coalesced: true, predicted: true, raw: false, desynchronized: true, inkTrail: false },
     environment: ENV,
     coreVersion: "0.1.0",
+    echelons: () => "2:off,3:off,4:off",
     now: () => "2026-11-19T09:00:00.000Z",
   };
   const fire = (g: GestureEvent): void => {
@@ -105,5 +106,31 @@ describe("createAppBench", () => {
     bench.dispose();
     expect(gestureCbs.size).toBe(0);
     expect(drawnCbs.size).toBe(0);
+  });
+
+  it("report(n) garde les n dernières images, pas les n premières", () => {
+    const { bench } = setupWith([...Array.from({ length: 900 }, () => 10), ...Array.from({ length: 100 }, () => 40)]);
+    expect(bench.report(100).frames).toMatchObject({ count: 100, p50: 40, p95: 40 });
+    expect(bench.report().frames?.count).toBe(1000);
+  });
+
+  it("panneau : le résumé dit qu'il porte sur les 600 dernières images", () => {
+    const { bench } = setup();
+    expect(PANEL_RECENT_FRAMES).toBe(600);
+    const text = panelText(bench.report(PANEL_RECENT_FRAMES));
+    expect(text.split("\n")).toHaveLength(4);
+    expect(text).toContain("les 600 dernières images au plus");
+  });
+
+  it("rapport : réglages effectifs des échelons, lus au moment du rapport", () => {
+    let tag = "2:off,3:off,4:off";
+    const { deps } = setup();
+    const bench = createAppBench({ ...deps, echelons: () => tag });
+    expect(bench.report().echelons).toBe("2:off,3:off,4:off");
+    tag = "2:on,3:off,4:repli";
+    expect(bench.report().echelons).toBe("2:on,3:off,4:repli");
+    const text = panelText(bench.report(PANEL_RECENT_FRAMES));
+    expect(text.split("\n")).toHaveLength(4);
+    expect(text.split("\n")[0]).toBe("Banc (géométrie du produit, cœur 0.1.0, échelons 2:on,3:off,4:repli)");
   });
 });

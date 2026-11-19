@@ -30,6 +30,11 @@ export interface SamplerOptions {
   readonly coalesced: boolean;
   readonly predicted: boolean;
   readonly raw: boolean;
+  /**
+   * Paume posée avant le stylet (D18, réglage « paume ») : absent ou vrai = son geste est annulé quand le stylet touche
+   * (écart accepté T1) ; faux = il continue. Lu à chaque pose du stylet : la page peut passer un accesseur.
+   */
+  readonly cancelTouchesOnPen?: boolean;
 }
 
 export interface SamplerStats {
@@ -71,8 +76,10 @@ export interface Sampler {
   dispose(): void;
 }
 
-/** Bit du bouton gomme du stylet dans `PointerEvent.buttons`. */
-const ERASER_BUTTON = 32;
+/** Bits de `PointerEvent.buttons` : bouton gauche, bouton du milieu, bouton gomme du stylet. */
+export const BUTTON_LEFT = 1;
+export const BUTTON_MIDDLE = 4;
+export const BUTTON_ERASER = 32;
 /** Pression donnée à la souris et au doigt (D8). */
 const NON_PEN_PRESSURE = 0.5;
 
@@ -153,12 +160,12 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
     const e = ev as unknown as PointerLike;
     if (active.has(e.pointerId)) return;
     // T27 : à la souris, seul le bouton gauche trace (milieu, droit, autres : aucun geste).
-    if (e.pointerType === "mouse" && (e.buttons & 1) === 0) return;
+    if (e.pointerType === "mouse" && (e.buttons & BUTTON_LEFT) === 0) return;
     if (e.pointerType === "touch" && penInContact()) {
       touchIgnored++;
       return;
     }
-    if (e.pointerType === "pen") cancelTouches();
+    if (e.pointerType === "pen" && opts.cancelTouchesOnPen !== false) cancelTouches();
     try {
       target.setPointerCapture(e.pointerId);
     } catch {
@@ -169,7 +176,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
       pointerType: e.pointerType,
       left: rect.left,
       top: rect.top,
-      eraser: (e.buttons & ERASER_BUTTON) !== 0,
+      eraser: (e.buttons & BUTTON_ERASER) !== 0,
     };
     active.set(e.pointerId, g);
     gestures++;
@@ -189,7 +196,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
     const e = ev as unknown as PointerLike;
     const g = active.get(e.pointerId);
     if (!g) return;
-    if ((e.buttons & ERASER_BUTTON) !== 0) {
+    if ((e.buttons & BUTTON_ERASER) !== 0) {
       g.eraser = true;
       eraserSeen = true;
     }

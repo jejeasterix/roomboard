@@ -85,4 +85,58 @@ describe("createFrameLoop", () => {
     loop.clear();
     expect(loop.durations()).toEqual([]);
   });
+
+  it("maxDurations : seules les N dernières durées, dans l'ordre", () => {
+    const clock = fakeClock();
+    const loop = createFrameLoop(clock.deps, () => {}, 3);
+    loop.start();
+    for (const ms of [10, 11, 12, 13, 14, 15, 16, 17]) clock.advance(ms);
+    expect(loop.durations()).toEqual([15, 16, 17]);
+  });
+
+  it("sans borne : toutes les durées (banc du lot 1)", () => {
+    const clock = fakeClock();
+    const loop = createFrameLoop(clock.deps, () => {});
+    loop.start();
+    for (let i = 0; i < 1000; i++) clock.advance(16);
+    expect(loop.durations()).toHaveLength(999);
+  });
+
+  it("borne invalide (0, négative, NaN) : sans borne", () => {
+    for (const max of [0, -5, Number.NaN]) {
+      const clock = fakeClock();
+      const loop = createFrameLoop(clock.deps, () => {}, max);
+      loop.start();
+      for (let i = 0; i < 10; i++) clock.advance(16);
+      expect(loop.durations()).toHaveLength(9);
+    }
+  });
+
+  it("borne mémoire : le tableau interne ne dépasse jamais 2 × N après 10 × N images, et les N dernières durées restent justes", () => {
+    const N = 3;
+    const clock = fakeClock();
+    const loop = createFrameLoop(clock.deps, () => {}, N);
+    // Le tableau interne est observé par son seul point d'entrée, `push` d'une durée ; aucun appel à `splice` n'est supposé.
+    const seen = new Set<number[]>();
+    const push = Array.prototype.push;
+    // Remplacement à la main (et non `vi.spyOn`, dont la comptabilité appelle `push` elle-même : récursion).
+    Array.prototype.push = function (this: unknown[], ...items: unknown[]): number {
+      if (items.length === 1 && typeof items[0] === "number" && items[0] % 1 === 0.5) seen.add(this as number[]);
+      return push.apply(this, items);
+    };
+    try {
+      loop.start();
+      let peak = 0;
+      for (let i = 0; i < 10 * N; i++) {
+        clock.advance(16.5);
+        for (const a of seen) peak = Math.max(peak, a.length);
+      }
+      expect(seen.size).toBe(1);
+      expect(peak).toBeGreaterThan(N);
+      expect(peak).toBeLessThanOrEqual(2 * N);
+      expect(loop.durations()).toEqual([16.5, 16.5, 16.5]);
+    } finally {
+      Array.prototype.push = push;
+    }
+  });
 });

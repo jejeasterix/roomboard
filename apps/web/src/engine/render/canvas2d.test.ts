@@ -156,4 +156,12 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
     createCanvas2DRenderer(canvas(), canvas(), make({}).src);
     expect(opts).toEqual([{ alpha: false }, { desynchronized: true }]);
   });
+
+  it("sans canvas d'interaction (null) : drawLive ne fait rien, resize ne touche que la scène", () => {
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: () => null, outline: () => null });
+    r.resize(100, 50, 2);
+    expect(scene.canvas).toEqual({ width: 200, height: 100 });
+    expect(() => r.drawLive({ strokes: [], erasers: [] }, IDENTITY)).not.toThrow();
+  });
 });

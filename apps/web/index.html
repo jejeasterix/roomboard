@@ -13,6 +13,9 @@
       #barre button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
       #barre button:disabled { opacity: 0.4; }
       #etat { margin-left: 8px; color: #b91c1c; }
+      #reglages { position: absolute; top: 60px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: calc(100vw - 16px); font-size: 13px; user-select: none; -webkit-user-select: none; }
+      #reglages button { min-height: 32px; padding: 0 10px; font: inherit; border: 1px solid #a1a1aa; border-radius: 8px; background: #ffffff; color: #18181b; }
+      #echelons-notes { margin-left: 8px; color: #b45309; }
     </style>
   </head>
   <body>
@@ -21,6 +24,7 @@
       <canvas id="interaction"></canvas>
     </div>
     <div id="barre" role="toolbar" aria-label="Outils"><span id="etat" role="status"></span></div>
+    <div id="reglages" role="group" aria-label="Réglages du moteur"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

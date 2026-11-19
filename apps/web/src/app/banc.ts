@@ -20,12 +20,16 @@ export interface AppBenchDeps {
   readonly options: BenchOptions;
   readonly environment: Environment;
   readonly coreVersion: string;
+  /** État effectif des échelons de DA9 (forme `echelonsTag`, engine/settings.ts), lu à chaque rapport. */
+  echelons(): string;
   now(): string;
 }
 
 export interface AppBenchReport extends BenchReport {
   readonly geometry: "freedraw";
   readonly coreVersion: string;
+  /** Échelons qui tournaient pendant la mesure, par exemple `2:off,3:on,4:repli`. */
+  readonly echelons: string;
 }
 
 export interface AppBench {
@@ -49,6 +53,7 @@ export function createAppBench(deps: AppBenchDeps): AppBench {
       }),
       geometry: "freedraw",
       coreVersion: deps.coreVersion,
+      echelons: deps.echelons(),
     }),
     dispose() {
       offGesture();
@@ -63,6 +68,17 @@ export const PANEL_RECENT_FRAMES = 600;
 const fmt = (v: number | null | undefined, digits = 1): string =>
   v === null || v === undefined ? "—" : v.toFixed(digits);
 
+/** Texte du panneau : quatre lignes ; le résumé des images porte sur les PANEL_RECENT_FRAMES dernières, et le dit. */
+export function panelText(r: AppBenchReport): string {
+  const t = r.totals;
+  return [
+    `Banc (géométrie du produit, cœur ${r.coreVersion}, échelons ${r.echelons})`,
+    `Traits ${t.strokes} (stylet ${t.penStrokes}) · pression stylet ${fmt(t.penPressure?.min, 2)}–${fmt(t.penPressure?.max, 2)}`,
+    `Retard interne p50 ${fmt(t.latencyP50)} / p95 ${fmt(t.latencyP95)} ms`,
+    `Images ${r.frames?.count ?? 0} (les ${PANEL_RECENT_FRAMES} dernières images au plus), p95 ${fmt(r.frames?.p95)} ms, > 25 ms ${fmt(r.frames ? r.frames.overBudgetShare * 100 : null)} %`,
+  ].join("\n");
+}
+
 /** Petit panneau (DOM) : résumé toutes les 500 ms et export du JSON. Hors de la zone de dessin. */
 export function mountBenchPanel(bench: AppBench, host: HTMLElement = document.body): () => void {
   const box = document.createElement("div");
@@ -76,6 +92,7 @@ export function mountBenchPanel(bench: AppBench, host: HTMLElement = document.bo
   const button = document.createElement("button");
   button.type = "button";
   button.textContent = "Télécharger le JSON";
+  button.title = "Toutes les images retenues par le moteur (3 600 au plus)";
   button.addEventListener("click", () => {
     const text = JSON.stringify(bench.report(), null, 2);
     const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -90,14 +107,7 @@ export function mountBenchPanel(bench: AppBench, host: HTMLElement = document.bo
   box.append(pre, button);
   host.append(box);
   const paint = (): void => {
-    const r = bench.report(PANEL_RECENT_FRAMES);
-    const t = r.totals;
-    pre.textContent = [
-      `Banc (géométrie du produit, cœur ${r.coreVersion})`,
-      `Traits ${t.strokes} (stylet ${t.penStrokes}) · pression stylet ${fmt(t.penPressure?.min, 2)}–${fmt(t.penPressure?.max, 2)}`,
-      `Retard interne p50 ${fmt(t.latencyP50)} / p95 ${fmt(t.latencyP95)} ms`,
-      `Images ${r.frames?.count ?? 0}, p95 ${fmt(r.frames?.p95)} ms, > 25 ms ${fmt(r.frames ? r.frames.overBudgetShare * 100 : null)} %`,
-    ].join("\n");
+    pre.textContent = panelText(bench.report(PANEL_RECENT_FRAMES));
   };
   paint();
   const timer = window.setInterval(paint, 500);
