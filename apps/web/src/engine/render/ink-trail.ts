@@ -18,8 +18,9 @@ export interface InkLike {
   requestPresenter(param?: { presentationArea?: Element | null }): Promise<InkPresenterLike>;
 }
 
-/** Ce que `styleFor` lit de l'événement : type de pointeur et boutons (bouton gomme, souris levée). */
+/** Ce que `styleFor` lit de l'événement : l'identifiant du pointeur (le routeur dit ce que ce geste fait), son type et ses boutons. */
 export interface TrailEvent {
+  readonly pointerId: number;
   readonly pointerType: string;
   readonly buttons: number;
 }
