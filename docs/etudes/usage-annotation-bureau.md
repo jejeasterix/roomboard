@@ -202,7 +202,7 @@ Options :
 
 Ce que le lot 5 / 5b doit déjà prévoir (détail dans l'étude jumelle) :
 
-- la table des capacités porte `desktopAnnotation` ; la barre et le profil le lisent (D22, D23) ;
+- la table des capacités porte `desktopAnnotation` ; la barre et le profil le lisent (D22, D23) ; *correction du cadrage d'usage (2026-11-19) : le champ existe déjà (`crates/roomboard-core/src/capabilities.rs:16`), statique, vrai sous Linux même sous Wayland natif : la coque le corrige à l'exécution (cadrage d'usage, U10)* ;
 - la barre d'outils doit pouvoir vivre dans **sa propre fenêtre** : son code SolidJS ne dépend d'aucune hypothèse « je suis dans la même page que le canvas » ; elle parle à la page principale par une interface de messages, pas par des variables partagées ;
 - l'ouverture de fichiers passe par une seule porte `FileHost.openPaths` ou équivalent, appelée par le dépôt du canvas et par le dépôt de la zone ;
 - la configuration Tauri est écrite pour **plusieurs fenêtres** : `capabilities/default.json` liste des fenêtres nommées (`main`, `annotate`, `toolbar`), CSP (lot 5) valable pour toutes, et `main.rs` n'est plus un `Builder::default()` nu ;

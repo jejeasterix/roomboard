@@ -17,7 +17,7 @@ Demande de Jérôme, mot pour mot : « La configuration de la toolbar (outils, t
 ### Fichiers du dépôt lus
 
 - `apps/web/src/toolbar.ts` (24 lignes) : `ToolId = "pen" | "eraser" | "select"`, `ToolDef { id, label }`, liste plate `toolbar`, `validateToolbar` (doublon, libellé vide). Aucune icône, aucune option, aucun groupe, aucun emplacement.
-- `docs/plans/socle-cadrage.md` : D21 (SolidJS seulement dans `apps/web/src/ui/`), D22 (étend `toolbar.ts` : `ToolItem`, `ToolbarProfile`, `parseToolbarProfile`, outil refusé par la table des capacités masqué, « le profil choisi se garde dans les réglages de l'application (pas dans le document) »), D23 (capacités : `Platform` + `Capabilities`, exposée par Wasm, « aucun champ au socle 0.1 »), D24 (manifeste `formatVersion`, `schema`), D26 (`FileHost`), D27 (réglages dans `localStorage` sur le web et dans la WebView Tauri, une fenêtre = un document), DA10 (formes exactes des types), lot 5 dans `docs/plans/socle-PLAN.md`.
+- `docs/plans/socle-cadrage.md` : D21 (SolidJS seulement dans `apps/web/src/ui/`), D22 (étend `toolbar.ts` : `ToolItem`, `ToolbarProfile`, `parseToolbarProfile`, outil refusé par la table des capacités masqué, « le profil choisi se garde dans les réglages de l'application (pas dans le document) »), D23 (capacités : `Platform` + `Capabilities`, exposée par Wasm, « aucun champ au socle 0.1 »), D24 (manifeste `formatVersion`, `schema`), D26 (`FileHost`), D27 (une fenêtre = une page = un document ; *correction du cadrage d'usage, 2026-11-19 : D27 ne parle pas de `localStorage`, c'est la carte d'impact du socle, § « Persistance et format », `socle-cadrage.md:134`, qui le suppose*), DA10 (formes exactes des types), lot 5 dans `docs/plans/socle-PLAN.md`.
 - `apps/desktop/src-tauri/tauri.conf.json`, `capabilities/default.json` : une seule fenêtre.
 
 ### Acquis ActCraft (`~/projets/actcraft`, lecture seule)
@@ -103,7 +103,7 @@ Le document (`.roomboard`, D24) ne contient pas le profil (D22 : « pas dans le 
 | B. IndexedDB (web) / fichiers dans le dossier de l'application (Tauri) derrière une interface `ProfileStore` | un profil = un enregistrement ou un fichier `<id>.json` | Comme ActCraft ; copie dans un dossier synchronisé possible ; robuste | Deux implémentations à tester ; calquer `FileHost` (D26) |
 | C. Fichier de profil dans le dossier du document | profil voyageur avec le document | Facile à partager | Contredit D22 ; mélange appareil et document |
 
-Recommandation : B pour le principe (interface `ProfileStore`), A comme première implémentation si le lot 5 doit rester court : D22 et D27 prévoient déjà `localStorage`. L'essentiel est que l'**interface** soit posée dès le lot 5b.
+Recommandation : B pour le principe (interface `ProfileStore`), A comme première implémentation si le lot 5 doit rester court : D22 et la carte d'impact du socle (`socle-cadrage.md:134`, supposé) prévoient déjà `localStorage`. L'essentiel est que l'**interface** soit posée dès le lot 5b.
 
 ### Fichier exportable
 
@@ -139,7 +139,7 @@ Le lot 5b (SolidJS, barre en profils, barre des pages) est le moment où le mod�
 2. **Une liste de barres** : `toolbars: ToolbarProfile[]` (ou `bars`) et non un `ToolbarProfile` unique ; au socle une seule barre affichée, mais la donnée est une liste. Même chose pour la barre des pages : un emplacement (`dock`) lisible.
 3. **Un `dock` par barre** (`top | bottom | left | right | floating`), même si seul `bottom` ou `left` est dessiné ; le CSS de la barre en dérive (orientation, ordre, taille de bouton).
 4. **`ToolId` ouvert** : une chaîne validée par la table des outils, pas une union figée à trois valeurs. `ToolId` étendu (D22) ; ajouter `desktopAnnotation` plus tard ne casse pas le code. Aucun `switch` sur l'identifiant dans les composants.
-5. **Capacités en entrée de la barre** : `visibleItems(profile, caps)` reçoit des capacités qui peuvent changer (signal), y compris la capacité `desktopAnnotation` (étude jumelle). Ajouter le champ à `Capabilities` au moment où un composant le lit, selon D23.
+5. **Capacités en entrée de la barre** : `visibleItems(profile, caps)` reçoit des capacités qui peuvent changer (signal), y compris la capacité `desktopAnnotation` (étude jumelle). *Correction du cadrage d'usage (2026-11-19) : le champ existe déjà* (`crates/roomboard-core/src/capabilities.rs:16`, `desktop_annotation`, avec `multi_window`, exposés par `capabilities(platform)` de la liaison Wasm) ; il est **statique** et vaut `true` sous Linux, ce qui est faux sous Wayland natif : la coque doit le corriger à l'exécution (cadrage d'usage, U10).
 6. **Préréglages séparés des éléments de barre** (`presets` par outil) et `ToolItem.options` réservé à la configuration de l'élément ; sinon couleurs et épaisseurs sont dupliquées par barre.
 7. **Taille de bouton en jeton** (`s | m | l`) servi par une variable CSS ; aucune dimension en pixels écrite dans les composants (la cible tactile compte pour le stylet et le doigt).
 8. **`ProfileStore` en interface** (lecture, écriture, liste, suppression, import, export), avec une première implémentation `localStorage` ; le composant n'appelle jamais `localStorage` directement.
