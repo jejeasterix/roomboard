@@ -149,3 +149,22 @@ Combiner : `?echelons=2,4`. Tout éteindre : `?echelons=aucun`. Avec le banc : `
 résume les 600 dernières images ; l'export JSON garde les 3 600 dernières que le moteur retient.
 Nouveautés à essayer en passant : outil « Main », barre d'espace + glisser (l'espace est pris même quand un bouton de la barre a le focus : il n'active donc plus les boutons, choix voulu pour que « espace + glisser » marche après un clic dans la barre), bouton du milieu de la souris (la vue suit,
 rien ne trace) ; bouton « Gomme : partielle / objet » (en gomme d'objet, un passage retire le trait entier).
+
+## Lot 4 : à essayer
+
+Troisième ligne de la barre (`#edition`, sous les réglages). Chaque geste fait une seule étape : Ctrl+Z le défait,
+Ctrl+Y le refait. Joué au navigateur headless sur la VM (`scripts/essais/s34-navigateur.mjs`) ; à revoir ici au stylet.
+
+| outil | geste | quoi regarder |
+|---|---|---|
+| Sélection | Toucher un élément ; tracer un rectangle dans le vide ; Maj + toucher ajoute ; glisser déplace ; tirer une des 8 poignées (Maj : proportions) ; Suppr retire ; Échap vide. | Les poignées se prennent-elles au stylet du premier coup ? Un simple toucher n'écrit rien (Annuler reste gris). |
+| Rectangle | Glisser d'un coin à l'autre (Maj : carré). | Aperçu sous la pointe pendant le geste, forme écrite au relâché seulement. |
+| Ellipse | Glisser (Maj : cercle). | Se sélectionne-t-elle en touchant son intérieur ? |
+| Ligne | Glisser (Maj : pas de 15°). | Facile à reprendre avec l'outil Sélection, sans viser le trait au pixel ? |
+| Flèche | Glisser de la queue vers la pointe. | La pointe est-elle du bon côté et lisible au zoom de travail ? |
+| Texte | Toucher une place vide : une zone pointillée s'ouvre ; écrire ; Échap ou toucher ailleurs valide. Toucher un texte le rouvre. | Clavier de l'ENI et IME réelle (accents, saisie japonaise si possible) : rien n'est écrit pendant la composition ; la fenêtre de candidats s'ouvre près du curseur. Texte vidé puis validé : il disparaît. |
+
+Pages : « Ajouter une page » insère après la page montrée et la montre ; « Retirer la page » montre la précédente,
+Ctrl+Z la rend avec son contenu ; la dernière page ne se retire pas (bouton grisé) ; le compteur dit « 2 / 3 ».
+Non prouvé sur la VM (HL4-3) : IME réelle de Windows ou de macOS, fenêtre de candidats, stylet et doigt sur les
+poignées, WebKit. La zone de texte ne suit pas un zoom fait pendant l'édition : valider puis rouvrir (CL4-15).
