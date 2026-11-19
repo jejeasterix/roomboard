@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CoreDocument } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import {
@@ -458,5 +458,23 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(stoppedAtReload).toBe(1);
     ctl.dispose();
     expect(t.s.log.stopped).toBe(1);
+  });
+
+  it("T81 : notify qui rejette : l'erreur d'enregistrement d'origine et l'erreur de la boîte sont toutes deux journalisées", async () => {
+    const t = setup();
+    t.h.onSave(new Error("disque plein"));
+    t.s.shell.notify = async () => {
+      throw new Error("boîte indisponible");
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      stroke(t.doc, t.versions);
+      expect(await t.ctl.run("save")).toBe(false);
+      const logged = warn.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(logged).toContain("disque plein");
+      expect(logged).toContain("boîte indisponible");
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

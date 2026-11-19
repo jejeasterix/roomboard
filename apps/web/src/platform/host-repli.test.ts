@@ -198,4 +198,16 @@ describe("hôte de repli (téléchargement et <input type=file>)", () => {
     expect(t.jobs.every((j) => j.cancelled)).toBe(true);
     expect(win.listeners.size).toBe(0);
   });
+
+  it("T81 : pointerdown sans change : annulation après le délai, input retiré, écouteurs retirés", async () => {
+    const { doc, appended, win } = fakeDocument();
+    const t = fakeSchedule();
+    const picked = browserFallbackDeps(doc, urls, later, t.schedule).pickFile(FALLBACK_ACCEPT);
+    win.listeners.get("pointerdown")?.();
+    expect(t.jobs).toHaveLength(1);
+    t.run();
+    expect(await picked).toBeNull();
+    expect(appended[0]?.removed).toBe(true);
+    expect(win.listeners.size).toBe(0);
+  });
 });

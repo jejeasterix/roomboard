@@ -60,7 +60,10 @@ export function createTauriHost(dialog: TauriDialog, fs: TauriFs): FileHost {
   };
 }
 
-export function createTauriShell(dialog: TauriDialog, win: TauriWindow): ShellPort {
+/** `window.confirm` de la page, lu au dernier moment (absent hors navigateur). */
+const pageConfirm = (message: string): boolean => globalThis.confirm(message);
+
+export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmPage: (message: string) => boolean = pageConfirm): ShellPort {
   return {
     confirm: (message) => dialog.ask(message, { title: APP_TITLE, kind: "warning" }),
     notify: (message) => dialog.message(message, { title: APP_TITLE, kind: "error" }),
@@ -73,13 +76,16 @@ export function createTauriShell(dialog: TauriDialog, win: TauriWindow): ShellPo
           try {
             const ok = await dialog.ask(message, { title: APP_TITLE, kind: "warning" });
             if (!ok) e.preventDefault();
-          } catch (err) {
-            // Boîte en erreur : on ne perd pas le document, la fenêtre reste ouverte et l'utilisateur est prévenu.
-            e.preventDefault();
-            const why = err instanceof Error ? err.message : String(err);
-            await dialog
-              .message(`Fermeture annulée : la question n'a pas pu s'afficher (${why}).`, { title: APP_TITLE, kind: "error" })
-              .catch(() => undefined);
+          } catch {
+            // `ask` et `message` passent par la même commande native : si l'une échoue, l'autre aussi. On se replie sur
+            // la boîte de la page ; si elle échoue à son tour, on garde le document et la fenêtre reste ouverte.
+            let ok = false;
+            try {
+              ok = confirmPage(message);
+            } catch {
+              ok = false;
+            }
+            if (!ok) e.preventDefault();
           }
         })
         .then((un) => {
