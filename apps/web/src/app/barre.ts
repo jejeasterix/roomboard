@@ -1,9 +1,10 @@
 /**
  * Barre minimale (lot 3, étendue au lot 3b), en DOM simple ; remplacée au lot 5. Première ligne : Stylo, Gomme, Main,
  * mode de gomme, Annuler, Rétablir, état. Seconde ligne (`#reglages`) : réglages du moteur (engine/settings.ts) ;
- * les échelons 3 et 4 rechargent la page avec la nouvelle adresse.
+ * les échelons 3 et 4 rechargent la page avec la nouvelle adresse. Troisième ligne (`#edition`, lot 4) : outils
+ * d'édition et pages.
  */
-import type { EraseMode } from "../core/api";
+import type { Bounds, EraseMode, ShapeKind } from "../core/api";
 import type { Engine, EngineState } from "../engine/engine";
 import type { ToolChoice } from "../engine/input/gesture";
 import {
@@ -21,8 +22,8 @@ import { toolbar } from "../toolbar";
 
 export type BarAction = ToolChoice | "eraser-mode" | "undo" | "redo";
 
-export interface BarButton {
-  readonly action: BarAction;
+export interface BarButton<A = BarAction> {
+  readonly action: A;
   readonly label: string;
   /** État pressé d'un outil ou du mode objet ; null pour une action. */
   readonly pressed: boolean | null;
@@ -138,4 +139,87 @@ export function mountSettings(root: HTMLElement, deps: SettingsBarDeps): () => v
   };
   paint(deps.store.get());
   return deps.store.onChange(paint);
+}
+
+/** Troisième ligne (lot 4, CL4-13) : outils d'édition et pages ; remplacée au lot 5. */
+export type EditionAction = "select" | ShapeKind | "text" | "page-prev" | "page-next" | "page-add" | "page-remove";
+type EditionTool = "select" | ShapeKind | "text";
+
+const EDITION_TOOLS: readonly EditionTool[] = ["select", "rect", "ellipse", "line", "arrow", "text"];
+const EDITION_LABELS: Record<Exclude<EditionAction, "select">, string> = {
+  rect: "Rectangle",
+  ellipse: "Ellipse",
+  line: "Ligne",
+  arrow: "Flèche",
+  text: "Texte",
+  "page-prev": "Page précédente",
+  "page-next": "Page suivante",
+  "page-add": "Ajouter une page",
+  "page-remove": "Retirer la page",
+};
+const editionLabel = (a: EditionAction): string => (a === "select" ? labelOf("select") : EDITION_LABELS[a]);
+
+export function editionModel(s: EngineState): BarButton<EditionAction>[] {
+  const last = s.pageIndex >= s.pageCount - 1;
+  return [
+    ...EDITION_TOOLS.map((t) => ({ action: t, label: editionLabel(t), pressed: s.tool === t, disabled: false })),
+    { action: "page-prev", label: editionLabel("page-prev"), pressed: null, disabled: s.pageIndex <= 0 },
+    { action: "page-next", label: editionLabel("page-next"), pressed: null, disabled: last },
+    { action: "page-add", label: editionLabel("page-add"), pressed: null, disabled: false },
+    // D37 : la dernière page ne se retire pas.
+    { action: "page-remove", label: editionLabel("page-remove"), pressed: null, disabled: s.pageCount <= 1 },
+  ];
+}
+
+export const pagesLabel = (s: EngineState): string => `${s.pageIndex + 1} / ${s.pageCount}`;
+
+const tenth = (v: number): string => String(Math.round(v * 10) / 10);
+const boundsTag = (b: Bounds | null): string => (b === null ? "" : [b.x0, b.y0, b.x1, b.y1].map(tenth).join(","));
+
+/** Attributs de `#stage` lus par le scénario S3/S4 (contrat du lot). */
+export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool", string> {
+  return {
+    page: `${s.pageIndex + 1}/${s.pageCount}`,
+    selection: String(s.selection.length),
+    bounds: boundsTag(s.selectionBounds),
+    tool: s.tool,
+  };
+}
+
+export function mountEdition(
+  root: HTMLElement,
+  engine: Pick<Engine, "setTool" | "addPage" | "removePage" | "nextPage" | "prevPage" | "state" | "onState">,
+): () => void {
+  const buttons = new Map<EditionAction, HTMLButtonElement>();
+  const run = (a: EditionAction): void => {
+    if (a === "page-prev") engine.prevPage();
+    else if (a === "page-next") engine.nextPage();
+    else if (a === "page-add") engine.addPage();
+    else if (a === "page-remove") engine.removePage();
+    else engine.setTool(a);
+  };
+  for (const b of editionModel(engine.state())) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.dataset["action"] = b.action;
+    el.textContent = b.label;
+    el.addEventListener("click", () => run(b.action));
+    buttons.set(b.action, el);
+    root.append(el);
+  }
+  const counter = document.createElement("span");
+  counter.id = "pages";
+  root.append(counter);
+  const paint = (s: EngineState): void => {
+    for (const b of editionModel(s)) {
+      const el = buttons.get(b.action);
+      if (!el) continue;
+      el.disabled = b.disabled;
+      if (b.pressed === null) el.removeAttribute("aria-pressed");
+      else el.setAttribute("aria-pressed", String(b.pressed));
+    }
+    counter.textContent = pagesLabel(s);
+  };
+  paint(engine.state());
+  return engine.onState(paint);
 }

@@ -13,6 +13,14 @@ import { join } from "node:path";
 import { DIST, ROOT, Echec, frames, gitSha, inkIn, loadPlaywright, serve } from "./commun.mjs";
 
 const LABEL = "S3/S4 lot 4";
+const NON_COUVERT = [
+  "enregistrer puis rouvrir (S3) : couvert par le cœur, s3_text_stroke_shape_survive_save_load (T49) ; fichier au lot 6",
+  "zoom à 200 % par Ctrl+molette puis trait aux coordonnées monde (S4) : tests du moteur (lot 3b), pas rejoué ici",
+  "profil de barre essai-simple (S4) : lot 5",
+  "WebKit (S4) : Playwright WebKit non posé sur la VM ; essai sur le Mac",
+  "IME réelle (Windows, macOS, Android), fenêtre de candidats (HL4-3) : essai ENI",
+  "stylet réel, poignées au doigt : essai ENI (docs/essais/eni-stylet.md, « Lot 4 : à essayer »)",
+];
 const TOOLS = ["select", "rect", "ellipse", "line", "arrow", "text"];
 
 async function scenario(page, url, captures) {
@@ -28,7 +36,7 @@ async function scenario(page, url, captures) {
   const attr = (name) => page.getAttribute("#stage", name);
   const elements = async () => Number(await attr("data-elements"));
   const selection = async () => (await attr("data-selection")) ?? "";
-  const nSel = async () => ((await selection()) === "" ? 0 : (await selection()).split(",").length);
+  const nSel = async () => Number((await selection()) || 0); // data-selection porte le nombre d'éléments (stageTags)
   const bounds = async () => ((await attr("data-bounds")) ?? "").split(",").map(Number);
   const edit = (action) => page.$(`#edition button[data-action="${action}"]`);
   const click = async (action) => {
@@ -159,13 +167,20 @@ async function scenario(page, url, captures) {
   await drag([[180, 180], [540, 300]]);
   const b0 = await bounds();
   check(b0.length === 4 && b0.every(Number.isFinite), "bornes de la sélection lues");
-  await drag([[260, 240], [310, 290]]);
+  await drag([[260, 200], [310, 250]]); // le bord haut du rectangle : les formes ne sont pas pleines, le test de prise suit le contour
   const b1 = await bounds();
-  check(Math.abs(b1[0] - b0[0] - 50) < 2 && Math.abs(b1[1] - b0[1] - 50) < 2, "déplacer : la sélection suit (+50, +50)");
+  // Les bornes sont en unités de page, les gestes en pixels écran : l'échelle se lit sur la sélection (rectangle et
+  // ellipse couvrent 320 px écran de large : de x = 200 à x = 520).
+  const zoom = (b0[2] - b0[0]) / 320;
+  check(
+    Math.abs(b1[0] - b0[0] - 50 * zoom) < 4 && Math.abs(b1[1] - b0[1] - 50 * zoom) < 4,
+    "déplacer : la sélection suit (+50 px écran, +50 px écran)",
+  );
   const w1 = b1[2] - b1[0];
-  await drag([[b1[2], b1[3]], [b1[2] + w1, b1[3] + (b1[3] - b1[1])]]); // poignée du coin bas droit
+  await drag([[570, 330], [890, 410]]); // poignée du coin bas droit (écran : 570, 330 après le déplacement), largeur et hauteur ×2
   const b2 = await bounds();
-  check(Math.abs(b2[2] - b2[0] - 2 * w1) < 3, "agrandir x2 par la poignée de coin");
+  // Les bornes comptent l'épaisseur du trait (quelques unités fixes) : le rapport tient à 1,5 % près, pas à l'unité.
+  check(Math.abs((b2[2] - b2[0]) / w1 - 2) < 0.03, "agrandir x2 par la poignée de coin");
   await shot("selection");
   const before = await elements();
   await page.keyboard.press("Delete");
@@ -175,9 +190,13 @@ async function scenario(page, url, captures) {
   // Ctrl+Z : une étape par geste.
   await undo();
   check((await elements()) === before, "Ctrl+Z annule la suppression");
+  // La sélection se vide avec la suppression (elle ne revient pas avec Ctrl+Z) : on resélectionne pour mesurer.
   await undo();
-  check(Math.abs((await bounds())[2] - (await bounds())[0] - w1) < 3, "Ctrl+Z annule l'agrandissement");
+  await drag([[230, 230], [600, 350]]);
+  const b21 = await bounds();
+  check(Math.abs(b21[2] - b21[0] - w1) < 3, "Ctrl+Z annule l'agrandissement");
   await undo();
+  await drag([[180, 180], [540, 300]]);
   const b3 = await bounds();
   check(Math.abs(b3[0] - b0[0]) < 2, "Ctrl+Z annule le déplacement");
 
@@ -189,12 +208,13 @@ async function scenario(page, url, captures) {
   await undo();
   check((await pageTag()) === "2/3", "Ctrl+Z rend la page 2");
   check((await inkIn(page, [380, 330, 920, 420])) > 0, "la page 2 retrouve son trait");
-  await shot("pages");
   await click("page-remove");
   await click("page-remove");
   check((await pageTag()) === "1/1", "deux retraits : une seule page");
   check(await (await edit("page-remove")).isDisabled(), "la dernière page ne se retire pas");
+  await shot("pages"); // une page, « 1 / 1 », « Retirer la page » grisé
 
+  for (const n of NON_COUVERT) console.log(`non couvert — ${n}`);
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
 
