@@ -26,18 +26,20 @@ Attendu : la sortie montre `Running beforeBuildCommand`, puis un installeur sous
 ## 3. Parcours dans la coque
 | # | geste | attendu |
 |---|---|---|
-| 1 | tracer un trait au stylet | trait visible ; titre de la fenêtre `• Sans titre.roomboard — RoomBoard` |
+| 1 | tracer un trait à la souris ou au pavé tactile | trait visible ; titre de la fenêtre `• Sans titre.roomboard — RoomBoard` |
 | 2 | gommer en travers | trait coupé |
 | 3 | Cmd+Maj+S | boîte macOS « Enregistrer », nom proposé `Sans titre.roomboard` ; choisir `Documents/essai-5a.roomboard` |
 | 4 | — | titre `essai-5a.roomboard — RoomBoard` (sans `•`) |
 | 5 | tracer, puis Cmd+S | aucune boîte ; l'heure de modification du fichier change dans le Finder |
-| 6 | tracer, puis fermer par ✕ | question « Le document a des modifications non enregistrées. Les abandonner ? » ; répondre **Non** : la fenêtre reste |
+| 6 | tracer, puis fermer par le bouton rouge | question « Le document a des modifications non enregistrées. Les abandonner ? » ; répondre **Non** : la fenêtre reste |
 | 7a | fermer par le bouton rouge, répondre **Oui** | la fenêtre se ferme |
 | 7b | Cmd+Q avec un trait non enregistré | **attendu connu** : l'application quitte sans demander (Cmd+Q ne passe pas par la fermeture de la fenêtre) ; noter ce qui se passe |
 | 8 | relancer, Cmd+O, choisir `essai-5a.roomboard` | les traits enregistrés au geste 5 reviennent, aux mêmes places |
 | 9 | tracer, Cmd+S | **aucune boîte** (fichier rouvert, chemin gardé) ; l'heure de modification change |
-| 10 | tracer, fermer par ✕ | la question revient ; **Non** : la fenêtre reste |
-| 11 | Cmd+O sur un fichier texte renommé `faux.roomboard` | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
+| 10 | tracer, fermer par le bouton rouge | la question revient ; **Non** : la fenêtre reste |
+| 11 | Cmd+O sur `faux.roomboard` (le créer d'abord : `printf 'pas un zip' > ~/Documents/faux.roomboard` sous zsh) | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
+| 12 | tracer un trait, puis Cmd+N | question « Le document a des modifications non enregistrées. Les abandonner ? » ; **Non** : le trait reste ; Cmd+N de nouveau, **Oui** : page vide, titre `Sans titre.roomboard — RoomBoard` |
+| 13 | fermer la coque, couper le réseau (Wi-Fi coupé), relancer | la coque démarre, la page s'affiche, on trace et on enregistre (Cmd+S) sans erreur ni écran blanc ; noter tout message |
 
 ## 4. Même parcours dans Chrome (File System Access), puis Safari
 ```sh
@@ -53,5 +55,5 @@ Safari : le repli s'applique. Cmd+S télécharge `Sans titre.roomboard` dans Té
 
 ## 5. À rapporter
 Pour chaque geste : conforme / écart (une ligne). Captures : `coque-macos-lot5a-question.png` (geste 6),
-`coque-macos-lot5a-rouvert.png` (geste 8). Version de WebView2 (`edge://version` dans Chrome, ou les paramètres
-Windows) et modèle du stylet.
+`coque-macos-lot5a-rouvert.png` (geste 8). Version de macOS (menu Pomme > À propos de ce Mac) et de Safari/WebKit
+(Safari > À propos de Safari), version de Chrome (`chrome://version`), et le dispositif de pointage (souris ou pavé tactile).

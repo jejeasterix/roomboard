@@ -11,14 +11,23 @@ import { fileURLToPath } from "node:url";
 const TEXT = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt", ".webmanifest"]);
 /** Hôtes cités mais jamais chargés, chacun avec sa raison : toute entrée nouvelle se justifie ici. */
 export const NON_FETCHED_HOSTS = new Map([["www.w3.org", "espaces de noms XML (SVG, XHTML), jamais chargés"]]);
-const URL_RE = /\b(?:https?|wss?):\/\/([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g;
+// Schéma explicite (insensible à la casse) ou `//hôte` sans schéma (précédé ni de « : », ni d'un caractère de mot, ni de « / »).
+const URL_RE = /(?:\b(?:https?|wss?):\/\/|(?<![:\w/])\/\/)([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/gi;
 const FORBIDDEN_TOKENS = new Set(["*", "http:", "https:", "ws:", "wss:", "'unsafe-eval'"]);
+/** Schémas sans hôte admis, et les seules directives où ils le sont. */
+const SCHEME_TOKENS = new Map([
+  ["ipc:", new Set(["connect-src"])],
+  ["data:", new Set(["img-src", "font-src", "media-src"])],
+  ["blob:", new Set(["img-src", "media-src"])],
+]);
+const SCRIPT_TOKENS = new Set(["'self'", "'wasm-unsafe-eval'"]);
+const isLocalHost = (h) => h === "localhost" || h.endsWith(".localhost") || /^127(?:\.\d{1,3}){3}$/.test(h);
 
 export function remoteHosts(text) {
   const found = new Set();
   for (const m of text.matchAll(URL_RE)) {
     const host = m[1].toLowerCase();
-    if (host.endsWith(".localhost") || host.startsWith("127.") || NON_FETCHED_HOSTS.has(host)) continue;
+    if (isLocalHost(host) || NON_FETCHED_HOSTS.has(host)) continue;
     found.add(host);
   }
   return [...found].sort();
@@ -55,12 +64,24 @@ export function checkCsp(conf) {
   if (tokens("default-src").join(" ") !== "'self'") errors.push("default-src doit valoir 'self'");
   const script = tokens("script-src");
   if (!script.includes("'wasm-unsafe-eval'")) errors.push("script-src sans 'wasm-unsafe-eval' (le cœur Wasm ne se charge pas)");
-  if (script.includes("'unsafe-inline'")) errors.push("script-src avec 'unsafe-inline'");
+  for (const d of Object.keys(csp)) {
+    if (!d.startsWith("script-src")) continue;
+    for (const t of tokens(d)) if (!SCRIPT_TOKENS.has(t)) errors.push(`${d} : seuls 'self' et 'wasm-unsafe-eval' sont admis, trouvé ${t}`);
+  }
   for (const d of Object.keys(csp)) {
     const list = tokens(d);
     for (const t of list) if (FORBIDDEN_TOKENS.has(t)) errors.push(`${d} : source interdite ${t}`);
-    const hosts = remoteHosts(list.join(" "));
-    if (hosts.length > 0) errors.push(`${d} : hôte distant ${hosts.join(", ")}`);
+    for (const t of list) {
+      if (FORBIDDEN_TOKENS.has(t) || t.startsWith("script-src")) continue;
+      if (/^'[a-z-]+'$/.test(t)) continue; // mot-clé entre quotes
+      if (SCHEME_TOKENS.has(t)) {
+        if (!SCHEME_TOKENS.get(t).has(d)) errors.push(`${d} : schéma ${t} non admis ici`);
+        continue;
+      }
+      const host = t.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "").replace(/[/?#].*$/, "").replace(/:(?:\d+|\*)$/, "").replace(/^\*\./, "*.").toLowerCase();
+      if (isLocalHost(host.replace(/^\*\./, "x."))) continue;
+      errors.push(`${d} : source non locale ou inconnue ${t}`);
+    }
   }
   return errors;
 }
