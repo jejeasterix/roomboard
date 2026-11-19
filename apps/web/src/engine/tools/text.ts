@@ -56,11 +56,14 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     const s = session;
     if (!s) return;
     const content = host.value();
+    const hadHidden = live.hidden.size > 0;
     session = null;
     pending = false;
     composing = false;
     live = NO_LIVE;
     host.close();
+    // La boucle est arrêtée (outil inactif) : sans image, l'id masqué resterait invisible jusqu'au geste suivant.
+    if (hadHidden) ctx.requestFrame?.();
     if (s.id === null && content === "") return;
     if (s.id !== null && content === s.initial) return;
     const boxHeight = textBoxHeight(layoutText(content, s.size, s.boxWidth, measure).length, s.size);

@@ -16,6 +16,11 @@ describe("poignées (D15, CL4-11)", () => {
     ]);
   });
 
+  it("hitHandle : les poignées écartées (skip) ne sont pas prises", () => {
+    expect(hitHandle(b, 200, 200, 12, new Set(["n", "s", "e", "w"] as const))).toBeNull();
+    expect(hitHandle(b, 200, 200, 12)).not.toBeNull();
+  });
+
   it("hitHandle : la plus proche dans la portée, sinon null", () => {
     expect(hitHandle(b, 305, 203, 12)).toBe("se");
     expect(hitHandle(b, 200, 150, 12)).toBeNull();

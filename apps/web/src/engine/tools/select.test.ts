@@ -146,6 +146,33 @@ describe("outil Sélection (D15, D38)", () => {
     expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 30, 10] }]);
   });
 
+  it("cadre 34×8 px, appui au centre : déplacement, pas de poignée n/s", () => {
+    const { tool, runs, rect } = setup();
+    const a = rect(100, 100, 130, 104); // cadre 98..132 × 98..106
+    tool.setSelection([a]);
+    gesture(tool, [[115, 102], [125, 112]]);
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 10, 10] }]);
+  });
+
+  it("tiret 18×4 (cadre 22×8 px), appui au centre : déplacement, aucun coin pris", () => {
+    const { tool, runs, rect } = setup();
+    const a = rect(100, 100, 118, 104);
+    tool.setSelection([a]);
+    gesture(tool, [[109, 102], [119, 112]]);
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 10, 10] }]);
+  });
+
+  it("trait vertical (cadre 4 px de large), appui au bout haut : poignée n, pas nw", () => {
+    const { tool, runs, rect } = setup();
+    const a = rect(100, 100, 100, 140); // cadre 98..102 × 98..142
+    tool.setSelection([a]);
+    gesture(tool, [[100, 98], [100, 78]]);
+    expect(runs).toHaveLength(1);
+    const m = (runs[0] as unknown as { matrix: number[] }).matrix;
+    expect(m[0]).toBe(1); // largeur inchangée : poignée n (pas nw)
+    expect(m[3]).toBeGreaterThan(1);
+  });
+
   it("zoom 2 : poignée de coin et déplacement en unités monde", () => {
     const { tool, runs, rect } = setup(2);
     const a = rect(100, 100, 200, 200); // bornes 98..202, soit 196..404 à l'écran

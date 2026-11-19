@@ -31,7 +31,11 @@ function setup(measure: Measure = narrow, zoom = 1) {
   const page = doc.pageIds()[0] ?? "";
   let shown = page;
   const runs: Command[] = [];
+  let frames = 0;
   const ctx: ToolContext = {
+    requestFrame: () => {
+      frames++;
+    },
     doc,
     page: () => shown,
     camera: () => ({ zoom, tx: 0, ty: 0 }),
@@ -50,7 +54,7 @@ function setup(measure: Measure = narrow, zoom = 1) {
   const show = (p: string): void => {
     shown = p;
   };
-  return { doc, page, runs, host, tool, click, show };
+  return { doc, page, runs, host, tool, click, show, frames: () => frames };
 }
 
 describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
@@ -112,6 +116,18 @@ describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
     expect(runs).toHaveLength(0);
     expect(host.closed).toBe(1);
     expect(tool.editing()).toBeNull();
+  });
+
+  it("contenu inchangé sur un texte existant : une image est demandée (l'id masqué reparaît)", () => {
+    const { doc, page, host, tool, runs, click, frames } = setup();
+    doc.apply({ type: "SetText", page, id: null, x: 100, y: 200, content: "Bonjour", color: "#000000", size: 48, boxWidth: 600, boxHeight: 60 });
+    click(150, 210);
+    expect(tool.live().hidden.size).toBe(1);
+    host.text = "Bonjour";
+    tool.requestCommit();
+    expect(runs).toHaveLength(0);
+    expect(tool.live().hidden.size).toBe(0);
+    expect(frames()).toBe(1);
   });
 
   it("zoom 2 : position monde de la boîte neuve et tolérance de prise en unités monde", () => {
