@@ -5496,3 +5496,1285 @@ cd ~/projets/roomboard-wt/socle--T55
 git add apps/web/src/engine/engine.ts apps/web/src/engine/engine.test.ts apps/web/src/engine/input/gesture.ts apps/web/src/engine/input/router.ts apps/web/src/engine/input/router.test.ts apps/web/src/engine/input/keys.ts apps/web/src/engine/input/keys.test.ts apps/web/src/engine/render/trail-style.ts apps/web/src/engine/render/trail-style.test.ts
 git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(engine): wire selection, shape and text tools, delete, escape and shift keys (T55)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+<a id="tache-t56"></a>
+### Tâche T56 — Zone de saisie du texte (DOM)
+
+**Objectif.** L'hôte de saisie de l'outil Texte (T53) : une `<textarea id="texte-edition">` **visible** (fond
+transparent, cadre pointillé), posée hors de `#stage`, placée par une matrice CSS caméra × transformation de l'élément,
+dimensionnée en unités monde (CL4-2). Elle relaie à l'outil `compositionstart`, `compositionend`, Échap (hors
+composition) et la perte du focus ; Échap pendant une composition reste à l'IME (CL4-3, D14). Le montage dans la page
+est fait par T58.
+
+**Fichiers.**
+- Créer : `apps/web/src/app/text-editor.ts`, `apps/web/src/app/text-editor.test.ts`
+
+**Interfaces.**
+- Consomme (T53) : `TextEditorHost`, `TextEditSession`, `TextTool`, `createTextTool` (tests) (`engine/tools/text.ts`).
+  (T48) : `textFont`, `TEXT_LINE_HEIGHT` (`engine/text-layout.ts`). (T46) : `Matrix` (`core/api.ts`) ; `ToolContext`
+  (`engine/tools/tool.ts`, tests) ; `fakeCore` (tests).
+- Produit :
+  - `export const TEXT_EDITOR_ID = "texte-edition"` ;
+  - `export interface TextEditorEvents { compositionStart(): void; compositionEnd(): void; requestCommit(): void }`
+    (un `TextTool` le satisfait tel quel) ;
+  - `export function cssMatrix(camera: Camera, m: Matrix): string` (`"matrix(a, b, c, d, e, f)"`, écran = caméra ∘ m) ;
+  - `export interface TextEditor extends TextEditorHost { readonly element: HTMLTextAreaElement }` ;
+  - `export function createTextEditor(parent: HTMLElement, events: () => TextEditorEvents | null): TextEditor`
+    (`events` lu à chaque événement : l'outil est créé après la zone, T58).
+- Réutilise : `apps/web/src/engine/text-layout.ts` — `textFont(size)`, `TEXT_LINE_HEIGHT` (même police, même interligne
+  que le rendu ; aucune constante recopiée).
+- Réutilise : `apps/web/src/engine/camera.ts` — type `Camera`, `IDENTITY` (tests).
+- Réutilise : `apps/web/src/engine/tools/text.ts` — `createTextTool` réel dans le test de composition (pas de faux outil
+  pour le cas du Review Focus).
+
+**Test et commande bornée.**
+`cd ~/projets/roomboard-wt/socle--T56 && pnpm --filter @roomboard/web exec vitest run src/app/text-editor.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|Tests " | tail -15`
+— attendu : `Tests  8 passed`, aucun `×`, présents : `Échap pendant la composition reste à l'IME` (Review Focus n° 2,
+CL4-3) et `perte du focus : validation demandée`. Tests à garder verts : `text.test.ts` (T53), `barre.test.ts`.
+
+**Contraintes (recopiées de « Global Constraints » du plan maître et du lot).**
+- Worktree : `~/projets/roomboard-wt/socle--T56` (créé par l'orchestrateur depuis `feat/socle-lot4`, T48 et T53
+  fusionnées) ; neuf : `pnpm install --frozen-lockfile` à la racine.
+- `export PATH=$HOME/.cargo/bin:$PATH` avant `cargo` et avant `scripts/verifier.sh`.
+- Commandes bornées du profil : `cargo test --workspace 2>&1 | tail -20` ; `pnpm -r test 2>&1 | tail -20` ; suite
+  complète `scripts/verifier.sh 2>&1 | tail -30` (réussite `verifier.sh : OK` ; échec `test result: FAILED`,
+  `error[`, `FAIL `, code non nul).
+- Toute suite au premier plan (outil Bash, `timeout: 600000`), jamais `run_in_background`.
+- Jamais `git add -A`, `git add .`, `git commit -a` : fichiers ajoutés un par un. Aucun `--force`, aucun tag.
+- Commit : `git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "<message en anglais>" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"` (jamais « Sonnet »).
+- Aucun test sauté ni ignoré de plus, aucun seuil baissé, aucun test existant affaibli.
+- `.github/workflows/` non touché ; aucun build Tauri ; aucun build Android.
+- Le chemin de l'encre (stylo, `StrokeBuilder`, canvas d'interaction) ne change pas de comportement.
+- Suite de tests en environnement Node (aucun DOM) : faux nœuds, comme `barre.test.ts`.
+- Relecteur éventuel lancé au premier plan (`run_in_background: false`).
+
+**Interdits.** Toucher `main.ts`, `index.html` (T58) ou `engine/` ; écrire dans le document depuis la zone (seul l'outil
+écrit) ; prendre Échap quand `isComposing` est vrai ; `stopPropagation` sur les touches (les gardes `inEditable` de
+`keys.ts` laissent déjà la saisie à la zone).
+
+**Terminé quand** la commande bornée rend 8 tests verts nommés, `pnpm --filter @roomboard/web exec tsc --noEmit` sans
+erreur, `scripts/verifier.sh` rend `verifier.sh : OK`, et le rapport porte `Réutilisation : appelé textFont /
+TEXT_LINE_HEIGHT (text-layout.ts)` et `Réutilisation : appelé createTextTool (test de composition)`.
+
+**Étapes.**
+
+- [ ] **1. Tests rouges.** Créer `apps/web/src/app/text-editor.test.ts` :
+
+```ts
+import { describe, expect, it } from "vitest";
+import { fakeCore } from "../core/fake-core";
+import { IDENTITY } from "../engine/camera";
+import type { InputSample } from "../engine/input/sampler";
+import { createTextTool, type TextEditSession, type TextTool } from "../engine/tools/text";
+import type { ToolContext } from "../engine/tools/tool";
+import { createTextEditor, cssMatrix, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
+
+/** Faux `<textarea>` (pas de DOM dans la suite). */
+class FakeArea {
+  id = "";
+  hidden = false;
+  value = "";
+  spellcheck = true;
+  scrollHeight = 0;
+  focused = 0;
+  caret: [number, number] | null = null;
+  style: Record<string, string> = {};
+  attrs: Record<string, string> = {};
+  listeners = new Map<string, (e: unknown) => void>();
+  addEventListener(type: string, cb: (e: unknown) => void): void {
+    this.listeners.set(type, cb);
+  }
+  setAttribute(k: string, v: string): void {
+    this.attrs[k] = v;
+  }
+  focus(): void {
+    this.focused++;
+  }
+  setSelectionRange(a: number, b: number): void {
+    this.caret = [a, b];
+  }
+  fire(type: string, e: unknown = {}): void {
+    this.listeners.get(type)?.(e);
+  }
+}
+
+interface FakeKey { key: string; isComposing: boolean; prevented: boolean; preventDefault(): void }
+const keydown = (key: string, isComposing: boolean): FakeKey => {
+  const e: FakeKey = { key, isComposing, prevented: false, preventDefault() { e.prevented = true; } };
+  return e;
+};
+
+function mount(events: () => TextEditorEvents | null) {
+  const area = new FakeArea();
+  const children: unknown[] = [];
+  const parent = { ownerDocument: { createElement: () => area }, append: (n: unknown) => children.push(n) };
+  const editor = createTextEditor(parent as unknown as HTMLElement, events);
+  return { area, children, editor };
+}
+
+function recorder() {
+  const calls: string[] = [];
+  const events: TextEditorEvents = {
+    compositionStart: () => calls.push("start"),
+    compositionEnd: () => calls.push("end"),
+    requestCommit: () => calls.push("commit"),
+  };
+  return { calls, events };
+}
+
+const session: TextEditSession = {
+  page: "p", id: null, matrix: [1, 0, 0, 1, 100, 50], boxWidth: 600, color: "#1e40af", size: 48, initial: "Bonjour",
+};
+const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
+
+describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
+  it("cssMatrix : caméra × matrice de l'élément", () => {
+    expect(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, [1, 0, 0, 1, 100, 50])).toBe("matrix(2, 0, 0, 2, 210, 120)");
+    expect(cssMatrix(IDENTITY, [2, 0, 0, 3, 5, 6])).toBe("matrix(2, 0, 0, 3, 5, 6)");
+  });
+
+  it("montée cachée hors de la scène ; open : visible, placée, police du rendu, valeur initiale, focus", () => {
+    const { area, children, editor } = mount(() => null);
+    expect(children).toEqual([area]);
+    expect(area.id).toBe(TEXT_EDITOR_ID);
+    expect(area.hidden).toBe(true);
+    editor.open(session, { zoom: 2, tx: 10, ty: 20 });
+    expect(area.hidden).toBe(false);
+    expect(area.value).toBe("Bonjour");
+    expect(area.style).toMatchObject({
+      transform: "matrix(2, 0, 0, 2, 210, 120)",
+      transformOrigin: "0 0",
+      width: "600px",
+      font: '48px "Atkinson Hyperlegible", system-ui, sans-serif',
+      lineHeight: "1.25",
+      color: "#1e40af",
+    });
+    expect(area.focused).toBe(1);
+    expect(area.caret).toEqual([7, 7]);
+  });
+
+  it("close : zone cachée et vidée ; value lit la saisie", () => {
+    const { area, editor } = mount(() => null);
+    editor.open(session, IDENTITY);
+    area.value = "Bonjour à tous";
+    expect(editor.value()).toBe("Bonjour à tous");
+    editor.close();
+    expect(area.hidden).toBe(true);
+    expect(editor.value()).toBe("");
+  });
+
+  it("composition : début et fin transmis à l'outil", () => {
+    const { calls, events } = recorder();
+    const { area, editor } = mount(() => events);
+    editor.open(session, IDENTITY);
+    area.fire("compositionstart");
+    area.fire("compositionend");
+    expect(calls).toEqual(["start", "end"]);
+  });
+
+  it("Échap hors composition : validation demandée, touche gardée", () => {
+    const { calls, events } = recorder();
+    const { area, editor } = mount(() => events);
+    editor.open(session, IDENTITY);
+    const e = keydown("Escape", false);
+    area.fire("keydown", e);
+    expect(calls).toEqual(["commit"]);
+    expect(e.prevented).toBe(true);
+    const enter = keydown("Enter", false);
+    area.fire("keydown", enter);
+    expect(enter.prevented).toBe(false);
+    expect(calls).toEqual(["commit"]);
+  });
+
+  it("Échap pendant la composition reste à l'IME : rien d'écrit avant compositionend (outil réel)", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const ctx: ToolContext = { doc, page: () => page, camera: () => IDENTITY, run: (cmd) => doc.apply(cmd) };
+    let tool: TextTool | null = null;
+    const { area, editor } = mount(() => tool);
+    tool = createTextTool(ctx, editor, () => ({ color: "#000000", size: 36 }), (s) => s.length * 10);
+    tool.begin(1, [at(100, 200)]);
+    tool.close(1, "end");
+    expect(area.hidden).toBe(false);
+    area.fire("compositionstart");
+    area.value = "こん";
+    const esc = keydown("Escape", true);
+    area.fire("keydown", esc);
+    area.fire("blur");
+    expect(esc.prevented).toBe(false);
+    expect(doc.elementIds(page)).toEqual([]);
+    expect(area.hidden).toBe(false);
+    area.value = "こんにちは";
+    area.fire("compositionend");
+    const ids = doc.elementIds(page);
+    expect(ids).toHaveLength(1);
+    expect(doc.element(ids[0] ?? "")).toMatchObject({ kind: "text", text: { content: "こんにちは" } });
+    expect(area.hidden).toBe(true);
+  });
+
+  it("perte du focus : validation demandée ; zone fermée, la perte du focus ne redemande rien", () => {
+    const { calls, events } = recorder();
+    const { area, editor } = mount(() => events);
+    editor.open(session, IDENTITY);
+    area.fire("blur");
+    expect(calls).toEqual(["commit"]);
+    editor.close();
+    area.fire("blur");
+    expect(calls).toEqual(["commit"]);
+  });
+
+  it("aucun outil branché : événements sans effet, sans erreur", () => {
+    const { area, editor } = mount(() => null);
+    editor.open(session, IDENTITY);
+    expect(() => {
+      area.fire("compositionstart");
+      area.fire("compositionend");
+      area.fire("keydown", keydown("Escape", false));
+      area.fire("blur");
+      area.fire("input");
+    }).not.toThrow();
+  });
+});
+```
+
+  (si `ToolContext` exige `shift`, ajouter `shift: () => false` ; si `doc.apply` ne rend pas le type attendu par
+  `run`, reprendre la forme du `setup` de `text.test.ts`.)
+
+- [ ] **2. Le voir échouer.** `pnpm --filter @roomboard/web exec vitest run src/app/text-editor.test.ts 2>&1 | tail -4`
+  — attendu : `Failed to resolve import "./text-editor"`.
+
+- [ ] **3. Écrire `apps/web/src/app/text-editor.ts`.**
+
+```ts
+/**
+ * Zone de saisie du texte (D14, CL4-2, CL4-3) : `<textarea>` visible, hors de `#stage` (ses événements ne passent pas
+ * par l'échantillonneur), placée par la matrice CSS caméra × élément, en unités monde ; police et interligne du rendu
+ * (`engine/text-layout.ts`). Relaie la composition IME, Échap (hors composition) et la perte du focus à l'outil Texte,
+ * qui seul écrit (une SetText par validation, différée pendant une composition).
+ */
+import type { Matrix } from "../core/api";
+import type { Camera } from "../engine/camera";
+import { textFont, TEXT_LINE_HEIGHT } from "../engine/text-layout";
+import type { TextEditorHost, TextEditSession } from "../engine/tools/text";
+
+export const TEXT_EDITOR_ID = "texte-edition";
+
+export interface TextEditorEvents {
+  compositionStart(): void;
+  compositionEnd(): void;
+  requestCommit(): void;
+}
+
+export interface TextEditor extends TextEditorHost {
+  readonly element: HTMLTextAreaElement;
+}
+
+/** Écran (px CSS) = caméra ∘ m : `matrix(z·a, z·b, z·c, z·d, z·e + tx, z·f + ty)`. */
+export function cssMatrix(camera: Camera, m: Matrix): string {
+  const z = camera.zoom;
+  const [a, b, c, d, e, f] = m;
+  return `matrix(${z * a}, ${z * b}, ${z * c}, ${z * d}, ${z * e + camera.tx}, ${z * f + camera.ty})`;
+}
+
+export function createTextEditor(parent: HTMLElement, events: () => TextEditorEvents | null): TextEditor {
+  const area = parent.ownerDocument.createElement("textarea");
+  area.id = TEXT_EDITOR_ID;
+  area.hidden = true;
+  area.spellcheck = false;
+  area.setAttribute("aria-label", "Texte");
+  const s = area.style;
+  s.position = "absolute";
+  s.left = "0px";
+  s.top = "0px";
+  s.transformOrigin = "0 0";
+  s.margin = "0";
+  s.padding = "0";
+  s.border = "1px dashed #1e3a8a";
+  s.background = "transparent";
+  s.outline = "none";
+  s.resize = "none";
+  s.overflow = "hidden";
+  s.whiteSpace = "pre-wrap";
+  s.zIndex = "3";
+  let opened = false;
+  const grow = (): void => {
+    s.height = "auto";
+    s.height = `${area.scrollHeight}px`;
+  };
+  area.addEventListener("input", grow);
+  area.addEventListener("compositionstart", () => events()?.compositionStart());
+  area.addEventListener("compositionend", () => events()?.compositionEnd());
+  area.addEventListener("keydown", (e: KeyboardEvent) => {
+    // Pendant une composition, Échap appartient à l'IME (choix d'un candidat, CL4-3) : rien n'est demandé.
+    if (e.key !== "Escape" || e.isComposing) return;
+    e.preventDefault();
+    events()?.requestCommit();
+  });
+  // Perte du focus : l'outil valide, ou attend compositionend si une composition est en cours (CL4-3).
+  area.addEventListener("blur", () => {
+    if (opened) events()?.requestCommit();
+  });
+  parent.append(area);
+
+  return {
+    element: area,
+    open(session: TextEditSession, camera: Camera) {
+      opened = true;
+      area.value = session.initial;
+      s.transform = cssMatrix(camera, session.matrix);
+      s.width = `${session.boxWidth}px`;
+      s.minHeight = `${session.size * TEXT_LINE_HEIGHT}px`;
+      s.font = textFont(session.size);
+      s.lineHeight = String(TEXT_LINE_HEIGHT);
+      s.color = session.color;
+      area.hidden = false;
+      grow();
+      area.focus();
+      area.setSelectionRange(area.value.length, area.value.length);
+    },
+    close() {
+      opened = false; // avant de cacher : le blur qui suit ne redemande rien
+      area.hidden = true;
+      area.value = "";
+    },
+    value: () => area.value,
+  };
+}
+```
+
+- [ ] **4. Vérifier.** Commande bornée → `Tests  8 passed` ; `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -5`
+  sans erreur ; `cd ~/projets/roomboard-wt/socle--T56 && export PATH=$HOME/.cargo/bin:$PATH && scripts/verifier.sh 2>&1 | tail -30`
+  → `verifier.sh : OK`.
+
+- [ ] **5. Commit.**
+
+```bash
+cd ~/projets/roomboard-wt/socle--T56
+git add apps/web/src/app/text-editor.ts apps/web/src/app/text-editor.test.ts
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(app): text input overlay relaying IME composition, escape and blur (T56)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+<a id="tache-t57"></a>
+### Tâche T57 — Script S3/S4 au navigateur (rouge attendu avant T58)
+
+**Objectif.** Un script hors de `verifier.sh` joue S3 et S4 dans Chromium headless (Playwright du cache npx de la VM,
+même chargement que S2) sur l'application construite (`apps/web/dist`), servie par un serveur local que le script
+lance **et arrête** (`finally`). Parcours : ajouter deux pages ; page 1, écrire un texte avec IME simulée
+(CDP `Input.imeSetComposition` puis `Input.insertText`, repli : événements de composition synthétiques ; la ligne
+`IME : …` dit lequel a servi), rien d'écrit pendant la composition, Échap pendant la composition laissé à l'IME ;
+page 2, un trait ; page 3, rectangle, ellipse, ligne, flèche, un second texte validé par un clic ailleurs ;
+sélectionner deux formes au rectangle, ajouter la ligne par Maj + clic, Échap, déplacer, agrandir ×2 par la poignée de
+coin, Suppr ; Ctrl+Z annule chaque geste (une étape chacun) ; retirer la page 2 montre la précédente, Ctrl+Z la rend
+avec son trait ; retirer deux pages, la dernière restante ne se retire pas. Il dit ce qu'il ne couvre pas. Avec
+`--captures` : `docs/essais/s34-lot4-{selection,forme-texte,pages}.png` (posées par T58). Avant T58 la ligne
+`#edition` manque : le script doit sortir 1 sur `boutons absents : select, rect, ellipse, line, arrow, text`.
+
+**Fichiers.**
+- Créer : `scripts/essais/commun.mjs`, `scripts/essais/s34-navigateur.mjs`
+- Non touché : `scripts/essais/s2-navigateur.mjs` (hors des fichiers de la tâche ; sa preuve reste celle du lot 3b).
+
+**Interfaces.**
+- Consomme (contrat du lot, posé par T58) : `#stage[data-ready="1"]`, `data-elements`, `data-page` (`"<i>/<n>"`),
+  `data-selection`, `data-bounds` (`"x0,y0,x1,y1"` au dixième, vide sans sélection), `data-tool` ; boutons
+  `#edition button[data-action=…]` : `select`, `rect`, `ellipse`, `line`, `arrow`, `text`, `page-prev`, `page-next`,
+  `page-add`, `page-remove` ; compteur `#pages` (`"1 / 3"`) ; `#barre button[data-action="pen"]` ;
+  `textarea#texte-edition` ; `#etat`. T58 désactive `page-remove` sur la dernière page.
+- Produit (`scripts/essais/commun.mjs`) : `ROOT`, `DIST`, `class Echec extends Error`, `loadPlaywright(): Promise<module | null>`,
+  `serve(): Promise<http.Server>` (port libre sur 127.0.0.1), `gitSha(): string`, `frames(page): Promise<void>`
+  (deux images), `inkIn(page, [x0, y0, x1, y1]): Promise<number>` (pixels d'encre du canvas `#scene`, somme RVB < 300).
+- Produit (`scripts/essais/s34-navigateur.mjs`) : `node scripts/essais/s34-navigateur.mjs [--captures]` ; sortie 0 avec
+  `S3/S4 lot 4 : OK`, 1 avec `S3/S4 lot 4 : ÉCHEC — <raison>`, 2 avec `S3/S4 lot 4 : outil absent — …`.
+- Réutilise : `scripts/essais/s2-navigateur.mjs` — `loadPlaywright`, `serve`, la mesure d'encre `ink` et `frames`,
+  **repris** dans `commun.mjs` à l'identique (même cache npx, même `PLAYWRIGHT_MODULE`, mêmes types MIME). S2 n'est
+  pas réécrit pour importer `commun.mjs` : il n'est pas dans les fichiers de la tâche. Le rapport porte donc
+  `Réutilisation : écart — loadPlaywright / serve / ink repris de s2-navigateur.mjs dans commun.mjs ; s2 non migré
+  (hors fichiers de T57), à faire au lot 5`.
+
+**Test et commande bornée.** (le script est lui-même le test : il est rouge tant que T58 n'est pas fusionnée.)
+1. `cd ~/projets/roomboard-wt/socle--T57 && node --check scripts/essais/commun.mjs && node --check scripts/essais/s34-navigateur.mjs && echo syntaxe-ok`
+   — attendu : `syntaxe-ok`.
+2. `cd ~/projets/roomboard-wt/socle--T57 && export PATH=$HOME/.cargo/bin:$PATH && scripts/verifier.sh 2>&1 | tail -30`
+   — attendu `verifier.sh : OK` (construit `apps/web/dist`).
+3. `cd ~/projets/roomboard-wt/socle--T57 && node scripts/essais/s34-navigateur.mjs 2>&1 | tail -5; echo "code $?"`
+   — attendu : `S3/S4 lot 4 : ÉCHEC — boutons absents : select, rect, ellipse, line, arrow, text` et `code 1`
+   (avec `| tail`, `$?` est celui de `tail` : lancer aussi `node scripts/essais/s34-navigateur.mjs > /tmp/s34-T57.log 2>&1; echo "code $?"; tail -3 /tmp/s34-T57.log`
+   et lire `code 1`). Un `code 2` (outil absent) n'est pas la preuve : poser Playwright par
+   `npx -y playwright@1.65.1 --version` et rejouer.
+4. Serveur arrêté : `ss -ltnp 2>/dev/null | grep -c node` rend le même nombre avant et après la commande 3.
+5. Tests à garder verts : `cd ~/projets/roomboard-wt/socle--T57 && node scripts/essais/s2-navigateur.mjs 2>&1 | tail -3`
+   → `S2 lot 3 : OK` ; `node scripts/essais/s2-navigateur.mjs --lot3b 2>&1 | tail -3` → `S2 lot 3b : OK (4 passages)`.
+
+**Contraintes (recopiées de « Global Constraints » du plan maître et du lot).**
+- Worktree : `~/projets/roomboard-wt/socle--T57` (créé par l'orchestrateur depuis `feat/socle-lot4`) ; neuf :
+  `pnpm install --frozen-lockfile` à la racine.
+- `export PATH=$HOME/.cargo/bin:$PATH` avant `cargo` et avant `scripts/verifier.sh`.
+- Commandes bornées du profil : `cargo test --workspace 2>&1 | tail -20` ; `pnpm -r test 2>&1 | tail -20` ; suite
+  complète `scripts/verifier.sh 2>&1 | tail -30` (réussite `verifier.sh : OK` ; échec `test result: FAILED`,
+  `error[`, `FAIL `, code non nul).
+- Toute suite et tout script au premier plan (outil Bash, `timeout: 600000`), jamais `run_in_background`.
+- Jamais `git add -A`, `git add .`, `git commit -a` : fichiers ajoutés un par un. Aucun `--force`, aucun tag.
+- Commit : `git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "<message en anglais>" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"` (jamais « Sonnet »).
+- Aucun test sauté ni ignoré de plus, aucun seuil baissé, aucun test existant affaibli.
+- `.github/workflows/` non touché ; aucun build Tauri ; aucun build Android. Le script reste hors de `verifier.sh`.
+- Playwright 1.65.1 du cache npx (`~/.npm/_npx/*/node_modules/playwright`), aucune dépendance ajoutée au dépôt.
+- Relecteur éventuel lancé au premier plan (`run_in_background: false`).
+
+**Interdits.** Toucher `s2-navigateur.mjs`, l'application ou `verifier.sh` ; laisser le serveur ou le navigateur
+ouverts à la sortie, y compris sur échec ; affaiblir le script pour qu'il passe avant T58 ; poser des captures (T58).
+
+**Terminé quand** `syntaxe-ok`, `verifier.sh : OK`, le script sort `code 1` sur la ligne
+`S3/S4 lot 4 : ÉCHEC — boutons absents : select, rect, ellipse, line, arrow, text`, aucun serveur `node` laissé
+(commande 4), S2 lot 3 `OK` et S2 lot 3b `OK (4 passages)`, et le rapport porte la ligne `Réutilisation : écart — …`
+ci-dessus.
+
+**Étapes.**
+
+- [ ] **1. `scripts/essais/commun.mjs`.**
+
+```js
+// Outils partagés des scénarios au navigateur (lot 4, T57) : serveur local de apps/web/dist, chargement de Playwright
+// (cache npx de la VM ou PLAYWRIGHT_MODULE), images d'attente, encre du canvas de scène. Repris de s2-navigateur.mjs.
+import { existsSync, readdirSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
+import { homedir } from "node:os";
+import { extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+export const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+export const DIST = join(ROOT, "apps", "web", "dist");
+const TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+};
+
+export class Echec extends Error {}
+
+export async function loadPlaywright() {
+  const candidates = [];
+  if (process.env.PLAYWRIGHT_MODULE) candidates.push(process.env.PLAYWRIGHT_MODULE);
+  const npx = join(homedir(), ".npm", "_npx");
+  if (existsSync(npx)) {
+    for (const d of readdirSync(npx)) candidates.push(join(npx, d, "node_modules", "playwright", "index.mjs"));
+  }
+  const found = candidates.find((c) => existsSync(c));
+  return found ? import(pathToFileURL(found).href) : null;
+}
+
+export function serve() {
+  const server = createServer(async (req, res) => {
+    try {
+      const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
+      const rel = normalize(path).replace(/^[/\\]+/, "");
+      const file = join(DIST, rel === "" ? "index.html" : rel);
+      if (file !== DIST && !file.startsWith(DIST + sep)) {
+        res.writeHead(403).end();
+        return;
+      }
+      const target = (await stat(file)).isDirectory() ? join(file, "index.html") : file;
+      const body = await readFile(target);
+      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
+    } catch {
+      res.writeHead(404).end();
+    }
+  });
+  return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(server)));
+}
+
+export function gitSha() {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
+  } catch {
+    return "inconnu";
+  }
+}
+
+export const frames = (page) =>
+  page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))));
+
+/** Pixels d'encre (somme RVB < 300) dans une boîte en px CSS du canvas de scène. */
+export const inkIn = (page, box) =>
+  page.$eval(
+    "#scene",
+    (c, [x0, y0, x1, y1]) => {
+      const ctx = c.getContext("2d");
+      const sx = c.width / c.clientWidth;
+      const sy = c.height / c.clientHeight;
+      const w = Math.max(1, Math.round((x1 - x0) * sx));
+      const h = Math.max(1, Math.round((y1 - y0) * sy));
+      const d = ctx.getImageData(Math.round(x0 * sx), Math.round(y0 * sy), w, h).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 300) n++;
+      return n;
+    },
+    box,
+  );
+```
+
+- [ ] **2. `scripts/essais/s34-navigateur.mjs`.**
+
+```js
+#!/usr/bin/env node
+// Scénarios S3 et S4 au navigateur (cadrage § 6), lot 4 (T57) : application construite (apps/web/dist) servie en local,
+// Chromium headless de Playwright, souris et clavier simulés, IME simulée (CDP Input.imeSetComposition, sinon
+// événements de composition synthétiques). Lit #stage[data-elements, data-page, data-selection, data-bounds] et l'encre
+// du canvas de scène. Hors de scripts/verifier.sh. Code de sortie : 0 réussi, 1 échec, 2 outil absent.
+// Usage : node scripts/essais/s34-navigateur.mjs [--captures]   (docs/essais/s34-lot4-{selection,forme-texte,pages}.png)
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { DIST, Echec, ROOT, frames, gitSha, inkIn, loadPlaywright, serve } from "./commun.mjs";
+
+const LABEL = "S3/S4 lot 4";
+const TOOLS = ["select", "rect", "ellipse", "line", "arrow", "text"];
+const PAGE_ACTIONS = ["page-prev", "page-next", "page-add", "page-remove"];
+const NON_COUVERT = [
+  "enregistrer puis rouvrir (S3) : couvert par le cœur, s3_text_stroke_shape_survive_save_load (T49) ; fichier au lot 6",
+  "zoom à 200 % par Ctrl+molette puis trait aux coordonnées monde (S4) : tests du moteur (lot 3b), pas rejoué ici",
+  "profil de barre essai-simple (S4) : lot 5",
+  "WebKit (S4) : Playwright WebKit non posé sur la VM ; essai sur le Mac",
+  "IME réelle (Windows, macOS, Android), fenêtre de candidats (HL4-3) : essai ENI",
+  "stylet réel, poignées au doigt : essai ENI (docs/essais/eni-stylet.md, « Lot 4 : à essayer »)",
+];
+
+const parseBounds = (s) => {
+  if (!s) return null;
+  const [x0, y0, x1, y1] = s.split(",").map(Number);
+  return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+};
+
+async function scenario(page, cdp, url, captures) {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  const check = (cond, msg) => {
+    if (!cond) throw new Echec(msg);
+    console.log(`ok — ${msg}`);
+  };
+  const tick = () => frames(page);
+  const attr = (name) => page.getAttribute("#stage", name);
+  const elements = async () => Number(await attr("data-elements"));
+  const pageTag = () => attr("data-page");
+  const selection = async () => Number(await attr("data-selection"));
+  const bounds = async () => parseBounds(await attr("data-bounds"));
+  const near = (a, b, tol) => Math.abs(a - b) <= tol;
+  const drag = async (points) => {
+    const [first, ...rest] = points;
+    await page.mouse.move(first[0], first[1]);
+    await page.mouse.down();
+    for (const [x, y] of rest) await page.mouse.move(x, y, { steps: 8 });
+    await page.mouse.up();
+    await tick();
+  };
+  const clickAt = async (x, y) => {
+    await page.mouse.click(x, y);
+    await tick();
+  };
+  const press = async (keys) => {
+    await page.keyboard.press(keys);
+    await tick();
+  };
+  const edit = async (action) => {
+    await page.click(`#edition button[data-action="${action}"]`);
+    await tick();
+  };
+  const pen = async () => {
+    await page.click('#barre button[data-action="pen"]');
+    await tick();
+  };
+  const editorOpen = () => page.isVisible("#texte-edition");
+  const shot = async (name) => {
+    if (!captures) return;
+    const path = join(ROOT, "docs", "essais", `s34-lot4-${name}.png`);
+    await page.screenshot({ path });
+    console.log(`capture : ${path}`);
+  };
+
+  await page.goto(url);
+  try {
+    await page.waitForSelector('#stage[data-ready="1"]', { timeout: 15000 });
+  } catch {
+    throw new Echec(`l'application ne démarre pas (#stage[data-ready="1"] absent) ${errors.join(" | ")}`);
+  }
+  await tick();
+
+  const missing = [];
+  for (const a of TOOLS) if ((await page.$(`#edition button[data-action="${a}"]`)) === null) missing.push(a);
+  if (missing.length > 0) throw new Echec(`boutons absents : ${missing.join(", ")}`);
+  const missingPages = [];
+  for (const a of PAGE_ACTIONS) if ((await page.$(`#edition button[data-action="${a}"]`)) === null) missingPages.push(a);
+  if ((await page.$("#pages")) === null) missingPages.push("#pages");
+  if (missingPages.length > 0) throw new Echec(`boutons de page absents : ${missingPages.join(", ")}`);
+  check((await pageTag()) === "1/1" && (await elements()) === 0, "une page vide au démarrage");
+
+  // S3 : pages.
+  await edit("page-add");
+  await edit("page-add");
+  check((await pageTag()) === "3/3" && (await page.textContent("#pages")) === "3 / 3", "deux pages ajoutées, la dernière montrée");
+  await press("Control+z");
+  check((await pageTag()) === "2/2", "Ctrl+Z : l'ajout est annulé, la page précédente est montrée");
+  await press("Control+y");
+  check((await pageTag()) === "3/3", "Ctrl+Y : la page ajoutée revient et est montrée");
+  await edit("page-prev");
+  await edit("page-prev");
+  check((await pageTag()) === "1/3", "page précédente deux fois : page 1");
+
+  // Page 1 : texte avec IME simulée (D14, CL4-3).
+  await edit("text");
+  await clickAt(300, 250);
+  check(await editorOpen(), "outil Texte : la zone de saisie s'ouvre au clic");
+  check((await page.evaluate(() => document.activeElement?.id)) === "texte-edition", "la zone de saisie a le focus");
+  await page.evaluate(() => {
+    const t = document.getElementById("texte-edition");
+    window.__ime = [];
+    for (const k of ["compositionstart", "compositionend"]) t.addEventListener(k, () => window.__ime.push(k));
+  });
+  const ime = () => page.evaluate(() => window.__ime);
+  let mode = "CDP Input.imeSetComposition";
+  try {
+    await cdp.send("Input.imeSetComposition", { text: "こん", selectionStart: 2, selectionEnd: 2 });
+    await tick();
+    if (!(await ime()).includes("compositionstart")) throw new Error("compositionstart absent");
+  } catch {
+    mode = "événements de composition synthétiques";
+    await page.evaluate(() => {
+      const t = document.getElementById("texte-edition");
+      t.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      t.value = "こん";
+      t.dispatchEvent(new CompositionEvent("compositionupdate", { data: "こん" }));
+    });
+    await tick();
+  }
+  console.log(`IME : ${mode}`);
+  check((await elements()) === 0, "pendant la composition : rien d'écrit");
+  await page.evaluate(() =>
+    document
+      .getElementById("texte-edition")
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true })),
+  );
+  await tick();
+  check((await elements()) === 0 && (await editorOpen()), "Échap pendant la composition : laissé à l'IME, zone ouverte");
+  if (mode.startsWith("CDP")) {
+    await cdp.send("Input.insertText", { text: "こんにちは" });
+  } else {
+    await page.evaluate(() => {
+      const t = document.getElementById("texte-edition");
+      t.value = "こんにちは";
+      t.dispatchEvent(new CompositionEvent("compositionend", { data: "こんにちは" }));
+    });
+  }
+  await tick();
+  check((await ime()).includes("compositionend"), "compositionend reçu");
+  check((await page.inputValue("#texte-edition")) === "こんにちは", "texte composé dans la zone");
+  check((await elements()) === 0 && (await editorOpen()), "composition finie sans demande : zone ouverte, rien d'écrit");
+  await page.keyboard.type(" Bonjour");
+  await press("Escape");
+  check((await elements()) === 1 && !(await editorOpen()), "Échap hors composition : un texte écrit, zone fermée");
+  check((await inkIn(page, [300, 250, 600, 300])) > 0, "le texte est peint sur la scène");
+  await press("Control+z");
+  check((await elements()) === 0, "Ctrl+Z : le texte part (une étape)");
+  await press("Control+y");
+  check((await elements()) === 1, "Ctrl+Y : le texte revient");
+
+  // Page 2 : un trait.
+  await edit("page-next");
+  await pen();
+  await drag([[300, 400], [500, 400], [700, 400]]);
+  check((await pageTag()) === "2/3" && (await elements()) === 1, "page 2 : un trait");
+
+  // Page 3 : formes et texte.
+  await edit("page-next");
+  check((await pageTag()) === "3/3" && (await elements()) === 0, "page 3 vide");
+  await edit("rect");
+  await drag([[300, 300], [400, 360]]);
+  check((await elements()) === 1, "rectangle posé au relâché");
+  check((await inkIn(page, [296, 296, 304, 364])) > 0, "bord gauche du rectangle peint");
+  await press("Control+z");
+  check((await elements()) === 0, "Ctrl+Z : le rectangle part (une étape)");
+  await press("Control+y");
+  check((await elements()) === 1, "Ctrl+Y : le rectangle revient");
+  await edit("ellipse");
+  await drag([[420, 300], [520, 360]]);
+  await edit("line");
+  await drag([[300, 450], [400, 520]]);
+  await edit("arrow");
+  await drag([[550, 450], [700, 520]]);
+  check((await elements()) === 4, "ellipse, ligne et flèche posées : quatre formes");
+  await edit("text");
+  await clickAt(800, 250);
+  await page.keyboard.type("Rectangle");
+  await clickAt(1000, 620);
+  check((await elements()) === 5 && !(await editorOpen()), "clic ailleurs : le texte est validé, aucune boîte rouverte");
+  await shot("forme-texte");
+
+  // S4 : sélection, déplacement, poignée de coin, Maj, Échap, Suppr.
+  await edit("select");
+  await drag([[280, 280], [540, 380]]);
+  check((await selection()) === 2, "rectangle de sélection : deux formes sélectionnées");
+  const b0 = await bounds();
+  check(b0 !== null && b0.w > 0, `boîte de la sélection ${await attr("data-bounds")}`);
+  await drag([[350, 330], [400, 330], [450, 330]]);
+  const b1 = await bounds();
+  check((await selection()) === 2 && (await elements()) === 5, "déplacement : sélection gardée, aucun élément de plus");
+  check(b1.x0 > b0.x0 && near(b1.y0, b0.y0, 0.5) && near(b1.w, b0.w, 0.5), `déplacée vers la droite : ${await attr("data-bounds")}`);
+  const zoom = 100 / (b1.x0 - b0.x0);
+  console.log(`zoom lu : ${zoom.toFixed(3)} (100 px écran = ${(b1.x0 - b0.x0).toFixed(1)} unités)`);
+  // Coin bas-droit de la sélection à l'écran : (300 + 100) + 220, 360 (formes de 300..520 × 300..360, déplacées de 100 px).
+  await drag([[621, 361], [700, 400], [841, 421]]);
+  const b2 = await bounds();
+  check(near(b2.w / b1.w, 2, 0.1) && near(b2.h / b1.h, 2, 0.15), `poignée de coin : ×2 (${(b2.w / b1.w).toFixed(2)})`);
+  check(near(b2.x0, b1.x0, 1 / zoom + 0.5) && near(b2.y0, b1.y0, 1 / zoom + 0.5), "le coin opposé reste en place");
+  await shot("selection");
+  await press("Control+z");
+  const u1 = await bounds();
+  check(near(u1.x0, b1.x0, 0.2) && near(u1.w, b1.w, 0.2), "Ctrl+Z : l'agrandissement est défait (une étape)");
+  await press("Control+z");
+  const u0 = await bounds();
+  check(near(u0.x0, b0.x0, 0.2) && near(u0.y0, b0.y0, 0.2) && near(u0.w, b0.w, 0.2), "Ctrl+Z : retour à l'état de départ");
+  await page.keyboard.down("Shift");
+  await clickAt(350, 485);
+  await page.keyboard.up("Shift");
+  check((await selection()) === 3, "Maj + clic sur la ligne : ajoutée à la sélection");
+  await press("Escape");
+  check((await selection()) === 0 && (await elements()) === 5, "Échap : sélection vidée, rien d'écrit");
+  await clickAt(625, 485);
+  check((await selection()) === 1, "clic sur la flèche : sélectionnée");
+  await press("Delete");
+  check((await elements()) === 4 && (await selection()) === 0, "Suppr : la flèche part");
+  await press("Control+z");
+  check((await elements()) === 5, "Ctrl+Z : la flèche revient (une étape)");
+
+  // S3 : retirer des pages.
+  await edit("page-prev");
+  check((await pageTag()) === "2/3" && (await elements()) === 1, "page 2 montrée, son trait");
+  await edit("page-remove");
+  check((await pageTag()) === "1/2" && (await elements()) === 1, "retirer la page 2 : la précédente est montrée");
+  await press("Control+z");
+  check((await pageTag()) === "2/3" && (await elements()) === 1, "Ctrl+Z : la page 2 revient avec son trait, montrée");
+  await edit("page-remove");
+  await edit("page-remove");
+  check((await pageTag()) === "1/1", "deux pages retirées : une seule reste");
+  check(await page.$eval('#edition button[data-action="page-remove"]', (b) => b.disabled), "la dernière page ne se retire pas");
+  await shot("pages");
+
+  for (const n of NON_COUVERT) console.log(`non couvert — ${n}`);
+  check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
+}
+
+async function main() {
+  console.log(`sha ${gitSha()}`);
+  if (!existsSync(join(DIST, "index.html"))) {
+    console.error(`${LABEL} : ÉCHEC — apps/web/dist absent : lancer d'abord scripts/verifier.sh (Wasm et application)`);
+    return 1;
+  }
+  const pw = await loadPlaywright();
+  if (!pw) {
+    console.error(`${LABEL} : outil absent — Playwright introuvable (npx -y playwright@1.65.1 --version, ou PLAYWRIGHT_MODULE=…)`);
+    return 2;
+  }
+  const server = await serve();
+  let browser = null;
+  try {
+    try {
+      browser = await pw.chromium.launch({ args: ["--no-sandbox"] });
+    } catch (e) {
+      console.error(`${LABEL} : outil absent — Chromium de Playwright : ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+      return 2;
+    }
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    await scenario(page, cdp, `http://127.0.0.1:${server.address().port}/`, process.argv.includes("--captures"));
+    console.log(`${LABEL} : OK`);
+    return 0;
+  } catch (e) {
+    console.error(`${LABEL} : ÉCHEC — ${e instanceof Echec ? e.message : e instanceof Error ? e.stack : e}`);
+    return 1;
+  } finally {
+    await browser?.close();
+    await new Promise((ok) => server.close(() => ok(null)));
+  }
+}
+
+process.exitCode = await main();
+```
+
+  Les coordonnées écran supposent la caméra de départ du lot 3b (vue ajustée à la page) : le script ne lit que des
+  écarts (`data-bounds` avant / après) et déduit le zoom du déplacement, il ne suppose pas écran = monde. Le geste de
+  poignée part du coin bas-droit de l'union des deux formes déplacées (prise à 12 px écran, CL4-11) ; si le cadre de
+  sélection l'éloigne de plus de 12 px, partir du coin lu dans `data-bounds` converti par le zoom lu (corriger dans le
+  script, le dire au rapport).
+
+- [ ] **3. Le voir rouge.** Commandes 1 à 4 de la section — attendu : `syntaxe-ok`, `verifier.sh : OK`,
+  `S3/S4 lot 4 : ÉCHEC — boutons absents : select, rect, ellipse, line, arrow, text`, `code 1`, aucun serveur laissé.
+
+- [ ] **4. S2 toujours vert.** Commande 5 → `S2 lot 3 : OK`, `S2 lot 3b : OK (4 passages)`.
+
+- [ ] **5. Commit.**
+
+```bash
+cd ~/projets/roomboard-wt/socle--T57
+git add scripts/essais/commun.mjs scripts/essais/s34-navigateur.mjs
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "test(e2e): browser script for S3/S4 editing scenarios, red until the edit bar lands (T57)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+<a id="tache-t58"></a>
+### Tâche T58 — Amorce et barre d'édition ; S3/S4 joué vert, captures
+
+**Objectif.** L'amorce branche les trois outils d'édition (fabriques `select`, `shape`, `text` du moteur, T55), la zone
+de saisie (T56, montée dans `document.body`, hors de `#stage`) et la mesure du texte par le Canvas 2D (CL4-4) ; elle
+pose sur `#stage` les attributs lus par le scénario (`data-page`, `data-selection`, `data-bounds`, `data-tool`). La
+barre gagne la troisième ligne `#edition` (CL4-13) : Sélection, Rectangle, Ellipse, Ligne, Flèche, Texte, page
+précédente, page suivante, Ajouter une page, Retirer la page, puis le compteur `#pages` (« 1 / 3 »). S3/S4 (T57) passe
+au vert, S2 lot 3 et lot 3b restent `OK`, trois captures sont posées.
+
+**Fichiers.**
+- Modifier : `apps/web/src/main.ts`, `apps/web/src/app/barre.ts`, `apps/web/src/app/barre.test.ts`, `apps/web/index.html`
+- Créer (captures, par le script) : `docs/essais/s34-lot4-selection.png`, `docs/essais/s34-lot4-forme-texte.png`,
+  `docs/essais/s34-lot4-pages.png`
+
+**Interfaces.**
+- Consomme (T47) : `EngineState.{pageIndex, pageCount, selection, selectionBounds}`, `Engine.{addPage, removePage,
+  nextPage, prevPage}`. (T55) : `ToolFactories.{select, shape, text}`, `ToolChoice` étendu (`"select" | ShapeKind | "text"`).
+  (T51) `createSelectTool` ; (T52) `createShapeTool` ; (T53) `createTextTool`, `TextTool` ; (T56) `createTextEditor` ;
+  (T48) `textFont`, `type Measure` ; (T46) `ShapeKind`, `Bounds` (`core/api.ts`). (T57) `scripts/essais/s34-navigateur.mjs`.
+- Produit (`apps/web/src/app/barre.ts`) :
+  - `export type EditionAction = "select" | ShapeKind | "text" | "page-prev" | "page-next" | "page-add" | "page-remove"` ;
+  - `export function editionModel(s: EngineState): BarButton<EditionAction>[]` (outils : `pressed` = outil courant ;
+    pages : `pressed: null` ; `page-prev` désactivé sur la première page, `page-next` sur la dernière, `page-remove`
+    quand une seule page reste, D37) ;
+  - `export const pagesLabel = (s: EngineState): string` → `"<i> / <n>"` ;
+  - `export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool", string>`
+    (`"<i>/<n>"`, nombre d'ids, `"x0,y0,x1,y1"` arrondis au dixième ou `""`, outil) ;
+  - `export function mountEdition(root: HTMLElement, engine: Pick<Engine, "setTool" | "addPage" | "removePage" | "nextPage" | "prevPage" | "state" | "onState">): () => void` ;
+  - `BarButton` devient générique : `BarButton<A = BarAction>` (champ `action: A`), défaut inchangé pour `barModel`.
+- Produit (`index.html`) : `<div id="edition" role="toolbar" aria-label="Édition">` à `top: 104px`, mêmes boutons que
+  `#barre`.
+- Réutilise : `apps/web/src/app/barre.ts` — `labelOf` (libellé « Sélection » lu dans `toolbar.ts`, DA10), patron de
+  `mountBar` (boutons `data-action`, `aria-pressed`, `paint` sur `onState`) : **étendu**, pas recopié dans un autre
+  module.
+- Réutilise : `apps/web/src/main.ts` — `createEngine`, `mark`, `keyOf`, écouteurs clavier : **étendus**.
+- Réutilise : `apps/web/src/toolbar.ts` — lu seulement (non touché, carte d'impact).
+
+**Test et commande bornée.**
+1. `cd ~/projets/roomboard-wt/socle--T58 && pnpm --filter @roomboard/web exec vitest run src/app/barre.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|Tests " | tail -25`
+   — attendu : aucun `×`, `Tests  N passed` (N = existants + 4), présents : `editionModel : six outils puis quatre
+   actions de page`, `editionModel : bords de page et dernière page désactivés`, `stageTags : page, sélection, boîte
+   au dixième, outil`, `mountEdition : boutons puis compteur #pages ; un clic appelle le moteur`. Tests à garder verts :
+   tous ceux de `barre.test.ts` (dont `six boutons : stylo, gomme, main, …` : la ligne `#barre` ne change pas) et
+   `toolbar.test.ts`.
+2. `cd ~/projets/roomboard-wt/socle--T58 && export PATH=$HOME/.cargo/bin:$PATH && scripts/verifier.sh 2>&1 | tail -30`
+   → `verifier.sh : OK` (construit aussi `apps/web/dist`).
+3. `cd ~/projets/roomboard-wt/socle--T58 && node scripts/essais/s34-navigateur.mjs --captures > /tmp/s34-T58.log 2>&1; echo "code $?"; grep -cE "^ok — " /tmp/s34-T58.log; grep -E "^IME|^non couvert|^capture|S3/S4 lot 4" /tmp/s34-T58.log`
+   — attendu : `code 0`, nombre de `ok — ` ≥ 50, une ligne `IME : …`, six `non couvert — …`, trois `capture : …`,
+   `S3/S4 lot 4 : OK`.
+4. `cd ~/projets/roomboard-wt/socle--T58 && node scripts/essais/s2-navigateur.mjs 2>&1 | tail -3` → `S2 lot 3 : OK` ;
+   `node scripts/essais/s2-navigateur.mjs --lot3b 2>&1 | tail -3` → `S2 lot 3b : OK (4 passages)`.
+5. `ls -l docs/essais/s34-lot4-selection.png docs/essais/s34-lot4-forme-texte.png docs/essais/s34-lot4-pages.png` :
+   trois fichiers non vides.
+
+**Preuve visuelle.** Lectures d'abord (une valeur lue prouve plus qu'une image) : ce sont les `ok — …` du script, qui
+lisent `#stage[data-page]` (`"3/3"`, `"1/1"`), `data-elements`, `data-selection` (`2`, `3`), `data-bounds` (rapport ×2),
+`#pages` (`"3 / 3"`) et l'encre du canvas de scène. Puis les captures, à décrire au rapport :
+`s34-lot4-forme-texte.png` (page 3 : rectangle, ellipse, ligne, flèche, texte « Rectangle » ; ligne `#edition` sous
+`#reglages`, compteur « 3 / 3 ») ; `s34-lot4-selection.png` (deux formes agrandies ×2, cadre et 8 poignées) ;
+`s34-lot4-pages.png` (une page, compteur « 1 / 1 », « Retirer la page » grisé).
+
+**Contraintes (recopiées de « Global Constraints » du plan maître et du lot).**
+- Worktree : `~/projets/roomboard-wt/socle--T58` (créé par l'orchestrateur depuis `feat/socle-lot4`, T54, T55, T56 et
+  T57 fusionnées) ; neuf : `pnpm install --frozen-lockfile` à la racine.
+- `export PATH=$HOME/.cargo/bin:$PATH` avant `cargo` et avant `scripts/verifier.sh`.
+- Commandes bornées du profil : `cargo test --workspace 2>&1 | tail -20` ; `pnpm -r test 2>&1 | tail -20` ; suite
+  complète `scripts/verifier.sh 2>&1 | tail -30` (réussite `verifier.sh : OK` ; échec `test result: FAILED`,
+  `error[`, `FAIL `, code non nul).
+- Toute suite et tout script au premier plan (outil Bash, `timeout: 600000`), jamais `run_in_background`.
+- Jamais `git add -A`, `git add .`, `git commit -a` : fichiers ajoutés un par un. Aucun `--force`, aucun tag.
+- Commit : `git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "<message en anglais>" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"` (jamais « Sonnet »).
+- Aucun test sauté ni ignoré de plus, aucun seuil baissé, aucun test existant affaibli.
+- `.github/workflows/` non touché ; aucun build Tauri ; aucun build Android.
+- Le chemin de l'encre (stylo, `StrokeBuilder`, canvas d'interaction) ne change pas de comportement ; la ligne `#barre`
+  garde ses 6 boutons (S2 inchangé, CL4-13).
+- Relecteur éventuel lancé au premier plan (`run_in_background: false`).
+
+**Interdits.** Toucher `toolbar.ts` (DA10, lot 5), le moteur, les outils, `text-editor.ts` ou les scripts d'essai (une
+erreur trouvée par S3/S4 dans un autre module se dit au rapport, l'orchestrateur la confie à sa tâche) ; affaiblir
+`s34-navigateur.mjs` ; ajouter un réglage à `engine/settings.ts` ; poser la zone de saisie dans `#stage`.
+
+**Terminé quand** les commandes 1 à 5 rendent ce qui est attendu, `pnpm --filter @roomboard/web exec tsc --noEmit` est
+sans erreur, les trois captures sont décrites au rapport, et le rapport porte `Réutilisation : appelé labelOf /
+patron mountBar (barre.ts, étendu)` et `Réutilisation : appelé createEngine (main.ts, étendu)`.
+
+**Étapes.**
+
+- [ ] **1. Tests rouges.** Dans `apps/web/src/app/barre.test.ts`, importer `editionModel`, `mountEdition`,
+  `pagesLabel`, `stageTags` de `./barre`, puis ajouter (après `describe("mountBar", …)`) :
+
+```ts
+describe("ligne d'édition (CL4-13)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("editionModel : six outils puis quatre actions de page ; libellés", () => {
+    expect(editionModel(base).map((b) => [b.action, b.label])).toEqual([
+      ["select", "Sélection"],
+      ["rect", "Rectangle"],
+      ["ellipse", "Ellipse"],
+      ["line", "Ligne"],
+      ["arrow", "Flèche"],
+      ["text", "Texte"],
+      ["page-prev", "Page précédente"],
+      ["page-next", "Page suivante"],
+      ["page-add", "Ajouter une page"],
+      ["page-remove", "Retirer la page"],
+    ]);
+    expect(editionModel({ ...base, tool: "ellipse" }).map((b) => b.pressed)).toEqual([
+      false, false, true, false, false, false, null, null, null, null,
+    ]);
+  });
+
+  it("editionModel : bords de page et dernière page désactivés", () => {
+    const dis = (s: EngineState) => editionModel(s).slice(6).map((b) => b.disabled);
+    expect(dis({ ...base, pageIndex: 0, pageCount: 1 })).toEqual([true, true, false, true]);
+    expect(dis({ ...base, pageIndex: 0, pageCount: 3 })).toEqual([true, false, false, false]);
+    expect(dis({ ...base, pageIndex: 1, pageCount: 3 })).toEqual([false, false, false, false]);
+    expect(dis({ ...base, pageIndex: 2, pageCount: 3 })).toEqual([false, true, false, false]);
+  });
+
+  it("stageTags : page, sélection, boîte au dixième, outil ; pagesLabel", () => {
+    const s: EngineState = {
+      ...base,
+      tool: "select",
+      pageIndex: 1,
+      pageCount: 3,
+      selection: ["a", "b"],
+      selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
+    };
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen" });
+    expect(pagesLabel(s)).toBe("2 / 3");
+  });
+
+  it("mountEdition : boutons puis compteur #pages ; un clic appelle le moteur", () => {
+    const root = new FakeNode(NONE);
+    vi.stubGlobal("document", { createElement: () => new FakeNode(NONE) });
+    const calls: string[] = [];
+    const state: EngineState = { ...base, pageIndex: 0, pageCount: 2 };
+    mountEdition(root as unknown as HTMLElement, {
+      setTool: (t) => calls.push(`tool ${t}`),
+      addPage: () => {
+        calls.push("add");
+        return true;
+      },
+      removePage: () => {
+        calls.push("remove");
+        return true;
+      },
+      nextPage: () => {
+        calls.push("next");
+        return true;
+      },
+      prevPage: () => {
+        calls.push("prev");
+        return true;
+      },
+      state: () => state,
+      onState: () => () => {},
+    });
+    expect(root.children.map((c) => c.dataset["action"] ?? c.id)).toEqual([
+      "select", "rect", "ellipse", "line", "arrow", "text", "page-prev", "page-next", "page-add", "page-remove", "pages",
+    ]);
+    expect(root.children.at(-1)?.textContent).toBe("1 / 2");
+    for (const a of ["rect", "text", "page-add", "page-next", "page-prev", "page-remove"]) {
+      root.children.find((c) => c.dataset["action"] === a)?.click();
+    }
+    expect(calls).toEqual(["tool rect", "tool text", "add", "next", "prev", "remove"]);
+  });
+});
+```
+
+  (`base` porte déjà `pageIndex`, `pageCount`, `selection`, `selectionBounds` depuis T47 ; si `selectionBounds: null`
+  n'y est pas typé `Bounds | null`, le test passe tel quel. Le `FakeNode` du fichier suffit : `textContent`, `disabled`,
+  `dataset`, `click`.)
+
+- [ ] **2. Le voir échouer.** Commande bornée 1 — attendu : les 4 neufs en `×` (`editionModel is not a function` ou
+  import manquant), les anciens verts.
+
+- [ ] **3. `barre.ts` : ligne d'édition.** Ajouter l'import `import type { Bounds, ShapeKind } from "../core/api";`,
+  rendre `BarButton` générique :
+
+```ts
+export interface BarButton<A = BarAction> {
+  readonly action: A;
+  readonly label: string;
+  /** État pressé d'un outil ou du mode objet ; null pour une action. */
+  readonly pressed: boolean | null;
+  readonly disabled: boolean;
+}
+```
+
+  puis ajouter à la fin du fichier :
+
+```ts
+/** Troisième ligne (lot 4, CL4-13) : outils d'édition et pages ; remplacée au lot 5. */
+export type EditionAction = "select" | ShapeKind | "text" | "page-prev" | "page-next" | "page-add" | "page-remove";
+type EditionTool = "select" | ShapeKind | "text";
+
+const EDITION_TOOLS: readonly EditionTool[] = ["select", "rect", "ellipse", "line", "arrow", "text"];
+const EDITION_LABELS: Record<Exclude<EditionAction, "select">, string> = {
+  rect: "Rectangle",
+  ellipse: "Ellipse",
+  line: "Ligne",
+  arrow: "Flèche",
+  text: "Texte",
+  "page-prev": "Page précédente",
+  "page-next": "Page suivante",
+  "page-add": "Ajouter une page",
+  "page-remove": "Retirer la page",
+};
+const editionLabel = (a: EditionAction): string => (a === "select" ? labelOf("select") : EDITION_LABELS[a]);
+
+export function editionModel(s: EngineState): BarButton<EditionAction>[] {
+  const last = s.pageIndex >= s.pageCount - 1;
+  return [
+    ...EDITION_TOOLS.map((t) => ({ action: t, label: editionLabel(t), pressed: s.tool === t, disabled: false })),
+    { action: "page-prev", label: editionLabel("page-prev"), pressed: null, disabled: s.pageIndex <= 0 },
+    { action: "page-next", label: editionLabel("page-next"), pressed: null, disabled: last },
+    { action: "page-add", label: editionLabel("page-add"), pressed: null, disabled: false },
+    // D37 : la dernière page ne se retire pas.
+    { action: "page-remove", label: editionLabel("page-remove"), pressed: null, disabled: s.pageCount <= 1 },
+  ];
+}
+
+export const pagesLabel = (s: EngineState): string => `${s.pageIndex + 1} / ${s.pageCount}`;
+
+const tenth = (v: number): string => String(Math.round(v * 10) / 10);
+const boundsTag = (b: Bounds | null): string => (b === null ? "" : [b.x0, b.y0, b.x1, b.y1].map(tenth).join(","));
+
+/** Attributs de `#stage` lus par le scénario S3/S4 (contrat du lot). */
+export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool", string> {
+  return {
+    page: `${s.pageIndex + 1}/${s.pageCount}`,
+    selection: String(s.selection.length),
+    bounds: boundsTag(s.selectionBounds),
+    tool: s.tool,
+  };
+}
+
+export function mountEdition(
+  root: HTMLElement,
+  engine: Pick<Engine, "setTool" | "addPage" | "removePage" | "nextPage" | "prevPage" | "state" | "onState">,
+): () => void {
+  const buttons = new Map<EditionAction, HTMLButtonElement>();
+  const run = (a: EditionAction): void => {
+    if (a === "page-prev") engine.prevPage();
+    else if (a === "page-next") engine.nextPage();
+    else if (a === "page-add") engine.addPage();
+    else if (a === "page-remove") engine.removePage();
+    else engine.setTool(a);
+  };
+  for (const b of editionModel(engine.state())) {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.dataset["action"] = b.action;
+    el.textContent = b.label;
+    el.addEventListener("click", () => run(b.action));
+    buttons.set(b.action, el);
+    root.append(el);
+  }
+  const counter = document.createElement("span");
+  counter.id = "pages";
+  root.append(counter);
+  const paint = (s: EngineState): void => {
+    for (const b of editionModel(s)) {
+      const el = buttons.get(b.action);
+      if (!el) continue;
+      el.disabled = b.disabled;
+      if (b.pressed === null) el.removeAttribute("aria-pressed");
+      else el.setAttribute("aria-pressed", String(b.pressed));
+    }
+    counter.textContent = pagesLabel(s);
+  };
+  paint(engine.state());
+  return engine.onState(paint);
+}
+```
+
+  (si `labelOf("select")` ne compile pas parce que `ToolChoice` n'a pas `"select"`, T55 n'est pas fusionnée : arrêter
+  et le dire.) Mettre à jour le commentaire de tête du fichier : « Troisième ligne (`#edition`, lot 4) : outils
+  d'édition et pages. »
+
+- [ ] **4. Vérifier la barre.** Commande bornée 1 → aucun `×`.
+
+- [ ] **5. `index.html`.** Dans `<style>`, après la règle `#reglages button` :
+
+```css
+      #edition { position: absolute; top: 104px; left: 8px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: calc(100vw - 16px); user-select: none; -webkit-user-select: none; }
+      #edition button { min-width: 44px; min-height: 40px; padding: 0 12px; font: inherit; border: 1px solid #a1a1aa; border-radius: 8px; background: #ffffff; color: #18181b; }
+      #edition button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+      #edition button:disabled { opacity: 0.4; }
+      #pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
+```
+
+  et dans `<body>`, après `#reglages` : `<div id="edition" role="toolbar" aria-label="Édition"></div>`.
+
+- [ ] **6. `main.ts` : outils, zone, mesure, attributs.** Imports à ajouter :
+
+```ts
+import { mountEdition, stageTags } from "./app/barre"; // fusionner avec l'import existant de ./app/barre
+import { createTextEditor } from "./app/text-editor";
+import { textFont, type Measure } from "./engine/text-layout";
+import { createSelectTool } from "./engine/tools/select";
+import { createShapeTool } from "./engine/tools/shape";
+import { createTextTool, type TextTool } from "./engine/tools/text";
+```
+
+  Avant `const engine = createEngine(…)` :
+
+```ts
+  // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  const measure: Measure = (s, size) => {
+    if (!measureCtx) return s.length * size * 0.6;
+    measureCtx.font = textFont(size);
+    return measureCtx.measureText(s).width;
+  };
+  // Zone de saisie hors de #stage (CL4-2) ; l'outil Texte est créé par le moteur, après elle.
+  let textTool: TextTool | null = null;
+  const editor = createTextEditor(document.body, () => textTool);
+```
+
+  Remplacer `tools: { pen: createPenTool, eraser: createEraserTool },` par :
+
+```ts
+    tools: {
+      pen: createPenTool,
+      eraser: createEraserTool,
+      select: createSelectTool,
+      shape: createShapeTool,
+      text: (ctx, style) => {
+        textTool = createTextTool(ctx, editor, style, measure);
+        return textTool;
+      },
+    },
+```
+
+  Après `createMiddlePan(stage, engine.view);` :
+
+```ts
+  // Sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page : la zone de saisie, tout juste
+  // ouverte par l'outil Texte, le perdrait et validerait aussitôt une boîte vide.
+  stage.addEventListener("mousedown", (e) => e.preventDefault());
+```
+
+  Dans `mark`, après `stage.dataset["version"] = …` :
+
+```ts
+    const tags = stageTags(s);
+    stage.dataset["page"] = tags.page;
+    stage.dataset["selection"] = tags.selection;
+    stage.dataset["bounds"] = tags.bounds;
+    stage.dataset["tool"] = tags.tool;
+```
+
+  Après `mountBar(el<HTMLDivElement>("barre"), engine);` : `mountEdition(el<HTMLDivElement>("edition"), engine);`.
+  Mettre à jour le commentaire de tête : « Lot 4 : outils d'édition, zone de saisie du texte, ligne `#edition` ;
+  attributs du scénario S3/S4 sur `#stage`. »
+
+- [ ] **7. Vérifier.** `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -5` sans erreur ; commande bornée 2
+  → `verifier.sh : OK`.
+
+- [ ] **8. S3/S4 vert, S2 vert, captures.** Commandes 3, 4 et 5. Un `ok —` qui échoue sur un défaut d'un autre module
+  (moteur, outil, zone de saisie) : ne pas le corriger ici, noter la ligne `S3/S4 lot 4 : ÉCHEC — …` et le module au
+  rapport, s'arrêter. Un écart de coordonnées du script (poignée hors de prise) se corrige dans T57 : le dire, ne pas
+  toucher le script.
+
+- [ ] **9. Commit.**
+
+```bash
+cd ~/projets/roomboard-wt/socle--T58
+git add apps/web/src/main.ts apps/web/src/app/barre.ts apps/web/src/app/barre.test.ts apps/web/index.html docs/essais/s34-lot4-selection.png docs/essais/s34-lot4-forme-texte.png docs/essais/s34-lot4-pages.png
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(app): edit bar row, editing tools wired, text input overlay, S3/S4 green (T58)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+<a id="tache-t59"></a>
+### Tâche T59 — Fiche ENI : « Lot 4 : à essayer »
+
+**Objectif.** Ajouter à la fin de `docs/essais/eni-stylet.md` une section courte `## Lot 4 : à essayer` : un tableau
+d'une ligne par outil d'édition (outil, geste, quoi regarder), puis les pages et l'annulation, et ce que le navigateur
+headless n'a pas pu prouver (IME réelle, stylet, HL4-3). Rien d'autre dans la fiche ne change.
+
+**Fichiers.**
+- Modifier : `docs/essais/eni-stylet.md` (ajout en fin de fichier seulement)
+
+**Interfaces.**
+- Consomme : libellés de la ligne `#edition` (T58 : Sélection, Rectangle, Ellipse, Ligne, Flèche, Texte, Page
+  précédente, Page suivante, Ajouter une page, Retirer la page) ; CL4-3, CL4-6, CL4-7, CL4-9, CL4-10, CL4-11 ; HL4-3.
+- Produit : section `## Lot 4 : à essayer` ; 6 lignes de tableau commençant par `| Sélection |`, `| Rectangle |`,
+  `| Ellipse |`, `| Ligne |`, `| Flèche |`, `| Texte |`.
+- Réutilise : `docs/essais/eni-stylet.md` — format des sections « Lot 3b : comparer les réglages » (tableau
+  `| … | … | quoi regarder |`) : **étendu**, aucune nouvelle fiche.
+
+**Test et commande bornée.** (test rouge : avant l'ajout, les deux comptes valent `0`.)
+`cd ~/projets/roomboard-wt/socle--T59 && grep -c '^## Lot 4 : à essayer$' docs/essais/eni-stylet.md; grep -cE '^\| (Sélection|Rectangle|Ellipse|Ligne|Flèche|Texte) \|' docs/essais/eni-stylet.md; git diff --stat`
+— attendu avant : `0`, `0` ; après : `1`, `6`, et `git diff --stat` ne montre que `docs/essais/eni-stylet.md` avec
+seulement des ajouts (`git diff docs/essais/eni-stylet.md | grep -c '^-[^-]'` rend `0`).
+
+**Contraintes (recopiées de « Global Constraints » du plan maître et du lot).**
+- Worktree : `~/projets/roomboard-wt/socle--T59` (créé par l'orchestrateur depuis `feat/socle-lot4`, vague 4 ; aucune
+  dépendance de fichier).
+- Jamais `git add -A`, `git add .`, `git commit -a` : fichier ajouté seul. Aucun `--force`, aucun tag.
+- Commit : `git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "<message en anglais>" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"` (jamais « Sonnet »).
+- Aucun test sauté ni ignoré de plus, aucun seuil baissé. Tâche de documentation : `scripts/verifier.sh` n'est pas
+  exigé ; s'il est lancé, `export PATH=$HOME/.cargo/bin:$PATH` d'abord, au premier plan (`timeout: 600000`).
+- `.github/workflows/` non touché.
+- Français, accents et espaces avant « : ; ? ! » ; section courte (≤ 25 lignes).
+- Relecteur éventuel lancé au premier plan (`run_in_background: false`).
+
+**Interdits.** Modifier une section existante de la fiche ; annoncer comme prouvé ce que S3/S4 ne couvre pas ;
+toucher un autre fichier.
+
+**Terminé quand** la commande bornée rend `1` et `6`, le diff n'a que des ajouts dans `docs/essais/eni-stylet.md`, et
+le rapport porte `Réutilisation : appelé format « Lot 3b : comparer les réglages » (eni-stylet.md, étendu)`.
+
+**Étapes.**
+
+- [ ] **1. Le voir rouge.** Commande bornée → `0`, `0`.
+
+- [ ] **2. Ajouter à la fin de `docs/essais/eni-stylet.md`** (une ligne vide avant le titre) :
+
+```markdown
+## Lot 4 : à essayer
+
+Troisième ligne de la barre (`#edition`, sous les réglages). Chaque geste fait une seule étape : Ctrl+Z le défait,
+Ctrl+Y le refait. Joué au navigateur headless sur la VM (`scripts/essais/s34-navigateur.mjs`) ; à revoir ici au stylet.
+
+| outil | geste | quoi regarder |
+|---|---|---|
+| Sélection | Toucher un élément ; tracer un rectangle dans le vide ; Maj + toucher ajoute ; glisser déplace ; tirer une des 8 poignées (Maj : proportions) ; Suppr retire ; Échap vide. | Les poignées se prennent-elles au stylet du premier coup ? Un simple toucher n'écrit rien (Annuler reste gris). |
+| Rectangle | Glisser d'un coin à l'autre (Maj : carré). | Aperçu sous la pointe pendant le geste, forme écrite au relâché seulement. |
+| Ellipse | Glisser (Maj : cercle). | Se sélectionne-t-elle en touchant son intérieur ? |
+| Ligne | Glisser (Maj : pas de 15°). | Facile à reprendre avec l'outil Sélection, sans viser le trait au pixel ? |
+| Flèche | Glisser de la queue vers la pointe. | La pointe est-elle du bon côté et lisible au zoom de travail ? |
+| Texte | Toucher une place vide : une zone pointillée s'ouvre ; écrire ; Échap ou toucher ailleurs valide. Toucher un texte le rouvre. | Clavier de l'ENI et IME réelle (accents, saisie japonaise si possible) : rien n'est écrit pendant la composition ; la fenêtre de candidats s'ouvre près du curseur. Texte vidé puis validé : il disparaît. |
+
+Pages : « Ajouter une page » insère après la page montrée et la montre ; « Retirer la page » montre la précédente,
+Ctrl+Z la rend avec son contenu ; la dernière page ne se retire pas (bouton grisé) ; le compteur dit « 2 / 3 ».
+Non prouvé sur la VM (HL4-3) : IME réelle de Windows ou de macOS, fenêtre de candidats, stylet et doigt sur les
+poignées, WebKit. La zone de texte ne suit pas un zoom fait pendant l'édition : valider puis rouvrir (CL4-15).
+```
+
+- [ ] **3. Vérifier.** Commande bornée → `1`, `6`, diff d'ajouts seulement.
+
+- [ ] **4. Commit.**
+
+```bash
+cd ~/projets/roomboard-wt/socle--T59
+git add docs/essais/eni-stylet.md
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "docs(essais): lot 4 editing tools to try on the ENI (T59)" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
