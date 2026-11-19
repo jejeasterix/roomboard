@@ -5,13 +5,14 @@
 
 use std::rc::Rc;
 
-use yrs::{Array, Map, Out};
+use yrs::{Array, Map, MapRef, Out, ReadTxn};
 
-use crate::commands::{read_stroke, world_to_local_path};
+use crate::commands::{read_shape, read_stroke, world_to_local_path};
 use crate::document::Document;
-use crate::element::{apply_transform, invert, out_string, Transform};
+use crate::element::{apply_transform, invert, out_string, out_transform, Transform};
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
+use crate::shape::shape_polygon;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Bounds {
@@ -36,7 +37,7 @@ impl Bounds {
     }
 }
 
-struct StrokeGeom {
+struct Geom {
     id: String,
     transform: Transform,
     outline: Rc<[f32]>,
@@ -77,32 +78,48 @@ impl Document {
         Some(self.cached_outline(id, &style, &pts).to_vec())
     }
 
-    /// Traits de la page, du dessous vers le dessus ; contours pris dans le cache du document.
-    fn stroke_geoms(&self, page: &str) -> Vec<StrokeGeom> {
-        let txn = self.read();
-        let Some(elements) = self.page_elements(&txn, page) else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        for o in elements.iter(&txn) {
-            let Out::YMap(e) = o else { continue };
-            let Some((transform, style, pts)) = read_stroke(&txn, &e) else {
-                continue;
-            };
-            let id = out_string(e.get(&txn, "id")).unwrap_or_default();
+    /// Géométrie locale d'un élément pour la collision et les bornes : contour en cache (trait), polygone (forme).
+    fn element_geom<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Geom> {
+        let id = out_string(e.get(txn, "id")).unwrap_or_default();
+        if let Some((transform, style, pts)) = read_stroke(txn, e) {
             let outline = self.cached_outline(&id, &style, &pts);
-            out.push(StrokeGeom {
+            return Some(Geom {
                 id,
                 transform,
                 outline,
             });
         }
-        out
+        let transform = out_transform(e.get(txn, "transform"))?;
+        let s = read_shape(txn, e)?;
+        Some(Geom {
+            id,
+            transform,
+            outline: shape_polygon(s.kind, s.w, s.h, s.style.width).into(),
+        })
+    }
+
+    /// Éléments de la page, du dessous vers le dessus ; `strokes_only` : traits seuls (gomme, D12).
+    fn geoms(&self, page: &str, strokes_only: bool) -> Vec<Geom> {
+        let txn = self.read();
+        let Some(elements) = self.page_elements(&txn, page) else {
+            return Vec::new();
+        };
+        elements
+            .iter(&txn)
+            .filter_map(|o| match o {
+                Out::YMap(e) => Some(e),
+                _ => None,
+            })
+            .filter(|e| {
+                !strokes_only || out_string(e.get(&txn, "kind")).as_deref() == Some("stroke")
+            })
+            .filter_map(|e| self.element_geom(&txn, &e))
+            .collect()
     }
 
     /// Élément le plus haut sous (x, y) monde, à `tol` près.
     pub fn hit_test(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<String> {
-        self.stroke_geoms(page)
+        self.geoms(page, false)
             .into_iter()
             .rev()
             .find(|g| {
@@ -116,7 +133,7 @@ impl Document {
 
     /// Traits touchés par un chemin (gomme d'objet, aperçu D38), dans l'ordre d'empilement.
     pub fn hit_test_path(&self, page: &str, path: &[f32], radius: f32) -> Vec<String> {
-        self.stroke_geoms(page)
+        self.geoms(page, true)
             .into_iter()
             .filter(|g| {
                 world_to_local_path(&g.transform, path)
@@ -128,7 +145,7 @@ impl Document {
 
     /// Éléments entièrement inclus dans le rectangle monde (D15).
     pub fn ids_in_rect(&self, page: &str, rect: Bounds) -> Vec<String> {
-        self.stroke_geoms(page)
+        self.geoms(page, false)
             .into_iter()
             .filter(|g| world_bounds(&g.transform, &g.outline).is_some_and(|b| rect.contains(&b)))
             .map(|g| g.id)
@@ -143,10 +160,10 @@ impl Document {
             let Some(found) = self.find_element(&txn, id) else {
                 continue;
             };
-            let Some((t, style, pts)) = read_stroke(&txn, &found.element) else {
+            let Some(g) = self.element_geom(&txn, &found.element) else {
                 continue;
             };
-            if let Some(b) = world_bounds(&t, &self.cached_outline(id, &style, &pts)) {
+            if let Some(b) = world_bounds(&g.transform, &g.outline) {
                 acc = Some(match acc {
                     Some(a) => a.union(b),
                     None => b,
@@ -505,7 +522,11 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
-        assert_eq!(d.hit_test(&p, 700.0, 650.0, 1.0), Some(id), "intérieur sans remplissage (CL4-7)");
+        assert_eq!(
+            d.hit_test(&p, 700.0, 650.0, 1.0),
+            Some(id),
+            "intérieur sans remplissage (CL4-7)"
+        );
         assert_eq!(d.hit_test(&p, 900.0, 650.0, 1.0), None);
     }
 
@@ -516,14 +537,35 @@ mod tests {
         let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
         assert_eq!(
             d.bounds(std::slice::from_ref(&id)),
-            Some(Bounds { x0: 598.0, y0: 598.0, x1: 802.0, y1: 702.0 })
+            Some(Bounds {
+                x0: 598.0,
+                y0: 598.0,
+                x1: 802.0,
+                y1: 702.0
+            })
         );
         assert_eq!(
-            d.ids_in_rect(&p, Bounds { x0: 590.0, y0: 590.0, x1: 810.0, y1: 710.0 }),
+            d.ids_in_rect(
+                &p,
+                Bounds {
+                    x0: 590.0,
+                    y0: 590.0,
+                    x1: 810.0,
+                    y1: 710.0
+                }
+            ),
             vec![id]
         );
         assert!(d
-            .ids_in_rect(&p, Bounds { x0: 600.0, y0: 600.0, x1: 810.0, y1: 710.0 })
+            .ids_in_rect(
+                &p,
+                Bounds {
+                    x0: 600.0,
+                    y0: 600.0,
+                    x1: 810.0,
+                    y1: 710.0
+                }
+            )
             .is_empty());
     }
 
@@ -532,7 +574,9 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
-        assert!(d.hit_test_path(&p, &[600.0, 650.0, 800.0, 650.0], 10.0).is_empty());
+        assert!(d
+            .hit_test_path(&p, &[600.0, 650.0, 800.0, 650.0], 10.0)
+            .is_empty());
     }
 
     #[test]
@@ -540,11 +584,19 @@ mod tests {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
         let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
-        d.apply(Command::Transform { ids: vec![id.clone()], matrix: [2.0, 0.0, 0.0, 2.0, 0.0, 0.0] })
-            .expect("échelle");
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: [2.0, 0.0, 0.0, 2.0, 0.0, 0.0],
+        })
+        .expect("échelle");
         assert_eq!(
             d.bounds(&[id]),
-            Some(Bounds { x0: 1196.0, y0: 1196.0, x1: 1604.0, y1: 1404.0 })
+            Some(Bounds {
+                x0: 1196.0,
+                y0: 1196.0,
+                x1: 1604.0,
+                y1: 1404.0
+            })
         );
     }
 }

@@ -10,8 +10,9 @@ use yrs::{
     Transact, Transaction, TransactionMut, Update,
 };
 
+use crate::commands::read_shape;
 use crate::element::{
-    out_f64, out_string, out_transform, read_style, ElementView, PageView, StrokeStyle,
+    out_f64, out_string, out_transform, read_style, ElementView, PageView, ShapeView, StrokeStyle,
     DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
@@ -180,11 +181,26 @@ impl Document {
         let txn = self.doc.transact();
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
+        let kind = out_string(e.get(&txn, "kind"))?;
+        let transform = out_transform(e.get(&txn, "transform"))?;
+        let (style, shape) = if kind == "shape" {
+            let s = read_shape(&txn, e)?;
+            let view = ShapeView {
+                shape: s.kind.as_str().to_string(),
+                w: s.w,
+                h: s.h,
+                fill: s.fill,
+            };
+            (s.style, Some(view))
+        } else {
+            (read_style(&txn, e)?, None)
+        };
         Some(ElementView {
             id: id.to_string(),
-            kind: out_string(e.get(&txn, "kind"))?,
-            transform: out_transform(e.get(&txn, "transform"))?,
-            style: read_style(&txn, e)?,
+            kind,
+            transform,
+            style,
+            shape,
         })
     }
 
