@@ -24,7 +24,8 @@ class FakeCtx {
     this.log.push(`transform ${[a, b, c, d, e, f].join(",")}`);
   }
   clearRect(): void { this.log.push("clearRect"); }
-  fillRect(): void { this.log.push(`fillRect ${this.fillStyle}`); }
+  readonly rects: number[][] = [];
+  fillRect(x = 0, y = 0, w = 0, h = 0): void { this.rects.push([x, y, w, h]); this.log.push(`fillRect ${this.fillStyle}`); }
   beginPath(): void { this.log.push("beginPath"); }
   moveTo(): void { this.log.push("moveTo"); }
   lineTo(): void { this.log.push("lineTo"); }
@@ -88,6 +89,14 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
     expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${SURROUND_COLOR}`, `fillRect ${PAGE_BACKGROUND}`]);
     expect(scene.log.filter((l) => l.startsWith("fill "))).toEqual(["fill #000000", "fill #000000"]);
     expect(scene.log).toContain("transform 1,0,0,1,5,6");
+  });
+
+  it("page dessinée jusqu'au bas de la vue", () => {
+    const { r, scene } = make({});
+    r.resize(800, 600, 1);
+    r.drawScene({ id: "p", elementIds: [] }, { zoom: 1, tx: 0, ty: -5000 }, new Set());
+    const fills = scene.log.filter((l) => l.startsWith("fillRect"));
+    expect(scene.rects[fills.indexOf(`fillRect ${PAGE_BACKGROUND}`)]).toEqual([0, 0, 1920, 5600]);
   });
 
   it("drawScene : les éléments masqués (aperçu D38) ne sont pas dessinés", () => {
