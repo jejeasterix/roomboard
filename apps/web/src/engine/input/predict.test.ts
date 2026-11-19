@@ -117,6 +117,41 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
     ]);
   });
 
+  it("close seul (sans nouveau begin) : l'historique est vide, le geste suivant n'a rien à extrapoler", () => {
+    const { sink, calls } = spy();
+    const g = withLinearPrediction(sink, () => true);
+    g.begin(1, "pen", [s(0, 0, 0)]);
+    g.extend(1, [s(10, 0, 10)], []);
+    g.close(1, "end");
+    g.extend(1, [s(110, 0, 30)], []);
+    expect(calls[1]?.predicted).toEqual([]);
+  });
+
+  it("échantillon non fini (x, y ou t NaN) : ignoré, la prédiction repart du dernier échantillon sain", () => {
+    for (const bad of [s(Number.NaN, 0, 20), s(30, Number.NaN, 20), s(30, 0, Number.NaN), s(Number.POSITIVE_INFINITY, 0, 20)]) {
+      const { sink, calls } = spy();
+      const g = withLinearPrediction(sink, () => true);
+      g.begin(1, "pen", [s(0, 0, 0)]);
+      g.extend(1, [s(10, 0, 10)], []);
+      g.extend(1, [bad], []);
+      expect(xs(calls[1]?.predicted ?? [])).toEqual([
+        [18, 0, 18],
+        [26, 0, 26],
+      ]);
+    }
+  });
+
+  it("historique plafonné à 8 échantillons : la vitesse ne remonte pas au-delà", () => {
+    const { sink, calls } = spy();
+    const g = withLinearPrediction(sink, () => true);
+    const all = Array.from({ length: 12 }, (_, i) => s(i * i * 0.1, 0, i));
+    g.begin(1, "pen", [all[0] as InputSample]);
+    g.extend(1, all.slice(1), []);
+    const expected = predictLinear(all.slice(-8));
+    expect(xs(calls[0]?.predicted ?? [])).toEqual(xs(expected));
+    expect(xs(expected)).not.toEqual(xs(predictLinear(all)));
+  });
+
   it("begin et close transmis tels quels (outil, raison) ; échantillons transmis sans copie", () => {
     const { sink, calls, log } = spy();
     const g = withLinearPrediction(sink, () => true);

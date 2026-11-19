@@ -50,6 +50,22 @@ describe("réglages du moteur (lot 3b)", () => {
     expect(parseSettings("?paume=strict").settings.palm).toBe("strict");
   });
 
+  it("paume et doigt : un nom hérité d'Object (constructor, toString) est refusé, défaut gardé, message ajouté", () => {
+    const a = parseSettings("?paume=constructor");
+    expect(a.settings.palm).toBe(DEFAULT_SETTINGS.palm);
+    expect(a.errors).toEqual(["paume inconnue : constructor (strict ou souple)"]);
+    const b = parseSettings("?doigt=toString");
+    expect(b.settings.finger).toBe(DEFAULT_SETTINGS.finger);
+    expect(b.errors).toEqual(["doigt inconnu : toString (vue ou trace)"]);
+  });
+
+  it("settingsSearch et parseSettings : aller-retour pour paume et doigt (mots tirés d'une seule table)", () => {
+    const s = { ...DEFAULT_SETTINGS, palm: "lenient", finger: "draw" } as const;
+    const back = parseSettings(settingsSearch(s));
+    expect(back.errors).toEqual([]);
+    expect(back.settings).toEqual(s);
+  });
+
   it("doigt : trace et vue", () => {
     expect(parseSettings("?doigt=trace").settings.finger).toBe("draw");
     expect(parseSettings("?doigt=vue").settings.finger).toBe("pan");

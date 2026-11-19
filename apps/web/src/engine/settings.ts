@@ -46,8 +46,20 @@ export interface ParsedSettings {
   readonly errors: readonly string[];
 }
 
-const PALM_WORDS: Record<string, PalmSetting> = { strict: "strict", souple: "lenient" };
-const FINGER_WORDS: Record<string, FingerSetting> = { vue: "pan", trace: "draw" };
+/** Mots de l'adresse (Map : `?paume=constructor` ne trouve rien) ; `wordOf` les relit à l'envers pour `settingsSearch`. */
+const PALM_WORDS: ReadonlyMap<string, PalmSetting> = new Map([
+  ["strict", "strict"],
+  ["souple", "lenient"],
+]);
+const FINGER_WORDS: ReadonlyMap<string, FingerSetting> = new Map([
+  ["vue", "pan"],
+  ["trace", "draw"],
+]);
+
+function wordOf<V>(words: ReadonlyMap<string, V>, value: V): string {
+  for (const [word, v] of words) if (v === value) return word;
+  throw new Error(`réglage sans mot d'adresse : ${String(value)}`);
+}
 
 /**
  * Lit `?echelons=2,3:on,4:off&paume=souple&doigt=trace`. Un échelon seul vaut `on` ; `aucun` éteint 2, 3 et 4. Une
@@ -96,13 +108,13 @@ export function parseSettings(search: string): ParsedSettings {
   }
   const p = params.get("paume");
   if (p !== null) {
-    const v = PALM_WORDS[p.trim().toLowerCase()];
+    const v = PALM_WORDS.get(p.trim().toLowerCase());
     if (v) palm = v;
     else errors.push(`paume inconnue : ${p} (strict ou souple)`);
   }
   const d = params.get("doigt");
   if (d !== null) {
-    const v = FINGER_WORDS[d.trim().toLowerCase()];
+    const v = FINGER_WORDS.get(d.trim().toLowerCase());
     if (v) finger = v;
     else errors.push(`doigt inconnu : ${d} (vue ou trace)`);
   }
@@ -126,8 +138,8 @@ export function settingsSearch(s: EngineSettings, keep = ""): string {
   if (s.inkTrail !== DEFAULT_SETTINGS.inkTrail) tokens.push(`3:${s.inkTrail}`);
   if (s.webgl !== DEFAULT_SETTINGS.webgl) tokens.push(`4:${s.webgl}`);
   if (tokens.length > 0) parts.push(`echelons=${tokens.join(",")}`);
-  if (s.palm !== DEFAULT_SETTINGS.palm) parts.push("paume=souple");
-  if (s.finger !== DEFAULT_SETTINGS.finger) parts.push("doigt=trace");
+  if (s.palm !== DEFAULT_SETTINGS.palm) parts.push(`paume=${wordOf(PALM_WORDS, s.palm)}`);
+  if (s.finger !== DEFAULT_SETTINGS.finger) parts.push(`doigt=${wordOf(FINGER_WORDS, s.finger)}`);
   return parts.length === 0 ? "" : `?${parts.join("&")}`;
 }
 
