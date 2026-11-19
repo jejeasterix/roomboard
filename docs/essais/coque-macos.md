@@ -1,0 +1,59 @@
+# Essai S5 — coque RoomBoard sous macOS (lot 5a)
+
+Pour : Jérôme, sur le Mac, hors agent (non bloquant, D34). Durée : 30 min, dont 15 de build.
+Ce qui est essayé : ouvrir, enregistrer, fermer dans la coque (WebKit), puis la même chose dans Chrome avec la
+File System Access API. Formes et texte (lot 4) : seulement si le lot 4 est fusionné.
+
+## 1. Prérequis
+- Rust stable (`rustup`), puis `rustup target add wasm32-unknown-unknown`.
+- `cargo install wasm-bindgen-cli --version 0.2.130 --locked` (la version doit égaler `Cargo.lock`).
+- Node 22 et pnpm (`corepack enable`).
+- `xcode-select --install`.
+
+## 2. Construire (Terminal, zsh)
+```sh
+git clone https://github.com/jejeasterix/roomboard.git
+cd roomboard
+git checkout main
+pnpm install --frozen-lockfile
+cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
+wasm-bindgen --target web --out-dir apps/web/src/wasm target/wasm32-unknown-unknown/release/roomboard_wasm.wasm
+pnpm --filter @roomboard/desktop tauri build
+```
+Attendu : la sortie montre `Running beforeBuildCommand`, puis un installeur sous
+`apps/desktop/src-tauri/target/release/bundle/`. Lancer par `open apps/desktop/src-tauri/target/release/bundle/macos/RoomBoard.app`.
+
+## 3. Parcours dans la coque
+| # | geste | attendu |
+|---|---|---|
+| 1 | tracer un trait à la souris ou au pavé tactile | trait visible ; titre de la fenêtre `• Sans titre.roomboard — RoomBoard` |
+| 2 | gommer en travers | trait coupé |
+| 3 | Cmd+Maj+S | boîte macOS « Enregistrer », nom proposé `Sans titre.roomboard` ; choisir `Documents/essai-5a.roomboard` |
+| 4 | — | titre `essai-5a.roomboard — RoomBoard` (sans `•`) |
+| 5 | tracer, puis Cmd+S | aucune boîte ; l'heure de modification du fichier change dans le Finder |
+| 6 | tracer, puis fermer par le bouton rouge | question « Le document a des modifications non enregistrées. Les abandonner ? » ; répondre **Non** : la fenêtre reste |
+| 7a | fermer par le bouton rouge, répondre **Oui** | la fenêtre se ferme |
+| 7b | Cmd+Q avec un trait non enregistré | **attendu connu** : l'application quitte sans demander (Cmd+Q ne passe pas par la fermeture de la fenêtre) ; noter ce qui se passe |
+| 8 | relancer, Cmd+O, choisir `essai-5a.roomboard` | les traits enregistrés au geste 5 reviennent, aux mêmes places |
+| 9 | tracer, Cmd+S | **aucune boîte** (fichier rouvert, chemin gardé) ; l'heure de modification change |
+| 10 | tracer, fermer par le bouton rouge | la question revient ; **Non** : la fenêtre reste |
+| 11 | Cmd+O sur `faux.roomboard` (le créer d'abord : `printf 'pas un zip' > ~/Documents/faux.roomboard` sous zsh) | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
+| 12 | tracer un trait, puis Cmd+N | question « Le document a des modifications non enregistrées. Les abandonner ? » ; **Non** : le trait reste ; Cmd+N de nouveau, **Oui** : page vide, titre `Sans titre.roomboard — RoomBoard` |
+| 13 | fermer la coque, couper le réseau (Wi-Fi coupé), relancer | la coque démarre, la page s'affiche, on trace et on enregistre (Cmd+S) sans erreur ni écran blanc ; noter tout message |
+
+## 4. Même parcours dans Chrome (File System Access), puis Safari
+```sh
+pnpm --filter @roomboard/web build
+pnpm --filter @roomboard/web exec vite preview --port 4173
+```
+Ouvrir `http://localhost:4173/` dans Chrome. Gestes 1 à 5 : Cmd+S ouvre la boîte de Chrome la première fois, puis réécrit
+le même fichier sans boîte. F5, Cmd+O, choisir le fichier : les traits reviennent ; Cmd+S ensuite : au plus une
+demande d'autorisation de Chrome (« Enregistrer les modifications ? »), pas de nouvelle boîte. Fermer l'onglet avec un
+trait non enregistré : Chrome demande.
+
+Safari : le repli s'applique. Cmd+S télécharge `Sans titre.roomboard` dans Téléchargements, Cmd+O ouvre le sélecteur de fichiers.
+
+## 5. À rapporter
+Pour chaque geste : conforme / écart (une ligne). Captures : `coque-macos-lot5a-question.png` (geste 6),
+`coque-macos-lot5a-rouvert.png` (geste 8). Version de macOS (menu Pomme > À propos de ce Mac) et de Safari/WebKit
+(Safari > À propos de Safari), version de Chrome (`chrome://version`), et le dispositif de pointage (souris ou pavé tactile).

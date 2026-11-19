@@ -31,6 +31,7 @@ import { createPenTool } from "./engine/tools/pen";
 import { createSelectTool } from "./engine/tools/select";
 import { createShapeTool } from "./engine/tools/shape";
 import { createTextTool, type TextTool } from "./engine/tools/text";
+import { prepareFiles } from "./platform/mount";
 import init, * as wasm from "./wasm/roomboard_wasm";
 
 function el<T extends HTMLElement>(id: string): T {
@@ -54,7 +55,9 @@ function keyOf(e: KeyboardEvent): KeyLike {
 async function start(): Promise<void> {
   await init();
   const core = createWasmCore(wasm);
-  const doc = core.blank();
+  // Fichiers (D26) : le document vient du fichier ouvert avant le rechargement, sinon une page vide.
+  const files = await prepareFiles(core);
+  const doc = files.doc;
   const stage = el<HTMLDivElement>("stage");
   const parsed = parseSettings(window.location.search);
   const settings = createSettingsStore(parsed.settings);
@@ -241,6 +244,7 @@ async function start(): Promise<void> {
       }),
     );
   }
+  await files.mount(engine, stage);
   stage.dataset["ready"] = "1";
 }
 
