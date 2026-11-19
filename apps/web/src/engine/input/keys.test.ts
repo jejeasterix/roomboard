@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyAction, type KeyLike } from "./keys";
+import { isPanKey, keyAction, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -42,5 +42,27 @@ describe("keyAction (D11)", () => {
     expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "input" } }))).toBeNull();
     expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "DIV", isContentEditable: true } }))).toBeNull();
     expect(keyAction(k("z", { ctrlKey: true, target: { tagName: "BUTTON" } }))).toBe("undo");
+  });
+});
+
+describe("isPanKey (D17 : espace + glisser)", () => {
+  it("espace seul : déplacement de vue (Maj admise)", () => {
+    expect(isPanKey(k(" "))).toBe(true);
+    expect(isPanKey(k(" ", { shiftKey: true }))).toBe(true);
+  });
+  it("espace avec Ctrl, Cmd ou Alt : non", () => {
+    expect(isPanKey(k(" ", { ctrlKey: true }))).toBe(false);
+    expect(isPanKey(k(" ", { metaKey: true }))).toBe(false);
+    expect(isPanKey(k(" ", { altKey: true }))).toBe(false);
+  });
+  it("espace dans un champ ou pendant une composition IME : non", () => {
+    expect(isPanKey(k(" ", { target: { tagName: "input" } }))).toBe(false);
+    expect(isPanKey(k(" ", { target: { isContentEditable: true } }))).toBe(false);
+    expect(isPanKey(k(" ", { isComposing: true }))).toBe(false);
+    expect(isPanKey(k(" ", { target: { tagName: "BUTTON" } }))).toBe(true);
+  });
+  it("autre touche : non", () => {
+    expect(isPanKey(k("a"))).toBe(false);
+    expect(isPanKey(k("Spacebar"))).toBe(false);
   });
 });
