@@ -61,7 +61,7 @@ async function scenario(page, url, captures) {
   };
   const editorOpen = () => page.isVisible("#texte-edition");
   // Relit le contenu d'un texte écrit : l'outil Texte, au clic sur lui, rouvre la zone avec son contenu ; Échap referme sans écrire.
-  const readText = async (x, y, expected, msg) => {
+  const readText = async (x, y, expected, msg, inkBox) => {
     await click("text");
     await page.mouse.click(x, y);
     await frames(page);
@@ -70,6 +70,8 @@ async function scenario(page, url, captures) {
     await page.keyboard.press("Escape");
     await frames(page);
     check(!(await editorOpen()), "Échap : la zone se referme");
+    // Échap sans changement : le texte masqué pendant l'édition doit être repeint (image demandée au moteur).
+    check((await inkIn(page, inkBox)) > 0, "Échap sans changement : le texte est repeint");
   };
   const shot = async (name) => {
     if (!captures) return;
@@ -157,20 +159,48 @@ async function scenario(page, url, captures) {
   await frames(page);
   check((await elements()) === 0 && (await editorOpen()), "clic ailleurs pendant la composition : rien n'est écrit avant compositionend");
   if (imeMode === "synthétique") {
-    await page.$eval("#texte-edition", (t) => t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "ni" })));
+    await page.$eval("#texte-edition", (t) => {
+      t.value = "Bonjour"; // la composition « ni » est remplacée par le texte validé
+      t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "Bonjour" }));
+    });
   } else {
-    await cdp.send("Input.insertText", { text: "ni" }); // la composition se valide : compositionend
+    await cdp.send("Input.insertText", { text: "Bonjour" }); // la composition « ni » se valide en « Bonjour » : compositionend
   }
   await frames(page);
   check((await ime()).includes("compositionend"), "compositionend vu");
   check((await page.evaluate(() => window.__elementsAtEnd)) === "0", "rien n'était écrit au moment de compositionend");
   check((await elements()) === 1 && !(await editorOpen()), "après compositionend : le texte est écrit, la zone fermée");
-  check((await inkIn(page, [296, 296, 340, 330])) > 0, "le texte est peint sur la scène");
-  await readText(310, 310, "ni", "contenu du texte écrit : « ni »");
+  check((await inkIn(page, [296, 296, 420, 340])) > 0, "le texte est peint sur la scène");
+  await readText(310, 310, "Bonjour", "contenu du texte écrit : « Bonjour »", [296, 296, 420, 340]);
   await undo();
   check((await elements()) === 0, "Ctrl+Z : le texte part (une étape)");
   await redo();
   check((await elements()) === 1, "Ctrl+Y : le texte revient");
+
+  // Seconde boîte : composition finie SANS demande de validation (la zone reste ouverte), puis Échap hors composition.
+  await click("text");
+  await page.mouse.click(300, 500);
+  await frames(page);
+  await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
+  await page.focus("#texte-edition");
+  if (imeMode === "synthétique") {
+    await page.$eval("#texte-edition", (t) => {
+      t.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
+      t.value = "にほん";
+      t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "にほん" }));
+    });
+  } else {
+    await cdp.send("Input.imeSetComposition", { text: "にほん", selectionStart: 3, selectionEnd: 3 });
+    await cdp.send("Input.insertText", { text: "にほん" });
+  }
+  await frames(page);
+  check((await page.inputValue("#texte-edition")) === "にほん", "seconde boîte : composition finie, la zone porte « にほん »");
+  check((await elements()) === 1 && (await editorOpen()), "composition finie sans demande de validation : zone toujours ouverte, rien d'écrit");
+  await page.keyboard.press("Escape"); // hors composition : valide
+  await frames(page);
+  check((await elements()) === 2 && !(await editorOpen()), "Échap hors composition : le texte neuf est écrit, zone fermée");
+  await undo();
+  check((await elements()) === 1, "Ctrl+Z : la seconde boîte part (une étape)");
 
   // Page 2 : un trait.
   await click("page-next");
@@ -188,6 +218,7 @@ async function scenario(page, url, captures) {
   await click("rect");
   await drag([[200, 200], [320, 280]]);
   check((await elements()) === 1, "rectangle posé au relâché");
+  check((await inkIn(page, [196, 236, 204, 244])) > 0, "bord du rectangle peint (côté gauche)");
   await undo();
   check((await elements()) === 0, "Ctrl+Z : le rectangle part (une étape)");
   await redo();
@@ -210,10 +241,13 @@ async function scenario(page, url, captures) {
   check((await elements()) === 5, "page 3 : second texte validé par un clic ailleurs (cinq éléments)");
   check(!(await editorOpen()), "la zone de texte est fermée après le clic ailleurs");
   await shot("forme-texte"); // avant la relecture : la zone rouverte masque le texte jusqu'à sa fermeture
-  await readText(710, 310, "note", "contenu du second texte : « note »");
+  await readText(710, 310, "note", "contenu du second texte : « note »", [696, 290, 780, 340]);
 
   // Sélection au rectangle : deux formes (rectangle et ellipse).
   await click("select");
+  await page.mouse.click(260, 430); // clic simple (sans Maj) sur la ligne
+  await frames(page);
+  check((await nSel()) === 1, "clic simple (sans Maj) : la ligne est sélectionnée");
   await drag([[180, 180], [540, 300]]);
   check((await nSel()) === 2, "sélection au rectangle : deux formes");
   await page.keyboard.down("Shift");
@@ -225,7 +259,7 @@ async function scenario(page, url, captures) {
   await frames(page);
   check((await nSel()) === 0, "Échap : sélection vidée");
 
-  // Re-sélection, déplacement de 100 px écran par l'INTÉRIEUR du rectangle (vide), agrandissement, suppression.
+  // Re-sélection, déplacement de 100 unités (~63 px écran) par l'INTÉRIEUR du rectangle (vide), agrandissement, suppression.
   await drag([[180, 180], [540, 300]]);
   const b0 = await bounds();
   check(b0.length === 4 && b0.every(Number.isFinite), "bornes de la sélection lues");
@@ -248,7 +282,7 @@ async function scenario(page, url, captures) {
   const b2 = await bounds();
   const w2 = b2[2] - b2[0];
   const h2 = b2[3] - b2[1];
-  // Les bornes sont élargies par l'épaisseur du trait (fixe) : géométrie 320 px × 80 px écran, doublée.
+  // Les bornes sont élargies par l'épaisseur du trait (qui suit l'échelle depuis T63) : géométrie 320 px × 80 px écran, doublée.
   const wantW = 1 + (320 * k) / w1;
   const wantH = 1 + (80 * k) / h1;
   check(Math.abs(w2 / w1 - wantW) < 1e-3, `agrandir : largeur ×${(w2 / w1).toFixed(4)} (attendu ×${wantW.toFixed(4)})`);

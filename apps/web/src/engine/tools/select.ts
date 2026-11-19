@@ -13,7 +13,7 @@ import { EMPTY_OVERLAY, type EditOverlay } from "../render/overlay";
 import {
   HANDLE_GRAB_PX,
   handlePoint,
-  handlesOf,
+  hitHandle,
   isIdentity,
   resizeMatrix,
   transformBounds,
@@ -49,27 +49,24 @@ const norm = (ax: number, ay: number, bx: number, by: number): Bounds => ({
   y1: Math.max(ay, by),
 });
 
+const EDGE_EPS_PX = 1e-6;
+const NO_EW: ReadonlySet<HandleId> = new Set<HandleId>(["e", "w"]);
+const NO_NS: ReadonlySet<HandleId> = new Set<HandleId>(["n", "s"]);
+const NO_MID: ReadonlySet<HandleId> = new Set<HandleId>(["n", "s", "e", "w"]);
+
 /**
- * Poignée prise par un appui (portée `reach` en unités monde, bord exclu). Sur un cadre dont un côté écran est plus
- * petit que deux fois la zone de prise, les poignées de milieu de ces côtés sont écartées : elles couvriraient le
- * centre et l'appui déplacerait au lieu de redimensionner (CL4-11).
+ * Poignée prise par un appui. Un appui à l'intérieur d'une petite sélection la déplace (CL4-10, D15) : la portée de
+ * prise ne dépasse jamais la moitié du plus petit côté écran (bord exclu), et les milieux de côté qui couvriraient
+ * le centre (`narrow` : e/w ; `short` : n/s) sont écartés.
  */
 function grabbedHandle(frame: Bounds, x: number, y: number, zoom: number): HandleId | null {
-  const reach = HANDLE_GRAB_PX / zoom;
-  const narrow = (frame.x1 - frame.x0) * zoom <= 2 * HANDLE_GRAB_PX;
-  const short = (frame.y1 - frame.y0) * zoom <= 2 * HANDLE_GRAB_PX;
-  let best: HandleId | null = null;
-  let bestD = reach;
-  for (const h of handlesOf(frame)) {
-    if (narrow && (h.id === "n" || h.id === "s")) continue;
-    if (short && (h.id === "e" || h.id === "w")) continue;
-    const d = Math.max(Math.abs(h.x - x), Math.abs(h.y - y));
-    if (d < bestD) {
-      best = h.id;
-      bestD = d;
-    }
-  }
-  return best;
+  const wPx = (frame.x1 - frame.x0) * zoom;
+  const hPx = (frame.y1 - frame.y0) * zoom;
+  const reachPx = Math.min(HANDLE_GRAB_PX, Math.min(wPx, hPx) / 2 - EDGE_EPS_PX);
+  const narrow = wPx <= 2 * HANDLE_GRAB_PX;
+  const short = hPx <= 2 * HANDLE_GRAB_PX;
+  const skip = narrow && short ? NO_MID : narrow ? NO_EW : short ? NO_NS : undefined;
+  return hitHandle(frame, x, y, reachPx / zoom, skip);
 }
 
 export function createSelectTool(ctx: ToolContext): SelectionTool {

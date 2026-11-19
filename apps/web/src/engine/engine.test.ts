@@ -590,6 +590,29 @@ describe("createEngine", () => {
     expect(shift()).toBe(false);
   });
 
+  it("ctx.requestFrame() redessine la scène (outil à l'arrêt)", () => {
+    let seen: ToolContext | null = null;
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    createEngine({
+      doc: fakeCore.blank(),
+      renderer,
+      frames,
+      tools: {
+        pen: (ctx) => {
+          seen = ctx;
+          return fakeTool("pen", [], ctx);
+        },
+        eraser: (ctx) => fakeTool("eraser", [], ctx),
+      },
+    });
+    frames.tick();
+    const n = renderer.scenes.length;
+    (seen as ToolContext | null)?.requestFrame?.();
+    frames.tick();
+    expect(renderer.scenes.length).toBe(n + 1);
+  });
+
   it("état : sélection et boîte de la sélection ; un geste de sélection émet l'état", () => {
     const { engine, rect } = editSetup();
     const a = rect(100, 100, 200, 200);

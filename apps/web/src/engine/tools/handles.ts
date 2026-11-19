@@ -25,11 +25,15 @@ export const handlesOf = (b: Bounds): { id: HandleId; x: number; y: number }[] =
     return { id, x, y };
   });
 
-/** Poignée la plus proche à moins de `reach` (unités monde, distance de Tchebychev), ou null. */
-export function hitHandle(b: Bounds, x: number, y: number, reach: number): HandleId | null {
+/**
+ * Poignée la plus proche à moins de `reach` (unités monde, distance de Tchebychev, bord inclus), ou null ; les
+ * poignées de `skip` sont écartées (ex. milieux d'un cadre trop petit pour les distinguer du centre).
+ */
+export function hitHandle(b: Bounds, x: number, y: number, reach: number, skip?: ReadonlySet<HandleId>): HandleId | null {
   let best: HandleId | null = null;
   let bestD = reach;
   for (const h of handlesOf(b)) {
+    if (skip?.has(h.id)) continue;
     const d = Math.max(Math.abs(h.x - x), Math.abs(h.y - y));
     if (d <= bestD) {
       best = h.id;

@@ -14,6 +14,8 @@ export interface ToolContext {
   run(cmd: Command): Change | null;
   /** Maj tenue (CL4-12) ; absent = jamais tenue. */
   shift?(): boolean;
+  /** Demande une image (outil à l'arrêt dont l'aperçu a changé : ensemble masqué vidé) ; absent = sans effet. */
+  requestFrame?(): void;
 }
 
 /** Aperçu d'un outil : couche vive, éléments masqués de la scène, calque d'édition (CL4-1). */

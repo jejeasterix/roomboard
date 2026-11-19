@@ -241,7 +241,7 @@ export function createEngine(deps: EngineDeps): Engine {
     emit();
   }
 
-  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run, shift: () => shiftHeld };
+  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run, shift: () => shiftHeld, requestFrame: requestScene };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
