@@ -1,8 +1,9 @@
 /** Contrats entre le routeur d'entrées (D18) et le moteur. Coordonnées en px CSS relatifs à la zone de dessin. */
+import type { ShapeKind } from "../../core/api";
 import type { InputSample } from "./sampler";
 
 /** Outil d'un geste de tracé ; le bouton gomme du stylet impose "eraser" (D12). */
-export type DrawTool = "pen" | "eraser";
+export type DrawTool = "pen" | "eraser" | "select" | ShapeKind | "text";
 
 /**
  * Fin d'un geste. "end" : relâché. "cancel" : fin anormale (pointercancel, capture perdue) ; l'encre reçue est gardée,
