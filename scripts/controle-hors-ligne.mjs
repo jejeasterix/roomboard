@@ -86,6 +86,16 @@ export function checkCsp(conf) {
   return errors;
 }
 
+/**
+ * tauri-plugin-fs 2.7.1 ajoute de lui-même à sa portée tout chemin déposé sur la fenêtre, dossiers compris et
+ * récursivement (`scopeDroppedPaths`, vrai par défaut, `src/config.rs:19-23`, `src/lib.rs:629-646`). Avec
+ * `fs:allow-read-file` et `fs:allow-write-file`, un dossier glissé deviendrait lisible et inscriptible par la page.
+ */
+export function checkFsScope(conf) {
+  if (conf?.plugins?.fs?.scopeDroppedPaths === false) return [];
+  return ["plugins.fs.scopeDroppedPaths doit valoir false (un dossier déposé entrerait dans la portée fs de la page)"];
+}
+
 function main(argv) {
   const [dist, confPath] = argv;
   if (!dist || !confPath) {
@@ -93,12 +103,13 @@ function main(argv) {
     return 1;
   }
   const { errors, scanned } = checkDist(dist);
-  errors.push(...checkCsp(JSON.parse(readFileSync(confPath, "utf8"))));
+  const conf = JSON.parse(readFileSync(confPath, "utf8"));
+  errors.push(...checkCsp(conf), ...checkFsScope(conf));
   if (errors.length > 0) {
     for (const e of errors) console.error(`controle-hors-ligne : ${e}`);
     return 1;
   }
-  console.log(`controle-hors-ligne : OK (${scanned} fichiers sans hôte distant, CSP stricte)`);
+  console.log(`controle-hors-ligne : OK (${scanned} fichiers sans hôte distant, CSP stricte, dépôts hors de la portée fs)`);
   return 0;
 }
 
