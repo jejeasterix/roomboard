@@ -99,8 +99,8 @@ refuse 14 "$tmp/nip" "$tmp/bonne.json" "127.0.0.1.nip.io"
 
 # 15-16. portée fs des dépôts (tauri-plugin-fs, scopeDroppedPaths vrai par défaut : un dossier déposé devient
 # lisible et inscriptible par la page) : absente → 1 ; vraie → 1
-python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); del c["plugins"]; json.dump(c,open(sys.argv[2],"w"))' "$tmp/bonne.json" "$tmp/sans-portee.json"
-python3 -c 'import json,sys; c=json.load(open(sys.argv[1])); c["plugins"]["fs"]["scopeDroppedPaths"]=True; json.dump(c,open(sys.argv[2],"w"))' "$tmp/bonne.json" "$tmp/portee-vraie.json"
+node -e 'const f=require("fs"); const c=JSON.parse(f.readFileSync(process.argv[1])); delete c.plugins; f.writeFileSync(process.argv[2], JSON.stringify(c))' "$tmp/bonne.json" "$tmp/sans-portee.json"
+node -e 'const f=require("fs"); const c=JSON.parse(f.readFileSync(process.argv[1])); c.plugins.fs.scopeDroppedPaths=true; f.writeFileSync(process.argv[2], JSON.stringify(c))' "$tmp/bonne.json" "$tmp/portee-vraie.json"
 refuse 15 "$tmp/propre" "$tmp/sans-portee.json" "scopeDroppedPaths"
 refuse 16 "$tmp/propre" "$tmp/portee-vraie.json" "scopeDroppedPaths"
 
