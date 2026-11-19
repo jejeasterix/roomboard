@@ -859,4 +859,165 @@ pub(crate) mod tests {
         assert!(d.element_ids(&p).is_empty());
         assert!(!d.can_undo());
     }
+
+    use crate::element::{ShapeView, IDENTITY};
+    use crate::shape::ShapeKind;
+
+    fn rect(page: &str, corners: [f64; 4]) -> Command {
+        let [x0, y0, x1, y1] = corners;
+        Command::AddShape {
+            page: page.into(),
+            shape: ShapeKind::Rect,
+            x0,
+            y0,
+            x1,
+            y1,
+            style: pen(),
+            fill: None,
+        }
+    }
+
+    #[test]
+    fn transform_moves_elements_in_one_step() {
+        let mut d = Document::blank();
+        let (p, [a, b, _]) = three(&mut d);
+        let before = d.element(&a).expect("a").transform;
+        let c = d
+            .apply(Command::Transform {
+                ids: vec![b.clone(), a.clone(), a.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 50.0],
+            })
+            .expect("transform");
+        let mut want = vec![a.clone(), b.clone()];
+        want.sort();
+        assert_eq!(c.ids, want);
+        assert_eq!(c.pages, vec![p]);
+        assert_eq!(
+            d.element(&a).expect("a").transform,
+            [1.0, 0.0, 0.0, 1.0, before[4] + 100.0, before[5] + 50.0]
+        );
+        assert!(d.undo());
+        assert_eq!(d.element(&a).expect("a").transform, before);
+        assert!(d.can_undo(), "une seule étape défaite : les trois traits restent");
+    }
+
+    #[test]
+    fn transform_composes_on_the_left() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0)); // [1, 0, 0, 1, 100, 100]
+        d.apply(Command::Transform { ids: vec![a.clone()], matrix: [2.0, 0.0, 0.0, 2.0, 0.0, 0.0] })
+            .expect("échelle");
+        d.apply(Command::Transform { ids: vec![a.clone()], matrix: [1.0, 0.0, 0.0, 1.0, 10.0, 0.0] })
+            .expect("translation");
+        assert_eq!(d.element(&a).expect("a").transform, [2.0, 0.0, 0.0, 2.0, 210.0, 200.0]);
+    }
+
+    #[test]
+    fn transform_rejects_bad_matrix_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0));
+        let n = writes(&d);
+        for m in [[f64::NAN, 0.0, 0.0, 1.0, 0.0, 0.0], [0.0; 6], [1.0, 2.0, 2.0, 4.0, 0.0, 0.0]] {
+            assert_eq!(
+                d.apply(Command::Transform { ids: vec![a.clone()], matrix: m }),
+                Err(CommandError::BadMatrix)
+            );
+        }
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn transform_unknown_ids_or_identity_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0));
+        let n = writes(&d);
+        let v = d.version();
+        let c = d
+            .apply(Command::Transform { ids: vec!["absent".into()], matrix: [1.0, 0.0, 0.0, 1.0, 5.0, 5.0] })
+            .expect("inconnu");
+        assert!(c.ids.is_empty() && c.pages.is_empty());
+        let c = d.apply(Command::Transform { ids: vec![a], matrix: IDENTITY }).expect("identité");
+        assert!(c.ids.is_empty());
+        assert_eq!(d.version(), v);
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn add_shape_rect_normalizes_and_is_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let c = d.apply(rect(&p, [300.0, 200.0, 100.0, 50.0])).expect("rect");
+        assert_eq!(c.pages, vec![p.clone()]);
+        let e = d.element(&c.ids[0]).expect("élément");
+        assert_eq!(e.kind, "shape");
+        assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]);
+        assert_eq!(e.style, pen());
+        assert_eq!(e.shape, Some(ShapeView { shape: "rect".into(), w: 200.0, h: 150.0, fill: None }));
+        assert!(d.undo());
+        assert!(d.element_ids(&p).is_empty());
+    }
+
+    #[test]
+    fn add_shape_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        assert_eq!(d.apply(rect(&p, [f64::NAN, 0.0, 10.0, 10.0])), Err(CommandError::BadShape));
+        let mut thin = rect(&p, [0.0, 0.0, 10.0, 10.0]);
+        if let Command::AddShape { style, .. } = &mut thin {
+            style.width = 0.0;
+        }
+        assert_eq!(d.apply(thin), Err(CommandError::BadWidth));
+        assert_eq!(
+            d.apply(rect("absente", [0.0, 0.0, 10.0, 10.0])),
+            Err(CommandError::UnknownPage("absente".into()))
+        );
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn erase_and_delete_on_shapes() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let arrow = d
+            .apply(Command::AddShape {
+                page: p.clone(),
+                shape: ShapeKind::Arrow,
+                x0: 300.0,
+                y0: 200.0,
+                x1: 100.0,
+                y1: 50.0,
+                style: pen(),
+                fill: Some("#ff0000".into()),
+            })
+            .expect("flèche")
+            .ids[0]
+            .clone();
+        let e = d.element(&arrow).expect("flèche");
+        assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 300.0, 200.0]);
+        assert_eq!(
+            e.shape,
+            Some(ShapeView { shape: "arrow".into(), w: -200.0, h: -150.0, fill: Some("#ff0000".into()) })
+        );
+        let id = d.apply(rect(&p, [100.0, 300.0, 300.0, 500.0])).expect("rect").ids[0].clone();
+        for mode in [EraseMode::Partial, EraseMode::Object] {
+            let c = d
+                .apply(Command::Erase { page: p.clone(), path: vec![100.0, 400.0, 300.0, 400.0], radius: 20.0, mode })
+                .expect("gomme");
+            assert!(c.removed.is_empty(), "la gomme n'agit que sur les traits (D12)");
+        }
+        assert_eq!(d.apply(Command::Delete { ids: vec![id.clone()] }).expect("suppression").removed, vec![id]);
+    }
+
+    #[test]
+    fn new_errors_have_readable_messages() {
+        assert_eq!(
+            CommandError::BadShape.to_string(),
+            "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)"
+        );
+        assert_eq!(CommandError::BadMatrix.to_string(), "matrice invalide (six nombres finis, inversible)");
+    }
 }

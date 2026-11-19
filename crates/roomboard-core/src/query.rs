@@ -481,4 +481,70 @@ mod tests {
             again.len()
         );
     }
+
+    use crate::shape::ShapeKind;
+
+    fn rect_at(d: &mut Document, p: &str, c: [f64; 4]) -> String {
+        d.apply(Command::AddShape {
+            page: p.into(),
+            shape: ShapeKind::Rect,
+            x0: c[0],
+            y0: c[1],
+            x1: c[2],
+            y1: c[3],
+            style: pen(),
+            fill: None,
+        })
+        .expect("rect")
+        .ids[0]
+            .clone()
+    }
+
+    #[test]
+    fn hit_test_finds_shape_interior() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        assert_eq!(d.hit_test(&p, 700.0, 650.0, 1.0), Some(id), "intérieur sans remplissage (CL4-7)");
+        assert_eq!(d.hit_test(&p, 900.0, 650.0, 1.0), None);
+    }
+
+    #[test]
+    fn ids_in_rect_and_bounds_include_shapes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        assert_eq!(
+            d.bounds(std::slice::from_ref(&id)),
+            Some(Bounds { x0: 598.0, y0: 598.0, x1: 802.0, y1: 702.0 })
+        );
+        assert_eq!(
+            d.ids_in_rect(&p, Bounds { x0: 590.0, y0: 590.0, x1: 810.0, y1: 710.0 }),
+            vec![id]
+        );
+        assert!(d
+            .ids_in_rect(&p, Bounds { x0: 600.0, y0: 600.0, x1: 810.0, y1: 710.0 })
+            .is_empty());
+    }
+
+    #[test]
+    fn hit_test_path_ignores_shapes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        assert!(d.hit_test_path(&p, &[600.0, 650.0, 800.0, 650.0], 10.0).is_empty());
+    }
+
+    #[test]
+    fn bounds_follow_transform() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = rect_at(&mut d, &p, [600.0, 600.0, 800.0, 700.0]);
+        d.apply(Command::Transform { ids: vec![id.clone()], matrix: [2.0, 0.0, 0.0, 2.0, 0.0, 0.0] })
+            .expect("échelle");
+        assert_eq!(
+            d.bounds(&[id]),
+            Some(Bounds { x0: 1196.0, y0: 1196.0, x1: 1604.0, y1: 1404.0 })
+        );
+    }
 }
