@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { CoreDocument, CoreFactory, ShapeKind } from "./api";
+import type { CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
 import { createWasmCore, toBounds, toChange, toElementView, type WasmModule } from "./wasm-core";
@@ -375,6 +375,89 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     expect(d.idsInRect(p, { x0: 590, y0: 590, x1: 810, y1: 710 })).toEqual([r]);
     expect(d.hitTestPath(p, new Float32Array([600, 650, 800, 650]), 10)).toEqual([]);
     unchanged(d, () => d.apply({ type: "Erase", page: p, path: new Float32Array([600, 650, 800, 650]), radius: 10, mode: "object" }));
+    d.free();
+  });
+
+  // Constat 1 de T60 : la tolérance de hitTest est en unités monde des deux côtés. Discrimine le patron écarté (point
+  // ramené en local puis `tol` appliquée en local) : à ×4 il prendrait le clic à 20 du bord (5 en local), à ×0,05 il
+  // raterait la ligne à 2,9 (58 en local). Le cas anisotrope sépare la distance mesurée en monde de toute tolérance
+  // divisée par un seul facteur d'échelle (plus grande ou plus petite valeur singulière, racine du déterminant).
+  it("hitTest : tolérance en unités monde sur un élément mis à l'échelle (×4, ×0,05, anisotrope)", () => {
+    const d = f.blank();
+    const p = first(d);
+    // Rectangle (0, 0)-(100, 50), trait 4 : polygone local (-2, -2)-(102, 52), monde (-8, -8)-(408, 208) à ×4.
+    const big = shape(d, p, "rect", [0, 0, 100, 50]);
+    d.apply({ type: "Transform", ids: [big], matrix: [4, 0, 0, 4, 0, 0] });
+    expect(d.hitTest(p, 412, 100, 6)).toBe(big);
+    expect(d.hitTest(p, 428, 100, 6)).toBeNull();
+    d.apply({ type: "Delete", ids: [big] });
+    // Ligne (0, 0)-(1000, 0), trait 4 : à ×0,05, segment monde (0, 0)-(50, 0), demi-épaisseur 0,1.
+    const thin = shape(d, p, "line", [0, 0, 1000, 0]);
+    d.apply({ type: "Transform", ids: [thin], matrix: [0.05, 0, 0, 0.05, 0, 0] });
+    expect(d.hitTest(p, 25, 3, 6)).toBe(thin);
+    expect(d.hitTest(p, 25, 10, 6)).toBeNull();
+    d.apply({ type: "Delete", ids: [thin] });
+    // Même rectangle à [4, 0, 0, 0,25] : monde (-8, -0,5)-(408, 13).
+    const flat = shape(d, p, "rect", [0, 0, 100, 50]);
+    d.apply({ type: "Transform", ids: [flat], matrix: [4, 0, 0, 0.25, 0, 0] });
+    expect(d.hitTest(p, 200, 18, 6)).toBe(flat);
+    expect(d.hitTest(p, 428, 6, 6)).toBeNull();
+    d.free();
+  });
+
+  // Constats 2 et 3 de T60 : la matrice composée (pas seulement `matrix`) et la géométrie tirée des coins (pas seulement
+  // les coins) sont contrôlées ; refus sans étape, la commande entière.
+  it("Transform : matrice composée infinie ou presque singulière refusée ; AddShape : w, h, tx, ty non finis en f32 refusés", () => {
+    const d = f.blank();
+    const p = first(d);
+    const badMatrix = "matrice invalide (six nombres finis, inversible)";
+    const badShape = "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)";
+    const a = commit(d, p, 100);
+    const b = commit(d, p, 300);
+    const huge: Matrix = [1e200, 0, 0, 1e200, 0, 0];
+    d.apply({ type: "Transform", ids: [a], matrix: huge });
+    const aHuge = d.element(a)?.transform;
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "Transform", ids: [a], matrix: huge }))).toBe(badMatrix);
+    });
+    expect(d.element(a)?.transform).toEqual(aHuge);
+    const small: Matrix = [0.05, 0, 0, 0.05, 0, 0];
+    for (let i = 0; i < 4; i++) d.apply({ type: "Transform", ids: [b], matrix: small });
+    const b4 = d.element(b)?.transform;
+    const fresh = commit(d, p, 500);
+    const fresh0 = d.element(fresh)?.transform;
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "Transform", ids: [fresh, b], matrix: small }))).toBe(badMatrix);
+    });
+    expect(d.element(b)?.transform).toEqual(b4);
+    expect(d.element(fresh)?.transform).toEqual(fresh0);
+    const add = (kind: ShapeKind, c: Corners) => (): unknown =>
+      d.apply({ type: "AddShape", page: p, shape: kind, x0: c[0], y0: c[1], x1: c[2], y1: c[3], style: pen, fill: null });
+    unchanged(d, () => {
+      expect(messageOf(add("rect", [-1e308, 0, 1e308, 10]))).toBe(badShape);
+      expect(messageOf(add("rect", [0, 0, 1e39, 10]))).toBe(badShape);
+      expect(messageOf(add("ellipse", [0, -1e39, 10, 0]))).toBe(badShape);
+      expect(messageOf(add("rect", [1e39, 0, 1e39, 10]))).toBe(badShape);
+      expect(messageOf(add("line", [0, 0, 1e39, 0]))).toBe(badShape);
+    });
+    d.free();
+  });
+
+  // Constats 4 et 5 de T60 : la pointe de flèche entre dans la collision et les bornes ; l'ellipse n'est plus sa boîte.
+  it("hitTest et bounds : pointe de flèche prise et bornée, coin de la boîte d'une ellipse hors de l'ellipse", () => {
+    const d = f.blank();
+    const p = first(d);
+    const arrow = shape(d, p, "arrow", [0, 0, 100, 0]);
+    expect(d.hitTest(p, 90, 4.5, 0.1)).toBe(arrow);
+    expect(d.hitTest(p, 50, 4.5, 0.1)).toBeNull();
+    const b = d.bounds([arrow]);
+    expect(b?.y1).toBeCloseTo(12 * Math.sin((25 * Math.PI) / 180), 4);
+    expect(b?.y0).toBeCloseTo(-12 * Math.sin((25 * Math.PI) / 180), 4);
+    d.apply({ type: "Delete", ids: [arrow] });
+    const ellipse = shape(d, p, "ellipse", [0, 0, 100, 50]);
+    expect(d.hitTest(p, 1, 1, 1)).toBeNull();
+    expect(d.hitTest(p, 50, 25, 1)).toBe(ellipse);
+    expect(d.bounds([ellipse])).toEqual({ x0: -2, y0: -2, x1: 102, y1: 52 });
     d.free();
   });
 

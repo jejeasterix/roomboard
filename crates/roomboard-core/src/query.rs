@@ -9,7 +9,7 @@ use yrs::{Array, Map, MapRef, Out, ReadTxn};
 
 use crate::commands::{read_shape, read_stroke, read_text, world_to_local_path};
 use crate::document::Document;
-use crate::element::{apply_transform, invert, out_string, out_transform, Transform};
+use crate::element::{apply_transform, out_string, out_transform, Transform};
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
 use crate::shape::{box_polygon, shape_polygon};
@@ -62,6 +62,21 @@ fn world_bounds(t: &Transform, poly: &[f32]) -> Option<Bounds> {
                 None => b,
             })
         })
+}
+
+/// Contour local porté en monde ; les sommets non finis (séparateurs) sont recopiés tels quels, pour que la règle
+/// pair-impair et la distance aux arêtes les traitent comme dans le repère local.
+fn world_outline(t: &Transform, poly: &[f32]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(poly.len());
+    for c in poly.as_chunks::<2>().0 {
+        if c[0].is_finite() && c[1].is_finite() {
+            let (x, y) = apply_transform(t, f64::from(c[0]), f64::from(c[1]));
+            out.extend([x as f32, y as f32]);
+        } else {
+            out.extend(c);
+        }
+    }
+    out
 }
 
 impl Document {
@@ -125,16 +140,21 @@ impl Document {
             .collect()
     }
 
-    /// Élément le plus haut sous (x, y) monde, à `tol` près.
+    /// Élément le plus haut sous (x, y) monde, à `tol` près, `tol` en unités monde comme dans la fausse liaison
+    /// (constat 1 de T60) : le contour est porté en monde et la distance aux arêtes s'y mesure, exacte pour toute
+    /// matrice (échelle anisotrope, cisaillement), là où diviser `tol` par un seul facteur d'échelle ne l'est pas. Le
+    /// test « dedans » (pair-impair) ne dépend pas du repère.
     pub fn hit_test(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<String> {
         self.geoms(page, false)
             .into_iter()
             .rev()
             .find(|g| {
-                invert(&g.transform).is_some_and(|inv| {
-                    let (lx, ly) = apply_transform(&inv, x, y);
-                    hit_outline(&g.outline, lx as f32, ly as f32, tol)
-                })
+                hit_outline(
+                    &world_outline(&g.transform, &g.outline),
+                    x as f32,
+                    y as f32,
+                    tol,
+                )
             })
             .map(|g| g.id)
     }
@@ -536,6 +556,109 @@ mod tests {
             "intérieur sans remplissage (CL4-7)"
         );
         assert_eq!(d.hit_test(&p, 900.0, 650.0, 1.0), None);
+    }
+
+    fn scaled(d: &mut Document, p: &str, kind: ShapeKind, c: [f64; 4], m: Transform) -> String {
+        let id = d
+            .apply(Command::AddShape {
+                page: p.into(),
+                shape: kind,
+                x0: c[0],
+                y0: c[1],
+                x1: c[2],
+                y1: c[3],
+                style: pen(),
+                fill: None,
+            })
+            .expect("forme")
+            .ids[0]
+            .clone();
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: m,
+        })
+        .expect("échelle");
+        id
+    }
+
+    /// Constat 1 de T60 : `tol` est en unités monde, comme dans la fausse liaison. Le patron écarté (point ramené en
+    /// local, `tol` appliquée en local) prendrait le clic à 20 du bord à ×4 et raterait la ligne à 2,9 à ×0,05.
+    #[test]
+    fn hit_test_tolerance_is_in_world_units_under_scale() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let big = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Rect,
+            [0.0, 0.0, 100.0, 50.0],
+            [4.0, 0.0, 0.0, 4.0, 0.0, 0.0],
+        );
+        assert_eq!(d.hit_test(&p, 412.0, 100.0, 6.0), Some(big.clone()));
+        assert_eq!(d.hit_test(&p, 428.0, 100.0, 6.0), None, "20 du bord à ×4");
+        d.apply(Command::Delete { ids: vec![big] })
+            .expect("retrait");
+        let thin = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Line,
+            [0.0, 0.0, 1000.0, 0.0],
+            [0.05, 0.0, 0.0, 0.05, 0.0, 0.0],
+        );
+        assert_eq!(
+            d.hit_test(&p, 25.0, 3.0, 6.0),
+            Some(thin.clone()),
+            "ligne à ×0,05 prise à 2,9"
+        );
+        assert_eq!(d.hit_test(&p, 25.0, 10.0, 6.0), None);
+        d.apply(Command::Delete { ids: vec![thin] })
+            .expect("retrait");
+        let flat = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Rect,
+            [0.0, 0.0, 100.0, 50.0],
+            [4.0, 0.0, 0.0, 0.25, 0.0, 0.0],
+        );
+        assert_eq!(
+            d.hit_test(&p, 200.0, 18.0, 6.0),
+            Some(flat.clone()),
+            "anisotrope : 5 au-dessus du bord monde"
+        );
+        assert_eq!(
+            d.hit_test(&p, 428.0, 6.0, 6.0),
+            None,
+            "anisotrope : 20 à droite"
+        );
+    }
+
+    /// Constats 4 et 5 de T60 : la pointe de flèche est prise et bornée, l'ellipse n'est plus sa boîte.
+    #[test]
+    fn hit_test_and_bounds_follow_arrow_head_and_ellipse() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let one = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let arrow = scaled(&mut d, &p, ShapeKind::Arrow, [0.0, 0.0, 100.0, 0.0], one);
+        assert_eq!(d.hit_test(&p, 90.0, 4.5, 0.1), Some(arrow.clone()));
+        let b = d.bounds(std::slice::from_ref(&arrow)).expect("bornes");
+        assert!(
+            b.y1 > 5.0 && b.y1 < 5.2 && b.y0 < -5.0 && b.y0 > -5.2,
+            "{b:?}"
+        );
+        d.apply(Command::Delete { ids: vec![arrow] })
+            .expect("retrait");
+        let ellipse = scaled(&mut d, &p, ShapeKind::Ellipse, [0.0, 0.0, 100.0, 50.0], one);
+        assert_eq!(d.hit_test(&p, 1.0, 1.0, 1.0), None, "coin de la boîte");
+        assert_eq!(d.hit_test(&p, 50.0, 25.0, 1.0), Some(ellipse.clone()));
+        assert_eq!(
+            d.bounds(&[ellipse]),
+            Some(Bounds {
+                x0: -2.0,
+                y0: -2.0,
+                x1: 102.0,
+                y1: 52.0
+            })
+        );
     }
 
     #[test]

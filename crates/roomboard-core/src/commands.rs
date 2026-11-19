@@ -225,6 +225,11 @@ fn positive(v: f32) -> bool {
     v.is_finite() && v > 0.0
 }
 
+/// Matrice de `Transform`, donnée ou composée : six nombres finis, inversible (|dét| ≥ 1e-12, seuil d'`invert`).
+fn valid_matrix(m: &Transform) -> bool {
+    m.iter().all(|v| v.is_finite()) && invert(m).is_some()
+}
+
 fn stroke_prelim(
     id: &str,
     transform: &Transform,
@@ -324,6 +329,13 @@ impl Document {
         if corners.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadShape);
         }
+        let [x0, y0, x1, y1] = corners;
+        let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
+        // Constat 3 de T60 : des coins finis peuvent donner w = inf (x0 = -1e308, x1 = 1e308), ou une géométrie que le
+        // polygone (f32) et la liaison ne tiennent pas.
+        if [tx, ty, w, h].iter().any(|v| !(*v as f32).is_finite()) {
+            return Err(CommandError::BadShape);
+        }
         if !positive(style.width) {
             return Err(CommandError::BadWidth);
         }
@@ -332,8 +344,6 @@ impl Document {
             self.page_elements(&txn, page)
         }
         .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
-        let [x0, y0, x1, y1] = corners;
-        let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
         let id = yrs::uuid_v4().to_string();
         let mut fields: Vec<(&str, In)> = vec![
             ("id", In::from(id.as_str())),
@@ -365,7 +375,7 @@ impl Document {
     /// Compose `m` à gauche de la transformation de chaque élément trouvé (CL4-8) ; ids inconnus ignorés ; rien trouvé
     /// ou identité : aucune transaction (D38).
     fn cmd_transform(&mut self, ids: &[String], m: &Transform) -> Result<Change, CommandError> {
-        if m.iter().any(|v| !v.is_finite()) || invert(m).is_none() {
+        if !valid_matrix(m) {
             return Err(CommandError::BadMatrix);
         }
         let unique: BTreeSet<&String> = ids.iter().collect();
@@ -383,10 +393,16 @@ impl Document {
         if targets.is_empty() || *m == IDENTITY {
             return Ok(self.unchanged());
         }
+        // Constat 2 de T60 : chaque matrice composée suit la règle de `m` (deux × 1e200 donnent une matrice infinie,
+        // cinq × 0,05 un déterminant < 1e-12) ; une seule fautive refuse la commande, avant toute écriture.
+        let composed: Vec<Transform> = targets.iter().map(|(_, t, _, _)| compose(m, t)).collect();
+        if !composed.iter().all(valid_matrix) {
+            return Err(CommandError::BadMatrix);
+        }
         {
             let mut txn = self.transact_local();
-            for (e, t, _, _) in &targets {
-                e.insert(&mut txn, "transform", transform_to_any(&compose(m, t)));
+            for ((e, _, _, _), c) in targets.iter().zip(&composed) {
+                e.insert(&mut txn, "transform", transform_to_any(c));
             }
         }
         let mut pages: Vec<String> = targets.iter().map(|t| t.2.clone()).collect();
@@ -1335,6 +1351,79 @@ pub(crate) mod tests {
             Err(CommandError::UnknownPage("absente".into()))
         );
         assert_eq!(n.since(), 0);
+    }
+
+    /// Constat 3 de T60 : coins finis mais `w`, `h`, `tx` ou `ty` tirés non finis en f32 : BadShape, aucune écriture.
+    #[test]
+    fn add_shape_rejects_derived_geometry_not_finite_in_f32() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let mut line = rect(&p, [0.0, 0.0, 1e39, 0.0]);
+        if let Command::AddShape { shape, .. } = &mut line {
+            *shape = crate::shape::ShapeKind::Line;
+        }
+        for c in [
+            rect(&p, [-1e308, 0.0, 1e308, 10.0]),
+            rect(&p, [0.0, 0.0, 1e39, 10.0]),
+            rect(&p, [0.0, -1e39, 10.0, 0.0]),
+            rect(&p, [1e39, 0.0, 1e39, 10.0]),
+            line,
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadShape));
+        }
+        assert_eq!(n.since(), 0);
+        assert!(d.element_ids(&p).is_empty());
+    }
+
+    /// Constat 2 de T60 : chaque matrice composée est contrôlée (finie, |dét| ≥ 1e-12), toute la commande refusée sinon.
+    #[test]
+    fn transform_rejects_composed_matrix_overflow_or_collapse() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0));
+        let b = commit(&mut d, &p, hline(300.0));
+        let huge = [1e200, 0.0, 0.0, 1e200, 0.0, 0.0];
+        d.apply(Command::Transform {
+            ids: vec![a.clone()],
+            matrix: huge,
+        })
+        .expect("première, composée finie");
+        let n = writes(&d);
+        let before = d.element(&a).expect("a").transform;
+        assert_eq!(
+            d.apply(Command::Transform {
+                ids: vec![a.clone()],
+                matrix: huge
+            }),
+            Err(CommandError::BadMatrix),
+            "seconde : composée infinie"
+        );
+        assert_eq!(d.element(&a).expect("a").transform, before);
+        assert_eq!(n.since(), 0);
+        let small = [0.05, 0.0, 0.0, 0.05, 0.0, 0.0];
+        for _ in 0..4 {
+            d.apply(Command::Transform {
+                ids: vec![b.clone()],
+                matrix: small,
+            })
+            .expect("dét ≥ 1e-12");
+        }
+        let b4 = d.element(&b).expect("b").transform;
+        let fresh = commit(&mut d, &p, hline(500.0));
+        let fresh0 = d.element(&fresh).expect("neuf").transform;
+        let n2 = writes(&d);
+        assert_eq!(
+            d.apply(Command::Transform {
+                ids: vec![fresh.clone(), b.clone()],
+                matrix: small
+            }),
+            Err(CommandError::BadMatrix),
+            "cinquième réduction : dét < 1e-12, la commande entière est refusée"
+        );
+        assert_eq!(d.element(&b).expect("b").transform, b4);
+        assert_eq!(d.element(&fresh).expect("neuf").transform, fresh0);
+        assert_eq!(n2.since(), 0);
     }
 
     #[test]
