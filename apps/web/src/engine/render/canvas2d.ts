@@ -3,9 +3,13 @@
  * (`desynchronized`, effacée à chaque image : encre vive, queue prédite, aperçu de gomme). `Path2D` en cache par id,
  * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c).
  */
-import type { Change } from "../../core/api";
+import type { Bounds, Change, ElementView, Matrix, ShapeData, StrokeStyle, TextData } from "../../core/api";
+import { normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
+import { layoutText, textFont, TEXT_LINE_HEIGHT, type Measure } from "../text-layout";
+import { HANDLE_PX, handlesOf } from "../tools/handles";
+import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 
 export interface PathSink {
@@ -45,6 +49,65 @@ const FAR = 1e7;
 /** Demi-épaisseur du stylo par défaut (4 unités, HL3-3) : la coupe réelle vaut rayon + demi-épaisseur (HL3-2). */
 export const PEN_HALF_WIDTH = 2;
 
+export const SELECTION_COLOR = "#1e3a8a";
+export const BAND_FILL = "rgba(30, 58, 138, 0.08)";
+export const HANDLE_FILL = "#ffffff";
+
+/** Pointe de flèche (D13) : deux branches de longueur max(12, 3 × épaisseur) à ±25° derrière la fin du segment. */
+export function arrowHead(w: number, h: number, width: number): [number, number, number, number] | null {
+  const len = Math.hypot(w, h);
+  if (len < 1e-9) return null;
+  const l = Math.max(12, 3 * width);
+  const back = Math.atan2(-h, -w);
+  const a = (25 * Math.PI) / 180;
+  return [w + l * Math.cos(back + a), h + l * Math.sin(back + a), w + l * Math.cos(back - a), h + l * Math.sin(back - a)];
+}
+
+/** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)). */
+export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number): void {
+  ctx.beginPath();
+  if (s.shape === "rect") {
+    ctx.rect(0, 0, s.w, s.h);
+  } else if (s.shape === "ellipse") {
+    ctx.ellipse(s.w / 2, s.h / 2, s.w / 2, s.h / 2, 0, 0, Math.PI * 2);
+  } else {
+    ctx.moveTo(0, 0);
+    ctx.lineTo(s.w, s.h);
+    const head = s.shape === "arrow" ? arrowHead(s.w, s.h, width) : null;
+    if (head) {
+      ctx.moveTo(head[0], head[1]);
+      ctx.lineTo(s.w, s.h);
+      ctx.lineTo(head[2], head[3]);
+    }
+  }
+}
+
+function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeStyle): void {
+  traceShape(ctx, s, style.width);
+  if (s.fill !== null && (s.shape === "rect" || s.shape === "ellipse")) {
+    ctx.fillStyle = s.fill;
+    ctx.fill();
+  }
+  ctx.strokeStyle = style.color;
+  ctx.lineWidth = style.width;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke();
+}
+
+/** Texte (D14, CL4-4) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutText`). */
+function paintText(ctx: CanvasRenderingContext2D, t: TextData, color: string): void {
+  const measure: Measure = (s, size) => {
+    ctx.font = textFont(size);
+    return ctx.measureText(s).width;
+  };
+  const lines = layoutText(t.content, t.size, t.boxWidth, measure);
+  ctx.font = textFont(t.size);
+  ctx.fillStyle = color;
+  ctx.textBaseline = "top";
+  lines.forEach((line, i) => ctx.fillText(line, 0, i * t.size * TEXT_LINE_HEIGHT));
+}
+
 export class Canvas2DRenderer implements Renderer {
   private readonly paths = new Map<string, Path2D | null>();
   private readonly makePath: () => Path2D;
@@ -73,7 +136,7 @@ export class Canvas2DRenderer implements Renderer {
     this.sy = height > 0 ? h / height : dpr;
   }
 
-  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>): void {
+  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay: EditOverlay = EMPTY_OVERLAY): void {
     const ctx = this.scene;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = SURROUND_COLOR;
@@ -84,14 +147,77 @@ export class Canvas2DRenderer implements Renderer {
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
-      if (!el) continue;
-      const path = this.pathOf(id);
-      if (!path) continue;
-      const [a, b, c, d, e, f] = el.transform;
-      ctx.save();
-      ctx.transform(a, b, c, d, e, f);
+      if (el) this.paintElement(ctx, el, null);
+    }
+    this.paintOverlay(ctx, overlay, camera.zoom);
+  }
+
+  /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
+  private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null): void {
+    const path = el.kind === "stroke" ? this.pathOf(el.id) : null;
+    if (el.kind === "stroke" && !path) return;
+    ctx.save();
+    if (pre) ctx.transform(pre[0], pre[1], pre[2], pre[3], pre[4], pre[5]);
+    const [a, b, c, d, e, f] = el.transform;
+    ctx.transform(a, b, c, d, e, f);
+    if (el.kind === "stroke" && path) {
       ctx.fillStyle = el.style.color;
       ctx.fill(path, "nonzero");
+    } else if (el.kind === "shape") {
+      paintShape(ctx, el.shape, el.style);
+    } else if (el.kind === "text") {
+      paintText(ctx, el.text, el.style.color);
+    }
+    ctx.restore();
+  }
+
+  /** Calque d'édition (CL4-1), en coordonnées monde ; traits du cadre à 1 px écran. */
+  private paintOverlay(ctx: CanvasRenderingContext2D, o: EditOverlay, zoom: number): void {
+    for (const g of o.ghosts) {
+      const el = this.source.element(g.id);
+      if (el) this.paintElement(ctx, el, g.matrix);
+    }
+    for (const s of o.shapes) {
+      const n = normalizeShape(s.shape, s.x0, s.y0, s.x1, s.y1);
+      ctx.save();
+      ctx.transform(1, 0, 0, 1, n.tx, n.ty);
+      paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill }, s.style);
+      ctx.restore();
+    }
+    const px = 1 / zoom;
+    const box = (b: Bounds): void => {
+      ctx.beginPath();
+      ctx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+    };
+    if (o.band) {
+      ctx.save();
+      ctx.fillStyle = BAND_FILL;
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = px;
+      ctx.setLineDash([4 * px, 4 * px]);
+      box(o.band);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (o.frame) {
+      ctx.save();
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = px;
+      ctx.setLineDash([6 * px, 4 * px]);
+      box(o.frame);
+      ctx.stroke();
+      if (o.handles) {
+        ctx.setLineDash([]);
+        ctx.fillStyle = HANDLE_FILL;
+        const half = (HANDLE_PX / 2) * px;
+        for (const h of handlesOf(o.frame)) {
+          ctx.beginPath();
+          ctx.rect(h.x - half, h.y - half, 2 * half, 2 * half);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
       ctx.restore();
     }
   }

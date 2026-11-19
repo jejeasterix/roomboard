@@ -3,6 +3,7 @@ import type { Change } from "../../core/api";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
 import { asGL, FakeGL } from "./fake-gl";
+import { EMPTY_OVERLAY } from "./overlay";
 import type { LiveLayer, PageView, Renderer } from "./renderer";
 import {
   pageScissor,
@@ -16,8 +17,10 @@ import {
 
 class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize"> {
   readonly log: string[] = [];
-  drawScene(page: PageView): void {
+  readonly overlays: unknown[] = [];
+  drawScene(page: PageView, _camera?: Camera, _hidden?: ReadonlySet<string>, overlay?: unknown): void {
     this.log.push(`scene ${page.id}`);
+    this.overlays.push(overlay);
   }
   invalidate(change: Change): void {
     this.log.push(`invalidate ${change.version}`);
@@ -165,6 +168,13 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
     r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set<string>());
     r.invalidate({ pages: [], ids: [], removed: [], full: true, version: 7 });
     expect(scene.log).toEqual(["resize 200,100,1", "scene p", "invalidate 7"]);
+  });
+
+  it("drawScene passe le calque d'édition à la scène Canvas 2D", () => {
+    const { scene, r } = make();
+    const ov = { ...EMPTY_OVERLAY, handles: true, frame: { x0: 0, y0: 0, x1: 1, y1: 1 } };
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set<string>(), ov);
+    expect(scene.overlays.at(-1)).toBe(ov);
   });
 
   it("remise à zéro du stencil : le rectangle couvrant remet le compte à ZERO (stencilOp ZERO ZERO ZERO)", () => {

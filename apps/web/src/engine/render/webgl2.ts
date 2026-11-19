@@ -9,6 +9,7 @@ import type { Change } from "../../core/api";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
 import { PEN_HALF_WIDTH } from "./canvas2d";
+import type { EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
 
 export type Rgba = readonly [number, number, number, number];
@@ -290,8 +291,8 @@ export class WebGL2LiveRenderer implements Renderer {
     return this.contextLost;
   }
 
-  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>): void {
-    this.scene.drawScene(page, camera, hidden);
+  drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay?: EditOverlay): void {
+    this.scene.drawScene(page, camera, hidden, overlay);
   }
 
   invalidate(change: Change): void {

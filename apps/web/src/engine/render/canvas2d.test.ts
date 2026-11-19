@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { ElementView } from "../../core/api";
 import { IDENTITY } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
-import { Canvas2DRenderer, createCanvas2DRenderer, tracePolygons } from "./canvas2d";
+import { arrowHead, Canvas2DRenderer, createCanvas2DRenderer, tracePolygons } from "./canvas2d";
+import { EMPTY_OVERLAY } from "./overlay";
 import type { SceneSource } from "./renderer";
 
 class FakeCtx {
@@ -30,6 +32,12 @@ class FakeCtx {
   clip(): void { this.log.push("clip"); }
   fill(): void { this.log.push(`fill ${this.fillStyle}`); }
   stroke(): void { this.log.push(`stroke ${this.strokeStyle} ${this.lineWidth}`); }
+  font = "";
+  textBaseline = "alphabetic";
+  ellipse(): void { this.log.push("ellipse"); }
+  fillText(text: string, x: number, y: number): void { this.log.push(`fillText ${text} ${x},${y}`); }
+  measureText(text: string): { width: number } { return { width: text.length * 10 }; }
+  setLineDash(d: number[]): void { this.log.push(`setLineDash ${d.join(",")}`); }
 }
 
 class FakePath {
@@ -163,5 +171,93 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
     r.resize(100, 50, 2);
     expect(scene.canvas).toEqual({ width: 200, height: 100 });
     expect(() => r.drawLive({ strokes: [], erasers: [] }, IDENTITY)).not.toThrow();
+  });
+});
+
+const VIEWS: Record<string, ElementView> = {
+  a: { id: "a", kind: "stroke", transform: [1, 0, 0, 1, 5, 6], style: { color: "#000000", width: 4 } },
+  r: { id: "r", kind: "shape", transform: [1, 0, 0, 1, 10, 20], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null } },
+  e: { id: "e", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "ellipse", w: 50, h: 30, fill: "#ff0000" } },
+  f: { id: "f", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "arrow", w: 100, h: 0, fill: null } },
+  t: { id: "t", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text: { content: "un deux\ntrois", size: 20, boxWidth: 1000, boxHeight: 50 } },
+};
+
+function makeViews() {
+  const src: SceneSource = { element: (id) => VIEWS[id] ?? null, outline: (id) => (id === "a" ? square : null) };
+  const scene = new FakeCtx();
+  const r = new Canvas2DRenderer(asCtx(scene), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+  const after = (marker: string): string[] => scene.log.slice(scene.log.indexOf(marker));
+  return { r, scene, after };
+}
+
+describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
+  it("forme : rectangle tracé dans son repère, contour à l'épaisseur du style, sans remplissage", () => {
+    const { r, after } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["r"] }, IDENTITY, new Set());
+    const tail = after("transform 1,0,0,1,10,20");
+    expect(tail.slice(0, 4)).toEqual(["transform 1,0,0,1,10,20", "beginPath", "rect", "stroke #1e40af 4"]);
+    expect(tail.some((l) => l.startsWith("fill "))).toBe(false);
+  });
+
+  it("forme remplie : ellipse, fill de la couleur de remplissage puis stroke", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["e"] }, IDENTITY, new Set());
+    const i = scene.log.indexOf("ellipse");
+    expect(i).toBeGreaterThan(0);
+    expect(scene.log.slice(i + 1, i + 3)).toEqual(["fill #ff0000", "stroke #1e40af 4"]);
+  });
+
+  it("flèche : segment puis pointe (deux moveTo, trois lineTo)", () => {
+    const { r, after } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["f"] }, IDENTITY, new Set());
+    const tail = after("transform 1,0,0,1,0,0");
+    expect(tail.filter((l) => l === "moveTo")).toHaveLength(2);
+    expect(tail.filter((l) => l === "lineTo")).toHaveLength(3);
+  });
+
+  it("arrowHead : pointe à ±25° derrière la fin, longueur max(12, 3 × épaisseur)", () => {
+    const a = (25 * Math.PI) / 180;
+    const head = arrowHead(100, 0, 4);
+    expect(head).not.toBeNull();
+    const [x1, y1, x2, y2] = head ?? [0, 0, 0, 0];
+    expect(x1).toBeCloseTo(100 - 12 * Math.cos(a));
+    expect(x2).toBeCloseTo(100 - 12 * Math.cos(a));
+    expect(Math.abs(y1)).toBeCloseTo(12 * Math.sin(a));
+    expect(y2).toBeCloseTo(-y1);
+    expect(Math.hypot(100 - (arrowHead(100, 0, 10)?.[0] ?? 0), arrowHead(100, 0, 10)?.[1] ?? 0)).toBeCloseTo(30);
+    expect(arrowHead(0, 0, 4)).toBeNull();
+  });
+
+  it("texte : une ligne par fillText, interligne 1,25, police à la taille", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["t"] }, IDENTITY, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillText"))).toEqual(["fillText un deux 0,0", "fillText trois 0,25"]);
+    expect(scene.font).toBe('20px "Atkinson Hyperlegible", system-ui, sans-serif');
+  });
+
+  it("calque d'édition : fantômes, formes, cadre, poignées, rectangle", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set(), {
+      ghosts: [{ id: "a", matrix: [1, 0, 0, 1, 100, 0] }],
+      shapes: [{ shape: "rect", x0: 300, y0: 200, x1: 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null }],
+      frame: { x0: 0, y0: 0, x1: 50, y1: 50 },
+      handles: true,
+      band: { x0: 1, y0: 1, x1: 2, y1: 2 },
+    });
+    const g = scene.log.indexOf("transform 1,0,0,1,100,0");
+    expect(scene.log[g + 1]).toBe("transform 1,0,0,1,5,6");
+    expect(scene.log).toContain("transform 1,0,0,1,100,50");
+    expect(scene.log.filter((l) => l === "rect")).toHaveLength(1 + 1 + 1 + 8);
+    expect(scene.log.filter((l) => l.startsWith("setLineDash"))).toEqual(["setLineDash 4,4", "setLineDash 6,4", "setLineDash "]);
+  });
+
+  it("élément masqué : absent de la scène, présent une fois en fantôme", () => {
+    const { r, scene } = makeViews();
+    r.drawScene({ id: "p", elementIds: ["a"] }, IDENTITY, new Set(["a"]), {
+      ...EMPTY_OVERLAY,
+      ghosts: [{ id: "a", matrix: [2, 0, 0, 2, 0, 0] }],
+    });
+    expect(scene.log.filter((l) => l === "transform 1,0,0,1,5,6")).toHaveLength(1);
+    expect(scene.log).toContain("transform 2,0,0,2,0,0");
   });
 });
