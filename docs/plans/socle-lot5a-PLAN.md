@@ -27,7 +27,7 @@ document, déjà publiée par le moteur (`EngineState.version`, `engine.ts:22`, 
 dernier ; on reste en 2.x) ; rustc 1.100 ; Playwright du cache npx et son Chromium, hors `verifier.sh`.
 
 **Référence mesurée sur la base (`origin/main` @ 5341564) :** `verifier.sh` rc=0 en 5 min 18 — Rust 117+3+3+14
-(2 ignorés), web 24 fichiers / 319 tests. Fin de lot attendue : web 32 fichiers / 380 tests (319 + 61), Rust inchangé.
+(2 ignorés), web 24 fichiers / 319 tests. Fin de lot attendue : web 32 fichiers / 381 tests (319 + 62), Rust inchangé.
 
 ## Global Constraints
 
@@ -57,7 +57,8 @@ dernier ; on reste en 2.x) ; rustc 1.100 ; Playwright du cache npx et son Chromi
    rechargement` ; T77 `fichier en attente illisible : page vide et message qui nomme le fichier` ; essai T77 mode
    `repli`.
 3. Deux commandes d'affilée (Ctrl+S tenu, Ctrl+O pendant un enregistrement) : une seule boîte (S5) → T76
-   `commande pendant une autre : ignorée, une seule boîte`.
+   `commande pendant une autre : ignorée, une seule boîte` et `raccourcis : … ; Alt, touche tenue ou sans Ctrl : rien`
+   (`KeyboardEvent.repeat` ignoré).
 4. Poignée FSA gardée dont la permission est refusée après rechargement : la boîte d'enregistrement s'ouvre, pas
    d'échec muet (D26 « garde la poignée pour Ctrl+S ») → T72 `permission refusée sur la poignée gardée : la boîte
    d'enregistrement s'ouvre`.
@@ -75,16 +76,17 @@ dernier ; on reste en 2.x) ; rustc 1.100 ; Playwright du cache npx et son Chromi
 | Réglage `?fichiers=auto|fsa|repli` (défaut `auto`) | même forme que `?echelons=` ; force le repli pour l'essai | l'adresse |
 | Poignée FSA gardée à travers le rechargement (IndexedDB, clonage structuré) ; cible non clonable → fichier gardé sans cible | D26 « garde la poignée pour Ctrl+S » ; une fausse poignée de test n'est pas clonable | — |
 | Messages par `alert` (navigateur) et `dialog.message` (Tauri) ; indicateur « modifié » dans le titre (`• nom — RoomBoard`) et `#stage[data-modifie]` | `ui/` est interdit et l'interface SolidJS vient au lot 5b | 5b les affiche dans l'interface |
+| Ouvrir : le sélecteur d'abord, la question « abandonner les modifications ? » ensuite (après validation du fichier) | la boîte de Chromium (`showOpenFilePicker`, `input.click()`) exige une activation de l'utilisateur récente (environ 5 s, non vérifié sur la VM) : une question posée avant pourrait l'épuiser et la boîte serait refusée, ou ne s'ouvrirait pas sans erreur ; un refus restant (`SecurityError`, `NotAllowedError`) donne « Ouverture impossible : … » | — |
 | Ctrl+N lié (Nouveau, utile dans la coque) ; aucun bouton en 5a | D26 cite Nouveau ; Chromium garde Ctrl+N pour lui, sans effet dans la page | 5b ajoute le bouton |
-| `beforeBuildCommand: "pnpm --filter @roomboard/web build"` ajouté | piège du lot 3 : la coque embarquait le `dist` présent, même périmé ; le cadrage ne l'interdit pas. Le Wasm n'est pas régénéré (ce serait recopier `verifier.sh`) : s'il manque, la commande échoue en clair | retirer la clé |
+| `beforeBuildCommand: "pnpm --filter @roomboard/web build"` ajouté | piège du lot 3 : la coque embarquait le `dist` présent, même périmé ; le cadrage ne l'interdit pas. Le Wasm n'est pas régénéré (ce serait recopier `verifier.sh`) : s'il manque, la commande échoue en clair ; **limite** : un Wasm périmé dans `apps/web/src/wasm/` est embarqué sans avertissement. Parade : `verifier.sh` (qui régénère le Wasm) avant tout `tauri build` — T78 le fait, les fiches Windows et macOS régénèrent le Wasm avant le build | retirer la clé |
 | CSP en objet : `script-src 'self' 'wasm-unsafe-eval'`, `style-src 'self' 'unsafe-inline'` avec `dangerousDisableAssetCspModification: ["style-src"]` | `index.html` porte un `<style>` en ligne ; une empreinte ajoutée par Tauri annulerait `'unsafe-inline'` | retirer la clé quand les styles sortiront du HTML (5b) |
-| Permissions : `core:default`, `core:window:allow-destroy` (exigée par `onCloseRequested`, qui ferme par `destroy()`), `core:window:allow-set-title`, `dialog:allow-open|save|ask|message`, `fs:allow-read-file`, `fs:allow-write-file`, **aucune portée fs statique** | le plugin dialog ajoute au scope fs les seuls chemins choisis dans la boîte | si T78 prouve un refus « forbidden path », seule correction permise : portée `$HOME/**/*.roomboard`, notée en écart |
+| Permissions : `core:default`, `core:window:allow-destroy` (exigée par `onCloseRequested`, qui ferme par `destroy()`), `core:window:allow-set-title`, `dialog:allow-open|save|message` (`ask` passe par `allow-message` en 2.8.4 ; `allow-ask` est un alias déprécié), `fs:allow-read-file`, `fs:allow-write-file`, **aucune portée fs statique** | le plugin dialog ajoute au scope fs les seuls chemins choisis dans la boîte | si T78 prouve un refus « forbidden path », seule correction permise : portée `$HOME/**/*.roomboard`, notée en écart |
 | Pas de suffixe `.roomboard` forcé sur le chemin rendu par la boîte Tauri | la portée fs couvre le chemin choisi exact, pas un autre | — |
 | Contrôle hors ligne en deux temps : statique dans `verifier.sh` (`scripts/controle-hors-ligne.mjs`), et à l'exécution par l'essai Playwright (requêtes hors `127.0.0.1` comptées = 0) | D27 « vérifiable par un test ou un contrôle scripté » | — |
 | `base: './'` dans un nouveau `apps/web/vite.config.ts` | D27 le demande et il n'a jamais été posé (aucun `vite.config.ts` dans `apps/web`) | retirer le fichier |
 | `additionalBrowserArgs` de WebView2 (échelon 5) **hors du lot 5a, en attente** | sa condition (« bon dans Edge, mauvais dans WebView2 », mesure par la file du PC) n'est pas remplie : rien de mesuré au vrai stylet (état) ; un réglage WebView2 posé à l'aveugle change Windows sans essai possible depuis la VM | tâche ajoutée quand la mesure arrive |
 | Builds Tauri : au plus 2 en même temps | consigne de ce lot (le profil dit encore « un seul ») | — |
-| Association de l'extension `.roomboard` reportée | il faut aussi ouvrir le fichier passé au lancement (arguments, `RunEvent::Opened`) : hors D26 | lot ultérieur |
+| Association de l'extension `.roomboard` reportée | il faut aussi ouvrir le fichier passé au lancement (arguments, `RunEvent::Opened`) : hors D26 | lot 5b (ligne 5b de `socle-PLAN.md`) |
 | Essai navigateur dans un nouveau script `scripts/essais/fichiers-navigateur.mjs`, `serve` et `loadPlaywright` recopiés de `s2-navigateur.mjs` | ce dernier lance `main()` à l'import ; la mise en commun revient au 5b (`--e2e`) | 5b |
 
 **Quel mode de l'essai navigateur prouve quoi (T77) :**
@@ -107,10 +109,10 @@ dernier ; on reste en 2.x) ; rustc 1.100 ; Playwright du cache npx et son Chromi
 | T72 | Hôte Chromium (File System Access) | T70 | apps/web/src/platform/host-fsa.ts, apps/web/src/platform/host-fsa.test.ts | isolé | implementeur-tdd | vitest `host-fsa.test.ts` : `Tests  8 passed (8)`, nom `Ctrl+S sur une cible fsa réécrit la même poignée sans boîte` présent | S5 | #tache-t72 |
 | T73 | Hôte de repli et coquille du navigateur | T70 | apps/web/src/platform/host-repli.ts, apps/web/src/platform/host-repli.test.ts, apps/web/src/platform/shell-web.ts, apps/web/src/platform/shell-web.test.ts | isolé | implementeur-tdd | vitest `host-repli.test.ts shell-web.test.ts` : `Tests  10 passed (10)`, noms `aller-retour : le téléchargement puis le sélecteur rendent les mêmes octets` et `beforeunload : retenu seulement si modifié` présents | S2 | #tache-t73 |
 | T74 | Hôte et coquille Tauri | T70 | apps/web/src/platform/host-tauri.ts, apps/web/src/platform/host-tauri.test.ts | isolé | implementeur-tdd | vitest `host-tauri.test.ts` : `Tests  11 passed (11)`, nom `fermeture, document modifié, réponse Non : la fenêtre reste ouverte` présent | S5 | #tache-t74 |
-| T75 | Fichier ouvert en attente à travers le rechargement (IndexedDB) | T70 | apps/web/src/platform/pending.ts, apps/web/src/platform/pending.test.ts | isolé | implementeur-tdd | vitest `pending.test.ts` : `Tests  7 passed (7)`, nom `cible non clonable (fausse poignée FSA) : fichier gardé sans cible` présent | S2 | #tache-t75 |
-| T76 | Contrôleur des fichiers : « modifié », commandes, raccourcis, fermeture | T70 | apps/web/src/platform/controller.ts, apps/web/src/platform/controller.test.ts | isolé | concepteur-critique | vitest `controller.test.ts` : `Tests  16 passed (16)`, nom `trait tracé pendant l'enregistrement : le document reste modifié` présent ; mutation « version lue après l'écriture » rouge | S2, S5 | #tache-t76 |
+| T75 | Fichier ouvert en attente à travers le rechargement (IndexedDB) | T70 | apps/web/src/platform/pending.ts, apps/web/src/platform/pending.test.ts | isolé | implementeur-tdd | vitest `pending.test.ts` : `Tests  8 passed (8)`, nom `cible non clonable (fausse poignée FSA) : fichier gardé sans cible` présent | S2 | #tache-t75 |
+| T76 | Contrôleur des fichiers : « modifié », commandes, raccourcis, fermeture | T70 | apps/web/src/platform/controller.ts, apps/web/src/platform/controller.test.ts | isolé | concepteur-critique | vitest `controller.test.ts` : `Tests  16 passed (16)`, nom `trait tracé pendant l'enregistrement : le document reste modifié` présent ; mutation « version lue après l'écriture » rouge, retrait prouvé par `cmp` | S2, S5 | #tache-t76 |
 | T77 | Branchement dans l'amorce et essai des fichiers au navigateur | T71, T72, T73, T74, T75, T76 | apps/web/src/platform/mount.ts, apps/web/src/platform/mount.test.ts, apps/web/src/main.ts, scripts/essais/fichiers-navigateur.mjs, docs/essais/fichiers-lot5a-repli.png, docs/essais/fichiers-lot5a-fsa.png, scripts/controle-hors-ligne.mjs (seulement l'entrée `NON_FETCHED_HOSTS`, si besoin) | isolé | implementeur-tdd | vitest `mount.test.ts` : `Tests  4 passed (4)` ; `verifier.sh : OK` ; `Fichiers lot 5a : OK (3 modes)` ; `S2 lot 3 : OK` ; `S2 lot 3b : OK (4 passages)` | S2 | #tache-t77 |
-| T78 | Coque Linux : build Tauri, essai ouvrir / enregistrer / fermer | T77 | docs/essais/coque-linux-lot5a.png | branche du lot | orchestrateur | `verifier.sh : OK` ; clippy `src-tauri` vert ; `tauri build` : ligne `beforeBuildCommand` et `.deb` produit ; essai : enregistrer par la boîte GTK, fermer → question, « Non » garde la fenêtre, rouvrir → le trait revient ; capture | S5 (Linux) | #tache-t78 |
+| T78 | Coque Linux : build Tauri, essai ouvrir / enregistrer / fermer | T77 | docs/essais/coque-linux-lot5a.png | branche du lot | orchestrateur | `verifier.sh : OK` ; clippy `src-tauri` vert ; `tauri build` : ligne `beforeBuildCommand` et `.deb` produit ; essai : enregistrer par la boîte GTK, fermer → question, « Non » garde la fenêtre, rouvrir → le trait revient, Ctrl+S réécrit sans boîte le chemin restauré, la question revient ; capture | S5 (Linux) | #tache-t78 |
 
 **Vagues** (aucune tâche d'une vague ne touche un fichier d'une autre) :
 **1** T70, T71 · **2** T72, T73, T74, T75, T76 · **3** T77 · **fin** T78 (orchestrateur).
@@ -647,7 +649,6 @@ fn main() {
     "core:window:allow-set-title",
     "dialog:allow-open",
     "dialog:allow-save",
-    "dialog:allow-ask",
     "dialog:allow-message",
     "fs:allow-read-file",
     "fs:allow-write-file"
@@ -738,7 +739,9 @@ Attendu : la sortie montre `Running beforeBuildCommand`, puis un installeur sous
 | 6 | tracer, puis fermer par ✕ | question « Le document a des modifications non enregistrées. Les abandonner ? » ; répondre **Non** : la fenêtre reste |
 | 7 | Alt+F4, répondre **Oui** | la fenêtre se ferme |
 | 8 | relancer, Ctrl+O, choisir `essai-5a.roomboard` | les traits enregistrés au geste 5 reviennent, aux mêmes places |
-| 9 | Ctrl+O sur un fichier texte renommé `faux.roomboard` | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
+| 9 | tracer, Ctrl+S | **aucune boîte** (fichier rouvert, chemin gardé) ; l'heure de modification change |
+| 10 | tracer, fermer par ✕ | la question revient ; **Non** : la fenêtre reste |
+| 11 | Ctrl+O sur un fichier texte renommé `faux.roomboard` | message « Ouverture impossible (faux.roomboard) : … » ; document inchangé |
 
 ## 4. Même parcours dans Edge (File System Access)
 ```powershell
@@ -763,7 +766,7 @@ identiques sans `Set-Location` (`cd roomboard`) ; application
 `open apps/desktop/src-tauri/target/release/bundle/macos/RoomBoard.app` ; raccourcis Cmd au lieu de Ctrl ; boîtes
 « Enregistrer » de macOS ; geste 7 remplacé par deux lignes : « fermer par le bouton rouge, répondre Oui : la fenêtre
 se ferme » et « Cmd+Q avec un trait non enregistré : **attendu connu** : l'application quitte sans demander
-(Cmd+Q ne passe pas par la fermeture de la fenêtre) ; noter ce qui se passe » ; partie 4 dans Chrome (même parcours
+(Cmd+Q ne passe pas par la fermeture de la fenêtre) ; noter ce qui se passe » ; gestes 8 à 11 gardés tels quels (Cmd au lieu de Ctrl) ; partie 4 dans Chrome (même parcours
 qu'Edge) puis dans Safari, où le repli s'applique : Cmd+S télécharge `Sans titre.roomboard` dans Téléchargements,
 Cmd+O ouvre le sélecteur de fichiers ; captures `coque-macos-lot5a-*.png`.
 
@@ -1512,7 +1515,7 @@ modifié → on demande ; « Non » garde la fenêtre), titre de la fenêtre. Sc
 **Interfaces.**
 - Consomme (T70, `./files`) : `FileHost`, `ShellPort`, `SaveTarget`, `OpenedFile`, `ensureExtension`, `FILE_FILTER` ;
   paquets `@tauri-apps/api` 2.12.5, `@tauri-apps/plugin-dialog` 2.8.4, `@tauri-apps/plugin-fs` 2.7.1 (installés
-  par T70). Permissions posées par T71 : `dialog:allow-open|save|ask|message`, `fs:allow-read-file|write-file`,
+  par T70). Permissions posées par T71 : `dialog:allow-open|save|message` (couvre `ask`), `fs:allow-read-file|write-file`,
   `core:window:allow-destroy|set-title`.
 - Réutilise : `@tauri-apps/plugin-dialog` — `open`, `save`, `ask`, `message` ; `@tauri-apps/plugin-fs` —
   `readFile(path)`, `writeFile(path, data)` ; `@tauri-apps/api/window` — `getCurrentWindow().onCloseRequested`,
@@ -1888,11 +1891,12 @@ gardé sans cible. Scénario : S2 (« recharger la page, ouvrir le fichier »).
 - Réutilise : aucun module du dépôt (nouveau) ; API IndexedDB du navigateur (`IDBFactory.open`, transactions,
   clonage structuré).
 - Produit : `PENDING_DB = "roomboard-fichiers"` ; `createIdbPendingStore(factory: IDBFactory, name?: string): PendingStore` ;
-  `createMemoryPendingStore(): PendingStore` ; `isDataClone(e: unknown): boolean`.
+  `createMemoryPendingStore(): PendingStore` (tests) ; `createUnavailablePendingStore(reason: string): PendingStore`
+  (`put` refuse avec `Error(reason)`, `take` rend null, `clear` ne fait rien) ; `isDataClone(e: unknown): boolean`.
 
 **Test et commande bornée.**
 `cd "$WT/apps/web" && pnpm exec vitest run src/platform/pending.test.ts --reporter=verbose 2>&1 | tail -20`
-→ `Tests  7 passed (7)` ; noms `cible non clonable (fausse poignée FSA) : fichier gardé sans cible` et
+→ `Tests  8 passed (8)` ; noms `cible non clonable (fausse poignée FSA) : fichier gardé sans cible` et
 `rechargement : un second magasin sur la même base lit l'attente du premier` (S2) présents. Puis `verifier.sh`
 (jeton) → `verifier.sh : OK`.
 
@@ -1910,7 +1914,7 @@ gardé sans cible. Scénario : S2 (« recharger la page, ouvrir le fichier »).
 **Interdits.** Pas de `localStorage` ni `sessionStorage` (ils ne gardent ni octets volumineux ni poignées). Pas
 d'import de `fake-indexeddb/auto` (aucun global modifié). Ne pas toucher `files.ts`.
 
-**Terminé quand.** 7 tests verts, `verifier.sh : OK`, rapport avec `Réutilisation : écart — module nouveau (aucun
+**Terminé quand.** 8 tests verts, `verifier.sh : OK`, rapport avec `Réutilisation : écart — module nouveau (aucun
 stockage existant dans le dépôt)`.
 
 **Étapes.**
@@ -1921,7 +1925,7 @@ stockage existant dans le dépôt)`.
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
 import type { FileHandleLike, PendingOpen } from "./files";
-import { createIdbPendingStore, createMemoryPendingStore, isDataClone } from "./pending";
+import { createIdbPendingStore, createMemoryPendingStore, createUnavailablePendingStore, isDataClone } from "./pending";
 
 const file = (target: PendingOpen["target"]): PendingOpen => ({
   name: "cours.roomboard",
@@ -1984,6 +1988,13 @@ describe("fichier ouvert en attente (IndexedDB)", () => {
     expect(await store.take()).toBeNull();
   });
 
+  it("IndexedDB absent : put refusé avec la raison, take rend null (pas d'ouverture perdue au rechargement)", async () => {
+    const store = createUnavailablePendingStore("IndexedDB absent");
+    await expect(store.put(file(null))).rejects.toThrow("IndexedDB absent");
+    expect(await store.take()).toBeNull();
+    await store.clear();
+  });
+
   it("isDataClone reconnaît DataCloneError seulement", () => {
     expect(isDataClone(Object.assign(new Error("x"), { name: "DataCloneError" }))).toBe(true);
     expect(isDataClone(new Error("x"))).toBe(false);
@@ -2032,6 +2043,19 @@ export function createMemoryPendingStore(): PendingStore {
     async clear() {
       current = null;
     },
+  };
+}
+
+/** Sans IndexedDB, un fichier ne survit pas au rechargement : Ouvrir le refuse avec cette raison (message clair). */
+export function createUnavailablePendingStore(reason: string): PendingStore {
+  return {
+    async put() {
+      throw new Error(reason);
+    },
+    async take() {
+      return null;
+    },
+    async clear() {},
   };
 }
 
@@ -2098,7 +2122,7 @@ export function createIdbPendingStore(factory: IDBFactory, name: string = PENDIN
 }
 ```
 
-- [ ] **4. Lancer (vert).** Commande de la section → `Tests  7 passed (7)`, puis `verifier.sh` → `verifier.sh : OK`.
+- [ ] **4. Lancer (vert).** Commande de la section → `Tests  8 passed (8)`, puis `verifier.sh` → `verifier.sh : OK`.
 
 - [ ] **5. Commit.**
 
@@ -2146,7 +2170,7 @@ et publiée par le moteur (`apps/web/src/engine/engine.ts:22`, `:115-119`, `onSt
   `DISCARD_MESSAGE = "Le document a des modifications non enregistrées. Les abandonner ?"` ;
   `interface VersionSource { state(): { readonly version: number }; onState(cb: (s: { readonly version: number }) => void): () => void }` ;
   `type FileCommand = "open" | "save" | "saveAs" | "new"` ;
-  `interface FileKey { readonly key: string; readonly ctrlKey: boolean; readonly metaKey: boolean; readonly shiftKey: boolean; readonly altKey: boolean }` ;
+  `interface FileKey { readonly key: string; readonly ctrlKey: boolean; readonly metaKey: boolean; readonly shiftKey: boolean; readonly altKey: boolean; readonly repeat?: boolean }` (une touche tenue ne relance rien) ;
   `fileCommandOf(e: FileKey): FileCommand | null` ; `titleOf(name: string, dirty: boolean): string`
   (`• nom — RoomBoard` / `nom — RoomBoard`) ; `messageOf(e: unknown): string` ;
   `interface FileControllerDeps { readonly core: Pick<CoreFactory, "load">; readonly doc: Pick<CoreDocument, "save">; readonly versions: VersionSource; readonly host: FileHost; readonly shell: ShellPort; readonly pending: PendingStore; readonly opened: { readonly name: string; readonly target: SaveTarget | null } | null; readonly reload: () => void; readonly now: () => string; readonly appVersion: string }` ;
@@ -2157,7 +2181,8 @@ et publiée par le moteur (`apps/web/src/engine/engine.ts:22`, `:115-119`, `onSt
 `cd "$WT/apps/web" && pnpm exec vitest run src/platform/controller.test.ts --reporter=verbose 2>&1 | tail -30`
 → `Tests  16 passed (16)` ; noms `trait tracé pendant l'enregistrement : le document reste modifié` (Review Focus 1,
 D26/S5), `fichier illisible : message, aucune attente, aucun rechargement` (Review Focus 2, D24) et
-`commande pendant une autre : ignorée, une seule boîte` (Review Focus 3, S5) présents.
+`commande pendant une autre : ignorée, une seule boîte` et `raccourcis : … ; Alt, touche tenue ou sans Ctrl : rien`
+(Review Focus 3, S5 : Ctrl+S tenu) présents.
 **Mutation à jouer et à rapporter :** déplacer `const version = d.versions.state().version;` après
 `await d.host.save(...)` → le test `trait tracé pendant l'enregistrement…` doit rougir ; remettre, revert vérifié par
 `git diff --stat` vide sur `controller.ts` avant commit. Puis `verifier.sh` (jeton) → `verifier.sh : OK`.
@@ -2421,17 +2446,18 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.ctl.isDirty()).toBe(true);
   });
 
-  it("ouvrir avec un document modifié : demande ; Non → rien n'est ouvert", async () => {
+  it("ouvrir avec un document modifié : le sélecteur d'abord, puis la question ; Non → rien n'est ouvert", async () => {
     const t = setup({ answer: false });
     stroke(t.doc, t.versions);
     t.h.onOpen({ name: "a.roomboard", bytes: fakeCore.blank().save("x", "y"), target: { kind: "download", name: "a.roomboard" } });
     expect(await t.ctl.run("open")).toBe(false);
     expect(t.s.log.confirms).toEqual([DISCARD_MESSAGE]);
-    expect([t.h.calls.open, t.reloads(), t.pending.value]).toEqual([0, 0, null]);
+    expect([t.h.calls.open, t.reloads(), t.pending.value]).toEqual([1, 0, null]);
   });
 
   it("fichier illisible : message, aucune attente, aucun rechargement", async () => {
     const t = setup();
+    stroke(t.doc, t.versions); // modifié : un fichier illisible ne pose pas la question
     t.h.onOpen({
       name: "faux.roomboard",
       bytes: new TextEncoder().encode("pas un document"),
@@ -2439,14 +2465,18 @@ describe("contrôleur des fichiers (D26)", () => {
     });
     expect(await t.ctl.run("open")).toBe(false);
     expect(t.s.log.notes).toEqual(["Ouverture impossible (faux.roomboard) : ce fichier n'est pas un document RoomBoard"]);
-    expect([t.reloads(), t.pending.value]).toEqual([0, null]);
+    expect([t.reloads(), t.pending.value, t.s.log.confirms.length]).toEqual([0, null, 0]);
   });
 
-  it("annulation de l'ouverture : rien", async () => {
+  it("annulation de l'ouverture : rien, aucune question même modifié ; refus de la boîte : message", async () => {
     const t = setup();
+    stroke(t.doc, t.versions);
     t.h.onOpen(null);
     expect(await t.ctl.run("open")).toBe(false);
-    expect([t.reloads(), t.s.log.notes.length]).toEqual([0, 0]);
+    expect([t.reloads(), t.s.log.notes.length, t.s.log.confirms.length]).toEqual([0, 0, 0]);
+    t.h.onOpen(Object.assign(new Error("Must be handling a user gesture"), { name: "SecurityError" }));
+    expect(await t.ctl.run("open")).toBe(false);
+    expect(t.s.log.notes).toEqual(["Ouverture impossible : Must be handling a user gesture"]);
   });
 
   it("fermeture : gardée seulement si modifié, levée pendant le rechargement voulu", async () => {
@@ -2461,8 +2491,8 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.s.guard()).toBe(false);
   });
 
-  it("raccourcis : Ctrl+S, Ctrl+Maj+S, Ctrl+O, Ctrl+N, Cmd+S ; Alt ou sans Ctrl : rien", () => {
-    const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean }> = {}) => ({
+  it("raccourcis : Ctrl+S, Ctrl+Maj+S, Ctrl+O, Ctrl+N, Cmd+S ; Alt, touche tenue ou sans Ctrl : rien", () => {
+    const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat: boolean }> = {}) => ({
       key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...m,
     });
     expect(fileCommandOf(k("s", { ctrlKey: true }))).toBe("save");
@@ -2474,6 +2504,9 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(fileCommandOf(k("s", { ctrlKey: true, altKey: true }))).toBeNull();
     expect(fileCommandOf(k("z", { ctrlKey: true }))).toBeNull();
     expect(fileCommandOf(k("O", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(fileCommandOf(k("s", { ctrlKey: true, repeat: true }))).toBeNull();
+    expect(fileCommandOf(k("o", { metaKey: true, repeat: true }))).toBeNull();
+    expect(fileCommandOf(k("s", { ctrlKey: true, repeat: false }))).toBe("save");
   });
 
   it("nouveau : demande si modifié, vide l'attente, recharge ; document propre : sans question", async () => {
@@ -2547,6 +2580,8 @@ export interface FileKey {
   readonly metaKey: boolean;
   readonly shiftKey: boolean;
   readonly altKey: boolean;
+  /** Répétition d'une touche tenue : ignorée (Ctrl+S tenu ne relance pas dix téléchargements). */
+  readonly repeat?: boolean;
 }
 
 export interface FileControllerDeps {
@@ -2572,7 +2607,7 @@ export interface FileController {
 }
 
 export function fileCommandOf(e: FileKey): FileCommand | null {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey) return null;
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.repeat === true) return null;
   const k = e.key.toLowerCase();
   if (k === "s") return e.shiftKey ? "saveAs" : "save";
   if (e.shiftKey) return null;
@@ -2641,7 +2676,7 @@ export function createFileController(d: FileControllerDeps): FileController {
   }
 
   async function open(): Promise<boolean> {
-    if (!(await discardOk())) return false;
+    // Sélecteur d'abord, appelé sans attente préalable : l'activation de l'utilisateur (keydown) est encore fraîche.
     let file: OpenedFile | null;
     try {
       file = await d.host.open();
@@ -2654,6 +2689,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     } catch (e) {
       return fail(`Ouverture impossible (${file.name})`, e);
     }
+    if (!(await discardOk())) return false;
     try {
       await d.pending.put({ name: file.name, bytes: file.bytes, target: file.target });
     } catch (e) {
@@ -2706,10 +2742,12 @@ export function createFileController(d: FileControllerDeps): FileController {
 
 - [ ] **4. Lancer (vert).** Commande de la section → `Tests  16 passed (16)`.
 
-- [ ] **5. Jouer la mutation.** Déplacer la ligne `const version = …` juste après le bloc `result = await d.host.save(…)` ;
-relancer → `trait tracé pendant l'enregistrement : le document reste modifié` en `FAIL` ; remettre la ligne ;
-`git diff --stat -- apps/web/src/platform/controller.ts` (fichier encore non suivi : comparer au code de l'étape 3) ;
-relancer → `Tests  16 passed (16)`. Puis `verifier.sh` → `verifier.sh : OK`.
+- [ ] **5. Jouer la mutation.** `cp apps/web/src/platform/controller.ts /tmp/controller-t76.ts` ; déplacer la ligne
+`const version = …` juste après le bloc `result = await d.host.save(…)` ; relancer → `trait tracé pendant
+l'enregistrement : le document reste modifié` en `FAIL` ; remettre la ligne ;
+`cmp apps/web/src/platform/controller.ts /tmp/controller-t76.ts && echo "mutation retirée"` → `mutation retirée`
+(le fichier n'est pas encore suivi : `git diff` ne prouverait rien) ; relancer → `Tests  16 passed (16)`. Puis
+`verifier.sh` → `verifier.sh : OK`.
 
 - [ ] **6. Commit.**
 
@@ -2740,7 +2778,7 @@ code des paquets `@tauri-apps/*` : `scripts/controle-hors-ligne.mjs` (une entré
 - Consomme : T70 `files.ts` (`chooseHostKind`, `detectHostEnvironment`, `parseHostChoice`, `FileHost`, `ShellPort`,
   `HostKind`, `PendingOpen`, `PendingStore`) ; T72 `createFsaHost`, `FsaWindow` ; T73 `createFallbackHost`,
   `browserFallbackDeps`, `createWebShell` ; T74 `createTauriHost`, `createTauriShell`, `loadTauriPorts` (import
-  dynamique) ; T75 `createIdbPendingStore`, `createMemoryPendingStore` ; T76 `createFileController`,
+  dynamique) ; T75 `createIdbPendingStore`, `createUnavailablePendingStore` ; T76 `createFileController`,
   `fileCommandOf`, `messageOf`, `APP_VERSION`, `VersionSource`, `FileController` ; T71 `verifier.sh` avec le contrôle
   hors ligne.
 - Réutilise : amorce `apps/web/src/main.ts` (cadrage § 3, ligne « Amorce de l'application », étendre) — `start()`
@@ -2764,7 +2802,9 @@ Focus 2, D24) présent.
 et `verifier.sh : OK` (web 32 fichiers attendus après fusion de T70-T76, 0 `FAIL `).
 `cd "$WT" && node scripts/essais/fichiers-navigateur.mjs --captures 2>&1 | tail -45` → lignes `ok — [repli] …`,
 `ok — [fsa] …`, `ok — [detection] …`, dont `ok — [repli] fichier rouvert : le trait revient aux mêmes coordonnées`,
-`ok — [fsa] Ctrl+S deux fois : une seule boîte, deux écritures sur la même poignée`, `ok — [repli] hors ligne : aucune
+`ok — [fsa] Ctrl+S deux fois : une seule boîte, deux écritures sur la même poignée`, `ok — [repli] Ctrl+O sur un
+document modifié : sélecteur ouvert, puis « Le document a des modifications non enregistrées. Les abandonner ? »`,
+`ok — [repli] hors ligne : aucune
 requête hors de 127.0.0.1 (0)`, puis `Fichiers lot 5a : OK (3 modes)`, code 0.
 Tests à garder verts (zone `main.ts`) : `node scripts/essais/s2-navigateur.mjs 2>&1 | tail -5` → `S2 lot 3 : OK` ;
 `node scripts/essais/s2-navigateur.mjs --lot3b 2>&1 | tail -5` → `S2 lot 3b : OK (4 passages)`.
@@ -2891,7 +2931,7 @@ import {
 } from "./files";
 import { createFsaHost, type FsaWindow } from "./host-fsa";
 import { browserFallbackDeps, createFallbackHost } from "./host-repli";
-import { createIdbPendingStore, createMemoryPendingStore } from "./pending";
+import { createIdbPendingStore, createUnavailablePendingStore } from "./pending";
 import { createWebShell } from "./shell-web";
 
 export interface StartedDocument {
@@ -2938,7 +2978,10 @@ async function hostFor(kind: HostKind, w: Window): Promise<{ host: FileHost; she
 }
 
 export async function prepareFiles(core: CoreFactory, w: Window = window): Promise<PreparedFiles> {
-  const pending = typeof w.indexedDB === "undefined" ? createMemoryPendingStore() : createIdbPendingStore(w.indexedDB);
+  const pending =
+    typeof w.indexedDB === "undefined"
+      ? createUnavailablePendingStore("ce navigateur ne peut pas garder le fichier pendant le rechargement (IndexedDB absent)")
+      : createIdbPendingStore(w.indexedDB);
   const started = await startDocument(core, pending);
   return {
     ...started,
@@ -3033,6 +3076,7 @@ const TYPES = {
   ".png": "image/png",
 };
 const MODES = ["repli", "fsa", "detection"];
+const DISCARD = "Le document a des modifications non enregistrées. Les abandonner ?";
 const FIRST = [[400, 300], [650, 300], [900, 300]];
 const SECOND = [[400, 420], [650, 420], [900, 420]];
 const FIRST_BOX = [640, 290, 660, 310];
@@ -3258,6 +3302,18 @@ async function run(browser, port, mode, { captures, tmp }) {
     const alert = await waitDialog("alert");
     check(alert !== undefined && alert.message.startsWith("Ouverture impossible (faux.roomboard)"), `fichier invalide : message « ${alert?.message} »`);
     check((await elements()) === 1, "fichier invalide : document inchangé");
+    // Ctrl+O sur un document modifié : le sélecteur s'ouvre (activation encore valable), puis la question, puis le fichier.
+    await drag(SECOND);
+    check((await elements()) === 2 && (await attr("data-modifie")) === "1", "second trait : document modifié");
+    const chooser2 = page.waitForEvent("filechooser");
+    const nav2 = page.waitForEvent("load");
+    await page.keyboard.press("Control+o");
+    await (await chooser2).setFiles(join(tmp, `${mode}.roomboard`));
+    const question = await waitDialog("confirm");
+    check(question?.message === DISCARD, `Ctrl+O sur un document modifié : sélecteur ouvert, puis « ${question?.message} »`);
+    await nav2;
+    await ready();
+    check((await elements()) === 1 && (await attr("data-modifie")) === "0", "réponse Oui : le fichier remplace le document modifié");
   }
   check(external.length === 0, `hors ligne : aucune requête hors de 127.0.0.1 (${external.length})`);
   check(errors.length === 0, `aucune erreur de page ${errors.join(" | ")}`);
@@ -3385,8 +3441,10 @@ lot 3b). Gestes et lectures :
 | 3 | — | `ls -l /tmp/essai-5a.roomboard` : fichier non vide ; `head -c2` → `PK` ; titre sans `•` |
 | 4 | tracer un second trait, Ctrl+S | aucune boîte ; taille ou date du fichier changée |
 | 5 | tracer, fermer par ✕ | question « Le document a des modifications non enregistrées. Les abandonner ? » ; **Non** : la fenêtre reste — capture `docs/essais/coque-linux-lot5a.png` avec la question visible |
-| 6 | Ctrl+O, répondre Oui, choisir `/tmp/essai-5a.roomboard` | la page se recharge, les deux traits du geste 4 reviennent, titre `essai-5a.roomboard — RoomBoard` |
-| 7 | fermer par ✕ (non modifié) | fermeture sans question |
+| 6 | Ctrl+O, choisir `/tmp/essai-5a.roomboard`, puis la question : Oui | la page se recharge, les deux traits du geste 4 reviennent, titre `essai-5a.roomboard — RoomBoard` |
+| 7 | tracer, Ctrl+S | **aucune boîte** (chemin restauré depuis IndexedDB) ; date ou taille de `/tmp/essai-5a.roomboard` changée ; titre sans `•` |
+| 8 | tracer, fermer par ✕ | la question revient ; **Non** : la fenêtre reste |
+| 9 | Ctrl+S, puis fermer par ✕ | fermeture sans question |
 
 Si le geste 2 ou 6 échoue par `forbidden path` ou `not allowed` : seule correction permise, la permission exacte
 nommée par l'erreur (ou la portée `$HOME/**/*.roomboard` pour fs), commit séparé, noté en écart ; tout autre échec
@@ -3405,7 +3463,7 @@ est un défaut rapporté, pas contourné.
 tuer le client Broadway (fermer par ✕).
 
 **Terminé quand.** `verifier.sh : OK`, essai navigateur OK, clippy de la coque vert, `.deb` produit avec
-`beforeBuildCommand`, les 7 gestes conformes (ou écarts consignés), capture commitée
+`beforeBuildCommand`, les 9 gestes conformes (ou écarts consignés), capture commitée
 (`git add docs/essais/coque-linux-lot5a.png`, message `docs(essais): Linux shell file test capture (lot 5a T78)` +
 ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`), relevé porté au fichier d'état. Les fiches
 `docs/essais/coque-windows.md` (file du PC, `ordre-pc.cjs confier`, non bloquant) et `docs/essais/coque-macos.md`
@@ -3415,8 +3473,9 @@ ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`), relevé porté
 
 - Échelon 5 (`additionalBrowserArgs` de WebView2) : en attente de la mesure « bon dans Edge, mauvais dans WebView2 »
   (file du PC) ; tâche ajoutée à ce moment-là (Choix tranchés).
-- Association de l'extension `.roomboard` et ouverture du fichier passé au lancement ; Cmd+Q sous macOS quitte sans
-  demander (la fiche macOS le fait constater).
+- Lot 5b (attribué dans la ligne 5b de `socle-PLAN.md`) : association de l'extension `.roomboard` (carte d'impact,
+  `socle-cadrage.md:125`) et ouverture du fichier passé au lancement ; Cmd+Q sous macOS, qui quitte sans demander
+  (la fiche macOS le fait constater ; demander avant de quitter, `RunEvent::ExitRequested`).
 - Indicateur « modifié » et boutons Nouveau / Ouvrir / Enregistrer dans l'interface ; messages hors `alert` ;
   Playwright `--e2e` dans `verifier.sh` et mise en commun de `serve` / `loadPlaywright` ; WebKit (H2-10) : lot 5b.
 - Constats d'architecture « à reprendre au lot 5 » (duplication `fmt` / export JSON / suivi du DPR, types
