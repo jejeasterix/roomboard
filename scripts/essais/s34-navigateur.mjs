@@ -209,8 +209,8 @@ async function scenario(page, url, captures) {
   await frames(page);
   check((await elements()) === 5, "page 3 : second texte validé par un clic ailleurs (cinq éléments)");
   check(!(await editorOpen()), "la zone de texte est fermée après le clic ailleurs");
+  await shot("forme-texte"); // avant la relecture : la zone rouverte masque le texte jusqu'à sa fermeture
   await readText(710, 310, "note", "contenu du second texte : « note »");
-  await shot("forme-texte");
 
   // Sélection au rectangle : deux formes (rectangle et ellipse).
   await click("select");
