@@ -57,6 +57,7 @@ function setupWith(durations: number[]) {
     options: { coalesced: true, predicted: true, raw: false, desynchronized: true, inkTrail: false },
     environment: ENV,
     coreVersion: "0.1.0",
+    echelons: () => "2:off,3:off,4:off",
     now: () => "2026-11-19T09:00:00.000Z",
   };
   const fire = (g: GestureEvent): void => {
@@ -119,5 +120,17 @@ describe("createAppBench", () => {
     const text = panelText(bench.report(PANEL_RECENT_FRAMES));
     expect(text.split("\n")).toHaveLength(4);
     expect(text).toContain("les 600 dernières images au plus");
+  });
+
+  it("rapport : réglages effectifs des échelons, lus au moment du rapport", () => {
+    let tag = "2:off,3:off,4:off";
+    const { deps } = setup();
+    const bench = createAppBench({ ...deps, echelons: () => tag });
+    expect(bench.report().echelons).toBe("2:off,3:off,4:off");
+    tag = "2:on,3:off,4:repli";
+    expect(bench.report().echelons).toBe("2:on,3:off,4:repli");
+    const text = panelText(bench.report(PANEL_RECENT_FRAMES));
+    expect(text.split("\n")).toHaveLength(4);
+    expect(text.split("\n")[0]).toBe("Banc (géométrie du produit, cœur 0.1.0, échelons 2:on,3:off,4:repli)");
   });
 });
