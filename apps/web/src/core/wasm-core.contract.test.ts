@@ -443,6 +443,25 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     }
   });
 
+  // T63 : les bornes d'un trait transformé suivent aussi l'épaisseur mise à l'échelle (le cœur borne le contour porté
+  // par la matrice). L'ancienne fausse liaison gardait ±2 (épaisseur 4) à toute échelle.
+  it("bounds : épaisseur d'un trait transformé mise à l'échelle (×4, ×0,05)", () => {
+    for (const [m, lo, hi] of [
+      [[4, 0, 0, 4, 0, 0], 6, 10],
+      [[0.05, 0, 0, 0.05, 0, 0], 0.05, 0.5],
+    ] as [Matrix, number, number][]) {
+      const d = f.blank();
+      const id = commit(d, first(d), 0);
+      d.apply({ type: "Transform", ids: [id], matrix: m });
+      const b = d.bounds([id]);
+      expect(b?.y1, `×${m[0]}`).toBeGreaterThan(lo);
+      expect(b?.y1, `×${m[0]}`).toBeLessThan(hi);
+      expect(b?.y0, `×${m[0]}`).toBeLessThan(-lo);
+      expect(b?.y0, `×${m[0]}`).toBeGreaterThan(-hi);
+      d.free();
+    }
+  });
+
   // Constats 2 et 3 de T60 : la matrice composée (pas seulement `matrix`) et la géométrie tirée des coins (pas seulement
   // les coins) sont contrôlées ; refus sans étape, la commande entière.
   it("Transform : matrice composée infinie ou presque singulière refusée ; AddShape : w, h, tx, ty non finis en f32 refusés", () => {
