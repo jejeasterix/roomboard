@@ -105,3 +105,8 @@ export function ensureExtension(name: string): string {
   if (n === "") return UNTITLED;
   return n.toLowerCase().endsWith(ROOMBOARD_EXTENSION) ? n : `${n}${ROOMBOARD_EXTENSION}`;
 }
+
+/** Vrai si `e` est une erreur (ou un objet) dont le `name` vaut `name` (AbortError, DataCloneError…). */
+export function hasErrorName(e: unknown, name: string): boolean {
+  return typeof e === "object" && e !== null && (e as { name?: unknown }).name === name;
+}

@@ -3,10 +3,11 @@
  * document). IndexedDB garde les octets et la cible par clonage structuré (chemin Tauri, poignée FSA réelle) ; une
  * cible qui ne se clone pas est abandonnée, le fichier reste.
  */
-import type { PendingOpen, PendingStore, SaveTarget } from "./files";
+import { hasErrorName, type PendingOpen, type PendingStore, type SaveTarget } from "./files";
 
 export const PENDING_DB = "roomboard-fichiers";
 const STORE = "ouverture";
+/** Clé unique, partagée par tous les onglets : un seul document en attente à la fois (cas d'usage voulu, conflit rare : le dernier Ouvrir gagne). */
 const KEY = "courant";
 
 interface Row {
@@ -16,7 +17,7 @@ interface Row {
 }
 
 export function isDataClone(e: unknown): boolean {
-  return typeof e === "object" && e !== null && (e as { name?: unknown }).name === "DataCloneError";
+  return hasErrorName(e, "DataCloneError");
 }
 
 export function createMemoryPendingStore(): PendingStore {
@@ -67,13 +68,16 @@ function result<T>(r: IDBRequest<T>): Promise<T> {
 export function createIdbPendingStore(factory: IDBFactory, name: string = PENDING_DB): PendingStore {
   let db: Promise<IDBDatabase> | null = null;
   const open = (): Promise<IDBDatabase> => {
-    db ??= new Promise((resolve, reject) => {
+    db ??= new Promise<IDBDatabase>((resolve, reject) => {
       const r = factory.open(name, 1);
       r.onupgradeneeded = () => {
         r.result.createObjectStore(STORE);
       };
       r.onsuccess = () => resolve(r.result);
       r.onerror = () => reject(r.error ?? new Error("IndexedDB indisponible"));
+    }).catch((e: unknown) => {
+      db = null; // une ouverture refusée n'est pas gardée : l'appel suivant réessaie
+      throw e;
     });
     return db;
   };
@@ -95,6 +99,7 @@ export function createIdbPendingStore(factory: IDBFactory, name: string = PENDIN
     async take() {
       const tx = (await open()).transaction(STORE, "readwrite");
       const done = finished(tx);
+      done.catch(() => undefined); // si la lecture échoue, `done` n'est plus attendu : pas de rejet non géré
       const store = tx.objectStore(STORE);
       const read = result(store.get(KEY) as IDBRequest<Row | undefined>);
       store.delete(KEY); // exécutée après la lecture (ordre des requêtes d'une transaction)

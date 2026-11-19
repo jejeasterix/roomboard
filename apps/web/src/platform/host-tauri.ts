@@ -70,8 +70,17 @@ export function createTauriShell(dialog: TauriDialog, win: TauriWindow): ShellPo
       void win
         .onCloseRequested(async (e) => {
           if (!isDirty()) return;
-          const ok = await dialog.ask(message, { title: APP_TITLE, kind: "warning" });
-          if (!ok) e.preventDefault();
+          try {
+            const ok = await dialog.ask(message, { title: APP_TITLE, kind: "warning" });
+            if (!ok) e.preventDefault();
+          } catch (err) {
+            // Boîte en erreur : on ne perd pas le document, la fenêtre reste ouverte et l'utilisateur est prévenu.
+            e.preventDefault();
+            const why = err instanceof Error ? err.message : String(err);
+            await dialog
+              .message(`Fermeture annulée : la question n'a pas pu s'afficher (${why}).`, { title: APP_TITLE, kind: "error" })
+              .catch(() => undefined);
+          }
         })
         .then((un) => {
           if (stopped) un();

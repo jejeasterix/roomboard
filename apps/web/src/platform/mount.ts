@@ -100,15 +100,22 @@ export async function prepareFiles(core: CoreFactory, w: Window = window): Promi
       };
       mark();
       ctl.onChange(mark);
-      w.addEventListener("keydown", (e) => {
+      const onKey = (e: KeyboardEvent): void => {
         if (e.isComposing) return;
         if (ctl.key(e)) e.preventDefault();
-      });
+      };
+      w.addEventListener("keydown", onKey);
       if (started.error !== null) {
         stage.dataset["fichierErreur"] = started.error;
         void shell.notify(started.error);
       }
-      return ctl;
+      return {
+        ...ctl,
+        dispose() {
+          w.removeEventListener("keydown", onKey);
+          ctl.dispose();
+        },
+      };
     },
   };
 }
