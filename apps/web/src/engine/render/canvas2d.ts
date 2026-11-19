@@ -43,7 +43,7 @@ export function tracePolygons(p: PathSink, flat: ArrayLike<number>): void {
 const FAR = 1e7;
 
 /** Demi-épaisseur du stylo par défaut (4 unités, HL3-3) : la coupe réelle vaut rayon + demi-épaisseur (HL3-2). */
-const PEN_HALF_WIDTH = 2;
+export const PEN_HALF_WIDTH = 2;
 
 export class Canvas2DRenderer implements Renderer {
   private readonly paths = new Map<string, Path2D | null>();
@@ -53,7 +53,8 @@ export class Canvas2DRenderer implements Renderer {
 
   constructor(
     private readonly scene: CanvasRenderingContext2D,
-    private readonly live: CanvasRenderingContext2D,
+    /** Canvas d'interaction ; null quand WebGL2 le dessine (échelon 4, `webgl2.ts`). */
+    private readonly live: CanvasRenderingContext2D | null,
     private readonly source: SceneSource,
     opts: Canvas2DOptions = {},
   ) {
@@ -64,6 +65,7 @@ export class Canvas2DRenderer implements Renderer {
     const w = Math.max(1, Math.round(width * dpr));
     const h = Math.max(1, Math.round(height * dpr));
     for (const ctx of [this.scene, this.live]) {
+      if (!ctx) continue;
       if (ctx.canvas.width !== w) ctx.canvas.width = w;
       if (ctx.canvas.height !== h) ctx.canvas.height = h;
     }
@@ -96,6 +98,7 @@ export class Canvas2DRenderer implements Renderer {
 
   drawLive(live: LiveLayer, camera: Camera): void {
     const ctx = this.live;
+    if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     if (live.strokes.length === 0 && live.erasers.length === 0) return;
