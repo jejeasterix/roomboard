@@ -538,6 +538,78 @@ mod tests {
         assert_eq!(d.hit_test(&p, 900.0, 650.0, 1.0), None);
     }
 
+    fn scaled(d: &mut Document, p: &str, kind: ShapeKind, c: [f64; 4], m: Transform) -> String {
+        let id = d
+            .apply(Command::AddShape {
+                page: p.into(),
+                shape: kind,
+                x0: c[0],
+                y0: c[1],
+                x1: c[2],
+                y1: c[3],
+                style: pen(),
+                fill: None,
+            })
+            .expect("forme")
+            .ids[0]
+            .clone();
+        d.apply(Command::Transform {
+            ids: vec![id.clone()],
+            matrix: m,
+        })
+        .expect("échelle");
+        id
+    }
+
+    /// Constat 1 de T60 : `tol` est en unités monde, comme dans la fausse liaison. Le patron écarté (point ramené en
+    /// local, `tol` appliquée en local) prendrait le clic à 20 du bord à ×4 et raterait la ligne à 2,9 à ×0,05.
+    #[test]
+    fn hit_test_tolerance_is_in_world_units_under_scale() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let big = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Rect,
+            [0.0, 0.0, 100.0, 50.0],
+            [4.0, 0.0, 0.0, 4.0, 0.0, 0.0],
+        );
+        assert_eq!(d.hit_test(&p, 412.0, 100.0, 6.0), Some(big.clone()));
+        assert_eq!(d.hit_test(&p, 428.0, 100.0, 6.0), None, "20 du bord à ×4");
+        d.apply(Command::Delete { ids: vec![big] }).expect("retrait");
+        let thin = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Line,
+            [0.0, 0.0, 1000.0, 0.0],
+            [0.05, 0.0, 0.0, 0.05, 0.0, 0.0],
+        );
+        assert_eq!(
+            d.hit_test(&p, 25.0, 3.0, 6.0),
+            Some(thin.clone()),
+            "ligne à ×0,05 prise à 2,9"
+        );
+        assert_eq!(d.hit_test(&p, 25.0, 10.0, 6.0), None);
+        d.apply(Command::Delete { ids: vec![thin] }).expect("retrait");
+        let flat = scaled(
+            &mut d,
+            &p,
+            ShapeKind::Rect,
+            [0.0, 0.0, 100.0, 50.0],
+            [4.0, 0.0, 0.0, 0.25, 0.0, 0.0],
+        );
+        assert_eq!(
+            d.hit_test(&p, 200.0, 18.0, 6.0),
+            Some(flat.clone()),
+            "anisotrope : 5 au-dessus du bord monde"
+        );
+        assert_eq!(
+            d.hit_test(&p, 428.0, 6.0, 6.0),
+            None,
+            "anisotrope : 20 à droite"
+        );
+    }
+
     #[test]
     fn ids_in_rect_and_bounds_include_shapes() {
         let mut d = Document::blank();

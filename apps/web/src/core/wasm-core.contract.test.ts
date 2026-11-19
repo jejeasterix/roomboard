@@ -378,6 +378,33 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     d.free();
   });
 
+  // Constat 1 de T60 : la tolérance de hitTest est en unités monde des deux côtés. Discrimine le patron écarté (point
+  // ramené en local puis `tol` appliquée en local) : à ×4 il prendrait le clic à 20 du bord (5 en local), à ×0,05 il
+  // raterait la ligne à 2,9 (58 en local). Le cas anisotrope sépare la distance mesurée en monde de toute tolérance
+  // divisée par un seul facteur d'échelle (plus grande ou plus petite valeur singulière, racine du déterminant).
+  it("hitTest : tolérance en unités monde sur un élément mis à l'échelle (×4, ×0,05, anisotrope)", () => {
+    const d = f.blank();
+    const p = first(d);
+    // Rectangle (0, 0)-(100, 50), trait 4 : polygone local (-2, -2)-(102, 52), monde (-8, -8)-(408, 208) à ×4.
+    const big = shape(d, p, "rect", [0, 0, 100, 50]);
+    d.apply({ type: "Transform", ids: [big], matrix: [4, 0, 0, 4, 0, 0] });
+    expect(d.hitTest(p, 412, 100, 6)).toBe(big);
+    expect(d.hitTest(p, 428, 100, 6)).toBeNull();
+    d.apply({ type: "Delete", ids: [big] });
+    // Ligne (0, 0)-(1000, 0), trait 4 : à ×0,05, segment monde (0, 0)-(50, 0), demi-épaisseur 0,1.
+    const thin = shape(d, p, "line", [0, 0, 1000, 0]);
+    d.apply({ type: "Transform", ids: [thin], matrix: [0.05, 0, 0, 0.05, 0, 0] });
+    expect(d.hitTest(p, 25, 3, 6)).toBe(thin);
+    expect(d.hitTest(p, 25, 10, 6)).toBeNull();
+    d.apply({ type: "Delete", ids: [thin] });
+    // Même rectangle à [4, 0, 0, 0,25] : monde (-8, -0,5)-(408, 13).
+    const flat = shape(d, p, "rect", [0, 0, 100, 50]);
+    d.apply({ type: "Transform", ids: [flat], matrix: [4, 0, 0, 0.25, 0, 0] });
+    expect(d.hitTest(p, 200, 18, 6)).toBe(flat);
+    expect(d.hitTest(p, 428, 6, 6)).toBeNull();
+    d.free();
+  });
+
   it("save puis load garde formes, textes et matrices", () => {
     const d = f.blank();
     const p = first(d);
