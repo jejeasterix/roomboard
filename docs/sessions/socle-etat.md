@@ -1,11 +1,10 @@
 # État — socle
 
-Statut : en cours — lot 3b (OD4 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
+Statut : arrêté entre deux lots — lot 3b clos (OD4 : décision de Jérôme, 2026-11-19, « oui fait le avancé en autonomie même si je n'ai pas fais les tests » ; l'essai ENI du 2026-11-21 devient une vérification)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
-Avancement : 3/6 lots clos — clos : 1, 2, 3 · en cours : 3b · à faire : 4, 5
-Étage : 3 — depuis 2026-11-19 18:45
-Lot : 3b « Fin du moteur » — 0/12 tâches terminées — depuis 2026-11-19 18:45
+Avancement : 4/6 lots clos — clos : 1, 2, 3, 3b · à faire : 4, 5
+Étage : 3 (entre deux lots) — depuis 2026-11-19 21:00
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/socle   Branche : feat/socle-lot3b   Base : origin/main @ 37b5af3 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
 Branche principale locale au lancement : 37b5af3 (lot 3b)
@@ -51,6 +50,11 @@ Plan : docs/plans/socle-lot3b-PLAN.md (T30-T41, vagues : 1 = T30, T33, T34, T37 
 Référence lot 3b (37b5af3, 19:20) : verifier.sh rc=0 en 1 min 23, pic 0,59 Go — Rust 117+3+3+14 (1 ignoré), web 194 tests.
 Réglages : É2 `prediction` auto|on|off défaut auto (S1, OC56 : prédits natifs, p95 17,4 / 17,1 ms) · É3 `inkTrail` on|off défaut off (OC56 : 0 % d'images > 25 ms sans elle) · É4 `webgl` on|off défaut off, repli Canvas 2D (S1, OC56, OC66) · paume `palm` strict|lenient défaut strict (écart T1) · doigt `finger` pan|draw défaut pan (D18).
 
+T30 réglages (settings 14) · T31 É2 prédiction (predict 12) · T32 É3 traînée (ink-trail 8) · T33 É4 WebGL2 + repli (30 ; concepteur-critique, mutation éventail sans stencil rouge) · T34 paume + bouton du milieu (36) · T35 outil main + espace (router 20) · T36 images bornées + banc (14, mutation slice(0,n) rouge) · T37 mesure contour (rejouée : 10 000 points, push p95 0,021 ms ≤ 4 ms) · T38 moteur : caméra par page, espace (34) · T39 script S2 --lot3b + fiche · T40 amorce, barre à deux lignes, banc qui dit ses échelons (17 ; S2 lot 3b 4 passages) · T41 coque Linux (orchestrateur) · T42/T43 correctifs de fin de lot (2 majeurs : fiche « paume souple », traînée qui redevinait le routeur → `router.roleOf`) · T44 second tour (5 mineurs). Toutes : 1 essai, preuves rejouées par l'orchestrateur.
+Fin de lot : relectures conformité + qualité (rendu ; entrées) sans bloquant, 2 tours de correctifs, 18 + 5 constats fermés.
+Preuve du lot 3b (orchestrateur, tête bc4111e) : verifier.sh rc=0 — Rust 117+3+3+14 (2 ignorés : mesures), web 23 fichiers / 319 tests ; S2 lot 3 16 `ok`, `S2 lot 3 : OK` ; S2 lot 3b `OK (4 passages)` (réglages effectifs 2:off,3:off,4:off · 2:on · 3:on · 4:on ; WebGL2 par SwiftShader, repli prouvé par Vitest seulement) ; captures docs/essais/s2-lot3b-{defaut,2,3,4}.png.
+Coque Linux : build release complet 19 min 25 (CARGO_BUILD_JOBS=2, pic 1,32 Go RSS, .deb 3,2 Mo) ; reconstruction avec le web final 58 s (pic 0,79 Go) ; sous Broadway (shim DPI 96, hors dépôt) la coque trace, gomme, annule ; barre à deux lignes visible ; capture docs/essais/coque-linux-lot3b.png.
+
 ## Scénarios et captures
 S2 lot 3 (VM, 22:31, Chromium headless) — réussi : 3 traits souris, gomme en travers du 2e (4 traits), Ctrl+Z (3), Ctrl+Y (4), Ctrl+Maj+Z, boutons ; capture docs/essais/s2-lot3-vm.png (page blanche, 3 traits, le 2e coupé au milieu, barre avec Gomme pressée).
 S5 partie Linux (VM, 22:42-22:55) — coque release construite (10 min 17, pic 1,29 Go RSS, .deb 3,2 Mo) ; sous Broadway la page sortait hors champ (`gdk_screen_get_resolution` = −1 → devicePixelRatio négatif, artefact du backend virtuel) ; avec un DPI de 96 forcé hors dépôt (shim LD_PRELOAD), la coque trace et Ctrl+Z annule ; capture docs/essais/coque-linux-lot3.png. Non essayé sur un vrai X11/Wayland. La coque embarque le `apps/web/dist` présent au build (pas de `beforeBuildCommand`) : construire le web d'abord.
@@ -70,11 +74,10 @@ H2-13b Profil release `opt-level="s"` + `lto` exigé par le plan : grossit le .w
 ouvertes : — · passées : —
 
 ## Reprise (prochaine tâche)
-0. **Essai de jeudi 2026-11-19** : appli web (`apps/web/dist` servi en http ; le Wasm ne se charge pas en `file://`) et coque Tauri ; fiche docs/essais/eni-stylet.md, section du 19 (le doigt trace tant qu'aucun stylet n'a touché l'écran ; recharger avant l'étape doigt). Selon le verdict : échelons 2 à 4 de DA9 au lot 3b.
-1. Essai ENI avec Jérôme (S1, `docs/essais/eni-stylet.md`, fichier `docs/essais/proto-stylet.html`) ; selon le verdict, revoir H2-12 (STREAMLINE 0,3), DA9 et le plan maître (`socle-PLAN.md`, § Risque n° 1).
-2. **Prochaine tâche du plan** : après le verdict ENI, écrire le plan du lot 3b (`docs/plans/socle-lot3b-PLAN.md`, planificateur), depuis `socle-lot3-PLAN.md` § « Ce qui part en lot 3b » : reste de D17 (espace + glisser, bouton du milieu qui déplace la vue, outil main, caméra par page), gomme d'objet et réglage « doigt déplace la vue » dans la barre, échelons DA9 selon le verdict, mesure de la copie du contour au-delà de 2 000 points ; puis le lot 4.
-3. Essais de plateforme non bloquants : Windows (Edge, puis WebView2) par la file du PC, à confier par le pilote (aucun ordre au PC depuis ce chantier) ; macOS (Safari, Chrome) sur le Mac ; Android en attente de KVM.
-4. Runner self-hosted `[self-hosted, linux, vm]` à enregistrer pour ce dépôt (Outillage) avant toute CI.
+0. **Prochaine tâche du plan : écrire le plan du lot 4** (`docs/plans/socle-lot4-PLAN.md`, planificateur) depuis la ligne 4 de `socle-PLAN.md` (sélection, déplacer, redimensionner, formes, texte IME, pages) et le cadrage ; y reprendre HL3b-7 (retirer la page affichée, caméra par page).
+1. Essai ENI du samedi 2026-11-21 (vérification, plus un préalable) : `docs/essais/eni-stylet.md`, § « Lot 3b : comparer les réglages » ; selon le verdict, changer un défaut dans `apps/web/src/engine/settings.ts` (un seul endroit) et revoir H2-12.
+2. Essais de plateforme non bloquants : Windows (Edge, WebView2) par la file du PC, confiés par le pilote ; macOS (Safari, Chrome) ; Android en attente de KVM. Rien de mesuré sous WebKit ni au vrai stylet.
+3. Runner self-hosted `[self-hosted, linux, vm]` à enregistrer avant toute CI.
 
 ## Fin de lot 2
 Relecture 12:12 : aucun bloquant. Importants → T16b : (1) style en HashMap std ⇒ octets différents après save/load (14/20) ; (2) contrat ne joue pas S2/S3 sur fake-core, 3 écarts prouvés (Delete inconnu, AddPage after inconnue, points NaN). Mineurs : insert_page_at panique hors bornes ; copie du trait entier à chaque image (à mesurer lot 3) ; gomme garde des points densifiés ; radius/width non validés.
@@ -99,7 +102,11 @@ performance · cœur/query · crates/roomboard-core/src/query.rs · `hit_test_pa
 mineur · lot 3b T37 · seule la poussée native du contour est mesurée ; la copie Wasm → page ne l'est pas (HL3b-9), à voir au banc samedi.
 anti-refactorisation · duplication · apps/web/src/engine/render/ink-trail.ts · types `InkLike`/`InkPresenterLike` recopiés de `proto/stylet.ts` (non net) → lot 5, avec le module commun du banc.
 
+mineur · lot 3b · `badColors` et `lost` (WebGL2) ne sont lus par aucune barre : à afficher au lot 5.
+mineur · lot 3b · perte et restauration du contexte WebGL2 testées sur faux contexte seulement.
+
 ## Pièges trouvés
+- Orchestrateur en `claude -p` : un sous-agent qui lance sa suite en `run_in_background` et finit son tour n'est jamais réveillé (T30, T37 du lot 3b) : exiger le premier plan avec `timeout: 600000`.
 - GTK Broadway : `gdk_screen_get_resolution()` rend −1, WebKitGTK en tire un devicePixelRatio négatif (page hors champ) ; `broadwayd` plante si on tue un client : fermer la fenêtre par son ✕.
 - Le garde-arrêt refuse `kill` sur un processus lancé détaché (`&` dans un sous-shell) : lancer en `run_in_background`.
 - Sous-agents Sonnet : ils écrivent `Co-Authored-By: Claude Sonnet 5.5` malgré la consigne ; messages corrigés par rebase local avant fusion.
