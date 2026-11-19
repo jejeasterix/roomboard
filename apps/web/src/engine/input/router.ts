@@ -3,8 +3,9 @@
  * Un geste par pointerId. Stylet et souris tracent avec l'outil courant (bouton gomme du stylet : gomme). Doigt : trace
  * tant qu'aucun stylet n'a été vu (ENI sans stylet), sinon déplace la vue (réglable). Un second doigt posé dans les
  * 150 ms du premier annule le trait commencé (rien d'écrit) et passe en pincement. L'outil d'un geste est fixé au début.
+ * Outil main ou espace tenu : tout geste déplace la vue (D17).
  */
-import type { CloseReason, DrawTool, GestureSink, ViewSink } from "./gesture";
+import type { CloseReason, GestureSink, ToolChoice, ViewSink } from "./gesture";
 import type { GestureEvent, InputSample } from "./sampler";
 
 export const SECOND_FINGER_MS = 150;
@@ -18,7 +19,10 @@ export interface RouterOptions {
 export const DEFAULT_ROUTER_OPTIONS: RouterOptions = { fingerPansAfterPen: true, secondFingerMs: SECOND_FINGER_MS };
 
 export interface RouterDeps {
-  currentTool(): DrawTool;
+  /** Outil courant ; "hand" (outil main, D17) : tout geste déplace la vue. */
+  currentTool(): ToolChoice;
+  /** Barre d'espace tenue (D17) : lue au début du geste ; absent = jamais tenue. */
+  panHeld?(): boolean;
   readonly gestures: GestureSink;
   readonly view: ViewSink;
 }
@@ -60,9 +64,15 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const track: Track = { role: "ignored", pointerType: g.pointerType, startT: s.t, x: s.x, y: s.y };
     tracks.set(g.pointerId, track);
     if (g.pointerType === "pen") seenPen = true;
+    const tool = deps.currentTool();
+    const held = deps.panHeld?.() === true;
     if (g.pointerType !== "touch") {
+      if (tool === "hand" || held) {
+        track.role = "pan";
+        return;
+      }
       track.role = "draw";
-      deps.gestures.begin(g.pointerId, g.eraserButton ? "eraser" : deps.currentTool(), g.samples);
+      deps.gestures.begin(g.pointerId, g.eraserButton ? "eraser" : tool, g.samples);
       return;
     }
     if (pinchPair()) return; // troisième doigt : ignoré
@@ -80,12 +90,12 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       return;
     }
     if (drawing) return; // second doigt tardif : ignoré, le trait continue
-    if (seenPen && opts.fingerPansAfterPen) {
+    if (tool === "hand" || held || (seenPen && opts.fingerPansAfterPen)) {
       track.role = "pan";
       return;
     }
     track.role = "draw";
-    deps.gestures.begin(g.pointerId, deps.currentTool(), g.samples);
+    deps.gestures.begin(g.pointerId, tool, g.samples);
   };
 
   const onMove = (g: GestureEvent): void => {

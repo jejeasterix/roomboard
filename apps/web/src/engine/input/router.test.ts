@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { DrawTool, GestureSink, ViewSink } from "./gesture";
+import type { DrawTool, GestureSink, ToolChoice, ViewSink } from "./gesture";
 import { createRouter, DEFAULT_ROUTER_OPTIONS, SECOND_FINGER_MS, type RouterOptions } from "./router";
 import type { GestureEvent, GestureKind, InputSample } from "./sampler";
 
@@ -34,6 +34,20 @@ function penSeen(router: ReturnType<typeof createRouter>, log: string[]): void {
   router.handle(ev("start", 1, "pen", [s(0, 0, 0)]));
   router.handle(ev("end", 1, "pen", []));
   log.length = 0;
+}
+
+function setupTool(tool: () => ToolChoice, held: () => boolean = () => false, opts: RouterOptions = DEFAULT_ROUTER_OPTIONS) {
+  const log: string[] = [];
+  const gestures: GestureSink = {
+    begin: (id, t, samples) => log.push(`begin ${id} ${t} ${samples.length}`),
+    extend: (id, samples) => log.push(`extend ${id} ${samples.length}`),
+    close: (id, how) => log.push(`close ${id} ${how}`),
+  };
+  const view: ViewSink = {
+    panBy: (dx, dy) => log.push(`pan ${dx} ${dy}`),
+    zoomAt: (x, y, f) => log.push(`zoom ${x} ${y} ${f}`),
+  };
+  return { router: createRouter(opts, { currentTool: tool, panHeld: held, gestures, view }), log };
 }
 
 describe("createRouter (D18)", () => {
@@ -154,5 +168,72 @@ describe("createRouter (D18)", () => {
     router.handle(ev("move", 5, "touch", [s(310, 300, 30)]));
     router.handle(ev("end", 5, "touch", []));
     expect(log).toEqual([]);
+  });
+
+  it("outil main : stylet et souris déplacent la vue, aucun trait", () => {
+    const { router, log } = setupTool(() => "hand");
+    router.handle(ev("start", 1, "pen", [s(0, 0, 0)]));
+    router.handle(ev("move", 1, "pen", [s(5, 2, 5)]));
+    router.handle(ev("end", 1, "pen", []));
+    router.handle(ev("start", 2, "mouse", [s(10, 10, 20)]));
+    router.handle(ev("move", 2, "mouse", [s(4, 10, 25)]));
+    router.handle(ev("end", 2, "mouse", []));
+    expect(log).toEqual(["pan 5 2", "pan -6 0"]);
+    expect(router.penSeen()).toBe(true);
+  });
+
+  it("outil main : le bouton gomme du stylet déplace aussi la vue, aucune gomme", () => {
+    const { router, log } = setupTool(() => "hand");
+    router.handle(ev("start", 1, "pen", [s(0, 0, 0)], { eraserButton: true }));
+    router.handle(ev("move", 1, "pen", [s(3, 0, 5)], { eraserButton: true }));
+    router.handle(ev("end", 1, "pen", [], { eraserButton: true }));
+    expect(log).toEqual(["pan 3 0"]);
+  });
+
+  it("outil main : un doigt déplace la vue, un second le pince, même sans stylet vu", () => {
+    const { router, log } = setupTool(() => "hand");
+    router.handle(ev("start", 3, "touch", [s(100, 100, 0)]));
+    router.handle(ev("move", 3, "touch", [s(110, 100, 10)]));
+    router.handle(ev("start", 4, "touch", [s(200, 100, 50)]));
+    router.handle(ev("move", 3, "touch", [s(20, 100, 60)]));
+    expect(log).toEqual(["pan 10 0", "pan -45 0", "zoom 110 100 2"]);
+  });
+
+  it("espace maintenu : la souris déplace la vue ; relâché, elle trace de nouveau", () => {
+    let held = true;
+    const { router, log } = setupTool(() => "pen", () => held);
+    router.handle(ev("start", 1, "mouse", [s(0, 0, 0)]));
+    router.handle(ev("move", 1, "mouse", [s(7, 0, 5)]));
+    router.handle(ev("end", 1, "mouse", []));
+    held = false;
+    router.handle(ev("start", 2, "mouse", [s(0, 0, 10)]));
+    expect(log).toEqual(["pan 7 0", "begin 2 pen 1"]);
+  });
+
+  it("espace lu au début du geste : relâché pendant le glisser, la vue suit jusqu'au relâché", () => {
+    let held = true;
+    const { router, log } = setupTool(() => "pen", () => held);
+    router.handle(ev("start", 1, "mouse", [s(0, 0, 0)]));
+    held = false;
+    router.handle(ev("move", 1, "mouse", [s(4, 4, 5)]));
+    router.handle(ev("end", 1, "mouse", []));
+    expect(log).toEqual(["pan 4 4"]);
+  });
+
+  it("réglage du doigt lu à chaque geste (accesseur) : bascule à chaud", () => {
+    let pans = true;
+    const opts: RouterOptions = {
+      get fingerPansAfterPen() {
+        return pans;
+      },
+      secondFingerMs: SECOND_FINGER_MS,
+    };
+    const { router, log } = setupTool(() => "pen", () => false, opts);
+    penSeen(router, log);
+    router.handle(ev("start", 3, "touch", [s(0, 0, 100)]));
+    router.handle(ev("end", 3, "touch", []));
+    pans = false;
+    router.handle(ev("start", 4, "touch", [s(0, 0, 200)]));
+    expect(log).toEqual(["begin 4 pen 1"]);
   });
 });
