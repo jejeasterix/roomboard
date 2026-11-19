@@ -18,7 +18,7 @@ describe("importFiles (T86, usage § 8 point 12, Q1)", () => {
 
   it("fichier non .roomboard : message, document intact", async () => {
     const openDocument = vi.fn(async () => true);
-    const notify = vi.fn(async () => undefined);
+    const notify = vi.fn(async (_m: string) => undefined);
     const r = await createImporter({ openDocument, notify }).importFiles([file("photo.png"), file("cours.flipchart")]);
     expect(openDocument).not.toHaveBeenCalled();
     expect(r.refused).toEqual(["photo.png", "cours.flipchart"]);
