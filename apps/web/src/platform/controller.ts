@@ -93,7 +93,13 @@ export function createFileController(d: FileControllerDeps): FileController {
     for (const cb of listeners) cb();
   };
   const fail = async (prefix: string, e: unknown): Promise<false> => {
-    await d.shell.notify(`${prefix} : ${messageOf(e)}`);
+    const text = `${prefix} : ${messageOf(e)}`;
+    try {
+      await d.shell.notify(text);
+    } catch (boxError) {
+      console.warn(`RoomBoard : ${text}`); // l'erreur d'origine, sinon perdue avec celle de la boîte
+      throw boxError;
+    }
     return false;
   };
   let stopClose: (() => void) | null = null;

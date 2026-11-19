@@ -72,13 +72,13 @@ export function checkCsp(conf) {
     const list = tokens(d);
     for (const t of list) if (FORBIDDEN_TOKENS.has(t)) errors.push(`${d} : source interdite ${t}`);
     for (const t of list) {
-      if (FORBIDDEN_TOKENS.has(t) || t.startsWith("script-src")) continue;
+      if (FORBIDDEN_TOKENS.has(t)) continue;
       if (/^'[a-z-]+'$/.test(t)) continue; // mot-clé entre quotes
       if (SCHEME_TOKENS.has(t)) {
         if (!SCHEME_TOKENS.get(t).has(d)) errors.push(`${d} : schéma ${t} non admis ici`);
         continue;
       }
-      const host = t.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "").replace(/[/?#].*$/, "").replace(/:(?:\d+|\*)$/, "").replace(/^\*\./, "*.").toLowerCase();
+      const host = t.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "").replace(/[/?#].*$/, "").replace(/:(?:\d+|\*)$/, "").toLowerCase();
       if (isLocalHost(host.replace(/^\*\./, "x."))) continue;
       errors.push(`${d} : source non locale ou inconnue ${t}`);
     }
