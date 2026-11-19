@@ -2,7 +2,10 @@
 //! effet (gomme qui ne touche rien) n'ouvre aucune transaction d'écriture : aucune étape vide (D38).
 use std::collections::BTreeSet;
 
-use yrs::{Any, Array, ArrayRef, In, Map, MapPrelim, MapRef, Out, ReadTxn};
+use yrs::{
+    Any, Array, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn, Text, TextPrelim,
+    TextRef,
+};
 
 use crate::document::{insert_page, Document};
 use crate::element::{
@@ -56,6 +59,17 @@ pub enum Command {
         ids: Vec<String>,
         matrix: Transform,
     },
+    SetText {
+        page: String,
+        id: Option<String>,
+        x: f64,
+        y: f64,
+        content: String,
+        color: String,
+        size: f32,
+        box_width: f64,
+        box_height: f64,
+    },
 }
 
 /// Ce qu'une commande a touché ; `full` = tout invalider (annuler, rétablir).
@@ -77,6 +91,8 @@ pub enum CommandError {
     BadWidth,
     BadShape,
     BadMatrix,
+    BadText,
+    UnknownElement(String),
 }
 
 impl std::fmt::Display for CommandError {
@@ -103,6 +119,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadMatrix => {
                 write!(f, "matrice invalide (six nombres finis, inversible)")
             }
+            CommandError::BadText => {
+                write!(f, "texte invalide (taille et boîte finies > 0 attendues)")
+            }
+            CommandError::UnknownElement(id) => write!(f, "élément inconnu : {id}"),
         }
     }
 }
@@ -143,6 +163,46 @@ pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields>
         style: read_style(txn, e)?,
         fill: out_string(e.get(txn, "fill")),
     })
+}
+
+/// Champs d'un texte (D14) ; `None` si l'élément n'en est pas un. `text` : le `Y.Text` du contenu.
+pub(crate) struct TextFields {
+    pub color: String,
+    pub size: f32,
+    pub box_width: f64,
+    pub box_height: f64,
+    pub content: String,
+    pub text: TextRef,
+}
+
+pub(crate) fn read_text<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<TextFields> {
+    if out_string(e.get(txn, "kind"))? != "text" {
+        return None;
+    }
+    let Some(Out::YText(text)) = e.get(txn, "content") else {
+        return None;
+    };
+    Some(TextFields {
+        color: out_string(e.get(txn, "color"))?,
+        size: out_f64(e.get(txn, "size"))? as f32,
+        box_width: out_f64(e.get(txn, "boxWidth"))?,
+        box_height: out_f64(e.get(txn, "boxHeight"))?,
+        content: text.get_string(txn),
+        text,
+    })
+}
+
+/// Entrée de `SetText` (évite une fonction à neuf paramètres).
+struct TextInput<'a> {
+    page: &'a str,
+    id: Option<&'a str>,
+    x: f64,
+    y: f64,
+    content: &'a str,
+    color: &'a str,
+    size: f32,
+    box_width: f64,
+    box_height: f64,
 }
 
 /// Chemin monde (paires x, y) ramené au repère local par l'inverse de `t` ; `None` si `t` n'est pas inversible.
@@ -227,6 +287,27 @@ impl Document {
                 fill,
             } => self.cmd_add_shape(&page, shape, [x0, y0, x1, y1], &style, fill.as_deref()),
             Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
+            Command::SetText {
+                page,
+                id,
+                x,
+                y,
+                content,
+                color,
+                size,
+                box_width,
+                box_height,
+            } => self.cmd_set_text(TextInput {
+                page: &page,
+                id: id.as_deref(),
+                x,
+                y,
+                content: &content,
+                color: &color,
+                size,
+                box_width,
+                box_height,
+            }),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
@@ -315,6 +396,100 @@ impl Document {
         Ok(self.done(Change {
             pages,
             ids,
+            ..Default::default()
+        }))
+    }
+
+    /// Une validation de texte = une transaction (D14) ; texte invalide, page ou élément inconnus : erreur sans
+    /// écriture ; boîte neuve vide ou texte inchangé : aucune transaction (CL4-6, D38) ; texte existant vidé : élément
+    /// retiré. Comme `cmd_erase` : plan sous une lecture fermée, puis au plus une écriture.
+    fn cmd_set_text(&mut self, t: TextInput<'_>) -> Result<Change, CommandError> {
+        let finite_pos = |v: f64| v.is_finite() && v > 0.0;
+        if !positive(t.size)
+            || !finite_pos(t.box_width)
+            || !finite_pos(t.box_height)
+            || !t.x.is_finite()
+            || !t.y.is_finite()
+        {
+            return Err(CommandError::BadText);
+        }
+        let Some(id) = t.id else {
+            return self.insert_text(&t);
+        };
+        let (found, current) = {
+            let txn = self.read();
+            let unknown = || CommandError::UnknownElement(id.to_string());
+            let found = self.find_element(&txn, id).ok_or_else(unknown)?;
+            let current = read_text(&txn, &found.element).ok_or_else(unknown)?;
+            (found, current)
+        };
+        if t.content.is_empty() {
+            {
+                let mut txn = self.transact_local();
+                found.elements.remove(&mut txn, found.index);
+            }
+            return Ok(self.done(Change {
+                pages: vec![found.page_id],
+                removed: vec![id.to_string()],
+                ..Default::default()
+            }));
+        }
+        let same = current.content == t.content
+            && current.color == t.color
+            && current.size == t.size
+            && current.box_width == t.box_width
+            && current.box_height == t.box_height;
+        if same {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            let len = current.text.len(&txn);
+            current.text.remove_range(&mut txn, 0, len);
+            current.text.insert(&mut txn, 0, t.content);
+            let e = &found.element;
+            e.insert(&mut txn, "color", In::from(t.color));
+            e.insert(&mut txn, "size", In::Any(Any::from(f64::from(t.size))));
+            e.insert(&mut txn, "boxWidth", In::Any(Any::from(t.box_width)));
+            e.insert(&mut txn, "boxHeight", In::Any(Any::from(t.box_height)));
+        }
+        Ok(self.done(Change {
+            pages: vec![found.page_id],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    fn insert_text(&mut self, t: &TextInput<'_>) -> Result<Change, CommandError> {
+        let elements = {
+            let txn = self.read();
+            self.page_elements(&txn, t.page)
+        }
+        .ok_or_else(|| CommandError::UnknownPage(t.page.to_string()))?;
+        if t.content.is_empty() {
+            return Ok(self.unchanged());
+        }
+        let id = yrs::uuid_v4().to_string();
+        let fields: Vec<(&str, In)> = vec![
+            ("id", In::from(id.as_str())),
+            ("kind", In::from("text")),
+            (
+                "transform",
+                In::Any(transform_to_any(&[1.0, 0.0, 0.0, 1.0, t.x, t.y])),
+            ),
+            ("color", In::from(t.color)),
+            ("size", In::Any(Any::from(f64::from(t.size)))),
+            ("boxWidth", In::Any(Any::from(t.box_width))),
+            ("boxHeight", In::Any(Any::from(t.box_height))),
+            ("content", In::from(TextPrelim::new(t.content))),
+        ];
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+        }
+        Ok(self.done(Change {
+            pages: vec![t.page.to_string()],
+            ids: vec![id],
             ..Default::default()
         }))
     }
@@ -1004,7 +1179,7 @@ pub(crate) mod tests {
         assert!(!d.can_undo());
     }
 
-    use crate::element::{ShapeView, IDENTITY};
+    use crate::element::{ShapeView, TextView, IDENTITY};
     use crate::shape::ShapeKind;
 
     fn rect(page: &str, corners: [f64; 4]) -> Command {
@@ -1230,5 +1405,161 @@ pub(crate) mod tests {
             CommandError::BadMatrix.to_string(),
             "matrice invalide (six nombres finis, inversible)"
         );
+    }
+
+    fn text_cmd(page: &str, id: Option<String>, content: &str) -> Command {
+        Command::SetText {
+            page: page.into(),
+            id,
+            x: 100.0,
+            y: 200.0,
+            content: content.into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        }
+    }
+
+    #[test]
+    fn set_text_creates_text_in_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let c = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte");
+        assert_eq!(c.pages, vec![p.clone()]);
+        let e = d.element(&c.ids[0]).expect("élément");
+        assert_eq!(e.kind, "text");
+        assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 200.0]);
+        assert_eq!(
+            e.style,
+            StrokeStyle {
+                color: "#000000".into(),
+                width: 0.0
+            }
+        );
+        assert_eq!(
+            e.text,
+            Some(TextView {
+                content: "Bonjour".into(),
+                size: 36.0,
+                box_width: 600.0,
+                box_height: 45.0
+            })
+        );
+        assert_eq!(e.shape, None);
+        assert!(d.undo());
+        assert!(d.element_ids(&p).is_empty());
+    }
+
+    #[test]
+    fn set_text_replaces_content_in_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        let c = d
+            .apply(text_cmd(&p, Some(id.clone()), "Bonsoir"))
+            .expect("remplacer");
+        assert_eq!(c.ids, vec![id.clone()]);
+        assert_eq!(
+            d.element(&id).and_then(|e| e.text).map(|t| t.content),
+            Some("Bonsoir".into())
+        );
+        assert!(d.undo());
+        assert_eq!(
+            d.element(&id).and_then(|e| e.text).map(|t| t.content),
+            Some("Bonjour".into())
+        );
+    }
+
+    /// Discrimine le patron écarté (transaction d'écriture ouverte avant de savoir si `SetText` a un effet) : une
+    /// transaction vide n'ajoute aucune étape d'annulation, donc un test d'historique resterait vert ; seul le
+    /// compteur `writes` la voit (D38).
+    #[test]
+    fn set_text_unchanged_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        let n = writes(&d);
+        let v = d.version();
+        let c = d
+            .apply(text_cmd(&p, Some(id), "Bonjour"))
+            .expect("inchangé");
+        assert!(c.ids.is_empty() && c.removed.is_empty());
+        let c = d.apply(text_cmd(&p, None, "")).expect("boîte neuve vide");
+        assert!(c.ids.is_empty() && c.pages.is_empty());
+        assert_eq!(d.version(), v);
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn set_text_empty_removes_existing() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        let c = d.apply(text_cmd(&p, Some(id.clone()), "")).expect("vider");
+        assert_eq!(c.removed, vec![id.clone()]);
+        assert_eq!(c.pages, vec![p.clone()]);
+        assert!(d.element_ids(&p).is_empty());
+        assert!(d.undo());
+        assert_eq!(d.element_ids(&p), vec![id]);
+    }
+
+    #[test]
+    fn set_text_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let stroke = commit(&mut d, &p, hline(100.0));
+        let n = writes(&d);
+        let mut tiny = text_cmd(&p, None, "x");
+        if let Command::SetText { size, .. } = &mut tiny {
+            *size = 0.0;
+        }
+        assert_eq!(d.apply(tiny), Err(CommandError::BadText));
+        let mut nan = text_cmd(&p, None, "x");
+        if let Command::SetText { box_height, .. } = &mut nan {
+            *box_height = f64::NAN;
+        }
+        assert_eq!(d.apply(nan), Err(CommandError::BadText));
+        assert_eq!(
+            d.apply(text_cmd(&p, Some("absent".into()), "x")),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+        assert_eq!(
+            d.apply(text_cmd(&p, Some(stroke.clone()), "x")),
+            Err(CommandError::UnknownElement(stroke))
+        );
+        assert_eq!(
+            d.apply(text_cmd("absente", None, "x")),
+            Err(CommandError::UnknownPage("absente".into()))
+        );
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn set_text_errors_have_readable_messages() {
+        assert_eq!(
+            CommandError::BadText.to_string(),
+            "texte invalide (taille et boîte finies > 0 attendues)"
+        );
+        assert_eq!(
+            CommandError::UnknownElement("x".into()).to_string(),
+            "élément inconnu : x"
+        );
+    }
+
+    /// Garde l'interdit « plus d'une transaction par `SetText` » en comptant les transactions elles-mêmes, sans
+    /// dépendre du réglage de l'historique (délai de capture 0 aujourd'hui, `history.rs`).
+    #[test]
+    fn set_text_each_effect_is_one_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let id = d.apply(text_cmd(&p, None, "Bonjour")).expect("texte").ids[0].clone();
+        assert_eq!(n.since(), 1, "créer : une transaction");
+        d.apply(text_cmd(&p, Some(id.clone()), "Bonsoir"))
+            .expect("remplacer");
+        assert_eq!(n.since(), 2, "remplacer : une transaction");
+        d.apply(text_cmd(&p, Some(id), "")).expect("vider");
+        assert_eq!(n.since(), 3, "vider : une transaction");
     }
 }

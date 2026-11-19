@@ -42,6 +42,18 @@ pub struct ElementView {
     pub style: StrokeStyle,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shape: Option<ShapeView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<TextView>,
+}
+
+/// Texte d'un élément (D14) ; le contenu vient du `Y.Text` de l'élément.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextView {
+    pub content: String,
+    pub size: f32,
+    pub box_width: f64,
+    pub box_height: f64,
 }
 
 /// `m ∘ t` : applique `t` puis `m` (Transform du lot 4, CL4-8).
