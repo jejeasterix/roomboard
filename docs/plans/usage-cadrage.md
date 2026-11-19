@@ -421,7 +421,10 @@ Jouables plus tard, un ou deux par chantier (chantier entre parenthèses). VM : 
 - **S3** (C2) Déposer sur le canvas une photo JPEG prise de travers (EXIF), un PNG transparent et un SVG : trois images
   au point de dépôt, la photo droite ; enregistrer, recharger, rouvrir : les trois images sont là, `assets/` contient
   trois fichiers ; déposer deux fois la même photo : un seul asset. Annuler retire une image par étape.
-- **S4** (lot 5b, C3) Dans la coque, déposer depuis l'explorateur un `.roomboard` sur un tableau vierge : il s'ouvre.
+- **S4** (lot 5b, C3) — **amendé par Q1 (2026-11-20)** : dans la coque, déposer depuis l'explorateur un `.roomboard`,
+  sur un tableau vierge ou modifié : il s'ouvre dans un nouvel onglet, sans menu ni question ; l'onglet d'origine est
+  intact. Ce qui suit est caduc pour le dépôt (l'insertion de pages devient une commande explicite de C3).
+  Texte d'origine : dans la coque, déposer depuis l'explorateur un `.roomboard` sur un tableau vierge : il s'ouvre.
   Le déposer sur un tableau modifié : un menu au point de dépôt ; « Ouvrir à la place » pose la question « abandonner
   les modifications ? », « Oui » ouvre le fichier ; « Insérer ses pages ici » (dès C3) ajoute ses pages après la page
   montrée, une seule étape d'annulation.
