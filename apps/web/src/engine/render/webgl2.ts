@@ -13,14 +13,35 @@ import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer } fro
 
 export type Rgba = readonly [number, number, number, number];
 
-/** `#rrggbb` ou `#rgb` en composantes 0..1 ; toute autre écriture : noir opaque. */
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+
+/**
+ * `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(r, g, b)` et `rgba(r, g, b, a)` (a en nombre ou en %) en composantes
+ * 0..1 ; toute autre écriture : null.
+ */
+export function tryParseColor(css: string): Rgba | null {
+  const s = css.trim();
+  const hexMatch = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(s);
+  const hex = hexMatch?.[1];
+  if (hex !== undefined) {
+    if (hex.length === 5 || hex.length === 7) return null;
+    const full = hex.length <= 4 ? [...hex].map((c) => c + c).join("") : hex;
+    const n = Number.parseInt(full, 16);
+    if (full.length === 8) {
+      return [((n >>> 24) & 255) / 255, ((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+    }
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, 1];
+  }
+  const m = /^rgba?\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*(?:,\s*([\d.]+)(%?)\s*)?\)$/i.exec(s);
+  if (m === null) return null;
+  const ch = (v: string | undefined): number => clamp01(Number(v) / 255);
+  const alpha = m[4] === undefined ? 1 : clamp01(m[5] === "%" ? Number(m[4]) / 100 : Number(m[4]));
+  return [ch(m[1]), ch(m[2]), ch(m[3]), alpha];
+}
+
+/** Voir `tryParseColor` ; écriture inconnue : noir opaque (l'appelant peut le signaler avec `tryParseColor`). */
 export function parseColor(css: string): Rgba {
-  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(css.trim());
-  const hex = m?.[1];
-  if (hex === undefined) return [0, 0, 0, 1];
-  const full = hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex;
-  const n = Number.parseInt(full, 16);
-  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, 1];
+  return tryParseColor(css) ?? [0, 0, 0, 1];
 }
 
 /**
@@ -169,45 +190,100 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   return shader;
 }
 
-function link(gl: WebGL2RenderingContext, vs: WebGLShader, fs: WebGLShader): WebGLProgram {
+/** Programme lié ; les shaders sont détachés et supprimés dans tous les cas, le programme aussi si le lien échoue. */
+function link(gl: WebGL2RenderingContext): WebGLProgram {
+  const vs = compile(gl, gl.VERTEX_SHADER, VERTEX);
+  let fs: WebGLShader;
+  try {
+    fs = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
+  } catch (e) {
+    gl.deleteShader(vs);
+    throw e;
+  }
   const program = gl.createProgram();
-  if (!program) throw new Error("WebGL2 : programme non créé");
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  if (gl.getProgramParameter(program, gl.LINK_STATUS) !== true) {
-    const log = gl.getProgramInfoLog(program) ?? "";
-    throw new Error(`WebGL2 : programme refusé ${log}`.trim());
+  try {
+    if (!program) throw new Error("WebGL2 : programme non créé");
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (gl.getProgramParameter(program, gl.LINK_STATUS) !== true) {
+      const log = gl.getProgramInfoLog(program) ?? "";
+      throw new Error(`WebGL2 : programme refusé ${log}`.trim());
+    }
+  } catch (e) {
+    if (program) gl.deleteProgram(program);
+    throw e;
+  } finally {
+    if (program) {
+      gl.detachShader(program, vs);
+      gl.detachShader(program, fs);
+    }
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
   }
   return program;
 }
 
+interface Resources {
+  readonly program: WebGLProgram;
+  readonly uView: WebGLUniformLocation;
+  readonly uColor: WebGLUniformLocation;
+}
+
+/** Programme, tampon et états fixes : au constructeur, puis à chaque restauration du contexte. */
+function setup(gl: WebGL2RenderingContext): Resources {
+  const program = link(gl);
+  const buffer = gl.createBuffer();
+  const uView = gl.getUniformLocation(program, "u_view");
+  const uColor = gl.getUniformLocation(program, "u_color");
+  const aPos = gl.getAttribLocation(program, "a_pos");
+  if (!buffer || !uView || !uColor || aPos < 0) {
+    gl.deleteProgram(program);
+    throw new Error("WebGL2 : ressources du programme introuvables");
+  }
+  gl.useProgram(program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  return { program, uView, uColor };
+}
+
 export class WebGL2LiveRenderer implements Renderer {
-  private readonly uView: WebGLUniformLocation;
-  private readonly uColor: WebGLUniformLocation;
+  private res: Resources;
   private sx = 1;
   private sy = 1;
+  private contextLost = false;
+  /** Couleurs de trait non reconnues (dessinées en noir) : à dire à l'utilisateur. */
+  readonly badColors = new Set<string>();
 
   constructor(
     private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize">,
     private readonly gl: WebGL2RenderingContext,
   ) {
-    const program = link(gl, compile(gl, gl.VERTEX_SHADER, VERTEX), compile(gl, gl.FRAGMENT_SHADER, FRAGMENT));
-    const buffer = gl.createBuffer();
-    const uView = gl.getUniformLocation(program, "u_view");
-    const uColor = gl.getUniformLocation(program, "u_color");
-    const aPos = gl.getAttribLocation(program, "a_pos");
-    if (!buffer || !uView || !uColor || aPos < 0) throw new Error("WebGL2 : ressources du programme introuvables");
-    this.uView = uView;
-    this.uColor = uColor;
-    gl.useProgram(program);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.CULL_FACE);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    this.res = setup(gl);
+    // Sans preventDefault le navigateur ne restaure jamais le contexte : l'encre vive manquerait pour toujours.
+    gl.canvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      this.contextLost = true;
+    });
+    gl.canvas.addEventListener("webglcontextrestored", () => {
+      try {
+        this.res = setup(this.gl);
+        this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
+        this.contextLost = false;
+      } catch {
+        this.contextLost = true;
+      }
+    });
+  }
+
+  /** Vrai tant que le contexte est perdu : l'encre vive n'est pas dessinée (la barre pourra le dire). */
+  get lost(): boolean {
+    return this.contextLost;
   }
 
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>): void {
@@ -231,6 +307,7 @@ export class WebGL2LiveRenderer implements Renderer {
   }
 
   drawLive(live: LiveLayer, camera: Camera): void {
+    if (this.contextLost) return;
     const gl = this.gl;
     gl.disable(gl.SCISSOR_TEST);
     gl.disable(gl.STENCIL_TEST);
@@ -241,7 +318,7 @@ export class WebGL2LiveRenderer implements Renderer {
     if (live.strokes.length === 0 && live.erasers.length === 0) return;
     const w = gl.canvas.width;
     const h = gl.canvas.height;
-    gl.uniform4fv(this.uView, new Float32Array(viewTransform(camera, w, h, this.sx, this.sy)));
+    gl.uniform4fv(this.res.uView, new Float32Array(viewTransform(camera, w, h, this.sx, this.sy)));
     for (const e of live.erasers) this.paintEraser(e, camera, w, h);
     for (const s of live.strokes) this.paintStroke(s);
   }
@@ -254,7 +331,9 @@ export class WebGL2LiveRenderer implements Renderer {
   }
 
   private color(css: string): void {
-    this.gl.uniform4fv(this.uColor, new Float32Array(parseColor(css)));
+    const rgba = tryParseColor(css);
+    if (rgba === null) this.badColors.add(css);
+    this.gl.uniform4fv(this.res.uColor, new Float32Array(rgba ?? [0, 0, 0, 1]));
   }
 
   /** Remplissage nonzero (parité avec `ctx.fill("nonzero")` du Canvas 2D), puis queue prédite à la largeur du trait. */

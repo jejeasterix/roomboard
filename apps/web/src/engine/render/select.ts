@@ -11,6 +11,8 @@ export interface RendererChoice {
   readonly renderer: Renderer;
   /** Vrai si le canvas d'interaction est dessiné en WebGL2. */
   readonly webgl: boolean;
+  /** Canvas d'interaction effectif : l'original, ou son clone après un repli (qui l'a remplacé dans la page). */
+  readonly interaction: HTMLCanvasElement;
   /** Repli dit à l'utilisateur (barre), ou null. */
   readonly note: string | null;
 }
@@ -21,21 +23,31 @@ export function chooseRenderer(
   source: SceneSource,
   wantWebgl: boolean,
 ): RendererChoice {
-  if (!wantWebgl) return { renderer: createCanvas2DRenderer(scene, live, source), webgl: false, note: null };
+  if (!wantWebgl) {
+    return { renderer: createCanvas2DRenderer(scene, live, source), webgl: false, interaction: live, note: null };
+  }
   const gl = live.getContext("webgl2", WEBGL2_CONTEXT);
   if (!gl) {
     return {
       renderer: createCanvas2DRenderer(scene, live, source),
       webgl: false,
+      interaction: live,
       note: "WebGL2 indisponible : repli Canvas 2D",
     };
   }
   const sceneCtx = scene.getContext("2d", { alpha: false });
   if (!sceneCtx) throw new Error("canvas 2D indisponible");
   try {
-    return { renderer: new WebGL2LiveRenderer(new Canvas2DRenderer(sceneCtx, null, source), gl), webgl: true, note: null };
+    return { renderer: new WebGL2LiveRenderer(new Canvas2DRenderer(sceneCtx, null, source), gl), webgl: true, interaction: live, note: null };
   } catch (e) {
+    // Le contexte WebGL2 ne se rend pas : on le perd explicitement pour libérer la mémoire graphique du canvas jeté.
+    try {
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    } catch {
+      // extension refusée : le canvas jeté sera ramassé avec son contexte.
+    }
     const fresh = live.cloneNode(false) as HTMLCanvasElement;
+    const detached = !live.parentNode;
     live.replaceWith(fresh);
     const liveCtx = fresh.getContext("2d", { desynchronized: true });
     if (!liveCtx) throw new Error("canvas 2D indisponible");
@@ -43,7 +55,8 @@ export function chooseRenderer(
     return {
       renderer: new Canvas2DRenderer(sceneCtx, liveCtx, source),
       webgl: false,
-      note: `WebGL2 refusé (${cause}) : repli Canvas 2D`,
+      interaction: fresh,
+      note: `WebGL2 refusé (${cause}${detached ? " ; canvas d'interaction sans parent, remplacé hors page" : ""}) : repli Canvas 2D`,
     };
   }
 }
