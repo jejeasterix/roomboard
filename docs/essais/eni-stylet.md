@@ -127,3 +127,25 @@ Annuler, Rétablir) est provisoire : l'interface complète arrive au lot 5.
 
 Verdict : le ressenti de Jérôme (« le trait suit la pointe »), comme le 16 (D31). Si le trait ne suit pas : tableau
 « Si l'essai échoue » ci-dessus (échelons 2 à 4 de DA9, lot 3b).
+
+## Lot 3b : comparer les réglages
+
+Le lot 3b a été livré sans attendre l'essai (décision de Jérôme, 2026-11-19 : « oui fait le avancé en autonomie même
+si je n'ai pas fais les tests ») : chaque échelon de DA9 est un réglage, éteint par défaut tant que rien de mesuré ne
+le demande (S1, OC56, OC66). L'essai ENI du samedi 21 novembre vérifie ces défauts. Ouvrir la même adresse que
+l'application, suivie du réglage ; la seconde ligne de la barre montre l'état effectif et bascule chaque réglage (les
+échelons 3 et 4 rechargent la page : le dessin en cours est perdu).
+
+| réglage | adresse | quoi regarder |
+|---|---|---|
+| défauts | (rien) | Le trait suit-il la pointe ? C'est la référence des lignes suivantes. |
+| É2 prédiction TS | `?echelons=2` | La queue devant la pointe colle-t-elle mieux, ou dépasse-t-elle dans les virages ? |
+| É3 traînée `navigator.ink` | `?echelons=3` | Sous Edge Windows, la pointe dessinée par le système rattrape-t-elle le stylet ? « sans effet » dans la barre : l'API manque. |
+| É4 WebGL2 | `?echelons=4` | Traits longs et rapides : moins de saccades ? « repli Canvas 2D » dans la barre : WebGL2 manque. |
+| paume souple | `?paume=souple` | Paume posée avant le stylet : son trait continue-t-il (attendu : oui en souple, non par défaut) ? |
+| doigt qui trace | `?doigt=trace` | Après le stylet, le doigt trace au lieu de déplacer la vue ; le bouton « Doigt » de la barre bascule à chaud. |
+
+Combiner : `?echelons=2,4`. Tout éteindre : `?echelons=aucun`. Avec le banc : `?banc&echelons=4`. Le panneau du banc
+résume les 600 dernières images ; l'export JSON garde les 3 600 dernières que le moteur retient.
+Nouveautés à essayer en passant : outil « Main », barre d'espace + glisser, bouton du milieu de la souris (la vue suit,
+rien ne trace) ; bouton « Gomme : partielle / objet » (en gomme d'objet, un passage retire le trait entier).
