@@ -48,6 +48,8 @@ const finitePath = (path: Float32Array): boolean =>
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
 const clone = (s: State): State => ({ pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements] })) });
 const translate = (x: number, y: number): Matrix => [1, 0, 0, 1, x, y];
+/** Matrice de `Transform`, donnée ou composée : six nombres finis, |dét| ≥ 1e-12 (même règle que le cœur). */
+const validMatrix = (m: Matrix): boolean => m.every((v) => Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) >= 1e-12;
 const isIdentity = (m: Matrix): boolean => m[0] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 1 && m[4] === 0 && m[5] === 0;
 
 function toLocal(points: Float32Array): { x0: number; y0: number; local: Float32Array } {
@@ -231,11 +233,13 @@ class FakeDocument implements CoreDocument {
       }
       case "AddShape": {
         if (![cmd.x0, cmd.y0, cmd.x1, cmd.y1].every((v) => Number.isFinite(v))) throw new Error(MESSAGES.badShape);
+        // Comme le cœur (constat 3 de T60) : la géométrie tirée des coins doit rester finie en f32.
+        const g = normalizeShape(cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
+        if (![g.tx, g.ty, g.w, g.h].every((v) => Number.isFinite(Math.fround(v)))) throw new Error(MESSAGES.badShape);
         if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
         this.page(cmd.page);
         return this.step((s) => {
           const id = newId();
-          const g = normalizeShape(cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
           s.pages.find((p) => p.id === cmd.page)?.elements.push({
             id,
             transform: translate(g.tx, g.ty),
@@ -286,15 +290,18 @@ class FakeDocument implements CoreDocument {
       }
       case "Transform": {
         const m = cmd.matrix;
-        const det = m[0] * m[3] - m[1] * m[2];
-        if (!m.every((v) => Number.isFinite(v)) || Math.abs(det) < 1e-12) throw new Error(MESSAGES.badMatrix);
+        if (!validMatrix(m)) throw new Error(MESSAGES.badMatrix);
         const ids = [...new Set(cmd.ids)].filter((id) => this.find(id) !== undefined).sort();
         if (ids.length === 0 || isIdentity(m)) return this.unchanged();
+        // Comme le cœur (constat 2 de T60) : chaque matrice composée suit la règle de `m`, avant toute étape.
+        const composed = new Map(ids.map((id) => [id, composeMatrix(m, this.find(id)?.element.transform ?? m)]));
+        if (![...composed.values()].every(validMatrix)) throw new Error(MESSAGES.badMatrix);
         const pages = [...new Set(ids.map((id) => this.find(id)?.page.id ?? ""))].sort();
         return this.step((s) => {
           for (const p of s.pages) {
             p.elements.forEach((e, i) => {
-              if (ids.includes(e.id)) p.elements[i] = { ...e, transform: composeMatrix(m, e.transform) };
+              const t = composed.get(e.id);
+              if (t) p.elements[i] = { ...e, transform: t };
             });
           }
           return { pages, ids, removed: [] };

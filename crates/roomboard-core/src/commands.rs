@@ -225,6 +225,11 @@ fn positive(v: f32) -> bool {
     v.is_finite() && v > 0.0
 }
 
+/// Matrice de `Transform`, donnée ou composée : six nombres finis, inversible (|dét| ≥ 1e-12, seuil d'`invert`).
+fn valid_matrix(m: &Transform) -> bool {
+    m.iter().all(|v| v.is_finite()) && invert(m).is_some()
+}
+
 fn stroke_prelim(
     id: &str,
     transform: &Transform,
@@ -324,6 +329,13 @@ impl Document {
         if corners.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadShape);
         }
+        let [x0, y0, x1, y1] = corners;
+        let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
+        // Constat 3 de T60 : des coins finis peuvent donner w = inf (x0 = -1e308, x1 = 1e308), ou une géométrie que le
+        // polygone (f32) et la liaison ne tiennent pas.
+        if [tx, ty, w, h].iter().any(|v| !(*v as f32).is_finite()) {
+            return Err(CommandError::BadShape);
+        }
         if !positive(style.width) {
             return Err(CommandError::BadWidth);
         }
@@ -332,8 +344,6 @@ impl Document {
             self.page_elements(&txn, page)
         }
         .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
-        let [x0, y0, x1, y1] = corners;
-        let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
         let id = yrs::uuid_v4().to_string();
         let mut fields: Vec<(&str, In)> = vec![
             ("id", In::from(id.as_str())),
@@ -365,7 +375,7 @@ impl Document {
     /// Compose `m` à gauche de la transformation de chaque élément trouvé (CL4-8) ; ids inconnus ignorés ; rien trouvé
     /// ou identité : aucune transaction (D38).
     fn cmd_transform(&mut self, ids: &[String], m: &Transform) -> Result<Change, CommandError> {
-        if m.iter().any(|v| !v.is_finite()) || invert(m).is_none() {
+        if !valid_matrix(m) {
             return Err(CommandError::BadMatrix);
         }
         let unique: BTreeSet<&String> = ids.iter().collect();
@@ -383,10 +393,16 @@ impl Document {
         if targets.is_empty() || *m == IDENTITY {
             return Ok(self.unchanged());
         }
+        // Constat 2 de T60 : chaque matrice composée suit la règle de `m` (deux × 1e200 donnent une matrice infinie,
+        // cinq × 0,05 un déterminant < 1e-12) ; une seule fautive refuse la commande, avant toute écriture.
+        let composed: Vec<Transform> = targets.iter().map(|(_, t, _, _)| compose(m, t)).collect();
+        if !composed.iter().all(valid_matrix) {
+            return Err(CommandError::BadMatrix);
+        }
         {
             let mut txn = self.transact_local();
-            for (e, t, _, _) in &targets {
-                e.insert(&mut txn, "transform", transform_to_any(&compose(m, t)));
+            for ((e, _, _, _), c) in targets.iter().zip(&composed) {
+                e.insert(&mut txn, "transform", transform_to_any(c));
             }
         }
         let mut pages: Vec<String> = targets.iter().map(|t| t.2.clone()).collect();
