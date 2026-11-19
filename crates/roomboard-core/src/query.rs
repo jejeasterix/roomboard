@@ -7,12 +7,12 @@ use std::rc::Rc;
 
 use yrs::{Array, Map, MapRef, Out, ReadTxn};
 
-use crate::commands::{read_shape, read_stroke, world_to_local_path};
+use crate::commands::{read_shape, read_stroke, read_text, world_to_local_path};
 use crate::document::Document;
 use crate::element::{apply_transform, invert, out_string, out_transform, Transform};
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
-use crate::shape::shape_polygon;
+use crate::shape::{box_polygon, shape_polygon};
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Bounds {
@@ -78,7 +78,8 @@ impl Document {
         Some(self.cached_outline(id, &style, &pts).to_vec())
     }
 
-    /// Géométrie locale d'un élément pour la collision et les bornes : contour en cache (trait), polygone (forme).
+    /// Géométrie locale d'un élément pour la collision et les bornes : contour en cache (trait), polygone (forme),
+    /// boîte (texte).
     fn element_geom<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Geom> {
         let id = out_string(e.get(txn, "id")).unwrap_or_default();
         if let Some((transform, style, pts)) = read_stroke(txn, e) {
@@ -90,6 +91,13 @@ impl Document {
             });
         }
         let transform = out_transform(e.get(txn, "transform"))?;
+        if let Some(t) = read_text(txn, e) {
+            return Some(Geom {
+                id,
+                transform,
+                outline: box_polygon(t.box_width, t.box_height).into(),
+            });
+        }
         let s = read_shape(txn, e)?;
         Some(Geom {
             id,
