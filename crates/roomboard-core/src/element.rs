@@ -27,11 +27,33 @@ pub struct PageView {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ShapeView {
+    pub shape: String,
+    pub w: f64,
+    pub h: f64,
+    pub fill: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ElementView {
     pub id: String,
     pub kind: String,
     pub transform: Transform,
     pub style: StrokeStyle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<ShapeView>,
+}
+
+/// `m ∘ t` : applique `t` puis `m` (Transform du lot 4, CL4-8).
+pub fn compose(m: &Transform, t: &Transform) -> Transform {
+    [
+        m[0] * t[0] + m[2] * t[1],
+        m[1] * t[0] + m[3] * t[1],
+        m[0] * t[2] + m[2] * t[3],
+        m[1] * t[2] + m[3] * t[3],
+        m[0] * t[4] + m[2] * t[5] + m[4],
+        m[1] * t[4] + m[3] * t[5] + m[5],
+    ]
 }
 
 pub fn apply_transform(t: &Transform, x: f64, y: f64) -> (f64, f64) {

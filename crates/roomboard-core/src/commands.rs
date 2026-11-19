@@ -6,12 +6,13 @@ use yrs::{Any, Array, ArrayRef, In, Map, MapPrelim, MapRef, Out, ReadTxn};
 
 use crate::document::{insert_page, Document};
 use crate::element::{
-    apply_transform, invert, out_bytes, out_string, out_transform, read_style, style_fields,
-    transform_to_any, StrokeStyle, Transform,
+    apply_transform, compose, invert, out_bytes, out_f64, out_string, out_transform, read_style,
+    style_fields, transform_to_any, StrokeStyle, Transform, IDENTITY,
 };
 use crate::ink::erase::erase;
 use crate::ink::hit::path_hits_outline;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
+use crate::shape::{normalize, ShapeKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EraseMode {
@@ -41,6 +42,20 @@ pub enum Command {
     Delete {
         ids: Vec<String>,
     },
+    AddShape {
+        page: String,
+        shape: ShapeKind,
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        style: StrokeStyle,
+        fill: Option<String>,
+    },
+    Transform {
+        ids: Vec<String>,
+        matrix: Transform,
+    },
 }
 
 /// Ce qu'une commande a touché ; `full` = tout invalider (annuler, rétablir).
@@ -60,6 +75,8 @@ pub enum CommandError {
     BadPoints,
     BadRadius,
     BadWidth,
+    BadShape,
+    BadMatrix,
 }
 
 impl std::fmt::Display for CommandError {
@@ -79,6 +96,13 @@ impl std::fmt::Display for CommandError {
             CommandError::BadWidth => {
                 write!(f, "épaisseur de trait invalide (nombre fini > 0 attendu)")
             }
+            CommandError::BadShape => write!(
+                f,
+                "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)"
+            ),
+            CommandError::BadMatrix => {
+                write!(f, "matrice invalide (six nombres finis, inversible)")
+            }
         }
     }
 }
@@ -97,6 +121,28 @@ pub(crate) fn read_stroke<T: ReadTxn>(
         read_style(txn, e)?,
         decode(&out_bytes(e.get(txn, "points"))?)?,
     ))
+}
+
+/// Champs d'une forme (D13) ; `None` si l'élément n'en est pas une.
+pub(crate) struct ShapeFields {
+    pub kind: ShapeKind,
+    pub w: f64,
+    pub h: f64,
+    pub style: StrokeStyle,
+    pub fill: Option<String>,
+}
+
+pub(crate) fn read_shape<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ShapeFields> {
+    if out_string(e.get(txn, "kind"))? != "shape" {
+        return None;
+    }
+    Some(ShapeFields {
+        kind: ShapeKind::parse(&out_string(e.get(txn, "shape"))?)?,
+        w: out_f64(e.get(txn, "w"))?,
+        h: out_f64(e.get(txn, "h"))?,
+        style: read_style(txn, e)?,
+        fill: out_string(e.get(txn, "fill")),
+    })
 }
 
 /// Chemin monde (paires x, y) ramené au repère local par l'inverse de `t` ; `None` si `t` n'est pas inversible.
@@ -170,9 +216,107 @@ impl Document {
                 mode,
             } => self.cmd_erase(&page, &path, radius, mode),
             Command::Delete { ids } => self.cmd_delete(&ids),
+            Command::AddShape {
+                page,
+                shape,
+                x0,
+                y0,
+                x1,
+                y1,
+                style,
+                fill,
+            } => self.cmd_add_shape(&page, shape, [x0, y0, x1, y1], &style, fill.as_deref()),
+            Command::Transform { ids, matrix } => self.cmd_transform(&ids, &matrix),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
+    }
+
+    fn cmd_add_shape(
+        &mut self,
+        page: &str,
+        kind: ShapeKind,
+        corners: [f64; 4],
+        style: &StrokeStyle,
+        fill: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        if corners.iter().any(|v| !v.is_finite()) {
+            return Err(CommandError::BadShape);
+        }
+        if !positive(style.width) {
+            return Err(CommandError::BadWidth);
+        }
+        let elements = {
+            let txn = self.read();
+            self.page_elements(&txn, page)
+        }
+        .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        let [x0, y0, x1, y1] = corners;
+        let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
+        let id = yrs::uuid_v4().to_string();
+        let mut fields: Vec<(&str, In)> = vec![
+            ("id", In::from(id.as_str())),
+            ("kind", In::from("shape")),
+            ("shape", In::from(kind.as_str())),
+            (
+                "transform",
+                In::Any(transform_to_any(&[1.0, 0.0, 0.0, 1.0, tx, ty])),
+            ),
+            ("color", In::from(style.color.as_str())),
+            ("width", In::Any(Any::from(f64::from(style.width)))),
+            ("w", In::Any(Any::from(w))),
+            ("h", In::Any(Any::from(h))),
+        ];
+        if let Some(f) = fill {
+            fields.push(("fill", In::from(f)));
+        }
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ids: vec![id],
+            ..Default::default()
+        }))
+    }
+
+    /// Compose `m` à gauche de la transformation de chaque élément trouvé (CL4-8) ; ids inconnus ignorés ; rien trouvé
+    /// ou identité : aucune transaction (D38).
+    fn cmd_transform(&mut self, ids: &[String], m: &Transform) -> Result<Change, CommandError> {
+        if m.iter().any(|v| !v.is_finite()) || invert(m).is_none() {
+            return Err(CommandError::BadMatrix);
+        }
+        let unique: BTreeSet<&String> = ids.iter().collect();
+        let targets: Vec<(MapRef, Transform, String, String)> = {
+            let txn = self.read();
+            unique
+                .into_iter()
+                .filter_map(|id| {
+                    let f = self.find_element(&txn, id)?;
+                    let t = out_transform(f.element.get(&txn, "transform"))?;
+                    Some((f.element, t, f.page_id, id.clone()))
+                })
+                .collect()
+        };
+        if targets.is_empty() || *m == IDENTITY {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            for (e, t, _, _) in &targets {
+                e.insert(&mut txn, "transform", transform_to_any(&compose(m, t)));
+            }
+        }
+        let mut pages: Vec<String> = targets.iter().map(|t| t.2.clone()).collect();
+        pages.sort();
+        pages.dedup();
+        let ids = targets.into_iter().map(|t| t.3).collect();
+        Ok(self.done(Change {
+            pages,
+            ids,
+            ..Default::default()
+        }))
     }
 
     fn done(&mut self, mut change: Change) -> Change {
@@ -858,5 +1002,233 @@ pub(crate) mod tests {
         }
         assert!(d.element_ids(&p).is_empty());
         assert!(!d.can_undo());
+    }
+
+    use crate::element::{ShapeView, IDENTITY};
+    use crate::shape::ShapeKind;
+
+    fn rect(page: &str, corners: [f64; 4]) -> Command {
+        let [x0, y0, x1, y1] = corners;
+        Command::AddShape {
+            page: page.into(),
+            shape: ShapeKind::Rect,
+            x0,
+            y0,
+            x1,
+            y1,
+            style: pen(),
+            fill: None,
+        }
+    }
+
+    #[test]
+    fn transform_moves_elements_in_one_step() {
+        let mut d = Document::blank();
+        let (p, [a, b, _]) = three(&mut d);
+        let before = d.element(&a).expect("a").transform;
+        let c = d
+            .apply(Command::Transform {
+                ids: vec![b.clone(), a.clone(), a.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 50.0],
+            })
+            .expect("transform");
+        let mut want = vec![a.clone(), b.clone()];
+        want.sort();
+        assert_eq!(c.ids, want);
+        assert_eq!(c.pages, vec![p]);
+        assert_eq!(
+            d.element(&a).expect("a").transform,
+            [1.0, 0.0, 0.0, 1.0, before[4] + 100.0, before[5] + 50.0]
+        );
+        assert!(d.undo());
+        assert_eq!(d.element(&a).expect("a").transform, before);
+        assert!(
+            d.can_undo(),
+            "une seule étape défaite : les trois traits restent"
+        );
+    }
+
+    #[test]
+    fn transform_composes_on_the_left() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0)); // [1, 0, 0, 1, 100, 100]
+        d.apply(Command::Transform {
+            ids: vec![a.clone()],
+            matrix: [2.0, 0.0, 0.0, 2.0, 0.0, 0.0],
+        })
+        .expect("échelle");
+        d.apply(Command::Transform {
+            ids: vec![a.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 10.0, 0.0],
+        })
+        .expect("translation");
+        assert_eq!(
+            d.element(&a).expect("a").transform,
+            [2.0, 0.0, 0.0, 2.0, 210.0, 200.0]
+        );
+    }
+
+    #[test]
+    fn transform_rejects_bad_matrix_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0));
+        let n = writes(&d);
+        for m in [
+            [f64::NAN, 0.0, 0.0, 1.0, 0.0, 0.0],
+            [0.0; 6],
+            [1.0, 2.0, 2.0, 4.0, 0.0, 0.0],
+        ] {
+            assert_eq!(
+                d.apply(Command::Transform {
+                    ids: vec![a.clone()],
+                    matrix: m
+                }),
+                Err(CommandError::BadMatrix)
+            );
+        }
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn transform_unknown_ids_or_identity_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = commit(&mut d, &p, hline(100.0));
+        let n = writes(&d);
+        let v = d.version();
+        let c = d
+            .apply(Command::Transform {
+                ids: vec!["absent".into()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 5.0, 5.0],
+            })
+            .expect("inconnu");
+        assert!(c.ids.is_empty() && c.pages.is_empty());
+        let c = d
+            .apply(Command::Transform {
+                ids: vec![a],
+                matrix: IDENTITY,
+            })
+            .expect("identité");
+        assert!(c.ids.is_empty());
+        assert_eq!(d.version(), v);
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn add_shape_rect_normalizes_and_is_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let c = d
+            .apply(rect(&p, [300.0, 200.0, 100.0, 50.0]))
+            .expect("rect");
+        assert_eq!(c.pages, vec![p.clone()]);
+        let e = d.element(&c.ids[0]).expect("élément");
+        assert_eq!(e.kind, "shape");
+        assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]);
+        assert_eq!(e.style, pen());
+        assert_eq!(
+            e.shape,
+            Some(ShapeView {
+                shape: "rect".into(),
+                w: 200.0,
+                h: 150.0,
+                fill: None
+            })
+        );
+        assert!(d.undo());
+        assert!(d.element_ids(&p).is_empty());
+    }
+
+    #[test]
+    fn add_shape_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        assert_eq!(
+            d.apply(rect(&p, [f64::NAN, 0.0, 10.0, 10.0])),
+            Err(CommandError::BadShape)
+        );
+        let mut thin = rect(&p, [0.0, 0.0, 10.0, 10.0]);
+        if let Command::AddShape { style, .. } = &mut thin {
+            style.width = 0.0;
+        }
+        assert_eq!(d.apply(thin), Err(CommandError::BadWidth));
+        assert_eq!(
+            d.apply(rect("absente", [0.0, 0.0, 10.0, 10.0])),
+            Err(CommandError::UnknownPage("absente".into()))
+        );
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn erase_and_delete_on_shapes() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let arrow = d
+            .apply(Command::AddShape {
+                page: p.clone(),
+                shape: ShapeKind::Arrow,
+                x0: 300.0,
+                y0: 200.0,
+                x1: 100.0,
+                y1: 50.0,
+                style: pen(),
+                fill: Some("#ff0000".into()),
+            })
+            .expect("flèche")
+            .ids[0]
+            .clone();
+        let e = d.element(&arrow).expect("flèche");
+        assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 300.0, 200.0]);
+        assert_eq!(
+            e.shape,
+            Some(ShapeView {
+                shape: "arrow".into(),
+                w: -200.0,
+                h: -150.0,
+                fill: Some("#ff0000".into())
+            })
+        );
+        let id = d
+            .apply(rect(&p, [100.0, 300.0, 300.0, 500.0]))
+            .expect("rect")
+            .ids[0]
+            .clone();
+        for mode in [EraseMode::Partial, EraseMode::Object] {
+            let c = d
+                .apply(Command::Erase {
+                    page: p.clone(),
+                    path: vec![100.0, 400.0, 300.0, 400.0],
+                    radius: 20.0,
+                    mode,
+                })
+                .expect("gomme");
+            assert!(
+                c.removed.is_empty(),
+                "la gomme n'agit que sur les traits (D12)"
+            );
+        }
+        assert_eq!(
+            d.apply(Command::Delete {
+                ids: vec![id.clone()]
+            })
+            .expect("suppression")
+            .removed,
+            vec![id]
+        );
+    }
+
+    #[test]
+    fn new_errors_have_readable_messages() {
+        assert_eq!(
+            CommandError::BadShape.to_string(),
+            "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)"
+        );
+        assert_eq!(
+            CommandError::BadMatrix.to_string(),
+            "matrice invalide (six nombres finis, inversible)"
+        );
     }
 }
