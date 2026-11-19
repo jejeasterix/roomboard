@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ElementView } from "../../core/api";
+import { arrowWings } from "../../core/shapes";
 import { IDENTITY } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
-import { arrowHead, Canvas2DRenderer, createCanvas2DRenderer, tracePolygons } from "./canvas2d";
+import { Canvas2DRenderer, createCanvas2DRenderer, tracePolygons } from "./canvas2d";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { SceneSource } from "./renderer";
 
@@ -216,17 +217,17 @@ describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
     expect(tail.filter((l) => l === "lineTo")).toHaveLength(3);
   });
 
-  it("arrowHead : pointe à ±25° derrière la fin, longueur max(12, 3 × épaisseur)", () => {
+  it("arrowWings : pointe à ±25° derrière la fin, longueur max(12, 3 × épaisseur)", () => {
     const a = (25 * Math.PI) / 180;
-    const head = arrowHead(100, 0, 4);
+    const head = arrowWings(100, 0, 4);
     expect(head).not.toBeNull();
     const [x1, y1, x2, y2] = head ?? [0, 0, 0, 0];
     expect(x1).toBeCloseTo(100 - 12 * Math.cos(a));
     expect(x2).toBeCloseTo(100 - 12 * Math.cos(a));
     expect(Math.abs(y1)).toBeCloseTo(12 * Math.sin(a));
     expect(y2).toBeCloseTo(-y1);
-    expect(Math.hypot(100 - (arrowHead(100, 0, 10)?.[0] ?? 0), arrowHead(100, 0, 10)?.[1] ?? 0)).toBeCloseTo(30);
-    expect(arrowHead(0, 0, 4)).toBeNull();
+    expect(Math.hypot(100 - (arrowWings(100, 0, 10)?.[0] ?? 0), arrowWings(100, 0, 10)?.[1] ?? 0)).toBeCloseTo(30);
+    expect(arrowWings(0, 0, 4)).toBeNull();
   });
 
   it("texte : une ligne par fillText, interligne 1,25, police à la taille", () => {

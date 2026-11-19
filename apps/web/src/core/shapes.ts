@@ -21,7 +21,7 @@ export function normalizeShape(kind: ShapeKind, x0: number, y0: number, x1: numb
 }
 
 /**
- * Pointe de flèche (D13), `arrow_wings` du cœur et même calcul que `arrowHead` de `canvas2d.ts` : extrémités des deux
+ * Pointe de flèche (D13), `arrow_wings` du cœur, appelé aussi par le rendu (`canvas2d.ts`) : extrémités des deux
  * ailes, longueur max(12, 3 × épaisseur) à ±25° derrière la fin du segment ; null pour un segment nul.
  */
 export function arrowWings(w: number, h: number, width: number): [number, number, number, number] | null {

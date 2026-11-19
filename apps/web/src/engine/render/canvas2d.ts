@@ -53,10 +53,6 @@ export const SELECTION_COLOR = "#1e3a8a";
 export const BAND_FILL = "rgba(30, 58, 138, 0.08)";
 export const HANDLE_FILL = "#ffffff";
 
-/** Pointe de flèche (D13) : deux branches de longueur max(12, 3 × épaisseur) à ±25° derrière la fin du segment ; un seul
- *  calcul, `arrowWings`, partagé avec le polygone de collision et de bornes (`shapePolygon`). */
-export const arrowHead = arrowWings;
-
 /** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)). */
 export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number): void {
   ctx.beginPath();
@@ -67,7 +63,7 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
   } else {
     ctx.moveTo(0, 0);
     ctx.lineTo(s.w, s.h);
-    const head = s.shape === "arrow" ? arrowHead(s.w, s.h, width) : null;
+    const head = s.shape === "arrow" ? arrowWings(s.w, s.h, width) : null;
     if (head) {
       ctx.moveTo(head[0], head[1]);
       ctx.lineTo(s.w, s.h);

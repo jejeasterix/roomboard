@@ -462,6 +462,20 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
     }
   });
 
+  // T65 : rang 1 à 1e200 partout, déterminant NaN (inf - inf) : refusé par les deux fabriques, avec la même erreur.
+  it("Transform : matrice de rang 1 à 1e200 (déterminant NaN) refusée", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = commit(d, p, 100);
+    const before = d.element(a)?.transform;
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "Transform", ids: [a], matrix: [1e200, 1e200, 1e200, 1e200, 1e200, 1e200] }))).toBe(
+        "matrice invalide (six nombres finis, inversible)",
+      );
+    });
+    expect(d.element(a)?.transform).toEqual(before);
+  });
+
   // Constats 2 et 3 de T60 : la matrice composée (pas seulement `matrix`) et la géométrie tirée des coins (pas seulement
   // les coins) sont contrôlées ; refus sans étape, la commande entière.
   it("Transform : matrice composée infinie ou presque singulière refusée ; AddShape : w, h, tx, ty non finis en f32 refusés", () => {
