@@ -8,7 +8,7 @@ import type { SelectionTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
 
-function setup() {
+function setup(zoom = 1) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   let shift = false;
@@ -16,7 +16,7 @@ function setup() {
   const ctx: ToolContext = {
     doc,
     page: () => page,
-    camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
+    camera: () => ({ zoom, tx: 0, ty: 0 }),
     run: (cmd) => {
       runs.push(cmd);
       try {
@@ -136,6 +136,29 @@ describe("outil Sélection (D15, D38)", () => {
     gesture(tool, [[202, 202], [306, 250]]);
     expect(tool.selection()).toEqual([a]);
     expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [2, 0, 0, 2, -98, -98] }]);
+  });
+
+  it("tiret de 20×4 unités à zoom 1 : appui au centre puis glisser = déplacer, pas redimensionner", () => {
+    const { tool, runs, rect } = setup();
+    const a = rect(100, 100, 120, 104);
+    tool.setSelection([a]);
+    gesture(tool, [[110, 102], [140, 112]]);
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 30, 10] }]);
+  });
+
+  it("zoom 2 : poignée de coin et déplacement en unités monde", () => {
+    const { tool, runs, rect } = setup(2);
+    const a = rect(100, 100, 200, 200); // bornes 98..202, soit 196..404 à l'écran
+    gesture(tool, [[300, 300]]);
+    gesture(tool, [[404, 404], [612, 612]]);
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [2, 0, 0, 2, -98, -98] }]);
+  });
+
+  it("zoom 2 : glisser le corps déplace de l'écart en unités monde", () => {
+    const { tool, runs, rect } = setup(2);
+    const a = rect(100, 100, 200, 200);
+    gesture(tool, [[300, 300], [500, 360]]);
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 100, 30] }]);
   });
 
   it("cancel et abort n'écrivent rien", () => {

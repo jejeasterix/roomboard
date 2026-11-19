@@ -26,7 +26,7 @@ class FakeHost implements TextEditorHost {
   }
 }
 
-function setup(measure: Measure = narrow) {
+function setup(measure: Measure = narrow, zoom = 1) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   let shown = page;
@@ -34,7 +34,7 @@ function setup(measure: Measure = narrow) {
   const ctx: ToolContext = {
     doc,
     page: () => shown,
-    camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
+    camera: () => ({ zoom, tx: 0, ty: 0 }),
     run: (cmd) => {
       runs.push(cmd);
       return doc.apply(cmd);
@@ -101,6 +101,31 @@ describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
     tool.requestCommit();
     expect(doc.elementIds(page)).toEqual([]);
     expect(tool.live().hidden.size).toBe(0);
+  });
+
+  it("contenu inchangé : aucune SetText, même si la mesure a changé", () => {
+    const { doc, page, host, tool, runs, click } = setup((s) => s.length * 1000);
+    doc.apply({ type: "SetText", page, id: null, x: 100, y: 200, content: "Bonjour", color: "#000000", size: 48, boxWidth: 600, boxHeight: 60 });
+    click(150, 210);
+    host.text = "Bonjour";
+    tool.requestCommit();
+    expect(runs).toHaveLength(0);
+    expect(host.closed).toBe(1);
+    expect(tool.editing()).toBeNull();
+  });
+
+  it("zoom 2 : position monde de la boîte neuve et tolérance de prise en unités monde", () => {
+    const { doc, page, host, tool, click } = setup(narrow, 2);
+    click(200, 400);
+    expect(tool.editing()).toMatchObject({ id: null, matrix: [1, 0, 0, 1, 100, 200] });
+    tool.requestCommit();
+    const id = doc.apply({ type: "SetText", page, id: null, x: 100, y: 200, content: "Bonjour", color: "#000000", size: 48, boxWidth: 600, boxHeight: 60 }).ids[0] ?? "";
+    click(300, 420); // monde (150, 210) : dedans
+    expect(tool.editing()).toMatchObject({ id });
+    host.text = "Bonjour";
+    tool.requestCommit();
+    click(300, 528); // monde (150, 264) : 4 unités sous la boîte, tolérance 3 unités (6 px / 2)
+    expect(tool.editing()).toMatchObject({ id: null });
   });
 
   it("une validation pendant la composition attend compositionend", () => {

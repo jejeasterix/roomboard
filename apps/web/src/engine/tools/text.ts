@@ -62,6 +62,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     live = NO_LIVE;
     host.close();
     if (s.id === null && content === "") return;
+    if (s.id !== null && content === s.initial) return;
     const boxHeight = textBoxHeight(layoutText(content, s.size, s.boxWidth, measure).length, s.size);
     ctx.run({
       type: "SetText",

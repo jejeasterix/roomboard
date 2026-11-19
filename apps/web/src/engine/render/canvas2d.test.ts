@@ -36,7 +36,8 @@ class FakeCtx {
   textBaseline = "alphabetic";
   ellipse(): void { this.log.push("ellipse"); }
   fillText(text: string, x: number, y: number): void { this.log.push(`fillText ${text} ${x},${y}`); }
-  measureText(text: string): { width: number } { return { width: text.length * 10 }; }
+  measures = 0;
+  measureText(text: string): { width: number } { this.measures++; return { width: text.length * 10 }; }
   setLineDash(d: number[]): void { this.log.push(`setLineDash ${d.join(",")}`); }
 }
 
@@ -259,5 +260,18 @@ describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
     });
     expect(scene.log.filter((l) => l === "transform 1,0,0,1,5,6")).toHaveLength(1);
     expect(scene.log).toContain("transform 2,0,0,2,0,0");
+  });
+
+  it("texte : lignes en cache par id, remesurées seulement après invalidate (CL4-1)", () => {
+    const { r, scene } = makeViews();
+    const page = { id: "p", elementIds: ["t"] };
+    r.drawScene(page, IDENTITY, new Set());
+    const first = scene.measures;
+    expect(first).toBeGreaterThan(0);
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBe(first);
+    r.invalidate({ pages: [], ids: ["t"], removed: [], full: false, version: 2 });
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBeGreaterThan(first);
   });
 });
