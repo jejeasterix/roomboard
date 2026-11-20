@@ -131,8 +131,10 @@ export function App(props: AppProps): JSX.Element {
   const floating = createMemo(() => profile().toolbars.filter((b) => b.dock === "floating"));
   const grid = createMemo(() => layoutFor(docked()));
 
+  /** La rangée des préréglages n'est que dans la première barre de rôle `tools` (C1, P18). */
+  const presetsBarId = createMemo(() => profile().toolbars.find((b) => b.role === "tools")?.id);
   const toolbarOf = (bar: Bar): JSX.Element => (
-    <Toolbar bar={bar} caps={props.active.capabilities} view={state} size={size} host={host} presets={() => profile().presets} />
+    <Toolbar bar={bar} caps={props.active.capabilities} view={state} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} />
   );
   /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. */
   const BY_ROLE: Readonly<Record<string, (bar: Bar) => JSX.Element>> = {
@@ -233,12 +235,10 @@ export function App(props: AppProps): JSX.Element {
             profile={profile()}
             origin={originOf(profile(), BUILTIN_PROFILES)}
             save={(draft) => {
-              actions.save(draft);
-              setPanel(null);
+              if (actions.save(draft)) setPanel(null);
             }}
             saveAsNew={(draft, label) => {
-              actions.saveAsNew(draft, label);
-              setPanel(null);
+              if (actions.saveAsNew(draft, label) !== null) setPanel(null);
             }}
             close={() => setPanel(null)}
           />
