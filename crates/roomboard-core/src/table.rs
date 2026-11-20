@@ -1,11 +1,12 @@
-//! Tableau (U32, DAU10, C10a, DAC1) : élément `Y.Map{ id, kind: "table", transform, color, size, cols, rows, cells }` ;
+//! Tableau (U32, DAU10, C10a, DAC1 ; C10b, DAB1, DAB3) : élément `Y.Map{ id, kind: "table", transform, color, size, cols, rows, cells }` ;
 //! `cols` = `Y.Array<Y.Map{ id, width }>`, `rows` = `Y.Array<Y.Map{ id, height }>`, ids `yrs::uuid_v4` ; `cells` =
-//! `Y.Map` clé `"<rowId>:<colId>"` → `Y.Map{ text: Y.Text, fill? }`, cellule absente = vide. Lecture tolérante (T2) :
+//! `Y.Map` clé `"<rowId>:<colId>"` → `Y.Map{ text: Y.Text, fill?, shade?, span? }`, cellule absente = vide. Lecture tolérante (T2) :
 //! entrée de `cols` / `rows` illisible (id vide ou contenant `:`) ou d'un id déjà vu sautée (gardée dans le document), `text` qui n'est pas un
-//! `Y.Text` → vide, `fill` invalide → aucun, aucune ligne ou aucune colonne lisible → `None` : l'appelant se replie sur
-//! `element::unknown_view` (jamais invisible). C10a n'écrit jamais `shade`, `span`, `mergedInto` (place gardée pour
-//! C10b) ; aucune `Any::Map`.
-use std::collections::HashSet;
+//! `Y.Text` → vide, `fill` ou `shade` invalide → aucun, aucune ligne ou aucune colonne lisible → `None` : l'appelant se replie sur
+//! `element::unknown_view` (jamais invisible). C10b : fusion = `span` `[id de la dernière ligne, id de la dernière colonne]`
+//! (`Any::Array` de deux chaînes) sur l'ancre seule ; la couverture se déduit à la lecture par `merges_of` (F2), jamais
+//! écrite (aucun `mergedInto`) ; `shade` = couleur d'un ombrage opaque (F8). Aucune `Any::Map`.
+use std::collections::{HashMap, HashSet};
 
 use yrs::{
     Any, Array, ArrayPrelim, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn,
@@ -15,7 +16,8 @@ use yrs::{
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, fits_f32, out_f64, out_string, out_transform, transform_to_any, Transform,
+    finite_positive, fits_f32, invert, out_f64, out_string, out_transform, transform_to_any,
+    Transform,
 };
 use crate::rich_text::{self, valid_color};
 pub const TABLE_KIND: &str = "table";
@@ -36,16 +38,27 @@ pub struct TableRowView {
     pub height: f64,
 }
 
-/// Cellule non vide (texte ou remplissage) ; `fill` = remplissage (U32), distinct de l'ombrage de C10b.
+/// Cellule non vide (texte, remplissage ou ombrage) ; `fill` = remplissage (U32), `shade` = ombrage révélable (F8).
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct TableCellView {
     pub row: String,
     pub col: String,
     pub text: String,
     pub fill: Option<String>,
+    pub shade: Option<String>,
 }
 
-/// Vue d'un tableau (T13) : `color` = traits et texte, `size` = taille du texte ; cellules dans l'ordre de lecture.
+/// Zone fusionnée de la vue (F29) : ancre par ids, étendue en rangs, après la règle F2.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TableMergeView {
+    pub row: String,
+    pub col: String,
+    pub rows: u32,
+    pub cols: u32,
+}
+
+/// Vue d'un tableau (T13, F29) : `color` = traits et texte, `size` = taille du texte ; cellules dans l'ordre de lecture ;
+/// zones dans l'ordre de lecture de leurs ancres.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct TableView {
     pub color: String,
@@ -53,6 +66,7 @@ pub struct TableView {
     pub cols: Vec<TableColView>,
     pub rows: Vec<TableRowView>,
     pub cells: Vec<TableCellView>,
+    pub merges: Vec<TableMergeView>,
 }
 
 /// Ligne ou colonne lisible : id, taille, son `Y.Map` et son rang brut dans le `Y.Array` (entrées illisibles
@@ -76,12 +90,14 @@ pub(crate) struct RawTable {
     pub rows: Vec<Line>,
 }
 
-/// Cellule lue ; `text` : son `Y.Text` s'il en est un.
+/// Cellule lue ; `text` : son `Y.Text` s'il en est un ; `span` : `[dernière ligne, dernière colonne]` lisible (F1).
 pub(crate) struct RawCell {
     pub map: MapRef,
     pub text: Option<TextRef>,
     pub content: String,
     pub fill: Option<String>,
+    pub shade: Option<String>,
+    pub span: Option<(String, String)>,
 }
 
 pub(crate) fn cell_key(row: &str, col: &str) -> String {
@@ -153,6 +169,22 @@ pub(crate) fn read_raw<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<RawTable> {
     })
 }
 
+/// `span` lisible (F1) : `Any::Array` de deux chaînes ; toute autre forme → aucun (ignoré, gardé).
+fn read_span(o: Option<Out>) -> Option<(String, String)> {
+    let Some(Out::Any(Any::Array(items))) = o else {
+        return None;
+    };
+    match items.as_ref() {
+        [Any::String(r), Any::String(c)] => Some((r.to_string(), c.to_string())),
+        _ => None,
+    }
+}
+
+/// `span` à écrire sur une ancre (F1).
+pub(crate) fn span_any(last_row: &str, last_col: &str) -> Any {
+    Any::Array(vec![Any::String(last_row.into()), Any::String(last_col.into())].into())
+}
+
 /// Cellule `"<row>:<col>"` ; `None` si `cells` manque ou si l'entrée n'est pas un `Y.Map`.
 pub(crate) fn read_cell<T: ReadTxn>(
     txn: &T,
@@ -169,12 +201,63 @@ pub(crate) fn read_cell<T: ReadTxn>(
     };
     let content = text.as_ref().map(|t| t.get_string(txn)).unwrap_or_default();
     let fill = out_string(map.get(txn, "fill")).filter(|c| valid_color(c));
+    let shade = out_string(map.get(txn, "shade")).filter(|c| valid_color(c));
+    let span = read_span(map.get(txn, "span"));
     Some(RawCell {
         map,
         text,
         content,
         fill,
+        shade,
+        span,
     })
+}
+
+/// Zone retenue par la règle F2, en rangs des lignes et colonnes lisibles, bornes comprises.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Merge {
+    pub r0: usize,
+    pub c0: usize,
+    pub r1: usize,
+    pub c1: usize,
+}
+
+impl Merge {
+    pub(crate) fn overlaps(&self, o: &Merge) -> bool {
+        self.r0 <= o.r1 && o.r0 <= self.r1 && self.c0 <= o.c1 && o.c0 <= self.c1
+    }
+}
+
+/// Règle de lecture des fusions (F2, DAU10), seule source de la couverture : ancres dans l'ordre de lecture (rang de
+/// ligne, puis de colonne) ; un `span` est retenu si ses deux ids désignent une ligne et une colonne lisibles de rang ≥
+/// celui de l'ancre, si la zone compte au moins 2 cellules et si elle ne recoupe aucune zone déjà retenue. Sinon il est
+/// ignoré (gardé dans le document) et la cellule se lit comme une cellule simple.
+pub(crate) fn merges_of<T: ReadTxn>(raw: &RawTable, txn: &T) -> Vec<Merge> {
+    let mut out: Vec<Merge> = Vec::new();
+    for (r0, r) in raw.rows.iter().enumerate() {
+        for (c0, c) in raw.cols.iter().enumerate() {
+            let Some((last_row, last_col)) =
+                read_cell(txn, raw.cells.as_ref(), &r.id, &c.id).and_then(|cell| cell.span)
+            else {
+                continue;
+            };
+            let (Some(r1), Some(c1)) = (
+                raw.rows.iter().position(|l| l.id == last_row),
+                raw.cols.iter().position(|l| l.id == last_col),
+            ) else {
+                continue;
+            };
+            if r1 < r0 || c1 < c0 || (r1 == r0 && c1 == c0) {
+                continue;
+            }
+            let m = Merge { r0, c0, r1, c1 };
+            if out.iter().any(|o| o.overlaps(&m)) {
+                continue;
+            }
+            out.push(m);
+        }
+    }
+    out
 }
 
 impl RawTable {
@@ -186,7 +269,8 @@ impl RawTable {
         self.rows.iter().map(|l| l.size).sum()
     }
 
-    /// Vue (T13) : cellules non vides dans l'ordre de lecture, sur les seules lignes et colonnes lisibles.
+    /// Vue (T13, F29) : cellules non vides (texte, remplissage ou ombrage) dans l'ordre de lecture, sur les seules
+    /// lignes et colonnes lisibles ; zones par `merges_of`.
     pub(crate) fn view<T: ReadTxn>(&self, txn: &T) -> TableView {
         let mut cells = Vec::new();
         for r in &self.rows {
@@ -194,7 +278,7 @@ impl RawTable {
                 let Some(cell) = read_cell(txn, self.cells.as_ref(), &r.id, &c.id) else {
                     continue;
                 };
-                if cell.content.is_empty() && cell.fill.is_none() {
+                if cell.content.is_empty() && cell.fill.is_none() && cell.shade.is_none() {
                     continue;
                 }
                 cells.push(TableCellView {
@@ -202,9 +286,19 @@ impl RawTable {
                     col: c.id.clone(),
                     text: cell.content,
                     fill: cell.fill,
+                    shade: cell.shade,
                 });
             }
         }
+        let merges = merges_of(self, txn)
+            .into_iter()
+            .map(|m| TableMergeView {
+                row: self.rows[m.r0].id.clone(),
+                col: self.cols[m.c0].id.clone(),
+                rows: (m.r1 - m.r0 + 1) as u32,
+                cols: (m.c1 - m.c0 + 1) as u32,
+            })
+            .collect();
         TableView {
             color: self.color.clone(),
             size: self.size,
@@ -225,6 +319,7 @@ impl RawTable {
                 })
                 .collect(),
             cells,
+            merges,
         }
     }
 }
@@ -253,6 +348,56 @@ pub(crate) struct NewTable<'a> {
     pub row_height: f64,
     pub color: &'a str,
     pub size: f64,
+}
+
+/// Corps d'écriture commun d'`AddTable` et d'`ImportTable` (DAB3), entrées déjà contrôlées.
+pub(crate) struct NewTableSpec<'a> {
+    pub page: &'a str,
+    pub matrix: Transform,
+    pub col_widths: Vec<f64>,
+    pub row_heights: Vec<f64>,
+    /// `rows × cols` textes en rangées bout à bout ; vide : aucune cellule écrite.
+    pub cells: &'a [String],
+    /// `[rang de ligne, rang de colonne, lignes, colonnes]`, contrôlées (dans le tableau, sans recouvrement).
+    pub merges: &'a [[u32; 4]],
+    pub color: &'a str,
+    pub size: f64,
+}
+
+/// Entrée d'`ImportTable` (F18) : collage HTML ou classeur, déjà mesuré et placé par la page.
+pub(crate) struct ImportedTable<'a> {
+    pub page: &'a str,
+    pub matrix: Transform,
+    pub col_width: f64,
+    pub row_heights: &'a [f64],
+    pub cols: u32,
+    pub cells: &'a [String],
+    pub merges: &'a [[u32; 4]],
+    pub color: &'a str,
+    pub size: f64,
+}
+
+/// Fusions d'un import (F18) : au moins 2 cellules, dans le tableau, sans recouvrement.
+fn merges_ok(merges: &[[u32; 4]], rows: u32, cols: u32) -> bool {
+    let mut seen: Vec<Merge> = Vec::new();
+    for &[r, c, nr, nc] in merges {
+        let (r, c, nr, nc) = (u64::from(r), u64::from(c), u64::from(nr), u64::from(nc));
+        if nr == 0 || nc == 0 || nr * nc < 2 || r + nr > u64::from(rows) || c + nc > u64::from(cols)
+        {
+            return false;
+        }
+        let m = Merge {
+            r0: r as usize,
+            c0: c as usize,
+            r1: (r + nr - 1) as usize,
+            c1: (c + nc - 1) as usize,
+        };
+        if seen.iter().any(|o| o.overlaps(&m)) {
+            return false;
+        }
+        seen.push(m);
+    }
+    true
 }
 
 fn lines_ok(n: u32) -> bool {
@@ -338,6 +483,78 @@ impl Document {
         })
     }
 
+    /// Écrit un tableau neuf en une transaction (DAB3) : ids neufs ; textes vides et cellules couvertes non écrits ;
+    /// une fusion = `span` sur son ancre (F1). Page inconnue : `UnknownPage`.
+    fn write_table(&mut self, t: &NewTableSpec<'_>) -> Result<Change, CommandError> {
+        let elements = self.page_elements_or_err(t.page)?;
+        let id = yrs::uuid_v4().to_string();
+        let col_ids: Vec<String> = t
+            .col_widths
+            .iter()
+            .map(|_| yrs::uuid_v4().to_string())
+            .collect();
+        let row_ids: Vec<String> = t
+            .row_heights
+            .iter()
+            .map(|_| yrs::uuid_v4().to_string())
+            .collect();
+        let cols: Vec<In> = col_ids
+            .iter()
+            .zip(&t.col_widths)
+            .map(|(i, w)| In::Map(line_prelim(i, "width", *w)))
+            .collect();
+        let rows: Vec<In> = row_ids
+            .iter()
+            .zip(&t.row_heights)
+            .map(|(i, h)| In::Map(line_prelim(i, "height", *h)))
+            .collect();
+        let ncols = col_ids.len();
+        let mut covered = vec![false; t.cells.len()];
+        let mut anchors: HashMap<usize, (usize, usize)> = HashMap::new();
+        for m in t.merges {
+            let [r, c, nr, nc] = m.map(|v| v as usize);
+            anchors.insert(r * ncols + c, (r + nr - 1, c + nc - 1));
+            for rr in r..r + nr {
+                for cc in c..c + nc {
+                    if (rr, cc) != (r, c) {
+                        covered[rr * ncols + cc] = true;
+                    }
+                }
+            }
+        }
+        let mut cells: Vec<(String, In)> = Vec::new();
+        for (i, text) in t.cells.iter().enumerate() {
+            let span = anchors.get(&i);
+            if covered[i] || (text.is_empty() && span.is_none()) {
+                continue;
+            }
+            let mut fields: Vec<(&str, In)> =
+                vec![("text", In::from(TextPrelim::new(text.as_str())))];
+            if let Some(&(lr, lc)) = span {
+                fields.push(("span", In::Any(span_any(&row_ids[lr], &col_ids[lc]))));
+            }
+            cells.push((
+                cell_key(&row_ids[i / ncols], &col_ids[i % ncols]),
+                In::Map(fields.into_iter().collect::<MapPrelim>()),
+            ));
+        }
+        let fields: Vec<(&str, In)> = vec![
+            ("id", In::from(id.as_str())),
+            ("kind", In::from(TABLE_KIND)),
+            ("transform", In::Any(transform_to_any(&t.matrix))),
+            ("color", In::from(t.color)),
+            ("size", In::Any(Any::from(t.size))),
+            ("cols", In::Array(ArrayPrelim::from(cols))),
+            ("rows", In::Array(ArrayPrelim::from(rows))),
+            ("cells", In::Map(cells.into_iter().collect::<MapPrelim>())),
+        ];
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+        }
+        Ok(self.table_done(t.page.to_string(), &id))
+    }
+
     /// `AddTable` (T3) : refus `BadTable` avant la page, x, y et la boîte bornés en f32 comme une forme ; une
     /// transaction, cellules vides (`cells` = `Y.Map` vide).
     pub(crate) fn cmd_add_table(&mut self, t: &NewTable<'_>) -> Result<Change, CommandError> {
@@ -356,32 +573,50 @@ impl Document {
         if !valid {
             return Err(CommandError::BadTable);
         }
-        let elements = self.page_elements_or_err(t.page)?;
-        let id = yrs::uuid_v4().to_string();
-        let cols: Vec<In> = (0..t.cols)
-            .map(|_| In::Map(line_prelim(&yrs::uuid_v4(), "width", t.col_width)))
-            .collect();
-        let rows: Vec<In> = (0..t.rows)
-            .map(|_| In::Map(line_prelim(&yrs::uuid_v4(), "height", t.row_height)))
-            .collect();
-        let fields: Vec<(&str, In)> = vec![
-            ("id", In::from(id.as_str())),
-            ("kind", In::from(TABLE_KIND)),
-            (
-                "transform",
-                In::Any(transform_to_any(&[1.0, 0.0, 0.0, 1.0, t.x, t.y])),
-            ),
-            ("color", In::from(t.color)),
-            ("size", In::Any(Any::from(t.size))),
-            ("cols", In::Array(ArrayPrelim::from(cols))),
-            ("rows", In::Array(ArrayPrelim::from(rows))),
-            ("cells", In::Map(MapPrelim::default())),
-        ];
-        {
-            let mut txn = self.transact_local();
-            elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+        self.write_table(&NewTableSpec {
+            page: t.page,
+            matrix: [1.0, 0.0, 0.0, 1.0, t.x, t.y],
+            col_widths: vec![t.col_width; t.cols as usize],
+            row_heights: vec![t.row_height; t.rows as usize],
+            cells: &[],
+            merges: &[],
+            color: t.color,
+            size: t.size,
+        })
+    }
+
+    /// `ImportTable` (F18) : refus `BadTable` avant la page (dimensions 1..=64, `cells` = `rows × cols`, tailles finies
+    /// > 0, couleur, matrice finie inversible et bornée en f32 avec la boîte, fusions valides) ; une transaction.
+    pub(crate) fn cmd_import_table(
+        &mut self,
+        t: &ImportedTable<'_>,
+    ) -> Result<Change, CommandError> {
+        let rows = u32::try_from(t.row_heights.len()).unwrap_or(u32::MAX);
+        let valid = lines_ok(t.cols)
+            && lines_ok(rows)
+            && t.cells.len() as u64 == u64::from(t.cols) * u64::from(rows)
+            && finite_positive(t.col_width)
+            && t.row_heights.iter().all(|h| finite_positive(*h))
+            && finite_positive(t.size)
+            && valid_color(t.color)
+            && t.matrix.iter().all(|v| v.is_finite())
+            && invert(&t.matrix).is_some()
+            && fits_f32(&t.matrix)
+            && fits_f32(&[f64::from(t.cols) * t.col_width, t.row_heights.iter().sum()])
+            && merges_ok(t.merges, rows, t.cols);
+        if !valid {
+            return Err(CommandError::BadTable);
         }
-        Ok(self.table_done(t.page.to_string(), &id))
+        self.write_table(&NewTableSpec {
+            page: t.page,
+            matrix: t.matrix,
+            col_widths: vec![t.col_width; t.cols as usize],
+            row_heights: t.row_heights.to_vec(),
+            cells: t.cells,
+            merges: t.merges,
+            color: t.color,
+            size: t.size,
+        })
     }
 
     /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande,
@@ -841,7 +1076,11 @@ pub(crate) mod tests {
         let before = d.encode_v1();
         let t = d.element("t1").and_then(|v| v.table).expect("tableau");
         assert_eq!(
-            (t.cells.len(), t.cells[0].text.as_str(), t.cells[0].shade.as_deref()),
+            (
+                t.cells.len(),
+                t.cells[0].text.as_str(),
+                t.cells[0].shade.as_deref()
+            ),
             (1, "A", None)
         );
         assert!(t.merges.is_empty());
@@ -888,14 +1127,22 @@ pub(crate) mod tests {
         assert_eq!(
             t.cells
                 .iter()
-                .map(|c| (c.row.as_str(), c.col.as_str(), c.text.as_str(), c.shade.as_deref()))
+                .map(|c| (
+                    c.row.as_str(),
+                    c.col.as_str(),
+                    c.text.as_str(),
+                    c.shade.as_deref()
+                ))
                 .collect::<Vec<_>>(),
             vec![
                 ("r1", "c1", "Lundi", Some("#94a3b8")),
                 ("r2", "c2", "", Some("#94a3b8"))
             ]
         );
-        assert!(d.encode_v1() == before, "la lecture a écrit dans le document");
+        assert!(
+            d.encode_v1() == before,
+            "la lecture a écrit dans le document"
+        );
     }
 
     /// Colonnes `c1`..`c3` (100), lignes `r1`..`r3` (64).
@@ -1053,8 +1300,24 @@ pub(crate) mod tests {
             imp(2, vec![64.0, 64.0], 4, vec![], 0.0, id6, "#000000"),
             imp(2, vec![64.0, 64.0], 4, vec![], 240.0, id6, "!!"),
             imp(2, vec![64.0, 64.0], 4, vec![], 240.0, [0.0; 6], "#000000"),
-            imp(2, vec![64.0, 64.0], 4, vec![[0, 0, 1, 1]], 240.0, id6, "#000000"),
-            imp(2, vec![64.0, 64.0], 4, vec![[1, 1, 2, 1]], 240.0, id6, "#000000"),
+            imp(
+                2,
+                vec![64.0, 64.0],
+                4,
+                vec![[0, 0, 1, 1]],
+                240.0,
+                id6,
+                "#000000",
+            ),
+            imp(
+                2,
+                vec![64.0, 64.0],
+                4,
+                vec![[1, 1, 2, 1]],
+                240.0,
+                id6,
+                "#000000",
+            ),
             imp(
                 2,
                 vec![64.0, 64.0],
@@ -1073,9 +1336,20 @@ pub(crate) mod tests {
         if let Command::ImportTable { page, .. } = &mut unknown {
             *page = "zz".into();
         }
-        assert_eq!(d.apply(unknown), Err(CommandError::UnknownPage("zz".into())));
+        assert_eq!(
+            d.apply(unknown),
+            Err(CommandError::UnknownPage("zz".into()))
+        );
         assert!(d
-            .apply(imp(2, vec![64.0, 64.0], 4, vec![[0, 0, 2, 2]], 240.0, id6, "#000000"))
+            .apply(imp(
+                2,
+                vec![64.0, 64.0],
+                4,
+                vec![[0, 0, 2, 2]],
+                240.0,
+                id6,
+                "#000000"
+            ))
             .is_ok());
     }
 
@@ -1125,7 +1399,11 @@ pub(crate) mod tests {
             cell_key(&r[2], &c[1]),
         ];
         written.sort();
-        assert_eq!(cell_keys(&d, &id), written, "aucune cellule couverte écrite");
+        assert_eq!(
+            cell_keys(&d, &id),
+            written,
+            "aucune cellule couverte écrite"
+        );
         d.apply(Command::InsertTableLine {
             id: id.clone(),
             axis: TableAxis::Row,

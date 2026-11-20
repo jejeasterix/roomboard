@@ -146,6 +146,19 @@ pub enum Command {
         col: String,
         fill: Option<String>,
     },
+    /// Tableau rempli (C10b, F18) : collage HTML ou classeur ; `cells` = `rows × cols` textes en rangées bout à bout,
+    /// `merges` = `[rang de ligne, rang de colonne, lignes, colonnes]` ; une transaction, une étape.
+    ImportTable {
+        page: String,
+        matrix: [f64; 6],
+        col_width: f64,
+        row_heights: Vec<f64>,
+        cols: u32,
+        cells: Vec<String>,
+        merges: Vec<[u32; 4]>,
+        color: String,
+        size: f64,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -570,6 +583,27 @@ impl Document {
             Command::SetTableFill { id, row, col, fill } => {
                 self.cmd_set_table_fill(&id, (row.as_str(), col.as_str()), fill.as_deref())
             }
+            Command::ImportTable {
+                page,
+                matrix,
+                col_width,
+                row_heights,
+                cols,
+                cells,
+                merges,
+                color,
+                size,
+            } => self.cmd_import_table(&crate::table::ImportedTable {
+                page: &page,
+                matrix,
+                col_width,
+                row_heights: &row_heights,
+                cols,
+                cells: &cells,
+                merges: &merges,
+                color: &color,
+                size,
+            }),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
