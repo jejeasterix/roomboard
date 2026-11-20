@@ -11,8 +11,11 @@ import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
 import { createSettingsStore, parseSettings } from "./engine/settings";
 import { measureWith, type Measure } from "./engine/text-layout";
+import { createPageCodec } from "./platform/container";
+import { loadFormatsModule } from "./platform/container-load";
 import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
+import { pastedFiles } from "./platform/paste";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
@@ -72,8 +75,10 @@ async function start(): Promise<void> {
     host: prepared.host,
     kind: prepared.kind,
     shell: prepared.shell,
+    // Conteneur avec images (R7) : second module chargé au premier Ouvrir ou au premier enregistrement avec image.
+    codec: createPageCodec(loadFormatsModule),
     first,
-    makeSession: (doc) => createBoardSession(doc, shared),
+    makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),
     // L'ordre écoute du dépôt puis `launch_files` est tenu par le workspace (T98) : `launchFiles` n'est appelé que là.
     ...(ipc === null ? {} : { launch: () => launchFiles(ipc) }),
@@ -94,6 +99,15 @@ async function start(): Promise<void> {
     if (workspace.active().board.engine.keyUp(keyOf(e))) e.preventDefault();
   });
   window.addEventListener("blur", () => workspace.active().board.engine.releaseKeys());
+  // Collage (R19) : fichiers image du presse-papiers vers l'onglet actif, centre de la vue ; zone de texte : collage normal.
+  window.addEventListener("paste", (e) => {
+    const files = pastedFiles(e);
+    if (files.length === 0) return;
+    e.preventDefault();
+    void workspace.importFiles(files, null).catch((err: unknown) => {
+      console.warn(`RoomBoard : collage abandonné (${err instanceof Error ? err.message : String(err)})`);
+    });
+  });
 
   const note = workspace.active().board.choice.note;
   mountApp(root, {
