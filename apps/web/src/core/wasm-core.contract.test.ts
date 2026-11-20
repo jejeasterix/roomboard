@@ -1281,6 +1281,22 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     d.free();
   });
 
+  it("snapDelta (G7, relecture finale) : forme de largeur 100,3 aimantée puis petit glisser, déplacement exactement nul", () => {
+    const d = f.blank();
+    const p = first(d);
+    const style = { color: "#000000", width: 4 };
+    setGrid(d, p, gridOf([gridLevel("squares", 40)]));
+    for (let i = 0; i < 400; i++) {
+      const x0 = 3 + (i % 50) * 7.31;
+      const y0 = 5 + i * 0.377;
+      const c = d.apply({ type: "AddShape", page: p, shape: "rect", x0, y0, x1: x0 + 100.3, y1: y0 + 50.7, style, fill: null }).ids[0] ?? "";
+      const [dx, dy] = d.snapDelta(p, [c], 0, 0);
+      d.apply({ type: "Transform", ids: [c], matrix: [1, 0, 0, 1, dx, dy] });
+      expect(d.snapDelta(p, [c], 0.6, -0.4), `départ (${x0}, ${y0})`).toEqual([0, 0]);
+    }
+    d.free();
+  });
+
   it("gridLines (G9) : une seule famille sautée sous le pas minimal ; plafond par famille, jamais par niveau", () => {
     const d = f.blank();
     const p = first(d);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Command, ShapeKind } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
@@ -172,5 +172,28 @@ describe("outil Formes — magnétisme (C9, S4)", () => {
     expect(tool.live().overlay?.shapes[0]).toMatchObject({ x0: 13, y0: 17, x1: 118, y1: 97 });
     tool.close(1, "end");
     expect(runs).toEqual([{ type: "AddShape", page, shape: "rect", x0: 13, y0: 17, x1: 118, y1: 97, style: PEN, fill: null }]);
+  });
+
+  it("départ aimanté une fois par geste, recalculé seulement quand Alt change : un snapPoint par image (relecture finale)", () => {
+    const { ctx, page, runs, doc, setAlt } = setup();
+    doc.apply({ type: "SetGrid", page, grid: squares40 });
+    const spy = vi.spyOn(doc, "snapPoint");
+    const tool = createShapeTool(ctx, "rect", () => PEN);
+    tool.begin(1, [at(13, 17)]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 5; i++) {
+      tool.extend(1, [at(118 + i, 97)], []);
+      expect(tool.live().overlay?.shapes[0]).toMatchObject({ x0: 0, y0: 0, x1: 120, y1: 80 });
+    }
+    expect(spy).toHaveBeenCalledTimes(6);
+    setAlt(true);
+    expect(tool.live().overlay?.shapes[0]).toMatchObject({ x0: 13, y0: 17, x1: 122, y1: 97 });
+    expect(spy).toHaveBeenCalledTimes(6);
+    setAlt(false);
+    expect(tool.live().overlay?.shapes[0]).toMatchObject({ x0: 0, y0: 0, x1: 120, y1: 80 });
+    expect(spy).toHaveBeenCalledTimes(8);
+    tool.close(1, "end");
+    expect(spy).toHaveBeenCalledTimes(9);
+    expect(runs).toEqual([{ type: "AddShape", page, shape: "rect", x0: 0, y0: 0, x1: 120, y1: 80, style: PEN, fill: null }]);
   });
 });
