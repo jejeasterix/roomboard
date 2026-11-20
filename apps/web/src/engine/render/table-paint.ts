@@ -3,7 +3,7 @@
  * `canvas2d.ts`, seul chemin de dessin du texte. Repère local du tableau (coin en 0, 0), sous sa matrice.
  */
 import type { TableData } from "../../core/api";
-import { cellRect, TABLE_LINE_WIDTH, TABLE_PADDING } from "../table-geom";
+import { cellInnerBox, cellOf, cellRect, TABLE_LINE_WIDTH } from "../table-geom";
 
 export interface CellTextBox {
   readonly row: string;
@@ -19,17 +19,10 @@ export interface CellTextBox {
 const edges = (sizes: readonly number[]): number[] =>
   sizes.reduce<number[]>((acc, s) => [...acc, (acc[acc.length - 1] ?? 0) + s], [0]);
 
-/** Rangs d'une cellule par ids ; null si sa ligne ou sa colonne n'est plus lue. */
-function indexOf(t: TableData, row: string, col: string): { row: number; col: number } | null {
-  const r = t.rows.findIndex((x) => x.id === row);
-  const c = t.cols.findIndex((x) => x.id === col);
-  return r < 0 || c < 0 ? null : { row: r, col: c };
-}
-
 export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData): void {
   for (const cell of t.cells) {
     if (cell.fill === null) continue;
-    const at = indexOf(t, cell.row, cell.col);
+    const at = cellOf(t, cell);
     if (at === null) continue;
     const b = cellRect(t, at);
     // Couleur lisible d'abord : le canvas ignore une couleur qu'il ne sait pas lire (validColor accepte tout nom de 3 à
@@ -61,18 +54,10 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
   const out: CellTextBox[] = [];
   for (const cell of t.cells) {
     if (cell.text === "") continue;
-    const at = indexOf(t, cell.row, cell.col);
+    // Ligne ou colonne plus lue : rien à écrire.
+    const at = cellOf(t, cell);
     if (at === null) continue;
-    const b = cellRect(t, at);
-    out.push({
-      row: cell.row,
-      col: cell.col,
-      text: cell.text,
-      x: b.x0 + TABLE_PADDING,
-      y: b.y0 + TABLE_PADDING,
-      w: Math.max(1, b.x1 - b.x0 - 2 * TABLE_PADDING),
-      h: Math.max(0, b.y1 - b.y0 - 2 * TABLE_PADDING),
-    });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at) });
   }
   return out;
 }

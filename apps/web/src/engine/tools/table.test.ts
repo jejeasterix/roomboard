@@ -327,6 +327,21 @@ describe("outil Tableau (C10a)", () => {
     expect(s.doc.version()).toBe(v + 1);
   });
 
+  it("Uniformiser sur un tableau uniforme à un arrondi près (7 lignes : six à 64, une à 196) : une étape, puis aucune (T14)", () => {
+    const s = setup();
+    const id = s.doc.apply({ type: "AddTable", page: s.page, x: 0, y: 0, cols: 1, rows: 7, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const t0 = s.table(id);
+    s.doc.apply({ type: "SetTableCell", id, row: t0.rows[6]?.id ?? "", col: t0.cols[0]?.id ?? "", content: "", rowHeight: 196 });
+    expect(s.table(id).rows.map((r) => r.height)).toEqual([64, 64, 64, 64, 64, 64, 196]);
+    s.click(120, 32);
+    const v = s.doc.version();
+    s.tool.act("uniform");
+    expect(s.doc.version()).toBe(v + 1);
+    expect(s.table(id).rows.map((r) => r.height)).toEqual(Array(7).fill(580 / 7));
+    s.tool.act("uniform");
+    expect(s.doc.version()).toBe(v + 1);
+  });
+
   it("S3 : pastille jaune : SetTableFill sur la cellule active ; sans cellule active : rien", () => {
     const s = setup();
     const id = s.create(100, 200, 2, 2);
@@ -362,6 +377,21 @@ describe("outil Tableau (C10a)", () => {
     s.tool.compositionEnd();
     expect(s.last()).toMatchObject({ type: "SetTableCell", content: "日本" });
     expect(s.picker.isOpen()).toBe(false);
+  });
+
+  it("composition : act et fill n'écrivent rien et laissent la saisie ouverte, rien en attente (porte IME, comme navigate, T14)", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.type("日本");
+    s.tool.compositionStart();
+    const [n, closed] = [s.runs.length, s.host.closed];
+    s.tool.act("row-insert");
+    s.tool.fill("#fef08a");
+    expect([s.runs.length, s.host.closed, s.table(id).rows.length]).toEqual([n, closed, 2]);
+    s.tool.compositionEnd();
+    expect(s.runs.length).toBe(n);
+    s.tool.act("row-insert");
+    expect(s.runs.slice(n).map((c) => c.type)).toEqual(["SetTableCell", "InsertTableLine"]);
   });
 
   it("clic pendant la saisie : valide seulement ; grille ouverte : un clic la ferme seulement", () => {
