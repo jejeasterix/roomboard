@@ -102,7 +102,7 @@ describe("outil Formes — magnétisme (C9, S4)", () => {
     visible: true,
     snap: true,
     above: false,
-    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", snap: true, visible: true }],
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", lineWidth: 1, snap: true, visible: true }],
   };
   const draw = (shift: boolean, alt: boolean, from: [number, number], to: [number, number], kind: ShapeKind = "rect") => {
     const { ctx, page, runs, doc, setShift, setAlt } = setup();

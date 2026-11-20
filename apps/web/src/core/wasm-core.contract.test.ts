@@ -7,7 +7,7 @@ import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
-import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
+import { createWasmCore, gridArgs, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -1107,6 +1107,7 @@ const gridLevel = (kind: string, s: number, color = "#000000"): GridLevel => ({
   originY: 0,
   color,
   line: "solid",
+  lineWidth: 1,
   snap: true,
   visible: true,
 });
@@ -1123,6 +1124,7 @@ describe("contrôle de forme C9 (grille)", () => {
     expect(() => toPageView({ ...page, grid: { ...g, levels: "x" } })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, grid: { ...g, levels: [{ ...gridLevel("squares", 40), snap: 1 }] } })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, grid: { ...g, above: "oui" } })).toThrow("PageView invalide");
+    expect(() => toPageView({ ...page, grid: { ...g, levels: [{ ...gridLevel("squares", 40), lineWidth: "1" }] } })).toThrow("PageView invalide");
   });
 
   it("toPageView : grille ou niveau qui n'est pas un objet, tête sans visible → erreur", () => {
@@ -1339,11 +1341,61 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     });
     d.free();
   });
+
+  it("SetGrid (E1, S3) : lineWidth 2 écrit, relu, gardé par save puis load ; 0, 9 ou NaN refusés sans étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    unchanged(d, () => {
+      for (const lineWidth of [0, 9, Number.NaN]) {
+        expect(messageOf(() => setGrid(d, p, gridOf([{ ...gridLevel("squares", 40), lineWidth }])))).toBe(BAD_GRID);
+      }
+    });
+    const g = gridOf([{ ...gridLevel("squares", 40, "#94a3b8"), lineWidth: 2 }]);
+    setGrid(d, p, g);
+    expect(d.page(p)?.grid).toEqual(g);
+    expect(d.gridLines(p, { x0: 0, y0: 0, x1: 100, y1: 100 }, 4, 8)?.levels.map((l) => l.lineWidth)).toEqual([2]);
+    const file = d.save(now, "0.1.0");
+    const e = f.load(file);
+    expect(e.page(p)?.grid).toEqual(g);
+    expect(e.save(now, "0.1.0")).toEqual(file);
+    e.free();
+    d.free();
+  });
+
+  it("gridLinesOf (S3, DAE1) : mêmes lignes que gridLines après SetGrid de la même grille, sans étape ; page inconnue ou grille invisible → null", () => {
+    const d = f.blank();
+    const p = first(d);
+    const g = gridOf([{ ...gridLevel("squares", 40, "#94a3b8"), lineWidth: 3 }]);
+    const r = { x0: -13.3, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
+    const v = d.version();
+    const preview = d.gridLinesOf(p, g, r, 4, 8);
+    expect(d.version()).toBe(v);
+    expect(d.canUndo()).toBe(false);
+    expect(d.page(p)?.grid).toBeNull();
+    expect(preview?.levels.map((l) => l.lineWidth)).toEqual([3]);
+    expect(d.gridLinesOf("nulle-part", g, r, 4, 8)).toBeNull();
+    expect(d.gridLinesOf(p, { ...g, visible: false }, r, 4, 8)).toBeNull();
+    setGrid(d, p, g);
+    expect(d.gridLines(p, r, 4, 8)).toEqual(preview);
+    d.free();
+  });
+
+  it("gridLines (CR2) : niveau épais sauté sous min_step·lineWidth (carreaux 40, zoom 0,1 : épaisseur 1 gardée, 4 sautée)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const page = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+    for (const [lineWidth, groups] of [[1, 1], [4, 0]] as const) {
+      setGrid(d, p, gridOf([{ ...gridLevel("squares", 40), lineWidth }]));
+      expect(d.gridLines(p, page, 4 / 0.1, 8 / 0.1)?.levels.length, `lineWidth ${lineWidth}`).toBe(groups);
+      expect(d.gridLinesOf(p, gridOf([{ ...gridLevel("squares", 40), lineWidth }]), page, 4 / 0.1, 8 / 0.1)?.levels.length).toBe(groups);
+    }
+    d.free();
+  });
 });
 
 describe("contrôle de forme C9 (lignes de grille)", () => {
   it("toGridLines : null pour rien, erreur pour une forme fausse", () => {
-    const ok = { above: true, levels: [{ color: "#000000", line: "solid", alpha: 0.5, segments: [0, 0, 0, 10], dots: [1, 2] }] };
+    const ok = { above: true, levels: [{ color: "#000000", line: "solid", alpha: 0.5, lineWidth: 1, segments: [0, 0, 0, 10], dots: [1, 2] }] };
     expect(toGridLines(undefined)).toBeNull();
     expect(toGridLines(null)).toBeNull();
     expect(toGridLines(ok)).toEqual(ok);
@@ -1357,8 +1409,9 @@ describe("contrôle de forme C9 (lignes de grille)", () => {
     ["alpha qui n'est pas un nombre", { alpha: "0.5" }],
     ["couleur qui n'est pas un texte", { color: 0 }],
     ["trait qui n'est pas un texte", { line: null }],
+    ["épaisseur qui n'est pas un nombre", { lineWidth: "2" }],
   ])("toGridLines : niveau à %s → erreur", (_, bad) => {
-    const level = { color: "#000000", line: "solid", alpha: 1, segments: [0, 0, 0, 10], dots: [1, 2] };
+    const level = { color: "#000000", line: "solid", alpha: 1, lineWidth: 1, segments: [0, 0, 0, 10], dots: [1, 2] };
     expect(() => toGridLines({ above: true, levels: [{ ...level, ...bad }] })).toThrow("GridLines invalide");
   });
 
@@ -1371,10 +1424,30 @@ describe("contrôle de forme C9 (lignes de grille)", () => {
     expect(() => toPair([1])).toThrow("point invalide");
     expect(() => toPair("x")).toThrow("point invalide");
   });
+
+  it("gridArgs (E1) : sept nombres par niveau, sx, sy, ox, oy, snap, visible, lineWidth", () => {
+    const g = gridOf([{ ...gridLevel("squares", 40, "#94a3b8"), originX: 5, snap: false, lineWidth: 3 }], true, true);
+    const [visible, snap, above, kinds, colors, lines, nums] = gridArgs(g);
+    expect([visible, snap, above, kinds, colors, lines]).toEqual([true, true, true, ["squares"], ["#94a3b8"], ["solid"]]);
+    expect(Array.from(nums)).toEqual([40, 40, 5, 0, 0, 1, 3]);
+  });
 });
 
 describe.skipIf(loaded === null)("contrat C9 : vrai module seulement", () => {
   const fixture = (path: string): Uint8Array => new Uint8Array(fs.readFileSync(new URL(path, import.meta.url)));
+
+  // Seuil 2 (et non 4) : à l'épaisseur 2, le seuil CR2 vaut 4 et garde les fines du Seyès (7,56) ; points 40 ≥ 8·4.
+  it("gridLinesOf (S3) : Seyès et points rendent les lignes de gridLines après SetGrid, épaisseur comprise", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    const g = gridOf([{ ...gridLevel("seyes", 30.24, "#94a3b8"), lineWidth: 2 }, { ...gridLevel("dots", 40), lineWidth: 4 }]);
+    const r = { x0: 0, y0: 0, x1: 400, y1: 400 };
+    const preview = d.gridLinesOf(p, g, r, 2, 8);
+    expect(preview?.levels.map((l) => [l.alpha, l.lineWidth])).toEqual([[1, 2], [0.5, 2], [1, 4]]);
+    setGrid(d, p, g);
+    expect(d.gridLines(p, r, 2, 8)).toEqual(preview);
+    d.free();
+  });
 
   it("fichier du socle (S2) : grille nulle sur ses deux pages", () => {
     const d = need().core.load(fixture("../../../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard"));

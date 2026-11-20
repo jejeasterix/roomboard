@@ -166,7 +166,7 @@ describe("createPenTool — grille (C9)", () => {
     doc.apply({
       type: "SetGrid",
       page,
-      grid: { visible: true, snap: true, above: false, levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", snap: true, visible: true }] },
+      grid: { visible: true, snap: true, above: false, levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", lineWidth: 1, snap: true, visible: true }] },
     });
     tool.begin(1, [s(13, 17)]);
     tool.extend(1, [s(53, 21), s(118, 97)], []);

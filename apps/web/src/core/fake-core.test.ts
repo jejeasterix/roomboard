@@ -424,8 +424,29 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     originY: o,
     color: "#000000",
     line: "solid",
+    lineWidth: 1,
     snap: true,
     visible: true,
+  });
+
+  it("lineWidth (E1, Review Focus 1) : absent ou hors [1, 8] lu à 1, valeur brute gardée au save ; 2,5 gardé", () => {
+    const base = { kind: "squares", spacingX: 40, spacingY: 40 };
+    const levels = [base, { ...base, lineWidth: 0 }, { ...base, lineWidth: 9 }, { ...base, lineWidth: "2" }, { ...base, lineWidth: 2.5 }];
+    const d = withGrid({ levels });
+    expect(d.page(firstPage(d))?.grid?.levels.map((l) => l.lineWidth)).toEqual([1, 1, 1, 1, 2.5]);
+    expect(saveJson(d).pages[0]?.["grid"]).toEqual({ levels });
+  });
+
+  it("gridLinesOf (DAE1) : carreaux du brouillon, rien d'écrit ; page inconnue → null", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const g = { visible: true, snap: false, above: false, levels: [{ ...squares(40, 0), lineWidth: 3 }] };
+    const v = d.version();
+    const r = { x0: 0, y0: 0, x1: 100, y1: 100 };
+    expect(d.gridLinesOf(p, g, r, 4, 8)?.levels.map((x) => [x.lineWidth, x.segments.length])).toEqual([[3, (3 + 3) * 4]]);
+    expect(d.version()).toBe(v);
+    expect(d.page(p)?.grid).toBeNull();
+    expect(d.gridLinesOf("nulle-part", g, r, 4, 8)).toBeNull();
   });
 
   it("grille qui n'est pas un objet : null, page lisible ; sans levels ou levels non tableau : levels [] (S2)", () => {
@@ -442,7 +463,7 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     const d = withGrid({ snap: true, levels });
     const p = firstPage(d);
     expect(d.page(p)?.grid?.levels).toEqual([
-      { kind: "squares", spacingX: 40, spacingY: 20, originX: 0, originY: 0, color: "#000000", line: "solid", snap: true, visible: true },
+      { kind: "squares", spacingX: 40, spacingY: 20, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: true, visible: true },
     ]);
     const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { grid?: unknown }[] };
     expect(saved.pages[0]?.grid).toEqual({ snap: true, levels });
@@ -492,7 +513,7 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     expect(() => d.apply({ type: "SetGrid", page: p, grid: g })).not.toThrow();
   });
 
-  it("SetGrid écrit les neuf champs d'un niveau, jamais une clé en trop (HG8)", () => {
+  it("SetGrid écrit les dix champs d'un niveau, jamais une clé en trop (HG8)", () => {
     const d = fakeCore.blank();
     const p = firstPage(d);
     const level = { ...squares(40, 0), futur: 1 };

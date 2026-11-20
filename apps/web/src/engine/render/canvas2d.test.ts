@@ -365,6 +365,7 @@ const gridLevel = (kind: string, s: number, color: string): GridLevel => ({
   originY: 0,
   color,
   line: "solid",
+  lineWidth: 1,
   snap: false,
   visible: true,
 });
@@ -397,6 +398,11 @@ function gridSegments(f: FakeCtx): { v: number[]; h: number[] } {
 }
 
 describe("Canvas2DRenderer — grille (C9)", () => {
+  it("épaisseur du niveau (E1) : lineWidth 3 à dpr 1 → trait de 3 pixels", () => {
+    const scene = gridScene(1, 1, [{ ...gridLevel("squares", 40, "#7b68ee"), lineWidth: 3 }]);
+    expect(scene.log).toContain("stroke #7b68ee 3");
+  });
+
   it("grille (C9, S5 a) : carreaux de 40 de la fausse liaison, au loin sur la page, calés sur les pixels", () => {
     const cases = [
       { dpr: 1, x: 13.5, y: 33.5, step: 40, width: 1 },

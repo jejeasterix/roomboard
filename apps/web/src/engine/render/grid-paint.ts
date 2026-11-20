@@ -1,9 +1,9 @@
 /**
  * Grille calée sur les pixels (C9, G10). Les lignes viennent du cœur (`gridLines`, unités de page) : elles passent en
  * pixels physiques par `worldToScreen` puis × (sx, sy). Une ligne verticale ou horizontale tombe sur `round(X) + 0,5`
- * si l'épaisseur est impaire, sur `round(X)` sinon ; épaisseur `max(1, round(dpr))` pixels physiques, soit un pixel CSS
- * d'écran à tout zoom ; obliques (isométrique) sans calage ; point = carré de `max(2, round(2·dpr))` pixels, coin sur un
- * pixel entier. Motifs `dashed` [6, 4] et `dotted` [1, 3] en pixels CSS × dpr arrondis (au moins 1), décalés depuis
+ * si l'épaisseur est impaire, sur `round(X)` sinon ; épaisseur `max(1, round(lineWidth·dpr))` pixels physiques (`lineWidth`
+ * du niveau, pixels CSS d'écran, E1 ; 1 par défaut, soit un pixel CSS à tout zoom) ; obliques (isométrique) sans calage ;
+ * point = carré de `max(2, round(2·lineWidth·dpr))` pixels, coin sur un pixel entier. Motifs `dashed` [6, 4] et `dotted` [1, 3] en pixels CSS × dpr arrondis (au moins 1), décalés depuis
  * l'origine du monde arrondie au pixel : le motif ne glisse pas au défilement et ses bords tombent sur des pixels
  * entiers. Un `line` inconnu se dessine plein (G2) ; une couleur que le canvas refuse donne la couleur par défaut.
  */
@@ -35,8 +35,8 @@ export interface DeviceLevel {
   readonly dot: number;
 }
 
-export const lineWidthPx = (dpr: number): number => Math.max(1, Math.round(dpr));
-export const dotSizePx = (dpr: number): number => Math.max(2, Math.round(2 * dpr));
+export const lineWidthPx = (dpr: number, lineWidth = 1): number => Math.max(1, Math.round(lineWidth * dpr));
+export const dotSizePx = (dpr: number, lineWidth = 1): number => Math.max(2, Math.round(2 * lineWidth * dpr));
 /** Coordonnée d'une ligne sur la grille des pixels : centre d'un pixel (épaisseur impaire) ou bord (paire). */
 export const alignLine = (v: number, width: number): number => (width % 2 === 1 ? Math.round(v) + 0.5 : Math.round(v));
 
@@ -54,13 +54,13 @@ function phase(rx: number, ry: number, dx: number, dy: number, period: number): 
 }
 
 export function alignedSegments(lines: GridLines, camera: Camera, sx: number, sy: number, dpr: number): DeviceLevel[] {
-  const width = lineWidthPx(dpr);
-  const dot = dotSizePx(dpr);
   const [ox, oy] = worldToScreen(camera, 0, 0);
   // Origine arrondie au pixel : avec des longueurs entières, chaque bord de tiret tombe sur un pixel entier.
   const originX = Math.round(ox * sx);
   const originY = Math.round(oy * sy);
   return lines.levels.map((l) => {
+    const width = lineWidthPx(dpr, l.lineWidth);
+    const dot = dotSizePx(dpr, l.lineWidth);
     const dash = dashOf(l.line, dpr);
     const period = dash.reduce((a, b) => a + b, 0);
     const segments: number[] = [];
