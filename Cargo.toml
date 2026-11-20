@@ -12,7 +12,7 @@ license = "LicenseRef-PolyForm-Shield-1.0.0"
 [profile.release]
 opt-level = "s"
 lto = true
-# Taille du module Wasm (OD55, mesures dans docs/essais/taille-wasm.md) :
-# strip retire la section `name` et les symboles, pas les chaînes des messages d'erreur.
-strip = true
+# Taille du module Wasm (OD55, mesures dans docs/essais/taille-wasm.md). Sans effet par
+# paquet sous LTO : il vaut pour tout le workspace. La section `name` est retirée par
+# `wasm-bindgen --remove-name-section`, pas par `strip` (qui retirerait `target_features`).
 codegen-units = 1

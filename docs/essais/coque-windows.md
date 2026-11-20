@@ -17,7 +17,7 @@ Set-Location roomboard
 git checkout main
 pnpm install --frozen-lockfile
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
-wasm-bindgen --target web --out-dir apps/web/src/wasm target/wasm32-unknown-unknown/release/roomboard_wasm.wasm
+wasm-bindgen --target web --remove-name-section --out-dir apps/web/src/wasm target/wasm32-unknown-unknown/release/roomboard_wasm.wasm
 pnpm --filter @roomboard/desktop tauri build
 ```
 Attendu : la sortie montre `Running beforeBuildCommand`, puis un installeur sous
