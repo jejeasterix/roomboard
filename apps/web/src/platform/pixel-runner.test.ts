@@ -136,7 +136,27 @@ describe("lanceur de pixels (DAI3, I18, I19)", () => {
     await expect(a).resolves.toBeNull();
     await expect(b).resolves.toBeNull();
     expect(workers[0]?.terminated).toBe(true);
+    const late = bmp("tardif");
+    expect(() => workers[0]?.reply(0, { bitmap: late })).not.toThrow(); // réponse tardive réellement envoyée après dispose
+    expect(workers[0]?.posted).toHaveLength(1);
     await expect(runner.run("g", job("c"))).resolves.toBeNull();
+    expect(workers[0]?.posted).toHaveLength(1);
+  });
+
+  it("Worker impossible à lancer ou postMessage qui lève : rejet PIXELS_FAILED_MESSAGE, bitmap fermé, file reprise", async () => {
+    const closed = vi.fn();
+    const spawn = vi.fn((): WorkerLike => {
+      throw new Error("pas de Worker");
+    });
+    const runner = createPixelRunner(spawn);
+    const a = runner.run("e", job("a", { bitmap: vi.fn(async () => ({ close: closed }) as unknown as ImageBitmap) } as Partial<PixelJob>));
+    const seen = a.catch((e: unknown) => (e as Error).message);
+    await tick();
+    await expect(seen).resolves.toBe(PIXELS_FAILED_MESSAGE);
+    expect(closed).toHaveBeenCalledTimes(1);
+    const b = runner.run("f", job("b", { bitmap: vi.fn(() => { throw new Error("copie"); }) } as Partial<PixelJob>)).catch((e: unknown) => (e as Error).message);
+    await tick();
+    await expect(b).resolves.toBe(PIXELS_FAILED_MESSAGE);
   });
 });
 
