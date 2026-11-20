@@ -6,6 +6,8 @@
  * rien (D39) ; un clic sans glisser (< 2 px écran) non plus. Un seul pointeur à la fois (CL4-14).
  * C10b (F10) : un toucher sans glisser (< 8 px écran, REVEAL_TAP_PX), sans Maj, sur une cellule ombrée du tableau le plus
  * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
+ * C3 (Z2) : un clic prend le groupe extérieur entier, Maj+clic l'ajoute ou le retire entier, le rectangle ne prend un
+ * groupe qu'entier (`engine/groups.ts`).
  */
 import type { Bounds, Matrix } from "../../core/api";
 import { IDENTITY_MATRIX } from "../../core/shapes";
@@ -23,6 +25,7 @@ import {
   translateMatrix,
   type HandleId,
 } from "./handles";
+import { expandToGroups, keepWholeGroups, type GroupedView } from "../groups";
 import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
 
@@ -89,6 +92,13 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
 
   const world = (s: InputSample): [number, number] => screenToWorld(ctx.camera(), s.x, s.y);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= DRAG_THRESHOLD_PX;
+
+  /** Vues de la page montrée (C3, Z2), lues au geste, jamais gardées. */
+  const pageViews = (): GroupedView[] =>
+    ctx.doc.elementIds(ctx.page()).flatMap((id) => {
+      const v = ctx.doc.element(id);
+      return v === null ? [] : [v];
+    });
 
   /**
    * Déplacement du glisser (C9, G7, G8) : aimanté depuis le déplacement brut, à chaque image et au relâché (l'aperçu
@@ -159,12 +169,15 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
           startDrag(pointerId, "tap-shade", x, y, { reveal });
           return;
         }
+        const unit = expandToGroups([hit], pageViews()); // C3 : le groupe extérieur entier
         if (shift) {
-          selection = selection.includes(hit) ? selection.filter((id) => id !== hit) : [...selection, hit];
+          selection = selection.includes(hit)
+            ? selection.filter((id) => !unit.includes(id))
+            : [...selection, ...unit.filter((id) => !selection.includes(id))];
           startDrag(pointerId, "none", x, y);
           return;
         }
-        if (!selection.includes(hit)) selection = [hit];
+        if (!selection.includes(hit)) selection = unit;
         startDrag(pointerId, "move", x, y);
         return;
       }
@@ -198,7 +211,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
         return;
       }
       if (d.mode === "band") {
-        const ids = ctx.doc.idsInRect(ctx.page(), norm(d.x0, d.y0, d.x, d.y));
+        const ids = keepWholeGroups(ctx.doc.idsInRect(ctx.page(), norm(d.x0, d.y0, d.x, d.y)), pageViews());
         selection = d.shift ? [...selection, ...ids.filter((id) => !selection.includes(id))] : ids;
         return;
       }
