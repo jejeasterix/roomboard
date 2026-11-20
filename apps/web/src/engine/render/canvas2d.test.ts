@@ -783,3 +783,20 @@ describe("Canvas2DRenderer — tableau (C10b)", () => {
     expect(scene.texts.filter((t) => t.text !== "réponse").length).toBeGreaterThan(1);
   });
 });
+
+describe("Canvas2DRenderer — fond de page (C6a)", () => {
+  it("drawScene : le fond reçu (#bfdbfe) est peint au lieu du blanc (DA4)", () => {
+    const { r, scene } = make({});
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [], background: "#bfdbfe" }, IDENTITY, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${SURROUND_COLOR}`, "fillRect #bfdbfe"]);
+  });
+
+  it("gomme partielle : le fond retenu du dernier drawScene est repeint (D20)", () => {
+    const { r, live } = make({});
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [], background: "#bfdbfe" }, IDENTITY, new Set());
+    r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual(["stroke #bfdbfe 16", `stroke ${SURROUND_COLOR} 16`]);
+  });
+});
