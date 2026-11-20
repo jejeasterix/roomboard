@@ -340,3 +340,56 @@ fn socle_fixture_opens_white_and_takes_a_fill() {
         .expect("fond");
     assert_eq!(background(&d, &p), "#1d4ed8");
 }
+
+/// D4, D25 : un objet groupé se colore seul ; le pot vise l'élément touché, jamais son groupe (la remontée au groupe
+/// extérieur de C3 vit dans `select.ts`). Groupe de groupe ((a, b), c) ; b est le membre du milieu : un pot étendu au
+/// groupe colorerait a, b et c, un pot ramené au premier ou au dernier membre colorerait a ou c.
+#[test]
+fn grouped_object_fills_alone() {
+    let (mut d, p) = setup();
+    let a = shape(&mut d, &p, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
+    let b = shape(&mut d, &p, ShapeKind::Rect, [400.0, 100.0, 600.0, 200.0]);
+    let c = shape(&mut d, &p, ShapeKind::Rect, [700.0, 100.0, 900.0, 200.0]);
+    d.apply(Command::Group {
+        ids: vec![a.clone(), b.clone()],
+    })
+    .expect("groupe");
+    d.apply(Command::Group {
+        ids: vec![a.clone(), c.clone()],
+    })
+    .expect("groupe de groupe");
+    let paths = |d: &Document| -> Vec<Option<Vec<String>>> {
+        [&a, &b, &c]
+            .iter()
+            .map(|id| d.element(id).and_then(|e| e.group))
+            .collect()
+    };
+    let before = paths(&d);
+    assert_eq!(
+        before[1].as_ref().map(Vec::len),
+        Some(2),
+        "b dans un groupe de groupe"
+    );
+    assert_eq!(
+        d.hit_test(&p, 500.0, 150.0, 6.0).as_deref(),
+        Some(b.as_str())
+    );
+
+    let ch = d
+        .apply(fill(&p, inside(&b), Some("#facc15")))
+        .expect("intérieur");
+    assert_eq!(ch.ids, vec![b.clone()]);
+    assert_eq!(
+        [fill_of(&d, &a), fill_of(&d, &b), fill_of(&d, &c)],
+        [None, Some("#facc15".to_string()), None]
+    );
+    let ch = d
+        .apply(fill(&p, edge(&b), Some("#dc2626")))
+        .expect("contour");
+    assert_eq!(ch.ids, vec![b.clone()]);
+    assert_eq!(
+        [color_of(&d, &a), color_of(&d, &b), color_of(&d, &c)],
+        ["#000000", "#dc2626", "#000000"]
+    );
+    assert_eq!(paths(&d), before, "le pot ne touche pas aux groupes");
+}

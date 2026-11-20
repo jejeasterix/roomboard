@@ -194,4 +194,26 @@ describe("cible du pot (C6a)", () => {
     expect(s.at(1500, 1000)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: RED });
     expect(s.at(1500, 1000, null)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: null });
   });
+
+  // D4, D25 : un objet groupé se colore seul. Discrimine : la remontée de C3 (`expandToGroups([hit], …)`, select.ts)
+  // viserait le groupe extérieur entier ; b est le membre du milieu de ((rect, b), c), ni le premier ni le dernier.
+  it("objet d'un groupe de groupe : le pot vise l'élément touché, jamais son groupe (D4, D25)", () => {
+    const s = setup();
+    const style = { color: "#000000", width: 4 };
+    const add = (x: number): string => idOf(s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: x, y0: 800, x1: x + 200, y1: 900, style, fill: null }));
+    const b = add(100);
+    const c = add(400);
+    s.doc.apply({ type: "Group", ids: [s.rect, b] });
+    s.doc.apply({ type: "Group", ids: [s.rect, c] });
+    expect(s.doc.element(b)?.group).toHaveLength(2);
+    const fillOf = (id: string): string | null | undefined => {
+      const e = s.doc.element(id);
+      return e?.kind === "shape" ? e.shape.fill : undefined;
+    };
+    const inside = s.at(200, 850);
+    expect(inside).toEqual({ type: "Fill", page: s.page, target: { kind: "inside", id: b }, color: RED });
+    expect(s.doc.apply(inside!).ids).toEqual([b]);
+    expect([fillOf(s.rect), fillOf(b), fillOf(c)]).toEqual([null, RED, null]);
+    expect(s.at(102, 850, BLUE)).toEqual({ type: "Fill", page: s.page, target: { kind: "edge", id: b }, color: BLUE });
+  });
 });
