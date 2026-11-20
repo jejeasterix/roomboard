@@ -3,6 +3,9 @@ use std::sync::Arc;
 
 use yrs::{Any, In, Map, MapRef, Number, Out, ReadTxn};
 
+use crate::asset::is_asset_id;
+use crate::query::Bounds;
+
 pub const SCHEMA: u32 = 1;
 pub const PAGE_WIDTH: f64 = 1920.0;
 pub const PAGE_HEIGHT: f64 = 1080.0;
@@ -18,12 +21,82 @@ pub struct StrokeStyle {
     pub width: f32,
 }
 
+/// Types d'élément que ce cœur sait lire ; tout autre `kind` est gardé et rendu comme élément inconnu (U3, K8).
+pub const KNOWN_KINDS: [&str; 4] = ["stroke", "shape", "text", "image"];
+/// Boîte d'un élément inconnu sans `w`, `h` lisibles (K8, HK7).
+pub const UNKNOWN_BOX: f64 = 100.0;
+/// Seul ajustement de fond écrit par cette version : largeur de la page (K6, HK1).
+pub const FIT_WIDTH: &str = "width";
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PageView {
     pub id: String,
     pub width: f64,
     pub height: f64,
     pub background: String,
+    pub backdrop: Option<BackdropView>,
+}
+
+/// Fond de page (U6, K6, K9) : valeurs brutes, `rect` calculé par le cœur (DAK4).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct BackdropView {
+    pub asset: String,
+    pub kind: String,
+    pub w: Option<f64>,
+    pub h: Option<f64>,
+    pub fit: String,
+    pub rect: Option<Bounds>,
+}
+
+/// Image (U5, K5) : boîte locale (0, 0)-(w, h), taille source en pixels.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ImageView {
+    pub asset: String,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// Élément d'un `kind` inconnu (U3, K8) : dessiné comme un cadre ; `source_kind` = le `kind` lu.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnknownView {
+    pub source_kind: String,
+    pub w: f64,
+    pub h: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ElementView {
+    pub id: String,
+    pub kind: String,
+    pub transform: Transform,
+    /// Présent pour `stroke`, `shape`, `text` ; absent pour `image` et `unknown` (K8).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<StrokeStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<ShapeView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<TextView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown: Option<UnknownView>,
+}
+
+impl ElementView {
+    /// Vue sans champ propre ; chaque branche de `Document::element` complète le sien.
+    pub(crate) fn bare(id: &str, kind: &str, transform: Transform) -> ElementView {
+        ElementView {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            transform,
+            style: None,
+            shape: None,
+            text: None,
+            image: None,
+            unknown: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -32,18 +105,6 @@ pub struct ShapeView {
     pub w: f64,
     pub h: f64,
     pub fill: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct ElementView {
-    pub id: String,
-    pub kind: String,
-    pub transform: Transform,
-    pub style: StrokeStyle,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shape: Option<ShapeView>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<TextView>,
 }
 
 /// Texte d'un élément (D14) ; le contenu vient du `Y.Text` de l'élément.
@@ -147,5 +208,56 @@ pub(crate) fn read_style<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<StrokeStyle>
     Some(StrokeStyle {
         color: out_string(e.get(txn, "color"))?,
         width: out_f64(e.get(txn, "width"))? as f32,
+    })
+}
+
+pub(crate) fn finite_positive(v: f64) -> bool {
+    v.is_finite() && v > 0.0
+}
+
+/// Champs d'une image (K5) ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
+pub(crate) struct ImageFields {
+    pub transform: Transform,
+    pub asset: String,
+    pub w: f64,
+    pub h: f64,
+}
+
+pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ImageFields> {
+    if out_string(e.get(txn, "kind"))? != "image" {
+        return None;
+    }
+    Some(ImageFields {
+        transform: out_transform(e.get(txn, "transform"))?,
+        asset: out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?,
+        w: out_f64(e.get(txn, "w")).filter(|v| finite_positive(*v))?,
+        h: out_f64(e.get(txn, "h")).filter(|v| finite_positive(*v))?,
+    })
+}
+
+/// Champs lus d'un élément inconnu (K8) ; `None` pour un `kind` connu. `kind` absent ou non textuel : `""`.
+pub(crate) struct UnknownFields {
+    pub source_kind: String,
+    pub transform: Transform,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// Sans `transform` lisible : identité, rien n'est écrit ; boîte `w`, `h` s'ils sont tous deux finis > 0, sinon
+/// 100 × 100.
+pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<UnknownFields> {
+    let source_kind = out_string(e.get(txn, "kind")).unwrap_or_default();
+    if KNOWN_KINDS.contains(&source_kind.as_str()) {
+        return None;
+    }
+    let (w, h) = match (out_f64(e.get(txn, "w")), out_f64(e.get(txn, "h"))) {
+        (Some(w), Some(h)) if finite_positive(w) && finite_positive(h) => (w, h),
+        _ => (UNKNOWN_BOX, UNKNOWN_BOX),
+    };
+    Some(UnknownFields {
+        source_kind,
+        transform: out_transform(e.get(txn, "transform")).unwrap_or(IDENTITY),
+        w,
+        h,
     })
 }

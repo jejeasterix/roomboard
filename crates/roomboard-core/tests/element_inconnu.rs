@@ -8,7 +8,9 @@ use roomboard_core::element::IDENTITY;
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::query::Bounds;
 use yrs::updates::decoder::Decode;
-use yrs::{Any, Array, ArrayPrelim, Doc, In, Map, MapPrelim, Out, ReadTxn, StateVector, Transact, Update};
+use yrs::{
+    Any, Array, ArrayPrelim, Doc, In, Map, MapPrelim, Out, ReadTxn, StateVector, Transact, Update,
+};
 
 pub const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
@@ -93,9 +95,15 @@ fn raw_h1(d: &Document) -> (Option<f64>, Option<u32>, Option<Vec<String>>) {
         .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
         .expect("application");
     let txn = raw.transact();
-    let Some(Out::YMap(page)) = pages.get(&txn, 0) else { panic!("page") };
-    let Some(Out::YArray(els)) = page.get(&txn, "elements") else { panic!("éléments") };
-    let Some(Out::YMap(h1)) = els.get(&txn, 0) else { panic!("h1") };
+    let Some(Out::YMap(page)) = pages.get(&txn, 0) else {
+        panic!("page")
+    };
+    let Some(Out::YArray(els)) = page.get(&txn, "elements") else {
+        panic!("éléments")
+    };
+    let Some(Out::YMap(h1)) = els.get(&txn, 0) else {
+        panic!("h1")
+    };
     let w = match h1.get(&txn, "w") {
         Some(Out::Any(Any::Number(n))) => n.as_f64(),
         _ => None,
@@ -138,8 +146,14 @@ fn unknown_kind_view_has_box_and_no_style() {
     assert_eq!(v.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]);
     assert_eq!(v.style, None);
     let u = v.unknown.expect("unknown");
-    assert_eq!((u.source_kind.as_str(), u.w, u.h), ("hologram", 300.0, 200.0));
-    assert!(d.encode_v1() == before, "la lecture a écrit dans le document");
+    assert_eq!(
+        (u.source_kind.as_str(), u.w, u.h),
+        ("hologram", 300.0, 200.0)
+    );
+    assert!(
+        d.encode_v1() == before,
+        "la lecture a écrit dans le document"
+    );
     assert!(!d.can_undo());
 }
 
@@ -154,9 +168,17 @@ fn unknown_without_transform_is_identity_selectable_deletable() {
     assert_eq!(d.hit_test("p1", 50.0, 50.0, 0.0), Some("h2".to_string()));
     assert_eq!(
         d.bounds(&["h2".to_string()]),
-        Some(Bounds { x0: 0.0, y0: 0.0, x1: 100.0, y1: 100.0 })
+        Some(Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 100.0
+        })
     );
-    assert!(d.encode_v1() == before, "la lecture a écrit dans le document");
+    assert!(
+        d.encode_v1() == before,
+        "la lecture a écrit dans le document"
+    );
     let v0 = d.version();
     let c = d
         .apply(Command::Transform {
@@ -164,7 +186,10 @@ fn unknown_without_transform_is_identity_selectable_deletable() {
             matrix: [1.0, 0.0, 0.0, 1.0, 10.0, 0.0],
         })
         .expect("transform");
-    assert_eq!(c.version, v0, "Transform doit ignorer un élément sans transform lisible");
+    assert_eq!(
+        c.version, v0,
+        "Transform doit ignorer un élément sans transform lisible"
+    );
     let e = d
         .apply(Command::Erase {
             page: "p1".into(),

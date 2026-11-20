@@ -12,8 +12,9 @@ use yrs::{
 
 use crate::commands::{read_shape, read_text};
 use crate::element::{
-    out_f64, out_string, out_transform, read_style, ElementView, PageView, ShapeView, StrokeStyle,
-    TextView, DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    out_f64, out_string, out_transform, read_image, read_style, read_unknown, ElementView,
+    ImageView, PageView, ShapeView, StrokeStyle, TextView, UnknownView, DEFAULT_BACKGROUND,
+    PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
@@ -155,6 +156,7 @@ impl Document {
             width: out_f64(m.get(&txn, "width"))?,
             height: out_f64(m.get(&txn, "height"))?,
             background: out_string(m.get(&txn, "background"))?,
+            backdrop: None,
         })
     }
 
@@ -181,43 +183,65 @@ impl Document {
         let txn = self.doc.transact();
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
-        let kind = out_string(e.get(&txn, "kind"))?;
-        let transform = out_transform(e.get(&txn, "transform"))?;
-        let (style, shape, text) = match kind.as_str() {
-            "shape" => {
+        match out_string(e.get(&txn, "kind")).as_deref() {
+            Some("stroke") => Some(ElementView {
+                style: Some(read_style(&txn, e)?),
+                ..ElementView::bare(id, "stroke", out_transform(e.get(&txn, "transform"))?)
+            }),
+            Some("shape") => {
+                let transform = out_transform(e.get(&txn, "transform"))?;
                 let s = read_shape(&txn, e)?;
-                let view = ShapeView {
-                    shape: s.kind.as_str().to_string(),
-                    w: s.w,
-                    h: s.h,
-                    fill: s.fill,
-                };
-                (s.style, Some(view), None)
+                Some(ElementView {
+                    style: Some(s.style),
+                    shape: Some(ShapeView {
+                        shape: s.kind.as_str().to_string(),
+                        w: s.w,
+                        h: s.h,
+                        fill: s.fill,
+                    }),
+                    ..ElementView::bare(id, "shape", transform)
+                })
             }
-            "text" => {
+            Some("text") => {
+                let transform = out_transform(e.get(&txn, "transform"))?;
                 let t = read_text(&txn, e)?;
-                let view = TextView {
-                    content: t.content,
-                    size: t.size,
-                    box_width: t.box_width,
-                    box_height: t.box_height,
-                };
-                let style = StrokeStyle {
-                    color: t.color,
-                    width: 0.0,
-                };
-                (style, None, Some(view))
+                Some(ElementView {
+                    style: Some(StrokeStyle {
+                        color: t.color,
+                        width: 0.0,
+                    }),
+                    text: Some(TextView {
+                        content: t.content,
+                        size: t.size,
+                        box_width: t.box_width,
+                        box_height: t.box_height,
+                    }),
+                    ..ElementView::bare(id, "text", transform)
+                })
             }
-            _ => (read_style(&txn, e)?, None, None),
-        };
-        Some(ElementView {
-            id: id.to_string(),
-            kind,
-            transform,
-            style,
-            shape,
-            text,
-        })
+            Some("image") => {
+                let i = read_image(&txn, e)?;
+                Some(ElementView {
+                    image: Some(ImageView {
+                        asset: i.asset,
+                        w: i.w,
+                        h: i.h,
+                    }),
+                    ..ElementView::bare(id, "image", i.transform)
+                })
+            }
+            _ => {
+                let u = read_unknown(&txn, e)?;
+                Some(ElementView {
+                    unknown: Some(UnknownView {
+                        source_kind: u.source_kind,
+                        w: u.w,
+                        h: u.h,
+                    }),
+                    ..ElementView::bare(id, "unknown", u.transform)
+                })
+            }
+        }
     }
 
     pub fn schema(&self) -> Option<f64> {
@@ -671,5 +695,94 @@ mod tests {
         let (x, y) = crate::element::apply_transform(&t, 3.0, 4.0);
         let (bx, by) = crate::element::apply_transform(&i, x, y);
         assert!((bx - 3.0).abs() < 1e-9 && (by - 4.0).abs() < 1e-9);
+    }
+
+    use yrs::{Any, In, MapPrelim};
+
+    const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    /// Pousse un élément brut sur la première page, hors historique (fichier lu, pas un geste).
+    fn push_raw(d: &Document, fields: Vec<(&str, In)>) {
+        let els = {
+            let txn = d.read();
+            d.page_elements(&txn, &d.page_ids()[0]).expect("éléments")
+        };
+        els.push_back(
+            &mut d.doc.transact_mut(),
+            fields.into_iter().collect::<MapPrelim>(),
+        );
+    }
+
+    fn translate(x: f64, y: f64) -> In {
+        In::Any(crate::element::transform_to_any(&[
+            1.0, 0.0, 0.0, 1.0, x, y,
+        ]))
+    }
+
+    #[test]
+    fn image_view_reads_fields_without_style() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("i1")),
+                ("kind", In::from("image")),
+                ("transform", translate(10.0, 20.0)),
+                ("asset", In::from(ABC)),
+                ("w", In::Any(Any::from(640.0))),
+                ("h", In::Any(Any::from(480.0))),
+            ],
+        );
+        let v = d.element("i1").expect("vue");
+        assert_eq!(v.kind, "image");
+        assert_eq!(v.style, None);
+        assert_eq!(
+            v.image,
+            Some(ImageView {
+                asset: ABC.into(),
+                w: 640.0,
+                h: 480.0
+            })
+        );
+        assert_eq!(
+            d.hit_test(&d.page_ids()[0], 20.0, 30.0, 0.0),
+            Some("i1".into())
+        );
+    }
+
+    #[test]
+    fn malformed_image_has_no_view() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("i2")),
+                ("kind", In::from("image")),
+                ("transform", translate(0.0, 0.0)),
+                ("asset", In::from(ABC.to_uppercase().as_str())),
+                ("w", In::Any(Any::from(10.0))),
+                ("h", In::Any(Any::from(10.0))),
+            ],
+        );
+        assert_eq!(d.element("i2"), None);
+    }
+
+    #[test]
+    fn element_without_id_has_no_geometry() {
+        let d = Document::blank();
+        push_raw(&d, vec![("kind", In::from("hologram"))]);
+        let p = d.page_ids()[0].clone();
+        assert_eq!(d.hit_test(&p, 50.0, 50.0, 0.0), None);
+        assert!(d
+            .ids_in_rect(
+                &p,
+                crate::query::Bounds {
+                    x0: -1.0,
+                    y0: -1.0,
+                    x1: 500.0,
+                    y1: 500.0
+                }
+            )
+            .is_empty());
     }
 }
