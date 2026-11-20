@@ -4,12 +4,11 @@ import { fakeCore } from "../core/fake-core";
 import {
   APP_VERSION,
   createFileController,
-  DISCARD_MESSAGE,
   fileCommandOf,
   type FileControllerDeps,
   type VersionSource,
 } from "./controller";
-import type { FileHost, OpenedFile, PendingOpen, PendingStore, SaveTarget, ShellPort } from "./files";
+import type { FileHost, OpenedFile, SaveTarget, ShellPort } from "./files";
 
 function versionsOf(doc: CoreDocument): VersionSource & { bump(): void; listeners(): number } {
   const cbs = new Set<(s: { version: number }) => void>();
@@ -106,48 +105,41 @@ function fakeShell(answer: boolean) {
   return { shell, log, guard: () => guard() };
 }
 
-function memoryPending(): PendingStore & { value: PendingOpen | null; cleared: number } {
-  const p = {
-    value: null as PendingOpen | null,
-    cleared: 0,
-    async put(v: PendingOpen): Promise<void> {
-      p.value = v;
-    },
-    async take(): Promise<PendingOpen | null> {
-      const v = p.value;
-      p.value = null;
-      return v;
-    },
-    async clear(): Promise<void> {
-      p.cleared += 1;
-      p.value = null;
-    },
-  };
-  return p;
+interface SetupOptions {
+  readonly opened?: FileControllerDeps["opened"];
+  readonly answer?: boolean;
+  readonly docSave?: CoreDocument["save"];
+  readonly openInTab?: FileControllerDeps["openInTab"];
+  readonly newTab?: FileControllerDeps["newTab"];
 }
 
-function setup(o: { opened?: FileControllerDeps["opened"]; answer?: boolean; docSave?: CoreDocument["save"] } = {}) {
+function setup(o: SetupOptions = {}) {
   const doc = fakeCore.blank();
   const versions = versionsOf(doc);
   const h = memoryHost();
   const s = fakeShell(o.answer ?? true);
-  const pending = memoryPending();
-  let reloads = 0;
+  const tabs = { opened: [] as OpenedFile[], news: 0 };
   const ctl = createFileController({
-    core: fakeCore,
     doc: o.docSave ? { save: o.docSave } : doc,
     versions,
     host: h.host,
     shell: s.shell,
-    pending,
     opened: o.opened ?? null,
-    reload: () => {
-      reloads += 1;
-    },
+    openInTab:
+      o.openInTab ??
+      (async (f) => {
+        tabs.opened.push(f);
+        return true;
+      }),
+    newTab:
+      o.newTab ??
+      (async () => {
+        tabs.news += 1;
+      }),
     now: () => "2026-11-19T00:00:00.000Z",
     appVersion: APP_VERSION,
   });
-  return { doc, versions, h, s, pending, ctl, reloads: () => reloads };
+  return { doc, versions, h, s, tabs, ctl };
 }
 
 const pageOf = (d: CoreDocument): string => d.pageIds()[0] ?? "";
@@ -158,7 +150,7 @@ const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKe
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 describe("contrôleur des fichiers (D26)", () => {
-  it("aller-retour : enregistrer puis ouvrir met en attente les mêmes octets ; le document rechargé a les mêmes traits", async () => {
+  it("aller-retour : enregistrer puis ouvrir donne à openInTab les mêmes octets", async () => {
     const t = setup();
     stroke(t.doc, t.versions);
     stroke(t.doc, t.versions, 30);
@@ -167,9 +159,10 @@ describe("contrôleur des fichiers (D26)", () => {
     if (!bytes) throw new Error("rien d'enregistré");
     t.h.onOpen({ name: "Sans titre.roomboard", bytes, target: { kind: "download", name: "Sans titre.roomboard" } });
     expect(await t.ctl.run("open")).toBe(true);
-    expect(t.reloads()).toBe(1);
-    const p = t.pending.value;
-    if (!p) throw new Error("aucune attente");
+    expect(t.tabs.opened).toHaveLength(1);
+    const p = t.tabs.opened[0];
+    if (!p) throw new Error("rien d'ouvert");
+    expect(p.target).toEqual({ kind: "download", name: "Sans titre.roomboard" });
     expect(Array.from(p.bytes)).toEqual(Array.from(bytes));
     const reopened = fakeCore.load(p.bytes);
     expect(reopened.elementIds(pageOf(reopened))).toEqual(t.doc.elementIds(pageOf(t.doc)));
@@ -240,26 +233,27 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.ctl.isDirty()).toBe(true);
   });
 
-  it("ouvrir avec un document modifié : le sélecteur d'abord, puis la question ; Non → rien n'est ouvert", async () => {
+  it("ouvrir un document modifié : aucune question, openInTab appelé, document courant modifié intact", async () => {
     const t = setup({ answer: false });
     stroke(t.doc, t.versions);
     t.h.onOpen({ name: "a.roomboard", bytes: fakeCore.blank().save("x", "y"), target: { kind: "download", name: "a.roomboard" } });
-    expect(await t.ctl.run("open")).toBe(false);
-    expect(t.s.log.confirms).toEqual([DISCARD_MESSAGE]);
-    expect([t.h.calls.open, t.reloads(), t.pending.value]).toEqual([1, 0, null]);
+    expect(await t.ctl.run("open")).toBe(true);
+    expect(t.s.log.confirms).toEqual([]);
+    expect([t.h.calls.open, t.tabs.opened.map((f) => f.name)]).toEqual([1, ["a.roomboard"]]);
+    expect([t.ctl.isDirty(), t.ctl.name(), t.doc.elementIds(pageOf(t.doc)).length]).toEqual([true, "Sans titre.roomboard", 1]);
   });
 
-  it("fichier illisible : message, aucune attente, aucun rechargement", async () => {
-    const t = setup();
-    stroke(t.doc, t.versions); // modifié : un fichier illisible ne pose pas la question
+  it("openInTab qui rend false : rien d'autre, aucun message en double", async () => {
+    // L'onglet a déjà dit pourquoi (fichier illisible) : le contrôleur ne répète rien.
+    const t = setup({ openInTab: async () => false });
+    stroke(t.doc, t.versions);
     t.h.onOpen({
       name: "faux.roomboard",
       bytes: new TextEncoder().encode("pas un document"),
       target: { kind: "download", name: "faux.roomboard" },
     });
     expect(await t.ctl.run("open")).toBe(false);
-    expect(t.s.log.notes).toEqual(["Ouverture impossible (faux.roomboard) : ce fichier n'est pas un document RoomBoard"]);
-    expect([t.reloads(), t.pending.value, t.s.log.confirms.length]).toEqual([0, null, 0]);
+    expect([t.s.log.notes, t.s.log.confirms.length, t.ctl.isDirty(), t.ctl.name()]).toEqual([[], 0, true, "Sans titre.roomboard"]);
   });
 
   it("annulation de l'ouverture : rien, aucune question même modifié ; refus de la boîte : message", async () => {
@@ -267,22 +261,21 @@ describe("contrôleur des fichiers (D26)", () => {
     stroke(t.doc, t.versions);
     t.h.onOpen(null);
     expect(await t.ctl.run("open")).toBe(false);
-    expect([t.reloads(), t.s.log.notes.length, t.s.log.confirms.length]).toEqual([0, 0, 0]);
+    expect([t.tabs.opened.length, t.s.log.notes.length, t.s.log.confirms.length]).toEqual([0, 0, 0]);
     t.h.onOpen(Object.assign(new Error("Must be handling a user gesture"), { name: "SecurityError" }));
     expect(await t.ctl.run("open")).toBe(false);
     expect(t.s.log.notes).toEqual(["Ouverture impossible : Must be handling a user gesture"]);
   });
 
-  it("fermeture : gardée seulement si modifié, levée pendant le rechargement voulu", async () => {
+  it("garde de fermeture : jamais posée par le contrôleur d'onglet", async () => {
+    // La garde passe au workspace (une pour la fenêtre, CL5b-6) : N onglets ne posent pas N gardes.
     const t = setup();
-    expect(t.s.log.guardMessage).toBe(DISCARD_MESSAGE);
-    expect(t.s.guard()).toBe(false);
     stroke(t.doc, t.versions);
-    expect(t.s.guard()).toBe(true);
     t.h.onOpen({ name: "a.roomboard", bytes: fakeCore.blank().save("x", "y"), target: { kind: "download", name: "a.roomboard" } });
     expect(await t.ctl.run("open")).toBe(true);
-    expect(t.ctl.isDirty()).toBe(true);
-    expect(t.s.guard()).toBe(false);
+    expect(await t.ctl.run("new")).toBe(true);
+    t.ctl.dispose();
+    expect([t.s.log.guardMessage, t.s.log.stopped]).toEqual(["", 0]);
   });
 
   it("raccourcis : Ctrl+S, Ctrl+Maj+S, Ctrl+O, Ctrl+N, Cmd+S, touche tenue comprise ; Alt ou sans Ctrl : rien", () => {
@@ -314,17 +307,11 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.h.calls.save.length).toBe(1);
   });
 
-  it("nouveau refusé : rien n'est vidé ni rechargé, le document reste modifié", async () => {
+  it("nouveau avec un document modifié : newTab, sans question, document courant intact", async () => {
     const t = setup({ answer: false });
     stroke(t.doc, t.versions);
-    expect(await t.ctl.run("new")).toBe(false);
-    expect([t.s.log.confirms, t.pending.cleared, t.reloads(), t.ctl.isDirty(), t.s.guard()]).toEqual([
-      [DISCARD_MESSAGE],
-      0,
-      0,
-      true,
-      true,
-    ]);
+    expect(await t.ctl.run("new")).toBe(true);
+    expect([t.s.log.confirms, t.tabs.news, t.ctl.isDirty(), t.doc.elementIds(pageOf(t.doc)).length]).toEqual([[], 1, true, 1]);
   });
 
   it("sérialisation impossible : message, l'hôte n'est pas appelé, reste modifié", async () => {
@@ -339,28 +326,37 @@ describe("contrôleur des fichiers (D26)", () => {
     expect([t.h.calls.save.length, t.ctl.isDirty()]).toEqual([0, true]);
   });
 
-  it("mise en attente impossible : message, aucun rechargement, la fermeture reste gardée", async () => {
-    const t = setup();
+  it("openInTab qui lève : message « Ouverture impossible », la commande rend false", async () => {
+    const t = setup({
+      openInTab: async () => {
+        throw new Error("quota dépassé");
+      },
+    });
     stroke(t.doc, t.versions);
-    t.pending.put = async () => {
-      throw new Error("quota dépassé");
-    };
     t.h.onOpen({ name: "a.roomboard", bytes: fakeCore.blank().save("x", "y"), target: { kind: "download", name: "a.roomboard" } });
     expect(await t.ctl.run("open")).toBe(false);
     expect(t.s.log.notes).toEqual(["Ouverture impossible (a.roomboard) : quota dépassé"]);
-    expect([t.reloads(), t.s.guard()]).toEqual([0, true]);
+    expect(t.ctl.isDirty()).toBe(true);
     t.h.onOpen(null);
     expect(await t.ctl.run("open")).toBe(false);
     expect(t.h.calls.open).toBe(2);
   });
 
-  it("nouveau : l'attente qu'on ne peut vider n'empêche pas le rechargement", async () => {
-    const t = setup();
-    t.pending.clear = async () => {
-      throw new Error("base fermée");
-    };
+  it("newTab qui lève : la commande rend false, aucun rejet non géré, la suivante passe", async () => {
+    let fail = true;
+    const t = setup({
+      newTab: async () => {
+        if (fail) throw new Error("contexte WebGL2 refusé");
+      },
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await t.ctl.run("new")).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+    fail = false;
     expect(await t.ctl.run("new")).toBe(true);
-    expect([t.reloads(), t.s.log.notes]).toEqual([1, []]);
   });
 
   it("enregistrer puis annuler : le document reste modifié (version monotone, pas canUndo)", async () => {
@@ -375,14 +371,15 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.s.log.titles.at(-1)).toBe("• Sans titre.roomboard — RoomBoard");
   });
 
-  it("nouveau : demande si modifié, vide l'attente, recharge ; document propre : sans question", async () => {
+  it("nouveau : newTab, sans question, document courant intact", async () => {
     const t = setup();
     expect(await t.ctl.run("new")).toBe(true);
-    expect(t.s.log.confirms).toEqual([]);
+    expect([t.s.log.confirms, t.tabs.news]).toEqual([[], 1]);
     const u = setup();
     stroke(u.doc, u.versions);
-    expect(await u.ctl.run("new")).toBe(true);
-    expect([u.s.log.confirms, u.pending.cleared, u.reloads()]).toEqual([[DISCARD_MESSAGE], 1, 1]);
+    expect(await u.ctl.key(k("n", { ctrlKey: true }))).toBe(true);
+    await flush();
+    expect([u.s.log.confirms, u.tabs.news, u.ctl.isDirty()]).toEqual([[], 1, true]);
   });
 
   it("document ouvert depuis l'attente : nom et cible repris, Ctrl+S réécrit sans demander", async () => {
@@ -406,11 +403,11 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(await first).toBe(true);
   });
 
-  it("dispose : désabonné de l'état et de la fermeture", () => {
+  it("dispose : désabonné de l'état ; aucune garde de fermeture à retirer (posée par le workspace)", () => {
     const t = setup();
     expect(t.versions.listeners()).toBe(1);
     t.ctl.dispose();
-    expect([t.versions.listeners(), t.s.log.stopped]).toEqual([0, 1]);
+    expect([t.versions.listeners(), t.s.log.stopped]).toEqual([0, 0]);
   });
 
   it("T79 : notify qui rejette pendant Ctrl+S : aucun rejet non géré, la commande rend false", async () => {
@@ -426,39 +423,40 @@ describe("contrôleur des fichiers (D26)", () => {
     expect(t.ctl.isDirty()).toBe(true);
   });
 
-  it("T79 : confirm qui rejette pendant Ctrl+N : aucun rejet non géré, rien n'est rechargé", async () => {
-    const t = setup();
+  it("T79 : confirm qui rejette pendant une commande : aucun rejet non géré (Ctrl+O, notify qui rejette)", async () => {
+    // Ctrl+N ne pose plus de question : la boîte qui rejette se joue sur Ouvrir, quand openInTab lève et que notify rejette.
+    const t = setup({
+      openInTab: async () => {
+        throw new Error("illisible");
+      },
+    });
     stroke(t.doc, t.versions);
     t.s.shell.confirm = async () => {
       throw new Error("boîte indisponible");
     };
-    expect(t.ctl.key(k("n", { ctrlKey: true }))).toBe(true);
-    await flush();
-    expect(await t.ctl.run("new")).toBe(false);
-    expect(t.reloads()).toBe(0);
+    t.s.shell.notify = async () => {
+      throw new Error("boîte indisponible");
+    };
+    t.h.onOpen({ name: "a.roomboard", bytes: fakeCore.blank().save("x", "y"), target: { kind: "download", name: "a.roomboard" } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(t.ctl.key(k("o", { ctrlKey: true }))).toBe(true);
+      await flush();
+      expect(await t.ctl.run("open")).toBe(false);
+      expect(t.ctl.isDirty()).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
-  it("T79 : le rechargement voulu retire la garde de fermeture avant reload, une seule fois (dispose compris)", async () => {
+  it("T79 : Ctrl+N ne pose ni ne retire aucune garde de fermeture, dispose compris", async () => {
+    // Plus de rechargement voulu : la garde de la fenêtre appartient au workspace, le contrôleur n'y touche jamais.
     const t = setup();
-    let stoppedAtReload = -1;
-    const ctl = createFileController({
-      core: fakeCore,
-      doc: t.doc,
-      versions: t.versions,
-      host: t.h.host,
-      shell: t.s.shell,
-      pending: t.pending,
-      opened: null,
-      reload: () => {
-        stoppedAtReload = t.s.log.stopped;
-      },
-      now: () => "2026-11-19T00:00:00.000Z",
-      appVersion: APP_VERSION,
-    });
-    expect(await ctl.run("new")).toBe(true);
-    expect(stoppedAtReload).toBe(1);
-    ctl.dispose();
-    expect(t.s.log.stopped).toBe(1);
+    stroke(t.doc, t.versions);
+    expect(await t.ctl.run("new")).toBe(true);
+    expect(t.tabs.news).toBe(1);
+    t.ctl.dispose();
+    expect([t.s.log.guardMessage, t.s.log.stopped]).toEqual(["", 0]);
   });
 
   it("T81 : notify qui rejette : l'erreur d'enregistrement d'origine et l'erreur de la boîte sont toutes deux journalisées", async () => {

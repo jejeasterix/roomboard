@@ -302,3 +302,50 @@ describe("coque : dépôt, lancement, sortie (T86)", () => {
     await expect(quitApp(f.ipc)).resolves.toBeUndefined();
   });
 });
+
+describe("hôte Tauri : écoute du dépôt prête (T98, écart T87)", () => {
+  function manualIpc() {
+    let resolveListen!: (un: () => void) => void;
+    const calls: string[] = [];
+    const ipc: TauriIpc = {
+      async invoke<T>(): Promise<T> {
+        throw new Error("non attendu");
+      },
+      listen<T>(event: string, _cb: (e: { readonly payload: T }) => void): Promise<() => void> {
+        calls.push(event);
+        return new Promise((r) => {
+          resolveListen = r;
+        });
+      },
+    };
+    return { ipc, calls, resolve: () => resolveListen(() => undefined) };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it("dropListening se résout après ipc.listen", async () => {
+    const m = manualIpc();
+    const host = createTauriHost({} as never, {} as never, m.ipc);
+    host.onDrop(vi.fn());
+    expect(m.calls).toEqual([DROPPED_EVENT]);
+    let ready = false;
+    void host.dropListening().then(() => {
+      ready = true;
+    });
+    await tick();
+    expect(ready).toBe(false);
+    m.resolve();
+    await tick();
+    expect(ready).toBe(true);
+  });
+
+  it("ipc null : dropListening résolu", async () => {
+    const host = createTauriHost({} as never, {} as never, null);
+    host.onDrop(vi.fn());
+    await expect(host.dropListening()).resolves.toBeUndefined();
+  });
+
+  it("sans onDrop : dropListening résolu (rien à attendre)", async () => {
+    const m = manualIpc();
+    await expect(createTauriHost({} as never, {} as never, m.ipc).dropListening()).resolves.toBeUndefined();
+  });
+});
