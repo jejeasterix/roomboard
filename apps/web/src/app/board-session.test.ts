@@ -643,6 +643,35 @@ describe("session — médias (C14)", () => {
     };
     return { s, f, id, second, click, page };
   }
+  it("carte du son : le peintre reçoit assetName et écrit le nom du fichier (R7, M20)", async () => {
+    const texts: string[] = [];
+    restore();
+    restore = stubGetContext({
+      "2d": (canvas) => {
+        const base = fake2d(canvas) as Record<string, unknown>;
+        return new Proxy(base, {
+          get: (t, k) => (k === "fillText" ? (x: string) => void texts.push(x) : (t as Record<string | symbol, unknown>)[k]),
+          set: (t, k, v) => {
+            (t as Record<string | symbol, unknown>)[k] = v;
+            return true;
+          },
+        });
+      },
+    });
+    const assets = createAssetStore();
+    assets.adopt(ASSET, new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/ogg" }));
+    const s = await createBoardSession(fakeCore.blank(), { ...shared }, assets);
+    Object.defineProperty(s.stage, "clientWidth", { configurable: true, value: 640 });
+    Object.defineProperty(s.stage, "clientHeight", { configurable: true, value: 480 });
+    s.activate();
+    const page = s.engine.state().page;
+    s.engine.run({
+      type: "AddMedia", page, asset: { id: ASSET, name: "chant.ogg", mime: "audio/ogg", size: 4 }, linked: null, mediaType: "audio",
+      w: 200, h: 60, duration: 2.5, poster: null, matrix: [1, 0, 0, 1, 0, 0] as never,
+    });
+    await vi.waitFor(() => expect(texts).toContain("chant.ogg"), { timeout: 3000 });
+    s.dispose();
+  });
   const spec = (s: Awaited<ReturnType<typeof createBoardSession>>) => {
     const m = s.selectedMedia()!.media;
     return { asset: m.asset, mediaType: m.mediaType, duration: m.duration, trimStart: m.trimStart, trimEnd: m.trimEnd, loop: m.loop, volume: m.volume };

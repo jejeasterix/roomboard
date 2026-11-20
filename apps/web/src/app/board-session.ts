@@ -225,6 +225,7 @@ async function buildBoardSession(
   const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", {
     images,
     media: players,
+    assetName: (id) => doc.asset(id)?.name ?? null,
     ...(pdf === undefined ? {} : { backdrop }),
     onBackdrop: (s) => {
       stage.dataset["fond"] = s;
