@@ -625,12 +625,30 @@ describe("espace de travail : conteneur, repli et images (R7, R12, R30, S3, S4)"
     expect(await ws.active().files.run("save")).toBe(true);
   });
 
-  it("fichier refusé par le conteneur : « Ouverture impossible (nom) : message du cœur », aucun onglet", async () => {
+  it("fichier refusé par le conteneur : « Ouverture impossible (nom) : message du cœur », aucun onglet, pas de repli sur core.load", async () => {
     const ws = await setupWorkspace();
     codec.read.mockRejectedValueOnce(new Error("ce fichier n'est pas un document RoomBoard"));
-    expect(await ws.openDocument({ name: "x.roomboard", bytes: new Uint8Array([1]), target: null })).toBe(false);
+    // octets que core.load accepterait : seul le refus du conteneur peut expliquer l'échec
+    expect(await ws.openDocument({ name: "x.roomboard", bytes: validBytes(), target: null })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledTimes(1);
     expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.roomboard) : ce fichier n'est pas un document RoomBoard");
     expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("asset ignoré à l'ouverture (trop gros) : avertissement dit, onglet marqué, Enregistrer refusé sans écrire (R30)", async () => {
+    const ws = await setupWorkspace();
+    codec.read.mockResolvedValueOnce({
+      manifest: new Uint8Array([1]),
+      ybin: docWithImage().save(NOW, "0.1.0"),
+      assets: [],
+      warnings: ["asset ignoré : assets/x.png (trop gros)"],
+    } satisfies ContainerContents);
+    expect(await ws.openDocument({ name: "img.roomboard", bytes: new Uint8Array([9]), target: null })).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("img.roomboard : asset ignoré : assets/x.png (trop gros)");
+    expect(await ws.active().files.run("save")).toBe(false);
+    expect(shell.notify).toHaveBeenLastCalledWith(UNREAD_ASSETS_MESSAGE);
+    expect(codec.write).not.toHaveBeenCalled();
+    expect(host.save).not.toHaveBeenCalled();
   });
 
   it("premier document (attente IndexedDB, core.load) qui cite des images : Enregistrer refusé (R30, HR20)", async () => {

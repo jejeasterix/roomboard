@@ -149,9 +149,13 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const typed = (blob: Blob, mime: string | undefined): Blob =>
     mime !== undefined && mime !== "" && mime !== blob.type ? new Blob([blob], { type: mime }) : blob;
 
+  const missingOf = (doc: CoreDocument, assets: AssetStore): string[] =>
+    assets.pick(doc.citedAssets().map((a) => a.id)).missing;
+
   /**
    * Octets d'un onglet (R7), décidés à chaque enregistrement : sans asset cité, `doc.save` (mêmes octets qu'avant, sans
    * charger le second module, garde `compat_socle`) ; sinon `saveParts` et le conteneur. Jamais tout par le conteneur.
+   * Un asset cité absent du magasin n'arrive pas ici : `saveBlocked` refuse l'enregistrement avant (R30).
    */
   async function encodeTab(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string): Promise<Uint8Array> {
     const cited = doc.citedAssets();
@@ -167,7 +171,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     const assets = makeAssets();
     let contents: ContainerContents;
     try {
-      contents = await deps.codec.read(new Blob([bytes.slice()]));
+      contents = await deps.codec.read(new Blob([bytes as BlobPart]) /* le Blob copie déjà les octets */);
     } catch (e) {
       if (!(e instanceof CodecUnavailableError)) {
         await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
@@ -199,7 +203,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       return null;
     }
     if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
-    return { doc, assets, unread: false };
+    // un asset cité mais ignoré par le conteneur (trop gros…) : l'onglet est marqué, Enregistrer refusé (R30)
+    return { doc, assets, unread: missingOf(doc, assets).length > 0 };
   }
 
   /** Onglet qui reçoit les images (R3) : session active, magasin de l'onglet, moteur, rectangle du stage. */
@@ -233,7 +238,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     const files = createFileController({
       encode: (now, appVersion) => encodeTab(board.doc, assets, now, appVersion),
       importFiles: (f) => ws.importFiles(f, null),
-      saveBlocked: () => (slot.unread ? UNREAD_ASSETS_MESSAGE : null),
+      saveBlocked: () => (slot.unread || missingOf(board.doc, assets).length > 0 ? UNREAD_ASSETS_MESSAGE : null),
       versions: board.engine,
       host,
       shell: tabShell(slot),
