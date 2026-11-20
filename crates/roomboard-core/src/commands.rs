@@ -9,9 +9,9 @@ use yrs::{
 use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, finite_positive, fits_f32, invert, out_bytes, out_f64, out_string,
-    out_transform, read_backdrop, read_style, style_fields, transform_to_any, StrokeStyle,
-    Transform, FIT_WIDTH, IDENTITY,
+    apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, out_bytes, out_f64,
+    out_string, out_transform, read_backdrop, read_group, read_style, style_fields,
+    transform_to_any, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -144,6 +144,18 @@ pub enum Command {
         row_height: f64,
     },
     /// Remplissage d'une cellule (U32) ; `None` le retire.
+    /// Grouper (C3, Z1) : un id de groupe neuf (`uuid_v4`) en tête du chemin `group` de chaque élément ; refusé
+    /// (`BadGroup`) si un id est inconnu, si les éléments ne sont pas sur une même page ou s'ils forment moins de deux
+    /// unités (unité = groupe extérieur ou élément libre). Un groupe touché en partie est étendu à tous ses membres.
+    /// Une étape.
+    Group {
+        ids: Vec<String>,
+    },
+    /// Dégrouper (C3, Z1, HZ2-1) : retire le groupe extérieur du chemin de chaque élément (chemin vide = champ retiré) ;
+    /// ids inconnus ignorés ; aucun élément groupé = aucune étape (D38).
+    Ungroup {
+        ids: Vec<String>,
+    },
     SetTableFill {
         id: String,
         row: String,
@@ -187,6 +199,7 @@ pub enum CommandError {
     BadFormat,
     BadGrid,
     BadTable,
+    BadGroup,
 }
 
 impl std::fmt::Display for CommandError {
@@ -232,6 +245,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadGrid => write!(
                 f,
                 "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)"
+            ),
+            CommandError::BadGroup => write!(
+                f,
+                "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)"
             ),
             CommandError::BadTable => write!(
                 f,
@@ -436,6 +453,7 @@ struct Cut {
     transform: Transform,
     style: StrokeStyle,
     pieces: Vec<Vec<InkPoint>>,
+    group: Option<Any>,
 }
 
 /// Les chaînes données, triées et sans doublon.
@@ -444,6 +462,14 @@ fn sorted_unique(items: impl Iterator<Item = String>) -> Vec<String> {
     v.sort();
     v.dedup();
     v
+}
+
+/// Élément visé par `Group` ou `Ungroup` : son chemin lu (vide sans groupe lisible).
+struct GroupTarget {
+    id: String,
+    page: String,
+    element: MapRef,
+    path: Vec<String>,
 }
 
 struct Target {
@@ -581,6 +607,8 @@ impl Document {
                 col_width,
                 row_height,
             } => self.cmd_set_table_sizes(&id, col_width, row_height),
+            Command::Group { ids } => self.cmd_group(&ids),
+            Command::Ungroup { ids } => self.cmd_ungroup(&ids),
             Command::SetTableFill { id, row, col, fill } => {
                 self.cmd_set_table_fill(&id, (row.as_str(), col.as_str()), fill.as_deref())
             }
@@ -1020,6 +1048,10 @@ impl Document {
                         transform,
                         style,
                         pieces,
+                        group: match e.get(&txn, "group") {
+                            Some(Out::Any(a)) => Some(a),
+                            _ => None,
+                        },
                     });
                 }
             }
@@ -1039,17 +1071,105 @@ impl Document {
                 elements.remove(&mut txn, cut.index);
                 for (k, piece) in cut.pieces.iter().enumerate() {
                     let id = yrs::uuid_v4().to_string();
-                    elements.insert(
-                        &mut txn,
-                        cut.index + k as u32,
-                        stroke_prelim(&id, &cut.transform, &cut.style, piece),
-                    );
+                    let mut prelim = stroke_prelim(&id, &cut.transform, &cut.style, piece);
+                    // Z1 : un morceau reste dans le groupe du trait coupé (valeur recopiée telle quelle).
+                    if let Some(g) = &cut.group {
+                        prelim.insert("group".into(), In::Any(g.clone()));
+                    }
+                    elements.insert(&mut txn, cut.index + k as u32, prelim);
                     change.ids.push(id);
                 }
                 change.removed.push(cut.id.clone());
             }
         }
         Ok(self.done(change))
+    }
+
+    fn group_targets(&self, ids: &[String]) -> Vec<GroupTarget> {
+        let txn = self.read();
+        self.find_unique(&txn, ids)
+            .into_iter()
+            .map(|(id, f)| GroupTarget {
+                path: read_group(&txn, &f.element).unwrap_or_default(),
+                id,
+                page: f.page_id,
+                element: f.element,
+            })
+            .collect()
+    }
+
+    fn cmd_group(&mut self, ids: &[String]) -> Result<Change, CommandError> {
+        let unique: BTreeSet<&String> = ids.iter().collect();
+        let mut targets = self.group_targets(ids);
+        if targets.len() != unique.len() {
+            return Err(CommandError::BadGroup);
+        }
+        let Some(page) = targets.first().map(|t| t.page.clone()) else {
+            return Err(CommandError::BadGroup);
+        };
+        if targets.iter().any(|t| t.page != page) {
+            return Err(CommandError::BadGroup);
+        }
+        let outers: BTreeSet<String> = targets
+            .iter()
+            .map(|t| t.path.first().unwrap_or(&t.id).clone())
+            .collect();
+        if outers.len() < 2 {
+            return Err(CommandError::BadGroup);
+        }
+        // Un groupe touché en partie est étendu à tous ses membres (même groupe extérieur, même page).
+        let all_ids = self.element_ids(&page);
+        let known: BTreeSet<String> = targets.iter().map(|t| t.id.clone()).collect();
+        let rest: Vec<String> = all_ids.into_iter().filter(|i| !known.contains(i)).collect();
+        targets.extend(
+            self.group_targets(&rest)
+                .into_iter()
+                .filter(|t| t.path.first().is_some_and(|o| outers.contains(o))),
+        );
+        targets.sort_by(|a, b| a.id.cmp(&b.id));
+        let gid = yrs::uuid_v4().to_string();
+        {
+            let mut txn = self.transact_local();
+            for t in &targets {
+                let mut next = Vec::with_capacity(t.path.len() + 1);
+                next.push(gid.clone());
+                next.extend(t.path.iter().cloned());
+                t.element.insert(&mut txn, "group", group_to_any(&next));
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: targets.into_iter().map(|t| t.id).collect(),
+            ..Default::default()
+        }))
+    }
+
+    fn cmd_ungroup(&mut self, ids: &[String]) -> Result<Change, CommandError> {
+        let targets: Vec<GroupTarget> = self
+            .group_targets(ids)
+            .into_iter()
+            .filter(|t| !t.path.is_empty())
+            .collect();
+        if targets.is_empty() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            for t in &targets {
+                if t.path.len() == 1 {
+                    t.element.remove(&mut txn, "group");
+                } else {
+                    t.element
+                        .insert(&mut txn, "group", group_to_any(&t.path[1..]));
+                }
+            }
+        }
+        let pages = sorted_unique(targets.iter().map(|t| t.page.clone()));
+        Ok(self.done(Change {
+            pages,
+            ids: targets.into_iter().map(|t| t.id).collect(),
+            ..Default::default()
+        }))
     }
 
     fn cmd_delete(&mut self, ids: &[String]) -> Result<Change, CommandError> {
@@ -1169,7 +1289,6 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::element::group_to_any;
     use crate::ink::points::{to_flat, InkPoint};
 
     fn pen() -> StrokeStyle {
@@ -3651,15 +3770,35 @@ pub(crate) mod tests {
             ids: vec![a.clone(), b.clone(), c.clone()],
         })
         .expect("g2");
-        let file = save(&d, &meta).expect("save");
+        // Un groupe imbriqué remplace la valeur de `group` : le premier rechargement purge l'ancienne valeur (état yrs
+        // compacté), les suivants sont des points fixes. Un seul niveau (aucune valeur remplacée) est stable d'emblée.
+        let once = save(&d, &meta).expect("save");
+        let file = save(&load(&once).expect("load 1"), &meta).expect("resave 1");
         for i in 0..30 {
             let r = load(&file).expect("load");
             for id in [&a, &b, &c] {
-                assert_eq!(group_of(&r, id), group_of(&d, id), "groupe {id} au tour {i}");
+                assert_eq!(
+                    group_of(&r, id),
+                    group_of(&d, id),
+                    "groupe {id} au tour {i}"
+                );
             }
             assert!(
                 save(&r, &meta).expect("resave") == file,
                 "fichier différent au rechargement {i}"
+            );
+        }
+        let mut s = Document::blank();
+        let sp = first(&s);
+        let x = rect_at(&mut s, &sp, 0.0);
+        let y = rect_at(&mut s, &sp, 100.0);
+        s.apply(Command::Group { ids: vec![x, y] }).expect("g");
+        let one = save(&s, &meta).expect("save");
+        for i in 0..30 {
+            let r = load(&one).expect("load");
+            assert!(
+                save(&r, &meta).expect("resave") == one,
+                "un niveau : fichier différent au rechargement {i}"
             );
         }
     }

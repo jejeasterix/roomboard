@@ -16,9 +16,9 @@ use crate::commands::{read_shape, read_text};
 #[cfg(test)]
 use crate::element::ImageView;
 use crate::element::{
-    backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_image, read_style,
-    read_unknown, unknown_view, ElementView, PageView, ShapeView, StrokeStyle, TextView,
-    DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_group, read_image,
+    read_style, read_unknown, unknown_view, ElementView, PageView, ShapeView, StrokeStyle,
+    TextView, DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -248,7 +248,8 @@ impl Document {
         let txn = self.doc.transact();
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
-        match out_string(e.get(&txn, "kind")).as_deref() {
+        let group = read_group(&txn, e);
+        let view = match out_string(e.get(&txn, "kind")).as_deref() {
             Some("stroke") => Some(ElementView {
                 style: Some(read_style(&txn, e)?),
                 ..ElementView::bare(id, "stroke", out_transform(e.get(&txn, "transform"))?)
@@ -314,7 +315,8 @@ impl Document {
                     ..ElementView::bare(id, "unknown", transform)
                 })
             }
-        }
+        };
+        view.map(|v| ElementView { group, ..v })
     }
 
     pub fn schema(&self) -> Option<f64> {
