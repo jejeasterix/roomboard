@@ -9,6 +9,7 @@ use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, Era
 use roomboard_core::document::Document as CoreDocument;
 use roomboard_core::element::{StrokeStyle, Transform};
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
+use roomboard_core::grid::{GridInput, GridLevelView};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
@@ -96,6 +97,46 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
         mime: mime.to_string(),
         size,
     }
+}
+
+/// Grille reçue de JS (G12) : `nums` = 6 nombres par niveau (`sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1) ;
+/// longueurs incohérentes : `BadGrid`. Les valeurs elles-mêmes sont contrôlées par le cœur (`SetGrid`).
+fn grid_input(
+    visible: bool,
+    snap: bool,
+    above: bool,
+    kinds: Vec<String>,
+    colors: Vec<String>,
+    lines: Vec<String>,
+    nums: &[f64],
+) -> Result<GridInput, CommandError> {
+    let n = kinds.len();
+    if colors.len() != n || lines.len() != n || nums.len() != 6 * n {
+        return Err(CommandError::BadGrid);
+    }
+    let levels = kinds
+        .into_iter()
+        .zip(colors)
+        .zip(lines)
+        .zip(nums.as_chunks::<6>().0)
+        .map(|(((kind, color), line), v)| GridLevelView {
+            kind,
+            spacing_x: v[0],
+            spacing_y: v[1],
+            origin_x: v[2],
+            origin_y: v[3],
+            color,
+            line,
+            snap: v[4] != 0.0,
+            visible: v[5] != 0.0,
+        })
+        .collect();
+    Ok(GridInput {
+        visible,
+        snap,
+        above,
+        levels,
+    })
 }
 
 /// Document exposé à JavaScript.
@@ -206,6 +247,59 @@ impl Document {
 
     pub fn clear_backdrop(&mut self, page: &str) -> Result<JsValue, JsError> {
         to_js(&self.set_backdrop_inner(page, None).map_err(cmd_err)?)
+    }
+
+    /// Grille de page (U31, G12) ; voir `grid_input` pour la forme de `nums`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_grid(
+        &mut self,
+        page: &str,
+        visible: bool,
+        snap: bool,
+        above: bool,
+        kinds: Vec<String>,
+        colors: Vec<String>,
+        lines: Vec<String>,
+        nums: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let grid = grid_input(visible, snap, above, kinds, colors, lines, nums).map_err(cmd_err)?;
+        to_js(&self.set_grid_inner(page, Some(grid)).map_err(cmd_err)?)
+    }
+
+    pub fn clear_grid(&mut self, page: &str) -> Result<JsValue, JsError> {
+        to_js(&self.set_grid_inner(page, None).map_err(cmd_err)?)
+    }
+
+    /// Point aimanté `[x, y]` (G6) ; `undefined` sans accroche.
+    pub fn snap_point(&self, page: &str, x: f64, y: f64) -> Option<Vec<f64>> {
+        self.core.snap_point(page, x, y).map(|(a, b)| vec![a, b])
+    }
+
+    /// Déplacement aimanté `[dx, dy]` (G7), brut sans accroche.
+    pub fn snap_delta(&self, page: &str, ids: Vec<String>, dx: f64, dy: f64) -> Vec<f64> {
+        let (a, b) = self.core.snap_delta(page, &ids, dx, dy);
+        vec![a, b]
+    }
+
+    /// Lignes visibles (G9) dans le rectangle monde ; `null` sans grille ou grille invisible.
+    #[allow(clippy::too_many_arguments)]
+    pub fn grid_lines(
+        &self,
+        page: &str,
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        min_step: f64,
+        min_dot_step: f64,
+    ) -> Result<JsValue, JsError> {
+        match self
+            .core
+            .grid_lines(page, Bounds { x0, y0, x1, y1 }, min_step, min_dot_step)
+        {
+            Some(g) => to_js(&g),
+            None => Ok(JsValue::NULL),
+        }
     }
 
     pub fn add_page(&mut self) {
@@ -449,6 +543,18 @@ impl Document {
         self.run(Command::SetBackdrop {
             page: page.to_string(),
             backdrop,
+        })
+    }
+
+    /// `None` : retire la grille.
+    pub fn set_grid_inner(
+        &mut self,
+        page: &str,
+        grid: Option<GridInput>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetGrid {
+            page: page.to_string(),
+            grid,
         })
     }
 
@@ -943,5 +1049,94 @@ mod tests {
         let bytes = d.save_inner("2026-11-22T00:00:00Z", "0.1.0").expect("save");
         let e = Document::load_inner(&bytes).expect("load");
         assert_eq!(e.created.as_deref(), Some("2026-11-20T00:00:00Z"));
+    }
+
+    // C9 (T6) : grille de page par `grid_input` et `set_grid_inner`.
+
+    fn squares(s: f64) -> GridLevelView {
+        GridLevelView {
+            kind: "squares".into(),
+            spacing_x: s,
+            spacing_y: s,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            color: "#cccccc".into(),
+            line: "solid".into(),
+            snap: true,
+            visible: true,
+        }
+    }
+
+    /// G12 : six nombres par niveau, `sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1.
+    #[test]
+    fn grid_input_reads_six_numbers_per_level() {
+        let g = grid_input(
+            true,
+            true,
+            false,
+            vec!["squares".into(), "dots".into()],
+            vec!["#cccccc".into(), "#000000".into()],
+            vec!["solid".into(), "dashed".into()],
+            &[
+                40.0, 40.0, 0.0, 0.0, 1.0, 1.0, 20.0, 10.0, 5.0, -3.0, 0.0, 1.0,
+            ],
+        )
+        .expect("grille");
+        assert_eq!((g.visible, g.snap, g.above), (true, true, false));
+        assert_eq!(g.levels[0], squares(40.0));
+        assert_eq!(
+            g.levels[1],
+            GridLevelView {
+                kind: "dots".into(),
+                spacing_x: 20.0,
+                spacing_y: 10.0,
+                origin_x: 5.0,
+                origin_y: -3.0,
+                color: "#000000".into(),
+                line: "dashed".into(),
+                snap: false,
+                visible: true,
+            }
+        );
+    }
+
+    /// G12 : longueurs incohérentes → `BadGrid`.
+    #[test]
+    fn grid_input_rejects_inconsistent_lengths() {
+        let s = |len: usize| vec![String::from("x"); len];
+        for (k, c, l, n) in [(1, 1, 1, 5), (1, 0, 1, 6), (1, 1, 2, 6), (0, 0, 0, 6)] {
+            assert_eq!(
+                grid_input(true, true, false, s(k), s(c), s(l), &vec![1.0; n]),
+                Err(CommandError::BadGrid),
+                "{k} {c} {l} {n}"
+            );
+        }
+        assert!(grid_input(true, false, false, vec![], vec![], vec![], &[]).is_ok());
+    }
+
+    #[test]
+    fn set_grid_inner_then_snap_lines_and_clear() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let g = GridInput {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![squares(40.0)],
+        };
+        let c = d.set_grid_inner(&p, Some(g.clone())).expect("grille");
+        assert_eq!(c.pages, vec![p.clone()]);
+        assert_eq!(d.core.page(&p).and_then(|v| v.grid), Some(g));
+        assert_eq!(d.core.snap_point(&p, 118.0, 97.0), Some((120.0, 80.0)));
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 100.0,
+        };
+        let lines = d.core.grid_lines(&p, r, 4.0, 8.0).expect("visible");
+        assert_eq!(lines.levels[0].segments.len(), (3 + 3) * 4);
+        d.set_grid_inner(&p, None).expect("retrait");
+        assert_eq!(d.core.page(&p).and_then(|v| v.grid), None);
     }
 }
