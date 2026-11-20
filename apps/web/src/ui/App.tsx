@@ -7,16 +7,21 @@
  */
 import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost } from "../app/toolbar-host";
 import type { TabSession, Workspace } from "../app/workspace";
 import type { EngineState } from "../engine/engine";
 import type { SettingsStore } from "../engine/settings";
 import type { ShellPort } from "../platform/files";
+import type { ProfileFiles } from "../platform/profile-files";
+import { originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
-import { visibleItems, type Toolbar as Bar } from "../toolbar";
+import { resolveStartMode, visibleItems, type Toolbar as Bar } from "../toolbar";
+import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { layoutFor } from "./layout";
 import { PagesBar } from "./PagesBar";
+import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
 import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
@@ -30,13 +35,15 @@ export interface AppProps {
   readonly settings: SettingsStore;
   readonly notes: readonly string[];
   readonly shell: ShellPort;
+  /** Choix et écriture des fichiers `.rbprofile` (C1, P25) : boîtes natives dans la coque, repli web ailleurs. */
+  readonly profileFiles: ProfileFiles;
   /** Conteneur des scènes (`<main class="rb-stages">`), créé par l'amorce avant le premier onglet : les sessions y
    *  posent leur scène et leur zone de texte (`SessionShared.container`) ; l'application le place dans la case `stage`. */
   readonly stages: HTMLElement;
   navigate(search: string): void;
 }
 
-type Panel = "settings" | "profiles";
+type Panel = "settings" | "profiles" | "editor";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
@@ -107,6 +114,17 @@ export function App(props: AppProps): JSX.Element {
     () => props.active.profile(),
   );
 
+  // Mode de démarrage (U14, C1 P10) : une seule fois, au montage ; changer de profil ensuite ne le rejoue pas (P11).
+  host.setMode(resolveStartMode(props.active.profile(), props.active.capabilities()).mode);
+  const actions = createProfileActions({
+    store: props.store,
+    active: props.active,
+    files: props.profileFiles,
+    shell: props.shell,
+    builtins: BUILTIN_PROFILES,
+    warn: (m) => console.warn(m),
+  });
+
   const profile = () => props.active.profile();
   const size = () => profile().interface.buttonSize;
   const docked = createMemo(() => profile().toolbars.filter((b) => b.dock !== "floating"));
@@ -114,7 +132,7 @@ export function App(props: AppProps): JSX.Element {
   const grid = createMemo(() => layoutFor(docked()));
 
   const toolbarOf = (bar: Bar): JSX.Element => (
-    <Toolbar bar={bar} caps={props.active.capabilities} view={state} size={size} host={host} />
+    <Toolbar bar={bar} caps={props.active.capabilities} view={state} size={size} host={host} presets={() => profile().presets} />
   );
   /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. */
   const BY_ROLE: Readonly<Record<string, (bar: Bar) => JSX.Element>> = {
@@ -177,20 +195,52 @@ export function App(props: AppProps): JSX.Element {
       <Show when={panel() === "profiles"}>
         <div class="rb-popover">
           <ProfileMenu
-            profiles={() => props.store.list()}
+            profiles={props.active.profiles}
             activeId={() => profile().id}
-            canResetCurrent={() => false}
-            canRemove={() => false}
-            edit={() => undefined}
-            importFile={() => undefined}
-            exportActive={() => undefined}
-            resetCurrent={() => undefined}
-            remove={() => undefined}
-            resetAll={() => undefined}
+            canResetCurrent={() => actions.canResetCurrent()}
+            canRemove={() => actions.canRemove()}
             choose={(id) => {
               props.active.choose(id);
               setPanel(null);
             }}
+            edit={() => setPanel("editor")}
+            importFile={() => {
+              setPanel(null);
+              void actions.importFile();
+            }}
+            exportActive={() => {
+              setPanel(null);
+              void actions.exportActive();
+            }}
+            resetCurrent={() => {
+              actions.resetCurrent();
+              setPanel(null);
+            }}
+            remove={() => {
+              setPanel(null);
+              void actions.remove();
+            }}
+            resetAll={() => {
+              setPanel(null);
+              void actions.resetAll();
+            }}
+          />
+        </div>
+      </Show>
+      <Show when={panel() === "editor"}>
+        <div class="rb-popover">
+          <ProfileEditor
+            profile={profile()}
+            origin={originOf(profile(), BUILTIN_PROFILES)}
+            save={(draft) => {
+              actions.save(draft);
+              setPanel(null);
+            }}
+            saveAsNew={(draft, label) => {
+              actions.saveAsNew(draft, label);
+              setPanel(null);
+            }}
+            close={() => setPanel(null)}
           />
         </div>
       </Show>
