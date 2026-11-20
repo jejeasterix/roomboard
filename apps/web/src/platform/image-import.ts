@@ -43,7 +43,7 @@ function isSvg(head: Uint8Array, name: string): boolean {
   const text = new TextDecoder("utf-8").decode(head).replace(/^\uFEFF/, "").trimStart();
   if (!text.startsWith("<")) return false;
   // Prologue `<?xml …?>`, commentaires et `<!DOCTYPE svg …>` d'abord ; une page HTML qui contient un <svg> n'en est pas un.
-  const rest = text.replace(/^(?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE\s+svg\b[^>]*(?:\[[\s\S]*?\])?\s*>)+/i, "");
+  const rest = text.replace(/^(?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE\s+svg\b[^>[]*(?:\[[\s\S]*?\])?\s*>)+/i, "");
   if (/^<svg[\s>/]/i.test(rest)) return true;
   // En-tête coupé dans le prologue (4 Kio) : le nom `.svg` tranche.
   return name.toLowerCase().endsWith(".svg") && (rest === "" || /^(?:<\?|<!--|<!DOCTYPE\s+svg)/i.test(rest));
@@ -263,11 +263,12 @@ export function imageHandler(deps: { readonly decode?: ImageDecoder } = {}): Imp
           return "failed";
         }
         decoded.bitmap.close(); // le rendu décode à nouveau depuis le magasin (cache par empreinte, DAR2)
+        const id = await target.assets.put(blob);
+        // Vérifié après `put` (asynchrone : lecture et SHA-256), juste avant le premier appel au moteur : l'onglet a pu se fermer pendant l'écriture.
         if (target.alive?.() === false) {
           await ctx.notify(`${file.name} : ${TAB_CLOSED_MESSAGE}`);
           return "failed";
         }
-        const id = await target.assets.put(blob);
         const rect = target.stageRect();
         const camera = target.camera();
         const change = target.run({

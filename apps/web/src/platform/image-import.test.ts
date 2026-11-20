@@ -3,12 +3,14 @@ import { IDENTITY } from "../engine/camera";
 import {
   anchorOf,
   decodeImage,
+  imageHandler,
   ImageTooLargeError,
   jpegSize,
   kindOfMime,
   placement,
   probeSize,
   sniffImage,
+  TAB_CLOSED_MESSAGE,
   visibleOf,
   type DecodePorts,
 } from "./image-import";
@@ -50,6 +52,10 @@ describe("sniffImage (R1, R14)", () => {
     expect(sniffImage(doc, "a")).toBe("svg");
     expect(sniffImage(bytes("<!DOCTYPE html><html><body><svg width='1'></svg></body></html>"), "page.svg")).toBeNull();
     expect(sniffImage(bytes("<html><svg/></html>"), "a")).toBeNull();
+    // SVG d'Illustrator : DOCTYPE avec sous-ensemble interne (entités).
+    const ai = bytes('<?xml version="1.0"?>\n<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [\n<!ENTITY ns_svg "http://www.w3.org/2000/svg">\n]>\n<svg xmlns="&ns_svg;"/>');
+    expect(sniffImage(ai, "a")).toBe("svg");
+    expect(sniffImage(bytes('<!DOCTYPE html [<!ENTITY a "b">]><html><svg/></html>'), "page.svg")).toBeNull();
   });
 
   it("TIFF, ZIP, texte et HTML : non reconnus (R14 : TIFF refusé)", () => {
@@ -161,5 +167,31 @@ describe("géométrie d'insertion (R4, R5)", () => {
 
   it("placement : vue nulle (stage caché) : taille source, jamais 0", () => {
     expect(placement(200, 100, [0, 0], { w: 0, h: 0 }, 0)[0]).toBe(1);
+  });
+});
+
+describe("imageHandler : onglet fermé pendant put (garde après l'écriture au magasin)", () => {
+  it("ne touche plus le moteur et dit TAB_CLOSED_MESSAGE", async () => {
+    let open = true;
+    const calls: string[] = [];
+    const target = {
+      assets: { put: vi.fn(async () => { open = false; return "sha"; }) },
+      alive: () => open,
+      page: () => { calls.push("page"); return "p"; },
+      camera: () => { calls.push("camera"); return IDENTITY; },
+      stageRect: () => { calls.push("stageRect"); return { left: 0, top: 0, width: 100, height: 100 }; },
+      run: vi.fn(() => { calls.push("run"); return null; }),
+    };
+    const notify = vi.fn(async () => {});
+    const blob = new Blob([pngHead(2, 2)], { type: "image/png" });
+    const decode = vi.fn(async () => ({ bitmap: { close() {} } as unknown as ImageBitmap, w: 2, h: 2 }));
+    const out = await imageHandler({ decode }).run(
+      { name: "a.png" } as never,
+      { blob, head: pngHead(2, 2), at: null, inserted: 0, target, notify } as never,
+    );
+    expect(out).toBe("failed");
+    expect(target.assets.put).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([]);
+    expect(notify).toHaveBeenCalledWith(`a.png : ${TAB_CLOSED_MESSAGE}`);
   });
 });
