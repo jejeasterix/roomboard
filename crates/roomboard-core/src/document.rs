@@ -17,8 +17,8 @@ use crate::commands::{read_shape, read_text};
 use crate::element::ImageView;
 use crate::element::{
     backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_image, read_style,
-    read_unknown, ElementView, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
-    PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    read_unknown, unknown_view, ElementView, PageView, ShapeView, StrokeStyle, TextView,
+    DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -293,6 +293,20 @@ impl Document {
                     ..ElementView::bare(id, "image", transform)
                 })
             }
+            Some(crate::table::TABLE_KIND) => Some(match crate::table::read(&txn, e) {
+                Some((transform, table)) => ElementView {
+                    table: Some(table),
+                    ..ElementView::bare(id, "table", transform)
+                },
+                // T2 : tableau mal formé → cadre inconnu, jamais `None`.
+                None => {
+                    let (transform, unknown) = unknown_view(&txn, e)?;
+                    ElementView {
+                        unknown: Some(unknown),
+                        ..ElementView::bare(id, "unknown", transform)
+                    }
+                }
+            }),
             _ => {
                 let (transform, unknown) = read_unknown(&txn, e)?;
                 Some(ElementView {
