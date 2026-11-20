@@ -100,49 +100,135 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
     }
 }
 
-/// Valeur d'un patch `FormatText` venue de la page (C7, T7) ; `null` arrive en `None` (retrait).
-#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
-#[serde(untagged)]
+/// Valeur d'un patch `FormatText` venue de la page (C7, T7) ; `null` arrive en `None` (retrait). Lue par
+/// `WireVisitor` plutôt que par `#[serde(untagged)]`, qui tirait dans le module la machinerie `Content` de serde (T10) ;
+/// mêmes valeurs acceptées : booléen, nombre (entier ou flottant), chaîne ou octets UTF-8 ; tout le reste est refusé.
+#[derive(Debug, Clone, PartialEq)]
 pub enum WireValue {
     Bool(bool),
     Number(f64),
     Text(String),
 }
 
-/// Patch de la page → entrées du cœur (contrôle 1 de T7) : clé inconnue ou valeur au mauvais type : `BadFormat`. Les
-/// valeurs hors domaine (couleur, police, taille) sont refusées ensuite par le cœur (`valid_attrs`).
+impl<'de> serde::Deserialize<'de> for WireValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(WireVisitor)
+    }
+}
+
+struct WireVisitor;
+
+impl<'de> serde::de::Visitor<'de> for WireVisitor {
+    type Value = WireValue;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un booléen, un nombre ou une chaîne")
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<WireValue, E> {
+        Ok(WireValue::Bool(b))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<WireValue, E> {
+        Ok(WireValue::Number(n as f64))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<WireValue, E> {
+        Ok(WireValue::Number(n as f64))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, n: f64) -> Result<WireValue, E> {
+        Ok(WireValue::Number(n))
+    }
+
+    /// Refusé comme avec `untagged`, où un `char` ne se lisait pas en `String` (par défaut, serde le passerait à
+    /// `visit_str`).
+    fn visit_char<E: serde::de::Error>(self, c: char) -> Result<WireValue, E> {
+        Err(E::invalid_type(serde::de::Unexpected::Char(c), &self))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<WireValue, E> {
+        Ok(WireValue::Text(s.to_owned()))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, s: String) -> Result<WireValue, E> {
+        Ok(WireValue::Text(s))
+    }
+
+    fn visit_bytes<E: serde::de::Error>(self, b: &[u8]) -> Result<WireValue, E> {
+        match std::str::from_utf8(b) {
+            Ok(s) => Ok(WireValue::Text(s.to_owned())),
+            Err(_) => Err(E::invalid_value(serde::de::Unexpected::Bytes(b), &self)),
+        }
+    }
+}
+
+/// Une entrée du patch → entrée du cœur (contrôle 1 de T7) : clé inconnue ou valeur au mauvais type : `BadFormat`.
+fn wire_attr(k: &str, v: Option<WireValue>) -> Result<TextAttr, CommandError> {
+    Ok(match (k, v) {
+        ("bold", None) => TextAttr::Bold(false),
+        ("bold", Some(WireValue::Bool(b))) => TextAttr::Bold(b),
+        ("italic", None) => TextAttr::Italic(false),
+        ("italic", Some(WireValue::Bool(b))) => TextAttr::Italic(b),
+        ("underline", None) => TextAttr::Underline(false),
+        ("underline", Some(WireValue::Bool(b))) => TextAttr::Underline(b),
+        ("color", None) => TextAttr::Color(None),
+        ("color", Some(WireValue::Text(s))) => TextAttr::Color(Some(s)),
+        ("size", None) => TextAttr::Size(None),
+        ("size", Some(WireValue::Number(n))) => TextAttr::Size(Some(n as f32)),
+        ("font", None) => TextAttr::Font(None),
+        ("font", Some(WireValue::Text(s))) => TextAttr::Font(Some(s)),
+        _ => return Err(CommandError::BadFormat),
+    })
+}
+
+/// Patch de la page → entrées du cœur (contrôle 1 de T7), dans l'ordre des clés : clé inconnue ou valeur au mauvais
+/// type : `BadFormat`. Les valeurs hors domaine (couleur, police, taille) sont refusées ensuite par le cœur
+/// (`valid_attrs`).
 pub fn wire_attrs(
     patch: BTreeMap<String, Option<WireValue>>,
 ) -> Result<Vec<TextAttr>, CommandError> {
-    patch
-        .into_iter()
-        .map(|(k, v)| {
-            Ok(match (k.as_str(), v) {
-                ("bold", None) => TextAttr::Bold(false),
-                ("bold", Some(WireValue::Bool(b))) => TextAttr::Bold(b),
-                ("italic", None) => TextAttr::Italic(false),
-                ("italic", Some(WireValue::Bool(b))) => TextAttr::Italic(b),
-                ("underline", None) => TextAttr::Underline(false),
-                ("underline", Some(WireValue::Bool(b))) => TextAttr::Underline(b),
-                ("color", None) => TextAttr::Color(None),
-                ("color", Some(WireValue::Text(s))) => TextAttr::Color(Some(s)),
-                ("size", None) => TextAttr::Size(None),
-                ("size", Some(WireValue::Number(n))) => TextAttr::Size(Some(n as f32)),
-                ("font", None) => TextAttr::Font(None),
-                ("font", Some(WireValue::Text(s))) => TextAttr::Font(Some(s)),
-                _ => return Err(CommandError::BadFormat),
-            })
-        })
-        .collect()
+    patch.into_iter().map(|(k, v)| wire_attr(&k, v)).collect()
+}
+
+/// Clés connues d'un patch, dans l'ordre où une `BTreeMap<String, _>` les range : celui des entrées rendues.
+const PATCH_KEYS: [&str; 6] = ["bold", "color", "font", "italic", "size", "underline"];
+
+/// Lit la table du patch clé par clé (T10 : sans instancier `BTreeMap<String, Option<WireValue>>` dans le module) ;
+/// une clé répétée garde sa dernière valeur, comme l'insertion dans une `BTreeMap`.
+struct PatchVisitor;
+
+impl<'de> serde::de::Visitor<'de> for PatchVisitor {
+    type Value = [Option<Option<WireValue>>; 6];
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un objet")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut slots = Self::Value::default();
+        while let Some(k) = map.next_key::<String>()? {
+            let Some(i) = PATCH_KEYS.iter().position(|p| *p == k) else {
+                return Err(serde::de::Error::custom("clé inconnue"));
+            };
+            slots[i] = Some(map.next_value()?);
+        }
+        Ok(slots)
+    }
 }
 
 /// Lit le patch de `format_text` : chaque valeur en `Option` (une clé à `null` est un retrait, jamais une erreur) ;
 /// pas un objet, ou valeur ni booléen, ni nombre, ni chaîne : `BadFormat`. Générique sur le désérialiseur pour être
 /// testée en natif (hors wasm32, `serde_wasm_bindgen` panique).
 fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, CommandError> {
-    let patch: BTreeMap<String, Option<WireValue>> =
-        serde::Deserialize::deserialize(d).map_err(|_| CommandError::BadFormat)?;
-    wire_attrs(patch)
+    let slots = d
+        .deserialize_map(PatchVisitor)
+        .map_err(|_| CommandError::BadFormat)?;
+    PATCH_KEYS
+        .iter()
+        .zip(slots)
+        .filter_map(|(k, v)| v.map(|v| wire_attr(k, v)))
+        .collect()
 }
 
 /// Document exposé à JavaScript.
