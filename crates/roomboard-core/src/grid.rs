@@ -1201,6 +1201,23 @@ mod tests {
             vec![level("squares", 40.0, 40.0), level("dots", 20.0, 20.0)]
         );
         assert_eq!(validate(&g), Ok(()));
+        // Limite connue (relecture finale) : la lecture ne plafonne pas le nombre de niveaux. Une grille de 17 niveaux
+        // (autre écrivain, version plus récente) est lue entière, et `SetGrid` la refuserait telle quelle en `BadGrid`.
+        let many = In::Array(ArrayPrelim::from(
+            (0..=MAX_GRID_LEVELS)
+                .map(|_| {
+                    In::Map(MapPrelim::from([
+                        ("kind", In::from("squares")),
+                        ("spacingX", num(40.0)),
+                        ("spacingY", num(40.0)),
+                    ]))
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let (doc, page) = page_with(In::Map(MapPrelim::from([("levels", many)])));
+        let g = read(&doc.transact(), &page).expect("grille lisible");
+        assert_eq!(g.levels.len(), MAX_GRID_LEVELS + 1);
+        assert!(validate(&g).is_err());
     }
 
     /// G9, relecture T1 : le plafond des portées porte sur les lignes (5 par portée), comme `MAX_GRID_DOTS` le dit.
@@ -1222,5 +1239,56 @@ mod tests {
         let l = lines(&music, W, to(1000.0), 0.0, 0.0).expect("visible");
         let n = l.levels[0].segments.len() / 4;
         assert!(n > 0 && n <= MAX_GRID_DOTS, "{n} lignes");
+    }
+
+    /// G7, relecture finale : forme de largeur non entière (coins `f32` de `box_polygon`) aimantée, puis petit glisser
+    /// → déplacement exactement nul ; `q − candidat` seul y laissait un résidu d'arrondi (~1e-13).
+    #[test]
+    fn grid_snap_delta_after_a_snapped_move_is_exactly_zero() {
+        let g = grid(vec![level("squares", 40.0, 40.0)]);
+        let (w, h) = (f64::from(100.3f32), f64::from(50.7f32));
+        let at = |x: f64, y: f64| Bounds {
+            x0: x,
+            y0: y,
+            x1: x + w,
+            y1: y + h,
+        };
+        for i in 0..4000_u32 {
+            let (tx, ty) = (3.0 + f64::from(i % 50) * 7.31, 5.0 + f64::from(i) * 0.377);
+            let (dx, dy) = snap_delta(&g, W, at(tx, ty), (0.0, 0.0));
+            let (x, y) = (tx + dx, ty + dy);
+            assert_eq!(
+                snap_delta(&g, W, at(x, y), (0.6, -0.4)),
+                (0.0, 0.0),
+                "départ ({tx}, {ty})"
+            );
+        }
+    }
+
+    /// G6, relecture finale : un candidat non fini (portée de pas 1e308 : `10·sy` déborde) est ignoré ; le niveau
+    /// suivant accroche.
+    #[test]
+    fn snap_point_ignores_a_non_finite_candidate() {
+        let g = grid(vec![
+            level("music", 7.0, 1e308),
+            level("squares", 40.0, 40.0),
+        ]);
+        assert_eq!(validate(&g), Ok(()));
+        assert_eq!(snap_point(&g, W, (13.0, 17.0)), Some((0.0, 0.0)));
+    }
+
+    /// G9, relecture finale : une ligne de portée posée sur le bord de la vue compte comme dedans (`EPS·sy`, comme
+    /// `indices`) ; 3 × 0,1 = 0,300…04 > 0,3.
+    #[test]
+    fn music_line_on_the_view_edge_is_kept() {
+        let g = grid(vec![level("music", 7.0, 0.1)]);
+        let c = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: W,
+            y1: 0.3,
+        };
+        let l = lines(&g, W, c, 0.0, 0.0).expect("visible");
+        assert_eq!(l.levels[0].segments.len() / 4, 4);
     }
 }

@@ -2991,8 +2991,30 @@ pub(crate) mod tests {
         assert_eq!(page_grid(&r, &p), Some(g));
         let hex = grid_of(vec![grid_level("hexagon", 40.0, "#123456")], true, false);
         apply_grid(&mut d, &p, Some(hex.clone())).expect("hexagon écrit");
-        assert_eq!(page_grid(&d, &p), Some(hex));
+        assert_eq!(page_grid(&d, &p), Some(hex.clone()));
         assert_eq!(d.snap_point(&p, 13.0, 17.0), None);
+        assert_eq!(
+            d.grid_lines(&p, all, 0.0, 0.0).map(|l| l.levels.len()),
+            Some(0)
+        );
+        // S2 complet (relecture finale) : niveau `hexagon` écrit par SetGrid sur une page neuve, puis save → load →
+        // resave : mêmes octets (G14), même vue, ni ligne ni accroche. Page neuve : remplacer une grille déjà écrite
+        // change les octets du premier rechargement, comme deux SetBackdrop (encodage yrs du contenu remplacé).
+        let mut fresh = Document::blank();
+        let q = first(&fresh);
+        apply_grid(&mut fresh, &q, Some(hex.clone())).expect("hexagon écrit");
+        let file = save(&fresh, &meta).expect("save après SetGrid");
+        let r = load(&file).expect("load après SetGrid");
+        assert!(
+            save(&r, &meta).expect("resave après SetGrid") == file,
+            "le niveau hexagon écrit par SetGrid change les octets"
+        );
+        assert_eq!(page_grid(&r, &q), Some(hex));
+        assert_eq!(
+            r.grid_lines(&q, all, 0.0, 0.0).map(|l| l.levels.len()),
+            Some(0)
+        );
+        assert_eq!(r.snap_point(&q, 13.0, 17.0), None);
     }
 
     /// G5, HG4 : une page neuve n'a pas de grille ; retirer une page retire la sienne, annuler la remet.

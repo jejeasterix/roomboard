@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GridLines } from "../../core/api";
+import { DEFAULT_GRID_COLOR, type GridLines } from "../../core/api";
 import type { Camera } from "../camera";
 import { alignedSegments, alignLine, dotSizePx, lineWidthPx, paintGrid } from "./grid-paint";
 
@@ -98,6 +98,63 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     const farLine: GridLines = { above: false, levels: [{ color: "#000000", line: "dashed", alpha: 1, segments: [100, 1_000_003, 100, 1_000_053], dots: [] }] };
     const [l] = alignedSegments(farLine, { zoom: 1, tx: 0, ty: -1_000_003 }, 1, 1, 1);
     expect(l?.offsets).toEqual([3]);
+  });
+
+  it("motifs calés sur les pixels (relecture finale) : ty = -3,3, tx = 13,3, dpr 1,25 → longueurs et décalages entiers", () => {
+    // Verticale qui part du haut de vue (y écran 0), horizontale qui part du bord gauche (x écran 0).
+    const lines: GridLines = {
+      above: false,
+      levels: [
+        { color: "#000000", line: "dashed", alpha: 1, segments: [100, 3.3, 100, 53.3, -13.3, 20, 86.7, 20], dots: [] },
+        { color: "#000000", line: "dotted", alpha: 1, segments: [100, 3.3, 100, 53.3], dots: [] },
+      ],
+    };
+    const [dashed, dotted] = alignedSegments(lines, { zoom: 1, tx: 13.3, ty: -3.3 }, 1.25, 1.25, 1.25);
+    // [6, 4] × 1,25 = [7,5 ; 5] → [8, 5] ; [1, 3] × 1,25 = [1,25 ; 3,75] → [1, 4].
+    expect(dashed?.dash).toEqual([8, 5]);
+    expect(dotted?.dash).toEqual([1, 4]);
+    // Origine du monde en pixels : round(13,3 × 1,25) = 17, round(-3,3 × 1,25) = -4. Verticale : (0 − (−4)) mod 13 = 4 ;
+    // horizontale : (0 − 17) mod 13 = 9. Bords des tirets = origine + k·période : pixels entiers.
+    expect(dashed?.offsets).toEqual([4, 9]);
+    expect(dotted?.offsets).toEqual([4]);
+    for (const l of [dashed, dotted]) for (const v of [...(l?.dash ?? []), ...(l?.offsets ?? [])]) expect(Number.isInteger(v)).toBe(true);
+  });
+
+  it("couleur de niveau invalide (relecture finale) : trait et points à la couleur par défaut, jamais celle du niveau d'avant", () => {
+    const valid = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+    /** Le canvas ignore une couleur invalide et garde la précédente. */
+    class Strict {
+      readonly log: string[] = [];
+      globalAlpha = 1;
+      lineWidth = 1;
+      lineDashOffset = 0;
+      lineCap = "butt";
+      private stroke_ = "#ffffff";
+      private fill_ = "#ffffff";
+      get strokeStyle(): string { return this.stroke_; }
+      set strokeStyle(v: string) { if (valid.test(v)) this.stroke_ = v; }
+      get fillStyle(): string { return this.fill_; }
+      set fillStyle(v: string) { if (valid.test(v)) this.fill_ = v; }
+      save(): void {}
+      restore(): void {}
+      setTransform(): void {}
+      setLineDash(): void {}
+      beginPath(): void {}
+      moveTo(): void {}
+      lineTo(): void {}
+      stroke(): void { this.log.push(`stroke ${this.stroke_}`); }
+      fillRect(): void { this.log.push(`dot ${this.fill_}`); }
+    }
+    const ctx = new Strict();
+    const lines: GridLines = {
+      above: false,
+      levels: [
+        { color: "#111111", line: "solid", alpha: 1, segments: [0, 0, 0, 10], dots: [20, 20] },
+        { color: "#12345", line: "solid", alpha: 1, segments: [40, 0, 40, 10], dots: [60, 60] },
+      ],
+    };
+    paintGrid(ctx as unknown as CanvasRenderingContext2D, lines, { zoom: 1, tx: 0, ty: 0 }, 1, 1, 1);
+    expect(ctx.log).toEqual(["stroke #111111", "dot #111111", `stroke ${DEFAULT_GRID_COLOR}`, `dot ${DEFAULT_GRID_COLOR}`]);
   });
 
   it("aides : alignLine, lineWidthPx, dotSizePx", () => {
