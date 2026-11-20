@@ -41,7 +41,18 @@ const NONE: ReadonlySet<string> = new Set<string>();
 
 export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle): GestureTool {
   const drafts = new Map<number, Draft>();
-  const end = (d: Draft): [number, number] =>
+  /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
+  const snap = (page: string, x: number, y: number): readonly [number, number] =>
+    ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(page, x, y) ?? [x, y]);
+  /** Coins écrits : départ et bout aimantés, puis Maj appliquée au bout aimanté (CL4-12, G8). */
+  const corners = (d: Draft): [number, number, number, number] => {
+    const [x0, y0] = snap(d.page, d.x0, d.y0);
+    const [bx, by] = snap(d.page, d.x1, d.y1);
+    const [x1, y1] = ctx.shift?.() === true ? constrainEnd(kind, x0, y0, bx, by) : [bx, by];
+    return [x0, y0, x1, y1];
+  };
+  /** Bout brut (Maj comprise), seul juge du seuil de taille : un petit geste n'écrit rien, même agrandi par l'aimant. */
+  const rawEnd = (d: Draft): [number, number] =>
     ctx.shift?.() === true ? constrainEnd(kind, d.x0, d.y0, d.x1, d.y1) : [d.x1, d.y1];
 
   return {
@@ -68,15 +79,17 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       if (!d) return;
       drafts.delete(pointerId);
       if (how !== "end") return;
-      const [x1, y1] = end(d);
-      if (Math.abs(x1 - d.x0) * d.zoom < MIN_SHAPE_PX && Math.abs(y1 - d.y0) * d.zoom < MIN_SHAPE_PX) return;
-      ctx.run({ type: "AddShape", page: d.page, shape: kind, x0: d.x0, y0: d.y0, x1, y1, style: d.style, fill: null });
+      const [rx, ry] = rawEnd(d);
+      if (Math.abs(rx - d.x0) * d.zoom < MIN_SHAPE_PX && Math.abs(ry - d.y0) * d.zoom < MIN_SHAPE_PX) return;
+      const [x0, y0, x1, y1] = corners(d);
+      if (x0 === x1 && y0 === y1) return;
+      ctx.run({ type: "AddShape", page: d.page, shape: kind, x0, y0, x1, y1, style: d.style, fill: null });
     },
     live(): LivePart {
       if (drafts.size === 0) return { strokes: [], erasers: [], hidden: NONE };
       const shapes: ShapePreview[] = [...drafts.values()].map((d) => {
-        const [x1, y1] = end(d);
-        return { shape: kind, x0: d.x0, y0: d.y0, x1, y1, style: d.style, fill: null };
+        const [x0, y0, x1, y1] = corners(d);
+        return { shape: kind, x0, y0, x1, y1, style: d.style, fill: null };
       });
       return { strokes: [], erasers: [], hidden: NONE, overlay: { ...EMPTY_OVERLAY, shapes } };
     },

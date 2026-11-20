@@ -14,6 +14,8 @@ export interface ToolContext {
   run(cmd: Command): Change | null;
   /** Maj tenue (CL4-12) ; absent = jamais tenue. */
   shift?(): boolean;
+  /** Alt tenue (C9, G8) : aucun magnétisme ; absent = jamais tenue. */
+  alt?(): boolean;
   /** Demande une image (outil à l'arrêt dont l'aperçu a changé : ensemble masqué vidé) ; absent = sans effet. */
   requestFrame?(): void;
 }
