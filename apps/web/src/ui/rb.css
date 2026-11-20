@@ -45,3 +45,7 @@
 .rb-tab-close, .rb-tab-new { min-height: var(--rb-tab-h); min-width: var(--rb-tab-h); padding: 0; }
 .rb-tab-close { min-height: 0; border: none; background: transparent; cursor: pointer; }
 .rb-tab-new { align-self: center; flex: 0 0 auto; }
+
+/* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
+.rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
+.rb-swatch { display: inline-block; inline-size: calc(var(--rb-btn) / 3); block-size: calc(var(--rb-btn) / 3); border-radius: 50%; border: 1px solid #52525b; }
