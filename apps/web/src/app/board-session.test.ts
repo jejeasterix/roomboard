@@ -12,6 +12,7 @@ import { FakeGL } from "../engine/render/fake-gl";
 import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";
 import { createSettingsStore, echelonsTag, parseSettings, type ParsedSettings } from "../engine/settings";
 import { readSelection, readText, setSelection } from "./rich-dom";
+import type { WorkerLike } from "../platform/sheet-reader";
 import { stageTags } from "./stage-tags";
 import { createBoardSession, type SessionShared } from "./board-session";
 
@@ -439,6 +440,37 @@ describe("createBoardSession (T93)", () => {
     expect(Array.from(new Uint8Array(await decode.mock.calls[0]![0].arrayBuffer()))).toEqual([1, 2, 3]);
     s.dispose();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("S5 (I24) : module des pixels en échec : image brute, data-pixels=echec, message dans l'état, un seul Worker", async () => {
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 10, height: 10, close: vi.fn() })));
+    try {
+      const doc = fakeCore.blank();
+      const page = doc.pageIds()[0]!;
+      const asset = "cd".repeat(32);
+      const el = doc.apply({ type: "AddImage", page, asset: { id: asset, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
+      doc.apply({ type: "SetImageParams", id: el, params: { brightness: 20 }, matrix: [1, 0, 0, 1, 0, 0] });
+      const assets = createAssetStore();
+      assets.adopt(asset, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
+      const decode = vi.fn(async (_b: Blob) => ({ width: 10, height: 10, close: vi.fn() }) as unknown as ImageBitmap);
+      const spawn = vi.fn((): WorkerLike => {
+        const w: WorkerLike = {
+          onmessage: null,
+          onerror: null,
+          postMessage: (m) => queueMicrotask(() => w.onmessage?.({ data: { id: (m as { id: number }).id, error: "module des pixels indisponible" } })),
+          terminate: vi.fn(),
+        };
+        return w;
+      });
+      const s = await createBoardSession(doc, { ...shared, decode, pixels: spawn }, assets);
+      s.activate();
+      await vi.waitFor(() => expect(s.stage.dataset["pixels"]).toBe("echec"), { timeout: 5000 });
+      expect(s.engine.state().error).toBe("retouches de l'image non affichées : module des pixels indisponible");
+      expect(spawn).toHaveBeenCalledTimes(1);
+      s.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
