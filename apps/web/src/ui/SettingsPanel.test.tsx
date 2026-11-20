@@ -72,7 +72,7 @@ describe("SettingsPanel (T92)", () => {
     fireEvent.click(btn("webgl"));
     await flush();
     expect(confirm).not.toHaveBeenCalled();
-    expect(navigate).toHaveBeenCalledWith("?banc&echelons=4:on");
+    expect(navigate).toHaveBeenCalledWith("?banc=&echelons=4:on");
   });
 
   it("échelon 4 : question si un onglet est modifié", async () => {
@@ -80,7 +80,7 @@ describe("SettingsPanel (T92)", () => {
     fireEvent.click(btn("webgl"));
     await flush();
     expect(confirm).toHaveBeenCalledWith(RELOAD_DIRTY_MESSAGE);
-    expect(navigate).toHaveBeenCalledWith("?banc&echelons=4:on");
+    expect(navigate).toHaveBeenCalledWith("?banc=&echelons=4:on");
   });
 
   it("échelon 4 : refus de la question, aucun rechargement", async () => {
