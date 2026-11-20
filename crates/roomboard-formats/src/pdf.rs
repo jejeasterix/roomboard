@@ -41,7 +41,9 @@ impl fmt::Display for PdfWriteError {
         match self {
             PdfWriteError::BadList(m) => write!(f, "liste d'opérations invalide : {m}"),
             PdfWriteError::BadFont(i) => write!(f, "police {i} illisible ou absente"),
-            PdfWriteError::BadImage(i) => write!(f, "image {i} illisible ou absente (PNG ou JPEG attendu)"),
+            PdfWriteError::BadImage(i) => {
+                write!(f, "image {i} illisible ou absente (PNG ou JPEG attendu)")
+            }
             PdfWriteError::Write(m) => write!(f, "écriture du PDF impossible : {m}"),
         }
     }
@@ -69,11 +71,46 @@ pub(crate) enum Seg {
 pub(crate) enum Op {
     Save,
     Restore,
-    Fill { m: [f32; 6], color: Rgba, even_odd: bool, path: Vec<Seg> },
-    Stroke { m: [f32; 6], color: Rgba, width: f32, cap: usize, join: usize, dash: Vec<f32>, dash_offset: f32, path: Vec<Seg> },
-    Clip { m: [f32; 6], even_odd: bool, path: Vec<Seg> },
-    Text { m: [f32; 6], color: Rgba, size: f32, x: f32, y: f32, top: bool, text: usize, face: usize },
-    Image { m: [f32; 6], image: usize, x: f32, y: f32, w: f32, h: f32, alpha: f32 },
+    Fill {
+        m: [f32; 6],
+        color: Rgba,
+        even_odd: bool,
+        path: Vec<Seg>,
+    },
+    Stroke {
+        m: [f32; 6],
+        color: Rgba,
+        width: f32,
+        cap: usize,
+        join: usize,
+        dash: Vec<f32>,
+        dash_offset: f32,
+        path: Vec<Seg>,
+    },
+    Clip {
+        m: [f32; 6],
+        even_odd: bool,
+        path: Vec<Seg>,
+    },
+    Text {
+        m: [f32; 6],
+        color: Rgba,
+        size: f32,
+        x: f32,
+        y: f32,
+        top: bool,
+        text: usize,
+        face: usize,
+    },
+    Image {
+        m: [f32; 6],
+        image: usize,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        alpha: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,7 +131,10 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     fn num(&mut self) -> Result<f32, PdfWriteError> {
-        let x = *self.v.get(self.i).ok_or_else(|| bad(format!("flux coupé à {}", self.i)))?;
+        let x = *self
+            .v
+            .get(self.i)
+            .ok_or_else(|| bad(format!("flux coupé à {}", self.i)))?;
         self.i += 1;
         if x.is_finite() {
             Ok(x)
@@ -105,7 +145,10 @@ impl Reader<'_> {
     fn count(&mut self, max: usize) -> Result<usize, PdfWriteError> {
         let x = self.num()?;
         if x < 0.0 || x.fract() != 0.0 || f64::from(x) > max as f64 {
-            return Err(bad(format!("entier de 0 à {max} attendu à {}, lu {x}", self.i - 1)));
+            return Err(bad(format!(
+                "entier de 0 à {max} attendu à {}, lu {x}",
+                self.i - 1
+            )));
         }
         Ok(x as usize)
     }
@@ -118,7 +161,12 @@ impl Reader<'_> {
     }
     fn color(&mut self) -> Result<Rgba, PdfWriteError> {
         let c = |x: f32| x.round().clamp(0.0, 255.0) as u8;
-        Ok(Rgba { r: c(self.num()?), g: c(self.num()?), b: c(self.num()?), a: self.num()?.clamp(0.0, 1.0) })
+        Ok(Rgba {
+            r: c(self.num()?),
+            g: c(self.num()?),
+            b: c(self.num()?),
+            a: self.num()?.clamp(0.0, 1.0),
+        })
     }
     fn path(&mut self) -> Result<Vec<Seg>, PdfWriteError> {
         let n = self.count(MAX_SEGMENTS)?;
@@ -142,7 +190,11 @@ impl Reader<'_> {
 }
 
 /// Flux lu et validé (codes, tailles, indices de texte, de police et d'image) avant toute écriture.
-pub(crate) fn parse(list: &DisplayList, fonts: usize, images: usize) -> Result<Vec<PageOps>, PdfWriteError> {
+pub(crate) fn parse(
+    list: &DisplayList,
+    fonts: usize,
+    images: usize,
+) -> Result<Vec<PageOps>, PdfWriteError> {
     let mut r = Reader { v: &list.ops, i: 0 };
     let mut pages: Vec<PageOps> = Vec::new();
     while r.i < list.ops.len() {
@@ -154,13 +206,22 @@ pub(crate) fn parse(list: &DisplayList, fonts: usize, images: usize) -> Result<V
             if w <= 0.0 || h <= 0.0 {
                 return Err(bad(format!("taille de page {w} × {h}")));
             }
-            pages.push(PageOps { w, h, ops: Vec::new() });
+            pages.push(PageOps {
+                w,
+                h,
+                ops: Vec::new(),
+            });
             continue;
         }
         let op = match code {
             2 => Op::Save,
             3 => Op::Restore,
-            4 => Op::Fill { m: r.m()?, color: r.color()?, even_odd: r.count(1)? == 1, path: r.path()? },
+            4 => Op::Fill {
+                m: r.m()?,
+                color: r.color()?,
+                even_odd: r.count(1)? == 1,
+                path: r.path()?,
+            },
             5 => {
                 let (m, color, width) = (r.m()?, r.color()?, r.num()?.max(0.0));
                 let (cap, join) = (r.count(2)?, r.count(2)?);
@@ -170,9 +231,22 @@ pub(crate) fn parse(list: &DisplayList, fonts: usize, images: usize) -> Result<V
                     dash.push(r.num()?.max(0.0));
                 }
                 let dash_offset = r.num()?;
-                Op::Stroke { m, color, width, cap, join, dash, dash_offset, path: r.path()? }
+                Op::Stroke {
+                    m,
+                    color,
+                    width,
+                    cap,
+                    join,
+                    dash,
+                    dash_offset,
+                    path: r.path()?,
+                }
             }
-            6 => Op::Clip { m: r.m()?, even_odd: r.count(1)? == 1, path: r.path()? },
+            6 => Op::Clip {
+                m: r.m()?,
+                even_odd: r.count(1)? == 1,
+                path: r.path()?,
+            },
             7 => {
                 let (m, color, size, x, y) = (r.m()?, r.color()?, r.num()?, r.num()?, r.num()?);
                 let top = r.count(1)? == 0;
@@ -183,15 +257,38 @@ pub(crate) fn parse(list: &DisplayList, fonts: usize, images: usize) -> Result<V
                 if face >= fonts {
                     return Err(PdfWriteError::BadFont(face));
                 }
-                Op::Text { m, color, size, x, y, top, text, face }
+                Op::Text {
+                    m,
+                    color,
+                    size,
+                    x,
+                    y,
+                    top,
+                    text,
+                    face,
+                }
             }
             8 => {
                 let (m, image) = (r.m()?, r.count(usize::MAX)?);
-                let (x, y, w, h, alpha) = (r.num()?, r.num()?, r.num()?, r.num()?, r.num()?.clamp(0.0, 1.0));
+                let (x, y, w, h, alpha) = (
+                    r.num()?,
+                    r.num()?,
+                    r.num()?,
+                    r.num()?,
+                    r.num()?.clamp(0.0, 1.0),
+                );
                 if image >= images {
                     return Err(PdfWriteError::BadImage(image));
                 }
-                Op::Image { m, image, x, y, w, h, alpha }
+                Op::Image {
+                    m,
+                    image,
+                    x,
+                    y,
+                    w,
+                    h,
+                    alpha,
+                }
             }
             _ => return Err(bad(format!("code {code} inconnu à {at}"))),
         };
@@ -249,11 +346,22 @@ fn opacity(a: f32) -> NormalizedF32 {
 }
 
 fn fill(c: Rgba, even_odd: bool) -> Fill {
-    Fill { paint: rgb::Color::new(c.r, c.g, c.b).into(), opacity: opacity(c.a), rule: rule(even_odd) }
+    Fill {
+        paint: rgb::Color::new(c.r, c.g, c.b).into(),
+        opacity: opacity(c.a),
+        rule: rule(even_odd),
+    }
 }
 
 /// Une opération ; `levels` : découpes poussées par niveau de `save` (un `restore` les retire).
-fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], images: &[Image], texts: &[String]) {
+fn draw(
+    s: &mut Surface<'_>,
+    op: &Op,
+    levels: &mut Vec<usize>,
+    fonts: &[Font],
+    images: &[Image],
+    texts: &[String],
+) {
     match op {
         Op::Save => levels.push(0),
         Op::Restore => {
@@ -263,7 +371,12 @@ fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], i
                 }
             }
         }
-        Op::Fill { m, color, even_odd, path } => {
+        Op::Fill {
+            m,
+            color,
+            even_odd,
+            path,
+        } => {
             if let Some(path) = build(path, None) {
                 s.push_transform(&tf(m));
                 s.set_stroke(None);
@@ -272,7 +385,18 @@ fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], i
                 s.pop();
             }
         }
-        Op::Stroke { m, color, width, cap, join, dash, dash_offset, path } => {
+        Op::Stroke {
+            m,
+            color,
+            width,
+            cap,
+            join,
+            dash,
+            dash_offset,
+            path,
+        } => {
+            // Matrice poussée, chemin local : sous une échelle non uniforme, l'épaisseur et la jointure suivent la
+            // matrice comme au canvas (jamais de points transformés à l'avance pour un trait).
             if let Some(path) = build(path, Some(m)) {
                 s.set_fill(None);
                 s.set_stroke(Some(Stroke {
@@ -290,7 +414,10 @@ fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], i
                         _ => LineJoin::Miter,
                     },
                     opacity: opacity(color.a),
-                    dash: (!dash.is_empty()).then(|| StrokeDash { array: dash.clone(), offset: *dash_offset }),
+                    dash: (!dash.is_empty()).then(|| StrokeDash {
+                        array: dash.clone(),
+                        offset: *dash_offset,
+                    }),
                 }));
                 s.draw_path(&path);
             }
@@ -304,17 +431,41 @@ fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], i
                 }
             }
         }
-        Op::Text { m, color, size, x, y, top, text, face } => {
+        Op::Text {
+            m,
+            color,
+            size,
+            x,
+            y,
+            top,
+            text,
+            face,
+        } => {
             if let (Some(font), Some(t)) = (fonts.get(*face), texts.get(*text)) {
                 s.push_transform(&tf(m));
                 s.set_stroke(None);
                 s.set_fill(Some(fill(*color, false)));
                 let base = if *top { *y + size * ASCENT } else { *y };
-                s.draw_text(Point::from_xy(*x, base), font.clone(), *size, t, false, TextDirection::Auto);
+                s.draw_text(
+                    Point::from_xy(*x, base),
+                    font.clone(),
+                    *size,
+                    t,
+                    false,
+                    TextDirection::Auto,
+                );
                 s.pop();
             }
         }
-        Op::Image { m, image, x, y, w, h, alpha } => {
+        Op::Image {
+            m,
+            image,
+            x,
+            y,
+            w,
+            h,
+            alpha,
+        } => {
             if let (Some(img), Some(size)) = (images.get(*image), Size::from_wh(*w, *h)) {
                 let (e, f) = apply(m, *x, *y);
                 s.push_transform(&Transform::from_row(m[0], m[1], m[2], m[3], e, f));
@@ -332,7 +483,11 @@ fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], i
     }
 }
 
-pub fn write_pages(list: &DisplayList, fonts: &[&[u8]], images: &[ImageInput<'_>]) -> Result<Vec<u8>, PdfWriteError> {
+pub fn write_pages(
+    list: &DisplayList,
+    fonts: &[&[u8]],
+    images: &[ImageInput<'_>],
+) -> Result<Vec<u8>, PdfWriteError> {
     write_pages_with(list, fonts, images, SerializeSettings::default())
 }
 
@@ -363,7 +518,8 @@ fn write_pages_with(
         .collect::<Result<Vec<_>, _>>()?;
     let mut doc = Document::new_with(settings);
     for p in &pages {
-        let settings = PageSettings::from_wh(p.w, p.h).ok_or_else(|| bad(format!("taille de page {} × {}", p.w, p.h)))?;
+        let settings = PageSettings::from_wh(p.w, p.h)
+            .ok_or_else(|| bad(format!("taille de page {} × {}", p.w, p.h)))?;
         let mut page = doc.start_page_with(settings);
         let mut s = page.surface();
         let mut levels: Vec<usize> = vec![0];
@@ -378,7 +534,8 @@ fn write_pages_with(
         s.finish();
         page.finish();
     }
-    doc.finish().map_err(|e| PdfWriteError::Write(format!("{e:?}")))
+    doc.finish()
+        .map_err(|e| PdfWriteError::Write(format!("{e:?}")))
 }
 
 #[cfg(test)]
@@ -387,18 +544,21 @@ mod tests {
 
     const FONT: &[u8] = include_bytes!("../tests/fixtures/LiberationSans-Regular.ttf");
     const PNG_1PX: [u8; 70] = [
-        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21,
-        196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 100, 248, 207, 80, 15, 0, 3, 134, 1, 128, 90, 52, 125,
-        107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6,
+        0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 100, 248, 207, 80,
+        15, 0, 3, 134, 1, 128, 90, 52, 125, 107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ];
     const G1: [f32; 29] = [
-        1.0, 200.0, 100.0, 4.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 255.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 10.0, 20.0, 1.0,
-        40.0, 20.0, 1.0, 40.0, 60.0, 1.0, 10.0, 60.0, 3.0,
+        1.0, 200.0, 100.0, 4.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 255.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0,
+        10.0, 20.0, 1.0, 40.0, 20.0, 1.0, 40.0, 60.0, 1.0, 10.0, 60.0, 3.0,
     ];
     const ID: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
     fn list(ops: &[f32], texts: &[&str]) -> DisplayList {
-        DisplayList { ops: ops.to_vec(), texts: texts.iter().map(|t| t.to_string()).collect() }
+        DisplayList {
+            ops: ops.to_vec(),
+            texts: texts.iter().map(|t| t.to_string()).collect(),
+        }
     }
     fn is_pdf(b: &[u8]) -> bool {
         b.starts_with(b"%PDF-") && b.windows(5).any(|w| w == b"%%EOF")
@@ -411,18 +571,59 @@ mod tests {
     #[test]
     fn golden_stream_g1_parses_to_one_red_rect() {
         let pages = parse(&list(&G1, &[]), 0, 0).expect("G1");
-        let red = Rgba { r: 255, g: 0, b: 0, a: 1.0 };
-        let path = vec![Seg::Move(10.0, 20.0), Seg::Line(40.0, 20.0), Seg::Line(40.0, 60.0), Seg::Line(10.0, 60.0), Seg::Close];
-        assert_eq!(pages, vec![PageOps { w: 200.0, h: 100.0, ops: vec![Op::Fill { m: ID, color: red, even_odd: false, path }] }]);
-        assert!(is_pdf(&write_pages(&list(&G1, &[]), &[], &[]).expect("PDF")));
+        let red = Rgba {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 1.0,
+        };
+        let path = vec![
+            Seg::Move(10.0, 20.0),
+            Seg::Line(40.0, 20.0),
+            Seg::Line(40.0, 60.0),
+            Seg::Line(10.0, 60.0),
+            Seg::Close,
+        ];
+        assert_eq!(
+            pages,
+            vec![PageOps {
+                w: 200.0,
+                h: 100.0,
+                ops: vec![Op::Fill {
+                    m: ID,
+                    color: red,
+                    even_odd: false,
+                    path
+                }]
+            }]
+        );
+        assert!(is_pdf(
+            &write_pages(&list(&G1, &[]), &[], &[]).expect("PDF")
+        ));
     }
 
     #[test]
     fn bad_streams_are_bad_list() {
-        for ops in [&[9.0][..], &[1.0, 200.0][..], &[4.0, 1.0][..], &[1.0, 0.0, 100.0][..], &[1.0, 10.0, 10.0, 2.5][..], &[1.0, 10.0, f32::NAN][..]] {
-            assert!(matches!(write_pages(&list(ops, &[]), &[], &[]), Err(PdfWriteError::BadList(_))), "{ops:?}");
+        for ops in [
+            &[9.0][..],
+            &[1.0, 200.0][..],
+            &[4.0, 1.0][..],
+            &[1.0, 0.0, 100.0][..],
+            &[1.0, 10.0, 10.0, 2.5][..],
+            &[1.0, 10.0, f32::NAN][..],
+        ] {
+            assert!(
+                matches!(
+                    write_pages(&list(ops, &[]), &[], &[]),
+                    Err(PdfWriteError::BadList(_))
+                ),
+                "{ops:?}"
+            );
         }
-        assert!(matches!(write_pages(&list(&[], &[]), &[], &[]), Err(PdfWriteError::BadList(_))));
+        assert!(matches!(
+            write_pages(&list(&[], &[]), &[], &[]),
+            Err(PdfWriteError::BadList(_))
+        ));
     }
 
     #[test]
@@ -430,11 +631,17 @@ mod tests {
         let mut text = vec![1.0, 100.0, 100.0, 7.0];
         text.extend(ID);
         text.extend([0.0, 0.0, 0.0, 1.0, 12.0, 10.0, 10.0, 0.0, 0.0, 1.0]);
-        assert_eq!(parse(&list(&text, &["a"]), 1, 0).err(), Some(PdfWriteError::BadFont(1)));
+        assert_eq!(
+            parse(&list(&text, &["a"]), 1, 0).err(),
+            Some(PdfWriteError::BadFont(1))
+        );
         let mut image = vec![1.0, 100.0, 100.0, 8.0];
         image.extend(ID);
         image.extend([0.0, 0.0, 0.0, 10.0, 10.0, 1.0]);
-        assert_eq!(parse(&list(&image, &[]), 0, 0).err(), Some(PdfWriteError::BadImage(0)));
+        assert_eq!(
+            parse(&list(&image, &[]), 0, 0).err(),
+            Some(PdfWriteError::BadImage(0))
+        );
     }
 
     #[test]
@@ -442,10 +649,15 @@ mod tests {
         let mut ops = G1.to_vec();
         ops.extend([2.0, 6.0]);
         ops.extend(ID);
-        ops.extend([0.0, 4.0, 0.0, 0.0, 0.0, 1.0, 100.0, 0.0, 1.0, 100.0, 50.0, 3.0]);
+        ops.extend([
+            0.0, 4.0, 0.0, 0.0, 0.0, 1.0, 100.0, 0.0, 1.0, 100.0, 50.0, 3.0,
+        ]);
         ops.push(5.0);
         ops.extend([2.0, 0.0, 0.0, 2.0, 5.0, 5.0]);
-        ops.extend([0.0, 0.0, 255.0, 0.5, 4.0, 1.0, 1.0, 2.0, 6.0, 4.0, 0.0, 3.0, 0.0, 0.0, 0.0, 2.0, 10.0, 0.0, 20.0, 10.0, 30.0, 30.0, 3.0]);
+        ops.extend([
+            0.0, 0.0, 255.0, 0.5, 4.0, 1.0, 1.0, 2.0, 6.0, 4.0, 0.0, 3.0, 0.0, 0.0, 0.0, 2.0, 10.0,
+            0.0, 20.0, 10.0, 30.0, 30.0, 3.0,
+        ]);
         ops.extend([3.0, 1.0, 50.0, 50.0]);
         let pdf = write_pages(&list(&ops, &[]), &[], &[]).expect("PDF");
         assert!(is_pdf(&pdf));
@@ -457,20 +669,41 @@ mod tests {
     #[test]
     fn stroke_path_stays_local_under_its_matrix_and_clip_is_pretransformed() {
         let mut ops = vec![1.0, 100.0, 100.0, 2.0, 6.0, 2.0, 0.0, 0.0, 2.0, 0.0, 0.0];
-        ops.extend([0.0, 4.0, 0.0, 1.0, 1.0, 1.0, 13.0, 1.0, 1.0, 13.0, 17.0, 3.0]);
+        ops.extend([
+            0.0, 4.0, 0.0, 1.0, 1.0, 1.0, 13.0, 1.0, 1.0, 13.0, 17.0, 3.0,
+        ]);
         ops.extend([5.0, 3.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
-        ops.extend([0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 10.0, 1.0, 20.0, 10.0, 3.0]);
-        let plain = SerializeSettings { compress_content_streams: false, ..SerializeSettings::default() };
+        ops.extend([
+            0.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 10.0, 10.0, 1.0, 20.0, 10.0, 3.0,
+        ]);
+        let plain = SerializeSettings {
+            compress_content_streams: false,
+            ..SerializeSettings::default()
+        };
         let pdf = write_pages_with(&list(&ops, &[]), &[], &[], plain).expect("PDF");
         assert!(is_pdf(&pdf));
-        // Trait : matrice poussée, chemin local, largeur d'origine.
-        assert!(has(&pdf, "3 0 0 1 0 0 cm"), "matrice du trait absente");
-        assert!(has(&pdf, "10 10 m") && has(&pdf, "20 10 l"), "chemin du trait non local");
-        assert!(!has(&pdf, "30 10 m") && !has(&pdf, "60 10 l"), "chemin du trait transformé à l'avance");
+        // Flux réel de krilla (vérifié) : la matrice est composée avec le retournement de la page (`1 0 0 -1 0 h`),
+        // `q 3 0 0 -1 0 100 cm … 2 w 10 10 m 20 10 l S Q` ; la découpe est écrite en points de page retournés.
+        // Trait : chemin local, matrice poussée, largeur d'origine.
+        assert!(
+            !has(&pdf, "30 10 m") && !has(&pdf, "60 10 l") && !has(&pdf, "30 90 m"),
+            "chemin du trait transformé à l'avance"
+        );
+        assert!(
+            has(&pdf, "10 10 m") && has(&pdf, "20 10 l"),
+            "chemin du trait non local"
+        );
+        assert!(has(&pdf, "3 0 0 -1 0 100 cm"), "matrice du trait absente");
         assert!(has(&pdf, "2 w"), "largeur du trait");
-        // Découpe : points transformés à l'avance (échelle 2), aucun `cm` à l'échelle 2.
-        assert!(has(&pdf, "2 2 m") && has(&pdf, "26 2 l") && has(&pdf, "26 34 l"), "découpe non transformée");
-        assert!(!has(&pdf, "13 17 l") && !has(&pdf, "2 0 0 2 0 0 cm"), "découpe laissée locale");
+        // Découpe : points transformés à l'avance (échelle 2) puis retournés, aucun `cm` à l'échelle 2.
+        assert!(
+            has(&pdf, "2 98 m") && has(&pdf, "26 98 l") && has(&pdf, "26 66 l"),
+            "découpe non transformée"
+        );
+        assert!(
+            !has(&pdf, "13 17 l") && !has(&pdf, "2 0 0 -2 0 100 cm"),
+            "découpe laissée locale"
+        );
     }
 
     /// Une erreur tardive dans le flux (police absente sur la seconde page, après une découpe ouverte sur la première)
@@ -484,7 +717,10 @@ mod tests {
         ops.extend([1.0, 100.0, 100.0, 7.0]);
         ops.extend(ID);
         ops.extend([0.0, 0.0, 0.0, 1.0, 12.0, 10.0, 10.0, 0.0, 0.0, 0.0]);
-        assert_eq!(write_pages(&list(&ops, &["a"]), &[], &[]).err(), Some(PdfWriteError::BadFont(0)));
+        assert_eq!(
+            write_pages(&list(&ops, &["a"]), &[], &[]).err(),
+            Some(PdfWriteError::BadFont(0))
+        );
     }
 
     #[test]
@@ -494,7 +730,12 @@ mod tests {
         ops.extend([0.0, 0.0, 0.0, 1.0, 24.0, 10.0, 10.0, 0.0, 0.0, 0.0, 8.0]);
         ops.extend(ID);
         ops.extend([0.0, 20.0, 60.0, 50.0, 50.0, 0.5]);
-        let pdf = write_pages(&list(&ops, &["RoomBoard vectoriel"]), &[FONT], &[ImageInput { bytes: &PNG_1PX }]).expect("PDF");
+        let pdf = write_pages(
+            &list(&ops, &["RoomBoard vectoriel"]),
+            &[FONT],
+            &[ImageInput { bytes: &PNG_1PX }],
+        )
+        .expect("PDF");
         assert!(is_pdf(&pdf));
     }
 
@@ -504,13 +745,31 @@ mod tests {
         ops.extend(ID);
         ops.extend([0.0, 2.0, 0.0, 0.0, 0.0, 1.0, 50.0, 50.0]);
         ops.extend(&G1[3..]);
-        assert!(is_pdf(&write_pages(&list(&ops, &[]), &[], &[]).expect("PDF")));
+        assert!(is_pdf(
+            &write_pages(&list(&ops, &[]), &[], &[]).expect("PDF")
+        ));
     }
 
     #[test]
     fn unreadable_font_or_image_is_named() {
-        assert_eq!(write_pages(&list(&G1, &[]), &[b"pas une police"], &[]).err(), Some(PdfWriteError::BadFont(0)));
-        assert_eq!(write_pages(&list(&G1, &[]), &[], &[ImageInput { bytes: b"pas une image" }]).err(), Some(PdfWriteError::BadImage(0)));
-        assert_eq!(PdfWriteError::BadFont(2).to_string(), "police 2 illisible ou absente");
+        assert_eq!(
+            write_pages(&list(&G1, &[]), &[b"pas une police"], &[]).err(),
+            Some(PdfWriteError::BadFont(0))
+        );
+        assert_eq!(
+            write_pages(
+                &list(&G1, &[]),
+                &[],
+                &[ImageInput {
+                    bytes: b"pas une image"
+                }]
+            )
+            .err(),
+            Some(PdfWriteError::BadImage(0))
+        );
+        assert_eq!(
+            PdfWriteError::BadFont(2).to_string(),
+            "police 2 illisible ou absente"
+        );
     }
 }
