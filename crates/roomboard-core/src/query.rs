@@ -10,11 +10,12 @@ use yrs::{Array, Map, MapRef, Out, ReadTxn};
 use crate::commands::{read_shape, read_stroke, read_text, similarity_scale, world_to_local_path};
 use crate::document::Document;
 use crate::element::{
-    apply_transform, out_string, out_transform, read_image, read_unknown, Transform,
+    apply_transform, out_string, out_transform, read_image, read_unknown, unknown_view, Transform,
 };
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
 use crate::shape::{box_polygon, shape_polygon};
+use crate::table::{self, TABLE_KIND};
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct Bounds {
@@ -108,7 +109,7 @@ impl Document {
     }
 
     /// Géométrie locale pour la collision et les bornes : contour en cache (trait), polygone (forme), boîte (texte,
-    /// image, élément inconnu). Un élément inconnu sans `id` lisible n'a pas de géométrie (K8).
+    /// image, tableau, élément inconnu). Un élément inconnu sans `id` lisible n'a pas de géométrie (K8).
     fn element_geom<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Geom> {
         let raw_id = out_string(e.get(txn, "id"));
         let id = raw_id.clone().unwrap_or_default();
@@ -118,6 +119,21 @@ impl Document {
                 id,
                 transform,
                 outline,
+            });
+        }
+        if out_string(e.get(txn, "kind")).as_deref() == Some(TABLE_KIND) {
+            // Boîte (0, 0)-(Σ largeurs, Σ hauteurs) ; tableau mal formé : la boîte inconnue (T2).
+            let (transform, w, h) = match table::read_raw(txn, e) {
+                Some(t) => (t.transform, t.width(), t.height()),
+                None => {
+                    let (transform, u) = unknown_view(txn, e)?;
+                    (transform, u.w, u.h)
+                }
+            };
+            return Some(Geom {
+                id: raw_id?,
+                transform,
+                outline: box_polygon(w, h).into(),
             });
         }
         if let Some((transform, u)) = read_unknown(txn, e) {

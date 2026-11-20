@@ -520,7 +520,7 @@ describe("contrôleur : encode, import, refus R30 (R11, R18, R30)", () => {
   it("import : la boîte multiple puis importFiles avec les fichiers choisis", async () => {
     const importFiles = vi.fn(async () => undefined);
     const t = setup({ importFiles });
-    const f: DroppedFile = { name: "a.png", size: 1, mime: "", blob: async () => new Blob([new Uint8Array([1])]) };
+    const f: DroppedFile = { name: "a.png", size: 1, mime: "", head: async () => new Uint8Array([1]), blob: async () => new Blob([new Uint8Array([1])]) };
     t.h.onPick([f]);
     expect(await t.ctl.run("import")).toBe(true);
     expect(importFiles).toHaveBeenCalledWith([f]);
@@ -530,7 +530,7 @@ describe("contrôleur : encode, import, refus R30 (R11, R18, R30)", () => {
     let release: () => void = () => undefined;
     const importFiles = vi.fn(() => new Promise<void>((r) => (release = r)));
     const t = setup({ importFiles });
-    t.h.onPick([{ name: "a.png", size: 1, mime: "", blob: async () => new Blob([new Uint8Array([1])]) }]);
+    t.h.onPick([{ name: "a.png", size: 1, mime: "", head: async () => new Uint8Array([1]), blob: async () => new Blob([new Uint8Array([1])]) }]);
     const importing = t.ctl.run("import");
     await new Promise((r) => setTimeout(r, 0));
     expect(await t.ctl.run("save")).toBe(false);

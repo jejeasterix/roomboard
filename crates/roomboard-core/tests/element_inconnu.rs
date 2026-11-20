@@ -9,7 +9,8 @@ use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::query::Bounds;
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Array, ArrayPrelim, Doc, In, Map, MapPrelim, Out, ReadTxn, StateVector, Transact, Update,
+    Any, Array, ArrayPrelim, Doc, GetString, In, Map, MapPrelim, Out, ReadTxn, StateVector,
+    TextPrelim, Transact, Update,
 };
 
 pub const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
@@ -242,4 +243,146 @@ fn unknown_fixture_cites_asset_in_any_array() {
     assert_eq!(cited.len(), 1);
     assert_eq!(cited[0], roomboard_core::asset::AssetInfo::fallback(ABC));
     assert!(d.encode_v1() == before, "une lecture n'écrit rien");
+}
+
+fn table_line(id: &str, key: &str, v: f64) -> In {
+    In::Map(MapPrelim::from([("id", In::from(id)), (key, In::from(v))]))
+}
+
+/// État Yrs d'un tableau C10a de forme exacte (`cols`, `rows` en `Y.Array` de `Y.Map`, `cells` en `Y.Map` de `Y.Map`
+/// avec `Y.Text`) sous le `kind` donné : `"table-v2"` simule un lecteur qui ne connaît pas ce `kind` (HC10-14 : chemin
+/// inchangé depuis C2, référence `main` `8247215`) ; `with_rows = false` : tableau mal formé (aucune ligne).
+fn table_shaped_ybin(kind: &str, with_rows: bool) -> Vec<u8> {
+    let doc = Doc::with_client_id(9);
+    let meta = doc.get_or_insert_map("meta");
+    let pages = doc.get_or_insert_array("pages");
+    {
+        let mut txn = doc.transact_mut();
+        meta.insert(&mut txn, "schema", 1.0);
+        let transform: Vec<Any> = [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]
+            .into_iter()
+            .map(Any::from)
+            .collect();
+        let cells = MapPrelim::from([(
+            "r1:c1",
+            In::Map(MapPrelim::from([(
+                "text",
+                In::from(TextPrelim::new("Lundi")),
+            )])),
+        )]);
+        let rows = if with_rows {
+            vec![table_line("r1", "height", 64.0)]
+        } else {
+            Vec::new()
+        };
+        let t = MapPrelim::from([
+            ("id", In::from("t1")),
+            ("kind", In::from(kind)),
+            ("transform", In::Any(Any::Array(transform.into()))),
+            ("color", In::from("#000000")),
+            ("size", In::from(36.0)),
+            (
+                "cols",
+                In::Array(ArrayPrelim::from(vec![table_line("c1", "width", 240.0)])),
+            ),
+            ("rows", In::Array(ArrayPrelim::from(rows))),
+            ("cells", In::Map(cells)),
+        ]);
+        let page = MapPrelim::from([
+            ("id", In::from("p1")),
+            ("width", In::from(1920.0)),
+            ("height", In::from(1080.0)),
+            ("background", In::from("#ffffff")),
+            ("elements", In::Array(ArrayPrelim::from(vec![In::Map(t)]))),
+        ]);
+        pages.push_back(&mut txn, page);
+    }
+    let txn = doc.transact();
+    txn.encode_state_as_update_v1(&StateVector::default())
+}
+
+/// Texte de la cellule `r1:c1` de `t1`, relu dans un `Doc` yrs neuf.
+fn raw_cell_text(d: &Document) -> Option<String> {
+    let raw = Doc::new();
+    let pages = raw.get_or_insert_array("pages");
+    raw.transact_mut()
+        .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
+        .expect("application");
+    let txn = raw.transact();
+    let Some(Out::YMap(page)) = pages.get(&txn, 0) else {
+        return None;
+    };
+    let Some(Out::YArray(els)) = page.get(&txn, "elements") else {
+        return None;
+    };
+    let Some(Out::YMap(t)) = els.get(&txn, 0) else {
+        return None;
+    };
+    let Some(Out::YMap(cells)) = t.get(&txn, "cells") else {
+        return None;
+    };
+    let Some(Out::YMap(c)) = cells.get(&txn, "r1:c1") else {
+        return None;
+    };
+    match c.get(&txn, "text") {
+        Some(Out::YText(x)) => Some(x.get_string(&txn)),
+        _ => None,
+    }
+}
+
+/// S4 : un tableau sous un `kind` inconnu est un cadre gris de 100 × 100, se déplace et se réenregistre octet pour
+/// octet ; son `Y.Text` survit au déplacement et au rechargement.
+#[test]
+fn table_shape_under_unknown_kind_is_kept_byte_for_byte() {
+    let d = Document::from_update_v1(&table_shaped_ybin("table-v2", true)).expect("état");
+    let file = save(&d, &meta()).expect("save");
+    let r = load(&file).expect("load");
+    assert!(
+        save(&r, &meta()).expect("resave") == file,
+        "réenregistré octet pour octet"
+    );
+    let v = r.element("t1").expect("vue");
+    assert_eq!(v.kind, "unknown");
+    let u = v.unknown.expect("inconnu");
+    assert_eq!(
+        (u.source_kind.as_str(), u.w, u.h),
+        ("table-v2", 100.0, 100.0)
+    );
+    let mut m = r;
+    m.apply(Command::Transform {
+        ids: vec!["t1".into()],
+        matrix: [1.0, 0.0, 0.0, 1.0, 10.0, 0.0],
+    })
+    .expect("transform");
+    let again = load(&save(&m, &meta()).expect("save")).expect("reload");
+    assert_eq!(
+        again.element("t1").expect("vue").transform,
+        [1.0, 0.0, 0.0, 1.0, 110.0, 50.0]
+    );
+    assert_eq!(raw_cell_text(&again).as_deref(), Some("Lundi"));
+}
+
+#[test]
+fn same_shape_as_table_is_read_by_this_version() {
+    let d = Document::from_update_v1(&table_shaped_ybin("table", true)).expect("état");
+    let t = d.element("t1").and_then(|v| v.table).expect("tableau");
+    assert_eq!(t.cells.len(), 1);
+    assert_eq!(t.cells[0].text, "Lundi");
+}
+
+/// S4 : `kind: "table"` sans ligne lisible : cadre gris (jamais invisible), supprimable.
+#[test]
+fn malformed_table_is_a_gray_box_and_deletable() {
+    let mut d = Document::from_update_v1(&table_shaped_ybin("table", false)).expect("état");
+    let v = d.element("t1").expect("jamais invisible");
+    assert_eq!(v.kind, "unknown");
+    assert_eq!(
+        v.unknown.map(|u| (u.source_kind, u.w, u.h)),
+        Some(("table".to_string(), 100.0, 100.0))
+    );
+    d.apply(Command::Delete {
+        ids: vec!["t1".into()],
+    })
+    .expect("delete");
+    assert!(d.element_ids("p1").is_empty());
 }

@@ -17,6 +17,7 @@ const base: EngineState = {
   elementCount: 0,
   version: 0,
   error: null,
+  tableCell: null,
 };
 
 describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
@@ -29,8 +30,13 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "" });
     expect(pagesLabel(s)).toBe("2 / 3");
+  });
+
+  it("table : colonnes x lignes @ rang, colonne ; vide sans cellule (C10a, T15)", () => {
+    expect(stageTags(base).table).toBe("");
+    expect(stageTags({ ...base, tableCell: { id: "t", row: 2, col: 3, rows: 3, cols: 4 } }).table).toBe("4x3@2,3");
   });
 });

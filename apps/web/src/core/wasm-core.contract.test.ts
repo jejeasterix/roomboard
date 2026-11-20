@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
@@ -1400,6 +1400,263 @@ describe.skipIf(loaded === null)("contrat C9 : vrai module seulement", () => {
     expect(d.snapPoint(p, 500, 70)).toEqual([500, 48]);
     only("lines", 40);
     expect(d.snapPoint(p, 1950, 10)).toEqual([1950, 0]);
+    d.free();
+  });
+});
+
+// C10a (tableau) : contrat commun ; T6 : vrai module branché, contrat commun aux deux fabriques.
+const c10aFactories = factories;
+const TABLE_MESSAGE =
+  "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)";
+type AddTableCmd = Extract<Command, { type: "AddTable" }>;
+const addTable = (d: CoreDocument, page: string, over: Partial<Omit<AddTableCmd, "type" | "page">> = {}): string => {
+  const id = d.apply({ type: "AddTable", page, x: 100, y: 200, cols: 4, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36, ...over }).ids[0];
+  if (id === undefined) throw new Error("aucun id");
+  return id;
+};
+const tableOf = (d: CoreDocument, id: string): TableData => {
+  const v = d.element(id);
+  if (v?.kind !== "table") throw new Error(`pas un tableau : ${v?.kind ?? "absent"}`);
+  return v.table;
+};
+const ids2 = (t: TableData): [string, string, string, string] => {
+  const [r0, r1] = t.rows;
+  const [c0, c1] = t.cols;
+  if (!r0 || !r1 || !c0 || !c1) throw new Error("2 × 2 attendu");
+  return [r0.id, r1.id, c0.id, c1.id];
+};
+
+describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
+  it("AddTable (S1) : 4 × 3, une étape, vue exacte, boîte et collision ; annuler le retire", () => {
+    const d = f.blank();
+    const p = first(d);
+    const c = d.apply({ type: "AddTable", page: p, x: 100, y: 200, cols: 4, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 });
+    expect(c.pages).toEqual([p]);
+    const id = c.ids[0] ?? "";
+    expect(d.element(id)?.transform).toEqual([1, 0, 0, 1, 100, 200]);
+    const t = tableOf(d, id);
+    expect([t.color, t.size, t.cols.length, t.rows.length, t.cells]).toEqual(["#000000", 36, 4, 3, []]);
+    expect(t.cols.every((x) => x.width === 240) && t.rows.every((x) => x.height === 64)).toBe(true);
+    expect(new Set([...t.cols, ...t.rows].map((x) => x.id)).size).toBe(7);
+    expect(d.bounds([id])).toEqual({ x0: 100, y0: 200, x1: 1060, y1: 392 });
+    expect(d.hitTest(p, 300, 250, 0)).toBe(id);
+    expect(d.canUndo()).toBe(true);
+    d.undo();
+    expect(d.element(id)).toBeNull();
+    d.free();
+  });
+
+  it("AddTable refusé (BadTable, D38) : dimensions hors 1..=64 ou non entières, tailles, couleur, position ; page inconnue", () => {
+    const d = f.blank();
+    const p = first(d);
+    for (const over of [{ cols: 0 }, { cols: 65 }, { rows: 0 }, { rows: 2.5 }, { colWidth: Number.NaN }, { rowHeight: 0 }, { size: -1 }, { color: "!!" }, { x: Number.POSITIVE_INFINITY }]) {
+      unchanged(d, () => expect(messageOf(() => addTable(d, p, over))).toBe(TABLE_MESSAGE));
+    }
+    expect(messageOf(() => addTable(d, "zz"))).toBe("page inconnue : zz");
+    expect(tableOf(d, addTable(d, p, { cols: 64, rows: 64 })).rows).toHaveLength(64);
+    d.free();
+  });
+
+  it("SetTableCell : texte, ligne agrandie seulement si plus haute, inchangé sans étape (T5, D38)", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [r0, r1, c0] = ids2(tableOf(d, id));
+    d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi", rowHeight: 61 });
+    expect(tableOf(d, id).cells).toEqual([{ row: r0, col: c0, text: "Lundi", fill: null }]);
+    expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([64, 64]);
+    expect(d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi soir", rowHeight: 150 }).ids).toEqual([id]);
+    expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([150, 64]);
+    unchanged(d, () => d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi soir", rowHeight: 100 }));
+    unchanged(d, () => d.apply({ type: "SetTableCell", id, row: r1, col: c0, content: "" }));
+    d.undo();
+    expect(tableOf(d, id).cells[0]?.text).toBe("Lundi");
+    expect(tableOf(d, id).rows[0]?.height).toBe(64);
+    d.free();
+  });
+
+  it("SetTableCell refusé : ligne, colonne inconnue ou hauteur ≤ 0 (BadTable) ; trait ou id absent (élément inconnu)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = addTable(d, p, { cols: 2, rows: 2 });
+    const [row, , col] = ids2(tableOf(d, id));
+    const s = commit(d, p, 900);
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "SetTableCell", id, row: "absente", col, content: "x" }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "SetTableCell", id, row, col: "absente", content: "x" }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "SetTableCell", id, row, col, content: "x", rowHeight: 0 }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "SetTableCell", id: s, row, col, content: "x" }))).toBe(`élément inconnu : ${s}`);
+      expect(messageOf(() => d.apply({ type: "SetTableCell", id: "nulle-part", row, col, content: "x" }))).toBe("élément inconnu : nulle-part");
+    });
+    d.free();
+  });
+
+  it("InsertTableLine : taille de la voisine, en tête et à la fin, ids neufs ; hors bornes et à 64 → BadTable", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = addTable(d, p, { cols: 2, rows: 2 });
+    const [r0, , c0] = ids2(tableOf(d, id));
+    d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "haut", rowHeight: 150 });
+    expect(d.apply({ type: "InsertTableLine", id, axis: "row", at: 0 }).ids).toEqual([id]);
+    expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([150, 150, 64]);
+    expect(tableOf(d, id).rows[1]?.id).toBe(r0);
+    d.apply({ type: "InsertTableLine", id, axis: "col", at: 2 });
+    expect(tableOf(d, id).cols.map((c) => c.width)).toEqual([240, 240, 240]);
+    expect(tableOf(d, id).cells).toHaveLength(1);
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "InsertTableLine", id, axis: "row", at: 4 }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "InsertTableLine", id, axis: "row", at: -1 }))).toBe(TABLE_MESSAGE);
+    });
+    const full = addTable(d, p, { cols: 1, rows: 64 });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "InsertTableLine", id: full, axis: "row", at: 64 }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
+  it("borne f32 (T15) : AddTable, SetTableCell, SetTableSizes, InsertTableLine refusent un total hors f32 (BadTable, D38)", () => {
+    const d = f.blank();
+    const p = first(d);
+    // 64 × 1e37 = 6,4e38 > f32::MAX : chaque entrée finie ne suffit pas, le total compte (comme x et y).
+    for (const over of [{ cols: 64, colWidth: 1e37 }, { rows: 64, rowHeight: 1e37 }, { colWidth: 1e39 }, { x: 1e39 }, { y: -1e39 }]) {
+      unchanged(d, () => expect(messageOf(() => addTable(d, p, over))).toBe(TABLE_MESSAGE));
+    }
+    const wide = addTable(d, p, { cols: 34, rows: 1, colWidth: 1e37 });
+    const tall = addTable(d, p, { cols: 2, rows: 2 });
+    const [r0, r1, c0] = ids2(tableOf(d, tall));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableSizes", id: tall, colWidth: 240, rowHeight: 2e38 }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SetTableCell", id: tall, row: r0, col: c0, content: "haut", rowHeight: 1.7e38 });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableCell", id: tall, row: r1, col: c0, content: "x", rowHeight: 1.8e38 }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SetTableSizes", id: tall, colWidth: 240, rowHeight: 1.7e38 });
+    // Insertion : la taille voisine copiée ferait déborder le total de l'axe (3,4e38 + 1e37, 3,4e38 + 1,7e38).
+    const over = [[wide, "col", 34], [wide, "col", 0], [tall, "row", 2], [tall, "row", 1]] as const;
+    unchanged(d, () => {
+      for (const [id, axis, at] of over) expect(messageOf(() => d.apply({ type: "InsertTableLine", id, axis, at }))).toBe(TABLE_MESSAGE);
+    });
+    expect(d.apply({ type: "InsertTableLine", id: wide, axis: "row", at: 1 }).ids).toEqual([wide]);
+    expect(d.apply({ type: "InsertTableLine", id: tall, axis: "col", at: 2 }).ids).toEqual([tall]);
+    d.free();
+  });
+
+  it("RemoveTableLine : les cellules de la ligne partent avec elle ; dernière ligne ou ligne absente → BadTable", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [r0, r1, c0, c1] = ids2(tableOf(d, id));
+    for (const row of [r0, r1]) for (const col of [c0, c1]) d.apply({ type: "SetTableCell", id, row, col, content: `${row}/${col}` });
+    d.apply({ type: "RemoveTableLine", id, axis: "row", line: r0 });
+    expect(tableOf(d, id).rows.map((r) => r.id)).toEqual([r1]);
+    expect(tableOf(d, id).cells.map((c) => c.text)).toEqual([`${r1}/${c0}`, `${r1}/${c1}`]);
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "RemoveTableLine", id, axis: "row", line: r1 }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "RemoveTableLine", id, axis: "col", line: "absente" }))).toBe(TABLE_MESSAGE);
+    });
+    d.apply({ type: "RemoveTableLine", id, axis: "col", line: c1 });
+    expect(tableOf(d, id).cells.map((c) => c.text)).toEqual([`${r1}/${c0}`]);
+    d.undo();
+    expect(tableOf(d, id).cols).toHaveLength(2);
+    d.free();
+  });
+
+  it("SetTableSizes (Uniformiser, T11) : toutes à la taille donnée, peut réduire ; déjà uniforme : aucune étape", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 3, rows: 2 });
+    const [r0, , c0] = ids2(tableOf(d, id));
+    d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "x", rowHeight: 150 });
+    d.apply({ type: "SetTableSizes", id, colWidth: 200, rowHeight: 107 });
+    const t = tableOf(d, id);
+    expect([t.cols.map((c) => c.width), t.rows.map((r) => r.height)]).toEqual([[200, 200, 200], [107, 107]]);
+    unchanged(d, () => d.apply({ type: "SetTableSizes", id, colWidth: 200, rowHeight: 107 }));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableSizes", id, colWidth: 0, rowHeight: 64 }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
+  it("SetTableFill (T12) : pose, même valeur sans étape, null retire ; couleur invalide → BadTable", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [, r1, , c1] = ids2(tableOf(d, id));
+    d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#fef08a" });
+    expect(tableOf(d, id).cells).toEqual([{ row: r1, col: c1, text: "", fill: "#fef08a" }]);
+    unchanged(d, () => d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#fef08a" }));
+    d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: null });
+    expect(tableOf(d, id).cells).toEqual([]);
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "pas une couleur !" }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
+  it("une commande ne change que ce qu'elle vise (GC9) : texte et remplissage d'une cellule indépendants, ids et autres cellules repris", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [r0, r1, c0, c1] = ids2(tableOf(d, id));
+    d.apply({ type: "SetTableFill", id, row: r0, col: c0, fill: "#fef08a" });
+    d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "A" });
+    d.apply({ type: "SetTableCell", id, row: r1, col: c1, content: "B" });
+    expect(tableOf(d, id).cells).toEqual([
+      { row: r0, col: c0, text: "A", fill: "#fef08a" },
+      { row: r1, col: c1, text: "B", fill: null },
+    ]);
+    d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#bbf7d0" });
+    d.apply({ type: "SetTableFill", id, row: r0, col: c0, fill: null });
+    d.apply({ type: "SetTableSizes", id, colWidth: 200, rowHeight: 80 });
+    const t = tableOf(d, id);
+    expect([...t.rows, ...t.cols].map((l) => l.id)).toEqual([r0, r1, c0, c1]);
+    expect(t.cells).toEqual([
+      { row: r0, col: c0, text: "A", fill: null },
+      { row: r1, col: c1, text: "B", fill: "#bbf7d0" },
+    ]);
+    d.free();
+  });
+
+  it("S3 : enregistrer, recharger, réenregistrer : mêmes octets, même vue", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d));
+    const t = tableOf(d, id);
+    t.rows.forEach((r, i) => t.cols.forEach((c, j) => d.apply({ type: "SetTableCell", id, row: r.id, col: c.id, content: `L${i}C${j}` })));
+    d.apply({ type: "SetTableFill", id, row: t.rows[0]?.id ?? "", col: t.cols[0]?.id ?? "", fill: "#fef08a" });
+    const once = f.load(d.save(now, "0.1.0"));
+    const bytes = once.save(now, "0.1.0");
+    const twice = f.load(bytes);
+    expect(twice.save(now, "0.1.0")).toEqual(bytes);
+    expect(twice.element(id)).toEqual(d.element(id));
+    for (const x of [d, once, twice]) x.free();
+  });
+
+  it("un geste = une étape (D11) : annuler l'insertion rend la vue d'avant, rétablir la remet", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const before = tableOf(d, id);
+    d.apply({ type: "InsertTableLine", id, axis: "row", at: 2 });
+    const after = tableOf(d, id);
+    d.undo();
+    expect(tableOf(d, id)).toEqual(before);
+    d.redo();
+    expect(tableOf(d, id)).toEqual(after);
+    d.free();
+  });
+});
+
+describe("contrôle de forme C10a (tableau)", () => {
+  const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
+  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined }] };
+  it("toElementView : tableau contrôlé, fill absent → null", () => {
+    expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null }] } });
+  });
+  it("toElementView : forme fausse → erreur", () => {
+    expect(() => toElementView({ ...base })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, cols: "x" } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, rows: [{ id: "r1", height: 0 }] } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: 3 }] } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, size: "36" } })).toThrow("ElementView invalide");
+  });
+});
+
+describe.skipIf(loaded === null)("contrat C10a : vrai module seulement", () => {
+  it("fixture tableau-4x3.roomboard (T2) : un 4 × 3 rempli, première cellule jaune", () => {
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-core/tests/fixtures/tableau-4x3.roomboard", import.meta.url)));
+    const d = need().core.load(bytes);
+    const p = first(d);
+    const id = d.elementIds(p).find((e) => d.element(e)?.kind === "table") ?? "";
+    const t = tableOf(d, id);
+    expect([t.cols.length, t.rows.length]).toEqual([4, 3]);
+    expect(t.cells.map((c) => c.text)).toEqual(["Lundi", "Mardi", "Mercredi", "Jeudi", "Maths", "Français", "Histoire", "Sport", "Anglais", "Musique", "Dessin", "Sciences"]);
+    expect(t.cells[0]?.fill).toBe("#fef08a");
+    expect(t.cells[1]?.fill).toBeNull();
     d.free();
   });
 });

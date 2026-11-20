@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTION_TABLE, CAPABILITY_KEYS, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
-  resolveStartMode, serializeProfile, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
+  resolveStartMode, serializeProfile, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
 import { layoutFor } from "./ui/layout";
 import profilesSource from "./toolbar-profiles.ts?raw";
@@ -164,7 +164,7 @@ describe("profil de barre (T83, usage § 8)", () => {
   });
 
   it("tables : chaque outil du moteur a son entrée ; actions de l'ancienne barre présentes", () => {
-    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "hand", "line", "pen", "rect", "select", "text"]);
+    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "hand", "line", "pen", "rect", "select", "table", "text"]);
     for (const a of ["eraser-mode", "undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "fit-page", "file-new", "file-open", "file-save", "file-save-as", "settings", "profiles"]) {
       expect(ACTION_TABLE[a], a).toBeDefined();
     }
@@ -302,5 +302,25 @@ describe("C1 : modèle du profil (P2-P4, P10, P33)", () => {
     expect(isKnownItem({ ...it0, kind: "action", action: "undo", requires: ["projector" as never] })).toBe(false);
     expect(isKnownItem({ ...it0, kind: "dropzone", requires: ["dropPaths"] })).toBe(true);
     expect(isKnownItem({ ...it0, kind: "separator" })).toBe(true);
+  });
+});
+
+describe("actions du tableau (C10a)", () => {
+  it("TOOL_TABLE.table : « Tableau », choix table", () => {
+    expect(TOOL_TABLE["table"]).toEqual({ label: "Tableau", choice: "table" });
+  });
+  it("ACTION_TABLE porte les cinq actions ; TABLE_ACTIONS dans l'ordre de la rangée (T10)", () => {
+    expect(TABLE_ACTIONS).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform"]);
+    expect(TABLE_ACTIONS.map((a) => ACTION_TABLE[a]?.label)).toEqual(["+ Ligne", "+ Colonne", "− Ligne", "− Colonne", "Uniformiser"]);
+  });
+  it("TABLE_FILLS : aucune puis cinq teintes claires (T12, HC10-5)", () => {
+    expect(TABLE_FILLS.map((f) => [f.id, f.label, f.color])).toEqual([
+      ["aucun", "Aucun", null],
+      ["jaune", "Jaune", "#fef08a"],
+      ["vert", "Vert", "#bbf7d0"],
+      ["bleu", "Bleu", "#bfdbfe"],
+      ["rose", "Rose", "#fecdd3"],
+      ["gris", "Gris", "#e5e7eb"],
+    ]);
   });
 });

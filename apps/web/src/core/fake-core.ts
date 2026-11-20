@@ -15,6 +15,11 @@
 // Écart assumé, exclu du contrat commun (DAG3) : `snapPoint`, `snapDelta` et `gridLines` ne connaissent que le kind
 // `squares` ; lines, dots, isometric, music et seyes n'accrochent pas et ne tracent rien ici : ils se testent dans
 // `grid.rs` et sur le vrai module (bloc « contrat C9 : vrai module seulement »).
+// C10a : tableau (AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill) au modèle de
+// `table.rs` : mêmes refus dans le même ordre, mêmes messages, une étape par commande, aucune étape sans effet ; vue
+// = cellules non vides dans l'ordre de lecture ; tableau mal formé lu comme cadre inconnu (sourceKind "table").
+// Écart assumé, hors contrat (PC6) : les entrées illisibles d'un JSON de la fausse liaison sont retirées au
+// chargement, là où le cœur les garde dans le document.
 import type {
   AssetInfo,
   AssetRef,
@@ -36,12 +41,28 @@ import type {
   ShapeData,
   StrokeBuilderApi,
   StrokeStyle,
+  TableAxis,
+  TableCell,
+  TableCol,
+  TableData,
+  TableRow,
   TextData,
   TextSpan,
 } from "./api";
-import { DEFAULT_ASSET_MIME, DEFAULT_GRID_COLOR, MAX_GRID_DOTS, MAX_GRID_LEVELS, PAGE_HEIGHT, PAGE_WIDTH, UNKNOWN_BOX } from "./api";
+import {
+  DEFAULT_ASSET_MIME,
+  DEFAULT_GRID_COLOR,
+  DEFAULT_TABLE_COLOR,
+  DEFAULT_TABLE_SIZE,
+  MAX_GRID_DOTS,
+  MAX_GRID_LEVELS,
+  PAGE_HEIGHT,
+  PAGE_WIDTH,
+  TABLE_MAX_LINES,
+  UNKNOWN_BOX,
+} from "./api";
 import { isAssetId } from "./asset-store";
-import { cleanPatch, editSpans, formatSpans, plainSpans, sameSpans, utf16Bounds, validPatch } from "./rich-text";
+import { cleanPatch, editSpans, formatSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
@@ -65,11 +86,23 @@ interface FakeElement {
   readonly shape?: ShapeData;
   readonly text?: TextData;
   readonly image?: ImageData;
+  readonly table?: FakeTable;
   readonly unknown?: FakeUnknown;
   /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
   readonly malformed?: Readonly<Record<string, unknown>>;
 }
 type RawRecord = Readonly<Record<string, unknown>>;
+/** Cellule de la fausse liaison ; absente du Map = vide. */
+interface FakeCell { readonly text: string; readonly fill: string | null }
+/** Tableau (C10a) : objets repris tels quels d'une étape à l'autre, sauf ceux qu'une commande change. */
+interface FakeTable {
+  readonly color: string;
+  readonly size: number;
+  readonly cols: readonly TableCol[];
+  readonly rows: readonly TableRow[];
+  /** Clé `<rowId>:<colId>`. */
+  readonly cells: ReadonlyMap<string, FakeCell>;
+}
 /** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. */
 interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null; grid: unknown }
 /** `assets` : valeurs brutes (K3) ; lues avec défauts champ par champ (K4). */
@@ -84,11 +117,13 @@ const MESSAGES = {
   badImage: "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)",
   badFormat: "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)",
   badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
+  badTable: "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)",
 } as const;
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
-const KNOWN_KINDS = new Set(["stroke", "shape", "text", "image"]);
+/** Kinds lus par la fausse liaison : même liste que `KNOWN_KINDS` du cœur (`element.rs`). */
+export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table"]);
 const finitePositive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
@@ -99,6 +134,27 @@ const clone = (s: State): State => ({
 });
 const unknownBox = (raw: RawRecord): { w: number; h: number } =>
   finitePositive(raw["w"]) && finitePositive(raw["h"]) ? { w: raw["w"], h: raw["h"] } : { w: UNKNOWN_BOX, h: UNKNOWN_BOX };
+const cellKey = (row: string, col: string): string => `${row}:${col}`;
+const validLines = (n: number): boolean => Number.isInteger(n) && n >= 1 && n <= TABLE_MAX_LINES;
+const tableWidth = (t: FakeTable): number => t.cols.reduce((s, c) => s + c.width, 0);
+const tableHeight = (t: FakeTable): number => t.rows.reduce((s, r) => s + r.height, 0);
+/** Clé dans la ligne (ou colonne) `line` : découpe au premier `:`, comme `in_line` du cœur. */
+function inLine(key: string, axis: TableAxis, line: string): boolean {
+  const i = key.indexOf(":");
+  if (i < 0) return false;
+  return axis === "row" ? key.slice(0, i) === line : key.slice(i + 1) === line;
+}
+/** Vue (T13) : cellules non vides dans l'ordre de lecture, comme `RawTable::view`. */
+function tableView(t: FakeTable): TableData {
+  const cells: TableCell[] = [];
+  for (const r of t.rows) {
+    for (const c of t.cols) {
+      const cell = t.cells.get(cellKey(r.id, c.id));
+      if (cell && (cell.text !== "" || cell.fill !== null)) cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill });
+    }
+  }
+  return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells };
+}
 /** Écrite seulement si absente (K3). */
 const putMeta = (assets: Map<string, unknown>, a: AssetRef): void => {
   if (!assets.has(a.id)) assets.set(a.id, { name: a.name, mime: a.mime, size: a.size });
@@ -157,6 +213,9 @@ const newId = (): string => `fake-${++counter}`;
 const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
+/** `fits_f32` du cœur : chaque valeur reste finie une fois arrondie en f32. */
+const fitsF32 = (vs: readonly number[]): boolean => vs.every((v) => Number.isFinite(Math.fround(v)));
+const sum = (vs: readonly number[]): number => vs.reduce((a, b) => a + b, 0);
 /** Matrice de `Transform`, donnée ou composée : six nombres finis, |dét| ≥ 1e-12 (même règle que le cœur). */
 const validMatrix = (m: Matrix): boolean => m.every((v) => Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) >= 1e-12;
 
@@ -216,7 +275,7 @@ function strokeTouches(e: FakeElement, path: Float32Array, radius: number): bool
   return false;
 }
 
-/** Polygone monde (x, y alternés) d'une forme, d'un texte, d'une image ou d'un inconnu ; null pour un trait. */
+/** Polygone monde (x, y alternés) d'une forme, d'un texte, d'une image, d'un tableau ou d'un inconnu ; null pour un trait. */
 function worldPolygon(e: FakeElement): number[] | null {
   const local = e.shape
     ? shapePolygon(e.shape.shape, e.shape.w, e.shape.h, e.style.width)
@@ -224,9 +283,11 @@ function worldPolygon(e: FakeElement): number[] | null {
       ? boxPolygon(e.text.boxWidth, e.text.boxHeight)
       : e.image
         ? boxPolygon(e.image.w, e.image.h)
-        : e.unknown
-          ? boxPolygon(e.unknown.box.w, e.unknown.box.h)
-          : null;
+        : e.table
+          ? boxPolygon(tableWidth(e.table), tableHeight(e.table))
+          : e.unknown
+            ? boxPolygon(e.unknown.box.w, e.unknown.box.h)
+            : null;
   if (!local) return null;
   const out: number[] = [];
   for (let i = 0; i + 1 < local.length; i += 2) out.push(...applyMatrix(e.transform, local[i] ?? 0, local[i + 1] ?? 0));
@@ -283,6 +344,26 @@ class FakeDocument implements CoreDocument {
 
   private unchanged(): Change {
     return { pages: [], ids: [], removed: [], full: false, version: this.ver };
+  }
+
+  /** Tableau `id` ; absent ou pas un tableau : élément inconnu (ordre du cœur : après les contrôles d'arguments). */
+  private tableOf(id: string): { readonly found: Found; readonly t: FakeTable } {
+    const found = this.find(id);
+    const t = found?.element.table;
+    if (!found || !t) throw new Error(`élément inconnu : ${id}`);
+    return { found, t };
+  }
+
+  /** Une étape : le tableau `id` remplacé par `next` (les autres éléments repris tels quels). */
+  private writeTable(found: Found, id: string, next: FakeTable): Change {
+    const pageId = found.page.id;
+    return this.step((s) => {
+      const p = s.pages.find((q) => q.id === pageId);
+      const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
+      const old = p?.elements[i];
+      if (p && old) p.elements[i] = { ...old, table: next };
+      return { pages: [pageId], ids: [id], removed: [] };
+    });
   }
 
   private step(mutate: (s: State) => Omit<Change, "version" | "full">): Change {
@@ -505,6 +586,91 @@ class FakeDocument implements CoreDocument {
           return { pages: [cmd.page], ids: [], removed: [] };
         });
       }
+      case "AddTable": {
+        // Ordre du cœur : arguments (BadTable), puis page ; x, y et les totaux bornés en f32 (`fits_f32`).
+        const ok =
+          validLines(cmd.cols) && validLines(cmd.rows) && positive(cmd.colWidth) && positive(cmd.rowHeight) && positive(cmd.size) &&
+          fitsF32([cmd.x, cmd.y, cmd.cols * cmd.colWidth, cmd.rows * cmd.rowHeight]) && validColor(cmd.color);
+        if (!ok) throw new Error(MESSAGES.badTable);
+        this.pageOf(cmd.page);
+        return this.step((s) => {
+          const id = newId();
+          const table: FakeTable = {
+            color: cmd.color,
+            size: cmd.size,
+            cols: Array.from({ length: cmd.cols }, () => ({ id: newId(), width: cmd.colWidth })),
+            rows: Array.from({ length: cmd.rows }, () => ({ id: newId(), height: cmd.rowHeight })),
+            cells: new Map(),
+          };
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(cmd.x, cmd.y), style: NO_STYLE, table });
+          return { pages: [cmd.page], ids: [id], removed: [] };
+        });
+      }
+      case "SetTableCell": {
+        if (cmd.rowHeight !== undefined && !positive(cmd.rowHeight)) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        const r = t.rows.findIndex((l) => l.id === cmd.row);
+        const row = t.rows[r];
+        if (!row || !t.cols.some((l) => l.id === cmd.col)) throw new Error(MESSAGES.badTable);
+        const key = cellKey(cmd.row, cmd.col);
+        const cell = t.cells.get(key);
+        const current = cell?.text ?? "";
+        const grow = cmd.rowHeight !== undefined && cmd.rowHeight > row.height ? cmd.rowHeight : null;
+        if (grow !== null && !fitsF32([sum(t.rows.map((l) => l.height)) - row.height + grow])) throw new Error(MESSAGES.badTable);
+        if (current === cmd.content && grow === null) return this.unchanged();
+        const cells = new Map(t.cells);
+        if (current !== cmd.content) cells.set(key, { text: cmd.content, fill: cell?.fill ?? null });
+        const rows = grow === null ? t.rows : t.rows.map((l, i) => (i === r ? { ...l, height: grow } : l));
+        return this.writeTable(found, cmd.id, { ...t, rows, cells });
+      }
+      case "InsertTableLine": {
+        const { found, t } = this.tableOf(cmd.id);
+        const n = cmd.axis === "row" ? t.rows.length : t.cols.length;
+        const at = cmd.at;
+        if (!Number.isInteger(at) || at < 0 || at > n || n >= TABLE_MAX_LINES) throw new Error(MESSAGES.badTable);
+        const near = Math.max(0, at - 1);
+        const sizes = cmd.axis === "row" ? t.rows.map((l) => l.height) : t.cols.map((l) => l.width);
+        if (!fitsF32([sum(sizes) + (sizes[near] ?? 0)])) throw new Error(MESSAGES.badTable);
+        if (cmd.axis === "row") {
+          const height = t.rows[near]?.height ?? 0;
+          return this.writeTable(found, cmd.id, { ...t, rows: [...t.rows.slice(0, at), { id: newId(), height }, ...t.rows.slice(at)] });
+        }
+        const width = t.cols[near]?.width ?? 0;
+        return this.writeTable(found, cmd.id, { ...t, cols: [...t.cols.slice(0, at), { id: newId(), width }, ...t.cols.slice(at)] });
+      }
+      case "RemoveTableLine": {
+        const { found, t } = this.tableOf(cmd.id);
+        const lines: readonly { readonly id: string }[] = cmd.axis === "row" ? t.rows : t.cols;
+        if (!lines.some((l) => l.id === cmd.line) || lines.length <= 1) throw new Error(MESSAGES.badTable);
+        const cells = new Map([...t.cells].filter(([k]) => !inLine(k, cmd.axis, cmd.line)));
+        return this.writeTable(
+          found,
+          cmd.id,
+          cmd.axis === "row" ? { ...t, rows: t.rows.filter((l) => l.id !== cmd.line), cells } : { ...t, cols: t.cols.filter((l) => l.id !== cmd.line), cells },
+        );
+      }
+      case "SetTableSizes": {
+        if (!positive(cmd.colWidth) || !positive(cmd.rowHeight)) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        if (!fitsF32([t.cols.length * cmd.colWidth, t.rows.length * cmd.rowHeight])) throw new Error(MESSAGES.badTable);
+        if (t.cols.every((c) => c.width === cmd.colWidth) && t.rows.every((r) => r.height === cmd.rowHeight)) return this.unchanged();
+        return this.writeTable(found, cmd.id, {
+          ...t,
+          cols: t.cols.map((c) => (c.width === cmd.colWidth ? c : { ...c, width: cmd.colWidth })),
+          rows: t.rows.map((r) => (r.height === cmd.rowHeight ? r : { ...r, height: cmd.rowHeight })),
+        });
+      }
+      case "SetTableFill": {
+        if (cmd.fill !== null && !validColor(cmd.fill)) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        if (!t.rows.some((l) => l.id === cmd.row) || !t.cols.some((l) => l.id === cmd.col)) throw new Error(MESSAGES.badTable);
+        const key = cellKey(cmd.row, cmd.col);
+        const cell = t.cells.get(key);
+        if ((cell?.fill ?? null) === cmd.fill) return this.unchanged();
+        const cells = new Map(t.cells);
+        cells.set(key, { text: cell?.text ?? "", fill: cmd.fill });
+        return this.writeTable(found, cmd.id, { ...t, cells });
+      }
     }
   }
 
@@ -514,6 +680,7 @@ class FakeDocument implements CoreDocument {
     const base = { id, transform: e.transform };
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, kind: "image", image: e.image };
+    if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
     const styled = { ...base, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
     if (e.text) return { ...styled, kind: "text", text: e.text };
@@ -682,6 +849,14 @@ class FakeDocument implements CoreDocument {
 type SavedText = Omit<TextData, "spans"> & { readonly spans?: readonly TextSpan[] };
 /** JSON d'avant C7 : sans `spans`, le texte est un seul segment sans attribut (T8, T12). */
 const withSpans = (t: SavedText): TextData => ({ ...t, spans: Array.isArray(t.spans) ? t.spans : plainSpans(t.content) });
+/** Tableau enregistré par la fausse liaison : cellules en objet `<rowId>:<colId>` → cellule. */
+interface SavedTable {
+  readonly color: string;
+  readonly size: number;
+  readonly cols: readonly TableCol[];
+  readonly rows: readonly TableRow[];
+  readonly cells: Readonly<Record<string, FakeCell>>;
+}
 
 interface SavedElement {
   id: string;
@@ -694,6 +869,8 @@ interface SavedElement {
   shape?: ShapeData;
   text?: SavedText;
   image?: ImageData;
+  /** Écrit : `SavedTable` ; lu : valeur brute, contrôlée par `loadTable`. */
+  table?: SavedTable | unknown;
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
   raw?: Record<string, unknown>;
 }
@@ -704,6 +881,7 @@ function savedElement(e: FakeElement): SavedElement {
   if (e.unknown) {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw } };
   }
+  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) } };
   if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image };
   return {
     id: e.id,
@@ -712,6 +890,50 @@ function savedElement(e: FakeElement): SavedElement {
     ...(e.local ? { local: Array.from(e.local) } : {}),
     ...(e.shape ? { shape: e.shape } : {}),
     ...(e.text ? { text: e.text } : {}),
+  };
+}
+
+/** Entrées lisibles (T2) : objet avec un `id` texte non vide, sans « : » (clé de cellule ambiguë, comme le cœur), pas encore
+ * vu et `key` fini > 0 ; les autres retirées (PC6). */
+function readLines(v: unknown, key: "width" | "height"): { readonly id: string; readonly size: number }[] {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set<string>();
+  const out: { id: string; size: number }[] = [];
+  for (const x of v) {
+    if (!isRecord(x)) continue;
+    const id = x["id"];
+    const size = x[key];
+    if (typeof id !== "string" || id === "" || id.includes(":") || seen.has(id) || !finitePositive(size)) continue;
+    seen.add(id);
+    out.push({ id, size });
+  }
+  return out;
+}
+
+/** Tableau lu comme le cœur (T2) ; null sans ligne ou sans colonne lisible. */
+function loadTable(v: unknown): FakeTable | null {
+  if (!isRecord(v)) return null;
+  const cols = readLines(v["cols"], "width").map((l) => ({ id: l.id, width: l.size }));
+  const rows = readLines(v["rows"], "height").map((l) => ({ id: l.id, height: l.size }));
+  if (cols.length === 0 || rows.length === 0) return null;
+  const cells = new Map<string, FakeCell>();
+  const raw = v["cells"];
+  if (isRecord(raw)) {
+    for (const [k, c] of Object.entries(raw)) {
+      if (!isRecord(c)) continue;
+      const text = c["text"];
+      const fill = c["fill"];
+      cells.set(k, { text: typeof text === "string" ? text : "", fill: typeof fill === "string" && validColor(fill) ? fill : null });
+    }
+  }
+  const color = v["color"];
+  const size = v["size"];
+  return {
+    color: typeof color === "string" && validColor(color) ? color : DEFAULT_TABLE_COLOR,
+    size: finitePositive(size) ? size : DEFAULT_TABLE_SIZE,
+    cols,
+    rows,
+    cells,
   };
 }
 
@@ -730,6 +952,22 @@ function loadElement(e: SavedElement): FakeElement {
       ...(t === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
     return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown };
+  }
+  if (e.kind === "table") {
+    // Repli d'un tableau mal formé (T2) : cadre inconnu, jamais invisible ; brut gardé sous `raw.table`, réécrit tel quel.
+    const source = e.table ?? e.raw?.["table"];
+    const t = loadTable(source);
+    const m = toMatrix6(e.transform);
+    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t };
+    const raw = { table: source };
+    const unknown: FakeUnknown = {
+      sourceKind: "table",
+      raw,
+      box: unknownBox(raw),
+      hasTransform: m !== null,
+      ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
+    };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown };
   }
   if (e.kind === "image") {
     const im: unknown = e.image;

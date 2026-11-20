@@ -45,12 +45,15 @@ export interface OpenedFile {
 
 export interface Point { readonly x: number; readonly y: number }
 
-/** Fichier entrant (U23) : `path` dans la coque seulement ; `blob()` lit par morceaux dans la coque. */
+/** Fichier entrant (U23) : `path` dans la coque seulement ; `head(n)` avant la détection, `blob()` seulement pour un fichier reconnu (OD56). */
 export interface DroppedFile {
   readonly name: string;
   readonly size: number;
   readonly mime: string;
   readonly path?: string;
+  /** Au plus les `n` premiers octets ; dans la coque, un seul `read_granted_file` (OD56, DAC5). */
+  head(n: number): Promise<Uint8Array>;
+  /** Tout le fichier (par morceaux dans la coque), seulement pour un fichier reconnu. */
   blob(): Promise<Blob>;
 }
 
