@@ -1240,8 +1240,11 @@ interface SavedElement {
 interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown }
 
 function savedElement(e: FakeElement): SavedElement {
-  if (e.malformed) return { id: e.id, ...e.malformed } as SavedElement;
   const group = withGroup(e.group);
+  if (e.malformed) {
+    const { group: _stale, ...rest } = e.malformed; // le groupe vivant (Group, Ungroup) remplace celui lu
+    return { id: e.id, ...rest, ...group } as SavedElement;
+  }
   if (e.unknown) {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group };
   }
@@ -1351,7 +1354,7 @@ function loadElement(e: SavedElement): FakeElement {
     const ok = isRecord(im) && isAssetId(im["asset"]) && finitePositive(im["w"]) && finitePositive(im["h"]);
     if (!ok) {
       const { id: _id, ...rest } = e;
-      return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, malformed: rest };
+      return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, malformed: rest, ...group };
     }
   }
   if (e.kind === "image" && e.image) return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image: e.image, ...group };

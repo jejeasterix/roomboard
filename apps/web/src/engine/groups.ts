@@ -8,6 +8,14 @@ export interface GroupedView {
   readonly group?: readonly string[];
 }
 
+/** Vues (avec leur groupe) des éléments `ids` que le document connaît, dans l'ordre donné. */
+export function viewsOf(doc: { element(id: string): GroupedView | null }, ids: readonly string[]): GroupedView[] {
+  return ids.flatMap((id) => {
+    const v = doc.element(id);
+    return v === null ? [] : [v];
+  });
+}
+
 export function outerGroup(e: GroupedView): string | null {
   return e.group?.[0] ?? null;
 }

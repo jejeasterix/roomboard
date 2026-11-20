@@ -927,7 +927,7 @@ describe("espace de travail — C3", () => {
     const b1 = tab.board.doc.bounds([ids[1]!])!;
     expect([b1.x0 - b0.x0, b1.y0 - b0.y0]).toEqual([24, 24]);
     // un import n'entame pas la cascade du presse-papiers : le premier collage du même contenu reste au centre
-    codec.read.mockResolvedValue({ manifest: new Uint8Array(), ybin: fakeCore.blank().extract(fakeCore.blank().pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x"), assets: [], warnings: [] });
+    codec.read.mockResolvedValue({ manifest: new Uint8Array(), ybin: (() => { const e = fakeCore.blank(); return e.extract(e.pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x"); })(), assets: [], warnings: [] });
     await ws.importFiles([plainFile("vide.rbitem", zip)]);
     expect(shell.notify.mock.calls.some((c) => String(c[0]).startsWith("vide.rbitem : "))).toBe(true);
   });
