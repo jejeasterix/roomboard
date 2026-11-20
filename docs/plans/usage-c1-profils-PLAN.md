@@ -11,8 +11,8 @@
 | T3 | Fichiers de profil : `profile-file.ts`, exemples `.rbprofile`, port `ProfileFiles` | T1 | `apps/web/src/profile-file.ts` (neuf), `apps/web/src/profile-file.test.ts` (neuf), `apps/web/src/fixtures/profils/1.2-outil-inconnu.rbprofile` (neuf), `apps/web/src/fixtures/profils/2.0-majeure.rbprofile` (neuf), `apps/web/src/platform/profile-files.ts` (neuf), `apps/web/src/platform/profile-files.test.ts` (neuf) | isolé | implementeur-tdd | `vitest run src/profile-file.test.ts src/platform/profile-files.test.ts` : 0 échec, ≥ 15 tests, « S2 : 1.2 à outil inconnu » et « fichier illisible » présents | S1, S2 | #tache-t3 |
 | T4 | Rangée contextuelle des préréglages dans la barre d'outils | — | `apps/web/src/ui/Toolbar.tsx`, `apps/web/src/ui/Toolbar.test.tsx`, `apps/web/src/ui/rb.css` | isolé | implementeur-tdd | `vitest run src/ui/Toolbar.test.tsx` : 0 échec, ≥ 20 tests, « cinq préréglages : un clic sur le quatrième » présent | S4 | #tache-t4 |
 | T5 | Opérations d'édition pures (`profile-edit.ts`) | T1 | `apps/web/src/profile-edit.ts` (neuf), `apps/web/src/profile-edit.test.ts` (neuf) | isolé | implementeur-tdd | `vitest run src/profile-edit.test.ts` : 0 échec, ≥ 15 tests, « S3 : resetToOrigin » et « originOf » présents | S1, S3, S4 | #tache-t5 |
-| T6 | Profil actif (liste en signal, `refresh`) et menu Profil étendu | T1 | `apps/web/src/ui/active-profile.ts`, `apps/web/src/ui/active-profile.test.ts`, `apps/web/src/ui/ProfileMenu.tsx`, `apps/web/src/ui/ProfileMenu.test.tsx` | isolé | implementeur-tdd | `vitest run src/ui/active-profile.test.ts src/ui/ProfileMenu.test.tsx` : 0 échec, ≥ 11 tests, « commandes sous les profils, dans l'ordre » présent | S1, S3, S5 | #tache-t6 |
-| T7 | Éditeur de profil (`ProfileEditor.tsx`) | T4, T5 | `apps/web/src/ui/ProfileEditor.tsx` (neuf), `apps/web/src/ui/ProfileEditor.test.tsx` (neuf), `apps/web/src/ui/rb.css` | isolé | implementeur-tdd | `vitest run src/ui/ProfileEditor.test.tsx src/ui/Toolbar.test.tsx` : 0 échec, ≥ 12 tests dans l'éditeur, « S4 : Rétablir les préréglages » présent ; contrôle source de `Toolbar.test.tsx` vert | S1, S2, S4 | #tache-t7 |
+| T6 | Profil actif (liste en signal, `refresh`) et menu Profil étendu (bouchons dans `App.tsx`) | T1 | `apps/web/src/ui/active-profile.ts`, `apps/web/src/ui/active-profile.test.ts`, `apps/web/src/ui/ProfileMenu.tsx`, `apps/web/src/ui/ProfileMenu.test.tsx`, `apps/web/src/ui/App.tsx` | isolé | implementeur-tdd | `vitest run src/ui/active-profile.test.ts src/ui/ProfileMenu.test.tsx src/ui/App.test.tsx` : 0 échec, ≥ 11 tests dans les deux premiers, « commandes sous les profils, dans l'ordre » présent ; `App.test.tsx` vert ; `tsc` vide | S1, S3, S5 | #tache-t6 |
+| T7 | Éditeur de profil (`ProfileEditor.tsx`) | T4, T5 | `apps/web/src/ui/ProfileEditor.tsx` (neuf), `apps/web/src/ui/ProfileEditor.test.tsx` (neuf), `apps/web/src/ui/rb.css` | isolé | implementeur-tdd | `vitest run src/ui/ProfileEditor.test.tsx src/ui/Toolbar.test.tsx` : 0 échec, ≥ 14 tests dans l'éditeur, « S4 : Rétablir les préréglages » présent ; « Monter au clavier deux fois : le focus reste » présent ; contrôle source de `Toolbar.test.tsx` vert ; `tsc` vide | S1, S2, S4 | #tache-t7 |
 | T8 | Gestes de profil (`app/profile-actions.ts`) : enregistrer, nouveau, importer, exporter, remettre à zéro, supprimer | T2, T3, T5, T6 | `apps/web/src/app/profile-actions.ts` (neuf), `apps/web/src/app/profile-actions.test.ts` (neuf) | isolé | implementeur-tdd | `vitest run src/app/profile-actions.test.ts` : 0 échec, ≥ 15 tests, « S2 : id pris, Annuler : rien n'est importé » présent | S1, S2, S3 | #tache-t8 |
 | T9 | Branchement : `App.tsx` (menu, éditeur, rangée, mode au montage) et `main.ts` (`ProfileFiles`) | T4, T6, T7, T8 | `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `apps/web/src/main.ts` | isolé | implementeur-tdd | `vitest run src/ui/App.test.tsx` : 0 échec, ≥ 22 tests, « S5 : capacité vraie » présent ; `pnpm --filter @roomboard/web test` ≥ 1 000 tests, 0 échec ; `pnpm --filter @roomboard/web build` OK | S1, S4, S5 | #tache-t9 |
 | T10 | Essai e2e C1 dans `verifier.sh --e2e`, captures, fiches de la coque | T9 | `scripts/essais/c1-profils-navigateur.mjs` (neuf), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `docs/essais/c1-editeur.png` (neuf), `docs/essais/c1-barre-gauche-l.png` (neuf), `docs/essais/coque-windows.md`, `docs/essais/coque-macos.md` | isolé | implementeur-tdd | `bash scripts/verifier.sh --e2e` : « C1 : OK », « S5b : OK », « verifier.sh : e2e OK », « verifier.sh : OK » ; deux PNG dans `docs/essais/` | S1, S2, S5 | #tache-t10 |
@@ -23,8 +23,9 @@ T7 (après T4, T5) et T8 (après T2, T3, T5, T6), en parallèle. Vague 4 : T9. V
 vagues, donc jamais en parallèle : `apps/web/src/ui/rb.css` (T4 puis T7). Chemin critique T1 → T5 → T7 → T9 → T10,
 environ 30 + 30 + 40 + 35 + 45 min : ≈ 3 h avec les relectures.
 
-**`tsc` entre les vagues (attendu).** Après T6, `tsc` signale `src/ui/App.tsx` (props nouvelles de `ProfileMenu` non
-passées) ; T9 le rend vert. Aucun autre écart `tsc` n'est admis à la fin d'une tâche.
+**`tsc` entre les vagues.** Aucun écart admis : chaque tâche finit avec `tsc` vide. T6 passe les nouvelles props de
+`ProfileMenu` en bouchons dans `App.tsx` (`App.test.tsx` reste vert) ; T9 remplace ces bouchons. `App.tsx` est touché
+par T6 puis T9 seulement (vagues 2 et 4) : aucun recoupement avec T3, T5 (vague 2) ni T7, T8 (vague 3).
 
 **Goal :** on choisit un profil, on modifie sa barre (emplacement, taille des boutons, éléments montrés ou masqués et
 leur ordre, préréglages du stylo), on l'exporte et l'importe en `.rbprofile`, on le remet à zéro ; le profil fourni
@@ -50,10 +51,11 @@ Les gestes du menu (ordre des questions, import, remises à zéro) vivent dans `
 - PC3 `toolbar.ts` exporte aussi `withCurrentMinor`, `isKnownItem`, `PROFILES_ACTION`, `isProfilesAccess` (utilisés
   par l'éditeur et les gestes). `serializeProfile` n'élève pas la mineure lui-même : les gestes d'écriture appellent
   `withCurrentMinor` (sinon l'aller-retour de `toolbar.test.ts:181-184` et `profile-store.test.ts:60` casse).
-- PC4 `Toolbar` reçoit `presets` seulement (pas d'`activePreset` : P19 a retiré l'état enfoncé).
+- PC4 `Toolbar` reçoit `presets` seulement (pas d'`activePreset` : P19 a retiré l'état enfoncé). **Hypothèse à porter
+  à la porte de fin** (avec HC1-1, HC2-6) : aucun préréglage ne paraît enfoncé.
 - PC5 « Supprimer » demande une confirmation (« Supprimer le profil « X » ? ») ; le cadrage est muet.
 - PC6 La case « montrer » de Profil est présente mais grisée (S1 : « la case de Profil est grisée ») ; P33 disait
-  « sans case ».
+  « sans case ». **Hypothèse à porter à la porte de fin** (avec HC1-2, HC1-6).
 - PC7 `createTauriProfileFiles(dialog: Pick<TauriDialog, "open" | "save">, fs: TauriFs)` : accepte `TauriDialog`.
 
 ## Global Constraints
@@ -1645,8 +1647,8 @@ cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
 pnpm --filter @roomboard/web exec vitest run src/profile-edit.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | tail -40
 ```
 
-Attendu : 0 échec ; ≥ 15 tests ; présents : « S3 : resetToOrigin », « originOf : livré de même id, puis basedOn, puis
-defaut », « S4 : Rétablir les préréglages », « Monter / Descendre », « opérations pures ».
+Attendu : 0 échec ; 15 tests (≥ 15) ; présents : « S3 : resetToOrigin », « originOf : livré de même id, puis basedOn,
+puis defaut », « S4 : Rétablir les préréglages », « Monter / Descendre », « barre absente », « opérations pures ».
 
 **Preuve visuelle.** Aucune.
 
@@ -1837,6 +1839,13 @@ describe("profile-edit (C1, DAC1-1)", () => {
     expect(originOf({ ...DEFAUT, id: "cm1", basedOn: "simple" }, BUILTIN_PROFILES).id).toBe("simple");
     expect(originOf({ ...DEFAUT, id: "cm1" }, BUILTIN_PROFILES).id).toBe("defaut");
     expect(originOf({ ...DEFAUT, id: "x", basedOn: "disparu" }, BUILTIN_PROFILES).id).toBe("defaut");
+  });
+
+  it("barre absente : setDock, moveItem et addItem ne changent rien", () => {
+    const entry = catalog(DEFAUT, "outils")[0]!;
+    expect(setDock(DEFAUT, "absente", "left")).toEqual(DEFAUT);
+    expect(moveItem(DEFAUT, "absente", "pen", 1)).toEqual(DEFAUT);
+    expect(addItem(DEFAUT, "absente", entry)).toBe(DEFAUT);
   });
 
   it("opérations pures : un profil livré (figé) passe par toutes sans lever ni changer", () => {
@@ -2051,12 +2060,15 @@ export function originOf(p: Profile, builtins: readonly Profile[]): Profile {
 **Objectif.** `ActiveProfile` publie la liste du magasin en signal et se relit par `refresh()` après un changement du
 magasin, sans aperçu (DAC1-2, P20). `ProfileMenu` garde ses `menuitemradio` `data-profile` (essai s5b) et ajoute, dans
 l'ordre : « Modifier… », « Importer… », « Exporter… », « Remettre à zéro ce profil » (grisé si rien à remettre),
-« Supprimer » (profil de l'utilisateur seulement), « Tout remettre à zéro » (P22).
+« Supprimer » (profil de l'utilisateur seulement), « Tout remettre à zéro » (P22). `App.tsx` reçoit les nouvelles
+props en bouchons (aucun geste, « Supprimer » caché, remise grisée) pour que `App.test.tsx` et `tsc` restent verts ;
+T9 les remplace par les vrais gestes.
 
 **Subagent.** implementeur-tdd. **Dépend de.** T1 (`resolveStartMode` qui rend `desktop-annotation`).
 
 **Fichiers.** Modifier `apps/web/src/ui/active-profile.ts`, `apps/web/src/ui/active-profile.test.ts`,
-`apps/web/src/ui/ProfileMenu.tsx`, `apps/web/src/ui/ProfileMenu.test.tsx`.
+`apps/web/src/ui/ProfileMenu.tsx`, `apps/web/src/ui/ProfileMenu.test.tsx`, `apps/web/src/ui/App.tsx` (bloc
+`<ProfileMenu …>`, l. 179-186 seulement). Disjoint de T3 et T5 (vague 2) ; `App.tsx` est repris par T9 (vague 4).
 
 **Interfaces.**
 - Consomme : `ProfileStore.list/get/activeId/setActive/save/remove` (existants) ; `resolveStartMode` (T1).
@@ -2095,10 +2107,12 @@ export interface ProfileMenuProps {
 
 ```bash
 cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
-pnpm --filter @roomboard/web exec vitest run src/ui/active-profile.test.ts src/ui/ProfileMenu.test.tsx --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | tail -40
+pnpm --filter @roomboard/web exec vitest run src/ui/active-profile.test.ts src/ui/ProfileMenu.test.tsx src/ui/App.test.tsx --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | tail -60 && \
+pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep "error TS" | head -20
 ```
 
-Attendu : 0 échec ; ≥ 11 tests ; présents : « commandes sous les profils, dans l'ordre », « refresh : liste en signal »,
+Attendu : 0 échec ; ≥ 11 tests dans les deux premiers fichiers ; `App.test.tsx` vert (« changer de profil : barre à
+gauche, grands boutons, sans formes », « inventaire… ») ; `tsc` : aucune ligne ; présents : « commandes sous les profils, dans l'ordre », « refresh : liste en signal »,
 « annotation : desktop-annotation avec la capacité ». À garder verts : « menu avec un menuitemradio par profil »,
 « aria-checked sur le profil actif seulement », « un clic choisit le profil », « choose change le signal et le magasin ».
 
@@ -2112,17 +2126,18 @@ Attendu : 0 échec ; ≥ 11 tests ; présents : « commandes sous les profils, d
 - GC5 Preuve bornée : la commande de la section, telle quelle ; le rapport cite N ≥ 1 et les noms attendus.
 - GC6 Commits : fichiers ajoutés un par un (`git add <chemin>`, jamais `-A`, `--all`, `.`, ni `commit -a`), auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; aucun `--force` ; ne pas pousser.
 - GC7 Aucune dépendance nouvelle (jamais AGPL, GPL, LGPL).
-- GC8 OD56 : ne pas toucher `feat/usage-c2-depot`.
+- GC8 OD56 : ne pas toucher `feat/usage-c2-depot` ; `ui/App.tsx` est partagé avec OD56 (cible `pick` l. 103-104) : ne changer que les props du bloc `<ProfileMenu …>`, sans réordonner.
 - GC9 Rapport : une ligne `Réutilisation : appelé <module>` ou `Réutilisation : écart — <pourquoi>` par ligne `Réutilise :`.
 - GC10 Aucun composant n'appelle `localStorage` ; `ActiveProfile` ne fait aucun aperçu (P20).
 - GC11 Interface : aucun `switch`, aucune taille en `px` dans un `.tsx`, aucun `localStorage`, aucun glisser HTML5 ; libellés en français.
 - GC12 Ne modifier que les fichiers touchés de la tâche.
-- GC13 `tsc --noEmit` : seul écart admis, `src/ui/App.tsx` (props nouvelles de `ProfileMenu` non passées, branchées en T9).
+- GC13 `tsc --noEmit` sans erreur à la fin (les bouchons d'`App.tsx` le garantissent).
 
-**Interdits.** Toucher `App.tsx` ; renommer `data-profile` ; ajouter une action dans `ACTION_TABLE`.
+**Interdits.** Toucher `App.tsx` au-delà des bouchons du bloc `<ProfileMenu …>` (ni panneau, ni gestes, ni
+`profiles={props.active.profiles}` : c'est T9) ; renommer `data-profile` ; ajouter une action dans `ACTION_TABLE`.
 
-**Terminé quand.** Commande bornée verte ; `tsc` n'a d'erreurs que dans `src/ui/App.tsx` ; un commit ; rapport avec
-deux lignes `Réutilisation :`.
+**Terminé quand.** Commande bornée verte (tests et `tsc` vide) ; un commit ; rapport avec deux lignes
+`Réutilisation :`.
 
 **Étapes.**
 
@@ -2376,9 +2391,27 @@ export function ProfileMenu(props: ProfileMenuProps): JSX.Element {
 }
 ```
 
-- [ ] **7. Lancer la commande bornée : vert attendu**, puis `tsc` (seul écart : `src/ui/App.tsx`).
+- [ ] **7. Bouchons dans `ui/App.tsx`** : dans le bloc `<ProfileMenu …>` (l. 179-186), après `activeId={() => profile().id}`,
+  ajouter (le reste du bloc inchangé) :
 
-- [ ] **8. Commit** : les quatre fichiers ; message `feat(profile): reactive profile list with refresh; profile menu commands`.
+```tsx
+            canResetCurrent={() => false}
+            canRemove={() => false}
+            edit={() => undefined}
+            importFile={() => undefined}
+            exportActive={() => undefined}
+            resetCurrent={() => undefined}
+            remove={() => undefined}
+            resetAll={() => undefined}
+```
+
+  Bouchons de T6 : les commandes s'affichent mais ne font rien ; T9 les remplace par `createProfileActions`.
+
+- [ ] **8. Lancer la commande bornée : vert attendu** (tests, puis `tsc` sans aucune ligne).
+
+- [ ] **9. Commit** : `apps/web/src/ui/active-profile.ts`, `apps/web/src/ui/active-profile.test.ts`,
+  `apps/web/src/ui/ProfileMenu.tsx`, `apps/web/src/ui/ProfileMenu.test.tsx`, `apps/web/src/ui/App.tsx` ; message
+  `feat(profile): reactive profile list with refresh; profile menu commands (stubbed in the app)`.
 
 <a id="tache-t7"></a>
 ### Tâche T7 — Éditeur de profil (`ProfileEditor.tsx`)
@@ -2386,7 +2419,9 @@ export function ProfileMenu(props: ProfileMenuProps): JSX.Element {
 **Objectif.** Panneau passager à trois sections — Général (nom, démarrage, taille des boutons), Barres (par barre :
 emplacement, éléments montrés ou masqués, Monter / Descendre, Ajouter), Préréglages (stylo) — qui travaille sur un
 brouillon sans aperçu ; « Enregistrer », « Enregistrer comme nouveau » (nom proposé « <nom> (copie) »), « Rétablir les
-barres », « Rétablir les préréglages », « Fermer » (P14-P17, P20, P28, P33, HC1-2).
+barres », « Rétablir les préréglages », « Fermer » (P14-P17, P20, P28, P33, HC1-2). Chaque geste redessine la
+barre touchée (nouvel objet) : le focus revient sur la commande de la ligne touchée (repérée par `data-edit-item`), ou
+sur le sélecteur d'emplacement, pour que l'éditeur reste utilisable au clavier.
 
 **Subagent.** implementeur-tdd. **Dépend de.** T4 (`rb.css` d'abord), T5 (opérations).
 
@@ -2430,8 +2465,9 @@ cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
 pnpm --filter @roomboard/web exec vitest run src/ui/ProfileEditor.test.tsx src/ui/Toolbar.test.tsx src/ui/App.test.tsx --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | tail -80
 ```
 
-Attendu : 0 échec ; ≥ 12 tests dans `ProfileEditor.test.tsx` ; présents : « S1 : brouillon », « S1 : masquer la
-gomme ; la case de Profil est grisée », « S4 : Rétablir les préréglages », « élément inconnu : ligne grisée ». À garder
+Attendu : 0 échec ; ≥ 14 tests dans `ProfileEditor.test.tsx` ; présents : « S1 : brouillon », « S1 : masquer la
+gomme ; la case de Profil est grisée », « S4 : Rétablir les préréglages », « élément inconnu : ligne grisée »,
+« Monter au clavier deux fois : le focus reste sur le bouton de la ligne déplacée ». À garder
 vert : « aucun switch sur l'identifiant, aucun px, aucun localStorage, aucun glisser HTML5 dans src/ui » (il lit
 `ProfileEditor.tsx`) et « rb.css : la grille réserve la case de la scène » (`App.test.tsx`).
 
@@ -2450,13 +2486,12 @@ vert : « aucun switch sur l'identifiant, aucun px, aucun localStorage, aucun gl
 - GC10 L'éditeur n'écrit aucun stockage : il rend le brouillon par `save` ou `saveAsNew`.
 - GC11 Interface : aucun `switch`, aucune taille en `px` dans un `.tsx`, aucun `localStorage`, aucun glisser HTML5 (`draggable`, `dragstart`) ; libellés en français, aucune icône seule, cibles d'au moins `--rb-btn-m` (règles de `rb.css`).
 - GC12 Ne modifier que les fichiers touchés de la tâche.
-- GC13 `tsc --noEmit` : seul écart admis, `src/ui/App.tsx` (props de `ProfileMenu`, branchées en T9).
+- GC13 `tsc --noEmit` sans erreur à la fin.
 
 **Interdits.** Aperçu en direct (les barres ne changent qu'à l'enregistrement) ; confirmation à la fermeture ; ordre
 modifiable des préréglages ; glisser pour réordonner.
 
-**Terminé quand.** Commande bornée verte ; `tsc` (écart `App.tsx` seul) ; un commit ; rapport avec la ligne
-`Réutilisation :`.
+**Terminé quand.** Commande bornée verte ; `tsc` vide ; un commit ; rapport avec la ligne `Réutilisation :`.
 
 **Étapes.**
 
@@ -2551,6 +2586,30 @@ describe("ProfileEditor (C1, P20)", () => {
     const groups = outils(last(save)).groups.map((g) => g.items.map((i) => i.id));
     expect(groups[0]).toEqual(["pen", "eraser", "eraser-mode"]);
     expect(groups[1]![0]).toBe("hand");
+  });
+
+  it("Monter au clavier deux fois : le focus reste sur le bouton de la ligne déplacée (P14)", async () => {
+    const { q, save } = setup();
+    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="hand"] button[data-edit="up"]');
+    const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+    up().focus();
+    fireEvent.click(document.activeElement!); // Entrée ou Espace sur un bouton = clic
+    await tick();
+    expect(document.activeElement).toBe(up());
+    fireEvent.click(document.activeElement!);
+    await tick();
+    expect(document.activeElement).toBe(up());
+    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("hand");
+    fireEvent.click(q('button[data-edit="save"]'));
+    expect(outils(last(save)).groups[0]!.items.map((i) => i.id)).toEqual(["pen", "hand", "eraser", "eraser-mode"]);
+  });
+
+  it("Monter jusqu'en tête : le bouton grisé rend le focus à l'autre bouton de la ligne", async () => {
+    const { q } = setup();
+    q<HTMLButtonElement>('[data-edit-item="eraser"] button[data-edit="up"]').focus();
+    fireEvent.click(document.activeElement!);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(q('[data-edit-item="eraser"] button[data-edit="down"]'));
   });
 
   it("Ajouter un élément absent : en fin de barre, id rendu unique (P15)", () => {
@@ -2712,6 +2771,8 @@ export interface ProfileEditorProps {
 }
 
 type Edit = (f: (p: Profile) => Profile) => void;
+/** Rend le focus après un geste : la barre touchée est redessinée (nouvel objet), l'élément focalisé a disparu. */
+type Refocus = (find: (root: HTMLElement) => HTMLElement | undefined) => void;
 
 const DOCK_LABELS: Readonly<Record<Dock, string>> = { top: "En haut", bottom: "En bas", left: "À gauche", right: "À droite", floating: "Flottante" };
 const SIZE_LABELS: Readonly<Record<ButtonSize, string>> = { s: "Petits", m: "Moyens", l: "Grands" };
@@ -2729,8 +2790,21 @@ const roleLabel = (bar: Toolbar): string => (Object.hasOwn(ROLE_LABELS, bar.role
 const itemName = (it: ToolItem): string => (it.kind === "separator" ? "Séparateur" : it.label || it.id);
 const toolName = (tool: string): string => (Object.hasOwn(TOOL_TABLE, tool) ? TOOL_TABLE[tool]!.label : tool);
 const entryKey = (e: CatalogEntry): string => `${e.kind}:${e.ref}`;
+const byData = (root: HTMLElement, attr: string, key: string, value: string): HTMLElement | undefined =>
+  [...root.querySelectorAll<HTMLElement>(`[${attr}]`)].find((el) => el.dataset[key] === value);
+/** Commande `control` de la ligne `itemId` ; grisée (ligne en tête ou en fin) : le premier bouton actif de la ligne. */
+const rowControl = (itemId: string, control: string) => (root: HTMLElement): HTMLElement | undefined => {
+  const row = byData(root, "data-edit-item", "editItem", itemId);
+  if (row === undefined) return undefined;
+  const wanted = row.querySelector<HTMLButtonElement | HTMLInputElement>(`[data-edit="${control}"]`);
+  if (wanted !== null && !wanted.disabled) return wanted;
+  return row.querySelector<HTMLElement>("button:not([disabled])") ?? undefined;
+};
+/** Sélecteur d'emplacement de la barre `barId`. */
+const dockControl = (barId: string) => (root: HTMLElement): HTMLElement | undefined =>
+  byData(root, "data-edit-bar", "editBar", barId)?.querySelector<HTMLElement>('select[data-edit="dock"]') ?? undefined;
 
-function ItemRow(props: { barId: string; item: ToolItem; index: number; last: number; edit: Edit }): JSX.Element {
+function ItemRow(props: { barId: string; item: ToolItem; index: number; last: number; edit: Edit; refocus: Refocus }): JSX.Element {
   const known = isKnownItem(props.item);
   const name = itemName(props.item);
   return (
@@ -2744,21 +2818,22 @@ function ItemRow(props: { barId: string; item: ToolItem; index: number; last: nu
           onChange={(e) => {
             const on = e.currentTarget.checked;
             props.edit((p) => setHidden(p, props.item.id, !on));
+            props.refocus(rowControl(props.item.id, "shown"));
           }}
         />
         <span>{known ? name : `${name} — ${UNKNOWN}`}</span>
       </label>
-      <button type="button" data-edit="up" aria-label={`Monter ${name}`} disabled={props.index === 0} onClick={() => props.edit((p) => moveItem(p, props.barId, props.item.id, -1))}>
+      <button type="button" data-edit="up" aria-label={`Monter ${name}`} disabled={props.index === 0} onClick={() => { props.edit((p) => moveItem(p, props.barId, props.item.id, -1)); props.refocus(rowControl(props.item.id, "up")); }}>
         Monter
       </button>
-      <button type="button" data-edit="down" aria-label={`Descendre ${name}`} disabled={props.index === props.last} onClick={() => props.edit((p) => moveItem(p, props.barId, props.item.id, 1))}>
+      <button type="button" data-edit="down" aria-label={`Descendre ${name}`} disabled={props.index === props.last} onClick={() => { props.edit((p) => moveItem(p, props.barId, props.item.id, 1)); props.refocus(rowControl(props.item.id, "down")); }}>
         Descendre
       </button>
     </li>
   );
 }
 
-function BarFieldset(props: { bar: Toolbar; draft: Accessor<Profile>; edit: Edit }): JSX.Element {
+function BarFieldset(props: { bar: Toolbar; draft: Accessor<Profile>; edit: Edit; refocus: Refocus }): JSX.Element {
   const items = (): readonly ToolItem[] => props.bar.groups.flatMap((g) => g.items);
   const choices = (): readonly CatalogEntry[] => catalog(props.draft(), props.bar.id);
   const [choice, setChoice] = createSignal("");
@@ -2777,7 +2852,9 @@ function BarFieldset(props: { bar: Toolbar; draft: Accessor<Profile>; edit: Edit
           data-edit="dock"
           onChange={(e) => {
             const dock = pick(DOCKS, e.currentTarget.value);
-            if (dock !== undefined) props.edit((p) => setDock(p, props.bar.id, dock));
+            if (dock === undefined) return;
+            props.edit((p) => setDock(p, props.bar.id, dock));
+            props.refocus(dockControl(props.bar.id));
           }}
         >
           <For each={DOCKS}>{(d) => <option value={d} selected={props.bar.dock === d}>{DOCK_LABELS[d]}</option>}</For>
@@ -2785,7 +2862,7 @@ function BarFieldset(props: { bar: Toolbar; draft: Accessor<Profile>; edit: Edit
       </label>
       <ul>
         <For each={items()}>
-          {(it, i) => <ItemRow barId={props.bar.id} item={it} index={i()} last={items().length - 1} edit={props.edit} />}
+          {(it, i) => <ItemRow barId={props.bar.id} item={it} index={i()} last={items().length - 1} edit={props.edit} refocus={props.refocus} />}
         </For>
       </ul>
       <Show when={choices().length > 0}>
@@ -2864,8 +2941,14 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
   const [draft, setDraft] = createSignal<Profile>(props.profile);
   const [newName, setNewName] = createSignal(`${props.profile.label} (copie)`);
   const edit: Edit = (f) => void setDraft((p) => f(p));
+  let root: HTMLDivElement | undefined;
+  // Après le redessin (microtâche) : le focus revient sur la commande repérée dans le nouveau DOM.
+  const refocus: Refocus = (find) =>
+    queueMicrotask(() => {
+      if (root !== undefined) find(root)?.focus();
+    });
   return (
-    <div class="rb-editor" data-profile-editor role="dialog" aria-label="Modifier le profil">
+    <div ref={root} class="rb-editor" data-profile-editor role="dialog" aria-label="Modifier le profil">
       <section data-edit-section="general">
         <h3>Général</h3>
         <label>
@@ -2907,7 +2990,7 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
       </section>
       <section data-edit-section="bars">
         <h3>Barres</h3>
-        <For each={draft().toolbars}>{(bar) => <BarFieldset bar={bar} draft={draft} edit={edit} />}</For>
+        <For each={draft().toolbars}>{(bar) => <BarFieldset bar={bar} draft={draft} edit={edit} refocus={refocus} />}</For>
         <button type="button" data-edit="reset-bars" onClick={() => edit((p) => resetToolbars(p, props.origin))}>
           Rétablir les barres
         </button>
@@ -2958,7 +3041,7 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
 .rb-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }
 ```
 
-- [ ] **6. Lancer la commande bornée : vert attendu**, puis `tsc` (écart `App.tsx` seul).
+- [ ] **6. Lancer la commande bornée : vert attendu**, puis `tsc` (aucune ligne).
 
 - [ ] **7. Commit** : `apps/web/src/ui/ProfileEditor.tsx`, `apps/web/src/ui/ProfileEditor.test.tsx`,
   `apps/web/src/ui/rb.css` ; message `feat(profile): profile editor on a draft (general, bars, pen presets)`.
@@ -3038,13 +3121,12 @@ importé sans accès Profil », « fichier illisible : message, rien n'est impor
 - GC9 Rapport : une ligne `Réutilisation : appelé <module>` ou `Réutilisation : écart — <pourquoi>` par ligne `Réutilise :`.
 - GC10 `PROFILE_MINOR` vaut 1 : chaque profil écrit par un geste passe par `withCurrentMinor` ; seul le magasin écrit le stockage.
 - GC12 Ne modifier que les fichiers touchés de la tâche.
-- GC13 `tsc --noEmit` : seul écart admis, `src/ui/App.tsx` (branché en T9).
+- GC13 `tsc --noEmit` sans erreur à la fin.
 
 **Interdits.** Appeler `localStorage`, `window` ou le DOM ; importer sans passer par `profileFromText` ; importer
 malgré un « Annuler ».
 
-**Terminé quand.** Commande bornée verte ; `tsc` (écart `App.tsx` seul) ; un commit ; rapport avec la ligne
-`Réutilisation :`.
+**Terminé quand.** Commande bornée verte ; `tsc` vide ; un commit ; rapport avec la ligne `Réutilisation :`.
 
 **Étapes.**
 
@@ -3413,7 +3495,7 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
 }
 ```
 
-- [ ] **5. Lancer la commande bornée : vert attendu**, puis `tsc` (écart `App.tsx` seul).
+- [ ] **5. Lancer la commande bornée : vert attendu**, puis `tsc` (aucune ligne).
 
 - [ ] **6. Commit** : `apps/web/src/app/profile-actions.ts`, `apps/web/src/app/profile-actions.test.ts` ;
   message `feat(profile): profile gestures (save, save as new, import, export, reset, remove)`.
@@ -3427,7 +3509,7 @@ panneau abandonne le brouillon) ; `ProfileFiles` créé dans l'amorce (coque ou 
 
 **Subagent.** implementeur-tdd. **Dépend de.** T4, T6, T7, T8 (et, par eux, T1, T2, T3, T5).
 
-**Fichiers.** Modifier `apps/web/src/ui/App.tsx` (l. 8-39, 100-118, 177-188), `apps/web/src/ui/App.test.tsx`,
+**Fichiers.** Modifier `apps/web/src/ui/App.tsx` (l. 8-39, 100-118, bloc du menu des profils avec les bouchons de T6), `apps/web/src/ui/App.test.tsx`,
 `apps/web/src/main.ts` (l. 14-21, 49-51, 99-110).
 
 **Interfaces.**
@@ -3470,7 +3552,7 @@ est dans sa case », `ui/layout.test.ts`, `ui/item-state.test.ts`, `ui/PagesBar.
 - GC10 Le profil ne va jamais dans le `.roomboard` ; aucun composant n'appelle `localStorage`.
 - GC11 Interface : aucun `switch`, aucune taille en `px` dans un `.tsx`, aucun `localStorage`, aucun glisser HTML5 ; libellés en français.
 - GC12 Ne modifier que les fichiers touchés de la tâche ; `app/stage-tags.ts` non touché ; aucune enveloppe de l'hôte dans `App` (P19).
-- GC13 `tsc --noEmit` sans erreur à la fin (l'écart `App.tsx` des tâches T6-T8 disparaît ici).
+- GC13 `tsc --noEmit` sans erreur à la fin.
 
 **Interdits.** Appeler `setMode` à chaque changement de profil ; changer l'outil courant au changement de profil
 (CL5b-19) ; message à l'écran quand `desktop-annotation` est rabattu ; toucher `stage-tags.ts`.
@@ -3688,7 +3770,7 @@ import { ProfileEditor } from "./ProfileEditor";
   );
 ```
 
-  4e. Remplacer le bloc `<Show when={panel() === "profiles"}>…</Show>` (l. 177-188) par :
+  4e. Remplacer le bloc `<Show when={panel() === "profiles"}>…</Show>` (bouchons posés par T6 compris) par :
 
 ```tsx
       <Show when={panel() === "profiles"}>
@@ -4142,12 +4224,13 @@ Seulement si C1 est fusionné. Aucun build de plus que celui du § 2.
 | C1-3 | Profil → Tout remettre à zéro, confirmer | question native ; puis « Par défaut », barre en haut, « CM1 » absent du menu |
 | C1-4 | Profil → Importer… et choisir `cm1.rbprofile` | boîte native « Ouvrir » filtrée sur `rbprofile` ; « CM1 » revient, actif, barre à gauche en grand |
 | C1-5 | choisir « Annotation au démarrage », fermer RoomBoard (Alt+F4), relancer | la coque démarre sur le tableau ordinaire, aucun message (la fenêtre d'annotation arrive avec C11a) |
+| C1-6 | choisir « Par défaut » ; Profil → Modifier… : taille « Petits », Enregistrer ; fermer RoomBoard (Alt+F4), relancer ; puis Profil → Remettre à zéro ce profil | après la relance : « Par défaut » toujours actif, en petits boutons ; après la remise à zéro : boutons moyens, « Remettre à zéro ce profil » grisé |
 
 Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-windows-c1-export.png` (geste C1-2).
 ```
 
-  En fin de `docs/essais/coque-macos.md`, la même section, avec « Cmd+Q » au lieu de « Alt+F4 » au geste C1-5 et la
-  capture `coque-macos-c1-export.png`.
+  En fin de `docs/essais/coque-macos.md`, la même section, avec « Cmd+Q » au lieu de « Alt+F4 » aux gestes C1-5 et
+  C1-6, et la capture `coque-macos-c1-export.png`.
 
 - [ ] **6. Lancer la commande bornée** (verifier-e2e, `verifier.sh --e2e`, puis captures). Un échec de l'essai C1 se
   diagnostique avec `node scripts/essais/c1-profils-navigateur.mjs 2>&1 | tail -30` (le `dist` est déjà construit par
