@@ -51,7 +51,7 @@ export interface TablePicker {
   isOpen(): boolean;
 }
 
-/** Fond de la zone de saisie d'une cellule sans remplissage (HC10-10). */
+/** Fond de la zone de saisie d'une cellule sans remplissage, quand la page n'a pas de fond lisible (HC10-10). */
 export const CELL_EDITOR_BACKGROUND = "#ffffff";
 
 /** Écart sous lequel deux tailles sont égales (Uniformiser, T14) : la moyenne de n tailles égales diffère d'un arrondi. */
@@ -204,7 +204,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         size: at.table.size,
         initial: text,
         spans,
-        background: fill ?? CELL_EDITOR_BACKGROUND,
+        background: fill ?? ctx.doc.page(ctx.page())?.background ?? CELL_EDITOR_BACKGROUND,
       },
       ctx.camera(),
     );

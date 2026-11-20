@@ -260,6 +260,8 @@ function setup(gl: WebGL2RenderingContext): Resources {
 
 export class WebGL2LiveRenderer implements Renderer {
   private res: Resources;
+  /** Fond du dernier drawScene, repeint par l'aperçu de gomme partielle (D20). */
+  private background = PAGE_BACKGROUND;
   private sx = 1;
   private sy = 1;
   private contextLost = false;
@@ -293,6 +295,7 @@ export class WebGL2LiveRenderer implements Renderer {
   }
 
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay?: EditOverlay): void {
+    this.background = page.background !== undefined && tryParseColor(page.background) !== null ? page.background : PAGE_BACKGROUND;
     this.scene.drawScene(page, camera, hidden, overlay);
   }
 
@@ -381,7 +384,7 @@ export class WebGL2LiveRenderer implements Renderer {
     if (sw === 0 || sh === 0) return;
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(x, y, sw, sh);
-    this.color(PAGE_BACKGROUND);
+    this.color(this.background);
     this.draw(gl.TRIANGLES, band);
     gl.disable(gl.SCISSOR_TEST);
   }
