@@ -37,6 +37,8 @@ export const pickerAria = (cols: number, rows: number): string =>
 /** Champ de la boîte : entier de 1 à 64 (illisible : 1). */
 export const clampLines = (v: number): number => (Number.isFinite(v) ? Math.min(TABLE_MAX_LINES, Math.max(1, Math.round(v))) : 1);
 
+/** Touches que le moteur prend sans Ctrl ni Méta (`editAction`, `isPanKey`, engine/input/keys.ts) : gardées par la grille. */
+const ENGINE_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete", "Escape", " "]);
 const ARROWS: Readonly<Record<string, readonly [number, number]>> = {
   ArrowRight: [1, 0],
   ArrowLeft: [-1, 0],
@@ -106,9 +108,12 @@ export function createTablePicker(parent: HTMLElement): TablePickerHost {
       choose(hot.cols, hot.rows);
     }
   });
-  // Toutes les touches pressées dans la grille ou sa boîte lui appartiennent : sans cela, Retour arrière viderait la
-  // cellule active et Échap la sélection derrière elle (`inEditable` ne compte pas un <button>).
+  // Les touches dont le moteur se sert sans Ctrl ni Méta (Retour arrière, Suppr, Échap : `editAction` ; Espace :
+  // `isPanKey`) restent à la grille : sans cela, Retour arrière viderait la cellule active, Échap la sélection derrière
+  // elle et Espace passerait en déplacement de la vue (`inEditable` ne compte pas un <button>). Toute combinaison
+  // Ctrl/Méta remonte à window (Ctrl+S, Ctrl+O : `workspace.key`, main.ts) (T15).
   root.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || !ENGINE_KEYS.has(e.key)) return;
     e.stopPropagation();
     if (e.key !== "Escape") return;
     e.preventDefault();
