@@ -93,3 +93,16 @@ describe("outil Tableau dans les profils (C10a, T6)", () => {
     expect(ids("simple")).not.toContain("table");
   });
 });
+
+describe("outil Pot dans les profils (C6a)", () => {
+  it("defaut et annotation : Pot juste après Tableau, sans préréglage fill ; simple : sans Pot", () => {
+    for (const p of ["defaut", "annotation"]) {
+      const prof = BUILTIN_PROFILES.find((x) => x.id === p)!;
+      const ids = prof.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)));
+      expect(ids[ids.indexOf("table") + 1]).toBe("fill");
+      expect(prof.presets.fill).toBeUndefined();
+    }
+    const simple = BUILTIN_PROFILES.find((x) => x.id === "simple")!;
+    expect(simple.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)))).not.toContain("fill");
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTION_TABLE, CAPABILITY_KEYS, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
-  resolveStartMode, serializeProfile, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
+  resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
 import { layoutFor } from "./ui/layout";
 import profilesSource from "./toolbar-profiles.ts?raw";
@@ -164,7 +164,7 @@ describe("profil de barre (T83, usage § 8)", () => {
   });
 
   it("tables : chaque outil du moteur a son entrée ; actions de l'ancienne barre présentes", () => {
-    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "hand", "line", "pen", "rect", "select", "table", "text"]);
+    expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "fill", "hand", "line", "pen", "rect", "select", "table", "text"]);
     for (const a of ["eraser-mode", "undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "fit-page", "file-new", "file-open", "file-save", "file-save-as", "settings", "profiles", "grid"]) {
       expect(ACTION_TABLE[a], a).toBeDefined();
     }
@@ -323,5 +323,30 @@ describe("actions du tableau (C10a)", () => {
       ["rose", "Rose", "#fecdd3"],
       ["gris", "Gris", "#e5e7eb"],
     ]);
+  });
+});
+
+describe("couleurs du pot (C6a, D16, D17)", () => {
+  it("TOOL_TABLE.fill : « Pot », choix fill ; FILL_COLORS figée : rouge, jaune, vert, bleu, noir ; libellé « Aucune »", () => {
+    expect(TOOL_TABLE["fill"]).toEqual({ label: "Pot", choice: "fill" });
+    expect(FILL_COLORS.map((c) => [c.id, c.color])).toEqual([
+      ["rouge", "#dc2626"], ["jaune", "#facc15"], ["vert", "#16a34a"], ["bleu", "#1d4ed8"], ["noir", "#000000"],
+    ]);
+    expect(Object.isFrozen(FILL_COLORS)).toBe(true);
+    expect(FILL_NONE_LABEL).toBe("Aucune");
+  });
+  it("fillChoices : sans clé presets.fill, la liste figée", () => {
+    expect(fillChoices({})).toEqual(FILL_COLORS);
+    expect(fillChoices({ pen: [{ id: "noir", label: "Noir", color: "#000000", width: 4, rest: {} }] })).toEqual(FILL_COLORS);
+  });
+  it("fillChoices : la clé presets.fill fait foi ; un préréglage sans couleur est sauté (PC7)", () => {
+    const table = { fill: [
+      { id: "a", label: "Ambre", color: "#f59e0b", rest: {} },
+      { id: "b", label: "Sans", rest: {} },
+    ] };
+    expect(fillChoices(table)).toEqual([{ id: "a", label: "Ambre", color: "#f59e0b" }]);
+  });
+  it("fillChoices : clé présente mais vide = aucune couleur (le retrait de la clé est fait par l'éditeur)", () => {
+    expect(fillChoices({ fill: [] })).toEqual([]);
   });
 });
