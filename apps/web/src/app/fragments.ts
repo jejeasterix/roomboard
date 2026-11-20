@@ -117,6 +117,7 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       if (read === null) return false;
       if (!(await accept(tab, read, file.name))) return false;
       try {
+        adopt(tab, read);
         return tab.board.engine.insertPages(read.doc) !== null;
       } finally {
         read.doc.free();
