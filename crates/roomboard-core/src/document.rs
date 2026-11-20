@@ -785,4 +785,221 @@ mod tests {
             )
             .is_empty());
     }
+
+    use std::sync::Arc;
+
+    use crate::asset::AssetInfo;
+    use yrs::{Text, TextPrelim};
+
+    const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+    const TWO: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+    const THREE: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+
+    /// Patron écarté (K4, DAK2) : lire seulement le champ `asset` des images et du fond. Ici aucun élément n'est une
+    /// image : les ids sont rangés dans un `Y.Map` imbriqué, un `Any::Array`, un `Any::Map` lu, un attribut et un
+    /// embed de `Y.Text` ; ce lecteur-là rendrait une liste vide.
+    #[test]
+    fn cited_assets_scans_any_depth() {
+        let d = Document::blank();
+        let nested = MapPrelim::from([(
+            "deep",
+            In::Array(ArrayPrelim::from(vec![
+                In::from(ZERO),
+                In::from("pas-un-asset"),
+            ])),
+        )]);
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("u1")),
+                ("kind", In::from("model3d")),
+                ("nested", In::Map(nested)),
+                (
+                    "refs",
+                    In::Any(Any::Array(vec![Any::from(ABC), Any::from(ABC)].into())),
+                ),
+                (
+                    "legacy",
+                    In::Any(Any::Map(Arc::new(HashMap::from([(
+                        "src".to_string(),
+                        Any::from(EMPTY),
+                    )])))),
+                ),
+                ("content", In::from(TextPrelim::new(""))),
+            ],
+        );
+        let text = {
+            let txn = d.read();
+            let found = d.find_element(&txn, "u1").expect("u1");
+            match found.element.get(&txn, "content") {
+                Some(Out::YText(t)) => t,
+                _ => panic!("texte"),
+            }
+        };
+        {
+            let mut txn = d.doc.transact_mut();
+            let other = "1111111111111111111111111111111111111111111111111111111111111111";
+            text.insert(&mut txn, 0, other); // le texte lui-même n'est pas balayé
+            let attrs = HashMap::from([(Arc::from("href"), Any::from(TWO))]);
+            text.insert_with_attributes(&mut txn, 64, "lien", attrs);
+            let embed = Any::Map(Arc::new(HashMap::from([(
+                "src".to_string(),
+                Any::from(THREE),
+            )])));
+            text.insert_embed(&mut txn, 68, embed);
+        }
+        let before = d.encode_v1();
+        let ids: Vec<String> = d.cited_assets().into_iter().map(|a| a.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                ZERO.to_string(),
+                TWO.to_string(),
+                THREE.to_string(),
+                ABC.to_string(),
+                EMPTY.to_string(),
+            ]
+        );
+        assert!(d.encode_v1() == before, "une lecture n'écrit rien");
+    }
+
+    #[test]
+    fn cited_assets_malformed_meta_falls_back_without_writing() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("u1")),
+                ("kind", In::from("x")),
+                ("a", In::from(ABC)),
+                ("b", In::from(EMPTY)),
+                ("c", In::from(ZERO)),
+            ],
+        );
+        {
+            let mut txn = d.doc.transact_mut();
+            d.assets.insert(&mut txn, ABC, "pas une map");
+            d.assets.insert(
+                &mut txn,
+                EMPTY,
+                MapPrelim::from([
+                    ("name", In::from("fond.jpg")),
+                    ("mime", In::from("")),
+                    ("size", In::from("12")),
+                ]),
+            );
+            d.assets.insert(
+                &mut txn,
+                "CLE-NON-CONFORME",
+                MapPrelim::from([("name", In::from("x"))]),
+            );
+        }
+        let before = d.encode_v1();
+        let cited = d.cited_assets();
+        assert_eq!(cited[0], AssetInfo::fallback(ZERO));
+        assert_eq!(cited[1], AssetInfo::fallback(ABC));
+        assert_eq!(
+            cited[2],
+            AssetInfo {
+                name: "fond.jpg".into(),
+                ..AssetInfo::fallback(EMPTY)
+            }
+        );
+        assert_eq!(
+            cited.len(),
+            3,
+            "une clé non conforme de `assets` n'est jamais citée"
+        );
+        assert_eq!(d.asset("CLE-NON-CONFORME"), None);
+        assert_eq!(d.asset(ZERO), Some(AssetInfo::fallback(ZERO)));
+        assert!(d.encode_v1() == before, "une lecture n'écrit rien");
+    }
+
+    fn first_page_map(d: &Document) -> (String, MapRef) {
+        let p = d.page_ids()[0].clone();
+        let page = {
+            let txn = d.read();
+            d.find_page(&txn, &p).expect("page").1
+        };
+        (p, page)
+    }
+
+    #[test]
+    fn unreadable_backdrop_keeps_page_readable() {
+        let d = Document::blank();
+        let (p, page) = first_page_map(&d);
+        let set = |v: In| page.insert(&mut d.doc.transact_mut(), "backdrop", v);
+        set(In::Map(MapPrelim::from([
+            ("kind", In::from("image")),
+            ("w", In::from(10.0)),
+            ("h", In::from(10.0)),
+        ])));
+        assert_eq!(d.page(&p).expect("page lisible").backdrop, None);
+        set(In::from("pas une map"));
+        assert_eq!(d.page(&p).expect("page lisible").backdrop, None);
+        set(In::Map(MapPrelim::from([
+            ("asset", In::from(ABC.to_uppercase().as_str())),
+            ("kind", In::from("image")),
+        ])));
+        assert_eq!(d.page(&p).expect("page lisible").backdrop, None);
+        set(In::Map(MapPrelim::from([
+            ("asset", In::from(ABC)),
+            ("kind", In::from("pdf-page")),
+            ("fit", In::from("contain")),
+            ("w", In::from(1000.0)),
+            ("h", In::from(500.0)),
+        ])));
+        let b = d
+            .page(&p)
+            .expect("page")
+            .backdrop
+            .expect("fond d'une version plus récente");
+        assert_eq!((b.kind.as_str(), b.fit.as_str()), ("pdf-page", "contain"));
+        assert_eq!(b.rect.map(|r| r.y1), Some(960.0));
+        set(In::Map(MapPrelim::from([
+            ("asset", In::from(ABC)),
+            ("kind", In::from("image")),
+        ])));
+        let b = d
+            .page(&p)
+            .expect("page")
+            .backdrop
+            .expect("fond sans boîte");
+        assert_eq!((b.w, b.h, b.rect), (None, None, None));
+    }
+
+    /// Le fond suit la largeur lue de la page (page à hauteur infinie), pas la largeur par défaut ni la hauteur : une
+    /// image haute dépasse la hauteur de la page au lieu d'y être contenue.
+    #[test]
+    fn backdrop_rect_follows_page_width_not_height() {
+        let d = Document::blank();
+        let (p, page) = first_page_map(&d);
+        {
+            let mut txn = d.doc.transact_mut();
+            page.insert(&mut txn, "width", 960.0);
+            page.insert(
+                &mut txn,
+                "backdrop",
+                MapPrelim::from([
+                    ("asset", In::from(ABC)),
+                    ("kind", In::from("image")),
+                    ("w", In::from(500.0)),
+                    ("h", In::from(1000.0)),
+                    ("fit", In::from("width")),
+                ]),
+            );
+        }
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.width, v.height), (960.0, 1080.0));
+        assert_eq!(
+            v.backdrop.and_then(|b| b.rect),
+            Some(crate::query::Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 960.0,
+                y1: 1920.0
+            })
+        );
+    }
 }

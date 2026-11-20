@@ -1734,4 +1734,373 @@ pub(crate) mod tests {
         assert_eq!(d.element(&a).expect("a").transform, before);
         assert_eq!(n.since(), 0);
     }
+
+    use crate::asset::{AssetInfo, AssetRef};
+
+    const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    fn png() -> AssetRef {
+        AssetRef {
+            id: ABC.into(),
+            name: "photo.png".into(),
+            mime: "image/png".into(),
+            size: 3.0,
+        }
+    }
+
+    fn add_image(
+        d: &mut Document,
+        page: &str,
+        asset: AssetRef,
+        matrix: Transform,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::AddImage {
+            page: page.into(),
+            asset,
+            w: 640.0,
+            h: 480.0,
+            matrix,
+        })
+    }
+
+    #[test]
+    fn add_image_is_one_step_and_writes_meta_once() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let c = add_image(&mut d, &p, png(), [1.0, 0.0, 0.0, 1.0, 10.0, 20.0]).expect("image");
+        assert_eq!(c.pages, vec![p.clone()]);
+        let a = c.ids[0].clone();
+        let v = d.element(&a).expect("vue");
+        assert_eq!(
+            (v.kind.as_str(), v.transform),
+            ("image", [1.0, 0.0, 0.0, 1.0, 10.0, 20.0])
+        );
+        assert_eq!(
+            v.image.map(|i| (i.asset, i.w, i.h)),
+            Some((ABC.to_string(), 640.0, 480.0))
+        );
+        let renamed = AssetRef {
+            name: "autre.png".into(),
+            ..png()
+        };
+        let b = add_image(&mut d, &p, renamed, IDENTITY).expect("image 2").ids[0].clone();
+        assert_eq!(d.element_ids(&p), vec![a, b]);
+        assert_eq!(d.cited_assets(), vec![png()]);
+        assert_eq!(d.asset(ABC), Some(png()));
+        assert!(d.undo());
+        assert!(d.can_undo(), "l'image et sa métadonnée font une seule étape");
+        assert!(d.undo());
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn undo_add_image_removes_new_asset_meta_only() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        add_image(&mut d, &p, png(), IDENTITY).expect("1");
+        add_image(&mut d, &p, png(), IDENTITY).expect("2");
+        assert!(d.undo());
+        assert_eq!(
+            d.asset(ABC),
+            Some(png()),
+            "annuler la seconde garde la métadonnée"
+        );
+        assert!(d.undo());
+        assert_eq!(d.cited_assets(), Vec::<AssetInfo>::new());
+        assert_eq!(
+            d.asset(ABC),
+            Some(AssetInfo::fallback(ABC)),
+            "annuler la première la retire"
+        );
+    }
+
+    #[test]
+    fn add_image_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let w = writes(&d);
+        let bad = [
+            (
+                AssetRef {
+                    id: ABC.to_uppercase(),
+                    ..png()
+                },
+                CommandError::BadAsset,
+            ),
+            (
+                AssetRef {
+                    id: ABC[..63].into(),
+                    ..png()
+                },
+                CommandError::BadAsset,
+            ),
+            (
+                AssetRef {
+                    mime: String::new(),
+                    ..png()
+                },
+                CommandError::BadAsset,
+            ),
+            (AssetRef { size: -1.0, ..png() }, CommandError::BadAsset),
+            (AssetRef { size: 1.5, ..png() }, CommandError::BadAsset),
+            (
+                AssetRef {
+                    size: f64::NAN,
+                    ..png()
+                },
+                CommandError::BadAsset,
+            ),
+        ];
+        for (asset, err) in bad {
+            assert_eq!(add_image(&mut d, &p, asset, IDENTITY), Err(err));
+        }
+        for (iw, ih) in [(0.0, 1.0), (1.0, f64::INFINITY), (f64::NAN, 1.0)] {
+            assert_eq!(
+                d.apply(Command::AddImage {
+                    page: p.clone(),
+                    asset: png(),
+                    w: iw,
+                    h: ih,
+                    matrix: IDENTITY
+                }),
+                Err(CommandError::BadImage)
+            );
+        }
+        assert_eq!(
+            add_image(&mut d, &p, png(), [0.0; 6]),
+            Err(CommandError::BadMatrix)
+        );
+        assert_eq!(
+            add_image(&mut d, "nulle-part", png(), IDENTITY),
+            Err(CommandError::UnknownPage("nulle-part".into()))
+        );
+        assert_eq!(w.since(), 0);
+        assert!(!d.can_undo());
+        assert!(d.cited_assets().is_empty());
+    }
+
+    #[test]
+    fn image_moves_hits_and_eraser_ignores_it() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = add_image(&mut d, &p, png(), [1.0, 0.0, 0.0, 1.0, 100.0, 100.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        assert_eq!(d.hit_test(&p, 400.0, 300.0, 0.0), Some(a.clone()));
+        let w = writes(&d);
+        let e = d
+            .apply(Command::Erase {
+                page: p.clone(),
+                path: vec![100.0, 300.0, 740.0, 300.0],
+                radius: 10.0,
+                mode: EraseMode::Object,
+            })
+            .expect("gomme");
+        assert!(e.removed.is_empty());
+        assert_eq!(w.since(), 0);
+        d.apply(Command::Transform {
+            ids: vec![a.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 10.0, 0.0],
+        })
+        .expect("transform");
+        assert_eq!(
+            d.element(&a).expect("vue").transform,
+            [1.0, 0.0, 0.0, 1.0, 110.0, 100.0]
+        );
+        d.apply(Command::Delete { ids: vec![a] }).expect("delete");
+        assert_eq!(
+            d.asset(ABC),
+            Some(png()),
+            "supprimer l'image laisse sa métadonnée (K3)"
+        );
+        assert!(d.cited_assets().is_empty());
+    }
+
+    fn backdrop(asset: AssetRef, w: f64, h: f64, fit: &str) -> Option<BackdropInput> {
+        Some(BackdropInput {
+            asset,
+            w,
+            h,
+            fit: fit.into(),
+        })
+    }
+
+    /// Fond calé sur la largeur de la page (page à hauteur infinie) : 1000 × 500 sur 1920 de large donne 1920 × 960,
+    /// et la page garde sa taille.
+    #[test]
+    fn set_backdrop_scales_to_page_width() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let c = d
+            .apply(Command::SetBackdrop {
+                page: p.clone(),
+                backdrop: backdrop(png(), 1000.0, 500.0, "width"),
+            })
+            .expect("fond");
+        assert_eq!(c.pages, vec![p.clone()]);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.width, v.height), (1920.0, 1080.0));
+        let b = v.backdrop.expect("fond");
+        assert_eq!(
+            (b.asset.as_str(), b.kind.as_str(), b.fit.as_str()),
+            (ABC, "image", "width")
+        );
+        assert_eq!((b.w, b.h), (Some(1000.0), Some(500.0)));
+        assert_eq!(
+            b.rect,
+            Some(crate::query::Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 1920.0,
+                y1: 960.0
+            })
+        );
+        assert_eq!(d.hit_test(&p, 960.0, 480.0, 0.0), None);
+        assert!(d.element_ids(&p).is_empty());
+        assert_eq!(d.cited_assets(), vec![png()]);
+        assert!(d.undo());
+        assert_eq!(d.page(&p).expect("page").backdrop, None);
+        assert!(!d.can_undo(), "fond et métadonnée : une seule étape");
+    }
+
+    #[test]
+    fn set_backdrop_same_value_or_none_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let w = writes(&d);
+        d.apply(Command::SetBackdrop {
+            page: p.clone(),
+            backdrop: None,
+        })
+        .expect("rien à retirer");
+        assert_eq!(w.since(), 0);
+        d.apply(Command::SetBackdrop {
+            page: p.clone(),
+            backdrop: backdrop(png(), 1000.0, 500.0, "width"),
+        })
+        .expect("fond");
+        let w = writes(&d);
+        let v = d.version();
+        let c = d
+            .apply(Command::SetBackdrop {
+                page: p.clone(),
+                backdrop: backdrop(png(), 1000.0, 500.0, "width"),
+            })
+            .expect("même");
+        assert_eq!((c.version, w.since()), (v, 0));
+    }
+
+    #[test]
+    fn remove_backdrop_then_undo_restores_it() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        d.apply(Command::SetBackdrop {
+            page: p.clone(),
+            backdrop: backdrop(png(), 1000.0, 500.0, "width"),
+        })
+        .expect("fond");
+        d.apply(Command::SetBackdrop {
+            page: p.clone(),
+            backdrop: None,
+        })
+        .expect("retrait");
+        assert_eq!(d.page(&p).expect("page").backdrop, None);
+        assert!(d.undo());
+        assert_eq!(
+            d.page(&p)
+                .expect("page")
+                .backdrop
+                .and_then(|b| b.rect)
+                .map(|r| r.y1),
+            Some(960.0)
+        );
+    }
+
+    #[test]
+    fn set_backdrop_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let w = writes(&d);
+        for (b, err) in [
+            (
+                backdrop(png(), 10.0, 10.0, "contain"),
+                CommandError::BadImage,
+            ),
+            (backdrop(png(), 0.0, 10.0, "width"), CommandError::BadImage),
+            (
+                backdrop(
+                    AssetRef {
+                        mime: String::new(),
+                        ..png()
+                    },
+                    10.0,
+                    10.0,
+                    "width",
+                ),
+                CommandError::BadAsset,
+            ),
+        ] {
+            assert_eq!(
+                d.apply(Command::SetBackdrop {
+                    page: p.clone(),
+                    backdrop: b
+                }),
+                Err(err)
+            );
+        }
+        assert_eq!(
+            d.apply(Command::SetBackdrop {
+                page: "nulle-part".into(),
+                backdrop: None
+            }),
+            Err(CommandError::UnknownPage("nulle-part".into()))
+        );
+        assert_eq!(w.since(), 0);
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn new_asset_errors_have_readable_messages() {
+        assert!(CommandError::BadAsset
+            .to_string()
+            .starts_with("asset invalide"));
+        assert!(CommandError::BadImage.to_string().contains("« width »"));
+    }
+
+    /// G4 : métadonnée, élément image et fond en champs de `Y.Map` ; trente rechargements gardent les octets.
+    #[test]
+    fn image_and_backdrop_reload_keep_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        add_image(&mut d, &p, png(), IDENTITY).expect("image");
+        let jpg = AssetRef {
+            id: EMPTY.into(),
+            name: "fond.jpg".into(),
+            mime: "image/jpeg".into(),
+            size: 0.0,
+        };
+        d.apply(Command::SetBackdrop {
+            page: p,
+            backdrop: backdrop(jpg, 1000.0, 500.0, "width"),
+        })
+        .expect("fond");
+        let ybin = d.encode_v1();
+        let file = save(&d, &meta).expect("save");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            assert!(r.encode_v1() == ybin, "ybin différent au rechargement {i}");
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+        }
+    }
 }

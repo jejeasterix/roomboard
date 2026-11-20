@@ -60,8 +60,19 @@ mod tests {
         let doc = Doc::new();
         let pages = doc.get_or_insert_array("pages");
         let meta = doc.get_or_insert_map("meta");
-        let h = History::new(&doc, &pages, &meta);
+        let assets = doc.get_or_insert_map("assets");
+        let h = History::new(&doc, &pages, &meta, &assets);
         (doc, pages, meta, h)
+    }
+
+    #[test]
+    fn assets_is_in_scope() {
+        let (doc, _p, _m, mut h) = setup();
+        let assets = doc.get_or_insert_map("assets");
+        assets.insert(&mut doc.transact_mut_with(LOCAL), "k", 1.0);
+        assert!(h.can_undo());
+        assert!(h.undo());
+        assert!(assets.get(&doc.transact(), "k").is_none());
     }
 
     #[test]

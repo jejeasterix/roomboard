@@ -231,3 +231,15 @@ fn unknown_kind_is_kept_moved_and_resaved() {
         (Some(300.0), Some(2), Some(vec![ABC.to_string()]))
     );
 }
+
+/// Patron écarté (K4, DAK2) : `h1` n'est ni une image ni un fond, son id d'asset est rangé dans un `Any::Array` ; un
+/// lecteur du seul champ `asset` le perdrait au réenregistrement.
+#[test]
+fn unknown_fixture_cites_asset_in_any_array() {
+    let d = load(&unknown_bytes()).expect("load");
+    let before = d.encode_v1();
+    let cited = d.cited_assets();
+    assert_eq!(cited.len(), 1);
+    assert_eq!(cited[0], roomboard_core::asset::AssetInfo::fallback(ABC));
+    assert!(d.encode_v1() == before, "une lecture n'écrit rien");
+}
