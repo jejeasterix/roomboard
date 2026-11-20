@@ -702,4 +702,86 @@ mod tests {
             ]
         );
     }
+
+    // C2 (T8) : image, fond, parties séparées, par leurs `_inner`.
+
+    const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    fn png() -> AssetRef {
+        AssetRef {
+            id: ABC.into(),
+            name: "photo.png".into(),
+            mime: "image/png".into(),
+            size: 3.0,
+        }
+    }
+
+    #[test]
+    fn add_image_inner_reads_back_image_and_meta() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let c = d
+            .add_image_inner(&p, png(), [640.0, 480.0], &[1.0, 0.0, 0.0, 1.0, 5.0, 6.0])
+            .expect("image");
+        let e = d.core.element(&c.ids[0]).expect("vue");
+        assert_eq!(e.kind, "image");
+        assert_eq!(d.core.cited_assets(), vec![png()]);
+        assert_eq!(
+            d.add_image_inner(&p, png(), [1.0, 1.0], &[1.0, 0.0]),
+            Err(CommandError::BadMatrix)
+        );
+    }
+
+    #[test]
+    fn set_backdrop_inner_then_clear() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let input = BackdropInput {
+            asset: png(),
+            w: 1000.0,
+            h: 500.0,
+            fit: "width".into(),
+        };
+        d.set_backdrop_inner(&p, Some(input)).expect("fond");
+        assert_eq!(
+            d.core
+                .page(&p)
+                .and_then(|v| v.backdrop)
+                .and_then(|b| b.rect)
+                .map(|r| r.y1),
+            Some(960.0)
+        );
+        d.set_backdrop_inner(&p, None).expect("retrait");
+        assert_eq!(d.core.page(&p).and_then(|v| v.backdrop), None);
+    }
+
+    #[test]
+    fn save_parts_then_load_parts_inner_keeps_document_and_created() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        d.add_image_inner(&p, png(), [2.0, 2.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image");
+        let parts = d
+            .save_parts_inner("2026-11-20T00:00:00Z", "0.1.0")
+            .expect("parts");
+        let mut e = Document::load_parts_inner(&parts.manifest, &parts.ybin).expect("load_parts");
+        assert_eq!(e.core.cited_assets(), vec![png()]);
+        let again = e
+            .save_parts_inner("2026-11-21T00:00:00Z", "0.1.0")
+            .expect("parts 2");
+        let (_, m) =
+            roomboard_core::format::load_parts(&again.manifest, &again.ybin).expect("relu");
+        assert_eq!(m.created, "2026-11-20T00:00:00Z");
+    }
+
+    /// `save` et `save_parts` partagent `created` : un `save_parts` d'abord fixe la date que `save` recopie ensuite.
+    #[test]
+    fn save_parts_first_fixes_created_for_save() {
+        let mut d = Document::blank();
+        d.save_parts_inner("2026-11-20T00:00:00Z", "0.1.0")
+            .expect("parts");
+        let bytes = d.save_inner("2026-11-22T00:00:00Z", "0.1.0").expect("save");
+        let e = Document::load_inner(&bytes).expect("load");
+        assert_eq!(e.created.as_deref(), Some("2026-11-20T00:00:00Z"));
+    }
 }

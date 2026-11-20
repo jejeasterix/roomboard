@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AssetRef, CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
-import { createWasmCore, toBounds, toChange, toElementView, type WasmModule } from "./wasm-core";
+import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toPageView, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -115,6 +115,63 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
       ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000"],
       ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
+    ]);
+  });
+
+  // Discrimine le patron écarté (T8) : lever en fin de `toElementView` sur un kind non reconnu, ou exiger `style`
+  // pour tout élément, ferait échouer la lecture d'une image ou d'un élément venu d'une version plus récente (U3).
+  it("toElementView : image et kind inconnu sans style, kind non reconnu → unknown", () => {
+    const t = [1, 0, 0, 1, 5, 6];
+    const hash = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    expect(toElementView({ id: "i1", kind: "image", transform: t, image: { asset: hash, w: 2, h: 3 } })).toEqual({
+      id: "i1", kind: "image", transform: t, image: { asset: hash, w: 2, h: 3 },
+    });
+    const u = { id: "u1", kind: "unknown", transform: t, unknown: { sourceKind: "hologram", w: 300, h: 200 } };
+    expect(toElementView(u)).toEqual(u);
+    expect(toElementView({ id: "u2", kind: "video3d", transform: t })).toEqual({
+      id: "u2", kind: "unknown", transform: t, unknown: { sourceKind: "video3d", w: 100, h: 100 },
+    });
+    expect(toElementView({ id: "u3", kind: "video3d", transform: t, unknown: { w: 40, h: 30 } })).toEqual({
+      id: "u3", kind: "unknown", transform: t, unknown: { sourceKind: "video3d", w: 40, h: 30 },
+    });
+    expect(() => toElementView({ id: "u4", kind: "video3d", transform: [1, 0] })).toThrow("ElementView invalide");
+    expect(() => toElementView({ kind: "video3d", transform: t })).toThrow("ElementView invalide");
+    expect(() => toElementView({ id: "i2", kind: "image", transform: t })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...u, unknown: { sourceKind: "x", w: 0, h: 1 } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ id: "s1", kind: "stroke", transform: t })).toThrow("ElementView invalide");
+  });
+
+  it("toPageView et toAssetInfo : null pour rien, erreur pour une forme fausse", () => {
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff" };
+    expect(toPageView(undefined)).toBeNull();
+    expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null });
+    const b = { asset: "a".repeat(64), kind: "pdf-page", w: undefined, h: 5, fit: "contain", rect: undefined };
+    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, w: null, rect: null } });
+    expect(() => toPageView({ ...page, width: "1920" })).toThrow("PageView invalide");
+    expect(() => toPageView({ ...page, backdrop: { ...b, asset: 3 } })).toThrow("PageView invalide");
+    const info = { id: "a".repeat(64), name: "n", mime: "image/png", size: 3 };
+    expect(toAssetInfo(info)).toEqual(info);
+    expect(() => toAssetInfo({ ...info, size: "3" })).toThrow("AssetInfo invalide");
+  });
+
+  it("AddImage et SetBackdrop : retour contrôlé par toChange, arguments dans l'ordre de la liaison", () => {
+    const drift = { pages: ["p1"], ids: ["e1"], full: false, version: 1 };
+    const calls: unknown[][] = [];
+    const record = (name: string) => (...args: unknown[]): unknown => {
+      calls.push([name, ...args]);
+      return drift;
+    };
+    const doc = { add_image: record("add_image"), set_backdrop: record("set_backdrop"), clear_backdrop: record("clear_backdrop") };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    const d = createWasmCore(stub as unknown as WasmModule).blank();
+    const a = { id: "a".repeat(64), name: "n.png", mime: "image/png", size: 3 };
+    expect(() => d.apply({ type: "AddImage", page: "p1", asset: a, w: 2, h: 3, matrix: [1, 0, 0, 1, 4, 5] })).toThrow("Change invalide");
+    expect(() => d.apply({ type: "SetBackdrop", page: "p1", backdrop: { asset: a, w: 10, h: 20, fit: "width" } })).toThrow("Change invalide");
+    expect(() => d.apply({ type: "SetBackdrop", page: "p1", backdrop: null })).toThrow("Change invalide");
+    expect(calls).toEqual([
+      ["add_image", "p1", a.id, "n.png", "image/png", 3, 2, 3, new Float64Array([1, 0, 0, 1, 4, 5])],
+      ["set_backdrop", "p1", a.id, "n.png", "image/png", 3, 10, 20, "width"],
+      ["clear_backdrop", "p1"],
     ]);
   });
 });
@@ -577,7 +634,7 @@ const BAD_IMAGE = "image invalide (largeur et hauteur finies > 0 attendues, ajus
 const png = { id: ABC, name: "photo.png", mime: "image/png", size: 3 } as const;
 const jpg = { id: EMPTY_HASH, name: "fond.jpg", mime: "image/jpeg", size: 0 } as const;
 const I: Matrix = [1, 0, 0, 1, 0, 0];
-const c2Factories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
+const c2Factories = factories;
 
 describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
   const image = (d: CoreDocument, p: string, asset: AssetRef = png, matrix: Matrix = I): string =>
@@ -702,6 +759,29 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
     blank: (): CoreDocument => need().core.blank(),
     load: (b: Uint8Array): CoreDocument => need().core.load(b),
   };
+
+  const fixtureOf = (path: string): Uint8Array => new Uint8Array(fs.readFileSync(new URL(path, import.meta.url)));
+
+  it("élément de type inconnu : gardé, sans erreur (fixture binaire du cœur et fixture de la fausse liaison)", () => {
+    const real = core.load(fixtureOf("../../../../crates/roomboard-core/tests/fixtures/element-inconnu.roomboard"));
+    const fake = fakeCore.load(fixtureOf("./fixtures/element-inconnu.fake.json"));
+    expect(real.element("h1")).toEqual({
+      id: "h1", kind: "unknown", transform: [1, 0, 0, 1, 100, 50], unknown: { sourceKind: "hologram", w: 300, h: 200 },
+    });
+    for (const id of ["h1", "h2"]) expect(real.element(id)).toEqual(fake.element(id));
+    expect(real.citedAssets()).toEqual(fake.citedAssets());
+    expect(real.hitTest("p1", 50, 50, 0)).toBe("h2");
+    expect(real.canUndo()).toBe(false);
+    real.free();
+  });
+
+  it("fichier du socle : ouvert par le vrai module, réenregistré à l'identique (S5)", () => {
+    const socle = fixtureOf("../../../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard");
+    const d = core.load(socle);
+    expect(d.pageIds()).toHaveLength(2);
+    expect(new Uint8Array(d.save("2026-11-20T00:00:00Z", "0.1.0"))).toEqual(socle);
+    d.free();
+  });
 
   it("version non vide", () => {
     expect(core.version().length).toBeGreaterThan(0);
