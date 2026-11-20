@@ -1,6 +1,8 @@
 //! Liaison wasm-bindgen du cœur RoomBoard (DA5, D10). Une méthode par commande ; objets (Change, ElementView,
 //! Bounds, capacités) par serde-wasm-bindgen ; points et contours en Float32Array. Chaque méthode exposée délègue à
 //! une méthode `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use roomboard_core::asset::AssetRef;
@@ -14,6 +16,7 @@ use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
 use roomboard_core::query::Bounds;
+use roomboard_core::rich_text::TextAttr;
 use roomboard_core::shape::ShapeKind;
 use wasm_bindgen::prelude::*;
 
@@ -97,6 +100,140 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
         mime: mime.to_string(),
         size,
     }
+}
+
+/// Valeur d'un patch `FormatText` venue de la page (C7, T7) ; `null` arrive en `None` (retrait). Lue par
+/// `WireVisitor` plutôt que par `#[serde(untagged)]`, qui tirait dans le module la machinerie `Content` de serde (T10) ;
+/// mêmes valeurs acceptées : booléen, nombre (entier ou flottant), chaîne ou octets UTF-8 ; tout le reste est refusé.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WireValue {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
+impl<'de> serde::Deserialize<'de> for WireValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_any(WireVisitor)
+    }
+}
+
+struct WireVisitor;
+
+impl<'de> serde::de::Visitor<'de> for WireVisitor {
+    type Value = WireValue;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un booléen, un nombre ou une chaîne")
+    }
+
+    fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<WireValue, E> {
+        Ok(WireValue::Bool(b))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, n: i64) -> Result<WireValue, E> {
+        Ok(WireValue::Number(n as f64))
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, n: u64) -> Result<WireValue, E> {
+        Ok(WireValue::Number(n as f64))
+    }
+
+    fn visit_f64<E: serde::de::Error>(self, n: f64) -> Result<WireValue, E> {
+        Ok(WireValue::Number(n))
+    }
+
+    /// Refusé comme avec `untagged`, où un `char` ne se lisait pas en `String` (par défaut, serde le passerait à
+    /// `visit_str`).
+    fn visit_char<E: serde::de::Error>(self, c: char) -> Result<WireValue, E> {
+        Err(E::invalid_type(serde::de::Unexpected::Char(c), &self))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<WireValue, E> {
+        Ok(WireValue::Text(s.to_owned()))
+    }
+
+    fn visit_string<E: serde::de::Error>(self, s: String) -> Result<WireValue, E> {
+        Ok(WireValue::Text(s))
+    }
+
+    fn visit_bytes<E: serde::de::Error>(self, b: &[u8]) -> Result<WireValue, E> {
+        match std::str::from_utf8(b) {
+            Ok(s) => Ok(WireValue::Text(s.to_owned())),
+            Err(_) => Err(E::invalid_value(serde::de::Unexpected::Bytes(b), &self)),
+        }
+    }
+}
+
+/// Une entrée du patch → entrée du cœur (contrôle 1 de T7) : clé inconnue ou valeur au mauvais type : `BadFormat`.
+fn wire_attr(k: &str, v: Option<WireValue>) -> Result<TextAttr, CommandError> {
+    Ok(match (k, v) {
+        ("bold", None) => TextAttr::Bold(false),
+        ("bold", Some(WireValue::Bool(b))) => TextAttr::Bold(b),
+        ("italic", None) => TextAttr::Italic(false),
+        ("italic", Some(WireValue::Bool(b))) => TextAttr::Italic(b),
+        ("underline", None) => TextAttr::Underline(false),
+        ("underline", Some(WireValue::Bool(b))) => TextAttr::Underline(b),
+        ("color", None) => TextAttr::Color(None),
+        ("color", Some(WireValue::Text(s))) => TextAttr::Color(Some(s)),
+        ("size", None) => TextAttr::Size(None),
+        ("size", Some(WireValue::Number(n))) => TextAttr::Size(Some(n as f32)),
+        ("font", None) => TextAttr::Font(None),
+        ("font", Some(WireValue::Text(s))) => TextAttr::Font(Some(s)),
+        _ => return Err(CommandError::BadFormat),
+    })
+}
+
+/// Patch de la page → entrées du cœur (contrôle 1 de T7), dans l'ordre des clés : clé inconnue ou valeur au mauvais
+/// type : `BadFormat`. Les valeurs hors domaine (couleur, police, taille) sont refusées ensuite par le cœur
+/// (`valid_attrs`). Réservée aux tests (T11) : la liaison lit le patch par `read_patch`.
+#[cfg(test)]
+pub fn wire_attrs(
+    patch: BTreeMap<String, Option<WireValue>>,
+) -> Result<Vec<TextAttr>, CommandError> {
+    patch.into_iter().map(|(k, v)| wire_attr(&k, v)).collect()
+}
+
+/// Clés connues d'un patch, dans l'ordre où une `BTreeMap<String, _>` les range : celui des entrées rendues.
+const PATCH_KEYS: [&str; 6] = ["bold", "color", "font", "italic", "size", "underline"];
+
+/// Lit la table du patch clé par clé (T10 : sans instancier `BTreeMap<String, Option<WireValue>>` dans le module) ;
+/// une clé répétée garde sa dernière valeur, comme l'insertion dans une `BTreeMap`.
+struct PatchVisitor;
+
+impl<'de> serde::de::Visitor<'de> for PatchVisitor {
+    type Value = [Option<Option<WireValue>>; 6];
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un objet")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut slots = Self::Value::default();
+        while let Some(k) = map.next_key::<String>()? {
+            let Some(i) = PATCH_KEYS.iter().position(|p| *p == k) else {
+                return Err(serde::de::Error::custom("clé inconnue"));
+            };
+            slots[i] = Some(map.next_value()?);
+        }
+        Ok(slots)
+    }
+}
+
+/// Lit le patch de `format_text` : chaque valeur en `Option` (une clé à `null` est un retrait, jamais une erreur) ;
+/// pas un objet, ou valeur ni booléen, ni nombre, ni chaîne : `BadFormat`. Générique sur le désérialiseur pour être
+/// testée en natif (hors wasm32, `serde_wasm_bindgen` panique).
+fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, CommandError> {
+    let slots = d
+        .deserialize_map(PatchVisitor)
+        .map_err(|_| CommandError::BadFormat)?;
+    let mut attrs = Vec::new();
+    for (k, v) in PATCH_KEYS.iter().zip(slots) {
+        if let Some(v) = v {
+            attrs.push(wire_attr(k, v)?);
+        }
+    }
+    Ok(attrs)
 }
 
 /// Grille reçue de JS (G12) : `nums` = 6 nombres par niveau (`sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1) ;
@@ -413,6 +550,24 @@ impl Document {
         to_js(&self.transform_inner(ids, matrix).map_err(cmd_err)?)
     }
 
+    /// C7 : `attrs` = patch `TextAttrsPatch` sans clé `undefined` (retirées par `wasm-core.ts`, T7) ; `null` = retrait ;
+    /// `start`, `len` en unités UTF-16 du contenu.
+    pub fn format_text(
+        &mut self,
+        id: &str,
+        start: u32,
+        len: u32,
+        attrs: JsValue,
+        box_height: Option<f64>,
+    ) -> Result<JsValue, JsError> {
+        let attrs = read_patch(serde_wasm_bindgen::Deserializer::from(attrs)).map_err(cmd_err)?;
+        to_js(
+            &self
+                .format_text_inner(id, start, len, attrs, box_height)
+                .map_err(cmd_err)?,
+        )
+    }
+
     pub fn element(&self, id: &str) -> Result<JsValue, JsError> {
         match self.core.element(id) {
             Some(e) => to_js(&e),
@@ -669,6 +824,23 @@ impl Document {
     ) -> Result<Change, CommandError> {
         let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
         self.run(Command::Transform { ids, matrix: m })
+    }
+
+    pub fn format_text_inner(
+        &mut self,
+        id: &str,
+        start: u32,
+        len: u32,
+        attrs: Vec<TextAttr>,
+        box_height: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::FormatText {
+            id: id.to_string(),
+            start,
+            len,
+            attrs,
+            box_height,
+        })
     }
 
     /// `full = true` (tout invalider) seulement si une étape a été défaite.
@@ -1049,6 +1221,173 @@ mod tests {
         let bytes = d.save_inner("2026-11-22T00:00:00Z", "0.1.0").expect("save");
         let e = Document::load_inner(&bytes).expect("load");
         assert_eq!(e.created.as_deref(), Some("2026-11-20T00:00:00Z"));
+    }
+
+    // C7 (T6) : liaison `format_text`, par `read_patch`, `wire_attrs` et `format_text_inner`.
+
+    /// Valeur JS simulée en natif, lue comme par `serde_wasm_bindgen` : `null` donne `None` à une option, `()` sinon.
+    #[derive(Clone, Copy)]
+    enum Js {
+        Null,
+        Bool(bool),
+        Num(f64),
+        Str(&'static str),
+    }
+
+    impl<'de> serde::de::IntoDeserializer<'de> for Js {
+        type Deserializer = Self;
+
+        fn into_deserializer(self) -> Self {
+            self
+        }
+    }
+
+    impl<'de> serde::Deserializer<'de> for Js {
+        type Error = serde::de::value::Error;
+
+        fn deserialize_any<V: serde::de::Visitor<'de>>(
+            self,
+            v: V,
+        ) -> Result<V::Value, Self::Error> {
+            match self {
+                Js::Null => v.visit_unit(),
+                Js::Bool(b) => v.visit_bool(b),
+                Js::Num(n) => v.visit_f64(n),
+                Js::Str(s) => v.visit_str(s),
+            }
+        }
+
+        fn deserialize_option<V: serde::de::Visitor<'de>>(
+            self,
+            v: V,
+        ) -> Result<V::Value, Self::Error> {
+            match self {
+                Js::Null => v.visit_none(),
+                _ => v.visit_some(self),
+            }
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf unit unit_struct
+            newtype_struct seq tuple tuple_struct map struct enum identifier ignored_any
+        }
+    }
+
+    fn read(pairs: Vec<(&'static str, Js)>) -> Result<Vec<TextAttr>, CommandError> {
+        read_patch(serde::de::value::MapDeserializer::<
+            _,
+            serde::de::value::Error,
+        >::new(pairs.into_iter()))
+    }
+
+    /// Patron écarté (T6) : lu en `HashMap<String, WireValue>` sans `Option`, un `null` de la page (retrait) serait
+    /// une erreur ; lu sans contrôle de type, `bold: "oui"` passerait. Les deux rougissent ici, à la désérialisation.
+    #[test]
+    fn read_patch_takes_null_as_removal_and_checks_types() {
+        assert_eq!(
+            read(vec![
+                ("color", Js::Null),
+                ("bold", Js::Null),
+                ("size", Js::Num(72.0)),
+                ("italic", Js::Bool(true)),
+            ]),
+            Ok(vec![
+                TextAttr::Bold(false),
+                TextAttr::Color(None),
+                TextAttr::Italic(true),
+                TextAttr::Size(Some(72.0))
+            ])
+        );
+        assert_eq!(
+            read(vec![("font", Js::Str("Georgia")), ("underline", Js::Null)]),
+            Ok(vec![
+                TextAttr::Font(Some("Georgia".into())),
+                TextAttr::Underline(false)
+            ])
+        );
+        for bad in [
+            ("bold", Js::Str("oui")),
+            ("size", Js::Str("72")),
+            ("color", Js::Num(5.0)),
+            ("font", Js::Bool(true)),
+            ("href", Js::Null),
+        ] {
+            assert_eq!(read(vec![bad]), Err(CommandError::BadFormat), "{}", bad.0);
+        }
+    }
+
+    fn patch(pairs: Vec<(&str, Option<WireValue>)>) -> BTreeMap<String, Option<WireValue>> {
+        pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    }
+
+    /// T7 : `null` (None) et `false` retirent ; clé inconnue ou valeur au mauvais type : `BadFormat`.
+    #[test]
+    fn wire_attrs_maps_values_and_refuses_bad_ones() {
+        assert_eq!(
+            wire_attrs(patch(vec![
+                ("bold", Some(WireValue::Bool(true))),
+                ("color", None),
+                ("size", Some(WireValue::Number(72.0))),
+            ])),
+            Ok(vec![
+                TextAttr::Bold(true),
+                TextAttr::Color(None),
+                TextAttr::Size(Some(72.0))
+            ])
+        );
+        assert_eq!(
+            wire_attrs(patch(vec![
+                ("bold", None),
+                ("font", Some(WireValue::Text("Georgia".into()))),
+                ("italic", Some(WireValue::Bool(false))),
+            ])),
+            Ok(vec![
+                TextAttr::Bold(false),
+                TextAttr::Font(Some("Georgia".into())),
+                TextAttr::Italic(false)
+            ])
+        );
+        for bad in [
+            ("href", Some(WireValue::Text("x".into()))),
+            ("bold", Some(WireValue::Text("oui".into()))),
+            ("size", Some(WireValue::Text("72".into()))),
+            ("color", Some(WireValue::Number(5.0))),
+        ] {
+            assert_eq!(wire_attrs(patch(vec![bad])), Err(CommandError::BadFormat));
+        }
+    }
+
+    #[test]
+    fn format_text_inner_formats_and_reads_spans() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .set_text_inner(
+                &p,
+                None,
+                [100.0, 200.0],
+                "Le chat noir",
+                "#000000",
+                36.0,
+                [600.0, 45.0],
+            )
+            .expect("texte")
+            .ids[0]
+            .clone();
+        let red = vec![TextAttr::Color(Some("#ff0000".into()))];
+        let c = d
+            .format_text_inner(&id, 3, 4, red, Some(60.0))
+            .expect("format");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let t = d.core.element(&id).and_then(|e| e.text).expect("texte");
+        assert_eq!(t.box_height, 60.0);
+        let texts: Vec<&str> = t.spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, vec!["Le ", "chat", " noir"]);
+        assert_eq!(t.spans[1].attrs.color.as_deref(), Some("#ff0000"));
+        assert_eq!(
+            d.format_text_inner("absent", 0, 1, vec![TextAttr::Bold(true)], None),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
     }
 
     // C9 (T6) : grille de page par `grid_input` et `set_grid_inner`.

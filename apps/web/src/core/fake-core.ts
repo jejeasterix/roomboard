@@ -9,6 +9,7 @@
 // les polygones de `shapes.ts` (miroir de `shape.rs`) : même collision et mêmes bornes que le cœur.
 // C2 : images, fond (`page(id)`), métadonnées et `citedAssets` par le même balayage que le cœur ; `kind` inconnu gardé
 // avec ses champs bruts (`raw`) et réécrit tel quel.
+// C7 : segments (`spans`) gardés par SetText (différence de `rich-text.ts`), posés par FormatText ; JSON sans `spans` = un segment.
 // C9 : grille de page (`SetGrid`, `page(id).grid`) au modèle du cœur, lecture tolérante et sauvegarde comprises ; une
 // grille lue qui n'est pas un objet est gardée brute et réécrite telle quelle, vue comme absente (G13).
 // Écart assumé, exclu du contrat commun (DAG3) : `snapPoint`, `snapDelta` et `gridLines` ne connaissent que le kind
@@ -36,9 +37,11 @@ import type {
   StrokeBuilderApi,
   StrokeStyle,
   TextData,
+  TextSpan,
 } from "./api";
 import { DEFAULT_ASSET_MIME, DEFAULT_GRID_COLOR, MAX_GRID_DOTS, MAX_GRID_LEVELS, PAGE_HEIGHT, PAGE_WIDTH, UNKNOWN_BOX } from "./api";
 import { isAssetId } from "./asset-store";
+import { cleanPatch, editSpans, formatSpans, plainSpans, sameSpans, utf16Bounds, validPatch } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
@@ -79,6 +82,7 @@ const MESSAGES = {
   badWidth: "épaisseur de trait invalide (nombre fini > 0 attendu)",
   badAsset: "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)",
   badImage: "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)",
+  badFormat: "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)",
   badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
 } as const;
 
@@ -375,7 +379,7 @@ class FakeDocument implements CoreDocument {
         if (!positive(cmd.size) || !positive(cmd.boxWidth) || !positive(cmd.boxHeight) || !Number.isFinite(cmd.x) || !Number.isFinite(cmd.y)) {
           throw new Error(MESSAGES.badText);
         }
-        const text: TextData = { content: cmd.content, size: cmd.size, boxWidth: cmd.boxWidth, boxHeight: cmd.boxHeight };
+        const text: TextData = { content: cmd.content, size: cmd.size, boxWidth: cmd.boxWidth, boxHeight: cmd.boxHeight, spans: plainSpans(cmd.content) };
         const style: StrokeStyle = { color: cmd.color, width: 0 };
         if (cmd.id === null) {
           this.pageOf(cmd.page);
@@ -405,7 +409,7 @@ class FakeDocument implements CoreDocument {
           const p = s.pages.find((q) => q.id === pageId);
           const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
           const old = p?.elements[i];
-          if (p && old) p.elements[i] = { ...old, style, text };
+          if (p && old) p.elements[i] = { ...old, style, text: { ...text, spans: editSpans(t.spans, cmd.content) } };
           return { pages: [pageId], ids: [id], removed: [] };
         });
       }
@@ -466,6 +470,28 @@ class FakeDocument implements CoreDocument {
           if (p) p.backdrop = next;
           if (b !== null) putMeta(s.assets, b.asset);
           return { pages: [cmd.page], ids: [], removed: [] };
+        });
+      }
+      case "FormatText": {
+        // Ordre du cœur (T7) : patch nettoyé, boxHeight, élément, bornes ; rien ne change : aucune étape (D38).
+        const patch = cleanPatch(cmd.attrs);
+        if (!validPatch(patch)) throw new Error(MESSAGES.badFormat);
+        if (cmd.boxHeight !== undefined && !positive(cmd.boxHeight)) throw new Error(MESSAGES.badFormat);
+        const id = cmd.id;
+        const found = this.find(id);
+        const t = found?.element.text;
+        if (!found || !t) throw new Error(`élément inconnu : ${id}`);
+        if (!utf16Bounds(t.content, cmd.start, cmd.len)) throw new Error(MESSAGES.badFormat);
+        const spans = formatSpans(t.spans, cmd.start, cmd.len, patch);
+        const boxHeight = cmd.boxHeight ?? t.boxHeight;
+        if (sameSpans(spans, t.spans) && boxHeight === t.boxHeight) return this.unchanged();
+        const pageId = found.page.id;
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
+          const old = p?.elements[i];
+          if (p && old?.text) p.elements[i] = { ...old, text: { ...old.text, spans, boxHeight } };
+          return { pages: [pageId], ids: [id], removed: [] };
         });
       }
       case "SetGrid": {
@@ -657,6 +683,11 @@ class FakeDocument implements CoreDocument {
   }
 }
 
+/** Texte enregistré ; `spans` absent dans un JSON d'avant C7. */
+type SavedText = Omit<TextData, "spans"> & { readonly spans?: readonly TextSpan[] };
+/** JSON d'avant C7 : sans `spans`, le texte est un seul segment sans attribut (T8, T12). */
+const withSpans = (t: SavedText): TextData => ({ ...t, spans: Array.isArray(t.spans) ? t.spans : plainSpans(t.content) });
+
 interface SavedElement {
   id: string;
   /** Absent : élément du socle (trait, forme ou texte selon ses champs). */
@@ -666,7 +697,7 @@ interface SavedElement {
   style?: StrokeStyle;
   local?: number[];
   shape?: ShapeData;
-  text?: TextData;
+  text?: SavedText;
   image?: ImageData;
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
   raw?: Record<string, unknown>;
@@ -720,7 +751,7 @@ function loadElement(e: SavedElement): FakeElement {
     style: e.style ?? NO_STYLE,
     ...(e.local ? { local: new Float32Array(e.local) } : {}),
     ...(e.shape ? { shape: e.shape } : {}),
-    ...(e.text ? { text: e.text } : {}),
+    ...(e.text ? { text: withSpans(e.text) } : {}),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Command, CoreDocument } from "./api";
+import type { Command, CoreDocument, TextAttrsPatch } from "./api";
 import { fakeCore } from "./fake-core";
 
 const style = { color: "#000000", width: 4 };
@@ -144,7 +144,7 @@ describe("fakeCore — lot 4 (formes, texte, Transform)", () => {
       kind: "text",
       transform: [1, 0, 0, 1, 100, 200],
       style: { color: "#000000", width: 0 },
-      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45 },
+      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45, spans: [{ text: "Bonjour", attrs: {} }] },
     });
     const v = d.version();
     expect(text("Bonjour", id).version).toBe(v);
@@ -320,6 +320,91 @@ describe("fixture élément inconnu (S4, fausse liaison)", () => {
     expect(d.element("h3")).toEqual({ id: "h3", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "hologram", w: 100, h: 100 } });
     const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: unknown[] }[] };
     expect(saved.pages[0]?.elements).toEqual(raw.pages[0]?.elements);
+  });
+});
+
+describe("fakeCore — C7 (texte riche)", () => {
+  const BAD_FORMAT =
+    "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)";
+  const setText = (d: CoreDocument, page: string, content: string, id: string | null = null) =>
+    d.apply({ type: "SetText", page, id, x: 100, y: 200, content, color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+  const spansOf = (d: CoreDocument, id: string) => {
+    const e = d.element(id);
+    return e?.kind === "text" ? e.text.spans : null;
+  };
+  const plain = (text: string) => ({ text, attrs: {} });
+  const RB = { color: "#ff0000", bold: true } as const;
+
+  it("C7 S1 : FormatText une étape ; SetText garde les plages ; le texte neuf hérite du caractère précédent ; annuler, rétablir", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const id = setText(d, p, "Le chat noir").ids[0] ?? "";
+    expect(d.apply({ type: "FormatText", id, start: 3, len: 4, attrs: { color: "#ff0000", bold: true } })).toMatchObject({ pages: [p], ids: [id], removed: [] });
+    setText(d, p, "Le gros chat noir", id);
+    expect(spansOf(d, id)).toEqual([plain("Le gros "), { text: "chat", attrs: RB }, plain(" noir")]);
+    setText(d, p, "Le gros chats noir", id);
+    const full = spansOf(d, id);
+    expect(full).toEqual([plain("Le gros "), { text: "chats", attrs: RB }, plain(" noir")]);
+    d.undo();
+    d.undo();
+    d.undo();
+    expect(spansOf(d, id)).toEqual([plain("Le chat noir")]);
+    d.redo();
+    d.redo();
+    d.redo();
+    expect(spansOf(d, id)).toEqual(full);
+  });
+
+  it("C7 : une clé à undefined vaut une clé absente ; { bold: undefined } seul : aucune étape", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const id = setText(d, p, "Le chat noir").ids[0] ?? "";
+    d.apply({ type: "FormatText", id, start: 3, len: 4, attrs: { bold: true } });
+    d.apply({ type: "FormatText", id, start: 3, len: 4, attrs: { bold: undefined, italic: true } });
+    expect(spansOf(d, id)).toEqual([plain("Le "), { text: "chat", attrs: { bold: true, italic: true } }, plain(" noir")]);
+    const v = d.version();
+    expect(d.apply({ type: "FormatText", id, start: 3, len: 4, attrs: { bold: undefined } }).version).toBe(v);
+    expect(d.version()).toBe(v);
+  });
+
+  it("C7 : contrôles dans l'ordre du cœur (patch, boxHeight, élément, bornes), sans étape", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const stroke = commit(d, p, 10);
+    const id = setText(d, p, "Le 🐱 noir").ids[0] ?? "";
+    const v = d.version();
+    const fmt = (target: string, start: number, len: number, attrs: TextAttrsPatch, boxHeight?: number) => () =>
+      d.apply({ type: "FormatText", id: target, start, len, attrs, ...(boxHeight === undefined ? {} : { boxHeight }) });
+    expect(fmt("absent", 0, 1, { href: "x" } as unknown as TextAttrsPatch)).toThrow(BAD_FORMAT);
+    expect(fmt("absent", 0, 1, {}, -1)).toThrow(BAD_FORMAT);
+    expect(fmt("absent", 0, 1, { bold: true })).toThrow("élément inconnu : absent");
+    expect(fmt(stroke, 0, 1, { bold: true })).toThrow(`élément inconnu : ${stroke}`);
+    expect(fmt(id, 4, 1, { bold: true })).toThrow(BAD_FORMAT);
+    expect(fmt(id, 8, 3, { bold: true })).toThrow(BAD_FORMAT);
+    expect(d.version()).toBe(v);
+  });
+
+  it("C7 : JSON d'avant C7 sans spans : un seul segment sans attribut ; save écrit les spans", () => {
+    const old = { pages: [{ id: "p1", elements: [{ id: "t1", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45 } }] }] };
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(old)));
+    expect(spansOf(d, "t1")).toEqual([plain("Bonjour")]);
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: { text?: { spans?: unknown } }[] }[] };
+    expect(saved.pages[0]?.elements[0]?.text?.spans).toEqual([plain("Bonjour")]);
+  });
+
+  it("C7 parité : SetText diffère en points de code, préfixe d'abord (règle de rich-text.ts, pas une copie)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    // En unités UTF-16, la demi-paire haute commune de 🐱 et 🐶 entrerait dans le préfixe et 🐶 hériterait du gras.
+    const a = setText(d, p, "a🐱").ids[0] ?? "";
+    d.apply({ type: "FormatText", id: a, start: 1, len: 2, attrs: { bold: true } });
+    setText(d, p, "a🐶", a);
+    expect(spansOf(d, a)).toEqual([plain("a🐶")]);
+    // Suffixe d'abord, le « a » neuf irait en tête, sans attribut.
+    const b = setText(d, p, "aa").ids[0] ?? "";
+    d.apply({ type: "FormatText", id: b, start: 1, len: 1, attrs: { bold: true } });
+    setText(d, p, "aaa", b);
+    expect(spansOf(d, b)).toEqual([plain("a"), { text: "aa", attrs: { bold: true } }]);
   });
 });
 

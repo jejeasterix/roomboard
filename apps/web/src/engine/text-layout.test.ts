@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { graphemes, layoutText, textBoxHeight, textFont, type Measure } from "./text-layout";
+import { faceOf, graphemes, layoutRich, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
+import type { TextSpan } from "../core/api";
 
 /** Chaque caractère vaut 100 unités, quelle que soit la taille. */
 const wide: Measure = (s) => s.length * 100;
@@ -56,5 +57,55 @@ describe("mise en lignes du texte (CL4-4)", () => {
     } finally {
       (Intl as { Segmenter?: unknown }).Segmenter = saved;
     }
+  });
+});
+
+describe("mise en lignes par segments (C7, T9)", () => {
+  const ten: Measure = (s) => s.length * 10;
+  const plainSpan = (text: string): TextSpan => ({ text, attrs: {} });
+  const texts = (lines: readonly RichLine[]): string[][] => lines.map((l) => l.segments.map((s) => s.text));
+
+  it("un mot à cheval sur deux segments n'est pas coupé entre eux", () => {
+    const spans: TextSpan[] = [plainSpan("Le ch"), { text: "at", attrs: { bold: true } }, plainSpan(" noir")];
+    const lines = layoutRich(spans, { size: 36 }, 60, ten);
+    expect(texts(lines)).toEqual([["Le"], ["ch", "at"], ["noir"]]);
+    expect(lines[1]?.segments.map((s) => s.style.bold)).toEqual([false, true]);
+  });
+
+  it("S5 : « chat » en 48 gras souligné rouge, boîte étroite : ligne de hauteur 48 × 1,25", () => {
+    const spans: TextSpan[] = [plainSpan("Le "), { text: "chat", attrs: { size: 48, bold: true, underline: true, color: "#ff0000" } }, plainSpan(" noir")];
+    const lines = layoutRich(spans, { size: 36 }, 70, ten);
+    expect(texts(lines)).toEqual([["Le ", "chat"], ["noir"]]);
+    expect(lines.map((l) => [l.top, l.height, l.size])).toEqual([[0, 60, 48], [60, 45, 36]]);
+    expect(lines[0]?.segments.map((s) => [s.x, s.width])).toEqual([[0, 30], [30, 40]]);
+    expect(lines[0]?.segments[1]?.style).toEqual({ size: 48, bold: true, italic: false, underline: true, font: null, color: "#ff0000" });
+    expect(richBoxHeight(lines)).toBe(105);
+  });
+
+  // Review Focus 3 (cadrage T9, HC7-9).
+  it("Review Focus 3 : ligne vide à la taille du \\n qui la termine, sinon à celle de l'élément", () => {
+    const spans: TextSpan[] = [plainSpan("a\n"), { text: "\n", attrs: { size: 72 } }, plainSpan("b")];
+    expect(layoutRich(spans, { size: 36 }, 600, ten).map((l) => l.height)).toEqual([45, 90, 45]);
+    const last = layoutRich([{ text: "a\n", attrs: { size: 72 } }], { size: 36 }, 600, ten);
+    expect(last.map((l) => [l.size, l.height])).toEqual([[72, 90], [36, 45]]);
+  });
+
+  // Review Focus 4 (cadrage T10, T15).
+  it("Review Focus 4 : police nommée devant Atkinson, gras et italique dans l'ordre CSS", () => {
+    expect(textFont(48, { bold: true, italic: true, font: "Comic Sans MS" })).toBe('italic bold 48px "Comic Sans MS", "Atkinson Hyperlegible", system-ui, sans-serif');
+    expect(textFont(36, {})).toBe(textFont(36));
+    expect(textFont(36, faceOf(styleOf({}, { size: 36 })))).toBe('36px "Atkinson Hyperlegible", system-ui, sans-serif');
+  });
+
+  it("la mesure reçoit la face du segment ; un texte sans attribut est mesuré comme au socle", () => {
+    const calls: [string, number, Face | undefined][] = [];
+    const spy: Measure = (s, size, face) => {
+      calls.push([s, size, face]);
+      return s.length * 10;
+    };
+    layoutRich([plainSpan("a "), { text: "b", attrs: { bold: true, font: "Georgia" } }], { size: 36 }, 600, spy);
+    expect(calls).toContainEqual(["b", 36, { bold: true, italic: false, font: "Georgia" }]);
+    expect(calls).toContainEqual(["a ", 36, undefined]);
+    expect(layoutText("aaaa bbbb cc", 36, 700, (s) => s.length * 100)).toEqual(["aaaa", "bbbb cc"]);
   });
 });

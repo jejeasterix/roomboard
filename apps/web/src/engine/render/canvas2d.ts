@@ -7,7 +7,7 @@ import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeS
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
-import { layoutText, measureWith, textFont, TEXT_LINE_HEIGHT } from "../text-layout";
+import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
@@ -86,18 +86,41 @@ function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeSt
   ctx.stroke();
 }
 
-/** Texte (D14, CL4-4) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutText`). */
-function paintText(ctx: CanvasRenderingContext2D, t: TextData, color: string, lines: readonly string[]): void {
-  ctx.font = textFont(t.size);
-  ctx.fillStyle = color;
+/** Décalage de ligne de base d'un segment plus petit que sa ligne, position et épaisseur du souligné (HC7-5). */
+export const BASELINE_SHIFT = 0.8;
+export const UNDERLINE_OFFSET = 0.92;
+
+/**
+ * Texte (D14, CL4-4, C7) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutRich`) ; un fillText par
+ * segment ; une ligne d'une seule taille est dessinée comme au socle (même police, `y` = haut de la ligne).
+ */
+function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], color: string): void {
   ctx.textBaseline = "top";
-  lines.forEach((line, i) => ctx.fillText(line, 0, i * t.size * TEXT_LINE_HEIGHT));
+  for (const line of lines) {
+    // Le socle émettait fillText("") pour une ligne vide : conservé (compatibilité S3).
+    if (line.segments.length === 0) {
+      ctx.font = textFont(line.size);
+      ctx.fillStyle = color;
+      ctx.fillText("", 0, line.top);
+    }
+    for (const s of line.segments) {
+      const st = s.style;
+      const y = st.size === line.size ? line.top : line.top + (line.size - st.size) * BASELINE_SHIFT;
+      ctx.font = textFont(st.size, faceOf(st));
+      // Couleur de l'élément d'abord : le canvas ignore une couleur qu'il ne sait pas lire (T15 accepte tout nom de 3 à
+      // 20 lettres), et `st.color ?? color` laisserait alors celle d'avant (fond de page, segment précédent).
+      ctx.fillStyle = color;
+      if (st.color !== null) ctx.fillStyle = st.color;
+      ctx.fillText(s.text, s.x, y);
+      if (st.underline) ctx.fillRect(s.x, y + st.size * UNDERLINE_OFFSET, s.width, st.size / 16);
+    }
+  }
 }
 
 export class Canvas2DRenderer implements Renderer {
   private readonly paths = new Map<string, Path2D | null>();
-  /** Lignes des textes par id (clé : contenu, taille, largeur de boîte), invalidées par `Change` comme `paths`. */
-  private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly string[] }>();
+  /** Lignes des textes par id (clé : taille, largeur de boîte, segments), invalidées par `Change` comme `paths`. */
+  private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   private readonly makePath: () => Path2D;
   private sx = 1;
   private sy = 1;
@@ -175,7 +198,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "shape") {
       paintShape(ctx, el.shape, el.style);
     } else if (el.kind === "text") {
-      paintText(ctx, el.text, el.style.color, this.linesOf(ctx, el.id, el.text));
+      paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
     }
     ctx.restore();
   }
@@ -259,11 +282,11 @@ export class Canvas2DRenderer implements Renderer {
     }
   }
 
-  private linesOf(ctx: CanvasRenderingContext2D, id: string, t: TextData): readonly string[] {
-    const key = `${t.size}|${t.boxWidth}|${t.content}`;
+  private linesOf(ctx: CanvasRenderingContext2D, id: string, t: TextData): readonly RichLine[] {
+    const key = `${t.size}|${t.boxWidth}|${JSON.stringify(t.spans)}`;
     const cached = this.textLines.get(id);
     if (cached && cached.key === key) return cached.lines;
-    const lines = layoutText(t.content, t.size, t.boxWidth, measureWith(ctx));
+    const lines = layoutRich(t.spans, { size: t.size }, t.boxWidth, measureWith(ctx));
     this.textLines.set(id, { key, lines });
     return lines;
   }

@@ -6,6 +6,7 @@ use roomboard_core::commands::Command;
 use roomboard_core::document::Document;
 use roomboard_core::element::StrokeStyle;
 use roomboard_core::format::{load, save, SaveMeta};
+use roomboard_core::rich_text::{SpanAttrs, TextSpanView};
 use roomboard_core::shape::ShapeKind;
 
 fn fixture(name: &str) -> PathBuf {
@@ -122,6 +123,25 @@ fn socle_fixture_has_two_pages_and_three_kinds() {
     };
     assert_eq!(kinds(&pages[0]), vec!["stroke", "shape", "text"]);
     assert_eq!(kinds(&pages[1]), vec!["stroke"]);
+}
+
+/// S3 (C7, T12) : le texte du socle (troisième élément de la première page) est un seul segment sans attribut.
+#[test]
+fn socle_fixture_text_is_one_plain_span() {
+    let doc = load(&socle_bytes()).expect("load");
+    let p = doc.page_ids()[0].clone();
+    let id = doc.element_ids(&p)[2].clone();
+    let t = doc
+        .element(&id)
+        .and_then(|e| e.text)
+        .expect("texte du socle");
+    assert_eq!(
+        t.spans,
+        vec![TextSpanView {
+            text: "Bonjour RoomBoard".into(),
+            attrs: SpanAttrs::default()
+        }]
+    );
 }
 
 /// C9, S2 : le fichier du socle, écrit avant la grille, s'ouvre sans grille sur ses deux pages.

@@ -61,6 +61,7 @@ function recorder() {
 
 const session: TextEditSession = {
   page: "p", id: null, matrix: [1, 0, 0, 1, 100, 50], boxWidth: 600, color: "#1e40af", size: 48, initial: "Bonjour",
+  spans: [{ text: "Bonjour", attrs: {} }],
 };
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
 

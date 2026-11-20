@@ -6,6 +6,7 @@ use yrs::{Any, In, Map, MapRef, Number, Out, ReadTxn};
 use crate::asset::is_asset_id;
 use crate::grid::GridView;
 use crate::query::Bounds;
+use crate::rich_text::TextSpanView;
 
 pub const SCHEMA: u32 = 1;
 pub const PAGE_WIDTH: f64 = 1920.0;
@@ -118,6 +119,8 @@ pub struct TextView {
     pub size: f32,
     pub box_width: f64,
     pub box_height: f64,
+    /// Segments (C7, T8) : attributs normalisés, embeds sautés ; un seul segment sans attribut pour un texte du socle.
+    pub spans: Vec<TextSpanView>,
 }
 
 /// `m ∘ t` : applique `t` puis `m` (Transform du lot 4, CL4-8).
