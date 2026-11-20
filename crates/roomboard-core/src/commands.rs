@@ -86,6 +86,15 @@ pub enum Command {
         page: String,
         backdrop: Option<BackdropInput>,
     },
+    /// Attributs de plage d'un texte (C7, U27) : `start`, `len` en unités UTF-16 du contenu ; `attrs` = patch (T7) ;
+    /// `box_height` : hauteur de boîte mesurée par la page, écrite si elle change.
+    FormatText {
+        id: String,
+        start: u32,
+        len: u32,
+        attrs: Vec<TextAttr>,
+        box_height: Option<f64>,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -120,6 +129,7 @@ pub enum CommandError {
     UnknownElement(String),
     BadAsset,
     BadImage,
+    BadFormat,
 }
 
 impl std::fmt::Display for CommandError {
@@ -157,6 +167,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadImage => write!(
                 f,
                 "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)"
+            ),
+            CommandError::BadFormat => write!(
+                f,
+                "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)"
             ),
         }
     }
@@ -447,6 +461,13 @@ impl Document {
             Command::SetBackdrop { page, backdrop } => {
                 self.cmd_set_backdrop(&page, backdrop.as_ref())
             }
+            Command::FormatText {
+                id,
+                start,
+                len,
+                attrs,
+                box_height,
+            } => self.cmd_format_text(&id, (start, len), &attrs, box_height),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
@@ -929,6 +950,51 @@ impl Document {
         Ok(self.done(Change {
             pages,
             removed,
+            ..Default::default()
+        }))
+    }
+
+    /// `FormatText` (C7, T7) : contrôles dans l'ordre du cadrage, le même que `fake-core.ts` (patch, `box_height`,
+    /// élément, bornes) ; rien ne change (plage vide, mêmes attributs, même hauteur) : aucune transaction (D38) ; sinon
+    /// une seule, format puis hauteur. Comme `cmd_set_text` : plan sous une lecture fermée, puis au plus une écriture.
+    fn cmd_format_text(
+        &mut self,
+        id: &str,
+        range: (u32, u32),
+        attrs: &[TextAttr],
+        box_height: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        if !rich_text::valid_attrs(attrs) || box_height.is_some_and(|h| !finite_positive(h)) {
+            return Err(CommandError::BadFormat);
+        }
+        let (found, current, at, formats) = {
+            let txn = self.read();
+            let unknown = || CommandError::UnknownElement(id.to_string());
+            let found = self.find_element(&txn, id).ok_or_else(unknown)?;
+            let current = read_text(&txn, &found.element).ok_or_else(unknown)?;
+            let at = rich_text::utf16_range(&txn, &current.text, range.0, range.1)
+                .ok_or(CommandError::BadFormat)?;
+            let formats = rich_text::format_changes(&txn, &current.text, at, attrs);
+            (found, current, at, formats)
+        };
+        let height = box_height.filter(|h| *h != current.box_height);
+        if !formats && height.is_none() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            if formats {
+                rich_text::apply_format(&mut txn, &current.text, at, attrs);
+            }
+            if let Some(h) = height {
+                found
+                    .element
+                    .insert(&mut txn, "boxHeight", In::Any(Any::from(h)));
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![found.page_id],
+            ids: vec![id.to_string()],
             ..Default::default()
         }))
     }
