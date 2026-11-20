@@ -1,10 +1,10 @@
 # État — usage-c10a-tableau
 
-Statut : en cours — fusion
+Statut : clos
 Gabarit : chantier (12 tâches du plan + 4 correctives, confirmé à l'étage 2)
 Objectif : Dans RoomBoard, créer un tableau par une grille de choix, écrire dans ses cellules au clavier (Tab), insérer et supprimer lignes et colonnes, uniformiser les tailles, choisir une couleur, et le retrouver en rouvrant le `.roomboard`.
 Avancement : 16/16 tâches terminées
-Étage : 4 — depuis 2026-11-20 09:52
+Étage : 4 (clos) — depuis 2026-11-20 10:36
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c10a-tableau   Branche : feat/usage-c10a-tableau   Base : origin/main @ 8247215
 Branche principale locale au lancement : 8247215 · point de retour origin/main : 8247215
@@ -65,6 +65,7 @@ Plan : 64638c9. Vague 1 : T1, T3, T4, T5 · vague 2 : T2, T7, T8, T9 · vague 3 
 - Hors périmètre consigné, non corrigé : collaboration Yrs (1re écriture concurrente dans une cellule absente : une écriture perdue ; cellule orpheline après suppression concurrente) — à trancher avant de brancher la collaboration. La barre passe sur trois lignes avec la rangée du tableau à 1 280 px (scène 658 px ≥ 640, HC10-15). Échap avec Ctrl/Méta ne ferme plus la grille.
 - Constats d'architecture : 1 fermé (files.ts head(n)), 1 ajouté (scripts/essais coqueCsp ×3) ; toolbar-host.ts:45 reste ouvert (toolbar.ts:634). Aucune zone à 3 constats : pas d'audit à proposer.
 - Release : non due (aucune release, aucun tag : brief).
+- Fusion : locale --no-ff 5963958 poussée sur origin/main (PR #15), sans --force.
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh --e2e OK · S11 (partie C10a) réussi en Playwright · capture 4 × 3 dans docs/essais/ · fusion locale --no-ff poussée
