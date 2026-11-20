@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_TABLE, CAPABILITY_KEYS, parseProfile, RESERVED_BAR_IDS, resetItemOptions, resetPresets, resolveStartMode, serializeProfile,
-  TOOL_TABLE, visibleItems, type Profile, type RuntimeCapabilities,
+  ACTION_TABLE, CAPABILITY_KEYS, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
+  resolveStartMode, serializeProfile, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
 import { layoutFor } from "./ui/layout";
 import profilesSource from "./toolbar-profiles.ts?raw";
@@ -23,6 +23,7 @@ function base(): Record<string, unknown> {
         dock: "top",
         groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "undo", kind: "action", action: "undo", label: "Annuler" }] }],
       },
+      { id: "vue", role: "tools", dock: "right", groups: [{ id: "v", items: [{ id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] },
     ],
   };
 }
@@ -137,7 +138,7 @@ describe("profil de barre (T83, usage § 8)", () => {
     expect(visibleItems(profile.toolbars[0]!, NONE).map((i) => i.id)).toEqual(["pen", "undo"]);
     expect(visibleItems(profile.toolbars[0]!, ALL).map((i) => i.id)).toEqual(["pen", "undo", "drop"]);
     expect(resolveStartMode(profile, NONE)).toEqual({ mode: "board", fellBack: true });
-    expect(resolveStartMode(profile, ALL)).toEqual({ mode: "board", fellBack: true }); // seul board est honoré au lot 5b
+    expect(resolveStartMode(profile, ALL)).toEqual({ mode: "desktop-annotation", fellBack: false }); // C1 : la capacité décide (P10)
   });
 
   it("séparateurs : jamais en tête, en fin, ni doublés", () => {
@@ -181,5 +182,125 @@ describe("profil de barre (T83, usage § 8)", () => {
   it("aller-retour : parse(serialize(p)) = p", () => {
     const p = ok(base()).profile;
     expect(ok(serializeProfile(p)).profile).toEqual(p);
+  });
+});
+
+describe("C1 : modèle du profil (P2-P4, P10, P33)", () => {
+  /** Profil de base sans la barre « vue » : aucun accès au menu Profil. */
+  const bare = (): Record<string, any> => {
+    const j = base() as Record<string, any>;
+    j.toolbars = [j.toolbars[0]];
+    return j;
+  };
+
+  it("accès profiles ajouté : en fin de la première barre tools, avertissement, relu sans alerte", () => {
+    const { profile, warnings } = ok(bare());
+    expect(warnings).toContain("accès au menu Profil ajouté");
+    const items = profile.toolbars[0]!.groups.flatMap((g) => g.items);
+    expect(items.at(-1)).toMatchObject({ id: "profiles", kind: "action", action: "profiles", label: "Profil" });
+    expect(visibleItems(profile.toolbars[0]!, NONE).map((i) => i.id)).toEqual(["pen", "undo", "profiles"]);
+    expect(ok(serializeProfile(profile)).warnings).toEqual([]);
+  });
+
+  it("accès profiles ajouté : id profiles pris par un autre élément → profiles-2", () => {
+    const j = bare();
+    j.toolbars[0].groups[0].items.push({ id: "profiles", kind: "tool", tool: "pen", label: "Stylo bis" });
+    const items = ok(j).profile.toolbars[0]!.groups.flatMap((g) => g.items);
+    expect(items.at(-1)).toMatchObject({ id: "profiles-2", action: "profiles" });
+  });
+
+  it("profiles caché : montré, avertissement", () => {
+    const j = base() as Record<string, any>;
+    j.toolbars[1].groups[0].items[0].hidden = true;
+    const { profile, warnings } = ok(j);
+    expect(warnings).toContain("profiles : l'accès au menu Profil ne se masque pas, élément montré");
+    expect(profile.toolbars[1]!.groups[0]!.items[0]!.hidden).toBeUndefined();
+    expect(visibleItems(profile.toolbars[1]!, NONE).map((i) => i.id)).toEqual(["profiles"]);
+  });
+
+  it("sans barre tools : barre outils ajoutée (role tools, dock top) qui porte profiles", () => {
+    const j = base() as Record<string, any>;
+    j.toolbars = [
+      { id: "pages", role: "pages", dock: "bottom", groups: [{ id: "p", items: [{ id: "page-next", kind: "action", action: "page-next", label: "Page suivante" }] }] },
+    ];
+    const { profile, warnings } = ok(j);
+    expect(warnings).toContain("accès au menu Profil ajouté");
+    expect(profile.toolbars.map((b) => [b.id, b.role, b.dock])).toEqual([["pages", "pages", "bottom"], ["outils", "tools", "top"]]);
+    expect(profile.toolbars[1]!.groups[0]!.items.map((i) => i.id)).toEqual(["profiles"]);
+  });
+
+  it("hidden : masqué gardé (ordre, id, options), sauté par visibleItems, écrit seulement s'il est vrai", () => {
+    const j = base() as Record<string, any>;
+    j.toolbars[0].groups[0].items[0].hidden = true;
+    j.toolbars[0].groups[0].items[0].options = { epaisseur: 9 };
+    j.toolbars[0].groups[0].items[1].hidden = false;
+    const { profile, warnings } = ok(j);
+    expect(warnings).toEqual([]);
+    const items = profile.toolbars[0]!.groups[0]!.items;
+    expect(items.map((i) => i.id)).toEqual(["pen", "undo"]);
+    expect(items[0]).toMatchObject({ id: "pen", hidden: true, options: { epaisseur: 9 } });
+    expect(items[1]!.hidden).toBeUndefined();
+    expect(visibleItems(profile.toolbars[0]!, ALL).map((i) => i.id)).toEqual(["undo"]);
+    const out = serializeProfile(profile) as Record<string, any>;
+    expect(out.toolbars[0].groups[0].items[0].hidden).toBe(true);
+    expect("hidden" in out.toolbars[0].groups[0].items[1]).toBe(false);
+    expect(ok(out).profile).toEqual(profile);
+  });
+
+  it("hidden non booléen : erreur", () => {
+    const j = base() as Record<string, any>;
+    j.toolbars[0].groups[0].items[0].hidden = "oui";
+    expect(errs(j)).toContain("toolbars[0].groups[0].items[0].hidden : booléen attendu");
+  });
+
+  it("basedOn : lu et écrit ; absent : absent ; chaîne vide : erreur", () => {
+    const { profile } = ok({ ...base(), basedOn: "simple" });
+    expect(profile.basedOn).toBe("simple");
+    expect(profile.rest).toEqual({});
+    expect((serializeProfile(profile) as Record<string, unknown>).basedOn).toBe("simple");
+    expect(ok(base()).profile.basedOn).toBeUndefined();
+    expect("basedOn" in serializeProfile(ok(base()).profile)).toBe(false);
+    expect(errs({ ...base(), basedOn: " " })).toContain("profil.basedOn : chaîne non vide attendue");
+  });
+
+  it("écriture en 1.1 : PROFILE_MINOR vaut 1, withCurrentMinor relève la mineure sans la baisser", () => {
+    expect(PROFILE_MINOR).toBe(1);
+    const p = ok(base()).profile;
+    expect(p.minor).toBe(0);
+    // Lu en 1.0 et non touché : réécrit en 1.0 (serializeProfile n'écrit pas PROFILE_MINOR, seuls les gestes d'écriture le font).
+    expect("minor" in serializeProfile(p)).toBe(false);
+    const stamped = withCurrentMinor(p);
+    expect(stamped.minor).toBe(1);
+    expect((serializeProfile(stamped) as Record<string, unknown>).minor).toBe(1);
+    expect(ok(serializeProfile(stamped)).warnings).toEqual([]);
+    const newer = ok({ ...base(), minor: 2 }).profile;
+    expect(withCurrentMinor(newer)).toBe(newer);
+  });
+
+  it("mineure 2 : avertissement « plus récent que 1.1 »", () => {
+    expect(ok({ ...base(), minor: 2 }).warnings).toContain("profil 1.2 plus récent que 1.1 : clés inconnues conservées");
+  });
+
+  it("resolveStartMode : desktop-annotation avec la capacité, board sans (repli sans bruit)", () => {
+    const ann = ok({ ...base(), behavior: { startMode: "desktop-annotation" } }).profile;
+    expect(resolveStartMode(ann, ALL)).toEqual({ mode: "desktop-annotation", fellBack: false });
+    expect(resolveStartMode(ann, NONE)).toEqual({ mode: "board", fellBack: true });
+    expect(resolveStartMode(ok(base()).profile, ALL)).toEqual({ mode: "board", fellBack: false });
+  });
+
+  it("uniqueId : base libre, sinon premier <base>-<n> libre, n ≥ 2", () => {
+    expect(uniqueId("pen", new Set())).toBe("pen");
+    expect(uniqueId("pen", new Set(["pen"]))).toBe("pen-2");
+    expect(uniqueId("pen", new Set(["pen", "pen-2", "pen-3"]))).toBe("pen-4");
+  });
+
+  it("isKnownItem : outil, action ou capacité inconnus → faux ; séparateur → vrai", () => {
+    const it0 = { id: "x", label: "X", requires: [], rest: {} } as const;
+    expect(isKnownItem({ ...it0, kind: "tool", tool: "pen" })).toBe(true);
+    expect(isKnownItem({ ...it0, kind: "tool", tool: "laser" })).toBe(false);
+    expect(isKnownItem({ ...it0, kind: "action", action: "minuteur" })).toBe(false);
+    expect(isKnownItem({ ...it0, kind: "action", action: "undo", requires: ["projector" as never] })).toBe(false);
+    expect(isKnownItem({ ...it0, kind: "dropzone", requires: ["dropPaths"] })).toBe(true);
+    expect(isKnownItem({ ...it0, kind: "separator" })).toBe(true);
   });
 });
