@@ -258,4 +258,35 @@ describe("outil Sélection — magnétisme (C9, S3)", () => {
     tool.close(1, "end");
     expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 52, 31] }]);
   });
+
+  it("élément aligné, petit glisser au-delà de 2 px que l'aimant ramène en place : ni Transform ni fantôme (G7)", () => {
+    const { doc, tool, runs, rect } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    // Centre (160, 160) sur un croisement, appui (100, 100) dans une binade plus basse : `dx + (q - (c + dx))`
+    // y laisserait ±1,4e-14, une translation non nulle.
+    const a = rect(70, 70, 250, 250);
+    doc.apply({ type: "SetGrid", page, grid: squares40(true) });
+    tool.begin(1, [at(100, 100)]);
+    tool.extend(1, [at(102.3, 101.7)], []);
+    const live = tool.live();
+    expect(live.overlay?.ghosts).toEqual([]);
+    expect(live.hidden.size).toBe(0);
+    tool.close(1, "end");
+    expect(runs).toEqual([]);
+    expect(doc.element(a)?.transform).toEqual([1, 0, 0, 1, 70, 70]);
+  });
+
+  it("Alt pressée en cours de geste : l'aimant se coupe à l'image suivante, Transform brute (G8)", () => {
+    const { doc, tool, runs, rect, setAlt } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const a = rect(13, 17, 113, 77);
+    doc.apply({ type: "SetGrid", page, grid: squares40(true) });
+    tool.begin(1, [at(60, 50)]);
+    tool.extend(1, [at(112, 81)], []);
+    expect(tool.live().overlay?.ghosts).toEqual([{ id: a, matrix: [1, 0, 0, 1, 57, 33] }]);
+    setAlt(true);
+    expect(tool.live().overlay?.ghosts).toEqual([{ id: a, matrix: [1, 0, 0, 1, 52, 31] }]);
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 52, 31] }]);
+  });
 });

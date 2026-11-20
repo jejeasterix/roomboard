@@ -1140,4 +1140,75 @@ mod tests {
             lines(&grid(vec![level("lines", 40.0, 40.0)]), W, staves, 4.0, 8.0).expect("visible");
         assert!(segs(&only_h.levels[0]).0.is_empty());
     }
+
+    /// G7, relecture T1 : élément aligné ramené à sa place → déplacement exactement nul. Le déplacement rendu est
+    /// `q − coin d'origine` ; `dx + (q − (coin + dx))` laisserait ~3e-15 ici.
+    #[test]
+    fn grid_snap_delta_back_in_place_is_exactly_zero() {
+        let g = grid(vec![level("squares", 40.0, 40.0)]);
+        let b = Bounds {
+            x0: 70.0,
+            y0: 50.0,
+            x1: 170.0,
+            y1: 110.0,
+        };
+        assert_eq!(snap_delta(&g, W, b, (1.3, 0.7)), (0.0, 0.0));
+    }
+
+    /// G4, relecture T2 : toute grille relue est acceptée telle quelle par `SetGrid` ; niveau sans `kind` ou à `kind`
+    /// vide écarté de la vue, `color` et `line` vides ramenés au défaut de la lecture.
+    #[test]
+    fn read_grid_is_always_accepted_back_by_validate() {
+        let levels = In::Array(ArrayPrelim::from(vec![
+            In::Map(MapPrelim::from([
+                ("spacingX", num(40.0)),
+                ("spacingY", num(40.0)),
+            ])),
+            In::Map(MapPrelim::from([
+                ("kind", In::from("")),
+                ("spacingX", num(40.0)),
+                ("spacingY", num(40.0)),
+            ])),
+            In::Map(MapPrelim::from([
+                ("kind", In::from("squares")),
+                ("spacingX", num(40.0)),
+                ("spacingY", num(40.0)),
+                ("color", In::from("")),
+                ("line", In::from("")),
+            ])),
+            In::Map(MapPrelim::from([
+                ("kind", In::from("dots")),
+                ("spacingX", num(20.0)),
+                ("spacingY", num(20.0)),
+            ])),
+        ]));
+        let (doc, page) = page_with(In::Map(MapPrelim::from([("levels", levels)])));
+        let g = read(&doc.transact(), &page).expect("grille lisible");
+        assert_eq!(
+            g.levels,
+            vec![level("squares", 40.0, 40.0), level("dots", 20.0, 20.0)]
+        );
+        assert_eq!(validate(&g), Ok(()));
+    }
+
+    /// G9, relecture T1 : le plafond des portées porte sur les lignes (5 par portée), comme `MAX_GRID_DOTS` le dit.
+    #[test]
+    fn grid_music_cap_counts_lines_not_staves() {
+        let music = grid(vec![level("music", 7.0, 0.01)]);
+        let to = |y1: f64| Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: W,
+            y1,
+        };
+        // 20 001 portées ≤ 65 536, mais ~100 000 lignes : niveau sauté entier.
+        assert!(lines(&music, W, to(2000.0), 0.0, 0.0)
+            .expect("visible")
+            .levels
+            .is_empty());
+        // 10 001 portées ≤ 65 536 / 5 : dessinées, sous le plafond des lignes.
+        let l = lines(&music, W, to(1000.0), 0.0, 0.0).expect("visible");
+        let n = l.levels[0].segments.len() / 4;
+        assert!(n > 0 && n <= MAX_GRID_DOTS, "{n} lignes");
+    }
 }
