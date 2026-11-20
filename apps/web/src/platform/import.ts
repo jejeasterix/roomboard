@@ -1,14 +1,23 @@
 /**
- * Entrée unique des fichiers (usage § 8 point 12, Q1) : dépôt web, dépôt dans la coque et fichier passé au lancement
- * passent par `importFiles`. Un `.roomboard` s'ouvre dans un nouvel onglet (fonction de l'appelant), le reste est refusé.
+ * Entrée unique des fichiers (U23, R1) : dépôt web, dépôt dans la coque, collage, « Importer » et fichier passé au
+ * lancement passent par `importFiles`. Registre par nature : `roomboard` (document, reconnu par l'extension) ouvre un
+ * nouvel onglet (R2) ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
+ * Non reconnu : refusé avec `LATER_FORMAT_MESSAGE`. Hôtes web : 100 Mo au plus par fichier, contrôlé avant lecture (R15).
  */
 import { messageOf } from "./controller";
 import { ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
+/** Limite des hôtes web (R15) ; la coque n'en a pas. */
+export const WEB_MAX_BYTES = 100 * 1024 * 1024;
+
+export const tooBigMessage = (names: readonly string[], max: number): string =>
+  `${names.join(", ")} : fichier trop gros (plus de ${Math.round(max / (1024 * 1024))} Mo)`;
 
 export interface ImportReport {
   readonly opened: readonly string[];
+  readonly inserted: readonly string[];
   readonly refused: readonly string[];
   readonly failed: readonly string[];
 }
@@ -17,51 +26,115 @@ export interface ImportDeps {
   /** Ouvre le document dans un nouvel onglet (T93) ; false si illisible (le message est déjà dit). */
   openDocument(file: { readonly name: string; readonly bytes: Uint8Array; readonly target: SaveTarget | null }): Promise<boolean>;
   notify(message: string): Promise<void>;
-  /** Vrai quand plus aucun onglet ne peut s'ouvrir : un refus de `openDocument` arrête alors la boucle. */
+  /** Vrai quand plus aucun onglet ne peut s'ouvrir : un refus de `openDocument` arrête alors les documents suivants. */
   full?(): boolean;
+  /** Onglet qui reçoit les objets, lu une fois au début de `importFiles` (R3) ; absent ou null : aucun objet inséré. */
+  target?(): ImageTarget | null;
+  /** Taille maximale d'un fichier (R15 : `WEB_MAX_BYTES` sur les hôtes web) ; absente ou null : aucune limite. */
+  readonly maxBytes?: number | null;
+  /** Décodeur des images (tests) ; défaut : `decodeImage` du navigateur. */
+  readonly decode?: ImageDecoder;
 }
 
 export interface Importer {
   importFiles(files: readonly DroppedFile[], at?: Point | null): Promise<ImportReport>;
 }
 
+export interface ImportContext {
+  /** Contenu du fichier, lu une fois (la coque le lit par morceaux, `grantedFile`). */
+  readonly blob: Blob;
+  /** `HEAD_BYTES` premiers octets ; vide pour un `.roomboard` (reconnu par son nom). */
+  readonly head: Uint8Array;
+  /** Point de dépôt en px CSS de la fenêtre ; null : collage, « Importer », lancement. */
+  readonly at: Point | null;
+  /** Images déjà insérées par cet appel (cascade, R4). */
+  readonly inserted: number;
+  readonly target: ImageTarget | null;
+  notify(message: string): Promise<void>;
+}
+
+export type ImportOutcome = "opened" | "inserted" | "failed";
+
+export interface ImportHandler {
+  readonly id: string;
+  readonly nature: "document" | "objet";
+  detect(head: Uint8Array, name: string): boolean;
+  /** Dit lui-même ses messages d'échec. */
+  run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
+}
+
 export function isRoomboardName(name: string): boolean {
   return name.toLowerCase().endsWith(ROOMBOARD_EXTENSION) && name.length > ROOMBOARD_EXTENSION.length;
 }
 
-export function createImporter(deps: ImportDeps): Importer {
+function roomboardHandler(deps: ImportDeps): ImportHandler {
   return {
-    // `at` est reçu et ignoré au lot 5b : l'insertion au point de dépôt vient avec C2/C3.
-    async importFiles(files, _at = null) {
+    id: "roomboard",
+    nature: "document",
+    detect: (_head, name) => isRoomboardName(name),
+    async run(f, ctx) {
+      let bytes: Uint8Array;
+      try {
+        bytes = new Uint8Array(await ctx.blob.arrayBuffer());
+      } catch (e) {
+        await ctx.notify(`Ouverture impossible (${f.name}) : ${messageOf(e)}`);
+        return "failed";
+      }
+      return (await deps.openDocument({ name: f.name, bytes, target: null })) ? "opened" : "failed";
+    },
+  };
+}
+
+const EMPTY = new Uint8Array(0);
+
+export function createImporter(deps: ImportDeps): Importer {
+  const registry: readonly ImportHandler[] = [roomboardHandler(deps), imageHandler(deps.decode ? { decode: deps.decode } : {})];
+  return {
+    async importFiles(files, at = null) {
       const opened: string[] = [];
+      const inserted: string[] = [];
       const refused: string[] = [];
       const failed: string[] = [];
-      let stopped = false; // onglets pleins : une seule boîte, les .roomboard suivants ne sont pas tentés
+      const tooBig: string[] = [];
+      const target = deps.target?.() ?? null; // onglet actif au début de l'appel (R3)
+      const max = deps.maxBytes ?? null;
+      let stopped = false; // onglets pleins : une seule boîte, les documents suivants ne sont pas tentés
       for (const f of files) {
-        if (!isRoomboardName(f.name)) {
+        if (max !== null && f.size > max) {
+          tooBig.push(f.name);
+          continue;
+        }
+        const roomboard = isRoomboardName(f.name);
+        if (roomboard && stopped) {
+          failed.push(f.name);
+          continue;
+        }
+        let blob: Blob;
+        let head: Uint8Array;
+        try {
+          blob = await f.blob();
+          head = roomboard ? EMPTY : new Uint8Array(await (typeof blob.slice === "function" ? blob.slice(0, HEAD_BYTES) : blob).arrayBuffer()).subarray(0, HEAD_BYTES);
+        } catch (e) {
+          failed.push(f.name);
+          await deps.notify(`${roomboard ? "Ouverture" : "Import"} impossible (${f.name}) : ${messageOf(e)}`);
+          continue;
+        }
+        const handler = registry.find((h) => h.detect(head, f.name));
+        if (handler === undefined) {
           refused.push(f.name);
           continue;
         }
-        if (stopped) {
-          failed.push(f.name);
-          continue;
-        }
-        let bytes: Uint8Array;
-        try {
-          bytes = new Uint8Array(await (await f.blob()).arrayBuffer());
-        } catch (e) {
-          failed.push(f.name);
-          await deps.notify(`Ouverture impossible (${f.name}) : ${messageOf(e)}`);
-          continue;
-        }
-        if (await deps.openDocument({ name: f.name, bytes, target: null })) opened.push(f.name);
+        const outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify });
+        if (outcome === "opened") opened.push(f.name);
+        else if (outcome === "inserted") inserted.push(f.name);
         else {
           failed.push(f.name);
-          if (deps.full?.() === true) stopped = true;
+          if (handler.nature === "document" && deps.full?.() === true) stopped = true;
         }
       }
+      if (tooBig.length > 0 && max !== null) await deps.notify(tooBigMessage(tooBig, max));
       if (refused.length > 0) await deps.notify(`${refused.join(", ")} : ${LATER_FORMAT_MESSAGE}`);
-      return { opened, refused, failed };
+      return { opened, inserted, refused: [...tooBig, ...refused], failed };
     },
   };
 }
