@@ -149,9 +149,16 @@ async function scenario(page, url, { captures, tmp }) {
   await waitAttr("data-table-merges", "2");
   check(await page.evaluate(() => window.__rb === undefined), "S2 : collage : aucun script exécuté (window.__rb indéfini)");
   check((await page.evaluate(() => document.querySelectorAll("table, img").length)) === nodes, "S2 : aucun nœud <table> ni <img> ajouté à la page");
-  // Tableau collé centré au centre de la vue (F21), 480 × 128 à l'échelle 1.
-  const center = [(box.width / 2 - cP.tx) / cP.zoom, (box.height / 2 - cP.ty) / cP.zoom];
-  const pasted = [center[0] - COL, center[1] - ROW];
+  // Tableau collé centré dans la vue (F21), 480 × 128 à l'échelle 1 : son coin est lu par l'outil Sélection (data-bounds),
+  // la hauteur de la scène ne servant pas de repère (la zone de dessin est plus basse que #stage).
+  await page.click(item("select"));
+  await fr();
+  await mouse.click(box.width / 2, box.height / 2);
+  await waitAttr("data-selection", "1");
+  const [px, py] = ((await attr("data-bounds")) ?? "").split(",").map(Number);
+  const pasted = [px, py];
+  await page.keyboard.press("Escape");
+  await fr();
   const cell2 = (c, row, col) => screen(c, pasted[0] + COL * col + COL / 2, pasted[1] + ROW * row + ROW / 2);
   await page.click(item("table"));
   await fr();
