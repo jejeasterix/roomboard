@@ -457,7 +457,7 @@ pub(crate) fn valid_matrix(m: &Transform) -> bool {
 }
 
 /// Référence d'asset : empreinte conforme, type non vide, taille entière finie ≥ 0 (K5).
-fn valid_asset(a: &AssetRef) -> bool {
+pub(crate) fn valid_asset(a: &AssetRef) -> bool {
     is_asset_id(&a.id)
         && !a.mime.is_empty()
         && a.size.is_finite()
@@ -2804,7 +2804,10 @@ pub(crate) mod tests {
                 save(&r, &meta).expect("resave") == file,
                 "fichier différent au rechargement {i}"
             );
-            let b = r.page(&r.page_ids()[1]).and_then(|p| p.backdrop).expect("fond");
+            let b = r
+                .page(&r.page_ids()[1])
+                .and_then(|p| p.backdrop)
+                .expect("fond");
             assert_eq!((b.kind.as_str(), b.page), ("pdf-page", Some(1)), "fond {i}");
         }
     }

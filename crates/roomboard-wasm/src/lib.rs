@@ -408,6 +408,18 @@ impl Document {
         Self::wrap(CoreDocument::blank(), None)
     }
 
+    /// Document d'un PDF importé (C12, PF6) : `sizes` = largeurs et hauteurs en points bout à bout ; hors historique.
+    /// Lève une Error au message du cœur (`BadAsset`, `BadImage`).
+    pub fn from_pdf_pages(
+        id: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        sizes: Vec<f64>,
+    ) -> Result<Document, JsError> {
+        Self::from_pdf_pages_inner(asset_ref(id, name, mime, size), &sizes).map_err(cmd_err)
+    }
+
     /// Lève une Error dont le message est le `Display` de `FormatError`.
     pub fn load(bytes: &[u8]) -> Result<Document, JsError> {
         Self::load_inner(bytes).map_err(fmt_err)
@@ -1025,6 +1037,15 @@ impl Document {
     pub fn load_inner(bytes: &[u8]) -> Result<Document, FormatError> {
         let (core, manifest) = format::load_with_manifest(bytes)?;
         Ok(Self::wrap(core, Some(manifest.created)))
+    }
+
+    /// Couples `(w, h)` lus bout à bout ; une longueur impaire est refusée en `BadImage`.
+    pub fn from_pdf_pages_inner(asset: AssetRef, sizes: &[f64]) -> Result<Document, CommandError> {
+        if sizes.len() % 2 != 0 {
+            return Err(CommandError::BadImage);
+        }
+        let pairs: Vec<(f64, f64)> = sizes.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+        CoreDocument::from_pdf_pages(&asset, &pairs).map(|core| Self::wrap(core, None))
     }
 
     fn save_meta(&self, now: &str, app_version: &str) -> SaveMeta {
@@ -1953,7 +1974,10 @@ mod tests {
             .expect("document");
         let ids = d.page_ids();
         let b = d.core.page(&ids[1]).and_then(|p| p.backdrop).expect("fond");
-        assert_eq!((ids.len(), b.page, b.w, b.h), (2, Some(1), Some(792.0), Some(612.0)));
+        assert_eq!(
+            (ids.len(), b.page, b.w, b.h),
+            (2, Some(1), Some(792.0), Some(612.0))
+        );
         assert_eq!(
             Document::from_pdf_pages_inner(pdf, &[612.0]).err(),
             Some(CommandError::BadImage)
