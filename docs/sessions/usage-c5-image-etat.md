@@ -1,11 +1,11 @@
 # État — usage-c5-image
 
 Statut : en cours
-Gabarit : chantier (provisoire)
+Gabarit : chantier
 Objectif : On rogne une image, on la retourne, on la tourne par quarts de tour, on règle luminosité et contraste, et on rend transparente une couleur (pipette, tolérance, contigu ou global, plume, aperçu), sans perdre l'original, avec les calculs de pixels dans un Worker.
-Avancement : 16/19 tâches terminées
-Étage : 3 (fin de lot : correctifs) — depuis 2026-11-20 19:16
-Tâche : T18 — Correctifs de relecture — depuis 2026-11-20 19:16 — depuis 2026-11-20 18:50
+Avancement : 20/21 tâches terminées
+Étage : 3 (correctifs tour 2) — depuis 2026-11-20 19:30
+Tâche : T21 — Correctifs du tour 2 — depuis 2026-11-20 19:30
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c5-image   Branche : feat/usage-c5-image   Base : origin/main @ 0dd7f1a, puis origin/main @ 9549785 (C12) fusionné en e6ffd35
 Branche principale locale au lancement : 0dd7f1a (avancée à 9549785 par OD85, C12 fusionné : attendu)
@@ -16,7 +16,7 @@ Lancement : 2026-11-20 17:16 · arrêt ferme 21:16 (bilan à 21:06)
 Complète (origin/main @ 0dd7f1a) : `verifier.sh --e2e` OK (e2e OK), 17:28. Wasm principal 1 080 736 o · formats 859 580 o
 
 ## Compteurs
-contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; corrections T7 parité flipX, T12 asWorkerLike + timeout 5000, T16/T17 preuve par tee + grep) · vagues sans progrès 0/2 · correctifs de fin 1/2
+contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; corrections T7 parité flipX, T12 asWorkerLike + timeout 5000, T16/T17 preuve par tee + grep) · vagues sans progrès 0/2 · correctifs de fin 2/2
 
 ## Tâches
 Plan docs/plans/usage-c5-image-PLAN.md (17 tâches ; sections T11–T17 en écriture pendant la vague 1, choix tranché pour tenir l'arrêt ferme).
@@ -39,8 +39,10 @@ Vagues : V1 = T1, T5, T6, T8, T15 · V2 = T2, T9 · V3 = T3, T10 · V4 = T4 · V
 | T13 | terminée | 1/3 | 03ef298 | ui 206 ok |
 | T14 | terminée | 1/3 | 0531257 | ui 186 ok |
 | T16 | terminée | 1/3 | c13400d | verifier.sh --e2e OK, rejoué sur 21030f1 (C5 image : OK, scène 706 px) |
-| T18 correctifs de relecture | T1–T16 | en cours | 1/3 | — | — |
-| T19 simplification du lot (ex-T17) | T18 | à faire | 0/1 | — | — |
+| T18 correctifs de relecture | terminée | 1/3 | e68a879 | verifier.sh --e2e OK sur 798da2e |
+| T19 simplification du lot (ex-T17) | terminée | 1/1 | bf2cc05 | web 1908 = avant, diff des tests vide |
+| T20 contrôle des licences voit src-tauri | terminée | 1/3 | 98cd96d | controle-licences OK (11 cas) ; main 9549785 échouait aussi |
+| T21 correctifs du tour 2 | en cours | 1/3 | — | — |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · capture image rognée au fond transparent dans docs/essais/ · scène ≥ 640 px mesurée par un test · module Wasm principal ≤ 1 572 864 octets · PR fusionnée par fusion locale --no-ff et push sans --force
@@ -51,9 +53,24 @@ cargo --workspace : 546 passés, 0 FAILED · `ROOMBOARD_WASM_REQUIRED=1 pnpm -r 
 ## Double relecture (tour 1, 9549785..4a1bfc6)
 Aucun blocker. Majeurs : M1 aperçu périmé après écriture hors séance (qualité B + conformité) ; M2 Entrée pendant le rognage ignore la cible ; M3 export PDF vectoriel (C12) d'une image rognée faux (drawImage à 9 arguments non géré par RecordingContext2D, endroit absent de la carte d'impact). Mineurs : pixel-runner exceptions, contraste f64 inexact, hasPixels, Valider pendant calcul, aperçu gardé après fermeture, data-pixels I33, espace+glisser pendant le rognage, pointerId du geste. Simplifications : PixelParams = Pick<ImageParams>, échelle écran dupliquée, boucle des poignées [anti-refactorisation : duplication], sizeOf, nom `edit`, editAction calculé deux fois.
 
+## Rapport
+- Scénarios : S1, S2 joués par l'essai navigateur (C5 image : OK, scène 706 px panneau ouvert) ; S3 tests Rust de pixels.rs ; S4 compat_c5 (fixture d'avant C5) et contrat C5 enregistrer/rouvrir ; S5 tests du lanceur et du cache (résultat périmé, module absent).
+- Hypothèses : 17 dont 6 de niveau 1 (cadrage § hypothèses), toutes « à revoir » par Jérôme ; la plus visible : contigu depuis les bords (un fond enfermé reste opaque, passer en global).
+- Décisions d'architecture (prises par l'agent) : géométrie d'affichage dans la page (image-params.ts) ; pixels dans le module formats ; lanceur de pixels à Worker vivant ; séance de retouche du moteur (image-edit.ts).
+- Hors périmètre : rotation libre, pot et gomme sur image (C6b). `sourceAsset` non préparé (C6b le posera).
+- Simplification appliquée (T19) : 4 constats ; 1 consigné sans objet (sizeOf).
+- Constats d'architecture : 1 ajouté (crates/roomboard-core, ImageView recopie ImageParams). Zone crates/roomboard-core à 3 constats ouverts : audit de cette zone proposé, pas lancé.
+- Release : non due (aucune release ni tag demandés).
+- Hors chantier corrigé pour tenir verifier.sh : contrôle des licences (src-tauri devenu lisible hors ligne, main échouait aussi).
+
+## Double relecture (tour 2, 21030f1..798da2e)
+M1, M2, M3 et m1–m3 fermés. Nouveau major (régression de m4) : image validée pendant le calcul de l'aperçu, puis curseur touché : l'élément reste dessiné brut sans limite (reproduit par le relecteur). Minors : bitmap d'aperçu remplacé non fermé ; history() jette le brouillon même sans changement ; m4 et m5 partiels. → T21.
+
 ## Choix tranchés seul (orchestrateur)
 - Vague 1 lancée pendant que le planificateur finissait T11–T17 ; relecture du plan en parallèle (tenir l'arrêt ferme).
 - Revue immédiate des tâches `concepteur-critique` (3.5.5) remplacée par la double relecture de fin, pour le temps.
+- T20 ajoutée : le contrôle des licences échouait aussi sur main (environnement) ; exception target-lexicon (Apache-2.0 WITH LLVM-exception, permissive) et exclusion des membres du workspace dans le relevé src-tauri.
+- Contraste en entier exact (T18 m2) : change d'une unité ~4 % des valeurs par rapport au f64 ; aucun fichier n'avait encore de réglage figé.
 - Double relecture lancée sur T1–T15 pendant que T16 (essai navigateur) tourne.
 - origin/main (C12) fusionné tôt dans la branche (e6ffd35) ; conflits container.ts et formats lib.rs résolus en gardant les deux.
 
@@ -76,4 +93,4 @@ ouvertes : — · passées : —
 - Chantier en cours sur les mêmes fichiers : OD85 C12 PDF (`feat/usage-c12-pdf`) : element.rs, api.ts, wasm-core.ts, fake-core.ts, renderer.ts, canvas2d.ts, board-session.ts, stage-tags.ts, toolbar-host.ts, App.tsx, main.ts, verifier.sh, verifier-e2e.test.sh.
 
 ## Notes du coffre à poser
-—
+4 notes (journal, 2 décisions NNNN, 1 piège) et une ligne de la fiche : texte complet dans la description de la PR, section « Notes du coffre à poser ».
