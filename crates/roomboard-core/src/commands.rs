@@ -206,6 +206,13 @@ pub enum Command {
         target: crate::fill::FillTarget,
         color: Option<String>,
     },
+    /// Réglages d'une image (C5, U29, I6) : état voulu complet, remplacé en bloc, et nouvelle matrice de l'élément
+    /// (placement calculé par la page, I9, DAI1) ; une transaction, une étape ; même état et même matrice : aucune (D38).
+    SetImageParams {
+        id: String,
+        params: crate::image::ImageParamsInput,
+        matrix: Transform,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -245,6 +252,7 @@ pub enum CommandError {
     BadTable,
     BadFill,
     BadGroup,
+    BadImageParams,
 }
 
 impl std::fmt::Display for CommandError {
@@ -302,6 +310,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadFill => write!(
                 f,
                 "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)"
+            ),
+            CommandError::BadImageParams => write!(
+                f,
+                "réglages d'image invalides (image lisible, rognage entier dans l'image, quarts de tour 0 à 3, luminosité et contraste entiers de -100 à 100, couleur #rrggbb, tolérance et plume entières de 0 à 100 attendus)"
             ),
         }
     }
@@ -715,6 +727,9 @@ impl Document {
                 target,
                 color,
             } => self.cmd_fill(&page, &target, color.as_deref()),
+            Command::SetImageParams { id, params, matrix } => {
+                self.cmd_set_image_params(&id, &params, &matrix)
+            }
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)

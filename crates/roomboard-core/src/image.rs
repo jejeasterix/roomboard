@@ -2,9 +2,11 @@
 //! champ illisible est lu comme absent, U3), domaine (I5), boîte affichée (I8). Champ neutre = champ absent (I4) ;
 //! `crop` en `Any::Array` positionnel, `transparent` en `Y.Map` de champs scalaires, jamais `Any::Map` (I2, G4).
 //! L'écriture (`Command::SetImageParams`) suit le patron de `fill.rs` ; l'asset n'est jamais réécrit.
-use yrs::{Any, Map, MapRef, Out, ReadTxn};
+use yrs::{Any, In, Map, MapPrelim, MapRef, Out, ReadTxn};
 
-use crate::element::{any_f64, out_f64, out_string};
+use crate::commands::{valid_matrix, Change, CommandError};
+use crate::document::Document;
+use crate::element::{any_f64, out_f64, out_string, read_image, transform_to_any, Transform};
 
 /// Couleur rendue transparente (I5, I12-I14) : `color` en `#rrggbb` minuscules ; `tolerance`, `soft` de 0 à 100.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -141,6 +143,162 @@ pub fn display_size(w: f64, h: f64, crop: Option<[u32; 4]>, quarter_turns: u8) -
         (ch, cw)
     } else {
         (cw, ch)
+    }
+}
+
+/// Réglages demandés par `SetImageParams` (I6) : état voulu complet, valeurs brutes de la liaison (nombres de JS),
+/// contrôlées par `normalize` (I5). `crop: None` : aucun rognage ; `transparent: None` : aucune couleur transparente.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ImageParamsInput {
+    pub crop: Option<[f64; 4]>,
+    pub flip_x: bool,
+    pub flip_y: bool,
+    pub quarter_turns: f64,
+    pub brightness: f64,
+    pub contrast: f64,
+    pub transparent: Option<TransparentInput>,
+}
+
+/// Domaine de I5, neutres normalisés (I4) ; `None` hors domaine. Mêmes règles que la lecture (`read_params`).
+pub(crate) fn normalize(p: &ImageParamsInput, w: f64, h: f64) -> Option<ImageParams> {
+    Some(ImageParams {
+        crop: match p.crop {
+            None => None,
+            Some(c) => crop_of(c, w, h)?,
+        },
+        flip_x: p.flip_x,
+        flip_y: p.flip_y,
+        quarter_turns: int_in(p.quarter_turns, 0.0, 3.0)? as u8,
+        brightness: int_in(p.brightness, -100.0, 100.0)? as i8,
+        contrast: int_in(p.contrast, -100.0, 100.0)? as i8,
+        transparent: match &p.transparent {
+            None => None,
+            Some(t) => Some(transparent_of(t)?),
+        },
+    })
+}
+
+/// `transparent` en `Y.Map` de champs scalaires (I2, comme `backdrop`).
+fn transparent_prelim(t: &TransparentView) -> In {
+    In::Map(MapPrelim::from([
+        ("color", In::from(t.color.as_str())),
+        ("tolerance", In::Any(Any::from(f64::from(t.tolerance)))),
+        ("soft", In::Any(Any::from(f64::from(t.soft)))),
+        ("contiguous", In::Any(Any::Bool(t.contiguous))),
+    ]))
+}
+
+/// Écritures du passage de `cur` (lu, normalisé) à `next` : seuls les champs qui changent ; voulu neutre = champ retiré
+/// s'il est présent, même illisible (I4) ; `None` = retrait.
+fn plan<T: ReadTxn>(
+    txn: &T,
+    e: &MapRef,
+    cur: &ImageParams,
+    next: &ImageParams,
+) -> Vec<(&'static str, Option<In>)> {
+    let num = |v: f64| In::Any(Any::from(v));
+    let wanted: [(&'static str, bool, Option<In>); 7] = [
+        (
+            "crop",
+            cur.crop == next.crop,
+            next.crop.map(|c| {
+                In::Any(Any::Array(
+                    c.iter()
+                        .map(|v| Any::from(f64::from(*v)))
+                        .collect::<Vec<Any>>()
+                        .into(),
+                ))
+            }),
+        ),
+        (
+            "flipX",
+            cur.flip_x == next.flip_x,
+            next.flip_x.then_some(In::Any(Any::Bool(true))),
+        ),
+        (
+            "flipY",
+            cur.flip_y == next.flip_y,
+            next.flip_y.then_some(In::Any(Any::Bool(true))),
+        ),
+        (
+            "quarterTurns",
+            cur.quarter_turns == next.quarter_turns,
+            (next.quarter_turns != 0).then(|| num(f64::from(next.quarter_turns))),
+        ),
+        (
+            "brightness",
+            cur.brightness == next.brightness,
+            (next.brightness != 0).then(|| num(f64::from(next.brightness))),
+        ),
+        (
+            "contrast",
+            cur.contrast == next.contrast,
+            (next.contrast != 0).then(|| num(f64::from(next.contrast))),
+        ),
+        (
+            "transparent",
+            cur.transparent == next.transparent,
+            next.transparent.as_ref().map(transparent_prelim),
+        ),
+    ];
+    wanted
+        .into_iter()
+        .filter_map(|(key, same, want)| match want {
+            None if e.get(txn, key).is_some() => Some((key, None)),
+            Some(v) if !same => Some((key, Some(v))),
+            _ => None,
+        })
+        .collect()
+}
+
+impl Document {
+    /// `SetImageParams` (I6) : refus dans l'ordre id inconnu, cible qui n'est pas une image lisible, réglages hors
+    /// domaine, matrice ; plan sous une lecture fermée, puis au plus une transaction (une étape) ; aucun champ à écrire
+    /// et même matrice : aucune (D38).
+    pub(crate) fn cmd_set_image_params(
+        &mut self,
+        id: &str,
+        p: &ImageParamsInput,
+        m: &Transform,
+    ) -> Result<Change, CommandError> {
+        let (element, page, transform, ops) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let (transform, view) =
+                read_image(&txn, &found.element).ok_or(CommandError::BadImageParams)?;
+            let next = normalize(p, view.w, view.h).ok_or(CommandError::BadImageParams)?;
+            if !valid_matrix(m) {
+                return Err(CommandError::BadMatrix);
+            }
+            let ops = plan(&txn, &found.element, &view.params(), &next);
+            (found.element, found.page_id, transform, ops)
+        };
+        if ops.is_empty() && *m == transform {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            for (key, v) in ops {
+                match v {
+                    Some(v) => {
+                        element.insert(&mut txn, key, v);
+                    }
+                    None => {
+                        element.remove(&mut txn, key);
+                    }
+                }
+            }
+            if *m != transform {
+                element.insert(&mut txn, "transform", transform_to_any(m));
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
     }
 }
 
@@ -467,7 +625,9 @@ mod tests {
     fn present(d: &Document, id: &str) -> Vec<&'static str> {
         let txn = d.read();
         let e = d.find_element(&txn, id).expect("élément").element;
-        KEYS.into_iter().filter(|k| e.get(&txn, k).is_some()).collect()
+        KEYS.into_iter()
+            .filter(|k| e.get(&txn, k).is_some())
+            .collect()
     }
 
     #[test]
@@ -501,7 +661,10 @@ mod tests {
             (v.transform, v.image.map(|i| i.params())),
             (IDENTITY, Some(ImageParams::default()))
         );
-        assert!(d.can_undo(), "reste l'ajout de l'image : une seule étape pour les réglages");
+        assert!(
+            d.can_undo(),
+            "reste l'ajout de l'image : une seule étape pour les réglages"
+        );
         assert!(d.undo());
         assert!(!d.can_undo());
     }
@@ -515,13 +678,26 @@ mod tests {
             crop: Some([0.0, 0.0, 640.0, 480.0]),
             ..ImageParamsInput::default()
         };
-        assert_eq!(set(&mut d, &id, neutral, IDENTITY).expect("neutre").ids, Vec::<String>::new());
-        assert_eq!(w.since(), 0, "état neutre sur une image brute : aucune transaction");
+        assert_eq!(
+            set(&mut d, &id, neutral, IDENTITY).expect("neutre").ids,
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            w.since(),
+            0,
+            "état neutre sur une image brute : aucune transaction"
+        );
         set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
         let n = w.since();
-        assert_eq!(set(&mut d, &id, full_input(), IDENTITY).expect("même état").ids, Vec::<String>::new());
+        assert_eq!(
+            set(&mut d, &id, full_input(), IDENTITY)
+                .expect("même état")
+                .ids,
+            Vec::<String>::new()
+        );
         assert_eq!(w.since(), n, "même état, même matrice : aucune transaction");
-        let moved = set(&mut d, &id, full_input(), [1.0, 0.0, 0.0, 1.0, 1.0, 0.0]).expect("matrice seule");
+        let moved =
+            set(&mut d, &id, full_input(), [1.0, 0.0, 0.0, 1.0, 1.0, 0.0]).expect("matrice seule");
         assert_eq!(moved.ids, vec![id]);
     }
 
@@ -533,7 +709,14 @@ mod tests {
         set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
         assert_eq!(
             present(&d, &id),
-            vec!["crop", "flipX", "quarterTurns", "brightness", "contrast", "transparent"]
+            vec![
+                "crop",
+                "flipX",
+                "quarterTurns",
+                "brightness",
+                "contrast",
+                "transparent"
+            ]
         );
         put(&d, &id, "flipY", In::from("illisible"));
         set(&mut d, &id, ImageParamsInput::default(), IDENTITY).expect("rétablir");
@@ -567,14 +750,38 @@ mod tests {
         };
         let base = ImageParamsInput::default;
         let bad = [
-            ImageParamsInput { crop: Some([600.0, 0.0, 100.0, 10.0]), ..base() },
-            ImageParamsInput { crop: Some([0.0, 0.0, 0.0, 10.0]), ..base() },
-            ImageParamsInput { crop: Some([0.5, 0.0, 10.0, 10.0]), ..base() },
-            ImageParamsInput { quarter_turns: 4.0, ..base() },
-            ImageParamsInput { quarter_turns: 1.5, ..base() },
-            ImageParamsInput { brightness: 101.0, ..base() },
-            ImageParamsInput { contrast: -101.0, ..base() },
-            ImageParamsInput { brightness: f64::NAN, ..base() },
+            ImageParamsInput {
+                crop: Some([600.0, 0.0, 100.0, 10.0]),
+                ..base()
+            },
+            ImageParamsInput {
+                crop: Some([0.0, 0.0, 0.0, 10.0]),
+                ..base()
+            },
+            ImageParamsInput {
+                crop: Some([0.5, 0.0, 10.0, 10.0]),
+                ..base()
+            },
+            ImageParamsInput {
+                quarter_turns: 4.0,
+                ..base()
+            },
+            ImageParamsInput {
+                quarter_turns: 1.5,
+                ..base()
+            },
+            ImageParamsInput {
+                brightness: 101.0,
+                ..base()
+            },
+            ImageParamsInput {
+                contrast: -101.0,
+                ..base()
+            },
+            ImageParamsInput {
+                brightness: f64::NAN,
+                ..base()
+            },
             color(|t| t.color = "#FFFFFF".into()),
             color(|t| t.color = "white".into()),
             color(|t| t.tolerance = 101.0),
@@ -588,16 +795,30 @@ mod tests {
             );
         }
         assert_eq!(
-            set(&mut d, &id, ImageParamsInput { brightness: 101.0, ..base() }, [0.0; 6]),
+            set(
+                &mut d,
+                &id,
+                ImageParamsInput {
+                    brightness: 101.0,
+                    ..base()
+                },
+                [0.0; 6]
+            ),
             Err(CommandError::BadImageParams),
             "réglages contrôlés avant la matrice"
         );
-        assert_eq!(set(&mut d, &id, base(), [0.0; 6]), Err(CommandError::BadMatrix));
+        assert_eq!(
+            set(&mut d, &id, base(), [0.0; 6]),
+            Err(CommandError::BadMatrix)
+        );
         assert_eq!(
             set(&mut d, "nulle-part", base(), IDENTITY),
             Err(CommandError::UnknownElement("nulle-part".into()))
         );
-        assert_eq!(set(&mut d, &stroke, base(), IDENTITY), Err(CommandError::BadImageParams));
+        assert_eq!(
+            set(&mut d, &stroke, base(), IDENTITY),
+            Err(CommandError::BadImageParams)
+        );
         assert_eq!(w.since(), 0);
     }
 
@@ -609,6 +830,9 @@ mod tests {
     }
 
     /// I2, S4 : rognage en `Any::Array`, couleur en `Y.Map` ; trente rechargements gardent les octets.
+    /// La matrice est posée dès l'ajout : un champ remplacé (ici `transform`) laisse un contenu supprimé que l'annulation
+    /// garde dans l'original et que le rechargement ramasse ; les octets différeraient dès le premier rechargement, avec
+    /// ou sans réglages (préexistant, hors de cette commande).
     #[test]
     fn image_params_reload_keep_bytes() {
         use crate::format::{load, save, SaveMeta};
@@ -618,15 +842,22 @@ mod tests {
             created: None,
         };
         let mut d = Document::blank();
-        let (_, id) = add(&mut d, 640.0, 480.0, IDENTITY);
-        set(&mut d, &id, full_input(), [2.0, 0.0, 0.0, 1.0, 5.0, 6.0]).expect("réglages");
+        let m = [2.0, 0.0, 0.0, 1.0, 5.0, 6.0];
+        let (_, id) = add(&mut d, 640.0, 480.0, m);
+        set(&mut d, &id, full_input(), m).expect("réglages");
         let ybin = d.encode_v1();
         let file = save(&d, &meta).expect("save");
         for i in 0..30 {
             let r = load(&file).expect("load");
             assert!(r.encode_v1() == ybin, "ybin différent au rechargement {i}");
-            assert!(save(&r, &meta).expect("resave") == file, "fichier différent au rechargement {i}");
-            assert_eq!(r.element(&id).and_then(|e| e.image), d.element(&id).and_then(|e| e.image));
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+            assert_eq!(
+                r.element(&id).and_then(|e| e.image),
+                d.element(&id).and_then(|e| e.image)
+            );
         }
     }
 
@@ -643,14 +874,15 @@ mod tests {
         let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
         set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
         let want = d.element(&id).and_then(|e| e.image);
-        let f = d.extract(&p, &[id.clone()]).expect("extract");
+        let f = d.extract(&p, std::slice::from_ref(&id)).expect("extract");
         let fid = f.element_ids(&f.page_ids()[0])[0].clone();
         assert_eq!(f.element(&fid).and_then(|e| e.image), want);
         let mut t = Document::blank();
         let tp = t.page_ids()[0].clone();
         let pasted = t.insert_fragment(&f, &tp, 10.0, 0.0).expect("collage").ids[0].clone();
         assert_eq!(t.element(&pasted).and_then(|e| e.image), want);
-        let (r, _) = load_fragment(&save_fragment(&f, &meta, "image").expect("rbitem")).expect("relu");
+        let (r, _) =
+            load_fragment(&save_fragment(&f, &meta, "image").expect("rbitem")).expect("relu");
         let rid = r.element_ids(&r.page_ids()[0])[0].clone();
         assert_eq!(r.element(&rid).and_then(|e| e.image), want);
     }
@@ -676,7 +908,11 @@ mod tests {
         put(&d, &id, "flipY", In::Any(Any::Bool(false)));
         let before = clock(&d);
         let c = set(&mut d, &id, brighter(), IDENTITY).expect("neutre brut");
-        assert_eq!(c.ids, vec![id.clone()], "champ brut égal au neutre : retiré");
+        assert_eq!(
+            c.ids,
+            vec![id.clone()],
+            "champ brut égal au neutre : retiré"
+        );
         assert_eq!(clock(&d), before, "un retrait n'insère rien");
         assert!(!present(&d, &id).contains(&"flipY"));
     }
