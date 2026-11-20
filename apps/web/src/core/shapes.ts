@@ -93,3 +93,14 @@ export function composeMatrix(m: Matrix, t: Matrix): Matrix {
     m[1] * t[4] + m[3] * t[5] + m[5],
   ];
 }
+
+/** Inverse de `m` (`element::invert` du cœur) : null si le déterminant est NaN ou de valeur absolue < 1e-12. */
+export function invertMatrix(m: Matrix): Matrix | null {
+  const det = m[0] * m[3] - m[1] * m[2];
+  if (Number.isNaN(det) || Math.abs(det) < 1e-12) return null;
+  const a = m[3] / det;
+  const b = -m[1] / det;
+  const c = -m[2] / det;
+  const d = m[0] / det;
+  return [a, b, c, d, -(a * m[4] + c * m[5]), -(b * m[4] + d * m[5])];
+}

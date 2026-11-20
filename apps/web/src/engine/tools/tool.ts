@@ -3,6 +3,7 @@ import type { Change, Command, CoreDocument } from "../../core/api";
 import type { Camera } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
+import type { CellRef, NavMove, TableAction, TableCellState } from "../table-geom";
 import type { EditOverlay } from "../render/overlay";
 import type { LiveLayer } from "../render/renderer";
 
@@ -18,6 +19,8 @@ export interface ToolContext {
   alt?(): boolean;
   /** Demande une image (outil à l'arrêt dont l'aperçu a changé : ensemble masqué vidé) ; absent = sans effet. */
   requestFrame?(): void;
+  /** L'outil a changé ce que publie l'état (cellule active du tableau) sans écrire ; absent = sans effet. */
+  stateChanged?(): void;
 }
 
 /** Aperçu d'un outil : couche vive, éléments masqués de la scène, calque d'édition (CL4-1). */
@@ -47,6 +50,22 @@ export interface SelectionTool extends GestureTool {
   setSelection(ids: readonly string[]): void;
   /** Retire les ids absents de la page montrée (après annuler, rétablir, suppression). */
   prune(): void;
+}
+
+/** Outil Tableau (C10a) : cellule active tenue par ids, retirée par prune quand elle disparaît (I1). */
+export interface TableTool extends GestureTool {
+  cell(): CellRef | null;
+  cellState(): TableCellState | null;
+  act(a: TableAction): void;
+  fill(color: string | null): void;
+  /** Suppr, saisie fermée : vide la cellule active ; false sans cellule active ou saisie ouverte. */
+  clearCell(): boolean;
+  prune(): void;
+  /** Tab, Maj+Tab, flèches au bord (DAC3) ; vrai si la touche est prise. */
+  navigate(move: NavMove): boolean;
+  compositionStart(): void;
+  compositionEnd(): void;
+  requestCommit(): void;
 }
 
 export const NO_LIVE: LivePart = { strokes: [], erasers: [], hidden: new Set<string>() };
