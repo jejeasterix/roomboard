@@ -23,7 +23,7 @@ export const PDF_CUT_MESSAGE = "du contenu hors des pages PDF n'est pas exporté
 export const PDF_RASTER_MISSING_MESSAGE = "page d'origine du PDF illisible : page vierge à la place";
 export const PDF_RASTER_MESSAGE = "PDF d'origine non recopié : pages en image";
 
-export type PdfLib = Pick<typeof import("pdf-lib"), "PDFDocument" | "degrees">;
+export type PdfLib = Pick<typeof import("pdf-lib"), "PDFDocument" | "PDFObjectCopier" | "PDFPage" | "degrees">;
 
 /** Ce que l'export lit d'un fond et d'un document : un `CoreDocument` s'y branche tel quel. */
 export interface ExportBackdrop {
@@ -160,9 +160,11 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
   };
 
   /**
-   * Pages à recopier d'un asset, par position dans le document : un seul `copyPages` pour toutes (un copieur par appel
-   * dans pdf-lib 1.17.1 : page à page, polices et XObjects partagés seraient recopiés pour chaque page). Si le bloc
-   * échoue (une page abîmée), page par page : seule la page abîmée tombe en repli.
+   * Pages à recopier d'un asset, par position dans le document. `copyPages` crée un copieur par appel (pdf-lib 1.17.1) :
+   * page à page, polices et XObjects partagés seraient recopiés pour chaque page. On garde donc un seul copieur pour
+   * toutes les pages de l'asset. Une page abîmée fait lever le copieur en laissant des références sans objet : on retire
+   * les objets qu'elle a créés (numéros au-delà de la marque prise avant elle, que nulle page déjà recopiée ne
+   * référence), on jette ce copieur et la page suivante en prend un neuf. Seule la page abîmée tombe en repli.
    */
   const copies = new Map<string, Promise<Map<number, PDFPage>>>();
   const copiesOf = (asset: string, src: PDFDocument): Promise<Map<number, PDFPage>> => {
@@ -171,22 +173,25 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
     const wanted = snap.flatMap((q, pos) => (q.pdf !== null && q.pdf.asset === asset && q.pdf.index < src.getPageCount() ? [{ pos, index: q.pdf.index }] : []));
     const run = async (): Promise<Map<number, PDFPage>> => {
       const result = new Map<number, PDFPage>();
+      let srcPages: PDFPage[];
       try {
-        const all = await out.copyPages(src, wanted.map((w) => w.index));
-        for (const [i, w] of wanted.entries()) {
-          const c = all[i];
-          if (c === undefined) throw new Error(`page ${w.index + 1} illisible dans le PDF d'origine`);
-          result.set(w.pos, c);
-        }
+        await src.flush();
+        srcPages = src.getPages();
       } catch {
-        result.clear();
-        for (const w of wanted) {
-          try {
-            const [c] = await out.copyPages(src, [w.index]);
-            if (c !== undefined) result.set(w.pos, c);
-          } catch {
-            // page abîmée : absente du résultat, repli en image
-          }
+        return result; // PDF chargé mais abîmé : aucune page recopiée, tout tombe en repli en image
+      }
+      let copier = lib.PDFObjectCopier.for(src.context, out.context);
+      for (const w of wanted) {
+        const mark = out.context.largestObjectNumber;
+        try {
+          const original = srcPages[w.index];
+          if (original === undefined) throw new Error(`page ${w.index + 1} illisible dans le PDF d'origine`);
+          const node = copier.copy(original.node);
+          result.set(w.pos, lib.PDFPage.of(node, out.context.register(node), out));
+        } catch {
+          // page abîmée : absente du résultat (repli en image) ; ses objets partiels sont retirés
+          for (const [ref] of [...out.context.enumerateIndirectObjects()]) if (ref.objectNumber > mark) out.context.delete(ref);
+          copier = lib.PDFObjectCopier.for(src.context, out.context);
         }
       }
       return result;
