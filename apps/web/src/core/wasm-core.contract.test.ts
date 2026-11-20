@@ -2,7 +2,7 @@
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
 import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
-import { BAD_GROUP_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
+import { BAD_GROUP_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
@@ -2752,5 +2752,227 @@ describe("contrôle de forme C12 (fond pdf-page)", () => {
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.page).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, page: 2 } })?.backdrop?.page).toBe(2);
     expect(() => toPageView({ ...page, backdrop: { ...b, page: "2" } })).toThrow();
+  });
+});
+
+// C14 (élément média) : contrat commun aux deux fabriques ; le média mal formé (cadre inconnu) n'est fabricable que par
+// la fausse liaison (octets JSON), le vrai module le couvre côté Rust (`media.rs`, `tests/media.rs`).
+const c14Factories = factories;
+const WEBM = { id: ABC, name: "cours.webm", mime: "video/webm", size: 1000 } as const;
+const POSTER = jpg;
+const C14_MATRIX: Matrix = [1, 0, 0, 1, 100, 50];
+const BAD_MATRIX_C14 = "matrice invalide (six nombres finis, inversible)";
+type AddMediaCmd = Extract<Command, { type: "AddMedia" }>;
+type SetMediaCmd = Extract<Command, { type: "SetMedia" }>;
+const c14Add = (d: CoreDocument, page: string, over: Partial<Omit<AddMediaCmd, "type">> = {}): string => {
+  const cmd: AddMediaCmd = {
+    type: "AddMedia", page, asset: WEBM, linked: null, mediaType: "video", w: 320, h: 180, duration: 2.5, poster: POSTER, matrix: C14_MATRIX, ...over,
+  };
+  return d.apply(cmd).ids[0] ?? "";
+};
+const c14Media = (d: CoreDocument, id: string) => {
+  const v = d.element(id);
+  if (v === null || v.kind !== "media") throw new Error(`pas un média : ${JSON.stringify(v)}`);
+  return v.media;
+};
+const NEUTRAL = { trimStart: 0, trimEnd: null, loop: false, volume: 1 } as const;
+
+describe.each(c14Factories)("contrat C14 : $name", ({ f }) => {
+  const set = (d: CoreDocument, id: string, over: Partial<Omit<SetMediaCmd, "type" | "id">> = {}) =>
+    d.apply({ type: "SetMedia", id, ...NEUTRAL, ...over });
+
+  it("AddMedia : une étape, vue aux réglages neutres, média et poster cités ; annuler retire tout (S1, M5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const c = d.apply({ type: "AddMedia", page: p, asset: WEBM, linked: null, mediaType: "video", w: 320, h: 180, duration: 2.5, poster: POSTER, matrix: C14_MATRIX });
+    expect(c.pages).toEqual([p]);
+    expect(c.ids).toHaveLength(1);
+    const a = c.ids[0] ?? "";
+    expect(d.element(a)).toEqual({
+      id: a,
+      kind: "media",
+      transform: [1, 0, 0, 1, 100, 50],
+      media: { asset: ABC, mediaType: "video", w: 320, h: 180, duration: 2.5, poster: EMPTY_HASH, ...NEUTRAL },
+    });
+    expect(d.bounds([a])).toEqual({ x0: 100, y0: 50, x1: 420, y1: 230 });
+    expect(d.citedAssets()).toEqual([WEBM, POSTER]);
+    expect(d.linkedAssets()).toEqual([]);
+    expect(d.canUndo()).toBe(true);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([]);
+    expect(d.citedAssets()).toEqual([]);
+    expect(d.canUndo()).toBe(false);
+  });
+
+  it("AddMedia : refus sans étape (10 cas, messages exacts)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const cases: [string, Partial<Omit<AddMediaCmd, "type">>, string][] = [
+      ["asset invalide", { asset: { ...WEBM, id: "ABC" } }, BAD_ASSET],
+      ["poster invalide", { poster: { ...POSTER, mime: "" } }, BAD_ASSET],
+      ["lien vide", { linked: "" }, BAD_MEDIA_MESSAGE],
+      ["lien de 4 097 caractères", { linked: "a".repeat(4097) }, BAD_MEDIA_MESSAGE],
+      ["largeur nulle", { w: 0 }, BAD_MEDIA_MESSAGE],
+      ["hauteur hors f32", { h: 1e39 }, BAD_MEDIA_MESSAGE],
+      ["durée NaN", { duration: Number.NaN }, BAD_MEDIA_MESSAGE],
+      ["durée négative", { duration: -1 }, BAD_MEDIA_MESSAGE],
+      ["matrice nulle", { matrix: [0, 0, 0, 0, 0, 0] }, BAD_MATRIX_C14],
+      ["page inconnue", { page: "nope" }, "page inconnue : nope"],
+    ];
+    for (const [name, over, message] of cases) {
+      unchanged(d, () => expect(messageOf(() => c14Add(d, p, over)), name).toBe(message));
+    }
+    expect(d.citedAssets()).toEqual([]);
+    // 4 096 points de code (hors BMP compris) : accepté.
+    expect(() => c14Add(d, p, { linked: "\u{1F600}".repeat(4096) })).not.toThrow();
+  });
+
+  it("SetMedia : une étape par réglage, neutres retirés, même état sans étape ; annuler un par un (S2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c14Add(d, p);
+    unchanged(d, () => set(d, a));
+    const steps: Partial<Omit<SetMediaCmd, "type" | "id">>[] = [
+      { trimStart: 0.5 },
+      { trimStart: 0.5, trimEnd: 2 },
+      { trimStart: 0.5, trimEnd: 2, loop: true },
+      { trimStart: 0.5, trimEnd: 2, loop: true, volume: 0.25 },
+      {},
+    ];
+    const seen = [];
+    for (const s of steps) {
+      const c = set(d, a, s);
+      expect(c.pages).toEqual([p]);
+      expect(c.ids).toEqual([a]);
+      seen.push(c14Media(d, a));
+      unchanged(d, () => set(d, a, s));
+    }
+    expect(seen[3]).toMatchObject({ trimStart: 0.5, trimEnd: 2, loop: true, volume: 0.25 });
+    expect(seen[4]).toMatchObject(NEUTRAL);
+    for (let i = 3; i >= 0; i--) {
+      d.undo();
+      expect(c14Media(d, a)).toEqual(seen[i]);
+    }
+    d.undo();
+    expect(c14Media(d, a)).toMatchObject(NEUTRAL);
+    expect(d.canUndo()).toBe(true);
+  });
+
+  it("SetMedia : domaines contre la durée ; fin égale à la durée ; id inconnu ; image (M6)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c14Add(d, p); // 2,5 s
+    const bad: [string, Partial<Omit<SetMediaCmd, "type" | "id">>][] = [
+      ["début négatif", { trimStart: -1 }],
+      ["début = durée", { trimStart: 2.5 }],
+      ["début NaN", { trimStart: Number.NaN }],
+      ["fin = début", { trimEnd: 0 }],
+      ["fin au-delà de la durée", { trimEnd: 3 }],
+      ["fin NaN", { trimEnd: Number.NaN }],
+      ["fin = début non nul", { trimStart: 1, trimEnd: 1 }],
+      ["volume > 1", { volume: 1.5 }],
+      ["volume < 0", { volume: -0.1 }],
+    ];
+    for (const [name, s] of bad) unchanged(d, () => expect(messageOf(() => set(d, a, s)), name).toBe(BAD_MEDIA_MESSAGE));
+    unchanged(d, () => set(d, a, { trimEnd: 2.5 })); // fin = durée : neutre
+    expect(c14Media(d, a).trimEnd).toBeNull();
+    unchanged(d, () => expect(messageOf(() => set(d, "nope"))).toBe("élément inconnu : nope"));
+    const i = d.apply({ type: "AddImage", page: p, asset: png, w: 10, h: 10, matrix: I }).ids[0] ?? "";
+    unchanged(d, () => expect(messageOf(() => set(d, i))).toBe(BAD_MEDIA_MESSAGE));
+    const s0 = c14Add(d, p, { mediaType: "audio", duration: 0, poster: null }); // durée inconnue
+    set(d, s0, { trimStart: 3, trimEnd: 9 });
+    expect(c14Media(d, s0)).toMatchObject({ mediaType: "audio", duration: 0, poster: null, trimStart: 3, trimEnd: 9 });
+  });
+
+  it("enregistré puis relu : réglages, poster et lien gardés (S3)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c14Add(d, p, { linked: "/media/cours.webm" });
+    set(d, a, { trimStart: 0.5, trimEnd: 2, loop: true, volume: 0.25 });
+    const before = c14Media(d, a);
+    const r = f.load(d.save(now, "1.0.0"));
+    const q = first(r);
+    expect(r.elementIds(q)).toEqual([a]);
+    expect(c14Media(r, a)).toEqual(before);
+    expect(r.element(a)).toEqual(d.element(a));
+    expect(r.citedAssets()).toEqual([WEBM, POSTER]);
+    expect(r.linkedAssets()).toEqual([{ id: ABC, path: "/media/cours.webm" }]);
+  });
+
+  it("relinkAssets : hors historique, version inchangée (M30)", () => {
+    const d = f.blank();
+    const p = first(d);
+    c14Add(d, p, { linked: "/media/cours.webm" });
+    expect(d.linkedAssets()).toEqual([{ id: ABC, path: "/media/cours.webm" }]);
+    const v = d.version();
+    const pages = d.pageIds();
+    expect(d.relinkAssets([{ id: ABC, path: "/autre/cours.webm" }, { id: EMPTY_HASH, path: "/poster.jpg" }])).toBe(1);
+    expect(d.linkedAssets()).toEqual([{ id: ABC, path: "/autre/cours.webm" }]);
+    expect(d.version()).toBe(v);
+    expect(d.pageIds()).toEqual(pages);
+    expect(d.canUndo()).toBe(true);
+    expect(d.relinkAssets([{ id: ABC, path: "/autre/cours.webm" }])).toBe(0);
+    expect(d.relinkAssets([{ id: ABC, path: "" }])).toBe(0);
+    expect(d.relinkAssets([{ id: "0".repeat(64), path: "/x" }])).toBe(0);
+    expect(d.linkedAssets()).toEqual([{ id: ABC, path: "/autre/cours.webm" }]);
+    d.undo();
+    expect(d.linkedAssets()).toEqual([]);
+  });
+
+  it("copie (extract) : média inclus garde ses assets, média lié garde son lien (M32)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c14Add(d, p, { linked: "/media/cours.webm" });
+    const other = c14Add(d, p, { asset: { ...WEBM, id: "1".repeat(64) }, poster: null });
+    const copy = d.extract(p, [a]);
+    const ids = copy.elementIds(first(copy));
+    expect(ids).toHaveLength(1);
+    expect(c14Media(copy, ids[0] ?? "")).toEqual(c14Media(d, a));
+    expect(copy.citedAssets()).toEqual([WEBM, POSTER]);
+    expect(copy.linkedAssets()).toEqual([{ id: ABC, path: "/media/cours.webm" }]);
+    expect(copy.citedAssets().map((x) => x.id)).not.toContain(c14Media(d, other).asset);
+  });
+});
+
+// Un média mal formé suit le repli du tableau (cadre inconnu, jamais invisible), pas celui de l'image (`malformed`,
+// `element()` null). Seule la fausse liaison peut en fabriquer un à partir d'octets (JSON) ; sous le patron de l'image,
+// `element()` rendrait null et `bounds` null : ce test serait rouge.
+describe("contrat C14 : média mal formé = cadre inconnu (fausse liaison)", () => {
+  const doc = (elements: unknown[]): Uint8Array =>
+    new TextEncoder().encode(
+      JSON.stringify({ now, appVersion: "1.0.0", assets: {}, pages: [{ id: "p1", background: "#ffffff", backdrop: null, elements }] }),
+    );
+  it("mediaType inconnu et asset absent : vue unknown, bornes présentes, réenregistré à l'identique", () => {
+    const m1 = { id: "m1", kind: "media", transform: [1, 0, 0, 1, 100, 50], media: { asset: ABC, mediaType: "hologram", w: 320, h: 180 } };
+    const m2 = { id: "m2", kind: "media", transform: [1, 0, 0, 1, 0, 0], media: { mediaType: "video", w: 320, h: 180 } };
+    const d = fakeCore.load(doc([m1, m2]));
+    for (const id of ["m1", "m2"]) {
+      expect(d.element(id)).toMatchObject({ id, kind: "unknown", unknown: { sourceKind: "media", w: 320, h: 180 } });
+      expect(d.bounds([id])).not.toBeNull();
+    }
+    expect(d.bounds(["m1"])).toEqual({ x0: 100, y0: 50, x1: 420, y1: 230 });
+    const once = d.save(now, "1.0.0");
+    const twice = fakeCore.load(once).save(now, "1.0.0");
+    expect(new TextDecoder().decode(twice)).toBe(new TextDecoder().decode(once));
+    expect(fakeCore.load(once).element("m2")).toMatchObject({ kind: "unknown", unknown: { sourceKind: "media" } });
+  });
+});
+
+describe("contrôle de forme C14 (média)", () => {
+  const t = [1, 0, 0, 1, 5, 6];
+  const media = { asset: ABC, mediaType: "video", w: 320, h: 180, duration: 2.5, poster: undefined, trimStart: 0, trimEnd: undefined, loop: false, volume: 1 };
+  const view = (m: Record<string, unknown>) => toElementView({ id: "m1", kind: "media", transform: t, media: m });
+  it("poster et trimEnd undefined (Option::None) → null ; valeurs gardées", () => {
+    expect(view(media)).toEqual({ id: "m1", kind: "media", transform: t, media: { ...media, poster: null, trimEnd: null } });
+    expect(view({ ...media, poster: EMPTY_HASH, trimEnd: 2 })).toMatchObject({ media: { poster: EMPTY_HASH, trimEnd: 2 } });
+  });
+  it("mediaType hors video/audio, loop non booléen, w ou h non finis > 0 : ElementView invalide", () => {
+    for (const bad of [
+      { mediaType: "hologram" }, { loop: 1 }, { w: 0 }, { w: Number.NaN }, { h: Number.POSITIVE_INFINITY }, { h: -3 },
+      { asset: 3 }, { volume: "1" }, { poster: 3 }, { trimEnd: "x" }, { duration: "x" },
+    ]) {
+      expect(() => view({ ...media, ...bad }), JSON.stringify(bad)).toThrow("ElementView invalide");
+    }
+    expect(() => toElementView({ id: "m1", kind: "media", transform: t })).toThrow("ElementView invalide");
   });
 });
