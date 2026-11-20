@@ -441,6 +441,32 @@ pub(crate) fn apply_spans(txn: &mut TransactionMut, text: &TextRef, spans: &[Spa
     }
 }
 
+/// Segments d'une cellule (C7b, R16) : ceux de son `Y.Text` ; sans `Y.Text` (remplissage seul), un segment vide.
+pub(crate) fn cell_spans<T: ReadTxn>(txn: &T, text: Option<&TextRef>) -> Vec<TextSpanView> {
+    text.map_or_else(
+        || {
+            vec![TextSpanView {
+                text: String::new(),
+                attrs: SpanAttrs::default(),
+            }]
+        },
+        |t| read_spans(txn, t),
+    )
+}
+
+/// Sortie « inchangé » d'une cellule (R7) : sans état voulu, ou sans `Y.Text` (contenu vide : rien à aligner), vrai ;
+/// sinon, vrai si aucune clé connue ne diffère.
+pub(crate) fn spans_unchanged<T: ReadTxn>(
+    txn: &T,
+    text: Option<&TextRef>,
+    spans: Option<&[SpanInput]>,
+) -> bool {
+    match (text, spans) {
+        (Some(t), Some(s)) => !spans_differ(txn, t, s),
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;

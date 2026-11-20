@@ -65,6 +65,7 @@ fn build() -> Document {
             col: t.cols[i % 4].id.clone(),
             content: (*text).into(),
             row_height: None,
+            spans: None,
         })
         .expect("cellule");
     }
@@ -135,7 +136,10 @@ fn rich_cell_round_trips() {
         .ids[0]
         .clone();
     let t = d.element(&id).and_then(|v| v.table).expect("vue");
-    let bold = SpanAttrs { bold: true, ..SpanAttrs::default() };
+    let bold = SpanAttrs {
+        bold: true,
+        ..SpanAttrs::default()
+    };
     d.apply(Command::SetTableCell {
         id: id.clone(),
         row: t.rows[0].id.clone(),
@@ -143,14 +147,38 @@ fn rich_cell_round_trips() {
         content: "aaTotal".into(),
         row_height: None,
         spans: Some(vec![
-            SpanInput { text: "a".into(), attrs: SpanAttrs::default() },
-            SpanInput { text: "a".into(), attrs: bold.clone() },
-            SpanInput { text: "Total".into(), attrs: bold.clone() },
+            SpanInput {
+                text: "a".into(),
+                attrs: SpanAttrs::default(),
+            },
+            SpanInput {
+                text: "a".into(),
+                attrs: bold.clone(),
+            },
+            SpanInput {
+                text: "Total".into(),
+                attrs: bold.clone(),
+            },
         ]),
     })
     .expect("cellule");
-    let meta = SaveMeta { app_version: "0.1.0".into(), now: "2026-11-20T00:00:00Z".into(), created: None };
+    let meta = SaveMeta {
+        app_version: "0.1.0".into(),
+        now: "2026-11-20T00:00:00Z".into(),
+        created: None,
+    };
     let back = load(&save(&d, &meta).expect("save")).expect("load");
-    let cell = back.element(&id).and_then(|v| v.table).expect("vue").cells.remove(0);
-    assert_eq!(cell.spans.iter().map(|s| (s.text.as_str(), s.attrs.bold)).collect::<Vec<_>>(), vec![("a", false), ("aTotal", true)]);
+    let cell = back
+        .element(&id)
+        .and_then(|v| v.table)
+        .expect("vue")
+        .cells
+        .remove(0);
+    assert_eq!(
+        cell.spans
+            .iter()
+            .map(|s| (s.text.as_str(), s.attrs.bold))
+            .collect::<Vec<_>>(),
+        vec![("a", false), ("aTotal", true)]
+    );
 }

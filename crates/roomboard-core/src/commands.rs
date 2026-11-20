@@ -122,6 +122,8 @@ pub enum Command {
         col: String,
         content: String,
         row_height: Option<f64>,
+        /// C7b (R7) : état voulu des segments de la cellule ; `None` : différence seule (C10a).
+        spans: Option<Vec<SpanInput>>,
     },
     /// Ligne ou colonne insérée au rang `at` (0..=n), taille copiée de la voisine `at - 1`, sinon de la première.
     InsertTableLine {
@@ -562,7 +564,14 @@ impl Document {
                 col,
                 content,
                 row_height,
-            } => self.cmd_set_table_cell(&id, (row.as_str(), col.as_str()), &content, row_height),
+                spans,
+            } => self.cmd_set_table_cell(
+                &id,
+                (row.as_str(), col.as_str()),
+                &content,
+                row_height,
+                spans.as_deref(),
+            ),
             Command::InsertTableLine { id, axis, at } => self.cmd_insert_table_line(&id, axis, at),
             Command::RemoveTableLine { id, axis, line } => {
                 self.cmd_remove_table_line(&id, axis, &line)

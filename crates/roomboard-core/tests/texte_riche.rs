@@ -319,7 +319,13 @@ fn table_doc() -> (Document, String, Vec<String>, Vec<String>) {
     (d, id, rows, cols)
 }
 
-fn set_cell(id: &str, row: &str, col: &str, content: &str, spans: Option<Vec<SpanInput>>) -> Command {
+fn set_cell(
+    id: &str,
+    row: &str,
+    col: &str,
+    content: &str,
+    spans: Option<Vec<SpanInput>>,
+) -> Command {
     Command::SetTableCell {
         id: id.into(),
         row: row.into(),
@@ -344,34 +350,76 @@ fn cell_spans(d: &Document, id: &str, row: &str, col: &str) -> Vec<TextSpanView>
 #[test]
 fn cell_view_has_spans() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Lundi", None)).expect("texte");
-    d.apply(Command::SetTableFill { id: id.clone(), row: rows[1].clone(), col: cols[1].clone(), fill: Some("#fef08a".into()) })
-        .expect("remplissage");
-    assert_eq!(cell_spans(&d, &id, &rows[0], &cols[0]), vec![view("Lundi", none())]);
-    assert_eq!(cell_spans(&d, &id, &rows[1], &cols[1]), vec![view("", none())]);
+    d.apply(set_cell(&id, &rows[0], &cols[0], "Lundi", None))
+        .expect("texte");
+    d.apply(Command::SetTableFill {
+        id: id.clone(),
+        row: rows[1].clone(),
+        col: cols[1].clone(),
+        fill: Some("#fef08a".into()),
+    })
+    .expect("remplissage");
+    assert_eq!(
+        cell_spans(&d, &id, &rows[0], &cols[0]),
+        vec![view("Lundi", none())]
+    );
+    assert_eq!(
+        cell_spans(&d, &id, &rows[1], &cols[1]),
+        vec![view("", none())]
+    );
 }
 
 /// S1, R7 : cellule existante, texte changé et mis en forme en une seule `SetTableCell` : une étape.
 #[test]
 fn set_cell_with_spans_formats_in_one_step() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "aa", None)).expect("aa");
-    d.apply(set_cell(&id, &rows[0], &cols[0], "aaaTotal", Some(vec![sp("a", none()), sp("a", bold()), sp("a", none()), sp("Total", bold())])))
-        .expect("riche");
+    d.apply(set_cell(&id, &rows[0], &cols[0], "aa", None))
+        .expect("aa");
+    d.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "aaaTotal",
+        Some(vec![
+            sp("a", none()),
+            sp("a", bold()),
+            sp("a", none()),
+            sp("Total", bold()),
+        ]),
+    ))
+    .expect("riche");
     assert_eq!(
         cell_spans(&d, &id, &rows[0], &cols[0]),
-        vec![view("a", none()), view("a", bold()), view("a", none()), view("Total", bold())]
+        vec![
+            view("a", none()),
+            view("a", bold()),
+            view("a", none()),
+            view("Total", bold())
+        ]
     );
     assert!(d.undo());
-    assert_eq!(cell_spans(&d, &id, &rows[0], &cols[0]), vec![view("aa", none())]);
+    assert_eq!(
+        cell_spans(&d, &id, &rows[0], &cols[0]),
+        vec![view("aa", none())]
+    );
 }
 
 /// R7, R16 : cellule absente : créée et mise en forme dans la même transaction (`TextRef` relu) ; annuler la retire.
 #[test]
 fn absent_cell_with_spans_is_created_formatted() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[1], &cols[0], "Total", Some(vec![sp("Total", bold())]))).expect("neuve");
-    assert_eq!(cell_spans(&d, &id, &rows[1], &cols[0]), vec![view("Total", bold())]);
+    d.apply(set_cell(
+        &id,
+        &rows[1],
+        &cols[0],
+        "Total",
+        Some(vec![sp("Total", bold())]),
+    ))
+    .expect("neuve");
+    assert_eq!(
+        cell_spans(&d, &id, &rows[1], &cols[0]),
+        vec![view("Total", bold())]
+    );
     assert!(d.undo());
     assert!(cell_spans(&d, &id, &rows[1], &cols[0]).is_empty());
 }
@@ -380,23 +428,58 @@ fn absent_cell_with_spans_is_created_formatted() {
 #[test]
 fn set_cell_format_only_is_written() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Total", None)).expect("Total");
+    d.apply(set_cell(&id, &rows[0], &cols[0], "Total", None))
+        .expect("Total");
     let v = d.version();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Total", Some(vec![sp("Total", italic())]))).expect("italique");
+    d.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "Total",
+        Some(vec![sp("Total", italic())]),
+    ))
+    .expect("italique");
     assert!(d.version() > v);
-    assert_eq!(cell_spans(&d, &id, &rows[0], &cols[0]), vec![view("Total", italic())]);
+    assert_eq!(
+        cell_spans(&d, &id, &rows[0], &cols[0]),
+        vec![view("Total", italic())]
+    );
     assert!(d.undo());
-    assert_eq!(cell_spans(&d, &id, &rows[0], &cols[0]), vec![view("Total", none())]);
+    assert_eq!(
+        cell_spans(&d, &id, &rows[0], &cols[0]),
+        vec![view("Total", none())]
+    );
 }
 
 /// D38 : mêmes texte et segments : aucune transaction ; cellule absente et contenu vide avec segments : aucune.
 #[test]
 fn set_cell_same_spans_is_unchanged() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Total", Some(vec![sp("Total", bold())]))).expect("gras");
+    d.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "Total",
+        Some(vec![sp("Total", bold())]),
+    ))
+    .expect("gras");
     let v = d.version();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Total", Some(vec![sp("To", bold()), sp("tal", bold())]))).expect("même");
-    d.apply(set_cell(&id, &rows[1], &cols[1], "", Some(vec![sp("", bold())]))).expect("vide");
+    d.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "Total",
+        Some(vec![sp("To", bold()), sp("tal", bold())]),
+    ))
+    .expect("même");
+    d.apply(set_cell(
+        &id,
+        &rows[1],
+        &cols[1],
+        "",
+        Some(vec![sp("", bold())]),
+    ))
+    .expect("vide");
     assert_eq!(d.version(), v);
 }
 
@@ -406,8 +489,26 @@ fn set_cell_bad_spans_is_bad_format_first() {
     let (mut d, id, rows, cols) = table_doc();
     let v = d.version();
     let bad = vec![sp("Tota", none())];
-    assert_eq!(d.apply(set_cell(&id, &rows[0], &cols[0], "Total", Some(bad.clone()))), Err(CommandError::BadFormat));
-    assert_eq!(d.apply(set_cell("absent", &rows[0], &cols[0], "Total", Some(bad.clone()))), Err(CommandError::BadFormat));
+    assert_eq!(
+        d.apply(set_cell(
+            &id,
+            &rows[0],
+            &cols[0],
+            "Total",
+            Some(bad.clone())
+        )),
+        Err(CommandError::BadFormat)
+    );
+    assert_eq!(
+        d.apply(set_cell(
+            "absent",
+            &rows[0],
+            &cols[0],
+            "Total",
+            Some(bad.clone())
+        )),
+        Err(CommandError::BadFormat)
+    );
     let mut high = set_cell(&id, &rows[0], &cols[0], "Total", Some(bad));
     if let Command::SetTableCell { row_height, .. } = &mut high {
         *row_height = Some(f64::NAN);
@@ -420,9 +521,20 @@ fn set_cell_bad_spans_is_bad_format_first() {
 #[test]
 fn set_cell_without_spans_inherits() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Total", Some(vec![sp("Total", bold())]))).expect("gras");
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Totals", None)).expect("s");
-    assert_eq!(cell_spans(&d, &id, &rows[0], &cols[0]), vec![view("Totals", bold())]);
+    d.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "Total",
+        Some(vec![sp("Total", bold())]),
+    ))
+    .expect("gras");
+    d.apply(set_cell(&id, &rows[0], &cols[0], "Totals", None))
+        .expect("s");
+    assert_eq!(
+        cell_spans(&d, &id, &rows[0], &cols[0]),
+        vec![view("Totals", bold())]
+    );
 }
 
 /// R23 a (reste OD71, MESURE du défaut connu, non corrigé) : première écriture concurrente dans une même cellule
@@ -432,28 +544,58 @@ fn set_cell_without_spans_inherits() {
 fn concurrent_first_writes_in_an_absent_cell_keep_one() {
     let (d, id, rows, cols) = table_doc();
     let (mut a, mut b) = twins(&d);
-    a.apply(set_cell(&id, &rows[0], &cols[0], "Lundi", None)).expect("a");
-    b.apply(set_cell(&id, &rows[0], &cols[0], "Mardi", None)).expect("b");
+    a.apply(set_cell(&id, &rows[0], &cols[0], "Lundi", None))
+        .expect("a");
+    b.apply(set_cell(&id, &rows[0], &cols[0], "Mardi", None))
+        .expect("b");
     let text = |m: &Document| {
         let t = m.element(&id).and_then(|e| e.table).expect("vue");
         t.cells.into_iter().map(|c| c.text).collect::<Vec<_>>()
     };
     let ab = text(&merged(&a, &b));
     assert_eq!(ab, text(&merged(&b, &a)), "les deux documents convergent");
-    assert!(ab == vec!["Lundi".to_string()] || ab == vec!["Mardi".to_string()], "une seule écriture reste : {ab:?}");
+    assert!(
+        ab == vec!["Lundi".to_string()] || ab == vec!["Mardi".to_string()],
+        "une seule écriture reste : {ab:?}"
+    );
 }
 
 /// R23 b (mesure) : mises en forme concurrentes de deux mots d'une cellule existante : les deux restent.
 #[test]
 fn concurrent_formats_of_two_words_in_a_cell_both_stay() {
     let (mut d, id, rows, cols) = table_doc();
-    d.apply(set_cell(&id, &rows[0], &cols[0], "Le chat noir", None)).expect("texte");
+    d.apply(set_cell(&id, &rows[0], &cols[0], "Le chat noir", None))
+        .expect("texte");
     let (mut a, mut b) = twins(&d);
-    a.apply(set_cell(&id, &rows[0], &cols[0], "Le chat noir", Some(vec![sp("Le ", none()), sp("chat", bold()), sp(" noir", none())])))
-        .expect("a");
-    b.apply(set_cell(&id, &rows[0], &cols[0], "Le chat noir", Some(vec![sp("Le chat ", none()), sp("noir", italic())])))
-        .expect("b");
+    a.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "Le chat noir",
+        Some(vec![
+            sp("Le ", none()),
+            sp("chat", bold()),
+            sp(" noir", none()),
+        ]),
+    ))
+    .expect("a");
+    b.apply(set_cell(
+        &id,
+        &rows[0],
+        &cols[0],
+        "Le chat noir",
+        Some(vec![sp("Le chat ", none()), sp("noir", italic())]),
+    ))
+    .expect("b");
     let ab = cell_spans(&merged(&a, &b), &id, &rows[0], &cols[0]);
     assert_eq!(ab, cell_spans(&merged(&b, &a), &id, &rows[0], &cols[0]));
-    assert_eq!(ab, vec![view("Le ", none()), view("chat", bold()), view(" ", none()), view("noir", italic())]);
+    assert_eq!(
+        ab,
+        vec![
+            view("Le ", none()),
+            view("chat", bold()),
+            view(" ", none()),
+            view("noir", italic())
+        ]
+    );
 }

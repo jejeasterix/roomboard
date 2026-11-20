@@ -17,7 +17,7 @@ use crate::document::Document;
 use crate::element::{
     finite_positive, fits_f32, out_f64, out_string, out_transform, transform_to_any, Transform,
 };
-use crate::rich_text::{self, valid_color};
+use crate::rich_text::{self, valid_color, SpanInput, TextSpanView};
 pub const TABLE_KIND: &str = "table";
 pub const DEFAULT_TABLE_COLOR: &str = "#000000";
 pub const DEFAULT_TABLE_SIZE: f64 = 36.0;
@@ -43,6 +43,7 @@ pub struct TableCellView {
     pub col: String,
     pub text: String,
     pub fill: Option<String>,
+    pub spans: Vec<TextSpanView>,
 }
 
 /// Vue d'un tableau (T13) : `color` = traits et texte, `size` = taille du texte ; cellules dans l'ordre de lecture.
@@ -202,6 +203,7 @@ impl RawTable {
                     col: c.id.clone(),
                     text: cell.content,
                     fill: cell.fill,
+                    spans: rich_text::cell_spans(txn, cell.text.as_ref()),
                 });
             }
         }
@@ -287,7 +289,7 @@ fn insert_cell(
     (row, col): (&str, &str),
     text: &str,
     fill: Option<&str>,
-) {
+) -> MapRef {
     let cells = match cells {
         Some(m) => m.clone(),
         None => e.insert(txn, "cells", MapPrelim::default()),
@@ -300,7 +302,7 @@ fn insert_cell(
         txn,
         cell_key(row, col),
         fields.into_iter().collect::<MapPrelim>(),
-    );
+    )
 }
 
 impl RawTable {
@@ -384,46 +386,74 @@ impl Document {
         Ok(self.table_done(t.page.to_string(), &id))
     }
 
-    /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande,
-    /// la hauteur du tableau restant bornée en f32 ; même texte sans hauteur plus grande : aucune transaction (D38).
+    /// `SetTableCell` (T3, T5, C7b R7) : segments contrôlés d'abord ; texte par différence (`apply_text_diff`), puis
+    /// attributs alignés dans la même transaction (`apply_spans`) ; hauteur écrite seulement si plus grande, la hauteur
+    /// du tableau restant bornée en f32 ; même texte, mêmes segments, sans hauteur plus grande : aucune transaction.
     pub(crate) fn cmd_set_table_cell(
         &mut self,
         id: &str,
         (row, col): (&str, &str),
         content: &str,
         row_height: Option<f64>,
+        spans: Option<&[SpanInput]>,
     ) -> Result<Change, CommandError> {
+        // C7b (R7, PC2) : segments contrôlés en premier, sans écriture ; même ordre que `fake-core.ts`.
+        if spans.is_some_and(|s| !rich_text::valid_spans(content, s)) {
+            return Err(CommandError::BadFormat);
+        }
         if row_height.is_some_and(|h| !finite_positive(h)) {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
         let line = raw.cell_row(row, col).ok_or(CommandError::BadTable)?;
-        let cell = {
+        let (cell, spans_same) = {
             let txn = self.read();
-            read_cell(&txn, raw.cells.as_ref(), row, col)
+            let cell = read_cell(&txn, raw.cells.as_ref(), row, col);
+            let same = rich_text::spans_unchanged(
+                &txn,
+                cell.as_ref().and_then(|c| c.text.as_ref()),
+                spans,
+            );
+            (cell, same)
         };
         let current = cell.as_ref().map_or("", |c| c.content.as_str());
         let grow = row_height.filter(|h| *h > line.size);
         if grow.is_some_and(|h| !fits_f32(&[raw.height() - line.size + h])) {
             return Err(CommandError::BadTable);
         }
-        if current == content && grow.is_none() {
+        if current == content && grow.is_none() && spans_same {
             return Ok(self.unchanged());
         }
         {
             let mut txn = self.transact_local();
-            if current != content {
+            let text = if current != content {
                 match &cell {
                     Some(RawCell { text: Some(t), .. }) => {
-                        rich_text::apply_text_diff(&mut txn, t, content)
+                        rich_text::apply_text_diff(&mut txn, t, content);
+                        Some(t.clone())
                     }
-                    Some(c) => {
-                        c.map.insert(&mut txn, "text", TextPrelim::new(content));
-                    }
+                    Some(c) => Some(c.map.insert(&mut txn, "text", TextPrelim::new(content))),
                     None => {
-                        insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), content, None)
+                        let m = insert_cell(
+                            &mut txn,
+                            &e,
+                            raw.cells.as_ref(),
+                            (row, col),
+                            content,
+                            None,
+                        );
+                        match m.get(&txn, "text") {
+                            Some(Out::YText(t)) => Some(t),
+                            _ => None,
+                        }
                     }
                 }
+            } else {
+                cell.as_ref().and_then(|c| c.text.clone())
+            };
+            // C7b (R7) : alignement dans la même transaction, sur le `TextRef` relu après une création.
+            if let (Some(s), Some(t)) = (spans, &text) {
+                rich_text::apply_spans(&mut txn, t, s);
             }
             if let Some(h) = grow {
                 line.map.insert(&mut txn, "height", In::Any(Any::from(h)));
@@ -569,7 +599,7 @@ impl Document {
                     c.map.insert(&mut txn, "fill", In::from(f));
                 }
                 (Some(f), None) => {
-                    insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), "", Some(f))
+                    insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), "", Some(f));
                 }
                 (None, Some(c)) => {
                     c.map.remove(&mut txn, "fill");
@@ -708,13 +738,15 @@ pub(crate) mod tests {
                     row: "r1".into(),
                     col: "c1".into(),
                     text: "Lundi".into(),
-                    fill: None
+                    fill: None,
+                    spans: plain_spans("Lundi")
                 },
                 TableCellView {
                     row: "r2".into(),
                     col: "c2".into(),
                     text: String::new(),
-                    fill: Some("#fef08a".into())
+                    fill: Some("#fef08a".into()),
+                    spans: plain_spans("")
                 },
             ]
         );
@@ -906,7 +938,16 @@ pub(crate) mod tests {
             col: col.into(),
             content: content.into(),
             row_height: h,
+            spans: None,
         })
+    }
+
+    /// Segments d'une cellule sans attribut (C7b, R16).
+    fn plain_spans(t: &str) -> Vec<crate::rich_text::TextSpanView> {
+        vec![crate::rich_text::TextSpanView {
+            text: t.into(),
+            attrs: crate::rich_text::SpanAttrs::default(),
+        }]
     }
 
     #[test]
@@ -1299,7 +1340,8 @@ pub(crate) mod tests {
                 row: r.clone(),
                 col: c.clone(),
                 text: String::new(),
-                fill: Some("#fef08a".into())
+                fill: Some("#fef08a".into()),
+                spans: plain_spans("")
             }]
         );
         let w = writes(&d);
