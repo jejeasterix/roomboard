@@ -22,7 +22,7 @@ import type {
   TextSpan,
 } from "./api";
 import { UNKNOWN_BOX } from "./api";
-import { cleanPatch } from "./rich-text";
+import { cleanPatch, plainSpans } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
 
@@ -131,10 +131,11 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill } = c;
+      const { row, col, text, fill, spans } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
       if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: typeof fill === "string" ? fill : null };
+      // PC7 : module d'avant C7b sans `spans` → un segment ; T12 les exige.
+      return { row, col, text, fill: typeof fill === "string" ? fill : null, spans: spans === undefined ? plainSpans(text) : toSpans(spans, text) };
     }),
   };
 }
