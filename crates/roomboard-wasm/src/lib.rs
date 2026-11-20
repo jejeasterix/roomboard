@@ -898,6 +898,7 @@ impl Document {
             col: cell[1].to_string(),
             content: content.to_string(),
             row_height,
+            spans: None,
         })
     }
 
