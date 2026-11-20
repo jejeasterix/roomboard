@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Change, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
+import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, type Camera } from "./camera";
 import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
@@ -1370,5 +1371,164 @@ describe("moteur — fond de page (C12)", () => {
     blank.engine.resize(800, 600, 1);
     blank.frames.tick();
     expect(blank.renderer.scenes.at(-1)?.page.backdrop).toBeNull();
+  });
+});
+
+describe("moteur — C5 (retouche d'image)", () => {
+  const ASSET = { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 };
+  function c5() {
+    const doc = fakeCore.blank();
+    const renderer = new FakeRenderer();
+    const colorAt = vi.fn((_a: string, _x: number, _y: number): string | null => "#ffffff");
+    const tools: ToolFactories = { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx), select: (ctx) => createSelectTool(ctx) };
+    const engine = createEngine({ doc, renderer, frames: new Frames(), tools, images: { colorAt } });
+    const page = engine.state().page;
+    const id = doc.apply({ type: "AddImage", page, asset: ASSET, w: 200, h: 150, matrix: [1, 0, 0, 1, 100, 100] }).ids[0] ?? "";
+    const drag = (a: readonly [number, number], b: readonly [number, number], pointer = 2): void => {
+      engine.sink.begin(pointer, "select", [{ ...sample, x: a[0], y: a[1] }]);
+      engine.sink.extend(pointer, [{ ...sample, x: b[0], y: b[1] }], []);
+      engine.sink.close(pointer, "end");
+    };
+    engine.setTool("select");
+    drag([50, 50], [350, 300], 1);
+    const image = () => {
+      const el = doc.element(id);
+      if (el?.kind !== "image") throw new Error("image absente");
+      return el;
+    };
+    const rect = (): string => doc.apply({ type: "AddShape", page, shape: "rect", x0: 400, y0: 100, x1: 450, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    return { doc, engine, renderer, colorAt, page, id, drag, image, rect, ctrl: (k: string) => key(k, { ctrlKey: true }) };
+  }
+
+  it("C5 selectionImage : l'image sélectionnée seule ; null à deux objets", () => {
+    const { engine, id, drag, rect } = c5();
+    expect(engine.state().selectionImage).toBe(id);
+    rect();
+    drag([50, 50], [500, 300], 3);
+    expect(engine.state().selection).toHaveLength(2);
+    expect(engine.state().selectionImage).toBeNull();
+  });
+  it("C5 editImage : null pour un id qui n'est pas une image de la page", () => {
+    const { engine, rect } = c5();
+    expect(engine.editImage(rect())).toBeNull();
+    expect(engine.editImage("nulle-part")).toBeNull();
+  });
+  it("C5 geometry (Tourner ⟳) : une étape, centre gardé, boîte 150 × 200", () => {
+    const { engine, doc, id, page, image } = c5();
+    const edit = engine.editImage(id)!;
+    expect(edit.geometry(turnShown(paramsOf(image().image), 1))).toBe(true);
+    expect(image().image.quarterTurns).toBe(1);
+    expect(doc.bounds([id])).toEqual({ x0: 125, y0: 75, x1: 275, y1: 275 });
+    engine.undo();
+    expect(image().image.quarterTurns).toBeUndefined();
+    expect(doc.elementIds(page)).toEqual([id]);
+  });
+  it("C5 brouillon des pixels gardé par une écriture géométrique (I27), pas par une autre écriture", () => {
+    const { engine, renderer, id, image } = c5();
+    const edit = engine.editImage(id)!;
+    edit.preview({ brightness: 50 });
+    expect(renderer.imagePreviews.at(-1)).toEqual({ id, params: { brightness: 50 }, matrix: [1, 0, 0, 1, 100, 100] });
+    edit.geometry(turnShown({}, 1));
+    expect(image().image.brightness).toBeUndefined();
+    expect(renderer.imagePreviews.at(-1)).toMatchObject({ id, params: { quarterTurns: 1, brightness: 50 } });
+    expect(edit.keepsDraft(engine.state().version)).toBe(true);
+    engine.undo();
+    expect(edit.keepsDraft(engine.state().version)).toBe(false);
+  });
+  it("C5 commit : pixels du brouillon, géométrie du document, une étape ; aperçu retiré", () => {
+    const { engine, renderer, id, image } = c5();
+    const edit = engine.editImage(id)!;
+    edit.geometry(turnShown({}, 1));
+    edit.preview({ brightness: 50 });
+    expect(edit.commit({ brightness: 50 })).toBe(true);
+    expect(paramsOf(image().image)).toEqual({ quarterTurns: 1, brightness: 50 });
+    expect(renderer.imagePreviews.at(-1)).toBeNull();
+    engine.undo();
+    expect(paramsOf(image().image)).toEqual({ quarterTurns: 1 });
+  });
+  it("C5 rognage : image entière en aperçu, poignée sud-est tirée, Valider le rognage garde les pixels en place", () => {
+    const { engine, renderer, id, image, drag } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    expect(edit.mode()).toBe("crop");
+    expect(renderer.imagePreviews.at(-1)).toEqual({ id, params: {}, matrix: [1, 0, 0, 1, 100, 100], frame: { x0: 0, y0: 0, x1: 200, y1: 150 } });
+    drag([300, 250], [260, 220]);
+    expect(renderer.imagePreviews.at(-1)?.frame).toEqual({ x0: 0, y0: 0, x1: 160, y1: 120 });
+    expect(edit.finishCrop(true)).toBe(true);
+    expect(image().image.crop).toEqual([0, 0, 160, 120]);
+    expect(image().transform).toEqual([1, 0, 0, 1, 100, 100]);
+    expect([edit.mode(), engine.state().selection]).toEqual(["idle", [id]]);
+  });
+  it("C5 Entrée valide le rognage", () => {
+    const { engine, id, image, drag } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    drag([300, 250], [260, 220]);
+    expect(engine.key(key("Enter"))).toBe(true);
+    expect(image().image.crop).toEqual([0, 0, 160, 120]);
+  });
+  it("C5 Échap sort du rognage sans écrire", () => {
+    const { engine, doc, id } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    const v = doc.version();
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect([edit.mode(), doc.version(), engine.state().selection]).toEqual(["idle", v, [id]]);
+  });
+  it("C5 Suppr sous le cadre ne supprime pas", () => {
+    const { engine, doc, id, page } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(engine.key(key("Backspace"))).toBe(true);
+    expect([doc.elementIds(page), edit.mode()]).toEqual([[id], "crop"]);
+  });
+  it("C5 Ctrl+Z sort du rognage puis annule", () => {
+    const { engine, id, image, ctrl } = c5();
+    const edit = engine.editImage(id)!;
+    edit.geometry(turnShown({}, 1));
+    edit.startCrop();
+    expect(engine.key(ctrl("z"))).toBe(true);
+    expect(edit.mode()).toBe("idle");
+    expect(image().image.quarterTurns).toBeUndefined();
+  });
+  it("C5 pipette : hors de l'image elle reste armée ; sur l'image, couleur du pixel source d'origine", async () => {
+    const { engine, id, colorAt, drag } = c5();
+    const edit = engine.editImage(id)!;
+    const picked = edit.pick();
+    expect(edit.mode()).toBe("pick");
+    drag([20, 20], [20, 20]);
+    expect(edit.mode()).toBe("pick");
+    drag([110, 105], [110, 105]);
+    await expect(picked).resolves.toBe("#ffffff");
+    expect(colorAt).toHaveBeenCalledWith(ASSET.id, 10, 5);
+    expect(edit.mode()).toBe("idle");
+  });
+  it("C5 pipette : Échap ou second appel la désarment (null)", async () => {
+    const { engine, id } = c5();
+    const edit = engine.editImage(id)!;
+    const a = edit.pick();
+    expect(engine.key(key("Escape"))).toBe(true);
+    await expect(a).resolves.toBeNull();
+    const b = edit.pick();
+    await expect(edit.pick()).resolves.toBeNull();
+    await expect(b).resolves.toBeNull();
+    expect(edit.mode()).toBe("idle");
+  });
+  it("C5 restore : tous les réglages retirés, une étape", () => {
+    const { engine, id, image } = c5();
+    const edit = engine.editImage(id)!;
+    edit.commit({ brightness: 20 });
+    edit.geometry({ flipX: true });
+    expect(edit.restore()).toBe(true);
+    expect(paramsOf(image().image)).toEqual({});
+    engine.undo();
+    expect(paramsOf(image().image)).toEqual({ flipX: true, brightness: 20 });
+  });
+  it("C5 report : message dans l'état sans écriture", () => {
+    const { engine, doc } = c5();
+    const v = doc.version();
+    engine.report("retouches de l'image non affichées : x");
+    expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
   });
 });
