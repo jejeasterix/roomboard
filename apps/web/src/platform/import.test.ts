@@ -159,7 +159,7 @@ describe("importFiles : images (R1, R3 à R6, R14, R15)", () => {
 
   it("plus de maxBytes : refusé avant lecture, .roomboard compris, un seul message", async () => {
     const blob = vi.fn(async () => new Blob([pngHead(1, 1)]));
-    const big = (name: string): DroppedFile => ({ name, size: 120 * 1024 * 1024, mime: "", blob });
+    const big = (name: string): DroppedFile => ({ name, size: 120 * 1024 * 1024, mime: "", head: async () => new Uint8Array(), blob });
     const notify = vi.fn(async (_m: string) => undefined);
     const openDocument = vi.fn(async () => true);
     const r = await createImporter({ openDocument, notify, maxBytes: WEB_MAX_BYTES, target: () => fakeTarget().target })
