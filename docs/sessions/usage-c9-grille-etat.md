@@ -1,12 +1,10 @@
 # État — usage-c9-grille
 
-Statut : en cours
+Statut : clos
 Gabarit : courte (6 tâches, confirmé à l'étage 2)
 Objectif : Chaque page de RoomBoard peut afficher une grille nette (six types d'U31) et aimanter les éléments déplacés, enregistrée dans le fichier `.roomboard`.
 Avancement : 9/9 tâches terminées
-Étage : 4 (clôture : verifier.sh final, relecture tour 2, PR) — depuis 2026-11-20 05:50
-Lot : —
-Tâche : —
+Étage : 4 (clos) — depuis 2026-11-20 05:52
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c9-grille   Branche : feat/usage-c9-grille   Base : origin/main @ 05fdb73
 Branche principale locale au lancement : 05fdb73
@@ -46,7 +44,7 @@ toutes les tâches terminées · double relecture sans bloquant · verifier.sh O
 - Panneau d'édition à aperçu direct (C9 vague 1) · ressource grille (C4)
 
 ## Portes
-ouvertes : — · passées : —
+ouvertes : — · passées : fusion locale --no-ff de la PR #12 dans main (debc6d8), après C7 (PR #10) et PR #11
 
 ## Constats d'architecture
 duplication · cœur · crates/roomboard-core/src/query.rs:233-252 · `snap_box` recopie la boucle de `bounds` (:211-229) ; une aide commune recevant la fonction de contour suffirait.
@@ -66,3 +64,5 @@ f2ac57d · 15 décisions · 9 hypothèses (6 de niveau 1) · 3 DA · 15 modules 
 - Non traité (mineur, consigné) : `grid_lines` sérialisé en tableaux JS à chaque image (pire cas 65 536 points) → `Float64Array` ou mémoïsation plus tard ; au-delà de |y| ≈ 1e7, le seuil 1e-9 peut laisser un résidu ; deux `SetGrid`/`SetBackdrop` successifs changent les octets du premier rechargement (préexistant à C9) ; Alt relâchée seule dans un navigateur Windows non vérifiée.
 - Constat d'architecture écrit : 1 (crates/roomboard-core, `snap_box`/`bounds`) ; aucune zone à 3 constats.
 - Release : non due (aucune release, aucun tag).
+- Fusion : PR #12 fusionnée par `git merge --no-ff` local, `main` = debc6d8, poussé sans force. Test rouge du contrat `snapDelta` (largeur 100,3) prouvé sur 21b581c.
+- Coffre : écriture du journal refusée par les permissions de la session ouvrière (à écrire par une session qui y a accès).
