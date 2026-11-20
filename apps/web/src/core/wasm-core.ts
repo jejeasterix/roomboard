@@ -17,6 +17,7 @@ import type {
   PageView,
   StrokeBuilderApi,
   StrokeStyle,
+  TableData,
   TextAttrs,
   TextSpan,
 } from "./api";
@@ -106,6 +107,38 @@ function toSpans(v: unknown, content: string): TextSpan[] {
 /** Bornes de FormatText : hors des u32, u32::MAX, que le cœur refuse au contrôle des bornes comme la fausse liaison. */
 const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : 0xffffffff);
 
+/** Vue d'un tableau venue de Wasm (T13) : forme contrôlée ; `fill` absent (Option::None) → null. */
+export function toTable(v: unknown): TableData {
+  if (!isRecord(v)) throw new Error(ELEMENT);
+  const { color, size, cols, rows, cells } = v;
+  if (typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells)) {
+    throw new Error(ELEMENT);
+  }
+  return {
+    color,
+    size,
+    cols: cols.map((c: unknown) => {
+      if (!isRecord(c)) throw new Error(ELEMENT);
+      const { id, width } = c;
+      if (typeof id !== "string" || !finitePositive(width)) throw new Error(ELEMENT);
+      return { id, width };
+    }),
+    rows: rows.map((r: unknown) => {
+      if (!isRecord(r)) throw new Error(ELEMENT);
+      const { id, height } = r;
+      if (typeof id !== "string" || !finitePositive(height)) throw new Error(ELEMENT);
+      return { id, height };
+    }),
+    cells: cells.map((c: unknown) => {
+      if (!isRecord(c)) throw new Error(ELEMENT);
+      const { row, col, text, fill } = c;
+      if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
+      if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
+      return { row, col, text, fill: typeof fill === "string" ? fill : null };
+    }),
+  };
+}
+
 /** Kind connu : forme contrôlée ; kind non reconnu : UnknownElement (U3, K8) ; id et transform toujours exigés. */
 export function toElementView(v: unknown): ElementView | null {
   if (v === null || v === undefined) return null;
@@ -144,6 +177,8 @@ export function toElementView(v: unknown): ElementView | null {
       if (typeof asset !== "string" || typeof w !== "number" || typeof h !== "number") throw new Error(ELEMENT);
       return { ...base, kind, image: { asset, w, h } };
     }
+    case "table":
+      return { ...base, kind, table: toTable(v["table"]) };
     case "unknown": {
       const u = v["unknown"];
       if (!isRecord(u)) throw new Error(ELEMENT);
@@ -314,6 +349,14 @@ class WasmCoreDocument implements CoreDocument {
           this.d.set_grid(cmd.page, g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums),
         );
       }
+      case "AddTable":
+      case "SetTableCell":
+      case "InsertTableLine":
+      case "RemoveTableLine":
+      case "SetTableSizes":
+      case "SetTableFill":
+        // C10a : branchées sur la liaison Wasm par T6 ; d'ici là le vrai module ne les connaît pas.
+        throw new Error(`commande ${cmd.type} : liaison Wasm à venir (C10a, T6)`);
     }
   }
 
