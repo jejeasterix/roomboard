@@ -136,6 +136,8 @@ function fakeWorkspace(first: FakeTab): Workspace {
     pasteInternal: vi.fn(async () => false),
     exportSelection: vi.fn(async () => false),
     insertPages: vi.fn(async () => false),
+    openPdf: vi.fn(async () => true),
+    exportPdf: vi.fn(async () => false),
     selection: vi.fn(),
     canPaste: () => false,
     onClipboard: () => () => undefined,
