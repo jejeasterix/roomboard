@@ -17,6 +17,9 @@ import { createSampler, type Sampler, type SamplerOptions } from "../engine/inpu
 import type { Support } from "../engine/input/stats";
 import { createImageCache, type BitmapDecoder } from "../engine/render/image-cache";
 import { attachInkTrail, type InkLike } from "../engine/render/ink-trail";
+import type { PdfEngine, PdfFile } from "../engine/render/pdf-port";
+import { createPdfTiles, type PdfTiles } from "../engine/render/pdf-tiles";
+import type { BackdropPainter } from "../engine/render/renderer";
 import { chooseRenderer, type RendererChoice } from "../engine/render/select";
 import { trailStyleFor } from "../engine/render/trail-style";
 import {
@@ -54,6 +57,8 @@ export interface SessionShared {
   readonly coreVersion: string;
   /** Décodeur des bitmaps (tests) ; défaut : `decodeImage` du navigateur. */
   readonly decode?: BitmapDecoder;
+  /** C12 (DAPF1) : moteur PDF des fonds `pdf-page` ; absent : fond en « page PDF illisible ». */
+  readonly pdf?: PdfEngine;
 }
 
 /** Bitmap d'affichage d'un asset (R13, R15) : le type du Blob (posé à l'insertion ou à l'ouverture) choisit le SVG. */
@@ -136,7 +141,30 @@ async function buildBoardSession(
   const images = createImageCache(assets, shared.decode ?? decodeBitmap, () => redraw());
   undo.push(() => images.dispose());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
-  const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", { images });
+  // Fond `pdf-page` (C12, DAPF2) : tuiles par palier, `redraw` à chaque arrivée (patron R16). Libérées à la
+  // désactivation (PF32 : 12 onglets) et recréées au premier dessin suivant.
+  const pdf = shared.pdf;
+  const openPdf = (asset: string): Promise<PdfFile> | null => {
+    const blob = assets.get(asset);
+    return blob === undefined || pdf === undefined ? null : pdf.open(blob);
+  };
+  let tiles: PdfTiles | null = null;
+  const backdrop: BackdropPainter = {
+    paint: (ctx, b, camera, view) => (tiles ??= createPdfTiles(openPdf, () => redraw())).paint(ctx, b, camera, view),
+  };
+  const freeTiles = (): void => {
+    tiles?.dispose();
+    tiles = null;
+  };
+  undo.push(freeTiles);
+  stage.dataset["fond"] = "";
+  const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", {
+    images,
+    ...(pdf === undefined ? {} : { backdrop }),
+    onBackdrop: (s) => {
+      stage.dataset["fond"] = s;
+    },
+  });
   // Zone de saisie hors de la scène (CL4-2) ; les outils Texte et Tableau sont créés par le moteur, après elle. Ses
   // événements vont à l'outil actif (C10a, DAC3). Sans id tant que la session n'est pas active (un seul #texte-edition
   // dans la page, CL5b-2).
@@ -347,6 +375,7 @@ async function buildBoardSession(
       picker.close();
       for (const el of [stage, sceneCanvas, choice.interaction, editor.element]) el.removeAttribute("id");
       engine.releaseKeys();
+      freeTiles();
     },
     dispose() {
       if (disposed) return;
@@ -362,6 +391,7 @@ async function buildBoardSession(
       sampler.dispose();
       engine.dispose();
       images.dispose();
+      freeTiles();
       choice.release();
       doc.free();
       stage.remove();

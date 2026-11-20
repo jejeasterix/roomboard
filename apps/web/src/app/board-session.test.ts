@@ -447,7 +447,7 @@ describe("session — fond PDF (C12, PF15)", () => {
   function pdfEngine() {
     const close = vi.fn();
     const destroy = vi.fn();
-    const renderTile = vi.fn(async () => ({ close }) as unknown as TileBitmap);
+    const renderTile = vi.fn(async (_index: number, ..._rest: unknown[]) => ({ close }) as unknown as TileBitmap);
     const open = vi.fn(async (_b: Blob): Promise<PdfFile> => ({ pageCount: 1, pageSize: async () => ({ w: 612, h: 792 }), renderTile, destroy }));
     return { engine: { open } satisfies PdfEngine, open, renderTile, close, destroy };
   }
