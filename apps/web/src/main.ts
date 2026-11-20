@@ -5,7 +5,7 @@
  * fois ici et vont à l'onglet actif. `?banc` ajoute le banc du lot 1 rejoué sur l'onglet actif.
  */
 import { createBoardSession, type SessionShared } from "./app/board-session";
-import { browserExportCanvas, createPngOverlay, OVERLAY_MAX_PX } from "./app/pdf-overlay";
+import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
 import { createWorkspace, type TabSession } from "./app/workspace";
@@ -90,27 +90,41 @@ async function start(): Promise<void> {
       canvas: browserExportCanvas,
       painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images }),
     });
-  // Repli en image (PF20) : page `index` du PDF rendue en PNG par pdf.js, quand pdf-lib refuse le fichier.
-  const rasterPage = async (blob: Blob, index: number): Promise<RasterPage | null> => {
-    const file = await pdf.open(blob);
+  // Bitmap → PNG par une toile d'export, libérée aussitôt (mémoire de l'iPad).
+  const bitmapToPng = async (bitmap: CanvasImageSource, w: number, h: number): Promise<Uint8Array> => {
+    const c = browserExportCanvas(Math.max(1, w), Math.max(1, h));
     try {
-      if (index >= file.pageCount) return null;
-      const { w, h } = await file.pageSize(index);
-      const scale = Math.min(2, OVERLAY_MAX_PX / Math.max(w, h));
-      const pw = Math.max(1, Math.round(w * scale));
-      const ph = Math.max(1, Math.round(h * scale));
-      const bitmap = await file.renderTile(index, scale, { x: 0, y: 0, w: pw, h: ph }, new AbortController().signal);
-      const c = browserExportCanvas(pw, ph);
-      try {
-        c.ctx.drawImage(bitmap, 0, 0);
-        return { png: await c.png(), w, h };
-      } finally {
-        bitmap.close?.();
-        c.release();
-      }
+      c.ctx.drawImage(bitmap, 0, 0);
+      return await c.png();
     } finally {
-      file.destroy();
+      c.release();
     }
+  };
+  // Repli en image (PF20) : page `index` du PDF rendue en PNG par pdf.js, quand pdf-lib refuse le fichier. Un document
+  // pdf.js par blob pour tout l'export (`rasterClose`, appelé à la fin de l'export, même en erreur).
+  const rasterFiles = new Map<Blob, ReturnType<typeof pdf.open>>();
+  const rasterPage = async (blob: Blob, index: number): Promise<RasterPage | null> => {
+    let opening = rasterFiles.get(blob);
+    if (opening === undefined) {
+      opening = pdf.open(blob);
+      rasterFiles.set(blob, opening);
+    }
+    const file = await opening;
+    if (index >= file.pageCount) return null;
+    const { w, h } = await file.pageSize(index);
+    const scale = overlayScale({ x0: 0, y0: 0, x1: w, y1: h });
+    const pw = Math.max(1, Math.round(w * scale));
+    const ph = Math.max(1, Math.round(h * scale));
+    const bitmap = await file.renderTile(index, scale, { x: 0, y: 0, w: pw, h: ph }, new AbortController().signal);
+    try {
+      return { png: await bitmapToPng(bitmap, pw, ph), w, h };
+    } finally {
+      bitmap.close?.();
+    }
+  };
+  const rasterClose = (): void => {
+    for (const opening of rasterFiles.values()) void opening.then((f) => f.destroy(), () => undefined);
+    rasterFiles.clear();
   };
 
   // Conteneur des scènes, posé dans #app avant le premier onglet ; l'application le place dans la case `stage`.
@@ -162,13 +176,10 @@ async function start(): Promise<void> {
     }));
   const toPng = async (blob: Blob, mime: string): Promise<Uint8Array> => {
     const { bitmap } = await decodeImage(blob, kindOfMime(mime) ?? "png");
-    const c = browserExportCanvas(Math.max(1, bitmap.width), Math.max(1, bitmap.height));
     try {
-      c.ctx.drawImage(bitmap, 0, 0);
-      return await c.png();
+      return await bitmapToPng(bitmap, bitmap.width, bitmap.height);
     } finally {
       bitmap.close();
-      c.release();
     }
   };
   // Contexte à part : `RecordingContext2D` y règle `font` et `fillStyle`, la mesure de l'écran garde le sien.
@@ -204,6 +215,7 @@ async function start(): Promise<void> {
     loadPdfLib,
     overlay,
     rasterPage,
+    rasterClose,
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),

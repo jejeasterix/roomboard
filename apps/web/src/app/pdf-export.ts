@@ -159,6 +159,43 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
     return loaded;
   };
 
+  /**
+   * Pages à recopier d'un asset, par position dans le document : un seul `copyPages` pour toutes (un copieur par appel
+   * dans pdf-lib 1.17.1 : page à page, polices et XObjects partagés seraient recopiés pour chaque page). Si le bloc
+   * échoue (une page abîmée), page par page : seule la page abîmée tombe en repli.
+   */
+  const copies = new Map<string, Promise<Map<number, PDFPage>>>();
+  const copiesOf = (asset: string, src: PDFDocument): Promise<Map<number, PDFPage>> => {
+    const hit = copies.get(asset);
+    if (hit !== undefined) return hit;
+    const wanted = snap.flatMap((q, pos) => (q.pdf !== null && q.pdf.asset === asset && q.pdf.index < src.getPageCount() ? [{ pos, index: q.pdf.index }] : []));
+    const run = async (): Promise<Map<number, PDFPage>> => {
+      const result = new Map<number, PDFPage>();
+      try {
+        const all = await out.copyPages(src, wanted.map((w) => w.index));
+        for (const [i, w] of wanted.entries()) {
+          const c = all[i];
+          if (c === undefined) throw new Error(`page ${w.index + 1} illisible dans le PDF d'origine`);
+          result.set(w.pos, c);
+        }
+      } catch {
+        result.clear();
+        for (const w of wanted) {
+          try {
+            const [c] = await out.copyPages(src, [w.index]);
+            if (c !== undefined) result.set(w.pos, c);
+          } catch {
+            // page abîmée : absente du résultat, repli en image
+          }
+        }
+      }
+      return result;
+    };
+    const started = run();
+    copies.set(asset, started);
+    return started;
+  };
+
   const out = await lib.PDFDocument.create({ updateMetadata: false });
   const pages: PDFPage[] = [];
   const requests: OverlayRequest[] = [];
@@ -174,13 +211,9 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
       const src = await sourceOf(p.pdf.asset);
       let refused = src === null;
       if (src !== null && p.pdf.index < src.getPageCount()) {
-        try {
-          const [copied] = await out.copyPages(src, [p.pdf.index]);
-          if (copied === undefined) throw new Error(`page ${p.pdf.index + 1} illisible dans le PDF d'origine`);
-          page = out.addPage(copied);
-        } catch {
-          refused = true; // PDF chargé mais abîmé : même repli qu'un refus de `load`
-        }
+        const copied = (await copiesOf(p.pdf.asset, src)).get(k);
+        if (copied === undefined) refused = true; // PDF chargé mais abîmé : même repli qu'un refus de `load`
+        else page = out.addPage(copied);
       }
       if (refused) {
         if (!deps.alive()) return null;
@@ -209,7 +242,27 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
   if (!deps.alive()) return null;
   const overlays = requests.length > 0 ? await deps.overlay.pages(requests) : [];
   if (!deps.alive()) return null;
-  const embedded = new Map<Uint8Array, PDFDocument>();
+  // Un `embedPages` par jeu d'octets (un seul copieur : ressources partagées embarquées une fois)
+  const groups = new Map<Uint8Array, { src: PDFDocument; items: { k: number; index: number }[] }>();
+  for (const [k] of pages.entries()) {
+    const i = requestOf.get(k);
+    const o = i === undefined ? null : (overlays[i] ?? null);
+    if (o === null || o.kind !== "pdf") continue;
+    let g = groups.get(o.bytes);
+    if (g === undefined) {
+      g = { src: await lib.PDFDocument.load(o.bytes, { updateMetadata: false }), items: [] };
+      groups.set(o.bytes, g);
+    }
+    g.items.push({ k, index: o.index });
+  }
+  const forms = new Map<number, Awaited<ReturnType<PDFDocument["embedPage"]>>>();
+  for (const g of groups.values()) {
+    const embeddedPages = await out.embedPages(g.items.map((it) => g.src.getPage(it.index)));
+    for (const [n, it] of g.items.entries()) {
+      const f = embeddedPages[n];
+      if (f !== undefined) forms.set(it.k, f);
+    }
+  }
   for (const [k, page] of pages.entries()) {
     const i = requestOf.get(k);
     if (i === undefined) continue;
@@ -221,12 +274,8 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
     if (o.kind === "png") {
       page.drawImage(await out.embedPng(o.bytes), where);
     } else {
-      let src = embedded.get(o.bytes);
-      if (src === undefined) {
-        src = await lib.PDFDocument.load(o.bytes, { updateMetadata: false });
-        embedded.set(o.bytes, src);
-      }
-      page.drawPage(await out.embedPage(src.getPage(o.index)), where);
+      const form = forms.get(k);
+      if (form !== undefined) page.drawPage(form, where);
     }
   }
   const bytes = await out.save({ useObjectStreams: false });

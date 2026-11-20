@@ -93,6 +93,8 @@ export interface WorkspaceDeps {
   overlay?(tab: TabSession, doc: CoreDocument): OverlayProducer;
   /** C12 (PF20) : page `index` du PDF `blob` rendue en PNG par pdf.js, repli quand `pdf-lib` refuse le PDF ; absent : null. */
   rasterPage?(blob: Blob, index: number): Promise<RasterPage | null>;
+  /** Fin de l'export (réussi, refusé ou en erreur) : libère ce que `rasterPage` a gardé ouvert (un document par blob). */
+  rasterClose?(): void;
 }
 
 export interface Workspace {
@@ -362,16 +364,19 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       }
       exporting = true;
-      // Copie prise au départ (DAPF3) : fermer l'onglet pendant l'export libère son document, pas celle-ci.
-      const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
-      const doc = core.loadParts(manifest, ybin);
+      let doc: CoreDocument | null = null;
       try {
+        // Copie prise au départ (DAPF3) : fermer l'onglet pendant l'export libère son document, pas celle-ci.
+        const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
+        doc = core.loadParts(manifest, ybin);
+        const blobs = new Map<string, Blob>(); // un seul `Blob` par asset pendant l'export : `rasterPage` ouvre le PDF une fois
         const r = await assemblePdf(doc, tab.assets, {
           loadPdfLib: () => loadPdfLib(),
           overlay: overlay(tab, doc),
           alive: () => !released.has(tab),
           rasterPage: async (asset, index) => {
-            const blob = tab.assets.get(asset);
+            const blob = blobs.get(asset) ?? tab.assets.get(asset);
+            if (blob !== undefined) blobs.set(asset, blob);
             return blob === undefined || deps.rasterPage === undefined ? null : deps.rasterPage(blob, index);
           },
         });
@@ -387,7 +392,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       } finally {
         exporting = false;
-        doc.free();
+        doc?.free();
+        deps.rasterClose?.(); // sessions de rendu ouvertes par `rasterPage` pour cet export, même en cas d'erreur
       }
     },
     async newBlank() {
