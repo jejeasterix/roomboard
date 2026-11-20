@@ -49,7 +49,11 @@ fn int_in(v: f64, lo: f64, hi: f64) -> Option<f64> {
 /// de `rich_text.rs` accepte des noms, inutilisables pour des pixels.
 pub fn parse_rgb_hex(c: &str) -> Option<[u8; 3]> {
     let hex = c.strip_prefix('#')?;
-    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    if hex.len() != 6
+        || !hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return None;
     }
     let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
@@ -117,7 +121,8 @@ fn read_transparent<T: ReadTxn>(txn: &T, o: Option<Out>) -> Option<TransparentVi
 /// Réglages de l'image `e` de taille source `w × h`, champ par champ : un champ illisible ou hors domaine est lu comme
 /// absent (U3), l'élément reste lisible ; rien n'est réécrit à la lecture.
 pub(crate) fn read_params<T: ReadTxn>(txn: &T, e: &MapRef, w: f64, h: f64) -> ImageParams {
-    let int = |key: &str, lo: f64, hi: f64| out_f64(e.get(txn, key)).and_then(|v| int_in(v, lo, hi));
+    let int =
+        |key: &str, lo: f64, hi: f64| out_f64(e.get(txn, key)).and_then(|v| int_in(v, lo, hi));
     ImageParams {
         crop: read_crop(e.get(txn, "crop"), w, h),
         flip_x: out_bool(e.get(txn, "flipX")).unwrap_or(false),
@@ -196,7 +201,9 @@ mod tests {
     }
 
     fn nums(v: &[f64]) -> In {
-        In::Any(Any::Array(v.iter().map(|x| Any::from(*x)).collect::<Vec<Any>>().into()))
+        In::Any(Any::Array(
+            v.iter().map(|x| Any::from(*x)).collect::<Vec<Any>>().into(),
+        ))
     }
 
     fn color_map(color: &str, tolerance: f64) -> In {
@@ -210,12 +217,18 @@ mod tests {
 
     /// Forme interdite (I2, G4) : `Any::Map`, encodé par yrs dans l'ordre d'un `HashMap` à graine aléatoire.
     fn any_map(fields: &[(&str, Any)]) -> In {
-        let m: HashMap<String, Any> = fields.iter().map(|(k, v)| ((*k).to_string(), v.clone())).collect();
+        let m: HashMap<String, Any> = fields
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), v.clone()))
+            .collect();
         In::Any(Any::Map(Arc::new(m)))
     }
 
     fn params_of(d: &Document, id: &str) -> ImageParams {
-        d.element(id).and_then(|e| e.image).expect("image lisible").params()
+        d.element(id)
+            .and_then(|e| e.image)
+            .expect("image lisible")
+            .params()
     }
 
     #[test]
@@ -266,7 +279,11 @@ mod tests {
             put(&d, &id, key, v);
         }
         assert_eq!(params_of(&d, &id), ImageParams::default());
-        for c in [[600.0, 0.0, 100.0, 10.0], [0.5, 0.0, 10.0, 10.0], [-1.0, 0.0, 10.0, 10.0]] {
+        for c in [
+            [600.0, 0.0, 100.0, 10.0],
+            [0.5, 0.0, 10.0, 10.0],
+            [-1.0, 0.0, 10.0, 10.0],
+        ] {
             put(&d, &id, "crop", nums(&c));
             assert_eq!(params_of(&d, &id).crop, None, "{c:?}");
         }
@@ -285,7 +302,15 @@ mod tests {
     fn any_map_params_read_as_absent() {
         let mut d = Document::blank();
         let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
-        let crop = Any::Array(vec![Any::from(0.0), Any::from(0.0), Any::from(200.0), Any::from(100.0)].into());
+        let crop = Any::Array(
+            vec![
+                Any::from(0.0),
+                Any::from(0.0),
+                Any::from(200.0),
+                Any::from(100.0),
+            ]
+            .into(),
+        );
         let transparent = [
             ("color", Any::from("#ffffff")),
             ("tolerance", Any::from(10.0)),
@@ -307,9 +332,17 @@ mod tests {
         assert_eq!(params_of(&d, &id), ImageParams::default());
         let i = d.element(&id).and_then(|e| e.image).expect("image");
         assert_eq!(i.display_size(), (640.0, 480.0));
-        assert_eq!(d.hit_test(&p, 500.0, 300.0, 0.0), Some(id.clone()), "boîte source entière");
+        assert_eq!(
+            d.hit_test(&p, 500.0, 300.0, 0.0),
+            Some(id.clone()),
+            "boîte source entière"
+        );
         put(&d, &id, "transparent", color_map("#ffffff", 10.0));
-        assert_eq!(params_of(&d, &id).transparent.map(|t| t.tolerance), Some(10), "Y.Map lu");
+        assert_eq!(
+            params_of(&d, &id).transparent.map(|t| t.tolerance),
+            Some(10),
+            "Y.Map lu"
+        );
     }
 
     #[test]
@@ -326,12 +359,16 @@ mod tests {
         let mut d = Document::blank();
         let (p, id) = add(&mut d, 640.0, 480.0, [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]);
         put(&d, &id, "crop", nums(&[0.0, 0.0, 200.0, 100.0]));
-        let b = d.bounds(&[id.clone()]).expect("bornes");
+        let b = d.bounds(std::slice::from_ref(&id)).expect("bornes");
         assert_eq!((b.x0, b.y0, b.x1, b.y1), (100.0, 50.0, 300.0, 150.0));
         assert_eq!(d.hit_test(&p, 250.0, 100.0, 0.0), Some(id.clone()));
-        assert_eq!(d.hit_test(&p, 500.0, 100.0, 0.0), None, "hors du rognage : plus de collision");
+        assert_eq!(
+            d.hit_test(&p, 500.0, 100.0, 0.0),
+            None,
+            "hors du rognage : plus de collision"
+        );
         put(&d, &id, "quarterTurns", In::Any(Any::from(1.0)));
-        let b = d.bounds(&[id.clone()]).expect("bornes");
+        let b = d.bounds(std::slice::from_ref(&id)).expect("bornes");
         assert_eq!((b.x0, b.y0, b.x1, b.y1), (100.0, 50.0, 200.0, 250.0));
         assert_eq!(d.hit_test(&p, 150.0, 200.0, 0.0), Some(id.clone()));
         assert_eq!(d.hit_test(&p, 250.0, 100.0, 0.0), None);

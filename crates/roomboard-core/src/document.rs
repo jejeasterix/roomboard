@@ -970,7 +970,8 @@ mod tests {
             Some(ImageView {
                 asset: ABC.into(),
                 w: 640.0,
-                h: 480.0
+                h: 480.0,
+                ..ImageView::default()
             })
         );
         assert_eq!(
