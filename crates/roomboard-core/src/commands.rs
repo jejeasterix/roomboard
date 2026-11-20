@@ -187,6 +187,13 @@ pub enum Command {
         color: String,
         size: f64,
     },
+    /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
+    /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38).
+    Fill {
+        page: String,
+        target: crate::fill::FillTarget,
+        color: Option<String>,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -224,6 +231,7 @@ pub enum CommandError {
     BadFormat,
     BadGrid,
     BadTable,
+    BadFill,
 }
 
 impl std::fmt::Display for CommandError {
@@ -273,6 +281,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadTable => write!(
                 f,
                 "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)"
+            ),
+            CommandError::BadFill => write!(
+                f,
+                "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)"
             ),
         }
     }
@@ -670,6 +682,11 @@ impl Document {
                 color: &color,
                 size,
             }),
+            Command::Fill {
+                page,
+                target,
+                color,
+            } => self.cmd_fill(&page, &target, color.as_deref()),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
