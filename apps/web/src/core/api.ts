@@ -276,6 +276,15 @@ export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
+/** C12 (PF5) : genre du fond d'une page venue d'un PDF (`PDF_PAGE_KIND` du cœur). */
+export const PDF_PAGE_KIND = "pdf-page";
+/** C12 (PF7, U26) : pages importées d'un PDF au plus (`PDF_MAX_PAGES` du cœur). */
+export const PDF_MAX_PAGES = 500;
+/** C12 (PF6) : taille d'une page PDF en points, après /Rotate et CropBox (viewport de pdf.js à l'échelle 1). */
+export interface PdfPageSize {
+  readonly w: number;
+  readonly h: number;
+}
 /** Plafond des lignes et des colonnes d'un tableau (BadTable). */
 export const TABLE_MAX_LINES = 64;
 /** Défauts d'un tableau lu sans couleur ou sans taille lisible (T2). */
