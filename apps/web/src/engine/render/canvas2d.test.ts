@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Bounds, CoreDocument, ElementView, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
+import type { Bounds, CoreDocument, ElementView, MediaData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { BACKDROP_PLACEHOLDER, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, HANDLE_FILL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
+import type { MediaFrames } from "./media-frames";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { BackdropPainter, BackdropState, SceneSource } from "./renderer";
 
@@ -1047,5 +1048,88 @@ describe("Canvas2DRenderer — paintContent (C12)", () => {
       const strokes = out.log.filter((l) => l.startsWith("stroke"));
       expect(strokes, String(above)).toEqual(above ? ["stroke #000000 4", "stroke #7b68ee 1"] : ["stroke #7b68ee 1", "stroke #000000 4"]);
     }
+  });
+});
+
+describe("Canvas2DRenderer — média (C14)", () => {
+  const VID = "aa".repeat(32);
+  const POSTER = "bb".repeat(32);
+  const mediaData = (o: Partial<MediaData> = {}): MediaData => ({
+    asset: VID, mediaType: "video", w: 300, h: 150, duration: 10, poster: POSTER, trimStart: 0, trimEnd: null, loop: false, volume: 1, ...o,
+  });
+  const el = (o: Partial<MediaData> = {}): ElementView => ({ id: "m", kind: "media", transform: [1, 0, 0, 1, 5, 6], media: mediaData(o) });
+  function sceneOf(e: ElementView, opts: { images?: ImageSource; media?: MediaFrames; forExport?: boolean; assetName?: (a: string) => string | null } = {}) {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === e.id ? e : null), outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, opts);
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [e.id] }, IDENTITY, new Set());
+    return scene;
+  }
+  const frame = { tag: "frame" } as unknown as CanvasImageSource;
+  const poster = { tag: "poster" } as unknown as CanvasImageSource;
+  const images: ImageSource = { bitmap: (a) => (a === POSTER ? poster : null) };
+  const frames = (f: CanvasImageSource | null, playing: boolean, time = 0): MediaFrames => ({ frame: () => f, progress: () => ({ time, playing }) });
+
+  it("vidéo en lecture : image du lecteur dans (0,0)-(w,h), aucun badge", () => {
+    const scene = sceneOf(el(), { images, media: frames(frame, true) });
+    expect(scene.images).toEqual([{ img: frame, x: 0, y: 0, w: 300, h: 150 }]);
+    expect(scene.log).not.toContain(`fillRect ${MEDIA_BADGE_FILL}`);
+  });
+
+  it("vidéo sans image : poster du cache, badge", () => {
+    const scene = sceneOf(el(), { images, media: frames(null, false) });
+    expect(scene.images).toEqual([{ img: poster, x: 0, y: 0, w: 300, h: 150 }]);
+    expect(scene.log).toContain(`fillRect ${MEDIA_BADGE_FILL}`);
+    expect(scene.rects).toContainEqual([8, 150 - 8 - 25, 25, 25]);
+    expect(scene.log).toContain("fill #ffffff");
+  });
+
+  it("sans poster ni lecteur : cadre gris de sa taille", () => {
+    const scene = sceneOf(el({ poster: null }), { images });
+    expect(scene.images).toEqual([]);
+    expect(scene.rects).toContainEqual([0, 0, 300, 150]);
+    expect(scene.log).toContain(`fillRect ${PLACEHOLDER_FILL}`);
+  });
+
+  it("sans MediaFrames (export PDF, M34) : poster", () => {
+    const scene = sceneOf(el(), { images });
+    expect(scene.images).toEqual([{ img: poster, x: 0, y: 0, w: 300, h: 150 }]);
+  });
+
+  it("son : carte « Son », barre à la position du rognage", () => {
+    const a = el({ mediaType: "audio", poster: null, trimStart: 2, trimEnd: 6 });
+    const scene = sceneOf(a, { media: frames(null, true, 4) });
+    expect(scene.log).toContain(`fillRect ${AUDIO_CARD_FILL}`);
+    expect(scene.texts.map((t) => t.text)).toContain(AUDIO_CARD_LABEL);
+    expect(scene.log).toContain(`fillRect ${MEDIA_PROGRESS_COLOR}`);
+    expect(scene.rects.at(-1)).toEqual([0, 150 - 6, 150, 6]);
+  });
+
+  it("R7 : la carte du son affiche le nom du média quand il est connu", () => {
+    const a = el({ mediaType: "audio", poster: null });
+    const scene = sceneOf(a, { assetName: (id) => (id === VID ? "chanson.mp3" : null) });
+    expect(scene.texts.map((t) => t.text)).toEqual(["chanson.mp3"]);
+  });
+
+  it("R7 : export (forExport) : aucun badge « lecture », ni sur le poster ni sur la carte", () => {
+    const v = sceneOf(el(), { images, forExport: true });
+    expect(v.log).not.toContain(`fillRect ${MEDIA_BADGE_FILL}`);
+    const a = sceneOf(el({ mediaType: "audio", poster: null }), { forExport: true });
+    expect(a.log).not.toContain(`fillRect ${MEDIA_BADGE_FILL}`);
+    expect(a.texts.map((t) => t.text)).toEqual([AUDIO_CARD_LABEL]);
+  });
+});
+
+describe("exportPainterOptions (C14, R7, M34)", () => {
+  it("rendu d'export : forExport, jamais de lecteurs de média ni de nom (poster, pas de badge)", () => {
+    const images = {} as ImageSource;
+    const o = exportPainterOptions(images);
+    expect(o).toEqual({ images, forExport: true });
+    expect("media" in o).toBe(false);
+  });
+  it("le makePath du producteur vectoriel passe, forExport reste posé", () => {
+    const makePath = (): Path2D => ({}) as Path2D;
+    expect(exportPainterOptions({} as ImageSource, { makePath })).toMatchObject({ forExport: true, makePath });
   });
 });

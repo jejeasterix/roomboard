@@ -17,6 +17,7 @@ use roomboard_core::image::{ImageParamsInput, TransparentInput};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
+use roomboard_core::media::{LinkedAsset, MediaType};
 use roomboard_core::query::Bounds;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
@@ -596,6 +597,59 @@ impl Document {
         )
     }
 
+    /// C14 (M5) : média ; `linked` = chemin lié (M30), `null` pour un média inclus ; `poster` = empreinte du poster,
+    /// `null` sans poster (ses `poster_*` sont alors ignorés). Seules les références traversent la liaison.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_media(
+        &mut self,
+        page: &str,
+        asset: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        linked: Option<String>,
+        media_type: &str,
+        w: f64,
+        h: f64,
+        duration: f64,
+        poster: Option<String>,
+        poster_name: &str,
+        poster_mime: &str,
+        poster_size: f64,
+        matrix: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let poster = poster.map(|id| asset_ref(&id, poster_name, poster_mime, poster_size));
+        to_js(
+            &self
+                .add_media_inner(
+                    page,
+                    asset_ref(asset, name, mime, size),
+                    linked,
+                    media_type,
+                    [w, h, duration],
+                    poster,
+                    matrix,
+                )
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// C14 (M6) : réglages voulus d'un média ; `trim_end` `null` = jusqu'à la fin.
+    pub fn set_media(
+        &mut self,
+        id: &str,
+        trim_start: f64,
+        trim_end: Option<f64>,
+        looped: bool,
+        volume: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_media_inner(id, trim_start, trim_end, looped, volume)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Réglages d'une image (C5, I6) : état voulu complet et nouvelle matrice ; voir `image_params_input` pour la forme
     /// de `crop`, `color` et `transparent`.
     #[allow(clippy::too_many_arguments)]
@@ -628,6 +682,16 @@ impl Document {
                 .set_image_params_inner(id, params, matrix)
                 .map_err(cmd_err)?,
         )
+    }
+
+    /// C14 (M30) : `[{ id, path }]` des assets cités et liés, triés par id.
+    pub fn linked_assets(&self) -> Result<JsValue, JsError> {
+        to_js(&self.core.linked_assets())
+    }
+
+    /// C14 (M30) : `ids[i]` reçoit `paths[i]` ; hors historique, version inchangée ; rend le nombre réécrit.
+    pub fn relink_assets(&mut self, ids: Vec<String>, paths: Vec<String>) -> u32 {
+        u32::try_from(self.relink_assets_inner(&ids, &paths)).unwrap_or(u32::MAX)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1271,6 +1335,34 @@ impl Document {
         })
     }
 
+    /// Longueur de matrice différente de 6 : `BadMatrix` ; type ni `video` ni `audio` : `BadMedia`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_media_inner(
+        &mut self,
+        page: &str,
+        asset: AssetRef,
+        linked: Option<String>,
+        media_type: &str,
+        box_duration: [f64; 3],
+        poster: Option<AssetRef>,
+        matrix: &[f64],
+    ) -> Result<Change, CommandError> {
+        let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        let media_type = MediaType::parse(media_type).ok_or(CommandError::BadMedia)?;
+        let [w, h, duration] = box_duration;
+        self.run(Command::AddMedia {
+            page: page.to_string(),
+            asset,
+            linked,
+            media_type,
+            w,
+            h,
+            duration,
+            poster,
+            matrix: m,
+        })
+    }
+
     /// Réglages d'une image (C5, I6) : état voulu complet et nouvelle matrice.
     pub fn set_image_params_inner(
         &mut self,
@@ -1284,6 +1376,36 @@ impl Document {
             params,
             matrix: m,
         })
+    }
+
+    pub fn set_media_inner(
+        &mut self,
+        id: &str,
+        trim_start: f64,
+        trim_end: Option<f64>,
+        looped: bool,
+        volume: f64,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetMedia {
+            id: id.to_string(),
+            trim_start,
+            trim_end,
+            looped,
+            volume,
+        })
+    }
+
+    /// Paires (`ids[i]`, `paths[i]`) ; les éléments en trop de la plus longue liste sont ignorés.
+    pub fn relink_assets_inner(&mut self, ids: &[String], paths: &[String]) -> usize {
+        let links: Vec<LinkedAsset> = ids
+            .iter()
+            .zip(paths)
+            .map(|(id, path)| LinkedAsset {
+                id: id.clone(),
+                path: path.clone(),
+            })
+            .collect();
+        self.core.relink_assets(&links)
     }
 
     /// `None` : retire le fond.
@@ -2072,6 +2194,82 @@ mod tests {
         assert_eq!(
             d.add_image_inner(&p, png(), [1.0, 1.0], &[1.0, 0.0]),
             Err(CommandError::BadMatrix)
+        );
+    }
+
+    /// C14 : média lié ajouté, type inconnu refusé, réglages relus, lien réécrit hors historique.
+    #[test]
+    fn add_media_inner_then_set_media_and_links() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let webm = AssetRef {
+            id: ABC.into(),
+            name: "clip.webm".into(),
+            mime: "video/webm".into(),
+            size: 10.0,
+        };
+        let m = [1.0, 0.0, 0.0, 1.0, 5.0, 6.0];
+        let c = d
+            .add_media_inner(
+                &p,
+                webm.clone(),
+                Some("clips/clip.webm".into()),
+                "video",
+                [320.0, 180.0, 2.5],
+                None,
+                &m,
+            )
+            .expect("média");
+        let id = c.ids[0].clone();
+        let e = d.core.element(&id).expect("vue");
+        assert_eq!(e.kind, "media");
+        assert_eq!(
+            e.media.as_ref().map(|v| (v.media_type.as_str(), v.w, v.h)),
+            Some(("video", 320.0, 180.0))
+        );
+        assert_eq!(
+            d.add_media_inner(
+                &p,
+                webm.clone(),
+                None,
+                "hologram",
+                [320.0, 180.0, 2.5],
+                None,
+                &m
+            ),
+            Err(CommandError::BadMedia)
+        );
+        assert_eq!(
+            d.add_media_inner(
+                &p,
+                webm,
+                None,
+                "audio",
+                [320.0, 180.0, 2.5],
+                None,
+                &[1.0, 0.0]
+            ),
+            Err(CommandError::BadMatrix)
+        );
+        d.set_media_inner(&id, 0.5, Some(2.0), true, 0.4)
+            .expect("réglages");
+        let v = d.core.element(&id).and_then(|v| v.media).expect("média");
+        assert_eq!(
+            (v.trim_start, v.trim_end, v.looped, v.volume),
+            (0.5, Some(2.0), true, 0.4)
+        );
+        let version = d.core.version();
+        assert_eq!(
+            d.relink_assets_inner(&[ABC.to_string()], &["../clips/clip.webm".to_string()]),
+            1
+        );
+        assert_eq!(d.core.version(), version);
+        assert_eq!(
+            d.core.linked_assets(),
+            vec![LinkedAsset {
+                id: ABC.into(),
+                path: "../clips/clip.webm".into()
+            }]
         );
     }
 

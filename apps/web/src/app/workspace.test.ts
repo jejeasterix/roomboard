@@ -10,13 +10,20 @@ import { CodecUnavailableError, type ContainerCodec, type ContainerContents } fr
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
 import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG } from "../platform/html-table";
-import { LATER_FORMAT_MESSAGE } from "../platform/import";
+import { createImporter, LATER_FORMAT_MESSAGE } from "../platform/import";
+import type { LinkedMedia } from "../platform/media-import";
 import { PdfEncryptedError } from "../platform/pdf-render";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
 import type { OverlayProducer, OverlayRequest } from "./pdf-export";
 import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
+
+// Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
+vi.mock("../platform/import", async (importOriginal) => {
+  const m = await importOriginal<typeof import("../platform/import")>();
+  return { ...m, createImporter: vi.fn(m.createImporter) };
+});
 
 interface FakeBoard {
   readonly board: BoardSession;
@@ -39,7 +46,7 @@ let shell: {
   guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string) => () => void>>;
   setTitle: ReturnType<typeof vi.fn<(t: string) => void>>;
 };
-let host: FileHost & { save: ReturnType<typeof vi.fn<(e: () => Promise<Uint8Array>, t: SaveTarget) => Promise<SaveTarget | null>>> };
+let host: FileHost & { save: ReturnType<typeof vi.fn<(e: (t: SaveTarget) => Promise<Uint8Array>, t: SaveTarget) => Promise<SaveTarget | null>>> };
 let codec: { read: ReturnType<typeof vi.fn<ContainerCodec["read"]>>; write: ReturnType<typeof vi.fn<ContainerCodec["write"]>> };
 let saved: Uint8Array[];
 
@@ -219,6 +226,8 @@ interface SetupOptions {
   readonly overlay?: WorkspaceDeps["overlay"];
   readonly rasterPage?: WorkspaceDeps["rasterPage"];
   readonly rasterClose?: WorkspaceDeps["rasterClose"];
+  readonly linkMedia?: WorkspaceDeps["linkMedia"];
+  readonly relinkMedia?: WorkspaceDeps["relinkMedia"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -234,8 +243,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
       }),
     open: async () => opening,
     pick: async () => [],
-    save: vi.fn(async (encode: () => Promise<Uint8Array>, t: SaveTarget): Promise<SaveTarget | null> => {
-      saved.push(await encode());
+    save: vi.fn(async (encode: (t: SaveTarget) => Promise<Uint8Array>, t: SaveTarget): Promise<SaveTarget | null> => {
+      saved.push(await encode(t));
       return t.kind === "ask" ? { kind: "download", name: t.name } : t;
     }),
   };
@@ -259,6 +268,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.overlay ? { overlay: o.overlay } : {}),
     ...(o.rasterPage ? { rasterPage: o.rasterPage } : {}),
     ...(o.rasterClose ? { rasterClose: o.rasterClose } : {}),
+    ...(o.linkMedia ? { linkMedia: o.linkMedia } : {}),
+    ...(o.relinkMedia ? { relinkMedia: o.relinkMedia } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -1212,5 +1223,105 @@ describe("espace de travail : PDF (C12)", () => {
     const ws = await setupWorkspace({ loadPdfLib, overlay: () => producer() });
     expect(await ws.exportPdf()).toBe(false);
     expect(shell.notify).not.toHaveBeenCalled();
+  });
+});
+
+describe("espace de travail : médias (C14)", () => {
+  const VID = "cd".repeat(32);
+  const VIDEO_SIZE = 300_000_000;
+  const DOC_TARGET: SaveTarget = { kind: "tauri", name: "a.roomboard", path: "/cours/a.roomboard" };
+  function docWithLinkedVideo(linked: string): CoreDocument {
+    const d = fakeCore.blank();
+    d.apply({
+      type: "AddMedia",
+      page: d.pageIds()[0]!,
+      asset: { id: VID, name: "clip.webm", mime: "video/webm", size: VIDEO_SIZE },
+      poster: null,
+      linked,
+      mediaType: "video",
+      w: 640,
+      h: 360,
+      duration: 12,
+      matrix: [1, 0, 0, 1, 0, 0],
+    });
+    return d;
+  }
+  const readsLinked = (linked: string, assets: ContainerContents["assets"] = []): void => {
+    codec.read.mockResolvedValueOnce({ manifest: new Uint8Array([1]), ybin: docWithLinkedVideo(linked).save(NOW, "0.1.0"), assets, warnings: [] });
+  };
+
+  it("enregistrer un document à média lié le laisse non modifié", async () => {
+    const ws = await setupWorkspace({ kind: "tauri", relinkMedia: async () => true });
+    // R9 : même si le conteneur rendait des octets pour la vidéo, ils ne sont jamais réécrits.
+    readsLinked("/cours/videos/clip.webm", [[VID, new Blob([new Uint8Array([7, 7, 7, 7])])]]);
+    expect(await ws.openDocument({ name: "a.roomboard", bytes: new Uint8Array([9]), target: DOC_TARGET })).toBe(true);
+    const tab = ws.active();
+    const version = tab.board.doc.version();
+    expect(await tab.files.run("save")).toBe(true); // Enregistrer permis : le lié n'est pas un asset absent (R30)
+    expect(host.save.mock.calls.map((c) => c[1])).toEqual([DOC_TARGET]);
+    const [manifest, ybin, assets] = codec.write.mock.calls[0]!;
+    expect(fakeCore.loadParts(manifest, ybin).linkedAssets()).toEqual([{ id: VID, path: "videos/clip.webm" }]);
+    expect(assets.map((a) => a.id)).not.toContain(VID);
+    expect(tab.files.isDirty()).toBe(false);
+    expect(tab.board.doc.version()).toBe(version);
+  });
+
+  it("ouvrir en coque : relinkMedia avec le chemin résolu et la taille", async () => {
+    const relinkMedia = vi.fn(async (_p: string, _s: number) => true);
+    const ws = await setupWorkspace({ kind: "tauri", relinkMedia });
+    readsLinked("videos/clip.webm");
+    expect(await ws.openDocument({ name: "a.roomboard", bytes: new Uint8Array([9]), target: DOC_TARGET })).toBe(true);
+    expect(relinkMedia).toHaveBeenCalledWith("/cours/videos/clip.webm", VIDEO_SIZE);
+    expect(ws.active().assets.linked(VID)).toBe("/cours/videos/clip.webm");
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("M31 : un lien introuvable est gardé et réécrit relatif au nouveau dossier à « Enregistrer sous »", async () => {
+    const ws = await setupWorkspace({ kind: "tauri", relinkMedia: async () => false });
+    readsLinked("videos/v.mp4");
+    expect(await ws.openDocument({ name: "a.roomboard", bytes: new Uint8Array([9]), target: DOC_TARGET })).toBe(true);
+    const tab = ws.active();
+    const version = tab.board.doc.version();
+    host.save.mockImplementationOnce(async (encode: (t: SaveTarget) => Promise<Uint8Array>) => {
+      const t: SaveTarget = { kind: "tauri", name: "a.roomboard", path: "/b/a.roomboard" };
+      saved.push(await encode(t));
+      return t;
+    });
+    expect(await tab.files.run("save")).toBe(true);
+    const [manifest, ybin] = codec.write.mock.calls[0]!;
+    expect(fakeCore.loadParts(manifest, ybin).linkedAssets()).toEqual([{ id: VID, path: "../cours/videos/v.mp4" }]);
+    expect(tab.board.doc.version()).toBe(version);
+  });
+
+  it("R1 : un document ouvert par dépôt avec path résout sa vidéo liée relative", async () => {
+    const relinkMedia = vi.fn(async (_p: string, _s: number) => true);
+    const ws = await setupWorkspace({ kind: "tauri", relinkMedia });
+    readsLinked("videos/clip.webm");
+    expect(await ws.openDocument({ name: "/cours/a.roomboard", bytes: new Uint8Array([9]), target: null, path: "/cours/a.roomboard" })).toBe(true);
+    expect(relinkMedia).toHaveBeenCalledWith("/cours/videos/clip.webm", VIDEO_SIZE);
+    expect(ws.active().assets.linked(VID)).toBe("/cours/videos/clip.webm");
+  });
+
+  it("linkMedia transmis à l'importeur (vidéo de 300 Mo déposée avec un chemin : liée par le gestionnaire média, T8)", async () => {
+    const linkMedia = vi.fn(async (_p: string) => ({}) as unknown as LinkedMedia);
+    await setupWorkspace({ kind: "tauri", linkMedia });
+    const given = vi.mocked(createImporter).mock.calls.at(-1)![0];
+    expect(given.linkMedia).toBeDefined();
+    await given.linkMedia!("/cours/videos/clip.webm");
+    expect(linkMedia).toHaveBeenCalledWith("/cours/videos/clip.webm");
+    await setupWorkspace({ kind: "tauri" });
+    expect(vi.mocked(createImporter).mock.calls.at(-1)![0].linkMedia).toBeUndefined();
+  });
+
+  it("copier un média lié : « Copie impossible : vidéo liée… »", async () => {
+    const ws = await setupWorkspace({ kind: "tauri", relinkMedia: async () => true });
+    readsLinked("/cours/videos/clip.webm");
+    await ws.openDocument({ name: "a.roomboard", bytes: new Uint8Array([9]), target: DOC_TARGET });
+    const tab = ws.active();
+    const ids = tab.board.doc.elementIds(tab.board.doc.pageIds()[0]!);
+    (tab.board.engine as unknown as { select(ids: string[]): void }).select(ids);
+    await ws.copySelection(false);
+    expect(shell.notify).toHaveBeenCalledWith("Copie impossible : vidéo liée : copie non prise en charge, déposez le fichier à nouveau");
+    expect(ws.canPaste()).toBe(false);
   });
 });

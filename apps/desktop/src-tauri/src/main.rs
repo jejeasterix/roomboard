@@ -4,10 +4,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use roomboard_shell::{
-    launch_paths, read_granted, size_granted, GrantedPaths, ASSOCIATED_EXTENSIONS,
+    check_linked_media, launch_paths, read_granted, sha256_granted, size_granted, GrantedPaths,
+    ReadError, ASSOCIATED_EXTENSIONS,
 };
 use serde::Serialize;
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, RunEvent, Runtime, State, WindowEvent};
+use tauri_plugin_fs::FsExt;
 
 const DROPPED_EVENT: &str = "roomboard://dropped";
 #[cfg(target_os = "macos")]
@@ -51,6 +53,48 @@ async fn read_granted_file(
 #[tauri::command]
 async fn granted_file_size(granted: State<'_, GrantedPaths>, path: String) -> Result<u64, String> {
     size_granted(&granted, &PathBuf::from(path)).map_err(|e| e.to_string())
+}
+
+/// Lie une vidéo : empreinte SHA-256 par morceaux (M27), puis accord du seul fichier au protocole d'assets (M28).
+/// Un chemin choisi par le sélecteur de fichiers est dans la portée fs : il devient accordé ici.
+#[tauri::command]
+async fn link_media(
+    app: AppHandle,
+    granted: State<'_, GrantedPaths>,
+    path: String,
+) -> Result<String, String> {
+    let p = PathBuf::from(path);
+    if granted.granted_path(&p).is_none() && app.fs_scope().is_allowed(&p) {
+        granted.grant([p.clone()]);
+    }
+    let hash = sha256_granted(&granted, &p).map_err(|e| e.to_string())?;
+    let canonical = granted
+        .granted_path(&p)
+        .ok_or_else(|| ReadError::NotGranted.to_string())?;
+    app.asset_protocol_scope()
+        .allow_file(&canonical)
+        .map_err(|e| e.to_string())?;
+    Ok(hash)
+}
+
+/// Retrouve une vidéo liée à l'ouverture (M29) : même taille, extension de média ; introuvable : `false`.
+#[tauri::command]
+async fn relink_media(
+    app: AppHandle,
+    granted: State<'_, GrantedPaths>,
+    path: String,
+    size: u64,
+) -> Result<bool, String> {
+    let canonical = match check_linked_media(&PathBuf::from(path), size) {
+        Ok(c) => c,
+        Err(ReadError::Io(_)) => return Ok(false),
+        Err(e) => return Err(e.to_string()),
+    };
+    granted.grant([canonical.clone()]);
+    app.asset_protocol_scope()
+        .allow_file(&canonical)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -129,6 +173,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             read_granted_file,
             granted_file_size,
+            link_media,
+            relink_media,
             launch_files,
             quit_app
         ])

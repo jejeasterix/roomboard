@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SaveTarget } from "./files";
 import { browserFallbackDeps, createFallbackHost, FALLBACK_ACCEPT, IMPORT_ACCEPT, type FallbackDeps, type PickedFile } from "./host-repli";
 
@@ -257,5 +257,21 @@ describe("hôte de repli : onDrop (T86)", () => {
     const picked = browserFallbackDeps(doc, urls).pickFiles(IMPORT_ACCEPT);
     appended[0]?.listeners.get("cancel")?.();
     expect(await picked).toEqual([]);
+  });
+});
+
+describe("hôte de repli : save passe la cible choisie (C14)", () => {
+  it("encode reçoit la cible choisie", async () => {
+    const host = createFallbackHost(memoryDeps().deps);
+    const encode = vi.fn(async (_t: SaveTarget) => bytes);
+    const saved = await host.save(encode, { kind: "ask", name: "cours" });
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(encode.mock.calls[0]![0]).toEqual({ kind: "download", name: "cours.roomboard" });
+    expect(saved).toEqual({ kind: "download", name: "cours.roomboard" });
+  });
+
+  it("IMPORT_ACCEPT suit IMPORT_EXTENSIONS : vidéos et sons compris", () => {
+    expect(IMPORT_ACCEPT).toContain(".webm");
+    expect(IMPORT_ACCEPT).toContain(".mp3");
   });
 });

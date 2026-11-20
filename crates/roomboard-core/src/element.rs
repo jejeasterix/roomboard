@@ -6,6 +6,7 @@ use yrs::{Any, In, Map, MapRef, Number, Out, ReadTxn};
 use crate::asset::is_asset_id;
 use crate::grid::GridView;
 use crate::image::{ImageParams, TransparentView};
+use crate::media::MediaView;
 use crate::query::Bounds;
 use crate::rich_text::TextSpanView;
 use crate::table::TableView;
@@ -25,9 +26,9 @@ pub struct StrokeStyle {
     pub width: f32,
 }
 
-/// Types d'élément que ce cœur sait lire (C10a : `table`) ; tout autre `kind` est gardé et rendu comme élément inconnu
-/// (U3, K8).
-pub const KNOWN_KINDS: [&str; 5] = ["stroke", "shape", "text", "image", "table"];
+/// Types d'élément que ce cœur sait lire (C10a : `table`, C14 : `media`) ; tout autre `kind` est gardé et rendu comme
+/// élément inconnu (U3, K8).
+pub const KNOWN_KINDS: [&str; 6] = ["stroke", "shape", "text", "image", "table", "media"];
 /// Boîte d'un élément inconnu sans `w`, `h` lisibles (K8, HK7).
 pub const UNKNOWN_BOX: f64 = 100.0;
 /// Seul ajustement de fond écrit par cette version : largeur de la page (K6, HK1).
@@ -131,6 +132,9 @@ pub struct ElementView {
     /// Tableau (C10a, T13) ; absent pour tout autre `kind`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table: Option<TableView>,
+    /// Média (C14, M2) ; absent pour tout autre `kind`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media: Option<MediaView>,
     /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<Vec<String>>,
@@ -149,6 +153,7 @@ impl ElementView {
             image: None,
             unknown: None,
             table: None,
+            media: None,
             group: None,
         }
     }

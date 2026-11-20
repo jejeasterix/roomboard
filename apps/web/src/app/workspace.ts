@@ -5,7 +5,7 @@
  * de la fenêtre est celui de l'onglet actif. Le marquage `#stage[data-fichiers|data-modifie|data-fichier|data-tab]` est
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
  */
-import { PDF_MAX_PAGES, type CoreDocument, type CoreFactory, type PdfPageSize } from "../core/api";
+import { PDF_MAX_PAGES, type CoreDocument, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import type { ContainerCodec } from "../platform/container";
 import {
@@ -25,6 +25,8 @@ import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from ".
 import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
+import type { LinkedMedia } from "../platform/media-import";
+import { isAbsoluteLink, relativeLink, resolveLink } from "../platform/media-link";
 import type { StartedDocument } from "../platform/mount";
 import { insertTableGrid } from "../platform/table-insert";
 import type { TypedFiles } from "../platform/typed-files";
@@ -95,12 +97,17 @@ export interface WorkspaceDeps {
   rasterPage?(blob: Blob, index: number): Promise<RasterPage | null>;
   /** Fin de l'export (réussi, refusé ou en erreur) : libère ce que `rasterPage` a gardé ouvert (un document par blob). */
   rasterClose?(): void;
+  /** C14 (M30) : lie un média déposé par son chemin (coque) ; transmis à l'importeur ; absent : aucun média lié. */
+  linkMedia?(path: string): Promise<LinkedMedia>;
+  /** C14 (M31) : accorde à nouveau le fichier lié `path` s'il existe avec la taille `size` ; absent (web) : liens non lus. */
+  relinkMedia?(path: string, size: number): Promise<boolean>;
 }
 
 export interface Workspace {
   readonly tabs: Tabs<TabSession>;
   active(): TabSession;
-  openDocument(file: { readonly name: string; readonly bytes: Uint8Array; readonly target: SaveTarget | null }): Promise<boolean>;
+  /** `path` (R1) : chemin du fichier déposé ou du lancement, pour les liens relatifs quand la cible n'est pas `tauri`. */
+  openDocument(file: { readonly name: string; readonly bytes: Uint8Array; readonly target: SaveTarget | null; readonly path?: string | null }): Promise<boolean>;
   newBlank(): Promise<void>;
   /** Question si l'onglet est modifié ; dernier onglet : un vierge d'abord (CL5b-5). */
   close(id: string): Promise<boolean>;
@@ -143,6 +150,17 @@ interface Slot {
   title: string;
   /** Onglet aux assets non lus (R30) : Enregistrer refusé. */
   unread: boolean;
+}
+
+/** C14 (M30) : à l'enregistrement en coque, chaque lien connu du magasin est réécrit relatif au document cible ; hors
+ *  historique, version inchangée (`relinkAssets`) : l'onglet enregistré reste non modifié. */
+function relinkFor(doc: CoreDocument, assets: AssetStore, t: SaveTarget, lost: ReadonlyMap<string, string>): void {
+  if (t.kind !== "tauri") return;
+  const links = doc.linkedAssets().flatMap((l): LinkedAsset[] => {
+    const abs = assets.linked(l.id) ?? lost.get(l.id); // un lien introuvable à l'ouverture est gardé (M31)
+    return abs === undefined ? [] : [{ id: l.id, path: relativeLink(t.path, abs) }];
+  });
+  if (links.length > 0) doc.relinkAssets(links);
 }
 
 /** Ordre fixe : premier onglet, `host.onDrop`, `await dropReady()`, puis `launch()` → importFiles. */
@@ -211,7 +229,22 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
 
   const full = (): boolean => tabs.list().length >= MAX_TABS;
   const makeAssets = deps.makeAssets ?? (() => createAssetStore());
-  const io = createContainerIO({ core, codec: deps.codec, say, makeAssets });
+  const relinkMedia = deps.relinkMedia;
+  /** M31 : chemin absolu (résolu contre le dossier d'origine) de chaque lien tenté à l'ouverture, par `docPath` puis id. */
+  const lostLinks = new Map<string, string>();
+  /** M31 : lien absolu tel quel, relatif résolu par le chemin du document (null sans lui), puis accordé par la coque. */
+  const relink = async (docPath: string | null, link: LinkedAsset, size: number): Promise<string | null> => {
+    if (relinkMedia === undefined) return null;
+    const abs = docPath === null ? (isAbsoluteLink(link.path) ? link.path : null) : resolveLink(docPath, link.path);
+    if (abs === null) return null;
+    lostLinks.set(`${docPath ?? ""}\0${link.id}`, abs);
+    try {
+      return (await relinkMedia(abs, size)) ? abs : null;
+    } catch {
+      return null;
+    }
+  };
+  const io = createContainerIO({ core, codec: deps.codec, say, makeAssets, ...(relinkMedia ? { relink } : {}) });
   const clipboard = deps.clipboard ?? createClipboard(null);
   const fragments = createFragmentOps({ io, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
   /** Nom dit dans les messages d'un collage (aucun fichier). */
@@ -236,6 +269,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     opened: { readonly name: string; readonly target: SaveTarget | null } | null,
     assets: AssetStore = makeAssets(),
     unread = false,
+    lost: ReadonlyMap<string, string> = new Map(),
   ): Promise<TabSession | null> {
     let board: BoardSession;
     try {
@@ -250,12 +284,24 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       return null;
     }
     const slot: Slot = { tab: null, id: "", title: "", unread };
+    // PC3 : hôte de l'onglet ; la cible choisie par la boîte fixe les chemins relatifs des médias liés avant l'encodage.
+    const tabHost: FileHost = {
+      kind: host.kind,
+      open: () => host.open(),
+      pick: () => host.pick(),
+      onDrop: (h) => host.onDrop(h),
+      save: (encode, to) =>
+        host.save((t) => {
+          relinkFor(board.doc, assets, t, lost);
+          return encode(t);
+        }, to),
+    };
     const files = createFileController({
       encode: (now, appVersion) => io.encode(board.doc, assets, now, appVersion, { kind: "document" }),
       importFiles: (f) => ws.importFiles(f, null),
       saveBlocked: () => (slot.unread || missingOf(board.doc, assets).length > 0 ? UNREAD_ASSETS_MESSAGE : null),
       versions: board.engine,
-      host,
+      host: tabHost,
       shell: tabShell(slot),
       opened,
       openInTab: (f) => ws.openDocument(f),
@@ -281,6 +327,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   }
 
   const readSheet = deps.readSheet;
+  const linkMedia = deps.linkMedia;
   const parseHtml = deps.parseHtml ?? ((s: string) => new DOMParser().parseFromString(s, "text/html"));
   const importer = createImporter({
     openDocument: (f) => ws.openDocument(f),
@@ -294,6 +341,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? { readSheet } : {}),
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
+    ...(linkMedia ? { linkMedia } : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
@@ -311,9 +359,18 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return false;
       }
-      const read = await io.read(name, file.bytes, "document");
+      const target = file.target;
+      const docPath = target?.kind === "tauri" ? target.path : (file.path ?? null); // R1
+      const read = await io.read(name, file.bytes, "document", docPath);
+      const lost = new Map<string, string>();
+      for (const l of read?.doc.linkedAssets() ?? []) {
+        const key = `${docPath ?? ""}\0${l.id}`;
+        const abs = lostLinks.get(key);
+        if (abs !== undefined) lost.set(l.id, abs);
+        lostLinks.delete(key);
+      }
       if (read === null) return false;
-      return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread)) !== null;
+      return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread, lost)) !== null;
     },
     async openPdf(file) {
       const name = baseName(file.name);

@@ -111,4 +111,33 @@ node -e 'const f=require("fs"); const c=JSON.parse(f.readFileSync(process.argv[1
 refuse 17 "$tmp/propre" "$tmp/depot-coupe.json" "dragDropEnabled"
 refuse 18 "$tmp/propre" "$tmp/depot-coupe-implicite.json" "dragDropEnabled"
 
+# 19-23. média lié (C14, M27-M29) : `asset:` admis dans media-src seulement ; protocole d'assets à portée vide et
+# feature `protocol-asset` d'accord (le Cargo.toml voisin de la configuration).
+conf asset-img "\"script-src\": \"$S $W\", \"img-src\": \"$S asset:\""
+refuse 19 "$tmp/propre" "$tmp/asset-img.json" "img-src"
+mkdir -p "$tmp/coque"
+cat > "$tmp/coque/tauri.conf.json" <<EOT
+{ "app": { "security": { "csp": { "default-src": "'self'", "script-src": "'self' 'wasm-unsafe-eval'",
+  "media-src": "'self' blob: asset: http://asset.localhost" }, "assetProtocol": { "enable": true, "scope": [] } } },
+  "plugins": { "fs": { "scopeDroppedPaths": false } } }
+EOT
+cat > "$tmp/coque/Cargo.toml" <<'EOT'
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+EOT
+node "$script" "$tmp/propre" "$tmp/coque/tauri.conf.json" > "$tmp/out" 2>&1 || echec "cas 20 : refusé ($(cat "$tmp/out"))"
+cas=$((cas + 1))
+mkdir -p "$tmp/coque-portee" "$tmp/coque-sans"
+sed 's|"scope": \[\]|"scope": ["$HOME/**"]|' "$tmp/coque/tauri.conf.json" > "$tmp/coque-portee/tauri.conf.json"
+cp "$tmp/coque/Cargo.toml" "$tmp/coque-portee/Cargo.toml"
+refuse 21 "$tmp/propre" "$tmp/coque-portee/tauri.conf.json" "scope"
+cp "$tmp/coque/tauri.conf.json" "$tmp/coque-sans/tauri.conf.json"
+printf '[dependencies]\ntauri = { version = "2", features = [] }\n' > "$tmp/coque-sans/Cargo.toml"
+refuse 22 "$tmp/propre" "$tmp/coque-sans/tauri.conf.json" "protocol-asset"
+# 24. `http://asset.localhost` (forme Windows et Android de `asset:`) admis dans media-src seulement, comme `asset:`
+conf asset-host-img "\"script-src\": \"$S $W\", \"img-src\": \"$S http://asset.localhost\""
+refuse 24 "$tmp/propre" "$tmp/asset-host-img.json" "asset.localhost"
+node "$script" "$tmp/propre" "$racine/apps/desktop/src-tauri/tauri.conf.json" > "$tmp/out" 2>&1 || echec "cas 23 : vraie configuration refusée ($(cat "$tmp/out"))"
+cas=$((cas + 1))
+
 echo "controle-hors-ligne.test.sh : $cas cas OK"

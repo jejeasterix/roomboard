@@ -6,7 +6,7 @@
 // (3) Dépôts hors de la portée fs (scopeDroppedPaths: false) et dépôt gardé sur la fenêtre main (dragDropEnabled).
 // Usage : node scripts/controle-hors-ligne.mjs <dossier dist> <tauri.conf.json>   (0 : OK ; 1 : écart)
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { extname, join, relative } from "node:path";
+import { dirname, extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const TEXT = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt", ".webmanifest"]);
@@ -27,6 +27,7 @@ const SCHEME_TOKENS = new Map([
   ["ipc:", new Set(["connect-src"])],
   ["data:", new Set(["img-src", "font-src", "media-src"])],
   ["blob:", new Set(["img-src", "media-src"])],
+  ["asset:", new Set(["media-src"])],
 ]);
 const SCRIPT_TOKENS = new Set(["'self'", "'wasm-unsafe-eval'"]);
 const isLocalHost = (h) => h === "localhost" || h.endsWith(".localhost") || /^127(?:\.\d{1,3}){3}$/.test(h);
@@ -87,6 +88,11 @@ export function checkCsp(conf) {
         continue;
       }
       const host = t.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "").replace(/[/?#].*$/, "").replace(/:(?:\d+|\*)$/, "").toLowerCase();
+      // Forme Windows et Android de `asset:` : admise dans media-src seulement, comme `asset:`.
+      if (host === "asset.localhost" && d !== "media-src") {
+        errors.push(`${d} : source ${t} non admise ici (media-src seulement)`);
+        continue;
+      }
       if (isLocalHost(host.replace(/^\*\./, "x."))) continue;
       errors.push(`${d} : source non locale ou inconnue ${t}`);
     }
@@ -116,6 +122,24 @@ export function checkDragDrop(conf) {
     .map(() => "app.windows[main].dragDropEnabled doit valoir true (le dépôt des fichiers passe par la coque)");
 }
 
+/**
+ * Protocole d'assets (C14, M27-M29) : la coque accorde chaque vidéo liée par `allow_file`, la configuration ne doit
+ * donc porter aucune portée statique. Activation (`app.security.assetProtocol.enable`) et feature `protocol-asset`
+ * de tauri (src-tauri/Cargo.toml) vont ensemble.
+ */
+export function checkAssetProtocol(conf, cargoToml) {
+  const ap = conf?.app?.security?.assetProtocol;
+  const enabled = ap?.enable === true;
+  const feature = /^\s*tauri\s*=\s*\{[^}]*["']protocol-asset["']/m.test(cargoToml ?? "");
+  const errors = [];
+  if (enabled && !(Array.isArray(ap.scope) && ap.scope.length === 0)) {
+    errors.push("app.security.assetProtocol.scope doit être vide (chaque fichier lié est accordé par la coque)");
+  }
+  if (enabled && !feature) errors.push("assetProtocol activé sans la feature protocol-asset de tauri (src-tauri/Cargo.toml)");
+  if (!enabled && feature) errors.push("feature protocol-asset de tauri sans app.security.assetProtocol.enable");
+  return errors;
+}
+
 function main(argv) {
   const [dist, confPath] = argv;
   if (!dist || !confPath) {
@@ -124,7 +148,13 @@ function main(argv) {
   }
   const { errors, scanned } = checkDist(dist);
   const conf = JSON.parse(readFileSync(confPath, "utf8"));
-  errors.push(...checkCsp(conf), ...checkFsScope(conf), ...checkDragDrop(conf));
+  let cargoToml = "";
+  try {
+    cargoToml = readFileSync(join(dirname(confPath), "Cargo.toml"), "utf8");
+  } catch {
+    cargoToml = "";
+  }
+  errors.push(...checkCsp(conf), ...checkFsScope(conf), ...checkDragDrop(conf), ...checkAssetProtocol(conf, cargoToml));
   if (errors.length > 0) {
     for (const e of errors) console.error(`controle-hors-ligne : ${e}`);
     return 1;

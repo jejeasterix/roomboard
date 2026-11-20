@@ -10,7 +10,7 @@ import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
 import { createWorkspace, type TabSession } from "./app/workspace";
 import type { CoreDocument } from "./core/api";
-import { Canvas2DRenderer } from "./engine/render/canvas2d";
+import { Canvas2DRenderer, exportPainterOptions } from "./engine/render/canvas2d";
 import { RecordingPath } from "./engine/render/record-ctx";
 import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
@@ -23,7 +23,7 @@ import { measureWith, type Measure } from "./engine/text-layout";
 import { browserFallbackDeps } from "./platform/host-repli";
 import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
-import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
+import { launchFiles, linkMedia, loadTauriPorts, onQuitRequested, quitApp, relinkMedia, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
 import { browserSystemClipboard, createClipboard, handleCopy } from "./platform/clipboard";
 import { handlePaste } from "./platform/paste";
@@ -88,7 +88,7 @@ async function start(): Promise<void> {
       decode: decodeBitmap,
       alive: () => true,
       canvas: browserExportCanvas,
-      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images }),
+      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images)),
     });
   // Bitmap → PNG par une toile d'export, libérée aussitôt (mémoire de l'iPad).
   const bitmapToPng = async (bitmap: CanvasImageSource, w: number, h: number): Promise<Uint8Array> => {
@@ -138,7 +138,10 @@ async function start(): Promise<void> {
   const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
   // Pixels des images (C5, I18, DAI3) : un Worker par onglet, avec sa propre instance du module `formats`.
   const spawnPixelWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pixel-worker.ts", import.meta.url), { type: "module" }));
-  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker };
+  const shared: SessionShared = {
+    container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker,
+    ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
+  };
 
   const env = { tauri, userAgent: navigator.userAgent };
   const store = createProfileStore(browserKeyValue(window), BUILTIN_PROFILES);
@@ -195,7 +198,7 @@ async function start(): Promise<void> {
             assets: tab.assets,
             alive: () => true,
             measure: vectorMeasure,
-            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images, makePath: () => new RecordingPath() as unknown as Path2D }),
+            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images, { makePath: () => new RecordingPath() as unknown as Path2D })),
             fonts,
             toPng,
             write: workerPdfWriter(spawnPdfWorker),
@@ -223,6 +226,13 @@ async function start(): Promise<void> {
     dropReady: () => prepared.dropReady(),
     // L'ordre écoute du dépôt puis `launch_files` est tenu par le workspace (T98) : `launchFiles` n'est appelé que là.
     ...(ipc === null ? {} : { launch: () => launchFiles(ipc) }),
+    // Médias liés (C14) : coque seulement ; `linkMedia` de l'hôte rend l'empreinte, l'URL vient du protocole d'assets.
+    ...(ipc === null || ports === null
+      ? {}
+      : {
+          linkMedia: async (p: string) => ({ id: await linkMedia(ipc, p), url: ports.assetUrl(p) }),
+          relinkMedia: (p: string, size: number) => relinkMedia(ipc, p, size),
+        }),
     now: () => new Date().toISOString(),
     newId: () => `t${++tabCount}`,
   });

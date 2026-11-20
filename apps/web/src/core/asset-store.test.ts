@@ -92,3 +92,17 @@ describe("AssetStore (K13)", () => {
     expect(isAssetId("")).toBe(false);
   });
 });
+
+describe("AssetStore : liens (C14)", () => {
+  const ID = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+  it("link : chemin gardé, empreinte refusée, pick inchangé", () => {
+    const store = createAssetStore();
+    expect(store.linked(ID)).toBeUndefined();
+    store.link(ID, "/v/a.mp4");
+    store.link(ID, "/v/b.mp4");
+    expect(store.linked(ID)).toBe("/v/b.mp4");
+    expect(() => store.link("zz", "/v/a.mp4")).toThrow("empreinte d'asset invalide");
+    expect(store.has(ID)).toBe(false);
+    expect(store.pick([ID])).toEqual({ present: [], missing: [ID] });
+  });
+});

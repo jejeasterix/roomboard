@@ -3,6 +3,7 @@
 // plus récente, rendu comme cadre inconnu (voir la branche `default`).
 import type {
   AssetInfo,
+  LinkedAsset,
   AssetRef,
   BackdropView,
   Bounds,
@@ -200,6 +201,25 @@ export function toElementView(v: unknown): ElementView | null {
       const { asset, w, h } = i;
       if (typeof asset !== "string" || typeof w !== "number" || typeof h !== "number") throw new Error(ELEMENT);
       return { ...base, kind, image: { asset, w, h, ...toImageParams(i) } };
+    }
+    case "media": {
+      const m = v["media"];
+      if (!isRecord(m)) throw new Error(ELEMENT);
+      const { asset, mediaType, w, h, duration, poster, trimStart, trimEnd, loop, volume } = m;
+      if (
+        typeof asset !== "string" || (mediaType !== "video" && mediaType !== "audio") || !finitePositive(w) || !finitePositive(h) ||
+        typeof duration !== "number" || typeof trimStart !== "number" || typeof loop !== "boolean" || typeof volume !== "number"
+      ) {
+        throw new Error(ELEMENT);
+      }
+      // Option::None → undefined côté serde-wasm-bindgen ; le contrat dit null.
+      if (poster !== undefined && poster !== null && typeof poster !== "string") throw new Error(ELEMENT);
+      if (trimEnd !== undefined && trimEnd !== null && typeof trimEnd !== "number") throw new Error(ELEMENT);
+      return {
+        ...base,
+        kind,
+        media: { asset, mediaType, w, h, duration, poster: poster ?? null, trimStart, trimEnd: trimEnd ?? null, loop, volume },
+      };
     }
     case "table":
       return { ...base, kind, table: toTable(v["table"]) };
@@ -445,6 +465,19 @@ class WasmCoreDocument implements CoreDocument {
         const a = cmd.asset;
         return toChange(this.d.add_image(cmd.page, a.id, a.name, a.mime, a.size, cmd.w, cmd.h, new Float64Array(cmd.matrix)));
       }
+      case "AddMedia": {
+        // Seule la référence des assets traverse la liaison ; poster absent : nom et type vides, taille 0, ignorés.
+        const a = cmd.asset;
+        const q = cmd.poster;
+        return toChange(
+          this.d.add_media(
+            cmd.page, a.id, a.name, a.mime, a.size, cmd.linked ?? undefined, cmd.mediaType, cmd.w, cmd.h, cmd.duration,
+            q?.id ?? undefined, q?.name ?? "", q?.mime ?? "", q?.size ?? 0, new Float64Array(cmd.matrix),
+          ),
+        );
+      }
+      case "SetMedia":
+        return toChange(this.d.set_media(cmd.id, cmd.trimStart, cmd.trimEnd ?? undefined, cmd.loop, cmd.volume));
       case "SetBackdrop": {
         const b = cmd.backdrop;
         if (b === null) return toChange(this.d.clear_backdrop(cmd.page));
@@ -516,6 +549,15 @@ class WasmCoreDocument implements CoreDocument {
     const v: unknown = this.d.asset(id);
     return v === null || v === undefined ? null : toAssetInfo(v);
   }
+  linkedAssets(): LinkedAsset[] {
+    const v: unknown = this.d.linked_assets();
+    if (!Array.isArray(v)) throw new Error("LinkedAsset invalide");
+    return v.map((x: unknown) => {
+      if (!isRecord(x) || typeof x["id"] !== "string" || typeof x["path"] !== "string") throw new Error("LinkedAsset invalide");
+      return { id: x["id"], path: x["path"] };
+    });
+  }
+  relinkAssets(links: readonly LinkedAsset[]): number { return this.d.relink_assets(links.map((l) => l.id), links.map((l) => l.path)); }
   points(id: string): Float32Array | null { return this.d.points(id) ?? null; }
   outline(id: string): Float32Array | null { return this.d.outline(id) ?? null; }
   hitTest(page: string, x: number, y: number, tol: number): string | null { return this.d.hit_test(page, x, y, tol) ?? null; }

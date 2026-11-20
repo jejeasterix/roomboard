@@ -11,6 +11,7 @@ pub mod grid;
 pub mod history;
 pub mod image;
 pub mod ink;
+pub mod media;
 pub mod query;
 pub mod rich_text;
 pub mod shape;

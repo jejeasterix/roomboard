@@ -4,9 +4,13 @@ import type { Command } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
-import type { ImageTarget } from "./image-import";
+import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
 import { createImporter, hasPdfMagic, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES, ZIP_MAGIC } from "./import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
+import {
+  AUDIO_BOX, CODEC_UNREADABLE, MEDIA_INCLUDE_MAX_BYTES, MEDIA_LINKED_NOTE, MEDIA_NOT_LINKED, MEDIA_PASTE_MAX_BYTES, MEDIA_TOO_BIG,
+  POSTER_MIME, unsupportedMediaMessage, type LinkedMedia, type MediaProbe,
+} from "./media-import";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
   name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
@@ -17,7 +21,7 @@ describe("importFiles (T86, usage § 8 point 12, Q1)", () => {
     const openDocument = vi.fn(async () => true);
     const notify = vi.fn(async () => undefined);
     const r = await createImporter({ openDocument, notify }).importFiles([file("Cours.roomboard", new Uint8Array([1, 2]))]);
-    expect(openDocument).toHaveBeenCalledWith({ name: "Cours.roomboard", bytes: new Uint8Array([1, 2]), target: null });
+    expect(openDocument).toHaveBeenCalledWith({ name: "Cours.roomboard", bytes: new Uint8Array([1, 2]), target: null, path: null });
     expect(r).toEqual({ opened: ["Cours.roomboard"], inserted: [], refused: [], failed: [] });
     expect(notify).not.toHaveBeenCalled();
   });
@@ -494,5 +498,278 @@ describe("importFiles : PDF (C12, PF2, PF3)", () => {
     const r = await createImporter({ openDocument: async () => true, notify: n }).importFiles([file("Cours.pdf", PDF_HEAD)]);
     expect(r.refused).toEqual(["Cours.pdf"]);
     expect(n).toHaveBeenCalledWith(`Cours.pdf : ${LATER_FORMAT_MESSAGE}`);
+  });
+});
+
+const asciiBytes = (...parts: Array<string | number[]>): Uint8Array<ArrayBuffer> =>
+  new Uint8Array(parts.flatMap((p) => (typeof p === "string" ? Array.from(p, (c) => c.charCodeAt(0)) : p)));
+const WEBM = asciiBytes([0x1a, 0x45, 0xdf, 0xa3, 0x93, 0x42, 0x82, 0x84], "webm", [0x42, 0x87, 0x81, 0x02, 0, 0, 0, 0]);
+const MKV = asciiBytes([0x1a, 0x45, 0xdf, 0xa3, 0x93, 0x42, 0x82, 0x88], "matroska", [0x42, 0x87, 0x81, 0x02, 0, 0, 0, 0]);
+const WAV = asciiBytes("RIFF", [0x24, 0, 0, 0], "WAVEfmt ", [16, 0, 0, 0]);
+const AVI = asciiBytes("RIFF", [0x24, 0, 0, 0], "AVI LIST", [16, 0, 0, 0]);
+const HEIC = asciiBytes([0, 0, 0, 0x18], "ftypheic", [0, 0, 0, 0], "mif1heic");
+const AVIF = asciiBytes([0, 0, 0, 0x18], "ftypavif", [0, 0, 0, 0], "avifmif1");
+/** R5 : marque majeure neutre, marque d'image dans les compatibles. */
+const MIAF_HEIC = asciiBytes([0, 0, 0, 0x18], "ftypmiaf", [0, 0, 0, 0], "miafheic");
+const MB = 1024 * 1024;
+const LINK_ID = "b".repeat(64);
+type AddMedia = Extract<Command, { type: "AddMedia" }>;
+
+/** Fichier de la coque : taille annoncée, `blob()` espionné (jamais lu pour un fichier lié). */
+function sized(name: string, bytes: Uint8Array<ArrayBuffer>, size: number, path?: string, blobType = "") {
+  const blob = vi.fn(async () => new Blob([bytes], { type: blobType }));
+  const f: DroppedFile = { name, size, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob };
+  return { f, blob };
+}
+function mediaDeps(over: { probe?: (url: string) => Promise<MediaProbe>; linkMedia?: ((path: string) => Promise<LinkedMedia>) | null } = {}) {
+  const created: Blob[] = [];
+  const revoked: string[] = [];
+  const mediaUrls = {
+    create: vi.fn((b: Blob) => (created.push(b), `blob:fake/${created.length}`)),
+    revoke: vi.fn((u: string) => void revoked.push(u)),
+  };
+  const poster = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: POSTER_MIME });
+  const probe = vi.fn(over.probe ?? (async (_url: string): Promise<MediaProbe> => ({ duration: 12.5, width: 320, height: 180, poster })));
+  const linkMedia =
+    over.linkMedia === null ? undefined : vi.fn(over.linkMedia ?? (async (path: string): Promise<LinkedMedia> => ({ id: LINK_ID, url: `asset://localhost${path}` })));
+  const notify = vi.fn(async (_m: string) => undefined);
+  return { created, revoked, mediaUrls, probe, linkMedia, notify, poster };
+}
+
+describe("importFiles : médias (C14)", () => {
+  it("WebM déposé : sonde, poster et média au magasin, AddMedia en une étape, centré (S1)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls, linkMedia: d.linkMedia })
+      .importFiles([file("clip.webm", WEBM)], null);
+    expect(r).toEqual({ opened: [], inserted: ["clip.webm"], refused: [], failed: [] });
+    expect(d.probe).toHaveBeenCalledWith("blob:fake/1");
+    expect(d.revoked).toEqual(["blob:fake/1"]);
+    expect(t.cmds).toHaveLength(1);
+    const cmd = t.cmds[0] as AddMedia;
+    expect([cmd.type, cmd.page, cmd.mediaType, cmd.w, cmd.h, cmd.duration, cmd.linked]).toEqual(["AddMedia", "p1", "video", 320, 180, 12.5, null]);
+    expect(cmd.matrix).toEqual([1, 0, 0, 1, 240, 210]);
+    expect(cmd.asset).toMatchObject({ name: "clip.webm", mime: "video/webm", size: WEBM.length });
+    expect(t.assets.has(cmd.asset.id)).toBe(true);
+    expect(cmd.poster).toMatchObject({ name: "clip.webm.jpg", mime: POSTER_MIME, size: d.poster.size });
+    expect(t.assets.has(cmd.poster!.id)).toBe(true);
+    expect(d.linkMedia).not.toHaveBeenCalled();
+    expect(d.notify).not.toHaveBeenCalled();
+  });
+
+  it("son WAV : 480 × 120, aucun poster, audio (S3)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps({ probe: async () => ({ duration: 3, width: 0, height: 0, poster: null }) });
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("voix.wav", WAV)], null);
+    expect(r.inserted).toEqual(["voix.wav"]);
+    const cmd = t.cmds[0] as AddMedia;
+    const rect = t.target.stageRect();
+    expect([cmd.mediaType, cmd.w, cmd.h, cmd.duration, cmd.poster]).toEqual(["audio", AUDIO_BOX.w, AUDIO_BOX.h, 3, null]);
+    expect(cmd.asset.mime).toBe("audio/wav");
+    expect(cmd.matrix).toEqual(placement(AUDIO_BOX.w, AUDIO_BOX.h, anchorOf(rect, IDENTITY, null), visibleOf(rect, IDENTITY), 0));
+  });
+
+  it("M16 : WebM sans image (videoWidth 0) : audio, 480 × 120, aucun poster, MIME audio/webm", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps({ probe: async () => ({ duration: 3, width: 0, height: 0, poster: null }) });
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("son.webm", WEBM)], null);
+    expect(r.inserted).toEqual(["son.webm"]);
+    const cmd = t.cmds[0] as AddMedia;
+    expect([cmd.mediaType, cmd.w, cmd.h, cmd.poster, cmd.asset.mime]).toEqual(["audio", AUDIO_BOX.w, AUDIO_BOX.h, null, "audio/webm"]);
+  });
+
+  it("M16 : Ogg avec image (videoWidth > 0) : vidéo, taille de la sonde, MIME video/ogg", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("clip.ogv", asciiBytes("OggS", [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]))], null);
+    expect(r.inserted).toEqual(["clip.ogv"]);
+    const cmd = t.cmds[0] as AddMedia;
+    expect([cmd.mediaType, cmd.w, cmd.h, cmd.asset.mime]).toEqual(["video", 320, 180, "video/ogg"]);
+    expect(cmd.poster).not.toBeNull();
+  });
+
+  it("sonde en échec : « codec non lu sur ce poste », rien d'inséré, URL révoquée (M15)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps({ probe: async () => { throw new Error(CODEC_UNREADABLE); } });
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("clip.webm", WEBM)]);
+    expect(r.failed).toEqual(["clip.webm"]);
+    expect(t.cmds).toEqual([]);
+    expect(d.revoked).toEqual(["blob:fake/1"]);
+    expect(d.notify.mock.calls).toEqual([[`clip.webm : ${CODEC_UNREADABLE}`]]);
+  });
+
+  it("MKV et AVI : un message chacun, blob jamais lu (S4, M12)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const mkv = sized("film.mkv", MKV, MKV.length);
+    const avi = sized("film.avi", AVI, AVI.length);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([mkv.f, avi.f]);
+    expect(r).toEqual({ opened: [], inserted: [], refused: [], failed: ["film.mkv", "film.avi"] });
+    expect(mkv.blob).not.toHaveBeenCalled();
+    expect(avi.blob).not.toHaveBeenCalled();
+    expect(d.probe).not.toHaveBeenCalled();
+    expect(d.notify.mock.calls).toEqual([[`film.mkv : ${unsupportedMediaMessage("mkv")}`], [`film.avi : ${unsupportedMediaMessage("avi")}`]]);
+  });
+
+  it("un HEIC et un AVIF restent des images après l'ajout du média", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, decode: decoded(40, 30), probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("a.heic", HEIC), file("b.avif", AVIF)]);
+    expect(r.inserted).toEqual(["a.heic", "b.avif"]);
+    expect(d.probe).not.toHaveBeenCalled();
+    expect(t.cmds.map((c) => c.type)).toEqual(["AddImage", "AddImage"]);
+    expect(t.cmds.map((c) => (c as AddImage).asset.mime)).toEqual(["image/heic", "image/avif"]);
+  });
+
+  it("R5 : marque majeure miaf, heic dans les compatibles : reste une image, sonde jamais appelée", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, decode: decoded(40, 30), probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("c.heic", MIAF_HEIC)]);
+    expect(r.inserted).toEqual(["c.heic"]);
+    expect(d.probe).not.toHaveBeenCalled();
+    expect(t.cmds.map((c) => c.type)).toEqual(["AddImage"]);
+  });
+
+  it("coque, chemin et plus de 50 Mo : lié, blob jamais lu, lien au magasin, avertissement (S5, M14)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    // 60 Mo, et 2 Go : au-delà du plafond de 100 Mo, un fichier lié n'est ni lu ni refusé par `limit`.
+    const a = sized("cours.webm", WEBM, 60 * MB, "/v/cours.webm");
+    const b = sized("long.webm", WEBM, 2 * 1024 * MB, "/v/long.webm");
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls, linkMedia: d.linkMedia })
+      .importFiles([a.f, b.f]);
+    expect(r).toEqual({ opened: [], inserted: ["cours.webm", "long.webm"], refused: [], failed: [] });
+    expect(a.blob).not.toHaveBeenCalled();
+    expect(b.blob).not.toHaveBeenCalled();
+    expect(d.mediaUrls.create).not.toHaveBeenCalled();
+    expect(d.linkMedia!.mock.calls).toEqual([["/v/cours.webm"], ["/v/long.webm"]]);
+    expect(d.probe.mock.calls).toEqual([["asset://localhost/v/cours.webm"], ["asset://localhost/v/long.webm"]]);
+    expect(t.assets.linked(LINK_ID)).toBe("/v/long.webm");
+    const cmds = t.cmds as AddMedia[];
+    expect(cmds.map((c) => [c.type, c.linked, c.asset.id, c.asset.size, c.asset.mime])).toEqual([
+      ["AddMedia", "/v/cours.webm", LINK_ID, 60 * MB, "video/webm"],
+      ["AddMedia", "/v/long.webm", LINK_ID, 2 * 1024 * MB, "video/webm"],
+    ]);
+    expect(cmds[1]!.matrix[4] - cmds[0]!.matrix[4]).toBe(24); // cascade comme les images
+    expect(d.notify.mock.calls).toEqual([[`cours.webm : ${MEDIA_LINKED_NOTE}`], [`long.webm : ${MEDIA_LINKED_NOTE}`]]);
+  });
+
+  it("coque, chemin et au plus 50 Mo : inclus", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const a = sized("court.webm", WEBM, MEDIA_INCLUDE_MAX_BYTES, "/v/court.webm");
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls, linkMedia: d.linkMedia })
+      .importFiles([a.f]);
+    expect(r.inserted).toEqual(["court.webm"]);
+    expect(d.linkMedia).not.toHaveBeenCalled();
+    expect(a.blob).toHaveBeenCalledTimes(1);
+    const cmd = t.cmds[0] as AddMedia;
+    expect(cmd.linked).toBeNull();
+    expect(t.assets.has(cmd.asset.id)).toBe(true);
+    expect(d.notify).not.toHaveBeenCalled();
+  });
+
+  it("sans chemin, plus de 100 Mo : « trop lourd pour être inclus » (M13)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const a = sized("colle.webm", WEBM, MEDIA_PASTE_MAX_BYTES + 1);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls, linkMedia: d.linkMedia })
+      .importFiles([a.f]);
+    expect(r.failed).toEqual(["colle.webm"]);
+    expect(a.blob).not.toHaveBeenCalled();
+    expect(d.linkMedia).not.toHaveBeenCalled();
+    expect(d.notify.mock.calls).toEqual([[`colle.webm : ${MEDIA_TOO_BIG}`]]);
+  });
+
+  it("web, plus de 100 Mo : « plus de 100 Mo » (S4)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const a = sized("gros.webm", WEBM, WEB_MAX_BYTES + 1);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, maxBytes: WEB_MAX_BYTES, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([a.f]);
+    expect(r.refused).toEqual(["gros.webm"]);
+    expect(a.blob).not.toHaveBeenCalled();
+    expect(d.probe).not.toHaveBeenCalled();
+    expect(d.notify.mock.calls).toEqual([["gros.webm : fichier trop gros (plus de 100 Mo)"]]);
+  });
+
+  it("onglet fermé pendant la sonde : rien d'inséré", async () => {
+    let open = true;
+    const t = fakeTarget();
+    const target: ImageTarget = { ...t.target, alive: () => open };
+    const d = mediaDeps({ probe: async () => ((open = false), { duration: 1, width: 320, height: 180, poster: null }) });
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("clip.webm", WEBM)]);
+    expect(r.failed).toEqual(["clip.webm"]);
+    expect(t.cmds).toEqual([]);
+    expect(d.notify).toHaveBeenCalledTimes(1);
+    expect(d.notify.mock.calls[0]![0]).toMatch(/^clip\.webm : onglet fermé/);
+  });
+
+  it("sans linkMedia : un chemin de 60 Mo est inclus", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps({ linkMedia: null });
+    const a = sized("cours.webm", WEBM, 60 * MB, "/v/cours.webm");
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([a.f]);
+    expect(r.inserted).toEqual(["cours.webm"]);
+    expect(a.blob).toHaveBeenCalledTimes(1);
+    expect((t.cmds[0] as AddMedia).linked).toBeNull();
+  });
+
+  it("R3 : un Blob sans type est retypé par sniff.mime (sonde, magasin, AddMedia)", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const a = sized("sans-type.bin", WEBM, WEBM.length);
+    const f: DroppedFile = { ...a.f, mime: "application/octet-stream" };
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([f]);
+    expect(r.inserted).toEqual(["sans-type.bin"]);
+    expect(d.created.map((b) => b.type)).toEqual(["video/webm"]);
+    const cmd = t.cmds[0] as AddMedia;
+    expect([cmd.mediaType, cmd.asset.mime]).toEqual(["video", "video/webm"]);
+    expect(t.assets.get(cmd.asset.id)!.type).toBe("video/webm");
+  });
+
+  it("R4 : linkMedia rejette : message, rien inséré, fichier suivant traité", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps({ linkMedia: async () => { throw new Error("NotGranted"); } });
+    const a = sized("cours.webm", WEBM, 60 * MB, "/v/cours.webm");
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls, linkMedia: d.linkMedia })
+      .importFiles([a.f, file("voix.wav", WAV)]);
+    expect(r).toEqual({ opened: [], inserted: ["voix.wav"], refused: [], failed: ["cours.webm"] });
+    expect(a.blob).not.toHaveBeenCalled();
+    expect(t.cmds.map((c) => (c as AddMedia).asset.name)).toEqual(["voix.wav"]);
+    expect(t.assets.linked(LINK_ID)).toBeUndefined();
+    expect(d.notify.mock.calls).toEqual([[`cours.webm : ${MEDIA_NOT_LINKED} : NotGranted`]]);
+    expect(MEDIA_NOT_LINKED).toBe("vidéo non liée");
+  });
+
+  it("lié vers un onglet dont le magasin n'a pas link : « trop lourd pour être inclus », rien lu", async () => {
+    const t = fakeTarget();
+    const target: ImageTarget = { ...t.target, assets: { put: (b: Blob) => t.assets.put(b) } };
+    const d = mediaDeps();
+    const a = sized("cours.webm", WEBM, 60 * MB, "/v/cours.webm");
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => target, probe: d.probe, mediaUrls: d.mediaUrls, linkMedia: d.linkMedia })
+      .importFiles([a.f]);
+    expect(r.failed).toEqual(["cours.webm"]);
+    expect(a.blob).not.toHaveBeenCalled();
+    expect(d.linkMedia).not.toHaveBeenCalled();
+    expect(t.cmds).toEqual([]);
+    expect(d.notify.mock.calls).toEqual([[`cours.webm : ${MEDIA_TOO_BIG}`]]);
+  });
+
+  it("R1 : un .roomboard déposé avec f.path transmet path", async () => {
+    const openDocument = vi.fn(async () => true);
+    const notify = vi.fn(async () => undefined);
+    await createImporter({ openDocument, notify }).importFiles([file("Cours.roomboard", new Uint8Array([1, 2]), "/docs/Cours.roomboard")]);
+    expect(openDocument).toHaveBeenCalledWith({ name: "Cours.roomboard", bytes: new Uint8Array([1, 2]), target: null, path: "/docs/Cours.roomboard" });
   });
 });

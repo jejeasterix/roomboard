@@ -14,6 +14,7 @@ use crate::element::{
 };
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
+use crate::media::{read_media, MEDIA_KIND};
 use crate::shape::{box_polygon, shape_polygon};
 use crate::table::{self, TABLE_KIND};
 
@@ -125,6 +126,21 @@ impl Document {
             // Boîte (0, 0)-(Σ largeurs, Σ hauteurs) ; tableau mal formé : la boîte inconnue (T2).
             let (transform, w, h) = match table::read_raw(txn, e) {
                 Some(t) => (t.transform, t.width(), t.height()),
+                None => {
+                    let (transform, u) = unknown_view(txn, e)?;
+                    (transform, u.w, u.h)
+                }
+            };
+            return Some(Geom {
+                id: raw_id?,
+                transform,
+                outline: box_polygon(w, h).into(),
+            });
+        }
+        if out_string(e.get(txn, "kind")).as_deref() == Some(MEDIA_KIND) {
+            // Boîte (0, 0)-(w, h) ; média mal formé : la boîte inconnue (M7, repli du tableau).
+            let (transform, w, h) = match read_media(txn, e) {
+                Some((transform, m)) => (transform, m.w, m.h),
                 None => {
                     let (transform, u) = unknown_view(txn, e)?;
                     (transform, u.w, u.h)
