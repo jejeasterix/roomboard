@@ -154,10 +154,10 @@ interface Slot {
 
 /** C14 (M30) : à l'enregistrement en coque, chaque lien connu du magasin est réécrit relatif au document cible ; hors
  *  historique, version inchangée (`relinkAssets`) : l'onglet enregistré reste non modifié. */
-function relinkFor(doc: CoreDocument, assets: AssetStore, t: SaveTarget): void {
+function relinkFor(doc: CoreDocument, assets: AssetStore, t: SaveTarget, lost: ReadonlyMap<string, string>): void {
   if (t.kind !== "tauri") return;
   const links = doc.linkedAssets().flatMap((l): LinkedAsset[] => {
-    const abs = assets.linked(l.id);
+    const abs = assets.linked(l.id) ?? lost.get(l.id); // un lien introuvable à l'ouverture est gardé (M31)
     return abs === undefined ? [] : [{ id: l.id, path: relativeLink(t.path, abs) }];
   });
   if (links.length > 0) doc.relinkAssets(links);
@@ -230,11 +230,14 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const full = (): boolean => tabs.list().length >= MAX_TABS;
   const makeAssets = deps.makeAssets ?? (() => createAssetStore());
   const relinkMedia = deps.relinkMedia;
+  /** M31 : chemin absolu (résolu contre le dossier d'origine) de chaque lien tenté à l'ouverture, par `docPath` puis id. */
+  const lostLinks = new Map<string, string>();
   /** M31 : lien absolu tel quel, relatif résolu par le chemin du document (null sans lui), puis accordé par la coque. */
   const relink = async (docPath: string | null, link: LinkedAsset, size: number): Promise<string | null> => {
     if (relinkMedia === undefined) return null;
     const abs = docPath === null ? (isAbsoluteLink(link.path) ? link.path : null) : resolveLink(docPath, link.path);
     if (abs === null) return null;
+    lostLinks.set(`${docPath ?? ""}\0${link.id}`, abs);
     try {
       return (await relinkMedia(abs, size)) ? abs : null;
     } catch {
@@ -266,6 +269,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     opened: { readonly name: string; readonly target: SaveTarget | null } | null,
     assets: AssetStore = makeAssets(),
     unread = false,
+    lost: ReadonlyMap<string, string> = new Map(),
   ): Promise<TabSession | null> {
     let board: BoardSession;
     try {
@@ -288,7 +292,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       onDrop: (h) => host.onDrop(h),
       save: (encode, to) =>
         host.save((t) => {
-          relinkFor(board.doc, assets, t);
+          relinkFor(board.doc, assets, t, lost);
           return encode(t);
         }, to),
     };
@@ -358,8 +362,15 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const target = file.target;
       const docPath = target?.kind === "tauri" ? target.path : (file.path ?? null); // R1
       const read = await io.read(name, file.bytes, "document", docPath);
+      const lost = new Map<string, string>();
+      for (const l of read?.doc.linkedAssets() ?? []) {
+        const key = `${docPath ?? ""}\0${l.id}`;
+        const abs = lostLinks.get(key);
+        if (abs !== undefined) lost.set(l.id, abs);
+        lostLinks.delete(key);
+      }
       if (read === null) return false;
-      return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread)) !== null;
+      return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread, lost)) !== null;
     },
     async openPdf(file) {
       const name = baseName(file.name);

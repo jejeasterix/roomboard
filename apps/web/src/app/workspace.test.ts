@@ -1276,6 +1276,23 @@ describe("espace de travail : médias (C14)", () => {
     expect(shell.notify).not.toHaveBeenCalled();
   });
 
+  it("M31 : un lien introuvable est gardé et réécrit relatif au nouveau dossier à « Enregistrer sous »", async () => {
+    const ws = await setupWorkspace({ kind: "tauri", relinkMedia: async () => false });
+    readsLinked("videos/v.mp4");
+    expect(await ws.openDocument({ name: "a.roomboard", bytes: new Uint8Array([9]), target: DOC_TARGET })).toBe(true);
+    const tab = ws.active();
+    const version = tab.board.doc.version();
+    host.save.mockImplementationOnce(async (encode: (t: SaveTarget) => Promise<Uint8Array>) => {
+      const t: SaveTarget = { kind: "tauri", name: "a.roomboard", path: "/b/a.roomboard" };
+      saved.push(await encode(t));
+      return t;
+    });
+    expect(await tab.files.run("save")).toBe(true);
+    const [manifest, ybin] = codec.write.mock.calls[0]!;
+    expect(fakeCore.loadParts(manifest, ybin).linkedAssets()).toEqual([{ id: VID, path: "../cours/videos/v.mp4" }]);
+    expect(tab.board.doc.version()).toBe(version);
+  });
+
   it("R1 : un document ouvert par dépôt avec path résout sa vidéo liée relative", async () => {
     const relinkMedia = vi.fn(async (_p: string, _s: number) => true);
     const ws = await setupWorkspace({ kind: "tauri", relinkMedia });
