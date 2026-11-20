@@ -8,6 +8,7 @@ import { RELOAD_DIRTY_MESSAGE, SettingsPanel } from "./SettingsPanel";
 
 afterEach(cleanup);
 
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 const EFF: EffectiveEchelons = { prediction: false, inkTrail: "off", webgl: "off" };
 const DIAG: RendererDiagnostics = { webgl: "on", lost: false, badColors: [] };
 
@@ -69,7 +70,7 @@ describe("SettingsPanel (T92)", () => {
   it("échelon 4 : recharge avec l'adresse quand rien n'est modifié", async () => {
     const { btn, navigate, confirm } = setup();
     fireEvent.click(btn("webgl"));
-    await Promise.resolve();
+    await flush();
     expect(confirm).not.toHaveBeenCalled();
     expect(navigate).toHaveBeenCalledWith("?banc&echelons=4:on");
   });
@@ -77,8 +78,7 @@ describe("SettingsPanel (T92)", () => {
   it("échelon 4 : question si un onglet est modifié", async () => {
     const { btn, navigate, confirm } = setup({ dirty: true, answer: true });
     fireEvent.click(btn("webgl"));
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     expect(confirm).toHaveBeenCalledWith(RELOAD_DIRTY_MESSAGE);
     expect(navigate).toHaveBeenCalledWith("?banc&echelons=4:on");
   });
@@ -86,8 +86,7 @@ describe("SettingsPanel (T92)", () => {
   it("échelon 4 : refus de la question, aucun rechargement", async () => {
     const { btn, navigate, confirm } = setup({ dirty: true, answer: false });
     fireEvent.click(btn("webgl"));
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(navigate).not.toHaveBeenCalled();
   });
@@ -95,8 +94,7 @@ describe("SettingsPanel (T92)", () => {
   it("échelon 3 : même question quand un onglet est modifié", async () => {
     const { btn, navigate, confirm } = setup({ dirty: true, answer: false });
     fireEvent.click(btn("inkTrail"));
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(navigate).not.toHaveBeenCalled();
   });
