@@ -107,13 +107,22 @@ function toSpans(v: unknown, content: string): TextSpan[] {
 /** Bornes de FormatText et rangs ou dimensions du tableau (C10a) : hors des u32, u32::MAX, que le cœur refuse. */
 const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : 0xffffffff);
 
-/** Vue d'un tableau venue de Wasm (T13) : forme contrôlée ; `fill` absent (Option::None) → null. */
+/** Vue d'un tableau venue de Wasm (T13, F29) : forme contrôlée ; `fill`, `shade` absents (Option::None) → null ; zones
+ *  `{ row, col, rows, cols }` exigées (étendues entières ≥ 1). */
 export function toTable(v: unknown): TableData {
   if (!isRecord(v)) throw new Error(ELEMENT);
-  const { color, size, cols, rows, cells } = v;
-  if (typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells)) {
+  const { color, size, cols, rows, cells, merges } = v;
+  if (
+    typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells) ||
+    !Array.isArray(merges)
+  ) {
     throw new Error(ELEMENT);
   }
+  const color0 = (x: unknown): string | null => {
+    if (x !== undefined && x !== null && typeof x !== "string") throw new Error(ELEMENT);
+    return typeof x === "string" ? x : null;
+  };
+  const extent = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 1;
   return {
     color,
     size,
@@ -131,10 +140,15 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill } = c;
+      const { row, col, text, fill, shade } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: typeof fill === "string" ? fill : null };
+      return { row, col, text, fill: color0(fill), shade: color0(shade) };
+    }),
+    merges: merges.map((m: unknown) => {
+      if (!isRecord(m)) throw new Error(ELEMENT);
+      const { row, col, rows: n, cols: k } = m;
+      if (typeof row !== "string" || typeof col !== "string" || !extent(n) || !extent(k)) throw new Error(ELEMENT);
+      return { row, col, rows: n, cols: k };
     }),
   };
 }
@@ -369,12 +383,19 @@ class WasmCoreDocument implements CoreDocument {
       case "InsertTableLine":
         return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
       case "RemoveTableLine":
+        if (cmd.to !== undefined) throw new Error("C10b : RemoveTableLine.to branché par la liaison (T7)");
         return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line));
       case "SetTableSizes":
         return toChange(this.d.set_table_sizes(cmd.id, cmd.colWidth, cmd.rowHeight));
       case "SetTableFill":
+        if (cmd.to !== undefined) throw new Error("C10b : SetTableFill.to branché par la liaison (T7)");
         // null → undefined : Option::None côté Rust.
         return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined));
+      case "MergeTableCells":
+      case "SplitTableCell":
+      case "SetTableShade":
+      case "ImportTable":
+        throw new Error(`C10b : ${cmd.type} branché par la liaison (T7)`);
     }
   }
 
