@@ -161,8 +161,10 @@ mod tests {
 
     use super::*;
     use crate::asset::AssetRef;
-    use crate::commands::Command;
+    use crate::commands::tests::writes;
+    use crate::commands::{Change, Command, CommandError};
     use crate::document::Document;
+    use crate::element::StrokeStyle;
     use crate::element::{ImageView, Transform, IDENTITY};
     use crate::query::Bounds;
 
@@ -416,5 +418,266 @@ mod tests {
                 "transparent": { "color": "#ffffff", "tolerance": 10, "soft": 2, "contiguous": false }
             })
         );
+    }
+    fn white_input(contiguous: bool) -> TransparentInput {
+        TransparentInput {
+            color: "#ffffff".into(),
+            tolerance: 10.0,
+            soft: 0.0,
+            contiguous,
+        }
+    }
+
+    fn full_input() -> ImageParamsInput {
+        ImageParamsInput {
+            crop: Some([10.0, 20.0, 300.0, 200.0]),
+            flip_x: true,
+            flip_y: false,
+            quarter_turns: 1.0,
+            brightness: 30.0,
+            contrast: -20.0,
+            transparent: Some(white_input(true)),
+        }
+    }
+
+    fn set(
+        d: &mut Document,
+        id: &str,
+        params: ImageParamsInput,
+        matrix: Transform,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::SetImageParams {
+            id: id.into(),
+            params,
+            matrix,
+        })
+    }
+
+    const KEYS: [&str; 7] = [
+        "crop",
+        "flipX",
+        "flipY",
+        "quarterTurns",
+        "brightness",
+        "contrast",
+        "transparent",
+    ];
+
+    /// Champs de réglage présents dans le `Y.Map` de l'élément, lus ou non.
+    fn present(d: &Document, id: &str) -> Vec<&'static str> {
+        let txn = d.read();
+        let e = d.find_element(&txn, id).expect("élément").element;
+        KEYS.into_iter().filter(|k| e.get(&txn, k).is_some()).collect()
+    }
+
+    #[test]
+    fn set_image_params_is_one_step_and_reads_back() {
+        let mut d = Document::blank();
+        let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        let c = set(&mut d, &id, full_input(), [1.0, 0.0, 0.0, 1.0, 5.0, 6.0]).expect("réglages");
+        assert_eq!((c.pages, c.ids), (vec![p], vec![id.clone()]));
+        let v = d.element(&id).expect("vue");
+        assert_eq!(v.transform, [1.0, 0.0, 0.0, 1.0, 5.0, 6.0]);
+        assert_eq!(
+            v.image.map(|i| i.params()),
+            Some(ImageParams {
+                crop: Some([10, 20, 300, 200]),
+                flip_x: true,
+                flip_y: false,
+                quarter_turns: 1,
+                brightness: 30,
+                contrast: -20,
+                transparent: Some(TransparentView {
+                    color: "#ffffff".into(),
+                    tolerance: 10,
+                    soft: 0,
+                    contiguous: true,
+                }),
+            })
+        );
+        assert!(d.undo());
+        let v = d.element(&id).expect("vue");
+        assert_eq!(
+            (v.transform, v.image.map(|i| i.params())),
+            (IDENTITY, Some(ImageParams::default()))
+        );
+        assert!(d.can_undo(), "reste l'ajout de l'image : une seule étape pour les réglages");
+        assert!(d.undo());
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn same_state_and_matrix_is_no_step() {
+        let mut d = Document::blank();
+        let (_, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        let w = writes(&d);
+        let neutral = ImageParamsInput {
+            crop: Some([0.0, 0.0, 640.0, 480.0]),
+            ..ImageParamsInput::default()
+        };
+        assert_eq!(set(&mut d, &id, neutral, IDENTITY).expect("neutre").ids, Vec::<String>::new());
+        assert_eq!(w.since(), 0, "état neutre sur une image brute : aucune transaction");
+        set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
+        let n = w.since();
+        assert_eq!(set(&mut d, &id, full_input(), IDENTITY).expect("même état").ids, Vec::<String>::new());
+        assert_eq!(w.since(), n, "même état, même matrice : aucune transaction");
+        let moved = set(&mut d, &id, full_input(), [1.0, 0.0, 0.0, 1.0, 1.0, 0.0]).expect("matrice seule");
+        assert_eq!(moved.ids, vec![id]);
+    }
+
+    /// Review Focus 4 : « Rétablir l'original » (état neutre) retire chaque champ, illisible compris.
+    #[test]
+    fn neutral_state_removes_every_field_even_unreadable() {
+        let mut d = Document::blank();
+        let (_, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
+        assert_eq!(
+            present(&d, &id),
+            vec!["crop", "flipX", "quarterTurns", "brightness", "contrast", "transparent"]
+        );
+        put(&d, &id, "flipY", In::from("illisible"));
+        set(&mut d, &id, ImageParamsInput::default(), IDENTITY).expect("rétablir");
+        assert_eq!(present(&d, &id), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn rejects_out_of_domain_without_transaction() {
+        let mut d = Document::blank();
+        let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        let stroke = d
+            .apply(Command::CommitStroke {
+                page: p,
+                points: vec![0.0, 0.0, 0.5, 50.0, 0.0, 0.5, 100.0, 0.0, 0.5],
+                style: StrokeStyle {
+                    color: "#000000".into(),
+                    width: 4.0,
+                },
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        let w = writes(&d);
+        let color = |f: fn(&mut TransparentInput)| {
+            let mut t = white_input(true);
+            f(&mut t);
+            ImageParamsInput {
+                transparent: Some(t),
+                ..ImageParamsInput::default()
+            }
+        };
+        let base = ImageParamsInput::default;
+        let bad = [
+            ImageParamsInput { crop: Some([600.0, 0.0, 100.0, 10.0]), ..base() },
+            ImageParamsInput { crop: Some([0.0, 0.0, 0.0, 10.0]), ..base() },
+            ImageParamsInput { crop: Some([0.5, 0.0, 10.0, 10.0]), ..base() },
+            ImageParamsInput { quarter_turns: 4.0, ..base() },
+            ImageParamsInput { quarter_turns: 1.5, ..base() },
+            ImageParamsInput { brightness: 101.0, ..base() },
+            ImageParamsInput { contrast: -101.0, ..base() },
+            ImageParamsInput { brightness: f64::NAN, ..base() },
+            color(|t| t.color = "#FFFFFF".into()),
+            color(|t| t.color = "white".into()),
+            color(|t| t.tolerance = 101.0),
+            color(|t| t.soft = -1.0),
+        ];
+        for params in bad {
+            assert_eq!(
+                set(&mut d, &id, params.clone(), IDENTITY),
+                Err(CommandError::BadImageParams),
+                "{params:?}"
+            );
+        }
+        assert_eq!(
+            set(&mut d, &id, ImageParamsInput { brightness: 101.0, ..base() }, [0.0; 6]),
+            Err(CommandError::BadImageParams),
+            "réglages contrôlés avant la matrice"
+        );
+        assert_eq!(set(&mut d, &id, base(), [0.0; 6]), Err(CommandError::BadMatrix));
+        assert_eq!(
+            set(&mut d, "nulle-part", base(), IDENTITY),
+            Err(CommandError::UnknownElement("nulle-part".into()))
+        );
+        assert_eq!(set(&mut d, &stroke, base(), IDENTITY), Err(CommandError::BadImageParams));
+        assert_eq!(w.since(), 0);
+    }
+
+    #[test]
+    fn bad_image_params_message_is_readable() {
+        assert!(CommandError::BadImageParams
+            .to_string()
+            .starts_with("réglages d'image invalides"));
+    }
+
+    /// I2, S4 : rognage en `Any::Array`, couleur en `Y.Map` ; trente rechargements gardent les octets.
+    #[test]
+    fn image_params_reload_keep_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let (_, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        set(&mut d, &id, full_input(), [2.0, 0.0, 0.0, 1.0, 5.0, 6.0]).expect("réglages");
+        let ybin = d.encode_v1();
+        let file = save(&d, &meta).expect("save");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            assert!(r.encode_v1() == ybin, "ybin différent au rechargement {i}");
+            assert!(save(&r, &meta).expect("resave") == file, "fichier différent au rechargement {i}");
+            assert_eq!(r.element(&id).and_then(|e| e.image), d.element(&id).and_then(|e| e.image));
+        }
+    }
+
+    /// Effet de bord : copier, coller et `.rbitem` gardent les réglages (recopie profonde, `copy.rs:62`).
+    #[test]
+    fn copy_keeps_image_params() {
+        use crate::format::{load_fragment, save_fragment, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
+        let want = d.element(&id).and_then(|e| e.image);
+        let f = d.extract(&p, &[id.clone()]).expect("extract");
+        let fid = f.element_ids(&f.page_ids()[0])[0].clone();
+        assert_eq!(f.element(&fid).and_then(|e| e.image), want);
+        let mut t = Document::blank();
+        let tp = t.page_ids()[0].clone();
+        let pasted = t.insert_fragment(&f, &tp, 10.0, 0.0).expect("collage").ids[0].clone();
+        assert_eq!(t.element(&pasted).and_then(|e| e.image), want);
+        let (r, _) = load_fragment(&save_fragment(&f, &meta, "image").expect("rbitem")).expect("relu");
+        let rid = r.element_ids(&r.page_ids()[0])[0].clone();
+        assert_eq!(r.element(&rid).and_then(|e| e.image), want);
+    }
+
+    /// Patron écarté (`cmd_set_backdrop`, `commands.rs:1007-1018`, réécrit tout le `Y.Map`) : changer la seule
+    /// luminosité n'écrit qu'un champ, l'horloge du document avance d'une unité (dix si les sept champs étaient
+    /// réécrits : `transparent` compte cinq) ; comparaison sur l'état lu et normalisé : un champ brut égal au neutre est
+    /// retiré, sans aucune insertion.
+    #[test]
+    fn only_changed_fields_are_rewritten() {
+        let clock = |d: &Document| -> u32 { d.read().state_vector().iter().map(|(_, c)| *c).sum() };
+        let mut d = Document::blank();
+        let (_, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        set(&mut d, &id, full_input(), IDENTITY).expect("réglages");
+        let brighter = || ImageParamsInput {
+            brightness: 40.0,
+            ..full_input()
+        };
+        let before = clock(&d);
+        set(&mut d, &id, brighter(), IDENTITY).expect("luminosité");
+        assert_eq!(clock(&d) - before, 1, "seule la luminosité est réécrite");
+        assert_eq!(params_of(&d, &id).brightness, 40);
+        put(&d, &id, "flipY", In::Any(Any::Bool(false)));
+        let before = clock(&d);
+        let c = set(&mut d, &id, brighter(), IDENTITY).expect("neutre brut");
+        assert_eq!(c.ids, vec![id.clone()], "champ brut égal au neutre : retiré");
+        assert_eq!(clock(&d), before, "un retrait n'insère rien");
+        assert!(!present(&d, &id).contains(&"flipY"));
     }
 }
