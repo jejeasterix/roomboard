@@ -300,4 +300,12 @@ describe("fixture élément inconnu (S4, fausse liaison)", () => {
     d.apply({ type: "CommitStroke", page: "p1", points: line(500), style: { color: ABC.toUpperCase(), width: 4 } });
     expect(d.citedAssets().map((a) => a.id)).toEqual([ABC]);
   });
+
+  it("inconnu à transform illisible : identité dans la vue, champ gardé tel quel au save (K8)", () => {
+    const raw = { pages: [{ id: "p1", elements: [{ id: "h3", kind: "hologram", transform: "abc", raw: { w: 5 } }] }] };
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(d.element("h3")).toEqual({ id: "h3", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "hologram", w: 100, h: 100 } });
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: unknown[] }[] };
+    expect(saved.pages[0]?.elements).toEqual(raw.pages[0]?.elements);
+  });
 });

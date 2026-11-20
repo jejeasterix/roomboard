@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
+import type { AssetRef, CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
 import { createWasmCore, toBounds, toChange, toElementView, type WasmModule } from "./wasm-core";
@@ -580,7 +580,7 @@ const I: Matrix = [1, 0, 0, 1, 0, 0];
 const c2Factories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
 
 describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
-  const image = (d: CoreDocument, p: string, asset = png, matrix: Matrix = I): string =>
+  const image = (d: CoreDocument, p: string, asset: AssetRef = png, matrix: Matrix = I): string =>
     d.apply({ type: "AddImage", page: p, asset, w: 640, h: 480, matrix }).ids[0] ?? "";
 
   it("AddImage : une étape, vue image sans style, une seule métadonnée pour deux images (S2)", () => {
