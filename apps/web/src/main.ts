@@ -10,7 +10,7 @@ import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
 import { createWorkspace, type TabSession } from "./app/workspace";
 import type { CoreDocument } from "./core/api";
-import { Canvas2DRenderer } from "./engine/render/canvas2d";
+import { Canvas2DRenderer, exportPainterOptions } from "./engine/render/canvas2d";
 import { RecordingPath } from "./engine/render/record-ctx";
 import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
@@ -88,7 +88,7 @@ async function start(): Promise<void> {
       decode: decodeBitmap,
       alive: () => true,
       canvas: browserExportCanvas,
-      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images }),
+      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images)),
     });
   // Bitmap → PNG par une toile d'export, libérée aussitôt (mémoire de l'iPad).
   const bitmapToPng = async (bitmap: CanvasImageSource, w: number, h: number): Promise<Uint8Array> => {
@@ -198,7 +198,7 @@ async function start(): Promise<void> {
             assets: tab.assets,
             alive: () => true,
             measure: vectorMeasure,
-            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images, makePath: () => new RecordingPath() as unknown as Path2D }),
+            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images, { makePath: () => new RecordingPath() as unknown as Path2D })),
             fonts,
             toPng,
             write: workerPdfWriter(spawnPdfWorker),

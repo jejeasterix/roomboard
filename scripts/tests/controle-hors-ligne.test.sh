@@ -134,6 +134,9 @@ refuse 21 "$tmp/propre" "$tmp/coque-portee/tauri.conf.json" "scope"
 cp "$tmp/coque/tauri.conf.json" "$tmp/coque-sans/tauri.conf.json"
 printf '[dependencies]\ntauri = { version = "2", features = [] }\n' > "$tmp/coque-sans/Cargo.toml"
 refuse 22 "$tmp/propre" "$tmp/coque-sans/tauri.conf.json" "protocol-asset"
+# 24. `http://asset.localhost` (forme Windows et Android de `asset:`) admis dans media-src seulement, comme `asset:`
+conf asset-host-img "\"script-src\": \"$S $W\", \"img-src\": \"$S http://asset.localhost\""
+refuse 24 "$tmp/propre" "$tmp/asset-host-img.json" "asset.localhost"
 node "$script" "$tmp/propre" "$racine/apps/desktop/src-tauri/tauri.conf.json" > "$tmp/out" 2>&1 || echec "cas 23 : vraie configuration refusée ($(cat "$tmp/out"))"
 cas=$((cas + 1))
 

@@ -6,10 +6,6 @@
     }
   },
   "cargo": {
-    "roomboard-shell": {
-      "licence": "LicenseRef-PolyForm-Shield-1.0.0",
-      "raison": "crate du dépôt (coque, chemin local) vue comme dépendance par le relevé de src-tauri ; licence du projet, pas un tiers"
-    },
     "target-lexicon": {
       "licence": "Apache-2.0 WITH LLVM-exception",
       "raison": "Apache 2.0 avec l'exception LLVM, qui ne fait qu'élargir les droits (ni GPL, ni LGPL, ni AGPL) ; relevé du 2026-11-20"

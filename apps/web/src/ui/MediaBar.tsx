@@ -1,5 +1,5 @@
 /**
- * Barre flottante du média (C14, M22, DAM5) : posée sur la scène (`.rb-media-bar`), jamais une rangée permanente.
+ * Barre flottante du média (C14, M22, DAM5) : posée sur la scène (l'enveloppe d'App porte `.rb-media-bar`), jamais une rangée permanente.
  * Lecture/Pause, position, rognage (« Début ici », « Fin ici », « Tout garder »), boucle, volume. Chaque réglage est un
  * seul appel `set` avec l'état complet ; le volume n'est écrit qu'au relâché (`change`, M23). Un refus du cœur est
  * affiché tel quel (`error`). L'état de lecture vient des `controls` ; il est relu à chaque tic de rafraîchissement.
@@ -71,7 +71,7 @@ export function MediaBar(props: MediaBarProps): JSX.Element {
   };
   const here = (): number => Math.round(time() * 1000) / 1000;
   return (
-    <div class="rb-media-bar" role="group" aria-label="Commandes du média" data-media-bar>
+    <div role="group" aria-label="Commandes du média" data-media-bar>
       <div class="rb-media-bar-inner">
         <button type="button" data-media="toggle" disabled={status() === "echec"} onClick={() => props.controls.toggle()}>
           {status() === "lecture" ? "Pause" : "Lecture"}

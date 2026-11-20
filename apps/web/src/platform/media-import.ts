@@ -265,10 +265,12 @@ async function addMedia(
   ctx: Omit<ImportContext, "blob">,
   target: ImageTarget,
   probed: MediaProbe,
-  asset: AssetRef,
+  assetOf: AssetRef,
   linked: string | null,
 ): Promise<ImportOutcome> {
-  const mediaType: MediaType = sniff.mime.startsWith("audio/") ? "audio" : "video";
+  // M16 : le genre suit la sonde (aucune image : un son, quel que soit le conteneur) ; le MIME suit le genre.
+  const mediaType: MediaType = probed.width > 0 ? "video" : "audio";
+  const asset: AssetRef = { ...assetOf, mime: `${mediaType}/${sniff.mime.slice(sniff.mime.indexOf("/") + 1)}` };
   let poster: AssetRef | null = null;
   if (mediaType === "video" && probed.poster !== null) {
     const p = probed.poster.type === POSTER_MIME ? probed.poster : new Blob([probed.poster], { type: POSTER_MIME });

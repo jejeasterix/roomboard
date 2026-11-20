@@ -88,6 +88,11 @@ export function checkCsp(conf) {
         continue;
       }
       const host = t.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\//, "").replace(/[/?#].*$/, "").replace(/:(?:\d+|\*)$/, "").toLowerCase();
+      // Forme Windows et Android de `asset:` : admise dans media-src seulement, comme `asset:`.
+      if (host === "asset.localhost" && d !== "media-src") {
+        errors.push(`${d} : source ${t} non admise ici (media-src seulement)`);
+        continue;
+      }
       if (isLocalHost(host.replace(/^\*\./, "x."))) continue;
       errors.push(`${d} : source non locale ou inconnue ${t}`);
     }
