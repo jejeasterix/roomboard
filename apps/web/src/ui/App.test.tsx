@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardSession } from "../app/board-session";
 import { createTabs } from "../app/tabs";
 import type { TabSession, Workspace } from "../app/workspace";
+import { createAssetStore } from "../core/asset-store";
 import type { EngineState } from "../engine/engine";
 import { createSettingsStore, parseSettings } from "../engine/settings";
 import type { FileController } from "../platform/controller";
@@ -95,7 +96,7 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     dispose: vi.fn(),
   } as unknown as BoardSession;
   return {
-    session: { board, files },
+    session: { board, files, assets: createAssetStore() },
     emit(s) {
       state = baseState({ ...(state as unknown as Record<string, unknown>), ...s });
       for (const cb of listeners) cb(state);
