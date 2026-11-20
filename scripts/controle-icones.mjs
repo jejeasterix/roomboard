@@ -19,7 +19,8 @@ if (!Array.isArray(icones) || icones.length === 0) {
   for (const ic of icones) {
     if (!existsSync(resolve(base, ic))) erreurs.push(`fichier absent : ${ic}`);
   }
-  const ico = icones.filter((ic) => ic.toLowerCase().endsWith(".ico"));
+  // Même règle que tauri-build : extension .ico en minuscules.
+  const ico = icones.filter((ic) => ic.endsWith(".ico"));
   if (ico.length === 0) erreurs.push("aucun .ico dans bundle.icon");
   for (const ic of ico) {
     const chemin = resolve(base, ic);

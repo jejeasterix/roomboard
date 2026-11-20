@@ -14,6 +14,9 @@ cp "$vraies/32x32.png" "$vraies/icon.ico" "$tmp/icons/"
 # ICO à une seule image de 16 px : en-tête valide, tailles manquantes.
 printf '\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x01\x00\x20\x00\x00\x00\x00\x00\x16\x00\x00\x00' > "$tmp/icons/petit.ico"
 printf 'pas une icone' > "$tmp/icons/faux.ico"
+# En-tête de curseur (.cur, type 2) : refusé, Tauri attend une icône (type 1).
+printf '\x00\x00\x02\x00\x01\x00' > "$tmp/icons/curseur.ico"
+cp "$vraies/icon.ico" "$tmp/icons/MAJ.ICO"
 ecrire() { printf '{ "bundle": { "icon": %s } }\n' "$2" > "$tmp/$1.json"; }
 ecrire bonne '["icons/32x32.png", "icons/icon.ico"]'
 ecrire sans-ico '["icons/32x32.png"]'
@@ -21,6 +24,8 @@ ecrire absente '["icons/32x32.png", "icons/icon.ico", "icons/manque.png"]'
 ecrire petit '["icons/petit.ico"]'
 ecrire faux '["icons/faux.ico"]'
 ecrire vide '[]'
+ecrire curseur '["icons/curseur.ico"]'
+ecrire majuscules '["icons/MAJ.ICO"]'
 
 attendu_ok() { node "$script" "$tmp/$1.json" > "$tmp/out" 2>&1 || echec "$1 : refusé ($(cat "$tmp/out"))"; cas=$((cas + 1)); }
 attendu_ko() {
@@ -34,6 +39,8 @@ attendu_ko absente "fichier absent : icons/manque.png"
 attendu_ko petit "taille 256 px absente"
 attendu_ko faux "en-tête ICO invalide"
 attendu_ko vide "absent ou vide"
+attendu_ko curseur "en-tête ICO invalide"
+attendu_ko majuscules "aucun .ico"
 # La vraie configuration de la coque.
 node "$script" "$racine/apps/desktop/src-tauri/tauri.conf.json" > "$tmp/out" 2>&1 \
   || echec "tauri.conf.json de la coque refusé ($(cat "$tmp/out"))"
