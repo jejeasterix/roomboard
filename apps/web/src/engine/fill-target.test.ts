@@ -236,4 +236,11 @@ describe("cible du pot (C6a)", () => {
     seg(100, 1200, 100, 1000);
     expect(s.at(200, 1100)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: RED });
   });
+
+  // HC6-11 : la fausse liaison ne sait pas créer d'élément inconnu ; une liaison factice en rend un sous le pointeur.
+  it("élément de genre inconnu sous le pointeur : fond de la page (D1, HC6-11)", () => {
+    const unknown = { id: "u1", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "futur", x: 0, y: 0, w: 10, h: 10 } } as unknown as NonNullable<ReturnType<FillDoc["element"]>>;
+    const doc: FillDoc = { hitTest: () => "u1", element: () => unknown, edgeHit: () => false };
+    expect(fillCommand(doc, "p", 5, 5, 1, RED, ten)).toEqual({ type: "Fill", page: "p", target: { kind: "background" }, color: RED });
+  });
 });
