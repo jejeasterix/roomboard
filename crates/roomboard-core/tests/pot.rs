@@ -115,7 +115,10 @@ fn fill_inside_is_one_step_undone_and_redone() {
     let r = shape(&mut d, &p, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
     let v = d.version();
     let c = d.apply(fill(&p, inside(&r), Some("#facc15"))).expect("pot");
-    assert_eq!((c.pages.clone(), c.ids.clone()), (vec![p.clone()], vec![r.clone()]));
+    assert_eq!(
+        (c.pages.clone(), c.ids.clone()),
+        (vec![p.clone()], vec![r.clone()])
+    );
     assert!(c.version > v);
     assert_eq!(fill_of(&d, &r).as_deref(), Some("#facc15"));
     assert!(d.undo());
@@ -130,9 +133,14 @@ fn fill_edge_writes_color_of_shape_and_stroke() {
     let (mut d, p) = setup();
     let r = shape(&mut d, &p, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
     let s = stroke(&mut d, &p);
-    d.apply(fill(&p, inside(&r), Some("#facc15"))).expect("intérieur");
-    d.apply(fill(&p, edge(&r), Some("#dc2626"))).expect("contour");
-    assert_eq!((color_of(&d, &r), fill_of(&d, &r).as_deref()), ("#dc2626".to_string(), Some("#facc15")));
+    d.apply(fill(&p, inside(&r), Some("#facc15")))
+        .expect("intérieur");
+    d.apply(fill(&p, edge(&r), Some("#dc2626")))
+        .expect("contour");
+    assert_eq!(
+        (color_of(&d, &r), fill_of(&d, &r).as_deref()),
+        ("#dc2626".to_string(), Some("#facc15"))
+    );
     d.apply(fill(&p, edge(&s), Some("#dc2626"))).expect("trait");
     assert_eq!(color_of(&d, &s), "#dc2626");
     let l = shape(&mut d, &p, ShapeKind::Line, [100.0, 300.0, 300.0, 300.0]);
@@ -146,15 +154,23 @@ fn none_removes_fill_but_never_an_edge() {
     let (mut d, p) = setup();
     let r = shape(&mut d, &p, ShapeKind::Ellipse, [100.0, 100.0, 300.0, 200.0]);
     let s = stroke(&mut d, &p);
-    d.apply(fill(&p, inside(&r), Some("#facc15"))).expect("intérieur");
+    d.apply(fill(&p, inside(&r), Some("#facc15")))
+        .expect("intérieur");
     d.apply(fill(&p, inside(&r), None)).expect("aucune");
     assert_eq!(fill_of(&d, &r), None);
     let v = d.version();
-    for c in [fill(&p, inside(&r), None), fill(&p, edge(&r), None), fill(&p, edge(&s), None)] {
+    for c in [
+        fill(&p, inside(&r), None),
+        fill(&p, edge(&r), None),
+        fill(&p, edge(&s), None),
+    ] {
         let ch = d.apply(c).expect("sans effet");
         assert_eq!(ch.version, v);
     }
-    assert_eq!((color_of(&d, &r), color_of(&d, &s)), ("#000000".to_string(), "#000000".to_string()));
+    assert_eq!(
+        (color_of(&d, &r), color_of(&d, &s)),
+        ("#000000".to_string(), "#000000".to_string())
+    );
 }
 
 #[test]
@@ -162,22 +178,46 @@ fn same_value_is_no_step() {
     // D38 : même valeur, aucune étape.
     let (mut d, p) = setup();
     let r = shape(&mut d, &p, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
-    d.apply(fill(&p, inside(&r), Some("#facc15"))).expect("intérieur");
+    d.apply(fill(&p, inside(&r), Some("#facc15")))
+        .expect("intérieur");
     let v = d.version();
-    assert_eq!(d.apply(fill(&p, inside(&r), Some("#facc15"))).expect("même").version, v);
-    assert_eq!(d.apply(fill(&p, edge(&r), Some("#000000"))).expect("même contour").version, v);
-    assert_eq!(d.apply(fill(&p, FillTarget::Background, Some("#ffffff"))).expect("même fond").version, v);
-    assert_eq!(d.apply(fill(&p, FillTarget::Background, None)).expect("blanc").version, v);
+    assert_eq!(
+        d.apply(fill(&p, inside(&r), Some("#facc15")))
+            .expect("même")
+            .version,
+        v
+    );
+    assert_eq!(
+        d.apply(fill(&p, edge(&r), Some("#000000")))
+            .expect("même contour")
+            .version,
+        v
+    );
+    assert_eq!(
+        d.apply(fill(&p, FillTarget::Background, Some("#ffffff")))
+            .expect("même fond")
+            .version,
+        v
+    );
+    assert_eq!(
+        d.apply(fill(&p, FillTarget::Background, None))
+            .expect("blanc")
+            .version,
+        v
+    );
 }
 
 #[test]
 fn background_is_written_and_none_means_white() {
     // S4, D10, D11 : fond écrit ; « Aucune » = #ffffff ; annuler rend le bleu.
     let (mut d, p) = setup();
-    let c = d.apply(fill(&p, FillTarget::Background, Some("#1d4ed8"))).expect("fond");
+    let c = d
+        .apply(fill(&p, FillTarget::Background, Some("#1d4ed8")))
+        .expect("fond");
     assert_eq!((c.pages.clone(), c.ids.len()), (vec![p.clone()], 0));
     assert_eq!(background(&d, &p), "#1d4ed8");
-    d.apply(fill(&p, FillTarget::Background, None)).expect("aucune");
+    d.apply(fill(&p, FillTarget::Background, None))
+        .expect("aucune");
     assert_eq!(background(&d, &p), "#ffffff");
     assert!(d.undo());
     assert_eq!(background(&d, &p), "#1d4ed8");
@@ -191,13 +231,26 @@ fn bad_fill_is_refused_in_core_order_without_step() {
     let l = shape(&mut d, &p, ShapeKind::Arrow, [100.0, 300.0, 300.0, 300.0]);
     let s = stroke(&mut d, &p);
     let t = text(&mut d, &p);
-    let p2 = d.apply(Command::AddPage { after: None }).expect("page").pages[0].clone();
+    let p2 = d
+        .apply(Command::AddPage { after: None })
+        .expect("page")
+        .pages[0]
+        .clone();
     let v = d.version();
     let cases = [
         (fill("nope", inside(&r), Some("#12")), CommandError::BadFill),
-        (fill("nope", inside(&r), Some("#facc15")), CommandError::UnknownPage("nope".into())),
-        (fill(&p, inside("nope"), Some("#facc15")), CommandError::UnknownElement("nope".into())),
-        (fill(&p2, inside(&r), Some("#facc15")), CommandError::UnknownElement(r.clone())),
+        (
+            fill("nope", inside(&r), Some("#facc15")),
+            CommandError::UnknownPage("nope".into()),
+        ),
+        (
+            fill(&p, inside("nope"), Some("#facc15")),
+            CommandError::UnknownElement("nope".into()),
+        ),
+        (
+            fill(&p2, inside(&r), Some("#facc15")),
+            CommandError::UnknownElement(r.clone()),
+        ),
         (fill(&p, inside(&l), Some("#facc15")), CommandError::BadFill),
         (fill(&p, inside(&s), Some("#facc15")), CommandError::BadFill),
         (fill(&p, edge(&t), Some("#facc15")), CommandError::BadFill),
@@ -263,9 +316,12 @@ fn fill_survives_save_and_load() {
     // S5, D21 : valeurs de champs existants, gardées à l'aller-retour.
     let (mut d, p) = setup();
     let r = shape(&mut d, &p, ShapeKind::Rect, [100.0, 100.0, 300.0, 200.0]);
-    d.apply(fill(&p, inside(&r), Some("#facc15"))).expect("intérieur");
-    d.apply(fill(&p, edge(&r), Some("#dc2626"))).expect("contour");
-    d.apply(fill(&p, FillTarget::Background, Some("#1d4ed8"))).expect("fond");
+    d.apply(fill(&p, inside(&r), Some("#facc15")))
+        .expect("intérieur");
+    d.apply(fill(&p, edge(&r), Some("#dc2626")))
+        .expect("contour");
+    d.apply(fill(&p, FillTarget::Background, Some("#1d4ed8")))
+        .expect("fond");
     let back = load(&save(&d, &meta()).expect("save")).expect("load");
     assert_eq!(fill_of(&back, &r).as_deref(), Some("#facc15"));
     assert_eq!(color_of(&back, &r), "#dc2626");
@@ -280,6 +336,7 @@ fn socle_fixture_opens_white_and_takes_a_fill() {
     let mut d = load(&std::fs::read(path).expect("fixture")).expect("load");
     let p = d.page_ids()[0].clone();
     assert_eq!(background(&d, &p), "#ffffff");
-    d.apply(fill(&p, FillTarget::Background, Some("#1d4ed8"))).expect("fond");
+    d.apply(fill(&p, FillTarget::Background, Some("#1d4ed8")))
+        .expect("fond");
     assert_eq!(background(&d, &p), "#1d4ed8");
 }
