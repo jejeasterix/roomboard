@@ -79,3 +79,10 @@ describe("dépôt web (T86)", () => {
     }
   });
 });
+
+describe("droppedFromFile head", () => {
+  it("droppedFromFile : head lit les n premiers octets (slice), sans tout lire", async () => {
+    const f = new File([new Uint8Array([1, 2, 3, 4, 5])], "a.bin");
+    expect([...(await droppedFromFile(f).head(3))]).toEqual([1, 2, 3]);
+  });
+});

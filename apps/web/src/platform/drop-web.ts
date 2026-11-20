@@ -20,7 +20,7 @@ export interface DropTargetLike {
 }
 
 export function droppedFromFile(f: File): DroppedFile {
-  return { name: f.name, size: f.size, mime: f.type, blob: async () => f };
+  return { name: f.name, size: f.size, mime: f.type, head: async (n) => new Uint8Array(await f.slice(0, n).arrayBuffer()), blob: async () => f };
 }
 
 export function listenWebDrop(target: DropTargetLike | null, handler: DropHandler, opts: WebDropOptions = {}): () => void {
