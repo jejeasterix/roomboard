@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Change, StrokeStyle } from "../core/api";
+import type { Change, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, type Camera } from "./camera";
@@ -9,6 +9,7 @@ import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { GridPreview, LiveLayer, PageView, Renderer } from "./render/renderer";
+import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
 import type { TableCellState } from "./table-geom";
@@ -778,6 +779,7 @@ describe("createEngine — Alt (C9)", () => {
 function fakeTableTool(ctx: ToolContext, log: string[]) {
   let cell: TableCellState | null = null;
   let clears = false;
+  let ranges = false;
   const tool: TableTool = {
     begin: () => {
       log.push("table.begin");
@@ -799,6 +801,10 @@ function fakeTableTool(ctx: ToolContext, log: string[]) {
       log.push("clear");
       return clears;
     },
+    clearRange: () => {
+      log.push("clearRange");
+      return ranges;
+    },
     prune: () => {
       log.push("prune");
     },
@@ -815,6 +821,9 @@ function fakeTableTool(ctx: ToolContext, log: string[]) {
     },
     setClears(v: boolean): void {
       clears = v;
+    },
+    setRanges(v: boolean): void {
+      ranges = v;
     },
   };
 }
@@ -980,5 +989,56 @@ describe("moteur et outil Tableau (C10a, S2)", () => {
     tool.requestCommit();
     engine.tableAction("row-remove");
     expect(engine.state().tableCell).toMatchObject({ row: 1, col: 0, rows: 2 });
+  });
+});
+
+describe("moteur — C10b (F29, F14)", () => {
+  const tableEl = (id: string, merged: boolean, shades: number): ElementView => ({
+    id,
+    kind: "table",
+    transform: [1, 0, 0, 1, 0, 0],
+    table: {
+      color: "#000000",
+      size: 36,
+      cols: [{ id: "c1", width: 100 }, { id: "c2", width: 100 }],
+      rows: [{ id: "r1", height: 64 }],
+      cells: Array.from({ length: shades }, (_, i) => ({ row: "r1", col: `c${i + 1}`, text: "", fill: null, shade: "#94a3b8" })),
+      merges: merged ? [{ row: "r1", col: "c1", rows: 1, cols: 2 }] : [],
+    },
+  });
+
+  it("tableMerges, tableShades : comptés sur tous les tableaux de la page montrée, quel que soit l'outil (F29, S1)", () => {
+    const { doc, engine } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const els = new Map<string, ElementView>([["a", tableEl("a", true, 2)], ["b", tableEl("b", false, 1)]]);
+    const realIds = doc.elementIds.bind(doc);
+    const realEl = doc.element.bind(doc);
+    doc.elementIds = (p) => (p === page ? [...realIds(p), ...els.keys()] : realIds(p));
+    doc.element = (id) => els.get(id) ?? realEl(id);
+    engine.run({ type: "AddPage", after: page });
+    expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 3]);
+    engine.setTool("pen");
+    expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 3]);
+    els.delete("b");
+    engine.run({ type: "AddPage", after: page });
+    expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 2]);
+  });
+
+  it("textStyle : couleur du stylo, taille par défaut (cible d'import, F21)", () => {
+    const { engine } = setup();
+    engine.setPenStyle({ color: "#1d4ed8", width: 4 });
+    expect(engine.textStyle()).toEqual({ color: "#1d4ed8", size: DEFAULT_TEXT_SIZE });
+  });
+
+  it("Échap avec l'outil Tableau (PC18) : pris si l'outil retire une plage ; sinon rien ; autre outil : jamais appelé", () => {
+    const { engine, log, table } = setupTable();
+    engine.setTool("table");
+    table.setRanges(true);
+    expect(engine.key(key("Escape"))).toBe(true);
+    table.setRanges(false);
+    expect(engine.key(key("Escape"))).toBe(false);
+    engine.setTool("pen");
+    expect(engine.key(key("Escape"))).toBe(false);
+    expect(log.filter((l) => l === "clearRange")).toHaveLength(2);
   });
 });
