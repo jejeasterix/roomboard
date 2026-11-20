@@ -940,4 +940,194 @@ mod tests {
             "remplacement total : l'embed chaîne est retiré"
         );
     }
+
+    // C7b (R7) : état voulu des segments, alignement des seules clés connues qui diffèrent de la vue normalisée.
+
+    fn sp(t: &str, attrs: SpanAttrs) -> SpanInput {
+        SpanInput {
+            text: t.into(),
+            attrs,
+        }
+    }
+
+    #[test]
+    fn valid_spans_checks_concat_then_domains() {
+        let ok = vec![sp("Le ", SpanAttrs::default()), sp("chat", red())];
+        assert!(valid_spans("Le chat", &ok));
+        assert!(valid_spans("", &[]));
+        assert!(!valid_spans("Le cha", &ok));
+        for bad in [
+            SpanAttrs {
+                color: Some("rouge!".into()),
+                ..SpanAttrs::default()
+            },
+            SpanAttrs {
+                size: Some(0.0),
+                ..SpanAttrs::default()
+            },
+            SpanAttrs {
+                size: Some(1e39),
+                ..SpanAttrs::default()
+            },
+            SpanAttrs {
+                font: Some("a;b".into()),
+                ..SpanAttrs::default()
+            },
+        ] {
+            assert!(!valid_spans("x", &[sp("x", bad.clone())]), "{bad:?}");
+        }
+    }
+
+    /// Deux `Doc` bruts au même client, tirés de `state` ; `f` et `g` jouées chacune dans une transaction sur le
+    /// `Y.Text` du `n`-ième élément de la première page ; rend les deux états encodés.
+    fn twin_updates(
+        state: &[u8],
+        n: u32,
+        f: impl Fn(&mut TransactionMut, &TextRef),
+        g: impl Fn(&mut TransactionMut, &TextRef),
+    ) -> (Vec<u8>, Vec<u8>) {
+        use yrs::updates::decoder::Decode;
+        use yrs::{Array, Map, StateVector, Update};
+        let run = |edit: &dyn Fn(&mut TransactionMut, &TextRef)| {
+            let doc = Doc::with_client_id(1);
+            let pages = doc.get_or_insert_array("pages");
+            doc.transact_mut()
+                .apply_update(Update::decode_v1(state).expect("décodage"))
+                .expect("mise à jour");
+            let text = {
+                let txn = doc.transact();
+                let Some(Out::YMap(page)) = pages.get(&txn, 0) else {
+                    panic!("page")
+                };
+                let Some(Out::YArray(els)) = page.get(&txn, "elements") else {
+                    panic!("éléments")
+                };
+                let Some(Out::YMap(el)) = els.get(&txn, n) else {
+                    panic!("élément")
+                };
+                let Some(Out::YText(t)) = el.get(&txn, "content") else {
+                    panic!("texte")
+                };
+                t
+            };
+            edit(&mut doc.transact_mut(), &text);
+            let bytes = doc
+                .transact()
+                .encode_state_as_update_v1(&StateVector::default());
+            bytes
+        };
+        (run(&f), run(&g))
+    }
+
+    /// S5 (R7), document neuf : segments sans attribut sur un texte sans attribut = mêmes octets qu'une différence
+    /// seule. Patron écarté : un alignement qui écrirait toutes les clés (`Any::Null` compris) changerait les octets.
+    #[test]
+    fn plain_spans_write_the_same_update_as_no_spans() {
+        let (d, _, _) = core_text("Le chat noir");
+        let new = "Le gros chat noir";
+        let target = vec![sp(new, SpanAttrs::default())];
+        let (a, b) = twin_updates(
+            &d.encode_v1(),
+            0,
+            |txn, t| apply_text_diff(txn, t, new),
+            |txn, t| {
+                apply_text_diff(txn, t, new);
+                apply_spans(txn, t, &target);
+            },
+        );
+        assert_eq!(a, b);
+    }
+
+    /// S5 (C7 T12, R7) : fichier du socle, troisième élément de la première page (« Bonjour RoomBoard »).
+    #[test]
+    fn socle_fixture_plain_spans_write_the_same_update_as_no_spans() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/socle-v1.roomboard"
+        );
+        let d = crate::format::load(&std::fs::read(path).expect("fixture")).expect("load");
+        let new = "Bonjour à RoomBoard";
+        let target = vec![sp(new, SpanAttrs::default())];
+        let (a, b) = twin_updates(
+            &d.encode_v1(),
+            2,
+            |txn, t| apply_text_diff(txn, t, new),
+            |txn, t| {
+                apply_text_diff(txn, t, new);
+                apply_spans(txn, t, &target);
+            },
+        );
+        assert_eq!(a, b);
+    }
+
+    /// R7 : valeur brute hors domaine (`bold: "oui"`) sur une plage que la cible laisse sans gras, et clé inconnue
+    /// (`href`) : gardées ; seul le gras voulu de « chat » est écrit. Patron écarté : comparer les valeurs brutes
+    /// (`format_changes`) réécrirait « Le » en retirant `bold: "oui"`.
+    #[test]
+    fn apply_spans_keeps_raw_out_of_domain_and_unknown_keys() {
+        let (doc, text) = doc_with("Le chat noir");
+        {
+            let mut txn = doc.transact_mut();
+            text.format(
+                &mut txn,
+                0,
+                2,
+                Attrs::from([(Arc::from("bold"), Any::from("oui"))]),
+            );
+            text.format(
+                &mut txn,
+                3,
+                4,
+                Attrs::from([(Arc::from("href"), Any::from("x"))]),
+            );
+        }
+        let target = vec![
+            sp("Le ", SpanAttrs::default()),
+            sp("chat", bold()),
+            sp(" noir", SpanAttrs::default()),
+        ];
+        assert!(spans_differ(&doc.transact(), &text, &target));
+        apply_spans(&mut doc.transact_mut(), &text, &target);
+        let txn = doc.transact();
+        let chunks: Vec<(String, Attrs)> = text
+            .diff(&txn, YChange::identity)
+            .into_iter()
+            .map(|c| {
+                let s = match &c.insert {
+                    Out::Any(Any::String(s)) => s.to_string(),
+                    _ => String::new(),
+                };
+                (s, c.attributes.map(|a| *a).unwrap_or_default())
+            })
+            .collect();
+        let get = |s: &str, k: &str| {
+            chunks
+                .iter()
+                .find(|(t, _)| t == s)
+                .and_then(|(_, a)| a.get(k).cloned())
+        };
+        assert_eq!(get("Le", "bold"), Some(Any::from("oui")));
+        assert_eq!(get("chat", "href"), Some(Any::from("x")));
+        assert_eq!(get("chat", "bold"), Some(Any::Bool(true)));
+        assert!(!spans_differ(&txn, &text, &target));
+    }
+
+    /// R7, GC9 : un embed au milieu coupe la plage formatée ; il ne reçoit aucun attribut.
+    #[test]
+    fn apply_spans_never_formats_an_embed() {
+        let (doc, text) = doc_with("abcd");
+        text.insert_embed(&mut doc.transact_mut(), 2, embed());
+        apply_spans(&mut doc.transact_mut(), &text, &[sp("abcd", bold())]);
+        assert_eq!(spans(&doc, &text), vec![with("abcd", bold())]);
+        assert_eq!(embeds(&doc, &text), 1);
+        let embed_attrs = text
+            .diff(&doc.transact(), YChange::identity)
+            .into_iter()
+            .find(|c| !matches!(c.insert, Out::Any(Any::String(_))))
+            .and_then(|c| c.attributes);
+        assert!(
+            embed_attrs.is_none_or(|a| !a.contains_key("bold")),
+            "embed formaté"
+        );
+    }
 }

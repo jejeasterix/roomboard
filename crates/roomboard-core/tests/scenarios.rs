@@ -4,7 +4,7 @@ use roomboard_core::document::Document;
 use roomboard_core::element::StrokeStyle;
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::query::Bounds;
-use roomboard_core::rich_text::TextAttr;
+use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
 
 fn pen() -> StrokeStyle {
@@ -287,4 +287,58 @@ fn s2_rich_text_survives_save_load() {
         save(&r, &meta()).expect("resave") == file,
         "réenregistrer change les octets"
     );
+}
+
+/// C7b (S1, S5) : un texte mis en forme par `SetText` avec segments survit à l'aller-retour `.roomboard`.
+#[test]
+fn rich_text_set_text_round_trips() {
+    let mut d = Document::blank();
+    let page = d.page_ids()[0].clone();
+    let red_bold = SpanAttrs {
+        bold: true,
+        color: Some("#dc2626".into()),
+        ..SpanAttrs::default()
+    };
+    let spans = vec![
+        SpanInput {
+            text: "Le ".into(),
+            attrs: SpanAttrs::default(),
+        },
+        SpanInput {
+            text: "chat".into(),
+            attrs: red_bold.clone(),
+        },
+        SpanInput {
+            text: " noir".into(),
+            attrs: SpanAttrs::default(),
+        },
+    ];
+    let id = d
+        .apply(Command::SetText {
+            page,
+            id: None,
+            x: 100.0,
+            y: 200.0,
+            content: "Le chat noir".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+            spans: Some(spans),
+        })
+        .expect("texte")
+        .ids[0]
+        .clone();
+    let meta = SaveMeta {
+        app_version: "0.1.0".into(),
+        now: "2026-11-20T00:00:00Z".into(),
+        created: None,
+    };
+    let back = load(&save(&d, &meta).expect("save")).expect("load");
+    let got = back.element(&id).and_then(|e| e.text).expect("texte").spans;
+    assert_eq!(
+        got.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(),
+        vec!["Le ", "chat", " noir"]
+    );
+    assert_eq!(got[1].attrs, red_bold);
 }
