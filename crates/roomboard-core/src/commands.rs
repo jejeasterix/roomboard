@@ -2966,7 +2966,10 @@ pub(crate) mod tests {
         let file = save(&d, &meta).expect("save");
         let r = load(&file).expect("load");
         assert_eq!(page_grid(&r, &p), Some(g));
-        assert!(save(&r, &meta).expect("resave") == file, "fichier différent au rechargement");
+        assert!(
+            save(&r, &meta).expect("resave") == file,
+            "fichier différent au rechargement"
+        );
     }
 
     /// Effet de bord 1, Review Focus 1 : niveau écrit sans `lineWidth` (fichier de la PR 12) : lu à 1, ses lignes
@@ -3015,7 +3018,10 @@ pub(crate) mod tests {
         let file = save(&d, &meta).expect("save");
         let back = load(&file).expect("load");
         assert_eq!(page_grid(&back, &p), Some(g));
-        assert!(save(&back, &meta).expect("resave") == file, "relu puis réenregistré : mêmes octets");
+        assert!(
+            save(&back, &meta).expect("resave") == file,
+            "relu puis réenregistré : mêmes octets"
+        );
     }
 
     /// DAE1, S3 : `grid_lines_of` d'une grille non enregistrée = `grid_lines` après `SetGrid` de la même grille ; page

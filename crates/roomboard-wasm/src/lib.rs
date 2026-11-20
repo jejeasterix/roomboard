@@ -11,7 +11,7 @@ use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, Era
 use roomboard_core::document::Document as CoreDocument;
 use roomboard_core::element::{StrokeStyle, Transform};
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
-use roomboard_core::grid::{GridInput, GridLevelView};
+use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
@@ -236,7 +236,8 @@ fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, C
     Ok(attrs)
 }
 
-/// Grille reçue de JS (G12) : `nums` = 6 nombres par niveau (`sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1) ;
+/// Grille reçue de JS (G12, E1) : `nums` = 7 nombres par niveau (`sx, sy, ox, oy, snap, visible, lineWidth`, booléens en
+/// 0 ou 1) ;
 /// longueurs incohérentes : `BadGrid`. Les valeurs elles-mêmes sont contrôlées par le cœur (`SetGrid`).
 fn grid_input(
     visible: bool,
@@ -248,14 +249,14 @@ fn grid_input(
     nums: &[f64],
 ) -> Result<GridInput, CommandError> {
     let n = kinds.len();
-    if colors.len() != n || lines.len() != n || nums.len() != 6 * n {
+    if colors.len() != n || lines.len() != n || nums.len() != 7 * n {
         return Err(CommandError::BadGrid);
     }
     let levels = kinds
         .into_iter()
         .zip(colors)
         .zip(lines)
-        .zip(nums.as_chunks::<6>().0)
+        .zip(nums.as_chunks::<7>().0)
         .map(|(((kind, color), line), v)| GridLevelView {
             kind,
             spacing_x: v[0],
@@ -264,6 +265,7 @@ fn grid_input(
             origin_y: v[3],
             color,
             line,
+            line_width: v[6],
             snap: v[4] != 0.0,
             visible: v[5] != 0.0,
         })
@@ -433,6 +435,32 @@ impl Document {
         match self
             .core
             .grid_lines(page, Bounds { x0, y0, x1, y1 }, min_step, min_dot_step)
+        {
+            Some(g) => to_js(&g),
+            None => Ok(JsValue::NULL),
+        }
+    }
+
+    /// Lignes d'une grille non enregistrée (C9 éditeur, DAE1) : même calcul que `grid_lines` ; `nums` comme `set_grid`,
+    /// `view` = `x0, y0, x1, y1, min_step, min_dot_step` (autre longueur : `BadGrid`). `null` : page inconnue ou grille
+    /// invisible. Rien n'est écrit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn grid_lines_of(
+        &self,
+        page: &str,
+        visible: bool,
+        snap: bool,
+        above: bool,
+        kinds: Vec<String>,
+        colors: Vec<String>,
+        lines: Vec<String>,
+        nums: &[f64],
+        view: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let grid = grid_input(visible, snap, above, kinds, colors, lines, nums).map_err(cmd_err)?;
+        match self
+            .grid_lines_of_inner(page, &grid, view)
+            .map_err(cmd_err)?
         {
             Some(g) => to_js(&g),
             None => Ok(JsValue::NULL),
@@ -711,6 +739,27 @@ impl Document {
             page: page.to_string(),
             grid,
         })
+    }
+
+    /// Voir `grid_lines_of` ; `view` = `x0, y0, x1, y1, min_step, min_dot_step`.
+    pub fn grid_lines_of_inner(
+        &self,
+        page: &str,
+        grid: &GridInput,
+        view: &[f64],
+    ) -> Result<Option<GridLines>, CommandError> {
+        let [x0, y0, x1, y1, min_step, min_dot_step] = view else {
+            return Err(CommandError::BadGrid);
+        };
+        let rect = Bounds {
+            x0: *x0,
+            y0: *y0,
+            x1: *x1,
+            y1: *y1,
+        };
+        Ok(self
+            .core
+            .grid_lines_of(page, grid, rect, *min_step, *min_dot_step))
     }
 
     pub fn add_page_after_inner(&mut self, after: Option<String>) -> Result<Change, CommandError> {
