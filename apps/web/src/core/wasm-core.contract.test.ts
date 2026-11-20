@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AssetRef, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
-import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toPageView, type WasmModule } from "./wasm-core";
+import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -926,7 +926,7 @@ const gridLevel = (kind: string, s: number, color = "#000000"): GridLevel => ({
 });
 const gridOf = (levels: readonly GridLevel[], snap = true, above = false): GridInput => ({ visible: true, snap, above, levels });
 const setGrid = (d: CoreDocument, page: string, grid: GridInput | null) => d.apply({ type: "SetGrid", page, grid });
-const c9Factories = factories.filter(({ f }) => f === fakeCore);
+const c9Factories = factories; // T6 : vrai module branché, contrat C9 commun aux deux fabriques
 
 describe("contrôle de forme C9 (grille)", () => {
   it("toPageView : grille contrôlée, undefined → null, forme fausse → erreur", () => {
@@ -1074,6 +1074,49 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     expect(e.page(p)?.grid).toEqual(g);
     expect(e.save(now, "0.1.0")).toEqual(file);
     e.free();
+    d.free();
+  });
+});
+
+describe("contrôle de forme C9 (lignes de grille)", () => {
+  it("toGridLines : null pour rien, erreur pour une forme fausse", () => {
+    const ok = { above: true, levels: [{ color: "#000000", line: "solid", alpha: 0.5, segments: [0, 0, 0, 10], dots: [1, 2] }] };
+    expect(toGridLines(undefined)).toBeNull();
+    expect(toGridLines(null)).toBeNull();
+    expect(toGridLines(ok)).toEqual(ok);
+    expect(() => toGridLines({ ...ok, above: 1 })).toThrow("GridLines invalide");
+    expect(() => toGridLines({ above: true, levels: [{ ...ok.levels[0], segments: ["0"] }] })).toThrow("GridLines invalide");
+    expect(() => toGridLines({ above: true, levels: "x" })).toThrow("GridLines invalide");
+  });
+});
+
+describe.skipIf(loaded === null)("contrat C9 : vrai module seulement", () => {
+  const fixture = (path: string): Uint8Array => new Uint8Array(fs.readFileSync(new URL(path, import.meta.url)));
+
+  it("fichier du socle (S2) : grille nulle sur ses deux pages", () => {
+    const d = need().core.load(fixture("../../../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard"));
+    expect(d.pageIds().map((p) => d.page(p)?.grid)).toEqual([null, null]);
+    d.free();
+  });
+
+  it("les cinq autres types (DAG3) : Seyès principal et fin, isométrique, points, portées, lignes", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    const only = (kind: string, s: number): void => {
+      setGrid(d, p, gridOf([gridLevel(kind, s)]));
+    };
+    only("seyes", 30.24);
+    expect(d.gridLines(p, { x0: 0, y0: 0, x1: 400, y1: 400 }, 4, 8)?.levels.map((l) => l.alpha)).toEqual([1, 0.5]);
+    only("isometric", 40);
+    const q = d.snapPoint(p, 36, 25);
+    expect(q?.[0]).toBeCloseTo(20 * Math.sqrt(3));
+    expect(q?.[1]).toBeCloseTo(20);
+    only("dots", 40);
+    expect(d.gridLines(p, { x0: 0, y0: 0, x1: 100, y1: 100 }, 4, 8)?.levels[0]?.dots).toEqual([0, 0, 40, 0, 80, 0, 0, 40, 40, 40, 80, 40, 0, 80, 40, 80, 80, 80]);
+    only("music", 12);
+    expect(d.snapPoint(p, 500, 70)).toEqual([500, 48]);
+    only("lines", 40);
+    expect(d.snapPoint(p, 1950, 10)).toEqual([1950, 0]);
     d.free();
   });
 });
