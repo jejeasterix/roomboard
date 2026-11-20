@@ -329,6 +329,8 @@ mod tests {
     use yrs::{Any, Doc, GetString, Number, Out, Text, TextRef, Transact};
 
     use super::*;
+    use crate::commands::{read_text, Command};
+    use crate::document::Document;
 
     const HEX64: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
@@ -727,5 +729,119 @@ mod tests {
         assert_eq!(view.spans, vec![with("Le noir", bold())]);
         let cited: Vec<String> = d.cited_assets().into_iter().map(|a| a.id).collect();
         assert_eq!(cited, vec![HEX64.to_string()]);
+    }
+
+    /// Document du cœur avec un seul texte `content` : (document, id de l'élément, son `Y.Text`).
+    fn core_text(content: &str) -> (Document, String, TextRef) {
+        let mut d = Document::blank();
+        let page = d.page_ids()[0].clone();
+        let set = Command::SetText {
+            page,
+            id: None,
+            x: 0.0,
+            y: 0.0,
+            content: content.into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        };
+        let id = d.apply(set).expect("texte").ids[0].clone();
+        let text = {
+            let txn = d.read();
+            let f = d.find_element(&txn, &id).expect("élément");
+            read_text(&txn, &f.element).expect("texte").text
+        };
+        (d, id, text)
+    }
+
+    fn format_cmd(id: &str, start: u32, len: u32, attrs: Vec<TextAttr>) -> Command {
+        Command::FormatText {
+            id: id.into(),
+            start,
+            len,
+            attrs,
+            box_height: None,
+        }
+    }
+
+    fn view_spans(d: &Document, id: &str) -> Vec<TextSpanView> {
+        d.element(id).and_then(|e| e.text).expect("vue").spans
+    }
+
+    /// Constat 1 de relecture (T11) : une clé répétée garde sa dernière valeur dans le contrôle « sans effet » comme
+    /// dans l'écriture. Sous le patron écarté (contrôle entrée par entrée), `[Bold(true), Bold(false)]` sur un texte
+    /// sans gras rend un `Change` fait (version montée, id cité) sans étape d'annulation : `undo` défait alors l'étape
+    /// d'avant.
+    #[test]
+    fn format_text_repeated_key_keeps_last_value() {
+        let (mut d, id, _) = core_text("Le chat noir");
+        d.apply(format_cmd(&id, 0, 2, vec![TextAttr::Bold(true)]))
+            .expect("gras");
+        let before = d.version();
+        for (start, len, attrs) in [
+            (3, 4, vec![TextAttr::Bold(true), TextAttr::Bold(false)]),
+            (0, 2, vec![TextAttr::Bold(false), TextAttr::Bold(true)]),
+        ] {
+            let change = d.apply(format_cmd(&id, start, len, attrs)).expect("format");
+            assert_eq!(
+                (change.version, change.ids.len()),
+                (before, 0),
+                "plage {start}+{len} : aucune étape"
+            );
+        }
+        assert!(d.undo());
+        assert_eq!(view_spans(&d, &id), vec![plain("Le chat noir")]);
+    }
+
+    /// Constat 2 de relecture (T11) : `size` arrive en `f32` et s'écrit `f64::from` ; une taille brute déjà égale après
+    /// arrondi `f32` (14.3 écrit par un autre client) n'est pas un changement. Sous le patron écarté (comparaison en
+    /// `f64`), `Size(14.3)` crée une étape sans effet visible. La valeur écrite reste celle d'avant (`Math.fround`).
+    #[test]
+    fn format_text_size_equal_after_f32_rounding_is_no_step() {
+        let (mut d, id, text) = core_text("Le chat");
+        let raw = HashMap::from([(Arc::from("size"), Any::from(14.3))]);
+        text.format(&mut d.transact_local(), 0, 7, raw);
+        let before = d.version();
+        let change = d
+            .apply(format_cmd(&id, 0, 7, vec![TextAttr::Size(Some(14.3))]))
+            .expect("même taille");
+        assert_eq!((change.version, change.ids.len()), (before, 0));
+        let sized = |v: f64| SpanAttrs {
+            size: Some(v),
+            ..SpanAttrs::default()
+        };
+        assert_eq!(view_spans(&d, &id), vec![with("Le chat", sized(14.3))]);
+        let change = d
+            .apply(format_cmd(&id, 0, 7, vec![TextAttr::Size(Some(14.4))]))
+            .expect("autre taille");
+        assert_eq!(change.version, before + 1);
+        assert_eq!(
+            view_spans(&d, &id),
+            vec![with("Le chat", sized(f64::from(14.4f32)))]
+        );
+    }
+
+    /// Constat 3 de relecture (T11) : la garde de T6 et T16 sur le `Doc` du cœur lui-même (`Document::blank`), pas sur
+    /// un `Doc::new()` de yrs : « é🐱 » y compte 6 octets UTF-8 (3 unités sous `OffsetKind::Utf16`).
+    #[test]
+    fn core_doc_offsets_are_utf8_bytes() {
+        let (d, _, text) = core_text("é🐱");
+        assert_eq!(text.len(&d.read()), 6);
+    }
+
+    /// Constat 4 de relecture (T11), règle commune avec `validFont` (T12) : tout caractère de contrôle (catégorie Cc,
+    /// U+0000–U+001F et U+007F–U+009F) est refusé, `\f` compris (CSS le lit comme un retour à la ligne) ; U+00A0 ne
+    /// l'est pas.
+    #[test]
+    fn valid_font_refuses_control_chars() {
+        for bad in [
+            "a\u{c}b", "a\tb", "a\u{b}b", "\u{0}", "a\u{1f}b", "a\u{7f}b", "a\u{85}b", "a\u{9f}b",
+        ] {
+            assert!(!valid_font(bad), "{bad:?}");
+        }
+        for ok in ["a b", "a~b", "a\u{a0}b", "a\u{a1}b"] {
+            assert!(valid_font(ok), "{ok:?}");
+        }
     }
 }
