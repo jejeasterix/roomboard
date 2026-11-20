@@ -1,7 +1,6 @@
 //! Texte riche par plages (C7 ; U27 et DAU9 de `docs/plans/usage-cadrage.md`) : attributs Yrs du `Y.Text` `content`
 //! d'un élément texte. Positions : points de code pour `SetText` (T4), unités UTF-16 pour `FormatText` (T6), converties
 //! en décalages Yrs (octets UTF-8 des chaînes, 1 par embed : le `Doc` est en `OffsetKind::Bytes`, T16).
-#![cfg_attr(not(test), allow(dead_code))] // retiré par T3, qui branche les commandes
 
 use std::cmp::Ordering;
 use std::sync::Arc;
@@ -645,5 +644,73 @@ mod tests {
         assert_eq!(spans(&doc, &text), vec![plain("Bonjour")]);
         let (doc, text) = doc_with("");
         assert_eq!(spans(&doc, &text), vec![plain("")]);
+    }
+
+    /// T16 : un embed (écrit par une autre version) survit à `SetText` et `FormatText` autour et à travers ; il reste
+    /// cité par `cited_assets`, ni la couleur ni la police ne le sont (T15). Sous le patron écarté (`remove_range(0,
+    /// len)` puis `insert`), l'embed disparaît au premier `SetText` : `embeds(&d)` vaudrait 0.
+    #[test]
+    fn set_text_and_format_keep_embeds() {
+        use crate::commands::{read_text, Command};
+        use crate::document::Document;
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let set = |content: &str, id: Option<String>| Command::SetText {
+            page: p.clone(),
+            id,
+            x: 0.0,
+            y: 0.0,
+            content: content.into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        };
+        let fmt = |id: &str, start: u32, len: u32, attrs: Vec<TextAttr>| Command::FormatText {
+            id: id.into(),
+            start,
+            len,
+            attrs,
+            box_height: None,
+        };
+        let id = d.apply(set("Le chat noir", None)).expect("texte").ids[0].clone();
+        let text = {
+            let txn = d.read();
+            let f = d.find_element(&txn, &id).expect("élément");
+            read_text(&txn, &f.element).expect("texte").text
+        };
+        {
+            let mut txn = d.transact_local();
+            let embed = Any::Map(Arc::new(HashMap::from([(
+                "src".to_string(),
+                Any::from(HEX64),
+            )])));
+            text.insert_embed(&mut txn, 3, embed);
+        }
+        let embeds = |d: &Document| {
+            let txn = d.read();
+            text.diff(&txn, YChange::identity)
+                .iter()
+                .filter(|c| !matches!(c.insert, Out::Any(Any::String(_))))
+                .count()
+        };
+        // autour : FormatText sur « chat » (après l'embed), puis SetText qui insère juste avant lui
+        let red_georgia = vec![
+            TextAttr::Color(Some("#ff0000".into())),
+            TextAttr::Font(Some("Georgia".into())),
+        ];
+        d.apply(fmt(&id, 3, 4, red_georgia)).expect("format");
+        d.apply(set("Le gros chat noir", Some(id.clone())))
+            .expect("insère");
+        // à travers : suppression de part et d'autre de l'embed, puis format de tout le texte
+        d.apply(set("Le noir", Some(id.clone()))).expect("supprime");
+        d.apply(fmt(&id, 0, 7, vec![TextAttr::Bold(true)]))
+            .expect("format total");
+        assert_eq!(embeds(&d), 1, "l'embed est gardé");
+        let view = d.element(&id).and_then(|e| e.text).expect("vue");
+        assert_eq!(view.content, "Le noir");
+        assert_eq!(view.spans, vec![with("Le noir", bold())]);
+        let cited: Vec<String> = d.cited_assets().into_iter().map(|a| a.id).collect();
+        assert_eq!(cited, vec![HEX64.to_string()]);
     }
 }
