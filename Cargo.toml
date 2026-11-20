@@ -12,3 +12,5 @@ license = "LicenseRef-PolyForm-Shield-1.0.0"
 [profile.release]
 opt-level = "s"
 lto = true
+# Une seule unité de génération : module Wasm de C7 + C9 à 1,45 Mo au lieu de 1,58 Mo (plafond H2-13 : 1,5 Mo).
+codegen-units = 1
