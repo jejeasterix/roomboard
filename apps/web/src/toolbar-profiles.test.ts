@@ -35,7 +35,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
 
   it("defaut porte chaque bouton de l'ancienne barre (inventaire du plan)", () => {
     for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
-      "page-prev", "page-next", "page-add", "page-remove", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles", "grid"]) {
+      "page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles", "grid"]) {
       expect(ids("defaut"), id).toContain(id);
     }
   });

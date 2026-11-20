@@ -2,6 +2,7 @@
 pub mod asset;
 pub mod capabilities;
 pub mod commands;
+pub mod copy;
 pub mod document;
 pub mod element;
 pub mod fill;

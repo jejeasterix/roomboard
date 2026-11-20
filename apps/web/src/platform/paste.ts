@@ -1,6 +1,7 @@
-/** Collage (R19, C10b) : fichiers `image/*` du presse-papiers ; HTML qui porte un `<table>` (F19), que `main.ts` fait
- *  passer avant les images jointes (Excel joint aussi une image, HB-9) ; ignoré quand la cible est éditable ; texte seul
- *  ignoré (C3). */
+/** Collage (R19, C3, C10b) : objets RoomBoard (enveloppe en `text/plain`, Z9) d'abord ; puis HTML qui porte un `<table>`
+ *  (F19), qui passe avant les images jointes (Excel joint aussi une image, HB-9) ; puis fichiers `image/*` ; ignoré quand
+ *  la cible est éditable ; texte ordinaire ignoré. */
+import { fromEnvelope, type ItemsRefusal } from "./clipboard";
 import { droppedFromFile } from "./drop-web";
 import type { DroppedFile } from "./files";
 
@@ -28,16 +29,29 @@ export function pastedFiles(e: PasteEventLike): DroppedFile[] {
     .map(droppedFromFile);
 }
 
+/** Enveloppe d'objets RoomBoard dans `text/plain` (Z9) ; null sur une cible éditable ou sans enveloppe. */
+export function pastedItems(e: PasteEventLike): Uint8Array | ItemsRefusal | null {
+  if (isEditable(e.target)) return null;
+  const text = e.clipboardData?.getData?.("text/plain") ?? "";
+  return text === "" ? null : fromEnvelope(text);
+}
+
 /** Ce que le collage atteint : le workspace (`main.ts`), un faux dans les tests. */
 export interface PasteSink {
+  /** C3 (PC1) : objets dans l'onglet actif, ou refus à dire (version plus récente, trop gros) ; vrai si pris. */
+  pasteItems(items: Uint8Array | ItemsRefusal): Promise<boolean>;
+  /** C10b (F19) : tableau HTML collé ; faux si illisible (repli sur les images jointes, PC9). */
   pasteTable(html: string): Promise<boolean>;
   importFiles(files: readonly DroppedFile[], at: null): Promise<unknown>;
 }
 
-/** Corps de l'écouteur `paste` (R19, C10b) : un `<table>` HTML passe avant les images jointes (F19, HB-9) ; un HTML
- *  illisible (`pasteTable` rend false) se replie sur elles (PC9) ; sinon les images seules. Null : collage non pris
- *  (rien à coller, cible éditable), le collage normal suit ; sinon l'appelant fait `preventDefault`. */
+/** Corps de l'écouteur `paste` (R19, C3, Z9, C10b) : objets RoomBoard d'abord ; puis un `<table>` HTML, qui passe avant
+ *  les images jointes (F19, HB-9) ; un HTML illisible (`pasteTable` rend false) se replie sur elles (PC9) ; sinon les
+ *  images seules. Null : collage non pris (cible éditable, rien à coller), le collage normal suit ; sinon l'appelant
+ *  fait `preventDefault`. */
 export function handlePaste(e: PasteEventLike, sink: PasteSink): Promise<void> | null {
+  const items = pastedItems(e);
+  if (items !== null) return sink.pasteItems(items).then(() => undefined);
   const html = pastedTableHtml(e);
   const files = pastedFiles(e);
   if (html !== null) {

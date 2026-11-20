@@ -18,6 +18,7 @@ import {
   type ToolItem,
 } from "../toolbar";
 import { FormatRow } from "./FormatRow";
+import { SelectionRow } from "./SelectionRow";
 import { itemState, type ToolbarView } from "./item-state";
 
 /** Préréglages d'un profil, par outil (`Profile["presets"]`). */
@@ -172,6 +173,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
           <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
         </Show>
         <TableActionRow view={props.view} host={props.host} />
+        <SelectionRow view={props.view} host={props.host} />
         <FormatRow view={props.view} act={(a) => props.host.textFormat(a)} />
       </Show>
     </div>

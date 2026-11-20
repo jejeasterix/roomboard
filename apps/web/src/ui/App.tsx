@@ -27,6 +27,7 @@ import { ProfileMenu } from "./ProfileMenu";
 import { GridPanel } from "./GridPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
+import type { ToolbarView } from "./item-state";
 import { Toolbar } from "./Toolbar";
 import "./rb.css";
 
@@ -85,7 +86,9 @@ export function App(props: AppProps): JSX.Element {
   };
   follow();
   const stopTabs = ws.tabs.onChange(follow);
+  const stopClipboard = ws.onClipboard(() => bump());
   onCleanup(() => {
+    stopClipboard();
     stopTabs();
     stopState?.();
     for (const off of filesWatch.values()) off();
@@ -141,6 +144,8 @@ export function App(props: AppProps): JSX.Element {
       engine: () => ws.active().board.engine,
       runFile: (cmd) => void ws.active().files.run(cmd),
       importFiles: (files, at) => void ws.importFiles(files, at),
+      insertPages: () => void ws.insertPages(),
+      selection: (a) => ws.selection(a),
       toggle: (p) => setPanel((cur) => (cur === p ? null : p)),
     },
     () => props.active.profile(),
@@ -163,10 +168,16 @@ export function App(props: AppProps): JSX.Element {
   const floating = createMemo(() => profile().toolbars.filter((b) => b.dock === "floating"));
   const grid = createMemo(() => layoutFor(docked()));
 
+  /** Vue de la barre (C3) : état du moteur et presse-papiers interne (bouton « Coller »). */
+  const view = (): ToolbarView => {
+    tick();
+    return { ...state(), canPaste: ws.canPaste() };
+  };
+
   /** La rangée des préréglages n'est que dans la première barre de rôle `tools` (C1, P18). */
   const presetsBarId = createMemo(() => profile().toolbars.find((b) => b.role === "tools")?.id);
   const toolbarOf = (bar: Bar): JSX.Element => (
-    <Toolbar bar={bar} caps={props.active.capabilities} view={state} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} />
+    <Toolbar bar={bar} caps={props.active.capabilities} view={view} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} />
   );
   /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. */
   const BY_ROLE: Readonly<Record<string, (bar: Bar) => JSX.Element>> = {

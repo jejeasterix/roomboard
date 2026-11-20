@@ -1,6 +1,6 @@
 /**
  * Attributs de `#stage` lus par les scénarios S3/S4 (contrat du lot 4), déplacés de l'ancienne barre DOM (retirée par
- * T95) sans changement ; C10a (`table`) ; C10b (F29) : plage dans `table`, `tableMerges`, `tableShades`.
+ * T95) sans changement ; C10a (`table`) ; C10b (F29) : plage dans `table`, `tableMerges`, `tableShades` ; C3 (PC9) : `units`, `grouped`.
  */
 import type { Bounds } from "../core/api";
 import type { EngineState } from "../engine/engine";
@@ -18,7 +18,7 @@ const tableTag = (c: TableCellState | null): string => {
 };
 
 /** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`) et S1 à S4 de C10b (`tableMerges`, `tableShades`). */
-export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades", string> {
+export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     selection: String(s.selection.length),
@@ -27,5 +27,7 @@ export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds
     table: tableTag(s.tableCell),
     tableMerges: String(s.tableMerges),
     tableShades: String(s.tableShades),
+    units: String(s.selectionUnits),
+    grouped: s.selectionGrouped ? "1" : "0",
   };
 }

@@ -355,11 +355,67 @@ describe("révélation d'un ombrage (F10)", () => {
     expect(s.tool.selection()).toEqual([id]);
   });
 
+  it("C3 : glisser depuis une cellule ombrée d'un tableau groupé déplace le groupe entier", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    const r = s.rect(700, 100, 760, 160);
+    s.doc.apply({ type: "Group", ids: [id, r] });
+    gesture(s.tool, [[150, 130], [190, 130]]);
+    expect([...s.tool.selection()].sort()).toEqual([id, r].sort());
+    const t = s.runs.at(-1);
+    expect(t?.type).toBe("Transform");
+    expect(t?.type === "Transform" ? [...t.ids].sort() : []).toEqual([id, r].sort());
+  });
+
   it("F10 : une forme au-dessus de la cellule ombrée : la forme est sélectionnée, rien de révélé", () => {
     const s = setup();
     const { id } = shadedTable(s);
     const r = s.rect(140, 120, 160, 140);
     gesture(s.tool, [[150, 130]]);
     expect([s.tool.selection(), shades(s, id)]).toEqual([[r], 1]);
+  });
+});
+
+describe("outil Sélection : groupes (Z2)", () => {
+  function grouped() {
+    const s = setup();
+    const a = s.rect(100, 100, 200, 200);
+    const b = s.rect(300, 100, 400, 200);
+    const c = s.rect(500, 100, 600, 200);
+    s.doc.apply({ type: "Group", ids: [a, b] });
+    return { ...s, a, b, c };
+  }
+  it("clic sur un membre : groupe extérieur (sans écriture)", () => {
+    const { tool, runs, a, b } = grouped();
+    gesture(tool, [[150, 150]]);
+    expect(tool.selection()).toEqual([a, b]);
+    expect(runs).toEqual([]);
+  });
+  it("groupe imbriqué : un clic prend le groupe le plus extérieur", () => {
+    const { tool, doc, a, b, c } = grouped();
+    doc.apply({ type: "Group", ids: [a, b, c] });
+    gesture(tool, [[550, 150]]);
+    expect(tool.selection()).toEqual([a, b, c]);
+  });
+  it("Maj+clic : groupe entier (ajouté puis retiré)", () => {
+    const { tool, setShift, a, b, c } = grouped();
+    gesture(tool, [[550, 150]]);
+    setShift(true);
+    gesture(tool, [[150, 150]]);
+    expect(tool.selection()).toEqual([c, a, b]);
+    gesture(tool, [[350, 150]]);
+    expect(tool.selection()).toEqual([c]);
+  });
+  it("glisser un membre : une Transform sur tous les membres", () => {
+    const { tool, runs, a, b } = grouped();
+    gesture(tool, [[150, 150], [250, 150]]);
+    expect(runs).toEqual([{ type: "Transform", ids: [a, b], matrix: [1, 0, 0, 1, 100, 0] }]);
+  });
+  it("rectangle : groupe pris seulement entier", () => {
+    const { tool, a, b, c } = grouped();
+    gesture(tool, [[90, 90], [250, 210]]);
+    expect(tool.selection()).toEqual([]);
+    gesture(tool, [[90, 90], [610, 210]]);
+    expect(tool.selection()).toEqual([a, b, c]);
   });
 });

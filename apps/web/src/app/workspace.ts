@@ -7,7 +7,7 @@
  */
 import type { CoreDocument, CoreFactory } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
-import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
+import type { ContainerCodec } from "../platform/container";
 import {
   APP_VERSION,
   createFileController,
@@ -17,18 +17,23 @@ import {
   type FileController,
   type FileKey,
 } from "../platform/controller";
-import type { DroppedFile, FileHost, HostKind, Point, SaveTarget, ShellPort } from "../platform/files";
+import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_ITEMS_MESSAGE, type Clipboard, type ItemsRefusal } from "../platform/clipboard";
+import { RBITEM_EXTENSION, type DroppedFile, type FileHost, type HostKind, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
 import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import type { StartedDocument } from "../platform/mount";
 import { insertTableGrid } from "../platform/table-insert";
+import type { TypedFiles } from "../platform/typed-files";
 import type { BoardSession } from "./board-session";
+import { createContainerIO, missingOf } from "./container-io";
+import { createFragmentOps, SELECTION_NAME } from "./fragments";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
-/** Repli R7 : le module du conteneur ne s'est pas chargé, le document s'ouvre par le cœur seul. */
-export const CODEC_FALLBACK_MESSAGE = "images non lues : le module des images ne s'est pas chargé";
+import type { SelectionAction } from "./toolbar-host";
+
+export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 
 export interface TabSession {
   readonly board: BoardSession;
@@ -61,6 +66,10 @@ export interface WorkspaceDeps {
   launch?(): Promise<readonly DroppedFile[]>;
   readonly now: () => string;
   readonly newId: () => string;
+  /** C3 (Z8) : défaut presse-papiers interne seul. */
+  readonly clipboard?: Clipboard;
+  /** C3 (Z11) : absent → « Exporter » sans effet. */
+  readonly itemFiles?: TypedFiles;
 }
 
 export interface Workspace {
@@ -74,6 +83,22 @@ export interface Workspace {
   /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
    *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
   pasteTable(html: string): Promise<boolean>;
+  /** C3 : une sélection existe dans l'onglet actif (écouteurs `copy` et `cut`). */
+  hasSelection(): boolean;
+  /** C3 (Z8) : copie la sélection ; `cut` : puis la supprime, en une étape. */
+  copySelection(cut: boolean): Promise<void>;
+  /** C3 (PC1) : objets collés, ou refus à dire ; vrai si pris. */
+  pasteItems(items: Uint8Array | ItemsRefusal): Promise<boolean>;
+  /** C3 : bouton « Coller », presse-papiers interne ; faux s'il est vide. */
+  pasteInternal(): Promise<boolean>;
+  /** C3 (Z11) : écrit la sélection en `Sélection.rbitem` ; faux sans sélection, sans port ou boîte annulée. */
+  exportSelection(): Promise<boolean>;
+  /** C3 (Z12) : « Insérer des pages… » : boîte d'ouverture, pages après la page montrée. */
+  insertPages(): Promise<boolean>;
+  /** C3 : action de la rangée « Sélection ». */
+  selection(a: SelectionAction): void;
+  canPaste(): boolean;
+  onClipboard(cb: () => void): () => void;
   anyDirty(): boolean;
   /** Raccourcis de fichier vers l'onglet actif ; vrai si pris. */
   key(e: FileKey): boolean;
@@ -157,66 +182,11 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
 
   const full = (): boolean => tabs.list().length >= MAX_TABS;
   const makeAssets = deps.makeAssets ?? (() => createAssetStore());
-  const typed = (blob: Blob, mime: string | undefined): Blob =>
-    mime !== undefined && mime !== "" && mime !== blob.type ? new Blob([blob], { type: mime }) : blob;
-
-  const missingOf = (doc: CoreDocument, assets: AssetStore): string[] =>
-    assets.pick(doc.citedAssets().map((a) => a.id)).missing;
-
-  /**
-   * Octets d'un onglet (R7), décidés à chaque enregistrement : sans asset cité, `doc.save` (mêmes octets qu'avant, sans
-   * charger le second module, garde `compat_socle`) ; sinon `saveParts` et le conteneur. Jamais tout par le conteneur.
-   * Un asset cité absent du magasin n'arrive pas ici : `saveBlocked` refuse l'enregistrement avant (R30).
-   */
-  async function encodeTab(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string): Promise<Uint8Array> {
-    const cited = doc.citedAssets();
-    if (cited.length === 0) return doc.save(now, appVersion);
-    const [manifest, ybin] = doc.saveParts(now, appVersion);
-    const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
-    const { present } = assets.pick(cited.map((a) => a.id));
-    return deps.codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
-  }
-
-  /** Ouverture R7 : conteneur, sinon repli `core.load` ; null si le fichier est refusé (message déjà dit). */
-  async function readDocument(name: string, bytes: Uint8Array): Promise<{ doc: CoreDocument; assets: AssetStore; unread: boolean } | null> {
-    const assets = makeAssets();
-    let contents: ContainerContents;
-    try {
-      contents = await deps.codec.read(new Blob([bytes as BlobPart]) /* le Blob copie déjà les octets */);
-    } catch (e) {
-      if (!(e instanceof CodecUnavailableError)) {
-        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
-        return null;
-      }
-      let doc: CoreDocument;
-      try {
-        doc = core.load(bytes);
-      } catch (e2) {
-        await say(`Ouverture impossible (${name}) : ${messageOf(e2)}`);
-        return null;
-      }
-      const unread = doc.citedAssets().length > 0;
-      if (unread) await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
-      return { doc, assets, unread };
-    }
-    let doc: CoreDocument;
-    try {
-      doc = core.loadParts(contents.manifest, contents.ybin);
-    } catch (e) {
-      await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
-      return null;
-    }
-    try {
-      for (const [id, blob] of contents.assets) assets.adopt(id, typed(blob, doc.asset(id)?.mime));
-    } catch (e) {
-      doc.free();
-      await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
-      return null;
-    }
-    if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
-    // un asset cité mais ignoré par le conteneur (trop gros…) : l'onglet est marqué, Enregistrer refusé (R30)
-    return { doc, assets, unread: missingOf(doc, assets).length > 0 };
-  }
+  const io = createContainerIO({ core, codec: deps.codec, say, makeAssets });
+  const clipboard = deps.clipboard ?? createClipboard(null);
+  const fragments = createFragmentOps({ io, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
+  /** Nom dit dans les messages d'un collage (aucun fichier). */
+  const PASTE_NAME = "presse-papiers";
 
   /** Onglet qui reçoit les images (R3) : session active, magasin de l'onglet, moteur, rectangle du stage. */
   const imageTarget = (t: TabSession): ImageTarget => ({
@@ -228,6 +198,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     measure: () => t.board.measure,
     textStyle: () => t.board.engine.textStyle(),
     run: (cmd) => t.board.engine.run(cmd),
+    // Z10 : le `.rbitem` déposé s'insère dans cet onglet ; refus déjà dit par `fragments`.
+    insertFragment: (rbitem, at, index, name) => fragments.insert(t, rbitem, baseName(name), at, index),
   });
 
   async function addTab(
@@ -250,7 +222,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     }
     const slot: Slot = { tab: null, id: "", title: "", unread };
     const files = createFileController({
-      encode: (now, appVersion) => encodeTab(board.doc, assets, now, appVersion),
+      encode: (now, appVersion) => io.encode(board.doc, assets, now, appVersion, { kind: "document" }),
       importFiles: (f) => ws.importFiles(f, null),
       saveBlocked: () => (slot.unread || missingOf(board.doc, assets).length > 0 ? UNREAD_ASSETS_MESSAGE : null),
       versions: board.engine,
@@ -308,7 +280,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return false;
       }
-      const read = await readDocument(name, file.bytes);
+      const read = await io.read(name, file.bytes, "document");
       if (read === null) return false;
       return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread)) !== null;
     },
@@ -341,6 +313,74 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       await insertTableGrid(imageTarget(t), grid, null, 0, say);
       return true;
     },
+    hasSelection: () => ws.active().board.engine.state().selection.length > 0,
+    copySelection(cut) {
+      const tab = ws.active();
+      const ids = [...tab.board.engine.state().selection];
+      const bytes = fragments.encodeSelection(tab).then((b) => {
+        if (b === null) throw new Error("sélection vide");
+        return b;
+      });
+      fragments.resetCascade();
+      // `put` est appelé ici, sans attente : l'écriture système part pendant le geste (Z8, HZ2-3).
+      return clipboard.put(bytes).then(
+        async (where) => {
+          if (where === "internal") await say(INTERNAL_ONLY_MESSAGE);
+          if (cut && !released.has(tab)) tab.board.engine.deleteElements(ids);
+        },
+        async (e: unknown) => {
+          if (e instanceof Error && e.message === "sélection vide") return; // l'avis (images absentes) est déjà dit
+          await say(`Copie impossible : ${messageOf(e)}`);
+        },
+      );
+    },
+    async pasteItems(items) {
+      if (items === "newer" || items === "too-big") {
+        await say(items === "newer" ? NEWER_ITEMS_MESSAGE : TOO_BIG_ITEMS_MESSAGE);
+        return true;
+      }
+      return (await fragments.insertOutcome(ws.active(), items, PASTE_NAME, null)) !== "empty"; // pris : inséré, ou refusé avec avis (PC1) ; objet vide : avis, non pris
+    },
+    async pasteInternal() {
+      const last = clipboard.last();
+      return last === null ? false : fragments.insert(ws.active(), last, PASTE_NAME, null);
+    },
+    async exportSelection() {
+      const files = deps.itemFiles;
+      if (files === undefined) return false;
+      try {
+        const bytes = await fragments.encodeSelection(ws.active(), "export");
+        return bytes === null ? false : await files.save(`${SELECTION_NAME}${RBITEM_EXTENSION}`, bytes);
+      } catch (e) {
+        await say(`Export impossible : ${messageOf(e)}`);
+        return false;
+      }
+    },
+    async insertPages() {
+      const tab = ws.active(); // onglet montré à l'appel (R3) : la boîte d'ouverture peut durer
+      let file: OpenedFile | null;
+      try {
+        file = await host.open();
+      } catch (e) {
+        await say(`Ouverture impossible : ${messageOf(e)}`);
+        return false;
+      }
+      if (file === null) return false;
+      return fragments.insertPages(tab, { ...file, name: baseName(file.name) });
+    },
+    selection(a) {
+      const engine = ws.active().board.engine;
+      const actions: Record<SelectionAction, () => void> = {
+        group: () => void engine.group(),
+        ungroup: () => void engine.ungroup(),
+        copy: () => void ws.copySelection(false),
+        paste: () => void ws.pasteInternal(),
+        export: () => void ws.exportSelection(),
+      };
+      actions[a]();
+    },
+    canPaste: () => clipboard.last() !== null,
+    onClipboard: (cb) => clipboard.onChange(cb),
     anyDirty,
     key: (e) => ws.active().files.key(e),
     async quitRequested(quit) {
