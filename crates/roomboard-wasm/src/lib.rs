@@ -1401,14 +1401,15 @@ mod tests {
             origin_y: 0.0,
             color: "#cccccc".into(),
             line: "solid".into(),
+            line_width: 1.0,
             snap: true,
             visible: true,
         }
     }
 
-    /// G12 : six nombres par niveau, `sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1.
+    /// G12, E1 : sept nombres par niveau, `sx, sy, ox, oy, snap, visible, lineWidth`, booléens en 0 ou 1.
     #[test]
-    fn grid_input_reads_six_numbers_per_level() {
+    fn grid_input_reads_seven_numbers_per_level() {
         let g = grid_input(
             true,
             true,
@@ -1417,7 +1418,7 @@ mod tests {
             vec!["#cccccc".into(), "#000000".into()],
             vec!["solid".into(), "dashed".into()],
             &[
-                40.0, 40.0, 0.0, 0.0, 1.0, 1.0, 20.0, 10.0, 5.0, -3.0, 0.0, 1.0,
+                40.0, 40.0, 0.0, 0.0, 1.0, 1.0, 1.0, 20.0, 10.0, 5.0, -3.0, 0.0, 1.0, 2.5,
             ],
         )
         .expect("grille");
@@ -1433,17 +1434,24 @@ mod tests {
                 origin_y: -3.0,
                 color: "#000000".into(),
                 line: "dashed".into(),
+                line_width: 2.5,
                 snap: false,
                 visible: true,
             }
         );
     }
 
-    /// G12 : longueurs incohérentes → `BadGrid`.
+    /// G12 : longueurs incohérentes (dont l'ancienne forme à six nombres) → `BadGrid`.
     #[test]
     fn grid_input_rejects_inconsistent_lengths() {
         let s = |len: usize| vec![String::from("x"); len];
-        for (k, c, l, n) in [(1, 1, 1, 5), (1, 0, 1, 6), (1, 1, 2, 6), (0, 0, 0, 6)] {
+        for (k, c, l, n) in [
+            (1, 1, 1, 6),
+            (1, 1, 1, 8),
+            (1, 0, 1, 7),
+            (1, 1, 2, 7),
+            (0, 0, 0, 7),
+        ] {
             assert_eq!(
                 grid_input(true, true, false, s(k), s(c), s(l), &vec![1.0; n]),
                 Err(CommandError::BadGrid),
@@ -1451,6 +1459,44 @@ mod tests {
             );
         }
         assert!(grid_input(true, false, false, vec![], vec![], vec![], &[]).is_ok());
+    }
+
+    /// DAE1, S3 : `grid_lines_of_inner` = lignes de `grid_lines` après `SetGrid` de la même grille ; vue de longueur ≠ 6 :
+    /// `BadGrid` ; page inconnue : `None`.
+    #[test]
+    fn grid_lines_of_inner_matches_grid_lines_after_set_grid() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let g = GridInput {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![GridLevelView {
+                line_width: 2.0,
+                ..squares(40.0)
+            }],
+        };
+        let view = [0.0, 0.0, 100.0, 100.0, 4.0, 8.0];
+        for bad in [&view[..5], &[0.0; 7][..]] {
+            assert_eq!(
+                d.grid_lines_of_inner(&p, &g, bad),
+                Err(CommandError::BadGrid)
+            );
+        }
+        let preview = d
+            .grid_lines_of_inner(&p, &g, &view)
+            .expect("vue")
+            .expect("lignes");
+        assert_eq!(preview.levels[0].line_width, 2.0);
+        assert_eq!(d.grid_lines_of_inner("nulle-part", &g, &view), Ok(None));
+        d.set_grid_inner(&p, Some(g)).expect("grille");
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 100.0,
+        };
+        assert_eq!(d.core.grid_lines(&p, r, 4.0, 8.0), Some(preview));
     }
 
     #[test]

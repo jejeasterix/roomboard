@@ -2751,6 +2751,7 @@ pub(crate) mod tests {
             origin_y: 0.0,
             color: color.into(),
             line: "solid".into(),
+            line_width: 1.0,
             snap: true,
             visible: true,
         }
@@ -2927,6 +2928,126 @@ pub(crate) mod tests {
                 "fichier différent au rechargement {i}"
             );
         }
+    }
+
+    /// S3, E1 : `lineWidth` 2 écrit en une étape, relu, gardé par save → load → save (mêmes octets) ; 0, 9, NaN :
+    /// `BadGrid` sans transaction.
+    #[test]
+    fn set_grid_line_width_round_trip_and_bounds() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let ok = crate::grid::GridLevelView {
+            line_width: 2.0,
+            ..grid_level("squares", 40.0, "#94a3b8")
+        };
+        let w = writes(&d);
+        for bad in [0.0, 9.0, f64::NAN] {
+            let level = crate::grid::GridLevelView {
+                line_width: bad,
+                ..ok.clone()
+            };
+            assert_eq!(
+                apply_grid(&mut d, &p, Some(grid_of(vec![level], true, false))),
+                Err(CommandError::BadGrid),
+                "{bad}"
+            );
+        }
+        assert_eq!(w.since(), 0);
+        let g = grid_of(vec![ok], true, false);
+        apply_grid(&mut d, &p, Some(g.clone())).expect("grille");
+        assert_eq!(w.since(), 1);
+        assert_eq!(page_grid(&d, &p).map(|x| x.levels[0].line_width), Some(2.0));
+        let file = save(&d, &meta).expect("save");
+        let r = load(&file).expect("load");
+        assert_eq!(page_grid(&r, &p), Some(g));
+        assert!(save(&r, &meta).expect("resave") == file, "fichier différent au rechargement");
+    }
+
+    /// Effet de bord 1, Review Focus 1 : niveau écrit sans `lineWidth` (fichier de la PR 12) : lu à 1, ses lignes
+    /// portent 1, le fichier se réenregistre à l'identique.
+    #[test]
+    fn grid_level_without_line_width_reads_as_one_and_resaves_identically() {
+        use crate::format::{load, save, SaveMeta};
+        use crate::query::Bounds;
+        use yrs::ArrayPrelim;
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let d = Document::blank();
+        let p = first(&d);
+        let page = {
+            let txn = d.read();
+            d.find_page(&txn, &p).expect("page").1
+        };
+        {
+            let mut txn = d.transact_local();
+            page.insert(
+                &mut txn,
+                "grid",
+                MapPrelim::from([(
+                    "levels",
+                    In::Array(ArrayPrelim::from(vec![In::Map(MapPrelim::from([
+                        ("kind", In::from("squares")),
+                        ("spacingX", In::Any(Any::from(40.0))),
+                        ("spacingY", In::Any(Any::from(40.0))),
+                    ]))])),
+                )]),
+            );
+        }
+        let g = page_grid(&d, &p).expect("grille lisible");
+        assert_eq!(g.levels[0].line_width, 1.0);
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 100.0,
+        };
+        let lines = d.grid_lines(&p, r, 4.0, 8.0).expect("visible");
+        assert_eq!(lines.levels[0].line_width, 1.0);
+        let file = save(&d, &meta).expect("save");
+        let back = load(&file).expect("load");
+        assert_eq!(page_grid(&back, &p), Some(g));
+        assert!(save(&back, &meta).expect("resave") == file, "relu puis réenregistré : mêmes octets");
+    }
+
+    /// DAE1, S3 : `grid_lines_of` d'une grille non enregistrée = `grid_lines` après `SetGrid` de la même grille ; page
+    /// inconnue → `None` ; rien n'est écrit.
+    #[test]
+    fn grid_lines_of_matches_grid_lines_after_set_grid() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let g = grid_of(
+            vec![
+                grid_level("seyes", 30.24, "#7b68ee"),
+                crate::grid::GridLevelView {
+                    line_width: 3.0,
+                    ..grid_level("dots", 40.0, "#000000")
+                },
+            ],
+            true,
+            false,
+        );
+        let r = crate::query::Bounds {
+            x0: -13.3,
+            y0: 1_000_007.0,
+            x1: 786.7,
+            y1: 1_000_607.0,
+        };
+        let w = writes(&d);
+        let preview = d.grid_lines_of(&p, &g, r, 4.0, 8.0).expect("lignes");
+        assert_eq!(w.since(), 0);
+        assert_eq!(d.grid_lines(&p, r, 4.0, 8.0), None);
+        assert_eq!(d.grid_lines_of("nulle-part", &g, r, 4.0, 8.0), None);
+        apply_grid(&mut d, &p, Some(g)).expect("grille");
+        assert_eq!(d.grid_lines(&p, r, 4.0, 8.0), Some(preview));
     }
 
     /// S2, G4, G14 : niveau `hexagon` et clé inconnue écrits par yrs (version plus récente) : page lisible, gardés aux
