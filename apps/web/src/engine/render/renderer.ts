@@ -6,6 +6,8 @@ import type { EditOverlay } from "./overlay";
 export interface PageView {
   readonly id: string;
   readonly elementIds: readonly string[];
+  /** Fond de la page (C6a, DA4) ; absent : `PAGE_BACKGROUND`. */
+  readonly background?: string;
 }
 
 /** Trait en cours : contour du StrokeBuilder (polygones x, y monde séparés par NaN, NaN) et queue prédite. */

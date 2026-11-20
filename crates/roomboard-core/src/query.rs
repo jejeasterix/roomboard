@@ -69,7 +69,7 @@ fn world_bounds(t: &Transform, poly: &[f32]) -> Option<Bounds> {
 
 /// Contour local porté en monde ; les sommets non finis (séparateurs) sont recopiés tels quels, pour que la règle
 /// pair-impair et la distance aux arêtes les traitent comme dans le repère local.
-fn world_outline(t: &Transform, poly: &[f32]) -> Vec<f32> {
+pub(crate) fn world_outline(t: &Transform, poly: &[f32]) -> Vec<f32> {
     let mut out = Vec::with_capacity(poly.len());
     for c in poly.as_chunks::<2>().0 {
         if c[0].is_finite() && c[1].is_finite() {

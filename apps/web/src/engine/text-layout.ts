@@ -44,6 +44,36 @@ export function graphemes(s: string): string[] {
   return Array.from(cache.seg.segment(s), (x) => x.segment);
 }
 
+let words: { readonly ctor: typeof Intl.Segmenter; readonly seg: Intl.Segmenter } | null = null;
+/** Caractère d'un mot du repli (D26) : lettre, chiffre ou marque Unicode. */
+const WORD_CHAR = /[\p{L}\p{N}\p{M}]/u;
+
+/**
+ * Mot qui contient le rang `offset` (unités UTF-16) : [début, fin) d'un segment UAX 29 « word-like » (`Intl.Segmenter`,
+ * granularité `word`) ; null sur une espace, une ponctuation ou hors du texte (D6). Sans `Intl.Segmenter` : suite
+ * maximale de lettres, chiffres et marques, par points de code (D26).
+ */
+export function wordAt(content: string, offset: number): readonly [number, number] | null {
+  if (!Number.isInteger(offset) || offset < 0 || offset >= content.length) return null;
+  const ctor = (Intl as { Segmenter?: typeof Intl.Segmenter }).Segmenter;
+  if (ctor) {
+    if (words?.ctor !== ctor) words = { ctor, seg: new ctor(undefined, { granularity: "word" }) };
+    const s = words.seg.segment(content).containing(offset);
+    return s !== undefined && s.isWordLike === true ? [s.index, s.index + s.segment.length] : null;
+  }
+  const points: { readonly at: number; readonly ch: string }[] = [];
+  for (const ch of Array.from(content)) points.push({ at: (points.at(-1)?.at ?? 0) + (points.at(-1)?.ch.length ?? 0), ch });
+  const k = points.findIndex((p) => p.at <= offset && offset < p.at + p.ch.length);
+  const isWord = (i: number): boolean => WORD_CHAR.test(points[i]?.ch ?? "");
+  if (k < 0 || !isWord(k)) return null;
+  let a = k;
+  let b = k;
+  while (a > 0 && isWord(a - 1)) a--;
+  while (b + 1 < points.length && isWord(b + 1)) b++;
+  const last = points[b];
+  return [points[a]?.at ?? 0, (last?.at ?? 0) + (last?.ch.length ?? 0)];
+}
+
 /** Style résolu d'un segment (T3) : `color` null = couleur de l'élément, `font` null = police du socle. */
 export interface SegmentStyle {
   readonly size: number;
@@ -216,6 +246,39 @@ export function layoutRich(spans: readonly TextSpan[], base: { readonly size: nu
     });
   }
   return lines;
+}
+
+/**
+ * Caractère sous un point local de la boîte (C6a, D6) : rang UTF-16, dans le contenu (`spans` bout à bout), du graphème
+ * dont la case [x, x + largeur) × [haut de ligne, haut + hauteur) contient (lx, ly). Mêmes lignes que le dessin
+ * (`layoutRich`) : chaque ligne est retrouvée dans le contenu à partir de la fin de la précédente (seules des espaces ou
+ * un saut de ligne les séparent). null hors des caractères : marge, après la fin d'une ligne, sous la dernière.
+ */
+export function offsetAt(spans: readonly TextSpan[], base: { readonly size: number }, boxWidth: number, measure: Measure, lx: number, ly: number): number | null {
+  if (!Number.isFinite(lx) || !Number.isFinite(ly) || lx < 0 || ly < 0) return null;
+  const content = spans.map((s) => s.text).join("");
+  let cursor = 0;
+  for (const line of layoutRich(spans, base, boxWidth, measure)) {
+    const text = line.segments.map((s) => s.text).join("");
+    const found = text === "" ? cursor : content.indexOf(text, cursor);
+    const start = found < 0 ? cursor : found;
+    cursor = start + text.length;
+    if (ly < line.top || ly >= line.top + line.height) continue;
+    let at = start;
+    for (const seg of line.segments) {
+      const face = faceOf(seg.style);
+      let k = 0;
+      for (const g of graphemes(seg.text)) {
+        const x0 = seg.x + measure(seg.text.slice(0, k), seg.style.size, face);
+        const x1 = seg.x + measure(seg.text.slice(0, k + g.length), seg.style.size, face);
+        if (lx >= x0 && lx < x1) return at + k;
+        k += g.length;
+      }
+      at += seg.text.length;
+    }
+    return null;
+  }
+  return null;
 }
 
 export function layoutText(content: string, size: number, boxWidth: number, measure: Measure): string[] {

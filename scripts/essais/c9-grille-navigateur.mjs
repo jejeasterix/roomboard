@@ -8,32 +8,16 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, serve, stageBox } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, inkIn, item, loadPlaywright, serve, stageBox } from "./commun.mjs";
 
 const LABEL = "C9 grille";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const PANEL = "#grille";
 const field = (k) => `${PANEL} [data-grille="${k}"]`;
 
-/** Pixels différents du fond de page (somme RVB < 750) dans [x0, y0, x1, y1], px CSS de `#scene` : le gris des grilles
- *  neuves (#94a3b8, somme 495) compte, alors qu'`inkIn` (commun.mjs, somme < 300) ne voit que l'encre sombre. */
-function paintedIn(page, box) {
-  return page.$eval(
-    "#scene",
-    (c, [x0, y0, x1, y1]) => {
-      const ctx = c.getContext("2d");
-      const sx = c.width / c.clientWidth;
-      const sy = c.height / c.clientHeight;
-      const w = Math.max(1, Math.round((x1 - x0) * sx));
-      const h = Math.max(1, Math.round((y1 - y0) * sy));
-      const d = ctx.getImageData(Math.round(x0 * sx), Math.round(y0 * sy), w, h).data;
-      let n = 0;
-      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 750) n++;
-      return n;
-    },
-    box,
-  );
-}
+/** Pixels différents du fond de page (somme RVB < 750) : le gris des grilles neuves (#94a3b8, somme 495) compte, alors
+ *  que l'encre seule (`inkIn` sans option, somme < 300) ne le voit pas (C6a, D27 : un seul compteur). */
+const paintedIn = (page, box) => inkIn(page, box, { max: 750 });
 
 async function scenario(page, url, { captures, tmp }) {
   const errors = [];

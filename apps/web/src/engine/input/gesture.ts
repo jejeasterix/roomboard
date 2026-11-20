@@ -3,7 +3,7 @@ import type { ShapeKind } from "../../core/api";
 import type { InputSample } from "./sampler";
 
 /** Outil d'un geste de tracé ; le bouton gomme du stylet impose "eraser" (D12). */
-export type DrawTool = "pen" | "eraser" | "select" | ShapeKind | "text" | "table";
+export type DrawTool = "pen" | "eraser" | "select" | ShapeKind | "text" | "table" | "fill";
 
 /**
  * Fin d'un geste. "end" : relâché. "cancel" : fin anormale (pointercancel, capture perdue) ; l'encre reçue est gardée,

@@ -314,3 +314,31 @@ describe("aperçu de grille (C9 éditeur)", () => {
     expect(scene.log.filter((l) => l.startsWith("preview"))).toEqual(["preview p", "preview null"]);
   });
 });
+
+describe("WebGL2 — fond de page (C6a)", () => {
+  const partial: LiveLayer = { strokes: [], erasers: [{ path: new Float32Array([0, 0, 100, 0]), radius: 10, mode: "partial" }] };
+
+  it("gomme partielle : fond retenu du dernier drawScene, transmis à la scène (D20)", () => {
+    const { gl, r, scene } = make();
+    r.drawScene({ id: "p", elementIds: [], background: "#bfdbfe" }, IDENTITY, new Set());
+    r.drawLive(partial, IDENTITY);
+    expect(scene.log).toContain("scene p");
+    expect(gl.draws.map((d) => d.rgba)).toEqual([f32(parseColor(SURROUND_COLOR)), f32(parseColor("#bfdbfe"))]);
+  });
+
+  it("fond illisible pour WebGL (nom CSS) : PAGE_BACKGROUND, aucune couleur signalée (PC14)", () => {
+    const { gl, r } = make();
+    r.drawScene({ id: "p", elementIds: [], background: "rouge" }, IDENTITY, new Set());
+    r.drawLive(partial, IDENTITY);
+    expect(gl.draws[1]?.rgba).toEqual(f32(parseColor(PAGE_BACKGROUND)));
+    expect(r.badColors.has("rouge")).toBe(false);
+  });
+
+  it("fond accepté par le canvas (« red ») : la bande WebGL reprend la couleur retenue par la scène (point 1)", () => {
+    const { gl, r, scene } = make();
+    (scene as unknown as { pageColor: string }).pageColor = "#ff0000";
+    r.drawScene({ id: "p", elementIds: [], background: "red" }, IDENTITY, new Set());
+    r.drawLive(partial, IDENTITY);
+    expect(gl.draws[1]?.rgba).toEqual(f32([1, 0, 0, 1]));
+  });
+});

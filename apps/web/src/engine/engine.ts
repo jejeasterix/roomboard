@@ -13,6 +13,8 @@ import { editAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
+import { validColor } from "../core/rich-text";
+import { PAGE_BACKGROUND } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
@@ -41,6 +43,8 @@ export interface EngineState {
   readonly tableShades: number;
   /** État de la barre de format (C7b, R15) : saisie ouverte de l'outil Texte ou Tableau actif ; null sinon. */
   readonly textFormat: FormatState | null;
+  /** Couleur du pot (C6a, D16) ; null = « Aucune ». Facultative (PC5) : le moteur la publie toujours. */
+  readonly fillColor?: string | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -65,6 +69,8 @@ export interface ToolFactories {
   text?(ctx: ToolContext, style: () => TextStyle): TextTool;
   /** Outil Tableau (C10a) ; absent : outil inerte. */
   table?(ctx: ToolContext, style: () => TextStyle): TableTool;
+  /** Outil Pot (C6a, D15) ; `color` lue au relâché ; absent : outil inerte. */
+  fill?(ctx: ToolContext, color: () => string | null): GestureTool;
 }
 
 export interface EngineDeps {
@@ -119,6 +125,9 @@ export interface Engine {
   endGridPreview(): void;
   /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
   setPenStyle(s: StrokeStyle): void;
+  /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
+   *  invalide est ignorée. */
+  setFillColor(color: string | null): void;
   /** Bouton de structure de la rangée du tableau (C10a, DAC4) : sur la cellule active de l'outil Tableau. */
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
@@ -142,6 +151,8 @@ export interface Engine {
 
 /** Stylo par défaut (H1-8, HL3-3). */
 export const DEFAULT_PEN_STYLE: StrokeStyle = { color: "#000000", width: 4 };
+/** Couleur du pot au démarrage (D16). */
+export const DEFAULT_FILL_COLOR = "#dc2626";
 /** Ctrl+molette : facteur exp(-deltaY × vitesse) (HL3-6). */
 export const WHEEL_ZOOM_SPEED = 0.002;
 /** Durées d'image retenues (une minute à 60 Hz) : le banc et son export en lisent au plus autant (HL3b-8). */
@@ -199,6 +210,7 @@ export function createEngine(deps: EngineDeps): Engine {
   let pageId: string = first;
   let lastIndex = 0;
   let style = deps.penStyle ?? DEFAULT_PEN_STYLE;
+  let fillColor: string | null = DEFAULT_FILL_COLOR;
   let camera: Camera = IDENTITY;
   const cameraListeners = new Set<(c: Camera) => void>();
   const setCamera = (c: Camera): void => {
@@ -286,6 +298,7 @@ export function createEngine(deps: EngineDeps): Engine {
       tableMerges: tableCounts().merges,
       tableShades: tableCounts().shades,
       textFormat: tool === "text" ? textTool.formatState() : tool === "table" ? tableTool.formatState() : null,
+      fillColor,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -418,6 +431,7 @@ export function createEngine(deps: EngineDeps): Engine {
     arrow: shapeTool("arrow"),
     table: tableTool,
     text: textTool,
+    fill: deps.tools.fill?.(ctx, () => fillColor) ?? inertTool(),
   };
   const toolList: readonly GestureTool[] = Object.values(tools);
 
@@ -433,7 +447,12 @@ export function createEngine(deps: EngineDeps): Engine {
     const overlay = mergeOverlays(parts.map((p) => p.overlay));
     const key = overlayKey(overlay);
     if (sceneDirty || !sameSet(hidden, lastHidden) || key !== lastOverlay) {
-      renderer.drawScene({ id: pageId, elementIds: doc.elementIds(pageId) }, camera, hidden, overlay);
+      renderer.drawScene(
+        { id: pageId, elementIds: doc.elementIds(pageId), background: doc.page(pageId)?.background ?? PAGE_BACKGROUND },
+        camera,
+        hidden,
+        overlay,
+      );
       sceneDirty = false;
       lastHidden = hidden;
       lastOverlay = key;
@@ -634,6 +653,11 @@ export function createEngine(deps: EngineDeps): Engine {
       if (!previewing) return;
       stopPreview();
       requestScene();
+    },
+    setFillColor(c) {
+      if (c !== null && (typeof c !== "string" || !validColor(c))) return;
+      fillColor = c;
+      emit();
     },
     setPenStyle(s) {
       if (typeof s.color !== "string" || s.color === "" || !Number.isFinite(s.width) || !(s.width > 0)) return;

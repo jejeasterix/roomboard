@@ -83,7 +83,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
     expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "export-pdf"]);
     const simple = catalog(SIMPLE, "outils");
-    expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table"]);
+    expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");
     expect(pages.every((e) => e.kind === "action")).toBe(true);
     expect(pages.map((e) => e.ref)).not.toContain("page-next");
@@ -123,7 +123,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   });
 
   it("champs modifiables : stylo = couleur et épaisseur ; autres outils : aucun ; clés et outils non montrés gardés", () => {
-    expect(PRESET_TOOLS).toEqual(["pen"]);
+    expect(PRESET_TOOLS).toEqual(["pen", "fill"]);
     expect(presetFields("pen").map((f) => [f.key, f.input])).toEqual([["color", "color"], ["width", "number"]]);
     expect(presetFields("eraser")).toEqual([]);
     const p = updatePreset(withUnknownKeys(), "pen", "noir", { color: "#111111" });
@@ -186,5 +186,30 @@ describe("profile-edit (C1, DAC1-1)", () => {
     ];
     expect(all).toHaveLength(13);
     expect(JSON.stringify(serializeProfile(DEFAUT))).toBe(before);
+  });
+});
+
+describe("préréglages du pot (C6a, D17)", () => {
+  it("champs : couleur seule pour fill ; le stylo garde couleur et épaisseur", () => {
+    expect(presetFields("fill").map((f) => [f.key, f.input])).toEqual([["color", "color"]]);
+    expect(presetFields("pen").map((f) => f.key)).toEqual(["color", "width"]);
+  });
+  it("addPreset fill : noir, sans épaisseur ; la couleur s'édite, l'épaisseur est ignorée", () => {
+    const p = addPreset(DEFAUT, "fill");
+    expect(p.presets.fill).toEqual([{ id: "couleur", label: "Couleur 1", color: "#000000", rest: {} }]);
+    expect(Object.hasOwn(p.presets.fill![0]!, "width")).toBe(false);
+    const q = updatePreset(p, "fill", "couleur", { color: "#123456" });
+    expect(q.presets.fill![0]!.color).toBe("#123456");
+    expect(p.presets.pen).toEqual(DEFAUT.presets.pen);
+  });
+  it("removePreset du dernier préréglage du pot : la clé presets.fill est retirée (PC7) ; le stylo garde sa clé vide", () => {
+    const two = addPreset(addPreset(DEFAUT, "fill"), "fill");
+    const one = removePreset(two, "fill", "couleur");
+    expect(one.presets.fill!.map((x) => x.id)).toEqual(["couleur-2"]);
+    const none = removePreset(one, "fill", "couleur-2");
+    expect(Object.hasOwn(none.presets, "fill")).toBe(false);
+    let pen = DEFAUT;
+    for (const x of pens(DEFAUT)) pen = removePreset(pen, "pen", x);
+    expect(pen.presets.pen).toEqual([]);
   });
 });
