@@ -22,6 +22,9 @@ pub const DEFAULT_GRID_LINE: &str = "solid";
 pub const SEYES_FINE_ALPHA: f64 = 0.5;
 /// Tolérance d'indice, en pas : une ligne posée sur un bord compte comme dedans.
 const EPS: f64 = 1e-9;
+/// Résidu d'arrondi d'un déplacement aimanté, en unités de page : sous ce seuil, la composante vaut 0 exact (G7) ;
+/// même seuil que la fausse liaison (`SNAP_DELTA_EPS`).
+const DELTA_EPS: f64 = 1e-9;
 /// Lignes d'une portée (`music`, G3).
 const STAFF_LINES: u8 = 5;
 
@@ -82,7 +85,9 @@ fn out_bool(o: Option<Out>) -> Option<bool> {
 
 /// Grille lue avec tolérance (G4) : `grid` qui n'est pas un `Y.Map` → `None` ; `levels` absent ou qui n'est pas un
 /// `Y.Array` → `[]` ; niveau qui n'est pas un `Y.Map`, sans pas finis > 0 ou sans `kind` non vide → absent de la vue,
-/// gardé dans le document ; `color` et `line` absents ou vides → défaut. Toute vue lue passe donc `validate` telle quelle.
+/// gardé dans le document ; `color` et `line` absents ou vides → défaut. Toute vue d'au plus `MAX_GRID_LEVELS` niveaux
+/// lue passe donc `validate` telle quelle. Limite connue : la lecture ne plafonne pas le nombre de niveaux ; une vue de
+/// plus de `MAX_GRID_LEVELS` niveaux (autre écrivain) les garde tous, et `SetGrid` la refuse telle quelle en `BadGrid`.
 pub(crate) fn read<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<GridView> {
     let Some(Out::YMap(g)) = page.get(txn, "grid") else {
         return None;
@@ -267,14 +272,15 @@ fn snap_level(l: &GridLevelView, width: f64, (x, y): (f64, f64)) -> Option<(f64,
 
 /// Point aimanté (G6, `nearestGridPoint` d'ActCraft) : `None` si le magnétisme est coupé ou si aucun niveau aimanté
 /// d'un type connu n'accroche ; sinon le candidat le plus proche (distance euclidienne, sans seuil), le premier niveau
-/// gagnant à égalité. Une grille ou un niveau invisible accroche quand même (HG3).
+/// gagnant à égalité. Une grille ou un niveau invisible accroche quand même (HG3). Un candidat non fini (pas si grand
+/// que `10·sy` déborde) est ignoré : à distance `NaN`, il ne serait jamais battu.
 pub fn snap_point(g: &GridView, width: f64, p: (f64, f64)) -> Option<(f64, f64)> {
     if !g.snap {
         return None;
     }
     let mut best: Option<((f64, f64), f64)> = None;
     for l in g.levels.iter().filter(|l| l.snap && is_known_kind(&l.kind)) {
-        let Some(q) = snap_level(l, width, p) else {
+        let Some(q) = snap_level(l, width, p).filter(|q| q.0.is_finite() && q.1.is_finite()) else {
             continue;
         };
         let d = dist2(q, p);
@@ -287,7 +293,8 @@ pub fn snap_point(g: &GridView, width: f64, p: (f64, f64)) -> Option<(f64, f64)>
 
 /// Déplacement aimanté (G7) : candidats = 4 coins puis centre de `b`, déplacés de `(dx, dy)` ; on garde celui dont le
 /// point aimanté `q` est le plus proche (le premier à égalité) et le déplacement rendu est `q − candidat d'origine`,
-/// exactement nul quand l'élément revient à sa place ; brut sans accroche.
+/// chaque composante sous `DELTA_EPS` ramenée à 0 : exactement nul quand l'élément revient à sa place, même si ses
+/// coins portent un résidu d'arrondi ; brut sans accroche.
 pub fn snap_delta(g: &GridView, width: f64, b: Bounds, (dx, dy): (f64, f64)) -> (f64, f64) {
     let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
     let mut best: Option<((f64, f64), f64)> = None;
@@ -307,7 +314,8 @@ pub fn snap_delta(g: &GridView, width: f64, b: Bounds, (dx, dy): (f64, f64)) -> 
             best = Some(((q.0 - x, q.1 - y), d));
         }
     }
-    best.map_or((dx, dy), |(delta, _)| delta)
+    let settle = |v: f64| if v.abs() < DELTA_EPS { 0.0 } else { v };
+    best.map_or((dx, dy), |((ddx, ddy), _)| (settle(ddx), settle(ddy)))
 }
 
 /// Indices `k` (premier, dernier) tels que `o + k·step` ∈ [lo, hi] ; `(0, -1)` si aucun ; `None` si leur nombre dépasse
@@ -351,7 +359,8 @@ fn horizontals(out: &mut Vec<f64>, o: f64, step: f64, c: &Bounds, keep: impl Fn(
 }
 
 /// Portées (`music`) : 5 lignes à `sy`, une portée tous les `10·sy` ; le plafond porte sur les lignes, donc au plus
-/// `MAX_GRID_DOTS / 5` portées, sinon la famille est sautée entière.
+/// `MAX_GRID_DOTS / 5` portées, sinon la famille est sautée entière. Une ligne sur un bord de `c` (à `EPS·sy` près)
+/// compte comme dedans, comme dans `indices`.
 fn staves(out: &mut Vec<f64>, oy: f64, sy: f64, c: &Bounds) {
     let period = 10.0 * sy;
     let cap = MAX_GRID_DOTS / usize::from(STAFF_LINES);
@@ -359,7 +368,7 @@ fn staves(out: &mut Vec<f64>, oy: f64, sy: f64, c: &Bounds) {
         for k in a..=b {
             for l in 0..STAFF_LINES {
                 let y = oy + k as f64 * period + f64::from(l) * sy;
-                if (c.y0..=c.y1).contains(&y) {
+                if (c.y0 - EPS * sy..=c.y1 + EPS * sy).contains(&y) {
                     out.extend([c.x0, y, c.x1, y]);
                 }
             }
@@ -444,14 +453,6 @@ fn level_lines(
     let (sx, sy, ox, oy) = (l.spacing_x, l.spacing_y, l.origin_x, l.origin_y);
     let (mut main, mut fine, mut dots) = (Vec::new(), Vec::new(), Vec::new());
     match l.kind.as_str() {
-        "squares" => {
-            if sx >= min_step {
-                verticals(&mut main, ox, sx, c);
-            }
-            if sy >= min_step {
-                horizontals(&mut main, oy, sy, c, |_| true);
-            }
-        }
         "lines" => {
             if sy >= min_step {
                 horizontals(&mut main, oy, sy, c, |_| true);
@@ -472,14 +473,14 @@ fn level_lines(
                 staves(&mut main, oy, sy, c);
             }
         }
-        "seyes" => {
+        "squares" | "seyes" => {
             if sx >= min_step {
                 verticals(&mut main, ox, sx, c);
             }
             if sy >= min_step {
                 horizontals(&mut main, oy, sy, c, |_| true);
             }
-            if sy / 4.0 >= min_step {
+            if l.kind == "seyes" && sy / 4.0 >= min_step {
                 horizontals(&mut fine, oy, sy / 4.0, c, |k| k.rem_euclid(4) != 0);
             }
         }
@@ -1217,7 +1218,7 @@ mod tests {
         let (doc, page) = page_with(In::Map(MapPrelim::from([("levels", many)])));
         let g = read(&doc.transact(), &page).expect("grille lisible");
         assert_eq!(g.levels.len(), MAX_GRID_LEVELS + 1);
-        assert!(validate(&g).is_err());
+        assert_eq!(validate(&g), Err(CommandError::BadGrid));
     }
 
     /// G9, relecture T1 : le plafond des portées porte sur les lignes (5 par portée), comme `MAX_GRID_DOTS` le dit.
