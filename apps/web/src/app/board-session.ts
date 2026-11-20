@@ -7,6 +7,7 @@
  * contexte WebGL2 (`choice.release()`) : `engine.dispose()` n'arrête que la boucle.
  */
 import type { CoreDocument } from "../core/api";
+import { createAssetStore, type AssetStore } from "../core/asset-store";
 import type { Camera } from "../engine/camera";
 import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
 import { createMiddlePan } from "../engine/input/middle-pan";
@@ -14,6 +15,7 @@ import { withLinearPrediction } from "../engine/input/predict";
 import { createRouter, SECOND_FINGER_MS, type RouterOptions } from "../engine/input/router";
 import { createSampler, type Sampler, type SamplerOptions } from "../engine/input/sampler";
 import type { Support } from "../engine/input/stats";
+import { createImageCache, type BitmapDecoder } from "../engine/render/image-cache";
 import { attachInkTrail, type InkLike } from "../engine/render/ink-trail";
 import { chooseRenderer, type RendererChoice } from "../engine/render/select";
 import { trailStyleFor } from "../engine/render/trail-style";
@@ -25,6 +27,7 @@ import {
   type SettingsStore,
 } from "../engine/settings";
 import type { Measure } from "../engine/text-layout";
+import { decodeImage, kindOfMime } from "../platform/image-import";
 import { createEraserTool } from "../engine/tools/eraser";
 import { createPenTool } from "../engine/tools/pen";
 import { createSelectTool } from "../engine/tools/select";
@@ -45,7 +48,12 @@ export interface SessionShared {
   readonly measure: Measure;
   /** `core.version()`, pour le banc. */
   readonly coreVersion: string;
+  /** Décodeur des bitmaps (tests) ; défaut : `decodeImage` du navigateur. */
+  readonly decode?: BitmapDecoder;
 }
+
+/** Bitmap d'affichage d'un asset (R13, R15) : le type du Blob (posé à l'insertion ou à l'ouverture) choisit le SVG. */
+const decodeBitmap: BitmapDecoder = async (blob) => (await decodeImage(blob, kindOfMime(blob.type) ?? "png")).bitmap;
 
 export interface BoardSession {
   readonly doc: CoreDocument;
@@ -75,10 +83,14 @@ function cameraTag(c: Camera): string {
 
 /** Si une étape de la création échoue, tout ce qui est déjà posé (scène, écouteurs, contexte…) est libéré, puis l'erreur
  *  est relancée : aucune scène orpheline dans le conteneur. */
-export async function createBoardSession(doc: CoreDocument, shared: SessionShared): Promise<BoardSession> {
+export async function createBoardSession(
+  doc: CoreDocument,
+  shared: SessionShared,
+  assets: AssetStore = createAssetStore(),
+): Promise<BoardSession> {
   const undo: Array<() => void> = [];
   try {
-    return await buildBoardSession(doc, shared, undo);
+    return await buildBoardSession(doc, shared, assets, undo);
   } catch (e) {
     for (const free of undo.reverse()) {
       try {
@@ -91,7 +103,12 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
   }
 }
 
-async function buildBoardSession(doc: CoreDocument, shared: SessionShared, undo: Array<() => void>): Promise<BoardSession> {
+async function buildBoardSession(
+  doc: CoreDocument,
+  shared: SessionShared,
+  assets: AssetStore,
+  undo: Array<() => void>,
+): Promise<BoardSession> {
   const { container, settings, parsed, support, measure } = shared;
   const stage = document.createElement("div");
   stage.className = "rb-stage";
@@ -108,8 +125,12 @@ async function buildBoardSession(doc: CoreDocument, shared: SessionShared, undo:
   const { signal } = listening;
   undo.push(() => listening.abort());
 
+  // Bitmaps des images (R16) : le cache appelle `redraw` quand un bitmap arrive ; le moteur est créé plus bas.
+  let redraw = (): void => undefined;
+  const images = createImageCache(assets, shared.decode ?? decodeBitmap, () => redraw());
+  undo.push(() => images.dispose());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
-  const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on");
+  const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", { images });
   // Zone de saisie hors de la scène (CL4-2) ; l'outil Texte est créé par le moteur, après elle. Sans id tant que la
   // session n'est pas active (un seul #texte-edition dans la page, CL5b-2).
   let textTool: TextTool | null = null;
@@ -138,6 +159,7 @@ async function buildBoardSession(doc: CoreDocument, shared: SessionShared, undo:
   });
 
   undo.push(() => engine.dispose());
+  redraw = () => engine.redraw();
 
   // Échelon 1 de DA9 : fusionnés et prédits ; pointerrawupdate coupé (pas de prédits sous Chromium avec lui).
   // Paume (D18, réglage) : lue à chaque pose du stylet.
@@ -315,6 +337,7 @@ async function buildBoardSession(doc: CoreDocument, shared: SessionShared, undo:
       middlePan.dispose();
       sampler.dispose();
       engine.dispose();
+      images.dispose();
       choice.release();
       doc.free();
       stage.remove();

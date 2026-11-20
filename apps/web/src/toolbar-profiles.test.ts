@@ -39,4 +39,21 @@ describe("profils livrés (T83, CL5b-9)", () => {
     expect(Object.isFrozen(DEFAULT_PROFILE_JSON)).toBe(true);
     expect(builtinProfile("inconnu")).toBeNull();
   });
+
+  it("defaut : « Importer » après « Ouvrir » dans le groupe fichier ; simple ne l'a pas (R18)", () => {
+    const fichier = builtinProfile("defaut")!.toolbars[0]!.groups.find((g) => g.id === "fichier")!;
+    const fichierIds = fichier.items.map((i) => i.id);
+    expect(fichierIds.indexOf("file-import")).toBe(fichierIds.indexOf("file-open") + 1);
+    expect(fichier.items.find((i) => i.id === "file-import")?.label).toBe("Importer");
+    expect(ids("simple")).not.toContain("file-import");
+  });
+
+  it("un profil enregistré sans « Importer » ne le reçoit pas", () => {
+    const json = structuredClone(DEFAULT_PROFILE_JSON) as { id: string; toolbars: { groups: { id: string; items: { id: string }[] }[] }[] };
+    json.id = "perso";
+    for (const g of json.toolbars[0]!.groups) g.items = g.items.filter((i) => i.id !== "file-import");
+    const r = parseProfile(json);
+    if ("errors" in r) throw new Error(r.errors.join(" ; "));
+    expect(r.profile.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)))).not.toContain("file-import");
+  });
 });

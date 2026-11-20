@@ -5,10 +5,11 @@ import {
   APP_VERSION,
   createFileController,
   fileCommandOf,
+  UNREAD_ASSETS_MESSAGE,
   type FileControllerDeps,
   type VersionSource,
 } from "./controller";
-import type { FileHost, OpenedFile, SaveTarget, ShellPort } from "./files";
+import type { DroppedFile, FileHost, OpenedFile, SaveTarget, ShellPort } from "./files";
 
 function versionsOf(doc: CoreDocument): VersionSource & { bump(): void; listeners(): number } {
   const cbs = new Set<(s: { version: number }) => void>();
@@ -47,7 +48,8 @@ type SaveBehaviour = "write" | null | Error | Deferred<SaveTarget | null>;
 
 function memoryHost() {
   const files = new Map<string, Uint8Array>();
-  const calls = { save: [] as SaveTarget[], open: 0 };
+  const calls = { save: [] as SaveTarget[], open: 0, pick: 0 };
+  let picked: DroppedFile[] = [];
   let save: SaveBehaviour = "write";
   let open: OpenedFile | null | Error = null;
   const host: FileHost = {
@@ -58,12 +60,16 @@ function memoryHost() {
       if (open instanceof Error) throw open;
       return open;
     },
-    async save(bytes, target) {
+    async pick() {
+      calls.pick += 1;
+      return picked;
+    },
+    async save(encode, target) {
       calls.save.push(target);
       if (save instanceof Error) throw save;
       if (save === null) return null;
       if (save !== "write") return save.promise;
-      files.set(target.name, bytes.slice());
+      files.set(target.name, (await encode()).slice());
       return { kind: "download", name: target.name };
     },
   };
@@ -73,6 +79,9 @@ function memoryHost() {
     calls,
     onSave(b: SaveBehaviour) {
       save = b;
+    },
+    onPick(f: DroppedFile[]) {
+      picked = f;
     },
     onOpen(o: OpenedFile | null | Error) {
       open = o;
@@ -108,7 +117,9 @@ function fakeShell(answer: boolean) {
 interface SetupOptions {
   readonly opened?: FileControllerDeps["opened"];
   readonly answer?: boolean;
-  readonly docSave?: CoreDocument["save"];
+  readonly encode?: FileControllerDeps["encode"];
+  readonly saveBlocked?: FileControllerDeps["saveBlocked"];
+  readonly importFiles?: FileControllerDeps["importFiles"];
   readonly openInTab?: FileControllerDeps["openInTab"];
   readonly newTab?: FileControllerDeps["newTab"];
 }
@@ -120,7 +131,9 @@ function setup(o: SetupOptions = {}) {
   const s = fakeShell(o.answer ?? true);
   const tabs = { opened: [] as OpenedFile[], news: 0 };
   const ctl = createFileController({
-    doc: o.docSave ? { save: o.docSave } : doc,
+    encode: o.encode ?? (async (now, v) => doc.save(now, v)),
+    importFiles: o.importFiles ?? (async () => undefined),
+    ...(o.saveBlocked ? { saveBlocked: o.saveBlocked } : {}),
     versions,
     host: h.host,
     shell: s.shell,
@@ -314,16 +327,16 @@ describe("contrôleur des fichiers (D26)", () => {
     expect([t.s.log.confirms, t.tabs.news, t.ctl.isDirty(), t.doc.elementIds(pageOf(t.doc)).length]).toEqual([[], 1, true, 1]);
   });
 
-  it("sérialisation impossible : message, l'hôte n'est pas appelé, reste modifié", async () => {
+  it("encodage impossible : message, rien d'écrit, reste modifié (R11 : la cible avant l'encodage)", async () => {
     const t = setup({
-      docSave: () => {
+      encode: async () => {
         throw new Error("mémoire épuisée");
       },
     });
     stroke(t.doc, t.versions);
     expect(await t.ctl.run("save")).toBe(false);
     expect(t.s.log.notes).toEqual(["Enregistrement impossible : mémoire épuisée"]);
-    expect([t.h.calls.save.length, t.ctl.isDirty()]).toEqual([0, true]);
+    expect([t.h.files.size, t.ctl.isDirty()]).toEqual([0, true]);
   });
 
   it("openInTab qui lève : message « Ouverture impossible », la commande rend false", async () => {
@@ -475,5 +488,61 @@ describe("contrôleur des fichiers (D26)", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+});
+
+describe("contrôleur : encode, import, refus R30 (R11, R18, R30)", () => {
+  it("boîte annulée : encode jamais appelé, toujours modifié", async () => {
+    const encode = vi.fn(async () => new Uint8Array([1]));
+    const t = setup({ encode });
+    stroke(t.doc, t.versions);
+    t.h.onSave(null);
+    expect(await t.ctl.run("save")).toBe(false);
+    expect(encode).not.toHaveBeenCalled();
+    expect(t.ctl.isDirty()).toBe(true);
+  });
+
+  it("encode reçoit l'heure et la version de l'application", async () => {
+    const encode = vi.fn(async (_n: string, _v: string) => new Uint8Array([1]));
+    const t = setup({ encode });
+    await t.ctl.run("save");
+    expect(encode).toHaveBeenCalledWith("2026-11-19T00:00:00.000Z", APP_VERSION);
+  });
+
+  it("saveBlocked : Enregistrer et Enregistrer sous refusés avec le message, hôte jamais appelé", async () => {
+    const t = setup({ saveBlocked: () => UNREAD_ASSETS_MESSAGE });
+    expect(await t.ctl.run("save")).toBe(false);
+    expect(await t.ctl.run("saveAs")).toBe(false);
+    expect(t.s.log.notes).toEqual([UNREAD_ASSETS_MESSAGE, UNREAD_ASSETS_MESSAGE]);
+    expect(t.h.calls.save).toEqual([]);
+  });
+
+  it("import : la boîte multiple puis importFiles avec les fichiers choisis", async () => {
+    const importFiles = vi.fn(async () => undefined);
+    const t = setup({ importFiles });
+    const f: DroppedFile = { name: "a.png", size: 1, mime: "", blob: async () => new Blob([new Uint8Array([1])]) };
+    t.h.onPick([f]);
+    expect(await t.ctl.run("import")).toBe(true);
+    expect(importFiles).toHaveBeenCalledWith([f]);
+  });
+
+  it("Ctrl+S pendant un import : refusé avec un message court", async () => {
+    let release: () => void = () => undefined;
+    const importFiles = vi.fn(() => new Promise<void>((r) => (release = r)));
+    const t = setup({ importFiles });
+    t.h.onPick([{ name: "a.png", size: 1, mime: "", blob: async () => new Blob([new Uint8Array([1])]) }]);
+    const importing = t.ctl.run("import");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await t.ctl.run("save")).toBe(false);
+    expect(t.s.log.notes).toEqual(["Import en cours : réessayez dans un instant"]);
+    release();
+    await importing;
+  });
+
+  it("import annulé ([]) : false, rien importé", async () => {
+    const importFiles = vi.fn(async () => undefined);
+    const t = setup({ importFiles });
+    expect(await t.ctl.run("import")).toBe(false);
+    expect([t.h.calls.pick, importFiles.mock.calls.length]).toEqual([1, 0]);
   });
 });

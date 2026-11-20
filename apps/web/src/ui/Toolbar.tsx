@@ -32,7 +32,7 @@ function Button(props: { item: ToolItem; ctx: Ctx; onPress: () => void }): JSX.E
 function Drop(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
   let el: HTMLDivElement | undefined;
   onMount(() => {
-    const off = listenWebDrop(el ?? null, (files, at) => props.ctx.host.dropFiles(files, at));
+    const off = listenWebDrop(el ?? null, (files, at) => props.ctx.host.dropFiles(files, at), { stopPropagation: true });
     onCleanup(off);
   });
   return <div class="rb-drop" data-item={props.item.id} ref={el}>{props.item.label}</div>;

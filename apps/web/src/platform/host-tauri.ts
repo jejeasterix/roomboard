@@ -6,6 +6,7 @@
 import {
   ensureExtension,
   FILE_FILTER,
+  IMPORT_FILTER,
   type DroppedFile,
   type DropHandler,
   type FileHost,
@@ -22,6 +23,8 @@ export interface DialogFilter {
 
 export interface TauriDialog {
   open(o: { readonly multiple: false; readonly directory: false; readonly filters: readonly DialogFilter[] }): Promise<string | null>;
+  /** Boîte « Importer » (R18) : plusieurs fichiers ; [] si annulée. */
+  openMany(o: { readonly filters: readonly DialogFilter[] }): Promise<readonly string[]>;
   save(o: { readonly defaultPath: string; readonly filters: readonly DialogFilter[] }): Promise<string | null>;
   ask(message: string, o: { readonly title: string; readonly kind: "warning" }): Promise<boolean>;
   message(message: string, o: { readonly title: string; readonly kind: "error" }): Promise<void>;
@@ -137,13 +140,23 @@ export function createTauriHost(
       const name = baseName(path);
       return { name, bytes, target: { kind: "tauri", name, path } };
     },
-    async save(bytes: Uint8Array, target: SaveTarget): Promise<SaveTarget | null> {
+    async pick(): Promise<DroppedFile[]> {
+      const paths = await dialog.openMany({ filters: [IMPORT_FILTER] });
+      // Portée donnée par la boîte, comme Ouvrir (HR9) : fichier lu en une fois par plugin-fs.
+      return Promise.all(
+        paths.map(async (path) => {
+          const bytes = await fs.readFile(path);
+          return { name: baseName(path), size: bytes.byteLength, mime: "", path, blob: async () => new Blob([bytes.slice()]) };
+        }),
+      );
+    },
+    async save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
       let path = target.kind === "tauri" ? target.path : null;
       if (path === null) {
         path = await dialog.save({ defaultPath: ensureExtension(target.name), filters: [FILE_FILTER] });
         if (path === null) return null;
       }
-      await fs.writeFile(path, bytes);
+      await fs.writeFile(path, await encode());
       return { kind: "tauri", name: baseName(path), path };
     },
   };
@@ -209,6 +222,7 @@ export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: Tauri
         const r = await d.open({ multiple: false, directory: false, filters: filters(o.filters) });
         return typeof r === "string" ? r : null;
       },
+      openMany: async (o) => (await d.open({ multiple: true, directory: false, filters: filters(o.filters) })) ?? [],
       save: (o) => d.save({ defaultPath: o.defaultPath, filters: filters(o.filters) }),
       ask: (m, o) => d.ask(m, { title: o.title, kind: o.kind }),
       message: async (m, o) => {
