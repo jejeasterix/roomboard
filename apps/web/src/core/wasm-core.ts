@@ -89,6 +89,10 @@ function toAttrs(a: unknown): TextAttrs {
   return out;
 }
 
+/** Segments voulus (C7b, R7) : attributs nettoyés (`cleanPatch`, comme FormatText) ; absents : undefined (Option::None). */
+const spansArg = (spans: readonly TextSpan[] | undefined): unknown =>
+  spans === undefined ? undefined : spans.map((s) => ({ text: s.text, attrs: cleanPatch(s.attrs) }));
+
 /**
  * Segments d'un texte : au moins un (le cœur rend un segment vide pour un texte vide), et leurs textes mis bout à bout
  * redonnent `content` ; sinon le cœur a dérivé.
@@ -140,9 +144,9 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill, shade } = c;
+      const { row, col, text, fill, shade, spans } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: optString(fill), shade: optString(shade) };
+      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text) };
     }),
     merges: merges.map((m: unknown) => {
       if (!isRecord(m)) throw new Error(ELEMENT);
@@ -352,7 +356,7 @@ class WasmCoreDocument implements CoreDocument {
       case "SetText":
         // Avec un id, `page`, `x` et `y` ne placent rien (la position passe par Transform), comme la fausse liaison.
         return toChange(
-          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight),
+          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight, spansArg(cmd.spans)),
         );
       case "Transform":
         return toChange(this.d.transform([...cmd.ids], new Float64Array(cmd.matrix)));
@@ -379,7 +383,7 @@ class WasmCoreDocument implements CoreDocument {
           this.d.add_table(cmd.page, cmd.x, cmd.y, toU32(cmd.cols), toU32(cmd.rows), cmd.colWidth, cmd.rowHeight, cmd.color, cmd.size),
         );
       case "SetTableCell":
-        return toChange(this.d.set_table_cell(cmd.id, cmd.row, cmd.col, cmd.content, cmd.rowHeight));
+        return toChange(this.d.set_table_cell(cmd.id, cmd.row, cmd.col, cmd.content, cmd.rowHeight, spansArg(cmd.spans)));
       case "InsertTableLine":
         return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
       case "RemoveTableLine":

@@ -71,6 +71,7 @@ fn socle_document() -> Document {
         size: 36.0,
         box_width: 600.0,
         box_height: 45.0,
+        spans: None,
     })
     .expect("texte");
     let p2 = d

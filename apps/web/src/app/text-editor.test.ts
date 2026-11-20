@@ -1,54 +1,28 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { TextSpan } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { IDENTITY } from "../engine/camera";
+import { keyAction } from "../engine/input/keys";
 import type { InputSample } from "../engine/input/sampler";
 import { createTextTool, type TextEditSession, type TextTool } from "../engine/tools/text";
 import type { ToolContext } from "../engine/tools/tool";
-import { createTextEditor, cssMatrix, editorMove, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
+import { isEditable } from "../platform/paste";
+import { readSelection, readText, setSelection } from "./rich-dom";
+import { createTextEditor, cssMatrix, editorMove, formatKey, historyKey, plainPaste, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
 
-/** Faux `<textarea>` (pas de DOM dans la suite). */
-class FakeArea {
-  id = "";
-  hidden = false;
-  value = "";
-  spellcheck = true;
-  scrollHeight = 0;
-  focused = 0;
-  caret: [number, number] | null = null;
-  selectionStart = 0;
-  selectionEnd = 0;
-  style: Record<string, string> = {};
-  attrs: Record<string, string> = {};
-  listeners = new Map<string, (e: unknown) => void>();
-  addEventListener(type: string, cb: (e: unknown) => void): void {
-    this.listeners.set(type, cb);
-  }
-  setAttribute(k: string, v: string): void {
-    this.attrs[k] = v;
-  }
-  focus(): void {
-    this.focused++;
-  }
-  setSelectionRange(a: number, b: number): void {
-    this.caret = [a, b];
-  }
-  fire(type: string, e: unknown = {}): void {
-    this.listeners.get(type)?.(e);
-  }
-}
-
-interface FakeKey { key: string; isComposing: boolean; prevented: boolean; preventDefault(): void }
-const keydown = (key: string, isComposing: boolean): FakeKey => {
-  const e: FakeKey = { key, isComposing, prevented: false, preventDefault() { e.prevented = true; } };
-  return e;
-};
+const parents: HTMLElement[] = [];
+afterEach(() => {
+  for (const p of parents.splice(0)) p.remove();
+  document.getSelection()?.removeAllRanges();
+});
 
 function mount(events: () => TextEditorEvents | null) {
-  const area = new FakeArea();
-  const children: unknown[] = [];
-  const parent = { ownerDocument: { createElement: () => area }, append: (n: unknown) => children.push(n) };
-  const editor = createTextEditor(parent as unknown as HTMLElement, events);
-  return { area, children, editor };
+  const parent = document.createElement("div");
+  document.body.append(parent);
+  parents.push(parent);
+  const editor = createTextEditor(parent, events);
+  return { parent, zone: editor.element, editor };
 }
 
 function recorder() {
@@ -61,11 +35,42 @@ function recorder() {
   return { calls, events };
 }
 
+const plain = (text: string): TextSpan => ({ text, attrs: {} });
 const session: TextEditSession = {
   page: "p", id: null, matrix: [1, 0, 0, 1, 100, 50], boxWidth: 600, color: "#1e40af", size: 48, initial: "Bonjour",
-  spans: [{ text: "Bonjour", attrs: {} }],
+  spans: [plain("Bonjour")],
 };
+const withText = (spans: TextSpan[]): TextEditSession => ({ ...session, initial: spans.map((s) => s.text).join(""), spans });
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
+const key = (k: string, o: KeyboardEventInit = {}): KeyboardEvent => new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...o });
+const fire = (zone: HTMLElement, e: Event): Event => {
+  zone.dispatchEvent(e);
+  return e;
+};
+const before = (inputType: string): InputEvent => new InputEvent("beforeinput", { inputType, bubbles: true, cancelable: true });
+const selectionChange = (): void => {
+  document.dispatchEvent(new Event("selectionchange"));
+};
+const compose = (type: "compositionstart" | "compositionupdate" | "compositionend", data = ""): CompositionEvent =>
+  new CompositionEvent(type, { bubbles: true, data });
+/** Le navigateur insère `s` à la sélection (DOM aplati ici), place le curseur après, puis émet `input`. */
+function typeIn(zone: HTMLElement, s: string): void {
+  const sel = readSelection(zone) ?? { start: 0, end: 0 };
+  const t = readText(zone);
+  zone.textContent = t.slice(0, sel.start) + s + t.slice(sel.end);
+  setSelection(zone, sel.start + s.length, sel.start + s.length);
+  zone.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: s }));
+}
+/** Curseur ou sélection posés par l'utilisateur (clic, flèches) : DOM puis `selectionchange`. */
+function caret(zone: HTMLElement, start: number, end = start): void {
+  setSelection(zone, start, end);
+  selectionChange();
+}
+const paste = (zone: HTMLElement, data: Record<string, string>): Event => {
+  const e = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(e, "clipboardData", { value: { getData: (t: string) => data[t] ?? "" } });
+  return fire(zone, e);
+};
 
 describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
   it("cssMatrix : caméra × matrice de l'élément", () => {
@@ -74,55 +79,57 @@ describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
   });
 
   it("montée cachée hors de la scène ; open : visible, placée, police du rendu, valeur initiale, focus", () => {
-    const { area, children, editor } = mount(() => null);
-    expect(children).toEqual([area]);
-    expect(area.id).toBe(TEXT_EDITOR_ID);
-    expect(area.hidden).toBe(true);
+    const { parent, zone, editor } = mount(() => null);
+    expect([...parent.children]).toEqual([zone]);
+    expect(zone.id).toBe(TEXT_EDITOR_ID);
+    expect(zone.hidden).toBe(true);
+    expect(zone.tagName).toBe("DIV");
+    expect(zone.getAttribute("contenteditable")).toBe("true");
+    const focus = vi.spyOn(zone, "focus");
     editor.open(session, { zoom: 2, tx: 10, ty: 20 });
-    expect(area.hidden).toBe(false);
-    expect(area.value).toBe("Bonjour");
-    expect(area.style).toMatchObject({
-      transform: "matrix(2, 0, 0, 2, 210, 120)",
-      transformOrigin: "0 0",
-      width: "600px",
-      font: '48px "Atkinson Hyperlegible", system-ui, sans-serif',
-      lineHeight: "1.25",
-      color: "#1e40af",
-    });
-    expect(area.focused).toBe(1);
-    expect(area.caret).toEqual([7, 7]);
+    expect(zone.hidden).toBe(false);
+    expect(editor.value()).toBe("Bonjour");
+    expect(zone.textContent).toBe("Bonjour");
+    expect(zone.style.transform).toBe("matrix(2, 0, 0, 2, 210, 120)");
+    expect(zone.style.transformOrigin).toMatch(/^0(px)? 0(px)?$/);
+    expect(zone.style.width).toBe("600px");
+    expect(zone.style.fontSize).toBe("48px");
+    expect(zone.style.fontFamily).toBe('"Atkinson Hyperlegible", system-ui, sans-serif');
+    expect(zone.style.lineHeight).toBe("1.25");
+    expect(zone.style.color).toMatch(/^(#1e40af|rgb\(30, 64, 175\))$/);
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(readSelection(zone)).toEqual({ start: 7, end: 7 });
   });
 
   it("close : zone cachée et vidée ; value lit la saisie", () => {
-    const { area, editor } = mount(() => null);
+    const { zone, editor } = mount(() => null);
     editor.open(session, IDENTITY);
-    area.value = "Bonjour à tous";
+    typeIn(zone, " à tous");
     expect(editor.value()).toBe("Bonjour à tous");
     editor.close();
-    expect(area.hidden).toBe(true);
+    expect(zone.hidden).toBe(true);
+    expect(zone.childNodes).toHaveLength(0);
     expect(editor.value()).toBe("");
   });
 
   it("composition : début et fin transmis à l'outil", () => {
     const { calls, events } = recorder();
-    const { area, editor } = mount(() => events);
+    const { zone, editor } = mount(() => events);
     editor.open(session, IDENTITY);
-    area.fire("compositionstart");
-    area.fire("compositionend");
+    fire(zone, compose("compositionstart"));
+    fire(zone, compose("compositionend"));
     expect(calls).toEqual(["start", "end"]);
   });
 
   it("Échap hors composition : validation demandée, touche gardée", () => {
     const { calls, events } = recorder();
-    const { area, editor } = mount(() => events);
+    const { zone, editor } = mount(() => events);
     editor.open(session, IDENTITY);
-    const e = keydown("Escape", false);
-    area.fire("keydown", e);
+    const e = fire(zone, key("Escape"));
     expect(calls).toEqual(["commit"]);
-    expect(e.prevented).toBe(true);
-    const enter = keydown("Enter", false);
-    area.fire("keydown", enter);
-    expect(enter.prevented).toBe(false);
+    expect(e.defaultPrevented).toBe(true);
+    const enter = fire(zone, key("Enter"));
+    expect(enter.defaultPrevented).toBe(false);
     expect(calls).toEqual(["commit"]);
   });
 
@@ -131,68 +138,66 @@ describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
     const page = doc.pageIds()[0] ?? "";
     const ctx: ToolContext = { doc, page: () => page, camera: () => IDENTITY, run: (cmd) => doc.apply(cmd) };
     let tool: TextTool | null = null;
-    const { area, editor } = mount(() => tool);
+    const { zone, editor } = mount(() => tool);
     tool = createTextTool(ctx, editor, () => ({ color: "#000000", size: 36 }), (s) => s.length * 10);
     tool.begin(1, [at(100, 200)]);
     tool.close(1, "end");
-    expect(area.hidden).toBe(false);
-    area.fire("compositionstart");
-    area.value = "こん";
-    const esc = keydown("Escape", true);
-    area.fire("keydown", esc);
-    area.fire("blur");
-    expect(esc.prevented).toBe(false);
+    expect(zone.hidden).toBe(false);
+    fire(zone, compose("compositionstart"));
+    zone.textContent = "こん";
+    const esc = fire(zone, key("Escape", { isComposing: true }));
+    fire(zone, new Event("blur"));
+    expect(esc.defaultPrevented).toBe(false);
     expect(doc.elementIds(page)).toEqual([]);
-    expect(area.hidden).toBe(false);
-    area.value = "こんにちは";
-    area.fire("compositionend");
+    expect(zone.hidden).toBe(false);
+    zone.textContent = "こんにちは";
+    setSelection(zone, 5, 5);
+    fire(zone, compose("compositionend", "こんにちは"));
     const ids = doc.elementIds(page);
     expect(ids).toHaveLength(1);
     expect(doc.element(ids[0] ?? "")).toMatchObject({ kind: "text", text: { content: "こんにちは" } });
-    expect(area.hidden).toBe(true);
+    expect(zone.hidden).toBe(true);
   });
 
   it("perte du focus : validation demandée ; zone fermée, la perte du focus ne redemande rien", () => {
     const { calls, events } = recorder();
-    const { area, editor } = mount(() => events);
+    const { zone, editor } = mount(() => events);
     editor.open(session, IDENTITY);
-    area.fire("blur");
+    fire(zone, new Event("blur"));
     expect(calls).toEqual(["commit"]);
     editor.close();
-    area.fire("blur");
+    fire(zone, new Event("blur"));
     expect(calls).toEqual(["commit"]);
   });
 
   it("aucun outil branché : événements sans effet, sans erreur", () => {
-    const { area, editor } = mount(() => null);
+    const { zone, editor } = mount(() => null);
     editor.open(session, IDENTITY);
     expect(() => {
-      area.fire("compositionstart");
-      area.fire("compositionend");
-      area.fire("keydown", keydown("Escape", false));
-      area.fire("blur");
-      area.fire("input");
+      fire(zone, compose("compositionstart"));
+      fire(zone, compose("compositionupdate"));
+      fire(zone, compose("compositionend"));
+      fire(zone, key("Escape"));
+      fire(zone, new Event("blur"));
+      fire(zone, new InputEvent("input", { bubbles: true }));
+      fire(zone, before("insertParagraph"));
+      paste(zone, { "text/plain": "x" });
+      selectionChange();
     }).not.toThrow();
   });
 
   it("la zone suit le zoom", () => {
-    const { area, editor } = mount(() => null);
+    const { zone, editor } = mount(() => null);
     editor.follow({ zoom: 3, tx: 1, ty: 1 });
-    expect(area.style.transform).toBeUndefined();
+    expect(zone.style.transform).toBe("");
     editor.open(session, { zoom: 1, tx: 0, ty: 0 });
     editor.follow({ zoom: 2, tx: 10, ty: 20 });
-    expect(area.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
+    expect(zone.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
     editor.close();
     editor.follow({ zoom: 5, tx: 0, ty: 0 });
-    expect(area.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
+    expect(zone.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
   });
 });
-
-interface NavKey { key: string; shiftKey: boolean; isComposing: boolean; prevented: boolean; preventDefault(): void }
-const navKey = (key: string, shiftKey = false, isComposing = false): NavKey => {
-  const e: NavKey = { key, shiftKey, isComposing, prevented: false, preventDefault() { e.prevented = true; } };
-  return e;
-};
 
 describe("zone de saisie — navigation du tableau (C10a, DAC3)", () => {
   it("editorMove : Tab, Maj+Tab ; Ctrl+Tab et Alt+Tab non pris", () => {
@@ -220,49 +225,269 @@ describe("zone de saisie — navigation du tableau (C10a, DAC3)", () => {
     const moves: string[] = [];
     let answer = true;
     const events: TextEditorEvents = { ...recorder().events, navigate: (m) => (moves.push(m), answer) };
-    const { area, editor } = mount(() => events);
+    const { zone, editor } = mount(() => events);
     editor.open(session, IDENTITY);
-    const tab = navKey("Tab");
-    area.fire("keydown", tab);
-    expect([moves, tab.prevented]).toEqual([["next"], true]);
+    const tab = fire(zone, key("Tab"));
+    expect([moves, tab.defaultPrevented]).toEqual([["next"], true]);
     answer = false;
-    area.value = "xy";
-    area.selectionStart = 1;
-    area.selectionEnd = 1;
-    const left = navKey("ArrowLeft");
-    area.fire("keydown", left);
+    caret(zone, 0, 7);
+    typeIn(zone, "xy");
+    setSelection(zone, 1, 1);
+    fire(zone, key("ArrowLeft"));
     expect(moves).toEqual(["next"]);
-    area.selectionStart = 0;
-    area.selectionEnd = 0;
-    area.fire("keydown", left);
-    expect([moves, left.prevented]).toEqual([["next", "left"], false]);
+    setSelection(zone, 0, 0);
+    const left = fire(zone, key("ArrowLeft"));
+    expect([moves, left.defaultPrevented]).toEqual([["next", "left"], false]);
   });
 
   it("composition : aucune touche prise, navigate jamais appelé", () => {
     const moves: string[] = [];
     const events: TextEditorEvents = { ...recorder().events, navigate: (m) => (moves.push(m), true) };
-    const { area, editor } = mount(() => events);
+    const { zone, editor } = mount(() => events);
     editor.open(session, IDENTITY);
-    const tab = navKey("Tab", false, true);
-    area.fire("keydown", tab);
-    expect([moves, tab.prevented]).toEqual([[], false]);
+    const tab = fire(zone, key("Tab", { isComposing: true }));
+    expect([moves, tab.defaultPrevented]).toEqual([[], false]);
   });
 
   it("outil sans navigate (outil Texte) : Tab non pris, rien de demandé", () => {
     const r = recorder();
-    const { area, editor } = mount(() => r.events);
+    const { zone, editor } = mount(() => r.events);
     editor.open(session, IDENTITY);
-    const tab = navKey("Tab");
-    area.fire("keydown", tab);
-    expect([r.calls, tab.prevented]).toEqual([[], false]);
+    const tab = fire(zone, key("Tab"));
+    expect([r.calls, tab.defaultPrevented]).toEqual([[], false]);
   });
 
   it("fond : celui de la session (cellule, HC10-10), transparent sinon", () => {
-    const { area, editor } = mount(() => null);
+    const { zone, editor } = mount(() => null);
     editor.open({ ...session, background: "#fef08a" }, IDENTITY);
-    expect(area.style["background"]).toBe("#fef08a");
+    expect(zone.style.background).toMatch(/^(#fef08a|rgb\(254, 240, 138\))$/);
     editor.close();
     editor.open(session, IDENTITY);
-    expect(area.style["background"]).toBe("transparent");
+    expect(zone.style.background).toBe("transparent");
+  });
+});
+
+describe("zone de saisie riche (C7b)", () => {
+  const B = { bold: true } as const;
+  const counter = () => {
+    let n = 0;
+    const events: TextEditorEvents = { ...recorder().events, formatChanged: () => void n++ };
+    return { events, count: () => n };
+  };
+
+  it("frappe relue : « aa », curseur au milieu, Ctrl+B, « a » : la deuxième lettre est grasse (S1, R3, R9)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("aa")]), IDENTITY);
+    caret(zone, 1);
+    expect(fire(zone, key("b", { ctrlKey: true })).defaultPrevented).toBe(true);
+    typeIn(zone, "a");
+    selectionChange();
+    expect(editor.spans()).toEqual([plain("a"), { text: "a", attrs: B }, plain("a")]);
+    expect(zone.querySelectorAll("span")).toHaveLength(3);
+    expect(readSelection(zone)).toEqual({ start: 2, end: 2 });
+  });
+
+  it("Ctrl+B puis composition « に » : le format en attente survit aux selectionchange ; un déplacement l'oublie (S3, R9)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    fire(zone, key("b", { ctrlKey: true }));
+    fire(zone, compose("compositionstart"));
+    fire(zone, compose("compositionupdate", "に"));
+    zone.textContent = "abに";
+    setSelection(zone, 3, 3);
+    selectionChange();
+    fire(zone, new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "に", isComposing: true }));
+    fire(zone, compose("compositionend", "に"));
+    selectionChange();
+    expect(editor.spans()).toEqual([plain("ab"), { text: "に", attrs: B }]);
+    fire(zone, key("b", { ctrlKey: true }));
+    caret(zone, 1);
+    typeIn(zone, "x");
+    expect(editor.spans()).toEqual([plain("axb"), { text: "に", attrs: B }]);
+  });
+
+  it("sélection posée par l'IME, texte encore inchangé (recomposition) : le format en attente survit jusqu'à compositionend (R5, R9)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    fire(zone, key("b", { ctrlKey: true }));
+    fire(zone, compose("compositionstart"));
+    caret(zone, 0, 2);
+    fire(zone, compose("compositionupdate", "abに"));
+    zone.textContent = "abに";
+    setSelection(zone, 3, 3);
+    fire(zone, compose("compositionend", "abに"));
+    expect(editor.spans()).toEqual([plain("ab"), { text: "に", attrs: B }]);
+  });
+
+  it("pendant la composition : aucune relecture, aucun redessin, aucun raccourci, aucune action de barre (R5)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    fire(zone, compose("compositionstart"));
+    fire(zone, compose("compositionupdate", "こ"));
+    zone.textContent = "abこ";
+    const kept = zone.firstChild;
+    fire(zone, new InputEvent("input", { bubbles: true, isComposing: true }));
+    const ctrlB = fire(zone, key("b", { ctrlKey: true, isComposing: true }));
+    editor.format({ type: "bold" });
+    expect(ctrlB.defaultPrevented).toBe(false);
+    expect(zone.firstChild).toBe(kept);
+    expect(editor.value()).toBe("ab");
+    expect(editor.formatState()?.bold).toBe(false);
+  });
+
+  it("compositionupdate sans compositionstart : la composition reste protégée jusqu'à compositionend (PC13)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    fire(zone, compose("compositionupdate", "こ"));
+    zone.textContent = "abこ";
+    setSelection(zone, 3, 3);
+    const kept = zone.firstChild;
+    fire(zone, new InputEvent("input", { bubbles: true, inputType: "insertCompositionText", data: "こ" }));
+    expect(fire(zone, key("b", { ctrlKey: true })).defaultPrevented).toBe(false);
+    expect([zone.firstChild === kept, editor.value()]).toEqual([true, "ab"]);
+    fire(zone, compose("compositionend", "こ"));
+    expect(editor.spans()).toEqual([plain("abこ")]);
+    expect(zone.querySelectorAll("span")).toHaveLength(1);
+  });
+
+  it("ordre à compositionend : relire, redessiner, puis relayer — la validation voit le texte composé (R5)", () => {
+    const seen: string[] = [];
+    const holder: { editor?: ReturnType<typeof createTextEditor>; zone?: HTMLElement } = {};
+    const events: TextEditorEvents = {
+      ...recorder().events,
+      compositionEnd: () => void seen.push(`${holder.editor?.value() ?? ""}|${holder.zone?.firstChild?.nodeName ?? ""}`),
+    };
+    const { zone, editor } = mount(() => events);
+    holder.editor = editor;
+    holder.zone = zone;
+    editor.open(withText([plain("")]), IDENTITY);
+    fire(zone, compose("compositionstart"));
+    fire(zone, compose("compositionupdate", "にほん"));
+    zone.textContent = "にほん";
+    setSelection(zone, 3, 3);
+    fire(zone, compose("compositionend", "にほん"));
+    expect(seen).toEqual(["にほん|SPAN"]);
+  });
+
+  it("Entrée : « \\n » inséré par le modèle (beforeinput empêché), une étape ; br de fin (R3, R4, R10)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    expect(fire(zone, before("insertParagraph")).defaultPrevented).toBe(true);
+    expect(editor.value()).toBe("ab\n");
+    expect(zone.lastElementChild?.hasAttribute("data-rb-fin")).toBe(true);
+    expect(fire(zone, before("insertLineBreak")).defaultPrevented).toBe(true);
+    expect(editor.value()).toBe("ab\n\n");
+    fire(zone, key("z", { ctrlKey: true }));
+    expect(editor.value()).toBe("ab\n");
+  });
+
+  it("Ctrl+Z dans la zone annule la dernière mise en forme seule ; texte et sélection restent ; Ctrl+Y et historyRedo la remettent (S2, R10)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("Le chat noir")]), IDENTITY);
+    caret(zone, 8, 12);
+    fire(zone, key("i", { ctrlKey: true }));
+    expect(editor.spans()).toEqual([plain("Le chat "), { text: "noir", attrs: { italic: true } }]);
+    expect(fire(zone, key("z", { ctrlKey: true })).defaultPrevented).toBe(true);
+    expect(editor.spans()).toEqual([plain("Le chat noir")]);
+    expect(readSelection(zone)).toEqual({ start: 8, end: 12 });
+    fire(zone, key("y", { ctrlKey: true }));
+    expect(editor.spans()[1]).toEqual({ text: "noir", attrs: { italic: true } });
+    expect(fire(zone, before("historyUndo")).defaultPrevented).toBe(true);
+    expect(editor.spans()).toEqual([plain("Le chat noir")]);
+    expect(fire(zone, before("historyRedo")).defaultPrevented).toBe(true);
+    expect(editor.spans()[1]).toEqual({ text: "noir", attrs: { italic: true } });
+  });
+
+  it("collage : texte simple seulement, attributs du caractère précédent, une étape (S4, R12)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([{ text: "Total", attrs: B }]), IDENTITY);
+    caret(zone, 3);
+    const e = paste(zone, { "text/plain": "x\r\ny", "text/html": "<b>z</b><img src=x>" });
+    expect(e.defaultPrevented).toBe(true);
+    expect(editor.spans()).toEqual([{ text: "Totx\nyal", attrs: B }]);
+    expect(zone.querySelector("img, b")).toBeNull();
+    fire(zone, key("z", { ctrlKey: true }));
+    expect(editor.value()).toBe("Total");
+  });
+
+  it("dépôt dans la zone : refusé, ne remonte pas (R12, PC17)", () => {
+    const { parent, zone, editor } = mount(() => null);
+    editor.open(session, IDENTITY);
+    const up = vi.fn();
+    parent.addEventListener("drop", up);
+    const e = fire(zone, new Event("drop", { bubbles: true, cancelable: true }));
+    expect(e.defaultPrevented).toBe(true);
+    expect(up).not.toHaveBeenCalled();
+    expect(fire(zone, before("insertFromDrop")).defaultPrevented).toBe(true);
+    expect(editor.value()).toBe("Bonjour");
+  });
+
+  it("barre : format(a) sur la sélection, zone ouverte ; formatState suit ; formatChanged à chaque changement (R8, R15, PC12)", () => {
+    const c = counter();
+    const { zone, editor } = mount(() => c.events);
+    editor.open(withText([plain("Le chat")]), IDENTITY);
+    const afterOpen = c.count();
+    expect(afterOpen).toBeGreaterThan(0);
+    caret(zone, 3, 7);
+    editor.format({ type: "bold" });
+    editor.format({ type: "color", color: "#dc2626" });
+    expect(editor.spans()).toEqual([plain("Le "), { text: "chat", attrs: { bold: true, color: "#dc2626" } }]);
+    expect(editor.formatState()).toEqual({ bold: true, italic: false, underline: false, size: 48, color: "#dc2626" });
+    expect(readSelection(zone)).toEqual({ start: 3, end: 7 });
+    expect(c.count()).toBeGreaterThanOrEqual(afterOpen + 3);
+    editor.close();
+    expect(c.count()).toBeGreaterThanOrEqual(afterOpen + 4);
+  });
+
+  it("zone fermée : un segment vide, formatState null, format sans effet", () => {
+    const { zone, editor } = mount(() => null);
+    expect([editor.value(), editor.spans(), editor.formatState()]).toEqual(["", [plain("")], null]);
+    editor.open(withText([plain("chat")]), IDENTITY);
+    editor.close();
+    editor.format({ type: "bold" });
+    expect([editor.value(), editor.spans(), editor.formatState()]).toEqual(["", [plain("")], null]);
+    expect(zone.childNodes).toHaveLength(0);
+  });
+
+  it("gras natif jamais : beforeinput formatBold empêché, appliqué par le modèle ; Alt Gr (Ctrl+Alt+B) non pris", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("chat")]), IDENTITY);
+    caret(zone, 0, 4);
+    expect(fire(zone, before("formatBold")).defaultPrevented).toBe(true);
+    expect(editor.spans()).toEqual([{ text: "chat", attrs: B }]);
+    expect(fire(zone, key("b", { ctrlKey: true, altKey: true })).defaultPrevented).toBe(false);
+    expect(editor.spans()).toEqual([{ text: "chat", attrs: B }]);
+  });
+
+  it("formatKey, historyKey, plainPaste : Ctrl ou Cmd, jamais Alt ; Ctrl+Maj+Z rétablit ; \\r\\n et \\r → \\n (R10-R12, PC16)", () => {
+    expect(formatKey({ key: "B", ctrlKey: true })).toEqual({ type: "bold" });
+    expect(formatKey({ key: "i", metaKey: true })).toEqual({ type: "italic" });
+    expect(formatKey({ key: "u", ctrlKey: true })).toEqual({ type: "underline" });
+    expect(formatKey({ key: "b", ctrlKey: true, altKey: true })).toBeNull();
+    expect(formatKey({ key: "b" })).toBeNull();
+    expect(historyKey({ key: "z", ctrlKey: true })).toBe("undo");
+    expect(historyKey({ key: "Z", ctrlKey: true, shiftKey: true })).toBe("redo");
+    expect(historyKey({ key: "y", metaKey: true })).toBe("redo");
+    expect(historyKey({ key: "z", ctrlKey: true, altKey: true })).toBeNull();
+    expect(plainPaste("a\r\nb\rc")).toBe("a\nb\nc");
+  });
+
+  it("raccourcis globaux et collage global : la zone est une cible éditable (keys.ts, paste.ts inchangés)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(session, IDENTITY);
+    expect(isEditable(zone)).toBe(true);
+    expect(keyAction({ key: "z", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: zone })).toBeNull();
+  });
+
+  it("DOM mis à mal par le navigateur (bloc ajouté) : relu, puis redessiné en segments (R3)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([{ text: "ab", attrs: B }]), IDENTITY);
+    zone.innerHTML = "<span>ab</span><div>c</div>";
+    const c = zone.querySelector("div")!.firstChild!;
+    document.getSelection()?.setBaseAndExtent(c, 1, c, 1);
+    fire(zone, new InputEvent("input", { bubbles: true, inputType: "insertParagraph" }));
+    expect(editor.value()).toBe("ab\nc");
+    expect(zone.querySelector("div")).toBeNull();
+    expect(readSelection(zone)).toEqual({ start: 4, end: 4 });
   });
 });

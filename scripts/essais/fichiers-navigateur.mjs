@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve, stageMouse, coqueCsp } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames as framesOf, gitSha, inkIn, loadPlaywright, serve, stageMouse } from "./commun.mjs";
 const MODES = ["repli", "fsa", "detection"];
 const FIRST = [[400, 300], [650, 300], [900, 300]];
 const SECOND = [[400, 420], [650, 420], [900, 420]];

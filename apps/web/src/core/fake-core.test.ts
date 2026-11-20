@@ -569,7 +569,7 @@ describe("fakeCore — C10a (tableau)", () => {
     const v = load([{ id: "c:1", width: 240 }, { id: "c2", width: 100 }]).element("t1");
     if (v?.kind !== "table") throw new Error(`tableau attendu : ${v?.kind ?? "absent"}`);
     expect(v.table.cols).toEqual([{ id: "c2", width: 100 }]);
-    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null, shade: null }]);
+    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null, shade: null, spans: [{ text: "B", attrs: {} }] }]);
     expect(load([{ id: "c:1", width: 240 }]).element("t1")?.kind).toBe("unknown");
   });
 
@@ -617,8 +617,8 @@ describe("fakeCore — C10b (tableau)", () => {
     const v = d.element("t1");
     if (v?.kind !== "table") throw new Error("tableau");
     expect(v.table.cells).toEqual([
-      { row: "r1", col: "c1", text: "", fill: null, shade: "#94a3b8" },
-      { row: "r1", col: "c2", text: "B", fill: null, shade: null },
+      { row: "r1", col: "c1", text: "", fill: null, shade: "#94a3b8", spans: [{ text: "", attrs: {} }] },
+      { row: "r1", col: "c2", text: "B", fill: null, shade: null, spans: [{ text: "B", attrs: {} }] },
     ]);
   });
 });
@@ -662,5 +662,25 @@ describe("fakeCore — ImportTable (constat T13, mêmes cas que table.rs)", () =
     for (const [what, over] of cases) expect(refusal(() => d.apply(imp(d, over))), what).toBe(badTable);
     expect(d.elementIds(p)).toEqual([]);
     expect(d.apply(imp(d)).ids).toHaveLength(1);
+  });
+});
+
+describe("fakeCore — C7b (cellules riches, JSON)", () => {
+  const load = (cells: unknown) =>
+    fakeCore.load(new TextEncoder().encode(JSON.stringify({ pages: [{ id: "p1", elements: [{ id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0], table: { cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells } }] }] })));
+  const cellOf = (d: CoreDocument) => {
+    const v = d.element("t1");
+    if (v?.kind !== "table") throw new Error(`tableau attendu : ${v?.kind ?? "absent"}`);
+    return v.table.cells[0];
+  };
+
+  it("JSON d'avant C7b : cellule sans spans → un segment sans attribut", () => {
+    expect(cellOf(load({ "r1:c1": { text: "Lundi", fill: null } }))?.spans).toEqual([{ text: "Lundi", attrs: {} }]);
+  });
+
+  it("spans lisibles : normalisés ; illisibles (concaténation fausse, valeur hors domaine) : un segment", () => {
+    expect(cellOf(load({ "r1:c1": { text: "ab", fill: null, spans: [{ text: "a", attrs: { bold: true } }, { text: "b", attrs: { bold: true } }] } }))?.spans).toEqual([{ text: "ab", attrs: { bold: true } }]);
+    expect(cellOf(load({ "r1:c1": { text: "ab", fill: null, spans: [{ text: "a", attrs: {} }] } }))?.spans).toEqual([{ text: "ab", attrs: {} }]);
+    expect(cellOf(load({ "r1:c1": { text: "ab", fill: null, spans: [{ text: "ab", attrs: { size: 0 } }] } }))?.spans).toEqual([{ text: "ab", attrs: {} }]);
   });
 });

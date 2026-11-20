@@ -20,6 +20,7 @@ const base: EngineState = {
   tableCell: null,
   tableMerges: 0,
   tableShades: 0,
+  textFormat: null,
 };
 
 describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {

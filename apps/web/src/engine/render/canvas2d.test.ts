@@ -664,7 +664,10 @@ describe("Canvas2DRenderer — tableau (C10a)", () => {
       size: 36,
       cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }],
       rows: [{ id: "r1", height: 64 }],
-      cells: [{ row: "r1", col: "c1", text: "Lundi", fill: null, shade: null }, { row: "r1", col: "c2", text: "", fill: "#fef08a", shade: null }],
+      cells: [
+        { row: "r1", col: "c1", text: "Lundi", fill: null, shade: null, spans: [{ text: "Lundi", attrs: {} }] },
+        { row: "r1", col: "c2", text: "", fill: "#fef08a", shade: null, spans: [{ text: "", attrs: {} }] },
+      ],
       merges: [],
     },
   };
@@ -701,6 +704,29 @@ describe("Canvas2DRenderer — tableau (C10a)", () => {
     expect(a).toEqual([{ text: "Lundi", x: 0, y: 0, font: '36px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#000000", baseline: "top" }]);
   });
 
+  it("cellules par segments (C7b, R17) : le segment gras rouge est peint avec sa police et sa couleur", () => {
+    const rich: TableElement = {
+      ...TABLE,
+      table: { ...TABLE.table, cells: [{ row: "r1", col: "c1", text: "Le chat", fill: null, shade: null, spans: [{ text: "Le ", attrs: {} }, { text: "chat", attrs: { bold: true, color: "#dc2626" } }] }] },
+    };
+    const texts = draw([rich]).scene.texts;
+    expect(texts).toContainEqual(expect.objectContaining({ text: "chat", font: 'bold 36px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#dc2626" }));
+    expect(texts).toContainEqual(expect.objectContaining({ text: "Le ", fill: "#000000" }));
+  });
+
+  it("cellules par segments (C7b, R17) : mêmes textes, autres segments : lignes recalculées sans invalidate (clé du cache)", () => {
+    let el: TableElement = TABLE;
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: () => el, outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, {});
+    r.resize(100, 100, 1);
+    const page = { id: "p", elementIds: ["tb"] };
+    r.drawScene(page, IDENTITY, new Set());
+    el = { ...TABLE, table: { ...TABLE.table, cells: [{ row: "r1", col: "c1", text: "Lundi", fill: null, shade: null, spans: [{ text: "Lundi", attrs: { bold: true } }] }] } };
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.texts.at(-1)).toMatchObject({ text: "Lundi", font: 'bold 36px "Atkinson Hyperlegible", system-ui, sans-serif' });
+  });
+
   it("cache des lignes de cellules : remesuré seulement après invalidate (Change)", () => {
     const { r, scene, page } = draw([TABLE]);
     const first = scene.measures;
@@ -725,8 +751,8 @@ describe("Canvas2DRenderer — tableau (C10b)", () => {
       cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }],
       rows: [{ id: "r1", height: 64 }, { id: "r2", height: 64 }],
       cells: [
-        { row: "r1", col: "c1", text: "Lundi mardi mercredi jeudi", fill: null, shade: null },
-        { row: "r2", col: "c1", text: "réponse", fill: null, shade: "#94a3b8" },
+        { row: "r1", col: "c1", text: "Lundi mardi mercredi jeudi", fill: null, shade: null, spans: [{ text: "Lundi mardi mercredi jeudi", attrs: {} }] },
+        { row: "r2", col: "c1", text: "réponse", fill: null, shade: "#94a3b8", spans: [{ text: "réponse", attrs: {} }] },
       ],
       merges: [{ row: "r1", col: "c1", rows: 1, cols: 2 }],
     },

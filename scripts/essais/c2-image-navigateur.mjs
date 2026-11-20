@@ -11,7 +11,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync, inflateRawSync } from "node:zlib";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageMouse, coqueCsp } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageMouse } from "./commun.mjs";
 
 const LABEL = "C2 image";
 const LATER = "format pris en charge dans une prochaine version";

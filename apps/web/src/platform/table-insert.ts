@@ -8,6 +8,7 @@
  */
 import type { TableData } from "../core/api";
 import { TABLE_MAX_LINES } from "../core/api";
+import { plainSpans } from "../core/rich-text";
 import { rowHeightsFor, TABLE_COL_WIDTH, TABLE_ROW_HEIGHT } from "../engine/table-geom";
 import type { Measure } from "../engine/text-layout";
 import type { Point } from "./files";
@@ -30,7 +31,7 @@ export function gridTable(grid: TableGrid, size: number): TableData {
     }
   }
   const cells = grid.cells.flatMap((text, k) =>
-    text === "" || covered.has(k) ? [] : [{ row: `r${Math.floor(k / grid.cols)}`, col: `c${k % grid.cols}`, text, fill: null, shade: null }],
+    text === "" || covered.has(k) ? [] : [{ row: `r${Math.floor(k / grid.cols)}`, col: `c${k % grid.cols}`, text, fill: null, shade: null, spans: plainSpans(text) }],
   );
   const merges = grid.merges.map((m) => ({ row: `r${m.row}`, col: `c${m.col}`, rows: m.rows, cols: m.cols }));
   return { color: "#000000", size, cols, rows, cells, merges };

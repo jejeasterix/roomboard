@@ -1,4 +1,5 @@
 import { TABLE_MAX_LINES } from "../core/api";
+import type { FormatState } from "../engine/rich-edit";
 import { rangeSize, type Range, type TableCellState } from "../engine/table-geom";
 import { TOOL_TABLE, type ToolItem } from "../toolbar";
 
@@ -11,6 +12,8 @@ export interface ToolbarView {
   readonly pageCount: number;
   /** Cellule active de l'outil Tableau (C10a) ; absente ou null : aucune (PC9). */
   readonly tableCell?: TableCellState | null;
+  /** État de la barre de format (C7b, R15) ; absent ou null : aucune séance de saisie (boutons grisés). */
+  readonly textFormat?: FormatState | null;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 

@@ -49,6 +49,7 @@ fn build() -> Document {
         col: c[0].clone(),
         content: "Lundi".into(),
         row_height: None,
+        spans: None,
     })
     .expect("texte");
     d.apply(Command::MergeTableCells {

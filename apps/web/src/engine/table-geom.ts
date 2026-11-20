@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CoreDocument, Matrix, TableData } from "../core/api";
+import type { Bounds, CoreDocument, Matrix, TableData, TextSpan } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -155,9 +155,13 @@ export function cellOf<R extends Pick<CellRef, "row" | "col">>(t: TableData, ref
   return row < 0 || col < 0 ? null : { row, col };
 }
 
-export function cellContent(t: TableData, rowId: string, colId: string): { readonly text: string; readonly fill: string | null; readonly shade: string | null } {
+export function cellContent(
+  t: TableData,
+  rowId: string,
+  colId: string,
+): { readonly text: string; readonly spans: readonly TextSpan[]; readonly fill: string | null; readonly shade: string | null } {
   const c = t.cells.find((x) => x.row === rowId && x.col === colId);
-  return { text: c?.text ?? "", fill: c?.fill ?? null, shade: c?.shade ?? null };
+  return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null, shade: c?.shade ?? null };
 }
 
 /** Le tableau le plus haut sous (x, y) monde, du dessus vers le dessous (I2) ; matrice non inversible : sauté. */
@@ -223,9 +227,9 @@ export function cellInnerBox(t: TableData, c: Cell): CellBox {
   return { x: r.x0 + TABLE_PADDING, y: r.y0 + TABLE_PADDING, w: innerWidth(r.x1 - r.x0), h: Math.max(0, r.y1 - r.y0 - 2 * TABLE_PADDING) };
 }
 
-/** Hauteur exigée par `text` dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
-export function cellHeight(text: string, size: number, colWidth: number, measure: Measure): number {
-  return richBoxHeight(layoutRich(plainSpans(text), { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
+/** Hauteur exigée par les segments `spans` (C7b, R17) dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
+export function cellHeight(spans: readonly TextSpan[], size: number, colWidth: number, measure: Measure): number {
+  return richBoxHeight(layoutRich(spans, { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
 }
 
 /** Hauteur exigée de chaque ligne aux largeurs `colWidths` (Uniformiser T11, import F21) ; cellule vide : une ligne de
@@ -234,8 +238,8 @@ export function cellHeight(text: string, size: number, colWidth: number, measure
 export function rowHeightsFor(t: TableData, colWidths: readonly number[], measure: Measure): number[] {
   const zones = mergeRanges(t);
   const width = (c0: number, c1: number): number => sum(t.cols.slice(c0, c1 + 1).map((c, i) => colWidths[c0 + i] ?? c.width));
-  const text = (r: number, c: number): string => cellContent(t, t.rows[r]?.id ?? "", t.cols[c]?.id ?? "").text;
-  const empty = cellHeight("", t.size, colWidths[0] ?? t.cols[0]?.width ?? 1, measure);
+  const spans = (r: number, c: number): readonly TextSpan[] => cellContent(t, t.rows[r]?.id ?? "", t.cols[c]?.id ?? "").spans;
+  const empty = cellHeight(plainSpans(""), t.size, colWidths[0] ?? t.cols[0]?.width ?? 1, measure);
   const heights = t.rows.map((_, r) => {
     let h = 0;
     t.cols.forEach((col, c) => {
@@ -243,12 +247,12 @@ export function rowHeightsFor(t: TableData, colWidths: readonly number[], measur
       if (z !== undefined && (z.r0 !== r || z.c0 !== c)) return;
       if (z !== undefined && z.r1 > z.r0) return;
       const w = z === undefined ? (colWidths[c] ?? col.width) : width(z.c0, z.c1);
-      h = Math.max(h, cellHeight(text(r, c), t.size, w, measure));
+      h = Math.max(h, cellHeight(spans(r, c), t.size, w, measure));
     });
     return h > 0 ? h : empty;
   });
   for (const z of zones.filter((x) => x.r1 > x.r0).sort((a, b) => a.r1 - b.r1)) {
-    const need = cellHeight(text(z.r0, z.c0), t.size, width(z.c0, z.c1), measure);
+    const need = cellHeight(spans(z.r0, z.c0), t.size, width(z.c0, z.c1), measure);
     const above = sum(heights.slice(z.r0, z.r1));
     heights[z.r1] = Math.max(heights[z.r1] ?? 0, need - above);
   }

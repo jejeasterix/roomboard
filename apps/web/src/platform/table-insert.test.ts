@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Command } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
+import { plainSpans } from "../core/rich-text";
 import { IDENTITY } from "../engine/camera";
 import { cellHeight } from "../engine/table-geom";
 import type { TableGrid } from "./html-table";
@@ -44,7 +45,7 @@ describe("poser une grille (F21, F22)", () => {
 
   it("F21 : texte long : sa ligne prend la hauteur exigée ; texte couvert ignoré pour la mesure", () => {
     const long = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee";
-    expect(gridRowHeights(grid({ cells: ["", "", long, ""] }), 36, narrow)).toEqual([64, Math.max(64, cellHeight(long, 36, 240, narrow))]);
+    expect(gridRowHeights(grid({ cells: ["", "", long, ""] }), 36, narrow)).toEqual([64, Math.max(64, cellHeight(plainSpans(long), 36, 240, narrow))]);
     expect(gridRowHeights(grid({ rows: 1, cells: ["court", long], sourceRows: 1 }), 36, narrow)).toEqual([64]);
   });
 

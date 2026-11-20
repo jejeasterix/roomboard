@@ -144,11 +144,13 @@ export async function dropFile(page, selector, name, bytes, type = "", at = [50,
     }
   }, { selector, name, bytes: Array.from(bytes), type, at });
 }
-/** CSP de la coque (tauri.conf.json), envoyée telle quelle par le serveur des essais (une seule copie, F31). */
+/** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
+export const TAB = '[role="tab"][data-tab]';
+
+/** CSP de la coque (`apps/desktop/src-tauri/tauri.conf.json`), envoyée telle quelle par le serveur d'essai (R22) : un
+ *  défaut de CSP se voit dans l'essai. Seule copie (R22 de C7b, F31 de C10b) : les essais l'importent. */
 export function coqueCsp() {
   const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
   const csp = conf.app.security.csp;
   return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
 }
-/** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
-export const TAB = '[role="tab"][data-tab]';

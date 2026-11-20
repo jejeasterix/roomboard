@@ -5,7 +5,7 @@
  * (fond à sa couleur, hachures à 45°), découpé à la cellule ou à la zone, dessiné quel que soit l'outil, sous les
  * traits ; le texte d'une cellule ombrée ou couverte n'est jamais dessiné (F11).
  */
-import type { Bounds, TableCell, TableData } from "../../core/api";
+import type { Bounds, TableCell, TableData, TextSpan } from "../../core/api";
 import {
   cellInnerBox,
   cellOf,
@@ -27,6 +27,7 @@ export interface CellTextBox {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  readonly spans: readonly TextSpan[];
 }
 
 /** Bords successifs : 0, puis la somme des tailles. */
@@ -130,7 +131,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
     if (cell.text === "" || cell.shade !== null) continue;
     const at = visibleCell(t, zones, cell);
     if (at === null) continue;
-    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at) });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: cell.spans });
   }
   return out;
 }

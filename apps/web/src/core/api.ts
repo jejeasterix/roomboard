@@ -13,6 +13,7 @@
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 // C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
 // TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
+// C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -62,6 +63,8 @@ export type Command =
       readonly size: number;
       readonly boxWidth: number;
       readonly boxHeight: number;
+      /** C7b (R7) : état voulu des segments (concaténation = content) ; absent : différence seule (C7). */
+      readonly spans?: readonly TextSpan[];
     }
   | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
   | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
@@ -93,7 +96,7 @@ export type Command =
       readonly size: number;
     }
   /** row, col = ids ; rowHeight : hauteur exigée mesurée par la page, écrite si plus grande (T5). */
-  | { readonly type: "SetTableCell"; readonly id: string; readonly row: string; readonly col: string; readonly content: string; readonly rowHeight?: number }
+  | { readonly type: "SetTableCell"; readonly id: string; readonly row: string; readonly col: string; readonly content: string; readonly rowHeight?: number; readonly spans?: readonly TextSpan[] }
   /** at ∈ 0..=n ; taille de la voisine at - 1, sinon de la première. */
   | { readonly type: "InsertTableLine"; readonly id: string; readonly axis: TableAxis; readonly at: number }
   /** Retire aussi ses cellules ; to : dernière ligne de la plage, comprise (C10b, F6) ; refusée s'il n'en resterait aucune. */
@@ -140,8 +143,16 @@ export interface TableCol { readonly id: string; readonly width: number }
 export interface TableRow { readonly id: string; readonly height: number }
 /** Cellule par ids (C10b). */
 export interface CellIds { readonly row: string; readonly col: string }
-/** Cellule non vide (texte, remplissage ou ombrage) ; `fill` = remplissage (U32), `shade` = ombrage révélable (F8), null sans. */
-export interface TableCell { readonly row: string; readonly col: string; readonly text: string; readonly fill: string | null; readonly shade: string | null }
+/** Cellule non vide (texte, remplissage ou ombrage) ; `fill` = remplissage (U32), `shade` = ombrage révélable (F8), null sans ;
+ *  `spans` = segments du texte (C7b, R16), un segment sans attribut pour une cellule d'avant C7b. */
+export interface TableCell {
+  readonly row: string;
+  readonly col: string;
+  readonly text: string;
+  readonly fill: string | null;
+  readonly shade: string | null;
+  readonly spans: readonly TextSpan[];
+}
 /** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
 export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }
 /** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture ;
