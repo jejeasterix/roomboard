@@ -81,7 +81,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   });
 
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file"]);
     const simple = catalog(SIMPLE, "outils");
     expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table"]);
     const pages = catalog(DEFAUT, "pages");

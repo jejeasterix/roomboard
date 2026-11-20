@@ -103,6 +103,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "page-next": { label: "Page suivante" },
   "page-add": { label: "Ajouter une page" },
   "page-remove": { label: "Retirer la page" },
+  "page-insert-file": { label: "Insérer des pages…" },
   "fit-page": { label: "Ajuster la page" },
   "file-new": { label: "Nouveau" },
   "file-open": { label: "Ouvrir" },
