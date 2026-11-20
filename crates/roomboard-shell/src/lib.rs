@@ -279,4 +279,63 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn sha256_granted_hashes_in_chunks() {
+        use sha2::{Digest, Sha256};
+        let d = dir("sha");
+        let big = d.join("a.webm");
+        let data: Vec<u8> = (0..HASH_CHUNK + 3).map(|i| (i % 251) as u8).collect();
+        fs::write(&big, &data).unwrap();
+        let abc = d.join("b.mp3");
+        fs::write(&abc, b"abc").unwrap();
+        let g = GrantedPaths::default();
+        g.grant([big.clone(), abc.clone()]);
+        let want: String = Sha256::digest(&data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(sha256_granted(&g, &big).unwrap(), want);
+        assert_eq!(
+            sha256_granted(&g, &abc).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn sha256_granted_refuses_ungranted_and_non_media() {
+        let d = dir("sharef");
+        let v = d.join("a.webm");
+        fs::write(&v, b"x").unwrap();
+        let t = d.join("a.txt");
+        fs::write(&t, b"x").unwrap();
+        let g = GrantedPaths::default();
+        assert_eq!(sha256_granted(&g, &v), Err(ReadError::NotGranted));
+        g.grant([t.clone()]);
+        assert_eq!(sha256_granted(&g, &t), Err(ReadError::NotMedia));
+    }
+
+    #[test]
+    fn check_linked_media_needs_media_extension_and_same_size() {
+        let d = dir("check");
+        let v = d.join("a.mp4");
+        fs::write(&v, b"12345").unwrap();
+        let t = d.join("a.txt");
+        fs::write(&t, b"12345").unwrap();
+        assert_eq!(check_linked_media(&v, 5).unwrap(), v.canonicalize().unwrap());
+        assert_eq!(check_linked_media(&v, 6), Err(ReadError::SizeMismatch));
+        assert_eq!(check_linked_media(&t, 5), Err(ReadError::NotMedia));
+        assert!(matches!(
+            check_linked_media(&d.join("absent.mp4"), 5),
+            Err(ReadError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn media_extensions_ignore_case() {
+        assert!(has_media_extension(Path::new("/x/A.WEBM")));
+        assert!(has_media_extension(Path::new("b.Mp4")));
+        assert!(!has_media_extension(Path::new("c.txt")));
+        assert!(!has_media_extension(Path::new("webm")));
+    }
 }
