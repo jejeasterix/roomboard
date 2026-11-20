@@ -1197,6 +1197,17 @@ describe("espace de travail : PDF (C12)", () => {
     expect(rasterClose).toHaveBeenCalledTimes(2);
   });
 
+  it("export : rasterClose appelé avant la feuille d'enregistrement (save), une seule fois (relecture T17)", async () => {
+    const order: string[] = [];
+    const rasterClose = vi.fn(() => void order.push("rasterClose"));
+    const pdfFiles = files();
+    pdfFiles.save.mockImplementation(async () => (order.push("save"), true));
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles, loadPdfLib, overlay: () => producer(), rasterClose });
+    await ws.openPdf({ name: "ok.pdf", blob: new Blob([await realPdf(1)]) });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(order).toEqual(["rasterClose", "save"]);
+  });
+
   it("sans pdfFiles, loadPdfLib ou overlay : exportPdf rend faux, sans avis", async () => {
     const ws = await setupWorkspace({ loadPdfLib, overlay: () => producer() });
     expect(await ws.exportPdf()).toBe(false);
