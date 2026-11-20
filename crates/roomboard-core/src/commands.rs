@@ -127,11 +127,13 @@ pub enum Command {
         axis: crate::table::TableAxis,
         at: u32,
     },
-    /// Ligne ou colonne `line` (id) retirée avec ses cellules ; refusée s'il n'en reste qu'une.
+    /// Lignes ou colonnes `line` à `to` (ids, `to` compris, dans l'ordre des rangs ; `None` : `line` seule) retirées avec
+    /// leurs cellules, zones touchées reportées (C10b, F6) ; refusé s'il ne resterait aucune ligne.
     RemoveTableLine {
         id: String,
         axis: crate::table::TableAxis,
         line: String,
+        to: Option<String>,
     },
     /// Uniformiser (T11) : toutes les colonnes à `col_width`, toutes les lignes à `row_height` (peut réduire).
     SetTableSizes {
@@ -139,12 +141,34 @@ pub enum Command {
         col_width: f64,
         row_height: f64,
     },
-    /// Remplissage d'une cellule (U32) ; `None` le retire.
+    /// Remplissage (U32) de la cellule, ou de la plage jusqu'à `to` (C10b, F15) ; une cellule couverte vaut pour son
+    /// ancre ; `None` le retire.
     SetTableFill {
         id: String,
         row: String,
         col: String,
+        to: Option<(String, String)>,
         fill: Option<String>,
+    },
+    /// Fusion (C10b, F3) : rectangle `from`–`to` (ids, normalisé par les rangs) ; l'ancre garde son contenu, les
+    /// couvertes sont retirées, les zones dedans dissoutes ; recouvrement partiel ou moins de 2 cellules : `BadTable`.
+    MergeTableCells {
+        id: String,
+        from: (String, String),
+        to: (String, String),
+    },
+    /// Division (C10b, F4) : retire le `span` de l'ancre ; une cellule qui n'est pas une ancre : `BadTable`.
+    SplitTableCell {
+        id: String,
+        row: String,
+        col: String,
+    },
+    /// Ombrage (C10b, F9) : `shade` posé (couleur) ou retiré sur les ancres et cellules simples du rectangle.
+    SetTableShade {
+        id: String,
+        from: (String, String),
+        to: (String, String),
+        shade: Option<String>,
     },
     /// Tableau rempli (C10b, F18) : collage HTML ou classeur ; `cells` = `rows × cols` textes en rangées bout à bout,
     /// `merges` = `[rang de ligne, rang de colonne, lignes, colonnes]` ; une transaction, une étape.
@@ -572,17 +596,45 @@ impl Document {
                 row_height,
             } => self.cmd_set_table_cell(&id, (row.as_str(), col.as_str()), &content, row_height),
             Command::InsertTableLine { id, axis, at } => self.cmd_insert_table_line(&id, axis, at),
-            Command::RemoveTableLine { id, axis, line } => {
-                self.cmd_remove_table_line(&id, axis, &line)
+            Command::RemoveTableLine { id, axis, line, to } => {
+                self.cmd_remove_table_line(&id, axis, &line, to.as_deref())
             }
             Command::SetTableSizes {
                 id,
                 col_width,
                 row_height,
             } => self.cmd_set_table_sizes(&id, col_width, row_height),
-            Command::SetTableFill { id, row, col, fill } => {
-                self.cmd_set_table_fill(&id, (row.as_str(), col.as_str()), fill.as_deref())
+            Command::SetTableFill {
+                id,
+                row,
+                col,
+                to,
+                fill,
+            } => self.cmd_set_table_fill(
+                &id,
+                (row.as_str(), col.as_str()),
+                to.as_ref().map(|(r, c)| (r.as_str(), c.as_str())),
+                fill.as_deref(),
+            ),
+            Command::MergeTableCells { id, from, to } => self.cmd_merge_table_cells(
+                &id,
+                (from.0.as_str(), from.1.as_str()),
+                (to.0.as_str(), to.1.as_str()),
+            ),
+            Command::SplitTableCell { id, row, col } => {
+                self.cmd_split_table_cell(&id, (row.as_str(), col.as_str()))
             }
+            Command::SetTableShade {
+                id,
+                from,
+                to,
+                shade,
+            } => self.cmd_set_table_shade(
+                &id,
+                (from.0.as_str(), from.1.as_str()),
+                (to.0.as_str(), to.1.as_str()),
+                shade.as_deref(),
+            ),
             Command::ImportTable {
                 page,
                 matrix,
