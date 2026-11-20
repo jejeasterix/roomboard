@@ -1446,6 +1446,15 @@ describe("moteur — C5 (retouche d'image)", () => {
     engine.undo();
     expect(paramsOf(image().image)).toEqual({ quarterTurns: 1 });
   });
+  it("T21 (I31) : Rétablir sans rien à rétablir n'écrit rien : le brouillon des pixels reste en aperçu", () => {
+    const { engine, renderer, id } = c5();
+    const edit = engine.editImage(id)!;
+    edit.preview({ brightness: 50 });
+    const v = engine.state().version;
+    engine.redo();
+    expect(engine.state().version).toBe(v);
+    expect(renderer.imagePreviews.at(-1)).toEqual({ id, params: { brightness: 50 }, matrix: [1, 0, 0, 1, 100, 100] });
+  });
   it("C5 rognage : image entière en aperçu, poignée sud-est tirée, Valider le rognage garde les pixels en place", () => {
     const { engine, renderer, id, image, drag } = c5();
     const edit = engine.editImage(id)!;

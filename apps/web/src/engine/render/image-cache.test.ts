@@ -272,4 +272,126 @@ describe("bitmaps retouchés par élément (C5, I19, I22)", () => {
     await flush();
     expect(late.close).toHaveBeenCalledTimes(1);
   });
+
+  /** Aperçu 40 calculé (p40), aperçu 50 en route, Valider 50 avant l'arrivée ; `doc20` : l'élément tenait déjà un bitmap. */
+  async function validatedWhileComputing(doc20 = false) {
+    const r = await ready();
+    const { c, calls } = r;
+    const doc = out("doc20");
+    if (doc20) {
+      c.bitmapOf(el({ brightness: 20 }));
+      calls.at(-1)?.resolve(doc);
+      await flush();
+    }
+    c.bitmapOf(el({ brightness: 40 }), true);
+    const p40 = out("p40");
+    calls.at(-1)?.resolve(p40);
+    await flush();
+    c.bitmapOf(el({ brightness: 50 }), true);
+    const pending50 = calls.at(-1);
+    const atValidate = c.bitmapOf(el({ brightness: 50 }));
+    return { ...r, doc, p40, pending50, atValidate };
+  }
+
+  it("T21 (I22) : Valider pendant le calcul : l'élément garde le bitmap que montrait l'aperçu, pas le sien ni le brut", async () => {
+    const { c, p40, atValidate, runner } = await validatedWhileComputing(true);
+    expect(atValidate).toBe(p40);
+    expect(c.bitmapOf(el({ brightness: 50 }))).toBe(p40);
+    expect(runner.run).toHaveBeenCalledTimes(3);
+  });
+
+  it("T21 : Valider pendant le calcul : à l'arrivée, l'ancien bitmap de l'aperçu est fermé, pas le résultat passé à l'élément", async () => {
+    const { c, calls, doc, p40, pending50 } = await validatedWhileComputing(true);
+    const r50 = out("r50");
+    pending50?.resolve(r50);
+    await flush();
+    expect(c.bitmapOf(el({ brightness: 50 }))).toBe(r50);
+    expect(p40.close).toHaveBeenCalledTimes(1);
+    expect(doc.close).toHaveBeenCalledTimes(1);
+    expect(r50.close).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(3);
+    expect(c.pixelState()).toBe("pret");
+  });
+
+  it("T21 MAJOR : Valider pendant le calcul, curseur touché avant l'arrivée, puis Fermer : la clé validée est recalculée pour l'élément", async () => {
+    const { c, calls, pending50 } = await validatedWhileComputing();
+    c.bitmapOf(el({ brightness: 60 }), true); // curseur touché avant l'arrivée de 50
+    const pending60 = calls.at(-1);
+    pending50?.resolve(out("r50"));
+    await flush();
+    c.dropPreview("e"); // Fermer
+    const r60 = out("r60");
+    pending60?.resolve(r60);
+    await flush();
+    expect(r60.close).toHaveBeenCalledTimes(1);
+    c.bitmapOf(el({ brightness: 50 }));
+    const forElement = calls.filter((x) => x.slot === "e");
+    expect(forElement.map((x) => x.job.brightness)).toEqual([50]);
+    const v50 = out("v50");
+    forElement[0]?.resolve(v50);
+    await flush();
+    expect(c.bitmapOf(el({ brightness: 50 }))).toBe(v50);
+    expect(c.pixelState()).toBe("pret");
+  });
+
+  it("T21 MAJOR : même scénario, résultats arrivés puis Annuler : l'aperçu 60 est servi sans recalcul, l'élément recalcule 50", async () => {
+    const { c, calls, pending50 } = await validatedWhileComputing();
+    c.bitmapOf(el({ brightness: 60 }), true);
+    const pending60 = calls.at(-1);
+    pending50?.resolve(out("r50"));
+    await flush();
+    const r60 = out("r60");
+    pending60?.resolve(r60);
+    await flush();
+    expect(c.bitmapOf(el({ brightness: 60 }), true)).toBe(r60);
+    expect(calls).toHaveLength(3);
+    c.bitmapOf(el({ brightness: 50 })); // Annuler : l'élément validé à 50 est dessiné sans aperçu
+    expect(calls.slice(3).map((x) => [x.slot, x.job.brightness])).toEqual([["e", 50]]);
+    const v50 = out("v50");
+    calls[3]?.resolve(v50);
+    await flush();
+    expect(c.bitmapOf(el({ brightness: 50 }))).toBe(v50);
+    expect(c.pixelState()).toBe("pret");
+  });
+
+  it("T21 (I33) : data-pixels ne compte que les images dessinées par la dernière scène ; au retour, ni bitmap fermé ni recalcul", async () => {
+    const { c, calls } = await ready();
+    c.beginScene();
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    const b = out("k");
+    calls[0]?.resolve(b);
+    await flush();
+    expect(c.pixelState()).toBe("pret");
+    c.beginScene(); // page sans image retouchée
+    c.bitmapOf(el({}, "f"));
+    c.endScene();
+    expect(c.pixelState()).toBe("");
+    c.beginScene(); // page vide
+    c.endScene();
+    expect(c.pixelState()).toBe("");
+    c.beginScene(); // retour à la page de l'image retouchée
+    expect(c.bitmapOf(el({ brightness: 20 }))).toBe(b);
+    c.endScene();
+    expect(c.pixelState()).toBe("pret");
+    expect(b.close).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("T21 (I33) : un échec ne s'affiche pas sur une page sans image retouchée, et revient avec l'image", async () => {
+    const { c, calls } = await ready();
+    c.beginScene();
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    calls[0]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    c.beginScene();
+    c.endScene();
+    expect(c.pixelState()).toBe("");
+    c.beginScene();
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    expect(c.pixelState()).toBe("echec");
+  });
 });
