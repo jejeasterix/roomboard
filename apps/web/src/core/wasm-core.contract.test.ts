@@ -2,7 +2,7 @@
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
 import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
-import { BAD_GROUP_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE } from "./api";
+import { BAD_GROUP_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
@@ -2153,7 +2153,7 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
 
 // C3 (Z1, Z5, Z6) : groupes, extraction, insertion, fragments. T11 branche le vrai module (`c3Factories = factories`).
 // Aucun écart de la fausse liaison n'est exclu de ce bloc : mêmes refus dans le même ordre, mêmes messages, mêmes Change.
-const c3Factories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
+const c3Factories = factories; // T11 : vrai module branché, contrat C3 commun aux deux fabriques
 const C3_ASSET = { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 };
 const C3_GRID: GridInput = {
   visible: true, snap: true, above: false,
@@ -2237,6 +2237,19 @@ describe.each(c3Factories)("contrat C3 : $name", ({ f }) => {
     const u = d.apply({ type: "Ungroup", ids: [a, b, c] });
     expect(u.ids).toEqual([a, b, c].sort());
     expect([groupOf(d, a), groupOf(d, b), groupOf(d, c)]).toEqual([inner, inner, undefined]);
+  });
+
+  it("Ungroup partiel : seuls les ids nommés perdent leur niveau, le reste du groupe est gardé", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    const b = rect(d, p, 100);
+    const c = rect(d, p, 200);
+    d.apply({ type: "Group", ids: [a, b, c] });
+    const g = groupOf(d, b)!;
+    const u = d.apply({ type: "Ungroup", ids: [a] });
+    expect(u.ids).toEqual([a]);
+    expect([groupOf(d, a), groupOf(d, b), groupOf(d, c)]).toEqual([undefined, g, g]);
   });
 
   it("Ungroup sans élément groupé : aucune étape", () => {
@@ -2415,6 +2428,36 @@ describe.each(c3Factories)("contrat C3 : $name", ({ f }) => {
     d.apply({ type: "Group", ids: [a, b] });
     const back = f.load(d.save(now, "0.1.0"));
     expect(back.element(a)?.group).toEqual(d.element(a)?.group);
+  });
+});
+
+describe.skipIf(loaded === null)("contrat C3 : vrai module seulement", () => {
+  it("gomme partielle : les morceaux gardent le groupe du trait coupé", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    const a = commit(d, p, 100);
+    const b = commit(d, p, 200);
+    d.apply({ type: "Group", ids: [a, b] });
+    const g = d.element(a)?.group;
+    const c = d.apply({ type: "Erase", page: p, path: new Float32Array([300, 50, 300, 150]), radius: 10, mode: "partial" });
+    expect(c.removed).toEqual([a]);
+    expect(c.ids.length).toBeGreaterThan(0);
+    for (const id of c.ids) expect(d.element(id)?.group).toEqual(g);
+  });
+  it("kind inconnu dans le manifeste : refusé « prochaine version »", () => {
+    const d = need().core.blank();
+    const [m, y] = d.extract(first(d), []).saveFragmentParts(now, "0.1.0", "x");
+    const json = JSON.parse(new TextDecoder().decode(m)) as Record<string, unknown>;
+    json["kind"] = "grid";
+    const grid = new TextEncoder().encode(JSON.stringify(json));
+    expect(messageOf(() => need().core.loadFragmentParts(grid, y))).toBe(unknownKindMessage("grid"));
+    expect(messageOf(() => need().core.loadParts(grid, y))).toBe(unknownKindMessage("grid"));
+  });
+  it("source d'une autre liaison : erreur, rien d'écrit", () => {
+    const d = need().core.blank();
+    const s = fakeCore.blank();
+    unchanged(d, () => expect(messageOf(() => d.insertFragment(s, first(d), 0, 0))).toBe(MIXED_SOURCE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => d.insertPages(s, first(d)))).toBe(MIXED_SOURCE_MESSAGE));
   });
 });
 
