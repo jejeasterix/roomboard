@@ -432,7 +432,8 @@ impl Document {
         Ok(self.table_done(page, id))
     }
 
-    /// `InsertTableLine` (T3) : `at` ∈ 0..=n, plafond 64 ; inséré au rang brut de la `at`-ième ligne lisible.
+    /// `InsertTableLine` (T3, T15) : `at` ∈ 0..=n, plafond 64 ; inséré au rang brut de la `at`-ième ligne lisible ;
+    /// le total de l'axe, taille voisine copiée comprise, reste borné en f32 (même garde que `SetTableCell`).
     pub(crate) fn cmd_insert_table_line(
         &mut self,
         id: &str,
@@ -446,6 +447,10 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let size = lines[at.saturating_sub(1) as usize].size;
+        let total: f64 = lines.iter().map(|l| l.size).sum();
+        if !fits_f32(&[total + size]) {
+            return Err(CommandError::BadTable);
+        }
         let index = if at == n {
             let txn = self.read();
             arr.len(&txn)
