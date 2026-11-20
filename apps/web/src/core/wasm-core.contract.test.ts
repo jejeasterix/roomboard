@@ -2838,14 +2838,27 @@ describe.each(factories)("contrat C5 : $name", ({ f }) => {
     const p = first(d);
     const id = image(d, p);
     const stroke = commit(d, p, 100);
-    const typo = { flipX: 1 } as unknown as ImageParams;
-    const run = (target: string, matrix: Matrix = I): string =>
-      messageOf(() => d.apply({ type: "SetImageParams", id: target, params: typo, matrix }));
+    const white = FULL.transparent!;
+    // Refusés par `normalizeParams` ; sans contrôle de type, l'adaptateur les convertirait (booléen, Float64Array, f64).
+    const typos = [
+      { flipX: 1 },
+      { flipY: null },
+      { quarterTurns: "1" },
+      { brightness: "10" },
+      { crop: [] },
+      { crop: null },
+      { crop: ["0", 0, 10, 10] },
+      { transparent: { ...white, contiguous: 1 } },
+      { transparent: { ...white, tolerance: "10" } },
+    ] as unknown as ImageParams[];
+    const run = (target: string, params: ImageParams, matrix: Matrix = I): string =>
+      messageOf(() => d.apply({ type: "SetImageParams", id: target, params, matrix }));
     unchanged(d, () => {
-      expect(run(id)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
-      expect(run(id, [0, 0, 0, 0, 0, 0])).toBe(BAD_IMAGE_PARAMS_MESSAGE);
-      expect(run("nulle-part")).toBe("élément inconnu : nulle-part");
-      expect(run(stroke)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      for (const typo of typos) expect(run(id, typo), JSON.stringify(typo)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      const typo = typos[0] ?? {};
+      expect(run(id, typo, [0, 0, 0, 0, 0, 0])).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      expect(run("nulle-part", typo)).toBe("élément inconnu : nulle-part");
+      expect(run(stroke, typo)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
     });
     d.free();
   });
