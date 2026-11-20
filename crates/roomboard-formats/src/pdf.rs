@@ -397,7 +397,8 @@ fn draw(
         } => {
             // Matrice poussée, chemin local : sous une échelle non uniforme, l'épaisseur et la jointure suivent la
             // matrice comme au canvas (jamais de points transformés à l'avance pour un trait).
-            if let Some(path) = build(path, Some(m)) {
+            if let Some(path) = build(path, None) {
+                s.push_transform(&tf(m));
                 s.set_fill(None);
                 s.set_stroke(Some(Stroke {
                     paint: rgb::Color::new(color.r, color.g, color.b).into(),
@@ -420,6 +421,7 @@ fn draw(
                     }),
                 }));
                 s.draw_path(&path);
+                s.pop();
             }
         }
         // Découpe vide : ignorée (le canvas découperait tout) ; cas sans effet visible à l'export.
