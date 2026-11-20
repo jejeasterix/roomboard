@@ -944,4 +944,167 @@ mod tests {
         let e = Document::load_inner(&bytes).expect("load");
         assert_eq!(e.created.as_deref(), Some("2026-11-20T00:00:00Z"));
     }
+
+    // C7 (T6) : liaison `format_text`, par `read_patch`, `wire_attrs` et `format_text_inner`.
+
+    /// Valeur JS simulée en natif, lue comme par `serde_wasm_bindgen` : `null` donne `None` à une option, `()` sinon.
+    #[derive(Clone, Copy)]
+    enum Js {
+        Null,
+        Bool(bool),
+        Num(f64),
+        Str(&'static str),
+    }
+
+    impl<'de> serde::de::IntoDeserializer<'de> for Js {
+        type Deserializer = Self;
+
+        fn into_deserializer(self) -> Self {
+            self
+        }
+    }
+
+    impl<'de> serde::Deserializer<'de> for Js {
+        type Error = serde::de::value::Error;
+
+        fn deserialize_any<V: serde::de::Visitor<'de>>(self, v: V) -> Result<V::Value, Self::Error> {
+            match self {
+                Js::Null => v.visit_unit(),
+                Js::Bool(b) => v.visit_bool(b),
+                Js::Num(n) => v.visit_f64(n),
+                Js::Str(s) => v.visit_str(s),
+            }
+        }
+
+        fn deserialize_option<V: serde::de::Visitor<'de>>(
+            self,
+            v: V,
+        ) -> Result<V::Value, Self::Error> {
+            match self {
+                Js::Null => v.visit_none(),
+                _ => v.visit_some(self),
+            }
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf unit unit_struct
+            newtype_struct seq tuple tuple_struct map struct enum identifier ignored_any
+        }
+    }
+
+    fn read(pairs: Vec<(&'static str, Js)>) -> Result<Vec<TextAttr>, CommandError> {
+        read_patch(serde::de::value::MapDeserializer::<_, serde::de::value::Error>::new(
+            pairs.into_iter(),
+        ))
+    }
+
+    /// Patron écarté (T6) : lu en `HashMap<String, WireValue>` sans `Option`, un `null` de la page (retrait) serait
+    /// une erreur ; lu sans contrôle de type, `bold: "oui"` passerait. Les deux rougissent ici, à la désérialisation.
+    #[test]
+    fn read_patch_takes_null_as_removal_and_checks_types() {
+        assert_eq!(
+            read(vec![
+                ("color", Js::Null),
+                ("bold", Js::Null),
+                ("size", Js::Num(72.0)),
+                ("italic", Js::Bool(true)),
+            ]),
+            Ok(vec![
+                TextAttr::Bold(false),
+                TextAttr::Color(None),
+                TextAttr::Italic(true),
+                TextAttr::Size(Some(72.0))
+            ])
+        );
+        assert_eq!(
+            read(vec![("font", Js::Str("Georgia")), ("underline", Js::Null)]),
+            Ok(vec![
+                TextAttr::Font(Some("Georgia".into())),
+                TextAttr::Underline(false)
+            ])
+        );
+        for bad in [
+            ("bold", Js::Str("oui")),
+            ("size", Js::Str("72")),
+            ("color", Js::Num(5.0)),
+            ("font", Js::Bool(true)),
+            ("href", Js::Null),
+        ] {
+            assert_eq!(read(vec![bad]), Err(CommandError::BadFormat), "{}", bad.0);
+        }
+    }
+
+    fn patch(pairs: Vec<(&str, Option<WireValue>)>) -> BTreeMap<String, Option<WireValue>> {
+        pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    }
+
+    /// T7 : `null` (None) et `false` retirent ; clé inconnue ou valeur au mauvais type : `BadFormat`.
+    #[test]
+    fn wire_attrs_maps_values_and_refuses_bad_ones() {
+        assert_eq!(
+            wire_attrs(patch(vec![
+                ("bold", Some(WireValue::Bool(true))),
+                ("color", None),
+                ("size", Some(WireValue::Number(72.0))),
+            ])),
+            Ok(vec![
+                TextAttr::Bold(true),
+                TextAttr::Color(None),
+                TextAttr::Size(Some(72.0))
+            ])
+        );
+        assert_eq!(
+            wire_attrs(patch(vec![
+                ("bold", None),
+                ("font", Some(WireValue::Text("Georgia".into()))),
+                ("italic", Some(WireValue::Bool(false))),
+            ])),
+            Ok(vec![
+                TextAttr::Bold(false),
+                TextAttr::Font(Some("Georgia".into())),
+                TextAttr::Italic(false)
+            ])
+        );
+        for bad in [
+            ("href", Some(WireValue::Text("x".into()))),
+            ("bold", Some(WireValue::Text("oui".into()))),
+            ("size", Some(WireValue::Text("72".into()))),
+            ("color", Some(WireValue::Number(5.0))),
+        ] {
+            assert_eq!(wire_attrs(patch(vec![bad])), Err(CommandError::BadFormat));
+        }
+    }
+
+    #[test]
+    fn format_text_inner_formats_and_reads_spans() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .set_text_inner(
+                &p,
+                None,
+                [100.0, 200.0],
+                "Le chat noir",
+                "#000000",
+                36.0,
+                [600.0, 45.0],
+            )
+            .expect("texte")
+            .ids[0]
+            .clone();
+        let red = vec![TextAttr::Color(Some("#ff0000".into()))];
+        let c = d
+            .format_text_inner(&id, 3, 4, red, Some(60.0))
+            .expect("format");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let t = d.core.element(&id).and_then(|e| e.text).expect("texte");
+        assert_eq!(t.box_height, 60.0);
+        let texts: Vec<&str> = t.spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, vec!["Le ", "chat", " noir"]);
+        assert_eq!(t.spans[1].attrs.color.as_deref(), Some("#ff0000"));
+        assert_eq!(
+            d.format_text_inner("absent", 0, 1, vec![TextAttr::Bold(true)], None),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+    }
 }
