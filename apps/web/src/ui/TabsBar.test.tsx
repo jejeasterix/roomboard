@@ -98,4 +98,19 @@ describe("TabsBar (T91)", () => {
     expect(container.querySelector("[data-tab-new]")!.classList.contains("rb-tab-new")).toBe(true);
     expect(container.querySelector("[data-tab=b] .rb-tab-dirty")).not.toBeNull();
   });
+
+  it("une impulsion garde les mêmes nœuds d'onglet (le clic après mousedown n'est pas perdu)", () => {
+    const { container, setT } = setup();
+    const a = tab(container, "a");
+    const close = container.querySelector('[data-tab-close="b"]');
+    setT(TABS.map((t) => ({ ...t })));
+    expect(tab(container, "a")).toBe(a);
+    expect(container.querySelector('[data-tab-close="b"]')).toBe(close);
+    setT([{ ...TABS[0]!, title: "Renommé" }, { ...TABS[1]!, dirty: false }]);
+    expect(tab(container, "a")).toBe(a);
+    expect(a.textContent).toContain("Renommé");
+    expect(tab(container, "b").hasAttribute("data-dirty")).toBe(false);
+    setT([TABS[0]!]);
+    expect(container.querySelectorAll("[role=tab]").length).toBe(1);
+  });
 });
