@@ -140,4 +140,13 @@ describe("GridPanel (C9 éditeur, E9)", () => {
     typeIn(spacing, "");
     expect(preview).toHaveBeenCalledTimes(1);
   });
+
+  it("PC8 (T8) : document à épaisseur 6, on choisit 2 : l'option 6 reste proposée", () => {
+    const { q } = setup(grid([level("squares", 40, { lineWidth: 6 })]));
+    const sel = q<HTMLSelectElement>("lineWidth");
+    choose(sel, "2");
+    expect([...sel.options].map((o) => o.value)).toEqual(["1", "2", "3", "4", "6"]);
+    expect(sel.value).toBe("2");
+  });
 });
+

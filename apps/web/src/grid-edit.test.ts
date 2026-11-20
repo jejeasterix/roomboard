@@ -91,4 +91,18 @@ describe("brouillon de la grille (C9 éditeur, E4 à E6)", () => {
     const g = grid([level("music", 12, { color: "red", lineWidth: 2.5 })], { snap: false });
     expect(toGrid(draftOf(g))).toEqual(g);
   });
+
+  it("E5 (T8) : pas modifié puis ramené à la valeur du document : spacingX et spacingY écrits (pas de garde par valeur)", () => {
+    const g = grid([level("lines", 40, { spacingY: 25 })]);
+    const out = toGrid(withSpacing(withSpacing(draftOf(g), 60), 40));
+    expect(out?.levels[0]).toMatchObject({ spacingX: 40, spacingY: 40 });
+  });
+
+  it("E2, G5 (T8) : grille sans niveau lisible, brouillon inchangé : la grille du document, pas null", () => {
+    const g = grid([]);
+    expect(draftOf(g).kind).toBe("none");
+    expect(toGrid(draftOf(g))).toEqual(g);
+    expect(toGrid(withKind(withKind(draftOf(g), "squares"), "none"))).toBeNull();
+  });
 });
+
