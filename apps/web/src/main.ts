@@ -11,9 +11,11 @@ import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
 import { createSettingsStore, parseSettings } from "./engine/settings";
 import { measureWith, type Measure } from "./engine/text-layout";
+import { browserFallbackDeps } from "./platform/host-repli";
 import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
+import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
@@ -46,9 +48,13 @@ async function start(): Promise<void> {
   const first = await startDocument(core, pending);
   const prepared = await prepareHost(window);
   const tauri = prepared.kind === "tauri";
-  // `PreparedHost` n'expose pas l'ipc : enrobage sans état de la coque (`invoke`/`listen`), repris ici pour le lancement
-  // et Cmd+Q.
-  const ipc: TauriIpc | null = tauri ? (await loadTauriPorts()).ipc : null;
+  // `PreparedHost` n'expose ni l'ipc ni les boîtes : enrobages sans état de la coque, repris ici pour le lancement, Cmd+Q
+  // et les fichiers de profil.
+  const ports = tauri ? await loadTauriPorts() : null;
+  const ipc: TauriIpc | null = ports === null ? null : ports.ipc;
+  // Fichiers de profil (C1, P25) : boîtes natives dans la coque ; ailleurs <input type=file> et téléchargement.
+  const profileFiles =
+    ports === null ? createWebProfileFiles(browserFallbackDeps(document, URL)) : createTauriProfileFiles(ports.dialog, ports.fs);
 
   // Conteneur des scènes, posé dans #app avant le premier onglet ; l'application le place dans la case `stage`.
   const root = document.getElementById("app");
@@ -103,6 +109,7 @@ async function start(): Promise<void> {
     settings,
     notes: note === null ? parsed.errors : [...parsed.errors, note],
     shell: prepared.shell,
+    profileFiles,
     stages,
     navigate: (search) => {
       window.location.search = search;
