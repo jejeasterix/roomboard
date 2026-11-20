@@ -501,6 +501,19 @@ describe("outil Tableau (C10b)", () => {
     expect(s.host.opened).toHaveLength(n);
   });
 
+  it("F14, F16 : Maj+clic sur la zone active elle-même : aucune plage, Diviser reste offert", () => {
+    const { s, id, r, c } = made(3, 2);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[0] ?? "", col: c[1] ?? "" } });
+    s.tool.prune();
+    s.click(...mid(0, 0));
+    s.tool.requestCommit();
+    s.setShift(true);
+    s.click(...mid(0, 1));
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, merged: true, range: null });
+    s.tool.act("split");
+    expect(s.last()).toEqual({ type: "SplitTableCell", id, row: r[0], col: c[0] });
+  });
+
   it("F14 : appui pendant une saisie ouverte puis glisser : valide seulement, aucune plage", () => {
     const s = setup();
     s.create(100, 200, 2, 2);
