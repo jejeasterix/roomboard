@@ -578,8 +578,35 @@ describe("espace de travail : conteneur, repli et images (R7, R12, R30, S3, S4)"
     expect(shell.notify).toHaveBeenCalledWith(
       "img.roomboard : asset ignoré : assets/x.png (nom d'asset invalide) ; asset ignoré : assets/y.png (contenu différent de son empreinte)",
     );
-    expect(await tab.files.run("save")).toBe(true); // avertissements : pas de refus (HR13)
+    expect(await tab.files.run("save")).toBe(true); // avertissement du conteneur sur un asset non cité : pas de refus (HR13)
     expect(strokes(first)).toBe(0);
+  });
+
+  it("asset cité à empreinte fausse (ignoré par le conteneur) : enregistrement refusé (HR13 amendée)", async () => {
+    const ws = await setupWorkspace();
+    codec.read.mockResolvedValueOnce({
+      manifest: new Uint8Array([1]),
+      ybin: docWithImage().save(NOW, "0.1.0"),
+      assets: [],
+      warnings: ["asset ignoré : assets/x.png (contenu différent de son empreinte)"],
+    } satisfies ContainerContents);
+    expect(await ws.openDocument({ name: "img.roomboard", bytes: new Uint8Array([9]), target: null })).toBe(true);
+    expect(await ws.active().files.run("save")).toBe(false);
+    expect(shell.notify).toHaveBeenLastCalledWith(UNREAD_ASSETS_MESSAGE);
+    expect(codec.write).not.toHaveBeenCalled();
+  });
+
+  it("onglet fermé pendant le décodage : insertion abandonnée avec un message clair", async () => {
+    let ws!: Workspace;
+    const decode = vi.fn(async (_b: Blob, _k: string) => {
+      await ws.newBlank();
+      await ws.close(ws.tabs.list()[0]!.id);
+      return { bitmap: { close() {} } as unknown as ImageBitmap, w: 10, h: 10 };
+    });
+    ws = await setupWorkspace({ decode });
+    const r = await ws.importFiles([plainFile("a.png", pngHead(10, 10))], { x: 0, y: 0 });
+    expect(r.inserted).toEqual([]);
+    expect(shell.notify).toHaveBeenCalledWith("a.png : onglet fermé pendant l'import, image non insérée");
   });
 
   it("enregistrer sans image : octets de doc.save, conteneur jamais appelé", async () => {
