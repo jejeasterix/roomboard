@@ -9,6 +9,7 @@ import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { detectSupport } from "../engine/input/support";
 import { FakeGL } from "../engine/render/fake-gl";
+import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";
 import { createSettingsStore, echelonsTag, parseSettings, type ParsedSettings } from "../engine/settings";
 import { readSelection, readText, setSelection } from "./rich-dom";
 import { stageTags } from "./stage-tags";
@@ -438,5 +439,63 @@ describe("createBoardSession (T93)", () => {
     expect(Array.from(new Uint8Array(await decode.mock.calls[0]![0].arrayBuffer()))).toEqual([1, 2, 3]);
     s.dispose();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("session — fond PDF (C12, PF15)", () => {
+  const PDF = { id: "ef".repeat(32), name: "a.pdf", mime: "application/pdf", size: 5 };
+  function pdfEngine() {
+    const close = vi.fn();
+    const destroy = vi.fn();
+    const renderTile = vi.fn(async (_index: number, ..._rest: unknown[]) => ({ close }) as unknown as TileBitmap);
+    const open = vi.fn(async (_b: Blob): Promise<PdfFile> => ({ pageCount: 1, pageSize: async () => ({ w: 612, h: 792 }), renderTile, destroy }));
+    return { engine: { open } satisfies PdfEngine, open, renderTile, close, destroy };
+  }
+  async function pdfSession(o: { pdf?: PdfEngine; withAsset?: boolean } = {}) {
+    const doc = fakeCore.fromPdfPages(PDF, [{ w: 612, h: 792 }]);
+    const assets = createAssetStore();
+    if (o.withAsset !== false) assets.adopt(PDF.id, new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])], { type: "application/pdf" }));
+    const s = await createBoardSession(doc, { ...shared, ...(o.pdf ? { pdf: o.pdf } : {}) }, assets);
+    Object.defineProperty(s.stage, "clientWidth", { configurable: true, value: 640 });
+    Object.defineProperty(s.stage, "clientHeight", { configurable: true, value: 480 });
+    s.activate();
+    return s;
+  }
+
+  it("fond pdf-page : PDF ouvert depuis le magasin de l'onglet, tuiles rendues, data-fond « pret » (S1, S3)", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    expect(pdf.open).toHaveBeenCalledTimes(1);
+    expect(pdf.renderTile.mock.calls[0]?.[0]).toBe(0);
+    s.dispose();
+    expect(pdf.destroy).toHaveBeenCalledTimes(1);
+    expect(pdf.close).toHaveBeenCalled();
+  });
+
+  it("deactivate libère tuiles et PdfFile (12 onglets possibles) ; activate les recrée au dessin suivant (PF32, contre-relecture)", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    s.deactivate();
+    expect([pdf.destroy.mock.calls.length, pdf.close.mock.calls.length > 0]).toEqual([1, true]);
+    s.activate();
+    await vi.waitFor(() => expect(pdf.open).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    s.dispose();
+  });
+
+  it("sans moteur PDF (amorce partielle) : data-fond « echec »", async () => {
+    const s = await pdfSession();
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("echec"), { timeout: 5000 });
+    s.dispose();
+  });
+
+  it("asset absent du magasin : « echec », PDF jamais ouvert", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine, withAsset: false });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("echec"), { timeout: 5000 });
+    expect(pdf.open).not.toHaveBeenCalled();
+    s.dispose();
   });
 });

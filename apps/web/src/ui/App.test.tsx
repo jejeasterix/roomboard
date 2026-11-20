@@ -213,6 +213,12 @@ afterEach(() => {
 });
 
 describe("App (T95)", () => {
+  it("App : Exporter en PDF (C12) — le bouton de la barre des pages appelle workspace.exportPdf", () => {
+    const { container, workspace } = renderApp();
+    click(container.querySelector('button[data-item="export-pdf"]'));
+    expect(workspace.exportPdf).toHaveBeenCalledTimes(1);
+  });
+
   it("inventaire : chaque bouton de l'ancienne barre a son élément", () => {
     const { container } = renderApp();
     for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",

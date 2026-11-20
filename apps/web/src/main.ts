@@ -5,7 +5,14 @@
  * fois ici et vont à l'onglet actif. `?banc` ajoute le banc du lot 1 rejoué sur l'onglet actif.
  */
 import { createBoardSession, type SessionShared } from "./app/board-session";
-import { createWorkspace } from "./app/workspace";
+import { browserExportCanvas, createPngOverlay, OVERLAY_MAX_PX } from "./app/pdf-overlay";
+import type { RasterPage } from "./app/pdf-export";
+import { createWorkspace, type TabSession } from "./app/workspace";
+import type { CoreDocument } from "./core/api";
+import { Canvas2DRenderer } from "./engine/render/canvas2d";
+import { decodeImage, kindOfMime } from "./platform/image-import";
+import { loadPdfjs, loadPdfLib } from "./platform/pdf-load";
+import { createPdfEngine } from "./platform/pdf-render";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
@@ -21,7 +28,7 @@ import { handlePaste } from "./platform/paste";
 import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
-import { createTauriTypedFiles, createWebTypedFiles, RBITEM_TYPE } from "./platform/typed-files";
+import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, RBITEM_TYPE } from "./platform/typed-files";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
@@ -66,6 +73,44 @@ async function start(): Promise<void> {
   const itemFiles =
     ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBITEM_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBITEM_TYPE);
 
+  // PDF (C12) : pdf.js et pdf-lib chargés au premier PDF (import dynamique) ; écriture native dans la coque.
+  const pdf = createPdfEngine(loadPdfjs);
+  const pdfFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), PDF_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, PDF_TYPE);
+  const decodeBitmap = async (blob: Blob) => (await decodeImage(blob, kindOfMime(blob.type) ?? "png")).bitmap;
+  // Superposition PNG (lot b) ; T13 la garde en repli du producteur vectoriel. `doc` est la copie de l'export.
+  const pngOverlay = (tab: TabSession, doc: CoreDocument) =>
+    createPngOverlay({
+      doc,
+      assets: tab.assets,
+      decode: decodeBitmap,
+      alive: () => true,
+      canvas: browserExportCanvas,
+      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images }),
+    });
+  // Repli en image (PF20) : page `index` du PDF rendue en PNG par pdf.js, quand pdf-lib refuse le fichier.
+  const rasterPage = async (blob: Blob, index: number): Promise<RasterPage | null> => {
+    const file = await pdf.open(blob);
+    try {
+      if (index >= file.pageCount) return null;
+      const { w, h } = await file.pageSize(index);
+      const scale = Math.min(2, OVERLAY_MAX_PX / Math.max(w, h));
+      const pw = Math.max(1, Math.round(w * scale));
+      const ph = Math.max(1, Math.round(h * scale));
+      const bitmap = await file.renderTile(index, scale, { x: 0, y: 0, w: pw, h: ph }, new AbortController().signal);
+      const c = browserExportCanvas(pw, ph);
+      try {
+        c.ctx.drawImage(bitmap, 0, 0);
+        return { png: await c.png(), w, h };
+      } finally {
+        bitmap.close?.();
+        c.release();
+      }
+    } finally {
+      file.destroy();
+    }
+  };
+
   // Conteneur des scènes, posé dans #app avant le premier onglet ; l'application le place dans la case `stage`.
   const root = document.getElementById("app");
   if (root === null) throw new Error("élément absent : #app");
@@ -75,7 +120,7 @@ async function start(): Promise<void> {
   // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
   const measureCtx = document.createElement("canvas").getContext("2d");
   const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
-  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version() };
+  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf };
 
   const env = { tauri, userAgent: navigator.userAgent };
   const store = createProfileStore(browserKeyValue(window), BUILTIN_PROFILES);
@@ -107,6 +152,11 @@ async function start(): Promise<void> {
     readSheet: (b) => sheets.read(b),
     clipboard: createClipboard(browserSystemClipboard(navigator)),
     itemFiles,
+    pdf,
+    pdfFiles,
+    loadPdfLib,
+    overlay: pngOverlay,
+    rasterPage,
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),

@@ -31,7 +31,7 @@ import type { TypedFiles } from "../platform/typed-files";
 import type { BoardSession } from "./board-session";
 import { createContainerIO, missingOf, typed } from "./container-io";
 import { createFragmentOps, SELECTION_NAME } from "./fragments";
-import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
+import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RASTER_MISSING_MESSAGE, type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
@@ -377,6 +377,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         });
         if (r === null) return false; // onglet fermé pendant l'export : rien à dire
         if (r.rasterized) await say(PDF_RASTER_MESSAGE);
+        if (r.rasterMissing) await say(PDF_RASTER_MISSING_MESSAGE);
         if (r.cut) await say(PDF_CUT_MESSAGE);
         const saved = await pdfFiles.save(exportPdfName(tab.files.name(), r.annotated), r.bytes);
         if (saved) await say(pdfExportedMessage(r.pages));
