@@ -65,6 +65,12 @@ describe("ToolbarHost local", () => {
     const b = setup({ eraserMode: "object" }); b.host.runAction("eraser-mode");
     expect(b.engine.setEraserMode).toHaveBeenCalledWith("partial");
   });
+  it('grid → toggle("grid") (E7)', () => {
+    const { host, t } = setup();
+    host.runAction("grid");
+    expect(vi.mocked(t.toggle).mock.calls.map((c) => c[0])).toEqual(["grid"]);
+  });
+
   it("settings et profiles → toggle", () => {
     const { host, t } = setup();
     host.runAction("settings"); host.runAction("profiles");
