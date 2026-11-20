@@ -1985,6 +1985,67 @@ mod tests {
         );
     }
 
+    /// C14 : média lié ajouté, type inconnu refusé, réglages relus, lien réécrit hors historique.
+    #[test]
+    fn add_media_inner_then_set_media_and_links() {
+        use roomboard_core::media::LinkedAsset;
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let webm = AssetRef {
+            id: ABC.into(),
+            name: "clip.webm".into(),
+            mime: "video/webm".into(),
+            size: 10.0,
+        };
+        let m = [1.0, 0.0, 0.0, 1.0, 5.0, 6.0];
+        let c = d
+            .add_media_inner(
+                &p,
+                webm.clone(),
+                Some("clips/clip.webm".into()),
+                "video",
+                [320.0, 180.0, 2.5],
+                None,
+                &m,
+            )
+            .expect("média");
+        let id = c.ids[0].clone();
+        let e = d.core.element(&id).expect("vue");
+        assert_eq!(e.kind, "media");
+        assert_eq!(
+            e.media.as_ref().map(|v| (v.media_type.as_str(), v.w, v.h)),
+            Some(("video", 320.0, 180.0))
+        );
+        assert_eq!(
+            d.add_media_inner(&p, webm.clone(), None, "hologram", [320.0, 180.0, 2.5], None, &m),
+            Err(CommandError::BadMedia)
+        );
+        assert_eq!(
+            d.add_media_inner(&p, webm, None, "audio", [320.0, 180.0, 2.5], None, &[1.0, 0.0]),
+            Err(CommandError::BadMatrix)
+        );
+        d.set_media_inner(&id, 0.5, Some(2.0), true, 0.4)
+            .expect("réglages");
+        let v = d.core.element(&id).and_then(|v| v.media).expect("média");
+        assert_eq!(
+            (v.trim_start, v.trim_end, v.looped, v.volume),
+            (0.5, Some(2.0), true, 0.4)
+        );
+        let version = d.core.version();
+        assert_eq!(
+            d.relink_assets_inner(&[ABC.to_string()], &["../clips/clip.webm".to_string()]),
+            1
+        );
+        assert_eq!(d.core.version(), version);
+        assert_eq!(
+            d.core.linked_assets(),
+            vec![LinkedAsset {
+                id: ABC.into(),
+                path: "../clips/clip.webm".into()
+            }]
+        );
+    }
+
     #[test]
     fn set_backdrop_inner_then_clear() {
         let mut d = Document::blank();

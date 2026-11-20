@@ -1294,6 +1294,22 @@ mod tests {
                     color: "#000000".into(),
                     size: 36.0,
                 },
+                "media" => Command::AddMedia {
+                    page: p.clone(),
+                    asset: AssetRef {
+                        id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+                        name: "a.webm".into(),
+                        mime: "video/webm".into(),
+                        size: 3.0,
+                    },
+                    linked: None,
+                    media_type: crate::media::MediaType::Video,
+                    w: 320.0,
+                    h: 180.0,
+                    duration: 2.5,
+                    poster: None,
+                    matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                },
                 other => panic!("kind sans fabrique : {other} (ajouter sa commande ici, son bras dans element() et element_geom)"),
             };
             let id = d.apply(cmd).expect(kind).ids[0].clone();
