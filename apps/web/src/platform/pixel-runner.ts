@@ -7,6 +7,7 @@
  * l'arrivée est jugée par l'appelant (clé de son emplacement, `image-cache.ts`). Le Worker est créé par l'amorce
  * (`main.ts`) : aucun test ne résout `pixel-worker.ts` ni `src/wasm-formats/`.
  */
+import type { ImageParams } from "../core/api";
 import type { PixelFormatsBinding } from "./container";
 import type { WorkerLike } from "./sheet-reader";
 
@@ -17,12 +18,8 @@ export const PIXELS_FAILED_MESSAGE = "calcul des pixels interrompu";
 /** Message de `#etat` au premier échec d'un onglet (I24). */
 export const pixelNotice = (cause: string): string => `retouches de l'image non affichées : ${cause}`;
 
-/** Réglages calculés par le Worker (sous-ensemble structurel d'`ImageParams`). */
-export interface PixelParams {
-  readonly transparent?: { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean };
-  readonly brightness?: number;
-  readonly contrast?: number;
-}
+/** Réglages calculés par le Worker (sous-ensemble d'`ImageParams`). */
+export type PixelParams = Pick<ImageParams, "transparent" | "brightness" | "contrast">;
 export interface PixelJob extends PixelParams {
   /** `pixelKey` de l'image (I19). */
   readonly key: string;

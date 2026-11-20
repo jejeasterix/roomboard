@@ -71,7 +71,7 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
       { defer: true },
     ),
   );
-  const edit = (next: PixelDraft): void => {
+  const setPixels = (next: PixelDraft): void => {
     setDraft(next);
     props.edit.preview(pixelParams(next));
   };
@@ -101,11 +101,11 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
       </Show>
       <label>
         Luminosité{" "}
-        <input type="range" min="-100" max="100" step="1" data-image-input="brightness" value={draft().brightness} onInput={(e) => edit({ ...draft(), brightness: num(e) })} />
+        <input type="range" min="-100" max="100" step="1" data-image-input="brightness" value={draft().brightness} onInput={(e) => setPixels({ ...draft(), brightness: num(e) })} />
       </label>
       <label>
         Contraste{" "}
-        <input type="range" min="-100" max="100" step="1" data-image-input="contrast" value={draft().contrast} onInput={(e) => edit({ ...draft(), contrast: num(e) })} />
+        <input type="range" min="-100" max="100" step="1" data-image-input="contrast" value={draft().contrast} onInput={(e) => setPixels({ ...draft(), contrast: num(e) })} />
       </label>
       <fieldset>
         <legend>Couleur transparente</legend>
@@ -114,7 +114,7 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
             type="button"
             data-image-action="pick"
             aria-pressed={mode() === "pick"}
-            onClick={() => void props.edit.pick().then((c) => c !== null && edit({ ...draft(), color: c }))}
+            onClick={() => void props.edit.pick().then((c) => c !== null && setPixels({ ...draft(), color: c }))}
           >
             Pipette
           </button>
@@ -122,18 +122,18 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
         </div>
         <label>
           Tolérance{" "}
-          <input type="range" min="0" max="100" step="1" data-image-input="tolerance" value={draft().tolerance} onInput={(e) => edit({ ...draft(), tolerance: num(e) })} />
+          <input type="range" min="0" max="100" step="1" data-image-input="tolerance" value={draft().tolerance} onInput={(e) => setPixels({ ...draft(), tolerance: num(e) })} />
         </label>
         <label>
           Plume{" "}
-          <input type="range" min="0" max="100" step="1" data-image-input="soft" value={draft().soft} onInput={(e) => edit({ ...draft(), soft: num(e) })} />
+          <input type="range" min="0" max="100" step="1" data-image-input="soft" value={draft().soft} onInput={(e) => setPixels({ ...draft(), soft: num(e) })} />
         </label>
         <label>
           Mode{" "}
           <select
             data-image-input="mode"
             ref={(el) => syncValue(el, () => (draft().contiguous ? "contiguous" : "global"))}
-            onChange={(e) => edit({ ...draft(), contiguous: e.currentTarget.value === "contiguous" })}
+            onChange={(e) => setPixels({ ...draft(), contiguous: e.currentTarget.value === "contiguous" })}
           >
             <option value="contiguous">Contigu</option>
             <option value="global">Global</option>

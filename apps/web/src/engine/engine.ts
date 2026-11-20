@@ -576,27 +576,26 @@ export function createEngine(deps: EngineDeps): Engine {
         spaceHeld = true;
         return true;
       }
+      const edit = editAction(e);
+      const action = keyAction(e);
       if (imageEdit !== null && imageEdit.mode() !== "idle") {
         // C5 (I28) : pendant le rognage ou la pipette, Échap sort du mode, Suppr est pris sans effet, Entrée valide le
         // rognage, Ctrl+Z / Ctrl+Y sortent du mode sans écrire puis annulent ou rétablissent.
-        const ed = editAction(e);
-        if (ed === "escape") {
+        if (edit === "escape") {
           imageEdit.cancelMode();
           return true;
         }
-        if (ed === "delete") return true;
+        if (edit === "delete") return true;
         if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;
         }
-        const act = keyAction(e);
-        if (act === "undo" || act === "redo") {
+        if (action === "undo" || action === "redo") {
           imageEdit.cancelMode();
-          history(act);
+          history(action);
           return true;
         }
       }
-      const edit = editAction(e);
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
@@ -612,7 +611,6 @@ export function createEngine(deps: EngineDeps): Engine {
         }
         return true;
       }
-      const action = keyAction(e);
       if (action === null) return false;
       // C3 (Z13, HZ1-2) : Ctrl+G et Ctrl+Maj+G sont pris même sans effet.
       if (action === "group") {
