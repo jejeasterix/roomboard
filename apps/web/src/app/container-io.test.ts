@@ -1,9 +1,19 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
-import type { CoreDocument, CoreFactory } from "../core/api";
+import type { CoreDocument, CoreFactory, LinkedAsset } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
+import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec } from "../platform/container";
-import { CODEC_FALLBACK_MESSAGE, createContainerIO } from "./container-io";
+import {
+  CODEC_FALLBACK_MESSAGE,
+  createContainerIO,
+  LINKED_COPY_MESSAGE,
+  LINKED_WEB_MESSAGE,
+  LinkedMediaError,
+  linkedMissingMessage,
+  missingOf,
+  type ContainerIODeps,
+} from "./container-io";
 
 const ID = "ab".repeat(32);
 const hasher = async (): Promise<string> => ID;
@@ -116,5 +126,114 @@ describe("conteneurs (DAZ3)", () => {
     const core = { loadParts: () => { throw new Error("refus du cœur"); }, loadFragmentParts: () => { throw new Error("refus du cœur"); } } as unknown as CoreFactory;
     expect(await io(core, codecOk(), said).read("x.rbitem", u8(1), "fragment")).toBeNull();
     expect(said).toEqual(["Ouverture impossible (x.rbitem) : refus du cœur"]);
+  });
+});
+
+describe("conteneurs : médias (C14)", () => {
+  const VID = "cd".repeat(32);
+  const IMG = "ef".repeat(32);
+  const SIZE = 300_000_000;
+  const NOW = "2026-11-20T00:00:00Z";
+  function mediaDoc(linked: string | null, withImage = false): CoreDocument {
+    const d = fakeCore.blank();
+    const page = d.pageIds()[0]!;
+    d.apply({
+      type: "AddMedia",
+      page,
+      asset: { id: VID, name: "clip.webm", mime: "video/webm", size: SIZE },
+      poster: null,
+      linked,
+      mediaType: "video",
+      w: 640,
+      h: 360,
+      duration: 12,
+      matrix: [1, 0, 0, 1, 0, 0],
+    });
+    if (withImage) d.apply({ type: "AddImage", page, asset: { id: IMG, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+    return d;
+  }
+  const store = () => createAssetStore(hasher);
+  const readCodec = (d: CoreDocument, assets: [string, Blob][] = []): ContainerCodec => ({
+    read: vi.fn(async () => ({ manifest: u8(9), ybin: d.save(NOW, "0.1.0"), assets, warnings: [] })),
+    write: vi.fn(async () => u8(7)),
+  });
+  function ioWith(codec: ContainerCodec, said: string[], relink?: ContainerIODeps["relink"]) {
+    return createContainerIO({ core: fakeCore, codec, say: async (m) => void said.push(m), makeAssets: store, ...(relink ? { relink } : {}) });
+  }
+
+  it("asset lié : Enregistrer permis ; image absente : refusé (effet de bord R30)", () => {
+    expect(missingOf(mediaDoc("/v/clip.webm"), store())).toEqual([]);
+    expect(missingOf(mediaDoc("/v/clip.webm", true), store())).toEqual([IMG]);
+  });
+
+  it("fragment d'un média lié : LinkedMediaError, codec jamais appelé (M32)", async () => {
+    const codec = codecOk();
+    // image absente aussi : le refus du lié passe avant MissingAssetError
+    const p = ioWith(codec, []).encode(mediaDoc("/v/clip.webm", true), store(), "n", "v", { kind: "fragment", name: "Sélection" });
+    await expect(p).rejects.toBeInstanceOf(LinkedMediaError);
+    await expect(p).rejects.toThrow(LINKED_COPY_MESSAGE);
+    expect(LINKED_COPY_MESSAGE).toBe("vidéo liée : copie non prise en charge, déposez le fichier à nouveau");
+    expect(codec.write).not.toHaveBeenCalled();
+  });
+
+  it("fragment d'un média inclus : écrit", async () => {
+    const assets = store();
+    assets.adopt(VID, new Blob([u8(1, 2)], { type: "video/webm" }));
+    const codec = codecOk();
+    expect(await ioWith(codec, []).encode(mediaDoc(null), assets, "n", "v", { kind: "fragment", name: "Sélection" })).toEqual(u8(7));
+    expect(vi.mocked(codec.write).mock.calls[0]![2].map((a) => [a.id, a.mime])).toEqual([[VID, "video/webm"]]);
+  });
+
+  it("R9 : le conteneur écrit d'un document à vidéo liée ne contient pas les octets de la vidéo", async () => {
+    const assets = store();
+    assets.adopt(VID, new Blob([u8(7, 7, 7, 7)], { type: "video/webm" }));
+    assets.link(VID, "/v/clip.webm");
+    assets.adopt(IMG, new Blob([u8(1, 2, 3)], { type: "image/png" }));
+    const codec = codecOk();
+    await ioWith(codec, []).encode(mediaDoc("/v/clip.webm", true), assets, "n", "v", { kind: "document" });
+    expect(vi.mocked(codec.write).mock.calls[0]![2].map((a) => a.id)).toEqual([IMG]);
+  });
+
+  it("ouvrir en coque : lien résolu, accordé, au magasin (S5, M31)", async () => {
+    const said: string[] = [];
+    const relink = vi.fn(async (_doc: string | null, l: LinkedAsset, _size: number) => `/cours/${l.path}`);
+    const r = await ioWith(readCodec(mediaDoc("videos/clip.webm")), said, relink).read("a.roomboard", u8(1), "document", "/cours/a.roomboard");
+    expect(relink).toHaveBeenCalledWith("/cours/a.roomboard", { id: VID, path: "videos/clip.webm" }, SIZE);
+    expect(r?.assets.linked(VID)).toBe("/cours/videos/clip.webm");
+    expect(r?.unread).toBe(false);
+    expect(said).toEqual([]);
+  });
+
+  it("vidéo absente : avis « vidéo liée introuvable », document ouvert, unread faux (S5)", async () => {
+    const said: string[] = [];
+    const r = await ioWith(readCodec(mediaDoc("videos/clip.webm")), said, async () => null).read("a.roomboard", u8(1), "document", "/cours/a.roomboard");
+    expect(r).not.toBeNull();
+    expect(r?.unread).toBe(false);
+    expect(r?.assets.linked(VID)).toBeUndefined();
+    expect(said).toEqual(["clip.webm : vidéo liée introuvable (videos/clip.webm)"]);
+    expect(linkedMissingMessage("videos/clip.webm")).toBe(said[0]);
+  });
+
+  it("web : un avis « vidéo non incluse »", async () => {
+    const said: string[] = [];
+    const r = await ioWith(readCodec(mediaDoc("videos/clip.webm")), said).read("a.roomboard", u8(1), "document");
+    expect(r?.unread).toBe(false);
+    expect(said).toEqual(["a.roomboard : vidéo non incluse (liée, lisible dans l'application de bureau)"]);
+    expect(said[0]).toBe(`a.roomboard : ${LINKED_WEB_MESSAGE}`);
+  });
+
+  it("un média relu garde son type (typed)", async () => {
+    const r = await ioWith(readCodec(mediaDoc(null), [[VID, new Blob([u8(1, 2)])]]), []).read("a.roomboard", u8(1), "document");
+    expect(r?.assets.get(VID)?.type).toBe("video/webm");
+    expect(r?.unread).toBe(false);
+  });
+
+  it("repli (module absent) : un document à vidéo liée seule n'est pas « non lu », son lien est résolu", async () => {
+    const said: string[] = [];
+    const bytes = mediaDoc("/v/clip.webm").save(NOW, "0.1.0");
+    const r = await ioWith(codecDown, said, async (_d, l) => l.path).read("a.roomboard", bytes, "document");
+    expect(r?.unread).toBe(false);
+    expect(r?.assets.linked(VID)).toBe("/v/clip.webm");
+    expect(said).toEqual([]);
   });
 });

@@ -10,13 +10,20 @@ import { CodecUnavailableError, type ContainerCodec, type ContainerContents } fr
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
 import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG } from "../platform/html-table";
-import { LATER_FORMAT_MESSAGE } from "../platform/import";
+import { createImporter, LATER_FORMAT_MESSAGE } from "../platform/import";
+import type { LinkedMedia } from "../platform/media-import";
 import { PdfEncryptedError } from "../platform/pdf-render";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
 import type { OverlayProducer, OverlayRequest } from "./pdf-export";
 import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
+
+// Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
+vi.mock("../platform/import", async (importOriginal) => {
+  const m = await importOriginal<typeof import("../platform/import")>();
+  return { ...m, createImporter: vi.fn(m.createImporter) };
+});
 
 interface FakeBoard {
   readonly board: BoardSession;
@@ -1276,6 +1283,17 @@ describe("espace de travail : médias (C14)", () => {
     expect(await ws.openDocument({ name: "/cours/a.roomboard", bytes: new Uint8Array([9]), target: null, path: "/cours/a.roomboard" })).toBe(true);
     expect(relinkMedia).toHaveBeenCalledWith("/cours/videos/clip.webm", VIDEO_SIZE);
     expect(ws.active().assets.linked(VID)).toBe("/cours/videos/clip.webm");
+  });
+
+  it("linkMedia transmis à l'importeur (vidéo de 300 Mo déposée avec un chemin : liée par le gestionnaire média, T8)", async () => {
+    const linkMedia = vi.fn(async (_p: string) => ({}) as unknown as LinkedMedia);
+    await setupWorkspace({ kind: "tauri", linkMedia });
+    const given = vi.mocked(createImporter).mock.calls.at(-1)![0];
+    expect(given.linkMedia).toBeDefined();
+    await given.linkMedia!("/cours/videos/clip.webm");
+    expect(linkMedia).toHaveBeenCalledWith("/cours/videos/clip.webm");
+    await setupWorkspace({ kind: "tauri" });
+    expect(vi.mocked(createImporter).mock.calls.at(-1)![0].linkMedia).toBeUndefined();
   });
 
   it("copier un média lié : « Copie impossible : vidéo liée… »", async () => {
