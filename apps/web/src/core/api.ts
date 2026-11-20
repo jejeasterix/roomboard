@@ -16,6 +16,8 @@
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 // C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 // C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
+// C5 : SetImageParams (état voulu complet des réglages et nouvelle matrice, une étape, D38) ; ImageData porte les réglages
+// (neutres absents, I4) ; la boîte locale d'une image est sa boîte affichée (image-params.ts, displaySize).
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -132,6 +134,9 @@ export type Command =
     }
   /** C6a (D12) : color null = « Aucune » (intérieur retiré, fond #ffffff, contour inchangé) ; même valeur : aucune étape. */
   | { readonly type: "Fill"; readonly page: string; readonly target: FillTarget; readonly color: string | null }
+  /** C5 (I6) : état voulu complet des réglages (neutres retirés par le cœur) et nouvelle matrice (placeAfter, I9) ;
+   *  même état et même matrice : aucune étape ; hors domaine : BAD_IMAGE_PARAMS_MESSAGE. */
+  | { readonly type: "SetImageParams"; readonly id: string; readonly params: ImageParams; readonly matrix: Matrix }
   /** C3 (Z1) : deux unités au moins (objet seul ou groupe extérieur entier) d'une même page ; un id d'un groupe vaut tout
    *  son groupe extérieur ; ids = éléments écrits, triés. */
   | { readonly type: "Group"; readonly ids: readonly string[] }
