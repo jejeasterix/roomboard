@@ -1,10 +1,10 @@
 # État — usage-c7b-texte-riche
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : On écrit dans un texte et dans les cellules d'un tableau avec une saisie riche qui respecte l'IME, et une barre pose gras, italique, souligné, taille et couleur sur la sélection.
 Avancement : 16/16 tâches terminées
-Étage : 4 — depuis 2026-11-20 14:18
+Étage : 4 — clos 2026-11-20 14:30, main 6032e72 (PR #17 fusionnée)
 Lot : —
 Tâche : —
 Questions à Jérôme : —
