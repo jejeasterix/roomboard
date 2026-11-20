@@ -120,7 +120,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "table-merge": { label: "Fusionner" },
   "table-split": { label: "Diviser" },
   "table-shade": { label: "Ombrer" },
-  "table-unshade": { label: "Retirer l'ombrage" },
+  "table-unshade": { label: "Désombrer" },
 });
 
 /** Boutons de structure du tableau (C10a, DAC4 ; C10b, F15), dans l'ordre de la rangée contextuelle. */
