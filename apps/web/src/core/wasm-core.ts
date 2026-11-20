@@ -383,19 +383,32 @@ class WasmCoreDocument implements CoreDocument {
       case "InsertTableLine":
         return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
       case "RemoveTableLine":
-        if (cmd.to !== undefined) throw new Error("C10b : RemoveTableLine.to branché par la liaison (T7)");
-        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line));
+        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line, cmd.to));
       case "SetTableSizes":
         return toChange(this.d.set_table_sizes(cmd.id, cmd.colWidth, cmd.rowHeight));
       case "SetTableFill":
-        if (cmd.to !== undefined) throw new Error("C10b : SetTableFill.to branché par la liaison (T7)");
         // null → undefined : Option::None côté Rust.
-        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined));
+        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined, cmd.to?.row, cmd.to?.col));
       case "MergeTableCells":
+        return toChange(this.d.merge_table_cells(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col));
       case "SplitTableCell":
+        return toChange(this.d.split_table_cell(cmd.id, cmd.row, cmd.col));
       case "SetTableShade":
+        return toChange(this.d.set_table_shade(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, cmd.shade ?? undefined));
       case "ImportTable":
-        throw new Error(`C10b : ${cmd.type} branché par la liaison (T7)`);
+        return toChange(
+          this.d.import_table(
+            cmd.page,
+            new Float64Array(cmd.matrix),
+            cmd.colWidth,
+            new Float64Array(cmd.rowHeights),
+            toU32(cmd.cols),
+            [...cmd.cells],
+            Uint32Array.from(cmd.merges.flat(), toU32),
+            cmd.color,
+            cmd.size,
+          ),
+        );
     }
   }
 

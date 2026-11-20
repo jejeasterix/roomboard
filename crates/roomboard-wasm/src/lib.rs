@@ -469,15 +469,17 @@ impl Document {
         to_js(&self.insert_table_line_inner(id, row, at).map_err(cmd_err)?)
     }
 
+    /// `to` : dernière ligne de la plage (C10b, F6) ; absent : `line` seule.
     pub fn remove_table_line(
         &mut self,
         id: &str,
         row: bool,
         line: &str,
+        to: Option<String>,
     ) -> Result<JsValue, JsError> {
         to_js(
             &self
-                .remove_table_line_inner(id, row, line)
+                .remove_table_line_inner(id, row, line, to)
                 .map_err(cmd_err)?,
         )
     }
@@ -495,17 +497,96 @@ impl Document {
         )
     }
 
-    /// `fill` absent ou null : retire le remplissage.
+    /// `fill` absent ou null : retire le remplissage ; `to_row`, `to_col` : autre coin de la plage (C10b, F15).
     pub fn set_table_fill(
         &mut self,
         id: &str,
         row: &str,
         col: &str,
         fill: Option<String>,
+        to_row: Option<String>,
+        to_col: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        let to = match (&to_row, &to_col) {
+            (Some(r), Some(c)) => Some([r.as_str(), c.as_str()]),
+            _ => None,
+        };
+        to_js(
+            &self
+                .set_table_fill_inner(id, [row, col], to, fill)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Fusion (C10b, F3) : rectangle par ids.
+    pub fn merge_table_cells(
+        &mut self,
+        id: &str,
+        from_row: &str,
+        from_col: &str,
+        to_row: &str,
+        to_col: &str,
     ) -> Result<JsValue, JsError> {
         to_js(
             &self
-                .set_table_fill_inner(id, [row, col], fill)
+                .merge_table_cells_inner(id, [from_row, from_col], [to_row, to_col])
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Division (C10b, F4) : `row`, `col` = ancre.
+    pub fn split_table_cell(&mut self, id: &str, row: &str, col: &str) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .split_table_cell_inner(id, [row, col])
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Ombrage (C10b, F9) : `shade` absent ou null : retire (révéler).
+    pub fn set_table_shade(
+        &mut self,
+        id: &str,
+        from_row: &str,
+        from_col: &str,
+        to_row: &str,
+        to_col: &str,
+        shade: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_shade_inner(id, [from_row, from_col], [to_row, to_col], shade)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_table(
+        &mut self,
+        page: &str,
+        matrix: &[f64],
+        col_width: f64,
+        row_heights: &[f64],
+        cols: u32,
+        cells: Vec<String>,
+        merges: &[u32],
+        color: &str,
+        size: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .import_table_inner(
+                    page,
+                    matrix,
+                    col_width,
+                    row_heights,
+                    cols,
+                    cells,
+                    merges,
+                    color,
+                    size,
+                )
                 .map_err(cmd_err)?,
         )
     }
@@ -919,12 +1000,13 @@ impl Document {
         id: &str,
         row: bool,
         line: &str,
+        to: Option<String>,
     ) -> Result<Change, CommandError> {
         self.run(Command::RemoveTableLine {
             id: id.to_string(),
             axis: table_axis(row),
             line: line.to_string(),
-            to: None,
+            to,
         })
     }
 
@@ -945,14 +1027,89 @@ impl Document {
         &mut self,
         id: &str,
         cell: [&str; 2],
+        to: Option<[&str; 2]>,
         fill: Option<String>,
     ) -> Result<Change, CommandError> {
         self.run(Command::SetTableFill {
             id: id.to_string(),
             row: cell[0].to_string(),
             col: cell[1].to_string(),
-            to: None,
+            to: to.map(|[r, c]| (r.to_string(), c.to_string())),
             fill,
+        })
+    }
+
+    pub fn merge_table_cells_inner(
+        &mut self,
+        id: &str,
+        from: [&str; 2],
+        to: [&str; 2],
+    ) -> Result<Change, CommandError> {
+        self.run(Command::MergeTableCells {
+            id: id.to_string(),
+            from: (from[0].to_string(), from[1].to_string()),
+            to: (to[0].to_string(), to[1].to_string()),
+        })
+    }
+
+    pub fn split_table_cell_inner(
+        &mut self,
+        id: &str,
+        cell: [&str; 2],
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SplitTableCell {
+            id: id.to_string(),
+            row: cell[0].to_string(),
+            col: cell[1].to_string(),
+        })
+    }
+
+    pub fn set_table_shade_inner(
+        &mut self,
+        id: &str,
+        from: [&str; 2],
+        to: [&str; 2],
+        shade: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableShade {
+            id: id.to_string(),
+            from: (from[0].to_string(), from[1].to_string()),
+            to: (to[0].to_string(), to[1].to_string()),
+            shade,
+        })
+    }
+
+    /// Matrice qui n'a pas six nombres ou fusions qui ne vont pas par quatre : `BadTable` (comme le cœur, PC1).
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_table_inner(
+        &mut self,
+        page: &str,
+        matrix: &[f64],
+        col_width: f64,
+        row_heights: &[f64],
+        cols: u32,
+        cells: Vec<String>,
+        merges: &[u32],
+        color: &str,
+        size: f64,
+    ) -> Result<Change, CommandError> {
+        let Ok(matrix) = <[f64; 6]>::try_from(matrix) else {
+            return Err(CommandError::BadTable);
+        };
+        if !merges.len().is_multiple_of(4) {
+            return Err(CommandError::BadTable);
+        }
+        let merges: Vec<[u32; 4]> = merges.as_chunks::<4>().0.to_vec();
+        self.run(Command::ImportTable {
+            page: page.to_string(),
+            matrix,
+            col_width,
+            row_heights: row_heights.to_vec(),
+            cols,
+            cells,
+            merges,
+            color: color.to_string(),
+            size,
         })
     }
 
@@ -1844,14 +2001,20 @@ mod tests {
         assert_eq!(table_of(&d, &id).rows[0].height, 150.0);
         d.insert_table_line_inner(&id, false, 2).expect("colonne");
         assert_eq!(table_of(&d, &id).cols.len(), 3);
-        d.remove_table_line_inner(&id, true, &r0, None).expect("ligne");
+        d.remove_table_line_inner(&id, true, &r0, None)
+            .expect("ligne");
         assert!(table_of(&d, &id).cells.is_empty());
         d.set_table_sizes_inner(&id, 200.0, 70.0).expect("uniforme");
         assert!(table_of(&d, &id).cols.iter().all(|c| c.width == 200.0));
         let t = table_of(&d, &id);
         let (r1, c1) = (t.rows[0].id.clone(), t.cols[1].id.clone());
-        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None, Some("#fef08a".into()))
-            .expect("jaune");
+        d.set_table_fill_inner(
+            &id,
+            [r1.as_str(), c1.as_str()],
+            None,
+            Some("#fef08a".into()),
+        )
+        .expect("jaune");
         assert_eq!(table_of(&d, &id).cells[0].fill.as_deref(), Some("#fef08a"));
         d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None, None)
             .expect("aucun");
