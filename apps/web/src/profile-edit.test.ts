@@ -3,7 +3,7 @@ import {
   addItem, addPreset, canHide, catalog, moveItem, originOf, presetFields, PRESET_TOOLS, removePreset, resetAllPresets,
   resetToolbars, resetToOrigin, setButtonSize, setDock, setHidden, setLabel, setStartMode, updatePreset,
 } from "./profile-edit";
-import { parseProfile, serializeProfile, visibleItems, type Profile, type RuntimeCapabilities } from "./toolbar";
+import { parseProfile, serializeProfile, TABLE_ACTIONS, visibleItems, type Profile, type RuntimeCapabilities } from "./toolbar";
 import { BUILTIN_PROFILES, builtinProfile, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
 
 const ALL: RuntimeCapabilities = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
@@ -89,6 +89,13 @@ describe("profile-edit (C1, DAC1-1)", () => {
     expect(pages.map((e) => e.ref)).not.toContain("page-next");
     expect(pages.map((e) => e.ref)).toContain("undo");
     expect(catalog(DEFAUT, "absente")).toEqual([]);
+  });
+
+  it("actions contextuelles du tableau absentes du catalogue (C10a)", () => {
+    for (const bar of ["outils", "pages"]) {
+      const refs = catalog(DEFAUT, bar).map((e) => e.ref);
+      for (const a of TABLE_ACTIONS) expect(refs).not.toContain(a);
+    }
   });
 
   it("ajouter : en fin de barre ; id de l'outil s'il est libre, sinon <id>-<n> (P15)", () => {
