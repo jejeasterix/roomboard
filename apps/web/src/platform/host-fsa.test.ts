@@ -227,6 +227,7 @@ describe("IMPORT_TYPES : filtre « Importer » (Z10)", () => {
     expect(IMPORT_TYPES[0]!.accept).toEqual({
       "application/x-roomboard": [".roomboard"],
       "application/x-roomboard-item": [".rbitem"],
+      "application/pdf": [".pdf"],
       "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".avif", ".heic", ".heif"],
     });
   });

@@ -325,3 +325,9 @@ describe("actions du tableau (C10a)", () => {
     ]);
   });
 });
+
+describe("barre : Exporter en PDF (C12, PF19)", () => {
+  it("ACTION_TABLE : export-pdf « Exporter en PDF… »", () => {
+    expect(ACTION_TABLE["export-pdf"]?.label).toBe("Exporter en PDF…");
+  });
+});

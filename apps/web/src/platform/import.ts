@@ -3,6 +3,7 @@
  * lancement passent par `importFiles`. Registre par nature : `roomboard` (document, reconnu par l'extension) ouvre un
  * nouvel onglet (R2) ; `rbitem` (objet, nom + en-tête ZIP) s'insère comme une image ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
  * Non reconnu : refusé avec `LATER_FORMAT_MESSAGE`. Hôtes web : 100 Mo au plus par fichier, contrôlé avant lecture (R15).
+ * C12 (PF2, PF3) : `pdf` (document, reconnu par `%PDF-` dans le premier Kio) ouvre un nouvel onglet par `openPdf`.
  * C10b (F28) : `sheet` (objet, `.xlsx`/`.xlsm` et en-tête ZIP) lit la première feuille dans un Worker jetable et pose un tableau.
  */
 import { messageOf } from "./controller";
@@ -40,6 +41,9 @@ export interface ImportDeps {
   readonly decode?: ImageDecoder;
   /** Lecture d'un classeur dans un Worker jetable (C10b, F28) ; absente : `.xlsx` refusé comme avant. */
   readSheet?(file: Blob): Promise<TableGrid>;
+  /** C12 (PF2, PF10) : ouvre un PDF dans un nouvel onglet ; false si refusé (message déjà dit) ; absente : `.pdf`
+   *  refusé comme avant. */
+  openPdf?(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
 }
 
 export interface Importer {
@@ -162,13 +166,40 @@ export function sheetHandler(deps: { readSheet(file: Blob): Promise<TableGrid> }
   };
 }
 
+/** C12 (PF3) : en-tête `%PDF-`, cherché dans le premier Kio (la norme tolère des octets avant), sans regarder le nom. */
+export const PDF_MAGIC: readonly number[] = Object.freeze([0x25, 0x50, 0x44, 0x46, 0x2d]);
+export const PDF_HEAD_SCAN = 1024;
+
+export function hasPdfMagic(head: Uint8Array): boolean {
+  const last = Math.min(head.length, PDF_HEAD_SCAN) - PDF_MAGIC.length;
+  for (let i = 0; i <= last; i++) {
+    if (PDF_MAGIC.every((b, k) => head[i + k] === b)) return true;
+  }
+  return false;
+}
+
+/** Entrée `pdf` du registre (C12, PF2, Q1) : document, ouvert dans un nouvel onglet par `openPdf`, qui dit ses refus
+ *  (chiffré, illisible, onglets pleins). */
+export function pdfHandler(deps: { openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean> }): ImportHandler {
+  return {
+    id: "pdf",
+    nature: "document",
+    detect: (head) => hasPdfMagic(head),
+    async run(f, ctx) {
+      return (await deps.openPdf({ name: f.name, blob: ctx.blob })) ? "opened" : "failed";
+    },
+  };
+}
+
 const EMPTY = new Uint8Array(0);
 
 export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
+  const openPdf = deps.openPdf?.bind(deps);
   const registry: readonly ImportHandler[] = [
     roomboardHandler(deps),
     rbitemHandler(),
+    ...(openPdf ? [pdfHandler({ openPdf })] : []),
     imageHandler(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? [sheetHandler({ readSheet })] : []),
   ];
@@ -208,6 +239,11 @@ export function createImporter(deps: ImportDeps): Importer {
         const handler = registry.find((h) => h.detect(head, f.name));
         if (handler === undefined) {
           refused.push(f.name);
+          continue;
+        }
+        // Onglets pleins (PF10, PC18) : un document suivant reconnu par ses octets (PDF) n'est pas tenté non plus.
+        if (handler.nature === "document" && stopped) {
+          failed.push(f.name);
           continue;
         }
         // F22 : plafond du gestionnaire avant toute lecture du fichier (un `.xlsx` de 2 Go n'est jamais lu).
