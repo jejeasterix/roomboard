@@ -541,3 +541,191 @@ describe("session — fond PDF (C12, PF15)", () => {
     s.dispose();
   });
 });
+
+describe("session — médias (C14)", () => {
+  const ASSET = "ab".repeat(32);
+  const ASSET2 = "cd".repeat(32);
+  const ref = (id: string) => ({ id, name: "v.webm", mime: "video/webm", size: 4 });
+
+  interface FakeVid {
+    readonly video: Record<string, unknown> & { src: string; volume: number; pause: ReturnType<typeof vi.fn> };
+    readonly fire: (type: string) => void;
+    readonly removed: ReturnType<typeof vi.fn>;
+  }
+  function fakes() {
+    const made: FakeVid[] = [];
+    const createVideo = (): never => {
+      const listeners = new Map<string, Array<() => void>>();
+      const removed = vi.fn();
+      const video = {
+        src: "", currentTime: 0, volume: 1, preload: "", playsInline: false, crossOrigin: null, paused: true, ended: false, readyState: 4, duration: 2.5,
+        play: vi.fn(async () => undefined),
+        pause: vi.fn(),
+        removeAttribute: vi.fn(),
+        load: vi.fn(),
+        addEventListener: (t: string, cb: () => void) => listeners.set(t, [...(listeners.get(t) ?? []), cb]),
+      };
+      made.push({ video, fire: (t) => (listeners.get(t) ?? []).forEach((f) => f()), removed });
+      return { video, image: {}, onFrame: () => () => undefined, remove: removed } as never;
+    };
+    return { made, createVideo };
+  }
+
+  const created: string[] = [];
+  const revoked: string[] = [];
+  beforeEach(() => {
+    created.length = 0;
+    revoked.length = 0;
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => {
+        const u = `blob:m${created.length}`;
+        created.push(u);
+        return u;
+      }),
+      revokeObjectURL: vi.fn((u: string) => void revoked.push(u)),
+    });
+  });
+
+  async function mediaSession(o: { linked?: string; blob?: boolean; extra?: Partial<SessionShared>; second?: boolean } = {}) {
+    const f = fakes();
+    const assets = createAssetStore();
+    if (o.blob !== false) assets.adopt(ASSET, new Blob([new Uint8Array([1, 2, 3, 4])], { type: "video/webm" }));
+    if (o.linked !== undefined) assets.link(ASSET, o.linked);
+    const s = await createBoardSession(fakeCore.blank(), { ...shared, createVideo: f.createVideo, ...o.extra }, assets);
+    Object.defineProperty(s.stage, "clientWidth", { configurable: true, value: 640 });
+    Object.defineProperty(s.stage, "clientHeight", { configurable: true, value: 480 });
+    s.activate();
+    const page = s.engine.state().page;
+    const add = (asset: string, x: number) =>
+      s.engine.run({
+        type: "AddMedia", page, asset: ref(asset), linked: o.linked ?? null, mediaType: "video", w: 200, h: 100, duration: 2.5, poster: null,
+        matrix: [1, 0, 0, 1, x, 0] as never,
+      })!.ids[0]!;
+    const id = add(ASSET, 0);
+    const second = o.second === true ? add(ASSET2, 300) : null;
+    const click = (px: number, py: number): void => {
+      s.engine.setTool("select");
+      const c = s.engine.camera();
+      s.engine.sink.begin(1, "select", [{ x: px * c.zoom + c.tx, y: py * c.zoom + c.ty, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+      s.engine.sink.close(1, "end");
+    };
+    return { s, f, id, second, click, page };
+  }
+  const spec = (s: Awaited<ReturnType<typeof createBoardSession>>) => {
+    const m = s.selectedMedia()!.media;
+    return { asset: m.asset, mediaType: m.mediaType, duration: m.duration, trimStart: m.trimStart, trimEnd: m.trimEnd, loop: m.loop, volume: m.volume };
+  };
+
+  it("data-media vide sans sélection ; média sélectionné : video;poster;0.0;0.0-2.5;0;100 (M26)", async () => {
+    const { s, click } = await mediaSession();
+    expect(s.stage.dataset["media"]).toBe("");
+    expect(s.selectedMedia()).toBeNull();
+    click(100, 50);
+    expect(s.selectedMedia()?.kind).toBe("media");
+    expect(s.stage.dataset["media"]).toBe("video;poster;0.0;0.0-2.5;0;100");
+    s.dispose();
+  });
+
+  it("Lecture : source blob: du magasin, data-media lecture", async () => {
+    const { s, f, id, click } = await mediaSession();
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    expect(created).toEqual(["blob:m0"]);
+    expect(f.made[0]!.video.src).toBe("blob:m0");
+    expect(s.stage.dataset["media"]?.startsWith("video;lecture;")).toBe(true);
+    s.dispose();
+  });
+
+  it("changement de page : lecteurs jetés, poster revenu (Review Focus 4)", async () => {
+    const { s, f, id, click, page } = await mediaSession();
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    s.engine.addPage();
+    expect(s.media.state(id)).toBeNull();
+    expect(f.made[0]!.removed).toHaveBeenCalled();
+    s.engine.showPage(page);
+    click(100, 50);
+    expect(s.stage.dataset["media"]?.startsWith("video;poster;")).toBe(true);
+    s.dispose();
+  });
+
+  it("deactivate : tous en pause (H1-6)", async () => {
+    const { s, f, id, click } = await mediaSession();
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    s.deactivate();
+    expect(s.media.state(id)?.status).toBe("pause");
+    expect(f.made[0]!.video.pause).toHaveBeenCalled();
+    s.dispose();
+  });
+
+  it("suppression du média en lecture : lecteur jeté, data-media vide (Review Focus 3)", async () => {
+    const { s, id, click } = await mediaSession();
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    s.engine.deleteElements([id]);
+    expect(s.media.state(id)).toBeNull();
+    expect(s.stage.dataset["media"]).toBe("");
+    s.dispose();
+  });
+
+  it("annuler un réglage : le lecteur relit le volume (M23)", async () => {
+    const { s, f, id, click } = await mediaSession();
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    s.engine.run({ type: "SetMedia", id, trimStart: 0, trimEnd: null, loop: false, volume: 0.5 });
+    expect(f.made[0]!.video.volume).toBe(0.5);
+    s.engine.undo();
+    expect(f.made[0]!.video.volume).toBe(1);
+    s.dispose();
+  });
+
+  it("vidéo liée : URL par shared.mediaUrl (S5)", async () => {
+    const mediaUrl = vi.fn((p: string) => `asset://${p}`);
+    const { s, f, id, click } = await mediaSession({ blob: false, linked: "/v/a.webm", extra: { mediaUrl } });
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    expect(mediaUrl).toHaveBeenCalledWith("/v/a.webm");
+    expect(f.made.at(-1)!.video.src).toBe("asset:///v/a.webm");
+    expect(created).toEqual([]);
+    s.dispose();
+  });
+
+  it("dispose : lecteurs jetés, URL révoquée", async () => {
+    const { s, f, id, click } = await mediaSession();
+    click(100, 50);
+    await s.media.toggle(id, spec(s));
+    s.dispose();
+    expect(revoked).toEqual(["blob:m0"]);
+    expect(f.made[0]!.removed).toHaveBeenCalled();
+  });
+
+  it("média groupé : selectedMedia null", async () => {
+    const { s, id, second, click } = await mediaSession({ second: true });
+    s.engine.run({ type: "Group", ids: [id, second!] });
+    click(100, 50);
+    expect(s.engine.state().selection.length).toBeGreaterThan(0);
+    expect(s.selectedMedia()).toBeNull();
+    s.dispose();
+  });
+
+  it("image prête après un seek en pause : redessin (note de T5)", async () => {
+    const { s, f, id, click } = await mediaSession();
+    click(100, 50);
+    await s.media.seek(id, 1, spec(s));
+    const redraw = vi.spyOn(s.engine, "redraw");
+    f.made[0]!.fire("seeked");
+    expect(redraw).toHaveBeenCalled();
+    s.dispose();
+  });
+
+  it("R8 : média lié introuvable, état echec dès la sélection, sans clic de lecture (M31)", async () => {
+    const { s, f, click } = await mediaSession({ blob: false, linked: "/v/absent.webm", extra: { mediaUrl: (p) => `asset://${p}` } });
+    click(100, 50);
+    expect(s.stage.dataset["media"]?.startsWith("video;echec;")).toBe(false);
+    f.made.at(-1)!.fire("error");
+    expect(s.mediaState(s.selectedMedia()!.id)?.status).toBe("echec");
+    expect(s.stage.dataset["media"]?.startsWith("video;echec;")).toBe(true);
+    s.dispose();
+  });
+});
