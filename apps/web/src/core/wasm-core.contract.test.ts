@@ -2,6 +2,7 @@
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
 import type { AssetRef, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import { BAD_GROUP_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
@@ -1912,5 +1913,283 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
     d.apply({ type: "SetTableCell", id: "t1", row: "r1", col: "c1", content: "a", spans });
     expect(calls.map((a) => a.at(-1))).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
     expect((calls[0]?.at(-1) as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
+  });
+});
+
+// C3 (Z1, Z5, Z6) : groupes, extraction, insertion, fragments. T11 branche le vrai module (`c3Factories = factories`).
+// Aucun écart de la fausse liaison n'est exclu de ce bloc : mêmes refus dans le même ordre, mêmes messages, mêmes Change.
+const c3Factories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
+const C3_ASSET = { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 };
+const C3_GRID: GridInput = {
+  visible: true, snap: true, above: false,
+  levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", lineWidth: 1, snap: true, visible: true }],
+};
+describe.each(c3Factories)("contrat C3 : $name", ({ f }) => {
+  const rect = (d: CoreDocument, p: string, x: number): string => {
+    const id = d.apply({ type: "AddShape", page: p, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style, fill: null }).ids[0];
+    if (id === undefined) throw new Error("aucun id");
+    return id;
+  };
+  const groupOf = (d: CoreDocument, id: string): readonly string[] | undefined => d.element(id)?.group;
+
+  it("un élément sans groupe n'a pas de champ group", () => {
+    const d = f.blank();
+    const a = rect(d, first(d), 0);
+    expect(d.element(a)).not.toHaveProperty("group");
+  });
+
+  it("Group : un groupe neuf en tête du chemin, ids triés, une étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    const b = rect(d, p, 100);
+    const c = d.apply({ type: "Group", ids: [b, a] });
+    expect(c.ids).toEqual([a, b].sort());
+    expect(c.pages).toEqual([p]);
+    const g = groupOf(d, a);
+    expect(g).toHaveLength(1);
+    expect(groupOf(d, b)).toEqual(g);
+    d.undo();
+    expect([groupOf(d, a), groupOf(d, b)]).toEqual([undefined, undefined]);
+  });
+
+  it("Group refusé : vide, id inconnu, autre page, une seule unité ; rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    const b = rect(d, p, 100);
+    const q = d.apply({ type: "AddPage", after: p }).pages[0]!;
+    const c = rect(d, q, 0);
+    for (const ids of [[], [a, "absent"], [a, c], [a], [a, a]]) {
+      unchanged(d, () => expect(messageOf(() => d.apply({ type: "Group", ids }))).toBe(BAD_GROUP_MESSAGE));
+    }
+    d.apply({ type: "Group", ids: [a, b] });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "Group", ids: [a, b] }))).toBe(BAD_GROUP_MESSAGE));
+  });
+
+  // Discrimine (décision de contre-relecture) : un id pris dans un groupe vaut tout son groupe extérieur. Une liaison qui
+  // ne grouperait que les ids donnés laisserait `b` seul dans l'ancien groupe et rendrait `ids` = [a, c].
+  it("Group partiel : étendu au groupe extérieur entier de chaque id ; ids = tous les éléments écrits, triés", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    const b = rect(d, p, 100);
+    const c = rect(d, p, 200);
+    d.apply({ type: "Group", ids: [a, b] });
+    const inner = groupOf(d, a)!;
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "Group", ids: [b] }))).toBe(BAD_GROUP_MESSAGE));
+    const ch = d.apply({ type: "Group", ids: [c, a] });
+    expect(ch.ids).toEqual([a, b, c].sort());
+    expect(ch.pages).toEqual([p]);
+    const outer = groupOf(d, c)!;
+    expect(outer).toHaveLength(1);
+    expect([groupOf(d, a), groupOf(d, b)]).toEqual([[outer[0], inner[0]], [outer[0], inner[0]]]);
+  });
+
+  it("groupe de groupe : chemins imbriqués ; Ungroup retire le niveau extérieur", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    const b = rect(d, p, 100);
+    const c = rect(d, p, 200);
+    d.apply({ type: "Group", ids: [a, b] });
+    const inner = groupOf(d, a)!;
+    d.apply({ type: "Group", ids: [a, b, c] });
+    const outer = groupOf(d, a)!;
+    expect(outer).toHaveLength(2);
+    expect(outer[1]).toBe(inner[0]);
+    expect(groupOf(d, c)).toEqual([outer[0]]);
+    const u = d.apply({ type: "Ungroup", ids: [a, b, c] });
+    expect(u.ids).toEqual([a, b, c].sort());
+    expect([groupOf(d, a), groupOf(d, b), groupOf(d, c)]).toEqual([inner, inner, undefined]);
+  });
+
+  it("Ungroup sans élément groupé : aucune étape", () => {
+    const d = f.blank();
+    const a = rect(d, first(d), 0);
+    unchanged(d, () => expect(d.apply({ type: "Ungroup", ids: [a, "absent"] }).ids).toEqual([]));
+  });
+
+  it("extract : une page, ids neufs, ordre d'empilement, aucune étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = commit(d, p, 100);
+    rect(d, p, 300);
+    const c = rect(d, p, 500);
+    const x = d.extract(p, [c, a]);
+    expect(x.pageIds()).toHaveLength(1);
+    const ids = x.elementIds(first(x));
+    expect(ids).toHaveLength(2);
+    expect(ids).not.toContain(a);
+    expect(x.element(ids[0]!)?.kind).toBe("stroke");
+    expect(x.element(ids[1]!)?.transform).toEqual(d.element(c)?.transform);
+    expect(x.canUndo()).toBe(false);
+  });
+
+  it("extract refusé : page ou élément inconnus", () => {
+    const d = f.blank();
+    const a = rect(d, first(d), 0);
+    expect(messageOf(() => d.extract("absente", [a]))).toBe("page inconnue : absente");
+    expect(messageOf(() => d.extract(first(d), [a, "x"]))).toBe("élément inconnu : x");
+  });
+
+  it("extract recopie texte riche, tableau et métadonnée des seuls assets cités", () => {
+    const d = f.blank();
+    const p = first(d);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 10, y: 10, content: "Bonjour", color: "#000000", size: 36, boxWidth: 400, boxHeight: 45 }).ids[0]!;
+    d.apply({ type: "FormatText", id: t, start: 0, len: 3, attrs: { bold: true } });
+    const tb = d.apply({ type: "AddTable", page: p, x: 0, y: 300, cols: 2, rows: 2, colWidth: 100, rowHeight: 40, color: "#000000", size: 24 }).ids[0]!;
+    const i = d.apply({ type: "AddImage", page: p, asset: C3_ASSET, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
+    d.apply({ type: "AddImage", page: p, asset: { ...C3_ASSET, id: "cd".repeat(32), name: "b.png" }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+    const x = d.extract(p, [t, tb, i]);
+    const ids = x.elementIds(first(x));
+    expect(x.element(ids[0]!)).toMatchObject({ kind: "text", text: (d.element(t) as { text: unknown }).text });
+    expect(x.element(ids[1]!)).toMatchObject({ table: (d.element(tb) as { table: unknown }).table });
+    expect(x.citedAssets()).toEqual([C3_ASSET]);
+  });
+
+  it("insertFragment : en haut de la pile, translaté, une étape", () => {
+    const s = f.blank();
+    const a = rect(s, first(s), 0);
+    const frag = s.extract(first(s), [a]);
+    const d = f.blank();
+    const p = first(d);
+    const old = commit(d, p, 500);
+    const c = d.insertFragment(frag, p, 10, 20);
+    const ids = d.elementIds(p);
+    expect(ids[0]).toBe(old);
+    expect(c.ids).toEqual([ids[1]]);
+    expect(c.pages).toEqual([p]);
+    const t0 = s.element(a)!.transform;
+    const t1 = d.element(ids[1]!)!.transform;
+    expect([t1[4], t1[5]]).toEqual([t0[4] + 10, t0[5] + 20]);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([old]);
+  });
+
+  it("deux insertions : ids et groupes indépendants", () => {
+    const s = f.blank();
+    const sp = first(s);
+    const a = rect(s, sp, 0);
+    const b = rect(s, sp, 100);
+    s.apply({ type: "Group", ids: [a, b] });
+    const frag = s.extract(sp, [a, b]);
+    const d = f.blank();
+    const p = first(d);
+    const c1 = d.insertFragment(frag, p, 0, 0);
+    const c2 = d.insertFragment(frag, p, 24, 24);
+    expect(c1.ids.some((id) => c2.ids.includes(id))).toBe(false);
+    const g1 = groupOf(d, c1.ids[0]!);
+    const g2 = groupOf(d, c2.ids[0]!);
+    expect(g1).toHaveLength(1);
+    expect(g1).not.toEqual(g2);
+    expect(groupOf(d, c1.ids[1]!)).toEqual(g1);
+    expect(groupOf(d, c2.ids[1]!)).toEqual(g2);
+    expect(g1).not.toEqual(groupOf(s, a));
+  });
+
+  it("insertFragment refusé : déplacement non fini, page inconnue ; source vide : aucune étape", () => {
+    const s = f.blank();
+    const a = rect(s, first(s), 0);
+    const frag = s.extract(first(s), [a]);
+    const d = f.blank();
+    const p = first(d);
+    unchanged(d, () => expect(messageOf(() => d.insertFragment(frag, p, Number.NaN, 0))).toBe("matrice invalide (six nombres finis, inversible)"));
+    unchanged(d, () => expect(messageOf(() => d.insertFragment(frag, "absente", 0, 0))).toBe("page inconnue : absente"));
+    unchanged(d, () => expect(d.insertFragment(s.extract(first(s), []), p, 0, 0).ids).toEqual([]));
+  });
+
+  it("insertPages : pages recopiées après la page, grille et image, une étape", () => {
+    const s = f.blank();
+    const s0 = first(s);
+    const s1 = s.apply({ type: "AddPage", after: s0 }).pages[0]!;
+    s.apply({ type: "AddImage", page: s0, asset: C3_ASSET, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+    rect(s, s1, 0);
+    s.apply({ type: "SetGrid", page: s1, grid: C3_GRID });
+    const d = f.blank();
+    const t0 = first(d);
+    const t1 = d.apply({ type: "AddPage", after: t0 }).pages[0]!;
+    const c = d.insertPages(s, t0);
+    const pages = d.pageIds();
+    expect(pages).toHaveLength(4);
+    expect([pages[0], pages[3]]).toEqual([t0, t1]);
+    expect(c.pages).toEqual([pages[1], pages[2]]);
+    expect(pages).not.toContain(s0);
+    expect(d.page(pages[2]!)?.grid).toEqual(C3_GRID);
+    expect(c.ids).toHaveLength(2);
+    expect(d.asset(C3_ASSET.id)).toEqual(C3_ASSET);
+    d.undo();
+    expect(d.pageIds()).toEqual([t0, t1]);
+    expect(d.asset(C3_ASSET.id)?.name).toBe(C3_ASSET.id);
+  });
+
+  it("insertPages : page inconnue refusée", () => {
+    const d = f.blank();
+    unchanged(d, () => expect(messageOf(() => d.insertPages(f.blank(), "absente"))).toBe("page inconnue : absente"));
+  });
+
+  it("fragment : saveFragment puis loadFragment ; groupes gardés ; parts", () => {
+    const s = f.blank();
+    const sp = first(s);
+    const a = rect(s, sp, 0);
+    const b = rect(s, sp, 100);
+    s.apply({ type: "Group", ids: [a, b] });
+    const frag = s.extract(sp, [a, b]);
+    const back = f.loadFragment(frag.saveFragment(now, "0.1.0", "Sélection"));
+    const ids = back.elementIds(first(back));
+    expect(ids).toHaveLength(2);
+    expect(groupOf(back, ids[0]!)).toHaveLength(1);
+    expect(groupOf(back, ids[0]!)).toEqual(groupOf(back, ids[1]!));
+    const [m, y] = frag.saveFragmentParts(now, "0.1.0", "Sélection");
+    expect(f.loadFragmentParts(m, y).elementIds(first(frag))).toHaveLength(2);
+  });
+
+  // Décision de contre-relecture : un fragment se place sur les bornes réelles de ses éléments (pas sur `bounds` du
+  // manifeste) ; le fragment relu doit donc les donner, égales à celles de la sélection d'origine.
+  it("fragment relu : bornes réelles de ses éléments, égales à celles de la sélection", () => {
+    const s = f.blank();
+    const sp = first(s);
+    const a = rect(s, sp, 0);
+    const b = rect(s, sp, 300);
+    const back = f.loadFragment(s.extract(sp, [a, b]).saveFragment(now, "0.1.0", "Sélection"));
+    expect(back.bounds(back.elementIds(first(back)))).toEqual(s.bounds([a, b]));
+  });
+
+  it("un fragment n'est pas un document, un document n'est pas un fragment", () => {
+    const s = f.blank();
+    const frag = s.extract(first(s), [rect(s, first(s), 0)]);
+    expect(messageOf(() => f.load(frag.saveFragment(now, "0.1.0", "x")))).toBe(NOT_A_DOCUMENT_MESSAGE);
+    expect(messageOf(() => f.loadFragment(f.blank().save(now, "0.1.0")))).toBe(NOT_A_FRAGMENT_MESSAGE);
+  });
+
+  // Décision de contre-relecture : le mauvais type est refusé au chargement, par les parts aussi (conteneur avec assets).
+  it("parts : un fragment n'est pas un document, un document n'est pas un fragment", () => {
+    const s = f.blank();
+    const frag = s.extract(first(s), [rect(s, first(s), 0)]);
+    const [fm, fy] = frag.saveFragmentParts(now, "0.1.0", "x");
+    expect(messageOf(() => f.loadParts(fm, fy))).toBe(NOT_A_DOCUMENT_MESSAGE);
+    const [dm, dy] = f.blank().saveParts(now, "0.1.0");
+    expect(messageOf(() => f.loadFragmentParts(dm, dy))).toBe(NOT_A_FRAGMENT_MESSAGE);
+  });
+
+  it("enregistrer puis relire garde les groupes", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = rect(d, p, 0);
+    const b = rect(d, p, 100);
+    d.apply({ type: "Group", ids: [a, b] });
+    const back = f.load(d.save(now, "0.1.0"));
+    expect(back.element(a)?.group).toEqual(d.element(a)?.group);
+  });
+});
+
+describe("contrôle de forme C3", () => {
+  const base = { id: "e", kind: "stroke", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 4 } };
+  it("group lisible recopié, absent laissé absent", () => {
+    expect(toElementView({ ...base, group: ["g1", "g2"] })).toMatchObject({ group: ["g1", "g2"] });
+    expect(toElementView(base)).not.toHaveProperty("group");
+  });
+  it("group mal formé : erreur de forme", () => {
+    for (const group of [3, [], [1], "g"]) expect(() => toElementView({ ...base, group })).toThrow("ElementView invalide");
   });
 });

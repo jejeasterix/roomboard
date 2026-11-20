@@ -12,6 +12,7 @@
 // C10a : AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill (une étape chacune, D38) ;
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
+// C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -102,7 +103,12 @@ export type Command =
   /** Uniformiser : toutes les colonnes, toutes les lignes (peut réduire, T11). */
   | { readonly type: "SetTableSizes"; readonly id: string; readonly colWidth: number; readonly rowHeight: number }
   /** null retire. */
-  | { readonly type: "SetTableFill"; readonly id: string; readonly row: string; readonly col: string; readonly fill: string | null };
+  | { readonly type: "SetTableFill"; readonly id: string; readonly row: string; readonly col: string; readonly fill: string | null }
+  /** C3 (Z1) : deux unités au moins (objet seul ou groupe extérieur entier) d'une même page ; un id d'un groupe vaut tout
+   *  son groupe extérieur ; ids = éléments écrits, triés. */
+  | { readonly type: "Group"; readonly ids: readonly string[] }
+  /** C3 (Z1) : retire le niveau extérieur des ids groupés ; aucun : aucune étape. */
+  | { readonly type: "Ungroup"; readonly ids: readonly string[] };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData {
@@ -135,6 +141,8 @@ export interface TableData {
 interface ElementBase {
   readonly id: string;
   readonly transform: Matrix;
+  /** C3 (Z1) : chemin de groupes, extérieur d'abord ; absent sans groupe. */
+  readonly group?: readonly string[];
 }
 export interface StrokeElement extends ElementBase { readonly kind: "stroke"; readonly style: StrokeStyle }
 export interface ShapeElement extends ElementBase { readonly kind: "shape"; readonly style: StrokeStyle; readonly shape: ShapeData }
@@ -206,6 +214,16 @@ export interface CoreDocument {
   /** Lignes d'une grille non enregistrée sur la page (C9 éditeur, DAE1) : même calcul que gridLines ; null si la page est
    *  inconnue ou la grille invisible. Rien n'est écrit. */
   gridLinesOf(page: string, grid: GridView, rect: Bounds, minStep: number, minDotStep: number): GridLines | null;
+  /** C3 (Z5) : document neuf d'une page qui porte une recopie des éléments `ids` de `page` (ids neufs, aucune étape). */
+  extract(page: string, ids: readonly string[]): CoreDocument;
+  /** C3 : éléments de la première page de `src` en haut de `page`, translatés ; une étape ; source vide : aucune. */
+  insertFragment(src: CoreDocument, page: string, dx: number, dy: number): Change;
+  /** C3 : pages de `src` recopiées à la suite de `after` ; une étape. */
+  insertPages(src: CoreDocument, after: string): Change;
+  /** C3 (Z6) : `.rbitem` sans asset (ZIP du cœur). */
+  saveFragment(now: string, appVersion: string, name: string): Uint8Array;
+  /** C3 (Z6) : manifeste et `document.ybin` d'un fragment, pour le conteneur avec assets. */
+  saveFragmentParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array];
 }
 
 export interface CoreFactory {
@@ -214,6 +232,9 @@ export interface CoreFactory {
   load(bytes: Uint8Array): CoreDocument;
   loadParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
   version(): string;
+  /** C3 : lit un `.rbitem` sans asset ; un document est refusé (message du cœur). */
+  loadFragment(bytes: Uint8Array): CoreDocument;
+  loadFragmentParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
 }
 
 export const NO_CHANGE: Change = { pages: [], ids: [], removed: [], full: false, version: 0 };
@@ -226,6 +247,14 @@ export const TABLE_MAX_LINES = 64;
 /** Défauts d'un tableau lu sans couleur ou sans taille lisible (T2). */
 export const DEFAULT_TABLE_COLOR = "#000000";
 export const DEFAULT_TABLE_SIZE = 36;
+/** Messages C3 du cœur (G10), repris à l'identique par la fausse liaison. */
+export const BAD_GROUP_MESSAGE = "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)";
+export const NOT_A_DOCUMENT_MESSAGE = "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page";
+export const NOT_A_FRAGMENT_MESSAGE = "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages";
+export const unknownKindMessage = (kind: string): string =>
+  `type de fichier RoomBoard inconnu (« ${kind} ») : pris en charge dans une prochaine version`;
+/** Source d'une insertion venue de l'autre liaison (fausse ↔ Wasm) : jamais mêlées (DAZ2). */
+export const MIXED_SOURCE_MESSAGE = "source d'une autre liaison : insertion impossible";
 
 /** Attributs d'un segment (C7, T2-T3) ; absent = défaut : couleur et taille de l'élément, police du socle, faux. */
 export interface TextAttrs {
