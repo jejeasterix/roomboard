@@ -1,6 +1,6 @@
 # État — usage-c6a-pot
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : L'outil Pot (couleur choisie, puis clic) colore la cible de U28 — forme (contour près du bord, sinon intérieur), trait, mot sous le pointeur dans un texte ou une cellule, fond de la page si rien n'est touché — et une coloration s'annule en une étape.
 Avancement : 10/10 tâches terminées
@@ -33,7 +33,7 @@ contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 �
 | T10 simplification du lot | T9 | terminée | 1/1 | 389f6d5 | diff des tests vide, suite complète finale |
 
 ## Terminé quand
-(fait : tâches, double relecture sans bloquant, verifier.sh --e2e OK sur e3f5ded, capture, scène 706 px ; reste : PR, fusion locale, push)
+fait : PR #20 fusionnée par fusion locale --no-ff, push sans --force, main 9e0f7ab
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · capture forme + contour + mot colorés dans docs/essais/ · scène ≥ 640 px mesurée par un test · PR mergée par fusion locale --no-ff et push sans --force
 
 ## Scénarios et captures
@@ -49,7 +49,7 @@ S1 remplir un rectangle, annuler, rétablir · S2 contour près du bord, trait, 
 - P1 sur image (C6b, attend C5) ; P3 zones fermées par plusieurs objets (C8) : le pot passe à l'étape suivante de la cible (fond de la page).
 
 ## Portes
-ouvertes : — · passées : —
+ouvertes : — · passées : — (aucune porte avant merge au profil ; aucune release)
 
 ## Pièges trouvés
 - T1 : la notification de fin d'une construction en fond n'a pas réveillé l'agent (comme C10b) ; relancé au premier plan.
