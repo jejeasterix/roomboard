@@ -22,6 +22,9 @@
 // = cellules non vides dans l'ordre de lecture ; tableau mal formé lu comme cadre inconnu (sourceKind "table").
 // Écart assumé, hors contrat (PC6) : les entrées illisibles d'un JSON de la fausse liaison sont retirées au
 // chargement, là où le cœur les garde dans le document.
+// C3 : chemin group (Group, Ungroup), extract, insertFragment, insertPages, fragments JSON { kind: "fragment", name, … } ;
+// mêmes refus et messages que le cœur, dans le même ordre, joués par le bloc « contrat C3 » (aucun écart exclu). Group : un
+// id d'un groupe vaut tout son groupe extérieur ; le type du fichier (kind) se lit avant son contenu.
 import type {
   AssetInfo,
   AssetRef,
@@ -52,6 +55,7 @@ import type {
   TextSpan,
 } from "./api";
 import {
+  BAD_GROUP_MESSAGE,
   DEFAULT_ASSET_MIME,
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
@@ -61,10 +65,14 @@ import {
   MAX_GRID_LEVELS,
   MAX_GRID_LINE_WIDTH,
   MIN_GRID_LINE_WIDTH,
+  MIXED_SOURCE_MESSAGE,
+  NOT_A_DOCUMENT_MESSAGE,
+  NOT_A_FRAGMENT_MESSAGE,
   PAGE_HEIGHT,
   PAGE_WIDTH,
   TABLE_MAX_LINES,
   UNKNOWN_BOX,
+  unknownKindMessage,
 } from "./api";
 import { isAssetId } from "./asset-store";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
@@ -95,6 +103,8 @@ interface FakeElement {
   readonly unknown?: FakeUnknown;
   /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
   readonly malformed?: Readonly<Record<string, unknown>>;
+  /** C3 (Z1) : chemin de groupes, extérieur d'abord ; absent sans groupe (le brut d'un mal formé garde le sien). */
+  readonly group?: readonly string[];
 }
 type RawRecord = Readonly<Record<string, unknown>>;
 /** Cellule de la fausse liaison ; absente du Map = vide. */
@@ -123,6 +133,7 @@ const MESSAGES = {
   badFormat: "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)",
   badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
   badTable: "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)",
+  badGroup: BAD_GROUP_MESSAGE,
 } as const;
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
@@ -137,6 +148,12 @@ const clone = (s: State): State => ({
   pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop, grid: p.grid })),
   assets: new Map(s.assets),
 });
+/** Chemin lisible : tableau non vide de chaînes ; sinon retiré (PC6). */
+const readGroup = (v: unknown): readonly string[] | undefined =>
+  Array.isArray(v) && v.length > 0 && v.every((s) => typeof s === "string") ? (v as string[]) : undefined;
+const withGroup = (g: readonly string[] | undefined): { group?: readonly string[] } => (g === undefined ? {} : { group: g });
+/** Unité de groupage (Z1) : le groupe extérieur, sinon l'objet seul. */
+const unitOf = (e: FakeElement): string => e.group?.[0] ?? e.id;
 const unknownBox = (raw: RawRecord): { w: number; h: number } =>
   finitePositive(raw["w"]) && finitePositive(raw["h"]) ? { w: raw["w"], h: raw["h"] } : { w: UNKNOWN_BOX, h: UNKNOWN_BOX };
 const cellKey = (row: string, col: string): string => `${row}:${col}`;
@@ -164,6 +181,13 @@ function tableView(t: FakeTable): TableData {
 const putMeta = (assets: Map<string, unknown>, a: AssetRef): void => {
   if (!assets.has(a.id)) assets.set(a.id, { name: a.name, mime: a.mime, size: a.size });
 };
+/** Métadonnées des assets cités, recopiées seulement si absentes de la cible (K3). */
+function adoptMeta(into: Map<string, unknown>, from: ReadonlyMap<string, unknown>, cited: readonly string[]): void {
+  for (const id of cited) {
+    const v = from.get(id);
+    if (v !== undefined && !into.has(id)) into.set(id, v);
+  }
+}
 
 /** Métadonnée lue avec les défauts du cœur, champ par champ (K4). */
 function assetInfo(assets: ReadonlyMap<string, unknown>, id: string): AssetInfo {
@@ -215,6 +239,23 @@ function scanAssets(v: unknown, acc: Set<string>): void {
 
 let counter = 0;
 const newId = (): string => `fake-${++counter}`;
+
+/** Recopie (Z4) : id neuf, chemin renuméroté par `groups` (commun à l'insertion), translation si le transform est lu. */
+function copyElement(e: FakeElement, groups: Map<string, string>, dx: number, dy: number): FakeElement {
+  const group = e.group?.map((g) => {
+    let n = groups.get(g);
+    if (n === undefined) {
+      n = newId();
+      groups.set(g, n);
+    }
+    return n;
+  });
+  const { group: _old, ...rest } = e;
+  const moves = (dx !== 0 || dy !== 0) && e.unknown?.hasTransform !== false && e.malformed === undefined;
+  const t = e.transform;
+  const transform: Matrix = moves ? [t[0], t[1], t[2], t[3], t[4] + dx, t[5] + dy] : t;
+  return { ...rest, id: newId(), transform, ...withGroup(group) };
+}
 const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
@@ -686,13 +727,55 @@ class FakeDocument implements CoreDocument {
         cells.set(key, { text: cell?.text ?? "", spans: cell?.spans ?? plainSpans(""), fill: cmd.fill });
         return this.writeTable(found, cmd.id, { ...t, cells });
       }
+      case "Group": {
+        // Ordre du cœur : ids vides ou inconnus, puis pages différentes, puis moins de deux unités (BAD_GROUP_MESSAGE).
+        const asked = [...new Set(cmd.ids)];
+        const found = asked.map((id) => this.find(id));
+        if (asked.length === 0 || found.some((x) => x === undefined)) throw new Error(MESSAGES.badGroup);
+        const hits = found as Found[];
+        const page = hits[0]!.page;
+        if (hits.some((x) => x.page.id !== page.id)) throw new Error(MESSAGES.badGroup);
+        // Un id pris dans un groupe vaut tout son groupe extérieur (membres de la même page).
+        const outer = new Set(hits.flatMap((x) => (x.element.group === undefined ? [] : [unitOf(x.element)])));
+        const members = page.elements.filter((e) => asked.includes(e.id) || (e.group !== undefined && outer.has(unitOf(e))));
+        if (new Set(members.map(unitOf)).size < 2) throw new Error(MESSAGES.badGroup);
+        const ids = members.map((e) => e.id).sort();
+        const gid = newId();
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page.id);
+          p?.elements.forEach((e, i) => {
+            if (ids.includes(e.id)) p.elements[i] = { ...e, group: [gid, ...(e.group ?? [])] };
+          });
+          return { pages: [page.id], ids, removed: [] };
+        });
+      }
+      case "Ungroup": {
+        // Ids inconnus ou sans groupe ignorés, doublons fusionnés ; rien à retirer : aucune étape (D38).
+        const hits = [...new Set(cmd.ids)]
+          .map((id) => this.find(id))
+          .filter((x): x is Found => x !== undefined && (x.element.group?.length ?? 0) > 0);
+        if (hits.length === 0) return this.unchanged();
+        const ids = hits.map((x) => x.element.id).sort();
+        const pages = [...new Set(hits.map((x) => x.page.id))].sort();
+        return this.step((s) => {
+          for (const p of s.pages) {
+            p.elements.forEach((e, i) => {
+              if (!ids.includes(e.id) || e.group === undefined) return;
+              const { group: _g, ...rest } = e;
+              const tail = e.group.slice(1);
+              p.elements[i] = tail.length > 0 ? { ...rest, group: tail } : rest;
+            });
+          }
+          return { pages, ids, removed: [] };
+        });
+      }
     }
   }
 
   element(id: string): ElementView | null {
     const e = this.find(id)?.element;
     if (!e || e.malformed) return null;
-    const base = { id, transform: e.transform };
+    const base = { id, transform: e.transform, ...withGroup(e.group) };
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, kind: "image", image: e.image };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
@@ -784,14 +867,72 @@ class FakeDocument implements CoreDocument {
   canUndo(): boolean { return this.undoStack.length > 0; }
   canRedo(): boolean { return this.redoStack.length > 0; }
   version(): number { return this.ver; }
-  save(now: string, appVersion: string): Uint8Array {
-    const json = JSON.stringify({
+  /** Corps JSON commun au document et au fragment (même ordre de clés). */
+  private json(now: string, appVersion: string): Record<string, unknown> {
+    return {
       now,
       appVersion,
       assets: Object.fromEntries(this.state.assets),
       pages: this.state.pages.map((p) => ({ id: p.id, backdrop: p.backdrop, elements: p.elements.map(savedElement), ...(p.grid !== null ? { grid: p.grid } : {}) })),
+    };
+  }
+  save(now: string, appVersion: string): Uint8Array {
+    return new TextEncoder().encode(JSON.stringify(this.json(now, appVersion)));
+  }
+  saveFragment(now: string, appVersion: string, name: string): Uint8Array {
+    const n = this.state.pages.length;
+    if (n !== 1) throw new Error(`document RoomBoard endommagé : fragment de ${n} pages : une seule attendue`);
+    return new TextEncoder().encode(JSON.stringify({ kind: "fragment", name, ...this.json(now, appVersion) }));
+  }
+  saveFragmentParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array] {
+    const manifest = new TextEncoder().encode(JSON.stringify({ format: "roomboard-fake", kind: "fragment", name, appVersion, modified: now }));
+    return [manifest, this.saveFragment(now, appVersion, name)] as const;
+  }
+  extract(page: string, ids: readonly string[]): CoreDocument {
+    // Ordre du cœur : page inconnue, puis premier id absent de la page.
+    const p = this.pageOf(page);
+    for (const id of ids) if (!p.elements.some((e) => e.id === id)) throw new Error(`élément inconnu : ${id}`);
+    const wanted = new Set(ids);
+    const groups = new Map<string, string>();
+    const elements = p.elements.filter((e) => wanted.has(e.id)).map((e) => copyElement(e, groups, 0, 0));
+    const out = new FakeDocument({ pages: [{ id: newId(), elements, backdrop: null, grid: null }], assets: new Map() });
+    adoptMeta(out.state.assets, this.state.assets, out.citedAssets().map((a) => a.id));
+    return out;
+  }
+  insertFragment(src: CoreDocument, page: string, dx: number, dy: number): Change {
+    // Ordre du cœur : source d'une autre liaison, déplacement non fini, page inconnue ; source vide : aucune étape.
+    if (!(src instanceof FakeDocument)) throw new Error(MIXED_SOURCE_MESSAGE);
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) throw new Error(MESSAGES.badMatrix);
+    this.pageOf(page);
+    const from = src.state.pages[0]?.elements ?? [];
+    if (from.length === 0) return this.unchanged();
+    const groups = new Map<string, string>();
+    const copies = from.map((e) => copyElement(e, groups, dx, dy));
+    const cited = src.citedAssets().map((a) => a.id);
+    return this.step((s) => {
+      s.pages.find((q) => q.id === page)?.elements.push(...copies);
+      adoptMeta(s.assets, src.state.assets, cited);
+      return { pages: [page], ids: copies.map((c) => c.id), removed: [] };
     });
-    return new TextEncoder().encode(json);
+  }
+  insertPages(src: CoreDocument, after: string): Change {
+    if (!(src instanceof FakeDocument)) throw new Error(MIXED_SOURCE_MESSAGE);
+    const at = this.state.pages.findIndex((p) => p.id === after);
+    if (at < 0) throw new Error(`page inconnue : ${after}`);
+    if (src.state.pages.length === 0) return this.unchanged();
+    const groups = new Map<string, string>();
+    const pages: FakePage[] = src.state.pages.map((p) => ({
+      id: newId(),
+      elements: p.elements.map((e) => copyElement(e, groups, 0, 0)),
+      backdrop: p.backdrop,
+      grid: p.grid,
+    }));
+    const cited = src.citedAssets().map((a) => a.id);
+    return this.step((s) => {
+      s.pages.splice(at + 1, 0, ...pages);
+      adoptMeta(s.assets, src.state.assets, cited);
+      return { pages: pages.map((p) => p.id), ids: pages.flatMap((p) => p.elements.map((e) => e.id)), removed: [] };
+    });
   }
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
     const pts: number[] = [];
@@ -893,16 +1034,19 @@ interface SavedElement {
   table?: SavedTable | unknown;
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
   raw?: Record<string, unknown>;
+  /** C3 : lu par `readGroup` ; illisible : retiré (PC6). */
+  group?: unknown;
 }
 interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown }
 
 function savedElement(e: FakeElement): SavedElement {
   if (e.malformed) return { id: e.id, ...e.malformed } as SavedElement;
+  const group = withGroup(e.group);
   if (e.unknown) {
-    return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw } };
+    return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group };
   }
-  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) } };
-  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image };
+  if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group };
+  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image, ...group };
   return {
     id: e.id,
     transform: [...e.transform],
@@ -910,6 +1054,7 @@ function savedElement(e: FakeElement): SavedElement {
     ...(e.local ? { local: Array.from(e.local) } : {}),
     ...(e.shape ? { shape: e.shape } : {}),
     ...(e.text ? { text: e.text } : {}),
+    ...group,
   };
 }
 
@@ -964,6 +1109,7 @@ const toMatrix6 = (t: unknown): Matrix | null =>
   Array.isArray(t) && t.length === 6 && t.every((v) => typeof v === "number" && Number.isFinite(v)) ? (t as unknown as Matrix) : null;
 
 function loadElement(e: SavedElement): FakeElement {
+  const group = withGroup(readGroup(e.group));
   if (e.kind !== undefined && !KNOWN_KINDS.has(e.kind)) {
     const t = toMatrix6(e.transform);
     const raw = e.raw ?? {};
@@ -974,14 +1120,14 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: t !== null,
       ...(t === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown };
+    return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown, ...group };
   }
   if (e.kind === "table") {
     // Repli d'un tableau mal formé (T2) : cadre inconnu, jamais invisible ; brut gardé sous `raw.table`, réécrit tel quel.
     const source = e.table ?? e.raw?.["table"];
     const t = loadTable(source);
     const m = toMatrix6(e.transform);
-    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t };
+    if (t !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, table: t, ...group };
     const raw = { table: source };
     const unknown: FakeUnknown = {
       sourceKind: "table",
@@ -990,7 +1136,7 @@ function loadElement(e: SavedElement): FakeElement {
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
-    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
   }
   if (e.kind === "image") {
     const im: unknown = e.image;
@@ -1000,7 +1146,7 @@ function loadElement(e: SavedElement): FakeElement {
       return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, malformed: rest };
     }
   }
-  if (e.kind === "image" && e.image) return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image: e.image };
+  if (e.kind === "image" && e.image) return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image: e.image, ...group };
   return {
     id: e.id,
     transform: toMatrix6(e.transform) ?? IDENTITY,
@@ -1008,10 +1154,11 @@ function loadElement(e: SavedElement): FakeElement {
     ...(e.local ? { local: new Float32Array(e.local) } : {}),
     ...(e.shape ? { shape: e.shape } : {}),
     ...(e.text ? { text: withSpans(e.text) } : {}),
+    ...group,
   };
 }
 
-function loadFake(bytes: Uint8Array): CoreDocument {
+function loadFake(bytes: Uint8Array, expected: "document" | "fragment" = "document"): CoreDocument {
   // Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel.
   const notRoomboard = "ce fichier n'est pas un document RoomBoard";
   let raw: unknown;
@@ -1020,7 +1167,13 @@ function loadFake(bytes: Uint8Array): CoreDocument {
   } catch {
     throw new Error(notRoomboard);
   }
-  if (!isRecord(raw) || !Array.isArray(raw["pages"])) throw new Error(notRoomboard);
+  if (!isRecord(raw)) throw new Error(notRoomboard);
+  // C3 : le type se lit à l'ouverture, avant le contenu (un fichier d'un type à venir n'a pas à porter `pages`) ;
+  // kind absent : document d'avant C3. Le mauvais type est refusé une fois le contenu reconnu.
+  const kind = raw["kind"] ?? "document";
+  if (kind !== "document" && kind !== "fragment") throw new Error(unknownKindMessage(String(kind)));
+  if (!Array.isArray(raw["pages"])) throw new Error(notRoomboard);
+  if (kind !== expected) throw new Error(expected === "document" ? NOT_A_DOCUMENT_MESSAGE : NOT_A_FRAGMENT_MESSAGE);
   const pages = (raw["pages"] as SavedPage[]).map((p) => ({
     id: p.id,
     elements: p.elements.map(loadElement),
@@ -1034,12 +1187,17 @@ function loadFake(bytes: Uint8Array): CoreDocument {
 
 export const fakeCore: CoreFactory = {
   blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null }], assets: new Map() }),
-  load: loadFake,
+  load: (bytes: Uint8Array) => loadFake(bytes),
   loadParts: (manifest: Uint8Array, ybin: Uint8Array) => {
     void manifest;
     return loadFake(ybin);
   },
   version: () => "fake",
+  loadFragment: (bytes: Uint8Array) => loadFake(bytes, "fragment"),
+  loadFragmentParts: (manifest: Uint8Array, ybin: Uint8Array) => {
+    void manifest;
+    return loadFake(ybin, "fragment");
+  },
 };
 
 // --- Grille (C9) : mêmes règles que `crates/roomboard-core/src/grid.rs` pour le modèle ; carreaux seuls pour le reste.

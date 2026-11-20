@@ -149,7 +149,10 @@ export function toElementView(v: unknown): ElementView | null {
   if (!isRecord(v)) throw new Error(ELEMENT);
   const { id, kind } = v;
   if (typeof id !== "string") throw new Error(ELEMENT);
-  const base = { id, transform: toMatrix(v["transform"]) };
+  // C3 (Z1) : chemin de groupes, chaînes non vide ; absent (Option::None → undefined) laissé absent.
+  const group = v["group"];
+  if (group !== undefined && group !== null && (!isStrings(group) || group.length === 0)) throw new Error(ELEMENT);
+  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}) };
   switch (kind) {
     case "stroke":
       return { ...base, kind, style: toStyle(v["style"]) };
