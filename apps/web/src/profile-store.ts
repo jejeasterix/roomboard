@@ -21,11 +21,11 @@ export interface ProfileStore {
   isBuiltin(id: string): boolean;
   /** Vrai si une copie de l'utilisateur remplace le profil livré `id`. */
   hasOverride(id: string): boolean;
-  /** Ajoute ou remplace ; un id livré crée ou remplace sa copie. */
+  /** Ajoute ou remplace ; un id livré crée ou remplace sa copie. Lève si l'écriture échoue (mémoire alors inchangée). */
   save(p: Profile): void;
-  /** Retire un profil de l'utilisateur ; lève pour un id livré (passer par `revert`). */
+  /** Retire un profil de l'utilisateur ; lève pour un id livré (passer par `revert`) ou si l'écriture échoue. */
   remove(id: string): void;
-  /** Retire la copie du profil livré `id` (sans copie : rien) ; lève pour un id non livré. */
+  /** Retire la copie du profil livré `id` (sans copie : rien) ; lève pour un id non livré ou si l'écriture échoue. */
   revert(id: string): void;
   /** Retire tous les profils de l'utilisateur et toutes les copies ; profil actif → `defaut`. */
   resetAll(): void;
@@ -93,7 +93,12 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
   }
   active = read(ACTIVE_KEY);
 
-  const persist = (): void => write(PROFILES_KEY, JSON.stringify(saved.map(serializeProfile)));
+  /** Écrit `next` d'abord (sérialisation et stockage peuvent lever) ; la mémoire ne change qu'une fois l'écriture faite. */
+  const commit = (next: Profile[]): void => {
+    const text = JSON.stringify(next.map(serializeProfile));
+    if (kv !== null) kv.setItem(PROFILES_KEY, text);
+    saved = next;
+  };
   const copyOf = (id: string): Profile | undefined => saved.find((p) => p.id === id);
   /** Chaque livré à sa place, remplacé par sa copie s'il en a une, puis les profils de l'utilisateur. */
   const all = (): Profile[] => [...builtins.map((b) => copyOf(b.id) ?? b), ...saved.filter((p) => !builtinIds.has(p.id))];
@@ -104,20 +109,17 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
     isBuiltin: (id) => builtinIds.has(id),
     hasOverride: (id) => builtinIds.has(id) && copyOf(id) !== undefined,
     save(p) {
-      saved = copyOf(p.id) !== undefined ? saved.map((u) => (u.id === p.id ? p : u)) : [...saved, p];
-      persist();
+      commit(copyOf(p.id) !== undefined ? saved.map((u) => (u.id === p.id ? p : u)) : [...saved, p]);
     },
     remove(id) {
       if (builtinIds.has(id)) throw new Error(`profil livré : ${id} ne se supprime pas (revert retire sa copie)`);
-      saved = saved.filter((u) => u.id !== id);
+      commit(saved.filter((u) => u.id !== id));
       if (active === id) active = null;
-      persist();
     },
     revert(id) {
       if (!builtinIds.has(id)) throw new Error(`profil non livré : ${id} (rien à rétablir)`);
       if (copyOf(id) === undefined) return;
-      saved = saved.filter((u) => u.id !== id);
-      persist();
+      commit(saved.filter((u) => u.id !== id));
     },
     resetAll() {
       saved = [];

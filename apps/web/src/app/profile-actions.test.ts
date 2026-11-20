@@ -55,7 +55,7 @@ const cm1Draft = (): Profile => addPreset(addPreset(setHidden(setButtonSize(setD
 describe("gestes de profil (C1)", () => {
   it("S1 : enregistrer comme nouveau « CM1 » : id cm1, basedOn defaut, minor 1, actif ; defaut inchangé", () => {
     const { store, active, actions } = setup();
-    const p = actions.saveAsNew(cm1Draft(), "CM1");
+    const p = actions.saveAsNew(cm1Draft(), "CM1")!;
     expect([p.id, p.label, p.basedOn, p.minor]).toEqual(["cm1", "CM1", "defaut", 1]);
     expect(active.profile().id).toBe("cm1");
     expect(outils(active.profile()).dock).toBe("left");
@@ -196,10 +196,10 @@ describe("gestes de profil (C1)", () => {
 
   it("RF3 : nom qui donnerait un livré ou un slug vide : id unique, jamais un livré ; nom vide refusé", () => {
     const { actions } = setup();
-    expect(actions.saveAsNew(DEFAUT, "Simple").id).toBe("simple-2");
-    expect(actions.saveAsNew(DEFAUT, "Annotation").id).toBe("annotation-2");
-    expect(actions.saveAsNew(DEFAUT, "!!!").id).toBe("profil");
-    expect(actions.saveAsNew(DEFAUT, "!!!").id).toBe("profil-2");
+    expect(actions.saveAsNew(DEFAUT, "Simple")!.id).toBe("simple-2");
+    expect(actions.saveAsNew(DEFAUT, "Annotation")!.id).toBe("annotation-2");
+    expect(actions.saveAsNew(DEFAUT, "!!!")!.id).toBe("profil");
+    expect(actions.saveAsNew(DEFAUT, "!!!")!.id).toBe("profil-2");
     expect(() => actions.saveAsNew(DEFAUT, "   ")).toThrow("nom de profil vide");
   });
 

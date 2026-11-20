@@ -6,9 +6,9 @@
 import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { originOf, resetToOrigin } from "../profile-edit";
-import { planImport, profileFromText, profileToFile, slug, uniqueId } from "../profile-file";
+import { planImport, profileFromText, profileToFile, slug } from "../profile-file";
 import type { ProfileStore } from "../profile-store";
-import { withCurrentMinor, type Profile } from "../toolbar";
+import { uniqueId, withCurrentMinor, type Profile } from "../toolbar";
 import type { ActiveProfile } from "../ui/active-profile";
 
 export type ImportOutcome = "imported" | "cancelled" | "refused";
@@ -26,10 +26,10 @@ export interface ProfileActionsDeps {
 }
 
 export interface ProfileActions {
-  /** « Enregistrer » : remplace le profil (copie de même id pour un livré, P5) et le rend actif. */
-  save(draft: Profile): void;
-  /** « Enregistrer comme nouveau » : id = slug unique du nom (jamais un livré), `basedOn` = origine ; rendu actif. */
-  saveAsNew(draft: Profile, label: string): Profile;
+  /** « Enregistrer » : remplace le profil (copie de même id pour un livré, P5) et le rend actif. Faux (message) si l'écriture échoue. */
+  save(draft: Profile): boolean;
+  /** « Enregistrer comme nouveau » : id = slug unique du nom (jamais un livré), `basedOn` = origine ; rendu actif. Null (message) si l'écriture échoue. */
+  saveAsNew(draft: Profile, label: string): Profile | null;
   importFile(): Promise<ImportOutcome>;
   exportActive(): Promise<boolean>;
   /** Faux pour un profil livré sans copie (rien à remettre à zéro). */
@@ -50,19 +50,34 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
     d.store.save(withCurrentMinor(p));
     d.active.choose(p.id);
   };
+  /** Exécute un geste qui écrit ; l'échec (stockage plein, imbrication excessive) est dit par `notify`, jamais perdu. */
+  const attempt = (what: string, run: () => void): boolean => {
+    try {
+      run();
+      return true;
+    } catch (e) {
+      void d.shell.notify(`Profil non ${what} : ${messageOf(e)}`);
+      return false;
+    }
+  };
   return {
-    save: (draft) => keep(draft),
+    save: (draft) => attempt("enregistré", () => keep(draft)),
     saveAsNew(draft, label) {
       const name = label.trim();
       if (name === "") throw new Error("nom de profil vide");
       const taken = new Set([...builtinIds, ...d.store.list().map((p) => p.id)]);
       const { basedOn: _previous, ...rest } = draft;
       const id = uniqueId(slug(name), taken);
-      keep({ ...rest, id, label: name, basedOn: originOf(draft, d.builtins).id });
-      return d.store.get(id)!;
+      return attempt("enregistré", () => keep({ ...rest, id, label: name, basedOn: originOf(draft, d.builtins).id })) ? d.store.get(id)! : null;
     },
     async importFile() {
-      const picked = await d.files.pick();
+      let picked;
+      try {
+        picked = await d.files.pick();
+      } catch (e) {
+        await d.shell.notify(`Profil non importé : ${messageOf(e)}`);
+        return "refused";
+      }
       if (picked === null) return "cancelled";
       const r = profileFromText(picked.text);
       if ("errors" in r) {
@@ -72,15 +87,22 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
       for (const w of r.warnings) d.warn(`profil importé ${picked.name} : ${w}`);
       const plan = planImport(r.profile, d.store.list(), builtinIds);
       if (plan.kind === "confirm" && !(await d.shell.confirm(plan.message))) return "cancelled";
-      keep(r.profile);
+      try {
+        keep(r.profile);
+      } catch (e) {
+        await d.shell.notify(`Profil non importé (${picked.name}) : ${messageOf(e)}`);
+        return "refused";
+      }
       return "imported";
     },
     async exportActive() {
-      const f = profileToFile(d.active.profile());
+      let name = "";
       try {
+        const f = profileToFile(d.active.profile());
+        name = f.name;
         return await d.files.save(f.name, f.text);
       } catch (e) {
-        await d.shell.notify(`Profil non exporté (${f.name}) : ${messageOf(e)}`);
+        await d.shell.notify(`Profil non exporté${name === "" ? "" : ` (${name})`} : ${messageOf(e)}`);
         return false;
       }
     },
@@ -90,8 +112,10 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
     },
     resetCurrent() {
       const p = d.active.profile();
-      if (d.store.isBuiltin(p.id)) d.store.revert(p.id);
-      else d.store.save(withCurrentMinor(resetToOrigin(p, originOf(p, d.builtins))));
+      attempt("remis à zéro", () => {
+        if (d.store.isBuiltin(p.id)) d.store.revert(p.id);
+        else d.store.save(withCurrentMinor(resetToOrigin(p, originOf(p, d.builtins))));
+      });
       d.active.refresh();
     },
     canRemove: () => !d.store.isBuiltin(d.active.profile().id),
@@ -99,9 +123,9 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
       const p = d.active.profile();
       if (d.store.isBuiltin(p.id)) return false;
       if (!(await d.shell.confirm(`Supprimer le profil « ${p.label} » ?`))) return false;
-      d.store.remove(p.id);
+      const done = attempt("supprimé", () => d.store.remove(p.id));
       d.active.refresh();
-      return true;
+      return done;
     },
     async resetAll() {
       if (!(await d.shell.confirm(RESET_ALL_QUESTION))) return false;
