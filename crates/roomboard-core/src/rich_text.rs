@@ -5,7 +5,7 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 
-use yrs::types::text::YChange;
+use yrs::types::text::{Diff, YChange};
 use yrs::types::Attrs;
 use yrs::{Any, Out, ReadTxn, Text, TextRef, TransactionMut};
 
@@ -77,17 +77,16 @@ pub(crate) fn valid_attrs(attrs: &[TextAttr]) -> bool {
 }
 
 /// Clé et valeur Yrs d'une entrée : `Any::Null` retire l'attribut ; un booléen ne s'écrit que `true` (T2).
-fn entry(a: &TextAttr) -> (Arc<str>, Any) {
+fn entry(a: &TextAttr) -> (&'static str, Any) {
     let flag = |b: bool| if b { Any::Bool(true) } else { Any::Null };
-    let (k, v) = match a {
+    match a {
         TextAttr::Bold(b) => ("bold", flag(*b)),
         TextAttr::Italic(b) => ("italic", flag(*b)),
         TextAttr::Underline(b) => ("underline", flag(*b)),
         TextAttr::Color(c) => ("color", c.as_deref().map_or(Any::Null, Any::from)),
         TextAttr::Size(s) => ("size", s.map_or(Any::Null, |v| Any::from(f64::from(v)))),
         TextAttr::Font(f) => ("font", f.as_deref().map_or(Any::Null, Any::from)),
-    };
-    (Arc::from(k), v)
+    }
 }
 
 /// Un caractère du contenu (embeds sautés) : décalage Yrs de son début et indice du morceau `diff` d'origine.
@@ -105,10 +104,15 @@ fn end(c: &CharAt) -> u32 {
 /// Table des caractères et attributs bruts de chaque morceau, par `Text::diff` (même appel que `collect_out`) ; une
 /// chaîne compte ses octets UTF-8, tout autre morceau (embed) compte 1 (T16).
 fn char_table<T: ReadTxn>(txn: &T, text: &TextRef) -> (Vec<CharAt>, Vec<Attrs>) {
+    table_of(text.diff(txn, YChange::identity))
+}
+
+/// Corps de `char_table`, hors du générique : une seule copie pour ses deux transactions (T10).
+fn table_of(diff: Vec<Diff<YChange>>) -> (Vec<CharAt>, Vec<Attrs>) {
     let mut chars = Vec::new();
     let mut attrs = Vec::new();
     let mut at = 0u32;
-    for d in text.diff(txn, YChange::identity) {
+    for d in diff {
         let chunk = attrs.len();
         attrs.push(d.attributes.map(|a| *a).unwrap_or_default());
         match &d.insert {
@@ -208,18 +212,27 @@ pub(crate) fn read_spans<T: ReadTxn>(txn: &T, text: &TextRef) -> Vec<TextSpanVie
 }
 
 /// Plus long préfixe commun, puis plus long suffixe commun des deux restes (sans chevaucher le préfixe), en points de
-/// code (T4).
-fn common_ends(old: &[char], new: &[char]) -> (usize, usize) {
-    let p = old.iter().zip(new).take_while(|(a, b)| a == b).count();
-    let room = old.len().min(new.len()) - p;
+/// code (T4) ; comparés sur place, sans copie en `Vec<char>` (T10).
+fn common_ends(old: &[CharAt], new: &str) -> (usize, usize) {
+    let p = old
+        .iter()
+        .zip(new.chars())
+        .take_while(|(a, b)| a.ch == *b)
+        .count();
+    let room = old.len().min(new.chars().count()) - p;
     let s = old
         .iter()
         .rev()
-        .zip(new.iter().rev())
+        .zip(new.chars().rev())
         .take(room)
-        .take_while(|(a, b)| a == b)
+        .take_while(|(a, b)| a.ch == *b)
         .count();
     (p, s)
+}
+
+/// Décalage en octets du `i`-ième point de code de `s` (sa longueur quand `i` vaut le nombre de points de code).
+fn byte_at(s: &str, i: usize) -> usize {
+    s.char_indices().nth(i).map_or(s.len(), |(b, _)| b)
 }
 
 /// `SetText` sur un texte existant (T4, T5, T16) : supprime les morceaux de chaîne du milieu ancien (de droite à
@@ -227,11 +240,9 @@ fn common_ends(old: &[char], new: &[char]) -> (usize, usize) {
 /// attributs bruts de ce caractère (connus et inconnus) ; en tête, aucun attribut. Contenu égal : rien.
 pub(crate) fn apply_text_diff(txn: &mut TransactionMut, text: &TextRef, new: &str) {
     let (chars, attrs) = char_table(&*txn, text);
-    let old: Vec<char> = chars.iter().map(|c| c.ch).collect();
-    let fresh: Vec<char> = new.chars().collect();
-    let (p, s) = common_ends(&old, &fresh);
+    let (p, s) = common_ends(&chars, new);
     let mut runs: Vec<(u32, u32)> = Vec::new();
-    for c in &chars[p..old.len() - s] {
+    for c in &chars[p..chars.len() - s] {
         let n = c.ch.len_utf8() as u32;
         match runs.last_mut() {
             Some((start, len)) if *start + *len == c.yrs => *len += n,
@@ -241,7 +252,7 @@ pub(crate) fn apply_text_diff(txn: &mut TransactionMut, text: &TextRef, new: &st
     for (start, len) in runs.into_iter().rev() {
         text.remove_range(txn, start, len);
     }
-    let middle: String = fresh[p..fresh.len() - s].iter().collect();
+    let middle = &new[byte_at(new, p)..byte_at(new, new.chars().count() - s)];
     if middle.is_empty() {
         return;
     }
@@ -249,7 +260,7 @@ pub(crate) fn apply_text_diff(txn: &mut TransactionMut, text: &TextRef, new: &st
         Some(c) => (end(&c), attrs[c.chunk].clone()),
         None => (0, Attrs::new()),
     };
-    text.insert_with_attributes(txn, at, &middle, inherited);
+    text.insert_with_attributes(txn, at, middle, inherited);
 }
 
 fn same_value(current: Option<&Any>, wanted: &Any) -> bool {
@@ -271,7 +282,6 @@ pub(crate) fn format_changes<T: ReadTxn>(
     if range.1 == 0 || attrs.is_empty() {
         return false;
     }
-    let wanted: Vec<(Arc<str>, Any)> = attrs.iter().map(entry).collect();
     let mut at = 0u32;
     for d in text.diff(txn, YChange::identity) {
         let len = match &d.insert {
@@ -284,10 +294,10 @@ pub(crate) fn format_changes<T: ReadTxn>(
             continue;
         }
         let current = d.attributes.as_deref();
-        if wanted
-            .iter()
-            .any(|(k, v)| !same_value(current.and_then(|a| a.get(k)), v))
-        {
+        if attrs.iter().any(|a| {
+            let (k, v) = entry(a);
+            !same_value(current.and_then(|c| c.get(k)), &v)
+        }) {
             return true;
         }
     }
@@ -301,7 +311,12 @@ pub(crate) fn apply_format(
     range: (u32, u32),
     attrs: &[TextAttr],
 ) {
-    let map: Attrs = attrs.iter().map(entry).collect();
+    // Boucle plutôt que `collect` : mêmes insertions, sans instancier les adaptateurs d'itérateur (T10).
+    let mut map = Attrs::new();
+    for a in attrs {
+        let (k, v) = entry(a);
+        map.insert(Arc::from(k), v);
+    }
     text.format(txn, range.0, range.1, map);
 }
 
