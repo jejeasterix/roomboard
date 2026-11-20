@@ -17,7 +17,7 @@ Chaque piste du profil est essayée par la variable `CARGO_PROFILE_RELEASE_*` co
 | `strip = true` (profil) | 945 660 | 590 342 | non | retire aussi `target_features` : wasm-bindgen ne voit plus `multivalue` et produit une autre colle JS (retours par pointeur, 48 846 → 63 234 octets) ; touche aussi les builds natifs |
 | `strip = "debuginfo"` | 1 536 002 | 0 | non | aucune section de débogage dans le module release |
 | `codegen-units = 1` | 1 406 705 | 129 297 | oui | 78 202 octets de noms en moins, 44 465 octets de code en moins |
-| `codegen-units = 1` pour le seul paquet `roomboard-wasm` | 946 320 (avec `--remove-name-section`) | 1 391 | non | sous LTO, seul le réglage global compte |
+| `codegen-units = 1` pour le seul paquet `roomboard-wasm` | 946 320 (avec `--remove-name-section`) | 1 391 (contre `--remove-name-section` seul) | non | sur `roomboard-wasm` seul : sans effet ; non mesuré sur `roomboard-core` |
 | `panic = "abort"` | 1 532 932 | 3 070 | non | il coûte 1 506 octets une fois `strip` et `codegen-units = 1` appliqués |
 | `opt-level = "z"` | 1 774 946 | −238 944 | non | plus gros seul ; voir les combinaisons |
 | `wasm-bindgen --remove-producers-section` | — | 115 (sur le retenu) | non | gain négligeable |
