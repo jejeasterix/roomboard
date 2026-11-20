@@ -232,6 +232,12 @@ async function scenario(page, url, { captures, tmp }) {
   await (await chooserR).setFiles(fileR);
   await waitTabs(before3 + 2);
   const fileR2 = await saveTo("rouvert-2.roomboard");
+  // Enregistré (file1) puis rouvert et réenregistré (fileR) : mêmes entrées, même manifest, mêmes octets d'asset ; seul document.ybin peut différer.
+  const e1 = zipEntries(await readFile(file1));
+  const eRo = zipEntries(await readFile(fileR));
+  check(JSON.stringify([...e1.keys()].sort()) === JSON.stringify([...eRo.keys()].sort()), "S3 : enregistré puis rouvert et réenregistré : mêmes noms d'entrées");
+  check(e1.get("manifest.json") && eRo.get("manifest.json") && Buffer.compare(e1.get("manifest.json"), eRo.get("manifest.json")) === 0, "S3 : enregistré puis rouvert et réenregistré : même manifest.json");
+  check(e1.has(entry) && eRo.has(entry) && Buffer.compare(e1.get(entry), eRo.get(entry)) === 0, "S3 : enregistré puis rouvert et réenregistré : mêmes octets de l'asset");
   const [eR, eR2] = [zipEntries(await readFile(fileR)), zipEntries(await readFile(fileR2))];
   check(eR.get("document.ybin") && Buffer.compare(eR.get("document.ybin"), eR2.get("document.ybin")) === 0, "S3 : rouvert puis réenregistré : même document.ybin");
   check(eR.has(entry) && eR2.has(entry) && Buffer.compare(eR2.get(entry), png) === 0, "S3 : rouvert puis réenregistré : mêmes assets (octets du PNG déposé)");
