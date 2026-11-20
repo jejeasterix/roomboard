@@ -1,10 +1,10 @@
 # État — usage-c1-profils
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier (provisoire)
 Objectif : On choisit un profil, on modifie sa barre (emplacement, taille des boutons, outils, préréglages), on l'exporte et l'importe en `.rbprofile`, et on remet à zéro.
 Avancement : 12/12 tâches terminées
-Étage : 4 — depuis 2026-11-20 08:00
+Étage : 4 — clos le 2026-11-20 08:10
 Lot : —
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c1-profils   Branche : feat/usage-c1-profils   Base : origin/main @ 3057e29
@@ -45,7 +45,7 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 - association `.rbprofile` au système ; profil par utilisateur du système ; fenêtre d'annotation (C11a).
 
 ## Portes
-ouvertes : — · passées : —
+ouvertes : — · passées : merge par fusion locale `--no-ff` dans `main` (7da4e99, PR 14), sans porte (profil : porte avant merge non) ; aucune release
 
 ## Pièges trouvés
 - Prémisses démenties : stockage écartait la copie d'un livré ; aucun préréglage affiché ; `resolveStartMode` rend toujours `board` ; pas de graphe graphify RoomBoard.
