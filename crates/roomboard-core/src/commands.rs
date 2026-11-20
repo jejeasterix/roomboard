@@ -866,7 +866,7 @@ pub(crate) mod tests {
         let e = d.element(&id).expect("élément");
         assert_eq!(e.kind, "stroke");
         assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 10.0, 20.0]);
-        assert_eq!(e.style, pen());
+        assert_eq!(e.style, Some(pen()));
         let pts = d.stroke_points(&id).expect("points");
         assert_eq!((pts[1].x, pts[1].y, pts[1].pressure), (20.0, 20.0, 0.7));
     }
@@ -1382,7 +1382,7 @@ pub(crate) mod tests {
         let e = d.element(&c.ids[0]).expect("élément");
         assert_eq!(e.kind, "shape");
         assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]);
-        assert_eq!(e.style, pen());
+        assert_eq!(e.style, Some(pen()));
         assert_eq!(
             e.shape,
             Some(ShapeView {
@@ -1585,10 +1585,10 @@ pub(crate) mod tests {
         assert_eq!(e.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 200.0]);
         assert_eq!(
             e.style,
-            StrokeStyle {
+            Some(StrokeStyle {
                 color: "#000000".into(),
                 width: 0.0
-            }
+            })
         );
         assert_eq!(
             e.text,
