@@ -1,6 +1,112 @@
 //! Liaison wasm-bindgen du conteneur `.roomboard` (R8, DAR1) : second module Wasm, chargé par la page au premier besoin
 //! (R10). Mince : `container::read` et `container::write`, rien d'autre. Chaque fonction exposée délègue à une fonction
 //! `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
+use roomboard_core::format::Parts;
+use roomboard_formats::container::{self, AssetBytes};
+use wasm_bindgen::prelude::*;
+
+/// Fichier lu : manifeste, `document.ybin`, assets triés par empreinte, avertissements en français (K11).
+#[wasm_bindgen]
+pub struct ContainerReader {
+    manifest: Vec<u8>,
+    ybin: Vec<u8>,
+    assets: Vec<(String, Vec<u8>)>,
+    warnings: Vec<String>,
+}
+
+impl ContainerReader {
+    /// `container::read` ; le message d'erreur est le `Display` du cœur.
+    pub fn open_inner(file: &[u8]) -> Result<ContainerReader, String> {
+        let u = container::read(file).map_err(|e| e.to_string())?;
+        Ok(ContainerReader {
+            manifest: u.parts.manifest,
+            ybin: u.parts.ybin,
+            assets: u.assets,
+            warnings: u.warnings,
+        })
+    }
+}
+
+#[wasm_bindgen]
+impl ContainerReader {
+    /// Lève une Error au message du cœur (« ce fichier n'est pas un document RoomBoard », « … endommagé : … »).
+    pub fn open(file: &[u8]) -> Result<ContainerReader, JsError> {
+        Self::open_inner(file).map_err(|m| JsError::new(&m))
+    }
+    pub fn manifest(&self) -> Vec<u8> {
+        self.manifest.clone()
+    }
+    pub fn ybin(&self) -> Vec<u8> {
+        self.ybin.clone()
+    }
+    pub fn asset_count(&self) -> u32 {
+        self.assets.len() as u32
+    }
+    pub fn asset_id(&self, i: u32) -> Option<String> {
+        self.assets.get(i as usize).map(|(id, _)| id.clone())
+    }
+    pub fn asset_bytes(&self, i: u32) -> Option<Vec<u8>> {
+        self.assets.get(i as usize).map(|(_, b)| b.clone())
+    }
+    pub fn warnings(&self) -> Vec<String> {
+        self.warnings.clone()
+    }
+}
+
+/// Assets bout à bout dans `bytes`, découpés par `sizes` ; `ids`, `mimes`, `sizes` de même longueur.
+pub fn write_container_inner(
+    manifest: &[u8],
+    ybin: &[u8],
+    ids: &[String],
+    mimes: &[String],
+    sizes: &[u32],
+    bytes: &[u8],
+) -> Result<Vec<u8>, String> {
+    if ids.len() != mimes.len() || ids.len() != sizes.len() {
+        return Err(format!(
+            "assets incohérents : {} empreintes, {} types, {} tailles",
+            ids.len(),
+            mimes.len(),
+            sizes.len()
+        ));
+    }
+    let total: u64 = sizes.iter().map(|&s| u64::from(s)).sum();
+    if total != bytes.len() as u64 {
+        return Err(format!(
+            "assets incohérents : {total} octets annoncés, {} reçus",
+            bytes.len()
+        ));
+    }
+    let mut at = 0usize;
+    let mut assets = Vec::with_capacity(ids.len());
+    for ((id, mime), &size) in ids.iter().zip(mimes).zip(sizes) {
+        let end = at + size as usize;
+        assets.push(AssetBytes {
+            id: id.as_str(),
+            mime: mime.as_str(),
+            bytes: &bytes[at..end],
+        });
+        at = end;
+    }
+    let parts = Parts {
+        manifest: manifest.to_vec(),
+        ybin: ybin.to_vec(),
+    };
+    container::write(&parts, &assets).map_err(|e| e.to_string())
+}
+
+/// Écrit le `.roomboard` : manifeste et `document.ybin` du cœur, puis les assets (K12). Lève une Error lisible.
+#[wasm_bindgen]
+pub fn write_container(
+    manifest: &[u8],
+    ybin: &[u8],
+    ids: Vec<String>,
+    mimes: Vec<String>,
+    sizes: Vec<u32>,
+    bytes: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    write_container_inner(manifest, ybin, &ids, &mimes, &sizes, bytes).map_err(|m| JsError::new(&m))
+}
 
 #[cfg(test)]
 mod tests {
@@ -31,7 +137,7 @@ mod tests {
         let file = write_container_inner(
             &p.manifest,
             &p.ybin,
-            &[id.clone()],
+            std::slice::from_ref(&id),
             &["image/png".to_string()],
             &[png.len() as u32],
             &png,
@@ -69,7 +175,12 @@ mod tests {
         let mut want = vec![(ia, a), (ib, b)];
         want.sort();
         let got: Vec<(String, Vec<u8>)> = (0..r.asset_count())
-            .map(|i| (r.asset_id(i).expect("id"), r.asset_bytes(i).expect("octets")))
+            .map(|i| {
+                (
+                    r.asset_id(i).expect("id"),
+                    r.asset_bytes(i).expect("octets"),
+                )
+            })
             .collect();
         assert_eq!(got, want);
     }
