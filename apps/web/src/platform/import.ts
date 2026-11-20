@@ -109,13 +109,17 @@ export function createImporter(deps: ImportDeps): Importer {
           failed.push(f.name);
           continue;
         }
+        /** Lecture du fichier en échec : compté, signalé. */
+        const fail = async (e: unknown): Promise<void> => {
+          failed.push(f.name);
+          await deps.notify(`${roomboard ? "Ouverture" : "Import"} impossible (${f.name}) : ${messageOf(e)}`);
+        };
         // OD56 (DAC5) : l'en-tête seul avant la détection ; un fichier non reconnu n'est jamais lu en entier.
         let head: Uint8Array;
         try {
           head = roomboard ? EMPTY : (await f.head(HEAD_BYTES)).subarray(0, HEAD_BYTES);
         } catch (e) {
-          failed.push(f.name);
-          await deps.notify(`${roomboard ? "Ouverture" : "Import"} impossible (${f.name}) : ${messageOf(e)}`);
+          await fail(e);
           continue;
         }
         const handler = registry.find((h) => h.detect(head, f.name));
@@ -127,8 +131,7 @@ export function createImporter(deps: ImportDeps): Importer {
         try {
           blob = await f.blob();
         } catch (e) {
-          failed.push(f.name);
-          await deps.notify(`${roomboard ? "Ouverture" : "Import"} impossible (${f.name}) : ${messageOf(e)}`);
+          await fail(e);
           continue;
         }
         const outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify });

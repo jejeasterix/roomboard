@@ -303,8 +303,9 @@ export function createEngine(deps: EngineDeps): Engine {
     stateChanged: () => emit(),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
-  const tableTool: TableTool =
-    deps.tools.table?.(ctx, () => ({ color: style.color, size: DEFAULT_TEXT_SIZE })) ?? inertTable();
+  /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
+  const textStyle = (): TextStyle => ({ color: style.color, size: DEFAULT_TEXT_SIZE });
+  const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => style),
@@ -315,7 +316,7 @@ export function createEngine(deps: EngineDeps): Engine {
     line: shapeTool("line"),
     arrow: shapeTool("arrow"),
     table: tableTool,
-    text: deps.tools.text?.(ctx, () => ({ color: style.color, size: DEFAULT_TEXT_SIZE })) ?? inertTool(),
+    text: deps.tools.text?.(ctx, textStyle) ?? inertTool(),
   };
   const toolList: readonly GestureTool[] = Object.values(tools);
 

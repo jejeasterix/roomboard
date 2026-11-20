@@ -8,25 +8,26 @@
 import type { Matrix, TableAxis, TableData } from "../../core/api";
 import { TABLE_MAX_LINES } from "../../core/api";
 import { plainSpans } from "../../core/rich-text";
-import { applyMatrix, composeMatrix, translateMatrix } from "../../core/shapes";
+import { composeMatrix, translateMatrix } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
 import {
   cellContent,
   cellHeight,
+  cellInnerBox,
   cellOf,
   cellRect,
   rowHeightsFor,
   step,
   tableAt,
   TABLE_COL_WIDTH,
-  TABLE_PADDING,
   TABLE_ROW_HEIGHT,
   type Cell,
   type CellRef,
 } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { createCommitGate } from "./commit-gate";
+import { transformBounds } from "./handles";
 import type { TextEditorHost, TextStyle } from "./text";
 import { NO_LIVE, type LivePart, type TableTool, type ToolContext } from "./tool";
 
@@ -82,20 +83,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   /** Cadre de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement. */
   const refresh = (): void => {
     const at = locate(active);
-    if (at === null) {
-      live = NO_LIVE;
-    } else {
-      const r = cellRect(at.table, at.cell);
-      const pts = [
-        applyMatrix(at.transform, r.x0, r.y0),
-        applyMatrix(at.transform, r.x1, r.y0),
-        applyMatrix(at.transform, r.x1, r.y1),
-        applyMatrix(at.transform, r.x0, r.y1),
-      ];
-      const xs = pts.map((p) => p[0]);
-      const ys = pts.map((p) => p[1]);
-      live = { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) } } };
-    }
+    live = at === null ? NO_LIVE : { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame: transformBounds(at.transform, cellRect(at.table, at.cell)) } };
     ctx.requestFrame?.();
   };
 
@@ -135,6 +123,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     }
     const r = cellRect(at.table, at.cell);
     const colWidth = r.x1 - r.x0;
+    const inner = cellInnerBox(at.table, at.cell);
     const { text, fill } = cellContent(at.table, at.ref.row, at.ref.col);
     opened = { ref: at.ref, initial: text, colWidth, size: at.table.size };
     gate.reset();
@@ -142,8 +131,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       {
         page: ctx.page(),
         id: at.ref.id,
-        matrix: composeMatrix(at.transform, translateMatrix(r.x0 + TABLE_PADDING, r.y0 + TABLE_PADDING)),
-        boxWidth: Math.max(1, colWidth - 2 * TABLE_PADDING),
+        matrix: composeMatrix(at.transform, translateMatrix(inner.x, inner.y)),
+        boxWidth: inner.w,
         color: at.table.color,
         size: at.table.size,
         initial: text,

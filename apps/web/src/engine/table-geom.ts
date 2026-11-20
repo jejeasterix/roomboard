@@ -51,7 +51,8 @@ export function cellRect(t: TableData, c: Cell): Bounds {
   return { x0, y0, x1: x0 + (t.cols[c.col]?.width ?? 0), y1: y0 + (t.rows[c.row]?.height ?? 0) };
 }
 
-export function cellOf(t: TableData, ref: CellRef): Cell | null {
+/** Rangs d'une cellule par ids (une `CellRef`, ou une cellule de `t.cells`) ; null si sa ligne ou sa colonne n'est plus lue. */
+export function cellOf<R extends Pick<CellRef, "row" | "col">>(t: TableData, ref: R): Cell | null {
   const row = t.rows.findIndex((r) => r.id === ref.row);
   const col = t.cols.findIndex((c) => c.id === ref.col);
   return row < 0 || col < 0 ? null : { row, col };
@@ -93,10 +94,19 @@ export function step(t: TableData, c: Cell, move: NavMove): Cell | "add-row" | n
   return c.row + 1 < t.rows.length ? { row: c.row + 1, col: c.col } : null;
 }
 
+/** Largeur du texte dans une colonne de `colWidth` : moins les deux marges, 1 au moins. */
+const innerWidth = (colWidth: number): number => Math.max(1, colWidth - 2 * TABLE_PADDING);
+
+/** Zone intérieure d'une cellule, repère local du tableau : coin après la marge, largeur et hauteur moins les marges. */
+export interface CellBox { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
+export function cellInnerBox(t: TableData, c: Cell): CellBox {
+  const r = cellRect(t, c);
+  return { x: r.x0 + TABLE_PADDING, y: r.y0 + TABLE_PADDING, w: innerWidth(r.x1 - r.x0), h: Math.max(0, r.y1 - r.y0 - 2 * TABLE_PADDING) };
+}
+
 /** Hauteur exigée par `text` dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
 export function cellHeight(text: string, size: number, colWidth: number, measure: Measure): number {
-  const inner = Math.max(1, colWidth - 2 * TABLE_PADDING);
-  return richBoxHeight(layoutRich(plainSpans(text), { size }, inner, measure)) + 2 * TABLE_PADDING;
+  return richBoxHeight(layoutRich(plainSpans(text), { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
 }
 
 /** Hauteur exigée de chaque ligne aux largeurs `colWidths` (Uniformiser, T11) ; cellule vide : une ligne de texte. */
