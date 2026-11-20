@@ -1,6 +1,6 @@
 # État — usage-c5-image
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : On rogne une image, on la retourne, on la tourne par quarts de tour, on règle luminosité et contraste, et on rend transparente une couleur (pipette, tolérance, contigu ou global, plume, aperçu), sans perdre l'original, avec les calculs de pixels dans un Worker.
 Avancement : 21/21 tâches terminées
@@ -44,6 +44,7 @@ Vagues : V1 = T1, T5, T6, T8, T15 · V2 = T2, T9 · V3 = T3, T10 · V4 = T4 · V
 | T21 correctifs du tour 2 | terminée | 1/3 | 43165e6 | verifier.sh --e2e OK sur f806814 ; revue immédiate : aucun major |
 
 ## Terminé quand
+fait : PR #22 fusionnée par fusion locale --no-ff, push sans --force, main eb310e1
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · capture image rognée au fond transparent dans docs/essais/ · scène ≥ 640 px mesurée par un test · module Wasm principal ≤ 1 572 864 octets · PR fusionnée par fusion locale --no-ff et push sans --force
 
 ## Rapides sur la tête 4a1bfc6
