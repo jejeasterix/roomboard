@@ -57,12 +57,21 @@ export interface DroppedFile {
 /** `at` en px CSS relatifs à la fenêtre ; null quand le système ne donne pas de point (ouverture par le Finder). */
 export type DropHandler = (files: DroppedFile[], at: Point | null) => void;
 
+/** Extensions offertes par « Importer » (R18) : le `.roomboard` et les images d'U33 que le registre reconnaît. */
+export const IMPORT_EXTENSIONS = ["roomboard", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
+export const IMPORT_FILTER = { name: "Images et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
+
 export interface FileHost {
   readonly kind: HostKind;
   /** null : boîte annulée. Lève une Error si la lecture échoue. */
   open(): Promise<OpenedFile | null>;
-  /** `kind: "ask"` (ou cible d'un autre hôte) : demande où enregistrer. null : annulé. Lève si l'écriture échoue. */
-  save(bytes: Uint8Array, target: SaveTarget): Promise<SaveTarget | null>;
+  /** Boîte « Importer » (R18) : plusieurs fichiers, filtre `IMPORT_FILTER` ; [] : annulée. */
+  pick(): Promise<DroppedFile[]>;
+  /**
+   * Choisit d'abord la cible (boîte si `kind: "ask"` ou cible d'un autre hôte ; null : annulé, `encode` jamais appelé),
+   * puis appelle `encode`, puis écrit (R11). Lève si l'encodage ou l'écriture échoue.
+   */
+  save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null>;
   /** Abonne le dépôt de fichiers ; rend le désabonnement. Hôte sans surface de dépôt : no-op. */
   onDrop(handler: DropHandler): () => void;
 }

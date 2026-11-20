@@ -5,8 +5,11 @@
 import {
   ensureExtension,
   hasErrorName,
+  IMPORT_EXTENSIONS,
+  IMPORT_FILTER,
   ROOMBOARD_EXTENSION,
   ROOMBOARD_MIME,
+  type DroppedFile,
   type FileHandleLike,
   type FileHost,
   type OpenedFile,
@@ -20,12 +23,23 @@ export interface PickerType {
 }
 
 export interface FsaWindow {
-  showOpenFilePicker(o: { multiple: false; excludeAcceptAllOption: boolean; types: readonly PickerType[] }): Promise<readonly FileHandleLike[]>;
+  showOpenFilePicker(o: { multiple: boolean; excludeAcceptAllOption: boolean; types: readonly PickerType[] }): Promise<readonly FileHandleLike[]>;
   showSaveFilePicker(o: { suggestedName: string; excludeAcceptAllOption: boolean; types: readonly PickerType[] }): Promise<FileHandleLike>;
 }
 
 export const FSA_TYPES: readonly PickerType[] = [
   { description: "Document RoomBoard", accept: { [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION] } },
+];
+
+/** Filtre de « Importer » (R18) : documents RoomBoard et images d'U33. */
+export const IMPORT_TYPES: readonly PickerType[] = [
+  {
+    description: IMPORT_FILTER.name,
+    accept: {
+      [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION],
+      "image/*": IMPORT_EXTENSIONS.filter((e) => e !== "roomboard").map((e) => `.${e}`),
+    },
+  },
 ];
 
 export function isAbort(e: unknown): boolean {
@@ -72,7 +86,22 @@ export function createFsaHost(w: FsaWindow, dropTarget: DropTargetLike | null = 
       const bytes = new Uint8Array(await file.arrayBuffer());
       return { name: handle.name, bytes, target: { kind: "fsa", name: handle.name, handle } };
     },
-    async save(bytes: Uint8Array, target: SaveTarget): Promise<SaveTarget | null> {
+    async pick(): Promise<DroppedFile[]> {
+      let handles: readonly FileHandleLike[];
+      try {
+        handles = await w.showOpenFilePicker({ multiple: true, excludeAcceptAllOption: false, types: IMPORT_TYPES });
+      } catch (e) {
+        if (isAbort(e)) return [];
+        throw e;
+      }
+      return Promise.all(
+        handles.map(async (h) => {
+          const bytes = new Uint8Array(await (await h.getFile()).arrayBuffer());
+          return { name: h.name, size: bytes.byteLength, mime: "", blob: async () => new Blob([bytes]) };
+        }),
+      );
+    },
+    async save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
       let handle: FileHandleLike | null = target.kind === "fsa" && (await writable(target.handle)) ? target.handle : null;
       if (handle === null) {
         try {
@@ -86,7 +115,7 @@ export function createFsaHost(w: FsaWindow, dropTarget: DropTargetLike | null = 
           throw e;
         }
       }
-      await writeAll(handle, bytes);
+      await writeAll(handle, await encode());
       return { kind: "fsa", name: handle.name, handle };
     },
   };
