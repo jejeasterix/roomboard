@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : courte (6 tâches, confirmé à l'étage 2)
 Objectif : Chaque page de RoomBoard peut afficher une grille nette (six types d'U31) et aimanter les éléments déplacés, enregistrée dans le fichier `.roomboard`.
-Avancement : 7/7 tâches terminées
-Étage : 3 (fin de lot : double relecture conformité + qualité Rust + qualité TS) — depuis 2026-11-20 05:21
+Avancement : 9/9 tâches terminées
+Étage : 4 (clôture : verifier.sh final, relecture tour 2, PR) — depuis 2026-11-20 05:50
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -19,7 +19,7 @@ Tête 7cf48d7 : verifier.sh OK · core 208 (2 ignorés) · web 884 / 63 fichiers
 Rapide = complète (worktree neuf sur origin/main 05fdb73) : verifier.sh OK · cargo core 181 (2 ignorés) · web 814 / 62 fichiers
 
 ## Compteurs
-contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; 6 corrections passées dans les consignes des tâches au lieu d'un retour au planificateur, pour tenir le délai) · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; 6 corrections passées dans les consignes des tâches au lieu d'un retour au planificateur, pour tenir le délai) · vagues sans progrès 0/2 · correctifs de fin 1/2
 
 ## Tâches
 Plan : 9973848. Vague 1 : T1, T2, T3 · vague 2 : T4 (T2,T3), T5 (T2), T6 (T1,T2).
@@ -32,6 +32,9 @@ Plan : 9973848. Vague 1 : T1, T2, T3 · vague 2 : T4 (T2,T3), T5 (T2), T6 (T1,T2
 | T5 magnétisme select/shape, Alt | T2 | --T5 | concepteur-critique | terminée | 1/3 | 06e7027 | vitest src/engine 351/351, S3 S4 présents |
 | T6 liaison Wasm + contrat + notices | T1,T2 | --T6 | concepteur-critique | terminée | 1/3 | 06f9ce0 | vitest src/core wasm requis 149/149 ; tsc 0 ; module 1 520 076 o |
 | T7 correctifs des relectures T1/T2/T5/T6 | T1-T6 | --T7 | concepteur-critique | terminée | 1/3 | c662d97 | verifier.sh OK sur 7cf48d7 (core 208, web 884) |
+| integ fusion origin/main (C7, PR #10) | T7 | --integ | concepteur-critique | terminée | 1/3 | c7f485b | verifier.sh OK (core 237, web 932) |
+| T8 correctifs relecture finale (tour 1/2) | integ | --T8 | concepteur-critique | terminée | 1/3 | 1af5471 | verifier.sh OK sur 19f5943 (core 240, web 937, module 1 445 926 o) |
+| fusion origin/main (PR #11, taille Wasm) | T8 | (branche) | orchestrateur | terminée | 1/1 | 035f197 | verifier.sh OK (core 240, web 937, module 923 133 o) |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh OK · scénarios réussis · C7 fusionné puis rebase · fusion locale --no-ff poussée
@@ -54,3 +57,12 @@ duplication · cœur · crates/roomboard-core/src/query.rs:233-252 · `snap_box`
 
 ## Cadrage
 f2ac57d · 15 décisions · 9 hypothèses (6 de niveau 1) · 3 DA · 15 modules à réutiliser · S1 aller-retour + annuler A→B · S2 compatibilité + kind inconnu · S3 déplacement aimanté · S4 forme aimantée · S5 rendu net page infinie
+
+## Rapport
+- Scénarios S1-S5 : joués par tests automatiques, tous verts (relecture de conformité : chaque scénario a un test qui échouerait si le code ne faisait rien). Aucune preuve visuelle automatique dans ce projet : essai à l'écran à faire par Jérôme.
+- Ordre des couches (DAG2) : fond de page, place du `backdrop` (pas encore dessiné), grille si `above` faux, éléments, fantômes et formes en cours, grille si `above` vrai, sélection ; encre en cours au-dessus de tout.
+- Choix tranchés seul : commande `SetGrid` (pas `SetPageGrid`, nom déjà écrit au cadrage de l'usage l. 107) ; fusion de `origin/main` dans la branche au lieu d'un rebase (le rebase exigerait un push forcé, interdit) ; `codegen-units = 1` (puis repris de main, PR #11) ; delta d'accroche ramené à 0 sous 1e-9 ; rectangle/ellipse aplatis refusés ; niveau relu sans `kind` écarté ; plus de 16 niveaux relus = `BadGrid` au renvoi (limite connue).
+- Hypothèses de niveau 1 (cadrage) : géométrie de `lines`, `isometric`, `music`, `seyes` ; trait d'1 px CSS ; magnétisme sans seuil, actif même grille invisible ; page neuve sans grille héritée ; boîte d'accroche sans épaisseur du trait ; borne droite de la page (HG10).
+- Non traité (mineur, consigné) : `grid_lines` sérialisé en tableaux JS à chaque image (pire cas 65 536 points) → `Float64Array` ou mémoïsation plus tard ; au-delà de |y| ≈ 1e7, le seuil 1e-9 peut laisser un résidu ; deux `SetGrid`/`SetBackdrop` successifs changent les octets du premier rechargement (préexistant à C9) ; Alt relâchée seule dans un navigateur Windows non vérifiée.
+- Constat d'architecture écrit : 1 (crates/roomboard-core, `snap_box`/`bounds`) ; aucune zone à 3 constats.
+- Release : non due (aucune release, aucun tag).
