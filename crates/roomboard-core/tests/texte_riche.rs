@@ -4,8 +4,10 @@
 use roomboard_core::commands::{Command, CommandError};
 use roomboard_core::document::Document;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextSpanView};
+use std::sync::Arc;
 use yrs::updates::decoder::Decode;
-use yrs::{ReadTxn, StateVector, Transact, Update};
+
+use yrs::{Any, Array, Doc, Map, Out, ReadTxn, StateVector, Text, Transact, Update};
 
 fn none() -> SpanAttrs {
     SpanAttrs::default()
@@ -598,4 +600,50 @@ fn concurrent_formats_of_two_words_in_a_cell_both_stay() {
             view("noir", italic())
         ]
     );
+}
+
+/// Un client étranger pose `size` hors du domaine `f32` : la vue l'ignore, donc renvoyer la vue en segments reste
+/// accepté (même domaine en lecture et en entrée) et la valeur brute reste dans le document.
+#[test]
+fn foreign_size_outside_f32_domain_is_absent_from_view_and_view_round_trips() {
+    for foreign in [1e39_f64, 1e-46_f64] {
+        let (d, page, id) = text_doc("abc");
+        let raw = Doc::new();
+        let pages = raw.get_or_insert_array("pages");
+        raw.transact_mut()
+            .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
+            .expect("application");
+        {
+            let mut txn = raw.transact_mut();
+            let Some(Out::YMap(p)) = pages.get(&txn, 0) else {
+                panic!("page")
+            };
+            let Some(Out::YArray(els)) = p.get(&txn, "elements") else {
+                panic!("éléments")
+            };
+            let Some(Out::YMap(t)) = els.get(&txn, 0) else {
+                panic!("texte")
+            };
+            let Some(Out::YText(c)) = t.get(&txn, "content") else {
+                panic!("contenu")
+            };
+            c.format(
+                &mut txn,
+                0,
+                1,
+                [(Arc::from("size"), Any::from(foreign))].into(),
+            );
+        }
+        let bytes = raw
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let mut d = Document::from_update_v1(&bytes).expect("rechargement");
+        let spans = text_spans(&d, &id);
+        assert_eq!(spans, vec![view("abc", none())], "{foreign}");
+        let mut back: Vec<SpanInput> = spans.iter().map(|v| sp(&v.text, v.attrs.clone())).collect();
+        back.push(sp("d", none()));
+        d.apply(set_text(&page, Some(&id), "abcd", Some(back)))
+            .unwrap_or_else(|e| panic!("{foreign} : {e:?}"));
+        assert_eq!(content(&d, &id), "abcd");
+    }
 }

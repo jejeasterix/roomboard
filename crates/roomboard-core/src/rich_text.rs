@@ -170,7 +170,7 @@ pub(crate) fn utf16_range<T: ReadTxn>(
     Some((a, end(&chars[last - 1]) - a))
 }
 
-/// Attributs connus normalisés (T8) : booléen seulement `true`, `size` fini > 0 (entier ou flottant), `color` et
+/// Attributs connus normalisés (T8) : booléen seulement `true`, `size` fini > 0 après conversion en `f32`, comme `valid_attrs` (entier ou flottant), `color` et
 /// `font` de la forme de T15 ; tout le reste est ignoré de la vue, jamais réécrit.
 fn normalize(raw: Option<&Attrs>) -> SpanAttrs {
     let Some(a) = raw else {
@@ -189,7 +189,7 @@ fn normalize(raw: Option<&Attrs>) -> SpanAttrs {
         size: a
             .get("size")
             .and_then(any_f64)
-            .filter(|v| finite_positive(*v)),
+            .filter(|v| finite_positive(*v) && finite_positive(f64::from(*v as f32))),
         font: string("font", valid_font),
     }
 }
