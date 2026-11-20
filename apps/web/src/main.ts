@@ -16,10 +16,12 @@ import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
 import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
+import { browserSystemClipboard, createClipboard, handleCopy } from "./platform/clipboard";
 import { handlePaste } from "./platform/paste";
 import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
+import { createTauriTypedFiles, createWebTypedFiles, RBITEM_TYPE } from "./platform/typed-files";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
@@ -60,6 +62,10 @@ async function start(): Promise<void> {
   const profileFiles =
     ports === null ? createWebProfileFiles(browserFallbackDeps(document, URL)) : createTauriProfileFiles(ports.dialog, ports.fs);
 
+  // Objets exportés (C3, Z11) : boîte native filtrée dans la coque ; ailleurs téléchargement.
+  const itemFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBITEM_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBITEM_TYPE);
+
   // Conteneur des scènes, posé dans #app avant le premier onglet ; l'application le place dans la case `stage`.
   const root = document.getElementById("app");
   if (root === null) throw new Error("élément absent : #app");
@@ -99,6 +105,8 @@ async function start(): Promise<void> {
     // Conteneur avec images (R7) : second module chargé au premier Ouvrir ou au premier enregistrement avec image.
     codec: createPageCodec(loadFormatsModule),
     readSheet: (b) => sheets.read(b),
+    clipboard: createClipboard(browserSystemClipboard(navigator)),
+    itemFiles,
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),
@@ -121,8 +129,22 @@ async function start(): Promise<void> {
     if (workspace.active().board.engine.keyUp(keyOf(e))) e.preventDefault();
   });
   window.addEventListener("blur", () => workspace.active().board.engine.releaseKeys());
-  // Collage (R19, C10b) : un tableau HTML passe avant les images jointes (F19, HB-9) ; sinon fichiers image vers l'onglet
-  // actif, centre de la vue ; zone de texte : collage normal.
+  // Copier et couper (C3, Z8) : la sélection de l'onglet actif, hors zone éditable ; sinon la copie native suit.
+  for (const [type, cut] of [
+    ["copy", false],
+    ["cut", true],
+  ] as const) {
+    window.addEventListener(type, (e) => {
+      const done = handleCopy(e, workspace, cut);
+      if (done === null) return;
+      e.preventDefault();
+      void done.catch((err: unknown) => {
+        console.warn(`RoomBoard : copie abandonnée (${err instanceof Error ? err.message : String(err)})`);
+      });
+    });
+  }
+  // Collage (R19, C3, C10b) : objets RoomBoard, puis un tableau HTML, puis les images jointes (F19, HB-9) ; zone de
+  // texte : collage normal.
   window.addEventListener("paste", (e) => {
     const done = handlePaste(e, workspace);
     if (done === null) return;

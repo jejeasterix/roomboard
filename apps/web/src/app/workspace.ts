@@ -17,16 +17,21 @@ import {
   type FileController,
   type FileKey,
 } from "../platform/controller";
-import type { DroppedFile, FileHost, HostKind, Point, SaveTarget, ShellPort } from "../platform/files";
+import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_ITEMS_MESSAGE, type Clipboard, type ItemsRefusal } from "../platform/clipboard";
+import { RBITEM_EXTENSION, type DroppedFile, type FileHost, type HostKind, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
 import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import type { StartedDocument } from "../platform/mount";
 import { insertTableGrid } from "../platform/table-insert";
+import type { TypedFiles } from "../platform/typed-files";
 import type { BoardSession } from "./board-session";
 import { createContainerIO, missingOf } from "./container-io";
+import { createFragmentOps, SELECTION_NAME } from "./fragments";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
+
+import type { SelectionAction } from "./toolbar-host";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 
@@ -61,6 +66,10 @@ export interface WorkspaceDeps {
   launch?(): Promise<readonly DroppedFile[]>;
   readonly now: () => string;
   readonly newId: () => string;
+  /** C3 (Z8) : défaut presse-papiers interne seul. */
+  readonly clipboard?: Clipboard;
+  /** C3 (Z11) : absent → « Exporter » sans effet. */
+  readonly itemFiles?: TypedFiles;
 }
 
 export interface Workspace {
@@ -74,6 +83,22 @@ export interface Workspace {
   /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
    *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
   pasteTable(html: string): Promise<boolean>;
+  /** C3 : une sélection existe dans l'onglet actif (écouteurs `copy` et `cut`). */
+  hasSelection(): boolean;
+  /** C3 (Z8) : copie la sélection ; `cut` : puis la supprime, en une étape. */
+  copySelection(cut: boolean): Promise<void>;
+  /** C3 (PC1) : objets collés, ou refus à dire ; vrai si pris. */
+  pasteItems(items: Uint8Array | ItemsRefusal): Promise<boolean>;
+  /** C3 : bouton « Coller », presse-papiers interne ; faux s'il est vide. */
+  pasteInternal(): Promise<boolean>;
+  /** C3 (Z11) : écrit la sélection en `Sélection.rbitem` ; faux sans sélection, sans port ou boîte annulée. */
+  exportSelection(): Promise<boolean>;
+  /** C3 (Z12) : « Insérer des pages… » : boîte d'ouverture, pages après la page montrée. */
+  insertPages(): Promise<boolean>;
+  /** C3 : action de la rangée « Sélection ». */
+  selection(a: SelectionAction): void;
+  canPaste(): boolean;
+  onClipboard(cb: () => void): () => void;
   anyDirty(): boolean;
   /** Raccourcis de fichier vers l'onglet actif ; vrai si pris. */
   key(e: FileKey): boolean;
@@ -158,6 +183,10 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const full = (): boolean => tabs.list().length >= MAX_TABS;
   const makeAssets = deps.makeAssets ?? (() => createAssetStore());
   const io = createContainerIO({ core, codec: deps.codec, say, makeAssets });
+  const clipboard = deps.clipboard ?? createClipboard(null);
+  const fragments = createFragmentOps({ io, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
+  /** Nom dit dans les messages d'un collage (aucun fichier). */
+  const PASTE_NAME = "presse-papiers";
 
   /** Onglet qui reçoit les images (R3) : session active, magasin de l'onglet, moteur, rectangle du stage. */
   const imageTarget = (t: TabSession): ImageTarget => ({
@@ -169,6 +198,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     measure: () => t.board.measure,
     textStyle: () => t.board.engine.textStyle(),
     run: (cmd) => t.board.engine.run(cmd),
+    // Z10 : le `.rbitem` déposé s'insère dans cet onglet ; refus déjà dit par `fragments`.
+    insertFragment: (rbitem, at) => fragments.insert(t, rbitem, "objet", at),
   });
 
   async function addTab(
@@ -282,6 +313,71 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       await insertTableGrid(imageTarget(t), grid, null, 0, say);
       return true;
     },
+    hasSelection: () => ws.active().board.engine.state().selection.length > 0,
+    copySelection(cut) {
+      const tab = ws.active();
+      const ids = [...tab.board.engine.state().selection];
+      const bytes = fragments.encodeSelection(tab).then((b) => {
+        if (b === null) throw new Error("sélection vide");
+        return b;
+      });
+      fragments.resetCascade();
+      // `put` est appelé ici, sans attente : l'écriture système part pendant le geste (Z8, HZ2-3).
+      return clipboard.put(bytes).then(
+        async (where) => {
+          if (where === "internal") await say(INTERNAL_ONLY_MESSAGE);
+          if (cut && !released.has(tab)) tab.board.engine.run({ type: "Delete", ids });
+        },
+        async (e: unknown) => {
+          if (e instanceof Error && e.message === "sélection vide") return; // l'avis (images absentes) est déjà dit
+          await say(`Copie impossible : ${messageOf(e)}`);
+        },
+      );
+    },
+    async pasteItems(items) {
+      if (items === "newer" || items === "too-big") {
+        await say(items === "newer" ? NEWER_ITEMS_MESSAGE : TOO_BIG_ITEMS_MESSAGE);
+        return true;
+      }
+      await fragments.insert(ws.active(), items, PASTE_NAME, null);
+      return true; // pris : inséré, ou refusé avec avis (PC1)
+    },
+    async pasteInternal() {
+      const last = clipboard.last();
+      return last === null ? false : fragments.insert(ws.active(), last, PASTE_NAME, null);
+    },
+    async exportSelection() {
+      const files = deps.itemFiles;
+      if (files === undefined) return false;
+      try {
+        const bytes = await fragments.encodeSelection(ws.active());
+        return bytes === null ? false : await files.save(`${SELECTION_NAME}${RBITEM_EXTENSION}`, bytes);
+      } catch (e) {
+        await say(`Export impossible : ${messageOf(e)}`);
+        return false;
+      }
+    },
+    async insertPages() {
+      let file: OpenedFile | null;
+      try {
+        file = await host.open();
+      } catch (e) {
+        await say(`Ouverture impossible : ${messageOf(e)}`);
+        return false;
+      }
+      if (file === null) return false;
+      return fragments.insertPages(ws.active(), { ...file, name: baseName(file.name) });
+    },
+    selection(a) {
+      const engine = ws.active().board.engine;
+      if (a === "group") engine.group();
+      else if (a === "ungroup") engine.ungroup();
+      else if (a === "copy") void ws.copySelection(false);
+      else if (a === "paste") void ws.pasteInternal();
+      else void ws.exportSelection();
+    },
+    canPaste: () => clipboard.last() !== null,
+    onClipboard: (cb) => clipboard.onChange(cb),
     anyDirty,
     key: (e) => ws.active().files.key(e),
     async quitRequested(quit) {
