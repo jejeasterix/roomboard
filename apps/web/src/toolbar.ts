@@ -166,7 +166,7 @@ export const FILL_NONE_LABEL = "Aucune";
 /** Couleurs offertes au pot : dès que le profil a la clé `presets.fill` (même vide) elle fait foi, un préréglage sans couleur y est sauté (PC7). */
 export function fillChoices(table: Profile["presets"]): readonly FillColor[] {
   if (!Object.hasOwn(table, "fill")) return FILL_COLORS;
-  return (table["fill"] ?? []).flatMap((p) => (p.color === undefined ? [] : [{ id: p.id, label: p.label, color: p.color }]));
+  return presetsOf(table, "fill").flatMap((p) => (p.color === undefined ? [] : [{ id: p.id, label: p.label, color: p.color }]));
 }
 
 /** Clé propre de la table (jamais héritée : `toString`, `constructor`… ne sont pas des outils). */

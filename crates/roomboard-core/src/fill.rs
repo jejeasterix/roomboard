@@ -4,7 +4,7 @@
 //! `FillTarget`.
 use yrs::{In, Map, MapRef, ReadTxn};
 
-use crate::commands::{read_shape, similarity_scale, Change, CommandError};
+use crate::commands::{read_shape, Change, CommandError};
 use crate::document::Document;
 use crate::element::{out_string, out_transform, DEFAULT_BACKGROUND};
 use crate::ink::hit::dist_to_edges;
@@ -123,8 +123,7 @@ impl Document {
         if s.kind.is_segment() {
             return false;
         }
-        let scale =
-            similarity_scale(&t).unwrap_or_else(|| (t[0] * t[3] - t[1] * t[2]).abs().sqrt());
+        let scale = (t[0] * t[3] - t[1] * t[2]).abs().sqrt();
         let band = f64::from(tol) + f64::from(s.style.width) / 2.0 * scale;
         let outline = world_outline(&t, &shape_polygon(s.kind, s.w, s.h, 0.0));
         f64::from(dist_to_edges(&outline, x as f32, y as f32)) <= band

@@ -420,16 +420,6 @@ function worldPolygon(e: FakeElement): number[] | null {
   return out;
 }
 
-/** Facteur d'une similitude, null pour toute autre matrice (`similarity_scale` du cœur : tolérance relative 1e-9). */
-function similarityScale(m: Matrix): number | null {
-  const [a, b, c, d] = m;
-  const s = Math.hypot(a, b);
-  const eps = 1e-9 * Math.max(s, Math.hypot(c, d));
-  const direct = Math.abs(a - d) <= eps && Math.abs(b + c) <= eps;
-  const mirror = Math.abs(a + d) <= eps && Math.abs(b - c) <= eps;
-  return Number.isFinite(s) && s > 0 && (direct || mirror) ? s : null;
-}
-
 function polygonHit(poly: number[], x: number, y: number, tol: number): boolean {
   const n = poly.length / 2;
   let inside = false;
@@ -1087,7 +1077,7 @@ class FakeDocument implements CoreDocument {
       edge = Math.min(edge, distToSegment(x, y, world[2 * i] ?? 0, world[2 * i + 1] ?? 0, world[2 * j] ?? 0, world[2 * j + 1] ?? 0));
     }
     const m = e.transform;
-    const scale = similarityScale(m) ?? Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
     return edge <= tol + (e.style.width / 2) * scale;
   }
   hitTestPath(page: string, path: Float32Array, radius: number): string[] {
