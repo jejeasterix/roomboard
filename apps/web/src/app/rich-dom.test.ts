@@ -42,7 +42,7 @@ describe("segments ↔ DOM (C7b)", () => {
 
   it("sameRender : vrai juste après le rendu ; faux si le navigateur a ajouté un nœud, changé un texte ou un bloc", () => {
     const r = root();
-    const spans = [plain("Le "), { text: "chat", attrs: { bold: true } }];
+    const spans: TextSpan[] = [plain("Le "), { text: "chat", attrs: { bold: true } }];
     renderSpans(r, spans, BASE);
     expect(sameRender(r, spans)).toBe(true);
     r.append(document.createTextNode("x"));
