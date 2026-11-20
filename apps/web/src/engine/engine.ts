@@ -6,7 +6,7 @@
  */
 import type { Bounds, Change, Command, CoreDocument, EraseMode, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitPage, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import { editAction, isPanKey, keyAction, type KeyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -83,6 +83,12 @@ export interface Engine {
   /** Retire la page montrée, montre la précédente (CL4-9) ; dernière page : refus du cœur dans l'état (D37). */
   removePage(): boolean;
   nextPage(): boolean;
+  /** « Ajuster la page » (D5 amendée) : largeur cadrée, haut de page en haut de la vue. */
+  fitPage(): void;
+  /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
+  setPenStyle(s: StrokeStyle): void;
+  /** Chaque changement de caméra (pan, zoom, page montrée, ajustement) ; rend le désabonnement. */
+  onCamera(cb: (c: Camera) => void): () => void;
   prevPage(): boolean;
   wheel(e: WheelInput): void;
   resize(width: number, height: number, dpr: number): void;
@@ -118,8 +124,15 @@ export function createEngine(deps: EngineDeps): Engine {
   if (first === undefined) throw new Error("document sans page");
   let pageId: string = first;
   let lastIndex = 0;
-  const style = deps.penStyle ?? DEFAULT_PEN_STYLE;
+  let style = deps.penStyle ?? DEFAULT_PEN_STYLE;
   let camera: Camera = IDENTITY;
+  const cameraListeners = new Set<(c: Camera) => void>();
+  const setCamera = (c: Camera): void => {
+    camera = c;
+    for (const cb of [...cameraListeners]) cb(c);
+  };
+  /** Éléments de la dernière suppression, resélectionnés si elle est annulée aussitôt (CL5b-12). */
+  let lastDeleted: string[] | null = null;
   /** Caméra de chaque page quittée (D17 : par page, dans l'interface, jamais dans le document). */
   const cameras = new Map<string, Camera>();
   /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
@@ -180,12 +193,12 @@ export function createEngine(deps: EngineDeps): Engine {
     lastIndex = doc.pageIds().indexOf(id);
     const saved = cameras.get(id);
     if (saved) {
-      camera = saved;
+      setCamera(saved);
     } else if (viewW > 0 && viewH > 0) {
-      camera = fitPage(viewW, viewH);
+      setCamera(fitWidth(viewW, viewH));
       fitted.add(id);
     } else {
-      camera = IDENTITY;
+      setCamera(IDENTITY);
     }
     requestScene();
   }
@@ -212,6 +225,7 @@ export function createEngine(deps: EngineDeps): Engine {
   }
 
   function run(cmd: Command): Change | null {
+    lastDeleted = null;
     const before = doc.pageIds();
     let change: Change;
     try {
@@ -232,11 +246,17 @@ export function createEngine(deps: EngineDeps): Engine {
 
   function history(which: KeyAction): void {
     const before = doc.pageIds();
+    const restore = which === "undo" ? lastDeleted : null;
+    lastDeleted = null;
     const change = which === "undo" ? doc.undo() : doc.redo();
     renderer.invalidate(change);
     error = null;
     followPages(before, true);
     selectTool.prune();
+    if (restore) {
+      const present = new Set(doc.elementIds(pageId));
+      if (restore.every((id) => present.has(id))) selectTool.setSelection(restore);
+    }
     requestScene();
     emit();
   }
@@ -289,6 +309,7 @@ export function createEngine(deps: EngineDeps): Engine {
 
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
+      lastDeleted = null;
       const g = tools[t];
       owner.set(pointerId, g);
       emitIfSelectionChanged(() => g.begin(pointerId, samples));
@@ -308,11 +329,11 @@ export function createEngine(deps: EngineDeps): Engine {
 
   const view: ViewSink = {
     panBy(dx, dy) {
-      camera = panCamera(camera, dx, dy);
+      setCamera(panCamera(camera, dx, dy));
       requestScene();
     },
     zoomAt(x, y, factor) {
-      camera = zoomCamera(camera, x, y, factor);
+      setCamera(zoomCamera(camera, x, y, factor));
       requestScene();
     },
   };
@@ -349,7 +370,11 @@ export function createEngine(deps: EngineDeps): Engine {
       if (edit !== null) {
         const sel = selectTool.selection();
         if (sel.length === 0) return false;
-        if (edit === "delete") run({ type: "Delete", ids: [...sel] });
+        const ids = [...sel];
+        if (edit === "delete") {
+          run({ type: "Delete", ids });
+          lastDeleted = ids;
+        }
         selectTool.setSelection([]);
         requestScene();
         emit();
@@ -401,6 +426,23 @@ export function createEngine(deps: EngineDeps): Engine {
       const prev = i > 0 ? ids[i - 1] : undefined;
       return prev !== undefined && engine.showPage(prev);
     },
+    fitPage() {
+      if (viewW > 0 && viewH > 0) {
+        setCamera(fitWidth(viewW, viewH));
+        fitted.add(pageId);
+      }
+      requestScene();
+    },
+    setPenStyle(s) {
+      if (typeof s.color !== "string" || s.color === "" || !Number.isFinite(s.width) || !(s.width > 0)) return;
+      style = { color: s.color, width: s.width };
+    },
+    onCamera(cb) {
+      cameraListeners.add(cb);
+      return () => {
+        cameraListeners.delete(cb);
+      };
+    },
     wheel(e) {
       if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
       else view.panBy(-e.deltaX, -e.deltaY);
@@ -410,7 +452,7 @@ export function createEngine(deps: EngineDeps): Engine {
       viewW = width;
       viewH = height;
       if (!fitted.has(pageId) && width > 0 && height > 0) {
-        camera = fitPage(width, height);
+        setCamera(fitWidth(width, height));
         fitted.add(pageId);
       }
       requestScene();
@@ -435,6 +477,7 @@ export function createEngine(deps: EngineDeps): Engine {
       loop.stop();
       stateListeners.clear();
       drawnListeners.clear();
+      cameraListeners.clear();
     },
   };
   return engine;

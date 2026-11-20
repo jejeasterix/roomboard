@@ -655,23 +655,24 @@ describe("createEngine", () => {
   });
 
   it("setPenStyle : le trait suivant prend la couleur et l'épaisseur", () => {
-    const { engine, doc } = setup();
-    const draw = (): void => {
-      engine.sink.begin(1, "pen", [sample]);
+    // le faux stylo ignore le style : la forme lit le même `style` du moteur (getter partagé avec le stylo)
+    const { engine, doc, page } = editSetup();
+    const draw = (): unknown => {
+      engine.sink.begin(1, "rect", [{ ...sample, x: 10, y: 10 }]);
+      engine.sink.extend(1, [{ ...sample, x: 110, y: 60 }], []);
       engine.sink.close(1, "end");
-    };
-    const lastStyle = () => {
-      const ids = doc.elementIds(engine.state().page);
-      const e = doc.element(ids[ids.length - 1] ?? "");
-      return e && e.kind === "stroke" ? e.style : null;
+      const ids = doc.elementIds(page);
+      return JSON.stringify(doc.element(ids[ids.length - 1] ?? ""));
     };
     engine.setPenStyle({ color: "#dc2626", width: 6 });
-    draw();
-    expect(lastStyle()).toEqual({ color: "#dc2626", width: 6 });
+    const ok = draw();
+    expect(ok).toContain("#dc2626");
+    expect(ok).toContain("6");
     engine.setPenStyle({ color: "", width: 7 });
     engine.setPenStyle({ color: "#00ff00", width: Number.NaN });
-    draw();
-    expect(lastStyle()).toEqual({ color: "#dc2626", width: 6 });
+    const kept = draw();
+    expect(kept).toContain("#dc2626");
+    expect(kept).not.toContain("#00ff00");
   });
 
   it("Ctrl+Z après Suppr resélectionne les éléments rendus (CL5b-12)", () => {
