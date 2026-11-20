@@ -136,6 +136,16 @@ const key = (k: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
 });
 
 describe("createEngine", () => {
+  it("redraw : une scène de plus à l'image suivante (bitmap arrivé)", () => {
+    const { engine, frames, renderer } = setup();
+    engine.resize(800, 600, 1);
+    frames.tick();
+    const n = renderer.scenes.length;
+    engine.redraw();
+    frames.tick();
+    expect(renderer.scenes.length).toBe(n + 1);
+  });
+
   it("démarre sur la première page : rien à annuler, aucune erreur, outil stylo", () => {
     const { doc, engine } = setup();
     expect(engine.state()).toMatchObject({
