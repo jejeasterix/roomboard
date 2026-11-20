@@ -4,7 +4,8 @@
  * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c). Lignes de
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
-import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
+import { PDF_PAGE_KIND } from "../../core/api";
+import type { BackdropView, Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
@@ -12,9 +13,9 @@ import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../tex
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
 import { GridLinesCache } from "./grid-cache";
-import { paintGrid } from "./grid-paint";
+import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
-import type { EraserPreview, GridPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
+import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -28,6 +29,10 @@ export interface Canvas2DOptions {
   readonly makePath?: () => Path2D;
   /** Bitmaps des images par empreinte (R16, DAR2) ; absent : cadre gris. */
   readonly images?: ImageSource;
+  /** C12 (DAPF2) : peintre du fond `pdf-page` ; absent : placeholder et « page PDF illisible ». */
+  readonly backdrop?: BackdropPainter;
+  /** C12 (PF15) : état du fond après chaque scène. */
+  readonly onBackdrop?: (s: BackdropState) => void;
 }
 
 /** Polygones fermés x, y alternés ; une paire non finie (NaN, NaN) commence un nouveau polygone. */
@@ -64,6 +69,9 @@ export const HANDLE_FILL = "#ffffff";
 export const PLACEHOLDER_FILL = "#e5e7eb";
 export const PLACEHOLDER_STROKE = "#9ca3af";
 export const UNKNOWN_LABEL = "objet non pris en charge";
+/** C12 (PF14) : fond de page pas encore rendu (gris clair), et libellé d'un fond PDF illisible. */
+export const BACKDROP_PLACEHOLDER = "#f1f5f9";
+export const BACKDROP_UNREADABLE_LABEL = "page PDF illisible";
 
 /** Cadre gris de la boîte locale (0, 0)-(w, h), avec un libellé pour un élément inconnu. */
 function paintPlaceholder(ctx: CanvasRenderingContext2D, w: number, h: number, label: string | null): void {
@@ -157,6 +165,8 @@ export class Canvas2DRenderer implements Renderer {
   private gridPreview: GridPreview | null = null;
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
+  private readonly backdrop: BackdropPainter | null;
+  private readonly onBackdrop: ((s: BackdropState) => void) | null;
   /** Fond du dernier drawScene, repeint par l'aperçu de gomme partielle (D20). */
   private background = PAGE_BACKGROUND;
 
@@ -181,6 +191,8 @@ export class Canvas2DRenderer implements Renderer {
   ) {
     this.makePath = opts.makePath ?? (() => new Path2D());
     this.images = opts.images ?? null;
+    this.backdrop = opts.backdrop ?? null;
+    this.onBackdrop = opts.onBackdrop ?? null;
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -212,7 +224,9 @@ export class Canvas2DRenderer implements Renderer {
     this.background = String(ctx.fillStyle);
     const rect = visiblePageRect(camera, this.cssHeight);
     if (rect) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
-    // Place du backdrop (U6, partie « reste » de C2) : ici, sous la grille et sous les éléments (G11).
+    // Fond de page (U6, C12 PF14) : sous la grille et sous les éléments (G11).
+    const state = page.backdrop ? this.paintBackdrop(ctx, page.backdrop, camera) : "";
+    this.onBackdrop?.(state);
     const grid = this.gridOf(page.id, camera);
     if (grid && !grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     for (const id of page.elementIds) {
@@ -230,6 +244,56 @@ export class Canvas2DRenderer implements Renderer {
     const rect = visibleGridRect(camera, this.cssWidth, this.cssHeight);
     if (!rect) return null;
     return this.gridCache.get(page, rect, camera.zoom, PAGE_WIDTH);
+  }
+
+  /** Placeholder sur `rect`, puis le bitmap d'un fond `image` ou le peintre d'un fond `pdf-page` (PF14) ; un autre genre
+   *  (version plus récente) garde le placeholder seul. */
+  private paintBackdrop(ctx: CanvasRenderingContext2D, b: BackdropView, camera: Camera): BackdropState {
+    const r = b.rect;
+    if (r === null) return "echec";
+    const w = r.x1 - r.x0;
+    const h = r.y1 - r.y0;
+    ctx.fillStyle = BACKDROP_PLACEHOLDER;
+    ctx.fillRect(r.x0, r.y0, w, h);
+    if (b.kind === "image") {
+      const bmp = this.images?.bitmap(b.asset) ?? null;
+      if (bmp === null) return "attente";
+      ctx.drawImage(bmp, r.x0, r.y0, w, h);
+      return "pret";
+    }
+    if (b.kind !== PDF_PAGE_KIND) return "";
+    const s = this.backdrop?.paint(ctx, b, camera, { w: this.cssWidth, h: this.cssHeight, dpr: this.dpr }) ?? "echec";
+    if (s === "echec") {
+      ctx.save();
+      ctx.font = textFont(32);
+      ctx.fillStyle = PLACEHOLDER_STROKE;
+      ctx.textBaseline = "top";
+      ctx.fillText(BACKDROP_UNREADABLE_LABEL, r.x0 + 24, r.y0 + 24);
+      ctx.restore();
+    }
+    return s;
+  }
+
+  /**
+   * Contenu d'une page pour l'export (C12, PF20 à PF22) : grille (sous ou sur les éléments, G11) et éléments, sans
+   * pourtour, fond blanc, fond de page ni habillage. `rect` (monde) est projeté sur (0, 0)-(largeur × scale,
+   * hauteur × scale) du contexte et découpé ; même code de dessin que l'écran (D7).
+   */
+  paintContent(ctx: CanvasRenderingContext2D, page: PageView, rect: Bounds, scale: number): void {
+    const camera: Camera = { zoom: scale, tx: -rect.x0 * scale, ty: -rect.y0 * scale };
+    ctx.save();
+    ctx.setTransform(scale, 0, 0, scale, camera.tx, camera.ty);
+    ctx.beginPath();
+    ctx.rect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    ctx.clip();
+    const grid = this.source.gridLines?.(page.id, rect, MIN_GRID_PX / scale, MIN_DOT_PX / scale) ?? null;
+    if (grid && !grid.above) paintGrid(ctx, grid, camera, 1, 1, 1);
+    for (const id of page.elementIds) {
+      const el = this.source.element(id);
+      if (el) this.paintElement(ctx, el, null);
+    }
+    if (grid && grid.above) paintGrid(ctx, grid, camera, 1, 1, 1);
+    ctx.restore();
   }
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */

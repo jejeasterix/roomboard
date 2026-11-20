@@ -192,3 +192,98 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 plus proche). ActCraft est publié sous GPL-3.0-only ; son auteur, seul, est aussi celui de RoomBoard et reprend ce code
 sous PolyForm Shield (décision 0246). Auteur : jejeasterix (seul auteur de `core/src/gridsnap.cpp`, état lu :
 ActCraft `d9bf289f`). Aucune dépendance n'est ajoutée.
+
+## Paquets npm de l'application (C12, PDF)
+
+Chargés par import dynamique au premier PDF (`apps/web/src/platform/pdf-load.ts`), jamais au démarrage.
+
+| paquet | version | licence | dépôt |
+|---|---|---|---|
+| pdfjs-dist | 6.5.438 | Apache-2.0 | https://github.com/mozilla/pdf.js |
+| pdf-lib | 1.17.1 | MIT | https://github.com/Hopding/pdf-lib |
+| @pdf-lib/standard-fonts | 1.0.0 | MIT | https://github.com/Hopding/standard-fonts |
+| @pdf-lib/upng | 1.0.1 | MIT | https://github.com/Hopding/upng |
+| pako | 1.0.11 | MIT AND Zlib | https://github.com/nodeca/pako |
+| tslib | 1.14.1 | 0BSD | https://github.com/microsoft/tslib |
+
+`@napi-rs/canvas` (dépendance facultative de `pdfjs-dist`, MIT) peut être installé par `pnpm` ; il ne sert qu'à Node
+et n'entre pas dans `dist`.
+
+Ressources de `pdfjs-dist` copiées dans `dist/pdfjs/` avec leurs textes de licence : polices Liberation Sans
+(`standard_fonts/LICENSE_LIBERATION`, SIL Open Font License 1.1), polices Foxit (`standard_fonts/LICENSE_FOXIT`,
+licence de type BSD), tables de caractères Adobe (`cmaps/LICENSE`, BSD-3-Clause), modules `wasm/` : OpenJPEG
+(`LICENSE_OPENJPEG`, BSD-2-Clause), JBIG2 de PDFium (`LICENSE_JBIG2`, BSD-3-Clause), qcms (`LICENSE_QCMS`, MIT), et
+leurs enveloppes Mozilla (`LICENSE_PDFJS_*`, Apache-2.0). Le module QuickJS (script des formulaires PDF) n'est pas
+copié. Textes : MIT (https://opensource.org/licenses/MIT), Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0),
+OFL-1.1 (https://openfontlicense.org).
+
+## Crate `roomboard-formats` (C12, PDF vectoriel par krilla)
+
+Crates apportés par `krilla` 0.8 (features `simple-text` et `raster-images` seules, sans les features par défaut) et
+absents de l'arbre de `roomboard-core` comme des sections C2 et C10b (`cargo tree -e normal` et
+`-e normal,build --target all`). Licences lues dans `cargo metadata`. `krilla` n'entre que dans le module `formats`,
+jamais dans le module principal.
+
+| crate | version | licence | dépôt |
+|---|---|---|---|
+| adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2 |
+| arrayref | 0.3.9 | BSD-2-Clause | https://github.com/droundy/arrayref |
+| arrayvec | 0.7.8 | MIT OR Apache-2.0 | https://github.com/bluss/arrayvec |
+| autocfg | 1.5.1 | Apache-2.0 OR MIT | https://github.com/cuviper/autocfg |
+| base64 | 0.22.1 | MIT OR Apache-2.0 | https://github.com/marshallpierce/rust-base64 |
+| bitflags | 2.13.2 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags |
+| bumpalo | 3.20.4 | MIT OR Apache-2.0 | https://github.com/fitzgen/bumpalo |
+| bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/bytemuck |
+| bytemuck_derive | 1.12.1 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/bytemuck |
+| byteorder-lite | 0.1.0 | Unlicense OR MIT | https://github.com/image-rs/byteorder-lite |
+| color_quant | 1.1.0 | MIT | https://github.com/image-rs/color_quant.git |
+| core_maths | 0.1.1 | MIT | https://github.com/robertbastian/core_maths |
+| fdeflate | 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate |
+| float-cmp | 0.9.0 | MIT | https://github.com/mikedilger/float-cmp |
+| font-types | 0.11.3 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
+| gif | 0.14.2 | MIT OR Apache-2.0 | https://github.com/image-rs/image-gif |
+| image-webp | 0.2.4 | MIT OR Apache-2.0 | https://github.com/image-rs/image-webp |
+| imagesize | 0.14.0 | MIT | https://github.com/Roughsketch/imagesize |
+| krilla | 0.8.2 | MIT OR Apache-2.0 | https://github.com/LaurenzV/krilla |
+| kurbo | 0.13.1 | Apache-2.0 OR MIT | https://github.com/linebender/kurbo |
+| libm | 0.2.16 | MIT | https://github.com/rust-lang/compiler-builtins |
+| miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide |
+| miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide |
+| num-traits | 0.2.19 | MIT OR Apache-2.0 | https://github.com/rust-num/num-traits |
+| pdf-writer | 0.15.0 | MIT OR Apache-2.0 | https://github.com/typst/pdf-writer |
+| png | 0.18.1 | MIT OR Apache-2.0 | https://github.com/image-rs/image-png |
+| polycool | 0.4.0 | MIT OR Apache-2.0 | https://github.com/linebender/kurbo |
+| quick-error | 2.0.1 | MIT/Apache-2.0 | http://github.com/tailhook/quick-error |
+| read-fonts | 0.39.2 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
+| rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash |
+| rustybuzz | 0.20.1 | MIT | https://github.com/harfbuzz/rustybuzz |
+| ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | https://github.com/dtolnay/ryu |
+| siphasher | 1.0.4 | MIT OR Apache-2.0 | https://github.com/jedisct1/rust-siphash |
+| skrifa | 0.42.1 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
+| stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 | https://github.com/storyyeller/stable_deref_trait |
+| strict-num | 0.1.1 | MIT | https://github.com/RazrFalcon/strict-num |
+| subsetter | 0.2.6 | MIT OR Apache-2.0 | https://github.com/typst/subsetter |
+| synstructure | 0.14.0 | MIT | https://github.com/mystor/synstructure |
+| tiny-skia-path | 0.12.0 | BSD-3-Clause | https://github.com/linebender/tiny-skia/tree/master/path |
+| ttf-parser | 0.25.1 | MIT OR Apache-2.0 | https://github.com/harfbuzz/ttf-parser |
+| unicode-bidi-mirroring | 0.4.0 | MIT/Apache-2.0 | https://github.com/RazrFalcon/unicode-bidi-mirroring |
+| unicode-ccc | 0.4.0 | MIT/Apache-2.0 | https://github.com/RazrFalcon/unicode-ccc |
+| unicode-properties | 0.1.5 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/unicode-rs/unicode-properties |
+| unicode-script | 0.5.9 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-script |
+| weezl | 0.1.12 | MIT OR Apache-2.0 | https://github.com/image-rs/weezl |
+| write-fonts | 0.48.1 | MIT OR Apache-2.0 | https://github.com/googlefonts/fontations |
+| xmp-writer | 0.3.3 | MIT OR Apache-2.0 | https://github.com/typst/xmp-writer |
+| yoke | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
+| yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
+| zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
+| zerofrom-derive | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
+| zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image |
+| zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg |
+
+Police de test `crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf` : copie de
+`pdfjs-dist/standard_fonts/` (Liberation Sans, SIL Open Font License 1.1), texte joint à côté
+(`tests/fixtures/LICENSE_LIBERATION`). Textes : MIT (https://opensource.org/licenses/MIT), Apache-2.0
+(https://www.apache.org/licenses/LICENSE-2.0), BSD-2-Clause (https://opensource.org/licenses/BSD-2-Clause),
+BSD-3-Clause (https://opensource.org/licenses/BSD-3-Clause), Zlib (https://opensource.org/licenses/Zlib),
+Unicode-3.0 (https://www.unicode.org/license.txt), BSL-1.0 (https://www.boost.org/LICENSE_1_0.txt), OFL-1.1
+(https://openfontlicense.org).

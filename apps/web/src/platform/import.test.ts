@@ -5,7 +5,7 @@ import { createAssetStore } from "../core/asset-store";
 import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
 import type { ImageTarget } from "./image-import";
-import { createImporter, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES, ZIP_MAGIC } from "./import";
+import { createImporter, hasPdfMagic, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES, ZIP_MAGIC } from "./import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
@@ -415,5 +415,84 @@ describe("importFiles : classeur (F28)", () => {
   it("sans readSheet (amorce partielle, tests anciens) : .xlsx refusé comme avant", async () => {
     const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), target: () => fakeTarget().target }).importFiles([file("v.xlsx", PK)]);
     expect(r.refused).toEqual(["v.xlsx"]);
+  });
+});
+
+describe("importFiles : PDF (C12, PF2, PF3)", () => {
+  const PDF_HEAD = new TextEncoder().encode("%PDF-1.7\n%âã\n");
+  const notify = () => vi.fn(async (_m: string) => undefined);
+  const opener = (ok = true) => vi.fn(async (_f: { readonly name: string; readonly blob: Blob }) => ok);
+
+  it("un .pdf reconnu par %PDF- ouvre un onglet : openPdf(nom, blob), aucun objet inséré (S1, Q1, effet de bord C12)", async () => {
+    const openPdf = opener();
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openPdf }).importFiles([file("Cours.pdf", PDF_HEAD)]);
+    expect(r).toEqual({ opened: ["Cours.pdf"], inserted: [], refused: [], failed: [] });
+    expect(openPdf.mock.calls[0]![0].name).toBe("Cours.pdf");
+    expect(new Uint8Array(await openPdf.mock.calls[0]![0].blob.arrayBuffer())).toEqual(PDF_HEAD);
+    expect(n).not.toHaveBeenCalled();
+  });
+
+  it("octets magiques seuls : un PDF nommé .txt est ouvert ; un .pdf sans %PDF- est refusé (PF3)", async () => {
+    const openPdf = opener();
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openPdf }).importFiles([file("note.txt", PDF_HEAD), file("faux.pdf", new Uint8Array([1, 2, 3]))]);
+    expect([r.opened, r.refused]).toEqual([["note.txt"], ["faux.pdf"]]);
+    expect(n).toHaveBeenCalledWith(`faux.pdf : ${LATER_FORMAT_MESSAGE}`);
+  });
+
+  it("%PDF- à l'octet 1019 : reconnu ; à l'octet 1020 : refusé (premier Kio, PF3)", () => {
+    const at = (k: number): Uint8Array => {
+      const b = new Uint8Array(k + PDF_HEAD.length);
+      b.set(PDF_HEAD, k);
+      return b;
+    };
+    expect([hasPdfMagic(at(0)), hasPdfMagic(at(1019)), hasPdfMagic(at(1020)), hasPdfMagic(new Uint8Array(3))]).toEqual([true, true, false, false]);
+  });
+
+  it("ouverture refusée (chiffré, illisible) : failed ; le message est celui d'openPdf, l'importeur n'en ajoute pas (S2)", async () => {
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openPdf: opener(false) }).importFiles([file("secret.pdf", PDF_HEAD)]);
+    expect(r).toEqual({ opened: [], inserted: [], refused: [], failed: ["secret.pdf"] });
+    expect(n).not.toHaveBeenCalled();
+  });
+
+  it("onglets pleins : le premier PDF refusé arrête les documents suivants, .pdf et .roomboard (PF10, PC18)", async () => {
+    const openPdf = opener(false);
+    const openDocument = vi.fn(async () => true);
+    const r = await createImporter({ openDocument, notify: notify(), openPdf, full: () => true })
+      .importFiles([file("a.pdf", PDF_HEAD), file("b.pdf", PDF_HEAD), file("c.roomboard", new Uint8Array([1]))]);
+    expect(openPdf).toHaveBeenCalledTimes(1);
+    expect(openDocument).not.toHaveBeenCalled();
+    expect(r.failed).toEqual(["a.pdf", "b.pdf", "c.roomboard"]);
+  });
+
+  it("onglets pleins : un PDF qui suit un .roomboard refusé n'est pas lu en entier (correction de contre-relecture)", async () => {
+    const openPdf = opener();
+    const blob = vi.fn(async () => new Blob([PDF_HEAD]));
+    const pdf: DroppedFile = { name: "b.pdf", size: PDF_HEAD.length, mime: "", head: async () => PDF_HEAD, blob };
+    const r = await createImporter({ openDocument: async () => false, notify: notify(), openPdf, full: () => true })
+      .importFiles([file("a.roomboard", new Uint8Array([1])), pdf]);
+    expect(r.failed).toEqual(["a.roomboard", "b.pdf"]);
+    expect([blob.mock.calls.length, openPdf.mock.calls.length]).toEqual([0, 0]);
+  });
+
+  it("web : un PDF de 120 Mo est refusé avant lecture (S2, PF9)", async () => {
+    const head = vi.fn(async () => PDF_HEAD);
+    const blob = vi.fn(async () => new Blob([PDF_HEAD]));
+    const big: DroppedFile = { name: "gros.pdf", size: 120 * 1024 * 1024, mime: "", head, blob };
+    const openPdf = opener();
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openPdf, maxBytes: WEB_MAX_BYTES }).importFiles([big]);
+    expect(r.refused).toEqual(["gros.pdf"]);
+    expect([head.mock.calls.length, blob.mock.calls.length, openPdf.mock.calls.length]).toEqual([0, 0, 0]);
+    expect(n).toHaveBeenCalledWith("gros.pdf : fichier trop gros (plus de 100 Mo)");
+  });
+
+  it("sans openPdf (amorce partielle, tests anciens) : .pdf refusé comme avant", async () => {
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n }).importFiles([file("Cours.pdf", PDF_HEAD)]);
+    expect(r.refused).toEqual(["Cours.pdf"]);
+    expect(n).toHaveBeenCalledWith(`Cours.pdf : ${LATER_FORMAT_MESSAGE}`);
   });
 });

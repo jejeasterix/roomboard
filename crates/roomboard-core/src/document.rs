@@ -12,19 +12,23 @@ use yrs::{
 };
 
 use crate::asset::{is_asset_id, AssetInfo, AssetRef};
-use crate::commands::{read_shape, read_text};
+use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 #[cfg(test)]
 use crate::element::ImageView;
 use crate::element::{
-    backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_group, read_image,
-    read_style, read_unknown, unknown_view, ElementView, PageView, ShapeView, StrokeStyle,
-    TextView, DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    backdrop_view, finite_positive, out_f64, out_string, out_transform, read_backdrop, read_group,
+    read_image, read_style, read_unknown, unknown_view, ElementView, PageView, ShapeView,
+    StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
+    SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
 use crate::ink::points::InkPoint;
 use crate::query::Bounds;
+
+/// Plafond des pages d'un PDF importé (U26, PF7) : l'appelant coupe au-delà et le dit.
+pub const PDF_MAX_PAGES: usize = 500;
 
 /// Origine des transactions d'un geste local : seules celles-ci s'annulent (D11).
 pub const LOCAL: &str = "local";
@@ -85,6 +89,21 @@ pub(crate) fn insert_page(pages: &ArrayRef, txn: &mut TransactionMut, index: u32
     id.to_string()
 }
 
+/// Métadonnée écrite seulement si absente (K3) : champs scalaires d'un `Y.Map`, jamais `Any::Map` (G4).
+fn write_asset_meta(assets: &MapRef, txn: &mut TransactionMut, a: &AssetRef) {
+    if assets.get(txn, &a.id).is_none() {
+        assets.insert(
+            txn,
+            a.id.as_str(),
+            MapPrelim::from([
+                ("name", In::from(a.name.as_str())),
+                ("mime", In::from(a.mime.as_str())),
+                ("size", In::Any(Any::from(a.size))),
+            ]),
+        );
+    }
+}
+
 impl Document {
     /// Doc neuf, racines prises une fois, `meta.schema` écrit sans origine (hors historique).
     fn bare() -> (Doc, MapRef, ArrayRef, MapRef) {
@@ -125,6 +144,48 @@ impl Document {
             insert_page(&pages, &mut txn, 0);
         }
         Self::assemble(doc, meta, pages, assets)
+    }
+
+    /// Document d'un PDF importé (C12, PF6, DAPF5) : une page par taille `(w, h)` en points (après /Rotate et CropBox),
+    /// fond `pdf-page` d'indice i calé sur la largeur, métadonnée de l'asset ; tout est écrit sans origine avant
+    /// `History` (D37) : rien ne s'annule. Refus : `BadAsset`, puis `BadImage` (0 ou plus de 500 pages, taille non
+    /// finie ou ≤ 0).
+    pub fn from_pdf_pages(asset: &AssetRef, sizes: &[(f64, f64)]) -> Result<Self, CommandError> {
+        if !valid_asset(asset) {
+            return Err(CommandError::BadAsset);
+        }
+        if sizes.is_empty()
+            || sizes.len() > PDF_MAX_PAGES
+            || sizes
+                .iter()
+                .any(|&(w, h)| !finite_positive(w) || !finite_positive(h))
+        {
+            return Err(CommandError::BadImage);
+        }
+        let (doc, meta, pages, assets) = Self::bare();
+        {
+            let mut txn = doc.transact_mut();
+            for (i, &(w, h)) in sizes.iter().enumerate() {
+                let index = i as u32;
+                insert_page(&pages, &mut txn, index);
+                if let Some(Out::YMap(page)) = pages.get(&txn, index) {
+                    page.insert(
+                        &mut txn,
+                        "backdrop",
+                        MapPrelim::from([
+                            ("asset", In::from(asset.id.as_str())),
+                            ("kind", In::from(PDF_PAGE_KIND)),
+                            ("page", In::Any(Any::from(f64::from(index)))),
+                            ("w", In::Any(Any::from(w))),
+                            ("h", In::Any(Any::from(h))),
+                            ("fit", In::from(FIT_WIDTH)),
+                        ]),
+                    );
+                }
+            }
+            write_asset_meta(&assets, &mut txn, asset);
+        }
+        Ok(Self::assemble(doc, meta, pages, assets))
     }
 
     pub fn add_page(&mut self) -> String {
@@ -212,17 +273,7 @@ impl Document {
     /// Métadonnée écrite seulement si absente (K3), dans la transaction de la commande qui cite l'asset : champs
     /// scalaires d'un `Y.Map`, jamais `Any::Map` (G4).
     pub(crate) fn insert_asset_meta(&self, txn: &mut TransactionMut, a: &AssetRef) {
-        if self.assets.get(txn, &a.id).is_none() {
-            self.assets.insert(
-                txn,
-                a.id.as_str(),
-                MapPrelim::from([
-                    ("name", In::from(a.name.as_str())),
-                    ("mime", In::from(a.mime.as_str())),
-                    ("size", In::Any(Any::from(a.size))),
-                ]),
-            );
-        }
+        write_asset_meta(&self.assets, txn, a);
     }
 
     pub fn page_index(&self, id: &str) -> Option<u32> {
@@ -1253,5 +1304,121 @@ mod tests {
             );
             assert!(d.bounds(&[id]).is_some(), "boîte de {kind}");
         }
+    }
+
+    fn pdf_asset() -> AssetRef {
+        AssetRef {
+            id: ABC.into(),
+            name: "cours.pdf".into(),
+            mime: "application/pdf".into(),
+            size: 1234.0,
+        }
+    }
+
+    const SIZES: [(f64, f64); 3] = [(612.0, 792.0), (792.0, 612.0), (595.0, 842.0)];
+
+    /// C12 (PF4 à PF6, S1) : une page par taille, 1920 × 1080, fond `pdf-page` d'indice i calé sur la largeur ; asset
+    /// cité une fois, métadonnée écrite ; rien à annuler, version 0.
+    #[test]
+    fn from_pdf_pages_builds_one_backdrop_page_per_size() {
+        let mut d = Document::from_pdf_pages(&pdf_asset(), &SIZES).expect("document");
+        let ids = d.page_ids();
+        assert_eq!(ids.len(), 3);
+        for (i, (id, (w, h))) in ids.iter().zip(SIZES).enumerate() {
+            let p = d.page(id).expect("page");
+            assert_eq!((p.width, p.height), (1920.0, 1080.0));
+            let b = p.backdrop.expect("fond");
+            assert_eq!(
+                (
+                    b.asset.as_str(),
+                    b.kind.as_str(),
+                    b.page,
+                    b.w,
+                    b.h,
+                    b.fit.as_str()
+                ),
+                (
+                    ABC,
+                    PDF_PAGE_KIND,
+                    Some(i as u32),
+                    Some(w),
+                    Some(h),
+                    "width"
+                )
+            );
+            assert_eq!(
+                b.rect.map(|r| (r.x0, r.y0, r.x1, r.y1)),
+                Some((0.0, 0.0, 1920.0, h * 1920.0 / w))
+            );
+        }
+        assert_eq!(d.cited_assets(), vec![pdf_asset()]);
+        assert_eq!((d.version(), d.can_undo()), (0, false));
+        assert!(!d.undo());
+        assert_eq!(d.page_count(), 3);
+    }
+
+    /// PF6, PF7 : `BadAsset` d'abord (même règle que `SetBackdrop`), puis `BadImage` : 0 page, plus de 500, taille
+    /// nulle, négative ou non finie ; 500 pages passent.
+    #[test]
+    fn from_pdf_pages_refuses_bad_asset_then_bad_sizes() {
+        let mut bad = pdf_asset();
+        bad.id = ABC.to_uppercase();
+        assert_eq!(
+            Document::from_pdf_pages(&bad, &[]).err(),
+            Some(CommandError::BadAsset)
+        );
+        let a = pdf_asset();
+        for sizes in [
+            vec![],
+            vec![(612.0, 792.0); PDF_MAX_PAGES + 1],
+            vec![(612.0, 0.0)],
+            vec![(-1.0, 792.0)],
+            vec![(f64::NAN, 792.0)],
+            vec![(612.0, f64::INFINITY)],
+        ] {
+            assert_eq!(
+                Document::from_pdf_pages(&a, &sizes).err(),
+                Some(CommandError::BadImage),
+                "{} tailles",
+                sizes.len()
+            );
+        }
+        let full =
+            Document::from_pdf_pages(&a, &vec![(612.0, 792.0); PDF_MAX_PAGES]).expect("500 pages");
+        assert_eq!(full.page_count(), 500);
+    }
+
+    /// PF17, PF18, S4 : encodé puis relu, fonds et asset restent ; « Insérer des pages » recopie fonds et indices.
+    #[test]
+    fn pdf_backdrops_survive_encode_and_insert_pages() {
+        let d = Document::from_pdf_pages(&pdf_asset(), &SIZES[..2]).expect("document");
+        let backdrops = |x: &Document| {
+            x.page_ids()
+                .iter()
+                .map(|id| {
+                    x.page(id)
+                        .and_then(|p| p.backdrop)
+                        .map(|b| (b.kind, b.page))
+                })
+                .collect::<Vec<_>>()
+        };
+        let want = vec![
+            Some((PDF_PAGE_KIND.to_string(), Some(0))),
+            Some((PDF_PAGE_KIND.to_string(), Some(1))),
+        ];
+        let back = Document::from_update_v1(&d.encode_v1()).expect("relu");
+        assert_eq!(backdrops(&back), want);
+        assert_eq!(back.cited_assets(), vec![pdf_asset()]);
+        let mut host = Document::blank();
+        let first = host.page_ids()[0].clone();
+        host.insert_pages(&d, &first).expect("insertion");
+        assert_eq!(&backdrops(&host)[1..], &want[..]);
+        assert_eq!(
+            host.cited_assets()
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![ABC]
+        );
     }
 }

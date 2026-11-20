@@ -162,7 +162,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(toPageView(undefined)).toBeNull();
     expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null, grid: null });
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: undefined, h: 5, fit: "contain", rect: undefined };
-    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, w: null, rect: null }, grid: null });
+    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, page: null, w: null, rect: null }, grid: null });
     expect(() => toPageView({ ...page, width: "1920" })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, backdrop: { ...b, asset: 3 } })).toThrow("PageView invalide");
     const info = { id: "a".repeat(64), name: "n", mime: "image/png", size: 3 };
@@ -731,7 +731,7 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     const fond = { asset: png, w: 1000, h: 500, fit: "width" };
     expect(d.apply({ type: "SetBackdrop", page: p, backdrop: fond }).pages).toEqual([p]);
     const rect = { x0: 0, y0: 0, x1: 1920, y1: 960 };
-    expect(d.page(p)).toEqual({ ...before, backdrop: { asset: ABC, kind: "image", w: 1000, h: 500, fit: "width", rect } });
+    expect(d.page(p)).toEqual({ ...before, backdrop: { asset: ABC, kind: "image", page: null, w: 1000, h: 500, fit: "width", rect } });
     expect(d.hitTest(p, 960, 480, 0)).toBeNull();
     expect(d.elementIds(p)).toEqual([]);
     expect(d.citedAssets()).toEqual([png]);
@@ -2681,5 +2681,76 @@ describe("contrôle de forme C3", () => {
   });
   it("group mal formé : erreur de forme", () => {
     for (const group of [3, [], [1], "g"]) expect(() => toElementView({ ...base, group })).toThrow("ElementView invalide");
+  });
+});
+
+// C12 (PF5, PF6, PF17, PF18) : document d'un PDF, contrat commun aux deux fabriques ; mêmes refus dans le même ordre.
+// Le premier cas garde D37 : le cœur construit le document hors historique (version 0, rien à annuler) ; une fausse
+// liaison calquée sur SetBackdrop (une étape par page, puis historique vidé) y échouerait sur la version et le genre.
+const C12_PDF = { id: "cd".repeat(32), name: "cours.pdf", mime: "application/pdf", size: 1234 };
+const C12_SIZES = [{ w: 612, h: 792 }, { w: 792, h: 612 }, { w: 595, h: 842 }];
+const C12_BAD_ASSET = "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)";
+const C12_BAD_IMAGE = "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)";
+describe.each(factories)("contrat C12 : $name", ({ f }) => {
+  it("fromPdfPages : une page par taille, fond pdf-page d'indice i calé sur 1920, hauteur 1080, rien à annuler (S1)", () => {
+    const d = f.fromPdfPages(C12_PDF, C12_SIZES);
+    const ids = d.pageIds();
+    expect(ids).toHaveLength(3);
+    ids.forEach((id, i) => {
+      const s = C12_SIZES[i]!;
+      const p = d.page(id);
+      expect([p?.width, p?.height]).toEqual([1920, 1080]);
+      expect(p?.backdrop).toEqual({ asset: C12_PDF.id, kind: "pdf-page", page: i, w: s.w, h: s.h, fit: "width", rect: { x0: 0, y0: 0, x1: 1920, y1: (s.h * 1920) / s.w } });
+    });
+    expect(d.citedAssets()).toEqual([C12_PDF]);
+    expect([d.version(), d.canUndo()]).toEqual([0, false]);
+    d.undo();
+    expect(d.pageIds()).toEqual(ids);
+  });
+
+  it("fromPdfPages : BadAsset d'abord, puis BadImage (0 page, 501, taille nulle, négative ou non finie) ; 500 passent (S2, PF7)", () => {
+    expect(messageOf(() => f.fromPdfPages({ ...C12_PDF, id: C12_PDF.id.toUpperCase() }, []))).toBe(C12_BAD_ASSET);
+    const many = (n: number) => Array.from({ length: n }, () => ({ w: 612, h: 792 }));
+    for (const sizes of [[], many(501), [{ w: 612, h: 0 }], [{ w: -1, h: 792 }], [{ w: Number.NaN, h: 792 }], [{ w: 612, h: Number.POSITIVE_INFINITY }]]) {
+      expect(messageOf(() => f.fromPdfPages(C12_PDF, sizes)), `${sizes.length} tailles`).toBe(C12_BAD_IMAGE);
+    }
+    expect(f.fromPdfPages(C12_PDF, many(500)).pageIds()).toHaveLength(500);
+  });
+
+  it("enregistré en deux moitiés puis relu : fonds, indices et asset gardés (PF17, PF18)", () => {
+    const d = f.fromPdfPages(C12_PDF, C12_SIZES);
+    const [manifest, ybin] = d.saveParts(now, "0.1.0");
+    const back = f.loadParts(manifest, ybin);
+    expect(back.pageIds().map((id) => back.page(id)?.backdrop?.page)).toEqual([0, 1, 2]);
+    expect(back.citedAssets()).toEqual([C12_PDF]);
+  });
+
+  it("Insérer des pages d'un document PDF : fonds recopiés, un seul asset (Z5, S4)", () => {
+    const src = f.fromPdfPages(C12_PDF, C12_SIZES);
+    const d = f.blank();
+    d.insertPages(src, first(d));
+    expect(d.pageIds().slice(1).map((id) => [d.page(id)?.backdrop?.kind, d.page(id)?.backdrop?.page])).toEqual([
+      ["pdf-page", 0],
+      ["pdf-page", 1],
+      ["pdf-page", 2],
+    ]);
+    expect(d.citedAssets().map((a) => a.id)).toEqual([C12_PDF.id]);
+  });
+
+  it("fond image (SetBackdrop) : page null (PF18)", () => {
+    const d = f.blank();
+    const p = first(d);
+    d.apply({ type: "SetBackdrop", page: p, backdrop: { asset: { ...C12_PDF, mime: "image/png" }, w: 1000, h: 500, fit: "width" } });
+    expect(d.page(p)?.backdrop?.page).toBeNull();
+  });
+});
+
+describe("contrôle de forme C12 (fond pdf-page)", () => {
+  it("toPageView : page absente → null, entier gardé, chaîne → erreur", () => {
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const b = { asset: "a".repeat(64), kind: "pdf-page", w: 612, h: 792, fit: "width", rect: undefined };
+    expect(toPageView({ ...page, backdrop: b })?.backdrop?.page).toBeNull();
+    expect(toPageView({ ...page, backdrop: { ...b, page: 2 } })?.backdrop?.page).toBe(2);
+    expect(() => toPageView({ ...page, backdrop: { ...b, page: "2" } })).toThrow();
   });
 });

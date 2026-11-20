@@ -5,7 +5,16 @@
  * fois ici et vont à l'onglet actif. `?banc` ajoute le banc du lot 1 rejoué sur l'onglet actif.
  */
 import { createBoardSession, type SessionShared } from "./app/board-session";
-import { createWorkspace } from "./app/workspace";
+import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
+import type { RasterPage } from "./app/pdf-export";
+import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
+import { createWorkspace, type TabSession } from "./app/workspace";
+import type { CoreDocument } from "./core/api";
+import { Canvas2DRenderer } from "./engine/render/canvas2d";
+import { RecordingPath } from "./engine/render/record-ctx";
+import { decodeImage, kindOfMime } from "./platform/image-import";
+import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
+import { createPdfEngine } from "./platform/pdf-render";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
@@ -21,7 +30,7 @@ import { handlePaste } from "./platform/paste";
 import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
-import { createTauriTypedFiles, createWebTypedFiles, RBITEM_TYPE } from "./platform/typed-files";
+import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, RBITEM_TYPE } from "./platform/typed-files";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
@@ -66,6 +75,58 @@ async function start(): Promise<void> {
   const itemFiles =
     ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBITEM_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBITEM_TYPE);
 
+  // PDF (C12) : pdf.js et pdf-lib chargés au premier PDF (import dynamique) ; écriture native dans la coque.
+  const pdf = createPdfEngine(loadPdfjs);
+  const pdfFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), PDF_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, PDF_TYPE);
+  const decodeBitmap = async (blob: Blob) => (await decodeImage(blob, kindOfMime(blob.type) ?? "png")).bitmap;
+  // Superposition PNG (lot b) ; T13 la garde en repli du producteur vectoriel. `doc` est la copie de l'export.
+  const pngOverlay = (tab: TabSession, doc: CoreDocument) =>
+    createPngOverlay({
+      doc,
+      assets: tab.assets,
+      decode: decodeBitmap,
+      alive: () => true,
+      canvas: browserExportCanvas,
+      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images }),
+    });
+  // Bitmap → PNG par une toile d'export, libérée aussitôt (mémoire de l'iPad).
+  const bitmapToPng = async (bitmap: CanvasImageSource, w: number, h: number): Promise<Uint8Array> => {
+    const c = browserExportCanvas(Math.max(1, w), Math.max(1, h));
+    try {
+      c.ctx.drawImage(bitmap, 0, 0);
+      return await c.png();
+    } finally {
+      c.release();
+    }
+  };
+  // Repli en image (PF20) : page `index` du PDF rendue en PNG par pdf.js, quand pdf-lib refuse le fichier. Un document
+  // pdf.js par blob pour tout l'export (`rasterClose`, appelé à la fin de l'export, même en erreur).
+  const rasterFiles = new Map<Blob, ReturnType<typeof pdf.open>>();
+  const rasterPage = async (blob: Blob, index: number): Promise<RasterPage | null> => {
+    let opening = rasterFiles.get(blob);
+    if (opening === undefined) {
+      opening = pdf.open(blob);
+      rasterFiles.set(blob, opening);
+    }
+    const file = await opening;
+    if (index >= file.pageCount) return null;
+    const { w, h } = await file.pageSize(index);
+    const scale = overlayScale({ x0: 0, y0: 0, x1: w, y1: h });
+    const pw = Math.max(1, Math.round(w * scale));
+    const ph = Math.max(1, Math.round(h * scale));
+    const bitmap = await file.renderTile(index, scale, { x: 0, y: 0, w: pw, h: ph }, new AbortController().signal);
+    try {
+      return { png: await bitmapToPng(bitmap, pw, ph), w, h };
+    } finally {
+      bitmap.close?.();
+    }
+  };
+  const rasterClose = (): void => {
+    for (const opening of rasterFiles.values()) void opening.then((f) => f.destroy(), () => undefined);
+    rasterFiles.clear();
+  };
+
   // Conteneur des scènes, posé dans #app avant le premier onglet ; l'application le place dans la case `stage`.
   const root = document.getElementById("app");
   if (root === null) throw new Error("élément absent : #app");
@@ -75,7 +136,7 @@ async function start(): Promise<void> {
   // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
   const measureCtx = document.createElement("canvas").getContext("2d");
   const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
-  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version() };
+  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf };
 
   const env = { tauri, userAgent: navigator.userAgent };
   const store = createProfileStore(browserKeyValue(window), BUILTIN_PROFILES);
@@ -83,9 +144,8 @@ async function start(): Promise<void> {
   for (const w of store.warnings()) console.warn(w);
   const active = createActiveProfile(store, runtimeCapabilities(wasm.capabilities(detectPlatform(env)), env));
   let tabCount = 0;
-  // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
-  const spawnSheetWorker = (): WorkerLike => {
-    const w = new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" });
+  // Worker jetable (C10b DAB4, C12, `runOnce`) : un `Worker` du navigateur vu comme `WorkerLike`.
+  const asWorkerLike = (w: Worker): WorkerLike => {
     const like: WorkerLike = {
       onmessage: null,
       onerror: null,
@@ -96,7 +156,50 @@ async function start(): Promise<void> {
     w.onerror = (e) => like.onerror?.(e);
     return like;
   };
+  // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
+  const spawnSheetWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" }));
   const sheets = createSheetReader(spawnSheetWorker);
+  // Superposition vectorielle (C12 lot c, PF22) : un Worker jetable du module `formats` par export, jamais l'instance
+  // de la page qui enregistre les `.roomboard` (HR6) ; PNG en repli (PC14). Polices lues en local, une fois.
+  const spawnPdfWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pdf-vector-worker.ts", import.meta.url), { type: "module" }));
+  let pdfFonts: Promise<readonly Uint8Array[]> | null = null;
+  const fonts = (): Promise<readonly Uint8Array[]> =>
+    (pdfFonts ??= Promise.all(
+      PDF_FONT_FILES.map(async (f) => {
+        const r = await fetch(new URL(`${PDFJS_BASE}standard_fonts/${f}`, document.baseURI));
+        if (!r.ok) throw new Error(`police ${f} absente (${r.status})`);
+        return new Uint8Array(await r.arrayBuffer());
+      }),
+    ).catch((e: unknown) => {
+      pdfFonts = null;
+      throw e;
+    }));
+  const toPng = async (blob: Blob, mime: string): Promise<Uint8Array> => {
+    const { bitmap } = await decodeImage(blob, kindOfMime(mime) ?? "png");
+    try {
+      return await bitmapToPng(bitmap, bitmap.width, bitmap.height);
+    } finally {
+      bitmap.close();
+    }
+  };
+  // Contexte à part : `RecordingContext2D` y règle `font` et `fillStyle`, la mesure de l'écran garde le sien.
+  const vectorMeasure = document.createElement("canvas").getContext("2d");
+  const overlay = (tab: TabSession, doc: CoreDocument) =>
+    vectorMeasure === null
+      ? pngOverlay(tab, doc)
+      : fallbackOverlay(
+          createVectorOverlay({
+            doc,
+            assets: tab.assets,
+            alive: () => true,
+            measure: vectorMeasure,
+            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images, makePath: () => new RecordingPath() as unknown as Path2D }),
+            fonts,
+            toPng,
+            write: workerPdfWriter(spawnPdfWorker),
+          }),
+          pngOverlay(tab, doc),
+        );
   const workspace = await createWorkspace({
     core,
     host: prepared.host,
@@ -107,6 +210,12 @@ async function start(): Promise<void> {
     readSheet: (b) => sheets.read(b),
     clipboard: createClipboard(browserSystemClipboard(navigator)),
     itemFiles,
+    pdf,
+    pdfFiles,
+    loadPdfLib,
+    overlay,
+    rasterPage,
+    rasterClose,
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),

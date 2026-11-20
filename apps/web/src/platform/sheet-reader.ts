@@ -9,6 +9,9 @@
  * l'amorce (`main.ts`, PC20) : aucun test ne résout `sheet-worker.ts` ni `src/wasm-formats/`.
  */
 import type { GridMerge, TableGrid } from "./html-table";
+import { runOnce, type WorkerLike } from "./one-shot-worker";
+
+export type { WorkerLike } from "./one-shot-worker";
 
 export const EMPTY_SHEET_MESSAGE = "la première feuille est vide";
 export const SHEET_TOO_BIG_MESSAGE = "classeur trop gros pour un import en valeurs";
@@ -26,13 +29,6 @@ export function workerErrorMessage(err: unknown): string {
   return m === EMPTY_SHEET_MESSAGE || m === SHEET_TOO_BIG_MESSAGE || m.startsWith(UNREADABLE_SHEET_PREFIX) ? m : WORKER_FAILED_MESSAGE;
 }
 
-/** Forme d'un Worker utile ici (le vrai `Worker` du navigateur, un faux dans les tests). */
-export interface WorkerLike {
-  onmessage: ((e: { readonly data: unknown }) => void) | null;
-  onerror: ((e: unknown) => void) | null;
-  postMessage(message: unknown, transfer: Transferable[]): void;
-  terminate(): void;
-}
 export interface SheetReader {
   read(file: Blob): Promise<TableGrid>;
 }
@@ -75,34 +71,27 @@ export function isTableGrid(v: unknown): v is TableGrid {
 }
 
 /**
- * Un Worker neuf par lecture, jamais gardé (DAB4) : à l'inverse de `createPageCodec`, qui garde son instance jusqu'au
- * rechargement (HR6). Même port que le codec de la page (`read(file: Blob)`, octets copiés une fois), arrêté dans
- * `finally` comme le lecteur y est libéré ; sans réponse au bout de `SHEET_WORKER_TIMEOUT_MS` : rejet
- * `WORKER_FAILED_MESSAGE`, puis arrêt.
+ * Un Worker neuf par lecture, jamais gardé (DAB4, `runOnce`) : à l'inverse de `createPageCodec`, qui garde son instance
+ * jusqu'au rechargement (HR6). Même port que le codec de la page (`read(file: Blob)`, octets copiés une fois), arrêté
+ * après la réponse ; sans réponse au bout de `SHEET_WORKER_TIMEOUT_MS` : rejet `WORKER_FAILED_MESSAGE`, puis arrêt.
  */
 export function createSheetReader(spawn: () => WorkerLike): SheetReader {
   return {
     async read(file) {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const worker = spawn();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        return await new Promise<TableGrid>((resolve, reject) => {
-          timer = setTimeout(() => reject(new Error(WORKER_FAILED_MESSAGE)), SHEET_WORKER_TIMEOUT_MS);
-          worker.onmessage = (e) => {
-            const d = e.data;
-            const g = typeof d === "object" && d !== null ? (d as { grid?: unknown }).grid : undefined;
-            const err = typeof d === "object" && d !== null ? (d as { error?: unknown }).error : undefined;
-            if (isTableGrid(g)) resolve(g);
-            else reject(new Error(typeof err === "string" ? err : WORKER_FAILED_MESSAGE));
-          };
-          worker.onerror = () => reject(new Error(WORKER_FAILED_MESSAGE));
-          worker.postMessage({ bytes }, [bytes.buffer]);
-        });
-      } finally {
-        clearTimeout(timer);
-        worker.terminate();
-      }
+      return runOnce(
+        spawn,
+        { bytes },
+        [bytes.buffer],
+        SHEET_WORKER_TIMEOUT_MS,
+        (d) => {
+          const g = typeof d === "object" && d !== null ? (d as { grid?: unknown }).grid : undefined;
+          const err = typeof d === "object" && d !== null ? (d as { error?: unknown }).error : undefined;
+          if (isTableGrid(g)) return g;
+          throw new Error(typeof err === "string" ? err : WORKER_FAILED_MESSAGE);
+        },
+        WORKER_FAILED_MESSAGE,
+      );
     },
   };
 }

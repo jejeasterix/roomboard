@@ -68,6 +68,16 @@ export function hasSheetReader(m: FormatsBinding): m is SheetFormatsBinding {
   return typeof (m as Partial<SheetFormatsBinding>).SheetReader?.open === "function";
 }
 
+/** Module `formats` avec l'écrivain PDF vectoriel (C12, PF22, krilla) : servi seulement dans `pdf-vector-worker.ts`. */
+export interface PdfFormatsBinding extends FormatsBinding {
+  write_pdf_pages(ops: Float32Array, texts: string[], fonts: Uint8Array, font_sizes: Uint32Array, images: Uint8Array, image_sizes: Uint32Array): Uint8Array;
+}
+
+/** Vrai si le module chargé expose `write_pdf_pages` (module construit après C12) ; faux : PNG en repli (PC14). */
+export function hasPdfWriter(m: FormatsBinding): m is PdfFormatsBinding {
+  return typeof (m as Partial<PdfFormatsBinding>).write_pdf_pages === "function";
+}
+
 export function createPageCodec(load: () => Promise<FormatsBinding>): ContainerCodec {
   let loading: Promise<FormatsBinding> | null = null;
   const binding = async (): Promise<FormatsBinding> => {

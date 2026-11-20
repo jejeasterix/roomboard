@@ -136,6 +136,8 @@ function fakeWorkspace(first: FakeTab): Workspace {
     pasteInternal: vi.fn(async () => false),
     exportSelection: vi.fn(async () => false),
     insertPages: vi.fn(async () => false),
+    openPdf: vi.fn(async () => true),
+    exportPdf: vi.fn(async () => false),
     selection: vi.fn(),
     canPaste: () => false,
     onClipboard: () => () => undefined,
@@ -211,6 +213,12 @@ afterEach(() => {
 });
 
 describe("App (T95)", () => {
+  it("App : Exporter en PDF (C12) — le bouton de la barre des pages appelle workspace.exportPdf", () => {
+    const { container, workspace } = renderApp();
+    click(container.querySelector('button[data-item="export-pdf"]'));
+    expect(workspace.exportPdf).toHaveBeenCalledTimes(1);
+  });
+
   it("inventaire : chaque bouton de l'ancienne barre a son élément", () => {
     const { container } = renderApp();
     for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
