@@ -2,7 +2,7 @@ import type { FormatAction } from "../engine/rich-edit";
 import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
-import { isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
+import { fillChoices, isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
 /** U15 : ce que la barre sait du reste ; implémentation locale par appels directs. */
 export interface ToolbarHost {
@@ -12,11 +12,13 @@ export interface ToolbarHost {
   setMode(mode: StartMode): void;
   /** Pastille de remplissage de la rangée du tableau (C10a, T12) ; null retire. */
   tableFill(fill: string | null): void;
+  /** « Aucune » de la rangée du pot (C6a, PC6) : null retire ; ne change ni l'outil ni le stylo. */
+  fillColor(color: string | null): void;
   /** Bouton de la rangée Format (C7b, R13) : relayé au moteur, puis à l'outil actif. */
   textFormat(a: FormatAction): void;
 }
 export interface HostTargets {
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "tableAction" | "tableFill" | "textFormat">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
   toggle(panel: "settings" | "profiles" | "grid"): void;
@@ -56,7 +58,11 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
   return {
     setTool(tool, preset) {
       if (!isKnownTool(tool)) return;
-      if (preset !== undefined) {
+      if (preset !== undefined && tool === "fill") {
+        // PC6 : le pot a sa couleur, jamais le style du stylo.
+        const c = fillChoices(profile().presets).find((x) => x.id === preset);
+        if (c !== undefined) t.engine().setFillColor(c.color);
+      } else if (preset !== undefined) {
         const p = presetsOf(profile().presets, tool).find((x) => x.id === preset);
         if (p?.color !== undefined && p.width !== undefined) t.engine().setPenStyle({ color: p.color, width: p.width });
       }
@@ -66,6 +72,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
       if (Object.hasOwn(ACTIONS, id)) ACTIONS[id]!(t);
     },
     dropFiles: (files, at) => t.importFiles(files, at),
+    fillColor: (color) => t.engine().setFillColor(color),
     tableFill: (fill) => t.engine().tableFill(fill),
     textFormat: (a) => t.engine().textFormat(a),
     setMode(mode) {

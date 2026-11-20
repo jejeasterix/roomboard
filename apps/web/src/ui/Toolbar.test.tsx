@@ -22,7 +22,7 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
 function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
-  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn() };
+  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), textFormat: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
@@ -273,5 +273,55 @@ describe("Toolbar — rangée Format (C7b, R13)", () => {
     setV({ ...VIEW, tool: "text", textFormat: PLAIN });
     fireEvent.click(container.querySelector('[data-format="bold"]')!);
     expect((host.textFormat as ReturnType<typeof vi.fn>).mock.calls).toEqual([[{ type: "bold" }]]);
+  });
+});
+
+describe("Toolbar — rangée du pot (C6a)", () => {
+  const POT: ToolbarView = { ...VIEW, tool: "fill" };
+  const potSetup = (table: PresetTable = {}) => {
+    const r = setup(outils, NO_CAPS, "m", table);
+    r.setV(POT);
+    return r;
+  };
+  it("pot actif sans presets.fill : Rouge, Jaune, Vert, Bleu, Noir, puis « Aucune » en dernier", () => {
+    const { container } = potSetup();
+    expect(presetIds(container)).toEqual(["rouge", "jaune", "vert", "bleu", "noir"]);
+    const bar = container.querySelector(".rb-bar")!;
+    const none = bar.querySelector("button[data-fill-none]")!;
+    expect(none.textContent).toContain("Aucune");
+    expect(none.hasAttribute("data-preset")).toBe(false);
+    expect(none.hasAttribute("data-item")).toBe(false);
+    expect(bar.querySelector("[data-presets-sep]")).not.toBeNull();
+    const rows = [...bar.querySelectorAll("button[data-preset], button[data-fill-none]")];
+    expect(rows[rows.length - 1]).toBe(none);
+  });
+  it("un clic sur une couleur appelle host.setTool(fill, id)", () => {
+    const { container, host } = potSetup();
+    fireEvent.click(container.querySelector('button[data-preset="vert"]')!);
+    expect(host.setTool).toHaveBeenCalledWith("fill", "vert");
+  });
+  it("un clic sur « Aucune » appelle host.fillColor(null), sans setTool", () => {
+    const { container, host } = potSetup();
+    fireEvent.click(container.querySelector("button[data-fill-none]")!);
+    expect(host.fillColor).toHaveBeenCalledWith(null);
+    expect(host.setTool).not.toHaveBeenCalled();
+  });
+  it("profil avec presets.fill : ses couleurs, puis « Aucune » ; clé vide : « Aucune » seule", () => {
+    const { container } = potSetup({ fill: [{ id: "ambre", label: "Ambre", color: "#f59e0b", rest: {} }] });
+    expect(presetIds(container)).toEqual(["ambre"]);
+    expect(container.querySelector("button[data-fill-none]")).not.toBeNull();
+    cleanup();
+    const vide = potSetup({ fill: [] });
+    expect(presetIds(vide.container)).toEqual([]);
+    expect(vide.container.querySelector("button[data-fill-none]")).not.toBeNull();
+  });
+  it("le stylo garde ses préréglages sans « Aucune » ; Main : la rangée disparaît", () => {
+    const { container, setV } = setup(outils, NO_CAPS, "m", PEN);
+    expect(container.querySelector("button[data-fill-none]")).toBeNull();
+    setV({ ...VIEW, tool: "fill" });
+    expect(presetIds(container)).toEqual(["rouge", "jaune", "vert", "bleu", "noir"]);
+    setV({ ...VIEW, tool: "hand" });
+    expect(presetIds(container)).toEqual([]);
+    expect(container.querySelector("button[data-fill-none]")).toBeNull();
   });
 });
