@@ -2,6 +2,7 @@ import { For, Show, createMemo, onCleanup, onMount, type Accessor, type JSX } fr
 import { listenWebDrop } from "../platform/drop-web";
 import type { ToolbarHost } from "../app/toolbar-host";
 import {
+  presetsOf,
   TOOL_TABLE,
   visibleItems,
   type ButtonSize,
@@ -79,8 +80,7 @@ function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<Toolb
   const tool = createMemo(() => toolOf(props.view().tool));
   const list = createMemo((): readonly Preset[] => {
     const t = tool();
-    const all = props.presets();
-    return t !== null && Object.hasOwn(all, t) ? (all[t] ?? []) : [];
+    return t === null ? [] : presetsOf(props.presets(), t);
   });
   const press = (presetId: string): void => {
     const t = tool();

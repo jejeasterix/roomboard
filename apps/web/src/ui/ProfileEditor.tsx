@@ -3,7 +3,7 @@
  * ne change dans les barres avant « Enregistrer » ou « Enregistrer comme nouveau » ; fermer abandonne le brouillon. Chaque
  * geste appelle une opération pure de `profile-edit.ts` ; le composant n'écrit aucun stockage.
  */
-import { createEffect, createSignal, For, Show, type Accessor, type JSX } from "solid-js";
+import { createEffect, createSignal, For, Index, Show, type Accessor, type JSX } from "solid-js";
 import {
   addItem,
   addPreset,
@@ -29,6 +29,7 @@ import {
   BUTTON_SIZES,
   DOCKS,
   isKnownItem,
+  presetsOf,
   START_MODES,
   TOOL_TABLE,
   type ButtonSize,
@@ -122,7 +123,9 @@ function ItemRow(props: { barId: string; item: ToolItem; index: number; last: nu
 function BarFieldset(props: { bar: Toolbar; draft: Accessor<Profile>; edit: Edit; refocus: Refocus }): JSX.Element {
   const items = (): readonly ToolItem[] => props.bar.groups.flatMap((g) => g.items);
   const choices = (): readonly CatalogEntry[] => catalog(props.draft(), props.bar.id);
-  const [choice, setChoice] = createSignal("");
+  const [picked, setChoice] = createSignal("");
+  /** Choix affiché et agissant : celui de la liste, ou vide si l'entrée n'y est plus (même valeur pour le sélecteur et le bouton). */
+  const choice = (): string => (choices().some((e) => entryKey(e) === picked()) ? picked() : "");
   const add = (): void => {
     const entry = choices().find((e) => entryKey(e) === choice());
     if (entry === undefined) return;
@@ -155,9 +158,9 @@ function BarFieldset(props: { bar: Toolbar; draft: Accessor<Profile>; edit: Edit
       <Show when={choices().length > 0}>
         <label>
           Ajouter{" "}
-          <select data-edit="add-choice" onChange={(e) => setChoice(e.currentTarget.value)}>
-            <option value="" selected={choice() === ""}>Choisir…</option>
-            <For each={choices()}>{(c) => <option value={entryKey(c)}>{c.kind === "tool" ? `Outil : ${c.label}` : c.label}</option>}</For>
+          <select data-edit="add-choice" ref={(el) => syncValue(el, choice)} onChange={(e) => setChoice(e.currentTarget.value)}>
+            <option value="">Choisir…</option>
+            <Index each={choices()}>{(c) => <option value={entryKey(c())}>{c().kind === "tool" ? `Outil : ${c().label}` : c().label}</option>}</Index>
           </select>
         </label>
         <button type="button" data-edit="add" disabled={choice() === ""} onClick={add}>
@@ -188,34 +191,35 @@ function PresetInput(props: { tool: string; preset: Preset; field: PresetField; 
 }
 
 function PresetList(props: { tool: string; draft: Accessor<Profile>; edit: Edit }): JSX.Element {
-  const list = (): readonly Preset[] => (Object.hasOwn(props.draft().presets, props.tool) ? (props.draft().presets[props.tool] ?? []) : []);
+  const list = (): readonly Preset[] => presetsOf(props.draft().presets, props.tool);
   const fields = presetFields(props.tool);
   return (
     <fieldset data-edit-presets={props.tool}>
       <legend>{toolName(props.tool)}</legend>
       <ul>
-        <For each={list()}>
+        {/* Index : la ligne et ses champs restent en place quand le préréglage change (le focus ne se perd pas). */}
+        <Index each={list()}>
           {(p) => (
-            <li data-edit-preset={p.id}>
+            <li data-edit-preset={p().id}>
               <label>
                 Nom{" "}
                 <input
                   type="text"
                   data-edit="preset-label"
-                  value={p.label}
+                  value={p().label}
                   onChange={(e) => {
                     const label = e.currentTarget.value;
-                    props.edit((d) => updatePreset(d, props.tool, p.id, { label }));
+                    props.edit((d) => updatePreset(d, props.tool, p().id, { label }));
                   }}
                 />
               </label>
-              <For each={fields}>{(f) => <PresetInput tool={props.tool} preset={p} field={f} edit={props.edit} />}</For>
-              <button type="button" data-edit="preset-remove" aria-label={`Retirer ${p.label}`} onClick={() => props.edit((d) => removePreset(d, props.tool, p.id))}>
+              <For each={fields}>{(f) => <PresetInput tool={props.tool} preset={p()} field={f} edit={props.edit} />}</For>
+              <button type="button" data-edit="preset-remove" aria-label={`Retirer ${p().label}`} onClick={() => props.edit((d) => removePreset(d, props.tool, p().id))}>
                 Retirer
               </button>
             </li>
           )}
-        </For>
+        </Index>
       </ul>
       <button type="button" data-edit="preset-add" onClick={() => props.edit((d) => addPreset(d, props.tool))}>
         Ajouter une couleur
