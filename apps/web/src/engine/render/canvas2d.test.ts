@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Bounds, CoreDocument, ElementView, GridInput, GridLevel, GridView, TableElement, TextElement } from "../../core/api";
+import type { Bounds, CoreDocument, ElementView, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
+import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { BACKDROP_PLACEHOLDER, BACKDROP_UNREADABLE_LABEL, Canvas2DRenderer, createCanvas2DRenderer, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { BACKDROP_PLACEHOLDER, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, HANDLE_FILL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
@@ -651,6 +652,67 @@ describe("images et éléments inconnus (R16, U3)", () => {
     const scene = sceneOf(image, { bitmap: () => bmp }, new Set(["i"]), { ...EMPTY_OVERLAY, ghosts: [{ id: "i", matrix: [1, 0, 0, 1, 30, 0] }] });
     expect(scene.images).toHaveLength(1);
     expect(scene.log).toContain("transform 1,0,0,1,30,0");
+  });
+
+  /** Rendu de `el` avec un aperçu d'image posé avant la scène. */
+  function previewed(el: ElementView, images: ImageSource, preview: Parameters<Canvas2DRenderer["setImagePreview"]>[0]) {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === el.id ? el : null), outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, { images });
+    r.resize(100, 100, 1);
+    r.setImagePreview(preview);
+    r.drawScene({ id: "p", elementIds: [el.id] }, IDENTITY, new Set());
+    return { scene, r };
+  }
+
+  it("image sans réglage : drawImage à 5 arguments, journal inchangé", () => {
+    const bmp = { tag: "bitmap" } as unknown as CanvasImageSource;
+    const scene = sceneOf(image, { bitmap: () => bmp });
+    expect(scene.log).toContain("drawImage 0,0,200,100");
+    expect(scene.images[0]?.src).toBeUndefined();
+  });
+
+  it("image rognée, retournée, tournée : boîte affichée, rectangle source à l'échelle de la copie, matrice d'orientation (I23)", () => {
+    const i = { asset: IMG, w: 200, h: 100, crop: [20, 10, 100, 50] as const, flipX: true, quarterTurns: 1 };
+    const el: ElementView = { id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: i };
+    const half = { tag: "copie réduite", width: 100, height: 50 } as unknown as CanvasImageSource;
+    const scene = sceneOf(el, { bitmap: () => half });
+    expect(scene.images).toEqual([{ img: half, x: 0, y: 0, w: 100, h: 50, src: [10, 5, 50, 25] }]);
+    expect(orientMatrix(i)).toEqual([0, -1, -1, 0, 50, 100]);
+    expect(scene.log).toContain("transform 0,-1,-1,0,50,100");
+  });
+
+  it("image tournée sans bitmap : cadre gris de la boîte affichée", () => {
+    const el: ElementView = { id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: IMG, w: 200, h: 100, quarterTurns: 1 } };
+    const scene = sceneOf(el, { bitmap: () => null });
+    expect(scene.rects).toContainEqual([0, 0, 100, 200]);
+  });
+
+  it("bitmapOf préféré quand la source le fournit ; aperçu : réglages et matrice de l'aperçu, drapeau preview", () => {
+    const bmp = { tag: "retouchée" } as unknown as CanvasImageSource;
+    const bitmapOf = vi.fn((_el: ImageElement, _preview?: boolean) => bmp);
+    const { scene, r } = previewed(image, { bitmap: () => null, bitmapOf }, { id: "i", params: { brightness: 10 }, matrix: [1, 0, 0, 1, 30, 0] });
+    expect(bitmapOf).toHaveBeenCalledWith({ ...image, transform: [1, 0, 0, 1, 30, 0], image: { asset: IMG, w: 200, h: 100, brightness: 10 } }, true);
+    expect(scene.log).toContain("transform 1,0,0,1,30,0");
+    expect(scene.images[0]?.img).toBe(bmp);
+    r.setImagePreview(null);
+    r.drawScene({ id: "p", elementIds: ["i"] }, IDENTITY, new Set());
+    expect(bitmapOf).toHaveBeenLastCalledWith(image, false);
+  });
+
+  it("cadre de rognage : voile hors du cadre (evenodd), cadre, huit poignées (I28)", () => {
+    const bmp = { tag: "bitmap" } as unknown as CanvasImageSource;
+    const { scene } = previewed(image, { bitmap: () => bmp }, { id: "i", params: {}, matrix: [1, 0, 0, 1, 5, 6], frame: { x0: 10, y0: 10, x1: 60, y1: 40 } });
+    expect(scene.log).toContain(`fill ${CROP_VEIL}`);
+    expect(scene.log.filter((l) => l === `fill ${HANDLE_FILL}`)).toHaveLength(8);
+  });
+
+  it("invalidate : les éléments retirés sont oubliés par la source d'images (I19)", () => {
+    const forget = vi.fn();
+    const src: SceneSource = { element: () => null, outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(new FakeCtx()), null, src, { images: { bitmap: () => null, forget } });
+    r.invalidate({ ...NO_CHANGE, ids: ["a"], removed: ["b"] });
+    expect(forget).toHaveBeenCalledWith(["b"]);
   });
 });
 

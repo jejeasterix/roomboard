@@ -1,5 +1,5 @@
 /** Rendu derrière une interface (DA2, D19) : Canvas 2D au socle ; WebGL2 pourra remplacer l'implémentation (DA9). */
-import type { BackdropView, Change, CoreDocument, EraseMode, GridView } from "../../core/api";
+import type { BackdropView, Bounds, Change, CoreDocument, EraseMode, GridView, ImageParams, Matrix } from "../../core/api";
 import type { Camera } from "../camera";
 import type { EditOverlay } from "./overlay";
 
@@ -59,6 +59,15 @@ export interface GridPreview {
   readonly grid: GridView | null;
 }
 
+/** Aperçu d'une image (C5, DAI4, I28) : `params` et `matrix` remplacent ceux du document pour l'élément `id` ; `frame` :
+ *  cadre de rognage dans la boîte affichée de l'aperçu (pixels source), voile au-dehors, huit poignées. Rien n'est écrit. */
+export interface ImagePreview {
+  readonly id: string;
+  readonly params: ImageParams;
+  readonly matrix: Matrix;
+  readonly frame?: Bounds;
+}
+
 export interface Renderer {
   /**
    * Scène fixe (G11) : pourtour, fond de page, grille si `above` est faux, éléments sauf `hidden` (masqués pendant un
@@ -74,4 +83,6 @@ export interface Renderer {
   invalidate(change: Change): void;
   /** Aperçu de grille (DAE1) : rien n'est écrit ; `null` rend la grille du document. */
   setGridPreview(p: GridPreview | null): void;
+  /** Aperçu d'une image (C5, DAI4) : rien n'est écrit ; `null` rend l'image du document. */
+  setImagePreview(p: ImagePreview | null): void;
 }
