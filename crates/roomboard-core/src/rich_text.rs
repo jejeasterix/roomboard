@@ -170,7 +170,7 @@ pub(crate) fn utf16_range<T: ReadTxn>(
     Some((a, end(&chars[last - 1]) - a))
 }
 
-/// Attributs connus normalisés (T8) : booléen seulement `true`, `size` fini > 0 (entier ou flottant), `color` et
+/// Attributs connus normalisés (T8) : booléen seulement `true`, `size` fini > 0 après conversion en `f32`, comme `valid_attrs` (entier ou flottant), `color` et
 /// `font` de la forme de T15 ; tout le reste est ignoré de la vue, jamais réécrit.
 fn normalize(raw: Option<&Attrs>) -> SpanAttrs {
     let Some(a) = raw else {
@@ -189,7 +189,7 @@ fn normalize(raw: Option<&Attrs>) -> SpanAttrs {
         size: a
             .get("size")
             .and_then(any_f64)
-            .filter(|v| finite_positive(*v)),
+            .filter(|v| finite_positive(*v) && finite_positive(f64::from(*v as f32))),
         font: string("font", valid_font),
     }
 }
@@ -356,14 +356,40 @@ pub struct SpanInput {
 
 /// Entrées de `attrs` dans l'ordre de `TextAttr` : chaque clé connue, au défaut comprise (`false`, `None` = retrait).
 fn entries(attrs: &SpanAttrs) -> [TextAttr; 6] {
+    let SpanAttrs {
+        bold,
+        italic,
+        underline,
+        color,
+        size,
+        font,
+    } = attrs;
     [
-        TextAttr::Bold(attrs.bold),
-        TextAttr::Italic(attrs.italic),
-        TextAttr::Underline(attrs.underline),
-        TextAttr::Color(attrs.color.clone()),
-        TextAttr::Size(attrs.size.map(|v| v as f32)),
-        TextAttr::Font(attrs.font.clone()),
+        TextAttr::Bold(*bold),
+        TextAttr::Italic(*italic),
+        TextAttr::Underline(*underline),
+        TextAttr::Color(color.clone()),
+        TextAttr::Size(size.map(|v| v as f32)),
+        TextAttr::Font(font.clone()),
     ]
+}
+
+impl SpanAttrs {
+    /// Attributs d'un état voulu depuis ses entrées (R7) : `false` et `None` valent « absent ».
+    pub fn from_entries(entries: Vec<TextAttr>) -> Self {
+        let mut a = Self::default();
+        for e in entries {
+            match e {
+                TextAttr::Bold(b) => a.bold = b,
+                TextAttr::Italic(b) => a.italic = b,
+                TextAttr::Underline(b) => a.underline = b,
+                TextAttr::Color(c) => a.color = c,
+                TextAttr::Size(s) => a.size = s.map(f64::from),
+                TextAttr::Font(f) => a.font = f,
+            }
+        }
+        a
+    }
 }
 
 /// Contrôle d'un état voulu (R7) : concaténation des `text` égale au contenu, valeurs dans les domaines de T15

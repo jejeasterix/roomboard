@@ -320,22 +320,6 @@ impl<'de> serde::de::Visitor<'de> for SpansVisitor {
     }
 }
 
-/// Entrées d'un état voulu → attributs (R7) : `false` et `null` valent « absent ».
-fn attrs_of(entries: Vec<TextAttr>) -> SpanAttrs {
-    let mut a = SpanAttrs::default();
-    for e in entries {
-        match e {
-            TextAttr::Bold(b) => a.bold = b,
-            TextAttr::Italic(b) => a.italic = b,
-            TextAttr::Underline(b) => a.underline = b,
-            TextAttr::Color(c) => a.color = c,
-            TextAttr::Size(s) => a.size = s.map(f64::from),
-            TextAttr::Font(f) => a.font = f,
-        }
-    }
-    a
-}
-
 /// Segments voulus de `set_text` et `set_table_cell` (C7b, R7) : une liste d'objets `{ text, attrs }`, `attrs` lu comme
 /// le patch de `format_text` ; pas une liste, clé inconnue, type faux : `BadFormat`. Les valeurs hors domaine sont
 /// refusées ensuite par le cœur (`valid_spans`). Générique pour être testée en natif, comme `read_patch`.
@@ -349,7 +333,7 @@ fn read_spans_input<'de, D: serde::Deserializer<'de>>(
     for (text, slots) in raw {
         out.push(SpanInput {
             text,
-            attrs: attrs_of(entries_of(slots)?),
+            attrs: SpanAttrs::from_entries(entries_of(slots)?),
         });
     }
     Ok(out)
