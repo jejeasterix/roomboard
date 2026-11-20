@@ -5,6 +5,8 @@
  */
 export const ROOMBOARD_EXTENSION = ".roomboard";
 export const ROOMBOARD_MIME = "application/x-roomboard";
+export const RBITEM_EXTENSION = ".rbitem";
+export const RBITEM_MIME = "application/x-roomboard-item";
 export const UNTITLED = "Sans titre.roomboard";
 export const FILE_FILTER = { name: "Document RoomBoard", extensions: ["roomboard"] } as const;
 
@@ -60,8 +62,8 @@ export interface DroppedFile {
 /** `at` en px CSS relatifs à la fenêtre ; null quand le système ne donne pas de point (ouverture par le Finder). */
 export type DropHandler = (files: DroppedFile[], at: Point | null) => void;
 
-/** Extensions offertes par « Importer » (R18) : le `.roomboard` et les images d'U33 que le registre reconnaît. */
-export const IMPORT_EXTENSIONS = ["roomboard", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
+/** Extensions offertes par « Importer » (R18) : le `.roomboard`, l'objet `.rbitem` et les images d'U33 que le registre reconnaît. */
+export const IMPORT_EXTENSIONS = ["roomboard", "rbitem", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
 export const IMPORT_FILTER = { name: "Images et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
 
 export interface FileHost {
