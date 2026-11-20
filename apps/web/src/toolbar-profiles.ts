@@ -57,7 +57,7 @@ const defaultToolbars = () => [
       { id: "edition", items: [sep("sep-1"), tool("select", "Sélection"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau")] },
       { id: "historique", items: [sep("sep-2"), action("undo", "Annuler"), action("redo", "Rétablir")] },
       { id: "fichier", items: [sep("sep-3"), action("file-new", "Nouveau"), action("file-open", "Ouvrir"), action("file-import", "Importer"), action("file-save", "Enregistrer"), action("file-save-as", "Enregistrer sous")] },
-      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages")] },
+      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("profiles", "Profil"), action("settings", "Réglages")] },
     ],
   },
   pagesBar(),

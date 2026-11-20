@@ -94,7 +94,7 @@ export const TOOL_TABLE: Readonly<Record<ToolId, ToolEntry>> = Object.freeze({
   table: { label: "Tableau", choice: "table" },
 });
 
-/** Actions connues : celles de l'ancienne barre (inventaire du plan du lot 5b). */
+/** Actions connues : celles de l'ancienne barre (inventaire du plan du lot 5b), et « Grille » (C9 éditeur). */
 export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>> = Object.freeze({
   "eraser-mode": { label: "Gomme : partielle" },
   undo: { label: "Annuler" },
@@ -111,6 +111,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "file-save-as": { label: "Enregistrer sous" },
   settings: { label: "Réglages" },
   profiles: { label: "Profil" },
+  grid: { label: "Grille" },
   "table-row-insert": { label: "+ Ligne" },
   "table-col-insert": { label: "+ Colonne" },
   "table-row-remove": { label: "− Ligne" },

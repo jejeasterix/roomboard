@@ -16,7 +16,7 @@ export interface HostTargets {
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "tableAction" | "tableFill">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
-  toggle(panel: "settings" | "profiles"): void;
+  toggle(panel: "settings" | "profiles" | "grid"): void;
 }
 
 const file = (cmd: FileCommand) => (t: HostTargets): void => t.runFile(cmd);
@@ -37,6 +37,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "file-save-as": file("saveAs"),
   settings: (t) => t.toggle("settings"),
   profiles: (t) => t.toggle("profiles"),
+  grid: (t) => t.toggle("grid"),
   "table-row-insert": (t) => t.engine().tableAction("row-insert"),
   "table-col-insert": (t) => t.engine().tableAction("col-insert"),
   "table-row-remove": (t) => t.engine().tableAction("row-remove"),
