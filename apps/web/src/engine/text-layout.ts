@@ -4,6 +4,7 @@
  * attribut. Coupure gloutonne aux espaces, un mot peut traverser plusieurs segments, mot trop long coupé par graphème.
  */
 import type { TextAttrs, TextSpan } from "../core/api";
+import { TEXT_ATTR_KEYS } from "../core/rich-text";
 
 export const TEXT_FONT_FAMILY = '"Atkinson Hyperlegible", system-ui, sans-serif';
 export const TEXT_SIZES: readonly number[] = [24, 36, 48, 72];
@@ -75,8 +76,8 @@ export const styleOf = (attrs: TextAttrs, base: { readonly size: number }): Segm
   color: attrs.color ?? null,
 });
 
-const sameStyle = (a: SegmentStyle, b: SegmentStyle): boolean =>
-  a.size === b.size && a.bold === b.bold && a.italic === b.italic && a.underline === b.underline && a.font === b.font && a.color === b.color;
+/** Mêmes clés que `TextAttrs` (`sameAttrs` de `rich-text.ts`), valeurs résolues. */
+const sameStyle = (a: SegmentStyle, b: SegmentStyle): boolean => TEXT_ATTR_KEYS.every((k) => a[k] === b[k]);
 
 /** Face mesurée et dessinée ; undefined pour le style du socle (même police, même mesure qu'au socle). */
 export const faceOf = (s: SegmentStyle): Face | undefined =>

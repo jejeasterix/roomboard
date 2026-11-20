@@ -958,11 +958,13 @@ describe("contrat C7 : contrôle de forme des valeurs venues de Wasm", () => {
       text: { content: "Le chat", size: 36, boxWidth: 600, boxHeight: 45, spans: [plainSpan("Le "), { text: "chat", attrs: { bold: true, italic: true, underline: true, color: "#ff0000", size: 48, font: "Georgia" } }] },
     };
     expect(toElementView(view)).toEqual(view);
-    const withSpans = (spans: unknown) => ({ ...view, text: { ...view.text, spans } });
+    // Contenu « a », celui des segments : chaque dérive ci-dessous lève pour sa seule cause, pas pour un contenu
+    // que ses segments ne redonnent pas (T12).
+    const withSpans = (spans: unknown) => ({ ...view, text: { ...view.text, content: "a", spans } });
     expect(() => toElementView({ ...view, text: { content: "x", size: 36, boxWidth: 600, boxHeight: 45 } })).toThrow("ElementView invalide");
     const drifts: unknown[] = [[], "Le chat", [{ text: 1, attrs: {} }], [{ text: "a" }], [{ text: "a", attrs: { bold: false } }], [{ text: "a", attrs: { size: 0 } }], [{ text: "a", attrs: { color: 5 } }], [{ text: "a", attrs: { href: "x" } }]];
     for (const spans of drifts) expect(() => toElementView(withSpans(spans))).toThrow("ElementView invalide");
-    expect(toElementView(withSpans([{ text: "a", attrs: { bold: undefined } }]))).toStrictEqual({ ...view, text: { ...view.text, spans: [plainSpan("a")] } });
+    expect(toElementView(withSpans([{ text: "a", attrs: { bold: undefined } }]))).toStrictEqual({ ...view, text: { ...view.text, content: "a", spans: [plainSpan("a")] } });
   });
 
   it("FormatText : clés undefined retirées, bornes hors u32 portées à u32::MAX, retour contrôlé par toChange", () => {
