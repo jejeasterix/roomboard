@@ -72,6 +72,7 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/s34-navigateur.mjs
   node scripts/essais/fichiers-navigateur.mjs
   node scripts/essais/s5b-navigateur.mjs
+  node scripts/essais/c1-profils-navigateur.mjs
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"

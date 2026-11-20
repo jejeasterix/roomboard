@@ -64,3 +64,7 @@
 .rb-editor button, .rb-editor select, .rb-editor input:not([type="checkbox"]) { min-height: var(--rb-btn-m); }
 .rb-editor input[type="checkbox"] { inline-size: calc(var(--rb-btn-m) / 2); block-size: calc(var(--rb-btn-m) / 2); }
 .rb-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }
+/* Barre verticale (left/right) : prend la hauteur de sa case et passe en plusieurs colonnes quand elle en manque ;
+   chaque colonne a la largeur de son bouton le plus large (align-items: stretch). */
+.rb-slot > .rb-bar[data-dock="left"], .rb-slot > .rb-bar[data-dock="right"] { height: 100%; box-sizing: border-box; align-items: stretch; align-content: flex-start; }
+.rb-bar[data-dock="left"] .rb-sep, .rb-bar[data-dock="right"] .rb-sep { align-self: auto; border-inline-start: 0; border-block-start: 1px solid #94a3b8; margin: 4px 0; }
