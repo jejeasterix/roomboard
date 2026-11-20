@@ -398,6 +398,21 @@ describe("App (T95)", () => {
     expect(document.querySelectorAll("#etat")).toHaveLength(1);
     expect(document.getElementById("etat")!.textContent).toBe("RoomBoard n'a pas pu démarrer : encore");
   });
+  it("panneau image : ouvert par le bouton « Image », gardé par une écriture, fermé quand la sélection change (I31)", () => {
+    const tab = fakeTab("Sans titre.roomboard");
+    const edit = { id: "i", preview: vi.fn(), pick: vi.fn(async () => null), startCrop: vi.fn(), finishCrop: vi.fn(() => false), geometry: vi.fn(() => true), commit: vi.fn(() => true), restore: vi.fn(() => true), mode: () => "idle" as const, keepsDraft: () => false, close: vi.fn() };
+    tab.engine["editImage"] = vi.fn(() => edit);
+    (tab.session.board.doc as unknown as Record<string, unknown>)["element"] = (id: string) => ({ id, kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: "ab".repeat(32), w: 200, h: 150 } });
+    const { container } = renderApp({ tab });
+    tab.emit({ tool: "select", selection: ["i"], selectionUnits: 1, selectionImage: "i" });
+    click(container.querySelector('[data-selection-action="image"]'));
+    expect(container.querySelector('.rb-popover[data-panel="image"] #image-retouche')).not.toBeNull();
+    tab.emit({ version: 5 });
+    expect(container.querySelector("#image-retouche")).not.toBeNull();
+    tab.emit({ selection: [], selectionUnits: 0, selectionImage: null });
+    expect(container.querySelector("#image-retouche")).toBeNull();
+    expect(edit.close).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("App — profils (C1)", () => {

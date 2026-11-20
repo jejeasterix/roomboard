@@ -84,10 +84,19 @@ function cargoMetadata(manifest) {
   return JSON.parse(execFileSync("cargo", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
 }
 
-function cargoPackages(meta) {
-  const members = new Set(meta.workspace_members);
+/** Nom et version des membres de tous les workspaces : le crate du projet vu comme dépendance dans un autre relevé reste exclu. */
+function memberKeys(metas) {
+  const keys = new Set();
+  for (const meta of metas) {
+    const ids = new Set(meta.workspace_members);
+    for (const p of meta.packages) if (ids.has(p.id)) keys.add(`${p.name} ${p.version}`);
+  }
+  return keys;
+}
+
+function cargoPackages(meta, members) {
   return meta.packages
-    .filter((p) => !members.has(p.id))
+    .filter((p) => !members.has(`${p.name} ${p.version}`))
     .map((p) => ({ kind: "cargo", name: p.name, version: p.version, license: p.license ?? null }));
 }
 
@@ -150,9 +159,10 @@ function main(argv) {
     }
   }
   const exceptions = JSON.parse(readFileSync(args.exceptions, "utf8"));
+  const members = memberKeys(metas);
   const seen = new Set();
   const all = [];
-  for (const p of [...metas.flatMap(cargoPackages), ...npmPackages(args.npmRoot)]) {
+  for (const p of [...metas.flatMap((m) => cargoPackages(m, members)), ...npmPackages(args.npmRoot)]) {
     const key = `${p.kind} ${p.name} ${p.version} ${p.license}`;
     if (!seen.has(key)) {
       seen.add(key);

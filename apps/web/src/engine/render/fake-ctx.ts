@@ -69,11 +69,21 @@ export class FakeCtx {
   measures = 0;
   measureText(text: string): { width: number } { this.measures++; return { width: text.length * 10 }; }
   setLineDash(d: number[]): void { this.log.push(`setLineDash ${d.join(",")}`); }
-  readonly images: { img: unknown; x: number; y: number; w: number; h: number }[] = [];
-  drawImage(img: unknown, x = 0, y = 0, w = 0, h = 0): void {
+  /** `src` : rectangle source d'un drawImage à 9 arguments (C5, rognage) ; absent pour 5 arguments. */
+  readonly images: { img: unknown; x: number; y: number; w: number; h: number; src?: readonly number[] }[] = [];
+  drawImage(img: unknown, ...a: number[]): void {
+    if (a.length === 8) {
+      const [sx = 0, sy = 0, sw = 0, sh = 0, x = 0, y = 0, w = 0, h = 0] = a;
+      this.log.push(`drawImage ${sx},${sy},${sw},${sh} -> ${x},${y},${w},${h}`);
+      this.images.push({ img, x, y, w, h, src: [sx, sy, sw, sh] });
+      return;
+    }
+    const [x = 0, y = 0, w = 0, h = 0] = a;
     this.log.push(`drawImage ${x},${y},${w},${h}`);
     this.images.push({ img, x, y, w, h });
   }
+  scale(x: number, y: number): void { this.log.push(`scale ${x},${y}`); }
+  rotate(r: number): void { this.log.push(`rotate ${r}`); }
 }
 
 export const asCtx = (f: FakeCtx): CanvasRenderingContext2D => f as unknown as CanvasRenderingContext2D;

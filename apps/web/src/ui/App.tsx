@@ -8,6 +8,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { BoardSession } from "../app/board-session";
+import type { ImageData } from "../core/api";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost } from "../app/toolbar-host";
 import type { TabSession, Workspace } from "../app/workspace";
@@ -25,6 +26,7 @@ import { PagesBar } from "./PagesBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
 import { GridPanel } from "./GridPanel";
+import { ImagePanel } from "./ImagePanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
 import type { ToolbarView } from "./item-state";
@@ -46,7 +48,7 @@ export interface AppProps {
   navigate(search: string): void;
 }
 
-type Panel = "settings" | "profiles" | "editor" | "grid";
+type Panel = "settings" | "profiles" | "editor" | "grid" | "image";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
@@ -138,6 +140,38 @@ export function App(props: AppProps): JSX.Element {
       { defer: true },
     ),
   );
+  /** Panneau de l'image (C5, I25, I31) : l'image sélectionnée seule à l'ouverture ; fermé si l'onglet, la page ou la
+   *  sélection changent, ou si l'image disparaît ; une écriture ne le ferme pas (au contraire de la grille). */
+  const [imageTarget, setImageTarget] = createSignal<string | null>(null);
+  createEffect(
+    on(panel, (p) => {
+      if (p !== "image") return;
+      const id = state().selectionImage ?? null;
+      setImageTarget(id);
+      if (id === null) setPanel(null);
+    }),
+  );
+  const imageKey = createMemo(() => `${activeId() ?? ""}|${state().page}|${state().selectionImage ?? ""}`);
+  createEffect(
+    on(
+      imageKey,
+      () => {
+        if (panel() === "image") setPanel(null);
+      },
+      { defer: true },
+    ),
+  );
+  /** Séance de retouche du moteur `b` (figé à l'ouverture, comme la grille) ; démontée : séance fermée. */
+  const imagePanelFor = (b: BoardSession, id: string): JSX.Element => {
+    const edit = b.engine.editImage(id);
+    if (edit === null) return null;
+    const image = (): ImageData | null => {
+      state();
+      const el = b.doc.element(id);
+      return el?.kind === "image" ? el.image : null;
+    };
+    return <ImagePanel image={image} version={() => state().version} tick={state} edit={edit} close={() => setPanel(null)} />;
+  };
 
   const host = createLocalToolbarHost(
     {
@@ -290,6 +324,13 @@ export function App(props: AppProps): JSX.Element {
       </Show>
       <Show when={panel() === "grid"}>
         <div class="rb-popover">{gridPanelFor(ws.active().board)}</div>
+      </Show>
+      <Show when={panel() === "image" ? imageTarget() : null}>
+        {(id) => (
+          <div class="rb-popover" data-panel="image">
+            {imagePanelFor(ws.active().board, id())}
+          </div>
+        )}
       </Show>
     </div>
   );

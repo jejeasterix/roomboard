@@ -144,10 +144,12 @@ impl Document {
             });
         }
         if let Some((transform, i)) = read_image(txn, e) {
+            // C5 (I8) : boîte affichée (rognage, quarts de tour) ; collision, bornes, rectangle et accroche suivent.
+            let (bw, bh) = i.display_size();
             return Some(Geom {
                 id,
                 transform,
-                outline: box_polygon(i.w, i.h).into(),
+                outline: box_polygon(bw, bh).into(),
             });
         }
         let transform = out_transform(e.get(txn, "transform"))?;

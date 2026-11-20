@@ -8,6 +8,7 @@
  */
 import type { CoreDocument } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
+import { displaySize } from "../core/image-params";
 import type { Camera } from "../engine/camera";
 import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
 import { createMiddlePan } from "../engine/input/middle-pan";
@@ -31,6 +32,8 @@ import {
 } from "../engine/settings";
 import type { Measure } from "../engine/text-layout";
 import { decodeImage, kindOfMime } from "../platform/image-import";
+import { createPixelRunner, pixelNotice } from "../platform/pixel-runner";
+import type { WorkerLike } from "../platform/sheet-reader";
 import { createEraserTool } from "../engine/tools/eraser";
 import { createFillTool } from "../engine/tools/fill";
 import { createPenTool } from "../engine/tools/pen";
@@ -57,6 +60,8 @@ export interface SessionShared {
   readonly coreVersion: string;
   /** Décodeur des bitmaps (tests) ; défaut : `decodeImage` du navigateur. */
   readonly decode?: BitmapDecoder;
+  /** C5 (I18, DAI3) : lanceur du Worker de pixels de l'onglet ; absent : aucun calcul, images brutes. */
+  readonly pixels?: () => WorkerLike;
   /** C12 (DAPF1) : moteur PDF des fonds `pdf-page` ; absent : fond en « page PDF illisible ». */
   readonly pdf?: PdfEngine;
 }
@@ -138,7 +143,15 @@ async function buildBoardSession(
 
   // Bitmaps des images (R16) : le cache appelle `redraw` quand un bitmap arrive ; le moteur est créé plus bas.
   let redraw = (): void => undefined;
-  const images = createImageCache(assets, shared.decode ?? decodeBitmap, () => redraw());
+  // C5 (I18, I24, I33) : un lanceur de pixels par onglet ; premier échec dit une fois dans #etat ; état dans data-pixels.
+  let report = (_message: string): void => undefined;
+  let remark = (): void => undefined;
+  const runner = shared.pixels === undefined ? undefined : createPixelRunner(shared.pixels);
+  if (runner !== undefined) undo.push(() => runner.dispose());
+  const images = createImageCache(assets, shared.decode ?? decodeBitmap, () => redraw(), runner, {
+    onFailure: (m) => report(pixelNotice(m)),
+    onState: () => remark(),
+  });
   undo.push(() => images.dispose());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
   // Fond `pdf-page` (C12, DAPF2) : tuiles par palier, `redraw` à chaque arrivée (patron R16). Libérées à la
@@ -182,6 +195,7 @@ async function buildBoardSession(
   const engine = createEngine({
     doc,
     renderer: choice.renderer,
+    images,
     frames: {
       requestFrame: (cb) => requestAnimationFrame(cb),
       cancelFrame: (id) => cancelAnimationFrame(id),
@@ -207,6 +221,7 @@ async function buildBoardSession(
   activeTool = () => engine.tool();
   undo.push(() => engine.dispose());
   redraw = () => engine.redraw();
+  report = (m) => engine.report(m);
 
   // Échelon 1 de DA9 : fusionnés et prédits ; pointerrawupdate coupé (pas de prédits sous Chromium avec lui).
   // Paume (D18, réglage) : lue à chaque pose du stylet.
@@ -294,10 +309,15 @@ async function buildBoardSession(
     { passive: false, signal },
   );
 
+  /** Boîte affichée de l'image sélectionnée seule (I33), pixels source. */
+  const imageSize = (id: string | null | undefined): readonly [number, number] | null => {
+    const el = id ? doc.element(id) : null;
+    return el?.kind === "image" ? displaySize(el.image) : null;
+  };
   const mark = (s: EngineState): void => {
     stage.dataset["elements"] = String(s.elementCount);
     stage.dataset["version"] = String(s.version);
-    const tags = stageTags(s);
+    const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage) });
     stage.dataset["page"] = tags.page;
     stage.dataset["selection"] = tags.selection;
     stage.dataset["bounds"] = tags.bounds;
@@ -307,10 +327,13 @@ async function buildBoardSession(
     stage.dataset["tableShades"] = tags.tableShades;
     stage.dataset["units"] = tags.units;
     stage.dataset["grouped"] = tags.grouped;
+    stage.dataset["pixels"] = tags.pixels;
+    stage.dataset["image"] = tags.image;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
   const offState = engine.onState(mark);
+  remark = () => mark(engine.state());
   const markEchelons = (): void => {
     stage.dataset["echelons"] = echelonsTag(effective());
   };
@@ -394,6 +417,7 @@ async function buildBoardSession(
       middlePan.dispose();
       sampler.dispose();
       engine.dispose();
+      runner?.dispose();
       images.dispose();
       freeTiles();
       choice.release();

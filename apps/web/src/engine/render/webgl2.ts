@@ -10,7 +10,7 @@ import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visiblePageRect } from "../page";
 import { PEN_HALF_WIDTH } from "./canvas2d";
 import type { EditOverlay } from "./overlay";
-import type { EraserPreview, GridPreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
+import type { EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -269,7 +269,7 @@ export class WebGL2LiveRenderer implements Renderer {
   readonly badColors = new Set<string>();
 
   constructor(
-    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview"> & { readonly pageColor?: string },
+    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview" | "setImagePreview"> & { readonly pageColor?: string },
     private readonly gl: WebGL2RenderingContext,
   ) {
     this.res = setup(gl);
@@ -307,6 +307,11 @@ export class WebGL2LiveRenderer implements Renderer {
 
   setGridPreview(p: GridPreview | null): void {
     this.scene.setGridPreview(p);
+  }
+
+  /** C5 : l'image se dessine sur la scène Canvas 2D ; WebGL2 ne dessine que l'encre vive. */
+  setImagePreview(p: ImagePreview | null): void {
+    this.scene.setImagePreview(p);
   }
 
   resize(width: number, height: number, dpr: number): void {

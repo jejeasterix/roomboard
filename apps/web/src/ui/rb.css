@@ -26,6 +26,8 @@
 #echelons-notes { margin-left: 8px; color: #b45309; }
 .rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
 .rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: 100%; max-height: 100%; overflow: auto; background: #ffffff; border: 1px solid #a1a1aa; }
+/* Panneau de l'image (C5, I26) : calé à droite, l'image déposée au centre ou à gauche reste visible. */
+.rb-popover[data-panel="image"] { justify-self: end; }
 /* Scène (règles d'index.html du lot 4 : sans elles, le navigateur fait défiler ou sélectionne au lieu de tracer). */
 .rb-stages { grid-area: stage; position: relative; overflow: hidden; }
 .rb-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }

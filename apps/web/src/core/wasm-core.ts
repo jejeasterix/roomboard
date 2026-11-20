@@ -14,6 +14,7 @@ import type {
   GridLevel,
   GridLines,
   GridView,
+  ImageParams,
   Matrix,
   PageView,
   PdfPageSize,
@@ -198,7 +199,7 @@ export function toElementView(v: unknown): ElementView | null {
       if (!isRecord(i)) throw new Error(ELEMENT);
       const { asset, w, h } = i;
       if (typeof asset !== "string" || typeof w !== "number" || typeof h !== "number") throw new Error(ELEMENT);
-      return { ...base, kind, image: { asset, w, h } };
+      return { ...base, kind, image: { asset, w, h, ...toImageParams(i) } };
     }
     case "table":
       return { ...base, kind, table: toTable(v["table"]) };
@@ -341,6 +342,78 @@ export function gridArgs(g: GridView): [boolean, boolean, boolean, string[], str
   return [g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums];
 }
 
+/** Types admis par `normalizeParams` du faux cœur (le domaine reste au cœur) : `crop` quatre nombres, booléens, nombres
+ *  (null vaut neutre pour ces trois-là), `transparent` aux quatre champs typés. */
+function wellTyped(p: ImageParams): boolean {
+  const r = p as Readonly<Record<string, unknown>>;
+  const bool = (v: unknown): boolean => v === undefined || typeof v === "boolean";
+  const num = (v: unknown): boolean => v === undefined || v === null || typeof v === "number";
+  const crop = r["crop"];
+  const t = r["transparent"];
+  return (
+    (crop === undefined || (isNumbers(crop) && crop.length === 4)) &&
+    bool(r["flipX"]) &&
+    bool(r["flipY"]) &&
+    num(r["quarterTurns"]) &&
+    num(r["brightness"]) &&
+    num(r["contrast"]) &&
+    (t === undefined ||
+      (isRecord(t) && typeof t["color"] === "string" && typeof t["tolerance"] === "number" && typeof t["soft"] === "number" && typeof t["contiguous"] === "boolean"))
+  );
+}
+
+/** Quarts de tour hors domaine (I5) : un réglage mal typé part ainsi au cœur, qui le refuse par BadImageParams à son rang
+ *  (élément, image lisible, réglages, matrice), comme le faux cœur ; lever ici répondrait avant « élément inconnu ». */
+const MISTYPED_TURNS = 4;
+
+/** Arguments de `set_image_params` (C5, I6) : rognage vide ou [x, y, w, h], deux booléens, trois nombres, couleur ou
+ *  undefined, [tolérance, plume, contigu en 0 ou 1] ou vide ; les valeurs sont contrôlées par le cœur. */
+export function imageParamsArgs(p: ImageParams): [Float64Array, boolean, boolean, number, number, number, string | undefined, Float64Array] {
+  if (!wellTyped(p)) return [new Float64Array(), false, false, MISTYPED_TURNS, 0, 0, undefined, new Float64Array()];
+  const t = p.transparent;
+  return [
+    new Float64Array(p.crop ?? []),
+    p.flipX === true,
+    p.flipY === true,
+    p.quarterTurns ?? 0,
+    p.brightness ?? 0,
+    p.contrast ?? 0,
+    t?.color,
+    new Float64Array(t === undefined ? [] : [t.tolerance, t.soft, t.contiguous ? 1 : 0]),
+  ];
+}
+
+/** Réglages d'une image lus du cœur (C5) : un champ absent reste absent, un neutre n'est pas recopié ; un champ présent
+ *  mal typé lève (dérive de forme entre Rust et TS). */
+export function toImageParams(i: Record<string, unknown>): ImageParams {
+  const out: Record<string, unknown> = {};
+  const crop = i["crop"];
+  if (crop !== undefined && crop !== null) {
+    if (!Array.isArray(crop) || crop.length !== 4 || !crop.every((n) => typeof n === "number")) throw new Error(ELEMENT);
+    out["crop"] = [crop[0], crop[1], crop[2], crop[3]];
+  }
+  for (const k of ["flipX", "flipY"] as const) {
+    const b = i[k];
+    if (b === undefined || b === null) continue;
+    if (typeof b !== "boolean") throw new Error(ELEMENT);
+    if (b) out[k] = true;
+  }
+  for (const k of ["quarterTurns", "brightness", "contrast"] as const) {
+    const n = i[k];
+    if (n === undefined || n === null) continue;
+    if (typeof n !== "number") throw new Error(ELEMENT);
+    if (n !== 0) out[k] = n;
+  }
+  const t = i["transparent"];
+  if (t !== undefined && t !== null) {
+    if (!isRecord(t)) throw new Error(ELEMENT);
+    const { color, tolerance, soft, contiguous } = t;
+    if (typeof color !== "string" || typeof tolerance !== "number" || typeof soft !== "number" || typeof contiguous !== "boolean") throw new Error(ELEMENT);
+    out["transparent"] = { color, tolerance, soft, contiguous };
+  }
+  return out as ImageParams;
+}
+
 class WasmCoreDocument implements CoreDocument {
   constructor(private readonly d: Wasm.Document, private readonly mod: WasmModule) {}
 
@@ -425,6 +498,9 @@ class WasmCoreDocument implements CoreDocument {
         const t = cmd.target;
         return toChange(this.d.fill(cmd.page, t.kind, t.kind === "background" ? undefined : t.id, cmd.color ?? undefined));
       }
+      case "SetImageParams":
+        // C5 (I6) : réglages à plat ; seule la référence de l'asset vit dans l'élément, jamais ses octets.
+        return toChange(this.d.set_image_params(cmd.id, ...imageParamsArgs(cmd.params), new Float64Array(cmd.matrix)));
     }
   }
 

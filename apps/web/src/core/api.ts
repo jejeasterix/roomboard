@@ -16,6 +16,8 @@
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 // C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 // C3 : Group, Ungroup ; ElementBase.group ; extract, insertFragment, insertPages, saveFragment(Parts), loadFragment(Parts).
+// C5 : SetImageParams (état voulu complet des réglages et nouvelle matrice, une étape, D38) ; ImageData porte les réglages
+// (neutres absents, I4) ; la boîte locale d'une image est sa boîte affichée (image-params.ts, displaySize).
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -132,6 +134,9 @@ export type Command =
     }
   /** C6a (D12) : color null = « Aucune » (intérieur retiré, fond #ffffff, contour inchangé) ; même valeur : aucune étape. */
   | { readonly type: "Fill"; readonly page: string; readonly target: FillTarget; readonly color: string | null }
+  /** C5 (I6) : état voulu complet des réglages (neutres retirés par le cœur) et nouvelle matrice (placeAfter, I9) ;
+   *  même état et même matrice : aucune étape ; hors domaine : BAD_IMAGE_PARAMS_MESSAGE. */
+  | { readonly type: "SetImageParams"; readonly id: string; readonly params: ImageParams; readonly matrix: Matrix }
   /** C3 (Z1) : deux unités au moins (objet seul ou groupe extérieur entier) d'une même page ; un id d'un groupe vaut tout
    *  son groupe extérieur ; ids = éléments écrits, triés. */
   | { readonly type: "Group"; readonly ids: readonly string[] }
@@ -148,7 +153,21 @@ export interface TextData {
   readonly spans: readonly TextSpan[];
 }
 
-export interface ImageData { readonly asset: string; readonly w: number; readonly h: number }
+/** C5 (U29, I5) : couleur rendue transparente ; `color` en `#rrggbb` minuscules ; `tolerance`, `soft` entiers de 0 à 100. */
+export interface TransparentColor { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean }
+/** C5 (U29, I2, I4) : réglages non destructifs, champ absent = neutre. `crop` = [x, y, w, h] en pixels source ;
+ *  `quarterTurns` 0 à 3, sens horaire ; `brightness`, `contrast` entiers de −100 à 100. */
+export interface ImageParams {
+  readonly crop?: readonly [number, number, number, number];
+  readonly flipX?: boolean;
+  readonly flipY?: boolean;
+  readonly quarterTurns?: number;
+  readonly brightness?: number;
+  readonly contrast?: number;
+  readonly transparent?: TransparentColor;
+}
+/** Image (U5) : `w`, `h` = taille source en pixels ; réglages de C5 à plat (I8 : boîte affichée, `displaySize`). */
+export type ImageData = { readonly asset: string; readonly w: number; readonly h: number } & ImageParams;
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
 
 export type TableAxis = "row" | "col";
@@ -309,6 +328,10 @@ export const DEFAULT_TABLE_COLOR = "#000000";
 export const DEFAULT_TABLE_SIZE = 36;
 /** Messages C3 du cœur (G10), repris à l'identique par la fausse liaison. */
 export const BAD_GROUP_MESSAGE = "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)";
+
+/** C5 (I5) : message de `BadImageParams` du cœur, repris par la fausse liaison. */
+export const BAD_IMAGE_PARAMS_MESSAGE =
+  "réglages d'image invalides (image lisible, rognage entier dans l'image, quarts de tour 0 à 3, luminosité et contraste entiers de -100 à 100, couleur #rrggbb, tolérance et plume entières de 0 à 100 attendus)";
 export const NOT_A_DOCUMENT_MESSAGE = "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page";
 export const NOT_A_FRAGMENT_MESSAGE = "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages";
 export const unknownKindMessage = (kind: string): string =>

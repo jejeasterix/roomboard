@@ -62,6 +62,7 @@ import type {
 } from "./api";
 import {
   BAD_GROUP_MESSAGE,
+  BAD_IMAGE_PARAMS_MESSAGE,
   DEFAULT_ASSET_MIME,
   DEFAULT_BACKGROUND,
   DEFAULT_GRID_COLOR,
@@ -86,6 +87,7 @@ import {
 import { isAssetId } from "./asset-store";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
+import { displaySize, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
 interface FakeUnknown {
@@ -151,6 +153,7 @@ const MESSAGES = {
   badTable: "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)",
   badFill: "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)",
   badGroup: BAD_GROUP_MESSAGE,
+  badImageParams: BAD_IMAGE_PARAMS_MESSAGE,
 } as const;
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
@@ -415,7 +418,7 @@ function worldPolygon(e: FakeElement): number[] | null {
     : e.text
       ? boxPolygon(e.text.boxWidth, e.text.boxHeight)
       : e.image
-        ? boxPolygon(e.image.w, e.image.h)
+        ? boxPolygon(...displaySize(e.image))
         : e.table
           ? boxPolygon(tableWidth(e.table), tableHeight(e.table))
           : e.unknown
@@ -1016,6 +1019,28 @@ class FakeDocument implements CoreDocument {
         if (shape === undefined || shape.fill === color) return this.unchanged();
         return write((old) => (old.shape ? { ...old, shape: { ...old.shape, fill: color } } : old));
       }
+      case "SetImageParams": {
+        // Ordre du cœur (`image.rs`) : élément, image lisible, réglages (I5), matrice ; même état et même matrice : aucune étape.
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const im = found.element.image;
+        if (!im || found.element.malformed) throw new Error(MESSAGES.badImageParams);
+        const next = normalizeParams(cmd.params, im.w, im.h);
+        if (next === null) throw new Error(MESSAGES.badImageParams);
+        if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
+        const sameMatrix = cmd.matrix.every((v, k) => v === found.element.transform[k]);
+        if (sameParams(paramsOf(im), next) && sameMatrix) return this.unchanged();
+        const page = found.page.id;
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page);
+          const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
+          const old = p?.elements[i];
+          if (p && old?.image) {
+            p.elements[i] = { ...old, transform: cmd.matrix, image: { asset: old.image.asset, w: old.image.w, h: old.image.h, ...next } };
+          }
+          return { pages: [page], ids: [cmd.id], removed: [] };
+        });
+      }
     }
   }
 
@@ -1424,7 +1449,12 @@ function loadElement(e: SavedElement): FakeElement {
       return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, malformed: rest, ...group };
     }
   }
-  if (e.kind === "image" && e.image) return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image: e.image, ...group };
+  if (e.kind === "image" && e.image) {
+    // C5 : réglages relus champ par champ (un champ illisible est lu comme absent, U3).
+    const im = e.image;
+    const image: ImageData = { asset: im.asset, w: im.w, h: im.h, ...readParams(im as unknown as Readonly<Record<string, unknown>>, im.w, im.h) };
+    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...group };
+  }
   return {
     id: e.id,
     transform: toMatrix6(e.transform) ?? IDENTITY,

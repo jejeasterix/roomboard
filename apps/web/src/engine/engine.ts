@@ -4,12 +4,13 @@
  * au relâché (D38) ; toute erreur du cœur (dernière page, points invalides…) est attrapée et rendue dans l'état.
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
+import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
 import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
+import { editAction, enterAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -36,6 +37,8 @@ export interface EngineState {
   readonly selectionUnits: number;
   /** C3 (Z13) : un élément sélectionné au moins porte un groupe. */
   readonly selectionGrouped: boolean;
+  /** C5 (I25, I33) : id de l'image sélectionnée seule ; null sinon. Facultatif (comme fillColor) : le moteur le publie toujours. */
+  readonly selectionImage?: string | null;
   /** Cellule active de l'outil Tableau (C10a) : rangs et taille du tableau ; null sans cellule active. */
   readonly tableCell: TableCellState | null;
   /** C10b (F29) : zones fusionnées et cellules ombrées de tous les tableaux de la page montrée, quel que soit l'outil. */
@@ -79,6 +82,8 @@ export interface EngineDeps {
   readonly frames: FrameLoopDeps;
   readonly tools: ToolFactories;
   readonly penStyle?: StrokeStyle;
+  /** C5 (I29) : couleur d'origine d'un pixel source, pour la pipette ; absent : la pipette ne rend rien. */
+  readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
 }
 
 export interface Engine {
@@ -123,6 +128,10 @@ export interface Engine {
   previewGrid(grid: GridView | null): void;
   /** Fin de l'aperçu : la grille du document revient ; sans aperçu, rien. Changer de page la coupe aussi (E8). */
   endGridPreview(): void;
+  /** C5 (DAI4) : séance de retouche de l'image `id` de la page montrée (une seule à la fois) ; null si ce n'en est pas une. */
+  editImage(id: string): ImageEdit | null;
+  /** C5 (I24) : message dans l'état (`#etat`), sans écriture. */
+  report(message: string): void;
   /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
   setPenStyle(s: StrokeStyle): void;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
@@ -241,6 +250,7 @@ export function createEngine(deps: EngineDeps): Engine {
     previewing = false;
     renderer.setGridPreview(null);
   }
+  let imageEdit: ImageEditSession | null = null;
   const stateListeners = new Set<(s: EngineState) => void>();
   const drawnListeners = new Set<(now: number) => void>();
   const owner = new Map<number, GestureTool>();
@@ -294,6 +304,7 @@ export function createEngine(deps: EngineDeps): Engine {
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
       selectionUnits: units.units,
       selectionGrouped: units.grouped,
+      selectionImage: sel.length === 1 && doc.element(sel[0] ?? "")?.kind === "image" ? (sel[0] ?? null) : null,
       tableCell: tableTool.cellState(),
       tableMerges: tableCounts().merges,
       tableShades: tableCounts().shades,
@@ -325,6 +336,7 @@ export function createEngine(deps: EngineDeps): Engine {
     closeAll("abort");
     leaveAll("page");
     stopPreview();
+    imageEdit?.close();
     cameras.set(pageId, camera);
     pageId = id;
     lastIndex = doc.pageIds().indexOf(id);
@@ -374,6 +386,7 @@ export function createEngine(deps: EngineDeps): Engine {
       return null;
     }
     renderer.invalidate(change);
+    imageEdit?.changed(doc.version());
     error = null;
     followPages(before, showAppeared);
     selectTool.prune();
@@ -391,8 +404,11 @@ export function createEngine(deps: EngineDeps): Engine {
     const before = doc.pageIds();
     const restore = which === "undo" ? lastDeleted : null;
     lastDeleted = null;
+    const version = doc.version();
     const change = which === "undo" ? doc.undo() : doc.redo();
     renderer.invalidate(change);
+    // Rien à annuler ou à rétablir : aucune écriture, le brouillon de la retouche reste (I31).
+    if (doc.version() !== version) imageEdit?.changed(doc.version());
     error = null;
     followPages(before, true);
     selectTool.prune();
@@ -444,7 +460,9 @@ export function createEngine(deps: EngineDeps): Engine {
     const parts: LivePart[] = toolList.map((t) => t.live());
     const hidden = new Set<string>();
     for (const p of parts) for (const id of p.hidden) hidden.add(id);
-    const overlay = mergeOverlays(parts.map((p) => p.overlay));
+    const merged = mergeOverlays(parts.map((p) => p.overlay));
+    // C5 (I28) : pendant le rognage, le cadre de la sélection cède la place au cadre de rognage.
+    const overlay = imageEdit?.mode() === "crop" ? { ...merged, frame: null, handles: false } : merged;
     const key = overlayKey(overlay);
     if (sceneDirty || !sameSet(hidden, lastHidden) || key !== lastOverlay) {
       // Un seul `doc.page` par scène (PF29) : fond de couleur (C6a) et fond de page (C12).
@@ -461,7 +479,7 @@ export function createEngine(deps: EngineDeps): Engine {
     }
     renderer.drawLive({ strokes: parts.flatMap((p) => p.strokes), erasers: parts.flatMap((p) => p.erasers) }, camera);
     for (const cb of drawnListeners) cb(now);
-    if (!toolList.some((t) => t.active())) loop.stop();
+    if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true) loop.stop();
   }
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
@@ -476,7 +494,7 @@ export function createEngine(deps: EngineDeps): Engine {
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
       lastDeleted = null;
-      const g = tools[t];
+      const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : tools[t];
       owner.set(pointerId, g);
       emitIfSelectionChanged(() => g.begin(pointerId, samples));
       loop.start();
@@ -561,6 +579,25 @@ export function createEngine(deps: EngineDeps): Engine {
         return true;
       }
       const edit = editAction(e);
+      const action = keyAction(e);
+      if (imageEdit !== null && imageEdit.mode() !== "idle") {
+        // C5 (I28) : pendant le rognage ou la pipette, Échap sort du mode, Suppr est pris sans effet, Entrée valide le
+        // rognage, Ctrl+Z / Ctrl+Y sortent du mode sans écrire puis annulent ou rétablissent.
+        if (edit === "escape") {
+          imageEdit.cancelMode();
+          return true;
+        }
+        if (edit === "delete") return true;
+        if (enterAction(e)) {
+          if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
+          return true;
+        }
+        if (action === "undo" || action === "redo") {
+          imageEdit.cancelMode();
+          history(action);
+          return true;
+        }
+      }
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
@@ -576,7 +613,6 @@ export function createEngine(deps: EngineDeps): Engine {
         }
         return true;
       }
-      const action = keyAction(e);
       if (action === null) return false;
       // C3 (Z13, HZ1-2) : Ctrl+G et Ctrl+Maj+G sont pris même sans effet.
       if (action === "group") {
@@ -656,6 +692,26 @@ export function createEngine(deps: EngineDeps): Engine {
       stopPreview();
       requestScene();
     },
+    editImage(id) {
+      if (doc.element(id)?.kind !== "image" || !doc.elementIds(pageId).includes(id)) return null;
+      imageEdit?.close();
+      const session = createImageEdit({
+        ctx,
+        id,
+        setPreview: (p) => renderer.setImagePreview(p),
+        colorAt: (asset, x, y) => deps.images?.colorAt(asset, x, y) ?? null,
+        closed: () => {
+          deps.images?.dropPreview?.(id); // m4 : l'emplacement d'aperçu de l'image est jeté avec la séance
+          if (imageEdit === session) imageEdit = null;
+        },
+      });
+      imageEdit = session;
+      return session;
+    },
+    report(message) {
+      error = message;
+      emit();
+    },
     setFillColor(c) {
       if (c !== null && (typeof c !== "string" || !validColor(c))) return;
       fillColor = c;
@@ -712,6 +768,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     frameDurations: () => loop.durations(),
     dispose() {
+      imageEdit?.close();
       closeAll("abort");
       loop.stop();
       stateListeners.clear();
