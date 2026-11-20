@@ -101,6 +101,24 @@ afterEach(() => {
 });
 
 describe("createBoardSession (T93)", () => {
+  it("création qui échoue : aucune scène ne reste dans le conteneur, l'erreur est relancée", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor() {
+          throw new Error("boum");
+        }
+      },
+    );
+    try {
+      await expect(createBoardSession(fakeCore.blank(), shared)).rejects.toThrow("boum");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(container.querySelectorAll(".rb-stage")).toHaveLength(0);
+    expect(container.children).toHaveLength(0);
+  });
+
   it("activate pose les ids #stage/#scene/#interaction/#texte-edition ; deactivate les retire et cache la scène", async () => {
     const s = await createBoardSession(fakeCore.blank(), shared);
     s.activate();

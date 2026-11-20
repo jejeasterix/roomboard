@@ -44,6 +44,27 @@ describe("importFiles (T86, usage § 8 point 12, Q1)", () => {
     expect(notify).toHaveBeenCalledWith("Ouverture impossible (x.roomboard) : disque");
   });
 
+  it("onglets pleins : la boucle s'arrête au premier refus, une seule boîte", async () => {
+    let slots = 1;
+    const opened: string[] = [];
+    const notify = vi.fn(async (_m: string) => undefined);
+    const openDocument = vi.fn(async (f: { name: string }) => {
+      if (slots === 0) {
+        await notify("12 onglets au plus");
+        return false;
+      }
+      slots -= 1;
+      opened.push(f.name);
+      return true;
+    });
+    const r = await createImporter({ openDocument, notify, full: () => slots === 0 })
+      .importFiles(["a", "b", "c", "d", "e"].map((n) => file(`${n}.roomboard`)));
+    expect(opened).toEqual(["a.roomboard"]);
+    expect(openDocument).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(r.failed).toEqual(["b.roomboard", "c.roomboard", "d.roomboard", "e.roomboard"]);
+  });
+
   it("liste vide : rien", async () => {
     const notify = vi.fn(async () => undefined);
     expect(await createImporter({ openDocument: async () => true, notify }).importFiles([])).toEqual({ opened: [], refused: [], failed: [] });
