@@ -1,3 +1,4 @@
+import type { FormatAction } from "../engine/rich-edit";
 import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
@@ -11,9 +12,11 @@ export interface ToolbarHost {
   setMode(mode: StartMode): void;
   /** Pastille de remplissage de la rangée du tableau (C10a, T12) ; null retire. */
   tableFill(fill: string | null): void;
+  /** Bouton de la rangée Format (C7b, R13) : relayé au moteur, puis à l'outil actif. */
+  textFormat(a: FormatAction): void;
 }
 export interface HostTargets {
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "tableAction" | "tableFill">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
   toggle(panel: "settings" | "profiles" | "grid"): void;
@@ -60,6 +63,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     },
     dropFiles: (files, at) => t.importFiles(files, at),
     tableFill: (fill) => t.engine().tableFill(fill),
+    textFormat: (a) => t.engine().textFormat(a),
     setMode(mode) {
       // Tableau : déjà affiché, rien à faire ni à dire. Annotation du bureau : point d'accroche de C11a, sans effet ici.
       if (mode === "board") return;

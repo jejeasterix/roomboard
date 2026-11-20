@@ -258,7 +258,7 @@ describe("Toolbar — rangée Format (C7b, R13)", () => {
     expect(container.querySelectorAll("button[data-format], button[data-format-size], button[data-format-color]")).toHaveLength(12);
     setV({ ...VIEW, tool: "table", tableCell: null });
     const buttons = [...container.querySelectorAll("button")];
-    const lastFill = buttons.findLastIndex((b) => b.hasAttribute("data-table-fill"));
+    const lastFill = buttons.map((b) => b.hasAttribute("data-table-fill")).lastIndexOf(true);
     const firstFormat = buttons.findIndex((b) => b.hasAttribute("data-format"));
     expect(lastFill).toBeGreaterThanOrEqual(0);
     expect(firstFormat).toBeGreaterThan(lastFill);
