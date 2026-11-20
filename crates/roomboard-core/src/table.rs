@@ -278,12 +278,29 @@ fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
     })
 }
 
-/// `cells` du tableau, posé neuf s'il manque ou n'est pas un `Y.Map` (PC12).
-fn cells_or_new(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
-    match cells {
+/// Cellule absente `(row, col)` posée en `Y.Map{ text, fill? }` ; `cells` posé neuf s'il manque ou n'est pas un
+/// `Y.Map` (PC12).
+fn insert_cell(
+    txn: &mut TransactionMut,
+    e: &MapRef,
+    cells: Option<&MapRef>,
+    (row, col): (&str, &str),
+    text: &str,
+    fill: Option<&str>,
+) {
+    let cells = match cells {
         Some(m) => m.clone(),
         None => e.insert(txn, "cells", MapPrelim::default()),
+    };
+    let mut fields: Vec<(&str, In)> = vec![("text", In::from(TextPrelim::new(text)))];
+    if let Some(f) = fill {
+        fields.push(("fill", In::from(f)));
     }
+    cells.insert(
+        txn,
+        cell_key(row, col),
+        fields.into_iter().collect::<MapPrelim>(),
+    );
 }
 
 impl RawTable {
@@ -294,8 +311,12 @@ impl RawTable {
         }
     }
 
-    fn has_cell(&self, row: &str, col: &str) -> bool {
-        self.rows.iter().any(|l| l.id == row) && self.cols.iter().any(|l| l.id == col)
+    /// Ligne de la cellule `(row, col)`, si sa ligne et sa colonne sont lisibles.
+    fn cell_row(&self, row: &str, col: &str) -> Option<&Line> {
+        self.rows
+            .iter()
+            .find(|l| l.id == row)
+            .filter(|_| self.cols.iter().any(|l| l.id == col))
     }
 }
 
@@ -376,14 +397,7 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
-        if !raw.has_cell(row, col) {
-            return Err(CommandError::BadTable);
-        }
-        let line = raw
-            .rows
-            .iter()
-            .find(|l| l.id == row)
-            .ok_or(CommandError::BadTable)?;
+        let line = raw.cell_row(row, col).ok_or(CommandError::BadTable)?;
         let cell = {
             let txn = self.read();
             read_cell(&txn, raw.cells.as_ref(), row, col)
@@ -407,12 +421,7 @@ impl Document {
                         c.map.insert(&mut txn, "text", TextPrelim::new(content));
                     }
                     None => {
-                        let cells = cells_or_new(&mut txn, &e, raw.cells.as_ref());
-                        cells.insert(
-                            &mut txn,
-                            cell_key(row, col),
-                            MapPrelim::from([("text", In::from(TextPrelim::new(content)))]),
-                        );
+                        insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), content, None)
                     }
                 }
             }
@@ -538,7 +547,7 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
-        if !raw.has_cell(row, col) {
+        if raw.cell_row(row, col).is_none() {
             return Err(CommandError::BadTable);
         }
         let cell = {
@@ -555,15 +564,7 @@ impl Document {
                     c.map.insert(&mut txn, "fill", In::from(f));
                 }
                 (Some(f), None) => {
-                    let cells = cells_or_new(&mut txn, &e, raw.cells.as_ref());
-                    cells.insert(
-                        &mut txn,
-                        cell_key(row, col),
-                        MapPrelim::from([
-                            ("text", In::from(TextPrelim::new(""))),
-                            ("fill", In::from(f)),
-                        ]),
-                    );
+                    insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), "", Some(f))
                 }
                 (None, Some(c)) => {
                     c.map.remove(&mut txn, "fill");
