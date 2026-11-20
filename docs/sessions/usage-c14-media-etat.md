@@ -1,7 +1,7 @@
 # État — usage-c14-media
 
-Statut : clôture (PR à fusionner)
-Étage : 4 — depuis 2026-11-20 21:27
+Statut : clos
+Étage : 4 — clos le 2026-11-20 21:35
 Gabarit : chantier (11 tâches, un lot)
 Objectif : Une vidéo ou un son déposé devient un élément `media` sur la page montrée : lecture dans la page avec les commandes RoomBoard, rognage du début et de la fin, boucle et volume ; inclus dans le `.roomboard` jusqu'à 50 Mo, lié en coque au-delà, refusé sur le web au-delà de 100 Mo.
 Avancement : 13/13 tâches terminées
@@ -44,7 +44,7 @@ Table complète : docs/plans/usage-c14-media-PLAN.md (745c669, 11 tâches, 31 li
 - Essai e2e : vidéo WebM (MediaRecorder) et son WAV écrit à la main, générés dans le test (Chromium Linux sans H.264).
 
 ## Terminé quand
-Élément `media` du cœur, importeur navigateur (octets magiques), image dans le canvas pendant la lecture et `poster` sinon, commandes (lecture, pause, rognage, boucle, volume), inclus ou lié selon U26, message MKV/AVI, CSP de la coque, aller-retour `.roomboard`, compatibilité avant C14 · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste média (déposer vidéo et son générés, lire, rogner, boucle, enregistrer, rouvrir, média dans le fichier) · capture d'une vidéo en lecture dans docs/essais/ · scène ≥ 640 px mesurée · plafonds Wasm inchangés, `formats` non touché · PR fusionnée par fusion locale --no-ff et push sans --force
+Élément `media` du cœur, importeur navigateur (octets magiques), image dans le canvas pendant la lecture et `poster` sinon, commandes (lecture, pause, rognage, boucle, volume), inclus ou lié selon U26, message MKV/AVI, CSP de la coque, aller-retour `.roomboard`, compatibilité avant C14 · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste média (déposer vidéo et son générés, lire, rogner, boucle, enregistrer, rouvrir, média dans le fichier) · capture d'une vidéo en lecture dans docs/essais/ · scène ≥ 640 px mesurée · plafonds Wasm inchangés, `formats` non touché · PR fusionnée par fusion locale --no-ff et push sans --force — fait : PR #23, main 858fd82 ; verifier.sh --e2e OK sur 28ecaa1
 
 ## Choix tranchés seul (suite)
 - Revue immédiate des tâches `concepteur-critique` (T1, T5, T8, T10) remplacée par la double relecture de fin (borne de 4 h).
@@ -77,7 +77,7 @@ ouvertes : — · passées : —
 ---
 id: 2026-11-20-roomboard-usage-c14-media-clos
 type: journal
-summary: "RoomBoard usage C14 vidéo et son clos : élément media (rognage, boucle, volume, une étape par réglage), lecture dans le canvas, inclus jusqu'à 50 Mo, lié en coque au-delà, refus web > 100 Mo, MKV/AVI refusés ; PR __PR__ fusionnée."
+summary: "RoomBoard usage C14 vidéo et son clos : élément media (rognage, boucle, volume, une étape par réglage), lecture dans le canvas, inclus jusqu'à 50 Mo, lié en coque au-delà, refus web > 100 Mo, MKV/AVI refusés ; PR 23 fusionnée."
 created: 2026-11-20
 project: "[[roomboard]]"
 tags: [projet/roomboard, chaine/nouvelle-feature]
@@ -119,4 +119,4 @@ evidence: "docs/plans/usage-c14-media-cadrage.md § DAM1 à DAM5, dépôt jejeas
 
 ### 3. Fiche `01_Projets/roomboard.md`, ligne « Vague 2 en cours »
 
-Remplacer « C5 édition d'image en cours. » par : « C5 édition d'image clos ; C14 vidéo et son (élément media, lecture dans le canvas, lien en coque) clos (PR __PR__, `main` __MAIN__) — voir [[2026-11-20-roomboard-usage-c14-media-clos]] et [[NNNN-roomboard-media-lie-en-coque-lecteurs-hors-coeur]]. »
+Remplacer « C5 édition d'image en cours. » par : « C5 édition d'image clos ; C14 vidéo et son (élément media, lecture dans le canvas, lien en coque) clos (PR 23, `main` 858fd82) — voir [[2026-11-20-roomboard-usage-c14-media-clos]] et [[NNNN-roomboard-media-lie-en-coque-lecteurs-hors-coeur]]. »
