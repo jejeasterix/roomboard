@@ -1480,6 +1480,58 @@ pub(crate) mod tests {
         assert_eq!(view(&d, &id), before);
     }
 
+    /// Patron écarté : copier la taille voisine sans borner le nouveau total (34 × 1e37 = 3,4e38 tient en f32, une
+    /// colonne de plus donne 3,5e38 > `f32::MAX`, tableau intouchable) ; même garde que `SetTableCell` : le total
+    /// après l'insertion, sur l'axe inséré seulement.
+    #[test]
+    fn insert_line_refuses_a_total_beyond_f32() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let wide = d
+            .apply(Command::AddTable {
+                page: p,
+                x: 0.0,
+                y: 0.0,
+                cols: 34,
+                rows: 1,
+                col_width: 1e37,
+                row_height: 64.0,
+                color: "#000000".into(),
+                size: 36.0,
+            })
+            .expect("3,4e38 tient en f32")
+            .ids[0]
+            .clone();
+        let tall = add(&mut d, 2, 2);
+        d.apply(Command::SetTableSizes {
+            id: tall.clone(),
+            col_width: 240.0,
+            row_height: 1.7e38,
+        })
+        .expect("3,4e38 tient en f32");
+        let ins = |d: &mut Document, id: &str, axis: TableAxis, at: u32| {
+            d.apply(Command::InsertTableLine {
+                id: id.to_string(),
+                axis,
+                at,
+            })
+        };
+        let before = (view(&d, &wide), view(&d, &tall));
+        let w = writes(&d);
+        for (id, axis, at) in [
+            (&wide, TableAxis::Col, 34),
+            (&wide, TableAxis::Col, 0),
+            (&tall, TableAxis::Row, 2),
+            (&tall, TableAxis::Row, 1),
+        ] {
+            assert_eq!(ins(&mut d, id, axis, at), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert_eq!((view(&d, &wide), view(&d, &tall)), before);
+        ins(&mut d, &wide, TableAxis::Row, 1).expect("l'autre axe reste libre");
+        ins(&mut d, &tall, TableAxis::Col, 2).expect("l'autre axe reste libre");
+    }
+
     /// Clé `"<row>:<col>"` : un id contenant `:` la rendrait ambiguë (`r:1` + `c` = `r` + `1:c`) ; une telle ligne est
     /// illisible comme les autres (sautée, gardée) et, s'il n'en reste aucune, le tableau se lit « inconnu ».
     #[test]
