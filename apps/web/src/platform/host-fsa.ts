@@ -5,8 +5,10 @@
 import {
   ensureExtension,
   hasErrorName,
-  IMPORT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
   IMPORT_FILTER,
+  RBITEM_EXTENSION,
+  RBITEM_MIME,
   ROOMBOARD_EXTENSION,
   ROOMBOARD_MIME,
   type DroppedFile,
@@ -37,7 +39,8 @@ export const IMPORT_TYPES: readonly PickerType[] = [
     description: IMPORT_FILTER.name,
     accept: {
       [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION],
-      "image/*": IMPORT_EXTENSIONS.filter((e) => e !== "roomboard").map((e) => `.${e}`),
+      [RBITEM_MIME]: [RBITEM_EXTENSION],
+      "image/*": IMAGE_EXTENSIONS.map((e) => `.${e}`),
     },
   },
 ];

@@ -237,6 +237,11 @@ export interface ImageTarget {
   alive?(): boolean;
   /** `engine.run` : null si le cœur refuse (message dans l'état du moteur). */
   run(cmd: Command): Change | null;
+  /**
+   * Z10 : insère un objet `.rbitem` (fragment, pas une `Command`) dans cet onglet ; `index` = rang dans l'appel
+   * (cascade, R4). Absent : `.rbitem` refusé. Faux : refus, le message est déjà dit.
+   */
+  insertFragment?(rbitem: Uint8Array, at: Point | null, index: number, name: string): Promise<boolean>;
 }
 
 /** Entrée `image` du registre (R1) : en-tête, décodage, empreinte, `AddImage` en une étape (R6). */

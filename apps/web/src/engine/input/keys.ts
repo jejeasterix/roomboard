@@ -1,4 +1,4 @@
-/** Raccourcis d'annulation (D11) : Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z ; Cmd sous macOS. */
+/** Raccourcis d'annulation (D11) : Ctrl+Z, Ctrl+Y, Ctrl+Maj+Z ; Cmd sous macOS. Ctrl+G grouper, Ctrl+Maj+G dégrouper (C3, Z13). */
 export interface KeyLike {
   readonly key: string;
   readonly ctrlKey: boolean;
@@ -9,7 +9,7 @@ export interface KeyLike {
   readonly target: { readonly tagName?: string; readonly isContentEditable?: boolean } | null;
 }
 
-export type KeyAction = "undo" | "redo";
+export type KeyAction = "undo" | "redo" | "group" | "ungroup";
 
 const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
@@ -30,6 +30,7 @@ export function keyAction(e: KeyLike): KeyAction | null {
   const key = e.key.toLowerCase();
   if (key === "z") return e.shiftKey ? "redo" : "undo";
   if (key === "y" && !e.shiftKey) return "redo";
+  if (key === "g") return e.shiftKey ? "ungroup" : "group";
   return null;
 }
 

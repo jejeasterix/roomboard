@@ -9,7 +9,7 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
     fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
-  const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn() } as unknown as HostTargets;
+  const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
   return { engine, t, host };
 }
@@ -159,5 +159,21 @@ describe("ToolbarHost — tableau (C10a, DAC4)", () => {
     host.textFormat({ type: "bold" });
     host.textFormat({ type: "color", color: null });
     expect(engine.textFormat.mock.calls).toEqual([[{ type: "bold" }], [{ type: "color", color: null }]]);
+  });
+});
+
+describe("hôte de la barre : C3", () => {
+  it("page-insert-file → insertPages()", () => {
+    const { t, host } = setup();
+    host.runAction("page-insert-file");
+    expect(vi.mocked((t as unknown as { insertPages: () => void }).insertPages)).toHaveBeenCalledTimes(1);
+    expect(Object.hasOwn(ACTIONS, "page-insert-file")).toBe(true);
+    expect(ACTION_TABLE["page-insert-file"]?.label).toBe("Insérer des pages…");
+  });
+  it("selection(a) relayée telle quelle", () => {
+    const { t, host } = setup();
+    host.selection("ungroup");
+    host.selection("export");
+    expect(vi.mocked((t as unknown as { selection: (a: string) => void }).selection).mock.calls).toEqual([["ungroup"], ["export"]]);
   });
 });

@@ -17,7 +17,7 @@ use crate::ink::points::InkPoint;
 use crate::shape::{box_polygon, shape_polygon};
 use crate::table::{self, TABLE_KIND};
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Bounds {
     pub x0: f64,
     pub y0: f64,

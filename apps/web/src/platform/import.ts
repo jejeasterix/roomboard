@@ -1,12 +1,12 @@
 /**
  * Entrée unique des fichiers (U23, R1) : dépôt web, dépôt dans la coque, collage, « Importer » et fichier passé au
  * lancement passent par `importFiles`. Registre par nature : `roomboard` (document, reconnu par l'extension) ouvre un
- * nouvel onglet (R2) ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
+ * nouvel onglet (R2) ; `rbitem` (objet, nom + en-tête ZIP) s'insère comme une image ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
  * Non reconnu : refusé avec `LATER_FORMAT_MESSAGE`. Hôtes web : 100 Mo au plus par fichier, contrôlé avant lecture (R15).
  * C10b (F28) : `sheet` (objet, `.xlsx`/`.xlsm` et en-tête ZIP) lit la première feuille dans un Worker jetable et pose un tableau.
  */
 import { messageOf } from "./controller";
-import { ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
@@ -72,8 +72,13 @@ export interface ImportHandler {
   run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
 }
 
+/** Nom qui se termine par `ext` (minuscules, point compris) et ne s'y réduit pas. */
+function hasExtension(name: string, ext: string): boolean {
+  return name.toLowerCase().endsWith(ext) && name.length > ext.length;
+}
+
 export function isRoomboardName(name: string): boolean {
-  return name.toLowerCase().endsWith(ROOMBOARD_EXTENSION) && name.length > ROOMBOARD_EXTENSION.length;
+  return hasExtension(name, ROOMBOARD_EXTENSION);
 }
 
 function roomboardHandler(deps: ImportDeps): ImportHandler {
@@ -94,13 +99,44 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
   };
 }
 
+/** En-tête d'un ZIP (`PK\x03\x04`) : un `.rbitem` (Z10) comme un `.xlsx` (F28) est un ZIP ; chacun est reconnu par son
+ *  nom ET cet en-tête, le nom seul les départage. */
+export const ZIP_MAGIC: readonly number[] = Object.freeze([0x50, 0x4b, 0x03, 0x04]);
+
+const hasZipMagic = (head: Uint8Array): boolean => head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b);
+
+export function isRbitemName(name: string): boolean {
+  return hasExtension(name, RBITEM_EXTENSION);
+}
+
+/** Entrée `rbitem` (objet, Z10) : remis à l'onglet lu au début de l'appel (R3), au rang de cascade de l'appel. */
+export function rbitemHandler(): ImportHandler {
+  return {
+    id: "rbitem",
+    nature: "objet",
+    detect: (head, name) => isRbitemName(name) && hasZipMagic(head),
+    async run(f, ctx) {
+      const insert = ctx.target?.insertFragment?.bind(ctx.target);
+      if (insert === undefined) {
+        await ctx.notify(`Import impossible (${f.name}) : aucun onglet ne peut recevoir cet objet`);
+        return "failed";
+      }
+      try {
+        const bytes = new Uint8Array(await ctx.blob.arrayBuffer());
+        return (await insert(bytes, ctx.at, ctx.inserted, f.name)) ? "inserted" : "failed";
+      } catch (e) {
+        await ctx.notify(`Import impossible (${f.name}) : ${messageOf(e)}`);
+        return "failed";
+      }
+    },
+  };
+}
+
 /** Plafond d'un classeur (F22), aussi dans la coque où `maxBytes` est nul. */
 export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
-const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
 export function isSheetName(name: string): boolean {
-  const n = name.toLowerCase();
-  return (n.endsWith(".xlsx") || n.endsWith(".xlsm")) && n.length > 5;
+  return hasExtension(name, ".xlsx") || hasExtension(name, ".xlsm");
 }
 
 /** Entrée `sheet` du registre (F28) : nom `.xlsx` / `.xlsm` et en-tête ZIP ; une `ImportTable` dans l'onglet actif. */
@@ -108,7 +144,7 @@ export function sheetHandler(deps: { readSheet(file: Blob): Promise<TableGrid> }
   return {
     id: "sheet",
     nature: "objet",
-    detect: (head, name) => isSheetName(name) && ZIP_MAGIC.every((b, i) => head[i] === b),
+    detect: (head, name) => isSheetName(name) && hasZipMagic(head),
     limit: { maxBytes: SHEET_MAX_BYTES, message: SHEET_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       const target = ctx.target;
@@ -132,6 +168,7 @@ export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
   const registry: readonly ImportHandler[] = [
     roomboardHandler(deps),
+    rbitemHandler(),
     imageHandler(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? [sheetHandler({ readSheet })] : []),
   ];

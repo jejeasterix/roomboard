@@ -684,3 +684,55 @@ describe("fakeCore — C7b (cellules riches, JSON)", () => {
     expect(cellOf(load({ "r1:c1": { text: "ab", fill: null, spans: [{ text: "ab", attrs: { size: 0 } }] } }))?.spans).toEqual([{ text: "ab", attrs: {} }]);
   });
 });
+
+describe("fakeCore — C3", () => {
+  const json = (v: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(v));
+  it("JSON d'un kind inconnu : refusé comme le cœur ; d'un fragment ouvert comme document : refusé", () => {
+    const grid = json({ kind: "grid", pages: [] });
+    expect(() => fakeCore.load(grid)).toThrow("type de fichier RoomBoard inconnu (« grid ») : pris en charge dans une prochaine version");
+    expect(() => fakeCore.loadFragment(grid)).toThrow("(« grid »)");
+  });
+  // Discrimine (décision de contre-relecture) : le kind se lit à l'ouverture, avant le contenu ; un fichier d'un type à
+  // venir n'a pas à porter `pages`. Contrôler `pages` d'abord rendrait « ce fichier n'est pas un document RoomBoard ».
+  it("kind inconnu refusé à l'ouverture, avant le contenu (fichier sans pages)", () => {
+    const grid = json({ kind: "grid", levels: [] });
+    expect(() => fakeCore.load(grid)).toThrow("type de fichier RoomBoard inconnu (« grid »)");
+    expect(() => fakeCore.loadFragment(grid)).toThrow("type de fichier RoomBoard inconnu (« grid »)");
+    expect(() => fakeCore.loadParts(json({ format: "roomboard-fake" }), grid)).toThrow("(« grid »)");
+    expect(() => fakeCore.load(json({ foo: 1 }))).toThrow("ce fichier n'est pas un document RoomBoard");
+  });
+  it("group illisible dans le JSON : retiré (PC6), l'élément reste", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0]!;
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null });
+    const saved = JSON.parse(new TextDecoder().decode(d.save("n", "v"))) as { pages: { elements: Record<string, unknown>[] }[] };
+    saved.pages[0]!.elements[0]!["group"] = [1];
+    const back = fakeCore.load(json(saved));
+    const id = back.elementIds(back.pageIds()[0]!)[0]!;
+    expect(back.element(id)).not.toHaveProperty("group");
+  });
+  it("image mal formée : son group est chargé (membre du groupe), gardé à l'enregistrement et mis à jour par Group", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0]!;
+    const style = { color: "#000000", width: 4 };
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style, fill: null });
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: 50, y0: 0, x1: 60, y1: 10, style, fill: null });
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: 100, y0: 0, x1: 110, y1: 10, style, fill: null });
+    const saved = JSON.parse(new TextDecoder().decode(d.save("n", "v"))) as { pages: { elements: Record<string, unknown>[] }[] };
+    const els = saved.pages[0]!.elements;
+    els[0]!["group"] = ["g1"];
+    els.push({ id: "bad", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: "pas-un-asset" }, group: ["g1"] });
+    const back = fakeCore.load(json(saved));
+    const [a, b] = back.elementIds(back.pageIds()[0]!);
+    back.apply({ type: "Group", ids: [a!, b!] }); // a (g1) vaut tout g1 : le membre mal formé suit
+    const again = JSON.parse(new TextDecoder().decode(back.save("n", "v"))) as { pages: { elements: Record<string, unknown>[] }[] };
+    const bad = again.pages[0]!.elements.find((e) => e["id"] === "bad");
+    expect((bad?.["group"] as string[]).length).toBe(2);
+  });
+  it("source d'une autre liaison : erreur", () => {
+    const d = fakeCore.blank();
+    const other = { ...fakeCore.blank() } as unknown as CoreDocument;
+    expect(() => d.insertFragment(other, d.pageIds()[0]!, 0, 0)).toThrow("source d'une autre liaison : insertion impossible");
+    expect(() => d.insertPages(other, d.pageIds()[0]!)).toThrow("source d'une autre liaison : insertion impossible");
+  });
+});

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { toEnvelope } from "./clipboard";
 import type { DroppedFile } from "./files";
-import { handlePaste, isEditable, pastedFiles, pastedTableHtml } from "./paste";
+import { handlePaste, isEditable, pastedFiles, pastedItems, pastedTableHtml } from "./paste";
 
 const files = (...f: File[]) => ({ files: f });
 const png = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
@@ -27,6 +28,69 @@ describe("collage (R19)", () => {
     expect(isEditable(b)).toBe(false);
     expect(isEditable(document.createElement("button"))).toBe(false);
     expect(pastedFiles({ target: document.body, clipboardData: null })).toEqual([]);
+  });
+});
+
+const withText = (text: string, ...f: File[]) => ({ files: f, getData: (t: string) => (t === "text/plain" ? text : "") });
+const sinkOf = () => ({
+  pasteItems: vi.fn(async (_i: Uint8Array | "newer" | "too-big") => true),
+  pasteTable: vi.fn(async (_html: string) => true),
+  importFiles: vi.fn(async () => undefined),
+});
+
+describe("collage des objets (Z9)", () => {
+  it("une enveloppe passe avant les images jointes", async () => {
+    const sink = sinkOf();
+    await handlePaste({ target: document.body, clipboardData: withText(toEnvelope(new Uint8Array([1, 2])), png) }, sink);
+    expect(sink.pasteItems).toHaveBeenCalledWith(new Uint8Array([1, 2]));
+    expect(sink.importFiles).not.toHaveBeenCalled();
+  });
+  it("enveloppe plus récente : pasteItems(\"newer\")", async () => {
+    const sink = sinkOf();
+    await handlePaste({ target: document.body, clipboardData: withText('{"format":"roomboard-items/9"}') }, sink);
+    expect(sink.pasteItems).toHaveBeenCalledWith("newer");
+  });
+  it("texte ordinaire collé : ni objet ni image ; collage normal (null)", () => {
+    const sink = sinkOf();
+    expect(handlePaste({ target: document.body, clipboardData: withText("bonjour") }, sink)).toBeNull();
+    expect(sink.pasteItems).not.toHaveBeenCalled();
+  });
+  it("cible éditable : null, rien de pris ; pastedItems null", () => {
+    const area = document.createElement("textarea");
+    const sink = sinkOf();
+    const e = { target: area, clipboardData: withText(toEnvelope(new Uint8Array([1])), png) };
+    expect(pastedItems(e)).toBeNull();
+    expect(handlePaste(e, sink)).toBeNull();
+  });
+  it("images seules : importFiles(files, null)", async () => {
+    const sink = sinkOf();
+    await handlePaste({ target: document.body, clipboardData: files(png) }, sink);
+    expect(sink.importFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("collage : objets RoomBoard avant tableau HTML (fusion C3 + C10b)", () => {
+  it("enveloppe en text/plain + <table> en text/html + image : les objets seuls", async () => {
+    const sink = sinkOf();
+    const both = {
+      files: [png],
+      getData: (t: string) =>
+        t === "text/plain" ? toEnvelope(new Uint8Array([7])) : t === "text/html" ? "<table><tr><td>a</td></tr></table>" : "",
+    };
+    await handlePaste({ target: document.body, clipboardData: both }, sink);
+    expect(sink.pasteItems).toHaveBeenCalledWith(new Uint8Array([7]));
+    expect(sink.pasteTable).not.toHaveBeenCalled();
+    expect(sink.importFiles).not.toHaveBeenCalled();
+  });
+  it("texte ordinaire (cellules d'Excel) + <table> : le tableau, pas d'objet", async () => {
+    const sink = sinkOf();
+    const excel = {
+      files: [],
+      getData: (t: string) => (t === "text/plain" ? "a\tb" : t === "text/html" ? "<table><tr><td>a</td><td>b</td></tr></table>" : ""),
+    };
+    await handlePaste({ target: document.body, clipboardData: excel }, sink);
+    expect(sink.pasteItems).not.toHaveBeenCalled();
+    expect(sink.pasteTable).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -64,6 +128,10 @@ describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", 
     const calls: string[] = [];
     return {
       calls,
+      pasteItems: async () => {
+        calls.push("objets");
+        return true;
+      },
       pasteTable: async (html: string) => {
         calls.push(`tableau:${html}`);
         return tableDone;

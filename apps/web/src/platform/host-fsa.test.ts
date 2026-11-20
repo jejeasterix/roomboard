@@ -220,3 +220,14 @@ describe("hôte FSA : onDrop (T86)", () => {
     expect(encode).not.toHaveBeenCalled();
   });
 });
+
+describe("IMPORT_TYPES : filtre « Importer » (Z10)", () => {
+  it("rbitem : entrée propre (valeurs littérales), le reste hors roomboard sous image/*", () => {
+    expect(IMPORT_TYPES).toHaveLength(1);
+    expect(IMPORT_TYPES[0]!.accept).toEqual({
+      "application/x-roomboard": [".roomboard"],
+      "application/x-roomboard-item": [".rbitem"],
+      "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".avif", ".heic", ".heif"],
+    });
+  });
+});

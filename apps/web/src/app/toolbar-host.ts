@@ -4,6 +4,8 @@ import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
 import { isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
+export type SelectionAction = "group" | "ungroup" | "copy" | "paste" | "export";
+
 /** U15 : ce que la barre sait du reste ; implémentation locale par appels directs. */
 export interface ToolbarHost {
   setTool(tool: string, preset?: string): void;
@@ -14,12 +16,18 @@ export interface ToolbarHost {
   tableFill(fill: string | null): void;
   /** Bouton de la rangée Format (C7b, R13) : relayé au moteur, puis à l'outil actif. */
   textFormat(a: FormatAction): void;
+  /** C3 (Z13) : bouton de la rangée Sélection. */
+  selection(a: SelectionAction): void;
 }
 export interface HostTargets {
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
   toggle(panel: "settings" | "profiles" | "grid"): void;
+  /** C3 (Z12). */
+  insertPages(): void;
+  /** C3 (Z13). */
+  selection(a: SelectionAction): void;
 }
 
 const file = (cmd: FileCommand) => (t: HostTargets): void => t.runFile(cmd);
@@ -31,6 +39,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "page-next": (t) => void t.engine().nextPage(),
   "page-add": (t) => void t.engine().addPage(),
   "page-remove": (t) => void t.engine().removePage(),
+  "page-insert-file": (t) => t.insertPages(),
   "fit-page": (t) => t.engine().fitPage(),
   "eraser-mode": (t) => t.engine().setEraserMode(t.engine().state().eraserMode === "partial" ? "object" : "partial"),
   "file-new": file("new"),
@@ -68,6 +77,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     dropFiles: (files, at) => t.importFiles(files, at),
     tableFill: (fill) => t.engine().tableFill(fill),
     textFormat: (a) => t.engine().textFormat(a),
+    selection: (a) => t.selection(a),
     setMode(mode) {
       // Tableau : déjà affiché, rien à faire ni à dire. Annotation du bureau : point d'accroche de C11a, sans effet ici.
       if (mode === "board") return;

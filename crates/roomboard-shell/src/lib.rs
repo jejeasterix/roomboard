@@ -11,7 +11,7 @@ use std::sync::Mutex;
 /// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
 /// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
-pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard"];
+pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem"];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReadError {
@@ -267,13 +267,15 @@ mod tests {
             "/x/Cours.RoomBoard",
             "/x/photo.png",
             "/x/b.roomboard",
+            "/x/objet.RBITEM",
         ]
         .map(String::from);
         assert_eq!(
             launch_paths(args, ASSOCIATED_EXTENSIONS),
             vec![
                 PathBuf::from("/x/Cours.RoomBoard"),
-                PathBuf::from("/x/b.roomboard")
+                PathBuf::from("/x/b.roomboard"),
+                PathBuf::from("/x/objet.RBITEM")
             ]
         );
     }

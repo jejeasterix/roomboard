@@ -33,6 +33,7 @@ const pagesBar = () => ({
         action("page-next", "Page suivante"),
         action("page-add", "Ajouter une page"),
         action("page-remove", "Retirer la page"),
+        action("page-insert-file", "Insérer des pages…"),
       ],
     },
   ],

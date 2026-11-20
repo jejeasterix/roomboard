@@ -430,6 +430,78 @@ impl Document {
         })
     }
 
+    /// Grouper (C3, Z1) : une étape ; `BadGroup` sinon.
+    pub fn group(&mut self, ids: Vec<String>) -> Result<JsValue, JsError> {
+        to_js(&self.group_inner(ids).map_err(cmd_err)?)
+    }
+
+    /// Dégrouper le niveau extérieur (C3, Z1) ; aucun élément groupé : aucune étape.
+    pub fn ungroup(&mut self, ids: Vec<String>) -> Result<JsValue, JsError> {
+        to_js(&self.ungroup_inner(ids).map_err(cmd_err)?)
+    }
+
+    /// Document neuf d'une page qui porte une recopie des éléments `ids` de `page` (C3, Z5) ; aucune étape.
+    pub fn extract(&self, page: &str, ids: Vec<String>) -> Result<Document, JsError> {
+        self.extract_inner(page, &ids).map_err(cmd_err)
+    }
+
+    /// Éléments de la première page de `src` en haut de `page`, translatés ; une étape (C3, Z5).
+    pub fn insert_fragment(
+        &mut self,
+        src: &Document,
+        page: &str,
+        dx: f64,
+        dy: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .insert_fragment_inner(src, page, dx, dy)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Pages de `src` à la suite de `after` ; une étape (C3, Z5, Z12).
+    pub fn insert_pages(&mut self, src: &Document, after: &str) -> Result<JsValue, JsError> {
+        to_js(&self.insert_pages_inner(src, after).map_err(cmd_err)?)
+    }
+
+    /// `.rbitem` sans asset (C3, Z6).
+    pub fn save_fragment(
+        &self,
+        now: String,
+        app_version: String,
+        name: String,
+    ) -> Result<Vec<u8>, JsError> {
+        self.save_fragment_inner(&now, &app_version, &name)
+            .map_err(fmt_err)
+    }
+
+    /// Manifeste et `document.ybin` d'un fragment, pour le conteneur avec assets (C3, Z6).
+    pub fn save_fragment_parts(
+        &self,
+        now: String,
+        app_version: String,
+        name: String,
+    ) -> Result<SavedParts, JsError> {
+        let p = self
+            .save_fragment_parts_inner(&now, &app_version, &name)
+            .map_err(fmt_err)?;
+        Ok(SavedParts {
+            manifest: p.manifest,
+            ybin: p.ybin,
+        })
+    }
+
+    /// Lit un `.rbitem` sans asset ; un document est refusé (`WrongKind`).
+    pub fn load_fragment(bytes: &[u8]) -> Result<Document, JsError> {
+        Self::load_fragment_inner(bytes).map_err(fmt_err)
+    }
+
+    /// Lit un fragment depuis ses deux moitiés ; mêmes erreurs que `load_fragment`.
+    pub fn load_fragment_parts(manifest: &[u8], ybin: &[u8]) -> Result<Document, JsError> {
+        Self::load_fragment_parts_inner(manifest, ybin).map_err(fmt_err)
+    }
+
     /// Vue de page (K7) ; `null` pour une page inconnue.
     pub fn page(&self, id: &str) -> Result<JsValue, JsError> {
         match self.core.page(id) {
@@ -988,6 +1060,76 @@ impl Document {
         Ok(Self::wrap(core, Some(m.created)))
     }
 
+    pub fn group_inner(&mut self, ids: Vec<String>) -> Result<Change, CommandError> {
+        self.run(Command::Group { ids })
+    }
+
+    pub fn ungroup_inner(&mut self, ids: Vec<String>) -> Result<Change, CommandError> {
+        self.run(Command::Ungroup { ids })
+    }
+
+    pub fn extract_inner(&self, page: &str, ids: &[String]) -> Result<Document, CommandError> {
+        Ok(Self::wrap(self.core.extract(page, ids)?, None))
+    }
+
+    pub fn insert_fragment_inner(
+        &mut self,
+        src: &Document,
+        page: &str,
+        dx: f64,
+        dy: f64,
+    ) -> Result<Change, CommandError> {
+        self.core.insert_fragment(&src.core, page, dx, dy)
+    }
+
+    pub fn insert_pages_inner(
+        &mut self,
+        src: &Document,
+        after: &str,
+    ) -> Result<Change, CommandError> {
+        self.core.insert_pages(&src.core, after)
+    }
+
+    /// Un fragment n'a pas d'historique d'enregistrement : `created` = maintenant.
+    fn fragment_meta(now: &str, app_version: &str) -> SaveMeta {
+        SaveMeta {
+            app_version: app_version.to_string(),
+            now: now.to_string(),
+            created: None,
+        }
+    }
+
+    pub fn save_fragment_inner(
+        &self,
+        now: &str,
+        app_version: &str,
+        name: &str,
+    ) -> Result<Vec<u8>, FormatError> {
+        format::save_fragment(&self.core, &Self::fragment_meta(now, app_version), name)
+    }
+
+    pub fn save_fragment_parts_inner(
+        &self,
+        now: &str,
+        app_version: &str,
+        name: &str,
+    ) -> Result<Parts, FormatError> {
+        format::save_fragment_parts(&self.core, &Self::fragment_meta(now, app_version), name)
+    }
+
+    pub fn load_fragment_inner(bytes: &[u8]) -> Result<Document, FormatError> {
+        let (core, _) = format::load_fragment(bytes)?;
+        Ok(Self::wrap(core, None))
+    }
+
+    pub fn load_fragment_parts_inner(
+        manifest: &[u8],
+        ybin: &[u8],
+    ) -> Result<Document, FormatError> {
+        let (core, _) = format::load_fragment_parts(manifest, ybin)?;
+        Ok(Self::wrap(core, None))
+    }
+
     /// Longueur de matrice différente de 6 : `BadMatrix`.
     pub fn add_image_inner(
         &mut self,
@@ -1410,6 +1552,97 @@ impl StrokeBuilder {
 mod tests {
     use super::*;
     use roomboard_core::rich_text::{SpanAttrs, SpanInput};
+
+    fn c3_rect(d: &mut Document, p: &str, x: f64) -> String {
+        d.add_shape_inner(p, "rect", [x, 100.0, x + 50.0, 150.0], "#000000", 4.0, None)
+            .expect("forme")
+            .ids[0]
+            .clone()
+    }
+
+    #[test]
+    fn c3_group_and_ungroup_inner() {
+        let mut d = Document::blank();
+        let p = d.core.page_ids()[0].clone();
+        let a = c3_rect(&mut d, &p, 0.0);
+        let b = c3_rect(&mut d, &p, 100.0);
+        assert_eq!(d.group_inner(vec![a.clone()]), Err(CommandError::BadGroup));
+        assert_eq!(
+            d.group_inner(vec![a.clone(), b.clone()])
+                .expect("group")
+                .ids
+                .len(),
+            2
+        );
+        assert!(d.core.element(&a).expect("vue").group.is_some());
+        assert_eq!(
+            d.ungroup_inner(vec![a.clone(), b])
+                .expect("ungroup")
+                .ids
+                .len(),
+            2
+        );
+        assert_eq!(d.core.element(&a).expect("vue").group, None);
+    }
+
+    #[test]
+    fn c3_extract_insert_fragment_inner() {
+        let mut s = Document::blank();
+        let sp = s.core.page_ids()[0].clone();
+        let a = c3_rect(&mut s, &sp, 0.0);
+        let frag = s.extract_inner(&sp, &[a]).expect("extract");
+        let mut d = Document::blank();
+        let p = d.core.page_ids()[0].clone();
+        let c = d
+            .insert_fragment_inner(&frag, &p, 5.0, 5.0)
+            .expect("insert");
+        assert_eq!(c.ids.len(), 1);
+        assert!(d.core.can_undo());
+    }
+
+    #[test]
+    fn c3_insert_pages_inner() {
+        let mut s = Document::blank();
+        s.add_page_after_inner(None).expect("page");
+        let mut d = Document::blank();
+        let p = d.core.page_ids()[0].clone();
+        assert_eq!(d.insert_pages_inner(&s, &p).expect("pages").pages.len(), 2);
+        assert_eq!(d.core.page_count(), 3);
+    }
+
+    #[test]
+    fn c3_fragment_save_load_inner() {
+        let mut s = Document::blank();
+        let sp = s.core.page_ids()[0].clone();
+        let a = c3_rect(&mut s, &sp, 0.0);
+        let frag = s.extract_inner(&sp, &[a]).expect("extract");
+        let bytes = frag
+            .save_fragment_inner("n", "v", "Sélection")
+            .expect("save");
+        assert_eq!(
+            Document::load_fragment_inner(&bytes)
+                .expect("load")
+                .core
+                .page_count(),
+            1
+        );
+        let parts = frag
+            .save_fragment_parts_inner("n", "v", "Sélection")
+            .expect("parts");
+        assert!(Document::load_fragment_parts_inner(&parts.manifest, &parts.ybin).is_ok());
+    }
+
+    #[test]
+    fn c3_load_refuses_fragment() {
+        let s = Document::blank();
+        let sp = s.core.page_ids()[0].clone();
+        let frag = s.extract_inner(&sp, &[]).expect("extract");
+        let bytes = frag.save_fragment_inner("n", "v", "x").expect("save");
+        assert!(matches!(
+            Document::load_inner(&bytes),
+            Err(FormatError::WrongKind { .. })
+        ));
+    }
 
     fn hline(y: f32) -> Vec<f32> {
         (0..=40)

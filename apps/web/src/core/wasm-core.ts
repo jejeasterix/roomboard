@@ -21,7 +21,7 @@ import type {
   TextAttrs,
   TextSpan,
 } from "./api";
-import { UNKNOWN_BOX } from "./api";
+import { MIXED_SOURCE_MESSAGE, UNKNOWN_BOX } from "./api";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
@@ -163,7 +163,10 @@ export function toElementView(v: unknown): ElementView | null {
   if (!isRecord(v)) throw new Error(ELEMENT);
   const { id, kind } = v;
   if (typeof id !== "string") throw new Error(ELEMENT);
-  const base = { id, transform: toMatrix(v["transform"]) };
+  // C3 (Z1) : chemin de groupes, chaînes non vide ; absent (Option::None → undefined) laissé absent.
+  const group = v["group"];
+  if (group !== undefined && group !== null && (!isStrings(group) || group.length === 0)) throw new Error(ELEMENT);
+  const base = { id, transform: toMatrix(v["transform"]), ...(isStrings(group) ? { group } : {}) };
   switch (kind) {
     case "stroke":
       return { ...base, kind, style: toStyle(v["style"]) };
@@ -349,6 +352,8 @@ class WasmCoreDocument implements CoreDocument {
       case "CommitStroke": return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width));
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));
+      case "Group": return toChange(this.d.group([...cmd.ids]));
+      case "Ungroup": return toChange(this.d.ungroup([...cmd.ids]));
       case "AddShape":
         return toChange(
           this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined),
@@ -449,6 +454,24 @@ class WasmCoreDocument implements CoreDocument {
     }
   }
 
+  /** Source d'une insertion : même liaison exigée (DAZ2). */
+  private other(src: CoreDocument): Wasm.Document {
+    if (!(src instanceof WasmCoreDocument)) throw new Error(MIXED_SOURCE_MESSAGE);
+    return src.d;
+  }
+  extract(page: string, ids: readonly string[]): CoreDocument { return new WasmCoreDocument(this.d.extract(page, [...ids]), this.mod); }
+  insertFragment(src: CoreDocument, page: string, dx: number, dy: number): Change { return toChange(this.d.insert_fragment(this.other(src), page, dx, dy)); }
+  insertPages(src: CoreDocument, after: string): Change { return toChange(this.d.insert_pages(this.other(src), after)); }
+  saveFragment(now: string, appVersion: string, name: string): Uint8Array { return this.d.save_fragment(now, appVersion, name); }
+  saveFragmentParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array] {
+    const p = this.d.save_fragment_parts(now, appVersion, name);
+    try {
+      return [p.manifest(), p.ybin()] as const;
+    } finally {
+      p.free();
+    }
+  }
+
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
     const b = new this.mod.StrokeBuilder(style.width);
     return { push: (p: Float32Array) => b.push(p), finish: () => b.finish(), free: () => b.free() };
@@ -477,6 +500,8 @@ export function createWasmCore(mod: WasmModule): CoreFactory {
     blank: () => new WasmCoreDocument(mod.Document.blank(), mod),
     load: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load(bytes), mod),
     loadParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_parts(manifest, ybin), mod),
+    loadFragment: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment(bytes), mod),
+    loadFragmentParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment_parts(manifest, ybin), mod),
     version: () => mod.version(),
   };
 }

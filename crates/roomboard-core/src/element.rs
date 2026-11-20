@@ -90,6 +90,9 @@ pub struct ElementView {
     /// Tableau (C10a, T13) ; absent pour tout autre `kind`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub table: Option<TableView>,
+    /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<Vec<String>>,
 }
 
 impl ElementView {
@@ -105,6 +108,7 @@ impl ElementView {
             image: None,
             unknown: None,
             table: None,
+            group: None,
         }
     }
 }
@@ -190,6 +194,30 @@ pub(crate) fn out_bytes(o: Option<Out>) -> Option<Arc<[u8]>> {
 #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
 pub(crate) fn transform_to_any(t: &Transform) -> Any {
     Any::Array(t.iter().map(|v| Any::from(*v)).collect::<Vec<Any>>().into())
+}
+
+/// Chemin `group` lisible (Z1) : tableau non vide de chaînes. Absent, vide ou mal formé = sans groupe ; la valeur reste
+/// telle quelle dans le document (jamais réécrite à la lecture).
+pub(crate) fn read_group<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<Vec<String>> {
+    match e.get(txn, "group") {
+        Some(Out::Any(Any::Array(items))) if !items.is_empty() => items
+            .iter()
+            .map(|a| match a {
+                Any::String(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+/// Valeur écrite du champ `group` : `Any::Array` de chaînes, remplacé en bloc (U7).
+pub(crate) fn group_to_any(path: &[String]) -> Any {
+    Any::Array(
+        path.iter()
+            .map(|s| Any::String(s.as_str().into()))
+            .collect(),
+    )
 }
 
 pub(crate) fn out_transform(o: Option<Out>) -> Option<Transform> {
