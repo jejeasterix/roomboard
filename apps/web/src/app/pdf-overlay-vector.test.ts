@@ -191,9 +191,10 @@ describe("superposition vectorielle (C12, PF22)", () => {
     expect(kinds).not.toContain("/Image");
     expect(res?.lookupMaybe(PDFName.of("Font"), PDFDict)?.keys().length ?? 0).toBeGreaterThan(0);
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const doc = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    const task = pdfjs.getDocument({ data: bytes.slice() });
+    const doc = await task.promise;
     const text = (await (await doc.getPage(1)).getTextContent()).items.map((it) => ("str" in it ? it.str : "")).join("");
-    await doc.destroy();
+    await task.destroy();
     expect(text).toContain("RoomBoard vectoriel");
   });
 });
