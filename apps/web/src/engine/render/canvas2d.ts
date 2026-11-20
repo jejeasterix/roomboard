@@ -5,7 +5,6 @@
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
-import { plainSpans } from "../../core/rich-text";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
@@ -365,13 +364,13 @@ export class Canvas2DRenderer implements Renderer {
     return lines;
   }
 
-  /** Lignes de chaque cellule au texte non vide (B1) : `layoutRich` du texte brut (C7b remplacera `plainSpans`). */
+  /** Lignes de chaque cellule au texte non vide (B1) : `layoutRich` des segments de la cellule (C7b, R17). */
   private cellLinesOf(ctx: CanvasRenderingContext2D, id: string, t: TableData, boxes: readonly CellTextBox[]): readonly (readonly RichLine[])[] {
-    const key = `${t.size}|${JSON.stringify(boxes.map((b) => [b.w, b.text]))}`;
+    const key = `${t.size}|${JSON.stringify(boxes.map((b) => [b.w, b.spans]))}`;
     const cached = this.cellLines.get(id);
     if (cached && cached.key === key) return cached.lines;
     const measure = measureWith(ctx);
-    const lines = boxes.map((b) => layoutRich(plainSpans(b.text), { size: t.size }, b.w, measure));
+    const lines = boxes.map((b) => layoutRich(b.spans, { size: t.size }, b.w, measure));
     this.cellLines.set(id, { key, lines });
     return lines;
   }

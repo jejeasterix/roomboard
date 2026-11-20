@@ -5,7 +5,7 @@
  * lignes du dessin (`layoutRich`, B1). Tailles par défaut en unités de page (T4) ; la largeur de page se lit sur la
  * page, jamais ici.
  */
-import type { Bounds, CoreDocument, Matrix, TableData } from "../core/api";
+import type { Bounds, CoreDocument, Matrix, TableData, TextSpan } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -58,9 +58,9 @@ export function cellOf<R extends Pick<CellRef, "row" | "col">>(t: TableData, ref
   return row < 0 || col < 0 ? null : { row, col };
 }
 
-export function cellContent(t: TableData, rowId: string, colId: string): { readonly text: string; readonly fill: string | null } {
+export function cellContent(t: TableData, rowId: string, colId: string): { readonly text: string; readonly spans: readonly TextSpan[]; readonly fill: string | null } {
   const c = t.cells.find((x) => x.row === rowId && x.col === colId);
-  return { text: c?.text ?? "", fill: c?.fill ?? null };
+  return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null };
 }
 
 /** Le tableau le plus haut sous (x, y) monde, du dessus vers le dessous (I2) ; matrice non inversible : sauté. */
@@ -104,14 +104,14 @@ export function cellInnerBox(t: TableData, c: Cell): CellBox {
   return { x: r.x0 + TABLE_PADDING, y: r.y0 + TABLE_PADDING, w: innerWidth(r.x1 - r.x0), h: Math.max(0, r.y1 - r.y0 - 2 * TABLE_PADDING) };
 }
 
-/** Hauteur exigée par `text` dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
-export function cellHeight(text: string, size: number, colWidth: number, measure: Measure): number {
-  return richBoxHeight(layoutRich(plainSpans(text), { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
+/** Hauteur exigée par les segments `spans` (C7b, R17) dans une colonne de `colWidth` (T5, B1) : lignes du dessin + deux marges. */
+export function cellHeight(spans: readonly TextSpan[], size: number, colWidth: number, measure: Measure): number {
+  return richBoxHeight(layoutRich(spans, { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
 }
 
 /** Hauteur exigée de chaque ligne aux largeurs `colWidths` (Uniformiser, T11) ; cellule vide : une ligne de texte. */
 export function rowHeightsFor(t: TableData, colWidths: readonly number[], measure: Measure): number[] {
   return t.rows.map((r) =>
-    Math.max(...t.cols.map((c, i) => cellHeight(cellContent(t, r.id, c.id).text, t.size, colWidths[i] ?? c.width, measure))),
+    Math.max(...t.cols.map((c, i) => cellHeight(cellContent(t, r.id, c.id).spans, t.size, colWidths[i] ?? c.width, measure))),
   );
 }

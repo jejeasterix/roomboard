@@ -11,7 +11,7 @@ const T: TableData = {
   size: 36,
   cols: [{ id: "c1", width: 240 }, { id: "c2", width: 100 }],
   rows: [{ id: "r1", height: 64 }, { id: "r2", height: 80 }],
-  cells: [{ row: "r2", col: "c1", text: "Lundi", fill: "#fef08a" }],
+  cells: [{ row: "r2", col: "c1", text: "Lundi", fill: "#fef08a", spans: plainSpans("Lundi") }],
 };
 const at = (row: number, col: number) => ({ row, col });
 const docOf = (els: ElementView[]): Pick<CoreDocument, "elementIds" | "element"> => ({
@@ -53,23 +53,23 @@ describe("géométrie des cellules (C10a, DAC6)", () => {
   it("cellOf, cellContent : par ids ; ligne disparue : null ; cellule absente : vide", () => {
     expect(cellOf(T, { id: "t", row: "r2", col: "c2" })).toEqual(at(1, 1));
     expect(cellOf(T, { id: "t", row: "r9", col: "c2" })).toBeNull();
-    expect(cellContent(T, "r2", "c1")).toEqual({ text: "Lundi", fill: "#fef08a" });
-    expect(cellContent(T, "r1", "c1")).toEqual({ text: "", fill: null });
+    expect(cellContent(T, "r2", "c1")).toEqual({ text: "Lundi", spans: plainSpans("Lundi"), fill: "#fef08a" });
+    expect(cellContent(T, "r1", "c1")).toEqual({ text: "", spans: plainSpans(""), fill: null });
   });
 
   it("cellHeight : même mise en lignes que le dessin (layoutRich, B1), plus deux marges (T5)", () => {
-    expect(cellHeight("", 36, 240, narrow)).toBe(36 * 1.25 + 2 * TABLE_PADDING);
+    expect(cellHeight(plainSpans(""), 36, 240, narrow)).toBe(36 * 1.25 + 2 * TABLE_PADDING);
     const text = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee";
     const want = richBoxHeight(layoutRich(plainSpans(text), { size: 36 }, 240 - 2 * TABLE_PADDING, narrow)) + 2 * TABLE_PADDING;
-    expect(cellHeight(text, 36, 240, narrow)).toBe(want);
+    expect(cellHeight(plainSpans(text), 36, 240, narrow)).toBe(want);
     expect(want).toBeGreaterThan(2 * 45 + 2 * TABLE_PADDING);
   });
 
   it("rowHeightsFor : par ligne, la plus haute cellule aux largeurs données (Uniformiser, T11)", () => {
-    const long: TableData = { ...T, cells: [{ row: "r1", col: "c2", text: "aaaaaaaaaa bbbbbbbbbb cccccccccc", fill: null }] };
+    const long: TableData = { ...T, cells: [{ row: "r1", col: "c2", text: "aaaaaaaaaa bbbbbbbbbb cccccccccc", fill: null, spans: plainSpans("aaaaaaaaaa bbbbbbbbbb cccccccccc") }] };
     const h = rowHeightsFor(long, [170, 170], narrow);
-    expect(h[0]).toBe(cellHeight("aaaaaaaaaa bbbbbbbbbb cccccccccc", 36, 170, narrow));
-    expect(h[1]).toBe(cellHeight("", 36, 170, narrow));
+    expect(h[0]).toBe(cellHeight(plainSpans("aaaaaaaaaa bbbbbbbbbb cccccccccc"), 36, 170, narrow));
+    expect(h[1]).toBe(cellHeight(plainSpans(""), 36, 170, narrow));
   });
 
   it("tableAt : le tableau le plus haut sous le point, même sous un trait (I2) ; point ramené au repère du tableau", () => {
@@ -82,5 +82,36 @@ describe("géométrie des cellules (C10a, DAC6)", () => {
   it("tableAt : matrice non inversible sautée", () => {
     const d = docOf([table("bas", [1, 0, 0, 1, 0, 0]), table("plat", [0, 0, 0, 0, 0, 0])]);
     expect(tableAt(d, "p", 10, 10)?.id).toBe("bas");
+  });
+});
+
+describe("table-geom — cellules par segments (C7b, R17)", () => {
+  /** Mesure par face : 10 par caractère, 30 en gras. */
+  const byFace: Measure = (s, _size, face) => s.length * (face?.bold ? 30 : 10);
+
+  it("cellHeight : segments mesurés avec leur face ; un mot gras qui ne tient plus passe à la ligne", () => {
+    const plainH = cellHeight(plainSpans("aaaa aaaa"), 36, 240, byFace);
+    const boldH = cellHeight([{ text: "aaaa aaaa", attrs: { bold: true } }], 36, 240, byFace);
+    expect(plainH).toBe(36 * 1.25 + 2 * TABLE_PADDING);
+    expect(boldH).toBe(2 * 36 * 1.25 + 2 * TABLE_PADDING);
+  });
+
+  it("cellHeight : un segment de taille 72 fixe la hauteur de sa ligne", () => {
+    expect(cellHeight([plainSpans("Le ")[0]!, { text: "chat", attrs: { size: 72 } }], 36, 240, narrow)).toBe(72 * 1.25 + 2 * TABLE_PADDING);
+  });
+
+  it("cellule sans attribut : même hauteur que le texte brut d'avant (C10a)", () => {
+    expect(cellHeight(plainSpans("Lundi"), 36, 240, narrow)).toBe(richBoxHeight(layoutRich(plainSpans("Lundi"), { size: 36 }, 240 - 2 * TABLE_PADDING, narrow)) + 2 * TABLE_PADDING);
+  });
+
+  it("rowHeightsFor : mesure les segments de chaque cellule", () => {
+    const big: TableData = { ...T, cells: [{ row: "r1", col: "c1", text: "chat", fill: null, spans: [{ text: "chat", attrs: { size: 72 } }] }] };
+    expect(rowHeightsFor(big, [240, 100], narrow)[0]).toBe(72 * 1.25 + 2 * TABLE_PADDING);
+  });
+
+  it("cellContent : segments de la cellule ; cellule absente : un segment vide", () => {
+    const rich: TableData = { ...T, cells: [{ row: "r1", col: "c1", text: "ab", fill: null, spans: [{ text: "ab", attrs: { bold: true } }] }] };
+    expect(cellContent(rich, "r1", "c1").spans).toEqual([{ text: "ab", attrs: { bold: true } }]);
+    expect(cellContent(rich, "r2", "c2").spans).toEqual(plainSpans(""));
   });
 });
