@@ -365,6 +365,13 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
       exporting = true;
       let doc: CoreDocument | null = null;
+      let rasterClosed = false;
+      /** Sessions de rendu ouvertes par `rasterPage` : fermées dès l'assemblage fini (avant la feuille d'enregistrement, longue), une fois. */
+      const closeRaster = (): void => {
+        if (rasterClosed) return;
+        rasterClosed = true;
+        deps.rasterClose?.();
+      };
       try {
         // Copie prise au départ (DAPF3) : fermer l'onglet pendant l'export libère son document, pas celle-ci.
         const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
@@ -380,6 +387,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
             return blob === undefined || deps.rasterPage === undefined ? null : deps.rasterPage(blob, index);
           },
         });
+        closeRaster();
         if (r === null) return false; // onglet fermé pendant l'export : rien à dire
         if (r.rasterized) await say(PDF_RASTER_MESSAGE);
         if (r.rasterMissing) await say(PDF_RASTER_MISSING_MESSAGE);
@@ -393,7 +401,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       } finally {
         exporting = false;
         doc?.free();
-        deps.rasterClose?.(); // sessions de rendu ouvertes par `rasterPage` pour cet export, même en cas d'erreur
+        closeRaster(); // même en cas d'erreur
       }
     },
     async newBlank() {

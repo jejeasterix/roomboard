@@ -149,8 +149,10 @@ async function buildBoardSession(
     return blob === undefined || pdf === undefined ? null : pdf.open(blob);
   };
   let tiles: PdfTiles | null = null;
+  /** Onglet montré : un dessin déjà demandé peut passer après `deactivate` (rAF avant ResizeObserver), sans rouvrir le PDF. */
+  let active = false;
   const backdrop: BackdropPainter = {
-    paint: (ctx, b, camera, view) => (tiles ??= createPdfTiles(openPdf, () => redraw())).paint(ctx, b, camera, view),
+    paint: (ctx, b, camera, view) => (active ? (tiles ??= createPdfTiles(openPdf, () => redraw())).paint(ctx, b, camera, view) : "pret"),
   };
   const freeTiles = (): void => {
     tiles?.dispose();
@@ -368,9 +370,11 @@ async function buildBoardSession(
       choice.interaction.id = "interaction";
       editor.element.id = TEXT_EDITOR_ID;
       stage.hidden = false;
+      active = true;
       fit();
     },
     deactivate() {
+      active = false;
       stage.hidden = true;
       picker.close();
       for (const el of [stage, sceneCanvas, choice.interaction, editor.element]) el.removeAttribute("id");

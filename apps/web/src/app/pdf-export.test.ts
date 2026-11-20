@@ -1,4 +1,4 @@
-import { degrees, PDFDict, PDFDocument, PDFName, PDFStream, StandardFonts } from "pdf-lib";
+import { degrees, PDFDict, PDFDocument, PDFName, PDFObjectCopier, PDFPage, PDFStream, StandardFonts } from "pdf-lib";
 import { describe, expect, it, vi } from "vitest";
 import type { Bounds } from "../core/api";
 import {
@@ -57,12 +57,23 @@ const pngProducer = (seen: OverlayRequest[] = []): OverlayProducer => ({
     return reqs.map(() => ({ kind: "png" as const, bytes: PNG_1PX }));
   },
 });
-const lib = (o: { refuse?: boolean } = {}): PdfLib & { loads: () => number } => {
-  const load = vi.fn((bytes: Uint8Array, opts?: Parameters<typeof PDFDocument.load>[1]) =>
-    o.refuse === true ? Promise.reject(new Error("Failed to parse PDF document (line:0 col:0 offset=0): No PDF header found")) : PDFDocument.load(bytes, opts),
-  );
+/** Page dont la copie lève, après avoir copié ses ressources (dernière entrée du dictionnaire de page). */
+const boobyTrap = (d: PDFDocument): PDFDict => {
+  const b = PDFDict.withContext(d.context);
+  b.clone = () => {
+    throw new Error("objet abîmé");
+  };
+  return b;
+};
+const lib = (o: { refuse?: boolean; damaged?: readonly number[] } = {}): PdfLib & { loads: () => number } => {
+  const load = vi.fn(async (bytes: Uint8Array, opts?: Parameters<typeof PDFDocument.load>[1]) => {
+    if (o.refuse === true) throw new Error("Failed to parse PDF document (line:0 col:0 offset=0): No PDF header found");
+    const d = await PDFDocument.load(bytes, opts);
+    for (const i of o.damaged ?? []) d.getPages()[i]?.node.set(PDFName.of("Booby"), boobyTrap(d));
+    return d;
+  });
   const PDF = { create: (opts?: Parameters<typeof PDFDocument.create>[0]) => PDFDocument.create(opts), load } as unknown as PdfLib["PDFDocument"];
-  return { PDFDocument: PDF, degrees, loads: () => load.mock.calls.length };
+  return { PDFDocument: PDF, PDFObjectCopier, PDFPage, degrees, loads: () => load.mock.calls.length };
 };
 /** Dépendances d'un export : la page d'origine se recopie, jamais en image (patron écarté (2), U34). */
 const deps = (o: { lib?: PdfLib; overlay?: OverlayProducer } & Partial<ExportDeps> = {}): ExportDeps => ({
@@ -229,6 +240,14 @@ describe("export PDF annoté (PF20, PF21)", () => {
 
   it("police partagée par 3 pages d'origine : recopiée une seule fois dans la sortie (copyPages groupé)", async () => {
     const r = await done(exportPdf(source(pdfPages(3)), store({ [A]: await sourcePdf({ pages: 3 }) }), deps()));
+    expect(await fontObjects(r.bytes)).toBe(1);
+  });
+
+  it("une page abîmée sur trois : les deux autres sont recopiées, police une seule fois, la police de la page abîmée n'est pas restée orpheline, la page abîmée passe en image", async () => {
+    const raster = vi.fn(async (_asset: string, _index: number) => ({ png: PNG_2PX, w: 612, h: 792 }));
+    const r = await done(exportPdf(source(pdfPages(3)), store({ [A]: await sourcePdf({ pages: 3 }) }), deps({ lib: lib({ damaged: [0] }), rasterPage: raster })));
+    expect([r.pages, r.rasterized, raster.mock.calls.map((c) => c[1])]).toEqual([3, true, [0]]);
+    expect(await texts(r.bytes)).toEqual(["", "RoomBoard page 2", "RoomBoard page 3"]);
     expect(await fontObjects(r.bytes)).toBe(1);
   });
 
