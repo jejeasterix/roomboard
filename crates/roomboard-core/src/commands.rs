@@ -10,8 +10,9 @@ use yrs::{
 use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, invert, out_bytes, out_f64, out_string, out_transform, read_backdrop,
-    read_style, style_fields, transform_to_any, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
+    apply_transform, compose, finite_positive, invert, out_bytes, out_f64, out_string,
+    out_transform, read_backdrop, read_style, style_fields, transform_to_any, StrokeStyle,
+    Transform, FIT_WIDTH, IDENTITY,
 };
 use crate::ink::erase::erase;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
@@ -315,11 +316,6 @@ fn erase_stroke(
     )
 }
 
-/// Rayon de gomme ou épaisseur de trait : fini et strictement positif (NaN refusé).
-fn positive(v: f64) -> bool {
-    v.is_finite() && v > 0.0
-}
-
 /// Matrice de `Transform`, donnée ou composée : six nombres finis, inversible (|dét| ≥ 1e-12, seuil d'`invert`).
 fn valid_matrix(m: &Transform) -> bool {
     m.iter().all(|v| v.is_finite()) && invert(m).is_some()
@@ -473,7 +469,7 @@ impl Document {
         if [tx, ty, w, h].iter().any(|v| !(*v as f32).is_finite()) {
             return Err(CommandError::BadShape);
         }
-        if !positive(f64::from(style.width)) {
+        if !finite_positive(f64::from(style.width)) {
             return Err(CommandError::BadWidth);
         }
         let elements = self.page_elements_or_err(page)?;
@@ -549,9 +545,9 @@ impl Document {
     /// écriture ; boîte neuve vide ou texte inchangé : aucune transaction (CL4-6, D38) ; texte existant vidé : élément
     /// retiré. Comme `cmd_erase` : plan sous une lecture fermée, puis au plus une écriture.
     fn cmd_set_text(&mut self, t: TextInput<'_>) -> Result<Change, CommandError> {
-        if !positive(f64::from(t.size))
-            || !positive(t.box_width)
-            || !positive(t.box_height)
+        if !finite_positive(f64::from(t.size))
+            || !finite_positive(t.box_width)
+            || !finite_positive(t.box_height)
             || !t.x.is_finite()
             || !t.y.is_finite()
         {
@@ -646,7 +642,7 @@ impl Document {
         if !valid_asset(asset) {
             return Err(CommandError::BadAsset);
         }
-        if !positive(w) || !positive(h) {
+        if !finite_positive(w) || !finite_positive(h) {
             return Err(CommandError::BadImage);
         }
         if !valid_matrix(m) {
@@ -685,7 +681,7 @@ impl Document {
             if !valid_asset(&b.asset) {
                 return Err(CommandError::BadAsset);
             }
-            if !positive(b.w) || !positive(b.h) || b.fit != FIT_WIDTH {
+            if !finite_positive(b.w) || !finite_positive(b.h) || b.fit != FIT_WIDTH {
                 return Err(CommandError::BadImage);
             }
         }
@@ -807,7 +803,7 @@ impl Document {
         if flat.len() < 3 || !flat.len().is_multiple_of(3) || flat.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
         }
-        if !positive(f64::from(style.width)) {
+        if !finite_positive(f64::from(style.width)) {
             return Err(CommandError::BadWidth);
         }
         let elements = self.page_elements_or_err(page)?;
@@ -837,7 +833,7 @@ impl Document {
         if path.len() < 2 || !path.len().is_multiple_of(2) || path.iter().any(|v| !v.is_finite()) {
             return Err(CommandError::BadPoints);
         }
-        if !positive(f64::from(radius)) {
+        if !finite_positive(f64::from(radius)) {
             return Err(CommandError::BadRadius);
         }
         // 1. Plan, sous une transaction de lecture, fermée avant toute écriture.

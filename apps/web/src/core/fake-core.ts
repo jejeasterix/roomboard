@@ -28,6 +28,7 @@ import type {
   TextData,
 } from "./api";
 import { DEFAULT_ASSET_MIME, PAGE_HEIGHT, PAGE_WIDTH, UNKNOWN_BOX } from "./api";
+import { isAssetId } from "./asset-store";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
@@ -37,6 +38,8 @@ interface FakeUnknown {
   readonly hasTransform: boolean;
   /** `transform` illisible tel que lu : la vue prend l'identité, le document le garde (K8). */
   readonly rawTransform?: unknown;
+  /** Boîte dessinée, calculée une fois à la lecture : `raw` ne change pas. */
+  readonly box: { readonly w: number; readonly h: number };
 }
 interface FakeElement {
   readonly id: string;
@@ -70,8 +73,6 @@ const MESSAGES = {
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
 const KNOWN_KINDS = new Set(["stroke", "shape", "text", "image"]);
-const ASSET_ID = /^[0-9a-f]{64}$/;
-const isAssetId = (s: unknown): s is string => typeof s === "string" && ASSET_ID.test(s);
 const finitePositive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
@@ -124,7 +125,7 @@ const sameBackdrop = (a: RawRecord | null, b: RawRecord | null): boolean =>
 /** Balayage des assets cités (K4) : toute chaîne conforme, à toute profondeur ; le texte lui-même n'est pas balayé. */
 function scanAssets(v: unknown, acc: Set<string>): void {
   if (typeof v === "string") {
-    if (ASSET_ID.test(v)) acc.add(v);
+    if (isAssetId(v)) acc.add(v);
     return;
   }
   if (v instanceof Float32Array) return;
@@ -208,7 +209,7 @@ function worldPolygon(e: FakeElement): number[] | null {
       : e.image
         ? boxPolygon(e.image.w, e.image.h)
         : e.unknown
-          ? boxPolygon(unknownBox(e.unknown.raw).w, unknownBox(e.unknown.raw).h)
+          ? boxPolygon(e.unknown.box.w, e.unknown.box.h)
           : null;
   if (!local) return null;
   const out: number[] = [];
@@ -462,7 +463,7 @@ class FakeDocument implements CoreDocument {
     const e = this.find(id)?.element;
     if (!e || e.malformed) return null;
     const base = { id, transform: e.transform };
-    if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...unknownBox(e.unknown.raw) } };
+    if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, kind: "image", image: e.image };
     const styled = { ...base, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
@@ -610,9 +611,11 @@ const toMatrix6 = (t: unknown): Matrix | null =>
 function loadElement(e: SavedElement): FakeElement {
   if (e.kind !== undefined && !KNOWN_KINDS.has(e.kind)) {
     const t = toMatrix6(e.transform);
+    const raw = e.raw ?? {};
     const unknown: FakeUnknown = {
       sourceKind: e.kind,
-      raw: e.raw ?? {},
+      raw,
+      box: unknownBox(raw),
       hasTransform: t !== null,
       ...(t === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };

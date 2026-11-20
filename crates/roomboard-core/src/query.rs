@@ -120,17 +120,17 @@ impl Document {
                 outline,
             });
         }
-        if let Some(u) = read_unknown(txn, e) {
+        if let Some((transform, u)) = read_unknown(txn, e) {
             return Some(Geom {
                 id: raw_id?,
-                transform: u.transform,
+                transform,
                 outline: box_polygon(u.w, u.h).into(),
             });
         }
-        if let Some(i) = read_image(txn, e) {
+        if let Some((transform, i)) = read_image(txn, e) {
             return Some(Geom {
                 id,
-                transform: i.transform,
+                transform,
                 outline: box_polygon(i.w, i.h).into(),
             });
         }
