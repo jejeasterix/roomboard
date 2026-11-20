@@ -78,6 +78,28 @@ describe("chooseRenderer (échelon 4 et repli)", () => {
     expect(gl.log).toContain("deleteProgram");
   });
 
+  it("diagnostics : off sans WebGL, repli sans contexte, état WebGL2 sur faux GL", () => {
+    const mk = (): FakeCanvas => new FakeCanvas({ "2d": ctx2d() });
+    expect(chooseRenderer(el(mk()), el(mk()), SRC, false).diagnostics()).toEqual({ webgl: "off", lost: false, badColors: [] });
+    expect(chooseRenderer(el(mk()), el(mk()), SRC, true).diagnostics()).toEqual({ webgl: "repli", lost: false, badColors: [] });
+    const gl = new FakeGL();
+    const c = chooseRenderer(el(mk()), el(new FakeCanvas({ webgl2: gl })), SRC, true);
+    expect(c.diagnostics()).toEqual({ webgl: "on", lost: false, badColors: [] });
+    (c.renderer as WebGL2LiveRenderer).drawLive(
+      { strokes: [{ outline: new Float32Array([0, 0, 1, 0, 1, 1]), predicted: new Float32Array(0), color: "pas-une-couleur", width: 1 }], erasers: [] },
+      { zoom: 1, tx: 0, ty: 0 },
+    );
+    gl.fire("webglcontextlost");
+    expect(c.diagnostics()).toEqual({ webgl: "on", lost: true, badColors: ["pas-une-couleur"] });
+  });
+
+  it("diagnostics : programme refusé donne repli", () => {
+    const gl = new FakeGL();
+    gl.compileOk = false;
+    const c = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ webgl2: gl })), SRC, true);
+    expect(c.diagnostics().webgl).toBe("repli");
+  });
+
   it("repli : le contexte WebGL2 du canvas remplacé est perdu (WEBGL_lose_context)", () => {
     const gl = new FakeGL();
     gl.compileOk = false;

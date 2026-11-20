@@ -7,7 +7,7 @@
  */
 import type { Change } from "../../core/api";
 import type { Camera } from "../camera";
-import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
+import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visiblePageRect } from "../page";
 import { PEN_HALF_WIDTH } from "./canvas2d";
 import type { EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
@@ -65,7 +65,7 @@ export function viewTransform(
   ];
 }
 
-/** Cadre de page en pixels du tampon pour `gl.scissor` (x, y, largeur, hauteur ; origine en bas), borné au tampon. */
+/** Fond de page en pixels du tampon pour `gl.scissor` (x, y, largeur, hauteur ; origine en bas), jusqu'au bas du tampon. */
 export function pageScissor(
   c: Camera,
   bufW: number,
@@ -76,7 +76,8 @@ export function pageScissor(
   const x0 = Math.max(0, Math.floor(c.tx * sx));
   const x1 = Math.min(bufW, Math.ceil((PAGE_WIDTH * c.zoom + c.tx) * sx));
   const top = Math.max(0, Math.floor(c.ty * sy));
-  const bottom = Math.min(bufH, Math.ceil((PAGE_HEIGHT * c.zoom + c.ty) * sy));
+  // Page infinie en hauteur : le fond va jusqu'au bas du tampon tant que le haut de page est dans la vue.
+  const bottom = visiblePageRect(c, bufH / sy) ? bufH : top;
   return [x0, bufH - bottom, Math.max(0, x1 - x0), Math.max(0, bottom - top)];
 }
 

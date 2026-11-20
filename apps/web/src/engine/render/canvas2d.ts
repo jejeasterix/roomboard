@@ -6,7 +6,7 @@
 import type { Bounds, Change, ElementView, Matrix, ShapeData, StrokeStyle, TextData } from "../../core/api";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
-import { PAGE_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SURROUND_COLOR } from "../page";
+import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visiblePageRect, type PageRect } from "../page";
 import { layoutText, measureWith, textFont, TEXT_LINE_HEIGHT } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
@@ -100,6 +100,8 @@ export class Canvas2DRenderer implements Renderer {
   private readonly makePath: () => Path2D;
   private sx = 1;
   private sy = 1;
+  /** Hauteur CSS retenue par `resize` : le fond de page va jusqu'à son bas. */
+  private cssHeight = 0;
 
   constructor(
     private readonly scene: CanvasRenderingContext2D,
@@ -119,6 +121,7 @@ export class Canvas2DRenderer implements Renderer {
       if (ctx.canvas.width !== w) ctx.canvas.width = w;
       if (ctx.canvas.height !== h) ctx.canvas.height = h;
     }
+    this.cssHeight = height;
     this.sx = width > 0 ? w / width : dpr;
     this.sy = height > 0 ? h / height : dpr;
   }
@@ -130,7 +133,8 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     this.setView(ctx, camera);
     ctx.fillStyle = PAGE_BACKGROUND;
-    ctx.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+    const rect = visiblePageRect(camera, this.cssHeight);
+    if (rect) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
@@ -216,7 +220,8 @@ export class Canvas2DRenderer implements Renderer {
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     if (live.strokes.length === 0 && live.erasers.length === 0) return;
     this.setView(ctx, camera);
-    for (const e of live.erasers) this.paintEraser(ctx, e);
+    const rect = visiblePageRect(camera, this.cssHeight);
+    for (const e of live.erasers) this.paintEraser(ctx, e, rect);
     for (const s of live.strokes) this.paintStroke(ctx, s);
   }
 
@@ -278,7 +283,7 @@ export class Canvas2DRenderer implements Renderer {
    * Gomme partielle (D38, HL3-2) : la couleur du fond est peinte le long du chemin, découpée au cadre de la page
    * (blanc dedans, pourtour dehors). Gomme d'objet : rien ici, les traits touchés sont masqués de la scène.
    */
-  private paintEraser(ctx: CanvasRenderingContext2D, e: EraserPreview): void {
+  private paintEraser(ctx: CanvasRenderingContext2D, e: EraserPreview, page: PageRect | null): void {
     if (e.mode !== "partial" || e.path.length < 2) return;
     const x0 = e.path[0] ?? 0;
     const y0 = e.path[1] ?? 0;
@@ -298,10 +303,13 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       ctx.restore();
     };
-    along(PAGE_BACKGROUND, () => ctx.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT));
+    const pageRect = (): void => {
+      if (page) ctx.rect(page.x0, page.y0, page.x1 - page.x0, page.y1 - page.y0);
+    };
+    if (page) along(PAGE_BACKGROUND, pageRect);
     along(SURROUND_COLOR, () => {
       ctx.rect(-FAR, -FAR, 2 * FAR, 2 * FAR);
-      ctx.rect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+      pageRect();
     });
   }
 }

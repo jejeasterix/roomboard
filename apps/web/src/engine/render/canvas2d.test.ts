@@ -24,7 +24,8 @@ class FakeCtx {
     this.log.push(`transform ${[a, b, c, d, e, f].join(",")}`);
   }
   clearRect(): void { this.log.push("clearRect"); }
-  fillRect(): void { this.log.push(`fillRect ${this.fillStyle}`); }
+  readonly rects: number[][] = [];
+  fillRect(x = 0, y = 0, w = 0, h = 0): void { this.rects.push([x, y, w, h]); this.log.push(`fillRect ${this.fillStyle}`); }
   beginPath(): void { this.log.push("beginPath"); }
   moveTo(): void { this.log.push("moveTo"); }
   lineTo(): void { this.log.push("lineTo"); }
@@ -90,6 +91,14 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
     expect(scene.log).toContain("transform 1,0,0,1,5,6");
   });
 
+  it("page dessinée jusqu'au bas de la vue", () => {
+    const { r, scene } = make({});
+    r.resize(800, 600, 1);
+    r.drawScene({ id: "p", elementIds: [] }, { zoom: 1, tx: 0, ty: -5000 }, new Set());
+    const fills = scene.log.filter((l) => l.startsWith("fillRect"));
+    expect(scene.rects[fills.indexOf(`fillRect ${PAGE_BACKGROUND}`)]).toEqual([0, 0, 1920, 5600]);
+  });
+
   it("drawScene : les éléments masqués (aperçu D38) ne sont pas dessinés", () => {
     const { r, scene } = make({ a: square, b: square });
     r.drawScene({ id: "p", elementIds: ["a", "b"] }, IDENTITY, new Set(["a"]));
@@ -143,6 +152,7 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
 
   it("gomme partielle : fond de page puis pourtour repeints le long du chemin, largeur 2 × (rayon + demi-épaisseur du stylo)", () => {
     const { r, live } = make({});
+    r.resize(100, 100, 1);
     r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
     expect(live.log.filter((l) => l === "clip")).toHaveLength(2);
