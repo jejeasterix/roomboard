@@ -1149,3 +1149,111 @@ describe("moteur — barre de format (C7b, DAR4)", () => {
     expect(() => engine.textFormat({ type: "bold" })).not.toThrow();
   });
 });
+
+describe("moteur — C3", () => {
+  function c3() {
+    const doc = fakeCore.blank();
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", [], ctx),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => createSelectTool(ctx),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    const page = engine.state().page;
+    const rect = (x: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    const ctrl = (key: string, shiftKey = false): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey, altKey: false, isComposing: false, target: null });
+    return { doc, engine, page, rect, ctrl };
+  }
+  /** Sélection posée par un vrai geste de rectangle de l'outil Sélection. */
+  const band = (engine: ReturnType<typeof createEngine>, x0: number, x1: number): void => {
+    engine.setTool("select");
+    engine.sink.begin(1, "select", [{ ...sample, x: x0, y: 50 }]);
+    engine.sink.extend(1, [{ ...sample, x: x1, y: 250 }], []);
+    engine.sink.close(1, "end");
+  };
+
+  it("état : unités et groupe de la sélection", () => {
+    const { engine, rect } = c3();
+    rect(100);
+    rect(300);
+    expect(engine.state()).toMatchObject({ selectionUnits: 0, selectionGrouped: false });
+    band(engine, 50, 400);
+    expect(engine.state()).toMatchObject({ selectionUnits: 2, selectionGrouped: false });
+  });
+  it("group() : une étape, sélection gardée, une seule unité ensuite", () => {
+    const { engine, doc, rect } = c3();
+    const a = rect(100);
+    const b = rect(300);
+    band(engine, 50, 400);
+    expect(engine.group()).toBe(true);
+    expect(engine.state()).toMatchObject({ selection: [a, b], selectionUnits: 1, selectionGrouped: true });
+    expect(doc.element(a)?.group).toEqual(doc.element(b)?.group);
+    engine.undo();
+    expect(doc.element(a)?.group).toBeUndefined();
+  });
+  it("group() sous deux unités : faux, aucune écriture", () => {
+    const { engine, doc, rect } = c3();
+    rect(100);
+    band(engine, 50, 200);
+    const v = doc.version();
+    expect(engine.group()).toBe(false);
+    expect(doc.version()).toBe(v);
+  });
+  it("ungroup() : sans groupe faux ; avec groupe une étape", () => {
+    const { engine, rect } = c3();
+    rect(100);
+    rect(300);
+    band(engine, 50, 400);
+    expect(engine.ungroup()).toBe(false);
+    engine.group();
+    expect(engine.ungroup()).toBe(true);
+    expect(engine.state()).toMatchObject({ selectionUnits: 2, selectionGrouped: false });
+  });
+  it("Ctrl+G groupe, Ctrl+Maj+G dégroupe ; la touche est prise même sans effet", () => {
+    const { engine, rect, ctrl } = c3();
+    rect(100);
+    rect(300);
+    expect(engine.key(ctrl("g"))).toBe(true); // rien de sélectionné : pris, sans effet
+    band(engine, 50, 400);
+    expect(engine.key(ctrl("g"))).toBe(true);
+    expect(engine.state().selectionGrouped).toBe(true);
+    expect(engine.key(ctrl("G", true))).toBe(true);
+    expect(engine.state().selectionGrouped).toBe(false);
+  });
+  it("insertFragment : outil Sélection, objets insérés sélectionnés, une étape", () => {
+    const { engine, doc, page, rect } = c3();
+    const s = fakeCore.blank();
+    const sp = s.pageIds()[0]!;
+    const x = s.apply({ type: "AddShape", page: sp, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: PEN, fill: null }).ids[0]!;
+    rect(100);
+    engine.setTool("pen");
+    const c = engine.insertFragment(s.extract(sp, [x]), 24, 24);
+    expect(c?.ids).toHaveLength(1);
+    expect(engine.state()).toMatchObject({ tool: "select", selection: c?.ids });
+    expect(doc.elementIds(page)).toHaveLength(2);
+    engine.undo();
+    expect(doc.elementIds(page)).toHaveLength(1);
+  });
+  it("insertFragment refusé : null, erreur dans l'état, outil inchangé", () => {
+    const { engine } = c3();
+    engine.setTool("pen");
+    const s = fakeCore.blank();
+    const sp = s.pageIds()[0]!;
+    const x = s.apply({ type: "AddShape", page: sp, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: PEN, fill: null }).ids[0]!;
+    expect(engine.insertFragment(s.extract(sp, [x]), Number.NaN, 0)).toBeNull();
+    expect(engine.state()).toMatchObject({ tool: "pen", error: "matrice invalide (six nombres finis, inversible)" });
+  });
+  it("insertPages : après la page montrée, la première insérée est montrée ; Annuler les retire", () => {
+    const { engine, doc, page } = c3();
+    const s = fakeCore.blank();
+    s.apply({ type: "AddPage", after: s.pageIds()[0]! });
+    const c = engine.insertPages(s);
+    expect(c?.pages).toHaveLength(2);
+    expect(doc.pageIds()).toEqual([page, ...(c?.pages ?? [])]);
+    expect(engine.state().page).toBe(c?.pages[0]);
+    engine.undo();
+    expect(doc.pageIds()).toEqual([page]);
+    expect(engine.state().page).toBe(page);
+  });
+});

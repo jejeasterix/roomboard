@@ -35,6 +35,8 @@ function baseState(over: Partial<Record<string, unknown>> = {}): EngineState {
     pageCount: 1,
     selection: [],
     selectionBounds: null,
+    selectionUnits: 0,
+    selectionGrouped: false,
     elementCount: 0,
     version: 0,
     error: null,
