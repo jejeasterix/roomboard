@@ -53,6 +53,7 @@ function memoryHost() {
   let open: OpenedFile | null | Error = null;
   const host: FileHost = {
     kind: "repli",
+    onDrop: () => () => undefined,
     async open() {
       calls.open += 1;
       if (open instanceof Error) throw open;
