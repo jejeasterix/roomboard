@@ -300,4 +300,31 @@ mod tests {
         };
         assert!(e.starts_with("classeur illisible"), "{e}");
     }
+
+    #[test]
+    fn image_transparent_inner_clears_white_and_refuses_bad_size() {
+        let t = roomboard_formats::pixels::Transparent {
+            rgb: [255, 255, 255],
+            tolerance: 10,
+            soft: 0,
+            contiguous: false,
+        };
+        let mut px = vec![255, 255, 255, 255, 0, 0, 0, 255];
+        image_transparent_inner(&mut px, 2, 1, &t).expect("calcul");
+        assert_eq!(px, vec![255, 255, 255, 0, 0, 0, 0, 255]);
+        assert_eq!(
+            image_transparent_inner(&mut px, 3, 1, &t),
+            Err("pixels incohérents (4 × largeur × hauteur octets attendus)".to_string())
+        );
+    }
+
+    #[test]
+    fn image_adjust_and_flood_fill_inner() {
+        let mut px = vec![100, 100, 100, 50];
+        image_adjust_inner(&mut px, 50, 0);
+        assert_eq!(px, vec![228, 228, 228, 50]);
+        let mut px = vec![10, 10, 10, 255, 10, 10, 10, 255];
+        image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, [1, 2, 3]).expect("calcul");
+        assert_eq!(px, vec![1, 2, 3, 255, 1, 2, 3, 255]);
+    }
 }
