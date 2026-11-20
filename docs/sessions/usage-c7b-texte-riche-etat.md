@@ -1,12 +1,12 @@
 # État — usage-c7b-texte-riche
 
 Statut : en cours
-Gabarit : chantier (provisoire)
+Gabarit : chantier
 Objectif : On écrit dans un texte et dans les cellules d'un tableau avec une saisie riche qui respecte l'IME, et une barre pose gras, italique, souligné, taille et couleur sur la sélection.
-Avancement : —
-Étage : 2 — depuis 2026-11-20 12:20
+Avancement : 13/15 tâches terminées
+Étage : 3 (vague 4) — depuis 2026-11-20 13:11
 Lot : —
-Tâche : —
+Tâche : T12 — Liaison Wasm des segments — depuis 2026-11-20 13:35
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c7b-texte-riche   Branche : feat/usage-c7b-texte-riche   Base : origin/main @ 425d617
 Branche principale locale au lancement : 425d617
@@ -17,10 +17,13 @@ Rapide : couverte par la complète
 Complète (origin/main 425d617, verifier.sh --e2e) : OK (code 0)
 
 ## Compteurs
-contre-relecture cadrage 1/2 (aucune bloquante, 11 corrigées) · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 (aucune bloquante, 11 corrigées) · relecture plan 1/3 (partielle, T5-T11 tiennent ; critère T10 corrigé dans le brief ; T12-T15 non couverts) · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
 
 ## Tâches
-—
+Plan : 15 tâches, 6 vagues. Fusionnées dans feat/usage-c7b-texte-riche, preuves rejouées par l'orchestrateur :
+T1 (core 314 ok) · T2 (23) · T3 (8) · T4 (coque-csp OK) · T5 (core 324 ok) · T6 (core TS 268) · T7 (16) · T8 (184) · T9 (44) · T10 (31) · T11 (211) · T13 (app+ui 335, tsc vide) · T15 (check( 64/58/12 inchangés)
+En cours : T12 (worktree --T12). À faire : T14 (essai Playwright C7b + captures), après T12.
+Choix d'orchestration : relecture du plan menée en parallèle de la vague 1 (borne de 5 h) ; revues immédiates des tâches concepteur-critique remplacées par la double relecture de fin.
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · captures dans `docs/essais/` · PR mergée par fusion locale `--no-ff` et poussée
