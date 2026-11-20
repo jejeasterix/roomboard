@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CoreDocument } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import type { PendingOpen, PendingStore } from "./files";
-import { prepareFiles, startDocument } from "./mount";
+import { prepareFiles, prepareHost, startDocument } from "./mount";
 
 function store(value: PendingOpen | null, failTake = false): PendingStore & { taken: number } {
   const s = {
@@ -121,5 +121,47 @@ describe("raccourcis de fichier de l'amorce", () => {
     expect(removed.some(([t, cb]) => t === "keydown" && cb === keydown)).toBe(false);
     ctl.dispose();
     expect(removed.some(([t, cb]) => t === "keydown" && cb === keydown)).toBe(true);
+  });
+});
+
+describe("prepareHost (T98)", () => {
+  function webWindow(search: string, fsa: boolean) {
+    const doc = { title: "", addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    const w: Record<string, unknown> = {
+      indexedDB: undefined,
+      location: { search, reload: () => undefined },
+      document: doc,
+      confirm: () => true,
+      alert: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+    if (fsa) {
+      w["showOpenFilePicker"] = async () => [];
+      w["showSaveFilePicker"] = async () => [];
+    }
+    return { w: w as unknown as Window, doc };
+  }
+
+  it("hôte FSA : rend { kind, host, shell, dropReady }, dépôt posé sur w.document, dropReady résolu", async () => {
+    const { w, doc } = webWindow("", true);
+    const p = await prepareHost(w);
+    expect(p.kind).toBe("fsa");
+    expect(p.host.kind).toBe("fsa");
+    expect(typeof p.shell.setTitle).toBe("function");
+    const off = p.host.onDrop(vi.fn());
+    expect(doc.addEventListener.mock.calls.map((c) => c[0])).toEqual(["dragover", "drop"]);
+    off();
+    expect(doc.removeEventListener.mock.calls.map((c) => c[0])).toEqual(["dragover", "drop"]);
+    await expect(p.dropReady()).resolves.toBeUndefined();
+  });
+
+  it("repli (?fichiers=repli) : dépôt posé sur w.document, dropReady résolu", async () => {
+    const { w, doc } = webWindow("?fichiers=repli", true);
+    const p = await prepareHost(w);
+    expect([p.kind, p.host.kind]).toEqual(["repli", "repli"]);
+    p.host.onDrop(vi.fn());
+    expect(doc.addEventListener.mock.calls.map((c) => c[0])).toEqual(["dragover", "drop"]);
+    await expect(p.dropReady()).resolves.toBeUndefined();
   });
 });
