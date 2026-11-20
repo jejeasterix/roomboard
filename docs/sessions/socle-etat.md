@@ -4,8 +4,8 @@ Statut : en cours — lot 5b (OD33, lancé 2026-11-20 00:19, arrêt ferme 04:19)
 Gabarit : lots
 Objectif : RoomBoard a un socle 0.1 (pages, tracé avec pression, gomme, sélection, formes, texte, annuler, zoom, format natif) bâti sur un cœur Rust/Wasm, une interface TypeScript et une coque Tauri 2.
 Avancement : 5/6 lots clos — clos : 1, 2, 3, 3b, 4 (et 5a) · à faire : 5b
-Étage : 2 (plan du lot 5b) — depuis 2026-11-20 00:21
-Lot : 5b « interface SolidJS, barre en profils, barre des pages » — plan en cours — depuis 2026-11-20 00:21
+Étage : 3 (exécution du lot 5b) — depuis 2026-11-20 00:42
+Lot : 5b « interface SolidJS, barre en profils, onglets, barre des pages » — 15/18 tâches terminées — depuis 2026-11-20 00:21
 Avancement lot 5a (OD19) : clos — 12/12 tâches (T70-T81) ; prochaine tâche : plan du lot 5b (lot 4 fusionné)
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/socle-lot5b   Branche : feat/socle-lot5b   Base : origin/main @ d71eda3 (dépôt public jejeasterix/roomboard ; roomboard-prive hors chantier)
@@ -76,6 +76,13 @@ Correctif après fusion (PR #5, signalé par le cadrage de l'usage OD21, U24) : 
 Preuve du lot 4 (orchestrateur, tête df81224 après fusion de origin/main = lot 5a) : verifier.sh rc=0, `verifier.sh : OK` — Rust cœur 152 (2 ignorés : mesures), web 552 tests ; S2 lot 3 `OK` ; S2 lot 3b `OK (4 passages)` ; S3/S4 lot 4 `OK` (68 `ok —`, IME par CDP `Input.imeSetComposition`, 6 `non couvert —`) ; Fichiers lot 5a `OK (3 modes)`. Captures docs/essais/s34-lot4-{selection,forme-texte,pages}.png.
 Coque Linux lot 4 : build release avec cache 4 min 32 (CARGO_BUILD_JOBS=2, pic 1,41 Go RSS, .deb 3,53 Mio) ; chauffe avant fusion 14 min 47 (pic 1,25 Go). Sous Broadway (shim DPI 96, hors dépôt) : page ouverte, barre `#edition`, trait, rectangle, sélection + déplacement, texte « Bonjour », Ajouter une page (2 / 2), Ctrl+Z (1 / 1) ; fermeture par ✕ avec la question « modifications non enregistrées » (lot 5a). Capture docs/essais/coque-linux-lot4.png. À voir : la 3e ligne de barre recouvre le haut du canvas (Broadway ou réel : non tranché ; barre remplacée au lot 5b).
 Fusion de origin/main (lot 5a, 1bdca2a) dans la branche : 2 conflits (imports de main.ts ; ce fichier) résolus en gardant les deux côtés.
+
+## Tâches (lot 5b)
+Plan : docs/plans/socle-lot5b-PLAN.md (T82-T99 ; vagues : 1 = T82-T88 · 2 = T89-T92 · 3 = T93, T94 · 4 = T98 · 5 = T95, T99 · 6 = T96 · 7 = T97 orchestrateur). Cadrages amendés avant le plan : D5 (page infinie en hauteur) et D27 (un fichier par onglet), Q1-Q6 de usage-cadrage.md tranchées (f931e85, fce787d).
+Référence (d71eda3 + état, 00:42) : verifier.sh rc=0 en 1 min 32, pic 0,59 Go — Rust 152, web 552.
+Relecture du plan 1/3 (en parallèle de la vague 1) : aucun bloquant ; 8 majeurs (styles de la scène, coordonnées des essais sous la barre, Ctrl+O selon Q1, marquage #stage par onglet, banc, preuve de T96, 3 points de scénario jamais joués, contexte WebGL2 non libéré) corrigés par le planificateur (88c38c1), T93 scindée en T93 + T98.
+T82 SolidJS 1.9.20 (2) · T83 profil versionné (20 ; concepteur-critique, 3 mutations rouges) · T84 page infinie, fitWidth, diagnostics WebGL2 · T85 module commun des essais (S2, S2 3b, fichiers, S3/S4 verts, rejoués) · T86 entrée unique des fichiers (+28) · T87 coque : chemins accordés canoniques, read_granted_file, association, lancement, Cmd+Q (shell 12, contrôle hors ligne 18) · T88 mesure-outils · orchestrateur : `onDrop` au faux FileHost (tsc) · T89 ProfileStore, capacités, profil actif (18) · T90 moteur (fitWidth, style du stylo, caméra, Suppr+Ctrl+Z, Intl.Segmenter) · T91 barres des pages et des onglets (19) · T92 réglages, profil, diagnostics (15) · T93 BoardSession (28 ; release WebGL2) · T94 barre d'outils en profils (44) · T98 onglets, contrôleur par onglet (88 ; 12 tests du contrôleur réécrits selon Q1) · T99 correctif revue : écouteur matchMedia retiré au dispose. Toutes : 1 essai ; verifier.sh rejoué par l'orchestrateur après chaque vague (web 610 → 672 → 733 → 768).
+Revue immédiate T83/T87/T93 : aucun bloquant, 1 majeur (matchMedia → T99), 1 mineur (saisie de texte au changement d'onglet → T95).
 
 ## Scénarios et captures (lot 5a)
 Essai fichiers au navigateur (VM, Chromium headless, `scripts/essais/fichiers-navigateur.mjs`, CSP de la coque en en-tête) : `Fichiers lot 5a : OK (3 modes)` (détection, fsa, repli) — tracer, Ctrl+S, recharger (page vide), ouvrir : même empreinte des pixels d'encre, nom repris, aucune requête hors de 127.0.0.1 ; captures docs/essais/fichiers-lot5a-{repli,fsa}.png. S2 lot 3 OK ; S2 lot 3b OK (4 passages).
