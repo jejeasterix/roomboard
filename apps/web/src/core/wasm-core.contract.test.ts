@@ -368,7 +368,7 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
       kind: "text",
       transform: [1, 0, 0, 1, 100, 200],
       style: { color: "#000000", width: 0 },
-      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45 },
+      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45, spans: [{ text: "Bonjour", attrs: {} }] },
     });
     const v = d.version();
     expect(text(d, p, "Bonjour", id).version).toBe(v);
