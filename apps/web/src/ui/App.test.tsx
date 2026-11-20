@@ -50,6 +50,9 @@ interface FakeTab {
   readonly run: ReturnType<typeof vi.fn>;
   readonly engine: Record<string, ReturnType<typeof vi.fn>>;
   readonly setDirty: (d: boolean) => void;
+  readonly media: { toggle: ReturnType<typeof vi.fn>; seek: ReturnType<typeof vi.fn> };
+  /** Pose le média « sélectionné » du faux onglet et prévient l'application (état et lecteurs). */
+  readonly showMedia: (m: unknown, status?: string) => void;
 }
 
 function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): FakeTab {
@@ -77,6 +80,16 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     endGridPreview: vi.fn(),
     run: vi.fn(() => ({ pages: ["p"], ids: [], removed: [], full: false, version: 1 })),
   };
+  const mediaListeners = new Set<() => void>();
+  const media = {
+    onChange: vi.fn((cb: () => void) => {
+      mediaListeners.add(cb);
+      return () => mediaListeners.delete(cb);
+    }),
+    toggle: vi.fn(async () => undefined),
+    seek: vi.fn(async () => undefined),
+  };
+  const mediaView: { current: unknown; status: string } = { current: null, status: "poster" };
   let dirty = false;
   const dirtyListeners = new Set<() => void>();
   const run = vi.fn();
@@ -98,6 +111,9 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
       pageIds: () => ["p1", "p2", "p3"],
       page: (id: string) => ({ id, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null }),
     },
+    media,
+    selectedMedia: () => mediaView.current,
+    mediaState: () => ({ status: mediaView.status, time: 0 }),
     choice: { note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }) },
     effective: () => ({ prediction: false, inkTrail: "off", webgl: "off" }),
     activate: vi.fn(),
@@ -112,6 +128,14 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     },
     run,
     engine,
+    media,
+    showMedia(m, status = "poster") {
+      mediaView.current = m;
+      mediaView.status = status;
+      for (const cb of mediaListeners) cb();
+      state = baseState({ ...(state as unknown as Record<string, unknown>), version: Number((state as unknown as { version: number }).version) + 1 });
+      for (const cb of listeners) cb(state);
+    },
     setDirty(d) {
       dirty = d;
       for (const cb of dirtyListeners) cb();
@@ -662,5 +686,55 @@ describe("App — grille (C9 éditeur, E7, E8)", () => {
     expect(panelOf(container)).toBeNull();
     expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
     expect(tab.engine.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("App : barre du média (C14)", () => {
+  const MEDIA = {
+    id: "m1",
+    kind: "media",
+    media: { asset: "ab".repeat(32), mediaType: "video", w: 200, h: 100, duration: 2.5, poster: null, trimStart: 0, trimEnd: null, loop: false, volume: 1 },
+  };
+
+  it("visible pour un média sélectionné, absente sinon", async () => {
+    const { container, tab } = renderApp();
+    expect(container.querySelector("[data-media-bar]")).toBeNull();
+    tab.showMedia(MEDIA);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    tab.showMedia(null);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).toBeNull());
+  });
+
+  it("Lecture : le lecteur de la session reçoit l'élément et ses réglages", async () => {
+    const { container, tab } = renderApp();
+    tab.showMedia(MEDIA);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    container.querySelector<HTMLButtonElement>('[data-media="toggle"]')!.click();
+    expect(tab.media.toggle).toHaveBeenCalledWith("m1", expect.objectContaining({ asset: MEDIA.media.asset, duration: 2.5, volume: 1 }));
+  });
+
+  it("« Début ici » écrit un SetMedia par engine.run", async () => {
+    const { container, tab } = renderApp();
+    tab.showMedia(MEDIA);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    container.querySelector<HTMLButtonElement>('[data-media="start"]')!.click();
+    expect(tab.engine["run"]).toHaveBeenCalledWith(expect.objectContaining({ type: "SetMedia", id: "m1", trimEnd: null, loop: false, volume: 1 }));
+  });
+
+  it("refus du cœur : message dans la barre", async () => {
+    const { container, tab } = renderApp();
+    tab.engine["run"]!.mockReturnValueOnce(null);
+    tab.emit({ error: "durée inconnue" });
+    tab.showMedia(MEDIA);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    container.querySelector<HTMLButtonElement>('[data-media="end"]')!.click();
+    await vi.waitFor(() => expect(container.querySelector('[data-media="error"]')?.textContent).toBe("durée inconnue"));
+  });
+
+  it("R8 : média lié introuvable, lecture grisée dès l'ouverture de la barre (M31)", async () => {
+    const { container, tab } = renderApp();
+    tab.showMedia(MEDIA, "echec");
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    expect(container.querySelector<HTMLButtonElement>('[data-media="toggle"]')!.disabled).toBe(true);
   });
 });

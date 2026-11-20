@@ -67,7 +67,7 @@ export interface SessionShared {
 }
 
 /** Réglages de lecture d'un média du document. */
-function specOf(m: MediaData): MediaPlaySpec {
+export function specOf(m: MediaData): MediaPlaySpec {
   return { asset: m.asset, mediaType: m.mediaType, duration: m.duration, trimStart: m.trimStart, trimEnd: m.trimEnd, loop: m.loop, volume: m.volume };
 }
 
@@ -179,7 +179,6 @@ async function buildBoardSession(
   // Lecteurs de média (C14) : conteneur caché dans la scène, URL du magasin (blob:) ou du lien (M19, S5).
   const mediaHost = document.createElement("div");
   mediaHost.className = "rb-media-host";
-  mediaHost.hidden = true;
   stage.append(mediaHost);
   const owned = new Set<string>();
   const sourceUrl = (asset: string): string | null => {
