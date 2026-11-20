@@ -13,7 +13,7 @@ const hex = (buf: ArrayBuffer): string => Array.from(new Uint8Array(buf), (b) =>
 export const webCryptoHasher: AssetHasher = async (blob) => hex(await crypto.subtle.digest("SHA-256", await blob.arrayBuffer()));
 
 export interface AssetStore {
-  /** Calcule l'empreinte ; un contenu déjà présent garde son premier Blob. */
+  /** Calcule l'empreinte ; un contenu déjà présent garde son premier Blob ; le Blob gardé est une copie en mémoire. */
   put(blob: Blob): Promise<AssetId>;
   /** Octets déjà vérifiés (lecture du conteneur) ; lève si l'empreinte n'est pas conforme. */
   adopt(id: AssetId, blob: Blob): void;
@@ -30,9 +30,12 @@ export function createAssetStore(hash: AssetHasher = webCryptoHasher): AssetStor
   };
   return {
     async put(blob) {
-      const id = await hash(blob);
+      // Octets lus une seule fois : l'empreinte et le Blob gardé viennent du même tampon, en mémoire. Un Blob adossé à
+      // un fichier disque (dépôt, sélecteur) échouerait ou changerait si le fichier source bougeait avant Ctrl+S.
+      const copy = new Blob([await blob.arrayBuffer()], { type: blob.type });
+      const id = await hash(copy);
       if (!isAssetId(id)) throw new Error(`empreinte d'asset invalide : ${id}`);
-      keep(id, blob);
+      keep(id, copy);
       return id;
     },
     adopt(id, blob) {

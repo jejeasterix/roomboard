@@ -24,7 +24,7 @@ export type PermissionLike = "granted" | "denied" | "prompt";
 export interface FileHandleLike {
   readonly kind?: "file";
   readonly name: string;
-  getFile(): Promise<{ arrayBuffer(): Promise<ArrayBuffer> }>;
+  getFile(): Promise<File>;
   createWritable(): Promise<WritableLike>;
   queryPermission?(d: { mode: "readwrite" }): Promise<PermissionLike>;
   requestPermission?(d: { mode: "readwrite" }): Promise<PermissionLike>;

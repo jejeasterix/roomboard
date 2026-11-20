@@ -95,7 +95,7 @@ export function createFsaHost(w: FsaWindow, dropTarget: DropTargetLike | null = 
         throw e;
       }
       // Aucune lecture ici : l'importeur contrôle `size` d'abord (R15, HR14) ; `getFile()` rend un `File` réel.
-      return Promise.all(handles.map(async (h) => droppedFromFile((await h.getFile()) as File)));
+      return Promise.all(handles.map(async (h) => droppedFromFile(await h.getFile())));
     },
     async save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
       let handle: FileHandleLike | null = target.kind === "fsa" && (await writable(target.handle)) ? target.handle : null;

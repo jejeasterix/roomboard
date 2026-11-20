@@ -11,7 +11,7 @@ const file = (target: PendingOpen["target"]): PendingOpen => ({
 
 const fakeHandle: FileHandleLike = {
   name: "cours.roomboard",
-  getFile: async () => ({ arrayBuffer: async () => new ArrayBuffer(0) }),
+  getFile: async () => new File([], "cours.roomboard"),
   createWritable: async () => ({ write: async () => undefined, close: async () => undefined }),
 };
 
