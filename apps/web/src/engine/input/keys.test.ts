@@ -82,3 +82,21 @@ describe("editAction (D12, CL4-10)", () => {
     expect(editAction(k("Delete", { altKey: true }))).toBeNull();
   });
 });
+
+describe("keyAction : groupes (Z13)", () => {
+  it("Ctrl+G groupe, Cmd+G aussi", () => {
+    expect(keyAction(k("g", { ctrlKey: true }))).toBe("group");
+    expect(keyAction(k("g", { metaKey: true }))).toBe("group");
+  });
+  it("Ctrl+Maj+G dégroupe (touche rendue en majuscule)", () => {
+    expect(keyAction(k("G", { ctrlKey: true, shiftKey: true }))).toBe("ungroup");
+  });
+  it("G seul ou Alt+Ctrl+G : rien", () => {
+    expect(keyAction(k("g"))).toBeNull();
+    expect(keyAction(k("g", { ctrlKey: true, altKey: true }))).toBeNull();
+  });
+  it("Ctrl+G dans un champ : rien", () => {
+    expect(keyAction(k("g", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(keyAction(k("g", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
+  });
+});
