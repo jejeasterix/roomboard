@@ -711,6 +711,14 @@ describe("App : barre du média (C14)", () => {
     media: { asset: "ab".repeat(32), mediaType: "video", w: 200, h: 100, duration: 2.5, poster: null, trimStart: 0, trimEnd: null, loop: false, volume: 1 },
   };
 
+  it("la classe rb-media-bar n'est posée qu'une fois (enveloppe), sans doubler bordure et ombre", async () => {
+    const { container, tab } = renderApp();
+    tab.showMedia(MEDIA);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    expect(container.querySelectorAll(".rb-media-bar")).toHaveLength(1);
+    expect(container.querySelector("[data-media-bar]")!.parentElement!.className).toBe("rb-popover rb-media-bar");
+  });
+
   it("visible pour un média sélectionné, absente sinon", async () => {
     const { container, tab } = renderApp();
     expect(container.querySelector("[data-media-bar]")).toBeNull();
