@@ -708,12 +708,20 @@ impl Document {
             }
             _ => false,
         };
-        if same {
+        // Même fond mais métadonnée d'asset absente : on l'écrit (une étape) au lieu de « inchangé ».
+        let meta_missing = same
+            && input.is_some_and(|b| {
+                let txn = self.read();
+                txn.get_map("assets")
+                    .is_none_or(|m| m.get(&txn, b.asset.id.as_str()).is_none())
+            });
+        if same && !meta_missing {
             return Ok(self.unchanged());
         }
         {
             let mut txn = self.transact_local();
             match input {
+                Some(b) if same => self.insert_asset_meta(&mut txn, &b.asset),
                 None => {
                     page_map.remove(&mut txn, "backdrop");
                 }

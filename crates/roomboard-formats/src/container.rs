@@ -117,7 +117,7 @@ pub fn read(file: &[u8]) -> Result<Unpacked, FormatError> {
 
 /// `read` avec une limite par entrée paramétrable (tests) ; `read` passe `MAX_ASSET_BYTES`.
 #[doc(hidden)]
-pub fn read_limited(file: &[u8], _max: u64) -> Result<Unpacked, FormatError> {
+pub fn read_limited(file: &[u8], max: u64) -> Result<Unpacked, FormatError> {
     let format::Opened {
         mut archive, parts, ..
     } = format::open(file)?;
@@ -131,6 +131,9 @@ pub fn read_limited(file: &[u8], _max: u64) -> Result<Unpacked, FormatError> {
     for name in names {
         let rest = &name[ASSETS_DIR.len()..];
         let id = rest.split_once('.').map_or(rest, |(id, _)| id);
+        if rest.is_empty() {
+            continue; // entrée de dossier `assets/` : pas un asset, rien à signaler
+        }
         if rest.contains('/') || !is_asset_id(id) {
             warnings.push(format!("entrée ignorée : {name} (nom d'asset invalide)"));
             continue;
@@ -139,9 +142,19 @@ pub fn read_limited(file: &[u8], _max: u64) -> Result<Unpacked, FormatError> {
         let read_ok = archive
             .by_name(&name)
             .map_err(|e| e.to_string())
-            .and_then(|mut f| f.read_to_end(&mut bytes).map_err(|e| e.to_string()));
+            .and_then(|f| {
+                f.take(max.saturating_add(1))
+                    .read_to_end(&mut bytes)
+                    .map_err(|e| e.to_string())
+            });
         if let Err(e) = read_ok {
             warnings.push(format!("asset ignoré : {name} (illisible : {e})"));
+            continue;
+        }
+        if bytes.len() as u64 > max {
+            warnings.push(format!(
+                "asset ignoré : {name} (trop gros : plus de {max} octets)"
+            ));
             continue;
         }
         if sha256_hex(&bytes) != id {

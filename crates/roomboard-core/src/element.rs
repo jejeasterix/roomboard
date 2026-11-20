@@ -292,18 +292,22 @@ pub(crate) fn read_backdrop<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<RawBac
 }
 
 /// Vue du fond (K6, K9, DAK4) : `None` sans asset conforme ; `rect` calé sur la largeur de la page (page à hauteur
-/// infinie : coin en (0, 0), hauteur = h × largeur / w) dès que `w` et `h` sont finis > 0, quel que soit `fit`.
+/// infinie : coin en (0, 0), hauteur = h × largeur / w) dès que `w`, `h` et la largeur de page sont finis > 0 et la hauteur calculée finie, quel que soit `fit`.
 pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropView> {
     let asset = r.asset.filter(|a| is_asset_id(a))?;
     let w = r.w.filter(|v| finite_positive(*v));
     let h = r.h.filter(|v| finite_positive(*v));
-    let rect = match (w, h) {
-        (Some(w), Some(h)) => Some(Bounds {
-            x0: 0.0,
-            y0: 0.0,
-            x1: page_width,
-            y1: h * page_width / w,
-        }),
+    let page_width = Some(page_width).filter(|v| finite_positive(*v));
+    let rect = match (w, h, page_width) {
+        (Some(w), Some(h), Some(page_width)) => {
+            let y1 = h * page_width / w;
+            y1.is_finite().then_some(Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: page_width,
+                y1,
+            })
+        }
         _ => None,
     };
     Some(BackdropView {
