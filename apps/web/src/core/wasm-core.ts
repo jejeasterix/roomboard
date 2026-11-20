@@ -10,6 +10,8 @@ import type {
   CoreDocument,
   CoreFactory,
   ElementView,
+  GridLevel,
+  GridView,
   Matrix,
   PageView,
   StrokeBuilderApi,
@@ -137,6 +139,36 @@ function toBackdropView(v: unknown): BackdropView | null {
   return { asset, kind, w: numberOrNull(v["w"], PAGE), h: numberOrNull(v["h"], PAGE), fit, rect: toBounds(v["rect"]) };
 }
 
+function toGridLevel(v: unknown): GridLevel {
+  if (!isRecord(v)) throw new Error(PAGE);
+  const { kind, spacingX, spacingY, originX, originY, color, line, snap, visible } = v;
+  if (
+    typeof kind !== "string" ||
+    typeof spacingX !== "number" ||
+    typeof spacingY !== "number" ||
+    typeof originX !== "number" ||
+    typeof originY !== "number" ||
+    typeof color !== "string" ||
+    typeof line !== "string" ||
+    typeof snap !== "boolean" ||
+    typeof visible !== "boolean"
+  ) {
+    throw new Error(PAGE);
+  }
+  return { kind, spacingX, spacingY, originX, originY, color, line, snap, visible };
+}
+
+// Grille (C9, G12) : `undefined` (Option::None) → null, comme le fond ; forme fausse → erreur.
+function toGridView(v: unknown): GridView | null {
+  if (v === null || v === undefined) return null;
+  if (!isRecord(v)) throw new Error(PAGE);
+  const { visible, snap, above, levels } = v;
+  if (typeof visible !== "boolean" || typeof snap !== "boolean" || typeof above !== "boolean" || !Array.isArray(levels)) {
+    throw new Error(PAGE);
+  }
+  return { visible, snap, above, levels: levels.map(toGridLevel) };
+}
+
 export function toPageView(v: unknown): PageView | null {
   if (v === null || v === undefined) return null;
   if (!isRecord(v)) throw new Error(PAGE);
@@ -144,7 +176,7 @@ export function toPageView(v: unknown): PageView | null {
   if (typeof id !== "string" || typeof width !== "number" || typeof height !== "number" || typeof background !== "string") {
     throw new Error(PAGE);
   }
-  return { id, width, height, background, backdrop: toBackdropView(v["backdrop"]) };
+  return { id, width, height, background, backdrop: toBackdropView(v["backdrop"]), grid: toGridView(v["grid"]) };
 }
 
 export function toAssetInfo(v: unknown): AssetInfo {
