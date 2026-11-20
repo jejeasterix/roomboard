@@ -3,6 +3,295 @@
 //! l'insertion des pages d'un document. Chaque élément garde tous ses champs (types inconnus compris, U3) ; seuls
 //! `id`, `group` (renuméroté par une table commune à l'insertion) et la translation de `transform` sont réécrits.
 //! Aucune lecture du `kind`.
+//!
+//! Jamais l'état d'un document appliqué comme mise à jour Yrs sur la cible (U9) : la cible garderait les ids et
+//! l'historique de la source, et la page du fragment avec. Seul `extract` décode un état, celui du document neuf qu'il
+//! vient d'écrire.
+use std::collections::{HashMap, HashSet};
+
+use yrs::types::AsPrelim;
+use yrs::{
+    Any, Array, ArrayPrelim, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
+    Transact, TransactionMut,
+};
+
+use crate::commands::{Change, CommandError};
+use crate::document::{insert_page, Document};
+use crate::element::{any_f64, out_string, transform_to_any, SCHEMA};
+
+/// Table ancien → neuf des ids de groupe, commune à toute une insertion (Z4).
+pub(crate) type IdMap = HashMap<String, String>;
+
+/// Chemin `group` renuméroté ; valeur illisible gardée telle quelle (`None` : ne pas réécrire).
+fn renumber(v: &In, ids: &mut IdMap) -> Option<In> {
+    let In::Any(Any::Array(items)) = v else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for a in items.iter() {
+        let Any::String(s) = a else { return None };
+        let next = ids
+            .entry(s.to_string())
+            .or_insert_with(|| yrs::uuid_v4().to_string());
+        out.push(Any::String(next.as_str().into()));
+    }
+    Some(In::Any(Any::Array(out.into())))
+}
+
+/// `transform` translaté de (dx, dy) ; `None` si illisible (gardé tel quel).
+fn translated(v: &In, dx: f64, dy: f64) -> Option<In> {
+    let In::Any(Any::Array(items)) = v else {
+        return None;
+    };
+    if items.len() != 6 {
+        return None;
+    }
+    let mut t = [0.0; 6];
+    for (slot, a) in t.iter_mut().zip(items.iter()) {
+        *slot = any_f64(a)?;
+    }
+    t[4] += dx;
+    t[5] += dy;
+    Some(In::Any(transform_to_any(&t)))
+}
+
+/// Les `Y.Map` d'un tableau, dans l'ordre.
+fn maps<T: ReadTxn>(txn: &T, a: &ArrayRef) -> Vec<MapRef> {
+    a.iter(txn)
+        .filter_map(|o| match o {
+            Out::YMap(m) => Some(m),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Éléments d'une page, dans l'ordre d'empilement ; aucun si `elements` est illisible.
+fn elements_of<T: ReadTxn>(txn: &T, page: &MapRef) -> Vec<MapRef> {
+    match page.get(txn, "elements") {
+        Some(Out::YArray(a)) => maps(txn, &a),
+        _ => Vec::new(),
+    }
+}
+
+/// Recopie `from` (lus dans `src`) en haut de `into`, dans l'ordre : id neuf, groupes renumérotés par `ids`, translation.
+/// Rend les ids neufs.
+pub(crate) fn copy_elements<T: ReadTxn>(
+    src: &T,
+    from: &[MapRef],
+    dst: &mut TransactionMut,
+    into: &ArrayRef,
+    ids: &mut IdMap,
+    dx: f64,
+    dy: f64,
+) -> Vec<String> {
+    let mut out = Vec::with_capacity(from.len());
+    for e in from {
+        let mut prelim = e.as_prelim(src);
+        let id = yrs::uuid_v4().to_string();
+        prelim.insert("id".into(), In::from(id.as_str()));
+        if let Some(g) = prelim.get("group").and_then(|g| renumber(g, ids)) {
+            prelim.insert("group".into(), g);
+        }
+        if dx != 0.0 || dy != 0.0 {
+            if let Some(t) = prelim.get("transform").and_then(|t| translated(t, dx, dy)) {
+                prelim.insert("transform".into(), t);
+            }
+        }
+        let n = into.len(dst);
+        into.insert(dst, n, prelim);
+        out.push(id);
+    }
+    out
+}
+
+/// Recopie dans `dst_assets` le `Y.Map` d'asset de chaque id de `cited` absent de la cible (K3), lu dans la racine
+/// `assets` de `src` : mêmes champs que `insert_asset_meta`, champs inconnus compris.
+fn copy_asset_meta<T: ReadTxn>(
+    src: &T,
+    cited: &[String],
+    dst: &mut TransactionMut,
+    dst_assets: &MapRef,
+) {
+    let Some(src_assets) = src.get_map("assets") else {
+        return;
+    };
+    for id in cited {
+        if dst_assets.get(dst, id).is_some() {
+            continue;
+        }
+        if let Some(Out::YMap(m)) = src_assets.get(src, id) {
+            dst_assets.insert(dst, id.as_str(), m.as_prelim(src));
+        }
+    }
+}
+
+/// Relit un `Doc` brut que l'on vient d'écrire en `Document` neuf (historique vide, D37).
+fn decode(doc: &Doc) -> Result<Document, CommandError> {
+    let bytes = doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    // Un document que l'on vient d'écrire se relit toujours ; une erreur ici serait un défaut du cœur.
+    Document::from_update_v1(&bytes).map_err(|_| CommandError::BadFormat)
+}
+
+impl Document {
+    /// Éléments `ids` de `page`, dans l'ordre d'empilement (D2) ; premier id absent = `UnknownElement`.
+    fn picked<T: ReadTxn>(
+        &self,
+        txn: &T,
+        page: &str,
+        ids: &[String],
+    ) -> Result<Vec<MapRef>, CommandError> {
+        let els = self
+            .page_elements(txn, page)
+            .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
+        let mut found = HashSet::new();
+        let mut out = Vec::new();
+        for e in maps(txn, &els) {
+            if let Some(id) = out_string(e.get(txn, "id")) {
+                if wanted.contains(id.as_str()) {
+                    found.insert(id);
+                    out.push(e);
+                }
+            }
+        }
+        if let Some(missing) = ids.iter().find(|id| !found.contains(*id)) {
+            return Err(CommandError::UnknownElement(missing.clone()));
+        }
+        Ok(out)
+    }
+
+    /// Document neuf d'une page qui porte une recopie des éléments `ids` de `page` (Z5) ; métadonnées des assets
+    /// cités recopiées ; aucune étape d'annulation (écrit sur un `Doc` brut, puis décodé).
+    pub fn extract(&self, page: &str, ids: &[String]) -> Result<Document, CommandError> {
+        let src = self.read();
+        let picked = self.picked(&src, page, ids)?;
+        let doc = Doc::new();
+        let meta = doc.get_or_insert_map("meta");
+        let pages = doc.get_or_insert_array("pages");
+        let assets = doc.get_or_insert_map("assets");
+        {
+            let mut t = doc.transact_mut();
+            meta.insert(&mut t, "schema", f64::from(SCHEMA));
+            insert_page(&pages, &mut t, 0);
+            let Some(Out::YMap(pm)) = pages.get(&t, 0) else {
+                return Err(CommandError::BadFormat);
+            };
+            let Some(Out::YArray(els)) = pm.get(&t, "elements") else {
+                return Err(CommandError::BadFormat);
+            };
+            copy_elements(&src, &picked, &mut t, &els, &mut IdMap::new(), 0.0, 0.0);
+        }
+        let cited: Vec<String> = decode(&doc)?
+            .cited_assets()
+            .into_iter()
+            .map(|a| a.id)
+            .collect();
+        if !cited.is_empty() {
+            let mut t = doc.transact_mut();
+            copy_asset_meta(&src, &cited, &mut t, &assets);
+        }
+        decode(&doc)
+    }
+
+    /// Recopie les éléments de la première page de `src` en haut de `page`, translatés de (dx, dy) ; une transaction
+    /// `"local"` (une étape) ; source sans élément : aucune étape (D38).
+    pub fn insert_fragment(
+        &mut self,
+        src: &Document,
+        page: &str,
+        dx: f64,
+        dy: f64,
+    ) -> Result<Change, CommandError> {
+        if !dx.is_finite() || !dy.is_finite() {
+            return Err(CommandError::BadMatrix);
+        }
+        let into = self.page_elements_or_err(page)?;
+        let st = src.read();
+        let from = match maps(&st, src.pages_ref()).first() {
+            Some(pm) => elements_of(&st, pm),
+            None => Vec::new(),
+        };
+        if from.is_empty() {
+            return Ok(self.unchanged());
+        }
+        let cited: Vec<String> = src.cited_assets().into_iter().map(|a| a.id).collect();
+        let ids = {
+            let mut t = self.transact_local();
+            let ids = copy_elements(&st, &from, &mut t, &into, &mut IdMap::new(), dx, dy);
+            if let Some(assets) = t.get_map("assets") {
+                copy_asset_meta(&st, &cited, &mut t, &assets);
+            }
+            ids
+        };
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ids,
+            ..Default::default()
+        }))
+    }
+
+    /// Recopie chaque page de `src` en entier (fond, grille, champs inconnus) avec un id neuf, à la suite de `after` ;
+    /// une transaction `"local"` ; une table de groupes commune à toutes les pages (Z4).
+    pub fn insert_pages(&mut self, src: &Document, after: &str) -> Result<Change, CommandError> {
+        let at = {
+            let txn = self.read();
+            self.find_page(&txn, after)
+                .map(|(i, _)| i + 1)
+                .ok_or_else(|| CommandError::UnknownPage(after.to_string()))?
+        };
+        let st = src.read();
+        let src_pages = maps(&st, src.pages_ref());
+        if src_pages.is_empty() {
+            return Ok(self.unchanged());
+        }
+        let cited: Vec<String> = src.cited_assets().into_iter().map(|a| a.id).collect();
+        let mut change = Change::default();
+        {
+            let pages = self.pages_ref().clone();
+            let mut t = self.transact_local();
+            let mut groups = IdMap::new();
+            for (k, sp) in src_pages.iter().enumerate() {
+                let index = at + k as u32;
+                // Tous les champs de la page sauf ses éléments, recopiés à part (ids neufs, groupes renumérotés).
+                let mut prelim: MapPrelim = sp
+                    .iter(&st)
+                    .filter(|(key, _)| *key != "elements")
+                    .map(|(key, v)| (key, v.as_prelim(&st)))
+                    .collect();
+                let id = yrs::uuid_v4().to_string();
+                prelim.insert("id".into(), In::from(id.as_str()));
+                prelim.insert(
+                    "elements".into(),
+                    In::Array(ArrayPrelim::from(Vec::<In>::new())),
+                );
+                pages.insert(&mut t, index, prelim);
+                let Some(Out::YMap(pm)) = pages.get(&t, index) else {
+                    continue;
+                };
+                let Some(Out::YArray(into)) = pm.get(&t, "elements") else {
+                    continue;
+                };
+                let from = elements_of(&st, sp);
+                change.ids.extend(copy_elements(
+                    &st,
+                    &from,
+                    &mut t,
+                    &into,
+                    &mut groups,
+                    0.0,
+                    0.0,
+                ));
+                change.pages.push(id);
+            }
+            if let Some(assets) = t.get_map("assets") {
+                copy_asset_meta(&st, &cited, &mut t, &assets);
+            }
+        }
+        Ok(self.done(change))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -130,7 +419,7 @@ mod tests {
         let p = first(&d);
         let a = rect(&mut d, &p, 0.0);
         assert_eq!(
-            d.extract("absente", &[a.clone()]).err(),
+            d.extract("absente", std::slice::from_ref(&a)).err(),
             Some(CommandError::UnknownPage("absente".into()))
         );
         assert_eq!(
@@ -204,8 +493,14 @@ mod tests {
         .expect("cellule");
         let f = d.extract(&p, &[t.clone(), tb.clone()]).expect("extract");
         let got = ids_of(&f);
-        assert_eq!(f.element(&got[0]).unwrap().text, d.element(&t).unwrap().text);
-        assert_eq!(f.element(&got[1]).unwrap().table, d.element(&tb).unwrap().table);
+        assert_eq!(
+            f.element(&got[0]).unwrap().text,
+            d.element(&t).unwrap().text
+        );
+        assert_eq!(
+            f.element(&got[1]).unwrap().table,
+            d.element(&tb).unwrap().table
+        );
     }
 
     #[test]
@@ -218,7 +513,11 @@ mod tests {
         let cited = f.cited_assets();
         assert_eq!(cited.len(), 1);
         assert_eq!(
-            (cited[0].id.as_str(), cited[0].name.as_str(), cited[0].mime.as_str()),
+            (
+                cited[0].id.as_str(),
+                cited[0].name.as_str(),
+                cited[0].mime.as_str()
+            ),
             (A1, "a.png", "image/png")
         );
     }
@@ -255,7 +554,7 @@ mod tests {
         let mut src = Document::blank();
         let sp = first(&src);
         let a = rect(&mut src, &sp, 0.0);
-        let f = src.extract(&sp, &[a.clone()]).expect("extract");
+        let f = src.extract(&sp, std::slice::from_ref(&a)).expect("extract");
         let mut d = Document::blank();
         let p = first(&d);
         let old = stroke(&mut d, &p, 500.0);
@@ -431,7 +730,7 @@ mod tests {
 
     #[test]
     fn unknown_kind_element_is_copied_with_its_fields() {
-        let mut d = Document::blank();
+        let d = Document::blank();
         let p = first(&d);
         {
             let mut txn = d.transact_local();
@@ -456,7 +755,10 @@ mod tests {
         let id = ids_of(&f)[0].clone();
         let txn = f.read();
         let e = f.find_element(&txn, &id).unwrap().element;
-        assert_eq!(e.get(&txn, "foo"), Some(Out::Any(Any::String("bar".into()))));
+        assert_eq!(
+            e.get(&txn, "foo"),
+            Some(Out::Any(Any::String("bar".into())))
+        );
         assert_eq!(
             e.get(&txn, "kind"),
             Some(Out::Any(Any::String("sticker".into())))
