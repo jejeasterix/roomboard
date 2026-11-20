@@ -75,8 +75,13 @@ function fileOf(doc: PdfjsDocument, dom: PdfDom): PdfFile {
   const page = (i: number): Promise<PdfjsPage> => {
     let p = pages.get(i);
     if (p === undefined) {
-      p = doc.getPage(i + 1);
-      pages.set(i, p);
+      const mine = doc.getPage(i + 1);
+      p = mine;
+      pages.set(i, mine);
+      // Rejet : l'entrée est retirée, la page sera retentée.
+      mine.catch(() => {
+        if (pages.get(i) === mine) pages.delete(i);
+      });
     }
     return p;
   };

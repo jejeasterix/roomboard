@@ -264,10 +264,12 @@ export class Canvas2DRenderer implements Renderer {
     if (b.kind !== PDF_PAGE_KIND) return "";
     const s = this.backdrop?.paint(ctx, b, camera, { w: this.cssWidth, h: this.cssHeight, dpr: this.dpr }) ?? "echec";
     if (s === "echec") {
+      ctx.save();
       ctx.font = textFont(32);
       ctx.fillStyle = PLACEHOLDER_STROKE;
       ctx.textBaseline = "top";
       ctx.fillText(BACKDROP_UNREADABLE_LABEL, r.x0 + 24, r.y0 + 24);
+      ctx.restore();
     }
     return s;
   }

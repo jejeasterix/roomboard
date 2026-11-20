@@ -3,7 +3,7 @@
  * plus grossiers d'abord, puis le palier courant : l'image la plus fine recouvre) et demande les tuiles visibles qui
  * manquent. Palier p = 2^⌈log2(zoom × dpr)⌉ borné à [1/4, 8] (pixels d'écran par unité monde) ; tuiles de 1024 px ; clé
  * `asset · page · p · colonne · rang` ; 2 rendus au plus, ceux qui sortent de la vue annulés. Un `PdfFile` par asset,
- * ouvert au premier besoin, détruit à `clear` et à `dispose`. Une instance par onglet, un `paint` par image ; `ready`
+ * ouvert au premier besoin (jamais pour une vue vide), détruit à `dispose`. Une instance par onglet, un `paint` par image ; `ready`
  * (branché sur `engine.redraw()`) est appelé à chaque arrivée, comme `image-cache.ts`.
  *
  * Éviction (LRU, bitmaps fermés) : une tuile de l'image en cours (visible au palier courant, au dernier `paint`) n'est
@@ -11,8 +11,8 @@
  * écran 5K (dpr 2, palier 4 : jusqu'à 54 tuiles) : tuile prête, redessin, éviction d'une visible, sans fin, et le fond
  * n'arriverait jamais à « pret ». La vue réduite, le cache revient à 32.
  *
- * `clear` (onglet désactivé) libère tout, bitmaps et PDF, et laisse le cache resservir ; `dispose` (onglet fermé) libère
- * tout et ferme aussitôt ce qui arrive après.
+ * `dispose` (onglet désactivé ou fermé : board-session le fait puis recrée le cache au dessin suivant) libère tout,
+ * bitmaps et PDF, et ferme aussitôt ce qui arrive après.
  */
 import type { Bounds } from "../../core/api";
 import type { Camera } from "../camera";
@@ -46,9 +46,8 @@ export interface PdfTile {
 }
 export interface PdfTiles {
   paint(ctx: CanvasRenderingContext2D, backdrop: PdfBackdrop, camera: Camera, view: TileView): TileState;
-  /** Onglet désactivé : rendus annulés, bitmaps fermés, PDF détruits ; le prochain `paint` rouvre et redemande. */
-  clear(): void;
-  /** Onglet fermé : comme `clear`, et tout ce qui arrive ensuite est fermé ou détruit aussitôt. */
+  /** Onglet fermé ou désactivé (la session recrée le cache au dessin suivant) : rendus annulés, bitmaps fermés, PDF
+   *  détruits, et tout ce qui arrive ensuite est fermé ou détruit aussitôt. */
   dispose(): void;
 }
 
@@ -99,8 +98,6 @@ export function createPdfTiles(open: (asset: string) => Promise<PdfFile> | null,
   const failed = new Set<string>();
   /** Tuiles de l'image en cours (palier courant, dernier `paint`) : jamais évincées. */
   let current: ReadonlySet<string> = NONE;
-  /** Change à chaque `clear` : un PDF ouvert pour une génération passée est détruit à l'arrivée. */
-  let epoch = 0;
   let disposed = false;
 
   const fileFor = (asset: string): FileEntry => {
@@ -114,10 +111,9 @@ export function createPdfTiles(open: (asset: string) => Promise<PdfFile> | null,
     }
     const entry: FileEntry = { state: "pending" };
     files.set(asset, entry);
-    const mine = epoch;
     pending.then(
       (file) => {
-        if (disposed || mine !== epoch) {
+        if (disposed) {
           file.destroy();
           return;
         }
@@ -125,7 +121,7 @@ export function createPdfTiles(open: (asset: string) => Promise<PdfFile> | null,
         ready();
       },
       (e: unknown) => {
-        if (disposed || mine !== epoch) return;
+        if (disposed) return;
         files.set(asset, { state: "failed" });
         console.warn(`RoomBoard : PDF ${asset} illisible (${why(e)})`);
         ready();
@@ -191,7 +187,6 @@ export function createPdfTiles(open: (asset: string) => Promise<PdfFile> | null,
     );
   };
   const release = (): void => {
-    epoch += 1;
     current = NONE;
     for (const c of inflight.values()) c.abort();
     inflight.clear();
@@ -211,10 +206,11 @@ export function createPdfTiles(open: (asset: string) => Promise<PdfFile> | null,
     paint(ctx, b, camera, view) {
       const { page, w, rect } = b;
       if (disposed || page === null || w === null || rect === null) return nothing("echec");
-      const entry = fileFor(b.asset);
-      if (entry.state === "failed") return nothing("echec");
+      // Vue vide (onglet désactivé, 0 x 0) : ni ouverture de PDF ni dessin, avant même `fileFor`.
       const visible = visibleGridRect(camera, view.w, view.h);
       if (visible === null) return nothing("pret");
+      const entry = fileFor(b.asset);
+      if (entry.state === "failed") return nothing("echec");
       const prefix = `${b.asset}|${page}`;
       const level = levelFor(camera.zoom, view.dpr);
       for (const q of LEVELS) {
@@ -245,9 +241,6 @@ export function createPdfTiles(open: (asset: string) => Promise<PdfFile> | null,
       }
       trim();
       return broken ? "echec" : missing > 0 ? "attente" : "pret";
-    },
-    clear() {
-      if (!disposed) release();
     },
     dispose() {
       if (disposed) return;
