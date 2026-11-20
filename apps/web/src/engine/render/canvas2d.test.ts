@@ -313,4 +313,11 @@ describe("Canvas2DRenderer — C7 (texte par segments)", () => {
     r.drawScene(page, IDENTITY, new Set());
     expect(scene.measures).toBeGreaterThan(first);
   });
+
+  it("socle : une ligne vide émet encore fillText(\"\") à son y", () => {
+    const t = VIEWS["t"];
+    if (!t || t.kind !== "text") throw new Error("vue t");
+    const scene = draw({ ...t, text: { ...t.text, content: "a\n\nb", spans: [{ text: "a\n\nb", attrs: {} }] } });
+    expect(scene.log.filter((l) => l.startsWith("fillText"))).toEqual(["fillText a 0,0", "fillText  0,25", "fillText b 0,50"]);
+  });
 });
