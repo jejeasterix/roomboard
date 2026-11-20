@@ -14,8 +14,11 @@ import type {
   PageView,
   StrokeBuilderApi,
   StrokeStyle,
+  TextAttrs,
+  TextSpan,
 } from "./api";
 import { UNKNOWN_BOX } from "./api";
+import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
 
@@ -53,6 +56,48 @@ function toStyle(s: unknown): StrokeStyle {
   return { color, width };
 }
 
+/** Attributs d'un segment (C7, T8) : clés connues seules, valeurs déjà normalisées par le cœur ; `undefined` = absent. */
+function toAttrs(a: unknown): TextAttrs {
+  if (!isRecord(a)) throw new Error(ELEMENT);
+  const out: { bold?: true; italic?: true; underline?: true; color?: string; size?: number; font?: string } = {};
+  for (const [k, v] of Object.entries(a)) {
+    if (v === undefined) continue;
+    switch (k) {
+      case "bold":
+      case "italic":
+      case "underline":
+        if (v !== true) throw new Error(ELEMENT);
+        out[k] = true;
+        break;
+      case "color":
+      case "font":
+        if (typeof v !== "string") throw new Error(ELEMENT);
+        out[k] = v;
+        break;
+      case "size":
+        if (!finitePositive(v)) throw new Error(ELEMENT);
+        out.size = v;
+        break;
+      default:
+        throw new Error(ELEMENT);
+    }
+  }
+  return out;
+}
+
+/** Segments d'un texte : au moins un (le cœur rend un segment vide pour un texte vide). */
+function toSpans(v: unknown): TextSpan[] {
+  if (!Array.isArray(v) || v.length === 0) throw new Error(ELEMENT);
+  return v.map((s: unknown) => {
+    const text = isRecord(s) ? s["text"] : undefined;
+    if (!isRecord(s) || typeof text !== "string") throw new Error(ELEMENT);
+    return { text, attrs: toAttrs(s["attrs"]) };
+  });
+}
+
+/** Bornes de FormatText : hors des u32, u32::MAX, que le cœur refuse au contrôle des bornes comme la fausse liaison. */
+const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : 0xffffffff);
+
 /** Kind connu : forme contrôlée ; kind non reconnu : UnknownElement (U3, K8) ; id et transform toujours exigés. */
 export function toElementView(v: unknown): ElementView | null {
   if (v === null || v === undefined) return null;
@@ -82,7 +127,7 @@ export function toElementView(v: unknown): ElementView | null {
       if (typeof content !== "string" || typeof size !== "number" || typeof boxWidth !== "number" || typeof boxHeight !== "number") {
         throw new Error(ELEMENT);
       }
-      return { ...base, kind, style, text: { content, size, boxWidth, boxHeight } };
+      return { ...base, kind, style, text: { content, size, boxWidth, boxHeight, spans: toSpans(t["spans"]) } };
     }
     case "image": {
       const i = v["image"];
@@ -190,6 +235,9 @@ class WasmCoreDocument implements CoreDocument {
         if (b === null) return toChange(this.d.clear_backdrop(cmd.page));
         return toChange(this.d.set_backdrop(cmd.page, b.asset.id, b.asset.name, b.asset.mime, b.asset.size, b.w, b.h, b.fit));
       }
+      case "FormatText":
+        // Clés à `undefined` retirées (T7) : serde-wasm-bindgen les lirait comme null, donc comme un retrait.
+        return toChange(this.d.format_text(cmd.id, toU32(cmd.start), toU32(cmd.len), cleanPatch(cmd.attrs), cmd.boxHeight));
     }
   }
 
