@@ -224,6 +224,17 @@ async function scenario(page, url, { captures, tmp }) {
   }
 
 
+  // Le fichier d'origine garde l'historique des gestes (annuler, rétablir, glisser) ; le document rouvert n'en garde que l'état :
+  // document.ybin diffère de l'origine, c'est attendu. Rouvert puis réenregistré deux fois : mêmes octets, mêmes assets.
+  const fileR = await saveTo("rouvert.roomboard");
+  const chooserR = page.waitForEvent("filechooser");
+  await page.keyboard.press("Control+o");
+  await (await chooserR).setFiles(fileR);
+  await waitTabs(before3 + 2);
+  const fileR2 = await saveTo("rouvert-2.roomboard");
+  const [eR, eR2] = [zipEntries(await readFile(fileR)), zipEntries(await readFile(fileR2))];
+  check(eR.get("document.ybin") && Buffer.compare(eR.get("document.ybin"), eR2.get("document.ybin")) === 0, "S3 : rouvert puis réenregistré : même document.ybin");
+  check(eR.has(entry) && eR2.has(entry) && Buffer.compare(eR2.get(entry), png) === 0, "S3 : rouvert puis réenregistré : mêmes assets (octets du PNG déposé)");
   // S4 : .roomboard déposé → nouvel onglet avec ses images, onglet d'origine intact.
   await page.locator(TAB).nth(0).click();
   await fr();
