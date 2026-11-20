@@ -10,6 +10,7 @@ import { messageOf } from "./controller";
 import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
+import type { LinkedMedia, MediaProbe } from "./media-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 
@@ -44,6 +45,10 @@ export interface ImportDeps {
   /** C12 (PF2, PF10) : ouvre un PDF dans un nouvel onglet ; false si refusé (message déjà dit) ; absente : `.pdf`
    *  refusé comme avant. */
   openPdf?(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
+  /** C14 (M15) : sonde d'un média (durée, taille, poster) ; absente : la sonde du navigateur (T8). */
+  readonly probe?: (url: string) => Promise<MediaProbe>;
+  /** C14 : lie un fichier de la coque sans le copier (T8, T10). */
+  linkMedia?(path: string): Promise<LinkedMedia>;
 }
 
 export interface Importer {
