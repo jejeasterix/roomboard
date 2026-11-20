@@ -14,6 +14,7 @@ for a in "$@"; do
 done
 
 WASM_OUT=apps/web/src/wasm
+FORMATS_OUT=apps/web/src/wasm-formats
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -29,6 +30,17 @@ rm -rf "$WASM_OUT"
 # --remove-name-section : ~510 Ko de noms de fonctions en moins (OD55, docs/essais/taille-wasm.md).
 wasm-bindgen --target web --remove-name-section --out-dir "$WASM_OUT" \
   target/wasm32-unknown-unknown/release/roomboard_wasm.wasm
+# Second module (R8, R9) : conteneur avec assets, chargé par la page au premier besoin ; 3 Mio au plus.
+cargo build -p roomboard-formats-wasm --target wasm32-unknown-unknown --release
+rm -rf "$FORMATS_OUT"
+wasm-bindgen --target web --remove-name-section --out-dir "$FORMATS_OUT" \
+  target/wasm32-unknown-unknown/release/roomboard_formats_wasm.wasm
+taille_formats=$(wc -c < "$FORMATS_OUT/roomboard_formats_wasm_bg.wasm" | tr -d ' ')
+echo "module formats : $taille_formats octets ($FORMATS_OUT/roomboard_formats_wasm_bg.wasm)"
+if [ "$taille_formats" -gt 3145728 ]; then
+  echo "verifier.sh : module formats trop gros ($taille_formats octets > 3 Mio, R9)" >&2
+  exit 1
+fi
 
 pnpm install --frozen-lockfile
 # Contrat du vrai module (D33) : exigé ici, il échoue au lieu de se sauter si le .wasm manque.
