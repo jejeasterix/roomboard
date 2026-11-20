@@ -1,0 +1,128 @@
+import { describe, expect, it } from "vitest";
+import { ACTIVE_KEY, PROFILES_KEY, browserKeyValue, createProfileStore, type KeyValue } from "./profile-store";
+import { serializeProfile } from "./toolbar";
+import { BUILTIN_PROFILES, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
+
+function fakeKv(): KeyValue & { map: Map<string, string> } {
+  const map = new Map<string, string>();
+  return {
+    map,
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k),
+  };
+}
+
+const userJson = (id: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  ...DEFAULT_PROFILE_JSON,
+  id,
+  label: `Profil ${id}`,
+  ...extra,
+});
+
+function userProfile(id: string, extra: Record<string, unknown> = {}) {
+  const store = createProfileStore(null, BUILTIN_PROFILES);
+  const kv = fakeKv();
+  kv.setItem(PROFILES_KEY, JSON.stringify([userJson(id, extra)]));
+  void store;
+  return { kv, p: createProfileStore(kv, BUILTIN_PROFILES).get(id)! };
+}
+
+describe("ProfileStore (T89)", () => {
+  it("profil defaut en lecture seule", () => {
+    const s = createProfileStore(fakeKv(), BUILTIN_PROFILES);
+    const d = s.get("defaut")!;
+    expect(() => s.save(d)).toThrow("profil en lecture seule : defaut");
+    expect(() => s.remove("defaut")).toThrow("profil en lecture seule : defaut");
+    expect(s.isReadOnly("defaut")).toBe(true);
+  });
+
+  it("sans stockage : defaut actif, utilisable", () => {
+    const s = createProfileStore(null, BUILTIN_PROFILES);
+    expect(s.activeId()).toBe("defaut");
+    expect(s.list().length).toBe(BUILTIN_PROFILES.length);
+  });
+
+  it("choix gardé", () => {
+    const kv = fakeKv();
+    createProfileStore(kv, BUILTIN_PROFILES).setActive("simple");
+    expect(kv.map.get(ACTIVE_KEY)).toBe("simple");
+    expect(createProfileStore(kv, BUILTIN_PROFILES).activeId()).toBe("simple");
+  });
+
+  it("profil utilisateur : enregistré, relu, clés inconnues gardées", () => {
+    const { p } = userProfile("perso", { futur: { a: 1 } });
+    const kv = fakeKv();
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    s.save(p);
+    expect(s.isReadOnly("perso")).toBe(false);
+    const again = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(again.get("perso")).toEqual(p);
+    expect(again.list().map((x) => x.id)).toEqual(["defaut", "simple", "perso"]);
+    expect(kv.map.get(PROFILES_KEY)).toContain('"futur"');
+    expect(JSON.parse(kv.map.get(PROFILES_KEY)!)).toEqual([serializeProfile(p)]);
+    again.remove("perso");
+    expect(createProfileStore(kv, BUILTIN_PROFILES).get("perso")).toBeNull();
+  });
+
+  it("stockage illisible", () => {
+    const kv = fakeKv();
+    kv.setItem(PROFILES_KEY, "{pas du json");
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(s.list()).toEqual(BUILTIN_PROFILES);
+    expect(s.warnings().length).toBeGreaterThan(0);
+  });
+
+  it("profil stocké d'une majeure supérieure : écarté avec avertissement, les autres gardés", () => {
+    const kv = fakeKv();
+    kv.setItem(PROFILES_KEY, JSON.stringify([userJson("futur", { schema: 99 }), userJson("ok")]));
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(s.get("futur")).toBeNull();
+    expect(s.get("ok")).not.toBeNull();
+    expect(s.warnings().length).toBeGreaterThan(0);
+  });
+
+  it("profil livré présent dans le stockage : ignoré avec avertissement", () => {
+    const kv = fakeKv();
+    kv.setItem(PROFILES_KEY, JSON.stringify([userJson("defaut", { label: "Pirate" })]));
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(s.get("defaut")!.label).not.toBe("Pirate");
+    expect(s.warnings().length).toBeGreaterThan(0);
+  });
+
+  it("actif inconnu", () => {
+    const kv = fakeKv();
+    kv.setItem(ACTIVE_KEY, "disparu");
+    expect(createProfileStore(kv, BUILTIN_PROFILES).activeId()).toBe("defaut");
+  });
+
+  it("stockage qui lève : le choix reste en mémoire, avertissement", () => {
+    const kv: KeyValue = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem: () => {},
+    };
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    s.setActive("simple");
+    expect(s.activeId()).toBe("simple");
+    expect(s.warnings().length).toBeGreaterThan(0);
+  });
+
+  it("setActive inconnu lève", () => {
+    expect(() => createProfileStore(null, BUILTIN_PROFILES).setActive("inconnu")).toThrow("profil inconnu : inconnu");
+  });
+
+  it("browserKeyValue : null si l'accès lève ou si absent", () => {
+    const kv = fakeKv();
+    expect(browserKeyValue({ localStorage: kv as unknown as Storage })).toBe(kv);
+    expect(browserKeyValue({})).toBeNull();
+    const w = {
+      get localStorage(): Storage {
+        throw new Error("SecurityError");
+      },
+    };
+    expect(browserKeyValue(w)).toBeNull();
+  });
+});
