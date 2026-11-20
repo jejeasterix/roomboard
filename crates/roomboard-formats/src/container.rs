@@ -2,7 +2,7 @@
 //! `assets/<sha256>.<ext>` ; le manifeste et `document.ybin` passent par le cœur (`format::write_parts`,
 //! `format::open`), jamais recopiés ici.
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::Write;
 
 use roomboard_core::asset::is_asset_id;
 use roomboard_core::format::{self, FormatError, Parts};
@@ -138,25 +138,23 @@ pub fn read_limited(file: &[u8], max: u64) -> Result<Unpacked, FormatError> {
             warnings.push(format!("entrée ignorée : {name} (nom d'asset invalide)"));
             continue;
         }
-        let mut bytes = Vec::new();
-        let read_ok = archive
-            .by_name(&name)
-            .map_err(|e| e.to_string())
-            .and_then(|f| {
-                f.take(max.saturating_add(1))
-                    .read_to_end(&mut bytes)
-                    .map_err(|e| e.to_string())
-            });
-        if let Err(e) = read_ok {
-            warnings.push(format!("asset ignoré : {name} (illisible : {e})"));
-            continue;
-        }
-        if bytes.len() as u64 > max {
-            warnings.push(format!(
-                "asset ignoré : {name} (trop gros : plus de {max} octets)"
-            ));
-            continue;
-        }
+        let read = match archive.by_name(&name) {
+            Ok(f) => format::read_bounded(f, max),
+            Err(e) => Err(format::BoundedReadError::Io(e.to_string())),
+        };
+        let bytes = match read {
+            Ok(b) => b,
+            Err(format::BoundedReadError::TooLarge) => {
+                warnings.push(format!(
+                    "asset ignoré : {name} (trop gros : plus de {max} octets)"
+                ));
+                continue;
+            }
+            Err(format::BoundedReadError::Io(e)) => {
+                warnings.push(format!("asset ignoré : {name} (illisible : {e})"));
+                continue;
+            }
+        };
         if sha256_hex(&bytes) != id {
             warnings.push(format!(
                 "asset ignoré : {name} (contenu différent de son empreinte)"

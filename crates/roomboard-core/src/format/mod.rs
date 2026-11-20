@@ -73,11 +73,49 @@ pub fn load(bytes: &[u8]) -> Result<Document, FormatError> {
     load_with_manifest(bytes).map(|(doc, _)| doc)
 }
 
-fn read_entry(archive: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Option<Vec<u8>> {
-    let mut file = archive.by_name(name).ok()?;
+/// Taille maximale du manifeste lu (R20) : 1 Mio.
+pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+/// Taille maximale de `document.ybin` lu (R20) : 256 Mio.
+pub const MAX_DOCUMENT_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Échec d'une lecture bornée (R20).
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoundedReadError {
+    /// Plus de `max` octets.
+    TooLarge,
+    Io(String),
+}
+
+/// Lit au plus `max` octets de `r` (`take(max + 1)`) : au-delà, `TooLarge`, sans jamais remplir la mémoire d'une bombe
+/// de décompression. Seule lecture bornée du projet (R20) : `read_entry` et `roomboard_formats::container` l'appellent.
+pub fn read_bounded(r: impl Read, max: u64) -> Result<Vec<u8>, BoundedReadError> {
     let mut out = Vec::new();
-    file.read_to_end(&mut out).ok()?;
-    Some(out)
+    r.take(max.saturating_add(1))
+        .read_to_end(&mut out)
+        .map_err(|e| BoundedReadError::Io(e.to_string()))?;
+    if out.len() as u64 > max {
+        return Err(BoundedReadError::TooLarge);
+    }
+    Ok(out)
+}
+
+/// Entrée `name` lue au plus à `max` octets ; absente ou illisible : `Ok(None)` (comme avant R20) ; trop grosse :
+/// `Corrupt`.
+fn read_entry(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    name: &str,
+    max: u64,
+) -> Result<Option<Vec<u8>>, FormatError> {
+    let Ok(file) = archive.by_name(name) else {
+        return Ok(None);
+    };
+    match read_bounded(file, max) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(BoundedReadError::TooLarge) => Err(FormatError::Corrupt(format!(
+            "{name} trop gros : plus de {max} octets"
+        ))),
+        Err(BoundedReadError::Io(_)) => Ok(None),
+    }
 }
 
 /// Les deux entrées du `.roomboard` que seul le cœur écrit et lit (K2) : manifeste JSON et état Yrs v1.
@@ -169,12 +207,21 @@ pub fn check_manifest(raw: &[u8]) -> Result<Manifest, FormatError> {
     Ok(manifest)
 }
 
-/// Ouvre l'archive, contrôle le manifeste **avant** de chercher `document.ybin`, puis lit `document.ybin`.
+/// Ouvre l'archive, contrôle le manifeste **avant** de chercher `document.ybin`, puis lit `document.ybin` ; bornes R20.
 pub fn open(bytes: &[u8]) -> Result<Opened<'_>, FormatError> {
+    open_with_limits(bytes, MAX_MANIFEST_BYTES, MAX_DOCUMENT_BYTES)
+}
+
+/// `open` avec des bornes paramétrables (tests : un `document.ybin` de 256 Mio ne se fabrique pas dans un test).
+fn open_with_limits(
+    bytes: &[u8],
+    max_manifest: u64,
+    max_document: u64,
+) -> Result<Opened<'_>, FormatError> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| FormatError::NotRoomboard)?;
-    let raw = read_entry(&mut archive, MANIFEST).ok_or(FormatError::NotRoomboard)?;
+    let raw = read_entry(&mut archive, MANIFEST, max_manifest)?.ok_or(FormatError::NotRoomboard)?;
     let manifest = check_manifest(&raw)?;
-    let ybin = read_entry(&mut archive, DOCUMENT)
+    let ybin = read_entry(&mut archive, DOCUMENT, max_document)?
         .ok_or_else(|| FormatError::Corrupt(format!("{DOCUMENT} absent")))?;
     Ok(Opened {
         archive,
