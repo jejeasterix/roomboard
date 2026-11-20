@@ -157,18 +157,18 @@ pub fn transparent_color(px: &mut [u8], w: u32, h: u32, t: &Transparent) -> Resu
     Ok(())
 }
 
-/// Luminosité et contraste par canal, alpha gardé (I15) ; 0 et 0 : octets inchangés.
+/// Luminosité et contraste par canal, alpha gardé (I15) ; 0 et 0 : octets inchangés. Calcul entier exact.
 pub fn adjust(px: &mut [u8], brightness: i8, contrast: i8) {
     if brightness == 0 && contrast == 0 {
         return;
     }
-    let k = 1.0 + f64::from(contrast) / 100.0;
-    let b = f64::from(brightness) * 255.0 / 100.0; // exact : 50 × 2,55 flottant donnerait 127,4999…
-    let lut: Vec<u8> = (0..=255u8)
+    // Exact en entiers : v' = ((v - 128)(100 + c) + 12800 + 255 b) / 100, arrondi demi loin de zéro, borné à 0..=255
+    // (le flottant décalait des demis : 7 906 combinaisons à ±1). Un numérateur ≤ 0 donne 0 après bornage.
+    let (k, b) = (i32::from(contrast) + 100, i32::from(brightness));
+    let lut: Vec<u8> = (0..=255i32)
         .map(|v| {
-            ((f64::from(v) - 128.0) * k + 128.0 + b)
-                .round()
-                .clamp(0.0, 255.0) as u8
+            let n = (v - 128) * k + 12_800 + 255 * b;
+            ((n + 50) / 100).clamp(0, 255) as u8
         })
         .collect();
     for p in px.as_chunks_mut::<4>().0 {
@@ -306,6 +306,14 @@ mod tests {
         transparent_color(&mut v, 2, 1, &white(10, 0, false)).expect("calcul");
         assert_eq!(px(&v, 2, 0, 0)[3], 0, "écart 25 : 2500 ≤ 2550");
         assert_eq!(px(&v, 2, 1, 0)[3], 255, "écart 26 : 2600 > 2550");
+    }
+
+    #[test]
+    fn adjust_contrast_is_exact_in_integers() {
+        // (173 - 128) * 1 + 12800 - 12495 = 350 -> 3,5 -> 4 (le flottant donnait 3)
+        let mut v = [173u8, 173, 173, 255];
+        adjust(&mut v, -49, -99);
+        assert_eq!(v, [4, 4, 4, 255]);
     }
 
     #[test]

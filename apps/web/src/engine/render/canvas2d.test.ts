@@ -672,12 +672,13 @@ describe("images et éléments inconnus (R16, U3)", () => {
     expect(scene.images[0]?.src).toBeUndefined();
   });
 
-  it("image rognée, retournée, tournée : boîte affichée, rectangle source à l'échelle de la copie, matrice d'orientation (I23)", () => {
+  it("image rognée, retournée, tournée : rognage par clip, drawImage à 5 arguments de l'image entière, matrice d'orientation (I23)", () => {
     const i = { asset: IMG, w: 200, h: 100, crop: [20, 10, 100, 50] as const, flipX: true, quarterTurns: 1 };
     const el: ElementView = { id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: i };
     const half = { tag: "copie réduite", width: 100, height: 50 } as unknown as CanvasImageSource;
     const scene = sceneOf(el, { bitmap: () => half });
-    expect(scene.images).toEqual([{ img: half, x: 0, y: 0, w: 100, h: 50, src: [10, 5, 50, 25] }]);
+    expect(scene.images).toEqual([{ img: half, x: -20, y: -10, w: 200, h: 100 }]);
+    expect(scene.log).toContain("clip");
     expect(orientMatrix(i)).toEqual([0, -1, -1, 0, 50, 100]);
     expect(scene.log).toContain("transform 0,-1,-1,0,50,100");
   });

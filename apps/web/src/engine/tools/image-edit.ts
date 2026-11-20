@@ -49,6 +49,8 @@ export interface ImageEditSession extends ImageEdit {
   readonly gesture: GestureTool;
   /** Échap pendant un mode : en sort sans écrire. */
   cancelMode(): void;
+  /** Le document a changé (version `v`) : si l'écriture n'est pas une retouche géométrique de la séance, le brouillon est jeté (I31). */
+  changed(v: number): void;
 }
 
 export type Drag = { readonly handle: HandleId | "move"; readonly start: readonly [number, number]; readonly from: Bounds };
@@ -233,6 +235,11 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
     },
     mode: () => (crop !== null ? "crop" : picking !== null ? "pick" : "idle"),
     keepsDraft: (v) => writing || own.has(v),
+    changed(v) {
+      if (!open || writing || own.has(v)) return;
+      pixelDraft = null;
+      refresh();
+    },
     cancelMode() {
       if (crop !== null) session.finishCrop(false);
       else disarm();

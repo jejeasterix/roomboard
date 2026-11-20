@@ -107,19 +107,26 @@ export function createPixelRunner(spawn: () => WorkerLike, opts: { readonly idle
     const id = ++seq;
     busy = { id, w, timer: setTimeout(() => fail(PIXELS_FAILED_MESSAGE), timeoutMs) };
     const { job } = w;
-    job.bitmap().then(
-      (bitmap) => {
-        if (busy?.id !== id) {
-          bitmap.close();
-          return;
-        }
+    const send = (bitmap: ImageBitmap): void => {
+      if (busy?.id !== id) {
+        bitmap.close();
+        return;
+      }
+      try {
         const msg = { id, bitmap, transparent: job.transparent, brightness: job.brightness, contrast: job.contrast };
         ensure().postMessage(msg, [bitmap]);
-      },
-      () => {
+      } catch {
+        bitmap.close();
+        fail(PIXELS_FAILED_MESSAGE);
+      }
+    };
+    try {
+      job.bitmap().then(send, () => {
         if (busy?.id === id) fail(PIXELS_FAILED_MESSAGE);
-      },
-    );
+      });
+    } catch {
+      fail(PIXELS_FAILED_MESSAGE);
+    }
   }
   return {
     run(slot, job) {

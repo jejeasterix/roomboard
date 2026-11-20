@@ -43,3 +43,9 @@ export function editAction(e: KeyLike): EditAction | null {
   if (e.key === "Escape") return "escape";
   return null;
 }
+
+/** Entrée seule (validation d'un mode d'édition, C5) : hors champ, hors composition, et pas sur un bouton, dont elle est l'activation. */
+export function enterAction(e: KeyLike): boolean {
+  if (e.key !== "Enter" || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || inEditable(e.target)) return false;
+  return e.target?.tagName?.toUpperCase() !== "BUTTON";
+}
