@@ -1467,6 +1467,34 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(engine.key(key("Enter"))).toBe(true);
     expect(image().image.crop).toEqual([0, 0, 160, 120]);
   });
+  it("C5 annuler après Tourner avec brouillon : aperçu sans brouillon, matrice du document (I31)", () => {
+    const { engine, renderer, id } = c5();
+    const edit = engine.editImage(id)!;
+    edit.preview({ brightness: 50 });
+    edit.geometry(turnShown({}, 1));
+    expect(renderer.imagePreviews.at(-1)).toMatchObject({ params: { quarterTurns: 1, brightness: 50 } });
+    engine.undo();
+    expect(renderer.imagePreviews.at(-1)).toBeNull();
+  });
+  it("C5 déplacer l'image à l'outil Sélection avec brouillon : brouillon jeté, aperçu retiré (I31)", () => {
+    const { engine, renderer, id, drag } = c5();
+    const edit = engine.editImage(id)!;
+    edit.preview({ brightness: 50 });
+    expect(renderer.imagePreviews.at(-1)).not.toBeNull();
+    drag([200, 200], [260, 230]);
+    expect(renderer.imagePreviews.at(-1)).toBeNull();
+  });
+  it("C5 Entrée pendant le rognage sur un bouton : n'écrit pas le rognage", () => {
+    const { engine, id, image, drag } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    drag([300, 250], [260, 220]);
+    expect(engine.key(key("Enter", { target: { tagName: "BUTTON" } }))).toBe(false);
+    expect(image().image.crop).toBeUndefined();
+    expect(edit.mode()).toBe("crop");
+    expect(engine.key(key("Enter", { target: { tagName: "INPUT" } }))).toBe(false);
+    expect(edit.mode()).toBe("crop");
+  });
   it("C5 Échap sort du rognage sans écrire", () => {
     const { engine, doc, id } = c5();
     const edit = engine.editImage(id)!;
