@@ -7,11 +7,13 @@
 import { createBoardSession, type SessionShared } from "./app/board-session";
 import { browserExportCanvas, createPngOverlay, OVERLAY_MAX_PX } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
+import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
 import { createWorkspace, type TabSession } from "./app/workspace";
 import type { CoreDocument } from "./core/api";
 import { Canvas2DRenderer } from "./engine/render/canvas2d";
+import { RecordingPath } from "./engine/render/record-ctx";
 import { decodeImage, kindOfMime } from "./platform/image-import";
-import { loadPdfjs, loadPdfLib } from "./platform/pdf-load";
+import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
 import { createPdfEngine } from "./platform/pdf-render";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
@@ -128,9 +130,8 @@ async function start(): Promise<void> {
   for (const w of store.warnings()) console.warn(w);
   const active = createActiveProfile(store, runtimeCapabilities(wasm.capabilities(detectPlatform(env)), env));
   let tabCount = 0;
-  // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
-  const spawnSheetWorker = (): WorkerLike => {
-    const w = new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" });
+  // Worker jetable (C10b DAB4, C12, `runOnce`) : un `Worker` du navigateur vu comme `WorkerLike`.
+  const asWorkerLike = (w: Worker): WorkerLike => {
     const like: WorkerLike = {
       onmessage: null,
       onerror: null,
@@ -141,7 +142,53 @@ async function start(): Promise<void> {
     w.onerror = (e) => like.onerror?.(e);
     return like;
   };
+  // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
+  const spawnSheetWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" }));
   const sheets = createSheetReader(spawnSheetWorker);
+  // Superposition vectorielle (C12 lot c, PF22) : un Worker jetable du module `formats` par export, jamais l'instance
+  // de la page qui enregistre les `.roomboard` (HR6) ; PNG en repli (PC14). Polices lues en local, une fois.
+  const spawnPdfWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pdf-vector-worker.ts", import.meta.url), { type: "module" }));
+  let pdfFonts: Promise<readonly Uint8Array[]> | null = null;
+  const fonts = (): Promise<readonly Uint8Array[]> =>
+    (pdfFonts ??= Promise.all(
+      PDF_FONT_FILES.map(async (f) => {
+        const r = await fetch(new URL(`${PDFJS_BASE}standard_fonts/${f}`, document.baseURI));
+        if (!r.ok) throw new Error(`police ${f} absente (${r.status})`);
+        return new Uint8Array(await r.arrayBuffer());
+      }),
+    ).catch((e: unknown) => {
+      pdfFonts = null;
+      throw e;
+    }));
+  const toPng = async (blob: Blob, mime: string): Promise<Uint8Array> => {
+    const { bitmap } = await decodeImage(blob, kindOfMime(mime) ?? "png");
+    const c = browserExportCanvas(Math.max(1, bitmap.width), Math.max(1, bitmap.height));
+    try {
+      c.ctx.drawImage(bitmap, 0, 0);
+      return await c.png();
+    } finally {
+      bitmap.close();
+      c.release();
+    }
+  };
+  // Contexte à part : `RecordingContext2D` y règle `font` et `fillStyle`, la mesure de l'écran garde le sien.
+  const vectorMeasure = document.createElement("canvas").getContext("2d");
+  const overlay = (tab: TabSession, doc: CoreDocument) =>
+    vectorMeasure === null
+      ? pngOverlay(tab, doc)
+      : fallbackOverlay(
+          createVectorOverlay({
+            doc,
+            assets: tab.assets,
+            alive: () => true,
+            measure: vectorMeasure,
+            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images, makePath: () => new RecordingPath() as unknown as Path2D }),
+            fonts,
+            toPng,
+            write: workerPdfWriter(spawnPdfWorker),
+          }),
+          pngOverlay(tab, doc),
+        );
   const workspace = await createWorkspace({
     core,
     host: prepared.host,
@@ -155,7 +202,7 @@ async function start(): Promise<void> {
     pdf,
     pdfFiles,
     loadPdfLib,
-    overlay: pngOverlay,
+    overlay,
     rasterPage,
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
