@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createEffect, createRoot } from "solid-js";
+import { createComputed, createRoot } from "solid-js";
 import { describe, expect, it } from "vitest";
 import { createProfileStore } from "../profile-store";
 import { parseProfile, resolveStartMode, visibleItems, type RuntimeCapabilities } from "../toolbar";
@@ -26,7 +26,7 @@ describe("profil actif (T89)", () => {
     createRoot((dispose) => {
       const a = createActiveProfile(store, NO_CAPS);
       const seen: boolean[] = [];
-      createEffect(() => {
+      createComputed(() => {
         seen.push(visibleItems(a.profile().toolbars[0]!, a.capabilities()).some((i) => i.id === "depot-1"));
       });
       expect(a.profile().id).toBe("depot");
