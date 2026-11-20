@@ -8,7 +8,8 @@ import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeK
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
-import { editAction, isPanKey, keyAction, type KeyAction, type KeyLike } from "./input/keys";
+import { selectionUnits, type GroupedView } from "./groups";
+import { editAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -29,6 +30,10 @@ export interface EngineState {
   /** Éléments sélectionnés (outil Sélection, T55) et leur boîte monde ; vides tant que la sélection n'est pas branchée. */
   readonly selection: readonly string[];
   readonly selectionBounds: Bounds | null;
+  /** C3 (Z13) : unités de la sélection (groupes extérieurs et éléments libres) ; 0 sans sélection. */
+  readonly selectionUnits: number;
+  /** C3 (Z13) : un élément sélectionné au moins porte un groupe. */
+  readonly selectionGrouped: boolean;
   /** Cellule active de l'outil Tableau (C10a) : rangs et taille du tableau ; null sans cellule active. */
   readonly tableCell: TableCellState | null;
   /** C10b (F29) : zones fusionnées et cellules ombrées de tous les tableaux de la page montrée, quel que soit l'outil. */
@@ -77,6 +82,14 @@ export interface Engine {
   setTool(t: ToolChoice): void;
   setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
+  /** C3 (Z1) : groupe la sélection (≥ 2 unités) ; une étape ; sélection gardée ; faux si rien n'est fait. */
+  group(): boolean;
+  /** C3 (Z1) : retire le groupe extérieur de la sélection ; faux sans groupe. */
+  ungroup(): boolean;
+  /** C3 (Z7) : objets de `src` en haut de la page montrée, translatés ; outil Sélection, sélection = objets insérés. */
+  insertFragment(src: CoreDocument, dx: number, dy: number): Change | null;
+  /** C3 (Z12) : pages de `src` après la page montrée ; la première insérée est montrée. */
+  insertPages(src: CoreDocument): Change | null;
   undo(): void;
   redo(): void;
   /** Vrai si la touche est prise par le moteur (annuler, rétablir, espace tenu) : la page appelle preventDefault. */
@@ -236,8 +249,29 @@ export function createEngine(deps: EngineDeps): Engine {
     return counted;
   };
 
+  /** Vues des éléments sélectionnés (C3) : unités et groupe, sans parcourir toute la page. */
+  const selectedViews = (): GroupedView[] =>
+    selectTool.selection().flatMap((id) => {
+      const v = doc.element(id);
+      return v === null ? [] : [v];
+    });
+
+  function group(): boolean {
+    const sel = [...selectTool.selection()];
+    if (selectionUnits(sel, selectedViews()).units < 2) return false;
+    return run({ type: "Group", ids: sel }) !== null;
+  }
+
+  function ungroup(): boolean {
+    const sel = [...selectTool.selection()];
+    if (!selectionUnits(sel, selectedViews()).grouped) return false;
+    return run({ type: "Ungroup", ids: sel }) !== null;
+  }
+
   function state(): EngineState {
     const ids = doc.pageIds();
+    const sel = selectTool.selection();
+    const units = sel.length === 0 ? { units: 0, grouped: false } : selectionUnits(sel, selectedViews());
     return {
       tool,
       eraserMode,
@@ -248,6 +282,8 @@ export function createEngine(deps: EngineDeps): Engine {
       pageCount: ids.length,
       selection: [...selectTool.selection()],
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
+      selectionUnits: units.units,
+      selectionGrouped: units.grouped,
       tableCell: tableTool.cellState(),
       tableMerges: tableCounts().merges,
       tableShades: tableCounts().shades,
@@ -314,12 +350,13 @@ export function createEngine(deps: EngineDeps): Engine {
     lastIndex = after.indexOf(pageId);
   }
 
-  function run(cmd: Command): Change | null {
+  /** Écriture commune (commande ou insertion, C3) : refus dans l'état ; pages suivies ; outils élagués ; une émission. */
+  function commit(write: () => Change, showAppeared: boolean): Change | null {
     lastDeleted = null;
     const before = doc.pageIds();
     let change: Change;
     try {
-      change = doc.apply(cmd);
+      change = write();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       emit();
@@ -327,7 +364,7 @@ export function createEngine(deps: EngineDeps): Engine {
     }
     renderer.invalidate(change);
     error = null;
-    followPages(before, false);
+    followPages(before, showAppeared);
     selectTool.prune();
     tableTool.prune();
     requestScene();
@@ -335,7 +372,11 @@ export function createEngine(deps: EngineDeps): Engine {
     return change;
   }
 
-  function history(which: KeyAction): void {
+  function run(cmd: Command): Change | null {
+    return commit(() => doc.apply(cmd), false);
+  }
+
+  function history(which: "undo" | "redo"): void {
     const before = doc.pageIds();
     const restore = which === "undo" ? lastDeleted : null;
     lastDeleted = null;
@@ -461,6 +502,20 @@ export function createEngine(deps: EngineDeps): Engine {
       emit();
     },
     run,
+    group,
+    ungroup,
+    insertFragment(src, dx, dy) {
+      const change = commit(() => doc.insertFragment(src, pageId, dx, dy), false);
+      if (change === null || change.ids.length === 0) return change;
+      engine.setTool("select"); // quitte l'outil courant (texte ouvert validé) avant de poser la sélection
+      selectTool.setSelection(change.ids);
+      requestScene();
+      emit();
+      return change;
+    },
+    insertPages(src) {
+      return commit(() => doc.insertPages(src, pageId), true);
+    },
     undo: () => history("undo"),
     redo: () => history("redo"),
     key(e) {
@@ -496,6 +551,15 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const action = keyAction(e);
       if (action === null) return false;
+      // C3 (Z13, HZ1-2) : Ctrl+G et Ctrl+Maj+G sont pris même sans effet.
+      if (action === "group") {
+        group();
+        return true;
+      }
+      if (action === "ungroup") {
+        ungroup();
+        return true;
+      }
       history(action);
       return true;
     },

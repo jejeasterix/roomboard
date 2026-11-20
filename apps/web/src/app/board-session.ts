@@ -273,6 +273,8 @@ async function buildBoardSession(
     stage.dataset["table"] = tags.table;
     stage.dataset["tableMerges"] = tags.tableMerges;
     stage.dataset["tableShades"] = tags.tableShades;
+    stage.dataset["units"] = tags.units;
+    stage.dataset["grouped"] = tags.grouped;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
