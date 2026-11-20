@@ -1211,6 +1211,7 @@ mod tests {
                     size: 36.0,
                     box_width: 600.0,
                     box_height: 45.0,
+                    spans: None,
                 },
                 "image" => Command::AddImage {
                     page: p.clone(),
