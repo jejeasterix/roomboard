@@ -1162,7 +1162,7 @@ describe("espace de travail : PDF (C12)", () => {
   it("PDF que pdf-lib refuse : avis « PDF d'origine non recopié : pages en image » (PF20)", async () => {
     const raster = vi.fn(async () => ({ png: PNG_1PX, w: 612, h: 792 }));
     const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer(), rasterPage: raster });
-    await ws.openPdf({ name: "abime.pdf", blob: new Blob([new TextEncoder().encode("%PDF-1.7\nn'importe quoi\n")]) });
+    await ws.openPdf({ name: "abime.pdf", blob: new Blob([new TextEncoder().encode("pas un PDF")]) });
     expect(await ws.exportPdf()).toBe(true);
     expect(raster).toHaveBeenCalledTimes(1);
     expect(shell.notify).toHaveBeenCalledWith("PDF d'origine non recopié : pages en image");
