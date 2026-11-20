@@ -43,6 +43,12 @@ export interface Canvas2DOptions {
   readonly forExport?: boolean;
 }
 
+/** Options du peintre d'un export (PDF, superposition PNG ou vectorielle) : rendu d'export (sans badge « lecture », R7),
+ *  ni lecteurs de média (poster, M34) ni nom de son. */
+export function exportPainterOptions(images: ImageSource, extra: Pick<Canvas2DOptions, "makePath"> = {}): Canvas2DOptions {
+  return { images, ...extra, forExport: true };
+}
+
 /** Polygones fermés x, y alternés ; une paire non finie (NaN, NaN) commence un nouveau polygone. */
 export function tracePolygons(p: PathSink, flat: ArrayLike<number>): void {
   let open = false;

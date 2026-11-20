@@ -6,7 +6,7 @@ import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, HANDLE_FILL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
@@ -1118,5 +1118,18 @@ describe("Canvas2DRenderer — média (C14)", () => {
     const a = sceneOf(el({ mediaType: "audio", poster: null }), { forExport: true });
     expect(a.log).not.toContain(`fillRect ${MEDIA_BADGE_FILL}`);
     expect(a.texts.map((t) => t.text)).toEqual([AUDIO_CARD_LABEL]);
+  });
+});
+
+describe("exportPainterOptions (C14, R7, M34)", () => {
+  it("rendu d'export : forExport, jamais de lecteurs de média ni de nom (poster, pas de badge)", () => {
+    const images = {} as ImageSource;
+    const o = exportPainterOptions(images);
+    expect(o).toEqual({ images, forExport: true });
+    expect("media" in o).toBe(false);
+  });
+  it("le makePath du producteur vectoriel passe, forExport reste posé", () => {
+    const makePath = (): Path2D => ({}) as Path2D;
+    expect(exportPainterOptions({} as ImageSource, { makePath })).toMatchObject({ forExport: true, makePath });
   });
 });
