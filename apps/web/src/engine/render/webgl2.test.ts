@@ -333,4 +333,12 @@ describe("WebGL2 — fond de page (C6a)", () => {
     expect(gl.draws[1]?.rgba).toEqual(f32(parseColor(PAGE_BACKGROUND)));
     expect(r.badColors.has("rouge")).toBe(false);
   });
+
+  it("fond accepté par le canvas (« red ») : la bande WebGL reprend la couleur retenue par la scène (point 1)", () => {
+    const { gl, r, scene } = make();
+    (scene as unknown as { pageColor: string }).pageColor = "#ff0000";
+    r.drawScene({ id: "p", elementIds: [], background: "red" }, IDENTITY, new Set());
+    r.drawLive(partial, IDENTITY);
+    expect(gl.draws[1]?.rgba).toEqual(f32([1, 0, 0, 1]));
+  });
 });

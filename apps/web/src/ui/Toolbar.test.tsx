@@ -321,6 +321,12 @@ describe("Toolbar — rangée du pot (C6a)", () => {
     expect(presetIds(vide.container)).toEqual([]);
     expect(vide.container.querySelector("button[data-fill-none]")).not.toBeNull();
   });
+  it("barre sans presets (prop absente) : pot actif, ni « Aucune » ni préréglage", () => {
+    const { container, setV } = setup();
+    setV({ ...VIEW, tool: "fill" });
+    expect(container.querySelector("button[data-fill-none]")).toBeNull();
+    expect(container.querySelector("[data-preset]")).toBeNull();
+  });
   it("le stylo garde ses préréglages sans « Aucune » ; Main : la rangée disparaît", () => {
     const { container, setV } = setup(outils, NO_CAPS, "m", PEN);
     expect(container.querySelector("button[data-fill-none]")).toBeNull();
