@@ -1844,18 +1844,124 @@ mod tests {
         assert_eq!(table_of(&d, &id).rows[0].height, 150.0);
         d.insert_table_line_inner(&id, false, 2).expect("colonne");
         assert_eq!(table_of(&d, &id).cols.len(), 3);
-        d.remove_table_line_inner(&id, true, &r0).expect("ligne");
+        d.remove_table_line_inner(&id, true, &r0, None).expect("ligne");
         assert!(table_of(&d, &id).cells.is_empty());
         d.set_table_sizes_inner(&id, 200.0, 70.0).expect("uniforme");
         assert!(table_of(&d, &id).cols.iter().all(|c| c.width == 200.0));
         let t = table_of(&d, &id);
         let (r1, c1) = (t.rows[0].id.clone(), t.cols[1].id.clone());
-        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], Some("#fef08a".into()))
+        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None, Some("#fef08a".into()))
             .expect("jaune");
         assert_eq!(table_of(&d, &id).cells[0].fill.as_deref(), Some("#fef08a"));
-        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None)
+        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None, None)
             .expect("aucun");
         assert!(table_of(&d, &id).cells.is_empty());
+    }
+
+    // C10b (T7) : fusion, division, ombrage, plages, import par les `*_inner`.
+
+    #[test]
+    fn c10b_table_commands_inner() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [3, 3], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let r: Vec<&str> = t.rows.iter().map(|x| x.id.as_str()).collect();
+        let c: Vec<&str> = t.cols.iter().map(|x| x.id.as_str()).collect();
+        d.merge_table_cells_inner(&id, [r[0], c[0]], [r[0], c[1]])
+            .expect("fusion");
+        assert_eq!(table_of(&d, &id).merges.len(), 1);
+        assert_eq!(
+            d.split_table_cell_inner(&id, [r[0], c[1]]),
+            Err(CommandError::BadTable)
+        );
+        d.split_table_cell_inner(&id, [r[0], c[0]])
+            .expect("division");
+        assert!(table_of(&d, &id).merges.is_empty());
+        d.set_table_shade_inner(&id, [r[0], c[2]], [r[2], c[2]], Some("#94a3b8".into()))
+            .expect("ombre");
+        assert_eq!(
+            table_of(&d, &id)
+                .cells
+                .iter()
+                .filter(|x| x.shade.is_some())
+                .count(),
+            3
+        );
+        d.set_table_fill_inner(
+            &id,
+            [r[0], c[0]],
+            Some([r[1], c[1]]),
+            Some("#fef08a".into()),
+        )
+        .expect("plage");
+        assert_eq!(
+            table_of(&d, &id)
+                .cells
+                .iter()
+                .filter(|x| x.fill.is_some())
+                .count(),
+            4
+        );
+        d.remove_table_line_inner(&id, true, r[0], Some(r[1].to_string()))
+            .expect("deux lignes");
+        assert_eq!(table_of(&d, &id).rows.len(), 1);
+    }
+
+    #[test]
+    fn import_table_inner_reads_flat_merges() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let cells: Vec<String> = ["Titre", "", "a", "b"].map(String::from).to_vec();
+        let c = d
+            .import_table_inner(
+                &p,
+                &[1.0, 0.0, 0.0, 1.0, 10.0, 20.0],
+                240.0,
+                &[64.0, 64.0],
+                2,
+                cells.clone(),
+                &[0, 0, 1, 2],
+                "#000000",
+                36.0,
+            )
+            .expect("import");
+        let t = table_of(&d, &c.ids[0]);
+        assert_eq!((t.merges.len(), t.cells.len()), (1, 3));
+        assert_eq!(
+            d.import_table_inner(
+                &p,
+                &[1.0, 0.0, 0.0, 1.0],
+                240.0,
+                &[64.0, 64.0],
+                2,
+                cells.clone(),
+                &[],
+                "#000000",
+                36.0
+            ),
+            Err(CommandError::BadTable),
+            "matrice de quatre nombres"
+        );
+        assert_eq!(
+            d.import_table_inner(
+                &p,
+                &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                240.0,
+                &[64.0, 64.0],
+                2,
+                cells,
+                &[0, 0, 1],
+                "#000000",
+                36.0
+            ),
+            Err(CommandError::BadTable),
+            "fusions incomplètes"
+        );
     }
 
     #[test]
@@ -1873,7 +1979,7 @@ mod tests {
             Err(CommandError::BadTable)
         );
         assert_eq!(
-            d.remove_table_line_inner(&id, true, &t.rows[0].id),
+            d.remove_table_line_inner(&id, true, &t.rows[0].id, None),
             Err(CommandError::BadTable)
         );
         assert_eq!(
