@@ -110,6 +110,10 @@ export function stageMouse(page) {
     wheel: (dx, dy) => page.mouse.wheel(dx, dy),
   };
 }
+/** Vrai si les deux rectangles ne se chevauchent pas (tolérance 0,5 px). */
+function apart(a, b) {
+  return a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+}
 /** Chaque élément `selector` (ex. `button[data-item]`) hors du rectangle de #stage ; rend la liste des fautifs. */
 export async function overlapping(page, selector, stageSelector = "#stage") {
   const stage = await page.locator(stageSelector).boundingBox();
@@ -118,8 +122,7 @@ export async function overlapping(page, selector, stageSelector = "#stage") {
   for (const el of await page.locator(selector).all()) {
     const a = await el.boundingBox();
     if (!a) continue; // élément caché : ne recouvre rien
-    const apart = a.x + a.width <= stage.x + 0.5 || stage.x + stage.width <= a.x + 0.5 || a.y + a.height <= stage.y + 0.5 || stage.y + stage.height <= a.y + 0.5;
-    if (!apart) bad.push((await el.getAttribute("data-item")) ?? selector);
+    if (!apart(a, stage)) bad.push((await el.getAttribute("data-item")) ?? selector);
   }
   return bad;
 }
@@ -127,8 +130,7 @@ export async function overlapping(page, selector, stageSelector = "#stage") {
 export async function noOverlap(page, barSelector, stageSelector = "#stage") {
   const [a, b] = await Promise.all([page.locator(barSelector).boundingBox(), page.locator(stageSelector).boundingBox()]);
   if (!a || !b) throw new Echec(`rectangle absent : ${!a ? barSelector : stageSelector}`);
-  const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
-  return { apart, bar: a, stage: b };
+  return { apart: apart(a, b), bar: a, stage: b };
 }
 /** Dépôt simulé (DataTransfer construit dans la page) sur un sélecteur. */
 export async function dropFile(page, selector, name, bytes, type = "") {

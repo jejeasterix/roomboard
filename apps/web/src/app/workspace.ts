@@ -174,7 +174,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     return tab;
   }
 
-  const importer = createImporter({ openDocument: (f) => ws.openDocument(f), notify: (m) => shell.notify(m) });
+  const importer = createImporter({ openDocument: (f) => ws.openDocument(f), notify: say, full });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
   const ws: Workspace = {
@@ -207,14 +207,13 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       await addTab(core.blank(), null);
     },
     async close(id) {
-      const entry = tabs.list().find((t) => t.id === id);
-      if (entry === undefined) return false;
-      const tab = entry.session;
-      if (tab.files.isDirty() && !(await ask(DISCARD_MESSAGE))) return false;
-      if (tabs.list().length === 1 && (await addTab(core.blank(), null)) === null) return false;
-      if (tabs.remove(id) === null) return false;
-      release(tab);
-      return true;
+      if (closing.has(id)) return false; // double clic : le second appel ne fait rien
+      closing.add(id);
+      try {
+        return await closeTab(id);
+      } finally {
+        closing.delete(id);
+      }
     },
     importFiles: (files, at = null) => importer.importFiles(files, at),
     anyDirty,
@@ -230,6 +229,17 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       for (const t of tabs.list()) release(t.session);
     },
   };
+  const closing = new Set<string>();
+  async function closeTab(id: string): Promise<boolean> {
+    const entry = tabs.list().find((t) => t.id === id);
+    if (entry === undefined) return false;
+    const tab = entry.session;
+    if (tab.files.isDirty() && !(await ask(DISCARD_MESSAGE))) return false;
+    if (tabs.list().length === 1 && (await addTab(core.blank(), null)) === null) return false;
+    if (tabs.remove(id) === null) return false;
+    release(tab);
+    return true;
+  }
 
   const stopTabs = tabs.onChange(show);
   const first = await addTab(

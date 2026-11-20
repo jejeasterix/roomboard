@@ -409,6 +409,32 @@ describe("espace de travail : fermeture et garde (CL5b-5, CL5b-6)", () => {
     expect(ws.active().board.stage.dataset["tab"]).toBe(ws.tabs.active()!.id);
   });
 
+  it("double clic sur le × du dernier onglet : un seul onglet vierge (réentrance)", async () => {
+    const ws = await setupWorkspace();
+    const id = ws.tabs.active()!.id;
+    const results = await Promise.all([ws.close(id), ws.close(id)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("dépôt avec une boîte qui échoue : importFiles ne rejette pas", async () => {
+    const ws = await setupWorkspace();
+    shell.notify.mockRejectedValue(new Error("boîte morte"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expect(ws.importFiles([plainFile("a.png")])).resolves.toMatchObject({ refused: ["a.png"] });
+    warn.mockRestore();
+  });
+
+  it("onglets pleins : déposer 5 .roomboard avec 11 onglets ouverts → une seule boîte « 12 onglets au plus »", async () => {
+    const ws = await setupWorkspace();
+    for (let i = 1; i < 11; i++) await ws.newBlank();
+    expect(ws.tabs.list()).toHaveLength(11);
+    const r = await ws.importFiles(["a", "b", "c", "d", "e"].map((n) => roomboardFile(`${n}.roomboard`)));
+    expect(ws.tabs.list()).toHaveLength(12);
+    expect(r.opened).toHaveLength(1);
+    expect(shell.notify.mock.calls.filter((c) => c[0] === TOO_MANY_TABS)).toHaveLength(1);
+  });
+
   it("Cmd+Q : document propre → quit ; modifié → question, Non → rien", async () => {
     const ws = await setupWorkspace();
     const quit = vi.fn(async () => undefined);

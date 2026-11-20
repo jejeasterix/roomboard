@@ -17,6 +17,8 @@ export interface ImportDeps {
   /** Ouvre le document dans un nouvel onglet (T93) ; false si illisible (le message est déjà dit). */
   openDocument(file: { readonly name: string; readonly bytes: Uint8Array; readonly target: SaveTarget | null }): Promise<boolean>;
   notify(message: string): Promise<void>;
+  /** Vrai quand plus aucun onglet ne peut s'ouvrir : un refus de `openDocument` arrête alors la boucle. */
+  full?(): boolean;
 }
 
 export interface Importer {
@@ -34,9 +36,14 @@ export function createImporter(deps: ImportDeps): Importer {
       const opened: string[] = [];
       const refused: string[] = [];
       const failed: string[] = [];
+      let stopped = false; // onglets pleins : une seule boîte, les .roomboard suivants ne sont pas tentés
       for (const f of files) {
         if (!isRoomboardName(f.name)) {
           refused.push(f.name);
+          continue;
+        }
+        if (stopped) {
+          failed.push(f.name);
           continue;
         }
         let bytes: Uint8Array;
@@ -48,7 +55,10 @@ export function createImporter(deps: ImportDeps): Importer {
           continue;
         }
         if (await deps.openDocument({ name: f.name, bytes, target: null })) opened.push(f.name);
-        else failed.push(f.name);
+        else {
+          failed.push(f.name);
+          if (deps.full?.() === true) stopped = true;
+        }
       }
       if (refused.length > 0) await deps.notify(`${refused.join(", ")} : ${LATER_FORMAT_MESSAGE}`);
       return { opened, refused, failed };

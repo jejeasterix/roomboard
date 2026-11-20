@@ -22,6 +22,7 @@ cargo test --workspace
 bash scripts/tests/controle-wasm-bindgen.test.sh
 bash scripts/controle-wasm-bindgen.sh Cargo.lock
 bash scripts/tests/controle-hors-ligne.test.sh
+bash scripts/tests/verifier-e2e.test.sh
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
 rm -rf "$WASM_OUT"
 wasm-bindgen --target web --out-dir "$WASM_OUT" \

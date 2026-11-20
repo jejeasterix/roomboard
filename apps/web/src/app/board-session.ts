@@ -73,7 +73,25 @@ function cameraTag(c: Camera): string {
   return `${c.zoom.toFixed(3)},${c.tx.toFixed(1)},${c.ty.toFixed(1)}`;
 }
 
+/** Si une étape de la création échoue, tout ce qui est déjà posé (scène, écouteurs, contexte…) est libéré, puis l'erreur
+ *  est relancée : aucune scène orpheline dans le conteneur. */
 export async function createBoardSession(doc: CoreDocument, shared: SessionShared): Promise<BoardSession> {
+  const undo: Array<() => void> = [];
+  try {
+    return await buildBoardSession(doc, shared, undo);
+  } catch (e) {
+    for (const free of undo.reverse()) {
+      try {
+        free();
+      } catch {
+        // la libération ne masque pas l'erreur d'origine
+      }
+    }
+    throw e;
+  }
+}
+
+async function buildBoardSession(doc: CoreDocument, shared: SessionShared, undo: Array<() => void>): Promise<BoardSession> {
   const { container, settings, parsed, support, measure } = shared;
   const stage = document.createElement("div");
   stage.className = "rb-stage";
@@ -84,9 +102,11 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
   stage.append(sceneCanvas, liveCanvas);
   // Dans la page avant le choix du rendu : un repli WebGL2 remplace le canvas d'interaction à sa place.
   container.append(stage);
+  undo.push(() => stage.remove());
   // Les écouteurs de scène tombent tous ensemble à `dispose`.
   const listening = new AbortController();
   const { signal } = listening;
+  undo.push(() => listening.abort());
 
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
   const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on");
@@ -95,6 +115,8 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
   let textTool: TextTool | null = null;
   const editor = createTextEditor(container, () => textTool);
   editor.element.removeAttribute("id");
+  undo.push(() => editor.element.remove());
+  undo.push(() => choice.release());
   const engine = createEngine({
     doc,
     renderer: choice.renderer,
@@ -114,6 +136,8 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
       },
     },
   });
+
+  undo.push(() => engine.dispose());
 
   // Échelon 1 de DA9 : fusionnés et prédits ; pointerrawupdate coupé (pas de prédits sous Chromium avec lui).
   // Paume (D18, réglage) : lue à chaque pose du stylet.
@@ -141,8 +165,10 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
     gestures: withLinearPrediction(engine.sink, prediction),
     view: engine.view,
   });
+  undo.push(() => sampler.dispose());
   sampler.onGesture((g) => router.handle(g));
   const middlePan = createMiddlePan(stage, engine.view);
+  undo.push(() => middlePan.dispose());
   // Outil Texte seulement : sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page, et la zone de
   // saisie, tout juste ouverte, le perdrait et validerait aussitôt une boîte vide. Avec les autres outils on laisse le
   // mousedown faire son travail : le dernier bouton cliqué perd le focus (Entrée ne le redéclenche plus).
@@ -163,6 +189,7 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
     // Le routeur est l'unique décideur : la traînée ne suit que les gestes qu'il a classés « ink » (aucune règle recopiée).
     styleFor: trailStyleFor(router.roleOf, DEFAULT_PEN_STYLE, () => engine.camera().zoom),
   });
+  undo.push(() => trail.dispose());
   const effective = (): EffectiveEchelons => ({
     prediction: prediction(),
     inkTrail: trail.status,
@@ -175,9 +202,11 @@ export async function createBoardSession(doc: CoreDocument, shared: SessionShare
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
   };
   const resizes = new ResizeObserver(() => fit());
+  undo.push(() => resizes.disconnect());
   resizes.observe(stage);
   fit();
   const stopDpr = watchDpr(window, fit);
+  undo.push(stopDpr);
 
   stage.addEventListener(
     "wheel",
