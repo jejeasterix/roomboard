@@ -11,6 +11,7 @@
 // C9 éditeur : GridLevel.lineWidth et LevelLines.lineWidth (px CSS d'écran, 1 à 8) ; gridLinesOf (grille non enregistrée, aperçu, DAE1).
 // C10a : AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill (une étape chacune, D38) ;
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
+// C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -60,6 +61,8 @@ export type Command =
       readonly size: number;
       readonly boxWidth: number;
       readonly boxHeight: number;
+      /** C7b (R7) : état voulu des segments (concaténation = content) ; absent : différence seule (C7). */
+      readonly spans?: readonly TextSpan[];
     }
   | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
   | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
@@ -91,7 +94,7 @@ export type Command =
       readonly size: number;
     }
   /** row, col = ids ; rowHeight : hauteur exigée mesurée par la page, écrite si plus grande (T5). */
-  | { readonly type: "SetTableCell"; readonly id: string; readonly row: string; readonly col: string; readonly content: string; readonly rowHeight?: number }
+  | { readonly type: "SetTableCell"; readonly id: string; readonly row: string; readonly col: string; readonly content: string; readonly rowHeight?: number; readonly spans?: readonly TextSpan[] }
   /** at ∈ 0..=n ; taille de la voisine at - 1, sinon de la première. */
   | { readonly type: "InsertTableLine"; readonly id: string; readonly axis: TableAxis; readonly at: number }
   /** Retire aussi ses cellules ; refusée s'il n'en reste qu'une. */
@@ -117,8 +120,9 @@ export interface UnknownData { readonly sourceKind: string; readonly w: number; 
 export type TableAxis = "row" | "col";
 export interface TableCol { readonly id: string; readonly width: number }
 export interface TableRow { readonly id: string; readonly height: number }
-/** Cellule non vide (texte ou remplissage) ; `fill` = remplissage (U32), null sans remplissage. */
-export interface TableCell { readonly row: string; readonly col: string; readonly text: string; readonly fill: string | null }
+/** Cellule non vide (texte ou remplissage) ; `fill` = remplissage (U32), null sans remplissage ; `spans` = segments du
+ *  texte (C7b, R16), un segment sans attribut pour une cellule d'avant C7b. */
+export interface TableCell { readonly row: string; readonly col: string; readonly text: string; readonly fill: string | null; readonly spans: readonly TextSpan[] }
 /** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture. */
 export interface TableData {
   readonly color: string;
