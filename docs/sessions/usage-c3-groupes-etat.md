@@ -3,10 +3,10 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : On groupe et dégroupe des objets, on copie et colle une sélection (interne et système, avec repli JSON), on exporte la sélection en `.rbitem` et on insère un fragment ou les pages d'un document.
-Avancement : 15/16 tâches terminées
-Étage : 3 (vague 4) — depuis 2026-11-20 15:59
+Avancement : 19/19 tâches terminées
+Étage : 4 — depuis 2026-11-20 16:25
 Lot : —
-Tâche : T16 — essai navigateur C3 dans verifier.sh --e2e, deux captures — depuis 2026-11-20 15:59
+Tâche : —
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c3-groupes   Branche : feat/usage-c3-groupes   Base : origin/main @ 98bf320
 Branche principale locale au lancement : 98bf320
@@ -18,11 +18,11 @@ Complète (origin/main 98bf320, verifier.sh --e2e) : OK (code 0)
 Intégration : origin/main 28ba886 (C10b, PR #18) fusionné dans la branche en afe8eaf, 8 conflits résolus en gardant les deux côtés
 
 ## Compteurs
-contre-relecture cadrage 1/2 (0 bloquant, 4 majeurs corrigés dans les briefs) · relecture plan 1/3 (partielle, arrêtée à 60 tours ; 2 majeurs repris dans T13-T15) · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 (0 bloquant, 4 majeurs corrigés dans les briefs) · relecture plan 1/3 (partielle, arrêtée à 60 tours ; 2 majeurs repris dans T13-T15) · vagues sans progrès 0/2 · correctifs de fin 2/2
 
 ## Tâches
 Plan : 16 tâches, 4 vagues. Fusionnées dans feat/usage-c3-groupes, preuves rejouées :
-V1 T1-T10 → rejeu cargo workspace 473 ok / 0 échec, vitest 1668/1668 (après fusion d'origin/main) · V2 T11-T14 → cargo core+wasm 426 ok · T15 (12e9723) → verifier.sh complet en cours.
+V1 T1-T10 → rejeu cargo workspace 473 ok / 0 échec, vitest 1668/1668 (après fusion d'origin/main) · V2 T11-T14 → cargo core+wasm 426 ok · T15 (12e9723) → verifier.sh OK · T16 essai Playwright · T17 correctifs Rust · T18 correctifs web (71d1d3e → verifier.sh --e2e OK) · T19 correctif bloquant insertPages + essai durci (ca50dae).
 Choix d'orchestration : vague 1 de 10 tâches en parallèle (VM 8 cœurs, 27 Go libres) ; relecture du plan en parallèle de la vague 1 ; corrections de la contre-relecture passées dans les briefs au lieu d'un second tour du cadreur (borne de 4 h).
 
 ## Terminé quand
@@ -46,4 +46,12 @@ ouvertes : — · passées : —
 - Chantier parallèle OD80 (C10b, `feat/usage-c10b-tableau`) : collage d'un `<table>` HTML ; un seul point d'entrée du collage.
 
 ## Constats d'architecture
-—
+— (passés dans docs/architecture-constats.md : 2 ajoutés en apps/web/src/platform ; zone crates/roomboard-core à 3 ouverts : audit proposé)
+
+## Rapport
+- Scénarios : S1 (grouper, Δx et Δy des deux objets, Dégrouper puis annuler) · S2 (vrai Ctrl+C : presse-papiers système porte l'enveloppe ; collage par ClipboardEvent puis bouton Coller interne, décalage 24 px, annulation) · S3 (export « Sélection.rbitem » lu dans a.download, redéposé) · S5 (enregistré, rouvert, groupe gardé) : réussis dans c3-groupes-navigateur.mjs. S4 (insérer des pages, avec image) : tests unitaires et contrat ; Q1 : .roomboard déposé = nouvel onglet (workspace.test).
+- Captures : docs/essais/c3-groupe-selectionne.png (deux rectangles et un trait dans une seule boîte, Dégrouper actif) ; docs/essais/c3-collage.png (copie collée décalée de 24 px, sélectionnée, Coller actif).
+- Double relecture : tour 1 (4 relecteurs) 0 bloquant, 5 majeurs corrigés en T17/T18 ; tour 2 : 1 bloquant introduit par T18 (insertPages sans adoption des images), corrigé en T19 avec test.
+- Mineurs non corrigés : ordre de deux écritures système rapprochées (Ctrl+V peut lire l'ancienne) ; booléen de pasteItems ignoré par handlePaste ; adopt() adopte les images de toutes les pages d'un fragment (sans effet visible) ; double avis en repli pour insertPages (antérieur) ; S2 sans image ni nouvel onglet dans l'essai.
+- Wasm : 1 075 138 octets (plafond 1 572 864 inchangé).
+- Release : non due (aucune release, aucun tag).
