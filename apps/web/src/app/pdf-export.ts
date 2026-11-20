@@ -143,7 +143,13 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
     const blob = assets.get(asset);
     if (blob === undefined) throw new Error(`PDF d'origine absent (${asset})`);
     const loaded = blob.arrayBuffer().then(
-      (a) => lib.PDFDocument.load(new Uint8Array(a), { updateMetadata: false }).catch(() => null),
+      (a) =>
+        lib.PDFDocument.load(new Uint8Array(a), { updateMetadata: false })
+          .then((d) => {
+            d.getPageCount(); // en-tête seul : `load` accepte, puis le décompte lève (TypeError « Pages »)
+            return d;
+          })
+          .catch(() => null),
       () => null,
     );
     sources.set(asset, loaded);

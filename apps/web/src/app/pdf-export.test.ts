@@ -245,6 +245,14 @@ describe("export PDF annoté (PF20, PF21)", () => {
     expect(await imageDraws(r.bytes)).toEqual([[covering(2, 612, 792)], [covering(2, 612, 792), covering(1, 612, 792)], [covering(2, 612, 792)]]);
   });
 
+  it("PDF que pdf-lib charge mais dont getPageCount lève (en-tête seul) : compté comme un refus, repli en image (PF20)", async () => {
+    const junk = new TextEncoder().encode("%PDF-1.7\nn'importe quoi");
+    const raster = vi.fn(async (_asset: string, index: number) => (index === 0 ? { png: PNG_2PX, w: 612, h: 792 } : null));
+    const r = await done(exportPdf(source(pdfPages(1)), store({ [A]: junk }), deps({ rasterPage: raster })));
+    expect([r.pages, r.rasterized]).toEqual([1, true]);
+    expect(raster).toHaveBeenCalledTimes(1);
+  });
+
   it("onglet fermé pendant l'export : arrêt propre (null), document jamais relu après la libération (DAPF3, PF19)", async () => {
     let closed = false;
     let readsAfter = 0;
