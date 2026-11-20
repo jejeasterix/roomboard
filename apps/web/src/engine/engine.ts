@@ -85,6 +85,8 @@ export interface Engine {
   nextPage(): boolean;
   /** « Ajuster la page » (D5 amendée) : largeur cadrée, haut de page en haut de la vue. */
   fitPage(): void;
+  /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
+  redraw(): void;
   /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
   setPenStyle(s: StrokeStyle): void;
   /** Chaque changement de caméra (pan, zoom, page montrée, ajustement) ; rend le désabonnement. */
@@ -441,6 +443,9 @@ export function createEngine(deps: EngineDeps): Engine {
         setCamera(fitWidth(viewW, viewH));
         fitted.add(pageId);
       }
+      requestScene();
+    },
+    redraw() {
       requestScene();
     },
     setPenStyle(s) {

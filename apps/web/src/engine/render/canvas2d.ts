@@ -9,6 +9,7 @@ import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
+import type { ImageSource } from "./image-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
@@ -22,6 +23,8 @@ export interface PathSink {
 export interface Canvas2DOptions {
   /** Fabrique de chemins : Node n'a pas Path2D, les tests en passent une fausse. */
   readonly makePath?: () => Path2D;
+  /** Bitmaps des images par empreinte (R16, DAR2) ; absent : cadre gris. */
+  readonly images?: ImageSource;
 }
 
 /** Polygones fermés x, y alternés ; une paire non finie (NaN, NaN) commence un nouveau polygone. */
@@ -53,6 +56,28 @@ export const PEN_HALF_WIDTH = 2;
 export const SELECTION_COLOR = "#1e3a8a";
 export const BAND_FILL = "rgba(30, 58, 138, 0.08)";
 export const HANDLE_FILL = "#ffffff";
+
+/** Cadre d'une image pas encore décodée et d'un élément inconnu (U3, R16). */
+export const PLACEHOLDER_FILL = "#e5e7eb";
+export const PLACEHOLDER_STROKE = "#9ca3af";
+export const UNKNOWN_LABEL = "objet non pris en charge";
+
+/** Cadre gris de la boîte locale (0, 0)-(w, h), avec un libellé pour un élément inconnu. */
+function paintPlaceholder(ctx: CanvasRenderingContext2D, w: number, h: number, label: string | null): void {
+  ctx.fillStyle = PLACEHOLDER_FILL;
+  ctx.fillRect(0, 0, w, h);
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.strokeStyle = PLACEHOLDER_STROKE;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  if (label !== null) {
+    ctx.font = textFont(16);
+    ctx.fillStyle = PLACEHOLDER_STROKE;
+    ctx.textBaseline = "top";
+    ctx.fillText(label, 8, 8);
+  }
+}
 
 /** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)). */
 export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number): void {
@@ -122,6 +147,7 @@ export class Canvas2DRenderer implements Renderer {
   /** Lignes des textes par id (clé : taille, largeur de boîte, segments), invalidées par `Change` comme `paths`. */
   private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   private readonly makePath: () => Path2D;
+  private readonly images: ImageSource | null;
   private sx = 1;
   private sy = 1;
   /** Hauteur CSS retenue par `resize` : le fond de page va jusqu'à son bas. */
@@ -138,6 +164,7 @@ export class Canvas2DRenderer implements Renderer {
     opts: Canvas2DOptions = {},
   ) {
     this.makePath = opts.makePath ?? (() => new Path2D());
+    this.images = opts.images ?? null;
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -199,6 +226,12 @@ export class Canvas2DRenderer implements Renderer {
       paintShape(ctx, el.shape, el.style);
     } else if (el.kind === "text") {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
+    } else if (el.kind === "image") {
+      const bmp = this.images?.bitmap(el.image.asset) ?? null;
+      if (bmp !== null) ctx.drawImage(bmp, 0, 0, el.image.w, el.image.h);
+      else paintPlaceholder(ctx, el.image.w, el.image.h, null);
+    } else if (el.kind === "unknown") {
+      paintPlaceholder(ctx, el.unknown.w, el.unknown.h, UNKNOWN_LABEL);
     }
     ctx.restore();
   }
@@ -364,9 +397,10 @@ export function createCanvas2DRenderer(
   scene: HTMLCanvasElement,
   live: HTMLCanvasElement,
   source: SceneSource,
+  opts: Canvas2DOptions = {},
 ): Canvas2DRenderer {
   const sceneCtx = scene.getContext("2d", { alpha: false });
   const liveCtx = live.getContext("2d", { desynchronized: true });
   if (!sceneCtx || !liveCtx) throw new Error("canvas 2D indisponible");
-  return new Canvas2DRenderer(sceneCtx, liveCtx, source);
+  return new Canvas2DRenderer(sceneCtx, liveCtx, source, opts);
 }
