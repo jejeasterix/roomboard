@@ -97,3 +97,18 @@ describe("état des actions du tableau (C10b, F15)", () => {
     expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: false }) })).disabled).toBe(true);
   });
 });
+
+describe("« − Ligne » / « − Colonne » selon l'étendue réelle (constat T13)", () => {
+  const base = { id: "t", row: 0, col: 0 };
+  it("plage ou zone sur toutes les lignes : « − Ligne » grisé ; sur toutes les colonnes : « − Colonne » grisé", () => {
+    const range = { ...base, rows: 3, cols: 4, range: { r0: 0, c0: 1, r1: 2, c1: 2 } };
+    expect(itemState(action("table-row-remove"), view({ tableCell: range })).disabled).toBe(true);
+    expect(itemState(action("table-col-remove"), view({ tableCell: range })).disabled).toBe(false);
+    const zone = { ...base, rows: 2, cols: 3, merged: true, zone: { r0: 0, c0: 0, r1: 1, c1: 2 } };
+    expect(itemState(action("table-row-remove"), view({ tableCell: zone })).disabled).toBe(true);
+    expect(itemState(action("table-col-remove"), view({ tableCell: zone })).disabled).toBe(true);
+    const part = { ...base, rows: 3, cols: 3, merged: true, zone: { r0: 0, c0: 0, r1: 1, c1: 0 } };
+    expect(itemState(action("table-row-remove"), view({ tableCell: part })).disabled).toBe(false);
+    expect(itemState(action("table-col-remove"), view({ tableCell: part })).disabled).toBe(false);
+  });
+});

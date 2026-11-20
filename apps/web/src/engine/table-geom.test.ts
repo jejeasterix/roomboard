@@ -36,6 +36,18 @@ describe("géométrie des cellules (C10a, DAC6)", () => {
     expect(cellRect(T, at(1, 1))).toEqual({ x0: 240, y0: 64, x1: 340, y1: 144 });
   });
 
+  it("F16, constat T13 : → depuis (1,1) d'un 3 × 3, zone (0,2)-(1,2) dont l'ancre précède : zone sautée, (2,0), jamais l'ancre (0,2)", () => {
+    const g: TableData = {
+      ...T,
+      cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }, { id: "c3", width: 240 }],
+      rows: [{ id: "r1", height: 64 }, { id: "r2", height: 64 }, { id: "r3", height: 64 }],
+      cells: [],
+      merges: [{ row: "r1", col: "c3", rows: 2, cols: 1 }],
+    };
+    expect(step(g, at(1, 1), "right")).toEqual(at(2, 0));
+    expect(step(g, at(0, 2), "right")).toEqual(at(1, 0));
+  });
+
   it("step : Tab et ←/→ dans l'ordre de lecture, ↑/↓ dans la colonne ; ajout de ligne seulement par Tab en dernière cellule (T8, PC4)", () => {
     expect(step(T, at(0, 1), "next")).toEqual(at(1, 0));
     expect(step(T, at(1, 1), "next")).toBe("add-row");

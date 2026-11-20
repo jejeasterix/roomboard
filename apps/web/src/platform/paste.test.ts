@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { isEditable, pastedFiles, pastedTableHtml } from "./paste";
+import type { DroppedFile } from "./files";
+import { handlePaste, isEditable, pastedFiles, pastedTableHtml } from "./paste";
 
 const files = (...f: File[]) => ({ files: f });
 const png = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
@@ -50,5 +51,47 @@ describe("collage d'un tableau HTML (F19)", () => {
     const only = { target: document.body, clipboardData: data("", [png]) };
     expect(pastedTableHtml(only)).toBeNull();
     expect(pastedFiles(only)).toHaveLength(1);
+  });
+});
+
+describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", () => {
+  const TABLE = "<table><tr><td>a</td></tr></table>";
+  const event = (html: string | null, ...f: File[]) => ({
+    target: document.body,
+    clipboardData: { files: f, getData: (t: string) => (t === "text/html" && html !== null ? html : "") },
+  });
+  const sink = (tableDone: boolean) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      pasteTable: async (html: string) => {
+        calls.push(`tableau:${html}`);
+        return tableDone;
+      },
+      importFiles: async (files: readonly DroppedFile[]) => {
+        calls.push(`images:${files.map((x) => x.name).join(",")}`);
+      },
+    };
+  };
+
+  it("tableau + image : le tableau seul (F19, HB-9)", async () => {
+    const s = sink(true);
+    await handlePaste(event(TABLE, png), s);
+    expect(s.calls).toEqual([`tableau:${TABLE}`]);
+  });
+
+  it("HTML illisible (pasteTable rend false) + image : repli vers l'image (PC9)", async () => {
+    const s = sink(false);
+    await handlePaste(event(TABLE, png), s);
+    expect(s.calls).toEqual([`tableau:${TABLE}`, "images:a.png"]);
+  });
+
+  it("image seule : l'image ; ni tableau ni image : collage non pris (null)", async () => {
+    const s = sink(true);
+    await handlePaste(event(null, png), s);
+    expect(s.calls).toEqual(["images:a.png"]);
+    expect(handlePaste(event(null, txt), s)).toBeNull();
+    expect(handlePaste(event("<p>x</p>"), s)).toBeNull();
+    expect(s.calls).toHaveLength(1);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TableGrid } from "./html-table";
-import { createSheetReader, EMPTY_SHEET_MESSAGE, gridOf, WORKER_FAILED_MESSAGE, type WorkerLike } from "./sheet-reader";
+import { createSheetReader, EMPTY_SHEET_MESSAGE, gridOf, SHEET_TOO_BIG_MESSAGE, SHEET_WORKER_TIMEOUT_MS, WORKER_FAILED_MESSAGE, workerErrorMessage, type WorkerLike } from "./sheet-reader";
 
 class FakeWorker implements WorkerLike {
   onmessage: ((e: { readonly data: unknown }) => void) | null = null;
@@ -69,5 +69,50 @@ describe("lecteur de classeur en Worker (F28)", () => {
     });
     expect(g).toEqual({ rows: 2, cols: 2, cells: ["a", "", "c", "d"], merges: [{ row: 0, col: 0, rows: 1, cols: 2 }], sourceRows: 70, sourceCols: 6, cutCells: true });
     expect(freed).toEqual([]);
+  });
+});
+
+describe("délai d'arrêt et erreurs du Worker (constat T13)", () => {
+  it("Worker muet : arrêté après SHEET_WORKER_TIMEOUT_MS (60 s), rejet WORKER_FAILED_MESSAGE", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = new FakeWorker();
+      const out = createSheetReader(() => w).read(blob()).then(() => null, (e: unknown) => e);
+      await vi.waitFor(() => expect(w.posted).toHaveLength(1));
+      expect(SHEET_WORKER_TIMEOUT_MS).toBe(60_000);
+      await vi.advanceTimersByTimeAsync(SHEET_WORKER_TIMEOUT_MS - 1);
+      expect(w.terminated).toBe(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(w.terminated).toBe(1);
+      expect(await out).toEqual(new Error(WORKER_FAILED_MESSAGE));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("réponse avant le délai : minuterie retirée, Worker arrêté une seule fois", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = new FakeWorker();
+      const p = createSheetReader(() => w).read(blob());
+      await vi.waitFor(() => expect(w.posted).toHaveLength(1));
+      w.onmessage?.({ data: { grid: G } });
+      await expect(p).resolves.toEqual(G);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(SHEET_WORKER_TIMEOUT_MS);
+      expect(w.terminated).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("panique Wasm (RuntimeError « unreachable ») ou erreur inconnue : WORKER_FAILED_MESSAGE ; messages de SheetError gardés", () => {
+    expect(workerErrorMessage(new WebAssembly.RuntimeError("unreachable"))).toBe(WORKER_FAILED_MESSAGE);
+    expect(workerErrorMessage("unreachable")).toBe(WORKER_FAILED_MESSAGE);
+    expect(workerErrorMessage(new Error("module des classeurs indisponible"))).toBe(WORKER_FAILED_MESSAGE);
+    expect(workerErrorMessage(undefined)).toBe(WORKER_FAILED_MESSAGE);
+    expect(workerErrorMessage(new Error(EMPTY_SHEET_MESSAGE))).toBe(EMPTY_SHEET_MESSAGE);
+    expect(workerErrorMessage(SHEET_TOO_BIG_MESSAGE)).toBe(SHEET_TOO_BIG_MESSAGE);
+    expect(workerErrorMessage(new Error("classeur illisible : invalid Zip archive"))).toBe("classeur illisible : invalid Zip archive");
   });
 });
