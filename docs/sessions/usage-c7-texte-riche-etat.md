@@ -56,5 +56,5 @@ ouvertes : — · passées : —
 
 ## Pièges trouvés
 - Cible Cargo partagée entre worktrees : `env!("CARGO_MANIFEST_DIR")` reste figé au worktree qui a compilé ; après son retrait, compat_socle ne trouve plus la fixture. Remède : `cargo clean -p roomboard-core` (vu à 04:36).
-- Module Wasm : origin/main 1 480 983 o ; C7 avant T10 1 562 871 o ; après T10-T13 1 527 881 o (+46 898 pour C7, HC7-7 « < 30 Ko » démentie) ; plafond 1 572 864 o : marge 44 983 o pour C9. La section `name` pèse ~600 Ko : la retirer = décision de profil (Jérôme).
+- Module Wasm : origin/main 1 480 983 o ; C7 avant T10 1 562 871 o ; après T13 1 536 002 o (+55 019 pour C7 ; T10 −34 611, T13 +8 121, HC7-7 « < 30 Ko » démentie) ; plafond 1 572 864 o : marge 36 862 o pour C9. La section `name` pèse ~600 Ko : la retirer = décision de profil (Jérôme).
 - verifier.sh lit `target/` en dur (incompatible avec CARGO_TARGET_DIR ailleurs) : hors périmètre.
