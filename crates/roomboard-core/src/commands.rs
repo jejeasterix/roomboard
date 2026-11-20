@@ -1169,6 +1169,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::element::group_to_any;
     use crate::ink::points::{to_flat, InkPoint};
 
     fn pen() -> StrokeStyle {
@@ -3355,5 +3356,311 @@ pub(crate) mod tests {
         )
         .expect("coupé");
         assert_eq!(d.snap_delta(&p, &[a], 52.0, 31.0), (52.0, 31.0));
+    }
+
+    // ---- C3 : groupes (Z1) ----
+
+    fn rect_at(d: &mut Document, p: &str, x: f64) -> String {
+        d.apply(Command::AddShape {
+            page: p.into(),
+            shape: ShapeKind::Rect,
+            x0: x,
+            y0: 100.0,
+            x1: x + 50.0,
+            y1: 150.0,
+            style: pen(),
+            fill: None,
+        })
+        .expect("forme")
+        .ids[0]
+            .clone()
+    }
+
+    fn group_of(d: &Document, id: &str) -> Option<Vec<String>> {
+        d.element(id).expect("vue").group
+    }
+
+    fn raw_group(d: &Document, id: &str) -> Option<Out> {
+        let txn = d.read();
+        let f = d.find_element(&txn, id).expect("élément");
+        f.element.get(&txn, "group")
+    }
+
+    fn write_raw_group(d: &Document, id: &str, v: Any) {
+        let mut txn = d.transact_local();
+        let f = d.find_element(&txn, id).expect("élément");
+        f.element.insert(&mut txn, "group", v);
+    }
+
+    #[test]
+    fn element_view_exposes_group() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        assert_eq!(group_of(&d, &a), None);
+        write_raw_group(&d, &a, group_to_any(&["g1".into(), "g2".into()]));
+        assert_eq!(
+            group_of(&d, &a),
+            Some(vec!["g1".to_string(), "g2".to_string()])
+        );
+    }
+
+    #[test]
+    fn unreadable_group_reads_as_none_and_is_kept() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        for v in [
+            Any::from(3.0),
+            Any::Array(Vec::<Any>::new().into()),
+            Any::Array(vec![Any::from(1.0)].into()),
+        ] {
+            write_raw_group(&d, &a, v.clone());
+            assert_eq!(group_of(&d, &a), None);
+            assert_eq!(raw_group(&d, &a), Some(Out::Any(v)));
+        }
+    }
+
+    #[test]
+    fn group_writes_new_outer_id_on_each_element() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = d
+            .apply(Command::Group {
+                ids: vec![b.clone(), a.clone()],
+            })
+            .expect("group");
+        let mut both = vec![a.clone(), b.clone()];
+        both.sort();
+        assert_eq!(c.ids, both);
+        assert_eq!(c.pages, vec![p.clone()]);
+        let ga = group_of(&d, &a).expect("groupe a");
+        assert_eq!(ga.len(), 1);
+        assert_eq!(group_of(&d, &b), Some(ga.clone()));
+        assert_ne!(ga[0], a);
+        assert_ne!(ga[0], b);
+    }
+
+    #[test]
+    fn group_refuses_unknown_id_other_page_or_single_unit() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let q = d
+            .apply(Command::AddPage {
+                after: Some(p.clone()),
+            })
+            .expect("page")
+            .pages[0]
+            .clone();
+        let c = rect_at(&mut d, &q, 0.0);
+        let w = writes(&d);
+        for ids in [
+            vec![a.clone(), "absent".to_string()],
+            vec![a.clone(), c.clone()],
+            vec![a.clone()],
+            vec![a.clone(), a.clone()],
+            vec![],
+        ] {
+            assert_eq!(d.apply(Command::Group { ids }), Err(CommandError::BadGroup));
+        }
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("group");
+        // a et b forment désormais une seule unité : la regrouper seule est refusé.
+        assert_eq!(
+            d.apply(Command::Group {
+                ids: vec![a.clone(), b.clone()]
+            }),
+            Err(CommandError::BadGroup)
+        );
+        assert_eq!(w.since(), 1);
+        assert_eq!(
+            CommandError::BadGroup.to_string(),
+            "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)"
+        );
+    }
+
+    #[test]
+    fn group_of_group_and_element_nests_paths() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = rect_at(&mut d, &p, 200.0);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("g1");
+        let inner = group_of(&d, &a).expect("g1")[0].clone();
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone(), c.clone()],
+        })
+        .expect("g2");
+        let ga = group_of(&d, &a).expect("a");
+        assert_eq!(ga.len(), 2);
+        assert_eq!(ga[1], inner);
+        assert_eq!(group_of(&d, &b), Some(ga.clone()));
+        assert_eq!(group_of(&d, &c), Some(vec![ga[0].clone()]));
+    }
+
+    #[test]
+    fn group_is_one_undo_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("group");
+        assert!(d.undo());
+        assert_eq!((group_of(&d, &a), group_of(&d, &b)), (None, None));
+        assert_eq!(d.element_ids(&p), vec![a, b]);
+    }
+
+    #[test]
+    fn ungroup_removes_outer_level_only() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = rect_at(&mut d, &p, 200.0);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("g1");
+        let inner = group_of(&d, &a).expect("g1");
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone(), c.clone()],
+        })
+        .expect("g2");
+        let ch = d
+            .apply(Command::Ungroup {
+                ids: vec![a.clone(), b.clone(), c.clone()],
+            })
+            .expect("ungroup");
+        assert_eq!(ch.ids.len(), 3);
+        assert_eq!(group_of(&d, &a), Some(inner.clone()));
+        assert_eq!(group_of(&d, &b), Some(inner));
+        assert_eq!(group_of(&d, &c), None);
+        assert_eq!(raw_group(&d, &c), None, "chemin vide : champ retiré");
+        assert!(d.undo());
+        assert_eq!(group_of(&d, &c).map(|g| g.len()), Some(1));
+    }
+
+    #[test]
+    fn ungroup_without_group_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let v = d.version();
+        let w = writes(&d);
+        let ch = d
+            .apply(Command::Ungroup {
+                ids: vec![a.clone(), "absent".into()],
+            })
+            .expect("ungroup");
+        assert!(ch.ids.is_empty() && ch.pages.is_empty());
+        assert_eq!(d.version(), v);
+        assert_eq!(w.since(), 0);
+    }
+
+    #[test]
+    fn partial_erase_keeps_group() {
+        let mut d = Document::blank();
+        let (p, [_, b, c]) = three(&mut d);
+        d.apply(Command::Group {
+            ids: vec![b.clone(), c.clone()],
+        })
+        .expect("group");
+        let gb = group_of(&d, &b).expect("groupe");
+        let ch = d.apply(cut_second(&p)).expect("erase");
+        assert_eq!(ch.removed, vec![b]);
+        assert!(!ch.ids.is_empty());
+        for id in &ch.ids {
+            assert_eq!(group_of(&d, id), Some(gb.clone()), "morceau {id}");
+        }
+    }
+
+    /// Correction de cadrage : un groupe partiel est étendu au groupe extérieur entier de chaque id touché.
+    #[test]
+    fn group_partial_selection_extends_to_whole_outer_group() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = rect_at(&mut d, &p, 200.0);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("g1");
+        let inner = group_of(&d, &a).expect("g1")[0].clone();
+        // `a` seul (membre partiel de g1) avec `c` : b suit a.
+        let ch = d
+            .apply(Command::Group {
+                ids: vec![a.clone(), c.clone()],
+            })
+            .expect("g2");
+        let mut all = vec![a.clone(), b.clone(), c.clone()];
+        all.sort();
+        assert_eq!(ch.ids, all);
+        let ga = group_of(&d, &a).expect("a");
+        assert_eq!(ga.len(), 2);
+        assert_eq!(ga[1], inner);
+        assert_eq!(group_of(&d, &b), Some(ga.clone()));
+        assert_eq!(group_of(&d, &c), Some(vec![ga[0].clone()]));
+        // Un seul membre d'un groupe n'est pas deux unités.
+        let mut d2 = Document::blank();
+        let p2 = first(&d2);
+        let x = rect_at(&mut d2, &p2, 0.0);
+        let y = rect_at(&mut d2, &p2, 100.0);
+        d2.apply(Command::Group {
+            ids: vec![x.clone(), y.clone()],
+        })
+        .expect("g");
+        assert_eq!(
+            d2.apply(Command::Group { ids: vec![x] }),
+            Err(CommandError::BadGroup)
+        );
+    }
+
+    /// U3 : recharger un document dont des éléments portent `group` donne les mêmes octets et les mêmes vues.
+    #[test]
+    fn group_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = rect_at(&mut d, &p, 200.0);
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("g1");
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone(), c.clone()],
+        })
+        .expect("g2");
+        let file = save(&d, &meta).expect("save");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            for id in [&a, &b, &c] {
+                assert_eq!(group_of(&r, id), group_of(&d, id), "groupe {id} au tour {i}");
+            }
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+        }
     }
 }
