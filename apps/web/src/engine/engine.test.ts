@@ -1459,6 +1459,15 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(image().transform).toEqual([1, 0, 0, 1, 100, 100]);
     expect([edit.mode(), engine.state().selection]).toEqual(["idle", [id]]);
   });
+  it("C5 fermer la séance : l'emplacement d'aperçu de l'image est jeté dans le cache (m4)", () => {
+    const dropPreview = vi.fn();
+    const doc = fakeCore.blank();
+    const tools: ToolFactories = { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx), select: (ctx) => createSelectTool(ctx) };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools, images: { colorAt: () => null, dropPreview } });
+    const id = doc.apply({ type: "AddImage", page: engine.state().page, asset: ASSET, w: 200, h: 150, matrix: [1, 0, 0, 1, 100, 100] }).ids[0] ?? "";
+    engine.editImage(id)!.close();
+    expect(dropPreview).toHaveBeenCalledWith(id);
+  });
   it("C5 Entrée valide le rognage", () => {
     const { engine, id, image, drag } = c5();
     const edit = engine.editImage(id)!;

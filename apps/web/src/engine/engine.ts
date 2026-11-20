@@ -83,7 +83,7 @@ export interface EngineDeps {
   readonly tools: ToolFactories;
   readonly penStyle?: StrokeStyle;
   /** C5 (I29) : couleur d'origine d'un pixel source, pour la pipette ; absent : la pipette ne rend rien. */
-  readonly images?: { colorAt(asset: string, x: number, y: number): string | null };
+  readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
 }
 
 export interface Engine {
@@ -701,6 +701,7 @@ export function createEngine(deps: EngineDeps): Engine {
         setPreview: (p) => renderer.setImagePreview(p),
         colorAt: (asset, x, y) => deps.images?.colorAt(asset, x, y) ?? null,
         closed: () => {
+          deps.images?.dropPreview?.(id); // m4 : l'emplacement d'aperçu de l'image est jeté avec la séance
           if (imageEdit === session) imageEdit = null;
         },
       });

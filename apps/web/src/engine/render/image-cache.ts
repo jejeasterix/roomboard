@@ -23,6 +23,8 @@ export interface ImageSource {
   colorAt?(asset: string, x: number, y: number): string | null;
   /** C5 (I19) : éléments retirés (`Change.removed`) : leurs emplacements et résultats en route sont jetés. */
   forget?(ids: readonly string[]): void;
+  /** C5 : séance fermée, l'aperçu de l'élément est fini : son emplacement `<id>#apercu` est jeté. */
+  dropPreview?(id: string): void;
 }
 
 export type BitmapLike = CanvasImageSource & { close?(): void };
@@ -34,6 +36,7 @@ export interface ImageCache extends ImageSource {
   bitmapOf(el: ImageElement, preview?: boolean): CanvasImageSource | null;
   colorAt(asset: string, x: number, y: number): string | null;
   forget(ids: readonly string[]): void;
+  dropPreview(id: string): void;
   pixelState(): PixelState;
   dispose(): void;
 }
@@ -55,6 +58,8 @@ interface Slot {
   bitmap: BitmapLike | null;
   /** Clé en calcul pour cet emplacement ; un résultat d'une autre clé est périmé. */
   wanted: string | null;
+  /** Emplacement de l'élément qui attend ce calcul (Valider pendant le calcul de l'aperçu) : le résultat lui est transféré. */
+  adopter?: string;
 }
 
 const hex2 = (v: number): string => v.toString(16).padStart(2, "0");
@@ -97,6 +102,7 @@ export function createImageCache(
 
   const publish = (): void => {
     const hasBitmap = [...slots.values()].some((s) => s.bitmap !== null);
+    if (slots.size === 0) lastFailed = false; // plus d'image retouchée : un échec passé ne s'affiche plus (I33)
     const next: PixelState = running > 0 ? "attente" : lastFailed ? "echec" : hasBitmap ? "pret" : "";
     if (next === state) return;
     state = next;
@@ -107,7 +113,15 @@ export function createImageCache(
     if (s === undefined) return;
     slots.delete(name);
     s.bitmap?.close?.();
+    release(s);
   };
+  /** Un emplacement qui travaillait pour un autre (Valider) disparaît : l'attente de l'autre est levée. */
+  function release(s: Slot): void {
+    if (s.adopter === undefined) return;
+    const t = slots.get(s.adopter);
+    if (t !== undefined && t.wanted === s.wanted) t.wanted = null;
+    delete s.adopter;
+  }
 
   function bitmap(asset: string): BitmapLike | null {
     const hit = done.get(asset);
@@ -153,7 +167,9 @@ export function createImageCache(
         running--;
         const cur = slots.get(name);
         if (out === null) {
+          if (cur !== undefined) release(cur);
           publish();
+          if (!disposed) ready();
           return;
         }
         if (disposed || cur === undefined || cur.wanted !== key) {
@@ -161,10 +177,21 @@ export function createImageCache(
           publish();
           return;
         }
-        cur.bitmap?.close?.();
-        cur.bitmap = out;
-        cur.key = key;
-        cur.wanted = null;
+        // Valider pendant le calcul : le résultat de l'aperçu va à l'élément, sans recalcul (I22).
+        const heir = cur.adopter === undefined ? undefined : slots.get(cur.adopter);
+        if (cur.adopter !== undefined) {
+          slots.delete(name);
+          if (heir === undefined || heir.wanted !== key) {
+            out.close();
+            publish();
+            return;
+          }
+        }
+        const target = heir ?? cur;
+        target.bitmap?.close?.();
+        target.bitmap = out;
+        target.key = key;
+        target.wanted = null;
         lastFailed = false;
         publish();
         ready();
@@ -173,7 +200,10 @@ export function createImageCache(
         running--;
         badKeys.add(key);
         const cur = slots.get(name);
-        if (cur?.wanted === key) cur.wanted = null;
+        if (cur?.wanted === key) {
+          release(cur);
+          cur.wanted = null;
+        }
         lastFailed = true;
         publish();
         if (!warned && !disposed) {
@@ -222,6 +252,12 @@ export function createImageCache(
         publish();
         return s.bitmap;
       }
+      if (!preview && twin !== undefined && twin.wanted === key && (twin.adopter === undefined || twin.adopter === name)) {
+        // Valider avant l'arrivée de l'aperçu de même clé : l'élément attend ce calcul au lieu d'en lancer un second.
+        twin.adopter = name;
+        s.wanted = key;
+        return s.bitmap ?? raw;
+      }
       // Élément dessiné sans aperçu : l'aperçu est fini ; son emplacement et son calcul en route sont jetés.
       if (!preview && twin !== undefined) drop(twinName);
       if (badKeys.has(key)) return raw;
@@ -243,6 +279,10 @@ export function createImageCache(
         drop(id);
         drop(`${id}#apercu`);
       }
+      publish();
+    },
+    dropPreview(id) {
+      drop(`${id}#apercu`);
       publish();
     },
     pixelState: () => state,

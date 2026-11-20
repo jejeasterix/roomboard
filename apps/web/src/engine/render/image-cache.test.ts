@@ -169,6 +169,43 @@ describe("bitmaps retouchés par élément (C5, I19, I22)", () => {
     expect(p.close).not.toHaveBeenCalled();
   });
 
+  it("m4 : Valider pendant le calcul de l'aperçu : pas de second calcul, le résultat passe à l'élément à son arrivée", async () => {
+    const { c, calls, runner, redraw } = await ready();
+    c.bitmapOf(el({ contrast: 10 }), true);
+    c.bitmapOf(el({ contrast: 10 })); // Valider : la clé de l'aperçu est celle de l'élément
+    c.bitmapOf(el({ contrast: 10 })); // redessiné avant l'arrivée : l'attente continue
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    const p = out("apercu");
+    calls[0]?.resolve(p);
+    await flush();
+    expect(c.bitmapOf(el({ contrast: 10 }))).toBe(p);
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(p.close).not.toHaveBeenCalled();
+    expect(redraw).toHaveBeenCalled();
+    expect(c.pixelState()).toBe("pret");
+  });
+
+  it("m4 : dropPreview (fermeture de la séance) jette l'emplacement <id>#apercu et ferme son bitmap", async () => {
+    const { c, calls } = await ready();
+    c.bitmapOf(el({ contrast: 10 }), true);
+    const p = out("apercu");
+    calls[0]?.resolve(p);
+    await flush();
+    c.dropPreview("e");
+    expect(p.close).toHaveBeenCalledTimes(1);
+    expect(c.pixelState()).toBe("");
+  });
+
+  it("m5 : échec puis retour à l'image sans retouche : plus d'échec affiché (I33)", async () => {
+    const { c, calls } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    calls[0]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    c.bitmapOf(el({}));
+    expect(c.pixelState()).toBe("");
+  });
+
   it("aperçu sans bitmap : celui de l'élément reste dessiné ; aperçu fini : le sien est fermé", async () => {
     const { c, calls } = await ready();
     c.bitmapOf(el({ brightness: 20 }));
