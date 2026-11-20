@@ -128,7 +128,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(() => d.apply({ type: "Transform", ids: ["e1", "e2"], matrix: [2, 0, 0, 2, 10, 20] })).toThrow("Change invalide");
     expect(calls).toEqual([
       ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000"],
-      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45],
+      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
   });

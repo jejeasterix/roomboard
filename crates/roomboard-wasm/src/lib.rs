@@ -16,7 +16,7 @@ use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
 use roomboard_core::query::Bounds;
-use roomboard_core::rich_text::TextAttr;
+use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::table::TableAxis;
 use wasm_bindgen::prelude::*;
@@ -175,6 +175,20 @@ impl<'de> serde::de::Visitor<'de> for WireVisitor {
     }
 }
 
+/// Emplacements d'un patch lu par `PatchVisitor`, dans l'ordre de `PATCH_KEYS`.
+type PatchSlots = [Option<Option<WireValue>>; 6];
+
+/// Emplacements → entrées du cœur (contrôle 1 de T7) : clé connue au mauvais type : `BadFormat`.
+fn entries_of(slots: PatchSlots) -> Result<Vec<TextAttr>, CommandError> {
+    let mut attrs = Vec::new();
+    for (k, v) in PATCH_KEYS.iter().zip(slots) {
+        if let Some(v) = v {
+            attrs.push(wire_attr(k, v)?);
+        }
+    }
+    Ok(attrs)
+}
+
 /// Une entrée du patch → entrée du cœur (contrôle 1 de T7) : clé inconnue ou valeur au mauvais type : `BadFormat`.
 fn wire_attr(k: &str, v: Option<WireValue>) -> Result<TextAttr, CommandError> {
     Ok(match (k, v) {
@@ -212,7 +226,7 @@ const PATCH_KEYS: [&str; 6] = ["bold", "color", "font", "italic", "size", "under
 struct PatchVisitor;
 
 impl<'de> serde::de::Visitor<'de> for PatchVisitor {
-    type Value = [Option<Option<WireValue>>; 6];
+    type Value = PatchSlots;
 
     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str("un objet")
@@ -237,13 +251,116 @@ fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, C
     let slots = d
         .deserialize_map(PatchVisitor)
         .map_err(|_| CommandError::BadFormat)?;
-    let mut attrs = Vec::new();
-    for (k, v) in PATCH_KEYS.iter().zip(slots) {
-        if let Some(v) = v {
-            attrs.push(wire_attr(k, v)?);
+    entries_of(slots)
+}
+
+/// Objet `attrs` d'un segment, lu par le `PatchVisitor` de `format_text`.
+struct AttrsSeed;
+
+impl<'de> serde::de::DeserializeSeed<'de> for AttrsSeed {
+    type Value = PatchSlots;
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<PatchSlots, D::Error> {
+        d.deserialize_map(PatchVisitor)
+    }
+}
+
+/// Un segment `{ text, attrs }` : les deux clés exigées, aucune autre.
+struct SpanVisitor;
+
+impl<'de> serde::de::Visitor<'de> for SpanVisitor {
+    type Value = (String, PatchSlots);
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("un segment { text, attrs }")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let (mut text, mut attrs) = (None, None);
+        while let Some(k) = map.next_key::<String>()? {
+            match k.as_str() {
+                "text" => text = Some(map.next_value::<String>()?),
+                "attrs" => attrs = Some(map.next_value_seed(AttrsSeed)?),
+                _ => return Err(serde::de::Error::custom("clé inconnue")),
+            }
+        }
+        match (text, attrs) {
+            (Some(t), Some(a)) => Ok((t, a)),
+            _ => Err(serde::de::Error::custom("segment incomplet")),
         }
     }
-    Ok(attrs)
+}
+
+struct SpanSeed;
+
+impl<'de> serde::de::DeserializeSeed<'de> for SpanSeed {
+    type Value = (String, PatchSlots);
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+        d.deserialize_map(SpanVisitor)
+    }
+}
+
+/// Liste de segments.
+struct SpansVisitor;
+
+impl<'de> serde::de::Visitor<'de> for SpansVisitor {
+    type Value = Vec<(String, PatchSlots)>;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("une liste de segments")
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        let mut out = Vec::new();
+        while let Some(s) = seq.next_element_seed(SpanSeed)? {
+            out.push(s);
+        }
+        Ok(out)
+    }
+}
+
+/// Entrées d'un état voulu → attributs (R7) : `false` et `null` valent « absent ».
+fn attrs_of(entries: Vec<TextAttr>) -> SpanAttrs {
+    let mut a = SpanAttrs::default();
+    for e in entries {
+        match e {
+            TextAttr::Bold(b) => a.bold = b,
+            TextAttr::Italic(b) => a.italic = b,
+            TextAttr::Underline(b) => a.underline = b,
+            TextAttr::Color(c) => a.color = c,
+            TextAttr::Size(s) => a.size = s.map(f64::from),
+            TextAttr::Font(f) => a.font = f,
+        }
+    }
+    a
+}
+
+/// Segments voulus de `set_text` et `set_table_cell` (C7b, R7) : une liste d'objets `{ text, attrs }`, `attrs` lu comme
+/// le patch de `format_text` ; pas une liste, clé inconnue, type faux : `BadFormat`. Les valeurs hors domaine sont
+/// refusées ensuite par le cœur (`valid_spans`). Générique pour être testée en natif, comme `read_patch`.
+fn read_spans_input<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Vec<SpanInput>, CommandError> {
+    let raw = d
+        .deserialize_seq(SpansVisitor)
+        .map_err(|_| CommandError::BadFormat)?;
+    let mut out = Vec::with_capacity(raw.len());
+    for (text, slots) in raw {
+        out.push(SpanInput {
+            text,
+            attrs: attrs_of(entries_of(slots)?),
+        });
+    }
+    Ok(out)
+}
+
+/// Paramètre `spans` de la page : `undefined` ou `null` = absent (comportement d'avant C7b).
+fn spans_arg(v: JsValue) -> Result<Option<Vec<SpanInput>>, CommandError> {
+    if v.is_undefined() || v.is_null() {
+        return Ok(None);
+    }
+    read_spans_input(serde_wasm_bindgen::Deserializer::from(v)).map(Some)
 }
 
 /// Grille reçue de JS (G12, E1) : `nums` = 7 nombres par niveau (`sx, sy, ox, oy, snap, visible, lineWidth`, booléens en
@@ -448,7 +565,8 @@ impl Document {
         )
     }
 
-    /// `row`, `col` : ids ; `row_height` : hauteur exigée mesurée par la page (T5).
+    /// `row`, `col` : ids ; `row_height` : hauteur exigée mesurée par la page (T5) ; `spans` : C7b, état voulu des
+    /// segments (`undefined` : absent).
     pub fn set_table_cell(
         &mut self,
         id: &str,
@@ -456,10 +574,12 @@ impl Document {
         col: &str,
         content: &str,
         row_height: Option<f64>,
+        spans: JsValue,
     ) -> Result<JsValue, JsError> {
+        let spans = spans_arg(spans).map_err(cmd_err)?;
         to_js(
             &self
-                .set_table_cell_inner(id, [row, col], content, row_height)
+                .set_table_cell_inner(id, [row, col], content, row_height, spans)
                 .map_err(cmd_err)?,
         )
     }
@@ -658,7 +778,9 @@ impl Document {
         size: f32,
         box_width: f64,
         box_height: f64,
+        spans: JsValue,
     ) -> Result<JsValue, JsError> {
+        let spans = spans_arg(spans).map_err(cmd_err)?;
         to_js(
             &self
                 .set_text_inner(
@@ -669,6 +791,7 @@ impl Document {
                     color,
                     size,
                     [box_width, box_height],
+                    spans,
                 )
                 .map_err(cmd_err)?,
         )
@@ -891,6 +1014,7 @@ impl Document {
         cell: [&str; 2],
         content: &str,
         row_height: Option<f64>,
+        spans: Option<Vec<SpanInput>>,
     ) -> Result<Change, CommandError> {
         self.run(Command::SetTableCell {
             id: id.to_string(),
@@ -898,7 +1022,7 @@ impl Document {
             col: cell[1].to_string(),
             content: content.to_string(),
             row_height,
-            spans: None,
+            spans,
         })
     }
 
@@ -1044,6 +1168,7 @@ impl Document {
         color: &str,
         size: f32,
         boxes: [f64; 2],
+        spans: Option<Vec<SpanInput>>,
     ) -> Result<Change, CommandError> {
         self.run(Command::SetText {
             page: page.to_string(),
@@ -1055,7 +1180,7 @@ impl Document {
             size,
             box_width: boxes[0],
             box_height: boxes[1],
-            spans: None,
+            spans,
         })
     }
 
@@ -1962,7 +2087,10 @@ mod tests {
         assert_eq!(
             got,
             Ok(vec![
-                SpanInput { text: "Le ".into(), attrs: SpanAttrs::default() },
+                SpanInput {
+                    text: "Le ".into(),
+                    attrs: SpanAttrs::default()
+                },
                 SpanInput {
                     text: "chat".into(),
                     attrs: SpanAttrs {
@@ -1984,10 +2112,17 @@ mod tests {
         for bad in [
             Jv::Map(vec![("text", Jv::Str("x"))]),
             Jv::List(vec![Jv::Map(vec![("text", Jv::Str("x"))])]),
-            Jv::List(vec![Jv::Map(vec![("text", Jv::Str("x")), ("attrs", Jv::Map(vec![])), ("href", Jv::Str("y"))])]),
+            Jv::List(vec![Jv::Map(vec![
+                ("text", Jv::Str("x")),
+                ("attrs", Jv::Map(vec![])),
+                ("href", Jv::Str("y")),
+            ])]),
             Jv::List(vec![seg("x", vec![("href", Jv::Str("y"))])]),
             Jv::List(vec![seg("x", vec![("bold", Jv::Str("oui"))])]),
-            Jv::List(vec![Jv::Map(vec![("text", Jv::Str("x")), ("attrs", Jv::Num(1.0))])]),
+            Jv::List(vec![Jv::Map(vec![
+                ("text", Jv::Str("x")),
+                ("attrs", Jv::Num(1.0)),
+            ])]),
             Jv::List(vec![Jv::Str("x")]),
         ] {
             assert_eq!(read_spans_input(bad), Err(CommandError::BadFormat));
@@ -1998,21 +2133,51 @@ mod tests {
     fn set_text_inner_with_spans_formats_in_one_step() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        let bold = SpanAttrs { bold: true, ..SpanAttrs::default() };
+        let bold = SpanAttrs {
+            bold: true,
+            ..SpanAttrs::default()
+        };
         let spans = vec![
-            SpanInput { text: "Le ".into(), attrs: SpanAttrs::default() },
-            SpanInput { text: "chat".into(), attrs: bold.clone() },
+            SpanInput {
+                text: "Le ".into(),
+                attrs: SpanAttrs::default(),
+            },
+            SpanInput {
+                text: "chat".into(),
+                attrs: bold.clone(),
+            },
         ];
         let id = d
-            .set_text_inner(&p, None, [100.0, 200.0], "Le chat", "#000000", 36.0, [600.0, 45.0], Some(spans))
+            .set_text_inner(
+                &p,
+                None,
+                [100.0, 200.0],
+                "Le chat",
+                "#000000",
+                36.0,
+                [600.0, 45.0],
+                Some(spans),
+            )
             .expect("texte")
             .ids[0]
             .clone();
         let t = d.core.element(&id).and_then(|e| e.text).expect("texte");
         assert_eq!(t.spans[1].attrs, bold);
-        let bad = vec![SpanInput { text: "Le cha".into(), attrs: SpanAttrs::default() }];
+        let bad = vec![SpanInput {
+            text: "Le cha".into(),
+            attrs: SpanAttrs::default(),
+        }];
         assert_eq!(
-            d.set_text_inner(&p, Some(id), [0.0, 0.0], "Le chat", "#000000", 36.0, [600.0, 45.0], Some(bad)),
+            d.set_text_inner(
+                &p,
+                Some(id),
+                [0.0, 0.0],
+                "Le chat",
+                "#000000",
+                36.0,
+                [600.0, 45.0],
+                Some(bad)
+            ),
             Err(CommandError::BadFormat)
         );
     }
@@ -2027,11 +2192,28 @@ mod tests {
             .ids[0]
             .clone();
         let t = d.core.element(&id).and_then(|e| e.table).expect("vue");
-        let bold = SpanAttrs { bold: true, ..SpanAttrs::default() };
-        let spans = vec![SpanInput { text: "Total".into(), attrs: bold.clone() }];
-        d.set_table_cell_inner(&id, [t.rows[0].id.as_str(), t.cols[0].id.as_str()], "Total", None, Some(spans))
-            .expect("cellule");
-        let cells = d.core.element(&id).and_then(|e| e.table).expect("vue").cells;
+        let bold = SpanAttrs {
+            bold: true,
+            ..SpanAttrs::default()
+        };
+        let spans = vec![SpanInput {
+            text: "Total".into(),
+            attrs: bold.clone(),
+        }];
+        d.set_table_cell_inner(
+            &id,
+            [t.rows[0].id.as_str(), t.cols[0].id.as_str()],
+            "Total",
+            None,
+            Some(spans),
+        )
+        .expect("cellule");
+        let cells = d
+            .core
+            .element(&id)
+            .and_then(|e| e.table)
+            .expect("vue")
+            .cells;
         assert_eq!(cells[0].spans[0].attrs, bold);
     }
 }
