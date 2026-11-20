@@ -45,6 +45,13 @@ describe("sniffImage (R1, R14)", () => {
   ];
   for (const [kind, head, name] of cases) it(`${kind} reconnu par ses octets`, () => expect(sniffImage(head, name)).toBe(kind));
 
+  it("SVG : seulement si le texte commence par <svg (après prologue, commentaires, DOCTYPE)", () => {
+    const doc = bytes('<?xml version="1.0"?><!-- c --><!DOCTYPE svg PUBLIC "x" "y">\n<svg/>');
+    expect(sniffImage(doc, "a")).toBe("svg");
+    expect(sniffImage(bytes("<!DOCTYPE html><html><body><svg width='1'></svg></body></html>"), "page.svg")).toBeNull();
+    expect(sniffImage(bytes("<html><svg/></html>"), "a")).toBeNull();
+  });
+
   it("TIFF, ZIP, texte et HTML : non reconnus (R14 : TIFF refusé)", () => {
     expect(sniffImage(bytes([0x49, 0x49, 0x2a, 0x00]), "photo.tif")).toBeNull();
     expect(sniffImage(bytes([0x4d, 0x4d, 0x00, 0x2a]), "photo.tiff")).toBeNull();

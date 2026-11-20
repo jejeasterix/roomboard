@@ -31,6 +31,7 @@ export const DISPLAY_MAX = 4096;
 export const CASCADE_STEP = 24;
 export const FIT_SHARE = 0.8;
 export const HEIC_UNREADABLE = "HEIC illisible sur ce poste";
+export const TAB_CLOSED_MESSAGE = "onglet fermé pendant l'import, image non insérée";
 export const TOO_MANY_PIXELS = "image trop grande (plus de 100 millions de pixels)";
 /** Le SOFn d'un JPEG est cherché dans le premier Mio (blocs EXIF compris). */
 const JPEG_SCAN = 1 << 20;
@@ -41,7 +42,11 @@ const ascii = (h: Uint8Array, from: number, to: number): string => String.fromCh
 function isSvg(head: Uint8Array, name: string): boolean {
   const text = new TextDecoder("utf-8").decode(head).replace(/^\uFEFF/, "").trimStart();
   if (!text.startsWith("<")) return false;
-  return /<svg[\s>/]/i.test(text) || (name.toLowerCase().endsWith(".svg") && /^<\?xml/i.test(text));
+  // Prologue `<?xml …?>`, commentaires et `<!DOCTYPE svg …>` d'abord ; une page HTML qui contient un <svg> n'en est pas un.
+  const rest = text.replace(/^(?:\s|<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE\s+svg\b[^>]*(?:\[[\s\S]*?\])?\s*>)+/i, "");
+  if (/^<svg[\s>/]/i.test(rest)) return true;
+  // En-tête coupé dans le prologue (4 Kio) : le nom `.svg` tranche.
+  return name.toLowerCase().endsWith(".svg") && (rest === "" || /^(?:<\?|<!--|<!DOCTYPE\s+svg)/i.test(rest));
 }
 
 /** Format d'image d'après les premiers octets ; `name` ne sert qu'au SVG sans balise `<svg` dans l'en-tête. */
@@ -223,6 +228,8 @@ export interface ImageTarget {
   page(): string;
   camera(): Camera;
   stageRect(): StageRect;
+  /** Faux une fois l'onglet fermé (décodage en cours) : plus aucun appel au moteur libéré. */
+  alive?(): boolean;
   /** `engine.run` : null si le cœur refuse (message dans l'état du moteur). */
   run(cmd: Command): Change | null;
 }
@@ -256,6 +263,10 @@ export function imageHandler(deps: { readonly decode?: ImageDecoder } = {}): Imp
           return "failed";
         }
         decoded.bitmap.close(); // le rendu décode à nouveau depuis le magasin (cache par empreinte, DAR2)
+        if (target.alive?.() === false) {
+          await ctx.notify(`${file.name} : ${TAB_CLOSED_MESSAGE}`);
+          return "failed";
+        }
         const id = await target.assets.put(blob);
         const rect = target.stageRect();
         const camera = target.camera();

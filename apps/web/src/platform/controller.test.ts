@@ -526,6 +526,19 @@ describe("contrôleur : encode, import, refus R30 (R11, R18, R30)", () => {
     expect(importFiles).toHaveBeenCalledWith([f]);
   });
 
+  it("Ctrl+S pendant un import : refusé avec un message court", async () => {
+    let release: () => void = () => undefined;
+    const importFiles = vi.fn(() => new Promise<void>((r) => (release = r)));
+    const t = setup({ importFiles });
+    t.h.onPick([{ name: "a.png", size: 1, mime: "", blob: async () => new Blob([new Uint8Array([1])]) }]);
+    const importing = t.ctl.run("import");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(await t.ctl.run("save")).toBe(false);
+    expect(t.s.log.notes).toEqual(["Import en cours : réessayez dans un instant"]);
+    release();
+    await importing;
+  });
+
   it("import annulé ([]) : false, rien importé", async () => {
     const importFiles = vi.fn(async () => undefined);
     const t = setup({ importFiles });

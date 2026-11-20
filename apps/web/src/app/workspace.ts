@@ -138,7 +138,9 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     },
   });
 
+  const released = new WeakSet<TabSession>();
   const release = (tab: TabSession): void => {
+    released.add(tab);
     slots.delete(tab);
     tab.files.dispose();
     tab.board.dispose();
@@ -210,6 +212,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   /** Onglet qui reçoit les images (R3) : session active, magasin de l'onglet, moteur, rectangle du stage. */
   const imageTarget = (t: TabSession): ImageTarget => ({
     assets: t.assets,
+    alive: () => !released.has(t),
     page: () => t.board.engine.state().page,
     camera: () => t.board.engine.camera(),
     stageRect: () => t.board.stage.getBoundingClientRect(),

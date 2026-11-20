@@ -9,6 +9,8 @@ import { UNTITLED, type DroppedFile, type FileHost, type OpenedFile, type SaveTa
 
 export const APP_VERSION = "0.1.0";
 export const UNREAD_ASSETS_MESSAGE = "images non lues : enregistrer les perdrait";
+export const IMPORT_BUSY_MESSAGE = "Import en cours : réessayez dans un instant";
+export const BUSY_MESSAGE = "Opération en cours : réessayez dans un instant";
 export const DISCARD_MESSAGE = "Le document a des modifications non enregistrées. Les abandonner ?";
 
 /** Sous-ensemble de `Engine` (engine.ts : `state().version`, `onState`). */
@@ -86,7 +88,7 @@ export function createFileController(d: FileControllerDeps): FileController {
   let savedVersion = d.versions.state().version;
   let target: SaveTarget | null = d.opened?.target ?? null;
   let name = d.opened?.name ?? UNTITLED;
-  let busy = false;
+  let busy: FileCommand | null = null;
   let lastTitle = "";
   const listeners = new Set<() => void>();
 
@@ -170,8 +172,16 @@ export function createFileController(d: FileControllerDeps): FileController {
   changed();
 
   async function run(cmd: FileCommand): Promise<boolean> {
-    if (busy) return false;
-    busy = true;
+    if (busy !== null) {
+      // refus dit à voix haute : sinon Ctrl+S pendant un import semble ignoré (R18)
+      try {
+        await d.shell.notify(busy === "import" ? IMPORT_BUSY_MESSAGE : BUSY_MESSAGE);
+      } catch (e) {
+        console.warn(`RoomBoard : commande de fichier abandonnée (${messageOf(e)})`);
+      }
+      return false;
+    }
+    busy = cmd;
     try {
       if (cmd === "save") return await save(false);
       if (cmd === "saveAs") return await save(true);
@@ -183,7 +193,7 @@ export function createFileController(d: FileControllerDeps): FileController {
       console.warn(`RoomBoard : commande de fichier abandonnée (${messageOf(e)})`);
       return false;
     } finally {
-      busy = false;
+      busy = null;
     }
   }
 
