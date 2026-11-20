@@ -33,6 +33,7 @@ export interface Canvas2DOptions {
   readonly backdrop?: BackdropPainter;
   /** C12 (PF15) : état du fond après chaque scène. */
   readonly onBackdrop?: (s: BackdropState) => void;
+  readonly media?: import("./media-frames").MediaFrames;
 }
 
 /** Polygones fermés x, y alternés ; une paire non finie (NaN, NaN) commence un nouveau polygone. */
