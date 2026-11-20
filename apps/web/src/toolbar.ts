@@ -1,5 +1,9 @@
-export type ToolId = "pen" | "eraser" | "select";
+import type { ToolChoice } from "./engine/input/gesture";
 
+/** Identifiant d'outil : chaîne ouverte, connue par `TOOL_TABLE` (usage § 8 point 3), jamais une union figée. */
+export type ToolId = string;
+
+/** Ancienne barre (DA10), lue par `app/barre.ts` seulement ; retirée par T95. */
 export interface ToolDef {
   readonly id: ToolId;
   readonly label: string;
@@ -22,3 +26,519 @@ export function validateToolbar(tools: readonly ToolDef[]): string[] {
   }
   return errors;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Profil de barre versionné (D22, DA10 étendu par U11-U14 ; usage § 8 points 1-7, 11, 17).
+// Chaque objet garde ses clés inconnues dans `rest` ; `serializeProfile` écrit `{ ...rest, ...champs connus }` à
+// chaque niveau : un profil d'une mineure plus récente se réécrit sans rien perdre.
+// ---------------------------------------------------------------------------------------------------------------
+
+export const PROFILE_FORMAT = "roomboard-profile";
+export const PROFILE_SCHEMA = 1;
+export const PROFILE_MINOR = 0;
+
+export type Dock = "top" | "bottom" | "left" | "right" | "floating";
+export const DOCKS: readonly Dock[] = Object.freeze(["top", "bottom", "left", "right", "floating"]);
+export type ItemKind = "tool" | "action" | "dropzone" | "separator";
+export const ITEM_KINDS: readonly ItemKind[] = Object.freeze(["tool", "action", "dropzone", "separator"]);
+export type ButtonSize = "s" | "m" | "l";
+export const BUTTON_SIZES: readonly ButtonSize[] = Object.freeze(["s", "m", "l"]);
+export type StartMode = "board" | "desktop-annotation";
+export const START_MODES: readonly StartMode[] = Object.freeze(["board", "desktop-annotation"]);
+export type ActionId = string;
+export type CapabilityKey = "desktopAnnotation" | "multiWindow" | "dropPaths" | "officeConverter";
+export const CAPABILITY_KEYS: readonly CapabilityKey[] = Object.freeze([
+  "desktopAnnotation",
+  "multiWindow",
+  "dropPaths",
+  "officeConverter",
+]);
+export type RuntimeCapabilities = Readonly<Record<CapabilityKey, boolean>>;
+export type Rest = Readonly<Record<string, unknown>>;
+
+export interface ToolItem {
+  readonly id: string;
+  readonly kind: ItemKind;
+  readonly tool?: ToolId;
+  readonly action?: ActionId;
+  readonly label: string;
+  readonly icon?: string;
+  readonly options?: Rest;
+  /** Capacités exigées ; une clé inconnue (profil plus récent) est gardée et rend l'élément invisible. */
+  readonly requires: readonly CapabilityKey[];
+  readonly rest: Rest;
+}
+export interface ToolbarGroup { readonly id: string; readonly items: readonly ToolItem[]; readonly rest: Rest }
+export interface Toolbar {
+  readonly id: string;
+  readonly role: string;
+  readonly dock: Dock;
+  readonly collapsed: boolean;
+  readonly groups: readonly ToolbarGroup[];
+  readonly rest: Rest;
+}
+export interface Preset {
+  readonly id: string;
+  readonly label: string;
+  readonly color?: string;
+  readonly width?: number;
+  readonly size?: number;
+  readonly rest: Rest;
+}
+export interface Profile {
+  readonly schema: number;
+  readonly minor: number;
+  readonly id: string;
+  readonly label: string;
+  readonly interface: { readonly buttonSize: ButtonSize; readonly rest: Rest };
+  readonly toolbars: readonly Toolbar[];
+  readonly presets: Readonly<Record<ToolId, readonly Preset[]>>;
+  readonly behavior: { readonly startMode: StartMode; readonly rest: Rest };
+  readonly rest: Rest;
+}
+export type ParsedProfile = { readonly profile: Profile; readonly warnings: string[] } | { readonly errors: string[] };
+
+export interface ToolEntry { readonly label: string; readonly choice: ToolChoice }
+
+/** Outils connus du moteur : un outil de profil absent d'ici est gardé et masqué (U13). */
+export const TOOL_TABLE: Readonly<Record<ToolId, ToolEntry>> = Object.freeze({
+  pen: { label: "Stylo", choice: "pen" },
+  eraser: { label: "Gomme", choice: "eraser" },
+  hand: { label: "Main", choice: "hand" },
+  select: { label: "Sélection", choice: "select" },
+  rect: { label: "Rectangle", choice: "rect" },
+  ellipse: { label: "Ellipse", choice: "ellipse" },
+  line: { label: "Ligne", choice: "line" },
+  arrow: { label: "Flèche", choice: "arrow" },
+  text: { label: "Texte", choice: "text" },
+});
+
+/** Actions connues : celles de l'ancienne barre (inventaire du plan du lot 5b). */
+export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>> = Object.freeze({
+  "eraser-mode": { label: "Gomme : partielle" },
+  undo: { label: "Annuler" },
+  redo: { label: "Rétablir" },
+  "page-prev": { label: "Page précédente" },
+  "page-next": { label: "Page suivante" },
+  "page-add": { label: "Ajouter une page" },
+  "page-remove": { label: "Retirer la page" },
+  "fit-page": { label: "Ajuster la page" },
+  "file-new": { label: "Nouveau" },
+  "file-open": { label: "Ouvrir" },
+  "file-save": { label: "Enregistrer" },
+  "file-save-as": { label: "Enregistrer sous" },
+  settings: { label: "Réglages" },
+  profiles: { label: "Profil" },
+});
+
+/** Clé propre de la table (jamais héritée : `toString`, `constructor`… ne sont pas des outils). */
+export function isKnownTool(id: string): boolean {
+  return Object.hasOwn(TOOL_TABLE, id);
+}
+
+export function isKnownAction(id: string): boolean {
+  return Object.hasOwn(ACTION_TABLE, id);
+}
+
+// --- Analyse ----------------------------------------------------------------------------------------------------
+
+type Raw = Readonly<Record<string, unknown>>;
+
+interface Ctx {
+  readonly errors: string[];
+  readonly warnings: string[];
+  /** Identifiants d'éléments déjà vus : uniques dans tout le profil. */
+  readonly seen: Set<string>;
+}
+
+const PROFILE_KEYS = ["format", "schema", "minor", "id", "label", "interface", "toolbars", "presets", "behavior"];
+const INTERFACE_KEYS = ["buttonSize"];
+const BEHAVIOR_KEYS = ["startMode"];
+const BAR_KEYS = ["id", "role", "dock", "collapsed", "groups"];
+const GROUP_KEYS = ["id", "items"];
+const ITEM_KEYS = ["id", "kind", "tool", "action", "label", "icon", "options", "requires"];
+const PRESET_KEYS = ["id", "label", "color", "width", "size"];
+
+const isObject = (v: unknown): v is Raw => typeof v === "object" && v !== null && !Array.isArray(v);
+const isNonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+const includes = <T extends string>(list: readonly T[], v: unknown): v is T =>
+  typeof v === "string" && (list as readonly string[]).includes(v);
+const show = (v: unknown): string => JSON.stringify(v) ?? String(v);
+
+/** Clés inconnues de `raw`, gardées telles quelles (`Object.fromEntries` : `__proto__` reste une clé propre). */
+function restOf(raw: Raw, known: readonly string[]): Rest {
+  return Object.fromEntries(Object.entries(raw).filter(([k]) => !known.includes(k)));
+}
+
+function nonEmptyField(raw: Raw, key: string, path: string, ctx: Ctx): string {
+  const v = raw[key];
+  if (isNonEmpty(v)) return v;
+  ctx.errors.push(`${path}.${key} : chaîne non vide attendue`);
+  return "";
+}
+
+function list(raw: Raw, key: string, path: string, ctx: Ctx): readonly unknown[] {
+  const v = raw[key];
+  if (Array.isArray(v)) return v;
+  ctx.errors.push(`${path}.${key} : liste attendue`);
+  return [];
+}
+
+function optionalString(raw: Raw, key: string, path: string, ctx: Ctx): string | undefined {
+  const v = raw[key];
+  if (v === undefined || typeof v === "string") return v;
+  ctx.errors.push(`${path}.${key} : chaîne attendue`);
+  return undefined;
+}
+
+function optionalPositive(raw: Raw, key: string, path: string, ctx: Ctx): number | undefined {
+  const v = raw[key];
+  if (v === undefined) return undefined;
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  ctx.errors.push(`${path}.${key} : nombre fini > 0 attendu`);
+  return undefined;
+}
+
+/** Ce que chaque sorte d'élément exige au-delà de `id` et `kind` (table par sorte, pas de branchement). */
+const ITEM_RULES: Readonly<Record<ItemKind, (raw: Raw, id: string, path: string, ctx: Ctx) => void>> = {
+  tool: (raw, id, path, ctx) => {
+    requireLabel(raw, id, ctx);
+    if (!isNonEmpty(raw.tool)) ctx.errors.push(`${path}.tool : identifiant d'outil attendu`);
+    else if (!isKnownTool(raw.tool)) ctx.warnings.push(`outil inconnu masqué : ${raw.tool}`);
+  },
+  action: (raw, id, path, ctx) => {
+    requireLabel(raw, id, ctx);
+    if (!isNonEmpty(raw.action)) ctx.errors.push(`${path}.action : identifiant d'action attendu`);
+    else if (!isKnownAction(raw.action)) ctx.warnings.push(`action inconnue masquée : ${raw.action}`);
+  },
+  dropzone: (raw, id, _path, ctx) => requireLabel(raw, id, ctx),
+  separator: () => undefined,
+};
+
+function requireLabel(raw: Raw, id: string, ctx: Ctx): void {
+  if (!isNonEmpty(raw.label)) ctx.errors.push(`libellé vide : ${id}`);
+}
+
+function parseRequires(raw: Raw, id: string, path: string, ctx: Ctx): readonly CapabilityKey[] {
+  const v = raw.requires;
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) {
+    ctx.errors.push(`${path}.requires : liste attendue`);
+    return [];
+  }
+  const out: string[] = [];
+  for (const key of v) {
+    if (typeof key !== "string") {
+      ctx.errors.push(`${path}.requires : chaînes attendues`);
+      continue;
+    }
+    if (!includes(CAPABILITY_KEYS, key)) ctx.warnings.push(`capacité inconnue : ${key} (élément ${id} masqué)`);
+    out.push(key);
+  }
+  // Une clé inconnue est gardée pour la réécriture ; `visibleItems` la tient pour fausse.
+  return out as CapabilityKey[];
+}
+
+function parseItem(raw: unknown, path: string, ctx: Ctx): ToolItem | null {
+  if (!isObject(raw)) {
+    ctx.errors.push(`${path} : objet attendu`);
+    return null;
+  }
+  const id = nonEmptyField(raw, "id", path, ctx);
+  if (id !== "") {
+    if (ctx.seen.has(id)) ctx.errors.push(`doublon : ${id}`);
+    ctx.seen.add(id);
+  }
+  const kind = raw.kind;
+  if (!includes(ITEM_KINDS, kind)) {
+    ctx.errors.push(`${path}.kind : ${show(kind)} inconnu (${ITEM_KINDS.join(", ")})`);
+    return null;
+  }
+  ITEM_RULES[kind](raw, id || path, path, ctx);
+  const tool = optionalString(raw, "tool", path, ctx);
+  const action = optionalString(raw, "action", path, ctx);
+  const label = optionalString(raw, "label", path, ctx) ?? "";
+  const icon = optionalString(raw, "icon", path, ctx);
+  let options: Rest | undefined;
+  if (raw.options !== undefined) {
+    if (isObject(raw.options)) options = raw.options;
+    else ctx.errors.push(`${path}.options : objet attendu`);
+  }
+  return {
+    id,
+    kind,
+    ...(tool !== undefined ? { tool } : {}),
+    ...(action !== undefined ? { action } : {}),
+    label,
+    ...(icon !== undefined ? { icon } : {}),
+    ...(options !== undefined ? { options } : {}),
+    requires: parseRequires(raw, id || path, path, ctx),
+    rest: restOf(raw, ITEM_KEYS),
+  };
+}
+
+function parseGroup(raw: unknown, path: string, ctx: Ctx): ToolbarGroup | null {
+  if (!isObject(raw)) {
+    ctx.errors.push(`${path} : objet attendu`);
+    return null;
+  }
+  const id = nonEmptyField(raw, "id", path, ctx);
+  const items = list(raw, "items", path, ctx)
+    .map((it, i) => parseItem(it, `${path}.items[${i}]`, ctx))
+    .filter((it): it is ToolItem => it !== null);
+  return { id, items, rest: restOf(raw, GROUP_KEYS) };
+}
+
+function parseBar(raw: unknown, path: string, ctx: Ctx): Toolbar | null {
+  if (!isObject(raw)) {
+    ctx.errors.push(`${path} : objet attendu`);
+    return null;
+  }
+  const id = nonEmptyField(raw, "id", path, ctx);
+  const role = nonEmptyField(raw, "role", path, ctx);
+  let dock: Dock = "top";
+  if (includes(DOCKS, raw.dock)) dock = raw.dock;
+  else ctx.errors.push(`${path}.dock : ${show(raw.dock)} n'est pas une position (${DOCKS.join(", ")})`);
+  let collapsed = false;
+  if (typeof raw.collapsed === "boolean") collapsed = raw.collapsed;
+  else if (raw.collapsed !== undefined) ctx.errors.push(`${path}.collapsed : booléen attendu`);
+  const groups = list(raw, "groups", path, ctx)
+    .map((g, i) => parseGroup(g, `${path}.groups[${i}]`, ctx))
+    .filter((g): g is ToolbarGroup => g !== null);
+  return { id, role, dock, collapsed, groups, rest: restOf(raw, BAR_KEYS) };
+}
+
+function parsePreset(raw: unknown, path: string, ctx: Ctx): Preset | null {
+  if (!isObject(raw)) {
+    ctx.errors.push(`${path} : objet attendu`);
+    return null;
+  }
+  const id = nonEmptyField(raw, "id", path, ctx);
+  const label = nonEmptyField(raw, "label", path, ctx);
+  const color = optionalString(raw, "color", path, ctx);
+  const width = optionalPositive(raw, "width", path, ctx);
+  const size = optionalPositive(raw, "size", path, ctx);
+  return {
+    id,
+    label,
+    ...(color !== undefined ? { color } : {}),
+    ...(width !== undefined ? { width } : {}),
+    ...(size !== undefined ? { size } : {}),
+    rest: restOf(raw, PRESET_KEYS),
+  };
+}
+
+function parsePresets(raw: unknown, ctx: Ctx): Readonly<Record<ToolId, readonly Preset[]>> {
+  if (raw === undefined) return {};
+  if (!isObject(raw)) {
+    ctx.errors.push("presets : objet attendu");
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(raw).map(([tool, presets]) => {
+      const path = `presets.${tool}`;
+      if (!Array.isArray(presets)) {
+        ctx.errors.push(`${path} : liste attendue`);
+        return [tool, []];
+      }
+      const parsed = presets
+        .map((p, i) => parsePreset(p, `${path}[${i}]`, ctx))
+        .filter((p): p is Preset => p !== null);
+      return [tool, parsed];
+    }),
+  );
+}
+
+function block(raw: unknown, name: string, ctx: Ctx): Raw {
+  if (raw === undefined) return {};
+  if (isObject(raw)) return raw;
+  ctx.errors.push(`${name} : objet attendu`);
+  return {};
+}
+
+function parseInterface(raw: unknown, ctx: Ctx): Profile["interface"] {
+  const o = block(raw, "interface", ctx);
+  let buttonSize: ButtonSize = "m";
+  if (includes(BUTTON_SIZES, o.buttonSize)) buttonSize = o.buttonSize;
+  else if (o.buttonSize !== undefined) {
+    ctx.errors.push(`interface.buttonSize : ${show(o.buttonSize)} n'est pas une taille (${BUTTON_SIZES.join(", ")})`);
+  }
+  return { buttonSize, rest: restOf(o, INTERFACE_KEYS) };
+}
+
+/** `startMode` inconnu (version plus récente) : avertissement et `board`, valeur non gardée (CL5b-16). */
+function parseBehavior(raw: unknown, ctx: Ctx): Profile["behavior"] {
+  const o = block(raw, "behavior", ctx);
+  let startMode: StartMode = "board";
+  if (includes(START_MODES, o.startMode)) startMode = o.startMode;
+  else if (typeof o.startMode === "string") {
+    ctx.warnings.push(`behavior.startMode : ${show(o.startMode)} inconnu, board utilisé`);
+  } else if (o.startMode !== undefined) ctx.errors.push("behavior.startMode : chaîne attendue");
+  return { startMode, rest: restOf(o, BEHAVIOR_KEYS) };
+}
+
+const isVersion = (v: unknown, min: number): v is number => Number.isInteger(v) && (v as number) >= min;
+
+/** Analyse un profil JSON (règles du plan du lot 5b, T83) ; toutes les erreurs sont rassemblées, sauf format et version. */
+export function parseProfile(json: unknown): ParsedProfile {
+  if (!isObject(json)) return { errors: ["profil : objet JSON attendu"] };
+  if (json.format !== PROFILE_FORMAT) {
+    return { errors: [`profil : format ${show(json.format)} inconnu, ${show(PROFILE_FORMAT)} attendu`] };
+  }
+  if (!isVersion(json.schema, 1)) return { errors: [`profil : schema ${show(json.schema)} invalide, entier ≥ 1 attendu`] };
+  if (json.schema > PROFILE_SCHEMA) {
+    return {
+      errors: [
+        `profil de version ${json.schema} : cette version de RoomBoard lit la version ${PROFILE_SCHEMA}, mettez RoomBoard à jour`,
+      ],
+    };
+  }
+  const minor = json.minor === undefined ? 0 : json.minor;
+  if (!isVersion(minor, 0)) return { errors: [`profil : minor ${show(json.minor)} invalide, entier ≥ 0 attendu`] };
+
+  const ctx: Ctx = { errors: [], warnings: [], seen: new Set() };
+  if (json.schema === PROFILE_SCHEMA && minor > PROFILE_MINOR) {
+    ctx.warnings.push(
+      `profil ${json.schema}.${minor} plus récent que ${PROFILE_SCHEMA}.${PROFILE_MINOR} : clés inconnues conservées`,
+    );
+  }
+  const id = nonEmptyField(json, "id", "profil", ctx);
+  const label = nonEmptyField(json, "label", "profil", ctx);
+  const iface = parseInterface(json.interface, ctx);
+  const toolbars = list(json, "toolbars", "profil", ctx)
+    .map((b, i) => parseBar(b, `toolbars[${i}]`, ctx))
+    .filter((b): b is Toolbar => b !== null);
+  const presets = parsePresets(json.presets, ctx);
+  const behavior = parseBehavior(json.behavior, ctx);
+  if (ctx.errors.length > 0) return { errors: ctx.errors };
+  return {
+    profile: {
+      schema: json.schema,
+      minor,
+      id,
+      label,
+      interface: iface,
+      toolbars,
+      presets,
+      behavior,
+      rest: restOf(json, PROFILE_KEYS),
+    },
+    warnings: ctx.warnings,
+  };
+}
+
+// --- Écriture ---------------------------------------------------------------------------------------------------
+
+function serializeItem(it: ToolItem): Record<string, unknown> {
+  return {
+    ...it.rest,
+    id: it.id,
+    kind: it.kind,
+    ...(it.tool !== undefined ? { tool: it.tool } : {}),
+    ...(it.action !== undefined ? { action: it.action } : {}),
+    label: it.label,
+    ...(it.icon !== undefined ? { icon: it.icon } : {}),
+    ...(it.options !== undefined ? { options: it.options } : {}),
+    ...(it.requires.length > 0 ? { requires: [...it.requires] } : {}),
+  };
+}
+
+function serializePreset(p: Preset): Record<string, unknown> {
+  return {
+    ...p.rest,
+    id: p.id,
+    label: p.label,
+    ...(p.color !== undefined ? { color: p.color } : {}),
+    ...(p.width !== undefined ? { width: p.width } : {}),
+    ...(p.size !== undefined ? { size: p.size } : {}),
+  };
+}
+
+/** Écrit `{ ...rest, ...champs connus }` à chaque niveau ; `minor` seulement s'il est > 0, `format` toujours. */
+export function serializeProfile(p: Profile): Record<string, unknown> {
+  return {
+    ...p.rest,
+    format: PROFILE_FORMAT,
+    schema: p.schema,
+    ...(p.minor > 0 ? { minor: p.minor } : {}),
+    id: p.id,
+    label: p.label,
+    interface: { ...p.interface.rest, buttonSize: p.interface.buttonSize },
+    toolbars: p.toolbars.map((b) => ({
+      ...b.rest,
+      id: b.id,
+      role: b.role,
+      dock: b.dock,
+      collapsed: b.collapsed,
+      groups: b.groups.map((g) => ({ ...g.rest, id: g.id, items: g.items.map(serializeItem) })),
+    })),
+    presets: Object.fromEntries(Object.entries(p.presets).map(([tool, list]) => [tool, list.map(serializePreset)])),
+    behavior: { ...p.behavior.rest, startMode: p.behavior.startMode },
+  };
+}
+
+// --- Lecture du profil ------------------------------------------------------------------------------------------
+
+/** Ce qui rend un élément affichable selon sa sorte (table par sorte ; les identifiants passent par les tables). */
+const KNOWN_BY_KIND: Readonly<Record<ItemKind, (it: ToolItem) => boolean>> = {
+  tool: (it) => it.tool !== undefined && isKnownTool(it.tool),
+  action: (it) => it.action !== undefined && isKnownAction(it.action),
+  dropzone: () => true,
+  separator: () => true,
+};
+
+/**
+ * Éléments affichés d'une barre : groupes à plat, outils et actions connus, capacités exigées toutes vraies (une clé
+ * inconnue compte pour fausse) ; puis aucun séparateur en tête, en fin, ni doublé.
+ */
+export function visibleItems(bar: Toolbar, caps: RuntimeCapabilities): ToolItem[] {
+  const out: ToolItem[] = [];
+  for (const it of bar.groups.flatMap((g) => g.items)) {
+    if (!KNOWN_BY_KIND[it.kind](it)) continue;
+    if (!it.requires.every((key) => caps[key] === true)) continue;
+    if (it.kind === "separator" && (out.length === 0 || out[out.length - 1]!.kind === "separator")) continue;
+    out.push(it);
+  }
+  while (out.length > 0 && out[out.length - 1]!.kind === "separator") out.pop();
+  return out;
+}
+
+/**
+ * Mode de démarrage honoré : `board` seul au lot 5b (usage § 8 point 11) ; `fellBack` vrai quand le profil demande
+ * autre chose. Les capacités décideront de `desktop-annotation` quand ce mode sera livré (U14).
+ */
+export function resolveStartMode(
+  p: Profile,
+  caps: RuntimeCapabilities,
+): { readonly mode: "board"; readonly fellBack: boolean } {
+  void caps;
+  return { mode: "board", fellBack: p.behavior.startMode !== "board" };
+}
+
+/** Remise à zéro des options d'un élément ; les préréglages ne bougent pas. */
+export function resetItemOptions(p: Profile, itemId: string): Profile {
+  const strip = (it: ToolItem): ToolItem => {
+    if (it.id !== itemId) return it;
+    const { options: _dropped, ...kept } = it;
+    return kept;
+  };
+  return {
+    ...p,
+    toolbars: p.toolbars.map((b) => ({ ...b, groups: b.groups.map((g) => ({ ...g, items: g.items.map(strip) })) })),
+  };
+}
+
+/** Remise à zéro des préréglages d'un outil depuis `from` (profil d'origine) ; les barres ne bougent pas. */
+export function resetPresets(p: Profile, tool: ToolId, from: Profile): Profile {
+  const origin = Object.hasOwn(from.presets, tool) ? from.presets[tool] : undefined;
+  const entries = Object.entries(p.presets).filter(([k]) => k !== tool);
+  if (origin !== undefined) entries.push([tool, origin]);
+  const order = Object.keys(p.presets);
+  entries.sort(([a], [b]) => rank(order, a) - rank(order, b));
+  return { ...p, presets: Object.fromEntries(entries) };
+}
+
+const rank = (order: readonly string[], key: string): number => {
+  const i = order.indexOf(key);
+  return i === -1 ? order.length : i;
+};
