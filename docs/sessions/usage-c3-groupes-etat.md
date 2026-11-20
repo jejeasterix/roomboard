@@ -53,5 +53,27 @@ ouvertes : — · passées : —
 - Captures : docs/essais/c3-groupe-selectionne.png (deux rectangles et un trait dans une seule boîte, Dégrouper actif) ; docs/essais/c3-collage.png (copie collée décalée de 24 px, sélectionnée, Coller actif).
 - Double relecture : tour 1 (4 relecteurs) 0 bloquant, 5 majeurs corrigés en T17/T18 ; tour 2 : 1 bloquant introduit par T18 (insertPages sans adoption des images), corrigé en T19 avec test.
 - Mineurs non corrigés : ordre de deux écritures système rapprochées (Ctrl+V peut lire l'ancienne) ; booléen de pasteItems ignoré par handlePaste ; adopt() adopte les images de toutes les pages d'un fragment (sans effet visible) ; double avis en repli pour insertPages (antérieur) ; S2 sans image ni nouvel onglet dans l'essai.
-- Wasm : 1 075 138 octets (plafond 1 572 864 inchangé).
+- Wasm : 1 074 713 octets sur ca50dae (plafond 1 572 864 inchangé).
 - Release : non due (aucune release, aucun tag).
+
+## Notes du coffre à poser
+Chemin : `00_Journal/2026-11-20-roomboard-usage-c3-groupes-clos.md`
+```markdown
+---
+id: 2026-11-20-roomboard-usage-c3-groupes-clos
+type: journal
+summary: "RoomBoard usage C3 clos : groupes (champ group), fragments .rbitem (kind du manifeste), copier/coller interne et système (enveloppe JSON roomboard-items/1), export de la sélection, insertion de fragment et de pages par recopie profonde ; PR 19."
+created: 2026-11-20
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c3-groupes-etat.md (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — usage C3 groupes, fragments et presse-papiers, clos (OD83)
+
+- Livré : `group` en chemin d'ids, Grouper / Dégrouper (Ctrl+G, Ctrl+Maj+G), sélection et déplacement par groupe ; `kind` du manifeste (absent = document, mêmes octets) ; `.rbitem` ; `copy.rs` : recopie profonde par `AsPrelim` (yrs 0.28.1), une transaction = une étape ; rangée « Sélection » ; 19 tâches, essai `c3-groupes-navigateur.mjs`.
+- Collage : point d'entrée unique `handlePaste` (`platform/paste.ts`), ordre objets → `<table>` (C10b) → images ; OD80 fusionné pendant le chantier, intégré par fusion d'origin/main.
+- Pièges : un sous-agent qui lance une commande en fond et finit son tour la perd (tuée) ; vitest ignore les filtres passés après `pnpm test --` ; Chromium sans écran nomme « download » un téléchargement non ASCII (lire `a.download`).
+- Relectures : 5 majeurs corrigés, 1 bloquant introduit par un correctif (insertPages sans adoption des images) corrigé avec test.
+- Hors périmètre : presse-papiers propre et association `.rbitem` de la coque construite (build Tauri exclu).
+```
