@@ -56,7 +56,10 @@ const percent = (t: number, duration: number): string => `${duration > 0 ? Math.
 export function MediaBar(props: MediaBarProps): JSX.Element {
   const settingsOf = (m: MediaBarMedia): MediaSettings => ({ trimStart: m.trimStart, trimEnd: m.trimEnd, loop: m.loop, volume: m.volume });
   const [settings, setSettings] = createSignal<MediaSettings>(settingsOf(props.media));
-  createEffect(on(() => props.media, (m) => setSettings(settingsOf(m)), { defer: true }));
+  createEffect(on(() => props.media, (m) => {
+    setSettings(settingsOf(m));
+    setError(null);
+  }, { defer: true }));
   const [error, setError] = createSignal<string | null>(null);
   const [tick, setTick] = createSignal(0);
   const timer = setInterval(() => setTick((n) => n + 1), REFRESH_MS);
