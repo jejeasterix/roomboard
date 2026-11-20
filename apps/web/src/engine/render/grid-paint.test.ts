@@ -137,6 +137,27 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     for (const l of [dashed, dotted]) for (const v of [...(l?.dash ?? []), ...(l?.offsets ?? [])]) expect(Number.isInteger(v)).toBe(true);
   });
 
+  it("motif à l'échelle de l'épaisseur (relecture T7) : dotted de 4 px → [4, 12], points carrés ; dashed de 2 à dpr 1,25 → [15, 10]", () => {
+    const seg = [100, 0, 100, 50];
+    const lines: GridLines = {
+      above: false,
+      levels: [
+        { color: "#000000", line: "dotted", alpha: 1, lineWidth: 4, segments: seg, dots: [] },
+        { color: "#000000", line: "dashed", alpha: 1, lineWidth: 2, segments: seg, dots: [] },
+        { color: "#000000", line: "dotted", alpha: 1, lineWidth: 3, segments: seg, dots: [] },
+      ],
+    };
+    const [dotted, dashed] = alignedSegments(lines, { zoom: 1, tx: 0, ty: 0 }, 1, 1, 1);
+    expect(dotted?.width).toBe(4);
+    expect(dotted?.dash).toEqual([4, 12]);
+    expect(dashed?.dash).toEqual([12, 8]);
+    // [6, 4] × 2 × 1,25 = [15, 10] ; [1, 3] × 3 × 1,25 = [3,75 ; 11,25] → [4, 11] : un point de motif aussi long que le trait est large.
+    const [, dashedHi, dottedHi] = alignedSegments(lines, { zoom: 1, tx: 0, ty: 0 }, 1.25, 1.25, 1.25);
+    expect(dashedHi?.dash).toEqual([15, 10]);
+    expect(dottedHi?.width).toBe(4);
+    expect(dottedHi?.dash).toEqual([4, 11]);
+  });
+
   it("couleur de niveau invalide (relecture finale) : trait et points à la couleur par défaut, jamais celle du niveau d'avant", () => {
     const valid = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
     /** Le canvas ignore une couleur invalide et garde la précédente. */
