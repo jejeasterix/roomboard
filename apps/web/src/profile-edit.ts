@@ -34,6 +34,7 @@ const PRESET_FIELDS: Readonly<Record<ToolId, readonly PresetField[]>> = Object.f
     { key: "color", label: "Couleur", input: "color" },
     { key: "width", label: "Épaisseur", input: "number" },
   ] as const),
+  fill: Object.freeze([{ key: "color", label: "Couleur", input: "color" }] as const),
 });
 export const PRESET_TOOLS: readonly ToolId[] = Object.freeze(Object.keys(PRESET_FIELDS));
 
@@ -41,8 +42,12 @@ export function presetFields(tool: ToolId): readonly PresetField[] {
   return Object.hasOwn(PRESET_FIELDS, tool) ? (PRESET_FIELDS[tool] ?? []) : [];
 }
 
-/** Préréglage ajouté : noir, épaisseur 4 (celle des livrés). */
-const NEW_PRESET = { color: "#000000", width: 4 } as const;
+/** Préréglage ajouté, par outil : noir, épaisseur 4 (celle des livrés) pour le stylo ; noir seul pour le pot (D17). */
+const NEW_PRESET: Readonly<Record<ToolId, { readonly color: string; readonly width?: number }>> = {
+  pen: { color: "#000000", width: 4 },
+  fill: { color: "#000000" },
+};
+const newPreset = (tool: ToolId) => (Object.hasOwn(NEW_PRESET, tool) ? NEW_PRESET[tool]! : NEW_PRESET["pen"]!);
 
 const mapBar = (p: Profile, barId: string, f: (b: Toolbar) => Toolbar): Profile => ({
   ...p,
@@ -131,7 +136,7 @@ export function addItem(p: Profile, barId: string, entry: CatalogEntry): Profile
 export function addPreset(p: Profile, tool: ToolId): Profile {
   const list = presetsOf(p.presets, tool);
   const id = uniqueId("couleur", new Set(list.map((x) => x.id)));
-  return withPresets(p, tool, [...list, { id, label: `Couleur ${list.length + 1}`, ...NEW_PRESET, rest: {} }]);
+  return withPresets(p, tool, [...list, { id, label: `Couleur ${list.length + 1}`, ...newPreset(tool), rest: {} }]);
 }
 
 /** Libellé vide, couleur vide, épaisseur ≤ 0 ou non finie : valeur gardée. */
@@ -152,7 +157,13 @@ export function updatePreset(p: Profile, tool: ToolId, id: string, patch: Preset
 
 export function removePreset(p: Profile, tool: ToolId, id: string): Profile {
   if (!Object.hasOwn(p.presets, tool)) return p;
-  return withPresets(p, tool, presetsOf(p.presets, tool).filter((x) => x.id !== id));
+  const left = presetsOf(p.presets, tool).filter((x) => x.id !== id);
+  if (tool === "fill" && left.length === 0) {
+    // PC7 : plus aucun préréglage du pot, la clé part et le pot revient à sa liste figée.
+    const { fill: _gone, ...rest } = p.presets;
+    return { ...p, presets: rest };
+  }
+  return withPresets(p, tool, left);
 }
 
 /** « Rétablir les barres » (U12) : barres et taille des boutons de l'origine ; le reste du profil ne bouge pas. */

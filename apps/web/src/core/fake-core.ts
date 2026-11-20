@@ -28,6 +28,7 @@
 // C10b : fusion (`span` sur l'ancre, zones par `mergesOf`, miroir de `merges_of` du cœur, règle F2), division, ombrage
 // (`shade`), plages de RemoveTableLine et SetTableFill, report des zones (F6), hauteur d'une ancre haute (F7),
 // ImportTable (F18) : mêmes refus dans le même ordre que `table.rs`, une étape par commande, aucune étape vide.
+// C6a : Fill (contour, intérieur, fond) au modèle de `fill.rs` (même ordre de refus, mêmes messages) ; edgeHit, miroir d'`edge_hit` ; fond de page gardé dans le JSON.
 import type {
   AssetInfo,
   AssetRef,
@@ -61,6 +62,7 @@ import type {
 import {
   BAD_GROUP_MESSAGE,
   DEFAULT_ASSET_MIME,
+  DEFAULT_BACKGROUND,
   DEFAULT_GRID_COLOR,
   DEFAULT_GRID_LINE_WIDTH,
   DEFAULT_TABLE_COLOR,
@@ -80,7 +82,7 @@ import {
 } from "./api";
 import { isAssetId } from "./asset-store";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
-import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
+import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
 interface FakeUnknown {
@@ -130,7 +132,7 @@ interface FakeTable {
   readonly cells: ReadonlyMap<string, FakeCell>;
 }
 /** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. */
-interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null; grid: unknown }
+interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null; grid: unknown; background: string }
 /** `assets` : valeurs brutes (K3) ; lues avec défauts champ par champ (K4). */
 interface State { readonly pages: FakePage[]; readonly assets: Map<string, unknown> }
 
@@ -144,6 +146,7 @@ const MESSAGES = {
   badFormat: "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)",
   badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
   badTable: "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)",
+  badFill: "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)",
   badGroup: BAD_GROUP_MESSAGE,
 } as const;
 
@@ -156,7 +159,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
 const validAsset = (a: AssetRef): boolean => isAssetId(a.id) && a.mime !== "" && Number.isInteger(a.size) && a.size >= 0;
 const clone = (s: State): State => ({
-  pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop, grid: p.grid })),
+  pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop, grid: p.grid, background: p.background })),
   assets: new Map(s.assets),
 });
 /** Chemin lisible : tableau non vide de chaînes ; sinon retiré (PC6). */
@@ -536,7 +539,7 @@ class FakeDocument implements CoreDocument {
         return this.step((s) => {
           const id = newId();
           const at = after === null ? s.pages.length : s.pages.findIndex((p) => p.id === after) + 1;
-          s.pages.splice(at, 0, { id, elements: [], backdrop: null, grid: null });
+          s.pages.splice(at, 0, { id, elements: [], backdrop: null, grid: null, background: DEFAULT_BACKGROUND });
           return { pages: [id], ids: [], removed: [] };
         });
       }
@@ -969,6 +972,43 @@ class FakeDocument implements CoreDocument {
           return { color: cmd.color, size: cmd.size, cols, rows, cells };
         });
       }
+      case "Fill": {
+        // Ordre du cœur (`fill.rs`, PC2) : couleur, page, élément de cette page (PC3), cible ; même valeur : aucune étape.
+        if (cmd.color !== null && !validColor(cmd.color)) throw new Error(MESSAGES.badFill);
+        const page = this.pageOf(cmd.page);
+        const t = cmd.target;
+        const color = cmd.color;
+        if (t.kind === "background") {
+          const next = color ?? DEFAULT_BACKGROUND;
+          if (page.background === next) return this.unchanged();
+          return this.step((s) => {
+            const p = s.pages.find((q) => q.id === cmd.page);
+            if (p) p.background = next;
+            return { pages: [cmd.page], ids: [], removed: [] };
+          });
+        }
+        const e = page.elements.find((x) => x.id === t.id);
+        if (!e) throw new Error(`élément inconnu : ${t.id}`);
+        const shape = e.shape;
+        const inside = t.kind === "inside";
+        // `field_for` du cœur : contour = `color` d'un trait ou de toute forme ; intérieur = `fill` d'un rectangle ou d'une ellipse.
+        const key = !inside && (e.local !== undefined || shape) ? "color" : inside && shape && !isSegment(shape.shape) ? "fill" : null;
+        if (key === null) throw new Error(MESSAGES.badFill);
+        const write = (next: (old: FakeElement) => FakeElement): Change =>
+          this.step((s) => {
+            const p = s.pages.find((q) => q.id === cmd.page);
+            const i = p ? p.elements.findIndex((x) => x.id === t.id) : -1;
+            const old = p?.elements[i];
+            if (p && old) p.elements[i] = next(old);
+            return { pages: [cmd.page], ids: [t.id], removed: [] };
+          });
+        if (key === "color") {
+          if (color === null || e.style.color === color) return this.unchanged();
+          return write((old) => ({ ...old, style: { ...old.style, color } }));
+        }
+        if (shape === undefined || shape.fill === color) return this.unchanged();
+        return write((old) => (old.shape ? { ...old, shape: { ...old.shape, fill: color } } : old));
+      }
     }
   }
 
@@ -987,7 +1027,7 @@ class FakeDocument implements CoreDocument {
   page(id: string): PageView | null {
     const p = this.state.pages.find((q) => q.id === id);
     if (!p) return null;
-    return { id, width: PAGE_WIDTH, height: PAGE_HEIGHT, background: "#ffffff", backdrop: backdropView(p.backdrop, PAGE_WIDTH), grid: gridView(p.grid) };
+    return { id, width: PAGE_WIDTH, height: PAGE_HEIGHT, background: p.background, backdrop: backdropView(p.backdrop, PAGE_WIDTH), grid: gridView(p.grid) };
   }
   citedAssets(): AssetInfo[] {
     const acc = new Set<string>();
@@ -1020,6 +1060,25 @@ class FakeDocument implements CoreDocument {
       if (poly ? polygonHit(poly, x, y, tol) : strokeTouches(e, new Float32Array([x, y]), tol)) return e.id;
     }
     return null;
+  }
+  edgeHit(id: string, x: number, y: number, tol: number): boolean {
+    // Miroir d'`edge_hit` (`fill.rs`) : tracé `shapePolygon(kind, w, h, 0)` porté par la matrice, arêtes seules (jamais
+    // l'intérieur, à l'inverse de `polygonHit`), bande = tol + demi-épaisseur × (facteur de similitude, sinon racine du
+    // déterminant ; pas la plus petite valeur singulière de `strokeHalfWidth`).
+    const e = this.find(id)?.element;
+    const s = e?.shape;
+    if (!e || !s || isSegment(s.shape)) return false;
+    const local = shapePolygon(s.shape, s.w, s.h, 0);
+    const world: number[] = [];
+    for (let i = 0; i + 1 < local.length; i += 2) world.push(...applyMatrix(e.transform, local[i] ?? 0, local[i + 1] ?? 0));
+    const n = world.length / 2;
+    let edge = Number.POSITIVE_INFINITY;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      edge = Math.min(edge, distToSegment(x, y, world[2 * i] ?? 0, world[2 * i + 1] ?? 0, world[2 * j] ?? 0, world[2 * j + 1] ?? 0));
+    }
+    const m = e.transform;
+    const scale = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    return edge <= tol + (e.style.width / 2) * scale;
   }
   hitTestPath(page: string, path: Float32Array, radius: number): string[] {
     return this.pageOf(page).elements.filter((e) => e.local !== undefined && strokeTouches(e, path, radius)).map((e) => e.id);
@@ -1073,7 +1132,7 @@ class FakeDocument implements CoreDocument {
       now,
       appVersion,
       assets: Object.fromEntries(this.state.assets),
-      pages: this.state.pages.map((p) => ({ id: p.id, backdrop: p.backdrop, elements: p.elements.map(savedElement), ...(p.grid !== null ? { grid: p.grid } : {}) })),
+      pages: this.state.pages.map((p) => ({ id: p.id, background: p.background, backdrop: p.backdrop, elements: p.elements.map(savedElement), ...(p.grid !== null ? { grid: p.grid } : {}) })),
     };
   }
   save(now: string, appVersion: string): Uint8Array {
@@ -1095,7 +1154,7 @@ class FakeDocument implements CoreDocument {
     const wanted = new Set(ids);
     const groups = new Map<string, string>();
     const elements = p.elements.filter((e) => wanted.has(e.id)).map((e) => copyElement(e, groups, 0, 0));
-    const out = new FakeDocument({ pages: [{ id: newId(), elements, backdrop: null, grid: null }], assets: new Map() });
+    const out = new FakeDocument({ pages: [{ id: newId(), elements, backdrop: null, grid: null, background: DEFAULT_BACKGROUND }], assets: new Map() });
     adoptMeta(out.state.assets, this.state.assets, out.citedAssets().map((a) => a.id));
     return out;
   }
@@ -1126,6 +1185,7 @@ class FakeDocument implements CoreDocument {
       elements: p.elements.map((e) => copyElement(e, groups, 0, 0)),
       backdrop: p.backdrop,
       grid: p.grid,
+      background: p.background,
     }));
     const cited = src.citedAssets().map((a) => a.id);
     return this.step((s) => {
@@ -1237,7 +1297,7 @@ interface SavedElement {
   /** C3 : lu par `readGroup` ; illisible : retiré (PC6). */
   group?: unknown;
 }
-interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown }
+interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown; background?: unknown }
 
 function savedElement(e: FakeElement): SavedElement {
   const group = withGroup(e.group);
@@ -1391,13 +1451,14 @@ function loadFake(bytes: Uint8Array, expected: "document" | "fragment" = "docume
     backdrop: isRecord(p.backdrop) ? p.backdrop : null,
     // Brute, quelle qu'elle soit (G13) : réécrite telle quelle ; `gridView` décide de la vue.
     grid: p.grid ?? null,
+    background: typeof p.background === "string" && validColor(p.background) ? p.background : DEFAULT_BACKGROUND,
   }));
   const assets = new Map(isRecord(raw["assets"]) ? Object.entries(raw["assets"]) : []);
   return new FakeDocument({ pages, assets });
 }
 
 export const fakeCore: CoreFactory = {
-  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null }], assets: new Map() }),
+  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null, background: DEFAULT_BACKGROUND }], assets: new Map() }),
   load: (bytes: Uint8Array) => loadFake(bytes),
   loadParts: (manifest: Uint8Array, ybin: Uint8Array) => {
     void manifest;

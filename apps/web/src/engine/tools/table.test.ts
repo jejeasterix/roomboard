@@ -712,3 +712,26 @@ describe("outil Tableau — C7b (segments, barre)", () => {
     expect(s.changes()).toBe(c + 1);
   });
 });
+
+describe("outil Tableau — fond de page (C6a)", () => {
+  it("éditeur d'une cellule sans remplissage : fond de la page (D20)", () => {
+    const s = setup();
+    const page = s.doc.page.bind(s.doc);
+    s.doc.page = (id) => {
+      const p = page(id);
+      return p === null ? null : { ...p, background: "#bfdbfe" };
+    };
+    s.create(100, 200, 2, 2);
+    expect(s.host.last().background).toBe("#bfdbfe");
+  });
+
+  it("cellule remplie : son remplissage passe avant le fond de la page", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    const t = s.table(id);
+    s.doc.apply({ type: "SetTableFill", id, row: t.rows[0]?.id ?? "", col: t.cols[1]?.id ?? "", fill: "#fef08a" });
+    s.tool.navigate("next");
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 1 });
+    expect(s.host.last().background).toBe("#fef08a");
+  });
+});

@@ -157,6 +157,13 @@ export class Canvas2DRenderer implements Renderer {
   private gridPreview: GridPreview | null = null;
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
+  /** Fond du dernier drawScene, repeint par l'aperçu de gomme partielle (D20). */
+  private background = PAGE_BACKGROUND;
+
+  /** Fond que le canvas a retenu au dernier `drawScene` (écriture normalisée par le navigateur). */
+  get pageColor(): string {
+    return this.background;
+  }
   private sx = 1;
   private sy = 1;
   /** Hauteur CSS retenue par `resize` : le fond de page va jusqu'à son bas. */
@@ -198,7 +205,11 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = SURROUND_COLOR;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     this.setView(ctx, camera);
+    // Blanc d'abord : le canvas ignore une couleur qu'il ne sait pas lire (un nom CSS accepté par le cœur) ; on retient
+    // ce qu'il a vraiment accepté (relu normalisé), que l'aperçu de gomme repeint et que WebGL2 relit (`pageColor`).
     ctx.fillStyle = PAGE_BACKGROUND;
+    ctx.fillStyle = page.background ?? PAGE_BACKGROUND;
+    this.background = String(ctx.fillStyle);
     const rect = visiblePageRect(camera, this.cssHeight);
     if (rect) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
     // Place du backdrop (U6, partie « reste » de C2) : ici, sous la grille et sous les éléments (G11).
@@ -436,7 +447,7 @@ export class Canvas2DRenderer implements Renderer {
     const pageRect = (): void => {
       if (page) ctx.rect(page.x0, page.y0, page.x1 - page.x0, page.y1 - page.y0);
     };
-    if (page) along(PAGE_BACKGROUND, pageRect);
+    if (page) along(this.background, pageRect);
     along(SURROUND_COLOR, () => {
       ctx.rect(-FAR, -FAR, 2 * FAR, 2 * FAR);
       pageRect();

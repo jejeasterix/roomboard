@@ -5,7 +5,7 @@ import { ACTIONS, createLocalToolbarHost, type HostTargets } from "./toolbar-hos
 
 function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profile = BUILTIN_PROFILES[0]!) {
   const engine = {
-    setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), undo: vi.fn(), redo: vi.fn(),
+    setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
     fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
@@ -159,6 +159,34 @@ describe("ToolbarHost — tableau (C10a, DAC4)", () => {
     host.textFormat({ type: "bold" });
     host.textFormat({ type: "color", color: null });
     expect(engine.textFormat.mock.calls).toEqual([[{ type: "bold" }], [{ type: "color", color: null }]]);
+  });
+});
+
+describe("ToolbarHost — pot (C6a, D16)", () => {
+  it('setTool("fill", "bleu") sans clé presets.fill : couleur de FILL_COLORS → setFillColor puis setTool, jamais setPenStyle', () => {
+    const { host, engine } = setup();
+    host.setTool("fill", "bleu");
+    expect(engine.setFillColor).toHaveBeenCalledWith("#1d4ed8");
+    expect(engine.setPenStyle).not.toHaveBeenCalled();
+    expect(engine.setTool).toHaveBeenCalledWith("fill");
+    expect(engine.setFillColor.mock.invocationCallOrder[0]!).toBeLessThan(engine.setTool.mock.invocationCallOrder[0]!);
+  });
+  it("profil avec presets.fill : le préréglage du profil ; id inconnu : l'outil change, la couleur non", () => {
+    const profile = { ...BUILTIN_PROFILES[0]!, presets: { fill: [{ id: "ambre", label: "Ambre", color: "#f59e0b", rest: {} }] } } as Profile;
+    const { host, engine } = setup({}, profile);
+    host.setTool("fill", "ambre");
+    expect(engine.setFillColor).toHaveBeenCalledWith("#f59e0b");
+    engine.setFillColor.mockClear();
+    host.setTool("fill", "rouge");
+    expect(engine.setFillColor).not.toHaveBeenCalled();
+    expect(engine.setTool).toHaveBeenLastCalledWith("fill");
+  });
+  it("fillColor(null) : « Aucune » → setFillColor(null), sans changer d'outil ni le stylo", () => {
+    const { host, engine } = setup();
+    host.fillColor(null);
+    expect(engine.setFillColor).toHaveBeenCalledWith(null);
+    expect(engine.setTool).not.toHaveBeenCalled();
+    expect(engine.setPenStyle).not.toHaveBeenCalled();
   });
 });
 

@@ -2151,6 +2151,216 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
   });
 });
 
+// C6a (pot de peinture) : Fill (contour, intérieur, fond de page) et edgeHit ; T5 joue ce bloc sur le vrai module.
+const c6aFactories = factories;
+const BAD_FILL = "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)";
+const shapeAt = (d: CoreDocument, page: string, shape: ShapeKind = "rect", c: readonly [number, number, number, number] = [100, 100, 300, 200]): string => {
+  const id = d.apply({ type: "AddShape", page, shape, x0: c[0], y0: c[1], x1: c[2], y1: c[3], style: { color: "#000000", width: 4 }, fill: null }).ids[0];
+  if (id === undefined) throw new Error("aucune forme");
+  return id;
+};
+const shapeFill = (d: CoreDocument, id: string): string | null => {
+  const e = d.element(id);
+  return e?.kind === "shape" ? e.shape.fill : null;
+};
+const strokeColor = (d: CoreDocument, id: string): string => {
+  const e = d.element(id);
+  return e?.kind === "shape" || e?.kind === "stroke" ? e.style.color : "";
+};
+const bg = (d: CoreDocument, page: string): string => d.page(page)?.background ?? "";
+
+describe.each(c6aFactories)("contrat C6a : $name", ({ f }) => {
+  it("Fill intérieur : une étape, annulée puis rétablie (S1)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: "#facc15" });
+    expect([c.pages, c.ids]).toEqual([[p], [r]]);
+    expect(shapeFill(d, r)).toBe("#facc15");
+    d.undo();
+    expect(shapeFill(d, r)).toBeNull();
+    d.redo();
+    expect(shapeFill(d, r)).toBe("#facc15");
+    d.free();
+  });
+
+  it("Fill contour : couleur d'une forme (intérieur gardé) et d'un trait (S2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    const s = commit(d, p, 500);
+    d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: "#facc15" });
+    d.apply({ type: "Fill", page: p, target: { kind: "edge", id: r }, color: "#dc2626" });
+    d.apply({ type: "Fill", page: p, target: { kind: "edge", id: s }, color: "#dc2626" });
+    expect([strokeColor(d, r), shapeFill(d, r), strokeColor(d, s)]).toEqual(["#dc2626", "#facc15", "#dc2626"]);
+    d.free();
+  });
+
+  it("« Aucune » : intérieur retiré ; sur un contour ou un trait, aucune étape (D11, D38)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p, "ellipse");
+    const s = commit(d, p, 500);
+    d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: "#facc15" });
+    d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: null });
+    expect(shapeFill(d, r)).toBeNull();
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: null }));
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "edge", id: r }, color: null }));
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "edge", id: s }, color: null }));
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "edge", id: r }, color: "#000000" }));
+    d.free();
+  });
+
+  it("Fill fond de page : écrit, « Aucune » = #ffffff, même valeur sans étape, annulé (S4, D10)", () => {
+    const d = f.blank();
+    const p = first(d);
+    expect(bg(d, p)).toBe("#ffffff");
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: null }));
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: "#1d4ed8" });
+    expect([c.pages, c.ids]).toEqual([[p], []]);
+    expect(bg(d, p)).toBe("#1d4ed8");
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: "#1d4ed8" }));
+    d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: null });
+    expect(bg(d, p)).toBe("#ffffff");
+    d.undo();
+    expect(bg(d, p)).toBe("#1d4ed8");
+    const p2 = d.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    expect(bg(d, p2)).toBe("#ffffff");
+    d.free();
+  });
+
+  it("refus dans l'ordre du cœur, sans étape : couleur, page, élément de la page, cible (D12, PC2, PC3)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    const l = shapeAt(d, p, "line", [100, 300, 300, 300]);
+    const s = commit(d, p, 500);
+    const t = d.apply({ type: "SetText", page: p, id: null, x: 400, y: 600, content: "abc", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    const p2 = d.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    const cases: [Command, string][] = [
+      [{ type: "Fill", page: "nope", target: { kind: "inside", id: r }, color: "#12" }, BAD_FILL],
+      [{ type: "Fill", page: "nope", target: { kind: "inside", id: r }, color: "#facc15" }, "page inconnue : nope"],
+      [{ type: "Fill", page: p, target: { kind: "inside", id: "nope" }, color: "#facc15" }, "élément inconnu : nope"],
+      [{ type: "Fill", page: p2, target: { kind: "inside", id: r }, color: "#facc15" }, `élément inconnu : ${r}`],
+      [{ type: "Fill", page: p, target: { kind: "inside", id: l }, color: "#facc15" }, BAD_FILL],
+      [{ type: "Fill", page: p, target: { kind: "inside", id: s }, color: "#facc15" }, BAD_FILL],
+      [{ type: "Fill", page: p, target: { kind: "edge", id: t }, color: "#facc15" }, BAD_FILL],
+      [{ type: "Fill", page: p, target: { kind: "inside", id: t }, color: null }, BAD_FILL],
+    ];
+    for (const [cmd, msg] of cases) unchanged(d, () => expect(messageOf(() => d.apply(cmd)), JSON.stringify(cmd)).toBe(msg));
+    d.free();
+  });
+
+  it("edgeHit : bande = tolérance + demi-épaisseur, à l'échelle de la forme (D5, DA2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    const l = shapeAt(d, p, "line", [100, 300, 300, 300]);
+    expect([d.edgeHit(r, 103, 150, 6), d.edgeHit(r, 110, 150, 6), d.edgeHit(r, 200, 150, 6)]).toEqual([true, false, false]);
+    expect([d.edgeHit(l, 200, 300, 6), d.edgeHit("nope", 103, 150, 6)]).toEqual([false, false]);
+    d.apply({ type: "Transform", ids: [r], matrix: [2, 0, 0, 2, 0, 0] });
+    expect([d.edgeHit(r, 190, 300, 6), d.edgeHit(r, 186, 300, 6)]).toEqual([true, false]);
+    d.free();
+  });
+
+  it("edgeHit : échelle non uniforme, racine du déterminant, ni la plus petite ni la plus grande valeur singulière (DA2)", () => {
+    // [1, 0, 0, 4] : valeurs singulières 1 et 4, racine du déterminant 2 ; bord gauche monde vers x = 99, à mi-hauteur
+    // y = 600. Bande du cœur 6 + 2 × 2 = 10 : la distance 9 touche, 11 non. Plus petite valeur singulière (bande 8) :
+    // la distance 9 raterait ; plus grande (bande 14) : la distance 11 toucherait.
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    d.apply({ type: "Transform", ids: [r], matrix: [1, 0, 0, 4, 0, 0] });
+    expect([d.edgeHit(r, 90, 600, 6), d.edgeHit(r, 88, 600, 6)]).toEqual([true, false]);
+    d.free();
+  });
+
+  it("groupe de groupe, membre du milieu : Fill ne touche que lui, contour comme intérieur (D4, D25)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = shapeAt(d, p, "rect", [100, 100, 300, 200]);
+    const b = shapeAt(d, p, "rect", [100, 800, 300, 900]);
+    const c = shapeAt(d, p, "rect", [400, 800, 600, 900]);
+    d.apply({ type: "Group", ids: [a, b] });
+    d.apply({ type: "Group", ids: [a, c] });
+    expect(d.element(b)?.group).toHaveLength(2);
+    const inside = d.apply({ type: "Fill", page: p, target: { kind: "inside", id: b }, color: "#facc15" });
+    expect(inside.ids).toEqual([b]);
+    expect([a, b, c].map((id) => shapeFill(d, id))).toEqual([null, "#facc15", null]);
+    const edge = d.apply({ type: "Fill", page: p, target: { kind: "edge", id: b }, color: "#dc2626" });
+    expect(edge.ids).toEqual([b]);
+    expect([a, b, c].map((id) => strokeColor(d, id))).toEqual(["#000000", "#dc2626", "#000000"]);
+    d.free();
+  });
+
+  it("edgeHit d'une ellipse : le bord suit la courbe, pas la boîte (D5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const e = shapeAt(d, p, "ellipse");
+    // boîte (100, 100)-(300, 200), centre (200, 150) : sommets du grand et du petit axe sur le bord, coin de la boîte loin de la courbe.
+    expect([d.edgeHit(e, 100, 150, 6), d.edgeHit(e, 200, 100, 6), d.edgeHit(e, 200, 150, 6), d.edgeHit(e, 103, 103, 6)]).toEqual([true, true, false, false]);
+    d.free();
+  });
+
+  it("aller-retour : remplissage, contour et fond gardés (S5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: "#facc15" });
+    d.apply({ type: "Fill", page: p, target: { kind: "edge", id: r }, color: "#dc2626" });
+    d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: "#1d4ed8" });
+    const back = f.load(d.save(now, "0.1.0"));
+    expect([shapeFill(back, r), strokeColor(back, r), bg(back, p)]).toEqual(["#facc15", "#dc2626", "#1d4ed8"]);
+    back.free();
+    d.free();
+  });
+});
+
+describe("contrôle de forme C6a", () => {
+  const ok = { pages: ["p1"], ids: ["e1"], removed: [], full: false, version: 1 };
+  const setup = () => {
+    const calls: unknown[][] = [];
+    const doc = {
+      fill: (...args: unknown[]): unknown => (calls.push(["fill", ...args]), ok),
+      edge_hit: (...args: unknown[]): boolean => (calls.push(["edge_hit", ...args]), true),
+    };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    return { calls, d: createWasmCore(stub as unknown as WasmModule).blank() };
+  };
+
+  it("Fill : cible, id et couleur passés ; fond sans id ; null → undefined (Option::None)", () => {
+    const { calls, d } = setup();
+    d.apply({ type: "Fill", page: "p1", target: { kind: "inside", id: "e1" }, color: "#facc15" });
+    d.apply({ type: "Fill", page: "p1", target: { kind: "edge", id: "e1" }, color: null });
+    d.apply({ type: "Fill", page: "p1", target: { kind: "background" }, color: null });
+    expect(calls).toEqual([
+      ["fill", "p1", "inside", "e1", "#facc15"],
+      ["fill", "p1", "edge", "e1", undefined],
+      ["fill", "p1", "background", undefined, undefined],
+    ]);
+  });
+
+  it("edgeHit : arguments passés tels quels, booléen rendu", () => {
+    const { calls, d } = setup();
+    expect(d.edgeHit("e1", 103, 150, 6)).toBe(true);
+    expect(calls).toEqual([["edge_hit", "e1", 103, 150, 6]]);
+  });
+});
+
+describe.skipIf(loaded === null)("contrat C6a : vrai module seulement", () => {
+  it("fixture socle-v1.roomboard (d'avant C6a, S5, D21) : fond blanc, le pot y colore le fond, relu après enregistrement", () => {
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard", import.meta.url)));
+    const d = need().core.load(bytes);
+    const p = first(d);
+    expect(bg(d, p)).toBe("#ffffff");
+    d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: "#1d4ed8" });
+    const back = need().core.load(d.save(now, "0.1.0"));
+    expect(bg(back, p)).toBe("#1d4ed8");
+    back.free();
+    d.free();
+  });
+});
+
 // C3 (Z1, Z5, Z6) : groupes, extraction, insertion, fragments. T11 branche le vrai module (`c3Factories = factories`).
 // Aucun écart de la fausse liaison n'est exclu de ce bloc : mêmes refus dans le même ordre, mêmes messages, mêmes Change.
 const c3Factories = factories; // T11 : vrai module branché, contrat C3 commun aux deux fabriques
@@ -2354,11 +2564,13 @@ describe.each(c3Factories)("contrat C3 : $name", ({ f }) => {
     s.apply({ type: "AddImage", page: s0, asset: C3_ASSET, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
     rect(s, s1, 0);
     s.apply({ type: "SetGrid", page: s1, grid: C3_GRID });
+    s.apply({ type: "Fill", page: s0, target: { kind: "background" }, color: "#bfdbfe" });
     const d = f.blank();
     const t0 = first(d);
     const t1 = d.apply({ type: "AddPage", after: t0 }).pages[0]!;
     const c = d.insertPages(s, t0);
     const pages = d.pageIds();
+    expect([bg(d, pages[1]!), bg(d, pages[2]!)]).toEqual(["#bfdbfe", "#ffffff"]);
     expect(pages).toHaveLength(4);
     expect([pages[0], pages[3]]).toEqual([t0, t1]);
     expect(c.pages).toEqual([pages[1], pages[2]]);

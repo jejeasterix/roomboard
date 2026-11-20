@@ -10,6 +10,7 @@ use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
 use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
 use roomboard_core::document::Document as CoreDocument;
 use roomboard_core::element::{StrokeStyle, Transform};
+use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
@@ -977,6 +978,27 @@ impl Document {
         self.core.hit_test(page, x, y, tol)
     }
 
+    /// Pot (C6a, D12) : `target` = "edge", "inside" ou "background" ; `id` exigé sauf pour le fond ; `color` absent ou
+    /// null : « Aucune ».
+    pub fn fill(
+        &mut self,
+        page: &str,
+        target: &str,
+        id: Option<String>,
+        color: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .fill_inner(page, target, id.as_deref(), color)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Bord d'un rectangle ou d'une ellipse (C6a, DA2), lecture seule ; `tol` en unités monde.
+    pub fn edge_hit(&self, id: &str, x: f64, y: f64, tol: f32) -> bool {
+        self.core.edge_hit(id, x, y, tol)
+    }
+
     pub fn hit_test_path(&self, page: &str, path: &[f32], radius: f32) -> Vec<String> {
         self.core.hit_test_path(page, path, radius)
     }
@@ -1361,6 +1383,26 @@ impl Document {
             merges,
             color: color.to_string(),
             size,
+        })
+    }
+
+    pub fn fill_inner(
+        &mut self,
+        page: &str,
+        target: &str,
+        id: Option<&str>,
+        color: Option<String>,
+    ) -> Result<Change, CommandError> {
+        let target = match (target, id) {
+            ("edge", Some(id)) => FillTarget::Edge { id: id.to_string() },
+            ("inside", Some(id)) => FillTarget::Inside { id: id.to_string() },
+            ("background", _) => FillTarget::Background,
+            _ => return Err(CommandError::BadFill),
+        };
+        self.run(Command::Fill {
+            page: page.to_string(),
+            target,
+            color,
         })
     }
 
@@ -2703,5 +2745,46 @@ mod tests {
             .expect("vue")
             .cells;
         assert_eq!(cells[0].spans[0].attrs, bold);
+    }
+    // C6a (T1) : pot de peinture par `fill_inner`, bord par `edge_hit`.
+
+    #[test]
+    fn fill_inner_and_edge_hit() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let r = d
+            .add_shape_inner(
+                &p,
+                "rect",
+                [100.0, 100.0, 300.0, 200.0],
+                "#000000",
+                4.0,
+                None,
+            )
+            .expect("forme")
+            .ids[0]
+            .clone();
+        d.fill_inner(&p, "inside", Some(&r), Some("#facc15".into()))
+            .expect("intérieur");
+        d.fill_inner(&p, "edge", Some(&r), Some("#dc2626".into()))
+            .expect("contour");
+        let e = d.core.element(&r).expect("élément");
+        assert_eq!(
+            (e.style.map(|s| s.color), e.shape.and_then(|s| s.fill)),
+            (Some("#dc2626".to_string()), Some("#facc15".to_string()))
+        );
+        d.fill_inner(&p, "background", None, Some("#1d4ed8".into()))
+            .expect("fond");
+        assert_eq!(d.core.page(&p).expect("page").background, "#1d4ed8");
+        assert_eq!(
+            d.fill_inner(&p, "inside", None, None),
+            Err(CommandError::BadFill)
+        );
+        assert_eq!(
+            d.fill_inner(&p, "zone", Some(&r), None),
+            Err(CommandError::BadFill)
+        );
+        assert!(d.edge_hit(&r, 103.0, 150.0, 6.0));
+        assert!(!d.edge_hit(&r, 200.0, 150.0, 6.0));
     }
 }

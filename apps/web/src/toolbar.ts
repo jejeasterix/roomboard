@@ -92,6 +92,7 @@ export const TOOL_TABLE: Readonly<Record<ToolId, ToolEntry>> = Object.freeze({
   arrow: { label: "Flèche", choice: "arrow" },
   text: { label: "Texte", choice: "text" },
   table: { label: "Tableau", choice: "table" },
+  fill: { label: "Pot", choice: "fill" },
 });
 
 /** Actions connues : celles de l'ancienne barre (inventaire du plan du lot 5b), et « Grille » (C9 éditeur). */
@@ -148,6 +149,25 @@ export const TABLE_FILLS: readonly TableFill[] = Object.freeze([
   { id: "rose", label: "Rose", color: "#fecdd3" },
   { id: "gris", label: "Gris", color: "#e5e7eb" },
 ]);
+
+/** Couleur du pot (C6a, D16, D17) : celle d'un préréglage `presets.fill` ou de la liste figée. */
+export interface FillColor { readonly id: string; readonly label: string; readonly color: string }
+/** Liste figée du pot, quand le profil n'a pas de `presets.fill`. */
+export const FILL_COLORS: readonly FillColor[] = Object.freeze([
+  { id: "rouge", label: "Rouge", color: "#dc2626" },
+  { id: "jaune", label: "Jaune", color: "#facc15" },
+  { id: "vert", label: "Vert", color: "#16a34a" },
+  { id: "bleu", label: "Bleu", color: "#1d4ed8" },
+  { id: "noir", label: "Noir", color: "#000000" },
+]);
+/** Bouton qui retire la couleur du pot (D11) : le pot rend alors le fond blanc et retire l'intérieur. */
+export const FILL_NONE_LABEL = "Aucune";
+
+/** Couleurs offertes au pot : dès que le profil a la clé `presets.fill` (même vide) elle fait foi, un préréglage sans couleur y est sauté (PC7). */
+export function fillChoices(table: Profile["presets"]): readonly FillColor[] {
+  if (!Object.hasOwn(table, "fill")) return FILL_COLORS;
+  return presetsOf(table, "fill").flatMap((p) => (p.color === undefined ? [] : [{ id: p.id, label: p.label, color: p.color }]));
+}
 
 /** Clé propre de la table (jamais héritée : `toString`, `constructor`… ne sont pas des outils). */
 export function isKnownTool(id: string): boolean {

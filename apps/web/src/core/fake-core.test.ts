@@ -685,6 +685,23 @@ describe("fakeCore — C7b (cellules riches, JSON)", () => {
   });
 });
 
+describe("fakeCore — C6a (fond de page)", () => {
+  const json = (pages: unknown[]): Uint8Array => new TextEncoder().encode(JSON.stringify({ pages }));
+
+  it("le fond est écrit dans le JSON et relu", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: "#bfdbfe" });
+    const back = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0"));
+    expect(back.page(p)?.background).toBe("#bfdbfe");
+  });
+
+  it("JSON sans fond ou au fond illisible : #ffffff (PC13)", () => {
+    const d = fakeCore.load(json([{ id: "a", elements: [] }, { id: "b", elements: [], background: 42 }, { id: "c", elements: [], background: "#12" }]));
+    expect(["a", "b", "c"].map((id) => d.page(id)?.background)).toEqual(["#ffffff", "#ffffff", "#ffffff"]);
+  });
+});
+
 describe("fakeCore — C3", () => {
   const json = (v: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(v));
   it("JSON d'un kind inconnu : refusé comme le cœur ; d'un fragment ouvert comme document : refusé", () => {
