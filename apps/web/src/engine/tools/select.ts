@@ -4,6 +4,8 @@
  * redimensionner autour de la poignée opposée (Maj : proportions). Aperçu : éléments masqués de la scène et redessinés
  * en fantômes avec la matrice provisoire (CL4-1) ; une seule Transform au relâché ; "cancel" et "abort" n'écrivent
  * rien (D39) ; un clic sans glisser (< 2 px écran) non plus. Un seul pointeur à la fois (CL4-14).
+ * C10b (F10) : un toucher sans glisser (< 8 px écran, REVEAL_TAP_PX), sans Maj, sur une cellule ombrée du tableau le plus
+ * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
  */
 import type { Bounds, Matrix } from "../../core/api";
 import { IDENTITY_MATRIX } from "../../core/shapes";
@@ -21,16 +23,27 @@ import {
   translateMatrix,
   type HandleId,
 } from "./handles";
+import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
 
 export const SELECT_TOL_PX = 6;
 export const DRAG_THRESHOLD_PX = 2;
+/** Toucher qui révèle un ombrage (F10, HB-24) : seuil propre, le glisser de 2 px est trop petit au doigt. */
+export const REVEAL_TAP_PX = 8;
 
-type Mode = "move" | "resize" | "band" | "none";
+type Mode = "move" | "resize" | "band" | "none" | "tap-shade";
+
+/** Cellule ombrée retenue au `begin` (F10), révélée au `close` si le pointeur n'a pas glissé. */
+interface Reveal {
+  readonly id: string;
+  readonly row: string;
+  readonly col: string;
+}
 
 interface Drag {
   readonly pointerId: number;
-  readonly mode: Mode;
+  /** `tap-shade` devient `move` au-delà de `REVEAL_TAP_PX`. */
+  mode: Mode;
   readonly x0: number;
   readonly y0: number;
   x: number;
@@ -39,6 +52,7 @@ interface Drag {
   readonly handle: HandleId | null;
   readonly base: Bounds | null;
   readonly shift: boolean;
+  readonly reveal: Reveal | null;
 }
 
 const NONE: ReadonlySet<string> = new Set<string>();
@@ -97,7 +111,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
     return IDENTITY_MATRIX;
   };
 
-  const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds } = {}): void => {
+  const startDrag = (pointerId: number, mode: Mode, x: number, y: number, extra: { handle?: HandleId; base?: Bounds; reveal?: Reveal } = {}): void => {
     drag = {
       pointerId,
       mode,
@@ -109,7 +123,18 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       handle: extra.handle ?? null,
       base: extra.base ?? null,
       shift: ctx.shift?.() === true,
+      reveal: extra.reveal ?? null,
     };
+  };
+
+  /** Cellule ombrée sous (x, y) monde du tableau `id` (ancre d'une zone), ou null. */
+  const shadedCellAt = (id: string, x: number, y: number): Reveal | null => {
+    const h = tableAt(ctx.doc, ctx.page(), x, y);
+    if (h?.id !== id) return null;
+    const r = h.table.rows[h.cell.row];
+    const k = h.table.cols[h.cell.col];
+    if (r === undefined || k === undefined) return null;
+    return cellContent(h.table, r.id, k.id).shade === null ? null : { id, row: r.id, col: k.id };
   };
 
   return {
@@ -128,6 +153,12 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       }
       const hit = ctx.doc.hitTest(ctx.page(), x, y, SELECT_TOL_PX / zoom);
       if (hit !== null) {
+        // F10 : sans Maj, une cellule ombrée du tableau le plus haut est retenue ; le relâché décide.
+        const reveal = shift ? null : shadedCellAt(hit, x, y);
+        if (reveal !== null) {
+          startDrag(pointerId, "tap-shade", x, y, { reveal });
+          return;
+        }
         if (shift) {
           selection = selection.includes(hit) ? selection.filter((id) => id !== hit) : [...selection, hit];
           startDrag(pointerId, "none", x, y);
@@ -146,6 +177,12 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       const [x, y] = world(s);
       drag.x = x;
       drag.y = y;
+      // F10 : au-delà de 8 px écran, le toucher devient un déplacement depuis le point d'appui.
+      if (drag.mode === "tap-shade" && Math.hypot(x - drag.x0, y - drag.y0) * drag.zoom >= REVEAL_TAP_PX) {
+        const id = drag.reveal?.id;
+        if (id !== undefined && !selection.includes(id)) selection = [id];
+        drag.mode = "move";
+      }
     },
     frame() {
       // rien à pousser : l'aperçu se calcule dans live()
@@ -155,6 +192,11 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       if (!d || d.pointerId !== pointerId) return;
       drag = null;
       if (how !== "end") return;
+      if (d.mode === "tap-shade") {
+        const r = d.reveal;
+        if (r !== null) ctx.run({ type: "SetTableShade", id: r.id, from: { row: r.row, col: r.col }, to: { row: r.row, col: r.col }, shade: null });
+        return;
+      }
       if (d.mode === "band") {
         const ids = ctx.doc.idsInRect(ctx.page(), norm(d.x0, d.y0, d.x, d.y));
         selection = d.shift ? [...selection, ...ids.filter((id) => !selection.includes(id))] : ids;

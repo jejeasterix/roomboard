@@ -133,22 +133,22 @@ export async function noOverlap(page, barSelector, stageSelector = "#stage") {
   return { apart: apart(a, b), bar: a, stage: b };
 }
 /** Dépôt simulé (DataTransfer construit dans la page) sur un sélecteur. */
-export async function dropFile(page, selector, name, bytes, type = "") {
-  await page.evaluate(({ selector, name, bytes, type }) => {
+export async function dropFile(page, selector, name, bytes, type = "", at = [50, 50]) {
+  await page.evaluate(({ selector, name, bytes, type, at }) => {
     const dt = new DataTransfer();
     dt.items.add(new File([new Uint8Array(bytes)], name, { type }));
     const target = document.querySelector(selector);
     const r = target.getBoundingClientRect();
     for (const t of ["dragover", "drop"]) {
-      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + 50, clientY: r.y + 50 }));
+      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + at[0], clientY: r.y + at[1] }));
     }
-  }, { selector, name, bytes: Array.from(bytes), type });
+  }, { selector, name, bytes: Array.from(bytes), type, at });
 }
 /** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
 export const TAB = '[role="tab"][data-tab]';
 
 /** CSP de la coque (`apps/desktop/src-tauri/tauri.conf.json`), envoyée telle quelle par le serveur d'essai (R22) : un
- *  défaut de CSP se voit dans l'essai. Seule copie : les essais l'importent. */
+ *  défaut de CSP se voit dans l'essai. Seule copie (R22 de C7b, F31 de C10b) : les essais l'importent. */
 export function coqueCsp() {
   const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
   const csp = conf.app.security.csp;

@@ -220,7 +220,7 @@ describe("Toolbar — rangée du tableau (C10a, T10)", () => {
     const { container, setV } = setup();
     expect(container.querySelector("[data-table-sep]")).toBeNull();
     setV({ ...VIEW, tool: "table", tableCell: CELL });
-    expect(actionIds(container)).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform"]);
+    expect(actionIds(container)).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform", "table-merge", "table-split", "table-shade", "table-unshade"]);
     expect(container.querySelector('[data-table-action="table-row-insert"]')!.textContent).toBe("+ Ligne");
     expect([...container.querySelectorAll("button[data-table-fill]")].map((b) => b.textContent)).toEqual(["Aucun", "Jaune", "Vert", "Bleu", "Rose", "Gris"]);
     expect(container.querySelector("button[data-table-action][data-item]")).toBeNull();

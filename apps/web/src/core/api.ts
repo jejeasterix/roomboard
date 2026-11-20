@@ -11,6 +11,8 @@
 // C9 éditeur : GridLevel.lineWidth et LevelLines.lineWidth (px CSS d'écran, 1 à 8) ; gridLinesOf (grille non enregistrée, aperçu, DAE1).
 // C10a : AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill (une étape chacune, D38) ;
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
+// C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
+// TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
 
 export type Matrix = readonly [number, number, number, number, number, number];
@@ -97,12 +99,31 @@ export type Command =
   | { readonly type: "SetTableCell"; readonly id: string; readonly row: string; readonly col: string; readonly content: string; readonly rowHeight?: number; readonly spans?: readonly TextSpan[] }
   /** at ∈ 0..=n ; taille de la voisine at - 1, sinon de la première. */
   | { readonly type: "InsertTableLine"; readonly id: string; readonly axis: TableAxis; readonly at: number }
-  /** Retire aussi ses cellules ; refusée s'il n'en reste qu'une. */
-  | { readonly type: "RemoveTableLine"; readonly id: string; readonly axis: TableAxis; readonly line: string }
+  /** Retire aussi ses cellules ; to : dernière ligne de la plage, comprise (C10b, F6) ; refusée s'il n'en resterait aucune. */
+  | { readonly type: "RemoveTableLine"; readonly id: string; readonly axis: TableAxis; readonly line: string; readonly to?: string }
   /** Uniformiser : toutes les colonnes, toutes les lignes (peut réduire, T11). */
   | { readonly type: "SetTableSizes"; readonly id: string; readonly colWidth: number; readonly rowHeight: number }
-  /** null retire. */
-  | { readonly type: "SetTableFill"; readonly id: string; readonly row: string; readonly col: string; readonly fill: string | null };
+  /** null retire ; to : autre coin de la plage (C10b, F15) ; une cellule couverte vaut pour son ancre. */
+  | { readonly type: "SetTableFill"; readonly id: string; readonly row: string; readonly col: string; readonly to?: CellIds; readonly fill: string | null }
+  /** C10b (F3) : rectangle from–to ; l'ancre garde son contenu, les couvertes sont retirées. */
+  | { readonly type: "MergeTableCells"; readonly id: string; readonly from: CellIds; readonly to: CellIds }
+  /** C10b (F4) : row, col = ancre d'une zone. */
+  | { readonly type: "SplitTableCell"; readonly id: string; readonly row: string; readonly col: string }
+  /** C10b (F9) : shade = couleur, null retire (révéler, retirer l'ombrage). */
+  | { readonly type: "SetTableShade"; readonly id: string; readonly from: CellIds; readonly to: CellIds; readonly shade: string | null }
+  /** C10b (F18) : tableau rempli ; cells = rows × cols textes en rangées ; merges = [ligne, colonne, lignes, colonnes]. */
+  | {
+      readonly type: "ImportTable";
+      readonly page: string;
+      readonly matrix: Matrix;
+      readonly colWidth: number;
+      readonly rowHeights: readonly number[];
+      readonly cols: number;
+      readonly cells: readonly string[];
+      readonly merges: readonly (readonly [number, number, number, number])[];
+      readonly color: string;
+      readonly size: number;
+    };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData {
@@ -120,16 +141,29 @@ export interface UnknownData { readonly sourceKind: string; readonly w: number; 
 export type TableAxis = "row" | "col";
 export interface TableCol { readonly id: string; readonly width: number }
 export interface TableRow { readonly id: string; readonly height: number }
-/** Cellule non vide (texte ou remplissage) ; `fill` = remplissage (U32), null sans remplissage ; `spans` = segments du
- *  texte (C7b, R16), un segment sans attribut pour une cellule d'avant C7b. */
-export interface TableCell { readonly row: string; readonly col: string; readonly text: string; readonly fill: string | null; readonly spans: readonly TextSpan[] }
-/** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture. */
+/** Cellule par ids (C10b). */
+export interface CellIds { readonly row: string; readonly col: string }
+/** Cellule non vide (texte, remplissage ou ombrage) ; `fill` = remplissage (U32), `shade` = ombrage révélable (F8), null sans ;
+ *  `spans` = segments du texte (C7b, R16), un segment sans attribut pour une cellule d'avant C7b. */
+export interface TableCell {
+  readonly row: string;
+  readonly col: string;
+  readonly text: string;
+  readonly fill: string | null;
+  readonly shade: string | null;
+  readonly spans: readonly TextSpan[];
+}
+/** Zone fusionnée (F29) : ancre par ids, étendue en rangs, après la règle F2 du cœur. */
+export interface TableMerge { readonly row: string; readonly col: string; readonly rows: number; readonly cols: number }
+/** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture ;
+ *  zones dans l'ordre de lecture de leurs ancres. */
 export interface TableData {
   readonly color: string;
   readonly size: number;
   readonly cols: readonly TableCol[];
   readonly rows: readonly TableRow[];
   readonly cells: readonly TableCell[];
+  readonly merges: readonly TableMerge[];
 }
 
 interface ElementBase {

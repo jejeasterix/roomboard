@@ -3,8 +3,10 @@ import type { DroppedFile } from "./files";
 import type { Command } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { IDENTITY } from "../engine/camera";
+import type { TableGrid } from "./html-table";
 import type { ImageTarget } from "./image-import";
-import { createImporter, isRoomboardName, LATER_FORMAT_MESSAGE, WEB_MAX_BYTES } from "./import";
+import { createImporter, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES } from "./import";
+import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
   name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
@@ -100,6 +102,8 @@ function fakeTarget(rect = { left: 0, top: 0, width: 800, height: 600 }) {
     page: () => "p1",
     camera: () => IDENTITY,
     stageRect: () => rect,
+    measure: () => (s: string) => s.length * 10,
+    textStyle: () => ({ color: "#000000", size: 36 }),
     run: (cmd) => {
       cmds.push(cmd);
       return { pages: [], ids: [`e${cmds.length}`], removed: [], full: false, version: cmds.length };
@@ -248,5 +252,67 @@ describe("en-tête seul avant refus (OD56, T14, DAC5)", () => {
     expect(r.failed).toEqual(["x.png"]);
     expect(r.refused).toEqual(["b.txt"]);
     expect(notify.mock.calls[0]![0]).toContain("Import impossible (x.png) : disque");
+  });
+});
+
+describe("importFiles : classeur (F28)", () => {
+  const G: TableGrid = { rows: 2, cols: 2, cells: ["a", "b", "c", "d"], merges: [], sourceRows: 2, sourceCols: 2, cutCells: false };
+  const PK = new Uint8Array([0x50, 0x4b, 3, 4, 9]);
+
+  it("S4 : .xlsx reconnu par son nom et PK : readSheet puis une ImportTable dans l'onglet actif", async () => {
+    const t = fakeTarget();
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => t.target, readSheet }).importFiles([file("v.xlsx", PK)], null);
+    expect(r).toEqual({ opened: [], inserted: ["v.xlsx"], refused: [], failed: [] });
+    expect(readSheet).toHaveBeenCalledTimes(1);
+    expect(t.cmds).toHaveLength(1);
+    expect(t.cmds[0]).toMatchObject({ type: "ImportTable", cols: 2, cells: ["a", "b", "c", "d"], colWidth: 240 });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("S4 : casse.xlsx sans en-tête PK : refusé par le registre (prochaine version) ; .xlsm avec PK : reconnu", async () => {
+    const t = fakeTarget();
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => t.target, readSheet })
+      .importFiles([file("casse.xlsx", new Uint8Array([1, 2, 3, 4])), file("m.xlsm", PK)], null);
+    expect([r.refused, r.inserted]).toEqual([["casse.xlsx"], ["m.xlsm"]]);
+    expect(notify).toHaveBeenCalledWith(`casse.xlsx : ${LATER_FORMAT_MESSAGE}`);
+  });
+
+  it("S4 : lecture en échec : « Import impossible (casse.xlsx) : … » ; feuille vide : « <nom> : la première feuille est vide »", async () => {
+    const notify = vi.fn(async (_m: string) => undefined);
+    const fails = (m: string) => createImporter({ openDocument: vi.fn(async () => true), notify, target: () => fakeTarget().target, readSheet: async () => { throw new Error(m); } });
+    expect((await fails("classeur illisible : zip").importFiles([file("casse.xlsx", PK)])).failed).toEqual(["casse.xlsx"]);
+    await fails(EMPTY_SHEET_MESSAGE).importFiles([file("vide.xlsx", PK)]);
+    expect(notify.mock.calls.map((c) => c[0])).toEqual(["Import impossible (casse.xlsx) : classeur illisible : zip", `vide.xlsx : ${EMPTY_SHEET_MESSAGE}`]);
+  });
+
+  it("F22 : plus de 100 Mo dans la coque (maxBytes nul) : refusé par le gestionnaire, rien lu", async () => {
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const big = { ...file("big.xlsx", PK), size: SHEET_MAX_BYTES + 1 };
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => fakeTarget().target, readSheet }).importFiles([big]);
+    expect(r.failed).toEqual(["big.xlsx"]);
+    expect(readSheet).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("big.xlsx : classeur trop gros pour un import en valeurs");
+  });
+
+  it("F22, constat T13 : plafond du gestionnaire vérifié avant f.blob() (coque : un .xlsx de 2 Go n'est jamais lu)", async () => {
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const blob = vi.fn(async () => new Blob([PK]));
+    const big: DroppedFile = { ...file("big.xlsx", PK), size: 2 * 1024 * 1024 * 1024, blob };
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => fakeTarget().target, readSheet }).importFiles([big]);
+    expect(blob).not.toHaveBeenCalled();
+    expect(readSheet).not.toHaveBeenCalled();
+    expect(r).toEqual({ opened: [], inserted: [], refused: [], failed: ["big.xlsx"] });
+    expect(notify.mock.calls).toEqual([[`big.xlsx : ${SHEET_TOO_BIG_MESSAGE}`]]);
+  });
+
+  it("sans readSheet (amorce partielle, tests anciens) : .xlsx refusé comme avant", async () => {
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), target: () => fakeTarget().target }).importFiles([file("v.xlsx", PK)]);
+    expect(r.refused).toEqual(["v.xlsx"]);
   });
 });

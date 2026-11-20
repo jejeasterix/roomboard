@@ -31,6 +31,9 @@ export interface EngineState {
   readonly selectionBounds: Bounds | null;
   /** Cellule active de l'outil Tableau (C10a) : rangs et taille du tableau ; null sans cellule active. */
   readonly tableCell: TableCellState | null;
+  /** C10b (F29) : zones fusionnées et cellules ombrées de tous les tableaux de la page montrée, quel que soit l'outil. */
+  readonly tableMerges: number;
+  readonly tableShades: number;
   /** État de la barre de format (C7b, R15) : saisie ouverte de l'outil Texte ou Tableau actif ; null sinon. */
   readonly textFormat: FormatState | null;
   readonly elementCount: number;
@@ -105,6 +108,8 @@ export interface Engine {
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
   tableFill(fill: string | null): void;
+  /** Style de texte des outils Texte et Tableau, et de la cible d'import (F21). */
+  textStyle(): TextStyle;
   /** Bouton de la rangée Format (C7b, DAR4) : relayé à l'outil actif (Texte ou Tableau) ; autre outil : sans effet. */
   textFormat(a: FormatAction): void;
   /** Chaque changement de caméra (pan, zoom, page montrée, ajustement) ; rend le désabonnement. */
@@ -146,6 +151,7 @@ function inertTable(): TableTool {
     act() {},
     fill() {},
     clearCell: () => false,
+    clearRange: () => false,
     prune() {},
     navigate: () => false,
     compositionStart() {},
@@ -212,6 +218,24 @@ export function createEngine(deps: EngineDeps): Engine {
   const drawnListeners = new Set<(now: number) => void>();
   const owner = new Map<number, GestureTool>();
 
+  /** Comptes de `#stage[data-table-merges|data-table-shades]` (F29), recalculés quand la version ou la page change (PC12). */
+  let counted = { key: "", merges: 0, shades: 0 };
+  const tableCounts = (): { readonly merges: number; readonly shades: number } => {
+    const key = `${pageId}|${doc.version()}`;
+    if (counted.key !== key) {
+      let merges = 0;
+      let shades = 0;
+      for (const id of doc.elementIds(pageId)) {
+        const el = doc.element(id);
+        if (el?.kind !== "table") continue;
+        merges += el.table.merges.length;
+        shades += el.table.cells.filter((c) => c.shade !== null).length;
+      }
+      counted = { key, merges, shades };
+    }
+    return counted;
+  };
+
   function state(): EngineState {
     const ids = doc.pageIds();
     return {
@@ -225,6 +249,8 @@ export function createEngine(deps: EngineDeps): Engine {
       selection: [...selectTool.selection()],
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
       tableCell: tableTool.cellState(),
+      tableMerges: tableCounts().merges,
+      tableShades: tableCounts().shades,
       textFormat: tool === "text" ? textTool.formatState() : tool === "table" ? tableTool.formatState() : null,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
@@ -454,6 +480,8 @@ export function createEngine(deps: EngineDeps): Engine {
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
+        // PC18 : Échap avec l'outil Tableau (saisie fermée) retire d'abord la plage.
+        if (edit === "escape" && tool === "table" && tableTool.clearRange()) return true;
         const sel = selectTool.selection();
         if (sel.length === 0) return false;
         const ids = [...sel];
@@ -544,6 +572,7 @@ export function createEngine(deps: EngineDeps): Engine {
     tableAction(a) {
       tableTool.act(a);
     },
+    textStyle,
     tableFill(fill) {
       tableTool.fill(fill);
     },

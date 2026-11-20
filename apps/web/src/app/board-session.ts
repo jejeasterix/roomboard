@@ -67,6 +67,8 @@ export interface BoardSession {
   readonly samplerOptions: SamplerOptions;
   /** État de la traînée d'encre (`attachInkTrail`), lu par le banc (`options.inkTrail`). */
   readonly trail: { readonly status: string };
+  /** Mesure du texte partagée (CL4-4), lue par la cible d'import des tableaux (C10b, F21). */
+  readonly measure: Measure;
   effective(): EffectiveEchelons;
   /** Dépendances de `createAppBench` pour cette session (celles de l'ancien main.ts, à l'identique). */
   bench(): AppBenchDeps;
@@ -269,6 +271,8 @@ async function buildBoardSession(
     stage.dataset["bounds"] = tags.bounds;
     stage.dataset["tool"] = tags.tool;
     stage.dataset["table"] = tags.table;
+    stage.dataset["tableMerges"] = tags.tableMerges;
+    stage.dataset["tableShades"] = tags.tableShades;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
@@ -303,6 +307,7 @@ async function buildBoardSession(
     sampler,
     samplerOptions,
     trail,
+    measure,
     effective,
     bench: () => ({
       sampler,
