@@ -4,6 +4,7 @@ import {
   detectHostEnvironment,
   ensureExtension,
   FILE_FILTER,
+  IMPORT_FILTER,
   parseHostChoice,
   ROOMBOARD_MIME,
   UNTITLED,
@@ -58,5 +59,12 @@ describe("FileHost : onDrop (T86)", () => {
     // @ts-expect-error onDrop manque
     const h: import("./files").FileHost = { kind: "repli", open: async () => null, save: async () => null };
     expect(h.kind).toBe("repli");
+  });
+
+  it("filtre « Importer » : .roomboard puis les images d'U33, sans TIFF ni RAW (R14, R18)", () => {
+    expect(IMPORT_FILTER).toEqual({
+      name: "Images et documents RoomBoard",
+      extensions: ["roomboard", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"],
+    });
   });
 });
