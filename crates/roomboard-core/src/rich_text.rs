@@ -347,6 +347,100 @@ pub(crate) fn apply_format(
     text.format(txn, range.0, range.1, patch);
 }
 
+/// Segment voulu d'un `SetText` ou d'un `SetTableCell` (C7b, R7) : un état, pas un patch ; champ au défaut = absent.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpanInput {
+    pub text: String,
+    pub attrs: SpanAttrs,
+}
+
+/// Entrées de `attrs` dans l'ordre de `TextAttr` : chaque clé connue, au défaut comprise (`false`, `None` = retrait).
+fn entries(attrs: &SpanAttrs) -> [TextAttr; 6] {
+    [
+        TextAttr::Bold(attrs.bold),
+        TextAttr::Italic(attrs.italic),
+        TextAttr::Underline(attrs.underline),
+        TextAttr::Color(attrs.color.clone()),
+        TextAttr::Size(attrs.size.map(|v| v as f32)),
+        TextAttr::Font(attrs.font.clone()),
+    ]
+}
+
+/// Contrôle d'un état voulu (R7) : concaténation des `text` égale au contenu, valeurs dans les domaines de T15
+/// (`valid_attrs`, `size` contrôlé après conversion en `f32`).
+pub(crate) fn valid_spans(content: &str, spans: &[SpanInput]) -> bool {
+    spans
+        .iter()
+        .flat_map(|s| s.text.chars())
+        .eq(content.chars())
+        && spans.iter().all(|s| valid_attrs(&entries(&s.attrs)))
+}
+
+/// Clés connues dont la vue normalisée `current` diffère de `target`, avec la valeur à écrire (`Any::Null` retire) ;
+/// `size` comparé après arrondi en `f32` (T11, `same_value`) ; vide si rien ne change. La valeur brute n'entre pas
+/// dans la comparaison : une valeur hors domaine que la cible laisse au défaut n'est jamais réécrite.
+fn differing(current: &SpanAttrs, target: &SpanAttrs) -> Attrs {
+    let mut out = Attrs::new();
+    for (now, want) in entries(current).iter().zip(entries(target).iter()) {
+        let (key, have) = entry(now);
+        let (_, value) = entry(want);
+        if !same_value(Some(&have), &value) {
+            out.insert(Arc::from(key), value);
+        }
+    }
+    out
+}
+
+/// Plan d'alignement (R7) : chaque caractère comparé, vue normalisée contre cible ; plages Yrs contiguës de même patch
+/// (un embed, compté 1 par `char_table`, coupe la plage : jamais formaté). `None` si la table est illisible (T13) ou
+/// si sa longueur diffère de la cible (PC3).
+fn align_plan<T: ReadTxn>(
+    txn: &T,
+    text: &TextRef,
+    spans: &[SpanInput],
+) -> Option<Vec<(u32, u32, Attrs)>> {
+    let (chars, raw) = char_table(txn, text)?;
+    let want: Vec<&SpanAttrs> = spans
+        .iter()
+        .flat_map(|s| s.text.chars().map(move |_| &s.attrs))
+        .collect();
+    if want.len() != chars.len() {
+        return None;
+    }
+    let norm: Vec<SpanAttrs> = raw.iter().map(|a| normalize(Some(a))).collect();
+    let mut runs: Vec<(u32, u32, Attrs)> = Vec::new();
+    for (c, t) in chars.iter().zip(want) {
+        let patch = differing(&norm[c.chunk], t);
+        if patch.is_empty() {
+            continue;
+        }
+        let len = c.ch.len_utf8() as u32;
+        match runs.last_mut() {
+            Some((start, n, p)) if *start + *n == c.yrs && *p == patch => *n += len,
+            _ => runs.push((c.yrs, len, patch)),
+        }
+    }
+    Some(runs)
+}
+
+/// Sortie « inchangé » (R7) : vrai si un caractère porte une valeur connue normalisée différente de la cible ; table
+/// illisible : faux (rien n'est aligné, PC3).
+pub(crate) fn spans_differ<T: ReadTxn>(txn: &T, text: &TextRef, spans: &[SpanInput]) -> bool {
+    align_plan(txn, text, spans).is_some_and(|runs| !runs.is_empty())
+}
+
+/// Aligne les attributs connus du `Y.Text` sur la cible (R7, DAR1), dans la transaction de l'appelant, après
+/// `apply_text_diff` : n'écrit, par `Text::format`, que les clés qui diffèrent ; clés inconnues, embeds et valeurs
+/// brutes hors domaine que la cible laisse sans l'attribut ne sont jamais touchés.
+pub(crate) fn apply_spans(txn: &mut TransactionMut, text: &TextRef, spans: &[SpanInput]) {
+    let Some(runs) = align_plan(&*txn, text, spans) else {
+        return;
+    };
+    for (start, len, patch) in runs {
+        text.format(txn, start, len, patch);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -733,6 +827,7 @@ mod tests {
             size: 36.0,
             box_width: 600.0,
             box_height: 45.0,
+            spans: None,
         };
         let fmt = |id: &str, start: u32, len: u32, attrs: Vec<TextAttr>| Command::FormatText {
             id: id.into(),
@@ -796,6 +891,7 @@ mod tests {
             size: 36.0,
             box_width: 600.0,
             box_height: 45.0,
+            spans: None,
         };
         let id = d.apply(set).expect("texte").ids[0].clone();
         let text = {
@@ -929,6 +1025,7 @@ mod tests {
             size: 36.0,
             box_width: 600.0,
             box_height: 45.0,
+            spans: None,
         };
         d.apply(set).expect("SetText");
         let v = view(&d);
@@ -1020,7 +1117,8 @@ mod tests {
     }
 
     /// S5 (R7), document neuf : segments sans attribut sur un texte sans attribut = mêmes octets qu'une différence
-    /// seule. Patron écarté : un alignement qui écrirait toutes les clés (`Any::Null` compris) changerait les octets.
+    /// seule. Garde des octets, pas du choix des clés : mesuré, `Text::format` à `Any::Null` sur une plage déjà sans
+    /// la clé n'écrit rien ; le choix des clés est gardé par `apply_spans_keeps_raw_out_of_domain_and_unknown_keys`.
     #[test]
     fn plain_spans_write_the_same_update_as_no_spans() {
         let (d, _, _) = core_text("Le chat noir");
@@ -1129,5 +1227,54 @@ mod tests {
             embed_attrs.is_none_or(|a| !a.contains_key("bold")),
             "embed formaté"
         );
+    }
+
+    /// R7 au niveau de la commande : `SetText` avec segments garde la valeur brute hors domaine (`bold: "oui"`) que la
+    /// cible laisse sans gras, écrit le gras voulu, en une seule étape ; rejouée, la même cible est « inchangée ».
+    /// Patron écarté : comparaison brute (`format_changes`) ou `SetText` puis `FormatText` (deux étapes).
+    #[test]
+    fn set_text_spans_keep_raw_out_of_domain_value_in_one_step() {
+        let (mut d, id, text) = core_text("Le chat noir");
+        text.format(
+            &mut d.transact_local(),
+            0,
+            2,
+            Attrs::from([(Arc::from("bold"), Any::from("oui"))]),
+        );
+        let raw_bold = |d: &Document, s: &str| {
+            text.diff(&d.read(), YChange::identity)
+                .into_iter()
+                .find(|c| matches!(&c.insert, Out::Any(Any::String(t)) if t.as_ref() == s))
+                .and_then(|c| c.attributes)
+                .and_then(|a| a.get("bold").cloned())
+        };
+        let target = vec![
+            sp("Le ", SpanAttrs::default()),
+            sp("chat", bold()),
+            sp(" noir", SpanAttrs::default()),
+        ];
+        let set = |spans: Vec<SpanInput>| Command::SetText {
+            page: d.page_ids()[0].clone(),
+            id: Some(id.clone()),
+            x: 0.0,
+            y: 0.0,
+            content: "Le chat noir".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+            spans: Some(spans),
+        };
+        let first = set(target.clone());
+        let again = set(target);
+        d.apply(first).expect("gras");
+        assert_eq!(raw_bold(&d, "Le"), Some(Any::from("oui")));
+        assert_eq!(raw_bold(&d, "chat"), Some(Any::Bool(true)));
+        let v = d.version();
+        d.apply(again).expect("même cible");
+        assert_eq!(d.version(), v, "même cible : aucune transaction");
+        assert!(d.undo());
+        assert_eq!(raw_bold(&d, "Le"), Some(Any::from("oui")));
+        assert_eq!(view_spans(&d, &id), vec![plain("Le chat noir")]);
     }
 }

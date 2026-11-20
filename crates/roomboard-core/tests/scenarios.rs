@@ -149,6 +149,7 @@ fn s3_text_stroke_shape_survive_save_load() {
             size: 36.0,
             box_width: 600.0,
             box_height: 45.0,
+            spans: None,
         })
         .expect("texte")
         .ids[0]
@@ -254,6 +255,7 @@ fn s2_rich_text_survives_save_load() {
             size: 36.0,
             box_width: 600.0,
             box_height: 90.0,
+            spans: None,
         })
         .expect("texte")
         .ids[0]

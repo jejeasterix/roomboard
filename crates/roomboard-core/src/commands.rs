@@ -17,7 +17,7 @@ use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
 use crate::query::path_hits_stroke;
-use crate::rich_text::{self, TextAttr};
+use crate::rich_text::{self, SpanInput, TextAttr};
 use crate::shape::{normalize, ShapeKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,6 +72,8 @@ pub enum Command {
         size: f32,
         box_width: f64,
         box_height: f64,
+        /// C7b (R7) : état voulu des segments, aligné dans la même transaction ; `None` : différence seule (C7).
+        spans: Option<Vec<SpanInput>>,
     },
     /// Image (U5, K5) : `w`, `h` = taille source en pixels, boîte locale placée par `matrix`.
     AddImage {
@@ -313,6 +315,7 @@ struct TextInput<'a> {
     size: f32,
     box_width: f64,
     box_height: f64,
+    spans: Option<&'a [SpanInput]>,
 }
 
 /// Chemin monde (paires x, y) ramené au repère local par l'inverse de `t` ; `None` si `t` n'est pas inversible.
@@ -501,6 +504,7 @@ impl Document {
                 size,
                 box_width,
                 box_height,
+                spans,
             } => self.cmd_set_text(TextInput {
                 page: &page,
                 id: id.as_deref(),
@@ -511,6 +515,7 @@ impl Document {
                 size,
                 box_width,
                 box_height,
+                spans: spans.as_deref(),
             }),
             Command::AddImage {
                 page,
@@ -669,6 +674,12 @@ impl Document {
     /// écriture ; boîte neuve vide ou texte inchangé : aucune transaction (CL4-6, D38) ; texte existant vidé : élément
     /// retiré. Comme `cmd_erase` : plan sous une lecture fermée, puis au plus une écriture.
     fn cmd_set_text(&mut self, t: TextInput<'_>) -> Result<Change, CommandError> {
+        // C7b (R7, PC2) : segments contrôlés en premier, sans écriture ; même ordre que `fake-core.ts`.
+        if t.spans
+            .is_some_and(|s| !rich_text::valid_spans(t.content, s))
+        {
+            return Err(CommandError::BadFormat);
+        }
         if !finite_positive(f64::from(t.size))
             || !finite_positive(t.box_width)
             || !finite_positive(t.box_height)
@@ -680,12 +691,16 @@ impl Document {
         let Some(id) = t.id else {
             return self.insert_text(&t);
         };
-        let (found, current) = {
+        let (found, current, spans_same) = {
             let txn = self.read();
             let unknown = || CommandError::UnknownElement(id.to_string());
             let found = self.find_element(&txn, id).ok_or_else(unknown)?;
             let current = read_text(&txn, &found.element).ok_or_else(unknown)?;
-            (found, current)
+            // R7 : une mise en forme seule (texte égal) n'est jamais « inchangée ».
+            let spans_same = t
+                .spans
+                .is_none_or(|s| !rich_text::spans_differ(&txn, &current.text, s));
+            (found, current, spans_same)
         };
         if t.content.is_empty() {
             {
@@ -702,7 +717,8 @@ impl Document {
             && current.color == t.color
             && current.size == t.size
             && current.box_width == t.box_width
-            && current.box_height == t.box_height;
+            && current.box_height == t.box_height
+            && spans_same;
         if same {
             return Ok(self.unchanged());
         }
@@ -710,6 +726,9 @@ impl Document {
             let mut txn = self.transact_local();
             // T4, T5, T16 : différence en points de code, héritage du caractère précédent, embeds gardés.
             rich_text::apply_text_diff(&mut txn, &current.text, t.content);
+            if let Some(s) = t.spans {
+                rich_text::apply_spans(&mut txn, &current.text, s);
+            }
             let e = &found.element;
             e.insert(&mut txn, "color", In::from(t.color));
             e.insert(&mut txn, "size", In::Any(Any::from(f64::from(t.size))));
@@ -744,7 +763,11 @@ impl Document {
         ];
         {
             let mut txn = self.transact_local();
-            elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+            let el = elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+            // C7b (R7) : attributs posés dans la même transaction, sur le `Y.Text` relu après l'insertion.
+            if let (Some(s), Some(Out::YText(text))) = (t.spans, el.get(&txn, "content")) {
+                rich_text::apply_spans(&mut txn, &text, s);
+            }
         }
         Ok(self.done(Change {
             pages: vec![t.page.to_string()],
@@ -1933,6 +1956,7 @@ pub(crate) mod tests {
             size: 36.0,
             box_width: 600.0,
             box_height: 45.0,
+            spans: None,
         }
     }
 

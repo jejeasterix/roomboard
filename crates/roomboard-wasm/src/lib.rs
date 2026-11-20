@@ -1054,6 +1054,7 @@ impl Document {
             size,
             box_width: boxes[0],
             box_height: boxes[1],
+            spans: None,
         })
     }
 

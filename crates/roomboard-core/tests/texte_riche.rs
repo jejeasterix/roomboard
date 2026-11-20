@@ -67,7 +67,11 @@ fn set_text(page: &str, id: Option<&str>, content: &str, spans: Option<Vec<SpanI
 fn text_doc(content: &str) -> (Document, String, String) {
     let mut d = Document::blank();
     let page = d.page_ids()[0].clone();
-    let id = d.apply(set_text(&page, None, content, None)).expect("texte").ids[0].clone();
+    let id = d
+        .apply(set_text(&page, None, content, None))
+        .expect("texte")
+        .ids[0]
+        .clone();
     (d, page, id)
 }
 
@@ -98,7 +102,9 @@ fn merged(first: &Document, second: &Document) -> Document {
                 .expect("mise à jour");
         }
     }
-    let bytes = raw.transact().encode_state_as_update_v1(&StateVector::default());
+    let bytes = raw
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
     Document::from_update_v1(&bytes).expect("fusion")
 }
 
@@ -107,12 +113,20 @@ fn merged(first: &Document, second: &Document) -> Document {
 fn set_text_with_spans_is_one_undo_step() {
     let (mut d, page, id) = text_doc("Le chat noir");
     let before = text_spans(&d, &id);
-    let spans = vec![sp("Le gros ", none()), sp("chat", red_bold()), sp(" noir", none())];
+    let spans = vec![
+        sp("Le gros ", none()),
+        sp("chat", red_bold()),
+        sp(" noir", none()),
+    ];
     d.apply(set_text(&page, Some(&id), "Le gros chat noir", Some(spans)))
         .expect("riche");
     assert_eq!(
         text_spans(&d, &id),
-        vec![view("Le gros ", none()), view("chat", red_bold()), view(" noir", none())]
+        vec![
+            view("Le gros ", none()),
+            view("chat", red_bold()),
+            view(" noir", none())
+        ]
     );
     assert!(d.undo());
     assert_eq!(
@@ -181,7 +195,12 @@ fn set_text_bad_spans_is_bad_format_first() {
             Err(CommandError::BadFormat)
         );
         assert_eq!(
-            d.apply(set_text(&page, Some("absent"), "Le chat", Some(spans.clone()))),
+            d.apply(set_text(
+                &page,
+                Some("absent"),
+                "Le chat",
+                Some(spans.clone())
+            )),
             Err(CommandError::BadFormat)
         );
         let mut tiny = set_text(&page, Some(&id), "Le chat", Some(spans));
@@ -199,7 +218,11 @@ fn new_text_with_spans_is_created_formatted() {
     let mut d = Document::blank();
     let page = d.page_ids()[0].clone();
     let spans = vec![sp("Le ", none()), sp("chat", red_bold())];
-    let id = d.apply(set_text(&page, None, "Le chat", Some(spans))).expect("neuf").ids[0].clone();
+    let id = d
+        .apply(set_text(&page, None, "Le chat", Some(spans)))
+        .expect("neuf")
+        .ids[0]
+        .clone();
     assert_eq!(
         text_spans(&d, &id),
         vec![view("Le ", none()), view("chat", red_bold())]
@@ -218,7 +241,11 @@ fn concurrent_formats_of_two_words_in_a_text_both_stay() {
         &page,
         Some(&id),
         "Le chat noir",
-        Some(vec![sp("Le ", none()), sp("chat", bold()), sp(" noir", none())]),
+        Some(vec![
+            sp("Le ", none()),
+            sp("chat", bold()),
+            sp(" noir", none()),
+        ]),
     ))
     .expect("a");
     b.apply(set_text(
@@ -232,7 +259,12 @@ fn concurrent_formats_of_two_words_in_a_text_both_stay() {
     assert_eq!(ab, text_spans(&merged(&b, &a), &id));
     assert_eq!(
         ab,
-        vec![view("Le ", none()), view("chat", bold()), view(" ", none()), view("noir", italic())]
+        vec![
+            view("Le ", none()),
+            view("chat", bold()),
+            view(" ", none()),
+            view("noir", italic())
+        ]
     );
 }
 
