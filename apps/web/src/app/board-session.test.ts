@@ -513,6 +513,20 @@ describe("session — fond PDF (C12, PF15)", () => {
     }
   });
 
+  it("un dessin déjà demandé qui passe entre deactivate et le ResizeObserver (rAF avant RO) n'ouvre pas le PDF ; activate le redessine (relecture T17)", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    s.deactivate();
+    s.engine.setTool(s.engine.tool() === "select" ? "pen" : "select"); // scène sale, taille d'avant (le RO n'est pas encore passé)
+    await new Promise((r) => setTimeout(r, 100));
+    expect(pdf.open).toHaveBeenCalledTimes(1);
+    s.activate();
+    await vi.waitFor(() => expect(pdf.open).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    s.dispose();
+  });
+
   it("sans moteur PDF (amorce partielle) : data-fond « echec »", async () => {
     const s = await pdfSession();
     await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("echec"), { timeout: 5000 });
