@@ -284,7 +284,13 @@ mod tests {
         ))
         .expect("lecture");
         assert_eq!(
-            (r.rows(), r.cols(), r.source_rows(), r.source_cols(), r.cut_cells()),
+            (
+                r.rows(),
+                r.cols(),
+                r.source_rows(),
+                r.source_cols(),
+                r.cut_cells()
+            ),
             (64, 6, 70, 6, false)
         );
         assert_eq!(r.merges(), vec![1, 0, 1, 2]);
