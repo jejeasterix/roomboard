@@ -129,4 +129,14 @@ describe("PagesBar (T91)", () => {
     expect(css).toMatch(/\.rb-pages-count\s*\{[^}]*padding/);
     expect(css).toMatch(/\.rb-bar button\s*\{[^}]*padding/);
   });
+
+  it("à 25 pages, les numéros sont dans une liste défilante ; les actions restent hors de la liste", () => {
+    const { container } = setup({ pageIndex: 0, pageCount: 25 });
+    const list = container.querySelector(".rb-pages-list")!;
+    expect(list.querySelectorAll("[data-page]").length).toBe(25);
+    expect(list.querySelector("[data-item]")).toBeNull();
+    expect(container.querySelector("[data-item=page-add]")!.closest(".rb-pages-list")).toBeNull();
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    expect(css).toMatch(/\.rb-pages-list\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/);
+  });
 });
