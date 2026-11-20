@@ -4,7 +4,7 @@ import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
 import { asGL, FakeGL } from "./fake-gl";
 import { EMPTY_OVERLAY } from "./overlay";
-import type { LiveLayer, PageView, Renderer } from "./renderer";
+import type { GridPreview, LiveLayer, PageView, Renderer } from "./renderer";
 import {
   pageScissor,
   parseColor,
@@ -15,7 +15,7 @@ import {
   WebGL2LiveRenderer,
 } from "./webgl2";
 
-class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize"> {
+class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview"> {
   readonly log: string[] = [];
   readonly overlays: unknown[] = [];
   drawScene(page: PageView, _camera?: Camera, _hidden?: ReadonlySet<string>, overlay?: unknown): void {
@@ -27,6 +27,9 @@ class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize">
   }
   resize(w: number, h: number, dpr: number): void {
     this.log.push(`resize ${w},${h},${dpr}`);
+  }
+  setGridPreview(p: GridPreview | null): void {
+    this.log.push(`preview ${p === null ? "null" : p.page}`);
   }
 }
 
@@ -300,5 +303,14 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
     const gl = new FakeGL();
     gl.compileOk = false;
     expect(() => new WebGL2LiveRenderer(new FakeScene(), asGL(gl))).toThrow(/^WebGL2 : shader refusé/);
+  });
+});
+
+describe("aperçu de grille (C9 éditeur)", () => {
+  it("setGridPreview : délégué à la scène Canvas 2D", () => {
+    const { scene, r } = make();
+    r.setGridPreview({ page: "p", grid: null });
+    r.setGridPreview(null);
+    expect(scene.log.filter((l) => l.startsWith("preview"))).toEqual(["preview p", "preview null"]);
   });
 });
