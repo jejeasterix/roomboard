@@ -57,6 +57,12 @@ describe("rich-text : segments côté page (C7)", () => {
     for (const p of bad) expect(validPatch(p as TextAttrsPatch)).toBe(false);
   });
 
+  it("validFont refuse tout caractère de contrôle Unicode (Cc : U+0000–U+001F, U+007F–U+009F), comme le cœur", () => {
+    const refused = ["a\fb", "a\tb", "a\u0000b", "a\u001fb", "a\u007fb", "a\u0085b", "a\u009fb"];
+    expect(refused.map(validFont)).toEqual(refused.map(() => false));
+    expect([validFont("a\u00a0b"), validFont("Comic Sans MS"), validFont("a\u2028b")]).toEqual([true, true, true]);
+  });
+
   it("validColor et validFont : formes de T15 (font compté en points de code)", () => {
     expect([validColor("#f00"), validColor("#ff00"), validColor("re"), validColor("ABC")]).toEqual([true, false, false, true]);
     expect([validFont("é".repeat(48)), validFont("é".repeat(49)), validFont("a\nb"), validFont('a"b')]).toEqual([true, false, false, false]);

@@ -94,6 +94,18 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(() => toBounds({ x0: 0, y0: 1, x1: 2 })).toThrow("Bounds invalide");
   });
 
+  it("toElementView : des segments qui ne redonnent pas le contenu sont une dérive du cœur (C7)", () => {
+    const spans = [{ text: "Le ", attrs: {} }, { text: "chat", attrs: { bold: true } }];
+    const text = { content: "Le chat", size: 36, boxWidth: 600, boxHeight: 45, spans };
+    const view = { id: "t1", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text };
+    expect(toElementView(view)).toEqual(view);
+    expect(toElementView({ ...view, text: { ...text, content: "", spans: [{ text: "", attrs: {} }] } })).toMatchObject({ kind: "text" });
+    expect(() => toElementView({ ...view, text: { ...text, content: "Le chat noir" } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...view, text: { ...text, spans: [{ text: "Le ", attrs: {} }, { text: "chien", attrs: {} }] } })).toThrow(
+      "ElementView invalide",
+    );
+  });
+
   // Discrimine le patron écarté (T54) : un `as Change` sur le retour de `add_shape`, `set_text` ou `transform`
   // laisserait passer ce Change sans `removed` ; l'adaptateur doit le lever par `toChange`. Module factice : seul le
   // test, pas l'adaptateur, force son type.
