@@ -13,6 +13,8 @@ use yrs::{
 
 use crate::asset::{is_asset_id, AssetInfo, AssetRef};
 use crate::commands::{read_shape, read_text};
+#[cfg(test)]
+use crate::element::ImageView;
 use crate::element::{
     backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_image, read_style,
     read_unknown, ElementView, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
