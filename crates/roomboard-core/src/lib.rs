@@ -8,4 +8,5 @@ pub mod format;
 pub mod history;
 pub mod ink;
 pub mod query;
+pub mod rich_text;
 pub mod shape;
