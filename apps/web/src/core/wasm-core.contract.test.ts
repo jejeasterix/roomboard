@@ -2318,3 +2318,17 @@ describe("contrôle de forme C6a", () => {
     expect(calls).toEqual([["edge_hit", "e1", 103, 150, 6]]);
   });
 });
+
+describe.skipIf(loaded === null)("contrat C6a : vrai module seulement", () => {
+  it("fixture socle-v1.roomboard (d'avant C6a, S5, D21) : fond blanc, le pot y colore le fond, relu après enregistrement", () => {
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard", import.meta.url)));
+    const d = need().core.load(bytes);
+    const p = first(d);
+    expect(bg(d, p)).toBe("#ffffff");
+    d.apply({ type: "Fill", page: p, target: { kind: "background" }, color: "#1d4ed8" });
+    const back = need().core.load(d.save(now, "0.1.0"));
+    expect(bg(back, p)).toBe("#1d4ed8");
+    back.free();
+    d.free();
+  });
+});
