@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Command, TableData } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
-import { cellHeight } from "../table-geom";
+import { cellHeight, TABLE_SHADE_COLOR } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { createTableTool, type TablePicker } from "./table";
 import type { TextEditorHost, TextEditSession } from "./text";
@@ -61,6 +61,7 @@ function setup() {
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
   let changes = 0;
+  let shift = false;
   const host = new FakeHost();
   const picker = new FakePicker();
   const holder: { tool?: TableTool } = {};
@@ -79,6 +80,7 @@ function setup() {
         return null;
       }
     },
+    shift: () => shift,
     requestFrame: () => undefined,
     stateChanged: () => {
       changes++;
@@ -103,7 +105,9 @@ function setup() {
     return ids[ids.length - 1] ?? "";
   };
   const last = (): Command | undefined => runs[runs.length - 1];
-  return { doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes };
+  return { doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
+    shift = v;
+  } };
 }
 
 /** 2 × 2 en (100, 200), « xy » saisi dans la dernière cellule (1, 1), saisie ouverte. */
@@ -427,5 +431,173 @@ describe("outil Tableau (C10a)", () => {
     expect(s.tool.live().overlay?.frame).toEqual({ x0: 100, y0: 200, x1: 340, y1: 264 });
     s.tool.leave?.("tool");
     expect(s.tool.live().overlay).toBeUndefined();
+  });
+});
+
+describe("outil Tableau (C10b)", () => {
+  type S = ReturnType<typeof setup>;
+  /** Appui en a, glisser jusqu'à b, relâché (caméra identité : px = unités). */
+  const drag = (s: S, a: [number, number], b: [number, number]): void => {
+    s.tool.begin(1, [at(a[0], a[1])]);
+    s.tool.extend(1, [at(b[0], b[1])], []);
+    s.tool.close(1, "end");
+  };
+  /** Tableau cols × rows en (100, 200), saisie fermée ; ids des lignes et colonnes. */
+  const made = (cols: number, rows: number) => {
+    const s = setup();
+    const id = s.create(100, 200, cols, rows);
+    s.tool.requestCommit();
+    const t = s.table(id);
+    return { s, id, r: t.rows.map((x) => x.id), c: t.cols.map((x) => x.id) };
+  };
+  /** Centre de la cellule (ligne, colonne) d'un tableau de colonnes 240 et lignes 64 en (100, 200). */
+  const mid = (row: number, col: number): [number, number] => [100 + 240 * col + 120, 200 + 64 * row + 32];
+
+  it("F14 : clic sans glisser : saisie ouverte au relâché, pas à l'appui (HB-12)", () => {
+    const { s } = made(2, 2);
+    const n = s.host.opened.length;
+    s.tool.begin(1, [at(...mid(0, 1))]);
+    expect(s.host.opened).toHaveLength(n);
+    s.tool.close(1, "end");
+    expect(s.host.opened).toHaveLength(n + 1);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 1, range: null });
+  });
+
+  it("F14 : appui puis geste annulé (cancel, abort) : aucune saisie, rien d'écrit (le relâché décide, comme select.ts)", () => {
+    const { s } = made(2, 2);
+    const n = s.host.opened.length;
+    const k = s.runs.length;
+    s.tool.begin(1, [at(...mid(1, 1))]);
+    s.tool.close(1, "cancel");
+    s.tool.begin(2, [at(...mid(1, 0))]);
+    s.tool.close(2, "abort");
+    expect(s.host.opened).toHaveLength(n);
+    expect(s.runs).toHaveLength(k);
+  });
+
+  it("F14 : glisser de la première à la deuxième cellule : plage 0,0-0,1, aucune saisie ; Échap (clearRange) la retire", () => {
+    const { s } = made(2, 2);
+    const n = s.host.opened.length;
+    drag(s, mid(0, 0), mid(0, 1));
+    expect(s.host.opened).toHaveLength(n);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: { r0: 0, c0: 0, r1: 0, c1: 1 } });
+    expect(s.tool.live().overlay?.frame).toEqual({ x0: 100, y0: 200, x1: 580, y1: 264 });
+    expect(s.tool.clearRange()).toBe(true);
+    expect(s.tool.cellState()?.range).toBeNull();
+    expect(s.tool.clearRange()).toBe(false);
+    expect(s.runs.filter((c) => c.type !== "AddTable")).toEqual([]);
+  });
+
+  it("F14 : Maj+clic : plage de la cellule active au point, élargie à une zone touchée", () => {
+    const { s, id, r, c } = made(3, 3);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[1] ?? "", col: c[1] ?? "" }, to: { row: r[2] ?? "", col: c[2] ?? "" } });
+    s.tool.prune();
+    s.click(...mid(0, 0));
+    s.tool.requestCommit();
+    const n = s.host.opened.length;
+    s.setShift(true);
+    s.click(...mid(1, 1));
+    expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 0, r1: 2, c1: 2 });
+    expect(s.host.opened).toHaveLength(n);
+  });
+
+  it("F14 : appui pendant une saisie ouverte puis glisser : valide seulement, aucune plage", () => {
+    const s = setup();
+    s.create(100, 200, 2, 2);
+    s.type("a");
+    drag(s, mid(0, 0), mid(0, 1));
+    expect(s.last()).toMatchObject({ type: "SetTableCell", content: "a" });
+    expect(s.tool.cellState()?.range).toBeNull();
+  });
+
+  it("F3 : Fusionner : MergeTableCells sur la plage, l'ancre active, plage retirée ; une étape", () => {
+    const { s, id, r, c } = made(3, 2);
+    drag(s, mid(0, 0), mid(0, 1));
+    s.tool.act("merge");
+    expect(s.last()).toEqual({ type: "MergeTableCells", id, from: { row: r[0], col: c[0] }, to: { row: r[0], col: c[1] } });
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, merged: true, range: null });
+    expect(s.table(id).merges).toHaveLength(1);
+    s.doc.undo();
+    expect(s.table(id).merges).toHaveLength(0);
+  });
+
+  it("F4 : Diviser : SplitTableCell sur l'ancre active ; avec une plage : rien", () => {
+    const { s, id, r, c } = made(3, 2);
+    drag(s, mid(0, 0), mid(0, 1));
+    s.tool.act("merge");
+    drag(s, mid(0, 0), mid(1, 2));
+    const n = s.runs.length;
+    s.tool.act("split");
+    expect(s.runs).toHaveLength(n);
+    s.tool.clearRange();
+    s.tool.act("split");
+    expect(s.last()).toEqual({ type: "SplitTableCell", id, row: r[0], col: c[0] });
+    expect(s.table(id).merges).toEqual([]);
+  });
+
+  it("F9, S1 : Ombrer la plage d'une colonne : une SetTableShade, trois cellules ; Retirer l'ombrage : null ; la plage reste (PC19)", () => {
+    const { s, id, r, c } = made(4, 3);
+    drag(s, mid(0, 2), mid(2, 2));
+    expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 2, r1: 2, c1: 2 });
+    s.tool.act("shade");
+    expect(s.last()).toEqual({ type: "SetTableShade", id, from: { row: r[0], col: c[2] }, to: { row: r[2], col: c[2] }, shade: TABLE_SHADE_COLOR });
+    expect(s.table(id).cells.filter((x) => x.shade !== null)).toHaveLength(3);
+    expect(s.tool.cellState()).toMatchObject({ shaded: true, range: { r0: 0, c0: 2, r1: 2, c1: 2 } });
+    s.tool.act("unshade");
+    expect(s.last()).toMatchObject({ type: "SetTableShade", shade: null });
+    expect(s.tool.cellState()?.shaded).toBe(false);
+  });
+
+  it("F15 : pastille sur une plage : SetTableFill avec to", () => {
+    const { s, id, r, c } = made(2, 2);
+    drag(s, mid(0, 0), mid(1, 1));
+    s.tool.fill("#fef08a");
+    expect(s.last()).toEqual({ type: "SetTableFill", id, row: r[0], col: c[0], to: { row: r[1], col: c[1] }, fill: "#fef08a" });
+  });
+
+  it("F5 : + Ligne sur une zone de deux lignes : insérée après sa dernière ligne", () => {
+    const { s, id, r, c } = made(2, 3);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[1] ?? "", col: c[0] ?? "" } });
+    s.click(...mid(1, 0));
+    s.tool.requestCommit();
+    s.tool.act("row-insert");
+    expect(s.last()).toEqual({ type: "InsertTableLine", id, axis: "row", at: 2 });
+  });
+
+  it("F6 : − Ligne sur une plage de deux lignes : une RemoveTableLine avec to ; la ligne suivante devient active", () => {
+    const { s, id, r } = made(2, 4);
+    drag(s, mid(0, 0), mid(1, 0));
+    s.tool.act("row-remove");
+    expect(s.last()).toEqual({ type: "RemoveTableLine", id, axis: "row", line: r[0], to: r[1] });
+    expect(s.tool.cellState()).toMatchObject({ row: 0, rows: 2, range: null });
+    expect(s.table(id).rows.map((x) => x.id)).toEqual([r[2], r[3]]);
+  });
+
+  it("F16, F7 : clic sur une cellule couverte : l'ancre s'ouvre, à la largeur de la zone", () => {
+    const { s, id, r, c } = made(3, 2);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[0] ?? "", col: c[1] ?? "" } });
+    s.tool.prune();
+    s.click(...mid(0, 1));
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, merged: true });
+    expect(s.host.last().boxWidth).toBe(480 - 16);
+    s.type("Lundi et un texte long qui passe à la ligne");
+    s.tool.requestCommit();
+    expect(s.last()).toMatchObject({ type: "SetTableCell", row: r[0], col: c[0], rowHeight: cellHeight("Lundi et un texte long qui passe à la ligne", 36, 480, narrow) });
+  });
+
+  it("F16, S5 : Tab saute les cellules couvertes", () => {
+    const { s, id, r, c } = made(3, 2);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[0] ?? "", col: c[1] ?? "" } });
+    s.click(...mid(0, 0));
+    s.tool.navigate("next");
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 2 });
+  });
+
+  it("prune : coin de plage disparu (colonne retirée) : plage retirée, cellule active gardée", () => {
+    const { s, id, c } = made(3, 2);
+    drag(s, mid(0, 0), mid(0, 2));
+    s.doc.apply({ type: "RemoveTableLine", id, axis: "col", line: c[2] ?? "" });
+    s.tool.prune();
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: null });
   });
 });
