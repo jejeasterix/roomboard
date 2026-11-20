@@ -3,6 +3,7 @@ import type { Change, Command, CoreDocument } from "../../core/api";
 import type { Camera } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
+import type { FormatAction, FormatState } from "../rich-edit";
 import type { CellRef, NavMove, TableAction, TableCellState } from "../table-geom";
 import type { EditOverlay } from "../render/overlay";
 import type { LiveLayer } from "../render/renderer";
@@ -66,6 +67,11 @@ export interface TableTool extends GestureTool {
   compositionStart(): void;
   compositionEnd(): void;
   requestCommit(): void;
+  /** Barre de format (C7b, DAR4) : relayée à la zone si une cellule est ouverte, hors composition (R5). */
+  format(a: FormatAction): void;
+  formatState(): FormatState | null;
+  /** La zone a changé sélection ou format : l'état du moteur est republié (R15). */
+  formatChanged(): void;
 }
 
 export const NO_LIVE: LivePart = { strokes: [], erasers: [], hidden: new Set<string>() };
