@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageData } from "../core/api";
+import type { ImageData, ImageParams } from "../core/api";
 import type { ImageEdit } from "../engine/tools/image-edit";
 import { draftOf, ImagePanel, pixelParams } from "./ImagePanel";
 
@@ -16,7 +16,7 @@ function fakeEdit(pick: string | null = "#ffffff") {
     pick: vi.fn(async () => pick),
     startCrop: vi.fn(() => (mode = "crop")),
     finishCrop: vi.fn(() => ((mode = "idle"), true)),
-    geometry: vi.fn(() => true),
+    geometry: vi.fn((_p: ImageParams) => true),
     commit: vi.fn(() => true),
     restore: vi.fn(() => true),
     mode: () => mode,
