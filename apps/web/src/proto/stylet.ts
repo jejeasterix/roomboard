@@ -10,6 +10,7 @@ import { detectSupport } from "../engine/input/support";
 import { createFrameLoop } from "./frame-loop";
 import { drawPredicted, drawSegments, widthFor } from "./polyline";
 import { createRecorder } from "./recorder";
+import { downloadJson, fmt, watchDpr } from "../app/mesure-outils";
 
 const BASE_WIDTH = 4;
 const INK = "#1a1a1a";
@@ -143,18 +144,6 @@ function redrawInk(): void {
   }
 }
 
-function watchDevicePixelRatio(): void {
-  const query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
-  query.addEventListener(
-    "change",
-    () => {
-      fitCanvases();
-      watchDevicePixelRatio();
-    },
-    { once: true },
-  );
-}
-
 async function setupInkTrail(): Promise<void> {
   presenter = null;
   const nav = navigator as unknown as { ink?: InkLike };
@@ -240,8 +229,6 @@ function report(): BenchReport {
   });
 }
 
-const fmt = (v: number | null | undefined, digits = 1): string =>
-  v === null || v === undefined ? "—" : v.toFixed(digits);
 const yes = (b: boolean): string => (b ? "oui" : "non");
 
 function updatePanel(): void {
@@ -282,14 +269,11 @@ function exportJson(): string {
 
 el<HTMLButtonElement>("btn-telecharger").addEventListener("click", () => {
   const text = exportJson();
-  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `roomboard-stylet-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadJson(text, "roomboard-stylet", new Date(), {
+    document,
+    url: URL,
+    setTimeout: (cb, ms) => window.setTimeout(cb, ms),
+  });
   flash("JSON téléchargé");
 });
 
@@ -343,6 +327,6 @@ for (const input of Object.values(toggles)) {
 
 buildCanvases();
 new ResizeObserver(() => fitCanvases()).observe(stage);
-watchDevicePixelRatio();
+watchDpr(window, fitCanvases);
 buildSampler();
 updatePanel();
