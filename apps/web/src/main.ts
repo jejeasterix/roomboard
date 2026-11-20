@@ -136,7 +136,9 @@ async function start(): Promise<void> {
   // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
   const measureCtx = document.createElement("canvas").getContext("2d");
   const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
-  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf };
+  // Pixels des images (C5, I18, DAI3) : un Worker par onglet, avec sa propre instance du module `formats`.
+  const spawnPixelWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pixel-worker.ts", import.meta.url), { type: "module" }));
+  const shared: SessionShared = { container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker };
 
   const env = { tauri, userAgent: navigator.userAgent };
   const store = createProfileStore(browserKeyValue(window), BUILTIN_PROFILES);
