@@ -2,7 +2,12 @@
  * Module média (C14, M10, M12, M15, M16) : reconnaissance par octets magiques, sonde (durée, taille, poster) et
  * refus des formats MKV et AVI. Aucune conversion, aucun décodeur embarqué : le navigateur lit ou ne lit pas.
  */
-import type { ImportHandler } from "./import";
+import type { AssetRef, MediaType } from "../core/api";
+import type { AssetStore } from "../core/asset-store";
+import { messageOf } from "./controller";
+import type { DroppedFile } from "./files";
+import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
+import type { ImportContext, ImportHandler, ImportOutcome } from "./import";
 
 export type MediaFormat = "mp4" | "mov" | "webm" | "mp3" | "wav" | "ogg" | "m4a";
 export type MediaSniff = { readonly format: MediaFormat; readonly mime: string } | { readonly unsupported: "mkv" | "avi" };
@@ -27,6 +32,9 @@ export const AUDIO_BOX: { readonly w: 480; readonly h: 120 } = Object.freeze({ w
 export const CODEC_UNREADABLE = "codec non lu sur ce poste";
 export const MEDIA_TOO_BIG = "trop lourd pour être inclus (plus de 100 Mo)";
 export const MEDIA_LINKED_NOTE = "vidéo non incluse dans le document (liée, plus de 50 Mo)";
+/** R4 : `linkMedia` a rejeté (`NotGranted`, `NotMedia`, `Io`) ; suivi de la raison. */
+export const MEDIA_NOT_LINKED = "vidéo non liée";
+export const MEDIA_TAB_CLOSED = "onglet fermé pendant l'import, média non inséré";
 export const unsupportedMediaMessage = (kind: "mkv" | "avi"): string =>
   `format ${kind.toUpperCase()} non lu par RoomBoard ; convertissez-le en MP4 ou WebM`;
 
@@ -38,6 +46,9 @@ const ascii = (h: Uint8Array, from: number, to: number): string => {
 const at = (h: Uint8Array, i: number): number => h[i] ?? 0;
 const IMAGE_BRANDS = new Set(["avif", "avis", "heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1", "mif2"]);
 const EBML_SCAN = 64;
+/** R5 (M11) : marques d'image cherchées comme `sniffImage` (image-import.ts:62-67), dans toute la boîte `ftyp` lue
+ *  (majeure, version, compatibles) : ce que l'image revendique, le média le laisse. */
+const IMAGE_BRAND_SCAN = /avi[fs]|hei[cxms]|hev[cx]|mif[12]|msf1/;
 
 const found = (format: MediaFormat): MediaSniff => ({ format, mime: MEDIA_MIME[format] });
 
@@ -60,7 +71,8 @@ export function sniffMedia(head: Uint8Array, name: string): MediaSniff | null {
     const brand = ascii(head, 8, 12);
     if (brand === "qt  ") return found("mov");
     if (brand === "M4A " || brand === "M4B ") return found("m4a");
-    if (IMAGE_BRANDS.has(brand)) return null;
+    const size = ((at(head, 0) << 24) | (at(head, 1) << 16) | (at(head, 2) << 8) | at(head, 3)) >>> 0;
+    if (IMAGE_BRANDS.has(brand) || IMAGE_BRAND_SCAN.test(ascii(head, 8, Math.min(head.length, Math.max(12, size))))) return null;
     return found("mp4");
   }
   if (/^(moov|mdat|wide|free)$/.test(ascii(head, 4, 8)) && name.toLowerCase().endsWith(".mov")) return found("mov");
@@ -225,5 +237,141 @@ export function unsupportedMediaHandler(kind: "mkv" | "avi"): ImportHandler {
     },
     limit: { maxBytes: -1, message: unsupportedMediaMessage(kind) },
     run: async () => "failed",
+  };
+}
+
+export interface MediaHandlerDeps {
+  readonly probe: (url: string) => Promise<MediaProbe>;
+  readonly urls: { create(blob: Blob): string; revoke(url: string): void };
+  linkMedia?(path: string): Promise<LinkedMedia>;
+}
+
+type Supported = Extract<MediaSniff, { readonly format: MediaFormat }>;
+
+function supported(head: Uint8Array, name: string): Supported | null {
+  const s = sniffMedia(head, name);
+  return s !== null && "format" in s ? s : null;
+}
+
+/** PC7 : la cible garde `Pick<AssetStore, "put">` ; le lien n'est posé que si son magasin sait lier. */
+const canLink = (assets: ImageTarget["assets"]): assets is Pick<AssetStore, "put" | "link"> =>
+  "link" in assets && typeof (assets as { link?: unknown }).link === "function";
+
+/** Fin commune des deux branches, sur le patron d'`imageHandler` : poster au magasin, onglet vivant après la dernière
+ *  attente, `AddMedia` en une étape placé par `placement(anchorOf, visibleOf, inserted)`. */
+async function addMedia(
+  file: DroppedFile,
+  sniff: Supported,
+  ctx: Omit<ImportContext, "blob">,
+  target: ImageTarget,
+  probed: MediaProbe,
+  asset: AssetRef,
+  linked: string | null,
+): Promise<ImportOutcome> {
+  const mediaType: MediaType = sniff.mime.startsWith("audio/") ? "audio" : "video";
+  let poster: AssetRef | null = null;
+  if (mediaType === "video" && probed.poster !== null) {
+    const p = probed.poster.type === POSTER_MIME ? probed.poster : new Blob([probed.poster], { type: POSTER_MIME });
+    poster = { id: await target.assets.put(p), name: `${file.name}.jpg`, mime: POSTER_MIME, size: p.size };
+  }
+  // Vérifié après la dernière attente (sonde, `put`), juste avant le premier appel au moteur.
+  if (target.alive?.() === false) {
+    await ctx.notify(`${file.name} : ${MEDIA_TAB_CLOSED}`);
+    return "failed";
+  }
+  const { w, h } = mediaType === "audio" ? AUDIO_BOX : { w: probed.width, h: probed.height };
+  const rect = target.stageRect();
+  const camera = target.camera();
+  const change = target.run({
+    type: "AddMedia",
+    page: target.page(),
+    asset,
+    linked,
+    mediaType,
+    w,
+    h,
+    duration: probed.duration,
+    poster,
+    matrix: placement(w, h, anchorOf(rect, camera, ctx.at), visibleOf(rect, camera), ctx.inserted),
+  });
+  return change === null ? "failed" : "inserted";
+}
+
+/**
+ * Entrée `media` du registre (C14, M13 à M15) : reconnue par ses octets, avant `image` ; 100 Mo au plus inclus (au-delà,
+ * `MEDIA_TOO_BIG` avant toute lecture). Avec `linkMedia` (coque), un fichier qui a un chemin et dépasse 50 Mo passe par
+ * `link` : `importFiles` l'appelle avant le plafond et sans jamais lire le fichier.
+ */
+export function mediaHandler(deps: MediaHandlerDeps): ImportHandler {
+  const linkMedia = deps.linkMedia?.bind(deps);
+  return {
+    id: "media",
+    nature: "objet",
+    detect: (head, name) => supported(head, name) !== null,
+    limit: { maxBytes: MEDIA_PASTE_MAX_BYTES, message: MEDIA_TOO_BIG },
+    ...(linkMedia === undefined
+      ? {}
+      : {
+          link: {
+            aboveBytes: MEDIA_INCLUDE_MAX_BYTES,
+            async run(file: DroppedFile, path: string, ctx: Omit<ImportContext, "blob">): Promise<ImportOutcome> {
+              const sniff = supported(ctx.head, file.name);
+              const target = ctx.target;
+              if (sniff === null || target === null) return "failed";
+              if (!canLink(target.assets)) {
+                await ctx.notify(`${file.name} : ${MEDIA_TOO_BIG}`);
+                return "failed";
+              }
+              try {
+                let linked: LinkedMedia;
+                try {
+                  linked = await linkMedia(path);
+                } catch (e) {
+                  await ctx.notify(`${file.name} : ${MEDIA_NOT_LINKED} : ${messageOf(e)}`);
+                  return "failed";
+                }
+                let probed: MediaProbe;
+                try {
+                  probed = await deps.probe(linked.url);
+                } catch {
+                  await ctx.notify(`${file.name} : ${CODEC_UNREADABLE}`);
+                  return "failed";
+                }
+                target.assets.link(linked.id, path);
+                const asset: AssetRef = { id: linked.id, name: file.name, mime: sniff.mime, size: file.size };
+                const outcome = await addMedia(file, sniff, ctx, target, probed, asset, path);
+                if (outcome === "inserted") await ctx.notify(`${file.name} : ${MEDIA_LINKED_NOTE}`);
+                return outcome;
+              } catch (e) {
+                await ctx.notify(`Import impossible (${file.name}) : ${messageOf(e)}`);
+                return "failed";
+              }
+            },
+          },
+        }),
+    async run(file, ctx) {
+      const sniff = supported(ctx.head, file.name);
+      const target = ctx.target;
+      if (sniff === null || target === null) return "failed";
+      try {
+        // R3 : la coque rend un Blob sans type ; retypé par les octets, comme `imageHandler`.
+        const blob = ctx.blob.type === sniff.mime ? ctx.blob : new Blob([ctx.blob], { type: sniff.mime });
+        const url = deps.urls.create(blob);
+        let probed: MediaProbe;
+        try {
+          probed = await deps.probe(url);
+        } catch {
+          await ctx.notify(`${file.name} : ${CODEC_UNREADABLE}`);
+          return "failed";
+        } finally {
+          deps.urls.revoke(url);
+        }
+        const id = await target.assets.put(blob);
+        return await addMedia(file, sniff, ctx, target, probed, { id, name: file.name, mime: sniff.mime, size: blob.size }, null);
+      } catch (e) {
+        await ctx.notify(`Import impossible (${file.name}) : ${messageOf(e)}`);
+        return "failed";
+      }
+    },
   };
 }

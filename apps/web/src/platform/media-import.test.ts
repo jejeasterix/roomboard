@@ -52,6 +52,12 @@ describe("sniffMedia (C14, M10)", () => {
     expect(sniffMedia(ftyp("M4A "), "a.m4a")).toEqual({ format: "m4a", mime: MEDIA_MIME.m4a });
     expect(MEDIA_MIME.m4a).toBe("audio/mp4");
   });
+  it("R5 : marque d'image dans les compatibles (miaf majeure + heic, isom + avif) : laissé à l'image (M11)", () => {
+    const compat = (major: string, brands: string): Uint8Array => bytes([0, 0, 0, 16 + brands.length], "ftyp", major, [0, 0, 0, 0], brands);
+    expect(sniffMedia(compat("miaf", "miafheic"), "a.heic")).toBeNull();
+    expect(sniffMedia(compat("isom", "isomavif"), "a.avif")).toBeNull();
+    expect(sniffMedia(compat("mp42", "isomiso2avc1mp41"), "a.mp4")).toEqual({ format: "mp4", mime: MEDIA_MIME.mp4 });
+  });
 });
 
 type Ev = "loadedmetadata" | "durationchange" | "seeked" | "error";

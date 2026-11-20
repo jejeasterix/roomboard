@@ -14,6 +14,7 @@ import {
   visibleOf,
   type DecodePorts,
 } from "./image-import";
+import { sniffMedia } from "./media-import";
 
 const bytes = (...parts: Array<readonly number[] | string>): Uint8Array<ArrayBuffer> =>
   new Uint8Array(parts.flatMap((p) => (typeof p === "string" ? [...p].map((c) => c.charCodeAt(0)) : [...p])));
@@ -32,19 +33,21 @@ const jpeg = (w: number, h: number): Uint8Array<ArrayBuffer> =>
   bytes([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10], "JFIF\0", [1, 1, 0, 0, 1, 0, 1, 0, 0],
     [0xff, 0xc0, 0x00, 0x11, 0x08, h >> 8, h & 0xff, w >> 8, w & 0xff, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]);
 
+const IMAGE_CASES: Array<[string, Uint8Array, string]> = [
+  ["png", pngHead(1, 1), "a"],
+  ["jpeg", bytes([0xff, 0xd8, 0xff, 0xe0]), "a"],
+  ["gif", bytes("GIF89a", [1, 0, 1, 0]), "a"],
+  ["webp", bytes("RIFF", [0, 0, 0, 0], "WEBPVP8 "), "a"],
+  ["bmp", bytes("BM", new Array<number>(24).fill(0)), "a"],
+  ["ico", bytes([0, 0, 1, 0, 1, 0, 16, 16]), "a"],
+  ["avif", bytes([0, 0, 0, 0x1c], "ftypavif", [0, 0, 0, 0], "avifmif1"), "a"],
+  ["heic", bytes([0, 0, 0, 0x18], "ftypheic", [0, 0, 0, 0], "mif1heic"), "a"],
+  ["svg", bytes('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>'), "a"],
+  ["svg", bytes([0xef, 0xbb, 0xbf], "  <svg viewBox='0 0 1 1'></svg>"), "dessin"],
+];
+
 describe("sniffImage (R1, R14)", () => {
-  const cases: Array<[string, Uint8Array, string]> = [
-    ["png", pngHead(1, 1), "a"],
-    ["jpeg", bytes([0xff, 0xd8, 0xff, 0xe0]), "a"],
-    ["gif", bytes("GIF89a", [1, 0, 1, 0]), "a"],
-    ["webp", bytes("RIFF", [0, 0, 0, 0], "WEBPVP8 "), "a"],
-    ["bmp", bytes("BM", new Array<number>(24).fill(0)), "a"],
-    ["ico", bytes([0, 0, 1, 0, 1, 0, 16, 16]), "a"],
-    ["avif", bytes([0, 0, 0, 0x1c], "ftypavif", [0, 0, 0, 0], "avifmif1"), "a"],
-    ["heic", bytes([0, 0, 0, 0x18], "ftypheic", [0, 0, 0, 0], "mif1heic"), "a"],
-    ["svg", bytes('<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>'), "a"],
-    ["svg", bytes([0xef, 0xbb, 0xbf], "  <svg viewBox='0 0 1 1'></svg>"), "dessin"],
-  ];
+  const cases = IMAGE_CASES;
   for (const [kind, head, name] of cases) it(`${kind} reconnu par ses octets`, () => expect(sniffImage(head, name)).toBe(kind));
 
   it("SVG : seulement si le texte commence par <svg (après prologue, commentaires, DOCTYPE)", () => {
@@ -193,5 +196,49 @@ describe("imageHandler : onglet fermé pendant put (garde après l'écriture au 
     expect(target.assets.put).toHaveBeenCalledTimes(1);
     expect(calls).toEqual([]);
     expect(notify).toHaveBeenCalledWith(`a.png : ${TAB_CLOSED_MESSAGE}`);
+  });
+});
+
+describe("image et média départagés (C14, M11, R5)", () => {
+  // En-têtes de la table `sniffMedia` (media-import.test.ts), avec les mêmes fabriques.
+  const ftyp = (brand: string): Uint8Array => bytes([0, 0, 0, 24], "ftyp", brand, [0, 0, 0, 0], "isomiso2");
+  const atom = (name: string): Uint8Array => bytes([0, 0, 0, 40], name, new Array<number>(32).fill(0));
+  const ebml = (doctype: string): Uint8Array =>
+    bytes([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81, 0x01, 0x42, 0x82, 0x80 | doctype.length], doctype, [0x42, 0x87, 0x81, 0x04]);
+  const riff = (kind: string): Uint8Array => bytes("RIFF", [0x24, 0, 0, 0], kind, new Array<number>(16).fill(0));
+  /** R5 : majeure neutre, marque d'image dans les compatibles seulement. */
+  const MIAF_HEIC = bytes([0, 0, 0, 0x18], "ftypmiaf", [0, 0, 0, 0], "miafheic");
+  const MEDIA_HEADS: Array<[string, Uint8Array, string]> = [
+    ["mp4 isom", ftyp("isom"), "a.mp4"],
+    ["mov qt", ftyp("qt  "), "a.mov"],
+    ["m4a", ftyp("M4A "), "a.m4a"],
+    ["HEIC", ftyp("heic"), "a.heic"],
+    ["AVIF", ftyp("avif"), "a.avif"],
+    ["atome moov + .mov", atom("moov"), "a.mov"],
+    ["moov sans .mov", atom("moov"), "a.bin"],
+    ["webm", ebml("webm"), "a.webm"],
+    ["mkv", ebml("matroska"), "a.mkv"],
+    ["wav", riff("WAVE"), "a.wav"],
+    ["avi", riff("AVI "), "a.avi"],
+    ["WEBP", riff("WEBP"), "a.webp"],
+    ["OggS", bytes("OggS", new Array<number>(20).fill(0)), "a.ogg"],
+    ["ID3", bytes("ID3", [3, 0, 0], new Array<number>(20).fill(0)), "a.mp3"],
+    ["synchro FF FB", bytes([0xff, 0xfb, 0x90, 0x44], new Array<number>(20).fill(0)), "a.mp3"],
+    ["JPEG", bytes([0xff, 0xd8, 0xff, 0xe0], new Array<number>(20).fill(0)), "a.jpg"],
+    ["PNG", bytes([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], new Array<number>(20).fill(0)), "a.png"],
+    ["vide", new Uint8Array(0), "a.mp4"],
+    ["miaf majeure + heic compatible", MIAF_HEIC, "a.heic"],
+  ];
+
+  it("sniffImage et sniffMedia ne revendiquent jamais le même en-tête (M11)", () => {
+    const heads = [...IMAGE_CASES.map(([k, h, n]): [string, Uint8Array, string] => [`image ${k}`, h, n]), ...MEDIA_HEADS];
+    expect(heads).toHaveLength(IMAGE_CASES.length + 19);
+    for (const [label, head, name] of heads) {
+      const claimed = [sniffImage(head, name) !== null ? "image" : null, sniffMedia(head, name) !== null ? "média" : null];
+      expect(claimed.filter((c) => c !== null).length, label).toBeLessThanOrEqual(1);
+    }
+    // Chaque image de sa table reste à l'image ; le cas R5 aussi.
+    for (const [kind, head, name] of IMAGE_CASES) expect(sniffMedia(head, name), kind).toBeNull();
+    expect([sniffImage(MIAF_HEIC, "a.heic"), sniffMedia(MIAF_HEIC, "a.heic")]).toEqual(["heic", null]);
   });
 });

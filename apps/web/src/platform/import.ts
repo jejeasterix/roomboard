@@ -5,12 +5,14 @@
  * Non reconnu : refusé avec `LATER_FORMAT_MESSAGE`. Hôtes web : 100 Mo au plus par fichier, contrôlé avant lecture (R15).
  * C12 (PF2, PF3) : `pdf` (document, reconnu par `%PDF-` dans le premier Kio) ouvre un nouvel onglet par `openPdf`.
  * C10b (F28) : `sheet` (objet, `.xlsx`/`.xlsm` et en-tête ZIP) lit la première feuille dans un Worker jetable et pose un tableau.
+ * C14 (M10 à M15) : `media` (objet, reconnu par ses octets, avant `image`) ; MKV et AVI refusés avant lecture ; dans la
+ * coque, un média qui a un chemin et dépasse 50 Mo est lié (`link`), sans lecture ni plafond.
  */
 import { messageOf } from "./controller";
 import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
-import type { LinkedMedia, MediaProbe } from "./media-import";
+import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 
@@ -30,7 +32,13 @@ export interface ImportReport {
 
 export interface ImportDeps {
   /** Ouvre le document dans un nouvel onglet (T93) ; false si illisible (le message est déjà dit). */
-  openDocument(file: { readonly name: string; readonly bytes: Uint8Array; readonly target: SaveTarget | null }): Promise<boolean>;
+  /** C14 (R1) : `path`, chemin du fichier déposé ou passé au lancement (null : collage, web), pour les liens relatifs. */
+  openDocument(file: {
+    readonly name: string;
+    readonly bytes: Uint8Array;
+    readonly target: SaveTarget | null;
+    readonly path?: string | null;
+  }): Promise<boolean>;
   notify(message: string): Promise<void>;
   /** Vrai quand plus aucun onglet ne peut s'ouvrir : un refus de `openDocument` arrête alors les documents suivants. */
   full?(): boolean;
@@ -49,6 +57,8 @@ export interface ImportDeps {
   readonly probe?: (url: string) => Promise<MediaProbe>;
   /** C14 : lie un fichier de la coque sans le copier (T8, T10). */
   linkMedia?(path: string): Promise<LinkedMedia>;
+  /** URL `blob:` de la sonde (tests) ; défaut : `URL.createObjectURL` / `URL.revokeObjectURL`. */
+  readonly mediaUrls?: MediaHandlerDeps["urls"];
 }
 
 export interface Importer {
@@ -77,6 +87,12 @@ export interface ImportHandler {
   /** Plafond propre au gestionnaire (F22), contrôlé par `importFiles` sur `f.size` **avant** `f.blob()` (la coque lit
    *  le fichier en entier) : dépassé, « <nom> : <message> », compté en échec. */
   readonly limit?: { readonly maxBytes: number; readonly message: string };
+  /** C14 (PC4, M14) : fichier qui a un chemin (coque) et dépasse `aboveBytes` : `run` lie le fichier sans le lire ;
+   *  appelé par `importFiles` avant `limit` et sans `f.blob()`. Dit lui-même ses messages. */
+  readonly link?: {
+    readonly aboveBytes: number;
+    run(file: DroppedFile, path: string, ctx: Omit<ImportContext, "blob">): Promise<ImportOutcome>;
+  };
   /** Dit lui-même ses messages d'échec. */
   run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
 }
@@ -103,7 +119,7 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
         await ctx.notify(`Ouverture impossible (${f.name}) : ${messageOf(e)}`);
         return "failed";
       }
-      return (await deps.openDocument({ name: f.name, bytes, target: null })) ? "opened" : "failed";
+      return (await deps.openDocument({ name: f.name, bytes, target: null, path: f.path ?? null })) ? "opened" : "failed";
     },
   };
 }
@@ -201,10 +217,20 @@ const EMPTY = new Uint8Array(0);
 export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
   const openPdf = deps.openPdf?.bind(deps);
+  const linkMedia = deps.linkMedia?.bind(deps);
+  const media: MediaHandlerDeps = {
+    probe: deps.probe ?? ((url) => probeMedia(url)),
+    urls: deps.mediaUrls ?? { create: (b) => URL.createObjectURL(b), revoke: (u) => URL.revokeObjectURL(u) },
+    ...(linkMedia ? { linkMedia } : {}),
+  };
+  // C14 (M11) : `media` avant `image` ; `sniffMedia` laisse à l'image tout en-tête que `sniffImage` revendique.
   const registry: readonly ImportHandler[] = [
     roomboardHandler(deps),
     rbitemHandler(),
     ...(openPdf ? [pdfHandler({ openPdf })] : []),
+    mediaHandler(media),
+    unsupportedMediaHandler("mkv"),
+    unsupportedMediaHandler("avi"),
     imageHandler(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? [sheetHandler({ readSheet })] : []),
   ];
@@ -251,20 +277,27 @@ export function createImporter(deps: ImportDeps): Importer {
           failed.push(f.name);
           continue;
         }
-        // F22 : plafond du gestionnaire avant toute lecture du fichier (un `.xlsx` de 2 Go n'est jamais lu).
-        if (handler.limit !== undefined && f.size > handler.limit.maxBytes) {
-          failed.push(f.name);
-          await deps.notify(`${f.name} : ${handler.limit.message}`);
-          continue;
+        let outcome: ImportOutcome;
+        const link = handler.link;
+        if (link !== undefined && f.path !== undefined && f.path !== "" && f.size > link.aboveBytes) {
+          // C14 (PC4, M14) : lié avant le plafond et sans `f.blob()` ; la coque lirait 2 Go en entier.
+          outcome = await link.run(f, f.path, { head, at, inserted: inserted.length, target, notify: deps.notify });
+        } else {
+          // F22 : plafond du gestionnaire avant toute lecture du fichier (un `.xlsx` de 2 Go n'est jamais lu).
+          if (handler.limit !== undefined && f.size > handler.limit.maxBytes) {
+            failed.push(f.name);
+            await deps.notify(`${f.name} : ${handler.limit.message}`);
+            continue;
+          }
+          let blob: Blob;
+          try {
+            blob = await f.blob();
+          } catch (e) {
+            await fail(e);
+            continue;
+          }
+          outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify });
         }
-        let blob: Blob;
-        try {
-          blob = await f.blob();
-        } catch (e) {
-          await fail(e);
-          continue;
-        }
-        const outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify });
         if (outcome === "opened") opened.push(f.name);
         else if (outcome === "inserted") inserted.push(f.name);
         else {
