@@ -1,5 +1,5 @@
 /** Rendu derrière une interface (DA2, D19) : Canvas 2D au socle ; WebGL2 pourra remplacer l'implémentation (DA9). */
-import type { Change, CoreDocument, EraseMode, GridView } from "../../core/api";
+import type { BackdropView, Change, CoreDocument, EraseMode, GridView } from "../../core/api";
 import type { Camera } from "../camera";
 import type { EditOverlay } from "./overlay";
 
@@ -8,6 +8,21 @@ export interface PageView {
   readonly elementIds: readonly string[];
   /** Fond de la page (C6a, DA4) ; absent : `PAGE_BACKGROUND`. */
   readonly background?: string;
+  /** C12 (PF14) : fond de la page, lu par le moteur dans `doc.page(id)` ; absent ou null : aucun fond. */
+  readonly backdrop?: BackdropView | null;
+}
+
+/** C12 (PF15) : état du fond après une scène — "" sans fond, `attente`, `pret`, `echec` (`#stage[data-fond]`). */
+export type BackdropState = "" | "attente" | "pret" | "echec";
+
+/** C12 (DAPF2) : peintre du fond `pdf-page` (cache de tuiles `pdf-tiles.ts`), appelé dans la scène, sans attente. */
+export interface BackdropPainter {
+  paint(
+    ctx: CanvasRenderingContext2D,
+    backdrop: BackdropView,
+    camera: Camera,
+    view: { readonly w: number; readonly h: number; readonly dpr: number },
+  ): Exclude<BackdropState, "">;
 }
 
 /** Trait en cours : contour du StrokeBuilder (polygones x, y monde séparés par NaN, NaN) et queue prédite. */

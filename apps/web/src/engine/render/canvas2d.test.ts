@@ -5,12 +5,12 @@ import { fakeCore } from "../../core/fake-core";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { Canvas2DRenderer, createCanvas2DRenderer, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { BACKDROP_PLACEHOLDER, BACKDROP_UNREADABLE_LABEL, Canvas2DRenderer, createCanvas2DRenderer, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
 import { EMPTY_OVERLAY } from "./overlay";
-import type { SceneSource } from "./renderer";
+import type { BackdropPainter, BackdropState, SceneSource } from "./renderer";
 
 class FakePath {
   moves = 0;
@@ -810,5 +810,150 @@ describe("Canvas2DRenderer — fond de page (C6a)", () => {
     r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
     expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${SURROUND_COLOR}`, `fillRect ${PAGE_BACKGROUND}`]);
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
+  });
+});
+
+describe("Canvas2DRenderer — fond de page (C12)", () => {
+  const PDF = { id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 };
+  const PNG = { id: "cd".repeat(32), name: "a.png", mime: "image/png", size: 3 };
+  const pdfDoc = (): CoreDocument => fakeCore.fromPdfPages(PDF, [{ w: 612, h: 792 }]);
+  const pageOf = (doc: CoreDocument, ids: string[] = []) => {
+    const id = doc.pageIds()[0] ?? "";
+    return { id, elementIds: ids, backdrop: doc.page(id)?.backdrop ?? null };
+  };
+  const painter = (state: "attente" | "pret" | "echec", calls: unknown[][] = []): BackdropPainter => ({
+    paint: (ctx, b, camera, view) => {
+      (ctx as unknown as FakeCtx).log.push("peintre");
+      calls.push([b.kind, b.page, camera, view]);
+      return state;
+    },
+  });
+
+  it("fond pdf-page : placeholder sur rect, puis le peintre ; sous la grille et les éléments (PF14, G11)", () => {
+    const doc = pdfDoc();
+    const p = doc.pageIds()[0] ?? "";
+    const id = doc.apply({ type: "AddShape", page: p, shape: "rect", x0: 100, y0: 100, x1: 200, y1: 200, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "SetGrid", page: p, grid: gridOf([gridLevel("squares", 40, "#7b68ee")]) });
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, doc, { makePath: () => new FakePath() as unknown as Path2D, backdrop: painter("pret") });
+    r.resize(800, 600, 1);
+    r.drawScene(pageOf(doc, [id]), IDENTITY, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect") || l.startsWith("stroke") || l === "peintre")).toEqual([
+      `fillRect ${SURROUND_COLOR}`,
+      `fillRect ${PAGE_BACKGROUND}`,
+      `fillRect ${BACKDROP_PLACEHOLDER}`,
+      "peintre",
+      "stroke #7b68ee 1",
+      "stroke #000000 4",
+    ]);
+    expect(scene.rects[2]).toEqual([0, 0, 1920, (792 * 1920) / 612]);
+  });
+
+  it("le peintre reçoit le fond, la caméra et la vue (largeur et hauteur CSS, dpr) (PF13)", () => {
+    const doc = pdfDoc();
+    const calls: unknown[][] = [];
+    const r = new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { backdrop: painter("attente", calls) });
+    r.resize(800, 600, 2);
+    const cam = { zoom: 0.5, tx: 10, ty: 20 };
+    r.drawScene(pageOf(doc), cam, new Set());
+    expect(calls).toEqual([["pdf-page", 0, cam, { w: 800, h: 600, dpr: 2 }]]);
+  });
+
+  it("onBackdrop : état du peintre après chaque scène ; page sans fond : chaîne vide (PF15)", () => {
+    const states: BackdropState[] = [];
+    const doc = pdfDoc();
+    const r = new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { backdrop: painter("attente"), onBackdrop: (s) => void states.push(s) });
+    r.resize(800, 600, 1);
+    r.drawScene(pageOf(doc), IDENTITY, new Set());
+    r.drawScene({ id: "x", elementIds: [] }, IDENTITY, new Set());
+    r.drawScene({ id: "x", elementIds: [], backdrop: null }, IDENTITY, new Set());
+    expect(states).toEqual(["attente", "", ""]);
+  });
+
+  it("fond pdf-page en échec (sans peintre, ou peintre en échec) : placeholder et libellé « page PDF illisible » (Review Focus 5)", () => {
+    for (const backdrop of [undefined, painter("echec")]) {
+      const doc = pdfDoc();
+      const scene = new FakeCtx();
+      const states: BackdropState[] = [];
+      const r = new Canvas2DRenderer(asCtx(scene), null, doc, { ...(backdrop ? { backdrop } : {}), onBackdrop: (s) => void states.push(s) });
+      r.resize(800, 600, 1);
+      r.drawScene(pageOf(doc), IDENTITY, new Set());
+      expect(scene.texts.map((t) => t.text)).toContain(BACKDROP_UNREADABLE_LABEL);
+      expect(states).toEqual(["echec"]);
+    }
+    expect(BACKDROP_UNREADABLE_LABEL).toBe("page PDF illisible");
+  });
+
+  it("fond image : bitmap étiré sur rect, avant la grille ; non décodé : placeholder seul, attente (effet de bord C12)", () => {
+    const doc = fakeCore.blank();
+    const p = doc.pageIds()[0] ?? "";
+    doc.apply({ type: "SetBackdrop", page: p, backdrop: { asset: PNG, w: 1000, h: 500, fit: "width" } });
+    const bmp = { width: 1000, height: 500 } as unknown as CanvasImageSource;
+    const states: BackdropState[] = [];
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, doc, { images: { bitmap: (a) => (a === PNG.id ? bmp : null) }, onBackdrop: (s) => void states.push(s) });
+    r.resize(800, 600, 1);
+    r.drawScene(pageOf(doc), IDENTITY, new Set());
+    expect(scene.images).toEqual([{ img: bmp, x: 0, y: 0, w: 1920, h: 960 }]);
+    const blind = new FakeCtx();
+    const r2 = new Canvas2DRenderer(asCtx(blind), null, doc, { images: { bitmap: () => null }, onBackdrop: (s) => void states.push(s) });
+    r2.resize(800, 600, 1);
+    r2.drawScene(pageOf(doc), IDENTITY, new Set());
+    expect(blind.images).toEqual([]);
+    expect(blind.log).toContain(`fillRect ${BACKDROP_PLACEHOLDER}`);
+    expect(states).toEqual(["pret", "attente"]);
+  });
+
+  it("fond sans rect (w ou h illisibles) : rien dessiné, echec ; genre inconnu (version plus récente) : placeholder seul, état vide", () => {
+    const states: BackdropState[] = [];
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, fakeCore.blank(), { backdrop: painter("pret"), onBackdrop: (s) => void states.push(s) });
+    r.resize(800, 600, 1);
+    const base = { asset: PDF.id, page: 0, w: 612, h: 792, fit: "width" };
+    r.drawScene({ id: "p", elementIds: [], backdrop: { ...base, kind: "pdf-page", rect: null } }, IDENTITY, new Set());
+    r.drawScene({ id: "p", elementIds: [], backdrop: { ...base, kind: "video", rect: { x0: 0, y0: 0, x1: 1920, y1: 2000 } } }, IDENTITY, new Set());
+    expect(states).toEqual(["echec", ""]);
+    expect(scene.log.filter((l) => l === `fillRect ${BACKDROP_PLACEHOLDER}`)).toHaveLength(1);
+    expect(scene.log).not.toContain("peintre");
+  });
+});
+
+describe("Canvas2DRenderer — paintContent (C12)", () => {
+  const shapeDoc = () => {
+    const doc = fakeCore.blank();
+    const p = doc.pageIds()[0] ?? "";
+    const id = doc.apply({ type: "AddShape", page: p, shape: "rect", x0: 100, y0: 100, x1: 200, y1: 200, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    return { doc, p, id };
+  };
+
+  it("rect projeté à l'échelle et découpé ; éléments dessinés ; ni pourtour, ni fond blanc, ni fond de page (PF21)", () => {
+    const { doc, p, id } = shapeDoc();
+    const calls: unknown[] = [];
+    const r = new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { makePath: () => new FakePath() as unknown as Path2D, backdrop: { paint: () => (calls.push(1), "pret") } });
+    const out = new FakeCtx();
+    r.paintContent(asCtx(out), { id: p, elementIds: [id], backdrop: null }, { x0: 0, y0: 0, x1: 1920, y1: 2715 }, 0.5);
+    expect(out.log.slice(0, 5)).toEqual(["save", "setTransform 0.5,0,0,0.5,0,0", "beginPath", "rect", "clip"]);
+    expect(out.log.at(-1)).toBe("restore");
+    expect(out.log).toContain("stroke #000000 4");
+    expect(out.log.filter((l) => l.startsWith("fillRect"))).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("rect décalé : translation de -x0 × scale, -y0 × scale", () => {
+    const { doc, p, id } = shapeDoc();
+    const out = new FakeCtx();
+    new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { makePath: () => new FakePath() as unknown as Path2D }).paintContent(asCtx(out), { id: p, elementIds: [id] }, { x0: 100, y0: 50, x1: 300, y1: 250 }, 2);
+    expect(out.log[1]).toBe("setTransform 2,0,0,2,-200,-100");
+  });
+
+  it("grille de la page : sous les éléments, sur eux si above (G11)", () => {
+    for (const above of [false, true]) {
+      const { doc, p, id } = shapeDoc();
+      doc.apply({ type: "SetGrid", page: p, grid: gridOf([gridLevel("squares", 40, "#7b68ee")], above) });
+      const out = new FakeCtx();
+      new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { makePath: () => new FakePath() as unknown as Path2D }).paintContent(asCtx(out), { id: p, elementIds: [id] }, { x0: 0, y0: 0, x1: 1920, y1: 1080 }, 1);
+      const strokes = out.log.filter((l) => l.startsWith("stroke"));
+      expect(strokes, String(above)).toEqual(above ? ["stroke #000000 4", "stroke #7b68ee 1"] : ["stroke #7b68ee 1", "stroke #000000 4"]);
+    }
   });
 });
