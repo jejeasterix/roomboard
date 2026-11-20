@@ -64,7 +64,7 @@ describe("FileHost : onDrop (T86)", () => {
   it("filtre « Importer » : .roomboard puis les images d'U33, sans TIFF ni RAW (R14, R18)", () => {
     expect(IMPORT_FILTER).toEqual({
       name: "Images et documents RoomBoard",
-      extensions: ["roomboard", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"],
+      extensions: ["roomboard", "rbitem", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"],
     });
   });
 });

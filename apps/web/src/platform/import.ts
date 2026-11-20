@@ -1,11 +1,11 @@
 /**
  * Entrée unique des fichiers (U23, R1) : dépôt web, dépôt dans la coque, collage, « Importer » et fichier passé au
  * lancement passent par `importFiles`. Registre par nature : `roomboard` (document, reconnu par l'extension) ouvre un
- * nouvel onglet (R2) ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
+ * nouvel onglet (R2) ; `rbitem` (objet, nom + en-tête ZIP) s'insère comme une image ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
  * Non reconnu : refusé avec `LATER_FORMAT_MESSAGE`. Hôtes web : 100 Mo au plus par fichier, contrôlé avant lecture (R15).
  */
 import { messageOf } from "./controller";
-import { ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
@@ -85,10 +85,40 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
   };
 }
 
+/** En-tête d'un ZIP (`PK\x03\x04`) : un `.rbitem` est un ZIP, reconnu par son nom ET cet en-tête (Z10). */
+export const ZIP_MAGIC: Uint8Array = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+
+export function isRbitemName(name: string): boolean {
+  return name.toLowerCase().endsWith(RBITEM_EXTENSION) && name.length > RBITEM_EXTENSION.length;
+}
+
+/** Entrée `rbitem` (objet, Z10) : remis à l'onglet lu au début de l'appel (R3), au rang de cascade de l'appel. */
+export function rbitemHandler(): ImportHandler {
+  return {
+    id: "rbitem",
+    nature: "objet",
+    detect: (head, name) => isRbitemName(name) && head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b),
+    async run(f, ctx) {
+      const insert = ctx.target?.insertFragment?.bind(ctx.target);
+      if (insert === undefined) {
+        await ctx.notify(`Import impossible (${f.name}) : aucun onglet ne peut recevoir cet objet`);
+        return "failed";
+      }
+      try {
+        const bytes = new Uint8Array(await ctx.blob.arrayBuffer());
+        return (await insert(bytes, ctx.at, ctx.inserted)) ? "inserted" : "failed";
+      } catch (e) {
+        await ctx.notify(`Import impossible (${f.name}) : ${messageOf(e)}`);
+        return "failed";
+      }
+    },
+  };
+}
+
 const EMPTY = new Uint8Array(0);
 
 export function createImporter(deps: ImportDeps): Importer {
-  const registry: readonly ImportHandler[] = [roomboardHandler(deps), imageHandler(deps.decode ? { decode: deps.decode } : {})];
+  const registry: readonly ImportHandler[] = [roomboardHandler(deps), rbitemHandler(), imageHandler(deps.decode ? { decode: deps.decode } : {})];
   return {
     async importFiles(files, at = null) {
       const opened: string[] = [];

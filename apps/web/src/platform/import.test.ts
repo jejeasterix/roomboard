@@ -4,7 +4,7 @@ import type { Command } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { IDENTITY } from "../engine/camera";
 import type { ImageTarget } from "./image-import";
-import { createImporter, isRoomboardName, LATER_FORMAT_MESSAGE, WEB_MAX_BYTES } from "./import";
+import { createImporter, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, WEB_MAX_BYTES, ZIP_MAGIC } from "./import";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
   name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
@@ -248,5 +248,80 @@ describe("en-tête seul avant refus (OD56, T14, DAC5)", () => {
     expect(r.failed).toEqual(["x.png"]);
     expect(r.refused).toEqual(["b.txt"]);
     expect(notify.mock.calls[0]![0]).toContain("Import impossible (x.png) : disque");
+  });
+});
+
+describe("import d'un objet .rbitem (Z10)", () => {
+  const zip = new Uint8Array([0x50, 0x4b, 3, 4, 9, 9]);
+  const deps = (t: ImageTarget | null, extra: Partial<Parameters<typeof createImporter>[0]> = {}) => ({
+    openDocument: vi.fn(async () => true), notify: vi.fn(async (_m: string) => undefined), target: () => t, ...extra,
+  });
+  const targetWith = (calls: Array<[Uint8Array, unknown, number]>, ok = true): ImageTarget => ({
+    ...fakeTarget().target,
+    insertFragment: async (b, at, i) => (calls.push([b, at, i]), ok),
+  });
+
+  it("reconnu par le nom ET l'en-tête ZIP : isRbitemName, ZIP_MAGIC", () => {
+    expect(isRbitemName("a.rbitem")).toBe(true);
+    expect(isRbitemName("A.RBITEM")).toBe(true);
+    expect(isRbitemName(".rbitem")).toBe(false);
+    expect(isRbitemName("a.png")).toBe(false);
+    expect(Array.from(ZIP_MAGIC)).toEqual([0x50, 0x4b, 3, 4]);
+  });
+
+  it("un .rbitem est remis à la cible avec le point de dépôt, sans ouvrir d'onglet", async () => {
+    const calls: Array<[Uint8Array, unknown, number]> = [];
+    const d = deps(targetWith(calls));
+    const r = await createImporter(d).importFiles([file("o.rbitem", zip)], { x: 5, y: 6 });
+    expect(r).toEqual({ opened: [], inserted: ["o.rbitem"], refused: [], failed: [] });
+    expect(calls).toEqual([[zip, { x: 5, y: 6 }, 0]]);
+    expect(d.openDocument).not.toHaveBeenCalled();
+  });
+
+  it("nom en .rbitem sans en-tête ZIP : refusé, jamais lu en entier", async () => {
+    const calls: Array<[Uint8Array, unknown, number]> = [];
+    const blob = vi.fn(async () => new Blob([new Uint8Array([1])]));
+    const f: DroppedFile = { name: "x.rbitem", size: 4, mime: "", head: async () => new Uint8Array([1, 2, 3, 4]), blob };
+    const r = await createImporter(deps(targetWith(calls))).importFiles([f]);
+    expect(r.refused).toEqual(["x.rbitem"]);
+    expect(blob).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it("en-tête ZIP sans l'extension : refusé (un .zip n'est pas un objet)", async () => {
+    const r = await createImporter(deps(targetWith([]))).importFiles([file("o.zip", zip)]);
+    expect(r.refused).toEqual(["o.zip"]);
+  });
+
+  it("R3 : a.roomboard puis b.rbitem, b va dans l'onglet d'origine lu au début", async () => {
+    const calls: Array<[Uint8Array, unknown, number]> = [];
+    const origin = targetWith(calls);
+    let active: ImageTarget = origin;
+    const target = vi.fn(() => active);
+    const d = { ...deps(origin), target, openDocument: vi.fn(async () => ((active = fakeTarget().target), true)) };
+    const r = await createImporter(d).importFiles([file("a.roomboard", new Uint8Array([1])), file("b.rbitem", zip)]);
+    expect(r).toEqual({ opened: ["a.roomboard"], inserted: ["b.rbitem"], refused: [], failed: [] });
+    expect(target).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("plusieurs .rbitem : l'indice de cascade croît comme pour les images", async () => {
+    const calls: Array<[Uint8Array, unknown, number]> = [];
+    await createImporter(deps(targetWith(calls))).importFiles([file("a.rbitem", zip), file("b.rbitem", zip), file("c.rbitem", zip)]);
+    expect(calls.map((c) => c[2])).toEqual([0, 1, 2]);
+  });
+
+  it("sans onglet ou sans insertFragment : échec signalé, rien n'est inséré", async () => {
+    for (const t of [null, fakeTarget().target]) {
+      const d = deps(t);
+      const r = await createImporter(d).importFiles([file("o.rbitem", zip)]);
+      expect(r.failed).toEqual(["o.rbitem"]);
+      expect(d.notify).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("insertion refusée par la cible : failed", async () => {
+    const r = await createImporter(deps(targetWith([], false))).importFiles([file("o.rbitem", zip)]);
+    expect(r).toEqual({ opened: [], inserted: [], refused: [], failed: ["o.rbitem"] });
   });
 });
