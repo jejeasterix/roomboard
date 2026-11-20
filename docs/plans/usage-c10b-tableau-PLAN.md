@@ -4746,3 +4746,3189 @@ git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com 
 
   Rapport : N, noms vus, sortie `tsc`, une ligne `Réutilisation :` par ligne `Réutilise :`.
 
+<a id="tache-t7"></a>
+
+### Tâche T7 — Liaison Wasm des commandes C10b, contrat sur le vrai module
+
+**Objectif.** Exposer au module Wasm principal les commandes C10b de T1 et T2 sur le patron `set_table_fill` /
+`*_inner` (C10a), brancher les cas d'`apply` de `wasm-core.ts` que T4 a posés en levée, jouer le contrat C10b sur les
+deux fabriques et relire la fixture `tableau-fusion-ombrage.roomboard` par le vrai module (S3, F30). Relever la taille
+du module principal (plafond H2-13 inchangé).
+
+**Fichiers.**
+- Modifier : `crates/roomboard-wasm/src/lib.rs:472-512` (méthodes exposées), `:917-956` (`*_inner`), module `tests`
+- Modifier : `apps/web/src/core/wasm-core.ts` (`apply`, cas posés par T4)
+- Modifier : `apps/web/src/core/wasm-core.contract.test.ts` (`c10bFactories`, bloc « vrai module seulement »)
+
+**Interfaces.**
+- Consomme (T1, T2) : `Command::{ImportTable, MergeTableCells, SplitTableCell, SetTableShade}`, `RemoveTableLine.to`,
+  `SetTableFill.to`, `CommandError::BadTable` ; (T4) les variantes TS, `toU32`, `toChange`, `c10bFactories`, `c10bIds`,
+  `c10bAt`, `tableOf`, `first`.
+- Produit (méthodes wasm-bindgen de `Document`, lues par `wasm-core.ts`) :
+
+```rust
+pub fn remove_table_line(&mut self, id: &str, row: bool, line: &str, to: Option<String>) -> Result<JsValue, JsError>;
+pub fn set_table_fill(&mut self, id: &str, row: &str, col: &str, fill: Option<String>, to_row: Option<String>, to_col: Option<String>) -> Result<JsValue, JsError>;
+pub fn merge_table_cells(&mut self, id: &str, from_row: &str, from_col: &str, to_row: &str, to_col: &str) -> Result<JsValue, JsError>;
+pub fn split_table_cell(&mut self, id: &str, row: &str, col: &str) -> Result<JsValue, JsError>;
+pub fn set_table_shade(&mut self, id: &str, from_row: &str, from_col: &str, to_row: &str, to_col: &str, shade: Option<String>) -> Result<JsValue, JsError>;
+#[allow(clippy::too_many_arguments)]
+pub fn import_table(&mut self, page: &str, matrix: &[f64], col_width: f64, row_heights: &[f64], cols: u32, cells: Vec<String>, merges: &[u32], color: &str, size: f64) -> Result<JsValue, JsError>;
+// natifs : remove_table_line_inner(id, row: bool, line, to: Option<String>), set_table_fill_inner(id, cell: [&str; 2], to: Option<[&str; 2]>, fill),
+// merge_table_cells_inner(id, from: [&str; 2], to: [&str; 2]), split_table_cell_inner(id, cell: [&str; 2]),
+// set_table_shade_inner(id, from: [&str; 2], to: [&str; 2], shade: Option<String>),
+// import_table_inner(page, matrix: &[f64], col_width, row_heights: &[f64], cols, cells: Vec<String>, merges: &[u32], color, size) -> Result<Change, CommandError>
+```
+
+- Réutilise : `crates/roomboard-wasm/src/lib.rs:422-510` — patron `set_table_fill` / `set_table_fill_inner`, `run`,
+  `cmd_err`, `to_js`, `table_axis` (`:97`) étendus aux six appels.
+- Réutilise : `apps/web/src/core/wasm-core.ts:110` (`toTable`, de T4), `:107` (`toU32`), `toChange` — un rang ou une
+  dimension hors des u32 arrive comme u32::MAX, refusé en `BadTable` comme par la fausse liaison.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+cargo test -p roomboard-wasm table 2>&1 | grep -E "test result|FAILED|error\[|table" | tail -20 && \
+cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release 2>&1 | tail -1 && rm -rf apps/web/src/wasm && \
+wasm-bindgen --target web --remove-name-section --out-dir apps/web/src/wasm target/wasm32-unknown-unknown/release/roomboard_wasm.wasm && \
+ROOMBOARD_WASM_REQUIRED=1 pnpm --filter @roomboard/web exec vitest run src/core --reporter=verbose 2>&1 | grep -E "C10b|×|FAIL|Test Files|Tests " | tail -60 && \
+wc -c apps/web/src/wasm/roomboard_wasm_bg.wasm && pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep "error TS" | sed 's/(.*//' | sort | uniq -c
+```
+
+Attendu : `cargo` 5 tests `table` `ok` (les 3 de C10a et `c10b_table_commands_inner`, `import_table_inner_reads_flat_merges`) ;
+`vitest` sans `×` : 9 `✓ … contrat C10b : vrai module wasm`, 9 `✓ … contrat C10b : fausse liaison`, 1
+`✓ contrat C10b : vrai module seulement > fixture tableau-fusion-ombrage.roomboard (F30, S3)` ; « contrat C10a », « contrat
+commun », « contrat C2 », « contrat C9 » verts sur les deux fabriques (tests à garder verts : `RemoveTableLine` et
+`SetTableFill` sans `to` = C10a) ; taille ≤ 1 572 864 o, citée. `tsc` : seuls les écarts nommés encore ouverts
+(`src/app/stage-tags.test.ts`, `src/app/workspace.ts`, `src/engine/render/*.test.ts` selon les fusions déjà faites).
+
+**Contraintes (recopiées).**
+- GC2 TDD : test rouge d'abord, vu rouge, puis le code. Aucun test sauté ni désactivé (`skip`, `only`, `todo`,
+  `#[ignore]`), aucun seuil ni délai relevé ; un test qui échoue sur un délai est rejoué une fois. Ici le vrai module est
+  exigé (`ROOMBOARD_WASM_REQUIRED=1`).
+- GC3 PATH : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` avant toute commande. Aucun build Tauri, aucun build Android.
+- GC4 Préparation : `cd "$WT" && ([ -d node_modules ] || pnpm install --frozen-lockfile) && ([ -d target ] || cp -r /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/target .) && mkdir -p apps/web/src/wasm-formats && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm-formats/*.d.ts apps/web/src/wasm-formats/`
+  (le module `apps/web/src/wasm` est reconstruit par la commande bornée ; jamais commité).
+- GC5 Preuve bornée : la commande ci-dessus, telle quelle ; le rapport cite N, les noms vus et la taille du module.
+- GC6 Commits : `git add <chemin>` un par un, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message
+  anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; ne pas pousser.
+- GC7 Jamais `git add -A`, `git add --all`, `git add .`, `git commit -a`, `--force`, ni `git stash` nu.
+- GC8 Aucune dépendance nouvelle ; jamais AGPL, GPL ni LGPL.
+- GC9 Plafond du module principal 1 572 864 o (H2-13) ni baissé ni relevé ; `calamine` n'y entre pas ; taille citée.
+- GC11 Aucune lecture neuve dans la liaison : la vue passe par `element()` (`TableView.merges`, `shade`).
+- GC13 `tsc` vide sauf les écarts nommés encore ouverts (table de l'en-tête).
+- GC14 Rapport : une ligne `Réutilisation :` par ligne `Réutilise :` ci-dessus.
+- GC15 `cargo fmt --all` puis `cargo clippy -p roomboard-wasm --all-targets -- -D warnings` sans avertissement.
+- GC17 Aucun processus laissé en marche.
+- GC18 Périmètre : seuls les trois fichiers ci-dessus ; `scripts/verifier.sh` non modifié.
+
+**Interdits.** Ne pas commiter `apps/web/src/wasm/` ; aucune méthode de lecture neuve ; ne pas toucher au cœur.
+
+**Critère « terminé ».** Commande bornée verte, taille citée, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : tests natifs rouges.** Dans le module `tests` de `crates/roomboard-wasm/src/lib.rs`, remplacer les
+  appels C10a `remove_table_line_inner(&id, true, &r0)` → `remove_table_line_inner(&id, true, &r0, None)` (et de même
+  `:1874`), `set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], X)` → `set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None, X)`, puis ajouter :
+
+```rust
+    // C10b (T7) : fusion, division, ombrage, plages, import par les `*_inner`.
+
+    #[test]
+    fn c10b_table_commands_inner() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [3, 3], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let r: Vec<&str> = t.rows.iter().map(|x| x.id.as_str()).collect();
+        let c: Vec<&str> = t.cols.iter().map(|x| x.id.as_str()).collect();
+        d.merge_table_cells_inner(&id, [r[0], c[0]], [r[0], c[1]]).expect("fusion");
+        assert_eq!(table_of(&d, &id).merges.len(), 1);
+        assert_eq!(
+            d.split_table_cell_inner(&id, [r[0], c[1]]),
+            Err(CommandError::BadTable)
+        );
+        d.split_table_cell_inner(&id, [r[0], c[0]]).expect("division");
+        assert!(table_of(&d, &id).merges.is_empty());
+        d.set_table_shade_inner(&id, [r[0], c[2]], [r[2], c[2]], Some("#94a3b8".into()))
+            .expect("ombre");
+        assert_eq!(
+            table_of(&d, &id).cells.iter().filter(|x| x.shade.is_some()).count(),
+            3
+        );
+        d.set_table_fill_inner(&id, [r[0], c[0]], Some([r[1], c[1]]), Some("#fef08a".into()))
+            .expect("plage");
+        assert_eq!(
+            table_of(&d, &id).cells.iter().filter(|x| x.fill.is_some()).count(),
+            4
+        );
+        d.remove_table_line_inner(&id, true, r[0], Some(r[1].to_string()))
+            .expect("deux lignes");
+        assert_eq!(table_of(&d, &id).rows.len(), 1);
+    }
+
+    #[test]
+    fn import_table_inner_reads_flat_merges() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let cells: Vec<String> = ["Titre", "", "a", "b"].map(String::from).to_vec();
+        let c = d
+            .import_table_inner(
+                &p,
+                &[1.0, 0.0, 0.0, 1.0, 10.0, 20.0],
+                240.0,
+                &[64.0, 64.0],
+                2,
+                cells.clone(),
+                &[0, 0, 1, 2],
+                "#000000",
+                36.0,
+            )
+            .expect("import");
+        let t = table_of(&d, &c.ids[0]);
+        assert_eq!((t.merges.len(), t.cells.len()), (1, 3));
+        assert_eq!(
+            d.import_table_inner(&p, &[1.0, 0.0, 0.0, 1.0], 240.0, &[64.0, 64.0], 2, cells.clone(), &[], "#000000", 36.0),
+            Err(CommandError::BadTable),
+            "matrice de quatre nombres"
+        );
+        assert_eq!(
+            d.import_table_inner(&p, &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0], 240.0, &[64.0, 64.0], 2, cells, &[0, 0, 1], "#000000", 36.0),
+            Err(CommandError::BadTable),
+            "fusions incomplètes"
+        );
+    }
+```
+
+- [ ] **Étape 3 : les voir rouges.** `cargo test -p roomboard-wasm table 2>&1 | grep "error\[" | head` (méthodes absentes).
+
+- [ ] **Étape 4 : méthodes exposées.** Remplacer `remove_table_line` et `set_table_fill` (`:472-512`) et ajouter, à la
+  suite :
+
+```rust
+    /// `to` : dernière ligne de la plage (C10b, F6) ; absent : `line` seule.
+    pub fn remove_table_line(
+        &mut self,
+        id: &str,
+        row: bool,
+        line: &str,
+        to: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .remove_table_line_inner(id, row, line, to)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// `fill` absent ou null : retire le remplissage ; `to_row`, `to_col` : autre coin de la plage (C10b, F15).
+    pub fn set_table_fill(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        fill: Option<String>,
+        to_row: Option<String>,
+        to_col: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        let to = match (&to_row, &to_col) {
+            (Some(r), Some(c)) => Some([r.as_str(), c.as_str()]),
+            _ => None,
+        };
+        to_js(
+            &self
+                .set_table_fill_inner(id, [row, col], to, fill)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Fusion (C10b, F3) : rectangle par ids.
+    pub fn merge_table_cells(
+        &mut self,
+        id: &str,
+        from_row: &str,
+        from_col: &str,
+        to_row: &str,
+        to_col: &str,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .merge_table_cells_inner(id, [from_row, from_col], [to_row, to_col])
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Division (C10b, F4) : `row`, `col` = ancre.
+    pub fn split_table_cell(&mut self, id: &str, row: &str, col: &str) -> Result<JsValue, JsError> {
+        to_js(&self.split_table_cell_inner(id, [row, col]).map_err(cmd_err)?)
+    }
+
+    /// Ombrage (C10b, F9) : `shade` absent ou null : retire (révéler).
+    pub fn set_table_shade(
+        &mut self,
+        id: &str,
+        from_row: &str,
+        from_col: &str,
+        to_row: &str,
+        to_col: &str,
+        shade: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_shade_inner(id, [from_row, from_col], [to_row, to_col], shade)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Tableau rempli (C10b, F18) : `matrix` six nombres, `merges` quadruplets bout à bout.
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_table(
+        &mut self,
+        page: &str,
+        matrix: &[f64],
+        col_width: f64,
+        row_heights: &[f64],
+        cols: u32,
+        cells: Vec<String>,
+        merges: &[u32],
+        color: &str,
+        size: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .import_table_inner(page, matrix, col_width, row_heights, cols, cells, merges, color, size)
+                .map_err(cmd_err)?,
+        )
+    }
+```
+
+- [ ] **Étape 5 : `*_inner`.** Remplacer `remove_table_line_inner` et `set_table_fill_inner` (`:917-956`, avec le
+  `to: None` de T2) et ajouter après `set_table_fill_inner` :
+
+```rust
+    pub fn remove_table_line_inner(
+        &mut self,
+        id: &str,
+        row: bool,
+        line: &str,
+        to: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::RemoveTableLine {
+            id: id.to_string(),
+            axis: table_axis(row),
+            line: line.to_string(),
+            to,
+        })
+    }
+
+    pub fn set_table_fill_inner(
+        &mut self,
+        id: &str,
+        cell: [&str; 2],
+        to: Option<[&str; 2]>,
+        fill: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableFill {
+            id: id.to_string(),
+            row: cell[0].to_string(),
+            col: cell[1].to_string(),
+            to: to.map(|[r, c]| (r.to_string(), c.to_string())),
+            fill,
+        })
+    }
+
+    pub fn merge_table_cells_inner(
+        &mut self,
+        id: &str,
+        from: [&str; 2],
+        to: [&str; 2],
+    ) -> Result<Change, CommandError> {
+        self.run(Command::MergeTableCells {
+            id: id.to_string(),
+            from: (from[0].to_string(), from[1].to_string()),
+            to: (to[0].to_string(), to[1].to_string()),
+        })
+    }
+
+    pub fn split_table_cell_inner(&mut self, id: &str, cell: [&str; 2]) -> Result<Change, CommandError> {
+        self.run(Command::SplitTableCell {
+            id: id.to_string(),
+            row: cell[0].to_string(),
+            col: cell[1].to_string(),
+        })
+    }
+
+    pub fn set_table_shade_inner(
+        &mut self,
+        id: &str,
+        from: [&str; 2],
+        to: [&str; 2],
+        shade: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableShade {
+            id: id.to_string(),
+            from: (from[0].to_string(), from[1].to_string()),
+            to: (to[0].to_string(), to[1].to_string()),
+            shade,
+        })
+    }
+
+    /// Matrice qui n'a pas six nombres ou fusions qui ne vont pas par quatre : `BadTable` (comme le cœur, PC1).
+    #[allow(clippy::too_many_arguments)]
+    pub fn import_table_inner(
+        &mut self,
+        page: &str,
+        matrix: &[f64],
+        col_width: f64,
+        row_heights: &[f64],
+        cols: u32,
+        cells: Vec<String>,
+        merges: &[u32],
+        color: &str,
+        size: f64,
+    ) -> Result<Change, CommandError> {
+        let Ok(matrix) = <[f64; 6]>::try_from(matrix) else {
+            return Err(CommandError::BadTable);
+        };
+        if merges.len() % 4 != 0 {
+            return Err(CommandError::BadTable);
+        }
+        let merges: Vec<[u32; 4]> = merges
+            .chunks_exact(4)
+            .map(|m| [m[0], m[1], m[2], m[3]])
+            .collect();
+        self.run(Command::ImportTable {
+            page: page.to_string(),
+            matrix,
+            col_width,
+            row_heights: row_heights.to_vec(),
+            cols,
+            cells,
+            merges,
+            color: color.to_string(),
+            size,
+        })
+    }
+```
+
+- [ ] **Étape 6 : `wasm-core.ts`.** Remplacer les cas que T4 a posés en levée :
+
+```ts
+      case "RemoveTableLine":
+        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line, cmd.to));
+      case "SetTableSizes":
+        return toChange(this.d.set_table_sizes(cmd.id, cmd.colWidth, cmd.rowHeight));
+      case "SetTableFill":
+        // null → undefined : Option::None côté Rust.
+        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined, cmd.to?.row, cmd.to?.col));
+      case "MergeTableCells":
+        return toChange(this.d.merge_table_cells(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col));
+      case "SplitTableCell":
+        return toChange(this.d.split_table_cell(cmd.id, cmd.row, cmd.col));
+      case "SetTableShade":
+        return toChange(this.d.set_table_shade(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, cmd.shade ?? undefined));
+      case "ImportTable":
+        return toChange(
+          this.d.import_table(
+            cmd.page,
+            new Float64Array(cmd.matrix),
+            cmd.colWidth,
+            new Float64Array(cmd.rowHeights),
+            toU32(cmd.cols),
+            [...cmd.cells],
+            Uint32Array.from(cmd.merges.flat(), toU32),
+            cmd.color,
+            cmd.size,
+          ),
+        );
+```
+
+- [ ] **Étape 7 : contrat sur le vrai module.** Dans `wasm-core.contract.test.ts`, remplacer
+  `const c10bFactories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];` par
+  `const c10bFactories = factories;`, puis à la fin du fichier :
+
+```ts
+describe.skipIf(loaded === null)("contrat C10b : vrai module seulement", () => {
+  it("fixture tableau-fusion-ombrage.roomboard (F30, S3) : « Lundi » sur deux colonnes, trois cellules ombrées", () => {
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-core/tests/fixtures/tableau-fusion-ombrage.roomboard", import.meta.url)));
+    const d = need().core.load(bytes);
+    const id = d.elementIds(first(d)).find((e) => d.element(e)?.kind === "table") ?? "";
+    const t = tableOf(d, id);
+    expect([t.cols.length, t.rows.length, t.merges.length, t.merges[0]?.cols]).toEqual([4, 3, 1, 2]);
+    expect(t.cells.filter((c) => c.shade !== null)).toHaveLength(3);
+    expect(t.cells[0]?.text).toBe("Lundi");
+    d.free();
+  });
+});
+```
+
+- [ ] **Étape 8 : vert, format, clippy.** La commande bornée ; `cargo fmt --all` ;
+  `cargo clippy -p roomboard-wasm --all-targets -- -D warnings 2>&1 | grep -E "^(warning|error)" | head` (rien).
+
+- [ ] **Étape 9 : commit.**
+
+```bash
+cd "$WT" && git add crates/roomboard-wasm/src/lib.rs && git add apps/web/src/core/wasm-core.ts && \
+git add apps/web/src/core/wasm-core.contract.test.ts && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(wasm): bind C10b table commands and play the contract on the real module" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, taille du module, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t8"></a>
+
+### Tâche T8 — Outil Tableau : plage, saisie au relâché, fusion, division, ombrage, plages des actions
+
+**Objectif.** L'outil Tableau fait la plage (F14) : glisser d'une cellule à une autre du même tableau, ou Maj+clic depuis
+la cellule active, sans ouvrir la saisie ; la plage s'élargit aux zones qu'elle touche et se montre par
+`EditOverlay.frame`. Un clic sans glisser ouvre la saisie **au relâché** (changement de C10a, HB-12, effet de bord) ; un
+appui pendant une saisie ouverte valide seulement, même s'il glisse. Échap retire la plage (`clearRange`, PC18). Les
+actions : « Fusionner » (F3, l'ancre devient active, PC19), « Diviser » (F4), « Ombrer » / « Retirer l'ombrage » (F9,
+couleur F13), pastilles sur la plage (F15), « + Ligne » après la fin de la zone ou de la plage (F5), « − Ligne » sur la
+plage en une commande (F6). Une cellule couverte s'active par son ancre ; la saisie d'une zone a sa largeur réunie (F7).
+
+**Fichiers.**
+- Modifier : `apps/web/src/engine/tools/table.ts` (fichier entier, bouchons de T6 compris)
+- Modifier : `apps/web/src/engine/tools/table.test.ts` (`setup` gagne `shift`, bloc neuf)
+
+**Interfaces.**
+- Consomme (T4) : `Command` C10b, `CellIds`, `TableData.merges`, `TableCell.shade` ; (T6) `anchorOf`, `cellRect`,
+  `rangeRect`, `expandRange`, `mergeAt`, `rangeCells`, `cellContent` (avec `shade`), `step`, `Range`, `TableAction`,
+  `TABLE_SHADE_COLOR`, `TableTool.clearRange`, `TableCellState.{range, merged, shaded}`.
+- Produit : `createTableTool(ctx, editor, picker, style, measure): TableTool` (signature inchangée) ; `cellState()` publie
+  `range`, `merged`, `shaded` (lus par T11).
+- Réutilise : `apps/web/src/engine/tools/table.ts:60-323`, `tools/tool.ts:56` — `begin` / `extend` / `close` (plage, saisie
+  au relâché), `act` (quatre actions), `fill` (plage) étendus dans le même module.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+pnpm --filter @roomboard/web exec vitest run src/engine/tools/table.test.ts src/engine/engine.test.ts src/engine/tools/text.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | grep -E "C10b|×|FAIL|Test Files|Tests " | tail -40 && \
+pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep "error TS" | sed 's/(.*//' | sort | uniq -c
+```
+
+Attendu : aucune ligne `×` ; 13 lignes `✓ outil Tableau (C10b) > …` dont « F14 : clic sans glisser : saisie ouverte au
+relâché, pas à l'appui » (effet de bord), « F14 : appui pendant une saisie ouverte puis glisser : valide seulement, aucune
+plage », « F6 : − Ligne sur une plage de deux lignes : une RemoveTableLine avec to » (Review Focus 2), « F16 : Tab saute
+les cellules couvertes » (S5) ; « outil Tableau (C10a) », « moteur et outil Tableau (C10a, S2) » et `text.test.ts`
+restent verts (carte d'impact : `tools/table.test.ts` gardé vert, attendus d'ouverture lus après `close`). `tsc` : seuls
+les écarts nommés encore ouverts (`src/engine/render/*.test.ts` jusqu'à T9, `src/app/stage-tags.test.ts`,
+`src/app/workspace.ts` jusqu'à T11).
+
+**Contraintes (recopiées).**
+- GC2 TDD : test rouge d'abord, vu rouge, puis le code. Aucun test sauté ni désactivé (`skip`, `only`, `todo`,
+  `#[ignore]`), aucun seuil ni délai relevé ; un test qui échoue sur un délai est rejoué une fois avant d'être jugé.
+- GC3 PATH : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` avant toute commande. Aucun build Tauri, aucun build Android.
+- GC4 Préparation : `cd "$WT" && ([ -d node_modules ] || pnpm install --frozen-lockfile) && mkdir -p apps/web/src/wasm apps/web/src/wasm-formats && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm/*.d.ts apps/web/src/wasm/ && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm-formats/*.d.ts apps/web/src/wasm-formats/`.
+- GC5 Preuve bornée : la commande ci-dessus, telle quelle ; le rapport cite N et les noms vus.
+- GC6 Commits : `git add <chemin>` un par un, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message
+  anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; ne pas pousser.
+- GC7 Jamais `git add -A`, `git add --all`, `git add .`, `git commit -a`, `--force`, ni `git stash` nu.
+- GC8 Aucune dépendance nouvelle ; jamais AGPL, GPL ni LGPL.
+- GC11 L'outil lit les zones par `table-geom.ts` (aucune lecture de `span`).
+- GC12 Aucune taille d'écran neuve dans l'outil (la plage naît d'un changement de cellule, pas d'un seuil en px).
+- GC13 `tsc` vide sauf les écarts nommés encore ouverts.
+- GC14 Rapport : une ligne `Réutilisation :` par ligne `Réutilise :` ci-dessus.
+- GC17 Aucun processus laissé en marche.
+- GC18 Périmètre : seuls les deux fichiers ci-dessus.
+
+**Patron à ne pas reprendre.** Ouvrir la saisie à l'appui (`begin`, C10a, `tools/table.ts:197-201`) : un glisser
+n'aurait plus de place pour devenir une plage, et un appui sur la zone de saisie ouverte (au-dessus de la scène) ne doit
+jamais en créer une. Ici l'appui choisit la cellule, le relâché décide : pas bougé de cellule → ouvrir ; changé de
+cellule → plage. Chemin de référence du « relâché décide » : `apps/web/src/engine/tools/select.ts:153-170` (`close`
+d'un glisser qui n'a pas franchi son seuil n'écrit rien).
+
+**Interdits.** Aucune écriture au `begin` ni à l'`extend` (une écriture par action, D38) ; Suppr ne vide pas la plage
+(HB-19) ; ne pas toucher `engine.ts` (contrat posé par T6).
+
+**Critère « terminé ».** Commande bornée verte, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : tests rouges.** Dans `apps/web/src/engine/tools/table.test.ts` : dans `setup()`, ajouter
+  `let shift = false;`, le membre `shift: () => shift,` au `ctx`, et `setShift: (v: boolean) => { shift = v; }` à l'objet
+  rendu. Ajouter `import { TABLE_SHADE_COLOR } from "../table-geom";` (à côté de `cellHeight`). À la fin du fichier :
+
+```ts
+describe("outil Tableau (C10b)", () => {
+  type S = ReturnType<typeof setup>;
+  /** Appui en a, glisser jusqu'à b, relâché (caméra identité : px = unités). */
+  const drag = (s: S, a: [number, number], b: [number, number]): void => {
+    s.tool.begin(1, [at(a[0], a[1])]);
+    s.tool.extend(1, [at(b[0], b[1])], []);
+    s.tool.close(1, "end");
+  };
+  /** Tableau cols × rows en (100, 200), saisie fermée ; ids des lignes et colonnes. */
+  const made = (cols: number, rows: number) => {
+    const s = setup();
+    const id = s.create(100, 200, cols, rows);
+    s.tool.requestCommit();
+    const t = s.table(id);
+    return { s, id, r: t.rows.map((x) => x.id), c: t.cols.map((x) => x.id) };
+  };
+  /** Centre de la cellule (ligne, colonne) d'un tableau de colonnes 240 et lignes 64 en (100, 200). */
+  const mid = (row: number, col: number): [number, number] => [100 + 240 * col + 120, 200 + 64 * row + 32];
+
+  it("F14 : clic sans glisser : saisie ouverte au relâché, pas à l'appui (HB-12)", () => {
+    const { s } = made(2, 2);
+    const n = s.host.opened.length;
+    s.tool.begin(1, [at(...mid(0, 1))]);
+    expect(s.host.opened).toHaveLength(n);
+    s.tool.close(1, "end");
+    expect(s.host.opened).toHaveLength(n + 1);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 1, range: null });
+  });
+
+  it("F14 : glisser de la première à la deuxième cellule : plage 0,0-0,1, aucune saisie ; Échap (clearRange) la retire", () => {
+    const { s } = made(2, 2);
+    const n = s.host.opened.length;
+    drag(s, mid(0, 0), mid(0, 1));
+    expect(s.host.opened).toHaveLength(n);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: { r0: 0, c0: 0, r1: 0, c1: 1 } });
+    expect(s.tool.live().overlay?.frame).toEqual({ x0: 100, y0: 200, x1: 580, y1: 264 });
+    expect(s.tool.clearRange()).toBe(true);
+    expect(s.tool.cellState()?.range).toBeNull();
+    expect(s.tool.clearRange()).toBe(false);
+    expect(s.runs.filter((c) => c.type !== "AddTable")).toEqual([]);
+  });
+
+  it("F14 : Maj+clic : plage de la cellule active au point, élargie à une zone touchée", () => {
+    const { s, id, r, c } = made(3, 3);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[1] ?? "", col: c[1] ?? "" }, to: { row: r[2] ?? "", col: c[2] ?? "" } });
+    s.tool.prune();
+    s.click(...mid(0, 0));
+    s.tool.requestCommit();
+    const n = s.host.opened.length;
+    s.setShift(true);
+    s.click(...mid(1, 1));
+    expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 0, r1: 2, c1: 2 });
+    expect(s.host.opened).toHaveLength(n);
+  });
+
+  it("F14 : appui pendant une saisie ouverte puis glisser : valide seulement, aucune plage", () => {
+    const s = setup();
+    s.create(100, 200, 2, 2);
+    s.type("a");
+    drag(s, mid(0, 0), mid(0, 1));
+    expect(s.last()).toMatchObject({ type: "SetTableCell", content: "a" });
+    expect(s.tool.cellState()?.range).toBeNull();
+  });
+
+  it("F3 : Fusionner : MergeTableCells sur la plage, l'ancre active, plage retirée ; une étape", () => {
+    const { s, id, r, c } = made(3, 2);
+    drag(s, mid(0, 0), mid(0, 1));
+    s.tool.act("merge");
+    expect(s.last()).toEqual({ type: "MergeTableCells", id, from: { row: r[0], col: c[0] }, to: { row: r[0], col: c[1] } });
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, merged: true, range: null });
+    expect(s.table(id).merges).toHaveLength(1);
+    s.doc.undo();
+    expect(s.table(id).merges).toHaveLength(0);
+  });
+
+  it("F4 : Diviser : SplitTableCell sur l'ancre active ; avec une plage : rien", () => {
+    const { s, id, r, c } = made(3, 2);
+    drag(s, mid(0, 0), mid(0, 1));
+    s.tool.act("merge");
+    drag(s, mid(0, 0), mid(1, 2));
+    const n = s.runs.length;
+    s.tool.act("split");
+    expect(s.runs).toHaveLength(n);
+    s.tool.clearRange();
+    s.tool.act("split");
+    expect(s.last()).toEqual({ type: "SplitTableCell", id, row: r[0], col: c[0] });
+    expect(s.table(id).merges).toEqual([]);
+  });
+
+  it("F9, S1 : Ombrer la plage d'une colonne : une SetTableShade, trois cellules ; Retirer l'ombrage : null ; la plage reste (PC19)", () => {
+    const { s, id, r, c } = made(4, 3);
+    drag(s, mid(0, 2), mid(2, 2));
+    expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 2, r1: 2, c1: 2 });
+    s.tool.act("shade");
+    expect(s.last()).toEqual({ type: "SetTableShade", id, from: { row: r[0], col: c[2] }, to: { row: r[2], col: c[2] }, shade: TABLE_SHADE_COLOR });
+    expect(s.table(id).cells.filter((x) => x.shade !== null)).toHaveLength(3);
+    expect(s.tool.cellState()).toMatchObject({ shaded: true, range: { r0: 0, c0: 2, r1: 2, c1: 2 } });
+    s.tool.act("unshade");
+    expect(s.last()).toMatchObject({ type: "SetTableShade", shade: null });
+    expect(s.tool.cellState()?.shaded).toBe(false);
+  });
+
+  it("F15 : pastille sur une plage : SetTableFill avec to", () => {
+    const { s, id, r, c } = made(2, 2);
+    drag(s, mid(0, 0), mid(1, 1));
+    s.tool.fill("#fef08a");
+    expect(s.last()).toEqual({ type: "SetTableFill", id, row: r[0], col: c[0], to: { row: r[1], col: c[1] }, fill: "#fef08a" });
+  });
+
+  it("F5 : + Ligne sur une zone de deux lignes : insérée après sa dernière ligne", () => {
+    const { s, id, r, c } = made(2, 3);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[1] ?? "", col: c[0] ?? "" } });
+    s.click(...mid(1, 0));
+    s.tool.requestCommit();
+    s.tool.act("row-insert");
+    expect(s.last()).toEqual({ type: "InsertTableLine", id, axis: "row", at: 2 });
+  });
+
+  it("F6 : − Ligne sur une plage de deux lignes : une RemoveTableLine avec to ; la ligne suivante devient active", () => {
+    const { s, id, r } = made(2, 4);
+    drag(s, mid(0, 0), mid(1, 0));
+    s.tool.act("row-remove");
+    expect(s.last()).toEqual({ type: "RemoveTableLine", id, axis: "row", line: r[0], to: r[1] });
+    expect(s.tool.cellState()).toMatchObject({ row: 0, rows: 2, range: null });
+    expect(s.table(id).rows.map((x) => x.id)).toEqual([r[2], r[3]]);
+  });
+
+  it("F16, F7 : clic sur une cellule couverte : l'ancre s'ouvre, à la largeur de la zone", () => {
+    const { s, id, r, c } = made(3, 2);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[0] ?? "", col: c[1] ?? "" } });
+    s.tool.prune();
+    s.click(...mid(0, 1));
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, merged: true });
+    expect(s.host.last().boxWidth).toBe(480 - 16);
+    s.type("Lundi et un texte long qui passe à la ligne");
+    s.tool.requestCommit();
+    expect(s.last()).toMatchObject({ type: "SetTableCell", row: r[0], col: c[0], rowHeight: cellHeight("Lundi et un texte long qui passe à la ligne", 36, 480, narrow) });
+  });
+
+  it("F16, S5 : Tab saute les cellules couvertes", () => {
+    const { s, id, r, c } = made(3, 2);
+    s.doc.apply({ type: "MergeTableCells", id, from: { row: r[0] ?? "", col: c[0] ?? "" }, to: { row: r[0] ?? "", col: c[1] ?? "" } });
+    s.click(...mid(0, 0));
+    s.tool.navigate("next");
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 2 });
+  });
+
+  it("prune : coin de plage disparu (colonne retirée) : plage retirée, cellule active gardée", () => {
+    const { s, id, c } = made(3, 2);
+    drag(s, mid(0, 0), mid(0, 2));
+    s.doc.apply({ type: "RemoveTableLine", id, axis: "col", line: c[2] ?? "" });
+    s.tool.prune();
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: null });
+  });
+});
+```
+
+- [ ] **Étape 3 : les voir rouges.** La commande bornée : `×` sur le bloc C10b.
+
+- [ ] **Étape 4 : l'outil.** Remplacer `apps/web/src/engine/tools/table.ts` :
+
+```ts
+/**
+ * Outil Tableau (C10a, T6 à T12 ; C10b, F3 à F9, F14 à F16) : clic hors d'un tableau → grille de choix au point ; choix
+ * → AddTable, saisie ouverte sur la première cellule. Appui sur un tableau → le plus haut sous le point, même sous
+ * l'encre (I2) : sa cellule (l'ancre d'une zone) devient active ; au relâché, sans changement de cellule, la saisie
+ * s'ouvre (F14, HB-12) ; un glisser vers une autre cellule du même tableau, ou Maj+clic, fait une plage, élargie aux
+ * zones qu'elle touche. Un appui pendant une saisie ouverte valide seulement. Une SetTableCell par validation, hauteur
+ * exigée mesurée comme le dessin, à la largeur de la zone (T5, F7, B1) ; Tab, Maj+Tab, flèches au bord par `navigate`
+ * (DAC3, F16) ; porte IME partagée avec l'outil Texte. Fusionner, Diviser, Ombrer, Retirer l'ombrage, pastilles,
+ * insertions et suppressions agissent sur la plage, sinon sur la zone de la cellule active. Cellule active et plage
+ * tenues par ids, retirées par `prune` quand elles disparaissent (I1).
+ */
+import type { CellIds, Command, Matrix, TableAxis, TableData } from "../../core/api";
+import { TABLE_MAX_LINES } from "../../core/api";
+import { plainSpans } from "../../core/rich-text";
+import { composeMatrix, translateMatrix } from "../../core/shapes";
+import { screenToWorld } from "../camera";
+import { EMPTY_OVERLAY } from "../render/overlay";
+import {
+  anchorOf,
+  cellContent,
+  cellHeight,
+  cellInnerBox,
+  cellOf,
+  cellRect,
+  expandRange,
+  mergeAt,
+  rangeCells,
+  rangeRect,
+  rowHeightsFor,
+  step,
+  tableAt,
+  TABLE_COL_WIDTH,
+  TABLE_ROW_HEIGHT,
+  TABLE_SHADE_COLOR,
+  type Cell,
+  type CellRef,
+  type Range,
+} from "../table-geom";
+import type { Measure } from "../text-layout";
+import { createCommitGate } from "./commit-gate";
+import { transformBounds } from "./handles";
+import type { TextEditorHost, TextStyle } from "./text";
+import { NO_LIVE, type LivePart, type TableTool, type ToolContext } from "./tool";
+
+/** Grille de choix (hôte DOM : `app/table-picker.ts`, même forme que `TablePickerHost`) ; `at` en px CSS de la scène. */
+export interface TablePicker {
+  open(at: { readonly x: number; readonly y: number }, pick: (cols: number, rows: number) => void): void;
+  close(): void;
+  isOpen(): boolean;
+}
+
+/** Fond de la zone de saisie d'une cellule sans remplissage (HC10-10). */
+export const CELL_EDITOR_BACKGROUND = "#ffffff";
+
+/** Écart sous lequel deux tailles sont égales (Uniformiser, T14) : la moyenne de n tailles égales diffère d'un arrondi. */
+const SIZE_EPSILON = 1e-6;
+const sameSize = (a: number, b: number): boolean => Math.abs(a - b) <= SIZE_EPSILON;
+
+/** Cellule retrouvée dans le document : son tableau, sa matrice, les rangs de son ancre. */
+interface Located {
+  readonly ref: CellRef;
+  readonly transform: Matrix;
+  readonly table: TableData;
+  readonly cell: Cell;
+}
+/** Saisie ouverte : la cellule (par ids), son texte à l'ouverture, la largeur (de la zone) et la taille pour la mesure. */
+interface Opened {
+  readonly ref: CellRef;
+  readonly initial: string;
+  readonly colWidth: number;
+  readonly size: number;
+}
+/** Appui sur une cellule (F14) : le relâché décide (ouvrir, ou rien après une plage). */
+interface Press {
+  readonly pointerId: number;
+  readonly id: string;
+  readonly start: Cell;
+  moved: boolean;
+}
+
+export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure): TableTool {
+  let active: CellRef | null = null;
+  /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
+  let corner: CellRef | null = null;
+  let press: Press | null = null;
+  /** Pointeur dont l'appui a seulement validé la saisie ou fermé la grille : ni plage, ni ouverture au relâché. */
+  let swallowed: number | null = null;
+  let opened: Opened | null = null;
+  let live: LivePart = NO_LIVE;
+  const gate = createCommitGate(() => commit(), () => opened !== null);
+
+  const refAt = (id: string, t: TableData, row: number, col: number): CellRef | null => {
+    const r = t.rows[row];
+    const c = t.cols[col];
+    return r && c ? { id, row: r.id, col: c.id } : null;
+  };
+  const idsAt = (t: TableData, row: number, col: number): CellIds | null => {
+    const r = t.rows[row];
+    const c = t.cols[col];
+    return r && c ? { row: r.id, col: c.id } : null;
+  };
+
+  /** Cellule active retrouvée, ramenée à l'ancre de sa zone (F16). */
+  const locate = (ref: CellRef | null): Located | null => {
+    if (ref === null) return null;
+    const el = ctx.doc.element(ref.id);
+    if (el?.kind !== "table") return null;
+    const raw = cellOf(el.table, ref);
+    if (raw === null) return null;
+    const cell = anchorOf(el.table, raw);
+    const anchor = refAt(ref.id, el.table, cell.row, cell.col);
+    return anchor === null ? null : { ref: anchor, transform: el.transform, table: el.table, cell };
+  };
+
+  /** Plage en rangs, élargie aux zones (F14) ; null sans coin, coin d'un autre tableau ou disparu. */
+  const rangeOf = (at: Located): Range | null => {
+    if (corner === null || corner.id !== at.ref.id) return null;
+    const b = cellOf(at.table, corner);
+    return b === null ? null : expandRange(at.table, at.cell, b);
+  };
+  /** Zone de la cellule active (une cellule simple : elle-même). */
+  const zoneOf = (at: Located): Range => mergeAt(at.table, at.cell) ?? { r0: at.cell.row, c0: at.cell.col, r1: at.cell.row, c1: at.cell.col };
+
+  /** Cadre de la plage, sinon de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement. */
+  const refresh = (): void => {
+    const at = locate(active);
+    const r = at === null ? null : rangeOf(at);
+    live =
+      at === null
+        ? NO_LIVE
+        : { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame: transformBounds(at.transform, r === null ? cellRect(at.table, at.cell) : rangeRect(at.table, r)) } };
+    ctx.requestFrame?.();
+  };
+
+  const setActive = (ref: CellRef | null): void => {
+    active = ref;
+    corner = null;
+    refresh();
+    ctx.stateChanged?.();
+  };
+
+  const setCorner = (ref: CellRef | null): void => {
+    corner = ref;
+    refresh();
+    ctx.stateChanged?.();
+  };
+
+  /** Écrit la cellule ouverte (une SetTableCell au plus, T9) ; la saisie est fermée avant `editor.close()`. */
+  function commit(): void {
+    const o = opened;
+    if (o === null) return;
+    const content = editor.value();
+    opened = null;
+    gate.reset();
+    editor.close();
+    if (content !== o.initial) {
+      ctx.run({
+        type: "SetTableCell",
+        id: o.ref.id,
+        row: o.ref.row,
+        col: o.ref.col,
+        content,
+        rowHeight: cellHeight(content, o.size, o.colWidth, measure),
+      });
+    }
+    refresh();
+  }
+
+  /** Ouvre la saisie sur la cellule active : coin intérieur de la zone, largeur de la zone moins les marges, fond. */
+  const openActive = (): void => {
+    const at = locate(active);
+    if (at === null) {
+      setActive(null);
+      return;
+    }
+    active = at.ref;
+    const r = cellRect(at.table, at.cell);
+    const colWidth = r.x1 - r.x0;
+    const inner = cellInnerBox(at.table, at.cell);
+    const { text, fill } = cellContent(at.table, at.ref.row, at.ref.col);
+    opened = { ref: at.ref, initial: text, colWidth, size: at.table.size };
+    gate.reset();
+    editor.open(
+      {
+        page: ctx.page(),
+        id: at.ref.id,
+        matrix: composeMatrix(at.transform, translateMatrix(inner.x, inner.y)),
+        boxWidth: inner.w,
+        color: at.table.color,
+        size: at.table.size,
+        initial: text,
+        spans: plainSpans(text),
+        background: fill ?? CELL_EDITOR_BACKGROUND,
+      },
+      ctx.camera(),
+    );
+  };
+
+  /** Grille choisie (T6) : coin au point, décalé à gauche si le tableau dépasse la largeur de la page (T4, x ≥ 0). */
+  const create = (x: number, y: number, cols: number, rows: number): void => {
+    const page = ctx.page();
+    const width = ctx.doc.page(page)?.width;
+    if (width === undefined) return;
+    const st = style();
+    const x0 = Math.max(0, Math.min(x, width - cols * TABLE_COL_WIDTH));
+    const id = ctx.run({ type: "AddTable", page, x: x0, y, cols, rows, colWidth: TABLE_COL_WIDTH, rowHeight: TABLE_ROW_HEIGHT, color: st.color, size: st.size })?.ids[0];
+    const el = id === undefined ? null : ctx.doc.element(id);
+    if (id === undefined || el?.kind !== "table") return;
+    setActive(refAt(id, el.table, 0, 0));
+    openActive();
+  };
+
+  /** − Ligne / − Colonne (T7, HC10-17, F6) : les lignes `i0..=i1` en une commande ; la voisine (après, sinon avant)
+   *  devient active avant la commande, pour que `prune` la garde ; refus du cœur : la cellule d'avant revient. */
+  const removeLines = (ref: CellRef, axis: TableAxis, ids: readonly string[], i0: number, i1: number): void => {
+    const line = ids[i0];
+    const last = ids[i1];
+    const near = ids[i1 + 1] ?? ids[i0 - 1];
+    if (ids.length - (i1 - i0 + 1) < 1 || line === undefined || last === undefined || near === undefined) return;
+    active = axis === "row" ? { ...ref, row: near } : { ...ref, col: near };
+    corner = null;
+    const cmd: Command = i1 > i0 ? { type: "RemoveTableLine", id: ref.id, axis, line, to: last } : { type: "RemoveTableLine", id: ref.id, axis, line };
+    if (ctx.run(cmd) === null) active = ref;
+  };
+
+  /** Uniformiser (T11) : colonnes à la largeur moyenne ; lignes à max(hauteur moyenne, plus grande hauteur exigée).
+   *  Déjà uniforme à un arrondi près : aucune étape (T14). */
+  const uniform = (id: string, t: TableData): void => {
+    const w = t.cols.reduce((s, c) => s + c.width, 0) / t.cols.length;
+    const need = Math.max(...rowHeightsFor(t, t.cols.map(() => w), measure));
+    const mean = t.rows.reduce((s, r) => s + r.height, 0) / t.rows.length;
+    const h = Math.max(mean, need);
+    if (t.cols.every((c) => sameSize(c.width, w)) && t.rows.every((r) => sameSize(r.height, h))) return;
+    ctx.run({ type: "SetTableSizes", id, colWidth: w, rowHeight: h });
+  };
+
+  /** Fusionner (F3, PC19) : la plage (au moins deux cellules) ; l'ancre devient active, la plage est retirée. */
+  const merge = (at: Located, r: Range | null): void => {
+    if (r === null || (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) < 2) return;
+    const from = idsAt(at.table, r.r0, r.c0);
+    const to = idsAt(at.table, r.r1, r.c1);
+    if (from === null || to === null) return;
+    if (ctx.run({ type: "MergeTableCells", id: at.ref.id, from, to }) === null) return;
+    active = { id: at.ref.id, ...from };
+    corner = null;
+  };
+
+  /** Ombrer ou retirer l'ombrage (F9) sur la plage, sinon la zone active. */
+  const shadeOver = (at: Located, span: Range, shade: string | null): void => {
+    const from = idsAt(at.table, span.r0, span.c0);
+    const to = idsAt(at.table, span.r1, span.c1);
+    if (from !== null && to !== null) ctx.run({ type: "SetTableShade", id: at.ref.id, from, to, shade });
+  };
+
+  /** Avant une action de la rangée : valide la saisie ouverte ; pendant une composition, rien (la touche appartient à
+   *  l'IME, comme `navigate`), et l'action n'a pas lieu. */
+  const settle = (): boolean => {
+    if (gate.composing()) return false;
+    gate.request();
+    return true;
+  };
+
+  return {
+    begin(pointerId, samples) {
+      const s = samples[0];
+      if (!s) return;
+      press = null;
+      // Appui pendant la saisie : valide seulement (T7 de C10a, F14), même s'il glisse ; grille ouverte : la ferme.
+      if (opened !== null) {
+        swallowed = pointerId;
+        gate.request();
+        return;
+      }
+      if (picker.isOpen()) {
+        swallowed = pointerId;
+        picker.close();
+        return;
+      }
+      swallowed = null;
+      const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
+      const hit = tableAt(ctx.doc, ctx.page(), x, y);
+      if (hit !== null) {
+        const ref = refAt(hit.id, hit.table, hit.cell.row, hit.cell.col);
+        if (ref === null) return;
+        const at = locate(active);
+        // Maj+clic : plage de la cellule active au point (F14).
+        if (ctx.shift?.() === true && at !== null && at.ref.id === hit.id) {
+          setCorner(ref);
+          return;
+        }
+        setActive(ref);
+        press = { pointerId, id: hit.id, start: hit.cell, moved: false };
+        return;
+      }
+      picker.open({ x: s.x, y: s.y }, (cols, rows) => create(x, y, cols, rows));
+    },
+    extend(pointerId, samples) {
+      const p = press;
+      const s = samples[samples.length - 1];
+      if (p === null || p.pointerId !== pointerId || !s) return;
+      const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
+      const hit = tableAt(ctx.doc, ctx.page(), x, y);
+      if (hit === null || hit.id !== p.id) return;
+      const same = hit.cell.row === p.start.row && hit.cell.col === p.start.col;
+      if (same && !p.moved) return;
+      p.moved = true;
+      const ref = same ? null : refAt(hit.id, hit.table, hit.cell.row, hit.cell.col);
+      if (ref?.row !== corner?.row || ref?.col !== corner?.col) setCorner(ref);
+    },
+    frame() {
+      // rien à pousser
+    },
+    close(pointerId, how) {
+      if (swallowed === pointerId) {
+        swallowed = null;
+        return;
+      }
+      const p = press;
+      if (p === null || p.pointerId !== pointerId) return;
+      press = null;
+      // F14 : sans changement de cellule, le clic ouvre la saisie au relâché.
+      if (how === "end" && !p.moved) openActive();
+    },
+    live: () => live,
+    active: () => false,
+    leave() {
+      gate.request();
+      picker.close();
+      press = null;
+      swallowed = null;
+      if (active !== null) setActive(null);
+    },
+    cell: () => active,
+    cellState() {
+      const at = locate(active);
+      if (at === null) return null;
+      const range = rangeOf(at);
+      const t = at.table;
+      const shaded = (range === null ? [at.cell] : rangeCells(t, range)).some((c) => {
+        const r = t.rows[c.row];
+        const k = t.cols[c.col];
+        return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null;
+      });
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: mergeAt(t, at.cell) !== null, shaded };
+    },
+    act(a) {
+      if (!settle()) return;
+      const at = locate(active);
+      if (at === null) return;
+      const { ref, table: t } = at;
+      const r = rangeOf(at);
+      // Plage, sinon zone de la cellule active (F5, F6).
+      const span = r ?? zoneOf(at);
+      switch (a) {
+        case "row-insert":
+          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "row", at: span.r1 + 1 });
+          break;
+        case "col-insert":
+          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "col", at: span.c1 + 1 });
+          break;
+        case "row-remove":
+          removeLines(ref, "row", t.rows.map((x) => x.id), span.r0, span.r1);
+          break;
+        case "col-remove":
+          removeLines(ref, "col", t.cols.map((x) => x.id), span.c0, span.c1);
+          break;
+        case "uniform":
+          uniform(ref.id, t);
+          break;
+        case "merge":
+          merge(at, r);
+          break;
+        case "split":
+          if (r === null && mergeAt(t, at.cell) !== null) ctx.run({ type: "SplitTableCell", id: ref.id, row: ref.row, col: ref.col });
+          break;
+        case "shade":
+          shadeOver(at, span, TABLE_SHADE_COLOR);
+          break;
+        case "unshade":
+          shadeOver(at, span, null);
+          break;
+        default:
+          // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
+          return a satisfies never;
+      }
+      refresh();
+      ctx.stateChanged?.();
+    },
+    fill(color) {
+      if (!settle()) return;
+      const at = locate(active);
+      if (at === null) return;
+      const r = rangeOf(at);
+      const from = r === null ? null : idsAt(at.table, r.r0, r.c0);
+      const to = r === null ? null : idsAt(at.table, r.r1, r.c1);
+      ctx.run(
+        from !== null && to !== null
+          ? { type: "SetTableFill", id: at.ref.id, row: from.row, col: from.col, to, fill: color }
+          : { type: "SetTableFill", id: at.ref.id, row: at.ref.row, col: at.ref.col, fill: color },
+      );
+      refresh();
+      ctx.stateChanged?.();
+    },
+    clearCell() {
+      if (opened !== null) return false;
+      const at = locate(active);
+      if (at === null) return false;
+      ctx.run({ type: "SetTableCell", id: at.ref.id, row: at.ref.row, col: at.ref.col, content: "" });
+      refresh();
+      return true;
+    },
+    clearRange() {
+      if (opened !== null || corner === null) return false;
+      setCorner(null);
+      return true;
+    },
+    prune() {
+      if (active === null) return;
+      const at = locate(active);
+      if (at !== null) {
+        if (corner !== null && cellOf(at.table, corner) === null) corner = null;
+        refresh();
+        ctx.stateChanged?.();
+        return;
+      }
+      // I1 : tableau, ligne ou colonne disparus : cellule retirée, saisie fermée sans rien écrire.
+      active = null;
+      corner = null;
+      if (opened !== null) {
+        opened = null;
+        gate.reset();
+        editor.close();
+      }
+      refresh();
+      ctx.stateChanged?.();
+    },
+    navigate(move) {
+      const o = opened;
+      if (o === null || gate.composing()) return false;
+      const at = locate(o.ref);
+      if (at === null) return false;
+      const next = step(at.table, at.cell, move);
+      const tab = move === "next" || move === "prev";
+      // Au bord : Tab est pris (la saisie reste ouverte), une flèche est rendue à la zone.
+      if (next === null) return tab;
+      // 64 lignes : Tab en dernière cellule est inerte, la saisie reste ouverte (T4).
+      if (next === "add-row" && at.table.rows.length >= TABLE_MAX_LINES) return true;
+      commit();
+      if (next === "add-row") {
+        if (ctx.run({ type: "InsertTableLine", id: o.ref.id, axis: "row", at: at.table.rows.length }) === null) return true;
+        const el = ctx.doc.element(o.ref.id);
+        setActive(el?.kind === "table" ? refAt(o.ref.id, el.table, el.table.rows.length - 1, 0) : null);
+      } else {
+        setActive(refAt(o.ref.id, at.table, next.row, next.col));
+      }
+      openActive();
+      return true;
+    },
+    compositionStart() {
+      gate.compositionStart();
+    },
+    compositionEnd() {
+      gate.compositionEnd();
+    },
+    requestCommit() {
+      gate.request();
+    },
+  };
+}
+```
+
+- [ ] **Étape 5 : vert.** La commande bornée. Si un test C10a attendait l'ouverture dès `begin` sans `close`, déplacer
+  son attendu après `close` (carte d'impact) et le citer au rapport ; aucun autre attendu C10a ne change.
+
+- [ ] **Étape 6 : commit.**
+
+```bash
+cd "$WT" && git add apps/web/src/engine/tools/table.ts && git add apps/web/src/engine/tools/table.test.ts && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(web): table tool ranges, open on release, merge, split and shade" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, attendus C10a déplacés (s'il y en a), une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t9"></a>
+
+### Tâche T9 — Dessin des zones et de l'ombrage, révélation par l'outil Sélection
+
+**Objectif.** Le rendu dessine une zone fusionnée à son rectangle réuni, traits intérieurs omis (PC15), et un ombrage
+opaque : fond à la couleur de la cellule puis hachures à 45° `#cbd5e1`, trait 2, pas 16, découpées à la cellule ou à la
+zone, traits du tableau par-dessus (F13, HB-6) ; le texte d'une cellule ombrée ou couverte n'est jamais dessiné, quel
+que soit l'outil (F11). Le texte d'une zone est mis en lignes à sa largeur réunie ; le cache des lignes suit la largeur
+de chaque boîte (carte : « clé étendue aux zones »). L'outil Sélection révèle : un toucher sans glisser (moins de
+`REVEAL_TAP_PX` = 8 px écran), sans Maj, dont l'élément le plus haut est un tableau et dont la cellule sous le point
+porte un ombrage → `SetTableShade` à `null` sur elle, une étape, sélection inchangée ; au-delà de 8 px, le glisser
+sélectionne et déplace depuis le point d'appui (F10, F12, HB-4, HB-24, effet de bord).
+
+**Fichiers.**
+- Modifier : `apps/web/src/engine/render/table-paint.ts` (fichier entier, 63 lignes), `apps/web/src/engine/render/table-paint.test.ts`
+- Modifier : `apps/web/src/engine/render/canvas2d.ts:369` (commentaire de `cellLinesOf` seulement), `apps/web/src/engine/render/canvas2d.test.ts`
+- Modifier : `apps/web/src/engine/tools/select.ts:1-7`, `:8-25` (imports, constante), `:29-42` (`Mode`, `Drag`), `:100-170`
+  (`startDrag`, `begin`, `extend`, `close`), `apps/web/src/engine/tools/select.test.ts`
+
+**Interfaces.**
+- Consomme (T4) : `TableData.merges`, `TableCell.shade`, `Command` `SetTableShade` ; (T6) `mergeRanges`, `isCovered`,
+  `cellRect`, `cellInnerBox`, `cellAt` (ancre), `cellContent` (avec `shade`), `TABLE_SHADE_HATCH`,
+  `TABLE_SHADE_HATCH_WIDTH`, `TABLE_SHADE_HATCH_STEP`.
+- Produit : `paintTableGrid(ctx, t)`, `cellTextBoxes(t)` (signatures inchangées) ; `export const REVEAL_TAP_PX = 8`
+  (`tools/select.ts`).
+- Réutilise : `apps/web/src/engine/tools/select.ts:116` (`begin`), `:153` (`close`), `:27` (`DRAG_THRESHOLD_PX`) ;
+  `table-geom.ts:42` (`cellAt`) — mode de glisser `"tap-shade"` (cellule retenue au `begin`, révélée au `close` sans
+  glisser) ; `ctx.run(SetTableShade)`.
+- Réutilise : `apps/web/src/engine/render/table-paint.ts:22`, `:53` ; `canvas2d.ts:244`, `:369` — `paintTableGrid`
+  (zones, ombrage), `cellTextBoxes` (rectangle réuni) étendues ; `paintText` inchangé (seul chemin du texte, B1).
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+pnpm --filter @roomboard/web exec vitest run src/engine/render/table-paint.test.ts src/engine/render/canvas2d.test.ts src/engine/tools/select.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | grep -E "C10b|F10|F13|×|FAIL|Test Files|Tests " | tail -40 && \
+pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep "error TS" | sed 's/(.*//' | sort | uniq -c
+```
+
+Attendu : aucune ligne `×` ; 3 `✓ zones et ombrage (C10b, F13) > …`, 2 `✓ Canvas2DRenderer — tableau (C10b) > …`,
+6 `✓ révélation d'un ombrage (F10) > …` dont « glisser de 5 px (< 8) : révélé quand même » et « glisser de 9 px :
+déplacement depuis le point d'appui, rien de révélé » (Review Focus 5) ; « fonds et traits du tableau (C10a, T13, B1) »,
+« Canvas2DRenderer — tableau (C10a) », « outil Sélection (D15, D38) », « outil Sélection — magnétisme (C9, S3) » restent
+verts (tests à garder verts de la carte). `tsc` : les écarts `src/engine/render/*.test.ts` sont fermés ici ; restent
+seulement `src/app/stage-tags.test.ts` et `src/app/workspace.ts` (fermés par T11).
+
+**Contraintes (recopiées).**
+- GC2 TDD : test rouge d'abord, vu rouge, puis le code. Aucun test sauté ni désactivé (`skip`, `only`, `todo`,
+  `#[ignore]`), aucun seuil ni délai relevé ; un test qui échoue sur un délai est rejoué une fois avant d'être jugé.
+- GC3 PATH : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` avant toute commande. Aucun build Tauri, aucun build Android.
+- GC4 Préparation : `cd "$WT" && ([ -d node_modules ] || pnpm install --frozen-lockfile) && mkdir -p apps/web/src/wasm apps/web/src/wasm-formats && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm/*.d.ts apps/web/src/wasm/ && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm-formats/*.d.ts apps/web/src/wasm-formats/`.
+- GC5 Preuve bornée : la commande ci-dessus, telle quelle ; le rapport cite N et les noms vus.
+- GC6 Commits : `git add <chemin>` un par un, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message
+  anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; ne pas pousser.
+- GC7 Jamais `git add -A`, `git add --all`, `git add .`, `git commit -a`, `--force`, ni `git stash` nu.
+- GC8 Aucune dépendance nouvelle ; jamais AGPL, GPL ni LGPL.
+- GC11 Le rendu lit les zones par `table-geom.ts` (aucune lecture de `span`) ; aucun texte dans `table-paint.ts` (B1).
+- GC13 `tsc` vide sauf `src/app/stage-tags.test.ts` et `src/app/workspace.ts` (écarts nommés, fermés par T11).
+- GC14 Rapport : une ligne `Réutilisation :` par ligne `Réutilise :` ci-dessus.
+- GC17 Aucun processus laissé en marche.
+- GC18 Périmètre : seuls les six fichiers ci-dessus ; dans `canvas2d.ts`, le commentaire seul.
+
+**Interdits.** Aucun `fillText` dans `table-paint.ts` ; aucune transparence de l'ombrage selon l'outil (F11) ; aucune
+révélation par un autre outil que Sélection (HB-4).
+
+**Critère « terminé ».** Commande bornée verte, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : tests rouges.** `apps/web/src/engine/render/table-paint.test.ts` : littéral `T` complété (`shade: null`
+  à ses trois cellules, `merges: []`) ; à la fin :
+
+```ts
+/** 2 × 2 (100 × 64) : zone r1 × c1..c2 (« Lundi », jaune ; la couverte garde un texte d'une autre version), r2:c2 ombrée. */
+const Z: TableData = {
+  color: "#000000",
+  size: 36,
+  cols: [{ id: "c1", width: 100 }, { id: "c2", width: 100 }],
+  rows: [{ id: "r1", height: 64 }, { id: "r2", height: 64 }],
+  cells: [
+    { row: "r1", col: "c1", text: "Lundi", fill: "#fef08a", shade: null },
+    { row: "r1", col: "c2", text: "caché", fill: "#bbf7d0", shade: null },
+    { row: "r2", col: "c2", text: "réponse", fill: null, shade: "#94a3b8" },
+  ],
+  merges: [{ row: "r1", col: "c1", rows: 1, cols: 2 }],
+};
+
+describe("zones et ombrage (C10b, F13)", () => {
+  it("zone fusionnée : un fond au rectangle réuni ; couverte : aucun fond ; trait intérieur de la zone omis", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), Z);
+    expect(ctx.rects[0]).toEqual([0, 0, 200, 64]);
+    expect(ctx.log).not.toContain("fillRect #bbf7d0");
+    expect(ctx.path).not.toContainEqual(["M", 100, 0]);
+    expect(ctx.path).toContainEqual(["M", 100, 64]);
+  });
+
+  it("F13 : ombrage : fond opaque à la couleur de la cellule, hachures #cbd5e1 découpées, traits du tableau par-dessus", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), Z);
+    expect(ctx.rects).toContainEqual([100, 64, 100, 64]);
+    const fill = ctx.log.indexOf("fillRect #94a3b8");
+    const hatch = ctx.log.indexOf(`stroke ${TABLE_SHADE_HATCH} ${TABLE_SHADE_HATCH_WIDTH}`);
+    const lines = ctx.log.lastIndexOf(`stroke #000000 ${TABLE_LINE_WIDTH}`);
+    expect(fill).toBeGreaterThanOrEqual(0);
+    expect(hatch).toBeGreaterThan(fill);
+    expect(lines).toBeGreaterThan(hatch);
+    expect(ctx.log.slice(fill, hatch)).toContain("clip");
+  });
+
+  it("cellTextBoxes (F11) : zone = rectangle réuni ; cellule couverte et cellule ombrée : aucun texte", () => {
+    expect(cellTextBoxes(Z)).toEqual([
+      { row: "r1", col: "c1", text: "Lundi", x: TABLE_PADDING, y: TABLE_PADDING, w: 200 - 2 * TABLE_PADDING, h: 64 - 2 * TABLE_PADDING },
+    ]);
+  });
+});
+```
+
+  (importer `TABLE_SHADE_HATCH`, `TABLE_SHADE_HATCH_WIDTH` de `../table-geom` avec `TABLE_LINE_WIDTH`, `TABLE_PADDING`.)
+
+  `apps/web/src/engine/render/canvas2d.test.ts` : littéral `TABLE` du bloc C10a complété (`shade: null` aux deux
+  cellules, `merges: []`) ; à la fin :
+
+```ts
+describe("Canvas2DRenderer — tableau (C10b)", () => {
+  const els: ElementView[] = [];
+  const ZT: TableElement = {
+    id: "tz",
+    kind: "table",
+    transform: [1, 0, 0, 1, 0, 0],
+    table: {
+      color: "#000000",
+      size: 36,
+      cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }],
+      rows: [{ id: "r1", height: 64 }, { id: "r2", height: 64 }],
+      cells: [
+        { row: "r1", col: "c1", text: "Lundi mardi mercredi jeudi", fill: null, shade: null },
+        { row: "r2", col: "c1", text: "réponse", fill: null, shade: "#94a3b8" },
+      ],
+      merges: [{ row: "r1", col: "c1", rows: 1, cols: 2 }],
+    },
+  };
+  function draw() {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => els.find((e) => e.id === id) ?? null, outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, {});
+    r.resize(100, 100, 1);
+    const page = { id: "p", elementIds: ["tz"] };
+    r.drawScene(page, IDENTITY, new Set());
+    return { r, scene, page };
+  }
+
+  it("texte d'une zone mis en lignes à la largeur réunie (une ligne) ; cellule ombrée : aucun fillText (F11)", () => {
+    els.splice(0, els.length, ZT);
+    const { scene } = draw();
+    expect(scene.texts.map((t) => t.text)).toEqual(["Lundi mardi mercredi jeudi"]);
+  });
+
+  it("zone défaite : le cache est remesuré sans invalidate (la clé suit la largeur des boîtes)", () => {
+    els.splice(0, els.length, ZT);
+    const { r, scene, page } = draw();
+    const first = scene.measures;
+    els.splice(0, els.length, { ...ZT, table: { ...ZT.table, merges: [] } });
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBeGreaterThan(first);
+    expect(scene.texts.filter((t) => t.text !== "réponse").length).toBeGreaterThan(1);
+  });
+});
+```
+
+  `apps/web/src/engine/tools/select.test.ts` : à la fin :
+
+```ts
+describe("révélation d'un ombrage (F10)", () => {
+  type S = ReturnType<typeof setup>;
+  /** Tableau 2 × 2 (240 × 64) en (100, 100), cellule (0, 0) ombrée. */
+  const shadedTable = (s: S) => {
+    const p = s.doc.pageIds()[0] ?? "";
+    const id = s.doc.apply({ type: "AddTable", page: p, x: 100, y: 100, cols: 2, rows: 2, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = s.doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    const cell = { row: v.table.rows[0]?.id ?? "", col: v.table.cols[0]?.id ?? "" };
+    s.doc.apply({ type: "SetTableShade", id, from: cell, to: cell, shade: "#94a3b8" });
+    return { id, cell };
+  };
+  const shades = (s: S, id: string): number => {
+    const v = s.doc.element(id);
+    return v?.kind === "table" ? v.table.cells.filter((c) => c.shade !== null).length : -1;
+  };
+
+  it("F10, S1 : toucher une cellule ombrée : SetTableShade null sur elle, une étape, sélection inchangée", () => {
+    const s = setup();
+    const { id, cell } = shadedTable(s);
+    gesture(s.tool, [[150, 130]]);
+    expect(s.runs).toEqual([{ type: "SetTableShade", id, from: cell, to: cell, shade: null }]);
+    expect([shades(s, id), s.tool.selection()]).toEqual([0, []]);
+    s.doc.undo();
+    expect(shades(s, id)).toBe(1);
+  });
+
+  it("F10, HB-24 : glisser de 5 px (< 8) : révélé quand même (seuil propre)", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    gesture(s.tool, [[150, 130], [155, 130]]);
+    expect(s.runs.map((c) => c.type)).toEqual(["SetTableShade"]);
+    expect(shades(s, id)).toBe(0);
+  });
+
+  it("F10 : glisser de 9 px : déplacement depuis le point d'appui, rien de révélé", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    gesture(s.tool, [[150, 130], [159, 130]]);
+    expect(s.runs).toEqual([{ type: "Transform", ids: [id], matrix: [1, 0, 0, 1, 9, 0] }]);
+    expect([shades(s, id), s.tool.selection()]).toEqual([1, [id]]);
+  });
+
+  it("F10 : Maj tenue, ou cellule non ombrée : sélection comme avant, rien d'écrit", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    s.setShift(true);
+    gesture(s.tool, [[150, 130]]);
+    expect([s.runs, s.tool.selection()]).toEqual([[], [id]]);
+    s.setShift(false);
+    s.tool.setSelection([]);
+    gesture(s.tool, [[400, 130]]);
+    expect([s.runs, s.tool.selection()]).toEqual([[], [id]]);
+  });
+
+  it("F10 : tableau déjà sélectionné : toucher une cellule ombrée (hors poignée) la révèle, la sélection reste", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    gesture(s.tool, [[400, 130]]);
+    gesture(s.tool, [[150, 130]]);
+    expect(s.runs.map((c) => c.type)).toEqual(["SetTableShade"]);
+    expect(s.tool.selection()).toEqual([id]);
+  });
+
+  it("F10 : une forme au-dessus de la cellule ombrée : la forme est sélectionnée, rien de révélé", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    const r = s.rect(140, 120, 160, 140);
+    gesture(s.tool, [[150, 130]]);
+    expect([s.tool.selection(), shades(s, id)]).toEqual([[r], 1]);
+  });
+});
+```
+
+- [ ] **Étape 3 : les voir rouges.** La commande bornée : `×` sur les blocs C10b et F10.
+
+- [ ] **Étape 4 : `table-paint.ts`.** Remplacer le fichier :
+
+```ts
+/**
+ * Fonds, ombrages et traits d'un tableau (C10a, T13, B1 ; C10b, F11, F13) : aucun texte ici — le texte des cellules
+ * passe par `paintText` de `canvas2d.ts`, seul chemin de dessin du texte. Repère local du tableau (coin en 0, 0), sous
+ * sa matrice. Une zone fusionnée se dessine à son rectangle réuni, traits intérieurs omis (PC15) ; un ombrage est opaque
+ * (fond à sa couleur, hachures à 45°), découpé à la cellule ou à la zone, dessiné quel que soit l'outil, sous les
+ * traits ; le texte d'une cellule ombrée ou couverte n'est jamais dessiné (F11).
+ */
+import type { Bounds, TableCell, TableData } from "../../core/api";
+import {
+  cellInnerBox,
+  cellOf,
+  cellRect,
+  isCovered,
+  mergeRanges,
+  TABLE_LINE_WIDTH,
+  TABLE_SHADE_HATCH,
+  TABLE_SHADE_HATCH_STEP,
+  TABLE_SHADE_HATCH_WIDTH,
+  type Cell,
+} from "../table-geom";
+
+export interface CellTextBox {
+  readonly row: string;
+  readonly col: string;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** Bords successifs : 0, puis la somme des tailles. */
+const edges = (sizes: readonly number[]): number[] =>
+  sizes.reduce<number[]>((acc, s) => [...acc, (acc[acc.length - 1] ?? 0) + s], [0]);
+
+/** Rangs d'une cellule de la vue, ou null si sa ligne ou sa colonne n'est plus lue, ou si une zone la couvre. */
+const visibleCell = (t: TableData, cell: TableCell): Cell | null => {
+  const at = cellOf(t, cell);
+  return at === null || isCovered(t, at) ? null : at;
+};
+
+/** Couleur lisible d'abord : le canvas ignore une couleur qu'il ne sait pas lire (validColor accepte tout nom de 3 à 20
+ *  lettres), la valeur d'avant resterait. */
+function fillBox(ctx: CanvasRenderingContext2D, b: Bounds, color: string): void {
+  ctx.fillStyle = "transparent";
+  ctx.fillStyle = color;
+  ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+}
+
+/** Ombrage (F13) : fond opaque à la couleur de la cellule, hachures à 45° découpées au rectangle. */
+function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): void {
+  fillBox(ctx, b, color);
+  const w = b.x1 - b.x0;
+  const h = b.y1 - b.y0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(b.x0, b.y0, w, h);
+  ctx.clip();
+  ctx.beginPath();
+  for (let k = -h; k < w; k += TABLE_SHADE_HATCH_STEP) {
+    ctx.moveTo(b.x0 + k, b.y1);
+    ctx.lineTo(b.x0 + k + h, b.y0);
+  }
+  ctx.strokeStyle = TABLE_SHADE_HATCH;
+  ctx.lineWidth = TABLE_SHADE_HATCH_WIDTH;
+  ctx.stroke();
+  ctx.restore();
+}
+
+export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData): void {
+  for (const cell of t.cells) {
+    if (cell.fill === null) continue;
+    const at = visibleCell(t, cell);
+    if (at !== null) fillBox(ctx, cellRect(t, at), cell.fill);
+  }
+  for (const cell of t.cells) {
+    if (cell.shade === null) continue;
+    const at = visibleCell(t, cell);
+    if (at !== null) paintShade(ctx, cellRect(t, at), cell.shade);
+  }
+  const xs = edges(t.cols.map((c) => c.width));
+  const ys = edges(t.rows.map((r) => r.height));
+  const w = xs[xs.length - 1] ?? 0;
+  const h = ys[ys.length - 1] ?? 0;
+  const zones = mergeRanges(t);
+  ctx.beginPath();
+  if (zones.length === 0) {
+    for (const x of xs) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+    }
+    for (const y of ys) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+    }
+  } else {
+    // Segments par cellule ; le bord commun de deux cellules d'une même zone est omis.
+    const same = (r: number, c: number, r2: number, c2: number): boolean =>
+      zones.some((z) => r >= z.r0 && r <= z.r1 && c >= z.c0 && c <= z.c1 && r2 >= z.r0 && r2 <= z.r1 && c2 >= z.c0 && c2 <= z.c1);
+    for (let i = 0; i < xs.length; i++) {
+      for (let r = 0; r < t.rows.length; r++) {
+        if (i > 0 && i < t.cols.length && same(r, i - 1, r, i)) continue;
+        ctx.moveTo(xs[i] ?? 0, ys[r] ?? 0);
+        ctx.lineTo(xs[i] ?? 0, ys[r + 1] ?? 0);
+      }
+    }
+    for (let j = 0; j < ys.length; j++) {
+      for (let c = 0; c < t.cols.length; c++) {
+        if (j > 0 && j < t.rows.length && same(j - 1, c, j, c)) continue;
+        ctx.moveTo(xs[c] ?? 0, ys[j] ?? 0);
+        ctx.lineTo(xs[c + 1] ?? 0, ys[j] ?? 0);
+      }
+    }
+  }
+  ctx.strokeStyle = t.color;
+  ctx.lineWidth = TABLE_LINE_WIDTH;
+  ctx.lineCap = "square";
+  ctx.stroke();
+}
+
+/** Boîtes de texte : cellules au texte non vide, ni couvertes ni ombrées (F11), au rectangle intérieur de leur zone. */
+export function cellTextBoxes(t: TableData): CellTextBox[] {
+  const out: CellTextBox[] = [];
+  for (const cell of t.cells) {
+    if (cell.text === "" || cell.shade !== null) continue;
+    const at = visibleCell(t, cell);
+    if (at === null) continue;
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at) });
+  }
+  return out;
+}
+```
+
+  `apps/web/src/engine/render/canvas2d.ts:368`, commentaire de `cellLinesOf` :
+
+```ts
+  /** Lignes de chaque cellule au texte non vide (B1) : `layoutRich` du texte brut (C7b remplacera `plainSpans`) ; la clé
+   *  suit la largeur de chaque boîte, donc la largeur réunie d'une zone fusionnée (C10b). */
+```
+
+- [ ] **Étape 5 : révélation.** `apps/web/src/engine/tools/select.ts` :
+  - en-tête, ajouter à la fin du bloc : ` * C10b (F10) : un toucher sans glisser (< 8 px écran, REVEAL_TAP_PX), sans Maj, sur une cellule ombrée du tableau le plus
+ * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.`
+  - imports : `import { applyMatrix, IDENTITY_MATRIX, invertMatrix } from "../../core/shapes";` et
+    `import { cellAt, cellContent } from "../table-geom";`
+  - après `DRAG_THRESHOLD_PX` : `/** Toucher qui révèle un ombrage (F10, HB-24) : seuil propre, le glisser de 2 px est trop petit au doigt. */ export const REVEAL_TAP_PX = 8;`
+  - remplacer `Mode` et `Drag` :
+
+```ts
+type Mode = "move" | "resize" | "band" | "none" | "tap-shade";
+
+/** Cellule ombrée retenue au `begin` (F10), révélée au `close` si le pointeur n'a pas glissé. */
+interface Reveal {
+  readonly id: string;
+  readonly row: string;
+  readonly col: string;
+}
+
+interface Drag {
+  readonly pointerId: number;
+  /** `tap-shade` devient `move` au-delà de `REVEAL_TAP_PX`. */
+  mode: Mode;
+  readonly x0: number;
+  readonly y0: number;
+  x: number;
+  y: number;
+  readonly zoom: number;
+  readonly handle: HandleId | null;
+  readonly base: Bounds | null;
+  readonly shift: boolean;
+  readonly reveal: Reveal | null;
+}
+```
+
+  - `startDrag` : paramètre `extra: { handle?: HandleId; base?: Bounds; reveal?: Reveal } = {}`, champ
+    `reveal: extra.reveal ?? null,` ;
+  - après `startDrag`, dans `createSelectTool` :
+
+```ts
+  /** Cellule ombrée sous (x, y) monde du tableau `id` (ancre d'une zone), ou null. */
+  const shadedCellAt = (id: string, x: number, y: number): Reveal | null => {
+    const el = ctx.doc.element(id);
+    if (el?.kind !== "table") return null;
+    const inv = invertMatrix(el.transform);
+    if (inv === null) return null;
+    const [lx, ly] = applyMatrix(inv, x, y);
+    const c = cellAt(el.table, lx, ly);
+    const r = c === null ? undefined : el.table.rows[c.row];
+    const k = c === null ? undefined : el.table.cols[c.col];
+    if (r === undefined || k === undefined) return null;
+    return cellContent(el.table, r.id, k.id).shade === null ? null : { id, row: r.id, col: k.id };
+  };
+```
+
+  - dans `begin`, juste après `if (hit !== null) {` :
+
+```ts
+        // F10 : sans Maj, une cellule ombrée du tableau le plus haut est retenue ; le relâché décide.
+        const reveal = shift ? null : shadedCellAt(hit, x, y);
+        if (reveal !== null) {
+          startDrag(pointerId, "tap-shade", x, y, { reveal });
+          return;
+        }
+```
+
+  - dans `extend`, après `drag.y = y;` :
+
+```ts
+      // F10 : au-delà de 8 px écran, le toucher devient un déplacement depuis le point d'appui.
+      if (drag.mode === "tap-shade" && Math.hypot(x - drag.x0, y - drag.y0) * drag.zoom >= REVEAL_TAP_PX) {
+        const id = drag.reveal?.id;
+        if (id !== undefined && !selection.includes(id)) selection = [id];
+        drag.mode = "move";
+      }
+```
+
+  - dans `close`, après `if (how !== "end") return;` :
+
+```ts
+      if (d.mode === "tap-shade") {
+        const r = d.reveal;
+        if (r !== null) ctx.run({ type: "SetTableShade", id: r.id, from: { row: r.row, col: r.col }, to: { row: r.row, col: r.col }, shade: null });
+        return;
+      }
+```
+
+- [ ] **Étape 6 : vert.** La commande bornée.
+
+- [ ] **Étape 7 : commit.**
+
+```bash
+cd "$WT" && git add apps/web/src/engine/render/table-paint.ts && git add apps/web/src/engine/render/table-paint.test.ts && \
+git add apps/web/src/engine/render/canvas2d.ts && git add apps/web/src/engine/render/canvas2d.test.ts && \
+git add apps/web/src/engine/tools/select.ts && git add apps/web/src/engine/tools/select.test.ts && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(web): paint merged cells and shades, reveal shades with the select tool" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, sortie `tsc`, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t10"></a>
+
+### Tâche T10 — Import : grille posée, classeur lu dans un Worker jetable, gestionnaire `sheet`
+
+**Objectif.** Un seul chemin pose une grille dans l'onglet actif (DAB2, F21, F22) : `insertTableGrid` mesure les
+hauteurs exigées (colonnes à 240, lignes au moins 64), place le tableau par `placement` de l'import d'image (réduit,
+jamais agrandi, à 80 % du visible, centré au point de dépôt ou au centre de la vue, cascade), lance une `ImportTable`
+(une étape, S4 « Ctrl+Z retire le tableau d'un coup ») et dit la troncature et les textes coupés. Le classeur se lit
+dans un **Worker jetable** par lecture, qui charge sa propre instance du module `formats` et est arrêté après la
+réponse, l'erreur ou une panique Wasm (F28, DAB4) : un classeur malformé n'empêche jamais d'enregistrer. Le registre de
+`importFiles` gagne le gestionnaire `sheet` (nature `objet`, `.xlsx` / `.xlsm` **et** en-tête `PK\x03\x04`), avec ses
+messages et son plafond de 100 Mo aussi dans la coque (F22). `vite.config.ts` gagne `worker: { format: "es" }`.
+
+**Fichiers.**
+- Créer : `apps/web/src/platform/table-insert.ts`, `table-insert.test.ts`, `sheet-reader.ts`, `sheet-reader.test.ts`,
+  `sheet-worker.ts`
+- Modifier : `apps/web/src/platform/import.ts:1-35` (en-tête, `ImportDeps.readSheet`), `:85-92` (registre, gestionnaire),
+  `apps/web/src/platform/import.test.ts` (`fakeTarget`, bloc neuf)
+- Modifier : `apps/web/src/platform/image-import.ts:226-236` (`ImageTarget` gagne `measure`, `textStyle`) ;
+  `apps/web/src/platform/image-import.test.ts` : aucun changement attendu (ses cibles sont `as never`) — à toucher
+  seulement si `tsc` le demande
+- Modifier : `apps/web/src/platform/container.ts:46-58` (`SheetFormatsBinding`, `hasSheetReader`),
+  `apps/web/src/platform/container.contract.test.ts` (bloc neuf), `apps/web/vite.config.ts`
+
+**Interfaces.**
+- Consomme : (T3) `SheetReader` du module `formats` (`open`, `rows`, `cols`, `cells`, `merges` en `Uint32Array`,
+  `source_rows`, `source_cols`, `cut_cells`, `free`), messages « la première feuille est vide », « classeur trop gros
+  pour un import en valeurs », « classeur illisible : … », fixture `valeurs.xlsx` ; (T4) `Command` `ImportTable`,
+  `TableData` avec `merges` / `shade` ; (T5) `TableGrid`, `GridMerge` ; (T6) `rowHeightsFor` (zones), `TABLE_COL_WIDTH`,
+  `TABLE_ROW_HEIGHT`.
+- Produit (lu par T11) :
+
+```ts
+// platform/table-insert.ts
+export const TABLE_TAB_CLOSED = "onglet fermé pendant l'import, tableau non inséré";
+export const CUT_CELLS_MESSAGE = "texte coupé à 2 000 caractères dans certaines cellules";
+export function truncatedMessage(rows: number, cols: number): string;
+export function gridTable(grid: TableGrid, size: number): TableData;
+export function gridRowHeights(grid: TableGrid, size: number, measure: Measure): number[];
+export function insertTableGrid(target: ImageTarget, grid: TableGrid, at: Point | null, index: number, notify: (m: string) => Promise<void>, name?: string): Promise<"inserted" | "failed">;
+// platform/sheet-reader.ts
+export const EMPTY_SHEET_MESSAGE: string; export const SHEET_TOO_BIG_MESSAGE: string; export const WORKER_FAILED_MESSAGE: string;
+export interface WorkerLike { onmessage: ((e: { readonly data: unknown }) => void) | null; onerror: ((e: unknown) => void) | null; postMessage(message: unknown, transfer: Transferable[]): void; terminate(): void }
+export interface SheetReader { read(file: Blob): Promise<TableGrid> }
+export interface SheetBinding { rows(): number; cols(): number; cells(): string[]; merges(): Uint32Array; source_rows(): number; source_cols(): number; cut_cells(): boolean; free(): void }
+export function gridOf(r: SheetBinding): TableGrid;
+export function isTableGrid(v: unknown): v is TableGrid;
+export function createSheetReader(spawn: () => WorkerLike): SheetReader;
+// platform/import.ts
+export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
+export function isSheetName(name: string): boolean;
+export function sheetHandler(deps: { readSheet(b: Blob): Promise<TableGrid> }): ImportHandler;
+// ImportDeps.readSheet?(b: Blob): Promise<TableGrid>
+// platform/image-import.ts : ImageTarget.measure(): Measure ; ImageTarget.textStyle(): { readonly color: string; readonly size: number }
+// platform/container.ts
+export interface SheetFormatsBinding extends FormatsBinding { readonly SheetReader: { open(bytes: Uint8Array): SheetBinding } }
+export function hasSheetReader(m: FormatsBinding): m is SheetFormatsBinding;
+```
+
+- Réutilise : `apps/web/src/platform/container.ts:47` (`FormatsBinding`), `container-load.ts:7` (`loadFormatsModule`) —
+  `SheetFormatsBinding` étend `FormatsBinding` (les faux modules des tests existants restent valides) ; le Worker appelle
+  `loadFormatsModule` tel quel et vérifie `hasSheetReader`.
+- Réutilise : aucun Worker dans `apps/web/src` (termes `Worker(`, `postMessage`, `onmessage`) — nouveaux modules
+  `platform/sheet-reader.ts` : `createSheetReader(spawn: () => WorkerLike): SheetReader`, `SheetReader { read(file: Blob): Promise<TableGrid> }`
+  (un Worker par lecture, arrêté après la réponse ou l'erreur) ; `platform/sheet-worker.ts` : message `{ bytes }` →
+  `{ grid }` ou `{ error }` (DAB4).
+- Réutilise : `apps/web/src/platform/import.ts:58` (`ImportHandler`), `:91` (registre), `:25` (`ImportDeps`) —
+  `sheetHandler(deps: { readSheet(b: Blob): Promise<TableGrid> }): ImportHandler` ajouté au registre ; `ImportDeps.readSheet?`.
+- Réutilise : `apps/web/src/platform/import.ts` (`f.head(HEAD_BYTES)` de la boucle, `isRoomboardName`) — `detect(head, name)` :
+  extension `.xlsx` / `.xlsm` et `PK\x03\x04` (même forme que `isRoomboardName`).
+- Réutilise : `apps/web/src/platform/image-import.ts:194` (`anchorOf`), `:204` (`visibleOf`), `:212` (`placement`), `:226`
+  (`ImageTarget`) ; `engine/table-geom.ts:113` (`rowHeightsFor`), `:13-14` (`TABLE_COL_WIDTH`, `TABLE_ROW_HEIGHT`) —
+  nouveau `platform/table-insert.ts` : `insertTableGrid(target, grid, at, index, notify, name?)` (mesure, matrice,
+  `ImportTable`, message de troncature) ; `ImageTarget` gagne `measure()` et `textStyle()`.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+cargo build -p roomboard-formats-wasm --target wasm32-unknown-unknown --release 2>&1 | tail -1 && rm -rf apps/web/src/wasm-formats && \
+wasm-bindgen --target web --remove-name-section --out-dir apps/web/src/wasm-formats target/wasm32-unknown-unknown/release/roomboard_formats_wasm.wasm && \
+ROOMBOARD_WASM_REQUIRED=1 pnpm --filter @roomboard/web exec vitest run src/platform --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | grep -E "F21|F22|F28|C10b|×|FAIL|Test Files|Tests " | tail -40 && \
+pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep "error TS" | sed 's/(.*//' | sort | uniq -c && \
+pnpm --filter @roomboard/web exec vite build --outDir /tmp/c10b-t10-dist 2>&1 | tail -2 && \
+find /tmp/c10b-t10-dist/assets -name 'roomboard_formats_wasm_bg*.wasm' | wc -l && rm -rf /tmp/c10b-t10-dist
+```
+
+Attendu : aucune ligne `×` ; 6 `✓ poser une grille (F21, F22) > …`, 5 `✓ lecteur de classeur en Worker (F28) > …` dont
+« onerror du Worker (panic Wasm) : rejet, Worker arrêté » (Review Focus 4), 5 `✓ importFiles : classeur (F28) > …`,
+1 `✓ contrat C10b : classeur (vrai module formats) > …` ; les blocs existants de `import.test.ts`, `image-import.test.ts`,
+`container.test.ts`, `container.contract.test.ts`, `paste.test.ts` restent verts ; `tsc` : seul l'écart nommé
+`src/app/workspace.ts` (et `src/app/stage-tags.test.ts`), fermés par T11 ; `vite build` réussit et le décompte des
+modules `formats` vaut `1`.
+
+**Écarts `tsc` nommés (recopiés).** Après cette tâche et jusqu'à T11 : `src/app/workspace.ts` (`measure` / `textStyle`
+absents de `imageTarget`) ; `src/app/stage-tags.test.ts` (de T6). Aucun autre.
+
+**Contraintes (recopiées).**
+- GC2 TDD : test rouge d'abord, vu rouge, puis le code. Aucun test sauté ni désactivé (`skip`, `only`, `todo`,
+  `#[ignore]`), aucun seuil ni délai relevé ; un test qui échoue sur un délai est rejoué une fois avant d'être jugé. Ici
+  le module `formats` est exigé (`ROOMBOARD_WASM_REQUIRED=1`).
+- GC3 PATH : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` avant toute commande. Aucun build Tauri, aucun build Android.
+- GC4 Préparation : `cd "$WT" && ([ -d node_modules ] || pnpm install --frozen-lockfile) && ([ -d target ] || cp -r /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/target .) && ([ -d apps/web/src/wasm ] || cp -r /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm apps/web/src/)`
+  (module principal copié pour `vite build` seulement ; `apps/web/src/wasm-formats` reconstruit par la commande ; rien
+  de cela n'est commité).
+- GC5 Preuve bornée : la commande ci-dessus, telle quelle ; le rapport cite N et les noms vus.
+- GC6 Commits : `git add <chemin>` un par un, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message
+  anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; ne pas pousser.
+- GC7 Jamais `git add -A`, `git add --all`, `git add .`, `git commit -a`, `--force`, ni `git stash` nu.
+- GC8 Aucune dépendance nouvelle ; jamais AGPL, GPL ni LGPL.
+- GC9 Plafond du module `formats` 3 Mio ni baissé ni relevé ; un seul fichier `formats` émis (le Worker et la page le
+  partagent, `verifier.sh:61-65` inchangé).
+- GC11 Le classeur n'est jamais lu par l'instance du module `formats` de la page (`createPageCodec`, HR6).
+- GC13 `tsc` vide sauf les écarts nommés ci-dessus.
+- GC14 Rapport : une ligne `Réutilisation :` par ligne `Réutilise :` ci-dessus.
+- GC16 Aucun `.xlsx` téléchargé : les tests lisent `crates/roomboard-formats/tests/fixtures/valeurs.xlsx` ou des octets
+  fabriqués.
+- GC17 Aucun processus laissé en marche ; `/tmp/c10b-t10-dist` retiré.
+- GC18 Périmètre : seuls les fichiers ci-dessus.
+
+**Patron à ne pas reprendre.** Lire le classeur avec le codec de la page (`createPageCodec(loadFormatsModule)`,
+`apps/web/src/platform/container.ts:59`) : son instance Wasm est gardée jusqu'au rechargement (HR6) et un `panic` de
+`calamine` (`panic = abort` en wasm32) la tuerait, le document ne s'enregistrerait plus. Ici : une instance neuve dans
+un Worker neuf par lecture, toujours arrêté (`finally`). Chemin de référence du port asynchrone sur `Blob` :
+`apps/web/src/platform/container.ts:1-4`, `:72-90`.
+
+**Interdits.** Ne pas créer le Worker hors de `main.ts` (T11) ; aucun `import` statique de `sheet-worker.ts` ni de
+`src/wasm-formats/` depuis un module testé ; ne pas toucher `verifier.sh`.
+
+**Critère « terminé ».** Commande bornée verte, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : tests rouges.** Créer `apps/web/src/platform/table-insert.test.ts` :
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+import type { Command } from "../core/api";
+import { createAssetStore } from "../core/asset-store";
+import { IDENTITY } from "../engine/camera";
+import { cellHeight } from "../engine/table-geom";
+import type { TableGrid } from "./html-table";
+import type { ImageTarget } from "./image-import";
+import { CUT_CELLS_MESSAGE, gridRowHeights, insertTableGrid, TABLE_TAB_CLOSED } from "./table-insert";
+
+const narrow = (s: string): number => s.length * 10;
+type Import = Extract<Command, { type: "ImportTable" }>;
+function fakeTarget(o: { alive?: boolean; refuse?: boolean } = {}) {
+  const cmds: Command[] = [];
+  const target: ImageTarget = {
+    assets: createAssetStore(),
+    page: () => "p1",
+    camera: () => IDENTITY,
+    stageRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
+    alive: () => o.alive !== false,
+    measure: () => narrow,
+    textStyle: () => ({ color: "#1d4ed8", size: 36 }),
+    run: (cmd) => {
+      cmds.push(cmd);
+      return o.refuse === true ? null : { pages: ["p1"], ids: ["t"], removed: [], full: false, version: 1 };
+    },
+  };
+  return { target, cmds };
+}
+const grid = (over: Partial<TableGrid> = {}): TableGrid => ({
+  rows: 2, cols: 2, cells: ["Titre", "", "a", "b"], merges: [{ row: 0, col: 0, rows: 1, cols: 2 }], sourceRows: 2, sourceCols: 2, cutCells: false, ...over,
+});
+
+describe("poser une grille (F21, F22)", () => {
+  it("F21 : colonnes 240, lignes ≥ 64, couleur du stylo, centrée au centre de la vue ; une ImportTable, aucun message", async () => {
+    const t = fakeTarget();
+    const notify = vi.fn(async (_m: string) => undefined);
+    expect(await insertTableGrid(t.target, grid(), null, 0, notify)).toBe("inserted");
+    expect(t.cmds).toEqual([{
+      type: "ImportTable", page: "p1", matrix: [1, 0, 0, 1, 160, 236], colWidth: 240, rowHeights: [64, 64], cols: 2,
+      cells: ["Titre", "", "a", "b"], merges: [[0, 0, 1, 2]], color: "#1d4ed8", size: 36,
+    }]);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("F21 : texte long : sa ligne prend la hauteur exigée ; texte couvert ignoré pour la mesure", () => {
+    const long = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd eeeeeeeeee";
+    expect(gridRowHeights(grid({ cells: ["", "", long, ""] }), 36, narrow)).toEqual([64, Math.max(64, cellHeight(long, 36, 240, narrow))]);
+    expect(gridRowHeights(grid({ rows: 1, cells: ["court", long], sourceRows: 1 }), 36, narrow)).toEqual([64]);
+  });
+
+  it("F22 : 70 × 6 : message de troncature avec le nom du fichier ; collage : sans nom", async () => {
+    const big = grid({ rows: 64, cols: 6, cells: new Array<string>(384).fill(""), merges: [], sourceRows: 70, sourceCols: 6 });
+    const notify = vi.fn(async (_m: string) => undefined);
+    await insertTableGrid(fakeTarget().target, big, null, 0, notify, "valeurs.xlsx");
+    await insertTableGrid(fakeTarget().target, big, null, 0, notify);
+    expect(notify.mock.calls.map((c) => c[0])).toEqual([
+      "valeurs.xlsx : tableau limité à 64 lignes et 64 colonnes (le fichier en a 70 × 6)",
+      "tableau limité à 64 lignes et 64 colonnes (le fichier en a 70 × 6)",
+    ]);
+  });
+
+  it("F22 : textes coupés : un seul message", async () => {
+    const notify = vi.fn(async (_m: string) => undefined);
+    await insertTableGrid(fakeTarget().target, grid({ cutCells: true }), null, 0, notify, "v.xlsx");
+    expect(notify.mock.calls).toEqual([[`v.xlsx : ${CUT_CELLS_MESSAGE}`]]);
+  });
+
+  it("onglet fermé : rien d'écrit, message ; ImportTable refusée : failed sans message", async () => {
+    const closed = fakeTarget({ alive: false });
+    const notify = vi.fn(async (_m: string) => undefined);
+    expect(await insertTableGrid(closed.target, grid(), null, 0, notify, "v.xlsx")).toBe("failed");
+    expect([closed.cmds, notify.mock.calls]).toEqual([[], [[`v.xlsx : ${TABLE_TAB_CLOSED}`]]]);
+    const refused = fakeTarget({ refuse: true });
+    const quiet = vi.fn(async (_m: string) => undefined);
+    expect(await insertTableGrid(refused.target, grid(), null, 0, quiet)).toBe("failed");
+    expect(quiet).not.toHaveBeenCalled();
+  });
+
+  it("point de dépôt dans la scène : centré sur ce point, décalé de 24 par fichier déjà inséré (R4)", async () => {
+    const t = fakeTarget();
+    await insertTableGrid(t.target, grid(), { x: 400, y: 300 }, 1, vi.fn(async () => undefined));
+    expect((t.cmds[0] as Import).matrix).toEqual([1, 0, 0, 1, 400 - 240 + 24, 300 - 64 + 24]);
+  });
+});
+```
+
+  Créer `apps/web/src/platform/sheet-reader.test.ts` :
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+import type { TableGrid } from "./html-table";
+import { createSheetReader, EMPTY_SHEET_MESSAGE, gridOf, WORKER_FAILED_MESSAGE, type WorkerLike } from "./sheet-reader";
+
+class FakeWorker implements WorkerLike {
+  onmessage: ((e: { readonly data: unknown }) => void) | null = null;
+  onerror: ((e: unknown) => void) | null = null;
+  posted: unknown[] = [];
+  terminated = 0;
+  postMessage(m: unknown): void {
+    this.posted.push(m);
+  }
+  terminate(): void {
+    this.terminated++;
+  }
+}
+const G: TableGrid = { rows: 1, cols: 2, cells: ["a", "b"], merges: [], sourceRows: 1, sourceCols: 2, cutCells: false };
+const blob = () => new Blob([new Uint8Array([0x50, 0x4b, 3, 4])]);
+
+describe("lecteur de classeur en Worker (F28)", () => {
+  it("un Worker par lecture, octets envoyés, arrêté après la réponse", async () => {
+    const w = new FakeWorker();
+    const spawn = vi.fn(() => w);
+    const p = createSheetReader(spawn).read(blob());
+    await vi.waitFor(() => expect(w.posted).toHaveLength(1));
+    expect(w.posted[0]).toEqual({ bytes: new Uint8Array([0x50, 0x4b, 3, 4]) });
+    w.onmessage?.({ data: { grid: G } });
+    await expect(p).resolves.toEqual(G);
+    expect([spawn.mock.calls.length, w.terminated]).toEqual([1, 1]);
+  });
+
+  it("erreur rendue par le Worker : rejet avec son message, Worker arrêté", async () => {
+    const w = new FakeWorker();
+    const p = createSheetReader(() => w).read(blob());
+    await vi.waitFor(() => expect(w.posted).toHaveLength(1));
+    w.onmessage?.({ data: { error: EMPTY_SHEET_MESSAGE } });
+    await expect(p).rejects.toThrow(EMPTY_SHEET_MESSAGE);
+    expect(w.terminated).toBe(1);
+  });
+
+  it("onerror du Worker (panic Wasm) : rejet, Worker arrêté ; la lecture suivante a son propre Worker (DAB4)", async () => {
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let n = 0;
+    const reader = createSheetReader(() => workers[n++] ?? new FakeWorker());
+    const p = reader.read(blob());
+    await vi.waitFor(() => expect(workers[0]?.posted).toHaveLength(1));
+    workers[0]?.onerror?.(new Error("unreachable"));
+    await expect(p).rejects.toThrow(WORKER_FAILED_MESSAGE);
+    expect(workers[0]?.terminated).toBe(1);
+    const q = reader.read(blob());
+    await vi.waitFor(() => expect(workers[1]?.posted).toHaveLength(1));
+    workers[1]?.onmessage?.({ data: { grid: G } });
+    await expect(q).resolves.toEqual(G);
+  });
+
+  it("réponse mal formée : rejet", async () => {
+    const w = new FakeWorker();
+    const p = createSheetReader(() => w).read(blob());
+    await vi.waitFor(() => expect(w.posted).toHaveLength(1));
+    w.onmessage?.({ data: { grid: { rows: 1, cols: 1, cells: [] } } });
+    await expect(p).rejects.toThrow(WORKER_FAILED_MESSAGE);
+  });
+
+  it("gridOf : fusions en quadruplets, dimensions de la source, textes coupés", () => {
+    const freed: number[] = [];
+    const g = gridOf({
+      rows: () => 2, cols: () => 2, cells: () => ["a", "", "c", "d"], merges: () => new Uint32Array([0, 0, 1, 2]),
+      source_rows: () => 70, source_cols: () => 6, cut_cells: () => true, free: () => freed.push(1),
+    });
+    expect(g).toEqual({ rows: 2, cols: 2, cells: ["a", "", "c", "d"], merges: [{ row: 0, col: 0, rows: 1, cols: 2 }], sourceRows: 70, sourceCols: 6, cutCells: true });
+    expect(freed).toEqual([]);
+  });
+});
+```
+
+  Dans `apps/web/src/platform/import.test.ts` : `fakeTarget` gagne `measure: () => (s: string) => s.length * 10,` et
+  `textStyle: () => ({ color: "#000000", size: 36 }),` ; importer `SHEET_MAX_BYTES` de `./import`, `EMPTY_SHEET_MESSAGE`
+  de `./sheet-reader` et le type `TableGrid` de `./html-table` ; à la fin :
+
+```ts
+describe("importFiles : classeur (F28)", () => {
+  const G: TableGrid = { rows: 2, cols: 2, cells: ["a", "b", "c", "d"], merges: [], sourceRows: 2, sourceCols: 2, cutCells: false };
+  const PK = new Uint8Array([0x50, 0x4b, 3, 4, 9]);
+
+  it("S4 : .xlsx reconnu par son nom et PK : readSheet puis une ImportTable dans l'onglet actif", async () => {
+    const t = fakeTarget();
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => t.target, readSheet }).importFiles([file("v.xlsx", PK)], null);
+    expect(r).toEqual({ opened: [], inserted: ["v.xlsx"], refused: [], failed: [] });
+    expect(readSheet).toHaveBeenCalledTimes(1);
+    expect(t.cmds).toHaveLength(1);
+    expect(t.cmds[0]).toMatchObject({ type: "ImportTable", cols: 2, cells: ["a", "b", "c", "d"], colWidth: 240 });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("S4 : casse.xlsx sans en-tête PK : refusé par le registre (prochaine version) ; .xlsm avec PK : reconnu", async () => {
+    const t = fakeTarget();
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => t.target, readSheet })
+      .importFiles([file("casse.xlsx", new Uint8Array([1, 2, 3, 4])), file("m.xlsm", PK)], null);
+    expect([r.refused, r.inserted]).toEqual([["casse.xlsx"], ["m.xlsm"]]);
+    expect(notify).toHaveBeenCalledWith(`casse.xlsx : ${LATER_FORMAT_MESSAGE}`);
+  });
+
+  it("S4 : lecture en échec : « Import impossible (casse.xlsx) : … » ; feuille vide : « <nom> : la première feuille est vide »", async () => {
+    const notify = vi.fn(async (_m: string) => undefined);
+    const fails = (m: string) => createImporter({ openDocument: vi.fn(async () => true), notify, target: () => fakeTarget().target, readSheet: async () => { throw new Error(m); } });
+    expect((await fails("classeur illisible : zip").importFiles([file("casse.xlsx", PK)])).failed).toEqual(["casse.xlsx"]);
+    await fails(EMPTY_SHEET_MESSAGE).importFiles([file("vide.xlsx", PK)]);
+    expect(notify.mock.calls.map((c) => c[0])).toEqual(["Import impossible (casse.xlsx) : classeur illisible : zip", `vide.xlsx : ${EMPTY_SHEET_MESSAGE}`]);
+  });
+
+  it("F22 : plus de 100 Mo dans la coque (maxBytes nul) : refusé par le gestionnaire, rien lu", async () => {
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const big = { ...file("big.xlsx", PK), size: SHEET_MAX_BYTES + 1 };
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => fakeTarget().target, readSheet }).importFiles([big]);
+    expect(r.failed).toEqual(["big.xlsx"]);
+    expect(readSheet).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("big.xlsx : classeur trop gros pour un import en valeurs");
+  });
+
+  it("sans readSheet (amorce partielle, tests anciens) : .xlsx refusé comme avant", async () => {
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), target: () => fakeTarget().target }).importFiles([file("v.xlsx", PK)]);
+    expect(r.refused).toEqual(["v.xlsx"]);
+  });
+});
+```
+
+  Dans `apps/web/src/platform/container.contract.test.ts` : importer `hasSheetReader` de `./container` et `gridOf` de
+  `./sheet-reader` ; à la fin :
+
+```ts
+describe.skipIf(binding === null)("contrat C10b : classeur (vrai module formats)", () => {
+  it("SheetReader sur valeurs.xlsx (S4, F23, F24) : 64 × 6, source 70 × 6, valeurs en français, fusion ; octets corrompus : illisible", () => {
+    const mod = need();
+    if (!hasSheetReader(mod)) throw new Error("SheetReader absent du module formats");
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-formats/tests/fixtures/valeurs.xlsx", import.meta.url)));
+    const r = mod.SheetReader.open(bytes);
+    try {
+      const g = gridOf(r);
+      expect([g.rows, g.cols, g.sourceRows, g.sourceCols, g.cutCells]).toEqual([64, 6, 70, 6, false]);
+      expect(g.cells.slice(0, 6)).toEqual(["texte", "42", "3,5", "20/11/2026", "VRAI", "#DIV/0!"]);
+      expect(g.merges).toEqual([{ row: 1, col: 0, rows: 1, cols: 2 }]);
+    } finally {
+      r.free();
+    }
+    expect(() => mod.SheetReader.open(new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3]))).toThrow("classeur illisible");
+  });
+});
+```
+
+- [ ] **Étape 3 : les voir rouges.** La commande bornée : `×` (modules absents).
+
+- [ ] **Étape 4 : cible et module.** `apps/web/src/platform/image-import.ts` : `import type { Measure } from "../engine/text-layout";`
+  et, dans `ImageTarget` (`:226`) après `stageRect()` :
+
+```ts
+  /** Mesure du texte de la session (C10b, F21) : hauteurs exigées d'un tableau importé ou collé. */
+  measure(): Measure;
+  /** Style de texte du moteur (couleur du stylo, taille par défaut) d'un tableau importé ou collé (F21). */
+  textStyle(): { readonly color: string; readonly size: number };
+```
+
+  `apps/web/src/platform/container.ts`, après `FormatsBinding` :
+
+```ts
+/** Module `formats` avec la lecture des classeurs (C10b, F28) : servi seulement dans le Worker de `sheet-worker.ts`. */
+export interface SheetFormatsBinding extends FormatsBinding {
+  readonly SheetReader: { open(bytes: Uint8Array): SheetBinding };
+}
+
+/** Vrai si le module chargé expose `SheetReader` (module construit après C10b). */
+export function hasSheetReader(m: FormatsBinding): m is SheetFormatsBinding {
+  return typeof (m as Partial<SheetFormatsBinding>).SheetReader?.open === "function";
+}
+```
+
+  (avec `import type { SheetBinding } from "./sheet-reader";` en tête). `apps/web/vite.config.ts` :
+
+```ts
+import { defineConfig } from "vite";
+import solid from "vite-plugin-solid";
+
+// D27 : chemins relatifs, l'application se sert de n'importe quel dossier (coque, file://, serveur local).
+// vite-plugin-solid impose jsdom aux essais : on garde « node » par défaut, les essais de composants
+// demandent happy-dom par leur première ligne `// @vitest-environment happy-dom`.
+// C10b (DAB4) : le Worker des classeurs importe le module Wasm `formats` ; format ES exigé (même fichier `.wasm` émis).
+export default defineConfig({ base: "./", plugins: [solid()], worker: { format: "es" }, test: { environment: "node" } });
+```
+
+- [ ] **Étape 5 : `table-insert.ts`.**
+
+```ts
+/**
+ * Pose d'une grille dans l'onglet actif (C10b, F21, F22, DAB2) : collage HTML et classeur passent ici, un seul chemin
+ * vers le cœur (`ImportTable`, une étape, F17). Colonnes à 240, lignes à la hauteur exigée par leur texte (au moins
+ * 64, zones comprises, `rowHeightsFor`), texte de la couleur du stylo et de la taille par défaut ; matrice de
+ * `placement` de l'import d'image (réduite, jamais agrandie, à 80 % du visible, centrée au point de dépôt ou au centre
+ * de la vue, cascade, R4, R5). Messages : troncature à 64 × 64 (dimensions comptées sur la source), textes coupés.
+ * Rien n'est sélectionné après.
+ */
+import type { TableData } from "../core/api";
+import { TABLE_MAX_LINES } from "../core/api";
+import { rowHeightsFor, TABLE_COL_WIDTH, TABLE_ROW_HEIGHT } from "../engine/table-geom";
+import type { Measure } from "../engine/text-layout";
+import type { Point } from "./files";
+import type { TableGrid } from "./html-table";
+import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
+
+export const TABLE_TAB_CLOSED = "onglet fermé pendant l'import, tableau non inséré";
+export const CUT_CELLS_MESSAGE = "texte coupé à 2 000 caractères dans certaines cellules";
+export const truncatedMessage = (rows: number, cols: number): string =>
+  `tableau limité à ${TABLE_MAX_LINES} lignes et ${TABLE_MAX_LINES} colonnes (le fichier en a ${rows} × ${cols})`;
+
+/** Vue provisoire de la grille pour la mesure (ids `r<i>`, `c<j>`) ; textes vides et couverts écartés. */
+export function gridTable(grid: TableGrid, size: number): TableData {
+  const cols = Array.from({ length: grid.cols }, (_, j) => ({ id: `c${j}`, width: TABLE_COL_WIDTH }));
+  const rows = Array.from({ length: grid.rows }, (_, i) => ({ id: `r${i}`, height: TABLE_ROW_HEIGHT }));
+  const covered = new Set<number>();
+  for (const m of grid.merges) {
+    for (let i = m.row; i < m.row + m.rows; i++) {
+      for (let j = m.col; j < m.col + m.cols; j++) if (i !== m.row || j !== m.col) covered.add(i * grid.cols + j);
+    }
+  }
+  const cells = grid.cells.flatMap((text, k) =>
+    text === "" || covered.has(k) ? [] : [{ row: `r${Math.floor(k / grid.cols)}`, col: `c${k % grid.cols}`, text, fill: null, shade: null }],
+  );
+  const merges = grid.merges.map((m) => ({ row: `r${m.row}`, col: `c${m.col}`, rows: m.rows, cols: m.cols }));
+  return { color: "#000000", size, cols, rows, cells, merges };
+}
+
+/** Hauteurs exigées (F21) : `rowHeightsFor` à 240, au moins 64. */
+export function gridRowHeights(grid: TableGrid, size: number, measure: Measure): number[] {
+  const t = gridTable(grid, size);
+  return rowHeightsFor(t, t.cols.map((c) => c.width), measure).map((h) => Math.max(TABLE_ROW_HEIGHT, h));
+}
+
+/** Pose `grid` dans la cible : une `ImportTable` ; `name` : fichier d'origine (classeur), absent pour un collage. */
+export async function insertTableGrid(
+  target: ImageTarget,
+  grid: TableGrid,
+  at: Point | null,
+  index: number,
+  notify: (m: string) => Promise<void>,
+  name?: string,
+): Promise<"inserted" | "failed"> {
+  const prefix = name === undefined ? "" : `${name} : `;
+  if (target.alive?.() === false) {
+    await notify(`${prefix}${TABLE_TAB_CLOSED}`);
+    return "failed";
+  }
+  const style = target.textStyle();
+  const heights = gridRowHeights(grid, style.size, target.measure());
+  const w = grid.cols * TABLE_COL_WIDTH;
+  const h = heights.reduce((a, b) => a + b, 0);
+  const rect = target.stageRect();
+  const camera = target.camera();
+  const change = target.run({
+    type: "ImportTable",
+    page: target.page(),
+    matrix: placement(w, h, anchorOf(rect, camera, at), visibleOf(rect, camera), index),
+    colWidth: TABLE_COL_WIDTH,
+    rowHeights: heights,
+    cols: grid.cols,
+    cells: [...grid.cells],
+    merges: grid.merges.map((m) => [m.row, m.col, m.rows, m.cols] as const),
+    color: style.color,
+    size: style.size,
+  });
+  if (change === null) return "failed";
+  if (grid.sourceRows > grid.rows || grid.sourceCols > grid.cols) await notify(`${prefix}${truncatedMessage(grid.sourceRows, grid.sourceCols)}`);
+  if (grid.cutCells) await notify(`${prefix}${CUT_CELLS_MESSAGE}`);
+  return "inserted";
+}
+```
+
+- [ ] **Étape 6 : `sheet-reader.ts` et `sheet-worker.ts`.**
+
+```ts
+/**
+ * Lecture d'un classeur hors de l'instance qui enregistre (C10b, F28, DAB4) : un Worker jetable par lecture charge sa
+ * propre instance du module `formats`, lit la première feuille (`SheetReader`), répond `{ grid }` ou `{ error }`, puis
+ * est arrêté — après la réponse, l'erreur ou une panique Wasm (`onerror`). Un `panic` de `calamine` (`panic = abort` en
+ * wasm32) ne casse donc jamais l'instance de la page qui enregistre le `.roomboard` (HR6). Le Worker est créé par
+ * l'amorce (`main.ts`, PC20) : aucun test ne résout `sheet-worker.ts` ni `src/wasm-formats/`.
+ */
+import type { GridMerge, TableGrid } from "./html-table";
+
+export const EMPTY_SHEET_MESSAGE = "la première feuille est vide";
+export const SHEET_TOO_BIG_MESSAGE = "classeur trop gros pour un import en valeurs";
+export const WORKER_FAILED_MESSAGE = "lecture du classeur interrompue";
+
+/** Forme d'un Worker utile ici (le vrai `Worker` du navigateur, un faux dans les tests). */
+export interface WorkerLike {
+  onmessage: ((e: { readonly data: unknown }) => void) | null;
+  onerror: ((e: unknown) => void) | null;
+  postMessage(message: unknown, transfer: Transferable[]): void;
+  terminate(): void;
+}
+export interface SheetReader {
+  read(file: Blob): Promise<TableGrid>;
+}
+/** Forme du lecteur généré par wasm-bindgen (`SheetReader` de `roomboard-formats-wasm`, T3). */
+export interface SheetBinding {
+  rows(): number;
+  cols(): number;
+  cells(): string[];
+  merges(): Uint32Array;
+  source_rows(): number;
+  source_cols(): number;
+  cut_cells(): boolean;
+  free(): void;
+}
+
+/** Grille d'un lecteur ouvert ; fusions bout à bout en quadruplets `[ligne, colonne, lignes, colonnes]`. */
+export function gridOf(r: SheetBinding): TableGrid {
+  const flat = Array.from(r.merges());
+  const merges: GridMerge[] = [];
+  for (let i = 0; i + 3 < flat.length; i += 4) {
+    merges.push({ row: flat[i] ?? 0, col: flat[i + 1] ?? 0, rows: flat[i + 2] ?? 1, cols: flat[i + 3] ?? 1 });
+  }
+  return { rows: r.rows(), cols: r.cols(), cells: r.cells(), merges, sourceRows: r.source_rows(), sourceCols: r.source_cols(), cutCells: r.cut_cells() };
+}
+
+const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+
+/** Réponse du Worker contrôlée (même prudence que `toTable`). */
+export function isTableGrid(v: unknown): v is TableGrid {
+  if (typeof v !== "object" || v === null) return false;
+  const g = v as Record<string, unknown>;
+  const cells = g["cells"];
+  const merges = g["merges"];
+  return (
+    isCount(g["rows"]) && isCount(g["cols"]) && Array.isArray(cells) && cells.length === g["rows"] * g["cols"] &&
+    cells.every((c) => typeof c === "string") && Array.isArray(merges) &&
+    merges.every((m) => typeof m === "object" && m !== null && ["row", "col", "rows", "cols"].every((k) => isCount((m as Record<string, unknown>)[k]))) &&
+    isCount(g["sourceRows"]) && isCount(g["sourceCols"]) && typeof g["cutCells"] === "boolean"
+  );
+}
+
+export function createSheetReader(spawn: () => WorkerLike): SheetReader {
+  return {
+    async read(file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const worker = spawn();
+      try {
+        return await new Promise<TableGrid>((resolve, reject) => {
+          worker.onmessage = (e) => {
+            const d = e.data;
+            const g = typeof d === "object" && d !== null ? (d as { grid?: unknown }).grid : undefined;
+            const err = typeof d === "object" && d !== null ? (d as { error?: unknown }).error : undefined;
+            if (isTableGrid(g)) resolve(g);
+            else reject(new Error(typeof err === "string" ? err : WORKER_FAILED_MESSAGE));
+          };
+          worker.onerror = () => reject(new Error(WORKER_FAILED_MESSAGE));
+          worker.postMessage({ bytes }, [bytes.buffer]);
+        });
+      } finally {
+        worker.terminate();
+      }
+    },
+  };
+}
+```
+
+```ts
+/**
+ * Entrée du Worker de lecture d'un classeur (C10b, F28, DAB4) : sa propre instance du module `formats`, la première
+ * feuille, une réponse `{ grid }` ou `{ error }`. Créé par `main.ts`, arrêté par `sheet-reader.ts` après la réponse.
+ */
+import { hasSheetReader } from "./container";
+import { loadFormatsModule } from "./container-load";
+import { gridOf } from "./sheet-reader";
+
+self.onmessage = async (e: MessageEvent<{ readonly bytes: Uint8Array }>): Promise<void> => {
+  try {
+    const mod = await loadFormatsModule();
+    if (!hasSheetReader(mod)) throw new Error("module des classeurs indisponible");
+    const reader = mod.SheetReader.open(e.data.bytes);
+    try {
+      self.postMessage({ grid: gridOf(reader) });
+    } finally {
+      reader.free();
+    }
+  } catch (err) {
+    self.postMessage({ error: err instanceof Error ? err.message : String(err) });
+  }
+};
+```
+
+- [ ] **Étape 7 : gestionnaire `sheet`.** `apps/web/src/platform/import.ts` : en-tête, ajouter
+  ` * C10b (F28) : \`sheet\` (objet, \`.xlsx\`/\`.xlsm\` et en-tête ZIP) lit la première feuille dans un Worker jetable et pose un tableau.` ;
+  imports `import type { TableGrid } from "./html-table";`,
+  `import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";`,
+  `import { insertTableGrid } from "./table-insert";` ; dans `ImportDeps`, après `decode` :
+
+```ts
+  /** Lecture d'un classeur dans un Worker jetable (C10b, F28) ; absente : `.xlsx` refusé comme avant. */
+  readSheet?(file: Blob): Promise<TableGrid>;
+```
+
+  Avant `const EMPTY` :
+
+```ts
+/** Plafond d'un classeur (F22), aussi dans la coque où `maxBytes` est nul. */
+export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
+
+export function isSheetName(name: string): boolean {
+  const n = name.toLowerCase();
+  return (n.endsWith(".xlsx") || n.endsWith(".xlsm")) && n.length > 5;
+}
+
+/** Entrée `sheet` du registre (F28) : nom `.xlsx` / `.xlsm` et en-tête ZIP ; une `ImportTable` dans l'onglet actif. */
+export function sheetHandler(deps: { readSheet(file: Blob): Promise<TableGrid> }): ImportHandler {
+  return {
+    id: "sheet",
+    nature: "objet",
+    detect: (head, name) => isSheetName(name) && ZIP_MAGIC.every((b, i) => head[i] === b),
+    async run(f, ctx) {
+      const target = ctx.target;
+      if (target === null) return "failed";
+      if (f.size > SHEET_MAX_BYTES) {
+        await ctx.notify(`${f.name} : ${SHEET_TOO_BIG_MESSAGE}`);
+        return "failed";
+      }
+      let grid: TableGrid;
+      try {
+        grid = await deps.readSheet(ctx.blob);
+      } catch (e) {
+        const m = messageOf(e);
+        await ctx.notify(m === EMPTY_SHEET_MESSAGE || m === SHEET_TOO_BIG_MESSAGE ? `${f.name} : ${m}` : `Import impossible (${f.name}) : ${m}`);
+        return "failed";
+      }
+      return insertTableGrid(target, grid, ctx.at, ctx.inserted, ctx.notify, f.name);
+    },
+  };
+}
+```
+
+  Et le registre de `createImporter` :
+
+```ts
+  const readSheet = deps.readSheet;
+  const registry: readonly ImportHandler[] = [
+    roomboardHandler(deps),
+    imageHandler(deps.decode ? { decode: deps.decode } : {}),
+    ...(readSheet ? [sheetHandler({ readSheet })] : []),
+  ];
+```
+
+- [ ] **Étape 8 : vert.** La commande bornée.
+
+- [ ] **Étape 9 : commit.**
+
+```bash
+cd "$WT" && git add apps/web/src/platform/table-insert.ts && git add apps/web/src/platform/table-insert.test.ts && \
+git add apps/web/src/platform/sheet-reader.ts && git add apps/web/src/platform/sheet-reader.test.ts && \
+git add apps/web/src/platform/sheet-worker.ts && git add apps/web/src/platform/import.ts && git add apps/web/src/platform/import.test.ts && \
+git add apps/web/src/platform/image-import.ts && git add apps/web/src/platform/container.ts && \
+git add apps/web/src/platform/container.contract.test.ts && git add apps/web/vite.config.ts && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(web): place imported table grids, read xlsx in a disposable worker" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, sortie `tsc`, décompte du module `formats` du build, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t11"></a>
+
+### Tâche T11 — Branchement : quatre boutons, attributs `#stage`, collage et classeur vers l'onglet actif
+
+**Objectif.** Les quatre actions de la rangée du tableau (F15) : `table-merge` « Fusionner », `table-split` « Diviser »,
+`table-shade` « Ombrer », `table-unshade` « Retirer l'ombrage », grisées par `ACTION_STATE` (PC21), hors du catalogue de
+l'éditeur de profil comme les cinq de C10a. `#stage[data-table]` gagne la plage (`…@<r>,<c>-<r2>,<c2>`), et deux
+attributs neufs `data-table-merges` / `data-table-shades` (F29). L'espace de travail branche la cible d'import (mesure de
+la session, style du moteur), `pasteTable(html)` (8 Mio au plus, F19 ; PC9) et le lecteur de classeur ; `main.ts` fait
+passer le tableau HTML avant les images jointes (effet de bord) et crée le Worker des classeurs (PC20).
+
+**Fichiers.**
+- Modifier : `apps/web/src/toolbar.ts:115-130`, `apps/web/src/toolbar.test.ts:313-315`
+- Modifier : `apps/web/src/ui/item-state.ts:28-32`, `apps/web/src/ui/item-state.test.ts` (bloc neuf),
+  `apps/web/src/ui/Toolbar.test.tsx:223` (PC23)
+- Modifier : `apps/web/src/app/toolbar-host.ts:41-45`, `apps/web/src/app/toolbar-host.test.ts` (test neuf)
+- Modifier : `apps/web/src/app/stage-tags.ts`, `apps/web/src/app/stage-tags.test.ts`
+- Modifier : `apps/web/src/app/board-session.ts:61-82` (`BoardSession.measure`), `:264-271` (deux attributs), objet rendu
+- Modifier : `apps/web/src/app/workspace.ts:37-74` (`WorkspaceDeps`, `Workspace`), `:213-220` (`imageTarget`),
+  `:271-281` (`createImporter`), objet `ws` ; `apps/web/src/app/workspace.test.ts` (`fakeSession`, `setupWorkspace`, bloc neuf)
+- Modifier : `apps/web/src/main.ts:15-19` (imports), appel de `createWorkspace`, `:108-116` (écoute `paste`)
+
+**Interfaces.**
+- Consomme : (T5) `pastedTableHtml`, `tableFromHtml`, `PASTE_MAX_CHARS`, `PASTE_TOO_BIG`, `TableGrid` ; (T6)
+  `TableAction` (quatre neuves), `TableCellState.{range, merged, shaded}`, `EngineState.{tableMerges, tableShades}`,
+  `Engine.textStyle()` ; (T8) l'outil qui publie l'état ; (T10) `insertTableGrid`, `createSheetReader`, `WorkerLike`,
+  `ImageTarget.{measure, textStyle}`, `ImportDeps.readSheet`.
+- Produit (lu par T12) : boutons `button[data-table-action="table-merge|table-split|table-shade|table-unshade"]` ;
+  `#stage[data-table]` (`4x3@0,0-0,1` avec une plage), `#stage[data-table-merges]`, `#stage[data-table-shades]` ;
+  `Workspace.pasteTable(html: string): Promise<boolean>` ; `BoardSession.measure: Measure` ;
+  `WorkspaceDeps.readSheet?(file: Blob): Promise<TableGrid>`, `WorkspaceDeps.parseHtml?(html: string): Document`.
+- Réutilise : `apps/web/src/toolbar.ts:115-130` ; `ui/item-state.ts:28` ; `app/toolbar-host.ts:41` ; `ui/Toolbar.tsx:111`
+  — `ACTION_TABLE`, `TABLE_ACTIONS`, `ACTION_STATE`, `ACTIONS` étendus ; `TableActionRow` les montre sans code ; aucune
+  lecture de préréglages ajoutée (constat `toolbar-host.ts:45` / `toolbar.ts:634` laissé ouvert, non aggravé).
+- Réutilise : `apps/web/src/app/stage-tags.ts:12-22` — `stageTags(s)` : `table` (plage), clés `tableMerges`, `tableShades`.
+- Réutilise : `apps/web/src/app/workspace.ts:60-74` (`Workspace`, seul `importFiles`) — `Workspace.pasteTable(html)` :
+  `tableFromHtml` puis `insertTableGrid` sur `imageTarget(onglet actif)`.
+- Réutilise : `apps/web/src/app/board-session.ts:51` (`SessionShared.measure`) ; `engine.ts` (`textStyle`, exposée par
+  T6) — `measure` lue sur la session par `imageTarget`, `textStyle` lue sur le moteur.
+- Réutilise : `apps/web/src/platform/paste.ts:12` (`isEditable`), `:20` (`pastedFiles`) ; `main.ts:108` —
+  `pastedTableHtml` essayée d'abord par l'écoute `paste` de `main.ts`, `pastedFiles` ensuite.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+pnpm --filter @roomboard/web exec vitest run src/toolbar.test.ts src/ui src/app src/profile-edit.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | grep -E "C10b|×|FAIL|Test Files|Tests " | tail -40 && \
+pnpm --filter @roomboard/web test 2>&1 | grep -E "Test Files|Tests |FAIL" | tail -5 && \
+pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep -c "error TS"
+```
+
+Attendu : aucune ligne `×` ni `FAIL` ; 2 `✓ … actions du tableau (C10b)` (toolbar, hôte), 4 `✓ état des actions du
+tableau (C10b, F15) > …`, 2 `✓ stageTags (C10b, F29) > …`, 4 `✓ espace de travail : tableau collé et classeur (C10b) > …`
+dont « pasteTable : HTML de plus de 8 Mio refusé » (Review Focus 3) ; la suite web entière sans échec (tests à garder
+verts : `toolbar-host.test.ts` « chaque action d'ACTION_TABLE a son entrée dans ACTIONS », `profile-edit.test.ts`,
+`board-session.test.ts`, `tools/text.test.ts`, `workspace.test.ts`) ; `tsc` : `0` (tous les écarts nommés sont fermés).
+
+**Contraintes (recopiées).**
+- GC2 TDD : test rouge d'abord, vu rouge, puis le code. Aucun test sauté ni désactivé (`skip`, `only`, `todo`,
+  `#[ignore]`), aucun seuil ni délai relevé ; un test qui échoue sur un délai est rejoué une fois avant d'être jugé.
+- GC3 PATH : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` avant toute commande. Aucun build Tauri, aucun build Android.
+- GC4 Préparation : `cd "$WT" && ([ -d node_modules ] || pnpm install --frozen-lockfile) && mkdir -p apps/web/src/wasm apps/web/src/wasm-formats && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm/*.d.ts apps/web/src/wasm/ && cp -n /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/apps/web/src/wasm-formats/*.d.ts apps/web/src/wasm-formats/`
+  ; si `tsc` signale `SheetReader` absent du module `formats` (types d'avant T3), reconstruire ses types :
+  `([ -d target ] || cp -r /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/target .) && cargo build -p roomboard-formats-wasm --target wasm32-unknown-unknown --release && rm -rf apps/web/src/wasm-formats && wasm-bindgen --target web --remove-name-section --out-dir apps/web/src/wasm-formats target/wasm32-unknown-unknown/release/roomboard_formats_wasm.wasm`
+  (jamais commité).
+- GC5 Preuve bornée : la commande ci-dessus, telle quelle ; le rapport cite N et les noms vus.
+- GC6 Commits : `git add <chemin>` un par un, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message
+  anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; ne pas pousser.
+- GC7 Jamais `git add -A`, `git add --all`, `git add .`, `git commit -a`, `--force`, ni `git stash` nu.
+- GC8 Aucune dépendance nouvelle ; jamais AGPL, GPL ni LGPL.
+- GC12 Dans `apps/web/src/ui/`, aucun `switch`, aucune taille en `px` dans un `.tsx`, libellés en français, aucune
+  icône seule ; aucun style neuf dans `rb.css`.
+- GC13 `tsc` vide (aucun écart permis après cette tâche).
+- GC14 Rapport : une ligne `Réutilisation :` par ligne `Réutilise :` ci-dessus.
+- GC17 Aucun processus laissé en marche.
+- GC18 Périmètre : seuls les fichiers ci-dessus.
+
+**Interdits.** Ne pas toucher `ui/Toolbar.tsx`, `profile-edit.ts`, `rb.css` ; aucun `innerHTML` ; le Worker n'est créé
+qu'ici (`main.ts`).
+
+**Critère « terminé ».** Commande bornée verte, `tsc` à 0, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : tests rouges.**
+  - `apps/web/src/toolbar.test.ts:313-315`, remplacer par :
+
+```ts
+  it("ACTION_TABLE porte les neuf actions ; TABLE_ACTIONS dans l'ordre de la rangée (T10 de C10a, F15 : actions du tableau (C10b))", () => {
+    expect(TABLE_ACTIONS).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform", "table-merge", "table-split", "table-shade", "table-unshade"]);
+    expect(TABLE_ACTIONS.map((a) => ACTION_TABLE[a]?.label)).toEqual(["+ Ligne", "+ Colonne", "− Ligne", "− Colonne", "Uniformiser", "Fusionner", "Diviser", "Ombrer", "Retirer l'ombrage"]);
+```
+
+  - `apps/web/src/ui/Toolbar.test.tsx:223` : la liste attendue gagne `"table-merge", "table-split", "table-shade", "table-unshade"` à la fin.
+  - `apps/web/src/ui/item-state.test.ts`, à la fin :
+
+```ts
+describe("état des actions du tableau (C10b, F15)", () => {
+  const cell = (o: Partial<TableCellState> = {}): TableCellState => ({ id: "t", row: 0, col: 0, rows: 3, cols: 4, ...o });
+  it("Fusionner : plage d'au moins deux cellules ; sans plage : grisé", () => {
+    expect(itemState(action("table-merge"), view({ tableCell: cell() })).disabled).toBe(true);
+    expect(itemState(action("table-merge"), view({ tableCell: cell({ range: { r0: 0, c0: 0, r1: 0, c1: 1 } }) })).disabled).toBe(false);
+  });
+  it("Diviser : cellule active fusionnée, sans plage", () => {
+    expect(itemState(action("table-split"), view({ tableCell: cell({ merged: true }) })).disabled).toBe(false);
+    expect(itemState(action("table-split"), view({ tableCell: cell({ merged: true, range: { r0: 0, c0: 0, r1: 1, c1: 1 } }) })).disabled).toBe(true);
+    expect(itemState(action("table-split"), view({ tableCell: cell() })).disabled).toBe(true);
+  });
+  it("Ombrer : une cellule active (PC21)", () => {
+    expect(itemState(action("table-shade"), view({ tableCell: cell() })).disabled).toBe(false);
+    expect(itemState(action("table-shade"), view({ tableCell: null })).disabled).toBe(true);
+  });
+  it("Retirer l'ombrage : au moins une cellule ombrée dans la plage (ou l'active)", () => {
+    expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: true }) })).disabled).toBe(false);
+    expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: false }) })).disabled).toBe(true);
+  });
+});
+```
+
+    (importer `type TableCellState` de `../engine/table-geom` si le fichier ne l'importe pas déjà.)
+  - `apps/web/src/app/toolbar-host.test.ts`, dans `describe("ToolbarHost local", …)` :
+
+```ts
+  it("actions du tableau (C10b) : Fusionner, Diviser, Ombrer, Retirer l'ombrage → engine.tableAction", () => {
+    const { host, engine } = setup();
+    for (const id of ["table-merge", "table-split", "table-shade", "table-unshade"]) host.runAction(id);
+    expect(engine.tableAction.mock.calls.map((c) => c[0])).toEqual(["merge", "split", "shade", "unshade"]);
+  });
+```
+
+  - `apps/web/src/app/stage-tags.test.ts` : `base` gagne `tableMerges: 0, tableShades: 0` ; à la fin :
+
+```ts
+describe("stageTags (C10b, F29)", () => {
+  it("table : avec une plage, `<c>x<l>@<r>,<c>-<r2>,<c2>` ; sans plage, forme de C10a", () => {
+    const cell = { id: "t", row: 0, col: 0, rows: 3, cols: 4 };
+    expect(stageTags({ ...base, tableCell: { ...cell, range: { r0: 0, c0: 0, r1: 0, c1: 1 } } }).table).toBe("4x3@0,0-0,1");
+    expect(stageTags({ ...base, tableCell: { ...cell, range: null } }).table).toBe("4x3@0,0");
+  });
+  it("tableMerges, tableShades : comptes de la page montrée en texte", () => {
+    const t = stageTags({ ...base, tableMerges: 2, tableShades: 3 });
+    expect([t.tableMerges, t.tableShades]).toEqual(["2", "3"]);
+  });
+});
+```
+
+  - `apps/web/src/app/workspace.test.ts` : dans `fakeSession`, l'objet `board` gagne `measure: (s: string) => s.length * 10,`
+    et `engine` gagne `textStyle: () => ({ color: "#1d4ed8", size: 36 }),` ; `SetupOptions` gagne
+    `readonly readSheet?: WorkspaceDeps["readSheet"];` et `setupWorkspace` passe `...(o.readSheet ? { readSheet: o.readSheet } : {}),`.
+    À la fin :
+
+```ts
+describe("espace de travail : tableau collé et classeur (C10b)", () => {
+  const tables = (ws: Workspace) => {
+    const d = ws.active().board.doc;
+    return d.elementIds(d.pageIds()[0] ?? "").map((id) => d.element(id)).filter((e) => e?.kind === "table");
+  };
+
+  it("pasteTable : tableau HTML collé dans l'onglet actif ; une ImportTable ; couleur du stylo (S2, F21)", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteTable('<table><tr><td colspan="2">Titre</td></tr><tr><td>a</td><td>b</td></tr></table>')).toBe(true);
+    const t = tables(ws);
+    expect(t).toHaveLength(1);
+    const v = t[0];
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect([v.table.color, v.table.merges.length, v.table.cells.map((c) => c.text)]).toEqual(["#1d4ed8", 1, ["Titre", "a", "b"]]);
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("pasteTable : HTML de plus de 8 Mio refusé avec « tableau trop gros pour être collé » ; rien d'inséré", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteTable(`<table><tr><td>${"x".repeat(PASTE_MAX_CHARS)}</td></tr></table>`)).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith(PASTE_TOO_BIG);
+    expect(tables(ws)).toHaveLength(0);
+  });
+
+  it("pasteTable : HTML sans tableau lisible : false (main.ts colle alors les images, PC9)", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteTable("<table></table><p>rien</p>")).toBe(false);
+    expect(tables(ws)).toHaveLength(0);
+  });
+
+  it("S4 : .xlsx importé par le lecteur de classeur : un tableau dans l'onglet actif, message de troncature", async () => {
+    const grid = { rows: 64, cols: 6, cells: new Array<string>(384).fill("v"), merges: [{ row: 1, col: 0, rows: 1, cols: 2 }], sourceRows: 70, sourceCols: 6, cutCells: false };
+    const ws = await setupWorkspace({ readSheet: async () => grid });
+    const bytes = new Uint8Array([0x50, 0x4b, 3, 4, 9]);
+    const r = await ws.importFiles([{ name: "valeurs.xlsx", size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]) }], null);
+    expect(r.inserted).toEqual(["valeurs.xlsx"]);
+    expect(tables(ws)).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("valeurs.xlsx : tableau limité à 64 lignes et 64 colonnes (le fichier en a 70 × 6)");
+  });
+});
+```
+
+    (importer `PASTE_MAX_CHARS`, `PASTE_TOO_BIG` de `../platform/html-table` et `type Workspace` de `./workspace` s'ils manquent.)
+
+- [ ] **Étape 3 : les voir rouges.** La commande bornée : `×` sur les blocs C10b.
+
+- [ ] **Étape 4 : barre.** `apps/web/src/toolbar.ts`, après `"table-uniform": { label: "Uniformiser" },` :
+
+```ts
+  "table-merge": { label: "Fusionner" },
+  "table-split": { label: "Diviser" },
+  "table-shade": { label: "Ombrer" },
+  "table-unshade": { label: "Retirer l'ombrage" },
+```
+
+  et `TABLE_ACTIONS` (commentaire : `/** Boutons de structure du tableau (C10a, DAC4 ; C10b, F15), dans l'ordre de la rangée contextuelle. */`) :
+
+```ts
+export const TABLE_ACTIONS: readonly ActionId[] = Object.freeze([
+  "table-row-insert",
+  "table-col-insert",
+  "table-row-remove",
+  "table-col-remove",
+  "table-uniform",
+  "table-merge",
+  "table-split",
+  "table-shade",
+  "table-unshade",
+]);
+```
+
+  `apps/web/src/ui/item-state.ts`, avant `ACTION_STATE` : `const cells = (r: Range | null | undefined): number => (r ? (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) : 0);`
+  (importer `type Range` de `../engine/table-geom` avec `TableCellState`), puis dans `ACTION_STATE` après `"table-uniform"` :
+
+```ts
+  "table-merge": (v) => ({ disabled: cells(v.tableCell?.range) < 2 }),
+  "table-split": (v) => ({ disabled: v.tableCell?.merged !== true || cells(v.tableCell.range) > 0 }),
+  "table-shade": (v) => ({ disabled: !v.tableCell }),
+  "table-unshade": (v) => ({ disabled: v.tableCell?.shaded !== true }),
+```
+
+  `apps/web/src/app/toolbar-host.ts`, dans `ACTIONS` après `"table-uniform"` :
+
+```ts
+  "table-merge": (t) => t.engine().tableAction("merge"),
+  "table-split": (t) => t.engine().tableAction("split"),
+  "table-shade": (t) => t.engine().tableAction("shade"),
+  "table-unshade": (t) => t.engine().tableAction("unshade"),
+```
+
+- [ ] **Étape 5 : attributs.** `apps/web/src/app/stage-tags.ts` :
+
+```ts
+/**
+ * Attributs de `#stage` lus par les scénarios S3/S4 (contrat du lot 4), déplacés de l'ancienne barre DOM (retirée par
+ * T95) sans changement ; C10a (`table`) ; C10b (F29) : plage dans `table`, `tableMerges`, `tableShades`.
+ */
+import type { Bounds } from "../core/api";
+import type { EngineState } from "../engine/engine";
+import type { TableCellState } from "../engine/table-geom";
+
+const tenth = (v: number): string => String(Math.round(v * 10) / 10);
+const boundsTag = (b: Bounds | null): string => (b === null ? "" : [b.x0, b.y0, b.x1, b.y1].map(tenth).join(","));
+
+/** `#stage[data-table]` (C10a, T15 ; C10b, F29) : `<colonnes>x<lignes>@<rang>,<colonne>` de la cellule active, ou
+ *  `…@<r>,<c>-<r2>,<c2>` d'une plage ; vide sans cellule. */
+const tableTag = (c: TableCellState | null): string => {
+  if (c === null) return "";
+  const r = c.range ?? null;
+  return r === null ? `${c.cols}x${c.rows}@${c.row},${c.col}` : `${c.cols}x${c.rows}@${r.r0},${r.c0}-${r.r1},${r.c1}`;
+};
+
+/** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`) et S1 à S4 de C10b (`tableMerges`, `tableShades`). */
+export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades", string> {
+  return {
+    page: `${s.pageIndex + 1}/${s.pageCount}`,
+    selection: String(s.selection.length),
+    bounds: boundsTag(s.selectionBounds),
+    tool: s.tool,
+    table: tableTag(s.tableCell),
+    tableMerges: String(s.tableMerges),
+    tableShades: String(s.tableShades),
+  };
+}
+```
+
+  `apps/web/src/app/board-session.ts` : `BoardSession` gagne `/** Mesure du texte partagée (CL4-4), lue par la cible d'import des tableaux (C10b, F21). */ readonly measure: Measure;` ;
+  l'objet rendu gagne `measure,` (après `trail,`) ; après `stage.dataset["table"] = tags.table;` :
+
+```ts
+    stage.dataset["tableMerges"] = tags.tableMerges;
+    stage.dataset["tableShades"] = tags.tableShades;
+```
+
+- [ ] **Étape 6 : espace de travail.** `apps/web/src/app/workspace.ts` : imports
+  `import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";` et
+  `import { insertTableGrid } from "../platform/table-insert";` ; `WorkspaceDeps`, après `decode` :
+
+```ts
+  /** Lecture d'un classeur dans un Worker jetable (C10b, F28) : `createSheetReader` dans l'amorce ; absent : `.xlsx` refusé. */
+  readSheet?(file: Blob): Promise<TableGrid>;
+  /** Lecture du HTML collé en document inerte (tests) ; défaut : `DOMParser` « text/html ». */
+  parseHtml?(html: string): Document;
+```
+
+  `Workspace`, après `importFiles` :
+
+```ts
+  /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
+   *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
+  pasteTable(html: string): Promise<boolean>;
+```
+
+  `imageTarget`, après `stageRect` :
+
+```ts
+    measure: () => t.board.measure,
+    textStyle: () => t.board.engine.textStyle(),
+```
+
+  `createImporter({ … })` gagne `...(deps.readSheet ? { readSheet: (b: Blob) => deps.readSheet!(b) } : {}),` (écrire
+  `const readSheet = deps.readSheet;` avant et `...(readSheet ? { readSheet } : {})` pour éviter `!`) ; juste avant
+  `const ws: Workspace` : `const parseHtml = deps.parseHtml ?? ((s: string) => new DOMParser().parseFromString(s, "text/html"));` ;
+  dans `ws`, après `importFiles` :
+
+```ts
+    async pasteTable(html) {
+      const t = tabs.active()?.session;
+      if (t === undefined) return false;
+      if (html.length > PASTE_MAX_CHARS) {
+        await say(PASTE_TOO_BIG);
+        return true;
+      }
+      const grid = tableFromHtml(html, parseHtml);
+      if (grid === null) return false;
+      await insertTableGrid(imageTarget(t), grid, null, 0, say);
+      return true;
+    },
+```
+
+- [ ] **Étape 7 : amorce.** `apps/web/src/main.ts` : remplacer `import { pastedFiles } from "./platform/paste";` par
+  `import { pastedFiles, pastedTableHtml } from "./platform/paste";` et ajouter
+  `import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";`. Avant `const workspace = await createWorkspace({` :
+
+```ts
+  // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
+  const spawnSheetWorker = (): WorkerLike => {
+    const w = new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" });
+    const like: WorkerLike = {
+      onmessage: null,
+      onerror: null,
+      postMessage: (m, transfer) => w.postMessage(m, transfer),
+      terminate: () => w.terminate(),
+    };
+    w.onmessage = (e) => like.onmessage?.(e);
+    w.onerror = (e) => like.onerror?.(e);
+    return like;
+  };
+  const sheets = createSheetReader(spawnSheetWorker);
+```
+
+  Dans l'objet passé à `createWorkspace`, après `codec: …,` : `readSheet: (b) => sheets.read(b),`. Remplacer l'écoute
+  `paste` (`:108-116`) :
+
+```ts
+  // Collage (R19, C10b) : un tableau HTML passe avant les images jointes (F19, HB-9) ; sinon fichiers image vers l'onglet
+  // actif, centre de la vue ; zone de texte : collage normal.
+  window.addEventListener("paste", (e) => {
+    const html = pastedTableHtml(e);
+    const files = pastedFiles(e);
+    const fail = (err: unknown): void => {
+      console.warn(`RoomBoard : collage abandonné (${err instanceof Error ? err.message : String(err)})`);
+    };
+    if (html !== null) {
+      e.preventDefault();
+      void workspace
+        .pasteTable(html)
+        .then(async (done) => {
+          if (!done && files.length > 0) await workspace.importFiles(files, null);
+        })
+        .catch(fail);
+      return;
+    }
+    if (files.length === 0) return;
+    e.preventDefault();
+    void workspace.importFiles(files, null).catch(fail);
+  });
+```
+
+- [ ] **Étape 8 : vert.** La commande bornée (`tsc` : `0`).
+
+- [ ] **Étape 9 : commit.**
+
+```bash
+cd "$WT" && for f in apps/web/src/toolbar.ts apps/web/src/toolbar.test.ts apps/web/src/ui/item-state.ts apps/web/src/ui/item-state.test.ts \
+  apps/web/src/ui/Toolbar.test.tsx apps/web/src/app/toolbar-host.ts apps/web/src/app/toolbar-host.test.ts apps/web/src/app/stage-tags.ts \
+  apps/web/src/app/stage-tags.test.ts apps/web/src/app/board-session.ts apps/web/src/app/workspace.ts apps/web/src/app/workspace.test.ts \
+  apps/web/src/main.ts; do git add "$f"; done && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(web): table merge and shade buttons, stage tags, pasted tables and xlsx import wiring" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, `tsc` à 0, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t12"></a>
+
+### Tâche T12 — Essai navigateur C10b dans `verifier.sh --e2e`, capture fusion + ombrage
+
+**Objectif.** Preuve de bout en bout (F31) : nouvel essai `scripts/essais/c10b-tableau-navigateur.mjs` (patron de
+`c10a-tableau-navigateur.mjs`) qui joue S1 (créer un 4 × 3, « Lundi », Échap, glisser, « Fusionner », glisser la troisième
+colonne, « Ombrer », outil Sélection : toucher révèle, Ctrl+Z remet, toucher encore), S2 (coller un `<table>` HTML porté
+par un `ClipboardEvent` avec un script et une image piégés), S3 (Ctrl+S, Ctrl+O, relire la zone et le tableau collé ;
+PC6) et S4 (déposer `valeurs.xlsx`, lire quatre valeurs, deux `casse.xlsx`, enregistrer après l'échec, Ctrl+Z) ; ajouté
+au bloc `--e2e` de `verifier.sh` et à `verifier-e2e.test.sh`. `coqueCsp()` passe dans `commun.mjs`, importée par les
+quatre essais qui l'avaient en copie (constat fermé) ; `dropFile` gagne un point de dépôt facultatif (PC24). Capture
+`docs/essais/c10b-tableau-fusion-ombrage.png` (avec `--captures` seulement). La suite complète tourne : tailles des deux
+modules relevées sous leurs plafonds, `tsc` vide.
+
+**Fichiers.**
+- Créer : `scripts/essais/c10b-tableau-navigateur.mjs`, `docs/essais/c10b-tableau-fusion-ombrage.png`
+- Modifier : `scripts/essais/commun.mjs` (`coqueCsp` exportée, `dropFile` avec `at`), `scripts/essais/c10a-tableau-navigateur.mjs:27-32`,
+  `scripts/essais/c2-image-navigateur.mjs:25-30`, `scripts/essais/c9-grille-navigateur.mjs:19-24`,
+  `scripts/essais/fichiers-navigateur.mjs:25-30` (copie locale retirée, import ajouté)
+- Modifier : `scripts/verifier.sh:90-102` (une ligne), `scripts/tests/verifier-e2e.test.sh:13` (un nom)
+
+**Interfaces.**
+- Consomme : tout le chantier fusionné (T1 à T11) ; attributs `#stage[data-table|data-table-merges|data-table-shades|data-selection|data-elements|data-bounds|data-camera]`,
+  boutons `button[data-table-action="table-merge|table-shade"]`, `button[data-item="table|select"]`, grille de choix
+  (`.rb-table-picker`, `button[aria-label="4 colonnes, 3 lignes"]`), `#texte-edition`, fixture `valeurs.xlsx`.
+- Produit : `export function coqueCsp(): string` et `dropFile(page, selector, name, bytes, type = "", at = [50, 50])` dans
+  `commun.mjs` ; ligne « C10b tableau : OK ».
+- Réutilise : `scripts/essais/commun.mjs` (`serve`, `loadPlaywright`, `stageMouse`, `stageBox`, `dropFile`, `item`,
+  `TAB`, `VIEWPORT`, `Echec`, `frames`, `gitSha`) ; `c10a-tableau-navigateur.mjs:27` (`coqueCsp`) — appelés tels quels ;
+  `coqueCsp` déplacée dans `commun.mjs` et importée par les quatre essais.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+bash scripts/verifier.sh --e2e 2>&1 | tail -70
+```
+
+Attendu : lignes `ok — S1 : …` à `ok — S4 : …` de l'essai C10b, puis « C10b tableau : OK », « C10a tableau : OK »,
+« C2 image : OK », les autres essais `: OK`, « verifier.sh : e2e OK », « verifier.sh : OK » ; `module Wasm : N octets`
+avec N ≤ 1 572 864 et `module formats : M octets` avec M ≤ 3 145 728 (les deux cités au rapport, avec leur valeur sur
+`main` : 953 883 o et 385 454 o d'après F26). Tests à garder verts (effets de bord) : `c10a-tableau-navigateur.mjs`
+(saisie au relâché), `s34-navigateur.mjs` (Sélection), `c2-image-navigateur.mjs` (collage d'une image seule), les quatre
+essais qui importent `coqueCsp`. En cas d'échec, `node scripts/essais/c10b-tableau-navigateur.mjs` seul (même sortie
+`ok — …`) ; un essai qui échoue sur un délai est rejoué une fois.
+
+**Preuve visuelle.** Lectures d'abord (une valeur lue prouve plus qu'une image) : dans la sortie, `data-table="4x3@0,0-0,1"`,
+`data-table-merges="1"`, `data-table-shades="3"` puis `"2"`, `"3"`, `"2"`, `data-selection="0"`, valeurs « 3,5 »,
+« 20/11/2026 », « VRAI », « #DIV/0! ». Puis la capture :
+`node scripts/essais/c10b-tableau-navigateur.mjs --captures` (après `verifier.sh`, `apps/web/dist` construit), à décrire au
+rapport : un tableau 4 × 3 dont la première ligne porte « Lundi » sur deux colonnes sans trait intérieur, et la troisième
+colonne grise hachurée sur ses trois lignes, traits noirs par-dessus.
+
+**Contraintes (recopiées).**
+- GC1 `scripts/verifier.sh --e2e` n'est lancé que dans cette tâche.
+- GC2 TDD : l'essai est d'abord lancé seul et vu en échec (`node scripts/essais/c10b-tableau-navigateur.mjs` avant
+  l'ajout des lignes de `verifier.sh` : il doit passer ; `bash scripts/tests/verifier-e2e.test.sh` vu en échec avant
+  l'ajout de la ligne dans `verifier.sh`). Aucun test sauté ni désactivé, aucun délai relevé (les attentes restent à
+  15 s) ; un essai qui échoue sur un délai est rejoué une fois (VM chargée).
+- GC3 PATH : `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH` avant toute commande. Aucun build Tauri, aucun build Android.
+- GC4 Préparation : `cd "$WT" && ([ -d node_modules ] || pnpm install --frozen-lockfile) && ([ -d target ] || cp -r /home/adminjd/projets/roomboard-wt/usage-c10b-tableau/target .)`
+  (`verifier.sh` reconstruit les deux modules Wasm et `apps/web/dist`, jamais commités).
+- GC5 Preuve bornée : la commande ci-dessus, telle quelle ; le rapport cite les lignes `OK` et les deux tailles.
+- GC6 Commits : `git add <chemin>` un par un, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message
+  anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` ; ne pas pousser.
+- GC7 Jamais `git add -A`, `git add --all`, `git add .`, `git commit -a`, `--force`, ni `git stash` nu.
+- GC8 Aucune dépendance nouvelle ; `node scripts/controle-licences.mjs` (joué par `verifier.sh`) passe.
+- GC9 Plafonds du module principal (1 572 864 o, H2-13) et du module `formats` (3 Mio) ni baissés ni relevés : les
+  contrôles de `verifier.sh:53-71` ne changent pas.
+- GC13 `tsc` vide (joué par `pnpm --filter @roomboard/web build` dans `verifier.sh`).
+- GC14 Rapport : une ligne `Réutilisation :` par ligne `Réutilise :` ci-dessus.
+- GC16 Aucun `.xlsx` téléchargé : l'essai dépose la fixture du dépôt et des octets fabriqués.
+- GC17 Aucun processus laissé en marche : l'essai ferme navigateur et serveur (`finally`) ; vérifier après coup
+  `pgrep -f "c10b-tableau-navigateur|chrome-headless|vite" || true` (rien de ce chantier).
+- GC18 Périmètre : seuls les fichiers ci-dessus ; aucune option de capture dans `verifier.sh`.
+
+**Interdits.** Ne pas modifier `rb.css` ni l'interface : si `stageBox` signale une scène plus basse que 640 px (rangée de
+neuf boutons sur deux lignes), la tâche s'arrête en **bloquée** avec la hauteur mesurée ; aucune capture régénérée par
+`verifier.sh`.
+
+**Critère « terminé ».** Commande bornée verte, capture commitée et décrite, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : `commun.mjs`.** Import `import { existsSync, readdirSync, readFileSync } from "node:fs";` ; après
+  `gitSha` :
+
+```js
+/** CSP de la coque (tauri.conf.json), envoyée telle quelle par le serveur des essais (une seule copie, F31). */
+export function coqueCsp() {
+  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
+  const csp = conf.app.security.csp;
+  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
+}
+```
+
+  `dropFile` :
+
+```js
+/** Dépôt simulé (DataTransfer construit dans la page) sur un sélecteur ; `at` : point dans son rectangle (PC24). */
+export async function dropFile(page, selector, name, bytes, type = "", at = [50, 50]) {
+  await page.evaluate(({ selector, name, bytes, type, at }) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(bytes)], name, { type }));
+    const target = document.querySelector(selector);
+    const r = target.getBoundingClientRect();
+    for (const t of ["dragover", "drop"]) {
+      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + at[0], clientY: r.y + at[1] }));
+    }
+  }, { selector, name, bytes: Array.from(bytes), type, at });
+}
+```
+
+  Dans `c10a-tableau-navigateur.mjs`, `c2-image-navigateur.mjs`, `c9-grille-navigateur.mjs`, `fichiers-navigateur.mjs` :
+  vérifier d'abord que la copie locale est identique (`diff <(sed -n '/^function coqueCsp/,/^}/p' scripts/essais/<f>.mjs) <(sed -n '/^export function coqueCsp/,/^}/p' scripts/essais/commun.mjs | sed 's/^export //')`,
+  seule la ligne de commentaire peut différer), retirer le bloc `function coqueCsp() { … }` et son commentaire, ajouter
+  `coqueCsp` à l'import de `./commun.mjs`, retirer `readFileSync` de l'import `node:fs` s'il n'y sert plus. Une copie
+  différente : la garder, le dire au rapport.
+
+- [ ] **Étape 3 : l'essai.** Créer `scripts/essais/c10b-tableau-navigateur.mjs` :
+
+```js
+#!/usr/bin/env node
+// Essai C10b « tableau : fusion, ombrage, collage, classeur » au navigateur (S1 à S4 du cadrage, partie C10b de S11).
+// Application construite (apps/web/dist) servie en local avec la CSP de la coque, Chromium headless de Playwright, mode
+// repli (`?fichiers=repli`), heure figée. Oracles : #stage[data-table|data-table-merges|data-table-shades|data-selection|
+// data-elements|data-bounds], valeur de #texte-edition, boîtes d'alerte ; aucune requête hors de 127.0.0.1.
+// Lancé par scripts/verifier.sh --e2e, sans option de capture. Code de sortie : 0 réussi, 1 échec, 2 outil absent.
+// Usage : node scripts/essais/c10b-tableau-navigateur.mjs [--captures] (--captures : docs/essais/c10b-tableau-fusion-ombrage.png).
+import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+
+const LABEL = "C10b tableau";
+const FIXED = new Date("2026-11-20T08:00:00.000Z");
+/** Point cliqué sur la scène (px de la scène) : coin haut gauche du premier tableau. */
+const CLICK = [200, 150];
+const COL = 240;
+const ROW = 64;
+const PASTE =
+  '<table><tr><td colspan="2">Titre</td></tr><tr><td>a</td><td>b</td></tr></table>' +
+  '<img src="http://exemple.invalid/x.png" onerror="window.__rb=1"><script>window.__rb=1</script>';
+const XLSX = join(ROOT, "crates", "roomboard-formats", "tests", "fixtures", "valeurs.xlsx");
+const TRUNCATED = "valeurs.xlsx : tableau limité à 64 lignes et 64 colonnes (le fichier en a 70 × 6)";
+const LATER = "format pris en charge dans une prochaine version";
+
+async function scenario(page, url, { captures, tmp }) {
+  const errors = [];
+  const dialogs = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("dialog", async (d) => {
+    dialogs.push(d.message());
+    await d.accept();
+  });
+  const check = (cond, msg) => {
+    if (!cond) throw new Echec(msg);
+    console.log(`ok — ${msg}`);
+  };
+  const fr = () => frames(page);
+  const mouse = stageMouse(page);
+  const attr = (name) => page.getAttribute("#stage", name);
+  const waitAttr = (name, v) =>
+    page
+      .waitForFunction(([n, w]) => document.querySelector("#stage")?.getAttribute(n) === w, [name, v], { timeout: 15000 })
+      .catch(async () => {
+        throw new Echec(`${name} attendu « ${v} », lu « ${await attr(name)} »`);
+      });
+  const waitDialog = async (text) => {
+    for (let i = 0; i < 150; i++) {
+      if (dialogs.some((d) => d.includes(text))) return;
+      await page.waitForTimeout(100);
+    }
+    throw new Echec(`boîte attendue « ${text} » ; reçues : ${dialogs.join(" | ")}`);
+  };
+  const editorValue = () => page.$eval("#texte-edition", (a) => a.value);
+  const camera = async () => {
+    const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);
+    return { zoom, tx, ty };
+  };
+  const screen = (c, wx, wy) => [wx * c.zoom + c.tx, wy * c.zoom + c.ty];
+  const drag = async (a, b) => {
+    await mouse.move(a[0], a[1]);
+    await mouse.down();
+    await mouse.move(b[0], b[1], { steps: 6 });
+    await mouse.up();
+    await fr();
+  };
+  const saveTo = async (name) => {
+    const dl = page.waitForEvent("download");
+    await page.keyboard.press("Control+s");
+    const file = join(tmp, name);
+    await (await dl).saveAs(file);
+    return file;
+  };
+  /** Clic (saisie ouverte au relâché), lecture de la saisie, Échap. */
+  const readCell = async (pt, tag, want, label) => {
+    await mouse.click(pt[0], pt[1]);
+    await waitAttr("data-table", tag);
+    const v = await editorValue();
+    check(v === want, `${label} : « ${v} » (data-table="${tag}")`);
+    await page.keyboard.press("Escape");
+    await fr();
+  };
+
+  await page.goto(url);
+  await page.waitForSelector("#stage");
+  await fr();
+  await page.click(item("table"));
+  await fr();
+  const box = await stageBox(page);
+  check(box.height >= 640, `S1 : la scène garde ${Math.round(box.height)} px de haut avec la rangée de neuf boutons`);
+  const c1 = await camera();
+  const world = [(CLICK[0] - c1.tx) / c1.zoom, (CLICK[1] - c1.ty) / c1.zoom];
+  const cell1 = (c, row, col) => screen(c, world[0] + COL * col + COL / 2, world[1] + ROW * row + ROW / 2);
+
+  // S1 : 4 × 3, « Lundi », Échap ; glisser ; Fusionner ; ombrer la troisième colonne ; révéler, annuler, révéler.
+  await mouse.click(CLICK[0], CLICK[1]);
+  await page.waitForSelector(".rb-table-picker:not([hidden])", { timeout: 5000 });
+  await page.click('button[aria-label="4 colonnes, 3 lignes"]');
+  await waitAttr("data-table", "4x3@0,0");
+  await page.keyboard.type("Lundi");
+  await page.keyboard.press("Escape");
+  await fr();
+  check(await page.$eval("#texte-edition", (a) => a.hidden), "S1 : « Lundi », Échap : saisie fermée (F14)");
+  await drag(cell1(c1, 0, 0), cell1(c1, 0, 1));
+  await waitAttr("data-table", "4x3@0,0-0,1");
+  check(true, 'S1 : glisser de la première à la deuxième cellule : data-table="4x3@0,0-0,1"');
+  await page.click('button[data-table-action="table-merge"]');
+  await waitAttr("data-table-merges", "1");
+  check((await attr("data-table")) === "4x3@0,0", 'S1 : « Fusionner » : data-table-merges="1", l\'ancre active');
+  await readCell(cell1(c1, 0, 1), "4x3@0,0", "Lundi", "S1 : la cellule fusionnée montre « Lundi » sur deux colonnes");
+  await drag(cell1(c1, 0, 2), cell1(c1, 2, 2));
+  await waitAttr("data-table", "4x3@0,2-2,2");
+  await page.click('button[data-table-action="table-shade"]');
+  await waitAttr("data-table-shades", "3");
+  check(true, 'S1 : « Ombrer » la troisième colonne : data-table-shades="3" (S11 « ombrer une colonne »)');
+  if (captures) {
+    await page.keyboard.press("Escape");
+    await fr();
+    const path = join(ROOT, "docs", "essais", "c10b-tableau-fusion-ombrage.png");
+    await page.screenshot({ path });
+    console.log(`capture : ${path}`);
+  }
+  await page.click(item("select"));
+  await fr();
+  await mouse.click(...cell1(c1, 0, 2));
+  await waitAttr("data-table-shades", "2");
+  check((await attr("data-selection")) === "0", 'S1 : outil Sélection, toucher la cellule ombrée : data-table-shades="2", aucun élément sélectionné');
+  await page.keyboard.press("Control+z");
+  await waitAttr("data-table-shades", "3");
+  check(true, "S1 : Ctrl+Z : l'ombrage revient (3)");
+  await mouse.click(...cell1(c1, 0, 2));
+  await waitAttr("data-table-shades", "2");
+  check(true, "S1 : toucher encore : 2");
+
+  // S2 : collage d'un <table> HTML porté par un ClipboardEvent, script et image piégés.
+  const elements = Number(await attr("data-elements"));
+  const nodes = await page.evaluate(() => document.querySelectorAll("table, img").length);
+  const cP = await camera();
+  await page.evaluate((html) => {
+    const dt = new DataTransfer();
+    dt.setData("text/html", html);
+    document.body.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, PASTE);
+  await waitAttr("data-elements", String(elements + 1));
+  await waitAttr("data-table-merges", "2");
+  check(await page.evaluate(() => window.__rb === undefined), "S2 : collage : aucun script exécuté (window.__rb indéfini)");
+  check((await page.evaluate(() => document.querySelectorAll("table, img").length)) === nodes, "S2 : aucun nœud <table> ni <img> ajouté à la page");
+  // Tableau collé centré au centre de la vue (F21), 480 × 128 à l'échelle 1.
+  const center = [(box.width / 2 - cP.tx) / cP.zoom, (box.height / 2 - cP.ty) / cP.zoom];
+  const pasted = [center[0] - COL, center[1] - ROW];
+  const cell2 = (c, row, col) => screen(c, pasted[0] + COL * col + COL / 2, pasted[1] + ROW * row + ROW / 2);
+  await page.click(item("table"));
+  await fr();
+  await readCell(cell2(cP, 0, 1), "2x2@0,0", "Titre", "S2 : tableau collé 2 × 2, fusion sur la première ligne (« Titre »)");
+  await readCell(cell2(cP, 1, 0), "2x2@1,0", "a", "S2 : « a » dessous");
+  await readCell(cell2(cP, 1, 1), "2x2@1,1", "b", "S2 : « b » dessous");
+
+  // S3 : Ctrl+S, Ctrl+O : nouvel onglet ; zone, ombrages et tableau collé relus.
+  const before = await page.locator(TAB).count();
+  const file = await saveTo("c10b.roomboard");
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Control+o");
+  await (await chooser).setFiles(file);
+  await page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, before + 1, { timeout: 15000 });
+  await fr();
+  await page.click(item("table"));
+  await fr();
+  const c2 = await camera();
+  await readCell(cell1(c2, 0, 1), "4x3@0,0", "Lundi", "S3 : rouvert, la cellule fusionnée montre « Lundi »");
+  check(
+    (await attr("data-table-merges")) === "2" && (await attr("data-table-shades")) === "2",
+    'S3 : data-table-merges="2" (fusion du tableau collé comprise, PC6), data-table-shades="2"',
+  );
+  await readCell(cell2(c2, 0, 1), "2x2@0,0", "Titre", "S3 : le tableau collé garde « Titre » et sa fusion");
+  await readCell(cell2(c2, 1, 1), "2x2@1,1", "b", "S3 : et « b »");
+
+  // S4 : classeur déposé au centre ; valeurs ; deux casse.xlsx ; enregistrer ; Ctrl+Z.
+  const els4 = Number(await attr("data-elements"));
+  const b4 = await stageBox(page);
+  const mid = [b4.width / 2, b4.height / 2];
+  await dropFile(page, "#stage", "valeurs.xlsx", readFileSync(XLSX), "", mid);
+  await waitAttr("data-elements", String(els4 + 1));
+  await waitDialog(TRUNCATED);
+  await waitAttr("data-table-merges", "3");
+  check(true, `S4 : valeurs.xlsx déposé : un tableau de plus, sa fusion, « ${TRUNCATED} »`);
+  await page.click(item("select"));
+  await fr();
+  await mouse.click(mid[0], mid[1]);
+  await waitAttr("data-selection", "1");
+  const [x0, y0, x1, y1] = ((await attr("data-bounds")) ?? "").split(",").map(Number);
+  await page.keyboard.press("Escape");
+  await fr();
+  await page.click(item("table"));
+  await fr();
+  const c4 = await camera();
+  const cw = (x1 - x0) / 6;
+  const rh = (y1 - y0) / 64;
+  for (const [col, want] of [[2, "3,5"], [3, "20/11/2026"], [4, "VRAI"], [5, "#DIV/0!"]]) {
+    await readCell(screen(c4, x0 + cw * (col + 0.5), y0 + rh * 0.5), `6x64@0,${col}`, want, `S4 : 64 lignes, colonne ${col + 1}`);
+  }
+  await dropFile(page, "#stage", "casse.xlsx", new Uint8Array([1, 2, 3, 4, 5]), "", mid);
+  await waitDialog(`casse.xlsx : ${LATER}`);
+  check(true, "S4 : casse.xlsx sans en-tête PK : refusé (« format pris en charge dans une prochaine version »)");
+  const corrupt = new Uint8Array(200).map((_, i) => (i * 37) % 251);
+  corrupt.set([0x50, 0x4b, 3, 4]);
+  await dropFile(page, "#stage", "casse.xlsx", corrupt, "", mid);
+  await waitDialog("Import impossible (casse.xlsx) : ");
+  check(Number(await attr("data-elements")) === els4 + 1, "S4 : casse.xlsx corrompu : « Import impossible (casse.xlsx) : … », rien d'inséré");
+  const again = await saveTo("apres-casse.roomboard");
+  check(existsSync(again), "S4 : l'enregistrement du document marche toujours après (DAB4)");
+  await page.keyboard.press("Control+z");
+  await waitAttr("data-elements", String(els4));
+  await waitAttr("data-table-merges", "2");
+  check(true, "S4 : Ctrl+Z retire le tableau importé d'un coup");
+  check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
+}
+
+async function main() {
+  console.log(`sha ${gitSha()}`);
+  if (!existsSync(join(DIST, "index.html"))) {
+    console.error(`${LABEL} : ÉCHEC — apps/web/dist absent : lancer d'abord scripts/verifier.sh (Wasm et application)`);
+    return 1;
+  }
+  const pw = await loadPlaywright();
+  if (!pw) {
+    console.error(`${LABEL} : outil absent — Playwright introuvable (npx -y playwright@1.65.1 --version, ou PLAYWRIGHT_MODULE=…)`);
+    return 2;
+  }
+  const server = await serve({ headers: { "Content-Security-Policy": coqueCsp() } });
+  const port = server.address().port;
+  const tmp = await mkdtemp(join(tmpdir(), "roomboard-c10b-"));
+  let browser = null;
+  try {
+    try {
+      browser = await pw.chromium.launch({ args: ["--no-sandbox"] });
+    } catch (e) {
+      console.error(`${LABEL} : outil absent — Chromium de Playwright : ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+      return 2;
+    }
+    const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, acceptDownloads: true });
+    const external = [];
+    await context.route("**/*", (route) => {
+      const u = new URL(route.request().url());
+      if (u.hostname === "127.0.0.1") return route.continue();
+      external.push(u.href);
+      return route.abort();
+    });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(FIXED);
+    await scenario(page, `http://127.0.0.1:${port}/?fichiers=repli`, { captures: process.argv.includes("--captures"), tmp });
+    if (external.length > 0) throw new Echec(`requêtes hors de 127.0.0.1 : ${external.join(", ")}`);
+    console.log(`${LABEL} : OK`);
+    return 0;
+  } catch (e) {
+    console.error(`${LABEL} : ÉCHEC — ${e instanceof Echec ? e.message : e instanceof Error ? e.stack : e}`);
+    return 1;
+  } finally {
+    await browser?.close();
+    server.close();
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+process.exitCode = await main();
+```
+
+- [ ] **Étape 4 : `verifier.sh` et son test (rouge puis vert).** Ajouter `c10b-tableau-navigateur` à la boucle
+  `for s in …` de `scripts/tests/verifier-e2e.test.sh:13` ; lancer `bash scripts/tests/verifier-e2e.test.sh` : échec
+  « c10b-tableau-navigateur absent de verifier.sh ». Dans `scripts/verifier.sh`, après
+  `node scripts/essais/c10a-tableau-navigateur.mjs` : `node scripts/essais/c10b-tableau-navigateur.mjs` ; relancer le
+  test : « verifier-e2e.test.sh : OK ».
+
+- [ ] **Étape 5 : suite complète.** La commande bornée. Un échec de l'essai C10b : le relancer seul pour lire ses lignes
+  `ok — …` ; un défaut d'une autre tâche se signale (tâche **bloquée**, cause et ligne), il ne se corrige pas ici.
+
+- [ ] **Étape 6 : capture.** `node scripts/essais/c10b-tableau-navigateur.mjs --captures 2>&1 | tail -5` ; ouvrir
+  `docs/essais/c10b-tableau-fusion-ombrage.png` et la décrire (preuve visuelle ci-dessus).
+
+- [ ] **Étape 7 : commit.**
+
+```bash
+cd "$WT" && for f in scripts/essais/c10b-tableau-navigateur.mjs scripts/essais/commun.mjs scripts/essais/c10a-tableau-navigateur.mjs \
+  scripts/essais/c2-image-navigateur.mjs scripts/essais/c9-grille-navigateur.mjs scripts/essais/fichiers-navigateur.mjs \
+  scripts/verifier.sh scripts/tests/verifier-e2e.test.sh docs/essais/c10b-tableau-fusion-ombrage.png; do git add "$f"; done && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "test(e2e): C10b table merge, shade, paste and xlsx browser scenario" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : lignes `OK`, les deux tailles de module, description de la capture, une ligne `Réutilisation :` par ligne
+  `Réutilise :`.
+
+## Couverture du cadrage
+
+| entrée | tâche |
+|---|---|
+| F1, F2, F8, F29 (cœur), F30 (lecture) | T1 |
+| F18 | T1 (cœur), T4 (contrat), T7 (liaison), T10 (pose) |
+| F3, F4, F6, F7, F9, F12, F15 (cœur), F5 (test), F17 | T2, T4 |
+| F22 à F27, F32 | T3 (lecture, licences, taille), T5 et T10 (plafonds côté page) |
+| F19, F20 | T5, T11 (`main.ts`, 8 Mio) |
+| F14, F16, F7 (page) | T6, T8 |
+| F10, F11, F13 | T9 |
+| F21, F28 | T10, T11 |
+| F15 (boutons), F29 (attributs) | T11 |
+| F31, S1 à S4 (navigateur) | T12 |
+| S5 | T1, T2, T4, T6, T8 |
+| F33 (C7b) | aucune tâche : rebase sur `origin/main` avant la fusion, tenu par l'orchestrateur (piège de l'état) |
