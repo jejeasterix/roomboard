@@ -78,6 +78,19 @@ export function hasPdfWriter(m: FormatsBinding): m is PdfFormatsBinding {
   return typeof (m as Partial<PdfFormatsBinding>).write_pdf_pages === "function";
 }
 
+/** Module `formats` avec les calculs de pixels (C5, I17) : servi seulement dans le Worker de `pixel-worker.ts`. */
+export interface PixelFormatsBinding extends FormatsBinding {
+  image_transparent(px: Uint8Array, w: number, h: number, r: number, g: number, b: number, tolerance: number, soft: number, contiguous: boolean): void;
+  image_adjust(px: Uint8Array, brightness: number, contrast: number): void;
+  image_flood_fill(px: Uint8Array, w: number, h: number, x: number, y: number, tolerance: number, r: number, g: number, b: number): void;
+}
+
+/** Vrai si le module chargé expose les calculs de pixels (module construit après C5). */
+export function hasPixels(m: FormatsBinding): m is PixelFormatsBinding {
+  const p = m as Partial<PixelFormatsBinding>;
+  return typeof p.image_transparent === "function" && typeof p.image_adjust === "function";
+}
+
 export function createPageCodec(load: () => Promise<FormatsBinding>): ContainerCodec {
   let loading: Promise<FormatsBinding> | null = null;
   const binding = async (): Promise<FormatsBinding> => {
