@@ -15,6 +15,7 @@ import {
   type ToolId,
   type ToolItem,
 } from "../toolbar";
+import { FormatRow } from "./FormatRow";
 import { itemState, type ToolbarView } from "./item-state";
 
 /** Préréglages d'un profil, par outil (`Profile["presets"]`). */
@@ -158,6 +159,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       <Show when={props.bar.role === "tools"}>
         <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
         <TableActionRow view={props.view} host={props.host} />
+        <FormatRow view={props.view} act={(a) => props.host.textFormat(a)} />
       </Show>
     </div>
   );
