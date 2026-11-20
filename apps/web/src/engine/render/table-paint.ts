@@ -10,13 +10,13 @@ import {
   cellInnerBox,
   cellOf,
   cellRect,
-  isCovered,
   mergeRanges,
   TABLE_LINE_WIDTH,
   TABLE_SHADE_HATCH,
   TABLE_SHADE_HATCH_STEP,
   TABLE_SHADE_HATCH_WIDTH,
   type Cell,
+  type Range,
 } from "../table-geom";
 
 export interface CellTextBox {
@@ -34,9 +34,13 @@ const edges = (sizes: readonly number[]): number[] =>
   sizes.reduce<number[]>((acc, s) => [...acc, (acc[acc.length - 1] ?? 0) + s], [0]);
 
 /** Rangs d'une cellule de la vue, ou null si sa ligne ou sa colonne n'est plus lue, ou si une zone la couvre. */
-const visibleCell = (t: TableData, cell: TableCell): Cell | null => {
+const visibleCell = (t: TableData, zones: readonly Range[], cell: TableCell): Cell | null => {
   const at = cellOf(t, cell);
-  return at === null || isCovered(t, at) ? null : at;
+  if (at === null) return null;
+  const covered = zones.some(
+    (z) => at.row >= z.r0 && at.row <= z.r1 && at.col >= z.c0 && at.col <= z.c1 && (z.r0 !== at.row || z.c0 !== at.col),
+  );
+  return covered ? null : at;
 };
 
 /** Couleur lisible d'abord : le canvas ignore une couleur qu'il ne sait pas lire (validColor accepte tout nom de 3 à 20
@@ -68,21 +72,21 @@ function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): vo
 }
 
 export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData): void {
+  const zones = mergeRanges(t);
   for (const cell of t.cells) {
     if (cell.fill === null) continue;
-    const at = visibleCell(t, cell);
+    const at = visibleCell(t, zones, cell);
     if (at !== null) fillBox(ctx, cellRect(t, at), cell.fill);
   }
   for (const cell of t.cells) {
     if (cell.shade === null) continue;
-    const at = visibleCell(t, cell);
+    const at = visibleCell(t, zones, cell);
     if (at !== null) paintShade(ctx, cellRect(t, at), cell.shade);
   }
   const xs = edges(t.cols.map((c) => c.width));
   const ys = edges(t.rows.map((r) => r.height));
   const w = xs[xs.length - 1] ?? 0;
   const h = ys[ys.length - 1] ?? 0;
-  const zones = mergeRanges(t);
   ctx.beginPath();
   if (zones.length === 0) {
     for (const x of xs) {
@@ -121,9 +125,10 @@ export function paintTableGrid(ctx: CanvasRenderingContext2D, t: TableData): voi
 /** Boîtes de texte : cellules au texte non vide, ni couvertes ni ombrées (F11), au rectangle intérieur de leur zone. */
 export function cellTextBoxes(t: TableData): CellTextBox[] {
   const out: CellTextBox[] = [];
+  const zones = mergeRanges(t);
   for (const cell of t.cells) {
     if (cell.text === "" || cell.shade !== null) continue;
-    const at = visibleCell(t, cell);
+    const at = visibleCell(t, zones, cell);
     if (at === null) continue;
     out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at) });
   }

@@ -440,6 +440,16 @@ class FakeDocument implements CoreDocument {
     });
   }
 
+  /** Une étape : un nouveau tableau (id tiré avant ses lignes et colonnes) posé en dernier sur la page. */
+  private writeNewTable(page: string, transform: Matrix, make: () => FakeTable): Change {
+    return this.step((s) => {
+      const id = newId();
+      const table = make();
+      s.pages.find((p) => p.id === page)?.elements.push({ id, transform, style: NO_STYLE, table });
+      return { pages: [page], ids: [id], removed: [] };
+    });
+  }
+
   /** `fill` ou `shade` posé ou retiré sur les ancres et cellules simples du rectangle ; rien à changer : aucune étape. */
   private setOnTargets(found: Found, id: string, t: FakeTable, rect: FakeMerge, key: "fill" | "shade", value: string | null): Change {
     const cells = new Map(t.cells);
@@ -681,18 +691,13 @@ class FakeDocument implements CoreDocument {
           fitsF32([cmd.x, cmd.y, cmd.cols * cmd.colWidth, cmd.rows * cmd.rowHeight]) && validColor(cmd.color);
         if (!ok) throw new Error(MESSAGES.badTable);
         this.pageOf(cmd.page);
-        return this.step((s) => {
-          const id = newId();
-          const table: FakeTable = {
-            color: cmd.color,
-            size: cmd.size,
-            cols: Array.from({ length: cmd.cols }, () => ({ id: newId(), width: cmd.colWidth })),
-            rows: Array.from({ length: cmd.rows }, () => ({ id: newId(), height: cmd.rowHeight })),
-            cells: new Map(),
-          };
-          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(cmd.x, cmd.y), style: NO_STYLE, table });
-          return { pages: [cmd.page], ids: [id], removed: [] };
-        });
+        return this.writeNewTable(cmd.page, translate(cmd.x, cmd.y), () => ({
+          color: cmd.color,
+          size: cmd.size,
+          cols: Array.from({ length: cmd.cols }, () => ({ id: newId(), width: cmd.colWidth })),
+          rows: Array.from({ length: cmd.rows }, () => ({ id: newId(), height: cmd.rowHeight })),
+          cells: new Map(),
+        }));
       }
       case "SetTableCell": {
         if (cmd.rowHeight !== undefined && !positive(cmd.rowHeight)) throw new Error(MESSAGES.badTable);
@@ -844,8 +849,7 @@ class FakeDocument implements CoreDocument {
           fitsF32([...cmd.matrix, cmd.cols * cmd.colWidth, sum(cmd.rowHeights)]) && validMerges(cmd.merges, n, cmd.cols);
         if (!ok) throw new Error(MESSAGES.badTable);
         this.pageOf(cmd.page);
-        return this.step((s) => {
-          const id = newId();
+        return this.writeNewTable(cmd.page, cmd.matrix, () => {
           const cols = Array.from({ length: cmd.cols }, () => ({ id: newId(), width: cmd.colWidth }));
           const rows = cmd.rowHeights.map((height) => ({ id: newId(), height }));
           const covered = new Set<number>();
@@ -860,9 +864,8 @@ class FakeDocument implements CoreDocument {
             if (covered.has(i) || (text === "" && span === null)) return;
             cells.set(cellKey(rows[Math.floor(i / cmd.cols)]?.id ?? "", cols[i % cmd.cols]?.id ?? ""), { text, fill: null, shade: null, span });
           });
-          const table: FakeTable = { color: cmd.color, size: cmd.size, cols, rows, cells };
-          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: cmd.matrix, style: NO_STYLE, table });
-          return { pages: [cmd.page], ids: [id], removed: [] };
+          
+          return { color: cmd.color, size: cmd.size, cols, rows, cells };
         });
       }
     }

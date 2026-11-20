@@ -430,7 +430,7 @@ fn erase_stroke(
 }
 
 /// Matrice de `Transform`, donnée ou composée : six nombres finis, inversible (|dét| ≥ 1e-12, seuil d'`invert`).
-fn valid_matrix(m: &Transform) -> bool {
+pub(crate) fn valid_matrix(m: &Transform) -> bool {
     m.iter().all(|v| v.is_finite()) && invert(m).is_some()
 }
 

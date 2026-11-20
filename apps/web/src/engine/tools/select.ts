@@ -8,7 +8,7 @@
  * haut sous le point la révèle (SetTableShade à null, une étape), sélection inchangée ; au-delà, le glisser sélectionne et déplace.
  */
 import type { Bounds, Matrix } from "../../core/api";
-import { applyMatrix, IDENTITY_MATRIX, invertMatrix } from "../../core/shapes";
+import { IDENTITY_MATRIX } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
@@ -23,7 +23,7 @@ import {
   translateMatrix,
   type HandleId,
 } from "./handles";
-import { cellAt, cellContent } from "../table-geom";
+import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
 
 export const SELECT_TOL_PX = 6;
@@ -129,16 +129,12 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
 
   /** Cellule ombrée sous (x, y) monde du tableau `id` (ancre d'une zone), ou null. */
   const shadedCellAt = (id: string, x: number, y: number): Reveal | null => {
-    const el = ctx.doc.element(id);
-    if (el?.kind !== "table") return null;
-    const inv = invertMatrix(el.transform);
-    if (inv === null) return null;
-    const [lx, ly] = applyMatrix(inv, x, y);
-    const c = cellAt(el.table, lx, ly);
-    const r = c === null ? undefined : el.table.rows[c.row];
-    const k = c === null ? undefined : el.table.cols[c.col];
+    const h = tableAt(ctx.doc, ctx.page(), x, y);
+    if (h?.id !== id) return null;
+    const r = h.table.rows[h.cell.row];
+    const k = h.table.cols[h.cell.col];
     if (r === undefined || k === undefined) return null;
-    return cellContent(el.table, r.id, k.id).shade === null ? null : { id, row: r.id, col: k.id };
+    return cellContent(h.table, r.id, k.id).shade === null ? null : { id, row: r.id, col: k.id };
   };
 
   return {

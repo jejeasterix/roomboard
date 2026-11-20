@@ -13,11 +13,10 @@ use yrs::{
     TextPrelim, TextRef, TransactionMut,
 };
 
-use crate::commands::{Change, CommandError};
+use crate::commands::{valid_matrix, Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, fits_f32, invert, out_f64, out_string, out_transform, transform_to_any,
-    Transform,
+    finite_positive, fits_f32, out_f64, out_string, out_transform, transform_to_any, Transform,
 };
 use crate::rich_text::{self, valid_color};
 pub const TABLE_KIND: &str = "table";
@@ -90,14 +89,13 @@ pub(crate) struct RawTable {
     pub rows: Vec<Line>,
 }
 
-/// Cellule lue ; `text` : son `Y.Text` s'il en est un ; `span` : `[dernière ligne, dernière colonne]` lisible (F1).
+/// Cellule lue ; `text` : son `Y.Text` s'il en est un (le `span` se lit par `read_cell_span`, F1).
 pub(crate) struct RawCell {
     pub map: MapRef,
     pub text: Option<TextRef>,
     pub content: String,
     pub fill: Option<String>,
     pub shade: Option<String>,
-    pub span: Option<(String, String)>,
 }
 
 pub(crate) fn cell_key(row: &str, col: &str) -> String {
@@ -202,15 +200,42 @@ pub(crate) fn read_cell<T: ReadTxn>(
     let content = text.as_ref().map(|t| t.get_string(txn)).unwrap_or_default();
     let fill = out_string(map.get(txn, "fill")).filter(|c| valid_color(c));
     let shade = out_string(map.get(txn, "shade")).filter(|c| valid_color(c));
-    let span = read_span(map.get(txn, "span"));
     Some(RawCell {
         map,
         text,
         content,
         fill,
         shade,
-        span,
     })
+}
+
+/// Clé de cellule posée par `set_on_targets`.
+#[derive(Clone, Copy)]
+enum PaintKey {
+    Fill,
+    Shade,
+}
+
+impl PaintKey {
+    fn name(self) -> &'static str {
+        match self {
+            PaintKey::Fill => "fill",
+            PaintKey::Shade => "shade",
+        }
+    }
+}
+
+/// `span` seul d'une cellule : ni texte ni couleurs lus (parcours des fusions).
+fn read_cell_span<T: ReadTxn>(
+    txn: &T,
+    cells: Option<&MapRef>,
+    row: &str,
+    col: &str,
+) -> Option<(String, String)> {
+    let Some(Out::YMap(map)) = cells?.get(txn, &cell_key(row, col)) else {
+        return None;
+    };
+    read_span(map.get(txn, "span"))
 }
 
 /// Zone retenue par la règle F2, en rangs des lignes et colonnes lisibles, bornes comprises.
@@ -245,8 +270,7 @@ pub(crate) fn merges_of<T: ReadTxn>(raw: &RawTable, txn: &T) -> Vec<Merge> {
     let mut out: Vec<Merge> = Vec::new();
     for (r0, r) in raw.rows.iter().enumerate() {
         for (c0, c) in raw.cols.iter().enumerate() {
-            let Some((last_row, last_col)) =
-                read_cell(txn, raw.cells.as_ref(), &r.id, &c.id).and_then(|cell| cell.span)
+            let Some((last_row, last_col)) = read_cell_span(txn, raw.cells.as_ref(), &r.id, &c.id)
             else {
                 continue;
             };
@@ -698,8 +722,7 @@ impl Document {
             && t.row_heights.iter().all(|h| finite_positive(*h))
             && finite_positive(t.size)
             && valid_color(t.color)
-            && t.matrix.iter().all(|v| v.is_finite())
-            && invert(&t.matrix).is_some()
+            && valid_matrix(&t.matrix)
             && fits_f32(&t.matrix)
             && fits_f32(&[f64::from(t.cols) * t.col_width, t.row_heights.iter().sum()])
             && merges_ok(t.merges, rows, t.cols);
@@ -929,15 +952,12 @@ impl Document {
 
     /// `key` (`fill` ou `shade`) posé ou retiré sur les ancres et cellules simples du rectangle (F9, F15) ; rien à
     /// changer : aucune transaction (D38).
-    #[allow(clippy::too_many_arguments)]
     fn set_on_targets(
         &mut self,
-        page: String,
-        id: &str,
-        e: &MapRef,
+        (page, id, e): (String, &str, &MapRef),
         raw: &RawTable,
         rect: &Merge,
-        key: &'static str,
+        key: PaintKey,
         value: Option<&str>,
     ) -> Result<Change, CommandError> {
         let todo: Vec<((usize, usize), Option<RawCell>)> = {
@@ -949,8 +969,8 @@ impl Document {
                     let cell =
                         read_cell(&txn, raw.cells.as_ref(), &raw.rows[r].id, &raw.cols[c].id);
                     let current = cell.as_ref().and_then(|x| match key {
-                        "fill" => x.fill.clone(),
-                        _ => x.shade.clone(),
+                        PaintKey::Fill => x.fill.clone(),
+                        PaintKey::Shade => x.shade.clone(),
                     });
                     (current.as_deref() != value).then_some(((r, c), cell))
                 })
@@ -965,7 +985,7 @@ impl Document {
             for ((r, c), cell) in todo {
                 match (value, cell) {
                     (Some(v), Some(x)) => {
-                        x.map.insert(&mut txn, key, In::from(v));
+                        x.map.insert(&mut txn, key.name(), In::from(v));
                     }
                     (Some(v), None) => {
                         insert_cell(
@@ -973,11 +993,11 @@ impl Document {
                             &cells,
                             raw.key(r, c),
                             "",
-                            vec![(key, In::from(v))],
+                            vec![(key.name(), In::from(v))],
                         );
                     }
                     (None, Some(x)) => {
-                        x.map.remove(&mut txn, key);
+                        x.map.remove(&mut txn, key.name());
                     }
                     (None, None) => {}
                 }
@@ -1001,7 +1021,7 @@ impl Document {
         let rect = raw
             .rect(from, to.unwrap_or(from))
             .ok_or(CommandError::BadTable)?;
-        self.set_on_targets(page, id, &e, &raw, &rect, "fill", fill)
+        self.set_on_targets((page, id, &e), &raw, &rect, PaintKey::Fill, fill)
     }
 
     /// `SetTableShade` (F9) : ombrer, retirer l'ombrage, révéler (F10, F12 : une étape par appel).
@@ -1017,7 +1037,7 @@ impl Document {
         }
         let (page, e, raw) = self.table_of(id)?;
         let rect = raw.rect(from, to).ok_or(CommandError::BadTable)?;
-        self.set_on_targets(page, id, &e, &raw, &rect, "shade", shade)
+        self.set_on_targets((page, id, &e), &raw, &rect, PaintKey::Shade, shade)
     }
 
     /// `MergeTableCells` (F3) : zones dedans dissoutes, couvertes retirées de `cells` (texte, `fill`, `shade`),
