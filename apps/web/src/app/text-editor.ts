@@ -135,8 +135,6 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
   let model: RichEdit | null = null;
   /** Composition IME en cours (R5) : ni relecture, ni redessin, ni raccourci, ni action de barre. */
   let composing = false;
-  /** Redessin en cours (R4) : le `selectionchange` qu'il provoque n'oublie pas le format en attente (R9). */
-  let redrawing = false;
 
   const changed = (): void => events()?.formatChanged?.();
 
@@ -145,13 +143,8 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
     if (model === null || current === null) return;
     const st = model.state();
     if (!force && sameRender(zone, st.spans)) return;
-    redrawing = true;
-    try {
-      renderSpans(zone, st.spans, { size: current.size });
-      setSelection(zone, st.start, st.end);
-    } finally {
-      redrawing = false;
-    }
+    renderSpans(zone, st.spans, { size: current.size });
+    setSelection(zone, st.start, st.end);
   };
 
   /** Relit le DOM après une frappe ou une composition (R3) ; curseur illisible : -1, -1 (PC9). */
@@ -183,10 +176,11 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
   };
 
   /** Clic, flèches : la sélection relue va au modèle, qui oublie l'attente si elle a bougé (R9) ; jamais pendant une
-   *  composition ni pendant un redessin. Texte du DOM pas encore relu (frappe dont l'`input` n'est pas arrivé : un
+   *  composition. Le `selectionchange` d'un redessin arrive après coup : le test du texte et `select` (qui oublie
+   *  l'attente seulement si la sélection a bougé) suffisent. Texte du DOM pas encore relu (frappe dont l'`input` n'est pas arrivé : un
    *  moteur qui émet `selectionchange` avant lui) : ses positions sont celles d'un autre texte, l'`input` les portera. */
   const onSelection = (): void => {
-    if (!opened || composing || redrawing || model === null) return;
+    if (!opened || composing || model === null) return;
     if (readText(zone) !== model.text()) return;
     const sel = readSelection(zone);
     if (sel === null) return;
@@ -304,12 +298,7 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
       redraw(true);
       zone.focus();
       const st = model.state();
-      redrawing = true;
-      try {
-        setSelection(zone, st.start, st.end);
-      } finally {
-        redrawing = false;
-      }
+      setSelection(zone, st.start, st.end);
       doc.addEventListener("selectionchange", onSelection);
       changed();
     },

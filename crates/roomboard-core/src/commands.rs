@@ -706,9 +706,7 @@ impl Document {
             let found = self.find_element(&txn, id).ok_or_else(unknown)?;
             let current = read_text(&txn, &found.element).ok_or_else(unknown)?;
             // R7 : une mise en forme seule (texte égal) n'est jamais « inchangée ».
-            let spans_same = t
-                .spans
-                .is_none_or(|s| !rich_text::spans_differ(&txn, &current.text, s));
+            let spans_same = rich_text::spans_unchanged(&txn, Some(&current.text), t.spans);
             (found, current, spans_same)
         };
         if t.content.is_empty() {

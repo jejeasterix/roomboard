@@ -6,7 +6,7 @@
  * finit seul un bloc (marque de ligne vide) ne sont jamais lus (PC8). Sélection en unités UTF-16 du texte lu. Sans état.
  */
 import type { TextAttrs, TextSpan } from "../core/api";
-import { TEXT_ATTR_KEYS } from "../core/rich-text";
+import { spansText, TEXT_ATTR_KEYS } from "../core/rich-text";
 import { faceOf, styleOf, TEXT_FONT_FAMILY } from "../engine/text-layout";
 
 export const END_BR = "data-rb-fin";
@@ -29,8 +29,6 @@ export interface DomSelection {
 /** Clé stable des attributs (ordre de `TEXT_ATTR_KEYS`) : deux objets égaux ont la même clé. */
 export const attrsKey = (a: TextAttrs): string => JSON.stringify(TEXT_ATTR_KEYS.map((k) => a[k] ?? null));
 
-const textOf = (spans: readonly TextSpan[]): string => spans.map((s) => s.text).join("");
-
 export function renderSpans(root: HTMLElement, spans: readonly TextSpan[], base: DomBase): void {
   const doc = root.ownerDocument;
   const nodes: Node[] = [];
@@ -49,7 +47,7 @@ export function renderSpans(root: HTMLElement, spans: readonly TextSpan[], base:
     el.textContent = s.text;
     nodes.push(el);
   }
-  if (textOf(spans).endsWith("\n")) {
+  if (spansText(spans).endsWith("\n")) {
     const br = doc.createElement("br");
     br.setAttribute(END_BR, "");
     nodes.push(br);
@@ -60,7 +58,7 @@ export function renderSpans(root: HTMLElement, spans: readonly TextSpan[], base:
 /** Vrai si le DOM de `root` est exactement le rendu de `spans` : sinon la zone redessine (R3). */
 export function sameRender(root: HTMLElement, spans: readonly TextSpan[]): boolean {
   const want = spans.filter((s) => s.text !== "");
-  const end = textOf(spans).endsWith("\n");
+  const end = spansText(spans).endsWith("\n");
   const kids = Array.from(root.childNodes);
   if (kids.length !== want.length + (end ? 1 : 0)) return false;
   const spansOk = want.every((s, i) => {
