@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutText, textBoxHeight, textFont, type Measure } from "./text-layout";
+import { graphemes, layoutText, textBoxHeight, textFont, type Measure } from "./text-layout";
 
 /** Chaque caractère vaut 100 unités, quelle que soit la taille. */
 const wide: Measure = (s) => s.length * 100;
@@ -35,5 +35,26 @@ describe("mise en lignes du texte (CL4-4)", () => {
     expect(textBoxHeight(2, 36)).toBe(90);
     expect(textBoxHeight(0, 36)).toBe(45);
     expect(textFont(48)).toBe('48px "Atkinson Hyperlegible", system-ui, sans-serif');
+  });
+
+  it("famille ZWJ jamais coupée", () => {
+    const family = "👨‍👩‍👧‍👦";
+    const measure = (s: string): number => graphemes(s).length * 10;
+    expect(layoutText(family + family + family, 36, 15, measure)).toEqual([family, family, family]);
+  });
+
+  it("drapeau et teinte de peau restent entiers", () => {
+    const measure = (s: string): number => graphemes(s).length * 10;
+    expect(layoutText("🇫🇷👍🏽", 36, 15, measure)).toEqual(["🇫🇷", "👍🏽"]);
+  });
+
+  it("graphemes : repli sur les points de code sans Intl.Segmenter", () => {
+    const saved = Intl.Segmenter;
+    delete (Intl as { Segmenter?: unknown }).Segmenter;
+    try {
+      expect(graphemes("ab")).toEqual(["a", "b"]);
+    } finally {
+      (Intl as { Segmenter?: unknown }).Segmenter = saved;
+    }
   });
 });

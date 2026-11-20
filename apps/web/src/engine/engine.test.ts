@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Change, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import type { FrameLoopDeps } from "../proto/frame-loop";
-import { fitPage, type Camera } from "./camera";
+import { fitWidth, type Camera } from "./camera";
 import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -326,7 +326,7 @@ describe("createEngine", () => {
     const cam1: Camera = engine.camera();
     expect(engine.showPage(p2)).toBe(true);
     expect(engine.state().page).toBe(p2);
-    expect(engine.camera()).toEqual(fitPage(1280, 720));
+    expect(engine.camera()).toEqual(fitWidth(1280, 720));
     engine.view.zoomAt(0, 0, 2);
     const cam2 = engine.camera();
     expect(engine.showPage(p1)).toBe(true);
@@ -622,5 +622,78 @@ describe("createEngine", () => {
     engine.sink.close(1, "end");
     expect(states).toEqual([1]);
     expect(engine.state()).toMatchObject({ selection: [a], selectionBounds: { x0: 98, y0: 98, x1: 202, y1: 202 } });
+  });
+
+  it("page jamais vue : cadrée par la largeur", () => {
+    const { engine } = setup();
+    engine.resize(1000, 400, 1);
+    expect(engine.camera()).toEqual(fitWidth(1000, 400));
+  });
+
+  it("fitPage recadre après un zoom", () => {
+    const { engine } = setup();
+    engine.resize(1000, 400, 1);
+    engine.view.zoomAt(10, 10, 2);
+    engine.fitPage();
+    expect(engine.camera()).toEqual(fitWidth(1000, 400));
+  });
+
+  it("onCamera : pan, zoom, page, ajustement", () => {
+    const { engine } = setup();
+    engine.resize(1000, 400, 1);
+    engine.addPage();
+    const got: Camera[] = [];
+    const off = engine.onCamera((c) => got.push(c));
+    engine.view.panBy(5, 5);
+    engine.view.zoomAt(0, 0, 2);
+    engine.prevPage();
+    engine.fitPage();
+    expect(got.length).toBe(4);
+    off();
+    engine.view.panBy(1, 1);
+    expect(got.length).toBe(4);
+  });
+
+  it("setPenStyle : le trait suivant prend la couleur et l'épaisseur", () => {
+    const { engine, doc } = setup();
+    const draw = (): void => {
+      engine.sink.begin(1, "pen", [sample]);
+      engine.sink.close(1, "end");
+    };
+    const lastStyle = () => {
+      const ids = doc.elementIds(engine.state().page);
+      const e = doc.element(ids[ids.length - 1] ?? "");
+      return e && e.kind === "stroke" ? e.style : null;
+    };
+    engine.setPenStyle({ color: "#dc2626", width: 6 });
+    draw();
+    expect(lastStyle()).toEqual({ color: "#dc2626", width: 6 });
+    engine.setPenStyle({ color: "", width: 7 });
+    engine.setPenStyle({ color: "#00ff00", width: Number.NaN });
+    draw();
+    expect(lastStyle()).toEqual({ color: "#dc2626", width: 6 });
+  });
+
+  it("Ctrl+Z après Suppr resélectionne les éléments rendus (CL5b-12)", () => {
+    const { engine, rect, sel } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    const b = rect(400, 100, 500, 200);
+    sel().setSelection([a, b]);
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(engine.state().selection).toEqual([]);
+    engine.key(key("z", { ctrlKey: true }));
+    expect([...engine.state().selection].sort()).toEqual([a, b].sort());
+  });
+
+  it("Ctrl+Z après Suppr puis un autre geste : pas de resélection", () => {
+    const { engine, rect, sel } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    sel().setSelection([a]);
+    engine.key(key("Delete"));
+    rect(600, 600, 700, 700);
+    engine.run({ type: "AddShape", page: engine.state().page, shape: "rect", x0: 1, y0: 1, x1: 9, y1: 9, style: PEN, fill: null });
+    engine.key(key("z", { ctrlKey: true }));
+    engine.key(key("z", { ctrlKey: true }));
+    expect(engine.state().selection).toEqual([]);
   });
 });
