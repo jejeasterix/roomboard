@@ -6,7 +6,7 @@
 `docs/plans/usage-cadrage.md` (§ 8 « À prendre dès le lot 5b », en entier ; U10-U16, U23-U25 ; DAU8 ; § 11 tranché).
 **Plan maître :** `docs/plans/socle-PLAN.md`, ligne « 5b — Interface ». **Lots précédents :** `socle-lot4-PLAN.md`
 (CL4-1 à CL4-15 gardés), `socle-lot5a-PLAN.md`, `socle-lot3b-PLAN.md` (réglages `engine/settings.ts`).
-**Tâches :** T82 à T97 (16), 6 vagues. Vague = tâches lancées ensemble ; aucune paire d'une même vague ne partage un
+**Tâches :** T82 à T98 (17 ; T98 est la seconde moitié de T93, scindée à la relecture), 7 vagues. Vague = tâches lancées ensemble ; aucune paire d'une même vague ne partage un
 fichier.
 
 ## Table des tâches
@@ -24,14 +24,15 @@ fichier.
 | T90 | Moteur : Ajuster la page, style du stylo, caméra publiée, sélection après Suppr + Ctrl+Z, zone de texte qui suit le zoom, `Intl.Segmenter` | T84 | `apps/web/src/engine/engine.ts`, `apps/web/src/engine/engine.test.ts`, `apps/web/src/app/text-editor.ts`, `apps/web/src/app/text-editor.test.ts`, `apps/web/src/engine/text-layout.ts`, `apps/web/src/engine/text-layout.test.ts` | isolé | implementeur-tdd | vitest `engine`, `text-editor`, `text-layout` ≥ 8 tests neufs, noms « Ctrl+Z après Suppr resélectionne », « famille ZWJ jamais coupée » | S3, S4 | #tache-t90 | 2 |
 | T91 | Barre des pages et barre des onglets (composants) | T82, T83 | `apps/web/src/ui/PagesBar.tsx` (neuf), `apps/web/src/ui/PagesBar.test.tsx` (neuf), `apps/web/src/ui/TabsBar.tsx` (neuf), `apps/web/src/ui/TabsBar.test.tsx` (neuf) | isolé | implementeur-tdd | vitest des deux fichiers ≥ 10 tests, noms « aller à la page 3 », « onglet modifié marqué » | S3 | #tache-t91 | 2 |
 | T92 | Panneau des réglages, choix du profil, diagnostics WebGL2 | T82, T83, T84 | `apps/web/src/ui/SettingsPanel.tsx` (neuf), `apps/web/src/ui/SettingsPanel.test.tsx` (neuf), `apps/web/src/ui/ProfileMenu.tsx` (neuf), `apps/web/src/ui/ProfileMenu.test.tsx` (neuf) | isolé | implementeur-tdd | vitest des deux fichiers ≥ 10 tests, noms « échelon 4 : question si un onglet est modifié », « badColors affichées » | S2 | #tache-t92 | 2 |
-| T93 | Onglets : un document, un moteur, un contrôleur de fichiers par onglet ; Ouvrir et dépôt = nouvel onglet | T86, T88, T90 | `apps/web/src/app/tabs.ts` (neuf), `apps/web/src/app/tabs.test.ts` (neuf), `apps/web/src/app/board-session.ts` (neuf), `apps/web/src/app/board-session.test.ts` (neuf), `apps/web/src/app/workspace.ts` (neuf), `apps/web/src/app/workspace.test.ts` (neuf), `apps/web/src/platform/controller.ts`, `apps/web/src/platform/controller.test.ts`, `apps/web/src/platform/mount.ts`, `apps/web/src/platform/mount.test.ts` | isolé | concepteur-critique | vitest `tabs`, `board-session`, `workspace`, `controller`, `mount` ≥ 30 tests, noms « ouvrir : nouvel onglet, l'onglet d'origine intact », « fermeture gardée si un onglet est modifié » | S2, S3, U-S4 | #tache-t93 | 3 |
+| T93 | `BoardSession` : un moteur, un rendu, un document par onglet ; `dispose` libère le contexte WebGL2 ; dépendances du banc | T84, T88, T90 | `apps/web/src/app/board-session.ts` (neuf), `apps/web/src/app/board-session.test.ts` (neuf), `apps/web/src/engine/render/select.ts`, `apps/web/src/engine/render/select.test.ts` | isolé | concepteur-critique | vitest `board-session`, `select` ≥ 14 tests, noms « dispose : contexte WebGL2 perdu, scène retirée, document libéré », « deux sessions : un seul #stage, un seul #texte-edition » | S2, S3 | #tache-t93 | 3 |
+| T98 | Espace de travail : onglets, contrôleur de fichiers par onglet, Ouvrir et dépôt = nouvel onglet, marquage `#stage` | T86, T93 | `apps/web/src/app/tabs.ts` (neuf), `apps/web/src/app/tabs.test.ts` (neuf), `apps/web/src/app/workspace.ts` (neuf), `apps/web/src/app/workspace.test.ts` (neuf), `apps/web/src/platform/controller.ts`, `apps/web/src/platform/controller.test.ts`, `apps/web/src/platform/mount.ts`, `apps/web/src/platform/mount.test.ts`, `apps/web/src/platform/host-tauri.ts`, `apps/web/src/platform/host-tauri.test.ts` | isolé | concepteur-critique | vitest `tabs`, `workspace`, `controller`, `mount`, `host-tauri` ≥ 30 tests, noms « ouvrir : nouvel onglet, l'onglet d'origine intact », « fermeture gardée si un onglet est modifié », « lancement : écoute du dépôt posée avant launch_files », « marquage #stage par onglet » ; `tsc --noEmit` sans `error TS` | S2, S3, U-S4 | #tache-t98 | 4 |
 | T94 | Barre d'outils SolidJS en profils : `ToolbarHost`, état des éléments par table, dock, taille | T82, T83, T86, T89, T90 | `apps/web/src/ui/Toolbar.tsx` (neuf), `apps/web/src/ui/Toolbar.test.tsx` (neuf), `apps/web/src/ui/item-state.ts` (neuf), `apps/web/src/ui/item-state.test.ts` (neuf), `apps/web/src/ui/layout.ts` (neuf), `apps/web/src/ui/layout.test.ts` (neuf), `apps/web/src/ui/rb.css` (neuf), `apps/web/src/app/toolbar-host.ts` (neuf), `apps/web/src/app/toolbar-host.test.ts` (neuf) | isolé | implementeur-tdd | vitest des cinq fichiers ≥ 20 tests, noms « outil inconnu : bouton absent », « aucun switch sur l'identifiant » (contrôle de source) | S2, S3 | #tache-t94 | 3 |
-| T95 | Application SolidJS assemblée : `App.tsx`, `main.ts` réduit, `index.html`, barre DOM retirée, la barre ne recouvre rien | T89, T91, T92, T93, T94 | `apps/web/src/ui/App.tsx` (neuf), `apps/web/src/ui/App.test.tsx` (neuf), `apps/web/src/main.ts`, `apps/web/index.html`, `apps/web/src/app/barre.ts` (retiré), `apps/web/src/app/barre.test.ts` (retiré), `apps/web/src/app/stage-tags.ts` (neuf), `apps/web/src/app/stage-tags.test.ts` (neuf), `apps/web/src/toolbar.ts`, `apps/web/src/toolbar.test.ts`, `apps/web/src/app/board-session.ts` (import), `apps/web/src/ui/PagesBar.tsx` | isolé | concepteur-critique | vitest `App.test.tsx` ≥ 8 tests, nom « inventaire : chaque bouton de l'ancienne barre a son élément » ; `scripts/verifier.sh` → `verifier.sh : OK` | S2, S3, S4 | #tache-t95 | 4 |
-| T96 | Playwright `--e2e` : S2-S4 et lot 5b par l'interface SolidJS, captures, `verifier.sh --e2e` | T85, T95 | `scripts/verifier.sh`, `scripts/essais/commun.mjs`, `scripts/essais/s2-navigateur.mjs`, `scripts/essais/s34-navigateur.mjs`, `scripts/essais/fichiers-navigateur.mjs`, `scripts/essais/s5b-navigateur.mjs` (neuf), `scripts/tests/verifier-e2e.test.sh` (neuf), `docs/essais/s5b-*.png` (neufs), `docs/essais/s2-lot5b.png`, `docs/essais/s34-lot5b-*.png` (neufs) | isolé | implementeur-tdd | `verifier.sh --e2e` → `S2 lot 3 : OK`, `S3/S4 lot 4 : OK`, `Fichiers lot 5a : OK`, `S5b : OK` (≥ 25 `ok —`), `verifier.sh : OK` ; sans `--e2e` aucun script lancé | S2, S3, S4, U-S4 | #tache-t96 | 5 |
-| T97 | Orchestrateur : build Tauri Linux, essai de la coque sous Broadway, capture | T96 | `docs/essais/coque-linux-lot5b.png` (neuf), `docs/sessions/socle-etat.md` (orchestrateur seul) | principal | orchestrateur | build release `.deb` produit ; sous Broadway : trace, barre SolidJS, onglet ; capture | S5 | #tache-t97 | 6 |
+| T95 | Application SolidJS assemblée : `App.tsx`, `main.ts` réduit, `index.html`, barre DOM retirée, la barre ne recouvre rien | T89, T91, T92, T93, T94, T98 | `apps/web/src/ui/App.tsx` (neuf), `apps/web/src/ui/App.test.tsx` (neuf), `apps/web/src/main.ts`, `apps/web/index.html`, `apps/web/src/app/barre.ts` (retiré), `apps/web/src/app/barre.test.ts` (retiré), `apps/web/src/app/stage-tags.ts` (neuf), `apps/web/src/app/stage-tags.test.ts` (neuf), `apps/web/src/toolbar.ts`, `apps/web/src/toolbar.test.ts`, `apps/web/src/app/board-session.ts` (import), `apps/web/src/ui/PagesBar.tsx`, `apps/web/src/ui/rb.css` | isolé | concepteur-critique | vitest `App.test.tsx` ≥ 9 tests, nom « inventaire : chaque bouton de l'ancienne barre a son élément » ; `scripts/verifier.sh` → `verifier.sh : OK` | S2, S3, S4 | #tache-t95 | 5 |
+| T96 | Playwright `--e2e` : S2-S4 et lot 5b par l'interface SolidJS, captures, `verifier.sh --e2e` | T85, T95 | `scripts/verifier.sh`, `scripts/essais/commun.mjs`, `scripts/essais/s2-navigateur.mjs`, `scripts/essais/s34-navigateur.mjs`, `scripts/essais/fichiers-navigateur.mjs`, `scripts/essais/s5b-navigateur.mjs` (neuf), `scripts/tests/verifier-e2e.test.sh` (neuf), `docs/essais/s5b-*.png` (neufs), `docs/essais/s2-lot5b.png`, `docs/essais/s34-lot5b-*.png` (neufs) | isolé | implementeur-tdd | `verifier.sh --e2e` code 0, `grep -E "^(S2\|S3/S4\|Fichiers\|S5b).*: OK\|verifier.sh :\|Echec"` → les cinq motifs `: OK`, `verifier.sh : OK`, aucun `Echec` ; `grep -c "ok —"` ≥ 25 pour S5b ; sans `--e2e` : compte = 0 | S2, S3, S4, U-S4 | #tache-t96 | 6 |
+| T97 | Orchestrateur : build Tauri Linux, essai de la coque sous Broadway, capture | T96 | `docs/essais/coque-linux-lot5b.png` (neuf), `docs/sessions/socle-etat.md` (orchestrateur seul) | principal | orchestrateur | build release `.deb` produit ; sous Broadway : trace, barre SolidJS, onglet ; capture | S5 | #tache-t97 | 7 |
 
-Vagues : **1** = T82, T83, T84, T85, T86, T87, T88 · **2** = T89, T90, T91, T92 · **3** = T93, T94 · **4** = T95 ·
-**5** = T96 · **6** = T97 (orchestrateur). Au plus 4 sous-agents à la fois si la VM manque de place : dans la vague 1,
+Vagues : **1** = T82, T83, T84, T85, T86, T87, T88 (faite) · **2** = T89, T90, T91, T92 · **3** = T93, T94 ·
+**4** = T98 · **5** = T95 · **6** = T96 · **7** = T97 (orchestrateur). Au plus 4 sous-agents à la fois si la VM manque de place : dans la vague 1,
 T87 (compilation Rust) d'abord, avec T83 et T86.
 
 Scénarios : **S2-S5** = `socle-cadrage.md` § Scénarios ; **U-S2** et **U-S4** = `usage-cadrage.md` § 6 (S2 : profil
@@ -53,20 +54,21 @@ apps/web/
     active-profile.ts (+test)                         T89
     PagesBar.tsx, TabsBar.tsx (+tests)                T91
     SettingsPanel.tsx, ProfileMenu.tsx (+tests)       T92
-    Toolbar.tsx, item-state.ts, layout.ts, rb.css     T94
+    Toolbar.tsx, item-state.ts, layout.ts, rb.css     T94 (rb.css : règles de la scène et de la grille ajoutées par T95)
     App.tsx (+test)                                   T95
   src/app/
     mesure-outils.ts (+test), banc.ts                 T88
     text-editor.ts (+test)                            T90
-    tabs.ts, board-session.ts, workspace.ts (+tests)  T93
+    board-session.ts (+test)                          T93
+    tabs.ts, workspace.ts (+tests)                    T98
     toolbar-host.ts (+test)                           T94
     stage-tags.ts (+test) ; barre.ts retiré           T95
   src/engine/
-    camera.ts, page.ts, render/{canvas2d,webgl2,select}.ts   T84
+    camera.ts, page.ts, render/{canvas2d,webgl2,select}.ts   T84 (select.ts : `release()` ajouté par T93)
     engine.ts, text-layout.ts                         T90
   src/platform/
-    import.ts, drop-web.ts, files.ts, host-*.ts       T86
-    controller.ts, mount.ts                           T93
+    import.ts, drop-web.ts, files.ts, host-*.ts       T86 (host-tauri.ts : `dropListening` ajouté par T98)
+    controller.ts, mount.ts                           T98
   src/proto/stylet.ts                                 T88
 crates/roomboard-shell/ (neuf, membre du workspace)   T87
 apps/desktop/src-tauri/ (main.rs, Cargo.toml, tauri.conf.json, capabilities/default.json)   T87
@@ -94,7 +96,7 @@ Chaque ligne a un élément dans le profil `defaut` (T83) et un test dans `App.t
 | Notes des échelons `#echelons-notes` | `#echelons-notes` | `SettingsPanel` (garde l'id) | — |
 | Ouvrir, Enregistrer, Enregistrer sous, Nouveau (raccourcis du lot 5a) | Ctrl+O, Ctrl+S, Ctrl+Maj+S, Ctrl+N | `file-open`, `file-save`, `file-save-as`, `file-new` (action) ; raccourcis gardés | `outils` |
 | (neuf) Ajuster la page | — | `fit-page` (action) | `outils` |
-| (neuf) diagnostics WebGL2 (`badColors`, `lost`) | — | `SettingsPanel` (`#webgl-diagnostic`) et `#stage[data-webgl-perdu]` | — |
+| (neuf) diagnostics WebGL2 (`badColors`, `lost`) | — | `SettingsPanel` (`#webgl-diagnostic`) et `#stage[data-webgl-perdu]` (posé par la session, T93) | — |
 
 ## Choix tranchés
 
@@ -109,9 +111,10 @@ Ce que les cadrages ne tranchent pas, avec la raison. Ce qui se voit et se défa
   moteur testé ne change pour les onglets ; l'isolement des historiques est garanti par construction. Coût : deux canvas
   par onglet ; borne **12 onglets** (au-delà : message « 12 onglets au plus ; fermez-en un »), sous la limite de 16
   contextes WebGL2 de Chromium quand l'échelon 4 est actif.
-- **CL5b-2 — Les identifiants `#stage`, `#scene`, `#interaction` suivent l'onglet actif.** Les scripts d'essai et les
-  attributs `#stage[data-*]` (S2, S3/S4, fichiers) restent valables : l'onglet activé reçoit ces ids, les autres les
-  perdent (`data-tab` reste sur chacun).
+- **CL5b-2 — Les identifiants `#stage`, `#scene`, `#interaction`, `#texte-edition` suivent l'onglet actif.** Les
+  scripts d'essai et les attributs `#stage[data-*]` (S2, S3/S4, fichiers) restent valables : l'onglet activé reçoit ces
+  ids, les autres les perdent (`data-tab` reste sur chacun). Le marquage des fichiers (`data-fichiers`, `data-modifie`,
+  `data-fichier`, `data-fichier-erreur`) est tenu par onglet (T98).
 - **CL5b-3 — Ouvrir ne recharge plus la page.** Ouvrir (boîte, dépôt, lancement) charge le fichier dans un nouvel onglet,
   sans question (D27 amendée, Q1) ; l'attente IndexedDB du lot 5a ne sert plus qu'au démarrage (fichier mis en attente
   par une version précédente), gardée sans écriture neuve. Nouveau (Ctrl+N) ouvre un onglet vierge.
@@ -169,6 +172,21 @@ Insertion des pages d'un document (C3) · formats autres que `.roomboard` (C2-C5
 modèle ne s'appuie sur aucun glisser HTML5 ; rien n'est réordonnable au lot 5b) · WebKit Playwright (H2-10, reste
 essayé hors chaîne).
 
+## Écarts de la vague 1 (rapports des tâches, intégrés le 2026-11-20)
+
+- **T82** : `apps/web/vite.config.ts` porte `test: { environment: "node" }` (vite-plugin-solid imposait jsdom) ; les tests
+  de composants et de DOM posent happy-dom par leur première ligne. `pnpm-workspace.yaml` a reçu
+  `minimumReleaseAgeExclude: solid-js@1.9.20`. → contrainte recopiée dans T89-T98.
+- **T84** : le rendu Canvas 2D retient la hauteur CSS au `resize` ; `fitWidth` est à côté de `fitPage`. → T93
+  (taille CSS de la case passée au rendu).
+- **T86** : le faux `FileHost` de `apps/web/src/platform/controller.test.ts:54` n'a pas `onDrop` : `tsc --noEmit` échoue
+  (TS2741) jusqu'à T98, qui le corrige en première étape. Aucune tâche des vagues 2 et 3 ne lance `tsc` ; si l'une le
+  fait, cette seule erreur est attendue.
+- **T87** : le contrôle s'appelle `scripts/controle-hors-ligne.mjs` ; les chemins émis par la coque sous Windows ont la
+  forme `\\?\C:\…` (la page n'affiche que le nom de base) ; la page doit écouter `roomboard://dropped` avant
+  d'appeler `launch_files`. → T98 (`dropListening`, ordre testé, nom de base testé), T95 (aucun autre appel de
+  `launchFiles`).
+
 ## Contraintes globales (recopiées dans chaque section)
 
 - Toutes les commandes visent le worktree donné par l'orchestrateur : `cd <worktree> && …` ; avant toute commande
@@ -199,6 +217,8 @@ essayé hors chaîne).
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- (Ajout après la vague 1, T89 et suivantes) Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ;
+  `apps/web/vite.config.ts` garde `test: { environment: "node" }` (écart T82), ne pas le changer.
 
 ---
 
@@ -1898,6 +1918,8 @@ rabattu » présents.
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Aucun composant ne lit `localStorage` : seul `browserKeyValue` y touche. Aucune écriture du profil `defaut`.
 
@@ -2047,6 +2069,8 @@ le rapport, jamais retiré.
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Le moteur n'importe ni `toolbar.ts` ni `src/ui/` (il reçoit des commandes). Pas d'API `setDocument`
 (CL5b-1).
@@ -2207,6 +2231,8 @@ export function TabsBar(props: TabsBarProps): JSX.Element;
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Aucun appel au moteur ni au document : seulement les propriétés. Aucun `switch` sur un id d'action.
 Pas de glisser pour réordonner les onglets.
@@ -2303,6 +2329,8 @@ export function ProfileMenu(props: ProfileMenuProps): JSX.Element;
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Ne pas toucher `engine/settings.ts` ni `app/barre.ts`. Aucun `localStorage`.
 
@@ -2320,38 +2348,263 @@ menu change le profil.
 3. Vert. Commit : `feat(ui): settings panel, profile menu, WebGL2 diagnostics`.
 
 <a id="tache-t93"></a>
-### Tâche T93 — Onglets : un document, un moteur, un contrôleur de fichiers par onglet ; Ouvrir et dépôt = nouvel onglet
+### Tâche T93 — `BoardSession` : un moteur, un rendu, un document par onglet ; `dispose` libère le contexte WebGL2
 
-**Objectif.** D27 amendée et Q1 : la fenêtre tient plusieurs onglets ; chaque onglet a son document, son historique, ses
-pages (une `BoardSession`, CL5b-1) et son contrôleur de fichiers ; Ouvrir, Nouveau, le dépôt et le fichier du lancement
-ouvrent un onglet (CL5b-3) ; une seule garde de fermeture (CL5b-6) ; Cmd+Q macOS branché ; `kind` d'onglet prévu
-(CL5b-20). Le corps de `start()` de `main.ts` (l. 54-247) devient `createBoardSession`.
+> Scindée à la relecture du plan (2026-11-20) : la moitié « espace de travail » (onglets, contrôleur de fichiers par
+> onglet, Ouvrir et dépôt = nouvel onglet, marquage `#stage`) est la tâche **T98**.
 
-**Fichiers.** `apps/web/src/app/tabs.ts` (neuf), `tabs.test.ts` (neuf), `apps/web/src/app/board-session.ts` (neuf),
-`board-session.test.ts` (neuf), `apps/web/src/app/workspace.ts` (neuf), `workspace.test.ts` (neuf),
-`apps/web/src/platform/controller.ts`, `controller.test.ts`, `apps/web/src/platform/mount.ts`, `mount.test.ts`.
+**Objectif.** CL5b-1 et CL5b-2 : le corps de `start()` de `main.ts` (l. 54-247) devient `createBoardSession`, une session
+par onglet (sa scène, ses deux canvas, son moteur, son échantillonneur, sa zone de texte), montrée ou cachée par
+`activate`/`deactivate`, libérée entièrement par `dispose` (contexte WebGL2 compris : 12 onglets ouverts puis fermés ne
+doivent pas épuiser les 16 contextes de Chromium). La session expose aussi les dépendances du banc `?banc` et produit
+`#stage[data-webgl-perdu]`.
+
+**Fichiers.** `apps/web/src/app/board-session.ts` (neuf), `apps/web/src/app/board-session.test.ts` (neuf),
+`apps/web/src/engine/render/select.ts`, `apps/web/src/engine/render/select.test.ts`.
+
+**Interfaces.**
+- Réutilise : `apps/web/src/main.ts:54-247` — déplacé dans `board-session.ts` (mêmes appels, même ordre :
+  `chooseRenderer`, `createTextEditor`, `createEngine`, `createSampler`, `createRouter`, `createMiddlePan`,
+  `attachInkTrail`, `withLinearPrediction`, `resolvePrediction`) ; `main.ts` lui-même est réduit par T95.
+- Réutilise : `apps/web/src/app/barre.ts:180` — `stageTags(s)` importé depuis `./barre` (T95 déplace l'import vers
+  `./stage-tags`).
+- Réutilise : `apps/web/src/main.ts:222-240` — le contenu de l'objet passé à `createAppBench` (dépendances du banc,
+  `apps/web/src/app/banc.ts:16-26`, `AppBenchDeps`) devient `bench()`.
+- Réutilise : `apps/web/src/engine/render/fake-gl.ts:95` — `getExtension("WEBGL_lose_context")` journalise déjà
+  `"loseContext"` dans `log` : aucun changement du faux.
+- Consomme : T88 `watchDpr` ; T90 `Engine.onCamera`, `TextEditor.follow`, `TextEditor.element` ; T84
+  `RendererChoice.diagnostics()`.
+- Produit :
+```ts
+// engine/render/select.ts — ajout à RendererChoice (les trois branches de chooseRenderer)
+export interface RendererChoice {
+  // … champs existants (renderer, webgl, interaction, note) et diagnostics() de T84
+  /** Libère la mémoire graphique : branche WebGL2 → `gl.getExtension("WEBGL_lose_context")?.loseContext()`
+   *  (exception avalée, comme select.ts:45) ; Canvas 2D → rien. Idempotent. */
+  release(): void;
+}
+
+// app/board-session.ts
+export interface SessionShared {
+  readonly container: HTMLElement;          // conteneur des scènes (case centrale de la grille, T95)
+  readonly settings: SettingsStore;
+  readonly parsed: ParsedSettings;
+  readonly support: Support;                // engine/input/stats.ts:119, rendu par detectSupport()
+  readonly measure: Measure;
+  readonly coreVersion: string;             // core.version(), pour le banc
+}
+export interface BoardSession {
+  readonly doc: CoreDocument;
+  readonly engine: Engine;
+  readonly stage: HTMLDivElement;
+  readonly choice: RendererChoice;
+  readonly sampler: Sampler;
+  readonly samplerOptions: SamplerOptions;
+  /** État de la traînée d'encre (`attachInkTrail`), lu par le banc (`options.inkTrail`). */
+  readonly trail: { readonly status: string };
+  effective(): EffectiveEchelons;
+  /** Dépendances de `createAppBench` pour cette session (main.ts:222-240, à l'identique). */
+  bench(): AppBenchDeps;
+  /** Rend les ids #stage, #scene, #interaction, #texte-edition à cette session (CL5b-2), la montre, ajuste sa taille. */
+  activate(): void;
+  /** Cache, retire les quatre ids, relâche les touches tenues (engine.releaseKeys). */
+  deactivate(): void;
+  /** Observateurs arrêtés, moteur arrêté (engine.dispose), choice.release(), document libéré (doc.free),
+   *  scène et zone de texte retirées du DOM. Idempotent. */
+  dispose(): void;
+}
+export function createBoardSession(doc: CoreDocument, shared: SessionShared): Promise<BoardSession>;
+```
+- Attributs de `#stage` posés par la session (sur son `.rb-stage`, qui porte l'id quand elle est active) : ceux d'avant
+  (`data-elements`, `data-version`, `data-page`, `data-selection`, `data-bounds`, `data-tool`, `data-echelons`), plus
+  `data-tab` (id de l'onglet, posé par T98), `data-camera="<zoom>,<tx>,<ty>"` (zoom à 3 décimales, tx/ty au dixième, mis
+  à jour par `onCamera`, lu par S5b, T96) et `data-webgl-perdu="1"` à l'événement `webglcontextlost` du canvas
+  `choice.interaction` (seul producteur de cet attribut, inventaire de l'ancienne barre).
+
+**Patron à ne pas reprendre.** (1) Ajouter au moteur un `setDocument(doc)` qui échange le document sous les outils, les
+caméras et le cache du rendu (`apps/web/src/engine/engine.ts:115-200` les lie tous à `doc` à la création) : historiques
+mêlés, caméras d'une page d'un autre document, cache d'ids périmé. Ici une session par onglet. (2) Les écouteurs
+`keydown`/`keyup`/`blur` posés sur `window` par chaque session (`main.ts:169-175`) : ils sont posés **une fois** par
+l'amorce (T95) et vont à la session active ; la session ne pose que ses écouteurs de scène (`wheel`, `mousedown`,
+`ResizeObserver`). (3) Croire que `engine.dispose()` libère le rendu : `engine.ts:433` arrête seulement la boucle ;
+`loseContext` n'est appelé aujourd'hui que sur l'échec de création (`select.ts:45`). Chemin de référence de la parité à
+tenir : `apps/web/src/main.ts:54-247` (ordre de création des pièces ; CL4-2 : zone de texte hors de la scène, `mousedown`
+empêché seulement pour l'outil Texte).
+
+**Test et commande bornée.**
+`cd <worktree> && pnpm --filter @roomboard/web exec vitest run src/app/board-session.test.ts src/engine/render/select.test.ts 2>&1 | tail -15`
+→ ≥ 14 tests, aucun `FAIL `, noms « dispose : contexte WebGL2 perdu, scène retirée, document libéré » et « deux sessions :
+un seul #stage, un seul #texte-edition » présents. Tests à garder verts : tous ceux de `select.test.ts` (dont ceux de
+T84 sur `diagnostics()`), puis `pnpm --filter @roomboard/web test 2>&1 | tail -6` sans `FAIL `.
+
+**Contraintes.**
+- Toutes les commandes visent le worktree donné par l'orchestrateur : `cd <worktree> && …` ; avant toute commande
+  cargo ou wasm : `export PATH=$HOME/.cargo/bin:$PATH`.
+- Worktree neuf : `pnpm install --frozen-lockfile` à la racine ; si `apps/web/src/wasm/` manque (contrat, build web,
+  essais), lancer une fois `PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh 2>&1 | tail -30` au premier plan.
+- TDD : le test d'abord, montré rouge (sortie copiée dans le rapport), puis le code, puis vert.
+- Aucun test désactivé (`.skip`, `.only`, `#[ignore]` neuf), aucun seuil baissé. Un test qui dépend d'un délai et
+  échoue est rejoué une fois ; s'il échoue encore, c'est un échec.
+- Commandes longues (verifier.sh, build, essais Playwright) au premier plan avec `timeout: 600000`, jamais en
+  `run_in_background`. Sous-agents et relecteurs lancés au premier plan, `run_in_background: false` écrit explicitement.
+- Builds Tauri : au plus 2 pour tout le lot sur la VM (le `cargo check` de T87 et le build release de T97), un seul à
+  la fois, `CARGO_BUILD_JOBS=2`. Aucune autre tâche ne compile `apps/desktop/src-tauri`. Aucun build Android.
+- `git add` fichier par fichier ; jamais `git add -A`, `git add .`, `git commit -a` ; jamais `--force` ; aucun tag,
+  aucune release ; `.github/workflows/` non touché.
+- Commit : auteur `jejeasterix <jejeasterix@users.noreply.github.com>` (déjà réglé), message en anglais, dernière ligne
+  exactement `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` (jamais « Sonnet »).
+- SolidJS seulement dans `apps/web/src/ui/` (D21) ; `src/engine/` n'importe aucun framework ni `src/ui/`.
+- Aucune ressource réseau à l'exécution (D27) : polices et icônes embarquées ; `scripts/controle-hors-ligne.mjs` reste
+  vert. Ne jamais retirer `"plugins": { "fs": { "scopeDroppedPaths": false } }` de `tauri.conf.json`.
+- Composants de barre : aucun appel à `localStorage` (passer par `ProfileStore`), aucun `switch` ni chaîne de `if` sur
+  un identifiant d'outil ou d'action (tables), aucune dimension en pixels (jetons CSS `--rb-btn-s|m|l`), aucun état
+  propre au document (tout vient du profil, des capacités et de l'état publié par le moteur), aucun glisser HTML5
+  (`draggable`, `dragstart`) dans l'interface.
+- Choix du lot 4 gardés (CL4-1 à CL4-15) : aperçus d'édition sur la scène Canvas 2D, `<textarea>` visible, validation
+  différée pendant l'IME, retirer la page montrée montre la précédente.
+- Réglages `engine/settings.ts` (É2 `prediction`, É3 `inkTrail`, É4 `webgl`, `palm`, `finger`) : défauts et
+  adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
+- Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
+  `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
+- Le rendu Canvas 2D retient la hauteur CSS au `resize` (écart T84, page infinie) : le `ResizeObserver` de la session
+  passe la taille CSS de sa case (`clientWidth`, `clientHeight`), jamais celle de la fenêtre.
+
+**Interdits.** Aucun `setDocument` dans le moteur. Ne pas toucher `main.ts`, `index.html`, `src/ui/` (T95), ni
+`engine.ts` (T90, fait). Aucun écouteur sur `window` dans la session. Ne pas réécrire `fake-gl.ts`.
+
+**Terminé quand** deux sessions coexistent dans un même conteneur avec un seul jeu d'ids, `dispose` perd le contexte
+WebGL2 et vide le DOM, `bench()` rend les mêmes dépendances que `main.ts:222-240`, et les tests ci-dessous passent.
+
+**Étapes.**
+1. Test rouge, `select.test.ts` (aides existantes du fichier : `FakeCanvas` l. 14, `ctx2d()`, `SRC` l. 27, `FakeGL`) :
+```ts
+it("release : branche WebGL2 → loseContext ; deux appels → un seul", () => {
+  const gl = new FakeGL();
+  const scene = new FakeCanvas({ "2d": ctx2d() });
+  const live = new FakeCanvas({ "2d": ctx2d(), webgl2: gl });
+  const choice = chooseRenderer(el(scene), el(live), SRC, true);
+  expect(choice.webgl).toBe(true);
+  choice.release();
+  choice.release();
+  expect(gl.log.filter((l) => l === "loseContext")).toHaveLength(1);
+});
+it("release : WebGL2 non demandé → rien, aucune exception", () => {
+  const choice = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ "2d": ctx2d() })), SRC, false);
+  expect(() => choice.release()).not.toThrow();
+});
+it("release : extension absente → aucune exception", () => {
+  const gl = new FakeGL();
+  gl.loseContextAvailable = false;
+  const choice = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ "2d": ctx2d(), webgl2: gl })), SRC, true);
+  expect(() => choice.release()).not.toThrow();
+});
+```
+   (Reprendre la construction exacte des tests existants l. 33-60 si `el`/`ctx2d` y portent un autre nom ; ne changer
+   aucun test existant.)
+2. Code, `select.ts` : dans la branche WebGL2, `let released = false; release() { if (released) return; released = true;
+   try { gl.getExtension("WEBGL_lose_context")?.loseContext(); } catch { /* extension refusée */ } }` ; dans les deux
+   branches Canvas 2D, `release() {}`. Vert.
+3. Tests rouges, `board-session.test.ts` (`// @vitest-environment happy-dom`, faux contexte 2D, faux cœur
+   `fake-core.ts`, `settings` et `parsed` par défaut, WebGL2 coupé sauf le test qui le force avec `FakeGL`) :
+```ts
+it("activate pose les ids #stage/#scene/#interaction/#texte-edition ; deactivate les retire et cache la scène", async () => {
+  const s = await createBoardSession(fakeCore.blank(), shared);
+  s.activate();
+  expect(document.getElementById("stage")).toBe(s.stage);
+  expect(document.getElementById("scene")?.parentElement).toBe(s.stage);
+  expect(document.getElementById("texte-edition")).not.toBeNull();
+  s.deactivate();
+  for (const id of ["stage", "scene", "interaction", "texte-edition"]) expect(document.getElementById(id), id).toBeNull();
+  expect(s.stage.hidden).toBe(true);
+});
+it("deux sessions : un seul #stage, un seul #texte-edition", async () => {
+  const a = await createBoardSession(fakeCore.blank(), shared);
+  const b = await createBoardSession(fakeCore.blank(), shared);
+  a.activate();
+  b.deactivate();
+  expect(document.querySelectorAll("#stage")).toHaveLength(1);
+  expect(document.querySelectorAll("#texte-edition")).toHaveLength(1);
+  a.deactivate();
+  b.activate();
+  expect(document.getElementById("stage")).toBe(b.stage);
+  expect(document.querySelectorAll("#texte-edition")).toHaveLength(1);
+});
+it("dispose : contexte WebGL2 perdu, scène retirée, document libéré", async () => {
+  const gl = new FakeGL();
+  // happy-dom ne fournit pas de contexte : le test le pose (2D factice, WebGL2 = FakeGL) et le rend en fin de test.
+  const restore = stubGetContext({ "2d": () => fake2d(), webgl2: () => gl });
+  const doc = fakeCore.blank();
+  const free = vi.spyOn(doc, "free");
+  const s = await createBoardSession(doc, { ...shared, settings: webglOn });   // É4 actif
+  s.dispose();
+  expect(gl.log).toContain("loseContext");
+  expect(shared.container.contains(s.stage)).toBe(false);
+  expect(free).toHaveBeenCalledTimes(1);
+  expect(() => s.dispose()).not.toThrow();            // idempotent : free toujours appelé une fois
+  expect(free).toHaveBeenCalledTimes(1);
+  restore();
+});
+```
+   (`stubGetContext` : aide locale du fichier de test, `vi.spyOn(HTMLCanvasElement.prototype, "getContext")` qui rend
+   le contexte du genre demandé ; aucun champ de test dans `SessionShared`.)
+   Puis : « la zone de texte suit la caméra (onCamera → follow) » ; « attributs data-* de #stage publiés comme avant
+   (elements, version, page, selection, bounds, tool, echelons) » ; « data-camera suit le zoom (zoomAt ×2 → zoom
+   doublé à 3 décimales) » ; « webglcontextlost sur choice.interaction → data-webgl-perdu="1" » ; « bench() :
+   options.inkTrail suit trail.status, echelons = echelonsTag(effective()), coreVersion = shared.coreVersion » ;
+   « mousedown empêché seulement pour l'outil Texte (CL4-2) » ; « aucun écouteur posé sur window » (espion
+   `vi.spyOn(window, "addEventListener")` : aucun appel pour `keydown`, `keyup`, `blur`).
+4. Code, `board-session.ts` : déplacer `main.ts:54-247` ; chaque session crée `<div class="rb-stage" data-tab>` avec ses
+   deux `<canvas>` dans `shared.container`, sa zone de texte dans `shared.container` (hors de la scène, CL4-2), retire
+   aussitôt l'id `texte-edition` posé par `createTextEditor` (`editor.element.removeAttribute("id")`) tant qu'elle n'est
+   pas active ; `watchDpr` (T88), `ResizeObserver` sur sa scène, `engine.onCamera((c) => { editor.follow(c);
+   stage.dataset["camera"] = … })`, publication `#stage[data-*]` via `stageTags`, `wheel` et `mousedown` sur sa scène ;
+   `activate` pose `stage.id = "stage"`, `scene.id`, `choice.interaction.id`, `editor.element.id = TEXT_EDITOR_ID`,
+   `hidden = false`, puis ajuste la taille ; `deactivate` fait l'inverse et `engine.releaseKeys()` ; `dispose` dans
+   l'ordre : observateurs, `engine.dispose()`, `choice.release()`, `doc.free()`, retrait du DOM.
+5. Vert, puis la suite web. Commit : `feat(app): board session per tab, releases its WebGL2 context on dispose`.
+
+<a id="tache-t98"></a>
+### Tâche T98 — Espace de travail : onglets, contrôleur de fichiers par onglet, Ouvrir et dépôt = nouvel onglet, marquage `#stage`
+
+**Objectif.** D27 amendée et Q1 : la fenêtre tient plusieurs onglets ; chaque onglet a sa `BoardSession` (T93) et son
+contrôleur de fichiers ; Ouvrir, Nouveau, le dépôt et le fichier du lancement ouvrent un onglet (CL5b-3) ; une seule
+garde de fermeture (CL5b-6) ; Cmd+Q macOS branché ; `kind` d'onglet prévu (CL5b-20) ; le marquage
+`#stage[data-fichiers|data-modifie|data-fichier|data-fichier-erreur]`, posé aujourd'hui une fois par
+`prepareFiles().mount` (`apps/web/src/platform/mount.ts:96-110`), est tenu **par onglet**. Écarts de la vague 1 :
+faux `FileHost` de `controller.test.ts` sans `onDrop` (T86) ; écoute de `roomboard://dropped` avant `launch_files` et
+chemins `\\?\C:\…` (T87).
+
+**Fichiers.** `apps/web/src/app/tabs.ts` (neuf), `apps/web/src/app/tabs.test.ts` (neuf),
+`apps/web/src/app/workspace.ts` (neuf), `apps/web/src/app/workspace.test.ts` (neuf),
+`apps/web/src/platform/controller.ts`, `apps/web/src/platform/controller.test.ts`, `apps/web/src/platform/mount.ts`,
+`apps/web/src/platform/mount.test.ts`, `apps/web/src/platform/host-tauri.ts`, `apps/web/src/platform/host-tauri.test.ts`.
 
 **Interfaces.**
 - Réutilise : `apps/web/src/platform/controller.ts:77` — `createFileController` étendu (deps changées ci-dessous),
   `fileCommandOf`, `titleOf`, `DISCARD_MESSAGE`, `messageOf` appelés tels quels.
 - Réutilise : `apps/web/src/platform/mount.ts:38` — `startDocument(core, pending)` (premier onglet) ; `hostFor` devient
   exporté `prepareHost(w)`.
-- Réutilise : `apps/web/src/main.ts:54-247` — déplacé dans `board-session.ts` (mêmes appels : `chooseRenderer`,
-  `createTextEditor`, `createEngine`, `createSampler`, `createRouter`, `createMiddlePan`, `attachInkTrail`,
-  `withLinearPrediction`, `resolvePrediction`) ; `main.ts` lui-même est réduit par T95.
-- Consomme : T86 `createImporter`, `DroppedFile`, `FileHost.onDrop`, `launchFiles`, `onQuitRequested`, `quitApp`,
-  `TauriIpc` ; T88 `watchDpr` ; T90 `Engine.onCamera`, `TextEditor.follow` ; T84 `RendererChoice.diagnostics`.
+- Réutilise : `apps/web/src/platform/mount.ts:96-110` — la fonction `mark` (`data-fichiers`, `data-modifie`,
+  `data-fichier`) et la pose de `data-fichier-erreur` déplacées dans `workspace.ts`, appliquées au `stage` de chaque
+  onglet.
+- Réutilise : `apps/web/src/platform/host-tauri.ts:36` — `baseName(path)` (sépare sur `\` et `/` : `\\?\C:\Cours\a.roomboard`
+  → `a.roomboard`).
+- Consomme : T93 `BoardSession`, `createBoardSession` (via `makeSession`) ; T86 `createImporter`, `DroppedFile`,
+  `FileHost.onDrop`, `launchFiles`, `onQuitRequested`, `quitApp`, `TauriIpc`.
 - Produit :
 ```ts
 // tabs.ts — pur, générique
 export type TabKind = "board" | "annotation";
 export const ANNOTATION_NOT_YET = "onglet d'annotation : prévu, livré par C11a";
 export const MAX_TABS = 12;
+export const TOO_MANY_TABS = "12 onglets au plus ; fermez-en un";
 export interface TabEntry<S> { readonly id: string; readonly kind: TabKind; readonly session: S }
 export interface Tabs<S> {
   list(): readonly TabEntry<S>[];
   active(): TabEntry<S> | null;
-  /** Lève ANNOTATION_NOT_YET pour "annotation", et « 12 onglets au plus ; fermez-en un » au-delà de MAX_TABS. */
+  /** Lève ANNOTATION_NOT_YET pour "annotation", et TOO_MANY_TABS au-delà de MAX_TABS. */
   add(kind: TabKind, session: S, activate?: boolean): TabEntry<S>;
   activate(id: string): boolean;
   /** Retire ; si c'était l'actif, active le précédent (le suivant s'il était premier). Rend l'onglet retiré. */
@@ -2360,28 +2613,22 @@ export interface Tabs<S> {
 }
 export function createTabs<S>(newId: () => string): Tabs<S>;
 
-// board-session.ts
-export interface SessionShared {
-  readonly container: HTMLElement;          // conteneur des scènes (case centrale de la grille, T95)
-  readonly settings: SettingsStore;
-  readonly parsed: ParsedSettings;
-  readonly support: Support;                // engine/input/stats.ts:119, rendu par detectSupport()
-  readonly measure: Measure;
+// host-tauri.ts — ajout (l'écoute de la coque est asynchrone : `ipc.listen` rend une promesse)
+export interface TauriFileHost extends FileHost {
+  /** Se résout quand l'écoute de DROPPED_EVENT posée par le dernier `onDrop` est en place (immédiat si ipc null). */
+  dropListening(): Promise<void>;
 }
-export interface BoardSession {
-  readonly doc: CoreDocument;
-  readonly engine: Engine;
-  readonly stage: HTMLDivElement;
-  readonly choice: RendererChoice;
-  effective(): EffectiveEchelons;
-  /** Rend les ids #stage, #scene, #interaction à cet onglet (CL5b-2), le montre, ajuste sa taille. */
-  activate(): void;
-  /** Cache, retire les ids, relâche les touches tenues (engine.releaseKeys). */
-  deactivate(): void;
-  /** Observateurs arrêtés, moteur arrêté, document libéré, scène retirée du DOM. */
-  dispose(): void;
+export function createTauriHost(dialog: TauriDialog, fs: TauriFs, ipc?: TauriIpc | null, dpr?: () => number): TauriFileHost;
+
+// mount.ts
+export interface PreparedHost {
+  readonly kind: HostKind;
+  readonly host: FileHost;
+  readonly shell: ShellPort;
+  /** Hôte Tauri : `dropListening()` ; hôtes web : `Promise.resolve()`. */
+  dropReady(): Promise<void>;
 }
-export function createBoardSession(doc: CoreDocument, shared: SessionShared): Promise<BoardSession>;
+export function prepareHost(w: Window): Promise<PreparedHost>;
 
 // workspace.ts
 export interface TabSession {
@@ -2391,9 +2638,14 @@ export interface TabSession {
 export interface WorkspaceDeps {
   readonly core: CoreFactory;
   readonly host: FileHost;
+  readonly kind: HostKind;                   // pour data-fichiers
   readonly shell: ShellPort;
   readonly first: StartedDocument;
   makeSession(doc: CoreDocument): Promise<BoardSession>;
+  /** Attendue après `host.onDrop` et avant `launch` (écart T87). */
+  dropReady(): Promise<void>;
+  /** Fichiers du lancement (Tauri : `() => launchFiles(ipc)`) ; absent hors coque. */
+  launch?(): Promise<readonly DroppedFile[]>;
   readonly now: () => string;
   readonly newId: () => string;
 }
@@ -2412,28 +2664,36 @@ export interface Workspace {
   quitRequested(quit: () => Promise<void>): Promise<void>;
   dispose(): void;
 }
+/** Ordre fixe : premier onglet, `host.onDrop`, `await dropReady()`, puis `launch()` → importFiles. */
 export function createWorkspace(deps: WorkspaceDeps): Promise<Workspace>;
 ```
 - `FileControllerDeps` change (contrôleur par onglet) : retirer `core`, `pending`, `reload` ; ajouter
   `openInTab(file: OpenedFile): Promise<boolean>` et `newTab(): Promise<void>`. `open()` = boîte, puis
   `openInTab(file)` **sans question** (le document courant reste dans son onglet) ; `newDocument()` = `newTab()` sans
   question. Le reste (enregistrer, modifié, titre, raccourcis, touche tenue, T79, T81) ne change pas.
+- Marquage par onglet (`workspace.ts`) : à la création d'un onglet et à chaque `files.onChange`, sur `board.stage` :
+  `data-fichiers = kind`, `data-modifie = "1" | "0"`, `data-fichier = files.name()`, `data-tab = id` ; une erreur
+  d'ouverture du premier document (`first.error`) pose `data-fichier-erreur` sur le stage du premier onglet et
+  `notify`. Comme l'id `stage` suit l'onglet actif (CL5b-2), `#stage[data-modifie]` est toujours celui de l'onglet montré.
+- `prepareFiles(...).mount` n'a plus d'appelant : le retirer avec ses tests propres (les cas qu'ils couvrent sont
+  repris par les tests de marquage de `workspace.test.ts`, listés à l'étape 2).
 
-**Patron à ne pas reprendre.** (1) Ajouter au moteur un `setDocument(doc)` qui échange le document sous les outils, les
-caméras et le cache du rendu (`engine.ts:115-200` les lie tous à `doc` à la création) : historiques mêlés, caméras d'une
-page d'un autre document, cache d'ids périmé. Ici une session par onglet, rien de partagé hors du module Wasm, des
-réglages et du profil. (2) Une garde de fermeture par contrôleur (`controller.ts:180`, `d.shell.guardClose`) : avec N
-onglets, N gardes et N questions. Ici le contrôleur reçoit un `ShellPort` d'onglet dont `guardClose` est inerte et
-`setTitle` n'agit que pour l'onglet actif ; `createWorkspace` pose **une** garde, `() => anyDirty()`. (3) Les écouteurs
-`keydown`/`keyup`/`blur` posés sur `window` par chaque session : ils sont posés **une fois** par l'espace de travail
-(T95) et vont à `active().board.engine`. Chemin de référence de la parité à tenir : `main.ts:54-247` (ordre de création
-des pièces, CL4-2 : zone de texte hors de la scène, `mousedown` empêché seulement pour l'outil Texte).
+**Patron à ne pas reprendre.** (1) Une garde de fermeture par contrôleur (`controller.ts:180`, `d.shell.guardClose`) :
+avec N onglets, N gardes et N questions. Ici le contrôleur reçoit un `ShellPort` d'onglet dont `guardClose` est inerte et
+`setTitle` n'agit que pour l'onglet actif ; `createWorkspace` pose **une** garde, `() => anyDirty()`. (2) Le marquage
+posé une fois sur `#stage` par `mount.ts:96-110` : avec des onglets, il resterait celui du premier document. (3)
+`host.onDrop(...)` puis `launch()` sans attendre : `onDrop` rend la main avant que `ipc.listen` soit en place
+(`host-tauri.ts`, `const sub = ipc.listen(...)`, promesse), un fichier ouvert par le Finder dans l'intervalle est émis
+sans écouteur et se perd. Chemin de référence : `apps/web/src/platform/mount.ts:80-115` (montage actuel).
 
 **Test et commande bornée.**
-`cd <worktree> && pnpm --filter @roomboard/web exec vitest run src/app/tabs.test.ts src/app/board-session.test.ts src/app/workspace.test.ts src/platform/controller.test.ts src/platform/mount.test.ts 2>&1 | tail -15`
-→ ≥ 30 tests, aucun `FAIL `, noms « ouvrir : nouvel onglet, l'onglet d'origine intact » et « fermeture gardée si un
-onglet est modifié » présents. Tests à garder verts : tous ceux de `controller.test.ts` hors ceux qui décrivent le
-rechargement, qui sont **réécrits** (pas retirés) selon la table ci-dessous ; `pnpm -r test` vert.
+`cd <worktree> && pnpm --filter @roomboard/web exec vitest run src/app/tabs.test.ts src/app/workspace.test.ts src/platform/controller.test.ts src/platform/mount.test.ts src/platform/host-tauri.test.ts 2>&1 | tail -15`
+→ ≥ 30 tests, aucun `FAIL `, noms « ouvrir : nouvel onglet, l'onglet d'origine intact », « fermeture gardée si un
+onglet est modifié », « lancement : écoute du dépôt posée avant launch_files » et « marquage #stage par onglet »
+présents. Puis `cd <worktree> && pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -5` → aucune ligne
+`error TS` (la TS2741 de `controller.test.ts:54` a disparu). Tests à garder verts : tous ceux de `controller.test.ts`
+hors ceux qui décrivent le rechargement, qui sont **réécrits** (pas retirés) selon la table ci-dessous ; tous ceux de
+`host-tauri.test.ts` (T86) ; `pnpm -r test` vert.
 
 | test actuel (`controller.test.ts`) | devient |
 |---|---|
@@ -2475,18 +2735,25 @@ rechargement, qui sont **réécrits** (pas retirés) selon la table ci-dessous ;
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
-**Interdits.** Aucun `setDocument` dans le moteur. Aucune écriture neuve dans l'attente IndexedDB. Ne pas toucher
-`main.ts`, `index.html`, ni `src/ui/` (T95). Aucun rechargement de page pour Ouvrir ou Nouveau.
+**Interdits.** Aucune écriture neuve dans l'attente IndexedDB. Ne pas toucher `main.ts`, `index.html`, `src/ui/` (T95),
+ni `board-session.ts` (T93). Aucun rechargement de page pour Ouvrir ou Nouveau. Aucun chemin complet affiché (onglet,
+titre, message) : nom de base seulement.
 
 **Terminé quand** deux onglets ont des historiques indépendants, Ouvrir et dépôt ajoutent un onglet sans toucher l'actif,
-la fenêtre n'a qu'une garde, et les tests ci-dessous passent.
+la fenêtre n'a qu'une garde, le marquage `#stage` suit l'onglet montré, l'écoute du dépôt précède `launch_files`,
+`tsc --noEmit` est propre, et les tests ci-dessous passent.
 
 **Étapes.**
-1. Tests rouges, `tabs.test.ts` : ajout et activation ; « retirer l'actif montre le précédent ; le premier : le suivant » ;
-   « annotation : lève ANNOTATION_NOT_YET » ; « 13e onglet refusé » ; onChange appelé à chaque changement.
-2. `workspace.test.ts` (faux cœur `fake-core.ts`, fausse `makeSession` qui rend `{ doc, engine: createEngine(...) avec
-   faux rendu, … }` ou un objet minimal `BoardSession` dont `engine.state().version` suit le faux document) :
+1. Écart T86 d'abord : dans `controller.test.ts`, le faux `FileHost` (l. 54) gagne `onDrop: () => () => undefined` ;
+   `tsc --noEmit` rouge sur cette erreur avant, propre après (sortie copiée).
+2. Tests rouges. `tabs.test.ts` : ajout et activation ; « retirer l'actif montre le précédent ; le premier : le
+   suivant » ; « annotation : lève ANNOTATION_NOT_YET » ; « 13e onglet refusé : TOO_MANY_TABS » ; onChange appelé à
+   chaque changement. `workspace.test.ts` (`// @vitest-environment happy-dom`, faux cœur `fake-core.ts`, fausse
+   `makeSession` qui rend un objet `BoardSession` minimal : `stage` = `<div>`, `engine.state().version` suit le faux
+   document, `activate`/`deactivate`/`dispose` espionnés) :
 ```ts
 it("ouvrir : nouvel onglet, l'onglet d'origine intact", async () => {
   const ws = await setupWorkspace();                  // un onglet vierge
@@ -2500,6 +2767,35 @@ it("ouvrir : nouvel onglet, l'onglet d'origine intact", async () => {
   expect(shell.confirm).not.toHaveBeenCalled();
   expect(ws.active().files.name()).toBe("Cours.roomboard");
 });
+it("marquage #stage par onglet", async () => {
+  const ws = await setupWorkspace({ kind: "repli" });
+  const first = ws.active();
+  drawOn(first);
+  await ws.newBlank();
+  const second = ws.active();
+  expect(first.board.stage.dataset["modifie"]).toBe("1");
+  expect(second.board.stage.dataset["modifie"]).toBe("0");
+  expect(second.board.stage.dataset["fichiers"]).toBe("repli");
+  expect(second.board.stage.dataset["fichier"]).toBe(second.files.name());
+  expect(second.board.stage.dataset["tab"]).toBe(ws.tabs.active()!.id);
+});
+it("lancement : écoute du dépôt posée avant launch_files", async () => {
+  const order: string[] = [];
+  let listening!: () => void;
+  const ws = await setupWorkspace({
+    onDrop: () => { order.push("onDrop"); return () => undefined; },
+    dropReady: () => new Promise<void>((r) => { listening = () => { order.push("listening"); r(); }; setTimeout(listening, 0); }),
+    launch: async () => { order.push("launch"); return [roomboardFile("C:\\Cours\\a.roomboard")]; },
+  });
+  expect(order).toEqual(["onDrop", "listening", "launch"]);
+  expect(ws.tabs.list()).toHaveLength(2);
+});
+it("chemin Windows \\\\?\\C:\\… : l'onglet et le titre portent le nom de base seulement", async () => {
+  const ws = await setupWorkspace({ launch: async () => [roomboardFile("\\\\?\\C:\\Cours\\a.roomboard")] });
+  expect(ws.active().files.name()).toBe("a.roomboard");
+  expect(shell.setTitle).toHaveBeenLastCalledWith(expect.not.stringContaining("C:"));
+});
+it("erreur du premier document : data-fichier-erreur sur le premier onglet et message", async () => { /* first.error */ });
 it("fichier illisible : message, aucun onglet ajouté", async () => { /* bytes = [1,2,3] → false, notify « Ouverture impossible (x.roomboard) : … », 1 onglet */ });
 it("dépôt d'un .png : message, document intact, aucun onglet", async () => { /* importFiles([png]) → refused, version inchangée, 1 onglet */ });
 it("historiques indépendants : Ctrl+Z dans l'onglet 2 ne touche pas l'onglet 1", async () => { /* … */ });
@@ -2513,28 +2809,28 @@ it("fermeture gardée si un onglet est modifié", async () => {
 });
 it("fermer un onglet modifié : question ; Non → gardé ; Oui → retiré, précédent montré", async () => { /* … */ });
 it("fermer le dernier onglet : un vierge le remplace (CL5b-5)", async () => { /* 1 onglet, close → 1 onglet, autre id */ });
+it("activer un onglet : deactivate de l'ancien puis activate du nouveau", async () => { /* ordre des espions */ });
 it("titre de la fenêtre : celui de l'onglet actif seulement", async () => { /* setTitle du shell réel */ });
 it("Cmd+Q : document propre → quit ; modifié → question, Non → rien", async () => { /* quitRequested */ });
 it("raccourcis : Ctrl+S va au contrôleur de l'onglet actif", async () => { /* key({ key: 's', ctrlKey: true }) */ });
-it("dispose : sessions libérées (doc.free), garde retirée", async () => { /* … */ });
+it("dispose : sessions libérées (board.dispose), garde retirée, onDrop désabonné", async () => { /* … */ });
 ```
-   `board-session.test.ts` (`// @vitest-environment happy-dom`, faux contexte 2D, faux cœur) : « activate pose les ids
-   #stage/#scene/#interaction ; deactivate les retire et cache la scène » ; « deux sessions : un seul #stage dans le
-   document » ; « dispose : scène retirée, document libéré » ; « la zone de texte suit la caméra (onCamera → follow) » ;
-   « attributs data-* de #stage publiés comme avant (elements, version, page, selection, bounds, tool, echelons) ».
-   `mount.test.ts` : `prepareHost(w)` rend `{ kind, host, shell }` et passe `w.document` comme cible de dépôt aux hôtes web.
+   `host-tauri.test.ts` : « dropListening se résout après ipc.listen » (faux `ipc.listen` qui rend une promesse
+   résolue à la main : `dropListening()` encore en attente avant, résolue après) ; « ipc null : dropListening résolu ».
+   `mount.test.ts` : `prepareHost(w)` rend `{ kind, host, shell, dropReady }`, passe `w.document` comme cible de dépôt
+   aux hôtes web, `dropReady()` résolu pour les hôtes web.
 3. `controller.ts` : nouvelles deps, `open`/`newDocument` comme ci-dessus ; réécrire les tests de la table.
-4. `tabs.ts`, `board-session.ts` (déplacer `main.ts:54-247` : chaque session crée `<div class="rb-stage" data-tab>`
-   avec ses deux `<canvas>`, sa zone de texte dans `shared.container`, `watchDpr` de T88, `ResizeObserver`,
-   `engine.onCamera((c) => editor.follow(c))`, la publication `#stage[data-*]` via `stageTags` (T95 la déplace : ici,
-   importer `stageTags` depuis `../app/barre`, T95 change l'import), `wheel` et `mousedown` sur sa scène).
+4. `tabs.ts` ; `host-tauri.ts` : `createTauriHost` garde la dernière promesse `sub` d'`onDrop` et
+   `dropListening = () => (sub ?? Promise.resolve()).then(() => undefined)`.
 5. `workspace.ts` : un contrôleur par onglet (`openInTab: (f) => ws.openDocument(f)`, `newTab: () => ws.newBlank()`,
-   `shell` d'onglet), `createImporter({ openDocument, notify: shell.notify })`, `host.onDrop((files, at) => void
-   importFiles(files, at))`, garde unique, `openDocument` = `core.load(bytes)` (erreur → `notify("Ouverture impossible
-   (<nom>) : <message>")`, false) puis `makeSession` puis `tabs.add("board", …)`.
-6. `mount.ts` : exporter `prepareHost(w)` (ex-`hostFor` + choix du genre) et passer `w.document` aux hôtes web ;
-   `prepareFiles` garde `startDocument` pour le premier onglet ; la liaison des raccourcis passe au workspace.
-7. Vert. Commit : `feat(app): tabs with one engine and file controller per document`.
+   `shell` d'onglet), marquage par onglet, `createImporter({ openDocument, notify: shell.notify })`,
+   `host.onDrop((files, at) => void importFiles(files, at))`, `await deps.dropReady()`, puis `deps.launch?.()` →
+   `importFiles(files, null)` ; garde unique ; `openDocument` = `core.load(bytes)` (erreur → `notify("Ouverture
+   impossible (<nom>) : <message>")`, false) puis `makeSession` puis `tabs.add("board", …)` (TOO_MANY_TABS → `notify`,
+   session libérée, false).
+6. `mount.ts` : exporter `prepareHost(w)` (ex-`hostFor` + choix du genre + `dropReady`) ; `startDocument` gardé pour le
+   premier onglet ; retirer `prepareFiles().mount` (marquage et raccourcis passent au workspace et à l'amorce T95).
+7. Vert, `tsc --noEmit` propre, `pnpm -r test`. Commit : `feat(app): workspace with tabs and one file controller per tab`.
 
 <a id="tache-t94"></a>
 ### Tâche T94 — Barre d'outils SolidJS en profils : `ToolbarHost`, état des éléments par table, dock, taille
@@ -2604,8 +2900,10 @@ export function Toolbar(props: ToolbarProps): JSX.Element;
   `<div class="rb-drop" data-item>` qui reçoit un dépôt HTML5 (`listenWebDrop` de T86) → `host.dropFiles`.
 - `rb.css` : jetons `--rb-btn-s: 36px; --rb-btn-m: 44px; --rb-btn-l: 64px` sur `:root`,
   `.rb-bar[data-size="m"] { --rb-btn: var(--rb-btn-m) }` (idem s, l), `.rb-bar button { min-width: var(--rb-btn);
-  min-height: var(--rb-btn) }`, `data-dock` top/bottom → `flex-direction: row`, left/right → `column` ; styles des
-  boutons pressés repris de `index.html` (`#1e3a8a`) ; aucune dimension dans les `.tsx`.
+  min-height: var(--rb-btn) }`, `data-dock` top/bottom → `flex-direction: row; flex-wrap: wrap` (la barre `outils`
+  du profil `defaut` a 19 boutons : à 1280 px elle passe sur deux lignes au lieu de déborder), left/right →
+  `flex-direction: column; flex-wrap: wrap` ; styles des boutons pressés repris de `index.html` (`#1e3a8a`) ; aucune
+  dimension dans les `.tsx`. Les règles de la scène (`.rb-stage`) ne sont pas ici : T95 les ajoute à ce fichier.
 
 **Test et commande bornée.**
 `cd <worktree> && pnpm --filter @roomboard/web exec vitest run src/ui/Toolbar.test.tsx src/ui/item-state.test.ts src/ui/layout.test.ts src/app/toolbar-host.test.ts 2>&1 | tail -15`
@@ -2640,12 +2938,15 @@ export function Toolbar(props: ToolbarProps): JSX.Element;
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Aucun `switch`, aucune chaîne `if (id === …)` sur un identifiant d'outil ou d'action dans `src/ui/` et
 `toolbar-host.ts` (tables seulement). Aucun `draggable`, `dragstart`. Aucune dimension en `px` dans les `.tsx`.
 
 **Terminé quand** la barre `outils` du profil `defaut` se rend avec tous ses boutons, réagit à l'état publié, et le profil
-`simple` donne une barre à gauche en grands boutons.
+`simple` donne une barre à gauche en grands boutons, et le contrôle de source couvre `src/ui/` et `app/toolbar-host.ts`
+(le test est rouge si l'on ajoute un `switch (` dans `toolbar-host.ts` : à vérifier une fois, puis retirer).
 
 **Étapes.**
 1. Tests rouges, `item-state.test.ts` : un test par ligne d'`ACTION_STATE` et un pour les outils (pressé selon
@@ -2684,8 +2985,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 it("aucun switch sur l'identifiant, aucun px, aucun localStorage, aucun glisser HTML5 dans src/ui", () => {
   const dir = join(__dirname);
-  for (const f of readdirSync(dir).filter((n) => /\.tsx?$/.test(n) && !/\.test\./.test(n))) {
-    const src = readFileSync(join(dir, f), "utf8");
+  const files = readdirSync(dir).filter((n) => /\.tsx?$/.test(n) && !/\.test\./.test(n)).map((n) => join(dir, n));
+  files.push(join(dir, "..", "app", "toolbar-host.ts"));       // l'hôte de la barre obéit aux mêmes règles
+  for (const path of files) {
+    const f = path.split(/[\\/]/).pop()!;
+    const src = readFileSync(path, "utf8");
     expect(src, f).not.toMatch(/switch\s*\(/);
     expect(src, f).not.toMatch(/localStorage/);
     expect(src, f).not.toMatch(/draggable|dragstart/);
@@ -2711,12 +3015,14 @@ barre des pages, panneau des réglages, menu des profils, ligne d'état. Rien de
 **Fichiers.** `apps/web/src/ui/App.tsx` (neuf), `App.test.tsx` (neuf), `apps/web/src/main.ts`, `apps/web/index.html`,
 `apps/web/src/app/barre.ts` (retiré), `app/barre.test.ts` (retiré), `apps/web/src/app/stage-tags.ts` (neuf),
 `stage-tags.test.ts` (neuf), `apps/web/src/toolbar.ts`, `toolbar.test.ts`, l'import de `stageTags` dans
-`apps/web/src/app/board-session.ts` (une ligne), `apps/web/src/ui/PagesBar.tsx` (table d'état).
+`apps/web/src/app/board-session.ts` (une ligne), `apps/web/src/ui/PagesBar.tsx` (table d'état), `apps/web/src/ui/rb.css`
+(règles de la scène et de la grille, ajoutées à celles de T94).
 
 **Interfaces.**
 - Consomme : tout ce que produisent T89-T94 (`createActiveProfile`, `createProfileStore`, `browserKeyValue`,
   `runtimeCapabilities`, `detectPlatform`, `PagesBar`, `TabsBar`, `SettingsPanel`, `ProfileMenu`, `Toolbar`,
-  `layoutFor`, `createLocalToolbarHost`, `createWorkspace`, `createBoardSession`, `prepareHost`, `startDocument`).
+  `layoutFor`, `createLocalToolbarHost`) ; T93 `createBoardSession`, `BoardSession.bench()` ; T98 `createWorkspace`,
+  `prepareHost` (`PreparedHost.dropReady`), `startDocument`.
 - Réutilise : `apps/web/src/app/barre.ts:180-196` — `stageTags` déplacé tel quel dans `stage-tags.ts` avec ses tests ;
   `pagesLabel` est celui de `ui/PagesBar.tsx` (T91), ses anciens tests vont dans `stage-tags.test.ts` en l'important de
   là ; les tests de `barModel`, `editionModel`, `settingsModel`, `mountBar`,
@@ -2737,15 +3043,27 @@ export function App(props: AppProps): JSX.Element;
 - `index.html` : `<body><div id="app"></div><script type="module" src="/src/main.ts"></script></body>`, styles réduits
   à `html, body { margin: 0; height: 100%; overflow: hidden; font: 15px system-ui, sans-serif }` ; le reste dans
   `ui/rb.css`. `#app` est une grille (`display: grid; height: 100vh`) dont `grid-template-*` viennent de `layoutFor`.
-  Scène : `<main class="rb-stages" style="grid-area: stage; position: relative; overflow: hidden">` = `container` des
-  sessions ; chaque `.rb-stage` y est `position: absolute; inset: 0`.
+  Scène : `<main class="rb-stages">` = `container` des sessions. Les règles de la scène d'`index.html:9-10` ne se
+  perdent pas (sans elles, le navigateur fait défiler ou sélectionne au lieu de tracer au doigt et au stylet) ; ajoutées
+  à `ui/rb.css` :
+```css
+.rb-stages { grid-area: stage; position: relative; overflow: hidden; }
+.rb-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
+.rb-stage[hidden] { display: none; }
+```
 - `main.ts` (amorce seule) : `init()` Wasm, `createWasmCore`, `parseSettings`, `createSettingsStore`, `prepareHost`,
   `startDocument`, `createProfileStore(browserKeyValue(window), BUILTIN_PROFILES)`, `runtimeCapabilities(wasm.capabilities(
   detectPlatform(...)), env)`, `createWorkspace`, écouteurs `keydown`/`keyup`/`blur` **une fois** vers
-  `workspace.active().board.engine` puis `workspace.key`, Tauri : `launchFiles(ipc)` → `workspace.importFiles`,
-  `onQuitRequested(ipc, …)` → `workspace.quitRequested(() => quitApp(ipc))` ; `render(() => <App …/>,
-  document.getElementById("app"))` (fichier renommé `main.tsx` si le JSX y est nécessaire : alors `index.html` pointe
-  `main.tsx`) ; `?banc` monté sur la session active comme avant ; `#stage[data-ready="1"]` posé à la fin.
+  `workspace.active().board.engine` puis `workspace.key`, Tauri : `createWorkspace({ …, dropReady: prepared.dropReady,
+  launch: ipc ? () => launchFiles(ipc) : undefined })` (l'ordre écoute puis `launch_files` est tenu et testé par T98 ;
+  ne pas appeler `launchFiles` ailleurs), `onQuitRequested(ipc, …)` → `workspace.quitRequested(() => quitApp(ipc))` ;
+  `render(() => <App …/>, document.getElementById("app"))` (fichier renommé `main.tsx` si le JSX y est nécessaire :
+  alors `index.html` pointe `main.tsx`) ; `?banc` : `mountBenchPanel(createAppBench(workspace.active().board.bench()))`
+  (dépendances exposées par T93, `banc.ts:16-26`) ; `#stage[data-ready="1"]` posé à la fin. Échec du démarrage
+  (`main.ts:251-256`) : `App` n'est peut-être pas montée, donc `#etat` peut manquer ; le `catch` garde
+  `document.body.dataset["erreur"]` et écrit « RoomBoard n'a pas pu démarrer : … » dans `#etat`, qu'il crée
+  (`<p id="etat" role="status">` ajouté à `body`) s'il est absent.
 
 **Patron à ne pas reprendre.** Garder la position absolue des barres (`index.html:12-21`, `top: 8px/60px/104px`) : elle
 recouvrait le haut de la scène (constat de la coque au lot 4, « la 3e ligne de barre recouvre le haut du canvas »). Ici
@@ -2787,6 +3105,8 @@ hors ligne, prototype). Puis `grep -rn "app/barre" apps/web/src` → rien.
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Aucune barre en `position: absolute` par-dessus la scène (sauf `dock: "floating"`). Ne pas changer les
 scripts d'essai (T96). Ne pas retirer de réglage ni de bouton de l'inventaire.
@@ -2813,6 +3133,11 @@ it("inventaire : chaque bouton de l'ancienne barre a son élément", () => {
 });
 it("changer de profil : barre à gauche, grands boutons, sans formes", () => { /* menu profils → simple : data-dock=left, data-size=l, pas de rect, grille columns "auto minmax(0, 1fr)" */ });
 it("la scène est dans sa case : aucune barre en position absolue", () => { /* getComputedStyle des .rb-bar ≠ absolute ; grid-area stage */ });
+it("styles de la scène repris d'index.html (touch-action, user-select, canvas inertes)", () => {
+  const css = readFileSync(join(__dirname, "rb.css"), "utf8").replace(/\s+/g, " ");
+  expect(css).toMatch(/\.rb-stage \{[^}]*touch-action: none;[^}]*user-select: none;/);
+  expect(css).toMatch(/\.rb-stage canvas \{[^}]*position: absolute;[^}]*inset: 0;[^}]*pointer-events: none;/);
+});
 it("onglets : la barre des onglets suit le workspace (ajout, actif, modifié)", () => { /* … */ });
 it("l'erreur du moteur s'affiche dans #etat", () => { /* state.error */ });
 it("Ouvrir dans la barre → contrôleur de l'onglet actif", () => { /* clic file-open → files.run("open") */ });
@@ -2843,8 +3168,32 @@ d'un autre fichier → message, **la barre ne recouvre pas la scène** (rectangl
 - Réutilise : `scripts/essais/commun.mjs` (T85) — `loadPlaywright`, `serve`, `inkIn`, `frames`, `Echec`.
 - Produit (dans `commun.mjs`) :
 ```js
+/** Fenêtre de tous les essais du lot 5b : la scène doit garder au moins 640 px de haut sous les barres. */
+export const VIEWPORT = { width: 1280, height: 900 };
 /** Bouton d'un élément de barre (CL5b-11). */
 export const item = (id) => `button[data-item="${id}"]`;
+/** Rectangle de #stage (px de page) ; Echec si absent ou plus bas que `minHeight`. */
+export async function stageBox(page, minHeight = 640) {
+  const b = await page.locator("#stage").boundingBox();
+  if (!b) throw new Echec("#stage absent");
+  if (b.height < minHeight) throw new Echec(`scène trop basse : ${b.height} px < ${minHeight} (barres sur plusieurs lignes ?)`);
+  return b;
+}
+/** Point de page d'un point de scène : les gestes des scénarios sont écrits en px de la scène (origine = coin de #stage). */
+export const onStage = (box, x, y) => [box.x + x, box.y + y];
+/** Chaque élément `selector` (ex. `button[data-item]`) hors du rectangle de #stage ; rend la liste des fautifs. */
+export async function overlapping(page, selector, stageSelector = "#stage") {
+  const stage = await page.locator(stageSelector).boundingBox();
+  if (!stage) throw new Echec(`rectangle absent : ${stageSelector}`);
+  const bad = [];
+  for (const el of await page.locator(selector).all()) {
+    const a = await el.boundingBox();
+    if (!a) continue;                                     // élément caché : ne recouvre rien
+    const apart = a.x + a.width <= stage.x + 0.5 || stage.x + stage.width <= a.x + 0.5 || a.y + a.height <= stage.y + 0.5 || stage.y + stage.height <= a.y + 0.5;
+    if (!apart) bad.push((await el.getAttribute("data-item")) ?? selector);
+  }
+  return bad;
+}
 /** Rectangles de la barre et de la scène ; vrai s'ils ne se chevauchent pas. */
 export async function noOverlap(page, barSelector, stageSelector = "#stage") {
   const [a, b] = await Promise.all([page.locator(barSelector).boundingBox(), page.locator(stageSelector).boundingBox()]);
@@ -2869,7 +3218,7 @@ export async function dropFile(page, selector, name, bytes, type = "") {
   en tête ; avant `echo "verifier.sh : OK"` :
 ```bash
 if [ "$E2E" = 1 ]; then
-  node scripts/essais/s2-navigateur.mjs --capture docs/essais/s2-lot5b.png
+  node scripts/essais/s2-navigateur.mjs
   node scripts/essais/s2-navigateur.mjs --lot3b
   node scripts/essais/s34-navigateur.mjs
   node scripts/essais/fichiers-navigateur.mjs
@@ -2877,13 +3226,19 @@ if [ "$E2E" = 1 ]; then
   echo "verifier.sh : e2e OK"
 fi
 ```
-  (code de sortie 2 « outil absent » d'un script = échec de `--e2e` : `set -e` le propage.)
+  (code de sortie 2 « outil absent » d'un script = échec de `--e2e` : `set -e` le propage.) `--e2e` ne passe **aucune**
+  option de capture : un `verifier.sh --e2e` ne réécrit jamais une capture commitée. Les captures du lot se font à
+  l'étape 4, par des appels explicites.
 
 **Scénario `s5b-navigateur.mjs`** (chaque ligne = un `check(cond, "ok — …")`, motif `S5b : OK` à la fin, sortie 1
 au premier échec, `--captures` pour les PNG) :
-1. Page prête (`#stage[data-ready="1"]`), profil `defaut` : `[data-toolbar="outils"][data-dock="top"]`,
+1. Page prête (`#stage[data-ready="1"]`), fenêtre `VIEWPORT`, profil `defaut` : `[data-toolbar="outils"][data-dock="top"]`,
    `[data-toolbar="pages"][data-dock="bottom"]` ; `noOverlap` barre `outils` / `#stage` et barre `pages` / `#stage`
-   → `apart` ; `#stage` commence sous la barre (`stage.y >= bar.y + bar.height - 0.5`). Capture `s5b-defaut.png`.
+   → `apart` ; `overlapping(page, "button[data-item]")` → `[]` (chaque bouton, la barre de 19 boutons passant sur
+   deux lignes) ; `#stage` commence sous la barre (`stage.y >= bar.y + bar.height - 0.5`) ; `stageBox(page)` ≥ 640 px ;
+   styles de la scène (`index.html:9-10`, repris par T95) : `getComputedStyle(#stage).touchAction === "none"`,
+   `userSelect === "none"`, et pour `#scene` et `#interaction` `position === "absolute"`, `pointerEvents === "none"`.
+   Capture `s5b-defaut.png`.
 2. Profil : clic `item("profiles")` puis `[data-profile="simple"]` → `[data-toolbar="outils"][data-dock="left"]`,
    `data-size="l"`, `item("rect")` absent, `noOverlap` → `apart`, `stage.x >= bar.x + bar.width - 0.5` ; recharger la
    page : `simple` toujours actif (`ProfileStore`). Capture `s5b-simple.png`. Revenir à `defaut`.
@@ -2900,26 +3255,62 @@ au premier échec, `--captures` pour les PNG) :
    (boîte `alert` du repli interceptée par `page.on("dialog")`).
 6. Fermer l'onglet modifié : question (`dialog` « modifications non enregistrées ») → `dismiss` : gardé ; `accept` :
    retiré, l'onglet précédent montré.
+7. S3, enregistrer puis rouvrir trois pages (renvoyé au lot 5 par `s34-navigateur.mjs`, `NON_COUVERT[0]`) : onglet
+   vierge (Ctrl+N), un trait sur la page 1, `item("page-add")` puis un rectangle (`item("rect")`) sur la page 2,
+   `item("page-add")` puis un texte « trois » (`item("text")`, saisie, clic ailleurs) sur la page 3 ; Ctrl+S (repli,
+   téléchargement intercepté) ; Ctrl+O avec ce fichier → un onglet de plus, `#pages` = « 1 / 3 »,
+   `#stage[data-elements="1"]` sur chaque page parcourue par `item("page-next")` (`data-page` « 1/3 », « 2/3 », « 3/3 »),
+   et l'encre de chaque élément à ses coordonnées (`inkIn` sur la boîte du geste).
+8. S4, zoom 200 % par Ctrl+molette puis trait aux coordonnées monde (`NON_COUVERT[1]`) : `item("fit-page")`, lire
+   `#stage[data-camera]` (T93) ; Ctrl tenu, `page.mouse.wheel(0, -100)` au centre de la scène jusqu'à zoom ≥ 2 (40
+   crans au plus, sinon Echec « zoom 200 % jamais atteint ») ; check `zoom >= 2` ; tracer un trait horizontal de
+   (sx0, sy) à (sx1, sy) en px de scène ; outil Sélection, clic sur le trait → `#stage[data-bounds]` ; check que
+   `x0 ≈ (sx0 - tx) / zoom`, `x1 ≈ (sx1 - tx) / zoom`, `(y0 + y1) / 2 ≈ (sy - ty) / zoom` à 6 unités monde près (demi
+   épaisseur comprise).
+9. S4, profil à trois outils (`NON_COUVERT[2]`) : profil `simple` → parmi `pen, eraser, hand, select, rect, ellipse,
+   line, arrow, text`, exactement trois `[data-toolbar="outils"] button[data-item]` présents (`pen`, `eraser`, `hand`) ;
+   revenir à `defaut` : les neuf présents. `s34-navigateur.mjs` retire ces trois lignes de `NON_COUVERT` et y écrit
+   « joué par s5b-navigateur.mjs (lot 5b) » à la place (la liste garde les autres).
 
-**Mises à jour des scripts existants** (sélecteurs seulement, CL5b-11 ; aucun `check` affaibli) :
-`s2-navigateur.mjs` l. 94-95, 141 : `#barre button[data-action="X"]` → `item("X")` ; S2 lot 3b : boutons
-`[data-reglage]` après clic `item("settings")`. `s34-navigateur.mjs` l. 41-43, 208, 327 : `#edition button[data-action]`
-et `#barre button[data-action]` → `item(...)` ; coordonnées de clic relatives à `#stage` (`boundingBox`) au lieu de la
-page entière (la scène commence sous la barre). `fichiers-navigateur.mjs` : Ouvrir ne recharge plus → après
-`file-open`, attendre 2 `[data-tab]` et vérifier la même empreinte d'encre dans l'onglet ouvert (au lieu d'attendre le
-rechargement).
+**Mises à jour des scripts existants** (CL5b-11 ; aucun `check` retiré ni affaibli) :
+- **Les trois scripts** : fenêtre `VIEWPORT` (1280 × 900 au lieu de 1280 × 720 : `s2-navigateur.mjs` `newPage`,
+  `s34-navigateur.mjs:362`, `fichiers-navigateur.mjs:87`) ; **chaque geste** (`page.mouse.move/down/click`, `drag`) passe
+  par `onStage(await stageBox(page), x, y)` : les coordonnées écrites dans les scénarios restent celles d'aujourd'hui,
+  en px de la scène (elle commençait en (0, 0)), et `inkIn` reste en coordonnées du canvas, sans décalage. Sans cela,
+  la gomme de S2 (`s2-navigateur.mjs:96-111`, `MID`/`REST`) et les boîtes `FIRST_BOX`/`SECOND_BOX` de
+  `fichiers-navigateur.mjs:182-197` tombent à côté du trait, et les clics « ailleurs » à y = 600 de `s34-navigateur.mjs`
+  (l. 158, 239) tombent hors de la scène.
+- `s2-navigateur.mjs` l. 94-95, 141 : `#barre button[data-action="X"]` → `item("X")` ; S2 lot 3b : boutons
+  `[data-reglage]` après clic `item("settings")`.
+- `s34-navigateur.mjs` l. 41-43, 208, 327 : `#edition button[data-action]` et `#barre button[data-action]` →
+  `item(...)` ; captures renommées `s34-lot5b-${name}.png` (l. 78 ; en-tête l. 8 mis à jour) : celles du lot 4 ne sont
+  pas écrasées.
+- `fichiers-navigateur.mjs` : Ouvrir ne recharge plus. Chaque `page.waitForEvent("load")` qui suit un Ctrl+O
+  (l. 177-178, 201-202, 231-232) disparaît ; à la place, attendre un `[data-tab]` de plus et l'onglet ouvert actif, puis
+  les mêmes contrôles (éléments, encre, empreinte, nom, non modifié). Le bloc « Ctrl+O sur un document modifié »
+  (l. 227-238, motif `DISCARD`) est **réécrit nommément** selon Q1, sans retrait de contrôle :
+  | contrôle actuel | devient |
+  |---|---|
+  | `Ctrl+O sur un document modifié : sélecteur ouvert, puis « <DISCARD> »` | `Ctrl+O sur un document modifié : sélecteur ouvert, aucune question` (aucun `dialog` `confirm` dans les 2 s) |
+  | `réponse Oui : le fichier remplace le document modifié` | `le fichier s'ouvre dans un 2e onglet : 1 élément, non modifié` (`[data-tab]` × 2, `#stage[data-elements="1"][data-modifie="0"]`) |
+  | (neuf, même bloc) | `l'onglet d'origine garde ses 2 éléments et data-modifie="1"` (clic sur le premier `[data-tab]`) |
+  Le contrôle `fermeture d'un document modifié : le navigateur demande` (`beforeunload`) est gardé tel quel (la garde
+  unique de T98 le tient).
 
 **Test et commande bornée.** Rouge d'abord : `bash scripts/tests/verifier-e2e.test.sh` (neuf : `verifier.sh --inconnu`
 → code 2 ; `grep -q -- '--e2e' scripts/verifier.sh`) rouge ; puis, au premier plan, `timeout: 600000` :
-`cd <worktree> && PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh --e2e 2>&1 | grep -E "ok —|OK|Echec|FAIL|error" | tail -40`
-→ `S2 lot 3 : OK`, `S2 lot 3b : OK (4 passages)`, `S3/S4 lot 4 : OK`, `Fichiers lot 5a : OK (3 modes)`, `S5b : OK`
-avec ≥ 25 lignes `ok —` pour S5b, `verifier.sh : e2e OK`, `verifier.sh : OK`. Puis
-`PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh 2>&1 | tail -3` → `verifier.sh : OK` sans aucune ligne `ok —`
-(aucun navigateur lancé). Captures listées par `ls -la docs/essais/s5b-*.png docs/essais/s2-lot5b.png`.
+`cd <worktree> && PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh --e2e > /tmp/e2e-5b.log 2>&1; echo "code $?"; grep -E "^(S2|S3/S4|Fichiers|S5b).*: OK|verifier.sh :|Echec" /tmp/e2e-5b.log; grep -c "ok —" /tmp/e2e-5b.log`
+→ `code 0` ; lignes `S2 lot 3 : OK`, `S2 lot 3b : OK (4 passages)`, `S3/S4 lot 4 : OK`, `Fichiers lot 5a : OK (3
+modes)`, `S5b : OK`, `verifier.sh : e2e OK`, `verifier.sh : OK` ; aucune ligne `Echec` ; le compte `ok —` ≥ 25 pour S5b
+seul (le relever aussi par `node scripts/essais/s5b-navigateur.mjs 2>&1 | grep -c "ok —"` → ≥ 25). Puis
+`cd <worktree> && PATH=$HOME/.cargo/bin:$PATH scripts/verifier.sh > /tmp/v-5b.log 2>&1; echo "code $?"; tail -1 /tmp/v-5b.log; grep -c "ok —" /tmp/v-5b.log`
+→ `code 0`, `verifier.sh : OK`, compte = 0 (aucun navigateur lancé). Captures listées par
+`ls -la docs/essais/s5b-*.png docs/essais/s2-lot5b.png docs/essais/s34-lot5b-*.png` ; `git status --short docs/essais/`
+ne montre aucune capture d'un lot précédent modifiée.
 
 **Preuve visuelle.** Lectures d'abord (une valeur lue prouve plus qu'une image) : `#stage[data-tool="pen"]`,
-`#stage[data-page="1/1"]`, `[data-toolbar="outils"][data-dock="top"]`, `noOverlap(...).apart === true` imprimés par
-le script ; puis décrire chaque capture dans le rapport (barre en haut, scène dessous, pages en bas ; profil simple à
+`#stage[data-page="1/1"]`, `[data-toolbar="outils"][data-dock="top"]`, `noOverlap(...).apart === true`,
+`overlapping(...)` vide, `touchAction` = `none`, `#stage[data-camera]` après le zoom imprimés par le script ; puis décrire chaque capture dans le rapport (barre en haut, scène dessous, pages en bas ; profil simple à
 gauche ; deux onglets ; trait loin sous 1080 sur fond blanc).
 
 **Contraintes.**
@@ -2951,6 +3342,8 @@ gauche ; deux onglets ; trait loin sous 1080 sur fond blanc).
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Aucun `check` retiré ou rendu plus lâche ; aucun délai augmenté sans le dire. Pas de WebKit (H2-10, hors
 chaîne). Les captures du lot 4 et 5a ne sont pas écrasées (noms neufs).
@@ -2963,8 +3356,10 @@ les captures sont commitées.
 2. `commun.mjs` : `item`, `noOverlap`, `dropFile`.
 3. `s5b-navigateur.mjs` (structure de `s34-navigateur.mjs` : `main`, `scenario`, `check`), puis les trois scripts
    existants ; les jouer un par un (`node scripts/essais/<script> 2>&1 | tail -5`).
-4. `verifier.sh --e2e` complet. Commit (captures ajoutées une par une) :
-   `test(e2e): Playwright trials through the SolidJS interface, verifier --e2e`.
+4. `verifier.sh --e2e` complet (commande de preuve). Puis les captures, par appels explicites :
+   `node scripts/essais/s2-navigateur.mjs --capture docs/essais/s2-lot5b.png`,
+   `node scripts/essais/s34-navigateur.mjs --captures`, `node scripts/essais/s5b-navigateur.mjs --captures`.
+   Commit (captures ajoutées une par une) : `test(e2e): Playwright trials through the SolidJS interface, verifier --e2e`.
 
 <a id="tache-t97"></a>
 ### Tâche T97 — Orchestrateur : build Tauri Linux, essai de la coque sous Broadway, capture
@@ -3014,6 +3409,8 @@ depuis un gestionnaire de fichiers (HU2-13), association `.roomboard`, Cmd+Q (ma
   adresse `?echelons=`, `?paume=`, `?doigt=` inchangés ; aucun ne se perd dans l'interface neuve.
 - Le rapport de la tâche porte, pour chaque ligne `Réutilise :` de sa section, `Réutilisation : appelé <module>` ou
   `Réutilisation : écart — <pourquoi>`.
+- Tests DOM et composants : première ligne `// @vitest-environment happy-dom` ; `apps/web/vite.config.ts` garde
+  `test: { environment: "node" }` (écart T82 : vite-plugin-solid imposait jsdom), ne pas le changer.
 
 **Interdits.** Un seul build Tauri à la fois ; pas de troisième build dans le lot (si le second échoue, consigner et
 demander, ne pas relancer en boucle). Ne jamais tuer `broadwayd` : fermer la fenêtre par son ✕.
