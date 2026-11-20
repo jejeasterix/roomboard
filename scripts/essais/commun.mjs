@@ -142,3 +142,5 @@ export async function dropFile(page, selector, name, bytes, type = "") {
     }
   }, { selector, name, bytes: Array.from(bytes), type });
 }
+/** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
+export const TAB = '[role="tab"][data-tab]';

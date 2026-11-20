@@ -14,9 +14,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve, stageMouse } from "./commun.mjs";
 const MODES = ["repli", "fsa", "detection"];
-const DISCARD = "Le document a des modifications non enregistrées. Les abandonner ?";
 const FIRST = [[400, 300], [650, 300], [900, 300]];
 const SECOND = [[400, 420], [650, 420], [900, 420]];
 const FIRST_BOX = [640, 290, 660, 310];
@@ -84,7 +83,7 @@ function fakeFsa() {
 }
 
 async function run(browser, port, mode, { captures, tmp }) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, acceptDownloads: true });
+  const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, acceptDownloads: true });
   const external = [];
   await context.route("**/*", (route) => {
     const u = new URL(route.request().url());
@@ -114,6 +113,20 @@ async function run(browser, port, mode, { captures, tmp }) {
     console.log(`ok — [${mode}] ${msg}`);
   };
   const frames = () => framesOf(page);
+  const mouse = stageMouse(page); // gestes en px de la scène (origine = coin de #stage)
+  const tabCount = () => page.locator(TAB).count();
+  // Ouvrir ne recharge plus (Q1) : le fichier arrive dans un onglet de plus, qui devient l'actif (le dernier).
+  const openedTab = async (before) => {
+    await page.waitForFunction(
+      (n) => {
+        const tabs = [...document.querySelectorAll('[role="tab"][data-tab]')];
+        return tabs.length === n + 1 && tabs[tabs.length - 1].getAttribute("aria-selected") === "true";
+      },
+      before,
+      { timeout: 15000 },
+    );
+    await frames();
+  };
   const attr = (name) => page.getAttribute("#stage", name);
   const elements = async () => Number(await attr("data-elements"));
   const ready = async () => {
@@ -123,10 +136,10 @@ async function run(browser, port, mode, { captures, tmp }) {
   const clean = () => page.waitForFunction(() => document.querySelector("#stage")?.dataset.modifie === "0");
   const drag = async (points) => {
     const [first, ...rest] = points;
-    await page.mouse.move(first[0], first[1]);
-    await page.mouse.down();
-    for (const [x, y] of rest) await page.mouse.move(x, y, { steps: 8 });
-    await page.mouse.up();
+    await mouse.move(first[0], first[1]);
+    await mouse.down();
+    for (const [x, y] of rest) await mouse.move(x, y, { steps: 8 });
+    await mouse.up();
     await frames();
   };
   // Pixels d'encre (somme RVB < 300) dans une boîte en px CSS du canvas de scène (même mesure que S2).
@@ -146,6 +159,13 @@ async function run(browser, port, mode, { captures, tmp }) {
       }
       return `${c.width}x${c.height}:${n}:${h}`;
     });
+  // Même scène : mêmes pixels d'encre aux mêmes positions. La hauteur du canvas peut changer d'un onglet à deux (la barre
+  // d'onglets apparaît et prend sa ligne) ; la largeur, le nombre de pixels et l'empreinte (indexée par pixel) restent égaux.
+  const sameScene = (a, b) => {
+    const [da, ...ra] = a.split(":");
+    const [db, ...rb] = b.split(":");
+    return da.split("x")[0] === db.split("x")[0] && ra.join(":") === rb.join(":");
+  };
   let before = "";
   const waitDialog = async (type) => {
     for (let i = 0; i < 50 && !dialogs.some((d) => d.type === type); i++) await new Promise((r) => setTimeout(r, 100));
@@ -174,14 +194,14 @@ async function run(browser, port, mode, { captures, tmp }) {
     await page.reload();
     await ready();
     check((await elements()) === 0, "rechargé : page vide");
-    const nav = page.waitForEvent("load");
+    const tabs0 = await tabCount();
     await page.keyboard.press("Control+o");
-    await nav;
-    await ready();
+    await openedTab(tabs0);
+    check((await tabCount()) === tabs0 + 1, "fichier rouvert dans un onglet de plus (Ouvrir ne recharge plus)");
     check((await elements()) === 2, "fichier rouvert : les deux traits reviennent");
     check((await ink(FIRST_BOX)) > 0 && (await ink(SECOND_BOX)) > 0, "encre aux mêmes coordonnées (y = 300 et 420)");
     const after = await signature();
-    check(after === before && !before.includes(":0:"), `scène identique pixel pour pixel avant enregistrement et après réouverture (${after})`);
+    check(sameScene(after, before) && !before.includes(":0:"), `scène identique pixel pour pixel avant enregistrement et après réouverture (${before} / ${after})`);
   } else {
     const dl = page.waitForEvent("download");
     await page.keyboard.press("Control+s");
@@ -198,14 +218,14 @@ async function run(browser, port, mode, { captures, tmp }) {
     await ready();
     check((await elements()) === 0, "rechargé : page vide");
     const chooser = page.waitForEvent("filechooser");
-    const nav = page.waitForEvent("load");
+    const tabs0 = await tabCount();
     await page.keyboard.press("Control+o");
     await (await chooser).setFiles(file);
-    await nav;
-    await ready();
+    await openedTab(tabs0);
+    check((await tabCount()) === tabs0 + 1, "fichier rouvert dans un onglet de plus (Ouvrir ne recharge plus)");
     check((await elements()) === 1 && (await ink(FIRST_BOX)) > 0, "fichier rouvert : le trait revient aux mêmes coordonnées");
     const after = await signature();
-    check(after === before && !before.includes(":0:"), `scène identique pixel pour pixel avant enregistrement et après réouverture (${after})`);
+    check(sameScene(after, before) && !before.includes(":0:"), `scène identique pixel pour pixel avant enregistrement et après réouverture (${before} / ${after})`);
   }
   // Le nom vient du fichier rouvert : le fichier du repli est enregistré sous `<mode>.roomboard` par l'essai.
   const reopened = mode === "fsa" ? "Sans titre.roomboard" : `${mode}.roomboard`;
@@ -228,14 +248,20 @@ async function run(browser, port, mode, { captures, tmp }) {
     await drag(SECOND);
     check((await elements()) === 2 && (await attr("data-modifie")) === "1", "second trait : document modifié");
     const chooser2 = page.waitForEvent("filechooser");
-    const nav2 = page.waitForEvent("load");
+    const tabs1 = await tabCount();
+    const dialogsBefore = dialogs.length;
     await page.keyboard.press("Control+o");
     await (await chooser2).setFiles(join(tmp, `${mode}.roomboard`));
-    const question = await waitDialog("confirm");
-    check(question?.message === DISCARD, `Ctrl+O sur un document modifié : sélecteur ouvert, puis « ${question?.message} »`);
-    await nav2;
-    await ready();
-    check((await elements()) === 1 && (await attr("data-modifie")) === "0", "réponse Oui : le fichier remplace le document modifié");
+    await openedTab(tabs1);
+    await new Promise((r) => setTimeout(r, 2000));
+    check(!dialogs.slice(dialogsBefore).some((d) => d.type === "confirm"), "Ctrl+O sur un document modifié : sélecteur ouvert, aucune question");
+    check(
+      (await tabCount()) === tabs1 + 1 && (await elements()) === 1 && (await attr("data-modifie")) === "0",
+      "le fichier s'ouvre dans un onglet de plus : 1 élément, non modifié",
+    );
+    await page.locator(TAB).nth(tabs1 - 1).click();
+    await frames();
+    check((await elements()) === 2 && (await attr("data-modifie")) === "1", "l'onglet d'origine garde ses 2 éléments et data-modifie=\"1\"");
   }
   check(external.length === 0, `hors ligne : aucune requête hors de 127.0.0.1 (${external.length})`);
   check(errors.length === 0, `aucune erreur de page ${errors.join(" | ")}`);
