@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { ElementView } from "../../core/api";
+import type { ElementView, GridInput, GridLevel } from "../../core/api";
+import { fakeCore } from "../../core/fake-core";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
-import { Canvas2DRenderer, createCanvas2DRenderer, tracePolygons } from "./canvas2d";
+import { Canvas2DRenderer, createCanvas2DRenderer, SELECTION_COLOR, tracePolygons } from "./canvas2d";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { SceneSource } from "./renderer";
 
@@ -15,6 +16,9 @@ class FakeCtx {
   lineWidth = 1;
   lineCap = "butt";
   lineJoin = "miter";
+  globalAlpha = 1;
+  lineDashOffset = 0;
+  readonly path: [string, number, number][] = [];
   save(): void { this.log.push("save"); }
   restore(): void { this.log.push("restore"); }
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void {
@@ -27,8 +31,8 @@ class FakeCtx {
   readonly rects: number[][] = [];
   fillRect(x = 0, y = 0, w = 0, h = 0): void { this.rects.push([x, y, w, h]); this.log.push(`fillRect ${this.fillStyle}`); }
   beginPath(): void { this.log.push("beginPath"); }
-  moveTo(): void { this.log.push("moveTo"); }
-  lineTo(): void { this.log.push("lineTo"); }
+  moveTo(x = 0, y = 0): void { this.log.push("moveTo"); this.path.push(["M", x, y]); }
+  lineTo(x = 0, y = 0): void { this.log.push("lineTo"); this.path.push(["L", x, y]); }
   closePath(): void { this.log.push("closePath"); }
   rect(): void { this.log.push("rect"); }
   clip(): void { this.log.push("clip"); }
@@ -284,5 +288,120 @@ describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
     r.invalidate({ pages: [], ids: ["t"], removed: [], full: false, version: 2 });
     r.drawScene(page, IDENTITY, new Set());
     expect(scene.measures).toBeGreaterThan(first);
+  });
+});
+
+const gridLevel = (kind: string, s: number, color: string): GridLevel => ({
+  kind,
+  spacingX: s,
+  spacingY: s,
+  originX: 0,
+  originY: 0,
+  color,
+  line: "solid",
+  snap: false,
+  visible: true,
+});
+const gridOf = (levels: GridLevel[], above = false): GridInput => ({ visible: true, snap: false, above, levels });
+
+/** Scène de la fausse liaison avec une grille, vue 800 × 600 CSS, caméra S5. */
+function gridScene(dpr: number, zoom: number, levels: GridLevel[]) {
+  const doc = fakeCore.blank();
+  const p = doc.pageIds()[0] ?? "";
+  doc.apply({ type: "SetGrid", page: p, grid: gridOf(levels) });
+  const scene = new FakeCtx();
+  const r = new Canvas2DRenderer(asCtx(scene), null, doc, { makePath: () => new FakePath() as unknown as Path2D });
+  r.resize(800, 600, dpr);
+  r.drawScene({ id: p, elementIds: doc.elementIds(p) }, { zoom, tx: 13.3, ty: -1_000_007 * zoom }, new Set());
+  return scene;
+}
+
+/** Verticales (x) et horizontales (y) relevées dans les paires moveTo / lineTo. */
+function gridSegments(f: FakeCtx): { v: number[]; h: number[] } {
+  const v: number[] = [];
+  const h: number[] = [];
+  for (let i = 0; i + 1 < f.path.length; i++) {
+    const a = f.path[i];
+    const b = f.path[i + 1];
+    if (a?.[0] !== "M" || b?.[0] !== "L") continue;
+    if (a[1] === b[1]) v.push(a[1]);
+    else if (a[2] === b[2]) h.push(a[2]);
+  }
+  return { v, h };
+}
+
+describe("Canvas2DRenderer — grille (C9)", () => {
+  it("grille (C9, S5 a) : carreaux de 40 de la fausse liaison, au loin sur la page, calés sur les pixels", () => {
+    const cases = [
+      { dpr: 1, x: 13.5, y: 33.5, step: 40, width: 1 },
+      { dpr: 1.25, x: 17.5, y: 41.5, step: 50, width: 1 },
+      { dpr: 2, x: 27, y: 66, step: 80, width: 2 },
+    ];
+    for (const c of cases) {
+      const scene = gridScene(c.dpr, 1, [gridLevel("squares", 40, "#7b68ee")]);
+      const { v, h } = gridSegments(scene);
+      expect(v).toEqual(Array.from({ length: 20 }, (_, i) => c.x + c.step * i));
+      expect(h).toEqual(Array.from({ length: 15 }, (_, k) => c.y + c.step * k));
+      expect(scene.log).toContain(`stroke #7b68ee ${c.width}`);
+    }
+  });
+
+  it("grille (C9, S5) : tout zoom, tout dpr — calage, épaisseur, au plus 202 verticales et 152 horizontales ; 20 absent à z = 0,15", () => {
+    for (const zoom of [0.15, 0.37, 1, 2.5, 8]) {
+      for (const dpr of [1, 1.25, 2]) {
+        for (const s of [40, 20]) {
+          const scene = gridScene(dpr, zoom, [gridLevel("squares", s, "#7b68ee")]);
+          const { v, h } = gridSegments(scene);
+          const w = Math.max(1, Math.round(dpr));
+          if (s === 20 && zoom === 0.15) {
+            expect(v.length + h.length).toBe(0);
+            continue;
+          }
+          expect(v.length).toBeGreaterThan(0);
+          expect(v.length).toBeLessThanOrEqual(202);
+          expect(h.length).toBeLessThanOrEqual(152);
+          for (const x of [...v, ...h]) expect(Number.isInteger(w % 2 === 1 ? x - 0.5 : x)).toBe(true);
+          expect(scene.log).toContain(`stroke #7b68ee ${w}`);
+        }
+      }
+    }
+  });
+
+  it("ordre des couches (G11) : grille après le fond et avant les éléments ; above : après le fantôme, avant le cadre", () => {
+    const strokes = (above: boolean): string[] => {
+      const doc = fakeCore.blank();
+      const p = doc.pageIds()[0] ?? "";
+      const id = doc.apply({ type: "AddShape", page: p, shape: "rect", x0: 100, y0: 100, x1: 200, y1: 200, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+      doc.apply({ type: "SetGrid", page: p, grid: gridOf([gridLevel("squares", 40, "#7b68ee")], above) });
+      const scene = new FakeCtx();
+      const r = new Canvas2DRenderer(asCtx(scene), null, doc, { makePath: () => new FakePath() as unknown as Path2D });
+      r.resize(800, 600, 1);
+      const overlay = above
+        ? { ...EMPTY_OVERLAY, ghosts: [{ id, matrix: [1, 0, 0, 1, 10, 0] as const }], frame: { x0: 110, y0: 100, x1: 210, y1: 200 } }
+        : EMPTY_OVERLAY;
+      r.drawScene({ id: p, elementIds: [id] }, IDENTITY, above ? new Set([id]) : new Set(), overlay);
+      return scene.log.filter((l) => l.startsWith("stroke") || l.startsWith("fillRect"));
+    };
+    expect(strokes(false)).toEqual([`fillRect ${SURROUND_COLOR}`, `fillRect ${PAGE_BACKGROUND}`, "stroke #7b68ee 1", "stroke #000000 4"]);
+    expect(strokes(true)).toEqual([
+      `fillRect ${SURROUND_COLOR}`,
+      `fillRect ${PAGE_BACKGROUND}`,
+      "stroke #000000 4",
+      "stroke #7b68ee 1",
+      `stroke ${SELECTION_COLOR} 1`,
+    ]);
+  });
+
+  it("source sans gridLines ou avant resize : aucune grille", () => {
+    const { r, scene } = make({});
+    r.resize(800, 600, 1);
+    r.drawScene({ id: "p", elementIds: [] }, IDENTITY, new Set());
+    expect(scene.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
+    const doc = fakeCore.blank();
+    const p = doc.pageIds()[0] ?? "";
+    doc.apply({ type: "SetGrid", page: p, grid: gridOf([gridLevel("squares", 40, "#7b68ee")]) });
+    const fresh = new FakeCtx();
+    new Canvas2DRenderer(asCtx(fresh), null, doc).drawScene({ id: p, elementIds: [] }, IDENTITY, new Set());
+    expect(fresh.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
   });
 });

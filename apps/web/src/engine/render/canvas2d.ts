@@ -3,12 +3,13 @@
  * (`desynchronized`, effacée à chaque image : encre vive, queue prédite, aperçu de gomme). `Path2D` en cache par id,
  * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c).
  */
-import type { Bounds, Change, ElementView, Matrix, ShapeData, StrokeStyle, TextData } from "../../core/api";
+import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TextData } from "../../core/api";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
-import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visiblePageRect, type PageRect } from "../page";
+import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
 import { layoutText, measureWith, textFont, TEXT_LINE_HEIGHT } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
+import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 
@@ -102,6 +103,9 @@ export class Canvas2DRenderer implements Renderer {
   private sy = 1;
   /** Hauteur CSS retenue par `resize` : le fond de page va jusqu'à son bas. */
   private cssHeight = 0;
+  /** Largeur CSS et devicePixelRatio retenus par `resize` : partie visible et épaisseur de la grille (C9). */
+  private cssWidth = 0;
+  private dpr = 1;
 
   constructor(
     private readonly scene: CanvasRenderingContext2D,
@@ -122,6 +126,8 @@ export class Canvas2DRenderer implements Renderer {
       if (ctx.canvas.height !== h) ctx.canvas.height = h;
     }
     this.cssHeight = height;
+    this.cssWidth = width;
+    this.dpr = dpr;
     this.sx = width > 0 ? w / width : dpr;
     this.sy = height > 0 ? h / height : dpr;
   }
@@ -135,12 +141,24 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = PAGE_BACKGROUND;
     const rect = visiblePageRect(camera, this.cssHeight);
     if (rect) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    // Place du backdrop (U6, partie « reste » de C2) : ici, sous la grille et sous les éléments (G11).
+    const grid = this.gridOf(page.id, camera);
+    if (grid && !grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
       if (el) this.paintElement(ctx, el, null);
     }
-    this.paintOverlay(ctx, overlay, camera.zoom);
+    this.paintOverlayContent(ctx, overlay);
+    if (grid && grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
+    this.paintOverlayChrome(ctx, overlay, camera.zoom);
+  }
+
+  /** Lignes visibles de la grille de la page (G9) ; null sans source de grille, sans grille ou vue hors page. */
+  private gridOf(page: string, camera: Camera): GridLines | null {
+    const rect = visibleGridRect(camera, this.cssWidth, this.cssHeight);
+    if (!rect) return null;
+    return this.source.gridLines?.(page, rect, MIN_GRID_PX / camera.zoom, MIN_DOT_PX / camera.zoom) ?? null;
   }
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
@@ -162,8 +180,8 @@ export class Canvas2DRenderer implements Renderer {
     ctx.restore();
   }
 
-  /** Calque d'édition (CL4-1), en coordonnées monde ; traits du cadre à 1 px écran. */
-  private paintOverlay(ctx: CanvasRenderingContext2D, o: EditOverlay, zoom: number): void {
+  /** Contenu du calque d'édition (CL4-1) : fantômes et formes en cours, sous une grille `above` (G11). */
+  private paintOverlayContent(ctx: CanvasRenderingContext2D, o: EditOverlay): void {
     for (const g of o.ghosts) {
       const el = this.source.element(g.id);
       if (el) this.paintElement(ctx, el, g.matrix);
@@ -175,6 +193,10 @@ export class Canvas2DRenderer implements Renderer {
       paintShape(ctx, { shape: s.shape, w: n.w, h: n.h, fill: s.fill }, s.style);
       ctx.restore();
     }
+  }
+
+  /** Habillage d'édition (CL4-1), en coordonnées monde, toujours au-dessus de la grille ; traits du cadre à 1 px écran. */
+  private paintOverlayChrome(ctx: CanvasRenderingContext2D, o: EditOverlay, zoom: number): void {
     const px = 1 / zoom;
     const box = (b: Bounds): void => {
       ctx.beginPath();
