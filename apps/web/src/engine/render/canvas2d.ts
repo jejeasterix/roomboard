@@ -1,7 +1,8 @@
 /**
  * Rendu Canvas 2D à deux canvas (D19, DA2) : scène fixe (redessinée sur changement ou caméra) et interaction
  * (`desynchronized`, effacée à chaque image : encre vive, queue prédite, aperçu de gomme). `Path2D` en cache par id,
- * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c).
+ * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c). Lignes de
+ * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { plainSpans } from "../../core/rich-text";
@@ -11,7 +12,8 @@ import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePa
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
-import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
+import { GridLinesCache } from "./grid-cache";
+import { paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
@@ -150,6 +152,8 @@ export class Canvas2DRenderer implements Renderer {
   private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
   /** Lignes du texte des cellules, par tableau (B1) : même cache et même invalidation que `textLines`. */
   private readonly cellLines = new Map<string, { readonly key: string; readonly lines: readonly (readonly RichLine[])[] }>();
+  /** Lignes de grille gardées (E3) : recalculées sur page, zoom, `resize`, sortie du rectangle gardé ou `Change`. */
+  private readonly gridCache = new GridLinesCache((page, rect, minStep, minDotStep) => this.source.gridLines?.(page, rect, minStep, minDotStep) ?? null);
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
   private sx = 1;
@@ -184,6 +188,7 @@ export class Canvas2DRenderer implements Renderer {
     this.dpr = dpr;
     this.sx = width > 0 ? w / width : dpr;
     this.sy = height > 0 ? h / height : dpr;
+    this.gridCache.clear();
   }
 
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay: EditOverlay = EMPTY_OVERLAY): void {
@@ -208,11 +213,11 @@ export class Canvas2DRenderer implements Renderer {
     this.paintOverlayChrome(ctx, overlay, camera.zoom);
   }
 
-  /** Lignes visibles de la grille de la page (G9) ; null sans source de grille, sans grille ou vue hors page. */
+  /** Lignes visibles de la grille de la page (G9), servies par le cache (E3) ; null sans source, sans grille ou hors page. */
   private gridOf(page: string, camera: Camera): GridLines | null {
     const rect = visibleGridRect(camera, this.cssWidth, this.cssHeight);
     if (!rect) return null;
-    return this.source.gridLines?.(page, rect, MIN_GRID_PX / camera.zoom, MIN_DOT_PX / camera.zoom) ?? null;
+    return this.gridCache.get(page, rect, camera.zoom, PAGE_WIDTH);
   }
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
@@ -321,6 +326,7 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   invalidate(change: Change): void {
+    this.gridCache.invalidate(change);
     if (change.full) {
       this.paths.clear();
       this.textLines.clear();
