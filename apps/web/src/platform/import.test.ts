@@ -7,7 +7,7 @@ import type { ImageTarget } from "./image-import";
 import { createImporter, isRoomboardName, LATER_FORMAT_MESSAGE, WEB_MAX_BYTES } from "./import";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
-  name, size: bytes.length, mime: "", path, blob: async () => new Blob([bytes]),
+  name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
 });
 
 describe("importFiles (T86, usage § 8 point 12, Q1)", () => {
@@ -41,7 +41,7 @@ describe("importFiles (T86, usage § 8 point 12, Q1)", () => {
   });
 
   it("ouverture refusée ou lecture qui lève : rangé dans failed, les autres continuent", async () => {
-    const bad: DroppedFile = { name: "x.roomboard", size: 1, mime: "", blob: async () => { throw new Error("disque"); } };
+    const bad: DroppedFile = { name: "x.roomboard", size: 1, mime: "", head: async () => new Uint8Array(), blob: async () => { throw new Error("disque"); } };
     const notify = vi.fn(async () => undefined);
     const r = await createImporter({ openDocument: async (f) => f.name !== "y.roomboard", notify })
       .importFiles([bad, file("y.roomboard"), file("z.roomboard")]);
@@ -172,7 +172,7 @@ describe("importFiles : images (R1, R3 à R6, R14, R15)", () => {
 
   it("sans limite (coque) : un gros fichier passe", async () => {
     const t = fakeTarget();
-    const f: DroppedFile = { name: "gros.png", size: 120 * 1024 * 1024, mime: "", blob: async () => new Blob([pngHead(10, 10)]) };
+    const f: DroppedFile = { name: "gros.png", size: 120 * 1024 * 1024, mime: "", head: async (n: number) => pngHead(10, 10).slice(0, n), blob: async () => new Blob([pngHead(10, 10)]) };
     const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), target: () => t.target, decode: decoded(10, 10) })
       .importFiles([f]);
     expect(r.inserted).toEqual(["gros.png"]);
@@ -206,5 +206,47 @@ describe("importFiles : images (R1, R3 à R6, R14, R15)", () => {
     const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), target: () => target, decode: decoded(10, 10) })
       .importFiles([file("a.png", pngHead(10, 10))]);
     expect(r.failed).toEqual(["a.png"]);
+  });
+});
+
+describe("en-tête seul avant refus (OD56, T14, DAC5)", () => {
+  it("S5 : non reconnu, head(4096) une fois, blob() jamais ; message de refus", async () => {
+    const head = vi.fn(async (n: number) => new Uint8Array(Math.min(n, 16)));
+    const blob = vi.fn(async (): Promise<Blob> => {
+      throw new Error("blob() ne doit pas être lu");
+    });
+    const f: DroppedFile = { name: "notes.xyz", size: 50 * 1024 * 1024, mime: "", head, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify }).importFiles([f]);
+    expect(r.refused).toEqual(["notes.xyz"]);
+    expect(head).toHaveBeenCalledTimes(1);
+    expect(head).toHaveBeenCalledWith(4096);
+    expect(blob).not.toHaveBeenCalled();
+    expect(notify.mock.calls[0]![0]).toBe(`notes.xyz : ${LATER_FORMAT_MESSAGE}`);
+  });
+
+  it("reconnu : head puis blob une fois ; .roomboard : blob seul (reconnu par son nom)", async () => {
+    const t = fakeTarget();
+    const png = pngHead(200, 100);
+    const head = vi.fn(async (n: number) => png.slice(0, n));
+    const blob = vi.fn(async () => new Blob([png]));
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), target: () => t.target, decode: decoded(200, 100) })
+      .importFiles([{ name: "a.png", size: png.length, mime: "", head, blob }], null);
+    expect(r.inserted).toEqual(["a.png"]);
+    expect([head.mock.calls.length, blob.mock.calls.length]).toEqual([1, 1]);
+    const rbHead = vi.fn(async () => new Uint8Array());
+    const rbBlob = vi.fn(async () => new Blob([new Uint8Array([1, 2])]));
+    await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined) })
+      .importFiles([{ name: "Cours.roomboard", size: 2, mime: "", head: rbHead, blob: rbBlob }]);
+    expect([rbHead.mock.calls.length, rbBlob.mock.calls.length]).toEqual([0, 1]);
+  });
+
+  it("head qui lève : rangé dans failed, message, les autres continuent", async () => {
+    const notify = vi.fn(async (_m: string) => undefined);
+    const bad: DroppedFile = { name: "x.png", size: 1, mime: "", head: async () => { throw new Error("disque"); }, blob: async () => new Blob() };
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify }).importFiles([bad, file("b.txt")]);
+    expect(r.failed).toEqual(["x.png"]);
+    expect(r.refused).toEqual(["b.txt"]);
+    expect(notify.mock.calls[0]![0]).toContain("Import impossible (x.png) : disque");
   });
 });

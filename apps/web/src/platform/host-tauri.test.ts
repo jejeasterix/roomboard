@@ -279,6 +279,13 @@ describe("coque : dépôt, lancement, sortie (T86)", () => {
   const tick = () => new Promise((r) => setTimeout(r, 0));
   const host = (ipc: TauriIpc | null, dpr = 1) => createTauriHost({} as never, {} as never, ipc, () => dpr);
 
+  it("head(4096) : un seul read_granted_file, offset 0, len 4096 (S5, OD56)", async () => {
+    const f = ipcFake({ "/tmp/notes.xyz": 50 * 1024 * 1024 });
+    const h = await grantedFile(f.ipc, "/tmp/notes.xyz", 50 * 1024 * 1024).head(4096);
+    expect(h.byteLength).toBe(4096);
+    expect(f.reads).toEqual([{ path: "/tmp/notes.xyz", offset: 0, len: 4096 }]);
+  });
+
   it("dépôt dans la coque : lecture par morceaux", async () => {
     const f = ipcFake({ "/tmp/a.roomboard": READ_CHUNK + 3 });
     const handler = vi.fn();

@@ -111,7 +111,7 @@ describe("ToolbarHost local", () => {
   });
   it("dropFiles → importFiles", () => {
     const { host, t } = setup();
-    const files = [{ name: "a.roomboard", size: 1, mime: "", blob: async () => new Blob() }];
+    const files = [{ name: "a.roomboard", size: 1, mime: "", head: async () => new Uint8Array(), blob: async () => new Blob() }];
     host.dropFiles(files, { x: 1, y: 2 });
     expect(t.importFiles).toHaveBeenCalledWith(files, { x: 1, y: 2 });
   });
