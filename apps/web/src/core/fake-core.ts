@@ -7,46 +7,140 @@
 // grossier : distance des seuls points du trait au chemin, sans contour ni pression.
 // Lot 4 : chaque élément porte sa matrice (`Transform` la compose à gauche, comme le cœur) ; formes et textes suivent
 // les polygones de `shapes.ts` (miroir de `shape.rs`) : même collision et mêmes bornes que le cœur.
+// C2 : images, fond (`page(id)`), métadonnées et `citedAssets` par le même balayage que le cœur ; `kind` inconnu gardé
+// avec ses champs bruts (`raw`) et réécrit tel quel.
 import type {
+  AssetInfo,
+  AssetRef,
+  BackdropView,
   Bounds,
   Change,
   Command,
   CoreDocument,
   CoreFactory,
   ElementView,
+  ImageData,
   Matrix,
+  PageView,
   ShapeData,
   StrokeBuilderApi,
   StrokeStyle,
   TextData,
 } from "./api";
+import { DEFAULT_ASSET_MIME, PAGE_HEIGHT, PAGE_WIDTH, UNKNOWN_BOX } from "./api";
+import { isAssetId } from "./asset-store";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
+/** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
+interface FakeUnknown {
+  readonly sourceKind: string;
+  readonly raw: Readonly<Record<string, unknown>>;
+  readonly hasTransform: boolean;
+  /** `transform` illisible tel que lu : la vue prend l'identité, le document le garde (K8). */
+  readonly rawTransform?: unknown;
+  /** Boîte dessinée, calculée une fois à la lecture : `raw` ne change pas. */
+  readonly box: { readonly w: number; readonly h: number };
+}
 interface FakeElement {
   readonly id: string;
+  /** Identité pour un élément inconnu sans transform lisible (hasTransform = false). */
   readonly transform: Matrix;
+  /** Image et inconnu : NO_STYLE, jamais exposé par element(). */
   readonly style: StrokeStyle;
   /** Trait : triplets x, y, pression locaux. */
   readonly local?: Float32Array;
   readonly shape?: ShapeData;
   readonly text?: TextData;
+  readonly image?: ImageData;
+  readonly unknown?: FakeUnknown;
+  /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
+  readonly malformed?: Readonly<Record<string, unknown>>;
 }
-interface FakePage { readonly id: string; readonly elements: FakeElement[] }
-interface State { readonly pages: FakePage[] }
+type RawRecord = Readonly<Record<string, unknown>>;
+interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null }
+/** `assets` : valeurs brutes (K3) ; lues avec défauts champ par champ (K4). */
+interface State { readonly pages: FakePage[]; readonly assets: Map<string, unknown> }
 
 const MESSAGES = {
   badShape: "forme invalide (rect, ellipse, line ou arrow, coins finis attendus)",
   badMatrix: "matrice invalide (six nombres finis, inversible)",
   badText: "texte invalide (taille et boîte finies > 0 attendues)",
   badWidth: "épaisseur de trait invalide (nombre fini > 0 attendu)",
+  badAsset: "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)",
+  badImage: "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)",
 } as const;
+
+const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
+const NO_STYLE: StrokeStyle = { color: "", width: 0 };
+const KNOWN_KINDS = new Set(["stroke", "shape", "text", "image"]);
+const finitePositive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
+const validAsset = (a: AssetRef): boolean => isAssetId(a.id) && a.mime !== "" && Number.isInteger(a.size) && a.size >= 0;
+const clone = (s: State): State => ({
+  pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop })),
+  assets: new Map(s.assets),
+});
+const unknownBox = (raw: RawRecord): { w: number; h: number } =>
+  finitePositive(raw["w"]) && finitePositive(raw["h"]) ? { w: raw["w"], h: raw["h"] } : { w: UNKNOWN_BOX, h: UNKNOWN_BOX };
+/** Écrite seulement si absente (K3). */
+const putMeta = (assets: Map<string, unknown>, a: AssetRef): void => {
+  if (!assets.has(a.id)) assets.set(a.id, { name: a.name, mime: a.mime, size: a.size });
+};
+
+/** Métadonnée lue avec les défauts du cœur, champ par champ (K4). */
+function assetInfo(assets: ReadonlyMap<string, unknown>, id: string): AssetInfo {
+  const m = assets.get(id);
+  const r = isRecord(m) ? m : {};
+  const { name, mime, size } = r;
+  return {
+    id,
+    name: typeof name === "string" ? name : id,
+    mime: typeof mime === "string" && mime !== "" ? mime : DEFAULT_ASSET_MIME,
+    size: typeof size === "number" && Number.isFinite(size) && size >= 0 ? size : 0,
+  };
+}
+
+/** Fond vu comme par le cœur (K6, K9) : null sans asset conforme ; rect sur la largeur si w et h sont lisibles. */
+function backdropView(raw: RawRecord | null, width: number): BackdropView | null {
+  if (raw === null) return null;
+  const { asset, kind, w, h, fit } = raw;
+  if (!isAssetId(asset)) return null;
+  const bw = finitePositive(w) ? w : null;
+  const bh = finitePositive(h) ? h : null;
+  return {
+    asset,
+    kind: typeof kind === "string" ? kind : "",
+    w: bw,
+    h: bh,
+    fit: typeof fit === "string" ? fit : "",
+    rect: bw !== null && bh !== null ? { x0: 0, y0: 0, x1: width, y1: (bh * width) / bw } : null,
+  };
+}
+
+const BACKDROP_KEYS = ["asset", "kind", "w", "h", "fit"] as const;
+const sameBackdrop = (a: RawRecord | null, b: RawRecord | null): boolean =>
+  a === null || b === null ? a === b : BACKDROP_KEYS.every((k) => a[k] === b[k]);
+
+/** Balayage des assets cités (K4) : toute chaîne conforme, à toute profondeur ; le texte lui-même n'est pas balayé. */
+function scanAssets(v: unknown, acc: Set<string>): void {
+  if (typeof v === "string") {
+    if (isAssetId(v)) acc.add(v);
+    return;
+  }
+  if (v instanceof Float32Array) return;
+  if (Array.isArray(v)) {
+    for (const x of v) scanAssets(x, acc);
+    return;
+  }
+  if (isRecord(v)) for (const x of Object.values(v)) scanAssets(x, acc);
+}
 
 let counter = 0;
 const newId = (): string => `fake-${++counter}`;
 const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
-const clone = (s: State): State => ({ pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements] })) });
 /** Matrice de `Transform`, donnée ou composée : six nombres finis, |dét| ≥ 1e-12 (même règle que le cœur). */
 const validMatrix = (m: Matrix): boolean => m.every((v) => Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) >= 1e-12;
 
@@ -106,13 +200,17 @@ function strokeTouches(e: FakeElement, path: Float32Array, radius: number): bool
   return false;
 }
 
-/** Polygone monde (x, y alternés) d'une forme ou d'un texte ; null pour un trait. */
+/** Polygone monde (x, y alternés) d'une forme, d'un texte, d'une image ou d'un inconnu ; null pour un trait. */
 function worldPolygon(e: FakeElement): number[] | null {
   const local = e.shape
     ? shapePolygon(e.shape.shape, e.shape.w, e.shape.h, e.style.width)
     : e.text
       ? boxPolygon(e.text.boxWidth, e.text.boxHeight)
-      : null;
+      : e.image
+        ? boxPolygon(e.image.w, e.image.h)
+        : e.unknown
+          ? boxPolygon(e.unknown.box.w, e.unknown.box.h)
+          : null;
   if (!local) return null;
   const out: number[] = [];
   for (let i = 0; i + 1 < local.length; i += 2) out.push(...applyMatrix(e.transform, local[i] ?? 0, local[i + 1] ?? 0));
@@ -152,7 +250,7 @@ class FakeDocument implements CoreDocument {
     this.state = state;
   }
 
-  private page(id: string): FakePage {
+  private pageOf(id: string): FakePage {
     const p = this.state.pages.find((q) => q.id === id);
     if (!p) throw new Error(`page inconnue : ${id}`);
     return p;
@@ -184,17 +282,17 @@ class FakeDocument implements CoreDocument {
   }
 
   pageIds(): string[] { return this.state.pages.map((p) => p.id); }
-  elementIds(page: string): string[] { return this.page(page).elements.map((e) => e.id); }
+  elementIds(page: string): string[] { return this.pageOf(page).elements.map((e) => e.id); }
 
   apply(cmd: Command): Change {
     switch (cmd.type) {
       case "AddPage": {
         const after = cmd.after;
-        if (after !== null) this.page(after);
+        if (after !== null) this.pageOf(after);
         return this.step((s) => {
           const id = newId();
           const at = after === null ? s.pages.length : s.pages.findIndex((p) => p.id === after) + 1;
-          s.pages.splice(at, 0, { id, elements: [] });
+          s.pages.splice(at, 0, { id, elements: [], backdrop: null });
           return { pages: [id], ids: [], removed: [] };
         });
       }
@@ -211,7 +309,7 @@ class FakeDocument implements CoreDocument {
           throw new Error("points invalides");
         }
         if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
-        this.page(cmd.page);
+        this.pageOf(cmd.page);
         return this.step((s) => {
           const id = newId();
           const { x0, y0, local } = toLocal(cmd.points);
@@ -222,7 +320,7 @@ class FakeDocument implements CoreDocument {
       case "Erase": {
         if (!finitePath(cmd.path)) throw new Error("points invalides");
         if (!positive(cmd.radius)) throw new Error("rayon de gomme invalide (nombre fini > 0 attendu)");
-        const hit = this.page(cmd.page).elements
+        const hit = this.pageOf(cmd.page).elements
           .filter((e) => e.local !== undefined && strokeTouches(e, cmd.path, cmd.radius))
           .map((e) => e.id);
         if (hit.length === 0) return this.unchanged();
@@ -248,7 +346,7 @@ class FakeDocument implements CoreDocument {
         const g = normalizeShape(cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
         if (![g.tx, g.ty, g.w, g.h].every((v) => Number.isFinite(Math.fround(v)))) throw new Error(MESSAGES.badShape);
         if (!positive(cmd.style.width)) throw new Error(MESSAGES.badWidth);
-        this.page(cmd.page);
+        this.pageOf(cmd.page);
         return this.step((s) => {
           const id = newId();
           s.pages.find((p) => p.id === cmd.page)?.elements.push({
@@ -268,7 +366,7 @@ class FakeDocument implements CoreDocument {
         const text: TextData = { content: cmd.content, size: cmd.size, boxWidth: cmd.boxWidth, boxHeight: cmd.boxHeight };
         const style: StrokeStyle = { color: cmd.color, width: 0 };
         if (cmd.id === null) {
-          this.page(cmd.page);
+          this.pageOf(cmd.page);
           if (cmd.content === "") return this.unchanged();
           return this.step((s) => {
             const id = newId();
@@ -302,7 +400,13 @@ class FakeDocument implements CoreDocument {
       case "Transform": {
         const m = cmd.matrix;
         if (!validMatrix(m)) throw new Error(MESSAGES.badMatrix);
-        const ids = [...new Set(cmd.ids)].filter((id) => this.find(id) !== undefined).sort();
+        // Un inconnu sans transform lisible est ignoré, comme tout élément sans transform lisible (`cmd_transform`, `crates/roomboard-core/src/commands.rs`).
+        const ids = [...new Set(cmd.ids)]
+          .filter((id) => {
+            const found = this.find(id);
+            return found !== undefined && found.element.unknown?.hasTransform !== false && found.element.malformed === undefined;
+          })
+          .sort();
         if (ids.length === 0 || isIdentity(m)) return this.unchanged();
         // Comme le cœur (constat 2 de T60) : chaque matrice composée suit la règle de `m`, avant toute étape.
         const composed = new Map(ids.map((id) => [id, composeMatrix(m, this.find(id)?.element.transform ?? m)]));
@@ -318,16 +422,74 @@ class FakeDocument implements CoreDocument {
           return { pages, ids, removed: [] };
         });
       }
+      case "AddImage": {
+        // Même ordre que le cœur : asset, boîte, matrice, puis page.
+        if (!validAsset(cmd.asset)) throw new Error(MESSAGES.badAsset);
+        if (!positive(cmd.w) || !positive(cmd.h)) throw new Error(MESSAGES.badImage);
+        if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
+        this.pageOf(cmd.page);
+        return this.step((s) => {
+          const id = newId();
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({
+            id,
+            transform: cmd.matrix,
+            style: NO_STYLE,
+            image: { asset: cmd.asset.id, w: cmd.w, h: cmd.h },
+          });
+          putMeta(s.assets, cmd.asset);
+          return { pages: [cmd.page], ids: [id], removed: [] };
+        });
+      }
+      case "SetBackdrop": {
+        const b = cmd.backdrop;
+        if (b !== null) {
+          if (!validAsset(b.asset)) throw new Error(MESSAGES.badAsset);
+          if (!positive(b.w) || !positive(b.h) || b.fit !== "width") throw new Error(MESSAGES.badImage);
+        }
+        const current = this.pageOf(cmd.page).backdrop;
+        const next: RawRecord | null = b === null ? null : { asset: b.asset.id, kind: "image", w: b.w, h: b.h, fit: "width" };
+        if (sameBackdrop(current, next)) return this.unchanged();
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === cmd.page);
+          if (p) p.backdrop = next;
+          if (b !== null) putMeta(s.assets, b.asset);
+          return { pages: [cmd.page], ids: [], removed: [] };
+        });
+      }
     }
   }
 
   element(id: string): ElementView | null {
     const e = this.find(id)?.element;
-    if (!e) return null;
-    const base = { id, transform: e.transform, style: e.style };
-    if (e.shape) return { ...base, kind: "shape", shape: e.shape };
-    if (e.text) return { ...base, kind: "text", text: e.text };
-    return { ...base, kind: "stroke" };
+    if (!e || e.malformed) return null;
+    const base = { id, transform: e.transform };
+    if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
+    if (e.image) return { ...base, kind: "image", image: e.image };
+    const styled = { ...base, style: e.style };
+    if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
+    if (e.text) return { ...styled, kind: "text", text: e.text };
+    return { ...styled, kind: "stroke" };
+  }
+  page(id: string): PageView | null {
+    const p = this.state.pages.find((q) => q.id === id);
+    if (!p) return null;
+    return { id, width: PAGE_WIDTH, height: PAGE_HEIGHT, background: "#ffffff", backdrop: backdropView(p.backdrop, PAGE_WIDTH) };
+  }
+  citedAssets(): AssetInfo[] {
+    const acc = new Set<string>();
+    for (const p of this.state.pages) {
+      scanAssets(p.id, acc);
+      scanAssets(p.backdrop, acc);
+      for (const e of p.elements) scanAssets({ ...e, text: undefined, local: undefined }, acc);
+    }
+    return [...acc].sort().map((id) => assetInfo(this.state.assets, id));
+  }
+  asset(id: string): AssetInfo | null {
+    return isAssetId(id) ? assetInfo(this.state.assets, id) : null;
+  }
+  saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array] {
+    const manifest = new TextEncoder().encode(JSON.stringify({ format: "roomboard-fake", appVersion, modified: now }));
+    return [manifest, this.save(now, appVersion)] as const;
   }
   points(id: string): Float32Array | null { return this.find(id)?.element.local ?? null; }
   outline(id: string): Float32Array | null {
@@ -335,7 +497,7 @@ class FakeDocument implements CoreDocument {
     return l ? polyOutline(l, 0, 0) : null;
   }
   hitTest(page: string, x: number, y: number, tol: number): string | null {
-    const els = this.page(page).elements;
+    const els = this.pageOf(page).elements;
     for (let i = els.length - 1; i >= 0; i--) {
       const e = els[i];
       if (!e) continue;
@@ -345,10 +507,10 @@ class FakeDocument implements CoreDocument {
     return null;
   }
   hitTestPath(page: string, path: Float32Array, radius: number): string[] {
-    return this.page(page).elements.filter((e) => e.local !== undefined && strokeTouches(e, path, radius)).map((e) => e.id);
+    return this.pageOf(page).elements.filter((e) => e.local !== undefined && strokeTouches(e, path, radius)).map((e) => e.id);
   }
   idsInRect(page: string, r: Bounds): string[] {
-    return this.page(page).elements.filter((e) => {
+    return this.pageOf(page).elements.filter((e) => {
       const b = this.bounds([e.id]);
       return b !== null && b.x0 >= r.x0 && b.y0 >= r.y0 && b.x1 <= r.x1 && b.y1 <= r.y1;
     }).map((e) => e.id);
@@ -391,17 +553,12 @@ class FakeDocument implements CoreDocument {
   canRedo(): boolean { return this.redoStack.length > 0; }
   version(): number { return this.ver; }
   save(now: string, appVersion: string): Uint8Array {
-    const json = JSON.stringify({ now, appVersion, pages: this.state.pages.map((p) => ({
-      id: p.id,
-      elements: p.elements.map((e) => ({
-        id: e.id,
-        transform: [...e.transform],
-        style: e.style,
-        ...(e.local ? { local: Array.from(e.local) } : {}),
-        ...(e.shape ? { shape: e.shape } : {}),
-        ...(e.text ? { text: e.text } : {}),
-      })),
-    })) });
+    const json = JSON.stringify({
+      now,
+      appVersion,
+      assets: Object.fromEntries(this.state.assets),
+      pages: this.state.pages.map((p) => ({ id: p.id, backdrop: p.backdrop, elements: p.elements.map(savedElement) })),
+    });
     return new TextEncoder().encode(json);
   }
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
@@ -418,40 +575,96 @@ class FakeDocument implements CoreDocument {
 
 interface SavedElement {
   id: string;
-  transform: [number, number, number, number, number, number];
-  style: StrokeStyle;
+  /** Absent : élément du socle (trait, forme ou texte selon ses champs). */
+  kind?: string;
+  /** Lu par `toMatrix6` ; celui d'un inconnu peut être illisible, il est alors réécrit tel quel. */
+  transform?: unknown;
+  style?: StrokeStyle;
   local?: number[];
   shape?: ShapeData;
   text?: TextData;
+  image?: ImageData;
+  /** Champs bruts d'un élément inconnu, réécrits tels quels. */
+  raw?: Record<string, unknown>;
 }
-interface SavedPage { id: string; elements: SavedElement[] }
+interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown }
+
+function savedElement(e: FakeElement): SavedElement {
+  if (e.malformed) return { id: e.id, ...e.malformed } as SavedElement;
+  if (e.unknown) {
+    return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw } };
+  }
+  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image };
+  return {
+    id: e.id,
+    transform: [...e.transform],
+    style: e.style,
+    ...(e.local ? { local: Array.from(e.local) } : {}),
+    ...(e.shape ? { shape: e.shape } : {}),
+    ...(e.text ? { text: e.text } : {}),
+  };
+}
+
+const toMatrix6 = (t: unknown): Matrix | null =>
+  Array.isArray(t) && t.length === 6 && t.every((v) => typeof v === "number" && Number.isFinite(v)) ? (t as unknown as Matrix) : null;
+
+function loadElement(e: SavedElement): FakeElement {
+  if (e.kind !== undefined && !KNOWN_KINDS.has(e.kind)) {
+    const t = toMatrix6(e.transform);
+    const raw = e.raw ?? {};
+    const unknown: FakeUnknown = {
+      sourceKind: e.kind,
+      raw,
+      box: unknownBox(raw),
+      hasTransform: t !== null,
+      ...(t === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
+    };
+    return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown };
+  }
+  if (e.kind === "image") {
+    const im: unknown = e.image;
+    const ok = isRecord(im) && isAssetId(im["asset"]) && finitePositive(im["w"]) && finitePositive(im["h"]);
+    if (!ok) {
+      const { id: _id, ...rest } = e;
+      return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, malformed: rest };
+    }
+  }
+  if (e.kind === "image" && e.image) return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image: e.image };
+  return {
+    id: e.id,
+    transform: toMatrix6(e.transform) ?? IDENTITY,
+    style: e.style ?? NO_STYLE,
+    ...(e.local ? { local: new Float32Array(e.local) } : {}),
+    ...(e.shape ? { shape: e.shape } : {}),
+    ...(e.text ? { text: e.text } : {}),
+  };
+}
+
+function loadFake(bytes: Uint8Array): CoreDocument {
+  // Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel.
+  const notRoomboard = "ce fichier n'est pas un document RoomBoard";
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new Error(notRoomboard);
+  }
+  if (!isRecord(raw) || !Array.isArray(raw["pages"])) throw new Error(notRoomboard);
+  const pages = (raw["pages"] as SavedPage[]).map((p) => ({
+    id: p.id,
+    elements: p.elements.map(loadElement),
+    backdrop: isRecord(p.backdrop) ? p.backdrop : null,
+  }));
+  const assets = new Map(isRecord(raw["assets"]) ? Object.entries(raw["assets"]) : []);
+  return new FakeDocument({ pages, assets });
+}
 
 export const fakeCore: CoreFactory = {
-  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [] }] }),
-  load: (bytes: Uint8Array) => {
-    // Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel.
-    const notRoomboard = "ce fichier n'est pas un document RoomBoard";
-    let raw: unknown;
-    try {
-      raw = JSON.parse(new TextDecoder().decode(bytes));
-    } catch {
-      throw new Error(notRoomboard);
-    }
-    if (typeof raw !== "object" || raw === null || !("pages" in raw) || !Array.isArray(raw.pages)) {
-      throw new Error(notRoomboard);
-    }
-    const pages = (raw.pages as SavedPage[]).map((p) => ({
-      id: p.id,
-      elements: p.elements.map((e): FakeElement => ({
-        id: e.id,
-        transform: e.transform,
-        style: e.style,
-        ...(e.local ? { local: new Float32Array(e.local) } : {}),
-        ...(e.shape ? { shape: e.shape } : {}),
-        ...(e.text ? { text: e.text } : {}),
-      })),
-    }));
-    return new FakeDocument({ pages });
+  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null }], assets: new Map() }),
+  load: loadFake,
+  loadParts: (manifest: Uint8Array, ybin: Uint8Array) => {
+    void manifest;
+    return loadFake(ybin);
   },
   version: () => "fake",
 };

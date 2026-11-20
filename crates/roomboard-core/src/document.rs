@@ -1,19 +1,24 @@
 //! Document CRDT (yrs), schéma D2 : racine `meta` {schema}, racine `pages` = tableau de pages `Y.Map`
 //! {id, width, height, background, elements: Y.Array de Y.Map}. L'ordre de `elements` est l'ordre d'empilement.
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
+use yrs::types::text::YChange;
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Array, ArrayPrelim, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
-    Transact, Transaction, TransactionMut, Update,
+    Any, Array, ArrayPrelim, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
+    Text, Transact, Transaction, TransactionMut, Update,
 };
 
+use crate::asset::{is_asset_id, AssetInfo, AssetRef};
 use crate::commands::{read_shape, read_text};
+#[cfg(test)]
+use crate::element::ImageView;
 use crate::element::{
-    out_f64, out_string, out_transform, read_style, ElementView, PageView, ShapeView, StrokeStyle,
-    TextView, DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_image, read_style,
+    read_unknown, ElementView, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
+    PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
@@ -40,6 +45,8 @@ pub struct Document {
     doc: Doc,
     meta: MapRef,
     pages: ArrayRef,
+    /// Racine `assets` (K3) : empreinte → `Y.Map{ name, mime, size }`.
+    assets: MapRef,
     history: History,
     version: u64,
     outlines: RefCell<HashMap<String, CachedOutline>>,
@@ -54,10 +61,12 @@ pub(crate) struct FoundElement {
     pub element: MapRef,
 }
 
-fn roots(doc: &Doc) -> (MapRef, ArrayRef) {
+/// Racines prises une fois. Une racine vide n'est pas encodée : un document sans asset garde ses octets.
+fn roots(doc: &Doc) -> (MapRef, ArrayRef, MapRef) {
     (
         doc.get_or_insert_map("meta"),
         doc.get_or_insert_array("pages"),
+        doc.get_or_insert_map("assets"),
     )
 }
 
@@ -76,23 +85,24 @@ pub(crate) fn insert_page(pages: &ArrayRef, txn: &mut TransactionMut, index: u32
 
 impl Document {
     /// Doc neuf, racines prises une fois, `meta.schema` écrit sans origine (hors historique).
-    fn bare() -> (Doc, MapRef, ArrayRef) {
+    fn bare() -> (Doc, MapRef, ArrayRef, MapRef) {
         let doc = Doc::new();
-        let (meta, pages) = roots(&doc);
+        let (meta, pages, assets) = roots(&doc);
         {
             let mut txn = doc.transact_mut();
             meta.insert(&mut txn, "schema", f64::from(SCHEMA));
         }
-        (doc, meta, pages)
+        (doc, meta, pages, assets)
     }
 
     /// `History` est créée en dernier : rien de ce qui précède ne s'annule (D37).
-    fn assemble(doc: Doc, meta: MapRef, pages: ArrayRef) -> Self {
-        let history = History::new(&doc, &pages, &meta);
+    fn assemble(doc: Doc, meta: MapRef, pages: ArrayRef, assets: MapRef) -> Self {
+        let history = History::new(&doc, &pages, &meta, &assets);
         Self {
             doc,
             meta,
             pages,
+            assets,
             history,
             version: 0,
             outlines: RefCell::new(HashMap::new()),
@@ -101,18 +111,18 @@ impl Document {
     }
 
     pub fn new() -> Self {
-        let (doc, meta, pages) = Self::bare();
-        Self::assemble(doc, meta, pages)
+        let (doc, meta, pages, assets) = Self::bare();
+        Self::assemble(doc, meta, pages, assets)
     }
 
     /// Document de démarrage : une page, créée sans origine avant `History` (D37).
     pub fn blank() -> Self {
-        let (doc, meta, pages) = Self::bare();
+        let (doc, meta, pages, assets) = Self::bare();
         {
             let mut txn = doc.transact_mut();
             insert_page(&pages, &mut txn, 0);
         }
-        Self::assemble(doc, meta, pages)
+        Self::assemble(doc, meta, pages, assets)
     }
 
     pub fn add_page(&mut self) -> String {
@@ -147,15 +157,69 @@ impl Document {
             .collect()
     }
 
+    /// Vue de page ; un fond illisible donne `backdrop: None`, jamais une page illisible (K9).
     pub fn page(&self, id: &str) -> Option<PageView> {
         let txn = self.doc.transact();
         let (_, m) = self.find_page(&txn, id)?;
+        let width = out_f64(m.get(&txn, "width"))?;
         Some(PageView {
             id: id.to_string(),
-            width: out_f64(m.get(&txn, "width"))?,
+            width,
             height: out_f64(m.get(&txn, "height"))?,
             background: out_string(m.get(&txn, "background"))?,
+            backdrop: read_backdrop(&txn, &m).and_then(|r| backdrop_view(r, width)),
         })
+    }
+
+    /// Assets cités par le document (K4, DAK2) : toute chaîne conforme de `pages`, à toute profondeur ; sans doublon,
+    /// triés ; métadonnée de `assets` ou défauts, rendus sans écrire (D38).
+    pub fn cited_assets(&self) -> Vec<AssetInfo> {
+        let txn = self.doc.transact();
+        let mut ids = BTreeSet::new();
+        collect_out(&txn, &Out::YArray(self.pages.clone()), &mut ids);
+        ids.iter().map(|id| self.asset_info(&txn, id)).collect()
+    }
+
+    /// Métadonnée d'un asset ; `None` si l'id n'est pas conforme ; défauts si l'entrée est absente ou mal formée.
+    pub fn asset(&self, id: &str) -> Option<AssetInfo> {
+        if !is_asset_id(id) {
+            return None;
+        }
+        let txn = self.doc.transact();
+        Some(self.asset_info(&txn, id))
+    }
+
+    /// Défauts champ par champ (K4) : `name` chaîne, `mime` chaîne non vide, `size` nombre fini ≥ 0.
+    fn asset_info<T: ReadTxn>(&self, txn: &T, id: &str) -> AssetInfo {
+        let mut info = AssetInfo::fallback(id);
+        if let Some(Out::YMap(m)) = self.assets.get(txn, id) {
+            if let Some(name) = out_string(m.get(txn, "name")) {
+                info.name = name;
+            }
+            if let Some(mime) = out_string(m.get(txn, "mime")).filter(|s| !s.is_empty()) {
+                info.mime = mime;
+            }
+            if let Some(size) = out_f64(m.get(txn, "size")).filter(|v| v.is_finite() && *v >= 0.0) {
+                info.size = size;
+            }
+        }
+        info
+    }
+
+    /// Métadonnée écrite seulement si absente (K3), dans la transaction de la commande qui cite l'asset : champs
+    /// scalaires d'un `Y.Map`, jamais `Any::Map` (G4).
+    pub(crate) fn insert_asset_meta(&self, txn: &mut TransactionMut, a: &AssetRef) {
+        if self.assets.get(txn, &a.id).is_none() {
+            self.assets.insert(
+                txn,
+                a.id.as_str(),
+                MapPrelim::from([
+                    ("name", In::from(a.name.as_str())),
+                    ("mime", In::from(a.mime.as_str())),
+                    ("size", In::Any(Any::from(a.size))),
+                ]),
+            );
+        }
     }
 
     pub fn page_index(&self, id: &str) -> Option<u32> {
@@ -181,43 +245,57 @@ impl Document {
         let txn = self.doc.transact();
         let found = self.find_element(&txn, id)?;
         let e = &found.element;
-        let kind = out_string(e.get(&txn, "kind"))?;
-        let transform = out_transform(e.get(&txn, "transform"))?;
-        let (style, shape, text) = match kind.as_str() {
-            "shape" => {
+        match out_string(e.get(&txn, "kind")).as_deref() {
+            Some("stroke") => Some(ElementView {
+                style: Some(read_style(&txn, e)?),
+                ..ElementView::bare(id, "stroke", out_transform(e.get(&txn, "transform"))?)
+            }),
+            Some("shape") => {
+                let transform = out_transform(e.get(&txn, "transform"))?;
                 let s = read_shape(&txn, e)?;
-                let view = ShapeView {
-                    shape: s.kind.as_str().to_string(),
-                    w: s.w,
-                    h: s.h,
-                    fill: s.fill,
-                };
-                (s.style, Some(view), None)
+                Some(ElementView {
+                    style: Some(s.style),
+                    shape: Some(ShapeView {
+                        shape: s.kind.as_str().to_string(),
+                        w: s.w,
+                        h: s.h,
+                        fill: s.fill,
+                    }),
+                    ..ElementView::bare(id, "shape", transform)
+                })
             }
-            "text" => {
+            Some("text") => {
+                let transform = out_transform(e.get(&txn, "transform"))?;
                 let t = read_text(&txn, e)?;
-                let view = TextView {
-                    content: t.content,
-                    size: t.size,
-                    box_width: t.box_width,
-                    box_height: t.box_height,
-                };
-                let style = StrokeStyle {
-                    color: t.color,
-                    width: 0.0,
-                };
-                (style, None, Some(view))
+                Some(ElementView {
+                    style: Some(StrokeStyle {
+                        color: t.color,
+                        width: 0.0,
+                    }),
+                    text: Some(TextView {
+                        content: t.content,
+                        size: t.size,
+                        box_width: t.box_width,
+                        box_height: t.box_height,
+                    }),
+                    ..ElementView::bare(id, "text", transform)
+                })
             }
-            _ => (read_style(&txn, e)?, None, None),
-        };
-        Some(ElementView {
-            id: id.to_string(),
-            kind,
-            transform,
-            style,
-            shape,
-            text,
-        })
+            Some("image") => {
+                let (transform, image) = read_image(&txn, e)?;
+                Some(ElementView {
+                    image: Some(image),
+                    ..ElementView::bare(id, "image", transform)
+                })
+            }
+            _ => {
+                let (transform, unknown) = read_unknown(&txn, e)?;
+                Some(ElementView {
+                    unknown: Some(unknown),
+                    ..ElementView::bare(id, "unknown", transform)
+                })
+            }
+        }
     }
 
     pub fn schema(&self) -> Option<f64> {
@@ -266,7 +344,7 @@ impl Document {
     pub fn from_update_v1(bytes: &[u8]) -> Result<Self, DecodeError> {
         let update = Update::decode_v1(bytes).map_err(|e| DecodeError::Update(format!("{e:?}")))?;
         let doc = Doc::new();
-        let (meta, pages) = roots(&doc);
+        let (meta, pages, assets) = roots(&doc);
         {
             let mut txn = doc.transact_mut();
             txn.apply_update(update)
@@ -279,7 +357,7 @@ impl Document {
         if found != Some(f64::from(SCHEMA)) {
             return Err(DecodeError::Schema { found });
         }
-        Ok(Self::assemble(doc, meta, pages))
+        Ok(Self::assemble(doc, meta, pages, assets))
     }
 
     #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
@@ -398,6 +476,46 @@ impl Document {
             }
         }
         None
+    }
+}
+
+fn collect_any(a: &Any, acc: &mut BTreeSet<String>) {
+    match a {
+        Any::String(s) if is_asset_id(s) => {
+            acc.insert(s.to_string());
+        }
+        Any::Array(items) => items.iter().for_each(|i| collect_any(i, acc)),
+        Any::Map(m) => m.values().for_each(|v| collect_any(v, acc)),
+        _ => {}
+    }
+}
+
+/// Parcours générique (K4) : `Y.Map`, `Y.Array`, valeurs `Any`, embeds et attributs des `Y.Text` ; le texte lui-même
+/// (morceaux `Any::String` insérés) n'est pas balayé.
+fn collect_out<T: ReadTxn>(txn: &T, o: &Out, acc: &mut BTreeSet<String>) {
+    match o {
+        Out::Any(a) => collect_any(a, acc),
+        Out::YMap(m) => {
+            for (_, v) in m.iter(txn) {
+                collect_out(txn, &v, acc);
+            }
+        }
+        Out::YArray(a) => {
+            for v in a.iter(txn) {
+                collect_out(txn, &v, acc);
+            }
+        }
+        Out::YText(t) => {
+            for d in t.diff(txn, YChange::identity) {
+                if !matches!(d.insert, Out::Any(Any::String(_))) {
+                    collect_out(txn, &d.insert, acc);
+                }
+                if let Some(attrs) = d.attributes {
+                    attrs.values().for_each(|v| collect_any(v, acc));
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -671,5 +789,307 @@ mod tests {
         let (x, y) = crate::element::apply_transform(&t, 3.0, 4.0);
         let (bx, by) = crate::element::apply_transform(&i, x, y);
         assert!((bx - 3.0).abs() < 1e-9 && (by - 4.0).abs() < 1e-9);
+    }
+
+    use yrs::{Any, In, MapPrelim};
+
+    const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    /// Pousse un élément brut sur la première page, hors historique (fichier lu, pas un geste).
+    fn push_raw(d: &Document, fields: Vec<(&str, In)>) {
+        let els = {
+            let txn = d.read();
+            d.page_elements(&txn, &d.page_ids()[0]).expect("éléments")
+        };
+        els.push_back(
+            &mut d.doc.transact_mut(),
+            fields.into_iter().collect::<MapPrelim>(),
+        );
+    }
+
+    fn translate(x: f64, y: f64) -> In {
+        In::Any(crate::element::transform_to_any(&[
+            1.0, 0.0, 0.0, 1.0, x, y,
+        ]))
+    }
+
+    #[test]
+    fn image_view_reads_fields_without_style() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("i1")),
+                ("kind", In::from("image")),
+                ("transform", translate(10.0, 20.0)),
+                ("asset", In::from(ABC)),
+                ("w", In::Any(Any::from(640.0))),
+                ("h", In::Any(Any::from(480.0))),
+            ],
+        );
+        let v = d.element("i1").expect("vue");
+        assert_eq!(v.kind, "image");
+        assert_eq!(v.style, None);
+        assert_eq!(
+            v.image,
+            Some(ImageView {
+                asset: ABC.into(),
+                w: 640.0,
+                h: 480.0
+            })
+        );
+        assert_eq!(
+            d.hit_test(&d.page_ids()[0], 20.0, 30.0, 0.0),
+            Some("i1".into())
+        );
+    }
+
+    #[test]
+    fn malformed_image_has_no_view() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("i2")),
+                ("kind", In::from("image")),
+                ("transform", translate(0.0, 0.0)),
+                ("asset", In::from(ABC.to_uppercase().as_str())),
+                ("w", In::Any(Any::from(10.0))),
+                ("h", In::Any(Any::from(10.0))),
+            ],
+        );
+        assert_eq!(d.element("i2"), None);
+    }
+
+    #[test]
+    fn element_without_id_has_no_geometry() {
+        let d = Document::blank();
+        push_raw(&d, vec![("kind", In::from("hologram"))]);
+        let p = d.page_ids()[0].clone();
+        assert_eq!(d.hit_test(&p, 50.0, 50.0, 0.0), None);
+        assert!(d
+            .ids_in_rect(
+                &p,
+                crate::query::Bounds {
+                    x0: -1.0,
+                    y0: -1.0,
+                    x1: 500.0,
+                    y1: 500.0
+                }
+            )
+            .is_empty());
+    }
+
+    use std::sync::Arc;
+
+    use crate::asset::AssetInfo;
+    use yrs::{Text, TextPrelim};
+
+    const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+    const TWO: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+    const THREE: &str = "3333333333333333333333333333333333333333333333333333333333333333";
+
+    /// Patron écarté (K4, DAK2) : lire seulement le champ `asset` des images et du fond. Ici aucun élément n'est une
+    /// image : les ids sont rangés dans un `Y.Map` imbriqué, un `Any::Array`, un `Any::Map` lu, un attribut et un
+    /// embed de `Y.Text` ; ce lecteur-là rendrait une liste vide.
+    #[test]
+    fn cited_assets_scans_any_depth() {
+        let d = Document::blank();
+        let nested = MapPrelim::from([(
+            "deep",
+            In::Array(ArrayPrelim::from(vec![
+                In::from(ZERO),
+                In::from("pas-un-asset"),
+            ])),
+        )]);
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("u1")),
+                ("kind", In::from("model3d")),
+                ("nested", In::Map(nested)),
+                (
+                    "refs",
+                    In::Any(Any::Array(vec![Any::from(ABC), Any::from(ABC)].into())),
+                ),
+                (
+                    "legacy",
+                    In::Any(Any::Map(Arc::new(HashMap::from([(
+                        "src".to_string(),
+                        Any::from(EMPTY),
+                    )])))),
+                ),
+                ("content", In::from(TextPrelim::new(""))),
+            ],
+        );
+        let text = {
+            let txn = d.read();
+            let found = d.find_element(&txn, "u1").expect("u1");
+            match found.element.get(&txn, "content") {
+                Some(Out::YText(t)) => t,
+                _ => panic!("texte"),
+            }
+        };
+        {
+            let mut txn = d.doc.transact_mut();
+            let other = "1111111111111111111111111111111111111111111111111111111111111111";
+            text.insert(&mut txn, 0, other); // le texte lui-même n'est pas balayé
+            let attrs = HashMap::from([(Arc::from("href"), Any::from(TWO))]);
+            text.insert_with_attributes(&mut txn, 64, "lien", attrs);
+            let embed = Any::Map(Arc::new(HashMap::from([(
+                "src".to_string(),
+                Any::from(THREE),
+            )])));
+            text.insert_embed(&mut txn, 68, embed);
+        }
+        let before = d.encode_v1();
+        let ids: Vec<String> = d.cited_assets().into_iter().map(|a| a.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                ZERO.to_string(),
+                TWO.to_string(),
+                THREE.to_string(),
+                ABC.to_string(),
+                EMPTY.to_string(),
+            ]
+        );
+        assert!(d.encode_v1() == before, "une lecture n'écrit rien");
+    }
+
+    #[test]
+    fn cited_assets_malformed_meta_falls_back_without_writing() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![
+                ("id", In::from("u1")),
+                ("kind", In::from("x")),
+                ("a", In::from(ABC)),
+                ("b", In::from(EMPTY)),
+                ("c", In::from(ZERO)),
+            ],
+        );
+        {
+            let mut txn = d.doc.transact_mut();
+            d.assets.insert(&mut txn, ABC, "pas une map");
+            d.assets.insert(
+                &mut txn,
+                EMPTY,
+                MapPrelim::from([
+                    ("name", In::from("fond.jpg")),
+                    ("mime", In::from("")),
+                    ("size", In::from("12")),
+                ]),
+            );
+            d.assets.insert(
+                &mut txn,
+                "CLE-NON-CONFORME",
+                MapPrelim::from([("name", In::from("x"))]),
+            );
+        }
+        let before = d.encode_v1();
+        let cited = d.cited_assets();
+        assert_eq!(cited[0], AssetInfo::fallback(ZERO));
+        assert_eq!(cited[1], AssetInfo::fallback(ABC));
+        assert_eq!(
+            cited[2],
+            AssetInfo {
+                name: "fond.jpg".into(),
+                ..AssetInfo::fallback(EMPTY)
+            }
+        );
+        assert_eq!(
+            cited.len(),
+            3,
+            "une clé non conforme de `assets` n'est jamais citée"
+        );
+        assert_eq!(d.asset("CLE-NON-CONFORME"), None);
+        assert_eq!(d.asset(ZERO), Some(AssetInfo::fallback(ZERO)));
+        assert!(d.encode_v1() == before, "une lecture n'écrit rien");
+    }
+
+    fn first_page_map(d: &Document) -> (String, MapRef) {
+        let p = d.page_ids()[0].clone();
+        let page = {
+            let txn = d.read();
+            d.find_page(&txn, &p).expect("page").1
+        };
+        (p, page)
+    }
+
+    #[test]
+    fn unreadable_backdrop_keeps_page_readable() {
+        let d = Document::blank();
+        let (p, page) = first_page_map(&d);
+        let set = |v: In| page.insert(&mut d.doc.transact_mut(), "backdrop", v);
+        set(In::Map(MapPrelim::from([
+            ("kind", In::from("image")),
+            ("w", In::from(10.0)),
+            ("h", In::from(10.0)),
+        ])));
+        assert_eq!(d.page(&p).expect("page lisible").backdrop, None);
+        set(In::from("pas une map"));
+        assert_eq!(d.page(&p).expect("page lisible").backdrop, None);
+        set(In::Map(MapPrelim::from([
+            ("asset", In::from(ABC.to_uppercase().as_str())),
+            ("kind", In::from("image")),
+        ])));
+        assert_eq!(d.page(&p).expect("page lisible").backdrop, None);
+        set(In::Map(MapPrelim::from([
+            ("asset", In::from(ABC)),
+            ("kind", In::from("pdf-page")),
+            ("fit", In::from("contain")),
+            ("w", In::from(1000.0)),
+            ("h", In::from(500.0)),
+        ])));
+        let b = d
+            .page(&p)
+            .expect("page")
+            .backdrop
+            .expect("fond d'une version plus récente");
+        assert_eq!((b.kind.as_str(), b.fit.as_str()), ("pdf-page", "contain"));
+        assert_eq!(b.rect.map(|r| r.y1), Some(960.0));
+        set(In::Map(MapPrelim::from([
+            ("asset", In::from(ABC)),
+            ("kind", In::from("image")),
+        ])));
+        let b = d.page(&p).expect("page").backdrop.expect("fond sans boîte");
+        assert_eq!((b.w, b.h, b.rect), (None, None, None));
+    }
+
+    /// Le fond suit la largeur lue de la page (page à hauteur infinie), pas la largeur par défaut ni la hauteur : une
+    /// image haute dépasse la hauteur de la page au lieu d'y être contenue.
+    #[test]
+    fn backdrop_rect_follows_page_width_not_height() {
+        let d = Document::blank();
+        let (p, page) = first_page_map(&d);
+        {
+            let mut txn = d.doc.transact_mut();
+            page.insert(&mut txn, "width", 960.0);
+            page.insert(
+                &mut txn,
+                "backdrop",
+                MapPrelim::from([
+                    ("asset", In::from(ABC)),
+                    ("kind", In::from("image")),
+                    ("w", In::from(500.0)),
+                    ("h", In::from(1000.0)),
+                    ("fit", In::from("width")),
+                ]),
+            );
+        }
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.width, v.height), (960.0, 1080.0));
+        assert_eq!(
+            v.backdrop.and_then(|b| b.rect),
+            Some(crate::query::Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: 960.0,
+                y1: 1920.0
+            })
+        );
     }
 }

@@ -249,3 +249,76 @@ describe("fakeCore — lot 4 (formes, texte, Transform)", () => {
     expect(d.bounds([r])).toEqual({ x0: 98, y0: 298, x1: 202, y1: 402 });
   });
 });
+
+interface NodeFs { readFileSync(p: URL): Uint8Array }
+const fs = (await import(/* @vite-ignore */ `node:${"fs"}`)) as NodeFs;
+const unknownFixture = (): Uint8Array => fs.readFileSync(new URL("./fixtures/element-inconnu.fake.json", import.meta.url));
+const ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+describe("fixture élément inconnu (S4, fausse liaison)", () => {
+  it("vue unknown avec sa boîte ; sans transform : identité et 100 × 100", () => {
+    const d = fakeCore.load(unknownFixture());
+    expect(d.element("h1")).toEqual({ id: "h1", kind: "unknown", transform: [1, 0, 0, 1, 100, 50], unknown: { sourceKind: "hologram", w: 300, h: 200 } });
+    expect(d.element("h2")).toEqual({ id: "h2", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "hologram", w: 100, h: 100 } });
+    expect(d.citedAssets()).toEqual([{ id: ABC, name: ABC, mime: "application/octet-stream", size: 0 }]);
+    expect(d.canUndo()).toBe(false);
+  });
+
+  it("Transform ne change que la matrice et ignore l'élément sans transform ; save réécrit les champs bruts", () => {
+    const d = fakeCore.load(unknownFixture());
+    const v = d.version();
+    expect(d.apply({ type: "Transform", ids: ["h2"], matrix: [1, 0, 0, 1, 10, 0] }).version).toBe(v);
+    d.apply({ type: "Transform", ids: ["h1"], matrix: [1, 0, 0, 1, 10, 0] });
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: unknown[] }[] };
+    const original = JSON.parse(new TextDecoder().decode(unknownFixture())) as { pages: { elements: Record<string, unknown>[] }[] };
+    const [h1, h2] = original.pages[0]?.elements ?? [];
+    expect(saved.pages[0]?.elements).toEqual([{ ...h1, transform: [1, 0, 0, 1, 110, 50] }, h2]);
+  });
+
+  it("hitTest le sélectionne, Delete le retire, la gomme l'ignore", () => {
+    const d = fakeCore.load(unknownFixture());
+    expect(d.hitTest("p1", 50, 50, 0)).toBe("h2");
+    expect(d.hitTest("p1", 150, 100, 0)).toBe("h1");
+    expect(d.apply({ type: "Erase", page: "p1", path: new Float32Array([0, 50, 400, 50]), radius: 10, mode: "object" }).removed).toEqual([]);
+    expect(d.apply({ type: "Delete", ids: ["h2"] }).removed).toEqual(["h2"]);
+    expect(d.elementIds("p1")).toEqual(["h1"]);
+  });
+
+  it("métadonnée mal formée au chargement : défauts champ par champ (K4)", () => {
+    const raw = {
+      pages: [{ id: "p1", elements: [{ id: "i1", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: ABC, w: 2, h: 2 } }] }],
+      assets: { [ABC]: { name: 3, mime: "", size: -1 } },
+    };
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(d.citedAssets()).toEqual([{ id: ABC, name: ABC, mime: "application/octet-stream", size: 0 }]);
+    expect(d.page("p1")?.backdrop).toBeNull();
+  });
+  it("image connue mal formée : illisible par element(), champs gardés tels quels au save (K8)", () => {
+    const bad = [
+      { id: "i1", kind: "image", transform: [1, 0, 0, 1, 0, 0] },
+      { id: "i2", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: ABC.toUpperCase(), w: 2, h: 2 } },
+      { id: "i3", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: ABC, w: 0, h: 2 } },
+    ];
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify({ pages: [{ id: "p1", elements: bad }] })));
+    for (const e of bad) expect(d.element(e.id)).toBeNull();
+    expect(d.elementIds("p1")).toEqual(["i1", "i2", "i3"]);
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: unknown[] }[] };
+    expect(saved.pages[0]?.elements).toEqual(bad);
+  });
+
+  it("balayage (K4) : le contenu d'un texte n'est pas cité, une empreinte en majuscules non plus", () => {
+    const d = fakeCore.load(unknownFixture());
+    const empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: empty, color: "#000000", size: 16, boxWidth: 100, boxHeight: 20 });
+    d.apply({ type: "CommitStroke", page: "p1", points: line(500), style: { color: ABC.toUpperCase(), width: 4 } });
+    expect(d.citedAssets().map((a) => a.id)).toEqual([ABC]);
+  });
+
+  it("inconnu à transform illisible : identité dans la vue, champ gardé tel quel au save (K8)", () => {
+    const raw = { pages: [{ id: "p1", elements: [{ id: "h3", kind: "hologram", transform: "abc", raw: { w: 5 } }] }] };
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(raw)));
+    expect(d.element("h3")).toEqual({ id: "h3", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "hologram", w: 100, h: 100 } });
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: unknown[] }[] };
+    expect(saved.pages[0]?.elements).toEqual(raw.pages[0]?.elements);
+  });
+});

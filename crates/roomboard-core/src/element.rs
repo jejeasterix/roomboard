@@ -3,6 +3,9 @@ use std::sync::Arc;
 
 use yrs::{Any, In, Map, MapRef, Number, Out, ReadTxn};
 
+use crate::asset::is_asset_id;
+use crate::query::Bounds;
+
 pub const SCHEMA: u32 = 1;
 pub const PAGE_WIDTH: f64 = 1920.0;
 pub const PAGE_HEIGHT: f64 = 1080.0;
@@ -18,12 +21,82 @@ pub struct StrokeStyle {
     pub width: f32,
 }
 
+/// Types d'élément que ce cœur sait lire ; tout autre `kind` est gardé et rendu comme élément inconnu (U3, K8).
+pub const KNOWN_KINDS: [&str; 4] = ["stroke", "shape", "text", "image"];
+/// Boîte d'un élément inconnu sans `w`, `h` lisibles (K8, HK7).
+pub const UNKNOWN_BOX: f64 = 100.0;
+/// Seul ajustement de fond écrit par cette version : largeur de la page (K6, HK1).
+pub const FIT_WIDTH: &str = "width";
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PageView {
     pub id: String,
     pub width: f64,
     pub height: f64,
     pub background: String,
+    pub backdrop: Option<BackdropView>,
+}
+
+/// Fond de page (U6, K6, K9) : valeurs brutes, `rect` calculé par le cœur (DAK4).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct BackdropView {
+    pub asset: String,
+    pub kind: String,
+    pub w: Option<f64>,
+    pub h: Option<f64>,
+    pub fit: String,
+    pub rect: Option<Bounds>,
+}
+
+/// Image (U5, K5) : boîte locale (0, 0)-(w, h), taille source en pixels.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ImageView {
+    pub asset: String,
+    pub w: f64,
+    pub h: f64,
+}
+
+/// Élément d'un `kind` inconnu (U3, K8) : dessiné comme un cadre ; `source_kind` = le `kind` lu.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnknownView {
+    pub source_kind: String,
+    pub w: f64,
+    pub h: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ElementView {
+    pub id: String,
+    pub kind: String,
+    pub transform: Transform,
+    /// Présent pour `stroke`, `shape`, `text` ; absent pour `image` et `unknown` (K8).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<StrokeStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<ShapeView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<TextView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown: Option<UnknownView>,
+}
+
+impl ElementView {
+    /// Vue sans champ propre ; chaque branche de `Document::element` complète le sien.
+    pub(crate) fn bare(id: &str, kind: &str, transform: Transform) -> ElementView {
+        ElementView {
+            id: id.to_string(),
+            kind: kind.to_string(),
+            transform,
+            style: None,
+            shape: None,
+            text: None,
+            image: None,
+            unknown: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -32,18 +105,6 @@ pub struct ShapeView {
     pub w: f64,
     pub h: f64,
     pub fill: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
-pub struct ElementView {
-    pub id: String,
-    pub kind: String,
-    pub transform: Transform,
-    pub style: StrokeStyle,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub shape: Option<ShapeView>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<TextView>,
 }
 
 /// Texte d'un élément (D14) ; le contenu vient du `Y.Text` de l'élément.
@@ -148,4 +209,131 @@ pub(crate) fn read_style<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<StrokeStyle>
         color: out_string(e.get(txn, "color"))?,
         width: out_f64(e.get(txn, "width"))? as f32,
     })
+}
+
+pub(crate) fn finite_positive(v: f64) -> bool {
+    v.is_finite() && v > 0.0
+}
+
+/// Image (K5) : transform et vue ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
+pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, ImageView)> {
+    if out_string(e.get(txn, "kind"))? != "image" {
+        return None;
+    }
+    Some((
+        out_transform(e.get(txn, "transform"))?,
+        ImageView {
+            asset: out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?,
+            w: out_f64(e.get(txn, "w")).filter(|v| finite_positive(*v))?,
+            h: out_f64(e.get(txn, "h")).filter(|v| finite_positive(*v))?,
+        },
+    ))
+}
+
+/// Élément inconnu (K8) : transform et vue ; `None` pour un `kind` connu. `kind` absent ou non textuel : `""`.
+/// Sans `transform` lisible : identité, rien n'est écrit ; boîte `w`, `h` s'ils sont tous deux finis > 0, sinon
+/// 100 × 100.
+pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, UnknownView)> {
+    let source_kind = out_string(e.get(txn, "kind")).unwrap_or_default();
+    if KNOWN_KINDS.contains(&source_kind.as_str()) {
+        return None;
+    }
+    let (w, h) = match (out_f64(e.get(txn, "w")), out_f64(e.get(txn, "h"))) {
+        (Some(w), Some(h)) if finite_positive(w) && finite_positive(h) => (w, h),
+        _ => (UNKNOWN_BOX, UNKNOWN_BOX),
+    };
+    Some((
+        out_transform(e.get(txn, "transform")).unwrap_or(IDENTITY),
+        UnknownView { source_kind, w, h },
+    ))
+}
+
+/// Champs bruts du fond d'une page (K9) ; `None` si la page n'a pas de champ `backdrop`.
+pub(crate) struct RawBackdrop {
+    pub asset: Option<String>,
+    pub kind: Option<String>,
+    pub w: Option<f64>,
+    pub h: Option<f64>,
+    pub fit: Option<String>,
+}
+
+/// Fond rangé en champs d'un `Y.Map` (jamais `Any::Map`, G4) ; une autre valeur donne des champs vides (K9).
+pub(crate) fn read_backdrop<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<RawBackdrop> {
+    Some(match page.get(txn, "backdrop")? {
+        Out::YMap(b) => RawBackdrop {
+            asset: out_string(b.get(txn, "asset")),
+            kind: out_string(b.get(txn, "kind")),
+            w: out_f64(b.get(txn, "w")),
+            h: out_f64(b.get(txn, "h")),
+            fit: out_string(b.get(txn, "fit")),
+        },
+        _ => RawBackdrop {
+            asset: None,
+            kind: None,
+            w: None,
+            h: None,
+            fit: None,
+        },
+    })
+}
+
+/// Vue du fond (K6, K9, DAK4) : `None` sans asset conforme ; `rect` calé sur la largeur de la page (page à hauteur
+/// infinie : coin en (0, 0), hauteur = h × largeur / w) dès que `w`, `h` et la largeur de page sont finis > 0 et la hauteur calculée finie, quel que soit `fit`.
+pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropView> {
+    let asset = r.asset.filter(|a| is_asset_id(a))?;
+    let w = r.w.filter(|v| finite_positive(*v));
+    let h = r.h.filter(|v| finite_positive(*v));
+    let page_width = Some(page_width).filter(|v| finite_positive(*v));
+    let rect = match (w, h, page_width) {
+        (Some(w), Some(h), Some(page_width)) => {
+            let y1 = h * page_width / w;
+            y1.is_finite().then_some(Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: page_width,
+                y1,
+            })
+        }
+        _ => None,
+    };
+    Some(BackdropView {
+        asset,
+        kind: r.kind.unwrap_or_default(),
+        w,
+        h,
+        fit: r.fit.unwrap_or_default(),
+        rect,
+    })
+}
+
+#[cfg(test)]
+mod backdrop_tests {
+    use super::*;
+
+    fn raw(w: f64, h: f64) -> RawBackdrop {
+        RawBackdrop {
+            asset: Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into()),
+            kind: Some("image".into()),
+            w: Some(w),
+            h: Some(h),
+            fit: Some("width".into()),
+        }
+    }
+
+    #[test]
+    fn backdrop_view_without_usable_page_width_has_no_rect() {
+        for width in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+            let v = backdrop_view(raw(1000.0, 500.0), width).expect("vue");
+            assert_eq!(v.rect, None, "largeur de page {width}");
+        }
+        let ok = backdrop_view(raw(1000.0, 500.0), 1920.0).expect("vue");
+        assert_eq!(ok.rect.map(|r| r.y1), Some(960.0));
+    }
+
+    #[test]
+    fn backdrop_view_with_overflowing_height_has_no_rect() {
+        let v = backdrop_view(raw(1e-300, 1e10), 1920.0).expect("vue");
+        assert_eq!(v.rect, None);
+        assert_eq!((v.w, v.h), (Some(1e-300), Some(1e10)));
+    }
 }

@@ -1,0 +1,25 @@
+{
+  "now": "2026-11-20T00:00:00Z",
+  "appVersion": "0.1.0",
+  "assets": {},
+  "pages": [
+    {
+      "id": "p1",
+      "backdrop": null,
+      "elements": [
+        {
+          "id": "h1",
+          "kind": "hologram",
+          "transform": [1, 0, 0, 1, 100, 50],
+          "raw": {
+            "w": 300,
+            "h": 200,
+            "layers": { "a": [1, 2] },
+            "refs": ["ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"]
+          }
+        },
+        { "id": "h2", "kind": "hologram", "raw": {} }
+      ]
+    }
+  ]
+}
