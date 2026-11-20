@@ -15,8 +15,8 @@ use crate::asset::{is_asset_id, AssetInfo, AssetRef};
 use crate::commands::{read_shape, read_text};
 use crate::element::{
     backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_image, read_style,
-    read_unknown, ElementView, ImageView, PageView, ShapeView, StrokeStyle, TextView, UnknownView,
-    DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    read_unknown, ElementView, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
+    PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
@@ -280,25 +280,17 @@ impl Document {
                 })
             }
             Some("image") => {
-                let i = read_image(&txn, e)?;
+                let (transform, image) = read_image(&txn, e)?;
                 Some(ElementView {
-                    image: Some(ImageView {
-                        asset: i.asset,
-                        w: i.w,
-                        h: i.h,
-                    }),
-                    ..ElementView::bare(id, "image", i.transform)
+                    image: Some(image),
+                    ..ElementView::bare(id, "image", transform)
                 })
             }
             _ => {
-                let u = read_unknown(&txn, e)?;
+                let (transform, unknown) = read_unknown(&txn, e)?;
                 Some(ElementView {
-                    unknown: Some(UnknownView {
-                        source_kind: u.source_kind,
-                        w: u.w,
-                        h: u.h,
-                    }),
-                    ..ElementView::bare(id, "unknown", u.transform)
+                    unknown: Some(unknown),
+                    ..ElementView::bare(id, "unknown", transform)
                 })
             }
         }

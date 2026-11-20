@@ -5,7 +5,7 @@ export type AssetId = string;
 export type AssetHasher = (blob: Blob) => Promise<AssetId>;
 
 const ASSET_ID = /^[0-9a-f]{64}$/;
-export const isAssetId = (s: string): boolean => ASSET_ID.test(s);
+export const isAssetId = (s: unknown): s is string => typeof s === "string" && ASSET_ID.test(s);
 
 const hex = (buf: ArrayBuffer): string => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
 

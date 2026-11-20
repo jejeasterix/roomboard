@@ -188,7 +188,11 @@ pub fn open(bytes: &[u8]) -> Result<Opened<'_>, FormatError> {
 
 /// Décode les deux moitiés : manifeste contrôlé, migration, décodage, accord du schéma (D24 : désaccord = `Corrupt`).
 pub fn load_parts(manifest: &[u8], ybin: &[u8]) -> Result<(Document, Manifest), FormatError> {
-    let manifest = check_manifest(manifest)?;
+    decode_checked(check_manifest(manifest)?, ybin)
+}
+
+/// Suite de `load_parts` pour un manifeste déjà contrôlé : migration, décodage, accord du schéma.
+fn decode_checked(manifest: Manifest, ybin: &[u8]) -> Result<(Document, Manifest), FormatError> {
     let (manifest, ybin) = migrate(manifest, ybin.to_vec())?;
     let doc = Document::from_update_v1(&ybin).map_err(|e| match e {
         DecodeError::Update(m) => FormatError::Corrupt(format!("état illisible : {m}")),
@@ -205,10 +209,10 @@ pub fn load_parts(manifest: &[u8], ybin: &[u8]) -> Result<(Document, Manifest), 
     Ok((doc, manifest))
 }
 
-/// Lit un `.roomboard` : `open`, puis `load_parts`.
+/// Lit un `.roomboard` : `open` (manifeste contrôlé une fois), puis décodage.
 pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
     let opened = open(bytes)?;
-    load_parts(&opened.parts.manifest, &opened.parts.ybin)
+    decode_checked(opened.manifest, &opened.parts.ybin)
 }
 
 /// Migration (D24) : appelée pour toute version ≤ la version connue. Rien à migrer en v1 ; une version < 1 n'a

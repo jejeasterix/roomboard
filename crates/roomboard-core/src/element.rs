@@ -215,37 +215,25 @@ pub(crate) fn finite_positive(v: f64) -> bool {
     v.is_finite() && v > 0.0
 }
 
-/// Champs d'une image (K5) ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
-pub(crate) struct ImageFields {
-    pub transform: Transform,
-    pub asset: String,
-    pub w: f64,
-    pub h: f64,
-}
-
-pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<ImageFields> {
+/// Image (K5) : transform et vue ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
+pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, ImageView)> {
     if out_string(e.get(txn, "kind"))? != "image" {
         return None;
     }
-    Some(ImageFields {
-        transform: out_transform(e.get(txn, "transform"))?,
-        asset: out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?,
-        w: out_f64(e.get(txn, "w")).filter(|v| finite_positive(*v))?,
-        h: out_f64(e.get(txn, "h")).filter(|v| finite_positive(*v))?,
-    })
+    Some((
+        out_transform(e.get(txn, "transform"))?,
+        ImageView {
+            asset: out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?,
+            w: out_f64(e.get(txn, "w")).filter(|v| finite_positive(*v))?,
+            h: out_f64(e.get(txn, "h")).filter(|v| finite_positive(*v))?,
+        },
+    ))
 }
 
-/// Champs lus d'un élément inconnu (K8) ; `None` pour un `kind` connu. `kind` absent ou non textuel : `""`.
-pub(crate) struct UnknownFields {
-    pub source_kind: String,
-    pub transform: Transform,
-    pub w: f64,
-    pub h: f64,
-}
-
+/// Élément inconnu (K8) : transform et vue ; `None` pour un `kind` connu. `kind` absent ou non textuel : `""`.
 /// Sans `transform` lisible : identité, rien n'est écrit ; boîte `w`, `h` s'ils sont tous deux finis > 0, sinon
 /// 100 × 100.
-pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<UnknownFields> {
+pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, UnknownView)> {
     let source_kind = out_string(e.get(txn, "kind")).unwrap_or_default();
     if KNOWN_KINDS.contains(&source_kind.as_str()) {
         return None;
@@ -254,12 +242,10 @@ pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<UnknownFie
         (Some(w), Some(h)) if finite_positive(w) && finite_positive(h) => (w, h),
         _ => (UNKNOWN_BOX, UNKNOWN_BOX),
     };
-    Some(UnknownFields {
-        source_kind,
-        transform: out_transform(e.get(txn, "transform")).unwrap_or(IDENTITY),
-        w,
-        h,
-    })
+    Some((
+        out_transform(e.get(txn, "transform")).unwrap_or(IDENTITY),
+        UnknownView { source_kind, w, h },
+    ))
 }
 
 /// Champs bruts du fond d'une page (K9) ; `None` si la page n'a pas de champ `backdrop`.
