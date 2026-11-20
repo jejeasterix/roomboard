@@ -49,6 +49,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
           </button>
         )}
       </For>
+      <div class="rb-pages-list">
       <For each={numbers()}>
         {(n) => (
           <button
@@ -62,6 +63,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
           </button>
         )}
       </For>
+      </div>
       <span id="pages" class="rb-pages-count">{pagesLabel(props.view())}</span>
     </nav>
   );
