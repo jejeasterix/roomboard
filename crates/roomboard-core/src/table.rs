@@ -1766,6 +1766,7 @@ pub(crate) mod tests {
                 id: id.clone(),
                 axis,
                 line: line.into(),
+                to: None,
             })
         };
         rm(&mut d, TableAxis::Row, &t.rows[0].id).expect("ligne");
@@ -1792,6 +1793,7 @@ pub(crate) mod tests {
             id: id.clone(),
             row: t.rows[1].id.clone(),
             col: t.cols[1].id.clone(),
+            to: None,
             fill: Some("#fef08a".into()),
         })
         .expect("jaune");
@@ -1860,6 +1862,7 @@ pub(crate) mod tests {
                 id: id.clone(),
                 row: r.clone(),
                 col: c.clone(),
+                to: None,
                 fill: f.map(str::to_string),
             })
         };
@@ -1907,6 +1910,7 @@ pub(crate) mod tests {
             id: id.clone(),
             row: t.rows[0].id.clone(),
             col: t.cols[0].id.clone(),
+            to: None,
             fill: Some("#bbf7d0".into()),
         })
         .expect("vert");
@@ -2144,5 +2148,449 @@ pub(crate) mod tests {
         let v = d.element("t1").expect("jamais invisible");
         assert_eq!(v.kind, "unknown");
         assert_eq!(v.unknown.map(|u| u.source_kind), Some("table".to_string()));
+    }
+
+    fn ids(t: &TableView) -> (Vec<String>, Vec<String>) {
+        (
+            t.rows.iter().map(|r| r.id.clone()).collect(),
+            t.cols.iter().map(|c| c.id.clone()).collect(),
+        )
+    }
+
+    fn merge(
+        d: &mut Document,
+        id: &str,
+        from: (&str, &str),
+        to: (&str, &str),
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::MergeTableCells {
+            id: id.into(),
+            from: (from.0.into(), from.1.into()),
+            to: (to.0.into(), to.1.into()),
+        })
+    }
+
+    fn shade(
+        d: &mut Document,
+        id: &str,
+        from: (&str, &str),
+        to: (&str, &str),
+        s: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::SetTableShade {
+            id: id.into(),
+            from: (from.0.into(), from.1.into()),
+            to: (to.0.into(), to.1.into()),
+            shade: s.map(str::to_string),
+        })
+    }
+
+    fn rm_rows(
+        d: &mut Document,
+        id: &str,
+        line: &str,
+        to: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::RemoveTableLine {
+            id: id.into(),
+            axis: TableAxis::Row,
+            line: line.into(),
+            to: to.map(str::to_string),
+        })
+    }
+
+    fn mv(row: &str, col: &str, rows: u32, cols: u32) -> TableMergeView {
+        TableMergeView {
+            row: row.into(),
+            col: col.into(),
+            rows,
+            cols,
+        }
+    }
+
+    /// F3 : « le contenu en haut à gauche reste » ; texte et remplissage des couvertes retirés ; une étape (F17).
+    #[test]
+    fn merge_keeps_the_top_left_content_in_one_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 2);
+        let (r, c) = ids(&view(&d, &id));
+        for (i, row) in r.iter().enumerate() {
+            for (j, col) in c.iter().enumerate() {
+                set(&mut d, &id, row, col, &format!("L{i}C{j}"), None).expect("texte");
+            }
+        }
+        d.apply(Command::SetTableFill {
+            id: id.clone(),
+            row: r[0].clone(),
+            col: c[1].clone(),
+            to: None,
+            fill: Some("#fef08a".into()),
+        })
+        .expect("jaune");
+        let before = view(&d, &id);
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[1], &c[1])).expect("fusion");
+        let t = view(&d, &id);
+        assert_eq!(t.merges, vec![mv(&r[0], &c[0], 2, 2)]);
+        assert_eq!(
+            t.cells.iter().map(|x| x.text.as_str()).collect::<Vec<_>>(),
+            vec!["L0C0", "L0C2", "L1C2"]
+        );
+        assert!(
+            t.cells.iter().all(|x| x.fill.is_none()),
+            "remplissage couvert retiré"
+        );
+        assert!(d.undo());
+        assert_eq!(
+            view(&d, &id),
+            before,
+            "une étape : l'annulation rend les couvertes"
+        );
+    }
+
+    /// F3 : moins de 2 cellules, ligne inconnue, recouvrement partiel d'une zone : `BadTable`, aucune écriture.
+    #[test]
+    fn merge_refuses_one_cell_unknown_lines_and_partial_overlap() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 3);
+        let (r, c) = ids(&view(&d, &id));
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[1], &c[0])).expect("zone verticale");
+        let w = writes(&d);
+        let cases: [((&str, &str), (&str, &str)); 3] = [
+            ((&r[2], &c[2]), (&r[2], &c[2])),
+            ((&r[0], &c[1]), ("absente", &c[2])),
+            ((&r[1], &c[0]), (&r[2], &c[1])),
+        ];
+        for (from, to) in cases {
+            assert_eq!(merge(&mut d, &id, from, to), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0);
+    }
+
+    /// F3, PC10 : une zone entièrement dedans est dissoute ; la même zone redemandée sans couverte à vider : aucune étape.
+    #[test]
+    fn merge_dissolves_inner_merges_and_an_identical_merge_is_no_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 2);
+        let (r, c) = ids(&view(&d, &id));
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[0], &c[1])).expect("zone");
+        let w = writes(&d);
+        let v = d.version();
+        assert_eq!(
+            merge(&mut d, &id, (&r[0], &c[0]), (&r[0], &c[1]))
+                .expect("même")
+                .version,
+            v
+        );
+        assert_eq!(w.since(), 0);
+        merge(&mut d, &id, (&r[1], &c[2]), (&r[0], &c[0])).expect("plus grande");
+        assert_eq!(view(&d, &id).merges, vec![mv(&r[0], &c[0], 2, 3)]);
+    }
+
+    /// F4, HB-21 : diviser retire le `span` ; le texte reste en haut à gauche ; une cellule qui n'est pas une ancre : refus.
+    #[test]
+    fn split_removes_the_span_and_refuses_a_non_anchor() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 2);
+        let (r, c) = ids(&view(&d, &id));
+        set(&mut d, &id, &r[0], &c[0], "Lundi", None).expect("texte");
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[0], &c[1])).expect("zone");
+        let split = |d: &mut Document, row: &str, col: &str| {
+            d.apply(Command::SplitTableCell {
+                id: id.clone(),
+                row: row.into(),
+                col: col.into(),
+            })
+        };
+        assert_eq!(split(&mut d, &r[0], &c[1]), Err(CommandError::BadTable));
+        assert_eq!(split(&mut d, &r[1], &c[2]), Err(CommandError::BadTable));
+        split(&mut d, &r[0], &c[0]).expect("division");
+        let t = view(&d, &id);
+        assert!(t.merges.is_empty());
+        assert_eq!(
+            t.cells
+                .iter()
+                .map(|x| (x.col.as_str(), x.text.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(c[0].as_str(), "Lundi")]
+        );
+        assert!(d.undo());
+        assert_eq!(view(&d, &id).merges, vec![mv(&r[0], &c[0], 1, 2)]);
+    }
+
+    /// F9, F12, S1 : ombrer une colonne (trois cellules) ; une zone dans la plage : son ancre seule ; rien à changer :
+    /// aucune étape ; révéler une cellule : une étape, l'annulation la remet ; couleur invalide : refus.
+    #[test]
+    fn shade_sets_the_anchors_of_a_range_and_reveal_is_one_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 3);
+        let (r, c) = ids(&view(&d, &id));
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[0], &c[1])).expect("zone");
+        shade(&mut d, &id, (&r[0], &c[2]), (&r[2], &c[2]), Some("#94a3b8")).expect("colonne");
+        shade(&mut d, &id, (&r[0], &c[1]), (&r[0], &c[1]), Some("#94a3b8")).expect("zone");
+        let shaded = |d: &Document| {
+            view(d, &id)
+                .cells
+                .iter()
+                .filter(|x| x.shade.is_some())
+                .map(|x| (x.row.clone(), x.col.clone()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            shaded(&d),
+            vec![
+                (r[0].clone(), c[0].clone()),
+                (r[0].clone(), c[2].clone()),
+                (r[1].clone(), c[2].clone()),
+                (r[2].clone(), c[2].clone())
+            ]
+        );
+        let w = writes(&d);
+        let v = d.version();
+        assert_eq!(
+            shade(&mut d, &id, (&r[0], &c[2]), (&r[2], &c[2]), Some("#94a3b8"))
+                .expect("même")
+                .version,
+            v
+        );
+        assert_eq!(w.since(), 0);
+        shade(&mut d, &id, (&r[0], &c[2]), (&r[0], &c[2]), None).expect("révélée");
+        assert_eq!(shaded(&d).len(), 3);
+        assert!(d.undo());
+        assert_eq!(shaded(&d).len(), 4, "annuler : il revient (S11)");
+        assert_eq!(
+            shade(
+                &mut d,
+                &id,
+                (&r[0], &c[2]),
+                (&r[0], &c[2]),
+                Some("pas une couleur !")
+            ),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    /// F15 : une pastille sur une plage remplit les ancres et les cellules simples, en une étape.
+    #[test]
+    fn fill_range_paints_anchors_and_simple_cells() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 2);
+        let (r, c) = ids(&view(&d, &id));
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[1], &c[0])).expect("zone");
+        d.apply(Command::SetTableFill {
+            id: id.clone(),
+            row: r[0].clone(),
+            col: c[0].clone(),
+            to: Some((r[1].clone(), c[1].clone())),
+            fill: Some("#bbf7d0".into()),
+        })
+        .expect("vert");
+        let filled: Vec<(String, String)> = view(&d, &id)
+            .cells
+            .iter()
+            .filter(|x| x.fill.is_some())
+            .map(|x| (x.row.clone(), x.col.clone()))
+            .collect();
+        assert_eq!(
+            filled,
+            vec![
+                (r[0].clone(), c[0].clone()),
+                (r[0].clone(), c[1].clone()),
+                (r[1].clone(), c[1].clone())
+            ]
+        );
+        assert!(d.undo());
+        assert!(view(&d, &id).cells.iter().all(|x| x.fill.is_none()));
+    }
+
+    /// F6, S5, HB-20 : ligne d'ancrage retirée → la zone glisse sur la première ligne restante (le contenu de l'ancre
+    /// part avec sa ligne) ; dernière ligne retirée → zone ramenée ; une seule cellule restante → plus de zone ; plage
+    /// de deux lignes = une étape ; tout retirer : refus. Même règle pour les colonnes.
+    #[test]
+    fn remove_lines_moves_or_trims_the_merges_they_touch() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 4);
+        let (r, c) = ids(&view(&d, &id));
+        set(&mut d, &id, &r[0], &c[0], "Haut", None).expect("texte");
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[2], &c[0])).expect("zone");
+        rm_rows(&mut d, &id, &r[0], None).expect("ligne d'ancrage");
+        let t = view(&d, &id);
+        assert_eq!(t.merges, vec![mv(&r[1], &c[0], 2, 1)]);
+        assert!(t.cells.iter().all(|x| x.text != "Haut"));
+        rm_rows(&mut d, &id, &r[2], None).expect("fin de zone");
+        assert!(
+            view(&d, &id).merges.is_empty(),
+            "une seule cellule : plus de zone"
+        );
+        assert!(d.undo() && d.undo());
+        let before = view(&d, &id);
+        rm_rows(&mut d, &id, &r[2], Some(r[1].as_str())).expect("plage");
+        let t = view(&d, &id);
+        assert_eq!(
+            t.rows.iter().map(|x| x.id.clone()).collect::<Vec<_>>(),
+            vec![r[0].clone(), r[3].clone()]
+        );
+        assert!(t.merges.is_empty());
+        assert!(d.undo());
+        assert_eq!(view(&d, &id), before, "plage de deux lignes : une étape");
+        rm_rows(&mut d, &id, &r[0], Some(r[2].as_str())).expect("zone entière");
+        assert!(view(&d, &id).merges.is_empty());
+        assert_eq!(
+            rm_rows(&mut d, &id, &r[3], Some(r[3].as_str())).map(|_| ()),
+            Err(CommandError::BadTable),
+            "plus aucune ligne"
+        );
+        assert_eq!(
+            rm_rows(&mut d, &id, &r[3], Some("absente")),
+            Err(CommandError::BadTable)
+        );
+        let id2 = add(&mut d, 4, 1);
+        let (r2, c2) = ids(&view(&d, &id2));
+        merge(&mut d, &id2, (&r2[0], &c2[0]), (&r2[0], &c2[2])).expect("zone large");
+        d.apply(Command::RemoveTableLine {
+            id: id2.clone(),
+            axis: TableAxis::Col,
+            line: c2[0].clone(),
+            to: None,
+        })
+        .expect("colonne d'ancrage");
+        assert_eq!(view(&d, &id2).merges, vec![mv(&r2[0], &c2[1], 1, 2)]);
+    }
+
+    /// F5, S5 : une ligne insérée entre l'ancre et la fin d'une zone l'agrandit (aucun code : plage par ids).
+    #[test]
+    fn insert_line_inside_a_merge_grows_it() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 3);
+        let (r, c) = ids(&view(&d, &id));
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[1], &c[0])).expect("zone");
+        d.apply(Command::InsertTableLine {
+            id: id.clone(),
+            axis: TableAxis::Row,
+            at: 1,
+        })
+        .expect("ligne");
+        assert_eq!(view(&d, &id).merges, vec![mv(&r[0], &c[0], 3, 1)]);
+    }
+
+    /// F7 : sur une ancre de deux lignes, la hauteur exigée vaut pour la zone, la dernière ligne grandit ; plus petite :
+    /// rien ; cellule simple : comme C10a.
+    #[test]
+    fn set_cell_on_a_tall_merge_grows_its_last_row() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 3);
+        let (r, c) = ids(&view(&d, &id));
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[1], &c[0])).expect("zone");
+        set(&mut d, &id, &r[0], &c[0], "long", Some(200.0)).expect("haute");
+        let h = |d: &Document| {
+            view(d, &id)
+                .rows
+                .iter()
+                .map(|x| x.height)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(h(&d), vec![64.0, 136.0, 64.0]);
+        let v = d.version();
+        assert_eq!(
+            set(&mut d, &id, &r[0], &c[0], "long", Some(100.0))
+                .expect("plus petite")
+                .version,
+            v
+        );
+        set(&mut d, &id, &r[2], &c[1], "x", Some(90.0)).expect("simple");
+        assert_eq!(h(&d), vec![64.0, 136.0, 90.0]);
+    }
+
+    /// S3, F30 : enregistrer, recharger, réenregistrer un tableau avec fusion et ombrage : mêmes octets, même vue.
+    #[test]
+    fn c10b_table_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let id = add(&mut d, 4, 3);
+        let (r, c) = ids(&view(&d, &id));
+        set(&mut d, &id, &r[0], &c[0], "Lundi", None).expect("texte");
+        merge(&mut d, &id, (&r[0], &c[0]), (&r[0], &c[1])).expect("zone");
+        shade(&mut d, &id, (&r[0], &c[2]), (&r[2], &c[2]), Some("#94a3b8")).expect("ombre");
+        let want = view(&d, &id);
+        assert_eq!(
+            (
+                want.merges.len(),
+                want.cells.iter().filter(|x| x.shade.is_some()).count()
+            ),
+            (1, 3)
+        );
+        let file =
+            save(&load(&save(&d, &meta).expect("save")).expect("load"), &meta).expect("resave");
+        for i in 0..30 {
+            let back = load(&file).expect("load");
+            assert_eq!(view(&back, &id), want, "vue au rechargement {i}");
+            assert!(
+                save(&back, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+        }
+    }
+
+    /// Test qui discrimine (GC11, F2) : chaque commande lit la couverture par `merges_of`, comme la vue que l'écran lit.
+    /// Patron écarté : une boucle « cellule couverte ? » par commande sur les `span` bruts (ou un `mergedInto` sur les
+    /// couvertes) ; elle prendrait pour zones les `span` que la règle F2 ignore (`r1:c2` recoupe la zone retenue,
+    /// `r2:c3` vise une ligne absente, `r3:c3` d'une seule cellule) : diviser `r1:c2` réussirait, ombrer `r1:c3`
+    /// ombrerait `r1:c2`, fusionner `r2:c3`–`r3:c3` serait refusé, retirer `r1` reporterait le `span` ignoré de
+    /// `r1:c2` sur une clé `r2:c2` neuve ; un `mergedInto` garderait la couverte `r3:c3`.
+    #[test]
+    fn commands_read_coverage_through_merges_of_only() {
+        let s = |r: &str, c: &str| vec![("span", In::Any(span_any(r, c)))];
+        let empty = || In::from(TextPrelim::new(""));
+        let fresh = || {
+            doc_with(three_by_three(MapPrelim::from([
+                ("r1:c1", cell(In::from(TextPrelim::new("A")), s("r2", "c2"))),
+                ("r1:c2", cell(empty(), s("r3", "c3"))),
+                ("r2:c3", cell(empty(), s("r9", "c3"))),
+                ("r3:c3", cell(empty(), s("r3", "c3"))),
+            ])))
+        };
+        let zone = mv("r1", "c1", 2, 2);
+        let mut d = fresh();
+        assert_eq!(view(&d, "t1").merges, vec![zone.clone()], "référence : la vue (F2)");
+        let w = writes(&d);
+        for (row, col) in [("r1", "c2"), ("r2", "c3"), ("r3", "c3")] {
+            assert_eq!(
+                d.apply(Command::SplitTableCell {
+                    id: "t1".into(),
+                    row: row.into(),
+                    col: col.into(),
+                }),
+                Err(CommandError::BadTable),
+                "{row}:{col} n'est pas une ancre pour la vue"
+            );
+        }
+        assert_eq!(w.since(), 0, "aucune écriture sur un refus");
+        shade(&mut d, "t1", ("r1", "c3"), ("r1", "c3"), Some("#94a3b8")).expect("cellule simple");
+        let shaded: Vec<(String, String)> = view(&d, "t1")
+            .cells
+            .iter()
+            .filter(|x| x.shade.is_some())
+            .map(|x| (x.row.clone(), x.col.clone()))
+            .collect();
+        assert_eq!(shaded, vec![("r1".to_string(), "c3".to_string())]);
+        merge(&mut d, "t1", ("r2", "c3"), ("r3", "c3")).expect("hors de la zone retenue");
+        assert_eq!(view(&d, "t1").merges, vec![zone, mv("r2", "c3", 2, 1)]);
+        assert_eq!(
+            cell_keys(&d, "t1"),
+            vec!["r1:c1", "r1:c2", "r1:c3", "r2:c3"],
+            "couverte retirée, jamais marquée"
+        );
+        let mut d = fresh();
+        rm_rows(&mut d, "t1", "r1", None).expect("ligne d'ancrage");
+        assert_eq!(view(&d, "t1").merges, vec![mv("r2", "c1", 1, 2)]);
+        assert_eq!(
+            cell_keys(&d, "t1"),
+            vec!["r2:c1", "r2:c3", "r3:c3"],
+            "seule la zone retenue est reportée"
+        );
     }
 }
