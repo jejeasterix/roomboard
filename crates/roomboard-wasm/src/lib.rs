@@ -13,6 +13,7 @@ use roomboard_core::element::{StrokeStyle, Transform};
 use roomboard_core::fill::FillTarget;
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
+use roomboard_core::image::{ImageParamsInput, TransparentInput};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
@@ -111,6 +112,46 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
         mime: mime.to_string(),
         size,
     }
+}
+
+/// Réglages d'image reçus de JS (C5, I6) : `crop` vide ou `[x, y, w, h]` ; `color` absente avec `transparent` vide, ou
+/// présente avec `[tolérance, plume, contigu (0 ou 1)]` ; toute autre forme : `BadImageParams`. Les valeurs sont
+/// contrôlées par le cœur.
+#[allow(clippy::too_many_arguments)]
+fn image_params_input(
+    crop: &[f64],
+    flip_x: bool,
+    flip_y: bool,
+    quarter_turns: f64,
+    brightness: f64,
+    contrast: f64,
+    color: Option<String>,
+    transparent: &[f64],
+) -> Result<ImageParamsInput, CommandError> {
+    let crop = match crop {
+        [] => None,
+        [x, y, w, h] => Some([*x, *y, *w, *h]),
+        _ => return Err(CommandError::BadImageParams),
+    };
+    let transparent = match (color, transparent) {
+        (None, []) => None,
+        (Some(color), [tolerance, soft, contiguous]) => Some(TransparentInput {
+            color,
+            tolerance: *tolerance,
+            soft: *soft,
+            contiguous: *contiguous != 0.0,
+        }),
+        _ => return Err(CommandError::BadImageParams),
+    };
+    Ok(ImageParamsInput {
+        crop,
+        flip_x,
+        flip_y,
+        quarter_turns,
+        brightness,
+        contrast,
+        transparent,
+    })
 }
 
 /// Valeur d'un patch `FormatText` venue de la page (C7, T7) ; `null` arrive en `None` (retrait). Lue par
@@ -551,6 +592,40 @@ impl Document {
         to_js(
             &self
                 .add_image_inner(page, asset_ref(asset, name, mime, size), [w, h], matrix)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Réglages d'une image (C5, I6) : état voulu complet et nouvelle matrice ; voir `image_params_input` pour la forme
+    /// de `crop`, `color` et `transparent`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_image_params(
+        &mut self,
+        id: &str,
+        crop: &[f64],
+        flip_x: bool,
+        flip_y: bool,
+        quarter_turns: f64,
+        brightness: f64,
+        contrast: f64,
+        color: Option<String>,
+        transparent: &[f64],
+        matrix: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let params = image_params_input(
+            crop,
+            flip_x,
+            flip_y,
+            quarter_turns,
+            brightness,
+            contrast,
+            color,
+            transparent,
+        )
+        .map_err(cmd_err)?;
+        to_js(
+            &self
+                .set_image_params_inner(id, params, matrix)
                 .map_err(cmd_err)?,
         )
     }
@@ -1192,6 +1267,21 @@ impl Document {
             asset,
             w: size[0],
             h: size[1],
+            matrix: m,
+        })
+    }
+
+    /// Réglages d'une image (C5, I6) : état voulu complet et nouvelle matrice.
+    pub fn set_image_params_inner(
+        &mut self,
+        id: &str,
+        params: ImageParamsInput,
+        matrix: &[f64],
+    ) -> Result<Change, CommandError> {
+        let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        self.run(Command::SetImageParams {
+            id: id.to_string(),
+            params,
             matrix: m,
         })
     }
@@ -1982,6 +2072,78 @@ mod tests {
         assert_eq!(
             d.add_image_inner(&p, png(), [1.0, 1.0], &[1.0, 0.0]),
             Err(CommandError::BadMatrix)
+        );
+    }
+
+    // C5 (I6) : réglages d'image par leur `_inner`.
+
+    #[test]
+    fn set_image_params_inner_writes_and_reads_back() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_image_inner(&p, png(), [640.0, 480.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        let params = image_params_input(
+            &[0.0, 0.0, 320.0, 240.0],
+            true,
+            false,
+            1.0,
+            10.0,
+            -10.0,
+            Some("#ffffff".into()),
+            &[10.0, 5.0, 1.0],
+        )
+        .expect("entrée");
+        let c = d
+            .set_image_params_inner(&id, params, &[1.0, 0.0, 0.0, 1.0, 5.0, 6.0])
+            .expect("réglages");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let i = d.core.element(&id).and_then(|e| e.image).expect("image");
+        assert_eq!(
+            (i.crop, i.flip_x, i.quarter_turns, i.brightness, i.contrast),
+            (Some([0, 0, 320, 240]), true, 1, 10, -10)
+        );
+        assert_eq!(
+            i.transparent
+                .map(|t| (t.color, t.tolerance, t.soft, t.contiguous)),
+            Some(("#ffffff".to_string(), 10, 5, true))
+        );
+        assert_eq!(
+            d.set_image_params_inner(&id, ImageParamsInput::default(), &[1.0, 0.0]),
+            Err(CommandError::BadMatrix)
+        );
+    }
+
+    #[test]
+    fn image_params_input_refuses_bad_shapes() {
+        let none: &[f64] = &[];
+        assert_eq!(
+            image_params_input(&[1.0, 2.0], false, false, 0.0, 0.0, 0.0, None, none),
+            Err(CommandError::BadImageParams)
+        );
+        assert_eq!(
+            image_params_input(
+                none,
+                false,
+                false,
+                0.0,
+                0.0,
+                0.0,
+                Some("#ffffff".into()),
+                &[10.0]
+            ),
+            Err(CommandError::BadImageParams)
+        );
+        assert_eq!(
+            image_params_input(none, false, false, 0.0, 0.0, 0.0, None, &[10.0, 0.0, 1.0]),
+            Err(CommandError::BadImageParams)
+        );
+        assert_eq!(
+            image_params_input(none, false, false, 0.0, 0.0, 0.0, None, none),
+            Ok(ImageParamsInput::default())
         );
     }
 
