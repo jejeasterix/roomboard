@@ -3,9 +3,11 @@
 //! dans un Worker jetable, DAB4) ; pages vectorielles en PDF (`pdf::write_pages`, C12, PF22, Worker jetable). Chaque
 //! fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS
 //! panique).
+//! C5 (U30, I17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
 use roomboard_core::format::Parts;
 use roomboard_formats::container::{self, AssetBytes};
 use roomboard_formats::pdf::{write_pages, DisplayList, ImageInput};
+use roomboard_formats::pixels::{self, Transparent};
 use wasm_bindgen::prelude::*;
 
 /// Fichier lu : manifeste, `document.ybin`, assets triés par empreinte, avertissements en français (K11).
@@ -168,6 +170,77 @@ pub fn write_pdf_pages(
 ) -> Result<Vec<u8>, JsError> {
     write_pdf_pages_inner(ops, texts, fonts, &font_sizes, images, &image_sizes)
         .map_err(|m| JsError::new(&m))
+}
+
+/// Couleur rendue transparente (C5, I17) : `px` RGBA modifié sur place ; le message d'erreur est le `Display` de
+/// `PixelError`.
+pub fn image_transparent_inner(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    t: &Transparent,
+) -> Result<(), String> {
+    pixels::transparent_color(px, w, h, t).map_err(|e| e.to_string())
+}
+
+pub fn image_adjust_inner(px: &mut [u8], brightness: i8, contrast: i8) {
+    pixels::adjust(px, brightness, contrast);
+}
+
+pub fn image_flood_fill_inner(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    seed: (u32, u32),
+    tolerance: u8,
+    rgb: [u8; 3],
+) -> Result<(), String> {
+    pixels::flood_fill(px, w, h, seed, tolerance, rgb).map_err(|e| e.to_string())
+}
+
+/// C5 (I17) : sans état ; `px` revient modifié côté JS (copie rendue par wasm-bindgen).
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn image_transparent(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    tolerance: u8,
+    soft: u8,
+    contiguous: bool,
+) -> Result<(), JsError> {
+    let t = Transparent {
+        rgb: [r, g, b],
+        tolerance,
+        soft,
+        contiguous,
+    };
+    image_transparent_inner(px, w, h, &t).map_err(|m| JsError::new(&m))
+}
+
+#[wasm_bindgen]
+pub fn image_adjust(px: &mut [u8], brightness: i8, contrast: i8) {
+    image_adjust_inner(px, brightness, contrast);
+}
+
+/// Pot sur pixels (prêt pour C6b) ; aucun appelant en C5.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn image_flood_fill(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    x: u32,
+    y: u32,
+    tolerance: u8,
+    r: u8,
+    g: u8,
+    b: u8,
+) -> Result<(), JsError> {
+    image_flood_fill_inner(px, w, h, (x, y), tolerance, [r, g, b]).map_err(|m| JsError::new(&m))
 }
 
 /// Première feuille d'un classeur (C10b, F23) : grille de textes, fusions en quadruplets, dimensions de la source.
@@ -390,5 +463,32 @@ mod tests {
             panic!("refus attendu");
         };
         assert!(e.starts_with("classeur illisible"), "{e}");
+    }
+
+    #[test]
+    fn image_transparent_inner_clears_white_and_refuses_bad_size() {
+        let t = roomboard_formats::pixels::Transparent {
+            rgb: [255, 255, 255],
+            tolerance: 10,
+            soft: 0,
+            contiguous: false,
+        };
+        let mut px = vec![255, 255, 255, 255, 0, 0, 0, 255];
+        image_transparent_inner(&mut px, 2, 1, &t).expect("calcul");
+        assert_eq!(px, vec![255, 255, 255, 0, 0, 0, 0, 255]);
+        assert_eq!(
+            image_transparent_inner(&mut px, 3, 1, &t),
+            Err("pixels incohérents (4 × largeur × hauteur octets attendus)".to_string())
+        );
+    }
+
+    #[test]
+    fn image_adjust_and_flood_fill_inner() {
+        let mut px = vec![100, 100, 100, 50];
+        image_adjust_inner(&mut px, 50, 0);
+        assert_eq!(px, vec![228, 228, 228, 50]);
+        let mut px = vec![10, 10, 10, 255, 10, 10, 10, 255];
+        image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, [1, 2, 3]).expect("calcul");
+        assert_eq!(px, vec![1, 2, 3, 255, 1, 2, 3, 255]);
     }
 }
