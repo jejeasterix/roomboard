@@ -1,10 +1,9 @@
 # État — usage-c12-pdf
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : Un PDF déposé ou importé devient un document dont chaque page est une page RoomBoard à fond `pdf-page` ; on annote par-dessus, et on exporte les pages RoomBoard en PDF vectoriel et le PDF annoté (texte et vecteurs d'origine conservés).
 Avancement : 17/17 tâches terminées
-Étage : 4 — depuis 2026-11-20 18:25
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c12-pdf   Branche : feat/usage-c12-pdf   Base : origin/main @ 1a756bd, puis origin/main @ 0dd7f1a (C6a) fusionné en 694cc93
 Branche principale locale au lancement : 1a756bd (avancée à 0dd7f1a par la fusion de C6a, OD84)
@@ -42,7 +41,7 @@ Table complète : docs/plans/usage-c12-pdf-PLAN.md (9f20988, 13 tâches, 39 lign
 | T17 correctifs tour 2 | terminée | 1/3 | 388e510 | src/app 293/293 |
 
 ## Terminé quand
-(a) importeur PDF + backdrop pdf-page, (b) export PDF annoté, (c) export vectoriel krilla · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste PDF (3 pages, annoter, exporter annoté, relire, enregistrer, rouvrir) · capture d'un PDF annoté dans docs/essais/ · PR mergée par fusion locale --no-ff et push sans --force
+(a) importeur PDF + backdrop pdf-page, (b) export PDF annoté, (c) export vectoriel krilla · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste PDF (3 pages, annoter, exporter annoté, relire, enregistrer, rouvrir) · capture d'un PDF annoté dans docs/essais/ · PR mergée par fusion locale --no-ff et push sans --force — fait : PR #21, main 7779629 ; verifier.sh --e2e OK sur d866e77 (web 1 972/1 972, C12 PDF : OK)
 
 ## Hypothèses à revoir
 17 au cadrage, dont 7 de niveau 1 (cadrage § hypothèses). Scénarios S1 (geste e2e complet), S2 (chiffré, >500 pages, 120 Mo), S3 (net à 400 %, Ctrl+Z), S4 (compatibilité, insertion, octets stables), S5 (vectoriel krilla).
@@ -57,7 +56,7 @@ Table complète : docs/plans/usage-c12-pdf-PLAN.md (9f20988, 13 tâches, 39 lign
 - Module formats à 98,3 % de son plafond : tout ajout côté krilla le fera dépasser.
 
 ## Portes
-ouvertes : — · passées : — (profil « Porte avant merge : non » ; aucune release)
+ouvertes : — · passées : — (merge sans porte, profil « Porte avant merge : non » ; aucune release, aucun tag)
 
 ## Pièges trouvés
 - T7 construit sur le plan 2e1b9be, avant la révision 9f20988 : le contrat du code (rasterPage, alive, rasterized, null) fait foi ; T9 et T13 s'y alignent.
@@ -80,4 +79,79 @@ ouvertes : — · passées : — (profil « Porte avant merge : non » ; aucune 
 1 écrit (apps/web/src/app, peu-profond : table blobs de l'export redondante avec AssetStore). Zone à 3 constats ouverts : crates/roomboard-core → audit de cette zone proposé (pas lancé).
 
 ## Notes du coffre à poser
-—
+
+Coffre de la VM en lecture seule (`coffre-lecture-seule.cjs` : code 0, « lecture-seule »). Trois notes, plus une ligne de la fiche projet à changer.
+
+### Note 1 — journal
+Chemin : `00_Journal/2026-11-20-roomboard-usage-c12-pdf-clos.md`
+
+```markdown
+---
+id: 2026-11-20-roomboard-usage-c12-pdf-clos
+type: journal
+summary: "RoomBoard usage C12 PDF clos : un PDF déposé s'ouvre en onglet, une page RoomBoard à fond pdf-page par page PDF (pdf.js à la demande, tuiles par palier) ; export PDF annoté par pdf-lib (texte d'origine gardé) avec superposition vectorielle krilla dans le module formats ; PR 21 fusionnée."
+created: 2026-11-20
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c12-pdf-etat.md (dépôt jejeasterix/roomboard, PR 21)"
+---
+
+# RoomBoard — usage C12 PDF, clos (OD85)
+
+- Livré : un PDF déposé ou importé s'ouvre dans un nouvel onglet (Q1) ; une page RoomBoard par page PDF, fond `pdf-page` (U6) rendu par pdf.js chargé à la demande, cache de tuiles de 1024 px par palier de zoom, placeholder gris pendant le rendu ; document construit hors historique (Ctrl+Z ne retire pas l'import).
+- Limites U26 : 500 pages au plus (les 500 premières, avec un avis), PDF chiffré refusé, 100 Mo sur le web.
+- Export « Exporter en PDF… » (barre des pages) : pages d'origine recopiées par pdf-lib (texte et vecteurs gardés, /Rotate et CropBox respectés), annotation superposée en `/Form` vectoriel écrit par krilla dans un Worker jetable, repli PNG si le module formats manque ; repli des pages d'origine en image si pdf-lib refuse le PDF, avec un avis.
+- Aller-retour `.roomboard` : l'original est un seul asset ; un fichier d'avant C12 s'ouvre toujours.
+- Tailles : module principal 1 084 202 o (plafond 1 572 864) ; module formats 859 580 → 3 092 294 o (plafond 3 145 728, marge 53 Ko).
+- 16 tâches (13 du plan, 1 correctif trouvé par l'essai navigateur, 2 correctifs de relecture) ; fusion de C6a au milieu (4 conflits, ajouts côte à côte).
+- `verifier.sh --e2e` OK (essai C12 : dépôt d'un PDF de 3 pages généré, annotation, export relu, redépôt, enregistrer et rouvrir) ; capture `docs/essais/c12-pdf-annote.png`.
+```
+
+### Note 2 — décision
+Chemin : `02_Decisions/0255-roomboard-pdf-fond-tuiles-export-superpose.md` (numéro à ajuster si 0255 est pris)
+
+```markdown
+---
+id: 0255-roomboard-pdf-fond-tuiles-export-superpose
+type: decision
+summary: "RoomBoard : un PDF importé reste un seul asset rendu par pdf.js dans la page (port PdfEngine, tuiles par palier), et l'export annoté superpose une page vectorielle krilla (module formats, Worker jetable) aux pages d'origine recopiées par pdf-lib ; prise par l'agent."
+created: 2026-11-20
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c12-pdf-cadrage.md § DAPF1 à DAPF5, dépôt jejeasterix/roomboard"
+---
+
+# RoomBoard — PDF : fond rendu à la demande, export par superposition (prise par l'agent)
+
+- DAPF1 : pdf.js tourne dans la page avec son propre Worker, chargé par import dynamique, derrière un port `PdfEngine` ; le moteur ne l'importe jamais.
+- DAPF2 : cache de tuiles de 1024 px par palier (puissance de 2 de zoom × dpr), peint sans attente ; capacité max(32, tuiles visibles + 8) pour ne jamais évincer l'image en cours.
+- DAPF3 : un seul export, producteur de superposition interchangeable (PNG ou vectoriel) ; l'export travaille sur une copie prise au départ.
+- DAPF4 : le vectoriel s'obtient en enregistrant le rendu Canvas 2D (`RecordingContext2D`) en flux de nombres, écrit en PDF par krilla dans le module `formats`, appelé par un Worker jetable (une panique de krilla ne touche pas le module qui enregistre les `.roomboard`).
+- DAPF5 : le document d'un PDF est construit hors historique (`Document::from_pdf_pages`).
+```
+
+### Note 3 — piège
+Chemin : `04_Pieges/pdfjs-6-document-sans-destroy.md`
+
+```markdown
+---
+id: pdfjs-6-document-sans-destroy
+type: piege
+summary: "pdfjs-dist 6.x : le document rendu par getDocument().promise n'a plus de destroy() ; seule la tâche de chargement l'a. Appeler doc.destroy() lève, et une tâche dont la promesse rejette garde les octets dans le worker tant qu'on ne la détruit pas."
+created: 2026-11-20
+project: "[[roomboard]]"
+tags: [projet/roomboard, piege/pdfjs]
+evidence: "jejeasterix/roomboard apps/web/src/platform/pdf-load.ts (openPdfDocument) et pdf-load.test.ts ; essai scripts/essais/c12-pdf-navigateur.mjs (« dépôt abandonné (e.destroy is not a function) ») ; PR 21"
+---
+
+# pdfjs-dist 6 : `destroy()` est sur la tâche, pas sur le document
+
+- Symptôme : « doc.destroy is not a function » ; dans RoomBoard, le redépôt d'un PDF n'ouvrait aucun onglet.
+- Cause : en pdfjs-dist 6.5.438, `PDFDocumentProxy` n'expose plus `destroy` ; `PDFDocumentLoadingTask.destroy()` libère le worker.
+- Correction : garder la tâche, `const task = getDocument({...}); const doc = await task.promise;` puis greffer `destroy: () => task.destroy()` ; si `task.promise` rejette (PDF chiffré ou invalide), appeler `task.destroy()` avant de relancer l'erreur, sinon les octets restent dans le worker.
+- Même version : l'option `isEvalSupported` n'existe plus.
+```
+
+### Fiche projet
+Fichier : `01_Projets/roomboard.md`, ligne 21 : remplacer « ; C12 PDF en cours. » par « ; C12 PDF (import en onglet, fond pdf-page, export annoté pdf-lib + krilla) clos (PR 21, `main` 7779629) — voir [[2026-11-20-roomboard-usage-c12-pdf-clos]] et [[0255-roomboard-pdf-fond-tuiles-export-superpose]]. » ; et ajouter `- [[2026-11-20-roomboard-usage-c12-pdf-clos]]` après la ligne `- [[2026-11-20-roomboard-usage-c6a-pot-clos]]`.
