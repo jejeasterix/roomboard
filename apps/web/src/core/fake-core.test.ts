@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Command, CoreDocument, TextAttrsPatch } from "./api";
-import { fakeCore } from "./fake-core";
+import { fakeCore, KNOWN_KINDS } from "./fake-core";
 
 const style = { color: "#000000", width: 4 };
 const line = (y: number): Float32Array => new Float32Array([0, y, 0.5, 50, y, 0.5, 100, y, 0.5]);
@@ -498,5 +498,53 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     const level = { ...squares(40, 0), futur: 1 };
     d.apply({ type: "SetGrid", page: p, grid: { visible: true, snap: true, above: false, levels: [level] } });
     expect(saveJson(d).pages[0]?.["grid"]).toEqual({ visible: true, snap: true, above: false, levels: [squares(40, 0)] });
+  });
+});
+
+describe("fakeCore — C10a (tableau)", () => {
+  const saveJson = (d: CoreDocument): { pages: { elements: Record<string, unknown>[] }[] } =>
+    JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: Record<string, unknown>[] }[] };
+
+  it("chaque kind connu a une vue de son kind et une boîte (pendant de every_known_kind_has_view_and_geom, I3)", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0] ?? "";
+    const pen = { color: "#000000", width: 4 };
+    const make: Readonly<Record<string, () => Command>> = {
+      stroke: () => ({ type: "CommitStroke", page: p, points: new Float32Array([10, 10, 0.5, 60, 60, 0.5]), style: pen }),
+      shape: () => ({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 50, y1: 40, style: pen, fill: null }),
+      text: () => ({ type: "SetText", page: p, id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }),
+      image: () => ({ type: "AddImage", page: p, asset: { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 }, w: 64, h: 48, matrix: [1, 0, 0, 1, 0, 0] }),
+      table: () => ({ type: "AddTable", page: p, x: 0, y: 0, cols: 2, rows: 2, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }),
+    };
+    for (const kind of KNOWN_KINDS) {
+      const build = make[kind];
+      if (build === undefined) throw new Error(`kind sans fabrique : ${kind}`);
+      const id = d.apply(build()).ids[0] ?? "";
+      expect(d.element(id)?.kind, kind).toBe(kind);
+      expect(d.bounds([id]), kind).not.toBeNull();
+    }
+  });
+
+  it("JSON : un tableau enregistré se relit à l'identique, cellules comprises", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0] ?? "";
+    const id = d.apply({ type: "AddTable", page: p, x: 10, y: 20, cols: 2, rows: 1, colWidth: 240, rowHeight: 64, color: "#1d4ed8", size: 36 }).ids[0] ?? "";
+    const v = d.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    d.apply({ type: "SetTableCell", id, row: v.table.rows[0]?.id ?? "", col: v.table.cols[1]?.id ?? "", content: "B" });
+    const r = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0"));
+    expect(r.element(id)).toEqual(d.element(id));
+    expect(saveJson(r).pages[0]?.elements[0]?.["kind"]).toBe("table");
+  });
+
+  it("JSON : tableau mal formé (aucune ligne) : cadre inconnu 100 × 100, réécrit tel quel", () => {
+    const json = { pages: [{ id: "p1", elements: [{ id: "t1", kind: "table", transform: [1, 0, 0, 1, 10, 20], table: { cols: [{ id: "c1", width: 240 }], rows: [], cells: {} } }] }] };
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(json)));
+    expect(d.element("t1")).toEqual({ id: "t1", kind: "unknown", transform: [1, 0, 0, 1, 10, 20], unknown: { sourceKind: "table", w: 100, h: 100 } });
+    // Brut gardé (jamais perdu ni rendu invisible) : réécrit sous `raw.table`.
+    expect(saveJson(d).pages[0]?.elements[0]?.["raw"]).toEqual({ table: json.pages[0]?.elements[0]?.table });
+    const again = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0"));
+    expect(again.element("t1")).toEqual(d.element("t1"));
+    expect(saveJson(again)).toEqual(saveJson(d));
   });
 });
