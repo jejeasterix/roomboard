@@ -23,7 +23,7 @@ import { measureWith, type Measure } from "./engine/text-layout";
 import { browserFallbackDeps } from "./platform/host-repli";
 import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
-import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
+import { launchFiles, linkMedia, loadTauriPorts, onQuitRequested, quitApp, relinkMedia, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
 import { browserSystemClipboard, createClipboard, handleCopy } from "./platform/clipboard";
 import { handlePaste } from "./platform/paste";
@@ -226,6 +226,13 @@ async function start(): Promise<void> {
     dropReady: () => prepared.dropReady(),
     // L'ordre écoute du dépôt puis `launch_files` est tenu par le workspace (T98) : `launchFiles` n'est appelé que là.
     ...(ipc === null ? {} : { launch: () => launchFiles(ipc) }),
+    // Médias liés (C14) : coque seulement ; `linkMedia` de l'hôte rend l'empreinte, l'URL vient du protocole d'assets.
+    ...(ipc === null || ports === null
+      ? {}
+      : {
+          linkMedia: async (p: string) => ({ id: await linkMedia(ipc, p), url: ports.assetUrl(p) }),
+          relinkMedia: (p: string, size: number) => relinkMedia(ipc, p, size),
+        }),
     now: () => new Date().toISOString(),
     newId: () => `t${++tabCount}`,
   });
