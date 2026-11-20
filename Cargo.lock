@@ -386,6 +386,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "roomboard-formats-wasm"
+version = "0.1.0"
+dependencies = [
+ "roomboard-core",
+ "roomboard-formats",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "roomboard-shell"
 version = "0.1.0"
 
