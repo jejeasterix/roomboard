@@ -208,6 +208,8 @@ async function scenario(page, url, { captures, tmp }) {
   const entries = zipEntries(bytes1);
   check(entries.has(entry), `S3 : le fichier contient ${entry}`);
   check(Buffer.compare(entries.get(entry), png) === 0, "S3 : l'entrée a les octets du PNG déposé (empreinte SHA-256 vérifiée)");
+  const file2 = await saveTo("image-2.roomboard");
+  check(Buffer.compare(await readFile(file2), bytes1) === 0, "S3 : enregistrer encore le même onglet donne les mêmes octets");
   const before3 = await tabs();
   const chooser = page.waitForEvent("filechooser");
   await page.keyboard.press("Control+o");
@@ -220,8 +222,7 @@ async function scenario(page, url, { captures, tmp }) {
     await page.screenshot({ path });
     console.log(`capture : ${path}`);
   }
-  const file2 = await saveTo("image-2.roomboard");
-  check(Buffer.compare(await readFile(file2), bytes1) === 0, "S3 : enregistrer encore donne les mêmes octets");
+
 
   // S4 : .roomboard déposé → nouvel onglet avec ses images, onglet d'origine intact.
   await page.locator(TAB).nth(0).click();
