@@ -485,6 +485,34 @@ describe("session — fond PDF (C12, PF15)", () => {
     s.dispose();
   });
 
+  it("après deactivate, un redimensionnement à 0 x 0 (ResizeObserver) ne rouvre pas le PDF (relecture T16)", async () => {
+    const seen: Array<() => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          seen.push(cb);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    try {
+      const pdf = pdfEngine();
+      const s = await pdfSession({ pdf: pdf.engine });
+      await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+      s.deactivate();
+      Object.defineProperty(s.stage, "clientWidth", { configurable: true, value: 0 });
+      Object.defineProperty(s.stage, "clientHeight", { configurable: true, value: 0 });
+      for (const cb of seen) cb();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(pdf.open).toHaveBeenCalledTimes(1);
+      s.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("sans moteur PDF (amorce partielle) : data-fond « echec »", async () => {
     const s = await pdfSession();
     await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("echec"), { timeout: 5000 });

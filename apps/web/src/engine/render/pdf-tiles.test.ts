@@ -231,6 +231,17 @@ describe("tuiles PDF par palier (PF13, DAPF2)", () => {
     expect(slow.destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("vue vide (0 x 0) : rien n'est ouvert ni dessiné, « pret » ; le PDF ne s'ouvre qu'à une vue visible (deactivate, ResizeObserver)", () => {
+    const { file } = fakeFile();
+    const open = vi.fn(async () => file);
+    const tiles = createPdfTiles(open, () => undefined);
+    const { c, drawn } = ctx();
+    expect(tiles.paint(c, B, CAM, { w: 0, h: 0, dpr: 1 })).toBe("pret");
+    expect([open.mock.calls.length, drawn.length]).toEqual([0, 0]);
+    tiles.paint(c, B, CAM, VIEW);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
   it("dispose : rendus annulés, bitmaps fermés, PDF détruit ; un PDF ouvert après dispose est détruit aussitôt", async () => {
     const { file, calls, destroy } = fakeFile();
     const tiles = createPdfTiles(async () => file, () => undefined);

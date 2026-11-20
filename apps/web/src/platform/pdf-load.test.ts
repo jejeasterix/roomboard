@@ -12,4 +12,20 @@ describe("pdf-load : ouverture d'un document pdf.js", () => {
     expect(doc.numPages).toBe(1);
     await expect(doc.destroy()).resolves.toBeUndefined();
   });
+
+  it("PDF invalide : la tâche de chargement est détruite et l'erreur d'origine est rendue (relecture T16)", async () => {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    let destroyed = 0;
+    const open = openPdfDocument(
+      (p) => {
+        const task = pdfjs.getDocument(p);
+        const destroy = task.destroy.bind(task);
+        return { promise: task.promise, destroy: () => (destroyed++, destroy()) };
+      },
+      new Uint8Array([1, 2, 3, 4]),
+      {},
+    );
+    await expect(open).rejects.toMatchObject({ name: "InvalidPDFException" });
+    expect(destroyed).toBe(1);
+  });
 });
