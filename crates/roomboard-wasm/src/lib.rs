@@ -1985,6 +1985,68 @@ mod tests {
         );
     }
 
+    // C5 (I6) : réglages d'image par leur `_inner`.
+
+    #[test]
+    fn set_image_params_inner_writes_and_reads_back() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_image_inner(&p, png(), [640.0, 480.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        let params = image_params_input(
+            &[0.0, 0.0, 320.0, 240.0],
+            true,
+            false,
+            1.0,
+            10.0,
+            -10.0,
+            Some("#ffffff".into()),
+            &[10.0, 5.0, 1.0],
+        )
+        .expect("entrée");
+        let c = d
+            .set_image_params_inner(&id, params, &[1.0, 0.0, 0.0, 1.0, 5.0, 6.0])
+            .expect("réglages");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let i = d.core.element(&id).and_then(|e| e.image).expect("image");
+        assert_eq!(
+            (i.crop, i.flip_x, i.quarter_turns, i.brightness, i.contrast),
+            (Some([0, 0, 320, 240]), true, 1, 10, -10)
+        );
+        assert_eq!(
+            i.transparent.map(|t| (t.color, t.tolerance, t.soft, t.contiguous)),
+            Some(("#ffffff".to_string(), 10, 5, true))
+        );
+        assert_eq!(
+            d.set_image_params_inner(&id, ImageParamsInput::default(), &[1.0, 0.0]),
+            Err(CommandError::BadMatrix)
+        );
+    }
+
+    #[test]
+    fn image_params_input_refuses_bad_shapes() {
+        let none: &[f64] = &[];
+        assert_eq!(
+            image_params_input(&[1.0, 2.0], false, false, 0.0, 0.0, 0.0, None, none),
+            Err(CommandError::BadImageParams)
+        );
+        assert_eq!(
+            image_params_input(none, false, false, 0.0, 0.0, 0.0, Some("#ffffff".into()), &[10.0]),
+            Err(CommandError::BadImageParams)
+        );
+        assert_eq!(
+            image_params_input(none, false, false, 0.0, 0.0, 0.0, None, &[10.0, 0.0, 1.0]),
+            Err(CommandError::BadImageParams)
+        );
+        assert_eq!(
+            image_params_input(none, false, false, 0.0, 0.0, 0.0, None, none),
+            Ok(ImageParamsInput::default())
+        );
+    }
+
     #[test]
     fn set_backdrop_inner_then_clear() {
         let mut d = Document::blank();
