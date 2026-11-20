@@ -6,8 +6,9 @@
  * aperçu (`<id>#apercu`), calculé par le lanceur de pixels ; tant que le bitmap de la clé voulue manque, le dernier de
  * l'emplacement reste dessiné (l'aperçu retombe sur celui de l'élément, l'élément sur l'image brute) : aucun clignotement.
  * Un résultat dont la clé n'est plus celle voulue par son emplacement est fermé à l'arrivée. `ready` (branché sur
- * `engine.redraw()`) est appelé quand un bitmap arrive. Une instance par onglet : `dispose` ferme les bitmaps, et ferme
- * aussitôt ceux qui arrivent après.
+ * `engine.redraw()`) est appelé quand un bitmap arrive. `data-pixels` (I33) ne compte que les images dessinées par la
+ * dernière scène (`beginScene`, `endScene`) ; les emplacements des autres restent, rien n'est fermé (I22). Une instance par
+ * onglet : `dispose` ferme les bitmaps, et ferme aussitôt ceux qui arrivent après.
  */
 import type { ImageElement } from "../../core/api";
 import type { AssetStore } from "../../core/asset-store";
@@ -25,6 +26,10 @@ export interface ImageSource {
   forget?(ids: readonly string[]): void;
   /** C5 : séance fermée, l'aperçu de l'élément est fini : son emplacement `<id>#apercu` est jeté. */
   dropPreview?(id: string): void;
+  /** C5 (I33) : une scène commence ; les éléments passés à `bitmapOf` jusqu'à `endScene` sont ceux qu'elle dessine. */
+  beginScene?(): void;
+  /** C5 (I33) : la scène est finie ; `pixelState` ne compte plus que ses images. */
+  endScene?(): void;
 }
 
 export type BitmapLike = CanvasImageSource & { close?(): void };
@@ -37,6 +42,8 @@ export interface ImageCache extends ImageSource {
   colorAt(asset: string, x: number, y: number): string | null;
   forget(ids: readonly string[]): void;
   dropPreview(id: string): void;
+  beginScene(): void;
+  endScene(): void;
   pixelState(): PixelState;
   dispose(): void;
 }
@@ -62,6 +69,9 @@ interface Slot {
   adopter?: string;
 }
 
+const PREVIEW = "#apercu";
+/** Élément d'un emplacement (`<id>` ou `<id>#apercu`). */
+const ownerOf = (name: string): string => (name.endsWith(PREVIEW) ? name.slice(0, -PREVIEW.length) : name);
 const hex2 = (v: number): string => v.toString(16).padStart(2, "0");
 const sizeOf = (b: BitmapLike): readonly [number, number] | null => {
   const s = b as { readonly width?: unknown; readonly height?: unknown };
@@ -99,11 +109,17 @@ export function createImageCache(
   let warned = false;
   let disposed = false;
   let state: PixelState = "";
+  /** Éléments dessinés par la dernière scène finie ; null tant qu'aucune n'est signalée : tous comptent. */
+  let shown: ReadonlySet<string> | null = null;
+  /** Éléments dessinés par la scène en cours (entre `beginScene` et `endScene`). */
+  let marking: Set<string> | null = null;
 
   const publish = (): void => {
-    const hasBitmap = [...slots.values()].some((s) => s.bitmap !== null);
     if (slots.size === 0) lastFailed = false; // plus d'image retouchée : un échec passé ne s'affiche plus (I33)
-    const next: PixelState = running > 0 ? "attente" : lastFailed ? "echec" : hasBitmap ? "pret" : "";
+    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements des éléments de la dernière scène.
+    const visible = [...slots].filter(([n]) => shown === null || shown.has(ownerOf(n))).map(([, s]) => s);
+    const hasBitmap = visible.some((s) => s.bitmap !== null);
+    const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : lastFailed ? "echec" : hasBitmap ? "pret" : "";
     if (next === state) return;
     state = next;
     opts.onState?.(next);
@@ -151,6 +167,8 @@ export function createImageCache(
 
   /** Lance le calcul de `key` pour l'emplacement `name` (une copie du bitmap brut part quand le calcul part). */
   function compute(runner: PixelRunner, name: string, s: Slot, key: string, el: ImageElement, raw: BitmapLike): void {
+    // L'aperçu change de clé : l'élément qui attendait l'ancienne (Valider) n'attend plus, il calculera la sienne.
+    release(s);
     s.wanted = key;
     running++;
     publish();
@@ -180,10 +198,15 @@ export function createImageCache(
         // Valider pendant le calcul : le résultat de l'aperçu va à l'élément, sans recalcul (I22).
         const heir = cur.adopter === undefined ? undefined : slots.get(cur.adopter);
         if (cur.adopter !== undefined) {
+          // Pas `drop` : sa levée de l'adoption remettrait `heir.wanted` à null et jetterait ce résultat. L'emplacement de
+          // l'aperçu disparaît ; son ancien bitmap, que plus rien ne dessine, est fermé.
           slots.delete(name);
+          delete cur.adopter;
+          if (cur.bitmap !== heir?.bitmap) cur.bitmap?.close?.();
           if (heir === undefined || heir.wanted !== key) {
             out.close();
             publish();
+            if (!disposed) ready(); // l'élément est redessiné : il relance son calcul s'il en faut un
             return;
           }
         }
@@ -218,6 +241,7 @@ export function createImageCache(
   return {
     bitmap,
     bitmapOf(el, preview = false) {
+      marking?.add(el.id);
       const i = el.image;
       sizes.set(i.asset, [i.w, i.h]);
       const raw = bitmap(i.asset);
@@ -256,7 +280,8 @@ export function createImageCache(
         // Valider avant l'arrivée de l'aperçu de même clé : l'élément attend ce calcul au lieu d'en lancer un second.
         twin.adopter = name;
         s.wanted = key;
-        return s.bitmap ?? raw;
+        // Ce que montrait l'aperçu (son bitmap, sinon celui de l'élément) reste dessiné jusqu'à l'arrivée (I22).
+        return twin.bitmap ?? s.bitmap ?? raw;
       }
       // Élément dessiné sans aperçu : l'aperçu est fini ; son emplacement et son calcul en route sont jetés.
       if (!preview && twin !== undefined) drop(twinName);
@@ -283,6 +308,15 @@ export function createImageCache(
     },
     dropPreview(id) {
       drop(`${id}#apercu`);
+      publish();
+    },
+    beginScene() {
+      marking = new Set();
+    },
+    endScene() {
+      if (marking === null) return;
+      shown = marking;
+      marking = null;
       publish();
     },
     pixelState: () => state,

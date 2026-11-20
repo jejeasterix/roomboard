@@ -404,9 +404,11 @@ export function createEngine(deps: EngineDeps): Engine {
     const before = doc.pageIds();
     const restore = which === "undo" ? lastDeleted : null;
     lastDeleted = null;
+    const version = doc.version();
     const change = which === "undo" ? doc.undo() : doc.redo();
     renderer.invalidate(change);
-    imageEdit?.changed(doc.version());
+    // Rien à annuler ou à rétablir : aucune écriture, le brouillon de la retouche reste (I31).
+    if (doc.version() !== version) imageEdit?.changed(doc.version());
     error = null;
     followPages(before, true);
     selectTool.prune();
