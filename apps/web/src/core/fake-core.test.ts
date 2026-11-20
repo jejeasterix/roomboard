@@ -601,6 +601,12 @@ describe("fakeCore — C10b (tableau)", () => {
     expect(v.table.merges).toEqual([{ row: "r1", col: "c1", rows: 2, cols: 2 }]);
     const back = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0")).element("t1");
     expect(back).toEqual(v);
+    // Constat T13 : les span ignorés restent tels quels dans le JSON ré-enregistré.
+    type Saved = { pages: { elements: { table?: { cells?: Record<string, { span?: unknown }> } }[] }[] };
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as Saved;
+    const cells = saved.pages[0]?.elements[0]?.table?.cells;
+    expect(cells?.["r1:c2"]?.span).toEqual(["r3", "c3"]);
+    expect(cells?.["r2:c3"]?.span).toEqual(["r9", "c3"]);
   });
 
   it("JSON : shade lu, invalide retiré (PC13) ; une cellule seulement ombrée est listée", () => {
@@ -614,5 +620,47 @@ describe("fakeCore — C10b (tableau)", () => {
       { row: "r1", col: "c1", text: "", fill: null, shade: "#94a3b8" },
       { row: "r1", col: "c2", text: "B", fill: null, shade: null },
     ]);
+  });
+});
+
+describe("fakeCore — ImportTable (constat T13, mêmes cas que table.rs)", () => {
+  type Imp = Extract<Command, { type: "ImportTable" }>;
+  const imp = (d: CoreDocument, over: Partial<Imp> = {}): Imp => ({
+    type: "ImportTable", page: firstPage(d), matrix: [1, 0, 0, 1, 0, 0], colWidth: 240, rowHeights: [64, 64], cols: 2,
+    cells: ["", "", "", ""], merges: [], color: "#000000", size: 36, ...over,
+  });
+  const refusal = (f: () => unknown): string => {
+    try {
+      f();
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    return "aucun refus";
+  };
+
+  it("F18 : ancre de zone vide : la fusion est dans la vue", () => {
+    const d = fakeCore.blank();
+    const id = d.apply(imp(d, { cells: ["", "caché", "a", "b"], merges: [[0, 0, 1, 2]] })).ids[0] ?? "";
+    const v = d.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(v.table.merges).toEqual([{ row: v.table.rows[0]?.id, col: v.table.cols[0]?.id, rows: 1, cols: 2 }]);
+  });
+
+  it("F18 : taille non positive, translation NaN, matrice hors f32 (1e39), boîte hors f32 : refus BadTable, rien d'écrit", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const badTable = refusal(() => d.apply(imp(d, { cells: ["", ""] })));
+    expect(badTable).not.toBe("aucun refus");
+    const cases: [string, Partial<Imp>][] = [
+      ["taille nulle", { size: 0 }],
+      ["taille négative", { size: -1 }],
+      ["translation NaN", { matrix: [1, 0, 0, 1, Number.NaN, 0] }],
+      ["matrice hors f32", { matrix: [1e39, 0, 0, 1, 0, 0] }],
+      ["largeur hors f32", { colWidth: 2e38 }],
+      ["hauteur hors f32", { rowHeights: [2e38, 2e38] }],
+    ];
+    for (const [what, over] of cases) expect(refusal(() => d.apply(imp(d, over))), what).toBe(badTable);
+    expect(d.elementIds(p)).toEqual([]);
+    expect(d.apply(imp(d)).ids).toHaveLength(1);
   });
 });

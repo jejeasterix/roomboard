@@ -1636,6 +1636,63 @@ pub(crate) mod tests {
             .is_ok());
     }
 
+    /// F18, constat T13 : ancre de zone vide : la cellule est écrite pour porter le `span`, la vue liste la fusion.
+    #[test]
+    fn import_table_keeps_a_merge_whose_anchor_is_empty() {
+        let mut d = Document::blank();
+        let texts: Vec<String> = ["", "caché", "a", "b"].map(String::from).to_vec();
+        let c = import(&mut d, vec![[0, 0, 1, 2]], texts, vec![64.0, 64.0], 2).expect("import");
+        let t = d.element(&c.ids[0]).and_then(|v| v.table).expect("tableau");
+        assert_eq!(
+            t.merges,
+            vec![TableMergeView {
+                row: t.rows[0].id.clone(),
+                col: t.cols[0].id.clone(),
+                rows: 1,
+                cols: 2
+            }]
+        );
+    }
+
+    /// F18, constat T13 : taille non positive, translation `NaN`, matrice hors f32 (1e39), boîte hors f32 (largeur ou
+    /// hauteur totale) : `BadTable` avant la page, aucune transaction ; mêmes cas dans `fake-core.test.ts`.
+    #[test]
+    fn import_table_refuses_size_nan_and_out_of_f32() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id6 = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let imp = |size: f64, matrix: [f64; 6], col_width: f64, height: f64| Command::ImportTable {
+            page: p.clone(),
+            matrix,
+            col_width,
+            row_heights: vec![height; 2],
+            cols: 2,
+            cells: vec![String::new(); 4],
+            merges: vec![],
+            color: "#000000".into(),
+            size,
+        };
+        let w = writes(&d);
+        for (what, c) in [
+            ("taille nulle", imp(0.0, id6, 240.0, 64.0)),
+            ("taille négative", imp(-1.0, id6, 240.0, 64.0)),
+            (
+                "translation NaN",
+                imp(36.0, [1.0, 0.0, 0.0, 1.0, f64::NAN, 0.0], 240.0, 64.0),
+            ),
+            (
+                "matrice hors f32",
+                imp(36.0, [1e39, 0.0, 0.0, 1.0, 0.0, 0.0], 240.0, 64.0),
+            ),
+            ("largeur hors f32", imp(36.0, id6, 2e38, 64.0)),
+            ("hauteur hors f32", imp(36.0, id6, 240.0, 2e38)),
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadTable), "{what}");
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert!(d.apply(imp(36.0, id6, 240.0, 64.0)).is_ok());
+    }
+
     /// Clés de `cells` du tableau `id`, triées.
     fn cell_keys(d: &Document, id: &str) -> Vec<String> {
         let txn = d.read();
