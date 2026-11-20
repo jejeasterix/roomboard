@@ -5,6 +5,7 @@ pub mod commands;
 pub mod document;
 pub mod element;
 pub mod format;
+pub mod grid;
 pub mod history;
 pub mod ink;
 pub mod query;

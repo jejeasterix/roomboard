@@ -20,9 +20,11 @@ use crate::element::{
     read_unknown, ElementView, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
     PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
+use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
 use crate::ink::points::InkPoint;
+use crate::query::Bounds;
 
 /// Origine des transactions d'un geste local : seules celles-ci s'annulent (D11).
 pub const LOCAL: &str = "local";
@@ -168,6 +170,7 @@ impl Document {
             height: out_f64(m.get(&txn, "height"))?,
             background: out_string(m.get(&txn, "background"))?,
             backdrop: read_backdrop(&txn, &m).and_then(|r| backdrop_view(r, width)),
+            grid: grid::read(&txn, &m),
         })
     }
 
@@ -476,6 +479,43 @@ impl Document {
             }
         }
         None
+    }
+
+    /// Grille et largeur d'une page ; `None` si la page est inconnue ou sans grille lisible.
+    fn page_grid(&self, page: &str) -> Option<(GridView, f64)> {
+        let txn = self.doc.transact();
+        let (_, m) = self.find_page(&txn, page)?;
+        let width = out_f64(m.get(&txn, "width"))?;
+        Some((grid::read(&txn, &m)?, width))
+    }
+
+    /// Point aimanté de la page (G6) ; `None` sans grille, magnétisme coupé ou aucun niveau qui accroche.
+    pub fn snap_point(&self, page: &str, x: f64, y: f64) -> Option<(f64, f64)> {
+        let (g, width) = self.page_grid(page)?;
+        grid::snap_point(&g, width, (x, y))
+    }
+
+    /// Déplacement aimanté (G7), toujours calculé depuis le déplacement brut ; brut sans grille ou sans boîte.
+    pub fn snap_delta(&self, page: &str, ids: &[String], dx: f64, dy: f64) -> (f64, f64) {
+        let Some((g, width)) = self.page_grid(page) else {
+            return (dx, dy);
+        };
+        let Some(b) = self.snap_box(ids) else {
+            return (dx, dy);
+        };
+        grid::snap_delta(&g, width, b, (dx, dy))
+    }
+
+    /// Lignes visibles de la grille de la page (G9) ; `None` sans grille ou grille invisible.
+    pub fn grid_lines(
+        &self,
+        page: &str,
+        rect: Bounds,
+        min_step: f64,
+        min_dot_step: f64,
+    ) -> Option<GridLines> {
+        let (g, width) = self.page_grid(page)?;
+        grid::lines(&g, width, rect, min_step, min_dot_step)
     }
 }
 

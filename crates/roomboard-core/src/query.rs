@@ -227,6 +227,29 @@ impl Document {
         }
         acc
     }
+
+    /// Boîte d'accroche (G7, HG6) : comme `bounds`, mais une forme compte sa boîte géométrique (0, 0)-(w, h) placée par
+    /// sa transformation, sans l'épaisseur du trait ; texte, image, élément inconnu : leur boîte ; trait : son contour.
+    pub fn snap_box(&self, ids: &[String]) -> Option<Bounds> {
+        let txn = self.read();
+        let mut acc: Option<Bounds> = None;
+        for id in ids {
+            let Some(found) = self.find_element(&txn, id) else {
+                continue;
+            };
+            let e = &found.element;
+            let b = match (read_shape(&txn, e), out_transform(e.get(&txn, "transform"))) {
+                (Some(s), Some(t)) => world_bounds(&t, &box_polygon(s.w, s.h)),
+                _ => self
+                    .element_geom(&txn, e)
+                    .and_then(|g| world_bounds(&g.transform, &g.outline)),
+            };
+            if let Some(b) = b {
+                acc = Some(acc.map_or(b, |a| a.union(b)));
+            }
+        }
+        acc
+    }
 }
 
 #[cfg(test)]
