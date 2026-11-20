@@ -447,8 +447,10 @@ export function createEngine(deps: EngineDeps): Engine {
     const overlay = mergeOverlays(parts.map((p) => p.overlay));
     const key = overlayKey(overlay);
     if (sceneDirty || !sameSet(hidden, lastHidden) || key !== lastOverlay) {
+      // Un seul `doc.page` par scène (PF29) : fond de couleur (C6a) et fond de page (C12).
+      const view = doc.page(pageId);
       renderer.drawScene(
-        { id: pageId, elementIds: doc.elementIds(pageId), background: doc.page(pageId)?.background ?? PAGE_BACKGROUND },
+        { id: pageId, elementIds: doc.elementIds(pageId), background: view?.background ?? PAGE_BACKGROUND, backdrop: view?.backdrop ?? null },
         camera,
         hidden,
         overlay,
