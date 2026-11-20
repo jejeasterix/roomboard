@@ -4,7 +4,7 @@ import { fakeCore } from "../../core/fake-core";
 import { createWasmCore } from "../../core/wasm-core";
 import type { Camera } from "../camera";
 import { visibleGridRect } from "../page";
-import { cacheMargin, cacheRect, GridLinesCache, visibleLines } from "./grid-cache";
+import { cacheMargin, cacheRect, EDGE_EPS, GridLinesCache, visibleLines } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX } from "./grid-paint";
 
 // Vrai module Wasm, patron du contrat (`core/wasm-core.contract.test.ts`) : chargé en Node par `initSync` sur les octets ;
@@ -62,6 +62,13 @@ describe("visibleLines (E3)", () => {
 
   it("ligne posée sur un bord de la vue : gardée (Review Focus 2)", () => {
     expect(visibleLines(one([800, 400, 800, 2200, 0, 1000, 1920, 1000]), V)).toEqual(one([800, 1000, 800, 1600, 0, 1000, 800, 1000]));
+  });
+
+  it("EDGE_EPS (relecture T7) : tolérance absolue de 1e-6, quel que soit le pas (le cœur : 1e-9 · pas)", () => {
+    expect(EDGE_EPS).toBe(1e-6);
+    // Horizontales à 9e-7 et 2e-6 sous le bas de la vue (y1 = 1600) : la première gardée, la seconde écartée.
+    const lines = one([0, 1600 + 9e-7, 800, 1600 + 9e-7, 0, 1600 + 2e-6, 800, 1600 + 2e-6]);
+    expect(visibleLines(lines, V)).toEqual(one([0, 1600 + 9e-7, 800, 1600 + 9e-7]));
   });
 
   it("oblique recoupée (Liang-Barsky) ; points hors vue retirés ; groupe vidé retiré", () => {
