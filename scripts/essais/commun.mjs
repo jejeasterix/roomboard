@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { deflateSync } from "node:zlib";
 
 export const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const DIST = join(ROOT, "apps", "web", "dist");
@@ -161,3 +162,46 @@ export function coqueCsp() {
   const csp = conf.app.security.csp;
   return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
 }
+
+// PNG fabriqués par les essais (C2, C6a, C5 ; I34) : RVB 8 bits, une ligne filtrée 0 par rangée ; jamais téléchargés.
+const CRC = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function chunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+/** PNG RVB 8 bits `w × h` ; `at(x, y)` rend la couleur [r, g, b] du pixel. */
+export function rgbPng(w, h, at) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const raw = Buffer.concat(
+    Array.from({ length: h }, (_, y) => {
+      const row = Buffer.alloc(1 + 3 * w);
+      for (let x = 0; x < w; x++) row.set(at(x, y), 1 + 3 * x);
+      return row;
+    }),
+  );
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+/** PNG RVB 8 bits d'une seule couleur. */
+export const solidPng = (w, h, rgb) => rgbPng(w, h, () => rgb);
