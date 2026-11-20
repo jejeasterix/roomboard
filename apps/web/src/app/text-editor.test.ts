@@ -4,7 +4,7 @@ import { IDENTITY } from "../engine/camera";
 import type { InputSample } from "../engine/input/sampler";
 import { createTextTool, type TextEditSession, type TextTool } from "../engine/tools/text";
 import type { ToolContext } from "../engine/tools/tool";
-import { createTextEditor, cssMatrix, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
+import { createTextEditor, cssMatrix, editorMove, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
 
 /** Faux `<textarea>` (pas de DOM dans la suite). */
 class FakeArea {
@@ -15,6 +15,8 @@ class FakeArea {
   scrollHeight = 0;
   focused = 0;
   caret: [number, number] | null = null;
+  selectionStart = 0;
+  selectionEnd = 0;
   style: Record<string, string> = {};
   attrs: Record<string, string> = {};
   listeners = new Map<string, (e: unknown) => void>();
@@ -183,5 +185,84 @@ describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
     editor.close();
     editor.follow({ zoom: 5, tx: 0, ty: 0 });
     expect(area.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
+  });
+});
+
+interface NavKey { key: string; shiftKey: boolean; isComposing: boolean; prevented: boolean; preventDefault(): void }
+const navKey = (key: string, shiftKey = false, isComposing = false): NavKey => {
+  const e: NavKey = { key, shiftKey, isComposing, prevented: false, preventDefault() { e.prevented = true; } };
+  return e;
+};
+
+describe("zone de saisie — navigation du tableau (C10a, DAC3)", () => {
+  it("editorMove : Tab, Maj+Tab ; Ctrl+Tab et Alt+Tab non pris", () => {
+    expect(editorMove({ key: "Tab" }, "ab", 1, 1)).toBe("next");
+    expect(editorMove({ key: "Tab", shiftKey: true }, "ab", 1, 1)).toBe("prev");
+    expect(editorMove({ key: "Tab", ctrlKey: true }, "ab", 1, 1)).toBeNull();
+    expect(editorMove({ key: "Tab", altKey: true }, "ab", 1, 1)).toBeNull();
+  });
+
+  it("editorMove : flèches au bord du texte seulement (lignes logiques, HC10-8) ; sélection, Maj, Entrée : rien", () => {
+    expect(editorMove({ key: "ArrowLeft" }, "xy", 0, 0)).toBe("left");
+    expect(editorMove({ key: "ArrowLeft" }, "xy", 1, 1)).toBeNull();
+    expect(editorMove({ key: "ArrowRight" }, "xy", 2, 2)).toBe("right");
+    expect(editorMove({ key: "ArrowRight" }, "xy", 1, 1)).toBeNull();
+    expect(editorMove({ key: "ArrowUp" }, "a\nb", 1, 1)).toBe("up");
+    expect(editorMove({ key: "ArrowUp" }, "a\nb", 3, 3)).toBeNull();
+    expect(editorMove({ key: "ArrowDown" }, "a\nb", 2, 2)).toBe("down");
+    expect(editorMove({ key: "ArrowDown" }, "a\nb", 1, 1)).toBeNull();
+    expect(editorMove({ key: "ArrowRight" }, "xy", 0, 2)).toBeNull();
+    expect(editorMove({ key: "ArrowLeft", shiftKey: true }, "xy", 0, 0)).toBeNull();
+    expect(editorMove({ key: "Enter" }, "xy", 2, 2)).toBeNull();
+  });
+
+  it("keydown : navigate reçoit le mouvement ; touche prise (preventDefault) seulement s'il rend vrai", () => {
+    const moves: string[] = [];
+    let answer = true;
+    const events: TextEditorEvents = { ...recorder().events, navigate: (m) => (moves.push(m), answer) };
+    const { area, editor } = mount(() => events);
+    editor.open(session, IDENTITY);
+    const tab = navKey("Tab");
+    area.fire("keydown", tab);
+    expect([moves, tab.prevented]).toEqual([["next"], true]);
+    answer = false;
+    area.value = "xy";
+    area.selectionStart = 1;
+    area.selectionEnd = 1;
+    const left = navKey("ArrowLeft");
+    area.fire("keydown", left);
+    expect(moves).toEqual(["next"]);
+    area.selectionStart = 0;
+    area.selectionEnd = 0;
+    area.fire("keydown", left);
+    expect([moves, left.prevented]).toEqual([["next", "left"], false]);
+  });
+
+  it("composition : aucune touche prise, navigate jamais appelé", () => {
+    const moves: string[] = [];
+    const events: TextEditorEvents = { ...recorder().events, navigate: (m) => (moves.push(m), true) };
+    const { area, editor } = mount(() => events);
+    editor.open(session, IDENTITY);
+    const tab = navKey("Tab", false, true);
+    area.fire("keydown", tab);
+    expect([moves, tab.prevented]).toEqual([[], false]);
+  });
+
+  it("outil sans navigate (outil Texte) : Tab non pris, rien de demandé", () => {
+    const r = recorder();
+    const { area, editor } = mount(() => r.events);
+    editor.open(session, IDENTITY);
+    const tab = navKey("Tab");
+    area.fire("keydown", tab);
+    expect([r.calls, tab.prevented]).toEqual([[], false]);
+  });
+
+  it("fond : celui de la session (cellule, HC10-10), transparent sinon", () => {
+    const { area, editor } = mount(() => null);
+    editor.open({ ...session, background: "#fef08a" }, IDENTITY);
+    expect(area.style["background"]).toBe("#fef08a");
+    editor.close();
+    editor.open(session, IDENTITY);
+    expect(area.style["background"]).toBe("transparent");
   });
 });

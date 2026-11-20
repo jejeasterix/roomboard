@@ -18,6 +18,7 @@ use roomboard_core::ink::points::to_flat;
 use roomboard_core::query::Bounds;
 use roomboard_core::rich_text::TextAttr;
 use roomboard_core::shape::ShapeKind;
+use roomboard_core::table::TableAxis;
 use wasm_bindgen::prelude::*;
 
 /// Version du cœur, pour vérifier que le module Wasm est chargé.
@@ -89,6 +90,15 @@ impl SavedParts {
 
     pub fn ybin(&self) -> Vec<u8> {
         self.ybin.clone()
+    }
+}
+
+/// Axe reçu de JS (`row` : ligne, sinon colonne) des insertions et suppressions de tableau.
+fn table_axis(row: bool) -> TableAxis {
+    if row {
+        TableAxis::Row
+    } else {
+        TableAxis::Col
     }
 }
 
@@ -407,6 +417,97 @@ impl Document {
 
     pub fn clear_grid(&mut self, page: &str) -> Result<JsValue, JsError> {
         to_js(&self.set_grid_inner(page, None).map_err(cmd_err)?)
+    }
+
+    /// Tableau (C10a, T13) : `cols`, `rows` en u32 ; une valeur hors des u32 arrive comme u32::MAX (`toU32` de la page),
+    /// refusée en `BadTable`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_table(
+        &mut self,
+        page: &str,
+        x: f64,
+        y: f64,
+        cols: u32,
+        rows: u32,
+        col_width: f64,
+        row_height: f64,
+        color: &str,
+        size: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .add_table_inner(
+                    page,
+                    [x, y],
+                    [cols, rows],
+                    [col_width, row_height],
+                    color,
+                    size,
+                )
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// `row`, `col` : ids ; `row_height` : hauteur exigée mesurée par la page (T5).
+    pub fn set_table_cell(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        content: &str,
+        row_height: Option<f64>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_cell_inner(id, [row, col], content, row_height)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// `row` : vrai pour une ligne, faux pour une colonne.
+    pub fn insert_table_line(&mut self, id: &str, row: bool, at: u32) -> Result<JsValue, JsError> {
+        to_js(&self.insert_table_line_inner(id, row, at).map_err(cmd_err)?)
+    }
+
+    pub fn remove_table_line(
+        &mut self,
+        id: &str,
+        row: bool,
+        line: &str,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .remove_table_line_inner(id, row, line)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    pub fn set_table_sizes(
+        &mut self,
+        id: &str,
+        col_width: f64,
+        row_height: f64,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_sizes_inner(id, col_width, row_height)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// `fill` absent ou null : retire le remplissage.
+    pub fn set_table_fill(
+        &mut self,
+        id: &str,
+        row: &str,
+        col: &str,
+        fill: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .set_table_fill_inner(id, [row, col], fill)
+                .map_err(cmd_err)?,
+        )
     }
 
     /// Point aimanté `[x, y]` (G6) ; `undefined` sans accroche.
@@ -760,6 +861,97 @@ impl Document {
         Ok(self
             .core
             .grid_lines_of(page, grid, rect, *min_step, *min_dot_step))
+    }
+
+    pub fn add_table_inner(
+        &mut self,
+        page: &str,
+        origin: [f64; 2],
+        dims: [u32; 2],
+        sizes: [f64; 2],
+        color: &str,
+        size: f64,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::AddTable {
+            page: page.to_string(),
+            x: origin[0],
+            y: origin[1],
+            cols: dims[0],
+            rows: dims[1],
+            col_width: sizes[0],
+            row_height: sizes[1],
+            color: color.to_string(),
+            size,
+        })
+    }
+
+    pub fn set_table_cell_inner(
+        &mut self,
+        id: &str,
+        cell: [&str; 2],
+        content: &str,
+        row_height: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableCell {
+            id: id.to_string(),
+            row: cell[0].to_string(),
+            col: cell[1].to_string(),
+            content: content.to_string(),
+            row_height,
+        })
+    }
+
+    pub fn insert_table_line_inner(
+        &mut self,
+        id: &str,
+        row: bool,
+        at: u32,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::InsertTableLine {
+            id: id.to_string(),
+            axis: table_axis(row),
+            at,
+        })
+    }
+
+    pub fn remove_table_line_inner(
+        &mut self,
+        id: &str,
+        row: bool,
+        line: &str,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::RemoveTableLine {
+            id: id.to_string(),
+            axis: table_axis(row),
+            line: line.to_string(),
+        })
+    }
+
+    pub fn set_table_sizes_inner(
+        &mut self,
+        id: &str,
+        col_width: f64,
+        row_height: f64,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableSizes {
+            id: id.to_string(),
+            col_width,
+            row_height,
+        })
+    }
+
+    pub fn set_table_fill_inner(
+        &mut self,
+        id: &str,
+        cell: [&str; 2],
+        fill: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetTableFill {
+            id: id.to_string(),
+            row: cell[0].to_string(),
+            col: cell[1].to_string(),
+            fill,
+        })
     }
 
     pub fn add_page_after_inner(&mut self, after: Option<String>) -> Result<Change, CommandError> {
@@ -1600,5 +1792,91 @@ mod tests {
         assert_eq!(d.snap_delta(&p, vec![a], 52.0, 31.0), vec![57.0, 33.0]);
         assert_eq!(d.snap_delta(&p, vec![b], 1.3, 0.7), vec![0.0, 0.0]);
         assert_eq!(d.snap_delta(&p, vec![], 52.0, 31.0), vec![52.0, 31.0]);
+    }
+
+    // C10a (T6) : tableau par les `*_inner`.
+
+    fn table_of(d: &Document, id: &str) -> roomboard_core::table::TableView {
+        d.core.element(id).and_then(|e| e.table).expect("tableau")
+    }
+
+    #[test]
+    fn add_table_inner_creates_and_refuses() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let c = d
+            .add_table_inner(&p, [100.0, 200.0], [4, 3], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau");
+        let t = table_of(&d, &c.ids[0]);
+        assert_eq!((t.cols.len(), t.rows.len()), (4, 3));
+        assert_eq!(
+            d.add_table_inner(
+                &p,
+                [0.0, 0.0],
+                [u32::MAX, 3],
+                [240.0, 64.0],
+                "#000000",
+                36.0
+            ),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            d.add_table_inner(&p, [0.0, 0.0], [0, 3], [240.0, 64.0], "#000000", 36.0),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    #[test]
+    fn table_cell_line_size_fill_inner() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let (r0, c0) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        d.set_table_cell_inner(&id, [r0.as_str(), c0.as_str()], "Lundi", Some(150.0))
+            .expect("cellule");
+        assert_eq!(table_of(&d, &id).rows[0].height, 150.0);
+        d.insert_table_line_inner(&id, false, 2).expect("colonne");
+        assert_eq!(table_of(&d, &id).cols.len(), 3);
+        d.remove_table_line_inner(&id, true, &r0).expect("ligne");
+        assert!(table_of(&d, &id).cells.is_empty());
+        d.set_table_sizes_inner(&id, 200.0, 70.0).expect("uniforme");
+        assert!(table_of(&d, &id).cols.iter().all(|c| c.width == 200.0));
+        let t = table_of(&d, &id);
+        let (r1, c1) = (t.rows[0].id.clone(), t.cols[1].id.clone());
+        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], Some("#fef08a".into()))
+            .expect("jaune");
+        assert_eq!(table_of(&d, &id).cells[0].fill.as_deref(), Some("#fef08a"));
+        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None)
+            .expect("aucun");
+        assert!(table_of(&d, &id).cells.is_empty());
+    }
+
+    #[test]
+    fn table_inner_refuses_with_core_errors() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [1, 1], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        assert_eq!(
+            d.insert_table_line_inner(&id, true, u32::MAX),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            d.remove_table_line_inner(&id, true, &t.rows[0].id),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            d.set_table_cell_inner("absent", ["r", "c"], "x", None),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
     }
 }

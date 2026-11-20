@@ -102,6 +102,43 @@ afterEach(() => {
 });
 
 describe("createBoardSession (T93)", () => {
+  it("mousedown empêché aussi pour l'outil Tableau (C10a)", async () => {
+    const s = await createBoardSession(fakeCore.blank(), shared);
+    const down = (): boolean => {
+      const e = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+      s.stage.dispatchEvent(e);
+      return e.defaultPrevented;
+    };
+    s.engine.setTool("table");
+    expect(down()).toBe(true);
+    s.engine.setTool("select");
+    expect(down()).toBe(false);
+  });
+
+  it("outil Tableau : grille, saisie, Tab (C10a) — clic dans le vide, 2 × 2 choisi, Tab va à l'outil Tableau", async () => {
+    const s = await createBoardSession(fakeCore.blank(), shared);
+    s.activate();
+    s.engine.setTool("table");
+    const c = s.engine.camera();
+    const [sx, sy] = [200 * c.zoom + c.tx, 150 * c.zoom + c.ty];
+    s.engine.sink.begin(1, "table", [{ x: sx, y: sy, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    s.engine.sink.close(1, "end");
+    const picker = container.querySelector<HTMLElement>(".rb-table-picker");
+    expect(picker?.hidden).toBe(false);
+    picker!.querySelector<HTMLButtonElement>('button[data-cols="2"][data-rows="2"]')!.click();
+    expect(s.stage.dataset["table"]).toBe("2x2@0,0");
+    const area = document.getElementById("texte-edition") as HTMLTextAreaElement;
+    expect(area.hidden).toBe(false);
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    area.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(s.stage.dataset["table"]).toBe("2x2@0,1");
+    s.deactivate();
+    expect(picker?.hidden).toBe(true);
+    s.dispose();
+    expect(container.querySelector(".rb-table-picker")).toBeNull();
+  });
+
   it("création qui échoue : aucune scène ne reste dans le conteneur, l'erreur est relancée", async () => {
     vi.stubGlobal(
       "ResizeObserver",

@@ -7,6 +7,7 @@ use crate::asset::is_asset_id;
 use crate::grid::GridView;
 use crate::query::Bounds;
 use crate::rich_text::TextSpanView;
+use crate::table::TableView;
 
 pub const SCHEMA: u32 = 1;
 pub const PAGE_WIDTH: f64 = 1920.0;
@@ -23,8 +24,9 @@ pub struct StrokeStyle {
     pub width: f32,
 }
 
-/// Types d'élément que ce cœur sait lire ; tout autre `kind` est gardé et rendu comme élément inconnu (U3, K8).
-pub const KNOWN_KINDS: [&str; 4] = ["stroke", "shape", "text", "image"];
+/// Types d'élément que ce cœur sait lire (C10a : `table`) ; tout autre `kind` est gardé et rendu comme élément inconnu
+/// (U3, K8).
+pub const KNOWN_KINDS: [&str; 5] = ["stroke", "shape", "text", "image", "table"];
 /// Boîte d'un élément inconnu sans `w`, `h` lisibles (K8, HK7).
 pub const UNKNOWN_BOX: f64 = 100.0;
 /// Seul ajustement de fond écrit par cette version : largeur de la page (K6, HK1).
@@ -85,6 +87,9 @@ pub struct ElementView {
     pub image: Option<ImageView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unknown: Option<UnknownView>,
+    /// Tableau (C10a, T13) ; absent pour tout autre `kind`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<TableView>,
 }
 
 impl ElementView {
@@ -99,6 +104,7 @@ impl ElementView {
             text: None,
             image: None,
             unknown: None,
+            table: None,
         }
     }
 }
@@ -221,6 +227,11 @@ pub(crate) fn finite_positive(v: f64) -> bool {
     v.is_finite() && v > 0.0
 }
 
+/// Géométrie que le polygone (f32) et la liaison tiennent (constat 3 de T60) : chaque valeur reste finie en f32.
+pub(crate) fn fits_f32(values: &[f64]) -> bool {
+    values.iter().all(|v| (*v as f32).is_finite())
+}
+
 /// Image (K5) : transform et vue ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
 pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, ImageView)> {
     if out_string(e.get(txn, "kind"))? != "image" {
@@ -237,13 +248,19 @@ pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, 
 }
 
 /// Élément inconnu (K8) : transform et vue ; `None` pour un `kind` connu. `kind` absent ou non textuel : `""`.
-/// Sans `transform` lisible : identité, rien n'est écrit ; boîte `w`, `h` s'ils sont tous deux finis > 0, sinon
-/// 100 × 100.
 pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, UnknownView)> {
-    let source_kind = out_string(e.get(txn, "kind")).unwrap_or_default();
-    if KNOWN_KINDS.contains(&source_kind.as_str()) {
+    let kind = out_string(e.get(txn, "kind")).unwrap_or_default();
+    if KNOWN_KINDS.contains(&kind.as_str()) {
         return None;
     }
+    unknown_view(txn, e)
+}
+
+/// Vue « inconnu » de tout élément (K8), aussi le repli d'un tableau mal formé (C10a, T2) : `source_kind` = le `kind`
+/// lu (`""` sans `kind` textuel) ; sans `transform` lisible : identité, rien n'est écrit ; boîte `w`, `h` s'ils sont tous
+/// deux finis > 0, sinon 100 × 100. Toujours `Some`.
+pub(crate) fn unknown_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, UnknownView)> {
+    let source_kind = out_string(e.get(txn, "kind")).unwrap_or_default();
     let (w, h) = match (out_f64(e.get(txn, "w")), out_f64(e.get(txn, "h"))) {
         (Some(w), Some(h)) if finite_positive(w) && finite_positive(h) => (w, h),
         _ => (UNKNOWN_BOX, UNKNOWN_BOX),

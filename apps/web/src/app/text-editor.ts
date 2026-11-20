@@ -1,7 +1,8 @@
 /**
  * Zone de saisie du texte (D14, CL4-2, CL4-3) : `<textarea>` visible, hors de `#stage` (ses événements ne passent pas
  * par l'échantillonneur), placée par la matrice CSS caméra × élément, en unités monde ; police et interligne du rendu
- * (`engine/text-layout.ts`). Relaie la composition IME, Échap (hors composition) et la perte du focus à l'outil Texte,
+ * (`engine/text-layout.ts`). Relaie la composition IME, Échap (hors composition), la perte du focus, et pour l'outil Tableau Tab, Maj+Tab et les
+ * flèches au bord du texte (`navigate`, C10a DAC3) à l'outil actif,
  * qui seul écrit (une SetText par validation, différée pendant une composition).
  */
 import type { Matrix } from "../core/api";
@@ -11,10 +12,36 @@ import type { TextEditorHost, TextEditSession } from "../engine/tools/text";
 
 export const TEXT_EDITOR_ID = "texte-edition";
 
+/** Mouvement demandé par la zone (C10a, DAC3) : même union que `NavMove` de `engine/table-geom.ts` (PC7). */
+export type EditorMove = "next" | "prev" | "left" | "right" | "up" | "down";
+
 export interface TextEditorEvents {
   compositionStart(): void;
   compositionEnd(): void;
   requestCommit(): void;
+  /** Tab, Maj+Tab, flèches au bord du texte ; vrai si l'outil prend la touche. Absent (outil Texte) : rien n'est pris. */
+  navigate?(move: EditorMove): boolean;
+}
+
+interface MoveKey {
+  readonly key: string;
+  readonly shiftKey?: boolean;
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+  readonly altKey?: boolean;
+}
+
+/** Touche → mouvement : Tab (Maj+Tab) toujours ; flèche sans modificateur, curseur sans sélection, au bord du texte
+ *  (← au début, → à la fin, ↑ sans saut de ligne avant le curseur, ↓ sans saut de ligne après, HC10-8). */
+export function editorMove(e: MoveKey, value: string, start: number, end: number): EditorMove | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
+  if (e.key === "Tab") return e.shiftKey ? "prev" : "next";
+  if (e.shiftKey || start !== end) return null;
+  if (e.key === "ArrowLeft") return start === 0 ? "left" : null;
+  if (e.key === "ArrowRight") return start === value.length ? "right" : null;
+  if (e.key === "ArrowUp") return value.slice(0, start).includes("\n") ? null : "up";
+  if (e.key === "ArrowDown") return value.slice(start).includes("\n") ? null : "down";
+  return null;
 }
 
 export interface TextEditor extends TextEditorHost {
@@ -60,10 +87,15 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
   area.addEventListener("compositionstart", () => events()?.compositionStart());
   area.addEventListener("compositionend", () => events()?.compositionEnd());
   area.addEventListener("keydown", (e: KeyboardEvent) => {
-    // Pendant une composition, Échap appartient à l'IME (choix d'un candidat, CL4-3) : rien n'est demandé.
-    if (e.key !== "Escape" || e.isComposing) return;
-    e.preventDefault();
-    events()?.requestCommit();
+    // Pendant une composition, toute touche appartient à l'IME (choix d'un candidat, CL4-3) : rien n'est pris.
+    if (e.isComposing) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      events()?.requestCommit();
+      return;
+    }
+    const move = editorMove(e, area.value, area.selectionStart, area.selectionEnd);
+    if (move !== null && events()?.navigate?.(move) === true) e.preventDefault();
   });
   // Perte du focus : l'outil valide, ou attend compositionend si une composition est en cours (CL4-3).
   area.addEventListener("blur", () => {
@@ -83,6 +115,7 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
       s.font = textFont(session.size);
       s.lineHeight = String(TEXT_LINE_HEIGHT);
       s.color = session.color;
+      s.background = session.background ?? "transparent";
       area.hidden = false;
       grow();
       area.focus();

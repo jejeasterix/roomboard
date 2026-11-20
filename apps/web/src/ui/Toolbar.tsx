@@ -2,7 +2,10 @@ import { For, Show, createMemo, onCleanup, onMount, type Accessor, type JSX } fr
 import { listenWebDrop } from "../platform/drop-web";
 import type { ToolbarHost } from "../app/toolbar-host";
 import {
+  ACTION_TABLE,
   presetsOf,
+  TABLE_ACTIONS,
+  TABLE_FILLS,
   TOOL_TABLE,
   visibleItems,
   type ButtonSize,
@@ -101,6 +104,43 @@ function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<Toolb
   );
 }
 
+/** Action fabriquée pour l'état des boutons du tableau : même table `ACTION_STATE` qu'une action de profil. */
+const tableItem = (id: string): ToolItem => ({ id, kind: "action", action: id, label: ACTION_TABLE[id]?.label ?? id, requires: [], rest: {} });
+
+/** Rangée du tableau (C10a, T10, DAC4) : outil Tableau actif, à la place des préréglages ; cinq actions, puis les pastilles. */
+function TableActionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element {
+  return (
+    <Show when={props.view().tool === TOOL_TABLE["table"]?.choice}>
+      <span class="rb-sep" role="separator" data-table-sep />
+      <For each={TABLE_ACTIONS}>
+        {(id) => {
+          const st = createMemo(() => itemState(tableItem(id), props.view()));
+          return (
+            <button type="button" data-table-action={id} disabled={st().disabled} onClick={() => props.host.runAction(id)}>
+              {st().label}
+            </button>
+          );
+        }}
+      </For>
+      <For each={TABLE_FILLS}>
+        {(f) => (
+          <button
+            type="button"
+            class="rb-preset"
+            data-table-fill={f.id}
+            title={f.label}
+            disabled={!props.view().tableCell}
+            onClick={() => props.host.tableFill(f.color)}
+          >
+            <span class="rb-swatch rb-swatch-square" aria-hidden="true" style={{ "background-color": f.color ?? "transparent" }} />
+            {f.label}
+          </button>
+        )}
+      </For>
+    </Show>
+  );
+}
+
 export function Toolbar(props: ToolbarProps): JSX.Element {
   const items = createMemo(() => visibleItems(props.bar, props.caps()));
   const ctx: Ctx = { view: props.view, host: props.host };
@@ -117,6 +157,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       <For each={items()}>{(item) => RENDER[item.kind](item, ctx)}</For>
       <Show when={props.bar.role === "tools"}>
         <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
+        <TableActionRow view={props.view} host={props.host} />
       </Show>
     </div>
   );

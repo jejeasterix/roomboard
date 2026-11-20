@@ -9,12 +9,14 @@
 // C7 : FormatText (patch d'attributs sur une plage UTF-16, une étape) ; TextData.spans = segments du texte (U27, DAU9).
 // C9 : SetGrid ; PageView.grid ; snapPoint, snapDelta, gridLines (géométrie dans le cœur, DAG1 ; fausse liaison : carreaux seuls, DAG3).
 // C9 éditeur : GridLevel.lineWidth et LevelLines.lineWidth (px CSS d'écran, 1 à 8) ; gridLinesOf (grille non enregistrée, aperçu, DAE1).
+// C10a : AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill (une étape chacune, D38) ;
+// élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
 export type ShapeKind = "rect" | "ellipse" | "line" | "arrow";
-export type ElementKind = "stroke" | "shape" | "text" | "image" | "unknown";
+export type ElementKind = "stroke" | "shape" | "text" | "image" | "table" | "unknown";
 export interface AssetRef { readonly id: string; readonly name: string; readonly mime: string; readonly size: number }
 /** Métadonnée d'un asset cité (K3) : même forme que la référence ; défauts du cœur pour une entrée absente (K4). */
 export type AssetInfo = AssetRef;
@@ -74,7 +76,30 @@ export type Command =
       readonly boxHeight?: number;
     }
   /** grid null : retire la grille ; même grille : aucune étape (D38) ; remplacée en bloc, une étape (G5). */
-  | { readonly type: "SetGrid"; readonly page: string; readonly grid: GridInput | null };
+  | { readonly type: "SetGrid"; readonly page: string; readonly grid: GridInput | null }
+  /** C10a : 1 à 64 colonnes et lignes ; coin en (x, y). */
+  | {
+      readonly type: "AddTable";
+      readonly page: string;
+      readonly x: number;
+      readonly y: number;
+      readonly cols: number;
+      readonly rows: number;
+      readonly colWidth: number;
+      readonly rowHeight: number;
+      readonly color: string;
+      readonly size: number;
+    }
+  /** row, col = ids ; rowHeight : hauteur exigée mesurée par la page, écrite si plus grande (T5). */
+  | { readonly type: "SetTableCell"; readonly id: string; readonly row: string; readonly col: string; readonly content: string; readonly rowHeight?: number }
+  /** at ∈ 0..=n ; taille de la voisine at - 1, sinon de la première. */
+  | { readonly type: "InsertTableLine"; readonly id: string; readonly axis: TableAxis; readonly at: number }
+  /** Retire aussi ses cellules ; refusée s'il n'en reste qu'une. */
+  | { readonly type: "RemoveTableLine"; readonly id: string; readonly axis: TableAxis; readonly line: string }
+  /** Uniformiser : toutes les colonnes, toutes les lignes (peut réduire, T11). */
+  | { readonly type: "SetTableSizes"; readonly id: string; readonly colWidth: number; readonly rowHeight: number }
+  /** null retire. */
+  | { readonly type: "SetTableFill"; readonly id: string; readonly row: string; readonly col: string; readonly fill: string | null };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData {
@@ -89,6 +114,20 @@ export interface TextData {
 export interface ImageData { readonly asset: string; readonly w: number; readonly h: number }
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
 
+export type TableAxis = "row" | "col";
+export interface TableCol { readonly id: string; readonly width: number }
+export interface TableRow { readonly id: string; readonly height: number }
+/** Cellule non vide (texte ou remplissage) ; `fill` = remplissage (U32), null sans remplissage. */
+export interface TableCell { readonly row: string; readonly col: string; readonly text: string; readonly fill: string | null }
+/** Tableau (T13) : boîte locale (0, 0)-(somme des largeurs, somme des hauteurs) ; cellules non vides dans l'ordre de lecture. */
+export interface TableData {
+  readonly color: string;
+  readonly size: number;
+  readonly cols: readonly TableCol[];
+  readonly rows: readonly TableRow[];
+  readonly cells: readonly TableCell[];
+}
+
 interface ElementBase {
   readonly id: string;
   readonly transform: Matrix;
@@ -100,7 +139,9 @@ export interface TextElement extends ElementBase { readonly kind: "text"; readon
 export interface ImageElement extends ElementBase { readonly kind: "image"; readonly image: ImageData }
 /** Élément d'un kind inconnu (U3) : gardé, dessiné comme un cadre, boîte (0, 0)-(w, h). */
 export interface UnknownElement extends ElementBase { readonly kind: "unknown"; readonly unknown: UnknownData }
-export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | UnknownElement;
+/** Tableau (C10a) : coin en (0, 0) local, placé par transform. */
+export interface TableElement extends ElementBase { readonly kind: "table"; readonly table: TableData }
+export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | TableElement | UnknownElement;
 
 /** Fond de page (U6, K6) : rect calculé par le cœur, calé sur la largeur de la page ; null si w ou h illisibles. */
 export interface BackdropView {
@@ -176,6 +217,11 @@ export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
+/** Plafond des lignes et des colonnes d'un tableau (BadTable). */
+export const TABLE_MAX_LINES = 64;
+/** Défauts d'un tableau lu sans couleur ou sans taille lisible (T2). */
+export const DEFAULT_TABLE_COLOR = "#000000";
+export const DEFAULT_TABLE_SIZE = 36;
 
 /** Attributs d'un segment (C7, T2-T3) ; absent = défaut : couleur et taille de l'élément, police du socle, faux. */
 export interface TextAttrs {

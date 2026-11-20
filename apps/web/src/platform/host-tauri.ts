@@ -73,6 +73,9 @@ export function grantedFile(ipc: TauriIpc, path: string, size: number): DroppedF
     size,
     mime: "",
     path,
+    async head(n: number) {
+      return new Uint8Array(await ipc.invoke<ArrayBuffer>("read_granted_file", { path, offset: 0, len: n }));
+    },
     async blob() {
       const parts: Uint8Array<ArrayBuffer>[] = [];
       let offset = 0;
@@ -146,7 +149,7 @@ export function createTauriHost(
       return Promise.all(
         paths.map(async (path) => {
           const bytes = await fs.readFile(path);
-          return { name: baseName(path), size: bytes.byteLength, mime: "", path, blob: async () => new Blob([bytes.slice()]) };
+          return { name: baseName(path), size: bytes.byteLength, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes.slice()]) };
         }),
       );
     },

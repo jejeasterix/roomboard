@@ -91,6 +91,7 @@ export const TOOL_TABLE: Readonly<Record<ToolId, ToolEntry>> = Object.freeze({
   line: { label: "Ligne", choice: "line" },
   arrow: { label: "Flèche", choice: "arrow" },
   text: { label: "Texte", choice: "text" },
+  table: { label: "Tableau", choice: "table" },
 });
 
 /** Actions connues : celles de l'ancienne barre (inventaire du plan du lot 5b). */
@@ -110,7 +111,33 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "file-save-as": { label: "Enregistrer sous" },
   settings: { label: "Réglages" },
   profiles: { label: "Profil" },
+  "table-row-insert": { label: "+ Ligne" },
+  "table-col-insert": { label: "+ Colonne" },
+  "table-row-remove": { label: "− Ligne" },
+  "table-col-remove": { label: "− Colonne" },
+  "table-uniform": { label: "Uniformiser" },
 });
+
+/** Boutons de structure du tableau (C10a, DAC4), dans l'ordre de la rangée contextuelle. */
+export const TABLE_ACTIONS: readonly ActionId[] = Object.freeze([
+  "table-row-insert",
+  "table-col-insert",
+  "table-row-remove",
+  "table-col-remove",
+  "table-uniform",
+]);
+
+/** Pastille de remplissage d'une cellule (T12, HC10-5) ; `color` null : retire le remplissage. */
+export interface TableFill { readonly id: string; readonly label: string; readonly color: string | null }
+/** Aucune, puis cinq teintes claires (le texte noir reste lisible). */
+export const TABLE_FILLS: readonly TableFill[] = Object.freeze([
+  { id: "aucun", label: "Aucun", color: null },
+  { id: "jaune", label: "Jaune", color: "#fef08a" },
+  { id: "vert", label: "Vert", color: "#bbf7d0" },
+  { id: "bleu", label: "Bleu", color: "#bfdbfe" },
+  { id: "rose", label: "Rose", color: "#fecdd3" },
+  { id: "gris", label: "Gris", color: "#e5e7eb" },
+]);
 
 /** Clé propre de la table (jamais héritée : `toString`, `constructor`… ne sont pas des outils). */
 export function isKnownTool(id: string): boolean {

@@ -139,12 +139,13 @@ function roomboardFile(path: string, bytes: Uint8Array = validBytes()): DroppedF
     size: bytes.byteLength,
     mime: "",
     path,
+    head: async (n: number) => bytes.slice(0, n),
     blob: async () => ({ arrayBuffer: async () => bytes.slice().buffer }) as unknown as Blob,
   };
 }
 
 function plainFile(name: string, bytes: Uint8Array<ArrayBuffer> = new Uint8Array([0x49, 0x49, 0x2a, 0x00]), size = bytes.byteLength): DroppedFile {
-  return { name, size, mime: "", blob: async () => new Blob([bytes]) };
+  return { name, size, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]) };
 }
 function pngHead(w: number, h: number): Uint8Array<ArrayBuffer> {
   const b = new Uint8Array(33);

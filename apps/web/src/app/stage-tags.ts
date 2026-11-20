@@ -4,16 +4,21 @@
  */
 import type { Bounds } from "../core/api";
 import type { EngineState } from "../engine/engine";
+import type { TableCellState } from "../engine/table-geom";
 
 const tenth = (v: number): string => String(Math.round(v * 10) / 10);
 const boundsTag = (b: Bounds | null): string => (b === null ? "" : [b.x0, b.y0, b.x1, b.y1].map(tenth).join(","));
 
-/** Attributs de `#stage` lus par le scénario S3/S4 (contrat du lot). */
-export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool", string> {
+/** `#stage[data-table]` (C10a, T15) : `<colonnes>x<lignes>@<rang>,<colonne>` de la cellule active, vide sinon. */
+const tableTag = (c: TableCellState | null): string => (c === null ? "" : `${c.cols}x${c.rows}@${c.row},${c.col}`);
+
+/** Attributs de `#stage` lus par les scénarios S3/S4 (contrat du lot) et S1 de C10a (`table`). */
+export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool" | "table", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     selection: String(s.selection.length),
     bounds: boundsTag(s.selectionBounds),
     tool: s.tool,
+    table: tableTag(s.tableCell),
   };
 }

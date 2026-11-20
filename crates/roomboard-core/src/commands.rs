@@ -9,7 +9,7 @@ use yrs::{
 use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, finite_positive, invert, out_bytes, out_f64, out_string,
+    apply_transform, compose, finite_positive, fits_f32, invert, out_bytes, out_f64, out_string,
     out_transform, read_backdrop, read_style, style_fields, transform_to_any, StrokeStyle,
     Transform, FIT_WIDTH, IDENTITY,
 };
@@ -100,6 +100,52 @@ pub enum Command {
         page: String,
         grid: Option<GridInput>,
     },
+    /// Tableau (U32, C10a, T3) : `cols` × `rows` (1 à 64), colonnes et lignes à la taille donnée ; coin en (x, y).
+    AddTable {
+        page: String,
+        x: f64,
+        y: f64,
+        cols: u32,
+        rows: u32,
+        col_width: f64,
+        row_height: f64,
+        color: String,
+        size: f64,
+    },
+    /// Texte d'une cellule (`row`, `col` = ids) ; `row_height` : hauteur exigée mesurée par la page, écrite si plus
+    /// grande (T5, DAC2).
+    SetTableCell {
+        id: String,
+        row: String,
+        col: String,
+        content: String,
+        row_height: Option<f64>,
+    },
+    /// Ligne ou colonne insérée au rang `at` (0..=n), taille copiée de la voisine `at - 1`, sinon de la première.
+    InsertTableLine {
+        id: String,
+        axis: crate::table::TableAxis,
+        at: u32,
+    },
+    /// Ligne ou colonne `line` (id) retirée avec ses cellules ; refusée s'il n'en reste qu'une.
+    RemoveTableLine {
+        id: String,
+        axis: crate::table::TableAxis,
+        line: String,
+    },
+    /// Uniformiser (T11) : toutes les colonnes à `col_width`, toutes les lignes à `row_height` (peut réduire).
+    SetTableSizes {
+        id: String,
+        col_width: f64,
+        row_height: f64,
+    },
+    /// Remplissage d'une cellule (U32) ; `None` le retire.
+    SetTableFill {
+        id: String,
+        row: String,
+        col: String,
+        fill: Option<String>,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -136,6 +182,7 @@ pub enum CommandError {
     BadImage,
     BadFormat,
     BadGrid,
+    BadTable,
 }
 
 impl std::fmt::Display for CommandError {
@@ -181,6 +228,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadGrid => write!(
                 f,
                 "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)"
+            ),
+            CommandError::BadTable => write!(
+                f,
+                "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)"
             ),
         }
     }
@@ -407,7 +458,7 @@ impl Document {
             .collect()
     }
 
-    fn page_elements_or_err(&self, page: &str) -> Result<ArrayRef, CommandError> {
+    pub(crate) fn page_elements_or_err(&self, page: &str) -> Result<ArrayRef, CommandError> {
         let txn = self.read();
         self.page_elements(&txn, page)
             .ok_or_else(|| CommandError::UnknownPage(page.to_string()))
@@ -479,6 +530,46 @@ impl Document {
                 box_height,
             } => self.cmd_format_text(&id, (start, len), &attrs, box_height),
             Command::SetGrid { page, grid } => self.cmd_set_grid(&page, grid.as_ref()),
+            Command::AddTable {
+                page,
+                x,
+                y,
+                cols,
+                rows,
+                col_width,
+                row_height,
+                color,
+                size,
+            } => self.cmd_add_table(&crate::table::NewTable {
+                page: &page,
+                x,
+                y,
+                cols,
+                rows,
+                col_width,
+                row_height,
+                color: &color,
+                size,
+            }),
+            Command::SetTableCell {
+                id,
+                row,
+                col,
+                content,
+                row_height,
+            } => self.cmd_set_table_cell(&id, (row.as_str(), col.as_str()), &content, row_height),
+            Command::InsertTableLine { id, axis, at } => self.cmd_insert_table_line(&id, axis, at),
+            Command::RemoveTableLine { id, axis, line } => {
+                self.cmd_remove_table_line(&id, axis, &line)
+            }
+            Command::SetTableSizes {
+                id,
+                col_width,
+                row_height,
+            } => self.cmd_set_table_sizes(&id, col_width, row_height),
+            Command::SetTableFill { id, row, col, fill } => {
+                self.cmd_set_table_fill(&id, (row.as_str(), col.as_str()), fill.as_deref())
+            }
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
@@ -499,7 +590,7 @@ impl Document {
         let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
         // Constat 3 de T60 : des coins finis peuvent donner w = inf (x0 = -1e308, x1 = 1e308), ou une géométrie que le
         // polygone (f32) et la liaison ne tiennent pas.
-        if [tx, ty, w, h].iter().any(|v| !(*v as f32).is_finite()) {
+        if !fits_f32(&[tx, ty, w, h]) {
             return Err(CommandError::BadShape);
         }
         if !finite_positive(f64::from(style.width)) {
@@ -775,12 +866,12 @@ impl Document {
         }))
     }
 
-    fn done(&mut self, mut change: Change) -> Change {
+    pub(crate) fn done(&mut self, mut change: Change) -> Change {
         change.version = self.bump();
         change
     }
 
-    fn unchanged(&self) -> Change {
+    pub(crate) fn unchanged(&self) -> Change {
         Change {
             version: self.version(),
             ..Default::default()

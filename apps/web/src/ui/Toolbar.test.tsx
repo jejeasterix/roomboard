@@ -22,7 +22,7 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
 function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
-  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn() };
+  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
@@ -208,5 +208,42 @@ describe("Toolbar — rangée des préréglages (C1, P18, S4)", () => {
 
   it("sans préréglages fournis : aucune rangée", () => {
     expect(presetIds(setup().container)).toEqual([]);
+  });
+});
+
+describe("Toolbar — rangée du tableau (C10a, T10)", () => {
+  const CELL = { id: "t", row: 0, col: 0, rows: 3, cols: 4 };
+  const actionIds = (root: ParentNode): (string | null)[] =>
+    [...root.querySelectorAll("button[data-table-action]")].map((b) => b.getAttribute("data-table-action"));
+
+  it("outil Tableau actif : séparateur, cinq actions puis six pastilles ; autre outil : rien", () => {
+    const { container, setV } = setup();
+    expect(container.querySelector("[data-table-sep]")).toBeNull();
+    setV({ ...VIEW, tool: "table", tableCell: CELL });
+    expect(actionIds(container)).toEqual(["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform"]);
+    expect(container.querySelector('[data-table-action="table-row-insert"]')!.textContent).toBe("+ Ligne");
+    expect([...container.querySelectorAll("button[data-table-fill]")].map((b) => b.textContent)).toEqual(["Aucun", "Jaune", "Vert", "Bleu", "Rose", "Gris"]);
+    expect(container.querySelector("button[data-table-action][data-item]")).toBeNull();
+    setV({ ...VIEW, tool: "pen" });
+    expect(actionIds(container)).toEqual([]);
+  });
+
+  it("sans cellule active : tout grisé ; une seule ligne : « − Ligne » grisé ; 64 colonnes : « + Colonne » grisé", () => {
+    const { container, setV } = setup();
+    setV({ ...VIEW, tool: "table", tableCell: null });
+    expect([...container.querySelectorAll<HTMLButtonElement>("button[data-table-action], button[data-table-fill]")].every((b) => b.disabled)).toBe(true);
+    setV({ ...VIEW, tool: "table", tableCell: { ...CELL, rows: 1, cols: 64 } });
+    const q = (id: string) => container.querySelector<HTMLButtonElement>(`[data-table-action="${id}"]`)!;
+    expect([q("table-row-remove").disabled, q("table-col-insert").disabled, q("table-row-insert").disabled]).toEqual([true, true, false]);
+  });
+
+  it("clic : runAction de l'action ; pastille : tableFill (null pour « Aucun »)", () => {
+    const { container, host, setV } = setup();
+    setV({ ...VIEW, tool: "table", tableCell: CELL });
+    fireEvent.click(container.querySelector('[data-table-action="table-col-insert"]')!);
+    expect(host.runAction).toHaveBeenCalledWith("table-col-insert");
+    fireEvent.click(container.querySelector('[data-table-fill="jaune"]')!);
+    fireEvent.click(container.querySelector('[data-table-fill="aucun"]')!);
+    expect((host.tableFill as ReturnType<typeof vi.fn>).mock.calls).toEqual([["#fef08a"], [null]]);
   });
 });

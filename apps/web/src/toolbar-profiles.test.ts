@@ -75,3 +75,13 @@ describe("profils livrés (T83, CL5b-9)", () => {
     expect(r.profile.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)))).not.toContain("file-import");
   });
 });
+
+describe("outil Tableau dans les profils (C10a, T6)", () => {
+  it("defaut et annotation : Tableau juste après Texte ; simple : sans Tableau", () => {
+    for (const p of ["defaut", "annotation"]) {
+      const edition = builtinProfile(p)!.toolbars[0]!.groups.find((g) => g.id === "edition")!.items.map((i) => i.id);
+      expect(edition.indexOf("table"), p).toBe(edition.indexOf("text") + 1);
+    }
+    expect(ids("simple")).not.toContain("table");
+  });
+});

@@ -2,12 +2,13 @@
  * Outil Texte (D14, CL4-2 à CL4-6) : un clic ouvre une boîte (nouvelle, ou le texte touché, masqué de la scène pendant
  * l'édition) ; la saisie se fait dans la zone de la page (hôte injecté : `app/text-editor.ts`) ; une seule SetText à la
  * validation, hauteur mesurée par `layoutRich` sur les segments prévus après l'édition (C7, T11). Composition IME (CL4-3) : toute demande de validation attend
- * `compositionend` ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
+ * `compositionend` (porte partagée, `commit-gate.ts`) ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
 import type { Matrix, TextSpan } from "../../core/api";
 import { editSpans, plainSpans } from "../../core/rich-text";
 import { screenToWorld, type Camera } from "../camera";
 import { DEFAULT_TEXT_BOX_WIDTH, layoutRich, richBoxHeight, type Measure } from "../text-layout";
+import { createCommitGate } from "./commit-gate";
 import { NO_LIVE, type GestureTool, type LivePart, type ToolContext } from "./tool";
 
 export const TEXT_HIT_TOL_PX = 6;
@@ -29,6 +30,8 @@ export interface TextEditSession {
   readonly initial: string;
   /** Segments à l'ouverture (C7, T11) : la hauteur prévoit ceux d'après l'édition ; boîte neuve : un segment vide. */
   readonly spans: readonly TextSpan[];
+  /** Fond opaque de la zone (cellule de tableau, C10a HC10-10) ; absent : transparent. */
+  readonly background?: string;
 }
 
 /** Zone de saisie de la page (DOM, T56) : le moteur n'en connaît que ceci. */
@@ -49,10 +52,9 @@ export interface TextTool extends GestureTool {
 
 export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: () => TextStyle, measure: Measure): TextTool {
   let session: TextEditSession | null = null;
-  let composing = false;
-  /** Validation demandée pendant la composition : jouée à `compositionend`. */
-  let pending = false;
   let live: LivePart = NO_LIVE;
+  /** Porte IME (CL4-3), partagée avec l'outil Tableau : toute validation attend la fin d'une composition. */
+  const gate = createCommitGate(() => commit(), () => session !== null);
 
   /** Écrit la boîte ouverte (une SetText au plus) ; la session est fermée avant `host.close()` (blur réentrant sans effet). */
   const commit = (): void => {
@@ -61,8 +63,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     const content = host.value();
     const hadHidden = live.hidden.size > 0;
     session = null;
-    pending = false;
-    composing = false;
+    gate.reset();
     live = NO_LIVE;
     host.close();
     // La boucle est arrêtée (outil inactif) : sans image, l'id masqué resterait invisible jusqu'au geste suivant.
@@ -82,19 +83,6 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
       boxWidth: s.boxWidth,
       boxHeight,
     });
-  };
-
-  /**
-   * Seule porte de validation. Même règle que `engine/input/keys.ts:27` (« composition IME : la touche appartient à
-   * l'IME », D14), appliquée aux demandes de validation : pendant la composition, la demande est différée.
-   */
-  const requestCommit = (): void => {
-    if (!session) return;
-    if (composing) {
-      pending = true;
-      return;
-    }
-    commit();
   };
 
   const open = (x: number, y: number): void => {
@@ -119,8 +107,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
       session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans("") };
       live = NO_LIVE;
     }
-    composing = false;
-    pending = false;
+    gate.reset();
     host.open(session, cam);
   };
 
@@ -129,7 +116,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
       const s = samples[0];
       if (!s) return;
       if (session) {
-        requestCommit();
+        gate.request();
         return;
       }
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
@@ -147,17 +134,18 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     live: () => live,
     active: () => false,
     leave() {
-      requestCommit();
+      gate.request();
     },
     editing: () => session,
-    composing: () => composing,
+    composing: () => gate.composing(),
     compositionStart() {
-      if (session) composing = true;
+      gate.compositionStart();
     },
     compositionEnd() {
-      composing = false;
-      if (pending) commit();
+      gate.compositionEnd();
     },
-    requestCommit,
+    requestCommit() {
+      gate.request();
+    },
   };
 }

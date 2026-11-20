@@ -1,7 +1,7 @@
 import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
-import { isKnownTool, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
+import { isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
 /** U15 : ce que la barre sait du reste ; implémentation locale par appels directs. */
 export interface ToolbarHost {
@@ -9,9 +9,11 @@ export interface ToolbarHost {
   runAction(id: string): void;
   dropFiles(files: readonly DroppedFile[], at?: Point | null): void;
   setMode(mode: StartMode): void;
+  /** Pastille de remplissage de la rangée du tableau (C10a, T12) ; null retire. */
+  tableFill(fill: string | null): void;
 }
 export interface HostTargets {
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "tableAction" | "tableFill">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
   toggle(panel: "settings" | "profiles"): void;
@@ -35,6 +37,11 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "file-save-as": file("saveAs"),
   settings: (t) => t.toggle("settings"),
   profiles: (t) => t.toggle("profiles"),
+  "table-row-insert": (t) => t.engine().tableAction("row-insert"),
+  "table-col-insert": (t) => t.engine().tableAction("col-insert"),
+  "table-row-remove": (t) => t.engine().tableAction("row-remove"),
+  "table-col-remove": (t) => t.engine().tableAction("col-remove"),
+  "table-uniform": (t) => t.engine().tableAction("uniform"),
 };
 
 export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): ToolbarHost {
@@ -42,7 +49,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     setTool(tool, preset) {
       if (!isKnownTool(tool)) return;
       if (preset !== undefined) {
-        const p = (Object.hasOwn(profile().presets, tool) ? profile().presets[tool] : undefined)?.find((x) => x.id === preset);
+        const p = presetsOf(profile().presets, tool).find((x) => x.id === preset);
         if (p?.color !== undefined && p.width !== undefined) t.engine().setPenStyle({ color: p.color, width: p.width });
       }
       t.engine().setTool(TOOL_TABLE[tool]!.choice);
@@ -51,6 +58,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
       if (Object.hasOwn(ACTIONS, id)) ACTIONS[id]!(t);
     },
     dropFiles: (files, at) => t.importFiles(files, at),
+    tableFill: (fill) => t.engine().tableFill(fill),
     setMode(mode) {
       // Tableau : déjà affiché, rien à faire ni à dire. Annotation du bureau : point d'accroche de C11a, sans effet ici.
       if (mode === "board") return;

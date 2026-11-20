@@ -32,11 +32,14 @@ import { createEraserTool } from "../engine/tools/eraser";
 import { createPenTool } from "../engine/tools/pen";
 import { createSelectTool } from "../engine/tools/select";
 import { createShapeTool } from "../engine/tools/shape";
+import { createTableTool } from "../engine/tools/table";
 import { createTextTool, type TextTool } from "../engine/tools/text";
+import type { TableTool } from "../engine/tools/tool";
 import type { AppBenchDeps } from "./banc";
 import { stageTags } from "./stage-tags";
 import { watchDpr } from "./mesure-outils";
-import { createTextEditor, TEXT_EDITOR_ID } from "./text-editor";
+import { createTablePicker } from "./table-picker";
+import { createTextEditor, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
 
 export interface SessionShared {
   /** Conteneur des scènes (case centrale de la grille, T95) ; les zones de texte y sont aussi, hors des scènes (CL4-2). */
@@ -131,10 +134,15 @@ async function buildBoardSession(
   undo.push(() => images.dispose());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
   const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", { images });
-  // Zone de saisie hors de la scène (CL4-2) ; l'outil Texte est créé par le moteur, après elle. Sans id tant que la
-  // session n'est pas active (un seul #texte-edition dans la page, CL5b-2).
+  // Zone de saisie hors de la scène (CL4-2) ; les outils Texte et Tableau sont créés par le moteur, après elle. Ses
+  // événements vont à l'outil actif (C10a, DAC3). Sans id tant que la session n'est pas active (un seul #texte-edition
+  // dans la page, CL5b-2).
   let textTool: TextTool | null = null;
-  const editor = createTextEditor(container, () => textTool);
+  let tableTool: TableTool | null = null;
+  let activeTool = (): string => "";
+  const editor = createTextEditor(container, (): TextEditorEvents | null => (activeTool() === "table" ? tableTool : textTool));
+  const picker = createTablePicker(container);
+  undo.push(() => picker.element.remove());
   editor.element.removeAttribute("id");
   undo.push(() => editor.element.remove());
   undo.push(() => choice.release());
@@ -155,9 +163,14 @@ async function buildBoardSession(
         textTool = createTextTool(ctx, editor, style, measure);
         return textTool;
       },
+      table: (ctx, style) => {
+        tableTool = createTableTool(ctx, editor, picker, style, measure);
+        return tableTool;
+      },
     },
   });
 
+  activeTool = () => engine.tool();
   undo.push(() => engine.dispose());
   redraw = () => engine.redraw();
 
@@ -191,13 +204,13 @@ async function buildBoardSession(
   sampler.onGesture((g) => router.handle(g));
   const middlePan = createMiddlePan(stage, engine.view);
   undo.push(() => middlePan.dispose());
-  // Outil Texte seulement : sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page, et la zone de
+  // Outils Texte et Tableau seulement : sans cela, le mousedown qui suit le pointerdown donnerait le focus à la page, et la zone de
   // saisie, tout juste ouverte, le perdrait et validerait aussitôt une boîte vide. Avec les autres outils on laisse le
   // mousedown faire son travail : le dernier bouton cliqué perd le focus (Entrée ne le redéclenche plus).
   stage.addEventListener(
     "mousedown",
     (e) => {
-      if (engine.tool() === "text") e.preventDefault();
+      if (engine.tool() === "text" || engine.tool() === "table") e.preventDefault();
     },
     { signal },
   );
@@ -255,6 +268,7 @@ async function buildBoardSession(
     stage.dataset["selection"] = tags.selection;
     stage.dataset["bounds"] = tags.bounds;
     stage.dataset["tool"] = tags.tool;
+    stage.dataset["table"] = tags.table;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
@@ -321,6 +335,7 @@ async function buildBoardSession(
     },
     deactivate() {
       stage.hidden = true;
+      picker.close();
       for (const el of [stage, sceneCanvas, choice.interaction, editor.element]) el.removeAttribute("id");
       engine.releaseKeys();
     },
@@ -341,6 +356,7 @@ async function buildBoardSession(
       choice.release();
       doc.free();
       stage.remove();
+      picker.element.remove();
       editor.element.remove();
     },
   };

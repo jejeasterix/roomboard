@@ -17,6 +17,7 @@ import type {
   PageView,
   StrokeBuilderApi,
   StrokeStyle,
+  TableData,
   TextAttrs,
   TextSpan,
 } from "./api";
@@ -103,8 +104,40 @@ function toSpans(v: unknown, content: string): TextSpan[] {
   return spans;
 }
 
-/** Bornes de FormatText : hors des u32, u32::MAX, que le cœur refuse au contrôle des bornes comme la fausse liaison. */
+/** Bornes de FormatText et rangs ou dimensions du tableau (C10a) : hors des u32, u32::MAX, que le cœur refuse. */
 const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : 0xffffffff);
+
+/** Vue d'un tableau venue de Wasm (T13) : forme contrôlée ; `fill` absent (Option::None) → null. */
+export function toTable(v: unknown): TableData {
+  if (!isRecord(v)) throw new Error(ELEMENT);
+  const { color, size, cols, rows, cells } = v;
+  if (typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells)) {
+    throw new Error(ELEMENT);
+  }
+  return {
+    color,
+    size,
+    cols: cols.map((c: unknown) => {
+      if (!isRecord(c)) throw new Error(ELEMENT);
+      const { id, width } = c;
+      if (typeof id !== "string" || !finitePositive(width)) throw new Error(ELEMENT);
+      return { id, width };
+    }),
+    rows: rows.map((r: unknown) => {
+      if (!isRecord(r)) throw new Error(ELEMENT);
+      const { id, height } = r;
+      if (typeof id !== "string" || !finitePositive(height)) throw new Error(ELEMENT);
+      return { id, height };
+    }),
+    cells: cells.map((c: unknown) => {
+      if (!isRecord(c)) throw new Error(ELEMENT);
+      const { row, col, text, fill } = c;
+      if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
+      if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
+      return { row, col, text, fill: typeof fill === "string" ? fill : null };
+    }),
+  };
+}
 
 /** Kind connu : forme contrôlée ; kind non reconnu : UnknownElement (U3, K8) ; id et transform toujours exigés. */
 export function toElementView(v: unknown): ElementView | null {
@@ -144,6 +177,8 @@ export function toElementView(v: unknown): ElementView | null {
       if (typeof asset !== "string" || typeof w !== "number" || typeof h !== "number") throw new Error(ELEMENT);
       return { ...base, kind, image: { asset, w, h } };
     }
+    case "table":
+      return { ...base, kind, table: toTable(v["table"]) };
     case "unknown": {
       const u = v["unknown"];
       if (!isRecord(u)) throw new Error(ELEMENT);
@@ -325,6 +360,21 @@ class WasmCoreDocument implements CoreDocument {
         if (g === null) return toChange(this.d.clear_grid(cmd.page));
         return toChange(this.d.set_grid(cmd.page, ...gridArgs(g)));
       }
+      case "AddTable":
+        return toChange(
+          this.d.add_table(cmd.page, cmd.x, cmd.y, toU32(cmd.cols), toU32(cmd.rows), cmd.colWidth, cmd.rowHeight, cmd.color, cmd.size),
+        );
+      case "SetTableCell":
+        return toChange(this.d.set_table_cell(cmd.id, cmd.row, cmd.col, cmd.content, cmd.rowHeight));
+      case "InsertTableLine":
+        return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
+      case "RemoveTableLine":
+        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line));
+      case "SetTableSizes":
+        return toChange(this.d.set_table_sizes(cmd.id, cmd.colWidth, cmd.rowHeight));
+      case "SetTableFill":
+        // null → undefined : Option::None côté Rust.
+        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined));
     }
   }
 

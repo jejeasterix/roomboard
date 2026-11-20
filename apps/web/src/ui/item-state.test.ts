@@ -56,3 +56,22 @@ describe("itemState", () => {
     expect(itemState(sep, view()).pressed).toBeNull();
   });
 });
+
+describe("état des actions du tableau (C10a, T10)", () => {
+  const cell = (rows: number, cols: number) => ({ id: "t", row: 0, col: 0, rows, cols });
+  it("sans cellule active : les cinq actions grisées", () => {
+    for (const a of ["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform"]) {
+      expect(itemState(action(a), view()).disabled, a).toBe(true);
+      expect(itemState(action(a), view({ tableCell: null })).disabled, a).toBe(true);
+    }
+  });
+  it("cellule active : tout permis ; une seule ligne ou colonne : « − » grisé ; 64 : « + » grisé (T4, HC10-9)", () => {
+    expect(itemState(action("table-row-remove"), view({ tableCell: cell(3, 4) })).disabled).toBe(false);
+    expect(itemState(action("table-row-remove"), view({ tableCell: cell(1, 4) })).disabled).toBe(true);
+    expect(itemState(action("table-col-remove"), view({ tableCell: cell(3, 1) })).disabled).toBe(true);
+    expect(itemState(action("table-row-insert"), view({ tableCell: cell(64, 4) })).disabled).toBe(true);
+    expect(itemState(action("table-col-insert"), view({ tableCell: cell(3, 64) })).disabled).toBe(true);
+    expect(itemState(action("table-col-insert"), view({ tableCell: cell(3, 63) })).disabled).toBe(false);
+    expect(itemState(action("table-uniform"), view({ tableCell: cell(3, 4) })).disabled).toBe(false);
+  });
+});

@@ -1,3 +1,5 @@
+import { TABLE_MAX_LINES } from "../core/api";
+import type { TableCellState } from "../engine/table-geom";
 import { TOOL_TABLE, type ToolItem } from "../toolbar";
 
 export interface ToolbarView {
@@ -7,6 +9,8 @@ export interface ToolbarView {
   readonly canRedo: boolean;
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** Cellule active de l'outil Tableau (C10a) ; absente ou null : aucune (PC9). */
+  readonly tableCell?: TableCellState | null;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 
@@ -21,6 +25,11 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "page-prev": (v) => ({ disabled: v.pageIndex <= 0 }),
   "page-next": (v) => ({ disabled: v.pageIndex >= v.pageCount - 1 }),
   "page-remove": (v) => ({ disabled: v.pageCount <= 1 }),
+  "table-row-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.rows >= TABLE_MAX_LINES }),
+  "table-col-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.cols >= TABLE_MAX_LINES }),
+  "table-row-remove": (v) => ({ disabled: !v.tableCell || v.tableCell.rows <= 1 }),
+  "table-col-remove": (v) => ({ disabled: !v.tableCell || v.tableCell.cols <= 1 }),
+  "table-uniform": (v) => ({ disabled: !v.tableCell }),
 };
 
 type Rule = (item: ToolItem, v: ToolbarView) => Partial<ItemState>;
