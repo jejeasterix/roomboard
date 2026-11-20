@@ -43,6 +43,13 @@ describe("AssetStore (K13)", () => {
     expect(store.has(ABC.toUpperCase())).toBe(false);
   });
 
+  it("put contrôle l'empreinte rendue par le hasher : majuscules refusées, rien n'est rangé", async () => {
+    const store = createAssetStore(async () => "A".repeat(64));
+    await expect(store.put(new Blob(["x"]))).rejects.toThrow("empreinte d'asset invalide");
+    expect(store.has("A".repeat(64))).toBe(false);
+    expect(store.pick(["A".repeat(64)])).toEqual({ present: [], missing: ["A".repeat(64)] });
+  });
+
   it("l'empreinte est injectée : le hasher donné est seul appelé", async () => {
     let calls = 0;
     const hash: AssetHasher = async () => {
