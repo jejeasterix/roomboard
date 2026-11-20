@@ -90,3 +90,15 @@
    barre de base sur trois lignes et la scène garde 640 px en 1280 × 900 (HC10-15). Hauteur et largeur minimales inchangées. */
 .rb-bar [data-table-action], .rb-bar [data-table-fill], .rb-bar .rb-format { padding: 0 calc(var(--rb-pad) / 2); }
 .rb-bar [data-table-fill], .rb-bar .rb-format.rb-preset { gap: calc(var(--rb-gap) / 2); }
+
+/* Barre flottante du média (C14, M22) : posée en bas de la scène (case « stage »), jamais une rangée ; la scène garde ses 640 px. */
+.rb-media-bar { align-self: end; justify-self: center; margin-block-end: var(--rb-gap); z-index: 3; max-width: 100%; background: #ffffff; border: 1px solid #a1a1aa; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+.rb-media-bar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); padding: var(--rb-pad); }
+.rb-media-bar-inner button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); }
+.rb-media-bar-inner button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+.rb-media-bar-inner input[type="range"] { min-height: var(--rb-btn-m); }
+.rb-media-bar-inner [data-media="position"] { flex: 1 1 12em; --rb-trim-start: 0%; --rb-trim-end: 100%; background: linear-gradient(to right, #e4e4e7 var(--rb-trim-start), #93c5fd var(--rb-trim-start), #93c5fd var(--rb-trim-end), #e4e4e7 var(--rb-trim-end)); }
+.rb-media-bar-inner [data-media="time"] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rb-media-bar-inner [data-media="failed"], .rb-media-bar-inner [data-media="error"] { color: #b91c1c; }
+/* Hôte des lecteurs : dans la page (la lecture l'exige) mais invisible et hors de la scène. */
+.rb-media-host { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
