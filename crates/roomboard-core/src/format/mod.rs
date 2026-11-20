@@ -564,4 +564,46 @@ mod tests {
             assert!(f.last_modified() == Some(DateTime::default()), "{name}");
         }
     }
+
+    #[test]
+    fn read_bounded_keeps_up_to_max() {
+        assert_eq!(read_bounded(&[1u8, 2, 3][..], 3), Ok(vec![1, 2, 3]));
+        assert_eq!(
+            read_bounded(&[1u8, 2, 3, 4][..], 3),
+            Err(BoundedReadError::TooLarge)
+        );
+        assert_eq!(read_bounded(&[0u8; 0][..], 0), Ok(vec![]));
+    }
+
+    #[test]
+    fn oversized_manifest_is_corrupt() {
+        let mut big = manifest_json(FORMAT, FORMAT_VERSION, SCHEMA);
+        big.resize(MAX_MANIFEST_BYTES as usize + 1, b' ');
+        let file = zip_of(&[(MANIFEST, &big[..]), (DOCUMENT, &[0u8; 0][..])]);
+        assert_eq!(
+            open(&file).err(),
+            Some(FormatError::Corrupt(format!(
+                "{MANIFEST} trop gros : plus de {MAX_MANIFEST_BYTES} octets"
+            )))
+        );
+    }
+
+    #[test]
+    fn oversized_document_is_corrupt() {
+        let m = manifest_json(FORMAT, FORMAT_VERSION, SCHEMA);
+        let file = zip_of(&[(MANIFEST, &m[..]), (DOCUMENT, &[0u8; 11][..])]);
+        assert_eq!(
+            open_with_limits(&file, MAX_MANIFEST_BYTES, 10).err(),
+            Some(FormatError::Corrupt(format!(
+                "{DOCUMENT} trop gros : plus de 10 octets"
+            )))
+        );
+        assert!(open_with_limits(&file, MAX_MANIFEST_BYTES, 11).is_ok());
+    }
+
+    #[test]
+    fn limits_are_one_and_256_mib() {
+        assert_eq!(MAX_MANIFEST_BYTES, 1_048_576);
+        assert_eq!(MAX_DOCUMENT_BYTES, 268_435_456);
+    }
 }
