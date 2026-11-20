@@ -306,6 +306,19 @@ describe("zone de saisie riche (C7b)", () => {
     expect(editor.spans()).toEqual([plain("axb"), { text: "に", attrs: B }]);
   });
 
+  it("sélection posée par l'IME, texte encore inchangé (recomposition) : le format en attente survit jusqu'à compositionend (R5, R9)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    fire(zone, key("b", { ctrlKey: true }));
+    fire(zone, compose("compositionstart"));
+    caret(zone, 0, 2);
+    fire(zone, compose("compositionupdate", "abに"));
+    zone.textContent = "abに";
+    setSelection(zone, 3, 3);
+    fire(zone, compose("compositionend", "abに"));
+    expect(editor.spans()).toEqual([plain("ab"), { text: "に", attrs: B }]);
+  });
+
   it("pendant la composition : aucune relecture, aucun redessin, aucun raccourci, aucune action de barre (R5)", () => {
     const { zone, editor } = mount(() => null);
     editor.open(withText([plain("ab")]), IDENTITY);
