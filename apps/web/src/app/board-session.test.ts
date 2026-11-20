@@ -140,6 +140,19 @@ describe("createBoardSession (T93)", () => {
     expect(container.querySelector(".rb-table-picker")).toBeNull();
   });
 
+  it("outil Pot (C6a) : un clic dans le vide colore le fond de la page (fabrique branchée, rouge par défaut)", async () => {
+    const doc = fakeCore.blank();
+    const s = await createBoardSession(doc, shared);
+    s.activate();
+    s.engine.setTool("fill");
+    const c = s.engine.camera();
+    const [sx, sy] = [1500 * c.zoom + c.tx, 900 * c.zoom + c.ty];
+    s.engine.sink.begin(1, "fill", [{ x: sx, y: sy, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    s.engine.sink.close(1, "end");
+    expect(doc.page(doc.pageIds()[0] ?? "")?.background).toBe("#dc2626");
+    s.dispose();
+  });
+
   /** Le navigateur insère `s` à la sélection de la zone (DOM aplati), place le curseur après, puis émet `input`. */
   const typeIn = (zone: HTMLElement, s: string): void => {
     const sel = readSelection(zone) ?? { start: 0, end: 0 };
