@@ -29,6 +29,7 @@ import {
 import type { Measure } from "../engine/text-layout";
 import { decodeImage, kindOfMime } from "../platform/image-import";
 import { createEraserTool } from "../engine/tools/eraser";
+import { createFillTool } from "../engine/tools/fill";
 import { createPenTool } from "../engine/tools/pen";
 import { createSelectTool } from "../engine/tools/select";
 import { createShapeTool } from "../engine/tools/shape";
@@ -169,6 +170,7 @@ async function buildBoardSession(
         tableTool = createTableTool(ctx, editor, picker, style, measure);
         return tableTool;
       },
+      fill: (ctx, color) => createFillTool(ctx, color, measure),
     },
   });
 
