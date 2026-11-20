@@ -22,7 +22,7 @@ import type {
   TextSpan,
 } from "./api";
 import { UNKNOWN_BOX } from "./api";
-import { cleanPatch, plainSpans } from "./rich-text";
+import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
 
@@ -89,6 +89,10 @@ function toAttrs(a: unknown): TextAttrs {
   return out;
 }
 
+/** Segments voulus (C7b, R7) : attributs nettoyés (`cleanPatch`, comme FormatText) ; absents : undefined (Option::None). */
+const spansArg = (spans: readonly TextSpan[] | undefined): unknown =>
+  spans === undefined ? undefined : spans.map((s) => ({ text: s.text, attrs: cleanPatch(s.attrs) }));
+
 /**
  * Segments d'un texte : au moins un (le cœur rend un segment vide pour un texte vide), et leurs textes mis bout à bout
  * redonnent `content` ; sinon le cœur a dérivé.
@@ -134,8 +138,7 @@ export function toTable(v: unknown): TableData {
       const { row, col, text, fill, spans } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
       if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
-      // PC7 : module d'avant C7b sans `spans` → un segment ; T12 les exige.
-      return { row, col, text, fill: typeof fill === "string" ? fill : null, spans: spans === undefined ? plainSpans(text) : toSpans(spans, text) };
+      return { row, col, text, fill: typeof fill === "string" ? fill : null, spans: toSpans(spans, text) };
     }),
   };
 }
@@ -339,7 +342,7 @@ class WasmCoreDocument implements CoreDocument {
       case "SetText":
         // Avec un id, `page`, `x` et `y` ne placent rien (la position passe par Transform), comme la fausse liaison.
         return toChange(
-          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight),
+          this.d.set_text(cmd.page, cmd.id ?? undefined, cmd.x, cmd.y, cmd.content, cmd.color, cmd.size, cmd.boxWidth, cmd.boxHeight, spansArg(cmd.spans)),
         );
       case "Transform":
         return toChange(this.d.transform([...cmd.ids], new Float64Array(cmd.matrix)));
@@ -366,7 +369,7 @@ class WasmCoreDocument implements CoreDocument {
           this.d.add_table(cmd.page, cmd.x, cmd.y, toU32(cmd.cols), toU32(cmd.rows), cmd.colWidth, cmd.rowHeight, cmd.color, cmd.size),
         );
       case "SetTableCell":
-        return toChange(this.d.set_table_cell(cmd.id, cmd.row, cmd.col, cmd.content, cmd.rowHeight));
+        return toChange(this.d.set_table_cell(cmd.id, cmd.row, cmd.col, cmd.content, cmd.rowHeight, spansArg(cmd.spans)));
       case "InsertTableLine":
         return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
       case "RemoveTableLine":
