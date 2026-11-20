@@ -10,6 +10,10 @@ use sha2::{Digest, Sha256};
 
 pub const ASSETS_DIR: &str = "assets/";
 
+/// Taille décompressée maximale d'une entrée `assets/` : 512 Mio. Au-delà, l'entrée est ignorée avec un avertissement
+/// « trop gros », sans erreur (la lecture ne remplit jamais la mémoire d'une bombe de décompression).
+pub const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+
 /// (type MIME, extension, stored) : « stored » pour les contenus déjà compressés (K12).
 const TYPES: [(&str, &str, bool); 14] = [
     ("image/png", "png", true),
@@ -108,6 +112,12 @@ pub fn write(parts: &Parts, assets: &[AssetBytes<'_>]) -> Result<Vec<u8>, Format
 /// `assets/<id>.<ext>` ; empreinte recalculée ; écart, nom invalide, sous-dossier ou doublon : ignoré avec un
 /// avertissement ; autres entrées ignorées (HK9).
 pub fn read(file: &[u8]) -> Result<Unpacked, FormatError> {
+    read_limited(file, MAX_ASSET_BYTES)
+}
+
+/// `read` avec une limite par entrée paramétrable (tests) ; `read` passe `MAX_ASSET_BYTES`.
+#[doc(hidden)]
+pub fn read_limited(file: &[u8], max: u64) -> Result<Unpacked, FormatError> {
     let format::Opened {
         mut archive, parts, ..
     } = format::open(file)?;
@@ -121,6 +131,9 @@ pub fn read(file: &[u8]) -> Result<Unpacked, FormatError> {
     for name in names {
         let rest = &name[ASSETS_DIR.len()..];
         let id = rest.split_once('.').map_or(rest, |(id, _)| id);
+        if rest.is_empty() {
+            continue; // entrée de dossier `assets/` : pas un asset, rien à signaler
+        }
         if rest.contains('/') || !is_asset_id(id) {
             warnings.push(format!("entrée ignorée : {name} (nom d'asset invalide)"));
             continue;
@@ -129,9 +142,19 @@ pub fn read(file: &[u8]) -> Result<Unpacked, FormatError> {
         let read_ok = archive
             .by_name(&name)
             .map_err(|e| e.to_string())
-            .and_then(|mut f| f.read_to_end(&mut bytes).map_err(|e| e.to_string()));
+            .and_then(|f| {
+                f.take(max.saturating_add(1))
+                    .read_to_end(&mut bytes)
+                    .map_err(|e| e.to_string())
+            });
         if let Err(e) = read_ok {
             warnings.push(format!("asset ignoré : {name} (illisible : {e})"));
+            continue;
+        }
+        if bytes.len() as u64 > max {
+            warnings.push(format!(
+                "asset ignoré : {name} (trop gros : plus de {max} octets)"
+            ));
             continue;
         }
         if sha256_hex(&bytes) != id {

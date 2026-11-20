@@ -292,18 +292,22 @@ pub(crate) fn read_backdrop<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<RawBac
 }
 
 /// Vue du fond (K6, K9, DAK4) : `None` sans asset conforme ; `rect` calé sur la largeur de la page (page à hauteur
-/// infinie : coin en (0, 0), hauteur = h × largeur / w) dès que `w` et `h` sont finis > 0, quel que soit `fit`.
+/// infinie : coin en (0, 0), hauteur = h × largeur / w) dès que `w`, `h` et la largeur de page sont finis > 0 et la hauteur calculée finie, quel que soit `fit`.
 pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropView> {
     let asset = r.asset.filter(|a| is_asset_id(a))?;
     let w = r.w.filter(|v| finite_positive(*v));
     let h = r.h.filter(|v| finite_positive(*v));
-    let rect = match (w, h) {
-        (Some(w), Some(h)) => Some(Bounds {
-            x0: 0.0,
-            y0: 0.0,
-            x1: page_width,
-            y1: h * page_width / w,
-        }),
+    let page_width = Some(page_width).filter(|v| finite_positive(*v));
+    let rect = match (w, h, page_width) {
+        (Some(w), Some(h), Some(page_width)) => {
+            let y1 = h * page_width / w;
+            y1.is_finite().then_some(Bounds {
+                x0: 0.0,
+                y0: 0.0,
+                x1: page_width,
+                y1,
+            })
+        }
         _ => None,
     };
     Some(BackdropView {
@@ -314,4 +318,36 @@ pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropV
         fit: r.fit.unwrap_or_default(),
         rect,
     })
+}
+
+#[cfg(test)]
+mod backdrop_tests {
+    use super::*;
+
+    fn raw(w: f64, h: f64) -> RawBackdrop {
+        RawBackdrop {
+            asset: Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into()),
+            kind: Some("image".into()),
+            w: Some(w),
+            h: Some(h),
+            fit: Some("width".into()),
+        }
+    }
+
+    #[test]
+    fn backdrop_view_without_usable_page_width_has_no_rect() {
+        for width in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+            let v = backdrop_view(raw(1000.0, 500.0), width).expect("vue");
+            assert_eq!(v.rect, None, "largeur de page {width}");
+        }
+        let ok = backdrop_view(raw(1000.0, 500.0), 1920.0).expect("vue");
+        assert_eq!(ok.rect.map(|r| r.y1), Some(960.0));
+    }
+
+    #[test]
+    fn backdrop_view_with_overflowing_height_has_no_rect() {
+        let v = backdrop_view(raw(1e-300, 1e10), 1920.0).expect("vue");
+        assert_eq!(v.rect, None);
+        assert_eq!((v.w, v.h), (Some(1e-300), Some(1e10)));
+    }
 }

@@ -4,7 +4,7 @@ use std::io::{Cursor, Write};
 use roomboard_core::document::Document;
 use roomboard_core::format::zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 use roomboard_core::format::{self, FormatError, SaveMeta, DOCUMENT, MANIFEST};
-use roomboard_formats::container::{self, sha256_hex, AssetBytes};
+use roomboard_formats::container::{self, sha256_hex, AssetBytes, MAX_ASSET_BYTES};
 
 const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -43,6 +43,32 @@ fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
     w.finish().expect("fin").into_inner()
 }
 
+/// Section `[dependencies]` d'un `Cargo.toml`, commentaires retirés (les autres sections, `[dev-dependencies]`
+/// comprise, ne comptent pas).
+fn dependencies_section(toml: &str) -> String {
+    let mut inside = false;
+    let mut out = Vec::new();
+    for line in toml.lines() {
+        let t = line.trim();
+        if t.starts_with('[') {
+            inside = t == "[dependencies]";
+            continue;
+        }
+        if inside {
+            out.push(t.split('#').next().unwrap_or("").to_string());
+        }
+    }
+    out.join("\n")
+}
+
+#[test]
+fn dependencies_section_ignores_comments_and_other_sections() {
+    let toml = "[package]\nname = \"zip\"\n[dependencies]\nsha2 = \"0.10\" # zip ?\n# zip = \"9\"\n[dev-dependencies]\nzip = \"9\"\n";
+    let deps = dependencies_section(toml);
+    assert!(deps.contains("sha2") && !deps.contains("zip"), "{deps}");
+    assert!(dependencies_section("[dependencies]\nzip = \"9\"\n").contains("zip"));
+}
+
 /// Patron écarté (arbitrage B1, carnet F1) : le conteneur ne réécrit ni l'ouverture du ZIP, ni l'écriture ou le
 /// contrôle du manifeste et de `document.ybin` ; il passe par `format::write_parts` et `format::open`. Une copie
 /// fidèle donnerait les mêmes octets et les mêmes erreurs : seul son code la distingue de la délégation.
@@ -64,8 +90,9 @@ fn container_delegates_manifest_and_document_to_core() {
         );
     }
     for banned in [
-        "ZipWriter::new",
-        "ZipArchive::new",
+        "ZipWriter",
+        "ZipArchive",
+        "zip::",
         "MANIFEST",
         "DOCUMENT",
         "manifest.json",
@@ -80,8 +107,9 @@ fn container_delegates_manifest_and_document_to_core() {
             "{banned} dans container.rs : lecture ou écriture du cœur recopiée"
         );
     }
+    let deps = dependencies_section(include_str!("../Cargo.toml"));
     assert!(
-        !include_str!("../Cargo.toml").contains("zip"),
+        !deps.contains("zip"),
         "dépendance zip propre au crate : prendre roomboard_core::format::zip"
     );
 }
@@ -273,7 +301,8 @@ fn read_ignores_bad_asset_entries_with_warnings() {
     let wrong = format!("assets/{ABC}.png");
     let dup = format!("assets/{EMPTY}.jpg");
     let dup2 = format!("assets/{EMPTY}.bin");
-    let sub = format!("assets/x/{ABC}.png");
+    // Id valide, mais « .d/x.png » : seul `rest.contains('/')` l'écarte.
+    let sub = format!("assets/{ABC}.d/x.png");
     let file = zip_of(&[
         (MANIFEST, &p.manifest),
         (DOCUMENT, &p.ybin),
@@ -287,11 +316,74 @@ fn read_ignores_bad_asset_entries_with_warnings() {
     let u = container::read(&file).expect("la lecture ne doit pas échouer");
     assert_eq!(u.assets, vec![(EMPTY.to_string(), Vec::new())]);
     assert_eq!(u.warnings.len(), 4, "{:?}", u.warnings);
+    let has = |name: &str, motif: &str| {
+        u.warnings
+            .iter()
+            .any(|w| w.contains(name) && w.contains(motif))
+    };
     assert!(
-        u.warnings.iter().all(|w| w.contains("assets/")),
+        has(&wrong, "contenu différent de son empreinte"),
         "{:?}",
         u.warnings
     );
+    assert!(
+        has("assets/pasunhash.png", "nom d'asset invalide"),
+        "{:?}",
+        u.warnings
+    );
+    assert!(has(&sub, "nom d'asset invalide"), "{:?}", u.warnings);
+    assert!(
+        has(&format!("assets/{EMPTY}."), "empreinte en double"),
+        "{:?}",
+        u.warnings
+    );
+}
+
+/// Une entrée de dossier `assets/` (nom restant vide) n'est pas un asset : ignorée sans avertissement.
+#[test]
+fn read_ignores_assets_directory_entry_silently() {
+    let p = parts();
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, bytes) in [(MANIFEST, &p.manifest), (DOCUMENT, &p.ybin)] {
+        w.start_file(name, format::entry_options(false))
+            .expect("entrée");
+        w.write_all(bytes).expect("écriture");
+    }
+    w.add_directory("assets/", format::entry_options(false))
+        .expect("dossier");
+    let file = w.finish().expect("fin").into_inner();
+    assert!(
+        names(&file).iter().any(|n| n == "assets/"),
+        "dossier présent"
+    );
+    let u = container::read(&file).expect("read");
+    assert!(u.assets.is_empty());
+    assert!(u.warnings.is_empty(), "{:?}", u.warnings);
+}
+
+/// Même empreinte à deux types MIME : le plus petit gagne, dans les deux ordres, mêmes octets.
+#[test]
+fn duplicate_id_with_different_mimes_is_deterministic() {
+    let p = parts();
+    let jpeg = AssetBytes {
+        id: ABC,
+        mime: "image/jpeg",
+        bytes: b"abc",
+    };
+    let png = AssetBytes {
+        id: ABC,
+        mime: "image/png",
+        bytes: b"abc",
+    };
+    let a = container::write(&p, &[jpeg, png]).expect("jpeg puis png");
+    let b = container::write(&p, &[png, jpeg]).expect("png puis jpeg");
+    assert!(a == b, "l'ordre reçu ne change pas les octets");
+    let wanted = format!("assets/{ABC}.jpg");
+    let found: Vec<String> = names(&a)
+        .into_iter()
+        .filter(|n| n.starts_with("assets/"))
+        .collect();
+    assert_eq!(found, vec![wanted]);
 }
 
 #[test]
@@ -342,4 +434,27 @@ fn core_load_ignores_assets() {
             .page_ids(),
         d.page_ids()
     );
+}
+
+/// Entrée `assets/` au-delà de la limite : ignorée avec un avertissement « trop gros », sans erreur.
+#[test]
+fn read_ignores_entry_over_limit_with_warning() {
+    let p = parts();
+    let file = zip_of(&[
+        (MANIFEST, &p.manifest),
+        (DOCUMENT, &p.ybin),
+        (&format!("assets/{ABC}.png"), b"abc"),
+    ]);
+    let u = container::read_limited(&file, 3).expect("exactement la limite : lu");
+    assert_eq!(u.assets.len(), 1, "{:?}", u.warnings);
+    let u = container::read_limited(&file, 2).expect("la lecture n'échoue pas");
+    assert!(u.assets.is_empty());
+    assert_eq!(u.warnings.len(), 1, "{:?}", u.warnings);
+    assert!(u.warnings[0].contains("trop gros"), "{:?}", u.warnings);
+    assert!(u.warnings[0].contains(ABC), "{:?}", u.warnings);
+}
+
+#[test]
+fn default_asset_limit_is_512_mib() {
+    assert_eq!(MAX_ASSET_BYTES, 512 * 1024 * 1024);
 }
