@@ -1211,10 +1211,26 @@ pub(crate) mod tests {
             rm(&mut d, TableAxis::Col, "absente"),
             Err(CommandError::BadTable)
         );
+        d.apply(Command::SetTableFill {
+            id: id.clone(),
+            row: t.rows[1].id.clone(),
+            col: t.cols[1].id.clone(),
+            fill: Some("#fef08a".into()),
+        })
+        .expect("jaune");
+        let before = view(&d, &id);
+        assert!(before
+            .cells
+            .iter()
+            .any(|c| c.col == t.cols[1].id && !c.text.is_empty() && c.fill.is_some()));
         rm(&mut d, TableAxis::Col, &t.cols[1].id).expect("colonne");
         assert_eq!(view(&d, &id).cells.len(), 1);
         assert!(d.undo());
-        assert_eq!(view(&d, &id).cols.len(), 2);
+        assert_eq!(
+            view(&d, &id),
+            before,
+            "colonne, texte et remplissage de ses cellules restaurés"
+        );
     }
 
     #[test]
@@ -1351,6 +1367,31 @@ pub(crate) mod tests {
         assert_eq!(view(&d, &id), before);
         assert!(d.redo());
         assert_eq!(view(&d, &id), after);
+    }
+
+    /// Texte et hauteur de ligne d'un même `SetTableCell` : une seule étape d'annulation, cellule absente ou déjà écrite.
+    #[test]
+    fn set_cell_growing_its_row_is_one_undo_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        for (content, h) in [
+            ("Lundi", 150.0),
+            ("Lundi et un texte bien plus long", 300.0),
+        ] {
+            let before = view(&d, &id);
+            set(&mut d, &id, &r, &c, content, Some(h)).expect("plus haut");
+            let after = view(&d, &id);
+            assert_eq!(
+                (after.rows[0].height, after.cells[0].text.as_str()),
+                (h, content)
+            );
+            assert!(d.undo());
+            assert_eq!(view(&d, &id), before, "texte et hauteur annulés ensemble");
+            assert!(d.redo());
+            assert_eq!(view(&d, &id), after);
+        }
     }
 
     /// Patron écarté : borner chaque entrée en f32 (`col_width` = 1e37 y tient) laisse passer une largeur totale de
