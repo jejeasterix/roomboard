@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -116,5 +118,15 @@ describe("PagesBar (T91)", () => {
     const { container, setV } = setup({ pageIndex: 0, pageCount: 2 });
     setV({ pageIndex: 0, pageCount: 4 });
     expect(container.querySelectorAll("button[data-page]").length).toBe(4);
+  });
+
+  it("mise en forme (T101) : compteur et pages stylés, bornés par les jetons", () => {
+    const { container } = setup({ pageIndex: 0, pageCount: 1 });
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    expect(container.querySelector("#pages")!.classList.contains("rb-pages-count")).toBe(true);
+    expect(container.querySelector("[data-page]")!.classList.contains("rb-page")).toBe(true);
+    expect(css).toMatch(/\.rb-bar\s*\{[^}]*align-items:\s*center/);
+    expect(css).toMatch(/\.rb-pages-count\s*\{[^}]*padding/);
+    expect(css).toMatch(/\.rb-bar button\s*\{[^}]*padding/);
   });
 });
