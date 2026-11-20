@@ -7,10 +7,11 @@ use yrs::{
     TextRef,
 };
 
+use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, invert, out_bytes, out_f64, out_string, out_transform, read_style,
-    style_fields, transform_to_any, StrokeStyle, Transform, IDENTITY,
+    apply_transform, compose, invert, out_bytes, out_f64, out_string, out_transform, read_backdrop,
+    read_style, style_fields, transform_to_any, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
 };
 use crate::ink::erase::erase;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
@@ -70,6 +71,28 @@ pub enum Command {
         box_width: f64,
         box_height: f64,
     },
+    /// Image (U5, K5) : `w`, `h` = taille source en pixels, boîte locale placée par `matrix`.
+    AddImage {
+        page: String,
+        asset: AssetRef,
+        w: f64,
+        h: f64,
+        matrix: Transform,
+    },
+    /// Fond de page (U6, K6) ; `None` retire le fond.
+    SetBackdrop {
+        page: String,
+        backdrop: Option<BackdropInput>,
+    },
+}
+
+/// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackdropInput {
+    pub asset: AssetRef,
+    pub w: f64,
+    pub h: f64,
+    pub fit: String,
 }
 
 /// Ce qu'une commande a touché ; `full` = tout invalider (annuler, rétablir).
@@ -93,6 +116,8 @@ pub enum CommandError {
     BadMatrix,
     BadText,
     UnknownElement(String),
+    BadAsset,
+    BadImage,
 }
 
 impl std::fmt::Display for CommandError {
@@ -123,6 +148,14 @@ impl std::fmt::Display for CommandError {
                 write!(f, "texte invalide (taille et boîte finies > 0 attendues)")
             }
             CommandError::UnknownElement(id) => write!(f, "élément inconnu : {id}"),
+            CommandError::BadAsset => write!(
+                f,
+                "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)"
+            ),
+            CommandError::BadImage => write!(
+                f,
+                "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)"
+            ),
         }
     }
 }
@@ -292,6 +325,15 @@ fn valid_matrix(m: &Transform) -> bool {
     m.iter().all(|v| v.is_finite()) && invert(m).is_some()
 }
 
+/// Référence d'asset : empreinte conforme, type non vide, taille entière finie ≥ 0 (K5).
+fn valid_asset(a: &AssetRef) -> bool {
+    is_asset_id(&a.id)
+        && !a.mime.is_empty()
+        && a.size.is_finite()
+        && a.size >= 0.0
+        && a.size.fract() == 0.0
+}
+
 fn stroke_prelim(
     id: &str,
     transform: &Transform,
@@ -398,6 +440,16 @@ impl Document {
                 box_width,
                 box_height,
             }),
+            Command::AddImage {
+                page,
+                asset,
+                w,
+                h,
+                matrix,
+            } => self.cmd_add_image(&page, &asset, [w, h], &matrix),
+            Command::SetBackdrop { page, backdrop } => {
+                self.cmd_set_backdrop(&page, backdrop.as_ref())
+            }
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
@@ -578,6 +630,111 @@ impl Document {
         Ok(self.done(Change {
             pages: vec![t.page.to_string()],
             ids: vec![id],
+            ..Default::default()
+        }))
+    }
+
+    /// Image (U5, K5) : une étape ; la métadonnée entre dans la même transaction si elle est absente (K3).
+    fn cmd_add_image(
+        &mut self,
+        page: &str,
+        asset: &AssetRef,
+        size: [f64; 2],
+        m: &Transform,
+    ) -> Result<Change, CommandError> {
+        let [w, h] = size;
+        if !valid_asset(asset) {
+            return Err(CommandError::BadAsset);
+        }
+        if !positive(w) || !positive(h) {
+            return Err(CommandError::BadImage);
+        }
+        if !valid_matrix(m) {
+            return Err(CommandError::BadMatrix);
+        }
+        let elements = self.page_elements_or_err(page)?;
+        let id = yrs::uuid_v4().to_string();
+        let fields = MapPrelim::from([
+            ("id", In::from(id.as_str())),
+            ("kind", In::from("image")),
+            ("transform", In::Any(transform_to_any(m))),
+            ("asset", In::from(asset.id.as_str())),
+            ("w", In::Any(Any::from(w))),
+            ("h", In::Any(Any::from(h))),
+        ]);
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, fields);
+            self.insert_asset_meta(&mut txn, asset);
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ids: vec![id],
+            ..Default::default()
+        }))
+    }
+
+    /// Fond de page (U6, K6) : une étape ; `None` retire ; même valeur, ou rien à retirer : aucune transaction (D38) ;
+    /// seul `fit: "width"` s'écrit ; la taille de la page ne change jamais.
+    fn cmd_set_backdrop(
+        &mut self,
+        page: &str,
+        input: Option<&BackdropInput>,
+    ) -> Result<Change, CommandError> {
+        if let Some(b) = input {
+            if !valid_asset(&b.asset) {
+                return Err(CommandError::BadAsset);
+            }
+            if !positive(b.w) || !positive(b.h) || b.fit != FIT_WIDTH {
+                return Err(CommandError::BadImage);
+            }
+        }
+        let (page_map, current) = {
+            let txn = self.read();
+            let (_, m) = self
+                .find_page(&txn, page)
+                .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+            let current = read_backdrop(&txn, &m);
+            (m, current)
+        };
+        let same = match (input, &current) {
+            (None, None) => true,
+            (Some(b), Some(r)) => {
+                r.asset.as_deref() == Some(b.asset.id.as_str())
+                    && r.kind.as_deref() == Some("image")
+                    && r.w == Some(b.w)
+                    && r.h == Some(b.h)
+                    && r.fit.as_deref() == Some(FIT_WIDTH)
+            }
+            _ => false,
+        };
+        if same {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            match input {
+                None => {
+                    page_map.remove(&mut txn, "backdrop");
+                }
+                Some(b) => {
+                    page_map.insert(
+                        &mut txn,
+                        "backdrop",
+                        MapPrelim::from([
+                            ("asset", In::from(b.asset.id.as_str())),
+                            ("kind", In::from("image")),
+                            ("w", In::Any(Any::from(b.w))),
+                            ("h", In::Any(Any::from(b.h))),
+                            ("fit", In::from(FIT_WIDTH)),
+                        ]),
+                    );
+                    self.insert_asset_meta(&mut txn, &b.asset);
+                }
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
             ..Default::default()
         }))
     }
@@ -1784,12 +1941,18 @@ pub(crate) mod tests {
             name: "autre.png".into(),
             ..png()
         };
-        let b = add_image(&mut d, &p, renamed, IDENTITY).expect("image 2").ids[0].clone();
+        let b = add_image(&mut d, &p, renamed, IDENTITY)
+            .expect("image 2")
+            .ids[0]
+            .clone();
         assert_eq!(d.element_ids(&p), vec![a, b]);
         assert_eq!(d.cited_assets(), vec![png()]);
         assert_eq!(d.asset(ABC), Some(png()));
         assert!(d.undo());
-        assert!(d.can_undo(), "l'image et sa métadonnée font une seule étape");
+        assert!(
+            d.can_undo(),
+            "l'image et sa métadonnée font une seule étape"
+        );
         assert!(d.undo());
         assert!(!d.can_undo());
     }
@@ -1842,7 +2005,13 @@ pub(crate) mod tests {
                 },
                 CommandError::BadAsset,
             ),
-            (AssetRef { size: -1.0, ..png() }, CommandError::BadAsset),
+            (
+                AssetRef {
+                    size: -1.0,
+                    ..png()
+                },
+                CommandError::BadAsset,
+            ),
             (AssetRef { size: 1.5, ..png() }, CommandError::BadAsset),
             (
                 AssetRef {

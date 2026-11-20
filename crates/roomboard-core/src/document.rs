@@ -1,20 +1,22 @@
 //! Document CRDT (yrs), schéma D2 : racine `meta` {schema}, racine `pages` = tableau de pages `Y.Map`
 //! {id, width, height, background, elements: Y.Array de Y.Map}. L'ordre de `elements` est l'ordre d'empilement.
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
 
+use yrs::types::text::YChange;
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Array, ArrayPrelim, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
-    Transact, Transaction, TransactionMut, Update,
+    Any, Array, ArrayPrelim, ArrayRef, Doc, In, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
+    Text, Transact, Transaction, TransactionMut, Update,
 };
 
+use crate::asset::{is_asset_id, AssetInfo, AssetRef};
 use crate::commands::{read_shape, read_text};
 use crate::element::{
-    out_f64, out_string, out_transform, read_image, read_style, read_unknown, ElementView,
-    ImageView, PageView, ShapeView, StrokeStyle, TextView, UnknownView, DEFAULT_BACKGROUND,
-    PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
+    backdrop_view, out_f64, out_string, out_transform, read_backdrop, read_image, read_style,
+    read_unknown, ElementView, ImageView, PageView, ShapeView, StrokeStyle, TextView, UnknownView,
+    DEFAULT_BACKGROUND, PAGE_HEIGHT, PAGE_WIDTH, SCHEMA,
 };
 use crate::history::History;
 use crate::ink::outline::{outline as ink_outline, InkStyle};
@@ -41,6 +43,8 @@ pub struct Document {
     doc: Doc,
     meta: MapRef,
     pages: ArrayRef,
+    /// Racine `assets` (K3) : empreinte → `Y.Map{ name, mime, size }`.
+    assets: MapRef,
     history: History,
     version: u64,
     outlines: RefCell<HashMap<String, CachedOutline>>,
@@ -55,10 +59,12 @@ pub(crate) struct FoundElement {
     pub element: MapRef,
 }
 
-fn roots(doc: &Doc) -> (MapRef, ArrayRef) {
+/// Racines prises une fois. Une racine vide n'est pas encodée : un document sans asset garde ses octets.
+fn roots(doc: &Doc) -> (MapRef, ArrayRef, MapRef) {
     (
         doc.get_or_insert_map("meta"),
         doc.get_or_insert_array("pages"),
+        doc.get_or_insert_map("assets"),
     )
 }
 
@@ -77,23 +83,24 @@ pub(crate) fn insert_page(pages: &ArrayRef, txn: &mut TransactionMut, index: u32
 
 impl Document {
     /// Doc neuf, racines prises une fois, `meta.schema` écrit sans origine (hors historique).
-    fn bare() -> (Doc, MapRef, ArrayRef) {
+    fn bare() -> (Doc, MapRef, ArrayRef, MapRef) {
         let doc = Doc::new();
-        let (meta, pages) = roots(&doc);
+        let (meta, pages, assets) = roots(&doc);
         {
             let mut txn = doc.transact_mut();
             meta.insert(&mut txn, "schema", f64::from(SCHEMA));
         }
-        (doc, meta, pages)
+        (doc, meta, pages, assets)
     }
 
     /// `History` est créée en dernier : rien de ce qui précède ne s'annule (D37).
-    fn assemble(doc: Doc, meta: MapRef, pages: ArrayRef) -> Self {
-        let history = History::new(&doc, &pages, &meta);
+    fn assemble(doc: Doc, meta: MapRef, pages: ArrayRef, assets: MapRef) -> Self {
+        let history = History::new(&doc, &pages, &meta, &assets);
         Self {
             doc,
             meta,
             pages,
+            assets,
             history,
             version: 0,
             outlines: RefCell::new(HashMap::new()),
@@ -102,18 +109,18 @@ impl Document {
     }
 
     pub fn new() -> Self {
-        let (doc, meta, pages) = Self::bare();
-        Self::assemble(doc, meta, pages)
+        let (doc, meta, pages, assets) = Self::bare();
+        Self::assemble(doc, meta, pages, assets)
     }
 
     /// Document de démarrage : une page, créée sans origine avant `History` (D37).
     pub fn blank() -> Self {
-        let (doc, meta, pages) = Self::bare();
+        let (doc, meta, pages, assets) = Self::bare();
         {
             let mut txn = doc.transact_mut();
             insert_page(&pages, &mut txn, 0);
         }
-        Self::assemble(doc, meta, pages)
+        Self::assemble(doc, meta, pages, assets)
     }
 
     pub fn add_page(&mut self) -> String {
@@ -148,16 +155,69 @@ impl Document {
             .collect()
     }
 
+    /// Vue de page ; un fond illisible donne `backdrop: None`, jamais une page illisible (K9).
     pub fn page(&self, id: &str) -> Option<PageView> {
         let txn = self.doc.transact();
         let (_, m) = self.find_page(&txn, id)?;
+        let width = out_f64(m.get(&txn, "width"))?;
         Some(PageView {
             id: id.to_string(),
-            width: out_f64(m.get(&txn, "width"))?,
+            width,
             height: out_f64(m.get(&txn, "height"))?,
             background: out_string(m.get(&txn, "background"))?,
-            backdrop: None,
+            backdrop: read_backdrop(&txn, &m).and_then(|r| backdrop_view(r, width)),
         })
+    }
+
+    /// Assets cités par le document (K4, DAK2) : toute chaîne conforme de `pages`, à toute profondeur ; sans doublon,
+    /// triés ; métadonnée de `assets` ou défauts, rendus sans écrire (D38).
+    pub fn cited_assets(&self) -> Vec<AssetInfo> {
+        let txn = self.doc.transact();
+        let mut ids = BTreeSet::new();
+        collect_out(&txn, &Out::YArray(self.pages.clone()), &mut ids);
+        ids.iter().map(|id| self.asset_info(&txn, id)).collect()
+    }
+
+    /// Métadonnée d'un asset ; `None` si l'id n'est pas conforme ; défauts si l'entrée est absente ou mal formée.
+    pub fn asset(&self, id: &str) -> Option<AssetInfo> {
+        if !is_asset_id(id) {
+            return None;
+        }
+        let txn = self.doc.transact();
+        Some(self.asset_info(&txn, id))
+    }
+
+    /// Défauts champ par champ (K4) : `name` chaîne, `mime` chaîne non vide, `size` nombre fini ≥ 0.
+    fn asset_info<T: ReadTxn>(&self, txn: &T, id: &str) -> AssetInfo {
+        let mut info = AssetInfo::fallback(id);
+        if let Some(Out::YMap(m)) = self.assets.get(txn, id) {
+            if let Some(name) = out_string(m.get(txn, "name")) {
+                info.name = name;
+            }
+            if let Some(mime) = out_string(m.get(txn, "mime")).filter(|s| !s.is_empty()) {
+                info.mime = mime;
+            }
+            if let Some(size) = out_f64(m.get(txn, "size")).filter(|v| v.is_finite() && *v >= 0.0) {
+                info.size = size;
+            }
+        }
+        info
+    }
+
+    /// Métadonnée écrite seulement si absente (K3), dans la transaction de la commande qui cite l'asset : champs
+    /// scalaires d'un `Y.Map`, jamais `Any::Map` (G4).
+    pub(crate) fn insert_asset_meta(&self, txn: &mut TransactionMut, a: &AssetRef) {
+        if self.assets.get(txn, &a.id).is_none() {
+            self.assets.insert(
+                txn,
+                a.id.as_str(),
+                MapPrelim::from([
+                    ("name", In::from(a.name.as_str())),
+                    ("mime", In::from(a.mime.as_str())),
+                    ("size", In::Any(Any::from(a.size))),
+                ]),
+            );
+        }
     }
 
     pub fn page_index(&self, id: &str) -> Option<u32> {
@@ -290,7 +350,7 @@ impl Document {
     pub fn from_update_v1(bytes: &[u8]) -> Result<Self, DecodeError> {
         let update = Update::decode_v1(bytes).map_err(|e| DecodeError::Update(format!("{e:?}")))?;
         let doc = Doc::new();
-        let (meta, pages) = roots(&doc);
+        let (meta, pages, assets) = roots(&doc);
         {
             let mut txn = doc.transact_mut();
             txn.apply_update(update)
@@ -303,7 +363,7 @@ impl Document {
         if found != Some(f64::from(SCHEMA)) {
             return Err(DecodeError::Schema { found });
         }
-        Ok(Self::assemble(doc, meta, pages))
+        Ok(Self::assemble(doc, meta, pages, assets))
     }
 
     #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
@@ -422,6 +482,46 @@ impl Document {
             }
         }
         None
+    }
+}
+
+fn collect_any(a: &Any, acc: &mut BTreeSet<String>) {
+    match a {
+        Any::String(s) if is_asset_id(s) => {
+            acc.insert(s.to_string());
+        }
+        Any::Array(items) => items.iter().for_each(|i| collect_any(i, acc)),
+        Any::Map(m) => m.values().for_each(|v| collect_any(v, acc)),
+        _ => {}
+    }
+}
+
+/// Parcours générique (K4) : `Y.Map`, `Y.Array`, valeurs `Any`, embeds et attributs des `Y.Text` ; le texte lui-même
+/// (morceaux `Any::String` insérés) n'est pas balayé.
+fn collect_out<T: ReadTxn>(txn: &T, o: &Out, acc: &mut BTreeSet<String>) {
+    match o {
+        Out::Any(a) => collect_any(a, acc),
+        Out::YMap(m) => {
+            for (_, v) in m.iter(txn) {
+                collect_out(txn, &v, acc);
+            }
+        }
+        Out::YArray(a) => {
+            for v in a.iter(txn) {
+                collect_out(txn, &v, acc);
+            }
+        }
+        Out::YText(t) => {
+            for d in t.diff(txn, YChange::identity) {
+                if !matches!(d.insert, Out::Any(Any::String(_))) {
+                    collect_out(txn, &d.insert, acc);
+                }
+                if let Some(attrs) = d.attributes {
+                    attrs.values().for_each(|v| collect_any(v, acc));
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -961,11 +1061,7 @@ mod tests {
             ("asset", In::from(ABC)),
             ("kind", In::from("image")),
         ])));
-        let b = d
-            .page(&p)
-            .expect("page")
-            .backdrop
-            .expect("fond sans boîte");
+        let b = d.page(&p).expect("page").backdrop.expect("fond sans boîte");
         assert_eq!((b.w, b.h, b.rect), (None, None, None));
     }
 
