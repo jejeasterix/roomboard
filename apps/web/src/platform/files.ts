@@ -62,10 +62,13 @@ export interface DroppedFile {
 /** `at` en px CSS relatifs à la fenêtre ; null quand le système ne donne pas de point (ouverture par le Finder). */
 export type DropHandler = (files: DroppedFile[], at: Point | null) => void;
 
-/** Extensions offertes par « Importer » (R18) : le `.roomboard`, l'objet `.rbitem` et les images d'U33 que le registre reconnaît. */
+/** C12 (PF3, PF19) : extension et type MIME d'un PDF. */
+export const PDF_EXTENSION = ".pdf";
+export const PDF_MIME = "application/pdf";
+/** Extensions offertes par « Importer » (R18, PF3) : le `.roomboard`, l'objet `.rbitem`, le PDF et les images d'U33 que le registre reconnaît. */
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
-export const IMPORT_EXTENSIONS = ["roomboard", "rbitem", ...IMAGE_EXTENSIONS] as const;
-export const IMPORT_FILTER = { name: "Images et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
+export const IMPORT_EXTENSIONS = ["roomboard", "rbitem", "pdf", ...IMAGE_EXTENSIONS] as const;
+export const IMPORT_FILTER = { name: "Images, PDF et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
 
 export interface FileHost {
   readonly kind: HostKind;

@@ -34,6 +34,7 @@ const pagesBar = () => ({
         action("page-add", "Ajouter une page"),
         action("page-remove", "Retirer la page"),
         action("page-insert-file", "Insérer des pages…"),
+        action("export-pdf", "Exporter en PDF…"),
       ],
     },
   ],
