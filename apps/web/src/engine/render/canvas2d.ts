@@ -232,6 +232,7 @@ export class Canvas2DRenderer implements Renderer {
 
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay: EditOverlay = EMPTY_OVERLAY): void {
     const ctx = this.scene;
+    this.images?.beginScene?.(); // `data-pixels` ne compte que les images de cette scène (I33)
     this.zoom = camera.zoom;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = SURROUND_COLOR;
@@ -257,6 +258,7 @@ export class Canvas2DRenderer implements Renderer {
     this.paintOverlayContent(ctx, overlay);
     if (grid && grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     this.paintOverlayChrome(ctx, overlay, camera.zoom);
+    this.images?.endScene?.();
   }
 
   /** Lignes visibles de la grille de la page (G9), servies par le cache (E3) ; null sans source, sans grille ou hors page. */
