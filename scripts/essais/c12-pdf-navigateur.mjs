@@ -8,7 +8,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
 
@@ -27,11 +27,12 @@ async function threePages() {
 
 async function readBack(bytes) {
   const pdfjs = await import(pathToFileURL(web.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, verbosity: 0, standardFontDataUrl: pathToFileURL(join(dirname(web.resolve("pdfjs-dist/package.json")), "standard_fonts") + sep).href });
+  const doc = await task.promise;
   const texts = [];
   for (let i = 1; i <= doc.numPages; i++) texts.push((await (await doc.getPage(i)).getTextContent()).items.map((it) => it.str ?? "").join(""));
   const pages = doc.numPages;
-  await doc.destroy();
+  await task.destroy();
   const overlays = (await PDFDocument.load(bytes)).getPages().map((p) => {
     const xo = p.node.Resources()?.lookupMaybe(PDFName.of("XObject"), PDFDict);
     return xo ? xo.keys().map((k) => String(xo.lookup(k, PDFStream).dict.get(PDFName.of("Subtype")))) : [];
@@ -58,7 +59,7 @@ async function scenario(page, url, { captures, tmp, requests }) {
       throw new Echec(`${name} attendu « ${v} », lu « ${await attr(name)} »`);
     });
   const tabs = () => page.locator(TAB).count();
-  const waitTabs = (n) => page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, n, { timeout: 30000 });
+  const waitTabs = (n) => page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, n, { timeout: 30000 }).catch(async (e) => { throw new Echec(`onglets attendus ${n}, lus ${await tabs()} ; texte : ${JSON.stringify((await page.evaluate(() => document.body.innerText)).slice(-400))} ; erreurs : ${errors.join(" | ")}`); });
   const download = async (click, name) => {
     const dl = page.waitForEvent("download");
     await click();
