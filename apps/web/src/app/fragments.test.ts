@@ -4,7 +4,7 @@ import type { CoreDocument } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
-import { createContainerIO, type ContainerIO } from "./container-io";
+import { createContainerIO, LINKED_COPY_MESSAGE, type ContainerIO } from "./container-io";
 import { createFragmentOps, EMPTY_ITEMS_MESSAGE, MISSING_EXPORT_MESSAGE, MISSING_ITEMS_MESSAGE, SELECTION_NAME, TAB_GONE_MESSAGE, UNREAD_ITEMS_MESSAGE } from "./fragments";
 import type { TabSession } from "./workspace";
 
@@ -269,5 +269,37 @@ describe("opérations sur la sélection (DAZ3)", () => {
     const json = s.extract(s.pageIds()[0]!, [i]).saveFragment(NOW, "0.1.0", "x");
     expect(await ops.insert(tabOf().tab, json, "x.rbitem", null)).toBe(false);
     expect(said).toHaveLength(1);
+  });
+});
+
+describe("opérations sur la sélection : médias liés (C14)", () => {
+  it("R2 : insérer les pages d'un fichier à vidéo liée : la vidéo refusée avec avis, le reste inséré", async () => {
+    const VID = "cd".repeat(32);
+    const codec = memoryCodec();
+    const { ops, said } = opsOf(codec);
+    const s = fakeCore.blank();
+    rectIn(s, 0, 0, 100, 100);
+    s.apply({
+      type: "AddMedia",
+      page: s.pageIds()[0]!,
+      asset: { id: VID, name: "clip.webm", mime: "video/webm", size: 300_000_000 },
+      poster: null,
+      linked: "/cours/videos/clip.webm",
+      mediaType: "video",
+      w: 640,
+      h: 360,
+      duration: 12,
+      matrix: [1, 0, 0, 1, 0, 0],
+    });
+    const io = createContainerIO({ core: fakeCore, codec, say: async () => undefined, makeAssets: () => createAssetStore(async () => ID) });
+    const bytes = await io.encode(s, createAssetStore(async () => ID), NOW, "0.1.0", { kind: "document" });
+    const dst = tabOf();
+    expect(await ops.insertPages(dst.tab, { name: "b.roomboard", bytes, target: { kind: "download", name: "b.roomboard" } })).toBe(true);
+    const added = dst.doc.pageIds().slice(1);
+    expect(added).toHaveLength(1);
+    expect(added.flatMap((p) => dst.doc.elementIds(p)).map((id) => dst.doc.element(id)?.kind)).toEqual(["shape"]);
+    expect(dst.doc.citedAssets().map((a) => a.id)).not.toContain(VID);
+    expect(dst.assets.linked(VID)).toBeUndefined();
+    expect(said).toContain(`b.roomboard : ${LINKED_COPY_MESSAGE}`);
   });
 });

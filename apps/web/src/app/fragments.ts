@@ -2,11 +2,13 @@
  * Opérations sur la sélection d'un onglet (C3, DAZ3) : encoder la sélection en `.rbitem` ; insérer un `.rbitem` collé
  * (centre de la vue, cascade de 24 px par collage successif du même contenu, Z7) ou déposé (centre de ses bornes au
  * point) ; insérer les pages d'un `.roomboard` après la page montrée (Z12). Assets adoptés par le magasin de l'onglet ;
- * un asset cité non lu : refus (HZ2-6, PC8). Lecture et écriture par `container-io.ts`.
+ * un asset cité non lu : refus (HZ2-6, PC8). Lecture et écriture par `container-io.ts`. Pages d'un fichier : ses médias
+ * liés ne sont pas insérés, avec l'avis de la copie d'un média lié (C14, R2) ; le reste l'est.
  */
 import { anchorOf, CASCADE_STEP } from "../platform/image-import";
 import type { OpenedFile, Point } from "../platform/files";
-import { MissingAssetError, type ContainerIO, type ReadResult } from "./container-io";
+import type { CoreDocument } from "../core/api";
+import { LINKED_COPY_MESSAGE, MissingAssetError, type ContainerIO, type ReadResult } from "./container-io";
 import type { TabSession } from "./workspace";
 
 export const SELECTION_NAME = "Sélection";
@@ -64,6 +66,18 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
     for (const [id, blob] of present) tab.assets.adopt(id, blob);
   }
 
+  /** R2 (C14) : médias liés de l'autre document retirés de la copie lue (jamais du fichier), avec un avis. */
+  async function dropLinked(doc: CoreDocument, name: string): Promise<void> {
+    const linked = new Set(doc.linkedAssets().map((l) => l.id));
+    if (linked.size === 0) return;
+    const ids = doc.pageIds().flatMap((p) => doc.elementIds(p)).filter((id) => {
+      const e = doc.element(id);
+      return e?.kind === "media" && linked.has(e.media.asset);
+    });
+    if (ids.length > 0) doc.apply({ type: "Delete", ids });
+    await deps.say(`${name} : ${LINKED_COPY_MESSAGE}`);
+  }
+
   async function insertOutcome(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
     const read = await deps.io.read(name, rbitem, "fragment");
     if (read === null) return "refused";
@@ -117,6 +131,7 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       if (read === null) return false;
       if (!(await accept(tab, read, file.name))) return false;
       try {
+        await dropLinked(read.doc, file.name);
         adopt(tab, read);
         return tab.board.engine.insertPages(read.doc) !== null;
       } finally {
