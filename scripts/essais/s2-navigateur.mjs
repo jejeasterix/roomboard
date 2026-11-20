@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { DIST, Echec, ROOT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve } from "./commun.mjs";
+import { DIST, Echec, ROOT, VIEWPORT, frames as framesOf, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
 
 /** Passages du lot 3b : `attendu` lit #stage[data-echelons] (forme `2:off,3:off,4:off`, engine/settings.ts). */
 const PASSES = [
@@ -41,14 +41,16 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     console.log(`ok — ${msg}`);
   };
   const frames = () => framesOf(page);
+  const mouse = stageMouse(page); // gestes en px de la scène (origine = coin de #stage)
   const elements = async () => Number(await page.getAttribute("#stage", "data-elements"));
-  const disabled = (action) => page.$eval(`#barre button[data-action="${action}"]`, (b) => b.disabled);
-  const pressed = (action) => page.getAttribute(`#barre button[data-action="${action}"]`, "aria-pressed");
+  const disabled = (action) => page.$eval(item(action), (b) => b.disabled);
+  const pressed = (action) => page.getAttribute(item(action), "aria-pressed");
   // Pixels d'encre (somme RVB < 300) dans une boîte en px CSS du canvas de scène.
   const ink = (box) => inkIn(page, box);
   // Pixels d'encre à l'écran (capture composée : scène et canvas d'interaction, Canvas 2D ou WebGL2), décodés dans la page.
   const shotInk = async ([x0, y0, x1, y1]) => {
-    const png = await page.screenshot({ clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+    const box = await stageBox(page);
+    const png = await page.screenshot({ clip: { x: box.x + x0, y: box.y + y0, width: x1 - x0, height: y1 - y0 } });
     return page.evaluate(async (b64) => {
       const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob();
       const bmp = await createImageBitmap(blob);
@@ -63,10 +65,10 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
   };
   const drag = async (points) => {
     const [first, ...rest] = points;
-    await page.mouse.move(first[0], first[1]);
-    await page.mouse.down();
-    for (const [x, y] of rest) await page.mouse.move(x, y, { steps: 8 });
-    await page.mouse.up();
+    await mouse.move(first[0], first[1]);
+    await mouse.down();
+    for (const [x, y] of rest) await mouse.move(x, y, { steps: 8 });
+    await mouse.up();
     await frames();
   };
   const press = async (keys) => {
@@ -74,7 +76,7 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     await frames();
   };
   const click = async (action) => {
-    await page.click(`#barre button[data-action="${action}"]`);
+    await page.click(item(action));
     await frames();
   };
 
@@ -135,13 +137,13 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
 
   // Lot 3b : encre vive pendant le geste (canvas d'interaction), rien d'écrit avant le relâché (D38).
   await click("pen");
-  await page.mouse.move(400, 550);
-  await page.mouse.down();
-  await page.mouse.move(900, 550, { steps: 12 });
+  await mouse.move(400, 550);
+  await mouse.down();
+  await mouse.move(900, 550, { steps: 12 });
   await frames();
   check((await elements()) === 4, "pendant le geste : rien d'écrit dans le document (D38)");
   check((await shotInk([640, 540, 660, 560])) > 0, "encre vive visible pendant le geste (canvas d'interaction)");
-  await page.mouse.up();
+  await mouse.up();
   await frames();
   check((await elements()) === 5, "relâché : le trait est écrit (cinq traits)");
 
@@ -153,10 +155,10 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     await drag([[700, 620], [550, 620]]);
     check((await elements()) === 5 && (await ink(LEFT)) > 0, "outil main : la vue suit le glisser, aucun trait");
     await click("pen"); // outil Stylo : sans lui, l'outil Main masquerait une régression T27 (le milieu tracerait)
-    await page.mouse.move(550, 620);
-    await page.mouse.down({ button: "middle" });
-    await page.mouse.move(700, 620, { steps: 8 });
-    await page.mouse.up({ button: "middle" });
+    await mouse.move(550, 620);
+    await mouse.down({ button: "middle" });
+    await mouse.move(700, 620, { steps: 8 });
+    await mouse.up({ button: "middle" });
     await frames();
     check((await elements()) === 5 && (await ink(LEFT)) === 0, "bouton du milieu : la vue revient, aucun trait");
     await click("pen");
@@ -207,14 +209,14 @@ async function main() {
       return 2;
     }
     if (!lot3b) {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+      const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       await scenario(page, `http://127.0.0.1:${port}/`, { capture: captureTarget(argv) });
       console.log("S2 lot 3 : OK");
       return 0;
     }
     const captures = argv.includes("--captures");
     for (const pass of PASSES) {
-      const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+      const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       try {
         const page = await context.newPage();
         console.log(`— passage ${pass.nom} (${pass.query || "réglages par défaut"})`);
