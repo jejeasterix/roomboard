@@ -1,5 +1,5 @@
 /** Rendu derrière une interface (DA2, D19) : Canvas 2D au socle ; WebGL2 pourra remplacer l'implémentation (DA9). */
-import type { Change, CoreDocument, EraseMode } from "../../core/api";
+import type { Change, CoreDocument, EraseMode, GridView } from "../../core/api";
 import type { Camera } from "../camera";
 import type { EditOverlay } from "./overlay";
 
@@ -32,8 +32,15 @@ export interface LiveLayer {
 
 export const EMPTY_LIVE: LiveLayer = { strokes: [], erasers: [] };
 
-/** Ce que le rendu lit du document : vue d'un élément, contour local et, s'il y en a, lignes de la grille (C9). */
-export type SceneSource = Pick<CoreDocument, "element" | "outline"> & Partial<Pick<CoreDocument, "gridLines">>;
+/** Ce que le rendu lit du document : vue d'un élément, contour local, lignes de la grille et, pour l'aperçu de l'éditeur,
+ *  lignes d'une grille non enregistrée (C9). */
+export type SceneSource = Pick<CoreDocument, "element" | "outline"> & Partial<Pick<CoreDocument, "gridLines" | "gridLinesOf">>;
+
+/** Aperçu de la grille (C9 éditeur, DAE1) : `grid` remplace celle du document sur `page` ; null = aucune grille. */
+export interface GridPreview {
+  readonly page: string;
+  readonly grid: GridView | null;
+}
 
 export interface Renderer {
   /**
@@ -48,4 +55,6 @@ export interface Renderer {
   resize(width: number, height: number, dpr: number): void;
   /** Oublie les chemins en cache des éléments touchés (`full` : tous). */
   invalidate(change: Change): void;
+  /** Aperçu de grille (DAE1) : rien n'est écrit ; `null` rend la grille du document. */
+  setGridPreview(p: GridPreview | null): void;
 }

@@ -8,7 +8,7 @@ import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
-import type { LiveLayer, PageView, Renderer } from "./render/renderer";
+import type { GridPreview, LiveLayer, PageView, Renderer } from "./render/renderer";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
 import type { TableCellState } from "./table-geom";
@@ -60,6 +60,10 @@ class FakeRenderer implements Renderer {
   }
   invalidate(change: Change): void {
     this.changes.push(change);
+  }
+  readonly previews: (GridPreview | null)[] = [];
+  setGridPreview(p: GridPreview | null): void {
+    this.previews.push(p);
   }
 }
 
@@ -709,6 +713,37 @@ describe("createEngine", () => {
     engine.key(key("z", { ctrlKey: true }));
     engine.key(key("z", { ctrlKey: true }));
     expect(engine.state().selection).toEqual([]);
+  });
+
+  it("previewGrid (DAE1) : aperçu posé sur la page montrée, scène redessinée, rien d'écrit ; endGridPreview l'ôte une fois", () => {
+    const { doc, engine, renderer, frames } = setup();
+    engine.resize(800, 600, 1);
+    frames.tick();
+    const p = engine.state().page;
+    const v = doc.version();
+    const n = renderer.scenes.length;
+    const g = { visible: true, snap: false, above: false, levels: [] };
+    engine.previewGrid(g);
+    frames.tick();
+    expect(renderer.previews).toEqual([{ page: p, grid: g }]);
+    expect(renderer.scenes.length).toBe(n + 1);
+    expect(doc.version()).toBe(v);
+    expect(engine.state().canUndo).toBe(false);
+    engine.endGridPreview();
+    engine.endGridPreview();
+    frames.tick();
+    expect(renderer.previews).toEqual([{ page: p, grid: g }, null]);
+    expect(renderer.scenes.length).toBe(n + 2);
+  });
+
+  it("switchTo coupe l'aperçu (E8) : page changée → setGridPreview(null), une seule fois", () => {
+    const { engine, renderer } = setup();
+    const p = engine.state().page;
+    engine.previewGrid(null);
+    expect(engine.addPage()).toBe(true);
+    expect(renderer.previews).toEqual([{ page: p, grid: null }, null]);
+    engine.endGridPreview();
+    expect(renderer.previews).toHaveLength(2);
   });
 });
 
