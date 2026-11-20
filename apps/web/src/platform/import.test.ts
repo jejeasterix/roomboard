@@ -570,6 +570,27 @@ describe("importFiles : médias (C14)", () => {
     expect(cmd.matrix).toEqual(placement(AUDIO_BOX.w, AUDIO_BOX.h, anchorOf(rect, IDENTITY, null), visibleOf(rect, IDENTITY), 0));
   });
 
+  it("M16 : WebM sans image (videoWidth 0) : audio, 480 × 120, aucun poster, MIME audio/webm", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps({ probe: async () => ({ duration: 3, width: 0, height: 0, poster: null }) });
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("son.webm", WEBM)], null);
+    expect(r.inserted).toEqual(["son.webm"]);
+    const cmd = t.cmds[0] as AddMedia;
+    expect([cmd.mediaType, cmd.w, cmd.h, cmd.poster, cmd.asset.mime]).toEqual(["audio", AUDIO_BOX.w, AUDIO_BOX.h, null, "audio/webm"]);
+  });
+
+  it("M16 : Ogg avec image (videoWidth > 0) : vidéo, taille de la sonde, MIME video/ogg", async () => {
+    const t = fakeTarget();
+    const d = mediaDeps();
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: d.notify, target: () => t.target, probe: d.probe, mediaUrls: d.mediaUrls })
+      .importFiles([file("clip.ogv", asciiBytes("OggS", [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]))], null);
+    expect(r.inserted).toEqual(["clip.ogv"]);
+    const cmd = t.cmds[0] as AddMedia;
+    expect([cmd.mediaType, cmd.w, cmd.h, cmd.asset.mime]).toEqual(["video", 320, 180, "video/ogg"]);
+    expect(cmd.poster).not.toBeNull();
+  });
+
   it("sonde en échec : « codec non lu sur ce poste », rien d'inséré, URL révoquée (M15)", async () => {
     const t = fakeTarget();
     const d = mediaDeps({ probe: async () => { throw new Error(CODEC_UNREADABLE); } });
