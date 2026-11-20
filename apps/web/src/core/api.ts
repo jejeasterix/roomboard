@@ -5,12 +5,18 @@
 // Change.full = true : tout invalider (annuler, rétablir). Lot 4 : AddShape, SetText, Transform ; éléments shape et text.
 // Forme : rect / ellipse = boîte locale (0, 0)-(w, h), w, h ≥ 0 ; line / arrow = segment (0, 0)-(w, h) (core/shapes.ts).
 // Texte : boîte locale (0, 0)-(boxWidth, boxHeight) ; style.color = couleur du texte, style.width = 0.
+// C2 : AddImage, SetBackdrop ; éléments image et unknown (style absent) ; page(id), citedAssets, asset, saveParts, loadParts.
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
 export type ShapeKind = "rect" | "ellipse" | "line" | "arrow";
-export type ElementKind = "stroke" | "shape" | "text";
+export type ElementKind = "stroke" | "shape" | "text" | "image" | "unknown";
+export interface AssetRef { readonly id: string; readonly name: string; readonly mime: string; readonly size: number }
+/** Métadonnée d'un asset cité (K3) : même forme que la référence ; défauts du cœur pour une entrée absente (K4). */
+export type AssetInfo = AssetRef;
+/** Fond demandé par SetBackdrop ; seul fit = "width" est accepté à l'écriture (K6). */
+export interface BackdropInput { readonly asset: AssetRef; readonly w: number; readonly h: number; readonly fit: string }
 
 export interface Change {
   readonly pages: readonly string[];
@@ -50,20 +56,46 @@ export type Command =
       readonly boxWidth: number;
       readonly boxHeight: number;
     }
-  | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix };
+  | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
+  | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
+  /** backdrop null : retire le fond ; même valeur : aucune étape (D38). */
+  | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData { readonly content: string; readonly size: number; readonly boxWidth: number; readonly boxHeight: number }
 
+export interface ImageData { readonly asset: string; readonly w: number; readonly h: number }
+export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
+
 interface ElementBase {
   readonly id: string;
   readonly transform: Matrix;
-  readonly style: StrokeStyle;
 }
-export interface StrokeElement extends ElementBase { readonly kind: "stroke" }
-export interface ShapeElement extends ElementBase { readonly kind: "shape"; readonly shape: ShapeData }
-export interface TextElement extends ElementBase { readonly kind: "text"; readonly text: TextData }
-export type ElementView = StrokeElement | ShapeElement | TextElement;
+export interface StrokeElement extends ElementBase { readonly kind: "stroke"; readonly style: StrokeStyle }
+export interface ShapeElement extends ElementBase { readonly kind: "shape"; readonly style: StrokeStyle; readonly shape: ShapeData }
+export interface TextElement extends ElementBase { readonly kind: "text"; readonly style: StrokeStyle; readonly text: TextData }
+/** Image (U5) : boîte locale (0, 0)-(w, h), taille source en pixels. */
+export interface ImageElement extends ElementBase { readonly kind: "image"; readonly image: ImageData }
+/** Élément d'un kind inconnu (U3) : gardé, dessiné comme un cadre, boîte (0, 0)-(w, h). */
+export interface UnknownElement extends ElementBase { readonly kind: "unknown"; readonly unknown: UnknownData }
+export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | UnknownElement;
+
+/** Fond de page (U6, K6) : rect calculé par le cœur, calé sur la largeur de la page ; null si w ou h illisibles. */
+export interface BackdropView {
+  readonly asset: string;
+  readonly kind: string;
+  readonly w: number | null;
+  readonly h: number | null;
+  readonly fit: string;
+  readonly rect: Bounds | null;
+}
+export interface PageView {
+  readonly id: string;
+  readonly width: number;
+  readonly height: number;
+  readonly background: string;
+  readonly backdrop: BackdropView | null;
+}
 
 export interface Bounds { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
 
@@ -79,6 +111,9 @@ export interface CoreDocument {
   /** Lève une Error dont le message dit la cause (page inconnue, dernière page, points invalides). */
   apply(cmd: Command): Change;
   element(id: string): ElementView | null;
+  page(id: string): PageView | null;
+  citedAssets(): AssetInfo[];
+  asset(id: string): AssetInfo | null;
   points(id: string): Float32Array | null;
   outline(id: string): Float32Array | null;
   hitTest(page: string, x: number, y: number, tol: number): string | null;
@@ -91,6 +126,7 @@ export interface CoreDocument {
   canRedo(): boolean;
   version(): number;
   save(now: string, appVersion: string): Uint8Array;
+  saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array];
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi;
   free(): void;
 }
@@ -99,7 +135,12 @@ export interface CoreFactory {
   blank(): CoreDocument;
   /** Lève une Error lisible si le fichier n'est pas un .roomboard, est plus récent, ou est corrompu. */
   load(bytes: Uint8Array): CoreDocument;
+  loadParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
   version(): string;
 }
 
 export const NO_CHANGE: Change = { pages: [], ids: [], removed: [], full: false, version: 0 };
+export const DEFAULT_ASSET_MIME = "application/octet-stream";
+export const UNKNOWN_BOX = 100;
+export const PAGE_WIDTH = 1920;
+export const PAGE_HEIGHT = 1080;
