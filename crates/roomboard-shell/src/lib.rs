@@ -12,11 +12,19 @@ use std::sync::Mutex;
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
 /// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
 pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem"];
+/// Extensions des médias (audio, vidéo) qu'on peut lier sans les copier.
+pub const MEDIA_EXTENSIONS: &[&str] = &[
+    "mp4", "m4v", "m4a", "mov", "webm", "mp3", "wav", "ogg", "oga", "ogv",
+];
+/// Taille des morceaux lus pour l'empreinte d'un média lié (8 Mio).
+pub const HASH_CHUNK: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReadError {
     NotGranted,
     TooLarge,
+    NotMedia,
+    SizeMismatch,
     Io(String),
 }
 
@@ -25,6 +33,8 @@ impl fmt::Display for ReadError {
         match self {
             ReadError::NotGranted => write!(f, "fichier non accordé"),
             ReadError::TooLarge => write!(f, "lecture trop grande (8 Mio au plus)"),
+            ReadError::NotMedia => write!(f, "extension de média attendue"),
+            ReadError::SizeMismatch => write!(f, "taille différente"),
             ReadError::Io(e) => write!(f, "lecture impossible : {e}"),
         }
     }
@@ -90,6 +100,54 @@ pub fn read_granted(
 pub fn size_granted(g: &GrantedPaths, path: &Path) -> Result<u64, ReadError> {
     let c = g.granted_path(path).ok_or(ReadError::NotGranted)?;
     std::fs::metadata(&c).map(|m| m.len()).map_err(io)
+}
+
+/// Vrai si l'extension de `path` est celle d'un média, sans tenir compte de la casse.
+pub fn has_media_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| MEDIA_EXTENSIONS.iter().any(|x| x.eq_ignore_ascii_case(e)))
+}
+
+/// Empreinte SHA-256 (hexadécimal minuscule) d'un média accordé, lue par morceaux de `HASH_CHUNK` ; ouvre le chemin
+/// canonique vérifié, pas le chemin reçu.
+pub fn sha256_granted(g: &GrantedPaths, path: &Path) -> Result<String, ReadError> {
+    use sha2::{Digest, Sha256};
+    let c = g.granted_path(path).ok_or(ReadError::NotGranted)?;
+    if !has_media_extension(&c) {
+        return Err(ReadError::NotMedia);
+    }
+    let mut f = File::open(&c).map_err(io)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; HASH_CHUNK];
+    loop {
+        let n = f.read(&mut buf).map_err(io)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
+/// Chemin canonique d'un média lié retrouvé : fichier ordinaire, extension de média, même taille que celle notée.
+pub fn check_linked_media(path: &Path, size: u64) -> Result<PathBuf, ReadError> {
+    let c = path.canonicalize().map_err(io)?;
+    let meta = std::fs::metadata(&c).map_err(io)?;
+    if !meta.is_file() {
+        return Err(ReadError::Io("fichier ordinaire attendu".into()));
+    }
+    if !has_media_extension(&c) {
+        return Err(ReadError::NotMedia);
+    }
+    if meta.len() != size {
+        return Err(ReadError::SizeMismatch);
+    }
+    Ok(c)
 }
 
 /// Arguments du lancement (sans le programme) dont l'extension est associée ; options (`-…`) ignorées.
@@ -278,5 +336,67 @@ mod tests {
                 PathBuf::from("/x/objet.RBITEM")
             ]
         );
+    }
+
+    #[test]
+    fn sha256_granted_hashes_in_chunks() {
+        use sha2::{Digest, Sha256};
+        let d = dir("sha");
+        let big = d.join("a.webm");
+        let data: Vec<u8> = (0..HASH_CHUNK + 3).map(|i| (i % 251) as u8).collect();
+        fs::write(&big, &data).unwrap();
+        let abc = d.join("b.mp3");
+        fs::write(&abc, b"abc").unwrap();
+        let g = GrantedPaths::default();
+        g.grant([big.clone(), abc.clone()]);
+        let want: String = Sha256::digest(&data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(sha256_granted(&g, &big).unwrap(), want);
+        assert_eq!(
+            sha256_granted(&g, &abc).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn sha256_granted_refuses_ungranted_and_non_media() {
+        let d = dir("sharef");
+        let v = d.join("a.webm");
+        fs::write(&v, b"x").unwrap();
+        let t = d.join("a.txt");
+        fs::write(&t, b"x").unwrap();
+        let g = GrantedPaths::default();
+        assert_eq!(sha256_granted(&g, &v), Err(ReadError::NotGranted));
+        g.grant([t.clone()]);
+        assert_eq!(sha256_granted(&g, &t), Err(ReadError::NotMedia));
+    }
+
+    #[test]
+    fn check_linked_media_needs_media_extension_and_same_size() {
+        let d = dir("check");
+        let v = d.join("a.mp4");
+        fs::write(&v, b"12345").unwrap();
+        let t = d.join("a.txt");
+        fs::write(&t, b"12345").unwrap();
+        assert_eq!(
+            check_linked_media(&v, 5).unwrap(),
+            v.canonicalize().unwrap()
+        );
+        assert_eq!(check_linked_media(&v, 6), Err(ReadError::SizeMismatch));
+        assert_eq!(check_linked_media(&t, 5), Err(ReadError::NotMedia));
+        assert!(matches!(
+            check_linked_media(&d.join("absent.mp4"), 5),
+            Err(ReadError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn media_extensions_ignore_case() {
+        assert!(has_media_extension(Path::new("/x/A.WEBM")));
+        assert!(has_media_extension(Path::new("b.Mp4")));
+        assert!(!has_media_extension(Path::new("c.txt")));
+        assert!(!has_media_extension(Path::new("webm")));
     }
 }

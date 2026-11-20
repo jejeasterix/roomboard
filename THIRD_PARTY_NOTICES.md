@@ -287,3 +287,38 @@ Police de test `crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.t
 BSD-3-Clause (https://opensource.org/licenses/BSD-3-Clause), Zlib (https://opensource.org/licenses/Zlib),
 Unicode-3.0 (https://www.unicode.org/license.txt), BSL-1.0 (https://www.boost.org/LICENSE_1_0.txt), OFL-1.1
 (https://openfontlicense.org).
+
+## Coque Tauri (C14, protocole d'assets)
+
+Feature `protocol-asset` de `tauri` (`apps/desktop/src-tauri/Cargo.toml`) : elle ajoute au verrou de `src-tauri` une seule crate, `http-range`. La coque (`roomboard-shell`) ajoute aussi `sha2` pour l'empreinte des vidéos liées (déjà relevé plus haut).
+
+| crate | version | licence | dépôt |
+|---|---|---|---|
+| http-range | 0.1.6 | MIT | https://github.com/bancek/rust-http-range |
+| sha2 (`roomboard-shell`) | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
+
+## Texte de licence : http-range 0.1.6 (MIT)
+
+```
+MIT License
+
+Copyright (c) 2016 Luka Zakrajšek
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

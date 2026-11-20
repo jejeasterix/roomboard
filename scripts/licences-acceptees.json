@@ -5,5 +5,14 @@
       "raison": "données de navigateurs lues au build (browserslist), aucun code lié à l'application ; relevé du 2026-11-20"
     }
   },
-  "cargo": {}
+  "cargo": {
+    "roomboard-shell": {
+      "licence": "LicenseRef-PolyForm-Shield-1.0.0",
+      "raison": "crate du dépôt (coque, chemin local) vue comme dépendance par le relevé de src-tauri ; licence du projet, pas un tiers"
+    },
+    "target-lexicon": {
+      "licence": "Apache-2.0 WITH LLVM-exception",
+      "raison": "Apache-2.0 avec exception LLVM (plus permissive qu'Apache-2.0), dépendance de la chaîne Tauri ; non copyleft"
+    }
+  }
 }
