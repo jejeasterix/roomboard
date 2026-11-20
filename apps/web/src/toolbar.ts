@@ -117,15 +117,23 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "table-row-remove": { label: "− Ligne" },
   "table-col-remove": { label: "− Colonne" },
   "table-uniform": { label: "Uniformiser" },
+  "table-merge": { label: "Fusionner" },
+  "table-split": { label: "Diviser" },
+  "table-shade": { label: "Ombrer" },
+  "table-unshade": { label: "Retirer l'ombrage" },
 });
 
-/** Boutons de structure du tableau (C10a, DAC4), dans l'ordre de la rangée contextuelle. */
+/** Boutons de structure du tableau (C10a, DAC4 ; C10b, F15), dans l'ordre de la rangée contextuelle. */
 export const TABLE_ACTIONS: readonly ActionId[] = Object.freeze([
   "table-row-insert",
   "table-col-insert",
   "table-row-remove",
   "table-col-remove",
   "table-uniform",
+  "table-merge",
+  "table-split",
+  "table-shade",
+  "table-unshade",
 ]);
 
 /** Pastille de remplissage d'une cellule (T12, HC10-5) ; `color` null : retire le remplissage. */
