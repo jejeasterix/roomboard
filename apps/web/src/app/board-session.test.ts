@@ -258,6 +258,25 @@ describe("createBoardSession (T93)", () => {
     expect(down()).toBe(false);
   });
 
+  it("dispose : aucun écouteur matchMedia restant", async () => {
+    const live = new Set<() => void>();
+    const spy = vi.spyOn(window, "matchMedia").mockImplementation(
+      () =>
+        ({
+          addEventListener: (_t: string, cb: () => void) => live.add(cb),
+          removeEventListener: (_t: string, cb: () => void) => live.delete(cb),
+        }) as unknown as MediaQueryList,
+    );
+    try {
+      const s = await createBoardSession(fakeCore.blank(), shared);
+      expect(live.size).toBeGreaterThan(0);
+      s.dispose();
+      expect(live.size).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("aucun écouteur posé sur window", async () => {
     const spy = vi.spyOn(window, "addEventListener");
     const s = await createBoardSession(fakeCore.blank(), shared);

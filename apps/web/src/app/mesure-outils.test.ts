@@ -58,6 +58,9 @@ describe("watchDpr", () => {
           addEventListener: (_t, cb) => {
             listener = cb;
           },
+          removeEventListener: (_t, cb) => {
+            if (listener === cb) listener = undefined;
+          },
         };
       },
     };
@@ -82,5 +85,33 @@ describe("watchDpr", () => {
     stop();
     f.fire();
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("retire l'écouteur à l'arrêt et n'en garde qu'un vivant à la fois", () => {
+    const live = new Set<() => void>();
+    let max = 0;
+    const ratio = { v: 1 };
+    const w = {
+      get devicePixelRatio() {
+        return ratio.v;
+      },
+      matchMedia: () => ({
+        addEventListener: (_t: "change", cb: () => void) => {
+          live.add(cb);
+          max = Math.max(max, live.size);
+        },
+        removeEventListener: (_t: "change", cb: () => void) => {
+          live.delete(cb);
+        },
+      }),
+    } as DprWindow;
+    const stop = watchDpr(w, () => undefined);
+    expect(live.size).toBe(1);
+    ratio.v = 2;
+    [...live][0]?.();
+    expect(live.size).toBeLessThanOrEqual(1);
+    stop();
+    expect(live.size).toBe(0);
+    expect(max).toBeLessThanOrEqual(1);
   });
 });

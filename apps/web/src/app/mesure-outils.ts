@@ -22,27 +22,38 @@ export function downloadJson(text: string, prefix: string, now: Date, deps: Down
   deps.setTimeout(() => deps.url.revokeObjectURL(url), 1000);
 }
 
-export interface DprWindow {
-  readonly devicePixelRatio: number;
-  matchMedia(q: string): { addEventListener(t: "change", cb: () => void, o: { once: true }): void };
+export interface DprMediaQueryList {
+  addEventListener(t: "change", cb: () => void, o: { once: true }): void;
+  removeEventListener(t: "change", cb: () => void): void;
 }
 
-/** Appelle `onChange` à chaque changement du devicePixelRatio (écran, zoom) ; rend l'arrêt. */
+export interface DprWindow {
+  readonly devicePixelRatio: number;
+  matchMedia(q: string): DprMediaQueryList;
+}
+
+/** Appelle `onChange` à chaque changement du devicePixelRatio (écran, zoom) ; rend l'arrêt, qui retire l'écouteur. */
 export function watchDpr(w: DprWindow, onChange: () => void): () => void {
   let stopped = false;
+  let current: { mql: DprMediaQueryList; cb: () => void } | undefined;
+  const disarm = (): void => {
+    if (current) current.mql.removeEventListener("change", current.cb);
+    current = undefined;
+  };
   const arm = (): void => {
-    w.matchMedia(`(resolution: ${w.devicePixelRatio || 1}dppx)`).addEventListener(
-      "change",
-      () => {
-        if (stopped) return;
-        onChange();
-        arm();
-      },
-      { once: true },
-    );
+    disarm();
+    const mql = w.matchMedia(`(resolution: ${w.devicePixelRatio || 1}dppx)`);
+    const cb = (): void => {
+      if (stopped) return;
+      onChange();
+      arm();
+    };
+    current = { mql, cb };
+    mql.addEventListener("change", cb, { once: true });
   };
   arm();
   return () => {
     stopped = true;
+    disarm();
   };
 }
