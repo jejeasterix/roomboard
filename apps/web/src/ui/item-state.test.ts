@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { TableCellState } from "../engine/table-geom";
 import type { ToolItem } from "../toolbar";
 import { ACTION_STATE, itemState, type ToolbarView } from "./item-state";
 
@@ -73,5 +74,26 @@ describe("état des actions du tableau (C10a, T10)", () => {
     expect(itemState(action("table-col-insert"), view({ tableCell: cell(3, 64) })).disabled).toBe(true);
     expect(itemState(action("table-col-insert"), view({ tableCell: cell(3, 63) })).disabled).toBe(false);
     expect(itemState(action("table-uniform"), view({ tableCell: cell(3, 4) })).disabled).toBe(false);
+  });
+});
+
+describe("état des actions du tableau (C10b, F15)", () => {
+  const cell = (o: Partial<TableCellState> = {}): TableCellState => ({ id: "t", row: 0, col: 0, rows: 3, cols: 4, ...o });
+  it("Fusionner : plage d'au moins deux cellules ; sans plage : grisé", () => {
+    expect(itemState(action("table-merge"), view({ tableCell: cell() })).disabled).toBe(true);
+    expect(itemState(action("table-merge"), view({ tableCell: cell({ range: { r0: 0, c0: 0, r1: 0, c1: 1 } }) })).disabled).toBe(false);
+  });
+  it("Diviser : cellule active fusionnée, sans plage", () => {
+    expect(itemState(action("table-split"), view({ tableCell: cell({ merged: true }) })).disabled).toBe(false);
+    expect(itemState(action("table-split"), view({ tableCell: cell({ merged: true, range: { r0: 0, c0: 0, r1: 1, c1: 1 } }) })).disabled).toBe(true);
+    expect(itemState(action("table-split"), view({ tableCell: cell() })).disabled).toBe(true);
+  });
+  it("Ombrer : une cellule active (PC21)", () => {
+    expect(itemState(action("table-shade"), view({ tableCell: cell() })).disabled).toBe(false);
+    expect(itemState(action("table-shade"), view({ tableCell: null })).disabled).toBe(true);
+  });
+  it("Retirer l'ombrage : au moins une cellule ombrée dans la plage (ou l'active)", () => {
+    expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: true }) })).disabled).toBe(false);
+    expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: false }) })).disabled).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
 import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
+import { PASTE_MAX_CHARS, PASTE_TOO_BIG } from "../platform/html-table";
 import { LATER_FORMAT_MESSAGE } from "../platform/import";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
@@ -69,7 +70,9 @@ function fakeSession(doc: CoreDocument): FakeBoard {
   const n = boards.length + 1;
   const board = {
     doc,
+    measure: (s: string) => s.length * 10,
     engine: {
+      textStyle: () => ({ color: "#1d4ed8", size: 36 }),
       state: () => ({ version: doc.version(), page: doc.pageIds()[0] ?? "" }),
       camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
       run: (cmd: Command) => {
@@ -189,6 +192,7 @@ interface SetupOptions {
   readonly dropReady?: WorkspaceDeps["dropReady"];
   readonly launch?: WorkspaceDeps["launch"];
   readonly decode?: WorkspaceDeps["decode"];
+  readonly readSheet?: WorkspaceDeps["readSheet"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -220,6 +224,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     makeSession: async (doc, _assets) => fakeSession(doc).board,
     makeAssets: () => createAssetStore(fakeHasher),
     ...(o.decode ? { decode: o.decode } : {}),
+    ...(o.readSheet ? { readSheet: o.readSheet } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -709,5 +714,46 @@ describe("espace de travail : conteneur, repli et images (R7, R12, R30, S3, S4)"
     expect((await web.importFiles([big()])).refused).toEqual(["gros.png"]);
     const coque = await setupWorkspace({ kind: "tauri", decode: fakeDecode });
     expect((await coque.importFiles([big()])).inserted).toEqual(["gros.png"]);
+  });
+});
+
+describe("espace de travail : tableau collé et classeur (C10b)", () => {
+  const tables = (ws: Workspace) => {
+    const d = ws.active().board.doc;
+    return d.elementIds(d.pageIds()[0] ?? "").map((id) => d.element(id)).filter((e) => e?.kind === "table");
+  };
+
+  it("pasteTable : tableau HTML collé dans l'onglet actif ; une ImportTable ; couleur du stylo (S2, F21)", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteTable('<table><tr><td colspan="2">Titre</td></tr><tr><td>a</td><td>b</td></tr></table>')).toBe(true);
+    const t = tables(ws);
+    expect(t).toHaveLength(1);
+    const v = t[0];
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect([v.table.color, v.table.merges.length, v.table.cells.map((c) => c.text)]).toEqual(["#1d4ed8", 1, ["Titre", "a", "b"]]);
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("pasteTable : HTML de plus de 8 Mio refusé avec « tableau trop gros pour être collé » ; rien d'inséré", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteTable(`<table><tr><td>${"x".repeat(PASTE_MAX_CHARS)}</td></tr></table>`)).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith(PASTE_TOO_BIG);
+    expect(tables(ws)).toHaveLength(0);
+  });
+
+  it("pasteTable : HTML sans tableau lisible : false (main.ts colle alors les images, PC9)", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteTable("<table></table><p>rien</p>")).toBe(false);
+    expect(tables(ws)).toHaveLength(0);
+  });
+
+  it("S4 : .xlsx importé par le lecteur de classeur : un tableau dans l'onglet actif, message de troncature", async () => {
+    const grid = { rows: 64, cols: 6, cells: new Array<string>(384).fill("v"), merges: [{ row: 1, col: 0, rows: 1, cols: 2 }], sourceRows: 70, sourceCols: 6, cutCells: false };
+    const ws = await setupWorkspace({ readSheet: async () => grid });
+    const bytes = new Uint8Array([0x50, 0x4b, 3, 4, 9]);
+    const r = await ws.importFiles([{ name: "valeurs.xlsx", size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]) }], null);
+    expect(r.inserted).toEqual(["valeurs.xlsx"]);
+    expect(tables(ws)).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("valeurs.xlsx : tableau limité à 64 lignes et 64 colonnes (le fichier en a 70 × 6)");
   });
 });
