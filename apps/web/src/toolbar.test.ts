@@ -165,9 +165,10 @@ describe("profil de barre (T83, usage § 8)", () => {
 
   it("tables : chaque outil du moteur a son entrée ; actions de l'ancienne barre présentes", () => {
     expect(Object.keys(TOOL_TABLE).sort()).toEqual(["arrow", "ellipse", "eraser", "hand", "line", "pen", "rect", "select", "table", "text"]);
-    for (const a of ["eraser-mode", "undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "fit-page", "file-new", "file-open", "file-save", "file-save-as", "settings", "profiles"]) {
+    for (const a of ["eraser-mode", "undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "fit-page", "file-new", "file-open", "file-save", "file-save-as", "settings", "profiles", "grid"]) {
       expect(ACTION_TABLE[a], a).toBeDefined();
     }
+    expect(ACTION_TABLE["grid"]?.label).toBe("Grille");
     expect(CAPABILITY_KEYS).toEqual(["desktopAnnotation", "multiWindow", "dropPaths", "officeConverter"]);
   });
 

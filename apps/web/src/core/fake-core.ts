@@ -12,7 +12,8 @@
 // C7 : segments (`spans`) gardés par SetText (différence de `rich-text.ts`), posés par FormatText ; JSON sans `spans` = un segment.
 // C9 : grille de page (`SetGrid`, `page(id).grid`) au modèle du cœur, lecture tolérante et sauvegarde comprises ; une
 // grille lue qui n'est pas un objet est gardée brute et réécrite telle quelle, vue comme absente (G13).
-// Écart assumé, exclu du contrat commun (DAG3) : `snapPoint`, `snapDelta` et `gridLines` ne connaissent que le kind
+// Écart assumé, exclu du contrat commun (DAG3) : `snapPoint`, `snapDelta`, `gridLines` et
+// `gridLinesOf` ne connaissent que le kind
 // `squares` ; lines, dots, isometric, music et seyes n'accrochent pas et ne tracent rien ici : ils se testent dans
 // `grid.rs` et sur le vrai module (bloc « contrat C9 : vrai module seulement »).
 // C10a : tableau (AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill) au modèle de
@@ -52,10 +53,13 @@ import type {
 import {
   DEFAULT_ASSET_MIME,
   DEFAULT_GRID_COLOR,
+  DEFAULT_GRID_LINE_WIDTH,
   DEFAULT_TABLE_COLOR,
   DEFAULT_TABLE_SIZE,
   MAX_GRID_DOTS,
   MAX_GRID_LEVELS,
+  MAX_GRID_LINE_WIDTH,
+  MIN_GRID_LINE_WIDTH,
   PAGE_HEIGHT,
   PAGE_WIDTH,
   TABLE_MAX_LINES,
@@ -819,6 +823,11 @@ class FakeDocument implements CoreDocument {
     const g = this.gridOfPage(page);
     return g === null ? null : squaresLines(g, PAGE_WIDTH, rect, minStep);
   }
+  gridLinesOf(page: string, grid: GridView, rect: Bounds, minStep: number, minDotStep: number): GridLines | null {
+    void minDotStep; // points : vrai module seulement (DAG3)
+    if (!this.state.pages.some((q) => q.id === page)) return null;
+    return squaresLines(grid, PAGE_WIDTH, rect, minStep);
+  }
   private gridOfPage(page: string): GridView | null {
     const p = this.state.pages.find((q) => q.id === page);
     return p ? gridView(p.grid) : null;
@@ -1041,12 +1050,15 @@ const dist2 = (ax: number, ay: number, bx: number, by: number): number => {
 };
 
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v !== "";
+/** Épaisseur acceptable (E1) : nombre fini dans [1, 8], comme `grid::line_width_ok`. */
+const lineWidthOk = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v >= MIN_GRID_LINE_WIDTH && v <= MAX_GRID_LINE_WIDTH;
 
 /** Niveau vu comme par le cœur (G4) : sans pas finis > 0 ou sans kind non vide, absent ; défauts champ par champ,
  *  couleur et trait vides compris. Toute vue lue passe donc `validGrid` telle quelle. */
 function gridLevelView(raw: unknown): GridLevel | null {
   if (!isRecord(raw)) return null;
-  const { kind, spacingX, spacingY, originX, originY, color, line, snap, visible } = raw;
+  const { kind, spacingX, spacingY, originX, originY, color, line, lineWidth, snap, visible } = raw;
   if (!finitePositive(spacingX) || !finitePositive(spacingY) || !nonEmpty(kind)) return null;
   return {
     kind,
@@ -1056,6 +1068,7 @@ function gridLevelView(raw: unknown): GridLevel | null {
     originY: finiteOr(originY, 0),
     color: nonEmpty(color) ? color : DEFAULT_GRID_COLOR,
     line: nonEmpty(line) ? line : "solid",
+    lineWidth: lineWidthOk(lineWidth) ? lineWidth : DEFAULT_GRID_LINE_WIDTH,
     snap: boolOr(snap, true),
     visible: boolOr(visible, true),
   };
@@ -1074,7 +1087,7 @@ function gridView(raw: unknown): GridView | null {
   };
 }
 
-const LEVEL_KEYS = ["kind", "spacingX", "spacingY", "originX", "originY", "color", "line", "snap", "visible"] as const satisfies readonly (keyof GridLevel)[];
+const LEVEL_KEYS = ["kind", "spacingX", "spacingY", "originX", "originY", "color", "line", "lineWidth", "snap", "visible"] as const satisfies readonly (keyof GridLevel)[];
 /** Garde d'exhaustivité : un champ ajouté à `GridLevel` sans entrer dans `LEVEL_KEYS` casse la compilation. */
 type MissingLevelKey = Exclude<keyof GridLevel, (typeof LEVEL_KEYS)[number]>;
 const LEVEL_KEYS_COMPLETE: [MissingLevelKey] extends [never] ? true : never = true;
@@ -1105,10 +1118,11 @@ const validGrid = (g: GridInput): boolean =>
       Number.isFinite(l.originY) &&
       l.kind !== "" &&
       l.color !== "" &&
-      l.line !== "",
+      l.line !== "" &&
+      lineWidthOk(l.lineWidth),
   );
 
-/** Champs écrits par SetGrid : les neuf champs de chaque niveau, recopiés un à un ; toute autre clé perdue, comme le
+/** Champs écrits par SetGrid : les dix champs de chaque niveau, recopiés un à un ; toute autre clé perdue, comme le
  *  cœur (`grid::level_fields`, HG8). */
 const gridRecord = (g: GridInput): RawRecord => ({
   visible: g.visible,
@@ -1122,6 +1136,7 @@ const gridRecord = (g: GridInput): RawRecord => ({
     originY: l.originY,
     color: l.color,
     line: l.line,
+    lineWidth: l.lineWidth,
     snap: l.snap,
     visible: l.visible,
   })),
@@ -1174,21 +1189,21 @@ function squaresLines(g: GridView, width: number, r: Bounds, minStep: number): G
     for (const l of g.levels) {
       if (!l.visible || l.kind !== "squares") continue;
       const segments: number[] = [];
-      const ix = l.spacingX >= minStep ? gridIndices(l.originX, l.spacingX, c.x0, c.x1) : null;
+      const ix = l.spacingX >= minStep * l.lineWidth ? gridIndices(l.originX, l.spacingX, c.x0, c.x1) : null;
       if (ix) {
         for (let k = ix[0]; k <= ix[1]; k++) {
           const x = l.originX + k * l.spacingX;
           segments.push(x, c.y0, x, c.y1);
         }
       }
-      const iy = l.spacingY >= minStep ? gridIndices(l.originY, l.spacingY, c.y0, c.y1) : null;
+      const iy = l.spacingY >= minStep * l.lineWidth ? gridIndices(l.originY, l.spacingY, c.y0, c.y1) : null;
       if (iy) {
         for (let k = iy[0]; k <= iy[1]; k++) {
           const y = l.originY + k * l.spacingY;
           segments.push(c.x0, y, c.x1, y);
         }
       }
-      if (segments.length > 0) levels.push({ color: l.color, line: l.line, alpha: 1, segments, dots: [] });
+      if (segments.length > 0) levels.push({ color: l.color, line: l.line, alpha: 1, lineWidth: l.lineWidth, segments, dots: [] });
     }
   }
   return { above: g.above, levels };

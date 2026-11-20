@@ -227,7 +227,7 @@ function toBackdropView(v: unknown): BackdropView | null {
 
 function toGridLevel(v: unknown): GridLevel {
   if (!isRecord(v)) throw new Error(PAGE);
-  const { kind, spacingX, spacingY, originX, originY, color, line, snap, visible } = v;
+  const { kind, spacingX, spacingY, originX, originY, color, line, lineWidth, snap, visible } = v;
   if (
     typeof kind !== "string" ||
     typeof spacingX !== "number" ||
@@ -236,12 +236,13 @@ function toGridLevel(v: unknown): GridLevel {
     typeof originY !== "number" ||
     typeof color !== "string" ||
     typeof line !== "string" ||
+    typeof lineWidth !== "number" ||
     typeof snap !== "boolean" ||
     typeof visible !== "boolean"
   ) {
     throw new Error(PAGE);
   }
-  return { kind, spacingX, spacingY, originX, originY, color, line, snap, visible };
+  return { kind, spacingX, spacingY, originX, originY, color, line, lineWidth, snap, visible };
 }
 
 // Grille (C9, G12) : `undefined` (Option::None) → null, comme le fond ; forme fausse → erreur.
@@ -285,11 +286,18 @@ export function toGridLines(v: unknown): GridLines | null {
     above,
     levels: levels.map((l: unknown) => {
       if (!isRecord(l)) throw new Error(LINES);
-      const { color, line, alpha, segments, dots } = l;
-      if (typeof color !== "string" || typeof line !== "string" || typeof alpha !== "number" || !isNumbers(segments) || !isNumbers(dots)) {
+      const { color, line, alpha, lineWidth, segments, dots } = l;
+      if (
+        typeof color !== "string" ||
+        typeof line !== "string" ||
+        typeof alpha !== "number" ||
+        typeof lineWidth !== "number" ||
+        !isNumbers(segments) ||
+        !isNumbers(dots)
+      ) {
         throw new Error(LINES);
       }
-      return { color, line, alpha, segments, dots };
+      return { color, line, alpha, lineWidth, segments, dots };
     }),
   };
 }
@@ -299,6 +307,15 @@ export function toPair(v: unknown): readonly [number, number] {
   const a: unknown = v instanceof Float64Array ? Array.from(v) : v;
   if (!isNumbers(a) || a.length !== 2) throw new Error("point invalide");
   return [a[0] ?? 0, a[1] ?? 0];
+}
+
+/** Arguments de grille de `set_grid` et `grid_lines_of` (G12, E1) : têtes, kinds, couleurs, traits, puis sept nombres par
+ *  niveau `sx, sy, ox, oy, snap, visible, lineWidth` (booléens en 0 ou 1) ; les valeurs sont contrôlées par le cœur. */
+export function gridArgs(g: GridView): [boolean, boolean, boolean, string[], string[], string[], Float64Array] {
+  const nums = new Float64Array(
+    g.levels.flatMap((l) => [l.spacingX, l.spacingY, l.originX, l.originY, l.snap ? 1 : 0, l.visible ? 1 : 0, l.lineWidth]),
+  );
+  return [g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums];
 }
 
 class WasmCoreDocument implements CoreDocument {
@@ -341,13 +358,7 @@ class WasmCoreDocument implements CoreDocument {
       case "SetGrid": {
         const g = cmd.grid;
         if (g === null) return toChange(this.d.clear_grid(cmd.page));
-        // Six nombres par niveau (G12) : sx, sy, ox, oy, snap, visible ; les valeurs sont contrôlées par le cœur.
-        const nums = new Float64Array(
-          g.levels.flatMap((l) => [l.spacingX, l.spacingY, l.originX, l.originY, l.snap ? 1 : 0, l.visible ? 1 : 0]),
-        );
-        return toChange(
-          this.d.set_grid(cmd.page, g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums),
-        );
+        return toChange(this.d.set_grid(cmd.page, ...gridArgs(g)));
       }
       case "AddTable":
         return toChange(
@@ -416,6 +427,10 @@ class WasmCoreDocument implements CoreDocument {
   }
   gridLines(page: string, r: Bounds, minStep: number, minDotStep: number): GridLines | null {
     return toGridLines(this.d.grid_lines(page, r.x0, r.y0, r.x1, r.y1, minStep, minDotStep));
+  }
+  gridLinesOf(page: string, grid: GridView, r: Bounds, minStep: number, minDotStep: number): GridLines | null {
+    const view = new Float64Array([r.x0, r.y0, r.x1, r.y1, minStep, minDotStep]);
+    return toGridLines(this.d.grid_lines_of(page, ...gridArgs(grid), view));
   }
 }
 

@@ -522,6 +522,27 @@ impl Document {
         grid::snap_delta(&g, width, b, (dx, dy))
     }
 
+    /// Largeur d'une page ; `None` si la page est inconnue ou sans largeur lisible.
+    fn page_width(&self, page: &str) -> Option<f64> {
+        let txn = self.doc.transact();
+        let (_, m) = self.find_page(&txn, page)?;
+        out_f64(m.get(&txn, "width"))
+    }
+
+    /// Lignes visibles d'une grille non enregistrée sur la page (C9 éditeur, DAE1) : même `grid::lines` que la grille
+    /// enregistrée (DAG1), sur la largeur de la page ; rien n'est écrit. `None` : page inconnue ou grille invisible.
+    pub fn grid_lines_of(
+        &self,
+        page: &str,
+        grid: &GridView,
+        rect: Bounds,
+        min_step: f64,
+        min_dot_step: f64,
+    ) -> Option<GridLines> {
+        let width = self.page_width(page)?;
+        grid::lines(grid, width, rect, min_step, min_dot_step)
+    }
+
     /// Lignes visibles de la grille de la page (G9) ; `None` sans grille ou grille invisible.
     pub fn grid_lines(
         &self,
@@ -530,8 +551,8 @@ impl Document {
         min_step: f64,
         min_dot_step: f64,
     ) -> Option<GridLines> {
-        let (g, width) = self.page_grid(page)?;
-        grid::lines(&g, width, rect, min_step, min_dot_step)
+        let (g, _) = self.page_grid(page)?;
+        self.grid_lines_of(page, &g, rect, min_step, min_dot_step)
     }
 }
 

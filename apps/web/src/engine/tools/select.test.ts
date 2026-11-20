@@ -219,7 +219,7 @@ describe("outil Sélection — magnétisme (C9, S3)", () => {
     visible: true,
     snap,
     above: false,
-    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", snap: true, visible: true }],
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", lineWidth: 1, snap: true, visible: true }],
   });
 
   it("glisser aimanté : fantôme aimanté, puis une seule Transform égale à l'aperçu ; la boîte géométrique a son centre sur un croisement", () => {

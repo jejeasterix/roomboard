@@ -71,6 +71,9 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     setPenStyle: vi.fn(),
     showPage: vi.fn(() => true),
     releaseKeys: vi.fn(),
+    previewGrid: vi.fn(),
+    endGridPreview: vi.fn(),
+    run: vi.fn(() => ({ pages: ["p"], ids: [], removed: [], full: false, version: 1 })),
   };
   let dirty = false;
   const dirtyListeners = new Set<() => void>();
@@ -89,7 +92,10 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
   const board = {
     engine,
     stage,
-    doc: { pageIds: () => ["p1", "p2", "p3"] },
+    doc: {
+      pageIds: () => ["p1", "p2", "p3"],
+      page: (id: string) => ({ id, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null }),
+    },
     choice: { note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }) },
     effective: () => ({ prediction: false, inkTrail: "off", webgl: "off" }),
     activate: vi.fn(),
@@ -197,7 +203,7 @@ describe("App (T95)", () => {
   it("inventaire : chaque bouton de l'ancienne barre a son élément", () => {
     const { container } = renderApp();
     for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
-      "page-prev", "page-next", "page-add", "page-remove", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles"]) {
+      "page-prev", "page-next", "page-add", "page-remove", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles", "grid"]) {
       expect(container.querySelector(`button[data-item="${id}"]`), id).not.toBeNull();
     }
     expect(container.querySelector("#pages")?.textContent).toBe("1 / 1");
@@ -537,5 +543,105 @@ describe("App — profils (C1)", () => {
     const [name, text] = files.save.mock.calls[0]!;
     expect(name).toBe("par-defaut.rbprofile");
     expect(JSON.parse(text).id).toBe("defaut");
+  });
+});
+
+describe("App — grille (C9 éditeur, E7, E8)", () => {
+  const GRID = 'button[data-item="grid"]';
+  const panelOf = (c: HTMLElement): Element | null => c.querySelector("#grille");
+  const chooseKind = (c: HTMLElement, kind: string): void => {
+    const el = c.querySelector<HTMLSelectElement>('#grille select[data-grille="kind"]');
+    expect(el).not.toBeNull();
+    el!.value = kind;
+    el!.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  it("E7 : « Grille » ouvre #grille ; Carreaux → aperçu sur l'onglet actif ; second clic : fermé, aperçu coupé, rien d'écrit", () => {
+    const { container, tab } = renderApp();
+    click(container.querySelector(GRID));
+    expect(panelOf(container)).not.toBeNull();
+    chooseKind(container, "squares");
+    expect(tab.engine.previewGrid).toHaveBeenCalledTimes(1);
+    expect(tab.engine.previewGrid!.mock.calls[0]![0]).toMatchObject({ levels: [{ kind: "squares", spacingX: 40, color: "#94a3b8", lineWidth: 1 }] });
+    click(container.querySelector(GRID));
+    expect(panelOf(container)).toBeNull();
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
+    expect(tab.engine.run).not.toHaveBeenCalled();
+  });
+
+  it("S2 : Appliquer → un SetGrid sur la page montrée, aperçu coupé, panneau fermé", () => {
+    const { container, tab } = renderApp();
+    click(container.querySelector(GRID));
+    chooseKind(container, "squares");
+    click(container.querySelector('#grille [data-grille="apply"]'));
+    expect(tab.engine.run).toHaveBeenCalledTimes(1);
+    expect(tab.engine.run!.mock.calls[0]![0]).toMatchObject({ type: "SetGrid", page: "p", grid: { levels: [{ kind: "squares" }] } });
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
+    expect(panelOf(container)).toBeNull();
+  });
+
+  it("E8, CR6 : Appliquer refusé par le cœur : panneau ouvert, message affiché, aperçu gardé", () => {
+    const { container, tab } = renderApp();
+    tab.engine.run!.mockReturnValueOnce(null);
+    click(container.querySelector(GRID));
+    chooseKind(container, "squares");
+    tab.emit({ error: "grille invalide" });
+    click(container.querySelector('#grille [data-grille="apply"]'));
+    expect(tab.engine.run).toHaveBeenCalledTimes(1);
+    expect(panelOf(container)).not.toBeNull();
+    expect(container.querySelector('#grille [data-grille="error"]')?.textContent).toBe("grille invalide");
+    expect(tab.engine.endGridPreview).not.toHaveBeenCalled();
+  });
+
+  it("CR3 : aperçu, autre onglet, retour : aucune grille (aperçu coupé sur le moteur de départ, jamais rouvert)", () => {
+    const { container, workspace, tab } = renderApp();
+    click(container.querySelector(GRID));
+    chooseKind(container, "squares");
+    const second = fakeTab("B.roomboard");
+    workspace.tabs.add("board", second.session, true);
+    workspace.tabs.activate(workspace.tabs.list()[0]!.id);
+    expect(panelOf(container)).toBeNull();
+    expect(tab.engine.previewGrid).toHaveBeenCalledTimes(1);
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
+    expect(tab.engine.endGridPreview!.mock.invocationCallOrder[0]!).toBeGreaterThan(tab.engine.previewGrid!.mock.invocationCallOrder[0]!);
+    expect(second.engine.previewGrid).not.toHaveBeenCalled();
+    expect(second.engine.endGridPreview).not.toHaveBeenCalled();
+    expect(tab.engine.run).not.toHaveBeenCalled();
+  });
+
+  it("E8 : page ou version qui change pendant la séance : panneau fermé, rien d'écrit ; une erreur seule ne ferme pas", () => {
+    const { container, tab } = renderApp();
+    click(container.querySelector(GRID));
+    tab.emit({ error: "refus" });
+    expect(panelOf(container)).not.toBeNull();
+    tab.emit({ page: "p2" });
+    expect(panelOf(container)).toBeNull();
+    click(container.querySelector(GRID));
+    tab.emit({ version: 7 });
+    expect(panelOf(container)).toBeNull();
+    expect(tab.engine.run).not.toHaveBeenCalled();
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(2);
+  });
+
+  it("E8, Review Focus 5 : onglet changé pendant la séance : panneau fermé, aperçu coupé sur l'onglet de départ seulement", () => {
+    const { container, workspace, tab } = renderApp();
+    click(container.querySelector(GRID));
+    chooseKind(container, "dots");
+    const second = fakeTab("B.roomboard");
+    workspace.tabs.add("board", second.session, true);
+    expect(panelOf(container)).toBeNull();
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
+    expect(second.engine.endGridPreview).not.toHaveBeenCalled();
+    expect(second.engine.previewGrid).not.toHaveBeenCalled();
+  });
+
+  it("E7 : ouvrir un autre panneau abandonne la séance", () => {
+    const { container, tab } = renderApp();
+    click(container.querySelector(GRID));
+    chooseKind(container, "squares");
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(panelOf(container)).toBeNull();
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
+    expect(tab.engine.run).not.toHaveBeenCalled();
   });
 });

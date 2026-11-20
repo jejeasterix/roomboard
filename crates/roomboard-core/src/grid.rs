@@ -20,6 +20,11 @@ pub const DEFAULT_GRID_COLOR: &str = "#000000";
 pub const DEFAULT_GRID_LINE: &str = "solid";
 /// Opacité des lignes fines du Seyès (G10).
 pub const SEYES_FINE_ALPHA: f64 = 0.5;
+/// Épaisseur par défaut d'un niveau, en pixels CSS d'écran (E1) : celle de G10.
+pub const DEFAULT_LINE_WIDTH: f64 = 1.0;
+/// Bornes de `lineWidth` à l'écriture (E1) ; hors bornes à la lecture : `DEFAULT_LINE_WIDTH`.
+pub const MIN_LINE_WIDTH: f64 = 1.0;
+pub const MAX_LINE_WIDTH: f64 = 8.0;
 /// Tolérance d'indice, en pas : une ligne posée sur un bord compte comme dedans.
 const EPS: f64 = 1e-9;
 /// Résidu d'arrondi d'un déplacement aimanté, en unités de page : sous ce seuil, la composante vaut 0 exact (G7) ;
@@ -39,6 +44,8 @@ pub struct GridLevelView {
     pub origin_y: f64,
     pub color: String,
     pub line: String,
+    /// Épaisseur en pixels CSS d'écran, `[1, 8]` (E1) ; la grille reste nette à tout zoom (G10).
+    pub line_width: f64,
     pub snap: bool,
     pub visible: bool,
 }
@@ -57,10 +64,13 @@ pub type GridInput = GridView;
 
 /// Groupe de lignes d'un niveau (G9) : segments `x0, y0, x1, y1` et points `x, y` à la suite, en unités de page.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LevelLines {
     pub color: String,
     pub line: String,
     pub alpha: f64,
+    /// Épaisseur du niveau, en pixels CSS d'écran (E1).
+    pub line_width: f64,
     pub segments: Vec<f64>,
     pub dots: Vec<f64>,
 }
@@ -83,9 +93,15 @@ fn out_bool(o: Option<Out>) -> Option<bool> {
     }
 }
 
+/// `lineWidth` acceptable (E1) : fini dans `[MIN_LINE_WIDTH, MAX_LINE_WIDTH]` (NaN et infinis exclus).
+fn line_width_ok(v: f64) -> bool {
+    (MIN_LINE_WIDTH..=MAX_LINE_WIDTH).contains(&v)
+}
+
 /// Grille lue avec tolérance (G4) : `grid` qui n'est pas un `Y.Map` → `None` ; `levels` absent ou qui n'est pas un
 /// `Y.Array` → `[]` ; niveau qui n'est pas un `Y.Map`, sans pas finis > 0 ou sans `kind` non vide → absent de la vue,
-/// gardé dans le document ; `color` et `line` absents ou vides → défaut. Toute vue d'au plus `MAX_GRID_LEVELS` niveaux
+/// gardé dans le document ; `color` et `line` absents ou vides → défaut ; `lineWidth` absent, non fini ou hors `[1, 8]`
+/// → 1 (E1). Toute vue d'au plus `MAX_GRID_LEVELS` niveaux
 /// lue passe donc `validate` telle quelle. Limite connue : la lecture ne plafonne pas le nombre de niveaux ; une vue de
 /// plus de `MAX_GRID_LEVELS` niveaux (autre écrivain) les garde tous, et `SetGrid` la refuse telle quelle en `BadGrid`.
 pub(crate) fn read<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<GridView> {
@@ -126,6 +142,9 @@ fn read_level<T: ReadTxn>(txn: &T, l: &MapRef) -> Option<GridLevelView> {
         origin_y: finite("originY"),
         color: text("color").unwrap_or_else(|| DEFAULT_GRID_COLOR.to_string()),
         line: text("line").unwrap_or_else(|| DEFAULT_GRID_LINE.to_string()),
+        line_width: out_f64(l.get(txn, "lineWidth"))
+            .filter(|v| line_width_ok(*v))
+            .unwrap_or(DEFAULT_LINE_WIDTH),
         snap: out_bool(l.get(txn, "snap")).unwrap_or(true),
         visible: out_bool(l.get(txn, "visible")).unwrap_or(true),
     })
@@ -160,12 +179,14 @@ fn level_fields(l: &GridLevelView) -> In {
         ("originY", In::Any(Any::from(l.origin_y))),
         ("color", In::from(l.color.as_str())),
         ("line", In::from(l.line.as_str())),
+        ("lineWidth", In::Any(Any::from(l.line_width))),
         ("snap", In::Any(Any::Bool(l.snap))),
         ("visible", In::Any(Any::Bool(l.visible))),
     ]))
 }
 
-/// `BadGrid` (G2) : pas finis > 0, origine finie, `kind`, `color`, `line` non vides, au plus 16 niveaux.
+/// `BadGrid` (G2) : pas finis > 0, origine finie, `kind`, `color`, `line` non vides, épaisseur dans `[1, 8]` (E1), au
+/// plus 16 niveaux.
 pub(crate) fn validate(g: &GridInput) -> Result<(), CommandError> {
     let level_ok = |l: &GridLevelView| {
         finite_positive(l.spacing_x)
@@ -175,6 +196,7 @@ pub(crate) fn validate(g: &GridInput) -> Result<(), CommandError> {
             && !l.kind.is_empty()
             && !l.color.is_empty()
             && !l.line.is_empty()
+            && line_width_ok(l.line_width)
     };
     if g.levels.len() <= MAX_GRID_LEVELS && g.levels.iter().all(level_ok) {
         Ok(())
@@ -450,6 +472,8 @@ fn level_lines(
     min_dot_step: f64,
     out: &mut Vec<LevelLines>,
 ) {
+    // CR2 : un niveau épais garde le même blanc entre ses traits qu'un niveau fin : seuils × `lineWidth`.
+    let (min_step, min_dot_step) = (min_step * l.line_width, min_dot_step * l.line_width);
     let (sx, sy, ox, oy) = (l.spacing_x, l.spacing_y, l.origin_x, l.origin_y);
     let (mut main, mut fine, mut dots) = (Vec::new(), Vec::new(), Vec::new());
     match l.kind.as_str() {
@@ -491,6 +515,7 @@ fn level_lines(
             color: l.color.clone(),
             line: l.line.clone(),
             alpha: 1.0,
+            line_width: l.line_width,
             segments: main,
             dots,
         });
@@ -500,6 +525,7 @@ fn level_lines(
             color: l.color.clone(),
             line: l.line.clone(),
             alpha: SEYES_FINE_ALPHA,
+            line_width: l.line_width,
             segments: fine,
             dots: Vec::new(),
         });
@@ -507,8 +533,8 @@ fn level_lines(
 }
 
 /// Lignes visibles (G9), en unités de page, limitées à `rect ∩ page` (`0 ≤ x ≤ width`, `y ≥ 0`). `None` si la grille est
-/// invisible. Niveau invisible ou d'un `kind` inconnu sauté ; famille sautée si son pas est `< min_step` ; points sautés
-/// si un pas est `< min_dot_step` ou si leur nombre dépasse `MAX_GRID_DOTS`. Le nombre de lignes dépend de `rect`,
+/// invisible. Niveau invisible ou d'un `kind` inconnu sauté ; famille sautée si son pas est `< min_step·lineWidth` ;
+/// points sautés si un pas est `< min_dot_step·lineWidth` (CR2) ou si leur nombre dépasse `MAX_GRID_DOTS`. Le nombre de lignes dépend de `rect`,
 /// jamais de la distance au haut de page.
 pub fn lines(
     g: &GridView,
@@ -561,6 +587,7 @@ mod tests {
             origin_y: 0.0,
             color: "#000000".into(),
             line: "solid".into(),
+            line_width: 1.0,
             snap: true,
             visible: true,
         }
@@ -660,6 +687,7 @@ mod tests {
                     origin_y: -3.0,
                     color: "#7b68ee".into(),
                     line: "dashed".into(),
+                    line_width: 3.0,
                     snap: false,
                     visible: false,
                     ..level("seyes", 30.24, 30.24)
@@ -1291,5 +1319,118 @@ mod tests {
         };
         let l = lines(&g, W, c, 0.0, 0.0).expect("visible");
         assert_eq!(l.levels[0].segments.len() / 4, 4);
+    }
+
+    /// E1, Review Focus 1 : `lineWidth` absent, non nombre, non fini ou hors `[1, 8]` → 1 à la lecture (fichiers de la
+    /// PR 12 lus tels quels, aucun niveau écarté) ; 1, 2,5 et 8 gardés.
+    #[test]
+    fn read_level_line_width_defaults_to_one() {
+        let read_width = |w: Option<In>| -> f64 {
+            let mut fields = vec![
+                ("kind", In::from("squares")),
+                ("spacingX", num(40.0)),
+                ("spacingY", num(40.0)),
+            ];
+            if let Some(w) = w {
+                fields.push(("lineWidth", w));
+            }
+            let level = In::Map(fields.into_iter().collect::<MapPrelim>());
+            let levels = In::Array(ArrayPrelim::from(vec![level]));
+            let (doc, page) = page_with(In::Map(MapPrelim::from([("levels", levels)])));
+            let g = read(&doc.transact(), &page).expect("grille lisible");
+            assert_eq!(g.levels.len(), 1, "niveau gardé");
+            g.levels[0].line_width
+        };
+        assert_eq!(read_width(None), 1.0);
+        for bad in [
+            In::from("2"),
+            num(0.0),
+            num(0.5),
+            num(9.0),
+            num(-2.0),
+            num(f64::NAN),
+            num(f64::INFINITY),
+        ] {
+            assert_eq!(read_width(Some(bad)), 1.0);
+        }
+        for ok in [1.0, 2.5, 8.0] {
+            assert_eq!(read_width(Some(num(ok))), ok);
+        }
+    }
+
+    /// E1 : `lineWidth` fini dans `[1, 8]` à l'écriture, sinon `BadGrid`.
+    #[test]
+    fn validate_grid_line_width_bounds() {
+        let ok = level("squares", 40.0, 40.0);
+        let with = |w: f64| {
+            grid(vec![GridLevelView {
+                line_width: w,
+                ..ok.clone()
+            }])
+        };
+        for w in [1.0, 2.0, 3.5, 8.0] {
+            assert_eq!(validate(&with(w)), Ok(()), "{w}");
+        }
+        for w in [0.0, 0.99, 8.01, 9.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(validate(&with(w)), Err(CommandError::BadGrid), "{w}");
+        }
+    }
+
+    /// E1 : chaque groupe porte l'épaisseur de son niveau (Seyès : principal et fines), sérialisée en `lineWidth`.
+    /// `min_step` 1 : à l'épaisseur 3, le seuil (CR2) vaut 3 et garde les fines du Seyès (7,56).
+    #[test]
+    fn grid_lines_carry_the_level_line_width() {
+        let g = grid(vec![
+            GridLevelView {
+                line_width: 3.0,
+                ..level("seyes", 30.24, 30.24)
+            },
+            GridLevelView {
+                line_width: 2.0,
+                ..level("dots", 40.0, 40.0)
+            },
+        ]);
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 400.0,
+            y1: 400.0,
+        };
+        let l = lines(&g, W, r, 1.0, 8.0).expect("visible");
+        assert_eq!(
+            l.levels
+                .iter()
+                .map(|x| (x.alpha, x.line_width))
+                .collect::<Vec<_>>(),
+            vec![(1.0, 3.0), (SEYES_FINE_ALPHA, 3.0), (1.0, 2.0)]
+        );
+        let json = serde_json::to_value(&l.levels[0]).expect("json");
+        assert_eq!(json["lineWidth"], 3.0);
+    }
+
+    /// CR2 : seuils de saut × `lineWidth` (pas d'aplat) : carreaux 40 au zoom 0,1 (`min_step` 40) gardés à l'épaisseur 1,
+    /// sautés à 4 ; points 40 au zoom 0,2 (`min_dot_step` 40) gardés à 1, sautés à 2.
+    #[test]
+    fn thick_levels_are_skipped_before_they_fill_the_page() {
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: W,
+            y1: 1080.0,
+        };
+        let groups = |kind: &str, w: f64, z: f64| {
+            let g = grid(vec![GridLevelView {
+                line_width: w,
+                ..level(kind, 40.0, 40.0)
+            }]);
+            lines(&g, W, r, 4.0 / z, 8.0 / z)
+                .expect("visible")
+                .levels
+                .len()
+        };
+        assert_eq!(groups("squares", 1.0, 0.1), 1);
+        assert_eq!(groups("squares", 4.0, 0.1), 0);
+        assert_eq!(groups("dots", 1.0, 0.2), 1);
+        assert_eq!(groups("dots", 2.0, 0.2), 0);
     }
 }

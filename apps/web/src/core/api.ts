@@ -8,6 +8,7 @@
 // C2 : AddImage, SetBackdrop ; éléments image et unknown (style absent) ; page(id), citedAssets, asset, saveParts, loadParts.
 // C7 : FormatText (patch d'attributs sur une plage UTF-16, une étape) ; TextData.spans = segments du texte (U27, DAU9).
 // C9 : SetGrid ; PageView.grid ; snapPoint, snapDelta, gridLines (géométrie dans le cœur, DAG1 ; fausse liaison : carreaux seuls, DAG3).
+// C9 éditeur : GridLevel.lineWidth et LevelLines.lineWidth (px CSS d'écran, 1 à 8) ; gridLinesOf (grille non enregistrée, aperçu, DAE1).
 // C10a : AddTable, SetTableCell, InsertTableLine, RemoveTableLine, SetTableSizes, SetTableFill (une étape chacune, D38) ;
 // élément table (TableData, cellules non vides dans l'ordre de lecture) ; tableau mal formé : élément unknown, sourceKind "table".
 
@@ -198,6 +199,9 @@ export interface CoreDocument {
   snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number];
   /** Lignes visibles de la grille dans `rect` (monde), familles sous `minStep` et points sous `minDotStep` sautés (G9). */
   gridLines(page: string, rect: Bounds, minStep: number, minDotStep: number): GridLines | null;
+  /** Lignes d'une grille non enregistrée sur la page (C9 éditeur, DAE1) : même calcul que gridLines ; null si la page est
+   *  inconnue ou la grille invisible. Rien n'est écrit. */
+  gridLinesOf(page: string, grid: GridView, rect: Bounds, minStep: number, minDotStep: number): GridLines | null;
 }
 
 export interface CoreFactory {
@@ -246,6 +250,10 @@ export const MAX_GRID_LEVELS = 16;
 /** Plafond des points d'un niveau et des lignes d'une famille (G9). */
 export const MAX_GRID_DOTS = 65_536;
 export const DEFAULT_GRID_COLOR = "#000000";
+/** Épaisseur d'un niveau (E1), en pixels CSS d'écran : défaut, puis bornes de l'écriture. */
+export const DEFAULT_GRID_LINE_WIDTH = 1;
+export const MIN_GRID_LINE_WIDTH = 1;
+export const MAX_GRID_LINE_WIDTH = 8;
 /** Niveau de grille (U31) ; kind et line inconnus gardés tels quels (line inconnu dessiné plein). */
 export interface GridLevel {
   readonly kind: string;
@@ -255,6 +263,8 @@ export interface GridLevel {
   readonly originY: number;
   readonly color: string;
   readonly line: string;
+  /** Épaisseur en pixels CSS d'écran, 1 à 8 (E1) ; absente ou hors bornes à la lecture : 1. */
+  readonly lineWidth: number;
   readonly snap: boolean;
   readonly visible: boolean;
 }
@@ -271,6 +281,8 @@ export interface LevelLines {
   readonly color: string;
   readonly line: string;
   readonly alpha: number;
+  /** Épaisseur du niveau, en pixels CSS d'écran (E1). */
+  readonly lineWidth: number;
   readonly segments: readonly number[];
   readonly dots: readonly number[];
 }

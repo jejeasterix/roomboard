@@ -13,7 +13,7 @@ function squares40(): GridLines {
   const segments: number[] = [];
   for (let i = 0; i < 20; i++) segments.push(40 * i, 1_000_007, 40 * i, 1_000_607);
   for (let k = 0; k < 15; k++) segments.push(0, 1_000_040 + 40 * k, 786.7, 1_000_040 + 40 * k);
-  return { above: false, levels: [{ color: "#7b68ee", line: "solid", alpha: 1, segments, dots: [] }] };
+  return { above: false, levels: [{ color: "#7b68ee", line: "solid", alpha: 1, lineWidth: 1, segments, dots: [] }] };
 }
 
 /** Abscisses des verticales, ordonnées des horizontales (pixels physiques). */
@@ -28,6 +28,23 @@ function split(segs: readonly number[]): { v: number[]; h: number[] } {
 }
 
 describe("grille calée sur les pixels (C9, G10)", () => {
+  it("épaisseur du niveau (E1, S3) : lineWidth 3 à dpr 2 → 6 pixels physiques, lignes sur round(X) ; point 2·lineWidth·dpr", () => {
+    const base = squares40().levels[0]!;
+    const lines: GridLines = {
+      above: false,
+      levels: [{ ...base, lineWidth: 3 }, { color: "#000000", line: "solid", alpha: 1, lineWidth: 2, segments: [], dots: [40, 1_000_047] }],
+    };
+    const [main, dots] = alignedSegments(lines, far(1), 2, 2, 2);
+    expect(main?.width).toBe(6);
+    const { v, h } = split(main?.segments ?? []);
+    expect(v).toEqual(Array.from({ length: 20 }, (_, i) => 27 + 80 * i));
+    expect(h).toEqual(Array.from({ length: 15 }, (_, k) => 66 + 80 * k));
+    expect(dots?.width).toBe(4);
+    expect(dots?.dot).toBe(8);
+    expect(alignedSegments(squares40(), far(1), 2, 2, 2)[0]?.width).toBe(2);
+    expect([lineWidthPx(1.25, 3), lineWidthPx(1), dotSizePx(1, 1), dotSizePx(1.25, 3)]).toEqual([4, 1, 2, 8]);
+  });
+
   it("attendu exact de S5 (a), carreaux de 40 à z = 1 : dpr 1, 1,25 et 2", () => {
     const cases = [
       { dpr: 1, x: 13.5, y: 33.5, step: 40, width: 1 },
@@ -48,7 +65,7 @@ describe("grille calée sur les pixels (C9, G10)", () => {
       const segments: number[] = [];
       for (let i = 0; i < 48; i++) segments.push(40 * i, 1_000_007, 40 * i, 1_000_007 + 600 / z);
       for (let k = 0; k < 20; k++) segments.push(0, 1_000_040 + 40 * k, 1920, 1_000_040 + 40 * k);
-      const lines: GridLines = { above: false, levels: [{ color: "#000000", line: "solid", alpha: 1, segments, dots: [] }] };
+      const lines: GridLines = { above: false, levels: [{ color: "#000000", line: "solid", alpha: 1, lineWidth: 1, segments, dots: [] }] };
       for (const dpr of DPRS) {
         const [level] = alignedSegments(lines, far(z), dpr, dpr, dpr);
         const w = Math.max(1, Math.round(dpr));
@@ -61,7 +78,7 @@ describe("grille calée sur les pixels (C9, G10)", () => {
   });
 
   it("obliques (isométrique) : sans calage, en pixels physiques", () => {
-    const lines: GridLines = { above: false, levels: [{ color: "#000000", line: "solid", alpha: 1, segments: [0, 0, 100, 57.735], dots: [] }] };
+    const lines: GridLines = { above: false, levels: [{ color: "#000000", line: "solid", alpha: 1, lineWidth: 1, segments: [0, 0, 100, 57.735], dots: [] }] };
     const [l] = alignedSegments(lines, { zoom: 2, tx: 3.3, ty: 4.4 }, 1.5, 1.5, 1.5);
     const s = l?.segments ?? [];
     expect(s[0]).toBeCloseTo(3.3 * 1.5);
@@ -71,7 +88,7 @@ describe("grille calée sur les pixels (C9, G10)", () => {
   });
 
   it("points : carré de max(2, round(2·dpr)) pixels physiques, coin sur un pixel entier (dpr 1,2 : aucun arrondi à mi-chemin)", () => {
-    const lines: GridLines = { above: false, levels: [{ color: "#000000", line: "solid", alpha: 1, segments: [], dots: [40, 40, 80, 40] }] };
+    const lines: GridLines = { above: false, levels: [{ color: "#000000", line: "solid", alpha: 1, lineWidth: 1, segments: [], dots: [40, 40, 80, 40] }] };
     for (const [dpr, size, corner, corner2] of [[1, 2, 39, 79], [1.2, 2, 47, 95], [2, 4, 78, 158]] as const) {
       const [l] = alignedSegments(lines, { zoom: 1, tx: 0, ty: 0 }, dpr, dpr, dpr);
       expect(l?.dot).toBe(size);
@@ -84,9 +101,9 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     const lines: GridLines = {
       above: false,
       levels: [
-        { color: "#000000", line: "dashed", alpha: 1, segments: [...seg(0), ...seg(7)], dots: [] },
-        { color: "#000000", line: "dotted", alpha: 1, segments: seg(0), dots: [] },
-        { color: "#000000", line: "wavy", alpha: 1, segments: seg(0), dots: [] },
+        { color: "#000000", line: "dashed", alpha: 1, lineWidth: 1, segments: [...seg(0), ...seg(7)], dots: [] },
+        { color: "#000000", line: "dotted", alpha: 1, lineWidth: 1, segments: seg(0), dots: [] },
+        { color: "#000000", line: "wavy", alpha: 1, lineWidth: 1, segments: seg(0), dots: [] },
       ],
     };
     const [dashed, dotted, wavy] = alignedSegments(lines, { zoom: 1, tx: 0, ty: 0 }, 2, 2, 2);
@@ -95,7 +112,7 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     expect(wavy?.dash).toEqual([]);
     expect(dashed?.offsets).toEqual([0, 14]);
     // Défilement (Review Focus 5) : la même ligne loin sur la page garde sa phase depuis l'origine du monde.
-    const farLine: GridLines = { above: false, levels: [{ color: "#000000", line: "dashed", alpha: 1, segments: [100, 1_000_003, 100, 1_000_053], dots: [] }] };
+    const farLine: GridLines = { above: false, levels: [{ color: "#000000", line: "dashed", alpha: 1, lineWidth: 1, segments: [100, 1_000_003, 100, 1_000_053], dots: [] }] };
     const [l] = alignedSegments(farLine, { zoom: 1, tx: 0, ty: -1_000_003 }, 1, 1, 1);
     expect(l?.offsets).toEqual([3]);
   });
@@ -105,8 +122,8 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     const lines: GridLines = {
       above: false,
       levels: [
-        { color: "#000000", line: "dashed", alpha: 1, segments: [100, 3.3, 100, 53.3, -13.3, 20, 86.7, 20], dots: [] },
-        { color: "#000000", line: "dotted", alpha: 1, segments: [100, 3.3, 100, 53.3], dots: [] },
+        { color: "#000000", line: "dashed", alpha: 1, lineWidth: 1, segments: [100, 3.3, 100, 53.3, -13.3, 20, 86.7, 20], dots: [] },
+        { color: "#000000", line: "dotted", alpha: 1, lineWidth: 1, segments: [100, 3.3, 100, 53.3], dots: [] },
       ],
     };
     const [dashed, dotted] = alignedSegments(lines, { zoom: 1, tx: 13.3, ty: -3.3 }, 1.25, 1.25, 1.25);
@@ -118,6 +135,27 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     expect(dashed?.offsets).toEqual([4, 9]);
     expect(dotted?.offsets).toEqual([4]);
     for (const l of [dashed, dotted]) for (const v of [...(l?.dash ?? []), ...(l?.offsets ?? [])]) expect(Number.isInteger(v)).toBe(true);
+  });
+
+  it("motif à l'échelle de l'épaisseur (relecture T7) : dotted de 4 px → [4, 12], points carrés ; dashed de 2 à dpr 1,25 → [15, 10]", () => {
+    const seg = [100, 0, 100, 50];
+    const lines: GridLines = {
+      above: false,
+      levels: [
+        { color: "#000000", line: "dotted", alpha: 1, lineWidth: 4, segments: seg, dots: [] },
+        { color: "#000000", line: "dashed", alpha: 1, lineWidth: 2, segments: seg, dots: [] },
+        { color: "#000000", line: "dotted", alpha: 1, lineWidth: 3, segments: seg, dots: [] },
+      ],
+    };
+    const [dotted, dashed] = alignedSegments(lines, { zoom: 1, tx: 0, ty: 0 }, 1, 1, 1);
+    expect(dotted?.width).toBe(4);
+    expect(dotted?.dash).toEqual([4, 12]);
+    expect(dashed?.dash).toEqual([12, 8]);
+    // [6, 4] × 2 × 1,25 = [15, 10] ; [1, 3] × 3 × 1,25 = [3,75 ; 11,25] → [4, 11] : un point de motif aussi long que le trait est large.
+    const [, dashedHi, dottedHi] = alignedSegments(lines, { zoom: 1, tx: 0, ty: 0 }, 1.25, 1.25, 1.25);
+    expect(dashedHi?.dash).toEqual([15, 10]);
+    expect(dottedHi?.width).toBe(4);
+    expect(dottedHi?.dash).toEqual([4, 11]);
   });
 
   it("couleur de niveau invalide (relecture finale) : trait et points à la couleur par défaut, jamais celle du niveau d'avant", () => {
@@ -149,8 +187,8 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     const lines: GridLines = {
       above: false,
       levels: [
-        { color: "#111111", line: "solid", alpha: 1, segments: [0, 0, 0, 10], dots: [20, 20] },
-        { color: "#12345", line: "solid", alpha: 1, segments: [40, 0, 40, 10], dots: [60, 60] },
+        { color: "#111111", line: "solid", alpha: 1, lineWidth: 1, segments: [0, 0, 0, 10], dots: [20, 20] },
+        { color: "#12345", line: "solid", alpha: 1, lineWidth: 1, segments: [40, 0, 40, 10], dots: [60, 60] },
       ],
     };
     paintGrid(ctx as unknown as CanvasRenderingContext2D, lines, { zoom: 1, tx: 0, ty: 0 }, 1, 1, 1);
@@ -160,8 +198,9 @@ describe("grille calée sur les pixels (C9, G10)", () => {
   it("aides : alignLine, lineWidthPx, dotSizePx", () => {
     expect(alignLine(13.3, 1)).toBe(13.5);
     expect(alignLine(26.6, 2)).toBe(27);
-    expect([1, 1.25, 1.5, 2, 3].map(lineWidthPx)).toEqual([1, 1, 2, 2, 3]);
-    expect([1, 1.2, 2].map(dotSizePx)).toEqual([2, 2, 4]);
+    // Appels explicites : `map` passerait l'index comme `lineWidth` (E1).
+    expect([1, 1.25, 1.5, 2, 3].map((dpr) => lineWidthPx(dpr))).toEqual([1, 1, 2, 2, 3]);
+    expect([1, 1.2, 2].map((dpr) => dotSizePx(dpr))).toEqual([2, 2, 4]);
   });
 
   it("paintGrid : pixels physiques (transformation identité) puis restore ; plein en un seul tracé, tireté segment par segment ; alpha du groupe", () => {
@@ -187,9 +226,9 @@ describe("grille calée sur les pixels (C9, G10)", () => {
     const lines: GridLines = {
       above: false,
       levels: [
-        { color: "#111111", line: "solid", alpha: 1, segments: [0, 0, 0, 10, 40, 0, 40, 10], dots: [] },
-        { color: "#222222", line: "solid", alpha: 0.5, segments: [0, 5, 10, 5], dots: [] },
-        { color: "#333333", line: "dashed", alpha: 1, segments: [0, 0, 0, 10], dots: [20, 20] },
+        { color: "#111111", line: "solid", alpha: 1, lineWidth: 1, segments: [0, 0, 0, 10, 40, 0, 40, 10], dots: [] },
+        { color: "#222222", line: "solid", alpha: 0.5, lineWidth: 1, segments: [0, 5, 10, 5], dots: [] },
+        { color: "#333333", line: "dashed", alpha: 1, lineWidth: 1, segments: [0, 0, 0, 10], dots: [20, 20] },
       ],
     };
     paintGrid(rec as unknown as CanvasRenderingContext2D, lines, { zoom: 1, tx: 0, ty: 0 }, 1, 1, 1);

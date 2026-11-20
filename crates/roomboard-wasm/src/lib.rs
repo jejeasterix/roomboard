@@ -11,7 +11,7 @@ use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, Era
 use roomboard_core::document::Document as CoreDocument;
 use roomboard_core::element::{StrokeStyle, Transform};
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
-use roomboard_core::grid::{GridInput, GridLevelView};
+use roomboard_core::grid::{GridInput, GridLevelView, GridLines};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
@@ -246,7 +246,8 @@ fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, C
     Ok(attrs)
 }
 
-/// Grille reçue de JS (G12) : `nums` = 6 nombres par niveau (`sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1) ;
+/// Grille reçue de JS (G12, E1) : `nums` = 7 nombres par niveau (`sx, sy, ox, oy, snap, visible, lineWidth`, booléens en
+/// 0 ou 1) ;
 /// longueurs incohérentes : `BadGrid`. Les valeurs elles-mêmes sont contrôlées par le cœur (`SetGrid`).
 fn grid_input(
     visible: bool,
@@ -258,14 +259,14 @@ fn grid_input(
     nums: &[f64],
 ) -> Result<GridInput, CommandError> {
     let n = kinds.len();
-    if colors.len() != n || lines.len() != n || nums.len() != 6 * n {
+    if colors.len() != n || lines.len() != n || nums.len() != 7 * n {
         return Err(CommandError::BadGrid);
     }
     let levels = kinds
         .into_iter()
         .zip(colors)
         .zip(lines)
-        .zip(nums.as_chunks::<6>().0)
+        .zip(nums.as_chunks::<7>().0)
         .map(|(((kind, color), line), v)| GridLevelView {
             kind,
             spacing_x: v[0],
@@ -274,6 +275,7 @@ fn grid_input(
             origin_y: v[3],
             color,
             line,
+            line_width: v[6],
             snap: v[4] != 0.0,
             visible: v[5] != 0.0,
         })
@@ -534,6 +536,32 @@ impl Document {
         match self
             .core
             .grid_lines(page, Bounds { x0, y0, x1, y1 }, min_step, min_dot_step)
+        {
+            Some(g) => to_js(&g),
+            None => Ok(JsValue::NULL),
+        }
+    }
+
+    /// Lignes d'une grille non enregistrée (C9 éditeur, DAE1) : même calcul que `grid_lines` ; `nums` comme `set_grid`,
+    /// `view` = `x0, y0, x1, y1, min_step, min_dot_step` (autre longueur : `BadGrid`). `null` : page inconnue ou grille
+    /// invisible. Rien n'est écrit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn grid_lines_of(
+        &self,
+        page: &str,
+        visible: bool,
+        snap: bool,
+        above: bool,
+        kinds: Vec<String>,
+        colors: Vec<String>,
+        lines: Vec<String>,
+        nums: &[f64],
+        view: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let grid = grid_input(visible, snap, above, kinds, colors, lines, nums).map_err(cmd_err)?;
+        match self
+            .grid_lines_of_inner(page, &grid, view)
+            .map_err(cmd_err)?
         {
             Some(g) => to_js(&g),
             None => Ok(JsValue::NULL),
@@ -812,6 +840,27 @@ impl Document {
             page: page.to_string(),
             grid,
         })
+    }
+
+    /// Voir `grid_lines_of` ; `view` = `x0, y0, x1, y1, min_step, min_dot_step`.
+    pub fn grid_lines_of_inner(
+        &self,
+        page: &str,
+        grid: &GridInput,
+        view: &[f64],
+    ) -> Result<Option<GridLines>, CommandError> {
+        let [x0, y0, x1, y1, min_step, min_dot_step] = view else {
+            return Err(CommandError::BadGrid);
+        };
+        let rect = Bounds {
+            x0: *x0,
+            y0: *y0,
+            x1: *x1,
+            y1: *y1,
+        };
+        Ok(self
+            .core
+            .grid_lines_of(page, grid, rect, *min_step, *min_dot_step))
     }
 
     pub fn add_table_inner(
@@ -1593,14 +1642,15 @@ mod tests {
             origin_y: 0.0,
             color: "#cccccc".into(),
             line: "solid".into(),
+            line_width: 1.0,
             snap: true,
             visible: true,
         }
     }
 
-    /// G12 : six nombres par niveau, `sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1.
+    /// G12, E1 : sept nombres par niveau, `sx, sy, ox, oy, snap, visible, lineWidth`, booléens en 0 ou 1.
     #[test]
-    fn grid_input_reads_six_numbers_per_level() {
+    fn grid_input_reads_seven_numbers_per_level() {
         let g = grid_input(
             true,
             true,
@@ -1609,7 +1659,7 @@ mod tests {
             vec!["#cccccc".into(), "#000000".into()],
             vec!["solid".into(), "dashed".into()],
             &[
-                40.0, 40.0, 0.0, 0.0, 1.0, 1.0, 20.0, 10.0, 5.0, -3.0, 0.0, 1.0,
+                40.0, 40.0, 0.0, 0.0, 1.0, 1.0, 1.0, 20.0, 10.0, 5.0, -3.0, 0.0, 1.0, 2.5,
             ],
         )
         .expect("grille");
@@ -1625,17 +1675,24 @@ mod tests {
                 origin_y: -3.0,
                 color: "#000000".into(),
                 line: "dashed".into(),
+                line_width: 2.5,
                 snap: false,
                 visible: true,
             }
         );
     }
 
-    /// G12 : longueurs incohérentes → `BadGrid`.
+    /// G12 : longueurs incohérentes (dont l'ancienne forme à six nombres) → `BadGrid`.
     #[test]
     fn grid_input_rejects_inconsistent_lengths() {
         let s = |len: usize| vec![String::from("x"); len];
-        for (k, c, l, n) in [(1, 1, 1, 5), (1, 0, 1, 6), (1, 1, 2, 6), (0, 0, 0, 6)] {
+        for (k, c, l, n) in [
+            (1, 1, 1, 6),
+            (1, 1, 1, 8),
+            (1, 0, 1, 7),
+            (1, 1, 2, 7),
+            (0, 0, 0, 7),
+        ] {
             assert_eq!(
                 grid_input(true, true, false, s(k), s(c), s(l), &vec![1.0; n]),
                 Err(CommandError::BadGrid),
@@ -1643,6 +1700,44 @@ mod tests {
             );
         }
         assert!(grid_input(true, false, false, vec![], vec![], vec![], &[]).is_ok());
+    }
+
+    /// DAE1, S3 : `grid_lines_of_inner` = lignes de `grid_lines` après `SetGrid` de la même grille ; vue de longueur ≠ 6 :
+    /// `BadGrid` ; page inconnue : `None`.
+    #[test]
+    fn grid_lines_of_inner_matches_grid_lines_after_set_grid() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let g = GridInput {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![GridLevelView {
+                line_width: 2.0,
+                ..squares(40.0)
+            }],
+        };
+        let view = [0.0, 0.0, 100.0, 100.0, 4.0, 8.0];
+        for bad in [&view[..5], &[0.0; 7][..]] {
+            assert_eq!(
+                d.grid_lines_of_inner(&p, &g, bad),
+                Err(CommandError::BadGrid)
+            );
+        }
+        let preview = d
+            .grid_lines_of_inner(&p, &g, &view)
+            .expect("vue")
+            .expect("lignes");
+        assert_eq!(preview.levels[0].line_width, 2.0);
+        assert_eq!(d.grid_lines_of_inner("nulle-part", &g, &view), Ok(None));
+        d.set_grid_inner(&p, Some(g)).expect("grille");
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 100.0,
+        };
+        assert_eq!(d.core.grid_lines(&p, r, 4.0, 8.0), Some(preview));
     }
 
     #[test]

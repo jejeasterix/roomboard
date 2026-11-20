@@ -67,12 +67,12 @@ const PATCH: Readonly<Record<PresetField["key"], (raw: string) => PresetPatch>> 
 };
 
 /** Fixe la valeur d'un `select` une fois ses options posées, puis à chaque changement (fiable, contrairement à `selected`). */
-const syncValue = (el: HTMLSelectElement, value: () => string): void => {
+export const syncValue = (el: HTMLSelectElement, value: () => string): void => {
   createEffect(() => {
     el.value = value();
   });
 };
-const pick = <T extends string>(list: readonly T[], v: string): T | undefined => list.find((x) => x === v);
+export const pick = <T extends string>(list: readonly T[], v: string): T | undefined => list.find((x) => x === v);
 const roleLabel = (bar: Toolbar): string => (Object.hasOwn(ROLE_LABELS, bar.role) ? ROLE_LABELS[bar.role]! : `Barre ${bar.id}`);
 const itemName = (it: ToolItem): string => (it.kind === "separator" ? "Séparateur" : it.label || it.id);
 const toolName = (tool: string): string => (Object.hasOwn(TOOL_TABLE, tool) ? TOOL_TABLE[tool]!.label : tool);

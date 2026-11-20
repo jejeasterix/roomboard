@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ElementView, GridInput, GridLevel, TableElement, TextElement } from "../../core/api";
+import type { Bounds, CoreDocument, ElementView, GridInput, GridLevel, GridView, TableElement, TextElement } from "../../core/api";
+import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { arrowWings } from "../../core/shapes";
-import { IDENTITY } from "../camera";
-import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
+import { IDENTITY, type Camera } from "../camera";
+import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
 import { Canvas2DRenderer, createCanvas2DRenderer, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
+import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { SceneSource } from "./renderer";
@@ -365,6 +367,7 @@ const gridLevel = (kind: string, s: number, color: string): GridLevel => ({
   originY: 0,
   color,
   line: "solid",
+  lineWidth: 1,
   snap: false,
   visible: true,
 });
@@ -397,6 +400,11 @@ function gridSegments(f: FakeCtx): { v: number[]; h: number[] } {
 }
 
 describe("Canvas2DRenderer — grille (C9)", () => {
+  it("épaisseur du niveau (E1) : lineWidth 3 à dpr 1 → trait de 3 pixels", () => {
+    const scene = gridScene(1, 1, [{ ...gridLevel("squares", 40, "#7b68ee"), lineWidth: 3 }]);
+    expect(scene.log).toContain("stroke #7b68ee 3");
+  });
+
   it("grille (C9, S5 a) : carreaux de 40 de la fausse liaison, au loin sur la page, calés sur les pixels", () => {
     const cases = [
       { dpr: 1, x: 13.5, y: 33.5, step: 40, width: 1 },
@@ -469,6 +477,131 @@ describe("Canvas2DRenderer — grille (C9)", () => {
     const fresh = new FakeCtx();
     new Canvas2DRenderer(asCtx(fresh), null, doc).drawScene({ id: p, elementIds: [] }, IDENTITY, new Set());
     expect(fresh.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
+  });
+});
+
+/** Scène dont la source compte les appels de gridLines (S4) : vue 800 × 600 CSS, dpr 1, caméra S5 descendue de `dy` px. */
+function cachedScene(levels: GridLevel[] = [gridLevel("squares", 40, "#7b68ee")]) {
+  const doc = fakeCore.blank();
+  const p = doc.pageIds()[0] ?? "";
+  doc.apply({ type: "SetGrid", page: p, grid: gridOf(levels) });
+  const gridLines = vi.fn((page: string, rect: Bounds, minStep: number, minDotStep: number) => doc.gridLines(page, rect, minStep, minDotStep));
+  const gridLinesOf = vi.fn((page: string, grid: GridView, rect: Bounds, minStep: number, minDotStep: number) =>
+    doc.gridLinesOf(page, grid, rect, minStep, minDotStep),
+  );
+  const src: SceneSource = { element: (id) => doc.element(id), outline: (id) => doc.outline(id), gridLines, gridLinesOf };
+  const scene = new FakeCtx();
+  const r = new Canvas2DRenderer(asCtx(scene), null, src, { makePath: () => new FakePath() as unknown as Path2D });
+  r.resize(800, 600, 1);
+  const cam = (dy = 0, zoom = 1): Camera => ({ zoom, tx: 13.3, ty: -1_000_007 * zoom - dy });
+  const draw = (c: Camera, page = p): void => {
+    scene.path.length = 0;
+    scene.log.length = 0;
+    r.drawScene({ id: page, elementIds: [] }, c, new Set());
+  };
+  return { doc, p, r, scene, gridLines, gridLinesOf, cam, draw };
+}
+
+/** Segments d'un rendu sans cache : lignes du cœur pour la seule vue, peintes directement. */
+function uncached(doc: CoreDocument, p: string, c: Camera): { v: number[]; h: number[] } {
+  const f = new FakeCtx();
+  const rect = visibleGridRect(c, 800, 600);
+  const lines = rect ? doc.gridLines(p, rect, MIN_GRID_PX / c.zoom, MIN_DOT_PX / c.zoom) : null;
+  if (lines) paintGrid(asCtx(f), lines, c, 1, 1, 1);
+  return gridSegments(f);
+}
+
+describe("Canvas2DRenderer — cache de la grille (C9 éditeur, E3, S4)", () => {
+  it("S4 : dix images de même caméra → un seul appel au cœur", () => {
+    const { gridLines, cam, draw } = cachedScene();
+    for (let i = 0; i < 10; i++) draw(cam());
+    expect(gridLines).toHaveBeenCalledTimes(1);
+  });
+
+  it("S4 : défilement de 50 px → toujours un appel, segments d'un rendu sans cache ; au-delà de la marge → 2 ; zoom → 3", () => {
+    const { doc, p, scene, gridLines, cam, draw } = cachedScene();
+    draw(cam());
+    draw(cam(50));
+    expect(gridLines).toHaveBeenCalledTimes(1);
+    expect(gridSegments(scene)).toEqual(uncached(doc, p, cam(50)));
+    draw(cam(400));
+    expect(gridLines).toHaveBeenCalledTimes(2);
+    expect(gridSegments(scene)).toEqual(uncached(doc, p, cam(400)));
+    draw(cam(400, 1.25));
+    expect(gridLines).toHaveBeenCalledTimes(3);
+    expect(gridSegments(scene)).toEqual(uncached(doc, p, cam(400, 1.25)));
+  });
+
+  it("S4, Review Focus 2 : ligne sur le haut de la vue après défilement : présente, comme sans cache", () => {
+    const { doc, p, scene, gridLines, cam, draw } = cachedScene();
+    draw(cam());
+    draw(cam(33)); // haut de vue à y = 1 000 040, une ligne
+    expect(gridLines).toHaveBeenCalledTimes(1);
+    const segs = gridSegments(scene);
+    expect(segs).toEqual(uncached(doc, p, cam(33)));
+    expect(segs.h[0]).toBe(0.5);
+  });
+
+  it("S4 : invalidate d'une autre page → aucun appel ; de la page ou full → un appel neuf ; resize → un appel neuf", () => {
+    const { p, r, gridLines, cam, draw } = cachedScene();
+    draw(cam());
+    r.invalidate({ ...NO_CHANGE, pages: ["autre"] });
+    draw(cam());
+    expect(gridLines).toHaveBeenCalledTimes(1);
+    r.invalidate({ ...NO_CHANGE, pages: [p] });
+    draw(cam());
+    expect(gridLines).toHaveBeenCalledTimes(2);
+    r.invalidate({ ...NO_CHANGE, full: true });
+    draw(cam());
+    expect(gridLines).toHaveBeenCalledTimes(3);
+    r.resize(800, 600, 1);
+    draw(cam());
+    expect(gridLines).toHaveBeenCalledTimes(4);
+  });
+
+  it("S4 : SetGrid puis invalidate : les lignes peintes suivent la nouvelle grille ; page changée : un appel, null gardé", () => {
+    const { doc, p, r, scene, gridLines, cam, draw } = cachedScene();
+    draw(cam());
+    r.invalidate(doc.apply({ type: "SetGrid", page: p, grid: gridOf([gridLevel("squares", 80, "#7b68ee")]) }));
+    draw(cam());
+    expect(gridSegments(scene)).toEqual(uncached(doc, p, cam()));
+    expect(gridSegments(scene).v.length).toBe(10);
+    const q = doc.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    const before = gridLines.mock.calls.length;
+    draw(cam(), q);
+    draw(cam(), q);
+    expect(gridLines.mock.calls.length).toBe(before + 1);
+    expect(scene.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
+  });
+
+  it("S4, DAE1 : setGridPreview → gridLinesOf appelé avec le brouillon, gridLines non ; null → aucune grille ; fin → grille du document", () => {
+    const { p, r, scene, gridLines, gridLinesOf, cam, draw } = cachedScene();
+    const draft = gridOf([{ ...gridLevel("squares", 80, "#94a3b8"), lineWidth: 3 }]);
+    r.setGridPreview({ page: p, grid: draft });
+    draw(cam());
+    expect(gridLines).not.toHaveBeenCalled();
+    expect(gridLinesOf).toHaveBeenCalledTimes(1);
+    expect(gridLinesOf.mock.calls[0]?.[1]).toBe(draft);
+    expect(scene.log).toContain("stroke #94a3b8 3");
+    expect(gridSegments(scene).v.length).toBe(10);
+    draw(cam(50));
+    expect(gridLinesOf).toHaveBeenCalledTimes(1);
+    r.setGridPreview({ page: p, grid: null });
+    draw(cam());
+    expect(scene.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
+    r.setGridPreview(null);
+    draw(cam());
+    expect(gridLines).toHaveBeenCalledTimes(1);
+    expect(scene.log).toContain("stroke #7b68ee 1");
+  });
+
+  it("aperçu posé pour une autre page : la page montrée garde sa grille", () => {
+    const { r, scene, gridLines, gridLinesOf, cam, draw } = cachedScene();
+    r.setGridPreview({ page: "autre", grid: null });
+    draw(cam());
+    expect(gridLinesOf).not.toHaveBeenCalled();
+    expect(gridLines).toHaveBeenCalledTimes(1);
+    expect(scene.log).toContain("stroke #7b68ee 1");
   });
 });
 

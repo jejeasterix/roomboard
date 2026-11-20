@@ -10,7 +10,7 @@ import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visiblePageRect } from "../page";
 import { PEN_HALF_WIDTH } from "./canvas2d";
 import type { EditOverlay } from "./overlay";
-import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
+import type { EraserPreview, GridPreview, LiveLayer, LiveStrokeView, PageView, Renderer } from "./renderer";
 
 export type Rgba = readonly [number, number, number, number];
 
@@ -267,7 +267,7 @@ export class WebGL2LiveRenderer implements Renderer {
   readonly badColors = new Set<string>();
 
   constructor(
-    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize">,
+    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview">,
     private readonly gl: WebGL2RenderingContext,
   ) {
     this.res = setup(gl);
@@ -298,6 +298,10 @@ export class WebGL2LiveRenderer implements Renderer {
 
   invalidate(change: Change): void {
     this.scene.invalidate(change);
+  }
+
+  setGridPreview(p: GridPreview | null): void {
+    this.scene.setGridPreview(p);
   }
 
   resize(width: number, height: number, dpr: number): void {
