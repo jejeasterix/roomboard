@@ -189,6 +189,18 @@ describe("ProfileStore (T89)", () => {
     expect(s.warnings().length).toBeGreaterThan(0);
   });
 
+  it("setActive rend faux quand l'écriture échoue, vrai sinon", () => {
+    const kv: KeyValue = { getItem: () => null, setItem: () => { throw new Error("QuotaExceededError"); }, removeItem: () => {} };
+    expect(createProfileStore(kv, BUILTIN_PROFILES).setActive("simple")).toBe(false);
+    expect(createProfileStore(fakeKv(), BUILTIN_PROFILES).setActive("simple")).toBe(true);
+  });
+
+  it("resetAll rend faux quand l'effacement échoue, vrai sinon", () => {
+    const kv: KeyValue = { getItem: () => null, setItem: () => undefined, removeItem: () => { throw new Error("SecurityError"); } };
+    expect(createProfileStore(kv, BUILTIN_PROFILES).resetAll()).toBe(false);
+    expect(createProfileStore(fakeKv(), BUILTIN_PROFILES).resetAll()).toBe(true);
+  });
+
   it("setActive inconnu lève", () => {
     expect(() => createProfileStore(null, BUILTIN_PROFILES).setActive("inconnu")).toThrow("profil inconnu : inconnu");
   });

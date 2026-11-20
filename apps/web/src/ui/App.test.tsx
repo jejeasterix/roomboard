@@ -11,7 +11,7 @@ import { createSettingsStore, parseSettings } from "../engine/settings";
 import type { FileController } from "../platform/controller";
 import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
-import { createProfileStore } from "../profile-store";
+import { createProfileStore, type KeyValue } from "../profile-store";
 import type { RuntimeCapabilities } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { createActiveProfile } from "./active-profile";
@@ -138,10 +138,10 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles> } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
-  const store = createProfileStore(null, BUILTIN_PROFILES);
+  const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
   if (opts.profile) store.setActive(opts.profile);
   const active = createActiveProfile(store, opts.caps ?? CAPS);
   const files = opts.files ?? fakeFiles();
@@ -437,6 +437,27 @@ describe("App — profils (C1)", () => {
     expect(bar().dataset["size"]).toBe("l");
     expect(store.hasOverride("defaut")).toBe(true);
     expect(container.querySelector<HTMLElement>(".rb-layout")!.style.gridTemplateColumns).toBe("auto minmax(0, 1fr)");
+  });
+
+  it("Enregistrer, écriture refusée : l'éditeur reste ouvert, un message est notifié", () => {
+    const map = new Map<string, string>();
+    let refuse = false;
+    const kv: KeyValue = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => {
+        if (refuse) throw new Error("QuotaExceededError");
+        map.set(k, v);
+      },
+      removeItem: (k) => void map.delete(k),
+    };
+    const { container } = renderApp({ kv });
+    openEditor(container);
+    change(container.querySelector(DOCK), "left");
+    vi.mocked(shell.notify).mockClear();
+    refuse = true;
+    click(container.querySelector('button[data-edit="save"]'));
+    expect(container.querySelector("[data-profile-editor]")).not.toBeNull();
+    expect(String(vi.mocked(shell.notify).mock.calls[0]?.[0])).toMatch(/^Profil non enregistré : .*QuotaExceededError/);
   });
 
   it("Enregistrer comme nouveau : cm1 actif, dans le menu", () => {

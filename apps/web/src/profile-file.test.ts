@@ -97,6 +97,12 @@ describe("profile-file : plafond de taille (T11)", () => {
     const r = profileFromText(" ".repeat(MAX_PROFILE_TEXT + 1));
     expect("errors" in r && r.errors[0]).toMatch(/^fichier trop gros/);
   });
+  it("le plafond se compte en octets UTF-8 : sous 1 M caractères accentués mais au-dessus de 1 Mo, refusé", () => {
+    const text = "é".repeat(MAX_PROFILE_TEXT / 2 + 1);
+    expect(text.length).toBeLessThan(MAX_PROFILE_TEXT);
+    const r = profileFromText(text);
+    expect("errors" in r && r.errors[0]).toMatch(/^fichier trop gros/);
+  });
   it("exactement le plafond : lu comme un JSON ordinaire", () => {
     const r = profileFromText(" ".repeat(MAX_PROFILE_TEXT));
     expect("errors" in r && r.errors[0]).toMatch(/^fichier de profil illisible/);

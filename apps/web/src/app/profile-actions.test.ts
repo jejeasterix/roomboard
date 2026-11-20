@@ -263,6 +263,29 @@ describe("gestes de profil : échecs (T11)", () => {
     expect(active.profile().id).toBe("defaut");
   });
 
+  it("choisir un profil, écriture refusée : le choix reste, message « pas gardé au prochain démarrage »", () => {
+    const { actions, kv, shell, active } = setup();
+    quota(kv);
+    expect(actions.choose("simple")).toBe(false);
+    expect(active.profile().id).toBe("simple");
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/ne sera pas gardé au prochain démarrage/);
+  });
+
+  it("choisir un profil, écriture réussie : vrai, aucun message", () => {
+    const { actions, shell } = setup();
+    expect(actions.choose("simple")).toBe(true);
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("tout remettre à zéro, effacement refusé : vrai (mémoire vidée), message « pas gardé au prochain démarrage »", async () => {
+    const { actions, kv, shell } = setup();
+    kv.removeItem = () => {
+      throw new Error("SecurityError");
+    };
+    expect(await actions.resetAll()).toBe(true);
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/ne sera pas gardé au prochain démarrage/);
+  });
+
   it("enregistrer, écriture refusée : faux, message, brouillon non appliqué", () => {
     const { actions, kv, shell, active } = setup();
     quota(kv);
