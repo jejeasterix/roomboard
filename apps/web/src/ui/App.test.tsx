@@ -475,6 +475,22 @@ describe("App — profils (C1)", () => {
     expect(tab.engine["setTool"]).toHaveBeenCalledWith("pen");
   });
 
+  it("préréglages : une seule rangée, dans la première barre de rôle tools (T11)", async () => {
+    const bar = (id: string) => ({ id, role: "tools", dock: "top", groups: [{ id: "g", items: [{ id: `pen-${id}`, kind: "tool", tool: "pen", label: "Stylo" }, { id: `profiles-${id}`, kind: "action", action: "profiles", label: "Profil" }] }] });
+    const text = JSON.stringify({
+      format: "roomboard-profile", schema: 1, id: "deux", label: "Deux",
+      toolbars: [bar("a"), bar("b")],
+      presets: { pen: [{ id: "noir", label: "Noir", color: "#000000", width: 2 }] },
+    });
+    const files = fakeFiles([{ name: "deux.rbprofile", text }]);
+    const { container } = renderApp({ files });
+    openMenu(container);
+    click(container.querySelector('[data-profile-cmd="import"]'));
+    await vi.waitFor(() => expect(container.querySelector('[data-toolbar="b"]')).not.toBeNull());
+    expect(container.querySelectorAll('[data-toolbar="a"] button[data-preset]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-toolbar="b"] button[data-preset]')).toHaveLength(0);
+  });
+
   it("Importer… : le profil choisi devient actif", async () => {
     const text = JSON.stringify({
       format: "roomboard-profile", schema: 1, id: "importe", label: "Importé", interface: { buttonSize: "l" },

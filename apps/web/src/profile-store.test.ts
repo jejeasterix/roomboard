@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACTIVE_KEY, PROFILES_KEY, browserKeyValue, createProfileStore, type KeyValue } from "./profile-store";
-import { serializeProfile } from "./toolbar";
+import { parseProfile, serializeProfile } from "./toolbar";
 import { BUILTIN_PROFILES, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
 
 function fakeKv(): KeyValue & { map: Map<string, string> } {
@@ -203,5 +203,48 @@ describe("ProfileStore (T89)", () => {
       },
     };
     expect(browserKeyValue(w)).toBeNull();
+  });
+});
+
+describe("magasin : écriture refusée (T11)", () => {
+  const quotaKv = (): KeyValue => ({
+    getItem: () => null,
+    setItem: () => {
+      throw new Error("QuotaExceededError");
+    },
+    removeItem: () => {},
+  });
+  const user = (id: string) => {
+    const r = parseProfile(userJson(id));
+    if ("errors" in r) throw new Error(r.errors.join());
+    return r.profile;
+  };
+
+  it("save : lève et la mémoire reste inchangée", () => {
+    const s = createProfileStore(quotaKv(), BUILTIN_PROFILES);
+    expect(() => s.save(user("neuf"))).toThrow("QuotaExceededError");
+    expect(s.get("neuf")).toBeNull();
+  });
+
+  it("remove et revert : lèvent et gardent le profil", () => {
+    const kv = quotaKv();
+    kv.getItem = (k) => (k === PROFILES_KEY ? JSON.stringify([userJson("ancien"), userJson("simple")]) : null);
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(() => s.remove("ancien")).toThrow("QuotaExceededError");
+    expect(s.get("ancien")).not.toBeNull();
+    expect(() => s.revert("simple")).toThrow("QuotaExceededError");
+    expect(s.hasOverride("simple")).toBe(true);
+  });
+
+  it("save : imbrication trop profonde (RangeError de JSON.stringify) : lève, magasin utilisable ensuite", () => {
+    const kv = fakeKv();
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    let deep: unknown = 1;
+    for (let i = 0; i < 50000; i++) deep = [deep];
+    const hostile = { ...user("hostile"), rest: { x: deep } };
+    expect(() => s.save(hostile)).toThrow(RangeError);
+    expect(s.get("hostile")).toBeNull();
+    s.save(user("sain"));
+    expect(s.get("sain")).not.toBeNull();
   });
 });

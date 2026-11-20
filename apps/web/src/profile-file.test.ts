@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { planImport, PROFILE_EXTENSION, PROFILE_MIME, profileFromText, profileToFile, slug, uniqueId } from "./profile-file";
+import { MAX_PROFILE_TEXT, planImport, PROFILE_EXTENSION, PROFILE_MIME, profileFromText, profileToFile, slug } from "./profile-file";
+import { uniqueId } from "./toolbar";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
 
 const fixture = (name: string): string => readFileSync(join(__dirname, "fixtures", "profils", name), "utf8");
@@ -87,5 +88,17 @@ describe("profile-file (C1, DAC1-3)", () => {
     expect(planImport({ ...DEFAUT, label: "Pirate" }, existing, BUILTIN_IDS)).toEqual({ kind: "confirm", message: "Remplacer le profil « Par défaut » ?" });
     expect(planImport({ ...cm1, label: "Autre" }, existing, BUILTIN_IDS)).toEqual({ kind: "confirm", message: "Remplacer le profil « CM1 » ?" });
     expect(planImport({ ...DEFAUT, id: "simple" }, [], BUILTIN_IDS)).toEqual({ kind: "confirm", message: "Remplacer le profil « simple » ?" });
+  });
+});
+
+describe("profile-file : plafond de taille (T11)", () => {
+  it("plus d'un mégaoctet de texte : erreur claire, avant toute lecture JSON", () => {
+    expect(MAX_PROFILE_TEXT).toBe(1_048_576);
+    const r = profileFromText(" ".repeat(MAX_PROFILE_TEXT + 1));
+    expect("errors" in r && r.errors[0]).toMatch(/^fichier trop gros/);
+  });
+  it("exactement le plafond : lu comme un JSON ordinaire", () => {
+    const r = profileFromText(" ".repeat(MAX_PROFILE_TEXT));
+    expect("errors" in r && r.errors[0]).toMatch(/^fichier de profil illisible/);
   });
 });

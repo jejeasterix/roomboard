@@ -236,3 +236,66 @@ describe("gestes de profil (C1)", () => {
     expect(shell.notify).toHaveBeenCalledWith("Profil non exporté (par-defaut.rbprofile) : disque plein");
   });
 });
+
+describe("gestes de profil : échecs (T11)", () => {
+  const quota = (kv: ReturnType<typeof fakeKv>): void => {
+    kv.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+  };
+  const ferme = (id: string) =>
+    JSON.stringify({ format: "roomboard-profile", schema: 1, id, label: "Fermé", toolbars: [{ id: "outils", role: "tools", dock: "top", groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] }] });
+
+  it("import, lecture qui lève : message, refusé, rien ne change", async () => {
+    const { actions, files, shell, store } = setup();
+    vi.mocked(files.pick).mockRejectedValueOnce(new Error("accès refusé"));
+    expect(await actions.importFile()).toBe("refused");
+    expect(shell.notify).toHaveBeenCalledWith("Profil non importé : accès refusé");
+    expect(store.list()).toEqual(BUILTIN_PROFILES);
+  });
+
+  it("import, écriture refusée (quota) : pas « imported », profil non actif, message", async () => {
+    const { actions, kv, shell, store, active } = setup([{ name: "f.rbprofile", text: ferme("ferme") }]);
+    quota(kv);
+    expect(await actions.importFile()).toBe("refused");
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non importé \(f\.rbprofile\) : .*QuotaExceededError/);
+    expect(store.get("ferme")).toBeNull();
+    expect(active.profile().id).toBe("defaut");
+  });
+
+  it("enregistrer, écriture refusée : faux, message, brouillon non appliqué", () => {
+    const { actions, kv, shell, active } = setup();
+    quota(kv);
+    expect(actions.save(setDock(DEFAUT, "outils", "left"))).toBe(false);
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non enregistré : .*QuotaExceededError/);
+    expect(active.profile().toolbars.find((b) => b.id === "outils")!.dock).toBe("top");
+    expect(actions.saveAsNew(DEFAUT, "Autre")).toBeNull();
+    expect(shell.notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("supprimer et remettre à zéro le profil courant, écriture refusée : message, profil gardé", async () => {
+    const { actions, kv, shell, store } = setup();
+    actions.saveAsNew(DEFAUT, "Perso");
+    quota(kv);
+    expect(await actions.remove()).toBe(false);
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non supprimé : /);
+    expect(store.get("perso")).not.toBeNull();
+    actions.resetCurrent();
+    expect(String(shell.notify.mock.calls[1]![0])).toMatch(/^Profil non remis à zéro : /);
+  });
+
+  it("fichier hostile imbriqué à l'excès : refusé avec un message, le magasin reste utilisable", async () => {
+    const deep = `{"format":"roomboard-profile","schema":1,"id":"deep","label":"D","x":${"[".repeat(50000)}${"]".repeat(50000)},"toolbars":[]}`;
+    const { actions, shell, store } = setup([{ name: "d.rbprofile", text: deep }]);
+    expect(await actions.importFile()).toBe("refused");
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non importé \(d\.rbprofile\) : /);
+    expect(store.get("deep")).toBeNull();
+    expect(actions.saveAsNew(DEFAUT, "Après")!.id).toBe("apres");
+  });
+
+  it("fichier de plus d'un mégaoctet : refusé avec un message clair", async () => {
+    const { actions, shell } = setup([{ name: "gros.rbprofile", text: " ".repeat(1_048_577) }]);
+    expect(await actions.importFile()).toBe("refused");
+    expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non importé \(gros\.rbprofile\) : fichier trop gros/);
+  });
+});

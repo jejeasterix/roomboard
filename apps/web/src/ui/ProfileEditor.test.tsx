@@ -209,3 +209,29 @@ describe("ProfileEditor (C1, P20)", () => {
     expect(saveAsNew).not.toHaveBeenCalled();
   });
 });
+
+describe("ProfileEditor : sélecteur Ajouter et focus des préréglages (T11)", () => {
+  const ADD = '[data-edit-bar="outils"] select[data-edit="add-choice"]';
+  it("après une autre édition, le sélecteur Ajouter garde son choix affiché et cohérent avec le bouton", () => {
+    const { q } = setup();
+    setValue(q<HTMLSelectElement>(ADD), "action:page-next");
+    expect(q<HTMLButtonElement>('[data-edit-bar="outils"] button[data-edit="add"]').disabled).toBe(false);
+    setValue(q<HTMLSelectElement>('select[data-edit="button-size"]'), "l");
+    expect(q<HTMLSelectElement>(ADD).value).toBe("action:page-next");
+    expect(q<HTMLButtonElement>('[data-edit-bar="outils"] button[data-edit="add"]').disabled).toBe(false);
+  });
+
+  it("modifier un préréglage garde le focus sur son champ", () => {
+    const { q } = setup();
+    const color = q<HTMLInputElement>('[data-edit-preset="rouge"] input[data-edit="preset-color"]');
+    color.focus();
+    setValue(color, "#16a34a");
+    expect(document.activeElement).toBe(color);
+    expect(q<HTMLInputElement>('[data-edit-preset="rouge"] input[data-edit="preset-color"]')).toBe(color);
+    const label = q<HTMLInputElement>('[data-edit-preset="bleu"] input[data-edit="preset-label"]');
+    label.focus();
+    setValue(label, "Azur");
+    expect(document.activeElement).toBe(label);
+    expect(label.value).toBe("Azur");
+  });
+});
