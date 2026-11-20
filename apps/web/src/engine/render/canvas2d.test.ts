@@ -701,6 +701,21 @@ describe("images et éléments inconnus (R16, U3)", () => {
     expect(bitmapOf).toHaveBeenLastCalledWith(image, false);
   });
 
+  it("T21 (I33) : drawScene encadre ses images de beginScene et endScene, fantômes compris", () => {
+    const order: string[] = [];
+    const images: ImageSource = {
+      bitmap: () => null,
+      bitmapOf: (el) => {
+        order.push(`bitmapOf ${el.id}`);
+        return null;
+      },
+      beginScene: () => order.push("begin"),
+      endScene: () => order.push("end"),
+    };
+    sceneOf(image, images, new Set(["i"]), { ...EMPTY_OVERLAY, ghosts: [{ id: "i", matrix: [1, 0, 0, 1, 30, 0] }] });
+    expect(order).toEqual(["begin", "bitmapOf i", "end"]);
+  });
+
   it("cadre de rognage : voile hors du cadre (evenodd), cadre, huit poignées (I28)", () => {
     const bmp = { tag: "bitmap" } as unknown as CanvasImageSource;
     const { scene } = previewed(image, { bitmap: () => bmp }, { id: "i", params: {}, matrix: [1, 0, 0, 1, 5, 6], frame: { x0: 10, y0: 10, x1: 60, y1: 40 } });
