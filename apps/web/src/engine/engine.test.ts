@@ -13,7 +13,9 @@ import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
 import type { TableCellState } from "./table-geom";
 import { createTableTool, type TablePicker } from "./tools/table";
-import type { TextEditorHost, TextEditSession } from "./tools/text";
+import { plainSpans } from "../core/rich-text";
+import type { FormatState } from "./rich-edit";
+import type { TextEditorHost, TextEditSession, TextTool } from "./tools/text";
 import { NO_LIVE, type GestureTool, type TableTool, type ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
@@ -778,6 +780,7 @@ describe("createEngine — Alt (C9)", () => {
 function fakeTableTool(ctx: ToolContext, log: string[]) {
   let cell: TableCellState | null = null;
   let clears = false;
+  let fmt: FormatState | null = null;
   const tool: TableTool = {
     begin: () => {
       log.push("table.begin");
@@ -806,9 +809,18 @@ function fakeTableTool(ctx: ToolContext, log: string[]) {
     compositionStart: () => undefined,
     compositionEnd: () => undefined,
     requestCommit: () => undefined,
+    format: (a) => {
+      log.push(`table.format ${a.type}`);
+    },
+    formatState: () => fmt,
+    formatChanged: () => ctx.stateChanged?.(),
   };
   return {
     tool,
+    setFormat(f: FormatState | null): void {
+      fmt = f;
+      ctx.stateChanged?.();
+    },
     setCell(c: TableCellState | null): void {
       cell = c;
       ctx.stateChanged?.();
@@ -912,6 +924,9 @@ function setupRealTable() {
     },
     close() {},
     value: () => host.text,
+    spans: () => plainSpans(host.text),
+    format: () => undefined,
+    formatState: () => null,
   };
   let pick: ((c: number, r: number) => void) | null = null;
   const picker: TablePicker = {
@@ -980,5 +995,97 @@ describe("moteur et outil Tableau (C10a, S2)", () => {
     tool.requestCommit();
     engine.tableAction("row-remove");
     expect(engine.state().tableCell).toMatchObject({ row: 1, col: 0, rows: 2 });
+  });
+});
+
+/** Faux outil Texte (C7b) : journalise les actions de format ; `setFormat` change l'état publié et prévient le moteur. */
+function fakeTextTool(ctx: ToolContext, log: string[]) {
+  let fmt: FormatState | null = null;
+  const tool: TextTool = {
+    begin: () => undefined,
+    extend: () => undefined,
+    frame: () => undefined,
+    close: () => undefined,
+    live: () => NO_LIVE,
+    active: () => false,
+    editing: () => null,
+    composing: () => false,
+    compositionStart: () => undefined,
+    compositionEnd: () => undefined,
+    requestCommit: () => undefined,
+    format: (a) => {
+      log.push(`text.format ${a.type}`);
+    },
+    formatState: () => fmt,
+    formatChanged: () => ctx.stateChanged?.(),
+  };
+  return {
+    tool,
+    setFormat(f: FormatState | null): void {
+      fmt = f;
+      ctx.stateChanged?.();
+    },
+  };
+}
+
+function setupFormat() {
+  const doc = fakeCore.blank();
+  const frames = new Frames();
+  const renderer = new FakeRenderer();
+  const log: string[] = [];
+  const holder: { text?: ReturnType<typeof fakeTextTool>; table?: ReturnType<typeof fakeTableTool> } = {};
+  const tools: ToolFactories = {
+    pen: (ctx) => fakeTool("pen", log, ctx),
+    eraser: (ctx) => fakeTool("eraser", log, ctx),
+    text: (ctx) => {
+      holder.text = fakeTextTool(ctx, log);
+      return holder.text.tool;
+    },
+    table: (ctx) => {
+      holder.table = fakeTableTool(ctx, log);
+      return holder.table.tool;
+    },
+  };
+  const engine = createEngine({ doc, renderer, frames, tools });
+  const { text, table } = holder;
+  if (text === undefined || table === undefined) throw new Error("outils non créés");
+  return { engine, log, text, table };
+}
+
+describe("moteur — barre de format (C7b, DAR4)", () => {
+  const BOLD: FormatState = { bold: true, italic: false, underline: false, size: 36, color: "default" };
+
+  it("textFormat(a) : relayé à l'outil Texte ou Tableau actif ; autre outil : rien", () => {
+    const { engine, log } = setupFormat();
+    engine.setTool("text");
+    engine.textFormat({ type: "bold" });
+    engine.setTool("table");
+    engine.textFormat({ type: "italic" });
+    engine.setTool("pen");
+    engine.textFormat({ type: "underline" });
+    expect(log.filter((l) => l.includes(".format"))).toEqual(["text.format bold", "table.format italic"]);
+  });
+
+  it("state().textFormat : celui de l'outil actif ; stateChanged republie ; autre outil : null", () => {
+    const { engine, text, table } = setupFormat();
+    const seen: (FormatState | null)[] = [];
+    engine.onState((s) => seen.push(s.textFormat));
+    engine.setTool("text");
+    text.setFormat(BOLD);
+    expect(seen.at(-1)).toEqual(BOLD);
+    expect(engine.state().textFormat).toEqual(BOLD);
+    engine.setTool("table");
+    expect(engine.state().textFormat).toBeNull();
+    table.setFormat({ ...BOLD, bold: false });
+    expect(engine.state().textFormat).toEqual({ ...BOLD, bold: false });
+    engine.setTool("pen");
+    expect(engine.state().textFormat).toBeNull();
+  });
+
+  it("sans fabrique text ni table : textFormat null, action sans effet", () => {
+    const { engine } = setup();
+    engine.setTool("text");
+    expect(engine.state().textFormat).toBeNull();
+    expect(() => engine.textFormat({ type: "bold" })).not.toThrow();
   });
 });
