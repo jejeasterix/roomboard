@@ -1,5 +1,5 @@
 import { TABLE_MAX_LINES } from "../core/api";
-import type { TableCellState } from "../engine/table-geom";
+import type { Range, TableCellState } from "../engine/table-geom";
 import { TOOL_TABLE, type ToolItem } from "../toolbar";
 
 export interface ToolbarView {
@@ -13,6 +13,8 @@ export interface ToolbarView {
   readonly tableCell?: TableCellState | null;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
+
+const cells = (r: Range | null | undefined): number => (r ? (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) : 0);
 
 /** Ce que l'état publié change d'une action ; une action absente de la table garde l'état neutre. */
 export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<ItemState>>> = {
@@ -30,6 +32,10 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "table-row-remove": (v) => ({ disabled: !v.tableCell || v.tableCell.rows <= 1 }),
   "table-col-remove": (v) => ({ disabled: !v.tableCell || v.tableCell.cols <= 1 }),
   "table-uniform": (v) => ({ disabled: !v.tableCell }),
+  "table-merge": (v) => ({ disabled: cells(v.tableCell?.range) < 2 }),
+  "table-split": (v) => ({ disabled: v.tableCell?.merged !== true || cells(v.tableCell.range) > 0 }),
+  "table-shade": (v) => ({ disabled: !v.tableCell }),
+  "table-unshade": (v) => ({ disabled: v.tableCell?.shaded !== true }),
 };
 
 type Rule = (item: ToolItem, v: ToolbarView) => Partial<ItemState>;
