@@ -9,6 +9,8 @@ import {
   isProfilesAccess,
   resetPresets,
   TOOL_TABLE,
+  appendToLastGroup,
+  presetsOf,
   uniqueId,
   type ButtonSize,
   type Dock,
@@ -50,7 +52,7 @@ const mapItems = (p: Profile, f: (it: ToolItem) => ToolItem): Profile => ({
   toolbars: p.toolbars.map((b) => ({ ...b, groups: b.groups.map((g) => ({ ...g, items: g.items.map(f) })) })),
 });
 const itemIds = (p: Profile): Set<string> => new Set(p.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id))));
-const presetsOf = (p: Profile, tool: ToolId): readonly Preset[] => (Object.hasOwn(p.presets, tool) ? (p.presets[tool] ?? []) : []);
+
 const withPresets = (p: Profile, tool: ToolId, list: readonly Preset[]): Profile => ({ ...p, presets: { ...p.presets, [tool]: list } });
 
 export const setLabel = (p: Profile, label: string): Profile => ({ ...p, label });
@@ -122,15 +124,11 @@ export function addItem(p: Profile, barId: string, entry: CatalogEntry): Profile
     requires: [],
     rest: {},
   };
-  return mapBar(p, barId, (bar) => {
-    if (bar.groups.length === 0) return { ...bar, groups: [{ id: "groupe", items: [item], rest: {} }] };
-    const last = bar.groups.length - 1;
-    return { ...bar, groups: bar.groups.map((g, k) => (k === last ? { ...g, items: [...g.items, item] } : g)) };
-  });
+  return mapBar(p, barId, (bar) => appendToLastGroup(bar, item, "groupe"));
 }
 
 export function addPreset(p: Profile, tool: ToolId): Profile {
-  const list = presetsOf(p, tool);
+  const list = presetsOf(p.presets, tool);
   const id = uniqueId("couleur", new Set(list.map((x) => x.id)));
   return withPresets(p, tool, [...list, { id, label: `Couleur ${list.length + 1}`, ...NEW_PRESET, rest: {} }]);
 }
@@ -141,7 +139,7 @@ export function updatePreset(p: Profile, tool: ToolId, id: string, patch: Preset
   return withPresets(
     p,
     tool,
-    presetsOf(p, tool).map((x) => {
+    presetsOf(p.presets, tool).map((x) => {
       if (x.id !== id) return x;
       const label = patch.label !== undefined && patch.label.trim() !== "" ? patch.label.trim() : x.label;
       const color = patch.color !== undefined && patch.color !== "" ? patch.color : x.color;
@@ -153,7 +151,7 @@ export function updatePreset(p: Profile, tool: ToolId, id: string, patch: Preset
 
 export function removePreset(p: Profile, tool: ToolId, id: string): Profile {
   if (!Object.hasOwn(p.presets, tool)) return p;
-  return withPresets(p, tool, presetsOf(p, tool).filter((x) => x.id !== id));
+  return withPresets(p, tool, presetsOf(p.presets, tool).filter((x) => x.id !== id));
 }
 
 /** « Rétablir les barres » (U12) : barres et taille des boutons de l'origine ; le reste du profil ne bouge pas. */

@@ -128,6 +128,11 @@ export function isProfilesAccess(it: ToolItem): boolean {
 }
 
 /** `base` s'il est libre, sinon `<base>-<n>` avec le premier n ≥ 2 libre (C1 : P15, P28, P33). */
+/** Préréglages de l'outil `tool` dans la table d'un profil (vide si l'outil n'en a pas). */
+export function presetsOf(table: Profile["presets"], tool: ToolId): readonly Preset[] {
+  return Object.hasOwn(table, tool) ? (table[tool] ?? []) : [];
+}
+
 export function uniqueId(base: string, taken: ReadonlySet<string>): string {
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) {
@@ -383,9 +388,9 @@ function parseBehavior(raw: unknown, ctx: Ctx): Profile["behavior"] {
 
 const isVersion = (v: unknown, min: number): v is number => Number.isInteger(v) && (v as number) >= min;
 
-/** Ajoute `item` en fin du dernier groupe de `bar` (groupe `profil` créé si la barre n'en a aucun). */
-function appendToLastGroup(bar: Toolbar, item: ToolItem): Toolbar {
-  if (bar.groups.length === 0) return { ...bar, groups: [{ id: "profil", items: [item], rest: {} }] };
+/** Ajoute `item` en fin du dernier groupe de `bar` (groupe `groupId` créé si la barre n'en a aucun). */
+export function appendToLastGroup(bar: Toolbar, item: ToolItem, groupId: string): Toolbar {
+  if (bar.groups.length === 0) return { ...bar, groups: [{ id: groupId, items: [item], rest: {} }] };
   const last = bar.groups.length - 1;
   return { ...bar, groups: bar.groups.map((g, i) => (i === last ? { ...g, items: [...g.items, item] } : g)) };
 }
@@ -424,7 +429,7 @@ function ensureProfilesAccess(bars: readonly Toolbar[], ctx: Ctx): readonly Tool
     const barId = uniqueId("outils", new Set(shown.map((b) => b.id)));
     return [...shown, { id: barId, role: "tools", dock: "top", collapsed: false, groups: [{ id: "profil", items: [item], rest: {} }], rest: {} }];
   }
-  return shown.map((b, i) => (i === first ? appendToLastGroup(b, item) : b));
+  return shown.map((b, i) => (i === first ? appendToLastGroup(b, item, "profil") : b));
 }
 
 /** Analyse un profil JSON (règles du plan du lot 5b, T83) ; toutes les erreurs sont rassemblées, sauf format et version. */
