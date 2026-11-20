@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Command, TableData } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
+import { plainSpans } from "../../core/rich-text";
 import type { InputSample } from "../input/sampler";
 import { cellHeight } from "../table-geom";
 import type { Measure } from "../text-layout";
@@ -304,7 +305,7 @@ describe("outil Tableau (C10a)", () => {
     const long = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd";
     s.type(long);
     s.tool.requestCommit();
-    const h = cellHeight(long, 36, 240, narrow);
+    const h = cellHeight(plainSpans(long), 36, 240, narrow);
     const t = s.table(id);
     expect(s.last()).toEqual({ type: "SetTableCell", id, row: t.rows[0]?.id, col: t.cols[0]?.id, content: long, rowHeight: h });
     expect(h).toBeGreaterThan(64);
@@ -317,7 +318,7 @@ describe("outil Tableau (C10a)", () => {
     const long = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd";
     s.type(long);
     s.tool.requestCommit();
-    const h = cellHeight(long, 36, 240, narrow);
+    const h = cellHeight(plainSpans(long), 36, 240, narrow);
     const v = s.doc.version();
     s.tool.act("uniform");
     const t = s.table(id);
