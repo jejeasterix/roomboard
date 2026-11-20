@@ -1,7 +1,7 @@
 //! Tableau (U32, DAU10, C10a, DAC1) : élément `Y.Map{ id, kind: "table", transform, color, size, cols, rows, cells }` ;
 //! `cols` = `Y.Array<Y.Map{ id, width }>`, `rows` = `Y.Array<Y.Map{ id, height }>`, ids `yrs::uuid_v4` ; `cells` =
 //! `Y.Map` clé `"<rowId>:<colId>"` → `Y.Map{ text: Y.Text, fill? }`, cellule absente = vide. Lecture tolérante (T2) :
-//! entrée de `cols` / `rows` illisible ou d'un id déjà vu sautée (gardée dans le document), `text` qui n'est pas un
+//! entrée de `cols` / `rows` illisible (id vide ou contenant `:`) ou d'un id déjà vu sautée (gardée dans le document), `text` qui n'est pas un
 //! `Y.Text` → vide, `fill` invalide → aucun, aucune ligne ou aucune colonne lisible → `None` : l'appelant se replie sur
 //! `element::unknown_view` (jamais invisible). C10a n'écrit jamais `shade`, `span`, `mergedInto` (place gardée pour
 //! C10b) ; aucune `Any::Map`.
@@ -15,7 +15,7 @@ use yrs::{
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, out_f64, out_string, out_transform, transform_to_any, Transform,
+    finite_positive, fits_f32, out_f64, out_string, out_transform, transform_to_any, Transform,
 };
 use crate::rich_text::{self, valid_color};
 pub const TABLE_KIND: &str = "table";
@@ -88,13 +88,15 @@ pub(crate) fn cell_key(row: &str, col: &str) -> String {
     format!("{row}:{col}")
 }
 
-/// Entrées lisibles d'un `Y.Array` de lignes : `Y.Map` avec un `id` texte non vide pas encore vu et `key` fini > 0.
+/// Entrées lisibles d'un `Y.Array` de lignes : `Y.Map` avec un `id` texte non vide, sans `:` (la clé de cellule
+/// `"<row>:<col>"` reste sans ambiguïté), pas encore vu, et `key` fini > 0.
 fn lines<T: ReadTxn>(txn: &T, arr: &ArrayRef, key: &str) -> Vec<Line> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for (i, o) in arr.iter(txn).enumerate() {
         let Out::YMap(map) = o else { continue };
-        let Some(id) = out_string(map.get(txn, "id")).filter(|s| !s.is_empty()) else {
+        let Some(id) = out_string(map.get(txn, "id")).filter(|s| !s.is_empty() && !s.contains(':'))
+        else {
             continue;
         };
         let Some(size) = out_f64(map.get(txn, key)).filter(|v| finite_positive(*v)) else {
@@ -268,7 +270,7 @@ fn line_prelim(id: &str, key: &'static str, size: f64) -> MapPrelim {
     MapPrelim::from([("id", In::from(id)), (key, In::Any(Any::from(size)))])
 }
 
-/// Clé `"<row>:<col>"` dans la ligne (ou colonne) `line` ; découpe au premier `:` (ids `uuid_v4` sans `:`).
+/// Clé `"<row>:<col>"` dans la ligne (ou colonne) `line` ; découpe au premier `:` (ids lisibles sans `:`, `lines`).
 fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
     key.split_once(':').is_some_and(|(r, c)| match axis {
         TableAxis::Row => r == line,
@@ -315,15 +317,20 @@ impl Document {
         })
     }
 
-    /// `AddTable` (T3) : refus `BadTable` avant la page ; une transaction, cellules vides (`cells` = `Y.Map` vide).
+    /// `AddTable` (T3) : refus `BadTable` avant la page, x, y et la boîte bornés en f32 comme une forme ; une
+    /// transaction, cellules vides (`cells` = `Y.Map` vide).
     pub(crate) fn cmd_add_table(&mut self, t: &NewTable<'_>) -> Result<Change, CommandError> {
         let valid = lines_ok(t.cols)
             && lines_ok(t.rows)
             && finite_positive(t.col_width)
             && finite_positive(t.row_height)
             && finite_positive(t.size)
-            && t.x.is_finite()
-            && t.y.is_finite()
+            && fits_f32(&[
+                t.x,
+                t.y,
+                f64::from(t.cols) * t.col_width,
+                f64::from(t.rows) * t.row_height,
+            ])
             && valid_color(t.color);
         if !valid {
             return Err(CommandError::BadTable);
@@ -356,8 +363,8 @@ impl Document {
         Ok(self.table_done(t.page.to_string(), &id))
     }
 
-    /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande ;
-    /// même texte sans hauteur plus grande : aucune transaction (D38).
+    /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande,
+    /// la hauteur du tableau restant bornée en f32 ; même texte sans hauteur plus grande : aucune transaction (D38).
     pub(crate) fn cmd_set_table_cell(
         &mut self,
         id: &str,
@@ -383,6 +390,9 @@ impl Document {
         };
         let current = cell.as_ref().map_or("", |c| c.content.as_str());
         let grow = row_height.filter(|h| *h > line.size);
+        if grow.is_some_and(|h| !fits_f32(&[raw.height() - line.size + h])) {
+            return Err(CommandError::BadTable);
+        }
         if current == content && grow.is_none() {
             return Ok(self.unchanged());
         }
@@ -480,7 +490,8 @@ impl Document {
         Ok(self.table_done(page, id))
     }
 
-    /// `SetTableSizes` (T11) : écrit seulement les tailles qui changent ; déjà uniforme : aucune transaction.
+    /// `SetTableSizes` (T11) : largeur et hauteur totales bornées en f32 ; écrit seulement les tailles qui changent ;
+    /// déjà uniforme : aucune transaction.
     pub(crate) fn cmd_set_table_sizes(
         &mut self,
         id: &str,
@@ -491,6 +502,12 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, _, raw) = self.table_of(id)?;
+        if !fits_f32(&[
+            raw.cols.len() as f64 * col_width,
+            raw.rows.len() as f64 * row_height,
+        ]) {
+            return Err(CommandError::BadTable);
+        }
         let cols: Vec<&Line> = raw.cols.iter().filter(|l| l.size != col_width).collect();
         let rows: Vec<&Line> = raw.rows.iter().filter(|l| l.size != row_height).collect();
         if cols.is_empty() && rows.is_empty() {
@@ -1455,9 +1472,6 @@ pub(crate) mod tests {
         ));
         let v = d.element("t1").expect("jamais invisible");
         assert_eq!(v.kind, "unknown");
-        assert_eq!(
-            v.unknown.map(|u| u.source_kind),
-            Some("table".to_string())
-        );
+        assert_eq!(v.unknown.map(|u| u.source_kind), Some("table".to_string()));
     }
 }

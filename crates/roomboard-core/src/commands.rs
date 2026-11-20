@@ -9,7 +9,7 @@ use yrs::{
 use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
-    apply_transform, compose, finite_positive, invert, out_bytes, out_f64, out_string,
+    apply_transform, compose, finite_positive, fits_f32, invert, out_bytes, out_f64, out_string,
     out_transform, read_backdrop, read_style, style_fields, transform_to_any, StrokeStyle,
     Transform, FIT_WIDTH, IDENTITY,
 };
@@ -590,7 +590,7 @@ impl Document {
         let (tx, ty, w, h) = normalize(kind, x0, y0, x1, y1);
         // Constat 3 de T60 : des coins finis peuvent donner w = inf (x0 = -1e308, x1 = 1e308), ou une géométrie que le
         // polygone (f32) et la liaison ne tiennent pas.
-        if [tx, ty, w, h].iter().any(|v| !(*v as f32).is_finite()) {
+        if !fits_f32(&[tx, ty, w, h]) {
             return Err(CommandError::BadShape);
         }
         if !finite_positive(f64::from(style.width)) {
