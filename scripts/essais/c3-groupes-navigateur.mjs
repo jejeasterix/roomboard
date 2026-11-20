@@ -53,6 +53,15 @@ async function scenario(page, url, { captures, tmp }) {
     console.log(`capture : ${path}`);
   };
 
+  // Nom réellement proposé par la page : a.download de l'ancre cliquée (Chromium sans écran rend « download » à Playwright).
+  await page.addInitScript(() => {
+    window.__downloadNames = [];
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) window.__downloadNames.push(this.download);
+      return click.call(this);
+    };
+  });
   await page.goto(url);
   await page.waitForSelector("#stage");
   await fr();
@@ -83,22 +92,36 @@ async function scenario(page, url, { captures, tmp }) {
   const cam = ((await attr("data-camera")) ?? "").split(",").map(Number);
   const moved = await bounds();
   const dx = (moved[0] - before[0]) * cam[0];
-  check(Math.abs(dx - 100) < 2 && (await attr("data-selection")) === "3", `S1 : glisser : les trois bougent ensemble (Δx écran ${dx.toFixed(1)} px)`);
+  const dy = (moved[1] - before[1]) * cam[0];
+  check(Math.abs(dx - 100) < 2 && Math.abs(dy - 50) < 2 && (await attr("data-selection")) === "3", `S1 : glisser : les trois bougent ensemble (Δx écran ${dx.toFixed(1)} px, Δy ${dy.toFixed(1)} px)`);
   await page.keyboard.press("Control+z");
   await page.waitForFunction((b) => document.querySelector("#stage")?.getAttribute("data-bounds") === b, before.join(","), { timeout: 15000 }).catch(() => undefined);
   check((await bounds()).join(",") === before.join(","), "S1 : Annuler une fois : les trois reviennent");
+  await page.click('button[data-selection-action="ungroup"]');
+  await waitAttr("data-grouped", "0");
+  await page.keyboard.press("Escape");
+  await waitAttr("data-selection", "0");
+  await mouse.click(170, 160);
+  await waitAttr("data-selection", "1");
+  check((await attr("data-units")) === "1" && (await attr("data-grouped")) === "0", "S1 : Dégrouper : un clic ne prend plus qu'un objet");
+  await page.keyboard.press("Escape");
+  await waitAttr("data-selection", "0");
+  await page.keyboard.press("Control+z");
+  await mouse.click(170, 160);
+  await waitAttr("data-selection", "3");
+  check((await attr("data-grouped")) === "1", "S1 : Annuler rend le groupe : un clic reprend les trois objets");
 
   // S2 : Ctrl+C réel, enveloppe relue dans le presse-papiers système.
   await mouse.click(170, 160);
   await waitAttr("data-selection", "3");
   await page.keyboard.press("Control+c");
-  const envelope = await page
-    .waitForFunction(async () => {
-      const t = await navigator.clipboard.readText();
-      return t.startsWith('{"format":"roomboard-items/1","rbitem":"') ? t : null;
-    }, null, { timeout: 15000, polling: 250 })
-    .then((h) => h.jsonValue())
-    .catch(() => null);
+  // Sondage côté Node : un readText refusé ou en attente ne bloque pas l'attente, la limite reste 15 s.
+  let envelope = null;
+  for (const t0 = Date.now(); envelope === null && Date.now() - t0 < 15000; ) {
+    const t = await page.evaluate(() => navigator.clipboard.readText().catch(() => "")).catch(() => "");
+    if (t.startsWith('{"format":"roomboard-items/1","rbitem":"')) envelope = t;
+    else await page.waitForTimeout(250);
+  }
   check(typeof envelope === "string", "S2 : Ctrl+C : le presse-papiers système porte {\"format\":\"roomboard-items/1\",\"rbitem\":…}");
 
   // S2 : coller (ClipboardEvent porteur de l'enveloppe), deux fois, puis Annuler, puis le bouton « Coller ».
@@ -129,10 +152,9 @@ async function scenario(page, url, { captures, tmp }) {
   const dl = page.waitForEvent("download");
   await page.click('button[data-selection-action="export"]');
   const download = await dl;
-  // Chromium sans écran rend « download » pour un nom non ASCII (constaté hors application : a.download = "Sélection.rbitem") ;
-  // le nom « Sélection.rbitem » lui-même est contrôlé par workspace.test.ts (exporter).
-  const suggested = download.suggestedFilename().normalize("NFC");
-  check(suggested === "Sélection.rbitem" || suggested === "download", `S3 : « Exporter » télécharge un fichier (nom proposé « ${suggested} »)`);
+  const names = await page.evaluate(() => window.__downloadNames);
+  const proposed = (names.at(-1) ?? "").normalize("NFC");
+  check(proposed === "Sélection.rbitem", `S3 : « Exporter » propose le nom « ${proposed} »`);
   const file = join(tmp, "Sélection.rbitem");
   await download.saveAs(file);
   const bytes = await readFile(file);

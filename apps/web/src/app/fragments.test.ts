@@ -235,6 +235,21 @@ describe("opérations sur la sélection (DAZ3)", () => {
     expect(await ops.insert(dst.tab, bytes, "x.rbitem", null)).toBe(false);
   });
 
+  it("insérer des pages d'un .roomboard avec image : l'image entre dans le magasin de l'onglet", async () => {
+    const codec = memoryCodec();
+    const say = async () => undefined;
+    const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID) });
+    const ops = createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say, alive: () => true });
+    const src = tabOf();
+    src.doc.apply({ type: "AddImage", page: src.doc.pageIds()[0]!, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+    src.assets.adopt(ID, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
+    const bytes = await io.encode(src.doc, src.assets, NOW, "0.1.0", { kind: "document" });
+    expect(bytes[0]).toBe(0xfe);
+    const dst = tabOf();
+    expect(await ops.insertPages(dst.tab, { name: "b.roomboard", bytes, target: { kind: "download", name: "b.roomboard" } })).toBe(true);
+    expect(dst.assets.has(ID)).toBe(true);
+  });
+
   it("assets adoptés seulement après les contrôles : fragment vide, rien n'entre dans le magasin", async () => {
     const readAssets = createAssetStore(async () => ID);
     await readAssets.put(new Blob(["x"]));
