@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : courte (6 tâches, confirmé à l'étage 2)
 Objectif : Chaque page de RoomBoard peut afficher une grille nette (six types d'U31) et aimanter les éléments déplacés, enregistrée dans le fichier `.roomboard`.
-Avancement : 6/7 tâches terminées (T7 ajoutée : correctifs des relectures)
-Étage : 3 (T7 correctifs ; relecture T6) — depuis 2026-11-20 05:06
+Avancement : 7/7 tâches terminées
+Étage : 3 (fin de lot : double relecture conformité + qualité Rust + qualité TS) — depuis 2026-11-20 05:21
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -15,6 +15,7 @@ Lancement : 2026-11-20 03:40 · repli (push + état) au plus tard 08:30 · arrê
 Ordre de fusion : C2, C7, C9 (cadrage § 9) — fusion de C9 seulement après C7 dans origin/main.
 
 ## Référence
+Tête 7cf48d7 : verifier.sh OK · core 208 (2 ignorés) · web 884 / 63 fichiers (/tmp/c9-fin-sha.log)
 Rapide = complète (worktree neuf sur origin/main 05fdb73) : verifier.sh OK · cargo core 181 (2 ignorés) · web 814 / 62 fichiers
 
 ## Compteurs
@@ -30,7 +31,7 @@ Plan : 9973848. Vague 1 : T1, T2, T3 · vague 2 : T4 (T2,T3), T5 (T2), T6 (T1,T2
 | T4 scène canvas2d, couches | T2,T3 | --T4 | implementeur-tdd | terminée | 1/3 | 3a6d299 | vitest canvas2d+page 29/29 |
 | T5 magnétisme select/shape, Alt | T2 | --T5 | concepteur-critique | terminée | 1/3 | 06e7027 | vitest src/engine 351/351, S3 S4 présents |
 | T6 liaison Wasm + contrat + notices | T1,T2 | --T6 | concepteur-critique | terminée | 1/3 | 06f9ce0 | vitest src/core wasm requis 149/149 ; tsc 0 ; module 1 520 076 o |
-| T7 correctifs des relectures T1/T2/T5 | T1-T6 | --T7 | concepteur-critique | en cours | 1/3 | — | — |
+| T7 correctifs des relectures T1/T2/T5/T6 | T1-T6 | --T7 | concepteur-critique | terminée | 1/3 | c662d97 | verifier.sh OK sur 7cf48d7 (core 208, web 884) |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · verifier.sh OK · scénarios réussis · C7 fusionné puis rebase · fusion locale --no-ff poussée
