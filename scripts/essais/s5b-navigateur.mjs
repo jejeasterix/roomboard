@@ -185,11 +185,11 @@ async function scenario(page, url, { captures, tmp }) {
   const version = await attr("data-version");
   const nTabs = await tabs();
   const dlg0 = dialogs.length;
-  await dropFile(page, "#stage", "photo.png", [137, 80, 78, 71]);
+  await dropFile(page, "#stage", "photo.tif", [0x49, 0x49, 0x2a, 0x00]);
   await page.waitForTimeout(500);
   const later = dialogs.slice(dlg0).find((d) => d.type === "alert");
-  check((await tabs()) === nTabs && (await attr("data-version")) === version, "dépôt d'un .png : nombre d'onglets et data-version inchangés");
-  check(later !== undefined && later.message.includes(LATER), `dépôt d'un .png : message « ${later?.message} »`);
+  check((await tabs()) === nTabs && (await attr("data-version")) === version, "dépôt d'un .tif : nombre d'onglets et data-version inchangés");
+  check(later !== undefined && later.message.includes(LATER), `dépôt d'un .tif : message « ${later?.message} »`);
 
   // 6. Fermer l'onglet modifié.
   await drag([[400, 500], [900, 500]]);
