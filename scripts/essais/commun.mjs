@@ -85,3 +85,60 @@ export function inkIn(page, box) {
     box,
   );
 }
+
+/** Fenêtre de tous les essais du lot 5b : la scène doit garder au moins 640 px de haut sous les barres. */
+export const VIEWPORT = { width: 1280, height: 900 };
+/** Bouton d'un élément de barre (CL5b-11). */
+export const item = (id) => `button[data-item="${id}"]`;
+/** Rectangle de #stage (px de page) ; Echec si absent ou plus bas que `minHeight`. */
+export async function stageBox(page, minHeight = 640) {
+  const b = await page.locator("#stage").boundingBox();
+  if (!b) throw new Echec("#stage absent");
+  if (b.height < minHeight) throw new Echec(`scène trop basse : ${b.height} px < ${minHeight} (barres sur plusieurs lignes ?)`);
+  return b;
+}
+/** Point de page d'un point de scène : les gestes des scénarios sont écrits en px de la scène (origine = coin de #stage). */
+export const onStage = (box, x, y) => [box.x + x, box.y + y];
+/** Souris dont les coordonnées sont en px de la scène (rectangle de #stage relu à chaque geste). */
+export function stageMouse(page) {
+  const at = async (x, y) => onStage(await stageBox(page), x, y);
+  return {
+    move: async (x, y, o) => page.mouse.move(...(await at(x, y)), o),
+    click: async (x, y, o) => page.mouse.click(...(await at(x, y)), o),
+    down: (o) => page.mouse.down(o),
+    up: (o) => page.mouse.up(o),
+    wheel: (dx, dy) => page.mouse.wheel(dx, dy),
+  };
+}
+/** Chaque élément `selector` (ex. `button[data-item]`) hors du rectangle de #stage ; rend la liste des fautifs. */
+export async function overlapping(page, selector, stageSelector = "#stage") {
+  const stage = await page.locator(stageSelector).boundingBox();
+  if (!stage) throw new Echec(`rectangle absent : ${stageSelector}`);
+  const bad = [];
+  for (const el of await page.locator(selector).all()) {
+    const a = await el.boundingBox();
+    if (!a) continue; // élément caché : ne recouvre rien
+    const apart = a.x + a.width <= stage.x + 0.5 || stage.x + stage.width <= a.x + 0.5 || a.y + a.height <= stage.y + 0.5 || stage.y + stage.height <= a.y + 0.5;
+    if (!apart) bad.push((await el.getAttribute("data-item")) ?? selector);
+  }
+  return bad;
+}
+/** Rectangles de la barre et de la scène ; `apart` vrai s'ils ne se chevauchent pas. */
+export async function noOverlap(page, barSelector, stageSelector = "#stage") {
+  const [a, b] = await Promise.all([page.locator(barSelector).boundingBox(), page.locator(stageSelector).boundingBox()]);
+  if (!a || !b) throw new Echec(`rectangle absent : ${!a ? barSelector : stageSelector}`);
+  const apart = a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+  return { apart, bar: a, stage: b };
+}
+/** Dépôt simulé (DataTransfer construit dans la page) sur un sélecteur. */
+export async function dropFile(page, selector, name, bytes, type = "") {
+  await page.evaluate(({ selector, name, bytes, type }) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(bytes)], name, { type }));
+    const target = document.querySelector(selector);
+    const r = target.getBoundingClientRect();
+    for (const t of ["dragover", "drop"]) {
+      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + 50, clientY: r.y + 50 }));
+    }
+  }, { selector, name, bytes: Array.from(bytes), type });
+}
