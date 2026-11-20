@@ -71,6 +71,7 @@ fn build() -> Document {
         id,
         row: t.rows[0].id.clone(),
         col: t.cols[0].id.clone(),
+        to: None,
         fill: Some("#fef08a".into()),
     })
     .expect("jaune");

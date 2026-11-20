@@ -226,6 +226,15 @@ impl Merge {
     pub(crate) fn overlaps(&self, o: &Merge) -> bool {
         self.r0 <= o.r1 && o.r0 <= self.r1 && self.c0 <= o.c1 && o.c0 <= self.c1
     }
+
+    pub(crate) fn contains(&self, r: usize, c: usize) -> bool {
+        (self.r0..=self.r1).contains(&r) && (self.c0..=self.c1).contains(&c)
+    }
+
+    /// `self` entièrement dans `o`.
+    pub(crate) fn inside(&self, o: &Merge) -> bool {
+        o.r0 <= self.r0 && self.r1 <= o.r1 && o.c0 <= self.c0 && self.c1 <= o.c1
+    }
 }
 
 /// Règle de lecture des fusions (F2, DAU10), seule source de la couverture : ancres dans l'ordre de lecture (rang de
@@ -423,29 +432,103 @@ fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
     })
 }
 
-/// Cellule absente `(row, col)` posée en `Y.Map{ text, fill? }` ; `cells` posé neuf s'il manque ou n'est pas un
-/// `Y.Map` (PC12).
-fn insert_cell(
-    txn: &mut TransactionMut,
-    e: &MapRef,
-    cells: Option<&MapRef>,
-    (row, col): (&str, &str),
-    text: &str,
-    fill: Option<&str>,
-) {
-    let cells = match cells {
+/// `cells` du tableau : le `Y.Map` lu, sinon un neuf posé sur l'élément (PC12 de C10a). Une fois par transaction.
+fn cells_map(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
+    match cells {
         Some(m) => m.clone(),
         None => e.insert(txn, "cells", MapPrelim::default()),
-    };
-    let mut fields: Vec<(&str, In)> = vec![("text", In::from(TextPrelim::new(text)))];
-    if let Some(f) = fill {
-        fields.push(("fill", In::from(f)));
     }
-    cells.insert(
-        txn,
-        cell_key(row, col),
-        fields.into_iter().collect::<MapPrelim>(),
-    );
+}
+
+/// Cellule absente posée en `Y.Map{ text, …fields }`.
+fn insert_cell(
+    txn: &mut TransactionMut,
+    cells: &MapRef,
+    key: String,
+    text: &str,
+    fields: Vec<(&str, In)>,
+) -> MapRef {
+    let mut all: Vec<(&str, In)> = vec![("text", In::from(TextPrelim::new(text)))];
+    all.extend(fields);
+    cells.insert(txn, key, all.into_iter().collect::<MapPrelim>())
+}
+
+/// Ancres et cellules simples du rectangle, dans l'ordre de lecture, sans doublon (F9, F15, PC11) ; la couverture
+/// vient des zones de `merges_of` (GC11).
+fn targets(rect: &Merge, merges: &[Merge]) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for r in rect.r0..=rect.r1 {
+        for c in rect.c0..=rect.c1 {
+            let a = merges
+                .iter()
+                .find(|m| m.contains(r, c))
+                .map_or((r, c), |m| (m.r0, m.c0));
+            if !out.contains(&a) {
+                out.push(a);
+            }
+        }
+    }
+    out
+}
+
+/// Report d'une zone au retrait de lignes (F6), calculé avant la transaction.
+enum SpanMove {
+    Set {
+        key: String,
+        last_row: String,
+        last_col: String,
+    },
+    Clear {
+        key: String,
+    },
+}
+
+/// F6 : pour chaque zone touchée par le retrait des rangs `a..=b` de l'axe : ancre retirée → `span` sur la première
+/// ligne restante ; fin retirée → `span` ramené ; une seule cellule restante → `span` retiré ; tout retiré → rien.
+fn span_moves(
+    raw: &RawTable,
+    merges: &[Merge],
+    axis: TableAxis,
+    a: usize,
+    b: usize,
+) -> Vec<SpanMove> {
+    let gone = |i: usize| (a..=b).contains(&i);
+    let mut out = Vec::new();
+    for m in merges {
+        let (s, t, across) = match axis {
+            TableAxis::Row => (m.r0, m.r1, m.c1 - m.c0 + 1),
+            TableAxis::Col => (m.c0, m.c1, m.r1 - m.r0 + 1),
+        };
+        if t < a || s > b {
+            continue;
+        }
+        let left: Vec<usize> = (s..=t).filter(|i| !gone(*i)).collect();
+        let (Some(&first), Some(&last)) = (left.first(), left.last()) else {
+            continue;
+        };
+        let size = left.len() * across;
+        let ((ar, ac), (lr, lc)) = match axis {
+            TableAxis::Row => ((first, m.c0), (last, m.c1)),
+            TableAxis::Col => ((m.r0, first), (m.r1, last)),
+        };
+        let set = |key: String| SpanMove::Set {
+            key,
+            last_row: raw.rows[lr].id.clone(),
+            last_col: raw.cols[lc].id.clone(),
+        };
+        if gone(s) {
+            if size >= 2 {
+                out.push(set(raw.key(ar, ac)));
+            }
+        } else if size < 2 {
+            out.push(SpanMove::Clear {
+                key: raw.key(m.r0, m.c0),
+            });
+        } else if gone(t) {
+            out.push(set(raw.key(m.r0, m.c0)));
+        }
+    }
+    out
 }
 
 impl RawTable {
@@ -456,12 +539,28 @@ impl RawTable {
         }
     }
 
-    /// Ligne de la cellule `(row, col)`, si sa ligne et sa colonne sont lisibles.
-    fn cell_row(&self, row: &str, col: &str) -> Option<&Line> {
-        self.rows
-            .iter()
-            .find(|l| l.id == row)
-            .filter(|_| self.cols.iter().any(|l| l.id == col))
+    /// Rangs de la ligne `row` et de la colonne `col`, si elles sont lisibles.
+    fn ranks(&self, (row, col): (&str, &str)) -> Option<(usize, usize)> {
+        Some((
+            self.rows.iter().position(|l| l.id == row)?,
+            self.cols.iter().position(|l| l.id == col)?,
+        ))
+    }
+
+    /// Rectangle normalisé par les rangs de deux coins.
+    fn rect(&self, from: (&str, &str), to: (&str, &str)) -> Option<Merge> {
+        let (ra, ca) = self.ranks(from)?;
+        let (rb, cb) = self.ranks(to)?;
+        Some(Merge {
+            r0: ra.min(rb),
+            c0: ca.min(cb),
+            r1: ra.max(rb),
+            c1: ca.max(cb),
+        })
+    }
+
+    fn key(&self, r: usize, c: usize) -> String {
+        cell_key(&self.rows[r].id, &self.cols[c].id)
     }
 }
 
@@ -632,16 +731,29 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
-        let line = raw.cell_row(row, col).ok_or(CommandError::BadTable)?;
-        let cell = {
+        let (r, c) = raw.ranks((row, col)).ok_or(CommandError::BadTable)?;
+        let (cell, merges) = {
             let txn = self.read();
-            read_cell(&txn, raw.cells.as_ref(), row, col)
+            (
+                read_cell(&txn, raw.cells.as_ref(), row, col),
+                merges_of(&raw, &txn),
+            )
         };
-        let current = cell.as_ref().map_or("", |c| c.content.as_str());
-        let grow = row_height.filter(|h| *h > line.size);
-        if grow.is_some_and(|h| !fits_f32(&[raw.height() - line.size + h])) {
+        // F7 : sur une ancre de plusieurs lignes, la hauteur exigée vaut pour la zone ; sa dernière ligne grandit.
+        let (z0, z1) = merges
+            .iter()
+            .find(|m| m.r0 == r && m.c0 == c)
+            .map_or((r, r), |m| (m.r0, m.r1));
+        let zone: f64 = raw.rows[z0..=z1].iter().map(|l| l.size).sum();
+        let last = &raw.rows[z1];
+        let grow =
+            row_height
+                .filter(|h| *h > zone)
+                .map(|h| if z0 == z1 { h } else { last.size + (h - zone) });
+        if grow.is_some_and(|g| !fits_f32(&[raw.height() - last.size + g])) {
             return Err(CommandError::BadTable);
         }
+        let current = cell.as_ref().map_or("", |x| x.content.as_str());
         if current == content && grow.is_none() {
             return Ok(self.unchanged());
         }
@@ -652,16 +764,17 @@ impl Document {
                     Some(RawCell { text: Some(t), .. }) => {
                         rich_text::apply_text_diff(&mut txn, t, content)
                     }
-                    Some(c) => {
-                        c.map.insert(&mut txn, "text", TextPrelim::new(content));
+                    Some(x) => {
+                        x.map.insert(&mut txn, "text", TextPrelim::new(content));
                     }
                     None => {
-                        insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), content, None)
+                        let cells = cells_map(&mut txn, &e, raw.cells.as_ref());
+                        insert_cell(&mut txn, &cells, cell_key(row, col), content, vec![]);
                     }
                 }
             }
             if let Some(h) = grow {
-                line.map.insert(&mut txn, "height", In::Any(Any::from(h)));
+                last.map.insert(&mut txn, "height", In::Any(Any::from(h)));
             }
         }
         Ok(self.table_done(page, id))
@@ -700,39 +813,77 @@ impl Document {
         Ok(self.table_done(page, id))
     }
 
-    /// `RemoveTableLine` (T3) : la ligne et ses cellules dans la même transaction ; dernière ligne refusée.
+    /// `RemoveTableLine` (T3, F6) : les lignes `line..=to` et leurs cellules dans la même transaction que le report des
+    /// zones touchées ; refus s'il ne resterait aucune ligne, ou si `line` / `to` est inconnue.
     pub(crate) fn cmd_remove_table_line(
         &mut self,
         id: &str,
         axis: TableAxis,
         line: &str,
+        to: Option<&str>,
     ) -> Result<Change, CommandError> {
-        let (page, _, raw) = self.table_of(id)?;
+        let (page, e, raw) = self.table_of(id)?;
         let (lines, arr) = raw.axis(axis);
-        let target = lines
-            .iter()
-            .find(|l| l.id == line)
-            .ok_or(CommandError::BadTable)?;
-        if lines.len() <= 1 {
+        let rank = |l: &str| lines.iter().position(|x| x.id == l);
+        let ia = rank(line).ok_or(CommandError::BadTable)?;
+        let ib = match to {
+            Some(t) => rank(t).ok_or(CommandError::BadTable)?,
+            None => ia,
+        };
+        let (a, b) = (ia.min(ib), ia.max(ib));
+        if b - a + 1 >= lines.len() {
             return Err(CommandError::BadTable);
         }
-        let keys: Vec<String> = match &raw.cells {
-            Some(cells) => {
-                let txn = self.read();
-                cells
+        let removed: Vec<&str> = lines[a..=b].iter().map(|l| l.id.as_str()).collect();
+        // Clés et zones lues avant la transaction ; le report (F6) s'écrit dans la même que le retrait.
+        let (keys, merges) = {
+            let txn = self.read();
+            let keys: Vec<String> = match &raw.cells {
+                Some(cells) => cells
                     .keys(&txn)
-                    .filter(|k| in_line(k, axis, line))
+                    .filter(|k| removed.iter().any(|l| in_line(k, axis, l)))
                     .map(str::to_string)
-                    .collect()
-            }
-            None => Vec::new(),
+                    .collect(),
+                None => Vec::new(),
+            };
+            (keys, merges_of(&raw, &txn))
         };
+        let moves = span_moves(&raw, &merges, axis, a, b);
         {
             let mut txn = self.transact_local();
-            arr.remove(&mut txn, target.index);
+            for l in lines[a..=b].iter().rev() {
+                arr.remove(&mut txn, l.index);
+            }
             if let Some(cells) = &raw.cells {
                 for k in &keys {
                     cells.remove(&mut txn, k);
+                }
+            }
+            if !moves.is_empty() {
+                let cells = cells_map(&mut txn, &e, raw.cells.as_ref());
+                for mv in moves {
+                    match mv {
+                        SpanMove::Clear { key } => {
+                            if let Some(Out::YMap(cell)) = cells.get(&txn, &key) {
+                                cell.remove(&mut txn, "span");
+                            }
+                        }
+                        SpanMove::Set {
+                            key,
+                            last_row,
+                            last_col,
+                        } => {
+                            let span = In::Any(span_any(&last_row, &last_col));
+                            match cells.get(&txn, &key) {
+                                Some(Out::YMap(cell)) => {
+                                    cell.insert(&mut txn, "span", span);
+                                }
+                                _ => {
+                                    insert_cell(&mut txn, &cells, key, "", vec![("span", span)]);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -776,41 +927,173 @@ impl Document {
         Ok(self.table_done(page, id))
     }
 
-    /// `SetTableFill` (T12) : clé `fill` seule posée ou retirée ; cellule absente : `Y.Map{ text: "", fill }`.
+    /// `key` (`fill` ou `shade`) posé ou retiré sur les ancres et cellules simples du rectangle (F9, F15) ; rien à
+    /// changer : aucune transaction (D38).
+    #[allow(clippy::too_many_arguments)]
+    fn set_on_targets(
+        &mut self,
+        page: String,
+        id: &str,
+        e: &MapRef,
+        raw: &RawTable,
+        rect: &Merge,
+        key: &'static str,
+        value: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        let todo: Vec<((usize, usize), Option<RawCell>)> = {
+            let txn = self.read();
+            let merges = merges_of(raw, &txn);
+            targets(rect, &merges)
+                .into_iter()
+                .filter_map(|(r, c)| {
+                    let cell =
+                        read_cell(&txn, raw.cells.as_ref(), &raw.rows[r].id, &raw.cols[c].id);
+                    let current = cell.as_ref().and_then(|x| match key {
+                        "fill" => x.fill.clone(),
+                        _ => x.shade.clone(),
+                    });
+                    (current.as_deref() != value).then_some(((r, c), cell))
+                })
+                .collect()
+        };
+        if todo.is_empty() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            let cells = cells_map(&mut txn, e, raw.cells.as_ref());
+            for ((r, c), cell) in todo {
+                match (value, cell) {
+                    (Some(v), Some(x)) => {
+                        x.map.insert(&mut txn, key, In::from(v));
+                    }
+                    (Some(v), None) => {
+                        insert_cell(
+                            &mut txn,
+                            &cells,
+                            raw.key(r, c),
+                            "",
+                            vec![(key, In::from(v))],
+                        );
+                    }
+                    (None, Some(x)) => {
+                        x.map.remove(&mut txn, key);
+                    }
+                    (None, None) => {}
+                }
+            }
+        }
+        Ok(self.table_done(page, id))
+    }
+
+    /// `SetTableFill` (T12, F15) : la cellule, ou la plage jusqu'à `to` ; une couverte vaut pour son ancre.
     pub(crate) fn cmd_set_table_fill(
         &mut self,
         id: &str,
-        (row, col): (&str, &str),
+        from: (&str, &str),
+        to: Option<(&str, &str)>,
         fill: Option<&str>,
     ) -> Result<Change, CommandError> {
         if fill.is_some_and(|c| !valid_color(c)) {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
-        if raw.cell_row(row, col).is_none() {
+        let rect = raw
+            .rect(from, to.unwrap_or(from))
+            .ok_or(CommandError::BadTable)?;
+        self.set_on_targets(page, id, &e, &raw, &rect, "fill", fill)
+    }
+
+    /// `SetTableShade` (F9) : ombrer, retirer l'ombrage, révéler (F10, F12 : une étape par appel).
+    pub(crate) fn cmd_set_table_shade(
+        &mut self,
+        id: &str,
+        from: (&str, &str),
+        to: (&str, &str),
+        shade: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        if shade.is_some_and(|c| !valid_color(c)) {
             return Err(CommandError::BadTable);
         }
-        let cell = {
+        let (page, e, raw) = self.table_of(id)?;
+        let rect = raw.rect(from, to).ok_or(CommandError::BadTable)?;
+        self.set_on_targets(page, id, &e, &raw, &rect, "shade", shade)
+    }
+
+    /// `MergeTableCells` (F3) : zones dedans dissoutes, couvertes retirées de `cells` (texte, `fill`, `shade`),
+    /// `span` posé sur l'ancre ; zone identique sans couverte à vider : aucune étape (PC10).
+    pub(crate) fn cmd_merge_table_cells(
+        &mut self,
+        id: &str,
+        from: (&str, &str),
+        to: (&str, &str),
+    ) -> Result<Change, CommandError> {
+        let (page, e, raw) = self.table_of(id)?;
+        let rect = raw.rect(from, to).ok_or(CommandError::BadTable)?;
+        if (rect.r1 - rect.r0 + 1) * (rect.c1 - rect.c0 + 1) < 2 {
+            return Err(CommandError::BadTable);
+        }
+        let (merges, covered) = {
             let txn = self.read();
-            read_cell(&txn, raw.cells.as_ref(), row, col)
+            let merges = merges_of(&raw, &txn);
+            let mut covered = Vec::new();
+            if let Some(cells) = &raw.cells {
+                for r in rect.r0..=rect.r1 {
+                    for c in rect.c0..=rect.c1 {
+                        let k = raw.key(r, c);
+                        if (r, c) != (rect.r0, rect.c0) && cells.get(&txn, &k).is_some() {
+                            covered.push(k);
+                        }
+                    }
+                }
+            }
+            (merges, covered)
         };
-        if cell.as_ref().and_then(|c| c.fill.as_deref()) == fill {
+        if merges.iter().any(|m| m.overlaps(&rect) && !m.inside(&rect)) {
+            return Err(CommandError::BadTable);
+        }
+        let inner: Vec<Merge> = merges.into_iter().filter(|m| m.inside(&rect)).collect();
+        if inner.as_slice() == [rect] && covered.is_empty() {
             return Ok(self.unchanged());
         }
+        let anchor = raw.key(rect.r0, rect.c0);
+        let span = span_any(&raw.rows[rect.r1].id, &raw.cols[rect.c1].id);
         {
             let mut txn = self.transact_local();
-            match (fill, &cell) {
-                (Some(f), Some(c)) => {
-                    c.map.insert(&mut txn, "fill", In::from(f));
-                }
-                (Some(f), None) => {
-                    insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), "", Some(f))
-                }
-                (None, Some(c)) => {
-                    c.map.remove(&mut txn, "fill");
-                }
-                (None, None) => {}
+            let cells = cells_map(&mut txn, &e, raw.cells.as_ref());
+            for k in &covered {
+                cells.remove(&mut txn, k);
             }
+            match cells.get(&txn, &anchor) {
+                Some(Out::YMap(a)) => {
+                    a.insert(&mut txn, "span", In::Any(span));
+                }
+                _ => {
+                    insert_cell(&mut txn, &cells, anchor, "", vec![("span", In::Any(span))]);
+                }
+            }
+        }
+        Ok(self.table_done(page, id))
+    }
+
+    /// `SplitTableCell` (F4) : « diviser = défusionner » ; le contenu reste dans la cellule en haut à gauche.
+    pub(crate) fn cmd_split_table_cell(
+        &mut self,
+        id: &str,
+        cell: (&str, &str),
+    ) -> Result<Change, CommandError> {
+        let (page, _, raw) = self.table_of(id)?;
+        let (r, c) = raw.ranks(cell).ok_or(CommandError::BadTable)?;
+        let anchor = {
+            let txn = self.read();
+            if !merges_of(&raw, &txn).iter().any(|m| m.r0 == r && m.c0 == c) {
+                return Err(CommandError::BadTable);
+            }
+            read_cell(&txn, raw.cells.as_ref(), cell.0, cell.1).ok_or(CommandError::BadTable)?
+        };
+        {
+            let mut txn = self.transact_local();
+            anchor.map.remove(&mut txn, "span");
         }
         Ok(self.table_done(page, id))
     }
@@ -2255,7 +2538,8 @@ pub(crate) mod tests {
         let (r, c) = ids(&view(&d, &id));
         merge(&mut d, &id, (&r[0], &c[0]), (&r[1], &c[0])).expect("zone verticale");
         let w = writes(&d);
-        let cases: [((&str, &str), (&str, &str)); 3] = [
+        type Corner<'a> = (&'a str, &'a str);
+        let cases: [(Corner, Corner); 3] = [
             ((&r[2], &c[2]), (&r[2], &c[2])),
             ((&r[0], &c[1]), ("absente", &c[2])),
             ((&r[1], &c[0]), (&r[2], &c[1])),
@@ -2555,7 +2839,11 @@ pub(crate) mod tests {
         };
         let zone = mv("r1", "c1", 2, 2);
         let mut d = fresh();
-        assert_eq!(view(&d, "t1").merges, vec![zone.clone()], "référence : la vue (F2)");
+        assert_eq!(
+            view(&d, "t1").merges,
+            vec![zone.clone()],
+            "référence : la vue (F2)"
+        );
         let w = writes(&d);
         for (row, col) in [("r1", "c2"), ("r2", "c3"), ("r3", "c3")] {
             assert_eq!(

@@ -924,6 +924,7 @@ impl Document {
             id: id.to_string(),
             axis: table_axis(row),
             line: line.to_string(),
+            to: None,
         })
     }
 
@@ -950,6 +951,7 @@ impl Document {
             id: id.to_string(),
             row: cell[0].to_string(),
             col: cell[1].to_string(),
+            to: None,
             fill,
         })
     }

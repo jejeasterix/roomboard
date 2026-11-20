@@ -8,7 +8,8 @@ use roomboard_core::document::Document;
 use roomboard_core::format::{load, save, SaveMeta};
 
 fn fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tableau-fusion-ombrage.roomboard")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/tableau-fusion-ombrage.roomboard")
 }
 
 fn meta() -> SaveMeta {
