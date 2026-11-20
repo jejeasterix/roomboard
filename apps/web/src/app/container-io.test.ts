@@ -25,6 +25,7 @@ function docStub(cited: string[] = []) {
   const d = {
     citedAssets: () => cited.map((id) => ({ id, name: "a.png", mime: "image/png", size: 3 })),
     asset: (id: string) => (cited.includes(id) ? { id, name: "a.png", mime: "image/png", size: 3 } : null),
+    linkedAssets: () => [], // C14 : aucune image n'est un média lié
     save: (n: string, v: string) => (calls.push(`save ${n} ${v}`), u8(1)),
     saveParts: () => (calls.push("saveParts"), [u8(2), u8(3)] as const),
     saveFragment: (n: string, v: string, name: string) => (calls.push(`saveFragment ${name}`), u8(4)),

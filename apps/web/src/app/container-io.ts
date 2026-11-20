@@ -4,11 +4,14 @@
  * parties du cœur puis `ContainerCodec.write`. Lecture par le conteneur, repli par le cœur seul (R7). Repris de
  * `workspace.ts` (`encodeTab`, `readDocument`) sans changement de comportement pour un document.
  * Un fragment n'est écrit que si toutes ses images sont dans le magasin (pas d'élément sans son asset dans la cible).
+ * C14 (M30 à M32) : un média lié n'a jamais d'octets dans le conteneur ; il n'est pas « absent » (Enregistrer permis),
+ * un fragment qui le cite est refusé, et l'ouverture d'un document résout ses liens par `relink`.
  */
-import type { CoreDocument, CoreFactory } from "../core/api";
+import type { CoreDocument, CoreFactory, LinkedAsset } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { messageOf } from "../platform/controller";
+import { baseName } from "../platform/host-tauri";
 
 /** Repli R7 : le module du conteneur ne s'est pas chargé, le document s'ouvre par le cœur seul. */
 export const CODEC_FALLBACK_MESSAGE = "images non lues : le module des images ne s'est pas chargé";
@@ -20,6 +23,18 @@ export class MissingAssetError extends Error {
     this.name = "MissingAssetError";
   }
 }
+
+/** C14 (M32) : un fragment (copie, export, objet) qui cite un média lié est refusé. */
+export const LINKED_COPY_MESSAGE = "vidéo liée : copie non prise en charge, déposez le fichier à nouveau";
+export class LinkedMediaError extends Error {
+  constructor() {
+    super(LINKED_COPY_MESSAGE);
+    this.name = "LinkedMediaError";
+  }
+}
+/** C14 (S5) : hors coque, aucun lien n'est lu ; un avis par document. */
+export const LINKED_WEB_MESSAGE = "vidéo non incluse (liée, lisible dans l'application de bureau)";
+export const linkedMissingMessage = (path: string): string => `${baseName(path)} : vidéo liée introuvable (${path})`;
 
 export type EncodeAs = { readonly kind: "document" } | { readonly kind: "fragment"; readonly name: string };
 export type ReadKind = "document" | "fragment";
@@ -33,27 +48,59 @@ export interface ContainerIODeps {
   readonly codec: ContainerCodec;
   say(message: string): Promise<void>;
   makeAssets(): AssetStore;
+  /** C14 (M31) : chemin absolu accordé du lien `link` d'un document situé en `docPath`, ou null (introuvable, refusé).
+   *  Absent (web) : aucun lien résolu, un avis par document. */
+  relink?(docPath: string | null, link: LinkedAsset, size: number): Promise<string | null>;
 }
 export interface ContainerIO {
   encode(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string, as: EncodeAs): Promise<Uint8Array>;
-  read(name: string, bytes: Uint8Array, kind: ReadKind): Promise<ReadResult | null>;
+  /** `docPath` : chemin du document lu (liens relatifs des médias liés, C14), null s'il n'est pas connu. */
+  read(name: string, bytes: Uint8Array, kind: ReadKind, docPath?: string | null): Promise<ReadResult | null>;
 }
 
 export const typed = (blob: Blob, mime: string | undefined): Blob =>
   mime !== undefined && mime !== "" && mime !== blob.type ? new Blob([blob], { type: mime }) : blob;
 
-export const missingOf = (doc: CoreDocument, assets: AssetStore): string[] =>
-  assets.pick(doc.citedAssets().map((a) => a.id)).missing;
+const linkedIds = (doc: CoreDocument): Set<string> => new Set(doc.linkedAssets().map((l) => l.id));
+
+/** Assets cités à octets attendus (les médias liés n'en ont jamais, C14) et absents du magasin. */
+export const missingOf = (doc: CoreDocument, assets: AssetStore): string[] => {
+  const linked = linkedIds(doc);
+  return assets.pick(doc.citedAssets().map((a) => a.id).filter((id) => !linked.has(id))).missing;
+};
 
 export function createContainerIO(deps: ContainerIODeps): ContainerIO {
   const { core, codec, say } = deps;
+  /** Liens d'un document lu (M31) : hors coque, un avis ; sinon chaque lien accordé au magasin, ou un avis par absent. */
+  async function relinkAll(name: string, doc: CoreDocument, assets: AssetStore, docPath: string | null): Promise<void> {
+    const links = doc.linkedAssets();
+    if (links.length === 0) return;
+    const relink = deps.relink;
+    if (relink === undefined) {
+      await say(`${name} : ${LINKED_WEB_MESSAGE}`);
+      return;
+    }
+    for (const l of links) {
+      let found: string | null;
+      try {
+        found = await relink(docPath, l, doc.asset(l.id)?.size ?? 0);
+      } catch {
+        found = null;
+      }
+      if (found === null) await say(linkedMissingMessage(l.path));
+      else assets.link(l.id, found);
+    }
+  }
   return {
     async encode(doc, assets, now, appVersion, as) {
       const cited = doc.citedAssets();
       if (cited.length === 0) {
         return as.kind === "document" ? doc.save(now, appVersion) : doc.saveFragment(now, appVersion, as.name);
       }
-      const { present, missing } = assets.pick(cited.map((a) => a.id));
+      const linked = linkedIds(doc);
+      if (as.kind === "fragment" && linked.size > 0) throw new LinkedMediaError(); // avant l'image absente (M32)
+      // R9 : les octets d'un média lié ne sont jamais écrits, même si le magasin les tient.
+      const { present, missing } = assets.pick(cited.map((a) => a.id).filter((id) => !linked.has(id)));
       if (as.kind === "fragment" && missing.length > 0) {
         throw new MissingAssetError();
       }
@@ -61,7 +108,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
       const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
       return codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
     },
-    async read(name, bytes, kind) {
+    async read(name, bytes, kind, docPath = null) {
       const assets = deps.makeAssets();
       let contents: ContainerContents;
       try {
@@ -78,9 +125,11 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
           await say(`Ouverture impossible (${name}) : ${messageOf(e2)}`);
           return null;
         }
-        const unread = doc.citedAssets().length > 0;
+        const linked = linkedIds(doc);
+        const unread = doc.citedAssets().some((a) => !linked.has(a.id));
         // Un fragment non lu est refusé par l'appelant (`fragments`) avec son propre avis : un seul avis, pas deux.
         if (unread && kind === "document") await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
+        if (kind === "document") await relinkAll(name, doc, assets, docPath);
         return { doc, assets, unread };
       }
       let doc: CoreDocument;
@@ -98,6 +147,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         return null;
       }
       if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
+      if (kind === "document") await relinkAll(name, doc, assets, docPath);
       // un asset cité mais ignoré par le conteneur (trop gros…) : marqué, Enregistrer refusé (R30)
       return { doc, assets, unread: missingOf(doc, assets).length > 0 };
     },
