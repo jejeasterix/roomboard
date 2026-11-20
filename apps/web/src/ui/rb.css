@@ -80,3 +80,9 @@
    chaque colonne a la largeur de son bouton le plus large (align-items: stretch). */
 .rb-slot > .rb-bar[data-dock="left"], .rb-slot > .rb-bar[data-dock="right"] { height: 100%; box-sizing: border-box; align-items: stretch; align-content: flex-start; }
 .rb-bar[data-dock="left"] .rb-sep, .rb-bar[data-dock="right"] .rb-sep { align-self: auto; border-inline-start: 0; border-block-start: 1px solid #94a3b8; margin: 4px 0; }
+/* Rangée Format (C7b, R13) : G, I, S lisibles d'un coup d'œil ; mêmes cibles que la barre (--rb-btn), aucun saut de
+   hauteur à l'ouverture ni à la validation (boutons toujours présents, seulement grisés). */
+.rb-format { font-variant-numeric: tabular-nums; }
+.rb-format[data-format="bold"] { font-weight: 700; }
+.rb-format[data-format="italic"] { font-style: italic; }
+.rb-format[data-format="underline"] { text-decoration: underline; }
