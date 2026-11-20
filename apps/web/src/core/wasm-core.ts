@@ -11,6 +11,7 @@ import type {
   CoreFactory,
   ElementView,
   GridLevel,
+  GridLines,
   GridView,
   Matrix,
   PageView,
@@ -188,6 +189,33 @@ export function toAssetInfo(v: unknown): AssetInfo {
   return { id, name, mime, size };
 }
 
+const LINES = "GridLines invalide";
+// Lignes de grille (C9, G12) : `null` (Option::None) ou `undefined` → null ; forme fausse → erreur.
+export function toGridLines(v: unknown): GridLines | null {
+  if (v === null || v === undefined) return null;
+  if (!isRecord(v)) throw new Error(LINES);
+  const { above, levels } = v;
+  if (typeof above !== "boolean" || !Array.isArray(levels)) throw new Error(LINES);
+  return {
+    above,
+    levels: levels.map((l: unknown) => {
+      if (!isRecord(l)) throw new Error(LINES);
+      const { color, line, alpha, segments, dots } = l;
+      if (typeof color !== "string" || typeof line !== "string" || typeof alpha !== "number" || !isNumbers(segments) || !isNumbers(dots)) {
+        throw new Error(LINES);
+      }
+      return { color, line, alpha, segments, dots };
+    }),
+  };
+}
+
+/** Paire `[x, y]` venue de Wasm (Float64Array ou tableau) ; autre forme → erreur. */
+function toPair(v: unknown): readonly [number, number] {
+  const a: unknown = v instanceof Float64Array ? Array.from(v) : v;
+  if (!isNumbers(a) || a.length !== 2) throw new Error("point invalide");
+  return [a[0] ?? 0, a[1] ?? 0];
+}
+
 class WasmCoreDocument implements CoreDocument {
   constructor(private readonly d: Wasm.Document, private readonly mod: WasmModule) {}
 
@@ -221,6 +249,17 @@ class WasmCoreDocument implements CoreDocument {
         const b = cmd.backdrop;
         if (b === null) return toChange(this.d.clear_backdrop(cmd.page));
         return toChange(this.d.set_backdrop(cmd.page, b.asset.id, b.asset.name, b.asset.mime, b.asset.size, b.w, b.h, b.fit));
+      }
+      case "SetGrid": {
+        const g = cmd.grid;
+        if (g === null) return toChange(this.d.clear_grid(cmd.page));
+        // Six nombres par niveau (G12) : sx, sy, ox, oy, snap, visible ; les valeurs sont contrôlées par le cœur.
+        const nums = new Float64Array(
+          g.levels.flatMap((l) => [l.spacingX, l.spacingY, l.originX, l.originY, l.snap ? 1 : 0, l.visible ? 1 : 0]),
+        );
+        return toChange(
+          this.d.set_grid(cmd.page, g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums),
+        );
       }
     }
   }
@@ -264,6 +303,17 @@ class WasmCoreDocument implements CoreDocument {
   }
 
   free(): void { this.d.free(); }
+
+  snapPoint(page: string, x: number, y: number): readonly [number, number] | null {
+    const v: unknown = this.d.snap_point(page, x, y);
+    return v === null || v === undefined ? null : toPair(v);
+  }
+  snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number] {
+    return toPair(this.d.snap_delta(page, [...ids], dx, dy));
+  }
+  gridLines(page: string, r: Bounds, minStep: number, minDotStep: number): GridLines | null {
+    return toGridLines(this.d.grid_lines(page, r.x0, r.y0, r.x1, r.y1, minStep, minDotStep));
+  }
 }
 
 export function createWasmCore(mod: WasmModule): CoreFactory {

@@ -9,6 +9,7 @@ use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, Era
 use roomboard_core::document::Document as CoreDocument;
 use roomboard_core::element::{StrokeStyle, Transform};
 use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
+use roomboard_core::grid::{GridInput, GridLevelView};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
@@ -96,6 +97,46 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
         mime: mime.to_string(),
         size,
     }
+}
+
+/// Grille reçue de JS (G12) : `nums` = 6 nombres par niveau (`sx, sy, ox, oy, snap, visible`, booléens en 0 ou 1) ;
+/// longueurs incohérentes : `BadGrid`. Les valeurs elles-mêmes sont contrôlées par le cœur (`SetGrid`).
+fn grid_input(
+    visible: bool,
+    snap: bool,
+    above: bool,
+    kinds: Vec<String>,
+    colors: Vec<String>,
+    lines: Vec<String>,
+    nums: &[f64],
+) -> Result<GridInput, CommandError> {
+    let n = kinds.len();
+    if colors.len() != n || lines.len() != n || nums.len() != 6 * n {
+        return Err(CommandError::BadGrid);
+    }
+    let levels = kinds
+        .into_iter()
+        .zip(colors)
+        .zip(lines)
+        .zip(nums.as_chunks::<6>().0)
+        .map(|(((kind, color), line), v)| GridLevelView {
+            kind,
+            spacing_x: v[0],
+            spacing_y: v[1],
+            origin_x: v[2],
+            origin_y: v[3],
+            color,
+            line,
+            snap: v[4] != 0.0,
+            visible: v[5] != 0.0,
+        })
+        .collect();
+    Ok(GridInput {
+        visible,
+        snap,
+        above,
+        levels,
+    })
 }
 
 /// Document exposé à JavaScript.
@@ -206,6 +247,59 @@ impl Document {
 
     pub fn clear_backdrop(&mut self, page: &str) -> Result<JsValue, JsError> {
         to_js(&self.set_backdrop_inner(page, None).map_err(cmd_err)?)
+    }
+
+    /// Grille de page (U31, G12) ; voir `grid_input` pour la forme de `nums`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_grid(
+        &mut self,
+        page: &str,
+        visible: bool,
+        snap: bool,
+        above: bool,
+        kinds: Vec<String>,
+        colors: Vec<String>,
+        lines: Vec<String>,
+        nums: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let grid = grid_input(visible, snap, above, kinds, colors, lines, nums).map_err(cmd_err)?;
+        to_js(&self.set_grid_inner(page, Some(grid)).map_err(cmd_err)?)
+    }
+
+    pub fn clear_grid(&mut self, page: &str) -> Result<JsValue, JsError> {
+        to_js(&self.set_grid_inner(page, None).map_err(cmd_err)?)
+    }
+
+    /// Point aimanté `[x, y]` (G6) ; `undefined` sans accroche.
+    pub fn snap_point(&self, page: &str, x: f64, y: f64) -> Option<Vec<f64>> {
+        self.core.snap_point(page, x, y).map(|(a, b)| vec![a, b])
+    }
+
+    /// Déplacement aimanté `[dx, dy]` (G7), brut sans accroche.
+    pub fn snap_delta(&self, page: &str, ids: Vec<String>, dx: f64, dy: f64) -> Vec<f64> {
+        let (a, b) = self.core.snap_delta(page, &ids, dx, dy);
+        vec![a, b]
+    }
+
+    /// Lignes visibles (G9) dans le rectangle monde ; `null` sans grille ou grille invisible.
+    #[allow(clippy::too_many_arguments)]
+    pub fn grid_lines(
+        &self,
+        page: &str,
+        x0: f64,
+        y0: f64,
+        x1: f64,
+        y1: f64,
+        min_step: f64,
+        min_dot_step: f64,
+    ) -> Result<JsValue, JsError> {
+        match self
+            .core
+            .grid_lines(page, Bounds { x0, y0, x1, y1 }, min_step, min_dot_step)
+        {
+            Some(g) => to_js(&g),
+            None => Ok(JsValue::NULL),
+        }
     }
 
     pub fn add_page(&mut self) {
@@ -449,6 +543,18 @@ impl Document {
         self.run(Command::SetBackdrop {
             page: page.to_string(),
             backdrop,
+        })
+    }
+
+    /// `None` : retire la grille.
+    pub fn set_grid_inner(
+        &mut self,
+        page: &str,
+        grid: Option<GridInput>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetGrid {
+            page: page.to_string(),
+            grid,
         })
     }
 
