@@ -7,11 +7,17 @@
 //! C10b) ; aucune `Any::Map`.
 use std::collections::HashSet;
 
-use yrs::{Array, ArrayRef, GetString, Map, MapRef, Out, ReadTxn, TextRef};
+use yrs::{
+    Any, Array, ArrayPrelim, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn,
+    TextPrelim, TextRef, TransactionMut,
+};
 
-use crate::element::{finite_positive, out_f64, out_string, out_transform, Transform};
-use crate::rich_text::valid_color;
-
+use crate::commands::{Change, CommandError};
+use crate::document::Document;
+use crate::element::{
+    finite_positive, out_f64, out_string, out_transform, transform_to_any, Transform,
+};
+use crate::rich_text::{self, valid_color};
 pub const TABLE_KIND: &str = "table";
 pub const DEFAULT_TABLE_COLOR: &str = "#000000";
 pub const DEFAULT_TABLE_SIZE: f64 = 36.0;
@@ -51,7 +57,6 @@ pub struct TableView {
 
 /// Ligne ou colonne lisible : id, taille, son `Y.Map` et son rang brut dans le `Y.Array` (entrées illisibles
 /// comprises) : les commandes (T2) écrivent dans `map` et insèrent ou retirent à `index`.
-#[allow(dead_code)] // `map`, `index` : lus par les commandes (T2)
 pub(crate) struct Line {
     pub id: String,
     pub size: f64,
@@ -60,7 +65,6 @@ pub(crate) struct Line {
 }
 
 /// Tableau lu, avec les références que les commandes écrivent.
-#[allow(dead_code)] // `cols_arr`, `rows_arr` : lus par les commandes (T2)
 pub(crate) struct RawTable {
     pub transform: Transform,
     pub color: String,
@@ -73,7 +77,6 @@ pub(crate) struct RawTable {
 }
 
 /// Cellule lue ; `text` : son `Y.Text` s'il en est un.
-#[allow(dead_code)] // `map`, `text` : lus par les commandes (T2)
 pub(crate) struct RawCell {
     pub map: MapRef,
     pub text: Option<TextRef>,
@@ -228,6 +231,331 @@ impl RawTable {
 pub(crate) fn read<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, TableView)> {
     let raw = read_raw(txn, e)?;
     Some((raw.transform, raw.view(txn)))
+}
+
+/// Axe d'une insertion ou d'une suppression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableAxis {
+    Row,
+    Col,
+}
+
+/// Entrée d'`AddTable` (évite une fonction à neuf paramètres).
+pub(crate) struct NewTable<'a> {
+    pub page: &'a str,
+    pub x: f64,
+    pub y: f64,
+    pub cols: u32,
+    pub rows: u32,
+    pub col_width: f64,
+    pub row_height: f64,
+    pub color: &'a str,
+    pub size: f64,
+}
+
+fn lines_ok(n: u32) -> bool {
+    (1..=MAX_TABLE_LINES).contains(&n)
+}
+
+fn size_key(axis: TableAxis) -> &'static str {
+    match axis {
+        TableAxis::Row => "height",
+        TableAxis::Col => "width",
+    }
+}
+
+fn line_prelim(id: &str, key: &'static str, size: f64) -> MapPrelim {
+    MapPrelim::from([("id", In::from(id)), (key, In::Any(Any::from(size)))])
+}
+
+/// Clé `"<row>:<col>"` dans la ligne (ou colonne) `line` ; découpe au premier `:` (ids `uuid_v4` sans `:`).
+fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
+    key.split_once(':').is_some_and(|(r, c)| match axis {
+        TableAxis::Row => r == line,
+        TableAxis::Col => c == line,
+    })
+}
+
+/// `cells` du tableau, posé neuf s'il manque ou n'est pas un `Y.Map` (PC12).
+fn cells_or_new(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
+    match cells {
+        Some(m) => m.clone(),
+        None => e.insert(txn, "cells", MapPrelim::default()),
+    }
+}
+
+impl RawTable {
+    fn axis(&self, axis: TableAxis) -> (&[Line], &ArrayRef) {
+        match axis {
+            TableAxis::Row => (&self.rows, &self.rows_arr),
+            TableAxis::Col => (&self.cols, &self.cols_arr),
+        }
+    }
+
+    fn has_cell(&self, row: &str, col: &str) -> bool {
+        self.rows.iter().any(|l| l.id == row) && self.cols.iter().any(|l| l.id == col)
+    }
+}
+
+impl Document {
+    /// Tableau `id` : page, `Y.Map` de l'élément, lecture brute ; absent ou pas un tableau lisible : `UnknownElement`.
+    fn table_of(&self, id: &str) -> Result<(String, MapRef, RawTable), CommandError> {
+        let txn = self.read();
+        let unknown = || CommandError::UnknownElement(id.to_string());
+        let found = self.find_element(&txn, id).ok_or_else(unknown)?;
+        let raw = read_raw(&txn, &found.element).ok_or_else(unknown)?;
+        Ok((found.page_id, found.element, raw))
+    }
+
+    fn table_done(&mut self, page: String, id: &str) -> Change {
+        self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        })
+    }
+
+    /// `AddTable` (T3) : refus `BadTable` avant la page ; une transaction, cellules vides (`cells` = `Y.Map` vide).
+    pub(crate) fn cmd_add_table(&mut self, t: &NewTable<'_>) -> Result<Change, CommandError> {
+        let valid = lines_ok(t.cols)
+            && lines_ok(t.rows)
+            && finite_positive(t.col_width)
+            && finite_positive(t.row_height)
+            && finite_positive(t.size)
+            && t.x.is_finite()
+            && t.y.is_finite()
+            && valid_color(t.color);
+        if !valid {
+            return Err(CommandError::BadTable);
+        }
+        let elements = self.page_elements_or_err(t.page)?;
+        let id = yrs::uuid_v4().to_string();
+        let cols: Vec<In> = (0..t.cols)
+            .map(|_| In::Map(line_prelim(&yrs::uuid_v4(), "width", t.col_width)))
+            .collect();
+        let rows: Vec<In> = (0..t.rows)
+            .map(|_| In::Map(line_prelim(&yrs::uuid_v4(), "height", t.row_height)))
+            .collect();
+        let fields: Vec<(&str, In)> = vec![
+            ("id", In::from(id.as_str())),
+            ("kind", In::from(TABLE_KIND)),
+            (
+                "transform",
+                In::Any(transform_to_any(&[1.0, 0.0, 0.0, 1.0, t.x, t.y])),
+            ),
+            ("color", In::from(t.color)),
+            ("size", In::Any(Any::from(t.size))),
+            ("cols", In::Array(ArrayPrelim::from(cols))),
+            ("rows", In::Array(ArrayPrelim::from(rows))),
+            ("cells", In::Map(MapPrelim::default())),
+        ];
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, fields.into_iter().collect::<MapPrelim>());
+        }
+        Ok(self.table_done(t.page.to_string(), &id))
+    }
+
+    /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande ;
+    /// même texte sans hauteur plus grande : aucune transaction (D38).
+    pub(crate) fn cmd_set_table_cell(
+        &mut self,
+        id: &str,
+        (row, col): (&str, &str),
+        content: &str,
+        row_height: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        if row_height.is_some_and(|h| !finite_positive(h)) {
+            return Err(CommandError::BadTable);
+        }
+        let (page, e, raw) = self.table_of(id)?;
+        if !raw.has_cell(row, col) {
+            return Err(CommandError::BadTable);
+        }
+        let line = raw
+            .rows
+            .iter()
+            .find(|l| l.id == row)
+            .ok_or(CommandError::BadTable)?;
+        let cell = {
+            let txn = self.read();
+            read_cell(&txn, raw.cells.as_ref(), row, col)
+        };
+        let current = cell.as_ref().map_or("", |c| c.content.as_str());
+        let grow = row_height.filter(|h| *h > line.size);
+        if current == content && grow.is_none() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            if current != content {
+                match &cell {
+                    Some(RawCell { text: Some(t), .. }) => {
+                        rich_text::apply_text_diff(&mut txn, t, content)
+                    }
+                    Some(c) => {
+                        c.map.insert(&mut txn, "text", TextPrelim::new(content));
+                    }
+                    None => {
+                        let cells = cells_or_new(&mut txn, &e, raw.cells.as_ref());
+                        cells.insert(
+                            &mut txn,
+                            cell_key(row, col),
+                            MapPrelim::from([("text", In::from(TextPrelim::new(content)))]),
+                        );
+                    }
+                }
+            }
+            if let Some(h) = grow {
+                line.map.insert(&mut txn, "height", In::Any(Any::from(h)));
+            }
+        }
+        Ok(self.table_done(page, id))
+    }
+
+    /// `InsertTableLine` (T3) : `at` ∈ 0..=n, plafond 64 ; inséré au rang brut de la `at`-ième ligne lisible.
+    pub(crate) fn cmd_insert_table_line(
+        &mut self,
+        id: &str,
+        axis: TableAxis,
+        at: u32,
+    ) -> Result<Change, CommandError> {
+        let (page, _, raw) = self.table_of(id)?;
+        let (lines, arr) = raw.axis(axis);
+        let n = lines.len() as u32;
+        if at > n || n >= MAX_TABLE_LINES {
+            return Err(CommandError::BadTable);
+        }
+        let size = lines[at.saturating_sub(1) as usize].size;
+        let index = if at == n {
+            let txn = self.read();
+            arr.len(&txn)
+        } else {
+            lines[at as usize].index
+        };
+        let line_id = yrs::uuid_v4().to_string();
+        {
+            let mut txn = self.transact_local();
+            arr.insert(&mut txn, index, line_prelim(&line_id, size_key(axis), size));
+        }
+        Ok(self.table_done(page, id))
+    }
+
+    /// `RemoveTableLine` (T3) : la ligne et ses cellules dans la même transaction ; dernière ligne refusée.
+    pub(crate) fn cmd_remove_table_line(
+        &mut self,
+        id: &str,
+        axis: TableAxis,
+        line: &str,
+    ) -> Result<Change, CommandError> {
+        let (page, _, raw) = self.table_of(id)?;
+        let (lines, arr) = raw.axis(axis);
+        let target = lines
+            .iter()
+            .find(|l| l.id == line)
+            .ok_or(CommandError::BadTable)?;
+        if lines.len() <= 1 {
+            return Err(CommandError::BadTable);
+        }
+        let keys: Vec<String> = match &raw.cells {
+            Some(cells) => {
+                let txn = self.read();
+                cells
+                    .keys(&txn)
+                    .filter(|k| in_line(k, axis, line))
+                    .map(str::to_string)
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        {
+            let mut txn = self.transact_local();
+            arr.remove(&mut txn, target.index);
+            if let Some(cells) = &raw.cells {
+                for k in &keys {
+                    cells.remove(&mut txn, k);
+                }
+            }
+        }
+        Ok(self.table_done(page, id))
+    }
+
+    /// `SetTableSizes` (T11) : écrit seulement les tailles qui changent ; déjà uniforme : aucune transaction.
+    pub(crate) fn cmd_set_table_sizes(
+        &mut self,
+        id: &str,
+        col_width: f64,
+        row_height: f64,
+    ) -> Result<Change, CommandError> {
+        if !finite_positive(col_width) || !finite_positive(row_height) {
+            return Err(CommandError::BadTable);
+        }
+        let (page, _, raw) = self.table_of(id)?;
+        let cols: Vec<&Line> = raw.cols.iter().filter(|l| l.size != col_width).collect();
+        let rows: Vec<&Line> = raw.rows.iter().filter(|l| l.size != row_height).collect();
+        if cols.is_empty() && rows.is_empty() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            for l in cols {
+                l.map
+                    .insert(&mut txn, "width", In::Any(Any::from(col_width)));
+            }
+            for l in rows {
+                l.map
+                    .insert(&mut txn, "height", In::Any(Any::from(row_height)));
+            }
+        }
+        Ok(self.table_done(page, id))
+    }
+
+    /// `SetTableFill` (T12) : clé `fill` seule posée ou retirée ; cellule absente : `Y.Map{ text: "", fill }`.
+    pub(crate) fn cmd_set_table_fill(
+        &mut self,
+        id: &str,
+        (row, col): (&str, &str),
+        fill: Option<&str>,
+    ) -> Result<Change, CommandError> {
+        if fill.is_some_and(|c| !valid_color(c)) {
+            return Err(CommandError::BadTable);
+        }
+        let (page, e, raw) = self.table_of(id)?;
+        if !raw.has_cell(row, col) {
+            return Err(CommandError::BadTable);
+        }
+        let cell = {
+            let txn = self.read();
+            read_cell(&txn, raw.cells.as_ref(), row, col)
+        };
+        if cell.as_ref().and_then(|c| c.fill.as_deref()) == fill {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            match (fill, &cell) {
+                (Some(f), Some(c)) => {
+                    c.map.insert(&mut txn, "fill", In::from(f));
+                }
+                (Some(f), None) => {
+                    let cells = cells_or_new(&mut txn, &e, raw.cells.as_ref());
+                    cells.insert(
+                        &mut txn,
+                        cell_key(row, col),
+                        MapPrelim::from([
+                            ("text", In::from(TextPrelim::new(""))),
+                            ("fill", In::from(f)),
+                        ]),
+                    );
+                }
+                (None, Some(c)) => {
+                    c.map.remove(&mut txn, "fill");
+                }
+                (None, None) => {}
+            }
+        }
+        Ok(self.table_done(page, id))
+    }
 }
 
 #[cfg(test)]
@@ -513,5 +841,498 @@ pub(crate) mod tests {
         let t = d.element("t1").and_then(|v| v.table).expect("tableau");
         assert!(t.cells.is_empty());
         assert_eq!((t.color.as_str(), t.size), ("#000000", 36.0));
+    }
+
+    use crate::commands::tests::writes;
+    use crate::commands::{Change, Command, CommandError};
+    use crate::element::StrokeStyle;
+
+    fn add(d: &mut Document, cols: u32, rows: u32) -> String {
+        let p = d.page_ids()[0].clone();
+        d.apply(Command::AddTable {
+            page: p,
+            x: 100.0,
+            y: 200.0,
+            cols,
+            rows,
+            col_width: 240.0,
+            row_height: 64.0,
+            color: "#000000".into(),
+            size: 36.0,
+        })
+        .expect("tableau")
+        .ids[0]
+            .clone()
+    }
+
+    fn view(d: &Document, id: &str) -> TableView {
+        d.element(id).and_then(|v| v.table).expect("tableau")
+    }
+
+    fn set(
+        d: &mut Document,
+        id: &str,
+        row: &str,
+        col: &str,
+        content: &str,
+        h: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::SetTableCell {
+            id: id.into(),
+            row: row.into(),
+            col: col.into(),
+            content: content.into(),
+            row_height: h,
+        })
+    }
+
+    #[test]
+    fn add_table_writes_its_shape_in_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let c = d
+            .apply(Command::AddTable {
+                page: p.clone(),
+                x: 100.0,
+                y: 200.0,
+                cols: 4,
+                rows: 3,
+                col_width: 240.0,
+                row_height: 64.0,
+                color: "#1d4ed8".into(),
+                size: 36.0,
+            })
+            .expect("tableau");
+        assert_eq!(c.pages, vec![p]);
+        let id = c.ids[0].clone();
+        let v = d.element(&id).expect("vue");
+        assert_eq!(
+            (v.kind.as_str(), v.transform),
+            ("table", [1.0, 0.0, 0.0, 1.0, 100.0, 200.0])
+        );
+        let t = v.table.expect("tableau");
+        assert_eq!(
+            (t.color.as_str(), t.size, t.cols.len(), t.rows.len()),
+            ("#1d4ed8", 36.0, 4, 3)
+        );
+        assert!(t.cols.iter().all(|c| c.width == 240.0) && t.rows.iter().all(|r| r.height == 64.0));
+        assert!(t.cells.is_empty());
+        assert_eq!(
+            d.bounds(std::slice::from_ref(&id)),
+            Some(Bounds {
+                x0: 100.0,
+                y0: 200.0,
+                x1: 1060.0,
+                y1: 392.0
+            })
+        );
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            for k in ["shade", "span", "mergedInto"] {
+                assert!(e.get(&txn, k).is_none(), "{k} jamais écrit par C10a");
+            }
+            assert!(matches!(e.get(&txn, "cells"), Some(Out::YMap(_))));
+        }
+        assert!(d.can_undo());
+        assert!(d.undo());
+        assert!(d.element(&id).is_none());
+    }
+
+    #[test]
+    fn add_table_refuses_bad_input_without_writing() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let cmd = |cols: u32, rows: u32, sizes: [f64; 3], color: &str, x: f64| Command::AddTable {
+            page: p.clone(),
+            x,
+            y: 0.0,
+            cols,
+            rows,
+            col_width: sizes[0],
+            row_height: sizes[1],
+            color: color.into(),
+            size: sizes[2],
+        };
+        let ok = [240.0, 64.0, 36.0];
+        let w = writes(&d);
+        for c in [
+            cmd(0, 2, ok, "#000000", 0.0),
+            cmd(65, 2, ok, "#000000", 0.0),
+            cmd(2, 0, ok, "#000000", 0.0),
+            cmd(2, 65, ok, "#000000", 0.0),
+            cmd(2, 2, [f64::NAN, 64.0, 36.0], "#000000", 0.0),
+            cmd(2, 2, [240.0, 0.0, 36.0], "#000000", 0.0),
+            cmd(2, 2, [240.0, 64.0, -1.0], "#000000", 0.0),
+            cmd(2, 2, ok, "!!", 0.0),
+            cmd(2, 2, ok, "#000000", f64::INFINITY),
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert!(!d.can_undo());
+        assert_eq!(
+            d.apply(Command::AddTable {
+                page: "zz".into(),
+                x: 0.0,
+                y: 0.0,
+                cols: 2,
+                rows: 2,
+                col_width: 240.0,
+                row_height: 64.0,
+                color: "#000000".into(),
+                size: 36.0,
+            }),
+            Err(CommandError::UnknownPage("zz".into()))
+        );
+        assert!(d.apply(cmd(64, 64, ok, "#000000", 0.0)).is_ok());
+    }
+
+    #[test]
+    fn set_cell_writes_text_and_grows_only_its_row() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r0, r1, c0) = (
+            t.rows[0].id.clone(),
+            t.rows[1].id.clone(),
+            t.cols[0].id.clone(),
+        );
+        set(&mut d, &id, &r0, &c0, "Lundi", Some(61.0)).expect("texte");
+        let t = view(&d, &id);
+        assert_eq!(
+            (t.cells.len(), t.cells[0].text.as_str(), t.rows[0].height),
+            (1, "Lundi", 64.0)
+        );
+        let c =
+            set(&mut d, &id, &r0, &c0, "Lundi et un long texte", Some(150.0)).expect("plus haut");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let t = view(&d, &id);
+        assert_eq!((t.rows[0].height, t.rows[1].height), (150.0, 64.0));
+        let w = writes(&d);
+        let v = d.version();
+        assert_eq!(
+            set(&mut d, &id, &r0, &c0, "Lundi et un long texte", Some(100.0))
+                .expect("inchangé")
+                .version,
+            v
+        );
+        assert_eq!(
+            set(&mut d, &id, &r1, &c0, "", None).expect("vide").version,
+            v
+        );
+        assert_eq!(w.since(), 0, "aucune transaction sans effet (D38)");
+        assert!(d.undo());
+        let t = view(&d, &id);
+        assert_eq!(
+            (t.cells[0].text.as_str(), t.rows[0].height),
+            ("Lundi", 64.0)
+        );
+    }
+
+    #[test]
+    fn set_cell_keeps_its_unknown_keys() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        set(&mut d, &id, &r, &c, "Lundi", None).expect("texte");
+        {
+            let mut txn = d.transact_local();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+                panic!("cells")
+            };
+            let Some(Out::YMap(cell)) = cells.get(&txn, &cell_key(&r, &c)) else {
+                panic!("cellule")
+            };
+            cell.insert(&mut txn, "shade", In::Any(Any::Bool(true)));
+        }
+        set(&mut d, &id, &r, &c, "Lundi soir", None).expect("texte");
+        assert_eq!(view(&d, &id).cells[0].text, "Lundi soir");
+        let txn = d.read();
+        let e = d.find_element(&txn, &id).expect("élément").element;
+        let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+            panic!("cells")
+        };
+        let Some(Out::YMap(cell)) = cells.get(&txn, &cell_key(&r, &c)) else {
+            panic!("cellule")
+        };
+        assert!(
+            matches!(cell.get(&txn, "shade"), Some(Out::Any(Any::Bool(true)))),
+            "clé C10b gardée"
+        );
+        assert!(matches!(cell.get(&txn, "text"), Some(Out::YText(_))));
+    }
+
+    #[test]
+    fn set_cell_refuses_unknown_line_and_non_table() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (row, col) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        let p = d.page_ids()[0].clone();
+        let s = d
+            .apply(Command::CommitStroke {
+                page: p,
+                points: vec![10.0, 10.0, 0.5, 20.0, 20.0, 0.5],
+                style: StrokeStyle {
+                    color: "#000000".into(),
+                    width: 4.0,
+                },
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            set(&mut d, &id, "absente", &col, "x", None),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            set(&mut d, &id, &row, "absente", "x", None),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            set(&mut d, &id, &row, &col, "x", Some(0.0)),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            set(&mut d, &s, &row, &col, "x", None),
+            Err(CommandError::UnknownElement(s.clone()))
+        );
+        assert_eq!(
+            set(&mut d, "nulle-part", &row, &col, "x", None),
+            Err(CommandError::UnknownElement("nulle-part".into()))
+        );
+    }
+
+    #[test]
+    fn insert_line_copies_its_neighbour_and_respects_bounds() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r0, c0) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        set(&mut d, &id, &r0, &c0, "haut", Some(150.0)).expect("haut");
+        let ins = |d: &mut Document, axis: TableAxis, at: u32| {
+            d.apply(Command::InsertTableLine {
+                id: id.clone(),
+                axis,
+                at,
+            })
+        };
+        assert_eq!(
+            ins(&mut d, TableAxis::Row, 0).expect("en tête").ids,
+            vec![id.clone()]
+        );
+        let t = view(&d, &id);
+        assert_eq!(
+            t.rows.iter().map(|r| r.height).collect::<Vec<_>>(),
+            vec![150.0, 150.0, 64.0]
+        );
+        assert_eq!(t.rows[1].id, r0);
+        ins(&mut d, TableAxis::Col, 2).expect("à droite");
+        let t = view(&d, &id);
+        assert_eq!(
+            t.cols.iter().map(|c| c.width).collect::<Vec<_>>(),
+            vec![240.0, 240.0, 240.0]
+        );
+        assert_eq!(t.cells.len(), 1, "les cellules suivent leurs ids");
+        assert_eq!(ins(&mut d, TableAxis::Row, 4), Err(CommandError::BadTable));
+        let full = add(&mut d, 1, 64);
+        assert_eq!(
+            d.apply(Command::InsertTableLine {
+                id: full,
+                axis: TableAxis::Row,
+                at: 64
+            }),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    #[test]
+    fn remove_line_drops_its_cells_and_keeps_the_last_one() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        for r in &t.rows {
+            for c in &t.cols {
+                set(
+                    &mut d,
+                    &id,
+                    &r.id,
+                    &c.id,
+                    &format!("{}{}", r.id, c.id),
+                    None,
+                )
+                .expect("texte");
+            }
+        }
+        let rm = |d: &mut Document, axis: TableAxis, line: &str| {
+            d.apply(Command::RemoveTableLine {
+                id: id.clone(),
+                axis,
+                line: line.into(),
+            })
+        };
+        rm(&mut d, TableAxis::Row, &t.rows[0].id).expect("ligne");
+        let v = view(&d, &id);
+        assert_eq!((v.rows.len(), v.cells.len()), (1, 2));
+        assert!(v.cells.iter().all(|c| c.row == t.rows[1].id));
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+                panic!("cells")
+            };
+            assert_eq!(cells.len(&txn), 2, "clés de la ligne retirée effacées");
+        }
+        assert_eq!(
+            rm(&mut d, TableAxis::Row, &t.rows[1].id),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            rm(&mut d, TableAxis::Col, "absente"),
+            Err(CommandError::BadTable)
+        );
+        rm(&mut d, TableAxis::Col, &t.cols[1].id).expect("colonne");
+        assert_eq!(view(&d, &id).cells.len(), 1);
+        assert!(d.undo());
+        assert_eq!(view(&d, &id).cols.len(), 2);
+    }
+
+    #[test]
+    fn set_sizes_uniforms_and_skips_when_uniform() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 2);
+        let t = view(&d, &id);
+        set(&mut d, &id, &t.rows[0].id, &t.cols[0].id, "x", Some(150.0)).expect("haut");
+        d.apply(Command::SetTableSizes {
+            id: id.clone(),
+            col_width: 200.0,
+            row_height: 107.0,
+        })
+        .expect("uniforme");
+        let v = view(&d, &id);
+        assert!(
+            v.cols.iter().all(|c| c.width == 200.0) && v.rows.iter().all(|r| r.height == 107.0)
+        );
+        let w = writes(&d);
+        let ver = d.version();
+        assert_eq!(
+            d.apply(Command::SetTableSizes {
+                id: id.clone(),
+                col_width: 200.0,
+                row_height: 107.0
+            })
+            .expect("même")
+            .version,
+            ver
+        );
+        assert_eq!(w.since(), 0);
+        assert_eq!(
+            d.apply(Command::SetTableSizes {
+                id,
+                col_width: 0.0,
+                row_height: 64.0
+            }),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    #[test]
+    fn set_fill_sets_skips_and_clears() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[1].id.clone(), t.cols[1].id.clone());
+        let fill = |d: &mut Document, f: Option<&str>| {
+            d.apply(Command::SetTableFill {
+                id: id.clone(),
+                row: r.clone(),
+                col: c.clone(),
+                fill: f.map(str::to_string),
+            })
+        };
+        fill(&mut d, Some("#fef08a")).expect("jaune");
+        assert_eq!(
+            view(&d, &id).cells,
+            vec![TableCellView {
+                row: r.clone(),
+                col: c.clone(),
+                text: String::new(),
+                fill: Some("#fef08a".into())
+            }]
+        );
+        let w = writes(&d);
+        let v = d.version();
+        assert_eq!(fill(&mut d, Some("#fef08a")).expect("même").version, v);
+        assert_eq!(w.since(), 0);
+        fill(&mut d, None).expect("aucun");
+        assert!(view(&d, &id).cells.is_empty());
+        assert_eq!(
+            fill(&mut d, Some("pas une couleur !")),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    /// S3 : enregistrer, recharger, réenregistrer : mêmes octets, même vue (patron `grid_reload_keeps_bytes`).
+    #[test]
+    fn table_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let id = add(&mut d, 4, 3);
+        let t = view(&d, &id);
+        for (i, r) in t.rows.iter().enumerate() {
+            for (j, c) in t.cols.iter().enumerate() {
+                set(&mut d, &id, &r.id, &c.id, &format!("L{i}C{j}"), None).expect("texte");
+            }
+        }
+        d.apply(Command::SetTableFill {
+            id: id.clone(),
+            row: t.rows[0].id.clone(),
+            col: t.cols[0].id.clone(),
+            fill: Some("#bbf7d0".into()),
+        })
+        .expect("vert");
+        d.apply(Command::InsertTableLine {
+            id: id.clone(),
+            axis: TableAxis::Col,
+            at: 4,
+        })
+        .expect("colonne");
+        let want = view(&d, &id);
+        let file =
+            save(&load(&save(&d, &meta).expect("save")).expect("load"), &meta).expect("resave");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            assert_eq!(view(&r, &id), want, "vue au rechargement {i}");
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+        }
+    }
+
+    #[test]
+    fn one_command_is_one_undo_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let before = view(&d, &id);
+        d.apply(Command::InsertTableLine {
+            id: id.clone(),
+            axis: TableAxis::Row,
+            at: 2,
+        })
+        .expect("ligne");
+        let after = view(&d, &id);
+        assert!(d.undo());
+        assert_eq!(view(&d, &id), before);
+        assert!(d.redo());
+        assert_eq!(view(&d, &id), after);
     }
 }

@@ -1148,4 +1148,81 @@ mod tests {
             })
         );
     }
+
+    /// I3 (constat `architecture-constats.md:10`) : chaque `kind` de `KNOWN_KINDS` a une vue de son `kind` (jamais
+    /// `unknown`) et une boîte ; un `kind` ajouté sans fabrique fait paniquer ce test.
+    #[test]
+    fn every_known_kind_has_view_and_geom() {
+        use crate::asset::AssetRef;
+        use crate::commands::Command;
+        use crate::element::{StrokeStyle, KNOWN_KINDS};
+        use crate::shape::ShapeKind;
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let pen = StrokeStyle {
+            color: "#000000".into(),
+            width: 4.0,
+        };
+        for kind in KNOWN_KINDS {
+            let cmd = match kind {
+                "stroke" => Command::CommitStroke {
+                    page: p.clone(),
+                    points: vec![10.0, 10.0, 0.5, 60.0, 60.0, 0.5],
+                    style: pen.clone(),
+                },
+                "shape" => Command::AddShape {
+                    page: p.clone(),
+                    shape: ShapeKind::Rect,
+                    x0: 0.0,
+                    y0: 0.0,
+                    x1: 50.0,
+                    y1: 40.0,
+                    style: pen.clone(),
+                    fill: None,
+                },
+                "text" => Command::SetText {
+                    page: p.clone(),
+                    id: None,
+                    x: 0.0,
+                    y: 0.0,
+                    content: "a".into(),
+                    color: "#000000".into(),
+                    size: 36.0,
+                    box_width: 600.0,
+                    box_height: 45.0,
+                },
+                "image" => Command::AddImage {
+                    page: p.clone(),
+                    asset: AssetRef {
+                        id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+                        name: "a.png".into(),
+                        mime: "image/png".into(),
+                        size: 3.0,
+                    },
+                    w: 64.0,
+                    h: 48.0,
+                    matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                },
+                "table" => Command::AddTable {
+                    page: p.clone(),
+                    x: 0.0,
+                    y: 0.0,
+                    cols: 2,
+                    rows: 2,
+                    col_width: 240.0,
+                    row_height: 64.0,
+                    color: "#000000".into(),
+                    size: 36.0,
+                },
+                other => panic!("kind sans fabrique : {other} (ajouter sa commande ici, son bras dans element() et element_geom)"),
+            };
+            let id = d.apply(cmd).expect(kind).ids[0].clone();
+            assert_eq!(
+                d.element(&id).map(|v| v.kind),
+                Some(kind.to_string()),
+                "vue de {kind}"
+            );
+            assert!(d.bounds(&[id]).is_some(), "boîte de {kind}");
+        }
+    }
 }
