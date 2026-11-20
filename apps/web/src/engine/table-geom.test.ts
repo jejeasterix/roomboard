@@ -68,7 +68,7 @@ describe("géométrie des cellules (C10a, DAC6)", () => {
   it("rowHeightsFor : par ligne, la plus haute cellule aux largeurs données (Uniformiser, T11)", () => {
     const long: TableData = { ...T, cells: [{ row: "r1", col: "c2", text: "aaaaaaaaaa bbbbbbbbbb cccccccccc", fill: null, spans: plainSpans("aaaaaaaaaa bbbbbbbbbb cccccccccc") }] };
     const h = rowHeightsFor(long, [170, 170], narrow);
-    expect(h[0]).toBe(cellHeight("aaaaaaaaaa bbbbbbbbbb cccccccccc", 36, 170, narrow));
+    expect(h[0]).toBe(cellHeight(plainSpans("aaaaaaaaaa bbbbbbbbbb cccccccccc"), 36, 170, narrow));
     expect(h[1]).toBe(cellHeight(plainSpans(""), 36, 170, narrow));
   });
 

@@ -108,7 +108,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         row: o.ref.row,
         col: o.ref.col,
         content,
-        rowHeight: cellHeight(content, o.size, o.colWidth, measure),
+        rowHeight: cellHeight(plainSpans(content), o.size, o.colWidth, measure),
       });
     }
     refresh();
