@@ -7,7 +7,7 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
   const engine = {
     setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
-    fitPage: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
+    fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
   const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn() } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
@@ -120,5 +120,24 @@ describe("ToolbarHost local", () => {
     const { host, t } = setup();
     host.runAction("file-import");
     expect(t.runFile).toHaveBeenCalledWith("import");
+  });
+});
+
+describe("ToolbarHost — tableau (C10a, DAC4)", () => {
+  it("les cinq actions vont à engine.tableAction", () => {
+    const { host, engine } = setup();
+    for (const id of ["table-row-insert", "table-col-insert", "table-row-remove", "table-col-remove", "table-uniform"]) host.runAction(id);
+    expect(engine.tableAction.mock.calls.map((c) => c[0])).toEqual(["row-insert", "col-insert", "row-remove", "col-remove", "uniform"]);
+  });
+  it("tableFill → engine.tableFill (null retire)", () => {
+    const { host, engine } = setup();
+    host.tableFill("#fef08a");
+    host.tableFill(null);
+    expect(engine.tableFill.mock.calls).toEqual([["#fef08a"], [null]]);
+  });
+  it("outil Tableau : setTool(table) → engine.setTool(table)", () => {
+    const { host, engine } = setup();
+    host.setTool("table");
+    expect(engine.setTool).toHaveBeenCalledWith("table");
   });
 });
