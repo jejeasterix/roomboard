@@ -2089,6 +2089,32 @@ describe.each(c7bFactories)("contrat C7b : $name", ({ f }) => {
     r.free();
     d.free();
   });
+
+// Croisement C7b × C10b : les commandes de tableau ne touchent pas aux segments d'une cellule riche.
+describe.each(c7bFactories)("contrat C7b × C10b : $name", ({ f }) => {
+  it("segments d'une cellule riche intacts après SetTableShade, SetTableFill (plage), MergeTableCells (ancre), SplitTableCell", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 3, rows: 2 });
+    const g = c10bIds(tableOf(d, id));
+    const a = c10bAt(g, 0, 0);
+    const rich = [plainSpan("Le "), { text: "chat", attrs: C7B_RED_BOLD }, { text: " noir", attrs: C7B_ITALIC }];
+    d.apply({ type: "SetTableCell", id, ...a, content: "Le chat noir", spans: rich });
+    const spansNow = (): readonly TextSpan[] => tableOf(d, id).cells.find((c) => c.row === a.row && c.col === a.col)?.spans ?? [];
+    expect(spansNow()).toEqual(rich);
+    d.apply({ type: "SetTableShade", id, from: a, to: a, shade: SHADE });
+    expect(spansNow()).toEqual(rich);
+    d.apply({ type: "SetTableShade", id, from: a, to: a, shade: null });
+    expect(spansNow()).toEqual(rich);
+    d.apply({ type: "SetTableFill", id, ...a, to: c10bAt(g, 1, 2), fill: "#fef08a" });
+    expect(spansNow()).toEqual(rich);
+    d.apply({ type: "MergeTableCells", id, from: a, to: c10bAt(g, 1, 1) });
+    expect(spansNow()).toEqual(rich);
+    d.apply({ type: "SplitTableCell", id, ...a });
+    expect(spansNow()).toEqual(rich);
+    expect(tableOf(d, id).cells.find((c) => c.row === a.row && c.col === a.col)?.text).toBe("Le chat noir");
+    d.free();
+  });
+});
 });
 
 describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {

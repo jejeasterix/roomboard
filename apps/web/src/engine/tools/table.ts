@@ -5,7 +5,7 @@
  * s'ouvre (F14, HB-12) ; un glisser vers une autre cellule du même tableau, ou Maj+clic, fait une plage, élargie aux
  * zones qu'elle touche. Un appui pendant une saisie ouverte valide seulement. Une SetTableCell par validation, hauteur
  * exigée mesurée comme le dessin, à la largeur de la zone (T5, F7, B1) ; Tab, Maj+Tab, flèches au bord par `navigate`
- * (DAC3, F16) ; porte IME partagée avec l'outil Texte. Fusionner, Diviser, Ombrer, Retirer l'ombrage, pastilles,
+ * (DAC3, F16) ; porte IME partagée avec l'outil Texte. Fusionner, Diviser, Ombrer, Désombrer, pastilles,
  * insertions et suppressions agissent sur la plage, sinon sur la zone de la cellule active. Cellule active et plage
  * tenues par ids, retirées par `prune` quand elles disparaissent (I1).
  */

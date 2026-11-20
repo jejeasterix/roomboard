@@ -92,7 +92,7 @@ describe("état des actions du tableau (C10b, F15)", () => {
     expect(itemState(action("table-shade"), view({ tableCell: cell() })).disabled).toBe(false);
     expect(itemState(action("table-shade"), view({ tableCell: null })).disabled).toBe(true);
   });
-  it("Retirer l'ombrage : au moins une cellule ombrée dans la plage (ou l'active)", () => {
+  it("Désombrer : au moins une cellule ombrée dans la plage (ou l'active)", () => {
     expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: true }) })).disabled).toBe(false);
     expect(itemState(action("table-unshade"), view({ tableCell: cell({ shaded: false }) })).disabled).toBe(true);
   });

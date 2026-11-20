@@ -585,7 +585,7 @@ describe("outil Tableau (C10b)", () => {
     expect(s.table(id).merges).toEqual([]);
   });
 
-  it("F9, S1 : Ombrer la plage d'une colonne : une SetTableShade, trois cellules ; Retirer l'ombrage : null ; la plage reste (PC19)", () => {
+  it("F9, S1 : Ombrer la plage d'une colonne : une SetTableShade, trois cellules ; Désombrer : null ; la plage reste (PC19)", () => {
     const { s, id, r, c } = made(4, 3);
     drag(s, mid(0, 2), mid(2, 2));
     expect(s.tool.cellState()?.range).toEqual({ r0: 0, c0: 2, r1: 2, c1: 2 });

@@ -130,7 +130,7 @@ describe("ToolbarHost local", () => {
 });
 
 describe("actions du tableau (C10b)", () => {
-  it("actions du tableau (C10b) : Fusionner, Diviser, Ombrer, Retirer l'ombrage → engine.tableAction", () => {
+  it("actions du tableau (C10b) : Fusionner, Diviser, Ombrer, Désombrer → engine.tableAction", () => {
     const { host, engine } = setup();
     for (const id of ["table-merge", "table-split", "table-shade", "table-unshade"]) host.runAction(id);
     expect(engine.tableAction.mock.calls.map((c) => c[0])).toEqual(["merge", "split", "shade", "unshade"]);
