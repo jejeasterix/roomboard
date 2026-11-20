@@ -2275,6 +2275,33 @@ describe.each(c6aFactories)("contrat C6a : $name", ({ f }) => {
     d.free();
   });
 
+  it("groupe de groupe, membre du milieu : Fill ne touche que lui, contour comme intérieur (D4, D25)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = shapeAt(d, p, "rect", [100, 100, 300, 200]);
+    const b = shapeAt(d, p, "rect", [100, 800, 300, 900]);
+    const c = shapeAt(d, p, "rect", [400, 800, 600, 900]);
+    d.apply({ type: "Group", ids: [a, b] });
+    d.apply({ type: "Group", ids: [a, c] });
+    expect(d.element(b)?.group).toHaveLength(2);
+    const inside = d.apply({ type: "Fill", page: p, target: { kind: "inside", id: b }, color: "#facc15" });
+    expect(inside.ids).toEqual([b]);
+    expect([a, b, c].map((id) => shapeFill(d, id))).toEqual([null, "#facc15", null]);
+    const edge = d.apply({ type: "Fill", page: p, target: { kind: "edge", id: b }, color: "#dc2626" });
+    expect(edge.ids).toEqual([b]);
+    expect([a, b, c].map((id) => strokeColor(d, id))).toEqual(["#000000", "#dc2626", "#000000"]);
+    d.free();
+  });
+
+  it("edgeHit d'une ellipse : le bord suit la courbe, pas la boîte (D5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const e = shapeAt(d, p, "ellipse");
+    // boîte (100, 100)-(300, 200), centre (200, 150) : sommets du grand et du petit axe sur le bord, coin de la boîte loin de la courbe.
+    expect([d.edgeHit(e, 100, 150, 6), d.edgeHit(e, 200, 100, 6), d.edgeHit(e, 200, 150, 6), d.edgeHit(e, 103, 103, 6)]).toEqual([true, true, false, false]);
+    d.free();
+  });
+
   it("aller-retour : remplissage, contour et fond gardés (S5)", () => {
     const d = f.blank();
     const p = first(d);
@@ -2537,11 +2564,13 @@ describe.each(c3Factories)("contrat C3 : $name", ({ f }) => {
     s.apply({ type: "AddImage", page: s0, asset: C3_ASSET, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
     rect(s, s1, 0);
     s.apply({ type: "SetGrid", page: s1, grid: C3_GRID });
+    s.apply({ type: "Fill", page: s0, target: { kind: "background" }, color: "#bfdbfe" });
     const d = f.blank();
     const t0 = first(d);
     const t1 = d.apply({ type: "AddPage", after: t0 }).pages[0]!;
     const c = d.insertPages(s, t0);
     const pages = d.pageIds();
+    expect([bg(d, pages[1]!), bg(d, pages[2]!)]).toEqual(["#bfdbfe", "#ffffff"]);
     expect(pages).toHaveLength(4);
     expect([pages[0], pages[3]]).toEqual([t0, t1]);
     expect(c.pages).toEqual([pages[1], pages[2]]);

@@ -269,7 +269,7 @@ export class WebGL2LiveRenderer implements Renderer {
   readonly badColors = new Set<string>();
 
   constructor(
-    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview">,
+    private readonly scene: Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview"> & { readonly pageColor?: string },
     private readonly gl: WebGL2RenderingContext,
   ) {
     this.res = setup(gl);
@@ -295,8 +295,10 @@ export class WebGL2LiveRenderer implements Renderer {
   }
 
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay?: EditOverlay): void {
-    this.background = page.background !== undefined && tryParseColor(page.background) !== null ? page.background : PAGE_BACKGROUND;
     this.scene.drawScene(page, camera, hidden, overlay);
+    // Le fond retenu par la scène (le canvas accepte « red », WebGL non : il le relit normalisé en `#rrggbb`).
+    const kept = this.scene.pageColor ?? page.background;
+    this.background = kept !== undefined && tryParseColor(kept) !== null ? kept : PAGE_BACKGROUND;
   }
 
   invalidate(change: Change): void {

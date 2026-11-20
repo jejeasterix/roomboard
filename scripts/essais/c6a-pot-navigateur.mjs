@@ -293,7 +293,8 @@ async function scenario(page, url, { captures, tmp }) {
   await key("Escape");
   await key("Control+z");
   await openCell([tableW[0] + 30, tableW[1] + 20], "2x2@0,0");
-  check((await segs()).every(([, c]) => c === ""), "S3 : Annuler : « matin » n'est plus rouge (une étape)");
+  const undone = await segs();
+  check(show(undone) === show([["Lundi matin", ""]]), `S3 : Annuler : « matin » n'est plus rouge, texte intact (une étape) (${show(undone)})`);
   await key("Escape");
   await key("Control+y");
   await pot();

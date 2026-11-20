@@ -30,7 +30,7 @@ function textCommand(el: TextElement, x: number, y: number, color: string | null
   const inv = invertMatrix(el.transform);
   if (inv === null) return whole;
   const [lx, ly] = applyMatrix(inv, x, y);
-  const at = offsetAt(t.spans, { size: t.size }, t.boxWidth, measure, clamp(lx, t.boxWidth), clamp(ly, t.boxHeight));
+  const at = offsetAt(t.spans, { size: t.size }, t.boxWidth, measure, within(lx, t.boxWidth), within(ly, t.boxHeight));
   const word = at === null ? null : wordAt(t.content, at);
   return word === null ? whole : { type: "FormatText", id: el.id, start: word[0], len: word[1] - word[0], attrs: { color } };
 }

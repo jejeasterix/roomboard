@@ -799,4 +799,16 @@ describe("Canvas2DRenderer — fond de page (C6a)", () => {
     r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual(["stroke #bfdbfe 16", `stroke ${SURROUND_COLOR} 16`]);
   });
+
+  it("gomme partielle : fond « rouge » ignoré par le canvas, la bande reprend le blanc retenu (point 1)", () => {
+    const scene = new FakeCtx({ browserColors: true });
+    const live = new FakeCtx();
+    const src: SceneSource = { element: () => null, outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), asCtx(live), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [], background: "rouge" }, IDENTITY, new Set());
+    r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${SURROUND_COLOR}`, `fillRect ${PAGE_BACKGROUND}`]);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
+  });
 });

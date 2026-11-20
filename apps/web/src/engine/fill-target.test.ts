@@ -128,6 +128,12 @@ describe("cible du pot (C6a)", () => {
     expect(s.at(497, 110)).toEqual({ type: "FormatText", id: s.text, start: 0, len: 2, attrs: { color: RED } });
   });
 
+  it("bande sous un mot : ramené dans la boîte, mot « chat » sous lequel on clique, pas le texte entier (HC6-12)", () => {
+    const s = setup();
+    // boîte (500, 100)-(1100, 145) ; y = 148 est à 3 sous le bas, sous la ligne ; x = 550 est sous « chat »
+    expect(s.at(550, 148)).toEqual({ type: "FormatText", id: s.text, start: 3, len: 4, attrs: { color: RED } });
+  });
+
   it("mot après un emoji : FormatText accepté par la fausse liaison (bornes UTF-16)", () => {
     const s = setup();
     const id = idOf(s.doc.apply({ type: "SetText", page: s.page, id: null, x: 500, y: 200, content: "😀 été", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }));
@@ -215,5 +221,26 @@ describe("cible du pot (C6a)", () => {
     expect(s.doc.apply(inside!).ids).toEqual([b]);
     expect([fillOf(s.rect), fillOf(b), fillOf(c)]).toEqual([null, RED, null]);
     expect(s.at(102, 850, BLUE)).toEqual({ type: "Fill", page: s.page, target: { kind: "edge", id: b }, color: BLUE });
+  });
+
+  // D1 : aucune zone fermée n'est cherchée, quatre lignes en carré ne forment pas une zone.
+  it("quatre lignes en carré, clic au centre : fond de la page (D1)", () => {
+    const s = setup();
+    const style = { color: "#000000", width: 4 };
+    const seg = (x0: number, y0: number, x1: number, y1: number): void => {
+      s.doc.apply({ type: "AddShape", page: s.page, shape: "line", x0, y0, x1, y1, style, fill: null });
+    };
+    seg(100, 1000, 300, 1000);
+    seg(300, 1000, 300, 1200);
+    seg(300, 1200, 100, 1200);
+    seg(100, 1200, 100, 1000);
+    expect(s.at(200, 1100)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: RED });
+  });
+
+  // HC6-11 : la fausse liaison ne sait pas créer d'élément inconnu ; une liaison factice en rend un sous le pointeur.
+  it("élément de genre inconnu sous le pointeur : fond de la page (D1, HC6-11)", () => {
+    const unknown = { id: "u1", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "futur", x: 0, y: 0, w: 10, h: 10 } } as unknown as NonNullable<ReturnType<FillDoc["element"]>>;
+    const doc: FillDoc = { hitTest: () => "u1", element: () => unknown, edgeHit: () => false };
+    expect(fillCommand(doc, "p", 5, 5, 1, RED, ten)).toEqual({ type: "Fill", page: "p", target: { kind: "background" }, color: RED });
   });
 });
