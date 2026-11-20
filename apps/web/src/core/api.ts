@@ -6,6 +6,7 @@
 // Forme : rect / ellipse = boîte locale (0, 0)-(w, h), w, h ≥ 0 ; line / arrow = segment (0, 0)-(w, h) (core/shapes.ts).
 // Texte : boîte locale (0, 0)-(boxWidth, boxHeight) ; style.color = couleur du texte, style.width = 0.
 // C2 : AddImage, SetBackdrop ; éléments image et unknown (style absent) ; page(id), citedAssets, asset, saveParts, loadParts.
+// C9 : SetGrid ; PageView.grid ; snapPoint, snapDelta, gridLines (géométrie dans le cœur, DAG1 ; fausse liaison : carreaux seuls, DAG3).
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -59,7 +60,9 @@ export type Command =
   | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
   | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
   /** backdrop null : retire le fond ; même valeur : aucune étape (D38). */
-  | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null };
+  | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null }
+  /** grid null : retire la grille ; même grille : aucune étape (D38) ; remplacée en bloc, une étape (G5). */
+  | { readonly type: "SetGrid"; readonly page: string; readonly grid: GridInput | null };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData { readonly content: string; readonly size: number; readonly boxWidth: number; readonly boxHeight: number }
@@ -95,6 +98,7 @@ export interface PageView {
   readonly height: number;
   readonly background: string;
   readonly backdrop: BackdropView | null;
+  readonly grid: GridView | null;
 }
 
 export interface Bounds { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
@@ -129,6 +133,12 @@ export interface CoreDocument {
   saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array];
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi;
   free(): void;
+  /** Point aimanté de la page (G6) ; null sans grille, magnétisme coupé, aucun niveau qui accroche ou page inconnue. */
+  snapPoint(page: string, x: number, y: number): readonly [number, number] | null;
+  /** Déplacement aimanté depuis le déplacement brut (G7) ; brut sans grille, sans magnétisme ou sans élément. */
+  snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number];
+  /** Lignes visibles de la grille dans `rect` (monde), familles sous `minStep` et points sous `minDotStep` sautés (G9). */
+  gridLines(page: string, rect: Bounds, minStep: number, minDotStep: number): GridLines | null;
 }
 
 export interface CoreFactory {
@@ -144,3 +154,43 @@ export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
+
+/** Types de grille dessinés et aimantés (U31) ; tout autre kind est gardé tel quel, ignoré (C4). */
+export const GRID_KINDS = ["squares", "lines", "dots", "isometric", "music", "seyes"] as const;
+export type GridKind = (typeof GRID_KINDS)[number];
+export const MAX_GRID_LEVELS = 16;
+/** Plafond des points d'un niveau et des lignes d'une famille (G9). */
+export const MAX_GRID_DOTS = 65_536;
+export const DEFAULT_GRID_COLOR = "#000000";
+/** Niveau de grille (U31) ; kind et line inconnus gardés tels quels (line inconnu dessiné plein). */
+export interface GridLevel {
+  readonly kind: string;
+  readonly spacingX: number;
+  readonly spacingY: number;
+  readonly originX: number;
+  readonly originY: number;
+  readonly color: string;
+  readonly line: string;
+  readonly snap: boolean;
+  readonly visible: boolean;
+}
+export interface GridView {
+  readonly visible: boolean;
+  readonly snap: boolean;
+  readonly above: boolean;
+  readonly levels: readonly GridLevel[];
+}
+/** Grille demandée par SetGrid : même forme que la vue. */
+export type GridInput = GridView;
+/** Groupe de lignes en unités de page : segments x0, y0, x1, y1 et points x, y à la suite. */
+export interface LevelLines {
+  readonly color: string;
+  readonly line: string;
+  readonly alpha: number;
+  readonly segments: readonly number[];
+  readonly dots: readonly number[];
+}
+export interface GridLines {
+  readonly above: boolean;
+  readonly levels: readonly LevelLines[];
+}

@@ -322,3 +322,72 @@ describe("fixture élément inconnu (S4, fausse liaison)", () => {
     expect(saved.pages[0]?.elements).toEqual(raw.pages[0]?.elements);
   });
 });
+
+describe("grille de la fausse liaison (C9, G4)", () => {
+  const saveJson = (d: CoreDocument): { pages: Record<string, unknown>[] } =>
+    JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: Record<string, unknown>[] };
+  const withGrid = (grid: unknown): CoreDocument => {
+    const raw = saveJson(fakeCore.blank());
+    raw.pages[0] = { ...(raw.pages[0] ?? {}), grid };
+    return fakeCore.load(new TextEncoder().encode(JSON.stringify(raw)));
+  };
+  const squares = (s: number, o: number) => ({
+    kind: "squares",
+    spacingX: s,
+    spacingY: s,
+    originX: o,
+    originY: o,
+    color: "#000000",
+    line: "solid",
+    snap: true,
+    visible: true,
+  });
+
+  it("grille qui n'est pas un objet : null, page lisible ; sans levels ou levels non tableau : levels [] (S2)", () => {
+    const bad = withGrid("pas une grille");
+    expect(bad.page(firstPage(bad))?.grid).toBeNull();
+    const empty = withGrid({});
+    expect(empty.page(firstPage(empty))?.grid).toEqual({ visible: true, snap: false, above: false, levels: [] });
+    const flat = withGrid({ levels: "x", visible: false });
+    expect(flat.page(firstPage(flat))?.grid).toEqual({ visible: false, snap: false, above: false, levels: [] });
+  });
+
+  it("niveau sans pas finis > 0 ou qui n'est pas un objet : absent de la vue, gardé au save ; défauts champ par champ", () => {
+    const levels = ["x", { kind: "squares", spacingX: 0, spacingY: 40 }, { kind: "squares", spacingX: 40, spacingY: 20, originX: "n", futur: 1 }];
+    const d = withGrid({ snap: true, levels });
+    const p = firstPage(d);
+    expect(d.page(p)?.grid?.levels).toEqual([
+      { kind: "squares", spacingX: 40, spacingY: 20, originX: 0, originY: 0, color: "#000000", line: "solid", snap: true, visible: true },
+    ]);
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { grid?: unknown }[] };
+    expect(saved.pages[0]?.grid).toEqual({ snap: true, levels });
+  });
+
+  it("grille lue qui n'est pas un objet : vue sans grille, valeur brute réécrite telle quelle au save (G13)", () => {
+    for (const raw of ["pas une grille", 42, [1, 2], true]) {
+      const d = withGrid(raw);
+      expect(d.page(firstPage(d))?.grid).toBeNull();
+      expect(saveJson(d).pages[0]?.["grid"]).toEqual(raw);
+    }
+  });
+
+  it("page sans grille : aucune clé grid au save, même après SetGrid puis retrait (sauvegardes existantes identiques)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    expect(Object.keys(saveJson(d).pages[0] ?? {})).not.toContain("grid");
+    d.apply({ type: "SetGrid", page: p, grid: { visible: true, snap: true, above: false, levels: [squares(40, 0)] } });
+    expect(Object.keys(saveJson(d).pages[0] ?? {})).toContain("grid");
+    d.apply({ type: "SetGrid", page: p, grid: null });
+    expect(Object.keys(saveJson(d).pages[0] ?? {})).not.toContain("grid");
+  });
+
+  it("snapPoint : à mi-pas, l'indice s'arrondit loin de zéro comme f64::round du cœur (pas Math.round)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    // Origine 100, pas 40 : (40 - 100) / 40 = -1,5 → indice -2 → 20 (Math.round donnerait -1 → 60).
+    d.apply({ type: "SetGrid", page: p, grid: { visible: true, snap: true, above: false, levels: [squares(40, 100)] } });
+    expect(d.snapPoint(p, 40, 40)).toEqual([20, 20]);
+    // Côté positif : (160 - 100) / 40 = 1,5 → indice 2 → 180.
+    expect(d.snapPoint(p, 160, 160)).toEqual([180, 180]);
+  });
+});

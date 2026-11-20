@@ -9,6 +9,11 @@
 // les polygones de `shapes.ts` (miroir de `shape.rs`) : même collision et mêmes bornes que le cœur.
 // C2 : images, fond (`page(id)`), métadonnées et `citedAssets` par le même balayage que le cœur ; `kind` inconnu gardé
 // avec ses champs bruts (`raw`) et réécrit tel quel.
+// C9 : grille de page (`SetGrid`, `page(id).grid`) au modèle du cœur, lecture tolérante et sauvegarde comprises ; une
+// grille lue qui n'est pas un objet est gardée brute et réécrite telle quelle, vue comme absente (G13).
+// Écart assumé, exclu du contrat commun (DAG3) : `snapPoint`, `snapDelta` et `gridLines` ne connaissent que le kind
+// `squares` ; lines, dots, isometric, music et seyes n'accrochent pas et ne tracent rien ici : ils se testent dans
+// `grid.rs` et sur le vrai module (bloc « contrat C9 : vrai module seulement »).
 import type {
   AssetInfo,
   AssetRef,
@@ -19,7 +24,12 @@ import type {
   CoreDocument,
   CoreFactory,
   ElementView,
+  GridInput,
+  GridLevel,
+  GridLines,
+  GridView,
   ImageData,
+  LevelLines,
   Matrix,
   PageView,
   ShapeData,
@@ -27,7 +37,7 @@ import type {
   StrokeStyle,
   TextData,
 } from "./api";
-import { DEFAULT_ASSET_MIME, PAGE_HEIGHT, PAGE_WIDTH, UNKNOWN_BOX } from "./api";
+import { DEFAULT_ASSET_MIME, DEFAULT_GRID_COLOR, MAX_GRID_DOTS, MAX_GRID_LEVELS, PAGE_HEIGHT, PAGE_WIDTH, UNKNOWN_BOX } from "./api";
 import { isAssetId } from "./asset-store";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
@@ -57,7 +67,8 @@ interface FakeElement {
   readonly malformed?: Readonly<Record<string, unknown>>;
 }
 type RawRecord = Readonly<Record<string, unknown>>;
-interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null }
+/** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. */
+interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null; grid: unknown }
 /** `assets` : valeurs brutes (K3) ; lues avec défauts champ par champ (K4). */
 interface State { readonly pages: FakePage[]; readonly assets: Map<string, unknown> }
 
@@ -68,6 +79,7 @@ const MESSAGES = {
   badWidth: "épaisseur de trait invalide (nombre fini > 0 attendu)",
   badAsset: "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)",
   badImage: "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)",
+  badGrid: "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)",
 } as const;
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
@@ -78,7 +90,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
 const validAsset = (a: AssetRef): boolean => isAssetId(a.id) && a.mime !== "" && Number.isInteger(a.size) && a.size >= 0;
 const clone = (s: State): State => ({
-  pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop })),
+  pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop, grid: p.grid })),
   assets: new Map(s.assets),
 });
 const unknownBox = (raw: RawRecord): { w: number; h: number } =>
@@ -292,7 +304,7 @@ class FakeDocument implements CoreDocument {
         return this.step((s) => {
           const id = newId();
           const at = after === null ? s.pages.length : s.pages.findIndex((p) => p.id === after) + 1;
-          s.pages.splice(at, 0, { id, elements: [], backdrop: null });
+          s.pages.splice(at, 0, { id, elements: [], backdrop: null, grid: null });
           return { pages: [id], ids: [], removed: [] };
         });
       }
@@ -456,6 +468,17 @@ class FakeDocument implements CoreDocument {
           return { pages: [cmd.page], ids: [], removed: [] };
         });
       }
+      case "SetGrid": {
+        // Même ordre que le cœur : grille, puis page ; même grille (sur la vue) ou rien à retirer : aucune étape.
+        const g = cmd.grid;
+        if (g !== null && !validGrid(g)) throw new Error(MESSAGES.badGrid);
+        if (sameGrid(gridView(this.pageOf(cmd.page).grid), g)) return this.unchanged();
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === cmd.page);
+          if (p) p.grid = g === null ? null : gridRecord(g);
+          return { pages: [cmd.page], ids: [], removed: [] };
+        });
+      }
     }
   }
 
@@ -473,13 +496,14 @@ class FakeDocument implements CoreDocument {
   page(id: string): PageView | null {
     const p = this.state.pages.find((q) => q.id === id);
     if (!p) return null;
-    return { id, width: PAGE_WIDTH, height: PAGE_HEIGHT, background: "#ffffff", backdrop: backdropView(p.backdrop, PAGE_WIDTH) };
+    return { id, width: PAGE_WIDTH, height: PAGE_HEIGHT, background: "#ffffff", backdrop: backdropView(p.backdrop, PAGE_WIDTH), grid: gridView(p.grid) };
   }
   citedAssets(): AssetInfo[] {
     const acc = new Set<string>();
     for (const p of this.state.pages) {
       scanAssets(p.id, acc);
       scanAssets(p.backdrop, acc);
+      scanAssets(p.grid, acc);
       for (const e of p.elements) scanAssets({ ...e, text: undefined, local: undefined }, acc);
     }
     return [...acc].sort().map((id) => assetInfo(this.state.assets, id));
@@ -557,7 +581,7 @@ class FakeDocument implements CoreDocument {
       now,
       appVersion,
       assets: Object.fromEntries(this.state.assets),
-      pages: this.state.pages.map((p) => ({ id: p.id, backdrop: p.backdrop, elements: p.elements.map(savedElement) })),
+      pages: this.state.pages.map((p) => ({ id: p.id, backdrop: p.backdrop, elements: p.elements.map(savedElement), ...(p.grid !== null ? { grid: p.grid } : {}) })),
     });
     return new TextEncoder().encode(json);
   }
@@ -571,6 +595,65 @@ class FakeDocument implements CoreDocument {
     };
   }
   free(): void { /* rien à libérer */ }
+  snapPoint(page: string, x: number, y: number): readonly [number, number] | null {
+    const g = this.gridOfPage(page);
+    return g === null ? null : snapSquares(g, PAGE_WIDTH, x, y);
+  }
+  snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number] {
+    const g = this.gridOfPage(page);
+    const b = this.snapBox(ids);
+    if (g === null || b === null) return [dx, dy];
+    const cx = (b.x0 + b.x1) / 2;
+    const cy = (b.y0 + b.y1) / 2;
+    let best: [number, number] | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const [x, y] of [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1], [cx, cy]] as const) {
+      const c0 = x + dx;
+      const c1 = y + dy;
+      const q = snapSquares(g, PAGE_WIDTH, c0, c1);
+      if (q === null) continue;
+      const d = dist2(q[0], q[1], c0, c1);
+      if (best === null || d < bestD) {
+        best = [q[0] - c0, q[1] - c1];
+        bestD = d;
+      }
+    }
+    return best === null ? [dx, dy] : [dx + best[0], dy + best[1]];
+  }
+  gridLines(page: string, rect: Bounds, minStep: number, minDotStep: number): GridLines | null {
+    void minDotStep; // points : vrai module seulement (DAG3)
+    const g = this.gridOfPage(page);
+    return g === null ? null : squaresLines(g, PAGE_WIDTH, rect, minStep);
+  }
+  private gridOfPage(page: string): GridView | null {
+    const p = this.state.pages.find((q) => q.id === page);
+    return p ? gridView(p.grid) : null;
+  }
+  /** Boîte d'accroche (G7) : forme = boîte (0, 0)-(w, h) sans l'épaisseur du trait ; autre élément : `bounds`. */
+  private snapBox(ids: readonly string[]): Bounds | null {
+    let acc: Bounds | null = null;
+    for (const id of ids) {
+      const e = this.find(id)?.element;
+      if (!e) continue;
+      let box: Bounds | null = null;
+      if (e.shape) {
+        const poly = boxPolygon(e.shape.w, e.shape.h);
+        for (let i = 0; i + 1 < poly.length; i += 2) {
+          const [x, y] = applyMatrix(e.transform, poly[i] ?? 0, poly[i + 1] ?? 0);
+          box = box === null
+            ? { x0: x, y0: y, x1: x, y1: y }
+            : { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) };
+        }
+      } else {
+        box = this.bounds([id]);
+      }
+      if (box === null) continue;
+      acc = acc === null
+        ? box
+        : { x0: Math.min(acc.x0, box.x0), y0: Math.min(acc.y0, box.y0), x1: Math.max(acc.x1, box.x1), y1: Math.max(acc.y1, box.y1) };
+    }
+    return acc;
+  }
 }
 
 interface SavedElement {
@@ -587,7 +670,7 @@ interface SavedElement {
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
   raw?: Record<string, unknown>;
 }
-interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown }
+interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown }
 
 function savedElement(e: FakeElement): SavedElement {
   if (e.malformed) return { id: e.id, ...e.malformed } as SavedElement;
@@ -654,13 +737,15 @@ function loadFake(bytes: Uint8Array): CoreDocument {
     id: p.id,
     elements: p.elements.map(loadElement),
     backdrop: isRecord(p.backdrop) ? p.backdrop : null,
+    // Brute, quelle qu'elle soit (G13) : réécrite telle quelle ; `gridView` décide de la vue.
+    grid: p.grid ?? null,
   }));
   const assets = new Map(isRecord(raw["assets"]) ? Object.entries(raw["assets"]) : []);
   return new FakeDocument({ pages, assets });
 }
 
 export const fakeCore: CoreFactory = {
-  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null }], assets: new Map() }),
+  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null }], assets: new Map() }),
   load: loadFake,
   loadParts: (manifest: Uint8Array, ybin: Uint8Array) => {
     void manifest;
@@ -668,3 +753,152 @@ export const fakeCore: CoreFactory = {
   },
   version: () => "fake",
 };
+
+// --- Grille (C9) : mêmes règles que `crates/roomboard-core/src/grid.rs` pour le modèle ; carreaux seuls pour le reste.
+/** Tolérance d'indice, en pas (celle de `grid.rs`). */
+const GRID_EPS = 1e-9;
+const boolOr = (v: unknown, d: boolean): boolean => (typeof v === "boolean" ? v : d);
+const finiteOr = (v: unknown, d: number): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
+/** `f64::round` du cœur : moitié loin de zéro (Math.round arrondit -1,5 vers -1, le cœur vers -2). */
+const roundHalfAway = (v: number): number => Math.sign(v) * Math.round(Math.abs(v));
+const dist2 = (ax: number, ay: number, bx: number, by: number): number => {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy;
+};
+
+/** Niveau vu comme par le cœur (G4) : sans pas finis > 0, absent ; défauts champ par champ. */
+function gridLevelView(raw: unknown): GridLevel | null {
+  if (!isRecord(raw)) return null;
+  const { kind, spacingX, spacingY, originX, originY, color, line, snap, visible } = raw;
+  if (!finitePositive(spacingX) || !finitePositive(spacingY)) return null;
+  return {
+    kind: typeof kind === "string" ? kind : "",
+    spacingX,
+    spacingY,
+    originX: finiteOr(originX, 0),
+    originY: finiteOr(originY, 0),
+    color: typeof color === "string" ? color : DEFAULT_GRID_COLOR,
+    line: typeof line === "string" ? line : "solid",
+    snap: boolOr(snap, true),
+    visible: boolOr(visible, true),
+  };
+}
+
+/** Grille vue comme par le cœur (G4, G13) : pas un objet → null ; levels absent ou non tableau → [] ; têtes absentes →
+ *  visible, sans aimant, dessous. */
+function gridView(raw: unknown): GridView | null {
+  if (!isRecord(raw)) return null;
+  const levels = raw["levels"];
+  return {
+    visible: boolOr(raw["visible"], true),
+    snap: boolOr(raw["snap"], false),
+    above: boolOr(raw["above"], false),
+    levels: Array.isArray(levels) ? levels.map(gridLevelView).filter((l): l is GridLevel => l !== null) : [],
+  };
+}
+
+const LEVEL_KEYS = ["kind", "spacingX", "spacingY", "originX", "originY", "color", "line", "snap", "visible"] as const;
+/** Même grille, champ par champ sur la vue (G5), comme le cœur. */
+function sameGrid(a: GridView | null, b: GridInput | null): boolean {
+  if (a === null || b === null) return a === b;
+  return (
+    a.visible === b.visible &&
+    a.snap === b.snap &&
+    a.above === b.above &&
+    a.levels.length === b.levels.length &&
+    a.levels.every((l, i) => {
+      const m = b.levels[i];
+      return m !== undefined && LEVEL_KEYS.every((k) => l[k] === m[k]);
+    })
+  );
+}
+
+/** `BadGrid` (G2) : pas finis > 0, origine finie, kind, color, line non vides, au plus 16 niveaux. */
+const validGrid = (g: GridInput): boolean =>
+  g.levels.length <= MAX_GRID_LEVELS &&
+  g.levels.every(
+    (l) =>
+      finitePositive(l.spacingX) &&
+      finitePositive(l.spacingY) &&
+      Number.isFinite(l.originX) &&
+      Number.isFinite(l.originY) &&
+      l.kind !== "" &&
+      l.color !== "" &&
+      l.line !== "",
+  );
+
+/** Champs écrits par SetGrid : la demande recopiée en bloc (clés inconnues perdues, comme le cœur, HG8). */
+const gridRecord = (g: GridInput): RawRecord => ({
+  visible: g.visible,
+  snap: g.snap,
+  above: g.above,
+  levels: g.levels.map((l) => ({ ...l })),
+});
+
+/** `snap_axis` du cœur : ligne la plus proche, bornée à la première `≥ 0` et, si `hi` est donné, à la dernière `≤ hi`. */
+function snapAxis(v: number, o: number, step: number, hi: number | null): number | null {
+  const first = Math.ceil(-o / step - GRID_EPS);
+  const last = hi === null ? Number.POSITIVE_INFINITY : Math.floor((hi - o) / step + GRID_EPS);
+  if (Number.isNaN(first) || Number.isNaN(last) || first > last) return null;
+  return o + Math.min(Math.max(roundHalfAway((v - o) / step), first), last) * step;
+}
+
+/** Accroche des seuls carreaux (DAG3), même règle que `grid::snap_point`. */
+function snapSquares(g: GridView, width: number, x: number, y: number): readonly [number, number] | null {
+  if (!g.snap) return null;
+  let best: readonly [number, number] | null = null;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const l of g.levels) {
+    if (!l.snap || l.kind !== "squares") continue;
+    const qx = snapAxis(x, l.originX, l.spacingX, width);
+    const qy = snapAxis(y, l.originY, l.spacingY, null);
+    if (qx === null || qy === null) continue;
+    const d = dist2(qx, qy, x, y);
+    if (best === null || d < bestD) {
+      best = [qx, qy];
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+/** `indices` du cœur : premier et dernier k ; [0, -1] si aucun ; null au-delà du plafond. */
+function gridIndices(o: number, step: number, lo: number, hi: number): readonly [number, number] | null {
+  const first = Math.ceil((lo - o) / step - GRID_EPS);
+  const last = Math.floor((hi - o) / step + GRID_EPS);
+  if (!Number.isFinite(first) || !Number.isFinite(last)) return null;
+  if (last < first) return [0, -1];
+  if (last - first + 1 > MAX_GRID_DOTS) return null;
+  return [first, last];
+}
+
+/** Lignes des seuls carreaux (DAG3), mêmes segments que `grid::lines`. */
+function squaresLines(g: GridView, width: number, r: Bounds, minStep: number): GridLines | null {
+  if (!g.visible) return null;
+  const levels: LevelLines[] = [];
+  const finite = [r.x0, r.y0, r.x1, r.y1, width].every((v) => Number.isFinite(v));
+  const c = { x0: Math.max(r.x0, 0), y0: Math.max(r.y0, 0), x1: Math.min(r.x1, width), y1: r.y1 };
+  if (finite && c.x0 <= c.x1 && c.y0 <= c.y1) {
+    for (const l of g.levels) {
+      if (!l.visible || l.kind !== "squares") continue;
+      const segments: number[] = [];
+      const ix = l.spacingX >= minStep ? gridIndices(l.originX, l.spacingX, c.x0, c.x1) : null;
+      if (ix) {
+        for (let k = ix[0]; k <= ix[1]; k++) {
+          const x = l.originX + k * l.spacingX;
+          segments.push(x, c.y0, x, c.y1);
+        }
+      }
+      const iy = l.spacingY >= minStep ? gridIndices(l.originY, l.spacingY, c.y0, c.y1) : null;
+      if (iy) {
+        for (let k = iy[0]; k <= iy[1]; k++) {
+          const y = l.originY + k * l.spacingY;
+          segments.push(c.x0, y, c.x1, y);
+        }
+      }
+      if (segments.length > 0) levels.push({ color: l.color, line: l.line, alpha: 1, segments, dots: [] });
+    }
+  }
+  return { above: g.above, levels };
+}

@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
+import type { AssetRef, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
 import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toPageView, type WasmModule } from "./wasm-core";
@@ -144,9 +144,9 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
   it("toPageView et toAssetInfo : null pour rien, erreur pour une forme fausse", () => {
     const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff" };
     expect(toPageView(undefined)).toBeNull();
-    expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null });
+    expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null, grid: null });
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: undefined, h: 5, fit: "contain", rect: undefined };
-    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, w: null, rect: null } });
+    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, w: null, rect: null }, grid: null });
     expect(() => toPageView({ ...page, width: "1920" })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, backdrop: { ...b, asset: 3 } })).toThrow("PageView invalide");
     const info = { id: "a".repeat(64), name: "n", mime: "image/png", size: 3 };
@@ -711,7 +711,7 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     const d = f.blank();
     const p = first(d);
     const before = d.page(p);
-    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null });
+    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null });
     const fond = { asset: png, w: 1000, h: 500, fit: "width" };
     expect(d.apply({ type: "SetBackdrop", page: p, backdrop: fond }).pages).toEqual([p]);
     const rect = { x0: 0, y0: 0, x1: 1920, y1: 960 };
@@ -908,5 +908,172 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
   it("capabilities expose la table du cœur", () => {
     expect(need().capabilities("windows")).toEqual({ desktopAnnotation: true, multiWindow: true });
     expect(need().capabilities("ipados")).toEqual({ desktopAnnotation: false, multiWindow: false });
+  });
+});
+
+// C9 (grille, U31) : bloc joué sur la fausse liaison (T2), puis sur les deux fabriques quand le module est branché (T6).
+const BAD_GRID = "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)";
+const gridLevel = (kind: string, s: number, color = "#000000"): GridLevel => ({
+  kind,
+  spacingX: s,
+  spacingY: s,
+  originX: 0,
+  originY: 0,
+  color,
+  line: "solid",
+  snap: true,
+  visible: true,
+});
+const gridOf = (levels: readonly GridLevel[], snap = true, above = false): GridInput => ({ visible: true, snap, above, levels });
+const setGrid = (d: CoreDocument, page: string, grid: GridInput | null) => d.apply({ type: "SetGrid", page, grid });
+const c9Factories = factories.filter(({ f }) => f === fakeCore);
+
+describe("contrôle de forme C9 (grille)", () => {
+  it("toPageView : grille contrôlée, undefined → null, forme fausse → erreur", () => {
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined };
+    const g = { visible: true, snap: false, above: true, levels: [gridLevel("hexagon", 40)] };
+    expect(toPageView({ ...page, grid: g })?.grid).toEqual(g);
+    expect(toPageView({ ...page, grid: undefined })?.grid).toBeNull();
+    expect(() => toPageView({ ...page, grid: { ...g, levels: "x" } })).toThrow("PageView invalide");
+    expect(() => toPageView({ ...page, grid: { ...g, levels: [{ ...gridLevel("squares", 40), snap: 1 }] } })).toThrow("PageView invalide");
+    expect(() => toPageView({ ...page, grid: { ...g, above: "oui" } })).toThrow("PageView invalide");
+  });
+});
+
+describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
+  it("SetGrid (S1) : une étape, page(p).grid égale à la demande ; annuler la retire, rétablir la remet", () => {
+    const d = f.blank();
+    const p = first(d);
+    expect(d.page(p)?.grid).toBeNull();
+    const g = gridOf([gridLevel("seyes", 30.24, "#7b68ee"), gridLevel("dots", 40)], true, true);
+    expect(setGrid(d, p, g).pages).toEqual([p]);
+    expect(d.canUndo()).toBe(true);
+    expect(d.page(p)?.grid).toEqual(g);
+    d.undo();
+    expect(d.page(p)?.grid).toBeNull();
+    d.redo();
+    expect(d.page(p)?.grid).toEqual(g);
+    d.free();
+  });
+
+  it("SetGrid (G5) : même grille ou rien à retirer, sans étape ; null retire", () => {
+    const d = f.blank();
+    const p = first(d);
+    unchanged(d, () => setGrid(d, p, null));
+    setGrid(d, p, gridOf([gridLevel("squares", 40)]));
+    unchanged(d, () => setGrid(d, p, gridOf([gridLevel("squares", 40)])));
+    setGrid(d, p, null);
+    expect(d.page(p)?.grid).toBeNull();
+    d.free();
+  });
+
+  it("SetGrid (S1) : A (deux niveaux) remplacée par B en une étape ; annuler rend A à l'identique, dans l'ordre", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = gridOf([gridLevel("squares", 40, "#111111"), gridLevel("dots", 20, "#222222")]);
+    const b = gridOf([gridLevel("music", 12, "#333333")], false, true);
+    setGrid(d, p, a);
+    setGrid(d, p, b);
+    expect(d.page(p)?.grid).toEqual(b);
+    d.undo();
+    expect(d.page(p)?.grid).toEqual(a);
+    d.free();
+  });
+
+  it("SetGrid (G2) : niveau invalide ou 17 niveaux refusés sans étape, message du cœur ; page inconnue", () => {
+    const d = f.blank();
+    const p = first(d);
+    const ok = gridLevel("squares", 40);
+    unchanged(d, () => {
+      for (const bad of [
+        { ...ok, spacingX: 0 },
+        { ...ok, spacingY: Number.NaN },
+        { ...ok, originX: Number.POSITIVE_INFINITY },
+        { ...ok, kind: "" },
+        { ...ok, color: "" },
+        { ...ok, line: "" },
+      ]) {
+        expect(messageOf(() => setGrid(d, p, gridOf([bad])))).toBe(BAD_GRID);
+      }
+      expect(messageOf(() => setGrid(d, p, gridOf(Array.from({ length: 17 }, () => ok))))).toBe(BAD_GRID);
+      expect(messageOf(() => setGrid(d, "nulle-part", null))).toBe("page inconnue : nulle-part");
+    });
+    d.free();
+  });
+
+  it("SetGrid (S2) : kind et trait inconnus écrits et gardés ; ni ligne ni accroche pour le kind inconnu", () => {
+    const d = f.blank();
+    const p = first(d);
+    const g = gridOf([{ ...gridLevel("hexagon", 40), line: "wavy" }]);
+    setGrid(d, p, g);
+    expect(d.page(p)?.grid).toEqual(g);
+    expect(d.snapPoint(p, 13, 17)).toBeNull();
+    expect(d.gridLines(p, { x0: 0, y0: 0, x1: 1920, y1: 1080 }, 4, 8)).toEqual({ above: false, levels: [] });
+    d.free();
+  });
+
+  it("snapPoint (S4) : croisement le plus proche, bornes de la page ; null sans grille, sans magnétisme ou page inconnue", () => {
+    const d = f.blank();
+    const p = first(d);
+    expect(d.snapPoint(p, 13, 17)).toBeNull();
+    setGrid(d, p, gridOf([gridLevel("squares", 40)]));
+    expect(d.snapPoint(p, 13, 17)).toEqual([0, 0]);
+    expect(d.snapPoint(p, 118, 97)).toEqual([120, 80]);
+    expect(d.snapPoint(p, 1950, 10)).toEqual([1920, 0]);
+    expect(d.snapPoint(p, -70, -90)).toEqual([0, 0]);
+    expect(d.snapPoint("nulle-part", 13, 17)).toBeNull();
+    setGrid(d, p, gridOf([gridLevel("squares", 40)], false));
+    expect(d.snapPoint(p, 13, 17)).toBeNull();
+    d.free();
+  });
+
+  it("snapDelta (S3) : coin ou centre de la boîte géométrique le plus proche ; brut sans grille ou sans élément", () => {
+    const d = f.blank();
+    const p = first(d);
+    const rect = (x0: number, y0: number, x1: number, y1: number, width: number): string =>
+      d.apply({ type: "AddShape", page: p, shape: "rect", x0, y0, x1, y1, style: { color: "#000000", width }, fill: null }).ids[0] ?? "";
+    const a = rect(13, 17, 113, 77, 4);
+    const b = rect(0, 0, 100, 60, 10);
+    expect(d.snapDelta(p, [a], 52, 31)).toEqual([52, 31]);
+    setGrid(d, p, gridOf([gridLevel("squares", 40, "#cccccc")]));
+    expect(d.snapDelta(p, [a], 52, 31)).toEqual([57, 33]);
+    expect(d.snapDelta(p, [b], 2, 3)).toEqual([0, 0]);
+    expect(d.snapDelta(p, [], 52, 31)).toEqual([52, 31]);
+    d.free();
+  });
+
+  it("gridLines (S5) : carreaux de 40 au loin sur la page, limités à la page ; famille sous le pas minimal sautée ; null invisible", () => {
+    const d = f.blank();
+    const p = first(d);
+    expect(d.gridLines(p, { x0: 0, y0: 0, x1: 100, y1: 100 }, 4, 8)).toBeNull();
+    setGrid(d, p, gridOf([gridLevel("squares", 40, "#cccccc")], false, true));
+    const r = { x0: -13.3, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
+    const l = d.gridLines(p, r, 4, 8);
+    expect(l?.above).toBe(true);
+    expect(l?.levels.length).toBe(1);
+    const segs = l?.levels[0]?.segments ?? [];
+    expect(segs.length).toBe((20 + 15) * 4);
+    expect(segs.slice(0, 4)).toEqual([0, 1_000_007, 0, 1_000_607]);
+    expect(segs.slice(19 * 4, 20 * 4)).toEqual([760, 1_000_007, 760, 1_000_607]);
+    expect(segs.slice(20 * 4, 21 * 4)).toEqual([0, 1_000_040, 786.7, 1_000_040]);
+    expect(d.gridLines(p, r, 41, 8)?.levels).toEqual([]);
+    setGrid(d, p, { ...gridOf([gridLevel("squares", 40)]), visible: false });
+    expect(d.gridLines(p, r, 4, 8)).toBeNull();
+    d.free();
+  });
+
+  it("save puis load (S1) : grille gardée, octets stables ; page neuve sans grille (G5)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const g = gridOf([gridLevel("seyes", 30.24, "#7b68ee"), gridLevel("dots", 40)], true, true);
+    setGrid(d, p, g);
+    const q = d.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    expect(d.page(q)?.grid).toBeNull();
+    const file = d.save(now, "0.1.0");
+    const e = f.load(file);
+    expect(e.page(p)?.grid).toEqual(g);
+    expect(e.save(now, "0.1.0")).toEqual(file);
+    e.free();
+    d.free();
   });
 });
