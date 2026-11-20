@@ -144,6 +144,26 @@ describe("contexte enregistreur (C12, DAPF4)", () => {
     expect(l.drawn[0]).toBeGreaterThanOrEqual(3); // ellipse remplie puis tracée, rectangle tracé (et le trait si la fausse liaison rend son contour)
   });
 
+  it("image rognée (C5) : rognage par clip puis drawImage à 5 arguments, jamais 9 (export vectoriel, C12)", () => {
+    const doc = fakeCore.blank();
+    const p = doc.pageIds()[0] ?? "";
+    const asset = { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 };
+    const id = doc.apply({ type: "AddImage", page: p, asset, w: 200, h: 150, matrix: [1, 0, 0, 1, 0, 0] }).ids[0] ?? "";
+    doc.apply({ type: "SetImageParams", id, params: { crop: [40, 30, 120, 90] }, matrix: [1, 0, 0, 1, 40, 30] });
+    const bmp = { width: 200, height: 150 } as unknown as CanvasImageSource;
+    const r = rec();
+    r.page(842, 473.625);
+    new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { images: { bitmap: () => bmp } })
+      .paintContent(ctx(r), { id: p, elementIds: doc.elementIds(p) }, { x0: 0, y0: 0, x1: 1920, y1: 1080 }, 1);
+    const l = r.encode();
+    const ops = Array.from(l.ops);
+    // ... OP.image, matrice (6), index, x, y, w, h, alpha, puis les restore (image, page)
+    expect(ops.slice(-8, -3)).toEqual([-40, -30, 200, 150, 1]);
+    expect(ops.slice(-16, -15)).toEqual([OP.image]);
+    expect(ops.join(",")).toContain(`,${OP.clip},`);
+    expect(ops.join(",")).toContain("1,120,0,1,120,90"); // le clip est le rectangle rogné 120 × 90
+  });
+
   it("méthode Canvas 2D non enregistrée : lève, jamais en silence", () => {
     const r = rec() as unknown as { arc(): void };
     expect(() => r.arc()).toThrow(TypeError);

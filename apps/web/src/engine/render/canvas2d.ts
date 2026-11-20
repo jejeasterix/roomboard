@@ -361,14 +361,16 @@ export class Canvas2DRenderer implements Renderer {
     } else if (isPlainGeometry(i)) {
       ctx.drawImage(bmp, 0, 0, i.w, i.h);
     } else {
+      // Rognage par clip puis drawImage à 5 arguments (le contexte enregistreur de l'export vectoriel, C12, n'en connaît
+      // pas d'autre) ; la taille de destination est celle de l'image entière, l'échelle d'une copie réduite est implicite.
       const [cx, cy, cw, ch] = cropOf(i);
-      const s = bmp as { readonly width?: unknown; readonly height?: unknown };
-      const kx = typeof s.width === "number" && s.width > 0 ? s.width / i.w : 1;
-      const ky = typeof s.height === "number" && s.height > 0 ? s.height / i.h : 1;
       const o = orientMatrix(i);
       ctx.save();
       ctx.transform(o[0], o[1], o[2], o[3], o[4], o[5]);
-      ctx.drawImage(bmp, cx * kx, cy * ky, cw * kx, ch * ky, 0, 0, cw, ch);
+      ctx.beginPath();
+      ctx.rect(0, 0, cw, ch);
+      ctx.clip();
+      ctx.drawImage(bmp, -cx, -cy, i.w, i.h);
       ctx.restore();
     }
     if (p !== null && preview && p.frame !== undefined) this.paintCropFrame(ctx, p.frame, bw, bh, p.matrix);
