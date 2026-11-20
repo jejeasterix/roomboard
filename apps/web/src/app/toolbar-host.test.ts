@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { ACTION_TABLE } from "../toolbar";
+import { ACTION_TABLE, type Profile } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { ACTIONS, createLocalToolbarHost, type HostTargets } from "./toolbar-host";
 
-function setup(over: { eraserMode?: "partial" | "object" } = {}) {
+function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profile = BUILTIN_PROFILES[0]!) {
   const engine = {
     setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
     fitPage: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
   const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn() } as unknown as HostTargets;
-  const host = createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!);
+  const host = createLocalToolbarHost(t, () => profile);
   return { engine, t, host };
 }
 
@@ -75,13 +75,39 @@ describe("ToolbarHost local", () => {
     expect(() => host.runAction("toString")).not.toThrow();
     expect(t.runFile).not.toHaveBeenCalled();
   });
-  it('setMode("desktop-annotation") → rien, avertissement', () => {
+  it("setMode desktop-annotation : aucun effet, message C11a", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { host, engine } = setup();
     host.setMode("desktop-annotation");
-    expect(warn).toHaveBeenCalled();
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(String(info.mock.calls[0]![0])).toContain("C11a");
+    expect(warn).not.toHaveBeenCalled();
     expect(engine.setTool).not.toHaveBeenCalled();
+    info.mockRestore();
     warn.mockRestore();
+  });
+  it('setMode("board") : rien, aucun message', () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { host, engine } = setup();
+    host.setMode("board");
+    expect(info).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(engine.setTool).not.toHaveBeenCalled();
+    info.mockRestore();
+    warn.mockRestore();
+  });
+  it("préréglage ajouté (S4) : setTool(pen, quatrième) → setPenStyle reçoit sa couleur et son épaisseur", () => {
+    const d = BUILTIN_PROFILES[0]!;
+    const five: Profile = {
+      ...d,
+      presets: { ...d.presets, pen: [...(d.presets.pen ?? []), { id: "couleur", label: "Couleur 4", color: "#16a34a", width: 6, rest: {} }, { id: "couleur-2", label: "Couleur 5", color: "#9333ea", width: 2, rest: {} }] },
+    };
+    const { host, engine } = setup({}, five);
+    host.setTool("pen", "couleur");
+    expect(engine.setPenStyle).toHaveBeenCalledWith({ color: "#16a34a", width: 6 });
+    expect(engine.setTool).toHaveBeenCalledWith("pen");
   });
   it("dropFiles → importFiles", () => {
     const { host, t } = setup();

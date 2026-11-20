@@ -78,3 +78,17 @@ puis la lancer une fois par le Finder.
 
 Le geste 5b-6 remplace l'« attendu connu » du geste 7b (lot 5a). Rapporter chaque geste : conforme / écart (une ligne).
 Captures : `coque-macos-lot5b-depot.png` (geste 5b-1), `coque-macos-lot5b-cmdq.png` (geste 5b-6).
+
+## 7. Profils (C1) — export, import, remise à zéro, annotation au démarrage
+Seulement si C1 est fusionné. Aucun build de plus que celui du § 2.
+
+| # | geste | attendu |
+|---|---|---|
+| C1-1 | Profil → Modifier… : barre d'outils « À gauche », taille « Grands » ; « Enregistrer comme nouveau » sous le nom `CM1` | la barre passe à gauche en grands boutons, **tous les boutons visibles, répartis en colonnes** (barre verticale multi-colonnes, jamais vue sous WebKit) ; le menu Profil montre « CM1 » coché |
+| C1-2 | Profil → Exporter… | boîte native « Enregistrer » filtrée sur « Profil RoomBoard » (`rbprofile`), nom proposé `cm1.rbprofile` ; le fichier est écrit à l'endroit choisi |
+| C1-3 | Profil → Tout remettre à zéro, confirmer | question native ; puis « Par défaut », barre en haut, « CM1 » absent du menu |
+| C1-4 | Profil → Importer… et choisir `cm1.rbprofile` | boîte native « Ouvrir » filtrée sur `rbprofile` ; « CM1 » revient, actif, barre à gauche en grand |
+| C1-5 | choisir « Annotation au démarrage », fermer RoomBoard (Cmd+Q), relancer | la coque démarre sur le tableau ordinaire, aucun message (la fenêtre d'annotation arrive avec C11a) |
+| C1-6 | choisir « Par défaut » ; Profil → Modifier… : taille « Petits », Enregistrer ; fermer RoomBoard (Cmd+Q), relancer ; puis Profil → Remettre à zéro ce profil | après la relance : « Par défaut » toujours actif, en petits boutons ; après la remise à zéro : boutons moyens, « Remettre à zéro ce profil » grisé |
+
+Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-macos-c1-export.png` (geste C1-2).

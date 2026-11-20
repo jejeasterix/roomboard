@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ButtonSize, RuntimeCapabilities, Toolbar as Bar, ToolItem } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ToolbarHost } from "../app/toolbar-host";
-import { Toolbar } from "./Toolbar";
+import { Toolbar, type PresetTable } from "./Toolbar";
 import type { ToolbarView } from "./item-state";
 
 afterEach(cleanup);
@@ -21,12 +21,14 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 });
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
-function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m") {
+function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
   const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
-  const r = render(() => <Toolbar bar={bar} caps={c} view={v} size={s} host={host} />);
+  const r = render(() => (
+    <Toolbar bar={bar} caps={c} view={v} size={s} host={host} presets={presets === undefined ? undefined : () => presets} />
+  ));
   return { ...r, host, setC, setV, setS };
 }
 
@@ -154,5 +156,57 @@ describe("Toolbar", () => {
     } finally {
       document.removeEventListener("drop", onDoc);
     }
+  });
+});
+
+const PEN: PresetTable = BUILTIN_PROFILES[0]!.presets;
+const FIVE: PresetTable = {
+  pen: [
+    ...(PEN.pen ?? []),
+    { id: "couleur", label: "Couleur 4", color: "#16a34a", width: 6, rest: {} },
+    { id: "couleur-2", label: "Couleur 5", color: "#9333ea", width: 2, rest: {} },
+  ],
+};
+const presetIds = (root: ParentNode): (string | null)[] =>
+  [...root.querySelectorAll("button[data-preset]")].map((b) => b.getAttribute("data-preset"));
+
+describe("Toolbar — rangée des préréglages (C1, P18, S4)", () => {
+  it("stylo actif : préréglages en fin de barre, après un séparateur, data-preset et jamais data-item", () => {
+    const plain = setup().container.querySelectorAll("button[data-item]").length;
+    cleanup();
+    const { container } = setup(outils, NO_CAPS, "m", PEN);
+    const bar = container.querySelector(".rb-bar")!;
+    expect(presetIds(bar)).toEqual(["noir", "rouge", "bleu"]);
+    expect(bar.querySelectorAll("button[data-item]").length).toBe(plain);
+    expect(bar.querySelector("button[data-preset][data-item]")).toBeNull();
+    const kids = [...bar.children];
+    expect(kids.indexOf(bar.querySelector("[data-presets-sep]")!)).toBe(kids.length - 4);
+    expect(bar.querySelector('[data-preset="rouge"]')!.hasAttribute("aria-pressed")).toBe(false);
+    expect(bar.querySelector('[data-preset="rouge"]')!.textContent).toContain("Rouge");
+  });
+
+  it("cinq préréglages : un clic sur le quatrième appelle host.setTool(pen, couleur)", () => {
+    const { container, host } = setup(outils, NO_CAPS, "m", FIVE);
+    expect(presetIds(container)).toEqual(["noir", "rouge", "bleu", "couleur", "couleur-2"]);
+    fireEvent.click(container.querySelector('button[data-preset="couleur"]')!);
+    expect(host.setTool).toHaveBeenCalledWith("pen", "couleur");
+  });
+
+  it("Main active : la rangée disparaît ; retour au stylo : elle revient", () => {
+    const { container, setV } = setup(outils, NO_CAPS, "m", PEN);
+    setV({ ...VIEW, tool: "hand" });
+    expect(presetIds(container)).toEqual([]);
+    expect(container.querySelector("[data-presets-sep]")).toBeNull();
+    setV({ ...VIEW, tool: "pen" });
+    expect(presetIds(container)).toHaveLength(3);
+  });
+
+  it("barre de rôle pages : aucune rangée", () => {
+    const pages: Bar = { ...mkBar([tool("pen")]), role: "pages" };
+    expect(presetIds(setup(pages, NO_CAPS, "m", PEN).container)).toEqual([]);
+  });
+
+  it("sans préréglages fournis : aucune rangée", () => {
+    expect(presetIds(setup().container)).toEqual([]);
   });
 });

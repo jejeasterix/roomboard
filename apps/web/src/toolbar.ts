@@ -11,7 +11,7 @@ export type ToolId = string;
 
 export const PROFILE_FORMAT = "roomboard-profile";
 export const PROFILE_SCHEMA = 1;
-export const PROFILE_MINOR = 0;
+export const PROFILE_MINOR = 1;
 
 export type Dock = "top" | "bottom" | "left" | "right" | "floating";
 export const DOCKS: readonly Dock[] = Object.freeze(["top", "bottom", "left", "right", "floating"]);
@@ -40,6 +40,8 @@ export interface ToolItem {
   readonly label: string;
   readonly icon?: string;
   readonly options?: Rest;
+  /** Masqué par l'utilisateur (D22 : masqué, pas supprimé) ; écrit seulement s'il est vrai (C1, P2). */
+  readonly hidden?: boolean;
   /** Capacités exigées ; une clé inconnue (profil plus récent) est gardée et rend l'élément invisible. */
   readonly requires: readonly CapabilityKey[];
   readonly rest: Rest;
@@ -66,6 +68,8 @@ export interface Profile {
   readonly minor: number;
   readonly id: string;
   readonly label: string;
+  /** Profil livré dont celui-ci dérive, écrit par « Enregistrer comme nouveau » (C1, P3). */
+  readonly basedOn?: string;
   readonly interface: { readonly buttonSize: ButtonSize; readonly rest: Rest };
   readonly toolbars: readonly Toolbar[];
   readonly presets: Readonly<Record<ToolId, readonly Preset[]>>;
@@ -117,6 +121,27 @@ export function isKnownAction(id: string): boolean {
   return Object.hasOwn(ACTION_TABLE, id);
 }
 
+/** Action qui ouvre le menu Profil : jamais masquable, toujours présente dans une barre `tools` (C1, P33). */
+export const PROFILES_ACTION: ActionId = "profiles";
+
+export function isProfilesAccess(it: ToolItem): boolean {
+  return it.kind === "action" && it.action === PROFILES_ACTION;
+}
+
+/** Préréglages de l'outil `tool` dans la table d'un profil (vide si l'outil n'en a pas). */
+export function presetsOf(table: Profile["presets"], tool: ToolId): readonly Preset[] {
+  return Object.hasOwn(table, tool) ? (table[tool] ?? []) : [];
+}
+
+/** `base` s'il est libre, sinon `<base>-<n>` avec le premier n ≥ 2 libre (C1 : P15, P28, P33). */
+export function uniqueId(base: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const id = `${base}-${n}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
 // --- Analyse ----------------------------------------------------------------------------------------------------
 
 type Raw = Readonly<Record<string, unknown>>;
@@ -128,7 +153,7 @@ interface Ctx {
   readonly seen: Set<string>;
 }
 
-const PROFILE_KEYS = ["format", "schema", "minor", "id", "label", "interface", "toolbars", "presets", "behavior"];
+const PROFILE_KEYS = ["format", "schema", "minor", "id", "label", "basedOn", "interface", "toolbars", "presets", "behavior"];
 const INTERFACE_KEYS = ["buttonSize"];
 const BEHAVIOR_KEYS = ["startMode"];
 /** Noms de cases fixes de la grille (`ui/layout.ts`, `layoutFor`) : un identifiant de barre ne peut pas les prendre. */
@@ -136,7 +161,7 @@ export const RESERVED_BAR_IDS: readonly string[] = Object.freeze(["tabs", "stage
 
 const BAR_KEYS = ["id", "role", "dock", "collapsed", "groups"];
 const GROUP_KEYS = ["id", "items"];
-const ITEM_KEYS = ["id", "kind", "tool", "action", "label", "icon", "options", "requires"];
+const ITEM_KEYS = ["id", "kind", "tool", "action", "label", "icon", "options", "requires", "hidden"];
 const PRESET_KEYS = ["id", "label", "color", "width", "size"];
 
 const isObject = (v: unknown): v is Raw => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -244,6 +269,7 @@ function parseItem(raw: unknown, path: string, ctx: Ctx): ToolItem | null {
     if (isObject(raw.options)) options = raw.options;
     else ctx.errors.push(`${path}.options : objet attendu`);
   }
+  if (raw.hidden !== undefined && typeof raw.hidden !== "boolean") ctx.errors.push(`${path}.hidden : booléen attendu`);
   return {
     id,
     kind,
@@ -252,6 +278,7 @@ function parseItem(raw: unknown, path: string, ctx: Ctx): ToolItem | null {
     label,
     ...(icon !== undefined ? { icon } : {}),
     ...(options !== undefined ? { options } : {}),
+    ...(raw.hidden === true ? { hidden: true } : {}),
     requires: parseRequires(raw, id || path, path, ctx),
     rest: restOf(raw, ITEM_KEYS),
   };
@@ -362,6 +389,50 @@ function parseBehavior(raw: unknown, ctx: Ctx): Profile["behavior"] {
 
 const isVersion = (v: unknown, min: number): v is number => Number.isInteger(v) && (v as number) >= min;
 
+/** Ajoute `item` en fin du dernier groupe de `bar` (groupe `groupId` créé si la barre n'en a aucun). */
+export function appendToLastGroup(bar: Toolbar, item: ToolItem, groupId: string): Toolbar {
+  if (bar.groups.length === 0) return { ...bar, groups: [{ id: groupId, items: [item], rest: {} }] };
+  const last = bar.groups.length - 1;
+  return { ...bar, groups: bar.groups.map((g, i) => (i === last ? { ...g, items: [...g.items, item] } : g)) };
+}
+
+/**
+ * Jamais enfermé hors du menu Profil (C1, P33) : dans les barres `tools`, un élément Profil masqué est montré
+ * (avertissement) ; sans élément Profil sans capacité exigée, un élément est ajouté en fin de la première barre `tools`,
+ * ou dans une barre `outils` ajoutée en haut s'il n'y en a aucune.
+ */
+function ensureProfilesAccess(bars: readonly Toolbar[], ctx: Ctx): readonly Toolbar[] {
+  let reachable = false;
+  const shown = bars.map((b): Toolbar => {
+    if (b.role !== "tools") return b;
+    return {
+      ...b,
+      groups: b.groups.map((g) => ({
+        ...g,
+        items: g.items.map((it) => {
+          if (!isProfilesAccess(it)) return it;
+          if (it.requires.length === 0) reachable = true;
+          if (it.hidden !== true) return it;
+          ctx.warnings.push(`${it.id} : l'accès au menu Profil ne se masque pas, élément montré`);
+          const { hidden: _shown, ...kept } = it;
+          return kept;
+        }),
+      })),
+    };
+  });
+  if (reachable) return shown;
+  ctx.warnings.push("accès au menu Profil ajouté");
+  const id = uniqueId(PROFILES_ACTION, ctx.seen);
+  ctx.seen.add(id);
+  const item: ToolItem = { id, kind: "action", action: PROFILES_ACTION, label: ACTION_TABLE[PROFILES_ACTION]!.label, requires: [], rest: {} };
+  const first = shown.findIndex((b) => b.role === "tools");
+  if (first === -1) {
+    const barId = uniqueId("outils", new Set(shown.map((b) => b.id)));
+    return [...shown, { id: barId, role: "tools", dock: "top", collapsed: false, groups: [{ id: "profil", items: [item], rest: {} }], rest: {} }];
+  }
+  return shown.map((b, i) => (i === first ? appendToLastGroup(b, item, "profil") : b));
+}
+
 /** Analyse un profil JSON (règles du plan du lot 5b, T83) ; toutes les erreurs sont rassemblées, sauf format et version. */
 export function parseProfile(json: unknown): ParsedProfile {
   if (!isObject(json)) return { errors: ["profil : objet JSON attendu"] };
@@ -387,10 +458,15 @@ export function parseProfile(json: unknown): ParsedProfile {
   }
   const id = nonEmptyField(json, "id", "profil", ctx);
   const label = nonEmptyField(json, "label", "profil", ctx);
+  const basedOn = json.basedOn;
+  if (basedOn !== undefined && !isNonEmpty(basedOn)) ctx.errors.push("profil.basedOn : chaîne non vide attendue");
   const iface = parseInterface(json.interface, ctx);
-  const toolbars = list(json, "toolbars", "profil", ctx)
-    .map((b, i) => parseBar(b, `toolbars[${i}]`, ctx))
-    .filter((b): b is Toolbar => b !== null);
+  const toolbars = ensureProfilesAccess(
+    list(json, "toolbars", "profil", ctx)
+      .map((b, i) => parseBar(b, `toolbars[${i}]`, ctx))
+      .filter((b): b is Toolbar => b !== null),
+    ctx,
+  );
   const presets = parsePresets(json.presets, ctx);
   const behavior = parseBehavior(json.behavior, ctx);
   if (ctx.errors.length > 0) return { errors: ctx.errors };
@@ -400,6 +476,7 @@ export function parseProfile(json: unknown): ParsedProfile {
       minor,
       id,
       label,
+      ...(isNonEmpty(basedOn) ? { basedOn } : {}),
       interface: iface,
       toolbars,
       presets,
@@ -422,6 +499,7 @@ function serializeItem(it: ToolItem): Record<string, unknown> {
     label: it.label,
     ...(it.icon !== undefined ? { icon: it.icon } : {}),
     ...(it.options !== undefined ? { options: it.options } : {}),
+    ...(it.hidden === true ? { hidden: true } : {}),
     ...(it.requires.length > 0 ? { requires: [...it.requires] } : {}),
   };
 }
@@ -446,6 +524,7 @@ export function serializeProfile(p: Profile): Record<string, unknown> {
     ...(p.minor > 0 ? { minor: p.minor } : {}),
     id: p.id,
     label: p.label,
+    ...(p.basedOn !== undefined ? { basedOn: p.basedOn } : {}),
     interface: { ...p.interface.rest, buttonSize: p.interface.buttonSize },
     toolbars: p.toolbars.map((b) => ({
       ...b.rest,
@@ -477,6 +556,7 @@ const KNOWN_BY_KIND: Readonly<Record<ItemKind, (it: ToolItem) => boolean>> = {
 export function visibleItems(bar: Toolbar, caps: RuntimeCapabilities): ToolItem[] {
   const out: ToolItem[] = [];
   for (const it of bar.groups.flatMap((g) => g.items)) {
+    if (it.hidden === true) continue;
     if (!KNOWN_BY_KIND[it.kind](it)) continue;
     if (!it.requires.every((key) => caps[key] === true)) continue;
     if (it.kind === "separator" && (out.length === 0 || out[out.length - 1]!.kind === "separator")) continue;
@@ -487,15 +567,26 @@ export function visibleItems(bar: Toolbar, caps: RuntimeCapabilities): ToolItem[
 }
 
 /**
- * Mode de démarrage honoré : `board` seul au lot 5b (usage § 8 point 11) ; `fellBack` vrai quand le profil demande
- * autre chose. Les capacités décideront de `desktop-annotation` quand ce mode sera livré (U14).
+ * Mode de démarrage honoré (U14, C1 P10) : `desktop-annotation` si le profil le demande et que le poste en a la
+ * capacité, sinon `board` ; `fellBack` vrai quand le profil demandait autre chose que le mode rendu.
  */
 export function resolveStartMode(
   p: Profile,
   caps: RuntimeCapabilities,
-): { readonly mode: "board"; readonly fellBack: boolean } {
-  void caps;
-  return { mode: "board", fellBack: p.behavior.startMode !== "board" };
+): { readonly mode: StartMode; readonly fellBack: boolean } {
+  const wanted = p.behavior.startMode;
+  const mode: StartMode = wanted === "desktop-annotation" && caps.desktopAnnotation ? "desktop-annotation" : "board";
+  return { mode, fellBack: mode !== wanted };
+}
+
+/** Élément que cette version sait afficher : outil ou action connus, capacités exigées toutes connues (C1, P16). */
+export function isKnownItem(it: ToolItem): boolean {
+  return KNOWN_BY_KIND[it.kind](it) && it.requires.every((k) => includes(CAPABILITY_KEYS, k));
+}
+
+/** Profil écrit par l'éditeur ou l'import : mineure relevée à `PROFILE_MINOR`, jamais baissée (C1, P4). */
+export function withCurrentMinor(p: Profile): Profile {
+  return p.minor >= PROFILE_MINOR ? p : { ...p, minor: PROFILE_MINOR };
 }
 
 /** Remise à zéro des options d'un élément ; les préréglages ne bougent pas. */

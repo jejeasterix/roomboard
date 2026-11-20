@@ -59,4 +59,33 @@ describe("profil actif (T89)", () => {
       dispose();
     });
   });
+
+  it("annotation : desktop-annotation avec la capacité, board sans (S5)", () => {
+    const p = profileWithDrop();
+    expect(resolveStartMode(p, { ...NO_CAPS, desktopAnnotation: true })).toEqual({ mode: "desktop-annotation", fellBack: false });
+    expect(resolveStartMode(p, NO_CAPS)).toEqual({ mode: "board", fellBack: true });
+  });
+
+  it("refresh : liste en signal, profil actif relu après un changement du magasin", () => {
+    const store = createProfileStore(null, BUILTIN_PROFILES);
+    createRoot((dispose) => {
+      const a = createActiveProfile(store, NO_CAPS);
+      const counts: number[] = [];
+      createComputed(() => counts.push(a.profiles().length));
+      const perso = { ...BUILTIN_PROFILES[0]!, id: "perso", label: "Perso" };
+      store.save(perso);
+      expect(a.profiles()).toHaveLength(BUILTIN_PROFILES.length);
+      a.refresh();
+      expect(a.profiles().map((p) => p.id)).toContain("perso");
+      expect(counts.slice(0, 2)).toEqual([BUILTIN_PROFILES.length, BUILTIN_PROFILES.length + 1]);
+      a.choose("perso");
+      store.save({ ...perso, label: "Perso 2" });
+      a.refresh();
+      expect(a.profile().label).toBe("Perso 2");
+      store.remove("perso");
+      a.refresh();
+      expect(a.profile().id).toBe("defaut");
+      dispose();
+    });
+  });
 });

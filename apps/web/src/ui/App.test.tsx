@@ -11,7 +11,8 @@ import type { EngineState } from "../engine/engine";
 import { createSettingsStore, parseSettings } from "../engine/settings";
 import type { FileController } from "../platform/controller";
 import type { ShellPort } from "../platform/files";
-import { createProfileStore } from "../profile-store";
+import type { ProfileFiles } from "../platform/profile-files";
+import { createProfileStore, type KeyValue } from "../profile-store";
 import type { RuntimeCapabilities } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { createActiveProfile } from "./active-profile";
@@ -131,12 +132,20 @@ function fakeWorkspace(first: FakeTab): Workspace {
 const shell = { confirm: vi.fn(async () => true), notify: vi.fn(async () => undefined) } as unknown as ShellPort;
 let disposers: (() => void)[] = [];
 
-function renderApp(opts: { tab?: FakeTab; profile?: string } = {}) {
+function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
+  return {
+    pick: vi.fn(async () => picks.shift() ?? null),
+    save: vi.fn(async (_name: string, _text: string) => true),
+  } satisfies ProfileFiles;
+}
+
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
-  const store = createProfileStore(null, BUILTIN_PROFILES);
+  const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
   if (opts.profile) store.setActive(opts.profile);
-  const active = createActiveProfile(store, CAPS);
+  const active = createActiveProfile(store, opts.caps ?? CAPS);
+  const files = opts.files ?? fakeFiles();
   const settings = createSettingsStore(parseSettings("").settings);
   const navigate = vi.fn();
   const style = document.createElement("style");
@@ -155,6 +164,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string } = {}) {
         settings={settings}
         notes={["note de démarrage"]}
         shell={shell}
+        profileFiles={files}
         stages={stages}
         navigate={navigate}
       />
@@ -166,7 +176,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string } = {}) {
     container.remove();
     style.remove();
   });
-  return { container, workspace, tab, store, active, settings, navigate };
+  return { container, workspace, tab, store, active, settings, navigate, files };
 }
 
 const click = (el: Element | null): void => {
@@ -362,5 +372,170 @@ describe("App (T95)", () => {
     showStartError(document, "encore");
     expect(document.querySelectorAll("#etat")).toHaveLength(1);
     expect(document.getElementById("etat")!.textContent).toBe("RoomBoard n'a pas pu démarrer : encore");
+  });
+});
+
+describe("App — profils (C1)", () => {
+  const openMenu = (c: HTMLElement): void => click(c.querySelector('button[data-item="profiles"]'));
+  const openEditor = (c: HTMLElement): void => {
+    openMenu(c);
+    click(c.querySelector('[data-profile-cmd="edit"]'));
+  };
+  const change = (el: Element | null, value: string): void => {
+    expect(el).not.toBeNull();
+    (el as HTMLSelectElement).value = value;
+    el!.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const DOCK = '[data-edit-bar="outils"] select[data-edit="dock"]';
+
+  it("S5 : profil annotation au navigateur : tableau ordinaire, aucun message (console ni #etat)", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { container } = renderApp({ profile: "annotation" });
+    expect(info).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(container.querySelector("#etat")?.textContent).toBe("");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
+  it("S5 : capacité vraie : setMode(desktop-annotation) une fois au montage, pas au changement de profil", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { container, tab } = renderApp({ profile: "annotation", caps: { ...CAPS, desktopAnnotation: true } });
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(String(info.mock.calls[0]![0])).toContain("C11a");
+    openMenu(container);
+    click(container.querySelector('[data-profile="defaut"]'));
+    openMenu(container);
+    click(container.querySelector('[data-profile="annotation"]'));
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(tab.engine["setTool"]).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+
+  it("menu Profil : commandes sous les profils ; livré sans copie : remise grisée, pas de Supprimer ; Modifier… ouvre l'éditeur", () => {
+    const { container } = renderApp();
+    openMenu(container);
+    expect(container.querySelectorAll("[data-profile]")).toHaveLength(3);
+    expect([...container.querySelectorAll("[data-profile-cmd]")].map((b) => b.getAttribute("data-profile-cmd"))).toEqual(["edit", "import", "export", "reset", "reset-all"]);
+    expect(container.querySelector<HTMLButtonElement>('[data-profile-cmd="reset"]')!.disabled).toBe(true);
+    click(container.querySelector('[data-profile-cmd="edit"]'));
+    expect(container.querySelector("[data-profile-editor]")).not.toBeNull();
+    expect(container.querySelector("[data-profiles]")).toBeNull();
+  });
+
+  it("éditeur : la barre ne bouge pas avant Enregistrer ; Enregistrer applique (barre à gauche, grands boutons)", () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    change(container.querySelector(DOCK), "left");
+    change(container.querySelector('select[data-edit="button-size"]'), "l");
+    const bar = () => container.querySelector<HTMLElement>('[data-toolbar="outils"]')!;
+    expect(bar().dataset["dock"]).toBe("top");
+    click(container.querySelector('button[data-edit="save"]'));
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(bar().dataset["dock"]).toBe("left");
+    expect(bar().dataset["size"]).toBe("l");
+    expect(store.hasOverride("defaut")).toBe(true);
+    expect(container.querySelector<HTMLElement>(".rb-layout")!.style.gridTemplateColumns).toBe("auto minmax(0, 1fr)");
+  });
+
+  it("Enregistrer, écriture refusée : l'éditeur reste ouvert, un message est notifié", () => {
+    const map = new Map<string, string>();
+    let refuse = false;
+    const kv: KeyValue = {
+      getItem: (k) => map.get(k) ?? null,
+      setItem: (k, v) => {
+        if (refuse) throw new Error("QuotaExceededError");
+        map.set(k, v);
+      },
+      removeItem: (k) => void map.delete(k),
+    };
+    const { container } = renderApp({ kv });
+    openEditor(container);
+    change(container.querySelector(DOCK), "left");
+    vi.mocked(shell.notify).mockClear();
+    refuse = true;
+    click(container.querySelector('button[data-edit="save"]'));
+    expect(container.querySelector("[data-profile-editor]")).not.toBeNull();
+    expect(String(vi.mocked(shell.notify).mock.calls[0]?.[0])).toMatch(/^Profil non enregistré : .*QuotaExceededError/);
+  });
+
+  it("Enregistrer comme nouveau : cm1 actif, dans le menu", () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    change(container.querySelector(DOCK), "left");
+    const name = container.querySelector<HTMLInputElement>('input[data-edit="new-name"]')!;
+    name.value = "CM1";
+    name.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    click(container.querySelector('button[data-edit="save-new"]'));
+    expect(store.activeId()).toBe("cm1");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("left");
+    openMenu(container);
+    expect(container.querySelector('[data-profile="cm1"]')?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("changer de panneau abandonne le brouillon", () => {
+    const { container } = renderApp();
+    openEditor(container);
+    change(container.querySelector(DOCK), "left");
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    click(container.querySelector('button[data-item="settings"]'));
+    openEditor(container);
+    expect(container.querySelector<HTMLSelectElement>(DOCK)!.value).toBe("top");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+  });
+
+  it("rangée des préréglages : clic sur Rouge → setPenStyle puis setTool(pen) de l'onglet actif", () => {
+    const { container, tab } = renderApp();
+    const presets = [...container.querySelectorAll('[data-toolbar="outils"] button[data-preset]')].map((b) => b.getAttribute("data-preset"));
+    expect(presets).toEqual(["noir", "rouge", "bleu"]);
+    expect(container.querySelector('[data-toolbar="pages"] button[data-preset]')).toBeNull();
+    click(container.querySelector('button[data-preset="rouge"]'));
+    expect(tab.engine["setPenStyle"]).toHaveBeenCalledWith({ color: "#dc2626", width: 4 });
+    expect(tab.engine["setTool"]).toHaveBeenCalledWith("pen");
+  });
+
+  it("préréglages : une seule rangée, dans la première barre de rôle tools (T11)", async () => {
+    const bar = (id: string) => ({ id, role: "tools", dock: "top", groups: [{ id: "g", items: [{ id: `pen-${id}`, kind: "tool", tool: "pen", label: "Stylo" }, { id: `profiles-${id}`, kind: "action", action: "profiles", label: "Profil" }] }] });
+    const text = JSON.stringify({
+      format: "roomboard-profile", schema: 1, id: "deux", label: "Deux",
+      toolbars: [bar("a"), bar("b")],
+      presets: { pen: [{ id: "noir", label: "Noir", color: "#000000", width: 2 }] },
+    });
+    const files = fakeFiles([{ name: "deux.rbprofile", text }]);
+    const { container } = renderApp({ files });
+    openMenu(container);
+    click(container.querySelector('[data-profile-cmd="import"]'));
+    await vi.waitFor(() => expect(container.querySelector('[data-toolbar="b"]')).not.toBeNull());
+    expect(container.querySelectorAll('[data-toolbar="a"] button[data-preset]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-toolbar="b"] button[data-preset]')).toHaveLength(0);
+  });
+
+  it("Importer… : le profil choisi devient actif", async () => {
+    const text = JSON.stringify({
+      format: "roomboard-profile", schema: 1, id: "importe", label: "Importé", interface: { buttonSize: "l" },
+      toolbars: [{ id: "outils", role: "tools", dock: "left", groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] }],
+    });
+    const files = fakeFiles([{ name: "importe.rbprofile", text }]);
+    const { container, store } = renderApp({ files });
+    openMenu(container);
+    click(container.querySelector('[data-profile-cmd="import"]'));
+    expect(files.pick).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("left"));
+    expect(store.activeId()).toBe("importe");
+    expect(container.querySelector("[data-profiles]")).toBeNull();
+  });
+
+  it("Exporter… : ProfileFiles.save(par-defaut.rbprofile, JSON du profil)", async () => {
+    const files = fakeFiles();
+    const { container } = renderApp({ files });
+    openMenu(container);
+    click(container.querySelector('[data-profile-cmd="export"]'));
+    await vi.waitFor(() => expect(files.save).toHaveBeenCalledTimes(1));
+    const [name, text] = files.save.mock.calls[0]!;
+    expect(name).toBe("par-defaut.rbprofile");
+    expect(JSON.parse(text).id).toBe("defaut");
   });
 });

@@ -52,7 +52,9 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     },
     dropFiles: (files, at) => t.importFiles(files, at),
     setMode(mode) {
-      console.warn(`mode de démarrage non livré au lot 5b : ${mode}`);
+      // Tableau : déjà affiché, rien à faire ni à dire. Annotation du bureau : point d'accroche de C11a, sans effet ici.
+      if (mode === "board") return;
+      console.info(`mode de démarrage ${mode} : la fenêtre d'annotation arrive avec C11a, le tableau reste affiché`);
     },
   };
 }

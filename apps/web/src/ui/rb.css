@@ -45,3 +45,26 @@
 .rb-tab-close, .rb-tab-new { min-height: var(--rb-tab-h); min-width: var(--rb-tab-h); padding: 0; }
 .rb-tab-close { min-height: 0; border: none; background: transparent; cursor: pointer; }
 .rb-tab-new { align-self: center; flex: 0 0 auto; }
+
+/* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
+.rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
+.rb-swatch { display: inline-block; inline-size: calc(var(--rb-btn) / 3); block-size: calc(var(--rb-btn) / 3); border-radius: 50%; border: 1px solid #52525b; }
+
+/* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
+[data-profiles] { display: grid; gap: 4px; padding: 4px; }
+[data-profiles] button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); text-align: start; }
+.rb-menu-sep { border-block-start: 1px solid #a1a1aa; margin: 4px 0; }
+.rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
+.rb-editor section { display: grid; gap: var(--rb-gap); }
+.rb-editor h3 { margin: 0; font-size: 1rem; }
+.rb-editor fieldset { display: grid; gap: var(--rb-gap); border: 1px solid #d4d4d8; }
+.rb-editor ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rb-editor li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }
+.rb-editor li[data-unknown] { color: #71717a; font-style: italic; }
+.rb-editor button, .rb-editor select, .rb-editor input:not([type="checkbox"]) { min-height: var(--rb-btn-m); }
+.rb-editor input[type="checkbox"] { inline-size: calc(var(--rb-btn-m) / 2); block-size: calc(var(--rb-btn-m) / 2); }
+.rb-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }
+/* Barre verticale (left/right) : prend la hauteur de sa case et passe en plusieurs colonnes quand elle en manque ;
+   chaque colonne a la largeur de son bouton le plus large (align-items: stretch). */
+.rb-slot > .rb-bar[data-dock="left"], .rb-slot > .rb-bar[data-dock="right"] { height: 100%; box-sizing: border-box; align-items: stretch; align-content: flex-start; }
+.rb-bar[data-dock="left"] .rb-sep, .rb-bar[data-dock="right"] .rb-sep { align-self: auto; border-inline-start: 0; border-block-start: 1px solid #94a3b8; margin: 4px 0; }
