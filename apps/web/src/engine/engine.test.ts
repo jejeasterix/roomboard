@@ -8,7 +8,7 @@ import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
-import type { GridPreview, LiveLayer, PageView, Renderer } from "./render/renderer";
+import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
@@ -67,6 +67,10 @@ class FakeRenderer implements Renderer {
   readonly previews: (GridPreview | null)[] = [];
   setGridPreview(p: GridPreview | null): void {
     this.previews.push(p);
+  }
+  readonly imagePreviews: (ImagePreview | null)[] = [];
+  setImagePreview(p: ImagePreview | null): void {
+    this.imagePreviews.push(p);
   }
 }
 
