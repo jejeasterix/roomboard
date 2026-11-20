@@ -3691,6 +3691,34 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn group_extension_on_a_wide_page_keeps_behavior() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = rect_at(&mut d, &p, 200.0);
+        let fillers: Vec<String> = (0..3000).map(|i| rect_at(&mut d, &p, 300.0 + i as f64)).collect();
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("g1");
+        let start = std::time::Instant::now();
+        let ch = d
+            .apply(Command::Group {
+                ids: vec![a.clone(), c.clone()],
+            })
+            .expect("g2");
+        eprintln!("Group sur 3003 éléments : {:?}", start.elapsed());
+        let mut got = ch.ids.clone();
+        got.sort();
+        let mut want = vec![a.clone(), b.clone(), c.clone()];
+        want.sort();
+        assert_eq!(got, want);
+        assert_eq!(group_of(&d, &b).map(|g| g.len()), Some(2));
+        assert_eq!(group_of(&d, &fillers[0]), None);
+    }
+
+    #[test]
     fn group_of_group_and_element_nests_paths() {
         let mut d = Document::blank();
         let p = first(&d);

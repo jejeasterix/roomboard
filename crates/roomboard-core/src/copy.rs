@@ -295,7 +295,7 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
-    use yrs::{Any, Array, Map, Out};
+    use yrs::{Any, Array, Map, Out, ReadTxn};
 
     use crate::asset::AssetRef;
     use crate::commands::{Command, CommandError};
@@ -382,6 +382,12 @@ mod tests {
                     .collect(),
             ),
             _ => None,
+        }
+    }
+    impl Document {
+        fn assets_has(&self, id: &str) -> bool {
+            let txn = self.read();
+            txn.get_map("assets").is_some_and(|a| a.get(&txn, id).is_some())
         }
     }
     fn ids_of(d: &Document) -> Vec<String> {
@@ -504,6 +510,70 @@ mod tests {
     }
 
     #[test]
+    fn insert_fragment_copies_only_assets_cited_by_the_first_page() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let i1 = image(&mut d, &p, A1, "a.png");
+        d.apply(Command::AddPage { after: None }).expect("page");
+        let p2 = d.page_ids()[1].clone();
+        image(&mut d, &p2, A2, "b.png");
+        let _ = i1;
+        let mut target = Document::blank();
+        let tp = first(&target);
+        target.insert_fragment(&d, &tp, 0.0, 0.0).expect("insert");
+        assert!(target.assets_has(A1));
+        assert!(!target.assets_has(A2), "asset d'une autre page recopié");
+    }
+
+    #[test]
+    fn table_with_merge_and_fill_is_copied() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let tb = d
+            .apply(Command::AddTable {
+                page: p.clone(),
+                x: 0.0,
+                y: 0.0,
+                cols: 3,
+                rows: 3,
+                col_width: 100.0,
+                row_height: 40.0,
+                color: "#000000".into(),
+                size: 24.0,
+            })
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let v = d.element(&tb).unwrap().table.unwrap();
+        let (r0, r1) = (v.rows[0].id.clone(), v.rows[1].id.clone());
+        let (c0, c1) = (v.cols[0].id.clone(), v.cols[1].id.clone());
+        d.apply(Command::MergeTableCells {
+            id: tb.clone(),
+            from: (r0.clone(), c0.clone()),
+            to: (r1, c1),
+        })
+        .expect("fusion");
+        d.apply(Command::SetTableFill {
+            id: tb.clone(),
+            row: r0,
+            col: c0,
+            to: None,
+            fill: Some("#ff0000".into()),
+        })
+        .expect("remplissage");
+        let before = d.element(&tb).unwrap().table.unwrap();
+        assert_eq!(before.merges.len(), 1);
+        let f = d.extract(&p, &[tb.clone()]).expect("extract");
+        let got = ids_of(&f);
+        assert_eq!(f.element(&got[0]).unwrap().table, Some(before.clone()));
+        let mut t = Document::blank();
+        let tp = first(&t);
+        t.insert_fragment(&f, &tp, 5.0, 5.0).expect("insert");
+        let ids = ids_of(&t);
+        assert_eq!(t.element(&ids[0]).unwrap().table, Some(before));
+    }
+
+    #[test]
     fn extract_copies_cited_asset_meta_only() {
         let mut d = Document::blank();
         let p = first(&d);
@@ -512,6 +582,7 @@ mod tests {
         let f = d.extract(&p, &[i1]).expect("extract");
         let cited = f.cited_assets();
         assert_eq!(cited.len(), 1);
+        assert!(f.assets_has(A1) && !f.assets_has(A2), "asset non cité recopié");
         assert_eq!(
             (
                 cited[0].id.as_str(),
