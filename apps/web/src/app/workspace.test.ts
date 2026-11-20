@@ -1122,6 +1122,20 @@ describe("espace de travail : PDF (C12)", () => {
     expect(await first).toBe(true);
   });
 
+  it("export : saveParts qui lève ne laisse pas le verrou pris ; le second export n'est pas bloqué", async () => {
+    const ws = await setupWorkspace({ pdfFiles: files(), loadPdfLib, overlay: () => producer() });
+    drawOn(ws.active());
+    const doc = ws.active().board.doc;
+    const save = vi.spyOn(doc, "saveParts").mockImplementationOnce(() => {
+      throw new Error("refus du cœur");
+    });
+    expect(await ws.exportPdf()).toBe(false);
+    save.mockRestore();
+    shell.notify.mockClear?.();
+    expect(await ws.exportPdf()).toBe(true);
+    expect(shell.notify).not.toHaveBeenCalledWith("Opération en cours");
+  });
+
   it("export : contenu sous la page PDF : avis « du contenu hors des pages PDF n'est pas exporté » (Review Focus 4)", async () => {
     const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer() });
     await ws.openPdf({ name: "Cours.pdf", blob: new Blob([await realPdf(1)]) });

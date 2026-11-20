@@ -86,6 +86,13 @@ async function xobjects(bytes: Uint8Array): Promise<string[][]> {
     return xo === undefined ? [] : xo.keys().map((k) => String(xo.lookup(k, PDFStream).dict.get(PDFName.of("Subtype"))));
   });
 }
+/** Nombre d'objets police du PDF (un par ressource partagée si les pages sont recopiées d'un seul bloc). */
+async function fontObjects(bytes: Uint8Array): Promise<number> {
+  const d = await PDFDocument.load(bytes);
+  let n = 0;
+  for (const [, o] of d.context.enumerateIndirectObjects()) if (o instanceof PDFDict && o.get(PDFName.of("Type")) === PDFName.of("Font")) n++;
+  return n;
+}
 async function sizes(bytes: Uint8Array): Promise<number[][]> {
   return (await PDFDocument.load(bytes)).getPages().map((p) => [p.getWidth(), p.getHeight()].map((v) => Math.round(v * 1000) / 1000));
 }
@@ -218,6 +225,18 @@ describe("export PDF annoté (PF20, PF21)", () => {
     const r = await done(exportPdf(source(pdfPages(2, () => ({ elements: 1 }))), store({ [A]: await sourcePdf({ pages: 2 }) }), deps({ lib: l, overlay: producer })));
     expect(await xobjects(r.bytes)).toEqual([["/Form"], ["/Form"]]);
     expect(l.loads()).toBe(2);
+  });
+
+  it("police partagée par 3 pages d'origine : recopiée une seule fois dans la sortie (copyPages groupé)", async () => {
+    const r = await done(exportPdf(source(pdfPages(3)), store({ [A]: await sourcePdf({ pages: 3 }) }), deps()));
+    expect(await fontObjects(r.bytes)).toBe(1);
+  });
+
+  it("superpositions vectorielles de pages partageant une police : police embarquée une seule fois (embedPages groupé)", async () => {
+    const overlay = await sourcePdf({ pages: 3 });
+    const producer: OverlayProducer = { pages: async (reqs) => reqs.map((_, k) => ({ kind: "pdf" as const, bytes: overlay, index: k })) };
+    const r = await done(exportPdf(source([{ elements: 1 }, { elements: 1 }, { elements: 1 }]), store({}), deps({ overlay: producer })));
+    expect(await fontObjects(r.bytes)).toBe(1);
   });
 
   it("octets stables : deux exports du même document donnent les mêmes octets (PC16)", async () => {
