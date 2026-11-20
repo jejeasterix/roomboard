@@ -167,7 +167,10 @@ fn malformed_media_is_an_unknown_frame_kept_byte_for_byte() {
         assert_eq!(v.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 50.0]);
         assert!(d.bounds(&[id.to_string()]).is_some(), "boîte de {id}");
     }
-    assert_eq!(d.element_ids("p1"), vec!["m1".to_string(), "m2".to_string()]);
+    assert_eq!(
+        d.element_ids("p1"),
+        vec!["m1".to_string(), "m2".to_string()]
+    );
     let file = save(&d, &meta()).expect("save");
     let r = load(&file).expect("load");
     assert!(
@@ -201,7 +204,9 @@ fn copying_an_included_media_keeps_media_and_poster_meta() {
         MediaType::Audio,
         None,
     );
-    let f = d.extract(&p, &[included.clone()]).expect("extrait");
+    let f = d
+        .extract(&p, std::slice::from_ref(&included))
+        .expect("extrait");
     assert_eq!(
         f.cited_assets(),
         vec![
@@ -217,10 +222,7 @@ fn copying_an_included_media_keeps_media_and_poster_meta() {
         d.element(&included).and_then(|v| v.media)
     );
     let g = d.extract(&p, &[linked]).expect("extrait lié");
-    assert_eq!(
-        g.cited_assets(),
-        vec![asset(MP3, "voix.mp3", "audio/mpeg")]
-    );
+    assert_eq!(g.cited_assets(), vec![asset(MP3, "voix.mp3", "audio/mpeg")]);
     assert_eq!(
         g.linked_assets(),
         vec![LinkedAsset {

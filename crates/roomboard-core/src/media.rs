@@ -1,4 +1,328 @@
-//! Élément `media` (C14, M2, M5-M8) : vidéo ou son posé sur la page, avec rognage, boucle et volume.
+//! Élément `media` (C14, M2, M5-M8) : vidéo ou son posé sur la page, avec rognage, boucle et volume. Champs d'un
+//! `Y.Map` d'élément : `asset`, `mediaType`, `w`, `h`, `duration`, `poster` ; réglages facultatifs `trimStart`,
+//! `trimEnd`, `loop`, `volume`, absents à leur valeur neutre. Un média mal formé est un cadre inconnu, jamais `None`
+//! (M7, comme le tableau) : `element()` et `element_geom` se replient sur `unknown_view`.
+use yrs::{Any, Array, In, Map, MapPrelim, MapRef, Out, ReadTxn, TransactionMut};
+
+use crate::asset::{is_asset_id, AssetRef};
+use crate::commands::{valid_asset, valid_matrix, Change, CommandError};
+use crate::document::Document;
+use crate::element::{
+    finite_positive, fits_f32, out_f64, out_string, out_transform, transform_to_any, Transform,
+};
+
+pub const MEDIA_KIND: &str = "media";
+/// Plafond d'un chemin lié (M30), en caractères.
+pub const MAX_LINK_CHARS: usize = 4096;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaType {
+    Video,
+    Audio,
+}
+
+impl MediaType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MediaType::Video => "video",
+            MediaType::Audio => "audio",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<MediaType> {
+        match s {
+            "video" => Some(MediaType::Video),
+            "audio" => Some(MediaType::Audio),
+            _ => None,
+        }
+    }
+}
+
+/// Vue d'un média (M2) : boîte locale (0, 0)-(w, h) ; `duration` 0 = inconnue ; réglages aux neutres s'ils manquent.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaView {
+    pub asset: String,
+    pub media_type: String,
+    pub w: f64,
+    pub h: f64,
+    pub duration: f64,
+    pub poster: Option<String>,
+    pub trim_start: f64,
+    pub trim_end: Option<f64>,
+    #[serde(rename = "loop")]
+    pub looped: bool,
+    pub volume: f64,
+}
+
+/// Entrée d'`AddMedia` (M5).
+pub struct NewMedia<'a> {
+    pub page: &'a str,
+    pub asset: &'a AssetRef,
+    pub linked: Option<&'a str>,
+    pub media_type: MediaType,
+    pub w: f64,
+    pub h: f64,
+    pub duration: f64,
+    pub poster: Option<&'a AssetRef>,
+    pub matrix: &'a Transform,
+}
+
+/// État voulu de `SetMedia` (M6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MediaSettings {
+    pub trim_start: f64,
+    pub trim_end: Option<f64>,
+    pub looped: bool,
+    pub volume: f64,
+}
+
+/// Asset lié (M30) : son chemin, relatif au document ou absolu.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LinkedAsset {
+    pub id: String,
+    pub path: String,
+}
+
+const NEUTRAL: MediaSettings = MediaSettings {
+    trim_start: 0.0,
+    trim_end: None,
+    looped: false,
+    volume: 1.0,
+};
+
+fn valid_link(path: &str) -> bool {
+    (1..=MAX_LINK_CHARS).contains(&path.chars().count())
+}
+
+/// Boîte d'un média : finie > 0, tenant en f32 (comme le polygone et la liaison).
+fn valid_box(w: f64, h: f64) -> bool {
+    finite_positive(w) && finite_positive(h) && fits_f32(&[w, h])
+}
+
+/// Média (M7) : transform et vue ; `None` si l'élément n'en est pas un ou si un champ obligatoire manque ou est hors
+/// domaine (l'appelant rend alors le cadre inconnu). Facultatif illisible ou hors domaine = neutre.
+pub(crate) fn read_media<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, MediaView)> {
+    if out_string(e.get(txn, "kind"))? != MEDIA_KIND {
+        return None;
+    }
+    let transform = out_transform(e.get(txn, "transform"))?;
+    let asset = out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?;
+    let media_type =
+        out_string(e.get(txn, "mediaType")).filter(|t| MediaType::parse(t).is_some())?;
+    let w = out_f64(e.get(txn, "w")).filter(|v| valid_box(*v, 1.0))?;
+    let h = out_f64(e.get(txn, "h")).filter(|v| valid_box(1.0, *v))?;
+    let duration = out_f64(e.get(txn, "duration"))
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .unwrap_or(0.0);
+    let known = duration > 0.0;
+    let trim_start = out_f64(e.get(txn, "trimStart"))
+        .filter(|v| v.is_finite() && *v >= 0.0 && (!known || *v < duration))
+        .unwrap_or(0.0);
+    let trim_end = out_f64(e.get(txn, "trimEnd"))
+        .filter(|v| v.is_finite() && *v > trim_start && (!known || *v < duration));
+    Some((
+        transform,
+        MediaView {
+            asset,
+            media_type,
+            w,
+            h,
+            duration,
+            poster: out_string(e.get(txn, "poster")).filter(|a| is_asset_id(a)),
+            trim_start,
+            trim_end,
+            looped: matches!(e.get(txn, "loop"), Some(Out::Any(Any::Bool(true)))),
+            volume: out_f64(e.get(txn, "volume"))
+                .filter(|v| (0.0..=1.0).contains(v))
+                .unwrap_or(1.0),
+        },
+    ))
+}
+
+/// Pose `key` à `want`, ou le retire pour `None` ; rien si la valeur brute y est déjà.
+fn put_or_remove(e: &MapRef, txn: &mut TransactionMut, key: &str, want: Option<Any>) {
+    let same = match (e.get(txn, key), &want) {
+        (None, None) => true,
+        (Some(Out::Any(a)), Some(w)) => a == *w,
+        _ => false,
+    };
+    if same {
+        return;
+    }
+    match want {
+        Some(v) => {
+            e.insert(txn, key, In::Any(v));
+        }
+        None => {
+            e.remove(txn, key);
+        }
+    }
+}
+
+/// Chemin lié de la métadonnée d'un asset : `linked` textuel non vide, sinon `None`.
+fn link_of<T: ReadTxn>(txn: &T, assets: &MapRef, id: &str) -> Option<(MapRef, String)> {
+    match assets.get(txn, id) {
+        Some(Out::YMap(m)) => {
+            let path = out_string(m.get(txn, "linked")).filter(|s| !s.is_empty())?;
+            Some((m, path))
+        }
+        _ => None,
+    }
+}
+
+impl Document {
+    /// M5 : refus sans transaction, dans l'ordre BadAsset → BadMedia → BadMatrix → UnknownPage ; sinon une transaction
+    /// `"local"` (une étape) : l'élément, la métadonnée du média (avec `linked`) puis celle du poster.
+    pub(crate) fn cmd_add_media(&mut self, m: &NewMedia<'_>) -> Result<Change, CommandError> {
+        if !valid_asset(m.asset) || m.poster.is_some_and(|p| !valid_asset(p)) {
+            return Err(CommandError::BadAsset);
+        }
+        if m.linked.is_some_and(|l| !valid_link(l))
+            || !valid_box(m.w, m.h)
+            || !(m.duration.is_finite() && m.duration >= 0.0)
+        {
+            return Err(CommandError::BadMedia);
+        }
+        if !valid_matrix(m.matrix) {
+            return Err(CommandError::BadMatrix);
+        }
+        let elements = self.page_elements_or_err(m.page)?;
+        let id = yrs::uuid_v4().to_string();
+        let mut fields = vec![
+            ("id", In::from(id.as_str())),
+            ("kind", In::from(MEDIA_KIND)),
+            ("transform", In::Any(transform_to_any(m.matrix))),
+            ("asset", In::from(m.asset.id.as_str())),
+            ("mediaType", In::from(m.media_type.as_str())),
+            ("w", In::Any(Any::from(m.w))),
+            ("h", In::Any(Any::from(m.h))),
+            ("duration", In::Any(Any::from(m.duration))),
+        ];
+        if let Some(p) = m.poster {
+            fields.push(("poster", In::from(p.id.as_str())));
+        }
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, MapPrelim::from_iter(fields));
+            self.insert_media_asset_meta(&mut txn, m.asset, m.linked);
+            if let Some(p) = m.poster {
+                self.insert_asset_meta(&mut txn, p);
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![m.page.to_string()],
+            ids: vec![id],
+            ..Default::default()
+        }))
+    }
+
+    /// M6 : état voulu, contrôlé contre la durée connue (> 0) ; `trim_end` égal à la durée = sans fin. Même état que
+    /// l'état lu : aucune transaction (D38). Sinon une étape qui pose les réglages non neutres et retire les neutres.
+    pub(crate) fn cmd_set_media(
+        &mut self,
+        id: &str,
+        s: &MediaSettings,
+    ) -> Result<Change, CommandError> {
+        let (page, element, current) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let (_, view) = read_media(&txn, &found.element).ok_or(CommandError::BadMedia)?;
+            (found.page_id, found.element, view)
+        };
+        let d = current.duration;
+        let known = d > 0.0;
+        let start_ok =
+            s.trim_start.is_finite() && s.trim_start >= 0.0 && (!known || s.trim_start < d);
+        let end_ok = s
+            .trim_end
+            .is_none_or(|e| e.is_finite() && e > s.trim_start && (!known || e <= d));
+        if !start_ok || !end_ok || !(0.0..=1.0).contains(&s.volume) {
+            return Err(CommandError::BadMedia);
+        }
+        let want = MediaSettings {
+            trim_end: s.trim_end.filter(|e| !(known && *e == d)),
+            ..*s
+        };
+        let have = MediaSettings {
+            trim_start: current.trim_start,
+            trim_end: current.trim_end,
+            looped: current.looped,
+            volume: current.volume,
+        };
+        if want == have {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            let num = |v: f64, neutral: f64| (v != neutral).then(|| Any::from(v));
+            put_or_remove(
+                &element,
+                &mut txn,
+                "trimStart",
+                num(want.trim_start, NEUTRAL.trim_start),
+            );
+            put_or_remove(&element, &mut txn, "trimEnd", want.trim_end.map(Any::from));
+            put_or_remove(
+                &element,
+                &mut txn,
+                "loop",
+                want.looped.then_some(Any::Bool(true)),
+            );
+            put_or_remove(
+                &element,
+                &mut txn,
+                "volume",
+                num(want.volume, NEUTRAL.volume),
+            );
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
+    }
+
+    /// M30 : assets cités dont la métadonnée porte un `linked` textuel non vide, triés par id.
+    pub fn linked_assets(&self) -> Vec<LinkedAsset> {
+        let cited = self.cited_assets();
+        let txn = self.read();
+        cited
+            .into_iter()
+            .filter_map(|a| {
+                let (_, path) = link_of(&txn, self.assets_root(), &a.id)?;
+                Some(LinkedAsset { id: a.id, path })
+            })
+            .collect()
+    }
+
+    /// M30 : réécrit le chemin des assets déjà liés à un autre chemin, dans une transaction sans origine (hors
+    /// historique, `version` inchangée) ; chemin hors de 1 à 4 096 caractères ignoré. Rend le nombre réécrit ; 0 :
+    /// aucune transaction.
+    pub fn relink_assets(&mut self, links: &[LinkedAsset]) -> usize {
+        let targets: Vec<(MapRef, &str)> = {
+            let txn = self.read();
+            links
+                .iter()
+                .filter(|l| valid_link(&l.path))
+                .filter_map(|l| {
+                    let (m, path) = link_of(&txn, self.assets_root(), &l.id)?;
+                    (path != l.path).then_some((m, l.path.as_str()))
+                })
+                .collect()
+        };
+        if targets.is_empty() {
+            return 0;
+        }
+        let mut txn = self.transact_untracked();
+        for (m, path) in &targets {
+            m.insert(&mut txn, "linked", *path);
+        }
+        targets.len()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -163,10 +487,11 @@ mod tests {
             ),
             (
                 with(&|c| {
-                    if let Command::AddMedia { poster, .. } = c {
-                        if let Some(a) = poster {
-                            a.mime = String::new();
-                        }
+                    if let Command::AddMedia {
+                        poster: Some(a), ..
+                    } = c
+                    {
+                        a.mime = String::new();
                     }
                 }),
                 CommandError::BadAsset,

@@ -206,6 +206,27 @@ pub enum Command {
         target: crate::fill::FillTarget,
         color: Option<String>,
     },
+    /// Média (C14, M5) : élément, métadonnée du média (avec `linked` s'il est lié) et du poster ; une transaction, une
+    /// étape.
+    AddMedia {
+        page: String,
+        asset: AssetRef,
+        linked: Option<String>,
+        media_type: crate::media::MediaType,
+        w: f64,
+        h: f64,
+        duration: f64,
+        poster: Option<AssetRef>,
+        matrix: Transform,
+    },
+    /// Réglages d'un média (C14, M6) : état voulu ; neutres retirés ; même état : aucune étape (D38).
+    SetMedia {
+        id: String,
+        trim_start: f64,
+        trim_end: Option<f64>,
+        looped: bool,
+        volume: f64,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -245,6 +266,7 @@ pub enum CommandError {
     BadTable,
     BadFill,
     BadGroup,
+    BadMedia,
 }
 
 impl std::fmt::Display for CommandError {
@@ -302,6 +324,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadFill => write!(
                 f,
                 "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)"
+            ),
+            CommandError::BadMedia => write!(
+                f,
+                "média invalide (vidéo ou son, boîte finie > 0, durée finie ≥ 0, début ≥ 0 avant la fin, fin dans la durée, volume de 0 à 1, chemin lié de 1 à 4 096 caractères attendus)"
             ),
         }
     }
@@ -715,6 +741,42 @@ impl Document {
                 target,
                 color,
             } => self.cmd_fill(&page, &target, color.as_deref()),
+            Command::AddMedia {
+                page,
+                asset,
+                linked,
+                media_type,
+                w,
+                h,
+                duration,
+                poster,
+                matrix,
+            } => self.cmd_add_media(&crate::media::NewMedia {
+                page: &page,
+                asset: &asset,
+                linked: linked.as_deref(),
+                media_type,
+                w,
+                h,
+                duration,
+                poster: poster.as_ref(),
+                matrix: &matrix,
+            }),
+            Command::SetMedia {
+                id,
+                trim_start,
+                trim_end,
+                looped,
+                volume,
+            } => self.cmd_set_media(
+                &id,
+                &crate::media::MediaSettings {
+                    trim_start,
+                    trim_end,
+                    looped,
+                    volume,
+                },
+            ),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)

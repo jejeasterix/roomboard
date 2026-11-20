@@ -276,6 +276,36 @@ impl Document {
         write_asset_meta(&self.assets, txn, a);
     }
 
+    /// Métadonnée d'un média (C14, M30) : sans lien, celle de `write_asset_meta` ; avec lien, `linked` en plus. Écrite
+    /// seulement si absente (K3), champs scalaires d'un `Y.Map` (G4).
+    pub(crate) fn insert_media_asset_meta(
+        &self,
+        txn: &mut TransactionMut,
+        a: &AssetRef,
+        linked: Option<&str>,
+    ) {
+        let Some(path) = linked else {
+            return write_asset_meta(&self.assets, txn, a);
+        };
+        if self.assets.get(txn, &a.id).is_none() {
+            self.assets.insert(
+                txn,
+                a.id.as_str(),
+                MapPrelim::from([
+                    ("name", In::from(a.name.as_str())),
+                    ("mime", In::from(a.mime.as_str())),
+                    ("size", In::Any(Any::from(a.size))),
+                    ("linked", In::from(path)),
+                ]),
+            );
+        }
+    }
+
+    /// Racine `assets` (C14, M30) : lue et réécrite par `media::linked_assets` et `media::relink_assets`.
+    pub(crate) fn assets_root(&self) -> &MapRef {
+        &self.assets
+    }
+
     pub fn page_index(&self, id: &str) -> Option<u32> {
         let txn = self.doc.transact();
         self.find_page(&txn, id).map(|(i, _)| i)
@@ -351,6 +381,20 @@ impl Document {
                     ..ElementView::bare(id, "table", transform)
                 },
                 // T2 : tableau mal formé → cadre inconnu, jamais `None`.
+                None => {
+                    let (transform, unknown) = unknown_view(&txn, e)?;
+                    ElementView {
+                        unknown: Some(unknown),
+                        ..ElementView::bare(id, "unknown", transform)
+                    }
+                }
+            }),
+            Some(crate::media::MEDIA_KIND) => Some(match crate::media::read_media(&txn, e) {
+                Some((transform, media)) => ElementView {
+                    media: Some(media),
+                    ..ElementView::bare(id, "media", transform)
+                },
+                // M7 : média mal formé → cadre inconnu, jamais `None` (repli du tableau, pas de l'image).
                 None => {
                     let (transform, unknown) = unknown_view(&txn, e)?;
                     ElementView {
@@ -435,6 +479,11 @@ impl Document {
     #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
     pub(crate) fn transact_local(&self) -> TransactionMut<'_> {
         self.doc.transact_mut_with(LOCAL)
+    }
+
+    /// Transaction sans origine (C14, M30) : hors historique, ne fait pas d'étape.
+    pub(crate) fn transact_untracked(&self) -> TransactionMut<'_> {
+        self.doc.transact_mut()
     }
 
     #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
