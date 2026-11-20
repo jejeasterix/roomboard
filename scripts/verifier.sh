@@ -23,6 +23,7 @@ bash scripts/tests/controle-wasm-bindgen.test.sh
 bash scripts/controle-wasm-bindgen.sh Cargo.lock
 bash scripts/tests/controle-hors-ligne.test.sh
 bash scripts/tests/verifier-e2e.test.sh
+bash scripts/tests/controle-icones.test.sh
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
 rm -rf "$WASM_OUT"
 wasm-bindgen --target web --out-dir "$WASM_OUT" \
@@ -48,6 +49,8 @@ fi
 
 # Hors ligne (cadrage D27) : aucun hôte distant dans l'application construite, CSP stricte de la coque.
 node scripts/controle-hors-ligne.mjs apps/web/dist apps/desktop/src-tauri/tauri.conf.json
+# Icônes de l'installeur (OD47) : chaque fichier de bundle.icon existe, dont un .ico (bundle Windows).
+node scripts/controle-icones.mjs apps/desktop/src-tauri/tauri.conf.json
 
 # Banc du stylet (cadrage D29) : un seul fichier HTML, aucune ressource externe (ouvrable en file://).
 pnpm --filter @roomboard/web build:proto
