@@ -192,3 +192,27 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 plus proche). ActCraft est publié sous GPL-3.0-only ; son auteur, seul, est aussi celui de RoomBoard et reprend ce code
 sous PolyForm Shield (décision 0246). Auteur : jejeasterix (seul auteur de `core/src/gridsnap.cpp`, état lu :
 ActCraft `d9bf289f`). Aucune dépendance n'est ajoutée.
+
+## Paquets npm de l'application (C12, PDF)
+
+Chargés par import dynamique au premier PDF (`apps/web/src/platform/pdf-load.ts`), jamais au démarrage.
+
+| paquet | version | licence | dépôt |
+|---|---|---|---|
+| pdfjs-dist | 6.5.438 | Apache-2.0 | https://github.com/mozilla/pdf.js |
+| pdf-lib | 1.17.1 | MIT | https://github.com/Hopding/pdf-lib |
+| @pdf-lib/standard-fonts | 1.0.0 | MIT | https://github.com/Hopding/standard-fonts |
+| @pdf-lib/upng | 1.0.1 | MIT | https://github.com/Hopding/upng |
+| pako | 1.0.11 | MIT AND Zlib | https://github.com/nodeca/pako |
+| tslib | 1.14.1 | 0BSD | https://github.com/microsoft/tslib |
+
+`@napi-rs/canvas` (dépendance facultative de `pdfjs-dist`, MIT) peut être installé par `pnpm` ; il ne sert qu'à Node
+et n'entre pas dans `dist`.
+
+Ressources de `pdfjs-dist` copiées dans `dist/pdfjs/` avec leurs textes de licence : polices Liberation Sans
+(`standard_fonts/LICENSE_LIBERATION`, SIL Open Font License 1.1), polices Foxit (`standard_fonts/LICENSE_FOXIT`,
+licence de type BSD), tables de caractères Adobe (`cmaps/LICENSE`, BSD-3-Clause), modules `wasm/` : OpenJPEG
+(`LICENSE_OPENJPEG`, BSD-2-Clause), JBIG2 de PDFium (`LICENSE_JBIG2`, BSD-3-Clause), qcms (`LICENSE_QCMS`, MIT), et
+leurs enveloppes Mozilla (`LICENSE_PDFJS_*`, Apache-2.0). Le module QuickJS (script des formulaires PDF) n'est pas
+copié. Textes : MIT (https://opensource.org/licenses/MIT), Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0),
+OFL-1.1 (https://openfontlicense.org).
