@@ -4,7 +4,7 @@
  * au relâché (D38) ; toute erreur du cœur (dernière page, points invalides…) est attrapée et rendue dans l'état.
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
-import type { Bounds, Change, Command, CoreDocument, EraseMode, ShapeKind, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
@@ -92,6 +92,10 @@ export interface Engine {
   fitPage(): void;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
+  /** Aperçu d'une grille non enregistrée sur la page montrée (C9 éditeur, DAE1) : rien n'est écrit ; null = aucune grille. */
+  previewGrid(grid: GridView | null): void;
+  /** Fin de l'aperçu : la grille du document revient ; sans aperçu, rien. Changer de page la coupe aussi (E8). */
+  endGridPreview(): void;
   /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
   setPenStyle(s: StrokeStyle): void;
   /** Bouton de structure de la rangée du tableau (C10a, DAC4) : sur la cellule active de l'outil Tableau. */
@@ -175,6 +179,13 @@ export function createEngine(deps: EngineDeps): Engine {
   let error: string | null = null;
   let sceneDirty = true;
   let lastHidden: ReadonlySet<string> = new Set<string>();
+  /** Aperçu de grille posé sur le rendu (DAE1). */
+  let previewing = false;
+  function stopPreview(): void {
+    if (!previewing) return;
+    previewing = false;
+    renderer.setGridPreview(null);
+  }
   const stateListeners = new Set<(s: EngineState) => void>();
   const drawnListeners = new Set<(now: number) => void>();
   const owner = new Map<number, GestureTool>();
@@ -217,6 +228,7 @@ export function createEngine(deps: EngineDeps): Engine {
   function switchTo(id: string): void {
     closeAll("abort");
     leaveAll("page");
+    stopPreview();
     cameras.set(pageId, camera);
     pageId = id;
     lastIndex = doc.pageIds().indexOf(id);
@@ -489,6 +501,16 @@ export function createEngine(deps: EngineDeps): Engine {
       requestScene();
     },
     redraw() {
+      requestScene();
+    },
+    previewGrid(grid) {
+      previewing = true;
+      renderer.setGridPreview({ page: pageId, grid });
+      requestScene();
+    },
+    endGridPreview() {
+      if (!previewing) return;
+      stopPreview();
       requestScene();
     },
     setPenStyle(s) {

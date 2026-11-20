@@ -15,7 +15,7 @@ import type { ImageSource } from "./image-cache";
 import { GridLinesCache } from "./grid-cache";
 import { paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
-import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
+import type { EraserPreview, GridPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -153,7 +153,9 @@ export class Canvas2DRenderer implements Renderer {
   /** Lignes du texte des cellules, par tableau (B1) : même cache et même invalidation que `textLines`. */
   private readonly cellLines = new Map<string, { readonly key: string; readonly lines: readonly (readonly RichLine[])[] }>();
   /** Lignes de grille gardées (E3) : recalculées sur page, zoom, `resize`, sortie du rectangle gardé ou `Change`. */
-  private readonly gridCache = new GridLinesCache((page, rect, minStep, minDotStep) => this.source.gridLines?.(page, rect, minStep, minDotStep) ?? null);
+  private readonly gridCache = new GridLinesCache((page, rect, minStep, minDotStep) => this.computeGrid(page, rect, minStep, minDotStep));
+  /** Aperçu de l'éditeur de grille (DAE1) : sur sa page, sa grille remplace celle du document ; servi par le même cache. */
+  private gridPreview: GridPreview | null = null;
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
   private sx = 1;
@@ -338,6 +340,20 @@ export class Canvas2DRenderer implements Renderer {
       this.textLines.delete(id);
       this.cellLines.delete(id);
     }
+  }
+
+  setGridPreview(p: GridPreview | null): void {
+    this.gridPreview = p;
+    this.gridCache.clear();
+  }
+
+  /** Lignes que le cache demande : celles de l'aperçu sur sa page (DAE1), sinon celles du document. */
+  private computeGrid(page: string, rect: Bounds, minStep: number, minDotStep: number): GridLines | null {
+    const p = this.gridPreview;
+    if (p !== null && p.page === page) {
+      return p.grid === null ? null : (this.source.gridLinesOf?.(page, p.grid, rect, minStep, minDotStep) ?? null);
+    }
+    return this.source.gridLines?.(page, rect, minStep, minDotStep) ?? null;
   }
 
   private linesOf(ctx: CanvasRenderingContext2D, id: string, t: TextData): readonly RichLine[] {
