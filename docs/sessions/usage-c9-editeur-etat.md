@@ -1,10 +1,10 @@
 # État — usage-c9-editeur
 
-Statut : en cours
+Statut : clos
 Gabarit : courte
 Objectif : Régler la grille de la page dans le panneau (type parmi les six, pas, couleur, épaisseur, magnétisme) avec un aperçu direct, sans ralentir l'affichage quand les points sont nombreux.
 Avancement : 9/9 tâches terminées
-Étage : 4 — depuis 2026-11-20 11:25
+Étage : 4 — clos le 2026-11-20 11:36 (PR 16 fusionnée, main 6aee8a7)
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c9-editeur   Branche : feat/usage-c9-editeur   Base : origin/main @ 8247215, puis fusion de origin/main @ 07cb1d5 (PR 15, C10a)
 Cadrage : docs/plans/usage-c9-editeur-cadrage.md   Plan(s) : docs/plans/usage-c9-editeur-PLAN.md
@@ -60,4 +60,4 @@ HE1 épaisseur en px CSS · HE2 premier niveau seul réglable · HE3 un seul pas
 - Une commande lancée en fond par un sous-agent au premier plan meurt à la fin de son tour : l'orchestrateur lance lui-même verifier.sh --e2e.
 
 ## Portes
-ouvertes : — · passées : — (pas de porte avant merge, aucune release)
+ouvertes : — · passées : — (pas de porte avant merge, aucune release : aucune due)
