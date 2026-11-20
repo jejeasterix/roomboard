@@ -11,7 +11,8 @@ import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { LiveLayer, PageView, Renderer } from "./render/renderer";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
-import type { GestureTool, ToolContext } from "./tools/tool";
+import type { TableCellState } from "./table-geom";
+import { NO_LIVE, type GestureTool, type TableTool, type ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
   private next = 1;
@@ -733,5 +734,131 @@ describe("createEngine — Alt (C9)", () => {
     engine.key(key("Alt", { altKey: true }));
     engine.releaseKeys();
     expect(alt()).toBe(false);
+  });
+});
+
+/** Faux outil Tableau : journalise ; `setCell` change la cellule publiée et prévient le moteur (stateChanged). */
+function fakeTableTool(ctx: ToolContext, log: string[]) {
+  let cell: TableCellState | null = null;
+  let clears = false;
+  const tool: TableTool = {
+    begin: () => {
+      log.push("table.begin");
+    },
+    extend: () => undefined,
+    frame: () => undefined,
+    close: () => undefined,
+    live: () => NO_LIVE,
+    active: () => false,
+    cell: () => (cell === null ? null : { id: cell.id, row: "r", col: "c" }),
+    cellState: () => cell,
+    act: (a) => {
+      log.push(`act ${a}`);
+    },
+    fill: (c) => {
+      log.push(`fill ${String(c)}`);
+    },
+    clearCell: () => {
+      log.push("clear");
+      return clears;
+    },
+    prune: () => {
+      log.push("prune");
+    },
+    navigate: () => false,
+    compositionStart: () => undefined,
+    compositionEnd: () => undefined,
+    requestCommit: () => undefined,
+  };
+  return {
+    tool,
+    setCell(c: TableCellState | null): void {
+      cell = c;
+      ctx.stateChanged?.();
+    },
+    setClears(v: boolean): void {
+      clears = v;
+    },
+  };
+}
+
+function setupTable() {
+  const doc = fakeCore.blank();
+  const frames = new Frames();
+  const renderer = new FakeRenderer();
+  const log: string[] = [];
+  const holder: { t?: ReturnType<typeof fakeTableTool> } = {};
+  const tools: ToolFactories = {
+    pen: (ctx) => fakeTool("pen", log, ctx),
+    eraser: (ctx) => fakeTool("eraser", log, ctx),
+    table: (ctx) => {
+      holder.t = fakeTableTool(ctx, log);
+      return holder.t.tool;
+    },
+  };
+  const engine = createEngine({ doc, renderer, frames, tools });
+  const table = holder.t;
+  if (table === undefined) throw new Error("outil Tableau non créé");
+  return { doc, engine, log, table };
+}
+
+describe("moteur — outil Tableau (C10a, contrat T4)", () => {
+  const CELL: TableCellState = { id: "t", row: 0, col: 1, rows: 3, cols: 4 };
+
+  it("tableCell : publié par l'outil ; stateChanged émet un état", () => {
+    const { engine, table } = setupTable();
+    const seen: (TableCellState | null)[] = [];
+    engine.onState((s) => seen.push(s.tableCell));
+    expect(engine.state().tableCell).toBeNull();
+    table.setCell(CELL);
+    expect(seen[seen.length - 1]).toEqual(CELL);
+    expect(engine.state().tableCell).toEqual(CELL);
+  });
+
+  it("prune de l'outil Tableau après chaque commande et chaque annuler / rétablir (I1)", () => {
+    const { doc, engine, log } = setupTable();
+    engine.run({ type: "AddPage", after: doc.pageIds()[0] ?? null });
+    expect(log.filter((l) => l === "prune")).toHaveLength(1);
+    engine.undo();
+    engine.redo();
+    expect(log.filter((l) => l === "prune")).toHaveLength(3);
+  });
+
+  it("Suppr avec l'outil Tableau (T7) : pris si l'outil vide une cellule, sinon rien ; autre outil : clearCell jamais appelé", () => {
+    const { engine, log, table } = setupTable();
+    engine.setTool("table");
+    table.setClears(true);
+    expect(engine.key(key("Delete"))).toBe(true);
+    table.setClears(false);
+    expect(engine.key(key("Backspace"))).toBe(false);
+    expect(log.filter((l) => l === "clear")).toHaveLength(2);
+    engine.setTool("pen");
+    expect(engine.key(key("Delete"))).toBe(false);
+    expect(log.filter((l) => l === "clear")).toHaveLength(2);
+  });
+
+  it("tableAction, tableFill : délégués à l'outil Tableau", () => {
+    const { engine, log } = setupTable();
+    engine.tableAction("row-insert");
+    engine.tableAction("uniform");
+    engine.tableFill("#fef08a");
+    engine.tableFill(null);
+    expect(log.filter((l) => l.startsWith("act") || l.startsWith("fill"))).toEqual(["act row-insert", "act uniform", "fill #fef08a", "fill null"]);
+  });
+
+  it("geste avec l'outil Tableau : begin reçu par l'outil", () => {
+    const { engine, log } = setupTable();
+    engine.setTool("table");
+    engine.sink.begin(1, "table", [sample]);
+    expect(log).toContain("table.begin");
+  });
+
+  it("sans fabrique table : outil inerte, tableCell null, actions et Suppr sans effet", () => {
+    const { engine } = setup();
+    engine.setTool("table");
+    expect(engine.state().tableCell).toBeNull();
+    engine.tableAction("uniform");
+    engine.tableFill(null);
+    expect(engine.key(key("Delete"))).toBe(false);
   });
 });

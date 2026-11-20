@@ -13,7 +13,8 @@ import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
-import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type ToolContext } from "./tools/tool";
+import type { TableAction, TableCellState } from "./table-geom";
+import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
 export interface EngineState {
   readonly tool: ToolChoice;
@@ -27,6 +28,8 @@ export interface EngineState {
   /** Éléments sélectionnés (outil Sélection, T55) et leur boîte monde ; vides tant que la sélection n'est pas branchée. */
   readonly selection: readonly string[];
   readonly selectionBounds: Bounds | null;
+  /** Cellule active de l'outil Tableau (C10a) : rangs et taille du tableau ; null sans cellule active. */
+  readonly tableCell: TableCellState | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -49,6 +52,8 @@ export interface ToolFactories {
   select?(ctx: ToolContext): SelectionTool;
   shape?(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle): GestureTool;
   text?(ctx: ToolContext, style: () => TextStyle): TextTool;
+  /** Outil Tableau (C10a) ; absent : outil inerte. */
+  table?(ctx: ToolContext, style: () => TextStyle): TableTool;
 }
 
 export interface EngineDeps {
@@ -89,6 +94,10 @@ export interface Engine {
   redraw(): void;
   /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
   setPenStyle(s: StrokeStyle): void;
+  /** Bouton de structure de la rangée du tableau (C10a, DAC4) : sur la cellule active de l'outil Tableau. */
+  tableAction(a: TableAction): void;
+  /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
+  tableFill(fill: string | null): void;
   /** Chaque changement de caméra (pan, zoom, page montrée, ajustement) ; rend le désabonnement. */
   onCamera(cb: (c: Camera) => void): () => void;
   prevPage(): boolean;
@@ -118,6 +127,22 @@ function inertTool(): GestureTool {
 
 function inertSelection(): SelectionTool {
   return { ...inertTool(), selection: () => [], setSelection() {}, prune() {} };
+}
+
+function inertTable(): TableTool {
+  return {
+    ...inertTool(),
+    cell: () => null,
+    cellState: () => null,
+    act() {},
+    fill() {},
+    clearCell: () => false,
+    prune() {},
+    navigate: () => false,
+    compositionStart() {},
+    compositionEnd() {},
+    requestCommit() {},
+  };
 }
 
 export function createEngine(deps: EngineDeps): Engine {
@@ -166,6 +191,7 @@ export function createEngine(deps: EngineDeps): Engine {
       pageCount: ids.length,
       selection: [...selectTool.selection()],
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
+      tableCell: tableTool.cellState(),
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -242,6 +268,7 @@ export function createEngine(deps: EngineDeps): Engine {
     error = null;
     followPages(before, false);
     selectTool.prune();
+    tableTool.prune();
     requestScene();
     emit();
     return change;
@@ -256,6 +283,7 @@ export function createEngine(deps: EngineDeps): Engine {
     error = null;
     followPages(before, true);
     selectTool.prune();
+    tableTool.prune();
     if (restore) {
       const present = new Set(doc.elementIds(pageId));
       if (restore.every((id) => present.has(id))) selectTool.setSelection(restore);
@@ -264,8 +292,19 @@ export function createEngine(deps: EngineDeps): Engine {
     emit();
   }
 
-  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run, shift: () => shiftHeld, alt: () => altHeld, requestFrame: requestScene };
+  const ctx: ToolContext = {
+    doc,
+    page: () => pageId,
+    camera: () => camera,
+    run,
+    shift: () => shiftHeld,
+    alt: () => altHeld,
+    requestFrame: requestScene,
+    stateChanged: () => emit(),
+  };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
+  const tableTool: TableTool =
+    deps.tools.table?.(ctx, () => ({ color: style.color, size: DEFAULT_TEXT_SIZE })) ?? inertTable();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => style),
@@ -275,6 +314,7 @@ export function createEngine(deps: EngineDeps): Engine {
     ellipse: shapeTool("ellipse"),
     line: shapeTool("line"),
     arrow: shapeTool("arrow"),
+    table: tableTool,
     text: deps.tools.text?.(ctx, () => ({ color: style.color, size: DEFAULT_TEXT_SIZE })) ?? inertTool(),
   };
   const toolList: readonly GestureTool[] = Object.values(tools);
@@ -375,6 +415,8 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const edit = editAction(e);
       if (edit !== null) {
+        // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
+        if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
         const sel = selectTool.selection();
         if (sel.length === 0) return false;
         const ids = [...sel];
@@ -451,6 +493,12 @@ export function createEngine(deps: EngineDeps): Engine {
     setPenStyle(s) {
       if (typeof s.color !== "string" || s.color === "" || !Number.isFinite(s.width) || !(s.width > 0)) return;
       style = { color: s.color, width: s.width };
+    },
+    tableAction(a) {
+      tableTool.act(a);
+    },
+    tableFill(fill) {
+      tableTool.fill(fill);
     },
     onCamera(cb) {
       cameraListeners.add(cb);

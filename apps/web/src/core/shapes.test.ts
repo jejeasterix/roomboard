@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMatrix, arrowWings, boxPolygon, composeMatrix, ELLIPSE_VERTICES, isShapeKind, normalizeShape, shapePolygon } from "./shapes";
+import { applyMatrix, arrowWings, boxPolygon, composeMatrix, ELLIPSE_VERTICES, invertMatrix, isShapeKind, normalizeShape, shapePolygon } from "./shapes";
 
 describe("shapes (miroir de shape.rs)", () => {
   it("normalizeShape : rectangle et ellipse au coin haut-gauche, tailles positives", () => {
@@ -76,5 +76,17 @@ describe("shapePolygon : pointe de flèche et ellipse (T60)", () => {
     const ys = pairs(p).map(([, y]) => y);
     expect([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]).toEqual([-2, -2, 102, 52]);
     expect(has(p, -2, -2)).toBe(false);
+  });
+});
+
+describe("invertMatrix (C10a, miroir de element::invert)", () => {
+  it("invertMatrix : m ∘ m⁻¹ = identité ; non inversible ou NaN : null", () => {
+    const m = [2, 0.5, -1, 3, 100, 50] as const;
+    const inv = invertMatrix(m);
+    expect(inv).not.toBeNull();
+    const id = composeMatrix(m, inv ?? m);
+    [1, 0, 0, 1, 0, 0].forEach((v, i) => expect(id[i]).toBeCloseTo(v, 12));
+    expect(invertMatrix([1, 2, 2, 4, 0, 0])).toBeNull();
+    expect(invertMatrix([Number.NaN, 0, 0, 1, 0, 0])).toBeNull();
   });
 });
