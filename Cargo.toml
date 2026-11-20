@@ -12,5 +12,7 @@ license = "LicenseRef-PolyForm-Shield-1.0.0"
 [profile.release]
 opt-level = "s"
 lto = true
-# Une seule unité de génération : module Wasm de C7 + C9 à 1,45 Mo au lieu de 1,58 Mo (plafond H2-13 : 1,5 Mo).
+# Taille du module Wasm (OD55, mesures dans docs/essais/taille-wasm.md). Posé sur le seul
+# paquet roomboard-wasm, il est sans effet : il vaut donc pour tout le workspace. La section `name` est retirée par
+# `wasm-bindgen --remove-name-section`, pas par `strip` (qui retirerait `target_features`).
 codegen-units = 1
