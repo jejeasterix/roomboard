@@ -878,4 +878,49 @@ mod tests {
             assert!(valid_font(ok), "{ok:?}");
         }
     }
+
+    /// Constat 1 de relecture (T13) : un embed dont la valeur est une chaîne (`ItemContent::Embed(Any::String)`,
+    /// binaire fabriqué à la main) sort de `diff` comme un morceau de texte, mais `get_string` le saute. Sous le patron
+    /// écarté (tout `Out::Any(Any::String)` lu comme du texte), les segments valent « Le XYchat noir » pour un
+    /// `content` « Le chat noir » (vue rejetée par `toElementView`), et `SetText` panique (`remove_range` au-delà de la
+    /// fin). Ici : un seul segment sans attribut, `FormatText` refusé, `SetText` en remplacement total.
+    #[test]
+    fn string_embed_keeps_view_invariant() {
+        let (mut d, id, text) = core_text("Le chat noir");
+        text.insert_embed(&mut d.transact_local(), 3, Any::from("XY"));
+        let view = |d: &Document| {
+            let v = d.element(&id).and_then(|e| e.text).expect("vue");
+            let joined: String = v.spans.iter().map(|s| s.text.as_str()).collect();
+            assert_eq!(joined, v.content, "concaténation des segments = content");
+            v
+        };
+        let v = view(&d);
+        assert_eq!(v.content, "Le chat noir");
+        assert_eq!(v.spans, vec![plain("Le chat noir")]);
+        let bold = d.apply(format_cmd(&id, 3, 4, vec![TextAttr::Bold(true)]));
+        assert!(
+            matches!(bold, Err(crate::commands::CommandError::BadFormat)),
+            "{bold:?}"
+        );
+        let set = Command::SetText {
+            page: d.page_ids()[0].clone(),
+            id: Some(id.clone()),
+            x: 0.0,
+            y: 0.0,
+            content: "Le chat noir !".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        };
+        d.apply(set).expect("SetText");
+        let v = view(&d);
+        assert_eq!(v.content, "Le chat noir !");
+        assert_eq!(v.spans, vec![plain("Le chat noir !")]);
+        assert_eq!(
+            text.len(&d.read()),
+            14,
+            "remplacement total : l'embed chaîne est retiré"
+        );
+    }
 }
