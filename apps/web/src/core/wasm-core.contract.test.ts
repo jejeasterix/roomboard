@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AssetRef, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
-import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, type WasmModule } from "./wasm-core";
+import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -938,6 +938,14 @@ describe("contrôle de forme C9 (grille)", () => {
     expect(() => toPageView({ ...page, grid: { ...g, levels: [{ ...gridLevel("squares", 40), snap: 1 }] } })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, grid: { ...g, above: "oui" } })).toThrow("PageView invalide");
   });
+
+  it("toPageView : grille ou niveau qui n'est pas un objet, tête sans visible → erreur", () => {
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined };
+    const g = { visible: true, snap: false, above: true, levels: [gridLevel("squares", 40)] };
+    expect(() => toPageView({ ...page, grid: "x" })).toThrow("PageView invalide");
+    expect(() => toPageView({ ...page, grid: { ...g, levels: ["x"] } })).toThrow("PageView invalide");
+    expect(() => toPageView({ ...page, grid: { snap: g.snap, above: g.above, levels: g.levels } })).toThrow("PageView invalide");
+  });
 });
 
 describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
@@ -1076,6 +1084,59 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     e.free();
     d.free();
   });
+
+  it("snapDelta (G7) : élément aligné ramené à sa place, déplacement exactement nul", () => {
+    const d = f.blank();
+    const p = first(d);
+    const style = { color: "#000000", width: 4 };
+    const c = d.apply({ type: "AddShape", page: p, shape: "rect", x0: 70, y0: 50, x1: 170, y1: 110, style, fill: null }).ids[0] ?? "";
+    setGrid(d, p, gridOf([gridLevel("squares", 40)]));
+    expect(d.snapDelta(p, [c], 1.3, 0.7)).toEqual([0, 0]);
+    d.free();
+  });
+
+  it("gridLines (G9) : une seule famille sautée sous le pas minimal ; plafond par famille, jamais par niveau", () => {
+    const d = f.blank();
+    const p = first(d);
+    const page = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+    const families = (l: GridLevel, minStep: number): { v: number; h: number } | null => {
+      setGrid(d, p, gridOf([l]));
+      const lv = d.gridLines(p, page, minStep, 8)?.levels ?? [];
+      if (lv.length === 0) return null;
+      const s = lv[0]?.segments ?? [];
+      let v = 0;
+      let h = 0;
+      for (let i = 0; i < s.length; i += 4) {
+        if (s[i] === s[i + 2]) v++;
+        else if (s[i + 1] === s[i + 3]) h++;
+      }
+      return { v, h };
+    };
+    // Verticales au pas 40 (≥ 30), horizontales au pas 20 (< 30) sautées.
+    expect(families({ ...gridLevel("squares", 40), spacingY: 20 }, 30)).toEqual({ v: 49, h: 0 });
+    // Verticales au pas 0,01 : 192 001 > 65 536, sautées seules ; horizontales au pas 40 gardées.
+    expect(families({ ...gridLevel("squares", 40), spacingX: 0.01 }, 0)).toEqual({ v: 0, h: 28 });
+    expect(families(gridLevel("squares", 0.01), 0)).toBeNull();
+    d.free();
+  });
+
+  it("snapPoint (HG3) : grille et niveau invisibles accrochent ; niveau sans aimant dans une grille aimantée n'accroche pas", () => {
+    const d = f.blank();
+    const p = first(d);
+    setGrid(d, p, { ...gridOf([{ ...gridLevel("squares", 40), visible: false }]), visible: false });
+    expect(d.snapPoint(p, 13, 17)).toEqual([0, 0]);
+    setGrid(d, p, gridOf([{ ...gridLevel("squares", 40), snap: false }], true));
+    expect(d.snapPoint(p, 13, 17)).toBeNull();
+    d.free();
+  });
+
+  it("SetGrid (G2) : grille invalide sur une page inconnue → BadGrid d'abord, sans étape", () => {
+    const d = f.blank();
+    unchanged(d, () => {
+      expect(messageOf(() => setGrid(d, "nulle-part", gridOf([{ ...gridLevel("squares", 40), spacingX: 0 }])))).toBe(BAD_GRID);
+    });
+    d.free();
+  });
 });
 
 describe("contrôle de forme C9 (lignes de grille)", () => {
@@ -1087,6 +1148,26 @@ describe("contrôle de forme C9 (lignes de grille)", () => {
     expect(() => toGridLines({ ...ok, above: 1 })).toThrow("GridLines invalide");
     expect(() => toGridLines({ above: true, levels: [{ ...ok.levels[0], segments: ["0"] }] })).toThrow("GridLines invalide");
     expect(() => toGridLines({ above: true, levels: "x" })).toThrow("GridLines invalide");
+  });
+
+  it.each([
+    ["points non numériques", { dots: ["1"] }],
+    ["alpha qui n'est pas un nombre", { alpha: "0.5" }],
+    ["couleur qui n'est pas un texte", { color: 0 }],
+    ["trait qui n'est pas un texte", { line: null }],
+  ])("toGridLines : niveau à %s → erreur", (_, bad) => {
+    const level = { color: "#000000", line: "solid", alpha: 1, segments: [0, 0, 0, 10], dots: [1, 2] };
+    expect(() => toGridLines({ above: true, levels: [{ ...level, ...bad }] })).toThrow("GridLines invalide");
+  });
+
+  it("toGridLines : niveau qui n'est pas un objet → erreur", () => {
+    expect(() => toGridLines({ above: true, levels: [1] })).toThrow("GridLines invalide");
+  });
+
+  it("toPair : Float64Array de deux nombres → paire ; autre forme → erreur", () => {
+    expect(toPair(new Float64Array([1, 2]))).toEqual([1, 2]);
+    expect(() => toPair([1])).toThrow("point invalide");
+    expect(() => toPair("x")).toThrow("point invalide");
   });
 });
 

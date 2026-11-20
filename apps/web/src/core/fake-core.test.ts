@@ -390,4 +390,28 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     // Côté positif : (160 - 100) / 40 = 1,5 → indice 2 → 180.
     expect(d.snapPoint(p, 160, 160)).toEqual([180, 180]);
   });
+
+  it("grille relue renvoyable telle quelle (G4) : niveau sans kind ou à kind vide écarté ; couleur et trait vides au défaut", () => {
+    const d = withGrid({
+      snap: true,
+      levels: [
+        { spacingX: 40, spacingY: 40 },
+        { kind: "", spacingX: 40, spacingY: 40 },
+        { kind: "squares", spacingX: 40, spacingY: 40, color: "", line: "" },
+        { kind: "dots", spacingX: 20, spacingY: 20 },
+      ],
+    });
+    const p = firstPage(d);
+    const g = d.page(p)?.grid ?? null;
+    expect(g?.levels).toEqual([squares(40, 0), { ...squares(20, 0), kind: "dots" }]);
+    expect(() => d.apply({ type: "SetGrid", page: p, grid: g })).not.toThrow();
+  });
+
+  it("SetGrid écrit les neuf champs d'un niveau, jamais une clé en trop (HG8)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const level = { ...squares(40, 0), futur: 1 };
+    d.apply({ type: "SetGrid", page: p, grid: { visible: true, snap: true, above: false, levels: [level] } });
+    expect(saveJson(d).pages[0]?.["grid"]).toEqual({ visible: true, snap: true, above: false, levels: [squares(40, 0)] });
+  });
 });

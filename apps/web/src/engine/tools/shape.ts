@@ -1,7 +1,8 @@
 /**
  * Outil Formes (D13, D38, CL4-7) : rectangle, ellipse, ligne, flèche. Aperçu dans le calque d'édition (CL4-1), une
  * seule AddShape au relâché ; "cancel" et "abort" n'écrivent rien (D39). Maj : carré, cercle, angle par pas de 15°.
- * Couleur et épaisseur du stylo, sans remplissage. Plus petit que 4 px écran sur les deux axes : rien.
+ * Couleur et épaisseur du stylo, sans remplissage. Plus petit que 4 px écran sur les deux axes (points bruts), points
+ * aimantés confondus, ou rectangle et ellipse aplatis par l'aimant : ni aperçu ni écriture (même prédicat, `drawn`).
  */
 import type { ShapeKind, StrokeStyle } from "../../core/api";
 import { screenToWorld } from "../camera";
@@ -54,6 +55,20 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
   /** Bout brut (Maj comprise), seul juge du seuil de taille : un petit geste n'écrit rien, même agrandi par l'aimant. */
   const rawEnd = (d: Draft): [number, number] =>
     ctx.shift?.() === true ? constrainEnd(kind, d.x0, d.y0, d.x1, d.y1) : [d.x1, d.y1];
+  /** Geste sous `MIN_SHAPE_PX` écran sur les deux axes, jugé sur les points bruts (G8). */
+  const tooSmall = (d: Draft): boolean => {
+    const [rx, ry] = rawEnd(d);
+    return Math.abs(rx - d.x0) * d.zoom < MIN_SHAPE_PX && Math.abs(ry - d.y0) * d.zoom < MIN_SHAPE_PX;
+  };
+  /** Coins montrés et écrits, ou null : geste trop petit, points aimantés confondus, rectangle ou ellipse aplati. */
+  const drawn = (d: Draft): [number, number, number, number] | null => {
+    if (tooSmall(d)) return null;
+    const c = corners(d);
+    const [x0, y0, x1, y1] = c;
+    if (x0 === x1 && y0 === y1) return null;
+    if ((kind === "rect" || kind === "ellipse") && (x0 === x1 || y0 === y1)) return null;
+    return c;
+  };
 
   return {
     begin(pointerId, samples) {
@@ -79,18 +94,21 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       if (!d) return;
       drafts.delete(pointerId);
       if (how !== "end") return;
-      const [rx, ry] = rawEnd(d);
-      if (Math.abs(rx - d.x0) * d.zoom < MIN_SHAPE_PX && Math.abs(ry - d.y0) * d.zoom < MIN_SHAPE_PX) return;
-      const [x0, y0, x1, y1] = corners(d);
-      if (x0 === x1 && y0 === y1) return;
+      const c = drawn(d);
+      if (c === null) return;
+      const [x0, y0, x1, y1] = c;
       ctx.run({ type: "AddShape", page: d.page, shape: kind, x0, y0, x1, y1, style: d.style, fill: null });
     },
     live(): LivePart {
       if (drafts.size === 0) return { strokes: [], erasers: [], hidden: NONE };
-      const shapes: ShapePreview[] = [...drafts.values()].map((d) => {
-        const [x0, y0, x1, y1] = corners(d);
-        return { shape: kind, x0, y0, x1, y1, style: d.style, fill: null };
-      });
+      const shapes: ShapePreview[] = [];
+      for (const d of drafts.values()) {
+        const c = drawn(d);
+        if (c === null) continue;
+        const [x0, y0, x1, y1] = c;
+        shapes.push({ shape: kind, x0, y0, x1, y1, style: d.style, fill: null });
+      }
+      if (shapes.length === 0) return { strokes: [], erasers: [], hidden: NONE };
       return { strokes: [], erasers: [], hidden: NONE, overlay: { ...EMPTY_OVERLAY, shapes } };
     },
     active: () => drafts.size > 0,

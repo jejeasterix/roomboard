@@ -1139,4 +1139,32 @@ mod tests {
         d.set_grid_inner(&p, None).expect("retrait");
         assert_eq!(d.core.page(&p).and_then(|v| v.grid), None);
     }
+
+    /// G6, G7 : les méthodes de la liaison rendent `[x, y]` et `[dx, dy]` du cœur (S4, S3) ; élément aligné ramené à
+    /// sa place → déplacement exactement nul ; sans élément, brut.
+    #[test]
+    fn binding_snap_point_and_snap_delta_return_pairs() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        assert_eq!(d.snap_point(&p, 118.0, 97.0), None);
+        let g = GridInput {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![squares(40.0)],
+        };
+        d.set_grid_inner(&p, Some(g)).expect("grille");
+        assert_eq!(d.snap_point(&p, 118.0, 97.0), Some(vec![120.0, 80.0]));
+        let mut rect = |c: [f64; 4]| {
+            d.add_shape_inner(&p, "rect", c, "#000000", 4.0, None)
+                .expect("forme")
+                .ids[0]
+                .clone()
+        };
+        let a = rect([13.0, 17.0, 113.0, 77.0]);
+        let b = rect([70.0, 50.0, 170.0, 110.0]);
+        assert_eq!(d.snap_delta(&p, vec![a], 52.0, 31.0), vec![57.0, 33.0]);
+        assert_eq!(d.snap_delta(&p, vec![b], 1.3, 0.7), vec![0.0, 0.0]);
+        assert_eq!(d.snap_delta(&p, vec![], 52.0, 31.0), vec![52.0, 31.0]);
+    }
 }

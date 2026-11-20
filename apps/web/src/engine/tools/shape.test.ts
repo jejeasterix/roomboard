@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Command } from "../../core/api";
+import type { Command, ShapeKind } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
 import { constrainEnd, createShapeTool } from "./shape";
@@ -104,12 +104,12 @@ describe("outil Formes — magnétisme (C9, S4)", () => {
     above: false,
     levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", snap: true, visible: true }],
   };
-  const draw = (shift: boolean, alt: boolean, from: [number, number], to: [number, number]) => {
+  const draw = (shift: boolean, alt: boolean, from: [number, number], to: [number, number], kind: ShapeKind = "rect") => {
     const { ctx, page, runs, doc, setShift, setAlt } = setup();
     doc.apply({ type: "SetGrid", page, grid: squares40 });
     setShift(shift);
     setAlt(alt);
-    const tool = createShapeTool(ctx, "rect", () => PEN);
+    const tool = createShapeTool(ctx, kind, () => PEN);
     tool.begin(1, [at(from[0], from[1])]);
     tool.extend(1, [at(to[0], to[1])], []);
     const preview = tool.live().overlay?.shapes[0];
@@ -137,7 +137,40 @@ describe("outil Formes — magnétisme (C9, S4)", () => {
 
   it("petit geste : rien même agrandi par l'aimant ; points aimantés confondus : rien (G8, Review Focus 4)", () => {
     // Geste brut de 2 px que l'aimant porterait à (0, 0)-(40, 40) : le seuil se juge sur les points bruts.
-    expect(draw(false, false, [19, 19], [21, 21]).runs).toEqual([]);
+    const small = draw(false, false, [19, 19], [21, 21]);
+    expect(small.runs).toEqual([]);
+    expect(small.preview).toBeUndefined();
     expect(draw(false, false, [13, 17], [18, 3]).runs).toEqual([]);
+  });
+
+  it("Maj et petit geste sur une grille : ni écriture ni aperçu (le seuil se juge sur le bout brut contraint)", () => {
+    const { runs, preview } = draw(true, false, [19, 19], [21, 21]);
+    expect(runs).toEqual([]);
+    expect(preview).toBeUndefined();
+  });
+
+  it("rectangle ou ellipse aplatis par l'aimant (13, 17)-(18, 97) → (0, 0)-(0, 80) : ni écriture ni aperçu ; un trait reste", () => {
+    for (const kind of ["rect", "ellipse"] as const) {
+      const { runs, preview } = draw(false, false, [13, 17], [18, 97], kind);
+      expect(runs, kind).toEqual([]);
+      expect(preview, kind).toBeUndefined();
+    }
+    const line = draw(false, false, [13, 17], [18, 97], "line");
+    expect(line.runs).toHaveLength(1);
+    expect(line.runs[0]).toMatchObject({ shape: "line", x0: 0, y0: 0, x1: 0, y1: 80 });
+    expect(line.preview).toMatchObject({ x0: 0, y0: 0, x1: 0, y1: 80 });
+  });
+
+  it("Alt pressée en cours de geste : l'aimant se coupe à l'image suivante, écriture brute (G8)", () => {
+    const { ctx, page, runs, doc, setAlt } = setup();
+    doc.apply({ type: "SetGrid", page, grid: squares40 });
+    const tool = createShapeTool(ctx, "rect", () => PEN);
+    tool.begin(1, [at(13, 17)]);
+    tool.extend(1, [at(118, 97)], []);
+    expect(tool.live().overlay?.shapes[0]).toMatchObject({ x0: 0, y0: 0, x1: 120, y1: 80 });
+    setAlt(true);
+    expect(tool.live().overlay?.shapes[0]).toMatchObject({ x0: 13, y0: 17, x1: 118, y1: 97 });
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "AddShape", page, shape: "rect", x0: 13, y0: 17, x1: 118, y1: 97, style: PEN, fill: null }]);
   });
 });
