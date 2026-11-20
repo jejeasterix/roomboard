@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { render } from "solid-js/web";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardSession } from "../app/board-session";
@@ -17,8 +17,9 @@ import { createActiveProfile } from "./active-profile";
 import { App, showStartError } from "./App";
 import { layoutFor } from "./layout";
 
-const CSS = readFileSync(fileURLToPath(new URL("./rb.css", import.meta.url)), "utf8");
-const INDEX_HTML = readFileSync(fileURLToPath(new URL("../../index.html", import.meta.url)), "utf8");
+// Lus sur le disque : sous vitest, un import `?raw` de CSS rend une chaîne vide.
+const CSS = readFileSync(join(__dirname, "rb.css"), "utf8");
+const INDEX_HTML = readFileSync(join(__dirname, "../../index.html"), "utf8");
 const CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
 
 function baseState(over: Partial<Record<string, unknown>> = {}): EngineState {
@@ -27,6 +28,7 @@ function baseState(over: Partial<Record<string, unknown>> = {}): EngineState {
     eraserMode: "partial",
     canUndo: false,
     canRedo: false,
+    page: "p",
     pageIndex: 0,
     pageCount: 1,
     selection: [],
@@ -65,6 +67,7 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     prevPage: vi.fn(),
     fitPage: vi.fn(),
     setPenStyle: vi.fn(),
+    showPage: vi.fn(() => true),
     releaseKeys: vi.fn(),
   };
   let dirty = false;
@@ -81,7 +84,16 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
   } as unknown as FileController;
   const stage = document.createElement("div");
   stage.className = "rb-stage";
-  const board = { engine, stage, activate: vi.fn(), deactivate: vi.fn(), dispose: vi.fn() } as unknown as BoardSession;
+  const board = {
+    engine,
+    stage,
+    doc: { pageIds: () => ["p1", "p2", "p3"] },
+    choice: { note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }) },
+    effective: () => ({ prediction: false, inkTrail: "off", webgl: "off" }),
+    activate: vi.fn(),
+    deactivate: vi.fn(),
+    dispose: vi.fn(),
+  } as unknown as BoardSession;
   return {
     session: { board, files },
     emit(s) {
@@ -131,8 +143,21 @@ function renderApp(opts: { tab?: FakeTab; profile?: string } = {}) {
   document.head.append(style);
   const container = document.createElement("div");
   document.body.append(container);
+  const stages = document.createElement("main");
+  stages.className = "rb-stages";
   const dispose = render(
-    () => <App workspace={workspace} active={active} store={store} settings={settings} notes={["note de démarrage"]} shell={shell} navigate={navigate} />,
+    () => (
+      <App
+        workspace={workspace}
+        active={active}
+        store={store}
+        settings={settings}
+        notes={["note de démarrage"]}
+        shell={shell}
+        stages={stages}
+        navigate={navigate}
+      />
+    ),
     container,
   );
   disposers.push(() => {
@@ -185,8 +210,8 @@ describe("App (T95)", () => {
     expect(stages, "main.rb-stages").not.toBeNull();
     expect(stages.parentElement).toBe(layout);
     expect(getComputedStyle(stages).position).toBe("relative");
-    const bars = [...container.querySelectorAll<HTMLElement>(".rb-bar")];
-    expect(bars.length).toBeGreaterThanOrEqual(2);
+    const bars = [...container.querySelectorAll<HTMLElement>("[data-toolbar]")];
+    expect(bars.map((b) => b.dataset["toolbar"])).toEqual(profile.toolbars.map((b) => b.id));
     for (const bar of bars) {
       // La barre n'est pas dans la scène, et elle occupe sa propre case de la grille.
       expect(stages.contains(bar), bar.dataset["toolbar"]).toBe(false);
@@ -307,6 +332,24 @@ describe("App (T95)", () => {
     click(container.querySelector(`[data-tab="${first.id}"]`));
     expect(log).toEqual(["blur", `activate ${first.id}`]);
     expect(document.activeElement).not.toBe(area);
+  });
+
+  it("onglet changé hors de la barre (Nouveau, Ouvrir) pendant une saisie : la zone quittée est validée", () => {
+    const { container, workspace } = renderApp();
+    const area = document.createElement("textarea");
+    container.querySelector("main.rb-stages")!.append(area);
+    area.focus();
+    const blurred = vi.fn();
+    area.addEventListener("blur", blurred);
+    workspace.tabs.add("board", fakeTab("Nouveau.roomboard").session, true);
+    expect(blurred).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(area);
+  });
+
+  it("barre des pages : un numéro montre sa page dans le moteur de l'onglet actif", () => {
+    const { container, tab } = renderApp({ tab: fakeTab("A.roomboard", { pageCount: 3 }) });
+    click(container.querySelector('button[data-page="3"]'));
+    expect(tab.engine["showPage"]).toHaveBeenCalledWith("p3");
   });
 
   it("échec du démarrage : #etat créé s'il manque, message et data-erreur posés", () => {

@@ -1,5 +1,6 @@
 import { For, type Accessor, type JSX } from "solid-js";
 import type { ButtonSize, Toolbar, ToolItem } from "../toolbar";
+import { itemState, type ToolbarView } from "./item-state";
 
 export interface PagesView {
   readonly pageIndex: number;
@@ -17,17 +18,11 @@ export interface PagesBarProps {
 
 export const pagesLabel = (v: PagesView): string => `${v.pageIndex + 1} / ${v.pageCount}`;
 
-/** Actions désactivées selon la vue (T95 la remplace par `itemState` de T94). */
-const PAGE_STATE: Readonly<Record<string, (v: PagesView) => boolean>> = {
-  "page-prev": (v) => v.pageIndex <= 0,
-  "page-next": (v) => v.pageIndex >= v.pageCount - 1,
-  "page-remove": (v) => v.pageCount <= 1,
-};
+/** Champs de la vue sans effet sur les pages ; l'application passe la vue complète (`ToolbarView`), qui les remplace. */
+const NEUTRAL: Omit<ToolbarView, keyof PagesView> = { tool: "", eraserMode: "partial", canUndo: false, canRedo: false };
 
-const isDisabled = (item: ToolItem, v: PagesView): boolean => {
-  const rule = Object.hasOwn(PAGE_STATE, item.action ?? "") ? PAGE_STATE[item.action ?? ""] : undefined;
-  return rule ? rule(v) : false;
-};
+/** État d'un élément par la table de T94 (`itemState`), la même que celle de la barre d'outils. */
+const isDisabled = (item: ToolItem, v: PagesView): boolean => itemState(item, { ...NEUTRAL, ...v }).disabled;
 
 export function PagesBar(props: PagesBarProps): JSX.Element {
   const numbers = (): number[] => Array.from({ length: Math.max(0, props.view().pageCount) }, (_, i) => i + 1);

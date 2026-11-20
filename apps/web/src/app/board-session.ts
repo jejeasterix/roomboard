@@ -31,7 +31,7 @@ import { createSelectTool } from "../engine/tools/select";
 import { createShapeTool } from "../engine/tools/shape";
 import { createTextTool, type TextTool } from "../engine/tools/text";
 import type { AppBenchDeps } from "./banc";
-import { stageTags } from "./barre";
+import { stageTags } from "./stage-tags";
 import { watchDpr } from "./mesure-outils";
 import { createTextEditor, TEXT_EDITOR_ID } from "./text-editor";
 

@@ -3,30 +3,6 @@ import type { ToolChoice } from "./engine/input/gesture";
 /** Identifiant d'outil : chaîne ouverte, connue par `TOOL_TABLE` (usage § 8 point 3), jamais une union figée. */
 export type ToolId = string;
 
-/** Ancienne barre (DA10), lue par `app/barre.ts` seulement ; retirée par T95. */
-export interface ToolDef {
-  readonly id: ToolId;
-  readonly label: string;
-}
-
-export const toolbar: readonly ToolDef[] = [
-  { id: "pen", label: "Stylo" },
-  { id: "eraser", label: "Gomme" },
-  { id: "select", label: "Sélection" },
-];
-
-/** Retourne la liste des erreurs de cohérence de la barre d'outils. */
-export function validateToolbar(tools: readonly ToolDef[]): string[] {
-  const errors: string[] = [];
-  const seen = new Set<string>();
-  for (const t of tools) {
-    if (seen.has(t.id)) errors.push(`doublon : ${t.id}`);
-    seen.add(t.id);
-    if (t.label.trim() === "") errors.push(`libellé vide : ${t.id}`);
-  }
-  return errors;
-}
-
 // ---------------------------------------------------------------------------------------------------------------
 // Profil de barre versionné (D22, DA10 étendu par U11-U14 ; usage § 8 points 1-7, 11, 17).
 // Chaque objet garde ses clés inconnues dans `rest` ; `serializeProfile` écrit `{ ...rest, ...champs connus }` à

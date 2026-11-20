@@ -9,7 +9,7 @@ import { fakeCore } from "../core/fake-core";
 import { detectSupport } from "../engine/input/support";
 import { FakeGL } from "../engine/render/fake-gl";
 import { createSettingsStore, echelonsTag, parseSettings, type ParsedSettings } from "../engine/settings";
-import { stageTags } from "./barre";
+import { stageTags } from "./stage-tags";
 import { createBoardSession, type SessionShared } from "./board-session";
 
 /** Caméras reçues par `follow` de chaque zone de texte créée (le module réel, enveloppé). */

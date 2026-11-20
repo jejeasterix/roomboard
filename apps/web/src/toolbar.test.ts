@@ -1,24 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ACTION_TABLE, CAPABILITY_KEYS, parseProfile, resetItemOptions, resetPresets, resolveStartMode, serializeProfile,
-  TOOL_TABLE, toolbar, validateToolbar, visibleItems, type Profile, type RuntimeCapabilities, type ToolDef,
+  TOOL_TABLE, visibleItems, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
 import profilesSource from "./toolbar-profiles.ts?raw";
 import toolbarSource from "./toolbar.ts?raw";
-
-describe("toolbar", () => {
-  it("la barre par défaut est valide", () => {
-    expect(validateToolbar(toolbar)).toEqual([]);
-  });
-
-  it("détecte doublons et libellés vides", () => {
-    const bad: ToolDef[] = [
-      { id: "pen", label: "A" },
-      { id: "pen", label: " " },
-    ];
-    expect(validateToolbar(bad)).toEqual(["doublon : pen", "libellé vide : pen"]);
-  });
-});
 
 const ALL: RuntimeCapabilities = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
 const NONE: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
