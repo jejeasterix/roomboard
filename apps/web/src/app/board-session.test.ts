@@ -641,7 +641,7 @@ describe("session — médias (C14)", () => {
       s.engine.sink.begin(1, "select", [{ x: px * c.zoom + c.tx, y: py * c.zoom + c.ty, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
       s.engine.sink.close(1, "end");
     };
-    return { s, f, id, second, click, page };
+    return { s, f, id, second, click, page, assets };
   }
   it("carte du son : le peintre reçoit assetName et écrit le nom du fichier (R7, M20)", async () => {
     const texts: string[] = [];
@@ -787,6 +787,16 @@ describe("session — médias (C14)", () => {
     f.made.at(-1)!.fire("error");
     expect(s.mediaState(s.selectedMedia()!.id)?.status).toBe("echec");
     expect(s.stage.dataset["media"]?.startsWith("video;echec;")).toBe(true);
+    s.dispose();
+  });
+
+  it("R8 : un média lié en échec puis redéposé (octets reçus) n'est plus en echec", async () => {
+    const { s, f, click, id, assets } = await mediaSession({ blob: false, linked: "/v/absent.webm", extra: { mediaUrl: (p) => `asset://${p}` } });
+    click(100, 50);
+    f.made.at(-1)!.fire("error");
+    expect(s.mediaState(id)?.status).toBe("echec");
+    assets.adopt(ASSET, new Blob([new Uint8Array([1, 2, 3, 4])], { type: "video/webm" }));
+    expect(s.mediaState(id)?.status).not.toBe("echec");
     s.dispose();
   });
 });

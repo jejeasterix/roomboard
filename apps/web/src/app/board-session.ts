@@ -371,7 +371,9 @@ async function buildBoardSession(
     return e !== null && e.kind === "media" && (e.group === undefined || e.group.length === 0) ? e : null;
   };
   // R8 (M31) : un média lié sans lecteur est sondé dès sa sélection ; l'erreur du sondage le grise avant tout clic.
-  const failed = new Set<string>();
+  // L'échec vaut pour un lien donné et un asset sans octets : octets reçus ou lien changé, l'asset est sondé de nouveau.
+  const failed = new Map<string, string | undefined>();
+  const hasFailed = (asset: string): boolean => failed.has(asset) && assets.get(asset) === undefined && failed.get(asset) === assets.linked(asset);
   let probe: { readonly asset: string; readonly el: ReturnType<PlayerPorts["createVideo"]> } | null = null;
   const dropProbe = (): void => {
     if (probe === null) return;
@@ -387,7 +389,7 @@ async function buildBoardSession(
     const st = players.state(id);
     if (st !== null) return st;
     const e = doc.element(id);
-    return e !== null && e.kind === "media" && failed.has(e.media.asset) ? { status: "echec", time: 0 } : null;
+    return e !== null && e.kind === "media" && hasFailed(e.media.asset) ? { status: "echec", time: 0 } : null;
   };
   const markMedia = (): void => {
     const m = selectedMedia();
@@ -396,10 +398,10 @@ async function buildBoardSession(
   const probeSelected = (): void => {
     const m = selectedMedia();
     if (probe !== null && (m === null || probe.asset !== m.media.asset)) dropProbe();
-    if (m === null || probe !== null || players.state(m.id) !== null || failed.has(m.media.asset) || assets.get(m.media.asset) !== undefined) return;
+    if (m === null || probe !== null || players.state(m.id) !== null || hasFailed(m.media.asset) || assets.get(m.media.asset) !== undefined) return;
     const path = assets.linked(m.media.asset);
     if (path === undefined || shared.mediaUrl === undefined) {
-      failed.add(m.media.asset);
+      failed.set(m.media.asset, path);
       return;
     }
     const asset = m.media.asset;
@@ -409,7 +411,7 @@ async function buildBoardSession(
     el.video.crossOrigin = "anonymous";
     el.video.addEventListener("error", () => {
       if (probe?.el !== el) return;
-      failed.add(asset);
+      failed.set(asset, path);
       dropProbe();
       markMedia();
     });

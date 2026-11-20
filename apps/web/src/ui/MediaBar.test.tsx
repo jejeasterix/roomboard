@@ -88,6 +88,17 @@ describe("MediaBar (C14, M22)", () => {
     expect(q("error").getAttribute("role")).toBe("status");
   });
 
+  it("le refus affiché disparaît quand le média sélectionné change (A puis B)", async () => {
+    const { createSignal } = await import("solid-js");
+    const [m, setM] = createSignal(media());
+    const controls: MediaControls = { status: () => "poster", time: () => 0, toggle: vi.fn(), seek: vi.fn(), set: () => "Fin avant le début" };
+    const r = render(() => <MediaBar media={m()} controls={controls} />);
+    fireEvent.click(r.container.querySelector('[data-media="end"]')!);
+    expect(r.container.querySelector('[data-media="error"]')).not.toBeNull();
+    setM(media({ duration: 30 }));
+    expect(r.container.querySelector('[data-media="error"]')).toBeNull();
+  });
+
   it("echec : Lecture désactivée, « lecture impossible sur ce poste »", () => {
     const { q } = setup(media(), { status: "echec" });
     expect(q<HTMLButtonElement>("toggle").disabled).toBe(true);
