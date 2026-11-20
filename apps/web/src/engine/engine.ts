@@ -10,6 +10,7 @@ import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Came
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import { editAction, isPanKey, keyAction, type KeyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
+import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
@@ -30,6 +31,8 @@ export interface EngineState {
   readonly selectionBounds: Bounds | null;
   /** Cellule active de l'outil Tableau (C10a) : rangs et taille du tableau ; null sans cellule active. */
   readonly tableCell: TableCellState | null;
+  /** État de la barre de format (C7b, R15) : saisie ouverte de l'outil Texte ou Tableau actif ; null sinon. */
+  readonly textFormat: FormatState | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -102,6 +105,8 @@ export interface Engine {
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
   tableFill(fill: string | null): void;
+  /** Bouton de la rangée Format (C7b, DAR4) : relayé à l'outil actif (Texte ou Tableau) ; autre outil : sans effet. */
+  textFormat(a: FormatAction): void;
   /** Chaque changement de caméra (pan, zoom, page montrée, ajustement) ; rend le désabonnement. */
   onCamera(cb: (c: Camera) => void): () => void;
   prevPage(): boolean;
@@ -146,6 +151,23 @@ function inertTable(): TableTool {
     compositionStart() {},
     compositionEnd() {},
     requestCommit() {},
+    format() {},
+    formatState: () => null,
+    formatChanged() {},
+  };
+}
+
+function inertText(): TextTool {
+  return {
+    ...inertTool(),
+    editing: () => null,
+    composing: () => false,
+    compositionStart() {},
+    compositionEnd() {},
+    requestCommit() {},
+    format() {},
+    formatState: () => null,
+    formatChanged() {},
   };
 }
 
@@ -203,6 +225,7 @@ export function createEngine(deps: EngineDeps): Engine {
       selection: [...selectTool.selection()],
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
       tableCell: tableTool.cellState(),
+      textFormat: tool === "text" ? textTool.formatState() : tool === "table" ? tableTool.formatState() : null,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -318,6 +341,7 @@ export function createEngine(deps: EngineDeps): Engine {
   /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
   const textStyle = (): TextStyle => ({ color: style.color, size: DEFAULT_TEXT_SIZE });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
+  const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => style),
@@ -328,7 +352,7 @@ export function createEngine(deps: EngineDeps): Engine {
     line: shapeTool("line"),
     arrow: shapeTool("arrow"),
     table: tableTool,
-    text: deps.tools.text?.(ctx, textStyle) ?? inertTool(),
+    text: textTool,
   };
   const toolList: readonly GestureTool[] = Object.values(tools);
 
@@ -522,6 +546,10 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     tableFill(fill) {
       tableTool.fill(fill);
+    },
+    textFormat(a) {
+      if (tool === "text") textTool.format(a);
+      else if (tool === "table") tableTool.format(a);
     },
     onCamera(cb) {
       cameraListeners.add(cb);

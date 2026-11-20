@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { TableData } from "../../core/api";
+import { plainSpans } from "../../core/rich-text";
 import { TABLE_LINE_WIDTH, TABLE_PADDING } from "../table-geom";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { cellTextBoxes, paintTableGrid } from "./table-paint";
@@ -11,9 +12,9 @@ const T: TableData = {
   cols: [{ id: "c1", width: 240 }, { id: "c2", width: 100 }],
   rows: [{ id: "r1", height: 64 }, { id: "r2", height: 80 }],
   cells: [
-    { row: "r1", col: "c2", text: "", fill: "#fef08a" },
-    { row: "r2", col: "c1", text: "Lundi", fill: null },
-    { row: "r9", col: "c1", text: "fantôme", fill: "#bbf7d0" },
+    { row: "r1", col: "c2", text: "", fill: "#fef08a", spans: plainSpans("") },
+    { row: "r2", col: "c1", text: "Lundi", fill: null, spans: plainSpans("Lundi") },
+    { row: "r9", col: "c1", text: "fantôme", fill: "#bbf7d0", spans: plainSpans("fantôme") },
   ],
 };
 
@@ -43,7 +44,14 @@ describe("fonds et traits du tableau (C10a, T13, B1)", () => {
 
   it("cellTextBoxes : rectangle intérieur des cellules au texte non vide, lignes et colonnes connues seulement", () => {
     expect(cellTextBoxes(T)).toEqual([
-      { row: "r2", col: "c1", text: "Lundi", x: TABLE_PADDING, y: 64 + TABLE_PADDING, w: 240 - 2 * TABLE_PADDING, h: 80 - 2 * TABLE_PADDING },
+      { row: "r2", col: "c1", text: "Lundi", x: TABLE_PADDING, y: 64 + TABLE_PADDING, w: 240 - 2 * TABLE_PADDING, h: 80 - 2 * TABLE_PADDING, spans: plainSpans("Lundi") },
     ]);
+  });
+});
+
+describe("table-paint — cellules par segments (C7b, R17)", () => {
+  it("cellTextBoxes porte les segments de la cellule", () => {
+    const rich: TableData = { ...T, cells: [{ row: "r2", col: "c1", text: "Le chat", fill: null, spans: [plainSpans("Le ")[0]!, { text: "chat", attrs: { bold: true } }] }] };
+    expect(cellTextBoxes(rich)[0]?.spans).toEqual([{ text: "Le ", attrs: {} }, { text: "chat", attrs: { bold: true } }]);
   });
 });

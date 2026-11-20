@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { Command, TableData } from "../../core/api";
+import type { Command, TableData, TextSpan } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
+import { editSpans, plainSpans } from "../../core/rich-text";
+import type { FormatAction, FormatState } from "../rich-edit";
 import type { InputSample } from "../input/sampler";
 import { cellHeight } from "../table-geom";
 import type { Measure } from "../text-layout";
@@ -17,15 +19,30 @@ class FakeHost implements TextEditorHost {
   opened: TextEditSession[] = [];
   closed = 0;
   text = "";
+  /** Segments imposés par le test ; null : ceux d'une zone qui hérite (`editSpans` sur le texte saisi). */
+  rich: TextSpan[] | null = null;
+  formats: FormatAction[] = [];
+  state: FormatState | null = null;
   open(s: TextEditSession): void {
     this.opened.push(s);
     this.text = s.initial;
+    this.rich = null;
   }
   close(): void {
     this.closed++;
   }
   value(): string {
     return this.text;
+  }
+  spans(): readonly TextSpan[] {
+    const s = this.opened[this.opened.length - 1];
+    return this.rich ?? editSpans(s?.spans ?? plainSpans(""), this.text);
+  }
+  format(a: FormatAction): void {
+    this.formats.push(a);
+  }
+  formatState(): FormatState | null {
+    return this.state;
   }
   last(): TextEditSession {
     const s = this.opened[this.opened.length - 1];
@@ -304,9 +321,9 @@ describe("outil Tableau (C10a)", () => {
     const long = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd";
     s.type(long);
     s.tool.requestCommit();
-    const h = cellHeight(long, 36, 240, narrow);
+    const h = cellHeight(plainSpans(long), 36, 240, narrow);
     const t = s.table(id);
-    expect(s.last()).toEqual({ type: "SetTableCell", id, row: t.rows[0]?.id, col: t.cols[0]?.id, content: long, rowHeight: h });
+    expect(s.last()).toEqual({ type: "SetTableCell", id, row: t.rows[0]?.id, col: t.cols[0]?.id, content: long, rowHeight: h, spans: [{ text: long, attrs: {} }] });
     expect(h).toBeGreaterThan(64);
     expect(t.rows.map((r) => r.height)).toEqual([h, 64]);
   });
@@ -317,7 +334,7 @@ describe("outil Tableau (C10a)", () => {
     const long = "aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd";
     s.type(long);
     s.tool.requestCommit();
-    const h = cellHeight(long, 36, 240, narrow);
+    const h = cellHeight(plainSpans(long), 36, 240, narrow);
     const v = s.doc.version();
     s.tool.act("uniform");
     const t = s.table(id);
@@ -427,5 +444,66 @@ describe("outil Tableau (C10a)", () => {
     expect(s.tool.live().overlay?.frame).toEqual({ x0: 100, y0: 200, x1: 340, y1: 264 });
     s.tool.leave?.("tool");
     expect(s.tool.live().overlay).toBeUndefined();
+  });
+});
+
+describe("outil Tableau — C7b (segments, barre)", () => {
+  const B = { bold: true } as const;
+  const I = { italic: true } as const;
+  const cellSpans = (s: ReturnType<typeof setup>, id: string): readonly TextSpan[] | undefined => s.table(id).cells[0]?.spans;
+
+  it("S6 : cellule « Total » existante, italique seule : SetTableCell au même contenu avec spans ; annuler la rend droite", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.type("Total");
+    s.tool.requestCommit();
+    s.click(110, 210);
+    expect(s.host.last().spans).toEqual([{ text: "Total", attrs: {} }]);
+    s.host.rich = [{ text: "Total", attrs: I }];
+    s.tool.requestCommit();
+    const t = s.table(id);
+    expect(s.last()).toEqual({ type: "SetTableCell", id, row: t.rows[0]?.id, col: t.cols[0]?.id, content: "Total", rowHeight: cellHeight([{ text: "Total", attrs: I }], 36, 240, narrow), spans: [{ text: "Total", attrs: I }] });
+    expect(cellSpans(s, id)).toEqual([{ text: "Total", attrs: I }]);
+    s.doc.undo();
+    expect(cellSpans(s, id)).toEqual([{ text: "Total", attrs: {} }]);
+  });
+
+  it("ouverture : la zone reçoit les segments de la cellule (R18)", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const t = s.table(id);
+    s.doc.apply({ type: "SetTableCell", id, row: t.rows[0]?.id ?? "", col: t.cols[0]?.id ?? "", content: "aaTotal", spans: [{ text: "a", attrs: {} }, { text: "aTotal", attrs: B }] });
+    s.click(110, 210);
+    expect(s.host.last().spans).toEqual([{ text: "a", attrs: {} }, { text: "aTotal", attrs: B }]);
+  });
+
+  it("texte et segments inchangés : aucune SetTableCell (R6)", () => {
+    const s = setup();
+    s.create(100, 200, 2, 2);
+    s.type("Lundi");
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.click(110, 210);
+    s.tool.requestCommit();
+    expect(s.runs).toHaveLength(n);
+  });
+
+  it("format et formatState : relayés pendant la saisie, null sinon ; composition : rien ; formatChanged republie (R5, R15)", () => {
+    const s = setup();
+    const st: FormatState = { bold: true, italic: false, underline: false, size: 36, color: "default" };
+    s.host.state = st;
+    expect(s.tool.formatState()).toBeNull();
+    s.tool.format({ type: "bold" });
+    s.create(100, 200, 2, 2);
+    expect(s.tool.formatState()).toEqual(st);
+    s.tool.format({ type: "bold" });
+    s.tool.compositionStart();
+    s.tool.format({ type: "italic" });
+    s.tool.compositionEnd();
+    expect(s.host.formats).toEqual([{ type: "bold" }]);
+    const c = s.changes();
+    s.tool.formatChanged();
+    expect(s.changes()).toBe(c + 1);
   });
 });

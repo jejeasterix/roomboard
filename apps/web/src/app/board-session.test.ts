@@ -10,6 +10,7 @@ import { fakeCore } from "../core/fake-core";
 import { detectSupport } from "../engine/input/support";
 import { FakeGL } from "../engine/render/fake-gl";
 import { createSettingsStore, echelonsTag, parseSettings, type ParsedSettings } from "../engine/settings";
+import { readSelection, readText, setSelection } from "./rich-dom";
 import { stageTags } from "./stage-tags";
 import { createBoardSession, type SessionShared } from "./board-session";
 
@@ -127,7 +128,7 @@ describe("createBoardSession (T93)", () => {
     expect(picker?.hidden).toBe(false);
     picker!.querySelector<HTMLButtonElement>('button[data-cols="2"][data-rows="2"]')!.click();
     expect(s.stage.dataset["table"]).toBe("2x2@0,0");
-    const area = document.getElementById("texte-edition") as HTMLTextAreaElement;
+    const area = document.getElementById("texte-edition") as HTMLElement;
     expect(area.hidden).toBe(false);
     const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
     area.dispatchEvent(tab);
@@ -137,6 +138,53 @@ describe("createBoardSession (T93)", () => {
     expect(picker?.hidden).toBe(true);
     s.dispose();
     expect(container.querySelector(".rb-table-picker")).toBeNull();
+  });
+
+  /** Le navigateur insère `s` à la sélection de la zone (DOM aplati), place le curseur après, puis émet `input`. */
+  const typeIn = (zone: HTMLElement, s: string): void => {
+    const sel = readSelection(zone) ?? { start: 0, end: 0 };
+    const t = readText(zone);
+    zone.textContent = t.slice(0, sel.start) + s + t.slice(sel.end);
+    setSelection(zone, sel.start + s.length, sel.start + s.length);
+    zone.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: s }));
+  };
+
+  it("session — texte riche (C7b) : outil Texte, la zone est un contenteditable ; Ctrl+B publie textFormat ; Échap : null", async () => {
+    const s = await createBoardSession(fakeCore.blank(), shared);
+    s.activate();
+    s.engine.setTool("text");
+    const c = s.engine.camera();
+    s.engine.sink.begin(1, "text", [{ x: 200 * c.zoom + c.tx, y: 150 * c.zoom + c.ty, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    s.engine.sink.close(1, "end");
+    const zone = document.getElementById("texte-edition") as HTMLElement;
+    expect([zone.hidden, zone.getAttribute("contenteditable")]).toEqual([false, "true"]);
+    expect(s.engine.state().textFormat).toMatchObject({ bold: false });
+    zone.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(s.engine.state().textFormat?.bold).toBe(true);
+    zone.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(s.engine.state().textFormat).toBeNull();
+    s.dispose();
+  });
+
+  it("session — texte riche (C7b) : cellule, Ctrl+B puis « Total », Tab : SetTableCell en gras (S1)", async () => {
+    const doc = fakeCore.blank();
+    const s = await createBoardSession(doc, shared);
+    s.activate();
+    s.engine.setTool("table");
+    const c = s.engine.camera();
+    s.engine.sink.begin(1, "table", [{ x: 200 * c.zoom + c.tx, y: 150 * c.zoom + c.ty, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    s.engine.sink.close(1, "end");
+    container.querySelector<HTMLElement>(".rb-table-picker")!.querySelector<HTMLButtonElement>('button[data-cols="2"][data-rows="2"]')!.click();
+    const zone = document.getElementById("texte-edition") as HTMLElement;
+    zone.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+    typeIn(zone, "Total");
+    zone.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    const id = doc.elementIds(doc.pageIds()[0] ?? "").at(-1) ?? "";
+    const el = doc.element(id);
+    if (el?.kind !== "table") throw new Error("tableau attendu");
+    expect(el.table.cells[0]?.spans).toEqual([{ text: "Total", attrs: { bold: true } }]);
+    expect(s.stage.dataset["table"]).toBe("2x2@0,1");
+    s.dispose();
   });
 
   it("création qui échoue : aucune scène ne reste dans le conteneur, l'erreur est relancée", async () => {
@@ -206,7 +254,7 @@ describe("createBoardSession (T93)", () => {
     s.dispose();
     expect(gl.log.filter((l) => l === "loseContext")).toHaveLength(1);
     expect(on.container.contains(s.stage)).toBe(false);
-    expect(on.container.querySelector("textarea")).toBeNull();
+    expect(on.container.querySelector("#texte-edition, [contenteditable]")).toBeNull();
     for (const id of IDS) expect(document.getElementById(id), id).toBeNull();
     expect(free).toHaveBeenCalledTimes(1);
     expect(() => s.dispose()).not.toThrow(); // idempotent : free et loseContext toujours une fois

@@ -25,6 +25,7 @@ bash scripts/controle-wasm-bindgen.sh Cargo.lock
 bash scripts/tests/controle-hors-ligne.test.sh
 bash scripts/tests/verifier-e2e.test.sh
 bash scripts/tests/controle-icones.test.sh
+bash scripts/tests/coque-csp.test.sh
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
 rm -rf "$WASM_OUT"
 # --remove-name-section : ~510 Ko de noms de fonctions en moins (OD55, docs/essais/taille-wasm.md).
@@ -98,6 +99,7 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/c1-profils-navigateur.mjs
   node scripts/essais/c10a-tableau-navigateur.mjs
   node scripts/essais/c9-grille-navigateur.mjs
+  node scripts/essais/c7b-texte-riche-navigateur.mjs
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"

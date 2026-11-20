@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TextAttrsPatch, TextSpan } from "./api";
-import { cleanPatch, editSpans, formatSpans, plainSpans, sameSpans, utf16Bounds, validColor, validFont, validPatch } from "./rich-text";
+import { cleanPatch, editSpans, editSpansAt, formatSpans, insertedRange, normalSpans, patched, plainSpans, sameSpans, spansText, spliceSpans, utf16Bounds, validColor, validFont, validPatch, validSpans } from "./rich-text";
 
 const plain = (text: string): TextSpan => ({ text, attrs: {} });
 const RED = { color: "#ff0000" } as const;
@@ -88,5 +88,69 @@ describe("rich-text : segments côté page (C7)", () => {
     expect(sameSpans(formatSpans(red, 3, 4, { bold: true }), red)).toBe(true);
     expect(sameSpans([{ text: "a", attrs: { bold: true, color: "red" } }], [{ text: "a", attrs: { color: "red", bold: true } }])).toBe(true);
     expect(sameSpans(red, plainSpans("Le chat noir"))).toBe(false);
+  });
+});
+
+describe("rich-text : segments voulus et frappe ancrée (C7b)", () => {
+  const BOLD = { bold: true } as const;
+
+  it("editSpansAt : « aa », curseur au milieu : le milieu neuf est la deuxième lettre (S1, R3)", () => {
+    // Première lettre rouge, seconde sans attribut ; « a » tapé entre les deux, curseur relu en 2 après la frappe.
+    const old: TextSpan[] = [{ text: "a", attrs: RED }, plain("a")];
+    expect(editSpansAt(old, "aaa", 2)).toEqual([{ text: "aa", attrs: RED }, plain("a")]);
+    expect(insertedRange("aa", "aaa", 2)).toEqual([1, 2]);
+    // Patron écarté : le préfixe d'abord place le neuf en troisième, avec les attributs de la seconde.
+    expect(editSpans(old, "aaa")).toEqual([{ text: "a", attrs: RED }, plain("aa")]);
+  });
+
+  it("editSpansAt : effacement au curseur ; insertion en tête sans attribut (T5)", () => {
+    expect(editSpansAt([{ text: "ab", attrs: RED }, plain("c")], "ac", 1)).toEqual([{ text: "a", attrs: RED }, plain("c")]);
+    expect(insertedRange("abc", "ac", 1)).toEqual([1, 1]);
+    expect(editSpansAt([{ text: "chat", attrs: RED }], "Lchat", 1)).toEqual([plain("L"), { text: "chat", attrs: RED }]);
+  });
+
+  it("editSpansAt : curseur en unités UTF-16 (paire de substitution)", () => {
+    expect(editSpansAt([plain("🐱")], "🐱🐱", 4)).toEqual([plain("🐱🐱")]);
+    expect(insertedRange("🐱", "🐱🐱", 4)).toEqual([2, 4]);
+    expect(insertedRange("ab", "aXb", 2)).toEqual([1, 2]);
+  });
+
+  it("spliceSpans : remplace une plage par un texte aux attributs donnés, voisins fusionnés (R12)", () => {
+    expect(spliceSpans(redCat(), 3, 7, "chien", BOLD)).toEqual([plain("Le "), { text: "chien", attrs: BOLD }, plain(" noir")]);
+    expect(spliceSpans(redCat(), 5, 5, "x", RB)).toEqual([plain("Le "), { text: "chxat", attrs: RB }, plain(" noir")]);
+    expect(spliceSpans([plain("ab")], 0, 2, "", {})).toEqual([plain("")]);
+  });
+
+  it("spansText : concaténation", () => {
+    expect(spansText(redCat())).toBe("Le chat noir");
+    expect(spansText([])).toBe("");
+  });
+
+  it("validSpans : concaténation égale au contenu, valeurs du patch permises (R7)", () => {
+    expect(validSpans("Le chat noir", redCat())).toBe(true);
+    expect(validSpans("", [])).toBe(true);
+    expect(validSpans("Le chat", redCat())).toBe(false);
+    const one = (attrs: unknown): TextSpan[] => [{ text: "x", attrs } as TextSpan];
+    expect(validSpans("x", one({ bold: false, color: null }))).toBe(true);
+    for (const bad of [{ size: 0 }, { size: 1e39 }, { color: 5 }, { href: "y" }, { font: "a;b" }]) expect(validSpans("x", one(bad)), JSON.stringify(bad)).toBe(false);
+    expect(validSpans("x", [null as unknown as TextSpan])).toBe(false);
+    expect(validSpans("x", [{ text: "x" } as unknown as TextSpan])).toBe(false);
+  });
+
+  it("normalSpans : false et null retirés, size en f32, voisins égaux fusionnés, vides retirés (forme de read_spans)", () => {
+    const raw = [plain("Le"), plain(" "), { text: "chat", attrs: { bold: false, size: 0.1 } }, { text: "", attrs: RED }] as unknown as TextSpan[];
+    expect(normalSpans(raw)).toEqual([plain("Le "), { text: "chat", attrs: { size: Math.fround(0.1) } }]);
+    expect(normalSpans([])).toEqual([plain("")]);
+    expect(sameSpans(normalSpans(redCat()), redCat())).toBe(true);
+  });
+
+  it("patched : exporté ; false et null retirent, size arrondi en f32", () => {
+    expect(patched({ bold: true }, { bold: null, color: "#ff0000" })).toEqual({ color: "#ff0000" });
+    expect(patched({}, { size: 0.1 })).toEqual({ size: Math.fround(0.1) });
+  });
+
+  it("editSpansAt avec le curseur en fin : même résultat qu'editSpans pour un ajout en fin", () => {
+    const next = "Le chat noir !";
+    expect(editSpansAt(redCat(), next, next.length)).toEqual(editSpans(redCat(), next));
   });
 });

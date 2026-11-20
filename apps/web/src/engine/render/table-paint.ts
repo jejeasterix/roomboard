@@ -2,7 +2,7 @@
  * Fonds et traits d'un tableau (C10a, T13, B1) : aucun texte ici — le texte des cellules passe par `paintText` de
  * `canvas2d.ts`, seul chemin de dessin du texte. Repère local du tableau (coin en 0, 0), sous sa matrice.
  */
-import type { TableData } from "../../core/api";
+import type { TableData, TextSpan } from "../../core/api";
 import { cellInnerBox, cellOf, cellRect, TABLE_LINE_WIDTH } from "../table-geom";
 
 export interface CellTextBox {
@@ -13,6 +13,7 @@ export interface CellTextBox {
   readonly y: number;
   readonly w: number;
   readonly h: number;
+  readonly spans: readonly TextSpan[];
 }
 
 /** Bords successifs : 0, puis la somme des tailles. */
@@ -57,7 +58,7 @@ export function cellTextBoxes(t: TableData): CellTextBox[] {
     // Ligne ou colonne plus lue : rien à écrire.
     const at = cellOf(t, cell);
     if (at === null) continue;
-    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at) });
+    out.push({ row: cell.row, col: cell.col, text: cell.text, ...cellInnerBox(t, at), spans: cell.spans });
   }
   return out;
 }

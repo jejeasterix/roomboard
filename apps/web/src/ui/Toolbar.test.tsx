@@ -22,7 +22,7 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
 function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
-  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn() };
+  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
@@ -245,5 +245,33 @@ describe("Toolbar — rangée du tableau (C10a, T10)", () => {
     fireEvent.click(container.querySelector('[data-table-fill="jaune"]')!);
     fireEvent.click(container.querySelector('[data-table-fill="aucun"]')!);
     expect((host.tableFill as ReturnType<typeof vi.fn>).mock.calls).toEqual([["#fef08a"], [null]]);
+  });
+});
+
+describe("Toolbar — rangée Format (C7b, R13)", () => {
+  const PLAIN = { bold: false, italic: false, underline: false, size: 36, color: "default" } as const;
+
+  it("outil Texte : rangée Format ; outil Tableau : après la rangée du tableau ; autre outil : rien", () => {
+    const { container, setV } = setup();
+    expect(container.querySelector("[data-format-sep]")).toBeNull();
+    setV({ ...VIEW, tool: "text" });
+    expect(container.querySelectorAll("button[data-format], button[data-format-size], button[data-format-color]")).toHaveLength(12);
+    setV({ ...VIEW, tool: "table", tableCell: null });
+    const buttons = [...container.querySelectorAll("button")];
+    const lastFill = buttons.map((b) => b.hasAttribute("data-table-fill")).lastIndexOf(true);
+    const firstFormat = buttons.findIndex((b) => b.hasAttribute("data-format"));
+    expect(lastFill).toBeGreaterThanOrEqual(0);
+    expect(firstFormat).toBeGreaterThan(lastFill);
+    setV({ ...VIEW, tool: "pen" });
+    expect(container.querySelector("[data-format-sep]")).toBeNull();
+  });
+
+  it("clic sur G : host.textFormat({ type: \"bold\" }) ; grisé sans séance", () => {
+    const { container, host, setV } = setup();
+    setV({ ...VIEW, tool: "text", textFormat: null });
+    expect(container.querySelector<HTMLButtonElement>('[data-format="bold"]')!.disabled).toBe(true);
+    setV({ ...VIEW, tool: "text", textFormat: PLAIN });
+    fireEvent.click(container.querySelector('[data-format="bold"]')!);
+    expect((host.textFormat as ReturnType<typeof vi.fn>).mock.calls).toEqual([[{ type: "bold" }]]);
   });
 });

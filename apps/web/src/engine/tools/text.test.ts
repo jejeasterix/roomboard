@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Command } from "../../core/api";
+import type { Command, TextSpan } from "../../core/api";
+import { editSpans, plainSpans } from "../../core/rich-text";
+import type { FormatAction, FormatState } from "../rich-edit";
 import { fakeCore } from "../../core/fake-core";
 import type { Measure } from "../text-layout";
 import type { InputSample } from "../input/sampler";
@@ -14,15 +16,30 @@ class FakeHost implements TextEditorHost {
   opened: TextEditSession[] = [];
   closed = 0;
   text = "";
+  /** Segments imposés par le test ; null : ceux d'une zone qui hérite (`editSpans` sur le texte saisi). */
+  rich: TextSpan[] | null = null;
+  formats: FormatAction[] = [];
+  state: FormatState | null = null;
   open(s: TextEditSession): void {
     this.opened.push(s);
     this.text = s.initial;
+    this.rich = null;
   }
   close(): void {
     this.closed++;
   }
   value(): string {
     return this.text;
+  }
+  spans(): readonly TextSpan[] {
+    const s = this.opened[this.opened.length - 1];
+    return this.rich ?? editSpans(s?.spans ?? plainSpans(""), this.text);
+  }
+  format(a: FormatAction): void {
+    this.formats.push(a);
+  }
+  formatState(): FormatState | null {
+    return this.state;
   }
 }
 
@@ -32,9 +49,13 @@ function setup(measure: Measure = narrow, zoom = 1) {
   let shown = page;
   const runs: Command[] = [];
   let frames = 0;
+  let changes = 0;
   const ctx: ToolContext = {
     requestFrame: () => {
       frames++;
+    },
+    stateChanged: () => {
+      changes++;
     },
     doc,
     page: () => shown,
@@ -54,7 +75,7 @@ function setup(measure: Measure = narrow, zoom = 1) {
   const show = (p: string): void => {
     shown = p;
   };
-  return { doc, page, runs, host, tool, click, show, frames: () => frames };
+  return { doc, page, runs, host, tool, click, show, frames: () => frames, changes: () => changes };
 }
 
 describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
@@ -73,7 +94,7 @@ describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
     host.text = "Bonjour";
     tool.requestCommit();
     expect(runs).toEqual([
-      { type: "SetText", page, id: null, x: 100, y: 200, content: "Bonjour", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 },
+      { type: "SetText", page, id: null, x: 100, y: 200, content: "Bonjour", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45, spans: [{ text: "Bonjour", attrs: {} }] },
     ]);
     expect(host.closed).toBe(1);
     expect(tool.editing()).toBeNull();
@@ -249,5 +270,71 @@ describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
     host.text = "Le noir";
     tool.requestCommit();
     expect(runs.at(-1)).toMatchObject({ type: "SetText", id, content: "Le noir", boxHeight: 45 });
+  });
+});
+
+describe("outil Texte — C7b (segments, barre)", () => {
+  const ITALIC = { italic: true } as const;
+  const PLAIN_STATE: FormatState = { bold: false, italic: false, underline: false, size: 36, color: "default" };
+
+  it("SetText porte les segments de la zone ; hauteur mesurée sur eux (R6, R18)", () => {
+    const { host, tool, runs, click } = setup();
+    click(100, 200);
+    host.text = "Le chat";
+    host.rich = [{ text: "Le ", attrs: {} }, { text: "chat", attrs: { size: 48 } }];
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ type: "SetText", content: "Le chat", spans: host.rich, boxHeight: 60 });
+  });
+
+  it("S6 : même texte, segments changés : une SetText ; le texte est en italique, annuler le rend sans attribut", () => {
+    const { doc, page, host, tool, runs, click } = setup();
+    const id = doc.apply({ type: "SetText", page, id: null, x: 100, y: 200, content: "Le chat noir", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    click(150, 210);
+    host.rich = [{ text: "Le chat ", attrs: {} }, { text: "noir", attrs: ITALIC }];
+    tool.requestCommit();
+    expect(runs.at(-1)).toMatchObject({ type: "SetText", id, content: "Le chat noir", spans: host.rich });
+    const view = (): unknown => {
+      const e = doc.element(id);
+      return e?.kind === "text" ? e.text.spans : null;
+    };
+    expect(view()).toEqual(host.rich);
+    doc.undo();
+    expect(view()).toEqual([{ text: "Le chat noir", attrs: {} }]);
+  });
+
+  it("texte et segments inchangés : aucune commande (R6)", () => {
+    const { doc, page, tool, runs, click } = setup();
+    doc.apply({ type: "SetText", page, id: null, x: 100, y: 200, content: "Le chat", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+    click(150, 210);
+    tool.requestCommit();
+    expect(runs).toEqual([]);
+  });
+
+  it("format : relayé à la zone pendant la saisie ; fermée ou pendant une composition : rien (R5, DAR4)", () => {
+    const { host, tool, click } = setup();
+    tool.format({ type: "bold" });
+    expect(host.formats).toEqual([]);
+    click(100, 200);
+    tool.format({ type: "bold" });
+    tool.compositionStart();
+    tool.format({ type: "italic" });
+    tool.compositionEnd();
+    tool.format({ type: "size", size: 72 });
+    expect(host.formats).toEqual([{ type: "bold" }, { type: "size", size: 72 }]);
+  });
+
+  it("formatState : null hors saisie, celui de la zone sinon ; ouverture, validation et formatChanged republient l'état (PC12)", () => {
+    const { host, tool, click, changes } = setup();
+    host.state = PLAIN_STATE;
+    expect(tool.formatState()).toBeNull();
+    const c0 = changes();
+    click(100, 200);
+    expect(tool.formatState()).toEqual(PLAIN_STATE);
+    expect(changes()).toBe(c0 + 1);
+    tool.formatChanged();
+    expect(changes()).toBe(c0 + 2);
+    tool.requestCommit();
+    expect(changes()).toBeGreaterThanOrEqual(c0 + 3);
+    expect(tool.formatState()).toBeNull();
   });
 });

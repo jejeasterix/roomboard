@@ -5,9 +5,10 @@
  * exigée mesurée comme le dessin (T5, B1) ; Tab, Maj+Tab, flèches au bord par `navigate` (DAC3) ; porte IME partagée
  * avec l'outil Texte. Cellule active tenue par ids, retirée par `prune` quand elle disparaît (I1).
  */
-import type { Matrix, TableAxis, TableData } from "../../core/api";
+import type { Matrix, TableAxis, TableData, TextSpan } from "../../core/api";
 import { TABLE_MAX_LINES } from "../../core/api";
-import { plainSpans } from "../../core/rich-text";
+import { sameSpans } from "../../core/rich-text";
+import type { FormatAction, FormatState } from "../rich-edit";
 import { composeMatrix, translateMatrix } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
@@ -56,6 +57,8 @@ interface Located {
 interface Opened {
   readonly ref: CellRef;
   readonly initial: string;
+  /** Segments à l'ouverture (C7b, R6). */
+  readonly initialSpans: readonly TextSpan[];
   readonly colWidth: number;
   readonly size: number;
 }
@@ -93,25 +96,30 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     ctx.stateChanged?.();
   };
 
-  /** Écrit la cellule ouverte (une SetTableCell au plus, T9) ; la saisie est fermée avant `editor.close()`. */
+  /** Écrit la cellule ouverte (une SetTableCell au plus, T9, portant les segments de la zone, C7b R6) ; la saisie est
+   *  fermée avant `editor.close()`. */
   function commit(): void {
     const o = opened;
     if (o === null) return;
     const content = editor.value();
+    const spans = editor.spans();
     opened = null;
     gate.reset();
     editor.close();
-    if (content !== o.initial) {
+    // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
+    if (content !== o.initial || !sameSpans(spans, o.initialSpans)) {
       ctx.run({
         type: "SetTableCell",
         id: o.ref.id,
         row: o.ref.row,
         col: o.ref.col,
         content,
-        rowHeight: cellHeight(content, o.size, o.colWidth, measure),
+        rowHeight: cellHeight(spans, o.size, o.colWidth, measure),
+        spans,
       });
     }
     refresh();
+    ctx.stateChanged?.();
   }
 
   /** Ouvre la saisie sur la cellule active : coin intérieur, largeur de colonne moins les marges, fond de la cellule. */
@@ -124,8 +132,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     const r = cellRect(at.table, at.cell);
     const colWidth = r.x1 - r.x0;
     const inner = cellInnerBox(at.table, at.cell);
-    const { text, fill } = cellContent(at.table, at.ref.row, at.ref.col);
-    opened = { ref: at.ref, initial: text, colWidth, size: at.table.size };
+    const { text, spans, fill } = cellContent(at.table, at.ref.row, at.ref.col);
+    opened = { ref: at.ref, initial: text, initialSpans: spans, colWidth, size: at.table.size };
     gate.reset();
     editor.open(
       {
@@ -136,11 +144,12 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         color: at.table.color,
         size: at.table.size,
         initial: text,
-        spans: plainSpans(text),
+        spans,
         background: fill ?? CELL_EDITOR_BACKGROUND,
       },
       ctx.camera(),
     );
+    ctx.stateChanged?.();
   };
 
   /** Grille choisie (T6) : coin au point, décalé à gauche si le tableau dépasse la largeur de la page (T4, x ≥ 0). */
@@ -318,6 +327,13 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     },
     requestCommit() {
       gate.request();
+    },
+    format(a) {
+      if (opened !== null && !gate.composing()) editor.format(a);
+    },
+    formatState: () => (opened === null ? null : editor.formatState()),
+    formatChanged() {
+      ctx.stateChanged?.();
     },
   };
 }

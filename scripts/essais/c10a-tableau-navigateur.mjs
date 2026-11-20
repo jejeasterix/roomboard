@@ -4,15 +4,15 @@
 // Geste : outil Tableau, grille de choix 4 × 3, « Lundi », Tab, « Mardi », Tab, « Mercredi » (S1), puis les neuf autres
 // cellules par Tab (passage de ligne compris), Échap, capture (avec --captures seulement), « + Colonne », « + Ligne »,
 // Ctrl+S, Ctrl+O, relecture des trois premières cellules dans le nouvel onglet. Oracle : #stage[data-table] =
-// "<colonnes>x<lignes>@<rang>,<colonne>" et la valeur de #texte-edition. Aucune requête hors de 127.0.0.1.
+// "<colonnes>x<lignes>@<rang>,<colonne>" et le texte de #texte-edition. Aucune requête hors de 127.0.0.1.
 // Lancé par scripts/verifier.sh --e2e, sans option de capture.
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/c10a-tableau-navigateur.mjs [--captures]
 // (--captures : docs/essais/c10a-tableau-4x3.png).
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, frames, gitSha, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
 
 const LABEL = "C10a tableau";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
@@ -22,13 +22,6 @@ const COL = 240;
 const ROW = 64;
 const FIRST = ["Lundi", "Mardi", "Mercredi"];
 const REST = ["Jeudi", "Maths", "Français", "Histoire", "Sport", "Anglais", "Musique", "Dessin", "Sciences"];
-
-/** CSP de la coque (tauri.conf.json), envoyée telle quelle (même lecture que c2-image-navigateur.mjs). */
-function coqueCsp() {
-  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
-  const csp = conf.app.security.csp;
-  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
-}
 
 async function scenario(page, url, { captures, tmp }) {
   const errors = [];
@@ -50,7 +43,7 @@ async function scenario(page, url, { captures, tmp }) {
       .catch(async () => {
         throw new Echec(`data-table attendu « ${v} », lu « ${await attr("data-table")} »`);
       });
-  const editorValue = () => page.$eval("#texte-edition", (a) => a.value);
+  const editorValue = () => page.$eval("#texte-edition", (a) => a.textContent);
   const editorOpen = () => page.$eval("#texte-edition", (a) => !a.hidden && document.activeElement === a);
   const camera = async () => {
     const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);

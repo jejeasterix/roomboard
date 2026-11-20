@@ -128,7 +128,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(() => d.apply({ type: "Transform", ids: ["e1", "e2"], matrix: [2, 0, 0, 2, 10, 20] })).toThrow("Change invalide");
     expect(calls).toEqual([
       ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000"],
-      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45],
+      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
   });
@@ -1535,7 +1535,7 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     const id = addTable(d, first(d), { cols: 2, rows: 2 });
     const [r0, r1, c0] = ids2(tableOf(d, id));
     d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi", rowHeight: 61 });
-    expect(tableOf(d, id).cells).toEqual([{ row: r0, col: c0, text: "Lundi", fill: null }]);
+    expect(tableOf(d, id).cells).toEqual([{ row: r0, col: c0, text: "Lundi", fill: null, spans: [plainSpan("Lundi")] }]);
     expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([64, 64]);
     expect(d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi soir", rowHeight: 150 }).ids).toEqual([id]);
     expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([150, 64]);
@@ -1645,7 +1645,7 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     const id = addTable(d, first(d), { cols: 2, rows: 2 });
     const [, r1, , c1] = ids2(tableOf(d, id));
     d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#fef08a" });
-    expect(tableOf(d, id).cells).toEqual([{ row: r1, col: c1, text: "", fill: "#fef08a" }]);
+    expect(tableOf(d, id).cells).toEqual([{ row: r1, col: c1, text: "", fill: "#fef08a", spans: [plainSpan("")] }]);
     unchanged(d, () => d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#fef08a" }));
     d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: null });
     expect(tableOf(d, id).cells).toEqual([]);
@@ -1661,8 +1661,8 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "A" });
     d.apply({ type: "SetTableCell", id, row: r1, col: c1, content: "B" });
     expect(tableOf(d, id).cells).toEqual([
-      { row: r0, col: c0, text: "A", fill: "#fef08a" },
-      { row: r1, col: c1, text: "B", fill: null },
+      { row: r0, col: c0, text: "A", fill: "#fef08a", spans: [plainSpan("A")] },
+      { row: r1, col: c1, text: "B", fill: null, spans: [plainSpan("B")] },
     ]);
     d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#bbf7d0" });
     d.apply({ type: "SetTableFill", id, row: r0, col: c0, fill: null });
@@ -1670,8 +1670,8 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     const t = tableOf(d, id);
     expect([...t.rows, ...t.cols].map((l) => l.id)).toEqual([r0, r1, c0, c1]);
     expect(t.cells).toEqual([
-      { row: r0, col: c0, text: "A", fill: null },
-      { row: r1, col: c1, text: "B", fill: "#bbf7d0" },
+      { row: r0, col: c0, text: "A", fill: null, spans: [plainSpan("A")] },
+      { row: r1, col: c1, text: "B", fill: "#bbf7d0", spans: [plainSpan("B")] },
     ]);
     d.free();
   });
@@ -1706,9 +1706,9 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
 
 describe("contrôle de forme C10a (tableau)", () => {
   const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
-  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined }] };
+  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined, spans: [plainSpan("A")] }] };
   it("toElementView : tableau contrôlé, fill absent → null", () => {
-    expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null }] } });
+    expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null, spans: [plainSpan("A")] }] } });
   });
   it("toElementView : forme fausse → erreur", () => {
     expect(() => toElementView({ ...base })).toThrow("ElementView invalide");
@@ -1731,5 +1731,186 @@ describe.skipIf(loaded === null)("contrat C10a : vrai module seulement", () => {
     expect(t.cells[0]?.fill).toBe("#fef08a");
     expect(t.cells[1]?.fill).toBeNull();
     d.free();
+  });
+});
+
+// C7b (R7, R16) : `spans` facultatif de SetText et SetTableCell. T12 branche le vrai module (`c7bFactories = factories`).
+const c7bFactories = factories; // T12 : vrai module branché, contrat C7b commun aux deux fabriques
+const C7B_BOLD: TextAttrs = { bold: true };
+const C7B_ITALIC: TextAttrs = { italic: true };
+const C7B_RED_BOLD: TextAttrs = { bold: true, color: "#dc2626" };
+describe.each(c7bFactories)("contrat C7b : $name", ({ f }) => {
+  const setText = (d: CoreDocument, p: string, id: string | null, content: string, spans?: readonly TextSpan[]) =>
+    d.apply({ type: "SetText", page: p, id, x: 100, y: 200, content, color: "#000000", size: 36, boxWidth: 600, boxHeight: 45, ...(spans === undefined ? {} : { spans }) });
+  const spansOf = (d: CoreDocument, id: string): readonly TextSpan[] => {
+    const e = d.element(id);
+    if (e?.kind !== "text") throw new Error(`texte attendu : ${e?.kind ?? "absent"}`);
+    return e.text.spans;
+  };
+  const setCell = (d: CoreDocument, id: string, row: string, col: string, content: string, spans?: readonly TextSpan[]) =>
+    d.apply({ type: "SetTableCell", id, row, col, content, ...(spans === undefined ? {} : { spans }) });
+  const cellSpans = (d: CoreDocument, id: string, row: string, col: string): readonly TextSpan[] =>
+    tableOf(d, id).cells.find((c) => c.row === row && c.col === col)?.spans ?? [];
+
+  it("SetText avec segments : texte et format en une étape ; annuler rend l'état d'avant (R6, R7)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = setText(d, p, null, "Le chat noir").ids[0] ?? "";
+    setText(d, p, id, "Le gros chat noir", [plainSpan("Le gros "), { text: "chat", attrs: C7B_RED_BOLD }, plainSpan(" noir")]);
+    expect(spansOf(d, id)).toEqual([plainSpan("Le gros "), { text: "chat", attrs: C7B_RED_BOLD }, plainSpan(" noir")]);
+    d.undo();
+    expect(spansOf(d, id)).toEqual([plainSpan("Le chat noir")]);
+    d.free();
+  });
+
+  it("S6 : même texte, segments changés : écrit (jamais inchangé), une étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = setText(d, p, null, "Le chat noir").ids[0] ?? "";
+    const v = d.version();
+    setText(d, p, id, "Le chat noir", [plainSpan("Le chat "), { text: "noir", attrs: C7B_ITALIC }]);
+    expect(d.version()).toBeGreaterThan(v);
+    expect(spansOf(d, id)[1]).toEqual({ text: "noir", attrs: C7B_ITALIC });
+    d.undo();
+    expect(spansOf(d, id)).toEqual([plainSpan("Le chat noir")]);
+    d.free();
+  });
+
+  it("mêmes segments une fois normalisés (voisins égaux, false, null) : aucune étape (D38)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = setText(d, p, null, "Le chat").ids[0] ?? "";
+    setText(d, p, id, "Le chat", [plainSpan("Le "), { text: "chat", attrs: C7B_BOLD }]);
+    const same = [plainSpan("Le"), { text: " ", attrs: { italic: false, color: null } } as unknown as TextSpan, { text: "chat", attrs: C7B_BOLD }];
+    unchanged(d, () => setText(d, p, id, "Le chat", same));
+    d.free();
+  });
+
+  it("segments sans attribut sur un texte sans attribut : même vue qu'un SetText sans spans (S5)", () => {
+    const a = f.blank();
+    const b = f.blank();
+    const ia = setText(a, first(a), null, "Le chat").ids[0] ?? "";
+    const ib = setText(b, first(b), null, "Le chat").ids[0] ?? "";
+    setText(a, first(a), ia, "Le gros chat");
+    setText(b, first(b), ib, "Le gros chat", [plainSpan("Le gros chat")]);
+    expect(spansOf(b, ib)).toEqual(spansOf(a, ia));
+    expect(b.version()).toBe(a.version());
+    a.free();
+    b.free();
+  });
+
+  it("segments invalides : BadFormat d'abord (concaténation, valeur, clé inconnue), avant texte invalide et id inconnu (PC2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = setText(d, p, null, "Le chat").ids[0] ?? "";
+    const bads: TextSpan[][] = [
+      [plainSpan("Le cha")],
+      [{ text: "Le chat", attrs: { size: 0 } }],
+      [{ text: "Le chat", attrs: { color: "pas une couleur !" } }],
+      [{ text: "Le chat", attrs: { href: "x" } } as unknown as TextSpan],
+    ];
+    for (const spans of bads) {
+      unchanged(d, () => expect(messageOf(() => setText(d, p, id, "Le chat", spans))).toBe(BAD_FORMAT));
+      unchanged(d, () => expect(messageOf(() => setText(d, p, "absent", "Le chat", spans))).toBe(BAD_FORMAT));
+      unchanged(d, () =>
+        expect(messageOf(() => d.apply({ type: "SetText", page: p, id, x: 0, y: 0, content: "Le chat", color: "#000000", size: 0, boxWidth: 600, boxHeight: 45, spans }))).toBe(BAD_FORMAT),
+      );
+    }
+    d.free();
+  });
+
+  it("boîte neuve avec segments : créée mise en forme ; annuler la retire", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = setText(d, p, null, "Le chat", [plainSpan("Le "), { text: "chat", attrs: C7B_RED_BOLD }]).ids[0] ?? "";
+    expect(spansOf(d, id)).toEqual([plainSpan("Le "), { text: "chat", attrs: C7B_RED_BOLD }]);
+    d.undo();
+    expect(d.element(id)).toBeNull();
+    d.free();
+  });
+
+  it("SetTableCell avec segments : cellule absente créée en gras, une étape ; vue spans (R16)", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [r0, , c0] = ids2(tableOf(d, id));
+    setCell(d, id, r0, c0, "aaTotal", [plainSpan("a"), { text: "a", attrs: C7B_BOLD }, { text: "Total", attrs: C7B_BOLD }]);
+    expect(cellSpans(d, id, r0, c0)).toEqual([plainSpan("a"), { text: "aTotal", attrs: C7B_BOLD }]);
+    d.undo();
+    expect(tableOf(d, id).cells).toEqual([]);
+    d.free();
+  });
+
+  it("S6 : cellule « Total » existante, italique seule : écrite, une étape ; mêmes segments : aucune", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [r0, , c0] = ids2(tableOf(d, id));
+    setCell(d, id, r0, c0, "Total");
+    const v = d.version();
+    setCell(d, id, r0, c0, "Total", [{ text: "Total", attrs: C7B_ITALIC }]);
+    expect(d.version()).toBeGreaterThan(v);
+    expect(cellSpans(d, id, r0, c0)).toEqual([{ text: "Total", attrs: C7B_ITALIC }]);
+    unchanged(d, () => setCell(d, id, r0, c0, "Total", [{ text: "To", attrs: C7B_ITALIC }, { text: "tal", attrs: C7B_ITALIC }]));
+    d.undo();
+    expect(cellSpans(d, id, r0, c0)).toEqual([plainSpan("Total")]);
+    d.free();
+  });
+
+  it("SetTableCell sans segments : la frappe hérite du caractère précédent (C7 T5) ; segments invalides : BadFormat avant BadTable", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const [r0, , c0] = ids2(tableOf(d, id));
+    setCell(d, id, r0, c0, "Total", [{ text: "Total", attrs: C7B_BOLD }]);
+    setCell(d, id, r0, c0, "Totals");
+    expect(cellSpans(d, id, r0, c0)).toEqual([{ text: "Totals", attrs: C7B_BOLD }]);
+    unchanged(d, () =>
+      expect(messageOf(() => d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "x", rowHeight: -1, spans: [plainSpan("y")] }))).toBe(BAD_FORMAT),
+    );
+    d.free();
+  });
+
+  it("enregistrer puis rouvrir : segments du texte et de la cellule gardés (S1)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const tx = setText(d, p, null, "Le chat", [plainSpan("Le "), { text: "chat", attrs: C7B_RED_BOLD }]).ids[0] ?? "";
+    const id = addTable(d, p, { cols: 2, rows: 2 });
+    const [r0, , c0] = ids2(tableOf(d, id));
+    setCell(d, id, r0, c0, "Total", [{ text: "Total", attrs: C7B_BOLD }]);
+    const r = f.load(d.save(now, "0.1.0"));
+    expect(spansOf(r, tx)).toEqual(spansOf(d, tx));
+    expect(cellSpans(r, id, r0, c0)).toEqual([{ text: "Total", attrs: C7B_BOLD }]);
+    r.free();
+    d.free();
+  });
+});
+
+describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
+  const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
+  const table = (cell: Record<string, unknown>) => ({
+    color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }],
+    cells: [{ row: "r1", col: "c1", text: "ab", fill: null, ...cell }],
+  });
+
+  it("toElementView : segments de cellule exigés et contrôlés (R16)", () => {
+    expect(toElementView({ ...base, table: table({ spans: [{ text: "ab", attrs: { bold: true } }] }) })).toMatchObject({ table: { cells: [{ spans: [{ text: "ab", attrs: { bold: true } }] }] } });
+    for (const cell of [{}, { spans: [] }, { spans: [{ text: "a", attrs: {} }] }, { spans: [{ text: "ab", attrs: { href: "x" } }] }]) {
+      expect(() => toElementView({ ...base, table: table(cell) }), JSON.stringify(cell)).toThrow("ElementView invalide");
+    }
+  });
+
+  it("SetText et SetTableCell : spans passés nettoyés (clés undefined retirées) ; absents : undefined (R7)", () => {
+    const ok = { pages: ["p1"], ids: ["e1"], removed: [], full: false, version: 1 };
+    const calls: unknown[][] = [];
+    const doc = {
+      set_text: (...args: unknown[]): unknown => (calls.push(args), ok),
+      set_table_cell: (...args: unknown[]): unknown => (calls.push(args), ok),
+    };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    const d = createWasmCore(stub as unknown as WasmModule).blank();
+    const spans = [{ text: "a", attrs: { bold: true, color: undefined } as unknown as TextAttrs }];
+    d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45, spans });
+    d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+    d.apply({ type: "SetTableCell", id: "t1", row: "r1", col: "c1", content: "a", spans });
+    expect(calls.map((a) => a.at(-1))).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
+    expect((calls[0]?.at(-1) as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
   });
 });

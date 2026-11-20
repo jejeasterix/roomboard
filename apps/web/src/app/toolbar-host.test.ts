@@ -7,7 +7,7 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
   const engine = {
     setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
-    fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
+    fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
   const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn() } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
@@ -145,5 +145,11 @@ describe("ToolbarHost — tableau (C10a, DAC4)", () => {
     const { host, engine } = setup();
     host.setTool("table");
     expect(engine.setTool).toHaveBeenCalledWith("table");
+  });
+  it("textFormat → engine.textFormat (C7b, DAR4)", () => {
+    const { host, engine } = setup();
+    host.textFormat({ type: "bold" });
+    host.textFormat({ type: "color", color: null });
+    expect(engine.textFormat.mock.calls).toEqual([[{ type: "bold" }], [{ type: "color", color: null }]]);
   });
 });

@@ -1,11 +1,12 @@
 /**
  * Outil Texte (D14, CL4-2 à CL4-6) : un clic ouvre une boîte (nouvelle, ou le texte touché, masqué de la scène pendant
  * l'édition) ; la saisie se fait dans la zone de la page (hôte injecté : `app/text-editor.ts`) ; une seule SetText à la
- * validation, hauteur mesurée par `layoutRich` sur les segments prévus après l'édition (C7, T11). Composition IME (CL4-3) : toute demande de validation attend
+ * validation, portant les segments de la zone (C7b, R6), hauteur mesurée par `layoutRich` sur eux. Composition IME (CL4-3) : toute demande de validation attend
  * `compositionend` (porte partagée, `commit-gate.ts`) ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
 import type { Matrix, TextSpan } from "../../core/api";
-import { editSpans, plainSpans } from "../../core/rich-text";
+import { plainSpans, sameSpans } from "../../core/rich-text";
+import type { FormatAction, FormatState } from "../rich-edit";
 import { screenToWorld, type Camera } from "../camera";
 import { DEFAULT_TEXT_BOX_WIDTH, layoutRich, richBoxHeight, type Measure } from "../text-layout";
 import { createCommitGate } from "./commit-gate";
@@ -34,11 +35,17 @@ export interface TextEditSession {
   readonly background?: string;
 }
 
-/** Zone de saisie de la page (DOM, T56) : le moteur n'en connaît que ceci. */
+/** Zone de saisie de la page (DOM, T56 ; riche en C7b, R18) : le moteur n'en connaît que ceci. */
 export interface TextEditorHost {
   open(session: TextEditSession, camera: Camera): void;
   close(): void;
   value(): string;
+  /** Segments de la séance (C7b, R18) ; fermée : un segment vide. */
+  spans(): readonly TextSpan[];
+  /** Action de la barre ou d'un raccourci sur la sélection (R8) ; fermée ou pendant une composition : sans effet. */
+  format(a: FormatAction): void;
+  /** État de la barre (R15) ; fermée : null. */
+  formatState(): FormatState | null;
 }
 
 export interface TextTool extends GestureTool {
@@ -48,6 +55,11 @@ export interface TextTool extends GestureTool {
   compositionEnd(): void;
   /** Échap, clic ailleurs, perte du focus, outil ou page quittés : valide, ou attend la fin de la composition. */
   requestCommit(): void;
+  /** Barre de format (C7b, DAR4) : relayée à la zone si une saisie est ouverte, hors composition (R5). */
+  format(a: FormatAction): void;
+  formatState(): FormatState | null;
+  /** La zone a changé sélection ou format : l'état du moteur est republié (R15). */
+  formatChanged(): void;
 }
 
 export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: () => TextStyle, measure: Measure): TextTool {
@@ -56,11 +68,13 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
   /** Porte IME (CL4-3), partagée avec l'outil Tableau : toute validation attend la fin d'une composition. */
   const gate = createCommitGate(() => commit(), () => session !== null);
 
-  /** Écrit la boîte ouverte (une SetText au plus) ; la session est fermée avant `host.close()` (blur réentrant sans effet). */
+  /** Écrit la boîte ouverte (une SetText au plus, portant les segments de la zone, R6) ; la session est fermée avant
+   *  `host.close()` (blur réentrant sans effet). */
   const commit = (): void => {
     const s = session;
     if (!s) return;
     const content = host.value();
+    const spans = host.spans();
     const hadHidden = live.hidden.size > 0;
     session = null;
     gate.reset();
@@ -68,21 +82,12 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     host.close();
     // La boucle est arrêtée (outil inactif) : sans image, l'id masqué resterait invisible jusqu'au geste suivant.
     if (hadHidden) ctx.requestFrame?.();
+    ctx.stateChanged?.();
     if (s.id === null && content === "") return;
-    if (s.id !== null && content === s.initial) return;
-    const boxHeight = richBoxHeight(layoutRich(editSpans(s.spans, content), { size: s.size }, s.boxWidth, measure));
-    ctx.run({
-      type: "SetText",
-      page: s.page,
-      id: s.id,
-      x: s.matrix[4],
-      y: s.matrix[5],
-      content,
-      color: s.color,
-      size: s.size,
-      boxWidth: s.boxWidth,
-      boxHeight,
-    });
+    // R6 : texte et segments inchangés : aucune commande ; mise en forme seule (S6) : la commande part.
+    if (s.id !== null && content === s.initial && sameSpans(spans, s.spans)) return;
+    const boxHeight = richBoxHeight(layoutRich(spans, { size: s.size }, s.boxWidth, measure));
+    ctx.run({ type: "SetText", page: s.page, id: s.id, x: s.matrix[4], y: s.matrix[5], content, color: s.color, size: s.size, boxWidth: s.boxWidth, boxHeight, spans });
   };
 
   const open = (x: number, y: number): void => {
@@ -109,6 +114,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     }
     gate.reset();
     host.open(session, cam);
+    ctx.stateChanged?.();
   };
 
   return {
@@ -146,6 +152,13 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     },
     requestCommit() {
       gate.request();
+    },
+    format(a) {
+      if (session !== null && !gate.composing()) host.format(a);
+    },
+    formatState: () => (session === null ? null : host.formatState()),
+    formatChanged() {
+      ctx.stateChanged?.();
     },
   };
 }
