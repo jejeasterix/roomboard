@@ -1,12 +1,13 @@
 /**
  * Application SolidJS (lot 5b, T95) : onglets, barres du profil actif placées selon leur `dock`, scène dans la case
- * centrale, barre des pages, panneau des réglages, menu des profils, ligne d'état `#etat`. Remplace la barre DOM du
+ * centrale, barre des pages, panneau des réglages, panneau de la grille (C9 éditeur), menu des profils, ligne d'état `#etat`. Remplace la barre DOM du
  * lot 3-4, dont les barres en `position: absolute` recouvraient le haut de la scène : ici la grille
  * (`layoutFor`) réserve la case de chaque barre et la scène (`main.rb-stages`, conteneur des sessions) n'occupe que la
  * sienne ; seule une barre `floating` et les menus passagers (réglages, profils) se superposent (CL5b-10).
  */
-import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
+import type { BoardSession } from "../app/board-session";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost } from "../app/toolbar-host";
 import type { TabSession, Workspace } from "../app/workspace";
@@ -23,6 +24,7 @@ import { layoutFor } from "./layout";
 import { PagesBar } from "./PagesBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
+import { GridPanel } from "./GridPanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
 import { Toolbar } from "./Toolbar";
@@ -43,7 +45,7 @@ export interface AppProps {
   navigate(search: string): void;
 }
 
-type Panel = "settings" | "profiles" | "editor";
+type Panel = "settings" | "profiles" | "editor" | "grid";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
@@ -103,6 +105,37 @@ export function App(props: AppProps): JSX.Element {
     state();
     return ws.active().board;
   };
+
+  /** Séance de la grille (E8, CR3) : moteur `b` figé à l'ouverture (jamais `ws.active()` au rappel : chaque onglet a son
+   *  moteur) ; le démontage de `GridPanel` coupe l'aperçu sur ce moteur-là. */
+  const gridPanelFor = (b: BoardSession): JSX.Element => (
+    <GridPanel
+      initial={b.doc.page(b.engine.state().page)?.grid ?? null}
+      preview={(g) => b.engine.previewGrid(g)}
+      endPreview={() => b.engine.endGridPreview()}
+      apply={(grid) => {
+        // Refus du cœur : message dans #etat et rendu au panneau, resté ouvert, aperçu gardé (PC1, CR6).
+        if (b.engine.run({ type: "SetGrid", page: b.engine.state().page, grid }) === null) {
+          return b.engine.state().error ?? "grille refusée";
+        }
+        b.engine.endGridPreview();
+        setPanel(null);
+        return null;
+      }}
+      cancel={() => setPanel(null)}
+    />
+  );
+  /** Onglet, page ou version qui change pendant la séance (annuler, rétablir, autre écriture) : panneau fermé (E8). */
+  const sessionKey = createMemo(() => `${activeId() ?? ""}|${state().page}|${state().version}`);
+  createEffect(
+    on(
+      sessionKey,
+      () => {
+        if (panel() === "grid") setPanel(null);
+      },
+      { defer: true },
+    ),
+  );
 
   const host = createLocalToolbarHost(
     {
@@ -243,6 +276,9 @@ export function App(props: AppProps): JSX.Element {
             close={() => setPanel(null)}
           />
         </div>
+      </Show>
+      <Show when={panel() === "grid"}>
+        <div class="rb-popover">{gridPanelFor(ws.active().board)}</div>
       </Show>
     </div>
   );

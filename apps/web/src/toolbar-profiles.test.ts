@@ -35,9 +35,17 @@ describe("profils livrés (T83, CL5b-9)", () => {
 
   it("defaut porte chaque bouton de l'ancienne barre (inventaire du plan)", () => {
     for (const id of ["pen", "eraser", "hand", "eraser-mode", "undo", "redo", "select", "rect", "ellipse", "line", "arrow", "text",
-      "page-prev", "page-next", "page-add", "page-remove", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles"]) {
+      "page-prev", "page-next", "page-add", "page-remove", "file-new", "file-open", "file-save", "file-save-as", "fit-page", "settings", "profiles", "grid"]) {
       expect(ids("defaut"), id).toContain(id);
     }
+  });
+
+  it("Grille (E7, HE5) : dans le groupe vue de defaut et d'annotation, avant Profil ; absente de simple", () => {
+    for (const id of ["defaut", "annotation"]) {
+      const vue = builtinProfile(id)!.toolbars[0]!.groups.find((g) => g.id === "vue")!;
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "profiles", "settings"]);
+    }
+    expect(ids("simple")).not.toContain("grid");
   });
 
   it("toolbars en liste : la barre des pages est une entrée (role pages), chacune avec son dock", () => {
