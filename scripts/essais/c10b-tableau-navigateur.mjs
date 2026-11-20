@@ -2,7 +2,7 @@
 // Essai C10b « tableau : fusion, ombrage, collage, classeur » au navigateur (S1 à S4 du cadrage, partie C10b de S11).
 // Application construite (apps/web/dist) servie en local avec la CSP de la coque, Chromium headless de Playwright, mode
 // repli (`?fichiers=repli`), heure figée. Oracles : #stage[data-table|data-table-merges|data-table-shades|data-selection|
-// data-elements|data-bounds], valeur de #texte-edition, boîtes d'alerte ; aucune requête hors de 127.0.0.1.
+// data-elements|data-bounds], texte de #texte-edition, boîtes d'alerte ; aucune requête hors de 127.0.0.1.
 // Lancé par scripts/verifier.sh --e2e, sans option de capture. Code de sortie : 0 réussi, 1 échec, 2 outil absent.
 // Usage : node scripts/essais/c10b-tableau-navigateur.mjs [--captures] (--captures : docs/essais/c10b-tableau-fusion-ombrage.png).
 import { existsSync, readFileSync } from "node:fs";
@@ -55,7 +55,7 @@ async function scenario(page, url, { captures, tmp }) {
     }
     throw new Echec(`boîte attendue « ${text} » ; reçues : ${dialogs.join(" | ")}`);
   };
-  const editorValue = () => page.$eval("#texte-edition", (a) => a.value);
+  const editorValue = () => page.$eval("#texte-edition", (a) => a.textContent);
   const camera = async () => {
     const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);
     return { zoom, tx, ty };
