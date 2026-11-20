@@ -147,7 +147,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     }
     const slot: Slot = { tab: null, id: "", title: "" };
     const files = createFileController({
-      doc: board.doc,
+      encode: async (now, appVersion) => board.doc.save(now, appVersion),
+      importFiles: (f) => ws.importFiles(f, null),
       versions: board.engine,
       host,
       shell: tabShell(slot),

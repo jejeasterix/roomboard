@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SaveTarget } from "./files";
+import { IMPORT_FILTER, type SaveTarget } from "./files";
 import {
   baseName,
   createTauriHost,
@@ -18,10 +18,11 @@ import {
   type TauriWindow,
 } from "./host-tauri";
 
-function fakes(o: { openPath?: string | null; savePath?: string | null; answer?: boolean; failWrite?: boolean } = {}) {
+function fakes(o: { openPath?: string | null; savePath?: string | null; pickPaths?: string[]; answer?: boolean; failWrite?: boolean } = {}) {
   const disk = new Map<string, Uint8Array>();
   const calls = {
     open: 0,
+    openMany: [] as unknown[],
     save: [] as string[],
     ask: [] as Array<[string, string]>,
     message: [] as Array<[string, string]>,
@@ -34,6 +35,10 @@ function fakes(o: { openPath?: string | null; savePath?: string | null; answer?:
       calls.open += 1;
       expect(opt.filters).toEqual([{ name: "Document RoomBoard", extensions: ["roomboard"] }]);
       return o.openPath === undefined ? "/home/j/cours.roomboard" : o.openPath;
+    },
+    async openMany(opt) {
+      calls.openMany.push(opt.filters);
+      return o.pickPaths ?? [];
     },
     async save(opt) {
       calls.save.push(opt.defaultPath);
@@ -91,7 +96,7 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     const f = fakes({ openPath: "/home/j/Sans titre.roomboard" });
     const host = createTauriHost(f.dialog, f.fs);
     expect(host.kind).toBe("tauri");
-    const saved = await host.save(bytes, ask);
+    const saved = await host.save(async () => bytes, ask);
     expect(saved).toEqual({ kind: "tauri", name: "Sans titre.roomboard", path: "/home/j/Sans titre.roomboard" });
     expect(f.calls.save).toEqual(["Sans titre.roomboard"]);
     const opened = await host.open();
@@ -103,7 +108,7 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     const f = fakes();
     const host = createTauriHost(f.dialog, f.fs);
     const target: SaveTarget = { kind: "tauri", name: "cours.roomboard", path: "/home/j/cours.roomboard" };
-    expect(await host.save(bytes, target)).toEqual(target);
+    expect(await host.save(async () => bytes, target)).toEqual(target);
     expect(f.calls.save).toEqual([]);
     expect(f.calls.writes).toEqual(["/home/j/cours.roomboard"]);
   });
@@ -116,13 +121,13 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
 
   it("annulation de la boîte d'enregistrement : null, rien d'écrit", async () => {
     const f = fakes({ savePath: null });
-    expect(await createTauriHost(f.dialog, f.fs).save(bytes, ask)).toBeNull();
+    expect(await createTauriHost(f.dialog, f.fs).save(async () => bytes, ask)).toBeNull();
     expect(f.calls.writes).toEqual([]);
   });
 
   it("erreur d'écriture : l'erreur de plugin-fs remonte", async () => {
     const f = fakes({ failWrite: true });
-    await expect(createTauriHost(f.dialog, f.fs).save(bytes, ask)).rejects.toThrow("forbidden path");
+    await expect(createTauriHost(f.dialog, f.fs).save(async () => bytes, ask)).rejects.toThrow("forbidden path");
   });
 
   it("fermeture, document modifié, réponse Non : la fenêtre reste ouverte", async () => {
@@ -212,6 +217,37 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     createTauriShell(f.dialog, f.win, () => { throw new Error("confirm bloqué"); }).guardClose(() => true, "Abandonner ?");
     await f.tick();
     expect(await f.close()).toBe(true);
+  });
+  it("pick : boîte multiple au filtre d'import, fichiers lus par plugin-fs (R18)", async () => {
+    const f = fakes({ pickPaths: ["/home/j/a.png", "/home/j/b.roomboard"] });
+    f.disk.set("/home/j/a.png", new Uint8Array([1, 2]));
+    f.disk.set("/home/j/b.roomboard", new Uint8Array([3]));
+    const files = await createTauriHost(f.dialog, f.fs).pick();
+    expect(f.calls.openMany).toEqual([[IMPORT_FILTER]]);
+    expect(files.map((x) => [x.name, x.size, x.path])).toEqual([["a.png", 2, "/home/j/a.png"], ["b.roomboard", 1, "/home/j/b.roomboard"]]);
+    expect(Array.from(new Uint8Array(await (await files[0]!.blob()).arrayBuffer()))).toEqual([1, 2]);
+  });
+
+  it("pick annulé : [], aucune lecture", async () => {
+    const f = fakes();
+    expect(await createTauriHost(f.dialog, f.fs).pick()).toEqual([]);
+    expect(f.calls.reads).toEqual([]);
+  });
+
+  it("boîte d'enregistrement annulée : encode jamais appelé (R11)", async () => {
+    const f = fakes({ savePath: null });
+    const encode = vi.fn(async () => bytes);
+    expect(await createTauriHost(f.dialog, f.fs).save(encode, ask)).toBeNull();
+    expect(encode).not.toHaveBeenCalled();
+  });
+
+  it("enregistrer : la boîte d'abord, puis encode, puis l'écriture", async () => {
+    const f = fakes();
+    const order: string[] = [];
+    const dialog = { ...f.dialog, save: async (o: { defaultPath: string; filters: readonly unknown[] }) => (order.push("boîte"), `/home/j/${o.defaultPath}`) };
+    const fs = { ...f.fs, writeFile: async (p: string, d: Uint8Array) => (order.push("écriture"), f.fs.writeFile(p, d)) };
+    await createTauriHost(dialog as typeof f.dialog, fs).save(async () => (order.push("encode"), bytes), ask);
+    expect(order).toEqual(["boîte", "encode", "écriture"]);
   });
 });
 

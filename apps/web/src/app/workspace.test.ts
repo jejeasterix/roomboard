@@ -31,7 +31,7 @@ let shell: {
   guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string) => () => void>>;
   setTitle: ReturnType<typeof vi.fn<(t: string) => void>>;
 };
-let host: FileHost & { save: ReturnType<typeof vi.fn<(b: Uint8Array, t: SaveTarget) => Promise<SaveTarget | null>>> };
+let host: FileHost & { save: ReturnType<typeof vi.fn<(e: () => Promise<Uint8Array>, t: SaveTarget) => Promise<SaveTarget | null>>> };
 
 beforeEach(() => {
   log = [];
@@ -162,7 +162,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
         };
       }),
     open: async () => opening,
-    save: vi.fn(async (_b: Uint8Array, t: SaveTarget): Promise<SaveTarget | null> => (t.kind === "ask" ? { kind: "download", name: t.name } : t)),
+    pick: async () => [],
+    save: vi.fn(async (_e: () => Promise<Uint8Array>, t: SaveTarget): Promise<SaveTarget | null> => (t.kind === "ask" ? { kind: "download", name: t.name } : t)),
   };
   let n = 0;
   return createWorkspace({
