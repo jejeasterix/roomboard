@@ -1,5 +1,5 @@
 // Outils communs des scripts d'essai au navigateur (lot 4, T57). Repris à l'identique de s2-navigateur.mjs
-// (même cache npx, même PLAYWRIGHT_MODULE, mêmes types MIME) ; s2 n'est pas migré (lot 5).
+// (même cache npx, même PLAYWRIGHT_MODULE, mêmes types MIME) . Migrés : s2, fichiers (lot 5b, T85) et s34.
 import { existsSync, readdirSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
@@ -33,7 +33,8 @@ export async function loadPlaywright() {
   return found ? import(pathToFileURL(found).href) : null;
 }
 
-export function serve() {
+/** `headers` : en-têtes ajoutés à chaque réponse 200 (ex. la CSP de la coque). */
+export function serve({ headers = {} } = {}) {
   const server = createServer(async (req, res) => {
     try {
       const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
@@ -45,7 +46,7 @@ export function serve() {
       }
       const target = (await stat(file)).isDirectory() ? join(file, "index.html") : file;
       const body = await readFile(target);
-      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
+      res.writeHead(200, { ...headers, "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
     } catch {
       res.writeHead(404).end();
     }
@@ -84,3 +85,64 @@ export function inkIn(page, box) {
     box,
   );
 }
+
+/** Fenêtre de tous les essais du lot 5b : la scène doit garder au moins 640 px de haut sous les barres. */
+export const VIEWPORT = { width: 1280, height: 900 };
+/** Bouton d'un élément de barre (CL5b-11). */
+export const item = (id) => `button[data-item="${id}"]`;
+/** Rectangle de #stage (px de page) ; Echec si absent ou plus bas que `minHeight`. */
+export async function stageBox(page, minHeight = 640) {
+  const b = await page.locator("#stage").boundingBox();
+  if (!b) throw new Echec("#stage absent");
+  if (b.height < minHeight) throw new Echec(`scène trop basse : ${b.height} px < ${minHeight} (barres sur plusieurs lignes ?)`);
+  return b;
+}
+/** Point de page d'un point de scène : les gestes des scénarios sont écrits en px de la scène (origine = coin de #stage). */
+export const onStage = (box, x, y) => [box.x + x, box.y + y];
+/** Souris dont les coordonnées sont en px de la scène (rectangle de #stage relu à chaque geste). */
+export function stageMouse(page) {
+  const at = async (x, y) => onStage(await stageBox(page), x, y);
+  return {
+    move: async (x, y, o) => page.mouse.move(...(await at(x, y)), o),
+    click: async (x, y, o) => page.mouse.click(...(await at(x, y)), o),
+    down: (o) => page.mouse.down(o),
+    up: (o) => page.mouse.up(o),
+    wheel: (dx, dy) => page.mouse.wheel(dx, dy),
+  };
+}
+/** Vrai si les deux rectangles ne se chevauchent pas (tolérance 0,5 px). */
+function apart(a, b) {
+  return a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+}
+/** Chaque élément `selector` (ex. `button[data-item]`) hors du rectangle de #stage ; rend la liste des fautifs. */
+export async function overlapping(page, selector, stageSelector = "#stage") {
+  const stage = await page.locator(stageSelector).boundingBox();
+  if (!stage) throw new Echec(`rectangle absent : ${stageSelector}`);
+  const bad = [];
+  for (const el of await page.locator(selector).all()) {
+    const a = await el.boundingBox();
+    if (!a) continue; // élément caché : ne recouvre rien
+    if (!apart(a, stage)) bad.push((await el.getAttribute("data-item")) ?? selector);
+  }
+  return bad;
+}
+/** Rectangles de la barre et de la scène ; `apart` vrai s'ils ne se chevauchent pas. */
+export async function noOverlap(page, barSelector, stageSelector = "#stage") {
+  const [a, b] = await Promise.all([page.locator(barSelector).boundingBox(), page.locator(stageSelector).boundingBox()]);
+  if (!a || !b) throw new Echec(`rectangle absent : ${!a ? barSelector : stageSelector}`);
+  return { apart: apart(a, b), bar: a, stage: b };
+}
+/** Dépôt simulé (DataTransfer construit dans la page) sur un sélecteur. */
+export async function dropFile(page, selector, name, bytes, type = "") {
+  await page.evaluate(({ selector, name, bytes, type }) => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(bytes)], name, { type }));
+    const target = document.querySelector(selector);
+    const r = target.getBoundingClientRect();
+    for (const t of ["dragover", "drop"]) {
+      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + 50, clientY: r.y + 50 }));
+    }
+  }, { selector, name, bytes: Array.from(bytes), type });
+}
+/** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
+export const TAB = '[role="tab"][data-tab]';

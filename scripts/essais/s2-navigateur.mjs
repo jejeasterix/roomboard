@@ -8,25 +8,10 @@
 // Playwright (cache npx) et son Chromium. Code de sortie : 0 réussi, 1 échec, 2 outil absent.
 // Usage : node scripts/essais/s2-navigateur.mjs [--capture docs/essais/s2-lot3-vm.png]
 //         node scripts/essais/s2-navigateur.mjs --lot3b [--captures]   (docs/essais/s2-lot3b-<réglage>.png)
-import { existsSync, readdirSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
-import { createServer } from "node:http";
-import { homedir } from "node:os";
-import { extname, join, normalize, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 
-const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const DIST = join(ROOT, "apps", "web", "dist");
-const TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".wasm": "application/wasm",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-};
+import { DIST, Echec, ROOT, VIEWPORT, frames as framesOf, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
 
 /** Passages du lot 3b : `attendu` lit #stage[data-echelons] (forme `2:off,3:off,4:off`, engine/settings.ts). */
 const PASSES = [
@@ -38,43 +23,10 @@ const PASSES = [
 /** WebGL2 sous Chromium headless : SwiftShader s'il est permis ; sinon le passage 4 prouve le repli Canvas 2D. */
 const LOT3B_ARGS = ["--no-sandbox", "--enable-unsafe-swiftshader", "--use-angle=swiftshader"];
 
-class Echec extends Error {}
-
 function captureTarget(argv) {
   const i = argv.indexOf("--capture");
   if (i < 0) return null;
   return resolve(ROOT, argv[i + 1] ?? "docs/essais/s2-lot3-vm.png");
-}
-
-async function loadPlaywright() {
-  const candidates = [];
-  if (process.env.PLAYWRIGHT_MODULE) candidates.push(process.env.PLAYWRIGHT_MODULE);
-  const npx = join(homedir(), ".npm", "_npx");
-  if (existsSync(npx)) {
-    for (const d of readdirSync(npx)) candidates.push(join(npx, d, "node_modules", "playwright", "index.mjs"));
-  }
-  const found = candidates.find((c) => existsSync(c));
-  return found ? import(pathToFileURL(found).href) : null;
-}
-
-function serve() {
-  const server = createServer(async (req, res) => {
-    try {
-      const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
-      const rel = normalize(path).replace(/^[/\\]+/, "");
-      const file = join(DIST, rel === "" ? "index.html" : rel);
-      if (file !== DIST && !file.startsWith(DIST + sep)) {
-        res.writeHead(403).end();
-        return;
-      }
-      const target = (await stat(file)).isDirectory() ? join(file, "index.html") : file;
-      const body = await readFile(target);
-      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream" }).end(body);
-    } catch {
-      res.writeHead(404).end();
-    }
-  });
-  return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(server)));
 }
 
 /** `pass` absent : parcours du lot 3, sortie inchangée. `pass` donné : réglages lus, encre vive, contrôles du lot 3b. */
@@ -88,31 +40,17 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     if (!cond) throw new Echec(msg);
     console.log(`ok — ${msg}`);
   };
-  const frames = () =>
-    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))));
+  const frames = () => framesOf(page);
+  const mouse = stageMouse(page); // gestes en px de la scène (origine = coin de #stage)
   const elements = async () => Number(await page.getAttribute("#stage", "data-elements"));
-  const disabled = (action) => page.$eval(`#barre button[data-action="${action}"]`, (b) => b.disabled);
-  const pressed = (action) => page.getAttribute(`#barre button[data-action="${action}"]`, "aria-pressed");
+  const disabled = (action) => page.$eval(item(action), (b) => b.disabled);
+  const pressed = (action) => page.getAttribute(item(action), "aria-pressed");
   // Pixels d'encre (somme RVB < 300) dans une boîte en px CSS du canvas de scène.
-  const ink = (box) =>
-    page.$eval(
-      "#scene",
-      (c, [x0, y0, x1, y1]) => {
-        const ctx = c.getContext("2d");
-        const sx = c.width / c.clientWidth;
-        const sy = c.height / c.clientHeight;
-        const w = Math.max(1, Math.round((x1 - x0) * sx));
-        const h = Math.max(1, Math.round((y1 - y0) * sy));
-        const d = ctx.getImageData(Math.round(x0 * sx), Math.round(y0 * sy), w, h).data;
-        let n = 0;
-        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 300) n++;
-        return n;
-      },
-      box,
-    );
+  const ink = (box) => inkIn(page, box);
   // Pixels d'encre à l'écran (capture composée : scène et canvas d'interaction, Canvas 2D ou WebGL2), décodés dans la page.
   const shotInk = async ([x0, y0, x1, y1]) => {
-    const png = await page.screenshot({ clip: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } });
+    const box = await stageBox(page);
+    const png = await page.screenshot({ clip: { x: box.x + x0, y: box.y + y0, width: x1 - x0, height: y1 - y0 } });
     return page.evaluate(async (b64) => {
       const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob();
       const bmp = await createImageBitmap(blob);
@@ -127,10 +65,10 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
   };
   const drag = async (points) => {
     const [first, ...rest] = points;
-    await page.mouse.move(first[0], first[1]);
-    await page.mouse.down();
-    for (const [x, y] of rest) await page.mouse.move(x, y, { steps: 8 });
-    await page.mouse.up();
+    await mouse.move(first[0], first[1]);
+    await mouse.down();
+    for (const [x, y] of rest) await mouse.move(x, y, { steps: 8 });
+    await mouse.up();
     await frames();
   };
   const press = async (keys) => {
@@ -138,7 +76,7 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     await frames();
   };
   const click = async (action) => {
-    await page.click(`#barre button[data-action="${action}"]`);
+    await page.click(item(action));
     await frames();
   };
 
@@ -199,13 +137,13 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
 
   // Lot 3b : encre vive pendant le geste (canvas d'interaction), rien d'écrit avant le relâché (D38).
   await click("pen");
-  await page.mouse.move(400, 550);
-  await page.mouse.down();
-  await page.mouse.move(900, 550, { steps: 12 });
+  await mouse.move(400, 550);
+  await mouse.down();
+  await mouse.move(900, 550, { steps: 12 });
   await frames();
   check((await elements()) === 4, "pendant le geste : rien d'écrit dans le document (D38)");
   check((await shotInk([640, 540, 660, 560])) > 0, "encre vive visible pendant le geste (canvas d'interaction)");
-  await page.mouse.up();
+  await mouse.up();
   await frames();
   check((await elements()) === 5, "relâché : le trait est écrit (cinq traits)");
 
@@ -217,10 +155,10 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
     await drag([[700, 620], [550, 620]]);
     check((await elements()) === 5 && (await ink(LEFT)) > 0, "outil main : la vue suit le glisser, aucun trait");
     await click("pen"); // outil Stylo : sans lui, l'outil Main masquerait une régression T27 (le milieu tracerait)
-    await page.mouse.move(550, 620);
-    await page.mouse.down({ button: "middle" });
-    await page.mouse.move(700, 620, { steps: 8 });
-    await page.mouse.up({ button: "middle" });
+    await mouse.move(550, 620);
+    await mouse.down({ button: "middle" });
+    await mouse.move(700, 620, { steps: 8 });
+    await mouse.up({ button: "middle" });
     await frames();
     check((await elements()) === 5 && (await ink(LEFT)) === 0, "bouton du milieu : la vue revient, aucun trait");
     await click("pen");
@@ -245,12 +183,7 @@ async function scenario(page, url, { capture = null, pass = null } = {}) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  let sha = "inconnu";
-  try {
-    sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
-  } catch {
-    // hors dépôt git : la ligne le dit
-  }
+  const sha = gitSha();
   console.log(`sha ${sha}`);
   const lot3b = argv.includes("--lot3b");
   const label = lot3b ? "S2 lot 3b" : "S2 lot 3";
@@ -276,14 +209,14 @@ async function main() {
       return 2;
     }
     if (!lot3b) {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+      const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       await scenario(page, `http://127.0.0.1:${port}/`, { capture: captureTarget(argv) });
       console.log("S2 lot 3 : OK");
       return 0;
     }
     const captures = argv.includes("--captures");
     for (const pass of PASSES) {
-      const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+      const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1 });
       try {
         const page = await context.newPage();
         console.log(`— passage ${pass.nom} (${pass.query || "réglages par défaut"})`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitPage, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
+import { fitPage, fitWidth, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
 
 describe("camera (D17)", () => {
   const cam: Camera = { zoom: 2, tx: 10, ty: -20 };
@@ -48,5 +48,20 @@ describe("camera (D17)", () => {
 
   it("fitPage sur une vue vide : identité", () => {
     expect(fitPage(0, 720)).toBe(IDENTITY);
+  });
+
+  it("fitWidth cadre la largeur : 95 % de la vue, centrée, haut de page à 16 px", () => {
+    const c = fitWidth(1000, 400);
+    expect(c.zoom).toBeCloseTo((1000 / 1920) * 0.95, 10);
+    expect(c.tx).toBeCloseTo((1000 - 1920 * c.zoom) / 2, 10);
+    expect(c.ty).toBe(16);
+  });
+
+  it("fitWidth ne dépend pas de la hauteur de la vue (page infinie)", () => {
+    expect(fitWidth(1000, 400).zoom).toBe(fitWidth(1000, 4000).zoom);
+  });
+
+  it("fitWidth : vue vide → identité", () => {
+    expect(fitWidth(0, 300)).toEqual({ zoom: 1, tx: 0, ty: 0 });
   });
 });

@@ -43,12 +43,28 @@ export interface OpenedFile {
   readonly target: SaveTarget;
 }
 
+export interface Point { readonly x: number; readonly y: number }
+
+/** Fichier entrant (U23) : `path` dans la coque seulement ; `blob()` lit par morceaux dans la coque. */
+export interface DroppedFile {
+  readonly name: string;
+  readonly size: number;
+  readonly mime: string;
+  readonly path?: string;
+  blob(): Promise<Blob>;
+}
+
+/** `at` en px CSS relatifs à la fenêtre ; null quand le système ne donne pas de point (ouverture par le Finder). */
+export type DropHandler = (files: DroppedFile[], at: Point | null) => void;
+
 export interface FileHost {
   readonly kind: HostKind;
   /** null : boîte annulée. Lève une Error si la lecture échoue. */
   open(): Promise<OpenedFile | null>;
   /** `kind: "ask"` (ou cible d'un autre hôte) : demande où enregistrer. null : annulé. Lève si l'écriture échoue. */
   save(bytes: Uint8Array, target: SaveTarget): Promise<SaveTarget | null>;
+  /** Abonne le dépôt de fichiers ; rend le désabonnement. Hôte sans surface de dépôt : no-op. */
+  onDrop(handler: DropHandler): () => void;
 }
 
 /** Ce que la fenêtre offre autour des fichiers : question, message, fermeture gardée, titre. */

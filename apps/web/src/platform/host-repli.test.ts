@@ -211,3 +211,21 @@ describe("hôte de repli (téléchargement et <input type=file>)", () => {
     expect(win.listeners.size).toBe(0);
   });
 });
+
+describe("hôte de repli : onDrop (T86)", () => {
+  it("branché sur la cible passée ; désabonnement rendu", () => {
+    const added: string[] = [];
+    const removed: string[] = [];
+    const target = {
+      addEventListener: (t: string) => void added.push(t),
+      removeEventListener: (t: string) => void removed.push(t),
+    };
+    const off = createFallbackHost(memoryDeps().deps, target).onDrop(() => undefined);
+    expect(added.sort()).toEqual(["dragover", "drop"]);
+    off();
+    expect(removed.sort()).toEqual(["dragover", "drop"]);
+  });
+  it("sans cible : no-op", () => {
+    expect(() => createFallbackHost(memoryDeps().deps).onDrop(() => undefined)()).not.toThrow();
+  });
+});

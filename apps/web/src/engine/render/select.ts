@@ -7,6 +7,12 @@ import { Canvas2DRenderer, createCanvas2DRenderer } from "./canvas2d";
 import type { Renderer, SceneSource } from "./renderer";
 import { WEBGL2_CONTEXT, WebGL2LiveRenderer } from "./webgl2";
 
+export interface RendererDiagnostics {
+  readonly webgl: "on" | "off" | "repli";
+  readonly lost: boolean;
+  readonly badColors: readonly string[];
+}
+
 export interface RendererChoice {
   readonly renderer: Renderer;
   /** Vrai si le canvas d'interaction est dessiné en WebGL2. */
@@ -15,6 +21,22 @@ export interface RendererChoice {
   readonly interaction: HTMLCanvasElement;
   /** Repli dit à l'utilisateur (barre), ou null. */
   readonly note: string | null;
+  /** État du rendu WebGL2 pour la barre (réglages). */
+  diagnostics(): RendererDiagnostics;
+  /** Libère la mémoire graphique : branche WebGL2 → `WEBGL_lose_context` (exception avalée) ; Canvas 2D → rien.
+   *  Idempotent. `engine.dispose()` n'arrête que la boucle : c'est ceci qui rend le contexte (12 onglets fermés). */
+  release(): void;
+}
+
+const REPLI: RendererDiagnostics = { webgl: "repli", lost: false, badColors: [] };
+
+/** Perd le contexte pour rendre sa mémoire graphique ; extension refusée : le canvas sera ramassé avec lui. */
+function loseContext(gl: WebGL2RenderingContext): void {
+  try {
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    // extension refusée
+  }
 }
 
 export function chooseRenderer(
@@ -24,7 +46,7 @@ export function chooseRenderer(
   wantWebgl: boolean,
 ): RendererChoice {
   if (!wantWebgl) {
-    return { renderer: createCanvas2DRenderer(scene, live, source), webgl: false, interaction: live, note: null };
+    return { renderer: createCanvas2DRenderer(scene, live, source), webgl: false, interaction: live, note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }), release() {} };
   }
   const gl = live.getContext("webgl2", WEBGL2_CONTEXT);
   if (!gl) {
@@ -33,19 +55,30 @@ export function chooseRenderer(
       webgl: false,
       interaction: live,
       note: "WebGL2 indisponible : repli Canvas 2D",
+      diagnostics: () => REPLI,
+      release() {},
     };
   }
   const sceneCtx = scene.getContext("2d", { alpha: false });
   if (!sceneCtx) throw new Error("canvas 2D indisponible");
   try {
-    return { renderer: new WebGL2LiveRenderer(new Canvas2DRenderer(sceneCtx, null, source), gl), webgl: true, interaction: live, note: null };
+    const renderer = new WebGL2LiveRenderer(new Canvas2DRenderer(sceneCtx, null, source), gl);
+    let released = false;
+    return {
+      renderer,
+      webgl: true,
+      interaction: live,
+      note: null,
+      diagnostics: () => ({ webgl: "on", lost: renderer.lost, badColors: [...renderer.badColors] }),
+      release() {
+        if (released) return;
+        released = true;
+        loseContext(gl);
+      },
+    };
   } catch (e) {
     // Le contexte WebGL2 ne se rend pas : on le perd explicitement pour libérer la mémoire graphique du canvas jeté.
-    try {
-      gl.getExtension("WEBGL_lose_context")?.loseContext();
-    } catch {
-      // extension refusée : le canvas jeté sera ramassé avec son contexte.
-    }
+    loseContext(gl);
     const fresh = live.cloneNode(false) as HTMLCanvasElement;
     const detached = !live.parentNode;
     live.replaceWith(fresh);
@@ -56,6 +89,9 @@ export function chooseRenderer(
       renderer: new Canvas2DRenderer(sceneCtx, liveCtx, source),
       webgl: false,
       interaction: fresh,
+      diagnostics: () => REPLI,
+      // Contexte déjà perdu ci-dessus.
+      release() {},
       note: `WebGL2 refusé (${cause}${detached ? " ; canvas d'interaction sans parent, remplacé hors page" : ""}) : repli Canvas 2D`,
     };
   }

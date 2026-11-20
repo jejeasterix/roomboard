@@ -4,6 +4,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# --e2e : joue aussi les essais Playwright (Chromium, VM) ; sans lui, aucun navigateur n'est lancé.
+E2E=0
+for a in "$@"; do
+  case "$a" in
+    --e2e) E2E=1 ;;
+    *) echo "verifier.sh : option inconnue $a" >&2; exit 2 ;;
+  esac
+done
+
 WASM_OUT=apps/web/src/wasm
 
 cargo fmt --all --check
@@ -13,6 +22,7 @@ cargo test --workspace
 bash scripts/tests/controle-wasm-bindgen.test.sh
 bash scripts/controle-wasm-bindgen.sh Cargo.lock
 bash scripts/tests/controle-hors-ligne.test.sh
+bash scripts/tests/verifier-e2e.test.sh
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
 rm -rf "$WASM_OUT"
 wasm-bindgen --target web --out-dir "$WASM_OUT" \
@@ -51,4 +61,13 @@ if grep -Eq '<script[^>]*\ssrc=|<link[^>]*stylesheet' "$proto"; then
   exit 1
 fi
 echo "verifier.sh : prototype en fichier unique OK"
+if [ "$E2E" = 1 ]; then
+  # Aucune option de capture : un verifier.sh --e2e ne réécrit jamais une capture commitée.
+  node scripts/essais/s2-navigateur.mjs
+  node scripts/essais/s2-navigateur.mjs --lot3b
+  node scripts/essais/s34-navigateur.mjs
+  node scripts/essais/fichiers-navigateur.mjs
+  node scripts/essais/s5b-navigateur.mjs
+  echo "verifier.sh : e2e OK"
+fi
 echo "verifier.sh : OK"

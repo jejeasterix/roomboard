@@ -1,11 +1,12 @@
 /**
- * Contrôleur des fichiers (D26) : Ouvrir, Enregistrer, Enregistrer sous, Nouveau ; état « modifié » ; question avant
- * d'abandonner ; garde de fermeture. Ignore la plateforme (DA8). « Modifié » = version du document (monotone,
- * annulation comprise) différente de celle du dernier enregistrement réussi, lue avant l'écriture. Ouvrir valide le
- * fichier, le met en attente et recharge la page (le moteur garde son document).
+ * Contrôleur des fichiers d'un onglet (D26, T98) : Ouvrir, Enregistrer, Enregistrer sous, Nouveau ; état « modifié ».
+ * Ignore la plateforme (DA8). « Modifié » = version du document (monotone, annulation comprise) différente de celle du
+ * dernier enregistrement réussi, lue avant l'écriture. Ouvrir et Nouveau ouvrent un autre onglet (`openInTab`,
+ * `newTab`), sans question : le document de cet onglet reste où il est (D27 amendée, Q1, CL5b-3). La garde de
+ * fermeture n'est pas posée ici : une seule pour la fenêtre, tenue par l'espace de travail (CL5b-6).
  */
-import type { CoreDocument, CoreFactory } from "../core/api";
-import { UNTITLED, type FileHost, type OpenedFile, type PendingStore, type SaveTarget, type ShellPort } from "./files";
+import type { CoreDocument } from "../core/api";
+import { UNTITLED, type FileHost, type OpenedFile, type SaveTarget, type ShellPort } from "./files";
 
 export const APP_VERSION = "0.1.0";
 export const DISCARD_MESSAGE = "Le document a des modifications non enregistrées. Les abandonner ?";
@@ -29,15 +30,17 @@ export interface FileKey {
 }
 
 export interface FileControllerDeps {
-  readonly core: Pick<CoreFactory, "load">;
   readonly doc: Pick<CoreDocument, "save">;
   readonly versions: VersionSource;
   readonly host: FileHost;
+  /** Shell de l'onglet : `guardClose` n'est jamais appelé ; `setTitle` n'agit que pour l'onglet actif. */
   readonly shell: ShellPort;
-  readonly pending: PendingStore;
-  /** Fichier d'où vient le document (attente prise au démarrage), sinon null. */
+  /** Fichier d'où vient le document (attente prise au démarrage, onglet ouvert), sinon null. */
   readonly opened: { readonly name: string; readonly target: SaveTarget | null } | null;
-  readonly reload: () => void;
+  /** Ouvre le fichier dans un nouvel onglet ; false si illisible (le message est déjà dit). */
+  openInTab(file: OpenedFile): Promise<boolean>;
+  /** Ouvre un onglet vierge. */
+  newTab(): Promise<void>;
   readonly now: () => string;
   readonly appVersion: string;
 }
@@ -78,7 +81,6 @@ export function createFileController(d: FileControllerDeps): FileController {
   let savedVersion = d.versions.state().version;
   let target: SaveTarget | null = d.opened?.target ?? null;
   let name = d.opened?.name ?? UNTITLED;
-  let leaving = false;
   let busy = false;
   let lastTitle = "";
   const listeners = new Set<() => void>();
@@ -102,19 +104,6 @@ export function createFileController(d: FileControllerDeps): FileController {
     }
     return false;
   };
-  let stopClose: (() => void) | null = null;
-  const unguard = (): void => {
-    const stop = stopClose;
-    stopClose = null;
-    stop?.();
-  };
-  const leave = (): void => {
-    leaving = true;
-    unguard(); // Tauri : sans cela la garde de fermeture survit au rechargement voulu
-    d.reload();
-  };
-  const discardOk = async (): Promise<boolean> => !isDirty() || d.shell.confirm(DISCARD_MESSAGE);
-
   async function save(as: boolean): Promise<boolean> {
     const version = d.versions.state().version; // lue avant l'écriture : un trait tracé pendant reste « modifié »
     let bytes: Uint8Array;
@@ -147,34 +136,24 @@ export function createFileController(d: FileControllerDeps): FileController {
       return fail("Ouverture impossible", e);
     }
     if (file === null) return false;
+    // Aucune question : le document de cet onglet n'est pas abandonné, le fichier arrive dans un autre onglet.
     try {
-      d.core.load(file.bytes).free();
+      return await d.openInTab(file);
     } catch (e) {
       return fail(`Ouverture impossible (${file.name})`, e);
     }
-    if (!(await discardOk())) return false;
-    try {
-      await d.pending.put({ name: file.name, bytes: file.bytes, target: file.target });
-    } catch (e) {
-      return fail(`Ouverture impossible (${file.name})`, e);
-    }
-    leave();
-    return true;
   }
 
   async function newDocument(): Promise<boolean> {
-    if (!(await discardOk())) return false;
-    await d.pending.clear().catch(() => undefined);
-    leave();
+    await d.newTab();
     return true;
   }
 
   const stopState = d.versions.onState(() => changed());
-  stopClose = d.shell.guardClose(() => !leaving && isDirty(), DISCARD_MESSAGE);
   changed();
 
   async function run(cmd: FileCommand): Promise<boolean> {
-    if (busy || leaving) return false;
+    if (busy) return false;
     busy = true;
     try {
       if (cmd === "save") return await save(false);
@@ -208,7 +187,6 @@ export function createFileController(d: FileControllerDeps): FileController {
     },
     dispose() {
       stopState();
-      unguard();
       listeners.clear();
     },
   };

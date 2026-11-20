@@ -166,3 +166,22 @@ describe("hôte Chromium (File System Access)", () => {
     expect([disk.requests, w.calls.save.length, saved?.name]).toEqual([0, 1, "autre.roomboard"]);
   });
 });
+
+describe("hôte FSA : onDrop (T86)", () => {
+  const win = {} as FsaWindow;
+  it("branché sur la cible passée ; désabonnement rendu", () => {
+    const added: string[] = [];
+    const removed: string[] = [];
+    const target = {
+      addEventListener: (t: string) => void added.push(t),
+      removeEventListener: (t: string) => void removed.push(t),
+    };
+    const off = createFsaHost(win, target).onDrop(() => undefined);
+    expect(added.sort()).toEqual(["dragover", "drop"]);
+    off();
+    expect(removed.sort()).toEqual(["dragover", "drop"]);
+  });
+  it("sans cible : no-op", () => {
+    expect(() => createFsaHost(win).onDrop(() => undefined)()).not.toThrow();
+  });
+});

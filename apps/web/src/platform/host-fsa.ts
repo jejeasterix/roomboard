@@ -12,6 +12,7 @@ import {
   type OpenedFile,
   type SaveTarget,
 } from "./files";
+import { listenWebDrop, type DropTargetLike } from "./drop-web";
 
 export interface PickerType {
   readonly description: string;
@@ -53,9 +54,10 @@ async function writeAll(handle: FileHandleLike, bytes: Uint8Array): Promise<void
   await w.close();
 }
 
-export function createFsaHost(w: FsaWindow): FileHost {
+export function createFsaHost(w: FsaWindow, dropTarget: DropTargetLike | null = null): FileHost {
   return {
     kind: "fsa",
+    onDrop: (h) => listenWebDrop(dropTarget, h),
     async open(): Promise<OpenedFile | null> {
       let handles: readonly FileHandleLike[];
       try {

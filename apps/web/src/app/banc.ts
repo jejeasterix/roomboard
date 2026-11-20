@@ -12,6 +12,7 @@ import {
   type Environment,
 } from "../engine/input/stats";
 import { createRecorder } from "../proto/recorder";
+import { downloadJson, fmt } from "./mesure-outils";
 
 export interface AppBenchDeps {
   readonly sampler: Pick<Sampler, "onGesture" | "stats">;
@@ -65,8 +66,6 @@ export function createAppBench(deps: AppBenchDeps): AppBench {
 /** Images retenues pour le résumé affiché toutes les 500 ms : le travail (tris p50/p95) reste borné au fil de la séance. */
 export const PANEL_RECENT_FRAMES = 600;
 
-const fmt = (v: number | null | undefined, digits = 1): string =>
-  v === null || v === undefined ? "—" : v.toFixed(digits);
 
 /** Texte du panneau : quatre lignes ; le résumé des images porte sur les PANEL_RECENT_FRAMES dernières, et le dit. */
 export function panelText(r: AppBenchReport): string {
@@ -95,14 +94,11 @@ export function mountBenchPanel(bench: AppBench, host: HTMLElement = document.bo
   button.title = "Toutes les images retenues par le moteur (3 600 au plus)";
   button.addEventListener("click", () => {
     const text = JSON.stringify(bench.report(), null, 2);
-    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `roomboard-appli-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadJson(text, "roomboard-appli", new Date(), {
+      document,
+      url: URL,
+      setTimeout: (cb, ms) => window.setTimeout(cb, ms),
+    });
   });
   box.append(pre, button);
   host.append(box);

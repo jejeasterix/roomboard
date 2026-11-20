@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CoreDocument } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import type { PendingOpen, PendingStore } from "./files";
-import { prepareFiles, startDocument } from "./mount";
+import { prepareHost, startDocument } from "./mount";
 
 function store(value: PendingOpen | null, failTake = false): PendingStore & { taken: number } {
   const s = {
@@ -57,69 +57,44 @@ describe("amorce des fichiers", () => {
   });
 });
 
-describe("raccourcis de fichier de l'amorce", () => {
-  it("touche tenue : preventDefault à chaque répétition, commande lancée une seule fois", async () => {
-    const listeners: Record<string, Array<(e: unknown) => void>> = {};
-    let pickers = 0;
-    const w = {
+describe("prepareHost (T98)", () => {
+  function webWindow(search: string, fsa: boolean) {
+    const doc = { title: "", addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    const w: Record<string, unknown> = {
       indexedDB: undefined,
-      location: { search: "", reload: () => undefined },
-      document: { title: "" },
+      location: { search, reload: () => undefined },
+      document: doc,
       confirm: () => true,
       alert: () => undefined,
-      addEventListener: (t: string, cb: (e: unknown) => void) => {
-        (listeners[t] ??= []).push(cb);
-      },
+      addEventListener: () => undefined,
       removeEventListener: () => undefined,
-      showOpenFilePicker: async () => [],
-      showSaveFilePicker: async () => {
-        pickers += 1;
-        throw new DOMException("annulé", "AbortError");
-      },
     };
-    const prepared = await prepareFiles(fakeCore, w as unknown as Window);
-    const engine = { state: () => ({ version: 0 }), onState: () => () => undefined };
-    const stage = { dataset: {} as Record<string, string> };
-    await prepared.mount(engine, stage as unknown as HTMLElement);
-    expect(stage.dataset["fichiers"]).toBe("fsa");
-    let prevented = 0;
-    const press = (repeat: boolean): void => {
-      const e = { key: "s", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: false, repeat, preventDefault: () => (prevented += 1) };
-      for (const cb of listeners["keydown"] ?? []) cb(e);
-    };
-    press(false);
-    press(true);
-    press(true);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(prevented).toBe(3);
-    expect(pickers).toBe(1);
+    if (fsa) {
+      w["showOpenFilePicker"] = async () => [];
+      w["showSaveFilePicker"] = async () => [];
+    }
+    return { w: w as unknown as Window, doc };
+  }
+
+  it("hôte FSA : rend { kind, host, shell, dropReady }, dépôt posé sur w.document, dropReady résolu", async () => {
+    const { w, doc } = webWindow("", true);
+    const p = await prepareHost(w);
+    expect(p.kind).toBe("fsa");
+    expect(p.host.kind).toBe("fsa");
+    expect(typeof p.shell.setTitle).toBe("function");
+    const off = p.host.onDrop(vi.fn());
+    expect(doc.addEventListener.mock.calls.map((c) => c[0])).toEqual(["dragover", "drop"]);
+    off();
+    expect(doc.removeEventListener.mock.calls.map((c) => c[0])).toEqual(["dragover", "drop"]);
+    await expect(p.dropReady()).resolves.toBeUndefined();
   });
 
-  it("T79 : dispose retire l'écouteur keydown (et la garde du contrôleur)", async () => {
-    const added: Array<[string, unknown]> = [];
-    const removed: Array<[string, unknown]> = [];
-    const w = {
-      indexedDB: undefined,
-      location: { search: "", reload: () => undefined },
-      document: { title: "" },
-      confirm: () => true,
-      alert: () => undefined,
-      addEventListener: (t: string, cb: unknown) => {
-        added.push([t, cb]);
-      },
-      removeEventListener: (t: string, cb: unknown) => {
-        removed.push([t, cb]);
-      },
-      showOpenFilePicker: async () => [],
-      showSaveFilePicker: async () => [],
-    };
-    const prepared = await prepareFiles(fakeCore, w as unknown as Window);
-    const engine = { state: () => ({ version: 0 }), onState: () => () => undefined };
-    const ctl = await prepared.mount(engine, { dataset: {} } as unknown as HTMLElement);
-    const keydown = added.find(([t]) => t === "keydown")?.[1];
-    expect(keydown).toBeDefined();
-    expect(removed.some(([t, cb]) => t === "keydown" && cb === keydown)).toBe(false);
-    ctl.dispose();
-    expect(removed.some(([t, cb]) => t === "keydown" && cb === keydown)).toBe(true);
+  it("repli (?fichiers=repli) : dépôt posé sur w.document, dropReady résolu", async () => {
+    const { w, doc } = webWindow("?fichiers=repli", true);
+    const p = await prepareHost(w);
+    expect([p.kind, p.host.kind]).toEqual(["repli", "repli"]);
+    p.host.onDrop(vi.fn());
+    expect(doc.addEventListener.mock.calls.map((c) => c[0])).toEqual(["dragover", "drop"]);
+    await expect(p.dropReady()).resolves.toBeUndefined();
   });
 });

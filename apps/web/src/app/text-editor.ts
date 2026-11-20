@@ -19,6 +19,8 @@ export interface TextEditorEvents {
 
 export interface TextEditor extends TextEditorHost {
   readonly element: HTMLTextAreaElement;
+  /** Session ouverte : réapplique la matrice CSS pour la caméra donnée (CL4-15) ; fermée : rien. */
+  follow(camera: Camera): void;
 }
 
 /** Écran (px CSS) = caméra ∘ m : `matrix(z·a, z·b, z·c, z·d, z·e + tx, z·f + ty)`. */
@@ -49,6 +51,7 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
   s.whiteSpace = "pre-wrap";
   s.zIndex = "3";
   let opened = false;
+  let current: TextEditSession | null = null;
   const grow = (): void => {
     s.height = "auto";
     s.height = `${area.scrollHeight}px`;
@@ -72,6 +75,7 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
     element: area,
     open(session: TextEditSession, camera: Camera) {
       opened = true;
+      current = session;
       area.value = session.initial;
       s.transform = cssMatrix(camera, session.matrix);
       s.width = `${session.boxWidth}px`;
@@ -85,9 +89,13 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
       area.setSelectionRange(area.value.length, area.value.length);
     },
     close() {
+      current = null;
       opened = false; // avant de cacher : le blur qui suit ne redemande rien
       area.hidden = true;
       area.value = "";
+    },
+    follow(camera) {
+      if (current) s.transform = cssMatrix(camera, current.matrix);
     },
     value: () => area.value,
   };

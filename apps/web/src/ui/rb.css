@@ -1,0 +1,47 @@
+:root {
+  --rb-btn-s: 36px;
+  --rb-btn-m: 44px;
+  --rb-btn-l: 64px;
+  --rb-tab-h: 36px;
+  --rb-gap: 8px;
+  --rb-pad: 12px;
+}
+.rb-bar { display: flex; align-items: center; gap: 4px; padding: 4px; --rb-btn: var(--rb-btn-m); }
+.rb-bar[data-size="s"] { --rb-btn: var(--rb-btn-s); }
+.rb-bar[data-size="m"] { --rb-btn: var(--rb-btn-m); }
+.rb-bar[data-size="l"] { --rb-btn: var(--rb-btn-l); }
+.rb-bar[data-dock="top"], .rb-bar[data-dock="bottom"] { flex-direction: row; flex-wrap: wrap; }
+.rb-bar[data-dock="left"], .rb-bar[data-dock="right"] { flex-direction: column; flex-wrap: wrap; }
+.rb-bar button { min-width: var(--rb-btn); min-height: var(--rb-btn); padding: 0 var(--rb-pad); }
+.rb-bar button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+.rb-sep { align-self: stretch; border-inline-start: 1px solid #94a3b8; margin: 0 4px; }
+.rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed #94a3b8; min-height: var(--rb-btn); }
+/* Mise en page (T95, CL5b-10) : la grille vient de `layoutFor` ; chaque barre ancrée a sa case, la scène la sienne. Seuls
+   une barre `floating` et les menus passagers (réglages, profils) se superposent à la scène, dans sa case. */
+.rb-layout { display: grid; height: 100vh; overflow: hidden; }
+.rb-slot { min-width: 0; min-height: 0; overflow: auto; }
+.rb-head { display: flex; align-items: center; gap: 8px; }
+#etat { margin: 0 8px; color: #b91c1c; }
+#pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
+#echelons-notes { margin-left: 8px; color: #b45309; }
+.rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
+.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: 100%; max-height: 100%; overflow: auto; background: #ffffff; border: 1px solid #a1a1aa; }
+/* Scène (règles d'index.html du lot 4 : sans elles, le navigateur fait défiler ou sélectionne au lieu de tracer). */
+.rb-stages { grid-area: stage; position: relative; overflow: hidden; }
+.rb-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
+.rb-stage[hidden] { display: none; }
+/* Barre des pages (T101) : même allure que la barre d'outils ; compteur lisible, chiffres de largeur fixe. */
+.rb-bar button[aria-current="page"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+.rb-pages-count { margin-inline: var(--rb-gap); padding: 0 var(--rb-pad); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
+.rb-pages-list { display: flex; flex: 1 1 0; flex-wrap: nowrap; min-width: 0; gap: var(--rb-gap); overflow-x: auto; }
+.rb-bar[data-dock="left"] .rb-pages-list, .rb-bar[data-dock="right"] .rb-pages-list { flex-direction: column; overflow-x: visible; overflow-y: auto; }
+/* Onglets (T101) : une seule rangée, sans retour à la ligne ; défile à l'horizontale si elle déborde. */
+.rb-tabs { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 4px; padding: 4px 4px 0; overflow-x: auto; background: #e4e4e7; border-bottom: 1px solid #a1a1aa; }
+.rb-tab { display: inline-flex; align-items: center; gap: var(--rb-gap); flex: 0 1 auto; min-height: var(--rb-tab-h); padding: 0 var(--rb-gap); white-space: nowrap; cursor: pointer; background: #f4f4f5; border: 1px solid #a1a1aa; border-bottom: none; border-radius: 6px 6px 0 0; }
+.rb-tab[aria-selected="true"] { background: #ffffff; border-color: #1e3a8a; font-weight: 600; }
+.rb-tab-dirty { color: #b45309; }
+.rb-tab-close, .rb-tab-new { min-height: var(--rb-tab-h); min-width: var(--rb-tab-h); padding: 0; }
+.rb-tab-close { min-height: 0; border: none; background: transparent; cursor: pointer; }
+.rb-tab-new { align-self: center; flex: 0 0 auto; }

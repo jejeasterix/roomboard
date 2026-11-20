@@ -3,7 +3,17 @@
  * limitée aux chemins choisis dans la boîte), fermeture interceptée (`onCloseRequested` : la fenêtre se ferme par
  * `destroy()` si le gestionnaire n'appelle pas `preventDefault`). Les paquets Tauri ne sont chargés que dans la coque.
  */
-import { ensureExtension, FILE_FILTER, type FileHost, type OpenedFile, type SaveTarget, type ShellPort } from "./files";
+import {
+  ensureExtension,
+  FILE_FILTER,
+  type DroppedFile,
+  type DropHandler,
+  type FileHost,
+  type OpenedFile,
+  type Point,
+  type SaveTarget,
+  type ShellPort,
+} from "./files";
 
 export interface DialogFilter {
   readonly name: string;
@@ -38,9 +48,88 @@ export function baseName(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
-export function createTauriHost(dialog: TauriDialog, fs: TauriFs): FileHost {
+export interface TauriIpc {
+  invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+  listen<T>(event: string, cb: (e: { readonly payload: T }) => void): Promise<() => void>;
+}
+
+export const DROPPED_EVENT = "roomboard://dropped";
+export const QUIT_EVENT = "roomboard://quit-requested";
+export const READ_CHUNK = 8 * 1024 * 1024;
+
+/** Positions en pixels physiques ; la coque accorde les chemins avant d'émettre (CL5b-13). */
+export interface DropPayload {
+  readonly paths: readonly string[];
+  readonly position: Point | null;
+}
+
+/** Fichier accordé par la coque : lu par `read_granted_file`, par morceaux (jamais par `plugin-fs`). */
+export function grantedFile(ipc: TauriIpc, path: string, size: number): DroppedFile {
+  return {
+    name: baseName(path),
+    size,
+    mime: "",
+    path,
+    async blob() {
+      const parts: Uint8Array<ArrayBuffer>[] = [];
+      let offset = 0;
+      for (;;) {
+        const chunk = new Uint8Array(await ipc.invoke<ArrayBuffer>("read_granted_file", { path, offset, len: READ_CHUNK }));
+        parts.push(chunk);
+        offset += chunk.byteLength;
+        if (chunk.byteLength < READ_CHUNK) break;
+      }
+      return new Blob(parts);
+    },
+  };
+}
+
+async function filesOf(ipc: TauriIpc, paths: readonly string[]): Promise<DroppedFile[]> {
+  return Promise.all(paths.map(async (p) => grantedFile(ipc, p, await ipc.invoke<number>("granted_file_size", { path: p }))));
+}
+
+export async function launchFiles(ipc: TauriIpc): Promise<DroppedFile[]> {
+  return filesOf(ipc, await ipc.invoke<string[]>("launch_files"));
+}
+export const onQuitRequested = (ipc: TauriIpc, cb: () => void): Promise<() => void> => ipc.listen(QUIT_EVENT, () => cb());
+export const quitApp = (ipc: TauriIpc): Promise<void> => ipc.invoke<void>("quit_app");
+
+export interface TauriFileHost extends FileHost {
+  /** Se résout quand l'écoute de DROPPED_EVENT posée par le dernier `onDrop` est en place (immédiat si ipc null). */
+  dropListening(): Promise<void>;
+}
+
+export function createTauriHost(
+  dialog: TauriDialog,
+  fs: TauriFs,
+  ipc: TauriIpc | null = null,
+  dpr: () => number = () => 1,
+): TauriFileHost {
+  // `ipc.listen` rend une promesse : tant qu'elle n'est pas tenue, un évènement émis par la coque se perd (écart T87).
+  let lastSub: Promise<() => void> | null = null;
   return {
     kind: "tauri",
+    dropListening: () => (lastSub ?? Promise.resolve()).then(() => undefined),
+    onDrop(handler: DropHandler): () => void {
+      if (ipc === null) return () => undefined;
+      const sub = ipc.listen<DropPayload>(DROPPED_EVENT, (e) => {
+        const { paths, position } = e.payload;
+        filesOf(ipc, paths).then(
+          (files) => {
+            if (files.length > 0) handler(files, position && { x: position.x / dpr(), y: position.y / dpr() });
+          },
+          (err: unknown) => {
+            console.warn("RoomBoard : dépôt dans la coque abandonné", err);
+          },
+        );
+      });
+      lastSub = sub;
+      return () => {
+        void sub.then((un) => {
+          un();
+        });
+      };
+    },
     async open(): Promise<OpenedFile | null> {
       const path = await dialog.open({ multiple: false, directory: false, filters: [FILE_FILTER] });
       if (path === null) return null;
@@ -104,11 +193,13 @@ export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmP
 }
 
 /** Ports réels de la coque (imports dynamiques : absents du bundle du navigateur). Prouvé par l'essai T78. */
-export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: TauriFs; win: TauriWindow }> {
-  const [d, f, w] = await Promise.all([
+export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: TauriFs; win: TauriWindow; ipc: TauriIpc }> {
+  const [d, f, w, core, ev] = await Promise.all([
     import("@tauri-apps/plugin-dialog"),
     import("@tauri-apps/plugin-fs"),
     import("@tauri-apps/api/window"),
+    import("@tauri-apps/api/core"),
+    import("@tauri-apps/api/event"),
   ]);
   const current = w.getCurrentWindow();
   const filters = (list: readonly DialogFilter[]) => list.map((x) => ({ name: x.name, extensions: [...x.extensions] }));
@@ -131,6 +222,10 @@ export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: Tauri
     win: {
       onCloseRequested: (h) => current.onCloseRequested(h),
       setTitle: (t) => current.setTitle(t),
+    },
+    ipc: {
+      invoke: (cmd, args) => core.invoke(cmd, args),
+      listen: (event, cb) => ev.listen(event, cb),
     },
   };
 }

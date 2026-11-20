@@ -1,17 +1,10 @@
 /**
- * Branchement des fichiers dans l'amorce (D26, DA8) : le seul module que `main.ts` appelle pour les fichiers.
- * `prepareFiles` (avant le moteur) rend le document : le fichier en attente du rechargement, sinon une page vide.
- * `mount` (après le moteur) choisit l'hôte, crée le contrôleur, lie Ctrl+O, Ctrl+S, Ctrl+Maj+S, Ctrl+N et publie
- * l'état dans `#stage` (`data-fichiers`, `data-modifie`, `data-fichier`, `data-fichier-erreur`).
+ * Branchement des fichiers dans l'amorce (D26, DA8, T98). `startDocument` rend le document du premier onglet : le
+ * fichier en attente d'une version précédente, sinon une page vide. `prepareHost` choisit l'hôte et le shell de la
+ * fenêtre ; l'espace de travail (`app/workspace.ts`) tient ensuite les onglets, leurs contrôleurs et leur marquage.
  */
 import type { CoreDocument, CoreFactory } from "../core/api";
-import {
-  APP_VERSION,
-  createFileController,
-  messageOf,
-  type FileController,
-  type VersionSource,
-} from "./controller";
+import { messageOf } from "./controller";
 import {
   chooseHostKind,
   detectHostEnvironment,
@@ -24,7 +17,6 @@ import {
 } from "./files";
 import { createFsaHost, type FsaWindow } from "./host-fsa";
 import { browserFallbackDeps, createFallbackHost } from "./host-repli";
-import { createIdbPendingStore, createUnavailablePendingStore } from "./pending";
 import { createWebShell } from "./shell-web";
 
 export interface StartedDocument {
@@ -33,8 +25,12 @@ export interface StartedDocument {
   readonly error: string | null;
 }
 
-export interface PreparedFiles extends StartedDocument {
-  mount(engine: VersionSource, stage: HTMLElement): Promise<FileController>;
+export interface PreparedHost {
+  readonly kind: HostKind;
+  readonly host: FileHost;
+  readonly shell: ShellPort;
+  /** Hôte Tauri : `dropListening()` ; hôtes web : `Promise.resolve()`. */
+  dropReady(): Promise<void>;
 }
 
 export async function startDocument(core: CoreFactory, pending: PendingStore): Promise<StartedDocument> {
@@ -53,11 +49,14 @@ export async function startDocument(core: CoreFactory, pending: PendingStore): P
   }
 }
 
-async function hostFor(kind: HostKind, w: Window): Promise<{ host: FileHost; shell: ShellPort }> {
+/** Hôte et shell de la fenêtre ; les hôtes web écoutent le dépôt sur `w.document`, l'hôte Tauri sur la coque. */
+export async function prepareHost(w: Window): Promise<PreparedHost> {
+  const kind = chooseHostKind(detectHostEnvironment(w), parseHostChoice(w.location.search));
   if (kind === "tauri") {
     const { createTauriHost, createTauriShell, loadTauriPorts } = await import("./host-tauri");
     const p = await loadTauriPorts();
-    return { host: createTauriHost(p.dialog, p.fs), shell: createTauriShell(p.dialog, p.win) };
+    const host = createTauriHost(p.dialog, p.fs, p.ipc, () => w.devicePixelRatio || 1);
+    return { kind, host, shell: createTauriShell(p.dialog, p.win), dropReady: () => host.dropListening() };
   }
   const shell = createWebShell({
     confirm: (m) => w.confirm(m),
@@ -66,56 +65,9 @@ async function hostFor(kind: HostKind, w: Window): Promise<{ host: FileHost; she
     removeEventListener: (t, cb) => w.removeEventListener(t, cb),
     document: w.document,
   });
-  if (kind === "fsa") return { host: createFsaHost(w as unknown as FsaWindow), shell };
-  return { host: createFallbackHost(browserFallbackDeps(w.document, URL)), shell };
-}
-
-export async function prepareFiles(core: CoreFactory, w: Window = window): Promise<PreparedFiles> {
-  const pending =
-    typeof w.indexedDB === "undefined"
-      ? createUnavailablePendingStore("ce navigateur ne peut pas garder le fichier pendant le rechargement (IndexedDB absent)")
-      : createIdbPendingStore(w.indexedDB);
-  const started = await startDocument(core, pending);
-  return {
-    ...started,
-    async mount(engine, stage) {
-      const kind = chooseHostKind(detectHostEnvironment(w), parseHostChoice(w.location.search));
-      const { host, shell } = await hostFor(kind, w);
-      const ctl = createFileController({
-        core,
-        doc: started.doc,
-        versions: engine,
-        host,
-        shell,
-        pending,
-        opened: started.opened,
-        reload: () => w.location.reload(),
-        now: () => new Date().toISOString(),
-        appVersion: APP_VERSION,
-      });
-      const mark = (): void => {
-        stage.dataset["fichiers"] = kind;
-        stage.dataset["modifie"] = ctl.isDirty() ? "1" : "0";
-        stage.dataset["fichier"] = ctl.name();
-      };
-      mark();
-      ctl.onChange(mark);
-      const onKey = (e: KeyboardEvent): void => {
-        if (e.isComposing) return;
-        if (ctl.key(e)) e.preventDefault();
-      };
-      w.addEventListener("keydown", onKey);
-      if (started.error !== null) {
-        stage.dataset["fichierErreur"] = started.error;
-        void shell.notify(started.error);
-      }
-      return {
-        ...ctl,
-        dispose() {
-          w.removeEventListener("keydown", onKey);
-          ctl.dispose();
-        },
-      };
-    },
-  };
+  const host =
+    kind === "fsa"
+      ? createFsaHost(w as unknown as FsaWindow, w.document)
+      : createFallbackHost(browserFallbackDeps(w.document, URL), w.document);
+  return { kind, host, shell, dropReady: () => Promise.resolve() };
 }

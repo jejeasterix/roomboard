@@ -168,3 +168,21 @@ Pages : « Ajouter une page » insère après la page montrée et la montre ; «
 Ctrl+Z la rend avec son contenu ; la dernière page ne se retire pas (bouton grisé) ; le compteur dit « 2 / 3 ».
 Non prouvé sur la VM (HL4-3) : IME réelle de Windows ou de macOS, fenêtre de candidats, stylet et doigt sur les
 poignées, WebKit. La zone de texte ne suit pas un zoom fait pendant l'édition : valider puis rouvrir (CL4-15).
+
+## Socle 0.1 : à essayer
+
+Interface SolidJS du lot 5b : une barre d'outils en profils, une barre des onglets en haut, une barre des pages en bas.
+La barre ne recouvre plus le haut de la page. Joué au navigateur headless sur la VM (`scripts/verifier.sh --e2e`) ;
+à revoir ici au stylet et au doigt.
+
+| quoi | geste | quoi regarder |
+|---|---|---|
+| Profil | « Profil » → `simple` ; puis revenir à `defaut`. | `simple` : barre à gauche, grands boutons, trois outils (Stylo, Gomme, Main). Les gros boutons se touchent-ils bien au doigt ? Le choix est-il gardé après un rechargement ? |
+| Onglets | « + » ouvre un onglet vierge ; Ouvrir un `.roomboard`, ou le glisser sur la page. | Le fichier s'ouvre toujours dans un nouvel onglet, sans question (décision Q1). Un onglet modifié porte un point avant sa croix. Fermer un onglet modifié pose la question. |
+| Texte et onglets | Écrire un texte, puis toucher un autre onglet. | Le texte est validé et l'autre onglet s'ouvre du premier coup. |
+| Page infinie | Faire défiler vers le bas (Main ou deux doigts) et écrire loin sous le haut de la page. | La page reste blanche jusqu'en bas, sans limite. « Ajuster la page » cadre la largeur. |
+| Pages | Ajouter 20 pages et plus. | La liste des numéros défile ; les boutons « Page précédente », « Ajouter une page »… restent visibles. |
+| Réglages | « Réglages » : prédiction, traînée, WebGL2, paume, doigt. | Les mêmes cinq réglages que le lot 3b ; un réglage qui recharge la page pose une question si un onglet est modifié. |
+
+Non prouvé sur la VM : dépôt réel d'un fichier ou d'un dossier sur la coque (Windows, macOS), association `.roomboard`
+une fois installée, Cmd+Q sous macOS (fiches `coque-windows.md`, `coque-macos.md`) ; stylet et doigt sur les onglets.

@@ -5,18 +5,18 @@
 // flèche, texte validé par un clic ailleurs ; sélection au rectangle, Maj + clic, Échap, déplacer, agrandir x2,
 // Suppr ; Ctrl+Z geste par geste ; retrait de pages. Hors de scripts/verifier.sh.
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent.
-// Usage : node scripts/essais/s34-navigateur.mjs [--captures]   (docs/essais/s34-lot4-{selection,forme-texte,pages}.png)
+// Usage : node scripts/essais/s34-navigateur.mjs [--captures]   (docs/essais/s34-lot5b-{selection,forme-texte,pages}.png)
 // Ne couvre pas : le rendu WebGL2 (S2 lot 3b), l'IME réelle d'un système (seulement la simulation CDP ou
 // synthétique), le tactile, la rotation, l'export, le multi-fenêtre.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { DIST, ROOT, Echec, frames, gitSha, inkIn, loadPlaywright, serve } from "./commun.mjs";
+import { DIST, ROOT, VIEWPORT, Echec, frames, gitSha, inkIn, item, loadPlaywright, serve, stageMouse } from "./commun.mjs";
 
 const LABEL = "S3/S4 lot 4";
 const NON_COUVERT = [
-  "enregistrer puis rouvrir (S3) : couvert par le cœur, s3_text_stroke_shape_survive_save_load (T49) ; fichier au lot 5",
-  "zoom à 200 % par Ctrl+molette puis trait aux coordonnées monde (S4) : tests du moteur (lot 3b), pas rejoué ici",
-  "profil de barre essai-simple (S4) : lot 5",
+  "enregistrer puis rouvrir trois pages (S3) : joué par s5b-navigateur.mjs (lot 5b)",
+  "zoom à 200 % par Ctrl+molette puis trait aux coordonnées monde (S4) : joué par s5b-navigateur.mjs (lot 5b)",
+  "profil de barre à trois outils (S4) : joué par s5b-navigateur.mjs (lot 5b)",
   "WebKit (S4) : Playwright WebKit non posé sur la VM ; essai sur le Mac",
   "IME réelle (Windows, macOS, Android), fenêtre de candidats (HL4-3) : essai ENI",
   "stylet réel, poignées au doigt : essai ENI (docs/essais/eni-stylet.md, « Lot 4 : à essayer »)",
@@ -38,17 +38,18 @@ async function scenario(page, url, captures) {
   const selection = async () => (await attr("data-selection")) ?? "";
   const nSel = async () => Number((await selection()) || 0); // data-selection porte le nombre d'éléments (stageTags)
   const bounds = async () => ((await attr("data-bounds")) ?? "").split(",").map(Number);
-  const edit = (action) => page.$(`#edition button[data-action="${action}"]`);
+  const edit = (action) => page.$(item(action));
+  const mouse = stageMouse(page); // gestes en px de la scène (origine = coin de #stage)
   const click = async (action) => {
     await (await edit(action)).click();
     await frames(page);
   };
   const pageTag = () => attr("data-page");
   const drag = async (pts, opts = {}) => {
-    await page.mouse.move(pts[0][0], pts[0][1]);
-    await page.mouse.down();
-    for (const [x, y] of pts.slice(1)) await page.mouse.move(x, y, { steps: 8 });
-    await page.mouse.up();
+    await mouse.move(pts[0][0], pts[0][1]);
+    await mouse.down();
+    for (const [x, y] of pts.slice(1)) await mouse.move(x, y, { steps: 8 });
+    await mouse.up();
     await frames(page);
   };
   const undo = async () => {
@@ -63,7 +64,7 @@ async function scenario(page, url, captures) {
   // Relit le contenu d'un texte écrit : l'outil Texte, au clic sur lui, rouvre la zone avec son contenu ; Échap referme sans écrire.
   const readText = async (x, y, expected, msg, inkBox) => {
     await click("text");
-    await page.mouse.click(x, y);
+    await mouse.click(x, y);
     await frames(page);
     check(await editorOpen(), "clic sur un texte écrit : la zone se rouvre");
     check((await page.inputValue("#texte-edition")) === expected, msg);
@@ -75,7 +76,7 @@ async function scenario(page, url, captures) {
   };
   const shot = async (name) => {
     if (!captures) return;
-    const path = join(ROOT, "docs", "essais", `s34-lot4-${name}.png`);
+    const path = join(ROOT, "docs", "essais", `s34-lot5b-${name}.png`);
     await page.screenshot({ path });
     console.log(`capture : ${path}`);
   };
@@ -108,7 +109,7 @@ async function scenario(page, url, captures) {
 
   // Page 1 : texte par IME simulée (composition « ni »).
   await click("text");
-  await page.mouse.click(300, 300);
+  await mouse.click(300, 300);
   await frames(page);
   const area = await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
   check(await editorOpen(), "outil Texte : la zone de saisie s'ouvre au clic");
@@ -155,7 +156,7 @@ async function scenario(page, url, captures) {
   );
   await frames(page);
   check((await elements()) === 0 && (await editorOpen()), "Échap pendant la composition : laissé à l'IME (rien d'écrit, zone ouverte)");
-  await page.mouse.click(900, 600); // validation demandée pendant la composition
+  await mouse.click(900, 600); // validation demandée pendant la composition
   await frames(page);
   check((await elements()) === 0 && (await editorOpen()), "clic ailleurs pendant la composition : rien n'est écrit avant compositionend");
   if (imeMode === "synthétique") {
@@ -179,7 +180,7 @@ async function scenario(page, url, captures) {
 
   // Seconde boîte : composition finie SANS demande de validation (la zone reste ouverte), puis Échap hors composition.
   await click("text");
-  await page.mouse.click(300, 500);
+  await mouse.click(300, 500);
   await frames(page);
   await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
   await page.focus("#texte-edition");
@@ -205,7 +206,7 @@ async function scenario(page, url, captures) {
   // Page 2 : un trait.
   await click("page-next");
   check((await pageTag()) === "2/3", "page 2/3");
-  await (await page.$('#barre button[data-action="pen"]')).click();
+  await click("pen");
   await drag([[400, 350], [700, 400], [900, 350]]);
   check((await elements()) === 1, "page 2 : un trait");
   const inkP2 = await inkIn(page, [380, 330, 920, 420]);
@@ -231,12 +232,12 @@ async function scenario(page, url, captures) {
   await drag([[400, 400], [520, 460]]);
   check((await elements()) === 4, "page 3 : rectangle, ellipse, ligne, flèche (quatre éléments)");
   await click("text");
-  await page.mouse.click(700, 300);
+  await mouse.click(700, 300);
   await frames(page);
   const area2 = await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
   await area2.focus();
   await page.keyboard.type("note");
-  await page.mouse.click(900, 600); // clic ailleurs : valide
+  await mouse.click(900, 600); // clic ailleurs : valide
   await frames(page);
   check((await elements()) === 5, "page 3 : second texte validé par un clic ailleurs (cinq éléments)");
   check(!(await editorOpen()), "la zone de texte est fermée après le clic ailleurs");
@@ -245,13 +246,13 @@ async function scenario(page, url, captures) {
 
   // Sélection au rectangle : deux formes (rectangle et ellipse).
   await click("select");
-  await page.mouse.click(260, 430); // clic simple (sans Maj) sur la ligne
+  await mouse.click(260, 430); // clic simple (sans Maj) sur la ligne
   await frames(page);
   check((await nSel()) === 1, "clic simple (sans Maj) : la ligne est sélectionnée");
   await drag([[180, 180], [540, 300]]);
   check((await nSel()) === 2, "sélection au rectangle : deux formes");
   await page.keyboard.down("Shift");
-  await page.mouse.click(260, 430); // la ligne
+  await mouse.click(260, 430); // la ligne
   await page.keyboard.up("Shift");
   await frames(page);
   check((await nSel()) === 3, "Maj + clic : la ligne s'ajoute (trois éléments)");
@@ -324,7 +325,7 @@ async function scenario(page, url, captures) {
   // Le dernier bouton cliqué ne garde pas le focus : Entrée ne le redéclenche pas (outil autre que Texte).
   await click("page-add");
   check((await pageTag()) === "2/2", "Ajouter une page : page 2/2");
-  await (await page.$('#barre button[data-action="pen"]')).click();
+  await click("pen");
   await click("page-add");
   check((await pageTag()) === "3/3", "Ajouter une page : page 3/3");
   await drag([[400, 350], [700, 400]]);
@@ -359,7 +360,7 @@ async function main() {
       console.error(`${LABEL} : outil absent — Chromium de Playwright : ${e instanceof Error ? e.message.split("\n")[0] : e}`);
       return 2;
     }
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+    const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
     await scenario(page, `http://127.0.0.1:${port}/`, process.argv.includes("--captures"));
     console.log(`${LABEL} : OK`);
     return 0;

@@ -78,8 +78,14 @@ describe("géométrie WebGL2 (échelon 4)", () => {
   });
 
   it("pageScissor : cadre de page en pixels du tampon, origine en bas, borné au tampon", () => {
-    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 1, 1)).toEqual([10, 160, 960, 540]);
+    expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 1, 1)).toEqual([10, 0, 960, 700]);
     expect(pageScissor({ zoom: 0.5, tx: 10, ty: 20 }, 1280, 720, 2, 2)[2]).toBe(1260);
+  });
+
+  it("page dessinée jusqu'au bas de la vue : le ciseau va jusqu'au bas du tampon quand ty < 0", () => {
+    expect(pageScissor({ zoom: 1, tx: 0, ty: -5000 }, 200, 100, 1, 1)).toEqual([0, 0, 200, 100]);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: 40 }, 200, 100, 1, 1)).toEqual([0, 0, 200, 60]);
+    expect(pageScissor({ zoom: 1, tx: 0, ty: 700 }, 200, 100, 1, 1)[3]).toBe(0);
   });
 
   it("splitPolygons : une paire NaN sépare deux polygones ; moins de 3 sommets écarté", () => {

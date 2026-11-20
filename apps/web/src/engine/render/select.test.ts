@@ -78,6 +78,28 @@ describe("chooseRenderer (échelon 4 et repli)", () => {
     expect(gl.log).toContain("deleteProgram");
   });
 
+  it("diagnostics : off sans WebGL, repli sans contexte, état WebGL2 sur faux GL", () => {
+    const mk = (): FakeCanvas => new FakeCanvas({ "2d": ctx2d() });
+    expect(chooseRenderer(el(mk()), el(mk()), SRC, false).diagnostics()).toEqual({ webgl: "off", lost: false, badColors: [] });
+    expect(chooseRenderer(el(mk()), el(mk()), SRC, true).diagnostics()).toEqual({ webgl: "repli", lost: false, badColors: [] });
+    const gl = new FakeGL();
+    const c = chooseRenderer(el(mk()), el(new FakeCanvas({ webgl2: gl })), SRC, true);
+    expect(c.diagnostics()).toEqual({ webgl: "on", lost: false, badColors: [] });
+    (c.renderer as WebGL2LiveRenderer).drawLive(
+      { strokes: [{ outline: new Float32Array([0, 0, 1, 0, 1, 1]), predicted: new Float32Array(0), color: "pas-une-couleur", width: 1 }], erasers: [] },
+      { zoom: 1, tx: 0, ty: 0 },
+    );
+    gl.fire("webglcontextlost");
+    expect(c.diagnostics()).toEqual({ webgl: "on", lost: true, badColors: ["pas-une-couleur"] });
+  });
+
+  it("diagnostics : programme refusé donne repli", () => {
+    const gl = new FakeGL();
+    gl.compileOk = false;
+    const c = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ webgl2: gl })), SRC, true);
+    expect(c.diagnostics().webgl).toBe("repli");
+  });
+
   it("repli : le contexte WebGL2 du canvas remplacé est perdu (WEBGL_lose_context)", () => {
     const gl = new FakeGL();
     gl.compileOk = false;
@@ -118,5 +140,36 @@ describe("chooseRenderer (échelon 4 et repli)", () => {
     expect(c.webgl).toBe(false);
     expect(c.note).toMatch(/sans parent/);
     expect(c.note).toMatch(/repli Canvas 2D$/);
+  });
+});
+
+describe("release (T93 : dispose d'une session libère le contexte WebGL2)", () => {
+  it("release : branche WebGL2 → loseContext ; deux appels → un seul", () => {
+    const gl = new FakeGL();
+    const scene = new FakeCanvas({ "2d": ctx2d() });
+    const live = new FakeCanvas({ "2d": ctx2d(), webgl2: gl });
+    const choice = chooseRenderer(el(scene), el(live), SRC, true);
+    expect(choice.webgl).toBe(true);
+    choice.release();
+    choice.release();
+    expect(gl.log.filter((l) => l === "loseContext")).toHaveLength(1);
+  });
+
+  it("release : WebGL2 non demandé → rien, aucune exception", () => {
+    const choice = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ "2d": ctx2d() })), SRC, false);
+    expect(() => choice.release()).not.toThrow();
+  });
+
+  it("release : extension absente → aucune exception", () => {
+    const gl = new FakeGL();
+    gl.loseContextAvailable = false;
+    const choice = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ "2d": ctx2d(), webgl2: gl })), SRC, true);
+    expect(() => choice.release()).not.toThrow();
+  });
+
+  it("release : contexte WebGL2 nul (repli) → aucune exception", () => {
+    const choice = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ "2d": ctx2d() })), SRC, true);
+    expect(choice.webgl).toBe(false);
+    expect(() => choice.release()).not.toThrow();
   });
 });
