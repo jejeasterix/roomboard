@@ -88,7 +88,7 @@ export interface PixelFormatsBinding extends FormatsBinding {
 /** Vrai si le module chargé expose les calculs de pixels (module construit après C5). */
 export function hasPixels(m: FormatsBinding): m is PixelFormatsBinding {
   const p = m as Partial<PixelFormatsBinding>;
-  return typeof p.image_transparent === "function" && typeof p.image_adjust === "function";
+  return typeof p.image_transparent === "function" && typeof p.image_adjust === "function" && typeof p.image_flood_fill === "function";
 }
 
 export function createPageCodec(load: () => Promise<FormatsBinding>): ContainerCodec {

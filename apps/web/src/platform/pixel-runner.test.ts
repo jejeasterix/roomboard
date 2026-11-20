@@ -183,6 +183,7 @@ describe("calcul dans le Worker (I10, I17)", () => {
     expect(pixelNotice("x")).toBe("retouches de l'image non affichées : x");
     const base = { ContainerReader: { open: vi.fn() }, write_container: vi.fn() };
     expect(hasPixels(base as never)).toBe(false);
-    expect(hasPixels({ ...base, image_transparent: vi.fn(), image_adjust: vi.fn() } as never)).toBe(true);
+    expect(hasPixels({ ...base, image_transparent: vi.fn(), image_adjust: vi.fn() } as never)).toBe(false); // image_flood_fill manque (m3)
+    expect(hasPixels({ ...base, image_transparent: vi.fn(), image_adjust: vi.fn(), image_flood_fill: vi.fn() } as never)).toBe(true);
   });
 });
