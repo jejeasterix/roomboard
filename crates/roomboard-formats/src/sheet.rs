@@ -1,6 +1,6 @@
 //! Première feuille d'un classeur `.xlsx` en valeurs (U35, F22 à F24, C10b, DAB4) : `calamine` (MIT), lecteur `Xlsx`
-//! seul, lecture en flux. Garde contre une bombe ZIP : parties lues en entier refusées au-delà de 64 Mio décompressés
-//! déclarés (PC3). Première feuille visible ; 64 lignes gardées à partir de la première non vide, 64 colonnes à partir
+//! seul, lecture en flux. Garde contre une bombe ZIP : toute entrée de l'archive refusée au-delà de 64 Mio décompressés
+//! déclarés, et leur somme au-delà de 256 Mio (PC3). Première feuille visible ; 64 lignes gardées à partir de la première non vide, 64 colonnes à partir
 //! de la première non vide parmi elles, la suite comptée pour le message (F22) ; rectangle utilisé ; fusions gardées si
 //! entièrement dedans ; valeurs calculées en texte français (F24) ; textes coupés à 2 000 caractères. Servie dans un
 //! Worker jetable par `roomboard-formats-wasm` (un `panic` n'atteint pas l'instance qui enregistre, DAB4).
@@ -53,18 +53,23 @@ fn unreadable(e: impl std::fmt::Display) -> SheetError {
     SheetError::Unreadable(e.to_string())
 }
 
-/// Garde F22 (PC3) : `xl/sharedStrings.xml`, `xl/styles.xml`, `xl/workbook.xml` et chaque `xl/worksheets/*.xml`
-/// déclarent au plus 64 Mio décompressés ; lu sur le répertoire central, sans rien décompresser.
+/// Somme des tailles décompressées déclarées par toutes les entrées de l'archive (PC3) : quatre parties pleines.
+pub const MAX_TOTAL_BYTES: u64 = 4 * MAX_PART_BYTES;
+
+/// Garde F22 (PC3) : chaque entrée de l'archive déclare au plus 64 Mio décompressés, et toutes ensemble au plus
+/// 256 Mio, **quel que soit son nom** : `calamine` suit `_rels/.rels` (`xlsx/mod.rs:296-340`), les parties lues en
+/// entier peuvent donc être hors de `xl/`. Lu sur le répertoire central, sans rien décompresser.
 fn guard(bytes: &[u8]) -> Result<(), SheetError> {
+    guard_within(bytes, MAX_PART_BYTES, MAX_TOTAL_BYTES)
+}
+
+fn guard_within(bytes: &[u8], part_max: u64, total_max: u64) -> Result<(), SheetError> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).map_err(unreadable)?;
+    let mut total: u64 = 0;
     for i in 0..zip.len() {
-        let f = zip.by_index_raw(i).map_err(unreadable)?;
-        let name = f.name().map_err(unreadable)?.to_ascii_lowercase();
-        let whole = matches!(
-            name.as_str(),
-            "xl/sharedstrings.xml" | "xl/styles.xml" | "xl/workbook.xml"
-        ) || (name.starts_with("xl/worksheets/") && name.ends_with(".xml"));
-        if whole && f.size() > MAX_PART_BYTES {
+        let size = zip.by_index_raw(i).map_err(unreadable)?.size();
+        total = total.saturating_add(size);
+        if size > part_max || total > total_max {
             return Err(SheetError::TooBig);
         }
     }
@@ -80,6 +85,16 @@ pub fn number_text(v: f64) -> String {
         return v.to_string();
     }
     let exp = v.abs().log10().floor() as i32;
+    if exp >= 15 {
+        // Entier d'au moins 16 chiffres : 15 significatifs, puis des zéros jusqu'aux unités ; l'exposant est relu après
+        // l'arrondi (9,999…e15 devient 1e16).
+        let sci = format!("{v:.14e}");
+        let (mantissa, e) = sci.split_once('e').unwrap_or((sci.as_str(), "0"));
+        let zeros = e.parse::<usize>().unwrap_or(0).saturating_sub(14);
+        let digits: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+        let sign = if v < 0.0 { "-" } else { "" };
+        return format!("{sign}{digits}{}", "0".repeat(zeros));
+    }
     let decimals = (14 - exp).max(0) as usize;
     let mut s = format!("{v:.decimals$}");
     if s.contains('.') {
@@ -526,6 +541,9 @@ mod tests {
             (1.0 / 3.0, "0,333333333333333"),
             (-2.5, "-2,5"),
             (1e20, "100000000000000000000"),
+            (123_456_789_012_345_680.0, "123456789012346000"),
+            (-123_456_789_012_345_680.0, "-123456789012346000"),
+            (1.234_567_890_123_456_8e15, "1234567890123460"),
             (0.0, "0"),
             (123_456_789.123_456, "123456789,123456"),
         ] {
@@ -670,6 +688,82 @@ mod tests {
         let e = read_first_sheet(&bytes).expect_err("bombe");
         assert_eq!(e, SheetError::TooBig);
         assert_eq!(e.to_string(), TOO_BIG);
+    }
+
+    /// Classeur dont `_rels/.rels` désigne `data/workbook.xml` (chemin non standard, suivi par `calamine`), avec ses
+    /// chaînes partagées dans `data/sharedStrings.xml`, écrites telles quelles (`Stored`).
+    fn relocated(shared_body: &[u8]) -> Vec<u8> {
+        let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+        let o = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let mut put = |name: &str, body: &[u8]| {
+            w.start_file(name, o).expect("entrée");
+            w.write_all(body).expect("écriture");
+        };
+        put(
+            "[Content_Types].xml",
+            br#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>"#,
+        );
+        put(
+            "_rels/.rels",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{PKG}"><Relationship Id="rId1" Type="{REL}/officeDocument" Target="data/workbook.xml"/></Relationships>"#
+            )
+            .as_bytes(),
+        );
+        put(
+            "data/workbook.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="{NS}" xmlns:r="{REL}"><sheets><sheet name="F" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+            )
+            .as_bytes(),
+        );
+        put(
+            "data/_rels/workbook.xml.rels",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{PKG}"><Relationship Id="rId1" Type="{REL}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rIdT" Type="{REL}/sharedStrings" Target="sharedStrings.xml"/></Relationships>"#
+            )
+            .as_bytes(),
+        );
+        put(
+            "data/worksheets/sheet1.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="{NS}"><sheetData>{}</sheetData></worksheet>"#,
+                row(1, &[shared("A1", 0)])
+            )
+            .as_bytes(),
+        );
+        put("data/sharedStrings.xml", shared_body);
+        w.finish().expect("fin").into_inner()
+    }
+
+    /// F22, PC3 (constat T13) : la garde ne lit pas les noms des parties ; `calamine` suit `_rels/.rels` jusqu'à
+    /// `data/`, où une partie de 64 Mio + 1 déclarés est refusée comme sous `xl/`.
+    #[test]
+    fn zip_bomb_under_a_non_standard_path_is_refused() {
+        let small = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><sst xmlns="{NS}" count="1" uniqueCount="1"><si><t>déplacé</t></si></sst>"#
+        );
+        let s = read_first_sheet(&relocated(small.as_bytes())).expect("chemin non standard suivi");
+        assert_eq!(s.cells, vec!["déplacé"]);
+        let mut big = small.into_bytes();
+        big.resize(MAX_PART_BYTES as usize + 1, b' ');
+        let e = read_first_sheet(&relocated(&big)).expect_err("bombe sous data/");
+        assert_eq!(e, SheetError::TooBig);
+    }
+
+    /// PC3 (constat T13) : chaque entrée bornée, puis leur somme, quels que soient leurs noms.
+    #[test]
+    fn declared_sizes_are_bounded_one_by_one_and_summed() {
+        let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+        let o = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for name in ["a/un.bin", "b/deux.xml"] {
+            w.start_file(name, o).expect("entrée");
+            w.write_all(&[b' '; 600]).expect("écriture");
+        }
+        let bytes = w.finish().expect("fin").into_inner();
+        assert_eq!(guard_within(&bytes, 600, 1200), Ok(()));
+        assert_eq!(guard_within(&bytes, 599, 1200), Err(SheetError::TooBig));
+        assert_eq!(guard_within(&bytes, 600, 1199), Err(SheetError::TooBig));
     }
 
     /// DAB4, S4 : en-tête ZIP puis octets corrompus : `Unreadable`, jamais de panique en natif.

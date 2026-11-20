@@ -475,6 +475,26 @@ describe("outil Tableau (C10b)", () => {
     expect(s.runs).toHaveLength(k);
   });
 
+  it("F14, constat T13 : glisser puis geste interrompu (abort, cancel) : la plage du glisser est retirée", () => {
+    const { s } = made(2, 2);
+    for (const how of ["abort", "cancel"] as const) {
+      s.tool.begin(1, [at(...mid(0, 0))]);
+      s.tool.extend(1, [at(...mid(0, 1))], []);
+      expect(s.tool.cellState()?.range, how).toEqual({ r0: 0, c0: 0, r1: 0, c1: 1 });
+      s.tool.close(1, how);
+      expect(s.tool.cellState()?.range, how).toBeNull();
+    }
+  });
+
+  it("constat T13 : cellState publie la zone de la cellule active (étendue réelle de « − Ligne » / « − Colonne »)", () => {
+    const { s } = made(3, 2);
+    drag(s, mid(0, 0), mid(1, 0));
+    s.tool.act("merge");
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 0, range: null, merged: true, zone: { r0: 0, c0: 0, r1: 1, c1: 0 } });
+    s.tool.act("split");
+    expect(s.tool.cellState()?.zone).toBeNull();
+  });
+
   it("F14 : glisser de la première à la deuxième cellule : plage 0,0-0,1, aucune saisie ; Échap (clearRange) la retire", () => {
     const { s } = made(2, 2);
     const n = s.host.opened.length;

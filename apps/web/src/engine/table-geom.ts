@@ -41,6 +41,8 @@ export interface TableCellState {
   readonly cols: number;
   readonly range?: Range | null;
   readonly merged?: boolean;
+  /** Zone fusionnée de la cellule active (F16) ; null ou absente hors zone. */
+  readonly zone?: Range | null;
   readonly shaded?: boolean;
 }
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
@@ -194,6 +196,9 @@ export function step(t: TableData, c: Cell, move: NavMove): Cell | "add-row" | n
     return { row: z.r0, col: z.c0 };
   };
   if (move === "next" || move === "right") {
+    // F16 dit « arrivée sur une cellule couverte → son ancre ». Écart voulu : toute cellule couverte dont l'ancre
+    // précède est sautée, car la ramener à son ancre reculerait et bouclerait (3 × 3, zone (0,2)-(1,2) : → depuis (1,1)
+    // rendrait (0,2), puis (1,0), (1,1), (0,2)…) ; → depuis (1,1) donne donc (2,0) (test « F16, constat T13 »).
     for (let i = at + 1; i < count; i++) if (anchorIndex(i) > at) return toAnchor(i);
     return move === "next" ? "add-row" : null;
   }

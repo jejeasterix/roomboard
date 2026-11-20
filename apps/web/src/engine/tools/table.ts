@@ -321,6 +321,9 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       press = null;
       // F14 : sans changement de cellule, le clic ouvre la saisie au relâché.
       if (how === "end" && !p.moved) openActive();
+      // Geste interrompu (abort, cancel) après un glisser : la plage posée par `extend` est retirée, sinon le prochain
+      // « Ombrer » ou « − Ligne » s'y appliquerait.
+      if (how !== "end" && p.moved) setCorner(null);
     },
     live: () => live,
     active: () => false,
@@ -342,7 +345,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         const k = t.cols[c.col];
         return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null;
       });
-      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: mergeAt(t, at.cell) !== null, shaded };
+      const zone = mergeAt(t, at.cell);
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: zone !== null, zone, shaded };
     },
     act(a) {
       if (!settle()) return;

@@ -6,7 +6,7 @@ import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
 import type { ImageTarget } from "./image-import";
 import { createImporter, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES } from "./import";
-import { EMPTY_SHEET_MESSAGE } from "./sheet-reader";
+import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
   name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
@@ -297,6 +297,18 @@ describe("importFiles : classeur (F28)", () => {
     expect(r.failed).toEqual(["big.xlsx"]);
     expect(readSheet).not.toHaveBeenCalled();
     expect(notify).toHaveBeenCalledWith("big.xlsx : classeur trop gros pour un import en valeurs");
+  });
+
+  it("F22, constat T13 : plafond du gestionnaire vérifié avant f.blob() (coque : un .xlsx de 2 Go n'est jamais lu)", async () => {
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const blob = vi.fn(async () => new Blob([PK]));
+    const big: DroppedFile = { ...file("big.xlsx", PK), size: 2 * 1024 * 1024 * 1024, blob };
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => fakeTarget().target, readSheet }).importFiles([big]);
+    expect(blob).not.toHaveBeenCalled();
+    expect(readSheet).not.toHaveBeenCalled();
+    expect(r).toEqual({ opened: [], inserted: [], refused: [], failed: ["big.xlsx"] });
+    expect(notify.mock.calls).toEqual([[`big.xlsx : ${SHEET_TOO_BIG_MESSAGE}`]]);
   });
 
   it("sans readSheet (amorce partielle, tests anciens) : .xlsx refusé comme avant", async () => {
