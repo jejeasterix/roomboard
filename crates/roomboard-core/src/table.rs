@@ -1,7 +1,7 @@
 //! Tableau (U32, DAU10, C10a, DAC1) : élément `Y.Map{ id, kind: "table", transform, color, size, cols, rows, cells }` ;
 //! `cols` = `Y.Array<Y.Map{ id, width }>`, `rows` = `Y.Array<Y.Map{ id, height }>`, ids `yrs::uuid_v4` ; `cells` =
 //! `Y.Map` clé `"<rowId>:<colId>"` → `Y.Map{ text: Y.Text, fill? }`, cellule absente = vide. Lecture tolérante (T2) :
-//! entrée de `cols` / `rows` illisible ou d'un id déjà vu sautée (gardée dans le document), `text` qui n'est pas un
+//! entrée de `cols` / `rows` illisible (id vide ou contenant `:`) ou d'un id déjà vu sautée (gardée dans le document), `text` qui n'est pas un
 //! `Y.Text` → vide, `fill` invalide → aucun, aucune ligne ou aucune colonne lisible → `None` : l'appelant se replie sur
 //! `element::unknown_view` (jamais invisible). C10a n'écrit jamais `shade`, `span`, `mergedInto` (place gardée pour
 //! C10b) ; aucune `Any::Map`.
@@ -15,7 +15,7 @@ use yrs::{
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, out_f64, out_string, out_transform, transform_to_any, Transform,
+    finite_positive, fits_f32, out_f64, out_string, out_transform, transform_to_any, Transform,
 };
 use crate::rich_text::{self, valid_color};
 pub const TABLE_KIND: &str = "table";
@@ -88,13 +88,15 @@ pub(crate) fn cell_key(row: &str, col: &str) -> String {
     format!("{row}:{col}")
 }
 
-/// Entrées lisibles d'un `Y.Array` de lignes : `Y.Map` avec un `id` texte non vide pas encore vu et `key` fini > 0.
+/// Entrées lisibles d'un `Y.Array` de lignes : `Y.Map` avec un `id` texte non vide, sans `:` (la clé de cellule
+/// `"<row>:<col>"` reste sans ambiguïté), pas encore vu, et `key` fini > 0.
 fn lines<T: ReadTxn>(txn: &T, arr: &ArrayRef, key: &str) -> Vec<Line> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for (i, o) in arr.iter(txn).enumerate() {
         let Out::YMap(map) = o else { continue };
-        let Some(id) = out_string(map.get(txn, "id")).filter(|s| !s.is_empty()) else {
+        let Some(id) = out_string(map.get(txn, "id")).filter(|s| !s.is_empty() && !s.contains(':'))
+        else {
             continue;
         };
         let Some(size) = out_f64(map.get(txn, key)).filter(|v| finite_positive(*v)) else {
@@ -268,7 +270,7 @@ fn line_prelim(id: &str, key: &'static str, size: f64) -> MapPrelim {
     MapPrelim::from([("id", In::from(id)), (key, In::Any(Any::from(size)))])
 }
 
-/// Clé `"<row>:<col>"` dans la ligne (ou colonne) `line` ; découpe au premier `:` (ids `uuid_v4` sans `:`).
+/// Clé `"<row>:<col>"` dans la ligne (ou colonne) `line` ; découpe au premier `:` (ids lisibles sans `:`, `lines`).
 fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
     key.split_once(':').is_some_and(|(r, c)| match axis {
         TableAxis::Row => r == line,
@@ -276,12 +278,29 @@ fn in_line(key: &str, axis: TableAxis, line: &str) -> bool {
     })
 }
 
-/// `cells` du tableau, posé neuf s'il manque ou n'est pas un `Y.Map` (PC12).
-fn cells_or_new(txn: &mut TransactionMut, e: &MapRef, cells: Option<&MapRef>) -> MapRef {
-    match cells {
+/// Cellule absente `(row, col)` posée en `Y.Map{ text, fill? }` ; `cells` posé neuf s'il manque ou n'est pas un
+/// `Y.Map` (PC12).
+fn insert_cell(
+    txn: &mut TransactionMut,
+    e: &MapRef,
+    cells: Option<&MapRef>,
+    (row, col): (&str, &str),
+    text: &str,
+    fill: Option<&str>,
+) {
+    let cells = match cells {
         Some(m) => m.clone(),
         None => e.insert(txn, "cells", MapPrelim::default()),
+    };
+    let mut fields: Vec<(&str, In)> = vec![("text", In::from(TextPrelim::new(text)))];
+    if let Some(f) = fill {
+        fields.push(("fill", In::from(f)));
     }
+    cells.insert(
+        txn,
+        cell_key(row, col),
+        fields.into_iter().collect::<MapPrelim>(),
+    );
 }
 
 impl RawTable {
@@ -292,8 +311,12 @@ impl RawTable {
         }
     }
 
-    fn has_cell(&self, row: &str, col: &str) -> bool {
-        self.rows.iter().any(|l| l.id == row) && self.cols.iter().any(|l| l.id == col)
+    /// Ligne de la cellule `(row, col)`, si sa ligne et sa colonne sont lisibles.
+    fn cell_row(&self, row: &str, col: &str) -> Option<&Line> {
+        self.rows
+            .iter()
+            .find(|l| l.id == row)
+            .filter(|_| self.cols.iter().any(|l| l.id == col))
     }
 }
 
@@ -315,15 +338,20 @@ impl Document {
         })
     }
 
-    /// `AddTable` (T3) : refus `BadTable` avant la page ; une transaction, cellules vides (`cells` = `Y.Map` vide).
+    /// `AddTable` (T3) : refus `BadTable` avant la page, x, y et la boîte bornés en f32 comme une forme ; une
+    /// transaction, cellules vides (`cells` = `Y.Map` vide).
     pub(crate) fn cmd_add_table(&mut self, t: &NewTable<'_>) -> Result<Change, CommandError> {
         let valid = lines_ok(t.cols)
             && lines_ok(t.rows)
             && finite_positive(t.col_width)
             && finite_positive(t.row_height)
             && finite_positive(t.size)
-            && t.x.is_finite()
-            && t.y.is_finite()
+            && fits_f32(&[
+                t.x,
+                t.y,
+                f64::from(t.cols) * t.col_width,
+                f64::from(t.rows) * t.row_height,
+            ])
             && valid_color(t.color);
         if !valid {
             return Err(CommandError::BadTable);
@@ -356,8 +384,8 @@ impl Document {
         Ok(self.table_done(t.page.to_string(), &id))
     }
 
-    /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande ;
-    /// même texte sans hauteur plus grande : aucune transaction (D38).
+    /// `SetTableCell` (T3, T5) : texte par différence (`apply_text_diff`) ; hauteur écrite seulement si plus grande,
+    /// la hauteur du tableau restant bornée en f32 ; même texte sans hauteur plus grande : aucune transaction (D38).
     pub(crate) fn cmd_set_table_cell(
         &mut self,
         id: &str,
@@ -369,20 +397,16 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
-        if !raw.has_cell(row, col) {
-            return Err(CommandError::BadTable);
-        }
-        let line = raw
-            .rows
-            .iter()
-            .find(|l| l.id == row)
-            .ok_or(CommandError::BadTable)?;
+        let line = raw.cell_row(row, col).ok_or(CommandError::BadTable)?;
         let cell = {
             let txn = self.read();
             read_cell(&txn, raw.cells.as_ref(), row, col)
         };
         let current = cell.as_ref().map_or("", |c| c.content.as_str());
         let grow = row_height.filter(|h| *h > line.size);
+        if grow.is_some_and(|h| !fits_f32(&[raw.height() - line.size + h])) {
+            return Err(CommandError::BadTable);
+        }
         if current == content && grow.is_none() {
             return Ok(self.unchanged());
         }
@@ -397,12 +421,7 @@ impl Document {
                         c.map.insert(&mut txn, "text", TextPrelim::new(content));
                     }
                     None => {
-                        let cells = cells_or_new(&mut txn, &e, raw.cells.as_ref());
-                        cells.insert(
-                            &mut txn,
-                            cell_key(row, col),
-                            MapPrelim::from([("text", In::from(TextPrelim::new(content)))]),
-                        );
+                        insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), content, None)
                     }
                 }
             }
@@ -480,7 +499,8 @@ impl Document {
         Ok(self.table_done(page, id))
     }
 
-    /// `SetTableSizes` (T11) : écrit seulement les tailles qui changent ; déjà uniforme : aucune transaction.
+    /// `SetTableSizes` (T11) : largeur et hauteur totales bornées en f32 ; écrit seulement les tailles qui changent ;
+    /// déjà uniforme : aucune transaction.
     pub(crate) fn cmd_set_table_sizes(
         &mut self,
         id: &str,
@@ -491,6 +511,12 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, _, raw) = self.table_of(id)?;
+        if !fits_f32(&[
+            raw.cols.len() as f64 * col_width,
+            raw.rows.len() as f64 * row_height,
+        ]) {
+            return Err(CommandError::BadTable);
+        }
         let cols: Vec<&Line> = raw.cols.iter().filter(|l| l.size != col_width).collect();
         let rows: Vec<&Line> = raw.rows.iter().filter(|l| l.size != row_height).collect();
         if cols.is_empty() && rows.is_empty() {
@@ -521,7 +547,7 @@ impl Document {
             return Err(CommandError::BadTable);
         }
         let (page, e, raw) = self.table_of(id)?;
-        if !raw.has_cell(row, col) {
+        if raw.cell_row(row, col).is_none() {
             return Err(CommandError::BadTable);
         }
         let cell = {
@@ -538,15 +564,7 @@ impl Document {
                     c.map.insert(&mut txn, "fill", In::from(f));
                 }
                 (Some(f), None) => {
-                    let cells = cells_or_new(&mut txn, &e, raw.cells.as_ref());
-                    cells.insert(
-                        &mut txn,
-                        cell_key(row, col),
-                        MapPrelim::from([
-                            ("text", In::from(TextPrelim::new(""))),
-                            ("fill", In::from(f)),
-                        ]),
-                    );
+                    insert_cell(&mut txn, &e, raw.cells.as_ref(), (row, col), "", Some(f))
                 }
                 (None, Some(c)) => {
                     c.map.remove(&mut txn, "fill");
@@ -1194,10 +1212,26 @@ pub(crate) mod tests {
             rm(&mut d, TableAxis::Col, "absente"),
             Err(CommandError::BadTable)
         );
+        d.apply(Command::SetTableFill {
+            id: id.clone(),
+            row: t.rows[1].id.clone(),
+            col: t.cols[1].id.clone(),
+            fill: Some("#fef08a".into()),
+        })
+        .expect("jaune");
+        let before = view(&d, &id);
+        assert!(before
+            .cells
+            .iter()
+            .any(|c| c.col == t.cols[1].id && !c.text.is_empty() && c.fill.is_some()));
         rm(&mut d, TableAxis::Col, &t.cols[1].id).expect("colonne");
         assert_eq!(view(&d, &id).cells.len(), 1);
         assert!(d.undo());
-        assert_eq!(view(&d, &id).cols.len(), 2);
+        assert_eq!(
+            view(&d, &id),
+            before,
+            "colonne, texte et remplissage de ses cellules restaurés"
+        );
     }
 
     #[test]
@@ -1334,5 +1368,152 @@ pub(crate) mod tests {
         assert_eq!(view(&d, &id), before);
         assert!(d.redo());
         assert_eq!(view(&d, &id), after);
+    }
+
+    /// Texte et hauteur de ligne d'un même `SetTableCell` : une seule étape d'annulation, cellule absente ou déjà écrite.
+    #[test]
+    fn set_cell_growing_its_row_is_one_undo_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        for (content, h) in [
+            ("Lundi", 150.0),
+            ("Lundi et un texte bien plus long", 300.0),
+        ] {
+            let before = view(&d, &id);
+            set(&mut d, &id, &r, &c, content, Some(h)).expect("plus haut");
+            let after = view(&d, &id);
+            assert_eq!(
+                (after.rows[0].height, after.cells[0].text.as_str()),
+                (h, content)
+            );
+            assert!(d.undo());
+            assert_eq!(view(&d, &id), before, "texte et hauteur annulés ensemble");
+            assert!(d.redo());
+            assert_eq!(view(&d, &id), after);
+        }
+    }
+
+    /// Patron écarté : borner chaque entrée en f32 (`col_width` = 1e37 y tient) laisse passer une largeur totale de
+    /// 6,4e38 > `f32::MAX` (polygone infini, tableau non touchable) ; la garde des formes (`fits_f32`) vaut pour x, y
+    /// et les sommes des largeurs et des hauteurs.
+    #[test]
+    fn add_table_refuses_geometry_beyond_f32() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let cmd = |[x, y]: [f64; 2], [cols, rows]: [u32; 2], [col_width, row_height]: [f64; 2]| {
+            Command::AddTable {
+                page: p.clone(),
+                x,
+                y,
+                cols,
+                rows,
+                col_width,
+                row_height,
+                color: "#000000".into(),
+                size: 36.0,
+            }
+        };
+        let w = writes(&d);
+        for c in [
+            cmd([0.0, 0.0], [64, 1], [1e37, 64.0]),
+            cmd([0.0, 0.0], [1, 64], [240.0, 1e37]),
+            cmd([1e39, 0.0], [2, 2], [240.0, 64.0]),
+            cmd([0.0, -1e39], [2, 2], [240.0, 64.0]),
+            cmd([0.0, 0.0], [1, 1], [1e39, 64.0]),
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert!(!d.can_undo());
+        assert!(
+            d.apply(cmd([0.0, 0.0], [64, 64], [1e36, 1e36])).is_ok(),
+            "6,4e37 tient en f32"
+        );
+    }
+
+    #[test]
+    fn set_sizes_refuses_a_total_beyond_f32() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 64, 2);
+        let before = view(&d, &id);
+        let w = writes(&d);
+        for (col_width, row_height) in [(1e37, 64.0), (240.0, 2e38)] {
+            assert_eq!(
+                d.apply(Command::SetTableSizes {
+                    id: id.clone(),
+                    col_width,
+                    row_height
+                }),
+                Err(CommandError::BadTable)
+            );
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert_eq!(view(&d, &id), before);
+        d.apply(Command::SetTableSizes {
+            id: id.clone(),
+            col_width: 1e36,
+            row_height: 1e38,
+        })
+        .expect("6,4e37 et 2e38 tiennent en f32");
+    }
+
+    #[test]
+    fn set_cell_refuses_a_row_growth_beyond_f32() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r0, r1, c0) = (
+            t.rows[0].id.clone(),
+            t.rows[1].id.clone(),
+            t.cols[0].id.clone(),
+        );
+        set(&mut d, &id, &r0, &c0, "haut", Some(2e38)).expect("2e38 + 64 tient en f32");
+        let before = view(&d, &id);
+        let w = writes(&d);
+        assert_eq!(
+            set(&mut d, &id, &r1, &c0, "trop", Some(2e38)),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert_eq!(view(&d, &id), before);
+    }
+
+    /// Clé `"<row>:<col>"` : un id contenant `:` la rendrait ambiguë (`r:1` + `c` = `r` + `1:c`) ; une telle ligne est
+    /// illisible comme les autres (sautée, gardée) et, s'il n'en reste aucune, le tableau se lit « inconnu ».
+    #[test]
+    fn line_ids_with_a_colon_are_unreadable() {
+        let cells = MapPrelim::from([
+            ("r1:c:1", cell(In::from(TextPrelim::new("A")), vec![])),
+            ("r1:c2", cell(In::from(TextPrelim::new("B")), vec![])),
+        ]);
+        let d = doc_with(table_prelim(
+            vec![line("c:1", "width", 240.0), line("c2", "width", 100.0)],
+            vec![line("r1", "height", 64.0)],
+            cells,
+            vec![],
+        ));
+        let t = d.element("t1").and_then(|v| v.table).expect("tableau");
+        assert_eq!(
+            t.cols,
+            vec![TableColView {
+                id: "c2".into(),
+                width: 100.0
+            }]
+        );
+        assert_eq!(
+            t.cells.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            vec!["B"]
+        );
+        let d = doc_with(table_prelim(
+            vec![line("c1", "width", 240.0)],
+            vec![line("r:1", "height", 64.0)],
+            MapPrelim::default(),
+            vec![],
+        ));
+        let v = d.element("t1").expect("jamais invisible");
+        assert_eq!(v.kind, "unknown");
+        assert_eq!(v.unknown.map(|u| u.source_kind), Some("table".to_string()));
     }
 }

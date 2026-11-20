@@ -227,6 +227,11 @@ pub(crate) fn finite_positive(v: f64) -> bool {
     v.is_finite() && v > 0.0
 }
 
+/// Géométrie que le polygone (f32) et la liaison tiennent (constat 3 de T60) : chaque valeur reste finie en f32.
+pub(crate) fn fits_f32(values: &[f64]) -> bool {
+    values.iter().all(|v| (*v as f32).is_finite())
+}
+
 /// Image (K5) : transform et vue ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
 pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, ImageView)> {
     if out_string(e.get(txn, "kind"))? != "image" {

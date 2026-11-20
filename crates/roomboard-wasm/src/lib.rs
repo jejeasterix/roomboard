@@ -93,6 +93,15 @@ impl SavedParts {
     }
 }
 
+/// Axe reçu de JS (`row` : ligne, sinon colonne) des insertions et suppressions de tableau.
+fn table_axis(row: bool) -> TableAxis {
+    if row {
+        TableAxis::Row
+    } else {
+        TableAxis::Col
+    }
+}
+
 /// Référence d'asset reçue de JS : métadonnées seules, jamais les octets (U4, K13).
 fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
     AssetRef {
@@ -851,7 +860,7 @@ impl Document {
     ) -> Result<Change, CommandError> {
         self.run(Command::InsertTableLine {
             id: id.to_string(),
-            axis: if row { TableAxis::Row } else { TableAxis::Col },
+            axis: table_axis(row),
             at,
         })
     }
@@ -864,7 +873,7 @@ impl Document {
     ) -> Result<Change, CommandError> {
         self.run(Command::RemoveTableLine {
             id: id.to_string(),
-            axis: if row { TableAxis::Row } else { TableAxis::Col },
+            axis: table_axis(row),
             line: line.to_string(),
         })
     }
