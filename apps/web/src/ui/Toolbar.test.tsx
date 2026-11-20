@@ -22,7 +22,7 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
 function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
-  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn() };
+  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), selection: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
@@ -33,6 +33,12 @@ function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: But
 }
 
 describe("Toolbar", () => {
+  it("rangée Sélection dans la barre d'outils : outil Sélection seulement (C3)", () => {
+    const { container, setV } = setup();
+    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
+    setV({ ...VIEW, tool: "select" });
+    expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(5);
+  });
   it("defaut : un bouton par élément visible, dans l'ordre", () => {
     const { container } = setup();
     const ids = [...container.querySelectorAll("[data-item]")].map((e) => e.getAttribute("data-item"));

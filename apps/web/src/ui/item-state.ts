@@ -14,6 +14,14 @@ export interface ToolbarView {
   readonly tableCell?: TableCellState | null;
   /** État de la barre de format (C7b, R15) ; absent ou null : aucune séance de saisie (boutons grisés). */
   readonly textFormat?: FormatState | null;
+  /** C3 (Z13) : identifiants des objets sélectionnés ; absent : aucune sélection. */
+  readonly selection?: readonly string[];
+  /** C3 (Z13) : nombre d'unités de sélection (un groupe compte pour une) ; absent : 0. */
+  readonly selectionUnits?: number;
+  /** C3 (Z13) : la sélection contient au moins un groupe ; absent : non. */
+  readonly selectionGrouped?: boolean;
+  /** C3 (Z13) : le presse-papiers interne porte quelque chose à coller ; absent : non. */
+  readonly canPaste?: boolean;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 
