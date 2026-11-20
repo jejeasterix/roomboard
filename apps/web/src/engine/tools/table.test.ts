@@ -199,7 +199,10 @@ describe("outil Tableau (C10a)", () => {
     const s = setup();
     s.create(100, 200, 2, 2);
     s.tool.requestCommit();
-    s.doc.apply({ type: "CommitStroke", page: s.page, points: new Float32Array([300, 260, 0.5, 420, 260, 0.5]), style: { color: "#000000", width: 4 } });
+    const ink = s.doc.apply({ type: "CommitStroke", page: s.page, points: new Float32Array([300, 260, 0.5, 400, 260, 0.5, 420, 260, 0.5]), style: { color: "#000000", width: 4 } }).ids[0];
+    // Prémisse : l'encre est l'élément du dessus au point du clic ; sans elle, hitTest rendrait le tableau et le test ne
+    // distinguerait plus tableAt (I2) de hitTest (text.ts:91).
+    expect(s.doc.hitTest(s.page, 400, 260, 6)).toBe(ink);
     s.click(400, 260);
     expect(s.tool.cellState()).toMatchObject({ row: 0, col: 1 });
     expect(s.host.last().matrix).toEqual([1, 0, 0, 1, 348, 208]);
@@ -217,6 +220,19 @@ describe("outil Tableau (C10a)", () => {
     expect(s.tool.live().overlay).toBeUndefined();
     s.doc.undo();
     expect(s.table(s.id).cells).toEqual([]);
+  });
+
+  it("ligne insérée au-dessus de la cellule active : même cellule (ids), son rang suit (I1)", () => {
+    const s = setup();
+    const id = s.create(100, 200, 1, 3);
+    s.tool.navigate("next");
+    s.tool.requestCommit();
+    const row = s.table(id).rows[1]?.id;
+    s.doc.apply({ type: "InsertTableLine", id, axis: "row", at: 0 });
+    s.tool.prune();
+    expect(s.tool.cell()?.row).toBe(row);
+    expect(s.tool.cellState()).toMatchObject({ row: 2, col: 0, rows: 4 });
+    expect(s.tool.live().overlay?.frame).toEqual({ x0: 100, y0: 328, x1: 340, y1: 392 });
   });
 
   it("tableau supprimé pendant la saisie : saisie fermée sans écrire (I1)", () => {
