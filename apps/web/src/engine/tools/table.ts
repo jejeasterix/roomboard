@@ -250,6 +250,12 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         case "uniform":
           uniform(ref.id, t);
           break;
+        case "merge":
+        case "split":
+        case "shade":
+        case "unshade":
+          // C10b : branchés par T8.
+          return;
         default:
           // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
           return a satisfies never;
@@ -264,6 +270,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       ctx.run({ type: "SetTableFill", id: at.ref.id, row: at.ref.row, col: at.ref.col, fill: color });
       refresh();
     },
+    clearRange: () => false,
     clearCell() {
       if (opened !== null) return false;
       const at = locate(active);

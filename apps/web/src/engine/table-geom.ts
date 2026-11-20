@@ -1,9 +1,11 @@
 /**
- * Géométrie des cellules côté page (C10a, DAC6) : fonctions pures, sans liaison neuve. Le cœur ne connaît que la boîte
- * entière du tableau ; la page trouve le tableau le plus haut sous un point (même recouvert d'encre, I2), la cellule
- * sous un point local, son rectangle, la suivante (T8), et mesure la hauteur qu'exige un texte (DAC2) avec la mise en
- * lignes du dessin (`layoutRich`, B1). Tailles par défaut en unités de page (T4) ; la largeur de page se lit sur la
- * page, jamais ici.
+ * Géométrie des cellules côté page (C10a, DAC6 ; C10b, F7, F14 à F16) : fonctions pures, sans liaison neuve. Le cœur
+ * calcule les zones fusionnées (règle F2) et les rend dans la vue (`TableData.merges`) ; la page les lit en rangs sans
+ * recoder la règle (DAB1). Une cellule couverte vaut pour son ancre (`cellAt`, `cellRect`, `step`) ; une plage s'élargit
+ * jusqu'à contenir chaque zone qu'elle touche (`expandRange`). La page trouve le tableau le plus haut sous un point
+ * (même recouvert d'encre, I2) et mesure la hauteur qu'exige un texte (DAC2) avec la mise en lignes du dessin
+ * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
+ * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
 import type { Bounds, CoreDocument, Matrix, TableData } from "../core/api";
 import { plainSpans } from "../core/rich-text";
@@ -15,18 +17,37 @@ export const TABLE_ROW_HEIGHT = 64;
 /** Marge intérieure d'une cellule : 36 × 1,25 + 2 × 8 = 61 ≤ 64. */
 export const TABLE_PADDING = 8;
 export const TABLE_LINE_WIDTH = 2;
+/** Ombrage (F13, HB-6, choix visuel à l'essai) : fond opaque gris, puis hachures à 45°, trait 2, pas 16 unités. */
+export const TABLE_SHADE_COLOR = "#94a3b8";
+export const TABLE_SHADE_HATCH = "#cbd5e1";
+export const TABLE_SHADE_HATCH_WIDTH = 2;
+export const TABLE_SHADE_HATCH_STEP = 16;
 
 export type NavMove = "next" | "prev" | "left" | "right" | "up" | "down";
-export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform";
+export type TableAction = "row-insert" | "col-insert" | "row-remove" | "col-remove" | "uniform" | "merge" | "split" | "shade" | "unshade";
 /** Cellule par rangs (0 = première ligne, première colonne). */
 export interface Cell { readonly row: number; readonly col: number }
 /** Cellule active par ids : survit aux insertions et suppressions des autres lignes. */
 export interface CellRef { readonly id: string; readonly row: string; readonly col: string }
-/** Ce que publie le moteur (barre, `#stage[data-table]`) : rangs et taille du tableau. */
-export interface TableCellState { readonly id: string; readonly row: number; readonly col: number; readonly rows: number; readonly cols: number }
+/** Plage ou zone en rangs, bornes comprises (r0 ≤ r1, c0 ≤ c1). */
+export interface Range { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number }
+/** Ce que publie le moteur (barre, `#stage[data-table]`) : rangs de l'ancre active et taille du tableau ; C10b (PC7) :
+ *  plage en rangs (null sans), cellule active fusionnée, au moins une cellule ombrée dans la plage (sinon l'active). */
+export interface TableCellState {
+  readonly id: string;
+  readonly row: number;
+  readonly col: number;
+  readonly rows: number;
+  readonly cols: number;
+  readonly range?: Range | null;
+  readonly merged?: boolean;
+  readonly shaded?: boolean;
+}
 export interface TableHit { readonly id: string; readonly transform: Matrix; readonly table: TableData; readonly cell: Cell }
 
 const sum = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0);
+const inRange = (z: Range, c: Cell): boolean => c.row >= z.r0 && c.row <= z.r1 && c.col >= z.c0 && c.col <= z.c1;
+const single = (c: Cell): Range => ({ r0: c.row, c0: c.col, r1: c.row, c1: c.col });
 
 /** Rang de la bande qui contient `v` (bord gauche ou haut inclus) ; -1 hors du tableau ou NaN. */
 function band(sizes: readonly number[], v: number): number {
@@ -39,16 +60,88 @@ function band(sizes: readonly number[], v: number): number {
   return -1;
 }
 
+/** Zones de la vue en rangs (F29) ; une zone dont l'ancre n'est plus lue est sautée, son étendue bornée au tableau. */
+export function mergeRanges(t: TableData): Range[] {
+  const out: Range[] = [];
+  for (const m of t.merges) {
+    const r0 = t.rows.findIndex((r) => r.id === m.row);
+    const c0 = t.cols.findIndex((c) => c.id === m.col);
+    if (r0 < 0 || c0 < 0) continue;
+    out.push({ r0, c0, r1: Math.min(t.rows.length - 1, r0 + m.rows - 1), c1: Math.min(t.cols.length - 1, c0 + m.cols - 1) });
+  }
+  return out;
+}
+
+/** Zone qui contient la cellule ; null pour une cellule simple. */
+export function mergeAt(t: TableData, c: Cell): Range | null {
+  return mergeRanges(t).find((z) => inRange(z, c)) ?? null;
+}
+
+/** Ancre de la zone qui contient la cellule ; la cellule elle-même sinon. */
+export function anchorOf(t: TableData, c: Cell): Cell {
+  const z = mergeAt(t, c);
+  return z === null ? c : { row: z.r0, col: z.c0 };
+}
+
+/** Cellule couverte par une zone (et qui n'en est pas l'ancre). */
+export function isCovered(t: TableData, c: Cell): boolean {
+  const z = mergeAt(t, c);
+  return z !== null && (z.r0 !== c.row || z.c0 !== c.col);
+}
+
+/** Cellule sous un point local : l'ancre d'une cellule couverte (F16) ; hors du tableau ou NaN : null. */
 export function cellAt(t: TableData, lx: number, ly: number): Cell | null {
   const col = band(t.cols.map((c) => c.width), lx);
   const row = band(t.rows.map((r) => r.height), ly);
-  return col < 0 || row < 0 ? null : { row, col };
+  return col < 0 || row < 0 ? null : anchorOf(t, { row, col });
 }
 
+/** Rectangle local d'une plage en rangs. */
+export function rangeRect(t: TableData, r: Range): Bounds {
+  const widths = t.cols.map((c) => c.width);
+  const heights = t.rows.map((x) => x.height);
+  return {
+    x0: sum(widths.slice(0, r.c0)),
+    y0: sum(heights.slice(0, r.r0)),
+    x1: sum(widths.slice(0, r.c1 + 1)),
+    y1: sum(heights.slice(0, r.r1 + 1)),
+  };
+}
+
+/** Rectangle local d'une cellule : celui de sa zone si elle en a une. */
 export function cellRect(t: TableData, c: Cell): Bounds {
-  const x0 = sum(t.cols.slice(0, c.col).map((x) => x.width));
-  const y0 = sum(t.rows.slice(0, c.row).map((x) => x.height));
-  return { x0, y0, x1: x0 + (t.cols[c.col]?.width ?? 0), y1: y0 + (t.rows[c.row]?.height ?? 0) };
+  return rangeRect(t, mergeAt(t, c) ?? single(c));
+}
+
+/** Plage de `a` à `b`, élargie jusqu'à contenir entièrement chaque zone qu'elle touche (F14). */
+export function expandRange(t: TableData, a: Cell, b: Cell): Range {
+  let r: Range = { r0: Math.min(a.row, b.row), c0: Math.min(a.col, b.col), r1: Math.max(a.row, b.row), c1: Math.max(a.col, b.col) };
+  const zones = mergeRanges(t);
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const z of zones) {
+      if (z.r1 < r.r0 || z.r0 > r.r1 || z.c1 < r.c0 || z.c0 > r.c1) continue;
+      const n = { r0: Math.min(r.r0, z.r0), c0: Math.min(r.c0, z.c0), r1: Math.max(r.r1, z.r1), c1: Math.max(r.c1, z.c1) };
+      if (n.r0 !== r.r0 || n.c0 !== r.c0 || n.r1 !== r.r1 || n.c1 !== r.c1) {
+        r = n;
+        changed = true;
+      }
+    }
+  }
+  return r;
+}
+
+/** Ancres et cellules simples de la plage, dans l'ordre de lecture. */
+export function rangeCells(t: TableData, r: Range): Cell[] {
+  const zones = mergeRanges(t);
+  const out: Cell[] = [];
+  for (let row = r.r0; row <= r.r1; row++) {
+    for (let col = r.c0; col <= r.c1; col++) {
+      const z = zones.find((x) => inRange(x, { row, col }));
+      if (z === undefined || (z.r0 === row && z.c0 === col)) out.push({ row, col });
+    }
+  }
+  return out;
 }
 
 /** Rangs d'une cellule par ids (une `CellRef`, ou une cellule de `t.cells`) ; null si sa ligne ou sa colonne n'est plus lue. */
@@ -58,9 +151,9 @@ export function cellOf<R extends Pick<CellRef, "row" | "col">>(t: TableData, ref
   return row < 0 || col < 0 ? null : { row, col };
 }
 
-export function cellContent(t: TableData, rowId: string, colId: string): { readonly text: string; readonly fill: string | null } {
+export function cellContent(t: TableData, rowId: string, colId: string): { readonly text: string; readonly fill: string | null; readonly shade: string | null } {
   const c = t.cells.find((x) => x.row === rowId && x.col === colId);
-  return { text: c?.text ?? "", fill: c?.fill ?? null };
+  return { text: c?.text ?? "", fill: c?.fill ?? null, shade: c?.shade ?? null };
 }
 
 /** Le tableau le plus haut sous (x, y) monde, du dessus vers le dessous (I2) ; matrice non inversible : sauté. */
@@ -80,24 +173,43 @@ export function tableAt(doc: Pick<CoreDocument, "elementIds" | "element">, page:
   return null;
 }
 
-/** Cellule voisine (T8, PC4) : Tab et ←/→ dans l'ordre de lecture ; ↑/↓ dans la colonne ; Tab en dernière cellule :
- *  "add-row" ; au bord, null. */
+/** Cellule voisine (T8, PC4, F16, PC14). Tab / Maj+Tab : ancres et cellules simples dans l'ordre de lecture ; Tab en
+ *  dernière : "add-row". → : première cellule après la zone dont l'ancre vient après ; ← : la cellule avant l'ancre,
+ *  ramenée à son ancre ; ↑ / ↓ : la ligne avant le début / après la fin de la zone, à la colonne de l'ancre ; au bord :
+ *  null. */
 export function step(t: TableData, c: Cell, move: NavMove): Cell | "add-row" | null {
+  const zones = mergeRanges(t);
+  const zoneOf = (x: Cell): Range => zones.find((z) => inRange(z, x)) ?? single(x);
   const cols = t.cols.length;
   const count = t.rows.length * cols;
-  const flat = c.row * cols + c.col;
   const nth = (i: number): Cell => ({ row: Math.floor(i / cols), col: i % cols });
-  if (move === "next") return flat + 1 < count ? nth(flat + 1) : "add-row";
-  if (move === "right") return flat + 1 < count ? nth(flat + 1) : null;
-  if (move === "prev" || move === "left") return flat > 0 ? nth(flat - 1) : null;
-  if (move === "up") return c.row > 0 ? { row: c.row - 1, col: c.col } : null;
-  return c.row + 1 < t.rows.length ? { row: c.row + 1, col: c.col } : null;
+  const anchorIndex = (i: number): number => {
+    const z = zoneOf(nth(i));
+    return z.r0 * cols + z.c0;
+  };
+  const here = zoneOf(c);
+  const at = here.r0 * cols + here.c0;
+  const toAnchor = (i: number): Cell => {
+    const z = zoneOf(nth(i));
+    return { row: z.r0, col: z.c0 };
+  };
+  if (move === "next" || move === "right") {
+    for (let i = at + 1; i < count; i++) if (anchorIndex(i) > at) return toAnchor(i);
+    return move === "next" ? "add-row" : null;
+  }
+  if (move === "prev") {
+    for (let i = at - 1; i >= 0; i--) if (anchorIndex(i) === i) return nth(i);
+    return null;
+  }
+  if (move === "left") return at > 0 ? toAnchor(at - 1) : null;
+  if (move === "up") return here.r0 > 0 ? toAnchor((here.r0 - 1) * cols + here.c0) : null;
+  return here.r1 + 1 < t.rows.length ? toAnchor((here.r1 + 1) * cols + here.c0) : null;
 }
 
 /** Largeur du texte dans une colonne de `colWidth` : moins les deux marges, 1 au moins. */
 const innerWidth = (colWidth: number): number => Math.max(1, colWidth - 2 * TABLE_PADDING);
 
-/** Zone intérieure d'une cellule, repère local du tableau : coin après la marge, largeur et hauteur moins les marges. */
+/** Zone intérieure d'une cellule (de sa zone), repère local du tableau : coin après la marge, largeur et hauteur moins les marges. */
 export interface CellBox { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 export function cellInnerBox(t: TableData, c: Cell): CellBox {
   const r = cellRect(t, c);
@@ -109,9 +221,29 @@ export function cellHeight(text: string, size: number, colWidth: number, measure
   return richBoxHeight(layoutRich(plainSpans(text), { size }, innerWidth(colWidth), measure)) + 2 * TABLE_PADDING;
 }
 
-/** Hauteur exigée de chaque ligne aux largeurs `colWidths` (Uniformiser, T11) ; cellule vide : une ligne de texte. */
+/** Hauteur exigée de chaque ligne aux largeurs `colWidths` (Uniformiser T11, import F21) ; cellule vide : une ligne de
+ *  texte ; zone d'une ligne mesurée à sa largeur réunie ; ancre de plusieurs lignes : sa dernière ligne porte ce qui
+ *  manque (F7) ; cellule couverte : ignorée. */
 export function rowHeightsFor(t: TableData, colWidths: readonly number[], measure: Measure): number[] {
-  return t.rows.map((r) =>
-    Math.max(...t.cols.map((c, i) => cellHeight(cellContent(t, r.id, c.id).text, t.size, colWidths[i] ?? c.width, measure))),
-  );
+  const zones = mergeRanges(t);
+  const width = (c0: number, c1: number): number => sum(t.cols.slice(c0, c1 + 1).map((c, i) => colWidths[c0 + i] ?? c.width));
+  const text = (r: number, c: number): string => cellContent(t, t.rows[r]?.id ?? "", t.cols[c]?.id ?? "").text;
+  const empty = cellHeight("", t.size, colWidths[0] ?? t.cols[0]?.width ?? 1, measure);
+  const heights = t.rows.map((_, r) => {
+    let h = 0;
+    t.cols.forEach((col, c) => {
+      const z = zones.find((x) => inRange(x, { row: r, col: c }));
+      if (z !== undefined && (z.r0 !== r || z.c0 !== c)) return;
+      if (z !== undefined && z.r1 > z.r0) return;
+      const w = z === undefined ? (colWidths[c] ?? col.width) : width(z.c0, z.c1);
+      h = Math.max(h, cellHeight(text(r, c), t.size, w, measure));
+    });
+    return h > 0 ? h : empty;
+  });
+  for (const z of zones.filter((x) => x.r1 > x.r0).sort((a, b) => a.r1 - b.r1)) {
+    const need = cellHeight(text(z.r0, z.c0), t.size, width(z.c0, z.c1), measure);
+    const above = sum(heights.slice(z.r0, z.r1));
+    heights[z.r1] = Math.max(heights[z.r1] ?? 0, need - above);
+  }
+  return heights;
 }
