@@ -12,6 +12,8 @@ import type { LiveLayer, PageView, Renderer } from "./render/renderer";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
 import type { TableCellState } from "./table-geom";
+import { createTableTool, type TablePicker } from "./tools/table";
+import type { TextEditorHost, TextEditSession } from "./tools/text";
 import { NO_LIVE, type GestureTool, type TableTool, type ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
@@ -860,5 +862,88 @@ describe("moteur — outil Tableau (C10a, contrat T4)", () => {
     engine.tableAction("uniform");
     engine.tableFill(null);
     expect(engine.key(key("Delete"))).toBe(false);
+  });
+});
+
+function setupRealTable() {
+  const doc = fakeCore.blank();
+  const frames = new Frames();
+  const renderer = new FakeRenderer();
+  const log: string[] = [];
+  const host: TextEditorHost & { text: string } = {
+    text: "",
+    open(s: TextEditSession) {
+      host.text = s.initial;
+    },
+    close() {},
+    value: () => host.text,
+  };
+  let pick: ((c: number, r: number) => void) | null = null;
+  const picker: TablePicker = {
+    open: (_at, p) => {
+      pick = p;
+    },
+    close: () => {
+      pick = null;
+    },
+    isOpen: () => pick !== null,
+  };
+  const holder: { t?: TableTool } = {};
+  const tools: ToolFactories = {
+    pen: (ctx) => fakeTool("pen", log, ctx),
+    eraser: (ctx) => fakeTool("eraser", log, ctx),
+    table: (ctx, style) => {
+      holder.t = createTableTool(ctx, host, picker, style, (s) => s.length * 10);
+      return holder.t;
+    },
+  };
+  const engine = createEngine({ doc, renderer, frames, tools });
+  const tool = holder.t;
+  if (tool === undefined) throw new Error("outil Tableau non créé");
+  engine.setTool("table");
+  /** Clic au point monde (caméra identité) puis choix cols × rows dans la grille. */
+  const create = (x: number, y: number, cols: number, rows: number): void => {
+    engine.sink.begin(1, "table", [{ ...sample, x, y }]);
+    engine.sink.close(1, "end");
+    const p = pick;
+    pick = null;
+    p?.(cols, rows);
+  };
+  return { doc, engine, host, tool, create };
+}
+
+describe("moteur et outil Tableau (C10a, S2)", () => {
+  it("Ctrl+Z qui retire la ligne de la cellule active : tableCell null (I1)", () => {
+    const { engine, tool, create } = setupRealTable();
+    create(100, 200, 2, 1);
+    expect(engine.state().tableCell).toMatchObject({ row: 0, col: 0, rows: 1, cols: 2 });
+    tool.navigate("next");
+    tool.navigate("next");
+    tool.requestCommit();
+    expect(engine.state().tableCell).toMatchObject({ row: 1, col: 0, rows: 2 });
+    expect(engine.key(key("z", { ctrlKey: true }))).toBe(true);
+    expect(engine.state().tableCell).toBeNull();
+  });
+
+  it("Suppr, outil Tableau, cellule active : vide la cellule, une étape ; outil Sélection : Suppr à la sélection", () => {
+    const { doc, engine, host, tool, create } = setupRealTable();
+    create(100, 200, 2, 2);
+    host.text = "xy";
+    tool.requestCommit();
+    const v = doc.version();
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(doc.version()).toBe(v + 1);
+    engine.setTool("select");
+    expect(engine.state().tableCell).toBeNull();
+    expect(engine.key(key("Delete"))).toBe(false);
+  });
+
+  it("− Ligne par engine.tableAction : la cellule active passe à la voisine, l'état suit", () => {
+    const { engine, tool, create } = setupRealTable();
+    create(100, 200, 1, 3);
+    tool.navigate("next");
+    tool.requestCommit();
+    engine.tableAction("row-remove");
+    expect(engine.state().tableCell).toMatchObject({ row: 1, col: 0, rows: 2 });
   });
 });
