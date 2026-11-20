@@ -5,6 +5,8 @@ import {
   createTauriHost,
   DROPPED_EVENT,
   grantedFile,
+  linkMedia,
+  relinkMedia,
   launchFiles,
   onQuitRequested,
   QUIT_EVENT,
@@ -248,6 +250,28 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     const fs = { ...f.fs, writeFile: async (p: string, d: Uint8Array) => (order.push("écriture"), f.fs.writeFile(p, d)) };
     await createTauriHost(dialog as typeof f.dialog, fs).save(async () => (order.push("encode"), bytes), ask);
     expect(order).toEqual(["boîte", "encode", "écriture"]);
+  });
+});
+
+describe("hôte Tauri : liens et cible (C14)", () => {
+  it("encode reçoit la cible choisie", async () => {
+    const f = fakes();
+    const encode = vi.fn(async (_t: SaveTarget) => bytes);
+    const saved = await createTauriHost(f.dialog, f.fs).save(encode, ask);
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(encode.mock.calls[0]![0]).toEqual({ kind: "tauri", name: "Sans titre.roomboard", path: "/home/j/Sans titre.roomboard" });
+    expect(saved).toEqual(encode.mock.calls[0]![0]);
+  });
+
+  it("linkMedia et relinkMedia appellent link_media et relink_media", async () => {
+    const invoke = vi.fn(async (cmd: string) => (cmd === "link_media" ? "a".repeat(64) : true));
+    const ipc = { invoke, listen: async () => () => undefined } as unknown as TauriIpc;
+    expect(await linkMedia(ipc, "/v/clip.mp4")).toBe("a".repeat(64));
+    expect(await relinkMedia(ipc, "/v/clip.mp4", 12)).toBe(true);
+    expect(invoke.mock.calls).toEqual([
+      ["link_media", { path: "/v/clip.mp4" }],
+      ["relink_media", { path: "/v/clip.mp4", size: 12 }],
+    ]);
   });
 });
 

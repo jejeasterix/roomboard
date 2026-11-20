@@ -221,6 +221,18 @@ describe("hôte FSA : onDrop (T86)", () => {
   });
 });
 
+describe("hôte FSA : save passe la cible choisie (C14)", () => {
+  it("encode reçoit la cible choisie", async () => {
+    const disk = newDisk();
+    const host = createFsaHost(fsaWindow(disk, { saveAs: "cours.roomboard" }));
+    const encode = vi.fn(async (_t: SaveTarget) => bytes);
+    const saved = await host.save(encode, ask);
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(encode.mock.calls[0]![0]).toBe(saved);
+    expect(saved?.kind).toBe("fsa");
+  });
+});
+
 describe("IMPORT_TYPES : filtre « Importer » (Z10)", () => {
   it("rbitem : entrée propre (valeurs littérales), le reste hors roomboard sous image/*", () => {
     expect(IMPORT_TYPES).toHaveLength(1);
@@ -229,6 +241,8 @@ describe("IMPORT_TYPES : filtre « Importer » (Z10)", () => {
       "application/x-roomboard-item": [".rbitem"],
       "application/pdf": [".pdf"],
       "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".avif", ".heic", ".heif"],
+      "video/*": [".mp4", ".m4v", ".mov", ".webm", ".ogv"],
+      "audio/*": [".m4a", ".mp3", ".wav", ".ogg", ".oga"],
     });
   });
 });
