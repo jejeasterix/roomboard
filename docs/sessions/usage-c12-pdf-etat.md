@@ -3,9 +3,9 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : Un PDF déposé ou importé devient un document dont chaque page est une page RoomBoard à fond `pdf-page` ; on annote par-dessus, et on exporte les pages RoomBoard en PDF vectoriel et le PDF annoté (texte et vecteurs d'origine conservés).
-Avancement : 6/13 tâches terminées
-Étage : 3 (vague 2) — depuis 2026-11-20 17:30
-Tâche : T7, T11, T12 — depuis 2026-11-20 17:39
+Avancement : 11/13 tâches terminées
+Étage : 3 (vague 5) — depuis 2026-11-20 17:30
+Tâche : T10, T13 — vague 5 — depuis 2026-11-20 17:51
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c12-pdf   Branche : feat/usage-c12-pdf   Base : origin/main @ 1a756bd
 Branche principale locale au lancement : 1a756bd
@@ -28,10 +28,13 @@ Table complète : docs/plans/usage-c12-pdf-PLAN.md (9f20988, 13 tâches, 39 lign
 | T2 contrat TS | terminée | 1/3 | 4cdb361 | src/core 373/373 |
 | fusion origin/main (C6a) | terminée | — | 694cc93 | cargo 0 échec, web 1 885/1 885, tsc 0, wasm 1 084 202 o |
 | T5 rendu du fond | terminée | 1/3 | cdaa6f6 | src/engine 651/651, tsc 0 |
-| T11 krilla | en cours | 1/3 | — | — |
-| T12 enregistreur | en cours | 1/3 | — | — |
-| T7 export annoté | en cours | 1/3 | — | — |
-| T8, T9, T10, T13 | à venir | — | — | — |
+| T7 export annoté | terminée | 1/3 | bfce30c | pdf-export+overlay 18/18, tsc 0 ; revue : contrat ≠ plan 9f20988 (code fait foi), défauts du repli confiés à T9 |
+| T8 espace de travail | terminée | 1/3 | 6f8631d | src/app+src/ui 443/443 |
+| T12 enregistreur | terminée | 1/3 | 3c6a0fe | record-ctx 10/10 (attribution corrigée) |
+| T9 branchement | terminée | 1/3 | 02e68e1 | pnpm -r test 1 947/1 947, hors ligne OK, aucun .mjs ; corrige 4 défauts du repli (pdf-export) |
+| T11 krilla | terminée | 1/3 | 64a3947 | formats 53 tests (10 pdf), clippy/fmt 0, module formats 3 092 294 o (plafond 3 145 728) |
+| T10 essai e2e | en cours | 1/3 | — | — |
+| T13 vectoriel | en cours | 1/3 | — | — |
 
 ## Terminé quand
 (a) importeur PDF + backdrop pdf-page, (b) export PDF annoté, (c) export vectoriel krilla · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste PDF (3 pages, annoter, exporter annoté, relire, enregistrer, rouvrir) · capture d'un PDF annoté dans docs/essais/ · PR mergée par fusion locale --no-ff et push sans --force
@@ -46,6 +49,8 @@ Table complète : docs/plans/usage-c12-pdf-PLAN.md (9f20988, 13 tâches, 39 lign
 ouvertes : — · passées : — (profil « Porte avant merge : non » ; aucune release)
 
 ## Pièges trouvés
+- T7 construit sur le plan 2e1b9be, avant la révision 9f20988 : le contrat du code (rasterPage, alive, rasterized, null) fait foi ; T9 et T13 s'y alignent.
+- T12 avait signé « Claude Sonnet 5.5 » : messages corrigés par rebase local avant fusion ; brief commun précisé.
 - main a bougé pendant le chantier : C6a fusionné (0dd7f1a). À intégrer dans feat/usage-c12-pdf avant la clôture.
 - OD84 (C6a pot, feat/usage-c6a-pot) tourne en même temps : barre et cible du pointeur. Intégrer origin/main avant fusion.
 
