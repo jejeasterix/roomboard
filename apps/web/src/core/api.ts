@@ -148,7 +148,21 @@ export interface TextData {
   readonly spans: readonly TextSpan[];
 }
 
-export interface ImageData { readonly asset: string; readonly w: number; readonly h: number }
+/** C5 (U29, I5) : couleur rendue transparente ; `color` en `#rrggbb` minuscules ; `tolerance`, `soft` entiers de 0 à 100. */
+export interface TransparentColor { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean }
+/** C5 (U29, I2, I4) : réglages non destructifs, champ absent = neutre. `crop` = [x, y, w, h] en pixels source ;
+ *  `quarterTurns` 0 à 3, sens horaire ; `brightness`, `contrast` entiers de −100 à 100. */
+export interface ImageParams {
+  readonly crop?: readonly [number, number, number, number];
+  readonly flipX?: boolean;
+  readonly flipY?: boolean;
+  readonly quarterTurns?: number;
+  readonly brightness?: number;
+  readonly contrast?: number;
+  readonly transparent?: TransparentColor;
+}
+/** Image (U5) : `w`, `h` = taille source en pixels ; réglages de C5 à plat (I8 : boîte affichée, `displaySize`). */
+export type ImageData = { readonly asset: string; readonly w: number; readonly h: number } & ImageParams;
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
 
 export type TableAxis = "row" | "col";
@@ -309,6 +323,10 @@ export const DEFAULT_TABLE_COLOR = "#000000";
 export const DEFAULT_TABLE_SIZE = 36;
 /** Messages C3 du cœur (G10), repris à l'identique par la fausse liaison. */
 export const BAD_GROUP_MESSAGE = "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)";
+
+/** C5 (I5) : message de `BadImageParams` du cœur, repris par la fausse liaison. */
+export const BAD_IMAGE_PARAMS_MESSAGE =
+  "réglages d'image invalides (image lisible, rognage entier dans l'image, quarts de tour 0 à 3, luminosité et contraste entiers de -100 à 100, couleur #rrggbb, tolérance et plume entières de 0 à 100 attendus)";
 export const NOT_A_DOCUMENT_MESSAGE = "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page";
 export const NOT_A_FRAGMENT_MESSAGE = "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages";
 export const unknownKindMessage = (kind: string): string =>
