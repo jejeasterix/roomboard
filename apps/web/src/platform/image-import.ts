@@ -7,6 +7,7 @@ import type { Change, Command, Matrix } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { screenToWorld, type Camera } from "../engine/camera";
 import { PAGE_WIDTH } from "../engine/page";
+import type { Measure } from "../engine/text-layout";
 import { messageOf } from "./controller";
 import type { Point } from "./files";
 import type { ImportHandler } from "./import";
@@ -228,6 +229,10 @@ export interface ImageTarget {
   page(): string;
   camera(): Camera;
   stageRect(): StageRect;
+  /** Mesure du texte de la session (C10b, F21) : hauteurs exigées d'un tableau importé ou collé. */
+  measure(): Measure;
+  /** Style de texte du moteur (couleur du stylo, taille par défaut) d'un tableau importé ou collé (F21). */
+  textStyle(): { readonly color: string; readonly size: number };
   /** Faux une fois l'onglet fermé (décodage en cours) : plus aucun appel au moteur libéré. */
   alive?(): boolean;
   /** `engine.run` : null si le cœur refuse (message dans l'état du moteur). */

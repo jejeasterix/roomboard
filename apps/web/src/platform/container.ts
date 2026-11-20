@@ -3,6 +3,8 @@
  * chargé au premier besoin par le `load` reçu et gardé jusqu'au rechargement (HR6). Port asynchrone, `Blob` en entrée :
  * un Worker pourra le servir sans changer les appelants. Module qui ne se charge pas : `CodecUnavailableError` (repli R7).
  */
+import type { SheetBinding } from "./sheet-reader";
+
 export interface ContainerAsset {
   readonly id: string;
   readonly mime: string;
@@ -54,6 +56,16 @@ export interface FormatsBinding {
     sizes: Uint32Array,
     bytes: Uint8Array,
   ): Uint8Array;
+}
+
+/** Module `formats` avec la lecture des classeurs (C10b, F28) : servi seulement dans le Worker de `sheet-worker.ts`. */
+export interface SheetFormatsBinding extends FormatsBinding {
+  readonly SheetReader: { open(bytes: Uint8Array): SheetBinding };
+}
+
+/** Vrai si le module chargé expose `SheetReader` (module construit après C10b). */
+export function hasSheetReader(m: FormatsBinding): m is SheetFormatsBinding {
+  return typeof (m as Partial<SheetFormatsBinding>).SheetReader?.open === "function";
 }
 
 export function createPageCodec(load: () => Promise<FormatsBinding>): ContainerCodec {

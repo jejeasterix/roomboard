@@ -1,7 +1,8 @@
 // Contrat du second module Wasm (R8, R25) : chargé en Node par `initSync` sur les octets, joué à travers `createPageCodec`.
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import { createPageCodec, type FormatsBinding } from "./container";
+import { createPageCodec, hasSheetReader, type FormatsBinding } from "./container";
+import { gridOf } from "./sheet-reader";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -56,5 +57,23 @@ describe.skipIf(binding === null)("contrat du module formats (R8)", () => {
   it("octets qui ne sont pas un .roomboard : message du cœur", async () => {
     await expect(createPageCodec(async () => need()).read(new Blob([new Uint8Array([1, 2, 3])])))
       .rejects.toThrow("ce fichier n'est pas un document RoomBoard");
+  });
+});
+
+describe.skipIf(binding === null)("contrat C10b : classeur (vrai module formats)", () => {
+  it("SheetReader sur valeurs.xlsx (S4, F23, F24) : 64 × 6, source 70 × 6, valeurs en français, fusion ; octets corrompus : illisible", () => {
+    const mod = need();
+    if (!hasSheetReader(mod)) throw new Error("SheetReader absent du module formats");
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-formats/tests/fixtures/valeurs.xlsx", import.meta.url)));
+    const r = mod.SheetReader.open(bytes);
+    try {
+      const g = gridOf(r);
+      expect([g.rows, g.cols, g.sourceRows, g.sourceCols, g.cutCells]).toEqual([64, 6, 70, 6, false]);
+      expect(g.cells.slice(0, 6)).toEqual(["texte", "42", "3,5", "20/11/2026", "VRAI", "#DIV/0!"]);
+      expect(g.merges).toEqual([{ row: 1, col: 0, rows: 1, cols: 2 }]);
+    } finally {
+      r.free();
+    }
+    expect(() => mod.SheetReader.open(new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3]))).toThrow("classeur illisible");
   });
 });
