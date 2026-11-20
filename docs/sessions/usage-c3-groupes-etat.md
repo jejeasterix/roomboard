@@ -1,10 +1,10 @@
 # État — usage-c3-groupes
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : On groupe et dégroupe des objets, on copie et colle une sélection (interne et système, avec repli JSON), on exporte la sélection en `.rbitem` et on insère un fragment ou les pages d'un document.
 Avancement : 19/19 tâches terminées
-Étage : 4 — depuis 2026-11-20 16:25
+Étage : 4 — clos 2026-11-20, main ae5a053 (PR #19 fusionnée)
 Lot : —
 Tâche : —
 Questions à Jérôme : —
