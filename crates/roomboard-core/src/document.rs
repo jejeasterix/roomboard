@@ -454,6 +454,11 @@ impl Document {
         self.outlines.borrow().len()
     }
 
+    /// Racine `assets` (K3).
+    pub(crate) fn assets_ref(&self) -> &MapRef {
+        &self.assets
+    }
+
     #[allow(dead_code)] // appelée par commands.rs / format (lot 2)
     pub(crate) fn pages_ref(&self) -> &ArrayRef {
         &self.pages
@@ -571,7 +576,7 @@ fn collect_any(a: &Any, acc: &mut BTreeSet<String>) {
 
 /// Parcours générique (K4) : `Y.Map`, `Y.Array`, valeurs `Any`, embeds et attributs des `Y.Text` ; le texte lui-même
 /// (morceaux `Any::String` insérés) n'est pas balayé.
-fn collect_out<T: ReadTxn>(txn: &T, o: &Out, acc: &mut BTreeSet<String>) {
+pub(crate) fn collect_out<T: ReadTxn>(txn: &T, o: &Out, acc: &mut BTreeSet<String>) {
     match o {
         Out::Any(a) => collect_any(a, acc),
         Out::YMap(m) => {
