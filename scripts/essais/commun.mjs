@@ -1,6 +1,6 @@
 // Outils communs des scripts d'essai au navigateur (lot 4, T57). Repris à l'identique de s2-navigateur.mjs
 // (même cache npx, même PLAYWRIGHT_MODULE, mêmes types MIME) . Migrés : s2, fichiers (lot 5b, T85) et s34.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -146,3 +146,11 @@ export async function dropFile(page, selector, name, bytes, type = "") {
 }
 /** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
 export const TAB = '[role="tab"][data-tab]';
+
+/** CSP de la coque (`apps/desktop/src-tauri/tauri.conf.json`), envoyée telle quelle par le serveur d'essai (R22) : un
+ *  défaut de CSP se voit dans l'essai. Seule copie : les essais l'importent. */
+export function coqueCsp() {
+  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
+  const csp = conf.app.security.csp;
+  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
+}

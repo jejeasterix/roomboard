@@ -4,23 +4,16 @@
 // Aucune requête hors de 127.0.0.1. Lancé par scripts/verifier.sh --e2e, sans option de capture.
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/c9-grille-navigateur.mjs [--captures]
 // (--captures : docs/essais/c9-editeur-grille.png, panneau ouvert, Seyès en aperçu).
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, frames, gitSha, item, loadPlaywright, serve, stageBox } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, serve, stageBox } from "./commun.mjs";
 
 const LABEL = "C9 grille";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const PANEL = "#grille";
 const field = (k) => `${PANEL} [data-grille="${k}"]`;
-
-/** CSP de la coque (tauri.conf.json), envoyée telle quelle (même lecture que c2-image-navigateur.mjs). */
-function coqueCsp() {
-  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
-  const csp = conf.app.security.csp;
-  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
-}
 
 /** Pixels différents du fond de page (somme RVB < 750) dans [x0, y0, x1, y1], px CSS de `#scene` : le gris des grilles
  *  neuves (#94a3b8, somme 495) compte, alors qu'`inkIn` (commun.mjs, somme < 300) ne voit que l'encre sombre. */
