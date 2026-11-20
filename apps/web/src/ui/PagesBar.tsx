@@ -53,6 +53,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
         {(n) => (
           <button
             type="button"
+            class="rb-page"
             data-page={n}
             aria-current={n === props.view().pageIndex + 1 ? "page" : undefined}
             onClick={() => props.goTo(n - 1)}
@@ -61,7 +62,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
           </button>
         )}
       </For>
-      <span id="pages">{pagesLabel(props.view())}</span>
+      <span id="pages" class="rb-pages-count">{pagesLabel(props.view())}</span>
     </nav>
   );
 }

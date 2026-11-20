@@ -17,10 +17,11 @@ export interface TabsBarProps {
 
 export function TabsBar(props: TabsBarProps): JSX.Element {
   return (
-    <div role="tablist" data-tabs>
+    <div role="tablist" data-tabs class="rb-tabs">
       <For each={props.tabs()}>
         {(t) => (
           <div
+            class="rb-tab"
             role="tab"
             data-tab={t.id}
             data-kind={t.kind}
@@ -30,10 +31,13 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
           >
             <span>{t.title}</span>
             <Show when={t.dirty}>
-              <span aria-hidden="true">•</span>
+              <span class="rb-tab-dirty" aria-hidden="true">
+                •
+              </span>
             </Show>
             <button
               type="button"
+              class="rb-tab-close"
               data-tab-close={t.id}
               aria-label={`Fermer ${t.title}`}
               onClick={(e) => {
@@ -46,7 +50,7 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
           </div>
         )}
       </For>
-      <button type="button" data-tab-new aria-label="Nouvel onglet" onClick={() => props.newTab()}>
+      <button type="button" class="rb-tab-new" data-tab-new aria-label="Nouvel onglet" onClick={() => props.newTab()}>
         +
       </button>
     </div>
