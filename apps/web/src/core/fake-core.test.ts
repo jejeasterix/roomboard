@@ -293,6 +293,19 @@ describe("fixture élément inconnu (S4, fausse liaison)", () => {
     expect(d.citedAssets()).toEqual([{ id: ABC, name: ABC, mime: "application/octet-stream", size: 0 }]);
     expect(d.page("p1")?.backdrop).toBeNull();
   });
+  it("image connue mal formée : illisible par element(), champs gardés tels quels au save (K8)", () => {
+    const bad = [
+      { id: "i1", kind: "image", transform: [1, 0, 0, 1, 0, 0] },
+      { id: "i2", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: ABC.toUpperCase(), w: 2, h: 2 } },
+      { id: "i3", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: ABC, w: 0, h: 2 } },
+    ];
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify({ pages: [{ id: "p1", elements: bad }] })));
+    for (const e of bad) expect(d.element(e.id)).toBeNull();
+    expect(d.elementIds("p1")).toEqual(["i1", "i2", "i3"]);
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { elements: unknown[] }[] };
+    expect(saved.pages[0]?.elements).toEqual(bad);
+  });
+
   it("balayage (K4) : le contenu d'un texte n'est pas cité, une empreinte en majuscules non plus", () => {
     const d = fakeCore.load(unknownFixture());
     const empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";

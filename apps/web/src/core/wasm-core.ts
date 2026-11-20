@@ -1,5 +1,6 @@
 // Adaptateur du vrai module Wasm (T15) vers le contrat figé `api.ts` (T8). Toute valeur venue de Wasm est contrôlée :
-// une dérive de forme entre Rust et TS lève une erreur au lieu de passer sous un `as`.
+// une dérive de forme entre Rust et TS lève une erreur au lieu de passer sous un `as`, sauf un `kind` d'une version
+// plus récente, rendu comme cadre inconnu (voir la branche `default`).
 import type {
   AssetInfo,
   BackdropView,
@@ -98,7 +99,8 @@ export function toElementView(v: unknown): ElementView | null {
       return { ...base, kind, unknown: { sourceKind, w, h } };
     }
     default: {
-      // Kind d'une version plus récente : gardé comme cadre, boîte lue si elle est lisible, sinon UNKNOWN_BOX.
+      // Une dérive de `kind` ne lève pas : elle devient un cadre inconnu (le cœur rend déjà `kind: "unknown"` pour un
+      // kind d'une version plus récente). Gardé comme cadre, boîte lue si elle est lisible, sinon UNKNOWN_BOX.
       const raw = v["unknown"];
       const u: Record<string, unknown> = isRecord(raw) ? raw : {};
       const w = u["w"];

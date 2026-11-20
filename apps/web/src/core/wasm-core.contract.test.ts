@@ -681,6 +681,19 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     d.free();
   });
 
+  it("AddImage : à deux défauts, l'asset est contrôlé avant la boîte, la boîte avant la page", () => {
+    const d = f.blank();
+    const p = first(d);
+    const msg = (page: string, asset: typeof png, w: number): string =>
+      messageOf(() => d.apply({ type: "AddImage", page, asset, w, h: 1, matrix: I }));
+    unchanged(d, () => {
+      expect(msg(p, { ...png, id: ABC.toUpperCase() } as unknown as typeof png, 0)).toBe(BAD_ASSET);
+      expect(msg("nulle-part", png, 0)).toBe(BAD_IMAGE);
+    });
+    expect(d.citedAssets()).toEqual([]);
+    d.free();
+  });
+
   it("image : hitTest dans sa boîte, Transform la déplace, gomme et hitTestPath l'ignorent", () => {
     const d = f.blank();
     const p = first(d);
