@@ -117,6 +117,7 @@ async function scenario(page, url, { captures, tmp }) {
   await waitTabs(t0 + 1);
   check(!(await panelOpen()), "CR3 : autre onglet : panneau fermé");
   await page.locator(TAB).nth(0).click();
+  await page.waitForFunction((sel) => document.querySelectorAll(sel)[0]?.getAttribute("aria-selected") === "true", TAB, { timeout: 15000 });
   await settle();
   check((await painted()) === 0 && (await version()) === v0, "CR3 : aperçu, autre onglet, retour : aucune grille, rien d'écrit");
 
@@ -157,6 +158,8 @@ async function scenario(page, url, { captures, tmp }) {
   const vR = await version();
   if (captures) {
     await page.selectOption(field("kind"), "seyes");
+    // Épaisseur 1 : à 3, au zoom « ajuster la page », la règle CR2 saute les lignes fines du Seyès (ressemble à Carreaux).
+    await page.selectOption(field("lineWidth"), "1");
     await settle();
     const path = join(ROOT, "docs", "essais", "c9-editeur-grille.png");
     await page.screenshot({ path });
