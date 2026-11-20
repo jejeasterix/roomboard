@@ -1,4 +1,4 @@
-import { For, Show, type Accessor, type JSX } from "solid-js";
+import { createMemo, For, Show, type Accessor, type JSX } from "solid-js";
 
 export interface TabView {
   readonly id: string;
@@ -16,10 +16,25 @@ export interface TabsBarProps {
 }
 
 export function TabsBar(props: TabsBarProps): JSX.Element {
+  // Nœuds stables : on itère sur les ids (égalité par contenu) et chaque onglet relit sa vue par id. Des objets neufs à
+  // chaque impulsion recréaient les nœuds entre mousedown et mouseup, et le navigateur ne délivrait plus de `click`.
+  const ids = createMemo(
+    () => props.tabs().map((t) => t.id),
+    [],
+    { equals: (a, b) => a.length === b.length && a.every((id, i) => id === b[i]) },
+  );
   return (
     <div role="tablist" data-tabs class="rb-tabs">
-      <For each={props.tabs()}>
-        {(t) => (
+      <For each={ids()}>
+        {(id) => {
+          const view = createMemo(() => props.tabs().find((x) => x.id === id));
+          const t = {
+            get id() { return id; },
+            get title() { return view()?.title ?? ""; },
+            get dirty() { return view()?.dirty ?? false; },
+            get kind() { return view()?.kind ?? "board"; },
+          };
+          return (
           <div
             class="rb-tab"
             role="tab"
@@ -48,7 +63,8 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
               ×
             </button>
           </div>
-        )}
+          );
+        }}
       </For>
       <button type="button" class="rb-tab-new" data-tab-new aria-label="Nouvel onglet" onClick={() => props.newTab()}>
         +
