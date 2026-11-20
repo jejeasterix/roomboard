@@ -105,6 +105,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "fit-page": { label: "Ajuster la page" },
   "file-new": { label: "Nouveau" },
   "file-open": { label: "Ouvrir" },
+  "file-import": { label: "Importer" },
   "file-save": { label: "Enregistrer" },
   "file-save-as": { label: "Enregistrer sous" },
   settings: { label: "Réglages" },

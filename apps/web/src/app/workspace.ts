@@ -6,24 +6,33 @@
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
  */
 import type { CoreDocument, CoreFactory } from "../core/api";
+import { createAssetStore, type AssetStore } from "../core/asset-store";
+import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import {
   APP_VERSION,
   createFileController,
   DISCARD_MESSAGE,
   messageOf,
+  UNREAD_ASSETS_MESSAGE,
   type FileController,
   type FileKey,
 } from "../platform/controller";
 import type { DroppedFile, FileHost, HostKind, Point, SaveTarget, ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
-import { createImporter, type ImportReport } from "../platform/import";
+import type { ImageDecoder, ImageTarget } from "../platform/image-import";
+import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
+/** Repli R7 : le module du conteneur ne s'est pas chargé, le document s'ouvre par le cœur seul. */
+export const CODEC_FALLBACK_MESSAGE = "images non lues : le module des images ne s'est pas chargé";
+
 export interface TabSession {
   readonly board: BoardSession;
   readonly files: FileController;
+  /** Octets des images de l'onglet (R12). */
+  readonly assets: AssetStore;
 }
 
 export interface WorkspaceDeps {
@@ -32,8 +41,14 @@ export interface WorkspaceDeps {
   /** Pour `data-fichiers`. */
   readonly kind: HostKind;
   readonly shell: ShellPort;
+  /** Conteneur avec assets (R7, R10) : `createPageCodec(loadFormatsModule)` dans l'amorce, un faux dans les tests. */
+  readonly codec: ContainerCodec;
+  /** Magasin d'un onglet (R12) ; défaut `createAssetStore()`. */
+  makeAssets?(): AssetStore;
+  /** Décodeur des images importées (tests) ; défaut : celui du navigateur. */
+  readonly decode?: ImageDecoder;
   readonly first: StartedDocument;
-  makeSession(doc: CoreDocument): Promise<BoardSession>;
+  makeSession(doc: CoreDocument, assets: AssetStore): Promise<BoardSession>;
   /** Attendue après `host.onDrop` et avant `launch` (écart T87). */
   dropReady(): Promise<void>;
   /** Fichiers du lancement (Tauri : `() => launchFiles(ipc)`) ; absent hors coque. */
@@ -63,6 +78,8 @@ interface Slot {
   tab: TabSession | null;
   id: string;
   title: string;
+  /** Onglet aux assets non lus (R30) : Enregistrer refusé. */
+  unread: boolean;
 }
 
 /** Ordre fixe : premier onglet, `host.onDrop`, `await dropReady()`, puis `launch()` → importFiles. */
@@ -121,21 +138,96 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     },
   });
 
+  const released = new WeakSet<TabSession>();
   const release = (tab: TabSession): void => {
+    released.add(tab);
     slots.delete(tab);
     tab.files.dispose();
     tab.board.dispose();
   };
 
   const full = (): boolean => tabs.list().length >= MAX_TABS;
+  const makeAssets = deps.makeAssets ?? (() => createAssetStore());
+  const typed = (blob: Blob, mime: string | undefined): Blob =>
+    mime !== undefined && mime !== "" && mime !== blob.type ? new Blob([blob], { type: mime }) : blob;
+
+  const missingOf = (doc: CoreDocument, assets: AssetStore): string[] =>
+    assets.pick(doc.citedAssets().map((a) => a.id)).missing;
+
+  /**
+   * Octets d'un onglet (R7), décidés à chaque enregistrement : sans asset cité, `doc.save` (mêmes octets qu'avant, sans
+   * charger le second module, garde `compat_socle`) ; sinon `saveParts` et le conteneur. Jamais tout par le conteneur.
+   * Un asset cité absent du magasin n'arrive pas ici : `saveBlocked` refuse l'enregistrement avant (R30).
+   */
+  async function encodeTab(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string): Promise<Uint8Array> {
+    const cited = doc.citedAssets();
+    if (cited.length === 0) return doc.save(now, appVersion);
+    const [manifest, ybin] = doc.saveParts(now, appVersion);
+    const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
+    const { present } = assets.pick(cited.map((a) => a.id));
+    return deps.codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
+  }
+
+  /** Ouverture R7 : conteneur, sinon repli `core.load` ; null si le fichier est refusé (message déjà dit). */
+  async function readDocument(name: string, bytes: Uint8Array): Promise<{ doc: CoreDocument; assets: AssetStore; unread: boolean } | null> {
+    const assets = makeAssets();
+    let contents: ContainerContents;
+    try {
+      contents = await deps.codec.read(new Blob([bytes as BlobPart]) /* le Blob copie déjà les octets */);
+    } catch (e) {
+      if (!(e instanceof CodecUnavailableError)) {
+        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+        return null;
+      }
+      let doc: CoreDocument;
+      try {
+        doc = core.load(bytes);
+      } catch (e2) {
+        await say(`Ouverture impossible (${name}) : ${messageOf(e2)}`);
+        return null;
+      }
+      const unread = doc.citedAssets().length > 0;
+      if (unread) await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
+      return { doc, assets, unread };
+    }
+    let doc: CoreDocument;
+    try {
+      doc = core.loadParts(contents.manifest, contents.ybin);
+    } catch (e) {
+      await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+      return null;
+    }
+    try {
+      for (const [id, blob] of contents.assets) assets.adopt(id, typed(blob, doc.asset(id)?.mime));
+    } catch (e) {
+      doc.free();
+      await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+      return null;
+    }
+    if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
+    // un asset cité mais ignoré par le conteneur (trop gros…) : l'onglet est marqué, Enregistrer refusé (R30)
+    return { doc, assets, unread: missingOf(doc, assets).length > 0 };
+  }
+
+  /** Onglet qui reçoit les images (R3) : session active, magasin de l'onglet, moteur, rectangle du stage. */
+  const imageTarget = (t: TabSession): ImageTarget => ({
+    assets: t.assets,
+    alive: () => !released.has(t),
+    page: () => t.board.engine.state().page,
+    camera: () => t.board.engine.camera(),
+    stageRect: () => t.board.stage.getBoundingClientRect(),
+    run: (cmd) => t.board.engine.run(cmd),
+  });
 
   async function addTab(
     doc: CoreDocument,
     opened: { readonly name: string; readonly target: SaveTarget | null } | null,
+    assets: AssetStore = makeAssets(),
+    unread = false,
   ): Promise<TabSession | null> {
     let board: BoardSession;
     try {
-      board = await deps.makeSession(doc);
+      board = await deps.makeSession(doc, assets);
     } catch (e) {
       try {
         doc.free();
@@ -145,9 +237,11 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       await say(`Nouvel onglet impossible : ${messageOf(e)}`);
       return null;
     }
-    const slot: Slot = { tab: null, id: "", title: "" };
+    const slot: Slot = { tab: null, id: "", title: "", unread };
     const files = createFileController({
-      doc: board.doc,
+      encode: (now, appVersion) => encodeTab(board.doc, assets, now, appVersion),
+      importFiles: (f) => ws.importFiles(f, null),
+      saveBlocked: () => (slot.unread || missingOf(board.doc, assets).length > 0 ? UNREAD_ASSETS_MESSAGE : null),
       versions: board.engine,
       host,
       shell: tabShell(slot),
@@ -157,7 +251,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       now: deps.now,
       appVersion: APP_VERSION,
     });
-    const tab: TabSession = { board, files };
+    const tab: TabSession = { board, files, assets };
     slot.tab = tab;
     slots.set(tab, slot);
     let id: string;
@@ -174,7 +268,17 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     return tab;
   }
 
-  const importer = createImporter({ openDocument: (f) => ws.openDocument(f), notify: say, full });
+  const importer = createImporter({
+    openDocument: (f) => ws.openDocument(f),
+    notify: say,
+    full,
+    target: () => {
+      const t = tabs.active()?.session;
+      return t === undefined ? null : imageTarget(t);
+    },
+    maxBytes: deps.kind === "tauri" ? null : WEB_MAX_BYTES,
+    ...(deps.decode ? { decode: deps.decode } : {}),
+  });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
   const ws: Workspace = {
@@ -190,14 +294,9 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return false;
       }
-      let doc: CoreDocument;
-      try {
-        doc = core.load(file.bytes);
-      } catch (e) {
-        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
-        return false;
-      }
-      return (await addTab(doc, { name, target: file.target })) !== null;
+      const read = await readDocument(name, file.bytes);
+      if (read === null) return false;
+      return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread)) !== null;
     },
     async newBlank() {
       if (full()) {
@@ -242,9 +341,13 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   }
 
   const stopTabs = tabs.onChange(show);
+  // Premier document : `startDocument` l'a lu par `core.load` (attente IndexedDB) ; s'il cite des images, elles ne
+  // sont pas lues et l'onglet est marqué (R30, HR20).
   const first = await addTab(
     deps.first.doc,
     deps.first.opened === null ? null : { name: baseName(deps.first.opened.name), target: deps.first.opened.target },
+    makeAssets(),
+    deps.first.doc.citedAssets().length > 0,
   );
   if (first === null) throw new Error("RoomBoard : premier onglet impossible");
   if (deps.first.error !== null) {

@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Camera } from "../engine/camera";
+import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { detectSupport } from "../engine/input/support";
 import { FakeGL } from "../engine/render/fake-gl";
@@ -322,5 +323,22 @@ describe("createBoardSession (T93)", () => {
     const resize = vi.spyOn(s.engine, "resize");
     s.activate();
     expect(resize).toHaveBeenLastCalledWith(640, 480, window.devicePixelRatio || 1);
+  });
+
+  it("image du document : décodée depuis le magasin de l'onglet, bitmap fermé à dispose (R12, R16)", async () => {
+    const doc = fakeCore.blank();
+    const id = "cd".repeat(32);
+    doc.apply({ type: "AddImage", page: doc.pageIds()[0]!, asset: { id, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+    const assets = createAssetStore();
+    assets.adopt(id, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
+    const close = vi.fn();
+    const decode = vi.fn(async (_b: Blob) => ({ width: 10, height: 10, close }) as unknown as ImageBitmap);
+    const s = await createBoardSession(doc, { ...shared, decode }, assets);
+    s.activate();
+    await vi.waitFor(() => expect(decode).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(Array.from(new Uint8Array(await decode.mock.calls[0]![0].arrayBuffer()))).toEqual([1, 2, 3]);
+    s.dispose();
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

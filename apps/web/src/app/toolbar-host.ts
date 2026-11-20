@@ -30,6 +30,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "eraser-mode": (t) => t.engine().setEraserMode(t.engine().state().eraserMode === "partial" ? "object" : "partial"),
   "file-new": file("new"),
   "file-open": file("open"),
+  "file-import": file("import"),
   "file-save": file("save"),
   "file-save-as": file("saveAs"),
   settings: (t) => t.toggle("settings"),

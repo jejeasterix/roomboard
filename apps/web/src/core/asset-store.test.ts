@@ -5,6 +5,19 @@ const ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 const EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 describe("AssetStore (K13)", () => {
+  it("put garde une copie en mémoire : le Blob source qui échoue ou change ensuite n'altère pas l'asset", async () => {
+    const store = createAssetStore();
+    const source = new Blob(["abc"], { type: "image/png" });
+    const id = await store.put(source);
+    source.arrayBuffer = async () => {
+      throw new DOMException("fichier déplacé", "NotReadableError");
+    };
+    const kept = store.get(id)!;
+    expect(kept).not.toBe(source);
+    expect(kept.type).toBe("image/png");
+    expect(new TextDecoder().decode(await kept.arrayBuffer())).toBe("abc");
+  });
+
   it("webCryptoHasher : vecteurs communs avec container::sha256_hex", async () => {
     expect(await webCryptoHasher(new Blob(["abc"]))).toBe(ABC);
     expect(await webCryptoHasher(new Blob([]))).toBe(EMPTY_HASH);
@@ -16,19 +29,22 @@ describe("AssetStore (K13)", () => {
     const second = new Blob(["abc"], { type: "image/png" });
     expect(await store.put(first)).toBe(ABC);
     expect(await store.put(second)).toBe(ABC);
-    expect(store.get(ABC)).toBe(first);
+    const kept = store.get(ABC)!; // copie en mémoire du premier : l'identité du Blob source n'est plus gardée
+    expect(kept).not.toBe(second);
+    expect(await store.put(new Blob(["abc"]))).toBe(ABC);
+    expect(store.get(ABC)).toBe(kept);
     expect(store.has(ABC)).toBe(true);
   });
 
   it("pick rend les présents dans l'ordre reçu et les absents à part, sans trier", async () => {
     const store = createAssetStore();
-    const empty = new Blob([]);
     await store.put(new Blob(["abc"]));
-    await store.put(empty);
+    await store.put(new Blob([]));
     const missing = "0".repeat(64);
     const r = store.pick([EMPTY_HASH, missing, ABC]);
     expect(r.present.map(([id]) => id)).toEqual([EMPTY_HASH, ABC]);
-    expect(r.present[0]?.[1]).toBe(empty);
+    expect(r.present[0]?.[1]).toBe(store.get(EMPTY_HASH));
+    expect(r.present[0]?.[1].size).toBe(0);
     expect(r.missing).toEqual([missing]);
   });
 

@@ -5,10 +5,12 @@
  * `newTab`), sans question : le document de cet onglet reste où il est (D27 amendée, Q1, CL5b-3). La garde de
  * fermeture n'est pas posée ici : une seule pour la fenêtre, tenue par l'espace de travail (CL5b-6).
  */
-import type { CoreDocument } from "../core/api";
-import { UNTITLED, type FileHost, type OpenedFile, type SaveTarget, type ShellPort } from "./files";
+import { UNTITLED, type DroppedFile, type FileHost, type OpenedFile, type SaveTarget, type ShellPort } from "./files";
 
 export const APP_VERSION = "0.1.0";
+export const UNREAD_ASSETS_MESSAGE = "images non lues : enregistrer les perdrait";
+export const IMPORT_BUSY_MESSAGE = "Import en cours : réessayez dans un instant";
+export const BUSY_MESSAGE = "Opération en cours : réessayez dans un instant";
 export const DISCARD_MESSAGE = "Le document a des modifications non enregistrées. Les abandonner ?";
 
 /** Sous-ensemble de `Engine` (engine.ts : `state().version`, `onState`). */
@@ -17,7 +19,7 @@ export interface VersionSource {
   onState(cb: (s: { readonly version: number }) => void): () => void;
 }
 
-export type FileCommand = "open" | "save" | "saveAs" | "new";
+export type FileCommand = "open" | "save" | "saveAs" | "new" | "import";
 
 export interface FileKey {
   readonly key: string;
@@ -30,7 +32,6 @@ export interface FileKey {
 }
 
 export interface FileControllerDeps {
-  readonly doc: Pick<CoreDocument, "save">;
   readonly versions: VersionSource;
   readonly host: FileHost;
   /** Shell de l'onglet : `guardClose` n'est jamais appelé ; `setTitle` n'agit que pour l'onglet actif. */
@@ -43,6 +44,12 @@ export interface FileControllerDeps {
   newTab(): Promise<void>;
   readonly now: () => string;
   readonly appVersion: string;
+  /** Octets du fichier, appelé par l'hôte après le choix de la cible (R11). */
+  encode(now: string, appVersion: string): Promise<Uint8Array>;
+  /** « Importer » : fichiers choisis dans la boîte, vers l'entrée unique (R18). */
+  importFiles(files: readonly DroppedFile[]): Promise<unknown>;
+  /** Message si l'enregistrement est refusé (onglet aux images non lues, R30), sinon null. */
+  saveBlocked?(): string | null;
 }
 
 export interface FileController {
@@ -81,7 +88,7 @@ export function createFileController(d: FileControllerDeps): FileController {
   let savedVersion = d.versions.state().version;
   let target: SaveTarget | null = d.opened?.target ?? null;
   let name = d.opened?.name ?? UNTITLED;
-  let busy = false;
+  let busy: FileCommand | null = null;
   let lastTitle = "";
   const listeners = new Set<() => void>();
 
@@ -105,17 +112,16 @@ export function createFileController(d: FileControllerDeps): FileController {
     return false;
   };
   async function save(as: boolean): Promise<boolean> {
-    const version = d.versions.state().version; // lue avant l'écriture : un trait tracé pendant reste « modifié »
-    let bytes: Uint8Array;
-    try {
-      bytes = d.doc.save(d.now(), d.appVersion);
-    } catch (e) {
-      return fail("Enregistrement impossible", e);
+    const blocked = d.saveBlocked?.() ?? null;
+    if (blocked !== null) {
+      await d.shell.notify(blocked);
+      return false;
     }
+    const version = d.versions.state().version; // lue avant l'écriture : un trait tracé pendant reste « modifié »
     const to: SaveTarget = !as && target !== null ? target : { kind: "ask", name };
     let result: SaveTarget | null;
     try {
-      result = await d.host.save(bytes, to);
+      result = await d.host.save(() => d.encode(d.now(), d.appVersion), to);
     } catch (e) {
       return fail("Enregistrement impossible", e);
     }
@@ -124,6 +130,19 @@ export function createFileController(d: FileControllerDeps): FileController {
     name = result.name;
     savedVersion = version;
     changed();
+    return true;
+  }
+
+  async function importPicked(): Promise<boolean> {
+    // Boîte d'abord, appelée sans attente préalable : l'activation de l'utilisateur est encore fraîche.
+    let files: DroppedFile[];
+    try {
+      files = await d.host.pick();
+    } catch (e) {
+      return fail("Import impossible", e);
+    }
+    if (files.length === 0) return false;
+    await d.importFiles(files);
     return true;
   }
 
@@ -153,11 +172,20 @@ export function createFileController(d: FileControllerDeps): FileController {
   changed();
 
   async function run(cmd: FileCommand): Promise<boolean> {
-    if (busy) return false;
-    busy = true;
+    if (busy !== null) {
+      // refus dit à voix haute : sinon Ctrl+S pendant un import semble ignoré (R18)
+      try {
+        await d.shell.notify(busy === "import" ? IMPORT_BUSY_MESSAGE : BUSY_MESSAGE);
+      } catch (e) {
+        console.warn(`RoomBoard : commande de fichier abandonnée (${messageOf(e)})`);
+      }
+      return false;
+    }
+    busy = cmd;
     try {
       if (cmd === "save") return await save(false);
       if (cmd === "saveAs") return await save(true);
+      if (cmd === "import") return await importPicked();
       if (cmd === "open") return await open();
       return await newDocument();
     } catch (e) {
@@ -165,7 +193,7 @@ export function createFileController(d: FileControllerDeps): FileController {
       console.warn(`RoomBoard : commande de fichier abandonnée (${messageOf(e)})`);
       return false;
     } finally {
-      busy = false;
+      busy = null;
     }
   }
 

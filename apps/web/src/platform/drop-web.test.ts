@@ -68,4 +68,14 @@ describe("dépôt web (T86)", () => {
     const f = new File(["x"], "x.roomboard");
     expect(await droppedFromFile(f).blob()).toBe(f);
   });
+
+  it("stopPropagation demandé : le drop ne remonte pas ; sans l'option : il remonte (R29)", () => {
+    for (const stop of [true, false]) {
+      const t = fakeTarget();
+      listenWebDrop(t.target, vi.fn(), { stopPropagation: stop });
+      const e = { ...ev([new File(["x"], "a.png")]), stopped: 0, stopPropagation() { this.stopped += 1; } };
+      t.fire("drop", e);
+      expect(e.stopped, String(stop)).toBe(stop ? 1 : 0);
+    }
+  });
 });

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SaveTarget } from "./files";
-import { browserFallbackDeps, createFallbackHost, FALLBACK_ACCEPT, type FallbackDeps, type PickedFile } from "./host-repli";
+import { browserFallbackDeps, createFallbackHost, FALLBACK_ACCEPT, IMPORT_ACCEPT, type FallbackDeps, type PickedFile } from "./host-repli";
 
-function memoryDeps(o: { pick?: PickedFile | null | "saved"; failDownload?: boolean } = {}) {
+function memoryDeps(o: { pick?: PickedFile | null | "saved"; picks?: File[]; failDownload?: boolean } = {}) {
   const downloads: Array<{ name: string; bytes: Uint8Array; mime: string }> = [];
   const accepts: string[] = [];
   const deps: FallbackDeps = {
@@ -13,6 +13,10 @@ function memoryDeps(o: { pick?: PickedFile | null | "saved"; failDownload?: bool
         return last ? { name: last.name, bytes: last.bytes } : null;
       }
       return o.pick ?? null;
+    },
+    async pickFiles(accept) {
+      accepts.push(accept);
+      return o.picks ?? [];
     },
     download(name, bytes, mime) {
       if (o.failDownload) throw new Error("téléchargement bloqué");
@@ -26,6 +30,7 @@ interface FakeEl {
   tag: string;
   type: string;
   accept: string;
+  multiple: boolean;
   href: string;
   download: string;
   style: { display: string };
@@ -44,7 +49,7 @@ function fakeDocument(o: { clickThrows?: boolean } = {}) {
   const doc = {
     createElement(tag: string): FakeEl {
       const el: FakeEl = {
-        tag, type: "", accept: "", href: "", download: "", style: { display: "" }, files: null,
+        tag, type: "", accept: "", multiple: false, href: "", download: "", style: { display: "" }, files: null,
         listeners: new Map(), clicked: 0, removed: false,
         addEventListener(t, cb) { el.listeners.set(t, cb); },
         click() { el.clicked += 1; if (o.clickThrows && tag === "input") throw new Error("click refusé"); },
@@ -70,7 +75,7 @@ describe("hôte de repli (téléchargement et <input type=file>)", () => {
     const m = memoryDeps({ pick: "saved" });
     const host = createFallbackHost(m.deps);
     expect(host.kind).toBe("repli");
-    expect(await host.save(bytes, ask)).toEqual({ kind: "download", name: "Sans titre.roomboard" });
+    expect(await host.save(async () => bytes, ask)).toEqual({ kind: "download", name: "Sans titre.roomboard" });
     const opened = await host.open();
     expect(Array.from(opened?.bytes ?? [])).toEqual(Array.from(bytes));
     expect(opened?.target).toEqual({ kind: "download", name: "Sans titre.roomboard" });
@@ -83,15 +88,15 @@ describe("hôte de repli (téléchargement et <input type=file>)", () => {
   });
 
   it("erreur d'écriture : l'échec du téléchargement remonte", async () => {
-    await expect(createFallbackHost(memoryDeps({ failDownload: true }).deps).save(bytes, ask)).rejects.toThrow("téléchargement bloqué");
+    await expect(createFallbackHost(memoryDeps({ failDownload: true }).deps).save(async () => bytes, ask)).rejects.toThrow("téléchargement bloqué");
   });
 
   it("nom : extension ajoutée, type application/x-roomboard ; Ctrl+S sur une cible download retélécharge le même nom", async () => {
     const m = memoryDeps();
     const host = createFallbackHost(m.deps);
-    const first = await host.save(bytes, { kind: "ask", name: "cours" });
+    const first = await host.save(async () => bytes, { kind: "ask", name: "cours" });
     if (first === null) throw new Error("annulé");
-    await host.save(bytes, first);
+    await host.save(async () => bytes, first);
     expect(m.downloads.map((d) => [d.name, d.mime])).toEqual([
       ["cours.roomboard", "application/x-roomboard"],
       ["cours.roomboard", "application/x-roomboard"],
@@ -227,5 +232,30 @@ describe("hôte de repli : onDrop (T86)", () => {
   });
   it("sans cible : no-op", () => {
     expect(() => createFallbackHost(memoryDeps().deps).onDrop(() => undefined)()).not.toThrow();
+  });
+  it("pick : fichiers choisis rendus en DroppedFile, accept d'import (R18)", async () => {
+    const m = memoryDeps({ picks: [new File([new Uint8Array([1])], "a.png", { type: "image/png" })] });
+    const files = await createFallbackHost(m.deps).pick();
+    expect(m.accepts).toEqual([IMPORT_ACCEPT]);
+    expect(files.map((f) => [f.name, f.size, f.mime])).toEqual([["a.png", 1, "image/png"]]);
+  });
+
+  it("navigateur : pickFiles pose input multiple et rend tous les fichiers", async () => {
+    const { doc, appended } = fakeDocument();
+    const picked = browserFallbackDeps(doc, urls).pickFiles(IMPORT_ACCEPT);
+    const input = appended[0];
+    if (!input) throw new Error("aucun input ajouté");
+    expect([input.type, input.accept, input.multiple]).toEqual(["file", IMPORT_ACCEPT, true]);
+    input.files = [{ name: "a.png", arrayBuffer: async () => new ArrayBuffer(1) }, { name: "b.png", arrayBuffer: async () => new ArrayBuffer(1) }];
+    input.listeners.get("change")?.();
+    expect((await picked).map((f) => f.name)).toEqual(["a.png", "b.png"]);
+    expect(input.removed).toBe(true);
+  });
+
+  it("navigateur : pickFiles annulé → []", async () => {
+    const { doc, appended } = fakeDocument();
+    const picked = browserFallbackDeps(doc, urls).pickFiles(IMPORT_ACCEPT);
+    appended[0]?.listeners.get("cancel")?.();
+    expect(await picked).toEqual([]);
   });
 });

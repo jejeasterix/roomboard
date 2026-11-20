@@ -1,0 +1,13 @@
+[package]
+name = "roomboard-formats-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+roomboard-core = { path = "../roomboard-core" }
+roomboard-formats = { path = "../roomboard-formats" }
+wasm-bindgen = "=0.2.130"

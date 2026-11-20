@@ -69,6 +69,11 @@ export class FakeCtx {
   measures = 0;
   measureText(text: string): { width: number } { this.measures++; return { width: text.length * 10 }; }
   setLineDash(d: number[]): void { this.log.push(`setLineDash ${d.join(",")}`); }
+  readonly images: { img: unknown; x: number; y: number; w: number; h: number }[] = [];
+  drawImage(img: unknown, x = 0, y = 0, w = 0, h = 0): void {
+    this.log.push(`drawImage ${x},${y},${w},${h}`);
+    this.images.push({ img, x, y, w, h });
+  }
 }
 
 export const asCtx = (f: FakeCtx): CanvasRenderingContext2D => f as unknown as CanvasRenderingContext2D;

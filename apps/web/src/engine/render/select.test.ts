@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { IDENTITY } from "../camera";
 import { Canvas2DRenderer } from "./canvas2d";
+import { FakeCtx } from "./fake-ctx";
 import { FakeGL } from "./fake-gl";
 import type { SceneSource } from "./renderer";
 import { chooseRenderer } from "./select";
@@ -171,5 +173,19 @@ describe("release (T93 : dispose d'une session libère le contexte WebGL2)", () 
     const choice = chooseRenderer(el(new FakeCanvas({ "2d": ctx2d() })), el(new FakeCanvas({ "2d": ctx2d() })), SRC, true);
     expect(choice.webgl).toBe(false);
     expect(() => choice.release()).not.toThrow();
+  });
+
+  it("options transmises au rendu Canvas 2D : la source d'images est lue (réglage éteint, puis WebGL2 nul)", () => {
+    const IMG = "ab".repeat(32);
+    const src: SceneSource = {
+      element: () => ({ id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: IMG, w: 10, h: 10 } }),
+      outline: () => null,
+    };
+    for (const want of [false, true]) {
+      const bitmap = vi.fn(() => null);
+      const c = chooseRenderer(el(new FakeCanvas({ "2d": new FakeCtx() })), el(new FakeCanvas({ "2d": new FakeCtx() })), src, want, { images: { bitmap } });
+      c.renderer.drawScene({ id: "p", elementIds: ["i"] }, IDENTITY, new Set());
+      expect(bitmap, `webgl ${want}`).toHaveBeenCalledWith(IMG);
+    }
   });
 });
