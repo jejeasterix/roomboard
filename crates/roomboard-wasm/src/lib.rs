@@ -1,6 +1,7 @@
 //! Liaison wasm-bindgen du cœur RoomBoard (DA5, D10). Une méthode par commande ; objets (Change, ElementView,
 //! Bounds, capacités) par serde-wasm-bindgen ; points et contours en Float32Array. Chaque méthode exposée délègue à
 //! une méthode `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
+use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use roomboard_core::asset::AssetRef;
@@ -13,6 +14,7 @@ use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
 use roomboard_core::query::Bounds;
+use roomboard_core::rich_text::TextAttr;
 use roomboard_core::shape::ShapeKind;
 use wasm_bindgen::prelude::*;
 
@@ -96,6 +98,51 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
         mime: mime.to_string(),
         size,
     }
+}
+
+/// Valeur d'un patch `FormatText` venue de la page (C7, T7) ; `null` arrive en `None` (retrait).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(untagged)]
+pub enum WireValue {
+    Bool(bool),
+    Number(f64),
+    Text(String),
+}
+
+/// Patch de la page → entrées du cœur (contrôle 1 de T7) : clé inconnue ou valeur au mauvais type : `BadFormat`. Les
+/// valeurs hors domaine (couleur, police, taille) sont refusées ensuite par le cœur (`valid_attrs`).
+pub fn wire_attrs(
+    patch: BTreeMap<String, Option<WireValue>>,
+) -> Result<Vec<TextAttr>, CommandError> {
+    patch
+        .into_iter()
+        .map(|(k, v)| {
+            Ok(match (k.as_str(), v) {
+                ("bold", None) => TextAttr::Bold(false),
+                ("bold", Some(WireValue::Bool(b))) => TextAttr::Bold(b),
+                ("italic", None) => TextAttr::Italic(false),
+                ("italic", Some(WireValue::Bool(b))) => TextAttr::Italic(b),
+                ("underline", None) => TextAttr::Underline(false),
+                ("underline", Some(WireValue::Bool(b))) => TextAttr::Underline(b),
+                ("color", None) => TextAttr::Color(None),
+                ("color", Some(WireValue::Text(s))) => TextAttr::Color(Some(s)),
+                ("size", None) => TextAttr::Size(None),
+                ("size", Some(WireValue::Number(n))) => TextAttr::Size(Some(n as f32)),
+                ("font", None) => TextAttr::Font(None),
+                ("font", Some(WireValue::Text(s))) => TextAttr::Font(Some(s)),
+                _ => return Err(CommandError::BadFormat),
+            })
+        })
+        .collect()
+}
+
+/// Lit le patch de `format_text` : chaque valeur en `Option` (une clé à `null` est un retrait, jamais une erreur) ;
+/// pas un objet, ou valeur ni booléen, ni nombre, ni chaîne : `BadFormat`. Générique sur le désérialiseur pour être
+/// testée en natif (hors wasm32, `serde_wasm_bindgen` panique).
+fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, CommandError> {
+    let patch: BTreeMap<String, Option<WireValue>> =
+        serde::Deserialize::deserialize(d).map_err(|_| CommandError::BadFormat)?;
+    wire_attrs(patch)
 }
 
 /// Document exposé à JavaScript.
@@ -317,6 +364,24 @@ impl Document {
     /// `matrix` : six nombres `a, b, c, d, e, f`, composés à gauche de la matrice de chaque élément.
     pub fn transform(&mut self, ids: Vec<String>, matrix: &[f64]) -> Result<JsValue, JsError> {
         to_js(&self.transform_inner(ids, matrix).map_err(cmd_err)?)
+    }
+
+    /// C7 : `attrs` = patch `TextAttrsPatch` sans clé `undefined` (retirées par `wasm-core.ts`, T7) ; `null` = retrait ;
+    /// `start`, `len` en unités UTF-16 du contenu.
+    pub fn format_text(
+        &mut self,
+        id: &str,
+        start: u32,
+        len: u32,
+        attrs: JsValue,
+        box_height: Option<f64>,
+    ) -> Result<JsValue, JsError> {
+        let attrs = read_patch(serde_wasm_bindgen::Deserializer::from(attrs)).map_err(cmd_err)?;
+        to_js(
+            &self
+                .format_text_inner(id, start, len, attrs, box_height)
+                .map_err(cmd_err)?,
+        )
     }
 
     pub fn element(&self, id: &str) -> Result<JsValue, JsError> {
@@ -563,6 +628,23 @@ impl Document {
     ) -> Result<Change, CommandError> {
         let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
         self.run(Command::Transform { ids, matrix: m })
+    }
+
+    pub fn format_text_inner(
+        &mut self,
+        id: &str,
+        start: u32,
+        len: u32,
+        attrs: Vec<TextAttr>,
+        box_height: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::FormatText {
+            id: id.to_string(),
+            start,
+            len,
+            attrs,
+            box_height,
+        })
     }
 
     /// `full = true` (tout invalider) seulement si une étape a été défaite.
@@ -967,7 +1049,10 @@ mod tests {
     impl<'de> serde::Deserializer<'de> for Js {
         type Error = serde::de::value::Error;
 
-        fn deserialize_any<V: serde::de::Visitor<'de>>(self, v: V) -> Result<V::Value, Self::Error> {
+        fn deserialize_any<V: serde::de::Visitor<'de>>(
+            self,
+            v: V,
+        ) -> Result<V::Value, Self::Error> {
             match self {
                 Js::Null => v.visit_unit(),
                 Js::Bool(b) => v.visit_bool(b),
@@ -993,9 +1078,10 @@ mod tests {
     }
 
     fn read(pairs: Vec<(&'static str, Js)>) -> Result<Vec<TextAttr>, CommandError> {
-        read_patch(serde::de::value::MapDeserializer::<_, serde::de::value::Error>::new(
-            pairs.into_iter(),
-        ))
+        read_patch(serde::de::value::MapDeserializer::<
+            _,
+            serde::de::value::Error,
+        >::new(pairs.into_iter()))
     }
 
     /// Patron écarté (T6) : lu en `HashMap<String, WireValue>` sans `Option`, un `null` de la page (retrait) serait
