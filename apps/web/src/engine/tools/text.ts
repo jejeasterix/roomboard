@@ -1,12 +1,13 @@
 /**
  * Outil Texte (D14, CL4-2 à CL4-6) : un clic ouvre une boîte (nouvelle, ou le texte touché, masqué de la scène pendant
  * l'édition) ; la saisie se fait dans la zone de la page (hôte injecté : `app/text-editor.ts`) ; une seule SetText à la
- * validation, hauteur mesurée par `layoutText`. Composition IME (CL4-3) : toute demande de validation attend
+ * validation, hauteur mesurée par `layoutRich` sur les segments prévus après l'édition (C7, T11). Composition IME (CL4-3) : toute demande de validation attend
  * `compositionend` ; rien n'est écrit pendant la composition. Clic pendant l'édition : valide seulement.
  */
-import type { Matrix } from "../../core/api";
+import type { Matrix, TextSpan } from "../../core/api";
+import { editSpans, plainSpans } from "../../core/rich-text";
 import { screenToWorld, type Camera } from "../camera";
-import { DEFAULT_TEXT_BOX_WIDTH, layoutText, textBoxHeight, type Measure } from "../text-layout";
+import { DEFAULT_TEXT_BOX_WIDTH, layoutRich, richBoxHeight, type Measure } from "../text-layout";
 import { NO_LIVE, type GestureTool, type LivePart, type ToolContext } from "./tool";
 
 export const TEXT_HIT_TOL_PX = 6;
@@ -26,6 +27,8 @@ export interface TextEditSession {
   readonly color: string;
   readonly size: number;
   readonly initial: string;
+  /** Segments à l'ouverture (C7, T11) : la hauteur prévoit ceux d'après l'édition ; boîte neuve : un segment vide. */
+  readonly spans: readonly TextSpan[];
 }
 
 /** Zone de saisie de la page (DOM, T56) : le moteur n'en connaît que ceci. */
@@ -66,7 +69,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     if (hadHidden) ctx.requestFrame?.();
     if (s.id === null && content === "") return;
     if (s.id !== null && content === s.initial) return;
-    const boxHeight = textBoxHeight(layoutText(content, s.size, s.boxWidth, measure).length, s.size);
+    const boxHeight = richBoxHeight(layoutRich(editSpans(s.spans, content), { size: s.size }, s.boxWidth, measure));
     ctx.run({
       type: "SetText",
       page: s.page,
@@ -108,11 +111,12 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
         color: el.style.color,
         size: el.text.size,
         initial: el.text.content,
+        spans: el.text.spans,
       };
       live = { ...NO_LIVE, hidden: new Set([el.id]) };
     } else {
       const st = style();
-      session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "" };
+      session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans("") };
       live = NO_LIVE;
     }
     composing = false;

@@ -267,6 +267,7 @@ impl Document {
             Some("text") => {
                 let transform = out_transform(e.get(&txn, "transform"))?;
                 let t = read_text(&txn, e)?;
+                let spans = crate::rich_text::read_spans(&txn, &t.text);
                 Some(ElementView {
                     style: Some(StrokeStyle {
                         color: t.color,
@@ -277,6 +278,7 @@ impl Document {
                         size: t.size,
                         box_width: t.box_width,
                         box_height: t.box_height,
+                        spans,
                     }),
                     ..ElementView::bare(id, "text", transform)
                 })

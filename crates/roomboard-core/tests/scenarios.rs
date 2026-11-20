@@ -4,6 +4,7 @@ use roomboard_core::document::Document;
 use roomboard_core::element::StrokeStyle;
 use roomboard_core::format::{load, save, SaveMeta};
 use roomboard_core::query::Bounds;
+use roomboard_core::rich_text::TextAttr;
 use roomboard_core::shape::ShapeKind;
 
 fn pen() -> StrokeStyle {
@@ -233,5 +234,57 @@ fn s4_transform_two_elements_then_undo_twice() {
         d.bounds(&ids),
         Some(start),
         "deux annulations : état de départ (une étape par geste)"
+    );
+}
+
+/// S2 (C7) : six plages (gras, italique, souligné, couleur, taille 72, police « Georgia ») ; enregistrer, recharger :
+/// mêmes segments, même contenu ; réenregistrer : mêmes octets.
+#[test]
+fn s2_rich_text_survives_save_load() {
+    let mut d = Document::blank();
+    let p = d.page_ids()[0].clone();
+    let t = d
+        .apply(Command::SetText {
+            page: p,
+            id: None,
+            x: 100.0,
+            y: 100.0,
+            content: "aa bb cc dd ee ff".into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 90.0,
+        })
+        .expect("texte")
+        .ids[0]
+        .clone();
+    let patches = [
+        TextAttr::Bold(true),
+        TextAttr::Italic(true),
+        TextAttr::Underline(true),
+        TextAttr::Color(Some("#ff0000".into())),
+        TextAttr::Size(Some(72.0)),
+        TextAttr::Font(Some("Georgia".into())),
+    ];
+    for (i, a) in patches.into_iter().enumerate() {
+        d.apply(Command::FormatText {
+            id: t.clone(),
+            start: 3 * i as u32,
+            len: 2,
+            attrs: vec![a],
+            box_height: None,
+        })
+        .expect("format");
+    }
+    let before = d.element(&t).and_then(|e| e.text).expect("vue");
+    assert_eq!(before.spans.len(), 11);
+    let file = save(&d, &meta()).expect("save");
+    let r = load(&file).expect("load");
+    let after = r.element(&t).and_then(|e| e.text).expect("vue rechargée");
+    assert_eq!(after.spans, before.spans);
+    assert_eq!(after.content, "aa bb cc dd ee ff");
+    assert!(
+        save(&r, &meta()).expect("resave") == file,
+        "réenregistrer change les octets"
     );
 }

@@ -1,7 +1,10 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CoreDocument, CoreFactory, Matrix, ShapeKind } from "./api";
+import type { AssetRef, CoreDocument, CoreFactory, Matrix, ShapeKind, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
+import { Canvas2DRenderer } from "../engine/render/canvas2d";
+import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
 import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toPageView, type WasmModule } from "./wasm-core";
@@ -89,6 +92,18 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(toBounds({ x0: 0, y0: 1, x1: 2, y1: 3 })).toEqual({ x0: 0, y0: 1, x1: 2, y1: 3 });
     expect(toBounds(undefined)).toBeNull();
     expect(() => toBounds({ x0: 0, y0: 1, x1: 2 })).toThrow("Bounds invalide");
+  });
+
+  it("toElementView : des segments qui ne redonnent pas le contenu sont une dérive du cœur (C7)", () => {
+    const spans = [{ text: "Le ", attrs: {} }, { text: "chat", attrs: { bold: true } }];
+    const text = { content: "Le chat", size: 36, boxWidth: 600, boxHeight: 45, spans };
+    const view = { id: "t1", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text };
+    expect(toElementView(view)).toEqual(view);
+    expect(toElementView({ ...view, text: { ...text, content: "", spans: [{ text: "", attrs: {} }] } })).toMatchObject({ kind: "text" });
+    expect(() => toElementView({ ...view, text: { ...text, content: "Le chat noir" } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...view, text: { ...text, spans: [{ text: "Le ", attrs: {} }, { text: "chien", attrs: {} }] } })).toThrow(
+      "ElementView invalide",
+    );
   });
 
   // Discrimine le patron écarté (T54) : un `as Change` sur le retour de `add_shape`, `set_text` ou `transform`
@@ -368,7 +383,7 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
       kind: "text",
       transform: [1, 0, 0, 1, 100, 200],
       style: { color: "#000000", width: 0 },
-      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45 },
+      text: { content: "Bonjour", size: 36, boxWidth: 600, boxHeight: 45, spans: [{ text: "Bonjour", attrs: {} }] },
     });
     const v = d.version();
     expect(text(d, p, "Bonjour", id).version).toBe(v);
@@ -796,6 +811,24 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
     d.free();
   });
 
+  it("S3 (C7) : le texte du socle a un seul segment et se dessine comme au socle", () => {
+    const d = core.load(fixtureOf("../../../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard"));
+    const page = d.pageIds()[0] ?? "";
+    const id = d.elementIds(page)[2] ?? "";
+    const view = d.element(id);
+    expect(view?.kind === "text" && view.text.spans).toEqual([plainSpan("Bonjour RoomBoard")]);
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: (x) => (x === id ? view : null), outline: () => null });
+    r.drawScene({ id: page, elementIds: [id] }, CAMERA_IDENTITY, new Set());
+    const tail = scene.log.slice(scene.log.findIndex((l) => l.startsWith("transform ")));
+    expect(tail.filter((l) => l.startsWith("fillText"))).toEqual(["fillText Bonjour RoomBoard 0,0"]);
+    expect(scene.texts).toEqual([
+      { text: "Bonjour RoomBoard", x: 0, y: 0, font: '36px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#000000", baseline: "top" },
+    ]);
+    expect(tail.some((l) => l.startsWith("fillRect"))).toBe(false);
+    d.free();
+  });
+
   it("version non vide", () => {
     expect(core.version().length).toBeGreaterThan(0);
   });
@@ -908,5 +941,158 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
   it("capabilities expose la table du cœur", () => {
     expect(need().capabilities("windows")).toEqual({ desktopAnnotation: true, multiWindow: true });
     expect(need().capabilities("ipados")).toEqual({ desktopAnnotation: false, multiWindow: false });
+  });
+});
+
+const BAD_FORMAT =
+  "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)";
+const plainSpan = (text: string): TextSpan => ({ text, attrs: {} });
+
+// Discrimine le patron écarté (T9) : un `as ElementView` ou un `text` recopié sans contrôle de `spans` laisserait passer
+// chaque dérive ci-dessous ; un nettoyage du patch vérifié par `toEqual` ignorerait la clé à `undefined`, d'où le
+// `toStrictEqual` sur l'argument passé à `format_text`.
+describe("contrat C7 : contrôle de forme des valeurs venues de Wasm", () => {
+  it("toElementView : spans exigés et contrôlés (T8)", () => {
+    const view = {
+      id: "t1", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 },
+      text: { content: "Le chat", size: 36, boxWidth: 600, boxHeight: 45, spans: [plainSpan("Le "), { text: "chat", attrs: { bold: true, italic: true, underline: true, color: "#ff0000", size: 48, font: "Georgia" } }] },
+    };
+    expect(toElementView(view)).toEqual(view);
+    // Contenu « a », celui des segments : chaque dérive ci-dessous lève pour sa seule cause, pas pour un contenu
+    // que ses segments ne redonnent pas (T12).
+    const withSpans = (spans: unknown) => ({ ...view, text: { ...view.text, content: "a", spans } });
+    expect(() => toElementView({ ...view, text: { content: "x", size: 36, boxWidth: 600, boxHeight: 45 } })).toThrow("ElementView invalide");
+    const drifts: unknown[] = [[], "Le chat", [{ text: 1, attrs: {} }], [{ text: "a" }], [{ text: "a", attrs: { bold: false } }], [{ text: "a", attrs: { size: 0 } }], [{ text: "a", attrs: { color: 5 } }], [{ text: "a", attrs: { href: "x" } }]];
+    for (const spans of drifts) expect(() => toElementView(withSpans(spans))).toThrow("ElementView invalide");
+    expect(toElementView(withSpans([{ text: "a", attrs: { bold: undefined } }]))).toStrictEqual({ ...view, text: { ...view.text, content: "a", spans: [plainSpan("a")] } });
+  });
+
+  it("FormatText : clés undefined retirées, bornes hors u32 portées à u32::MAX, retour contrôlé par toChange", () => {
+    const drift = { pages: ["p1"], ids: ["e1"], full: false, version: 1 };
+    const calls: unknown[][] = [];
+    const doc = { format_text: (...args: unknown[]): unknown => { calls.push(args); return drift; } };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    const d = createWasmCore(stub as unknown as WasmModule).blank();
+    expect(() => d.apply({ type: "FormatText", id: "e1", start: 3, len: 4, attrs: { bold: undefined, italic: true } })).toThrow("Change invalide");
+    expect(() => d.apply({ type: "FormatText", id: "e1", start: -1, len: 1.5, attrs: {}, boxHeight: 60 })).toThrow("Change invalide");
+    expect(calls).toEqual([["e1", 3, 4, { italic: true }, undefined], ["e1", 4294967295, 4294967295, {}, 60]]);
+    expect(calls[0]?.[3]).toStrictEqual({ italic: true });
+  });
+});
+
+describe.each(factories)("contrat C7 : $name", ({ f }) => {
+  const text = (d: CoreDocument, p: string, content: string, id: string | null = null) =>
+    d.apply({ type: "SetText", page: p, id, x: 100, y: 200, content, color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+  const fmt = (d: CoreDocument, id: string, start: number, len: number, attrs: TextAttrsPatch, boxHeight?: number) =>
+    d.apply({ type: "FormatText", id, start, len, attrs, ...(boxHeight === undefined ? {} : { boxHeight }) });
+  const spans = (d: CoreDocument, id: string): readonly TextSpan[] | null => {
+    const e = d.element(id);
+    return e?.kind === "text" ? e.text.spans : null;
+  };
+  const RED = { color: "#ff0000" } as const;
+  const chat = (attrs: TextAttrs): TextSpan[] => [plainSpan("Le "), { text: "chat", attrs }, plainSpan(" noir")];
+
+  it("S4 : positions UTF-16, différence en points de code, héritage du caractère précédent", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = text(d, p, "Le 🐱 noir").ids[0] ?? "";
+    expect(fmt(d, id, 3, 2, RED)).toMatchObject({ pages: [p], ids: [id], removed: [], full: false });
+    expect(spans(d, id)).toEqual([plainSpan("Le "), { text: "🐱", attrs: RED }, plainSpan(" noir")]);
+    text(d, p, "Le gros 🐱 noir", id);
+    expect(spans(d, id)).toEqual([plainSpan("Le gros "), { text: "🐱", attrs: RED }, plainSpan(" noir")]);
+    text(d, p, "Le gros 🐱🐱 noir", id);
+    expect(spans(d, id)).toEqual([plainSpan("Le gros "), { text: "🐱🐱", attrs: RED }, plainSpan(" noir")]);
+    d.free();
+  });
+
+  it("S4 : retrait par false, par null ; une clé undefined vaut une clé absente", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = text(d, p, "Le chat noir").ids[0] ?? "";
+    fmt(d, id, 3, 4, { bold: true, color: "#ff0000" });
+    fmt(d, id, 3, 4, { bold: false });
+    expect(spans(d, id)).toEqual(chat(RED));
+    fmt(d, id, 3, 4, { bold: true });
+    fmt(d, id, 3, 4, { bold: null });
+    expect(spans(d, id)).toEqual(chat(RED));
+    fmt(d, id, 3, 4, { color: null });
+    expect(spans(d, id)).toEqual([plainSpan("Le chat noir")]);
+    fmt(d, id, 3, 4, { bold: undefined, italic: true });
+    expect(spans(d, id)).toEqual(chat({ italic: true }));
+    unchanged(d, () => fmt(d, id, 3, 4, { bold: undefined }));
+    d.free();
+  });
+
+  it("S4 : plage vide sans boxHeight, aucune étape ; avec un boxHeight neuf, une étape et la hauteur écrite", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = text(d, p, "Le chat noir").ids[0] ?? "";
+    unchanged(d, () => fmt(d, id, 2, 0, { bold: true }));
+    unchanged(d, () => fmt(d, id, 0, 0, {}, 45));
+    expect(fmt(d, id, 2, 0, { bold: true }, 90).ids).toEqual([id]);
+    expect(d.element(id)).toMatchObject({ text: { boxHeight: 90 } });
+    expect(spans(d, id)).toEqual([plainSpan("Le chat noir")]);
+    d.free();
+  });
+
+  it("S4 : ordre des contrôles et valeurs refusées : messages du contrat, aucune étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const stroke = commit(d, p, 100);
+    const id = text(d, p, "Le 🐱 noir").ids[0] ?? "";
+    const hex64 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    unchanged(d, () => {
+      expect(messageOf(() => fmt(d, "absent", 0, 1, { href: "x" } as unknown as TextAttrsPatch))).toBe(BAD_FORMAT);
+      expect(messageOf(() => fmt(d, "absent", 0, 1, {}, -1))).toBe(BAD_FORMAT);
+      expect(messageOf(() => fmt(d, "absent", 0, 1, { bold: true }))).toBe("élément inconnu : absent");
+      expect(messageOf(() => fmt(d, stroke, 0, 1, { bold: true }))).toBe(`élément inconnu : ${stroke}`);
+      for (const [start, len] of [[4, 1], [3, 1], [8, 3], [-1, 1]] as const) {
+        expect(messageOf(() => fmt(d, id, start, len, { bold: true }))).toBe(BAD_FORMAT);
+      }
+      expect(messageOf(() => fmt(d, id, 0, 1, { color: "rgb(0,0,0)" }))).toBe(BAD_FORMAT);
+      expect(messageOf(() => fmt(d, id, 0, 1, { font: hex64 }))).toBe(BAD_FORMAT);
+      expect(messageOf(() => fmt(d, id, 0, 1, { bold: "oui" } as unknown as TextAttrsPatch))).toBe(BAD_FORMAT);
+    });
+    d.free();
+  });
+
+  it("S2 : six plages, enregistrer puis recharger : mêmes segments ; réenregistrer : mêmes octets", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = text(d, p, "aa bb cc dd ee ff").ids[0] ?? "";
+    const patches: TextAttrsPatch[] = [{ bold: true }, { italic: true }, { underline: true }, RED, { size: 72 }, { font: "Georgia" }];
+    patches.forEach((attrs, i) => fmt(d, id, i * 3, 2, attrs));
+    const expected: TextSpan[] = [
+      { text: "aa", attrs: { bold: true } }, plainSpan(" "), { text: "bb", attrs: { italic: true } }, plainSpan(" "),
+      { text: "cc", attrs: { underline: true } }, plainSpan(" "), { text: "dd", attrs: RED }, plainSpan(" "),
+      { text: "ee", attrs: { size: 72 } }, plainSpan(" "), { text: "ff", attrs: { font: "Georgia" } },
+    ];
+    expect(spans(d, id)).toEqual(expected);
+    const bytes = d.save(now, "0.1.0");
+    const e = f.load(bytes);
+    expect(spans(e, id)).toEqual(expected);
+    expect(e.element(id)).toMatchObject({ text: { content: "aa bb cc dd ee ff" } });
+    expect(new Uint8Array(e.save(now, "0.1.0"))).toEqual(new Uint8Array(bytes));
+    e.free();
+    d.free();
+  });
+
+  it("S1 : annuler trois fois rend le texte sans attribut ; rétablir trois fois remet tout", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = text(d, p, "Le chat noir").ids[0] ?? "";
+    fmt(d, id, 3, 4, { color: "#ff0000", bold: true });
+    text(d, p, "Le gros chat noir", id);
+    text(d, p, "Le gros chats noir", id);
+    const full = spans(d, id);
+    d.undo();
+    d.undo();
+    d.undo();
+    expect(spans(d, id)).toEqual([plainSpan("Le chat noir")]);
+    d.redo();
+    d.redo();
+    d.redo();
+    expect(spans(d, id)).toEqual(full);
+    d.free();
   });
 });
