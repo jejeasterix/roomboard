@@ -99,6 +99,22 @@ async function scenario(page, url, { captures, tmp }) {
     await (await chooser).setFiles(file);
     await fr();
   };
+  // Chaque bouton de la barre : boîte entière dans la fenêtre, hors de la scène.
+  const allVisible = async (bar) => {
+    const stage = await page.locator("#stage").boundingBox();
+    const boxes = await page.locator(`${bar} button`).evaluateAll((bs) =>
+      bs.map((b) => {
+        const r = b.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height, id: b.dataset.item ?? b.dataset.preset ?? b.textContent };
+      }),
+    );
+    const bad = boxes.filter(
+      (r) =>
+        r.x < 0 || r.y < 0 || r.x + r.w > VIEWPORT.width || r.y + r.h > VIEWPORT.height ||
+        (r.x < stage.x + stage.width && r.x + r.w > stage.x && r.y < stage.y + stage.height && r.y + r.h > stage.y),
+    );
+    return { n: boxes.length, bad: bad.map((r) => r.id) };
+  };
   const presets = () => count(`${OUTILS} button[data-preset]`);
   const BAR = '[data-edit-bar="outils"]';
 
@@ -125,7 +141,10 @@ async function scenario(page, url, { captures, tmp }) {
     (await count(`${OUTILS}[data-dock="top"][data-size="m"]`)) === 1 && (await count(item("eraser"))) === 1,
     "rien d'enregistré : la barre est toujours en haut, en taille m, avec la gomme",
   );
-  await page.locator('[data-edit-section="bars"]').scrollIntoViewIfNeeded();
+  await page.locator("[data-profile-editor]").evaluate((e) => {
+    e.scrollTop = 0;
+    for (let p = e.parentElement; p; p = p.parentElement) p.scrollTop = 0;
+  });
   await shot("editeur");
   const proposed = await page.inputValue('input[data-edit="new-name"]');
   check(proposed === "Par défaut (copie)", `nom proposé « ${proposed} »`);
@@ -135,6 +154,8 @@ async function scenario(page, url, { captures, tmp }) {
   check((await count(`${OUTILS}[data-dock="left"][data-size="l"]`)) === 1, "enregistré : barre d'outils à gauche, grands boutons");
   check((await count(item("eraser"))) === 0, "enregistré : la gomme est masquée");
   check((await noOverlap(page, OUTILS)).apart, "la barre à gauche ne recouvre pas la scène");
+  const vis = await allVisible(OUTILS);
+  check(vis.n > 0 && vis.bad.length === 0, `barre à gauche en l : ${vis.n} boutons tous dans la fenêtre, hors scène${vis.bad.length ? ` (hors : ${vis.bad.join(", ")})` : ""}`);
 
   // 3. S1 : rechargé.
   await page.reload();
@@ -145,6 +166,8 @@ async function scenario(page, url, { captures, tmp }) {
   check((await page.getAttribute("#stage", "data-tool")) === "pen", "rechargé : stylo actif");
   check((await presets()) === 5, "rechargé : cinq boutons data-preset");
   check((await activeProfile()) === "cm1", "rechargé : cm1 actif");
+  const vis2 = await allVisible(OUTILS);
+  check(vis2.n > 0 && vis2.bad.length === 0, `rechargé : ${vis2.n} boutons tous dans la fenêtre, hors scène`);
   await shot("barre-gauche-l");
 
   // 4. S1 : exporter.
