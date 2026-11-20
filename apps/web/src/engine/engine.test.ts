@@ -1149,3 +1149,56 @@ describe("moteur — barre de format (C7b, DAR4)", () => {
     expect(() => engine.textFormat({ type: "bold" })).not.toThrow();
   });
 });
+
+describe("moteur — pot (C6a)", () => {
+  const inert: GestureTool = { begin() {}, extend() {}, frame() {}, close() {}, live: () => NO_LIVE, active: () => false };
+
+  it("drawScene reçoit le fond de la page montrée (DA4)", () => {
+    const { doc, engine, frames, renderer } = setup();
+    engine.redraw();
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page.background).toBe("#ffffff");
+    const page = doc.page.bind(doc);
+    doc.page = (id) => {
+      const p = page(id);
+      return p === null ? null : { ...p, background: "#bfdbfe" };
+    };
+    engine.redraw();
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page.background).toBe("#bfdbfe");
+  });
+
+  it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
+    const { engine } = setup();
+    expect(engine.state().fillColor).toBe("#dc2626");
+    engine.setFillColor("#facc15");
+    expect(engine.state().fillColor).toBe("#facc15");
+    engine.setFillColor("");
+    engine.setFillColor("pas une couleur !");
+    expect(engine.state().fillColor).toBe("#facc15");
+    engine.setFillColor(null);
+    expect(engine.state().fillColor).toBeNull();
+    expect(engine.textStyle().color).toBe("#000000");
+  });
+
+  it("fabrique fill : reçoit la couleur courante ; setTool(fill) : outil Pot actif", () => {
+    const got: { color?: () => string | null } = {};
+    const engine = createEngine({
+      doc: fakeCore.blank(),
+      renderer: new FakeRenderer(),
+      frames: new Frames(),
+      tools: {
+        pen: () => inert,
+        eraser: () => inert,
+        fill: (_ctx, c) => {
+          got.color = c;
+          return inert;
+        },
+      },
+    });
+    engine.setFillColor("#16a34a");
+    expect(got.color?.()).toBe("#16a34a");
+    engine.setTool("fill");
+    expect(engine.state().tool).toBe("fill");
+  });
+});
