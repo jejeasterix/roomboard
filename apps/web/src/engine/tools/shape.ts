@@ -36,6 +36,9 @@ interface Draft {
   x1: number;
   y1: number;
   readonly zoom: number;
+  /** Départ aimanté, retenu pour tout le geste ; recalculé seulement quand l'état d'Alt change (`startAlt`). */
+  start: readonly [number, number];
+  startAlt: boolean;
 }
 
 const NONE: ReadonlySet<string> = new Set<string>();
@@ -45,9 +48,18 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
   /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
   const snap = (page: string, x: number, y: number): readonly [number, number] =>
     ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(page, x, y) ?? [x, y]);
+  /** Départ aimanté du geste : un seul `snapPoint` tant qu'Alt ne change pas. */
+  const start = (d: Draft): readonly [number, number] => {
+    const alt = ctx.alt?.() === true;
+    if (alt !== d.startAlt) {
+      d.start = snap(d.page, d.x0, d.y0);
+      d.startAlt = alt;
+    }
+    return d.start;
+  };
   /** Coins écrits : départ et bout aimantés, puis Maj appliquée au bout aimanté (CL4-12, G8). */
   const corners = (d: Draft): [number, number, number, number] => {
-    const [x0, y0] = snap(d.page, d.x0, d.y0);
+    const [x0, y0] = start(d);
     const [bx, by] = snap(d.page, d.x1, d.y1);
     const [x1, y1] = ctx.shift?.() === true ? constrainEnd(kind, x0, y0, bx, by) : [bx, by];
     return [x0, y0, x1, y1];
@@ -76,7 +88,9 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       if (!s) return;
       const cam = ctx.camera();
       const [x, y] = screenToWorld(cam, s.x, s.y);
-      drafts.set(pointerId, { page: ctx.page(), style: style(), x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom });
+      const page = ctx.page();
+      const startAlt = ctx.alt?.() === true;
+      drafts.set(pointerId, { page, style: style(), x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt });
     },
     extend(pointerId, samples) {
       const d = drafts.get(pointerId);

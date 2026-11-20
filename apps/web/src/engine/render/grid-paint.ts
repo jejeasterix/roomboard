@@ -3,10 +3,11 @@
  * pixels physiques par `worldToScreen` puis × (sx, sy). Une ligne verticale ou horizontale tombe sur `round(X) + 0,5`
  * si l'épaisseur est impaire, sur `round(X)` sinon ; épaisseur `max(1, round(dpr))` pixels physiques, soit un pixel CSS
  * d'écran à tout zoom ; obliques (isométrique) sans calage ; point = carré de `max(2, round(2·dpr))` pixels, coin sur un
- * pixel entier. Motifs `dashed` [6, 4] et `dotted` [1, 3] en pixels CSS × dpr, décalés depuis l'origine du monde : le
- * motif ne glisse pas au défilement. Un `line` inconnu se dessine plein (G2).
+ * pixel entier. Motifs `dashed` [6, 4] et `dotted` [1, 3] en pixels CSS × dpr arrondis (au moins 1), décalés depuis
+ * l'origine du monde arrondie au pixel : le motif ne glisse pas au défilement et ses bords tombent sur des pixels
+ * entiers. Un `line` inconnu se dessine plein (G2) ; une couleur que le canvas refuse donne la couleur par défaut.
  */
-import type { GridLines } from "../../core/api";
+import { DEFAULT_GRID_COLOR, type GridLines } from "../../core/api";
 import { worldToScreen, type Camera } from "../camera";
 
 /** Pas minimal d'une famille de lignes, en pixels CSS d'écran (G9) : `min_step = MIN_GRID_PX / zoom`. */
@@ -41,7 +42,7 @@ export const alignLine = (v: number, width: number): number => (width % 2 === 1 
 
 function dashOf(line: string, dpr: number): number[] {
   const base = line === "dashed" ? DASHED : line === "dotted" ? DOTTED : null;
-  return base === null ? [] : base.map((v) => v * dpr);
+  return base === null ? [] : base.map((v) => Math.max(1, Math.round(v * dpr)));
 }
 
 /** Phase du motif au début d'un segment : distance le long du segment depuis la projection de l'origine du monde. */
@@ -56,8 +57,9 @@ export function alignedSegments(lines: GridLines, camera: Camera, sx: number, sy
   const width = lineWidthPx(dpr);
   const dot = dotSizePx(dpr);
   const [ox, oy] = worldToScreen(camera, 0, 0);
-  const originX = ox * sx;
-  const originY = oy * sy;
+  // Origine arrondie au pixel : avec des longueurs entières, chaque bord de tiret tombe sur un pixel entier.
+  const originX = Math.round(ox * sx);
+  const originY = Math.round(oy * sy);
   return lines.levels.map((l) => {
     const dash = dashOf(l.line, dpr);
     const period = dash.reduce((a, b) => a + b, 0);
@@ -101,6 +103,9 @@ export function paintGrid(ctx: CanvasRenderingContext2D, lines: GridLines, camer
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   for (const l of levels) {
     ctx.globalAlpha = l.alpha;
+    // Le canvas ignore une couleur invalide et garderait celle du niveau d'avant : défaut d'abord.
+    ctx.strokeStyle = DEFAULT_GRID_COLOR;
+    ctx.fillStyle = DEFAULT_GRID_COLOR;
     ctx.strokeStyle = l.color;
     ctx.fillStyle = l.color;
     ctx.lineWidth = l.width;

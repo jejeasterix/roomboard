@@ -641,7 +641,7 @@ class FakeDocument implements CoreDocument {
       const d = dist2(q[0], q[1], c0, c1);
       if (best === null || d < bestD) {
         // `q − candidat d'origine` (comme `grid::snap_delta`) : exactement nul quand l'élément revient à sa place.
-        best = [q[0] - x, q[1] - y];
+        best = [settleDelta(q[0] - x), settleDelta(q[1] - y)];
         bestD = d;
       }
     }
@@ -667,17 +667,12 @@ class FakeDocument implements CoreDocument {
         const poly = boxPolygon(e.shape.w, e.shape.h);
         for (let i = 0; i + 1 < poly.length; i += 2) {
           const [x, y] = applyMatrix(e.transform, poly[i] ?? 0, poly[i + 1] ?? 0);
-          box = box === null
-            ? { x0: x, y0: y, x1: x, y1: y }
-            : { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) };
+          box = union(box, { x0: x, y0: y, x1: x, y1: y });
         }
       } else {
         box = this.bounds([id]);
       }
-      if (box === null) continue;
-      acc = acc === null
-        ? box
-        : { x0: Math.min(acc.x0, box.x0), y0: Math.min(acc.y0, box.y0), x1: Math.max(acc.x1, box.x1), y1: Math.max(acc.y1, box.y1) };
+      if (box !== null) acc = union(acc, box);
     }
     return acc;
   }
@@ -789,6 +784,14 @@ export const fakeCore: CoreFactory = {
 // --- Grille (C9) : mêmes règles que `crates/roomboard-core/src/grid.rs` pour le modèle ; carreaux seuls pour le reste.
 /** Tolérance d'indice, en pas (celle de `grid.rs`). */
 const GRID_EPS = 1e-9;
+/** Résidu d'arrondi d'un déplacement aimanté, en unités de page (`DELTA_EPS` de `grid.rs`) : sous ce seuil, 0 exact. */
+const SNAP_DELTA_EPS = 1e-9;
+const settleDelta = (v: number): number => (Math.abs(v) < SNAP_DELTA_EPS ? 0 : v);
+/** Plus petite boîte qui contient `acc` (s'il y en a une) et `b`. */
+const union = (acc: Bounds | null, b: Bounds): Bounds =>
+  acc === null
+    ? b
+    : { x0: Math.min(acc.x0, b.x0), y0: Math.min(acc.y0, b.y0), x1: Math.max(acc.x1, b.x1), y1: Math.max(acc.y1, b.y1) };
 const boolOr = (v: unknown, d: boolean): boolean => (typeof v === "boolean" ? v : d);
 const finiteOr = (v: unknown, d: number): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
 /** `f64::round` du cœur : moitié loin de zéro (Math.round arrondit -1,5 vers -1, le cœur vers -2). */
@@ -873,7 +876,7 @@ const gridRecord = (g: GridInput): RawRecord => ({
   visible: g.visible,
   snap: g.snap,
   above: g.above,
-  levels: g.levels.map((l) => ({
+  levels: g.levels.map((l): GridLevel => ({
     kind: l.kind,
     spacingX: l.spacingX,
     spacingY: l.spacingY,
