@@ -698,3 +698,30 @@ describe("createEngine", () => {
     expect(engine.state().selection).toEqual([]);
   });
 });
+
+describe("createEngine — Alt (C9)", () => {
+  it("Alt suivie (C9, G8) : ctx.alt() vrai entre keydown et keyup, faux après releaseKeys ; la touche n'est pas prise", () => {
+    let seen: ToolContext | null = null;
+    const engine = createEngine({
+      doc: fakeCore.blank(),
+      renderer: new FakeRenderer(),
+      frames: new Frames(),
+      tools: {
+        pen: (ctx) => {
+          seen = ctx;
+          return fakeTool("pen", [], ctx);
+        },
+        eraser: (ctx) => fakeTool("eraser", [], ctx),
+      },
+    });
+    const alt = (): boolean => (seen as ToolContext | null)?.alt?.() === true;
+    expect(alt()).toBe(false);
+    expect(engine.key(key("Alt", { altKey: true }))).toBe(false);
+    expect(alt()).toBe(true);
+    expect(engine.keyUp(key("Alt"))).toBe(false);
+    expect(alt()).toBe(false);
+    engine.key(key("Alt", { altKey: true }));
+    engine.releaseKeys();
+    expect(alt()).toBe(false);
+  });
+});

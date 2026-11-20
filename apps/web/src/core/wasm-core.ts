@@ -10,6 +10,9 @@ import type {
   CoreDocument,
   CoreFactory,
   ElementView,
+  GridLevel,
+  GridLines,
+  GridView,
   Matrix,
   PageView,
   StrokeBuilderApi,
@@ -187,6 +190,36 @@ function toBackdropView(v: unknown): BackdropView | null {
   return { asset, kind, w: numberOrNull(v["w"], PAGE), h: numberOrNull(v["h"], PAGE), fit, rect: toBounds(v["rect"]) };
 }
 
+function toGridLevel(v: unknown): GridLevel {
+  if (!isRecord(v)) throw new Error(PAGE);
+  const { kind, spacingX, spacingY, originX, originY, color, line, snap, visible } = v;
+  if (
+    typeof kind !== "string" ||
+    typeof spacingX !== "number" ||
+    typeof spacingY !== "number" ||
+    typeof originX !== "number" ||
+    typeof originY !== "number" ||
+    typeof color !== "string" ||
+    typeof line !== "string" ||
+    typeof snap !== "boolean" ||
+    typeof visible !== "boolean"
+  ) {
+    throw new Error(PAGE);
+  }
+  return { kind, spacingX, spacingY, originX, originY, color, line, snap, visible };
+}
+
+// Grille (C9, G12) : `undefined` (Option::None) → null, comme le fond ; forme fausse → erreur.
+function toGridView(v: unknown): GridView | null {
+  if (v === null || v === undefined) return null;
+  if (!isRecord(v)) throw new Error(PAGE);
+  const { visible, snap, above, levels } = v;
+  if (typeof visible !== "boolean" || typeof snap !== "boolean" || typeof above !== "boolean" || !Array.isArray(levels)) {
+    throw new Error(PAGE);
+  }
+  return { visible, snap, above, levels: levels.map(toGridLevel) };
+}
+
 export function toPageView(v: unknown): PageView | null {
   if (v === null || v === undefined) return null;
   if (!isRecord(v)) throw new Error(PAGE);
@@ -194,7 +227,7 @@ export function toPageView(v: unknown): PageView | null {
   if (typeof id !== "string" || typeof width !== "number" || typeof height !== "number" || typeof background !== "string") {
     throw new Error(PAGE);
   }
-  return { id, width, height, background, backdrop: toBackdropView(v["backdrop"]) };
+  return { id, width, height, background, backdrop: toBackdropView(v["backdrop"]), grid: toGridView(v["grid"]) };
 }
 
 export function toAssetInfo(v: unknown): AssetInfo {
@@ -204,6 +237,33 @@ export function toAssetInfo(v: unknown): AssetInfo {
     throw new Error("AssetInfo invalide");
   }
   return { id, name, mime, size };
+}
+
+const LINES = "GridLines invalide";
+// Lignes de grille (C9, G12) : `null` (Option::None) ou `undefined` → null ; forme fausse → erreur.
+export function toGridLines(v: unknown): GridLines | null {
+  if (v === null || v === undefined) return null;
+  if (!isRecord(v)) throw new Error(LINES);
+  const { above, levels } = v;
+  if (typeof above !== "boolean" || !Array.isArray(levels)) throw new Error(LINES);
+  return {
+    above,
+    levels: levels.map((l: unknown) => {
+      if (!isRecord(l)) throw new Error(LINES);
+      const { color, line, alpha, segments, dots } = l;
+      if (typeof color !== "string" || typeof line !== "string" || typeof alpha !== "number" || !isNumbers(segments) || !isNumbers(dots)) {
+        throw new Error(LINES);
+      }
+      return { color, line, alpha, segments, dots };
+    }),
+  };
+}
+
+/** Paire `[x, y]` venue de Wasm (Float64Array ou tableau) ; autre forme → erreur. Exportée pour son test de forme. */
+export function toPair(v: unknown): readonly [number, number] {
+  const a: unknown = v instanceof Float64Array ? Array.from(v) : v;
+  if (!isNumbers(a) || a.length !== 2) throw new Error("point invalide");
+  return [a[0] ?? 0, a[1] ?? 0];
 }
 
 class WasmCoreDocument implements CoreDocument {
@@ -243,6 +303,17 @@ class WasmCoreDocument implements CoreDocument {
       case "FormatText":
         // Clés à `undefined` retirées (T7) : serde-wasm-bindgen les lirait comme null, donc comme un retrait.
         return toChange(this.d.format_text(cmd.id, toU32(cmd.start), toU32(cmd.len), cleanPatch(cmd.attrs), cmd.boxHeight));
+      case "SetGrid": {
+        const g = cmd.grid;
+        if (g === null) return toChange(this.d.clear_grid(cmd.page));
+        // Six nombres par niveau (G12) : sx, sy, ox, oy, snap, visible ; les valeurs sont contrôlées par le cœur.
+        const nums = new Float64Array(
+          g.levels.flatMap((l) => [l.spacingX, l.spacingY, l.originX, l.originY, l.snap ? 1 : 0, l.visible ? 1 : 0]),
+        );
+        return toChange(
+          this.d.set_grid(cmd.page, g.visible, g.snap, g.above, g.levels.map((l) => l.kind), g.levels.map((l) => l.color), g.levels.map((l) => l.line), nums),
+        );
+      }
     }
   }
 
@@ -285,6 +356,17 @@ class WasmCoreDocument implements CoreDocument {
   }
 
   free(): void { this.d.free(); }
+
+  snapPoint(page: string, x: number, y: number): readonly [number, number] | null {
+    const v: unknown = this.d.snap_point(page, x, y);
+    return v === null || v === undefined ? null : toPair(v);
+  }
+  snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number] {
+    return toPair(this.d.snap_delta(page, [...ids], dx, dy));
+  }
+  gridLines(page: string, r: Bounds, minStep: number, minDotStep: number): GridLines | null {
+    return toGridLines(this.d.grid_lines(page, r.x0, r.y0, r.x1, r.y1, minStep, minDotStep));
+  }
 }
 
 export function createWasmCore(mod: WasmModule): CoreFactory {

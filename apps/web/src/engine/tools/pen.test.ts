@@ -159,3 +159,19 @@ describe("createPenTool (D20, D38)", () => {
     expect(tool.active()).toBe(false);
   });
 });
+
+describe("createPenTool — grille (C9)", () => {
+  it("grille aimantée sur la page : le tracé garde ses points bruts (C9, S3)", () => {
+    const { doc, page, runs, tool } = setup();
+    doc.apply({
+      type: "SetGrid",
+      page,
+      grid: { visible: true, snap: true, above: false, levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", snap: true, visible: true }] },
+    });
+    tool.begin(1, [s(13, 17)]);
+    tool.extend(1, [s(53, 21), s(118, 97)], []);
+    tool.frame();
+    tool.close(1, "end");
+    expect(Array.from(commitOf(runs).points)).toEqual([13, 17, 0.5, 53, 21, 0.5, 118, 97, 0.5].map((v) => Math.fround(v)));
+  });
+});

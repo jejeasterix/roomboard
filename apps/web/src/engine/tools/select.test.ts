@@ -12,6 +12,7 @@ function setup(zoom = 1) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   let shift = false;
+  let alt = false;
   const runs: Command[] = [];
   const ctx: ToolContext = {
     doc,
@@ -26,11 +27,12 @@ function setup(zoom = 1) {
       }
     },
     shift: () => shift,
+    alt: () => alt,
   };
   const tool = createSelectTool(ctx);
   const rect = (x0: number, y0: number, x1: number, y1: number): string =>
     doc.apply({ type: "AddShape", page, shape: "rect", x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
-  return { doc, tool, runs, rect, setShift: (v: boolean) => { shift = v; } };
+  return { doc, tool, runs, rect, setShift: (v: boolean) => { shift = v; }, setAlt: (v: boolean) => { alt = v; } };
 }
 
 function gesture(tool: SelectionTool, pts: [number, number][], how: CloseReason = "end", id = 1): void {
@@ -209,5 +211,82 @@ describe("outil Sélection (D15, D38)", () => {
     tool.leave?.("tool");
     expect(tool.selection()).toEqual([]);
     expect(tool.live().overlay).toBeUndefined();
+  });
+});
+
+describe("outil Sélection — magnétisme (C9, S3)", () => {
+  const squares40 = (snap: boolean) => ({
+    visible: true,
+    snap,
+    above: false,
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#cccccc", line: "solid", snap: true, visible: true }],
+  });
+
+  it("glisser aimanté : fantôme aimanté, puis une seule Transform égale à l'aperçu ; la boîte géométrique a son centre sur un croisement", () => {
+    const { doc, tool, runs, rect } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const a = rect(13, 17, 113, 77);
+    doc.apply({ type: "SetGrid", page, grid: squares40(true) });
+    tool.begin(1, [at(60, 50)]);
+    tool.extend(1, [at(112, 81)], []);
+    expect(tool.live().overlay?.ghosts).toEqual([{ id: a, matrix: [1, 0, 0, 1, 57, 33] }]);
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 57, 33] }]);
+    expect(doc.element(a)?.transform).toEqual([1, 0, 0, 1, 70, 50]);
+  });
+
+  it("Alt tenue : déplacement brut ; magnétisme coupé : brut", () => {
+    for (const [alt, snap] of [[true, true], [false, false]] as const) {
+      const { doc, tool, runs, rect, setAlt } = setup();
+      const page = doc.pageIds()[0] ?? "";
+      const a = rect(13, 17, 113, 77);
+      doc.apply({ type: "SetGrid", page, grid: squares40(snap) });
+      setAlt(alt);
+      tool.begin(1, [at(60, 50)]);
+      tool.extend(1, [at(112, 81)], []);
+      expect(tool.live().overlay?.ghosts).toEqual([{ id: a, matrix: [1, 0, 0, 1, 52, 31] }]);
+      tool.close(1, "end");
+      expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 52, 31] }]);
+    }
+  });
+
+  it("sans grille : déplacement brut, comme avant C9", () => {
+    const { tool, runs, rect } = setup();
+    const a = rect(13, 17, 113, 77);
+    tool.begin(1, [at(60, 50)]);
+    tool.extend(1, [at(112, 81)], []);
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 52, 31] }]);
+  });
+
+  it("élément aligné, petit glisser au-delà de 2 px que l'aimant ramène en place : ni Transform ni fantôme (G7)", () => {
+    const { doc, tool, runs, rect } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    // Centre (160, 160) sur un croisement, appui (100, 100) dans une binade plus basse : `dx + (q - (c + dx))`
+    // y laisserait ±1,4e-14, une translation non nulle.
+    const a = rect(70, 70, 250, 250);
+    doc.apply({ type: "SetGrid", page, grid: squares40(true) });
+    tool.begin(1, [at(100, 100)]);
+    tool.extend(1, [at(102.3, 101.7)], []);
+    const live = tool.live();
+    expect(live.overlay?.ghosts).toEqual([]);
+    expect(live.hidden.size).toBe(0);
+    tool.close(1, "end");
+    expect(runs).toEqual([]);
+    expect(doc.element(a)?.transform).toEqual([1, 0, 0, 1, 70, 70]);
+  });
+
+  it("Alt pressée en cours de geste : l'aimant se coupe à l'image suivante, Transform brute (G8)", () => {
+    const { doc, tool, runs, rect, setAlt } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const a = rect(13, 17, 113, 77);
+    doc.apply({ type: "SetGrid", page, grid: squares40(true) });
+    tool.begin(1, [at(60, 50)]);
+    tool.extend(1, [at(112, 81)], []);
+    expect(tool.live().overlay?.ghosts).toEqual([{ id: a, matrix: [1, 0, 0, 1, 57, 33] }]);
+    setAlt(true);
+    expect(tool.live().overlay?.ghosts).toEqual([{ id: a, matrix: [1, 0, 0, 1, 52, 31] }]);
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 52, 31] }]);
   });
 });

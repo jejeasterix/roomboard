@@ -36,6 +36,9 @@ export class FakeCtx {
   lineWidth = 1;
   lineCap = "butt";
   lineJoin = "miter";
+  globalAlpha = 1;
+  lineDashOffset = 0;
+  readonly path: [string, number, number][] = [];
   save(): void { this.log.push("save"); }
   restore(): void { this.log.push("restore"); }
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void {
@@ -48,8 +51,8 @@ export class FakeCtx {
   readonly rects: number[][] = [];
   fillRect(x = 0, y = 0, w = 0, h = 0): void { this.rects.push([x, y, w, h]); this.log.push(`fillRect ${this.fillStyle}`); }
   beginPath(): void { this.log.push("beginPath"); }
-  moveTo(): void { this.log.push("moveTo"); }
-  lineTo(): void { this.log.push("lineTo"); }
+  moveTo(x = 0, y = 0): void { this.log.push("moveTo"); this.path.push(["M", x, y]); }
+  lineTo(x = 0, y = 0): void { this.log.push("lineTo"); this.path.push(["L", x, y]); }
   closePath(): void { this.log.push("closePath"); }
   rect(): void { this.log.push("rect"); }
   clip(): void { this.log.push("clip"); }

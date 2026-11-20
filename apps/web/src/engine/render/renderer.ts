@@ -32,13 +32,14 @@ export interface LiveLayer {
 
 export const EMPTY_LIVE: LiveLayer = { strokes: [], erasers: [] };
 
-/** Ce que le rendu lit du document : vue d'un élément (transformation, style) et contour local. */
-export type SceneSource = Pick<CoreDocument, "element" | "outline">;
+/** Ce que le rendu lit du document : vue d'un élément, contour local et, s'il y en a, lignes de la grille (C9). */
+export type SceneSource = Pick<CoreDocument, "element" | "outline"> & Partial<Pick<CoreDocument, "gridLines">>;
 
 export interface Renderer {
   /**
-   * Scène fixe : pourtour, cadre de page, éléments sauf `hidden` (masqués pendant un aperçu, D38), puis le calque
-   * d'édition (fantômes, formes en cours, sélection : CL4-1). `overlay` absent : rien.
+   * Scène fixe (G11) : pourtour, fond de page, grille si `above` est faux, éléments sauf `hidden` (masqués pendant un
+   * aperçu, D38), contenu du calque d'édition (fantômes, formes en cours), grille si `above` est vrai, puis habillage
+   * d'édition (rectangle de sélection, cadre, poignées : CL4-1). `overlay` absent : rien.
    */
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay?: EditOverlay): void;
   /** Canvas d'interaction : effacé puis redessiné à chaque image. */
