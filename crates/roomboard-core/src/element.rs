@@ -365,6 +365,7 @@ mod backdrop_tests {
         RawBackdrop {
             asset: Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into()),
             kind: Some("image".into()),
+            page: None,
             w: Some(w),
             h: Some(h),
             fit: Some("width".into()),
@@ -386,5 +387,28 @@ mod backdrop_tests {
         let v = backdrop_view(raw(1e-300, 1e10), 1920.0).expect("vue");
         assert_eq!(v.rect, None);
         assert_eq!((v.w, v.h), (Some(1e-300), Some(1e10)));
+    }
+
+    /// C12 (PF5, Review Focus 5) : `page` lisible = entier ≥ 0 tenant en u32 ; sinon `None` (fond en « page PDF
+    /// illisible »), jamais une erreur.
+    #[test]
+    fn backdrop_page_is_a_whole_non_negative_number() {
+        let with = |p: Option<f64>| {
+            let mut r = raw(612.0, 792.0);
+            r.page = p;
+            backdrop_view(r, 1920.0).expect("vue").page
+        };
+        assert_eq!(with(Some(0.0)), Some(0));
+        assert_eq!(with(Some(2.0)), Some(2));
+        for bad in [
+            Some(1.5),
+            Some(-1.0),
+            Some(f64::NAN),
+            Some(f64::INFINITY),
+            Some(4_294_967_296.0),
+            None,
+        ] {
+            assert_eq!(with(bad), None, "{bad:?}");
+        }
     }
 }

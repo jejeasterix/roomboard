@@ -1940,6 +1940,26 @@ mod tests {
         assert_eq!(d.core.page(&p).and_then(|v| v.backdrop), None);
     }
 
+    /// C12 (PF6) : couples `(w, h)` bout à bout ; longueur impaire refusée en `BadImage`.
+    #[test]
+    fn from_pdf_pages_inner_reads_pairs_and_refuses_odd_length() {
+        let pdf = AssetRef {
+            id: ABC.into(),
+            name: "cours.pdf".into(),
+            mime: "application/pdf".into(),
+            size: 10.0,
+        };
+        let d = Document::from_pdf_pages_inner(pdf.clone(), &[612.0, 792.0, 792.0, 612.0])
+            .expect("document");
+        let ids = d.page_ids();
+        let b = d.core.page(&ids[1]).and_then(|p| p.backdrop).expect("fond");
+        assert_eq!((ids.len(), b.page, b.w, b.h), (2, Some(1), Some(792.0), Some(612.0)));
+        assert_eq!(
+            Document::from_pdf_pages_inner(pdf, &[612.0]).err(),
+            Some(CommandError::BadImage)
+        );
+    }
+
     #[test]
     fn save_parts_then_load_parts_inner_keeps_document_and_created() {
         let mut d = Document::blank();

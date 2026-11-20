@@ -1254,4 +1254,98 @@ mod tests {
             assert!(d.bounds(&[id]).is_some(), "boîte de {kind}");
         }
     }
+
+    fn pdf_asset() -> AssetRef {
+        AssetRef {
+            id: ABC.into(),
+            name: "cours.pdf".into(),
+            mime: "application/pdf".into(),
+            size: 1234.0,
+        }
+    }
+
+    const SIZES: [(f64, f64); 3] = [(612.0, 792.0), (792.0, 612.0), (595.0, 842.0)];
+
+    /// C12 (PF4 à PF6, S1) : une page par taille, 1920 × 1080, fond `pdf-page` d'indice i calé sur la largeur ; asset
+    /// cité une fois, métadonnée écrite ; rien à annuler, version 0.
+    #[test]
+    fn from_pdf_pages_builds_one_backdrop_page_per_size() {
+        let mut d = Document::from_pdf_pages(&pdf_asset(), &SIZES).expect("document");
+        let ids = d.page_ids();
+        assert_eq!(ids.len(), 3);
+        for (i, (id, (w, h))) in ids.iter().zip(SIZES).enumerate() {
+            let p = d.page(id).expect("page");
+            assert_eq!((p.width, p.height), (1920.0, 1080.0));
+            let b = p.backdrop.expect("fond");
+            assert_eq!(
+                (b.asset.as_str(), b.kind.as_str(), b.page, b.w, b.h, b.fit.as_str()),
+                (ABC, PDF_PAGE_KIND, Some(i as u32), Some(w), Some(h), "width")
+            );
+            assert_eq!(
+                b.rect.map(|r| (r.x0, r.y0, r.x1, r.y1)),
+                Some((0.0, 0.0, 1920.0, h * 1920.0 / w))
+            );
+        }
+        assert_eq!(d.cited_assets(), vec![pdf_asset()]);
+        assert_eq!((d.version(), d.can_undo()), (0, false));
+        assert!(!d.undo());
+        assert_eq!(d.page_count(), 3);
+    }
+
+    /// PF6, PF7 : `BadAsset` d'abord (même règle que `SetBackdrop`), puis `BadImage` : 0 page, plus de 500, taille
+    /// nulle, négative ou non finie ; 500 pages passent.
+    #[test]
+    fn from_pdf_pages_refuses_bad_asset_then_bad_sizes() {
+        let mut bad = pdf_asset();
+        bad.id = ABC.to_uppercase();
+        assert_eq!(
+            Document::from_pdf_pages(&bad, &[]).err(),
+            Some(CommandError::BadAsset)
+        );
+        let a = pdf_asset();
+        for sizes in [
+            vec![],
+            vec![(612.0, 792.0); PDF_MAX_PAGES + 1],
+            vec![(612.0, 0.0)],
+            vec![(-1.0, 792.0)],
+            vec![(f64::NAN, 792.0)],
+            vec![(612.0, f64::INFINITY)],
+        ] {
+            assert_eq!(
+                Document::from_pdf_pages(&a, &sizes).err(),
+                Some(CommandError::BadImage),
+                "{} tailles",
+                sizes.len()
+            );
+        }
+        let full = Document::from_pdf_pages(&a, &vec![(612.0, 792.0); PDF_MAX_PAGES]).expect("500 pages");
+        assert_eq!(full.page_count(), 500);
+    }
+
+    /// PF17, PF18, S4 : encodé puis relu, fonds et asset restent ; « Insérer des pages » recopie fonds et indices.
+    #[test]
+    fn pdf_backdrops_survive_encode_and_insert_pages() {
+        let d = Document::from_pdf_pages(&pdf_asset(), &SIZES[..2]).expect("document");
+        let backdrops = |x: &Document| {
+            x.page_ids()
+                .iter()
+                .map(|id| x.page(id).and_then(|p| p.backdrop).map(|b| (b.kind, b.page)))
+                .collect::<Vec<_>>()
+        };
+        let want = vec![
+            Some((PDF_PAGE_KIND.to_string(), Some(0))),
+            Some((PDF_PAGE_KIND.to_string(), Some(1))),
+        ];
+        let back = Document::from_update_v1(&d.encode_v1()).expect("relu");
+        assert_eq!(backdrops(&back), want);
+        assert_eq!(back.cited_assets(), vec![pdf_asset()]);
+        let mut host = Document::blank();
+        let first = host.page_ids()[0].clone();
+        host.insert_pages(&d, &first).expect("insertion");
+        assert_eq!(&backdrops(&host)[1..], &want[..]);
+        assert_eq!(
+            host.cited_assets().iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            vec![ABC]
+        );
+    }
 }
