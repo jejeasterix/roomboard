@@ -21,11 +21,15 @@
 // = cellules non vides dans l'ordre de lecture ; tableau mal formé lu comme cadre inconnu (sourceKind "table").
 // Écart assumé, hors contrat (PC6) : les entrées illisibles d'un JSON de la fausse liaison sont retirées au
 // chargement, là où le cœur les garde dans le document.
+// C10b : fusion (`span` sur l'ancre, zones par `mergesOf`, miroir de `merges_of` du cœur, règle F2), division, ombrage
+// (`shade`), plages de RemoveTableLine et SetTableFill, report des zones (F6), hauteur d'une ancre haute (F7),
+// ImportTable (F18) : mêmes refus dans le même ordre que `table.rs`, une étape par commande, aucune étape vide.
 import type {
   AssetInfo,
   AssetRef,
   BackdropView,
   Bounds,
+  CellIds,
   Change,
   Command,
   CoreDocument,
@@ -96,8 +100,8 @@ interface FakeElement {
   readonly malformed?: Readonly<Record<string, unknown>>;
 }
 type RawRecord = Readonly<Record<string, unknown>>;
-/** Cellule de la fausse liaison ; absente du Map = vide. */
-interface FakeCell { readonly text: string; readonly fill: string | null }
+/** Cellule de la fausse liaison ; absente du Map = vide ; `span` = [dernière ligne, dernière colonne] (ancre, F1). */
+interface FakeCell { readonly text: string; readonly fill: string | null; readonly shade: string | null; readonly span: readonly [string, string] | null }
 /** Tableau (C10a) : objets repris tels quels d'une étape à l'autre, sauf ceux qu'une commande change. */
 interface FakeTable {
   readonly color: string;
@@ -148,16 +152,82 @@ function inLine(key: string, axis: TableAxis, line: string): boolean {
   if (i < 0) return false;
   return axis === "row" ? key.slice(0, i) === line : key.slice(i + 1) === line;
 }
-/** Vue (T13) : cellules non vides dans l'ordre de lecture, comme `RawTable::view`. */
+/** Zone retenue (F2), en rangs, bornes comprises. */
+interface FakeMerge { readonly r0: number; readonly c0: number; readonly r1: number; readonly c1: number }
+const EMPTY_CELL: FakeCell = { text: "", fill: null, shade: null, span: null };
+const overlaps = (a: FakeMerge, b: FakeMerge): boolean => a.r0 <= b.r1 && b.r0 <= a.r1 && a.c0 <= b.c1 && b.c0 <= a.c1;
+const inside = (a: FakeMerge, b: FakeMerge): boolean => b.r0 <= a.r0 && a.r1 <= b.r1 && b.c0 <= a.c0 && a.c1 <= b.c1;
+const contains = (m: FakeMerge, r: number, c: number): boolean => r >= m.r0 && r <= m.r1 && c >= m.c0 && c <= m.c1;
+const rowId = (t: FakeTable, i: number): string => t.rows[i]?.id ?? "";
+const colId = (t: FakeTable, j: number): string => t.cols[j]?.id ?? "";
+const keyAt = (t: FakeTable, i: number, j: number): string => cellKey(rowId(t, i), colId(t, j));
+
+/** Règle F2, comme `merges_of` du cœur : ancres dans l'ordre de lecture ; `span` désignant une ligne et une colonne lues,
+ *  de rang ≥ l'ancre, au moins deux cellules, sans recouvrement d'une zone déjà retenue. */
+function mergesOf(t: FakeTable): FakeMerge[] {
+  const out: FakeMerge[] = [];
+  t.rows.forEach((r, r0) => {
+    t.cols.forEach((c, c0) => {
+      const span = t.cells.get(cellKey(r.id, c.id))?.span;
+      if (!span) return;
+      const r1 = t.rows.findIndex((l) => l.id === span[0]);
+      const c1 = t.cols.findIndex((l) => l.id === span[1]);
+      if (r1 < r0 || c1 < c0 || (r1 === r0 && c1 === c0)) return;
+      const m = { r0, c0, r1, c1 };
+      if (!out.some((o) => overlaps(o, m))) out.push(m);
+    });
+  });
+  return out;
+}
+
+/** Ancres et cellules simples du rectangle, sans doublon (F9, F15, PC11), comme `targets` du cœur. */
+function targets(rect: FakeMerge, merges: readonly FakeMerge[]): [number, number][] {
+  const out: [number, number][] = [];
+  for (let r = rect.r0; r <= rect.r1; r++) {
+    for (let c = rect.c0; c <= rect.c1; c++) {
+      const m = merges.find((x) => contains(x, r, c));
+      const a: [number, number] = m ? [m.r0, m.c0] : [r, c];
+      if (!out.some(([i, j]) => i === a[0] && j === a[1])) out.push(a);
+    }
+  }
+  return out;
+}
+
+/** Rectangle normalisé de deux coins par ids ; null si une ligne ou une colonne manque. */
+function rectOf(t: FakeTable, a: CellIds, b: CellIds): FakeMerge | null {
+  const ra = t.rows.findIndex((l) => l.id === a.row);
+  const ca = t.cols.findIndex((l) => l.id === a.col);
+  const rb = t.rows.findIndex((l) => l.id === b.row);
+  const cb = t.cols.findIndex((l) => l.id === b.col);
+  if (ra < 0 || ca < 0 || rb < 0 || cb < 0) return null;
+  return { r0: Math.min(ra, rb), c0: Math.min(ca, cb), r1: Math.max(ra, rb), c1: Math.max(ca, cb) };
+}
+
+/** Fusions d'un import (F18), comme `merges_ok` du cœur. */
+function validMerges(merges: readonly (readonly [number, number, number, number])[], rows: number, cols: number): boolean {
+  const seen: FakeMerge[] = [];
+  for (const [r, c, nr, nc] of merges) {
+    if (![r, c, nr, nc].every((v) => Number.isInteger(v) && v >= 0) || nr < 1 || nc < 1 || nr * nc < 2 || r + nr > rows || c + nc > cols) return false;
+    const m = { r0: r, c0: c, r1: r + nr - 1, c1: c + nc - 1 };
+    if (seen.some((o) => overlaps(o, m))) return false;
+    seen.push(m);
+  }
+  return true;
+}
+
+/** Vue (T13, F29) : cellules non vides (texte, remplissage ou ombrage) dans l'ordre de lecture ; zones par `mergesOf`. */
 function tableView(t: FakeTable): TableData {
   const cells: TableCell[] = [];
   for (const r of t.rows) {
     for (const c of t.cols) {
       const cell = t.cells.get(cellKey(r.id, c.id));
-      if (cell && (cell.text !== "" || cell.fill !== null)) cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill });
+      if (cell && (cell.text !== "" || cell.fill !== null || cell.shade !== null)) {
+        cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, shade: cell.shade });
+      }
     }
   }
-  return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells };
+  const merges = mergesOf(t).map((m) => ({ row: rowId(t, m.r0), col: colId(t, m.c0), rows: m.r1 - m.r0 + 1, cols: m.c1 - m.c0 + 1 }));
+  return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells, merges };
 }
 /** Écrite seulement si absente (K3). */
 const putMeta = (assets: Map<string, unknown>, a: AssetRef): void => {
@@ -368,6 +438,20 @@ class FakeDocument implements CoreDocument {
       if (p && old) p.elements[i] = { ...old, table: next };
       return { pages: [pageId], ids: [id], removed: [] };
     });
+  }
+
+  /** `fill` ou `shade` posé ou retiré sur les ancres et cellules simples du rectangle ; rien à changer : aucune étape. */
+  private setOnTargets(found: Found, id: string, t: FakeTable, rect: FakeMerge, key: "fill" | "shade", value: string | null): Change {
+    const cells = new Map(t.cells);
+    let changed = false;
+    for (const [r, c] of targets(rect, mergesOf(t))) {
+      const k = keyAt(t, r, c);
+      const cell = t.cells.get(k) ?? EMPTY_CELL;
+      if (cell[key] === value) continue;
+      cells.set(k, { ...cell, [key]: value });
+      changed = true;
+    }
+    return changed ? this.writeTable(found, id, { ...t, cells }) : this.unchanged();
   }
 
   private step(mutate: (s: State) => Omit<Change, "version" | "full">): Change {
@@ -614,17 +698,24 @@ class FakeDocument implements CoreDocument {
         if (cmd.rowHeight !== undefined && !positive(cmd.rowHeight)) throw new Error(MESSAGES.badTable);
         const { found, t } = this.tableOf(cmd.id);
         const r = t.rows.findIndex((l) => l.id === cmd.row);
-        const row = t.rows[r];
-        if (!row || !t.cols.some((l) => l.id === cmd.col)) throw new Error(MESSAGES.badTable);
+        const c = t.cols.findIndex((l) => l.id === cmd.col);
+        if (r < 0 || c < 0) throw new Error(MESSAGES.badTable);
+        // F7 : sur une ancre de plusieurs lignes, la hauteur exigée vaut pour la zone ; sa dernière ligne grandit.
+        const zone = mergesOf(t).find((m) => m.r0 === r && m.c0 === c);
+        const z0 = zone?.r0 ?? r;
+        const z1 = zone?.r1 ?? r;
+        const zoneH = sum(t.rows.slice(z0, z1 + 1).map((l) => l.height));
+        const lastH = t.rows[z1]?.height ?? 0;
+        const h = cmd.rowHeight;
+        const grow = h !== undefined && h > zoneH ? (z0 === z1 ? h : lastH + (h - zoneH)) : null;
+        if (grow !== null && !fitsF32([sum(t.rows.map((l) => l.height)) - lastH + grow])) throw new Error(MESSAGES.badTable);
         const key = cellKey(cmd.row, cmd.col);
         const cell = t.cells.get(key);
         const current = cell?.text ?? "";
-        const grow = cmd.rowHeight !== undefined && cmd.rowHeight > row.height ? cmd.rowHeight : null;
-        if (grow !== null && !fitsF32([sum(t.rows.map((l) => l.height)) - row.height + grow])) throw new Error(MESSAGES.badTable);
         if (current === cmd.content && grow === null) return this.unchanged();
         const cells = new Map(t.cells);
-        if (current !== cmd.content) cells.set(key, { text: cmd.content, fill: cell?.fill ?? null });
-        const rows = grow === null ? t.rows : t.rows.map((l, i) => (i === r ? { ...l, height: grow } : l));
+        if (current !== cmd.content) cells.set(key, { ...(cell ?? EMPTY_CELL), text: cmd.content });
+        const rows = grow === null ? t.rows : t.rows.map((l, i) => (i === z1 ? { ...l, height: grow } : l));
         return this.writeTable(found, cmd.id, { ...t, rows, cells });
       }
       case "InsertTableLine": {
@@ -645,12 +736,45 @@ class FakeDocument implements CoreDocument {
       case "RemoveTableLine": {
         const { found, t } = this.tableOf(cmd.id);
         const lines: readonly { readonly id: string }[] = cmd.axis === "row" ? t.rows : t.cols;
-        if (!lines.some((l) => l.id === cmd.line) || lines.length <= 1) throw new Error(MESSAGES.badTable);
-        const cells = new Map([...t.cells].filter(([k]) => !inLine(k, cmd.axis, cmd.line)));
+        const ia = lines.findIndex((l) => l.id === cmd.line);
+        const ib = cmd.to === undefined ? ia : lines.findIndex((l) => l.id === cmd.to);
+        if (ia < 0 || ib < 0) throw new Error(MESSAGES.badTable);
+        const a = Math.min(ia, ib);
+        const b = Math.max(ia, ib);
+        if (b - a + 1 >= lines.length) throw new Error(MESSAGES.badTable);
+        const gone = new Set(lines.slice(a, b + 1).map((l) => l.id));
+        const cells = new Map([...t.cells].filter(([k]) => ![...gone].some((l) => inLine(k, cmd.axis, l))));
+        // F6 : report des zones touchées, comme `span_moves` du cœur.
+        const dropped = (i: number): boolean => i >= a && i <= b;
+        for (const m of mergesOf(t)) {
+          const [s, e, across]: [number, number, number] = cmd.axis === "row" ? [m.r0, m.r1, m.c1 - m.c0 + 1] : [m.c0, m.c1, m.r1 - m.r0 + 1];
+          if (e < a || s > b) continue;
+          const left: number[] = [];
+          for (let i = s; i <= e; i++) if (!dropped(i)) left.push(i);
+          const firstLeft = left[0];
+          const lastLeft = left[left.length - 1];
+          if (firstLeft === undefined || lastLeft === undefined) continue;
+          const size = left.length * across;
+          const [ar, ac]: [number, number] = cmd.axis === "row" ? [firstLeft, m.c0] : [m.r0, firstLeft];
+          const [lr, lc]: [number, number] = cmd.axis === "row" ? [lastLeft, m.c1] : [m.r1, lastLeft];
+          const span: [string, string] = [rowId(t, lr), colId(t, lc)];
+          const setSpan = (k: string): void => {
+            cells.set(k, { ...(cells.get(k) ?? EMPTY_CELL), span });
+          };
+          if (dropped(s)) {
+            if (size >= 2) setSpan(keyAt(t, ar, ac));
+          } else if (size < 2) {
+            const k = keyAt(t, m.r0, m.c0);
+            const cur = cells.get(k);
+            if (cur) cells.set(k, { ...cur, span: null });
+          } else if (dropped(e)) {
+            setSpan(keyAt(t, m.r0, m.c0));
+          }
+        }
         return this.writeTable(
           found,
           cmd.id,
-          cmd.axis === "row" ? { ...t, rows: t.rows.filter((l) => l.id !== cmd.line), cells } : { ...t, cols: t.cols.filter((l) => l.id !== cmd.line), cells },
+          cmd.axis === "row" ? { ...t, rows: t.rows.filter((l) => !gone.has(l.id)), cells } : { ...t, cols: t.cols.filter((l) => !gone.has(l.id)), cells },
         );
       }
       case "SetTableSizes": {
@@ -667,13 +791,79 @@ class FakeDocument implements CoreDocument {
       case "SetTableFill": {
         if (cmd.fill !== null && !validColor(cmd.fill)) throw new Error(MESSAGES.badTable);
         const { found, t } = this.tableOf(cmd.id);
-        if (!t.rows.some((l) => l.id === cmd.row) || !t.cols.some((l) => l.id === cmd.col)) throw new Error(MESSAGES.badTable);
-        const key = cellKey(cmd.row, cmd.col);
-        const cell = t.cells.get(key);
-        if ((cell?.fill ?? null) === cmd.fill) return this.unchanged();
+        const from = { row: cmd.row, col: cmd.col };
+        const rect = rectOf(t, from, cmd.to ?? from);
+        if (rect === null) throw new Error(MESSAGES.badTable);
+        return this.setOnTargets(found, cmd.id, t, rect, "fill", cmd.fill);
+      }
+      case "SetTableShade": {
+        if (cmd.shade !== null && !validColor(cmd.shade)) throw new Error(MESSAGES.badTable);
+        const { found, t } = this.tableOf(cmd.id);
+        const rect = rectOf(t, cmd.from, cmd.to);
+        if (rect === null) throw new Error(MESSAGES.badTable);
+        return this.setOnTargets(found, cmd.id, t, rect, "shade", cmd.shade);
+      }
+      case "MergeTableCells": {
+        const { found, t } = this.tableOf(cmd.id);
+        const rect = rectOf(t, cmd.from, cmd.to);
+        if (rect === null || (rect.r1 - rect.r0 + 1) * (rect.c1 - rect.c0 + 1) < 2) throw new Error(MESSAGES.badTable);
+        const merges = mergesOf(t);
+        if (merges.some((m) => overlaps(m, rect) && !inside(m, rect))) throw new Error(MESSAGES.badTable);
+        const covered: string[] = [];
+        for (let r = rect.r0; r <= rect.r1; r++) {
+          for (let c = rect.c0; c <= rect.c1; c++) {
+            const k = keyAt(t, r, c);
+            if ((r !== rect.r0 || c !== rect.c0) && t.cells.has(k)) covered.push(k);
+          }
+        }
+        const inner = merges.filter((m) => inside(m, rect));
+        const same = inner.length === 1 && inner[0]?.r0 === rect.r0 && inner[0]?.c0 === rect.c0 && inner[0]?.r1 === rect.r1 && inner[0]?.c1 === rect.c1;
+        if (same && covered.length === 0) return this.unchanged();
         const cells = new Map(t.cells);
-        cells.set(key, { text: cell?.text ?? "", fill: cmd.fill });
+        for (const k of covered) cells.delete(k);
+        const anchor = keyAt(t, rect.r0, rect.c0);
+        cells.set(anchor, { ...(cells.get(anchor) ?? EMPTY_CELL), span: [rowId(t, rect.r1), colId(t, rect.c1)] });
         return this.writeTable(found, cmd.id, { ...t, cells });
+      }
+      case "SplitTableCell": {
+        const { found, t } = this.tableOf(cmd.id);
+        const r = t.rows.findIndex((l) => l.id === cmd.row);
+        const c = t.cols.findIndex((l) => l.id === cmd.col);
+        if (r < 0 || c < 0 || !mergesOf(t).some((m) => m.r0 === r && m.c0 === c)) throw new Error(MESSAGES.badTable);
+        const key = cellKey(cmd.row, cmd.col);
+        const cells = new Map(t.cells);
+        cells.set(key, { ...(t.cells.get(key) ?? EMPTY_CELL), span: null });
+        return this.writeTable(found, cmd.id, { ...t, cells });
+      }
+      case "ImportTable": {
+        // Ordre du cœur (F18) : arguments (BadTable), puis page.
+        const n = cmd.rowHeights.length;
+        const ok =
+          validLines(cmd.cols) && validLines(n) && cmd.cells.length === cmd.cols * n && positive(cmd.colWidth) &&
+          cmd.rowHeights.every(positive) && positive(cmd.size) && validColor(cmd.color) && validMatrix(cmd.matrix) &&
+          fitsF32([...cmd.matrix, cmd.cols * cmd.colWidth, sum(cmd.rowHeights)]) && validMerges(cmd.merges, n, cmd.cols);
+        if (!ok) throw new Error(MESSAGES.badTable);
+        this.pageOf(cmd.page);
+        return this.step((s) => {
+          const id = newId();
+          const cols = Array.from({ length: cmd.cols }, () => ({ id: newId(), width: cmd.colWidth }));
+          const rows = cmd.rowHeights.map((height) => ({ id: newId(), height }));
+          const covered = new Set<number>();
+          const spans = new Map<number, [string, string]>();
+          for (const [r, c, nr, nc] of cmd.merges) {
+            spans.set(r * cmd.cols + c, [rows[r + nr - 1]?.id ?? "", cols[c + nc - 1]?.id ?? ""]);
+            for (let i = r; i < r + nr; i++) for (let j = c; j < c + nc; j++) if (i !== r || j !== c) covered.add(i * cmd.cols + j);
+          }
+          const cells = new Map<string, FakeCell>();
+          cmd.cells.forEach((text, i) => {
+            const span = spans.get(i) ?? null;
+            if (covered.has(i) || (text === "" && span === null)) return;
+            cells.set(cellKey(rows[Math.floor(i / cmd.cols)]?.id ?? "", cols[i % cmd.cols]?.id ?? ""), { text, fill: null, shade: null, span });
+          });
+          const table: FakeTable = { color: cmd.color, size: cmd.size, cols, rows, cells };
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: cmd.matrix, style: NO_STYLE, table });
+          return { pages: [cmd.page], ids: [id], removed: [] };
+        });
       }
     }
   }
@@ -932,7 +1122,14 @@ function loadTable(v: unknown): FakeTable | null {
       if (!isRecord(c)) continue;
       const text = c["text"];
       const fill = c["fill"];
-      cells.set(k, { text: typeof text === "string" ? text : "", fill: typeof fill === "string" && validColor(fill) ? fill : null });
+      const shade = c["shade"];
+      const span = c["span"];
+      cells.set(k, {
+        text: typeof text === "string" ? text : "",
+        fill: typeof fill === "string" && validColor(fill) ? fill : null,
+        shade: typeof shade === "string" && validColor(shade) ? shade : null,
+        span: Array.isArray(span) && span.length === 2 && typeof span[0] === "string" && typeof span[1] === "string" ? [span[0], span[1]] : null,
+      });
     }
   }
   const color = v["color"];
