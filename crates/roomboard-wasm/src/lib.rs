@@ -3,11 +3,12 @@
 //! une méthode `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
 use std::fmt::Display;
 
+use roomboard_core::asset::AssetRef;
 use roomboard_core::capabilities::{capabilities as core_capabilities, Platform};
-use roomboard_core::commands::{Change, Command, CommandError, EraseMode};
+use roomboard_core::commands::{BackdropInput, Change, Command, CommandError, EraseMode};
 use roomboard_core::document::Document as CoreDocument;
 use roomboard_core::element::{StrokeStyle, Transform};
-use roomboard_core::format::{self, FormatError, SaveMeta};
+use roomboard_core::format::{self, FormatError, Parts, SaveMeta};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
@@ -69,6 +70,34 @@ pub fn capabilities(platform: &str) -> Result<JsValue, JsError> {
     })
 }
 
+/// Les deux moitiés d'un `.roomboard` (K2) pour le Worker de la partie « reste » ; libérée par `free()` côté JS.
+#[wasm_bindgen]
+pub struct SavedParts {
+    manifest: Vec<u8>,
+    ybin: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl SavedParts {
+    pub fn manifest(&self) -> Vec<u8> {
+        self.manifest.clone()
+    }
+
+    pub fn ybin(&self) -> Vec<u8> {
+        self.ybin.clone()
+    }
+}
+
+/// Référence d'asset reçue de JS : métadonnées seules, jamais les octets (U4, K13).
+fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
+    AssetRef {
+        id: id.to_string(),
+        name: name.to_string(),
+        mime: mime.to_string(),
+        size,
+    }
+}
+
 /// Document exposé à JavaScript.
 #[wasm_bindgen]
 pub struct Document {
@@ -95,6 +124,88 @@ impl Document {
 
     pub fn save(&mut self, now: String, app_version: String) -> Result<Vec<u8>, JsError> {
         self.save_inner(&now, &app_version).map_err(fmt_err)
+    }
+
+    /// Ouvre un document depuis ses deux moitiés (K2) ; mêmes erreurs que `load`.
+    pub fn load_parts(manifest: &[u8], ybin: &[u8]) -> Result<Document, JsError> {
+        Self::load_parts_inner(manifest, ybin).map_err(fmt_err)
+    }
+
+    pub fn save_parts(&mut self, now: String, app_version: String) -> Result<SavedParts, JsError> {
+        let p = self.save_parts_inner(&now, &app_version).map_err(fmt_err)?;
+        Ok(SavedParts {
+            manifest: p.manifest,
+            ybin: p.ybin,
+        })
+    }
+
+    /// Vue de page (K7) ; `null` pour une page inconnue.
+    pub fn page(&self, id: &str) -> Result<JsValue, JsError> {
+        match self.core.page(id) {
+            Some(p) => to_js(&p),
+            None => Ok(JsValue::NULL),
+        }
+    }
+
+    pub fn cited_assets(&self) -> Result<JsValue, JsError> {
+        to_js(&self.core.cited_assets())
+    }
+
+    /// Métadonnée d'un asset (K3, K4) ; `null` si le cœur n'en rend aucune.
+    pub fn asset(&self, id: &str) -> Result<JsValue, JsError> {
+        match self.core.asset(id) {
+            Some(a) => to_js(&a),
+            None => Ok(JsValue::NULL),
+        }
+    }
+
+    /// `matrix` : six nombres ; seule la référence de l'asset traverse la liaison, jamais ses octets (K13).
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_image(
+        &mut self,
+        page: &str,
+        asset: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        w: f64,
+        h: f64,
+        matrix: &[f64],
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .add_image_inner(page, asset_ref(asset, name, mime, size), [w, h], matrix)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_backdrop(
+        &mut self,
+        page: &str,
+        asset: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        w: f64,
+        h: f64,
+        fit: &str,
+    ) -> Result<JsValue, JsError> {
+        let input = BackdropInput {
+            asset: asset_ref(asset, name, mime, size),
+            w,
+            h,
+            fit: fit.to_string(),
+        };
+        to_js(
+            &self
+                .set_backdrop_inner(page, Some(input))
+                .map_err(cmd_err)?,
+        )
+    }
+
+    pub fn clear_backdrop(&mut self, page: &str) -> Result<JsValue, JsError> {
+        to_js(&self.set_backdrop_inner(page, None).map_err(cmd_err)?)
     }
 
     pub fn add_page(&mut self) {
@@ -278,18 +389,67 @@ impl Document {
         Ok(Self::wrap(core, Some(manifest.created)))
     }
 
-    /// Le premier enregistrement fixe `created` ; les suivants le recopient (D24).
-    pub fn save_inner(&mut self, now: &str, app_version: &str) -> Result<Vec<u8>, FormatError> {
-        let meta = SaveMeta {
+    fn save_meta(&self, now: &str, app_version: &str) -> SaveMeta {
+        SaveMeta {
             app_version: app_version.to_string(),
             now: now.to_string(),
             created: self.created.clone(),
-        };
-        let bytes = format::save(&self.core, &meta)?;
+        }
+    }
+
+    fn mark_saved(&mut self, now: &str) {
         if self.created.is_none() {
             self.created = Some(now.to_string());
         }
+    }
+
+    /// Le premier enregistrement fixe `created` ; les suivants le recopient (D24).
+    pub fn save_inner(&mut self, now: &str, app_version: &str) -> Result<Vec<u8>, FormatError> {
+        let bytes = format::save(&self.core, &self.save_meta(now, app_version))?;
+        self.mark_saved(now);
         Ok(bytes)
+    }
+
+    /// Même règle de `created` que `save_inner` (D24), partagée entre les deux enregistrements.
+    pub fn save_parts_inner(&mut self, now: &str, app_version: &str) -> Result<Parts, FormatError> {
+        let parts = format::save_parts(&self.core, &self.save_meta(now, app_version))?;
+        self.mark_saved(now);
+        Ok(parts)
+    }
+
+    pub fn load_parts_inner(manifest: &[u8], ybin: &[u8]) -> Result<Document, FormatError> {
+        let (core, m) = format::load_parts(manifest, ybin)?;
+        Ok(Self::wrap(core, Some(m.created)))
+    }
+
+    /// Longueur de matrice différente de 6 : `BadMatrix`.
+    pub fn add_image_inner(
+        &mut self,
+        page: &str,
+        asset: AssetRef,
+        size: [f64; 2],
+        matrix: &[f64],
+    ) -> Result<Change, CommandError> {
+        let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        self.run(Command::AddImage {
+            page: page.to_string(),
+            asset,
+            w: size[0],
+            h: size[1],
+            matrix: m,
+        })
+    }
+
+    /// `None` : retire le fond.
+    pub fn set_backdrop_inner(
+        &mut self,
+        page: &str,
+        backdrop: Option<BackdropInput>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetBackdrop {
+            page: page.to_string(),
+            backdrop,
+        })
     }
 
     pub fn add_page_after_inner(&mut self, after: Option<String>) -> Result<Change, CommandError> {
