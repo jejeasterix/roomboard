@@ -50,10 +50,10 @@ export function createFallbackHost(d: FallbackDeps, dropTarget: DropTargetLike |
     async pick(): Promise<DroppedFile[]> {
       return (await d.pickFiles(IMPORT_ACCEPT)).map(droppedFromFile);
     },
-    async save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
-      const name = ensureExtension(target.name);
-      d.download(name, await encode(), ROOMBOARD_MIME);
-      return { kind: "download", name };
+    async save(encode: (target: SaveTarget) => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
+      const chosen: SaveTarget = { kind: "download", name: ensureExtension(target.name) };
+      d.download(chosen.name, await encode(chosen), ROOMBOARD_MIME);
+      return chosen;
     },
   };
 }

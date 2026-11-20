@@ -69,7 +69,7 @@ function memoryHost() {
       if (save instanceof Error) throw save;
       if (save === null) return null;
       if (save !== "write") return save.promise;
-      files.set(target.name, (await encode()).slice());
+      files.set(target.name, (await encode(target)).slice());
       return { kind: "download", name: target.name };
     },
   };

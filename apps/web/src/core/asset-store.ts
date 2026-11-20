@@ -19,12 +19,16 @@ export interface AssetStore {
   adopt(id: AssetId, blob: Blob): void;
   get(id: AssetId): Blob | undefined;
   has(id: AssetId): boolean;
+  /** Média lié (C14) : chemin du fichier sur disque, sans octets ; lève si l'empreinte n'est pas conforme ; le dernier chemin l'emporte. */
+  link(id: AssetId, path: string): void;
+  linked(id: AssetId): string | undefined;
   /** Présents dans l'ordre reçu, absents à part. */
   pick(ids: readonly AssetId[]): { present: Array<readonly [AssetId, Blob]>; missing: AssetId[] };
 }
 
 export function createAssetStore(hash: AssetHasher = webCryptoHasher): AssetStore {
   const blobs = new Map<AssetId, Blob>();
+  const links = new Map<AssetId, string>();
   const keep = (id: AssetId, blob: Blob): void => {
     if (!blobs.has(id)) blobs.set(id, blob);
   };
@@ -42,6 +46,11 @@ export function createAssetStore(hash: AssetHasher = webCryptoHasher): AssetStor
       if (!isAssetId(id)) throw new Error(`empreinte d'asset invalide : ${id}`);
       keep(id, blob);
     },
+    link(id, path) {
+      if (!isAssetId(id)) throw new Error(`empreinte d'asset invalide : ${id}`);
+      links.set(id, path);
+    },
+    linked: (id) => links.get(id),
     get: (id) => blobs.get(id),
     has: (id) => blobs.has(id),
     pick(ids) {

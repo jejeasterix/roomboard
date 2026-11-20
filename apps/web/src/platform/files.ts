@@ -67,8 +67,11 @@ export const PDF_EXTENSION = ".pdf";
 export const PDF_MIME = "application/pdf";
 /** Extensions offertes par « Importer » (R18, PF3) : le `.roomboard`, l'objet `.rbitem`, le PDF et les images d'U33 que le registre reconnaît. */
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
-export const IMPORT_EXTENSIONS = ["roomboard", "rbitem", "pdf", ...IMAGE_EXTENSIONS] as const;
-export const IMPORT_FILTER = { name: "Images, PDF et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
+/** C14 : vidéos et sons que la coque et la page savent lire (liés ou intégrés). */
+export const VIDEO_EXTENSIONS = ["mp4", "m4v", "mov", "webm", "ogv"] as const;
+export const AUDIO_EXTENSIONS = ["m4a", "mp3", "wav", "ogg", "oga"] as const;
+export const IMPORT_EXTENSIONS = ["roomboard", "rbitem", "pdf", ...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS] as const;
+export const IMPORT_FILTER = { name: "Images, vidéos, sons, PDF et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
 
 export interface FileHost {
   readonly kind: HostKind;
@@ -78,9 +81,10 @@ export interface FileHost {
   pick(): Promise<DroppedFile[]>;
   /**
    * Choisit d'abord la cible (boîte si `kind: "ask"` ou cible d'un autre hôte ; null : annulé, `encode` jamais appelé),
-   * puis appelle `encode`, puis écrit (R11). Lève si l'encodage ou l'écriture échoue.
+   * puis appelle `encode(cible choisie)` (C14 : le chemin relatif des médias liés en dépend), puis écrit (R11). Lève si
+   * l'encodage ou l'écriture échoue. Une fonction sans paramètre reste acceptée.
    */
-  save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null>;
+  save(encode: (target: SaveTarget) => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null>;
   /** Abonne le dépôt de fichiers ; rend le désabonnement. Hôte sans surface de dépôt : no-op. */
   onDrop(handler: DropHandler): () => void;
 }

@@ -98,6 +98,10 @@ export async function launchFiles(ipc: TauriIpc): Promise<DroppedFile[]> {
   return filesOf(ipc, await ipc.invoke<string[]>("launch_files"));
 }
 export const onQuitRequested = (ipc: TauriIpc, cb: () => void): Promise<() => void> => ipc.listen(QUIT_EVENT, () => cb());
+/** C14 : accorde le fichier média choisi, rend son empreinte SHA-256 ; la coque ajoute le chemin à la portée du protocole d'assets. */
+export const linkMedia = (ipc: TauriIpc, path: string): Promise<string> => ipc.invoke<string>("link_media", { path });
+/** C14 : revérifie un média lié à l'ouverture (taille) et le ré-accorde ; false : introuvable. */
+export const relinkMedia = (ipc: TauriIpc, path: string, size: number): Promise<boolean> => ipc.invoke<boolean>("relink_media", { path, size });
 export const quitApp = (ipc: TauriIpc): Promise<void> => ipc.invoke<void>("quit_app");
 
 export interface TauriFileHost extends FileHost {
@@ -153,14 +157,15 @@ export function createTauriHost(
         }),
       );
     },
-    async save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
+    async save(encode: (target: SaveTarget) => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
       let path = target.kind === "tauri" ? target.path : null;
       if (path === null) {
         path = await dialog.save({ defaultPath: ensureExtension(target.name), filters: [FILE_FILTER] });
         if (path === null) return null;
       }
-      await fs.writeFile(path, await encode());
-      return { kind: "tauri", name: baseName(path), path };
+      const chosen: SaveTarget = { kind: "tauri", name: baseName(path), path };
+      await fs.writeFile(path, await encode(chosen));
+      return chosen;
     },
   };
 }
@@ -209,7 +214,7 @@ export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmP
 }
 
 /** Ports réels de la coque (imports dynamiques : absents du bundle du navigateur). Prouvé par l'essai T78. */
-export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: TauriFs; win: TauriWindow; ipc: TauriIpc }> {
+export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: TauriFs; win: TauriWindow; ipc: TauriIpc; assetUrl: (path: string) => string }> {
   const [d, f, w, core, ev] = await Promise.all([
     import("@tauri-apps/plugin-dialog"),
     import("@tauri-apps/plugin-fs"),
@@ -244,5 +249,6 @@ export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: Tauri
       invoke: (cmd, args) => core.invoke(cmd, args),
       listen: (event, cb) => ev.listen(event, cb),
     },
+    assetUrl: (path) => core.convertFileSrc(path),
   };
 }

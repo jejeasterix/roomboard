@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SaveTarget } from "./files";
 import { browserFallbackDeps, createFallbackHost, FALLBACK_ACCEPT, IMPORT_ACCEPT, type FallbackDeps, type PickedFile } from "./host-repli";
 
