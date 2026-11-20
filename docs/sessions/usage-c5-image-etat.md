@@ -3,9 +3,8 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : On rogne une image, on la retourne, on la tourne par quarts de tour, on règle luminosité et contraste, et on rend transparente une couleur (pipette, tolérance, contigu ou global, plume, aperçu), sans perdre l'original, avec les calculs de pixels dans un Worker.
-Avancement : 20/21 tâches terminées
-Étage : 3 (correctifs tour 2) — depuis 2026-11-20 19:30
-Tâche : T21 — Correctifs du tour 2 — depuis 2026-11-20 19:30
+Avancement : 21/21 tâches terminées
+Étage : 4 — depuis 2026-11-20 19:45
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c5-image   Branche : feat/usage-c5-image   Base : origin/main @ 0dd7f1a, puis origin/main @ 9549785 (C12) fusionné en e6ffd35
 Branche principale locale au lancement : 0dd7f1a (avancée à 9549785 par OD85, C12 fusionné : attendu)
@@ -42,7 +41,7 @@ Vagues : V1 = T1, T5, T6, T8, T15 · V2 = T2, T9 · V3 = T3, T10 · V4 = T4 · V
 | T18 correctifs de relecture | terminée | 1/3 | e68a879 | verifier.sh --e2e OK sur 798da2e |
 | T19 simplification du lot (ex-T17) | terminée | 1/1 | bf2cc05 | web 1908 = avant, diff des tests vide |
 | T20 contrôle des licences voit src-tauri | terminée | 1/3 | 98cd96d | controle-licences OK (11 cas) ; main 9549785 échouait aussi |
-| T21 correctifs du tour 2 | en cours | 1/3 | — | — |
+| T21 correctifs du tour 2 | terminée | 1/3 | 43165e6 | verifier.sh --e2e OK sur f806814 ; revue immédiate : aucun major |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · capture image rognée au fond transparent dans docs/essais/ · scène ≥ 640 px mesurée par un test · module Wasm principal ≤ 1 572 864 octets · PR fusionnée par fusion locale --no-ff et push sans --force
@@ -65,6 +64,14 @@ Aucun blocker. Majeurs : M1 aperçu périmé après écriture hors séance (qual
 
 ## Double relecture (tour 2, 21030f1..798da2e)
 M1, M2, M3 et m1–m3 fermés. Nouveau major (régression de m4) : image validée pendant le calcul de l'aperçu, puis curseur touché : l'élément reste dessiné brut sans limite (reproduit par le relecteur). Minors : bitmap d'aperçu remplacé non fermé ; history() jette le brouillon même sans changement ; m4 et m5 partiels. → T21.
+
+## Suite complète finale
+f806814 : `verifier.sh --e2e` OK (C2, C12, C6a, C5 OK ; vitest 2079 passés ; licences OK ; principal 1 098 034 o, formats 3 099 350 o ; scène 706 px panneau ouvert).
+
+## Constats non corrigés (reste)
+- minor : `lastFailed` de image-cache.ts reste global (data-pixels `echec` sur une page dont l'image visible est saine) ; existait avant T21.
+- simplification : constante `PREVIEW` ajoutée mais `#apercu` encore écrit en dur 4 fois dans image-cache.ts.
+- minor : espace + glisser pendant le rognage ne déplace plus la vue ; pointerId ignoré par le geste de rognage (non vérifié).
 
 ## Choix tranchés seul (orchestrateur)
 - Vague 1 lancée pendant que le planificateur finissait T11–T17 ; relecture du plan en parallèle (tenir l'arrêt ferme).
@@ -93,4 +100,101 @@ ouvertes : — · passées : —
 - Chantier en cours sur les mêmes fichiers : OD85 C12 PDF (`feat/usage-c12-pdf`) : element.rs, api.ts, wasm-core.ts, fake-core.ts, renderer.ts, canvas2d.ts, board-session.ts, stage-tags.ts, toolbar-host.ts, App.tsx, main.ts, verifier.sh, verifier-e2e.test.sh.
 
 ## Notes du coffre à poser
-4 notes (journal, 2 décisions NNNN, 1 piège) et une ligne de la fiche : texte complet dans la description de la PR, section « Notes du coffre à poser ».
+
+4 notes, plus une ligne de la fiche projet.
+
+### 1. `00_Journal/2026-11-20-roomboard-usage-c5-image-clos.md`
+
+```markdown
+---
+id: 2026-11-20-roomboard-usage-c5-image-clos
+type: journal
+summary: "RoomBoard usage C5 édition d'image clos : rogner, retourner, quarts de tour, luminosité/contraste, couleur transparente (pipette, tolérance, plume, contigu depuis les bords ou global) non destructifs, pixels en Rust dans le module formats appelés par un Worker ; PR #22."
+created: 2026-11-20
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c5-image-etat.md (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — usage C5 édition d'image, clos (OD86)
+
+- Livré : réglages non destructifs de l'élément image (`crop`, `flipX`, `flipY`, `quarterTurns`, `brightness`, `contrast`, `transparent{color, tolerance, soft, contiguous}`), commande `SetImageParams` (une étape par validation, seuls les champs changés réécrits), « Rétablir l'original » (`{}`), bouton « Image » de la rangée Sélection et panneau calé à droite, pipette, aperçu avant « Valider ».
+- Pixels : `transparent_color`, `adjust`, `flood_fill` (prêt pour C6b) en Rust pur dans `roomboard-formats`, sans crate d'image ; Worker unique gardé vivant 10 s, file avec remplacement, résultat périmé jeté ; cache des bitmaps par élément.
+- Tailles : module principal 1 084 202 → 1 098 034 o (plafond 1 572 864) ; module formats 3 092 294 → 3 099 350 o (plafond 3 145 728, marge ~46 Ko : le prochain ajout au module formats doit la surveiller).
+- Relecture : 3 majors corrigés (aperçu périmé après une écriture hors séance, Entrée pendant le rognage, export PDF vectoriel de C12 d'une image rognée) ; simplification du lot appliquée.
+- C12 fusionné pendant le chantier : fusion de origin/main, conflits d'ajouts gardés des deux côtés.
+- Décisions : [[NNNN-roomboard-c5-contigu-depuis-les-bords]], [[NNNN-roomboard-c5-worker-pixels-vivant]]. Piège : [[yrs-any-map-octets-instables-au-rechargement]].
+```
+
+### 2. `02_Decisions/NNNN-roomboard-c5-contigu-depuis-les-bords.md`
+
+```markdown
+---
+id: NNNN-roomboard-c5-contigu-depuis-les-bords
+type: decision
+summary: "RoomBoard C5 : la couleur transparente en mode contigu diffuse depuis tous les pixels du bord de l'image source, sans graine ; le format garde transparent{color, tolerance, soft, contiguous} de U29 ; prise par l'agent."
+created: 2026-11-20
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c5-image-cadrage.md I3, I14 ; docs/etudes/usage-edition-image.md:60 ; crates/roomboard-formats/src/pixels.rs"
+---
+
+# RoomBoard — couleur transparente contiguë : diffusion depuis les bords (prise par l'agent)
+
+- Le mode contigu part de tous les pixels du bord dont l'écart à `color` est ≤ `tolerance + soft`, diffusion 4-connexe, calcul avant rognage.
+- La pipette ne donne que la couleur : pas de `x`, `y` dans le format (U29 tel quel).
+- Conséquence : un fond enfermé par le dessin reste opaque ; il faut passer en mode global.
+- `flood_fill` garde une graine explicite, pour le pot sur image de C6b.
+- À revoir par Jérôme : décision prise par l'agent en mode autonome (OD86).
+```
+
+### 3. `02_Decisions/NNNN-roomboard-c5-worker-pixels-vivant.md`
+
+```markdown
+---
+id: NNNN-roomboard-c5-worker-pixels-vivant
+type: decision
+summary: "RoomBoard C5 : les calculs de pixels passent par un Worker unique gardé vivant (pas le Worker jetable de C10b), file avec remplacement par emplacement, résultat périmé jeté ; aucun encodage PNG en C5, les retouches sont recalculées à l'ouverture ; prise par l'agent."
+created: 2026-11-20
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c5-image-cadrage.md (DAI3, I18, I19) ; apps/web/src/platform/pixel-runner.ts"
+---
+
+# RoomBoard — Worker de pixels vivant, sans encodage PNG (prise par l'agent)
+
+- Recréer un Worker à chaque calcul rechargerait le module formats (~3 Mo depuis C12) à chaque pas de curseur : un seul Worker par onglet, arrêté après 10 s d'inactivité ou sur erreur.
+- Un seul travail en attente par emplacement (élément ou aperçu) ; le travail remplacé se résout à `null` sans être lancé ; le résultat arrivé pour une clé périmée est fermé.
+- Pas de `convertToBlob` en C5 : l'asset d'origine n'est jamais réécrit, l'image retouchée est recalculée à l'ouverture. L'encodage PNG viendra avec C6b (destructif, `sourceAsset`) et l'export.
+- À revoir par Jérôme : décision prise par l'agent en mode autonome (OD86).
+```
+
+### 4. `04_Pieges/yrs-any-map-octets-instables-au-rechargement.md`
+
+```markdown
+---
+id: yrs-any-map-octets-instables-au-rechargement
+type: piege
+summary: "yrs : une valeur Any::Map est encodée dans l'ordre d'un HashMap à graine aléatoire, donc les octets du document changent à chaque rechargement ; ranger les objets en Y.Map (MapPrelim) ou en Any::Array positionnel."
+created: 2026-11-20
+project: "[[roomboard]]"
+status: actif
+tags: [tech/rust, tech/yrs, tech/crdt]
+evidence: "crates/roomboard-core/src/element.rs (lecture des réglages d'image, commentaire Any::Map) ; test any_map_params_read_as_absent et image_params_reload_keep_bytes (crates/roomboard-core/src/image.rs), tâche T2 du chantier usage-c5-image"
+---
+
+# yrs : Any::Map donne des octets instables
+
+**Symptôme** : un document enregistré, rouvert puis réenregistré n'a pas les mêmes octets (le test « rechargement à l'identique » échoue au hasard).
+
+**Cause** : yrs encode `Any::Map` dans l'ordre d'itération d'un `HashMap` dont la graine est aléatoire par processus.
+
+**Solution** : un objet de réglages va en `Y.Map` (`MapPrelim`), une liste fixe en `Any::Array` positionnel (comme `crop` et la matrice). Le lecteur ne prend que `Out::YMap` et lit tout autre forme comme absente.
+```
+
+### Fiche `01_Projets/roomboard.md`, ligne 21
+
+Remplacer `C5 édition d'image en cours.` par :
+`C5 édition d'image non destructive (rogner, retourner, quarts de tour, luminosité/contraste, couleur transparente, pixels en Worker) clos (PR #22) — voir [[2026-11-20-roomboard-usage-c5-image-clos]] et [[NNNN-roomboard-c5-contigu-depuis-les-bords]].`
