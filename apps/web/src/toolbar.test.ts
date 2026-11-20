@@ -326,6 +326,12 @@ describe("actions du tableau (C10a)", () => {
   });
 });
 
+describe("barre : Exporter en PDF (C12, PF19)", () => {
+  it("ACTION_TABLE : export-pdf « Exporter en PDF… »", () => {
+    expect(ACTION_TABLE["export-pdf"]?.label).toBe("Exporter en PDF…");
+  });
+});
+
 describe("couleurs du pot (C6a, D16, D17)", () => {
   it("TOOL_TABLE.fill : « Pot », choix fill ; FILL_COLORS figée : rouge, jaune, vert, bleu, noir ; libellé « Aucune »", () => {
     expect(TOOL_TABLE["fill"]).toEqual({ label: "Pot", choice: "fill" });

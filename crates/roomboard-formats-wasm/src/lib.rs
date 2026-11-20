@@ -1,9 +1,11 @@
 //! Liaison wasm-bindgen du second module Wasm (R8, DAR1) : conteneur `.roomboard` (`container::read`, `container::write`,
 //! chargé par la page au premier besoin, R10) et première feuille d'un `.xlsx` (`sheet::read_first_sheet`, C10b, lue
-//! dans un Worker jetable, DAB4). Chaque fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en
-//! natif (hors wasm32, tout appel à JS panique).
+//! dans un Worker jetable, DAB4) ; pages vectorielles en PDF (`pdf::write_pages`, C12, PF22, Worker jetable). Chaque
+//! fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS
+//! panique).
 use roomboard_core::format::Parts;
 use roomboard_formats::container::{self, AssetBytes};
+use roomboard_formats::pdf::{write_pages, DisplayList, ImageInput};
 use wasm_bindgen::prelude::*;
 
 /// Fichier lu : manifeste, `document.ybin`, assets triés par empreinte, avertissements en français (K11).
@@ -109,6 +111,65 @@ pub fn write_container(
     write_container_inner(manifest, ybin, &ids, &mimes, &sizes, bytes).map_err(|m| JsError::new(&m))
 }
 
+/// Octets bout à bout découpés par `sizes` ; la somme doit faire le compte (même contrôle que `write_container_inner`).
+fn split<'a>(bytes: &'a [u8], sizes: &[u32], what: &str) -> Result<Vec<&'a [u8]>, String> {
+    let total: u64 = sizes.iter().map(|&s| u64::from(s)).sum();
+    if total != bytes.len() as u64 {
+        return Err(format!(
+            "{what} incohérentes : {total} octets annoncés, {} reçus",
+            bytes.len()
+        ));
+    }
+    let mut at = 0usize;
+    Ok(sizes
+        .iter()
+        .map(|&s| {
+            let part = &bytes[at..at + s as usize];
+            at += s as usize;
+            part
+        })
+        .collect())
+}
+
+/// Pages vectorielles (C12, PF22) : flux d'opérations, textes, polices et images bout à bout ; le PDF écrit.
+pub fn write_pdf_pages_inner(
+    ops: &[f32],
+    texts: Vec<String>,
+    fonts: &[u8],
+    font_sizes: &[u32],
+    images: &[u8],
+    image_sizes: &[u32],
+) -> Result<Vec<u8>, String> {
+    let fonts = split(fonts, font_sizes, "polices")?;
+    let images: Vec<ImageInput<'_>> = split(images, image_sizes, "images")?
+        .into_iter()
+        .map(|bytes| ImageInput { bytes })
+        .collect();
+    write_pages(
+        &DisplayList {
+            ops: ops.to_vec(),
+            texts,
+        },
+        &fonts,
+        &images,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Lève une Error au message de `PdfWriteError` (« liste d'opérations invalide : … », « police 0 illisible… »).
+#[wasm_bindgen]
+pub fn write_pdf_pages(
+    ops: &[f32],
+    texts: Vec<String>,
+    fonts: &[u8],
+    font_sizes: Vec<u32>,
+    images: &[u8],
+    image_sizes: Vec<u32>,
+) -> Result<Vec<u8>, JsError> {
+    write_pdf_pages_inner(ops, texts, fonts, &font_sizes, images, &image_sizes)
+        .map_err(|m| JsError::new(&m))
+}
+
 /// Première feuille d'un classeur (C10b, F23) : grille de textes, fusions en quadruplets, dimensions de la source.
 #[wasm_bindgen]
 pub struct SheetReader {
@@ -174,6 +235,36 @@ mod tests {
         let mut d = Document::blank();
         d.add_page();
         d
+    }
+
+    #[test]
+    fn write_pdf_pages_inner_splits_fonts_and_images() {
+        let font: &[u8] =
+            include_bytes!("../../roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf");
+        let ops = [
+            1.0, 100.0, 100.0, 7.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 12.0, 5.0,
+            5.0, 0.0, 0.0, 0.0,
+        ];
+        let pdf =
+            write_pdf_pages_inner(&ops, vec!["a".into()], font, &[font.len() as u32], &[], &[])
+                .expect("PDF");
+        assert!(pdf.starts_with(b"%PDF-"));
+        let err = write_pdf_pages_inner(&ops, vec!["a".into()], font, &[3], &[], &[])
+            .expect_err("tailles fausses");
+        assert!(err.starts_with("polices incohérentes"), "{err}");
+        let err = write_pdf_pages_inner(
+            &ops,
+            vec!["a".into()],
+            font,
+            &[font.len() as u32],
+            b"abc",
+            &[2],
+        )
+        .expect_err("images");
+        assert!(err.starts_with("images incohérentes"), "{err}");
+        let err = write_pdf_pages_inner(&ops, vec!["a".into()], &[], &[], &[], &[])
+            .expect_err("police absente");
+        assert_eq!(err, "police 0 illisible ou absente");
     }
 
     #[test]

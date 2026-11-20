@@ -753,3 +753,16 @@ describe("fakeCore — C3", () => {
     expect(() => d.insertPages(other, d.pageIds()[0]!)).toThrow("source d'une autre liaison : insertion impossible");
   });
 });
+
+describe("fakeCore — C12 (PDF)", () => {
+  it("JSON : page illisible (1.5, -1, chaîne) → null, valeur gardée à l'enregistrement (K9, Review Focus 5)", () => {
+    const a = "ef".repeat(32);
+    for (const bad of [1.5, -1, "2"]) {
+      const json = { kind: "document", pages: [{ id: "p", elements: [], backdrop: { asset: a, kind: "pdf-page", page: bad, w: 612, h: 792, fit: "width" } }], assets: {} };
+      const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(json)));
+      expect(d.page("p")?.backdrop?.page, String(bad)).toBeNull();
+      const again = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as { pages: { backdrop: { page: unknown } }[] };
+      expect(again.pages[0]?.backdrop.page).toEqual(bad);
+    }
+  });
+});

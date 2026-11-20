@@ -469,7 +469,7 @@ pub(crate) fn valid_matrix(m: &Transform) -> bool {
 }
 
 /// Référence d'asset : empreinte conforme, type non vide, taille entière finie ≥ 0 (K5).
-fn valid_asset(a: &AssetRef) -> bool {
+pub(crate) fn valid_asset(a: &AssetRef) -> bool {
     is_asset_id(&a.id)
         && !a.mime.is_empty()
         && a.size.is_finite()
@@ -2793,6 +2793,39 @@ pub(crate) mod tests {
                 save(&r, &meta).expect("resave") == file,
                 "fichier différent au rechargement {i}"
             );
+        }
+    }
+
+    /// C12 (G4, PF17) : un fond `pdf-page` (champ `page` entier) se recharge à l'identique, trente fois.
+    #[test]
+    fn pdf_backdrop_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let pdf = AssetRef {
+            id: EMPTY.into(),
+            name: "cours.pdf".into(),
+            mime: "application/pdf".into(),
+            size: 0.0,
+        };
+        let d = Document::from_pdf_pages(&pdf, &[(612.0, 792.0), (792.0, 612.0)]).expect("pdf");
+        let ybin = d.encode_v1();
+        let file = save(&d, &meta).expect("save");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            assert!(r.encode_v1() == ybin, "ybin différent au rechargement {i}");
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+            let b = r
+                .page(&r.page_ids()[1])
+                .and_then(|p| p.backdrop)
+                .expect("fond");
+            assert_eq!((b.kind.as_str(), b.page), ("pdf-page", Some(1)), "fond {i}");
         }
     }
 

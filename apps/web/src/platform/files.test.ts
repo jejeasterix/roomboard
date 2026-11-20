@@ -61,10 +61,10 @@ describe("FileHost : onDrop (T86)", () => {
     expect(h.kind).toBe("repli");
   });
 
-  it("filtre « Importer » : .roomboard puis les images d'U33, sans TIFF ni RAW (R14, R18)", () => {
+  it("filtre « Importer » : .roomboard, .rbitem, .pdf puis les images d'U33, sans TIFF ni RAW (R14, R18, PF3)", () => {
     expect(IMPORT_FILTER).toEqual({
-      name: "Images et documents RoomBoard",
-      extensions: ["roomboard", "rbitem", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"],
+      name: "Images, PDF et documents RoomBoard",
+      extensions: ["roomboard", "rbitem", "pdf", "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"],
     });
   });
 });

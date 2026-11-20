@@ -1349,3 +1349,22 @@ describe("moteur — C3", () => {
     expect(engine.state().page).toBe(page);
   });
 });
+
+describe("moteur — fond de page (C12)", () => {
+  it("drawScene reçoit le fond lu dans doc.page(id), page par page ; page sans fond : null (PF14, PF29)", () => {
+    const doc = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 612, h: 792 }, { w: 612, h: 792 }]);
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    const engine = createEngine({ doc, renderer, frames, tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
+    engine.resize(800, 600, 1);
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page.backdrop).toMatchObject({ kind: "pdf-page", page: 0 });
+    engine.nextPage();
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page.backdrop).toMatchObject({ kind: "pdf-page", page: 1 });
+    const blank = setup();
+    blank.engine.resize(800, 600, 1);
+    blank.frames.tick();
+    expect(blank.renderer.scenes.at(-1)?.page.backdrop).toBeNull();
+  });
+});

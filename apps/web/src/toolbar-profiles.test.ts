@@ -94,6 +94,18 @@ describe("outil Tableau dans les profils (C10a, T6)", () => {
   });
 });
 
+describe("barre : Exporter en PDF (C12, PF19)", () => {
+  it("barre des pages, en bas : « Exporter en PDF… » en dernier dans defaut, simple et annotation ; rien dans la barre du haut", () => {
+    for (const id of ["defaut", "simple", "annotation"]) {
+      const bars = builtinProfile(id)!.toolbars;
+      const pages = bars.find((b) => b.role === "pages")!;
+      expect(pages.dock, id).toBe("bottom");
+      expect(pages.groups.flatMap((g) => g.items).at(-1), id).toMatchObject({ id: "export-pdf", kind: "action", action: "export-pdf", label: "Exporter en PDF…" });
+      expect(bars.filter((b) => b.role !== "pages").flatMap((b) => b.groups.flatMap((g) => g.items)).some((i) => i.id === "export-pdf"), id).toBe(false);
+    }
+  });
+});
+
 describe("outil Pot dans les profils (C6a)", () => {
   it("defaut et annotation : Pot juste après Tableau, sans préréglage fill ; simple : sans Pot", () => {
     for (const p of ["defaut", "annotation"]) {

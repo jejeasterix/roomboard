@@ -6,5 +6,6 @@ license.workspace = true
 
 [dependencies]
 calamine = { version = "0.38", default-features = false }
+krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }
 roomboard-core = { path = "../roomboard-core" }
 sha2 = "0.10"

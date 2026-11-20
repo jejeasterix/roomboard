@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTauriTypedFiles, createWebTypedFiles, type FileType } from "./typed-files";
+import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, type FileType } from "./typed-files";
 
 const T: FileType = { extension: ".rbitem", mime: "application/x-roomboard-item", filter: { name: "Objet RoomBoard", extensions: ["rbitem"] }, accept: ".rbitem,application/x-roomboard-item" };
 const b = (...x: number[]) => new Uint8Array(x);
@@ -36,5 +36,11 @@ describe("fichiers typés (DAZ4)", () => {
     expect(await files.save("a", b())).toBe(false);
     expect(fs.readFile).not.toHaveBeenCalled();
     expect(fs.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+describe("PDF_TYPE (C12)", () => {
+  it("PDF exporté : .pdf, application/pdf, filtre « Document PDF » (PF19)", () => {
+    expect(PDF_TYPE).toEqual({ extension: ".pdf", mime: "application/pdf", filter: { name: "Document PDF", extensions: ["pdf"] }, accept: ".pdf,application/pdf" });
   });
 });

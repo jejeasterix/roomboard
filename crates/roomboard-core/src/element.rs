@@ -31,6 +31,8 @@ pub const KNOWN_KINDS: [&str; 5] = ["stroke", "shape", "text", "image", "table"]
 pub const UNKNOWN_BOX: f64 = 100.0;
 /// Seul ajustement de fond écrit par cette version : largeur de la page (K6, HK1).
 pub const FIT_WIDTH: &str = "width";
+/// Genre du fond d'une page venue d'un PDF (C12, PF5) : `page` y désigne la page d'origine, à partir de 0.
+pub const PDF_PAGE_KIND: &str = "pdf-page";
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PageView {
@@ -48,6 +50,8 @@ pub struct PageView {
 pub struct BackdropView {
     pub asset: String,
     pub kind: String,
+    /// Indice de page à partir de 0 d'un fond `pdf-page` (C12, PF5) ; `None` absent ou illisible.
+    pub page: Option<u32>,
     pub w: Option<f64>,
     pub h: Option<f64>,
     pub fit: String,
@@ -303,6 +307,7 @@ pub(crate) fn unknown_view<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform
 pub(crate) struct RawBackdrop {
     pub asset: Option<String>,
     pub kind: Option<String>,
+    pub page: Option<f64>,
     pub w: Option<f64>,
     pub h: Option<f64>,
     pub fit: Option<String>,
@@ -314,6 +319,7 @@ pub(crate) fn read_backdrop<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<RawBac
         Out::YMap(b) => RawBackdrop {
             asset: out_string(b.get(txn, "asset")),
             kind: out_string(b.get(txn, "kind")),
+            page: out_f64(b.get(txn, "page")),
             w: out_f64(b.get(txn, "w")),
             h: out_f64(b.get(txn, "h")),
             fit: out_string(b.get(txn, "fit")),
@@ -321,11 +327,18 @@ pub(crate) fn read_backdrop<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<RawBac
         _ => RawBackdrop {
             asset: None,
             kind: None,
+            page: None,
             w: None,
             h: None,
             fit: None,
         },
     })
+}
+
+/// Indice de page lisible (PF5) : entier ≥ 0 tenant en u32 ; sinon `None`. Même règle que `pageIndexOf` (fausse liaison).
+pub(crate) fn page_index(v: Option<f64>) -> Option<u32> {
+    let v = v?;
+    (v.is_finite() && v >= 0.0 && v.fract() == 0.0 && v <= f64::from(u32::MAX)).then_some(v as u32)
 }
 
 /// Vue du fond (K6, K9, DAK4) : `None` sans asset conforme ; `rect` calé sur la largeur de la page (page à hauteur
@@ -350,6 +363,7 @@ pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropV
     Some(BackdropView {
         asset,
         kind: r.kind.unwrap_or_default(),
+        page: page_index(r.page),
         w,
         h,
         fit: r.fit.unwrap_or_default(),
@@ -365,6 +379,7 @@ mod backdrop_tests {
         RawBackdrop {
             asset: Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into()),
             kind: Some("image".into()),
+            page: None,
             w: Some(w),
             h: Some(h),
             fit: Some("width".into()),
@@ -386,5 +401,28 @@ mod backdrop_tests {
         let v = backdrop_view(raw(1e-300, 1e10), 1920.0).expect("vue");
         assert_eq!(v.rect, None);
         assert_eq!((v.w, v.h), (Some(1e-300), Some(1e10)));
+    }
+
+    /// C12 (PF5, Review Focus 5) : `page` lisible = entier ≥ 0 tenant en u32 ; sinon `None` (fond en « page PDF
+    /// illisible »), jamais une erreur.
+    #[test]
+    fn backdrop_page_is_a_whole_non_negative_number() {
+        let with = |p: Option<f64>| {
+            let mut r = raw(612.0, 792.0);
+            r.page = p;
+            backdrop_view(r, 1920.0).expect("vue").page
+        };
+        assert_eq!(with(Some(0.0)), Some(0));
+        assert_eq!(with(Some(2.0)), Some(2));
+        for bad in [
+            Some(1.5),
+            Some(-1.0),
+            Some(f64::NAN),
+            Some(f64::INFINITY),
+            Some(4_294_967_296.0),
+            None,
+        ] {
+            assert_eq!(with(bad), None, "{bad:?}");
+        }
     }
 }

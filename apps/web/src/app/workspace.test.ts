@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Command, CoreDocument } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
+import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";
 import { createClipboard } from "../platform/clipboard";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
@@ -9,9 +11,11 @@ import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform
 import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG } from "../platform/html-table";
 import { LATER_FORMAT_MESSAGE } from "../platform/import";
+import { PdfEncryptedError } from "../platform/pdf-render";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
-import { TOO_MANY_TABS } from "./tabs";
+import type { OverlayProducer, OverlayRequest } from "./pdf-export";
+import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 interface FakeBoard {
@@ -209,6 +213,12 @@ interface SetupOptions {
   readonly readSheet?: WorkspaceDeps["readSheet"];
   readonly clipboard?: WorkspaceDeps["clipboard"];
   readonly itemFiles?: WorkspaceDeps["itemFiles"];
+  readonly pdf?: WorkspaceDeps["pdf"];
+  readonly pdfFiles?: WorkspaceDeps["pdfFiles"];
+  readonly loadPdfLib?: WorkspaceDeps["loadPdfLib"];
+  readonly overlay?: WorkspaceDeps["overlay"];
+  readonly rasterPage?: WorkspaceDeps["rasterPage"];
+  readonly rasterClose?: WorkspaceDeps["rasterClose"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -243,6 +253,12 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.readSheet ? { readSheet: o.readSheet } : {}),
     ...(o.clipboard ? { clipboard: o.clipboard } : {}),
     ...(o.itemFiles ? { itemFiles: o.itemFiles } : {}),
+    ...(o.pdf ? { pdf: o.pdf } : {}),
+    ...(o.pdfFiles ? { pdfFiles: o.pdfFiles } : {}),
+    ...(o.loadPdfLib ? { loadPdfLib: o.loadPdfLib } : {}),
+    ...(o.overlay ? { overlay: o.overlay } : {}),
+    ...(o.rasterPage ? { rasterPage: o.rasterPage } : {}),
+    ...(o.rasterClose ? { rasterClose: o.rasterClose } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -946,5 +962,255 @@ describe("espace de travail — C3", () => {
     ws.selection("ungroup");
     const e = ws.active().board.engine as unknown as { group: ReturnType<typeof vi.fn>; ungroup: ReturnType<typeof vi.fn> };
     expect([e.group.mock.calls.length, e.ungroup.mock.calls.length]).toEqual([1, 1]);
+  });
+});
+
+describe("espace de travail : PDF (C12)", () => {
+  const PDF_HEAD = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a]);
+  const PNG_1PX = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+  function fakePdf(o: { pages?: number; encrypted?: boolean; fail?: string; size?: (i: number) => { w: number; h: number } } = {}) {
+    const destroy = vi.fn();
+    const pageSize = vi.fn(async (i: number) => (o.size ?? (() => ({ w: 612, h: 792 })))(i));
+    const open = vi.fn(async (_b: Blob): Promise<PdfFile> => {
+      if (o.encrypted === true) throw new PdfEncryptedError();
+      if (o.fail !== undefined) throw new Error(o.fail);
+      return { pageCount: o.pages ?? 3, pageSize, renderTile: async () => ({}) as TileBitmap, destroy };
+    });
+    return { engine: { open } satisfies PdfEngine, open, destroy, pageSize };
+  }
+  const drop = (name: string, bytes: Uint8Array<ArrayBuffer> = PDF_HEAD, size = bytes.byteLength): DroppedFile => ({
+    name, size, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
+  });
+  async function realPdf(pages = 3): Promise<Uint8Array<ArrayBuffer>> {
+    const d = await PDFDocument.create();
+    const font = await d.embedFont(StandardFonts.Helvetica);
+    for (let i = 1; i <= pages; i++) d.addPage([612, 792]).drawText(`RoomBoard page ${i}`, { x: 72, y: 700, size: 24, font });
+    return new Uint8Array(await d.save());
+  }
+  const files = () => ({ pick: vi.fn(async () => null), save: vi.fn(async (_n: string, _b: Uint8Array) => true) });
+  const producer = (seen: OverlayRequest[] = []): OverlayProducer => ({
+    pages: async (reqs) => {
+      seen.push(...reqs);
+      return reqs.map(() => ({ kind: "png" as const, bytes: PNG_1PX }));
+    },
+  });
+  const loadPdfLib = () => import("pdf-lib");
+
+  it("S1 : PDF déposé : nouvel onglet « Cours.roomboard », une page par page, fonds pdf-page, asset dans le magasin, non modifié, rien à annuler ; PdfFile détruit", async () => {
+    const pdf = fakePdf({ size: (i) => (i === 1 ? { w: 792, h: 612 } : { w: 612, h: 792 }) });
+    const ws = await setupWorkspace({ pdf: pdf.engine });
+    const r = await ws.importFiles([drop("/home/u/Cours.pdf")], null);
+    expect(r.opened).toEqual(["/home/u/Cours.pdf"]);
+    expect(ws.tabs.list()).toHaveLength(2);
+    const tab = ws.active();
+    const doc = tab.board.doc;
+    const views = doc.pageIds().map((id) => doc.page(id)?.backdrop);
+    expect(views.map((b) => [b?.kind, b?.page, b?.w, b?.h])).toEqual([
+      ["pdf-page", 0, 612, 792],
+      ["pdf-page", 1, 792, 612],
+      ["pdf-page", 2, 612, 792],
+    ]);
+    const asset = doc.citedAssets()[0];
+    expect([asset?.name, asset?.mime, asset?.size]).toEqual(["Cours.pdf", "application/pdf", PDF_HEAD.byteLength]);
+    expect(tab.assets.get(asset?.id ?? "")?.type).toBe("application/pdf");
+    expect([tab.files.name(), tab.files.isDirty(), doc.canUndo()]).toEqual(["Cours.roomboard", false, false]);
+    expect(pdf.destroy).toHaveBeenCalledTimes(1);
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("Enregistrer demande où (cible nulle), jamais sur le PDF (U1, PF10)", async () => {
+    const ws = await setupWorkspace({ pdf: fakePdf().engine });
+    await ws.openPdf({ name: "Cours.pdf", blob: new Blob([PDF_HEAD]) });
+    expect(await ws.active().files.run("save")).toBe(true);
+    expect(host.save.mock.calls[0]?.[1]).toEqual({ kind: "ask", name: "Cours.roomboard" });
+  });
+
+  it("PDF chiffré : avis « secret.pdf : PDF chiffré, non pris en charge », aucun onglet (S2, Review Focus 2)", async () => {
+    const ws = await setupWorkspace({ pdf: fakePdf({ encrypted: true }).engine });
+    expect(await ws.openPdf({ name: "secret.pdf", blob: new Blob([PDF_HEAD]) })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("secret.pdf : PDF chiffré, non pris en charge");
+    expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("501 pages : 500 pages importées, avis « gros.pdf : 500 premières pages importées sur 501 » (S2, PF7)", async () => {
+    const pdf = fakePdf({ pages: 501 });
+    const ws = await setupWorkspace({ pdf: pdf.engine });
+    expect(await ws.openPdf({ name: "gros.pdf", blob: new Blob([PDF_HEAD]) })).toBe(true);
+    expect(ws.active().board.doc.pageIds()).toHaveLength(500);
+    expect(pdf.pageSize).toHaveBeenCalledTimes(500);
+    expect(shell.notify).toHaveBeenCalledWith("gros.pdf : 500 premières pages importées sur 501");
+  });
+
+  it("PDF illisible : « Ouverture impossible (x.pdf) : … » ; 0 page : « … : PDF sans page », PdfFile détruit", async () => {
+    const bad = await setupWorkspace({ pdf: fakePdf({ fail: "Invalid PDF structure." }).engine });
+    expect(await bad.openPdf({ name: "x.pdf", blob: new Blob([PDF_HEAD]) })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.pdf) : Invalid PDF structure.");
+    const empty = fakePdf({ pages: 0 });
+    const ws = await setupWorkspace({ pdf: empty.engine });
+    expect(await ws.openPdf({ name: "vide.pdf", blob: new Blob([PDF_HEAD]) })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (vide.pdf) : PDF sans page");
+    expect(empty.destroy).toHaveBeenCalledTimes(1);
+    expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("onglets pleins : TOO_MANY_TABS, PDF jamais ouvert (PF10)", async () => {
+    const pdf = fakePdf();
+    const ws = await setupWorkspace({ pdf: pdf.engine });
+    for (let i = 1; i < MAX_TABS; i++) await ws.newBlank();
+    await ws.importFiles([drop("a.pdf")], null);
+    expect(shell.notify).toHaveBeenCalledWith(TOO_MANY_TABS);
+    expect(pdf.open).not.toHaveBeenCalled();
+  });
+
+  it("web : PDF de 120 Mo refusé avant lecture (S2, PF9)", async () => {
+    const pdf = fakePdf();
+    const ws = await setupWorkspace({ pdf: pdf.engine });
+    const r = await ws.importFiles([drop("gros.pdf", PDF_HEAD, 120 * 1024 * 1024)], null);
+    expect(r.refused).toEqual(["gros.pdf"]);
+    expect(pdf.open).not.toHaveBeenCalled();
+  });
+
+  it("export S1 : un trait en page 2 du PDF : « Cours annoté.pdf » écrit (3 pages), superposition demandée pour la page 2 seule, avis « PDF exporté (3 pages) »", async () => {
+    const bytes = await realPdf();
+    const seen: OverlayRequest[] = [];
+    const pdfFiles = files();
+    const ws = await setupWorkspace({ pdf: fakePdf().engine, pdfFiles, loadPdfLib, overlay: () => producer(seen) });
+    await ws.openPdf({ name: "Cours.pdf", blob: new Blob([bytes]) });
+    const doc = ws.active().board.doc;
+    const p2 = doc.pageIds()[1] ?? "";
+    doc.apply({ type: "CommitStroke", page: p2, points: new Float32Array([100, 100, 0.5, 400, 100, 0.5]), style: { color: "#000000", width: 4 } });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(seen.map((r) => r.pageId)).toEqual([p2]);
+    const [name, out] = pdfFiles.save.mock.calls[0] ?? ["", new Uint8Array()];
+    expect(name).toBe("Cours annoté.pdf");
+    expect((await PDFDocument.load(out)).getPageCount()).toBe(3);
+    expect(shell.notify).toHaveBeenCalledWith("PDF exporté (3 pages)");
+  });
+
+  it("export d'un document sans PDF : « Sans titre.pdf », 1 page, avis au singulier (PF19, PC10)", async () => {
+    const pdfFiles = files();
+    const ws = await setupWorkspace({ pdfFiles, loadPdfLib, overlay: () => producer() });
+    drawOn(ws.active());
+    expect(await ws.exportPdf()).toBe(true);
+    expect(pdfFiles.save.mock.calls[0]?.[0]).toBe("Sans titre.pdf");
+    expect(shell.notify).toHaveBeenCalledWith("PDF exporté (1 page)");
+  });
+
+  it("export : asset absent du magasin : UNREAD_ASSETS_MESSAGE, rien écrit (PF20)", async () => {
+    const pdfFiles = files();
+    const ws = await setupWorkspace({ first: { doc: docWithImage(), opened: null, error: null }, pdfFiles, loadPdfLib, overlay: () => producer() });
+    expect(await ws.exportPdf()).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith(UNREAD_ASSETS_MESSAGE);
+    expect(pdfFiles.save).not.toHaveBeenCalled();
+  });
+
+  it("export : un seul à la fois ; le second appel dit « Opération en cours » (PF19)", async () => {
+    let reached = false;
+    let release: () => void = () => undefined;
+    const slow: OverlayProducer = {
+      pages: (reqs) =>
+        new Promise((ok) => {
+          reached = true;
+          release = () => ok(reqs.map(() => ({ kind: "png" as const, bytes: PNG_1PX })));
+        }),
+    };
+    const ws = await setupWorkspace({ pdfFiles: files(), loadPdfLib, overlay: () => slow });
+    drawOn(ws.active());
+    const first = ws.exportPdf(); // `exporting` passe à vrai avant le premier `await`
+    expect(await ws.exportPdf()).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Opération en cours");
+    await vi.waitFor(() => expect(reached).toBe(true));
+    release();
+    expect(await first).toBe(true);
+  });
+
+  it("export : saveParts qui lève ne laisse pas le verrou pris ; le second export n'est pas bloqué", async () => {
+    const ws = await setupWorkspace({ pdfFiles: files(), loadPdfLib, overlay: () => producer() });
+    drawOn(ws.active());
+    const doc = ws.active().board.doc;
+    const save = vi.spyOn(doc, "saveParts").mockImplementationOnce(() => {
+      throw new Error("refus du cœur");
+    });
+    expect(await ws.exportPdf()).toBe(false);
+    save.mockRestore();
+    shell.notify.mockClear?.();
+    expect(await ws.exportPdf()).toBe(true);
+    expect(shell.notify).not.toHaveBeenCalledWith("Opération en cours");
+  });
+
+  it("export : contenu sous la page PDF : avis « du contenu hors des pages PDF n'est pas exporté » (Review Focus 4)", async () => {
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer() });
+    await ws.openPdf({ name: "Cours.pdf", blob: new Blob([await realPdf(1)]) });
+    const doc = ws.active().board.doc;
+    doc.apply({ type: "AddShape", page: doc.pageIds()[0] ?? "", shape: "rect", x0: 100, y0: 5000, x1: 200, y1: 5100, style: { color: "#000000", width: 4 }, fill: null });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("du contenu hors des pages PDF n'est pas exporté");
+  });
+
+  it("onglet fermé pendant l'export : l'export rend faux sur sa copie, rien écrit, aucun avis d'erreur (DAPF3, T7)", async () => {
+    let reached = false;
+    let release: () => void = () => undefined;
+    const docs: CoreDocument[] = [];
+    const pdfFiles = files();
+    const ws = await setupWorkspace({
+      pdfFiles,
+      loadPdfLib,
+      overlay: (_tab, doc) => {
+        docs.push(doc);
+        return { pages: (reqs) => new Promise((ok) => ((reached = true), (release = () => ok(reqs.map(() => ({ kind: "png" as const, bytes: PNG_1PX })))))) };
+      },
+    });
+    await ws.newBlank();
+    const tab = ws.active();
+    drawOn(tab);
+    const done = ws.exportPdf();
+    await vi.waitFor(() => expect(reached).toBe(true));
+    const id = ws.tabs.list().find((t) => t.session === tab)?.id ?? "";
+    answer = true;
+    expect(await ws.close(id)).toBe(true);
+    release();
+    expect(await done).toBe(false);
+    expect(docs[0]).not.toBe(tab.board.doc);
+    expect(pdfFiles.save).not.toHaveBeenCalled();
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("PDF que pdf-lib refuse : avis « PDF d'origine non recopié : pages en image » (PF20)", async () => {
+    const raster = vi.fn(async () => ({ png: PNG_1PX, w: 612, h: 792 }));
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer(), rasterPage: raster });
+    await ws.openPdf({ name: "abime.pdf", blob: new Blob([new TextEncoder().encode("pas un PDF")]) });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(raster).toHaveBeenCalledTimes(1);
+    expect(shell.notify).toHaveBeenCalledWith("PDF d'origine non recopié : pages en image");
+  });
+
+  it("export : rasterClose appelé une fois en fin d'export, même quand l'export échoue", async () => {
+    const rasterClose = vi.fn();
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer(), rasterClose });
+    await ws.openPdf({ name: "ok.pdf", blob: new Blob([await realPdf(1)]) });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(rasterClose).toHaveBeenCalledTimes(1);
+    vi.spyOn(ws.active().board.doc, "saveParts").mockImplementationOnce(() => {
+      throw new Error("refus du cœur");
+    });
+    expect(await ws.exportPdf()).toBe(false);
+    expect(rasterClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("export : rasterClose appelé avant la feuille d'enregistrement (save), une seule fois (relecture T17)", async () => {
+    const order: string[] = [];
+    const rasterClose = vi.fn(() => void order.push("rasterClose"));
+    const pdfFiles = files();
+    pdfFiles.save.mockImplementation(async () => (order.push("save"), true));
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles, loadPdfLib, overlay: () => producer(), rasterClose });
+    await ws.openPdf({ name: "ok.pdf", blob: new Blob([await realPdf(1)]) });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(order).toEqual(["rasterClose", "save"]);
+  });
+
+  it("sans pdfFiles, loadPdfLib ou overlay : exportPdf rend faux, sans avis", async () => {
+    const ws = await setupWorkspace({ loadPdfLib, overlay: () => producer() });
+    expect(await ws.exportPdf()).toBe(false);
+    expect(shell.notify).not.toHaveBeenCalled();
   });
 });

@@ -145,6 +145,7 @@ export function App(props: AppProps): JSX.Element {
       runFile: (cmd) => void ws.active().files.run(cmd),
       importFiles: (files, at) => void ws.importFiles(files, at),
       insertPages: () => void ws.insertPages(),
+      exportPdf: () => void ws.exportPdf(),
       selection: (a) => ws.selection(a),
       toggle: (p) => setPanel((cur) => (cur === p ? null : p)),
     },

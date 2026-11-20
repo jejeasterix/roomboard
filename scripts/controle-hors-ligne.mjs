@@ -11,7 +11,14 @@ import { fileURLToPath } from "node:url";
 
 const TEXT = new Set([".html", ".js", ".mjs", ".css", ".json", ".svg", ".txt", ".webmanifest"]);
 /** Hôtes cités mais jamais chargés, chacun avec sa raison : toute entrée nouvelle se justifie ici. */
-export const NON_FETCHED_HOSTS = new Map([["www.w3.org", "espaces de noms XML (SVG, XHTML), jamais chargés"]]);
+export const NON_FETCHED_HOSTS = new Map([
+  ["www.w3.org", "espaces de noms XML (SVG, XHTML), jamais chargés"],
+  ["example.com", "base d'URL fictive de pdf.js pour analyser une adresse relative (C12), jamais chargée"],
+  ["foo.bar", "base d'URL fictive de pdf.js pour analyser une adresse relative (C12), jamais chargée"],
+  ["github.com", "licence de core-js citée par pdf.js et nom de producteur de pdf-lib (C12), jamais chargés"],
+  ["ns.adobe.com", "espaces de noms XFA et XMP comparés comme chaînes par pdf.js (C12), jamais chargés"],
+  ["www.xfa.org", "espaces de noms XFA comparés comme chaînes par pdf.js (C12), jamais chargés"],
+]);
 // Schéma explicite (insensible à la casse) ou `//hôte` sans schéma (précédé ni de « : », ni d'un caractère de mot, ni de « / »).
 const URL_RE = /(?:\b(?:https?|wss?):\/\/|(?<![:\w/])\/\/)([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/gi;
 const FORBIDDEN_TOKENS = new Set(["*", "http:", "https:", "ws:", "wss:", "'unsafe-eval'"]);

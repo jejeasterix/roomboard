@@ -200,6 +200,8 @@ export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElem
 export interface BackdropView {
   readonly asset: string;
   readonly kind: string;
+  /** C12 (PF5) : indice de page à partir de 0 d'un fond `pdf-page` ; null absent ou illisible (entier ≥ 0 attendu). */
+  readonly page: number | null;
   readonly w: number | null;
   readonly h: number | null;
   readonly fit: string;
@@ -272,6 +274,9 @@ export interface CoreDocument {
 
 export interface CoreFactory {
   blank(): CoreDocument;
+  /** C12 (PF6) : une page par taille, fond `pdf-page` d'indice i, asset cité ; aucune étape (D37). Lève le message
+   *  BadAsset, puis BadImage (0 ou plus de PDF_MAX_PAGES pages, taille non finie ou ≤ 0). */
+  fromPdfPages(asset: AssetRef, sizes: readonly PdfPageSize[]): CoreDocument;
   /** Lève une Error lisible si le fichier n'est pas un .roomboard, est plus récent, ou est corrompu. */
   load(bytes: Uint8Array): CoreDocument;
   loadParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
@@ -286,6 +291,15 @@ export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
+/** C12 (PF5) : genre du fond d'une page venue d'un PDF (`PDF_PAGE_KIND` du cœur). */
+export const PDF_PAGE_KIND = "pdf-page";
+/** C12 (PF7, U26) : pages importées d'un PDF au plus (`PDF_MAX_PAGES` du cœur). */
+export const PDF_MAX_PAGES = 500;
+/** C12 (PF6) : taille d'une page PDF en points, après /Rotate et CropBox (viewport de pdf.js à l'échelle 1). */
+export interface PdfPageSize {
+  readonly w: number;
+  readonly h: number;
+}
 /** Fond d'une page neuve, et « Aucune » du pot sur le fond (`DEFAULT_BACKGROUND` de `element.rs`). */
 export const DEFAULT_BACKGROUND = "#ffffff";
 /** Plafond des lignes et des colonnes d'un tableau (BadTable). */

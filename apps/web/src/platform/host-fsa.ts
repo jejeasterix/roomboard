@@ -8,6 +8,8 @@ import {
   IMAGE_EXTENSIONS,
   IMPORT_FILTER,
   RBITEM_EXTENSION,
+  PDF_EXTENSION,
+  PDF_MIME,
   RBITEM_MIME,
   ROOMBOARD_EXTENSION,
   ROOMBOARD_MIME,
@@ -33,13 +35,14 @@ export const FSA_TYPES: readonly PickerType[] = [
   { description: "Document RoomBoard", accept: { [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION] } },
 ];
 
-/** Filtre de « Importer » (R18) : documents RoomBoard et images d'U33. */
+/** Filtre de « Importer » (R18) : documents RoomBoard, PDF (PF3) et images d'U33. */
 export const IMPORT_TYPES: readonly PickerType[] = [
   {
     description: IMPORT_FILTER.name,
     accept: {
       [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION],
       [RBITEM_MIME]: [RBITEM_EXTENSION],
+      [PDF_MIME]: [PDF_EXTENSION],
       "image/*": IMAGE_EXTENSIONS.map((e) => `.${e}`),
     },
   },

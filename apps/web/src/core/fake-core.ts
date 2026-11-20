@@ -48,6 +48,7 @@ import type {
   LevelLines,
   Matrix,
   PageView,
+  PdfPageSize,
   ShapeData,
   StrokeBuilderApi,
   StrokeStyle,
@@ -75,6 +76,8 @@ import {
   NOT_A_DOCUMENT_MESSAGE,
   NOT_A_FRAGMENT_MESSAGE,
   PAGE_HEIGHT,
+  PDF_MAX_PAGES,
+  PDF_PAGE_KIND,
   PAGE_WIDTH,
   TABLE_MAX_LINES,
   UNKNOWN_BOX,
@@ -282,16 +285,20 @@ function assetInfo(assets: ReadonlyMap<string, unknown>, id: string): AssetInfo 
   };
 }
 
+/** Indice de page lisible (PF5), même règle que `page_index` du cœur : entier ≥ 0 tenant en u32. */
+const pageIndexOf = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : null);
+
 /** Fond vu comme par le cœur (K6, K9) : null sans asset conforme ; rect sur la largeur si w et h sont lisibles. */
 function backdropView(raw: RawRecord | null, width: number): BackdropView | null {
   if (raw === null) return null;
-  const { asset, kind, w, h, fit } = raw;
+  const { asset, kind, page, w, h, fit } = raw;
   if (!isAssetId(asset)) return null;
   const bw = finitePositive(w) ? w : null;
   const bh = finitePositive(h) ? h : null;
   return {
     asset,
     kind: typeof kind === "string" ? kind : "",
+    page: pageIndexOf(page),
     w: bw,
     h: bh,
     fit: typeof fit === "string" ? fit : "",
@@ -1459,6 +1466,23 @@ function loadFake(bytes: Uint8Array, expected: "document" | "fragment" = "docume
 
 export const fakeCore: CoreFactory = {
   blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null, background: DEFAULT_BACKGROUND }], assets: new Map() }),
+  // C12 (D37) : état construit d'emblée, comme `blank` ; jamais par SetBackdrop (une étape par page), que le cœur n'emploie pas.
+  fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[]) => {
+    if (!validAsset(asset)) throw new Error(MESSAGES.badAsset);
+    if (sizes.length === 0 || sizes.length > PDF_MAX_PAGES || sizes.some((s) => !positive(s.w) || !positive(s.h))) {
+      throw new Error(MESSAGES.badImage);
+    }
+    const assets = new Map<string, unknown>();
+    putMeta(assets, asset);
+    const pages = sizes.map((s, i) => ({
+      id: newId(),
+      elements: [],
+      backdrop: { asset: asset.id, kind: PDF_PAGE_KIND, page: i, w: s.w, h: s.h, fit: "width" },
+      grid: null,
+      background: DEFAULT_BACKGROUND,
+    }));
+    return new FakeDocument({ pages, assets });
+  },
   load: (bytes: Uint8Array) => loadFake(bytes),
   loadParts: (manifest: Uint8Array, ybin: Uint8Array) => {
     void manifest;

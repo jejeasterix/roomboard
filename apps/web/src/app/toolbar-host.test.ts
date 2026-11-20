@@ -9,7 +9,7 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
     fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
-  const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
+  const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), exportPdf: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
   return { engine, t, host };
 }
@@ -203,5 +203,18 @@ describe("hôte de la barre : C3", () => {
     host.selection("ungroup");
     host.selection("export");
     expect(vi.mocked((t as unknown as { selection: (a: string) => void }).selection).mock.calls).toEqual([["ungroup"], ["export"]]);
+  });
+});
+
+describe("barre : Exporter en PDF (C12, PF19)", () => {
+  it("export-pdf → exportPdf()", () => {
+    const { t, host } = setup();
+    host.runAction("export-pdf");
+    expect(vi.mocked((t as unknown as { exportPdf: () => void }).exportPdf)).toHaveBeenCalledTimes(1);
+    expect(Object.hasOwn(ACTIONS, "export-pdf")).toBe(true);
+  });
+  it("sans exportPdf (hôte partiel) : rien, aucune erreur (PC9)", () => {
+    const t = { engine: () => ({}), runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
+    expect(() => createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!).runAction("export-pdf")).not.toThrow();
   });
 });
