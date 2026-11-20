@@ -14,6 +14,8 @@ const base: EngineState = {
   pageCount: 1,
   selection: [],
   selectionBounds: null,
+  selectionUnits: 0,
+  selectionGrouped: false,
   elementCount: 0,
   version: 0,
   error: null,
@@ -33,8 +35,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -53,5 +55,12 @@ describe("stageTags (C10b, F29)", () => {
   it("tableMerges, tableShades : comptes de la page montrée en texte", () => {
     const t = stageTags({ ...base, tableMerges: 2, tableShades: 3 });
     expect([t.tableMerges, t.tableShades]).toEqual(["2", "3"]);
+  });
+});
+
+describe("stageTags (C3)", () => {
+  it("units et grouped (PC9)", () => {
+    expect(stageTags({ ...base, selection: ["a", "b", "c"], selectionUnits: 1, selectionGrouped: true })).toMatchObject({ units: "1", grouped: "1" });
+    expect(stageTags(base)).toMatchObject({ units: "0", grouped: "0" });
   });
 });
