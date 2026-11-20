@@ -179,6 +179,14 @@ export function App(props: AppProps): JSX.Element {
           <ProfileMenu
             profiles={() => props.store.list()}
             activeId={() => profile().id}
+            canResetCurrent={() => false}
+            canRemove={() => false}
+            edit={() => undefined}
+            importFile={() => undefined}
+            exportActive={() => undefined}
+            resetCurrent={() => undefined}
+            remove={() => undefined}
+            resetAll={() => undefined}
             choose={(id) => {
               props.active.choose(id);
               setPanel(null);
