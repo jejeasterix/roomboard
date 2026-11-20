@@ -4,8 +4,8 @@ import type { CoreDocument } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
-import { createContainerIO } from "./container-io";
-import { createFragmentOps, MISSING_ITEMS_MESSAGE, SELECTION_NAME, TAB_GONE_MESSAGE, UNREAD_ITEMS_MESSAGE } from "./fragments";
+import { createContainerIO, type ContainerIO } from "./container-io";
+import { createFragmentOps, EMPTY_ITEMS_MESSAGE, MISSING_EXPORT_MESSAGE, MISSING_ITEMS_MESSAGE, SELECTION_NAME, TAB_GONE_MESSAGE, UNREAD_ITEMS_MESSAGE } from "./fragments";
 import type { TabSession } from "./workspace";
 
 const ID = "ab".repeat(32);
@@ -185,5 +185,74 @@ describe("opérations sur la sélection (DAZ3)", () => {
     const stripped = fakeCore.loadFragmentParts(m as never, ybin).saveFragment(NOW, "0.1.0", "x");
     expect(await ops.insert(dst.tab, stripped, "x.rbitem", { x: 100, y: 50 })).toBe(true);
     expect(centre(dst.doc, dst.doc.elementIds(dst.doc.pageIds()[0]!))).toEqual([100, 50]);
+  });
+
+  it("encodeSelection : une autre erreur que « image absente » remonte telle quelle, sans avis de copie", async () => {
+    const said: string[] = [];
+    const io: ContainerIO = {
+      encode: async () => { throw new CodecUnavailableError(new Error("module absent")); },
+      read: async () => null,
+    };
+    const ops = createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say: async (m) => void said.push(m), alive: () => true });
+    const src = tabOf();
+    src.select([rectIn(src.doc, 0, 0, 10, 10)]);
+    await expect(ops.encodeSelection(src.tab)).rejects.toBeInstanceOf(CodecUnavailableError);
+    expect(said).toEqual([]);
+  });
+
+  it("encodeSelection à l'export : image absente dite « exportée », pas « copiée »", async () => {
+    const { ops, said } = opsOf();
+    const src = tabOf();
+    const i = src.doc.apply({ type: "AddImage", page: src.doc.pageIds()[0]!, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
+    src.select([i]);
+    expect(await ops.encodeSelection(src.tab, "export")).toBeNull();
+    expect(said).toEqual([MISSING_EXPORT_MESSAGE]);
+    expect(MISSING_EXPORT_MESSAGE).toContain("exporté");
+  });
+
+  it("index de cascade : deux objets insérés avec 0 puis 1 se décalent de 24 px, sans toucher à la cascade du collage", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    src.select([rectIn(src.doc, 0, 0, 100, 100)]);
+    const bytes = (await ops.encodeSelection(src.tab))!;
+    const dst = tabOf();
+    expect(await ops.insert(dst.tab, bytes, "a.rbitem", null, 0)).toBe(true);
+    expect(await ops.insert(dst.tab, bytes, "b.rbitem", null, 1)).toBe(true);
+    expect(await ops.insert(dst.tab, bytes, "presse-papiers", null)).toBe(true); // collage : premier du contenu, rang 0
+    const ids = dst.doc.elementIds(dst.doc.pageIds()[0]!);
+    const c = ids.map((id) => centre(dst.doc, [id]));
+    expect([c[1]![0]! - c[0]![0]!, c[1]![1]! - c[0]![1]!]).toEqual([24, 24]);
+    expect(c[2]).toEqual(c[0]);
+  });
+
+  it("fragment sans élément : avis, issue « empty », rien inséré", async () => {
+    const { ops, said } = opsOf();
+    const empty = fakeCore.blank();
+    const bytes = empty.extract(empty.pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x");
+    const dst = tabOf();
+    expect(await ops.insertOutcome(dst.tab, bytes, "x.rbitem", null)).toBe("empty");
+    expect(said).toEqual([`x.rbitem : ${EMPTY_ITEMS_MESSAGE}`]);
+    expect(await ops.insert(dst.tab, bytes, "x.rbitem", null)).toBe(false);
+  });
+
+  it("assets adoptés seulement après les contrôles : fragment vide, rien n'entre dans le magasin", async () => {
+    const readAssets = createAssetStore(async () => ID);
+    await readAssets.put(new Blob(["x"]));
+    const doc = fakeCore.blank();
+    (doc as unknown as { citedAssets: () => { id: string; mime: string }[] }).citedAssets = () => [{ id: ID, mime: "image/png" }];
+    const io: ContainerIO = { encode: async () => new Uint8Array(), read: async () => ({ doc, assets: readAssets, unread: false }) };
+    const ops = createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say: async () => undefined, alive: () => true });
+    const dst = tabOf();
+    expect(await ops.insert(dst.tab, new Uint8Array([1]), "x.rbitem", null)).toBe(false);
+    expect(dst.assets.has(ID)).toBe(false);
+  });
+
+  it("fragment non lu en repli (module absent) : un seul avis", async () => {
+    const { ops, said } = opsOf(memoryCodec());
+    const s = fakeCore.blank();
+    const i = s.apply({ type: "AddImage", page: s.pageIds()[0]!, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
+    const json = s.extract(s.pageIds()[0]!, [i]).saveFragment(NOW, "0.1.0", "x");
+    expect(await ops.insert(tabOf().tab, json, "x.rbitem", null)).toBe(false);
+    expect(said).toHaveLength(1);
   });
 });

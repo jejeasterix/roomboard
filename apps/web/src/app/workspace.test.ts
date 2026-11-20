@@ -81,6 +81,11 @@ function fakeSession(doc: CoreDocument): FakeBoard {
       },
       insertFragment: (src: CoreDocument, dx: number, dy: number) => doc.insertFragment(src, doc.pageIds()[0] ?? "", dx, dy),
       insertPages: (src: CoreDocument) => doc.insertPages(src, doc.pageIds()[0] ?? ""),
+      deleteElements: vi.fn((ids: string[]) => {
+        const c = doc.apply({ type: "Delete", ids });
+        for (const cb of cbs) cb({ version: doc.version() });
+        return c;
+      }),
       group: vi.fn(() => true),
       ungroup: vi.fn(() => true),
       camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
@@ -880,6 +885,59 @@ describe("espace de travail — C3", () => {
     expect(await ws.openDocument({ name: "x.roomboard", bytes, target: null })).toBe(false);
     expect(ws.tabs.list()).toHaveLength(1);
     expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.roomboard) : ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page");
+  });
+
+  it("couper passe par le moteur (même chemin que Suppr, Ctrl+Z resélectionne)", async () => {
+    const ws = await setupWorkspace();
+    const tab = ws.active();
+    const a = rect(tab, 0);
+    selectAll(tab);
+    await ws.copySelection(true);
+    const e = tab.board.engine as unknown as { deleteElements: ReturnType<typeof vi.fn> };
+    expect(e.deleteElements).toHaveBeenCalledWith([a]);
+  });
+
+  it("insérer des pages : l'onglet cible est celui d'avant la boîte d'ouverture (R3)", async () => {
+    const ws = await setupWorkspace();
+    const origin = ws.active();
+    const src = fakeCore.blank();
+    src.apply({ type: "AddPage", after: src.pageIds()[0]! });
+    host.open = async () => {
+      await ws.newBlank(); // l'utilisateur change d'onglet pendant la boîte
+      return { name: "b.roomboard", bytes: src.save(NOW, "0.1.0"), target: { kind: "download", name: "b.roomboard" } };
+    };
+    expect(await ws.insertPages()).toBe(true);
+    expect(origin.board.doc.pageIds()).toHaveLength(3);
+    expect(ws.active().board.doc.pageIds()).toHaveLength(1);
+  });
+
+  it("deux .rbitem importés sans point : décalés de 24 px (cascade), nom du fichier dans les avis", async () => {
+    const ws = await setupWorkspace();
+    const s = fakeCore.blank();
+    const sp = s.pageIds()[0]!;
+    const x = s.apply({ type: "AddShape", page: sp, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!;
+    const ybin = s.extract(sp, [x]).saveFragment(NOW, "0.1.0", "x");
+    codec.read.mockResolvedValue({ manifest: new Uint8Array(), ybin, assets: [], warnings: [] });
+    const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0]);
+    const r = await ws.importFiles([plainFile("a.rbitem", zip), plainFile("b.rbitem", zip)]);
+    expect(r.inserted).toEqual(["a.rbitem", "b.rbitem"]);
+    const tab = ws.active();
+    const ids = tab.board.doc.elementIds(tab.board.doc.pageIds()[0]!);
+    const b0 = tab.board.doc.bounds([ids[0]!])!;
+    const b1 = tab.board.doc.bounds([ids[1]!])!;
+    expect([b1.x0 - b0.x0, b1.y0 - b0.y0]).toEqual([24, 24]);
+    // un import n'entame pas la cascade du presse-papiers : le premier collage du même contenu reste au centre
+    codec.read.mockResolvedValue({ manifest: new Uint8Array(), ybin: fakeCore.blank().extract(fakeCore.blank().pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x"), assets: [], warnings: [] });
+    await ws.importFiles([plainFile("vide.rbitem", zip)]);
+    expect(shell.notify.mock.calls.some((c) => String(c[0]).startsWith("vide.rbitem : "))).toBe(true);
+  });
+
+  it("pasteItems : fragment sans élément → avis et « non pris »", async () => {
+    const ws = await setupWorkspace();
+    const e = fakeCore.blank();
+    const bytes = e.extract(e.pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x");
+    expect(await ws.pasteItems(bytes)).toBe(false);
+    expect(shell.notify).toHaveBeenCalledTimes(1);
   });
 
   it("selection(a) : grouper et dégrouper relayés au moteur", async () => {
