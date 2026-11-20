@@ -40,6 +40,8 @@ HC7b-1 `<textarea>` retiré partout (texte et cellules) : U27 le gardait pour le
 
 ## Portes
 ouvertes : — · passées : —
+## Conditions du merge (toutes vraies)
+point de retour origin/main 425d617 · double relecture faite (3 relecteurs), aucun bloquant · aucune tâche bloquée · verifier.sh --e2e OK sur la tête (après T16) · aucun test retiré ni sauté · S1-S6 réussis · PR #17 · pas de CI GitHub (brief) : fusion locale --no-ff puis push
 
 ## Pièges trouvés
 - Prémisses démenties : cellules pas riches côté vue/rendu ; FormatText après SetText = plusieurs étapes d'annulation (d'où champ `spans`) ; s34, s5b, c10a lisent le textarea.
