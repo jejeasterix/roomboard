@@ -1,0 +1,15 @@
+:root {
+  --rb-btn-s: 36px;
+  --rb-btn-m: 44px;
+  --rb-btn-l: 64px;
+}
+.rb-bar { display: flex; gap: 4px; padding: 4px; --rb-btn: var(--rb-btn-m); }
+.rb-bar[data-size="s"] { --rb-btn: var(--rb-btn-s); }
+.rb-bar[data-size="m"] { --rb-btn: var(--rb-btn-m); }
+.rb-bar[data-size="l"] { --rb-btn: var(--rb-btn-l); }
+.rb-bar[data-dock="top"], .rb-bar[data-dock="bottom"] { flex-direction: row; flex-wrap: wrap; }
+.rb-bar[data-dock="left"], .rb-bar[data-dock="right"] { flex-direction: column; flex-wrap: wrap; }
+.rb-bar button { min-width: var(--rb-btn); min-height: var(--rb-btn); }
+.rb-bar button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+.rb-sep { align-self: stretch; border-inline-start: 1px solid #94a3b8; margin: 0 4px; }
+.rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed #94a3b8; min-height: var(--rb-btn); }
