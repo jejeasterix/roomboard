@@ -223,4 +223,19 @@ describe("outil Texte (D14, CL4-3 à CL4-6)", () => {
     tool.leave?.("page");
     expect(runs[0]).toMatchObject({ content: "Salut" });
   });
+
+  it("texte riche rouvert : la hauteur suit les segments prévus après l'édition (S5)", () => {
+    const { doc, page, host, tool, runs, click } = setup();
+    const id = doc.apply({ type: "SetText", page, id: null, x: 100, y: 200, content: "Le chat noir", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }).ids[0] ?? "";
+    doc.apply({ type: "FormatText", id, start: 3, len: 4, attrs: { size: 48, bold: true, underline: true, color: "#ff0000" } });
+    click(150, 210);
+    expect(tool.editing()?.spans).toEqual([
+      { text: "Le ", attrs: {} },
+      { text: "chat", attrs: { size: 48, bold: true, underline: true, color: "#ff0000" } },
+      { text: " noir", attrs: {} },
+    ]);
+    host.text = "Le gros chat noir";
+    tool.requestCommit();
+    expect(runs.at(-1)).toMatchObject({ type: "SetText", id, content: "Le gros chat noir", boxHeight: 60 });
+  });
 });
