@@ -1706,7 +1706,7 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
 
 describe("contrôle de forme C10a (tableau)", () => {
   const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
-  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined }] };
+  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined, spans: [plainSpan("A")] }] };
   it("toElementView : tableau contrôlé, fill absent → null", () => {
     expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null, spans: [plainSpan("A")] }] } });
   });
@@ -1735,7 +1735,7 @@ describe.skipIf(loaded === null)("contrat C10a : vrai module seulement", () => {
 });
 
 // C7b (R7, R16) : `spans` facultatif de SetText et SetTableCell. T12 branche le vrai module (`c7bFactories = factories`).
-const c7bFactories = factories.filter((x) => x.name === "fausse liaison");
+const c7bFactories = factories; // T12 : vrai module branché, contrat C7b commun aux deux fabriques
 const C7B_BOLD: TextAttrs = { bold: true };
 const C7B_ITALIC: TextAttrs = { italic: true };
 const C7B_RED_BOLD: TextAttrs = { bold: true, color: "#dc2626" };
@@ -1880,5 +1880,37 @@ describe.each(c7bFactories)("contrat C7b : $name", ({ f }) => {
     expect(cellSpans(r, id, r0, c0)).toEqual([{ text: "Total", attrs: C7B_BOLD }]);
     r.free();
     d.free();
+  });
+});
+
+describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
+  const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
+  const table = (cell: Record<string, unknown>) => ({
+    color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }],
+    cells: [{ row: "r1", col: "c1", text: "ab", fill: null, ...cell }],
+  });
+
+  it("toElementView : segments de cellule exigés et contrôlés (R16)", () => {
+    expect(toElementView({ ...base, table: table({ spans: [{ text: "ab", attrs: { bold: true } }] }) })).toMatchObject({ table: { cells: [{ spans: [{ text: "ab", attrs: { bold: true } }] }] } });
+    for (const cell of [{}, { spans: [] }, { spans: [{ text: "a", attrs: {} }] }, { spans: [{ text: "ab", attrs: { href: "x" } }] }]) {
+      expect(() => toElementView({ ...base, table: table(cell) }), JSON.stringify(cell)).toThrow("ElementView invalide");
+    }
+  });
+
+  it("SetText et SetTableCell : spans passés nettoyés (clés undefined retirées) ; absents : undefined (R7)", () => {
+    const ok = { pages: ["p1"], ids: ["e1"], removed: [], full: false, version: 1 };
+    const calls: unknown[][] = [];
+    const doc = {
+      set_text: (...args: unknown[]): unknown => (calls.push(args), ok),
+      set_table_cell: (...args: unknown[]): unknown => (calls.push(args), ok),
+    };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    const d = createWasmCore(stub as unknown as WasmModule).blank();
+    const spans = [{ text: "a", attrs: { bold: true, color: undefined } as unknown as TextAttrs }];
+    d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45, spans });
+    d.apply({ type: "SetText", page: "p1", id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+    d.apply({ type: "SetTableCell", id: "t1", row: "r1", col: "c1", content: "a", spans });
+    expect(calls.map((a) => a.at(-1))).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
+    expect((calls[0]?.at(-1) as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
   });
 });

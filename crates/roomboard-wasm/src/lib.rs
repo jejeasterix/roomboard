@@ -1141,6 +1141,7 @@ impl StrokeBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 
     fn hline(y: f32) -> Vec<f32> {
         (0..=40)
@@ -1323,6 +1324,7 @@ mod tests {
                 "#000000",
                 36.0,
                 [600.0, 45.0],
+                None,
             )
             .expect("texte")
             .ids[0]
@@ -1340,6 +1342,7 @@ mod tests {
                 "#000000",
                 36.0,
                 [600.0, 45.0],
+                None,
             )
             .expect("vider");
         assert_eq!(c.removed, vec![id]);
@@ -1613,6 +1616,7 @@ mod tests {
                 "#000000",
                 36.0,
                 [600.0, 45.0],
+                None,
             )
             .expect("texte")
             .ids[0]
@@ -1839,7 +1843,7 @@ mod tests {
             .clone();
         let t = table_of(&d, &id);
         let (r0, c0) = (t.rows[0].id.clone(), t.cols[0].id.clone());
-        d.set_table_cell_inner(&id, [r0.as_str(), c0.as_str()], "Lundi", Some(150.0))
+        d.set_table_cell_inner(&id, [r0.as_str(), c0.as_str()], "Lundi", Some(150.0), None)
             .expect("cellule");
         assert_eq!(table_of(&d, &id).rows[0].height, 150.0);
         d.insert_table_line_inner(&id, false, 2).expect("colonne");
@@ -1877,8 +1881,157 @@ mod tests {
             Err(CommandError::BadTable)
         );
         assert_eq!(
-            d.set_table_cell_inner("absent", ["r", "c"], "x", None),
+            d.set_table_cell_inner("absent", ["r", "c"], "x", None, None),
             Err(CommandError::UnknownElement("absent".into()))
         );
+    }
+
+    // C7b (T12) : segments voulus lus depuis la page ; `set_text_inner` et `set_table_cell_inner` avec `spans`.
+
+    /// Valeur JS simulée en natif, objets et listes compris, lue comme par `serde_wasm_bindgen`.
+    #[derive(Clone)]
+    enum Jv {
+        Null,
+        Bool(bool),
+        Num(f64),
+        Str(&'static str),
+        Map(Vec<(&'static str, Jv)>),
+        List(Vec<Jv>),
+    }
+
+    impl<'de> serde::de::IntoDeserializer<'de> for Jv {
+        type Deserializer = Self;
+
+        fn into_deserializer(self) -> Self {
+            self
+        }
+    }
+
+    impl<'de> serde::Deserializer<'de> for Jv {
+        type Error = serde::de::value::Error;
+
+        fn deserialize_any<V: serde::de::Visitor<'de>>(
+            self,
+            v: V,
+        ) -> Result<V::Value, Self::Error> {
+            match self {
+                Jv::Null => v.visit_unit(),
+                Jv::Bool(b) => v.visit_bool(b),
+                Jv::Num(n) => v.visit_f64(n),
+                Jv::Str(s) => v.visit_str(s),
+                Jv::Map(m) => v.visit_map(serde::de::value::MapDeserializer::new(m.into_iter())),
+                Jv::List(l) => v.visit_seq(serde::de::value::SeqDeserializer::new(l.into_iter())),
+            }
+        }
+
+        fn deserialize_option<V: serde::de::Visitor<'de>>(
+            self,
+            v: V,
+        ) -> Result<V::Value, Self::Error> {
+            match self {
+                Jv::Null => v.visit_none(),
+                _ => v.visit_some(self),
+            }
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf unit unit_struct
+            newtype_struct seq tuple tuple_struct map struct enum identifier ignored_any
+        }
+    }
+
+    fn seg(text: &'static str, attrs: Vec<(&'static str, Jv)>) -> Jv {
+        Jv::Map(vec![("text", Jv::Str(text)), ("attrs", Jv::Map(attrs))])
+    }
+
+    #[test]
+    fn read_spans_input_reads_text_and_attrs() {
+        let got = read_spans_input(Jv::List(vec![
+            seg("Le ", vec![]),
+            seg(
+                "chat",
+                vec![
+                    ("bold", Jv::Bool(true)),
+                    ("color", Jv::Str("#dc2626")),
+                    ("size", Jv::Num(48.0)),
+                    ("italic", Jv::Null),
+                    ("underline", Jv::Bool(false)),
+                ],
+            ),
+        ]));
+        assert_eq!(
+            got,
+            Ok(vec![
+                SpanInput { text: "Le ".into(), attrs: SpanAttrs::default() },
+                SpanInput {
+                    text: "chat".into(),
+                    attrs: SpanAttrs {
+                        bold: true,
+                        color: Some("#dc2626".into()),
+                        size: Some(48.0),
+                        ..SpanAttrs::default()
+                    },
+                },
+            ])
+        );
+        assert_eq!(read_spans_input(Jv::List(vec![])), Ok(vec![]));
+    }
+
+    /// Patron écarté (R7) : `read_patch` lit un objet seul ; ici une liste. Pas une liste, segment incomplet, clé
+    /// inconnue (segment ou attributs), type faux : `BadFormat`, jamais une panique.
+    #[test]
+    fn read_spans_input_refuses_bad_shapes() {
+        for bad in [
+            Jv::Map(vec![("text", Jv::Str("x"))]),
+            Jv::List(vec![Jv::Map(vec![("text", Jv::Str("x"))])]),
+            Jv::List(vec![Jv::Map(vec![("text", Jv::Str("x")), ("attrs", Jv::Map(vec![])), ("href", Jv::Str("y"))])]),
+            Jv::List(vec![seg("x", vec![("href", Jv::Str("y"))])]),
+            Jv::List(vec![seg("x", vec![("bold", Jv::Str("oui"))])]),
+            Jv::List(vec![Jv::Map(vec![("text", Jv::Str("x")), ("attrs", Jv::Num(1.0))])]),
+            Jv::List(vec![Jv::Str("x")]),
+        ] {
+            assert_eq!(read_spans_input(bad), Err(CommandError::BadFormat));
+        }
+    }
+
+    #[test]
+    fn set_text_inner_with_spans_formats_in_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let bold = SpanAttrs { bold: true, ..SpanAttrs::default() };
+        let spans = vec![
+            SpanInput { text: "Le ".into(), attrs: SpanAttrs::default() },
+            SpanInput { text: "chat".into(), attrs: bold.clone() },
+        ];
+        let id = d
+            .set_text_inner(&p, None, [100.0, 200.0], "Le chat", "#000000", 36.0, [600.0, 45.0], Some(spans))
+            .expect("texte")
+            .ids[0]
+            .clone();
+        let t = d.core.element(&id).and_then(|e| e.text).expect("texte");
+        assert_eq!(t.spans[1].attrs, bold);
+        let bad = vec![SpanInput { text: "Le cha".into(), attrs: SpanAttrs::default() }];
+        assert_eq!(
+            d.set_text_inner(&p, Some(id), [0.0, 0.0], "Le chat", "#000000", 36.0, [600.0, 45.0], Some(bad)),
+            Err(CommandError::BadFormat)
+        );
+    }
+
+    #[test]
+    fn set_table_cell_inner_with_spans_formats_the_cell() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = d.core.element(&id).and_then(|e| e.table).expect("vue");
+        let bold = SpanAttrs { bold: true, ..SpanAttrs::default() };
+        let spans = vec![SpanInput { text: "Total".into(), attrs: bold.clone() }];
+        d.set_table_cell_inner(&id, [t.rows[0].id.as_str(), t.cols[0].id.as_str()], "Total", None, Some(spans))
+            .expect("cellule");
+        let cells = d.core.element(&id).and_then(|e| e.table).expect("vue").cells;
+        assert_eq!(cells[0].spans[0].attrs, bold);
     }
 }
