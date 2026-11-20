@@ -81,3 +81,60 @@ describe("grille de choix du tableau (C10a, T6)", () => {
     expect([picker.isOpen(), pick.mock.calls.length]).toEqual([false, 0]);
   });
 });
+
+describe("grille de choix : bornée à la scène, touches consommées (C10a, T14)", () => {
+  /** Tailles posées à la main : happy-dom ne met rien en page. */
+  const sized = (el: HTMLElement, w: number, h: number, axes: readonly ["clientWidth" | "offsetWidth", "clientHeight" | "offsetHeight"]): void => {
+    Object.defineProperty(el, axes[0], { value: w, configurable: true });
+    Object.defineProperty(el, axes[1], { value: h, configurable: true });
+  };
+
+  it("grille 326 × 406 dans une scène 800 × 658 : clic à y = 450 → remontée à 252 ; clic à x = 700 → décalée à 474 ; scène plus petite : en haut à gauche", () => {
+    const { parent, picker, pick } = setup();
+    sized(parent, 800, 658, ["clientWidth", "clientHeight"]);
+    sized(picker.element, 326, 406, ["offsetWidth", "offsetHeight"]);
+    picker.open({ x: 100, y: 450 }, pick);
+    expect([picker.element.style.left, picker.element.style.top]).toEqual(["100px", "252px"]);
+    picker.open({ x: 700, y: 450 }, pick);
+    expect([picker.element.style.left, picker.element.style.top]).toEqual(["474px", "252px"]);
+    picker.open({ x: 100, y: 80 }, pick);
+    expect([picker.element.style.left, picker.element.style.top]).toEqual(["100px", "80px"]);
+    sized(parent, 300, 300, ["clientWidth", "clientHeight"]);
+    picker.open({ x: 100, y: 80 }, pick);
+    expect([picker.element.style.left, picker.element.style.top]).toEqual(["0px", "0px"]);
+  });
+
+  it("Retour arrière, Suppr, Échap pressés dans la grille : ne remontent pas à window (écoute du moteur, main.ts) ; Échap ferme la grille seulement", () => {
+    const { parent, picker, pick, cell } = setup();
+    const seen: string[] = [];
+    const engine = (e: KeyboardEvent): void => {
+      seen.push(e.key);
+    };
+    window.addEventListener("keydown", engine);
+    try {
+      picker.open({ x: 0, y: 0 }, pick);
+      key(cell(1, 1), "Backspace");
+      key(cell(1, 1), "Delete");
+      expect(picker.isOpen()).toBe(true);
+      key(cell(1, 1), "Escape");
+      expect(picker.isOpen()).toBe(false);
+      picker.open({ x: 0, y: 0 }, pick);
+      key(picker.element.querySelector("form input")!, "Escape");
+      expect(picker.isOpen()).toBe(false);
+      expect(seen).toEqual([]);
+      expect(pick).not.toHaveBeenCalled();
+      // Témoin : hors de la grille, la touche arrive bien à window.
+      key(parent, "Delete");
+      expect(seen).toEqual(["Delete"]);
+    } finally {
+      window.removeEventListener("keydown", engine);
+    }
+  });
+
+  it("structure ARIA : pas de role=grid sans rangées ; groupe étiqueté", () => {
+    const { picker } = setup();
+    expect(picker.element.querySelector('[role="grid"]')).toBeNull();
+    const grid = picker.element.querySelector(".rb-table-picker-grid")!;
+    expect([grid.getAttribute("role"), grid.getAttribute("aria-label")]).toEqual(["group", "Taille du tableau"]);
+  });
+});
