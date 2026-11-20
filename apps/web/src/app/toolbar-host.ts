@@ -20,12 +20,14 @@ export interface ToolbarHost {
   textFormat(a: FormatAction): void;
   /** C3 (Z13) : bouton de la rangée Sélection. */
   selection(a: SelectionAction): void;
+  /** C5 (I25) : bouton « Image » de la rangée Sélection : ouvre ou ferme le panneau de retouche. */
+  imagePanel(): void;
 }
 export interface HostTargets {
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
-  toggle(panel: "settings" | "profiles" | "grid"): void;
+  toggle(panel: "settings" | "profiles" | "grid" | "image"): void;
   /** C3 (Z12). */
   insertPages(): void;
   /** C12 (PF19) : « Exporter en PDF… » ; absent (hôte partiel) : sans effet (PC9). */
@@ -88,6 +90,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     tableFill: (fill) => t.engine().tableFill(fill),
     textFormat: (a) => t.engine().textFormat(a),
     selection: (a) => t.selection(a),
+    imagePanel: () => t.toggle("image"),
     setMode(mode) {
       // Tableau : déjà affiché, rien à faire ni à dire. Annotation du bureau : point d'accroche de C11a, sans effet ici.
       if (mode === "board") return;
