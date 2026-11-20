@@ -20,6 +20,7 @@ import type { AssetStore } from "../core/asset-store";
 
 export const NEW_PAGE_WIDTH = 842;
 export const PDF_CUT_MESSAGE = "du contenu hors des pages PDF n'est pas exporté";
+export const PDF_RASTER_MISSING_MESSAGE = "page d'origine du PDF illisible : page vierge à la place";
 export const PDF_RASTER_MESSAGE = "PDF d'origine non recopié : pages en image";
 
 export type PdfLib = Pick<typeof import("pdf-lib"), "PDFDocument" | "degrees">;
@@ -71,6 +72,8 @@ export interface ExportResult {
   readonly annotated: boolean;
   /** Au moins un PDF d'origine refusé par `pdf-lib`, ses pages reprises en image (`PDF_RASTER_MESSAGE`). */
   readonly rasterized: boolean;
+  /** Repli en image sans image pour au moins une page d'origine : page neuve à la place (`PDF_RASTER_MISSING_MESSAGE`). */
+  readonly rasterMissing: boolean;
 }
 
 export type Quarter = 0 | 90 | 180 | 270;
@@ -146,8 +149,8 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
       (a) =>
         lib.PDFDocument.load(new Uint8Array(a), { updateMetadata: false })
           .then((d) => {
-            d.getPageCount(); // en-tête seul : `load` accepte, puis le décompte lève (TypeError « Pages »)
-            return d;
+            // en-tête seul : `load` accepte, puis le décompte lève (TypeError « Pages ») ; 0 page : refus aussi
+            return d.getPageCount() > 0 ? d : null;
           })
           .catch(() => null),
       () => null,
@@ -163,22 +166,31 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
   let cut = false;
   let annotated = false;
   let rasterized = false;
+  let rasterMissing = false;
   for (const [k, p] of snap.entries()) {
     if (!deps.alive()) return null;
     let page: PDFPage | null = null;
     if (p.pdf !== null) {
       const src = await sourceOf(p.pdf.asset);
+      let refused = src === null;
       if (src !== null && p.pdf.index < src.getPageCount()) {
-        const [copied] = await out.copyPages(src, [p.pdf.index]);
-        if (copied === undefined) throw new Error(`page ${p.pdf.index + 1} illisible dans le PDF d'origine`);
-        page = out.addPage(copied);
-      } else if (src === null) {
+        try {
+          const [copied] = await out.copyPages(src, [p.pdf.index]);
+          if (copied === undefined) throw new Error(`page ${p.pdf.index + 1} illisible dans le PDF d'origine`);
+          page = out.addPage(copied);
+        } catch {
+          refused = true; // PDF chargé mais abîmé : même repli qu'un refus de `load`
+        }
+      }
+      if (refused) {
         if (!deps.alive()) return null;
         const raster = await deps.rasterPage(p.pdf.asset, p.pdf.index);
         if (raster !== null) {
           page = out.addPage([raster.w, raster.h]);
           page.drawImage(await out.embedPng(raster.png), { x: 0, y: 0, width: raster.w, height: raster.h });
           rasterized = true;
+        } else {
+          rasterMissing = true; // page d'origine non rendue : page neuve ci-dessous, mais signalée
         }
       }
     }
@@ -219,5 +231,5 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
   }
   const bytes = await out.save({ useObjectStreams: false });
   if (!deps.alive()) return null;
-  return { bytes, pages: pages.length, cut, annotated, rasterized };
+  return { bytes, pages: pages.length, cut, annotated, rasterized, rasterMissing };
 }

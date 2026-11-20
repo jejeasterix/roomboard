@@ -253,6 +253,32 @@ describe("export PDF annoté (PF20, PF21)", () => {
     expect(raster).toHaveBeenCalledTimes(1);
   });
 
+  it("PDF chargé par pdf-lib mais à 0 page : compté comme un refus, repli en image, pas une page neuve (PF20)", async () => {
+    // pdf-lib gonfle lui-même un document vide à 1 page : le « 0 page » vient d'un `load` qui rend un arbre vide.
+    const base = lib();
+    const l: PdfLib = { ...base, PDFDocument: { create: base.PDFDocument.create, load: async () => ({ getPageCount: () => 0 }) } as unknown as PdfLib["PDFDocument"] };
+    const raster = vi.fn(async () => ({ png: PNG_2PX, w: 612, h: 792 }));
+    const r = await done(exportPdf(source(pdfPages(1)), store({ [A]: await sourcePdf() }), deps({ lib: l, rasterPage: raster })));
+    expect([r.pages, r.rasterized, raster.mock.calls.length]).toEqual([1, true, 1]);
+    expect(await sizes(r.bytes)).toEqual([[612, 792]]);
+  });
+
+  it("copyPages qui lève sur un PDF chargé mais abîmé : repli en image, pas « Export impossible » (PF20)", async () => {
+    const base = lib();
+    const damaged = { getPageCount: () => 3 };
+    const l: PdfLib = { ...base, PDFDocument: { ...base.PDFDocument, create: base.PDFDocument.create, load: async () => damaged } as unknown as PdfLib["PDFDocument"] };
+    const raster = vi.fn(async () => ({ png: PNG_2PX, w: 612, h: 792 }));
+    const r = await done(exportPdf(source(pdfPages(1)), store({ [A]: await sourcePdf() }), deps({ lib: l, rasterPage: raster })));
+    expect([r.pages, r.rasterized, raster.mock.calls.length]).toEqual([1, true, 1]);
+  });
+
+  it("repli en image où rasterPage rend null : page blanche signalée par rasterMissing, jamais muette ; PC7 inchangé", async () => {
+    const r = await done(exportPdf(source(pdfPages(1)), store({ [A]: await sourcePdf() }), deps({ lib: lib({ refuse: true }), rasterPage: async () => null })));
+    expect([r.pages, r.rasterized, r.rasterMissing]).toEqual([1, false, true]);
+    const ok = await done(exportPdf(source([{ backdrop: { page: 7 } }]), store({ [A]: await sourcePdf() }), deps()));
+    expect(ok.rasterMissing).toBe(false);
+  });
+
   it("onglet fermé pendant l'export : arrêt propre (null), document jamais relu après la libération (DAPF3, PF19)", async () => {
     let closed = false;
     let readsAfter = 0;
