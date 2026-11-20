@@ -2320,4 +2320,301 @@ pub(crate) mod tests {
             );
         }
     }
+
+    #[test]
+    fn bad_grid_has_readable_message() {
+        assert_eq!(
+            CommandError::BadGrid.to_string(),
+            "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)"
+        );
+    }
+
+    fn grid_level(kind: &str, s: f64, color: &str) -> crate::grid::GridLevelView {
+        crate::grid::GridLevelView {
+            kind: kind.into(),
+            spacing_x: s,
+            spacing_y: s,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            color: color.into(),
+            line: "solid".into(),
+            snap: true,
+            visible: true,
+        }
+    }
+
+    fn grid_of(levels: Vec<crate::grid::GridLevelView>, snap: bool, above: bool) -> GridInput {
+        GridInput {
+            visible: true,
+            snap,
+            above,
+            levels,
+        }
+    }
+
+    fn apply_grid(d: &mut Document, page: &str, grid: Option<GridInput>) -> Result<Change, CommandError> {
+        d.apply(Command::SetGrid {
+            page: page.into(),
+            grid,
+        })
+    }
+
+    fn page_grid(d: &Document, page: &str) -> Option<GridInput> {
+        d.page(page).and_then(|v| v.grid)
+    }
+
+    /// S1, G5 : une transaction, une étape ; annuler retire la grille, rétablir la remet.
+    #[test]
+    fn set_grid_is_one_step_then_undo_redo() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let g = grid_of(
+            vec![grid_level("seyes", 30.24, "#7b68ee"), grid_level("dots", 40.0, "#000000")],
+            true,
+            true,
+        );
+        let w = writes(&d);
+        let c = apply_grid(&mut d, &p, Some(g.clone())).expect("grille");
+        assert_eq!(c.pages, vec![p.clone()]);
+        assert_eq!(w.since(), 1);
+        assert_eq!(page_grid(&d, &p), Some(g.clone()));
+        assert!(d.undo());
+        assert_eq!(page_grid(&d, &p), None);
+        assert!(d.redo());
+        assert_eq!(page_grid(&d, &p), Some(g));
+    }
+
+    /// G5, D38 : même grille, ou rien à retirer : aucune transaction.
+    #[test]
+    fn set_grid_same_value_or_nothing_to_remove_is_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let g = grid_of(vec![grid_level("squares", 40.0, "#cccccc")], true, false);
+        apply_grid(&mut d, &p, Some(g.clone())).expect("grille");
+        let v = d.version();
+        let w = writes(&d);
+        let same = apply_grid(&mut d, &p, Some(g)).expect("même grille");
+        assert_eq!((same.pages.len(), same.version), (0, v));
+        apply_grid(&mut d, &p, None).expect("retrait");
+        let nothing = apply_grid(&mut d, &p, None).expect("rien à retirer");
+        assert_eq!(nothing.pages.len(), 0);
+        assert_eq!(w.since(), 1, "seul le retrait écrit");
+    }
+
+    /// G2 : `BadGrid` sans transaction ; page inconnue ; 16 niveaux et 0 niveau acceptés.
+    #[test]
+    fn set_grid_rejects_bad_input_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let ok = grid_level("squares", 40.0, "#000000");
+        let w = writes(&d);
+        for bad in [
+            crate::grid::GridLevelView {
+                spacing_x: 0.0,
+                ..ok.clone()
+            },
+            crate::grid::GridLevelView {
+                spacing_y: f64::NAN,
+                ..ok.clone()
+            },
+            crate::grid::GridLevelView {
+                origin_x: f64::INFINITY,
+                ..ok.clone()
+            },
+            crate::grid::GridLevelView {
+                kind: String::new(),
+                ..ok.clone()
+            },
+            crate::grid::GridLevelView {
+                color: String::new(),
+                ..ok.clone()
+            },
+            crate::grid::GridLevelView {
+                line: String::new(),
+                ..ok.clone()
+            },
+        ] {
+            assert_eq!(
+                apply_grid(&mut d, &p, Some(grid_of(vec![bad], true, false))),
+                Err(CommandError::BadGrid)
+            );
+        }
+        assert_eq!(
+            apply_grid(&mut d, &p, Some(grid_of(vec![ok.clone(); 17], true, false))),
+            Err(CommandError::BadGrid)
+        );
+        assert_eq!(
+            apply_grid(&mut d, "nulle-part", None),
+            Err(CommandError::UnknownPage("nulle-part".into()))
+        );
+        assert_eq!(w.since(), 0);
+        assert!(!d.can_undo());
+        assert!(apply_grid(&mut d, &p, Some(grid_of(vec![ok; 16], true, false))).is_ok());
+        assert!(apply_grid(&mut d, &p, Some(grid_of(Vec::new(), false, false))).is_ok());
+    }
+
+    /// S1 : A (deux niveaux) remplacée par B en un `SetGrid` ; annuler rend A à l'identique, dans l'ordre.
+    #[test]
+    fn replace_grid_then_undo_restores_both_levels() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = grid_of(
+            vec![grid_level("squares", 40.0, "#111111"), grid_level("dots", 20.0, "#222222")],
+            true,
+            false,
+        );
+        let b = grid_of(vec![grid_level("music", 12.0, "#333333")], false, true);
+        apply_grid(&mut d, &p, Some(a.clone())).expect("A");
+        apply_grid(&mut d, &p, Some(b.clone())).expect("B");
+        assert_eq!(page_grid(&d, &p), Some(b));
+        assert!(d.undo());
+        assert_eq!(page_grid(&d, &p), Some(a));
+    }
+
+    /// G14, S1, GC9 : trente rechargements gardent les octets et la vue (modèle `image_and_backdrop_reload_keep_bytes`).
+    #[test]
+    fn grid_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let g = grid_of(
+            vec![grid_level("seyes", 30.24, "#7b68ee"), grid_level("dots", 40.0, "#000000")],
+            true,
+            true,
+        );
+        apply_grid(&mut d, &p, Some(g.clone())).expect("grille");
+        let file = save(&d, &meta).expect("save");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            assert_eq!(page_grid(&r, &p), Some(g.clone()), "vue au rechargement {i}");
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
+        }
+    }
+
+    /// S2, G4, G14 : niveau `hexagon` et clé inconnue écrits par yrs (version plus récente) : page lisible, gardés aux
+    /// octets près, ni ligne ni accroche ; un `SetGrid` d'un niveau `hexagon` l'écrit aussi.
+    #[test]
+    fn newer_grid_kind_is_kept_drawn_nowhere_and_never_snaps() {
+        use crate::format::{load, save, SaveMeta};
+        use crate::query::Bounds;
+        use yrs::ArrayPrelim;
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = first(&d);
+        let page = {
+            let txn = d.read();
+            d.find_page(&txn, &p).expect("page").1
+        };
+        {
+            let mut txn = d.transact_local();
+            page.insert(
+                &mut txn,
+                "grid",
+                MapPrelim::from([
+                    ("snap", In::Any(Any::Bool(true))),
+                    ("futur", In::from("gardé")),
+                    (
+                        "levels",
+                        In::Array(ArrayPrelim::from(vec![In::Map(MapPrelim::from([
+                            ("kind", In::from("hexagon")),
+                            ("spacingX", In::Any(Any::from(40.0))),
+                            ("spacingY", In::Any(Any::from(40.0))),
+                            ("rayon", In::Any(Any::from(3.0))),
+                        ]))])),
+                    ),
+                ]),
+            );
+        }
+        let g = page_grid(&d, &p).expect("grille lisible");
+        assert_eq!(g.levels.len(), 1);
+        assert_eq!(g.levels[0].kind, "hexagon");
+        assert_eq!((g.visible, g.snap, g.above), (true, true, false));
+        let all = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1920.0,
+            y1: 1080.0,
+        };
+        assert_eq!(d.grid_lines(&p, all, 0.0, 0.0).map(|l| l.levels.len()), Some(0));
+        assert_eq!(d.snap_point(&p, 13.0, 17.0), None);
+        let file = save(&d, &meta).expect("save");
+        let r = load(&file).expect("load");
+        assert!(save(&r, &meta).expect("resave") == file, "le niveau inconnu change les octets");
+        assert_eq!(page_grid(&r, &p), Some(g));
+        let hex = grid_of(vec![grid_level("hexagon", 40.0, "#123456")], true, false);
+        apply_grid(&mut d, &p, Some(hex.clone())).expect("hexagon écrit");
+        assert_eq!(page_grid(&d, &p), Some(hex));
+        assert_eq!(d.snap_point(&p, 13.0, 17.0), None);
+    }
+
+    /// G5, HG4 : une page neuve n'a pas de grille ; retirer une page retire la sienne, annuler la remet.
+    #[test]
+    fn new_page_has_no_grid_and_removed_page_takes_its_grid() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        apply_grid(&mut d, &p, Some(grid_of(vec![grid_level("squares", 40.0, "#cccccc")], true, false)))
+            .expect("grille");
+        let q = d
+            .apply(Command::AddPage {
+                after: Some(p.clone()),
+            })
+            .expect("page")
+            .pages[0]
+            .clone();
+        assert_eq!(page_grid(&d, &q), None);
+        d.apply(Command::RemovePage { page: p.clone() }).expect("retrait");
+        assert!(d.page(&p).is_none());
+        assert!(d.undo());
+        assert!(page_grid(&d, &p).is_some());
+    }
+
+    /// G7, HG6, S3 côté cœur : boîte géométrique (forme sans épaisseur) ; brut sans grille, sans élément, coupé.
+    #[test]
+    fn grid_snap_delta_uses_geometric_box() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = d.apply(rect(&p, [13.0, 17.0, 113.0, 77.0])).expect("a").ids[0].clone();
+        let b = d
+            .apply(Command::AddShape {
+                page: p.clone(),
+                shape: ShapeKind::Rect,
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 60.0,
+                style: StrokeStyle {
+                    color: "#000000".into(),
+                    width: 10.0,
+                },
+                fill: None,
+            })
+            .expect("b")
+            .ids[0]
+            .clone();
+        assert_eq!(d.snap_delta(&p, std::slice::from_ref(&a), 52.0, 31.0), (52.0, 31.0), "sans grille");
+        apply_grid(&mut d, &p, Some(grid_of(vec![grid_level("squares", 40.0, "#cccccc")], true, false)))
+            .expect("grille");
+        assert_eq!(d.snap_delta(&p, std::slice::from_ref(&a), 52.0, 31.0), (57.0, 33.0));
+        assert_eq!(
+            d.snap_delta(&p, std::slice::from_ref(&b), 2.0, 3.0),
+            (0.0, 0.0),
+            "boîte (0, 0)-(100, 60), pas le contour épaissi (−5, −5)-(105, 65)"
+        );
+        assert_eq!(d.snap_delta(&p, &[], 52.0, 31.0), (52.0, 31.0));
+        apply_grid(&mut d, &p, Some(grid_of(vec![grid_level("squares", 40.0, "#cccccc")], false, false)))
+            .expect("coupé");
+        assert_eq!(d.snap_delta(&p, &[a], 52.0, 31.0), (52.0, 31.0));
+    }
 }

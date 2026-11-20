@@ -123,3 +123,14 @@ fn socle_fixture_has_two_pages_and_three_kinds() {
     assert_eq!(kinds(&pages[0]), vec!["stroke", "shape", "text"]);
     assert_eq!(kinds(&pages[1]), vec!["stroke"]);
 }
+
+/// C9, S2 : le fichier du socle, écrit avant la grille, s'ouvre sans grille sur ses deux pages.
+#[test]
+fn socle_fixture_has_no_grid() {
+    let doc = load(&socle_bytes()).expect("load");
+    let pages = doc.page_ids();
+    assert_eq!(pages.len(), 2);
+    for p in pages {
+        assert_eq!(doc.page(&p).expect("page").grid, None, "page {p}");
+    }
+}
