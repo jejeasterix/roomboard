@@ -1,5 +1,5 @@
 //! Format natif `.roomboard` (D24, D25, DA3) : ZIP { manifest.json, document.ybin = état Yrs complet en v1 },
-//! dossier `assets/` réservé (vide au socle). Dates des entrées ZIP fixes (1980-01-01) ; l'heure et la version de
+//! dossier `assets/` écrit par `roomboard-formats` (K1). Dates des entrées ZIP fixes (1980-01-01) ; l'heure et la version de
 //! l'application viennent de l'appelant. `formatVersion` = disposition du conteneur ; `schema` = schéma du document.
 use std::io::{Cursor, Read, Write};
 
@@ -9,6 +9,8 @@ use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
 use crate::document::{DecodeError, Document};
 use crate::element::SCHEMA;
+
+pub use zip;
 
 pub const FORMAT: &str = "roomboard";
 pub const FORMAT_VERSION: u32 = 1;
@@ -59,42 +61,12 @@ impl std::fmt::Display for FormatError {
 
 impl std::error::Error for FormatError {}
 
-/// Options de toute entrée écrite : deflate, date DOS fixe (1980-01-01 00:00) — jamais l'heure courante (D25).
-fn options() -> SimpleFileOptions {
-    SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .last_modified_time(DateTime::default())
-}
-
 fn zip_err(e: zip::result::ZipError) -> FormatError {
     FormatError::Corrupt(e.to_string())
 }
 
 fn io_err(e: std::io::Error) -> FormatError {
     FormatError::Corrupt(e.to_string())
-}
-
-/// Enregistre `doc` : `schema` du manifeste recopié de `meta.schema` ; l'heure vient de `meta` (D24).
-pub fn save(doc: &Document, meta: &SaveMeta) -> Result<Vec<u8>, FormatError> {
-    let schema = doc
-        .schema()
-        .ok_or_else(|| FormatError::Corrupt("meta.schema absent".into()))? as u32;
-    let manifest = Manifest {
-        format: FORMAT.into(),
-        format_version: FORMAT_VERSION,
-        schema,
-        app_version: meta.app_version.clone(),
-        created: meta.created.clone().unwrap_or_else(|| meta.now.clone()),
-        modified: meta.now.clone(),
-    };
-    let json =
-        serde_json::to_vec_pretty(&manifest).map_err(|e| FormatError::Corrupt(e.to_string()))?;
-    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
-    w.start_file(MANIFEST, options()).map_err(zip_err)?;
-    w.write_all(&json).map_err(io_err)?;
-    w.start_file(DOCUMENT, options()).map_err(zip_err)?;
-    w.write_all(&doc.encode_v1()).map_err(io_err)?;
-    Ok(w.finish().map_err(zip_err)?.into_inner())
 }
 
 pub fn load(bytes: &[u8]) -> Result<Document, FormatError> {
@@ -108,12 +80,76 @@ fn read_entry(archive: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Option<Vec
     Some(out)
 }
 
-/// Lit un `.roomboard` : `format`, puis `formatVersion`, puis `schema` contrôlés **avant** de décoder
-/// `document.ybin` ; `meta.schema` du document doit égaler le `schema` du manifeste (D24 : désaccord = `Corrupt`).
-pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
-    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| FormatError::NotRoomboard)?;
-    let raw = read_entry(&mut archive, MANIFEST).ok_or(FormatError::NotRoomboard)?;
-    let manifest: Manifest = serde_json::from_slice(&raw)
+/// Les deux entrées du `.roomboard` que seul le cœur écrit et lit (K2) : manifeste JSON et état Yrs v1.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parts {
+    pub manifest: Vec<u8>,
+    pub ybin: Vec<u8>,
+}
+
+/// Archive ouverte, manifeste déjà contrôlé, deux entrées lues (K2, arbitrage I1).
+pub struct Opened<'a> {
+    pub archive: ZipArchive<Cursor<&'a [u8]>>,
+    pub manifest: Manifest,
+    pub parts: Parts,
+}
+
+/// Options de toute entrée écrite : date DOS fixe (1980-01-01 00:00), jamais l'heure courante (D25) ; `stored` pour
+/// un contenu déjà compressé (K12), deflate sinon.
+pub fn entry_options(stored: bool) -> SimpleFileOptions {
+    let method = if stored {
+        CompressionMethod::Stored
+    } else {
+        CompressionMethod::Deflated
+    };
+    SimpleFileOptions::default()
+        .compression_method(method)
+        .last_modified_time(DateTime::default())
+}
+
+/// Manifeste et `document.ybin` de `doc` : `schema` recopié de `meta.schema`, heure venue de `meta` (D24).
+pub fn save_parts(doc: &Document, meta: &SaveMeta) -> Result<Parts, FormatError> {
+    let schema = doc
+        .schema()
+        .ok_or_else(|| FormatError::Corrupt("meta.schema absent".into()))? as u32;
+    let manifest = Manifest {
+        format: FORMAT.into(),
+        format_version: FORMAT_VERSION,
+        schema,
+        app_version: meta.app_version.clone(),
+        created: meta.created.clone().unwrap_or_else(|| meta.now.clone()),
+        modified: meta.now.clone(),
+    };
+    let json =
+        serde_json::to_vec_pretty(&manifest).map_err(|e| FormatError::Corrupt(e.to_string()))?;
+    Ok(Parts {
+        manifest: json,
+        ybin: doc.encode_v1(),
+    })
+}
+
+/// Ouvre une archive neuve et y écrit `manifest.json` puis `document.ybin` ; l'écrivain est rendu ouvert pour que le
+/// conteneur ajoute ses entrées `assets/` (arbitrage B1).
+pub fn write_parts(parts: &Parts) -> Result<ZipWriter<Cursor<Vec<u8>>>, FormatError> {
+    let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+    w.start_file(MANIFEST, entry_options(false))
+        .map_err(zip_err)?;
+    w.write_all(&parts.manifest).map_err(io_err)?;
+    w.start_file(DOCUMENT, entry_options(false))
+        .map_err(zip_err)?;
+    w.write_all(&parts.ybin).map_err(io_err)?;
+    Ok(w)
+}
+
+/// Enregistre `doc` (sortie inchangée depuis le socle).
+pub fn save(doc: &Document, meta: &SaveMeta) -> Result<Vec<u8>, FormatError> {
+    let w = write_parts(&save_parts(doc, meta)?)?;
+    Ok(w.finish().map_err(zip_err)?.into_inner())
+}
+
+/// `format`, puis `formatVersion`, puis `schema` (D24).
+pub fn check_manifest(raw: &[u8]) -> Result<Manifest, FormatError> {
+    let manifest: Manifest = serde_json::from_slice(raw)
         .map_err(|e| FormatError::Corrupt(format!("manifeste illisible : {e}")))?;
     if manifest.format != FORMAT {
         return Err(FormatError::NotRoomboard);
@@ -130,9 +166,30 @@ pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatEr
             supported: SCHEMA,
         });
     }
+    Ok(manifest)
+}
+
+/// Ouvre l'archive, contrôle le manifeste **avant** de chercher `document.ybin`, puis lit `document.ybin`.
+pub fn open(bytes: &[u8]) -> Result<Opened<'_>, FormatError> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(|_| FormatError::NotRoomboard)?;
+    let raw = read_entry(&mut archive, MANIFEST).ok_or(FormatError::NotRoomboard)?;
+    let manifest = check_manifest(&raw)?;
     let ybin = read_entry(&mut archive, DOCUMENT)
         .ok_or_else(|| FormatError::Corrupt(format!("{DOCUMENT} absent")))?;
-    let (manifest, ybin) = migrate(manifest, ybin)?;
+    Ok(Opened {
+        archive,
+        manifest,
+        parts: Parts {
+            manifest: raw,
+            ybin,
+        },
+    })
+}
+
+/// Décode les deux moitiés : manifeste contrôlé, migration, décodage, accord du schéma (D24 : désaccord = `Corrupt`).
+pub fn load_parts(manifest: &[u8], ybin: &[u8]) -> Result<(Document, Manifest), FormatError> {
+    let manifest = check_manifest(manifest)?;
+    let (manifest, ybin) = migrate(manifest, ybin.to_vec())?;
     let doc = Document::from_update_v1(&ybin).map_err(|e| match e {
         DecodeError::Update(m) => FormatError::Corrupt(format!("état illisible : {m}")),
         DecodeError::Schema { found } => FormatError::Corrupt(format!(
@@ -146,6 +203,12 @@ pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatEr
         ));
     }
     Ok((doc, manifest))
+}
+
+/// Lit un `.roomboard` : `open`, puis `load_parts`.
+pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
+    let opened = open(bytes)?;
+    load_parts(&opened.parts.manifest, &opened.parts.ybin)
 }
 
 /// Migration (D24) : appelée pour toute version ≤ la version connue. Rien à migrer en v1 ; une version < 1 n'a
@@ -176,7 +239,7 @@ mod tests {
     fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut w = ZipWriter::new(Cursor::new(Vec::new()));
         for (name, bytes) in entries {
-            w.start_file(*name, options()).expect("entrée");
+            w.start_file(*name, entry_options(false)).expect("entrée");
             w.write_all(bytes).expect("écriture");
         }
         w.finish().expect("fin").into_inner()
@@ -409,6 +472,92 @@ mod tests {
                 date.map(|x| x.to_string())
                     .unwrap_or_else(|| "sans date".into())
             );
+        }
+    }
+
+    #[test]
+    fn save_is_write_parts_of_save_parts() {
+        let d = with_strokes();
+        let parts = save_parts(&d, &meta()).expect("parts");
+        let via = write_parts(&parts)
+            .expect("écrivain")
+            .finish()
+            .expect("fin")
+            .into_inner();
+        assert!(via == save(&d, &meta()).expect("save"));
+    }
+
+    #[test]
+    fn load_parts_reads_save_parts() {
+        let d = with_strokes();
+        let parts = save_parts(&d, &meta()).expect("parts");
+        let (e, m) = load_parts(&parts.manifest, &parts.ybin).expect("load_parts");
+        assert_eq!(e.page_ids(), d.page_ids());
+        assert!(e.encode_v1() == d.encode_v1());
+        assert_eq!((m.format_version, m.schema), (1, 1));
+    }
+
+    #[test]
+    fn open_gives_checked_manifest_and_both_parts() {
+        let d = with_strokes();
+        let file = save(&d, &meta()).expect("save");
+        let o = open(&file).expect("open");
+        assert_eq!(o.parts, save_parts(&d, &meta()).expect("parts"));
+        assert_eq!(o.manifest.format, FORMAT);
+        assert_eq!(o.archive.len(), 2);
+    }
+
+    /// Arbitrage I1 : le manifeste est contrôlé avant de chercher `document.ybin` ; jamais `Corrupt` ici.
+    #[test]
+    fn newer_format_version_without_document_is_newer() {
+        let z = zip_of(&[(MANIFEST, &manifest_json("roomboard", 2, 1))]);
+        let newer = Some(FormatError::NewerVersion {
+            found: 2,
+            supported: 1,
+        });
+        assert_eq!(load(&z).err(), newer);
+        assert_eq!(open(&z).err(), newer);
+    }
+
+    #[test]
+    fn load_parts_checks_manifest_first() {
+        assert_eq!(
+            load_parts(&manifest_json("roomboard", 2, 1), b"").err(),
+            Some(FormatError::NewerVersion {
+                found: 2,
+                supported: 1
+            })
+        );
+        assert_eq!(
+            load_parts(&manifest_json("flipx", 1, 1), b"").err(),
+            Some(FormatError::NotRoomboard)
+        );
+        assert!(matches!(
+            load_parts(b"{", b"").err(),
+            Some(FormatError::Corrupt(_))
+        ));
+        assert!(matches!(
+            load_parts(&manifest_json("roomboard", 1, 1), &[0xff, 0x01]).err(),
+            Some(FormatError::Corrupt(_))
+        ));
+    }
+
+    #[test]
+    fn entry_options_sets_method_and_fixed_date() {
+        let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+        w.start_file("a.png", entry_options(true)).expect("a");
+        w.write_all(&[7u8; 300]).expect("écriture a");
+        w.start_file("b.svg", entry_options(false)).expect("b");
+        w.write_all(&[7u8; 300]).expect("écriture b");
+        let bytes = w.finish().expect("fin").into_inner();
+        let mut a = ZipArchive::new(Cursor::new(bytes.as_slice())).expect("zip");
+        for (name, method) in [
+            ("a.png", CompressionMethod::Stored),
+            ("b.svg", CompressionMethod::Deflated),
+        ] {
+            let f = a.by_name(name).expect("entrée");
+            assert_eq!(f.compression(), method, "{name}");
+            assert!(f.last_modified() == Some(DateTime::default()), "{name}");
         }
     }
 }
