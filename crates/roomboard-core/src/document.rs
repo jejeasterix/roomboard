@@ -1159,7 +1159,10 @@ mod tests {
         use crate::shape::ShapeKind;
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        let pen = StrokeStyle { color: "#000000".into(), width: 4.0 };
+        let pen = StrokeStyle {
+            color: "#000000".into(),
+            width: 4.0,
+        };
         for kind in KNOWN_KINDS {
             let cmd = match kind {
                 "stroke" => Command::CommitStroke {
@@ -1214,7 +1217,11 @@ mod tests {
                 other => panic!("kind sans fabrique : {other} (ajouter sa commande ici, son bras dans element() et element_geom)"),
             };
             let id = d.apply(cmd).expect(kind).ids[0].clone();
-            assert_eq!(d.element(&id).map(|v| v.kind), Some(kind.to_string()), "vue de {kind}");
+            assert_eq!(
+                d.element(&id).map(|v| v.kind),
+                Some(kind.to_string()),
+                "vue de {kind}"
+            );
             assert!(d.bounds(&[id]).is_some(), "boîte de {kind}");
         }
     }

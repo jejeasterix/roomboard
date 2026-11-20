@@ -8,7 +8,17 @@ use roomboard_core::document::Document;
 use roomboard_core::format::{load, save, SaveMeta};
 
 const TEXTS: [&str; 12] = [
-    "Lundi", "Mardi", "Mercredi", "Jeudi", "Maths", "Français", "Histoire", "Sport", "Anglais", "Musique", "Dessin",
+    "Lundi",
+    "Mardi",
+    "Mercredi",
+    "Jeudi",
+    "Maths",
+    "Français",
+    "Histoire",
+    "Sport",
+    "Anglais",
+    "Musique",
+    "Dessin",
     "Sciences",
 ];
 
@@ -96,6 +106,9 @@ fn table_fixture_reads_as_a_filled_4x3() {
         .expect("un tableau");
     let t = d.element(&id).and_then(|v| v.table).expect("vue");
     assert_eq!((t.cols.len(), t.rows.len()), (4, 3));
-    assert_eq!(t.cells.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), TEXTS.to_vec());
+    assert_eq!(
+        t.cells.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+        TEXTS.to_vec()
+    );
     assert_eq!(t.cells[0].fill.as_deref(), Some("#fef08a"));
 }
