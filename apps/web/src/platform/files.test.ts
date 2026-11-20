@@ -52,3 +52,11 @@ describe("contrat des fichiers (D26, DA8)", () => {
     expect(FILE_FILTER).toEqual({ name: "Document RoomBoard", extensions: ["roomboard"] });
   });
 });
+
+describe("FileHost : onDrop (T86)", () => {
+  it("le type FileHost exige onDrop", () => {
+    // @ts-expect-error onDrop manque
+    const h: import("./files").FileHost = { kind: "repli", open: async () => null, save: async () => null };
+    expect(h.kind).toBe("repli");
+  });
+});

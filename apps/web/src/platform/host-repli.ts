@@ -11,6 +11,7 @@ import {
   type OpenedFile,
   type SaveTarget,
 } from "./files";
+import { listenWebDrop, type DropTargetLike } from "./drop-web";
 
 export interface PickedFile {
   readonly name: string;
@@ -31,9 +32,10 @@ export const FALLBACK_ACCEPT = `${ROOMBOARD_EXTENSION},${ROOMBOARD_MIME}`;
 /** Délai avant de révoquer l'URL du téléchargement : le navigateur a commencé à lire. */
 const REVOKE_MS = 1000;
 
-export function createFallbackHost(d: FallbackDeps): FileHost {
+export function createFallbackHost(d: FallbackDeps, dropTarget: DropTargetLike | null = null): FileHost {
   return {
     kind: "repli",
+    onDrop: (h) => listenWebDrop(dropTarget, h),
     async open(): Promise<OpenedFile | null> {
       const f = await d.pickFile(FALLBACK_ACCEPT);
       if (f === null) return null;
