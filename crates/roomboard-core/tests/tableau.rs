@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use roomboard_core::commands::Command;
 use roomboard_core::document::Document;
 use roomboard_core::format::{load, save, SaveMeta};
+use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 
 const TEXTS: [&str; 12] = [
     "Lundi",
@@ -111,4 +112,45 @@ fn table_fixture_reads_as_a_filled_4x3() {
         TEXTS.to_vec()
     );
     assert_eq!(t.cells[0].fill.as_deref(), Some("#fef08a"));
+}
+
+/// C7b (S1, R16) : une cellule mise en forme survit à l'aller-retour `.roomboard`.
+#[test]
+fn rich_cell_round_trips() {
+    let mut d = Document::blank();
+    let page = d.page_ids()[0].clone();
+    let id = d
+        .apply(Command::AddTable {
+            page,
+            x: 0.0,
+            y: 0.0,
+            cols: 2,
+            rows: 2,
+            col_width: 240.0,
+            row_height: 64.0,
+            color: "#000000".into(),
+            size: 36.0,
+        })
+        .expect("tableau")
+        .ids[0]
+        .clone();
+    let t = d.element(&id).and_then(|v| v.table).expect("vue");
+    let bold = SpanAttrs { bold: true, ..SpanAttrs::default() };
+    d.apply(Command::SetTableCell {
+        id: id.clone(),
+        row: t.rows[0].id.clone(),
+        col: t.cols[0].id.clone(),
+        content: "aaTotal".into(),
+        row_height: None,
+        spans: Some(vec![
+            SpanInput { text: "a".into(), attrs: SpanAttrs::default() },
+            SpanInput { text: "a".into(), attrs: bold.clone() },
+            SpanInput { text: "Total".into(), attrs: bold.clone() },
+        ]),
+    })
+    .expect("cellule");
+    let meta = SaveMeta { app_version: "0.1.0".into(), now: "2026-11-20T00:00:00Z".into(), created: None };
+    let back = load(&save(&d, &meta).expect("save")).expect("load");
+    let cell = back.element(&id).and_then(|v| v.table).expect("vue").cells.remove(0);
+    assert_eq!(cell.spans.iter().map(|s| (s.text.as_str(), s.attrs.bold)).collect::<Vec<_>>(), vec![("a", false), ("aTotal", true)]);
 }
