@@ -1041,10 +1041,15 @@ impl Document {
 
     /// Couples `(w, h)` lus bout à bout ; une longueur impaire est refusée en `BadImage`.
     pub fn from_pdf_pages_inner(asset: AssetRef, sizes: &[f64]) -> Result<Document, CommandError> {
-        if sizes.len() % 2 != 0 {
+        if !sizes.len().is_multiple_of(2) {
             return Err(CommandError::BadImage);
         }
-        let pairs: Vec<(f64, f64)> = sizes.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+        let pairs: Vec<(f64, f64)> = sizes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| (c[0], c[1]))
+            .collect();
         CoreDocument::from_pdf_pages(&asset, &pairs).map(|core| Self::wrap(core, None))
     }
 
