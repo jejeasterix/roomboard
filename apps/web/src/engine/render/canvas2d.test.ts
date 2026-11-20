@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ElementView, GridInput, GridLevel, TextElement } from "../../core/api";
+import type { ElementView, GridInput, GridLevel, TableElement, TextElement } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY } from "../camera";
@@ -518,5 +518,63 @@ describe("images et éléments inconnus (R16, U3)", () => {
     const scene = sceneOf(image, { bitmap: () => bmp }, new Set(["i"]), { ...EMPTY_OVERLAY, ghosts: [{ id: "i", matrix: [1, 0, 0, 1, 30, 0] }] });
     expect(scene.images).toHaveLength(1);
     expect(scene.log).toContain("transform 1,0,0,1,30,0");
+  });
+});
+
+describe("Canvas2DRenderer — tableau (C10a)", () => {
+  const TABLE: TableElement = {
+    id: "tb",
+    kind: "table",
+    transform: [1, 0, 0, 1, 10, 20],
+    table: {
+      color: "#000000",
+      size: 36,
+      cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }],
+      rows: [{ id: "r1", height: 64 }],
+      cells: [{ row: "r1", col: "c1", text: "Lundi", fill: null }, { row: "r1", col: "c2", text: "", fill: "#fef08a" }],
+    },
+  };
+  function draw(els: ElementView[]) {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => els.find((e) => e.id === id) ?? null, outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, {});
+    r.resize(100, 100, 1);
+    const page = { id: "p", elementIds: els.map((e) => e.id) };
+    r.drawScene(page, IDENTITY, new Set());
+    return { r, scene, page };
+  }
+
+  it("fonds et traits sous la matrice du tableau, puis le texte dans la cellule (découpe, coin intérieur)", () => {
+    const { scene } = draw([TABLE]);
+    expect(scene.log).toContain("transform 1,0,0,1,10,20");
+    expect(scene.rects).toContainEqual([240, 0, 240, 64]);
+    const i = scene.log.indexOf("transform 1,0,0,1,8,8");
+    expect(i).toBeGreaterThan(scene.log.indexOf("clip"));
+    expect(scene.log.indexOf("fillText Lundi 0,0")).toBeGreaterThan(i);
+  });
+
+  it("mêmes fillText qu'un texte d'un segment (B1) : police, couleur, ligne de base", () => {
+    const text: TextElement = {
+      id: "tx",
+      kind: "text",
+      transform: [1, 0, 0, 1, 0, 0],
+      style: { color: "#000000", width: 0 },
+      text: { content: "Lundi", size: 36, boxWidth: 224, boxHeight: 45, spans: [{ text: "Lundi", attrs: {} }] },
+    };
+    const a = draw([TABLE]).scene.texts;
+    const b = draw([text]).scene.texts;
+    expect(a).toEqual(b);
+    expect(a).toEqual([{ text: "Lundi", x: 0, y: 0, font: '36px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#000000", baseline: "top" }]);
+  });
+
+  it("cache des lignes de cellules : remesuré seulement après invalidate (Change)", () => {
+    const { r, scene, page } = draw([TABLE]);
+    const first = scene.measures;
+    expect(first).toBeGreaterThan(0);
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBe(first);
+    r.invalidate({ pages: [], ids: ["tb"], removed: [], full: false, version: 2 });
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBeGreaterThan(first);
   });
 });
