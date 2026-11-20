@@ -73,3 +73,16 @@ fn image_c2_fixture_opens_raw_and_resaves_identically() {
         "fichier d'avant C5 réenregistré à l'identique"
     );
 }
+
+/// C5 (I4, I32) : l'image d'avant C5 n'a aucun réglage ; sa boîte affichée est sa taille source.
+#[test]
+fn image_c2_fixture_has_no_image_params() {
+    let d = load(&fixture_bytes()).expect("load");
+    let p = d.page_ids()[0].clone();
+    let i = d
+        .element(&d.element_ids(&p)[0])
+        .and_then(|v| v.image)
+        .expect("image");
+    assert_eq!(i.params(), roomboard_core::image::ImageParams::default());
+    assert_eq!(i.display_size(), (200.0, 150.0));
+}
