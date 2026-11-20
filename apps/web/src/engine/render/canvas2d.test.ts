@@ -1,47 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { ElementView } from "../../core/api";
+import type { ElementView, TextElement } from "../../core/api";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
 import { Canvas2DRenderer, createCanvas2DRenderer, tracePolygons } from "./canvas2d";
+import { asCtx, FakeCtx } from "./fake-ctx";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { SceneSource } from "./renderer";
-
-class FakeCtx {
-  readonly canvas = { width: 0, height: 0 };
-  readonly log: string[] = [];
-  fillStyle = "";
-  strokeStyle = "";
-  lineWidth = 1;
-  lineCap = "butt";
-  lineJoin = "miter";
-  save(): void { this.log.push("save"); }
-  restore(): void { this.log.push("restore"); }
-  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void {
-    this.log.push(`setTransform ${[a, b, c, d, e, f].map((v) => +v.toFixed(4)).join(",")}`);
-  }
-  transform(a: number, b: number, c: number, d: number, e: number, f: number): void {
-    this.log.push(`transform ${[a, b, c, d, e, f].join(",")}`);
-  }
-  clearRect(): void { this.log.push("clearRect"); }
-  readonly rects: number[][] = [];
-  fillRect(x = 0, y = 0, w = 0, h = 0): void { this.rects.push([x, y, w, h]); this.log.push(`fillRect ${this.fillStyle}`); }
-  beginPath(): void { this.log.push("beginPath"); }
-  moveTo(): void { this.log.push("moveTo"); }
-  lineTo(): void { this.log.push("lineTo"); }
-  closePath(): void { this.log.push("closePath"); }
-  rect(): void { this.log.push("rect"); }
-  clip(): void { this.log.push("clip"); }
-  fill(): void { this.log.push(`fill ${this.fillStyle}`); }
-  stroke(): void { this.log.push(`stroke ${this.strokeStyle} ${this.lineWidth}`); }
-  font = "";
-  textBaseline = "alphabetic";
-  ellipse(): void { this.log.push("ellipse"); }
-  fillText(text: string, x: number, y: number): void { this.log.push(`fillText ${text} ${x},${y}`); }
-  measures = 0;
-  measureText(text: string): { width: number } { this.measures++; return { width: text.length * 10 }; }
-  setLineDash(d: number[]): void { this.log.push(`setLineDash ${d.join(",")}`); }
-}
 
 class FakePath {
   moves = 0;
@@ -52,7 +17,6 @@ class FakePath {
   closePath(): void { this.closes++; }
 }
 
-const asCtx = (f: FakeCtx): CanvasRenderingContext2D => f as unknown as CanvasRenderingContext2D;
 const square = new Float32Array([0, 0, 10, 0, 10, 10, 0, 10]);
 
 function make(outlines: Record<string, Float32Array | null>) {
@@ -191,7 +155,7 @@ const VIEWS: Record<string, ElementView> = {
   r: { id: "r", kind: "shape", transform: [1, 0, 0, 1, 10, 20], style: { color: "#1e40af", width: 4 }, shape: { shape: "rect", w: 200, h: 100, fill: null } },
   e: { id: "e", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "ellipse", w: 50, h: 30, fill: "#ff0000" } },
   f: { id: "f", kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color: "#1e40af", width: 4 }, shape: { shape: "arrow", w: 100, h: 0, fill: null } },
-  t: { id: "t", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text: { content: "un deux\ntrois", size: 20, boxWidth: 1000, boxHeight: 50 } },
+  t: { id: "t", kind: "text", transform: [1, 0, 0, 1, 0, 0], style: { color: "#000000", width: 0 }, text: { content: "un deux\ntrois", size: 20, boxWidth: 1000, boxHeight: 50, spans: [{ text: "un deux\ntrois", attrs: {} }] } },
 };
 
 function makeViews() {
@@ -282,6 +246,70 @@ describe("Canvas2DRenderer — lot 4 (formes, texte, calque)", () => {
     r.drawScene(page, IDENTITY, new Set());
     expect(scene.measures).toBe(first);
     r.invalidate({ pages: [], ids: ["t"], removed: [], full: false, version: 2 });
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBeGreaterThan(first);
+  });
+});
+
+const RICH: TextElement = {
+  id: "rt",
+  kind: "text",
+  transform: [1, 0, 0, 1, 0, 0],
+  style: { color: "#000000", width: 0 },
+  text: {
+    content: "Le chat noir",
+    size: 36,
+    boxWidth: 1000,
+    boxHeight: 60,
+    spans: [{ text: "Le ", attrs: {} }, { text: "chat", attrs: { size: 48, bold: true, underline: true, color: "#ff0000" } }, { text: " noir", attrs: {} }],
+  },
+};
+
+describe("Canvas2DRenderer — C7 (texte par segments)", () => {
+  const draw = (view: ElementView): FakeCtx => {
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: (id) => (id === view.id ? view : null), outline: () => null });
+    r.drawScene({ id: "p", elementIds: [view.id] }, IDENTITY, new Set());
+    return scene;
+  };
+
+  it("S5 : un fillText par segment, police et couleur du segment, ligne de base alignée, souligné sous « chat »", () => {
+    const scene = draw(RICH);
+    const [le, chat, noir] = scene.texts;
+    expect(le).toMatchObject({ text: "Le ", x: 0, font: '36px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#000000", baseline: "top" });
+    expect(le?.y).toBeCloseTo(9.6);
+    expect(chat).toEqual({ text: "chat", x: 30, y: 0, font: 'bold 48px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#ff0000", baseline: "top" });
+    expect(noir).toMatchObject({ text: " noir", x: 70, fill: "#000000" });
+    const underline = scene.rects.at(-1) ?? [];
+    expect(underline[0]).toBe(30);
+    expect(underline[1]).toBeCloseTo(44.16);
+    expect(underline[2]).toBe(40);
+    expect(underline[3]).toBe(3);
+    expect(scene.log.filter((l) => l === "fillRect #ff0000")).toHaveLength(1);
+  });
+
+  it("une ligne d'une seule taille est dessinée comme au socle : même police, même y, aucun souligné", () => {
+    const t = VIEWS["t"];
+    if (!t) throw new Error("vue t");
+    const scene = draw(t);
+    expect(scene.texts).toEqual([
+      { text: "un deux", x: 0, y: 0, font: '20px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#000000", baseline: "top" },
+      { text: "trois", x: 0, y: 25, font: '20px "Atkinson Hyperlegible", system-ui, sans-serif', fill: "#000000", baseline: "top" },
+    ]);
+    const tail = scene.log.slice(scene.log.indexOf("transform 1,0,0,1,0,0"));
+    expect(tail.some((l) => l.startsWith("fillRect"))).toBe(false);
+  });
+
+  it("cache : un changement de segments seul refait la mise en lignes", () => {
+    let view: TextElement = RICH;
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: () => view, outline: () => null });
+    const page = { id: "p", elementIds: ["rt"] };
+    r.drawScene(page, IDENTITY, new Set());
+    const first = scene.measures;
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBe(first);
+    view = { ...RICH, text: { ...RICH.text, spans: [{ text: "Le chat noir", attrs: {} }] } };
     r.drawScene(page, IDENTITY, new Set());
     expect(scene.measures).toBeGreaterThan(first);
   });
