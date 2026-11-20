@@ -314,6 +314,39 @@ describe("Canvas2DRenderer — C7 (texte par segments)", () => {
     expect(scene.measures).toBeGreaterThan(first);
   });
 
+  it("faux contexte en mode navigateur : une couleur illisible est ignorée, la valeur d'avant reste", () => {
+    const strict = new FakeCtx({ browserColors: true });
+    strict.fillStyle = "#abc";
+    strict.fillStyle = "zzz";
+    expect(strict.fillStyle).toBe("#abc");
+    strict.fillStyle = "Red";
+    expect(strict.fillStyle).toBe("Red");
+    const loose = new FakeCtx();
+    loose.fillStyle = "zzz";
+    expect(loose.fillStyle).toBe("zzz");
+  });
+
+  // Discrimine le patron écarté (T12) : `fillStyle = st.color ?? color` laisse au canvas la couleur d'avant quand il
+  // ignore « zzz » (acceptée par T15) : fond de page pour « Le », rouge de « chat » pour « noir ».
+  it("couleur de segment illisible par le canvas : segment et souligné dans la couleur de l'élément", () => {
+    const scene = new FakeCtx({ browserColors: true });
+    const view: TextElement = {
+      ...RICH,
+      text: {
+        ...RICH.text,
+        spans: [
+          { text: "Le ", attrs: { color: "zzz", underline: true } },
+          { text: "chat", attrs: { size: 48, bold: true, underline: true, color: "#ff0000" } },
+          { text: " noir", attrs: { color: "zzz" } },
+        ],
+      },
+    };
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: () => view, outline: () => null });
+    r.drawScene({ id: "p", elementIds: ["rt"] }, IDENTITY, new Set());
+    expect(scene.texts.map((t) => t.fill)).toEqual(["#000000", "#ff0000", "#000000"]);
+    expect(scene.log.filter((l) => l.startsWith("fillRect")).slice(-2)).toEqual(["fillRect #000000", "fillRect #ff0000"]);
+  });
+
   it("socle : une ligne vide émet encore fillText(\"\") à son y", () => {
     const t = VIEWS["t"];
     if (!t || t.kind !== "text") throw new Error("vue t");

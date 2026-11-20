@@ -59,7 +59,7 @@ function toStyle(s: unknown): StrokeStyle {
 /** Attributs d'un segment (C7, T8) : clés connues seules, valeurs déjà normalisées par le cœur ; `undefined` = absent. */
 function toAttrs(a: unknown): TextAttrs {
   if (!isRecord(a)) throw new Error(ELEMENT);
-  const out: { bold?: true; italic?: true; underline?: true; color?: string; size?: number; font?: string } = {};
+  const out: { -readonly [K in keyof TextAttrs]: TextAttrs[K] } = {};
   for (const [k, v] of Object.entries(a)) {
     if (v === undefined) continue;
     switch (k) {
@@ -85,14 +85,19 @@ function toAttrs(a: unknown): TextAttrs {
   return out;
 }
 
-/** Segments d'un texte : au moins un (le cœur rend un segment vide pour un texte vide). */
-function toSpans(v: unknown): TextSpan[] {
+/**
+ * Segments d'un texte : au moins un (le cœur rend un segment vide pour un texte vide), et leurs textes mis bout à bout
+ * redonnent `content` ; sinon le cœur a dérivé.
+ */
+function toSpans(v: unknown, content: string): TextSpan[] {
   if (!Array.isArray(v) || v.length === 0) throw new Error(ELEMENT);
-  return v.map((s: unknown) => {
+  const spans = v.map((s: unknown) => {
     const text = isRecord(s) ? s["text"] : undefined;
     if (!isRecord(s) || typeof text !== "string") throw new Error(ELEMENT);
     return { text, attrs: toAttrs(s["attrs"]) };
   });
+  if (spans.map((s) => s.text).join("") !== content) throw new Error(ELEMENT);
+  return spans;
 }
 
 /** Bornes de FormatText : hors des u32, u32::MAX, que le cœur refuse au contrôle des bornes comme la fausse liaison. */
@@ -127,7 +132,7 @@ export function toElementView(v: unknown): ElementView | null {
       if (typeof content !== "string" || typeof size !== "number" || typeof boxWidth !== "number" || typeof boxHeight !== "number") {
         throw new Error(ELEMENT);
       }
-      return { ...base, kind, style, text: { content, size, boxWidth, boxHeight, spans: toSpans(t["spans"]) } };
+      return { ...base, kind, style, text: { content, size, boxWidth, boxHeight, spans: toSpans(t["spans"], content) } };
     }
     case "image": {
       const i = v["image"];

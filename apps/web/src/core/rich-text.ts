@@ -3,11 +3,12 @@
 // deux. Différence en points de code (`Array.from`), positions de FormatText en unités UTF-16.
 import type { TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 
-const KEYS = ["bold", "italic", "underline", "color", "size", "font"] as const;
+/** Clés des attributs d'un segment (`TextAttrs`), partagées avec le style résolu de `text-layout.ts`. */
+export const TEXT_ATTR_KEYS = ["bold", "italic", "underline", "color", "size", "font"] as const;
 
 export const plainSpans = (content: string): TextSpan[] => [{ text: content, attrs: {} }];
 
-export const sameAttrs = (a: TextAttrs, b: TextAttrs): boolean => KEYS.every((k) => a[k] === b[k]);
+export const sameAttrs = (a: TextAttrs, b: TextAttrs): boolean => TEXT_ATTR_KEYS.every((k) => a[k] === b[k]);
 
 interface Char {
   readonly ch: string;
@@ -52,10 +53,11 @@ export function cleanPatch(patch: TextAttrsPatch): TextAttrsPatch {
 const COLOR = /^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|[A-Za-z]{3,20})$/;
 /** T15 : `#rgb`, `#rrggbb`, `#rrggbbaa`, ou un nom CSS de 3 à 20 lettres ASCII (`valid_color` du cœur). */
 export const validColor = (c: string): boolean => COLOR.test(c);
-/** T15 : 1 à 48 points de code, sans `"`, `\`, `;`, `{`, `}` ni retour à la ligne (`valid_font` du cœur). */
+/** T15 : 1 à 48 points de code, sans `"`, `\`, `;`, `{`, `}` ni caractère de contrôle Unicode (Cc, dont `\n`, `\r`,
+ *  `\f`) : `valid_font` du cœur (T11, T12). */
 export function validFont(f: string): boolean {
   const n = Array.from(f).length;
-  return n >= 1 && n <= 48 && !/["\\;{}\n\r]/.test(f);
+  return n >= 1 && n <= 48 && !/["\\;{}]|\p{Cc}/u.test(f);
 }
 /** Le cœur reçoit `size` en f32 : 1e39 y devient infini. */
 const validSize = (v: number): boolean => {
@@ -66,7 +68,7 @@ const validSize = (v: number): boolean => {
 /** Même règle que `wire_attrs` (liaison) puis `valid_attrs` (cœur) ; à appeler sur un patch nettoyé. */
 export function validPatch(patch: TextAttrsPatch): boolean {
   return Object.entries(patch).every(([k, v]) => {
-    if (v === null) return (KEYS as readonly string[]).includes(k);
+    if (v === null) return (TEXT_ATTR_KEYS as readonly string[]).includes(k);
     switch (k) {
       case "bold":
       case "italic":

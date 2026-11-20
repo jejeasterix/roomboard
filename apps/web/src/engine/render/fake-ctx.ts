@@ -1,5 +1,14 @@
 // Faux contexte 2D des tests (sorti de `canvas2d.test.ts`, comme `fake-gl.ts`) : journal des appels, `measureText` à
 // 10 unités par caractère ; `texts` note chaque fillText avec la police, la couleur et la ligne de base du moment.
+// Par défaut `fillStyle` garde toute chaîne ; `browserColors` imite le navigateur, qui ignore une couleur qu'il ne sait
+// pas lire (la valeur d'avant reste). Reconnues : `#rgb`, `#rrggbb`, `#rrggbbaa` et `NAMED` (pas `rgba()`).
+const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const NAMED = new Set(["black", "white", "red", "green", "blue", "yellow", "orange", "purple", "gray", "grey", "transparent"]);
+const readable = (c: string): boolean => HEX.test(c) || NAMED.has(c.toLowerCase());
+
+export interface FakeCtxOptions {
+  readonly browserColors?: boolean;
+}
 export interface DrawnText {
   readonly text: string;
   readonly x: number;
@@ -12,7 +21,17 @@ export interface DrawnText {
 export class FakeCtx {
   readonly canvas = { width: 0, height: 0 };
   readonly log: string[] = [];
-  fillStyle = "";
+  private readonly browserColors: boolean;
+  private fillValue = "";
+  constructor(opts: FakeCtxOptions = {}) {
+    this.browserColors = opts.browserColors === true;
+  }
+  get fillStyle(): string {
+    return this.fillValue;
+  }
+  set fillStyle(c: string) {
+    if (!this.browserColors || readable(c)) this.fillValue = c;
+  }
   strokeStyle = "";
   lineWidth = 1;
   lineCap = "butt";

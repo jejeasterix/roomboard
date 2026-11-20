@@ -106,7 +106,10 @@ function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], co
       const st = s.style;
       const y = st.size === line.size ? line.top : line.top + (line.size - st.size) * BASELINE_SHIFT;
       ctx.font = textFont(st.size, faceOf(st));
-      ctx.fillStyle = st.color ?? color;
+      // Couleur de l'élément d'abord : le canvas ignore une couleur qu'il ne sait pas lire (T15 accepte tout nom de 3 à
+      // 20 lettres), et `st.color ?? color` laisserait alors celle d'avant (fond de page, segment précédent).
+      ctx.fillStyle = color;
+      if (st.color !== null) ctx.fillStyle = st.color;
       ctx.fillText(s.text, s.x, y);
       if (st.underline) ctx.fillRect(s.x, y + st.size * UNDERLINE_OFFSET, s.width, st.size / 16);
     }
