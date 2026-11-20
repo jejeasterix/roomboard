@@ -1,8 +1,11 @@
 /**
  * Lecture d'un classeur hors de l'instance qui enregistre (C10b, F28, DAB4) : un Worker jetable par lecture charge sa
  * propre instance du module `formats`, lit la première feuille (`SheetReader`), répond `{ grid }` ou `{ error }`, puis
- * est arrêté — après la réponse, l'erreur ou une panique Wasm (`onerror`). Un `panic` de `calamine` (`panic = abort` en
- * wasm32) ne casse donc jamais l'instance de la page qui enregistre le `.roomboard` (HR6). Le Worker est créé par
+ * est arrêté — après la réponse, après `onerror` (échec de chargement du Worker), ou au bout de
+ * `SHEET_WORKER_TIMEOUT_MS` sans réponse (classeur qui fait boucler ou réserver sans fin). Une panique Wasm
+ * (`panic = abort` en wasm32) arrive dans le `catch` du Worker comme `WebAssembly.RuntimeError` (« unreachable ») et
+ * revient en `WORKER_FAILED_MESSAGE` (`workerErrorMessage`) ; elle ne casse jamais l'instance de la page qui enregistre
+ * le `.roomboard` (HR6). Le Worker est créé par
  * l'amorce (`main.ts`, PC20) : aucun test ne résout `sheet-worker.ts` ni `src/wasm-formats/`.
  */
 import type { GridMerge, TableGrid } from "./html-table";
@@ -10,6 +13,18 @@ import type { GridMerge, TableGrid } from "./html-table";
 export const EMPTY_SHEET_MESSAGE = "la première feuille est vide";
 export const SHEET_TOO_BIG_MESSAGE = "classeur trop gros pour un import en valeurs";
 export const WORKER_FAILED_MESSAGE = "lecture du classeur interrompue";
+/** Début du message `SheetError::Unreadable` (`sheet.rs`), suivi du détail de `calamine`. */
+export const UNREADABLE_SHEET_PREFIX = "classeur illisible : ";
+/** Délai d'arrêt d'un Worker de lecture sans réponse (constat T13). */
+export const SHEET_WORKER_TIMEOUT_MS = 60_000;
+
+/** Message rendu par le Worker : un message de `SheetError` connu tel quel ; toute autre erreur (panique Wasm
+ *  `RuntimeError` « unreachable », module absent, valeur quelconque) : `WORKER_FAILED_MESSAGE`. */
+export function workerErrorMessage(err: unknown): string {
+  const m = err instanceof Error ? err.message : typeof err === "string" ? err : null;
+  if (m === null) return WORKER_FAILED_MESSAGE;
+  return m === EMPTY_SHEET_MESSAGE || m === SHEET_TOO_BIG_MESSAGE || m.startsWith(UNREADABLE_SHEET_PREFIX) ? m : WORKER_FAILED_MESSAGE;
+}
 
 /** Forme d'un Worker utile ici (le vrai `Worker` du navigateur, un faux dans les tests). */
 export interface WorkerLike {
@@ -62,15 +77,18 @@ export function isTableGrid(v: unknown): v is TableGrid {
 /**
  * Un Worker neuf par lecture, jamais gardé (DAB4) : à l'inverse de `createPageCodec`, qui garde son instance jusqu'au
  * rechargement (HR6). Même port que le codec de la page (`read(file: Blob)`, octets copiés une fois), arrêté dans
- * `finally` comme le lecteur y est libéré.
+ * `finally` comme le lecteur y est libéré ; sans réponse au bout de `SHEET_WORKER_TIMEOUT_MS` : rejet
+ * `WORKER_FAILED_MESSAGE`, puis arrêt.
  */
 export function createSheetReader(spawn: () => WorkerLike): SheetReader {
   return {
     async read(file) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const worker = spawn();
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         return await new Promise<TableGrid>((resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(WORKER_FAILED_MESSAGE)), SHEET_WORKER_TIMEOUT_MS);
           worker.onmessage = (e) => {
             const d = e.data;
             const g = typeof d === "object" && d !== null ? (d as { grid?: unknown }).grid : undefined;
@@ -82,6 +100,7 @@ export function createSheetReader(spawn: () => WorkerLike): SheetReader {
           worker.postMessage({ bytes }, [bytes.buffer]);
         });
       } finally {
+        clearTimeout(timer);
         worker.terminate();
       }
     },

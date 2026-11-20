@@ -77,8 +77,12 @@ describe("délai d'arrêt et erreurs du Worker (constat T13)", () => {
     vi.useFakeTimers();
     try {
       const w = new FakeWorker();
-      const out = createSheetReader(() => w).read(blob()).then(() => null, (e: unknown) => e);
-      await vi.waitFor(() => expect(w.posted).toHaveLength(1));
+      // `arrayBuffer` résolu en microtâche : l'horloge simulée n'avance pas avant le lancement du Worker (`vi.waitFor`
+      // l'avancerait à chaque essai).
+      const fast = { arrayBuffer: async () => new Uint8Array([0x50, 0x4b, 3, 4]).buffer } as unknown as Blob;
+      const out = createSheetReader(() => w).read(fast).then(() => null, (e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(w.posted).toHaveLength(1);
       expect(SHEET_WORKER_TIMEOUT_MS).toBe(60_000);
       await vi.advanceTimersByTimeAsync(SHEET_WORKER_TIMEOUT_MS - 1);
       expect(w.terminated).toBe(0);

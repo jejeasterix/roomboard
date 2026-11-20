@@ -15,6 +15,10 @@ export interface ToolbarView {
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 
 const cells = (r: Range | null | undefined): number => (r ? (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) : 0);
+/** Étendue réelle de « − Ligne » / « − Colonne » (F5, F6) : la plage, sinon la zone, sinon la cellule active. */
+const extent = (c: TableCellState): Range => c.range ?? c.zone ?? { r0: c.row, c0: c.col, r1: c.row, c1: c.col };
+const spanRows = (c: TableCellState): number => extent(c).r1 - extent(c).r0 + 1;
+const spanCols = (c: TableCellState): number => extent(c).c1 - extent(c).c0 + 1;
 
 /** Ce que l'état publié change d'une action ; une action absente de la table garde l'état neutre. */
 export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<ItemState>>> = {
@@ -29,8 +33,9 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "page-remove": (v) => ({ disabled: v.pageCount <= 1 }),
   "table-row-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.rows >= TABLE_MAX_LINES }),
   "table-col-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.cols >= TABLE_MAX_LINES }),
-  "table-row-remove": (v) => ({ disabled: !v.tableCell || v.tableCell.rows <= 1 }),
-  "table-col-remove": (v) => ({ disabled: !v.tableCell || v.tableCell.cols <= 1 }),
+  // Toutes les lignes (resp. colonnes) couvertes : `removeLines` ne ferait rien.
+  "table-row-remove": (v) => ({ disabled: !v.tableCell || spanRows(v.tableCell) >= v.tableCell.rows }),
+  "table-col-remove": (v) => ({ disabled: !v.tableCell || spanCols(v.tableCell) >= v.tableCell.cols }),
   "table-uniform": (v) => ({ disabled: !v.tableCell }),
   "table-merge": (v) => ({ disabled: cells(v.tableCell?.range) < 2 }),
   "table-split": (v) => ({ disabled: v.tableCell?.merged !== true || cells(v.tableCell.range) > 0 }),

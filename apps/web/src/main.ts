@@ -16,7 +16,7 @@ import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
 import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
-import { pastedFiles, pastedTableHtml } from "./platform/paste";
+import { handlePaste } from "./platform/paste";
 import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
@@ -124,24 +124,12 @@ async function start(): Promise<void> {
   // Collage (R19, C10b) : un tableau HTML passe avant les images jointes (F19, HB-9) ; sinon fichiers image vers l'onglet
   // actif, centre de la vue ; zone de texte : collage normal.
   window.addEventListener("paste", (e) => {
-    const html = pastedTableHtml(e);
-    const files = pastedFiles(e);
-    const fail = (err: unknown): void => {
-      console.warn(`RoomBoard : collage abandonné (${err instanceof Error ? err.message : String(err)})`);
-    };
-    if (html !== null) {
-      e.preventDefault();
-      void workspace
-        .pasteTable(html)
-        .then(async (done) => {
-          if (!done && files.length > 0) await workspace.importFiles(files, null);
-        })
-        .catch(fail);
-      return;
-    }
-    if (files.length === 0) return;
+    const done = handlePaste(e, workspace);
+    if (done === null) return;
     e.preventDefault();
-    void workspace.importFiles(files, null).catch(fail);
+    void done.catch((err: unknown) => {
+      console.warn(`RoomBoard : collage abandonné (${err instanceof Error ? err.message : String(err)})`);
+    });
   });
 
   const note = workspace.active().board.choice.note;

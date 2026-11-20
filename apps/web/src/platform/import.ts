@@ -65,6 +65,9 @@ export interface ImportHandler {
   readonly id: string;
   readonly nature: "document" | "objet";
   detect(head: Uint8Array, name: string): boolean;
+  /** Plafond propre au gestionnaire (F22), contrôlé par `importFiles` sur `f.size` **avant** `f.blob()` (la coque lit
+   *  le fichier en entier) : dépassé, « <nom> : <message> », compté en échec. */
+  readonly limit?: { readonly maxBytes: number; readonly message: string };
   /** Dit lui-même ses messages d'échec. */
   run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
 }
@@ -106,13 +109,10 @@ export function sheetHandler(deps: { readSheet(file: Blob): Promise<TableGrid> }
     id: "sheet",
     nature: "objet",
     detect: (head, name) => isSheetName(name) && ZIP_MAGIC.every((b, i) => head[i] === b),
+    limit: { maxBytes: SHEET_MAX_BYTES, message: SHEET_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       const target = ctx.target;
       if (target === null) return "failed";
-      if (f.size > SHEET_MAX_BYTES) {
-        await ctx.notify(`${f.name} : ${SHEET_TOO_BIG_MESSAGE}`);
-        return "failed";
-      }
       let grid: TableGrid;
       try {
         grid = await deps.readSheet(ctx.blob);
@@ -171,6 +171,12 @@ export function createImporter(deps: ImportDeps): Importer {
         const handler = registry.find((h) => h.detect(head, f.name));
         if (handler === undefined) {
           refused.push(f.name);
+          continue;
+        }
+        // F22 : plafond du gestionnaire avant toute lecture du fichier (un `.xlsx` de 2 Go n'est jamais lu).
+        if (handler.limit !== undefined && f.size > handler.limit.maxBytes) {
+          failed.push(f.name);
+          await deps.notify(`${f.name} : ${handler.limit.message}`);
           continue;
         }
         let blob: Blob;

@@ -28,6 +28,27 @@ export function pastedFiles(e: PasteEventLike): DroppedFile[] {
     .map(droppedFromFile);
 }
 
+/** Ce que le collage atteint : le workspace (`main.ts`), un faux dans les tests. */
+export interface PasteSink {
+  pasteTable(html: string): Promise<boolean>;
+  importFiles(files: readonly DroppedFile[], at: null): Promise<unknown>;
+}
+
+/** Corps de l'écouteur `paste` (R19, C10b) : un `<table>` HTML passe avant les images jointes (F19, HB-9) ; un HTML
+ *  illisible (`pasteTable` rend false) se replie sur elles (PC9) ; sinon les images seules. Null : collage non pris
+ *  (rien à coller, cible éditable), le collage normal suit ; sinon l'appelant fait `preventDefault`. */
+export function handlePaste(e: PasteEventLike, sink: PasteSink): Promise<void> | null {
+  const html = pastedTableHtml(e);
+  const files = pastedFiles(e);
+  if (html !== null) {
+    return sink.pasteTable(html).then(async (done) => {
+      if (!done && files.length > 0) await sink.importFiles(files, null);
+    });
+  }
+  if (files.length === 0) return null;
+  return sink.importFiles(files, null).then(() => undefined);
+}
+
 /** HTML collé qui contient un `<table>` (F19), tel quel ; null sur une cible éditable, sans HTML ou sans tableau. */
 export function pastedTableHtml(e: PasteEventLike): string | null {
   if (isEditable(e.target)) return null;
