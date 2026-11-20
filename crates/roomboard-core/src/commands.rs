@@ -14,6 +14,7 @@ use crate::element::{
     out_transform, read_backdrop, read_style, style_fields, transform_to_any, StrokeStyle,
     Transform, FIT_WIDTH, IDENTITY,
 };
+use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
 use crate::query::path_hits_stroke;
@@ -85,6 +86,11 @@ pub enum Command {
         page: String,
         backdrop: Option<BackdropInput>,
     },
+    /// Grille de page (U31, C9) ; `None` retire la grille. Remplacée en bloc, une étape (G5).
+    SetGrid {
+        page: String,
+        grid: Option<GridInput>,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -119,6 +125,7 @@ pub enum CommandError {
     UnknownElement(String),
     BadAsset,
     BadImage,
+    BadGrid,
 }
 
 impl std::fmt::Display for CommandError {
@@ -156,6 +163,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadImage => write!(
                 f,
                 "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)"
+            ),
+            CommandError::BadGrid => write!(
+                f,
+                "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)"
             ),
         }
     }
@@ -446,6 +457,7 @@ impl Document {
             Command::SetBackdrop { page, backdrop } => {
                 self.cmd_set_backdrop(&page, backdrop.as_ref())
             }
+            Command::SetGrid { page, grid } => self.cmd_set_grid(&page, grid.as_ref()),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)
@@ -928,6 +940,37 @@ impl Document {
         Ok(self.done(Change {
             pages,
             removed,
+            ..Default::default()
+        }))
+    }
+
+    /// Grille de page (U31, G5) : validée (`BadGrid`, sans transaction), puis remplacée en bloc en une transaction
+    /// `"local"` ; même valeur (comparée champ par champ sur la vue) ou rien à retirer : aucune transaction (D38).
+    fn cmd_set_grid(
+        &mut self,
+        page: &str,
+        input: Option<&GridInput>,
+    ) -> Result<Change, CommandError> {
+        if let Some(g) = input {
+            grid::validate(g)?;
+        }
+        let (page_map, current) = {
+            let txn = self.read();
+            let (_, m) = self
+                .find_page(&txn, page)
+                .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+            let current = grid::read(&txn, &m);
+            (m, current)
+        };
+        if current.as_ref() == input {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            grid::write(&mut txn, &page_map, input);
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
             ..Default::default()
         }))
     }
@@ -2352,7 +2395,11 @@ pub(crate) mod tests {
         }
     }
 
-    fn apply_grid(d: &mut Document, page: &str, grid: Option<GridInput>) -> Result<Change, CommandError> {
+    fn apply_grid(
+        d: &mut Document,
+        page: &str,
+        grid: Option<GridInput>,
+    ) -> Result<Change, CommandError> {
         d.apply(Command::SetGrid {
             page: page.into(),
             grid,
@@ -2369,7 +2416,10 @@ pub(crate) mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let g = grid_of(
-            vec![grid_level("seyes", 30.24, "#7b68ee"), grid_level("dots", 40.0, "#000000")],
+            vec![
+                grid_level("seyes", 30.24, "#7b68ee"),
+                grid_level("dots", 40.0, "#000000"),
+            ],
             true,
             true,
         );
@@ -2459,7 +2509,10 @@ pub(crate) mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let a = grid_of(
-            vec![grid_level("squares", 40.0, "#111111"), grid_level("dots", 20.0, "#222222")],
+            vec![
+                grid_level("squares", 40.0, "#111111"),
+                grid_level("dots", 20.0, "#222222"),
+            ],
             true,
             false,
         );
@@ -2483,7 +2536,10 @@ pub(crate) mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let g = grid_of(
-            vec![grid_level("seyes", 30.24, "#7b68ee"), grid_level("dots", 40.0, "#000000")],
+            vec![
+                grid_level("seyes", 30.24, "#7b68ee"),
+                grid_level("dots", 40.0, "#000000"),
+            ],
             true,
             true,
         );
@@ -2491,7 +2547,11 @@ pub(crate) mod tests {
         let file = save(&d, &meta).expect("save");
         for i in 0..30 {
             let r = load(&file).expect("load");
-            assert_eq!(page_grid(&r, &p), Some(g.clone()), "vue au rechargement {i}");
+            assert_eq!(
+                page_grid(&r, &p),
+                Some(g.clone()),
+                "vue au rechargement {i}"
+            );
             assert!(
                 save(&r, &meta).expect("resave") == file,
                 "fichier différent au rechargement {i}"
@@ -2547,11 +2607,17 @@ pub(crate) mod tests {
             x1: 1920.0,
             y1: 1080.0,
         };
-        assert_eq!(d.grid_lines(&p, all, 0.0, 0.0).map(|l| l.levels.len()), Some(0));
+        assert_eq!(
+            d.grid_lines(&p, all, 0.0, 0.0).map(|l| l.levels.len()),
+            Some(0)
+        );
         assert_eq!(d.snap_point(&p, 13.0, 17.0), None);
         let file = save(&d, &meta).expect("save");
         let r = load(&file).expect("load");
-        assert!(save(&r, &meta).expect("resave") == file, "le niveau inconnu change les octets");
+        assert!(
+            save(&r, &meta).expect("resave") == file,
+            "le niveau inconnu change les octets"
+        );
         assert_eq!(page_grid(&r, &p), Some(g));
         let hex = grid_of(vec![grid_level("hexagon", 40.0, "#123456")], true, false);
         apply_grid(&mut d, &p, Some(hex.clone())).expect("hexagon écrit");
@@ -2564,8 +2630,16 @@ pub(crate) mod tests {
     fn new_page_has_no_grid_and_removed_page_takes_its_grid() {
         let mut d = Document::blank();
         let p = first(&d);
-        apply_grid(&mut d, &p, Some(grid_of(vec![grid_level("squares", 40.0, "#cccccc")], true, false)))
-            .expect("grille");
+        apply_grid(
+            &mut d,
+            &p,
+            Some(grid_of(
+                vec![grid_level("squares", 40.0, "#cccccc")],
+                true,
+                false,
+            )),
+        )
+        .expect("grille");
         let q = d
             .apply(Command::AddPage {
                 after: Some(p.clone()),
@@ -2574,7 +2648,8 @@ pub(crate) mod tests {
             .pages[0]
             .clone();
         assert_eq!(page_grid(&d, &q), None);
-        d.apply(Command::RemovePage { page: p.clone() }).expect("retrait");
+        d.apply(Command::RemovePage { page: p.clone() })
+            .expect("retrait");
         assert!(d.page(&p).is_none());
         assert!(d.undo());
         assert!(page_grid(&d, &p).is_some());
@@ -2603,18 +2678,41 @@ pub(crate) mod tests {
             .expect("b")
             .ids[0]
             .clone();
-        assert_eq!(d.snap_delta(&p, std::slice::from_ref(&a), 52.0, 31.0), (52.0, 31.0), "sans grille");
-        apply_grid(&mut d, &p, Some(grid_of(vec![grid_level("squares", 40.0, "#cccccc")], true, false)))
-            .expect("grille");
-        assert_eq!(d.snap_delta(&p, std::slice::from_ref(&a), 52.0, 31.0), (57.0, 33.0));
+        assert_eq!(
+            d.snap_delta(&p, std::slice::from_ref(&a), 52.0, 31.0),
+            (52.0, 31.0),
+            "sans grille"
+        );
+        apply_grid(
+            &mut d,
+            &p,
+            Some(grid_of(
+                vec![grid_level("squares", 40.0, "#cccccc")],
+                true,
+                false,
+            )),
+        )
+        .expect("grille");
+        assert_eq!(
+            d.snap_delta(&p, std::slice::from_ref(&a), 52.0, 31.0),
+            (57.0, 33.0)
+        );
         assert_eq!(
             d.snap_delta(&p, std::slice::from_ref(&b), 2.0, 3.0),
             (0.0, 0.0),
             "boîte (0, 0)-(100, 60), pas le contour épaissi (−5, −5)-(105, 65)"
         );
         assert_eq!(d.snap_delta(&p, &[], 52.0, 31.0), (52.0, 31.0));
-        apply_grid(&mut d, &p, Some(grid_of(vec![grid_level("squares", 40.0, "#cccccc")], false, false)))
-            .expect("coupé");
+        apply_grid(
+            &mut d,
+            &p,
+            Some(grid_of(
+                vec![grid_level("squares", 40.0, "#cccccc")],
+                false,
+                false,
+            )),
+        )
+        .expect("coupé");
         assert_eq!(d.snap_delta(&p, &[a], 52.0, 31.0), (52.0, 31.0));
     }
 }

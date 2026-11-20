@@ -4,6 +4,7 @@ use std::sync::Arc;
 use yrs::{Any, In, Map, MapRef, Number, Out, ReadTxn};
 
 use crate::asset::is_asset_id;
+use crate::grid::GridView;
 use crate::query::Bounds;
 
 pub const SCHEMA: u32 = 1;
@@ -35,6 +36,8 @@ pub struct PageView {
     pub height: f64,
     pub background: String,
     pub backdrop: Option<BackdropView>,
+    /// Grille de page (U31, C9) ; `None` sans champ `grid` lisible (G4).
+    pub grid: Option<GridView>,
 }
 
 /// Fond de page (U6, K6, K9) : valeurs brutes, `rect` calculé par le cœur (DAK4).
