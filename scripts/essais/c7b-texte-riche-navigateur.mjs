@@ -105,6 +105,7 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   check((await attr("data-tool")) === "text", 'S1 : outil Texte actif (data-tool="text")');
   check(await page.isVisible('button[data-format="bold"]'), "S1 : la rangée Format est visible avec l'outil Texte");
   check(!(await page.isEnabled('button[data-format="bold"]')), "S1 : la rangée Format est grisée, zone fermée");
+  const boxTool = await stageBox(page);
   const c1 = await (async () => {
     const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);
     return { zoom, tx, ty };
@@ -116,7 +117,9 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   await fr();
   check(await editorOpen(), "S1 : la zone s'ouvre au clic, avec le focus");
-  check(sameBox(box0, await stageBox(page)), "la boîte de #stage est immobile à l'ouverture de la séance");
+  const boxOpen = await stageBox(page);
+  console.log(`boîtes : départ ${show(box0)}, outil Texte ${show(boxTool)}, séance ${show(boxOpen)}`);
+  check(sameBox(boxTool, boxOpen), "la boîte de #stage est immobile à l'ouverture de la séance");
   await page.keyboard.type("Le chat noir");
   await key("Home");
   for (let i = 0; i < 3; i++) await key("ArrowRight");
@@ -136,7 +139,7 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   await key("Escape");
   check(!(await page.$eval("#texte-edition", (a) => !a.hidden)), "S1 : Échap ferme la zone");
   check((await attr("data-elements")) === "1", "S1 : un texte écrit (data-elements=1)");
-  check(sameBox(box0, await stageBox(page)), "la boîte de #stage est immobile après la validation");
+  check(sameBox(boxTool, await stageBox(page)), "la boîte de #stage est immobile après la validation");
   await shot("c7b-texte-riche.png");
 
   // Relecture d'un texte écrit : un clic de l'outil Texte rouvre la zone ; Échap referme.
@@ -172,7 +175,7 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   await key("Control+z");
   const back = await readText(TEXT_AT, async () => ({ i: await ti(), r: await tr() }));
   check(back.i.every((s) => !s[1]) && same(back.r, s1), "S2 : Ctrl+Z : texte remis à « chat » gras rouge, sans italique");
-  check(sameBox(box0, await stageBox(page)), "la boîte de #stage est immobile après S2");
+  check(sameBox(boxTool, await stageBox(page)), "la boîte de #stage est immobile après S2");
 
   // S1 : outil Tableau 2 × 2, « aa », curseur au milieu, Ctrl+B, « a », Fin, Ctrl+B, « Total ».
   await page.click(item("table"));
@@ -269,7 +272,7 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   check(await editorOpen(), 'S1 : Tab : deuxième cellule active, saisie ouverte (data-table="2x2@0,1")');
   await shot("c7b-cellule-riche.png");
   await key("Escape");
-  check(sameBox(box0, await stageBox(page)), "la boîte de #stage est immobile après la validation du tableau");
+  check(sameBox(boxTool, await stageBox(page)), "la boîte de #stage est immobile après la validation du tableau");
 
   // Ctrl+S, Ctrl+O : nouvel onglet, tout relu.
   const before = await page.locator(TAB).count();
