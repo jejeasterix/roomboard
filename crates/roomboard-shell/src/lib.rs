@@ -267,13 +267,15 @@ mod tests {
             "/x/Cours.RoomBoard",
             "/x/photo.png",
             "/x/b.roomboard",
+            "/x/objet.RBITEM",
         ]
         .map(String::from);
         assert_eq!(
             launch_paths(args, ASSOCIATED_EXTENSIONS),
             vec![
                 PathBuf::from("/x/Cours.RoomBoard"),
-                PathBuf::from("/x/b.roomboard")
+                PathBuf::from("/x/b.roomboard"),
+                PathBuf::from("/x/objet.RBITEM")
             ]
         );
     }
