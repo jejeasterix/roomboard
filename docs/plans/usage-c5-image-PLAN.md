@@ -20,7 +20,7 @@
 | T4 | Liaison du module principal | T3 | crates/roomboard-wasm/src/lib.rs | isolé | implementeur-tdd | `cargo test -p roomboard-wasm image_params` 2 tests ; taille du module principal avant/après ≤ 1 572 864 o | S1 | #tache-t4 |
 | T5 | Fonctions de pixels (Rust) | — | crates/roomboard-formats/src/pixels.rs, crates/roomboard-formats/src/lib.rs, crates/roomboard-formats-wasm/src/lib.rs | isolé | implementeur-tdd | `cargo test -p roomboard-formats --lib pixels::` ≥ 11 tests ; `cargo test -p roomboard-formats-wasm image_` 2 tests ; taille `formats` avant/après ≤ 3 Mio | S3 | #tache-t5 |
 | T6 | Géométrie d'affichage (page) | — | apps/web/src/core/api.ts, apps/web/src/core/image-params.ts, apps/web/src/core/image-params.test.ts | isolé | implementeur-tdd | `image-params.test.ts` : ≥ 16 tests, dont « placeAfter garde le centre, échelle diag(2, 1), ⟳ » | S1, S2 | #tache-t6 |
-| T7 | Faux cœur, liaison TS, contrat | T4, T6 | apps/web/src/core/api.ts, apps/web/src/core/fake-core.ts, apps/web/src/core/wasm-core.ts, apps/web/src/core/wasm-core.contract.test.ts | isolé | concepteur-critique | `ROOMBOARD_WASM_REQUIRED=1` `wasm-core.contract.test.ts` : « contrat C5 » joué par les 2 fabriques (12 tests C5) ; `tsc --noEmit` sans erreur | S4 | #tache-t7 |
+| T7 | Faux cœur, liaison TS, contrat | T4, T6 | apps/web/src/core/api.ts, apps/web/src/core/fake-core.ts, apps/web/src/core/wasm-core.ts, apps/web/src/core/wasm-core.contract.test.ts | isolé | concepteur-critique | `ROOMBOARD_WASM_REQUIRED=1` `wasm-core.contract.test.ts` : « C5 » : 6 tests × 2 fabriques + 1 test de forme (13 tests) ; `tsc --noEmit` sans erreur | S4 | #tache-t7 |
 | T8 | Lanceur et Worker de pixels | — | apps/web/src/platform/pixel-runner.ts, apps/web/src/platform/pixel-runner.test.ts, apps/web/src/platform/pixel-worker.ts, apps/web/src/platform/container.ts | isolé | implementeur-tdd | `pixel-runner.test.ts` : ≥ 10 tests dont « chargé au premier besoin » ; `sheet-reader.test.ts` vert | S5 | #tache-t8 |
 | T9 | Cache des bitmaps par élément | T6, T8 | apps/web/src/engine/render/image-cache.ts, apps/web/src/engine/render/image-cache.test.ts | isolé | concepteur-critique | `image-cache.test.ts` : anciens tests + 11 neufs dont « une image sans retouche ne lance aucun Worker » | S5 | #tache-t9 |
 | T10 | Dessin, aperçu, cadre de rognage | T9 | apps/web/src/engine/render/canvas2d.ts, apps/web/src/engine/render/canvas2d.test.ts, apps/web/src/engine/render/renderer.ts, apps/web/src/engine/render/webgl2.ts, apps/web/src/engine/render/webgl2.test.ts, apps/web/src/engine/render/fake-ctx.ts, apps/web/src/engine/engine.test.ts | isolé | implementeur-tdd | `canvas2d.test.ts` + `webgl2.test.ts` verts, dont « setImagePreview : délégué à la scène Canvas 2D » | S1 | #tache-t10 |
@@ -4252,3 +4252,1755 @@ Attendu : `Test Files  2 passed (2)`, puis aucun `FAIL `, puis aucune sortie de 
 ```bash
 cd <worktree> && git add apps/web/src/engine/render/canvas2d.ts apps/web/src/engine/render/canvas2d.test.ts apps/web/src/engine/render/renderer.ts apps/web/src/engine/render/webgl2.ts apps/web/src/engine/render/webgl2.test.ts apps/web/src/engine/render/fake-ctx.ts apps/web/src/engine/engine.test.ts && git commit -m "feat(web): draw cropped, flipped and turned images with a preview and crop frame" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+### Tâche T11 — Moteur : séance de retouche
+
+<a id="tache-t11"></a>
+
+**Objectif :** `Engine.editImage(id): ImageEdit | null` (DAI4) : aperçu non écrit, rognage à cadre, pipette, écritures `SetImageParams` (une étape chacune) ; le brouillon des pixels survit aux écritures géométriques (I27) ; pendant le rognage ou la pipette le moteur passe les gestes à la séance (outil publié : `select`, I30) et Échap, Entrée, Suppr, Ctrl+Z, Ctrl+Y y passent d'abord (I28) ; `EngineState.selectionImage` ; `Engine.report(message)` pour `#etat` (I24).
+
+**Fichiers :** Créer `apps/web/src/engine/tools/image-edit.ts`, `apps/web/src/engine/tools/image-edit.test.ts`. Modifier `apps/web/src/engine/engine.ts` (imports l. 7-21, `EngineState` l. 23-53, `EngineDeps` l. 76-82, `Engine` l. 84-150, `createEngine` : après `stopPreview` l. 235-240, `state()` l. 275-300, `switchTo` l. 325, `frame()` l. 444-463, `sink.begin` l. 476-482, `key` avant `const edit = editAction(e);` l. 561, objet `engine` après `endGridPreview` l. 651, `dispose` l. 708) ; `apps/web/src/engine/engine.test.ts` (import `vitest` l. 1, nouveau `describe` en fin).
+
+**Interfaces :**
+- Consomme (T6) : `cropFromDisplay`, `cropOf`, `displaySize`, `displayToSource`, `frameOf`, `geometryOf`, `paramsOf`, `pixelsOf`, `placeAfter`, `turnShown` (tests). (T7) : `Command` `SetImageParams`. (T10) : `ImagePreview`, `Renderer.setImagePreview`, `FakeRenderer.imagePreviews` (engine.test.ts).
+- Produit (`image-edit.ts`, lu par T13, T14) :
+  - `interface ImageEdit { readonly id: string; preview(p: ImageParams | null): void; pick(): Promise<string | null>; startCrop(): void; finishCrop(apply: boolean): boolean; geometry(next: ImageParams): boolean; commit(p: ImageParams): boolean; restore(): boolean; mode(): "idle" | "crop" | "pick"; keepsDraft(version: number): boolean; close(): void }` — `keepsDraft(v)` : vrai si l'écriture de la version `v` vient d'une retouche géométrique de la séance (ou est en cours) ; chaque changement de mode appelle `ctx.stateChanged()` (le panneau relit `mode()` à chaque état publié) ;
+  - `interface ImageEditDeps { readonly ctx: ToolContext; readonly id: string; setPreview(p: ImagePreview | null): void; colorAt(asset: string, x: number, y: number): string | null; closed(): void }` ;
+  - `interface ImageEditSession extends ImageEdit { readonly gesture: GestureTool; cancelMode(): void }` ; `createImageEdit(deps: ImageEditDeps): ImageEditSession` ;
+  - `type Drag = { readonly handle: HandleId | "move"; readonly start: readonly [number, number]; readonly from: Bounds }` ; `dragFrame(d: Drag, dx: number, dy: number, bw: number, bh: number): Bounds`.
+- Produit (`engine.ts`) : `EngineState.selectionImage?: string | null` (id de l'image sélectionnée seule ; facultatif comme `fillColor`, toujours publié) ; `EngineDeps.images?: { colorAt(asset: string, x: number, y: number): string | null }` ; `Engine.editImage(id: string): ImageEdit | null` (null si `id` n'est pas une image de la page montrée ; une seule séance à la fois) ; `Engine.report(message: string): void`.
+- Réutilise : `apps/web/src/engine/engine.ts:84` — `Engine.editImage(id): ImageEdit | null`, DAI4 (étendre).
+- Réutilise : `apps/web/src/engine/engine.ts:280-300` — `EngineState.selectionImage` (étendre).
+- Réutilise : `apps/web/src/engine/render/renderer.ts:61`, `engine.ts:647` — patron `setGridPreview` → `setImagePreview` (étendre ; ici la séance l'appelle comme `previewGrid`).
+- Réutilise : `apps/web/src/engine/tools/handles.ts:24`, `:34` — `handlesOf(b)`, `hitHandle(b, x, y, reach, skip?)`, `HANDLE_PX`, `HANDLE_GRAB_PX` (réutiliser ; ici `hitHandle`, `HANDLE_GRAB_PX`, `HandleId`).
+- Réutilise : `apps/web/src/core/shapes.ts:81`, `:98` — `applyMatrix(m, x, y)`, `invertMatrix(m)` (réutiliser).
+
+**Test et commande bornée :** `cd <worktree> && pnpm --filter @roomboard/web test src/engine/tools/image-edit.test.ts src/engine/engine.test.ts 2>&1 | tail -20` → aucun `FAIL ` ; `pnpm --filter @roomboard/web test src/engine/engine.test.ts -t "C5" 2>&1 | tail -6` → `Tests  14 passed` ; noms des effets de bord : « Échap sort du rognage sans écrire », « Suppr sous le cadre ne supprime pas », « Ctrl+Z sort du rognage puis annule ». Types : `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20` → aucune sortie.
+
+**Contraintes (recopiées) :**
+- GC7 Preuves bornées : `pnpm --filter @roomboard/web test <fichier> 2>&1 | tail -20` (sans `--`). Motif d'échec : `FAIL `, code de sortie non nul.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&` ; worktree neuf : `pnpm install --frozen-lockfile` à la racine avant le premier test web.
+
+**Interdits :** toucher `tools/select.ts`, `tools/fill.ts`, `input/keys.ts`, `overlay.ts` ; un outil `ToolChoice` neuf ; écrire des pixels dans une écriture géométrique (elle prend les pixels **du document**).
+
+**Terminé quand :** fichiers de test verts, 14 tests « C5 » du moteur, `tsc` sans erreur.
+
+**Rapport :** sha ; sorties bornées ; une ligne `Réutilisation : …` par ligne « Réutilise ».
+
+- [ ] **Étape 1 : tests (rouges)**
+
+`apps/web/src/engine/tools/image-edit.test.ts` :
+
+```ts
+import { describe, expect, it } from "vitest";
+import { dragFrame } from "./image-edit";
+
+const from = { x0: 10, y0: 10, x1: 110, y1: 60 };
+describe("cadre de rognage (I28)", () => {
+  it("poignée sud-est : bords est et sud, bornés à l'image", () => {
+    expect(dragFrame({ handle: "se", start: [110, 60], from }, -40, -30, 200, 100)).toEqual({ x0: 10, y0: 10, x1: 70, y1: 30 });
+    expect(dragFrame({ handle: "se", start: [110, 60], from }, 500, 500, 200, 100)).toEqual({ x0: 10, y0: 10, x1: 200, y1: 100 });
+    expect(dragFrame({ handle: "nw", start: [10, 10], from }, -50, -50, 200, 100)).toEqual({ x0: 0, y0: 0, x1: 110, y1: 60 });
+  });
+  it("intérieur : déplacement borné à l'image", () => {
+    expect(dragFrame({ handle: "move", start: [50, 30], from }, 500, -500, 200, 100)).toEqual({ x0: 100, y0: 0, x1: 200, y1: 50 });
+  });
+  it("jamais moins d'une unité", () => {
+    expect(dragFrame({ handle: "e", start: [110, 30], from }, -500, 0, 200, 100)).toEqual({ x0: 10, y0: 10, x1: 11, y1: 60 });
+    expect(dragFrame({ handle: "n", start: [60, 10], from }, 0, 500, 200, 100)).toEqual({ x0: 10, y0: 59, x1: 110, y1: 60 });
+  });
+});
+```
+
+`apps/web/src/engine/engine.test.ts` : ligne 1 `import { describe, expect, it } from "vitest";` devient `import { describe, expect, it, vi } from "vitest";` ; ajouter `import { paramsOf, turnShown } from "../core/image-params";` ; en fin de fichier :
+
+```ts
+describe("moteur — C5 (retouche d'image)", () => {
+  const ASSET = { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 };
+  function c5() {
+    const doc = fakeCore.blank();
+    const renderer = new FakeRenderer();
+    const colorAt = vi.fn((_a: string, _x: number, _y: number): string | null => "#ffffff");
+    const tools: ToolFactories = { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx), select: (ctx) => createSelectTool(ctx) };
+    const engine = createEngine({ doc, renderer, frames: new Frames(), tools, images: { colorAt } });
+    const page = engine.state().page;
+    const id = doc.apply({ type: "AddImage", page, asset: ASSET, w: 200, h: 150, matrix: [1, 0, 0, 1, 100, 100] }).ids[0] ?? "";
+    const drag = (a: readonly [number, number], b: readonly [number, number], pointer = 2): void => {
+      engine.sink.begin(pointer, "select", [{ ...sample, x: a[0], y: a[1] }]);
+      engine.sink.extend(pointer, [{ ...sample, x: b[0], y: b[1] }], []);
+      engine.sink.close(pointer, "end");
+    };
+    engine.setTool("select");
+    drag([50, 50], [350, 300], 1);
+    const image = () => {
+      const el = doc.element(id);
+      if (el?.kind !== "image") throw new Error("image absente");
+      return el;
+    };
+    const rect = (): string => doc.apply({ type: "AddShape", page, shape: "rect", x0: 400, y0: 100, x1: 450, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    return { doc, engine, renderer, colorAt, page, id, drag, image, rect, ctrl: (k: string) => key(k, { ctrlKey: true }) };
+  }
+
+  it("C5 selectionImage : l'image sélectionnée seule ; null à deux objets", () => {
+    const { engine, id, drag, rect } = c5();
+    expect(engine.state().selectionImage).toBe(id);
+    rect();
+    drag([50, 50], [500, 300], 3);
+    expect(engine.state().selection).toHaveLength(2);
+    expect(engine.state().selectionImage).toBeNull();
+  });
+  it("C5 editImage : null pour un id qui n'est pas une image de la page", () => {
+    const { engine, rect } = c5();
+    expect(engine.editImage(rect())).toBeNull();
+    expect(engine.editImage("nulle-part")).toBeNull();
+  });
+  it("C5 geometry (Tourner ⟳) : une étape, centre gardé, boîte 150 × 200", () => {
+    const { engine, doc, id, page, image } = c5();
+    const edit = engine.editImage(id)!;
+    expect(edit.geometry(turnShown(paramsOf(image().image), 1))).toBe(true);
+    expect(image().image.quarterTurns).toBe(1);
+    expect(doc.bounds([id])).toEqual({ x0: 125, y0: 75, x1: 275, y1: 275 });
+    engine.undo();
+    expect(image().image.quarterTurns).toBeUndefined();
+    expect(doc.elementIds(page)).toEqual([id]);
+  });
+  it("C5 brouillon des pixels gardé par une écriture géométrique (I27), pas par une autre écriture", () => {
+    const { engine, renderer, id, image } = c5();
+    const edit = engine.editImage(id)!;
+    edit.preview({ brightness: 50 });
+    expect(renderer.imagePreviews.at(-1)).toEqual({ id, params: { brightness: 50 }, matrix: [1, 0, 0, 1, 100, 100] });
+    edit.geometry(turnShown({}, 1));
+    expect(image().image.brightness).toBeUndefined();
+    expect(renderer.imagePreviews.at(-1)).toMatchObject({ id, params: { quarterTurns: 1, brightness: 50 } });
+    expect(edit.keepsDraft(engine.state().version)).toBe(true);
+    engine.undo();
+    expect(edit.keepsDraft(engine.state().version)).toBe(false);
+  });
+  it("C5 commit : pixels du brouillon, géométrie du document, une étape ; aperçu retiré", () => {
+    const { engine, renderer, id, image } = c5();
+    const edit = engine.editImage(id)!;
+    edit.geometry(turnShown({}, 1));
+    edit.preview({ brightness: 50 });
+    expect(edit.commit({ brightness: 50 })).toBe(true);
+    expect(paramsOf(image().image)).toEqual({ quarterTurns: 1, brightness: 50 });
+    expect(renderer.imagePreviews.at(-1)).toBeNull();
+    engine.undo();
+    expect(paramsOf(image().image)).toEqual({ quarterTurns: 1 });
+  });
+  it("C5 rognage : image entière en aperçu, poignée sud-est tirée, Valider le rognage garde les pixels en place", () => {
+    const { engine, renderer, id, image, drag } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    expect(edit.mode()).toBe("crop");
+    expect(renderer.imagePreviews.at(-1)).toEqual({ id, params: {}, matrix: [1, 0, 0, 1, 100, 100], frame: { x0: 0, y0: 0, x1: 200, y1: 150 } });
+    drag([300, 250], [260, 220]);
+    expect(renderer.imagePreviews.at(-1)?.frame).toEqual({ x0: 0, y0: 0, x1: 160, y1: 120 });
+    expect(edit.finishCrop(true)).toBe(true);
+    expect(image().image.crop).toEqual([0, 0, 160, 120]);
+    expect(image().transform).toEqual([1, 0, 0, 1, 100, 100]);
+    expect([edit.mode(), engine.state().selection]).toEqual(["idle", [id]]);
+  });
+  it("C5 Entrée valide le rognage", () => {
+    const { engine, id, image, drag } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    drag([300, 250], [260, 220]);
+    expect(engine.key(key("Enter"))).toBe(true);
+    expect(image().image.crop).toEqual([0, 0, 160, 120]);
+  });
+  it("C5 Échap sort du rognage sans écrire", () => {
+    const { engine, doc, id } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    const v = doc.version();
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect([edit.mode(), doc.version(), engine.state().selection]).toEqual(["idle", v, [id]]);
+  });
+  it("C5 Suppr sous le cadre ne supprime pas", () => {
+    const { engine, doc, id, page } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(engine.key(key("Backspace"))).toBe(true);
+    expect([doc.elementIds(page), edit.mode()]).toEqual([[id], "crop"]);
+  });
+  it("C5 Ctrl+Z sort du rognage puis annule", () => {
+    const { engine, id, image, ctrl } = c5();
+    const edit = engine.editImage(id)!;
+    edit.geometry(turnShown({}, 1));
+    edit.startCrop();
+    expect(engine.key(ctrl("z"))).toBe(true);
+    expect(edit.mode()).toBe("idle");
+    expect(image().image.quarterTurns).toBeUndefined();
+  });
+  it("C5 pipette : hors de l'image elle reste armée ; sur l'image, couleur du pixel source d'origine", async () => {
+    const { engine, id, colorAt, drag } = c5();
+    const edit = engine.editImage(id)!;
+    const picked = edit.pick();
+    expect(edit.mode()).toBe("pick");
+    drag([20, 20], [20, 20]);
+    expect(edit.mode()).toBe("pick");
+    drag([110, 105], [110, 105]);
+    await expect(picked).resolves.toBe("#ffffff");
+    expect(colorAt).toHaveBeenCalledWith(ASSET.id, 10, 5);
+    expect(edit.mode()).toBe("idle");
+  });
+  it("C5 pipette : Échap ou second appel la désarment (null)", async () => {
+    const { engine, id } = c5();
+    const edit = engine.editImage(id)!;
+    const a = edit.pick();
+    expect(engine.key(key("Escape"))).toBe(true);
+    await expect(a).resolves.toBeNull();
+    const b = edit.pick();
+    await expect(edit.pick()).resolves.toBeNull();
+    await expect(b).resolves.toBeNull();
+    expect(edit.mode()).toBe("idle");
+  });
+  it("C5 restore : tous les réglages retirés, une étape", () => {
+    const { engine, id, image } = c5();
+    const edit = engine.editImage(id)!;
+    edit.commit({ brightness: 20 });
+    edit.geometry({ flipX: true });
+    expect(edit.restore()).toBe(true);
+    expect(paramsOf(image().image)).toEqual({});
+    engine.undo();
+    expect(paramsOf(image().image)).toEqual({ flipX: true, brightness: 20 });
+  });
+  it("C5 report : message dans l'état sans écriture", () => {
+    const { engine, doc } = c5();
+    const v = doc.version();
+    engine.report("retouches de l'image non affichées : x");
+    expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
+  });
+});
+```
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/engine/tools/image-edit.test.ts src/engine/engine.test.ts 2>&1 | tail -20` → attendu `FAIL ` (module `./image-edit` absent, `editImage` absent).
+
+- [ ] **Étape 2 : `image-edit.ts`**
+
+```ts
+/**
+ * Séance de retouche d'une image (C5, DAI4, I27-I30) : aperçu non écrit (`Renderer.setImagePreview`), rognage par un
+ * cadre à huit poignées, pipette, écritures `SetImageParams` (une étape chacune, matrice par `placeAfter`). Le moteur lui
+ * passe les gestes de la scène pendant le rognage et la pipette (l'outil publié reste `select`) et Échap, Entrée, Suppr,
+ * Ctrl+Z, Ctrl+Y (I28). Le brouillon des pixels survit aux écritures géométriques (Retourner, Tourner, Valider le
+ * rognage), qui n'écrivent que la géométrie avec les pixels du document (I27). C6b étendra `restore` (`sourceAsset`).
+ */
+import type { Bounds, ImageData, ImageElement, ImageParams, Matrix } from "../../core/api";
+import { cropFromDisplay, cropOf, displaySize, displayToSource, frameOf, geometryOf, paramsOf, pixelsOf, placeAfter } from "../../core/image-params";
+import { applyMatrix, invertMatrix } from "../../core/shapes";
+import { screenToWorld } from "../camera";
+import type { InputSample } from "../input/sampler";
+import type { ImagePreview } from "../render/renderer";
+import { HANDLE_GRAB_PX, hitHandle, type HandleId } from "./handles";
+import { NO_LIVE, type GestureTool, type ToolContext } from "./tool";
+
+export interface ImageEdit {
+  readonly id: string;
+  /** Brouillon (luminosité, contraste, couleur transparente) montré en aperçu ; null : aucun. Rien n'est écrit. */
+  preview(p: ImageParams | null): void;
+  /** Arme la pipette : couleur `#rrggbb` d'origine du prochain appui sur l'image ; null si désarmée. */
+  pick(): Promise<string | null>;
+  startCrop(): void;
+  /** Sort du rognage ; `apply` : écrit le cadre (une étape). Vrai si écrit. */
+  finishCrop(apply: boolean): boolean;
+  /** Retourner, Tourner : géométrie de `next`, pixels du document ; vrai si écrit (ou déjà dans cet état). */
+  geometry(next: ImageParams): boolean;
+  /** « Valider » : pixels de `p`, géométrie du document ; vrai si écrit (ou déjà dans cet état). */
+  commit(p: ImageParams): boolean;
+  /** « Rétablir l'original » : tous les réglages retirés. */
+  restore(): boolean;
+  mode(): "idle" | "crop" | "pick";
+  /** Vrai si l'écriture de la version `v` vient d'une retouche géométrique de cette séance (I27, I31). */
+  keepsDraft(v: number): boolean;
+  close(): void;
+}
+
+export interface ImageEditDeps {
+  readonly ctx: ToolContext;
+  readonly id: string;
+  setPreview(p: ImagePreview | null): void;
+  colorAt(asset: string, x: number, y: number): string | null;
+  /** Séance fermée : le moteur l'oublie. */
+  closed(): void;
+}
+
+export interface ImageEditSession extends ImageEdit {
+  /** Gestes de la scène pendant le rognage et la pipette. */
+  readonly gesture: GestureTool;
+  /** Échap pendant un mode : en sort sans écrire. */
+  cancelMode(): void;
+}
+
+export type Drag = { readonly handle: HandleId | "move"; readonly start: readonly [number, number]; readonly from: Bounds };
+
+/** Cadre après un glissé de (dx, dy) depuis `d.from` (boîte affichée de l'image entière) : poignée = bords qu'elle tient,
+ *  intérieur = déplacement ; borné à (0, 0)-(bw, bh), une unité au moins (I28). */
+export function dragFrame(d: Drag, dx: number, dy: number, bw: number, bh: number): Bounds {
+  const f = d.from;
+  if (d.handle === "move") {
+    const w = f.x1 - f.x0;
+    const h = f.y1 - f.y0;
+    const x0 = Math.min(Math.max(0, f.x0 + dx), bw - w);
+    const y0 = Math.min(Math.max(0, f.y0 + dy), bh - h);
+    return { x0, y0, x1: x0 + w, y1: y0 + h };
+  }
+  const k = d.handle;
+  return {
+    x0: k.includes("w") ? Math.min(Math.max(0, f.x0 + dx), f.x1 - 1) : f.x0,
+    y0: k.includes("n") ? Math.min(Math.max(0, f.y0 + dy), f.y1 - 1) : f.y0,
+    x1: k.includes("e") ? Math.max(Math.min(bw, f.x1 + dx), f.x0 + 1) : f.x1,
+    y1: k.includes("s") ? Math.max(Math.min(bh, f.y1 + dy), f.y0 + 1) : f.y1,
+  };
+}
+
+/** Géométrie sans rognage : l'image entière montrée pendant le rognage. */
+const uncropped = (p: ImageParams): ImageParams => geometryOf({ ...p, crop: undefined });
+
+export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
+  const { ctx, id } = deps;
+  let pixelDraft: ImageParams | null = null;
+  let crop: { frame: Bounds; readonly full: ImageData; readonly matrix: Matrix } | null = null;
+  let picking: ((c: string | null) => void) | null = null;
+  let drag: Drag | null = null;
+  let writing = false;
+  let open = true;
+  const own = new Set<number>();
+
+  const current = (): ImageElement | null => {
+    const el = ctx.doc.element(id);
+    return el?.kind === "image" ? el : null;
+  };
+  /** Aperçu posé : rognage (image entière et cadre), sinon brouillon sur la géométrie du document, sinon aucun. */
+  function refresh(): void {
+    const el = current();
+    if (el === null || (crop === null && pixelDraft === null)) deps.setPreview(null);
+    else if (crop !== null) {
+      const pix = pixelDraft ?? pixelsOf(paramsOf(el.image));
+      deps.setPreview({ id, params: { ...uncropped(paramsOf(el.image)), ...pix }, matrix: crop.matrix, frame: crop.frame });
+    } else deps.setPreview({ id, params: { ...geometryOf(paramsOf(el.image)), ...(pixelDraft ?? {}) }, matrix: el.transform });
+    ctx.requestFrame?.();
+  }
+  function write(params: ImageParams, geometric: boolean): boolean {
+    const el = current();
+    if (el === null) return false;
+    writing = geometric;
+    const change = ctx.run({ type: "SetImageParams", id, params, matrix: placeAfter(el.transform, el.image, params) });
+    writing = false;
+    if (change !== null && geometric) own.add(change.version);
+    return change !== null;
+  }
+  function disarm(): void {
+    const p = picking;
+    picking = null;
+    if (p !== null) {
+      p(null);
+      ctx.stateChanged?.();
+    }
+  }
+  const local = (s: InputSample, m: Matrix): [number, number] | null => {
+    const inv = invertMatrix(m);
+    return inv === null ? null : applyMatrix(inv, ...screenToWorld(ctx.camera(), s.x, s.y));
+  };
+  /** Portée de prise des poignées en unités de la boîte affichée (12 px écran). */
+  const reach = (m: Matrix): number => {
+    const k = ctx.camera().zoom * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    return k > 0 ? HANDLE_GRAB_PX / k : HANDLE_GRAB_PX;
+  };
+
+  const gesture: GestureTool = {
+    begin(_pointerId, samples) {
+      const s = samples[0];
+      if (s === undefined) return;
+      if (picking !== null) {
+        const el = current();
+        const p = el === null ? null : local(s, el.transform);
+        if (el === null || p === null) return;
+        const [bw, bh] = displaySize(el.image);
+        if (p[0] < 0 || p[1] < 0 || p[0] > bw || p[1] > bh) return; // hors de l'image : la pipette reste armée
+        const [sx, sy] = displayToSource(el.image, p[0], p[1]);
+        const c = deps.colorAt(el.image.asset, Math.min(el.image.w - 1, Math.floor(sx)), Math.min(el.image.h - 1, Math.floor(sy)));
+        if (c === null) return; // bitmap pas prêt : la pipette reste armée
+        const done = picking;
+        picking = null;
+        done(c);
+        ctx.stateChanged?.();
+        return;
+      }
+      if (crop === null) return;
+      const p = local(s, crop.matrix);
+      if (p === null) return;
+      const f = crop.frame;
+      const h = hitHandle(f, p[0], p[1], reach(crop.matrix));
+      if (h !== null) drag = { handle: h, start: p, from: f };
+      else if (p[0] >= f.x0 && p[0] <= f.x1 && p[1] >= f.y0 && p[1] <= f.y1) drag = { handle: "move", start: p, from: f };
+    },
+    extend(_pointerId, samples) {
+      const s = samples[samples.length - 1];
+      if (drag === null || crop === null || s === undefined) return;
+      const p = local(s, crop.matrix);
+      if (p === null) return;
+      const [bw, bh] = displaySize(crop.full);
+      crop.frame = dragFrame(drag, p[0] - drag.start[0], p[1] - drag.start[1], bw, bh);
+      refresh();
+    },
+    frame() {},
+    close() {
+      drag = null;
+    },
+    live: () => NO_LIVE,
+    active: () => drag !== null,
+  };
+
+  const session: ImageEditSession = {
+    id,
+    gesture,
+    preview(p) {
+      pixelDraft = p === null ? null : pixelsOf(p);
+      refresh();
+    },
+    pick() {
+      if (picking !== null) {
+        disarm();
+        return Promise.resolve(null);
+      }
+      if (crop !== null || current() === null) return Promise.resolve(null);
+      const armed = new Promise<string | null>((resolve) => (picking = resolve));
+      ctx.stateChanged?.();
+      return armed;
+    },
+    startCrop() {
+      const el = current();
+      if (el === null || crop !== null) return;
+      disarm();
+      const geom = uncropped(paramsOf(el.image));
+      const full: ImageData = { asset: el.image.asset, w: el.image.w, h: el.image.h, ...geom };
+      crop = { full, matrix: placeAfter(el.transform, el.image, geom), frame: frameOf(full, cropOf(el.image)) };
+      refresh();
+      ctx.stateChanged?.();
+    },
+    finishCrop(apply) {
+      if (crop === null) return false;
+      const c = cropFromDisplay(crop.full, crop.frame);
+      crop = null;
+      drag = null;
+      const el = current();
+      const ok = apply && el !== null && write({ ...geometryOf({ ...paramsOf(el.image), crop: c }), ...pixelsOf(paramsOf(el.image)) }, true);
+      refresh();
+      ctx.stateChanged?.();
+      return ok;
+    },
+    geometry(next) {
+      const el = current();
+      if (el === null) return false;
+      const ok = write({ ...geometryOf(next), ...pixelsOf(paramsOf(el.image)) }, true);
+      refresh();
+      return ok;
+    },
+    commit(p) {
+      const el = current();
+      if (el === null) return false;
+      const ok = write({ ...geometryOf(paramsOf(el.image)), ...pixelsOf(p) }, false);
+      if (ok) pixelDraft = null;
+      refresh();
+      return ok;
+    },
+    restore() {
+      session.cancelMode();
+      const ok = write({}, false);
+      if (ok) pixelDraft = null;
+      refresh();
+      return ok;
+    },
+    mode: () => (crop !== null ? "crop" : picking !== null ? "pick" : "idle"),
+    keepsDraft: (v) => writing || own.has(v),
+    cancelMode() {
+      if (crop !== null) session.finishCrop(false);
+      else disarm();
+    },
+    close() {
+      if (!open) return;
+      open = false;
+      disarm();
+      crop = null;
+      drag = null;
+      pixelDraft = null;
+      deps.setPreview(null);
+      ctx.requestFrame?.();
+      deps.closed();
+    },
+  };
+  return session;
+}
+```
+
+- [ ] **Étape 3 : `engine.ts`**
+
+1. Import : `import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";`.
+2. `EngineState`, après `selectionGrouped` : `/** C5 (I25, I33) : id de l'image sélectionnée seule ; null sinon. Facultatif (comme fillColor) : le moteur le publie toujours. */ readonly selectionImage?: string | null;`
+3. `EngineDeps`, après `penStyle` : `/** C5 (I29) : couleur d'origine d'un pixel source, pour la pipette ; absent : la pipette ne rend rien. */ readonly images?: { colorAt(asset: string, x: number, y: number): string | null };`
+4. `Engine`, après `endGridPreview(): void;` :
+
+```ts
+  /** C5 (DAI4) : séance de retouche de l'image `id` de la page montrée (une seule à la fois) ; null si ce n'en est pas une. */
+  editImage(id: string): ImageEdit | null;
+  /** C5 (I24) : message dans l'état (`#etat`), sans écriture. */
+  report(message: string): void;
+```
+
+5. Après la fonction `stopPreview` : `let imageEdit: ImageEditSession | null = null;`
+6. `state()`, après `selectionGrouped: units.grouped,` : `selectionImage: sel.length === 1 && doc.element(sel[0] ?? "")?.kind === "image" ? (sel[0] ?? null) : null,`
+7. `switchTo`, après `stopPreview();` : `imageEdit?.close();`
+8. `frame()` : remplacer `const overlay = mergeOverlays(parts.map((p) => p.overlay));` par
+
+```ts
+    const merged = mergeOverlays(parts.map((p) => p.overlay));
+    // C5 (I28) : pendant le rognage, le cadre de la sélection cède la place au cadre de rognage.
+    const overlay = imageEdit?.mode() === "crop" ? { ...merged, frame: null, handles: false } : merged;
+```
+
+et `if (!toolList.some((t) => t.active())) loop.stop();` par `if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true) loop.stop();`.
+9. `sink.begin` : `const g = tools[t];` devient `const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : tools[t];`.
+10. `key`, juste avant `const edit = editAction(e);` :
+
+```ts
+      if (imageEdit !== null && imageEdit.mode() !== "idle") {
+        // C5 (I28) : pendant le rognage ou la pipette, Échap sort du mode, Suppr est pris sans effet, Entrée valide le
+        // rognage, Ctrl+Z / Ctrl+Y sortent du mode sans écrire puis annulent ou rétablissent.
+        const ed = editAction(e);
+        if (ed === "escape") {
+          imageEdit.cancelMode();
+          return true;
+        }
+        if (ed === "delete") return true;
+        if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing) {
+          if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
+          return true;
+        }
+        const act = keyAction(e);
+        if (act === "undo" || act === "redo") {
+          imageEdit.cancelMode();
+          history(act);
+          return true;
+        }
+      }
+```
+
+11. Objet `engine`, après `endGridPreview() { … },` :
+
+```ts
+    editImage(id) {
+      if (doc.element(id)?.kind !== "image" || !doc.elementIds(pageId).includes(id)) return null;
+      imageEdit?.close();
+      const session = createImageEdit({
+        ctx,
+        id,
+        setPreview: (p) => renderer.setImagePreview(p),
+        colorAt: (asset, x, y) => deps.images?.colorAt(asset, x, y) ?? null,
+        closed: () => {
+          if (imageEdit === session) imageEdit = null;
+        },
+      });
+      imageEdit = session;
+      return session;
+    },
+    report(message) {
+      error = message;
+      emit();
+    },
+```
+
+12. `dispose()`, première ligne : `imageEdit?.close();`.
+
+- [ ] **Étape 4 : vert, types**
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/engine/tools/image-edit.test.ts src/engine/engine.test.ts 2>&1 | tail -20 && pnpm --filter @roomboard/web test src/engine/engine.test.ts -t "C5" 2>&1 | tail -6 && pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20`
+Attendu : aucun `FAIL `, `Tests  14 passed`, aucune sortie de `tsc`.
+
+- [ ] **Étape 5 : commit**
+
+```bash
+cd <worktree> && git add apps/web/src/engine/tools/image-edit.ts apps/web/src/engine/tools/image-edit.test.ts apps/web/src/engine/engine.ts apps/web/src/engine/engine.test.ts && git commit -m "feat(web): add the engine image edit session with crop, picker and keys" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+### Tâche T12 — Session, attributs, amorce
+
+<a id="tache-t12"></a>
+
+**Objectif :** brancher le lanceur de pixels dans chaque session (un par onglet, fermé à `dispose`), le cache retouché, la pipette du moteur, le premier échec dans `#etat` (I24, une fois par onglet), `#stage[data-pixels]` et `#stage[data-image]` (I33) ; l'amorce lance le Worker (`spawnPixelWorker`, patron `spawnSheetWorker`).
+
+**Fichiers :** Modifier `apps/web/src/app/board-session.ts` (imports l. 9-40, `SessionShared` l. 44-58, cache l. 134-137, `createEngine` l. 152, après `redraw = …` l. 180, `mark` l. 268-284, après `offState` l. 285, `dispose` l. 364) ; `apps/web/src/app/board-session.test.ts` (imports, un test en fin de `describe`) ; `apps/web/src/app/stage-tags.ts:1-35` ; `apps/web/src/app/stage-tags.test.ts` (deux `toEqual` existants l. 37-38 gagnent `pixels: "", image: ""` ; un test ajouté) ; `apps/web/src/main.ts:79` et `:86-97`.
+
+**Interfaces :**
+- Consomme : (T8) `createPixelRunner`, `pixelNotice`, `WorkerLike` ; (T9) `createImageCache(assets, decode, ready, pixels?, opts?)`, `ImageCache.pixelState()` ; (T11) `EngineDeps.images`, `Engine.report`, `EngineState.selectionImage` ; (T6) `displaySize`.
+- Produit : `SessionShared.pixels?: () => WorkerLike` ; `stageTags(s: EngineState, extra?: StageExtras)` avec `interface StageExtras { readonly pixels?: string; readonly image?: readonly [number, number] | null }`, rend aussi `pixels` (texte de `PixelState`) et `image` (`<bw>x<bh>` arrondis, vide sans image seule).
+- Réutilise : `apps/web/src/app/stage-tags.ts:21` — `stageTags(s)` gagne `pixels`, `image` (étendre).
+- Réutilise : `apps/web/src/main.ts:86-99` — patron `spawnSheetWorker` → `spawnPixelWorker` (étendre).
+
+**Test et commande bornée :** `cd <worktree> && pnpm --filter @roomboard/web test src/app/board-session.test.ts src/app/stage-tags.test.ts 2>&1 | tail -20` → `Test Files  2 passed (2)` ; `-t "S5 (I24)"` → `Tests  1 passed`. Types : `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20` → aucune sortie.
+
+**Contraintes (recopiées) :**
+- GC5 Images de test fabriquées dans les tests (octets construits en code), jamais téléchargées.
+- GC7 Preuves bornées : `pnpm --filter @roomboard/web test <fichier> 2>&1 | tail -20` (sans `--`). Motif d'échec : `FAIL `, code de sortie non nul.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC10 VM chargée : un test qui échoue sur un délai est rejoué une fois avant d'être jugé ; aucun délai relevé.
+- GC11 Chantier parallèle OD85 (C12 PDF) sur les mêmes fichiers (`board-session.ts:135`, `stage-tags.ts`, `main.ts:66-109`) : modifications localisées, ajouts plutôt que réécritures ; `spawnSheetWorker` n'est pas réécrit.
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&` ; worktree neuf : `pnpm install --frozen-lockfile` à la racine avant le premier test web.
+
+**Interdits :** factoriser `spawnSheetWorker` (OD85) ; toucher `sheet-reader.ts`, `container-load.ts`.
+
+**Terminé quand :** deux fichiers verts, `tsc` sans erreur.
+
+**Rapport :** sha ; sorties bornées ; `Réutilisation : appelé stage-tags.ts:21 (étendu)`, `appelé main.ts:86 (patron spawnSheetWorker)`.
+
+- [ ] **Étape 1 : tests (rouges)**
+
+`apps/web/src/app/stage-tags.test.ts` : dans les deux `expect(stageTags(…)).toEqual({ page: …, grouped: "0" })` existants, ajouter `pixels: "", image: ""` en fin d'objet (le résultat a deux clés de plus) ; ajouter :
+
+```ts
+describe("stageTags (C5, I33)", () => {
+  it("pixels et image : vides par défaut ; état des pixels et boîte affichée en pixels source", () => {
+    expect([stageTags(base).pixels, stageTags(base).image]).toEqual(["", ""]);
+    const t = stageTags(base, { pixels: "pret", image: [160, 120] });
+    expect([t.pixels, t.image]).toEqual(["pret", "160x120"]);
+    expect(stageTags(base, { pixels: "echec", image: null }).image).toBe("");
+  });
+});
+```
+
+`apps/web/src/app/board-session.test.ts` : ajouter `import type { WorkerLike } from "../platform/sheet-reader";` ; à la fin du `describe("createBoardSession (T93)", …)` :
+
+```ts
+  it("S5 (I24) : module des pixels en échec : image brute, data-pixels=echec, message dans l'état, un seul Worker", async () => {
+    vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 10, height: 10, close: vi.fn() })));
+    try {
+      const doc = fakeCore.blank();
+      const page = doc.pageIds()[0]!;
+      const asset = "cd".repeat(32);
+      const el = doc.apply({ type: "AddImage", page, asset: { id: asset, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
+      doc.apply({ type: "SetImageParams", id: el, params: { brightness: 20 }, matrix: [1, 0, 0, 1, 0, 0] });
+      const assets = createAssetStore();
+      assets.adopt(asset, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
+      const decode = vi.fn(async (_b: Blob) => ({ width: 10, height: 10, close: vi.fn() }) as unknown as ImageBitmap);
+      const spawn = vi.fn((): WorkerLike => {
+        const w: WorkerLike = {
+          onmessage: null,
+          onerror: null,
+          postMessage: (m) => queueMicrotask(() => w.onmessage?.({ data: { id: (m as { id: number }).id, error: "module des pixels indisponible" } })),
+          terminate: vi.fn(),
+        };
+        return w;
+      });
+      const s = await createBoardSession(doc, { ...shared, decode, pixels: spawn }, assets);
+      s.activate();
+      await vi.waitFor(() => expect(s.stage.dataset["pixels"]).toBe("echec"));
+      expect(s.engine.state().error).toBe("retouches de l'image non affichées : module des pixels indisponible");
+      expect(spawn).toHaveBeenCalledTimes(1);
+      s.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+```
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/app/board-session.test.ts src/app/stage-tags.test.ts 2>&1 | tail -20` → attendu `FAIL `.
+
+- [ ] **Étape 2 : `stage-tags.ts`**
+
+Remplacer la fonction `stageTags` par :
+
+```ts
+/** C5 (I33) : état des pixels (`PixelState` du cache) et boîte affichée de l'image sélectionnée seule (pixels source). */
+export interface StageExtras {
+  readonly pixels?: string;
+  readonly image?: readonly [number, number] | null;
+}
+
+/** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`), S1 à S4 de C10b (`tableMerges`, `tableShades`)
+ *  et C5 (`pixels`, `image`). */
+export function stageTags(
+  s: EngineState,
+  extra: StageExtras = {},
+): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image", string> {
+  return {
+    page: `${s.pageIndex + 1}/${s.pageCount}`,
+    selection: String(s.selection.length),
+    bounds: boundsTag(s.selectionBounds),
+    tool: s.tool,
+    table: tableTag(s.tableCell),
+    tableMerges: String(s.tableMerges),
+    tableShades: String(s.tableShades),
+    units: String(s.selectionUnits),
+    grouped: s.selectionGrouped ? "1" : "0",
+    pixels: extra.pixels ?? "",
+    image: extra.image ? `${Math.round(extra.image[0])}x${Math.round(extra.image[1])}` : "",
+  };
+}
+```
+
+- [ ] **Étape 3 : `board-session.ts`**
+
+1. Imports : `import { displaySize } from "../core/image-params";`, `import { createPixelRunner, pixelNotice } from "../platform/pixel-runner";`, `import type { WorkerLike } from "../platform/sheet-reader";`.
+2. `SessionShared`, après `decode?` : `/** C5 (I18, DAI3) : lanceur du Worker de pixels de l'onglet ; absent : aucun calcul, images brutes. */ readonly pixels?: () => WorkerLike;`
+3. Remplacer les lignes 134-137 (`// Bitmaps des images (R16) …` jusqu'à `undo.push(() => images.dispose());`) par :
+
+```ts
+  // Bitmaps des images (R16) : le cache appelle `redraw` quand un bitmap arrive ; le moteur est créé plus bas.
+  let redraw = (): void => undefined;
+  // C5 (I18, I24, I33) : un lanceur de pixels par onglet ; premier échec dit une fois dans #etat ; état dans data-pixels.
+  let report = (_message: string): void => undefined;
+  let remark = (): void => undefined;
+  const runner = shared.pixels === undefined ? undefined : createPixelRunner(shared.pixels);
+  if (runner !== undefined) undo.push(() => runner.dispose());
+  const images = createImageCache(assets, shared.decode ?? decodeBitmap, () => redraw(), runner, {
+    onFailure: (m) => report(pixelNotice(m)),
+    onState: () => remark(),
+  });
+  undo.push(() => images.dispose());
+```
+
+4. `createEngine({ doc, renderer: choice.renderer, … })` : ajouter `images,` après `renderer: choice.renderer,`.
+5. Après `redraw = () => engine.redraw();` : `report = (m) => engine.report(m);`.
+6. Avant `const mark = (s: EngineState): void => {` :
+
+```ts
+  /** Boîte affichée de l'image sélectionnée seule (I33), pixels source. */
+  const imageSize = (id: string | null | undefined): readonly [number, number] | null => {
+    const el = id ? doc.element(id) : null;
+    return el?.kind === "image" ? displaySize(el.image) : null;
+  };
+```
+
+Dans `mark`, `const tags = stageTags(s);` devient `const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage) });` et, après `stage.dataset["grouped"] = tags.grouped;` : `stage.dataset["pixels"] = tags.pixels;` puis `stage.dataset["image"] = tags.image;`.
+7. Après `const offState = engine.onState(mark);` : `remark = () => mark(engine.state());`.
+8. `dispose()`, avant `images.dispose();` : `runner?.dispose();`.
+
+- [ ] **Étape 4 : `main.ts`**
+
+Avant la ligne `const shared: SessionShared = { … };` (l. 79), ajouter :
+
+```ts
+  // Pixels des images (C5, I18, DAI3) : un Worker par onglet, gardé tant qu'il a du travail, avec sa propre instance du module `formats`.
+  const spawnPixelWorker = (): WorkerLike => {
+    const w = new Worker(new URL("./platform/pixel-worker.ts", import.meta.url), { type: "module" });
+    const like: WorkerLike = {
+      onmessage: null,
+      onerror: null,
+      postMessage: (m, transfer) => w.postMessage(m, transfer),
+      terminate: () => w.terminate(),
+    };
+    w.onmessage = (e) => like.onmessage?.(e);
+    w.onerror = (e) => like.onerror?.(e);
+    return like;
+  };
+```
+
+et dans l'objet `shared`, ajouter `pixels: spawnPixelWorker` après `coreVersion: core.version()`.
+
+- [ ] **Étape 5 : vert, types, commit**
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/app/board-session.test.ts src/app/stage-tags.test.ts 2>&1 | tail -20 && pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20` → `Test Files  2 passed (2)`, aucune sortie de `tsc`.
+
+```bash
+cd <worktree> && git add apps/web/src/app/board-session.ts apps/web/src/app/board-session.test.ts apps/web/src/app/stage-tags.ts apps/web/src/app/stage-tags.test.ts apps/web/src/main.ts && git commit -m "feat(web): wire the pixel worker, data-pixels and data-image into each tab" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+### Tâche T13 — Entrée « Image » de la rangée Sélection
+
+<a id="tache-t13"></a>
+
+**Objectif :** un seul bouton « Image » après les cinq actions de la rangée Sélection (`data-selection-action="image"`), actif quand la sélection est **une seule image** (une image dans un groupe : la sélection prend le groupe, bouton grisé), qui appelle `ToolbarHost.imagePanel()` → `HostTargets.toggle("image")` ; `SelectionAction`, `SELECTION_ACTIONS`, `DISABLED` et `workspace.ts:373` inchangés (I25).
+
+**Fichiers :** Modifier `apps/web/src/ui/SelectionRow.tsx:1`, `:28-41` ; `apps/web/src/ui/SelectionRow.test.tsx` (setup l. 12-18, test « cinq boutons » l. 22-29, un test ajouté) ; `apps/web/src/ui/Toolbar.test.tsx:25` (`host` gagne `imagePanel: vi.fn()`) et `:40` (5 → 6) ; `apps/web/src/ui/item-state.ts:6-25` ; `apps/web/src/app/toolbar-host.ts:10-31`, `:66-92` ; `apps/web/src/app/toolbar-host.test.ts` (un test) ; `apps/web/src/ui/App.tsx:50` (`type Panel`).
+
+**Interfaces :**
+- Consomme (T11) : `EngineState.selectionImage?: string | null` (l'`App` le recopie dans la vue).
+- Produit : `ToolbarView.selectionImage?: string | null` (même type que l'état : `{ ...state(), canPaste }` doit se typer ; le cadrage disait `boolean`) ; `ToolbarHost.imagePanel(): void` ; `HostTargets.toggle(panel: "settings" | "profiles" | "grid" | "image"): void` ; `type Panel = "settings" | "profiles" | "editor" | "grid" | "image"` (App.tsx, rendu du panneau en T14).
+- Réutilise : `apps/web/src/ui/SelectionRow.tsx:28` — composant `SelectionRow` gagne un bouton « Image » (`view().selectionImage`) ; tables inchangées (étendre).
+- Réutilise : `apps/web/src/app/toolbar-host.ts:10`, `:28` — `ToolbarHost.imagePanel(): void` → `HostTargets.toggle("image")` (étendre).
+
+**Test et commande bornée :** `cd <worktree> && pnpm --filter @roomboard/web test src/ui/SelectionRow.test.tsx src/ui/Toolbar.test.tsx src/app/toolbar-host.test.ts 2>&1 | tail -20` → `Test Files  3 passed (3)` (garde de src/ui comprise) ; `-t "Image : grisé hors d'une seule image"` → `Tests  1 passed`. Types : aucune sortie de `tsc`.
+
+**Contraintes (recopiées) :**
+- GC3 Scène ≥ 640 px de haut à 1280 × 900, mesurée par un test, y compris panneau de l'image ouvert (mesure par l'essai T16).
+- GC7 Preuves bornées : `pnpm --filter @roomboard/web test <fichier> 2>&1 | tail -20` (sans `--`). Motif d'échec : `FAIL `, code de sortie non nul.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC11 Chantier parallèle OD85 (C12 PDF) sur les mêmes fichiers (`toolbar-host.ts`, `App.tsx`) : modifications localisées, ajouts plutôt que réécritures.
+- GC12 `src/ui` : aucun `switch (`, aucun `\d+px` dans un `.tsx`, aucun `localStorage` ; design des panneaux existants, aucun style neuf hors du calage à droite.
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&`.
+
+**Interdits :** ajouter `image` à `SelectionAction` ; toucher `toolbar.ts`, `toolbar-profiles.ts`, `workspace.ts`.
+
+**Terminé quand :** trois fichiers verts, `tsc` sans erreur.
+
+**Rapport :** sha ; sortie bornée ; `Réutilisation : appelé SelectionRow.tsx:28 (étendu)`, `appelé toolbar-host.ts:10, :28 (étendu)`.
+
+- [ ] **Étape 1 : tests (rouges)**
+
+`SelectionRow.test.tsx` : dans `setup`, `const host = { selection } as unknown as ToolbarHost;` devient `const imagePanel = vi.fn(); const host = { selection, imagePanel } as unknown as ToolbarHost;` et `return { container, setView, selection, imagePanel };` ; le test « montrée avec l'outil Sélection seulement, cinq boutons dans l'ordre » devient « … cinq actions puis « Image », dans l'ordre » avec l'attendu `[["group", "Grouper"], ["ungroup", "Dégrouper"], ["copy", "Copier"], ["paste", "Coller"], ["export", "Exporter"], ["image", "Image"]]` (la ligne `SELECTION_ACTIONS.map(…)` reste à cinq) ; ajouter :
+
+```ts
+  it("Image : grisé hors d'une seule image ; clic : host.imagePanel()", () => {
+    const { container, setView, imagePanel } = setup({ ...base, selection: ["a", "b"], selectionUnits: 2 });
+    expect(btn(container, "image")!.disabled).toBe(true);
+    setView({ ...base, selection: ["i"], selectionUnits: 1, selectionImage: "i" });
+    expect(btn(container, "image")!.disabled).toBe(false);
+    fireEvent.click(btn(container, "image")!);
+    expect(imagePanel).toHaveBeenCalledTimes(1);
+  });
+```
+
+`Toolbar.test.tsx` : ligne 25, ajouter `imagePanel: vi.fn()` à l'objet `host` ; ligne 40, `toHaveLength(5)` → `toHaveLength(6)`.
+
+`toolbar-host.test.ts`, dans `describe("ToolbarHost local", …)` :
+
+```ts
+  it('imagePanel → toggle("image") (C5, I25)', () => {
+    const { host, t } = setup();
+    host.imagePanel();
+    expect(t.toggle).toHaveBeenCalledWith("image");
+  });
+```
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/ui/SelectionRow.test.tsx src/ui/Toolbar.test.tsx src/app/toolbar-host.test.ts 2>&1 | tail -20` → attendu `FAIL `.
+
+- [ ] **Étape 2 : code**
+
+`item-state.ts`, après `canPaste?` : `/** C5 (I25) : id de l'image sélectionnée seule ; absent ou null : aucune (bouton « Image » grisé). */ readonly selectionImage?: string | null;`
+
+`toolbar-host.ts` : dans `ToolbarHost`, après `selection(a: SelectionAction): void;` : `/** C5 (I25) : bouton « Image » de la rangée Sélection : ouvre ou ferme le panneau de retouche. */ imagePanel(): void;` ; `toggle(panel: "settings" | "profiles" | "grid"): void;` devient `toggle(panel: "settings" | "profiles" | "grid" | "image"): void;` ; dans `createLocalToolbarHost`, après `selection: (a) => t.selection(a),` : `imagePanel: () => t.toggle("image"),`.
+
+`SelectionRow.tsx` : commentaire de tête : `/** Rangée « Sélection » (C3, Z13, HZ1-4 ; C5, I25) : outil Sélection actif ; cinq actions, hors catalogue des profils (C7b R13), puis « Image » (une seule image sélectionnée : panneau de retouche). */` ; après `</For>`, avant `</Show>` :
+
+```tsx
+      <button type="button" data-selection-action="image" disabled={!props.view().selectionImage} onClick={() => props.host.imagePanel()}>
+        Image
+      </button>
+```
+
+`App.tsx:50` : `type Panel = "settings" | "profiles" | "editor" | "grid";` devient `type Panel = "settings" | "profiles" | "editor" | "grid" | "image";`.
+
+- [ ] **Étape 3 : vert, types, commit**
+
+Run : même commande que l'étape 1, puis `pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20` → `Test Files  3 passed (3)`, aucune sortie.
+
+```bash
+cd <worktree> && git add apps/web/src/ui/SelectionRow.tsx apps/web/src/ui/SelectionRow.test.tsx apps/web/src/ui/Toolbar.test.tsx apps/web/src/ui/item-state.ts apps/web/src/app/toolbar-host.ts apps/web/src/app/toolbar-host.test.ts apps/web/src/ui/App.tsx && git commit -m "feat(web): add the Image button to the selection row" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+### Tâche T14 — Panneau de retouche
+
+<a id="tache-t14"></a>
+
+**Objectif :** `ImagePanel` en `rb-popover` calé à droite (I26) : (1) Rogner, Retourner ↔, Retourner ↕, Tourner ⟲, Tourner ⟳ (immédiats, une étape) ; (2) Luminosité, Contraste ; (3) Couleur transparente : Pipette, pastille, Tolérance (défaut 10), Plume (défaut 0), Contigu / Global — brouillon avec aperçu en direct (I27) ; (4) Valider, Annuler les réglages, Rétablir l'original, Fermer. Le panneau se ferme si l'onglet, la page ou la sélection changent ou si l'image disparaît ; une écriture ne le ferme pas ; une écriture géométrique de la séance garde le brouillon, toute autre le reprend du document (I31).
+
+**Fichiers :** Créer `apps/web/src/ui/ImagePanel.tsx`, `apps/web/src/ui/ImagePanel.test.tsx`. Modifier `apps/web/src/ui/App.tsx` (imports l. 8-32, après `sessionKey` l. 131-139, après le `Show` de la grille l. 290-292) ; `apps/web/src/ui/App.test.tsx` (un test dans `describe("App (T95)")`) ; `apps/web/src/ui/rb.css:28` (une règle après `.rb-popover`).
+
+**Interfaces :**
+- Consomme : (T11) `ImageEdit` (`preview`, `pick`, `startCrop`, `finishCrop`, `geometry`, `commit`, `restore`, `mode`, `keepsDraft`, `close`), `Engine.editImage(id)`, `EngineState.selectionImage` ; (T13) `type Panel` avec `"image"`, `toggle("image")` ; (T6) `clean`, `flipShown`, `turnShown`, `paramsOf`.
+- Produit : `interface ImagePanelProps { readonly image: Accessor<ImageData | null>; readonly version: Accessor<number>; readonly tick: Accessor<unknown>; readonly edit: ImageEdit; close(): void }` ; `ImagePanel(props): JSX.Element` (racine `#image-retouche.rb-editor`) ; `interface PixelDraft { brightness: number; contrast: number; color: string | null; tolerance: number; soft: number; contiguous: boolean }` ; `DEFAULT_TOLERANCE = 10`, `DEFAULT_SOFT = 0` ; `draftOf(i: ImageData | null): PixelDraft` ; `pixelParams(d: PixelDraft): ImageParams`. Sélecteurs de l'essai : `[data-image-action="crop|crop-apply|crop-cancel|flip-h|flip-v|turn-left|turn-right|pick|apply|cancel|restore|close"]`, `[data-image-input="brightness|contrast|tolerance|soft|mode"]` (`mode` : `contiguous` | `global`), `[data-image-color]` (couleur piquée, vide sans).
+- Réutilise : `apps/web/src/ui/GridPanel.tsx:30-37`, `App.tsx:114-139`, `:291` — patron `preview` / `endPreview` / `apply` / `cancel`, `rb-popover`, `sessionKey` (réutiliser le patron, nouveau composant `ImagePanel`) ; `syncValue` de `ProfileEditor.tsx` comme `GridPanel`.
+
+**Preuve visuelle :** aucune automatique ici ; la capture et les lectures (`#stage[data-image]`, `data-pixels`, couleurs lues dans `#scene`) sont faites par l'essai T16 ; montrer le panneau à la porte visuelle (HC5-3).
+
+**Test et commande bornée :** `cd <worktree> && pnpm --filter @roomboard/web test src/ui/ImagePanel.test.tsx src/ui/App.test.tsx src/ui/Toolbar.test.tsx 2>&1 | tail -20` → `Test Files  3 passed (3)` ; `src/ui/ImagePanel.test.tsx` : `Tests  9 passed (9)` ; `-t "panneau image"` → `Tests  1 passed`. Types : aucune sortie de `tsc`.
+
+**Contraintes (recopiées) :**
+- GC3 Scène ≥ 640 px de haut à 1280 × 900, mesurée par un test, y compris panneau de l'image ouvert (mesure par l'essai T16 ; le panneau se superpose à la scène, il ne la réduit pas).
+- GC7 Preuves bornées : `pnpm --filter @roomboard/web test <fichier> 2>&1 | tail -20` (sans `--`). Motif d'échec : `FAIL `, code de sortie non nul.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC11 Chantier parallèle OD85 (C12 PDF) sur les mêmes fichiers (`App.tsx`) : modifications localisées, ajouts plutôt que réécritures.
+- GC12 `src/ui` : aucun `switch (`, aucun `\d+px` dans un `.tsx`, aucun `localStorage` (garde de `apps/web/src/ui/Toolbar.test.tsx:135`) ; design des panneaux existants (`GridPanel`, `.rb-editor`), aucun style neuf hors du calage à droite.
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&`.
+
+**Interdits :** modifier `GridPanel.tsx` ; un style neuf autre que `.rb-popover[data-panel="image"]` ; écrire depuis le panneau autrement que par `ImageEdit`.
+
+**Terminé quand :** trois fichiers verts, `tsc` sans erreur.
+
+**Rapport :** sha ; sortie bornée ; `Réutilisation : appelé GridPanel.tsx (patron), App.tsx sessionKey (adapté), rb-popover`.
+
+- [ ] **Étape 1 : tests (rouges)**
+
+`apps/web/src/ui/ImagePanel.test.tsx` :
+
+```tsx
+// @vitest-environment happy-dom
+import { cleanup, fireEvent, render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ImageData } from "../core/api";
+import type { ImageEdit } from "../engine/tools/image-edit";
+import { draftOf, ImagePanel, pixelParams } from "./ImagePanel";
+
+afterEach(cleanup);
+const A = "ab".repeat(32);
+function fakeEdit(pick: string | null = "#ffffff") {
+  let mode: "idle" | "crop" | "pick" = "idle";
+  const edit = {
+    id: "i",
+    preview: vi.fn(),
+    pick: vi.fn(async () => pick),
+    startCrop: vi.fn(() => (mode = "crop")),
+    finishCrop: vi.fn(() => ((mode = "idle"), true)),
+    geometry: vi.fn(() => true),
+    commit: vi.fn(() => true),
+    restore: vi.fn(() => true),
+    mode: () => mode,
+    keepsDraft: vi.fn((_v: number) => false),
+    close: vi.fn(),
+  } satisfies ImageEdit;
+  return edit;
+}
+function setup(initial: ImageData = { asset: A, w: 200, h: 150 }, edit = fakeEdit()) {
+  const [image, setImage] = createSignal<ImageData | null>(initial);
+  const [version, setVersion] = createSignal(0);
+  const [tick, setTick] = createSignal(0);
+  const close = vi.fn();
+  const r = render(() => <ImagePanel image={image} version={version} tick={tick} edit={edit} close={close} />);
+  const q = (sel: string) => r.container.querySelector<HTMLElement>(sel)!;
+  const act = (id: string) => fireEvent.click(q(`[data-image-action="${id}"]`));
+  const input = (id: string, v: string) => {
+    const el = q(`[data-image-input="${id}"]`) as HTMLInputElement;
+    el.value = v;
+    fireEvent.input(el);
+  };
+  return { ...r, edit, close, setImage, setVersion, setTick, q, act, input };
+}
+
+describe("panneau de retouche (I25-I27, I31)", () => {
+  it("Retourner ↔ et ↕ : geometry(flipShown(document, …)) ; une image tournée bascule l'autre axe", () => {
+    const { act, edit } = setup({ asset: A, w: 200, h: 150, quarterTurns: 1 });
+    act("flip-h");
+    act("flip-v");
+    expect(edit.geometry.mock.calls.map((c) => c[0])).toEqual([{ flipY: true, quarterTurns: 1 }, { flipX: true, quarterTurns: 1 }]);
+  });
+  it("Tourner ⟲ et ⟳ : geometry(turnShown(document, ∓1))", () => {
+    const { act, edit } = setup();
+    act("turn-left");
+    act("turn-right");
+    expect(edit.geometry.mock.calls.map((c) => c[0])).toEqual([{ quarterTurns: 3 }, { quarterTurns: 1 }]);
+  });
+  it("Luminosité : aperçu du brouillon, rien d'écrit ; Valider : commit des pixels", () => {
+    const { input, act, edit } = setup();
+    input("brightness", "50");
+    expect(edit.preview).toHaveBeenLastCalledWith({ brightness: 50 });
+    expect(edit.commit).not.toHaveBeenCalled();
+    act("apply");
+    expect(edit.commit).toHaveBeenCalledWith({ brightness: 50 });
+  });
+  it("Pipette : la couleur piquée entre au brouillon (tolérance 10, plume 0, contigu) et à l'aperçu", async () => {
+    const { act, edit, q } = setup();
+    act("pick");
+    await vi.waitFor(() => expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true } }));
+    expect(q("[data-image-color]").getAttribute("data-image-color")).toBe("#ffffff");
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "global" } });
+    expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: false } });
+  });
+  it("écriture géométrique de la séance : brouillon gardé ; autre écriture : brouillon repris du document", () => {
+    const { input, edit, setVersion, setImage, q } = setup();
+    input("brightness", "50");
+    edit.keepsDraft.mockReturnValueOnce(true);
+    setVersion(1);
+    expect((q('[data-image-input="brightness"]') as HTMLInputElement).value).toBe("50");
+    setImage({ asset: A, w: 200, h: 150, brightness: 20 });
+    setVersion(2);
+    expect((q('[data-image-input="brightness"]') as HTMLInputElement).value).toBe("20");
+  });
+  it("Annuler les réglages : brouillon du document, aperçu retiré, aucune écriture", () => {
+    const { input, act, edit, q } = setup();
+    input("contrast", "30");
+    act("cancel");
+    expect(edit.preview).toHaveBeenLastCalledWith(null);
+    expect((q('[data-image-input="contrast"]') as HTMLInputElement).value).toBe("0");
+    expect(edit.commit).not.toHaveBeenCalled();
+  });
+  it("Rogner : startCrop ; en mode rognage, Valider le rognage et Annuler", () => {
+    const { act, edit, setTick, q } = setup();
+    act("crop");
+    expect(edit.startCrop).toHaveBeenCalled();
+    setTick(1);
+    expect(q('[data-image-action="flip-h"]')).toBeNull();
+    act("crop-apply");
+    expect(edit.finishCrop).toHaveBeenCalledWith(true);
+    setTick(2);
+    expect(q('[data-image-action="flip-h"]')).not.toBeNull();
+  });
+  it("Rétablir l'original : restore() ; Fermer : close()", () => {
+    const { act, edit, close } = setup();
+    act("restore");
+    act("close");
+    expect([edit.restore.mock.calls.length, close.mock.calls.length]).toEqual([1, 1]);
+  });
+  it("démontage : edit.close() ; draftOf et pixelParams", () => {
+    const { unmount, edit } = setup();
+    unmount();
+    expect(edit.close).toHaveBeenCalledTimes(1);
+    const d = draftOf({ asset: A, w: 1, h: 1, contrast: -5, transparent: { color: "#000000", tolerance: 3, soft: 4, contiguous: false } });
+    expect(d).toEqual({ brightness: 0, contrast: -5, color: "#000000", tolerance: 3, soft: 4, contiguous: false });
+    expect(pixelParams({ ...d, color: null })).toEqual({ contrast: -5 });
+  });
+});
+```
+
+`App.test.tsx`, dans `describe("App (T95)", …)` :
+
+```tsx
+  it("panneau image : ouvert par le bouton « Image », gardé par une écriture, fermé quand la sélection change (I31)", () => {
+    const tab = fakeTab("Sans titre.roomboard");
+    const edit = { id: "i", preview: vi.fn(), pick: vi.fn(async () => null), startCrop: vi.fn(), finishCrop: vi.fn(() => false), geometry: vi.fn(() => true), commit: vi.fn(() => true), restore: vi.fn(() => true), mode: () => "idle" as const, keepsDraft: () => false, close: vi.fn() };
+    tab.engine["editImage"] = vi.fn(() => edit);
+    (tab.session.board.doc as unknown as Record<string, unknown>)["element"] = (id: string) => ({ id, kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: "ab".repeat(32), w: 200, h: 150 } });
+    const { container } = renderApp({ tab });
+    tab.emit({ tool: "select", selection: ["i"], selectionUnits: 1, selectionImage: "i" });
+    click(container.querySelector('[data-selection-action="image"]'));
+    expect(container.querySelector('.rb-popover[data-panel="image"] #image-retouche')).not.toBeNull();
+    tab.emit({ version: 5 });
+    expect(container.querySelector("#image-retouche")).not.toBeNull();
+    tab.emit({ selection: [], selectionUnits: 0, selectionImage: null });
+    expect(container.querySelector("#image-retouche")).toBeNull();
+    expect(edit.close).toHaveBeenCalledTimes(1);
+  });
+```
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/ui/ImagePanel.test.tsx src/ui/App.test.tsx 2>&1 | tail -20` → attendu `FAIL `.
+
+- [ ] **Étape 2 : `ImagePanel.tsx`**
+
+```tsx
+/**
+ * Panneau de retouche d'une image (C5, I25-I27, I31) : géométrie immédiate (Rogner, Retourner, Tourner : une étape
+ * chacun, par la séance du moteur) ; luminosité, contraste et couleur transparente en brouillon, aperçu en direct, écrits
+ * ensemble par « Valider » (une étape). Une écriture géométrique de la séance garde le brouillon ; toute autre écriture
+ * (Valider, Rétablir, annuler, rétablir, ailleurs) le reprend du document. Démonté : la séance est fermée.
+ */
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import type { ImageData, ImageParams } from "../core/api";
+import { clean, flipShown, paramsOf, turnShown } from "../core/image-params";
+import type { ImageEdit } from "../engine/tools/image-edit";
+import { syncValue } from "./ProfileEditor";
+
+/** Défauts du panneau (I12, I13, HC5-7). */
+export const DEFAULT_TOLERANCE = 10;
+export const DEFAULT_SOFT = 0;
+
+export interface PixelDraft {
+  readonly brightness: number;
+  readonly contrast: number;
+  /** Couleur piquée ; null : aucune couleur transparente. */
+  readonly color: string | null;
+  readonly tolerance: number;
+  readonly soft: number;
+  readonly contiguous: boolean;
+}
+
+export function draftOf(i: ImageData | null): PixelDraft {
+  const t = i?.transparent;
+  return {
+    brightness: i?.brightness ?? 0,
+    contrast: i?.contrast ?? 0,
+    color: t?.color ?? null,
+    tolerance: t?.tolerance ?? DEFAULT_TOLERANCE,
+    soft: t?.soft ?? DEFAULT_SOFT,
+    contiguous: t?.contiguous ?? true,
+  };
+}
+
+export function pixelParams(d: PixelDraft): ImageParams {
+  return clean({
+    brightness: d.brightness,
+    contrast: d.contrast,
+    ...(d.color === null ? {} : { transparent: { color: d.color, tolerance: d.tolerance, soft: d.soft, contiguous: d.contiguous } }),
+  });
+}
+
+export interface ImagePanelProps {
+  /** Image du document, relue à chaque état (réactive) ; null : image disparue. */
+  readonly image: Accessor<ImageData | null>;
+  /** Version du document (réactive). */
+  readonly version: Accessor<number>;
+  /** Impulsion de l'état du moteur : le mode de la séance est relu à chaque état publié. */
+  readonly tick: Accessor<unknown>;
+  readonly edit: ImageEdit;
+  close(): void;
+}
+
+export function ImagePanel(props: ImagePanelProps): JSX.Element {
+  const [draft, setDraft] = createSignal<PixelDraft>(draftOf(props.image()));
+  const mode = createMemo(() => {
+    props.tick();
+    return props.edit.mode();
+  });
+  onCleanup(() => props.edit.close());
+  createEffect(
+    on(
+      props.version,
+      (v) => {
+        if (!props.edit.keepsDraft(v)) setDraft(draftOf(props.image()));
+      },
+      { defer: true },
+    ),
+  );
+  const edit = (next: PixelDraft): void => {
+    setDraft(next);
+    props.edit.preview(pixelParams(next));
+  };
+  const geometry = (next: (p: ImageParams) => ImageParams): void => {
+    const i = props.image();
+    if (i !== null) props.edit.geometry(next(paramsOf(i)));
+  };
+  const num = (e: { currentTarget: HTMLInputElement }): number => Number(e.currentTarget.value);
+  return (
+    <div id="image-retouche" class="rb-editor" role="group" aria-label="Retouche de l'image">
+      <Show
+        when={mode() === "crop"}
+        fallback={
+          <div class="rb-editor-actions">
+            <button type="button" data-image-action="crop" onClick={() => props.edit.startCrop()}>Rogner</button>
+            <button type="button" data-image-action="flip-h" onClick={() => geometry((p) => flipShown(p, "h"))}>Retourner ↔</button>
+            <button type="button" data-image-action="flip-v" onClick={() => geometry((p) => flipShown(p, "v"))}>Retourner ↕</button>
+            <button type="button" data-image-action="turn-left" onClick={() => geometry((p) => turnShown(p, -1))}>Tourner ⟲</button>
+            <button type="button" data-image-action="turn-right" onClick={() => geometry((p) => turnShown(p, 1))}>Tourner ⟳</button>
+          </div>
+        }
+      >
+        <div class="rb-editor-actions">
+          <button type="button" data-image-action="crop-apply" onClick={() => props.edit.finishCrop(true)}>Valider le rognage</button>
+          <button type="button" data-image-action="crop-cancel" onClick={() => props.edit.finishCrop(false)}>Annuler</button>
+        </div>
+      </Show>
+      <label>
+        Luminosité{" "}
+        <input type="range" min="-100" max="100" step="1" data-image-input="brightness" value={draft().brightness} onInput={(e) => edit({ ...draft(), brightness: num(e) })} />
+      </label>
+      <label>
+        Contraste{" "}
+        <input type="range" min="-100" max="100" step="1" data-image-input="contrast" value={draft().contrast} onInput={(e) => edit({ ...draft(), contrast: num(e) })} />
+      </label>
+      <fieldset>
+        <legend>Couleur transparente</legend>
+        <div class="rb-editor-actions">
+          <button
+            type="button"
+            data-image-action="pick"
+            aria-pressed={mode() === "pick"}
+            onClick={() => void props.edit.pick().then((c) => c !== null && edit({ ...draft(), color: c }))}
+          >
+            Pipette
+          </button>
+          <span class="rb-swatch" data-image-color={draft().color ?? ""} style={{ background: draft().color ?? "transparent" }} />
+        </div>
+        <label>
+          Tolérance{" "}
+          <input type="range" min="0" max="100" step="1" data-image-input="tolerance" value={draft().tolerance} onInput={(e) => edit({ ...draft(), tolerance: num(e) })} />
+        </label>
+        <label>
+          Plume{" "}
+          <input type="range" min="0" max="100" step="1" data-image-input="soft" value={draft().soft} onInput={(e) => edit({ ...draft(), soft: num(e) })} />
+        </label>
+        <label>
+          Mode{" "}
+          <select
+            data-image-input="mode"
+            ref={(el) => syncValue(el, () => (draft().contiguous ? "contiguous" : "global"))}
+            onChange={(e) => edit({ ...draft(), contiguous: e.currentTarget.value === "contiguous" })}
+          >
+            <option value="contiguous">Contigu</option>
+            <option value="global">Global</option>
+          </select>
+        </label>
+      </fieldset>
+      <div class="rb-editor-actions">
+        <button type="button" data-image-action="apply" onClick={() => props.edit.commit(pixelParams(draft()))}>Valider</button>
+        <button
+          type="button"
+          data-image-action="cancel"
+          onClick={() => {
+            setDraft(draftOf(props.image()));
+            props.edit.preview(null);
+          }}
+        >
+          Annuler les réglages
+        </button>
+        <button type="button" data-image-action="restore" onClick={() => props.edit.restore()}>Rétablir l'original</button>
+        <button type="button" data-image-action="close" onClick={() => props.close()}>Fermer</button>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Étape 3 : `App.tsx` et `rb.css`**
+
+Imports : `import type { ImageData } from "../core/api";` et `import { ImagePanel } from "./ImagePanel";`. Après le `createEffect(on(sessionKey, …))` existant :
+
+```tsx
+  /** Panneau de l'image (C5, I25, I31) : l'image sélectionnée seule à l'ouverture ; fermé si l'onglet, la page ou la
+   *  sélection changent, ou si l'image disparaît ; une écriture ne le ferme pas (au contraire de la grille). */
+  const [imageTarget, setImageTarget] = createSignal<string | null>(null);
+  createEffect(
+    on(panel, (p) => {
+      if (p !== "image") return;
+      const id = state().selectionImage ?? null;
+      setImageTarget(id);
+      if (id === null) setPanel(null);
+    }),
+  );
+  const imageKey = createMemo(() => `${activeId() ?? ""}|${state().page}|${state().selectionImage ?? ""}`);
+  createEffect(
+    on(
+      imageKey,
+      () => {
+        if (panel() === "image") setPanel(null);
+      },
+      { defer: true },
+    ),
+  );
+  /** Séance de retouche du moteur `b` (figé à l'ouverture, comme la grille) ; démontée : séance fermée. */
+  const imagePanelFor = (b: BoardSession, id: string): JSX.Element => {
+    const edit = b.engine.editImage(id);
+    if (edit === null) return null;
+    const image = (): ImageData | null => {
+      state();
+      const el = b.doc.element(id);
+      return el?.kind === "image" ? el.image : null;
+    };
+    return <ImagePanel image={image} version={() => state().version} tick={state} edit={edit} close={() => setPanel(null)} />;
+  };
+```
+
+Après `<Show when={panel() === "grid"}>…</Show>` :
+
+```tsx
+      <Show when={panel() === "image" ? imageTarget() : null}>
+        {(id) => (
+          <div class="rb-popover" data-panel="image">
+            {imagePanelFor(ws.active().board, id())}
+          </div>
+        )}
+      </Show>
+```
+
+`rb.css`, après la ligne `.rb-popover { … }` :
+
+```css
+/* Panneau de l'image (C5, I26) : calé à droite, l'image déposée au centre ou à gauche reste visible. */
+.rb-popover[data-panel="image"] { justify-self: end; }
+```
+
+- [ ] **Étape 4 : vert, types, commit**
+
+Run : `cd <worktree> && pnpm --filter @roomboard/web test src/ui/ImagePanel.test.tsx src/ui/App.test.tsx src/ui/Toolbar.test.tsx 2>&1 | tail -20 && pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20` → `Test Files  3 passed (3)`, aucune sortie de `tsc`. Un écart du test « Pipette » sur `fireEvent.change` (happy-dom) se corrige en posant `el.value` puis `fireEvent.change(el)`, jamais en retirant l'assertion.
+
+```bash
+cd <worktree> && git add apps/web/src/ui/ImagePanel.tsx apps/web/src/ui/ImagePanel.test.tsx apps/web/src/ui/App.tsx apps/web/src/ui/App.test.tsx apps/web/src/ui/rb.css && git commit -m "feat(web): add the image edit panel with live preview" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+### Tâche T15 — Générateur PNG des essais dans commun.mjs
+
+<a id="tache-t15"></a>
+
+**Objectif :** le générateur PNG, copié dans `c2-image-navigateur.mjs:22-57` et `c6a-pot-navigateur.mjs:35-69`, passe dans `commun.mjs` (`rgbPng`, `solidPng`) ; les deux essais l'importent ; octets identiques (I34, effet de bord : les deux essais sont rejoués par `verifier.sh --e2e` en T16).
+
+**Fichiers :** Modifier `scripts/essais/commun.mjs` (import `node:zlib`, deux fonctions en fin de fichier) ; `scripts/essais/c2-image-navigateur.mjs` (l. 13-14 imports, bloc `const CRC` … fin de `solidPng`) ; `scripts/essais/c6a-pot-navigateur.mjs` (l. 12-13 imports, commentaire « // PNG uni … » et bloc `const CRC` … fin de `solidPng`).
+
+**Interfaces :**
+- Produit : `rgbPng(w: number, h: number, at: (x: number, y: number) => [r, g, b]): Buffer` (PNG RVB 8 bits, filtre 0, `deflateSync`) ; `solidPng(w: number, h: number, rgb: [r, g, b]): Buffer` = `rgbPng(w, h, () => rgb)`.
+- Réutilise : `scripts/essais/c2-image-navigateur.mjs:29-54`, `c6a-pot-navigateur.mjs:42-67` (deux copies) — déplacé dans `commun.mjs` : `rgbPng(w, h, at: (x, y) => [r, g, b]) -> Buffer`, `solidPng(w, h, rgb)` (étendre `commun.mjs`).
+
+**Test et commande bornée :** `cd <worktree> && node --check scripts/essais/commun.mjs && node --check scripts/essais/c2-image-navigateur.mjs && node --check scripts/essais/c6a-pot-navigateur.mjs && node -e 'import("./scripts/essais/commun.mjs").then(({solidPng}) => { const h = (b) => require("node:crypto").createHash("sha256").update(b).digest("hex"); console.log(h(solidPng(200,150,[20,20,20]))); console.log(h(solidPng(80,60,[200,30,30]))); })' 2>&1 | tail -5` → exactement `c060abc2bfbb92e464184fc4ebc0fe3d6f03302627ef3ca2fa4f26541bfdc622` puis `83f9ba826897e90060d8d3daaa28250429d8d5d2adbff5496a5f5cb27b20ce21` (empreintes de l'ancien code, relevées le 2026-11-20). `grep -c "function crc32" scripts/essais/c2-image-navigateur.mjs scripts/essais/c6a-pot-navigateur.mjs` → `0` et `0`.
+
+**Contraintes (recopiées) :**
+- GC5 Images de test fabriquées dans les tests (octets construits en code), jamais téléchargées.
+- GC6 L'essai Playwright C5 entre dans le bloc `--e2e` de `scripts/verifier.sh` (patron `scripts/essais/*-navigateur.mjs`) ; ici, seul le générateur est partagé.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&`.
+
+**Interdits :** changer un autre passage des deux essais ; changer un octet produit.
+
+**Terminé quand :** les trois `node --check` passent, les deux empreintes sont identiques, plus aucune copie locale.
+
+**Rapport :** sha ; sortie bornée ; `Réutilisation : appelé commun.mjs rgbPng, solidPng (deux copies retirées)`.
+
+- [ ] **Étape 1 : `commun.mjs`**
+
+Ajouter `import { deflateSync } from "node:zlib";` après `import { fileURLToPath, pathToFileURL } from "node:url";`, et en fin de fichier :
+
+```js
+// PNG fabriqués par les essais (C2, C6a, C5 ; I34) : RVB 8 bits, une ligne filtrée 0 par rangée ; jamais téléchargés.
+const CRC = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function chunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([len, body, crc]);
+}
+/** PNG RVB 8 bits `w × h` ; `at(x, y)` rend la couleur [r, g, b] du pixel. */
+export function rgbPng(w, h, at) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const raw = Buffer.concat(
+    Array.from({ length: h }, (_, y) => {
+      const row = Buffer.alloc(1 + 3 * w);
+      for (let x = 0; x < w; x++) row.set(at(x, y), 1 + 3 * x);
+      return row;
+    }),
+  );
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+/** PNG RVB 8 bits d'une seule couleur. */
+export const solidPng = (w, h, rgb) => rgbPng(w, h, () => rgb);
+```
+
+- [ ] **Étape 2 : les deux essais**
+
+`c2-image-navigateur.mjs` : `import { deflateSync, inflateRawSync } from "node:zlib";` devient `import { inflateRawSync } from "node:zlib";` ; ajouter `solidPng` à la liste importée de `./commun.mjs` ; supprimer le bloc de `const CRC = Array.from(` jusqu'à l'accolade fermante de `function solidPng(…)` incluse (commentaire `/** PNG RVB 8 bits d'une seule couleur. */` compris).
+
+`c6a-pot-navigateur.mjs` : supprimer `import { deflateSync } from "node:zlib";` ; ajouter `solidPng` à la liste importée de `./commun.mjs` ; supprimer la ligne `// PNG uni (patron de c2-image-navigateur.mjs) : l'image déposée en S4.` et le bloc de `const CRC = Array.from(` jusqu'à la fin de `function solidPng(…)`.
+
+- [ ] **Étape 3 : preuve et commit**
+
+Run : la commande bornée de la section → les deux empreintes attendues, les deux `0`.
+
+```bash
+cd <worktree> && git add scripts/essais/commun.mjs scripts/essais/c2-image-navigateur.mjs scripts/essais/c6a-pot-navigateur.mjs && git commit -m "test(e2e): share the PNG generator of browser trials in commun.mjs" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+### Tâche T16 — Essai navigateur C5 et suite complète
+
+<a id="tache-t16"></a>
+
+**Objectif :** jouer S1 et S2 dans Chromium (application construite, CSP de la coque, mode repli, heure figée, aucune requête hors de 127.0.0.1), dans le bloc `--e2e` de `verifier.sh` ; capture `docs/essais/c5-image-rognee-transparente.png` par `--captures` seulement ; scène ≥ 640 px panneau ouvert (I35) ; suite complète verte ; tailles des deux modules.
+
+**Fichiers :** Créer `scripts/essais/c5-image-navigateur.mjs`, `docs/essais/c5-image-rognee-transparente.png` (généré). Modifier `scripts/verifier.sh:104` (une ligne après `c6a-pot-navigateur.mjs`) ; `scripts/tests/verifier-e2e.test.sh:13` (`c5-image-navigateur` ajouté à la liste) ; `apps/web/src/ui/rb.css` **seulement si** la scène mesure moins de 640 px (étape 4).
+
+**Interfaces :**
+- Consomme : (T15) `rgbPng`, `solidPng` ; (T12) `#stage[data-pixels]`, `#stage[data-image]` ; (T13, T14) `button[data-selection-action="image"]`, `[data-image-action=…]`, `[data-image-input=…]`, `[data-image-color]` ; existants : `#stage[data-bounds]` (`x0,y0,x1,y1` monde au dixième), `#stage[data-camera]` (`zoom,tx,ty`), `#stage[data-elements]`, `#stage[data-version]`, `button[data-item="fill"|"select"]`, `button[data-preset="bleu"]`.
+- Réutilise : `scripts/essais/commun.mjs:37`, `:72`, `:101`, `:110`, `:143` — `serve`, `inkIn(page, box, { rgb, tol })`, `stageBox`, `stageMouse`, `dropFile` (réutiliser).
+
+**Preuve visuelle :** lectures d'abord — `#stage[data-image]="160x120"`, `#stage[data-pixels]="pret"`, couleur bleue lue au coin (`inkIn` avec `rgb` `#1d4ed8`) et blanche dans l'anneau —, puis la capture : image rognée (160 × 120 pixels source) et retournée, fond devenu transparent (bleu de la page visible au coin), intérieur de l'anneau resté blanc, panneau calé à droite. Décrire la capture dans le rapport.
+
+**Test et commande bornée :**
+- `cd <worktree> && bash scripts/tests/verifier-e2e.test.sh 2>&1 | tail -5` → `verifier-e2e.test.sh : OK`.
+- `cd <worktree> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && scripts/verifier.sh --e2e 2>&1 | tail -40` → lignes `module Wasm : N octets` (N ≤ 1 572 864), `module formats : M octets` (M ≤ 3 145 728), `C2 image : OK`, `C6a pot : OK`, `C5 image : OK`, `verifier.sh : e2e OK`, `verifier.sh : OK`. Couvre tous les tests à garder verts (Rust et web), dont `c3-groupes-navigateur.mjs` à 640 px.
+- Capture : `cd <worktree> && node scripts/essais/c5-image-navigateur.mjs --captures 2>&1 | tail -5` → `capture : …/docs/essais/c5-image-rognee-transparente.png`, `C5 image : OK`.
+
+**Contraintes (recopiées) :**
+- GC2 Module Wasm principal ≤ 1 572 864 octets (H2-13), module `formats` ≤ 3 Mio (3 145 728 octets) ; aucun seuil baissé ni relevé dans `scripts/verifier.sh` ; tailles écrites avant/après dans le rapport (référence `main` @ 0dd7f1a : principal 1 080 736 o, `formats` 859 580 o).
+- GC3 Scène ≥ 640 px de haut à 1280 × 900, mesurée par un test, y compris panneau de l'image ouvert.
+- GC4 Un `.roomboard` d'avant C5 s'ouvre toujours ; l'aller-retour enregistrer/rouvrir garde les réglages et les octets.
+- GC5 Images de test fabriquées dans les tests (octets construits en code), jamais téléchargées.
+- GC6 L'essai Playwright C5 entre dans le bloc `--e2e` de `scripts/verifier.sh` (patron `c6a-pot-navigateur.mjs`) : déposer une image, la rogner, la retourner, rendre transparent son fond blanc par la pipette, annuler puis refaire, rétablir l'original, enregistrer puis rouvrir ; capture PNG d'une image rognée au fond transparent dans `docs/essais/`.
+- GC7 Suite complète `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && scripts/verifier.sh --e2e 2>&1 | tail -40`. Motif d'échec : `test result: FAILED`, `error[`, `FAIL `, code de sortie non nul.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC10 VM chargée : un essai qui échoue sur un délai est rejoué une fois avant d'être jugé ; aucun délai relevé.
+- GC11 Chantier parallèle OD85 : `verifier.sh` et `verifier-e2e.test.sh` reçoivent une ligne chacun, rien d'autre.
+- GC12 Design des panneaux existants, aucun style neuf hors du calage à droite (le resserrement éventuel de l'étape 4 est celui prévu par I35).
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&`.
+
+**Interdits :** passer `--captures` dans `verifier.sh` ; un build Tauri ; relever un délai d'attente de l'essai.
+
+**Terminé quand :** `verifier.sh --e2e` OK, capture commitée, tailles notées.
+
+**Rapport :** sha ; sortie bornée de la suite ; « module principal : 1 080 736 o → N o ; formats : 859 580 o → M o » ; hauteur de scène mesurée ; description de la capture ; `Réutilisation : appelé commun.mjs serve, inkIn, stageBox, stageMouse, dropFile`.
+
+- [ ] **Étape 1 : l'essai**
+
+`scripts/essais/c5-image-navigateur.mjs` :
+
+```js
+#!/usr/bin/env node
+// Essai C5 « édition d'image non destructive » au navigateur (S1, S2 du cadrage usage-c5-image). Application construite
+// (apps/web/dist) servie avec la CSP de la coque, Chromium headless de Playwright, mode repli (`?fichiers=repli`), heure
+// figée. PNG fabriqué ici (fond blanc, anneau rouge fermé à intérieur blanc), jamais téléchargé. Oracles : couleurs lues
+// dans `#scene` (`inkIn` avec `rgb`), attributs de `#stage` (`data-image`, `data-pixels`, `data-bounds`) ; aucune requête
+// hors de 127.0.0.1. Lancé par scripts/verifier.sh --e2e, sans option de capture.
+// Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/c5-image-navigateur.mjs [--captures]
+// (--captures : docs/essais/c5-image-rognee-transparente.png).
+import { existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, rgbPng, serve, stageBox, stageMouse } from "./commun.mjs";
+
+const LABEL = "C5 image";
+const FIXED = new Date("2026-11-20T08:00:00.000Z");
+const W = 200;
+const H = 150;
+const RED = [220, 38, 38];
+const WHITE = [255, 255, 255];
+const BLUE = [29, 78, 216];
+const LIGHT_RED = [255, 166, 166];
+/** Points de la scène (px de la scène, caméra du premier onglet). */
+const VOID = [1100, 560];
+const DROP1 = [400, 360];
+const DROP2 = [700, 380];
+/** Points de la boîte affichée (pixels source) : coin blanc, centre de l'anneau, pixel de l'anneau. */
+const CORNER = [12, 12];
+
+/** 200 × 150 : fond blanc, anneau rouge fermé (rayons 30 à 45 autour de (100, 75)), intérieur blanc. */
+const ringPng = () =>
+  rgbPng(W, H, (x, y) => {
+    const d = Math.hypot(x + 0.5 - 100, y + 0.5 - 75);
+    return d >= 30 && d <= 45 ? RED : WHITE;
+  });
+
+async function scenario(page, url, { captures, tmp }) {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("dialog", (d) => d.accept());
+  const check = (cond, msg) => {
+    if (!cond) throw new Echec(msg);
+    console.log(`ok — ${msg}`);
+  };
+  const fr = () => frames(page);
+  const mouse = stageMouse(page);
+  const attr = (name) => page.getAttribute("#stage", name);
+  const press = async (k) => {
+    await page.keyboard.press(k);
+    await fr();
+  };
+  const waitAttr = (name, v) =>
+    page
+      .waitForFunction(([n, w]) => document.querySelector("#stage")?.getAttribute(n) === w, [name, v], { timeout: 15000 })
+      .catch(async () => {
+        throw new Echec(`${name} attendu « ${v} », lu « ${await attr(name)} »`);
+      });
+  /** Attend qu'une sonde devienne vraie (15 s au plus, une image d'animation entre deux lectures). */
+  const until = async (probe, msg, ms = 15000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      if (await probe()) {
+        console.log(`ok — ${msg}`);
+        return;
+      }
+      if (Date.now() > end) throw new Echec(msg);
+      await fr();
+    }
+  };
+  const camera = async () => {
+    const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);
+    return { zoom, tx, ty };
+  };
+  const screen = async ([wx, wy]) => {
+    const c = await camera();
+    return [wx * c.zoom + c.tx, wy * c.zoom + c.ty];
+  };
+  /** Boîte de l'image sélectionnée seule : bornes monde, taille affichée en pixels source, échelle monde par pixel. */
+  const box = async () => {
+    const [x0, y0, x1, y1] = ((await attr("data-bounds")) ?? "").split(",").map(Number);
+    const [bw, bh] = ((await attr("data-image")) ?? "").split("x").map(Number);
+    return { x0, y0, x1, y1, bw, bh, s: (x1 - x0) / bw };
+  };
+  /** Point monde d'un point de la boîte affichée. */
+  const at = async ([dx, dy]) => {
+    const b = await box();
+    return [b.x0 + dx * b.s, b.y0 + dy * b.s];
+  };
+  const near = async (w, rgb, tol = 30, r = 3) => {
+    const [x, y] = await screen(w);
+    return inkIn(page, [x - r, y - r, x + r, y + r], { rgb, tol });
+  };
+  const nearDisplay = async (d, rgb, tol = 30) => near(await at(d), rgb, tol);
+  const clickWorld = async (w) => {
+    const [x, y] = await screen(w);
+    await mouse.click(x, y);
+    await fr();
+  };
+  const act = async (id) => {
+    await page.click(`[data-image-action="${id}"]`);
+    await fr();
+  };
+  const setRange = async (name, v) => {
+    await page.$eval(`[data-image-input="${name}"]`, (el, value) => {
+      el.value = String(value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }, v);
+    await fr();
+  };
+  const openPanel = async () => {
+    await page.click('button[data-selection-action="image"]');
+    await page.waitForSelector("#image-retouche", { timeout: 5000 });
+    await fr();
+  };
+  const saveTo = async (name) => {
+    const dl = page.waitForEvent("download");
+    await page.keyboard.press("Control+s");
+    const file = join(tmp, name);
+    await (await dl).saveAs(file);
+    return file;
+  };
+  const openFile = async (file) => {
+    const before = await page.locator(TAB).count();
+    const chooser = page.waitForEvent("filechooser");
+    await page.keyboard.press("Control+o");
+    await (await chooser).setFiles(file);
+    await page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, before + 1, { timeout: 15000 });
+    await fr();
+  };
+
+  await page.goto(url);
+  await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });
+  await fr();
+  const c0 = await camera();
+  const world = ([x, y]) => [(x - c0.tx) / c0.zoom, (y - c0.ty) / c0.zoom];
+  const voidW = world(VOID);
+
+  // S1 : fond de la page bleu (pot de C6a), pour que la transparence se voie.
+  await page.click(item("fill"));
+  await page.click('button[data-preset="bleu"]');
+  await clickWorld(voidW);
+  check((await near(voidW, BLUE, 40, 8)) > 150, "S1 : fond de la page bleu (pot)");
+
+  // S1 : dépôt, sélection, panneau ouvert, scène ≥ 640 px.
+  await dropFile(page, "#stage", "anneau.png", ringPng(), "image/png", DROP1);
+  await waitAttr("data-elements", "1");
+  await page.click(item("select"));
+  await fr();
+  await mouse.click(DROP1[0], DROP1[1]);
+  await waitAttr("data-image", "200x150");
+  await openPanel();
+  const h640 = (await stageBox(page)).height;
+  check(h640 >= 640, `S1 : outil Sélection, image sélectionnée, panneau ouvert : scène mesurée ${Math.round(h640)} px (>= 640)`);
+
+  // S1 : rogner (poignée sud-est vers le haut et la gauche de 40 × 30 pixels source) ; les pixels gardés ne bougent pas.
+  const ringBefore = await screen(await at([100, 38]));
+  check((await inkIn(page, [ringBefore[0] - 2, ringBefore[1] - 2, ringBefore[0] + 2, ringBefore[1] + 2], { rgb: RED, tol: 40 })) > 8, "S1 : anneau rouge avant le rognage");
+  const b0 = await box();
+  await act("crop");
+  const se = await screen([b0.x1, b0.y1]);
+  const to = await screen([b0.x1 - 40 * b0.s, b0.y1 - 30 * b0.s]);
+  await mouse.move(se[0], se[1]);
+  await mouse.down();
+  await mouse.move(to[0], to[1], { steps: 8 });
+  await mouse.up();
+  await fr();
+  await act("crop-apply");
+  await waitAttr("data-image", "160x120");
+  check((await inkIn(page, [ringBefore[0] - 2, ringBefore[1] - 2, ringBefore[0] + 2, ringBefore[1] + 2], { rgb: RED, tol: 40 })) > 8, "S1 : « Valider le rognage » : data-image 160x120, les pixels gardés n'ont pas bougé");
+
+  // S1 : Retourner ↔, pipette sur un coin blanc ; global puis contigu.
+  await act("flip-h");
+  const interior = [60, 75]; // centre de l'anneau, rogné puis retourné (160 − 100, 75)
+  await act("pick");
+  await clickWorld(await at(CORNER));
+  await page.waitForSelector('[data-image-color="#ffffff"]', { timeout: 5000 });
+  await page.selectOption('[data-image-input="mode"]', "global");
+  await fr();
+  await until(async () => (await nearDisplay(CORNER, BLUE)) > 20 && (await nearDisplay(interior, BLUE)) > 20, "S1 : global, tolérance 10 : du bleu au coin et dans l'anneau");
+  await page.selectOption('[data-image-input="mode"]', "contiguous");
+  await fr();
+  await until(async () => (await nearDisplay(CORNER, BLUE)) > 20 && (await nearDisplay(interior, WHITE, 6)) > 20, "S1 : contigu : du bleu au coin, l'intérieur de l'anneau reste blanc");
+
+  // S1 : Valider (une étape) ; Ctrl+Z, Ctrl+Y.
+  await act("apply");
+  await press("Control+z");
+  await until(async () => (await nearDisplay(CORNER, WHITE, 6)) > 20, "S1 : Ctrl+Z : le coin redevient blanc");
+  await press("Control+y");
+  await until(async () => (await nearDisplay(CORNER, BLUE)) > 20, "S1 : Ctrl+Y : il redevient bleu");
+  await waitAttr("data-pixels", "pret");
+  if (captures) {
+    await fr();
+    const path = join(ROOT, "docs", "essais", "c5-image-rognee-transparente.png");
+    await page.screenshot({ path });
+    console.log(`capture : ${path}`);
+  }
+
+  // S1 : enregistrer, rouvrir : même boîte, coin bleu, intérieur blanc.
+  const bounds1 = await attr("data-bounds");
+  const centreW = await at([80, 60]);
+  await act("close");
+  const file = await saveTo("c5.roomboard");
+  await openFile(file);
+  await waitAttr("data-pixels", "pret");
+  await page.click(item("select"));
+  await fr();
+  await clickWorld(centreW);
+  await waitAttr("data-image", "160x120");
+  check((await attr("data-bounds")) === bounds1, `S1 : rouvert, même boîte (${bounds1})`);
+  await until(async () => (await nearDisplay(CORNER, BLUE)) > 20 && (await nearDisplay(interior, WHITE, 6)) > 20, "S1 : rouvert : data-pixels pret, coin bleu, intérieur blanc");
+
+  // S1 : Rétablir l'original, puis Ctrl+Z.
+  await openPanel();
+  await act("restore");
+  await waitAttr("data-image", "200x150");
+  await until(async () => (await nearDisplay(CORNER, WHITE, 6)) > 20, "S1 : « Rétablir l'original » : data-image 200x150, coin blanc");
+  await act("close");
+  await press("Control+z");
+  await waitAttr("data-image", "160x120");
+  await until(async () => (await nearDisplay(CORNER, BLUE)) > 20, "S1 : Ctrl+Z : les retouches reviennent");
+
+  // S2 : image neuve, Tourner ⟳, Luminosité +50, Tourner ⟳, Fermer sans valider, Annuler ×2, Valider la luminosité.
+  await dropFile(page, "#stage", "anneau.png", ringPng(), "image/png", DROP2);
+  await waitAttr("data-elements", "2");
+  await page.click(item("select"));
+  await fr();
+  await mouse.click(DROP2[0], DROP2[1]);
+  await waitAttr("data-image", "200x150");
+  await openPanel();
+  const b2 = await box();
+  const v0 = Number(await attr("data-version"));
+  await act("turn-right");
+  await waitAttr("data-image", "150x200");
+  const b3 = await box();
+  const centreOk = Math.abs((b2.x0 + b2.x1) / 2 - (b3.x0 + b3.x1) / 2) <= 0.5 && Math.abs((b2.y0 + b2.y1) / 2 - (b3.y0 + b3.y1) / 2) <= 0.5;
+  check(centreOk && Number(await attr("data-version")) === v0 + 1, "S2 : Tourner ⟳ : 150x200, centre en place, une étape");
+  await setRange("brightness", 50);
+  await until(async () => (await nearDisplay([112, 100], LIGHT_RED)) > 20, "S2 : Luminosité +50 : l'aperçu s'éclaircit (anneau rose)");
+  await act("turn-right");
+  await waitAttr("data-image", "200x150");
+  await until(async () => (await nearDisplay([100, 112], LIGHT_RED)) > 20, "S2 : Tourner ⟳ encore : l'aperçu reste éclairci (brouillon gardé)");
+  await act("close");
+  await until(async () => (await nearDisplay([100, 112], RED)) > 20, "S2 : Fermer sans valider : la luminosité n'est pas écrite");
+  await press("Control+z");
+  await waitAttr("data-image", "150x200");
+  await press("Control+z");
+  await waitAttr("data-image", "200x150");
+  check((await attr("data-elements")) === "2", "S2 : Annuler défait les deux quarts de tour seulement");
+  await openPanel();
+  const v1 = Number(await attr("data-version"));
+  await setRange("brightness", 50);
+  await act("apply");
+  check(Number(await attr("data-version")) === v1 + 1, "S2 : Luminosité +50, « Valider » : une étape");
+  await until(async () => (await nearDisplay([100, 38], LIGHT_RED)) > 20, "S2 : luminosité écrite");
+  const hEnd = (await stageBox(page)).height;
+  check(hEnd >= 640, `S2 : panneau ouvert : scène mesurée ${Math.round(hEnd)} px (>= 640)`);
+  check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
+}
+
+async function main() {
+  console.log(`sha ${gitSha()}`);
+  if (!existsSync(join(DIST, "index.html"))) {
+    console.error(`${LABEL} : ÉCHEC — apps/web/dist absent : lancer d'abord scripts/verifier.sh (Wasm et application)`);
+    return 1;
+  }
+  const pw = await loadPlaywright();
+  if (!pw) {
+    console.error(`${LABEL} : outil absent — Playwright introuvable (npx -y playwright@1.65.1 --version, ou PLAYWRIGHT_MODULE=…)`);
+    return 2;
+  }
+  const server = await serve({ headers: { "Content-Security-Policy": coqueCsp() } });
+  const port = server.address().port;
+  const tmp = await mkdtemp(join(tmpdir(), "roomboard-c5-"));
+  let browser = null;
+  try {
+    try {
+      browser = await pw.chromium.launch({ args: ["--no-sandbox"] });
+    } catch (e) {
+      console.error(`${LABEL} : outil absent — Chromium de Playwright : ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+      return 2;
+    }
+    const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, acceptDownloads: true });
+    const external = [];
+    await context.route("**/*", (route) => {
+      const u = new URL(route.request().url());
+      if (u.hostname === "127.0.0.1") return route.continue();
+      external.push(u.href);
+      return route.abort();
+    });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(FIXED);
+    await scenario(page, `http://127.0.0.1:${port}/?fichiers=repli`, { captures: process.argv.includes("--captures"), tmp });
+    if (external.length > 0) throw new Echec(`requêtes hors de 127.0.0.1 : ${external.join(", ")}`);
+    console.log(`${LABEL} : OK`);
+    return 0;
+  } catch (e) {
+    console.error(`${LABEL} : ÉCHEC — ${e instanceof Echec ? e.message : e instanceof Error ? e.stack : e}`);
+    return 1;
+  } finally {
+    await browser?.close();
+    server.close();
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+process.exitCode = await main();
+```
+
+Points de la boîte affichée vérifiés : coin (12, 12) blanc avant et après rognage-retournement (source (148, 12), à 79 px du centre) ; centre de l'anneau (60, 75) après rognage `[0, 0, 160, 120]` et retournement ; pixel d'anneau source (100, 38) (écart 37 au centre) affiché en (112, 100) après un quart de tour, en (100, 112) après deux ; rouge `[220, 38, 38]` + 127,5 → `[255, 166, 166]`. Un écart de mesure (sonde trop proche d'un bord) se corrige en déplaçant la sonde dans la même zone de couleur, jamais en relevant une tolérance au-delà de 40 ni un délai.
+
+- [ ] **Étape 2 : `verifier.sh` et son test**
+
+`scripts/verifier.sh`, après `  node scripts/essais/c6a-pot-navigateur.mjs` : `  node scripts/essais/c5-image-navigateur.mjs`. `scripts/tests/verifier-e2e.test.sh:13`, ajouter `c5-image-navigateur` après `c6a-pot-navigateur` dans la liste du `for`.
+
+Run : `cd <worktree> && bash scripts/tests/verifier-e2e.test.sh 2>&1 | tail -5` → `verifier-e2e.test.sh : OK`.
+
+- [ ] **Étape 3 : suite complète**
+
+Run : `cd <worktree> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && scripts/verifier.sh --e2e 2>&1 | tail -40`
+Attendu : les lignes listées dans « Test et commande bornée ». Un essai en échec sur un délai est rejoué une fois seul (`node scripts/essais/<essai>.mjs 2>&1 | tail -20`) avant d'être jugé (GC10).
+
+- [ ] **Étape 4 : seulement si la scène mesure moins de 640 px**
+
+`apps/web/src/ui/rb.css`, après la règle `.rb-popover[data-panel="image"]` : `/* C5 (I35) : rangée Sélection à six boutons resserrée, la scène garde 640 px. */ .rb-bar button[data-selection-action] { padding: 0 calc(var(--rb-pad) / 2); }` ; rejouer l'étape 3.
+
+- [ ] **Étape 5 : capture et commit**
+
+Run : `cd <worktree> && node scripts/essais/c5-image-navigateur.mjs --captures 2>&1 | tail -5` puis regarder `docs/essais/c5-image-rognee-transparente.png` et la décrire.
+
+```bash
+cd <worktree> && git add scripts/essais/c5-image-navigateur.mjs scripts/verifier.sh scripts/tests/verifier-e2e.test.sh docs/essais/c5-image-rognee-transparente.png && git commit -m "test(e2e): add the C5 image editing browser trial and capture" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+(ajouter `apps/web/src/ui/rb.css` à la liste seulement si l'étape 4 a servi).
+
+### Tâche T17 — Simplification du lot
+
+<a id="tache-t17"></a>
+
+**Objectif :** relire le diff du lot (`git -C <worktree> diff origin/main...HEAD`) et appliquer les simplifications qui ne changent aucun comportement : duplication entre tâches, code mort, noms incohérents, commentaires faux ; rejouer la suite complète.
+
+**Fichiers :** au plus ceux du lot : `crates/roomboard-core/src/image.rs`, `element.rs`, `commands.rs`, `query.rs` ; `crates/roomboard-wasm/src/lib.rs` ; `crates/roomboard-formats/src/pixels.rs` ; `crates/roomboard-formats-wasm/src/lib.rs` ; `apps/web/src/core/{api.ts,image-params.ts,fake-core.ts,wasm-core.ts}` ; `apps/web/src/platform/{pixel-runner.ts,pixel-worker.ts,container.ts}` ; `apps/web/src/engine/render/{image-cache.ts,canvas2d.ts,renderer.ts,webgl2.ts,fake-ctx.ts}` ; `apps/web/src/engine/{engine.ts,tools/image-edit.ts}` ; `apps/web/src/app/{board-session.ts,stage-tags.ts,toolbar-host.ts}` ; `apps/web/src/main.ts` ; `apps/web/src/ui/{SelectionRow.tsx,ImagePanel.tsx,App.tsx,item-state.ts,rb.css}` ; `scripts/essais/{commun.mjs,c5-image-navigateur.mjs}` ; leurs tests.
+
+**Interfaces :** aucune signature publique ne change (celles des sections T1 à T16 restent la référence) ; `image_flood_fill` reste (prêt pour C6b, sans appelant : voulu).
+
+**Test et commande bornée :** `cd <worktree> && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && scripts/verifier.sh --e2e 2>&1 | tail -40` → `verifier.sh : e2e OK`, `verifier.sh : OK`, tailles ≤ seuils.
+
+**Contraintes (recopiées) :**
+- GC2 Module Wasm principal ≤ 1 572 864 octets (H2-13), module `formats` ≤ 3 Mio ; aucun seuil baissé ni relevé ; tailles écrites dans le rapport.
+- GC7 Suite complète `export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && scripts/verifier.sh --e2e 2>&1 | tail -40`. Motif d'échec : `test result: FAILED`, `error[`, `FAIL `, code de sortie non nul.
+- GC8 Interdits : jamais `git add -A`, `git add .`, `git commit -a` ; aucun `--force` ; aucun tag ni release ; aucun `git push` ; aucun build Tauri ni Android ; aucun test désactivé, sauté ni affaibli.
+- GC9 Commits : auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message en anglais, dernière ligne `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- GC11 Chantier parallèle OD85 : aucune remise en forme ni factorisation dans `element.rs`, `api.ts`, `wasm-core.ts`, `fake-core.ts`, `renderer.ts`, `canvas2d.ts`, `board-session.ts`, `stage-tags.ts`, `toolbar-host.ts`, `App.tsx`, `main.ts` (les deux enveloppes de Worker de `main.ts` restent séparées jusqu'à l'intégration d'OD85).
+- GC12 `src/ui` : aucun `switch (`, aucun `\d+px` dans un `.tsx`, aucun `localStorage`.
+- GC13 Tout le travail dans le worktree de la tâche, chaque commande préfixée `cd <worktree> &&`.
+
+**Interdits :** changer un comportement, un message, un attribut `data-*`, un test (sauf renommage suivant un renommage de code) ; supprimer une ligne « Réutilise » réalisée.
+
+**Terminé quand :** suite complète verte après les simplifications (ou aucune simplification utile, dite dans le rapport).
+
+**Rapport :** sha (ou « aucun changement ») ; liste des simplifications faites et écartées, une ligne chacune ; sortie bornée.
+
+- [ ] **Étape 1 :** `cd <worktree> && git diff --stat origin/main...HEAD | tail -40` ; relire chaque fichier du lot ; noter les simplifications.
+- [ ] **Étape 2 :** appliquer, une par une, en rejouant après chacune le test bornée du fichier touché (sections T1 à T16).
+- [ ] **Étape 3 :** suite complète (commande bornée ci-dessus).
+- [ ] **Étape 4 :** `cd <worktree> && git add <fichiers modifiés, un par un> && git commit -m "refactor: simplify the C5 image editing batch" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
