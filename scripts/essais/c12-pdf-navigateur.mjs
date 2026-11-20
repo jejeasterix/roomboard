@@ -120,6 +120,8 @@ async function scenario(page, url, { captures, tmp, requests }) {
   check(back.pages === 3 && back.texts[1]?.includes("RoomBoard page 2"), "S1 : PDF exporté relu : 3 pages, « RoomBoard page 2 » toujours en texte");
   const [o1, o2, o3] = back.overlays;
   check(o1?.length === 0 && o3?.length === 0 && o2?.length === 1, `S1 : page 2 : une superposition (${o2?.[0] ?? "aucune"}), pages 1 et 3 : aucune`);
+  // Lot c (PF22) : la superposition est vectorielle (page embarquée /Form) ; un /Image serait le repli PNG, un échec ici.
+  check(o2?.[0] === "/Form" && !o2.includes("/Image"), `PF22 : superposition de la page 2 vectorielle (/Form, sans /Image) : ${o2?.join(",") ?? "aucune"}`);
 
   // Enregistrer le .roomboard du PDF annoté.
   const saved = await download(() => page.keyboard.press("Control+s"), "essai-3-pages.roomboard");

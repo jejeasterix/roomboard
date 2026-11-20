@@ -218,6 +218,7 @@ interface SetupOptions {
   readonly loadPdfLib?: WorkspaceDeps["loadPdfLib"];
   readonly overlay?: WorkspaceDeps["overlay"];
   readonly rasterPage?: WorkspaceDeps["rasterPage"];
+  readonly rasterClose?: WorkspaceDeps["rasterClose"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -257,6 +258,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.loadPdfLib ? { loadPdfLib: o.loadPdfLib } : {}),
     ...(o.overlay ? { overlay: o.overlay } : {}),
     ...(o.rasterPage ? { rasterPage: o.rasterPage } : {}),
+    ...(o.rasterClose ? { rasterClose: o.rasterClose } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -1122,6 +1124,20 @@ describe("espace de travail : PDF (C12)", () => {
     expect(await first).toBe(true);
   });
 
+  it("export : saveParts qui lève ne laisse pas le verrou pris ; le second export n'est pas bloqué", async () => {
+    const ws = await setupWorkspace({ pdfFiles: files(), loadPdfLib, overlay: () => producer() });
+    drawOn(ws.active());
+    const doc = ws.active().board.doc;
+    const save = vi.spyOn(doc, "saveParts").mockImplementationOnce(() => {
+      throw new Error("refus du cœur");
+    });
+    expect(await ws.exportPdf()).toBe(false);
+    save.mockRestore();
+    shell.notify.mockClear?.();
+    expect(await ws.exportPdf()).toBe(true);
+    expect(shell.notify).not.toHaveBeenCalledWith("Opération en cours");
+  });
+
   it("export : contenu sous la page PDF : avis « du contenu hors des pages PDF n'est pas exporté » (Review Focus 4)", async () => {
     const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer() });
     await ws.openPdf({ name: "Cours.pdf", blob: new Blob([await realPdf(1)]) });
@@ -1166,6 +1182,19 @@ describe("espace de travail : PDF (C12)", () => {
     expect(await ws.exportPdf()).toBe(true);
     expect(raster).toHaveBeenCalledTimes(1);
     expect(shell.notify).toHaveBeenCalledWith("PDF d'origine non recopié : pages en image");
+  });
+
+  it("export : rasterClose appelé une fois en fin d'export, même quand l'export échoue", async () => {
+    const rasterClose = vi.fn();
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => producer(), rasterClose });
+    await ws.openPdf({ name: "ok.pdf", blob: new Blob([await realPdf(1)]) });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(rasterClose).toHaveBeenCalledTimes(1);
+    vi.spyOn(ws.active().board.doc, "saveParts").mockImplementationOnce(() => {
+      throw new Error("refus du cœur");
+    });
+    expect(await ws.exportPdf()).toBe(false);
+    expect(rasterClose).toHaveBeenCalledTimes(2);
   });
 
   it("sans pdfFiles, loadPdfLib ou overlay : exportPdf rend faux, sans avis", async () => {
