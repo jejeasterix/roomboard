@@ -6,6 +6,7 @@
 // Forme : rect / ellipse = boîte locale (0, 0)-(w, h), w, h ≥ 0 ; line / arrow = segment (0, 0)-(w, h) (core/shapes.ts).
 // Texte : boîte locale (0, 0)-(boxWidth, boxHeight) ; style.color = couleur du texte, style.width = 0.
 // C2 : AddImage, SetBackdrop ; éléments image et unknown (style absent) ; page(id), citedAssets, asset, saveParts, loadParts.
+// C7 : FormatText (patch d'attributs sur une plage UTF-16, une étape) ; TextData.spans = segments du texte (U27, DAU9).
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -59,10 +60,27 @@ export type Command =
   | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
   | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
   /** backdrop null : retire le fond ; même valeur : aucune étape (D38). */
-  | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null };
+  | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null }
+  /** C7 : start, len en unités UTF-16 du contenu ; attrs = patch (absent ou undefined : inchangé ; false, null : retiré). */
+  | {
+      readonly type: "FormatText";
+      readonly id: string;
+      readonly start: number;
+      readonly len: number;
+      readonly attrs: TextAttrsPatch;
+      /** Hauteur de boîte mesurée par la page, écrite si elle change. */
+      readonly boxHeight?: number;
+    };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
-export interface TextData { readonly content: string; readonly size: number; readonly boxWidth: number; readonly boxHeight: number }
+export interface TextData {
+  readonly content: string;
+  readonly size: number;
+  readonly boxWidth: number;
+  readonly boxHeight: number;
+  /** C7 : segments ; un texte sans attribut = un seul segment { text: content, attrs: {} }. */
+  readonly spans: readonly TextSpan[];
+}
 
 export interface ImageData { readonly asset: string; readonly w: number; readonly h: number }
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
@@ -144,3 +162,23 @@ export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
+
+/** Attributs d'un segment (C7, T2-T3) ; absent = défaut : couleur et taille de l'élément, police du socle, faux. */
+export interface TextAttrs {
+  readonly bold?: true;
+  readonly italic?: true;
+  readonly underline?: true;
+  readonly color?: string;
+  readonly size?: number;
+  readonly font?: string;
+}
+/** Patch de FormatText (T7) : clé absente = inchangée ; false ou null = retiré. */
+export interface TextAttrsPatch {
+  readonly bold?: boolean | null;
+  readonly italic?: boolean | null;
+  readonly underline?: boolean | null;
+  readonly color?: string | null;
+  readonly size?: number | null;
+  readonly font?: string | null;
+}
+export interface TextSpan { readonly text: string; readonly attrs: TextAttrs }
