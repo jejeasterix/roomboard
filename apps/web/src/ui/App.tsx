@@ -202,7 +202,7 @@ export function App(props: AppProps): JSX.Element {
             canResetCurrent={() => actions.canResetCurrent()}
             canRemove={() => actions.canRemove()}
             choose={(id) => {
-              props.active.choose(id);
+              actions.choose(id);
               setPanel(null);
             }}
             edit={() => setPanel("editor")}

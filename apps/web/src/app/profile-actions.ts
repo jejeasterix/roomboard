@@ -39,6 +39,8 @@ export interface ProfileActions {
   canRemove(): boolean;
   remove(): Promise<boolean>;
   resetAll(): Promise<boolean>;
+  /** Rend un profil actif ; faux (message) si le choix ne pourra pas être gardé au prochain démarrage. */
+  choose(id: string): boolean;
 }
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -60,7 +62,13 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
       return false;
     }
   };
+  const notKept = (what: string): void => void d.shell.notify(`${what} ne sera pas gardé au prochain démarrage : le stockage est refusé.`);
   return {
+    choose(id) {
+      const kept = d.active.choose(id);
+      if (!kept) notKept("Le choix du profil");
+      return kept;
+    },
     save: (draft) => attempt("enregistré", () => keep(draft)),
     saveAsNew(draft, label) {
       const name = label.trim();
@@ -129,8 +137,9 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
     },
     async resetAll() {
       if (!(await d.shell.confirm(RESET_ALL_QUESTION))) return false;
-      d.store.resetAll();
+      const erased = d.store.resetAll();
       d.active.refresh();
+      if (!erased) notKept("La remise à zéro");
       return true;
     },
   };

@@ -8,8 +8,8 @@ export interface ActiveProfile {
   /** Liste du magasin, relue par `refresh` (C1, DAC1-2). */
   readonly profiles: Accessor<readonly Profile[]>;
   readonly capabilities: Accessor<RuntimeCapabilities>;
-  /** Rend `id` actif (id inconnu : avertissement, profil inchangé), puis relit le magasin. */
-  choose(id: string): void;
+  /** Rend `id` actif (id inconnu : avertissement, profil inchangé), puis relit le magasin. Faux si le choix n'a pas pu être écrit (id inconnu compris). */
+  choose(id: string): boolean;
   /** Relit la liste et le profil actif après un changement du magasin (enregistrer, importer, remettre à zéro). */
   refresh(): void;
   setCapabilities(c: RuntimeCapabilities): void;
@@ -29,12 +29,14 @@ export function createActiveProfile(store: ProfileStore, caps: RuntimeCapabiliti
     profiles,
     capabilities,
     choose(id) {
+      let kept = false;
       try {
-        store.setActive(id);
+        kept = store.setActive(id);
       } catch (e) {
         console.warn(String(e));
       }
       refresh();
+      return kept;
     },
     refresh,
     setCapabilities: (c) => void setCapabilities(c),

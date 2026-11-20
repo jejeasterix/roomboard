@@ -8,7 +8,7 @@ import { parseProfile, serializeProfile, type ParsedProfile, type Profile } from
 export const PROFILE_EXTENSION = ".rbprofile";
 export const PROFILE_MIME = "application/vnd.roomboard.profile+json";
 
-/** Plafond du texte d'un `.rbprofile` à l'import (1 Mo) : au-delà, refusé avant toute lecture JSON. */
+/** Plafond du texte d'un `.rbprofile` à l'import (1 Mo, compté en octets UTF-8) : au-delà, refusé avant toute lecture JSON. */
 export const MAX_PROFILE_TEXT = 1_048_576;
 
 export type ImportPlan = { readonly kind: "add" } | { readonly kind: "confirm"; readonly message: string };
@@ -31,7 +31,7 @@ export function profileToFile(p: Profile): { readonly name: string; readonly tex
 
 /** Texte d'un fichier → profil ; JSON illisible : erreur lisible ; ensuite les règles de `parseProfile` (P24, P33). */
 export function profileFromText(text: string): ParsedProfile {
-  if (text.length > MAX_PROFILE_TEXT) return { errors: ["fichier trop gros (plus d'un mégaoctet)"] };
+  if (new TextEncoder().encode(text).length > MAX_PROFILE_TEXT) return { errors: ["fichier trop gros (plus d'un mégaoctet)"] };
   let json: unknown;
   try {
     json = JSON.parse(text);

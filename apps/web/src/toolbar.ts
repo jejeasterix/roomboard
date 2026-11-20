@@ -127,12 +127,12 @@ export function isProfilesAccess(it: ToolItem): boolean {
   return it.kind === "action" && it.action === PROFILES_ACTION;
 }
 
-/** `base` s'il est libre, sinon `<base>-<n>` avec le premier n ≥ 2 libre (C1 : P15, P28, P33). */
 /** Préréglages de l'outil `tool` dans la table d'un profil (vide si l'outil n'en a pas). */
 export function presetsOf(table: Profile["presets"], tool: ToolId): readonly Preset[] {
   return Object.hasOwn(table, tool) ? (table[tool] ?? []) : [];
 }
 
+/** `base` s'il est libre, sinon `<base>-<n>` avec le premier n ≥ 2 libre (C1 : P15, P28, P33). */
 export function uniqueId(base: string, taken: ReadonlySet<string>): string {
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) {

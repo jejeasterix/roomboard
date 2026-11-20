@@ -27,10 +27,11 @@ export interface ProfileStore {
   remove(id: string): void;
   /** Retire la copie du profil livré `id` (sans copie : rien) ; lève pour un id non livré ou si l'écriture échoue. */
   revert(id: string): void;
-  /** Retire tous les profils de l'utilisateur et toutes les copies ; profil actif → `defaut`. */
-  resetAll(): void;
+  /** Retire tous les profils de l'utilisateur et toutes les copies ; profil actif → `defaut`. Faux si le stockage n'a pas pu être effacé (mémoire vidée quand même). */
+  resetAll(): boolean;
   activeId(): string;
-  setActive(id: string): void;
+  /** Rend `id` actif ; lève pour un id inconnu. Faux si le choix n'a pas pu être écrit (il reste en mémoire). */
+  setActive(id: string): boolean;
   warnings(): readonly string[];
 }
 
@@ -51,20 +52,25 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
       return null;
     }
   };
-  const write = (key: string, value: string): void => {
-    if (kv === null) return;
+  /** Faux si l'écriture a échoué (avertissement noté) ; vrai sans stockage : il n'y a rien à garder. */
+  const write = (key: string, value: string): boolean => {
+    if (kv === null) return true;
     try {
       kv.setItem(key, value);
+      return true;
     } catch (e) {
       warnings.push(`stockage non écrit (${key}) : ${String(e)}`);
+      return false;
     }
   };
-  const erase = (key: string): void => {
-    if (kv === null) return;
+  const erase = (key: string): boolean => {
+    if (kv === null) return true;
     try {
       kv.removeItem(key);
+      return true;
     } catch (e) {
       warnings.push(`stockage non effacé (${key}) : ${String(e)}`);
+      return false;
     }
   };
 
@@ -124,8 +130,9 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
     resetAll() {
       saved = [];
       active = null;
-      erase(PROFILES_KEY);
-      erase(ACTIVE_KEY);
+      const profilesErased = erase(PROFILES_KEY);
+      const activeErased = erase(ACTIVE_KEY);
+      return profilesErased && activeErased;
     },
     activeId() {
       return active !== null && all().some((p) => p.id === active) ? active : DEFAULT_PROFILE_ID;
@@ -133,7 +140,7 @@ export function createProfileStore(kv: KeyValue | null, builtins: readonly Profi
     setActive(id) {
       if (!all().some((p) => p.id === id)) throw new Error(`profil inconnu : ${id}`);
       active = id;
-      write(ACTIVE_KEY, id);
+      return write(ACTIVE_KEY, id);
     },
     warnings: () => warnings,
   };
