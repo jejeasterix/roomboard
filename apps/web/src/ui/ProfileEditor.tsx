@@ -67,7 +67,7 @@ const PATCH: Readonly<Record<PresetField["key"], (raw: string) => PresetPatch>> 
 };
 
 /** Fixe la valeur d'un `select` une fois ses options posées, puis à chaque changement (fiable, contrairement à `selected`). */
-const syncValue = (el: HTMLSelectElement, value: () => string): void => {
+export const syncValue = (el: HTMLSelectElement, value: () => string): void => {
   createEffect(() => {
     el.value = value();
   });
