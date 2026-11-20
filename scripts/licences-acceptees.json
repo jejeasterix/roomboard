@@ -12,7 +12,7 @@
     },
     "target-lexicon": {
       "licence": "Apache-2.0 WITH LLVM-exception",
-      "raison": "Apache-2.0 avec exception LLVM (plus permissive qu'Apache-2.0), dépendance de la chaîne Tauri ; non copyleft"
+      "raison": "Apache 2.0 avec l'exception LLVM, qui ne fait qu'élargir les droits (ni GPL, ni LGPL, ni AGPL) ; relevé du 2026-11-20"
     }
   }
 }

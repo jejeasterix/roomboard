@@ -9,6 +9,7 @@ pub mod fill;
 pub mod format;
 pub mod grid;
 pub mod history;
+pub mod image;
 pub mod ink;
 pub mod media;
 pub mod query;

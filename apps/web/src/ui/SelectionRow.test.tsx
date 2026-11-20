@@ -12,19 +12,28 @@ const btn = (c: HTMLElement, id: string): HTMLButtonElement | null => c.querySel
 function setup(v: ToolbarView) {
   const [view, setView] = createSignal(v);
   const selection = vi.fn();
-  const host = { selection } as unknown as ToolbarHost;
+  const imagePanel = vi.fn();
+  const host = { selection, imagePanel } as unknown as ToolbarHost;
   const { container } = render(() => <SelectionRow view={view} host={host} />);
-  return { container, setView, selection };
+  return { container, setView, selection, imagePanel };
 }
 
 describe("rangée Sélection (Z13)", () => {
-  it("montrée avec l'outil Sélection seulement, cinq boutons dans l'ordre", () => {
+  it("montrée avec l'outil Sélection seulement, cinq actions puis « Image », dans l'ordre", () => {
     const { container, setView } = setup({ ...base, tool: "pen" });
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
     setView({ ...base });
     const ids = [...container.querySelectorAll("[data-selection-action]")].map((b) => [b.getAttribute("data-selection-action"), b.textContent]);
-    expect(ids).toEqual([["group", "Grouper"], ["ungroup", "Dégrouper"], ["copy", "Copier"], ["paste", "Coller"], ["export", "Exporter"]]);
+    expect(ids).toEqual([["group", "Grouper"], ["ungroup", "Dégrouper"], ["copy", "Copier"], ["paste", "Coller"], ["export", "Exporter"], ["image", "Image"]]);
     expect(SELECTION_ACTIONS.map((a) => a.id)).toEqual(["group", "ungroup", "copy", "paste", "export"]);
+  });
+  it("Image : grisé hors d'une seule image ; clic : host.imagePanel()", () => {
+    const { container, setView, imagePanel } = setup({ ...base, selection: ["a", "b"], selectionUnits: 2 });
+    expect(btn(container, "image")!.disabled).toBe(true);
+    setView({ ...base, selection: ["i"], selectionUnits: 1, selectionImage: "i" });
+    expect(btn(container, "image")!.disabled).toBe(false);
+    fireEvent.click(btn(container, "image")!);
+    expect(imagePanel).toHaveBeenCalledTimes(1);
   });
   it("Grouper : désactivé sous deux unités", () => {
     const { container, setView } = setup({ ...base, selection: ["a"], selectionUnits: 1 });

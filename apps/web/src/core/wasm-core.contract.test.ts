@@ -1,14 +1,14 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
-import { BAD_GROUP_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
+import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
-import { createWasmCore, gridArgs, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
+import { createWasmCore, gridArgs, imageParamsArgs, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -2974,5 +2974,167 @@ describe("contrôle de forme C14 (média)", () => {
       expect(() => view({ ...media, ...bad }), JSON.stringify(bad)).toThrow("ElementView invalide");
     }
     expect(() => toElementView({ id: "m1", kind: "media", transform: t })).toThrow("ElementView invalide");
+  });
+});
+
+// C5 (I4-I6, I8, S4) : réglages d'image, joués contre les deux cœurs.
+const FULL: ImageParams = {
+  crop: [10, 20, 300, 200],
+  flipX: true,
+  quarterTurns: 1,
+  brightness: 30,
+  contrast: -20,
+  transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true },
+};
+const imageOf = (d: CoreDocument, id: string): ImageElement["image"] | null => {
+  const el = d.element(id);
+  return el?.kind === "image" ? el.image : null;
+};
+
+describe.each(factories)("contrat C5 : $name", ({ f }) => {
+  const image = (d: CoreDocument, p: string): string =>
+    d.apply({ type: "AddImage", page: p, asset: png, w: 640, h: 480, matrix: I }).ids[0] ?? "";
+
+  it("C5 SetImageParams : une étape, champs relus, boîte affichée, Annuler revient à l'image brute", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    const c = d.apply({ type: "SetImageParams", id, params: FULL, matrix: [1, 0, 0, 1, 5, 6] });
+    expect([c.pages, c.ids]).toEqual([[p], [id]]);
+    expect(d.element(id)).toEqual({ id, kind: "image", transform: [1, 0, 0, 1, 5, 6], image: { asset: ABC, w: 640, h: 480, ...FULL } });
+    expect(d.bounds([id])).toEqual({ x0: 5, y0: 6, x1: 205, y1: 306 });
+    d.undo();
+    expect(d.element(id)).toEqual({ id, kind: "image", transform: I, image: { asset: ABC, w: 640, h: 480 } });
+    d.free();
+  });
+
+  it("C5 SetImageParams : état neutre complet = champs retirés ; même état et même matrice : aucune étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    unchanged(d, () => d.apply({ type: "SetImageParams", id, params: { crop: [0, 0, 640, 480], flipX: false, quarterTurns: 0, brightness: 0 }, matrix: I }));
+    d.apply({ type: "SetImageParams", id, params: { brightness: 10 }, matrix: I });
+    unchanged(d, () => d.apply({ type: "SetImageParams", id, params: { brightness: 10 }, matrix: I }));
+    // Patron écarté (objets reçus comparés tels quels) : même état, clés dans un autre ordre, aucune étape.
+    const { color, tolerance, soft, contiguous } = FULL.transparent!;
+    d.apply({ type: "SetImageParams", id, params: { brightness: 10, transparent: { color, tolerance, soft, contiguous } }, matrix: I });
+    unchanged(d, () => d.apply({ type: "SetImageParams", id, params: { transparent: { contiguous, soft, tolerance, color }, brightness: 10 }, matrix: I }));
+    expect(d.apply({ type: "SetImageParams", id, params: {}, matrix: I }).ids).toEqual([id]);
+    expect(Object.keys(imageOf(d, id) ?? {}).sort()).toEqual(["asset", "h", "w"]);
+    d.free();
+  });
+
+  it("C5 SetImageParams : refus sans étape, messages du contrat, réglages contrôlés avant la matrice", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    const stroke = commit(d, p, 100);
+    const white = FULL.transparent!;
+    const bad = [
+      { crop: [600, 0, 100, 10] },
+      { crop: [0, 0, 0, 10] },
+      { crop: [0.5, 0, 10, 10] },
+      { quarterTurns: 4 },
+      { quarterTurns: 1.5 },
+      { brightness: 101 },
+      { contrast: -101 },
+      { transparent: { ...white, color: "#FFFFFF" } },
+      { transparent: { ...white, color: "white" } },
+      { transparent: { ...white, tolerance: 101 } },
+      { transparent: { ...white, soft: -1 } },
+    ] as ImageParams[];
+    const run = (target: string, params: ImageParams, matrix: Matrix = I): string =>
+      messageOf(() => d.apply({ type: "SetImageParams", id: target, params, matrix }));
+    unchanged(d, () => {
+      for (const params of bad) expect(run(id, params), JSON.stringify(params)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      expect(run(id, { brightness: 101 }, [0, 0, 0, 0, 0, 0])).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      expect(run(id, {}, [0, 0, 0, 0, 0, 0])).toBe("matrice invalide (six nombres finis, inversible)");
+      expect(run("nulle-part", {})).toBe("élément inconnu : nulle-part");
+      expect(run(stroke, {})).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+    });
+    d.free();
+  });
+
+  it("C5 SetImageParams : réglage mal typé (flipX: 1) refusé comme hors domaine, dans l'ordre du cœur", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    const stroke = commit(d, p, 100);
+    const white = FULL.transparent!;
+    // Refusés par `normalizeParams` ; sans contrôle de type, l'adaptateur les convertirait (booléen, Float64Array, f64).
+    const typos = [
+      { flipX: 1 },
+      { flipY: null },
+      { quarterTurns: "1" },
+      { brightness: "10" },
+      { crop: [] },
+      { crop: null },
+      { crop: ["0", 0, 10, 10] },
+      { transparent: { ...white, contiguous: 1 } },
+      { transparent: { ...white, tolerance: "10" } },
+    ] as unknown as ImageParams[];
+    const run = (target: string, params: ImageParams, matrix: Matrix = I): string =>
+      messageOf(() => d.apply({ type: "SetImageParams", id: target, params, matrix }));
+    unchanged(d, () => {
+      for (const typo of typos) expect(run(id, typo), JSON.stringify(typo)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      const typo = typos[0] ?? {};
+      expect(run(id, typo, [0, 0, 0, 0, 0, 0])).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      expect(run("nulle-part", typo)).toBe("élément inconnu : nulle-part");
+      expect(run(stroke, typo)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+    });
+    d.free();
+  });
+
+  it("C5 enregistrer, rouvrir : réglages gardés (S4)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    d.apply({ type: "SetImageParams", id, params: FULL, matrix: [2, 0, 0, 1, 5, 6] });
+    const r = f.load(d.save(now, "0.1.0"));
+    expect(r.element(id)).toEqual(d.element(id));
+    r.free();
+    d.free();
+  });
+
+  it("C5 extract et .rbitem : une image retouchée garde ses réglages (copier, coller, exporter)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    d.apply({ type: "SetImageParams", id, params: FULL, matrix: I });
+    const x = d.extract(p, [id]);
+    expect(imageOf(x, x.elementIds(first(x))[0] ?? "")).toEqual(imageOf(d, id));
+    const r = f.loadFragment(x.saveFragment(now, "0.1.0", "image"));
+    expect(imageOf(r, r.elementIds(first(r))[0] ?? "")).toEqual(imageOf(d, id));
+    for (const doc of [r, x, d]) doc.free();
+  });
+
+  it("C5 hitTest et bounds suivent la boîte affichée (I8, effet de bord 1)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = image(d, p);
+    d.apply({ type: "SetImageParams", id, params: { crop: [0, 0, 100, 50] }, matrix: I });
+    expect(d.hitTest(p, 50, 25, 0)).toBe(id);
+    expect(d.hitTest(p, 150, 25, 0)).toBeNull();
+    expect(d.bounds([id])).toEqual({ x0: 0, y0: 0, x1: 100, y1: 50 });
+    d.free();
+  });
+});
+
+describe("toElementView — image (C5)", () => {
+  const base = { id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0] };
+  it("C5 réglages lus ; un champ mal typé lève ; imageParamsArgs : forme des arguments de set_image_params", () => {
+    expect(toElementView({ ...base, image: { asset: ABC, w: 4, h: 2, crop: [0, 0, 2, 1], flipY: true, contrast: 5 } })).toEqual({
+      id: "i",
+      kind: "image",
+      transform: [1, 0, 0, 1, 0, 0],
+      image: { asset: ABC, w: 4, h: 2, crop: [0, 0, 2, 1], flipY: true, contrast: 5 },
+    });
+    for (const bad of [{ crop: [1, 2] }, { flipX: 1 }, { quarterTurns: "1" }, { transparent: { color: "#ffffff" } }]) {
+      expect(() => toElementView({ ...base, image: { asset: ABC, w: 4, h: 2, ...bad } })).toThrow("ElementView invalide");
+    }
+    const [crop, fx, fy, q, b, c, color, t] = imageParamsArgs(FULL);
+    expect([Array.from(crop), fx, fy, q, b, c, color, Array.from(t)]).toEqual([[10, 20, 300, 200], true, false, 1, 30, -20, "#ffffff", [10, 0, 1]]);
+    const [crop0, , , , , , color0, t0] = imageParamsArgs({});
+    expect([crop0.length, color0, t0.length]).toEqual([0, undefined, 0]);
   });
 });

@@ -227,6 +227,13 @@ pub enum Command {
         looped: bool,
         volume: f64,
     },
+    /// Réglages d'une image (C5, U29, I6) : état voulu complet, remplacé en bloc, et nouvelle matrice de l'élément
+    /// (placement calculé par la page, I9, DAI1) ; une transaction, une étape ; même état et même matrice : aucune (D38).
+    SetImageParams {
+        id: String,
+        params: crate::image::ImageParamsInput,
+        matrix: Transform,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -267,6 +274,7 @@ pub enum CommandError {
     BadFill,
     BadGroup,
     BadMedia,
+    BadImageParams,
 }
 
 impl std::fmt::Display for CommandError {
@@ -328,6 +336,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadMedia => write!(
                 f,
                 "média invalide (vidéo ou son, boîte finie > 0, durée finie ≥ 0, début ≥ 0 avant la fin, fin dans la durée, volume de 0 à 1, chemin lié de 1 à 4 096 caractères attendus)"
+            ),
+            CommandError::BadImageParams => write!(
+                f,
+                "réglages d'image invalides (image lisible, rognage entier dans l'image, quarts de tour 0 à 3, luminosité et contraste entiers de -100 à 100, couleur #rrggbb, tolérance et plume entières de 0 à 100 attendus)"
             ),
         }
     }
@@ -777,6 +789,9 @@ impl Document {
                     volume,
                 },
             ),
+            Command::SetImageParams { id, params, matrix } => {
+                self.cmd_set_image_params(&id, &params, &matrix)
+            }
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)

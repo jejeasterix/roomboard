@@ -1,4 +1,4 @@
-/** Rangée « Sélection » (C3, Z13, HZ1-4) : outil Sélection actif ; cinq actions, hors catalogue des profils (C7b R13). */
+/** Rangée « Sélection » (C3, Z13, HZ1-4 ; C5, I25) : outil Sélection actif ; cinq actions, hors catalogue des profils (C7b R13), puis « Image » (une seule image sélectionnée : panneau de retouche). */
 import { For, Show, type Accessor, type JSX } from "solid-js";
 import type { SelectionAction, ToolbarHost } from "../app/toolbar-host";
 import { TOOL_TABLE } from "../toolbar";
@@ -36,6 +36,9 @@ export function SelectionRow(props: { view: Accessor<ToolbarView>; host: Toolbar
           </button>
         )}
       </For>
+      <button type="button" data-selection-action="image" disabled={!props.view().selectionImage} onClick={() => props.host.imagePanel()}>
+        Image
+      </button>
     </Show>
   );
 }

@@ -17,8 +17,18 @@ const tableTag = (c: TableCellState | null): string => {
   return r === null ? `${c.cols}x${c.rows}@${c.row},${c.col}` : `${c.cols}x${c.rows}@${r.r0},${r.c0}-${r.r1},${r.c1}`;
 };
 
-/** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`) et S1 à S4 de C10b (`tableMerges`, `tableShades`). */
-export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped", string> {
+/** C5 (I33) : état des pixels (`PixelState` du cache) et boîte affichée de l'image sélectionnée seule (pixels source). */
+export interface StageExtras {
+  readonly pixels?: string;
+  readonly image?: readonly [number, number] | null;
+}
+
+/** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`), S1 à S4 de C10b (`tableMerges`, `tableShades`)
+ *  et C5 (`pixels`, `image`). */
+export function stageTags(
+  s: EngineState,
+  extra: StageExtras = {},
+): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     selection: String(s.selection.length),
@@ -29,5 +39,7 @@ export function stageTags(s: EngineState): Record<"page" | "selection" | "bounds
     tableShades: String(s.tableShades),
     units: String(s.selectionUnits),
     grouped: s.selectionGrouped ? "1" : "0",
+    pixels: extra.pixels ?? "",
+    image: extra.image ? `${Math.round(extra.image[0])}x${Math.round(extra.image[1])}` : "",
   };
 }

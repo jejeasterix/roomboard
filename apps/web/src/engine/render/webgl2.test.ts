@@ -4,7 +4,7 @@ import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
 import { asGL, FakeGL } from "./fake-gl";
 import { EMPTY_OVERLAY } from "./overlay";
-import type { GridPreview, LiveLayer, PageView, Renderer } from "./renderer";
+import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./renderer";
 import {
   pageScissor,
   parseColor,
@@ -15,7 +15,7 @@ import {
   WebGL2LiveRenderer,
 } from "./webgl2";
 
-class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview"> {
+class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize" | "setGridPreview" | "setImagePreview"> {
   readonly log: string[] = [];
   readonly overlays: unknown[] = [];
   drawScene(page: PageView, _camera?: Camera, _hidden?: ReadonlySet<string>, overlay?: unknown): void {
@@ -30,6 +30,9 @@ class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize" 
   }
   setGridPreview(p: GridPreview | null): void {
     this.log.push(`preview ${p === null ? "null" : p.page}`);
+  }
+  setImagePreview(p: ImagePreview | null): void {
+    this.log.push(`image ${p === null ? "null" : p.id}`);
   }
 }
 
@@ -312,6 +315,13 @@ describe("aperçu de grille (C9 éditeur)", () => {
     r.setGridPreview({ page: "p", grid: null });
     r.setGridPreview(null);
     expect(scene.log.filter((l) => l.startsWith("preview"))).toEqual(["preview p", "preview null"]);
+  });
+
+  it("setImagePreview : délégué à la scène Canvas 2D", () => {
+    const { scene, r } = make();
+    r.setImagePreview({ id: "i", params: {}, matrix: [1, 0, 0, 1, 0, 0] });
+    r.setImagePreview(null);
+    expect(scene.log.filter((l) => l.startsWith("image"))).toEqual(["image i", "image null"]);
   });
 });
 

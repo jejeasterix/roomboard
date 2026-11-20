@@ -5,6 +5,7 @@ use yrs::{Any, In, Map, MapRef, Number, Out, ReadTxn};
 
 use crate::asset::is_asset_id;
 use crate::grid::GridView;
+use crate::image::{ImageParams, TransparentView};
 use crate::media::MediaView;
 use crate::query::Bounds;
 use crate::rich_text::TextSpanView;
@@ -59,12 +60,48 @@ pub struct BackdropView {
     pub rect: Option<Bounds>,
 }
 
-/// Image (U5, K5) : boîte locale (0, 0)-(w, h), taille source en pixels.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+/// Image (U5, K5 ; C5, I8) : `w`, `h` = taille source en pixels ; boîte locale = boîte affichée (`display_size`).
+/// Réglages (U29) : absents quand ils sont neutres (I4), lus tolérants (`image::read_params`).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageView {
     pub asset: String,
     pub w: f64,
     pub h: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crop: Option<[u32; 4]>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub flip_x: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub flip_y: bool,
+    #[serde(skip_serializing_if = "crate::image::is_zero_u8")]
+    pub quarter_turns: u8,
+    #[serde(skip_serializing_if = "crate::image::is_zero_i8")]
+    pub brightness: i8,
+    #[serde(skip_serializing_if = "crate::image::is_zero_i8")]
+    pub contrast: i8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparent: Option<TransparentView>,
+}
+
+impl ImageView {
+    /// Boîte affichée (I8) : `(bw, bh)` en pixels source.
+    pub fn display_size(&self) -> (f64, f64) {
+        crate::image::display_size(self.w, self.h, self.crop, self.quarter_turns)
+    }
+
+    /// Réglages (C5), sous la forme comparée par `SetImageParams`.
+    pub fn params(&self) -> ImageParams {
+        ImageParams {
+            crop: self.crop,
+            flip_x: self.flip_x,
+            flip_y: self.flip_y,
+            quarter_turns: self.quarter_turns,
+            brightness: self.brightness,
+            contrast: self.contrast,
+            transparent: self.transparent.clone(),
+        }
+    }
 }
 
 /// Élément d'un `kind` inconnu (U3, K8) : dessiné comme un cadre ; `source_kind` = le `kind` lu.
@@ -270,16 +307,29 @@ pub(crate) fn fits_f32(values: &[f64]) -> bool {
 }
 
 /// Image (K5) : transform et vue ; `None` si l'élément n'en est pas une ou est mal formé (asset non conforme, boîte ≤ 0).
+/// Un réglage illisible ne rend jamais `None` (C5, U3) : il est lu comme absent.
 pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, ImageView)> {
     if out_string(e.get(txn, "kind"))? != "image" {
         return None;
     }
+    let transform = out_transform(e.get(txn, "transform"))?;
+    let asset = out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?;
+    let w = out_f64(e.get(txn, "w")).filter(|v| finite_positive(*v))?;
+    let h = out_f64(e.get(txn, "h")).filter(|v| finite_positive(*v))?;
+    let p = crate::image::read_params(txn, e, w, h);
     Some((
-        out_transform(e.get(txn, "transform"))?,
+        transform,
         ImageView {
-            asset: out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?,
-            w: out_f64(e.get(txn, "w")).filter(|v| finite_positive(*v))?,
-            h: out_f64(e.get(txn, "h")).filter(|v| finite_positive(*v))?,
+            asset,
+            w,
+            h,
+            crop: p.crop,
+            flip_x: p.flip_x,
+            flip_y: p.flip_y,
+            quarter_turns: p.quarter_turns,
+            brightness: p.brightness,
+            contrast: p.contrast,
+            transparent: p.transparent,
         },
     ))
 }
