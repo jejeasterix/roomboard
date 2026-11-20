@@ -5,7 +5,8 @@
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import { PDF_PAGE_KIND } from "../../core/api";
-import type { BackdropView, Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
+import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
+import { cropOf, displaySize, isPlainGeometry, orientMatrix } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
@@ -15,7 +16,7 @@ import type { ImageSource } from "./image-cache";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
-import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
+import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -69,6 +70,8 @@ export const HANDLE_FILL = "#ffffff";
 export const PLACEHOLDER_FILL = "#e5e7eb";
 export const PLACEHOLDER_STROKE = "#9ca3af";
 export const UNKNOWN_LABEL = "objet non pris en charge";
+/** Voile hors du cadre de rognage (C5, I28). */
+export const CROP_VEIL = "rgba(15, 23, 42, 0.5)";
 /** C12 (PF14) : fond de page pas encore rendu (gris clair), et libellé d'un fond PDF illisible. */
 export const BACKDROP_PLACEHOLDER = "#f1f5f9";
 export const BACKDROP_UNREADABLE_LABEL = "page PDF illisible";
@@ -163,6 +166,10 @@ export class Canvas2DRenderer implements Renderer {
   private readonly gridCache = new GridLinesCache((page, rect, minStep, minDotStep) => this.computeGrid(page, rect, minStep, minDotStep));
   /** Aperçu de l'éditeur de grille (DAE1) : sur sa page, sa grille remplace celle du document ; servi par le même cache. */
   private gridPreview: GridPreview | null = null;
+  /** Aperçu d'une image (C5, DAI4) : ses réglages et sa matrice remplacent ceux du document pour son élément. */
+  private imagePreview: ImagePreview | null = null;
+  /** Zoom du dernier `drawScene` : traits du cadre de rognage à 1 px écran. */
+  private zoom = 1;
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
   private readonly backdrop: BackdropPainter | null;
@@ -213,6 +220,7 @@ export class Canvas2DRenderer implements Renderer {
 
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay: EditOverlay = EMPTY_OVERLAY): void {
     const ctx = this.scene;
+    this.zoom = camera.zoom;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = SURROUND_COLOR;
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
@@ -232,7 +240,7 @@ export class Canvas2DRenderer implements Renderer {
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
-      if (el) this.paintElement(ctx, el, null);
+      if (el) this.paintElement(ctx, this.withImagePreview(el), null);
     }
     this.paintOverlayContent(ctx, overlay);
     if (grid && grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
@@ -312,9 +320,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "text") {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
     } else if (el.kind === "image") {
-      const bmp = this.images?.bitmap(el.image.asset) ?? null;
-      if (bmp !== null) ctx.drawImage(bmp, 0, 0, el.image.w, el.image.h);
-      else paintPlaceholder(ctx, el.image.w, el.image.h, null);
+      this.paintImage(ctx, el);
     } else if (el.kind === "table") {
       paintTableGrid(ctx, el.table);
       const boxes = cellTextBoxes(el.table);
@@ -334,11 +340,71 @@ export class Canvas2DRenderer implements Renderer {
     ctx.restore();
   }
 
+  /** L'image en aperçu (C5) : réglages et matrice de l'aperçu à la place de ceux du document. */
+  private withImagePreview(el: ElementView): ElementView {
+    const p = this.imagePreview;
+    if (p === null || el.kind !== "image" || el.id !== p.id) return el;
+    return { ...el, transform: p.matrix, image: { asset: el.image.asset, w: el.image.w, h: el.image.h, ...p.params } };
+  }
+
+  /** Image (C5, I23) : boîte affichée ; rectangle source du rognage mis à l'échelle de la copie d'affichage, retournements
+   *  et quarts de tour par la matrice du contexte ; bitmap retouché (`bitmapOf`) ou brut ; jamais `ctx.filter`. Sans
+   *  réglage de géométrie : le dessin d'avant C5, à l'identique. */
+  private paintImage(ctx: CanvasRenderingContext2D, el: ImageElement): void {
+    const i = el.image;
+    const p = this.imagePreview;
+    const preview = p !== null && p.id === el.id;
+    const [bw, bh] = displaySize(i);
+    const bmp = (this.images?.bitmapOf?.(el, preview) ?? null) ?? this.images?.bitmap(i.asset) ?? null;
+    if (bmp === null) {
+      paintPlaceholder(ctx, bw, bh, null);
+    } else if (isPlainGeometry(i)) {
+      ctx.drawImage(bmp, 0, 0, i.w, i.h);
+    } else {
+      const [cx, cy, cw, ch] = cropOf(i);
+      const s = bmp as { readonly width?: unknown; readonly height?: unknown };
+      const kx = typeof s.width === "number" && s.width > 0 ? s.width / i.w : 1;
+      const ky = typeof s.height === "number" && s.height > 0 ? s.height / i.h : 1;
+      const o = orientMatrix(i);
+      ctx.save();
+      ctx.transform(o[0], o[1], o[2], o[3], o[4], o[5]);
+      ctx.drawImage(bmp, cx * kx, cy * ky, cw * kx, ch * ky, 0, 0, cw, ch);
+      ctx.restore();
+    }
+    if (p !== null && preview && p.frame !== undefined) this.paintCropFrame(ctx, p.frame, bw, bh, p.matrix);
+  }
+
+  /** Cadre de rognage (C5, I28), repère local de l'image : voile hors du cadre, cadre et huit poignées à 1 px écran. */
+  private paintCropFrame(ctx: CanvasRenderingContext2D, f: Bounds, bw: number, bh: number, m: Matrix): void {
+    const scale = this.zoom * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const px = scale > 0 ? 1 / scale : 1;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, bw, bh);
+    ctx.rect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0);
+    ctx.fillStyle = CROP_VEIL;
+    ctx.fill("evenodd");
+    ctx.beginPath();
+    ctx.rect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0);
+    ctx.strokeStyle = SELECTION_COLOR;
+    ctx.lineWidth = px;
+    ctx.stroke();
+    ctx.fillStyle = HANDLE_FILL;
+    const half = (HANDLE_PX / 2) * px;
+    for (const h of handlesOf(f)) {
+      ctx.beginPath();
+      ctx.rect(h.x - half, h.y - half, 2 * half, 2 * half);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** Contenu du calque d'édition (CL4-1) : fantômes et formes en cours, sous une grille `above` (G11). */
   private paintOverlayContent(ctx: CanvasRenderingContext2D, o: EditOverlay): void {
     for (const g of o.ghosts) {
       const el = this.source.element(g.id);
-      if (el) this.paintElement(ctx, el, g.matrix);
+      if (el) this.paintElement(ctx, this.withImagePreview(el), g.matrix);
     }
     for (const s of o.shapes) {
       const n = normalizeShape(s.shape, s.x0, s.y0, s.x1, s.y1);
@@ -402,6 +468,7 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   invalidate(change: Change): void {
+    if (change.removed.length > 0) this.images?.forget?.(change.removed);
     this.gridCache.invalidate(change);
     if (change.full) {
       this.paths.clear();
@@ -419,6 +486,10 @@ export class Canvas2DRenderer implements Renderer {
   setGridPreview(p: GridPreview | null): void {
     this.gridPreview = p;
     this.gridCache.clear();
+  }
+
+  setImagePreview(p: ImagePreview | null): void {
+    this.imagePreview = p;
   }
 
   /** Lignes que le cache demande : celles de l'aperçu sur sa page (DAE1), sinon celles du document. */
