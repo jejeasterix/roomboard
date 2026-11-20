@@ -270,3 +270,34 @@ dans `Renderer` ; aucune écriture avant « Appliquer » ; le magnétisme reste 
 ## 8. Portes immédiates
 
 Aucune.
+
+## Amendements après contre-relecture
+
+Contre-relecture du cadrage rendue après le plan (2026-11-20) ; les failles « à corriger » sont tranchées ici et portées
+dans `docs/plans/usage-c9-editeur-PLAN.md` (§ « Amendements après contre-relecture du cadrage », CR1 à CR9), sans tâche
+ajoutée.
+
+- **CR1 (S4 contre E3).** S4 se lit : pour toute vue jusqu'à 3840 × 2160 et tout zoom testé, le rectangle gardé tient
+  sous `MAX_GRID_DOTS` au pas minimal des points **si la vue seule tient** ; sinon la marge est nulle et le rectangle
+  gardé est la vue (E3 inchangé). Test : T2.
+- **CR2 (E1, E3 : seuils fixes contre `lineWidth` jusqu'à 8).** `MIN_GRID_PX = 4` et `MIN_DOT_PX = 8`
+  (`grid-paint.ts:13-16`) restent ; dans le cœur (`grid::lines`, donc `grid_lines` et `grid_lines_of`), une famille est
+  sautée si son pas est `< min_step·lineWidth`, les points si un pas est `< min_dot_step·lineWidth` (carreaux 40, épaisseur
+  4, zoom 0,1 : sautés, plus d'aplat). La fausse liaison suit la même règle. Test : T1.
+- **CR3 (E8 : aperçu et onglets).** Chaque onglet a son moteur (`board-session.ts:141`, `workspace.ts:112-115`) : le
+  panneau fige le moteur de l'onglet ouvert à son ouverture et y coupe l'aperçu, jamais par `ws.active()` au moment du
+  rappel (`App.tsx:110`). Scénario S1 complété : « aperçu, autre onglet, retour : aucune grille ». Tests : T5, T6.
+- **CR4 (carte d'impact).** Touché aussi : `apps/web/src/engine/tools/pen.test.ts:169` (littéral `GridLevel`).
+  `validGrid` de `fake-core.ts:858-870` refuse `lineWidth` hors `[1, 8]` comme le cœur (contrat C9 commun aux deux
+  liaisons). La délégation de `setGridPreview` par WebGL2 (`webgl2.ts:270`, `:295-300`) a son test. Tâches : T1, T3.
+- **CR5 (E5, E9).** Pendant la saisie du pas, l'aperçu montre la valeur bornée à `[4, 400]` ; le champ n'est ramené à la
+  borne qu'à sa validation.
+- **CR6 (E8).** Sur un refus du cœur (`BadGrid`), le panneau reste ouvert et affiche le message (en plus de `#etat`) ;
+  l'aperçu reste.
+- **CR7 (effet de bord 1).** Fixture `crates/roomboard-core/tests/fixtures/grille-pr12.roomboard`, écrite une fois par le
+  code de `main` `8247215` (niveaux sans `lineWidth`) : lue à 1, réenregistrée à l'identique. Tâche : T1.
+- **CR8 (amendement de U31).** U31 (`docs/plans/usage-cadrage.md:84`) est amendé : le niveau de grille gagne la clé
+  facultative `lineWidth` (épaisseur réglable en pixels CSS d'écran, `[1, 8]`, défaut 1, E1) ; `schema` et
+  `formatVersion` inchangés, un lecteur plus ancien l'ignore (U3).
+- **CR9 (E9).** Le bouton d'abandon du panneau s'appelle « Fermer sans appliquer » (`data-grille="cancel"` gardé), pour
+  ne pas se confondre avec « Annuler » de la barre.
