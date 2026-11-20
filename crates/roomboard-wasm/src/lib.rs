@@ -1,6 +1,7 @@
 //! Liaison wasm-bindgen du cœur RoomBoard (DA5, D10). Une méthode par commande ; objets (Change, ElementView,
 //! Bounds, capacités) par serde-wasm-bindgen ; points et contours en Float32Array. Chaque méthode exposée délègue à
 //! une méthode `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
+#[cfg(test)]
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
@@ -184,7 +185,8 @@ fn wire_attr(k: &str, v: Option<WireValue>) -> Result<TextAttr, CommandError> {
 
 /// Patch de la page → entrées du cœur (contrôle 1 de T7), dans l'ordre des clés : clé inconnue ou valeur au mauvais
 /// type : `BadFormat`. Les valeurs hors domaine (couleur, police, taille) sont refusées ensuite par le cœur
-/// (`valid_attrs`).
+/// (`valid_attrs`). Réservée aux tests (T11) : la liaison lit le patch par `read_patch`.
+#[cfg(test)]
 pub fn wire_attrs(
     patch: BTreeMap<String, Option<WireValue>>,
 ) -> Result<Vec<TextAttr>, CommandError> {
