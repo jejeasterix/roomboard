@@ -569,6 +569,133 @@ describe.each(factories)("contrat lot 4 : $name", ({ f }) => {
   });
 });
 
+// C2 (cœur) : image, fond, métadonnées. T8 remplace `c2Factories` par `factories` (vrai module compris).
+const ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+const EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+const BAD_ASSET = "asset invalide (empreinte SHA-256 en hexadécimal minuscule, type MIME non vide, taille entière ≥ 0 attendus)";
+const BAD_IMAGE = "image invalide (largeur et hauteur finies > 0 attendues, ajustement « width » seul accepté)";
+const png = { id: ABC, name: "photo.png", mime: "image/png", size: 3 } as const;
+const jpg = { id: EMPTY_HASH, name: "fond.jpg", mime: "image/jpeg", size: 0 } as const;
+const I: Matrix = [1, 0, 0, 1, 0, 0];
+const c2Factories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
+
+describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
+  const image = (d: CoreDocument, p: string, asset = png, matrix: Matrix = I): string =>
+    d.apply({ type: "AddImage", page: p, asset, w: 640, h: 480, matrix }).ids[0] ?? "";
+
+  it("AddImage : une étape, vue image sans style, une seule métadonnée pour deux images (S2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const c = d.apply({ type: "AddImage", page: p, asset: png, w: 640, h: 480, matrix: [1, 0, 0, 1, 10, 20] });
+    expect(c.pages).toEqual([p]);
+    expect(c.ids).toHaveLength(1);
+    const a = c.ids[0] ?? "";
+    expect(d.element(a)).toEqual({ id: a, kind: "image", transform: [1, 0, 0, 1, 10, 20], image: { asset: ABC, w: 640, h: 480 } });
+    const b = image(d, p, { ...png, name: "autre.png" });
+    expect(d.elementIds(p)).toEqual([a, b]);
+    expect(d.citedAssets()).toEqual([png]);
+    d.undo();
+    expect(d.asset(ABC)).toEqual(png);
+    d.undo();
+    expect(d.citedAssets()).toEqual([]);
+    expect(d.asset(ABC)).toEqual({ id: ABC, name: ABC, mime: "application/octet-stream", size: 0 });
+    expect(d.asset(ABC.toUpperCase())).toBeNull();
+    d.free();
+  });
+
+  it("AddImage : erreurs sans étape, messages du contrat", () => {
+    const d = f.blank();
+    const p = first(d);
+    const bad = (asset: typeof png | Record<string, unknown>, w: number, h: number, matrix: Matrix): string =>
+      messageOf(() => d.apply({ type: "AddImage", page: p, asset: asset as typeof png, w, h, matrix }));
+    unchanged(d, () => {
+      expect(bad({ ...png, id: ABC.toUpperCase() }, 1, 1, I)).toBe(BAD_ASSET);
+      expect(bad({ ...png, mime: "" }, 1, 1, I)).toBe(BAD_ASSET);
+      expect(bad({ ...png, size: -1 }, 1, 1, I)).toBe(BAD_ASSET);
+      expect(bad({ ...png, size: 1.5 }, 1, 1, I)).toBe(BAD_ASSET);
+      expect(bad(png, 0, 1, I)).toBe(BAD_IMAGE);
+      expect(bad(png, 1, Number.NaN, I)).toBe(BAD_IMAGE);
+      expect(bad(png, 1, 1, [0, 0, 0, 0, 0, 0])).toBe("matrice invalide (six nombres finis, inversible)");
+      expect(messageOf(() => d.apply({ type: "AddImage", page: "nulle-part", asset: png, w: 1, h: 1, matrix: I }))).toBe(
+        "page inconnue : nulle-part",
+      );
+    });
+    expect(d.citedAssets()).toEqual([]);
+    d.free();
+  });
+
+  it("image : hitTest dans sa boîte, Transform la déplace, gomme et hitTestPath l'ignorent", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = image(d, p, png, [1, 0, 0, 1, 100, 100]);
+    expect(d.hitTest(p, 400, 300, 0)).toBe(a);
+    expect(d.bounds([a])).toEqual({ x0: 100, y0: 100, x1: 740, y1: 580 });
+    unchanged(d, () => d.apply({ type: "Erase", page: p, path: new Float32Array([100, 300, 740, 300]), radius: 10, mode: "object" }));
+    expect(d.hitTestPath(p, new Float32Array([100, 300, 740, 300]), 10)).toEqual([]);
+    d.apply({ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 10, 0] });
+    expect(d.element(a)?.transform).toEqual([1, 0, 0, 1, 110, 100]);
+    d.free();
+  });
+
+  it("SetBackdrop (S3) : rect sur la largeur, page inchangée, aucun hitTest, même fond sans étape, retirer puis annuler", () => {
+    const d = f.blank();
+    const p = first(d);
+    const before = d.page(p);
+    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null });
+    const fond = { asset: png, w: 1000, h: 500, fit: "width" };
+    expect(d.apply({ type: "SetBackdrop", page: p, backdrop: fond }).pages).toEqual([p]);
+    const rect = { x0: 0, y0: 0, x1: 1920, y1: 960 };
+    expect(d.page(p)).toEqual({ ...before, backdrop: { asset: ABC, kind: "image", w: 1000, h: 500, fit: "width", rect } });
+    expect(d.hitTest(p, 960, 480, 0)).toBeNull();
+    expect(d.elementIds(p)).toEqual([]);
+    expect(d.citedAssets()).toEqual([png]);
+    unchanged(d, () => d.apply({ type: "SetBackdrop", page: p, backdrop: fond }));
+    d.apply({ type: "SetBackdrop", page: p, backdrop: null });
+    expect(d.page(p)?.backdrop).toBeNull();
+    unchanged(d, () => d.apply({ type: "SetBackdrop", page: p, backdrop: null }));
+    d.undo();
+    expect(d.page(p)?.backdrop?.rect).toEqual(rect);
+    expect(d.page("nulle-part")).toBeNull();
+    d.free();
+  });
+
+  it("SetBackdrop : ajustement autre que width, boîte ou asset invalides refusés sans étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "SetBackdrop", page: p, backdrop: { asset: png, w: 10, h: 10, fit: "contain" } }))).toBe(BAD_IMAGE);
+      expect(messageOf(() => d.apply({ type: "SetBackdrop", page: p, backdrop: { asset: png, w: 0, h: 10, fit: "width" } }))).toBe(BAD_IMAGE);
+      expect(messageOf(() => d.apply({ type: "SetBackdrop", page: p, backdrop: { asset: { ...png, mime: "" }, w: 10, h: 10, fit: "width" } }))).toBe(BAD_ASSET);
+      expect(messageOf(() => d.apply({ type: "SetBackdrop", page: "nulle-part", backdrop: null }))).toBe("page inconnue : nulle-part");
+    });
+    d.free();
+  });
+
+  it("saveParts puis loadParts, save puis load : image, fond et métadonnées gardés ; recharger garde les octets", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = image(d, p);
+    d.apply({ type: "SetBackdrop", page: p, backdrop: { asset: jpg, w: 1000, h: 500, fit: "width" } });
+    expect(d.citedAssets().map((x) => x.id)).toEqual([ABC, EMPTY_HASH]);
+    const [manifest, ybin] = d.saveParts(now, "0.1.0");
+    const e = f.loadParts(manifest, ybin);
+    expect(e.element(a)).toEqual(d.element(a));
+    expect(e.page(p)).toEqual(d.page(p));
+    expect(e.citedAssets()).toEqual(d.citedAssets());
+    const file = d.save(now, "0.1.0");
+    let cur = f.load(file);
+    for (let i = 0; i < 5; i++) {
+      const again = cur.save(now, "0.1.0");
+      expect(again).toEqual(file);
+      cur.free();
+      cur = f.load(again);
+    }
+    cur.free();
+    e.free();
+    d.free();
+  });
+});
+
 describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
   const core = {
     version: (): string => need().core.version(),
