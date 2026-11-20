@@ -10,23 +10,16 @@
 // Tous : aucune requête hors de 127.0.0.1 (D27). Hors de scripts/verifier.sh : exige Playwright (cache npx).
 // `serve`, `loadPlaywright`, `frames`, `inkIn` viennent de scripts/essais/commun.mjs (lot 5b, T85).
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/fichiers-navigateur.mjs [--captures]
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve, stageMouse, coqueCsp } from "./commun.mjs";
 const MODES = ["repli", "fsa", "detection"];
 const FIRST = [[400, 300], [650, 300], [900, 300]];
 const SECOND = [[400, 420], [650, 420], [900, 420]];
 const FIRST_BOX = [640, 290, 660, 310];
 const SECOND_BOX = [640, 410, 660, 430];
-
-/** CSP de la coque (tauri.conf.json), envoyée telle quelle par le serveur d'essai : un défaut de CSP se voit ici. */
-function coqueCsp() {
-  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
-  const csp = conf.app.security.csp;
-  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
-}
 
 /** Faux File System Access, injecté avant le chargement ; fichiers et compteurs dans sessionStorage (survit au rechargement). */
 function fakeFsa() {
