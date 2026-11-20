@@ -94,9 +94,22 @@ export async function launchFiles(ipc: TauriIpc): Promise<DroppedFile[]> {
 export const onQuitRequested = (ipc: TauriIpc, cb: () => void): Promise<() => void> => ipc.listen(QUIT_EVENT, () => cb());
 export const quitApp = (ipc: TauriIpc): Promise<void> => ipc.invoke<void>("quit_app");
 
-export function createTauriHost(dialog: TauriDialog, fs: TauriFs, ipc: TauriIpc | null = null, dpr: () => number = () => 1): FileHost {
+export interface TauriFileHost extends FileHost {
+  /** Se résout quand l'écoute de DROPPED_EVENT posée par le dernier `onDrop` est en place (immédiat si ipc null). */
+  dropListening(): Promise<void>;
+}
+
+export function createTauriHost(
+  dialog: TauriDialog,
+  fs: TauriFs,
+  ipc: TauriIpc | null = null,
+  dpr: () => number = () => 1,
+): TauriFileHost {
+  // `ipc.listen` rend une promesse : tant qu'elle n'est pas tenue, un évènement émis par la coque se perd (écart T87).
+  let lastSub: Promise<() => void> | null = null;
   return {
     kind: "tauri",
+    dropListening: () => (lastSub ?? Promise.resolve()).then(() => undefined),
     onDrop(handler: DropHandler): () => void {
       if (ipc === null) return () => undefined;
       const sub = ipc.listen<DropPayload>(DROPPED_EVENT, (e) => {
@@ -110,6 +123,7 @@ export function createTauriHost(dialog: TauriDialog, fs: TauriFs, ipc: TauriIpc 
           },
         );
       });
+      lastSub = sub;
       return () => {
         void sub.then((un) => {
           un();
