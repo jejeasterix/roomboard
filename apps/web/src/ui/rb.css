@@ -13,3 +13,18 @@
 .rb-bar button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
 .rb-sep { align-self: stretch; border-inline-start: 1px solid #94a3b8; margin: 0 4px; }
 .rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed #94a3b8; min-height: var(--rb-btn); }
+/* Mise en page (T95, CL5b-10) : la grille vient de `layoutFor` ; chaque barre ancrée a sa case, la scène la sienne. Seuls
+   une barre `floating` et les menus passagers (réglages, profils) se superposent à la scène, dans sa case. */
+.rb-layout { display: grid; height: 100vh; overflow: hidden; }
+.rb-slot { min-width: 0; min-height: 0; overflow: auto; }
+.rb-head { display: flex; align-items: center; gap: 8px; }
+#etat { margin: 0 8px; color: #b91c1c; }
+#pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
+#echelons-notes { margin-left: 8px; color: #b45309; }
+.rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
+.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: 100%; max-height: 100%; overflow: auto; background: #ffffff; border: 1px solid #a1a1aa; }
+/* Scène (règles d'index.html du lot 4 : sans elles, le navigateur fait défiler ou sélectionne au lieu de tracer). */
+.rb-stages { grid-area: stage; position: relative; overflow: hidden; }
+.rb-stage { position: absolute; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
+.rb-stage[hidden] { display: none; }
