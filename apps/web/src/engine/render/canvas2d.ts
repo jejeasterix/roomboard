@@ -5,7 +5,7 @@
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import { PDF_PAGE_KIND } from "../../core/api";
-import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
+import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
@@ -13,6 +13,7 @@ import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePa
 import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../text-layout";
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
+import type { MediaFrames } from "./media-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
@@ -34,7 +35,12 @@ export interface Canvas2DOptions {
   readonly backdrop?: BackdropPainter;
   /** C12 (PF15) : état du fond après chaque scène. */
   readonly onBackdrop?: (s: BackdropState) => void;
-  readonly media?: import("./media-frames").MediaFrames;
+  /** C14 (M20) : image courante des lecteurs de média ; absent (export PDF, M34) : poster. */
+  readonly media?: MediaFrames;
+  /** C14 (R7) : nom de l'asset d'un son, pour sa carte ; absent ou null : « Son ». */
+  readonly assetName?: (asset: string) => string | null;
+  /** C14 (R7) : rendu d'export : le badge « lecture » n'est pas dessiné. */
+  readonly forExport?: boolean;
 }
 
 /** Polygones fermés x, y alternés ; une paire non finie (NaN, NaN) commence un nouveau polygone. */
@@ -103,6 +109,60 @@ function paintPlaceholder(ctx: CanvasRenderingContext2D, w: number, h: number, l
     ctx.fillStyle = PLACEHOLDER_STROKE;
     ctx.textBaseline = "top";
     ctx.fillText(label, 8, 8);
+  }
+}
+
+/** C14 (M20) : carte d'un son, barre d'avancement, badge « lecture ». */
+export const AUDIO_CARD_FILL = "#f1f5f9";
+export const AUDIO_CARD_LABEL = "Son";
+export const MEDIA_PROGRESS_COLOR = "#1e3a8a";
+export const MEDIA_BADGE_FILL = "rgba(15, 23, 42, 0.6)";
+const AUDIO_CARD_TEXT = "#0f172a";
+const MEDIA_BAR_HEIGHT = 6;
+const MEDIA_BADGE_MARGIN = 8;
+
+/** Boîte (0, 0)-(w, h) d'un média : image du lecteur, sinon poster, sinon cadre gris ; un son : sa carte. */
+function paintMedia(
+  ctx: CanvasRenderingContext2D,
+  m: MediaData,
+  frame: CanvasImageSource | null,
+  progress: { readonly time: number; readonly playing: boolean } | null,
+  images: ImageSource | null,
+  name: string | null,
+  badge: boolean,
+): void {
+  if (m.mediaType === "audio") {
+    ctx.fillStyle = AUDIO_CARD_FILL;
+    ctx.fillRect(0, 0, m.w, m.h);
+    ctx.font = textFont(16);
+    ctx.fillStyle = AUDIO_CARD_TEXT;
+    ctx.textBaseline = "top";
+    ctx.fillText(name ?? AUDIO_CARD_LABEL, 8, 8);
+    if (progress !== null) {
+      const end = m.trimEnd ?? m.duration;
+      const span = end - m.trimStart;
+      const ratio = span > 0 ? Math.min(1, Math.max(0, (progress.time - m.trimStart) / span)) : 0;
+      ctx.fillStyle = MEDIA_PROGRESS_COLOR;
+      ctx.fillRect(0, m.h - MEDIA_BAR_HEIGHT, m.w * ratio, MEDIA_BAR_HEIGHT);
+    }
+  } else {
+    const bmp = frame ?? (m.poster !== null ? (images?.bitmap(m.poster) ?? null) : null);
+    if (bmp !== null) ctx.drawImage(bmp, 0, 0, m.w, m.h);
+    else paintPlaceholder(ctx, m.w, m.h, null);
+  }
+  if (badge && progress?.playing !== true) {
+    const s = Math.min(m.w, m.h) / 6;
+    const x = MEDIA_BADGE_MARGIN;
+    const y = m.h - MEDIA_BADGE_MARGIN - s;
+    ctx.fillStyle = MEDIA_BADGE_FILL;
+    ctx.fillRect(x, y, s, s);
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.3, y + s * 0.2);
+    ctx.lineTo(x + s * 0.3, y + s * 0.8);
+    ctx.lineTo(x + s * 0.8, y + s * 0.5);
+    ctx.closePath();
+    ctx.fill();
   }
 }
 
@@ -185,6 +245,9 @@ export class Canvas2DRenderer implements Renderer {
   private zoom = 1;
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
+  private readonly media: MediaFrames | null;
+  private readonly assetName: ((asset: string) => string | null) | null;
+  private readonly forExport: boolean;
   private readonly backdrop: BackdropPainter | null;
   private readonly onBackdrop: ((s: BackdropState) => void) | null;
   /** Fond du dernier drawScene, repeint par l'aperçu de gomme partielle (D20). */
@@ -211,6 +274,9 @@ export class Canvas2DRenderer implements Renderer {
   ) {
     this.makePath = opts.makePath ?? (() => new Path2D());
     this.images = opts.images ?? null;
+    this.media = opts.media ?? null;
+    this.assetName = opts.assetName ?? null;
+    this.forExport = opts.forExport === true;
     this.backdrop = opts.backdrop ?? null;
     this.onBackdrop = opts.onBackdrop ?? null;
   }
@@ -336,6 +402,12 @@ export class Canvas2DRenderer implements Renderer {
       paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
     } else if (el.kind === "image") {
       this.paintImage(ctx, el);
+    } else if (el.kind === "media") {
+      const audio = el.media.mediaType === "audio";
+      paintMedia(
+        ctx, el.media, this.media?.frame(el.id) ?? null, this.media?.progress(el.id) ?? null, this.images,
+        audio ? (this.assetName?.(el.media.asset) ?? null) : null, !this.forExport,
+      );
     } else if (el.kind === "table") {
       paintTableGrid(ctx, el.table);
       const boxes = cellTextBoxes(el.table);
