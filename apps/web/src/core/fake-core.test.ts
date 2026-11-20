@@ -569,7 +569,7 @@ describe("fakeCore — C10a (tableau)", () => {
     const v = load([{ id: "c:1", width: 240 }, { id: "c2", width: 100 }]).element("t1");
     if (v?.kind !== "table") throw new Error(`tableau attendu : ${v?.kind ?? "absent"}`);
     expect(v.table.cols).toEqual([{ id: "c2", width: 100 }]);
-    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null }]);
+    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null, shade: null }]);
     expect(load([{ id: "c:1", width: 240 }]).element("t1")?.kind).toBe("unknown");
   });
 
@@ -582,5 +582,37 @@ describe("fakeCore — C10a (tableau)", () => {
     const again = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0"));
     expect(again.element("t1")).toEqual(d.element("t1"));
     expect(saveJson(again)).toEqual(saveJson(d));
+  });
+});
+
+describe("fakeCore — C10b (tableau)", () => {
+  const loadJson = (table: unknown) =>
+    fakeCore.load(new TextEncoder().encode(JSON.stringify({ pages: [{ id: "p1", elements: [{ id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0], table }] }] })));
+  const lines = (ids: string[], key: "width" | "height") => ids.map((id) => ({ id, [key]: 100 }));
+
+  it("JSON : span recoupant ou sans ligne : ignoré, gardé à l'enregistrement (F2, S5)", () => {
+    const span = (r: string, c: string) => ({ text: "", fill: null, span: [r, c] });
+    const d = loadJson({
+      cols: lines(["c1", "c2", "c3"], "width"), rows: lines(["r1", "r2", "r3"], "height"),
+      cells: { "r1:c1": { text: "A", fill: null, span: ["r2", "c2"] }, "r1:c2": span("r3", "c3"), "r2:c3": span("r9", "c3"), "r3:c2": span("r2", "c1"), "r3:c3": span("r3", "c3") },
+    });
+    const v = d.element("t1");
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(v.table.merges).toEqual([{ row: "r1", col: "c1", rows: 2, cols: 2 }]);
+    const back = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0")).element("t1");
+    expect(back).toEqual(v);
+  });
+
+  it("JSON : shade lu, invalide retiré (PC13) ; une cellule seulement ombrée est listée", () => {
+    const d = loadJson({
+      cols: lines(["c1", "c2"], "width"), rows: lines(["r1"], "height"),
+      cells: { "r1:c1": { text: "", fill: null, shade: "#94a3b8" }, "r1:c2": { text: "B", fill: null, shade: true } },
+    });
+    const v = d.element("t1");
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(v.table.cells).toEqual([
+      { row: "r1", col: "c1", text: "", fill: null, shade: "#94a3b8" },
+      { row: "r1", col: "c2", text: "B", fill: null, shade: null },
+    ]);
   });
 });

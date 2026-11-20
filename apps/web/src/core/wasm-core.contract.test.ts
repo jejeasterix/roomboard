@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
@@ -1535,7 +1535,7 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     const id = addTable(d, first(d), { cols: 2, rows: 2 });
     const [r0, r1, c0] = ids2(tableOf(d, id));
     d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi", rowHeight: 61 });
-    expect(tableOf(d, id).cells).toEqual([{ row: r0, col: c0, text: "Lundi", fill: null }]);
+    expect(tableOf(d, id).cells).toEqual([{ row: r0, col: c0, text: "Lundi", fill: null, shade: null }]);
     expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([64, 64]);
     expect(d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "Lundi soir", rowHeight: 150 }).ids).toEqual([id]);
     expect(tableOf(d, id).rows.map((r) => r.height)).toEqual([150, 64]);
@@ -1645,7 +1645,7 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     const id = addTable(d, first(d), { cols: 2, rows: 2 });
     const [, r1, , c1] = ids2(tableOf(d, id));
     d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#fef08a" });
-    expect(tableOf(d, id).cells).toEqual([{ row: r1, col: c1, text: "", fill: "#fef08a" }]);
+    expect(tableOf(d, id).cells).toEqual([{ row: r1, col: c1, text: "", fill: "#fef08a", shade: null }]);
     unchanged(d, () => d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#fef08a" }));
     d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: null });
     expect(tableOf(d, id).cells).toEqual([]);
@@ -1661,8 +1661,8 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     d.apply({ type: "SetTableCell", id, row: r0, col: c0, content: "A" });
     d.apply({ type: "SetTableCell", id, row: r1, col: c1, content: "B" });
     expect(tableOf(d, id).cells).toEqual([
-      { row: r0, col: c0, text: "A", fill: "#fef08a" },
-      { row: r1, col: c1, text: "B", fill: null },
+      { row: r0, col: c0, text: "A", fill: "#fef08a", shade: null },
+      { row: r1, col: c1, text: "B", fill: null, shade: null },
     ]);
     d.apply({ type: "SetTableFill", id, row: r1, col: c1, fill: "#bbf7d0" });
     d.apply({ type: "SetTableFill", id, row: r0, col: c0, fill: null });
@@ -1670,8 +1670,8 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     const t = tableOf(d, id);
     expect([...t.rows, ...t.cols].map((l) => l.id)).toEqual([r0, r1, c0, c1]);
     expect(t.cells).toEqual([
-      { row: r0, col: c0, text: "A", fill: null },
-      { row: r1, col: c1, text: "B", fill: "#bbf7d0" },
+      { row: r0, col: c0, text: "A", fill: null, shade: null },
+      { row: r1, col: c1, text: "B", fill: "#bbf7d0", shade: null },
     ]);
     d.free();
   });
@@ -1706,9 +1706,9 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
 
 describe("contrôle de forme C10a (tableau)", () => {
   const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
-  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined }] };
+  const table = { color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }], rows: [{ id: "r1", height: 64 }], cells: [{ row: "r1", col: "c1", text: "A", fill: undefined }], merges: [] };
   it("toElementView : tableau contrôlé, fill absent → null", () => {
-    expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null }] } });
+    expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null, shade: null }] } });
   });
   it("toElementView : forme fausse → erreur", () => {
     expect(() => toElementView({ ...base })).toThrow("ElementView invalide");
@@ -1731,5 +1731,193 @@ describe.skipIf(loaded === null)("contrat C10a : vrai module seulement", () => {
     expect(t.cells[0]?.fill).toBe("#fef08a");
     expect(t.cells[1]?.fill).toBeNull();
     d.free();
+  });
+});
+
+// C10b (fusion, ombrage, import) : contrat commun ; T7 branche le vrai module (c10bFactories = factories).
+const c10bFactories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
+const SHADE = "#94a3b8";
+const c10bIds = (t: TableData): { readonly r: string[]; readonly c: string[] } => ({ r: t.rows.map((x) => x.id), c: t.cols.map((x) => x.id) });
+const c10bAt = (g: { readonly r: string[]; readonly c: string[] }, i: number, j: number): CellIds => ({ row: g.r[i] ?? "", col: g.c[j] ?? "" });
+const shadedOf = (t: TableData): string[] => t.cells.filter((x) => x.shade !== null).map((x) => `${x.row}:${x.col}`);
+
+describe.each(c10bFactories)("contrat C10b : $name", ({ f }) => {
+  // Garde du patron écarté (GC10) : une écriture en bloc de la cellule (`{ text, fill }`) perdrait la zone et l'ombrage.
+  it("une commande ne change que ses clés (GC10) : texte, remplissage, ombrage et zone d'une ancre gardés l'un par l'autre", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const g = c10bIds(tableOf(d, id));
+    const a = c10bAt(g, 0, 0);
+    const zone = [{ row: g.r[0], col: g.c[0], rows: 2, cols: 2 }];
+    d.apply({ type: "MergeTableCells", id, from: a, to: c10bAt(g, 1, 1) });
+    d.apply({ type: "SetTableCell", id, ...a, content: "A" });
+    d.apply({ type: "SetTableFill", id, ...a, fill: "#bbf7d0" });
+    d.apply({ type: "SetTableShade", id, from: a, to: a, shade: SHADE });
+    d.apply({ type: "SetTableCell", id, ...a, content: "B" });
+    d.apply({ type: "SetTableFill", id, ...a, fill: "#fef08a" });
+    expect(tableOf(d, id).merges).toEqual(zone);
+    expect(tableOf(d, id).cells).toEqual([{ ...a, text: "B", fill: "#fef08a", shade: SHADE }]);
+    d.apply({ type: "SetTableShade", id, from: a, to: a, shade: null });
+    expect(tableOf(d, id).merges).toEqual(zone);
+    expect(tableOf(d, id).cells).toEqual([{ ...a, text: "B", fill: "#fef08a", shade: null }]);
+    d.free();
+  });
+
+  it("MergeTableCells (F3) : l'ancre garde son texte, les couvertes sont retirées ; une étape", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 3, rows: 2 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "SetTableCell", id, ...c10bAt(g, 0, 0), content: "Lundi" });
+    d.apply({ type: "SetTableCell", id, ...c10bAt(g, 0, 1), content: "Mardi" });
+    const c = d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 1, 1) });
+    expect(c.ids).toEqual([id]);
+    const t = tableOf(d, id);
+    expect(t.merges).toEqual([{ row: g.r[0], col: g.c[0], rows: 2, cols: 2 }]);
+    expect(t.cells.map((x) => x.text)).toEqual(["Lundi"]);
+    d.undo();
+    expect(tableOf(d, id).merges).toEqual([]);
+    expect(tableOf(d, id).cells.map((x) => x.text)).toEqual(["Lundi", "Mardi"]);
+    d.free();
+  });
+
+  it("MergeTableCells refusé (F3) : une cellule, ligne inconnue, recouvrement partiel ; aucune étape", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 3, rows: 3 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 1, 0) });
+    unchanged(d, () => {
+      expect(messageOf(() => d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 2, 2), to: c10bAt(g, 2, 2) }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "MergeTableCells", id, from: { row: "absente", col: g.c[0] ?? "" }, to: c10bAt(g, 2, 2) }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 1, 0), to: c10bAt(g, 2, 1) }))).toBe(TABLE_MESSAGE);
+      expect(messageOf(() => d.apply({ type: "MergeTableCells", id: "absent", from: c10bAt(g, 0, 0), to: c10bAt(g, 0, 1) }))).toBe("élément inconnu : absent");
+    });
+    d.free();
+  });
+
+  it("SplitTableCell (F4) : la zone se défait, le texte reste en haut à gauche ; cellule couverte : refus", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 2 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "SetTableCell", id, ...c10bAt(g, 0, 0), content: "Lundi" });
+    d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 0, 1) });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SplitTableCell", id, ...c10bAt(g, 0, 1) }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SplitTableCell", id, ...c10bAt(g, 0, 0) });
+    const t = tableOf(d, id);
+    expect(t.merges).toEqual([]);
+    expect(t.cells).toEqual([{ ...c10bAt(g, 0, 0), text: "Lundi", fill: null, shade: null }]);
+    d.free();
+  });
+
+  it("SetTableShade (F8, F9, F12) : une colonne, révélation en une étape, sans changement aucune étape, couleur invalide", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 3, rows: 3 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 0, 1) });
+    d.apply({ type: "SetTableShade", id, from: c10bAt(g, 0, 2), to: c10bAt(g, 2, 2), shade: SHADE });
+    d.apply({ type: "SetTableShade", id, from: c10bAt(g, 0, 1), to: c10bAt(g, 0, 1), shade: SHADE });
+    expect(shadedOf(tableOf(d, id))).toEqual([`${g.r[0]}:${g.c[0]}`, `${g.r[0]}:${g.c[2]}`, `${g.r[1]}:${g.c[2]}`, `${g.r[2]}:${g.c[2]}`]);
+    unchanged(d, () => d.apply({ type: "SetTableShade", id, from: c10bAt(g, 0, 2), to: c10bAt(g, 2, 2), shade: SHADE }));
+    d.apply({ type: "SetTableShade", id, from: c10bAt(g, 0, 2), to: c10bAt(g, 0, 2), shade: null });
+    expect(shadedOf(tableOf(d, id))).toHaveLength(3);
+    d.undo();
+    expect(shadedOf(tableOf(d, id))).toHaveLength(4);
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableShade", id, from: c10bAt(g, 0, 2), to: c10bAt(g, 0, 2), shade: "!!" }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
+  it("SetTableFill avec to (F15) : la plage, ancres et cellules simples, une étape ; sans to : comme C10a", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 3, rows: 2 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 1, 0) });
+    d.apply({ type: "SetTableFill", id, ...c10bAt(g, 0, 0), to: c10bAt(g, 1, 1), fill: "#bbf7d0" });
+    expect(tableOf(d, id).cells.filter((x) => x.fill !== null).map((x) => `${x.row}:${x.col}`)).toEqual([`${g.r[0]}:${g.c[0]}`, `${g.r[0]}:${g.c[1]}`, `${g.r[1]}:${g.c[1]}`]);
+    d.undo();
+    expect(tableOf(d, id).cells.every((x) => x.fill === null)).toBe(true);
+    d.free();
+  });
+
+  it("RemoveTableLine avec to (F6, S5) : plage en une étape ; ligne d'ancrage retirée : la zone glisse ; tout retirer : refus", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 4 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 2, 0) });
+    d.apply({ type: "RemoveTableLine", id, axis: "row", line: g.r[0] ?? "" });
+    expect(tableOf(d, id).merges).toEqual([{ row: g.r[1], col: g.c[0], rows: 2, cols: 1 }]);
+    d.undo();
+    const before = tableOf(d, id);
+    d.apply({ type: "RemoveTableLine", id, axis: "row", line: g.r[2] ?? "", to: g.r[1] ?? "" });
+    expect(tableOf(d, id).rows.map((x) => x.id)).toEqual([g.r[0], g.r[3]]);
+    expect(tableOf(d, id).merges).toEqual([]);
+    d.undo();
+    expect(tableOf(d, id)).toEqual(before);
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "RemoveTableLine", id, axis: "row", line: g.r[0] ?? "", to: g.r[3] ?? "" }))).toBe(TABLE_MESSAGE));
+    d.free();
+  });
+
+  it("InsertTableLine dans une zone (F5) : elle grandit ; SetTableCell sur une ancre de deux lignes (F7) : la dernière grandit", () => {
+    const d = f.blank();
+    const id = addTable(d, first(d), { cols: 2, rows: 3 });
+    const g = c10bIds(tableOf(d, id));
+    d.apply({ type: "MergeTableCells", id, from: c10bAt(g, 0, 0), to: c10bAt(g, 1, 0) });
+    d.apply({ type: "SetTableCell", id, ...c10bAt(g, 0, 0), content: "long", rowHeight: 200 });
+    expect(tableOf(d, id).rows.map((x) => x.height)).toEqual([64, 136, 64]);
+    d.apply({ type: "InsertTableLine", id, axis: "row", at: 1 });
+    expect(tableOf(d, id).merges).toEqual([{ row: g.r[0], col: g.c[0], rows: 3, cols: 1 }]);
+    d.free();
+  });
+
+  it("ImportTable (F18) : une étape ; textes, fusion, matrice ; texte couvert ignoré", () => {
+    const d = f.blank();
+    const p = first(d);
+    const c = d.apply({
+      type: "ImportTable", page: p, matrix: [0.5, 0, 0, 0.5, 300, 100], colWidth: 240, rowHeights: [64, 80], cols: 2,
+      cells: ["Titre", "caché", "a", "b"], merges: [[0, 0, 1, 2]], color: "#1d4ed8", size: 36,
+    });
+    const id = c.ids[0] ?? "";
+    expect(d.element(id)?.transform).toEqual([0.5, 0, 0, 0.5, 300, 100]);
+    const t = tableOf(d, id);
+    expect([t.color, t.cols.map((x) => x.width), t.rows.map((x) => x.height)]).toEqual(["#1d4ed8", [240, 240], [64, 80]]);
+    expect(t.merges).toEqual([{ row: t.rows[0]?.id, col: t.cols[0]?.id, rows: 1, cols: 2 }]);
+    expect(t.cells.map((x) => x.text)).toEqual(["Titre", "a", "b"]);
+    expect(d.bounds([id])).toEqual({ x0: 300, y0: 100, x1: 540, y1: 172 });
+    d.undo();
+    expect(d.element(id)).toBeNull();
+    d.free();
+  });
+
+  it("ImportTable refusé (F18, PC1) : dimensions, longueurs, tailles, couleur, matrice, fusions ; page inconnue", () => {
+    const d = f.blank();
+    const p = first(d);
+    type Imp = Extract<Command, { type: "ImportTable" }>;
+    const ok: Imp = { type: "ImportTable", page: p, matrix: [1, 0, 0, 1, 0, 0], colWidth: 240, rowHeights: [64, 64], cols: 2, cells: ["", "", "", ""], merges: [], color: "#000000", size: 36 };
+    for (const over of [
+      { cols: 0, cells: [] }, { cols: 65 }, { rowHeights: [] }, { cells: ["", ""] }, { rowHeights: [64, Number.NaN] },
+      { colWidth: 0 }, { color: "!!" }, { matrix: [0, 0, 0, 0, 0, 0] as const }, { merges: [[0, 0, 1, 1]] as const },
+      { merges: [[1, 1, 2, 1]] as const }, { merges: [[0, 0, 2, 1], [1, 0, 1, 2]] as const },
+    ] as Partial<Imp>[]) {
+      unchanged(d, () => expect(messageOf(() => d.apply({ ...ok, ...over }))).toBe(TABLE_MESSAGE));
+    }
+    expect(messageOf(() => d.apply({ ...ok, page: "zz" }))).toBe("page inconnue : zz");
+    d.free();
+  });
+});
+
+describe("contrôle de forme C10b (tableau)", () => {
+  const base = { id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0] };
+  const table = {
+    color: "#000000", size: 36, cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }], rows: [{ id: "r1", height: 64 }],
+    cells: [{ row: "r1", col: "c1", text: "A", fill: undefined, shade: "#94a3b8" }], merges: [{ row: "r1", col: "c1", rows: 1, cols: 2 }],
+  };
+  it("toElementView : zones et ombrage contrôlés ; shade absent → null", () => {
+    expect(toElementView({ ...base, table })).toEqual({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", fill: null, shade: "#94a3b8" }] } });
+    const plain = { ...table, cells: [{ row: "r1", col: "c1", text: "A" }] };
+    expect(toElementView({ ...base, table: plain })).toEqual({ ...base, table: { ...plain, cells: [{ row: "r1", col: "c1", text: "A", fill: null, shade: null }] } });
+  });
+  it("toElementView : zones ou ombrage de forme fausse → erreur", () => {
+    expect(() => toElementView({ ...base, table: { ...table, merges: undefined } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, merges: [{ row: "r1", col: "c1", rows: 0, cols: 2 }] } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, merges: [{ row: 1, col: "c1", rows: 1, cols: 2 }] } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", shade: true }] } })).toThrow("ElementView invalide");
   });
 });
