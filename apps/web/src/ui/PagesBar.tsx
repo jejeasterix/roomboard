@@ -19,7 +19,7 @@ export interface PagesBarProps {
 export const pagesLabel = (v: PagesView): string => `${v.pageIndex + 1} / ${v.pageCount}`;
 
 /** Champs de la vue sans effet sur les pages ; l'application passe la vue complète (`ToolbarView`), qui les remplace. */
-const NEUTRAL: Omit<ToolbarView, keyof PagesView> = { tool: "", eraserMode: "partial", canUndo: false, canRedo: false };
+const NEUTRAL: Omit<ToolbarView, keyof PagesView> = { tool: "", eraserMode: "partial", canUndo: false, canRedo: false, tableCell: null };
 
 /** État d'un élément par la table de T94 (`itemState`), la même que celle de la barre d'outils. */
 const isDisabled = (item: ToolItem, v: PagesView): boolean => itemState(item, { ...NEUTRAL, ...v }).disabled;

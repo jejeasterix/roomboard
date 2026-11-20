@@ -50,6 +50,18 @@
 .rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
 .rb-swatch { display: inline-block; inline-size: calc(var(--rb-btn) / 3); block-size: calc(var(--rb-btn) / 3); border-radius: 50%; border: 1px solid #52525b; }
 
+/* Tableau (C10a) : pastilles carrées de la rangée du tableau ; grille de choix posée au point cliqué (app/table-picker.ts). */
+.rb-swatch-square { border-radius: 2px; }
+.rb-table-picker { position: absolute; z-index: 4; display: grid; gap: var(--rb-gap); padding: var(--rb-pad); background: #ffffff; border: 1px solid #a1a1aa; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+.rb-table-picker[hidden] { display: none; }
+.rb-table-picker-grid { display: grid; grid-template-columns: repeat(8, var(--rb-btn-s)); gap: 2px; }
+.rb-table-picker-grid button { inline-size: var(--rb-btn-s); block-size: var(--rb-btn-s); padding: 0; border: 1px solid #a1a1aa; background: #ffffff; }
+.rb-table-picker-grid button[data-on] { background: #bfdbfe; border-color: #1e3a8a; }
+.rb-table-picker [data-picker-label] { font-variant-numeric: tabular-nums; }
+.rb-table-picker form { display: flex; align-items: center; gap: var(--rb-gap); }
+.rb-table-picker input { inline-size: 4em; min-block-size: var(--rb-btn-m); }
+.rb-table-picker form button { min-block-size: var(--rb-btn-m); padding: 0 var(--rb-pad); }
+
 /* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
 [data-profiles] { display: grid; gap: 4px; padding: 4px; }
 [data-profiles] button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); text-align: start; }
