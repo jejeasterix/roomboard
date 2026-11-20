@@ -1,10 +1,9 @@
 # État — usage-c10b-tableau
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : On fusionne et on divise des cellules d'un tableau, on pose un ombrage révélable sur une cellule, on colle un tableau HTML qui devient un tableau RoomBoard, et on importe un fichier Excel en valeurs.
 Avancement : 14/14 tâches terminées
-Étage : 4 — depuis 2026-11-20 15:15
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c10b-tableau   Branche : feat/usage-c10b-tableau   Base : origin/main @ 425d617, puis origin/main @ 98bf320 (C7b) fusionné en c4db861
 Branche principale locale au lancement : 425d617
@@ -36,7 +35,7 @@ contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 �
 | fusion origin/main (C7b) + barre | terminée | — | 129a232 | cargo 0 échec, web 1 574/1 574, verifier.sh --e2e OK |
 
 ## Terminé quand
-toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · capture tableau fusionné + ombrage dans docs/essais/ · PR mergée par fusion locale --no-ff et push sans --force
+toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · capture tableau fusionné + ombrage dans docs/essais/ · PR mergée par fusion locale --no-ff et push sans --force — fait : PR #18, main 54a7c80
 
 ## Scénarios et captures
 S1 à S4 joués par `scripts/essais/c10b-tableau-navigateur.mjs` dans `verifier.sh --e2e` (sha 129a232) : C10b tableau : OK. S5 (cas du cœur) : tests Rust et vitest.
@@ -50,7 +49,7 @@ HB-1 à HB-12 de niveau 1 (cadrage § hypothèses) ; HB-13 plafonds (2 000 carac
 - `cellRect`/`cellInnerBox` appellent encore `mergeAt` par cellule (coût à un 64 × 64 très fusionné, non mesuré).
 
 ## Portes
-ouvertes : — · passées : — (aucune porte avant merge au profil ; aucune release)
+ouvertes : — · passées : — (merge sans porte, profil « Porte avant merge : non » ; aucune release) (aucune porte avant merge au profil ; aucune release)
 
 ## Pièges trouvés
 - Sur la VM, la notification de fin d'une commande de fond n'a pas réveillé plusieurs agents (T1, T4, T12) : briefs passés au premier plan.
@@ -67,3 +66,37 @@ ouvertes : — · passées : — (aucune porte avant merge au profil ; aucune re
 
 ## Constats d'architecture
 —  (les deux constats notés en route sont corrigés par T14)
+
+## Notes du coffre à poser
+
+Coffre de la VM en lecture seule (`coffre-lecture-seule.cjs` : code 0). Le piège des notifications de fond est déjà au coffre (`04_Pieges/subagent-fin-de-tour-en-attendant-la-notification-sans-preuve.md`) : rien de neuf.
+
+### Note 1
+Chemin : `00_Journal/2026-11-20-roomboard-usage-c10b-tableau-clos.md`
+
+```markdown
+---
+id: 2026-11-20-roomboard-usage-c10b-tableau-clos
+type: journal
+summary: "RoomBoard usage C10b tableau clos : fusion et division de cellules, ombrage révélable, collage d'un <table> HTML, import .xlsx en valeurs (calamine dans le module formats, Worker jetable) ; PR 18 fusionnée (main 54a7c80)."
+created: 2026-11-20
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c10b-tableau-etat.md (dépôt jejeasterix/roomboard, main 54a7c80)"
+---
+
+# RoomBoard — usage C10b tableau : fusion, ombrage, imports, clos (OD80)
+
+- Livré : zones `span` sur l'ancre (sans `mergedInto`), boutons Fusionner, Diviser, Ombrer, Désombrer ; révélation d'un ombrage par un toucher (outil Sélection, seuil 8 px) ; collage d'un `<table>` HTML par `DOMParser` inerte ; import `.xlsx` en valeurs par `calamine` 0.38 (MIT) dans le module `formats`, lu dans un Worker jetable (60 s) ; commande `ImportTable` ; 14 tâches, capture `docs/essais/c10b-tableau-fusion-ombrage.png`.
+- Tailles : module principal 1 000 393 o, formats 852 724 o ; `verifier.sh --e2e` OK.
+- Relectures sans bloquant ; T13 corrige une garde de décompression contournable par un chemin non standard (calamine suit `_rels/.rels`).
+- Intégration de C7b : barre sur quatre lignes, scène 610 px < 640 ; rangées resserrées et « Retirer l'ombrage » devenu « Désombrer » (amendement au cadrage).
+- Hors périmètre : `.xls`, `.ods`, `.csv`, formules, objets dans une cellule ; Worker sous la CSP de la coque non essayé.
+```
+
+### Note 2
+Chemin : `01_Projets/roomboard.md` — remplacer la ligne de la section « Avancement » qui commence par « - Vague 2 en cours : » par :
+
+```markdown
+- Vague 2 en cours : C7b éditeur de texte riche clos (PR 17, `main` 98bf320) ; C10b tableau (fusion, ombrage révélable, collage HTML, import `.xlsx`) clos (PR 18, `main` 54a7c80) — voir [[2026-11-20-roomboard-usage-c10b-tableau-clos]].
+```
