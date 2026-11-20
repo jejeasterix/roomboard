@@ -171,4 +171,16 @@ describe("zone de saisie du texte (CL4-2, CL4-3)", () => {
       area.fire("input");
     }).not.toThrow();
   });
+
+  it("la zone suit le zoom", () => {
+    const { area, editor } = mount(() => null);
+    editor.follow({ zoom: 3, tx: 1, ty: 1 });
+    expect(area.style.transform).toBeUndefined();
+    editor.open(session, { zoom: 1, tx: 0, ty: 0 });
+    editor.follow({ zoom: 2, tx: 10, ty: 20 });
+    expect(area.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
+    editor.close();
+    editor.follow({ zoom: 5, tx: 0, ty: 0 });
+    expect(area.style.transform).toBe(cssMatrix({ zoom: 2, tx: 10, ty: 20 }, session.matrix));
+  });
 });

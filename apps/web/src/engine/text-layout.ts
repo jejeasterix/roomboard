@@ -1,6 +1,6 @@
 /**
  * Mise en lignes du texte (D14, CL4-4, CL4-5) : une seule implémentation pour la hauteur de boîte envoyée au cœur
- * (outil Texte) et pour le rendu (Canvas 2D). Coupure gloutonne aux espaces, mot trop long coupé par points de code.
+ * (outil Texte) et pour le rendu (Canvas 2D). Coupure gloutonne aux espaces, mot trop long coupé par graphème.
  */
 export const TEXT_FONT_FAMILY = '"Atkinson Hyperlegible", system-ui, sans-serif';
 export const TEXT_SIZES: readonly number[] = [24, 36, 48, 72];
@@ -21,6 +21,16 @@ export const measureWith =
     return ctx.measureText(text).width;
   };
 
+let cache: { readonly ctor: typeof Intl.Segmenter; readonly seg: Intl.Segmenter } | null = null;
+
+/** Graphèmes (emoji ZWJ, drapeaux, teintes entiers) ; repli par points de code sans Intl.Segmenter. */
+export function graphemes(s: string): string[] {
+  const ctor = (Intl as { Segmenter?: typeof Intl.Segmenter }).Segmenter;
+  if (!ctor) return Array.from(s);
+  if (cache?.ctor !== ctor) cache = { ctor, seg: new ctor(undefined, { granularity: "grapheme" }) };
+  return Array.from(cache.seg.segment(s), (x) => x.segment);
+}
+
 export function layoutText(content: string, size: number, boxWidth: number, measure: Measure): string[] {
   const out: string[] = [];
   for (const para of content.split("\n")) {
@@ -34,9 +44,9 @@ export function layoutText(content: string, size: number, boxWidth: number, meas
         out.push(line.trimEnd());
         line = /^\s+$/.test(token) ? "" : token;
       }
-      while (line.trimEnd().length > 1 && measure(line.trimEnd(), size) > boxWidth) {
-        // par point de code (jamais au milieu d'un emoji) ; recherche dichotomique : la largeur croît avec le préfixe
-        const points = Array.from(line);
+      while (graphemes(line.trimEnd()).length > 1 && measure(line.trimEnd(), size) > boxWidth) {
+        // par graphème (jamais au milieu d'un emoji) ; recherche dichotomique : la largeur croît avec le préfixe
+        const points = graphemes(line);
         let lo = 1;
         let hi = points.length - 1;
         while (lo < hi) {
