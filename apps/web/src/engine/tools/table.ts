@@ -1,29 +1,40 @@
 /**
- * Outil Tableau (C10a, T6 à T12) : clic hors d'un tableau → grille de choix au point ; choix → AddTable, saisie ouverte
- * sur la première cellule. Clic sur un tableau → le plus haut sous le point, même sous l'encre (I2) : sa cellule devient
- * active et s'ouvre dans la zone de saisie du lot 4, fond opaque (HC10-10). Une SetTableCell par validation, hauteur
- * exigée mesurée comme le dessin (T5, B1) ; Tab, Maj+Tab, flèches au bord par `navigate` (DAC3) ; porte IME partagée
- * avec l'outil Texte. Cellule active tenue par ids, retirée par `prune` quand elle disparaît (I1).
+ * Outil Tableau (C10a, T6 à T12 ; C10b, F3 à F9, F14 à F16) : clic hors d'un tableau → grille de choix au point ; choix
+ * → AddTable, saisie ouverte sur la première cellule. Appui sur un tableau → le plus haut sous le point, même sous
+ * l'encre (I2) : sa cellule (l'ancre d'une zone) devient active ; au relâché, sans changement de cellule, la saisie
+ * s'ouvre (F14, HB-12) ; un glisser vers une autre cellule du même tableau, ou Maj+clic, fait une plage, élargie aux
+ * zones qu'elle touche. Un appui pendant une saisie ouverte valide seulement. Une SetTableCell par validation, hauteur
+ * exigée mesurée comme le dessin, à la largeur de la zone (T5, F7, B1) ; Tab, Maj+Tab, flèches au bord par `navigate`
+ * (DAC3, F16) ; porte IME partagée avec l'outil Texte. Fusionner, Diviser, Ombrer, Retirer l'ombrage, pastilles,
+ * insertions et suppressions agissent sur la plage, sinon sur la zone de la cellule active. Cellule active et plage
+ * tenues par ids, retirées par `prune` quand elles disparaissent (I1).
  */
-import type { Matrix, TableAxis, TableData } from "../../core/api";
+import type { CellIds, Command, Matrix, TableAxis, TableData } from "../../core/api";
 import { TABLE_MAX_LINES } from "../../core/api";
 import { plainSpans } from "../../core/rich-text";
 import { composeMatrix, translateMatrix } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import { EMPTY_OVERLAY } from "../render/overlay";
 import {
+  anchorOf,
   cellContent,
   cellHeight,
   cellInnerBox,
   cellOf,
   cellRect,
+  expandRange,
+  mergeAt,
+  rangeCells,
+  rangeRect,
   rowHeightsFor,
   step,
   tableAt,
   TABLE_COL_WIDTH,
   TABLE_ROW_HEIGHT,
+  TABLE_SHADE_COLOR,
   type Cell,
   type CellRef,
+  type Range,
 } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { createCommitGate } from "./commit-gate";
@@ -45,50 +56,91 @@ export const CELL_EDITOR_BACKGROUND = "#ffffff";
 const SIZE_EPSILON = 1e-6;
 const sameSize = (a: number, b: number): boolean => Math.abs(a - b) <= SIZE_EPSILON;
 
-/** Cellule retrouvée dans le document : son tableau, sa matrice, ses rangs. */
+/** Cellule retrouvée dans le document : son tableau, sa matrice, les rangs de son ancre. */
 interface Located {
   readonly ref: CellRef;
   readonly transform: Matrix;
   readonly table: TableData;
   readonly cell: Cell;
 }
-/** Saisie ouverte : la cellule (par ids), son texte à l'ouverture, la largeur et la taille pour la mesure. */
+/** Saisie ouverte : la cellule (par ids), son texte à l'ouverture, la largeur (de la zone) et la taille pour la mesure. */
 interface Opened {
   readonly ref: CellRef;
   readonly initial: string;
   readonly colWidth: number;
   readonly size: number;
 }
+/** Appui sur une cellule (F14) : le relâché décide (ouvrir, ou rien après une plage). */
+interface Press {
+  readonly pointerId: number;
+  readonly id: string;
+  readonly start: Cell;
+  moved: boolean;
+}
 
 export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure): TableTool {
   let active: CellRef | null = null;
+  /** Autre coin de la plage (F14), dans le tableau de `active` ; null : aucune plage. */
+  let corner: CellRef | null = null;
+  let press: Press | null = null;
+  /** Pointeur dont l'appui a seulement validé la saisie ou fermé la grille : ni plage, ni ouverture au relâché. */
+  let swallowed: number | null = null;
   let opened: Opened | null = null;
   let live: LivePart = NO_LIVE;
   const gate = createCommitGate(() => commit(), () => opened !== null);
-
-  const locate = (ref: CellRef | null): Located | null => {
-    if (ref === null) return null;
-    const el = ctx.doc.element(ref.id);
-    if (el?.kind !== "table") return null;
-    const cell = cellOf(el.table, ref);
-    return cell === null ? null : { ref, transform: el.transform, table: el.table, cell };
-  };
 
   const refAt = (id: string, t: TableData, row: number, col: number): CellRef | null => {
     const r = t.rows[row];
     const c = t.cols[col];
     return r && c ? { id, row: r.id, col: c.id } : null;
   };
+  const idsAt = (t: TableData, row: number, col: number): CellIds | null => {
+    const r = t.rows[row];
+    const c = t.cols[col];
+    return r && c ? { row: r.id, col: c.id } : null;
+  };
 
-  /** Cadre de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement. */
+  /** Cellule active retrouvée, ramenée à l'ancre de sa zone (F16). */
+  const locate = (ref: CellRef | null): Located | null => {
+    if (ref === null) return null;
+    const el = ctx.doc.element(ref.id);
+    if (el?.kind !== "table") return null;
+    const raw = cellOf(el.table, ref);
+    if (raw === null) return null;
+    const cell = anchorOf(el.table, raw);
+    const anchor = refAt(ref.id, el.table, cell.row, cell.col);
+    return anchor === null ? null : { ref: anchor, transform: el.transform, table: el.table, cell };
+  };
+
+  /** Plage en rangs, élargie aux zones (F14) ; null sans coin, coin d'un autre tableau ou disparu. */
+  const rangeOf = (at: Located): Range | null => {
+    if (corner === null || corner.id !== at.ref.id) return null;
+    const b = cellOf(at.table, corner);
+    return b === null ? null : expandRange(at.table, at.cell, b);
+  };
+  /** Zone de la cellule active (une cellule simple : elle-même). */
+  const zoneOf = (at: Located): Range => mergeAt(at.table, at.cell) ?? { r0: at.cell.row, c0: at.cell.col, r1: at.cell.row, c1: at.cell.col };
+
+  /** Cadre de la plage, sinon de la cellule active (boîte monde de ses quatre coins), redemandé à chaque changement. */
   const refresh = (): void => {
     const at = locate(active);
-    live = at === null ? NO_LIVE : { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame: transformBounds(at.transform, cellRect(at.table, at.cell)) } };
+    const r = at === null ? null : rangeOf(at);
+    live =
+      at === null
+        ? NO_LIVE
+        : { ...NO_LIVE, overlay: { ...EMPTY_OVERLAY, frame: transformBounds(at.transform, r === null ? cellRect(at.table, at.cell) : rangeRect(at.table, r)) } };
     ctx.requestFrame?.();
   };
 
   const setActive = (ref: CellRef | null): void => {
     active = ref;
+    corner = null;
+    refresh();
+    ctx.stateChanged?.();
+  };
+
+  const setCorner = (ref: CellRef | null): void => {
+    corner = ref;
     refresh();
     ctx.stateChanged?.();
   };
@@ -114,13 +166,14 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     refresh();
   }
 
-  /** Ouvre la saisie sur la cellule active : coin intérieur, largeur de colonne moins les marges, fond de la cellule. */
+  /** Ouvre la saisie sur la cellule active : coin intérieur de la zone, largeur de la zone moins les marges, fond. */
   const openActive = (): void => {
     const at = locate(active);
     if (at === null) {
       setActive(null);
       return;
     }
+    active = at.ref;
     const r = cellRect(at.table, at.cell);
     const colWidth = r.x1 - r.x0;
     const inner = cellInnerBox(at.table, at.cell);
@@ -157,14 +210,17 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     openActive();
   };
 
-  /** − Ligne / − Colonne (T7, HC10-17) : la voisine (suivante, sinon précédente) devient active avant la commande, pour
-   *  que `prune` la garde ; refus du cœur : la cellule d'avant revient. */
-  const removeLine = (ref: CellRef, axis: TableAxis, ids: readonly string[], i: number): void => {
-    const line = ids[i];
-    const near = ids[i + 1] ?? ids[i - 1];
-    if (ids.length <= 1 || line === undefined || near === undefined) return;
+  /** − Ligne / − Colonne (T7, HC10-17, F6) : les lignes `i0..=i1` en une commande ; la voisine (après, sinon avant)
+   *  devient active avant la commande, pour que `prune` la garde ; refus du cœur : la cellule d'avant revient. */
+  const removeLines = (ref: CellRef, axis: TableAxis, ids: readonly string[], i0: number, i1: number): void => {
+    const line = ids[i0];
+    const last = ids[i1];
+    const near = ids[i1 + 1] ?? ids[i0 - 1];
+    if (ids.length - (i1 - i0 + 1) < 1 || line === undefined || last === undefined || near === undefined) return;
     active = axis === "row" ? { ...ref, row: near } : { ...ref, col: near };
-    if (ctx.run({ type: "RemoveTableLine", id: ref.id, axis, line }) === null) active = ref;
+    corner = null;
+    const cmd: Command = i1 > i0 ? { type: "RemoveTableLine", id: ref.id, axis, line, to: last } : { type: "RemoveTableLine", id: ref.id, axis, line };
+    if (ctx.run(cmd) === null) active = ref;
   };
 
   /** Uniformiser (T11) : colonnes à la largeur moyenne ; lignes à max(hauteur moyenne, plus grande hauteur exigée).
@@ -178,6 +234,24 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     ctx.run({ type: "SetTableSizes", id, colWidth: w, rowHeight: h });
   };
 
+  /** Fusionner (F3, PC19) : la plage (au moins deux cellules) ; l'ancre devient active, la plage est retirée. */
+  const merge = (at: Located, r: Range | null): void => {
+    if (r === null || (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) < 2) return;
+    const from = idsAt(at.table, r.r0, r.c0);
+    const to = idsAt(at.table, r.r1, r.c1);
+    if (from === null || to === null) return;
+    if (ctx.run({ type: "MergeTableCells", id: at.ref.id, from, to }) === null) return;
+    active = { id: at.ref.id, ...from };
+    corner = null;
+  };
+
+  /** Ombrer ou retirer l'ombrage (F9) sur la plage, sinon la zone active. */
+  const shadeOver = (at: Located, span: Range, shade: string | null): void => {
+    const from = idsAt(at.table, span.r0, span.c0);
+    const to = idsAt(at.table, span.r1, span.c1);
+    if (from !== null && to !== null) ctx.run({ type: "SetTableShade", id: at.ref.id, from, to, shade });
+  };
+
   /** Avant une action de la rangée : valide la saisie ouverte ; pendant une composition, rien (la touche appartient à
    *  l'IME, comme `navigate`), et l'action n'a pas lieu. */
   const settle = (): boolean => {
@@ -187,75 +261,125 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   };
 
   return {
-    begin(_pointerId, samples) {
+    begin(pointerId, samples) {
       const s = samples[0];
       if (!s) return;
-      // Clic pendant la saisie : valide seulement (comme l'outil Texte) ; grille ouverte : la ferme seulement.
+      press = null;
+      // Appui pendant la saisie : valide seulement (T7 de C10a, F14), même s'il glisse ; grille ouverte : la ferme.
       if (opened !== null) {
+        swallowed = pointerId;
         gate.request();
         return;
       }
       if (picker.isOpen()) {
+        swallowed = pointerId;
         picker.close();
         return;
       }
+      swallowed = null;
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
       const hit = tableAt(ctx.doc, ctx.page(), x, y);
       if (hit !== null) {
-        setActive(refAt(hit.id, hit.table, hit.cell.row, hit.cell.col));
-        openActive();
+        const ref = refAt(hit.id, hit.table, hit.cell.row, hit.cell.col);
+        if (ref === null) return;
+        const at = locate(active);
+        // Maj+clic : plage de la cellule active au point (F14) ; sur la zone active elle-même (`hit.cell` et `at.cell`
+        // sont des ancres, F16) : aucune plage, une zone seule n'en fait pas une.
+        if (ctx.shift?.() === true && at !== null && at.ref.id === hit.id) {
+          setCorner(hit.cell.row === at.cell.row && hit.cell.col === at.cell.col ? null : ref);
+          return;
+        }
+        setActive(ref);
+        press = { pointerId, id: hit.id, start: hit.cell, moved: false };
         return;
       }
       picker.open({ x: s.x, y: s.y }, (cols, rows) => create(x, y, cols, rows));
     },
-    extend() {
-      // la saisie passe par la zone
+    extend(pointerId, samples) {
+      const p = press;
+      const s = samples[samples.length - 1];
+      if (p === null || p.pointerId !== pointerId || !s) return;
+      const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
+      const hit = tableAt(ctx.doc, ctx.page(), x, y);
+      if (hit === null || hit.id !== p.id) return;
+      const same = hit.cell.row === p.start.row && hit.cell.col === p.start.col;
+      if (same && !p.moved) return;
+      p.moved = true;
+      const ref = same ? null : refAt(hit.id, hit.table, hit.cell.row, hit.cell.col);
+      if (ref?.row !== corner?.row || ref?.col !== corner?.col) setCorner(ref);
     },
     frame() {
       // rien à pousser
     },
-    close() {
-      // le clic a tout fait au begin
+    close(pointerId, how) {
+      if (swallowed === pointerId) {
+        swallowed = null;
+        return;
+      }
+      const p = press;
+      if (p === null || p.pointerId !== pointerId) return;
+      press = null;
+      // F14 : sans changement de cellule, le clic ouvre la saisie au relâché.
+      if (how === "end" && !p.moved) openActive();
     },
     live: () => live,
     active: () => false,
     leave() {
       gate.request();
       picker.close();
+      press = null;
+      swallowed = null;
       if (active !== null) setActive(null);
     },
     cell: () => active,
     cellState() {
       const at = locate(active);
-      return at === null ? null : { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: at.table.rows.length, cols: at.table.cols.length };
+      if (at === null) return null;
+      const range = rangeOf(at);
+      const t = at.table;
+      const shaded = (range === null ? [at.cell] : rangeCells(t, range)).some((c) => {
+        const r = t.rows[c.row];
+        const k = t.cols[c.col];
+        return r !== undefined && k !== undefined && cellContent(t, r.id, k.id).shade !== null;
+      });
+      return { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: t.rows.length, cols: t.cols.length, range, merged: mergeAt(t, at.cell) !== null, shaded };
     },
     act(a) {
       if (!settle()) return;
       const at = locate(active);
       if (at === null) return;
-      const { ref, table: t, cell: c } = at;
+      const { ref, table: t } = at;
+      const r = rangeOf(at);
+      // Plage, sinon zone de la cellule active (F5, F6).
+      const span = r ?? zoneOf(at);
       switch (a) {
         case "row-insert":
-          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "row", at: c.row + 1 });
+          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "row", at: span.r1 + 1 });
           break;
         case "col-insert":
-          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "col", at: c.col + 1 });
+          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "col", at: span.c1 + 1 });
           break;
         case "row-remove":
-          removeLine(ref, "row", t.rows.map((r) => r.id), c.row);
+          removeLines(ref, "row", t.rows.map((x) => x.id), span.r0, span.r1);
           break;
         case "col-remove":
-          removeLine(ref, "col", t.cols.map((x) => x.id), c.col);
+          removeLines(ref, "col", t.cols.map((x) => x.id), span.c0, span.c1);
           break;
         case "uniform":
           uniform(ref.id, t);
           break;
         case "merge":
+          merge(at, r);
+          break;
         case "split":
+          if (r === null && mergeAt(t, at.cell) !== null) ctx.run({ type: "SplitTableCell", id: ref.id, row: ref.row, col: ref.col });
+          break;
         case "shade":
+          shadeOver(at, span, TABLE_SHADE_COLOR);
+          break;
         case "unshade":
-          // C10b : branchés par T8.
-          return;
+          shadeOver(at, span, null);
+          break;
         default:
           // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
           return a satisfies never;
@@ -267,10 +391,17 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       if (!settle()) return;
       const at = locate(active);
       if (at === null) return;
-      ctx.run({ type: "SetTableFill", id: at.ref.id, row: at.ref.row, col: at.ref.col, fill: color });
+      const r = rangeOf(at);
+      const from = r === null ? null : idsAt(at.table, r.r0, r.c0);
+      const to = r === null ? null : idsAt(at.table, r.r1, r.c1);
+      ctx.run(
+        from !== null && to !== null
+          ? { type: "SetTableFill", id: at.ref.id, row: from.row, col: from.col, to, fill: color }
+          : { type: "SetTableFill", id: at.ref.id, row: at.ref.row, col: at.ref.col, fill: color },
+      );
       refresh();
+      ctx.stateChanged?.();
     },
-    clearRange: () => false,
     clearCell() {
       if (opened !== null) return false;
       const at = locate(active);
@@ -279,14 +410,23 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       refresh();
       return true;
     },
+    clearRange() {
+      if (opened !== null || corner === null) return false;
+      setCorner(null);
+      return true;
+    },
     prune() {
       if (active === null) return;
-      if (locate(active) !== null) {
+      const at = locate(active);
+      if (at !== null) {
+        if (corner !== null && cellOf(at.table, corner) === null) corner = null;
         refresh();
+        ctx.stateChanged?.();
         return;
       }
       // I1 : tableau, ligne ou colonne disparus : cellule retirée, saisie fermée sans rien écrire.
       active = null;
+      corner = null;
       if (opened !== null) {
         opened = null;
         gate.reset();
