@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CoreDocument } from "../core/api";
+import type { Command, CoreDocument } from "../core/api";
+import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
-import { DISCARD_MESSAGE } from "../platform/controller";
+import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
+import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
 import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
 import { LATER_FORMAT_MESSAGE } from "../platform/import";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
 import { TOO_MANY_TABS } from "./tabs";
-import { createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
+import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 interface FakeBoard {
   readonly board: BoardSession;
@@ -32,6 +34,8 @@ let shell: {
   setTitle: ReturnType<typeof vi.fn<(t: string) => void>>;
 };
 let host: FileHost & { save: ReturnType<typeof vi.fn<(e: () => Promise<Uint8Array>, t: SaveTarget) => Promise<SaveTarget | null>>> };
+let codec: { read: ReturnType<typeof vi.fn<ContainerCodec["read"]>>; write: ReturnType<typeof vi.fn<ContainerCodec["write"]>> };
+let saved: Uint8Array[];
 
 beforeEach(() => {
   log = [];
@@ -42,6 +46,11 @@ beforeEach(() => {
   dropHandler = null;
   dropStops = 0;
   opening = null;
+  saved = [];
+  codec = {
+    read: vi.fn<ContainerCodec["read"]>(async (b) => ({ manifest: new Uint8Array(), ybin: new Uint8Array(await b.arrayBuffer()), assets: [], warnings: [] })),
+    write: vi.fn<ContainerCodec["write"]>(async () => new Uint8Array([0x50, 0x4b, 1])),
+  };
   shell = {
     confirm: vi.fn(async (_m: string) => answer),
     notify: vi.fn(async (_m: string) => undefined),
@@ -61,7 +70,13 @@ function fakeSession(doc: CoreDocument): FakeBoard {
   const board = {
     doc,
     engine: {
-      state: () => ({ version: doc.version() }),
+      state: () => ({ version: doc.version(), page: doc.pageIds()[0] ?? "" }),
+      camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
+      run: (cmd: Command) => {
+        const c = doc.apply(cmd);
+        for (const cb of cbs) cb({ version: doc.version() });
+        return c;
+      },
       onState(cb: (s: { version: number }) => void) {
         cbs.add(cb);
         return () => {
@@ -128,9 +143,33 @@ function roomboardFile(path: string, bytes: Uint8Array = validBytes()): DroppedF
   };
 }
 
-function plainFile(name: string): DroppedFile {
-  return { name, size: 3, mime: "image/png", blob: async () => ({ arrayBuffer: async () => new ArrayBuffer(3) }) as unknown as Blob };
+function plainFile(name: string, bytes: Uint8Array<ArrayBuffer> = new Uint8Array([0x49, 0x49, 0x2a, 0x00]), size = bytes.byteLength): DroppedFile {
+  return { name, size, mime: "", blob: async () => new Blob([bytes]) };
 }
+function pngHead(w: number, h: number): Uint8Array<ArrayBuffer> {
+  const b = new Uint8Array(33);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const v = new DataView(b.buffer);
+  v.setUint32(16, w);
+  v.setUint32(20, h);
+  b.set([8, 6, 0, 0, 0], 24);
+  return b;
+}
+const NOW = "2026-11-20T00:00:00Z";
+const ID = "ab".repeat(32);
+function docWithImage(): CoreDocument {
+  const d = fakeCore.blank();
+  d.apply({ type: "AddImage", page: d.pageIds()[0]!, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+  return d;
+}
+const fakeDecode = vi.fn(async (_b: Blob, _k: string) => ({ bitmap: { close() {} } as unknown as ImageBitmap, w: 10, h: 10 }));
+
+/** 64 caractères hexadécimaux, même contenu → même empreinte (suffit au magasin des tests). */
+const fakeHasher = async (b: Blob): Promise<string> => {
+  let h = 0;
+  for (const x of new Uint8Array(await b.arrayBuffer())) h = (h * 31 + x) >>> 0;
+  return h.toString(16).padStart(64, "0");
+};
 
 const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat: boolean }> = {}) => ({
   key,
@@ -148,6 +187,7 @@ interface SetupOptions {
   readonly onDrop?: FileHost["onDrop"];
   readonly dropReady?: WorkspaceDeps["dropReady"];
   readonly launch?: WorkspaceDeps["launch"];
+  readonly decode?: WorkspaceDeps["decode"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -163,7 +203,10 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
       }),
     open: async () => opening,
     pick: async () => [],
-    save: vi.fn(async (_e: () => Promise<Uint8Array>, t: SaveTarget): Promise<SaveTarget | null> => (t.kind === "ask" ? { kind: "download", name: t.name } : t)),
+    save: vi.fn(async (encode: () => Promise<Uint8Array>, t: SaveTarget): Promise<SaveTarget | null> => {
+      saved.push(await encode());
+      return t.kind === "ask" ? { kind: "download", name: t.name } : t;
+    }),
   };
   let n = 0;
   return createWorkspace({
@@ -171,8 +214,11 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     host,
     kind: host.kind,
     shell,
+    codec,
     first: o.first ?? { doc: fakeCore.blank(), opened: null, error: null },
-    makeSession: async (doc) => fakeSession(doc).board,
+    makeSession: async (doc, _assets) => fakeSession(doc).board,
+    makeAssets: () => createAssetStore(fakeHasher),
+    ...(o.decode ? { decode: o.decode } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -341,14 +387,14 @@ describe("espace de travail : dépôt et lancement (T86, T87)", () => {
     expect([first.files.isDirty(), strokes(first)]).toEqual([true, 1]);
   });
 
-  it("dépôt d'un .png : message, document intact, aucun onglet", async () => {
+  it("dépôt d'un .tif : message, document intact, aucun onglet", async () => {
     const ws = await setupWorkspace();
     const first = ws.active();
     drawOn(first);
     const version = first.board.engine.state().version;
-    const report = await ws.importFiles([plainFile("image.png")], null);
-    expect(report.refused).toEqual(["image.png"]);
-    expect(shell.notify).toHaveBeenCalledWith(`image.png : ${LATER_FORMAT_MESSAGE}`);
+    const report = await ws.importFiles([plainFile("image.tif")], null);
+    expect(report.refused).toEqual(["image.tif"]);
+    expect(shell.notify).toHaveBeenCalledWith(`image.tif : ${LATER_FORMAT_MESSAGE}`);
     expect([ws.tabs.list().length, first.board.engine.state().version]).toEqual([1, version]);
   });
 });
@@ -422,7 +468,7 @@ describe("espace de travail : fermeture et garde (CL5b-5, CL5b-6)", () => {
     const ws = await setupWorkspace();
     shell.notify.mockRejectedValue(new Error("boîte morte"));
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    await expect(ws.importFiles([plainFile("a.png")])).resolves.toMatchObject({ refused: ["a.png"] });
+    await expect(ws.importFiles([plainFile("a.tif")])).resolves.toMatchObject({ refused: ["a.tif"] });
     warn.mockRestore();
   });
 
@@ -511,5 +557,111 @@ describe("espace de travail : onglet actif, titre, raccourcis, dispose", () => {
     expect([a!.board.dispose, b!.board.dispose].map((f) => (f as ReturnType<typeof vi.fn>).mock.calls.length)).toEqual([1, 1]);
     expect([guardStops, dropStops]).toEqual([1, 1]);
     expect(boards.map((x) => x.listeners())).toEqual([0, 0]);
+  });
+});
+
+describe("espace de travail : conteneur, repli et images (R7, R12, R30, S3, S4)", () => {
+  it("ouvrir avec le conteneur : assets adoptés dans le magasin de l'onglet, avertissements dits en une boîte", async () => {
+    const ws = await setupWorkspace();
+    const first = ws.active();
+    codec.read.mockResolvedValueOnce({
+      manifest: new Uint8Array([1]),
+      ybin: docWithImage().save(NOW, "0.1.0"),
+      assets: [[ID, new Blob([new Uint8Array([1, 2, 3])])]],
+      warnings: ["asset ignoré : assets/x.png (nom d'asset invalide)", "asset ignoré : assets/y.png (contenu différent de son empreinte)"],
+    } satisfies ContainerContents);
+    expect(await ws.openDocument({ name: "img.roomboard", bytes: new Uint8Array([9]), target: null })).toBe(true);
+    const tab = ws.active();
+    expect(tab).not.toBe(first);
+    expect(tab.assets.get(ID)?.type).toBe("image/png");
+    expect(shell.notify).toHaveBeenCalledTimes(1);
+    expect(shell.notify).toHaveBeenCalledWith(
+      "img.roomboard : asset ignoré : assets/x.png (nom d'asset invalide) ; asset ignoré : assets/y.png (contenu différent de son empreinte)",
+    );
+    expect(await tab.files.run("save")).toBe(true); // avertissements : pas de refus (HR13)
+    expect(strokes(first)).toBe(0);
+  });
+
+  it("enregistrer sans image : octets de doc.save, conteneur jamais appelé", async () => {
+    const ws = await setupWorkspace();
+    drawOn(ws.active());
+    expect(await ws.active().files.run("save")).toBe(true);
+    expect(saved[0]).toEqual(ws.active().board.doc.save(NOW, APP_VERSION));
+    expect(codec.write).not.toHaveBeenCalled();
+  });
+
+  it("enregistrer avec image : saveParts puis codec.write avec l'empreinte, le type et les octets du magasin", async () => {
+    const ws = await setupWorkspace();
+    const blob = new Blob([new Uint8Array([1, 2, 3])]);
+    codec.read.mockResolvedValueOnce({ manifest: new Uint8Array([1]), ybin: docWithImage().save(NOW, "0.1.0"), assets: [[ID, blob]], warnings: [] });
+    await ws.openDocument({ name: "img.roomboard", bytes: new Uint8Array([9]), target: null });
+    expect(await ws.active().files.run("save")).toBe(true);
+    const [manifest, ybin, assets] = codec.write.mock.calls[0]!;
+    expect([manifest, ybin]).toEqual(ws.active().board.doc.saveParts(NOW, APP_VERSION));
+    expect(assets.map((a) => [a.id, a.mime])).toEqual([[ID, "image/png"]]);
+    expect(Array.from(new Uint8Array(await assets[0]!.blob.arrayBuffer()))).toEqual([1, 2, 3]);
+    expect(Array.from(saved[0]!)).toEqual([0x50, 0x4b, 1]);
+  });
+
+  it("repli : module indisponible → core.load, message, Enregistrer refusé ; les autres onglets non touchés", async () => {
+    const ws = await setupWorkspace();
+    const first = ws.active();
+    codec.read.mockRejectedValueOnce(new CodecUnavailableError(new Error("404")));
+    expect(await ws.openDocument({ name: "img.roomboard", bytes: docWithImage().save(NOW, "0.1.0"), target: null })).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith(`img.roomboard : ${CODEC_FALLBACK_MESSAGE}`);
+    expect(strokes(ws.active())).toBe(1);
+    expect(await ws.active().files.run("save")).toBe(false);
+    expect(await ws.active().files.run("saveAs")).toBe(false);
+    expect(shell.notify).toHaveBeenLastCalledWith(UNREAD_ASSETS_MESSAGE);
+    expect(host.save).not.toHaveBeenCalled();
+    expect(await first.files.run("save")).toBe(true);
+  });
+
+  it("repli sans image : aucun message, Enregistrer permis", async () => {
+    const ws = await setupWorkspace();
+    codec.read.mockRejectedValueOnce(new CodecUnavailableError(new Error("404")));
+    expect(await ws.openDocument({ name: "vide.roomboard", bytes: validBytes(), target: null })).toBe(true);
+    expect(shell.notify).not.toHaveBeenCalled();
+    expect(await ws.active().files.run("save")).toBe(true);
+  });
+
+  it("fichier refusé par le conteneur : « Ouverture impossible (nom) : message du cœur », aucun onglet", async () => {
+    const ws = await setupWorkspace();
+    codec.read.mockRejectedValueOnce(new Error("ce fichier n'est pas un document RoomBoard"));
+    expect(await ws.openDocument({ name: "x.roomboard", bytes: new Uint8Array([1]), target: null })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.roomboard) : ce fichier n'est pas un document RoomBoard");
+    expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("premier document (attente IndexedDB, core.load) qui cite des images : Enregistrer refusé (R30, HR20)", async () => {
+    const ws = await setupWorkspace({ first: { doc: docWithImage(), opened: null, error: null } });
+    expect(await ws.active().files.run("save")).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith(UNREAD_ASSETS_MESSAGE);
+  });
+
+  it("dépôt d'une image : insérée dans l'onglet actif, une étape, octets dans son magasin (S1)", async () => {
+    const ws = await setupWorkspace({ decode: fakeDecode });
+    const tab = ws.active();
+    const r = await ws.importFiles([plainFile("a.png", pngHead(10, 10))], { x: 0, y: 0 });
+    expect(r.inserted).toEqual(["a.png"]);
+    expect(strokes(tab)).toBe(1);
+    expect(tab.board.doc.citedAssets()).toHaveLength(1);
+    expect(tab.assets.has(tab.board.doc.citedAssets()[0]!.id)).toBe(true);
+  });
+
+  it("même image déposée deux fois : deux éléments, un seul asset écrit", async () => {
+    const ws = await setupWorkspace({ decode: fakeDecode });
+    await ws.importFiles([plainFile("a.png", pngHead(10, 10)), plainFile("b.png", pngHead(10, 10))], null);
+    expect(strokes(ws.active())).toBe(2);
+    expect(await ws.active().files.run("save")).toBe(true);
+    expect(codec.write.mock.calls[0]![2]).toHaveLength(1);
+  });
+
+  it("limite de taille : 100 Mo sur les hôtes web, aucune dans la coque (R15)", async () => {
+    const big = (): DroppedFile => plainFile("gros.png", pngHead(10, 10), 120 * 1024 * 1024);
+    const web = await setupWorkspace({ decode: fakeDecode });
+    expect((await web.importFiles([big()])).refused).toEqual(["gros.png"]);
+    const coque = await setupWorkspace({ kind: "tauri", decode: fakeDecode });
+    expect((await coque.importFiles([big()])).inserted).toEqual(["gros.png"]);
   });
 });
