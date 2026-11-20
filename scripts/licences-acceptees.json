@@ -5,5 +5,10 @@
       "raison": "données de navigateurs lues au build (browserslist), aucun code lié à l'application ; relevé du 2026-11-20"
     }
   },
-  "cargo": {}
+  "cargo": {
+    "target-lexicon": {
+      "licence": "Apache-2.0 WITH LLVM-exception",
+      "raison": "Apache 2.0 avec l'exception LLVM, qui ne fait qu'élargir les droits (ni GPL, ni LGPL, ni AGPL) ; relevé du 2026-11-20"
+    }
+  }
 }
