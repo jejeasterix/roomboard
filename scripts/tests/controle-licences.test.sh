@@ -92,4 +92,10 @@ set +e; node "$script" --inconnue > "$tmp/out" 2>&1; rc=$?; set -e
 [ "$rc" -eq 2 ] || echec "cas 10 : code $rc au lieu de 2"
 cas=$((cas + 1))
 
+# 11. Membre du workspace principal vu comme dépendance dans le relevé de src-tauri → exclu (0) ; un tiers GPL du second relevé → 1
+echo '{"workspace_members":["ws 0.1.0"],"packages":[{"id":"ws 0.1.0","name":"roomboard-core","version":"0.1.0","license":"LicenseRef-PolyForm-Shield-1.0.0"}]}' > "$tmp/ws1.json"
+echo '{"workspace_members":["app 0.1.0"],"packages":[{"id":"app 0.1.0","name":"app","version":"0.1.0","license":"LicenseRef-PolyForm-Shield-1.0.0"},{"id":"dep ws","name":"roomboard-core","version":"0.1.0","license":"LicenseRef-PolyForm-Shield-1.0.0"}]}' > "$tmp/ws2.json"
+run --cargo-json "$tmp/ws1.json" --cargo-json "$tmp/ws2.json" --npm-root "$tmp/npm-ok" || echec "cas 11 : membre du premier workspace refusé ($(cat "$tmp/out"))"
+cas=$((cas + 1))
+
 echo "controle-licences.test.sh : OK ($cas cas)"
