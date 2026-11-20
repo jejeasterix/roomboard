@@ -965,6 +965,7 @@ impl Document {
         if !rich_text::valid_attrs(attrs) || box_height.is_some_and(|h| !finite_positive(h)) {
             return Err(CommandError::BadFormat);
         }
+        let patch = rich_text::patch_attrs(attrs);
         let (found, current, at, formats) = {
             let txn = self.read();
             let unknown = || CommandError::UnknownElement(id.to_string());
@@ -972,7 +973,7 @@ impl Document {
             let current = read_text(&txn, &found.element).ok_or_else(unknown)?;
             let at = rich_text::utf16_range(&txn, &current.text, range.0, range.1)
                 .ok_or(CommandError::BadFormat)?;
-            let formats = rich_text::format_changes(&txn, &current.text, at, attrs);
+            let formats = rich_text::format_changes(&txn, &current.text, at, &patch);
             (found, current, at, formats)
         };
         let height = box_height.filter(|h| *h != current.box_height);
@@ -982,7 +983,7 @@ impl Document {
         {
             let mut txn = self.transact_local();
             if formats {
-                rich_text::apply_format(&mut txn, &current.text, at, attrs);
+                rich_text::apply_format(&mut txn, &current.text, at, patch);
             }
             if let Some(h) = height {
                 found

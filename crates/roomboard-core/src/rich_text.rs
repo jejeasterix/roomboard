@@ -58,12 +58,13 @@ pub(crate) fn valid_color(c: &str) -> bool {
     }
 }
 
-/// `font` (T15) : un nom de famille seul, 1 à 48 caractères, sans `"`, `\`, `;`, `{`, `}` ni retour à la ligne.
+/// `font` (T15) : un nom de famille seul, 1 à 48 caractères, sans `"`, `\`, `;`, `{`, `}` ni caractère de contrôle
+/// (catégorie Cc : U+0000–U+001F, U+007F–U+009F ; retours à la ligne et `\f` compris, T11 ; même règle que `validFont`).
 pub(crate) fn valid_font(f: &str) -> bool {
     (1..=48).contains(&f.chars().count())
         && !f
             .chars()
-            .any(|c| matches!(c, '"' | '\\' | ';' | '{' | '}' | '\n' | '\r'))
+            .any(|c| c.is_control() || matches!(c, '"' | '\\' | ';' | '{' | '}'))
 }
 
 /// Valeurs permises d'un patch (T7, T15) ; `size` contrôlé après conversion en `f32` (1e39 devient infini).
@@ -263,23 +264,38 @@ pub(crate) fn apply_text_diff(txn: &mut TransactionMut, text: &TextRef, new: &st
     text.insert_with_attributes(txn, at, middle, inherited);
 }
 
+/// Table du patch (T7), construite une fois par `FormatText` puis lue par `format_changes` comme par `apply_format` :
+/// une clé répétée garde sa dernière valeur (T11). Boucle plutôt que `collect` : sans adaptateurs d'itérateur (T10).
+pub(crate) fn patch_attrs(attrs: &[TextAttr]) -> Attrs {
+    let mut map = Attrs::new();
+    for a in attrs {
+        let (k, v) = entry(a);
+        map.insert(Arc::from(k), v);
+    }
+    map
+}
+
+/// Valeur brute égale à celle que le patch écrit : absente vaut `Null` ; un nombre (`size`, seul attribut numérique,
+/// écrit en `f64::from(f32)`) se compare après arrondi en `f32`, le domaine de la valeur écrite (T11).
 fn same_value(current: Option<&Any>, wanted: &Any) -> bool {
     match (current, wanted) {
         (None | Some(Any::Null), Any::Null) => true,
-        (Some(c), w) => c == w || matches!((any_f64(c), any_f64(w)), (Some(a), Some(b)) if a == b),
+        (Some(c), w) => {
+            c == w || matches!((any_f64(c), any_f64(w)), (Some(a), Some(b)) if a as f32 == b as f32)
+        }
         (None, _) => false,
     }
 }
 
-/// Vrai si un morceau de la plage Yrs (embed compris) a une valeur brute différente de celle que le patch écrirait ;
-/// plage vide ou patch vide : faux (aucune étape, D38).
+/// Vrai si un morceau de la plage Yrs (embed compris) a une valeur brute différente de celle que la table du patch
+/// écrit ; plage vide ou patch vide : faux (aucune étape, D38).
 pub(crate) fn format_changes<T: ReadTxn>(
     txn: &T,
     text: &TextRef,
     range: (u32, u32),
-    attrs: &[TextAttr],
+    patch: &Attrs,
 ) -> bool {
-    if range.1 == 0 || attrs.is_empty() {
+    if range.1 == 0 || patch.is_empty() {
         return false;
     }
     let mut at = 0u32;
@@ -294,30 +310,24 @@ pub(crate) fn format_changes<T: ReadTxn>(
             continue;
         }
         let current = d.attributes.as_deref();
-        if attrs.iter().any(|a| {
-            let (k, v) = entry(a);
-            !same_value(current.and_then(|c| c.get(k)), &v)
-        }) {
+        if patch
+            .iter()
+            .any(|(k, v)| !same_value(current.and_then(|c| c.get(k)), v))
+        {
             return true;
         }
     }
     false
 }
 
-/// Écrit le patch sur la plage Yrs (`Text::format`) ; l'appelant a vérifié `format_changes`.
+/// Écrit la table du patch sur la plage Yrs (`Text::format`) ; l'appelant a vérifié `format_changes` sur la même.
 pub(crate) fn apply_format(
     txn: &mut TransactionMut,
     text: &TextRef,
     range: (u32, u32),
-    attrs: &[TextAttr],
+    patch: Attrs,
 ) {
-    // Boucle plutôt que `collect` : mêmes insertions, sans instancier les adaptateurs d'itérateur (T10).
-    let mut map = Attrs::new();
-    for a in attrs {
-        let (k, v) = entry(a);
-        map.insert(Arc::from(k), v);
-    }
-    text.format(txn, range.0, range.1, map);
+    text.format(txn, range.0, range.1, patch);
 }
 
 #[cfg(test)]
@@ -329,6 +339,8 @@ mod tests {
     use yrs::{Any, Doc, GetString, Number, Out, Text, TextRef, Transact};
 
     use super::*;
+    use crate::commands::{read_text, Command};
+    use crate::document::Document;
 
     const HEX64: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
@@ -383,7 +395,7 @@ mod tests {
             .count()
     }
 
-    /// Garde de T6 et T16 : le `Doc` du cœur compte en octets UTF-8 (`Doc::new()`, `document.rs`).
+    /// Défaut de yrs (`Doc::new()`) en octets UTF-8 ; la garde du `Doc` du cœur est `core_doc_offsets_are_utf8_bytes`.
     #[test]
     fn doc_offsets_are_utf8_bytes() {
         let (doc, text) = doc_with("é🐱");
@@ -444,7 +456,7 @@ mod tests {
                 &mut txn,
                 &text,
                 (3, 4),
-                &[TextAttr::Color(Some("#ff0000".into()))],
+                patch_attrs(&[TextAttr::Color(Some("#ff0000".into()))]),
             );
             apply_text_diff(&mut txn, &text, "Le gros 🐱 noir");
         }
@@ -479,7 +491,12 @@ mod tests {
         let (doc, text) = doc_with("ab");
         {
             let mut txn = doc.transact_mut();
-            apply_format(&mut txn, &text, (1, 1), &[TextAttr::Bold(true)]);
+            apply_format(
+                &mut txn,
+                &text,
+                (1, 1),
+                patch_attrs(&[TextAttr::Bold(true)]),
+            );
             apply_text_diff(&mut txn, &text, "abb");
         }
         assert_eq!(spans(&doc, &text), vec![plain("a"), with("bb", bold())]);
@@ -491,7 +508,12 @@ mod tests {
         let (doc, text) = doc_with("chat");
         {
             let mut txn = doc.transact_mut();
-            apply_format(&mut txn, &text, (0, 4), &[TextAttr::Bold(true)]);
+            apply_format(
+                &mut txn,
+                &text,
+                (0, 4),
+                patch_attrs(&[TextAttr::Bold(true)]),
+            );
             apply_text_diff(&mut txn, &text, "Le chat");
         }
         assert_eq!(spans(&doc, &text), vec![plain("Le "), with("chat", bold())]);
@@ -538,10 +560,11 @@ mod tests {
             &mut doc.transact_mut(),
             &text,
             (3, 4),
-            &[TextAttr::Size(Some(48.0)), TextAttr::Bold(true)],
+            patch_attrs(&[TextAttr::Size(Some(48.0)), TextAttr::Bold(true)]),
         );
         let txn = doc.transact();
-        let changes = |r: (u32, u32), a: &[TextAttr]| format_changes(&txn, &text, r, a);
+        let changes =
+            |r: (u32, u32), a: &[TextAttr]| format_changes(&txn, &text, r, &patch_attrs(a));
         assert!(!changes(
             (3, 4),
             &[TextAttr::Size(Some(48.0)), TextAttr::Bold(true)]
@@ -558,6 +581,19 @@ mod tests {
             "l'espace avant « chat » n'est pas gras"
         );
         assert!(changes((3, 4), &[TextAttr::Bold(false)]));
+        // T11 : une clé répétée garde sa dernière valeur, comme à l'écriture.
+        assert!(!changes(
+            (0, 3),
+            &[TextAttr::Bold(true), TextAttr::Bold(false)]
+        ));
+        assert!(changes(
+            (0, 3),
+            &[TextAttr::Bold(false), TextAttr::Bold(true)]
+        ));
+        assert!(!changes(
+            (3, 4),
+            &[TextAttr::Bold(false), TextAttr::Bold(true)]
+        ));
     }
 
     /// Cadrage T2, T15 : formes permises de `color`, `font`, `size`.
@@ -727,5 +763,119 @@ mod tests {
         assert_eq!(view.spans, vec![with("Le noir", bold())]);
         let cited: Vec<String> = d.cited_assets().into_iter().map(|a| a.id).collect();
         assert_eq!(cited, vec![HEX64.to_string()]);
+    }
+
+    /// Document du cœur avec un seul texte `content` : (document, id de l'élément, son `Y.Text`).
+    fn core_text(content: &str) -> (Document, String, TextRef) {
+        let mut d = Document::blank();
+        let page = d.page_ids()[0].clone();
+        let set = Command::SetText {
+            page,
+            id: None,
+            x: 0.0,
+            y: 0.0,
+            content: content.into(),
+            color: "#000000".into(),
+            size: 36.0,
+            box_width: 600.0,
+            box_height: 45.0,
+        };
+        let id = d.apply(set).expect("texte").ids[0].clone();
+        let text = {
+            let txn = d.read();
+            let f = d.find_element(&txn, &id).expect("élément");
+            read_text(&txn, &f.element).expect("texte").text
+        };
+        (d, id, text)
+    }
+
+    fn format_cmd(id: &str, start: u32, len: u32, attrs: Vec<TextAttr>) -> Command {
+        Command::FormatText {
+            id: id.into(),
+            start,
+            len,
+            attrs,
+            box_height: None,
+        }
+    }
+
+    fn view_spans(d: &Document, id: &str) -> Vec<TextSpanView> {
+        d.element(id).and_then(|e| e.text).expect("vue").spans
+    }
+
+    /// Constat 1 de relecture (T11) : une clé répétée garde sa dernière valeur dans le contrôle « sans effet » comme
+    /// dans l'écriture. Sous le patron écarté (contrôle entrée par entrée), `[Bold(true), Bold(false)]` sur un texte
+    /// sans gras rend un `Change` fait (version montée, id cité) sans étape d'annulation : `undo` défait alors l'étape
+    /// d'avant.
+    #[test]
+    fn format_text_repeated_key_keeps_last_value() {
+        let (mut d, id, _) = core_text("Le chat noir");
+        d.apply(format_cmd(&id, 0, 2, vec![TextAttr::Bold(true)]))
+            .expect("gras");
+        let before = d.version();
+        for (start, len, attrs) in [
+            (3, 4, vec![TextAttr::Bold(true), TextAttr::Bold(false)]),
+            (0, 2, vec![TextAttr::Bold(false), TextAttr::Bold(true)]),
+        ] {
+            let change = d.apply(format_cmd(&id, start, len, attrs)).expect("format");
+            assert_eq!(
+                (change.version, change.ids.len()),
+                (before, 0),
+                "plage {start}+{len} : aucune étape"
+            );
+        }
+        assert!(d.undo());
+        assert_eq!(view_spans(&d, &id), vec![plain("Le chat noir")]);
+    }
+
+    /// Constat 2 de relecture (T11) : `size` arrive en `f32` et s'écrit `f64::from` ; une taille brute déjà égale après
+    /// arrondi `f32` (14.3 écrit par un autre client) n'est pas un changement. Sous le patron écarté (comparaison en
+    /// `f64`), `Size(14.3)` crée une étape sans effet visible. La valeur écrite reste celle d'avant (`Math.fround`).
+    #[test]
+    fn format_text_size_equal_after_f32_rounding_is_no_step() {
+        let (mut d, id, text) = core_text("Le chat");
+        let raw = HashMap::from([(Arc::from("size"), Any::from(14.3))]);
+        text.format(&mut d.transact_local(), 0, 7, raw);
+        let before = d.version();
+        let change = d
+            .apply(format_cmd(&id, 0, 7, vec![TextAttr::Size(Some(14.3))]))
+            .expect("même taille");
+        assert_eq!((change.version, change.ids.len()), (before, 0));
+        let sized = |v: f64| SpanAttrs {
+            size: Some(v),
+            ..SpanAttrs::default()
+        };
+        assert_eq!(view_spans(&d, &id), vec![with("Le chat", sized(14.3))]);
+        let change = d
+            .apply(format_cmd(&id, 0, 7, vec![TextAttr::Size(Some(14.4))]))
+            .expect("autre taille");
+        assert_eq!(change.version, before + 1);
+        assert_eq!(
+            view_spans(&d, &id),
+            vec![with("Le chat", sized(f64::from(14.4f32)))]
+        );
+    }
+
+    /// Constat 3 de relecture (T11) : la garde de T6 et T16 sur le `Doc` du cœur lui-même (`Document::blank`), pas sur
+    /// un `Doc::new()` de yrs : « é🐱 » y compte 6 octets UTF-8 (3 unités sous `OffsetKind::Utf16`).
+    #[test]
+    fn core_doc_offsets_are_utf8_bytes() {
+        let (d, _, text) = core_text("é🐱");
+        assert_eq!(text.len(&d.read()), 6);
+    }
+
+    /// Constat 4 de relecture (T11), règle commune avec `validFont` (T12) : tout caractère de contrôle (catégorie Cc,
+    /// U+0000–U+001F et U+007F–U+009F) est refusé, `\f` compris (CSS le lit comme un retour à la ligne) ; U+00A0 ne
+    /// l'est pas.
+    #[test]
+    fn valid_font_refuses_control_chars() {
+        for bad in [
+            "a\u{c}b", "a\tb", "a\u{b}b", "\u{0}", "a\u{1f}b", "a\u{7f}b", "a\u{85}b", "a\u{9f}b",
+        ] {
+            assert!(!valid_font(bad), "{bad:?}");
+        }
+        for ok in ["a b", "a~b", "a\u{a0}b", "a\u{a1}b"] {
+            assert!(valid_font(ok), "{ok:?}");
+        }
     }
 }
