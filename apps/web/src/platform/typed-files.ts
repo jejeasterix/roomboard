@@ -4,6 +4,7 @@
  * choisi. `FileHost` reste réservé au `.roomboard` (décision C1).
  */
 import type { FallbackDeps } from "./host-repli";
+import { RBITEM_EXTENSION, RBITEM_MIME } from "./files";
 import { baseName, type TauriDialog, type TauriFs } from "./host-tauri";
 
 export interface FileType {
@@ -12,6 +13,14 @@ export interface FileType {
   readonly filter: { readonly name: string; readonly extensions: readonly string[] };
   readonly accept: string;
 }
+
+/** C3 (Z11) : objet RoomBoard exporté par « Exporter ». */
+export const RBITEM_TYPE: FileType = {
+  extension: RBITEM_EXTENSION,
+  mime: RBITEM_MIME,
+  filter: { name: "Objet RoomBoard", extensions: ["rbitem"] },
+  accept: `${RBITEM_EXTENSION},${RBITEM_MIME}`,
+};
 
 export interface TypedFiles {
   /** null : boîte annulée. Lève si la lecture échoue. */
