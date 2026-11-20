@@ -50,7 +50,7 @@ function source(pages: readonly FakePage[]): ExportSource {
     },
   };
 }
-const store = (files: Record<string, Uint8Array>) => ({ get: (id: string) => (files[id] === undefined ? undefined : new Blob([files[id]])) });
+const store = (files: Record<string, Uint8Array>) => ({ get: (id: string) => (files[id] === undefined ? undefined : new Blob([new Uint8Array(files[id])])) });
 const pngProducer = (seen: OverlayRequest[] = []): OverlayProducer => ({
   pages: async (reqs) => {
     seen.push(...reqs);
@@ -91,17 +91,17 @@ async function sizes(bytes: Uint8Array): Promise<number[][]> {
 }
 async function openPdfjs(bytes: Uint8Array) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, isOffscreenCanvasSupported: false }).promise;
-  return { pdfjs, doc };
+  const task = pdfjs.getDocument({ data: bytes.slice() });
+  return { pdfjs, doc: await task.promise, close: () => task.destroy() };
 }
 async function texts(bytes: Uint8Array): Promise<string[]> {
-  const { doc } = await openPdfjs(bytes);
+  const { doc, close } = await openPdfjs(bytes);
   const out: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const c = await (await doc.getPage(i)).getTextContent();
     out.push(c.items.map((it) => ("str" in it ? it.str : "")).join(""));
   }
-  await doc.destroy();
+  await close();
   return out;
 }
 type Matrix = readonly [number, number, number, number, number, number];
@@ -119,7 +119,7 @@ const r3 = (v: number): number => Math.round(v * 1000) / 1000 + 0;
  * taille en pixels, coins haut gauche, haut droit, bas droit de l'image dans le viewport (points, origine en haut à gauche).
  */
 async function imageDraws(bytes: Uint8Array): Promise<{ readonly px: number[]; readonly corners: number[][]; readonly view: number[] }[][]> {
-  const { pdfjs, doc } = await openPdfjs(bytes);
+  const { pdfjs, doc, close } = await openPdfjs(bytes);
   const out: { px: number[]; corners: number[][]; view: number[] }[][] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
@@ -140,7 +140,7 @@ async function imageDraws(bytes: Uint8Array): Promise<{ readonly px: number[]; r
     });
     out.push(draws);
   }
-  await doc.destroy();
+  await close();
   return out;
 }
 /** Une image qui couvre exactement la page vue, haut gauche en haut à gauche (aucune rotation ni décalage). */
