@@ -118,7 +118,7 @@ export function toTable(v: unknown): TableData {
   ) {
     throw new Error(ELEMENT);
   }
-  const color0 = (x: unknown): string | null => {
+  const optString = (x: unknown): string | null => {
     if (x !== undefined && x !== null && typeof x !== "string") throw new Error(ELEMENT);
     return typeof x === "string" ? x : null;
   };
@@ -142,7 +142,7 @@ export function toTable(v: unknown): TableData {
       if (!isRecord(c)) throw new Error(ELEMENT);
       const { row, col, text, fill, shade } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: color0(fill), shade: color0(shade) };
+      return { row, col, text, fill: optString(fill), shade: optString(shade) };
     }),
     merges: merges.map((m: unknown) => {
       if (!isRecord(m)) throw new Error(ELEMENT);

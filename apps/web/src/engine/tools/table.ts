@@ -26,6 +26,7 @@ import {
   mergeAt,
   rangeCells,
   rangeRect,
+  rangeSize,
   rowHeightsFor,
   step,
   tableAt,
@@ -89,15 +90,20 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
   let live: LivePart = NO_LIVE;
   const gate = createCommitGate(() => commit(), () => opened !== null);
 
-  const refAt = (id: string, t: TableData, row: number, col: number): CellRef | null => {
-    const r = t.rows[row];
-    const c = t.cols[col];
-    return r && c ? { id, row: r.id, col: c.id } : null;
-  };
   const idsAt = (t: TableData, row: number, col: number): CellIds | null => {
     const r = t.rows[row];
     const c = t.cols[col];
     return r && c ? { row: r.id, col: c.id } : null;
+  };
+  const refAt = (id: string, t: TableData, row: number, col: number): CellRef | null => {
+    const ids = idsAt(t, row, col);
+    return ids === null ? null : { id, ...ids };
+  };
+  /** Ids des deux coins d'une plage ; null si l'un n'est plus lu. */
+  const cornersOf = (t: TableData, r: Range): { from: CellIds; to: CellIds } | null => {
+    const from = idsAt(t, r.r0, r.c0);
+    const to = idsAt(t, r.r1, r.c1);
+    return from !== null && to !== null ? { from, to } : null;
   };
 
   /** Cellule active retrouvée, ramenée à l'ancre de sa zone (F16). */
@@ -236,10 +242,10 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
 
   /** Fusionner (F3, PC19) : la plage (au moins deux cellules) ; l'ancre devient active, la plage est retirée. */
   const merge = (at: Located, r: Range | null): void => {
-    if (r === null || (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) < 2) return;
-    const from = idsAt(at.table, r.r0, r.c0);
-    const to = idsAt(at.table, r.r1, r.c1);
-    if (from === null || to === null) return;
+    if (r === null || rangeSize(r) < 2) return;
+    const corners = cornersOf(at.table, r);
+    if (corners === null) return;
+    const { from, to } = corners;
     if (ctx.run({ type: "MergeTableCells", id: at.ref.id, from, to }) === null) return;
     active = { id: at.ref.id, ...from };
     corner = null;
@@ -247,9 +253,8 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
 
   /** Ombrer ou retirer l'ombrage (F9) sur la plage, sinon la zone active. */
   const shadeOver = (at: Located, span: Range, shade: string | null): void => {
-    const from = idsAt(at.table, span.r0, span.c0);
-    const to = idsAt(at.table, span.r1, span.c1);
-    if (from !== null && to !== null) ctx.run({ type: "SetTableShade", id: at.ref.id, from, to, shade });
+    const corners = cornersOf(at.table, span);
+    if (corners !== null) ctx.run({ type: "SetTableShade", id: at.ref.id, ...corners, shade });
   };
 
   /** Avant une action de la rangée : valide la saisie ouverte ; pendant une composition, rien (la touche appartient à
@@ -396,11 +401,10 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       const at = locate(active);
       if (at === null) return;
       const r = rangeOf(at);
-      const from = r === null ? null : idsAt(at.table, r.r0, r.c0);
-      const to = r === null ? null : idsAt(at.table, r.r1, r.c1);
+      const corners = r === null ? null : cornersOf(at.table, r);
       ctx.run(
-        from !== null && to !== null
-          ? { type: "SetTableFill", id: at.ref.id, row: from.row, col: from.col, to, fill: color }
+        corners !== null
+          ? { type: "SetTableFill", id: at.ref.id, row: corners.from.row, col: corners.from.col, to: corners.to, fill: color }
           : { type: "SetTableFill", id: at.ref.id, row: at.ref.row, col: at.ref.col, fill: color },
       );
       refresh();

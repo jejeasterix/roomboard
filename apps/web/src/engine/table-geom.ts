@@ -49,6 +49,8 @@ export interface TableHit { readonly id: string; readonly transform: Matrix; rea
 
 const sum = (xs: readonly number[]): number => xs.reduce((a, b) => a + b, 0);
 const inRange = (z: Range, c: Cell): boolean => c.row >= z.r0 && c.row <= z.r1 && c.col >= z.c0 && c.col <= z.c1;
+/** Nombre de cellules d'une plage en rangs. */
+export const rangeSize = (r: Range): number => (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1);
 const single = (c: Cell): Range => ({ r0: c.row, c0: c.col, r1: c.row, c1: c.col });
 
 /** Rang de la bande qui contient `v` (bord gauche ou haut inclus) ; -1 hors du tableau ou NaN. */

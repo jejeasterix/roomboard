@@ -1,5 +1,5 @@
 import { TABLE_MAX_LINES } from "../core/api";
-import type { Range, TableCellState } from "../engine/table-geom";
+import { rangeSize, type Range, type TableCellState } from "../engine/table-geom";
 import { TOOL_TABLE, type ToolItem } from "../toolbar";
 
 export interface ToolbarView {
@@ -14,7 +14,7 @@ export interface ToolbarView {
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 
-const cells = (r: Range | null | undefined): number => (r ? (r.r1 - r.r0 + 1) * (r.c1 - r.c0 + 1) : 0);
+const cells = (r: Range | null | undefined): number => (r ? rangeSize(r) : 0);
 /** Étendue réelle de « − Ligne » / « − Colonne » (F5, F6) : la plage, sinon la zone, sinon la cellule active. */
 const extent = (c: TableCellState): Range => c.range ?? c.zone ?? { r0: c.row, c0: c.col, r1: c.row, c1: c.col };
 const spanRows = (c: TableCellState): number => extent(c).r1 - extent(c).r0 + 1;
