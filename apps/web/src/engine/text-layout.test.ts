@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faceOf, graphemes, layoutRich, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
+import { faceOf, graphemes, layoutRich, offsetAt, wordAt, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
 import type { TextSpan } from "../core/api";
 
 /** Chaque caractère vaut 100 unités, quelle que soit la taille. */
@@ -107,5 +107,74 @@ describe("mise en lignes par segments (C7, T9)", () => {
     expect(calls).toContainEqual(["b", 36, { bold: true, italic: false, font: "Georgia" }]);
     expect(calls).toContainEqual(["a ", 36, undefined]);
     expect(layoutText("aaaa bbbb cc", 36, 700, (s) => s.length * 100)).toEqual(["aaaa", "bbbb cc"]);
+  });
+});
+
+const ten: Measure = (s) => s.length * 10;
+const plain = (text: string): TextSpan[] => [{ text, attrs: {} }];
+
+describe("offsetAt (C6a, D6)", () => {
+  it("une ligne : rang du caractère sous le point ; espace compris ; hors des caractères : null", () => {
+    const s = plain("Le chat noir");
+    expect(offsetAt(s, { size: 36 }, 600, ten, 35, 10)).toBe(3);
+    expect(offsetAt(s, { size: 36 }, 600, ten, 25, 10)).toBe(2);
+    expect(offsetAt(s, { size: 36 }, 600, ten, 125, 10)).toBeNull();
+    expect(offsetAt(s, { size: 36 }, 600, ten, 5, 50)).toBeNull();
+    expect(offsetAt(s, { size: 36 }, 600, ten, -1, 10)).toBeNull();
+  });
+
+  it("deux lignes (coupure à l'espace) : rang dans le contenu, pas dans la ligne", () => {
+    const s = plain("Le chat noir");
+    expect(offsetAt(s, { size: 36 }, 70, ten, 65, 10)).toBe(6);
+    expect(offsetAt(s, { size: 36 }, 70, ten, 5, 50)).toBe(8);
+  });
+
+  it("paragraphes : la ligne après le saut de ligne commence après lui", () => {
+    expect(offsetAt(plain("ab\ncd"), { size: 36 }, 600, ten, 5, 50)).toBe(3);
+  });
+
+  it("segments stylés : rang continu d'un segment à l'autre", () => {
+    const s: TextSpan[] = [{ text: "Le ", attrs: {} }, { text: "chat", attrs: { bold: true } }, { text: " noir", attrs: {} }];
+    expect(offsetAt(s, { size: 36 }, 600, ten, 35, 10)).toBe(3);
+    expect(offsetAt(s, { size: 36 }, 600, ten, 95, 10)).toBe(9);
+  });
+
+  it("emoji : un graphème de deux unités UTF-16, rang suivant décalé de deux", () => {
+    expect(offsetAt(plain("😀 été"), { size: 36 }, 600, ten, 5, 10)).toBe(0);
+    expect(offsetAt(plain("😀 été"), { size: 36 }, 600, ten, 45, 10)).toBe(4);
+  });
+});
+
+describe("wordAt (C6a, D6, D26)", () => {
+  it("UAX 29 : le mot qui contient le rang ; espace et fin de texte : null", () => {
+    expect(wordAt("Le chat noir", 3)).toEqual([3, 7]);
+    expect(wordAt("Le chat noir", 6)).toEqual([3, 7]);
+    expect(wordAt("Le chat noir", 2)).toBeNull();
+    expect(wordAt("Le chat noir", 12)).toBeNull();
+    expect(wordAt("Le chat noir", -1)).toBeNull();
+    expect(wordAt("Lundi matin", 8)).toEqual([6, 11]);
+  });
+
+  it("wordAt : « été » après un emoji, bornes UTF-16 ; ponctuation : null", () => {
+    expect(wordAt("😀 été", 4)).toEqual([3, 6]);
+    expect(wordAt("café, crème", 4)).toBeNull();
+    expect(wordAt("café, crème", 7)).toEqual([6, 11]);
+  });
+
+  it("chiffres : un nombre est un mot", () => {
+    expect(wordAt("page 42 ici", 5)).toEqual([5, 7]);
+  });
+
+  it("repli sans Intl.Segmenter : lettres, chiffres, marques (D26)", () => {
+    const saved = Intl.Segmenter;
+    Object.defineProperty(Intl, "Segmenter", { value: undefined, configurable: true, writable: true });
+    try {
+      expect(wordAt("Le chat noir", 3)).toEqual([3, 7]);
+      expect(wordAt("café noir", 2)).toEqual([0, 5]);
+      expect(wordAt("😀 été", 4)).toEqual([3, 6]);
+      expect(wordAt("a b", 1)).toBeNull();
+    } finally {
+      Object.defineProperty(Intl, "Segmenter", { value: saved, configurable: true, writable: true });
+    }
   });
 });
