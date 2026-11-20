@@ -142,6 +142,7 @@ export function createEngine(deps: EngineDeps): Engine {
   let tool: ToolChoice = "pen";
   let spaceHeld = false;
   let shiftHeld = false;
+  let altHeld = false;
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
@@ -261,7 +262,7 @@ export function createEngine(deps: EngineDeps): Engine {
     emit();
   }
 
-  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run, shift: () => shiftHeld, requestFrame: requestScene };
+  const ctx: ToolContext = { doc, page: () => pageId, camera: () => camera, run, shift: () => shiftHeld, alt: () => altHeld, requestFrame: requestScene };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => style) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
@@ -362,6 +363,10 @@ export function createEngine(deps: EngineDeps): Engine {
         shiftHeld = true;
         return false;
       }
+      if (e.key === "Alt") {
+        altHeld = true;
+        return false;
+      }
       if (isPanKey(e)) {
         spaceHeld = true;
         return true;
@@ -390,6 +395,10 @@ export function createEngine(deps: EngineDeps): Engine {
         shiftHeld = false;
         return false;
       }
+      if (e.key === "Alt") {
+        altHeld = false;
+        return false;
+      }
       if (e.key !== " " || !spaceHeld) return false;
       spaceHeld = false;
       return true;
@@ -397,6 +406,7 @@ export function createEngine(deps: EngineDeps): Engine {
     releaseKeys() {
       spaceHeld = false;
       shiftHeld = false;
+      altHeld = false;
     },
     panHeld: () => spaceHeld,
     showPage(id) {

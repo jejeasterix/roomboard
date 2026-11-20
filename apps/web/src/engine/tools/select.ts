@@ -76,10 +76,20 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
   const world = (s: InputSample): [number, number] => screenToWorld(ctx.camera(), s.x, s.y);
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= DRAG_THRESHOLD_PX;
 
+  /**
+   * Déplacement du glisser (C9, G7, G8) : aimanté depuis le déplacement brut, à chaque image et au relâché (l'aperçu
+   * et la Transform écrite sont le même calcul) ; brut si Alt est tenue.
+   */
+  const moveDelta = (d: Drag): readonly [number, number] => {
+    const dx = d.x - d.x0;
+    const dy = d.y - d.y0;
+    return ctx.alt?.() === true ? [dx, dy] : ctx.doc.snapDelta(ctx.page(), selection, dx, dy);
+  };
+
   /** Matrice provisoire du glisser ; identité tant que le seuil n'est pas franchi. */
   const matrixOf = (d: Drag): Matrix => {
     if (!moved(d)) return IDENTITY_MATRIX;
-    if (d.mode === "move") return translateMatrix(d.x - d.x0, d.y - d.y0);
+    if (d.mode === "move") return translateMatrix(...moveDelta(d));
     if (d.mode === "resize" && d.base && d.handle) {
       const [gx, gy] = handlePoint(d.base, d.handle);
       return resizeMatrix(d.base, d.handle, gx + d.x - d.x0, gy + d.y - d.y0, ctx.shift?.() === true);
