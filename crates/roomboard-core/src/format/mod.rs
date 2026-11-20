@@ -176,7 +176,7 @@ mod tests {
     fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut w = ZipWriter::new(Cursor::new(Vec::new()));
         for (name, bytes) in entries {
-            w.start_file(*name, options()).expect("entrée");
+            w.start_file(*name, entry_options(false)).expect("entrée");
             w.write_all(bytes).expect("écriture");
         }
         w.finish().expect("fin").into_inner()
@@ -409,6 +409,92 @@ mod tests {
                 date.map(|x| x.to_string())
                     .unwrap_or_else(|| "sans date".into())
             );
+        }
+    }
+
+    #[test]
+    fn save_is_write_parts_of_save_parts() {
+        let d = with_strokes();
+        let parts = save_parts(&d, &meta()).expect("parts");
+        let via = write_parts(&parts)
+            .expect("écrivain")
+            .finish()
+            .expect("fin")
+            .into_inner();
+        assert!(via == save(&d, &meta()).expect("save"));
+    }
+
+    #[test]
+    fn load_parts_reads_save_parts() {
+        let d = with_strokes();
+        let parts = save_parts(&d, &meta()).expect("parts");
+        let (e, m) = load_parts(&parts.manifest, &parts.ybin).expect("load_parts");
+        assert_eq!(e.page_ids(), d.page_ids());
+        assert!(e.encode_v1() == d.encode_v1());
+        assert_eq!((m.format_version, m.schema), (1, 1));
+    }
+
+    #[test]
+    fn open_gives_checked_manifest_and_both_parts() {
+        let d = with_strokes();
+        let file = save(&d, &meta()).expect("save");
+        let o = open(&file).expect("open");
+        assert_eq!(o.parts, save_parts(&d, &meta()).expect("parts"));
+        assert_eq!(o.manifest.format, FORMAT);
+        assert_eq!(o.archive.len(), 2);
+    }
+
+    /// Arbitrage I1 : le manifeste est contrôlé avant de chercher `document.ybin` ; jamais `Corrupt` ici.
+    #[test]
+    fn newer_format_version_without_document_is_newer() {
+        let z = zip_of(&[(MANIFEST, &manifest_json("roomboard", 2, 1))]);
+        let newer = Some(FormatError::NewerVersion {
+            found: 2,
+            supported: 1,
+        });
+        assert_eq!(load(&z).err(), newer);
+        assert_eq!(open(&z).err(), newer);
+    }
+
+    #[test]
+    fn load_parts_checks_manifest_first() {
+        assert_eq!(
+            load_parts(&manifest_json("roomboard", 2, 1), b"").err(),
+            Some(FormatError::NewerVersion {
+                found: 2,
+                supported: 1
+            })
+        );
+        assert_eq!(
+            load_parts(&manifest_json("flipx", 1, 1), b"").err(),
+            Some(FormatError::NotRoomboard)
+        );
+        assert!(matches!(
+            load_parts(b"{", b"").err(),
+            Some(FormatError::Corrupt(_))
+        ));
+        assert!(matches!(
+            load_parts(&manifest_json("roomboard", 1, 1), &[0xff, 0x01]).err(),
+            Some(FormatError::Corrupt(_))
+        ));
+    }
+
+    #[test]
+    fn entry_options_sets_method_and_fixed_date() {
+        let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+        w.start_file("a.png", entry_options(true)).expect("a");
+        w.write_all(&[7u8; 300]).expect("écriture a");
+        w.start_file("b.svg", entry_options(false)).expect("b");
+        w.write_all(&[7u8; 300]).expect("écriture b");
+        let bytes = w.finish().expect("fin").into_inner();
+        let mut a = ZipArchive::new(Cursor::new(bytes.as_slice())).expect("zip");
+        for (name, method) in [
+            ("a.png", CompressionMethod::Stored),
+            ("b.svg", CompressionMethod::Deflated),
+        ] {
+            let f = a.by_name(name).expect("entrée");
+            assert_eq!(f.compression(), method, "{name}");
+            assert!(f.last_modified() == Some(DateTime::default()), "{name}");
         }
     }
 }
