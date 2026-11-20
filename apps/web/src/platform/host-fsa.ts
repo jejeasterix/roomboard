@@ -15,7 +15,7 @@ import {
   type OpenedFile,
   type SaveTarget,
 } from "./files";
-import { listenWebDrop, type DropTargetLike } from "./drop-web";
+import { droppedFromFile, listenWebDrop, type DropTargetLike } from "./drop-web";
 
 export interface PickerType {
   readonly description: string;
@@ -94,12 +94,8 @@ export function createFsaHost(w: FsaWindow, dropTarget: DropTargetLike | null = 
         if (isAbort(e)) return [];
         throw e;
       }
-      return Promise.all(
-        handles.map(async (h) => {
-          const bytes = new Uint8Array(await (await h.getFile()).arrayBuffer());
-          return { name: h.name, size: bytes.byteLength, mime: "", blob: async () => new Blob([bytes]) };
-        }),
-      );
+      // Aucune lecture ici : l'importeur contrôle `size` d'abord (R15, HR14) ; `getFile()` rend un `File` réel.
+      return Promise.all(handles.map(async (h) => droppedFromFile((await h.getFile()) as File)));
     },
     async save(encode: () => Promise<Uint8Array>, target: SaveTarget): Promise<SaveTarget | null> {
       let handle: FileHandleLike | null = target.kind === "fsa" && (await writable(target.handle)) ? target.handle : null;

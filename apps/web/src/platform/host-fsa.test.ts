@@ -11,7 +11,7 @@ function handle(disk: Disk, name: string, o: { permission?: PermissionLike; requ
     name,
     async getFile() {
       const b = disk.files.get(name) ?? new Uint8Array();
-      return { arrayBuffer: async () => b.slice().buffer };
+      return new File([b.slice()], name);
     },
     async createWritable(): Promise<WritableLike> {
       let data = new Uint8Array();
@@ -195,6 +195,19 @@ describe("hôte FSA : onDrop (T86)", () => {
     expect(w.calls.openOpts).toEqual([{ multiple: true, excludeAcceptAllOption: false, types: IMPORT_TYPES }]);
     expect(files.map((f) => [f.name, f.size])).toEqual([["a.png", 2], ["b.png", 1]]);
     expect(Array.from(new Uint8Array(await (await files[1]!.blob()).arrayBuffer()))).toEqual([3]);
+  });
+
+  it("pick : aucun fichier n'est lu avant l'import (R15, HR14)", async () => {
+    const disk = newDisk();
+    disk.files.set("a.png", new Uint8Array([1, 2]));
+    const spy = vi.spyOn(File.prototype, "arrayBuffer");
+    try {
+      const files = await createFsaHost(fsaWindow(disk, { openNames: ["a.png"] })).pick();
+      expect(spy).not.toHaveBeenCalled();
+      expect([files[0]?.name, files[0]?.size]).toEqual(["a.png", 2]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("pick annulé (AbortError) : []", async () => {
