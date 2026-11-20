@@ -65,7 +65,7 @@ const validSize = (v: number): boolean => {
   return Number.isFinite(f) && f > 0;
 };
 
-/** Même règle que `wire_attrs` (liaison) puis `valid_attrs` (cœur) ; à appeler sur un patch nettoyé. */
+/** Même règle que `read_patch` → `wire_attr` (liaison) puis `valid_attrs` (cœur) ; à appeler sur un patch nettoyé. */
 export function validPatch(patch: TextAttrsPatch): boolean {
   return Object.entries(patch).every(([k, v]) => {
     if (v === null) return (TEXT_ATTR_KEYS as readonly string[]).includes(k);
