@@ -8,7 +8,7 @@ license = "LicenseRef-PolyForm-Shield-1.0.0"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-fs = "2.7.1"
 # generate_context! embarque la configuration des plugins (plugins.fs) en serde_json::Value.
