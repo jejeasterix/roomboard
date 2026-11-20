@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Command, CoreDocument } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
+import { createClipboard } from "../platform/clipboard";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
@@ -66,6 +67,7 @@ beforeEach(() => {
 });
 
 function fakeSession(doc: CoreDocument): FakeBoard {
+  let sel: string[] = [];
   const cbs = new Set<(s: { version: number }) => void>();
   const n = boards.length + 1;
   const board = {
@@ -73,7 +75,14 @@ function fakeSession(doc: CoreDocument): FakeBoard {
     measure: (s: string) => s.length * 10,
     engine: {
       textStyle: () => ({ color: "#1d4ed8", size: 36 }),
-      state: () => ({ version: doc.version(), page: doc.pageIds()[0] ?? "" }),
+      state: () => ({ version: doc.version(), page: doc.pageIds()[0] ?? "", selection: [...sel] }),
+      select: (ids: string[]) => {
+        sel = ids;
+      },
+      insertFragment: (src: CoreDocument, dx: number, dy: number) => doc.insertFragment(src, doc.pageIds()[0] ?? "", dx, dy),
+      insertPages: (src: CoreDocument) => doc.insertPages(src, doc.pageIds()[0] ?? ""),
+      group: vi.fn(() => true),
+      ungroup: vi.fn(() => true),
       camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
       run: (cmd: Command) => {
         const c = doc.apply(cmd);
@@ -193,6 +202,8 @@ interface SetupOptions {
   readonly launch?: WorkspaceDeps["launch"];
   readonly decode?: WorkspaceDeps["decode"];
   readonly readSheet?: WorkspaceDeps["readSheet"];
+  readonly clipboard?: WorkspaceDeps["clipboard"];
+  readonly itemFiles?: WorkspaceDeps["itemFiles"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -225,6 +236,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     makeAssets: () => createAssetStore(fakeHasher),
     ...(o.decode ? { decode: o.decode } : {}),
     ...(o.readSheet ? { readSheet: o.readSheet } : {}),
+    ...(o.clipboard ? { clipboard: o.clipboard } : {}),
+    ...(o.itemFiles ? { itemFiles: o.itemFiles } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -755,5 +768,125 @@ describe("espace de travail : tableau collé et classeur (C10b)", () => {
     expect(r.inserted).toEqual(["valeurs.xlsx"]);
     expect(tables(ws)).toHaveLength(1);
     expect(shell.notify).toHaveBeenCalledWith("valeurs.xlsx : tableau limité à 64 lignes et 64 colonnes (le fichier en a 70 × 6)");
+  });
+});
+
+describe("espace de travail — C3", () => {
+  const selectAll = (tab: TabSession): string[] => {
+    const ids = tab.board.doc.elementIds(tab.board.doc.pageIds()[0]!);
+    (tab.board.engine as unknown as { select(ids: string[]): void }).select(ids);
+    return ids;
+  };
+  const rect = (tab: TabSession, x: number): string =>
+    tab.board.doc.apply({ type: "AddShape", page: tab.board.doc.pageIds()[0]!, shape: "rect", x0: x, y0: 0, x1: x + 50, y1: 50, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!;
+
+  it("copier sans presse-papiers système : interne retenu, avis, Coller possible", async () => {
+    const ws = await setupWorkspace();
+    rect(ws.active(), 0);
+    selectAll(ws.active());
+    const seen = vi.fn();
+    ws.onClipboard(seen);
+    expect(ws.canPaste()).toBe(false);
+    await ws.copySelection(false);
+    expect(ws.canPaste()).toBe(true);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(shell.notify).toHaveBeenCalledWith("copié dans RoomBoard seulement");
+  });
+
+  it("copier avec presse-papiers système : enveloppe écrite, aucun avis", async () => {
+    const written: string[] = [];
+    const ws = await setupWorkspace({ clipboard: createClipboard({ write: async (t) => void written.push(await t) }) });
+    rect(ws.active(), 0);
+    selectAll(ws.active());
+    await ws.copySelection(false);
+    expect(written[0]).toMatch(/^\{"format":"roomboard-items\/1","rbitem":"/);
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("couper : copie puis Delete, une étape", async () => {
+    const ws = await setupWorkspace();
+    const tab = ws.active();
+    rect(tab, 0);
+    selectAll(tab);
+    const v = tab.board.doc.version();
+    await ws.copySelection(true);
+    expect(strokes(tab)).toBe(0);
+    expect(tab.board.doc.version()).toBe(v + 1);
+    expect(ws.canPaste()).toBe(true);
+  });
+
+  it("Coller (bouton) dans un autre onglet : ids neufs ; second collage décalé", async () => {
+    const ws = await setupWorkspace();
+    const a = rect(ws.active(), 0);
+    selectAll(ws.active());
+    await ws.copySelection(false);
+    await ws.newBlank();
+    const dst = ws.active();
+    expect(await ws.pasteInternal()).toBe(true);
+    expect(await ws.pasteInternal()).toBe(true);
+    const ids = dst.board.doc.elementIds(dst.board.doc.pageIds()[0]!);
+    expect(ids).toHaveLength(2);
+    expect(ids).not.toContain(a);
+    const b0 = dst.board.doc.bounds([ids[0]!])!;
+    const b1 = dst.board.doc.bounds([ids[1]!])!;
+    expect([b1.x0 - b0.x0, b1.y0 - b0.y0]).toEqual([24, 24]);
+  });
+
+  it("pasteItems : enveloppe plus récente → avis, rien inséré, pris", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.pasteItems("newer")).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("objets copiés par une version plus récente de RoomBoard : mettez RoomBoard à jour");
+    expect(strokes(ws.active())).toBe(0);
+  });
+
+  it("exporter : Sélection.rbitem écrit par itemFiles ; sans sélection : rien", async () => {
+    const save = vi.fn(async (_n: string, _b: Uint8Array) => true);
+    const ws = await setupWorkspace({ itemFiles: { pick: async () => null, save } });
+    expect(await ws.exportSelection()).toBe(false);
+    rect(ws.active(), 0);
+    selectAll(ws.active());
+    expect(await ws.exportSelection()).toBe(true);
+    expect(save.mock.calls[0]![0]).toBe("Sélection.rbitem");
+  });
+
+  it("insérer des pages : boîte FileHost.open, pages après la page montrée", async () => {
+    const ws = await setupWorkspace();
+    const src = fakeCore.blank();
+    src.apply({ type: "AddPage", after: src.pageIds()[0]! });
+    opening = { name: "/cours/b.roomboard", bytes: src.save(NOW, "0.1.0"), target: { kind: "download", name: "b.roomboard" } };
+    expect(await ws.insertPages()).toBe(true);
+    expect(ws.active().board.doc.pageIds()).toHaveLength(3);
+    opening = null;
+    expect(await ws.insertPages()).toBe(false);
+  });
+
+  it("un .rbitem déposé s'insère dans l'onglet actif ; un .roomboard déposé ouvre un onglet (Q1)", async () => {
+    const ws = await setupWorkspace();
+    const s = fakeCore.blank();
+    const frag = s.extract(s.pageIds()[0]!, [s.apply({ type: "AddShape", page: s.pageIds()[0]!, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!]);
+    codec.read.mockResolvedValueOnce({ manifest: new Uint8Array(), ybin: frag.saveFragment(NOW, "0.1.0", "x"), assets: [], warnings: [] });
+    const r = await ws.importFiles([plainFile("objet.rbitem", new Uint8Array([0x50, 0x4b, 3, 4, 0]))], { x: 10, y: 10 });
+    expect(r.inserted).toEqual(["objet.rbitem"]);
+    expect(strokes(ws.active())).toBe(1);
+    expect(ws.tabs.list()).toHaveLength(1);
+    await ws.importFiles([roomboardFile("/cours/c.roomboard")], { x: 10, y: 10 });
+    expect(ws.tabs.list()).toHaveLength(2);
+  });
+
+  it("un fragment ouvert comme document : message, aucun onglet", async () => {
+    const ws = await setupWorkspace();
+    const s = fakeCore.blank();
+    const bytes = s.extract(s.pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x");
+    expect(await ws.openDocument({ name: "x.roomboard", bytes, target: null })).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.roomboard) : ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page");
+  });
+
+  it("selection(a) : grouper et dégrouper relayés au moteur", async () => {
+    const ws = await setupWorkspace();
+    ws.selection("group");
+    ws.selection("ungroup");
+    const e = ws.active().board.engine as unknown as { group: ReturnType<typeof vi.fn>; ungroup: ReturnType<typeof vi.fn> };
+    expect([e.group.mock.calls.length, e.ungroup.mock.calls.length]).toEqual([1, 1]);
   });
 });
