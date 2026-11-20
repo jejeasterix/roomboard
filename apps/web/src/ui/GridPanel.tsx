@@ -37,10 +37,13 @@ export interface GridPanelProps {
   cancel(): void;
 }
 
+
 const pickChoice = (v: string): GridKind | "none" | undefined => GRID_CHOICES.find((c) => c === v);
 
 export function GridPanel(props: GridPanelProps): JSX.Element {
   const [draft, setDraft] = createSignal<GridDraft>(draftOf(props.initial));
+  /** Épaisseur du document à l'ouverture : les choix ne suivent pas le brouillon (PC8). */
+  const docWidth = draftOf(props.initial).lineWidth;
   const kind = createMemo(() => draft().kind);
   onCleanup(() => props.endPreview());
   /** Saisie acceptée : brouillon et aperçu ; refusée (même brouillon) : rien. */
@@ -107,7 +110,7 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
           ref={(el) => syncValue(el, () => String(draft().lineWidth))}
           onChange={(e) => edit(withLineWidth(draft(), Number(e.currentTarget.value)))}
         >
-          <For each={lineWidthOptions(draft().lineWidth)}>{(w) => <option value={String(w)}>{`${w} px`}</option>}</For>
+          <For each={lineWidthOptions(docWidth)}>{(w) => <option value={String(w)}>{`${w} px`}</option>}</For>
         </select>
       </label>
       <label>

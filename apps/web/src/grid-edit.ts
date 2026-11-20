@@ -28,6 +28,10 @@ export interface GridDraft {
   readonly lineWidth: number;
   /** Magnétisme de tête (`grid.snap`). */
   readonly snap: boolean;
+  /** Le pas a été saisi ou posé par un type : il s'écrit dans spacingX et spacingY (E5). */
+  readonly spacingSet: boolean;
+  /** Le type a été choisi : « Aucune » choisi retire la grille ; « Aucune » d'office (sans niveau lisible) la garde (E2, G5). */
+  readonly kindSet: boolean;
 }
 
 /** Pas posé par le choix d'un type (E5) : Seyès 8 mm à 3,78 unités par mm, portée 20. */
@@ -63,22 +67,24 @@ export function draftOf(g: GridView | null): GridDraft {
   const head = g?.levels[0];
   const snap = g?.snap ?? false;
   if (head === undefined) {
-    return { base: g, kind: "none", spacing: GRID_DEFAULT_SPACING.squares, color: NEW_GRID_COLOR, lineWidth: DEFAULT_GRID_LINE_WIDTH, snap };
+    return { base: g, kind: "none", spacing: GRID_DEFAULT_SPACING.squares, color: NEW_GRID_COLOR, lineWidth: DEFAULT_GRID_LINE_WIDTH, snap, spacingSet: false, kindSet: false };
   }
-  return { base: g, kind: isKind(head.kind) ? head.kind : "other", spacing: head.spacingX, color: head.color, lineWidth: head.lineWidth, snap };
+  return { base: g, kind: isKind(head.kind) ? head.kind : "other", spacing: head.spacingX, color: head.color, lineWidth: head.lineWidth, snap, spacingSet: false, kindSet: false };
 }
 
 /** Choisir un type pose son pas par défaut (E5) ; couleur, épaisseur et magnétisme gardés. */
 export function withKind(d: GridDraft, k: GridKind | "none"): GridDraft {
   if (k === d.kind) return d;
-  return k === "none" ? { ...d, kind: "none" } : { ...d, kind: k, spacing: GRID_DEFAULT_SPACING[k] };
+  return k === "none"
+    ? { ...d, kind: "none", kindSet: true }
+    : { ...d, kind: k, spacing: GRID_DEFAULT_SPACING[k], spacingSet: true, kindSet: true };
 }
 
 /** Pas borné à [4, 400] ; non fini : inchangé (HE9). */
 export function withSpacing(d: GridDraft, v: number): GridDraft {
   if (!Number.isFinite(v)) return d;
   const spacing = Math.min(MAX_GRID_SPACING, Math.max(MIN_GRID_SPACING, v));
-  return spacing === d.spacing ? d : { ...d, spacing };
+  return spacing === d.spacing ? d : { ...d, spacing, spacingSet: true };
 }
 
 /** Texte du champ « Pas » → nombre ; vide : NaN (valeur précédente gardée, HE9). */
@@ -111,11 +117,11 @@ const NEW_GRID: GridView = { visible: true, snap: false, above: false, levels: [
 
 /** Grille du brouillon : null pour « Aucune » ; « Autre » garde la grille (seul le magnétisme de tête change). */
 export function toGrid(d: GridDraft): GridView | null {
-  if (d.kind === "none") return null;
+  if (d.kind === "none") return d.kindSet ? null : d.base;
   const base = d.base ?? NEW_GRID;
   if (d.kind === "other") return { ...base, snap: d.snap };
   const head = base.levels[0];
-  const keep = head !== undefined && head.kind === d.kind && head.spacingX === d.spacing;
+  const keep = head !== undefined && head.kind === d.kind && !d.spacingSet;
   const level: GridLevel = {
     ...NEW_LEVEL,
     ...head,
