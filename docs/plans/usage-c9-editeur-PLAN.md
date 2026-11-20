@@ -6,12 +6,12 @@
 
 | id | titre | dépend de | fichiers touchés | worktree | subagent | preuve | scénario | section |
 |----|-------|-----------|------------------|----------|----------|--------|----------|---------|
-| T1 | `lineWidth` et lignes d'une grille non enregistrée, du cœur Rust à la page (liaison Wasm, vraie et fausse liaison, épaisseur au rendu) | — | `crates/roomboard-core/src/grid.rs`, `crates/roomboard-core/src/document.rs`, `crates/roomboard-core/src/commands.rs`, `crates/roomboard-wasm/src/lib.rs`, `apps/web/src/core/api.ts`, `apps/web/src/core/wasm-core.ts`, `apps/web/src/core/fake-core.ts`, `apps/web/src/core/wasm-core.contract.test.ts`, `apps/web/src/core/fake-core.test.ts`, `apps/web/src/engine/render/grid-paint.ts`, `apps/web/src/engine/render/grid-paint.test.ts`, `apps/web/src/engine/render/canvas2d.test.ts`, `apps/web/src/engine/tools/select.test.ts`, `apps/web/src/engine/tools/shape.test.ts` | isolé | concepteur-critique | `cargo test --workspace` : `test result: ok` partout, ≥ 1 test `read_level_line_width_defaults_to_one`, `set_grid_line_width_round_trip_and_bounds`, `grid_lines_of_matches_grid_lines_after_set_grid`, `grid_lines_of_inner_matches_grid_lines_after_set_grid` ; `ROOMBOARD_WASM_REQUIRED=1` vitest des 4 fichiers web : 0 échec, « gridLinesOf (S3, DAE1) » présent sur les deux fabriques ; `tsc` vide | S3 | #tache-t1 |
+| T1 | `lineWidth` et lignes d'une grille non enregistrée, du cœur Rust à la page (liaison Wasm, vraie et fausse liaison, épaisseur au rendu) | — | `crates/roomboard-core/src/grid.rs`, `crates/roomboard-core/src/document.rs`, `crates/roomboard-core/src/commands.rs`, `crates/roomboard-wasm/src/lib.rs`, `apps/web/src/core/api.ts`, `apps/web/src/core/wasm-core.ts`, `apps/web/src/core/fake-core.ts`, `apps/web/src/core/wasm-core.contract.test.ts`, `apps/web/src/core/fake-core.test.ts`, `apps/web/src/engine/render/grid-paint.ts`, `apps/web/src/engine/render/grid-paint.test.ts`, `apps/web/src/engine/render/canvas2d.test.ts`, `apps/web/src/engine/tools/select.test.ts`, `apps/web/src/engine/tools/shape.test.ts`, `apps/web/src/engine/tools/pen.test.ts`, `crates/roomboard-core/tests/compat_grille_pr12.rs` (neuf), `crates/roomboard-core/tests/fixtures/grille-pr12.roomboard` (neuf) | isolé | concepteur-critique | `cargo test --workspace` : `test result: ok` partout, ≥ 1 test `read_level_line_width_defaults_to_one`, `thick_levels_are_skipped_before_they_fill_the_page`, `set_grid_line_width_round_trip_and_bounds`, `grid_lines_of_matches_grid_lines_after_set_grid`, `grid_lines_of_inner_matches_grid_lines_after_set_grid`, `grid_pr12_fixture_reads_line_width_one_and_resaves_identically` ; `ROOMBOARD_WASM_REQUIRED=1` vitest des 4 fichiers web : 0 échec, « gridLinesOf (S3, DAE1) » présent sur les deux fabriques ; `tsc` vide | S3 | #tache-t1 |
 | T2 | Cache des lignes de grille (`grid-cache.ts`) tenu par `Canvas2DRenderer` | T1 | `apps/web/src/engine/render/grid-cache.ts` (neuf), `apps/web/src/engine/render/grid-cache.test.ts` (neuf), `apps/web/src/engine/render/canvas2d.ts`, `apps/web/src/engine/render/canvas2d.test.ts` | isolé | concepteur-critique | vitest `grid-cache.test.ts` + `canvas2d.test.ts` : 0 échec, ≥ 8 tests de cache, « S4 : dix images de même caméra → un seul appel au cœur » présent ; tests S5 de la grille (calage, 202 et 152) verts sans retouche ; `tsc` vide | S4 | #tache-t2 |
 | T3 | Aperçu de grille au rendu et au moteur (`setGridPreview`, `previewGrid`, `endGridPreview`) | T2 | `apps/web/src/engine/render/renderer.ts`, `apps/web/src/engine/render/canvas2d.ts`, `apps/web/src/engine/render/canvas2d.test.ts`, `apps/web/src/engine/render/webgl2.ts`, `apps/web/src/engine/render/webgl2.test.ts`, `apps/web/src/engine/engine.ts`, `apps/web/src/engine/engine.test.ts` | isolé | implementeur-tdd | vitest `canvas2d.test.ts`, `webgl2.test.ts`, `engine.test.ts` : 0 échec, « setGridPreview → gridLinesOf appelé avec le brouillon, gridLines non » et « switchTo coupe l'aperçu » présents ; `tsc` vide | S4, S1 | #tache-t3 |
-| T4 | Brouillon de séance pur (`grid-edit.ts`) et panneau `GridPanel` | T1 | `apps/web/src/grid-edit.ts` (neuf), `apps/web/src/grid-edit.test.ts` (neuf), `apps/web/src/ui/GridPanel.tsx` (neuf), `apps/web/src/ui/GridPanel.test.tsx` (neuf), `apps/web/src/ui/ProfileEditor.tsx` | isolé | implementeur-tdd | vitest `grid-edit.test.ts` + `GridPanel.test.tsx` + `ProfileEditor.test.tsx` : 0 échec, ≥ 15 tests, « S2 : Seyès → preview » et « démontage → endPreview » présents ; `tsc` vide | S2 | #tache-t4 |
-| T5 | Bouton « Grille » (barre, profils `defaut` et `annotation`) et séance dans `App` | T3, T4 | `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `apps/web/src/app/toolbar-host.ts`, `apps/web/src/app/toolbar-host.test.ts`, `apps/web/src/toolbar.ts`, `apps/web/src/toolbar.test.ts`, `apps/web/src/toolbar-profiles.ts`, `apps/web/src/toolbar-profiles.test.ts` | isolé | implementeur-tdd | vitest des 4 fichiers de test : 0 échec, « App — grille (C9 éditeur, E7, E8) » ≥ 6 tests présents ; `ROOMBOARD_WASM_REQUIRED=1 pnpm -r test` : 0 échec (dont `profile-store.test.ts`, `profile-edit.test.ts`) ; `pnpm --filter @roomboard/web build` OK | S2, S1 | #tache-t5 |
-| T6 | Geste Playwright `c9-grille-navigateur.mjs` dans `verifier.sh --e2e`, capture de l'éditeur | T5 | `scripts/essais/c9-grille-navigateur.mjs` (neuf), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `docs/essais/c9-editeur-grille.png` (neuf) | isolé | implementeur-tdd | `bash scripts/verifier.sh --e2e` : « C9 grille : OK », « S5b : OK », « C1 : OK », « verifier.sh : e2e OK », « verifier.sh : OK » ; `verifier-e2e.test.sh : OK` ; PNG présent | S1, S5 | #tache-t6 |
+| T4 | Brouillon de séance pur (`grid-edit.ts`) et panneau `GridPanel` | T1 | `apps/web/src/grid-edit.ts` (neuf), `apps/web/src/grid-edit.test.ts` (neuf), `apps/web/src/ui/GridPanel.tsx` (neuf), `apps/web/src/ui/GridPanel.test.tsx` (neuf), `apps/web/src/ui/ProfileEditor.tsx` | isolé | implementeur-tdd | vitest `grid-edit.test.ts` + `GridPanel.test.tsx` + `ProfileEditor.test.tsx` : 0 échec, ≥ 15 tests, « S2 : Seyès → preview », « démontage → endPreview » et « refus du cœur : panneau ouvert, message affiché » présents ; `tsc` vide | S2 | #tache-t4 |
+| T5 | Bouton « Grille » (barre, profils `defaut` et `annotation`) et séance dans `App` | T3, T4 | `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `apps/web/src/app/toolbar-host.ts`, `apps/web/src/app/toolbar-host.test.ts`, `apps/web/src/toolbar.ts`, `apps/web/src/toolbar.test.ts`, `apps/web/src/toolbar-profiles.ts`, `apps/web/src/toolbar-profiles.test.ts` | isolé | implementeur-tdd | vitest des 4 fichiers de test : 0 échec, « App — grille (C9 éditeur, E7, E8) » ≥ 7 tests présents, dont « aperçu, autre onglet, retour : aucune grille » ; `ROOMBOARD_WASM_REQUIRED=1 pnpm -r test` : 0 échec (dont `profile-store.test.ts`, `profile-edit.test.ts`) ; `pnpm --filter @roomboard/web build` OK | S2, S1 | #tache-t5 |
+| T6 | Geste Playwright `c9-grille-navigateur.mjs` dans `verifier.sh --e2e`, capture de l'éditeur | T5 | `scripts/essais/c9-grille-navigateur.mjs` (neuf), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `docs/essais/c9-editeur-grille.png` (neuf) | isolé | implementeur-tdd | `bash scripts/verifier.sh --e2e` : « C9 grille : OK » (dont « aperçu, autre onglet, retour : aucune grille »), « S5b : OK », « C1 : OK », « verifier.sh : e2e OK », « verifier.sh : OK » ; `verifier-e2e.test.sh : OK` ; PNG présent | S1, S5 | #tache-t6 |
 
 **Vagues (par dépendances).** Vague 1 : T1 seule. Vague 2 : T2 et T4 en parallèle (fichiers disjoints : rendu d'un côté,
 `grid-edit.ts`, `GridPanel.tsx`, `ProfileEditor.tsx` de l'autre). Vague 3 : T3 (après T2 : `canvas2d.ts` et
@@ -79,8 +79,9 @@ composants), Playwright (Chromium headless, essai e2e).
    « S4 : vues jusqu'à 3840 × 2160 ».
 4. Pas saisi hors `[4, 400]`, vide ou illisible (HE9) : aperçu borné, champ ramené à la borne à la validation, vide sans
    effet → T4, « HE9 : pas borné » (grid-edit) et « HE9 : pas saisi hors bornes » (GridPanel).
-5. Onglet changé pendant une séance : panneau fermé, aperçu coupé sur l'onglet de départ, jamais posé sur le nouveau
-   (E8) → T5, « E8, Review Focus 5 : onglet changé pendant la séance ».
+5. Onglet changé pendant une séance : panneau fermé, aperçu coupé sur l'onglet de départ, jamais posé sur le nouveau ;
+   retour à l'onglet de départ : aucune grille (E8, CR3) → T5, « E8, Review Focus 5 : onglet changé pendant la séance »
+   et « aperçu, autre onglet, retour : aucune grille » ; T6, même geste au navigateur.
 
 ## Choix du plan (hors cadrage, à relire)
 
@@ -100,6 +101,28 @@ composants), Playwright (Chromium headless, essai e2e).
 - PC10 Fermeture de séance (E8) par un mémo `onglet|page|version` : une erreur seule (`#etat`) ne ferme pas.
 - PC11 Test « SetGrid écrit les neuf champs » de `fake-core.test.ts` renommé « dix champs ».
 
+## Amendements après contre-relecture du cadrage
+
+- CR1 (S4 contre E3) : le rectangle gardé tient sous le plafond **ou** la marge est nulle (PC3) ; le test de T2 le dit
+  ainsi, le cadrage est amendé de même.
+- CR2 (seuils fixes et `lineWidth` jusqu'à 8) : dans le cœur, une famille est sautée si son pas est
+  `< min_step·lineWidth`, les points si un pas est `< min_dot_step·lineWidth` (`MIN_GRID_PX`, `MIN_DOT_PX` inchangés) ;
+  la fausse liaison fait de même. T1, test `thick_levels_are_skipped_before_they_fill_the_page` et contrat commun.
+- CR3 (aperçu et onglets) : le moteur est figé à l'ouverture du panneau (`gridPanelFor(b)`, jamais `ws.active()` au
+  rappel) ; T5 test « aperçu, autre onglet, retour : aucune grille », T6 le même geste au navigateur.
+- CR4 (carte d'impact) : `pen.test.ts:169` entre dans T1 ; `validGrid` de la fausse liaison refuse `lineWidth` hors
+  bornes (T1, contrat commun « SetGrid (E1, S3) » sur les deux liaisons) ; la délégation WebGL2 de `setGridPreview` est
+  testée (T3, « setGridPreview : délégué à la scène Canvas 2D »).
+- CR5 Pendant la saisie du pas, l'aperçu montre la valeur bornée ; le champ n'est ramené à la borne qu'à sa validation
+  (T4, test HE9).
+- CR6 Refus du cœur à « Appliquer » : le panneau reste ouvert et affiche le message (`[data-grille="error"]`,
+  `role="alert"`) ; `GridPanelProps.apply` rend le message du refus ou `null` (T4, T5).
+- CR7 Fixture `crates/roomboard-core/tests/fixtures/grille-pr12.roomboard`, écrite une fois par le code de `main`
+  `8247215` (niveaux sans `lineWidth`) : lue à 1, réenregistrée à l'identique (T1).
+- CR8 Amendement de U31 (clé de niveau `lineWidth`, épaisseur réglable) déclaré dans le cadrage.
+- CR9 Le bouton d'abandon du panneau s'appelle « Fermer sans appliquer » (`data-grille="cancel"` gardé), pour ne pas se
+  confondre avec « Annuler » de la barre.
+
 ---
 
 <a id="tache-t1"></a>
@@ -109,12 +132,18 @@ composants), Playwright (Chromium headless, essai e2e).
 `BadGrid` sans transaction ; absent ou hors bornes à la lecture : 1 ; toujours écrit par `SetGrid`), recopié dans chaque
 groupe de lignes et peint à `max(1, round(lineWidth·dpr))` pixels physiques (point `max(2, round(2·lineWidth·dpr))`). Le
 cœur calcule les lignes d'une grille non enregistrée (`grid_lines_of`, même `grid::lines`), exposées jusqu'à
-`CoreDocument.gridLinesOf` sur la vraie et la fausse liaison. La liaison passe à 7 nombres par niveau. Cadrage : E1, E2
-(partie lecture), DAE1 ; scénario S3.
+`CoreDocument.gridLinesOf` sur la vraie et la fausse liaison. La liaison passe à 7 nombres par niveau. Un niveau épais
+ne remplit pas la page à petit zoom : une famille est sautée si son pas est `< min_step·lineWidth`, les points si un pas
+est `< min_dot_step·lineWidth` (CR2), dans le cœur et dans la fausse liaison. Une fixture écrite par le code de `main`
+`8247215` (niveaux sans `lineWidth`) se lit à 1 et se réenregistre à l'identique (CR7). Cadrage : E1, E2 (partie
+lecture), DAE1, amendements CR2, CR4, CR7 ; scénario S3.
 
 **Fichiers.**
 - Modifier : `crates/roomboard-core/src/grid.rs` (`:31-44` `GridLevelView`, `:58-66` `LevelLines`, `:113-131`
-  `read_level`, `:149-160` `level_fields`, `:163-178` `validate`, `:490`, `:499` poussées ; tests `:555-567`, `:650-685`).
+  `read_level`, `:149-160` `level_fields`, `:163-178` `validate`, `:446-505` `level_lines` (seuils, poussées `:490`,
+  `:499`) ; tests `:555-567`, `:650-685`).
+- Créer : `crates/roomboard-core/tests/fixtures/grille-pr12.roomboard` (écrite une fois par le code de base),
+  `crates/roomboard-core/tests/compat_grille_pr12.rs`.
 - Modifier : `crates/roomboard-core/src/document.rs` (`:486-521`).
 - Modifier : `crates/roomboard-core/src/commands.rs` (tests : `grid_level` `:2745-2757`, tests neufs à la suite de
   `grid_reload_keeps_bytes`).
@@ -124,8 +153,8 @@ cœur calcule les lignes d'une grille non enregistrée (`grid_lines_of`, même `
 - Modifier : `apps/web/src/engine/render/grid-paint.ts` (`:1-8`, `:39-40`, `:55-95`).
 - Tests : `apps/web/src/core/wasm-core.contract.test.ts`, `apps/web/src/core/fake-core.test.ts`,
   `apps/web/src/engine/render/grid-paint.test.ts`, `apps/web/src/engine/render/canvas2d.test.ts`,
-  `apps/web/src/engine/tools/select.test.ts`, `apps/web/src/engine/tools/shape.test.ts` (littéraux seulement pour ces
-  deux derniers).
+  `apps/web/src/engine/tools/select.test.ts`, `apps/web/src/engine/tools/shape.test.ts`,
+  `apps/web/src/engine/tools/pen.test.ts` (littéraux seulement pour ces trois derniers).
 
 **Interfaces.**
 - Consomme : rien des autres tâches.
@@ -164,7 +193,11 @@ cœur calcule les lignes d'une grille non enregistrée (`grid_lines_of`, même `
 - Rust : `cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && cargo test -p roomboard-core --lib
   line_width 2>&1 | grep -E "^test |test result"` → au moins `read_level_line_width_defaults_to_one`,
   `validate_grid_line_width_bounds`, `grid_lines_carry_the_level_line_width`, `set_grid_line_width_round_trip_and_bounds`,
-  `grid_level_without_line_width_reads_as_one_and_resaves_identically` en `... ok`, `test result: ok`.
+  `grid_level_without_line_width_reads_as_one_and_resaves_identically` en `... ok`, `test result: ok` ;
+  `cargo test -p roomboard-core --lib thick_levels 2>&1 | grep -E "^test |test result"` →
+  `thick_levels_are_skipped_before_they_fill_the_page ... ok` ;
+  `cargo test -p roomboard-core --test compat_grille_pr12 2>&1 | grep -E "^test |test result"` →
+  `grid_pr12_fixture_reads_line_width_one_and_resaves_identically ... ok`.
 - Rust : `cargo test -p roomboard-core --lib grid_lines_of 2>&1 | grep -E "^test |test result"` → 1 test ok ;
   `cargo test -p roomboard-wasm grid_ 2>&1 | grep -E "^test |test result"` → `grid_input_reads_seven_numbers_per_level`,
   `grid_input_rejects_inconsistent_lengths`, `grid_lines_of_inner_matches_grid_lines_after_set_grid` ok.
@@ -174,7 +207,9 @@ cœur calcule les lignes d'une grille non enregistrée (`grid_lines_of`, même `
 - Web : `cd "$WT" && ROOMBOARD_WASM_REQUIRED=1 pnpm --filter @roomboard/web exec vitest run
   src/core/wasm-core.contract.test.ts src/core/fake-core.test.ts src/engine/render/grid-paint.test.ts
   src/engine/render/canvas2d.test.ts --reporter=verbose 2>&1 | grep -E "gridLinesOf|lineWidth|gridArgs|épaisseur|Test Files|Tests " | head -30`
-  → « gridLinesOf (S3, DAE1) » deux fois (deux fabriques), « gridArgs (E1) », « épaisseur du niveau (E1, S3) »,
+  → « gridLinesOf (S3, DAE1) » et « gridLines (CR2) : niveau épais sauté » deux fois chacun (deux fabriques),
+  « SetGrid (E1, S3) » deux fois (`validGrid` de la fausse liaison refuse 0, 9, NaN comme le cœur), « gridArgs (E1) »,
+  « épaisseur du niveau (E1, S3) »,
   `Test Files  4 passed`, 0 échec ; les tests S5 de `canvas2d.test.ts` (« grille (C9, S5 a) », « grille (C9, S5) : tout
   zoom ») verts.
 - `cd "$WT" && pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20` → aucune sortie, code 0.
@@ -229,6 +264,105 @@ gagne `lineWidth: 1`).
 ```bash
 cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && pnpm install --frozen-lockfile 2>&1 | tail -3
 ```
+
+- [ ] **Étape 1 bis : fixture de la PR 12 (CR7), avant toute modification du cœur.** Le code est encore celui de
+  `8247215` (niveaux à neuf champs, sans `lineWidth`). Créer le générateur **temporaire**
+  `crates/roomboard-core/tests/gen_grille_pr12.rs` (jamais commité) :
+
+```rust
+use roomboard_core::commands::Command;
+use roomboard_core::document::Document;
+use roomboard_core::format::{save, SaveMeta};
+use roomboard_core::grid::{GridInput, GridLevelView};
+
+#[test]
+fn gen_grille_pr12() {
+    let level = |kind: &str, s: f64| GridLevelView {
+        kind: kind.into(),
+        spacing_x: s,
+        spacing_y: s,
+        origin_x: 0.0,
+        origin_y: 0.0,
+        color: "#94a3b8".into(),
+        line: "solid".into(),
+        snap: true,
+        visible: true,
+    };
+    let mut d = Document::blank();
+    let p = d.page_ids()[0].clone();
+    let grid = GridInput {
+        visible: true,
+        snap: true,
+        above: false,
+        levels: vec![level("squares", 40.0), level("dots", 20.0)],
+    };
+    d.apply(Command::SetGrid { page: p, grid: Some(grid) }).expect("grille");
+    let meta = SaveMeta {
+        app_version: "0.1.0".into(),
+        now: "2026-11-20T00:00:00Z".into(),
+        created: None,
+    };
+    let bytes = save(&d, &meta).expect("save");
+    std::fs::write(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/grille-pr12.roomboard"),
+        bytes,
+    )
+    .expect("fixture écrite");
+}
+```
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && git rev-parse --short HEAD && cargo test -p roomboard-core --test gen_grille_pr12 2>&1 | grep -E "test result" && rm crates/roomboard-core/tests/gen_grille_pr12.rs && ls -l crates/roomboard-core/tests/fixtures/grille-pr12.roomboard && git status --short crates/
+```
+
+  Attendu : `test result: ok. 1 passed`, le fichier `grille-pr12.roomboard` présent, `gen_grille_pr12.rs` absent de
+  `git status`. Puis écrire le test commité `crates/roomboard-core/tests/compat_grille_pr12.rs` :
+
+```rust
+//! Garde de compatibilité (C9 éditeur, E1, CR7, effet de bord 1) : `grille-pr12.roomboard` a été écrit une fois par le
+//! code de `main` 8247215 (PR 12 : niveaux sans `lineWidth`). Il ne se régénère pas : le code actuel écrit `lineWidth`.
+use roomboard_core::format::{load, save, SaveMeta};
+use roomboard_core::query::Bounds;
+
+const FIXTURE: &[u8] = include_bytes!("fixtures/grille-pr12.roomboard");
+
+fn meta() -> SaveMeta {
+    SaveMeta {
+        app_version: "0.1.0".into(),
+        now: "2026-11-20T00:00:00Z".into(),
+        created: None,
+    }
+}
+
+#[test]
+fn grid_pr12_fixture_reads_line_width_one_and_resaves_identically() {
+    let d = load(FIXTURE).expect("load");
+    let p = d.page_ids()[0].clone();
+    let g = d.page(&p).and_then(|v| v.grid).expect("grille lue");
+    assert_eq!(
+        g.levels
+            .iter()
+            .map(|l| (l.kind.as_str(), l.line_width))
+            .collect::<Vec<_>>(),
+        vec![("squares", 1.0), ("dots", 1.0)]
+    );
+    let r = Bounds {
+        x0: 0.0,
+        y0: 0.0,
+        x1: 400.0,
+        y1: 400.0,
+    };
+    let lines = d.grid_lines(&p, r, 4.0, 8.0).expect("visible");
+    assert_eq!(lines.levels.len(), 2);
+    assert!(lines.levels.iter().all(|l| l.line_width == 1.0));
+    assert!(
+        save(&d, &meta()).expect("resave") == FIXTURE,
+        "fichier de la PR 12 réenregistré à l'identique"
+    );
+}
+```
+
+  (Rouge jusqu'à l'étape 4 : `no field line_width`.)
 
 - [ ] **Étape 2 : tests Rust de `grid.rs` (rouges).** Dans le module de tests de `crates/roomboard-core/src/grid.rs`,
   ajouter `line_width: 1.0,` au littéral de `fn level` (après `line: "solid".into(),`), ajouter `line_width: 3.0,` au
@@ -321,6 +455,32 @@ cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && pnpm install 
         let json = serde_json::to_value(&l.levels[0]).expect("json");
         assert_eq!(json["lineWidth"], 3.0);
     }
+
+    /// CR2 : seuils de saut × `lineWidth` (pas d'aplat) : carreaux 40 au zoom 0,1 (`min_step` 40) gardés à l'épaisseur 1,
+    /// sautés à 4 ; points 40 au zoom 0,2 (`min_dot_step` 40) gardés à 1, sautés à 2.
+    #[test]
+    fn thick_levels_are_skipped_before_they_fill_the_page() {
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: W,
+            y1: 1080.0,
+        };
+        let groups = |kind: &str, w: f64, z: f64| {
+            let g = grid(vec![GridLevelView {
+                line_width: w,
+                ..level(kind, 40.0, 40.0)
+            }]);
+            lines(&g, W, r, 4.0 / z, 8.0 / z)
+                .expect("visible")
+                .levels
+                .len()
+        };
+        assert_eq!(groups("squares", 1.0, 0.1), 1);
+        assert_eq!(groups("squares", 4.0, 0.1), 0);
+        assert_eq!(groups("dots", 1.0, 0.2), 1);
+        assert_eq!(groups("dots", 2.0, 0.2), 0);
+    }
 ```
 
 - [ ] **Étape 3 : voir rouge.** `cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && cargo test -p
@@ -363,10 +523,18 @@ fn line_width_ok(v: f64) -> bool {
   Dans la doc de `read`, ajouter « `lineWidth` absent, non fini ou hors `[1, 8]` → 1 (E1) ». Dans `level_fields`, après
   `("line", …)` : `("lineWidth", In::Any(Any::from(l.line_width))),`. Dans `validate`, ajouter `&& line_width_ok(l.line_width)`
   à `level_ok` et « épaisseur dans `[1, 8]` » à sa doc. Dans `level_lines`, ajouter `line_width: l.line_width,` aux deux
-  `out.push(LevelLines { … })`.
+  `out.push(LevelLines { … })`, et en tête de la fonction (CR2) :
+
+```rust
+    // CR2 : un niveau épais garde le même blanc entre ses traits qu'un niveau fin : seuils × `lineWidth`.
+    let (min_step, min_dot_step) = (min_step * l.line_width, min_dot_step * l.line_width);
+```
+
+  Dans la doc de `lines` : « famille sautée si son pas est `< min_step·lineWidth` ; points sautés si un pas est
+  `< min_dot_step·lineWidth` (CR2) ou si leur nombre dépasse `MAX_GRID_DOTS` ».
 
 - [ ] **Étape 5 : voir vert.** `cargo test -p roomboard-core --lib grid:: 2>&1 | grep -E "FAILED|test result"` →
-  `test result: ok`.
+  `test result: ok` ; `cargo test -p roomboard-core --test compat_grille_pr12 2>&1 | grep -E "^test |test result"` → ok.
 
 - [ ] **Étape 6 : tests de `commands.rs` (rouges).** Dans `fn grid_level` (`:2745`), ajouter `line_width: 1.0,` après
   `line: "solid".into(),`. Après le test `grid_reload_keeps_bytes`, ajouter :
@@ -695,7 +863,7 @@ fn line_width_ok(v: f64) -> bool {
 
 ```bash
 cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings 2>&1 | tail -5 && cargo test --workspace 2>&1 | grep -E "FAILED|test result" | sort | uniq -c | tail -10
-git add crates/roomboard-core/src/grid.rs crates/roomboard-core/src/document.rs crates/roomboard-core/src/commands.rs crates/roomboard-wasm/src/lib.rs
+git add crates/roomboard-core/src/grid.rs crates/roomboard-core/src/document.rs crates/roomboard-core/src/commands.rs crates/roomboard-wasm/src/lib.rs crates/roomboard-core/tests/compat_grille_pr12.rs crates/roomboard-core/tests/fixtures/grille-pr12.roomboard
 git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(core): grid level lineWidth and grid_lines_of for unsaved grids" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -712,10 +880,12 @@ cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && cargo build -
 - [ ] **Étape 12 : littéraux des tests TS (mécanique, attendus inchangés).**
 
 ```bash
-cd "$WT" && sed -i -E 's/alpha: ([0-9.]+), segments/alpha: \1, lineWidth: 1, segments/g' apps/web/src/engine/render/grid-paint.test.ts apps/web/src/core/wasm-core.contract.test.ts && sed -i 's/line: "solid", snap: true, visible: true }/line: "solid", lineWidth: 1, snap: true, visible: true }/' apps/web/src/engine/tools/select.test.ts apps/web/src/engine/tools/shape.test.ts apps/web/src/core/fake-core.test.ts && grep -c "lineWidth: 1" apps/web/src/engine/render/grid-paint.test.ts apps/web/src/core/wasm-core.contract.test.ts apps/web/src/engine/tools/select.test.ts apps/web/src/engine/tools/shape.test.ts apps/web/src/core/fake-core.test.ts
+cd "$WT" && sed -i -E 's/alpha: ([0-9.]+), segments/alpha: \1, lineWidth: 1, segments/g' apps/web/src/engine/render/grid-paint.test.ts apps/web/src/core/wasm-core.contract.test.ts && sed -i 's/line: "solid", snap: true, visible: true }/line: "solid", lineWidth: 1, snap: true, visible: true }/' apps/web/src/engine/tools/select.test.ts apps/web/src/engine/tools/shape.test.ts apps/web/src/engine/tools/pen.test.ts apps/web/src/core/fake-core.test.ts && grep -c "lineWidth: 1" apps/web/src/engine/render/grid-paint.test.ts apps/web/src/core/wasm-core.contract.test.ts apps/web/src/engine/tools/select.test.ts apps/web/src/engine/tools/shape.test.ts apps/web/src/engine/tools/pen.test.ts apps/web/src/core/fake-core.test.ts && grep -rn "spacingX: [0-9]" apps/web/src --include=*.test.ts --include=*.test.tsx | grep -v lineWidth
 ```
 
-  Puis, à la main, ajouter `lineWidth: 1,` après `line: "solid",` dans les aides multi-lignes : `gridLevel` de
+  La dernière commande ne doit lister que des niveaux bruts non typés (lectures tolérantes de `fake-core.test.ts`,
+  `:441`, `:483-486`) : tout littéral typé `GridLevel` restant reçoit `lineWidth: 1`. Puis, à la main, ajouter
+  `lineWidth: 1,` après `line: "solid",` dans les aides multi-lignes : `gridLevel` de
   `wasm-core.contract.test.ts` (`:1102-1112`), `gridLevel` de `canvas2d.test.ts` (`:358-368`), `squares` de
   `fake-core.test.ts` (`:420-430`). Renommer le test « SetGrid écrit les neuf champs d'un niveau, jamais une clé en trop
   (HG8) » en « SetGrid écrit les dix champs d'un niveau, jamais une clé en trop (HG8) ».
@@ -778,6 +948,18 @@ cd "$WT" && sed -i -E 's/alpha: ([0-9.]+), segments/alpha: \1, lineWidth: 1, seg
     expect(d.gridLinesOf(p, { ...g, visible: false }, r, 4, 8)).toBeNull();
     setGrid(d, p, g);
     expect(d.gridLines(p, r, 4, 8)).toEqual(preview);
+    d.free();
+  });
+
+  it("gridLines (CR2) : niveau épais sauté sous min_step·lineWidth (carreaux 40, zoom 0,1 : épaisseur 1 gardée, 4 sautée)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const page = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+    for (const [lineWidth, groups] of [[1, 1], [4, 0]] as const) {
+      setGrid(d, p, gridOf([{ ...gridLevel("squares", 40), lineWidth }]));
+      expect(d.gridLines(p, page, 4 / 0.1, 8 / 0.1)?.levels.length, `lineWidth ${lineWidth}`).toBe(groups);
+      expect(d.gridLinesOf(p, gridOf([{ ...gridLevel("squares", 40), lineWidth }]), page, 4 / 0.1, 8 / 0.1)?.levels.length).toBe(groups);
+    }
     d.free();
   });
 ```
@@ -932,8 +1114,9 @@ const lineWidthOk = (v: unknown): v is number =>
 
   `gridLevelView` : déstructurer `lineWidth`, et ajouter `lineWidth: lineWidthOk(lineWidth) ? lineWidth : DEFAULT_GRID_LINE_WIDTH,`
   après `line`. `LEVEL_KEYS` : ajouter `"lineWidth"` après `"line"`. `validGrid` : ajouter `&& lineWidthOk(l.lineWidth)`.
-  `gridRecord` : doc « les dix champs », ajouter `lineWidth: l.lineWidth,` après `line`. `squaresLines` : la poussée
-  devient `levels.push({ color: l.color, line: l.line, alpha: 1, lineWidth: l.lineWidth, segments, dots: [] });`. Après
+  `gridRecord` : doc « les dix champs », ajouter `lineWidth: l.lineWidth,` après `line`. `squaresLines` : les deux
+  seuils deviennent `l.spacingX >= minStep * l.lineWidth` et `l.spacingY >= minStep * l.lineWidth` (CR2, comme le
+  cœur) ; la poussée devient `levels.push({ color: l.color, line: l.line, alpha: 1, lineWidth: l.lineWidth, segments, dots: [] });`. Après
   `gridLines(...)` de la classe :
 
 ```ts
@@ -960,10 +1143,10 @@ export const dotSizePx = (dpr: number, lineWidth = 1): number => Math.max(2, Mat
 - [ ] **Étape 18 : vert, `tsc`, suite web, commit TS.**
 
 ```bash
-cd "$WT" && ROOMBOARD_WASM_REQUIRED=1 pnpm --filter @roomboard/web exec vitest run src/core/wasm-core.contract.test.ts src/core/fake-core.test.ts src/engine/render/grid-paint.test.ts src/engine/render/canvas2d.test.ts --reporter=verbose 2>&1 | grep -E "gridLinesOf|lineWidth|gridArgs|épaisseur|S5|Test Files|Tests " | head -30
+cd "$WT" && ROOMBOARD_WASM_REQUIRED=1 pnpm --filter @roomboard/web exec vitest run src/core/wasm-core.contract.test.ts src/core/fake-core.test.ts src/engine/render/grid-paint.test.ts src/engine/render/canvas2d.test.ts --reporter=verbose 2>&1 | grep -E "gridLinesOf|lineWidth|gridArgs|épaisseur|CR2|S5|Test Files|Tests " | head -30
 cd "$WT" && pnpm --filter @roomboard/web exec tsc --noEmit 2>&1 | tail -20
 cd "$WT" && ROOMBOARD_WASM_REQUIRED=1 pnpm -r test 2>&1 | tail -20
-git add apps/web/src/core/api.ts apps/web/src/core/wasm-core.ts apps/web/src/core/fake-core.ts apps/web/src/core/wasm-core.contract.test.ts apps/web/src/core/fake-core.test.ts apps/web/src/engine/render/grid-paint.ts apps/web/src/engine/render/grid-paint.test.ts apps/web/src/engine/render/canvas2d.test.ts apps/web/src/engine/tools/select.test.ts apps/web/src/engine/tools/shape.test.ts
+git add apps/web/src/core/api.ts apps/web/src/core/wasm-core.ts apps/web/src/core/fake-core.ts apps/web/src/core/wasm-core.contract.test.ts apps/web/src/core/fake-core.test.ts apps/web/src/engine/render/grid-paint.ts apps/web/src/engine/render/grid-paint.test.ts apps/web/src/engine/render/canvas2d.test.ts apps/web/src/engine/tools/select.test.ts apps/web/src/engine/tools/shape.test.ts apps/web/src/engine/tools/pen.test.ts
 git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(web): grid lineWidth and gridLinesOf on both bindings, painted per level" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
@@ -1752,7 +1935,8 @@ git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com 
 **Objectif.** Le brouillon de la séance est un module de fonctions pures (`GridDraft → GridDraft`) : seul le premier niveau
 est réglé (type, pas, couleur, épaisseur) avec le magnétisme de tête ; le reste de la grille est recopié tel quel. Le
 panneau SolidJS `GridPanel` montre ces réglages, appelle `preview` à chaque saisie, `apply` une fois sur « Appliquer »,
-`cancel` sur « Annuler », et `endPreview` à son démontage quel que soit le chemin. Cadrage : E4, E5, E6, E9, HE9 ;
+`cancel` sur « Fermer sans appliquer » (CR9), et `endPreview` à son démontage quel que soit le chemin ; un refus du cœur
+(`apply` rend son message) reste affiché dans le panneau, ouvert (CR6). Cadrage : E4, E5, E6, E9, HE9, CR5, CR6, CR9 ;
 scénario S2.
 
 **Fichiers.**
@@ -1775,11 +1959,13 @@ scénario S2.
   string>>` ; `GRID_CHOICES: readonly (GridKind | "none")[]` ; `OTHER_KIND_LABEL` ; `NEW_GRID_COLOR = "#94a3b8"` ;
   `GRID_LINE_WIDTHS` ; `MIN_GRID_SPACING = 4` ; `MAX_GRID_SPACING = 400`.
 - Produit (`apps/web/src/ui/GridPanel.tsx`) : `export interface GridPanelProps { readonly initial: GridView | null;
-  preview(grid: GridView | null): void; endPreview(): void; apply(grid: GridView | null): void; cancel(): void }` ;
+  preview(grid: GridView | null): void; endPreview(): void; apply(grid: GridView | null): string | null; cancel(): void }`
+  (`apply` rend le message du refus, ou `null` si la grille est écrite) ;
   `export function GridPanel(props: GridPanelProps): JSX.Element` ; DOM : `<div id="grille" class="rb-editor"
   role="group" aria-label="Grille de la page">`, `select[data-grille="kind"]`, `input[type="number"][data-grille="spacing"]`,
   `input[type="color"][data-grille="color"]`, `select[data-grille="lineWidth"]`, `input[type="checkbox"][data-grille="snap"]`,
-  `button[data-grille="apply"]` « Appliquer », `button[data-grille="cancel"]` « Annuler ».
+  `button[data-grille="apply"]` « Appliquer », `button[data-grille="cancel"]` « Fermer sans appliquer »,
+  `p[data-grille="error"][role="alert"]` (présent seulement après un refus).
 - Produit (`ui/ProfileEditor.tsx`) : `export const syncValue: (el: HTMLSelectElement, value: () => string) => void`.
 - Réutilise : patron `apps/web/src/profile-edit.ts` (fonctions pures testées seules, utilisées par `ProfileEditor`) —
   **nouveau module** `apps/web/src/grid-edit.ts` : `type GridChoice = GridKind | "none" | "other"` ; `GridDraft` ;
@@ -2085,7 +2271,7 @@ const grid = (levels: GridLevel[], over: Partial<GridView> = {}): GridView => ({
 function setup(initial: GridView | null = null) {
   const preview = vi.fn<(g: GridView | null) => void>();
   const endPreview = vi.fn<() => void>();
-  const apply = vi.fn<(g: GridView | null) => void>();
+  const apply = vi.fn<(g: GridView | null) => string | null>(() => null);
   const cancel = vi.fn<() => void>();
   const r = render(() => <GridPanel initial={initial} preview={preview} endPreview={endPreview} apply={apply} cancel={cancel} />);
   const q = <T extends Element>(k: string): T => {
@@ -2118,7 +2304,7 @@ describe("GridPanel (C9 éditeur, E9)", () => {
     expect(q<HTMLSelectElement>("kind").value).toBe("none");
     expect([...q<HTMLSelectElement>("lineWidth").options].map((o) => o.value)).toEqual(["1", "2", "3", "4"]);
     for (const k of ["spacing", "color", "lineWidth", "snap"]) expect(q<HTMLInputElement>(k).disabled, k).toBe(true);
-    expect([q("apply").textContent, q("cancel").textContent]).toEqual(["Appliquer", "Annuler"]);
+    expect([q("apply").textContent, q("cancel").textContent]).toEqual(["Appliquer", "Fermer sans appliquer"]);
   });
 
   it("S2 : Seyès → preview(seyes 30,24, #94a3b8, lineWidth 1) ; chaque réglage = un preview ; apply jamais appelé", () => {
@@ -2136,7 +2322,7 @@ describe("GridPanel (C9 éditeur, E9)", () => {
     expect(apply).not.toHaveBeenCalled();
   });
 
-  it("S2 : Appliquer → apply une fois avec la grille finale ; Annuler → cancel, apply jamais", () => {
+  it("S2 : Appliquer → apply une fois avec la grille finale ; Fermer sans appliquer → cancel, apply jamais", () => {
     const a = setup();
     choose(a.q("kind"), "squares");
     typeIn(a.q("spacing"), "80");
@@ -2187,6 +2373,19 @@ describe("GridPanel (C9 éditeur, E9)", () => {
     expect(apply).toHaveBeenCalledWith(null);
   });
 
+  it("CR6 : refus du cœur : panneau ouvert, message affiché ; accepté : aucun message", () => {
+    const { q, apply, container } = setup();
+    choose(q("kind"), "squares");
+    expect(container.querySelector('[data-grille="error"]')).toBeNull();
+    apply.mockReturnValueOnce("grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)");
+    fireEvent.click(q("apply"));
+    const err = container.querySelector('[data-grille="error"]');
+    expect([err?.getAttribute("role"), err?.textContent]).toEqual(["alert", "grille invalide (pas finis > 0, origine finie, type, couleur et trait non vides, au plus 16 niveaux)"]);
+    expect(container.querySelector("#grille")).not.toBeNull();
+    fireEvent.click(q("apply"));
+    expect(container.querySelector('[data-grille="error"]')).toBeNull();
+  });
+
   it("HE9, Review Focus 4 : pas saisi hors bornes : aperçu borné, champ ramené à la borne à la validation ; vide : aucun aperçu", () => {
     const { q, preview } = setup(grid([level("squares", 40)]));
     const spacing = q<HTMLInputElement>("spacing");
@@ -2212,8 +2411,9 @@ describe("GridPanel (C9 éditeur, E9)", () => {
 /**
  * Panneau de la grille (C9 éditeur, E8, E9) : règle le premier niveau de la grille de la page montrée sur un brouillon
  * (`grid-edit.ts`) ; chaque saisie appelle `preview` (aperçu direct, rien n'est écrit). « Appliquer » rend la grille finale
- * (un seul `SetGrid` chez l'appelant) ; « Annuler » abandonne. `endPreview` est appelé au démontage, quel que soit le
- * chemin (Appliquer, Annuler, second clic sur « Grille », autre panneau, page, onglet ou version changés).
+ * (un seul `SetGrid` chez l'appelant) ; un refus revient en message, montré dans le panneau resté ouvert (CR6).
+ * « Fermer sans appliquer » abandonne (CR9). `endPreview` est appelé au démontage, quel que soit le chemin (Appliquer,
+ * Fermer sans appliquer, second clic sur « Grille », autre panneau, page, onglet ou version changés).
  */
 import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import type { GridKind, GridView } from "../core/api";
@@ -2242,7 +2442,8 @@ export interface GridPanelProps {
   readonly initial: GridView | null;
   preview(grid: GridView | null): void;
   endPreview(): void;
-  apply(grid: GridView | null): void;
+  /** Écrit la grille ; rend le message du refus du cœur, ou null si elle est écrite. */
+  apply(grid: GridView | null): string | null;
   cancel(): void;
 }
 
@@ -2258,6 +2459,8 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
     props.preview(toGrid(next));
   };
   const off = (): boolean => draft().kind === "none" || draft().kind === "other";
+  /** Dernier refus du cœur à « Appliquer » (CR6) ; effacé par l'essai suivant. */
+  const [error, setError] = createSignal<string | null>(null);
   return (
     <div id="grille" class="rb-editor" role="group" aria-label="Grille de la page">
       <label>
@@ -2327,13 +2530,20 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
         Magnétisme
       </label>
       <div class="rb-editor-actions">
-        <button type="button" data-grille="apply" onClick={() => props.apply(toGrid(draft()))}>
+        <button type="button" data-grille="apply" onClick={() => setError(props.apply(toGrid(draft())))}>
           Appliquer
         </button>
         <button type="button" data-grille="cancel" onClick={() => props.cancel()}>
-          Annuler
+          Fermer sans appliquer
         </button>
       </div>
+      <Show when={error()}>
+        {(m) => (
+          <p data-grille="error" role="alert">
+            {m()}
+          </p>
+        )}
+      </Show>
     </div>
   );
 }
@@ -2357,9 +2567,11 @@ git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com 
 placée dans le groupe `vue` des profils `defaut` et `annotation` avant « Profil » (pas dans `simple`). `App` montre
 `GridPanel` dans le même `rb-popover` que les réglages, lié à l'onglet ouvert à l'ouverture : aperçu par
 `engine.previewGrid`, « Appliquer » = un seul `engine.run({ type: "SetGrid", … })` puis fin de l'aperçu et fermeture
-(refus : message dans `#etat`, panneau ouvert) ; « Annuler », second clic, autre panneau, page, onglet ou version
+(refus : message dans `#etat` et dans le panneau, resté ouvert, CR6) ; « Fermer sans appliquer », second clic, autre
+panneau, page, onglet ou version
 changés : fermé, brouillon perdu, rien d'écrit. L'annulation existante (bouton « Annuler », Ctrl+Z) défait la séance en
-une étape. Cadrage : E7, E8 ; scénarios S2, S1 ; effets de bord 5 et 6.
+une étape. Le moteur de la séance est figé à l'ouverture du panneau : la fin de l'aperçu vise toujours l'onglet de
+départ (CR3). Cadrage : E7, E8, CR3, CR6 ; scénarios S2, S1 ; effets de bord 5 et 6.
 
 **Fichiers.**
 - Modifier : `apps/web/src/ui/App.tsx` (`:1-8` en-tête et imports, `:46`, après `:113` bloc séance, après `:245` bloc
@@ -2369,6 +2581,7 @@ une étape. Cadrage : E7, E8 ; scénarios S2, S1 ; effets de bord 5 et 6.
   `apps/web/src/toolbar-profiles.test.ts`.
 
 **Interfaces.**
+- Consomme (T4, CR6) : `GridPanelProps.apply(grid: GridView | null): string | null`.
 - Consomme (T3) : `Engine.previewGrid(grid: GridView | null): void`, `Engine.endGridPreview(): void`,
   `Engine.run(cmd: Command): Change | null`, `Engine.state().page`, `.version`. Consomme (T4) : `GridPanel(props:
   GridPanelProps)` avec `initial`, `preview`, `endPreview`, `apply`, `cancel`. Consomme (T1) : `PageView.grid` avec
@@ -2511,15 +2724,33 @@ describe("App — grille (C9 éditeur, E7, E8)", () => {
     expect(panelOf(container)).toBeNull();
   });
 
-  it("E8 : Appliquer refusé par le cœur : panneau ouvert, aperçu gardé", () => {
+  it("E8, CR6 : Appliquer refusé par le cœur : panneau ouvert, message affiché, aperçu gardé", () => {
     const { container, tab } = renderApp();
     tab.engine.run!.mockReturnValueOnce(null);
     click(container.querySelector(GRID));
     chooseKind(container, "squares");
+    tab.emit({ error: "grille invalide" });
     click(container.querySelector('#grille [data-grille="apply"]'));
     expect(tab.engine.run).toHaveBeenCalledTimes(1);
     expect(panelOf(container)).not.toBeNull();
+    expect(container.querySelector('#grille [data-grille="error"]')?.textContent).toBe("grille invalide");
     expect(tab.engine.endGridPreview).not.toHaveBeenCalled();
+  });
+
+  it("CR3 : aperçu, autre onglet, retour : aucune grille (aperçu coupé sur le moteur de départ, jamais rouvert)", () => {
+    const { container, workspace, tab } = renderApp();
+    click(container.querySelector(GRID));
+    chooseKind(container, "squares");
+    const second = fakeTab("B.roomboard");
+    workspace.tabs.add("board", second.session, true);
+    workspace.tabs.activate(workspace.tabs.list()[0]!.id);
+    expect(panelOf(container)).toBeNull();
+    expect(tab.engine.previewGrid).toHaveBeenCalledTimes(1);
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
+    expect(tab.engine.endGridPreview!.mock.invocationCallOrder[0]!).toBeGreaterThan(tab.engine.previewGrid!.mock.invocationCallOrder[0]!);
+    expect(second.engine.previewGrid).not.toHaveBeenCalled();
+    expect(second.engine.endGridPreview).not.toHaveBeenCalled();
+    expect(tab.engine.run).not.toHaveBeenCalled();
   });
 
   it("E8 : page ou version qui change pendant la séance : panneau fermé, rien d'écrit ; une erreur seule ne ferme pas", () => {
@@ -2568,17 +2799,21 @@ describe("App — grille (C9 éditeur, E7, E8)", () => {
   `type Panel = "settings" | "profiles" | "editor" | "grid";`. Après la définition de `board` :
 
 ```tsx
-  /** Séance de la grille (E8) : liée à l'onglet ouvert à son ouverture ; le démontage de `GridPanel` coupe l'aperçu. */
+  /** Séance de la grille (E8, CR3) : moteur `b` figé à l'ouverture (jamais `ws.active()` au rappel : chaque onglet a son
+   *  moteur) ; le démontage de `GridPanel` coupe l'aperçu sur ce moteur-là. */
   const gridPanelFor = (b: BoardSession): JSX.Element => (
     <GridPanel
       initial={b.doc.page(b.engine.state().page)?.grid ?? null}
       preview={(g) => b.engine.previewGrid(g)}
       endPreview={() => b.engine.endGridPreview()}
       apply={(grid) => {
-        // Refus du cœur : message dans #etat (state().error), panneau ouvert, aperçu gardé (PC1).
-        if (b.engine.run({ type: "SetGrid", page: b.engine.state().page, grid }) === null) return;
+        // Refus du cœur : message dans #etat et rendu au panneau, resté ouvert, aperçu gardé (PC1, CR6).
+        if (b.engine.run({ type: "SetGrid", page: b.engine.state().page, grid }) === null) {
+          return b.engine.state().error ?? "grille refusée";
+        }
         b.engine.endGridPreview();
         setPanel(null);
+        return null;
       }}
       cancel={() => setPanel(null)}
     />
@@ -2622,7 +2857,8 @@ git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com 
 ### Tâche T6 — Geste Playwright dans `verifier.sh --e2e`, capture de l'éditeur
 
 **Objectif.** Un essai au navigateur joue S1 sur l'application construite : ouvrir le panneau, choisir Carreaux puis pas
-80 et épaisseur 3 et voir la page changer avant « Appliquer » sans écriture, « Annuler », rouvrir et « Appliquer » (une
+80 et épaisseur 3 et voir la page changer avant « Appliquer » sans écriture, « Fermer sans appliquer », aperçu puis
+autre onglet puis retour sans grille (CR3), rouvrir et « Appliquer » (une
 étape), défaire et refaire par la barre, enregistrer puis rouvrir le fichier dans un nouvel onglet et relire les réglages.
 L'essai entre dans le bloc `--e2e` de `scripts/verifier.sh` et dans la liste de `verifier-e2e.test.sh` ; `--captures`
 écrit `docs/essais/c9-editeur-grille.png` (panneau ouvert, Seyès en aperçu). Cadrage : E10 ; scénarios S1, S5 ; effet de
@@ -2790,7 +3026,7 @@ async function scenario(page, url, { captures, tmp }) {
   const v0 = await version();
   check((await painted()) === 0, "avant : aucun pixel peint dans la zone vide de la scène");
 
-  // Séance 1 : aperçu direct, puis « Annuler ».
+  // Séance 1 : aperçu direct, puis « Fermer sans appliquer ».
   await openPanel();
   check((await page.inputValue(field("kind"))) === "none", "« Grille » : #grille visible, type « Aucune »");
   await page.selectOption(field("kind"), "squares");
@@ -2805,8 +3041,22 @@ async function scenario(page, url, { captures, tmp }) {
   check(n2 > 0 && n2 !== n1, `pas 80, épaisseur 3 : la page change (${n1} → ${n2} pixels)`);
   await page.click(field("cancel"));
   await settle();
-  check(!(await panelOpen()), "« Annuler » : panneau fermé");
-  check((await painted()) === 0 && (await version()) === v0, "« Annuler » : zone vide, data-version inchangé");
+  check(!(await panelOpen()), "« Fermer sans appliquer » : panneau fermé");
+  check((await painted()) === 0 && (await version()) === v0, "« Fermer sans appliquer » : zone vide, data-version inchangé");
+
+  // CR3 : aperçu, autre onglet, retour : aucune grille.
+  await openPanel();
+  await page.selectOption(field("kind"), "squares");
+  await settle();
+  check((await painted()) > 0, "CR3 : aperçu posé sur le premier onglet");
+  const t0 = await tabs();
+  await blur();
+  await page.keyboard.press("Control+n");
+  await waitTabs(t0 + 1);
+  check(!(await panelOpen()), "CR3 : autre onglet : panneau fermé");
+  await page.locator(TAB).nth(0).click();
+  await settle();
+  check((await painted()) === 0 && (await version()) === v0, "CR3 : aperçu, autre onglet, retour : aucune grille, rien d'écrit");
 
   // Séance 2 : « Appliquer », une seule étape.
   await openPanel();
@@ -2852,7 +3102,7 @@ async function scenario(page, url, { captures, tmp }) {
   }
   await page.click(field("cancel"));
   await settle();
-  check(!(await panelOpen()) && (await version()) === vR, "rouvert, « Annuler » : rien d'écrit");
+  check(!(await panelOpen()) && (await version()) === vR, "rouvert, « Fermer sans appliquer » : rien d'écrit");
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
 
