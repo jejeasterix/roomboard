@@ -15,6 +15,11 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
 }
 
 describe("ToolbarHost local", () => {
+  it('imagePanel → toggle("image") (C5, I25)', () => {
+    const { host, t } = setup();
+    host.imagePanel();
+    expect(t.toggle).toHaveBeenCalledWith("image");
+  });
   it('setTool("rect") → engine.setTool("rect")', () => {
     const { host, engine } = setup();
     host.setTool("rect");

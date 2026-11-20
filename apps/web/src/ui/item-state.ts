@@ -22,6 +22,8 @@ export interface ToolbarView {
   readonly selectionGrouped?: boolean;
   /** C3 (Z13) : le presse-papiers interne porte quelque chose à coller ; absent : non. */
   readonly canPaste?: boolean;
+  /** C5 (I25) : id de l'image sélectionnée seule ; absent ou null : aucune (bouton « Image » grisé). */
+  readonly selectionImage?: string | null;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 
