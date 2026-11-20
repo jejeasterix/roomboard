@@ -364,7 +364,8 @@ export class Canvas2DRenderer implements Renderer {
     return lines;
   }
 
-  /** Lignes de chaque cellule au texte non vide (B1) : `layoutRich` des segments de la cellule (C7b, R17). */
+  /** Lignes de chaque cellule au texte non vide (B1) : `layoutRich` des segments de la cellule (C7b, R17) ; la clé suit
+   *  la largeur de chaque boîte, donc la largeur réunie d'une zone fusionnée (C10b). */
   private cellLinesOf(ctx: CanvasRenderingContext2D, id: string, t: TableData, boxes: readonly CellTextBox[]): readonly (readonly RichLine[])[] {
     const key = `${t.size}|${JSON.stringify(boxes.map((b) => [b.w, b.spans]))}`;
     const cached = this.cellLines.get(id);

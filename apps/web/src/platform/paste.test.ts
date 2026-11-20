@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
 import { toEnvelope } from "./clipboard";
-import { handlePaste, isEditable, pastedFiles, pastedItems } from "./paste";
+import type { DroppedFile } from "./files";
+import { handlePaste, isEditable, pastedFiles, pastedItems, pastedTableHtml } from "./paste";
 
 const files = (...f: File[]) => ({ files: f });
 const png = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
@@ -33,6 +34,7 @@ describe("collage (R19)", () => {
 const withText = (text: string, ...f: File[]) => ({ files: f, getData: (t: string) => (t === "text/plain" ? text : "") });
 const sinkOf = () => ({
   pasteItems: vi.fn(async (_i: Uint8Array | "newer" | "too-big") => true),
+  pasteTable: vi.fn(async (_html: string) => true),
   importFiles: vi.fn(async () => undefined),
 });
 
@@ -64,5 +66,100 @@ describe("collage des objets (Z9)", () => {
     const sink = sinkOf();
     await handlePaste({ target: document.body, clipboardData: files(png) }, sink);
     expect(sink.importFiles).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("collage : objets RoomBoard avant tableau HTML (fusion C3 + C10b)", () => {
+  it("enveloppe en text/plain + <table> en text/html + image : les objets seuls", async () => {
+    const sink = sinkOf();
+    const both = {
+      files: [png],
+      getData: (t: string) =>
+        t === "text/plain" ? toEnvelope(new Uint8Array([7])) : t === "text/html" ? "<table><tr><td>a</td></tr></table>" : "",
+    };
+    await handlePaste({ target: document.body, clipboardData: both }, sink);
+    expect(sink.pasteItems).toHaveBeenCalledWith(new Uint8Array([7]));
+    expect(sink.pasteTable).not.toHaveBeenCalled();
+    expect(sink.importFiles).not.toHaveBeenCalled();
+  });
+  it("texte ordinaire (cellules d'Excel) + <table> : le tableau, pas d'objet", async () => {
+    const sink = sinkOf();
+    const excel = {
+      files: [],
+      getData: (t: string) => (t === "text/plain" ? "a\tb" : t === "text/html" ? "<table><tr><td>a</td><td>b</td></tr></table>" : ""),
+    };
+    await handlePaste({ target: document.body, clipboardData: excel }, sink);
+    expect(sink.pasteItems).not.toHaveBeenCalled();
+    expect(sink.pasteTable).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("collage d'un tableau HTML (F19)", () => {
+  const data = (html: string, f: File[] = []) => ({ files: f, getData: (t: string) => (t === "text/html" ? html : "") });
+  it("HTML avec <table> : rendu tel quel ; sans tableau, sans HTML ou sans presse-papiers : null", () => {
+    const html = "<TABLE><tr><td>a</td></tr></TABLE>";
+    expect(pastedTableHtml({ target: document.body, clipboardData: data(html) })).toBe(html);
+    expect(pastedTableHtml({ target: document.body, clipboardData: data("<p>a</p><tablex>") })).toBeNull();
+    expect(pastedTableHtml({ target: document.body, clipboardData: { files: [] } })).toBeNull();
+    expect(pastedTableHtml({ target: document.body, clipboardData: null })).toBeNull();
+  });
+  it("cible éditable : null (collage normal dans la zone de texte)", () => {
+    const area = document.createElement("textarea");
+    expect(pastedTableHtml({ target: area, clipboardData: data("<table><tr><td>a</td></tr></table>") })).toBeNull();
+  });
+  it("effet de bord : le tableau passe avant l'image jointe ; une image seule se colle comme avant", () => {
+    const png = new File([new Uint8Array([1])], "x.png", { type: "image/png" });
+    const both = { target: document.body, clipboardData: data("<table><tr><td>a</td></tr></table>", [png]) };
+    expect(pastedTableHtml(both)).not.toBeNull();
+    expect(pastedFiles(both)).toHaveLength(1);
+    const only = { target: document.body, clipboardData: data("", [png]) };
+    expect(pastedTableHtml(only)).toBeNull();
+    expect(pastedFiles(only)).toHaveLength(1);
+  });
+});
+
+describe("écouteur de collage : tableau avant images (F19, PC9, constat T13)", () => {
+  const TABLE = "<table><tr><td>a</td></tr></table>";
+  const event = (html: string | null, ...f: File[]) => ({
+    target: document.body,
+    clipboardData: { files: f, getData: (t: string) => (t === "text/html" && html !== null ? html : "") },
+  });
+  const sink = (tableDone: boolean) => {
+    const calls: string[] = [];
+    return {
+      calls,
+      pasteItems: async () => {
+        calls.push("objets");
+        return true;
+      },
+      pasteTable: async (html: string) => {
+        calls.push(`tableau:${html}`);
+        return tableDone;
+      },
+      importFiles: async (files: readonly DroppedFile[]) => {
+        calls.push(`images:${files.map((x) => x.name).join(",")}`);
+      },
+    };
+  };
+
+  it("tableau + image : le tableau seul (F19, HB-9)", async () => {
+    const s = sink(true);
+    await handlePaste(event(TABLE, png), s);
+    expect(s.calls).toEqual([`tableau:${TABLE}`]);
+  });
+
+  it("HTML illisible (pasteTable rend false) + image : repli vers l'image (PC9)", async () => {
+    const s = sink(false);
+    await handlePaste(event(TABLE, png), s);
+    expect(s.calls).toEqual([`tableau:${TABLE}`, "images:a.png"]);
+  });
+
+  it("image seule : l'image ; ni tableau ni image : collage non pris (null)", async () => {
+    const s = sink(true);
+    await handlePaste(event(null, png), s);
+    expect(s.calls).toEqual(["images:a.png"]);
+    expect(handlePaste(event(null, txt), s)).toBeNull();
+    expect(handlePaste(event("<p>x</p>"), s)).toBeNull();
+    expect(s.calls).toHaveLength(1);
   });
 });

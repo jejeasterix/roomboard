@@ -569,7 +569,7 @@ describe("fakeCore — C10a (tableau)", () => {
     const v = load([{ id: "c:1", width: 240 }, { id: "c2", width: 100 }]).element("t1");
     if (v?.kind !== "table") throw new Error(`tableau attendu : ${v?.kind ?? "absent"}`);
     expect(v.table.cols).toEqual([{ id: "c2", width: 100 }]);
-    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null, spans: [{ text: "B", attrs: {} }] }]);
+    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null, shade: null, spans: [{ text: "B", attrs: {} }] }]);
     expect(load([{ id: "c:1", width: 240 }]).element("t1")?.kind).toBe("unknown");
   });
 
@@ -582,6 +582,86 @@ describe("fakeCore — C10a (tableau)", () => {
     const again = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0"));
     expect(again.element("t1")).toEqual(d.element("t1"));
     expect(saveJson(again)).toEqual(saveJson(d));
+  });
+});
+
+describe("fakeCore — C10b (tableau)", () => {
+  const loadJson = (table: unknown) =>
+    fakeCore.load(new TextEncoder().encode(JSON.stringify({ pages: [{ id: "p1", elements: [{ id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0], table }] }] })));
+  const lines = (ids: string[], key: "width" | "height") => ids.map((id) => ({ id, [key]: 100 }));
+
+  it("JSON : span recoupant ou sans ligne : ignoré, gardé à l'enregistrement (F2, S5)", () => {
+    const span = (r: string, c: string) => ({ text: "", fill: null, span: [r, c] });
+    const d = loadJson({
+      cols: lines(["c1", "c2", "c3"], "width"), rows: lines(["r1", "r2", "r3"], "height"),
+      cells: { "r1:c1": { text: "A", fill: null, span: ["r2", "c2"] }, "r1:c2": span("r3", "c3"), "r2:c3": span("r9", "c3"), "r3:c2": span("r2", "c1"), "r3:c3": span("r3", "c3") },
+    });
+    const v = d.element("t1");
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(v.table.merges).toEqual([{ row: "r1", col: "c1", rows: 2, cols: 2 }]);
+    const back = fakeCore.load(d.save("2026-11-20T00:00:00Z", "0.1.0")).element("t1");
+    expect(back).toEqual(v);
+    // Constat T13 : les span ignorés restent tels quels dans le JSON ré-enregistré.
+    type Saved = { pages: { elements: { table?: { cells?: Record<string, { span?: unknown }> } }[] }[] };
+    const saved = JSON.parse(new TextDecoder().decode(d.save("2026-11-20T00:00:00Z", "0.1.0"))) as Saved;
+    const cells = saved.pages[0]?.elements[0]?.table?.cells;
+    expect(cells?.["r1:c2"]?.span).toEqual(["r3", "c3"]);
+    expect(cells?.["r2:c3"]?.span).toEqual(["r9", "c3"]);
+  });
+
+  it("JSON : shade lu, invalide retiré (PC13) ; une cellule seulement ombrée est listée", () => {
+    const d = loadJson({
+      cols: lines(["c1", "c2"], "width"), rows: lines(["r1"], "height"),
+      cells: { "r1:c1": { text: "", fill: null, shade: "#94a3b8" }, "r1:c2": { text: "B", fill: null, shade: true } },
+    });
+    const v = d.element("t1");
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(v.table.cells).toEqual([
+      { row: "r1", col: "c1", text: "", fill: null, shade: "#94a3b8", spans: [{ text: "", attrs: {} }] },
+      { row: "r1", col: "c2", text: "B", fill: null, shade: null, spans: [{ text: "B", attrs: {} }] },
+    ]);
+  });
+});
+
+describe("fakeCore — ImportTable (constat T13, mêmes cas que table.rs)", () => {
+  type Imp = Extract<Command, { type: "ImportTable" }>;
+  const imp = (d: CoreDocument, over: Partial<Imp> = {}): Imp => ({
+    type: "ImportTable", page: firstPage(d), matrix: [1, 0, 0, 1, 0, 0], colWidth: 240, rowHeights: [64, 64], cols: 2,
+    cells: ["", "", "", ""], merges: [], color: "#000000", size: 36, ...over,
+  });
+  const refusal = (f: () => unknown): string => {
+    try {
+      f();
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+    return "aucun refus";
+  };
+
+  it("F18 : ancre de zone vide : la fusion est dans la vue", () => {
+    const d = fakeCore.blank();
+    const id = d.apply(imp(d, { cells: ["", "caché", "a", "b"], merges: [[0, 0, 1, 2]] })).ids[0] ?? "";
+    const v = d.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    expect(v.table.merges).toEqual([{ row: v.table.rows[0]?.id, col: v.table.cols[0]?.id, rows: 1, cols: 2 }]);
+  });
+
+  it("F18 : taille non positive, translation NaN, matrice hors f32 (1e39), boîte hors f32 : refus BadTable, rien d'écrit", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const badTable = refusal(() => d.apply(imp(d, { cells: ["", ""] })));
+    expect(badTable).not.toBe("aucun refus");
+    const cases: [string, Partial<Imp>][] = [
+      ["taille nulle", { size: 0 }],
+      ["taille négative", { size: -1 }],
+      ["translation NaN", { matrix: [1, 0, 0, 1, Number.NaN, 0] }],
+      ["matrice hors f32", { matrix: [1e39, 0, 0, 1, 0, 0] }],
+      ["largeur hors f32", { colWidth: 2e38 }],
+      ["hauteur hors f32", { rowHeights: [2e38, 2e38] }],
+    ];
+    for (const [what, over] of cases) expect(refusal(() => d.apply(imp(d, over))), what).toBe(badTable);
+    expect(d.elementIds(p)).toEqual([]);
+    expect(d.apply(imp(d)).ids).toHaveLength(1);
   });
 });
 

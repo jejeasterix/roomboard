@@ -111,13 +111,22 @@ function toSpans(v: unknown, content: string): TextSpan[] {
 /** Bornes de FormatText et rangs ou dimensions du tableau (C10a) : hors des u32, u32::MAX, que le cœur refuse. */
 const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : 0xffffffff);
 
-/** Vue d'un tableau venue de Wasm (T13) : forme contrôlée ; `fill` absent (Option::None) → null. */
+/** Vue d'un tableau venue de Wasm (T13, F29) : forme contrôlée ; `fill`, `shade` absents (Option::None) → null ; zones
+ *  `{ row, col, rows, cols }` exigées (étendues entières ≥ 1). */
 export function toTable(v: unknown): TableData {
   if (!isRecord(v)) throw new Error(ELEMENT);
-  const { color, size, cols, rows, cells } = v;
-  if (typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells)) {
+  const { color, size, cols, rows, cells, merges } = v;
+  if (
+    typeof color !== "string" || typeof size !== "number" || !Array.isArray(cols) || !Array.isArray(rows) || !Array.isArray(cells) ||
+    !Array.isArray(merges)
+  ) {
     throw new Error(ELEMENT);
   }
+  const optString = (x: unknown): string | null => {
+    if (x !== undefined && x !== null && typeof x !== "string") throw new Error(ELEMENT);
+    return typeof x === "string" ? x : null;
+  };
+  const extent = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 1;
   return {
     color,
     size,
@@ -135,10 +144,15 @@ export function toTable(v: unknown): TableData {
     }),
     cells: cells.map((c: unknown) => {
       if (!isRecord(c)) throw new Error(ELEMENT);
-      const { row, col, text, fill, spans } = c;
+      const { row, col, text, fill, shade, spans } = c;
       if (typeof row !== "string" || typeof col !== "string" || typeof text !== "string") throw new Error(ELEMENT);
-      if (fill !== undefined && fill !== null && typeof fill !== "string") throw new Error(ELEMENT);
-      return { row, col, text, fill: typeof fill === "string" ? fill : null, spans: toSpans(spans, text) };
+      return { row, col, text, fill: optString(fill), shade: optString(shade), spans: toSpans(spans, text) };
+    }),
+    merges: merges.map((m: unknown) => {
+      if (!isRecord(m)) throw new Error(ELEMENT);
+      const { row, col, rows: n, cols: k } = m;
+      if (typeof row !== "string" || typeof col !== "string" || !extent(n) || !extent(k)) throw new Error(ELEMENT);
+      return { row, col, rows: n, cols: k };
     }),
   };
 }
@@ -376,12 +390,32 @@ class WasmCoreDocument implements CoreDocument {
       case "InsertTableLine":
         return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
       case "RemoveTableLine":
-        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line));
+        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line, cmd.to));
       case "SetTableSizes":
         return toChange(this.d.set_table_sizes(cmd.id, cmd.colWidth, cmd.rowHeight));
       case "SetTableFill":
         // null → undefined : Option::None côté Rust.
-        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined));
+        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined, cmd.to?.row, cmd.to?.col));
+      case "MergeTableCells":
+        return toChange(this.d.merge_table_cells(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col));
+      case "SplitTableCell":
+        return toChange(this.d.split_table_cell(cmd.id, cmd.row, cmd.col));
+      case "SetTableShade":
+        return toChange(this.d.set_table_shade(cmd.id, cmd.from.row, cmd.from.col, cmd.to.row, cmd.to.col, cmd.shade ?? undefined));
+      case "ImportTable":
+        return toChange(
+          this.d.import_table(
+            cmd.page,
+            new Float64Array(cmd.matrix),
+            cmd.colWidth,
+            new Float64Array(cmd.rowHeights),
+            toU32(cmd.cols),
+            [...cmd.cells],
+            Uint32Array.from(cmd.merges.flat(), toU32),
+            cmd.color,
+            cmd.size,
+          ),
+        );
     }
   }
 

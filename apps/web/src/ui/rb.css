@@ -86,3 +86,7 @@
 .rb-format[data-format="bold"] { font-weight: 700; }
 .rb-format[data-format="italic"] { font-style: italic; }
 .rb-format[data-format="underline"] { text-decoration: underline; }
+/* Boutons contextuels resserrés (rangées Tableau et Format) : outil Tableau actif, les deux rangées tiennent avec la
+   barre de base sur trois lignes et la scène garde 640 px en 1280 × 900 (HC10-15). Hauteur et largeur minimales inchangées. */
+.rb-bar [data-table-action], .rb-bar [data-table-fill], .rb-bar .rb-format { padding: 0 calc(var(--rb-pad) / 2); }
+.rb-bar [data-table-fill], .rb-bar .rb-format.rb-preset { gap: calc(var(--rb-gap) / 2); }

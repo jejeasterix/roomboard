@@ -16,7 +16,8 @@ import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
 import { launchFiles, loadTauriPorts, onQuitRequested, quitApp, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
-import { pastedFiles } from "./platform/paste";
+import { handlePaste } from "./platform/paste";
+import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
 import { browserKeyValue, createProfileStore } from "./profile-store";
@@ -76,6 +77,20 @@ async function start(): Promise<void> {
   for (const w of store.warnings()) console.warn(w);
   const active = createActiveProfile(store, runtimeCapabilities(wasm.capabilities(detectPlatform(env)), env));
   let tabCount = 0;
+  // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
+  const spawnSheetWorker = (): WorkerLike => {
+    const w = new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" });
+    const like: WorkerLike = {
+      onmessage: null,
+      onerror: null,
+      postMessage: (m, transfer) => w.postMessage(m, transfer),
+      terminate: () => w.terminate(),
+    };
+    w.onmessage = (e) => like.onmessage?.(e);
+    w.onerror = (e) => like.onerror?.(e);
+    return like;
+  };
+  const sheets = createSheetReader(spawnSheetWorker);
   const workspace = await createWorkspace({
     core,
     host: prepared.host,
@@ -83,6 +98,7 @@ async function start(): Promise<void> {
     shell: prepared.shell,
     // Conteneur avec images (R7) : second module chargé au premier Ouvrir ou au premier enregistrement avec image.
     codec: createPageCodec(loadFormatsModule),
+    readSheet: (b) => sheets.read(b),
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),
@@ -105,12 +121,13 @@ async function start(): Promise<void> {
     if (workspace.active().board.engine.keyUp(keyOf(e))) e.preventDefault();
   });
   window.addEventListener("blur", () => workspace.active().board.engine.releaseKeys());
-  // Collage (R19) : fichiers image du presse-papiers vers l'onglet actif, centre de la vue ; zone de texte : collage normal.
+  // Collage (R19, C10b) : un tableau HTML passe avant les images jointes (F19, HB-9) ; sinon fichiers image vers l'onglet
+  // actif, centre de la vue ; zone de texte : collage normal.
   window.addEventListener("paste", (e) => {
-    const files = pastedFiles(e);
-    if (files.length === 0) return;
+    const done = handlePaste(e, workspace);
+    if (done === null) return;
     e.preventDefault();
-    void workspace.importFiles(files, null).catch((err: unknown) => {
+    void done.catch((err: unknown) => {
       console.warn(`RoomBoard : collage abandonné (${err instanceof Error ? err.message : String(err)})`);
     });
   });

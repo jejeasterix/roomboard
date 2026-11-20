@@ -77,6 +77,14 @@ async function scenario(page, url, { captures, tmp }) {
   await page.click(cell43);
   await waitTable("4x3@0,0");
   check(await editorOpen(), 'S1 : tableau 4 × 3, saisie ouverte sur la première cellule (data-table="4x3@0,0")');
+  // HC10-15 pendant la saisie : rangées Tableau et Format toutes deux utiles, la scène garde 640 px et ne bouge pas
+  // (DAR4). Une rangée Format montrée seulement en saisie passerait le contrôle d'ouverture plus haut et tomberait ici.
+  check(await page.$eval('[data-format="bold"]', (b) => !b.disabled), "S1 : saisie de cellule ouverte, rangée Format active (Gras)");
+  const boxEdit = await stageBox(page);
+  check(
+    boxEdit.height >= 640 && boxEdit.y === box.y,
+    `S1 : en saisie, la scène garde ${Math.round(boxEdit.height)} px de haut, sans bouger (HC10-15, DAR4)`,
+  );
 
   // S1 : trois cellules par Tab.
   await page.keyboard.type(FIRST[0]);

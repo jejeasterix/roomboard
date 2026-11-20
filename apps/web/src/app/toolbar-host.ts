@@ -55,6 +55,10 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "table-row-remove": (t) => t.engine().tableAction("row-remove"),
   "table-col-remove": (t) => t.engine().tableAction("col-remove"),
   "table-uniform": (t) => t.engine().tableAction("uniform"),
+  "table-merge": (t) => t.engine().tableAction("merge"),
+  "table-split": (t) => t.engine().tableAction("split"),
+  "table-shade": (t) => t.engine().tableAction("shade"),
+  "table-unshade": (t) => t.engine().tableAction("unshade"),
 };
 
 export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): ToolbarHost {

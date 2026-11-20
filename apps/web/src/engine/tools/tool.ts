@@ -61,6 +61,8 @@ export interface TableTool extends GestureTool {
   fill(color: string | null): void;
   /** Suppr, saisie fermée : vide la cellule active ; false sans cellule active ou saisie ouverte. */
   clearCell(): boolean;
+  /** Échap, saisie fermée (C10b, PC18) : retire la plage ; false sans plage ou saisie ouverte. */
+  clearRange(): boolean;
   prune(): void;
   /** Tab, Maj+Tab, flèches au bord (DAC3) ; vrai si la touche est prise. */
   navigate(move: NavMove): boolean;

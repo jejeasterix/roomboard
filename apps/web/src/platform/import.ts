@@ -3,10 +3,14 @@
  * lancement passent par `importFiles`. Registre par nature : `roomboard` (document, reconnu par l'extension) ouvre un
  * nouvel onglet (R2) ; `rbitem` (objet, nom + en-tête ZIP) s'insère comme une image ; `image` (objet, reconnue par ses octets) s'insère dans l'onglet actif au début de l'appel (R3).
  * Non reconnu : refusé avec `LATER_FORMAT_MESSAGE`. Hôtes web : 100 Mo au plus par fichier, contrôlé avant lecture (R15).
+ * C10b (F28) : `sheet` (objet, `.xlsx`/`.xlsm` et en-tête ZIP) lit la première feuille dans un Worker jetable et pose un tableau.
  */
 import { messageOf } from "./controller";
 import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
+import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
+import { insertTableGrid } from "./table-insert";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
 /** Limite des hôtes web (R15) ; la coque n'en a pas. */
@@ -34,6 +38,8 @@ export interface ImportDeps {
   readonly maxBytes?: number | null;
   /** Décodeur des images (tests) ; défaut : `decodeImage` du navigateur. */
   readonly decode?: ImageDecoder;
+  /** Lecture d'un classeur dans un Worker jetable (C10b, F28) ; absente : `.xlsx` refusé comme avant. */
+  readSheet?(file: Blob): Promise<TableGrid>;
 }
 
 export interface Importer {
@@ -59,6 +65,9 @@ export interface ImportHandler {
   readonly id: string;
   readonly nature: "document" | "objet";
   detect(head: Uint8Array, name: string): boolean;
+  /** Plafond propre au gestionnaire (F22), contrôlé par `importFiles` sur `f.size` **avant** `f.blob()` (la coque lit
+   *  le fichier en entier) : dépassé, « <nom> : <message> », compté en échec. */
+  readonly limit?: { readonly maxBytes: number; readonly message: string };
   /** Dit lui-même ses messages d'échec. */
   run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
 }
@@ -85,7 +94,8 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
   };
 }
 
-/** En-tête d'un ZIP (`PK\x03\x04`) : un `.rbitem` est un ZIP, reconnu par son nom ET cet en-tête (Z10). */
+/** En-tête d'un ZIP (`PK\x03\x04`) : un `.rbitem` (Z10) comme un `.xlsx` (F28) est un ZIP ; chacun est reconnu par son
+ *  nom ET cet en-tête, le nom seul les départage. */
 export const ZIP_MAGIC: Uint8Array = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
 
 export function isRbitemName(name: string): boolean {
@@ -115,10 +125,47 @@ export function rbitemHandler(): ImportHandler {
   };
 }
 
+/** Plafond d'un classeur (F22), aussi dans la coque où `maxBytes` est nul. */
+export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
+
+export function isSheetName(name: string): boolean {
+  const n = name.toLowerCase();
+  return (n.endsWith(".xlsx") || n.endsWith(".xlsm")) && n.length > 5;
+}
+
+/** Entrée `sheet` du registre (F28) : nom `.xlsx` / `.xlsm` et en-tête ZIP ; une `ImportTable` dans l'onglet actif. */
+export function sheetHandler(deps: { readSheet(file: Blob): Promise<TableGrid> }): ImportHandler {
+  return {
+    id: "sheet",
+    nature: "objet",
+    detect: (head, name) => isSheetName(name) && ZIP_MAGIC.every((b, i) => head[i] === b),
+    limit: { maxBytes: SHEET_MAX_BYTES, message: SHEET_TOO_BIG_MESSAGE },
+    async run(f, ctx) {
+      const target = ctx.target;
+      if (target === null) return "failed";
+      let grid: TableGrid;
+      try {
+        grid = await deps.readSheet(ctx.blob);
+      } catch (e) {
+        const m = messageOf(e);
+        await ctx.notify(m === EMPTY_SHEET_MESSAGE || m === SHEET_TOO_BIG_MESSAGE ? `${f.name} : ${m}` : `Import impossible (${f.name}) : ${m}`);
+        return "failed";
+      }
+      return insertTableGrid(target, grid, ctx.at, ctx.inserted, ctx.notify, f.name);
+    },
+  };
+}
+
 const EMPTY = new Uint8Array(0);
 
 export function createImporter(deps: ImportDeps): Importer {
-  const registry: readonly ImportHandler[] = [roomboardHandler(deps), rbitemHandler(), imageHandler(deps.decode ? { decode: deps.decode } : {})];
+  const readSheet = deps.readSheet;
+  const registry: readonly ImportHandler[] = [
+    roomboardHandler(deps),
+    rbitemHandler(),
+    imageHandler(deps.decode ? { decode: deps.decode } : {}),
+    ...(readSheet ? [sheetHandler({ readSheet })] : []),
+  ];
   return {
     async importFiles(files, at = null) {
       const opened: string[] = [];
@@ -155,6 +202,12 @@ export function createImporter(deps: ImportDeps): Importer {
         const handler = registry.find((h) => h.detect(head, f.name));
         if (handler === undefined) {
           refused.push(f.name);
+          continue;
+        }
+        // F22 : plafond du gestionnaire avant toute lecture du fichier (un `.xlsx` de 2 Go n'est jamais lu).
+        if (handler.limit !== undefined && f.size > handler.limit.maxBytes) {
+          failed.push(f.name);
+          await deps.notify(`${f.name} : ${handler.limit.message}`);
           continue;
         }
         let blob: Blob;

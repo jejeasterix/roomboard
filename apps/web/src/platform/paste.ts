@@ -1,4 +1,5 @@
-/** Collage (R19, C3) : objets RoomBoard (enveloppe en `text/plain`, Z9) d'abord, puis fichiers `image/*` ; ignoré quand
+/** Collage (R19, C3, C10b) : objets RoomBoard (enveloppe en `text/plain`, Z9) d'abord ; puis HTML qui porte un `<table>`
+ *  (F19), qui passe avant les images jointes (Excel joint aussi une image, HB-9) ; puis fichiers `image/*` ; ignoré quand
  *  la cible est éditable ; texte ordinaire ignoré. */
 import { fromEnvelope, type ItemsRefusal } from "./clipboard";
 import { droppedFromFile } from "./drop-web";
@@ -11,6 +12,7 @@ export interface PasteEventLike {
 }
 
 const NOT_TEXT = new Set(["button", "checkbox", "radio", "file", "submit", "reset", "range", "color", "image", "hidden"]);
+const TABLE_TAG = /<table[\s>]/i;
 
 export function isEditable(t: EventTarget | null): boolean {
   if (typeof HTMLElement === "undefined" || !(t instanceof HTMLElement)) return false;
@@ -38,15 +40,32 @@ export function pastedItems(e: PasteEventLike): Uint8Array | ItemsRefusal | null
 export interface PasteSink {
   /** C3 (PC1) : objets dans l'onglet actif, ou refus à dire (version plus récente, trop gros) ; vrai si pris. */
   pasteItems(items: Uint8Array | ItemsRefusal): Promise<boolean>;
+  /** C10b (F19) : tableau HTML collé ; faux si illisible (repli sur les images jointes, PC9). */
+  pasteTable(html: string): Promise<boolean>;
   importFiles(files: readonly DroppedFile[], at: null): Promise<unknown>;
 }
 
-/** Corps de l'écouteur `paste` (R19, C3, Z9) : objets RoomBoard, puis images. Null : collage non pris (cible éditable,
- *  rien à coller), le collage normal suit ; sinon l'appelant fait `preventDefault`. */
+/** Corps de l'écouteur `paste` (R19, C3, Z9, C10b) : objets RoomBoard d'abord ; puis un `<table>` HTML, qui passe avant
+ *  les images jointes (F19, HB-9) ; un HTML illisible (`pasteTable` rend false) se replie sur elles (PC9) ; sinon les
+ *  images seules. Null : collage non pris (cible éditable, rien à coller), le collage normal suit ; sinon l'appelant
+ *  fait `preventDefault`. */
 export function handlePaste(e: PasteEventLike, sink: PasteSink): Promise<void> | null {
   const items = pastedItems(e);
   if (items !== null) return sink.pasteItems(items).then(() => undefined);
+  const html = pastedTableHtml(e);
   const files = pastedFiles(e);
+  if (html !== null) {
+    return sink.pasteTable(html).then(async (done) => {
+      if (!done && files.length > 0) await sink.importFiles(files, null);
+    });
+  }
   if (files.length === 0) return null;
   return sink.importFiles(files, null).then(() => undefined);
+}
+
+/** HTML collé qui contient un `<table>` (F19), tel quel ; null sur une cible éditable, sans HTML ou sans tableau. */
+export function pastedTableHtml(e: PasteEventLike): string | null {
+  if (isEditable(e.target)) return null;
+  const html = e.clipboardData?.getData?.("text/html") ?? "";
+  return TABLE_TAG.test(html) ? html : null;
 }

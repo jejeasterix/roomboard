@@ -19,9 +19,11 @@ import {
 } from "../platform/controller";
 import type { DroppedFile, FileHost, HostKind, Point, SaveTarget, ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
+import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
 import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import type { StartedDocument } from "../platform/mount";
+import { insertTableGrid } from "../platform/table-insert";
 import type { BoardSession } from "./board-session";
 import { createContainerIO, missingOf } from "./container-io";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
@@ -47,6 +49,10 @@ export interface WorkspaceDeps {
   makeAssets?(): AssetStore;
   /** Décodeur des images importées (tests) ; défaut : celui du navigateur. */
   readonly decode?: ImageDecoder;
+  /** Lecture d'un classeur dans un Worker jetable (C10b, F28) : `createSheetReader` dans l'amorce ; absent : `.xlsx` refusé. */
+  readSheet?(file: Blob): Promise<TableGrid>;
+  /** Lecture du HTML collé en document inerte (tests) ; défaut : `DOMParser` « text/html ». */
+  parseHtml?(html: string): Document;
   readonly first: StartedDocument;
   makeSession(doc: CoreDocument, assets: AssetStore): Promise<BoardSession>;
   /** Attendue après `host.onDrop` et avant `launch` (écart T87). */
@@ -65,6 +71,9 @@ export interface Workspace {
   /** Question si l'onglet est modifié ; dernier onglet : un vierge d'abord (CL5b-5). */
   close(id: string): Promise<boolean>;
   importFiles(files: readonly DroppedFile[], at?: Point | null): Promise<ImportReport>;
+  /** Tableau HTML collé (C10b, F19) dans l'onglet actif, centre de la vue ; vrai si le collage est pris (tableau posé
+   *  ou refusé pour sa taille), faux sans tableau lisible (PC9). */
+  pasteTable(html: string): Promise<boolean>;
   anyDirty(): boolean;
   /** Raccourcis de fichier vers l'onglet actif ; vrai si pris. */
   key(e: FileKey): boolean;
@@ -157,6 +166,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     page: () => t.board.engine.state().page,
     camera: () => t.board.engine.camera(),
     stageRect: () => t.board.stage.getBoundingClientRect(),
+    measure: () => t.board.measure,
+    textStyle: () => t.board.engine.textStyle(),
     run: (cmd) => t.board.engine.run(cmd),
   });
 
@@ -209,6 +220,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     return tab;
   }
 
+  const readSheet = deps.readSheet;
+  const parseHtml = deps.parseHtml ?? ((s: string) => new DOMParser().parseFromString(s, "text/html"));
   const importer = createImporter({
     openDocument: (f) => ws.openDocument(f),
     notify: say,
@@ -219,6 +232,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     },
     maxBytes: deps.kind === "tauri" ? null : WEB_MAX_BYTES,
     ...(deps.decode ? { decode: deps.decode } : {}),
+    ...(readSheet ? { readSheet } : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
@@ -256,6 +270,18 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
     },
     importFiles: (files, at = null) => importer.importFiles(files, at),
+    async pasteTable(html) {
+      const t = tabs.active()?.session;
+      if (t === undefined) return false;
+      if (html.length > PASTE_MAX_CHARS) {
+        await say(PASTE_TOO_BIG);
+        return true;
+      }
+      const grid = tableFromHtml(html, parseHtml);
+      if (grid === null) return false;
+      await insertTableGrid(imageTarget(t), grid, null, 0, say);
+      return true;
+    },
     anyDirty,
     key: (e) => ws.active().files.key(e),
     async quitRequested(quit) {

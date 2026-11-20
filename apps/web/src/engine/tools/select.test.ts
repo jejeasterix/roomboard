@@ -290,3 +290,76 @@ describe("outil Sélection — magnétisme (C9, S3)", () => {
     expect(runs).toEqual([{ type: "Transform", ids: [a], matrix: [1, 0, 0, 1, 52, 31] }]);
   });
 });
+
+describe("révélation d'un ombrage (F10)", () => {
+  type S = ReturnType<typeof setup>;
+  /** Tableau 2 × 2 (240 × 64) en (100, 100), cellule (0, 0) ombrée. */
+  const shadedTable = (s: S) => {
+    const p = s.doc.pageIds()[0] ?? "";
+    const id = s.doc.apply({ type: "AddTable", page: p, x: 100, y: 100, cols: 2, rows: 2, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const v = s.doc.element(id);
+    if (v?.kind !== "table") throw new Error("tableau");
+    const cell = { row: v.table.rows[0]?.id ?? "", col: v.table.cols[0]?.id ?? "" };
+    s.doc.apply({ type: "SetTableShade", id, from: cell, to: cell, shade: "#94a3b8" });
+    return { id, cell };
+  };
+  const shades = (s: S, id: string): number => {
+    const v = s.doc.element(id);
+    return v?.kind === "table" ? v.table.cells.filter((c) => c.shade !== null).length : -1;
+  };
+
+  it("F10, S1 : toucher une cellule ombrée : SetTableShade null sur elle, une étape, sélection inchangée", () => {
+    const s = setup();
+    const { id, cell } = shadedTable(s);
+    gesture(s.tool, [[150, 130]]);
+    expect(s.runs).toEqual([{ type: "SetTableShade", id, from: cell, to: cell, shade: null }]);
+    expect([shades(s, id), s.tool.selection()]).toEqual([0, []]);
+    s.doc.undo();
+    expect(shades(s, id)).toBe(1);
+  });
+
+  it("F10, HB-24 : glisser de 5 px (< 8) : révélé quand même (seuil propre)", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    gesture(s.tool, [[150, 130], [155, 130]]);
+    expect(s.runs.map((c) => c.type)).toEqual(["SetTableShade"]);
+    expect(shades(s, id)).toBe(0);
+  });
+
+  it("F10 : glisser de 9 px : déplacement depuis le point d'appui, rien de révélé", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    gesture(s.tool, [[150, 130], [159, 130]]);
+    expect(s.runs).toEqual([{ type: "Transform", ids: [id], matrix: [1, 0, 0, 1, 9, 0] }]);
+    expect([shades(s, id), s.tool.selection()]).toEqual([1, [id]]);
+  });
+
+  it("F10 : Maj tenue, ou cellule non ombrée : sélection comme avant, rien d'écrit", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    s.setShift(true);
+    gesture(s.tool, [[150, 130]]);
+    expect([s.runs, s.tool.selection()]).toEqual([[], [id]]);
+    s.setShift(false);
+    s.tool.setSelection([]);
+    gesture(s.tool, [[400, 130]]);
+    expect([s.runs, s.tool.selection()]).toEqual([[], [id]]);
+  });
+
+  it("F10 : tableau déjà sélectionné : toucher une cellule ombrée (hors poignée) la révèle, la sélection reste", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    gesture(s.tool, [[400, 130]]);
+    gesture(s.tool, [[150, 130]]);
+    expect(s.runs.map((c) => c.type)).toEqual(["SetTableShade"]);
+    expect(s.tool.selection()).toEqual([id]);
+  });
+
+  it("F10 : une forme au-dessus de la cellule ombrée : la forme est sélectionnée, rien de révélé", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    const r = s.rect(140, 120, 160, 140);
+    gesture(s.tool, [[150, 130]]);
+    expect([s.tool.selection(), shades(s, id)]).toEqual([[r], 1]);
+  });
+});

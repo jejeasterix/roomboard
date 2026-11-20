@@ -358,6 +358,7 @@ fn cell_view_has_spans() {
         id: id.clone(),
         row: rows[1].clone(),
         col: cols[1].clone(),
+        to: None,
         fill: Some("#fef08a".into()),
     })
     .expect("remplissage");
