@@ -708,13 +708,15 @@ pub(crate) mod tests {
                     row: "r1".into(),
                     col: "c1".into(),
                     text: "Lundi".into(),
-                    fill: None
+                    fill: None,
+                    shade: None
                 },
                 TableCellView {
                     row: "r2".into(),
                     col: "c2".into(),
                     text: String::new(),
-                    fill: Some("#fef08a".into())
+                    fill: Some("#fef08a".into()),
+                    shade: None
                 },
             ]
         );
@@ -816,6 +818,7 @@ pub(crate) mod tests {
         assert_eq!(d.snap_box(&id), d.bounds(&id));
     }
 
+    /// Formes invalides (`span` nombre, `shade` booléen, `mergedInto`) : ignorées et gardées ; la lecture n'écrit rien (F30).
     #[test]
     fn c10b_keys_are_ignored_and_kept() {
         let cells = MapPrelim::from([
@@ -837,12 +840,302 @@ pub(crate) mod tests {
         let d = doc_with(two_by_two(cells, vec![("shade", In::Any(Any::Bool(true)))]));
         let before = d.encode_v1();
         let t = d.element("t1").and_then(|v| v.table).expect("tableau");
-        assert_eq!(t.cells.len(), 1);
-        assert_eq!(t.cells[0].text, "A");
+        assert_eq!(
+            (t.cells.len(), t.cells[0].text.as_str(), t.cells[0].shade.as_deref()),
+            (1, "A", None)
+        );
+        assert!(t.merges.is_empty());
         assert!(
             d.encode_v1() == before,
             "la lecture a écrit dans le document"
         );
+    }
+
+    /// F1, F2, F8 : `span` lisible sur l'ancre → zone (ancre par ids, étendue en rangs) ; `shade` lu, cellule listée.
+    #[test]
+    fn spans_become_merges_and_shades_are_read() {
+        let cells = MapPrelim::from([
+            (
+                "r1:c1",
+                cell(
+                    In::from(TextPrelim::new("Lundi")),
+                    vec![
+                        ("span", In::Any(span_any("r1", "c2"))),
+                        ("shade", In::from("#94a3b8")),
+                    ],
+                ),
+            ),
+            (
+                "r2:c2",
+                cell(
+                    In::from(TextPrelim::new("")),
+                    vec![("shade", In::from("#94a3b8"))],
+                ),
+            ),
+        ]);
+        let d = doc_with(two_by_two(cells, vec![]));
+        let before = d.encode_v1();
+        let t = d.element("t1").and_then(|v| v.table).expect("tableau");
+        assert_eq!(
+            t.merges,
+            vec![TableMergeView {
+                row: "r1".into(),
+                col: "c1".into(),
+                rows: 1,
+                cols: 2
+            }]
+        );
+        assert_eq!(
+            t.cells
+                .iter()
+                .map(|c| (c.row.as_str(), c.col.as_str(), c.text.as_str(), c.shade.as_deref()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("r1", "c1", "Lundi", Some("#94a3b8")),
+                ("r2", "c2", "", Some("#94a3b8"))
+            ]
+        );
+        assert!(d.encode_v1() == before, "la lecture a écrit dans le document");
+    }
+
+    /// Colonnes `c1`..`c3` (100), lignes `r1`..`r3` (64).
+    fn three_by_three(cells: MapPrelim) -> MapPrelim {
+        table_prelim(
+            vec![
+                line("c1", "width", 100.0),
+                line("c2", "width", 100.0),
+                line("c3", "width", 100.0),
+            ],
+            vec![
+                line("r1", "height", 64.0),
+                line("r2", "height", 64.0),
+                line("r3", "height", 64.0),
+            ],
+            cells,
+            vec![],
+        )
+    }
+
+    /// F2, S5 : `span` qui recoupe une zone déjà retenue, dont un id manque, qui remonte, d'une seule cellule ou mal
+    /// formé : ignoré, gardé dans le document ; une seule zone retenue.
+    #[test]
+    fn bad_or_overlapping_spans_are_ignored_and_kept() {
+        let s = |r: &str, c: &str| vec![("span", In::Any(span_any(r, c)))];
+        let empty = || In::from(TextPrelim::new(""));
+        let cells = MapPrelim::from([
+            ("r1:c1", cell(In::from(TextPrelim::new("A")), s("r2", "c2"))),
+            ("r1:c2", cell(empty(), s("r3", "c3"))),
+            ("r2:c3", cell(empty(), s("r9", "c3"))),
+            ("r3:c2", cell(empty(), s("r2", "c1"))),
+            ("r3:c3", cell(empty(), s("r3", "c3"))),
+            ("r3:c1", cell(empty(), vec![("span", In::from(2.0))])),
+        ]);
+        let d = doc_with(three_by_three(cells));
+        let before = d.encode_v1();
+        let t = d.element("t1").and_then(|v| v.table).expect("tableau");
+        assert_eq!(
+            t.merges,
+            vec![TableMergeView {
+                row: "r1".into(),
+                col: "c1".into(),
+                rows: 2,
+                cols: 2
+            }]
+        );
+        assert!(d.encode_v1() == before, "rien d'écrit à la lecture");
+    }
+
+    fn import(
+        d: &mut Document,
+        merges: Vec<[u32; 4]>,
+        cells: Vec<String>,
+        heights: Vec<f64>,
+        cols: u32,
+    ) -> Result<Change, CommandError> {
+        let p = d.page_ids()[0].clone();
+        d.apply(Command::ImportTable {
+            page: p,
+            matrix: [0.5, 0.0, 0.0, 0.5, 300.0, 100.0],
+            col_width: 240.0,
+            row_heights: heights,
+            cols,
+            cells,
+            merges,
+            color: "#1d4ed8".into(),
+            size: 36.0,
+        })
+    }
+
+    /// F18 : une transaction ; ids neufs ; textes vides et couverts non écrits ; fusion en `span` sur l'ancre ; matrice
+    /// reçue telle quelle ; annuler retire le tableau entier (F17).
+    #[test]
+    fn import_table_writes_texts_spans_and_matrix_in_one_step() {
+        let mut d = Document::blank();
+        let texts: Vec<String> = ["Titre", "caché", "a", "b"].map(String::from).to_vec();
+        let c = import(&mut d, vec![[0, 0, 1, 2]], texts, vec![64.0, 80.0], 2).expect("import");
+        let id = c.ids[0].clone();
+        let v = d.element(&id).expect("vue");
+        assert_eq!(v.transform, [0.5, 0.0, 0.0, 0.5, 300.0, 100.0]);
+        let t = v.table.expect("tableau");
+        assert_eq!(
+            (
+                t.color.as_str(),
+                t.cols.len(),
+                t.rows.iter().map(|r| r.height).collect::<Vec<_>>()
+            ),
+            ("#1d4ed8", 2, vec![64.0, 80.0])
+        );
+        assert!(t.cols.iter().all(|c| c.width == 240.0));
+        assert_eq!(
+            t.merges,
+            vec![TableMergeView {
+                row: t.rows[0].id.clone(),
+                col: t.cols[0].id.clone(),
+                rows: 1,
+                cols: 2
+            }]
+        );
+        assert_eq!(
+            t.cells.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            vec!["Titre", "a", "b"],
+            "texte couvert ignoré"
+        );
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+                panic!("cells")
+            };
+            assert_eq!(cells.len(&txn), 3, "textes vides et couverts non écrits");
+            for k in cells.keys(&txn) {
+                let Some(Out::YMap(m)) = cells.get(&txn, k) else {
+                    panic!("cellule")
+                };
+                assert!(m.get(&txn, "mergedInto").is_none());
+            }
+        }
+        assert!(d.undo());
+        assert!(d.element(&id).is_none(), "une seule étape");
+    }
+
+    /// F18 : dimensions hors 1..=64, longueurs incohérentes, tailles non finies, couleur, matrice (PC1), fusion d'une
+    /// cellule, hors du tableau ou qui en recoupe une autre : `BadTable` avant la page, aucune transaction.
+    #[test]
+    fn import_table_refuses_bad_input_without_writing() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id6 = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let imp = |cols: u32,
+                   heights: Vec<f64>,
+                   n: usize,
+                   merges: Vec<[u32; 4]>,
+                   col_width: f64,
+                   matrix: [f64; 6],
+                   color: &str| Command::ImportTable {
+            page: p.clone(),
+            matrix,
+            col_width,
+            row_heights: heights,
+            cols,
+            cells: vec![String::new(); n],
+            merges,
+            color: color.into(),
+            size: 36.0,
+        };
+        let w = writes(&d);
+        for c in [
+            imp(0, vec![64.0], 0, vec![], 240.0, id6, "#000000"),
+            imp(65, vec![64.0], 65, vec![], 240.0, id6, "#000000"),
+            imp(2, vec![], 0, vec![], 240.0, id6, "#000000"),
+            imp(2, vec![64.0; 65], 130, vec![], 240.0, id6, "#000000"),
+            imp(2, vec![64.0, 64.0], 3, vec![], 240.0, id6, "#000000"),
+            imp(2, vec![64.0, f64::NAN], 4, vec![], 240.0, id6, "#000000"),
+            imp(2, vec![64.0, 64.0], 4, vec![], 0.0, id6, "#000000"),
+            imp(2, vec![64.0, 64.0], 4, vec![], 240.0, id6, "!!"),
+            imp(2, vec![64.0, 64.0], 4, vec![], 240.0, [0.0; 6], "#000000"),
+            imp(2, vec![64.0, 64.0], 4, vec![[0, 0, 1, 1]], 240.0, id6, "#000000"),
+            imp(2, vec![64.0, 64.0], 4, vec![[1, 1, 2, 1]], 240.0, id6, "#000000"),
+            imp(
+                2,
+                vec![64.0, 64.0],
+                4,
+                vec![[0, 0, 2, 1], [1, 0, 1, 2]],
+                240.0,
+                id6,
+                "#000000",
+            ),
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert!(!d.can_undo());
+        let mut unknown = imp(2, vec![64.0, 64.0], 4, vec![], 240.0, id6, "#000000");
+        if let Command::ImportTable { page, .. } = &mut unknown {
+            *page = "zz".into();
+        }
+        assert_eq!(d.apply(unknown), Err(CommandError::UnknownPage("zz".into())));
+        assert!(d
+            .apply(imp(2, vec![64.0, 64.0], 4, vec![[0, 0, 2, 2]], 240.0, id6, "#000000"))
+            .is_ok());
+    }
+
+    /// Clés de `cells` du tableau `id`, triées.
+    fn cell_keys(d: &Document, id: &str) -> Vec<String> {
+        let txn = d.read();
+        let e = d.find_element(&txn, id).expect("élément").element;
+        let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+            panic!("cells")
+        };
+        let mut keys: Vec<String> = cells.keys(&txn).map(str::to_string).collect();
+        keys.sort();
+        keys
+    }
+
+    /// Test qui discrimine (DAB1, F1, F5) : une ligne insérée entre l'ancre et la fin d'une zone l'agrandit, sans code
+    /// et sans écriture de couverture. Patron écarté : `mergedInto` écrit sur les cellules couvertes (ou couverture
+    /// recalculée par commande) — l'import écrirait `r1:c0`, l'insertion n'en poserait pas sur la ligne neuve (zone
+    /// trouée, donnée dérivée fausse) ou en écrirait une de plus ; ici seules les clés écrites par l'import restent, et
+    /// la zone se relit en 3 lignes par `merges_of`.
+    #[test]
+    fn merge_grows_with_a_row_inserted_inside_it() {
+        let mut d = Document::blank();
+        let texts: Vec<String> = ["Lundi", "x", "", "y", "", "z"].map(String::from).to_vec();
+        let id = import(&mut d, vec![[0, 0, 2, 1]], texts, vec![64.0; 3], 2)
+            .expect("import")
+            .ids[0]
+            .clone();
+        let t = view(&d, &id);
+        let (r, c) = (
+            t.rows.iter().map(|l| l.id.clone()).collect::<Vec<_>>(),
+            t.cols.iter().map(|l| l.id.clone()).collect::<Vec<_>>(),
+        );
+        let zone = |rows: u32| {
+            vec![TableMergeView {
+                row: r[0].clone(),
+                col: c[0].clone(),
+                rows,
+                cols: 1,
+            }]
+        };
+        assert_eq!(t.merges, zone(2));
+        let mut written = vec![
+            cell_key(&r[0], &c[0]),
+            cell_key(&r[0], &c[1]),
+            cell_key(&r[1], &c[1]),
+            cell_key(&r[2], &c[1]),
+        ];
+        written.sort();
+        assert_eq!(cell_keys(&d, &id), written, "aucune cellule couverte écrite");
+        d.apply(Command::InsertTableLine {
+            id: id.clone(),
+            axis: TableAxis::Row,
+            at: 1,
+        })
+        .expect("ligne dans la zone");
+        let t = view(&d, &id);
+        assert_eq!(t.rows.len(), 4);
+        assert_eq!(t.merges, zone(3), "zone agrandie, déduite à la lecture");
+        assert_eq!(cell_keys(&d, &id), written, "aucune couverture écrite");
     }
 
     #[test]
@@ -1299,7 +1592,8 @@ pub(crate) mod tests {
                 row: r.clone(),
                 col: c.clone(),
                 text: String::new(),
-                fill: Some("#fef08a".into())
+                fill: Some("#fef08a".into()),
+                shade: None
             }]
         );
         let w = writes(&d);
