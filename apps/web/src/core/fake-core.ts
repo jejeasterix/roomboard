@@ -614,11 +614,12 @@ class FakeDocument implements CoreDocument {
       if (q === null) continue;
       const d = dist2(q[0], q[1], c0, c1);
       if (best === null || d < bestD) {
-        best = [q[0] - c0, q[1] - c1];
+        // `q − candidat d'origine` (comme `grid::snap_delta`) : exactement nul quand l'élément revient à sa place.
+        best = [q[0] - x, q[1] - y];
         bestD = d;
       }
     }
-    return best === null ? [dx, dy] : [dx + best[0], dy + best[1]];
+    return best ?? [dx, dy];
   }
   gridLines(page: string, rect: Bounds, minStep: number, minDotStep: number): GridLines | null {
     void minDotStep; // points : vrai module seulement (DAG3)
@@ -767,19 +768,22 @@ const dist2 = (ax: number, ay: number, bx: number, by: number): number => {
   return dx * dx + dy * dy;
 };
 
-/** Niveau vu comme par le cœur (G4) : sans pas finis > 0, absent ; défauts champ par champ. */
+const nonEmpty = (v: unknown): v is string => typeof v === "string" && v !== "";
+
+/** Niveau vu comme par le cœur (G4) : sans pas finis > 0 ou sans kind non vide, absent ; défauts champ par champ,
+ *  couleur et trait vides compris. Toute vue lue passe donc `validGrid` telle quelle. */
 function gridLevelView(raw: unknown): GridLevel | null {
   if (!isRecord(raw)) return null;
   const { kind, spacingX, spacingY, originX, originY, color, line, snap, visible } = raw;
-  if (!finitePositive(spacingX) || !finitePositive(spacingY)) return null;
+  if (!finitePositive(spacingX) || !finitePositive(spacingY) || !nonEmpty(kind)) return null;
   return {
-    kind: typeof kind === "string" ? kind : "",
+    kind,
     spacingX,
     spacingY,
     originX: finiteOr(originX, 0),
     originY: finiteOr(originY, 0),
-    color: typeof color === "string" ? color : DEFAULT_GRID_COLOR,
-    line: typeof line === "string" ? line : "solid",
+    color: nonEmpty(color) ? color : DEFAULT_GRID_COLOR,
+    line: nonEmpty(line) ? line : "solid",
     snap: boolOr(snap, true),
     visible: boolOr(visible, true),
   };
@@ -798,7 +802,11 @@ function gridView(raw: unknown): GridView | null {
   };
 }
 
-const LEVEL_KEYS = ["kind", "spacingX", "spacingY", "originX", "originY", "color", "line", "snap", "visible"] as const;
+const LEVEL_KEYS = ["kind", "spacingX", "spacingY", "originX", "originY", "color", "line", "snap", "visible"] as const satisfies readonly (keyof GridLevel)[];
+/** Garde d'exhaustivité : un champ ajouté à `GridLevel` sans entrer dans `LEVEL_KEYS` casse la compilation. */
+type MissingLevelKey = Exclude<keyof GridLevel, (typeof LEVEL_KEYS)[number]>;
+const LEVEL_KEYS_COMPLETE: [MissingLevelKey] extends [never] ? true : never = true;
+void LEVEL_KEYS_COMPLETE;
 /** Même grille, champ par champ sur la vue (G5), comme le cœur. */
 function sameGrid(a: GridView | null, b: GridInput | null): boolean {
   if (a === null || b === null) return a === b;
@@ -828,12 +836,23 @@ const validGrid = (g: GridInput): boolean =>
       l.line !== "",
   );
 
-/** Champs écrits par SetGrid : la demande recopiée en bloc (clés inconnues perdues, comme le cœur, HG8). */
+/** Champs écrits par SetGrid : les neuf champs de chaque niveau, recopiés un à un ; toute autre clé perdue, comme le
+ *  cœur (`grid::level_fields`, HG8). */
 const gridRecord = (g: GridInput): RawRecord => ({
   visible: g.visible,
   snap: g.snap,
   above: g.above,
-  levels: g.levels.map((l) => ({ ...l })),
+  levels: g.levels.map((l) => ({
+    kind: l.kind,
+    spacingX: l.spacingX,
+    spacingY: l.spacingY,
+    originX: l.originX,
+    originY: l.originY,
+    color: l.color,
+    line: l.line,
+    snap: l.snap,
+    visible: l.visible,
+  })),
 });
 
 /** `snap_axis` du cœur : ligne la plus proche, bornée à la première `≥ 0` et, si `hi` est donné, à la dernière `≤ hi`. */

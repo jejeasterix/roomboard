@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AssetRef, CoreDocument, CoreFactory, GridInput, GridLevel, Matrix, ShapeKind } from "./api";
 import { fakeCore } from "./fake-core";
 import { normalizeShape } from "./shapes";
-import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, type WasmModule } from "./wasm-core";
+import { createWasmCore, toAssetInfo, toBounds, toChange, toElementView, toGridLines, toPageView, toPair, type WasmModule } from "./wasm-core";
 
 // `apps/web` n'a pas `@types/node` : `node:fs` par import dynamique typé localement, `process` par `globalThis`.
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -1148,6 +1148,26 @@ describe("contrôle de forme C9 (lignes de grille)", () => {
     expect(() => toGridLines({ ...ok, above: 1 })).toThrow("GridLines invalide");
     expect(() => toGridLines({ above: true, levels: [{ ...ok.levels[0], segments: ["0"] }] })).toThrow("GridLines invalide");
     expect(() => toGridLines({ above: true, levels: "x" })).toThrow("GridLines invalide");
+  });
+
+  it.each([
+    ["points non numériques", { dots: ["1"] }],
+    ["alpha qui n'est pas un nombre", { alpha: "0.5" }],
+    ["couleur qui n'est pas un texte", { color: 0 }],
+    ["trait qui n'est pas un texte", { line: null }],
+  ])("toGridLines : niveau à %s → erreur", (_, bad) => {
+    const level = { color: "#000000", line: "solid", alpha: 1, segments: [0, 0, 0, 10], dots: [1, 2] };
+    expect(() => toGridLines({ above: true, levels: [{ ...level, ...bad }] })).toThrow("GridLines invalide");
+  });
+
+  it("toGridLines : niveau qui n'est pas un objet → erreur", () => {
+    expect(() => toGridLines({ above: true, levels: [1] })).toThrow("GridLines invalide");
+  });
+
+  it("toPair : Float64Array de deux nombres → paire ; autre forme → erreur", () => {
+    expect(toPair(new Float64Array([1, 2]))).toEqual([1, 2]);
+    expect(() => toPair([1])).toThrow("point invalide");
+    expect(() => toPair("x")).toThrow("point invalide");
   });
 });
 

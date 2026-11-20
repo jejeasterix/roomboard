@@ -209,8 +209,8 @@ export function toGridLines(v: unknown): GridLines | null {
   };
 }
 
-/** Paire `[x, y]` venue de Wasm (Float64Array ou tableau) ; autre forme → erreur. */
-function toPair(v: unknown): readonly [number, number] {
+/** Paire `[x, y]` venue de Wasm (Float64Array ou tableau) ; autre forme → erreur. Exportée pour son test de forme. */
+export function toPair(v: unknown): readonly [number, number] {
   const a: unknown = v instanceof Float64Array ? Array.from(v) : v;
   if (!isNumbers(a) || a.length !== 2) throw new Error("point invalide");
   return [a[0] ?? 0, a[1] ?? 0];

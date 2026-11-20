@@ -22,6 +22,8 @@ pub const DEFAULT_GRID_LINE: &str = "solid";
 pub const SEYES_FINE_ALPHA: f64 = 0.5;
 /// Tolérance d'indice, en pas : une ligne posée sur un bord compte comme dedans.
 const EPS: f64 = 1e-9;
+/// Lignes d'une portée (`music`, G3).
+const STAFF_LINES: u8 = 5;
 
 /// Niveau de grille (U31) ; `kind` et `line` inconnus gardés tels quels.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -79,7 +81,8 @@ fn out_bool(o: Option<Out>) -> Option<bool> {
 }
 
 /// Grille lue avec tolérance (G4) : `grid` qui n'est pas un `Y.Map` → `None` ; `levels` absent ou qui n'est pas un
-/// `Y.Array` → `[]` ; niveau qui n'est pas un `Y.Map` ou sans pas finis > 0 → absent de la vue, gardé dans le document.
+/// `Y.Array` → `[]` ; niveau qui n'est pas un `Y.Map`, sans pas finis > 0 ou sans `kind` non vide → absent de la vue,
+/// gardé dans le document ; `color` et `line` absents ou vides → défaut. Toute vue lue passe donc `validate` telle quelle.
 pub(crate) fn read<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<GridView> {
     let Some(Out::YMap(g)) = page.get(txn, "grid") else {
         return None;
@@ -109,14 +112,15 @@ fn read_level<T: ReadTxn>(txn: &T, l: &MapRef) -> Option<GridLevelView> {
             .filter(|v| v.is_finite())
             .unwrap_or(0.0)
     };
+    let text = |k: &str| out_string(l.get(txn, k)).filter(|s| !s.is_empty());
     Some(GridLevelView {
-        kind: out_string(l.get(txn, "kind")).unwrap_or_default(),
+        kind: text("kind")?,
         spacing_x: positive("spacingX")?,
         spacing_y: positive("spacingY")?,
         origin_x: finite("originX"),
         origin_y: finite("originY"),
-        color: out_string(l.get(txn, "color")).unwrap_or_else(|| DEFAULT_GRID_COLOR.to_string()),
-        line: out_string(l.get(txn, "line")).unwrap_or_else(|| DEFAULT_GRID_LINE.to_string()),
+        color: text("color").unwrap_or_else(|| DEFAULT_GRID_COLOR.to_string()),
+        line: text("line").unwrap_or_else(|| DEFAULT_GRID_LINE.to_string()),
         snap: out_bool(l.get(txn, "snap")).unwrap_or(true),
         visible: out_bool(l.get(txn, "visible")).unwrap_or(true),
     })
@@ -197,7 +201,7 @@ fn snap_staff(y: f64, oy: f64, sy: f64) -> Option<f64> {
     let k0 = ((y - oy - 2.0 * sy) / period).round().max(first);
     let mut best: Option<f64> = None;
     for k in [k0 - 1.0, k0, k0 + 1.0] {
-        for l in 0..5 {
+        for l in 0..STAFF_LINES {
             let c = oy + k * period + f64::from(l) * sy;
             if c < -EPS * sy {
                 continue;
@@ -282,7 +286,8 @@ pub fn snap_point(g: &GridView, width: f64, p: (f64, f64)) -> Option<(f64, f64)>
 }
 
 /// Déplacement aimanté (G7) : candidats = 4 coins puis centre de `b`, déplacés de `(dx, dy)` ; on garde celui dont le
-/// point aimanté est le plus proche (le premier à égalité) et le déplacement est corrigé d'autant ; brut sans accroche.
+/// point aimanté `q` est le plus proche (le premier à égalité) et le déplacement rendu est `q − candidat d'origine`,
+/// exactement nul quand l'élément revient à sa place ; brut sans accroche.
 pub fn snap_delta(g: &GridView, width: f64, b: Bounds, (dx, dy): (f64, f64)) -> (f64, f64) {
     let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
     let mut best: Option<((f64, f64), f64)> = None;
@@ -299,15 +304,20 @@ pub fn snap_delta(g: &GridView, width: f64, b: Bounds, (dx, dy): (f64, f64)) -> 
         };
         let d = dist2(q, c);
         if best.is_none_or(|(_, bd)| d < bd) {
-            best = Some(((q.0 - c.0, q.1 - c.1), d));
+            best = Some(((q.0 - x, q.1 - y), d));
         }
     }
-    best.map_or((dx, dy), |((ex, ey), _)| (dx + ex, dy + ey))
+    best.map_or((dx, dy), |(delta, _)| delta)
 }
 
 /// Indices `k` (premier, dernier) tels que `o + k·step` ∈ [lo, hi] ; `(0, -1)` si aucun ; `None` si leur nombre dépasse
 /// `MAX_GRID_DOTS` (famille sautée entière) ou n'est pas fini.
 fn indices(o: f64, step: f64, lo: f64, hi: f64) -> Option<(i64, i64)> {
+    capped_indices(o, step, lo, hi, MAX_GRID_DOTS)
+}
+
+/// `indices` sous un plafond donné (portées : `MAX_GRID_DOTS / 5`, pour plafonner leurs lignes).
+fn capped_indices(o: f64, step: f64, lo: f64, hi: f64, cap: usize) -> Option<(i64, i64)> {
     let first = ((lo - o) / step - EPS).ceil();
     let last = ((hi - o) / step + EPS).floor();
     if !first.is_finite() || !last.is_finite() {
@@ -316,7 +326,7 @@ fn indices(o: f64, step: f64, lo: f64, hi: f64) -> Option<(i64, i64)> {
     if last < first {
         return Some((0, -1));
     }
-    if last - first + 1.0 > MAX_GRID_DOTS as f64 {
+    if last - first + 1.0 > cap as f64 {
         return None;
     }
     Some((first as i64, last as i64))
@@ -340,12 +350,14 @@ fn horizontals(out: &mut Vec<f64>, o: f64, step: f64, c: &Bounds, keep: impl Fn(
     }
 }
 
-/// Portées (`music`) : 5 lignes à `sy`, une portée tous les `10·sy`.
+/// Portées (`music`) : 5 lignes à `sy`, une portée tous les `10·sy` ; le plafond porte sur les lignes, donc au plus
+/// `MAX_GRID_DOTS / 5` portées, sinon la famille est sautée entière.
 fn staves(out: &mut Vec<f64>, oy: f64, sy: f64, c: &Bounds) {
     let period = 10.0 * sy;
-    if let Some((a, b)) = indices(oy, period, c.y0 - 4.0 * sy, c.y1) {
+    let cap = MAX_GRID_DOTS / usize::from(STAFF_LINES);
+    if let Some((a, b)) = capped_indices(oy, period, c.y0 - 4.0 * sy, c.y1, cap) {
         for k in a..=b {
-            for l in 0..5 {
+            for l in 0..STAFF_LINES {
                 let y = oy + k as f64 * period + f64::from(l) * sy;
                 if (c.y0..=c.y1).contains(&y) {
                     out.extend([c.x0, y, c.x1, y]);
