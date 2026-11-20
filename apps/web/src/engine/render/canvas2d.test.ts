@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ElementView, GridInput, GridLevel, TextElement } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR } from "../page";
-import { Canvas2DRenderer, createCanvas2DRenderer, SELECTION_COLOR, tracePolygons } from "./canvas2d";
+import { Canvas2DRenderer, createCanvas2DRenderer, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
+import type { ImageSource } from "./image-cache";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { SceneSource } from "./renderer";
 
@@ -468,5 +469,54 @@ describe("Canvas2DRenderer — grille (C9)", () => {
     const fresh = new FakeCtx();
     new Canvas2DRenderer(asCtx(fresh), null, doc).drawScene({ id: p, elementIds: [] }, IDENTITY, new Set());
     expect(fresh.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
+  });
+});
+
+describe("images et éléments inconnus (R16, U3)", () => {
+  const IMG = "ef".repeat(32);
+  const image: ElementView = { id: "i", kind: "image", transform: [1, 0, 0, 1, 5, 6], image: { asset: IMG, w: 200, h: 100 } };
+  function sceneOf(el: ElementView, images?: ImageSource, hidden: ReadonlySet<string> = new Set(), overlay = EMPTY_OVERLAY) {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === el.id ? el : null), outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, images ? { images } : {});
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [el.id] }, IDENTITY, hidden, overlay);
+    return scene;
+  }
+
+  it("image : bitmap dessiné dans sa boîte (0, 0)-(w, h), sous la transformation de l'élément", () => {
+    const bmp = { tag: "bitmap" } as unknown as CanvasImageSource;
+    const bitmap = vi.fn((a: string) => (a === IMG ? bmp : null));
+    const scene = sceneOf(image, { bitmap });
+    expect(bitmap).toHaveBeenCalledWith(IMG);
+    expect(scene.images).toEqual([{ img: bmp, x: 0, y: 0, w: 200, h: 100 }]);
+    expect(scene.log).toContain("transform 1,0,0,1,5,6");
+  });
+
+  it("image en décodage ou absente : cadre gris de sa taille, aucun drawImage", () => {
+    const scene = sceneOf(image, { bitmap: () => null });
+    expect(scene.images).toEqual([]);
+    expect(scene.rects).toContainEqual([0, 0, 200, 100]);
+    expect(scene.log).toContain(`fillRect ${PLACEHOLDER_FILL}`);
+  });
+
+  it("sans source d'images (contrat Wasm, tests) : cadre gris", () => {
+    const scene = sceneOf(image);
+    expect(scene.images).toEqual([]);
+    expect(scene.rects).toContainEqual([0, 0, 200, 100]);
+  });
+
+  it("élément inconnu : cadre gris et libellé « objet non pris en charge »", () => {
+    const unknown: ElementView = { id: "u", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "pdf-page", w: 50, h: 40 } };
+    const scene = sceneOf(unknown);
+    expect(scene.rects).toContainEqual([0, 0, 50, 40]);
+    expect(scene.texts.map((t) => t.text)).toContain(UNKNOWN_LABEL);
+  });
+
+  it("fantôme d'une image : dessiné par paintElement avec la matrice provisoire (R17)", () => {
+    const bmp = { tag: "bitmap" } as unknown as CanvasImageSource;
+    const scene = sceneOf(image, { bitmap: () => bmp }, new Set(["i"]), { ...EMPTY_OVERLAY, ghosts: [{ id: "i", matrix: [1, 0, 0, 1, 30, 0] }] });
+    expect(scene.images).toHaveLength(1);
+    expect(scene.log).toContain("transform 1,0,0,1,30,0");
   });
 });

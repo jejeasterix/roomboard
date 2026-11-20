@@ -3,7 +3,7 @@
  * le donne, sinon Canvas 2D. Contexte WebGL2 nul : repli direct. Programme refusé : le canvas, déjà lié à WebGL2, est
  * remplacé par un clone neuf (même id) pour ouvrir le Canvas 2D. Ne lève jamais pour une raison WebGL2.
  */
-import { Canvas2DRenderer, createCanvas2DRenderer } from "./canvas2d";
+import { Canvas2DRenderer, createCanvas2DRenderer, type Canvas2DOptions } from "./canvas2d";
 import type { Renderer, SceneSource } from "./renderer";
 import { WEBGL2_CONTEXT, WebGL2LiveRenderer } from "./webgl2";
 
@@ -44,14 +44,15 @@ export function chooseRenderer(
   live: HTMLCanvasElement,
   source: SceneSource,
   wantWebgl: boolean,
+  opts: Canvas2DOptions = {},
 ): RendererChoice {
   if (!wantWebgl) {
-    return { renderer: createCanvas2DRenderer(scene, live, source), webgl: false, interaction: live, note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }), release() {} };
+    return { renderer: createCanvas2DRenderer(scene, live, source, opts), webgl: false, interaction: live, note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }), release() {} };
   }
   const gl = live.getContext("webgl2", WEBGL2_CONTEXT);
   if (!gl) {
     return {
-      renderer: createCanvas2DRenderer(scene, live, source),
+      renderer: createCanvas2DRenderer(scene, live, source, opts),
       webgl: false,
       interaction: live,
       note: "WebGL2 indisponible : repli Canvas 2D",
@@ -62,7 +63,7 @@ export function chooseRenderer(
   const sceneCtx = scene.getContext("2d", { alpha: false });
   if (!sceneCtx) throw new Error("canvas 2D indisponible");
   try {
-    const renderer = new WebGL2LiveRenderer(new Canvas2DRenderer(sceneCtx, null, source), gl);
+    const renderer = new WebGL2LiveRenderer(new Canvas2DRenderer(sceneCtx, null, source, opts), gl);
     let released = false;
     return {
       renderer,
@@ -86,7 +87,7 @@ export function chooseRenderer(
     if (!liveCtx) throw new Error("canvas 2D indisponible");
     const cause = e instanceof Error ? e.message : String(e);
     return {
-      renderer: new Canvas2DRenderer(sceneCtx, liveCtx, source),
+      renderer: new Canvas2DRenderer(sceneCtx, liveCtx, source, opts),
       webgl: false,
       interaction: fresh,
       diagnostics: () => REPLI,
