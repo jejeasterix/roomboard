@@ -67,11 +67,13 @@ export function frames(page) {
   return page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))));
 }
 
-/** Pixels d'encre (somme RVB < 300) dans une boîte [x0, y0, x1, y1] en px CSS du canvas de scène `#scene`. */
-export function inkIn(page, box) {
+/** Pixels d'une boîte [x0, y0, x1, y1] en px CSS du canvas de scène `#scene` : d'encre (somme RVB < `max`, défaut 300),
+ *  ou, si `rgb` est donné, proches de cette couleur à `tol` près par composante (C6a, D27). */
+export function inkIn(page, box, opts = {}) {
+  const { max = 300, rgb = null, tol = 40 } = opts;
   return page.$eval(
     "#scene",
-    (c, [x0, y0, x1, y1]) => {
+    (c, [[x0, y0, x1, y1], max, rgb, tol]) => {
       const ctx = c.getContext("2d");
       const sx = c.width / c.clientWidth;
       const sy = c.height / c.clientHeight;
@@ -79,10 +81,15 @@ export function inkIn(page, box) {
       const h = Math.max(1, Math.round((y1 - y0) * sy));
       const d = ctx.getImageData(Math.round(x0 * sx), Math.round(y0 * sy), w, h).data;
       let n = 0;
-      for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 300) n++;
+      for (let i = 0; i < d.length; i += 4) {
+        const hit = rgb === null
+          ? d[i] + d[i + 1] + d[i + 2] < max
+          : Math.abs(d[i] - rgb[0]) <= tol && Math.abs(d[i + 1] - rgb[1]) <= tol && Math.abs(d[i + 2] - rgb[2]) <= tol;
+        if (hit) n++;
+      }
       return n;
     },
-    box,
+    [box, max, rgb, tol],
   );
 }
 
