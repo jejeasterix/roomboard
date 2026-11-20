@@ -259,3 +259,19 @@ describe("hôte de repli : onDrop (T86)", () => {
     expect(await picked).toEqual([]);
   });
 });
+
+describe("hôte de repli : save passe la cible choisie (C14)", () => {
+  it("encode reçoit la cible choisie", async () => {
+    const host = createFallbackHost(memoryDeps().deps);
+    const encode = vi.fn(async (_t: SaveTarget) => bytes);
+    const saved = await host.save(encode, { kind: "ask", name: "cours" });
+    expect(encode).toHaveBeenCalledTimes(1);
+    expect(encode.mock.calls[0]![0]).toEqual({ kind: "download", name: "cours.roomboard" });
+    expect(saved).toEqual({ kind: "download", name: "cours.roomboard" });
+  });
+
+  it("IMPORT_ACCEPT suit IMPORT_EXTENSIONS : vidéos et sons compris", () => {
+    expect(IMPORT_ACCEPT).toContain(".webm");
+    expect(IMPORT_ACCEPT).toContain(".mp3");
+  });
+});
