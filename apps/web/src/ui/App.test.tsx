@@ -576,7 +576,7 @@ describe("App — grille (C9 éditeur, E7, E8)", () => {
     click(container.querySelector('#grille [data-grille="apply"]'));
     expect(tab.engine.run).toHaveBeenCalledTimes(1);
     expect(tab.engine.run!.mock.calls[0]![0]).toMatchObject({ type: "SetGrid", page: "p", grid: { levels: [{ kind: "squares" }] } });
-    expect(tab.engine.endGridPreview).toHaveBeenCalled();
+    expect(tab.engine.endGridPreview).toHaveBeenCalledTimes(1);
     expect(panelOf(container)).toBeNull();
   });
 

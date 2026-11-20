@@ -37,11 +37,11 @@ export interface GridPanelProps {
   cancel(): void;
 }
 
-
 export function GridPanel(props: GridPanelProps): JSX.Element {
-  const [draft, setDraft] = createSignal<GridDraft>(draftOf(props.initial));
+  const initialDraft = draftOf(props.initial);
+  const [draft, setDraft] = createSignal<GridDraft>(initialDraft);
   /** Épaisseur du document à l'ouverture : les choix ne suivent pas le brouillon (PC8). */
-  const docWidth = draftOf(props.initial).lineWidth;
+  const docWidth = initialDraft.lineWidth;
   const kind = createMemo(() => draft().kind);
   onCleanup(() => props.endPreview());
   /** Saisie acceptée : brouillon et aperçu ; refusée (même brouillon) : rien. */
