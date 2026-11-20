@@ -5,5 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+calamine = { version = "0.38", default-features = false }
 roomboard-core = { path = "../roomboard-core" }
 sha2 = "0.10"
+zip = { version = "9.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

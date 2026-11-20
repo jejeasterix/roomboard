@@ -1,6 +1,7 @@
-//! Liaison wasm-bindgen du conteneur `.roomboard` (R8, DAR1) : second module Wasm, chargé par la page au premier besoin
-//! (R10). Mince : `container::read` et `container::write`, rien d'autre. Chaque fonction exposée délègue à une fonction
-//! `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS panique).
+//! Liaison wasm-bindgen du second module Wasm (R8, DAR1) : conteneur `.roomboard` (`container::read`, `container::write`,
+//! chargé par la page au premier besoin, R10) et première feuille d'un `.xlsx` (`sheet::read_first_sheet`, C10b, lue
+//! dans un Worker jetable, DAB4). Chaque fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en
+//! natif (hors wasm32, tout appel à JS panique).
 use roomboard_core::format::Parts;
 use roomboard_formats::container::{self, AssetBytes};
 use wasm_bindgen::prelude::*;
@@ -106,6 +107,52 @@ pub fn write_container(
     bytes: &[u8],
 ) -> Result<Vec<u8>, JsError> {
     write_container_inner(manifest, ybin, &ids, &mimes, &sizes, bytes).map_err(|m| JsError::new(&m))
+}
+
+/// Première feuille d'un classeur (C10b, F23) : grille de textes, fusions en quadruplets, dimensions de la source.
+#[wasm_bindgen]
+pub struct SheetReader {
+    sheet: roomboard_formats::sheet::Sheet,
+}
+
+impl SheetReader {
+    /// `sheet::read_first_sheet` ; le message d'erreur est le `Display` de `SheetError`.
+    pub fn open_inner(bytes: &[u8]) -> Result<SheetReader, String> {
+        roomboard_formats::sheet::read_first_sheet(bytes)
+            .map(|sheet| SheetReader { sheet })
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[wasm_bindgen]
+impl SheetReader {
+    /// Lève une Error : « la première feuille est vide », « classeur trop gros pour un import en valeurs »,
+    /// « classeur illisible : … ».
+    pub fn open(bytes: &[u8]) -> Result<SheetReader, JsError> {
+        Self::open_inner(bytes).map_err(|m| JsError::new(&m))
+    }
+    pub fn rows(&self) -> u32 {
+        self.sheet.rows
+    }
+    pub fn cols(&self) -> u32 {
+        self.sheet.cols
+    }
+    pub fn cells(&self) -> Vec<String> {
+        self.sheet.cells.clone()
+    }
+    /// `[ligne, colonne, lignes, colonnes]` bout à bout.
+    pub fn merges(&self) -> Vec<u32> {
+        self.sheet.merges.iter().flatten().copied().collect()
+    }
+    pub fn source_rows(&self) -> u32 {
+        self.sheet.source_rows
+    }
+    pub fn source_cols(&self) -> u32 {
+        self.sheet.source_cols
+    }
+    pub fn cut_cells(&self) -> bool {
+        self.sheet.cut_cells
+    }
 }
 
 #[cfg(test)]
@@ -228,5 +275,23 @@ mod tests {
         let p = format::save_parts(&d, &meta()).expect("parts");
         let file = write_container_inner(&p.manifest, &p.ybin, &[], &[], &[], &[]).expect("écrit");
         assert_eq!(file, format::save(&d, &meta()).expect("save"));
+    }
+
+    #[test]
+    fn sheet_reader_open_inner_reads_the_fixture_and_refuses_garbage() {
+        let r = SheetReader::open_inner(include_bytes!(
+            "../../roomboard-formats/tests/fixtures/valeurs.xlsx"
+        ))
+        .expect("lecture");
+        assert_eq!(
+            (r.rows(), r.cols(), r.source_rows(), r.source_cols(), r.cut_cells()),
+            (64, 6, 70, 6, false)
+        );
+        assert_eq!(r.merges(), vec![1, 0, 1, 2]);
+        assert_eq!(r.cells()[2], "3,5");
+        let Err(e) = SheetReader::open_inner(&[0x50, 0x4b, 3, 4, 1, 2, 3]) else {
+            panic!("refus attendu");
+        };
+        assert!(e.starts_with("classeur illisible"), "{e}");
     }
 }
