@@ -83,7 +83,7 @@ pub fn unknown_bytes() -> Vec<u8> {
         std::fs::write(&path, save(&doc, &meta()).expect("save")).expect("écriture");
     }
     std::fs::read(&path).expect(
-        "fixture element-inconnu.roomboard absente : ROOMBOARD_REGENERER_FIXTURES=1 cargo test -p roomboard-core --test element_inconnu",
+        "fixture element-inconnu.roomboard absente : ROOMBOARD_REGENERER_FIXTURES=1 cargo test -p roomboard-core --test element_inconnu -- --test-threads=1",
     )
 }
 

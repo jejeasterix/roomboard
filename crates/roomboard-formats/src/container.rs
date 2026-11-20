@@ -10,6 +10,10 @@ use sha2::{Digest, Sha256};
 
 pub const ASSETS_DIR: &str = "assets/";
 
+/// Taille décompressée maximale d'une entrée `assets/` : 512 Mio. Au-delà, l'entrée est ignorée avec un avertissement
+/// « trop gros », sans erreur (la lecture ne remplit jamais la mémoire d'une bombe de décompression).
+pub const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+
 /// (type MIME, extension, stored) : « stored » pour les contenus déjà compressés (K12).
 const TYPES: [(&str, &str, bool); 14] = [
     ("image/png", "png", true),
@@ -108,6 +112,12 @@ pub fn write(parts: &Parts, assets: &[AssetBytes<'_>]) -> Result<Vec<u8>, Format
 /// `assets/<id>.<ext>` ; empreinte recalculée ; écart, nom invalide, sous-dossier ou doublon : ignoré avec un
 /// avertissement ; autres entrées ignorées (HK9).
 pub fn read(file: &[u8]) -> Result<Unpacked, FormatError> {
+    read_limited(file, MAX_ASSET_BYTES)
+}
+
+/// `read` avec une limite par entrée paramétrable (tests) ; `read` passe `MAX_ASSET_BYTES`.
+#[doc(hidden)]
+pub fn read_limited(file: &[u8], _max: u64) -> Result<Unpacked, FormatError> {
     let format::Opened {
         mut archive, parts, ..
     } = format::open(file)?;

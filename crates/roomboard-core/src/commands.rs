@@ -2161,6 +2161,50 @@ pub(crate) mod tests {
         assert_eq!((c.version, w.since()), (v, 0));
     }
 
+    /// Fond identique mais métadonnée d'asset absente : la métadonnée s'écrit, en une étape annulable.
+    #[test]
+    fn set_backdrop_same_value_writes_missing_asset_meta() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        d.apply(Command::SetBackdrop {
+            page: p.clone(),
+            backdrop: backdrop(png(), 1000.0, 500.0, "width"),
+        })
+        .expect("fond");
+        // Retire `assets/<id>` dans un Doc brut, puis recharge : fond sans métadonnée, historique neuf.
+        use yrs::updates::decoder::Decode;
+        use yrs::{Transact, Update};
+        let raw = yrs::Doc::new();
+        raw.transact_mut()
+            .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
+            .expect("mise à jour");
+        let assets = raw.get_or_insert_map("assets");
+        assets.remove(&mut raw.transact_mut(), ABC);
+        let bytes =
+            yrs::ReadTxn::encode_state_as_update_v1(&raw.transact(), &yrs::StateVector::default());
+        let mut d = Document::from_update_v1(&bytes).expect("rechargé");
+        let p = first(&d);
+        assert_eq!(
+            d.asset(ABC).map(|a| a.mime),
+            Some("application/octet-stream".into())
+        );
+        assert!(d.page(&p).expect("page").backdrop.is_some());
+        assert!(!d.can_undo());
+        d.apply(Command::SetBackdrop {
+            page: p.clone(),
+            backdrop: backdrop(png(), 1000.0, 500.0, "width"),
+        })
+        .expect("même fond");
+        assert_eq!(d.asset(ABC).map(|a| a.mime), Some(png().mime));
+        assert!(d.undo());
+        assert_eq!(
+            d.asset(ABC).map(|a| a.mime),
+            Some("application/octet-stream".into())
+        );
+        assert!(d.page(&p).expect("page").backdrop.is_some());
+        assert!(!d.can_undo(), "métadonnée seule : une seule étape");
+    }
+
     #[test]
     fn remove_backdrop_then_undo_restores_it() {
         let mut d = Document::blank();

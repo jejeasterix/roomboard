@@ -315,3 +315,35 @@ pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropV
         rect,
     })
 }
+
+#[cfg(test)]
+mod backdrop_tests {
+    use super::*;
+
+    fn raw(w: f64, h: f64) -> RawBackdrop {
+        RawBackdrop {
+            asset: Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into()),
+            kind: Some("image".into()),
+            w: Some(w),
+            h: Some(h),
+            fit: Some("width".into()),
+        }
+    }
+
+    #[test]
+    fn backdrop_view_without_usable_page_width_has_no_rect() {
+        for width in [0.0, -5.0, f64::NAN, f64::INFINITY] {
+            let v = backdrop_view(raw(1000.0, 500.0), width).expect("vue");
+            assert_eq!(v.rect, None, "largeur de page {width}");
+        }
+        let ok = backdrop_view(raw(1000.0, 500.0), 1920.0).expect("vue");
+        assert_eq!(ok.rect.map(|r| r.y1), Some(960.0));
+    }
+
+    #[test]
+    fn backdrop_view_with_overflowing_height_has_no_rect() {
+        let v = backdrop_view(raw(1e-300, 1e10), 1920.0).expect("vue");
+        assert_eq!(v.rect, None);
+        assert_eq!((v.w, v.h), (Some(1e-300), Some(1e10)));
+    }
+}
