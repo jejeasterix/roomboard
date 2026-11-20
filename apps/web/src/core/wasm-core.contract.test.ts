@@ -1735,7 +1735,7 @@ describe.skipIf(loaded === null)("contrat C10a : vrai module seulement", () => {
 });
 
 // C10b (fusion, ombrage, import) : contrat commun ; T7 branche le vrai module (c10bFactories = factories).
-const c10bFactories: { name: string; f: CoreFactory }[] = [{ name: "fausse liaison", f: fakeCore }];
+const c10bFactories = factories;
 const SHADE = "#94a3b8";
 const c10bIds = (t: TableData): { readonly r: string[]; readonly c: string[] } => ({ r: t.rows.map((x) => x.id), c: t.cols.map((x) => x.id) });
 const c10bAt = (g: { readonly r: string[]; readonly c: string[] }, i: number, j: number): CellIds => ({ row: g.r[i] ?? "", col: g.c[j] ?? "" });
@@ -1919,5 +1919,18 @@ describe("contrôle de forme C10b (tableau)", () => {
     expect(() => toElementView({ ...base, table: { ...table, merges: [{ row: "r1", col: "c1", rows: 0, cols: 2 }] } })).toThrow("ElementView invalide");
     expect(() => toElementView({ ...base, table: { ...table, merges: [{ row: 1, col: "c1", rows: 1, cols: 2 }] } })).toThrow("ElementView invalide");
     expect(() => toElementView({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: "A", shade: true }] } })).toThrow("ElementView invalide");
+  });
+});
+
+describe.skipIf(loaded === null)("contrat C10b : vrai module seulement", () => {
+  it("fixture tableau-fusion-ombrage.roomboard (F30, S3) : « Lundi » sur deux colonnes, trois cellules ombrées", () => {
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-core/tests/fixtures/tableau-fusion-ombrage.roomboard", import.meta.url)));
+    const d = need().core.load(bytes);
+    const id = d.elementIds(first(d)).find((e) => d.element(e)?.kind === "table") ?? "";
+    const t = tableOf(d, id);
+    expect([t.cols.length, t.rows.length, t.merges.length, t.merges[0]?.cols]).toEqual([4, 3, 1, 2]);
+    expect(t.cells.filter((c) => c.shade !== null)).toHaveLength(3);
+    expect(t.cells[0]?.text).toBe("Lundi");
+    d.free();
   });
 });
