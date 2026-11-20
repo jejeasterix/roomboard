@@ -40,6 +40,10 @@ export interface TablePicker {
 /** Fond de la zone de saisie d'une cellule sans remplissage (HC10-10). */
 export const CELL_EDITOR_BACKGROUND = "#ffffff";
 
+/** Écart sous lequel deux tailles sont égales (Uniformiser, T14) : la moyenne de n tailles égales diffère d'un arrondi. */
+const SIZE_EPSILON = 1e-6;
+const sameSize = (a: number, b: number): boolean => Math.abs(a - b) <= SIZE_EPSILON;
+
 /** Cellule retrouvée dans le document : son tableau, sa matrice, ses rangs. */
 interface Located {
   readonly ref: CellRef;
@@ -174,12 +178,23 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     if (ctx.run({ type: "RemoveTableLine", id: ref.id, axis, line }) === null) active = ref;
   };
 
-  /** Uniformiser (T11) : colonnes à la largeur moyenne ; lignes à max(hauteur moyenne, plus grande hauteur exigée). */
+  /** Uniformiser (T11) : colonnes à la largeur moyenne ; lignes à max(hauteur moyenne, plus grande hauteur exigée).
+   *  Déjà uniforme à un arrondi près : aucune étape (T14). */
   const uniform = (id: string, t: TableData): void => {
     const w = t.cols.reduce((s, c) => s + c.width, 0) / t.cols.length;
     const need = Math.max(...rowHeightsFor(t, t.cols.map(() => w), measure));
     const mean = t.rows.reduce((s, r) => s + r.height, 0) / t.rows.length;
-    ctx.run({ type: "SetTableSizes", id, colWidth: w, rowHeight: Math.max(mean, need) });
+    const h = Math.max(mean, need);
+    if (t.cols.every((c) => sameSize(c.width, w)) && t.rows.every((r) => sameSize(r.height, h))) return;
+    ctx.run({ type: "SetTableSizes", id, colWidth: w, rowHeight: h });
+  };
+
+  /** Avant une action de la rangée : valide la saisie ouverte ; pendant une composition, rien (la touche appartient à
+   *  l'IME, comme `navigate`), et l'action n'a pas lieu. */
+  const settle = (): boolean => {
+    if (gate.composing()) return false;
+    gate.request();
+    return true;
   };
 
   return {
@@ -226,20 +241,35 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
       return at === null ? null : { id: at.ref.id, row: at.cell.row, col: at.cell.col, rows: at.table.rows.length, cols: at.table.cols.length };
     },
     act(a) {
-      if (opened !== null) commit();
+      if (!settle()) return;
       const at = locate(active);
       if (at === null) return;
       const { ref, table: t, cell: c } = at;
-      if (a === "row-insert") ctx.run({ type: "InsertTableLine", id: ref.id, axis: "row", at: c.row + 1 });
-      else if (a === "col-insert") ctx.run({ type: "InsertTableLine", id: ref.id, axis: "col", at: c.col + 1 });
-      else if (a === "row-remove") removeLine(ref, "row", t.rows.map((r) => r.id), c.row);
-      else if (a === "col-remove") removeLine(ref, "col", t.cols.map((x) => x.id), c.col);
-      else uniform(ref.id, t);
+      switch (a) {
+        case "row-insert":
+          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "row", at: c.row + 1 });
+          break;
+        case "col-insert":
+          ctx.run({ type: "InsertTableLine", id: ref.id, axis: "col", at: c.col + 1 });
+          break;
+        case "row-remove":
+          removeLine(ref, "row", t.rows.map((r) => r.id), c.row);
+          break;
+        case "col-remove":
+          removeLine(ref, "col", t.cols.map((x) => x.id), c.col);
+          break;
+        case "uniform":
+          uniform(ref.id, t);
+          break;
+        default:
+          // Contrôle d'exhaustivité : une action ajoutée à `TableAction` sans cas ici ne compile pas.
+          return a satisfies never;
+      }
       refresh();
       ctx.stateChanged?.();
     },
     fill(color) {
-      if (opened !== null) commit();
+      if (!settle()) return;
       const at = locate(active);
       if (at === null) return;
       ctx.run({ type: "SetTableFill", id: at.ref.id, row: at.ref.row, col: at.ref.col, fill: color });
