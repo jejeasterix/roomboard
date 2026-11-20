@@ -43,6 +43,9 @@ if [ "$taille_formats" -gt 3145728 ]; then
 fi
 
 pnpm install --frozen-lockfile
+# Licences des dépendances (U39, R21) : après pnpm install, sur le node_modules réel.
+bash scripts/tests/controle-licences.test.sh
+node scripts/controle-licences.mjs
 # Contrat du vrai module (D33) : exigé ici, il échoue au lieu de se sauter si le .wasm manque.
 ROOMBOARD_WASM_REQUIRED=1 pnpm -r test
 pnpm --filter @roomboard/web build

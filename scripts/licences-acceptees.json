@@ -1,0 +1,9 @@
+{
+  "npm": {
+    "caniuse-lite": {
+      "licence": "CC-BY-4.0",
+      "raison": "données de navigateurs lues au build (browserslist), aucun code lié à l'application ; relevé du 2026-11-20"
+    }
+  },
+  "cargo": {}
+}

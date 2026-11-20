@@ -1,7 +1,7 @@
 # Avis de tiers
 
 Dépendances tierces ajoutées par les chantiers d'usage (U39). Relevé : `cargo metadata` sur `Cargo.lock`.
-Le contrôle scripté des licences et son appel par `scripts/verifier.sh` viennent avec la partie « reste » de C2 (HK5).
+Contrôle scripté : `scripts/controle-licences.mjs` (crates et paquets npm, développement compris), appelé par `scripts/verifier.sh` après `pnpm install` ; exceptions écrites une fois dans `scripts/licences-acceptees.json` (`caniuse-lite`, CC-BY-4.0, données de build).
 
 ## Crate `roomboard-formats` (C2, empreinte SHA-256 des assets)
 
