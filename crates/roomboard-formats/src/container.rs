@@ -173,3 +173,41 @@ pub fn read_limited(file: &[u8], max: u64) -> Result<Unpacked, FormatError> {
         warnings,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use roomboard_core::document::Document;
+
+    /// Distingue le patron interdit « fragment refusé dès le contrôle du manifeste » : `read` passe par
+    /// `format::open` pour tout conteneur ; un `.rbitem` qui porte une image se lit avec son asset, puis se décode en
+    /// fragment (le refus du mauvais type vient après, dans le cœur).
+    #[test]
+    fn fragment_with_image_is_read() {
+        let meta = format::SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-16T12:00:00Z".into(),
+            created: None,
+        };
+        let parts =
+            format::save_fragment_parts(&Document::blank(), &meta, "Image").expect("fragment");
+        let png = [0x89u8, b'P', b'N', b'G', 1, 2, 3];
+        let id = sha256_hex(&png);
+        let file = write(
+            &parts,
+            &[AssetBytes {
+                id: &id,
+                mime: "image/png",
+                bytes: &png,
+            }],
+        )
+        .expect("écriture");
+        let u = read(&file).expect("lecture d'un fragment avec image");
+        assert_eq!(u.assets, vec![(id, png.to_vec())]);
+        assert!(u.warnings.is_empty(), "{:?}", u.warnings);
+        let (_, m) =
+            format::load_fragment_parts(&u.parts.manifest, &u.parts.ybin).expect("fragment");
+        assert_eq!(m.kind.as_deref(), Some(format::KIND_FRAGMENT));
+        assert_eq!(m.name.as_deref(), Some("Image"));
+    }
+}

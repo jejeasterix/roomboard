@@ -38,6 +38,13 @@
         "description": "Document RoomBoard",
         "mimeType": "application/x-roomboard",
         "role": "Editor"
+      },
+      {
+        "ext": ["rbitem"],
+        "name": "Objet RoomBoard",
+        "description": "Objet RoomBoard",
+        "mimeType": "application/x-roomboard-item",
+        "role": "Editor"
       }
     ]
   }
