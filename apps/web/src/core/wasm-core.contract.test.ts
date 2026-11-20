@@ -1404,8 +1404,8 @@ describe.skipIf(loaded === null)("contrat C9 : vrai module seulement", () => {
   });
 });
 
-// C10a (tableau) : contrat commun ; T6 remplace `c10aFactories` par `factories` (vrai module branché).
-const c10aFactories = factories.filter((x) => x.name === "fausse liaison");
+// C10a (tableau) : contrat commun ; T6 : vrai module branché, contrat commun aux deux fabriques.
+const c10aFactories = factories;
 const TABLE_MESSAGE =
   "tableau invalide (1 à 64 lignes et colonnes, tailles finies > 0, couleur valide, ligne ou colonne existante, au moins une ligne et une colonne attendues)";
 type AddTableCmd = Extract<Command, { type: "AddTable" }>;
@@ -1619,5 +1619,20 @@ describe("contrôle de forme C10a (tableau)", () => {
     expect(() => toElementView({ ...base, table: { ...table, rows: [{ id: "r1", height: 0 }] } })).toThrow("ElementView invalide");
     expect(() => toElementView({ ...base, table: { ...table, cells: [{ row: "r1", col: "c1", text: 3 }] } })).toThrow("ElementView invalide");
     expect(() => toElementView({ ...base, table: { ...table, size: "36" } })).toThrow("ElementView invalide");
+  });
+});
+
+describe.skipIf(loaded === null)("contrat C10a : vrai module seulement", () => {
+  it("fixture tableau-4x3.roomboard (T2) : un 4 × 3 rempli, première cellule jaune", () => {
+    const bytes = new Uint8Array(fs.readFileSync(new URL("../../../../crates/roomboard-core/tests/fixtures/tableau-4x3.roomboard", import.meta.url)));
+    const d = need().core.load(bytes);
+    const p = first(d);
+    const id = d.elementIds(p).find((e) => d.element(e)?.kind === "table") ?? "";
+    const t = tableOf(d, id);
+    expect([t.cols.length, t.rows.length]).toEqual([4, 3]);
+    expect(t.cells.map((c) => c.text)).toEqual(["Lundi", "Mardi", "Mercredi", "Jeudi", "Maths", "Français", "Histoire", "Sport", "Anglais", "Musique", "Dessin", "Sciences"]);
+    expect(t.cells[0]?.fill).toBe("#fef08a");
+    expect(t.cells[1]?.fill).toBeNull();
+    d.free();
   });
 });

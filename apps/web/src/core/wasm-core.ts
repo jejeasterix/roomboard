@@ -104,7 +104,7 @@ function toSpans(v: unknown, content: string): TextSpan[] {
   return spans;
 }
 
-/** Bornes de FormatText : hors des u32, u32::MAX, que le cœur refuse au contrôle des bornes comme la fausse liaison. */
+/** Bornes de FormatText et rangs ou dimensions du tableau (C10a) : hors des u32, u32::MAX, que le cœur refuse. */
 const toU32 = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 0xffffffff ? v : 0xffffffff);
 
 /** Vue d'un tableau venue de Wasm (T13) : forme contrôlée ; `fill` absent (Option::None) → null. */
@@ -350,13 +350,20 @@ class WasmCoreDocument implements CoreDocument {
         );
       }
       case "AddTable":
+        return toChange(
+          this.d.add_table(cmd.page, cmd.x, cmd.y, toU32(cmd.cols), toU32(cmd.rows), cmd.colWidth, cmd.rowHeight, cmd.color, cmd.size),
+        );
       case "SetTableCell":
+        return toChange(this.d.set_table_cell(cmd.id, cmd.row, cmd.col, cmd.content, cmd.rowHeight));
       case "InsertTableLine":
+        return toChange(this.d.insert_table_line(cmd.id, cmd.axis === "row", toU32(cmd.at)));
       case "RemoveTableLine":
+        return toChange(this.d.remove_table_line(cmd.id, cmd.axis === "row", cmd.line));
       case "SetTableSizes":
+        return toChange(this.d.set_table_sizes(cmd.id, cmd.colWidth, cmd.rowHeight));
       case "SetTableFill":
-        // C10a : branchées sur la liaison Wasm par T6 ; d'ici là le vrai module ne les connaît pas.
-        throw new Error(`commande ${cmd.type} : liaison Wasm à venir (C10a, T6)`);
+        // null → undefined : Option::None côté Rust.
+        return toChange(this.d.set_table_fill(cmd.id, cmd.row, cmd.col, cmd.fill ?? undefined));
     }
   }
 
