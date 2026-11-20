@@ -12,10 +12,10 @@
 | T4 | Cache de tuiles par palier (`pdf-tiles.ts`) et port PDF du moteur | — | `apps/web/src/engine/render/pdf-port.ts` (neuf), `apps/web/src/engine/render/pdf-tiles.ts` (neuf), `apps/web/src/engine/render/pdf-tiles.test.ts` (neuf) | isolé (`…--T4`) | concepteur-critique | `vitest run src/engine/render/pdf-tiles.test.ts` : 0 `×`, « tuiles PDF par palier (PF13, DAPF2) » ≥ 9 tests | S3 | #tache-t4 |
 | T5 | Rendu : fond dessiné dans `drawScene`, `paintContent`, `PageView.backdrop` | T2 | `apps/web/src/engine/render/renderer.ts`, `apps/web/src/engine/render/canvas2d.ts`, `apps/web/src/engine/render/canvas2d.test.ts`, `apps/web/src/engine/engine.ts`, `apps/web/src/engine/engine.test.ts` | isolé (`…--T5`) | implementeur-tdd | `vitest run src/engine/render/canvas2d.test.ts src/engine/render/webgl2.test.ts src/engine/engine.test.ts` : 0 `×`, « Canvas2DRenderer — fond de page (C12) » ≥ 6, « Canvas2DRenderer — paintContent (C12) » ≥ 3, « moteur — fond de page (C12) » ≥ 1 ; `webgl2.test.ts` vert | S1, S3, S4 | #tache-t5 |
 | T6 | Surfaces : PDF reconnu à l'import, filtres, action « Exporter en PDF… », `PDF_TYPE` | — | `apps/web/src/platform/import.ts`, `apps/web/src/platform/import.test.ts`, `apps/web/src/platform/files.ts`, `apps/web/src/platform/files.test.ts`, `apps/web/src/platform/host-fsa.ts`, `apps/web/src/platform/host-fsa.test.ts`, `apps/web/src/platform/typed-files.ts`, `apps/web/src/platform/typed-files.test.ts`, `apps/web/src/toolbar.ts`, `apps/web/src/toolbar.test.ts`, `apps/web/src/toolbar-profiles.ts`, `apps/web/src/toolbar-profiles.test.ts`, `apps/web/src/profile-edit.test.ts`, `apps/web/src/app/toolbar-host.ts`, `apps/web/src/app/toolbar-host.test.ts` | isolé (`…--T6`) | implementeur-tdd | `vitest run src/platform src/toolbar.test.ts src/toolbar-profiles.test.ts src/profile-edit.test.ts src/app/toolbar-host.test.ts src/ui` : 0 `×`, « importFiles : PDF (C12, PF2, PF3) » ≥ 7, « barre : Exporter en PDF (C12, PF19) » ≥ 4 ; `host-repli.test.ts`, `host-tauri.test.ts` verts | S1, S2 | #tache-t6 |
-| T7 | Assemblage de l'export PDF (`pdf-lib`) et producteur PNG | T1, T3 | `apps/web/src/app/pdf-export.ts` (neuf), `apps/web/src/app/pdf-export.test.ts` (neuf), `apps/web/src/app/pdf-overlay.ts` (neuf), `apps/web/src/app/pdf-overlay.test.ts` (neuf) | isolé (`…--T7`) | concepteur-critique | `vitest run src/app/pdf-export.test.ts src/app/pdf-overlay.test.ts` : 0 `×`, « export PDF annoté (PF20, PF21) » ≥ 8, « placement de la superposition (/Rotate, CropBox) » ≥ 2, « superposition PNG (PF21) » ≥ 3 | S1, S5 | #tache-t7 |
+| T7 | Assemblage de l'export PDF (`pdf-lib`) et producteur PNG | T1, T3 | `apps/web/src/app/pdf-export.ts` (neuf), `apps/web/src/app/pdf-export.test.ts` (neuf), `apps/web/src/app/pdf-overlay.ts` (neuf), `apps/web/src/app/pdf-overlay.test.ts` (neuf) | isolé (`…--T7`) | concepteur-critique | `vitest run src/app/pdf-export.test.ts src/app/pdf-overlay.test.ts` : 0 `×`, « export PDF annoté (PF20, PF21) » ≥ 8, « placement de la superposition (/Rotate, CropBox) » ≥ 2, « superposition PNG (PF21) » ≥ 4, dont « PDF refusé par pdf-lib : page en image » (PF20) | S1, S5 | #tache-t7 |
 | T8 | Espace de travail : ouvrir un PDF en onglet, exporter en PDF | T2, T3, T4, T6, T7 | `apps/web/src/app/workspace.ts`, `apps/web/src/app/workspace.test.ts`, `apps/web/src/ui/App.test.tsx` | isolé (`…--T8`) | implementeur-tdd | `vitest run src/app/workspace.test.ts src/ui/App.test.tsx` : 0 `×`, « espace de travail : PDF (C12) » ≥ 10 ; blocs C2, C3, C10b verts ; `tsc` vide | S1, S2 | #tache-t8 |
 | T9 | Branchement : tuiles dans la session, `data-fond`, amorce, bouton relié, hors ligne | T4, T5, T8 | `apps/web/src/app/board-session.ts`, `apps/web/src/app/board-session.test.ts`, `apps/web/src/main.ts`, `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `scripts/controle-hors-ligne.mjs` | isolé (`…--T9`) | implementeur-tdd | `vitest run src/app/board-session.test.ts src/ui/App.test.tsx` : 0 `×`, « session — fond PDF (C12, PF15) » ≥ 3, « App : Exporter en PDF (C12) » ≥ 1 ; `ROOMBOARD_WASM_REQUIRED=1 pnpm -r test` 0 échec ; `vite build` puis `node scripts/controle-hors-ligne.mjs apps/web/dist apps/desktop/src-tauri/tauri.conf.json` code 0 ; `bash scripts/tests/controle-hors-ligne.test.sh` OK ; `tsc` vide | S1, S3 | #tache-t9 |
-| T10 | Essai navigateur C12 dans `verifier.sh --e2e`, capture d'un PDF annoté | T9 | `scripts/essais/c12-pdf-navigateur.mjs` (neuf), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `docs/essais/c12-pdf-annote.png` (neuf) | isolé (`…--T10`) | implementeur-tdd | `bash scripts/verifier.sh --e2e 2>&1 \| tail -90` : « C12 PDF : OK », les 12 essais d'avant « : OK », « verifier.sh : e2e OK », « verifier.sh : OK », deux tailles de module sous leurs plafonds ; `docs/essais/c12-pdf-annote.png` présent | S1, S3, S4 | #tache-t10 |
+| T10 | Essai navigateur C12 dans `verifier.sh --e2e`, capture d'un PDF annoté | T9 | `scripts/essais/c12-pdf-navigateur.mjs` (neuf), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `scripts/essais/commun.mjs` (si un `.mjs` est servi), `docs/essais/c12-pdf-annote.png` (neuf) | isolé (`…--T10`) | implementeur-tdd | `bash scripts/verifier.sh --e2e 2>&1 \| tail -90` : « C12 PDF : OK », les 12 essais d'avant « : OK », « verifier.sh : e2e OK », « verifier.sh : OK », deux tailles de module sous leurs plafonds ; `docs/essais/c12-pdf-annote.png` présent | S1, S3, S4 | #tache-t10 |
 | T11 | (lot c) Écrivain PDF vectoriel `krilla` dans le module `formats` | T3 | `crates/roomboard-formats/Cargo.toml`, `crates/roomboard-formats/src/lib.rs`, `crates/roomboard-formats/src/pdf.rs` (neuf), `crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf` (neuf), `crates/roomboard-formats/tests/fixtures/LICENSE_LIBERATION` (neuf), `crates/roomboard-formats-wasm/src/lib.rs`, `Cargo.lock`, `THIRD_PARTY_NOTICES.md` | isolé (`…--T11`) | concepteur-critique | `cargo test -p roomboard-formats -p roomboard-formats-wasm 2>&1 \| grep -E "test result\|FAILED\|panicked\|error\[\|pdf" \| tail -40` : 0 `FAILED`, ≥ 8 tests `pdf` dont `golden_stream_g1_parses_to_one_red_rect`, `text_and_image_write_a_pdf` ; module formats mesuré avant et après, ≤ 3 145 728 o ; module principal inchangé ; `node scripts/controle-licences.mjs` code 0 | S5 | #tache-t11 |
 | T12 | (lot c) `RecordingContext2D` : le rendu enregistré en flux d'opérations | T5 | `apps/web/src/engine/render/record-ctx.ts` (neuf), `apps/web/src/engine/render/record-ctx.test.ts` (neuf) | isolé (`…--T12`) | implementeur-tdd | `vitest run src/engine/render/record-ctx.test.ts` : 0 `×`, « contexte enregistreur (C12, DAPF4) » ≥ 8 dont « flux témoin G1 » | S5 | #tache-t12 |
 | T13 | (lot c) Superposition vectorielle : Worker jetable commun, producteur `krilla`, branchement | T9, T11, T12 | `apps/web/src/platform/one-shot-worker.ts` (neuf), `apps/web/src/platform/one-shot-worker.test.ts` (neuf), `apps/web/src/platform/sheet-reader.ts`, `apps/web/src/platform/pdf-vector-worker.ts` (neuf), `apps/web/src/platform/container.ts`, `apps/web/src/app/pdf-overlay-vector.ts` (neuf), `apps/web/src/app/pdf-overlay-vector.test.ts` (neuf), `apps/web/src/main.ts` | isolé (`…--T13`) | concepteur-critique | `ROOMBOARD_WASM_REQUIRED=1 vitest run src/platform/one-shot-worker.test.ts src/platform/sheet-reader.test.ts src/app/pdf-overlay-vector.test.ts` : 0 `×`, « Worker jetable (C12) » ≥ 4, « superposition vectorielle (C12, PF22) » ≥ 4 dont « vrai module formats : aucune image, texte en police » ; `sheet-reader.test.ts` inchangé et vert ; `tsc` vide | S5 | #tache-t13 |
@@ -2694,7 +2694,12 @@ intacts), puis la superposition du contenu RoomBoard posée sur la CropBox en te
 sans contenu : recopiée telle quelle. Autre page : page neuve de 842 pt de large, hauteur
 `max(1080, bas du contenu) × 842 / 1920`. Contenu hors du rectangle d'une page PDF : coupé, `cut` vrai. La superposition
 vient d'un `OverlayProducer` : ici le producteur PNG (b), qui dessine par `paintContent` à `min(2, 4096 / plus grand
-côté)` px par unité (PF21) ; (c) branchera le producteur `krilla` sans toucher l'assemblage.
+côté)` px par unité (PF21) ; (c) branchera le producteur `krilla` sans toucher l'assemblage. Contre-relecture du
+cadrage : (PF20) un PDF que pdf.js ouvre mais que `pdf-lib` refuse (chargement en erreur ou 0 page) sort page par page en
+image rendue par pdf.js (`OverlayProducer.raster`), sous l'annotation, avec `rastered` vrai (l'espace de travail le
+dit) ; (PF21) le producteur attend le décodage de **toutes** les images citées avant `paintContent` (`ImageSource` est
+synchrone : une image non décodée sortirait en cadre gris, `canvas2d.ts:240-242`). `pdf-lib` est déjà dans
+`apps/web/package.json` (T3) : cette tâche ne touche pas `package.json`.
 
 **Fichiers.**
 - Créer : `apps/web/src/app/pdf-export.ts`, `apps/web/src/app/pdf-export.test.ts`, `apps/web/src/app/pdf-overlay.ts`,
@@ -2702,33 +2707,37 @@ côté)` px par unité (PF21) ; (c) branchera le producteur `krilla` sans touche
 
 **Interfaces.**
 - Consomme : T1 — `PDF_PAGE_KIND`, `PAGE_WIDTH`, `PAGE_HEIGHT` (`core/api.ts`) ; T3 — `pdf-lib` et `pdfjs-dist`
-  installés (tests en Node) ; `typed` (`app/container-io.ts:44`), `ImageSource`, `BitmapDecoder`, `BitmapLike`
+  installés (tests en Node) ; `typed` (`app/container-io.ts:42`), `ImageSource`, `BitmapDecoder`, `BitmapLike`
   (`engine/render/image-cache.ts`), `PageView` (`engine/render/renderer.ts`).
 - Produit (lu par T8, T9, T13) :
   - `pdf-export.ts` : `NEW_PAGE_WIDTH = 842`, `PDF_CUT_MESSAGE = "du contenu hors des pages PDF n'est pas exporté"`,
     `type PdfLib = Pick<typeof import("pdf-lib"), "PDFDocument" | "degrees">`,
-    `interface ExportBackdrop { asset; kind; page: number | null; rect: Bounds | null }`,
+    `interface ExportBackdrop { asset; kind; page: number | null; w: number | null; h: number | null; rect: Bounds | null }`,
+    `PDF_RASTER_MESSAGE = "PDF d'origine illisible pour l'export : pages exportées en image sous l'annotation"`,
+    `type RasterPage = (asset: string, index: number, w: number, h: number) => Promise<Uint8Array | null>` (PNG de la page
+    rendue par pdf.js),
     `interface ExportSource { pageIds(): string[]; elementIds(page: string): string[]; bounds(ids: readonly string[]): Bounds | null; page(id: string): { readonly backdrop: ExportBackdrop | null; readonly grid: { readonly visible: boolean } | null } | null }`
     (un `CoreDocument` s'y branche tel quel),
     `interface OverlayRequest { readonly pageId: string; readonly rect: Bounds; readonly box: { readonly w: number; readonly h: number } }`,
     `type Overlay = { kind: "png"; bytes: Uint8Array } | { kind: "pdf"; bytes: Uint8Array; index: number }`,
-    `interface OverlayProducer { pages(requests: readonly OverlayRequest[]): Promise<readonly (Overlay | null)[]> }` (PC6),
+    `interface OverlayProducer { pages(requests: readonly OverlayRequest[]): Promise<readonly (Overlay | null)[]>; readonly raster?: RasterPage }` (PC6),
     `interface ExportDeps { loadPdfLib(): Promise<PdfLib>; readonly overlay: OverlayProducer }`,
-    `interface ExportResult { readonly bytes: Uint8Array; readonly pages: number; readonly cut: boolean; readonly annotated: boolean }`,
+    `interface ExportResult { readonly bytes: Uint8Array; readonly pages: number; readonly cut: boolean; readonly annotated: boolean; readonly rastered: boolean }`,
     `function quarterOf(angle: number): 0 | 90 | 180 | 270`, `function placement(cropBox: Box4, rotate: number): Placement`,
     `function viewBox(cropBox: Box4, rotate: number): { w: number; h: number }`,
     `async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get">, deps: ExportDeps): Promise<ExportResult>`.
   - `pdf-overlay.ts` : `OVERLAY_MAX_PX = 4096`, `OVERLAY_MAX_SCALE = 2`, `overlayScale(rect: Bounds): number`,
     `interface ContentPainter { paintContent(ctx: CanvasRenderingContext2D, page: PageView, rect: Bounds, scale: number): void }`
     (le `Canvas2DRenderer` de T5 s'y branche), `interface ExportCanvas { readonly ctx: CanvasRenderingContext2D; png(): Promise<Uint8Array>; release(): void }`,
-    `interface PngOverlayDeps { doc; assets; decode: BitmapDecoder; canvas(w, h): ExportCanvas; painter(ctx, images: ImageSource): ContentPainter }`,
+    `interface PngOverlayDeps { doc; assets; decode: BitmapDecoder; canvas(w, h): ExportCanvas; painter(ctx, images: ImageSource): ContentPainter; raster?: RasterPage }`,
+    `function createRasterPage(deps: { pdf: PdfEngine; assets: Pick<AssetStore, "get">; canvas(w: number, h: number): ExportCanvas }): RasterPage`,
     `async function loadImageSource(doc, assets, decode): Promise<ImageSource & { dispose(): void }>`,
     `function createPngOverlay(deps: PngOverlayDeps): OverlayProducer`, `function browserExportCanvas(w: number, h: number): ExportCanvas`.
 - Réutilise : aucun module existant pour assembler le PDF exporté (cadrage § 3, ligne « Assembler le PDF exporté ») —
   nouveau module `app/pdf-export.ts`, interface DAPF3.
 - Réutilise : `apps/web/src/engine/render/canvas2d.ts` (`paintContent`, T5) par l'interface `ContentPainter` — même code
   de dessin que l'écran, dans un vrai contexte (b), aucune seconde implémentation (D7).
-- Réutilise : `apps/web/src/app/container-io.ts:44` (`typed(blob, mime)`) — type du `Blob` d'une image avant décodage
+- Réutilise : `apps/web/src/app/container-io.ts:42` (`typed(blob, mime)`) — type du `Blob` d'une image avant décodage
   (PF28, constat `workspace.ts:151`).
 
 **Test et commande bornée.**
@@ -2743,8 +2752,9 @@ Attendu : 0 `×` ; « export PDF annoté (PF20, PF21) » ≥ 8 (« pages d'origi
 superposition dans la boîte vue, texte gardé » (Review Focus 1), « page sans fond PDF : page neuve de 842 pt… » (PF20,
 HPF2-3), « contenu sous la page PDF : cut » (Review Focus 4), « page au-delà du PDF d'origine : page neuve » (PC7, Review
 Focus 5), « deux sources : chacune chargée une fois » (PF20, S4), « superposition en page PDF (lot c) : /Form » (S5),
-« octets stables » (PC16)) ; « placement de la superposition (/Rotate, CropBox) » ≥ 2 (Review Focus 1) ;
-« superposition PNG (PF21) » ≥ 3. `tsc` : aucune erreur dans ces quatre fichiers.
+« octets stables » (PC16), « PDF refusé par pdf-lib : page en image sous l'annotation » (PF20, contre-relecture)) ; « placement de la superposition (/Rotate, CropBox) » ≥ 2 (Review Focus 1) ;
+« superposition PNG (PF21) » ≥ 4 dont « le dessin attend le décodage de toutes les images » et
+« createRasterPage ». `tsc` : aucune erreur dans ces quatre fichiers.
 
 **Contraintes (recopiées).**
 - GC2 TDD ; aucun test sauté.
@@ -2808,7 +2818,7 @@ function source(pages: readonly FakePage[]): ExportSource {
     page: (id) => {
       const p = at(id);
       if (p === undefined) return null;
-      const backdrop = p.backdrop === undefined || p.backdrop === null ? null : { asset: A, kind: "pdf-page", page: 0, rect: rectOf(612, 792), ...p.backdrop };
+      const backdrop = p.backdrop === undefined || p.backdrop === null ? null : { asset: A, kind: "pdf-page", page: 0, w: 612, h: 792, rect: rectOf(612, 792), ...p.backdrop };
       return { backdrop, grid: p.grid === true ? { visible: true } : null };
     },
   };
@@ -2869,7 +2879,7 @@ describe("export PDF annoté (PF20, PF21)", () => {
 
   it("page tournée de 90° : boîte vue 792 × 612, superposition dans la boîte vue, texte gardé (Review Focus 1)", async () => {
     const seen: OverlayRequest[] = [];
-    const doc = source([{ backdrop: { page: 0, rect: rectOf(792, 612) }, elements: 1, bounds: { x0: 10, y0: 10, x1: 20, y1: 20 } }]);
+    const doc = source([{ backdrop: { page: 0, w: 792, h: 612, rect: rectOf(792, 612) }, elements: 1, bounds: { x0: 10, y0: 10, x1: 20, y1: 20 } }]);
     const r = await exportPdf(doc, store({ [A]: await sourcePdf({ pages: 1, rotate: 90 }) }), { loadPdfLib: async () => lib(), overlay: pngProducer(seen) });
     expect(seen[0]?.box).toEqual({ w: 792, h: 612 });
     expect(await xobjects(r.bytes)).toEqual([["/Image"]]);
@@ -2926,6 +2936,17 @@ describe("export PDF annoté (PF20, PF21)", () => {
     const run = async () => (await exportPdf(source(pdfPages(3, (i) => (i === 1 ? { elements: 1 } : {}))), store({ [A]: pdf }), { loadPdfLib: async () => lib(), overlay: pngProducer() })).bytes;
     expect(Array.from(await run())).toEqual(Array.from(await run()));
   });
+
+  it("PDF que pdf.js ouvre et que pdf-lib refuse : page en image rendue par pdf.js, sous l'annotation ; rastered (PF20, contre-relecture)", async () => {
+    const raster = vi.fn(async () => PNG_1PX);
+    const producer: OverlayProducer = { ...pngProducer(), raster };
+    const bad = new TextEncoder().encode("%PDF-1.7\nn'importe quoi\n");
+    const r = await exportPdf(source([{ backdrop: { page: 0 }, elements: 1 }]), store({ [A]: bad }), { loadPdfLib: async () => lib(), overlay: producer });
+    expect(raster).toHaveBeenCalledWith(A, 0, 612, 792);
+    expect(await sizes(r.bytes)).toEqual([[612, 792]]);
+    expect(await xobjects(r.bytes)).toEqual([["/Image", "/Image"]]);
+    expect([r.rastered, r.annotated]).toEqual([true, true]);
+  });
 });
 
 describe("placement de la superposition (/Rotate, CropBox)", () => {
@@ -2971,6 +2992,10 @@ import type { AssetStore } from "../core/asset-store";
 
 export const NEW_PAGE_WIDTH = 842;
 export const PDF_CUT_MESSAGE = "du contenu hors des pages PDF n'est pas exporté";
+export const PDF_RASTER_MESSAGE = "PDF d'origine illisible pour l'export : pages exportées en image sous l'annotation";
+
+/** PNG d'une page d'origine rendue par pdf.js (PF20 : PDF que pdf-lib refuse) ; null : rendu impossible. */
+export type RasterPage = (asset: string, index: number, w: number, h: number) => Promise<Uint8Array | null>;
 
 export type PdfLib = Pick<typeof import("pdf-lib"), "PDFDocument" | "degrees">;
 
@@ -2979,6 +3004,8 @@ export interface ExportBackdrop {
   readonly asset: string;
   readonly kind: string;
   readonly page: number | null;
+  readonly w: number | null;
+  readonly h: number | null;
   readonly rect: Bounds | null;
 }
 export interface ExportSource {
@@ -2997,6 +3024,8 @@ export type Overlay = { readonly kind: "png"; readonly bytes: Uint8Array } | { r
 /** Producteur interchangeable (DAPF3, PC6) : une réponse par requête, dans l'ordre ; null : rien à poser. */
 export interface OverlayProducer {
   pages(requests: readonly OverlayRequest[]): Promise<readonly (Overlay | null)[]>;
+  /** PF20 : page d'origine en image quand pdf-lib refuse le PDF ; absent : page neuve vide sous l'annotation. */
+  readonly raster?: RasterPage;
 }
 export interface ExportDeps {
   loadPdfLib(): Promise<PdfLib>;
@@ -3009,6 +3038,8 @@ export interface ExportResult {
   readonly cut: boolean;
   /** Au moins une page d'origine recopiée : nom `<base> annoté.pdf` (PF19). */
   readonly annotated: boolean;
+  /** Au moins une page d'origine sortie en image (PF20, PDF refusé par pdf-lib). */
+  readonly rastered: boolean;
 }
 
 export type Quarter = 0 | 90 | 180 | 270;
@@ -3050,6 +3081,8 @@ export function placement(cropBox: Box4, rotate: number): Placement {
 interface Plan {
   readonly id: string;
   readonly source: { readonly asset: string; readonly index: number } | null;
+  /** PF20 : page d'un PDF que pdf-lib refuse, rendue en image par pdf.js. */
+  readonly raster: { readonly asset: string; readonly index: number; readonly w: number; readonly h: number } | null;
   readonly rect: Bounds;
   readonly content: boolean;
   readonly bounds: Bounds | null;
@@ -3059,13 +3092,19 @@ const outside = (b: Bounds, r: Bounds): boolean => b.x0 < r.x0 || b.y0 < r.y0 ||
 
 export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get">, deps: ExportDeps): Promise<ExportResult> {
   const lib = await deps.loadPdfLib();
-  const sources = new Map<string, PDFDocument>();
-  const sourceOf = async (asset: string): Promise<PDFDocument> => {
-    const hit = sources.get(asset);
-    if (hit !== undefined) return hit;
+  /** null : pdf-lib refuse ce PDF (erreur de lecture ou aucune page) ; pdf.js l'a pourtant ouvert (PF20). */
+  const sources = new Map<string, PDFDocument | null>();
+  const sourceOf = async (asset: string): Promise<PDFDocument | null> => {
+    if (sources.has(asset)) return sources.get(asset) ?? null;
     const blob = assets.get(asset);
     if (blob === undefined) throw new Error(`PDF d'origine absent (${asset})`);
-    const src = await lib.PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), { updateMetadata: false });
+    let src: PDFDocument | null;
+    try {
+      src = await lib.PDFDocument.load(new Uint8Array(await blob.arrayBuffer()), { updateMetadata: false });
+      if (src.getPageCount() === 0) src = null;
+    } catch {
+      src = null;
+    }
     sources.set(asset, src);
     return src;
   };
@@ -3077,11 +3116,14 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
     const bounds = ids.length > 0 ? doc.bounds(ids) : null;
     const b = view?.backdrop ?? null;
     let source: Plan["source"] = null;
-    if (b !== null && b.kind === PDF_PAGE_KIND && b.page !== null && b.rect !== null && b.page < (await sourceOf(b.asset)).getPageCount()) {
-      source = { asset: b.asset, index: b.page };
+    let raster: Plan["raster"] = null;
+    if (b !== null && b.kind === PDF_PAGE_KIND && b.page !== null && b.rect !== null) {
+      const src = await sourceOf(b.asset);
+      if (src !== null && b.page < src.getPageCount()) source = { asset: b.asset, index: b.page };
+      else if (src === null && b.w !== null && b.h !== null) raster = { asset: b.asset, index: b.page, w: b.w, h: b.h };
     }
-    const rect = source !== null && b?.rect ? b.rect : { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: Math.max(PAGE_HEIGHT, bounds?.y1 ?? 0) };
-    plans.push({ id, source, rect, content: ids.length > 0 || view?.grid?.visible === true, bounds });
+    const rect = (source !== null || raster !== null) && b?.rect ? b.rect : { x0: 0, y0: 0, x1: PAGE_WIDTH, y1: Math.max(PAGE_HEIGHT, bounds?.y1 ?? 0) };
+    plans.push({ id, source, raster, rect, content: ids.length > 0 || view?.grid?.visible === true, bounds });
   }
 
   const out = await lib.PDFDocument.create({ updateMetadata: false });
@@ -3090,10 +3132,16 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
   const requestOf = new Map<number, number>();
   for (const [k, p] of plans.entries()) {
     let page: PDFPage;
-    if (p.source !== null) {
-      const [copied] = await out.copyPages(await sourceOf(p.source.asset), [p.source.index]);
+    const src = p.source === null ? null : await sourceOf(p.source.asset);
+    if (p.source !== null && src !== null) {
+      const [copied] = await out.copyPages(src, [p.source.index]);
       if (copied === undefined) throw new Error(`page ${p.source.index + 1} illisible dans le PDF d'origine`);
       page = out.addPage(copied);
+    } else if (p.raster !== null) {
+      // PF20 : la page d'origine en image rendue par pdf.js, sous l'annotation (texte d'origine perdu, avis).
+      page = out.addPage([p.raster.w, p.raster.h]);
+      const png = (await deps.overlay.raster?.(p.raster.asset, p.raster.index, p.raster.w, p.raster.h)) ?? null;
+      if (png !== null) page.drawImage(await out.embedPng(png), { x: 0, y: 0, width: p.raster.w, height: p.raster.h });
     } else {
       page = out.addPage([NEW_PAGE_WIDTH, ((p.rect.y1 - p.rect.y0) * NEW_PAGE_WIDTH) / PAGE_WIDTH]);
     }
@@ -3128,8 +3176,9 @@ export async function exportPdf(doc: ExportSource, assets: Pick<AssetStore, "get
   return {
     bytes: await out.save({ useObjectStreams: false }),
     pages: pages.length,
-    cut: plans.some((p) => p.source !== null && p.bounds !== null && outside(p.bounds, p.rect)),
-    annotated: plans.some((p) => p.source !== null),
+    cut: plans.some((p) => (p.source !== null || p.raster !== null) && p.bounds !== null && outside(p.bounds, p.rect)),
+    annotated: plans.some((p) => p.source !== null || p.raster !== null),
+    rastered: plans.some((p) => p.raster !== null),
   };
 }
 ```
@@ -3143,7 +3192,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AssetInfo, Bounds } from "../core/api";
 import type { ImageSource } from "../engine/render/image-cache";
 import type { PageView } from "../engine/render/renderer";
-import { createPngOverlay, overlayScale, type ExportCanvas } from "./pdf-overlay";
+import { createPngOverlay, createRasterPage, overlayScale, type ExportCanvas } from "./pdf-overlay";
 
 const IMG = "ab".repeat(32);
 const PDF = "cd".repeat(32);
@@ -3198,6 +3247,49 @@ describe("superposition PNG (PF21)", () => {
     expect(seen).not.toBeNull();
     expect(close).toHaveBeenCalledTimes(1);
   });
+
+  it("le dessin attend le décodage de toutes les images citées : aucun cadre gris à l'export (PF21, contre-relecture)", async () => {
+    const order: string[] = [];
+    const decode = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      order.push("décodé");
+      return { close: vi.fn() } as unknown as ImageBitmap;
+    });
+    const producer = createPngOverlay({
+      doc: { elementIds: () => [], citedAssets: () => [info(IMG, "image/png"), info("ef".repeat(32), "image/png")] },
+      assets: { get: () => new Blob([new Uint8Array([1])]) },
+      decode,
+      canvas: () => ({ ctx: {} as CanvasRenderingContext2D, png: async () => new Uint8Array(), release: () => undefined }),
+      painter: (_ctx, images) => ({ paintContent: () => void order.push(`peint ${images.bitmap(IMG) === null ? "gris" : "image"}`) }),
+    });
+    await producer.pages([{ pageId: "p", rect: { x0: 0, y0: 0, x1: 1920, y1: 1080 }, box: { w: 842, h: 473.625 } }]);
+    expect(order).toEqual(["décodé", "décodé", "peint image"]);
+  });
+
+  it("createRasterPage : page rendue par le moteur PDF à min(2, 4096 / côté), en PNG ; PDF détruit, bitmap fermé ; asset absent : null", async () => {
+    const close = vi.fn();
+    const destroy = vi.fn();
+    const tiles: unknown[][] = [];
+    const pdf = {
+      open: vi.fn(async () => ({
+        pageCount: 1,
+        pageSize: async () => ({ w: 612, h: 792 }),
+        renderTile: async (i: number, scale: number, tile: unknown) => (tiles.push([i, scale, tile]), { close } as unknown as ImageBitmap),
+        destroy,
+      })),
+    };
+    const drawn: number[][] = [];
+    const raster = createRasterPage({
+      pdf,
+      assets: { get: (id) => (id === PDF ? new Blob([new Uint8Array([1])]) : undefined) },
+      canvas: (w, h) => ({ ctx: { drawImage: (_b: unknown, x: number, y: number) => void drawn.push([w, h, x, y]) } as unknown as CanvasRenderingContext2D, png: async () => new Uint8Array([7]), release: () => undefined }),
+    });
+    expect(await raster(PDF, 0, 612, 792)).toEqual(new Uint8Array([7]));
+    expect(tiles).toEqual([[0, 2, { x: 0, y: 0, w: 1224, h: 1584 }]]);
+    expect(drawn).toEqual([[1224, 1584, 0, 0]]);
+    expect([close.mock.calls.length, destroy.mock.calls.length]).toEqual([1, 1]);
+    expect(await raster(IMG, 0, 612, 792)).toBeNull();
+  });
 });
 ```
 
@@ -3217,7 +3309,8 @@ import type { AssetStore } from "../core/asset-store";
 import type { BitmapDecoder, BitmapLike, ImageSource } from "../engine/render/image-cache";
 import type { PageView } from "../engine/render/renderer";
 import { typed } from "./container-io";
-import type { Overlay, OverlayProducer } from "./pdf-export";
+import type { PdfEngine } from "../engine/render/pdf-port";
+import type { Overlay, OverlayProducer, RasterPage } from "./pdf-export";
 
 export const OVERLAY_MAX_PX = 4096;
 export const OVERLAY_MAX_SCALE = 2;
@@ -3240,6 +3333,8 @@ export interface PngOverlayDeps {
   readonly decode: BitmapDecoder;
   canvas(w: number, h: number): ExportCanvas;
   painter(ctx: CanvasRenderingContext2D, images: ImageSource): ContentPainter;
+  /** PF20 : page d'origine en image (`createRasterPage`), relayée telle quelle par le producteur. */
+  readonly raster?: RasterPage;
 }
 
 /** Bitmaps des images citées (type `image/*` seulement), décodés d'avance ; un échec laisse le cadre gris. */
@@ -3270,6 +3365,7 @@ export async function loadImageSource(
 
 export function createPngOverlay(deps: PngOverlayDeps): OverlayProducer {
   return {
+    ...(deps.raster ? { raster: deps.raster } : {}),
     async pages(requests) {
       const images = await loadImageSource(deps.doc, deps.assets, deps.decode);
       try {
@@ -3291,6 +3387,33 @@ export function createPngOverlay(deps: PngOverlayDeps): OverlayProducer {
         images.dispose();
       }
     },
+  };
+}
+
+/**
+ * Page d'origine rendue par pdf.js en une seule tuile (PF20) : échelle min(2, 4096 / plus grand côté) pixels par point,
+ * bitmap posé dans une toile puis encodé en PNG ; le `PdfFile` est détruit et le bitmap fermé après chaque page.
+ */
+export function createRasterPage(deps: { readonly pdf: PdfEngine; readonly assets: Pick<AssetStore, "get">; canvas(w: number, h: number): ExportCanvas }): RasterPage {
+  return async (asset, index, w, h) => {
+    const blob = deps.assets.get(asset);
+    if (blob === undefined) return null;
+    const file = await deps.pdf.open(blob);
+    try {
+      const scale = Math.min(OVERLAY_MAX_SCALE, OVERLAY_MAX_PX / Math.max(w, h));
+      const tile = { x: 0, y: 0, w: Math.ceil(w * scale), h: Math.ceil(h * scale) };
+      const bmp = await file.renderTile(index, scale, tile, new AbortController().signal);
+      const c = deps.canvas(tile.w, tile.h);
+      try {
+        c.ctx.drawImage(bmp, 0, 0);
+        return await c.png();
+      } finally {
+        bmp.close?.();
+        c.release();
+      }
+    } finally {
+      file.destroy();
+    }
   };
 }
 
@@ -3318,7 +3441,8 @@ export function browserExportCanvas(w: number, h: number): ExportCanvas {
   (Le test attend `[Math.round(1920 * s), 4096]` : `Math.round(2715 × 4096 / 2715)` vaut 4096.)
 
 - [ ] **Étape 6 : vert.** La commande bornée ;
-  `pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep -E "pdf-(export|overlay)"` (rien). Un test de texte
+  `pnpm --filter @roomboard/web exec tsc --noEmit -p . 2>&1 | grep -E "pdf-(export|overlay)"` (rien). Le PDF de test
+  « n'importe quoi » doit faire lever `PDFDocument.load` ou lui donner 0 page : les deux mènent à `raster`. Un test de texte
   qui échoue sur l'avertissement « standardFontDataUrl » de `pdf.js` en Node reste vert : seul le texte compte.
 
 - [ ] **Étape 7 : commit.**
@@ -3344,7 +3468,10 @@ moteur PDF (chiffré → « <nom> : PDF chiffré, non pris en charge », PF8) ; 
 `<nom sans .pdf>.roomboard`, cible nulle (Enregistrer demande où, jamais sur le PDF, U1) ; le `PdfFile` de l'import est
 détruit (PC11). `Workspace.exportPdf` (PF19 à PF21) : une seule exportation à la fois (« Opération en cours »), asset
 absent → `UNREAD_ASSETS_MESSAGE`, assemblage par `exportPdf` (T7) avec le producteur de l'onglet, avis du contenu coupé,
-écriture par `pdfFiles` sous `<base> annoté.pdf` ou `<base>.pdf`, avis « PDF exporté (N pages) ».
+écriture par `pdfFiles` sous `<base> annoté.pdf` ou `<base>.pdf`, avis « PDF exporté (N pages) ». Contre-relecture du
+cadrage (DAPF3, PF19) : un onglet fermé pendant l'export libère son document Wasm (`board-session.ts:363`) ; l'export
+travaille donc sur une **copie** prise au départ (`saveParts` puis `core.loadParts`), passée au producteur
+(`overlay(tab, doc)`) et libérée à la fin. PF20 : `rastered` → avis `PDF_RASTER_MESSAGE`.
 
 **Fichiers.**
 - Modifier : `apps/web/src/app/workspace.ts:9-34` (imports), `:45-73` (`WorkspaceDeps`), `:75-110` (`Workspace`),
@@ -3356,10 +3483,10 @@ absent → `UNREAD_ASSETS_MESSAGE`, assemblage par `exportPdf` (T7) avec le prod
 - Consomme : T1 — `PDF_MAX_PAGES` ; T2 — `CoreFactory.fromPdfPages`, `PdfPageSize` ; T3 — `PdfEncryptedError`,
   `PDF_ENCRYPTED_MESSAGE` (`platform/pdf-render.ts`) ; T4 — `PdfEngine`, `PdfFile` (`engine/render/pdf-port.ts`) ;
   T6 — `ImportDeps.openPdf`, `PDF_EXTENSION`, `PDF_MIME` (`platform/files.ts`) ; T7 — `exportPdf`, `PDF_CUT_MESSAGE`,
-  `OverlayProducer`, `PdfLib` (`app/pdf-export.ts`).
+  `PDF_RASTER_MESSAGE`, `OverlayProducer`, `PdfLib` (`app/pdf-export.ts`).
 - Produit (lu par T9, T13) :
   - `WorkspaceDeps.pdf?: PdfEngine`, `WorkspaceDeps.pdfFiles?: TypedFiles`, `WorkspaceDeps.loadPdfLib?(): Promise<PdfLib>`,
-    `WorkspaceDeps.overlay?(tab: TabSession): OverlayProducer`.
+    `WorkspaceDeps.overlay?(tab: TabSession, doc: CoreDocument): OverlayProducer` (`doc` : la copie de l'export).
   - `Workspace.openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>`,
     `Workspace.exportPdf(): Promise<boolean>`.
   - Messages : `PDF_NO_PAGE_MESSAGE = "PDF sans page"`, `BUSY_MESSAGE = "Opération en cours"`,
@@ -3369,7 +3496,7 @@ absent → `UNREAD_ASSETS_MESSAGE`, assemblage par `exportPdf` (T7) avec le prod
   telle quelle pour l'onglet du PDF.
 - Réutilise : `apps/web/src/core/asset-store.ts` (`put`) — `assets.put(blob)` dans le magasin neuf de l'onglet.
 - Réutilise : `apps/web/src/platform/host-tauri.ts` (`baseName`) — nom sans chemin dans les avis et le titre.
-- Réutilise : `apps/web/src/app/container-io.ts:44` (`typed`), `:45` (`missingOf`) — type `application/pdf` du `Blob`
+- Réutilise : `apps/web/src/app/container-io.ts:42` (`typed`), `:45` (`missingOf`) — type `application/pdf` du `Blob`
   (PF28) ; asset absent avant l'export.
 - Réutilise : `apps/web/src/platform/import.ts:167` (`createImporter`) — reçoit `openPdf: (f) => ws.openPdf(f)` quand
   `deps.pdf` est donné.
@@ -3386,7 +3513,8 @@ Attendu : 0 `×` ; « espace de travail : PDF (C12) » ≥ 10 tests (« S1 : PDF
 PF7), « PDF illisible ou sans page… », « onglets pleins… » (PF10), « web : PDF de 120 Mo refusé avant lecture » (S2,
 PF9), « export S1 : Cours annoté.pdf… » (S1, PF19, PF20), « export sans PDF : Sans titre.pdf, 1 page » (PF19, PC10),
 « export : asset absent » (PF20), « export : un seul à la fois » (PF19), « export : contenu sous la page PDF : avis »
-(Review Focus 4), « sans port : faux, sans avis »). Tests à garder verts : blocs « conteneur, repli et images », « C3 »,
+(Review Focus 4), « onglet fermé pendant l'export : fini sur sa copie » (DAPF3, contre-relecture), « PDF refusé par
+pdf-lib : avis » (PF20), « sans port : faux, sans avis »). Tests à garder verts : blocs « conteneur, repli et images », « C3 »,
 « tableau collé et classeur (C10b) » — `Test Files` sans échec. `tsc` vide (GC14).
 
 **Contraintes (recopiées).**
@@ -3598,6 +3726,42 @@ describe("espace de travail : PDF (C12)", () => {
     expect(shell.notify).toHaveBeenCalledWith("du contenu hors des pages PDF n'est pas exporté");
   });
 
+  it("onglet fermé pendant l'export : l'export finit sur sa copie, PDF écrit, aucune erreur (DAPF3, contre-relecture)", async () => {
+    let reached = false;
+    let release: () => void = () => undefined;
+    const docs: CoreDocument[] = [];
+    const pdfFiles = files();
+    const ws = await setupWorkspace({
+      pdfFiles,
+      loadPdfLib,
+      overlay: (_tab, doc) => {
+        docs.push(doc);
+        return { pages: (reqs) => new Promise((ok) => ((reached = true), (release = () => ok(reqs.map(() => ({ kind: "png" as const, bytes: PNG_1PX })))))) };
+      },
+    });
+    await ws.newBlank();
+    const tab = ws.active();
+    drawOn(tab);
+    const done = ws.exportPdf();
+    await vi.waitFor(() => expect(reached).toBe(true));
+    const id = ws.tabs.list().find((t) => t.session === tab)?.id ?? "";
+    answer = true;
+    expect(await ws.close(id)).toBe(true);
+    release();
+    expect(await done).toBe(true);
+    expect(docs[0]).not.toBe(tab.board.doc);
+    expect(pdfFiles.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("PDF que pdf-lib refuse : avis « pages exportées en image sous l'annotation » (PF20)", async () => {
+    const raster = vi.fn(async () => PNG_1PX);
+    const ws = await setupWorkspace({ pdf: fakePdf({ pages: 1 }).engine, pdfFiles: files(), loadPdfLib, overlay: () => ({ ...producer(), raster }) });
+    await ws.openPdf({ name: "abime.pdf", blob: new Blob([new TextEncoder().encode("%PDF-1.7\nn'importe quoi\n")]) });
+    expect(await ws.exportPdf()).toBe(true);
+    expect(raster).toHaveBeenCalledTimes(1);
+    expect(shell.notify).toHaveBeenCalledWith("PDF d'origine illisible pour l'export : pages exportées en image sous l'annotation");
+  });
+
   it("sans pdfFiles, loadPdfLib ou overlay : exportPdf rend faux, sans avis", async () => {
     const ws = await setupWorkspace({ loadPdfLib, overlay: () => producer() });
     expect(await ws.exportPdf()).toBe(false);
@@ -3615,7 +3779,7 @@ describe("espace de travail : PDF (C12)", () => {
   `../engine/render/pdf-port` ; `PDF_EXTENSION`, `PDF_MIME`, `ROOMBOARD_EXTENSION` de `../platform/files` (dans l'import
   existant) ; `PDF_ENCRYPTED_MESSAGE`, `PdfEncryptedError` de `../platform/pdf-render` ; `typed` de `./container-io`
   (dans l'import existant de `createContainerIO, missingOf`) ;
-  `import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, type OverlayProducer, type PdfLib } from "./pdf-export";`.
+  `import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, type OverlayProducer, type PdfLib } from "./pdf-export";`.
   `WorkspaceDeps`, après `itemFiles` :
 
 ```ts
@@ -3625,8 +3789,9 @@ describe("espace de travail : PDF (C12)", () => {
   readonly pdfFiles?: TypedFiles;
   /** C12 (PF21) : `loadPdfLib` (import dynamique) dans l'amorce. */
   loadPdfLib?(): Promise<PdfLib>;
-  /** C12 (DAPF3) : producteur de superposition d'un onglet (PNG en b, `krilla` en c). */
-  overlay?(tab: TabSession): OverlayProducer;
+  /** C12 (DAPF3) : producteur de superposition d'un onglet (PNG en b, `krilla` en c), sur `doc`, copie prise au départ
+   *  de l'export (l'onglet peut être fermé pendant). */
+  overlay?(tab: TabSession, doc: CoreDocument): OverlayProducer;
 ```
 
   `Workspace`, après `insertPages(): Promise<boolean>;` :
@@ -3706,8 +3871,12 @@ export const exportPdfName = (tabName: string, annotated: boolean): string =>
         return false;
       }
       exporting = true;
+      // Copie prise au départ (DAPF3) : fermer l'onglet pendant l'export libère son document, pas celle-ci.
+      const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
+      const doc = core.loadParts(manifest, ybin);
       try {
-        const r = await assemblePdf(tab.board.doc, tab.assets, { loadPdfLib: () => loadPdfLib(), overlay: overlay(tab) });
+        const r = await assemblePdf(doc, tab.assets, { loadPdfLib: () => loadPdfLib(), overlay: overlay(tab, doc) });
+        if (r.rastered) await say(PDF_RASTER_MESSAGE);
         if (r.cut) await say(PDF_CUT_MESSAGE);
         const saved = await pdfFiles.save(exportPdfName(tab.files.name(), r.annotated), r.bytes);
         if (saved) await say(pdfExportedMessage(r.pages));
@@ -3717,6 +3886,7 @@ export const exportPdfName = (tabName: string, annotated: boolean): string =>
         return false;
       } finally {
         exporting = false;
+        doc.free();
       }
     },
 ```
@@ -3735,3 +3905,2273 @@ git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com 
 ```
 
   Rapport : N, noms vus, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t9"></a>
+
+### Tâche T9 — Branchement : tuiles dans la session, `data-fond`, amorce, bouton relié, hors ligne
+
+**Objectif.** Chaque onglet peint ses fonds `pdf-page` par un cache de tuiles (T4) branché sur le rendu (T5) et publie
+`#stage[data-fond]` (PF15). Contre-relecture (PF32) : 12 onglets possibles (`tabs.ts:9`) et `deactivate` ne libérait rien
+(`board-session.ts:343-348`) → la session **libère** son cache de tuiles et ses `PdfFile` à la désactivation et à la
+fermeture, et le recrée au premier dessin suivant. L'amorce crée le moteur PDF (`createPdfEngine(loadPdfjs)`), le port
+`PDF_TYPE`, le producteur PNG (avec `createRasterPage`, PF20) et les passe à l'espace de travail ; `App.tsx` relie
+« Exporter en PDF… » ; les hôtes que `pdf.js` et `pdf-lib` citent sans les charger entrent dans `NON_FETCHED_HOSTS`
+(PF24).
+
+**Fichiers.**
+- Modifier : `apps/web/src/app/board-session.ts:45-56` (`SessionShared.pdf`), `:130-136` (cache, options du rendu),
+  `:343-363` (`deactivate`, `dispose`) ; `apps/web/src/app/board-session.test.ts` (bloc neuf)
+- Modifier : `apps/web/src/main.ts:66-109` ; `apps/web/src/ui/App.tsx:142-150` ; `apps/web/src/ui/App.test.tsx` (test
+  neuf) ; `scripts/controle-hors-ligne.mjs:13`
+
+**Interfaces.**
+- Consomme : T3 — `createPdfEngine`, `loadPdfjs`, `loadPdfLib` ; T4 — `createPdfTiles`, `PdfTiles`, `PdfEngine`,
+  `PdfFile` ; T5 — `Canvas2DOptions.backdrop`, `onBackdrop`, `BackdropPainter`, `Canvas2DRenderer` ; T6 — `PDF_TYPE`,
+  `HostTargets.exportPdf` ; T7 — `createPngOverlay`, `createRasterPage`, `browserExportCanvas` ; T8 —
+  `WorkspaceDeps.pdf`, `pdfFiles`, `loadPdfLib`, `overlay(tab, doc)`, `Workspace.exportPdf`.
+- Produit (lu par T10, T13) : `SessionShared.pdf?: PdfEngine` ; `#stage[data-fond]` ∈ {`""`, `attente`, `pret`,
+  `echec`} ; dans `main.ts`, `pngOverlay(tab: TabSession, doc: CoreDocument): OverlayProducer` (repli de T13).
+- Réutilise : `apps/web/src/app/board-session.ts:135` (`createImageCache`, `redraw → engine.redraw()`) — même
+  branchement pour le cache de tuiles (patron R16).
+- Réutilise : `apps/web/src/platform/typed-files.ts:33`, `:47` — `createWebTypedFiles` / `createTauriTypedFiles` avec
+  `PDF_TYPE`, comme `RBITEM_TYPE` (`main.ts:66-69`).
+- Réutilise : `apps/web/src/platform/container-load.ts:7` (patron) — `loadPdfjs`, `loadPdfLib` importés par l'amorce
+  seule.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+pnpm --filter @roomboard/web exec vitest run src/app/board-session.test.ts src/ui/App.test.tsx --reporter=verbose 2>&1 | grep -E "C12|×|FAIL|Test Files|Tests " | tail -20 && \
+ROOMBOARD_WASM_REQUIRED=1 pnpm -r test 2>&1 | grep -E "Test Files|Tests |FAIL" | tail -6 && \
+pnpm --filter @roomboard/web build 2>&1 | tail -3 && ls apps/web/dist/assets | grep -E "^(pdfjs|pdf-lib|pdf-worker)-" && \
+node scripts/controle-hors-ligne.mjs apps/web/dist apps/desktop/src-tauri/tauri.conf.json; echo "hors-ligne: $?" && \
+bash scripts/tests/controle-hors-ligne.test.sh 2>&1 | tail -2
+```
+
+Attendu : « session — fond PDF (C12, PF15) » ≥ 4 (« tuiles rendues depuis le magasin : data-fond pret » (S1, S3),
+« deactivate libère tuiles et PdfFile, activate les recrée » (PF32, contre-relecture), « sans moteur PDF : echec »,
+« asset absent : echec, PDF jamais ouvert ») ; « App : Exporter en PDF (C12) » ≥ 1 ; `pnpm -r test` sans échec ; trois
+morceaux `pdfjs-*.js`, `pdf-lib-*.js`, `pdf-worker-*.js` (aucun `.mjs`) ; `hors-ligne: 0` ;
+`controle-hors-ligne.test.sh : OK` (effet de bord : test gardé vert). `tsc` vide.
+
+**Contraintes (recopiées).**
+- GC2 TDD ; aucun test sauté ; `pnpm -r test` joué avec `ROOMBOARD_WASM_REQUIRED=1`.
+- GC3 PATH ; aucun build Tauri, aucun build Android.
+- GC4 Préparation : `pnpm install --frozen-lockfile`, `target` copié (GC4).
+- GC5 Reconstruire les **deux** modules Wasm (commandes de GC5) avant `pnpm -r test` et le build : `from_pdf_pages`
+  n'est pas dans le module de la référence.
+- GC6 Preuve bornée : la commande ci-dessus ; N et noms dans le rapport.
+- GC7, GC8 Commits fichier par fichier, auteur et message imposés ; interdits git.
+- GC10 Tailles des deux modules relevées (`wc -c apps/web/dist/assets/roomboard_*wasm_bg*.wasm`), sous leurs plafonds.
+- GC11 `pdfjs-dist` et `pdf-lib` en morceaux paresseux ; `controle-hors-ligne.mjs` vert, une raison par hôte ajouté.
+- GC13 Aucun `switch`, aucune taille en `px` dans `App.tsx`.
+- GC14 `tsc` vide.
+- GC15 Une ligne `Réutilisation :` par ligne `Réutilise :`.
+- GC18, GC19 Aucun processus laissé ; seuls les fichiers ci-dessus ; `deactivate` et `dispose` gardent leur contrat
+  (ids retirés, touches relâchées).
+
+**Interdits.** Ne pas toucher la CSP de la coque ; aucun hôte ajouté sans raison ; ne pas importer `pdf-load.ts` ailleurs
+que dans `main.ts`.
+
+**Critère « terminé ».** Commande bornée verte, `tsc` vide, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4) et reconstruire les deux modules (GC5).
+
+- [ ] **Étape 2 : tests rouges.** À la fin de `apps/web/src/app/board-session.test.ts` (imports :
+  `import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";`) :
+
+```ts
+describe("session — fond PDF (C12, PF15)", () => {
+  const PDF = { id: "ef".repeat(32), name: "a.pdf", mime: "application/pdf", size: 5 };
+  function pdfEngine() {
+    const close = vi.fn();
+    const destroy = vi.fn();
+    const renderTile = vi.fn(async () => ({ close }) as unknown as TileBitmap);
+    const open = vi.fn(async (_b: Blob): Promise<PdfFile> => ({ pageCount: 1, pageSize: async () => ({ w: 612, h: 792 }), renderTile, destroy }));
+    return { engine: { open } satisfies PdfEngine, open, renderTile, close, destroy };
+  }
+  async function pdfSession(o: { pdf?: PdfEngine; withAsset?: boolean } = {}) {
+    const doc = fakeCore.fromPdfPages(PDF, [{ w: 612, h: 792 }]);
+    const assets = createAssetStore();
+    if (o.withAsset !== false) assets.adopt(PDF.id, new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])], { type: "application/pdf" }));
+    const s = await createBoardSession(doc, { ...shared, ...(o.pdf ? { pdf: o.pdf } : {}) }, assets);
+    Object.defineProperty(s.stage, "clientWidth", { configurable: true, value: 640 });
+    Object.defineProperty(s.stage, "clientHeight", { configurable: true, value: 480 });
+    s.activate();
+    return s;
+  }
+
+  it("fond pdf-page : PDF ouvert depuis le magasin de l'onglet, tuiles rendues, data-fond « pret » (S1, S3)", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    expect(pdf.open).toHaveBeenCalledTimes(1);
+    expect(pdf.renderTile.mock.calls[0]?.[0]).toBe(0);
+    s.dispose();
+    expect(pdf.destroy).toHaveBeenCalledTimes(1);
+    expect(pdf.close).toHaveBeenCalled();
+  });
+
+  it("deactivate libère tuiles et PdfFile (12 onglets possibles) ; activate les recrée au dessin suivant (PF32, contre-relecture)", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    s.deactivate();
+    expect([pdf.destroy.mock.calls.length, pdf.close.mock.calls.length > 0]).toEqual([1, true]);
+    s.activate();
+    await vi.waitFor(() => expect(pdf.open).toHaveBeenCalledTimes(2), { timeout: 5000 });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("pret"), { timeout: 5000 });
+    s.dispose();
+  });
+
+  it("sans moteur PDF (amorce partielle) : data-fond « echec »", async () => {
+    const s = await pdfSession();
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("echec"), { timeout: 5000 });
+    s.dispose();
+  });
+
+  it("asset absent du magasin : « echec », PDF jamais ouvert", async () => {
+    const pdf = pdfEngine();
+    const s = await pdfSession({ pdf: pdf.engine, withAsset: false });
+    await vi.waitFor(() => expect(s.stage.dataset["fond"]).toBe("echec"), { timeout: 5000 });
+    expect(pdf.open).not.toHaveBeenCalled();
+    s.dispose();
+  });
+});
+```
+
+  Dans `apps/web/src/ui/App.test.tsx`, dans `describe("App (T95)")` :
+
+```ts
+  it("App : Exporter en PDF (C12) — le bouton de la barre des pages appelle workspace.exportPdf", () => {
+    const { container, workspace } = renderApp();
+    click(container.querySelector('button[data-item="export-pdf"]'));
+    expect(workspace.exportPdf).toHaveBeenCalledTimes(1);
+  });
+```
+
+  Rouge.
+
+- [ ] **Étape 3 : la session.** Dans `board-session.ts` : imports `import type { PdfEngine, PdfFile } from "../engine/render/pdf-port";`,
+  `import { createPdfTiles, type PdfTiles } from "../engine/render/pdf-tiles";`,
+  `import type { BackdropPainter } from "../engine/render/renderer";`. `SessionShared` gagne :
+
+```ts
+  /** C12 (DAPF1) : moteur PDF des fonds `pdf-page` ; absent : fond en « page PDF illisible ». */
+  readonly pdf?: PdfEngine;
+```
+
+  Après la création d'`images` (`:136`), et l'appel `chooseRenderer` remplacé :
+
+```ts
+  // Fond `pdf-page` (C12, DAPF2) : tuiles par palier, `redraw` à chaque arrivée (patron R16). Libérées à la
+  // désactivation (PF32 : 12 onglets) et recréées au premier dessin suivant.
+  const pdf = shared.pdf;
+  const openPdf = (asset: string): Promise<PdfFile> | null => {
+    const blob = assets.get(asset);
+    return blob === undefined || pdf === undefined ? null : pdf.open(blob);
+  };
+  let tiles: PdfTiles | null = null;
+  const backdrop: BackdropPainter = {
+    paint: (ctx, b, camera, view) => (tiles ??= createPdfTiles(openPdf, () => redraw())).paint(ctx, b, camera, view),
+  };
+  const freeTiles = (): void => {
+    tiles?.dispose();
+    tiles = null;
+  };
+  undo.push(freeTiles);
+  stage.dataset["fond"] = "";
+  const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", {
+    images,
+    ...(pdf === undefined ? {} : { backdrop }),
+    onBackdrop: (s) => {
+      stage.dataset["fond"] = s;
+    },
+  });
+```
+
+  `deactivate()` appelle `freeTiles();` en dernier ; `dispose()` appelle `freeTiles();` juste après `images.dispose();`.
+
+- [ ] **Étape 4 : l'amorce et le bouton.** Dans `main.ts` : imports `createPdfEngine` (`./platform/pdf-render`),
+  `loadPdfjs`, `loadPdfLib` (`./platform/pdf-load`), `PDF_TYPE` (dans l'import de `./platform/typed-files`),
+  `Canvas2DRenderer` (`./engine/render/canvas2d`), `browserExportCanvas`, `createPngOverlay`, `createRasterPage`
+  (`./app/pdf-overlay`), `decodeImage`, `kindOfMime` (`./platform/image-import`), types `TabSession`
+  (`./app/workspace`), `CoreDocument` (`./core/api`). Après `itemFiles` :
+
+```ts
+  // PDF (C12) : pdf.js et pdf-lib chargés au premier PDF (import dynamique) ; écriture native dans la coque.
+  const pdf = createPdfEngine(loadPdfjs);
+  const pdfFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), PDF_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, PDF_TYPE);
+  const decodeBitmap = async (blob: Blob) => (await decodeImage(blob, kindOfMime(blob.type) ?? "png")).bitmap;
+  // Superposition PNG (lot b) ; T13 la garde en repli du producteur vectoriel.
+  const pngOverlay = (tab: TabSession, doc: CoreDocument) =>
+    createPngOverlay({
+      doc,
+      assets: tab.assets,
+      decode: decodeBitmap,
+      canvas: browserExportCanvas,
+      painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images }),
+      raster: createRasterPage({ pdf, assets: tab.assets, canvas: browserExportCanvas }),
+    });
+```
+
+  `shared` gagne `pdf` ; `createWorkspace({ … })` gagne `pdf, pdfFiles, loadPdfLib, overlay: pngOverlay,`. Dans
+  `ui/App.tsx`, l'objet passé à `createLocalToolbarHost` gagne `exportPdf: () => void ws.exportPdf(),` après
+  `insertPages`.
+
+- [ ] **Étape 5 : build et hôtes.** La commande bornée jusqu'à `controle-hors-ligne.mjs`. Pour chaque hôte signalé,
+  une entrée dans `NON_FETCHED_HOSTS` (`scripts/controle-hors-ligne.mjs:13`) avec sa raison ; relevé fait au planning sur
+  les fichiers minifiés (à confirmer par la sortie réelle, n'ajouter que les hôtes signalés) :
+
+```js
+export const NON_FETCHED_HOSTS = new Map([
+  ["www.w3.org", "espaces de noms XML (SVG, XHTML), jamais chargés"],
+  ["example.com", "base d'URL fictive de pdf.js pour analyser une adresse relative (C12), jamais chargée"],
+  ["foo.bar", "base d'URL fictive de pdf.js pour analyser une adresse relative (C12), jamais chargée"],
+  ["github.com", "licence de core-js citée par pdf.js et nom de producteur de pdf-lib (C12), jamais chargés"],
+  ["ns.adobe.com", "espaces de noms XFA et XMP comparés comme chaînes par pdf.js (C12), jamais chargés"],
+  ["www.xfa.org", "espaces de noms XFA comparés comme chaînes par pdf.js (C12), jamais chargés"],
+]);
+```
+
+  Puis la commande bornée entière.
+
+- [ ] **Étape 6 : commit.**
+
+```bash
+cd "$WT" && for f in apps/web/src/app/board-session.ts apps/web/src/app/board-session.test.ts apps/web/src/main.ts \
+  apps/web/src/ui/App.tsx apps/web/src/ui/App.test.tsx scripts/controle-hors-ligne.mjs; do git add "$f"; done && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(web): wire PDF tiles, Export as PDF and offline host exceptions" \
+  -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, tailles des deux modules et des trois morceaux (`ls -l apps/web/dist/assets | grep -E "pdfjs|pdf-lib|pdf-worker"`,
+  PF31), hôtes ajoutés, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t10"></a>
+
+### Tâche T10 — Essai navigateur C12 dans `verifier.sh --e2e`, capture d'un PDF annoté
+
+**Objectif.** L'essai `scripts/essais/c12-pdf-navigateur.mjs` (PF25 à PF27, patron `c3-groupes-navigateur.mjs`, CSP de la
+coque, repli, heure figée) joue S1 : PDF de 3 pages **généré dans l'essai** par `pdf-lib`, aucun morceau `pdf.js` /
+`pdf-lib` avant le dépôt (PF26), scène ≥ 640 px (PF27), dépôt → onglet « 1/3 », `data-fond` « pret », texte visible ;
+Ctrl+Z ne retire aucune page (S3) ; page 2 : un trait ; « Exporter en PDF… » → `essai-3-pages annoté.pdf` ; relu en
+Node : 3 pages, « RoomBoard page 2 » en texte, une superposition en page 2 seulement (genre imprimé : `/Image` en (b),
+`/Form` après T13) ; Enregistrer ; redéposer le PDF exporté : 3 pages ; redéposer le `.roomboard` : 3 pages, fond prêt, le
+trait en page 2. Ajouté au bloc `--e2e` ; `--captures` seul écrit `docs/essais/c12-pdf-annote.png`. Contre-relecture
+(PF25) : le Worker de `pdf.js` est empaqueté par Vite (T9 le vérifie : aucun `.mjs`) ; si un `.mjs` sort quand même,
+`scripts/essais/commun.mjs` gagne `".mjs": "text/javascript; charset=utf-8"` dans `TYPES`.
+
+**Fichiers.**
+- Créer : `scripts/essais/c12-pdf-navigateur.mjs`, `docs/essais/c12-pdf-annote.png`
+- Modifier : `scripts/verifier.sh:91-105`, `scripts/tests/verifier-e2e.test.sh:13`, `scripts/essais/commun.mjs:13-21`
+  (seulement si un `.mjs` est servi)
+
+**Interfaces.**
+- Consomme (T9) : boutons `export-pdf`, `page-next`, `pen` ; `#stage[data-page|data-fond|data-elements|data-camera]` ;
+  morceaux `assets/pdfjs-*.js`, `pdf-lib-*.js`, `pdf-worker-*.js`.
+- Produit : ligne d'essai « C12 PDF : OK » ; ligne `ok — S1 : page 2 : une superposition (/Image)` lue par T13 à la
+  clôture.
+- Réutilise : `scripts/essais/commun.mjs:136` (`dropFile`), `:94` (`stageBox`), `:152` (`coqueCsp`), `:71` (`inkIn`),
+  `:25` (`loadPlaywright`), `:37` (`serve`) — appelés tels quels.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && bash scripts/verifier.sh --e2e 2>&1 | tail -90
+```
+
+Attendu : « C12 PDF : OK » et ses lignes `ok — …` (PF26, PF27, S1, S3, S4), les 12 essais d'avant « : OK » (carte
+d'impact : à garder verts), « verifier.sh : e2e OK », « verifier.sh : OK », `module Wasm : N octets` ≤ 1 572 864 et
+`module formats : N octets` ≤ 3 145 728 ; `ls docs/essais/c12-pdf-annote.png`.
+
+**Preuve visuelle.** `node scripts/essais/c12-pdf-navigateur.mjs --captures` ; lectures d'abord (une valeur lue prouve
+plus qu'une image) : les lignes `ok — data-page="2/3"`, `data-fond="pret"` du PDF exporté redéposé ; puis ouvrir
+`docs/essais/c12-pdf-annote.png` et décrire : page 2 du PDF exporté, texte « RoomBoard page 2 » et le trait par-dessus.
+
+**Contraintes (recopiées).**
+- GC1 `verifier.sh --e2e` seulement ici.
+- GC2 Aucun essai sauté ni désactivé ; aucun délai relevé (attentes de 30 s au plus, rejouées une fois si la VM rame).
+- GC3 PATH ; aucun build Tauri, aucun build Android.
+- GC4 Préparation : `pnpm install --frozen-lockfile`, `target` copié ; Playwright de l'essai (`loadPlaywright`).
+- GC6 Preuve bornée : la commande ci-dessus ; lignes `OK` dans le rapport.
+- GC7, GC8 Commits fichier par fichier, auteur et message imposés ; interdits git.
+- GC10 Tailles des deux modules citées sous leurs plafonds.
+- GC17 PDF généré dans l'essai, jamais téléchargé ni commité ; seule la capture est commitée.
+- GC18 Serveur et navigateur fermés en fin d'essai (`finally`).
+- GC19 Seuls les fichiers ci-dessus ; un défaut d'une autre tâche se signale (tâche **bloquée**), il ne se corrige pas
+  ici.
+
+**Interdits.** Aucune option de capture dans `verifier.sh` ; aucune requête hors de 127.0.0.1 ; aucun PDF de
+`~/telechargements-roomboard/`.
+
+**Critère « terminé ».** Commande bornée verte, capture décrite, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : l'essai.** Créer `scripts/essais/c12-pdf-navigateur.mjs` :
+
+```js
+#!/usr/bin/env node
+// Essai C12 PDF au navigateur (S1, S3, S4 du cadrage, PF25 à PF27) : déposer un PDF de 3 pages généré ici, voir les
+// pages, annoter, exporter en PDF annoté, relire le PDF exporté en Node, enregistrer, redéposer le PDF et le .roomboard.
+// Application construite servie en local avec la CSP de la coque, Chromium headless, repli (`?fichiers=repli`), heure
+// figée. Oracles : #stage[data-page|data-fond|data-elements|data-camera], requêtes, pixels. Code : 0 réussi, 1 échec,
+// 2 outil absent. Usage : node scripts/essais/c12-pdf-navigateur.mjs [--captures] (docs/essais/c12-pdf-annote.png).
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+
+const LABEL = "C12 PDF";
+const FIXED = new Date("2026-11-20T08:00:00.000Z");
+const web = createRequire(join(ROOT, "apps", "web", "package.json"));
+const { PDFDict, PDFDocument, PDFName, PDFStream, StandardFonts } = web("pdf-lib");
+const LAZY = /\/assets\/(?:pdfjs|pdf-lib|pdf-worker)-[^/]*\.js$/;
+
+async function threePages() {
+  const d = await PDFDocument.create();
+  const font = await d.embedFont(StandardFonts.Helvetica);
+  for (let i = 1; i <= 3; i++) d.addPage([612, 792]).drawText(`RoomBoard page ${i}`, { x: 72, y: 700, size: 36, font });
+  return d.save();
+}
+
+async function readBack(bytes) {
+  const pdfjs = await import(pathToFileURL(web.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false }).promise;
+  const texts = [];
+  for (let i = 1; i <= doc.numPages; i++) texts.push((await (await doc.getPage(i)).getTextContent()).items.map((it) => it.str ?? "").join(""));
+  const pages = doc.numPages;
+  await doc.destroy();
+  const overlays = (await PDFDocument.load(bytes)).getPages().map((p) => {
+    const xo = p.node.Resources()?.lookupMaybe(PDFName.of("XObject"), PDFDict);
+    return xo ? xo.keys().map((k) => String(xo.lookup(k, PDFStream).dict.get(PDFName.of("Subtype")))) : [];
+  });
+  return { pages, texts, overlays };
+}
+
+async function scenario(page, url, { captures, tmp, requests }) {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("dialog", (d) => d.accept());
+  const check = (cond, msg) => {
+    if (!cond) throw new Echec(msg);
+    console.log(`ok — ${msg}`);
+  };
+  const fr = () => frames(page);
+  const mouse = stageMouse(page);
+  const attr = (name) => page.getAttribute("#stage", name);
+  const waitAttr = (name, v) =>
+    page.waitForFunction(([n, v]) => document.querySelector("#stage")?.getAttribute(n) === v, [name, v], { timeout: 30000 }).catch(async () => {
+      throw new Echec(`${name} attendu « ${v} », lu « ${await attr(name)} »`);
+    });
+  const tabs = () => page.locator(TAB).count();
+  const waitTabs = (n) => page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, n, { timeout: 30000 });
+  const download = async (click, name) => {
+    const dl = page.waitForEvent("download");
+    await click();
+    const file = join(tmp, name);
+    await (await dl).saveAs(file);
+    return file;
+  };
+
+  await page.addInitScript(() => {
+    window.__downloadNames = [];
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) window.__downloadNames.push(this.download);
+      return click.call(this);
+    };
+  });
+  await page.goto(url);
+  await page.waitForSelector("#stage");
+  await fr();
+  const box = await stageBox(page, 640);
+  check(box.height >= 640, `PF27 : scène de ${box.height} px (≥ 640) avec « Exporter en PDF… » dans la barre des pages`);
+  check(!requests.some((u) => LAZY.test(u)), "PF26 : aucun morceau pdf.js ni pdf-lib chargé avant le dépôt");
+
+  // S1 : dépôt d'un PDF de 3 pages généré ici.
+  const n0 = await tabs();
+  await dropFile(page, "#stage", "essai-3-pages.pdf", await threePages(), "application/pdf");
+  await waitTabs(n0 + 1);
+  await waitAttr("data-page", "1/3");
+  await waitAttr("data-fond", "pret");
+  check(requests.some((u) => /\/pdfjs-/.test(u)) && requests.some((u) => /\/pdf-worker-/.test(u)), 'S1 : nouvel onglet, data-page="1/3", data-fond="pret" ; pdf.js chargé au dépôt');
+  const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);
+  const ink = await inkIn(page, [200 * zoom + tx, 100 * zoom + ty, 1500 * zoom + tx, 320 * zoom + ty]);
+  check(ink > 50, `S1 : le texte de la page 1 est visible (${ink} pixels sombres)`);
+  await page.keyboard.press("Control+z");
+  await fr();
+  check((await attr("data-page")) === "1/3", "S3 : Ctrl+Z ne retire aucune page");
+
+  // Page 2 : un trait.
+  await page.click(item("page-next"));
+  await waitAttr("data-page", "2/3");
+  await waitAttr("data-fond", "pret");
+  await page.click(item("pen"));
+  await mouse.move(300, 320);
+  await mouse.down();
+  await mouse.move(450, 330, { steps: 5 });
+  await mouse.move(600, 340, { steps: 5 });
+  await mouse.up();
+  await waitAttr("data-elements", "1");
+  check(true, "S1 : page 2 annotée d'un trait");
+
+  // Export, relu en Node.
+  const exported = await download(() => page.click(item("export-pdf")), "export.pdf");
+  const names = await page.evaluate(() => window.__downloadNames);
+  const proposed = (names.at(-1) ?? "").normalize("NFC");
+  check(proposed === "essai-3-pages annoté.pdf", `S1 : « Exporter en PDF… » propose « ${proposed} »`);
+  check(requests.some((u) => /\/pdf-lib-/.test(u)), "PF26 : pdf-lib chargé à l'export seulement");
+  const back = await readBack(await readFile(exported));
+  check(back.pages === 3 && back.texts[1]?.includes("RoomBoard page 2"), "S1 : PDF exporté relu : 3 pages, « RoomBoard page 2 » toujours en texte");
+  const [o1, o2, o3] = back.overlays;
+  check(o1?.length === 0 && o3?.length === 0 && o2?.length === 1, `S1 : page 2 : une superposition (${o2?.[0] ?? "aucune"}), pages 1 et 3 : aucune`);
+
+  // Enregistrer le .roomboard du PDF annoté.
+  const saved = await download(() => page.keyboard.press("Control+s"), "essai-3-pages.roomboard");
+
+  // Redéposer le PDF exporté : 3 pages.
+  const n1 = await tabs();
+  await dropFile(page, "#stage", "essai-3-pages annoté.pdf", await readFile(exported), "application/pdf");
+  await waitTabs(n1 + 1);
+  await waitAttr("data-page", "1/3");
+  check(true, 'S1 : PDF exporté redéposé : data-page="1/3"');
+  if (captures) {
+    await page.click(item("page-next"));
+    await waitAttr("data-page", "2/3");
+    await waitAttr("data-fond", "pret");
+    check(true, 'capture : data-page="2/3", data-fond="pret"');
+    await fr();
+    const path = join(ROOT, "docs", "essais", "c12-pdf-annote.png");
+    await page.screenshot({ path });
+    console.log(`capture : ${path}`);
+  }
+
+  // Redéposer le .roomboard : 3 pages, fond prêt, le trait en page 2 (S4 : l'asset revient du conteneur).
+  const n2 = await tabs();
+  await dropFile(page, "#stage", "essai-3-pages.roomboard", await readFile(saved), "application/x-roomboard");
+  await waitTabs(n2 + 1);
+  await waitAttr("data-page", "1/3");
+  await waitAttr("data-fond", "pret");
+  await page.click(item("page-next"));
+  await waitAttr("data-page", "2/3");
+  await waitAttr("data-elements", "1");
+  check(true, "S1 : .roomboard rouvert : 3 pages, fond prêt, le trait en page 2");
+  check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
+}
+
+async function main() {
+  console.log(`sha ${gitSha()}`);
+  if (!existsSync(join(DIST, "index.html"))) {
+    console.error(`${LABEL} : ÉCHEC — apps/web/dist absent : lancer d'abord scripts/verifier.sh (Wasm et application)`);
+    return 1;
+  }
+  const pw = await loadPlaywright();
+  if (!pw) {
+    console.error(`${LABEL} : outil absent — Playwright introuvable (npx -y playwright@1.65.1 --version, ou PLAYWRIGHT_MODULE=…)`);
+    return 2;
+  }
+  const server = await serve({ headers: { "Content-Security-Policy": coqueCsp() } });
+  const port = server.address().port;
+  const tmp = await mkdtemp(join(tmpdir(), "roomboard-c12-"));
+  let browser = null;
+  try {
+    try {
+      browser = await pw.chromium.launch({ args: ["--no-sandbox"] });
+    } catch (e) {
+      console.error(`${LABEL} : outil absent — Chromium de Playwright : ${e instanceof Error ? e.message.split("\n")[0] : e}`);
+      return 2;
+    }
+    const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 1, acceptDownloads: true });
+    const external = [];
+    const requests = [];
+    context.on("request", (r) => requests.push(r.url()));
+    await context.route("**/*", (route) => {
+      const u = new URL(route.request().url());
+      if (u.hostname === "127.0.0.1") return route.continue();
+      external.push(u.href);
+      return route.abort();
+    });
+    const page = await context.newPage();
+    await page.clock.setFixedTime(FIXED);
+    await scenario(page, `http://127.0.0.1:${port}/?fichiers=repli`, { captures: process.argv.includes("--captures"), tmp, requests });
+    if (external.length > 0) throw new Echec(`requêtes hors de 127.0.0.1 : ${external.join(", ")}`);
+    console.log(`${LABEL} : OK`);
+    return 0;
+  } catch (e) {
+    console.error(`${LABEL} : ÉCHEC — ${e instanceof Echec ? e.message : e instanceof Error ? e.stack : e}`);
+    return 1;
+  } finally {
+    await browser?.close();
+    server.close();
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+process.exitCode = await main();
+```
+
+- [ ] **Étape 3 : `verifier.sh`.** Dans le bloc `--e2e`, après `node scripts/essais/c3-groupes-navigateur.mjs` :
+  `node scripts/essais/c12-pdf-navigateur.mjs`. Dans `scripts/tests/verifier-e2e.test.sh:13`, la liste gagne
+  `c12-pdf-navigateur`. `bash scripts/tests/verifier-e2e.test.sh` : « verifier-e2e.test.sh : OK ».
+
+- [ ] **Étape 4 : essai seul, puis suite.** `bash scripts/verifier.sh` (sans `--e2e`, construit `dist`), puis
+  `node scripts/essais/c12-pdf-navigateur.mjs 2>&1 | tail -25`. Une ressource refusée pour son type MIME (`.mjs`) :
+  ajouter `".mjs": "text/javascript; charset=utf-8",` à `TYPES` dans `commun.mjs` (PF25). Puis la commande bornée.
+
+- [ ] **Étape 5 : capture.** La preuve visuelle ci-dessus.
+
+- [ ] **Étape 6 : commit.**
+
+```bash
+cd "$WT" && for f in scripts/essais/c12-pdf-navigateur.mjs scripts/verifier.sh scripts/tests/verifier-e2e.test.sh \
+  docs/essais/c12-pdf-annote.png; do git add "$f"; done && \
+( git diff --quiet -- scripts/essais/commun.mjs || git add scripts/essais/commun.mjs ) && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "test(e2e): C12 PDF import, annotate, export and reopen browser scenario" \
+  -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : lignes `OK`, genre de la superposition lu, deux tailles de module, description de la capture, une ligne
+  `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t11"></a>
+
+### Tâche T11 — (lot c) Écrivain PDF vectoriel `krilla` dans le module `formats`
+
+**Objectif.** `roomboard_formats::pdf::write_pages(list, fonts, images)` (PF22, DAPF4) lit une liste d'affichage en flux
+de nombres (`Float32Array` côté page, PC12) et un tableau de textes, et écrit un PDF par `krilla` 0.8 : une page par code
+`PAGE`, chemins remplis et tracés, découpes rangées par niveau de `save`/`restore`, textes en Liberation Sans, images PNG
+ou JPEG. La liaison `write_pdf_pages` du module `formats` délègue à une fonction `_inner` testée en natif. `krilla` n'entre
+que dans `roomboard-formats` ; tailles des deux modules mesurées avant et après (GC10, HPF2-8).
+
+**Table des codes (commune à T11 et T12).** Chaque opération commence par son code ; `m` = 6 nombres
+`a b c d e f` (matrice courante, repère page en points, y vers le bas) ; couleur = `r g b` (0 à 255) puis `a` (0 à 1) ;
+chemin = `n`, puis `n` segments `0 x y` (moveTo) | `1 x y` (lineTo) | `2 x1 y1 x2 y2 x y` (cubique) | `3` (close).
+
+| code | nom | suite |
+|---|---|---|
+| 1 | PAGE | `w h` |
+| 2 | SAVE | — |
+| 3 | RESTORE | — |
+| 4 | FILL | `m`, couleur, règle (0 nonzero, 1 evenodd), chemin |
+| 5 | STROKE | `m`, couleur, largeur, bout (0 butt, 1 round, 2 square), jointure (0 miter, 1 round, 2 bevel), `nDash`, tirets…, décalage, chemin |
+| 6 | CLIP | `m`, règle, chemin |
+| 7 | TEXT | `m`, couleur, taille, `x`, `y`, ligne de base (0 top, 1 alphabetic), indice du texte, face (0 normal, 1 gras, 2 italique, 3 gras italique) |
+| 8 | IMAGE | `m`, indice de l'image, `x`, `y`, `w`, `h`, alpha |
+
+Flux témoin **G1** (page 200 × 100, rectangle rouge rempli (10, 20)-(40, 60)) :
+`[1, 200, 100, 4, 1, 0, 0, 1, 0, 0, 255, 0, 0, 1, 0, 5, 0, 10, 20, 1, 40, 20, 1, 40, 60, 1, 10, 60, 3]`.
+
+**Fichiers.**
+- Modifier : `crates/roomboard-formats/Cargo.toml`, `crates/roomboard-formats/src/lib.rs:1-4`,
+  `crates/roomboard-formats-wasm/src/lib.rs` (fonction neuve, tests), `Cargo.lock` (par `cargo`), `THIRD_PARTY_NOTICES.md`
+- Créer : `crates/roomboard-formats/src/pdf.rs`, `crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf`,
+  `crates/roomboard-formats/tests/fixtures/LICENSE_LIBERATION` (copiés de `apps/web/node_modules/pdfjs-dist/standard_fonts/`)
+
+**Interfaces.**
+- Consomme (T3) : `pdfjs-dist` installé (fixture de police).
+- Produit (lu par T12, T13) :
+  - Rust : `pub struct DisplayList { pub ops: Vec<f32>, pub texts: Vec<String> }`,
+    `pub struct ImageInput<'a> { pub bytes: &'a [u8] }`, `pub enum PdfWriteError { BadList(String), BadFont(usize), BadImage(usize), Write(String) }`
+    (`Display` en français), `pub const ASCENT: f32 = 0.905`,
+    `pub fn write_pages(list: &DisplayList, fonts: &[&[u8]], images: &[ImageInput<'_>]) -> Result<Vec<u8>, PdfWriteError>`.
+  - Wasm (module `formats`) : `write_pdf_pages(ops: Float32Array, texts: string[], fonts: Uint8Array, font_sizes: Uint32Array, images: Uint8Array, image_sizes: Uint32Array): Uint8Array`
+    (lève une Error au message de `PdfWriteError`) ; `pub fn write_pdf_pages_inner(ops: &[f32], texts: Vec<String>, fonts: &[u8], font_sizes: &[u32], images: &[u8], image_sizes: &[u32]) -> Result<Vec<u8>, String>`.
+- Réutilise : aucun écrivain PDF existant (`roomboard-formats` : `container`, `sheet` ; cadrage § 3, ligne « Écrivain PDF
+  vectoriel ») — nouveau module `roomboard-formats/src/pdf.rs`, interface DAPF4.
+- Réutilise : `crates/roomboard-formats-wasm/src/lib.rs:58-110` (`write_container_inner` / `write_container`) — même
+  découpe d'octets bout à bout par tailles et même contrôle de cohérence.
+- Réutilise : `scripts/controle-licences.mjs` — crates de `krilla` relevés par `cargo metadata`, exception écrite si
+  besoin.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+cargo test -p roomboard-formats -p roomboard-formats-wasm 2>&1 | grep -E "test result|FAILED|panicked|error\[|pdf" | tail -40
+```
+
+Attendu : 0 `FAILED` ; ≥ 8 tests `pdf` : `golden_stream_g1_parses_to_one_red_rect`, `bad_streams_are_bad_list`,
+`text_needs_its_font_and_image_its_index`, `fill_stroke_and_clip_write_a_pdf`, `text_and_image_write_a_pdf`,
+`unbalanced_restore_and_dangling_save_do_not_panic`, `unreadable_font_or_image_is_named`,
+`write_pdf_pages_inner_splits_fonts_and_images` (+ refus des tailles incohérentes). Tests à garder verts : tout
+`container` et `sheet`. Tailles : module formats avant (référence 859 580 o) et après (≤ 3 145 728), module principal
+inchangé (GC5 : les deux reconstruits) ; `node scripts/controle-licences.mjs` code 0.
+
+**Contraintes (recopiées).**
+- GC2 TDD ; aucun test sauté.
+- GC3 PATH ; aucun build Tauri, aucun build Android.
+- GC4 Préparation : `pnpm install --frozen-lockfile` (fixture de police), `target` copié.
+- GC5 Modules reconstruits pour la mesure (commandes de GC5).
+- GC6 Preuve bornée : la commande ci-dessus ; N et noms dans le rapport.
+- GC7, GC8 Commits fichier par fichier, auteur et message imposés ; interdits git.
+- GC9 Une seule dépendance : `krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }` ;
+  aucune AGPL, GPL, LGPL ; avis de tiers complétés (crates absents de l'arbre existant, `cargo tree -p roomboard-formats -e normal`).
+- GC10 `krilla` dans `roomboard-formats` seulement ; module formats ≤ 3 145 728 o ; module principal inchangé.
+- GC15 Une ligne `Réutilisation :` par ligne `Réutilise :`.
+- GC16 `cargo fmt --all`, `cargo clippy -p roomboard-formats -p roomboard-formats-wasm --all-targets -- -D warnings`.
+- GC18, GC19 Aucun processus laissé ; seuls les fichiers ci-dessus.
+
+**Patron à ne pas reprendre.** Transformer chaque point par la matrice avant d'écrire le chemin, pour les tracés : un
+trait sous une échelle non uniforme changerait d'épaisseur, et la jointure serait fausse. La matrice se pousse
+(`push_transform`), le chemin reste local ; seule la découpe est transformée à l'avance (une découpe doit survivre au
+`pop` de la matrice jusqu'au `restore`). Et ne jamais rendre la main sur une erreur après `start_page_with` : `Surface`
+vérifie à sa destruction que la pile est vide (`krilla-0.8.2/src/surface.rs:611-623`, `assert!`) ; tout se valide dans
+`parse` avant d'ouvrir la première page. Chemin de référence de la forme découpe/rendu : `crates/roomboard-formats-wasm/src/lib.rs:58-97`
+(contrôles d'abord, écriture ensuite).
+
+**Interdits.** Aucun `serde_json`, aucun `unsafe`, aucune autre fonction de `krilla` que `simple-text` et `raster-images` ;
+ne rien ajouter à `roomboard-wasm`.
+
+**Critère « terminé ».** Commande bornée verte, tailles relevées, licences vertes, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4) ; mesurer le module formats **avant** (GC5, `wc -c apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm`).
+
+- [ ] **Étape 2 : dépendance et fixture.** Dans `crates/roomboard-formats/Cargo.toml`, `[dependencies]` gagne
+  `krilla = { version = "0.8", default-features = false, features = ["simple-text", "raster-images"] }`. `lib.rs` gagne
+  `pub mod pdf;` et la phrase « pages vectorielles en PDF par `krilla` (C12, PF22) » dans son commentaire.
+  `mkdir -p crates/roomboard-formats/tests/fixtures && cp apps/web/node_modules/pdfjs-dist/standard_fonts/LiberationSans-Regular.ttf apps/web/node_modules/pdfjs-dist/standard_fonts/LICENSE_LIBERATION crates/roomboard-formats/tests/fixtures/`.
+
+- [ ] **Étape 3 : tests rouges, puis l'écrivain.** Créer `crates/roomboard-formats/src/pdf.rs` :
+
+```rust
+//! Écrivain PDF vectoriel (C12, PF22, DAPF4) : une liste d'affichage enregistrée par la page (`RecordingContext2D`,
+//! même `paintContent` que l'écran, D7) devient un PDF par `krilla`. Flux de nombres et tableau de textes (PC12) ; table
+//! des codes : `docs/plans/usage-c12-pdf-PLAN.md`, tâche T11. Tout est validé par `parse` avant d'ouvrir une page :
+//! `Surface` de krilla exige une pile vide à sa destruction. Rust pur, testé en natif ; servi par le module `formats`.
+use std::fmt;
+
+use krilla::color::rgb;
+use krilla::geom::{Path, PathBuilder, Point, Size, Transform};
+use krilla::image::Image;
+use krilla::num::NormalizedF32;
+use krilla::page::PageSettings;
+use krilla::paint::{Fill, FillRule, LineCap, LineJoin, Stroke, StrokeDash};
+use krilla::surface::Surface;
+use krilla::text::{Font, TextDirection};
+use krilla::{Data, Document};
+
+/// Hauteur au-dessus de la ligne de base de Liberation Sans (hhea ascender 1854 / 2048) : `textBaseline = "top"`.
+pub const ASCENT: f32 = 0.905;
+const MAX_SEGMENTS: usize = 1_000_000;
+const MAX_DASH: usize = 64;
+
+pub struct DisplayList {
+    pub ops: Vec<f32>,
+    pub texts: Vec<String>,
+}
+
+pub struct ImageInput<'a> {
+    pub bytes: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PdfWriteError {
+    BadList(String),
+    BadFont(usize),
+    BadImage(usize),
+    Write(String),
+}
+
+impl fmt::Display for PdfWriteError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PdfWriteError::BadList(m) => write!(f, "liste d'opérations invalide : {m}"),
+            PdfWriteError::BadFont(i) => write!(f, "police {i} illisible ou absente"),
+            PdfWriteError::BadImage(i) => write!(f, "image {i} illisible ou absente (PNG ou JPEG attendu)"),
+            PdfWriteError::Write(m) => write!(f, "écriture du PDF impossible : {m}"),
+        }
+    }
+}
+
+impl std::error::Error for PdfWriteError {}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Rgba {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Seg {
+    Move(f32, f32),
+    Line(f32, f32),
+    Cubic([f32; 6]),
+    Close,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Op {
+    Save,
+    Restore,
+    Fill { m: [f32; 6], color: Rgba, even_odd: bool, path: Vec<Seg> },
+    Stroke { m: [f32; 6], color: Rgba, width: f32, cap: usize, join: usize, dash: Vec<f32>, dash_offset: f32, path: Vec<Seg> },
+    Clip { m: [f32; 6], even_odd: bool, path: Vec<Seg> },
+    Text { m: [f32; 6], color: Rgba, size: f32, x: f32, y: f32, top: bool, text: usize, face: usize },
+    Image { m: [f32; 6], image: usize, x: f32, y: f32, w: f32, h: f32, alpha: f32 },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PageOps {
+    pub w: f32,
+    pub h: f32,
+    pub ops: Vec<Op>,
+}
+
+fn bad(m: String) -> PdfWriteError {
+    PdfWriteError::BadList(m)
+}
+
+struct Reader<'a> {
+    v: &'a [f32],
+    i: usize,
+}
+
+impl Reader<'_> {
+    fn num(&mut self) -> Result<f32, PdfWriteError> {
+        let x = *self.v.get(self.i).ok_or_else(|| bad(format!("flux coupé à {}", self.i)))?;
+        self.i += 1;
+        if x.is_finite() {
+            Ok(x)
+        } else {
+            Err(bad(format!("nombre non fini à {}", self.i - 1)))
+        }
+    }
+    fn count(&mut self, max: usize) -> Result<usize, PdfWriteError> {
+        let x = self.num()?;
+        if x < 0.0 || x.fract() != 0.0 || f64::from(x) > max as f64 {
+            return Err(bad(format!("entier de 0 à {max} attendu à {}, lu {x}", self.i - 1)));
+        }
+        Ok(x as usize)
+    }
+    fn m(&mut self) -> Result<[f32; 6], PdfWriteError> {
+        let mut m = [0.0; 6];
+        for s in &mut m {
+            *s = self.num()?;
+        }
+        Ok(m)
+    }
+    fn color(&mut self) -> Result<Rgba, PdfWriteError> {
+        let c = |x: f32| x.round().clamp(0.0, 255.0) as u8;
+        Ok(Rgba { r: c(self.num()?), g: c(self.num()?), b: c(self.num()?), a: self.num()?.clamp(0.0, 1.0) })
+    }
+    fn path(&mut self) -> Result<Vec<Seg>, PdfWriteError> {
+        let n = self.count(MAX_SEGMENTS)?;
+        let mut out = Vec::with_capacity(n.min(4096));
+        for _ in 0..n {
+            out.push(match self.count(3)? {
+                0 => Seg::Move(self.num()?, self.num()?),
+                1 => Seg::Line(self.num()?, self.num()?),
+                2 => {
+                    let mut c = [0.0; 6];
+                    for s in &mut c {
+                        *s = self.num()?;
+                    }
+                    Seg::Cubic(c)
+                }
+                _ => Seg::Close,
+            });
+        }
+        Ok(out)
+    }
+}
+
+/// Flux lu et validé (codes, tailles, indices de texte, de police et d'image) avant toute écriture.
+pub(crate) fn parse(list: &DisplayList, fonts: usize, images: usize) -> Result<Vec<PageOps>, PdfWriteError> {
+    let mut r = Reader { v: &list.ops, i: 0 };
+    let mut pages: Vec<PageOps> = Vec::new();
+    while r.i < list.ops.len() {
+        let at = r.i;
+        let code = r.count(8)?;
+        if code == 1 {
+            let (w, h) = (r.num()?, r.num()?);
+            if !(w > 0.0 && h > 0.0) {
+                return Err(bad(format!("taille de page {w} × {h}")));
+            }
+            pages.push(PageOps { w, h, ops: Vec::new() });
+            continue;
+        }
+        let op = match code {
+            2 => Op::Save,
+            3 => Op::Restore,
+            4 => Op::Fill { m: r.m()?, color: r.color()?, even_odd: r.count(1)? == 1, path: r.path()? },
+            5 => {
+                let (m, color, width) = (r.m()?, r.color()?, r.num()?.max(0.0));
+                let (cap, join) = (r.count(2)?, r.count(2)?);
+                let n = r.count(MAX_DASH)?;
+                let mut dash = Vec::with_capacity(n);
+                for _ in 0..n {
+                    dash.push(r.num()?.max(0.0));
+                }
+                let dash_offset = r.num()?;
+                Op::Stroke { m, color, width, cap, join, dash, dash_offset, path: r.path()? }
+            }
+            6 => Op::Clip { m: r.m()?, even_odd: r.count(1)? == 1, path: r.path()? },
+            7 => {
+                let (m, color, size, x, y) = (r.m()?, r.color()?, r.num()?, r.num()?, r.num()?);
+                let top = r.count(1)? == 0;
+                let (text, face) = (r.count(usize::MAX)?, r.count(3)?);
+                if !(size > 0.0) || text >= list.texts.len() {
+                    return Err(bad(format!("texte {text} absent ou taille {size} à {at}")));
+                }
+                if face >= fonts {
+                    return Err(PdfWriteError::BadFont(face));
+                }
+                Op::Text { m, color, size, x, y, top, text, face }
+            }
+            8 => {
+                let (m, image) = (r.m()?, r.count(usize::MAX)?);
+                let (x, y, w, h, alpha) = (r.num()?, r.num()?, r.num()?, r.num()?, r.num()?.clamp(0.0, 1.0));
+                if image >= images {
+                    return Err(PdfWriteError::BadImage(image));
+                }
+                Op::Image { m, image, x, y, w, h, alpha }
+            }
+            _ => return Err(bad(format!("code {code} inconnu à {at}"))),
+        };
+        pages
+            .last_mut()
+            .ok_or_else(|| bad(format!("opération {code} avant la première page")))?
+            .ops
+            .push(op);
+    }
+    Ok(pages)
+}
+
+fn tf(m: &[f32; 6]) -> Transform {
+    Transform::from_row(m[0], m[1], m[2], m[3], m[4], m[5])
+}
+
+fn apply(m: &[f32; 6], x: f32, y: f32) -> (f32, f32) {
+    (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
+}
+
+/// Chemin local ; `pre` : points transformés à l'avance (découpe). `None` : chemin vide.
+fn build(segs: &[Seg], pre: Option<&[f32; 6]>) -> Option<Path> {
+    let at = |x: f32, y: f32| pre.map_or((x, y), |m| apply(m, x, y));
+    let mut pb = PathBuilder::new();
+    for s in segs {
+        match *s {
+            Seg::Move(x, y) => {
+                let (x, y) = at(x, y);
+                pb.move_to(x, y);
+            }
+            Seg::Line(x, y) => {
+                let (x, y) = at(x, y);
+                pb.line_to(x, y);
+            }
+            Seg::Cubic([x1, y1, x2, y2, x, y]) => {
+                let ((x1, y1), (x2, y2), (x, y)) = (at(x1, y1), at(x2, y2), at(x, y));
+                pb.cubic_to(x1, y1, x2, y2, x, y);
+            }
+            Seg::Close => pb.close(),
+        }
+    }
+    pb.finish()
+}
+
+fn rule(even_odd: bool) -> FillRule {
+    if even_odd {
+        FillRule::EvenOdd
+    } else {
+        FillRule::NonZero
+    }
+}
+
+fn opacity(a: f32) -> NormalizedF32 {
+    NormalizedF32::new(a).unwrap_or(NormalizedF32::ONE)
+}
+
+fn fill(c: Rgba, even_odd: bool) -> Fill {
+    Fill { paint: rgb::Color::new(c.r, c.g, c.b).into(), opacity: opacity(c.a), rule: rule(even_odd) }
+}
+
+/// Une opération ; `levels` : découpes poussées par niveau de `save` (un `restore` les retire).
+fn draw(s: &mut Surface<'_>, op: &Op, levels: &mut Vec<usize>, fonts: &[Font], images: &[Image], texts: &[String]) {
+    match op {
+        Op::Save => levels.push(0),
+        Op::Restore => {
+            if levels.len() > 1 {
+                for _ in 0..levels.pop().unwrap_or(0) {
+                    s.pop();
+                }
+            }
+        }
+        Op::Fill { m, color, even_odd, path } => {
+            if let Some(path) = build(path, None) {
+                s.push_transform(&tf(m));
+                s.set_stroke(None);
+                s.set_fill(Some(fill(*color, *even_odd)));
+                s.draw_path(&path);
+                s.pop();
+            }
+        }
+        Op::Stroke { m, color, width, cap, join, dash, dash_offset, path } => {
+            if let Some(path) = build(path, None) {
+                s.push_transform(&tf(m));
+                s.set_fill(None);
+                s.set_stroke(Some(Stroke {
+                    paint: rgb::Color::new(color.r, color.g, color.b).into(),
+                    width: *width,
+                    miter_limit: 10.0,
+                    line_cap: match cap {
+                        1 => LineCap::Round,
+                        2 => LineCap::Square,
+                        _ => LineCap::Butt,
+                    },
+                    line_join: match join {
+                        1 => LineJoin::Round,
+                        2 => LineJoin::Bevel,
+                        _ => LineJoin::Miter,
+                    },
+                    opacity: opacity(color.a),
+                    dash: (!dash.is_empty()).then(|| StrokeDash { array: dash.clone(), offset: *dash_offset }),
+                }));
+                s.draw_path(&path);
+                s.pop();
+            }
+        }
+        // Découpe vide : ignorée (le canvas découperait tout) ; cas sans effet visible à l'export.
+        Op::Clip { m, even_odd, path } => {
+            if let Some(path) = build(path, Some(m)) {
+                s.push_clip_path(&path, &rule(*even_odd));
+                if let Some(n) = levels.last_mut() {
+                    *n += 1;
+                }
+            }
+        }
+        Op::Text { m, color, size, x, y, top, text, face } => {
+            if let (Some(font), Some(t)) = (fonts.get(*face), texts.get(*text)) {
+                s.push_transform(&tf(m));
+                s.set_stroke(None);
+                s.set_fill(Some(fill(*color, false)));
+                let base = if *top { *y + size * ASCENT } else { *y };
+                s.draw_text(Point::from_xy(*x, base), font.clone(), *size, t, false, TextDirection::Auto);
+                s.pop();
+            }
+        }
+        Op::Image { m, image, x, y, w, h, alpha } => {
+            if let (Some(img), Some(size)) = (images.get(*image), Size::from_wh(*w, *h)) {
+                let (e, f) = apply(m, *x, *y);
+                s.push_transform(&Transform::from_row(m[0], m[1], m[2], m[3], e, f));
+                let fade = *alpha < 1.0;
+                if fade {
+                    s.push_opacity(opacity(*alpha));
+                }
+                s.draw_image(img.clone(), size);
+                if fade {
+                    s.pop();
+                }
+                s.pop();
+            }
+        }
+    }
+}
+
+pub fn write_pages(list: &DisplayList, fonts: &[&[u8]], images: &[ImageInput<'_>]) -> Result<Vec<u8>, PdfWriteError> {
+    let pages = parse(list, fonts.len(), images.len())?;
+    if pages.is_empty() {
+        return Err(bad("aucune page".into()));
+    }
+    let fonts = fonts
+        .iter()
+        .enumerate()
+        .map(|(i, f)| Font::new(Data::from(f.to_vec()), 0).ok_or(PdfWriteError::BadFont(i)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let images = images
+        .iter()
+        .enumerate()
+        .map(|(i, im)| {
+            Image::from_png(Data::from(im.bytes.to_vec()), true)
+                .or_else(|_| Image::from_jpeg(Data::from(im.bytes.to_vec()), true))
+                .map_err(|_| PdfWriteError::BadImage(i))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut doc = Document::new();
+    for p in &pages {
+        let settings = PageSettings::from_wh(p.w, p.h).ok_or_else(|| bad(format!("taille de page {} × {}", p.w, p.h)))?;
+        let mut page = doc.start_page_with(settings);
+        let mut s = page.surface();
+        let mut levels: Vec<usize> = vec![0];
+        for op in &p.ops {
+            draw(&mut s, op, &mut levels, &fonts, &images, &list.texts);
+        }
+        for n in levels.drain(..) {
+            for _ in 0..n {
+                s.pop();
+            }
+        }
+        s.finish();
+        page.finish();
+    }
+    doc.finish().map_err(|e| PdfWriteError::Write(format!("{e:?}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FONT: &[u8] = include_bytes!("../tests/fixtures/LiberationSans-Regular.ttf");
+    const PNG_1PX: [u8; 70] = [
+        137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21,
+        196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 218, 99, 100, 248, 207, 80, 15, 0, 3, 134, 1, 128, 90, 52, 125,
+        107, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    ];
+    const G1: [f32; 29] = [
+        1.0, 200.0, 100.0, 4.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 255.0, 0.0, 0.0, 1.0, 0.0, 5.0, 0.0, 10.0, 20.0, 1.0,
+        40.0, 20.0, 1.0, 40.0, 60.0, 1.0, 10.0, 60.0, 3.0,
+    ];
+    const ID: [f32; 6] = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+
+    fn list(ops: &[f32], texts: &[&str]) -> DisplayList {
+        DisplayList { ops: ops.to_vec(), texts: texts.iter().map(|t| t.to_string()).collect() }
+    }
+    fn is_pdf(b: &[u8]) -> bool {
+        b.starts_with(b"%PDF-") && b.windows(5).any(|w| w == b"%%EOF")
+    }
+
+    /// Flux témoin G1, joué aussi par `record-ctx.test.ts` (T12) : parité du codage.
+    #[test]
+    fn golden_stream_g1_parses_to_one_red_rect() {
+        let pages = parse(&list(&G1, &[]), 0, 0).expect("G1");
+        let red = Rgba { r: 255, g: 0, b: 0, a: 1.0 };
+        let path = vec![Seg::Move(10.0, 20.0), Seg::Line(40.0, 20.0), Seg::Line(40.0, 60.0), Seg::Line(10.0, 60.0), Seg::Close];
+        assert_eq!(pages, vec![PageOps { w: 200.0, h: 100.0, ops: vec![Op::Fill { m: ID, color: red, even_odd: false, path }] }]);
+        assert!(is_pdf(&write_pages(&list(&G1, &[]), &[], &[]).expect("PDF")));
+    }
+
+    #[test]
+    fn bad_streams_are_bad_list() {
+        for ops in [&[9.0][..], &[1.0, 200.0][..], &[4.0, 1.0][..], &[1.0, 0.0, 100.0][..], &[1.0, 10.0, 10.0, 2.5][..], &[1.0, 10.0, f32::NAN][..]] {
+            assert!(matches!(write_pages(&list(ops, &[]), &[], &[]), Err(PdfWriteError::BadList(_))), "{ops:?}");
+        }
+        assert!(matches!(write_pages(&list(&[], &[]), &[], &[]), Err(PdfWriteError::BadList(_))));
+    }
+
+    #[test]
+    fn text_needs_its_font_and_image_its_index() {
+        let mut text = vec![1.0, 100.0, 100.0, 7.0];
+        text.extend(ID);
+        text.extend([0.0, 0.0, 0.0, 1.0, 12.0, 10.0, 10.0, 0.0, 0.0, 1.0]);
+        assert_eq!(parse(&list(&text, &["a"]), 1, 0).err(), Some(PdfWriteError::BadFont(1)));
+        let mut image = vec![1.0, 100.0, 100.0, 8.0];
+        image.extend(ID);
+        image.extend([0.0, 0.0, 0.0, 10.0, 10.0, 1.0]);
+        assert_eq!(parse(&list(&image, &[]), 0, 0).err(), Some(PdfWriteError::BadImage(0)));
+    }
+
+    #[test]
+    fn fill_stroke_and_clip_write_a_pdf() {
+        let mut ops = G1.to_vec();
+        ops.extend([2.0, 6.0]);
+        ops.extend(ID);
+        ops.extend([0.0, 4.0, 0.0, 0.0, 0.0, 1.0, 100.0, 0.0, 1.0, 100.0, 50.0, 3.0]);
+        ops.push(5.0);
+        ops.extend([2.0, 0.0, 0.0, 2.0, 5.0, 5.0]);
+        ops.extend([0.0, 0.0, 255.0, 0.5, 4.0, 1.0, 1.0, 2.0, 6.0, 4.0, 0.0, 3.0, 0.0, 0.0, 0.0, 2.0, 10.0, 0.0, 20.0, 10.0, 30.0, 30.0, 3.0]);
+        ops.extend([3.0, 1.0, 50.0, 50.0]);
+        let pdf = write_pages(&list(&ops, &[]), &[], &[]).expect("PDF");
+        assert!(is_pdf(&pdf));
+    }
+
+    #[test]
+    fn text_and_image_write_a_pdf() {
+        let mut ops = vec![1.0, 300.0, 200.0, 7.0];
+        ops.extend(ID);
+        ops.extend([0.0, 0.0, 0.0, 1.0, 24.0, 10.0, 10.0, 0.0, 0.0, 0.0, 8.0]);
+        ops.extend(ID);
+        ops.extend([0.0, 20.0, 60.0, 50.0, 50.0, 0.5]);
+        let pdf = write_pages(&list(&ops, &["RoomBoard vectoriel"]), &[FONT], &[ImageInput { bytes: &PNG_1PX }]).expect("PDF");
+        assert!(is_pdf(&pdf));
+    }
+
+    #[test]
+    fn unbalanced_restore_and_dangling_save_do_not_panic() {
+        let mut ops = vec![1.0, 100.0, 100.0, 3.0, 3.0, 2.0, 2.0, 6.0];
+        ops.extend(ID);
+        ops.extend([0.0, 2.0, 0.0, 0.0, 0.0, 1.0, 50.0, 50.0]);
+        ops.extend(&G1[3..]);
+        assert!(is_pdf(&write_pages(&list(&ops, &[]), &[], &[]).expect("PDF")));
+    }
+
+    #[test]
+    fn unreadable_font_or_image_is_named() {
+        assert_eq!(write_pages(&list(&G1, &[]), &[b"pas une police"], &[]).err(), Some(PdfWriteError::BadFont(0)));
+        assert_eq!(write_pages(&list(&G1, &[]), &[], &[ImageInput { bytes: b"pas une image" }]).err(), Some(PdfWriteError::BadImage(0)));
+        assert_eq!(PdfWriteError::BadFont(2).to_string(), "police 2 illisible ou absente");
+    }
+}
+```
+
+  Rouge d'abord : écrire le module `tests` avec des corps `todo!()` pour `parse` / `write_pages` n'est pas permis
+  (GC2 ne tolère pas de faux rouge) ; écrire le fichier entier, puis vérifier que chaque test **échoue** en inversant
+  une assertion de `golden_stream_g1_parses_to_one_red_rect` (rouge vu), et la remettre.
+
+- [ ] **Étape 4 : liaison.** Dans `crates/roomboard-formats-wasm/src/lib.rs`, après `write_container` :
+
+```rust
+/// Octets bout à bout découpés par `sizes` ; la somme doit faire le compte (même contrôle que `write_container_inner`).
+fn split<'a>(bytes: &'a [u8], sizes: &[u32], what: &str) -> Result<Vec<&'a [u8]>, String> {
+    let total: u64 = sizes.iter().map(|&s| u64::from(s)).sum();
+    if total != bytes.len() as u64 {
+        return Err(format!("{what} incohérentes : {total} octets annoncés, {} reçus", bytes.len()));
+    }
+    let mut at = 0usize;
+    Ok(sizes
+        .iter()
+        .map(|&s| {
+            let part = &bytes[at..at + s as usize];
+            at += s as usize;
+            part
+        })
+        .collect())
+}
+
+/// Pages vectorielles (C12, PF22) : flux d'opérations, textes, polices et images bout à bout ; le PDF écrit.
+pub fn write_pdf_pages_inner(ops: &[f32], texts: Vec<String>, fonts: &[u8], font_sizes: &[u32], images: &[u8], image_sizes: &[u32]) -> Result<Vec<u8>, String> {
+    let fonts = split(fonts, font_sizes, "polices")?;
+    let images: Vec<ImageInput<'_>> = split(images, image_sizes, "images")?.into_iter().map(|bytes| ImageInput { bytes }).collect();
+    write_pages(&DisplayList { ops: ops.to_vec(), texts }, &fonts, &images).map_err(|e| e.to_string())
+}
+
+/// Lève une Error au message de `PdfWriteError` (« liste d'opérations invalide : … », « police 0 illisible… »).
+#[wasm_bindgen]
+pub fn write_pdf_pages(ops: &[f32], texts: Vec<String>, fonts: &[u8], font_sizes: Vec<u32>, images: &[u8], image_sizes: Vec<u32>) -> Result<Vec<u8>, JsError> {
+    write_pdf_pages_inner(ops, texts, fonts, &font_sizes, images, &image_sizes).map_err(|m| JsError::new(&m))
+}
+```
+
+  (import : `use roomboard_formats::pdf::{write_pages, DisplayList, ImageInput};`). Test, dans le module `tests` :
+
+```rust
+    #[test]
+    fn write_pdf_pages_inner_splits_fonts_and_images() {
+        let font: &[u8] = include_bytes!("../../roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf");
+        let ops = [1.0, 100.0, 100.0, 7.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 12.0, 5.0, 5.0, 0.0, 0.0, 0.0];
+        let pdf = write_pdf_pages_inner(&ops, vec!["a".into()], font, &[font.len() as u32], &[], &[]).expect("PDF");
+        assert!(pdf.starts_with(b"%PDF-"));
+        let err = write_pdf_pages_inner(&ops, vec!["a".into()], font, &[3], &[], &[]).expect_err("tailles fausses");
+        assert!(err.starts_with("polices incohérentes"), "{err}");
+    }
+```
+
+- [ ] **Étape 5 : vert, mesures, licences.** La commande bornée ; `cargo fmt --all` ; clippy (GC16) ; les deux modules
+  (GC5) et `wc -c apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm apps/web/src/wasm/roomboard_wasm_bg.wasm` ;
+  `node scripts/controle-licences.mjs` ; `cargo tree -p roomboard-formats -e normal --prefix none | sort -u` comparé à
+  `cargo tree -p roomboard-core -e normal --prefix none | sort -u` : chaque crate en plus a sa ligne dans une section neuve
+  de `THIRD_PARTY_NOTICES.md` « Crate `roomboard-formats` (C12, PDF vectoriel par krilla) », même tableau que la section
+  `calamine` (crate, version, licence lue dans `cargo metadata`, dépôt), et la licence de Liberation Sans de la fixture.
+  Module formats au-dessus de 3 145 728 o : tâche **bloquée** (HPF2-8), rien n'est commité.
+
+- [ ] **Étape 6 : commit.**
+
+```bash
+cd "$WT" && for f in crates/roomboard-formats/Cargo.toml crates/roomboard-formats/src/lib.rs crates/roomboard-formats/src/pdf.rs \
+  crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf crates/roomboard-formats/tests/fixtures/LICENSE_LIBERATION \
+  crates/roomboard-formats-wasm/src/lib.rs Cargo.lock THIRD_PARTY_NOTICES.md; do git add "$f"; done && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(formats): vector PDF page writer with krilla" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, tailles avant/après des deux modules, sortie des licences, une ligne `Réutilisation :` par
+  ligne `Réutilise :`.
+
+<a id="tache-t12"></a>
+
+### Tâche T12 — (lot c) `RecordingContext2D` : le rendu enregistré en flux d'opérations
+
+**Objectif.** Un contexte qui reçoit `paintContent` (T5) au lieu d'un vrai canvas et produit la liste d'affichage de
+T11 (DAPF4) : chemins, remplissages, traits, découpes, textes placés, images, transformations, `save`/`restore`, au
+codage de la table de T11 (PC12). Couleurs normalisées par un vrai contexte (même règle que le canvas : une couleur
+illisible laisse la précédente), `measureText` délégué (mêmes coupures de lignes qu'à l'écran). Une méthode Canvas 2D non
+enregistrée lève (`TypeError`), jamais en silence.
+
+**Fichiers.**
+- Créer : `apps/web/src/engine/render/record-ctx.ts`, `apps/web/src/engine/render/record-ctx.test.ts`
+
+**Interfaces.**
+- Consomme : T5 — `Canvas2DRenderer.paintContent` (test d'intégration) ; T11 — table des codes et flux témoin G1 (copiés
+  ci-dessous, aucune dépendance de build).
+- Produit (lu par T13) : `OP` (`page` 1 … `image` 8), `SEG` (`move` 0 … `close` 3) ;
+  `class RecordingPath { moveTo; lineTo; bezierCurveTo; closePath; rect; ellipse; encode(): number[] }` (sert de `Path2D`) ;
+  `class RecordingContext2D { constructor(real: Pick<CanvasRenderingContext2D, "fillStyle" | "font" | "measureText">); page(w: number, h: number): void; encode(): RecordedList; … sous-ensemble Canvas 2D }` ;
+  `interface RecordedList { readonly ops: Float32Array; readonly texts: readonly string[]; readonly images: readonly unknown[]; readonly drawn: readonly number[] }`
+  (`drawn[k]` : opérations de dessin de la page k ; 0 → aucune superposition, voir T13).
+- Réutilise : `apps/web/src/engine/render/canvas2d.ts` (`paintContent`, T5) — même code de dessin que l'écran
+  (cadrage § 3, ligne « Contour d'un trait, formes, texte, tableaux pour l'export ») : aucune seconde implémentation du
+  dessin, ni en TS ni en Rust.
+- Réutilise : `apps/web/src/engine/text-layout.ts:23` (`textFont`) — forme `[italic ][bold ]<taille>px …` relue pour la
+  taille et la face.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+pnpm --filter @roomboard/web exec vitest run src/engine/render/record-ctx.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | tail -20
+```
+
+Attendu : « contexte enregistreur (C12, DAPF4) » ≥ 8 tests, 0 `×`, dont « flux témoin G1 » (parité avec T11),
+« paintContent d'un document… sans méthode manquante » (S5), « méthode non enregistrée : lève ». `tsc` : aucune erreur
+dans ces deux fichiers.
+
+**Contraintes (recopiées).**
+- GC2 TDD ; aucun test sauté.
+- GC3 PATH ; aucun build Tauri, aucun build Android.
+- GC4 Préparation : `pnpm install --frozen-lockfile`.
+- GC6 Preuve bornée : la commande ci-dessus ; N et noms dans le rapport.
+- GC7, GC8 Commits fichier par fichier, auteur et message imposés ; interdits git.
+- GC11 Le moteur n'importe ni `pdf.js` ni le module `formats`.
+- GC14 `tsc` propre sur ces fichiers.
+- GC15 Une ligne `Réutilisation :` par ligne `Réutilise :`.
+- GC18, GC19 Aucun processus laissé ; seuls ces deux fichiers.
+
+**Interdits.** Ne pas modifier `canvas2d.ts` pour l'export ; aucune méthode « silencieuse » (pas de `Proxy` qui avale).
+
+**Critère « terminé ».** Commande bornée verte, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4).
+
+- [ ] **Étape 2 : tests rouges.** Créer `apps/web/src/engine/render/record-ctx.test.ts` :
+
+```ts
+import { describe, expect, it } from "vitest";
+import { fakeCore } from "../../core/fake-core";
+import { Canvas2DRenderer } from "./canvas2d";
+import { asCtx, FakeCtx } from "./fake-ctx";
+import { OP, RecordingContext2D, RecordingPath } from "./record-ctx";
+
+/** Contexte « réel » des tests : normalise #rrggbb, rgba(), quelques noms ; ignore le reste (comme le canvas). */
+class Real {
+  private v = "#000000";
+  font = "";
+  get fillStyle(): string {
+    return this.v;
+  }
+  set fillStyle(c: string) {
+    const named: Record<string, string> = { red: "#ff0000", black: "#000000" };
+    if (/^#[0-9a-f]{6}$/i.test(c)) this.v = c.toLowerCase();
+    else if (/^rgba?\(/.test(c)) this.v = c;
+    else if (named[c] !== undefined) this.v = named[c];
+  }
+  measureText(t: string): TextMetrics {
+    return { width: t.length * 10 } as TextMetrics;
+  }
+}
+const rec = () => new RecordingContext2D(new Real() as unknown as CanvasRenderingContext2D);
+const ctx = (r: RecordingContext2D) => r as unknown as CanvasRenderingContext2D;
+const G1 = [1, 200, 100, 4, 1, 0, 0, 1, 0, 0, 255, 0, 0, 1, 0, 5, 0, 10, 20, 1, 40, 20, 1, 40, 60, 1, 10, 60, 3];
+const ID = [1, 0, 0, 1, 0, 0];
+
+describe("contexte enregistreur (C12, DAPF4)", () => {
+  it("flux témoin G1 : page 200 × 100, fillRect rouge à l'identité (parité avec pdf.rs, T11)", () => {
+    const r = rec();
+    r.page(200, 100);
+    r.fillStyle = "#ff0000";
+    r.fillRect(10, 20, 30, 40);
+    expect(Array.from(r.encode().ops)).toEqual(G1);
+    expect(r.encode().drawn).toEqual([1]);
+  });
+
+  it("fill du chemin courant à la matrice composée (setTransform puis transform), règle evenodd", () => {
+    const r = rec();
+    r.page(10, 10);
+    r.setTransform(2, 0, 0, 2, 0, 0);
+    r.transform(1, 0, 0, 1, 5, 6);
+    r.beginPath();
+    r.moveTo(0, 0);
+    r.lineTo(1, 0);
+    r.closePath();
+    r.fill("evenodd");
+    expect(Array.from(r.encode().ops).slice(3)).toEqual([OP.fill, 2, 0, 0, 2, 10, 12, 0, 0, 0, 1, 1, 3, 0, 0, 0, 1, 1, 0, 3]);
+  });
+
+  it("stroke : largeur, bouts, jointures, tirets et décalage, alpha global multiplié", () => {
+    const r = rec();
+    r.page(10, 10);
+    r.strokeStyle = "rgba(0, 0, 255, 0.5)";
+    r.globalAlpha = 0.5;
+    r.lineWidth = 4;
+    r.lineCap = "round";
+    r.lineJoin = "bevel";
+    r.setLineDash([6, 4]);
+    r.lineDashOffset = 2;
+    r.beginPath();
+    r.moveTo(0, 0);
+    r.lineTo(5, 5);
+    r.stroke();
+    expect(Array.from(r.encode().ops).slice(3)).toEqual([OP.stroke, ...ID, 0, 0, 255, 0.25, 4, 1, 2, 2, 6, 4, 2, 2, 0, 0, 0, 1, 5, 5]);
+  });
+
+  it("save, clip, restore : SAVE, CLIP au chemin courant, RESTORE ; restore sans save : rien", () => {
+    const r = rec();
+    r.page(10, 10);
+    r.save();
+    r.beginPath();
+    r.rect(0, 0, 4, 4);
+    r.clip();
+    r.restore();
+    r.restore();
+    const ops = Array.from(r.encode().ops).slice(3);
+    expect(ops[0]).toBe(OP.save);
+    expect(ops.slice(1, 9)).toEqual([OP.clip, ...ID, 0]);
+    expect(ops.at(-1)).toBe(OP.restore);
+    expect(ops).toHaveLength(1 + 8 + 14 + 1); // SAVE, CLIP + règle, chemin du rectangle (14 nombres), un seul RESTORE
+  });
+
+  it("fillText : taille et face relues de la police (italique gras 36 px), haut de ligne, texte indexé ; texte vide : rien", () => {
+    const r = rec();
+    r.page(10, 10);
+    r.font = 'italic bold 36px "Atkinson Hyperlegible", system-ui, sans-serif';
+    r.textBaseline = "top";
+    r.fillText("", 0, 0);
+    r.fillText("Bonjour", 5, 7);
+    const l = r.encode();
+    expect(Array.from(l.ops).slice(3)).toEqual([OP.text, ...ID, 0, 0, 0, 1, 36, 5, 7, 0, 0, 3]);
+    expect(l.texts).toEqual(["Bonjour"]);
+    expect(r.measureText("abc").width).toBe(30);
+  });
+
+  it("drawImage : images indexées par identité, réutilisées ; alpha global", () => {
+    const r = rec();
+    r.page(10, 10);
+    const a = { asset: "a" };
+    r.drawImage(a as unknown as CanvasImageSource, 0, 0, 20, 10);
+    r.globalAlpha = 0.5;
+    r.drawImage(a as unknown as CanvasImageSource, 1, 2, 3, 4);
+    const l = r.encode();
+    expect(l.images).toEqual([a]);
+    expect(Array.from(l.ops).slice(3)).toEqual([OP.image, ...ID, 0, 0, 0, 20, 10, 1, OP.image, ...ID, 0, 1, 2, 3, 4, 0.5]);
+  });
+
+  it("couleur illisible : la précédente reste (comme le canvas) ; rgb() et noms lus", () => {
+    const r = rec();
+    r.page(10, 10);
+    r.fillStyle = "red";
+    r.fillStyle = "pas-une-couleur";
+    r.fillRect(0, 0, 1, 1);
+    r.fillStyle = "rgb(1, 2, 3)";
+    r.fillRect(0, 0, 1, 1);
+    const ops = Array.from(r.encode().ops);
+    expect([ops.slice(10, 14), ops.slice(36, 40)]).toEqual([[255, 0, 0, 1], [1, 2, 3, 1]]); // 2e FILL à l'indice 29
+  });
+
+  it("ellipse : quatre cubiques, départ et arrivée sur l'ellipse (RecordingPath sert de Path2D)", () => {
+    const p = new RecordingPath();
+    p.ellipse(50, 25, 50, 25, 0, 0, Math.PI * 2);
+    const e = p.encode();
+    expect(e[0]).toBe(5);
+    expect(e.slice(1, 4)).toEqual([0, 100, 25]);
+    expect(e.filter((v, i) => i > 0 && v === 2 && (i - 4) % 7 === 0)).toHaveLength(4);
+    expect(e.slice(-2).map((v) => Math.round(v * 1e6) / 1e6)).toEqual([100, 25]);
+  });
+
+  it("paintContent d'un document (trait, forme remplie, rectangle) : enregistré sans méthode manquante (S5)", () => {
+    const doc = fakeCore.blank();
+    const p = doc.pageIds()[0] ?? "";
+    doc.apply({ type: "CommitStroke", page: p, points: new Float32Array([0, 10, 0.5, 50, 10, 0.5, 90, 40, 0.5]), style: { color: "#000000", width: 4 } });
+    doc.apply({ type: "AddShape", page: p, shape: "ellipse", x0: 100, y0: 100, x1: 200, y1: 160, style: { color: "#1d4ed8", width: 4 }, fill: "#fef08a" });
+    doc.apply({ type: "AddShape", page: p, shape: "rect", x0: 300, y0: 100, x1: 400, y1: 160, style: { color: "#000000", width: 2 }, fill: null });
+    const r = rec();
+    r.page(842, 473.625);
+    new Canvas2DRenderer(asCtx(new FakeCtx()), null, doc, { makePath: () => new RecordingPath() as unknown as Path2D })
+      .paintContent(ctx(r), { id: p, elementIds: doc.elementIds(p) }, { x0: 0, y0: 0, x1: 1920, y1: 1080 }, 842 / 1920);
+    const l = r.encode();
+    expect(l.drawn).toHaveLength(1);
+    expect(l.drawn[0]).toBeGreaterThanOrEqual(3); // ellipse remplie puis tracée, rectangle tracé (et le trait si la fausse liaison rend son contour)
+  });
+
+  it("méthode Canvas 2D non enregistrée : lève, jamais en silence", () => {
+    const r = rec() as unknown as { arc(): void };
+    expect(() => r.arc()).toThrow(TypeError);
+  });
+});
+```
+
+  Rouge (module absent).
+
+- [ ] **Étape 3 : l'enregistreur.** Créer `apps/web/src/engine/render/record-ctx.ts` :
+
+```ts
+/**
+ * Contexte enregistreur (C12, PF22, DAPF4) : `paintContent` (même code que l'écran, D7) dessine ici, et la liste
+ * d'affichage part au Worker du module `formats` (`write_pdf_pages`, krilla). Codes : table de la tâche T11 du plan
+ * (`crates/roomboard-formats/src/pdf.rs`). Couleurs normalisées par un vrai contexte (`real`, couleur illisible =
+ * précédente gardée) ; `measureText` délégué. Une méthode absente lève (`TypeError`) : rien n'est perdu en silence.
+ */
+export const OP = { page: 1, save: 2, restore: 3, fill: 4, stroke: 5, clip: 6, text: 7, image: 8 } as const;
+export const SEG = { move: 0, line: 1, cubic: 2, close: 3 } as const;
+
+export interface RecordedList {
+  readonly ops: Float32Array;
+  readonly texts: readonly string[];
+  readonly images: readonly unknown[];
+  /** Opérations de dessin de chaque page ; 0 : rien à superposer (T13). */
+  readonly drawn: readonly number[];
+}
+
+type M = [number, number, number, number, number, number];
+const IDENTITY: M = [1, 0, 0, 1, 0, 0];
+const mul = (m: M, n: M): M => [
+  m[0] * n[0] + m[2] * n[1],
+  m[1] * n[0] + m[3] * n[1],
+  m[0] * n[2] + m[2] * n[3],
+  m[1] * n[2] + m[3] * n[3],
+  m[0] * n[4] + m[2] * n[5] + m[4],
+  m[1] * n[4] + m[3] * n[5] + m[5],
+];
+const TAU = Math.PI * 2;
+
+export class RecordingPath {
+  private readonly segs: number[] = [];
+  private n = 0;
+  private cur: readonly [number, number] | null = null;
+  private start: readonly [number, number] | null = null;
+  moveTo(x: number, y: number): void {
+    this.segs.push(SEG.move, x, y);
+    this.n += 1;
+    this.cur = this.start = [x, y];
+  }
+  lineTo(x: number, y: number): void {
+    if (this.cur === null) return this.moveTo(x, y);
+    this.segs.push(SEG.line, x, y);
+    this.n += 1;
+    this.cur = [x, y];
+  }
+  bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void {
+    if (this.cur === null) this.moveTo(x1, y1);
+    this.segs.push(SEG.cubic, x1, y1, x2, y2, x, y);
+    this.n += 1;
+    this.cur = [x, y];
+  }
+  closePath(): void {
+    if (this.cur === null) return;
+    this.segs.push(SEG.close);
+    this.n += 1;
+    this.cur = this.start;
+  }
+  rect(x: number, y: number, w: number, h: number): void {
+    this.moveTo(x, y);
+    this.lineTo(x + w, y);
+    this.lineTo(x + w, y + h);
+    this.lineTo(x, y + h);
+    this.closePath();
+  }
+  /** Arc d'ellipse en cubiques d'au plus un quart de tour (k = 4/3 · tan(Δ/4)). */
+  ellipse(cx: number, cy: number, rx: number, ry: number, rotation: number, a0: number, a1: number, ccw = false): void {
+    let sweep = a1 - a0;
+    if (Math.abs(sweep) >= TAU) sweep = ccw ? -TAU : TAU;
+    else if (!ccw && sweep < 0) sweep += TAU;
+    else if (ccw && sweep > 0) sweep -= TAU;
+    const [c, s] = [Math.cos(rotation), Math.sin(rotation)];
+    const pt = (a: number): [number, number] => {
+      const [x, y] = [rx * Math.cos(a), ry * Math.sin(a)];
+      return [cx + x * c - y * s, cy + x * s + y * c];
+    };
+    const tan = (a: number): [number, number] => {
+      const [x, y] = [-rx * Math.sin(a), ry * Math.cos(a)];
+      return [x * c - y * s, x * s + y * c];
+    };
+    const n = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 2) - 1e-9));
+    const step = sweep / n;
+    const k = (4 / 3) * Math.tan(step / 4);
+    const [sx, sy] = pt(a0);
+    if (this.cur === null) this.moveTo(sx, sy);
+    else this.lineTo(sx, sy);
+    for (let i = 0; i < n; i++) {
+      const t0 = a0 + i * step;
+      const t1 = t0 + step;
+      const [p0, p1, d0, d1] = [pt(t0), pt(t1), tan(t0), tan(t1)];
+      this.bezierCurveTo(p0[0] + k * d0[0], p0[1] + k * d0[1], p1[0] - k * d1[0], p1[1] - k * d1[1], p1[0], p1[1]);
+    }
+  }
+  get empty(): boolean {
+    return this.n === 0;
+  }
+  encode(): number[] {
+    return [this.n, ...this.segs];
+  }
+}
+
+interface State {
+  m: M;
+  fill: string;
+  stroke: string;
+  lineWidth: number;
+  lineCap: CanvasLineCap;
+  lineJoin: CanvasLineJoin;
+  dash: number[];
+  dashOffset: number;
+  alpha: number;
+  font: string;
+  baseline: CanvasTextBaseline;
+}
+const initial = (): State => ({ m: [...IDENTITY], fill: "#000000", stroke: "#000000", lineWidth: 1, lineCap: "butt", lineJoin: "miter", dash: [], dashOffset: 0, alpha: 1, font: "10px sans-serif", baseline: "alphabetic" });
+
+/** `#rrggbb` ou `rgb[a](r, g, b[, a])` (formes rendues par un canvas) → [r, g, b, a] ; autre : noir. */
+function rgbaOf(c: string): [number, number, number, number] {
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c);
+  if (hex) return [parseInt(hex[1]!, 16), parseInt(hex[2]!, 16), parseInt(hex[3]!, 16), 1];
+  const fn = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(c);
+  if (fn) return [Number(fn[1]), Number(fn[2]), Number(fn[3]), fn[4] === undefined ? 1 : Number(fn[4])];
+  return [0, 0, 0, 1];
+}
+const CAP: Record<CanvasLineCap, number> = { butt: 0, round: 1, square: 2 };
+const JOIN: Record<CanvasLineJoin, number> = { miter: 0, round: 1, bevel: 2 };
+
+export class RecordingContext2D {
+  readonly canvas = { width: 0, height: 0 };
+  private readonly ops: number[] = [];
+  private readonly texts: string[] = [];
+  private readonly images: unknown[] = [];
+  private readonly drawn: number[] = [];
+  private st: State = initial();
+  private readonly stack: State[] = [];
+  private path = new RecordingPath();
+
+  constructor(private readonly real: Pick<CanvasRenderingContext2D, "fillStyle" | "font" | "measureText">) {}
+
+  /** Nouvelle page (code PAGE) : état remis à zéro. */
+  page(w: number, h: number): void {
+    this.ops.push(OP.page, w, h);
+    this.drawn.push(0);
+    this.st = initial();
+    this.stack.length = 0;
+    this.path = new RecordingPath();
+    this.canvas.width = w;
+    this.canvas.height = h;
+  }
+  encode(): RecordedList {
+    return { ops: Float32Array.from(this.ops), texts: [...this.texts], images: [...this.images], drawn: [...this.drawn] };
+  }
+
+  private color(v: unknown, prev: string): string {
+    if (typeof v !== "string") return prev;
+    this.real.fillStyle = prev;
+    this.real.fillStyle = v;
+    return String(this.real.fillStyle);
+  }
+  get fillStyle(): string { return this.st.fill; }
+  set fillStyle(v: string) { this.st.fill = this.color(v, this.st.fill); }
+  get strokeStyle(): string { return this.st.stroke; }
+  set strokeStyle(v: string) { this.st.stroke = this.color(v, this.st.stroke); }
+  get lineWidth(): number { return this.st.lineWidth; }
+  set lineWidth(v: number) { if (Number.isFinite(v) && v > 0) this.st.lineWidth = v; }
+  get lineCap(): CanvasLineCap { return this.st.lineCap; }
+  set lineCap(v: CanvasLineCap) { this.st.lineCap = v; }
+  get lineJoin(): CanvasLineJoin { return this.st.lineJoin; }
+  set lineJoin(v: CanvasLineJoin) { this.st.lineJoin = v; }
+  get globalAlpha(): number { return this.st.alpha; }
+  set globalAlpha(v: number) { if (v >= 0 && v <= 1) this.st.alpha = v; }
+  get lineDashOffset(): number { return this.st.dashOffset; }
+  set lineDashOffset(v: number) { this.st.dashOffset = v; }
+  get font(): string { return this.st.font; }
+  set font(v: string) { this.st.font = v; }
+  get textBaseline(): CanvasTextBaseline { return this.st.baseline; }
+  set textBaseline(v: CanvasTextBaseline) { this.st.baseline = v; }
+
+  save(): void {
+    this.stack.push({ ...this.st, m: [...this.st.m], dash: [...this.st.dash] });
+    this.ops.push(OP.save);
+  }
+  restore(): void {
+    const s = this.stack.pop();
+    if (s === undefined) return;
+    this.st = s;
+    this.ops.push(OP.restore);
+  }
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void { this.st.m = [a, b, c, d, e, f]; }
+  transform(a: number, b: number, c: number, d: number, e: number, f: number): void { this.st.m = mul(this.st.m, [a, b, c, d, e, f]); }
+  setLineDash(d: number[]): void { this.st.dash = [...d]; }
+  getLineDash(): number[] { return [...this.st.dash]; }
+  beginPath(): void { this.path = new RecordingPath(); }
+  moveTo(x: number, y: number): void { this.path.moveTo(x, y); }
+  lineTo(x: number, y: number): void { this.path.lineTo(x, y); }
+  bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void { this.path.bezierCurveTo(x1, y1, x2, y2, x, y); }
+  closePath(): void { this.path.closePath(); }
+  rect(x: number, y: number, w: number, h: number): void { this.path.rect(x, y, w, h); }
+  ellipse(cx: number, cy: number, rx: number, ry: number, rotation: number, a0: number, a1: number, ccw?: boolean): void {
+    this.path.ellipse(cx, cy, rx, ry, rotation, a0, a1, ccw);
+  }
+
+  private paint(c: string): number[] {
+    const [r, g, b, a] = rgbaOf(c);
+    return [r, g, b, a * this.st.alpha];
+  }
+  private count(): void {
+    const k = this.drawn.length - 1;
+    if (k >= 0) this.drawn[k] = (this.drawn[k] ?? 0) + 1;
+  }
+  fill(a?: RecordingPath | CanvasFillRule, b?: CanvasFillRule): void {
+    const path = a instanceof RecordingPath ? a : this.path;
+    const rule = typeof a === "string" ? a : b;
+    if (path.empty) return;
+    this.ops.push(OP.fill, ...this.st.m, ...this.paint(this.st.fill), rule === "evenodd" ? 1 : 0, ...path.encode());
+    this.count();
+  }
+  stroke(p?: RecordingPath): void {
+    const path = p ?? this.path;
+    if (path.empty) return;
+    const s = this.st;
+    this.ops.push(OP.stroke, ...s.m, ...this.paint(s.stroke), s.lineWidth, CAP[s.lineCap] ?? 0, JOIN[s.lineJoin] ?? 0, s.dash.length, ...s.dash, s.dashOffset, ...path.encode());
+    this.count();
+  }
+  clip(rule?: CanvasFillRule): void {
+    this.ops.push(OP.clip, ...this.st.m, rule === "evenodd" ? 1 : 0, ...this.path.encode());
+  }
+  fillRect(x: number, y: number, w: number, h: number): void {
+    const p = new RecordingPath();
+    p.rect(x, y, w, h);
+    this.fill(p);
+  }
+  fillText(text: string, x: number, y: number): void {
+    if (text === "") return;
+    const f = /^(italic )?(bold )?([\d.]+)px/.exec(this.st.font);
+    const size = f ? Number(f[3]) : 10;
+    const face = (f?.[2] ? 1 : 0) + (f?.[1] ? 2 : 0);
+    this.texts.push(text);
+    this.ops.push(OP.text, ...this.st.m, ...this.paint(this.st.fill), size, x, y, this.st.baseline === "top" ? 0 : 1, this.texts.length - 1, face);
+    this.count();
+  }
+  measureText(text: string): TextMetrics {
+    this.real.font = this.st.font;
+    return this.real.measureText(text);
+  }
+  drawImage(img: CanvasImageSource, x = 0, y = 0, w?: number, h?: number): void {
+    let i = this.images.indexOf(img);
+    if (i < 0) i = this.images.push(img) - 1;
+    const size = img as { width?: number; height?: number };
+    this.ops.push(OP.image, ...this.st.m, i, x, y, w ?? size.width ?? 0, h ?? size.height ?? 0, this.st.alpha);
+    this.count();
+  }
+}
+```
+
+  (Le premier test attend `drawn: [1]` ; le chemin du `clip` n'est pas compté, une découpe ne dessine rien.)
+
+- [ ] **Étape 4 : vert.** La commande bornée ; `tsc` sur ces fichiers (rien). Si `paintContent` appelle une méthode absente,
+  le test d'intégration lève : l'ajouter à `RecordingContext2D` avec son code (table de T11), jamais la stubber.
+
+- [ ] **Étape 5 : commit.**
+
+```bash
+cd "$WT" && git add apps/web/src/engine/render/record-ctx.ts && git add apps/web/src/engine/render/record-ctx.test.ts && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(render): recording 2D context that encodes a display list" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, une ligne `Réutilisation :` par ligne `Réutilise :`.
+
+<a id="tache-t13"></a>
+
+### Tâche T13 — (lot c) Superposition vectorielle : Worker jetable commun, producteur `krilla`, branchement
+
+**Objectif.** La superposition devient vectorielle (PF21, PF22, DAPF4) : le même `paintContent` dessine dans un
+`RecordingContext2D` (T12), la liste part dans un **Worker jetable** (patron C10b, DAB4) qui charge le module `formats`
+et appelle `write_pdf_pages` (T11) ; le PDF rendu (une page par requête) est posé par `embedPage` + `drawPage` (T7, sans
+changement). La boucle « un Worker, une réponse, délai, arrêt » sort de `sheet-reader.ts` en
+`runOnce` (`one-shot-worker.ts`), appelée par les deux. Le producteur vectoriel garde le PNG en repli
+(`fallbackOverlay`, PC14) et relaie `raster` (PF20). Une page sans opération de dessin rend `null` (pdf-lib refuse
+d'embarquer une page sans contenu). Carte du lot (c), contre-relecture : `container.ts` gagne la garde
+`hasPdfWriter` (à la manière de `hasSheetReader`) et le Worker d'écriture `pdf-vector-worker.ts` est un fichier de la tâche.
+
+**Fichiers.**
+- Créer : `apps/web/src/platform/one-shot-worker.ts`, `apps/web/src/platform/one-shot-worker.test.ts`,
+  `apps/web/src/platform/pdf-vector-worker.ts`, `apps/web/src/app/pdf-overlay-vector.ts`,
+  `apps/web/src/app/pdf-overlay-vector.test.ts`
+- Modifier : `apps/web/src/platform/sheet-reader.ts:30-36`, `:83-107` ; `apps/web/src/platform/container.ts:60-70` ;
+  `apps/web/src/main.ts` (producteur de l'onglet)
+
+**Interfaces.**
+- Consomme : T7 — `OverlayProducer`, `OverlayRequest`, `exportPdf`, `ContentPainter`, `loadImageSource`,
+  `browserExportCanvas` ; T9 — `pngOverlay(tab, doc)` dans `main.ts` ; T11 — `write_pdf_pages` (module `formats`) ;
+  T12 — `RecordingContext2D`, `RecordedList`.
+- Produit :
+  - `one-shot-worker.ts` : `interface WorkerLike` (déplacée ; `sheet-reader.ts` la réexporte, `main.ts` inchangé),
+    `function runOnce<T>(spawn: () => WorkerLike, message: unknown, transfer: Transferable[], timeoutMs: number, check: (d: unknown) => T, failure: string): Promise<T>`.
+  - `container.ts` : `interface PdfFormatsBinding extends FormatsBinding { write_pdf_pages(ops: Float32Array, texts: string[], fonts: Uint8Array, font_sizes: Uint32Array, images: Uint8Array, image_sizes: Uint32Array): Uint8Array }`,
+    `function hasPdfWriter(m: FormatsBinding): m is PdfFormatsBinding`.
+  - `pdf-overlay-vector.ts` : `PDF_WORKER_TIMEOUT_MS = 60_000`, `PDF_WRITE_FAILED_MESSAGE = "écriture du PDF interrompue"`,
+    `PDF_FONT_FILES` (quatre faces de Liberation Sans), `type PdfWriter = (list: RecordedList, fonts: readonly Uint8Array[], images: readonly Uint8Array[]) => Promise<Uint8Array>`,
+    `function workerPdfWriter(spawn: () => WorkerLike): PdfWriter`, `function createVectorOverlay(deps: VectorOverlayDeps): OverlayProducer`,
+    `function fallbackOverlay(primary: OverlayProducer, secondary: OverlayProducer): OverlayProducer`.
+- Réutilise : `apps/web/src/platform/sheet-reader.ts:83` (`createSheetReader`), `sheet-worker.ts` — boucle sortie en
+  `runOnce` dans `platform/one-shot-worker.ts`, appelée par les deux (étendre, cadrage § 3).
+- Réutilise : `apps/web/src/platform/container-load.ts:7` (`loadFormatsModule`) et `container.ts:67` (`hasSheetReader`,
+  patron de `hasPdfWriter`) — le Worker d'écriture charge sa propre instance du module `formats`.
+- Réutilise : `apps/web/src/engine/render/canvas2d.ts` (`paintContent`) dans un `RecordingContext2D` — aucune seconde
+  implémentation du dessin (cadrage § 3).
+- Réutilise : `apps/web/src/app/pdf-overlay.ts` (`loadImageSource`, `createPngOverlay`) — images décodées d'avance
+  (PF21), PNG en repli.
+
+**Test et commande bornée.**
+
+```bash
+cd "$WT" && export PATH=$HOME/.cargo/bin:$HOME/.local/bin:$PATH && \
+ROOMBOARD_WASM_REQUIRED=1 pnpm --filter @roomboard/web exec vitest run src/platform/one-shot-worker.test.ts src/platform/sheet-reader.test.ts src/app/pdf-overlay-vector.test.ts --reporter=verbose 2>&1 | grep -E "✓|×|FAIL|Test Files|Tests " | tail -30
+```
+
+Attendu : 0 `×` ; « Worker jetable (C12) » ≥ 4 ; « superposition vectorielle (C12, PF22) » ≥ 4 dont « vrai module
+formats : aucune image, texte en police » (S5) ; `sheet-reader.test.ts` **inchangé** et vert (effet de bord du cadrage :
+« lecteur de classeur en Worker (F28) », « délai d'arrêt et erreurs du Worker (constat T13) »). `tsc` vide. À la clôture,
+l'essai C12 (T10) imprime « page 2 : une superposition (/Form) ».
+
+**Contraintes (recopiées).**
+- GC2 TDD ; aucun test sauté ; « vrai module » joué avec `ROOMBOARD_WASM_REQUIRED=1`.
+- GC3 PATH ; aucun build Tauri, aucun build Android.
+- GC4 Préparation : `pnpm install --frozen-lockfile`, `target` copié.
+- GC5 Reconstruire le module **formats** (T11 y a mis `write_pdf_pages`) avant les tests ; le principal aussi (amorce).
+- GC6 Preuve bornée : la commande ci-dessus ; N et noms dans le rapport.
+- GC7, GC8 Commits fichier par fichier, auteur et message imposés ; interdits git.
+- GC10 Module formats ≤ 3 145 728 o, taille relevée ; aucun `krilla` dans le module principal.
+- GC11 Polices lues en local (`./pdfjs/standard_fonts/`), aucune URL distante ; le Worker est créé par l'amorce seule.
+- GC14 `tsc` vide.
+- GC15 Une ligne `Réutilisation :` par ligne `Réutilise :`.
+- GC18, GC19 Aucun processus laissé ; seuls les fichiers ci-dessus ; `sheet-reader.test.ts` n'est pas modifié.
+
+**Patron à ne pas reprendre.** Garder une instance du module `formats` dans la page pour écrire le PDF (comme
+`createPageCodec`) : une panique Wasm de `krilla` casserait l'instance qui enregistre les `.roomboard` (HR6). Un Worker
+neuf par export, arrêté après la réponse, comme le lecteur de classeur : chemin de référence
+`apps/web/src/platform/sheet-reader.ts:77-107` (et `sheet-worker.ts:1-24` pour l'entrée du Worker).
+
+**Interdits.** Ne pas modifier `sheet-reader.test.ts` ni `sheet-worker.ts` ; ne pas toucher `pdf-export.ts`.
+
+**Critère « terminé ».** Commande bornée verte, `tsc` vide, un commit.
+
+**Étapes.**
+
+- [ ] **Étape 1 : préparer le worktree** (GC4) ; reconstruire les deux modules (GC5).
+
+- [ ] **Étape 2 : tests rouges du Worker jetable.** Créer `apps/web/src/platform/one-shot-worker.test.ts` :
+
+```ts
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { runOnce, type WorkerLike } from "./one-shot-worker";
+
+function fake(reply?: (w: WorkerLike, m: unknown) => void) {
+  const terminate = vi.fn();
+  const posted: unknown[] = [];
+  const w: WorkerLike = {
+    onmessage: null,
+    onerror: null,
+    postMessage: (m) => {
+      posted.push(m);
+      reply?.(w, m);
+    },
+    terminate,
+  };
+  return { w, terminate, posted };
+}
+const ok = (d: unknown): number => {
+  if (typeof d !== "object" || d === null || typeof (d as { n?: unknown }).n !== "number") throw new Error("réponse mal formée");
+  return (d as { n: number }).n;
+};
+afterEach(() => void vi.useRealTimers());
+
+describe("Worker jetable (C12)", () => {
+  it("réponse contrôlée par check : résolue, Worker arrêté une fois", async () => {
+    const f = fake((w) => queueMicrotask(() => w.onmessage?.({ data: { n: 7 } })));
+    expect(await runOnce(() => f.w, { a: 1 }, [], 1000, ok, "interrompu")).toBe(7);
+    expect([f.posted, f.terminate.mock.calls.length]).toEqual([[{ a: 1 }], 1]);
+  });
+  it("check qui lève : rejet avec son message, Worker arrêté", async () => {
+    const f = fake((w) => queueMicrotask(() => w.onmessage?.({ data: "x" })));
+    await expect(runOnce(() => f.w, {}, [], 1000, ok, "interrompu")).rejects.toThrow("réponse mal formée");
+    expect(f.terminate).toHaveBeenCalledTimes(1);
+  });
+  it("onerror (panique Wasm, module absent) : rejet `failure`, Worker arrêté", async () => {
+    const f = fake((w) => queueMicrotask(() => w.onerror?.(new Error("unreachable"))));
+    await expect(runOnce(() => f.w, {}, [], 1000, ok, "interrompu")).rejects.toThrow("interrompu");
+    expect(f.terminate).toHaveBeenCalledTimes(1);
+  });
+  it("Worker muet : rejet `failure` au bout du délai, Worker arrêté", async () => {
+    vi.useFakeTimers();
+    const f = fake();
+    const p = runOnce(() => f.w, {}, [], 500, ok, "interrompu");
+    const seen = p.catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(f.terminate).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(((await seen) as Error).message).toBe("interrompu");
+    expect(f.terminate).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+- [ ] **Étape 3 : `runOnce` et le lecteur de classeur.** Créer `apps/web/src/platform/one-shot-worker.ts` :
+
+```ts
+/**
+ * Worker jetable (C10b DAB4, étendu par C12) : un Worker neuf par tâche, un message, une réponse contrôlée par `check`,
+ * puis arrêté — après la réponse, après `onerror` (panique Wasm, module absent) ou au bout de `timeoutMs`. Partagé par
+ * la lecture des classeurs (`sheet-reader.ts`) et l'écriture des PDF vectoriels (`app/pdf-overlay-vector.ts`).
+ */
+/** Forme d'un Worker utile ici (le vrai `Worker` du navigateur, un faux dans les tests). */
+export interface WorkerLike {
+  onmessage: ((e: { readonly data: unknown }) => void) | null;
+  onerror: ((e: unknown) => void) | null;
+  postMessage(message: unknown, transfer: Transferable[]): void;
+  terminate(): void;
+}
+
+export async function runOnce<T>(
+  spawn: () => WorkerLike,
+  message: unknown,
+  transfer: Transferable[],
+  timeoutMs: number,
+  check: (d: unknown) => T,
+  failure: string,
+): Promise<T> {
+  const worker = spawn();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(failure)), timeoutMs);
+      worker.onmessage = (e) => {
+        try {
+          resolve(check(e.data));
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(failure));
+        }
+      };
+      worker.onerror = () => reject(new Error(failure));
+      worker.postMessage(message, transfer);
+    });
+  } finally {
+    clearTimeout(timer);
+    worker.terminate();
+  }
+}
+```
+
+  Dans `sheet-reader.ts` : retirer l'interface `WorkerLike` et écrire à sa place
+  `export type { WorkerLike } from "./one-shot-worker";` plus `import { runOnce, type WorkerLike } from "./one-shot-worker";` ;
+  `createSheetReader` devient :
+
+```ts
+export function createSheetReader(spawn: () => WorkerLike): SheetReader {
+  return {
+    async read(file) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      return runOnce(
+        spawn,
+        { bytes },
+        [bytes.buffer],
+        SHEET_WORKER_TIMEOUT_MS,
+        (d) => {
+          const g = typeof d === "object" && d !== null ? (d as { grid?: unknown }).grid : undefined;
+          const err = typeof d === "object" && d !== null ? (d as { error?: unknown }).error : undefined;
+          if (isTableGrid(g)) return g;
+          throw new Error(typeof err === "string" ? err : WORKER_FAILED_MESSAGE);
+        },
+        WORKER_FAILED_MESSAGE,
+      );
+    },
+  };
+}
+```
+
+  `vitest run src/platform/one-shot-worker.test.ts src/platform/sheet-reader.test.ts` : vert, `sheet-reader.test.ts`
+  sans changement.
+
+- [ ] **Étape 4 : garde et Worker d'écriture.** Dans `container.ts`, après `hasSheetReader` :
+
+```ts
+/** Module `formats` avec l'écrivain PDF vectoriel (C12, PF22, krilla) : servi seulement dans `pdf-vector-worker.ts`. */
+export interface PdfFormatsBinding extends FormatsBinding {
+  write_pdf_pages(ops: Float32Array, texts: string[], fonts: Uint8Array, font_sizes: Uint32Array, images: Uint8Array, image_sizes: Uint32Array): Uint8Array;
+}
+
+/** Vrai si le module chargé expose `write_pdf_pages` (module construit après C12). */
+export function hasPdfWriter(m: FormatsBinding): m is PdfFormatsBinding {
+  return typeof (m as Partial<PdfFormatsBinding>).write_pdf_pages === "function";
+}
+```
+
+  Créer `apps/web/src/platform/pdf-vector-worker.ts` :
+
+```ts
+/**
+ * Entrée du Worker d'écriture PDF (C12, PF22, DAPF4) : sa propre instance du module `formats`, une réponse `{ bytes }`
+ * ou `{ error }`, puis arrêté par `runOnce`. Une panique Wasm (krilla) arrive en `RuntimeError` et ne touche jamais
+ * l'instance de la page qui enregistre le `.roomboard` (HR6). Créé par `main.ts`, jamais par un test.
+ */
+import { hasPdfWriter } from "./container";
+import { loadFormatsModule } from "./container-load";
+
+interface Job {
+  readonly ops: Float32Array;
+  readonly texts: string[];
+  readonly fonts: Uint8Array;
+  readonly fontSizes: Uint32Array;
+  readonly images: Uint8Array;
+  readonly imageSizes: Uint32Array;
+}
+
+self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
+  try {
+    const mod = await loadFormatsModule();
+    if (!hasPdfWriter(mod)) throw new Error("module de l'écrivain PDF indisponible");
+    const j = e.data;
+    const bytes = mod.write_pdf_pages(j.ops, j.texts, j.fonts, j.fontSizes, j.images, j.imageSizes);
+    self.postMessage({ bytes }, [bytes.buffer]);
+  } catch (err) {
+    self.postMessage({ error: err instanceof Error ? err.message : String(err) });
+  }
+};
+```
+
+- [ ] **Étape 5 : tests rouges du producteur.** Créer `apps/web/src/app/pdf-overlay-vector.test.ts` :
+
+```ts
+import { PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib";
+import { describe, expect, it, vi } from "vitest";
+import type { AssetInfo } from "../core/api";
+import { RecordingContext2D, type RecordedList } from "../engine/render/record-ctx";
+import { hasPdfWriter, type FormatsBinding } from "../platform/container";
+import { createVectorOverlay, fallbackOverlay, type PdfWriter } from "./pdf-overlay-vector";
+import type { OverlayProducer } from "./pdf-export";
+
+interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
+const fs = (await import(/* @vite-ignore */ `node:${"fs"}`)) as NodeFs;
+const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+const wasmFile = new URL("../wasm-formats/roomboard_formats_wasm_bg.wasm", import.meta.url);
+const fontFile = new URL("../../../../crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf", import.meta.url);
+const present = fs.existsSync(wasmFile);
+it("le module formats est présent quand il est exigé", () => {
+  if (env["ROOMBOARD_WASM_REQUIRED"] === "1") expect(present).toBe(true);
+});
+async function loadFormats(): Promise<FormatsBinding> {
+  const mod = (await import(/* @vite-ignore */ new URL("../wasm-formats/roomboard_formats_wasm.js", import.meta.url).href)) as FormatsBinding & { initSync(o: { module: Uint8Array }): unknown };
+  mod.initSync({ module: fs.readFileSync(wasmFile) });
+  return mod;
+}
+const formats = present ? await loadFormats() : null;
+
+class Real {
+  private v = "#000000";
+  font = "";
+  get fillStyle(): string { return this.v; }
+  set fillStyle(c: string) { if (/^#[0-9a-f]{6}$/i.test(c)) this.v = c; }
+  measureText(t: string): TextMetrics { return { width: t.length * 10 } as TextMetrics; }
+}
+const IMG = "ab".repeat(32);
+const info = (id: string, mime: string): AssetInfo => ({ id, name: id, mime, size: 3 });
+const req = (pageId: string) => ({ pageId, rect: { x0: 0, y0: 0, x1: 1920, y1: 1080 }, box: { w: 842, h: 473.625 } });
+
+function producer(write: PdfWriter, draw: (ctx: CanvasRenderingContext2D, page: string, images: { bitmap(id: string): CanvasImageSource | null }) => void, cited: AssetInfo[] = []) {
+  return createVectorOverlay({
+    doc: { elementIds: (p) => [`${p}-a`], citedAssets: () => cited },
+    assets: { get: () => new Blob([new Uint8Array([1, 2, 3])]) },
+    measure: new Real() as unknown as CanvasRenderingContext2D,
+    painter: (_ctx, images) => ({ paintContent: (ctx, page) => draw(ctx, page.id, images) }),
+    fonts: async () => [new Uint8Array([9])],
+    toPng: async () => new Uint8Array([8]),
+    write,
+  });
+}
+
+describe("superposition vectorielle (C12, PF22)", () => {
+  it("une page krilla par requête, à la boîte vue, en un seul appel ; page sans dessin : null", async () => {
+    const lists: RecordedList[] = [];
+    const write = vi.fn(async (l: RecordedList) => (lists.push(l), new Uint8Array([7])));
+    const out = await producer(write, (ctx, page) => {
+      if (page === "p1") ctx.fillRect(0, 0, 10, 10);
+    }).pages([req("p1"), req("p2")]);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(Array.from(lists[0]!.ops.slice(0, 3))).toEqual([1, 842, 473.625]);
+    expect(lists[0]!.drawn).toEqual([1, 0]);
+    expect(out).toEqual([{ kind: "pdf", bytes: new Uint8Array([7]), index: 0 }, null]);
+  });
+
+  it("images : PNG et JPEG passés tels quels, autre type converti en PNG ; une entrée par image dessinée, dans l'ordre", async () => {
+    const seen: (readonly Uint8Array[])[] = [];
+    const write: PdfWriter = async (_l, _f, images) => (seen.push(images), new Uint8Array([7]));
+    const cited = [info(IMG, "image/png"), info("cd".repeat(32), "image/webp"), info("ef".repeat(32), "application/pdf")];
+    await producer(write, (ctx, _p, images) => {
+      for (const id of [IMG, "cd".repeat(32), "ef".repeat(32)]) {
+        const b = images.bitmap(id);
+        if (b !== null) ctx.drawImage(b, 0, 0, 5, 5);
+      }
+    }, cited).pages([req("p1")]);
+    expect(seen[0]?.map((b) => Array.from(b))).toEqual([[1, 2, 3], [8]]);
+  });
+
+  it("fallbackOverlay : vecteur en échec → PNG, avertissement ; raster relayé (PC14, PF20)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const raster = vi.fn(async () => new Uint8Array([5]));
+    const png: OverlayProducer = { pages: async (r) => r.map(() => ({ kind: "png" as const, bytes: new Uint8Array([4]) })), raster };
+    const broken: OverlayProducer = { pages: async () => Promise.reject(new Error("krilla")) };
+    const both = fallbackOverlay(broken, png);
+    expect(await both.pages([req("p1")])).toEqual([{ kind: "png", bytes: new Uint8Array([4]) }]);
+    expect(both.raster).toBe(raster);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it.skipIf(formats === null)("vrai module formats : aucune image, texte en police, une page par requête (S5)", async () => {
+    const mod = formats!;
+    expect(hasPdfWriter(mod)).toBe(true);
+    if (!hasPdfWriter(mod)) return;
+    const write: PdfWriter = async (l, fonts, images) => {
+      const cat = (xs: readonly Uint8Array[]) => {
+        const out = new Uint8Array(xs.reduce((n, x) => n + x.length, 0));
+        let at = 0;
+        for (const x of xs) (out.set(x, at), (at += x.length));
+        return out;
+      };
+      return mod.write_pdf_pages(l.ops, [...l.texts], cat(fonts), Uint32Array.from(fonts.map((f) => f.length)), cat(images), Uint32Array.from(images.map((i) => i.length)));
+    };
+    const font = fs.readFileSync(fontFile);
+    const out = await createVectorOverlay({
+      doc: { elementIds: () => ["a"], citedAssets: () => [] },
+      assets: { get: () => undefined },
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: () => ({
+        paintContent: (ctx) => {
+          ctx.font = "36px sans-serif";
+          ctx.textBaseline = "top";
+          ctx.fillText("RoomBoard vectoriel", 20, 20);
+          ctx.beginPath();
+          ctx.rect(10, 100, 200, 50);
+          ctx.stroke();
+        },
+      }),
+      fonts: async () => [font, font, font, font],
+      toPng: async () => new Uint8Array(),
+      write,
+    }).pages([req("p1"), req("p2")]);
+    const bytes = out[0]?.kind === "pdf" ? out[0].bytes : new Uint8Array();
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getPageCount()).toBe(2);
+    const res = pdf.getPage(0).node.Resources();
+    const xo = res?.lookupMaybe(PDFName.of("XObject"), PDFDict);
+    const kinds = xo === undefined ? [] : xo.keys().map((k) => String(xo.lookup(k, PDFStream).dict.get(PDFName.of("Subtype"))));
+    expect(kinds).not.toContain("/Image");
+    expect(res?.lookupMaybe(PDFName.of("Font"), PDFDict)?.keys().length ?? 0).toBeGreaterThan(0);
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const doc = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    const text = (await (await doc.getPage(1)).getTextContent()).items.map((it) => ("str" in it ? it.str : "")).join("");
+    await doc.destroy();
+    expect(text).toContain("RoomBoard vectoriel");
+    expect(new RecordingContext2D(new Real() as unknown as CanvasRenderingContext2D)).toBeTruthy();
+  });
+});
+```
+
+  (Le `it.skipIf` suit le mécanisme existant des blocs « vrai module » : sous `ROOMBOARD_WASM_REQUIRED=1`, le premier
+  test exige le module, donc rien n'est sauté en vérification.) Rouge.
+
+- [ ] **Étape 6 : le producteur vectoriel.** Créer `apps/web/src/app/pdf-overlay-vector.ts` :
+
+```ts
+/**
+ * Producteur vectoriel de la superposition (C12, PF22, DAPF4, lot c) : `paintContent` enregistré par
+ * `RecordingContext2D`, une page `krilla` par requête (taille = boîte vue, échelle = points par unité), écrite dans un
+ * Worker jetable du module `formats` (`write_pdf_pages`). Images citées décodées d'avance (PF21) et passées en PNG ou
+ * JPEG ; Liberation Sans en quatre faces (HPF1-5). Page sans dessin : null. `fallbackOverlay` garde le PNG en repli.
+ */
+import type { CoreDocument } from "../core/api";
+import type { AssetStore } from "../core/asset-store";
+import type { ImageSource } from "../engine/render/image-cache";
+import { RecordingContext2D, type RecordedList } from "../engine/render/record-ctx";
+import { runOnce, type WorkerLike } from "../platform/one-shot-worker";
+import type { Overlay, OverlayProducer } from "./pdf-export";
+import type { ContentPainter } from "./pdf-overlay";
+
+export const PDF_WORKER_TIMEOUT_MS = 60_000;
+export const PDF_WRITE_FAILED_MESSAGE = "écriture du PDF interrompue";
+/** Faces 0 normal, 1 gras, 2 italique, 3 gras italique (table de T11), servies par `vite.config.ts` (T3). */
+export const PDF_FONT_FILES = ["LiberationSans-Regular.ttf", "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf", "LiberationSans-BoldItalic.ttf"] as const;
+
+export type PdfWriter = (list: RecordedList, fonts: readonly Uint8Array[], images: readonly Uint8Array[]) => Promise<Uint8Array>;
+
+export interface VectorOverlayDeps {
+  readonly doc: Pick<CoreDocument, "elementIds" | "citedAssets">;
+  readonly assets: Pick<AssetStore, "get">;
+  /** Vrai contexte : couleurs normalisées et `measureText` (mêmes lignes qu'à l'écran). */
+  readonly measure: Pick<CanvasRenderingContext2D, "fillStyle" | "font" | "measureText">;
+  painter(ctx: CanvasRenderingContext2D, images: ImageSource): ContentPainter;
+  fonts(): Promise<readonly Uint8Array[]>;
+  /** Image d'un autre type que PNG ou JPEG convertie en PNG (décodage du navigateur). */
+  toPng(blob: Blob, mime: string): Promise<Uint8Array>;
+  readonly write: PdfWriter;
+}
+
+const cat = (xs: readonly Uint8Array[]): Uint8Array => {
+  const out = new Uint8Array(xs.reduce((n, x) => n + x.length, 0));
+  let at = 0;
+  for (const x of xs) {
+    out.set(x, at);
+    at += x.length;
+  }
+  return out;
+};
+
+/** Écriture dans un Worker jetable (patron C10b) ; réponse `{ bytes }` ou `{ error }`. */
+export function workerPdfWriter(spawn: () => WorkerLike): PdfWriter {
+  return (list, fonts, images) => {
+    const job = {
+      ops: list.ops,
+      texts: [...list.texts],
+      fonts: cat(fonts),
+      fontSizes: Uint32Array.from(fonts.map((f) => f.length)),
+      images: cat(images),
+      imageSizes: Uint32Array.from(images.map((i) => i.length)),
+    };
+    return runOnce(
+      spawn,
+      job,
+      [job.ops.buffer, job.fonts.buffer, job.images.buffer],
+      PDF_WORKER_TIMEOUT_MS,
+      (d) => {
+        const r = typeof d === "object" && d !== null ? (d as { bytes?: unknown; error?: unknown }) : {};
+        if (r.bytes instanceof Uint8Array) return r.bytes;
+        throw new Error(typeof r.error === "string" ? r.error : PDF_WRITE_FAILED_MESSAGE);
+      },
+      PDF_WRITE_FAILED_MESSAGE,
+    );
+  };
+}
+
+interface Token {
+  readonly asset: string;
+  readonly mime: string;
+}
+
+export function createVectorOverlay(deps: VectorOverlayDeps): OverlayProducer {
+  return {
+    async pages(requests) {
+      const tokens = new Map<string, Token>();
+      for (const a of deps.doc.citedAssets()) if (a.mime.startsWith("image/") && deps.assets.get(a.id) !== undefined) tokens.set(a.id, { asset: a.id, mime: a.mime });
+      const images: ImageSource = { bitmap: (id) => (tokens.get(id) as unknown as CanvasImageSource | undefined) ?? null };
+      const rec = new RecordingContext2D(deps.measure);
+      const ctx = rec as unknown as CanvasRenderingContext2D;
+      const painter = deps.painter(ctx, images);
+      for (const r of requests) {
+        rec.page(r.box.w, r.box.h);
+        painter.paintContent(ctx, { id: r.pageId, elementIds: deps.doc.elementIds(r.pageId) }, r.rect, r.box.w / (r.rect.x1 - r.rect.x0));
+      }
+      const list = rec.encode();
+      const bytes: Uint8Array[] = [];
+      for (const t of list.images as readonly Token[]) {
+        const blob = deps.assets.get(t.asset);
+        if (blob === undefined) throw new Error(`image ${t.asset} absente`);
+        bytes.push(t.mime === "image/png" || t.mime === "image/jpeg" ? new Uint8Array(await blob.arrayBuffer()) : await deps.toPng(blob, t.mime));
+      }
+      const pdf = await deps.write(list, await deps.fonts(), bytes);
+      return requests.map((_, k): Overlay | null => ((list.drawn[k] ?? 0) === 0 ? null : { kind: "pdf", bytes: pdf, index: k }));
+    },
+  };
+}
+
+/** Vecteur d'abord, PNG en repli (PC14) ; `raster` (PF20) relayé. */
+export function fallbackOverlay(primary: OverlayProducer, secondary: OverlayProducer): OverlayProducer {
+  const raster = secondary.raster ?? primary.raster;
+  return {
+    ...(raster ? { raster } : {}),
+    async pages(requests) {
+      try {
+        return await primary.pages(requests);
+      } catch (e) {
+        console.warn(`RoomBoard : superposition vectorielle impossible, image à la place (${e instanceof Error ? e.message : String(e)})`);
+        return secondary.pages(requests);
+      }
+    },
+  };
+}
+```
+
+  (Dans le test « images », le PDF cité n'est pas une image : `bitmap` rend `null`, rien n'est dessiné ; le webp passe
+  par `toPng`.)
+
+- [ ] **Étape 7 : branchement.** Dans `main.ts` : imports `createVectorOverlay`, `fallbackOverlay`, `PDF_FONT_FILES`,
+  `workerPdfWriter` (`./app/pdf-overlay-vector`). Après `pngOverlay` (T9) :
+
+```ts
+  // Superposition vectorielle (C12 lot c) : Worker jetable du module `formats` par export ; PNG en repli.
+  const spawnPdfWorker = (): WorkerLike => {
+    const w = new Worker(new URL("./platform/pdf-vector-worker.ts", import.meta.url), { type: "module" });
+    const like: WorkerLike = { onmessage: null, onerror: null, postMessage: (m, t) => w.postMessage(m, t), terminate: () => w.terminate() };
+    w.onmessage = (e) => like.onmessage?.(e);
+    w.onerror = (e) => like.onerror?.(e);
+    return like;
+  };
+  let pdfFonts: Promise<readonly Uint8Array[]> | null = null;
+  const fonts = (): Promise<readonly Uint8Array[]> =>
+    (pdfFonts ??= Promise.all(
+      PDF_FONT_FILES.map(async (f) => new Uint8Array(await (await fetch(new URL(`./pdfjs/standard_fonts/${f}`, document.baseURI))).arrayBuffer())),
+    ).catch((e: unknown) => {
+      pdfFonts = null;
+      throw e;
+    }));
+  const toPng = async (blob: Blob): Promise<Uint8Array> => {
+    const bmp = await decodeBitmap(blob);
+    const c = browserExportCanvas(Number((bmp as { width?: number }).width ?? 1), Number((bmp as { height?: number }).height ?? 1));
+    try {
+      c.ctx.drawImage(bmp, 0, 0);
+      return await c.png();
+    } finally {
+      bmp.close?.();
+      c.release();
+    }
+  };
+  const measureCtx2 = document.createElement("canvas").getContext("2d");
+  const overlay = (tab: TabSession, doc: CoreDocument) =>
+    measureCtx2 === null
+      ? pngOverlay(tab, doc)
+      : fallbackOverlay(
+          createVectorOverlay({
+            doc,
+            assets: tab.assets,
+            measure: measureCtx2,
+            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, { images, makePath: () => new RecordingPath() as unknown as Path2D }),
+            fonts,
+            toPng: (b) => toPng(b),
+            write: workerPdfWriter(spawnPdfWorker),
+          }),
+          pngOverlay(tab, doc),
+        );
+```
+
+  (import `RecordingPath` de `./engine/render/record-ctx`, le type `WorkerLike` est déjà importé de
+  `./platform/sheet-reader`) ; `createWorkspace({ … })` prend `overlay` au lieu de `pngOverlay`. Le `painter` vectoriel
+  reçoit `makePath` : les traits (`Path2D`) sont enregistrés comme les autres chemins.
+
+- [ ] **Étape 8 : vert, taille.** La commande bornée ; `tsc` (GC14) ; `pnpm --filter @roomboard/web build 2>&1 | tail -3`
+  puis `wc -c apps/web/dist/assets/roomboard_formats_wasm_bg*.wasm` (≤ 3 145 728) et
+  `ls apps/web/dist/assets | grep -c "pdf-vector-worker"` (1). Le Worker de classeur et celui d'écriture partagent le
+  même `.wasm` émis (un seul `roomboard_formats_wasm_bg*.wasm`, contrôle de `verifier.sh`).
+
+- [ ] **Étape 9 : commit.**
+
+```bash
+cd "$WT" && for f in apps/web/src/platform/one-shot-worker.ts apps/web/src/platform/one-shot-worker.test.ts \
+  apps/web/src/platform/sheet-reader.ts apps/web/src/platform/pdf-vector-worker.ts apps/web/src/platform/container.ts \
+  apps/web/src/app/pdf-overlay-vector.ts apps/web/src/app/pdf-overlay-vector.test.ts apps/web/src/main.ts; do git add "$f"; done && \
+git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit \
+  -m "feat(web): vector PDF overlay written by krilla in a one-shot worker" \
+  -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+  Rapport : N, noms vus, taille du module formats, une ligne `Réutilisation :` par ligne `Réutilise :`.
