@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_TABLE, CAPABILITY_KEYS, parseProfile, resetItemOptions, resetPresets, resolveStartMode, serializeProfile,
+  ACTION_TABLE, CAPABILITY_KEYS, parseProfile, RESERVED_BAR_IDS, resetItemOptions, resetPresets, resolveStartMode, serializeProfile,
   TOOL_TABLE, visibleItems, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
+import { layoutFor } from "./ui/layout";
 import profilesSource from "./toolbar-profiles.ts?raw";
 import toolbarSource from "./toolbar.ts?raw";
 
@@ -104,6 +105,17 @@ describe("profil de barre (T83, usage § 8)", () => {
     const e = errs(json);
     expect(e).toContain("doublon : pen");
     expect(e).toContain("libellé vide : redo");
+  });
+
+  it.each(["stage", "tabs"])("identifiant de barre réservé %s : refusé avec un message clair", (name) => {
+    const json = base();
+    (json.toolbars as any[])[0].id = name;
+    expect(errs(json)).toContain(`toolbars[0].id : « ${name} » est réservé à la grille (${RESERVED_BAR_IDS.join(", ")})`);
+  });
+
+  it("RESERVED_BAR_IDS égale les noms de cases fixes de layoutFor", () => {
+    const names = new Set(layoutFor([]).areas.replace(/"/g, "").split(/\s+/));
+    expect([...RESERVED_BAR_IDS].sort()).toEqual([...names].sort());
   });
 
   it("dock, kind et buttonSize invalides : erreurs", () => {

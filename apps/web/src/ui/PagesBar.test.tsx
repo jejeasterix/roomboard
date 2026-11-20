@@ -47,6 +47,13 @@ describe("PagesBar (T91)", () => {
     expect(container.querySelectorAll("button[data-page]").length).toBe(2);
   });
 
+  it("la nav porte la classe rb-bar (jetons de taille s|m|l)", () => {
+    const { container } = setup({ pageIndex: 0, pageCount: 2 }, ORDER, "l");
+    const nav = container.querySelector("nav")!;
+    expect(nav.classList.contains("rb-bar")).toBe(true);
+    expect(nav.getAttribute("data-size")).toBe("l");
+  });
+
   it("aller à la page 3", () => {
     const { container, goTo } = setup({ pageIndex: 0, pageCount: 7 });
     fireEvent.click(btn(container, 'button[data-page="3"]'));

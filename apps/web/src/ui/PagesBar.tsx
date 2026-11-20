@@ -28,6 +28,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
   const numbers = (): number[] => Array.from({ length: Math.max(0, props.view().pageCount) }, (_, i) => i + 1);
   return (
     <nav
+      class="rb-bar"
       data-toolbar={props.bar.id}
       data-role="pages"
       data-dock={props.bar.dock}

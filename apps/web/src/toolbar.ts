@@ -130,6 +130,9 @@ interface Ctx {
 const PROFILE_KEYS = ["format", "schema", "minor", "id", "label", "interface", "toolbars", "presets", "behavior"];
 const INTERFACE_KEYS = ["buttonSize"];
 const BEHAVIOR_KEYS = ["startMode"];
+/** Noms de cases fixes de la grille (`ui/layout.ts`, `layoutFor`) : un identifiant de barre ne peut pas les prendre. */
+export const RESERVED_BAR_IDS: readonly string[] = Object.freeze(["tabs", "stage"]);
+
 const BAR_KEYS = ["id", "role", "dock", "collapsed", "groups"];
 const GROUP_KEYS = ["id", "items"];
 const ITEM_KEYS = ["id", "kind", "tool", "action", "label", "icon", "options", "requires"];
@@ -271,6 +274,9 @@ function parseBar(raw: unknown, path: string, ctx: Ctx): Toolbar | null {
     return null;
   }
   const id = nonEmptyField(raw, "id", path, ctx);
+  if (includes(RESERVED_BAR_IDS, id)) {
+    ctx.errors.push(`${path}.id : « ${id} » est réservé à la grille (${RESERVED_BAR_IDS.join(", ")})`);
+  }
   const role = nonEmptyField(raw, "role", path, ctx);
   let dock: Dock = "top";
   if (includes(DOCKS, raw.dock)) dock = raw.dock;
