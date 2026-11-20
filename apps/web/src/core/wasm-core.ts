@@ -3,7 +3,7 @@
 // plus récente, rendu comme cadre inconnu (voir la branche `default`).
 import type {
   AssetInfo,
-  AssetLink,
+  LinkedAsset,
   AssetRef,
   BackdropView,
   Bounds,
@@ -473,15 +473,15 @@ class WasmCoreDocument implements CoreDocument {
     const v: unknown = this.d.asset(id);
     return v === null || v === undefined ? null : toAssetInfo(v);
   }
-  linkedAssets(): AssetLink[] {
+  linkedAssets(): LinkedAsset[] {
     const v: unknown = this.d.linked_assets();
-    if (!Array.isArray(v)) throw new Error("AssetLink invalide");
+    if (!Array.isArray(v)) throw new Error("LinkedAsset invalide");
     return v.map((x: unknown) => {
-      if (!isRecord(x) || typeof x["id"] !== "string" || typeof x["path"] !== "string") throw new Error("AssetLink invalide");
+      if (!isRecord(x) || typeof x["id"] !== "string" || typeof x["path"] !== "string") throw new Error("LinkedAsset invalide");
       return { id: x["id"], path: x["path"] };
     });
   }
-  relinkAssets(links: readonly AssetLink[]): number { return this.d.relink_assets(links.map((l) => l.id), links.map((l) => l.path)); }
+  relinkAssets(links: readonly LinkedAsset[]): number { return this.d.relink_assets(links.map((l) => l.id), links.map((l) => l.path)); }
   points(id: string): Float32Array | null { return this.d.points(id) ?? null; }
   outline(id: string): Float32Array | null { return this.d.outline(id) ?? null; }
   hitTest(page: string, x: number, y: number, tol: number): string | null { return this.d.hit_test(page, x, y, tol) ?? null; }

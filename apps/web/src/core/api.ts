@@ -182,7 +182,7 @@ export interface MediaData {
   readonly volume: number;
 }
 /** C14 : asset lié à un fichier local (chemin) ; `relinkAssets` lit les mêmes paires. */
-export interface AssetLink { readonly id: string; readonly path: string }
+export interface LinkedAsset { readonly id: string; readonly path: string }
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
 
 export type TableAxis = "row" | "col";
@@ -270,10 +270,10 @@ export interface CoreDocument {
   citedAssets(): AssetInfo[];
   asset(id: string): AssetInfo | null;
   /** C14 : assets cités dont la métadonnée porte un chemin lié non vide, triés par id. */
-  linkedAssets(): AssetLink[];
+  linkedAssets(): LinkedAsset[];
   /** C14 (M30) : réécrit le chemin des assets déjà liés à un chemin différent (1 à 4 096 points de code), hors historique,
    *  version inchangée ; rend le nombre réécrit. */
-  relinkAssets(links: readonly AssetLink[]): number;
+  relinkAssets(links: readonly LinkedAsset[]): number;
   points(id: string): Float32Array | null;
   outline(id: string): Float32Array | null;
   hitTest(page: string, x: number, y: number, tol: number): string | null;
@@ -332,6 +332,8 @@ export const BAD_MEDIA_MESSAGE =
   "média invalide (vidéo ou son, boîte finie > 0, durée finie ≥ 0, début ≥ 0 avant la fin, fin dans la durée, volume de 0 à 1, chemin lié de 1 à 4 096 caractères attendus)";
 /** Longueur maximale d'un chemin lié, en points de code (`MAX_LINK_CHARS` du cœur). */
 export const MAX_LINK_CHARS = 4096;
+/** Genre de l'élément média (`MEDIA_KIND` du cœur, C14). */
+export const MEDIA_KIND = "media";
 export const NO_CHANGE: Change = { pages: [], ids: [], removed: [], full: false, version: 0 };
 export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;

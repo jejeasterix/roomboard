@@ -46,7 +46,7 @@ import type {
   GridView,
   ImageData,
   MediaData,
-  AssetLink,
+  LinkedAsset,
   LevelLines,
   Matrix,
   PageView,
@@ -1124,15 +1124,15 @@ class FakeDocument implements CoreDocument {
     }
     return [...acc].sort().map((id) => assetInfo(this.state.assets, id));
   }
-  linkedAssets(): AssetLink[] {
-    const out: AssetLink[] = [];
+  linkedAssets(): LinkedAsset[] {
+    const out: LinkedAsset[] = [];
     for (const { id } of this.citedAssets()) {
       const path = linkedOf(this.state.assets.get(id));
       if (path !== null) out.push({ id, path });
     }
     return out;
   }
-  relinkAssets(links: readonly AssetLink[]): number {
+  relinkAssets(links: readonly LinkedAsset[]): number {
     let n = 0;
     for (const { id, path } of links) {
       const current = linkedOf(this.state.assets.get(id));
