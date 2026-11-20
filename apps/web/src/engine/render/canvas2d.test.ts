@@ -664,7 +664,8 @@ describe("Canvas2DRenderer — tableau (C10a)", () => {
       size: 36,
       cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }],
       rows: [{ id: "r1", height: 64 }],
-      cells: [{ row: "r1", col: "c1", text: "Lundi", fill: null }, { row: "r1", col: "c2", text: "", fill: "#fef08a" }],
+      cells: [{ row: "r1", col: "c1", text: "Lundi", fill: null, shade: null }, { row: "r1", col: "c2", text: "", fill: "#fef08a", shade: null }],
+      merges: [],
     },
   };
   function draw(els: ElementView[]) {
@@ -709,5 +710,50 @@ describe("Canvas2DRenderer — tableau (C10a)", () => {
     r.invalidate({ pages: [], ids: ["tb"], removed: [], full: false, version: 2 });
     r.drawScene(page, IDENTITY, new Set());
     expect(scene.measures).toBeGreaterThan(first);
+  });
+});
+
+describe("Canvas2DRenderer — tableau (C10b)", () => {
+  const els: ElementView[] = [];
+  const ZT: TableElement = {
+    id: "tz",
+    kind: "table",
+    transform: [1, 0, 0, 1, 0, 0],
+    table: {
+      color: "#000000",
+      size: 36,
+      cols: [{ id: "c1", width: 240 }, { id: "c2", width: 240 }],
+      rows: [{ id: "r1", height: 64 }, { id: "r2", height: 64 }],
+      cells: [
+        { row: "r1", col: "c1", text: "Lundi mardi mercredi jeudi", fill: null, shade: null },
+        { row: "r2", col: "c1", text: "réponse", fill: null, shade: "#94a3b8" },
+      ],
+      merges: [{ row: "r1", col: "c1", rows: 1, cols: 2 }],
+    },
+  };
+  function draw() {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => els.find((e) => e.id === id) ?? null, outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, {});
+    r.resize(100, 100, 1);
+    const page = { id: "p", elementIds: ["tz"] };
+    r.drawScene(page, IDENTITY, new Set());
+    return { r, scene, page };
+  }
+
+  it("texte d'une zone mis en lignes à la largeur réunie (une ligne) ; cellule ombrée : aucun fillText (F11)", () => {
+    els.splice(0, els.length, ZT);
+    const { scene } = draw();
+    expect(scene.texts.map((t) => t.text)).toEqual(["Lundi mardi mercredi jeudi"]);
+  });
+
+  it("zone défaite : le cache est remesuré sans invalidate (la clé suit la largeur des boîtes)", () => {
+    els.splice(0, els.length, ZT);
+    const { r, scene, page } = draw();
+    const first = scene.measures;
+    els.splice(0, els.length, { ...ZT, table: { ...ZT.table, merges: [] } });
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.measures).toBeGreaterThan(first);
+    expect(scene.texts.filter((t) => t.text !== "réponse").length).toBeGreaterThan(1);
   });
 });
