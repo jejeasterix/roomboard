@@ -3,6 +3,8 @@ import { listenWebDrop } from "../platform/drop-web";
 import type { ToolbarHost } from "../app/toolbar-host";
 import {
   ACTION_TABLE,
+  FILL_NONE_LABEL,
+  fillChoices,
   presetsOf,
   TABLE_ACTIONS,
   TABLE_FILLS,
@@ -79,19 +81,22 @@ function toolOf(choice: string): ToolId | null {
   return Object.keys(TOOL_TABLE).find((id) => TOOL_TABLE[id]!.choice === choice) ?? null;
 }
 
-/** Rangée contextuelle (C1, P18, P19) : un bouton `data-preset` par préréglage de l'outil actif, sans état enfoncé. */
+/** Rangée contextuelle (C1, P18, P19) : un bouton `data-preset` par préréglage de l'outil actif, sans état enfoncé.
+ * Pot actif (C6a, D16) : ses couleurs (`fillChoices`), puis « Aucune » (`data-fill-none`). */
 function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element {
   const tool = createMemo(() => toolOf(props.view().tool));
-  const list = createMemo((): readonly Preset[] => {
+  const isFill = createMemo(() => tool() === "fill");
+  const list = createMemo((): readonly { readonly id: string; readonly label: string; readonly color?: string }[] => {
     const t = tool();
-    return t === null ? [] : presetsOf(props.presets(), t);
+    if (t === null) return [];
+    return t === "fill" ? fillChoices(props.presets()) : presetsOf(props.presets(), t);
   });
   const press = (presetId: string): void => {
     const t = tool();
     if (t !== null) props.host.setTool(t, presetId);
   };
   return (
-    <Show when={list().length > 0}>
+    <Show when={list().length > 0 || isFill()}>
       <span class="rb-sep" role="separator" data-presets-sep />
       <For each={list()}>
         {(p) => (
@@ -101,6 +106,12 @@ function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<Toolb
           </button>
         )}
       </For>
+      <Show when={isFill()}>
+        <button type="button" class="rb-preset" data-fill-none title={FILL_NONE_LABEL} onClick={() => props.host.fillColor(null)}>
+          <span class="rb-swatch" aria-hidden="true" style={{ "background-color": "transparent" }} />
+          {FILL_NONE_LABEL}
+        </button>
+      </Show>
     </Show>
   );
 }
@@ -157,7 +168,9 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
     >
       <For each={items()}>{(item) => RENDER[item.kind](item, ctx)}</For>
       <Show when={props.bar.role === "tools"}>
-        <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
+        <Show when={props.presets !== undefined}>
+          <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
+        </Show>
         <TableActionRow view={props.view} host={props.host} />
         <FormatRow view={props.view} act={(a) => props.host.textFormat(a)} />
       </Show>
