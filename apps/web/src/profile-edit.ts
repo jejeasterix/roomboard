@@ -5,6 +5,7 @@
  */
 import {
   ACTION_TABLE,
+  TABLE_ACTIONS,
   isKnownItem,
   isProfilesAccess,
   resetPresets,
@@ -108,7 +109,7 @@ export function catalog(p: Profile, barId: string): CatalogEntry[] {
       ? []
       : Object.entries(TOOL_TABLE).filter(([id]) => !tools.has(id)).map(([id, e]) => ({ kind: "tool", ref: id, label: e.label }));
   const actionEntries: CatalogEntry[] = Object.entries(ACTION_TABLE)
-    .filter(([id]) => !actions.has(id))
+    .filter(([id]) => !actions.has(id) && !TABLE_ACTIONS.includes(id)) // actions du tableau : rangée contextuelle, pas bouton de barre (C10a)
     .map(([id, e]) => ({ kind: "action", ref: id, label: e.label }));
   return [...toolEntries, ...actionEntries];
 }
