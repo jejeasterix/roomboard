@@ -10,7 +10,7 @@ import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
+import { editAction, enterAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -386,6 +386,7 @@ export function createEngine(deps: EngineDeps): Engine {
       return null;
     }
     renderer.invalidate(change);
+    imageEdit?.changed(doc.version());
     error = null;
     followPages(before, showAppeared);
     selectTool.prune();
@@ -405,6 +406,7 @@ export function createEngine(deps: EngineDeps): Engine {
     lastDeleted = null;
     const change = which === "undo" ? doc.undo() : doc.redo();
     renderer.invalidate(change);
+    imageEdit?.changed(doc.version());
     error = null;
     followPages(before, true);
     selectTool.prune();
@@ -583,7 +585,7 @@ export function createEngine(deps: EngineDeps): Engine {
           return true;
         }
         if (ed === "delete") return true;
-        if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !e.isComposing) {
+        if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;
         }
