@@ -9,7 +9,7 @@ use roomboard_formats::container::{self, sha256_hex, AssetBytes};
 const ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 const EMPTY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 /// Relevé une fois par `sha256sum crates/roomboard-core/tests/fixtures/socle-v1.roomboard` (étape 4).
-const SOCLE_SHA256: &str = "A_RELEVER";
+const SOCLE_SHA256: &str = "63cf821913427ad85e79859acf52f7ca084bfa329ac43fc330969b52eebefaad";
 const SOCLE: &[u8] = include_bytes!("../../roomboard-core/tests/fixtures/socle-v1.roomboard");
 
 fn meta() -> SaveMeta {
@@ -28,7 +28,9 @@ fn parts() -> format::Parts {
 
 fn names(file: &[u8]) -> Vec<String> {
     let a = ZipArchive::new(Cursor::new(file)).expect("zip");
-    a.file_names().map(|n| n.expect("nom").into_owned()).collect()
+    a.file_names()
+        .map(|n| n.expect("nom").into_owned())
+        .collect()
 }
 
 fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
@@ -122,9 +124,10 @@ fn assets_are_sorted_typed_and_compressed_by_type() {
         },
     ];
     let reversed: Vec<AssetBytes<'_>> = assets.iter().rev().copied().collect();
-    let a = container::write(&parts(), &assets).expect("write");
+    let p = parts();
+    let a = container::write(&p, &assets).expect("write");
     assert!(
-        a == container::write(&parts(), &reversed).expect("write 2"),
+        a == container::write(&p, &reversed).expect("write 2"),
         "l'ordre reçu change le fichier"
     );
     let mut expected: Vec<(String, &str, CompressionMethod)> = vec![
@@ -169,8 +172,7 @@ fn mismatched_hash_refuses_write() {
             bytes: b"abd",
         }],
     )
-    .err()
-    .expect("refus");
+    .expect_err("refus");
     assert!(
         matches!(&err, FormatError::Corrupt(m) if m.contains("empreinte")),
         "{err}"
