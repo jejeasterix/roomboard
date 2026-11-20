@@ -884,6 +884,20 @@ describe("Canvas2DRenderer — fond de page (C12)", () => {
     expect(BACKDROP_UNREADABLE_LABEL).toBe("page PDF illisible");
   });
 
+  it("libellé « illisible » : police, couleur et ligne de base encadrées par save / restore (relecture T16)", () => {
+    const doc = pdfDoc();
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), null, doc, { backdrop: painter("echec") });
+    r.resize(800, 600, 1);
+    r.drawScene(pageOf(doc), IDENTITY, new Set());
+    const at = scene.log.findIndex((l) => l.startsWith(`fillText ${BACKDROP_UNREADABLE_LABEL}`));
+    expect(at).toBeGreaterThan(0);
+    const save = scene.log.lastIndexOf("save", at);
+    expect(save).toBeGreaterThanOrEqual(0);
+    expect(scene.log.slice(save, at)).not.toContain("restore");
+    expect(scene.log[at + 1]).toBe("restore");
+  });
+
   it("fond image : bitmap étiré sur rect, avant la grille ; non décodé : placeholder seul, attente (effet de bord C12)", () => {
     const doc = fakeCore.blank();
     const p = doc.pageIds()[0] ?? "";

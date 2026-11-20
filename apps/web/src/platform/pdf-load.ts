@@ -23,7 +23,14 @@ export async function openPdfDocument(
   options: Record<string, unknown>,
 ): Promise<PdfjsDocument> {
   const task = getDocument({ data, ...options });
-  const doc = await task.promise;
+  let doc: object;
+  try {
+    doc = await task.promise;
+  } catch (e) {
+    // Mot de passe, PDF invalide : sans cela le Worker garde les octets.
+    await task.destroy().catch(() => undefined);
+    throw e;
+  }
   return Object.assign(doc, { destroy: () => task.destroy() }) as unknown as PdfjsDocument;
 }
 

@@ -108,6 +108,26 @@ describe("moteur PDF (PF8, PF12)", () => {
     expect(calls).toBe(2);
   });
 
+  it("getPage rejeté : l'entrée n'est pas gardée, la page est retentée au prochain appel (relecture T16)", async () => {
+    const log: string[] = [];
+    let first = true;
+    const doc: PdfjsDocument = {
+      ...fakeDoc(log),
+      getPage: async (n) => {
+        log.push(`getPage ${n}`);
+        if (first) {
+          first = false;
+          throw new Error("page illisible");
+        }
+        return fakePage(792, 612, log);
+      },
+    };
+    const f = await createPdfEngine(async () => binding(async () => doc), dom(log)).open(PDF);
+    await expect(f.pageSize(0)).rejects.toThrow("page illisible");
+    expect(await f.pageSize(0)).toEqual({ w: 792, h: 612 });
+    expect(log.filter((l) => l === "getPage 1")).toHaveLength(2);
+  });
+
   it("destroy : document détruit ; renderTile ensuite rejeté", async () => {
     const log: string[] = [];
     const f = await createPdfEngine(async () => binding(async () => fakeDoc(log)), dom(log)).open(PDF);

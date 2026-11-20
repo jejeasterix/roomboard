@@ -198,37 +198,15 @@ describe("tuiles PDF par palier (PF13, DAPF2)", () => {
     expect(tiles.paint(ctx().c, B, CAM, VIEW)).toBe("echec");
   });
 
-  it("clear (onglet désactivé) : rendus annulés, bitmaps fermés, PDF détruit ; le cache resservi rouvre et redemande", async () => {
-    const { file, calls, destroy } = fakeFile();
+  it("vue vide (0 x 0) : rien n'est ouvert ni dessiné, « pret » ; le PDF ne s'ouvre qu'à une vue visible (deactivate, ResizeObserver)", () => {
+    const { file } = fakeFile();
     const open = vi.fn(async () => file);
     const tiles = createPdfTiles(open, () => undefined);
-    const view = { w: 1280, h: 900, dpr: 1 };
-    tiles.paint(ctx().c, B, CAM, view);
-    await flush();
-    tiles.paint(ctx().c, B, CAM, view);
-    const kept = bmp();
-    calls[0]?.resolve(kept);
-    await flush();
-    tiles.clear();
-    expect([kept.close.mock.calls.length, destroy.mock.calls.length, calls[1]?.signal.aborted]).toEqual([1, 1, true]);
-    const late = bmp();
-    calls[1]?.resolve(late);
-    await flush();
-    expect(late.close).toHaveBeenCalledTimes(1);
     const { c, drawn } = ctx();
-    expect(tiles.paint(c, B, CAM, view)).toBe("attente");
-    expect([drawn.length, open.mock.calls.length]).toEqual([0, 2]);
-    await flush();
-    tiles.paint(ctx().c, B, CAM, view);
-    expect(calls).toHaveLength(4);
-    const slow = fakeFile();
-    let release: (f: PdfFile) => void = () => undefined;
-    const pending = createPdfTiles(() => new Promise<PdfFile>((r) => (release = r)), () => undefined);
-    pending.paint(ctx().c, B, CAM, view);
-    pending.clear();
-    release(slow.file);
-    await flush();
-    expect(slow.destroy).toHaveBeenCalledTimes(1);
+    expect(tiles.paint(c, B, CAM, { w: 0, h: 0, dpr: 1 })).toBe("pret");
+    expect([open.mock.calls.length, drawn.length]).toEqual([0, 0]);
+    tiles.paint(c, B, CAM, VIEW);
+    expect(open).toHaveBeenCalledTimes(1);
   });
 
   it("dispose : rendus annulés, bitmaps fermés, PDF détruit ; un PDF ouvert après dispose est détruit aussitôt", async () => {
