@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use yrs::types::text::{Diff, YChange};
 use yrs::types::Attrs;
-use yrs::{Any, Out, ReadTxn, Text, TextRef, TransactionMut};
+use yrs::{Any, GetString, Out, ReadTxn, Text, TextRef, TransactionMut};
 
 use crate::element::{any_f64, finite_positive};
 
@@ -103,13 +103,20 @@ fn end(c: &CharAt) -> u32 {
 }
 
 /// Table des caractères et attributs bruts de chaque morceau, par `Text::diff` (même appel que `collect_out`) ; une
-/// chaîne compte ses octets UTF-8, tout autre morceau (embed) compte 1 (T16).
-fn char_table<T: ReadTxn>(txn: &T, text: &TextRef) -> (Vec<CharAt>, Vec<Attrs>) {
-    table_of(text.diff(txn, YChange::identity))
+/// chaîne compte ses octets UTF-8, tout autre morceau (embed) compte 1 (T16). `None` quand la table ne rend pas le
+/// texte, caractères (`get_string`) ou longueur Yrs (T13) : un embed chaîne (binaire fabriqué à la main) sort de
+/// `diff` comme un morceau de texte, mais compte 1 et `get_string` le saute ; yrs ne permet pas de l'en distinguer.
+fn char_table<T: ReadTxn>(txn: &T, text: &TextRef) -> Option<(Vec<CharAt>, Vec<Attrs>)> {
+    let diff = text.diff(txn, YChange::identity);
+    table_of(diff, &text.get_string(txn), text.len(txn))
 }
 
 /// Corps de `char_table`, hors du générique : une seule copie pour ses deux transactions (T10).
-fn table_of(diff: Vec<Diff<YChange>>) -> (Vec<CharAt>, Vec<Attrs>) {
+fn table_of(
+    diff: Vec<Diff<YChange>>,
+    content: &str,
+    len: u32,
+) -> Option<(Vec<CharAt>, Vec<Attrs>)> {
     let mut chars = Vec::new();
     let mut attrs = Vec::new();
     let mut at = 0u32;
@@ -126,7 +133,8 @@ fn table_of(diff: Vec<Diff<YChange>>) -> (Vec<CharAt>, Vec<Attrs>) {
             _ => at += 1,
         }
     }
-    (chars, attrs)
+    let readable = at == len && chars.iter().map(|c| c.ch).eq(content.chars());
+    readable.then_some((chars, attrs))
 }
 
 /// Indice du caractère qui commence à l'unité UTF-16 `u` (la longueur du contenu pour sa fin) ; `None` au milieu d'une
@@ -144,14 +152,15 @@ fn index_at_utf16(chars: &[CharAt], u: u32) -> Option<usize> {
 }
 
 /// Plage `FormatText` (UTF-16) en `(index, len)` Yrs : du premier caractère à celui qui suit le dernier (un embed
-/// intérieur est compris, T16) ; `len = 0` : `Some((0, 0))` ; borne au milieu d'une paire ou au-delà : `None` (T6).
+/// intérieur est compris, T16) ; `len = 0` : `Some((0, 0))` ; borne au milieu d'une paire ou au-delà, ou table
+/// illisible (T13) : `None`.
 pub(crate) fn utf16_range<T: ReadTxn>(
     txn: &T,
     text: &TextRef,
     start: u32,
     len: u32,
 ) -> Option<(u32, u32)> {
-    let (chars, _) = char_table(txn, text);
+    let (chars, _) = char_table(txn, text)?;
     let first = index_at_utf16(&chars, start)?;
     let last = index_at_utf16(&chars, start.checked_add(len)?)?;
     if first == last {
@@ -186,8 +195,10 @@ fn normalize(raw: Option<&Attrs>) -> SpanAttrs {
 }
 
 /// Segments de la vue (T8) : morceaux de chaîne normalisés puis fusionnés ; embeds sautés ; texte vide ou sans
-/// chaîne : un seul segment vide sans attribut.
+/// chaîne : un seul segment vide sans attribut. Leur concaténation vaut toujours `get_string` (T13) : sinon (embed
+/// chaîne, rendu par `diff` comme du texte), un seul segment sans attribut portant le contenu.
 pub(crate) fn read_spans<T: ReadTxn>(txn: &T, text: &TextRef) -> Vec<TextSpanView> {
+    let content = text.get_string(txn);
     let mut out: Vec<TextSpanView> = Vec::new();
     for d in text.diff(txn, YChange::identity) {
         let Out::Any(Any::String(s)) = &d.insert else {
@@ -203,11 +214,11 @@ pub(crate) fn read_spans<T: ReadTxn>(txn: &T, text: &TextRef) -> Vec<TextSpanVie
             });
         }
     }
-    if out.is_empty() {
-        out.push(TextSpanView {
-            text: String::new(),
+    if out.is_empty() || out.iter().flat_map(|s| s.text.chars()).ne(content.chars()) {
+        return vec![TextSpanView {
+            text: content,
             attrs: SpanAttrs::default(),
-        });
+        }];
     }
     out
 }
@@ -238,9 +249,15 @@ fn byte_at(s: &str, i: usize) -> usize {
 
 /// `SetText` sur un texte existant (T4, T5, T16) : supprime les morceaux de chaîne du milieu ancien (de droite à
 /// gauche ; un embed du milieu est gardé), insère le milieu neuf juste après le dernier caractère du préfixe avec les
-/// attributs bruts de ce caractère (connus et inconnus) ; en tête, aucun attribut. Contenu égal : rien.
+/// attributs bruts de ce caractère (connus et inconnus) ; en tête, aucun attribut. Contenu égal : rien. Table
+/// illisible (T13) : remplacement total sans attribut, embeds compris, plutôt qu'une plage Yrs fausse (panique).
 pub(crate) fn apply_text_diff(txn: &mut TransactionMut, text: &TextRef, new: &str) {
-    let (chars, attrs) = char_table(&*txn, text);
+    let Some((chars, attrs)) = char_table(&*txn, text) else {
+        let len = text.len(&*txn);
+        text.remove_range(txn, 0, len);
+        text.insert_with_attributes(txn, 0, new, Attrs::new());
+        return;
+    };
     let (p, s) = common_ends(&chars, new);
     let mut runs: Vec<(u32, u32)> = Vec::new();
     for c in &chars[p..chars.len() - s] {
@@ -336,7 +353,7 @@ mod tests {
     use std::sync::Arc;
 
     use yrs::types::text::YChange;
-    use yrs::{Any, Doc, GetString, Number, Out, Text, TextRef, Transact};
+    use yrs::{Any, Doc, Number, Out, Text, TextRef, Transact};
 
     use super::*;
     use crate::commands::{read_text, Command};
