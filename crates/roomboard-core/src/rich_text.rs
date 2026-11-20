@@ -1,7 +1,6 @@
 //! Texte riche par plages (C7 ; U27 et DAU9 de `docs/plans/usage-cadrage.md`) : attributs Yrs du `Y.Text` `content`
 //! d'un élément texte. Positions : points de code pour `SetText` (T4), unités UTF-16 pour `FormatText` (T6), converties
 //! en décalages Yrs (octets UTF-8 des chaînes, 1 par embed : le `Doc` est en `OffsetKind::Bytes`, T16).
-#![cfg_attr(not(test), allow(dead_code))] // retiré par T3, qui branche les commandes
 
 use std::cmp::Ordering;
 use std::sync::Arc;

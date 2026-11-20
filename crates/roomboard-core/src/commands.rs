@@ -3,8 +3,7 @@
 use std::collections::BTreeSet;
 
 use yrs::{
-    Any, Array, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn, Text, TextPrelim,
-    TextRef,
+    Any, Array, ArrayRef, GetString, In, Map, MapPrelim, MapRef, Out, ReadTxn, TextPrelim, TextRef,
 };
 
 use crate::asset::{is_asset_id, AssetRef};
@@ -606,9 +605,8 @@ impl Document {
         }
         {
             let mut txn = self.transact_local();
-            let len = current.text.len(&txn);
-            current.text.remove_range(&mut txn, 0, len);
-            current.text.insert(&mut txn, 0, t.content);
+            // T4, T5, T16 : différence en points de code, héritage du caractère précédent, embeds gardés.
+            rich_text::apply_text_diff(&mut txn, &current.text, t.content);
             let e = &found.element;
             e.insert(&mut txn, "color", In::from(t.color));
             e.insert(&mut txn, "size", In::Any(Any::from(f64::from(t.size))));
