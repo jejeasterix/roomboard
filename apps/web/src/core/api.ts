@@ -193,6 +193,8 @@ export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElem
 export interface BackdropView {
   readonly asset: string;
   readonly kind: string;
+  /** C12 (PF5) : indice de page à partir de 0 d'un fond `pdf-page` ; null absent ou illisible (entier ≥ 0 attendu). */
+  readonly page: number | null;
   readonly w: number | null;
   readonly h: number | null;
   readonly fit: string;
@@ -262,6 +264,9 @@ export interface CoreDocument {
 
 export interface CoreFactory {
   blank(): CoreDocument;
+  /** C12 (PF6) : une page par taille, fond `pdf-page` d'indice i, asset cité ; aucune étape (D37). Lève le message
+   *  BadAsset, puis BadImage (0 ou plus de PDF_MAX_PAGES pages, taille non finie ou ≤ 0). */
+  fromPdfPages(asset: AssetRef, sizes: readonly PdfPageSize[]): CoreDocument;
   /** Lève une Error lisible si le fichier n'est pas un .roomboard, est plus récent, ou est corrompu. */
   load(bytes: Uint8Array): CoreDocument;
   loadParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
