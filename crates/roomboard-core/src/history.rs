@@ -1,7 +1,8 @@
 //! Historique (DA6, D11) : `UndoManager` de yrs 0.28.1 configuré à la main. Sous Wasm, ni `UndoManager::new()` ni
 //! `Options::default()` n'existent, et il n'y a pas d'horloge système : horloge `|| 0`, délai 0, origine "local".
 //! Une transaction d'origine "local" = un geste = une étape ; tout le reste (page initiale, chargement, distant)
-//! n'entre pas dans l'historique.
+//! n'entre pas dans l'historique. Portée : `pages`, `meta` et `assets` (K3 : annuler l'ajout d'une image retire aussi
+//! une métadonnée d'asset neuve, écrite dans la même transaction).
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -15,7 +16,7 @@ pub struct History {
 }
 
 impl History {
-    pub fn new(doc: &Doc, pages: &ArrayRef, meta: &MapRef) -> Self {
+    pub fn new(doc: &Doc, pages: &ArrayRef, meta: &MapRef, assets: &MapRef) -> Self {
         let options = Options {
             capture_timeout_millis: 0,
             tracked_origins: HashSet::from([Origin::from(LOCAL)]),
@@ -27,6 +28,7 @@ impl History {
         let mut mgr = UndoManager::with_options(options);
         mgr.expand_scope(doc, pages);
         mgr.expand_scope(doc, meta);
+        mgr.expand_scope(doc, assets);
         Self { mgr }
     }
 
@@ -60,8 +62,19 @@ mod tests {
         let doc = Doc::new();
         let pages = doc.get_or_insert_array("pages");
         let meta = doc.get_or_insert_map("meta");
-        let h = History::new(&doc, &pages, &meta);
+        let assets = doc.get_or_insert_map("assets");
+        let h = History::new(&doc, &pages, &meta, &assets);
         (doc, pages, meta, h)
+    }
+
+    #[test]
+    fn assets_is_in_scope() {
+        let (doc, _p, _m, mut h) = setup();
+        let assets = doc.get_or_insert_map("assets");
+        assets.insert(&mut doc.transact_mut_with(LOCAL), "k", 1.0);
+        assert!(h.can_undo());
+        assert!(h.undo());
+        assert!(assets.get(&doc.transact(), "k").is_none());
     }
 
     #[test]

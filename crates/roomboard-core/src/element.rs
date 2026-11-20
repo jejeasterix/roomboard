@@ -261,3 +261,57 @@ pub(crate) fn read_unknown<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<UnknownFie
         h,
     })
 }
+
+/// Champs bruts du fond d'une page (K9) ; `None` si la page n'a pas de champ `backdrop`.
+pub(crate) struct RawBackdrop {
+    pub asset: Option<String>,
+    pub kind: Option<String>,
+    pub w: Option<f64>,
+    pub h: Option<f64>,
+    pub fit: Option<String>,
+}
+
+/// Fond rangé en champs d'un `Y.Map` (jamais `Any::Map`, G4) ; une autre valeur donne des champs vides (K9).
+pub(crate) fn read_backdrop<T: ReadTxn>(txn: &T, page: &MapRef) -> Option<RawBackdrop> {
+    Some(match page.get(txn, "backdrop")? {
+        Out::YMap(b) => RawBackdrop {
+            asset: out_string(b.get(txn, "asset")),
+            kind: out_string(b.get(txn, "kind")),
+            w: out_f64(b.get(txn, "w")),
+            h: out_f64(b.get(txn, "h")),
+            fit: out_string(b.get(txn, "fit")),
+        },
+        _ => RawBackdrop {
+            asset: None,
+            kind: None,
+            w: None,
+            h: None,
+            fit: None,
+        },
+    })
+}
+
+/// Vue du fond (K6, K9, DAK4) : `None` sans asset conforme ; `rect` calé sur la largeur de la page (page à hauteur
+/// infinie : coin en (0, 0), hauteur = h × largeur / w) dès que `w` et `h` sont finis > 0, quel que soit `fit`.
+pub(crate) fn backdrop_view(r: RawBackdrop, page_width: f64) -> Option<BackdropView> {
+    let asset = r.asset.filter(|a| is_asset_id(a))?;
+    let w = r.w.filter(|v| finite_positive(*v));
+    let h = r.h.filter(|v| finite_positive(*v));
+    let rect = match (w, h) {
+        (Some(w), Some(h)) => Some(Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: page_width,
+            y1: h * page_width / w,
+        }),
+        _ => None,
+    };
+    Some(BackdropView {
+        asset,
+        kind: r.kind.unwrap_or_default(),
+        w,
+        h,
+        fit: r.fit.unwrap_or_default(),
+        rect,
+    })
+}
