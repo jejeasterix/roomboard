@@ -8,27 +8,13 @@
 //             permissions, ni la poignée réelle gardée dans IndexedDB (fausse poignée non clonable).
 //   detection sans réglage, sélecteurs retirés de window : le repli est choisi par détection ; même parcours que repli.
 // Tous : aucune requête hors de 127.0.0.1 (D27). Hors de scripts/verifier.sh : exige Playwright (cache npx).
-// `serve` et `loadPlaywright` recopiés de scripts/essais/s2-navigateur.mjs (non exportés ; mis en commun au lot 5b).
+// `serve`, `loadPlaywright`, `frames`, `inkIn` viennent de scripts/essais/commun.mjs (lot 5b, T85).
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/fichiers-navigateur.mjs [--captures]
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
-import { createServer } from "node:http";
-import { homedir, tmpdir } from "node:os";
-import { extname, join, normalize, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const DIST = join(ROOT, "apps", "web", "dist");
-const TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".wasm": "application/wasm",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-};
+import { existsSync, readFileSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DIST, Echec, ROOT, frames as framesOf, gitSha, inkIn, loadPlaywright, serve } from "./commun.mjs";
 const MODES = ["repli", "fsa", "detection"];
 const DISCARD = "Le document a des modifications non enregistrées. Les abandonner ?";
 const FIRST = [[400, 300], [650, 300], [900, 300]];
@@ -36,45 +22,11 @@ const SECOND = [[400, 420], [650, 420], [900, 420]];
 const FIRST_BOX = [640, 290, 660, 310];
 const SECOND_BOX = [640, 410, 660, 430];
 
-class Echec extends Error {}
-
-async function loadPlaywright() {
-  const candidates = [];
-  if (process.env.PLAYWRIGHT_MODULE) candidates.push(process.env.PLAYWRIGHT_MODULE);
-  const npx = join(homedir(), ".npm", "_npx");
-  if (existsSync(npx)) {
-    for (const d of readdirSync(npx)) candidates.push(join(npx, d, "node_modules", "playwright", "index.mjs"));
-  }
-  const found = candidates.find((c) => existsSync(c));
-  return found ? import(pathToFileURL(found).href) : null;
-}
-
 /** CSP de la coque (tauri.conf.json), envoyée telle quelle par le serveur d'essai : un défaut de CSP se voit ici. */
 function coqueCsp() {
   const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
   const csp = conf.app.security.csp;
   return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
-}
-
-function serve() {
-  const csp = coqueCsp();
-  const server = createServer(async (req, res) => {
-    try {
-      const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
-      const rel = normalize(path).replace(/^[/\\]+/, "");
-      const file = join(DIST, rel === "" ? "index.html" : rel);
-      if (file !== DIST && !file.startsWith(DIST + sep)) {
-        res.writeHead(403).end();
-        return;
-      }
-      const target = (await stat(file)).isDirectory() ? join(file, "index.html") : file;
-      const body = await readFile(target);
-      res.writeHead(200, { "content-type": TYPES[extname(target)] ?? "application/octet-stream", "content-security-policy": csp }).end(body);
-    } catch {
-      res.writeHead(404).end();
-    }
-  });
-  return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(server)));
 }
 
 /** Faux File System Access, injecté avant le chargement ; fichiers et compteurs dans sessionStorage (survit au rechargement). */
@@ -161,8 +113,7 @@ async function run(browser, port, mode, { captures, tmp }) {
     if (!cond) throw new Echec(`[${mode}] ${msg}`);
     console.log(`ok — [${mode}] ${msg}`);
   };
-  const frames = () =>
-    page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))));
+  const frames = () => framesOf(page);
   const attr = (name) => page.getAttribute("#stage", name);
   const elements = async () => Number(await attr("data-elements"));
   const ready = async () => {
@@ -179,22 +130,7 @@ async function run(browser, port, mode, { captures, tmp }) {
     await frames();
   };
   // Pixels d'encre (somme RVB < 300) dans une boîte en px CSS du canvas de scène (même mesure que S2).
-  const ink = (box) =>
-    page.$eval(
-      "#scene",
-      (c, [x0, y0, x1, y1]) => {
-        const ctx = c.getContext("2d");
-        const sx = c.width / c.clientWidth;
-        const sy = c.height / c.clientHeight;
-        const w = Math.max(1, Math.round((x1 - x0) * sx));
-        const h = Math.max(1, Math.round((y1 - y0) * sy));
-        const d = ctx.getImageData(Math.round(x0 * sx), Math.round(y0 * sy), w, h).data;
-        let n = 0;
-        for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] < 300) n++;
-        return n;
-      },
-      box,
-    );
+  const ink = (box) => inkIn(page, box);
   // Signature de toute la scène : masque d'encre (même seuil) condensé en empreinte FNV-1a + nombre de pixels d'encre.
   // Égale avant enregistrement et après réouverture = mêmes traits aux mêmes coordonnées (S2), pas seulement « de l'encre ».
   const signature = () =>
@@ -313,12 +249,7 @@ async function run(browser, port, mode, { captures, tmp }) {
 
 async function main() {
   const argv = process.argv.slice(2);
-  let sha = "inconnu";
-  try {
-    sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
-  } catch {
-    // hors dépôt git : la ligne le dit
-  }
+  const sha = gitSha();
   console.log(`sha ${sha}`);
   const label = "Fichiers lot 5a";
   if (!existsSync(join(DIST, "index.html"))) {
@@ -330,7 +261,7 @@ async function main() {
     console.error(`${label} : outil absent — Playwright introuvable (npx -y playwright@1.65.1 --version, ou PLAYWRIGHT_MODULE=…)`);
     return 2;
   }
-  const server = await serve();
+  const server = await serve({ headers: { "Content-Security-Policy": coqueCsp() } });
   const port = server.address().port;
   const tmp = await mkdtemp(join(tmpdir(), "roomboard-fichiers-"));
   let browser = null;
