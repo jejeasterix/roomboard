@@ -9,6 +9,7 @@ use zip::{CompressionMethod, DateTime, ZipArchive, ZipWriter};
 
 use crate::document::{DecodeError, Document};
 use crate::element::SCHEMA;
+use crate::query::Bounds;
 
 pub use zip;
 
@@ -19,6 +20,12 @@ pub const MIME: &str = "application/x-roomboard";
 pub const MANIFEST: &str = "manifest.json";
 pub const DOCUMENT: &str = "document.ybin";
 
+/// Valeurs de `kind` connues (U8) : absent ou `"document"` = document `.roomboard` ; `"fragment"` = objet `.rbitem`.
+pub const KIND_DOCUMENT: &str = "document";
+pub const KIND_FRAGMENT: &str = "fragment";
+pub const FRAGMENT_EXTENSION: &str = "rbitem";
+pub const FRAGMENT_MIME: &str = "application/x-roomboard-item";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
@@ -28,6 +35,16 @@ pub struct Manifest {
     pub app_version: String,
     pub created: String,
     pub modified: String,
+    /// Type du fichier (U8) : absent ou `"document"` = document ; `"fragment"` = objet `.rbitem` ; jamais écrit pour
+    /// un document (mêmes octets qu'avant C3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Nom d'un fragment (Z6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Boîte monde des objets d'un fragment (Z6, Z7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<Bounds>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,8 +59,19 @@ pub struct SaveMeta {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FormatError {
     NotRoomboard,
-    NewerVersion { found: u32, supported: u32 },
+    NewerVersion {
+        found: u32,
+        supported: u32,
+    },
     Corrupt(String),
+    /// `kind` inconnu de cette version (U8).
+    UnknownKind {
+        found: String,
+    },
+    /// Type connu mais pas celui attendu : `expected` = `KIND_DOCUMENT` ou `KIND_FRAGMENT` (PC7).
+    WrongKind {
+        expected: &'static str,
+    },
 }
 
 impl std::fmt::Display for FormatError {
@@ -55,6 +83,18 @@ impl std::fmt::Display for FormatError {
                 "document créé par une version plus récente de RoomBoard (version {found}, celle-ci lit jusqu'à la {supported})"
             ),
             FormatError::Corrupt(m) => write!(f, "document RoomBoard endommagé : {m}"),
+            FormatError::UnknownKind { found } => write!(
+                f,
+                "type de fichier RoomBoard inconnu (« {found} ») : pris en charge dans une prochaine version"
+            ),
+            FormatError::WrongKind { expected } if *expected == KIND_FRAGMENT => write!(
+                f,
+                "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages"
+            ),
+            FormatError::WrongKind { .. } => write!(
+                f,
+                "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page"
+            ),
         }
     }
 }
@@ -157,6 +197,9 @@ pub fn save_parts(doc: &Document, meta: &SaveMeta) -> Result<Parts, FormatError>
         app_version: meta.app_version.clone(),
         created: meta.created.clone().unwrap_or_else(|| meta.now.clone()),
         modified: meta.now.clone(),
+        kind: None,
+        name: None,
+        bounds: None,
     };
     let json =
         serde_json::to_vec_pretty(&manifest).map_err(|e| FormatError::Corrupt(e.to_string()))?;
@@ -204,7 +247,26 @@ pub fn check_manifest(raw: &[u8]) -> Result<Manifest, FormatError> {
             supported: SCHEMA,
         });
     }
+    // Type connu seulement : document ou fragment passent tous deux (`roomboard-formats` ouvre l'un et l'autre par
+    // `open`) ; le refus du mauvais type se fait à la lecture (`expect_kind`).
+    match manifest.kind.as_deref() {
+        None | Some(KIND_DOCUMENT) | Some(KIND_FRAGMENT) => {}
+        Some(other) => {
+            return Err(FormatError::UnknownKind {
+                found: other.to_string(),
+            })
+        }
+    }
     Ok(manifest)
+}
+
+/// Le manifeste dit-il le type attendu ? `kind` absent = document (U8).
+fn expect_kind(m: &Manifest, expected: &'static str) -> Result<(), FormatError> {
+    if m.kind.as_deref().unwrap_or(KIND_DOCUMENT) == expected {
+        Ok(())
+    } else {
+        Err(FormatError::WrongKind { expected })
+    }
 }
 
 /// Ouvre l'archive, contrôle le manifeste **avant** de chercher `document.ybin`, puis lit `document.ybin` ; bornes R20.
@@ -234,8 +296,11 @@ fn open_with_limits(
 }
 
 /// Décode les deux moitiés : manifeste contrôlé, migration, décodage, accord du schéma (D24 : désaccord = `Corrupt`).
+/// Un fragment est refusé (`WrongKind`).
 pub fn load_parts(manifest: &[u8], ybin: &[u8]) -> Result<(Document, Manifest), FormatError> {
-    decode_checked(check_manifest(manifest)?, ybin)
+    let m = check_manifest(manifest)?;
+    expect_kind(&m, KIND_DOCUMENT)?;
+    decode_checked(m, ybin)
 }
 
 /// Suite de `load_parts` pour un manifeste déjà contrôlé : migration, décodage, accord du schéma.
@@ -256,9 +321,69 @@ fn decode_checked(manifest: Manifest, ybin: &[u8]) -> Result<(Document, Manifest
     Ok((doc, manifest))
 }
 
-/// Lit un `.roomboard` : `open` (manifeste contrôlé une fois), puis décodage.
+/// Lit un `.roomboard` : `open` (manifeste contrôlé une fois), type document exigé, puis décodage.
 pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
     let opened = open(bytes)?;
+    expect_kind(&opened.manifest, KIND_DOCUMENT)?;
+    decode_checked(opened.manifest, &opened.parts.ybin)
+}
+
+/// Manifeste et `document.ybin` d'un fragment (Z6) : `kind: "fragment"`, `name`, `bounds` des éléments de la page
+/// unique ; `created` = maintenant (un fragment n'a pas d'historique d'enregistrement).
+pub fn save_fragment_parts(
+    doc: &Document,
+    meta: &SaveMeta,
+    name: &str,
+) -> Result<Parts, FormatError> {
+    let pages = doc.page_ids();
+    if pages.len() != 1 {
+        return Err(FormatError::Corrupt(format!(
+            "fragment de {} pages : une seule attendue",
+            pages.len()
+        )));
+    }
+    let schema = doc
+        .schema()
+        .ok_or_else(|| FormatError::Corrupt("meta.schema absent".into()))? as u32;
+    let manifest = Manifest {
+        format: FORMAT.into(),
+        format_version: FORMAT_VERSION,
+        schema,
+        app_version: meta.app_version.clone(),
+        created: meta.created.clone().unwrap_or_else(|| meta.now.clone()),
+        modified: meta.now.clone(),
+        kind: Some(KIND_FRAGMENT.into()),
+        name: Some(name.into()),
+        bounds: doc.bounds(&doc.element_ids(&pages[0])),
+    };
+    let json =
+        serde_json::to_vec_pretty(&manifest).map_err(|e| FormatError::Corrupt(e.to_string()))?;
+    Ok(Parts {
+        manifest: json,
+        ybin: doc.encode_v1(),
+    })
+}
+
+/// `.rbitem` complet sans asset (mêmes options de date fixe que `save`).
+pub fn save_fragment(doc: &Document, meta: &SaveMeta, name: &str) -> Result<Vec<u8>, FormatError> {
+    let w = write_parts(&save_fragment_parts(doc, meta, name)?)?;
+    Ok(w.finish().map_err(zip_err)?.into_inner())
+}
+
+/// Lit un fragment depuis ses deux moitiés ; un document est refusé (`WrongKind`).
+pub fn load_fragment_parts(
+    manifest: &[u8],
+    ybin: &[u8],
+) -> Result<(Document, Manifest), FormatError> {
+    let m = check_manifest(manifest)?;
+    expect_kind(&m, KIND_FRAGMENT)?;
+    decode_checked(m, ybin)
+}
+
+/// Lit un `.rbitem` sans asset (repli quand le module des formats manque) ; un document est refusé (`WrongKind`).
+pub fn load_fragment(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
+    let opened = open(bytes)?;
+    expect_kind(&opened.manifest, KIND_FRAGMENT)?;
     decode_checked(opened.manifest, &opened.parts.ybin)
 }
 
@@ -352,7 +477,9 @@ mod tests {
         let parts = save_parts(&with_strokes(), &meta()).expect("parts");
         let text = String::from_utf8(parts.manifest).expect("utf8");
         assert!(
-            !text.contains("\"kind\"") && !text.contains("\"name\"") && !text.contains("\"bounds\""),
+            !text.contains("\"kind\"")
+                && !text.contains("\"name\"")
+                && !text.contains("\"bounds\""),
             "{text}"
         );
         let bytes = save(&Document::blank(), &meta()).expect("save");

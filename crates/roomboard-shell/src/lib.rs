@@ -11,7 +11,7 @@ use std::sync::Mutex;
 /// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
 /// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
-pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard"];
+pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem"];
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReadError {
