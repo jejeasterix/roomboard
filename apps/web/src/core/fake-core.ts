@@ -10,6 +10,7 @@
 // C2 : images, fond (`page(id)`), métadonnées et `citedAssets` par le même balayage que le cœur ; `kind` inconnu gardé
 // avec ses champs bruts (`raw`) et réécrit tel quel.
 // C7 : segments (`spans`) gardés par SetText (différence de `rich-text.ts`), posés par FormatText ; JSON sans `spans` = un segment.
+// C7b : SetText et SetTableCell avec spans (état voulu, contrôlé d'abord, normalisé) ; cellules { text, spans, fill }.
 // C9 : grille de page (`SetGrid`, `page(id).grid`) au modèle du cœur, lecture tolérante et sauvegarde comprises ; une
 // grille lue qui n'est pas un objet est gardée brute et réécrite telle quelle, vue comme absente (G13).
 // Écart assumé, exclu du contrat commun (DAG3) : `snapPoint`, `snapDelta`, `gridLines` et
@@ -66,7 +67,7 @@ import {
   UNKNOWN_BOX,
 } from "./api";
 import { isAssetId } from "./asset-store";
-import { cleanPatch, editSpans, formatSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch } from "./rich-text";
+import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
@@ -97,7 +98,7 @@ interface FakeElement {
 }
 type RawRecord = Readonly<Record<string, unknown>>;
 /** Cellule de la fausse liaison ; absente du Map = vide. */
-interface FakeCell { readonly text: string; readonly fill: string | null }
+interface FakeCell { readonly text: string; readonly spans: readonly TextSpan[]; readonly fill: string | null }
 /** Tableau (C10a) : objets repris tels quels d'une étape à l'autre, sauf ceux qu'une commande change. */
 interface FakeTable {
   readonly color: string;
@@ -154,7 +155,7 @@ function tableView(t: FakeTable): TableData {
   for (const r of t.rows) {
     for (const c of t.cols) {
       const cell = t.cells.get(cellKey(r.id, c.id));
-      if (cell && (cell.text !== "" || cell.fill !== null)) cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill });
+      if (cell && (cell.text !== "" || cell.fill !== null)) cells.push({ row: r.id, col: c.id, text: cell.text, fill: cell.fill, spans: cell.spans });
     }
   }
   return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells };
@@ -460,11 +461,14 @@ class FakeDocument implements CoreDocument {
         });
       }
       case "SetText": {
+        // C7b (R7, PC2) : segments contrôlés en premier, comme le cœur ; état voulu normalisé (forme de read_spans).
+        if (cmd.spans !== undefined && !validSpans(cmd.content, cmd.spans)) throw new Error(MESSAGES.badFormat);
+        const want = cmd.spans === undefined ? null : normalSpans(cmd.spans);
         // Même ordre que le cœur : texte invalide, puis page ou élément inconnu, puis contenu vide, puis inchangé.
         if (!positive(cmd.size) || !positive(cmd.boxWidth) || !positive(cmd.boxHeight) || !Number.isFinite(cmd.x) || !Number.isFinite(cmd.y)) {
           throw new Error(MESSAGES.badText);
         }
-        const text: TextData = { content: cmd.content, size: cmd.size, boxWidth: cmd.boxWidth, boxHeight: cmd.boxHeight, spans: plainSpans(cmd.content) };
+        const text: TextData = { content: cmd.content, size: cmd.size, boxWidth: cmd.boxWidth, boxHeight: cmd.boxHeight, spans: want ?? plainSpans(cmd.content) };
         const style: StrokeStyle = { color: cmd.color, width: 0 };
         if (cmd.id === null) {
           this.pageOf(cmd.page);
@@ -487,14 +491,14 @@ class FakeDocument implements CoreDocument {
           });
         }
         const t = found.element.text;
-        if (t.content === text.content && t.size === text.size && t.boxWidth === text.boxWidth && t.boxHeight === text.boxHeight && found.element.style.color === cmd.color) {
+        if (t.content === text.content && t.size === text.size && t.boxWidth === text.boxWidth && t.boxHeight === text.boxHeight && found.element.style.color === cmd.color && (want === null || sameSpans(want, t.spans))) {
           return this.unchanged();
         }
         return this.step((s) => {
           const p = s.pages.find((q) => q.id === pageId);
           const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
           const old = p?.elements[i];
-          if (p && old) p.elements[i] = { ...old, style, text: { ...text, spans: editSpans(t.spans, cmd.content) } };
+          if (p && old) p.elements[i] = { ...old, style, text: { ...text, spans: want ?? editSpans(t.spans, cmd.content) } };
           return { pages: [pageId], ids: [id], removed: [] };
         });
       }
@@ -611,6 +615,9 @@ class FakeDocument implements CoreDocument {
         });
       }
       case "SetTableCell": {
+        // C7b (R7, PC2) : segments contrôlés en premier, comme `cmd_set_table_cell`.
+        if (cmd.spans !== undefined && !validSpans(cmd.content, cmd.spans)) throw new Error(MESSAGES.badFormat);
+        const want = cmd.spans === undefined ? null : normalSpans(cmd.spans);
         if (cmd.rowHeight !== undefined && !positive(cmd.rowHeight)) throw new Error(MESSAGES.badTable);
         const { found, t } = this.tableOf(cmd.id);
         const r = t.rows.findIndex((l) => l.id === cmd.row);
@@ -619,11 +626,15 @@ class FakeDocument implements CoreDocument {
         const key = cellKey(cmd.row, cmd.col);
         const cell = t.cells.get(key);
         const current = cell?.text ?? "";
+        const spans = cell?.spans ?? plainSpans(current);
         const grow = cmd.rowHeight !== undefined && cmd.rowHeight > row.height ? cmd.rowHeight : null;
         if (grow !== null && !fitsF32([sum(t.rows.map((l) => l.height)) - row.height + grow])) throw new Error(MESSAGES.badTable);
-        if (current === cmd.content && grow === null) return this.unchanged();
+        const restyle = want !== null && current !== "" && !sameSpans(want, spans);
+        if (current === cmd.content && grow === null && !restyle) return this.unchanged();
         const cells = new Map(t.cells);
-        if (current !== cmd.content) cells.set(key, { text: cmd.content, fill: cell?.fill ?? null });
+        if (current !== cmd.content || restyle) {
+          cells.set(key, { text: cmd.content, spans: want ?? editSpans(spans, cmd.content), fill: cell?.fill ?? null });
+        }
         const rows = grow === null ? t.rows : t.rows.map((l, i) => (i === r ? { ...l, height: grow } : l));
         return this.writeTable(found, cmd.id, { ...t, rows, cells });
       }
@@ -672,7 +683,7 @@ class FakeDocument implements CoreDocument {
         const cell = t.cells.get(key);
         if ((cell?.fill ?? null) === cmd.fill) return this.unchanged();
         const cells = new Map(t.cells);
-        cells.set(key, { text: cell?.text ?? "", fill: cmd.fill });
+        cells.set(key, { text: cell?.text ?? "", spans: cell?.spans ?? plainSpans(""), fill: cmd.fill });
         return this.writeTable(found, cmd.id, { ...t, cells });
       }
     }
@@ -930,9 +941,12 @@ function loadTable(v: unknown): FakeTable | null {
   if (isRecord(raw)) {
     for (const [k, c] of Object.entries(raw)) {
       if (!isRecord(c)) continue;
-      const text = c["text"];
+      const text = typeof c["text"] === "string" ? c["text"] : "";
       const fill = c["fill"];
-      cells.set(k, { text: typeof text === "string" ? text : "", fill: typeof fill === "string" && validColor(fill) ? fill : null });
+      const s = c["spans"];
+      // C7b : segments lisibles normalisés ; JSON d'avant C7b ou segments illisibles : un segment (R16).
+      const spans = Array.isArray(s) && validSpans(text, s as TextSpan[]) ? normalSpans(s as TextSpan[]) : plainSpans(text);
+      cells.set(k, { text, spans, fill: typeof fill === "string" && validColor(fill) ? fill : null });
     }
   }
   const color = v["color"];
