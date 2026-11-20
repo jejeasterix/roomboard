@@ -975,8 +975,7 @@ impl Document {
         let meta_missing = same
             && input.is_some_and(|b| {
                 let txn = self.read();
-                txn.get_map("assets")
-                    .is_none_or(|m| m.get(&txn, b.asset.id.as_str()).is_none())
+                self.assets_ref().get(&txn, b.asset.id.as_str()).is_none()
             });
         if same && !meta_missing {
             return Ok(self.unchanged());
@@ -1204,14 +1203,31 @@ impl Document {
             return Err(CommandError::BadGroup);
         }
         // Un groupe touché en partie est étendu à tous ses membres (même groupe extérieur, même page).
-        let all_ids = self.element_ids(&page);
+        // Un seul passage sur la page (pas un `find_element` par id).
         let known: BTreeSet<String> = targets.iter().map(|t| t.id.clone()).collect();
-        let rest: Vec<String> = all_ids.into_iter().filter(|i| !known.contains(i)).collect();
-        targets.extend(
-            self.group_targets(&rest)
-                .into_iter()
-                .filter(|t| t.path.first().is_some_and(|o| outers.contains(o))),
-        );
+        {
+            let txn = self.read();
+            if let Some(els) = self.page_elements(&txn, &page) {
+                for o in els.iter(&txn) {
+                    let Out::YMap(element) = o else { continue };
+                    let Some(id) = out_string(element.get(&txn, "id")) else {
+                        continue;
+                    };
+                    if known.contains(&id) {
+                        continue;
+                    }
+                    let path = read_group(&txn, &element).unwrap_or_default();
+                    if path.first().is_some_and(|o| outers.contains(o)) {
+                        targets.push(GroupTarget {
+                            path,
+                            id,
+                            page: page.clone(),
+                            element,
+                        });
+                    }
+                }
+            }
+        }
         targets.sort_by(|a, b| a.id.cmp(&b.id));
         let gid = yrs::uuid_v4().to_string();
         {
@@ -3688,6 +3704,36 @@ pub(crate) mod tests {
             CommandError::BadGroup.to_string(),
             "groupe invalide (au moins deux objets ou groupes d'une même page, ids connus attendus)"
         );
+    }
+
+    #[test]
+    fn group_extension_on_a_wide_page_keeps_behavior() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let a = rect_at(&mut d, &p, 0.0);
+        let b = rect_at(&mut d, &p, 100.0);
+        let c = rect_at(&mut d, &p, 200.0);
+        let fillers: Vec<String> = (0..3000)
+            .map(|i| rect_at(&mut d, &p, 300.0 + i as f64))
+            .collect();
+        d.apply(Command::Group {
+            ids: vec![a.clone(), b.clone()],
+        })
+        .expect("g1");
+        let start = std::time::Instant::now();
+        let ch = d
+            .apply(Command::Group {
+                ids: vec![a.clone(), c.clone()],
+            })
+            .expect("g2");
+        eprintln!("Group sur 3003 éléments : {:?}", start.elapsed());
+        let mut got = ch.ids.clone();
+        got.sort();
+        let mut want = vec![a.clone(), b.clone(), c.clone()];
+        want.sort();
+        assert_eq!(got, want);
+        assert_eq!(group_of(&d, &b).map(|g| g.len()), Some(2));
+        assert_eq!(group_of(&d, &fillers[0]), None);
     }
 
     #[test]

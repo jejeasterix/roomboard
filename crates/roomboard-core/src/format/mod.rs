@@ -252,9 +252,10 @@ pub fn check_manifest(raw: &[u8]) -> Result<Manifest, FormatError> {
     match manifest.kind.as_deref() {
         None | Some(KIND_DOCUMENT) | Some(KIND_FRAGMENT) => {}
         Some(other) => {
+            // Borné : la valeur vient d'un fichier non fiable et finit dans un message.
             return Err(FormatError::UnknownKind {
-                found: other.to_string(),
-            })
+                found: other.chars().take(64).collect(),
+            });
         }
     }
     Ok(manifest)
@@ -354,7 +355,10 @@ pub fn save_fragment_parts(
         modified: meta.now.clone(),
         kind: Some(KIND_FRAGMENT.into()),
         name: Some(name.into()),
-        bounds: doc.bounds(&doc.element_ids(&pages[0])),
+        // Une boîte non finie (transformation infinie, NaN) ne s'écrit pas : le JSON ne la relirait pas.
+        bounds: doc
+            .bounds(&doc.element_ids(&pages[0]))
+            .filter(|b| [b.x0, b.y0, b.x1, b.y1].iter().all(|v| v.is_finite())),
     };
     let json =
         serde_json::to_vec_pretty(&manifest).map_err(|e| FormatError::Corrupt(e.to_string()))?;
@@ -584,6 +588,37 @@ mod tests {
         assert_eq!(f.element_ids(&f.page_ids()[0]), ids);
         let parts = save_fragment_parts(&d, &meta(), "Sélection").expect("parts");
         assert!(load_fragment_parts(&parts.manifest, &parts.ybin).is_ok());
+    }
+
+    #[test]
+    fn fragment_with_infinite_transform_writes_no_bounds_and_reads_back() {
+        let d = one_rect();
+        let id = d.element_ids(&d.page_ids()[0])[0].clone();
+        {
+            let mut txn = d.transact_local();
+            let f = d.find_element(&txn, &id).expect("élément");
+            f.element.insert(
+                &mut txn,
+                "transform",
+                crate::element::transform_to_any(&[f64::INFINITY, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            );
+        }
+        let bytes = save_fragment(&d, &meta(), "Sélection").expect("fragment");
+        let (_, m) = load_fragment(&bytes).expect("relecture");
+        assert_eq!(m.bounds, None);
+    }
+
+    #[test]
+    fn unknown_kind_found_is_truncated_on_a_char_boundary() {
+        let ybin = Document::blank().encode_v1();
+        let long = "é".repeat(500);
+        match load_parts(&manifest_with_kind(&long), &ybin).err() {
+            Some(FormatError::UnknownKind { found }) => {
+                assert_eq!(found.chars().count(), 64);
+                assert!(long.starts_with(&found));
+            }
+            other => panic!("attendu UnknownKind, obtenu {other:?}"),
+        }
     }
 
     #[test]
