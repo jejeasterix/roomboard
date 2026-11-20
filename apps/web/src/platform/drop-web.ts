@@ -6,6 +6,12 @@ export interface DragEventLike {
   readonly clientY: number;
   readonly dataTransfer: { readonly files: ArrayLike<File>; dropEffect: string } | null;
   preventDefault(): void;
+  stopPropagation?(): void;
+}
+
+export interface WebDropOptions {
+  /** Le `drop` pris ici ne remonte pas (zone de la barre, R29) : l'écoute de `document` de l'hôte web ne le revoit pas. */
+  readonly stopPropagation?: boolean;
 }
 
 export interface DropTargetLike {
@@ -17,7 +23,7 @@ export function droppedFromFile(f: File): DroppedFile {
   return { name: f.name, size: f.size, mime: f.type, blob: async () => f };
 }
 
-export function listenWebDrop(target: DropTargetLike | null, handler: DropHandler): () => void {
+export function listenWebDrop(target: DropTargetLike | null, handler: DropHandler, opts: WebDropOptions = {}): () => void {
   if (target === null) return () => undefined;
   const over = (e: DragEventLike): void => {
     e.preventDefault();
@@ -25,6 +31,7 @@ export function listenWebDrop(target: DropTargetLike | null, handler: DropHandle
   };
   const drop = (e: DragEventLike): void => {
     e.preventDefault();
+    if (opts.stopPropagation === true) e.stopPropagation?.();
     const files = Array.from(e.dataTransfer?.files ?? [], droppedFromFile);
     if (files.length > 0) handler(files, { x: e.clientX, y: e.clientY });
   };
