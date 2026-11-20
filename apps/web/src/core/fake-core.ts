@@ -45,6 +45,8 @@ import type {
   GridLines,
   GridView,
   ImageData,
+  MediaData,
+  AssetLink,
   LevelLines,
   Matrix,
   PageView,
@@ -62,6 +64,8 @@ import type {
 } from "./api";
 import {
   BAD_GROUP_MESSAGE,
+  BAD_MEDIA_MESSAGE,
+  MAX_LINK_CHARS,
   DEFAULT_ASSET_MIME,
   DEFAULT_BACKGROUND,
   DEFAULT_GRID_COLOR,
@@ -108,6 +112,8 @@ interface FakeElement {
   readonly shape?: ShapeData;
   readonly text?: TextData;
   readonly image?: ImageData;
+  /** C14 : média lisible ; un média mal formé est un `unknown` (sourceKind "media"), comme un tableau. */
+  readonly media?: MediaData;
   readonly table?: FakeTable;
   readonly unknown?: FakeUnknown;
   /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
@@ -156,7 +162,7 @@ const MESSAGES = {
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
 /** Kinds lus par la fausse liaison : même liste que `KNOWN_KINDS` du cœur (`element.rs`). */
-export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table"]);
+export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table", "media"]);
 const finitePositive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
@@ -261,9 +267,33 @@ function tableView(t: FakeTable): TableData {
   return { color: t.color, size: t.size, cols: t.cols, rows: t.rows, cells, merges };
 }
 /** Écrite seulement si absente (K3). */
-const putMeta = (assets: Map<string, unknown>, a: AssetRef): void => {
-  if (!assets.has(a.id)) assets.set(a.id, { name: a.name, mime: a.mime, size: a.size });
+const putMeta = (assets: Map<string, unknown>, a: AssetRef, linked: string | null = null): void => {
+  if (!assets.has(a.id)) assets.set(a.id, { name: a.name, mime: a.mime, size: a.size, ...(linked !== null ? { linked } : {}) });
 };
+/** Chemin lié lisible d'une métadonnée (C14) : texte non vide, sinon null. */
+const linkedOf = (m: unknown): string | null => isRecord(m) && typeof m["linked"] === "string" && m["linked"] !== "" ? m["linked"] : null;
+const validLink = (p: string): boolean => p !== "" && [...p].length <= MAX_LINK_CHARS;
+/** Lecture tolérante d'un média (C14) : obligatoires asset, mediaType, w, h (f32) ; facultatifs neutres s'ils sont illisibles. */
+function readMedia(v: unknown): MediaData | null {
+  if (!isRecord(v)) return null;
+  const { asset, mediaType, w, h } = v;
+  if (!isAssetId(asset) || (mediaType !== "video" && mediaType !== "audio")) return null;
+  if (!finitePositive(w) || !finitePositive(h) || !Number.isFinite(Math.fround(w)) || !Number.isFinite(Math.fround(h))) return null;
+  const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
+  const d = num(v["duration"]);
+  const duration = d !== null && d >= 0 ? d : 0;
+  const poster = isAssetId(v["poster"]) ? v["poster"] : null;
+  const ts = num(v["trimStart"]);
+  const trimStart = ts !== null && ts >= 0 && (duration === 0 || ts < duration) ? ts : 0;
+  const te = num(v["trimEnd"]);
+  const trimEnd = te !== null && te > trimStart && (duration === 0 || te < duration) ? te : null;
+  const vol = num(v["volume"]);
+  return {
+    asset, mediaType, w, h, duration, poster, trimStart, trimEnd,
+    loop: v["loop"] === true,
+    volume: vol !== null && vol >= 0 && vol <= 1 ? vol : 1,
+  };
+}
 /** Métadonnées des assets cités, recopiées seulement si absentes de la cible (K3). */
 function adoptMeta(into: Map<string, unknown>, from: ReadonlyMap<string, unknown>, cited: readonly string[]): void {
   for (const id of cited) {
@@ -416,6 +446,8 @@ function worldPolygon(e: FakeElement): number[] | null {
       ? boxPolygon(e.text.boxWidth, e.text.boxHeight)
       : e.image
         ? boxPolygon(e.image.w, e.image.h)
+        : e.media
+          ? boxPolygon(e.media.w, e.media.h)
         : e.table
           ? boxPolygon(tableWidth(e.table), tableHeight(e.table))
           : e.unknown
@@ -695,6 +727,51 @@ class FakeDocument implements CoreDocument {
           });
           putMeta(s.assets, cmd.asset);
           return { pages: [cmd.page], ids: [id], removed: [] };
+        });
+      }
+      case "AddMedia": {
+        // Même ordre que le cœur : assets, média (lien, boîte, durée), matrice, puis page.
+        if (!validAsset(cmd.asset) || (cmd.poster !== null && !validAsset(cmd.poster))) throw new Error(MESSAGES.badAsset);
+        if (
+          (cmd.linked !== null && !validLink(cmd.linked)) || !positive(cmd.w) || !positive(cmd.h) || !fitsF32([cmd.w, cmd.h]) ||
+          !Number.isFinite(cmd.duration) || cmd.duration < 0 || (cmd.mediaType !== "video" && cmd.mediaType !== "audio")
+        ) {
+          throw new Error(BAD_MEDIA_MESSAGE);
+        }
+        if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
+        this.pageOf(cmd.page);
+        return this.step((s) => {
+          const id = newId();
+          const media: MediaData = {
+            asset: cmd.asset.id, mediaType: cmd.mediaType, w: cmd.w, h: cmd.h, duration: cmd.duration,
+            poster: cmd.poster?.id ?? null, trimStart: 0, trimEnd: null, loop: false, volume: 1,
+          };
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: cmd.matrix, style: NO_STYLE, media });
+          putMeta(s.assets, cmd.asset, cmd.linked);
+          if (cmd.poster !== null) putMeta(s.assets, cmd.poster);
+          return { pages: [cmd.page], ids: [id], removed: [] };
+        });
+      }
+      case "SetMedia": {
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const m = found.element.media;
+        if (!m) throw new Error(BAD_MEDIA_MESSAGE);
+        const known = m.duration > 0;
+        const startOk = Number.isFinite(cmd.trimStart) && cmd.trimStart >= 0 && (!known || cmd.trimStart < m.duration);
+        const endOk = cmd.trimEnd === null || (Number.isFinite(cmd.trimEnd) && cmd.trimEnd > cmd.trimStart && (!known || cmd.trimEnd <= m.duration));
+        const volOk = Number.isFinite(cmd.volume) && cmd.volume >= 0 && cmd.volume <= 1;
+        if (!startOk || !endOk || !volOk) throw new Error(BAD_MEDIA_MESSAGE);
+        const trimEnd = known && cmd.trimEnd === m.duration ? null : cmd.trimEnd;
+        if (m.trimStart === cmd.trimStart && m.trimEnd === trimEnd && m.loop === cmd.loop && m.volume === cmd.volume) return this.unchanged();
+        const next: MediaData = { ...m, trimStart: cmd.trimStart, trimEnd, loop: cmd.loop, volume: cmd.volume };
+        const pageId = found.page.id;
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
+          const old = p?.elements[i];
+          if (p && old) p.elements[i] = { ...old, media: next };
+          return { pages: [pageId], ids: [cmd.id], removed: [] };
         });
       }
       case "SetBackdrop": {
@@ -1025,6 +1102,7 @@ class FakeDocument implements CoreDocument {
     const base = { id, transform: e.transform, ...withGroup(e.group) };
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, kind: "image", image: e.image };
+    if (e.media) return { ...base, kind: "media", media: e.media };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
     const styled = { ...base, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
@@ -1045,6 +1123,28 @@ class FakeDocument implements CoreDocument {
       for (const e of p.elements) scanAssets({ ...e, text: undefined, local: undefined }, acc);
     }
     return [...acc].sort().map((id) => assetInfo(this.state.assets, id));
+  }
+  linkedAssets(): AssetLink[] {
+    const out: AssetLink[] = [];
+    for (const { id } of this.citedAssets()) {
+      const path = linkedOf(this.state.assets.get(id));
+      if (path !== null) out.push({ id, path });
+    }
+    return out;
+  }
+  relinkAssets(links: readonly AssetLink[]): number {
+    let n = 0;
+    for (const { id, path } of links) {
+      const current = linkedOf(this.state.assets.get(id));
+      if (!validLink(path) || current === null || current === path) continue;
+      // Hors historique (M30) : le nouveau chemin vaut aussi pour les états que annuler et rétablir rendront.
+      for (const st of [this.state, ...this.undoStack, ...this.redoStack]) {
+        const m = st.assets.get(id);
+        if (linkedOf(m) !== null) st.assets.set(id, { ...(m as Record<string, unknown>), linked: path });
+      }
+      n++;
+    }
+    return n;
   }
   asset(id: string): AssetInfo | null {
     return isAssetId(id) ? assetInfo(this.state.assets, id) : null;
@@ -1297,6 +1397,8 @@ interface SavedElement {
   shape?: ShapeData;
   text?: SavedText;
   image?: ImageData;
+  /** C14 : écrit `MediaData` ; lu : valeur brute, contrôlée par `readMedia`. */
+  media?: MediaData | unknown;
   /** Écrit : `SavedTable` ; lu : valeur brute, contrôlée par `loadTable`. */
   table?: SavedTable | unknown;
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
@@ -1317,6 +1419,7 @@ function savedElement(e: FakeElement): SavedElement {
   }
   if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group };
   if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image, ...group };
+  if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group };
   return {
     id: e.id,
     transform: [...e.transform],
@@ -1411,6 +1514,22 @@ function loadElement(e: SavedElement): FakeElement {
       sourceKind: "table",
       raw,
       box: unknownBox(raw),
+      hasTransform: m !== null,
+      ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
+    };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+  }
+  if (e.kind === "media") {
+    // Repli du tableau, pas celui de l'image (C14, M7) : un média mal formé est un cadre inconnu, jamais invisible ;
+    // brut gardé sous `raw.media`, réécrit tel quel, boîte lue dans le brut.
+    const source = e.media ?? e.raw?.["media"];
+    const media = readMedia(source);
+    const m = toMatrix6(e.transform);
+    if (media !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, media, ...group };
+    const unknown: FakeUnknown = {
+      sourceKind: "media",
+      raw: { media: source },
+      box: unknownBox(isRecord(source) ? source : {}),
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };

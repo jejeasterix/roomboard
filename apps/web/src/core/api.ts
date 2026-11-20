@@ -21,7 +21,7 @@ export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
 export type ShapeKind = "rect" | "ellipse" | "line" | "arrow";
-export type ElementKind = "stroke" | "shape" | "text" | "image" | "table" | "unknown";
+export type ElementKind = "stroke" | "shape" | "text" | "image" | "media" | "table" | "unknown";
 export interface AssetRef { readonly id: string; readonly name: string; readonly mime: string; readonly size: number }
 /** Métadonnée d'un asset cité (K3) : même forme que la référence ; défauts du cœur pour une entrée absente (K4). */
 export type AssetInfo = AssetRef;
@@ -74,6 +74,23 @@ export type Command =
     }
   | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
   | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
+  /** C14 : élément média (vidéo ou son), une étape ; refus sans écriture dans l'ordre BadAsset (asset, poster), BadMedia
+   *  (lien vide ou > 4 096 points de code, w ou h non finis > 0 ou hors f32, durée non finie ou < 0), BadMatrix, page inconnue.
+   *  `linked` : chemin local du fichier lié (M30), écrit dans la métadonnée du média seulement si elle est absente. */
+  | {
+      readonly type: "AddMedia";
+      readonly page: string;
+      readonly asset: AssetRef;
+      readonly linked: string | null;
+      readonly mediaType: MediaType;
+      readonly w: number;
+      readonly h: number;
+      readonly duration: number;
+      readonly poster: AssetRef | null;
+      readonly matrix: Matrix;
+    }
+  /** C14 (M6) : état voulu des réglages ; neutres : début 0, fin null, loop false, volume 1 ; même état : aucune étape. */
+  | { readonly type: "SetMedia"; readonly id: string; readonly trimStart: number; readonly trimEnd: number | null; readonly loop: boolean; readonly volume: number }
   /** backdrop null : retire le fond ; même valeur : aucune étape (D38). */
   | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null }
   /** C7 : start, len en unités UTF-16 du contenu ; attrs = patch (absent ou undefined : inchangé ; false, null : retiré). */
@@ -149,6 +166,23 @@ export interface TextData {
 }
 
 export interface ImageData { readonly asset: string; readonly w: number; readonly h: number }
+/** C14 : types de média acceptés. */
+export type MediaType = "video" | "audio";
+/** Média (C14) : boîte locale (0, 0)-(w, h) ; `duration` 0 = inconnue ; `trimEnd` null = jusqu'à la fin. */
+export interface MediaData {
+  readonly asset: string;
+  readonly mediaType: MediaType;
+  readonly w: number;
+  readonly h: number;
+  readonly duration: number;
+  readonly poster: string | null;
+  readonly trimStart: number;
+  readonly trimEnd: number | null;
+  readonly loop: boolean;
+  readonly volume: number;
+}
+/** C14 : asset lié à un fichier local (chemin) ; `relinkAssets` lit les mêmes paires. */
+export interface AssetLink { readonly id: string; readonly path: string }
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
 
 export type TableAxis = "row" | "col";
@@ -190,11 +224,13 @@ export interface ShapeElement extends ElementBase { readonly kind: "shape"; read
 export interface TextElement extends ElementBase { readonly kind: "text"; readonly style: StrokeStyle; readonly text: TextData }
 /** Image (U5) : boîte locale (0, 0)-(w, h), taille source en pixels. */
 export interface ImageElement extends ElementBase { readonly kind: "image"; readonly image: ImageData }
+/** Média (C14) : boîte locale (0, 0)-(w, h) ; mal formé : élément unknown, sourceKind "media". */
+export interface MediaElement extends ElementBase { readonly kind: "media"; readonly media: MediaData }
 /** Élément d'un kind inconnu (U3) : gardé, dessiné comme un cadre, boîte (0, 0)-(w, h). */
 export interface UnknownElement extends ElementBase { readonly kind: "unknown"; readonly unknown: UnknownData }
 /** Tableau (C10a) : coin en (0, 0) local, placé par transform. */
 export interface TableElement extends ElementBase { readonly kind: "table"; readonly table: TableData }
-export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | TableElement | UnknownElement;
+export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | MediaElement | TableElement | UnknownElement;
 
 /** Fond de page (U6, K6) : rect calculé par le cœur, calé sur la largeur de la page ; null si w ou h illisibles. */
 export interface BackdropView {
@@ -233,6 +269,11 @@ export interface CoreDocument {
   page(id: string): PageView | null;
   citedAssets(): AssetInfo[];
   asset(id: string): AssetInfo | null;
+  /** C14 : assets cités dont la métadonnée porte un chemin lié non vide, triés par id. */
+  linkedAssets(): AssetLink[];
+  /** C14 (M30) : réécrit le chemin des assets déjà liés à un chemin différent (1 à 4 096 points de code), hors historique,
+   *  version inchangée ; rend le nombre réécrit. */
+  relinkAssets(links: readonly AssetLink[]): number;
   points(id: string): Float32Array | null;
   outline(id: string): Float32Array | null;
   hitTest(page: string, x: number, y: number, tol: number): string | null;
@@ -286,6 +327,11 @@ export interface CoreFactory {
   loadFragmentParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
 }
 
+/** Message de BadMedia du cœur (C14), repris à l'identique par la fausse liaison. */
+export const BAD_MEDIA_MESSAGE =
+  "média invalide (vidéo ou son, boîte finie > 0, durée finie ≥ 0, début ≥ 0 avant la fin, fin dans la durée, volume de 0 à 1, chemin lié de 1 à 4 096 caractères attendus)";
+/** Longueur maximale d'un chemin lié, en points de code (`MAX_LINK_CHARS` du cœur). */
+export const MAX_LINK_CHARS = 4096;
 export const NO_CHANGE: Change = { pages: [], ids: [], removed: [], full: false, version: 0 };
 export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;

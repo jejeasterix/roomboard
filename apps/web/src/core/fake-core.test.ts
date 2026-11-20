@@ -536,6 +536,7 @@ describe("fakeCore — C10a (tableau)", () => {
       text: () => ({ type: "SetText", page: p, id: null, x: 0, y: 0, content: "a", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 }),
       image: () => ({ type: "AddImage", page: p, asset: { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 }, w: 64, h: 48, matrix: [1, 0, 0, 1, 0, 0] }),
       table: () => ({ type: "AddTable", page: p, x: 0, y: 0, cols: 2, rows: 2, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }),
+      media: () => ({ type: "AddMedia", page: p, asset: { id: "cd".repeat(32), name: "a.webm", mime: "video/webm", size: 3 }, linked: null, mediaType: "video", w: 320, h: 180, duration: 2.5, poster: null, matrix: [1, 0, 0, 1, 0, 0] }),
     };
     for (const kind of KNOWN_KINDS) {
       const build = make[kind];
