@@ -413,6 +413,11 @@ class WasmCoreDocument implements CoreDocument {
             cmd.size,
           ),
         );
+      case "Fill": {
+        // null → undefined : Option::None côté Rust (« Aucune ») ; le fond n'a pas d'id.
+        const t = cmd.target;
+        return toChange(this.d.fill(cmd.page, t.kind, t.kind === "background" ? undefined : t.id, cmd.color ?? undefined));
+      }
     }
   }
 
@@ -431,6 +436,7 @@ class WasmCoreDocument implements CoreDocument {
   points(id: string): Float32Array | null { return this.d.points(id) ?? null; }
   outline(id: string): Float32Array | null { return this.d.outline(id) ?? null; }
   hitTest(page: string, x: number, y: number, tol: number): string | null { return this.d.hit_test(page, x, y, tol) ?? null; }
+  edgeHit(id: string, x: number, y: number, tol: number): boolean { return this.d.edge_hit(id, x, y, tol); }
   hitTestPath(page: string, path: Float32Array, radius: number): string[] { return this.d.hit_test_path(page, path, radius); }
   idsInRect(page: string, r: Bounds): string[] { return this.d.ids_in_rect(page, r.x0, r.y0, r.x1, r.y1); }
   bounds(ids: readonly string[]): Bounds | null { return toBounds(this.d.bounds([...ids])); }

@@ -14,6 +14,7 @@
 // C10b : MergeTableCells, SplitTableCell, SetTableShade, ImportTable ; RemoveTableLine.to, SetTableFill.to (plages) ;
 // TableData.merges (zones calculées par le cœur, règle F2 : la page les lit, ne les recalcule pas) ; TableCell.shade (F8).
 // C7b : SetText et SetTableCell gagnent spans (état voulu des segments, appliqué dans la même étape) ; TableCell.spans.
+// C6a : Fill (contour, intérieur, fond de page ; une étape, D38) ; edgeHit (bord d'une forme, mesuré par le cœur, DA2).
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -33,6 +34,10 @@ export interface Change {
   readonly full: boolean;
   readonly version: number;
 }
+
+/** Cible du pot (C6a, D12) : contour (`color` d'une forme ou d'un trait), intérieur (`fill` d'un rectangle ou d'une
+ *  ellipse), fond de la page (`background`). */
+export type FillTarget = { readonly kind: "edge" | "inside"; readonly id: string } | { readonly kind: "background" };
 
 export type Command =
   | { readonly type: "AddPage"; readonly after: string | null }
@@ -123,7 +128,9 @@ export type Command =
       readonly merges: readonly (readonly [number, number, number, number])[];
       readonly color: string;
       readonly size: number;
-    };
+    }
+  /** C6a (D12) : color null = « Aucune » (intérieur retiré, fond #ffffff, contour inchangé) ; même valeur : aucune étape. */
+  | { readonly type: "Fill"; readonly page: string; readonly target: FillTarget; readonly color: string | null };
 
 export interface ShapeData { readonly shape: ShapeKind; readonly w: number; readonly h: number; readonly fill: string | null }
 export interface TextData {
@@ -219,6 +226,9 @@ export interface CoreDocument {
   points(id: string): Float32Array | null;
   outline(id: string): Float32Array | null;
   hitTest(page: string, x: number, y: number, tol: number): string | null;
+  /** Bord d'un rectangle ou d'une ellipse sous (x, y) monde (C6a, DA2) : tol + demi-épaisseur à l'échelle de la forme ;
+   *  faux pour tout autre élément ou un id inconnu. Rien n'est écrit. */
+  edgeHit(id: string, x: number, y: number, tol: number): boolean;
   hitTestPath(page: string, path: Float32Array, radius: number): string[];
   idsInRect(page: string, rect: Bounds): string[];
   bounds(ids: readonly string[]): Bounds | null;
@@ -255,6 +265,8 @@ export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
+/** Fond d'une page neuve, et « Aucune » du pot sur le fond (`DEFAULT_BACKGROUND` de `element.rs`). */
+export const DEFAULT_BACKGROUND = "#ffffff";
 /** Plafond des lignes et des colonnes d'un tableau (BadTable). */
 export const TABLE_MAX_LINES = 64;
 /** Défauts d'un tableau lu sans couleur ou sans taille lisible (T2). */
