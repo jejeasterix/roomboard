@@ -17,6 +17,7 @@ use crate::element::{
 use crate::ink::erase::erase;
 use crate::ink::points::{decode, dedup, encode, from_flat, to_local, InkPoint};
 use crate::query::path_hits_stroke;
+use crate::rich_text::{self, TextAttr};
 use crate::shape::{normalize, ShapeKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1421,6 +1422,7 @@ pub(crate) mod tests {
     }
 
     use crate::element::{ShapeView, TextView, IDENTITY};
+    use crate::rich_text::{SpanAttrs, TextSpanView};
     use crate::shape::ShapeKind;
 
     fn rect(page: &str, corners: [f64; 4]) -> Command {
@@ -1757,7 +1759,11 @@ pub(crate) mod tests {
                 content: "Bonjour".into(),
                 size: 36.0,
                 box_width: 600.0,
-                box_height: 45.0
+                box_height: 45.0,
+                spans: vec![TextSpanView {
+                    text: "Bonjour".into(),
+                    attrs: SpanAttrs::default()
+                }]
             })
         );
         assert_eq!(e.shape, None);
@@ -2319,5 +2325,304 @@ pub(crate) mod tests {
                 "fichier différent au rechargement {i}"
             );
         }
+    }
+
+    // --- C7 : texte riche (FormatText, SetText par différence) ---
+
+    const BAD_FORMAT_MESSAGE: &str = "mise en forme invalide (attributs bold, italic, underline, color, size, font aux valeurs permises, plage du texte hors paire de substitution, hauteur finie > 0 attendus)";
+
+    fn format_cmd(id: &str, start: u32, len: u32, attrs: Vec<TextAttr>) -> Command {
+        Command::FormatText {
+            id: id.into(),
+            start,
+            len,
+            attrs,
+            box_height: None,
+        }
+    }
+
+    fn spans_of(d: &Document, id: &str) -> Vec<TextSpanView> {
+        d.element(id).and_then(|e| e.text).expect("texte").spans
+    }
+
+    fn span(text: &str, attrs: SpanAttrs) -> TextSpanView {
+        TextSpanView {
+            text: text.into(),
+            attrs,
+        }
+    }
+
+    fn red_bold() -> SpanAttrs {
+        SpanAttrs {
+            bold: true,
+            color: Some("#ff0000".into()),
+            ..SpanAttrs::default()
+        }
+    }
+
+    fn red_bold_patch() -> Vec<TextAttr> {
+        vec![
+            TextAttr::Color(Some("#ff0000".into())),
+            TextAttr::Bold(true),
+        ]
+    }
+
+    /// S1 : « Le chat noir » avec « chat » (3, 4) rouge et gras.
+    fn red_cat(d: &mut Document) -> (String, String) {
+        let p = first(d);
+        let id = d
+            .apply(text_cmd(&p, None, "Le chat noir"))
+            .expect("texte")
+            .ids[0]
+            .clone();
+        d.apply(format_cmd(&id, 3, 4, red_bold_patch()))
+            .expect("format");
+        (p, id)
+    }
+
+    #[test]
+    fn format_text_is_one_step_and_reads_spans() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let id = d
+            .apply(text_cmd(&p, None, "Le chat noir"))
+            .expect("texte")
+            .ids[0]
+            .clone();
+        let n = writes(&d);
+        let c = d
+            .apply(format_cmd(&id, 3, 4, red_bold_patch()))
+            .expect("format");
+        assert_eq!(
+            (c.pages, c.ids, c.removed),
+            (vec![p], vec![id.clone()], vec![])
+        );
+        assert_eq!(n.since(), 1);
+        assert_eq!(
+            spans_of(&d, &id),
+            vec![
+                span("Le ", SpanAttrs::default()),
+                span("chat", red_bold()),
+                span(" noir", SpanAttrs::default())
+            ]
+        );
+    }
+
+    /// Discrimine le patron écarté (`remove_range(0, len)` puis `insert` dans `cmd_set_text`) : sous lui, « chat »
+    /// perdrait son rouge et son gras, et la vue serait un seul segment sans attribut.
+    #[test]
+    fn set_text_keeps_range_attributes_outside_the_edit() {
+        let mut d = Document::blank();
+        let (p, id) = red_cat(&mut d);
+        d.apply(text_cmd(&p, Some(id.clone()), "Le gros chat noir"))
+            .expect("gros");
+        assert_eq!(
+            spans_of(&d, &id),
+            vec![
+                span("Le gros ", SpanAttrs::default()),
+                span("chat", red_bold()),
+                span(" noir", SpanAttrs::default())
+            ]
+        );
+    }
+
+    #[test]
+    fn set_text_diff_is_one_step() {
+        let mut d = Document::blank();
+        let (p, id) = red_cat(&mut d);
+        let n = writes(&d);
+        let c = d
+            .apply(text_cmd(&p, Some(id.clone()), "Le gros chat noir"))
+            .expect("gros");
+        assert_eq!(c.ids, vec![id.clone()]);
+        assert_eq!(n.since(), 1, "différence et champs : une transaction");
+        assert!(d.undo());
+        assert_eq!(
+            spans_of(&d, &id),
+            vec![
+                span("Le ", SpanAttrs::default()),
+                span("chat", red_bold()),
+                span(" noir", SpanAttrs::default())
+            ]
+        );
+    }
+
+    /// HU2-15 : le texte inséré prend les attributs du caractère qui le précède.
+    #[test]
+    fn set_text_inserted_text_inherits_previous_char() {
+        let mut d = Document::blank();
+        let (p, id) = red_cat(&mut d);
+        d.apply(text_cmd(&p, Some(id.clone()), "Le gros chat noir"))
+            .expect("gros");
+        d.apply(text_cmd(&p, Some(id.clone()), "Le gros chats noir"))
+            .expect("chats");
+        assert_eq!(
+            spans_of(&d, &id),
+            vec![
+                span("Le gros ", SpanAttrs::default()),
+                span("chats", red_bold()),
+                span(" noir", SpanAttrs::default())
+            ]
+        );
+    }
+
+    /// Review Focus 1 (cadrage T5) : un mot formaté remplacé en entier suit le caractère qui le précède (sans attribut).
+    #[test]
+    fn set_text_replacing_a_whole_range_takes_previous_char_attrs() {
+        let mut d = Document::blank();
+        let (p, id) = red_cat(&mut d);
+        d.apply(text_cmd(&p, Some(id.clone()), "Le loup noir"))
+            .expect("loup");
+        assert_eq!(
+            spans_of(&d, &id),
+            vec![span("Le loup noir", SpanAttrs::default())]
+        );
+    }
+
+    /// S1 : annuler trois fois rend « Le chat noir » sans attribut ; rétablir trois fois remet tout.
+    #[test]
+    fn s1_three_undos_restore_plain_text_and_redo_restores_all() {
+        let mut d = Document::blank();
+        let (p, id) = red_cat(&mut d);
+        d.apply(text_cmd(&p, Some(id.clone()), "Le gros chat noir"))
+            .expect("gros");
+        d.apply(text_cmd(&p, Some(id.clone()), "Le gros chats noir"))
+            .expect("chats");
+        let full = spans_of(&d, &id);
+        assert!(d.undo() && d.undo() && d.undo());
+        assert_eq!(
+            spans_of(&d, &id),
+            vec![span("Le chat noir", SpanAttrs::default())]
+        );
+        assert!(d.redo() && d.redo() && d.redo());
+        assert_eq!(spans_of(&d, &id), full);
+    }
+
+    /// T7 : 1) patch, 2) boxHeight, 3) élément, 4) bornes UTF-16 ; aucune transaction sur une erreur. Discrimine le
+    /// patron écarté (élément vérifié avant le patch) par la première assertion.
+    #[test]
+    fn format_text_checks_in_order_without_transaction() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let stroke = commit(&mut d, &p, hline(100.0));
+        let id = d
+            .apply(text_cmd(&p, None, "Le 🐱 noir"))
+            .expect("texte")
+            .ids[0]
+            .clone();
+        let n = writes(&d);
+        let bold = || vec![TextAttr::Bold(true)];
+        let with_height = |id: &str, h: f64| Command::FormatText {
+            id: id.into(),
+            start: 0,
+            len: 1,
+            attrs: vec![],
+            box_height: Some(h),
+        };
+        let bad = Err(CommandError::BadFormat);
+        let rgb = vec![TextAttr::Color(Some("rgb(0,0,0)".into()))];
+        assert_eq!(
+            d.apply(format_cmd("absent", 0, 1, rgb)),
+            bad,
+            "le patch passe avant l'élément"
+        );
+        assert_eq!(d.apply(with_height("absent", -1.0)), bad);
+        assert_eq!(d.apply(with_height("absent", f64::NAN)), bad);
+        assert_eq!(
+            d.apply(format_cmd("absent", 0, 1, bold())),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+        assert_eq!(
+            d.apply(format_cmd(&stroke, 0, 1, bold())),
+            Err(CommandError::UnknownElement(stroke.clone()))
+        );
+        // « Le 🐱 noir » : 10 unités UTF-16, le 🐱 en 3-4
+        for (start, len) in [(4, 1), (3, 1), (8, 3), (11, 0), (u32::MAX, 1)] {
+            assert_eq!(
+                d.apply(format_cmd(&id, start, len, bold())),
+                bad,
+                "bornes {start}, {len}"
+            );
+        }
+        let hex64 = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        for attrs in [
+            vec![TextAttr::Font(Some(hex64.into()))],
+            vec![TextAttr::Color(Some(hex64.into()))],
+            vec![TextAttr::Size(Some(0.0))],
+            vec![TextAttr::Size(Some(f32::NAN))],
+        ] {
+            assert_eq!(d.apply(format_cmd(&id, 0, 1, attrs)), bad);
+        }
+        assert_eq!(n.since(), 0);
+    }
+
+    /// D38 : mêmes attributs, plage vide, retrait d'attributs absents, patch vide, même hauteur : aucune transaction.
+    /// Discrimine le patron écarté (`transact_local()` ouvert avant de savoir si la commande a un effet).
+    #[test]
+    fn format_text_no_change_is_no_step() {
+        let mut d = Document::blank();
+        let (_, id) = red_cat(&mut d);
+        let n = writes(&d);
+        let v = d.version();
+        for cmd in [
+            format_cmd(&id, 3, 4, red_bold_patch()),
+            format_cmd(&id, 2, 0, vec![TextAttr::Bold(true)]),
+            format_cmd(
+                &id,
+                0,
+                3,
+                vec![TextAttr::Bold(false), TextAttr::Color(None)],
+            ),
+            format_cmd(&id, 0, 12, vec![]),
+            Command::FormatText {
+                id: id.clone(),
+                start: 0,
+                len: 0,
+                attrs: vec![],
+                box_height: Some(45.0),
+            },
+        ] {
+            let c = d.apply(cmd).expect("sans effet");
+            assert!(c.ids.is_empty() && c.pages.is_empty());
+        }
+        assert_eq!(d.version(), v);
+        assert_eq!(n.since(), 0);
+    }
+
+    #[test]
+    fn format_text_box_height_alone_is_one_step() {
+        let mut d = Document::blank();
+        let (_, id) = red_cat(&mut d);
+        let n = writes(&d);
+        let height = |d: &Document| d.element(&id).and_then(|e| e.text).map(|t| t.box_height);
+        let c = d
+            .apply(Command::FormatText {
+                id: id.clone(),
+                start: 0,
+                len: 0,
+                attrs: vec![],
+                box_height: Some(60.0),
+            })
+            .expect("hauteur");
+        assert_eq!(c.ids, vec![id.clone()]);
+        assert_eq!(n.since(), 1);
+        assert_eq!(height(&d), Some(60.0));
+        d.apply(Command::FormatText {
+            id: id.clone(),
+            start: 3,
+            len: 4,
+            attrs: vec![TextAttr::Size(Some(48.0))],
+            box_height: Some(75.0),
+        })
+        .expect("taille et hauteur");
+        assert_eq!(n.since(), 2, "format et hauteur : une transaction");
+        assert!(d.undo());
+        assert_eq!(height(&d), Some(60.0));
+        assert_eq!(spans_of(&d, &id)[1], span("chat", red_bold()));
+    }
+
+    #[test]
+    fn format_text_error_has_readable_message() {
+        assert_eq!(CommandError::BadFormat.to_string(), BAD_FORMAT_MESSAGE);
     }
 }
