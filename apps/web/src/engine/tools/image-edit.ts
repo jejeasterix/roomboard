@@ -6,7 +6,7 @@
  * rognage), qui n'écrivent que la géométrie avec les pixels du document (I27). C6b étendra `restore` (`sourceAsset`).
  */
 import type { Bounds, ImageData, ImageElement, ImageParams, Matrix } from "../../core/api";
-import { cropFromDisplay, cropOf, displaySize, displayToSource, frameOf, geometryOf, paramsOf, pixelsOf, placeAfter } from "../../core/image-params";
+import { cropFromDisplay, screenScale, cropOf, displaySize, displayToSource, frameOf, geometryOf, paramsOf, pixelsOf, placeAfter } from "../../core/image-params";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { InputSample } from "../input/sampler";
@@ -125,7 +125,7 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
   };
   /** Portée de prise des poignées en unités de la boîte affichée (12 px écran). */
   const reach = (m: Matrix): number => {
-    const k = ctx.camera().zoom * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const k = screenScale(ctx.camera().zoom, m);
     return k > 0 ? HANDLE_GRAB_PX / k : HANDLE_GRAB_PX;
   };
 

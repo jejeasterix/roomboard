@@ -232,3 +232,6 @@ export function pixelKey(i: ImageData): string {
   const t = i.transparent;
   return JSON.stringify([i.asset, t === undefined ? null : [t.color, t.tolerance, t.soft, t.contiguous], i.brightness ?? 0, i.contrast ?? 0]);
 }
+
+/** Échelle écran d'une image : zoom de la caméra par l'échelle de sa matrice (racine du déterminant). */
+export const screenScale = (zoom: number, m: Matrix): number => zoom * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));

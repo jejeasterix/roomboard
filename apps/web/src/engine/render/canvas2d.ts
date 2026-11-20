@@ -6,7 +6,7 @@
  */
 import { PDF_PAGE_KIND } from "../../core/api";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
-import { cropOf, displaySize, isPlainGeometry, orientMatrix } from "../../core/image-params";
+import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
@@ -65,6 +65,18 @@ export const PEN_HALF_WIDTH = 2;
 export const SELECTION_COLOR = "#1e3a8a";
 export const BAND_FILL = "rgba(30, 58, 138, 0.08)";
 export const HANDLE_FILL = "#ffffff";
+
+/** Huit poignées d'un cadre : carrés `HANDLE_PX` à `px` unités par pixel écran, remplis puis tracés avec le style courant. */
+function paintHandles(ctx: CanvasRenderingContext2D, frame: Bounds, px: number): void {
+  ctx.fillStyle = HANDLE_FILL;
+  const half = (HANDLE_PX / 2) * px;
+  for (const h of handlesOf(frame)) {
+    ctx.beginPath();
+    ctx.rect(h.x - half, h.y - half, 2 * half, 2 * half);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
 
 /** Cadre d'une image pas encore décodée et d'un élément inconnu (U3, R16). */
 export const PLACEHOLDER_FILL = "#e5e7eb";
@@ -378,7 +390,7 @@ export class Canvas2DRenderer implements Renderer {
 
   /** Cadre de rognage (C5, I28), repère local de l'image : voile hors du cadre, cadre et huit poignées à 1 px écran. */
   private paintCropFrame(ctx: CanvasRenderingContext2D, f: Bounds, bw: number, bh: number, m: Matrix): void {
-    const scale = this.zoom * Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const scale = screenScale(this.zoom, m);
     const px = scale > 0 ? 1 / scale : 1;
     ctx.save();
     ctx.beginPath();
@@ -391,14 +403,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.strokeStyle = SELECTION_COLOR;
     ctx.lineWidth = px;
     ctx.stroke();
-    ctx.fillStyle = HANDLE_FILL;
-    const half = (HANDLE_PX / 2) * px;
-    for (const h of handlesOf(f)) {
-      ctx.beginPath();
-      ctx.rect(h.x - half, h.y - half, 2 * half, 2 * half);
-      ctx.fill();
-      ctx.stroke();
-    }
+    paintHandles(ctx, f, px);
     ctx.restore();
   }
 
@@ -444,14 +449,7 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       if (o.handles) {
         ctx.setLineDash([]);
-        ctx.fillStyle = HANDLE_FILL;
-        const half = (HANDLE_PX / 2) * px;
-        for (const h of handlesOf(o.frame)) {
-          ctx.beginPath();
-          ctx.rect(h.x - half, h.y - half, 2 * half, 2 * half);
-          ctx.fill();
-          ctx.stroke();
-        }
+        paintHandles(ctx, o.frame, px);
       }
       ctx.restore();
     }
