@@ -514,4 +514,367 @@ pub(crate) mod tests {
         assert!(t.cells.is_empty());
         assert_eq!((t.color.as_str(), t.size), ("#000000", 36.0));
     }
+
+    use crate::commands::tests::writes;
+    use crate::commands::{Change, Command, CommandError};
+    use crate::element::StrokeStyle;
+
+    fn add(d: &mut Document, cols: u32, rows: u32) -> String {
+        let p = d.page_ids()[0].clone();
+        d.apply(Command::AddTable {
+            page: p,
+            x: 100.0,
+            y: 200.0,
+            cols,
+            rows,
+            col_width: 240.0,
+            row_height: 64.0,
+            color: "#000000".into(),
+            size: 36.0,
+        })
+        .expect("tableau")
+        .ids[0]
+            .clone()
+    }
+
+    fn view(d: &Document, id: &str) -> TableView {
+        d.element(id).and_then(|v| v.table).expect("tableau")
+    }
+
+    fn set(
+        d: &mut Document,
+        id: &str,
+        row: &str,
+        col: &str,
+        content: &str,
+        h: Option<f64>,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::SetTableCell {
+            id: id.into(),
+            row: row.into(),
+            col: col.into(),
+            content: content.into(),
+            row_height: h,
+        })
+    }
+
+    #[test]
+    fn add_table_writes_its_shape_in_one_step() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let c = d
+            .apply(Command::AddTable {
+                page: p.clone(),
+                x: 100.0,
+                y: 200.0,
+                cols: 4,
+                rows: 3,
+                col_width: 240.0,
+                row_height: 64.0,
+                color: "#1d4ed8".into(),
+                size: 36.0,
+            })
+            .expect("tableau");
+        assert_eq!(c.pages, vec![p]);
+        let id = c.ids[0].clone();
+        let v = d.element(&id).expect("vue");
+        assert_eq!((v.kind.as_str(), v.transform), ("table", [1.0, 0.0, 0.0, 1.0, 100.0, 200.0]));
+        let t = v.table.expect("tableau");
+        assert_eq!((t.color.as_str(), t.size, t.cols.len(), t.rows.len()), ("#1d4ed8", 36.0, 4, 3));
+        assert!(t.cols.iter().all(|c| c.width == 240.0) && t.rows.iter().all(|r| r.height == 64.0));
+        assert!(t.cells.is_empty());
+        assert_eq!(
+            d.bounds(&[id.clone()]),
+            Some(Bounds { x0: 100.0, y0: 200.0, x1: 1060.0, y1: 392.0 })
+        );
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            for k in ["shade", "span", "mergedInto"] {
+                assert!(e.get(&txn, k).is_none(), "{k} jamais écrit par C10a");
+            }
+            assert!(matches!(e.get(&txn, "cells"), Some(Out::YMap(_))));
+        }
+        assert!(d.can_undo());
+        assert!(d.undo());
+        assert!(d.element(&id).is_none());
+    }
+
+    #[test]
+    fn add_table_refuses_bad_input_without_writing() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let cmd = |cols: u32, rows: u32, sizes: [f64; 3], color: &str, x: f64| Command::AddTable {
+            page: p.clone(),
+            x,
+            y: 0.0,
+            cols,
+            rows,
+            col_width: sizes[0],
+            row_height: sizes[1],
+            color: color.into(),
+            size: sizes[2],
+        };
+        let ok = [240.0, 64.0, 36.0];
+        let w = writes(&d);
+        for c in [
+            cmd(0, 2, ok, "#000000", 0.0),
+            cmd(65, 2, ok, "#000000", 0.0),
+            cmd(2, 0, ok, "#000000", 0.0),
+            cmd(2, 65, ok, "#000000", 0.0),
+            cmd(2, 2, [f64::NAN, 64.0, 36.0], "#000000", 0.0),
+            cmd(2, 2, [240.0, 0.0, 36.0], "#000000", 0.0),
+            cmd(2, 2, [240.0, 64.0, -1.0], "#000000", 0.0),
+            cmd(2, 2, ok, "!!", 0.0),
+            cmd(2, 2, ok, "#000000", f64::INFINITY),
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert!(!d.can_undo());
+        assert_eq!(
+            d.apply(Command::AddTable {
+                page: "zz".into(),
+                x: 0.0,
+                y: 0.0,
+                cols: 2,
+                rows: 2,
+                col_width: 240.0,
+                row_height: 64.0,
+                color: "#000000".into(),
+                size: 36.0,
+            }),
+            Err(CommandError::UnknownPage("zz".into()))
+        );
+        assert!(d.apply(cmd(64, 64, ok, "#000000", 0.0)).is_ok());
+    }
+
+    #[test]
+    fn set_cell_writes_text_and_grows_only_its_row() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r0, r1, c0) = (t.rows[0].id.clone(), t.rows[1].id.clone(), t.cols[0].id.clone());
+        set(&mut d, &id, &r0, &c0, "Lundi", Some(61.0)).expect("texte");
+        let t = view(&d, &id);
+        assert_eq!((t.cells.len(), t.cells[0].text.as_str(), t.rows[0].height), (1, "Lundi", 64.0));
+        let c = set(&mut d, &id, &r0, &c0, "Lundi et un long texte", Some(150.0)).expect("plus haut");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let t = view(&d, &id);
+        assert_eq!((t.rows[0].height, t.rows[1].height), (150.0, 64.0));
+        let w = writes(&d);
+        let v = d.version();
+        assert_eq!(set(&mut d, &id, &r0, &c0, "Lundi et un long texte", Some(100.0)).expect("inchangé").version, v);
+        assert_eq!(set(&mut d, &id, &r1, &c0, "", None).expect("vide").version, v);
+        assert_eq!(w.since(), 0, "aucune transaction sans effet (D38)");
+        assert!(d.undo());
+        let t = view(&d, &id);
+        assert_eq!((t.cells[0].text.as_str(), t.rows[0].height), ("Lundi", 64.0));
+    }
+
+    #[test]
+    fn set_cell_keeps_its_unknown_keys() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        set(&mut d, &id, &r, &c, "Lundi", None).expect("texte");
+        {
+            let mut txn = d.transact_local();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            let Some(Out::YMap(cells)) = e.get(&txn, "cells") else { panic!("cells") };
+            let Some(Out::YMap(cell)) = cells.get(&txn, &cell_key(&r, &c)) else { panic!("cellule") };
+            cell.insert(&mut txn, "shade", In::Any(Any::Bool(true)));
+        }
+        set(&mut d, &id, &r, &c, "Lundi soir", None).expect("texte");
+        assert_eq!(view(&d, &id).cells[0].text, "Lundi soir");
+        let txn = d.read();
+        let e = d.find_element(&txn, &id).expect("élément").element;
+        let Some(Out::YMap(cells)) = e.get(&txn, "cells") else { panic!("cells") };
+        let Some(Out::YMap(cell)) = cells.get(&txn, &cell_key(&r, &c)) else { panic!("cellule") };
+        assert!(matches!(cell.get(&txn, "shade"), Some(Out::Any(Any::Bool(true)))), "clé C10b gardée");
+        assert!(matches!(cell.get(&txn, "text"), Some(Out::YText(_))));
+    }
+
+    #[test]
+    fn set_cell_refuses_unknown_line_and_non_table() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (row, col) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        let p = d.page_ids()[0].clone();
+        let s = d
+            .apply(Command::CommitStroke {
+                page: p,
+                points: vec![10.0, 10.0, 0.5, 20.0, 20.0, 0.5],
+                style: StrokeStyle { color: "#000000".into(), width: 4.0 },
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        assert_eq!(set(&mut d, &id, "absente", &col, "x", None), Err(CommandError::BadTable));
+        assert_eq!(set(&mut d, &id, &row, "absente", "x", None), Err(CommandError::BadTable));
+        assert_eq!(set(&mut d, &id, &row, &col, "x", Some(0.0)), Err(CommandError::BadTable));
+        assert_eq!(set(&mut d, &s, &row, &col, "x", None), Err(CommandError::UnknownElement(s.clone())));
+        assert_eq!(
+            set(&mut d, "nulle-part", &row, &col, "x", None),
+            Err(CommandError::UnknownElement("nulle-part".into()))
+        );
+    }
+
+    #[test]
+    fn insert_line_copies_its_neighbour_and_respects_bounds() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r0, c0) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        set(&mut d, &id, &r0, &c0, "haut", Some(150.0)).expect("haut");
+        let ins = |d: &mut Document, axis: TableAxis, at: u32| {
+            d.apply(Command::InsertTableLine { id: id.clone(), axis, at })
+        };
+        assert_eq!(ins(&mut d, TableAxis::Row, 0).expect("en tête").ids, vec![id.clone()]);
+        let t = view(&d, &id);
+        assert_eq!(t.rows.iter().map(|r| r.height).collect::<Vec<_>>(), vec![150.0, 150.0, 64.0]);
+        assert_eq!(t.rows[1].id, r0);
+        ins(&mut d, TableAxis::Col, 2).expect("à droite");
+        let t = view(&d, &id);
+        assert_eq!(t.cols.iter().map(|c| c.width).collect::<Vec<_>>(), vec![240.0, 240.0, 240.0]);
+        assert_eq!(t.cells.len(), 1, "les cellules suivent leurs ids");
+        assert_eq!(ins(&mut d, TableAxis::Row, 4), Err(CommandError::BadTable));
+        let full = add(&mut d, 1, 64);
+        assert_eq!(
+            d.apply(Command::InsertTableLine { id: full, axis: TableAxis::Row, at: 64 }),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    #[test]
+    fn remove_line_drops_its_cells_and_keeps_the_last_one() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        for r in &t.rows {
+            for c in &t.cols {
+                set(&mut d, &id, &r.id, &c.id, &format!("{}{}", r.id, c.id), None).expect("texte");
+            }
+        }
+        let rm = |d: &mut Document, axis: TableAxis, line: &str| {
+            d.apply(Command::RemoveTableLine { id: id.clone(), axis, line: line.into() })
+        };
+        rm(&mut d, TableAxis::Row, &t.rows[0].id).expect("ligne");
+        let v = view(&d, &id);
+        assert_eq!((v.rows.len(), v.cells.len()), (1, 2));
+        assert!(v.cells.iter().all(|c| c.row == t.rows[1].id));
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            let Some(Out::YMap(cells)) = e.get(&txn, "cells") else { panic!("cells") };
+            assert_eq!(cells.len(&txn), 2, "clés de la ligne retirée effacées");
+        }
+        assert_eq!(rm(&mut d, TableAxis::Row, &t.rows[1].id), Err(CommandError::BadTable));
+        assert_eq!(rm(&mut d, TableAxis::Col, "absente"), Err(CommandError::BadTable));
+        rm(&mut d, TableAxis::Col, &t.cols[1].id).expect("colonne");
+        assert_eq!(view(&d, &id).cells.len(), 1);
+        assert!(d.undo());
+        assert_eq!(view(&d, &id).cols.len(), 2);
+    }
+
+    #[test]
+    fn set_sizes_uniforms_and_skips_when_uniform() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 3, 2);
+        let t = view(&d, &id);
+        set(&mut d, &id, &t.rows[0].id, &t.cols[0].id, "x", Some(150.0)).expect("haut");
+        d.apply(Command::SetTableSizes { id: id.clone(), col_width: 200.0, row_height: 107.0 }).expect("uniforme");
+        let v = view(&d, &id);
+        assert!(v.cols.iter().all(|c| c.width == 200.0) && v.rows.iter().all(|r| r.height == 107.0));
+        let w = writes(&d);
+        let ver = d.version();
+        assert_eq!(
+            d.apply(Command::SetTableSizes { id: id.clone(), col_width: 200.0, row_height: 107.0 })
+                .expect("même")
+                .version,
+            ver
+        );
+        assert_eq!(w.since(), 0);
+        assert_eq!(
+            d.apply(Command::SetTableSizes { id, col_width: 0.0, row_height: 64.0 }),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    #[test]
+    fn set_fill_sets_skips_and_clears() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[1].id.clone(), t.cols[1].id.clone());
+        let fill = |d: &mut Document, f: Option<&str>| {
+            d.apply(Command::SetTableFill {
+                id: id.clone(),
+                row: r.clone(),
+                col: c.clone(),
+                fill: f.map(str::to_string),
+            })
+        };
+        fill(&mut d, Some("#fef08a")).expect("jaune");
+        assert_eq!(
+            view(&d, &id).cells,
+            vec![TableCellView { row: r.clone(), col: c.clone(), text: String::new(), fill: Some("#fef08a".into()) }]
+        );
+        let w = writes(&d);
+        let v = d.version();
+        assert_eq!(fill(&mut d, Some("#fef08a")).expect("même").version, v);
+        assert_eq!(w.since(), 0);
+        fill(&mut d, None).expect("aucun");
+        assert!(view(&d, &id).cells.is_empty());
+        assert_eq!(fill(&mut d, Some("pas une couleur !")), Err(CommandError::BadTable));
+    }
+
+    /// S3 : enregistrer, recharger, réenregistrer : mêmes octets, même vue (patron `grid_reload_keeps_bytes`).
+    #[test]
+    fn table_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-20T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let id = add(&mut d, 4, 3);
+        let t = view(&d, &id);
+        for (i, r) in t.rows.iter().enumerate() {
+            for (j, c) in t.cols.iter().enumerate() {
+                set(&mut d, &id, &r.id, &c.id, &format!("L{i}C{j}"), None).expect("texte");
+            }
+        }
+        d.apply(Command::SetTableFill {
+            id: id.clone(),
+            row: t.rows[0].id.clone(),
+            col: t.cols[0].id.clone(),
+            fill: Some("#bbf7d0".into()),
+        })
+        .expect("vert");
+        d.apply(Command::InsertTableLine { id: id.clone(), axis: TableAxis::Col, at: 4 }).expect("colonne");
+        let want = view(&d, &id);
+        let file = save(&load(&save(&d, &meta).expect("save")).expect("load"), &meta).expect("resave");
+        for i in 0..30 {
+            let r = load(&file).expect("load");
+            assert_eq!(view(&r, &id), want, "vue au rechargement {i}");
+            assert!(save(&r, &meta).expect("resave") == file, "fichier différent au rechargement {i}");
+        }
+    }
+
+    #[test]
+    fn one_command_is_one_undo_step() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let before = view(&d, &id);
+        d.apply(Command::InsertTableLine { id: id.clone(), axis: TableAxis::Row, at: 2 }).expect("ligne");
+        let after = view(&d, &id);
+        assert!(d.undo());
+        assert_eq!(view(&d, &id), before);
+        assert!(d.redo());
+        assert_eq!(view(&d, &id), after);
+    }
 }
