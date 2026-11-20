@@ -137,4 +137,22 @@ describe("Toolbar", () => {
       if (f.endsWith(".tsx")) expect(src, f).not.toMatch(/\d+px/);
     }
   });
+
+  it("zone de dépôt : un dépôt ne remonte pas à document (une seule insertion, R29)", () => {
+    const zone: ToolItem = { id: "zone", kind: "dropzone", label: "Déposer", requires: [], rest: {} };
+    const { container, host } = setup(mkBar([zone]));
+    const onDoc = vi.fn();
+    document.addEventListener("drop", onDoc);
+    try {
+      const ev = new Event("drop", { bubbles: true, cancelable: true }) as Event & { dataTransfer: unknown; clientX: number; clientY: number };
+      ev.dataTransfer = { files: [new File(["x"], "a.png")], dropEffect: "" };
+      ev.clientX = 3;
+      ev.clientY = 4;
+      container.querySelector(".rb-drop")!.dispatchEvent(ev);
+      expect(host.dropFiles).toHaveBeenCalledTimes(1);
+      expect(onDoc).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("drop", onDoc);
+    }
+  });
 });

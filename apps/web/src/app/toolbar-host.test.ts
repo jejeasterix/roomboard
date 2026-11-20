@@ -89,4 +89,10 @@ describe("ToolbarHost local", () => {
     host.dropFiles(files, { x: 1, y: 2 });
     expect(t.importFiles).toHaveBeenCalledWith(files, { x: 1, y: 2 });
   });
+
+  it('runAction("file-import") → runFile("import") (R18)', () => {
+    const { host, t } = setup();
+    host.runAction("file-import");
+    expect(t.runFile).toHaveBeenCalledWith("import");
+  });
 });
