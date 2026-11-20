@@ -2,10 +2,9 @@
 
 Statut : en cours
 Gabarit : chantier
-Avancement : 4/9 tâches terminées
+Avancement : 9/9 tâches terminées
 Objectif : Le document RoomBoard sait porter des images et un fond de page (assets dans le `.roomboard`, élément image, `backdrop`, `kind` inconnu toléré), côté cœur Rust, liaison Wasm et stockage `AssetStore` de la page, sans interface, fusionné dans `main` avant C7 et C9.
-Étage : 3 (vague 2) — depuis 2026-11-20 02:45
-Tâche : T5 (vague 1), T6, T7 (vague 2) — depuis 2026-11-20 02:45
+Étage : 3 (fin du lot : double relecture, 4 relecteurs) — depuis 2026-11-20 03:00
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c2-coeur   Branche : feat/usage-c2-coeur   Base : origin/main @ cacd2e3 (rebasée à 02:35 : lot 5b fusionné, PR #7)
 Branche principale locale au lancement : d71eda3
@@ -15,6 +14,7 @@ Brief : OD36 (ouvrier CLI, nuit, Jérôme dort : choix tranchés seuls et écrit
 
 ## Référence
 Rapide (worktree neuf) : —
+Tête a08f026 (9 tâches) : verifier.sh OK, web 810 tests, module Wasm 1 480 131 o (/tmp/c2-verifier-a08f026.log)
 Complète (origin/main d71eda3, verifier.sh) : OK (/tmp/usage-c2-ref.log)
 
 ## Compteurs
@@ -27,11 +27,11 @@ contre-relecture cadrage 1/2 (1 bloquant, 6 importants, corrigés 2fa434b) · re
 | T2 format parts | — | --T2 | terminée | 1/3 | b159dad | format:: 23 ok, newer_format_version_without_document_is_newer |
 | T3 asset, image, inconnu | — | --T3 | terminée | 1/3 | f86ba10 | roomboard-core 163+14 ok, element_inconnu 4 |
 | T4 AssetStore | — | --T4 | terminée | 1/3 | 438777b | asset-store 7 ok |
-| T5 contrat TS, fausse liaison | — | --T5 | en cours | 1/3 | — | — |
-| T6 cœur assets, image, fond | T1,T3 | --T6 | en cours | 1/3 | — | — |
-| T7 crate roomboard-formats | T1,T2,T3 | --T7 | en cours | 1/3 | — | — |
-| T8 liaison Wasm, wasm-core.ts | T2,T5,T6 | — | à venir | 0/3 | — | — |
-| T9 scénarios conteneur | T6,T7 | — | à venir | 0/3 | — | — |
+| T5 contrat TS, fausse liaison | — | --T5 | terminée | 1/3 | ecc9a5f | web 766 ok (fake), bloc contrat C2 |
+| T6 cœur assets, image, fond | T1,T3 | --T6 | terminée | 1/3 | ab6c6c2 | workspace 0 échec, undo_add_image…, set_backdrop_scales_to_page_width |
+| T7 crate roomboard-formats | T1,T2,T3 | --T7 | terminée | 1/3 | 8fba14d | formats 14, socle_fixture_hash_is_pinned, sha2 absent du wasm |
+| T8 liaison Wasm, wasm-core.ts | T2,T5,T6 | --T8 | terminée | 1/3 | 1a641d9 | agent : web 810 avec wasm, module 1 480 131 o ; rejeu = verifier.sh |
+| T9 scénarios conteneur | T6,T7 | --T9 | terminée | 1/3 | 615c591 | scenarios 4 + 1 ignoré (essai réel 11 images OK) |
 Plan : 9 tâches, 3 vagues (T1-T5 · T6,T7 · T8,T9).
 
 ## Terminé quand
