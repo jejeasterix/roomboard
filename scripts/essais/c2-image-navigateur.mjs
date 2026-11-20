@@ -6,12 +6,12 @@
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/c2-image-navigateur.mjs [--captures]
 // (--captures : docs/essais/c2-image-deposee.png).
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync, inflateRawSync } from "node:zlib";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageMouse, coqueCsp } from "./commun.mjs";
 
 const LABEL = "C2 image";
 const LATER = "format pris en charge dans une prochaine version";
@@ -20,13 +20,6 @@ const W = 200;
 const H = 150;
 /** Point de dépôt de `dropFile` (commun.mjs:143) : 50 px à droite et en dessous du coin de #stage. */
 const DROP = [50, 50];
-
-/** CSP de la coque (tauri.conf.json), envoyée telle quelle (même lecture que fichiers-navigateur.mjs). */
-function coqueCsp() {
-  const conf = JSON.parse(readFileSync(join(ROOT, "apps", "desktop", "src-tauri", "tauri.conf.json"), "utf8"));
-  const csp = conf.app.security.csp;
-  return Object.entries(csp).map(([d, v]) => `${d} ${Array.isArray(v) ? v.join(" ") : v}`).join("; ");
-}
 
 const CRC = Array.from({ length: 256 }, (_, n) => {
   let c = n;
