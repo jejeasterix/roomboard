@@ -1335,4 +1335,129 @@ pub(crate) mod tests {
         assert!(d.redo());
         assert_eq!(view(&d, &id), after);
     }
+
+    /// Patron écarté : borner chaque entrée en f32 (`col_width` = 1e37 y tient) laisse passer une largeur totale de
+    /// 6,4e38 > `f32::MAX` (polygone infini, tableau non touchable) ; la garde des formes (`fits_f32`) vaut pour x, y
+    /// et les sommes des largeurs et des hauteurs.
+    #[test]
+    fn add_table_refuses_geometry_beyond_f32() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let cmd = |[x, y]: [f64; 2], [cols, rows]: [u32; 2], [col_width, row_height]: [f64; 2]| {
+            Command::AddTable {
+                page: p.clone(),
+                x,
+                y,
+                cols,
+                rows,
+                col_width,
+                row_height,
+                color: "#000000".into(),
+                size: 36.0,
+            }
+        };
+        let w = writes(&d);
+        for c in [
+            cmd([0.0, 0.0], [64, 1], [1e37, 64.0]),
+            cmd([0.0, 0.0], [1, 64], [240.0, 1e37]),
+            cmd([1e39, 0.0], [2, 2], [240.0, 64.0]),
+            cmd([0.0, -1e39], [2, 2], [240.0, 64.0]),
+            cmd([0.0, 0.0], [1, 1], [1e39, 64.0]),
+        ] {
+            assert_eq!(d.apply(c), Err(CommandError::BadTable));
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert!(!d.can_undo());
+        assert!(
+            d.apply(cmd([0.0, 0.0], [64, 64], [1e36, 1e36])).is_ok(),
+            "6,4e37 tient en f32"
+        );
+    }
+
+    #[test]
+    fn set_sizes_refuses_a_total_beyond_f32() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 64, 2);
+        let before = view(&d, &id);
+        let w = writes(&d);
+        for (col_width, row_height) in [(1e37, 64.0), (240.0, 2e38)] {
+            assert_eq!(
+                d.apply(Command::SetTableSizes {
+                    id: id.clone(),
+                    col_width,
+                    row_height
+                }),
+                Err(CommandError::BadTable)
+            );
+        }
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert_eq!(view(&d, &id), before);
+        d.apply(Command::SetTableSizes {
+            id: id.clone(),
+            col_width: 1e36,
+            row_height: 1e38,
+        })
+        .expect("6,4e37 et 2e38 tiennent en f32");
+    }
+
+    #[test]
+    fn set_cell_refuses_a_row_growth_beyond_f32() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r0, r1, c0) = (
+            t.rows[0].id.clone(),
+            t.rows[1].id.clone(),
+            t.cols[0].id.clone(),
+        );
+        set(&mut d, &id, &r0, &c0, "haut", Some(2e38)).expect("2e38 + 64 tient en f32");
+        let before = view(&d, &id);
+        let w = writes(&d);
+        assert_eq!(
+            set(&mut d, &id, &r1, &c0, "trop", Some(2e38)),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(w.since(), 0, "aucune transaction sur un refus");
+        assert_eq!(view(&d, &id), before);
+    }
+
+    /// Clé `"<row>:<col>"` : un id contenant `:` la rendrait ambiguë (`r:1` + `c` = `r` + `1:c`) ; une telle ligne est
+    /// illisible comme les autres (sautée, gardée) et, s'il n'en reste aucune, le tableau se lit « inconnu ».
+    #[test]
+    fn line_ids_with_a_colon_are_unreadable() {
+        let cells = MapPrelim::from([
+            ("r1:c:1", cell(In::from(TextPrelim::new("A")), vec![])),
+            ("r1:c2", cell(In::from(TextPrelim::new("B")), vec![])),
+        ]);
+        let d = doc_with(table_prelim(
+            vec![line("c:1", "width", 240.0), line("c2", "width", 100.0)],
+            vec![line("r1", "height", 64.0)],
+            cells,
+            vec![],
+        ));
+        let t = d.element("t1").and_then(|v| v.table).expect("tableau");
+        assert_eq!(
+            t.cols,
+            vec![TableColView {
+                id: "c2".into(),
+                width: 100.0
+            }]
+        );
+        assert_eq!(
+            t.cells.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+            vec!["B"]
+        );
+        let d = doc_with(table_prelim(
+            vec![line("c1", "width", 240.0)],
+            vec![line("r:1", "height", 64.0)],
+            MapPrelim::default(),
+            vec![],
+        ));
+        let v = d.element("t1").expect("jamais invisible");
+        assert_eq!(v.kind, "unknown");
+        assert_eq!(
+            v.unknown.map(|u| u.source_kind),
+            Some("table".to_string())
+        );
+    }
 }
