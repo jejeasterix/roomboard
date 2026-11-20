@@ -18,6 +18,7 @@ const base: EngineState = {
   version: 0,
   error: null,
   tableCell: null,
+  textFormat: null,
 };
 
 describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
