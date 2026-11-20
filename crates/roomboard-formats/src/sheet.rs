@@ -526,6 +526,9 @@ mod tests {
             (1.0 / 3.0, "0,333333333333333"),
             (-2.5, "-2,5"),
             (1e20, "100000000000000000000"),
+            (123_456_789_012_345_680.0, "123456789012346000"),
+            (-123_456_789_012_345_680.0, "-123456789012346000"),
+            (1_234_567_890_123_456.75, "1234567890123460"),
             (0.0, "0"),
             (123_456_789.123_456, "123456789,123456"),
         ] {
@@ -670,6 +673,67 @@ mod tests {
         let e = read_first_sheet(&bytes).expect_err("bombe");
         assert_eq!(e, SheetError::TooBig);
         assert_eq!(e.to_string(), TOO_BIG);
+    }
+
+    /// Classeur dont `_rels/.rels` désigne `data/workbook.xml` (chemin non standard, suivi par `calamine`), avec ses
+    /// chaînes partagées dans `data/sharedStrings.xml`, écrites telles quelles (`Stored`).
+    fn relocated(shared_body: &[u8]) -> Vec<u8> {
+        let mut w = ZipWriter::new(Cursor::new(Vec::new()));
+        let o = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        let mut put = |name: &str, body: &[u8]| {
+            w.start_file(name, o).expect("entrée");
+            w.write_all(body).expect("écriture");
+        };
+        put(
+            "[Content_Types].xml",
+            br#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/></Types>"#,
+        );
+        put(
+            "_rels/.rels",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{PKG}"><Relationship Id="rId1" Type="{REL}/officeDocument" Target="data/workbook.xml"/></Relationships>"#
+            )
+            .as_bytes(),
+        );
+        put(
+            "data/workbook.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="{NS}" xmlns:r="{REL}"><sheets><sheet name="F" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+            )
+            .as_bytes(),
+        );
+        put(
+            "data/_rels/workbook.xml.rels",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{PKG}"><Relationship Id="rId1" Type="{REL}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rIdT" Type="{REL}/sharedStrings" Target="sharedStrings.xml"/></Relationships>"#
+            )
+            .as_bytes(),
+        );
+        put(
+            "data/worksheets/sheet1.xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="{NS}"><sheetData>{}</sheetData></worksheet>"#,
+                row(1, &[shared("A1", 0)])
+            )
+            .as_bytes(),
+        );
+        put("data/sharedStrings.xml", shared_body);
+        w.finish().expect("fin").into_inner()
+    }
+
+    /// F22, PC3 (constat T13) : la garde ne lit pas les noms des parties ; `calamine` suit `_rels/.rels` jusqu'à
+    /// `data/`, où une partie de 64 Mio + 1 déclarés est refusée comme sous `xl/`.
+    #[test]
+    fn zip_bomb_under_a_non_standard_path_is_refused() {
+        let small = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><sst xmlns="{NS}" count="1" uniqueCount="1"><si><t>déplacé</t></si></sst>"#
+        );
+        let s = read_first_sheet(&relocated(small.as_bytes())).expect("chemin non standard suivi");
+        assert_eq!(s.cells, vec!["déplacé"]);
+        let mut big = small.into_bytes();
+        big.resize(MAX_PART_BYTES as usize + 1, b' ');
+        let e = read_first_sheet(&relocated(&big)).expect_err("bombe sous data/");
+        assert_eq!(e, SheetError::TooBig);
     }
 
     /// DAB4, S4 : en-tête ZIP puis octets corrompus : `Unreadable`, jamais de panique en natif.
