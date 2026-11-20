@@ -104,4 +104,11 @@ node -e 'const f=require("fs"); const c=JSON.parse(f.readFileSync(process.argv[1
 refuse 15 "$tmp/propre" "$tmp/sans-portee.json" "scopeDroppedPaths"
 refuse 16 "$tmp/propre" "$tmp/portee-vraie.json" "scopeDroppedPaths"
 
+# 17-18. dépôt coupé sur la fenêtre main (le dépôt passe par la coque, CL5b-13) : label "main" → 1 ; label absent
+# (Tauri le nomme "main") → 1
+node -e 'const f=require("fs"); const c=JSON.parse(f.readFileSync(process.argv[1])); c.app.windows=[{label:"main",dragDropEnabled:false}]; f.writeFileSync(process.argv[2], JSON.stringify(c))' "$tmp/bonne.json" "$tmp/depot-coupe.json"
+node -e 'const f=require("fs"); const c=JSON.parse(f.readFileSync(process.argv[1])); c.app.windows=[{title:"RoomBoard",dragDropEnabled:false}]; f.writeFileSync(process.argv[2], JSON.stringify(c))' "$tmp/bonne.json" "$tmp/depot-coupe-implicite.json"
+refuse 17 "$tmp/propre" "$tmp/depot-coupe.json" "dragDropEnabled"
+refuse 18 "$tmp/propre" "$tmp/depot-coupe-implicite.json" "dragDropEnabled"
+
 echo "controle-hors-ligne.test.sh : $cas cas OK"

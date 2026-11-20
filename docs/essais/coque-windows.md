@@ -54,3 +54,19 @@ trait non enregistré : Edge demande.
 Pour chaque geste : conforme / écart (une ligne). Captures : `coque-windows-lot5a-question.png` (geste 6),
 `coque-windows-lot5a-rouvert.png` (geste 8). Version de WebView2 (`edge://version` dans Edge, ou les paramètres
 Windows) et modèle du stylet.
+
+## 6. Lot 5b — dépôt, association, fichier au lancement
+Seulement si le lot 5b est fusionné (onglets). Préparer `essai-5a.roomboard` (§ 3, geste 3) et un dossier
+`Documents\depot-5b` qui contient une copie `copie.roomboard`. L'association n'existe qu'une fois installé : lancer
+l'installeur de `apps\desktop\src-tauri\target\release\bundle\` (msi ou nsis).
+
+| # | geste | attendu |
+|---|---|---|
+| 5b-1 | tracer un trait, puis déposer `essai-5a.roomboard` depuis l'Explorateur sur la fenêtre | un nouvel onglet s'ouvre avec les traits du fichier ; l'onglet d'origine garde son trait |
+| 5b-2 | déposer le dossier `depot-5b` | rien ne s'ouvre, aucun onglet neuf ; aucun fichier du dossier n'est lu (la coque n'accorde jamais un dossier) |
+| 5b-3 | déposer une image (`.png`) | message « format pris en charge dans une prochaine version » ; aucun onglet neuf |
+| 5b-4 | RoomBoard fermé, double-clic sur `essai-5a.roomboard` dans l'Explorateur | RoomBoard démarre et ouvre le fichier dans un onglet ; l'icône du fichier est « Document RoomBoard » |
+| 5b-5 | PowerShell : `& "$env:LOCALAPPDATA\Programs\RoomBoard\roomboard-desktop.exe" "$env:USERPROFILE\Documents\essai-5a.roomboard"` (adapter le chemin d'installation) | même chose que 5b-4 (fichier passé au lancement) |
+| 5b-6 | Alt+F4 avec un onglet modifié | comme au lot 5a (question) ; Windows ne garde rien de plus à la sortie |
+
+Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-windows-lot5b-depot.png` (geste 5b-1).

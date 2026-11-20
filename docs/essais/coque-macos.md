@@ -57,3 +57,24 @@ Safari : le repli s'applique. Cmd+S télécharge `Sans titre.roomboard` dans Té
 Pour chaque geste : conforme / écart (une ligne). Captures : `coque-macos-lot5a-question.png` (geste 6),
 `coque-macos-lot5a-rouvert.png` (geste 8). Version de macOS (menu Pomme > À propos de ce Mac) et de Safari/WebKit
 (Safari > À propos de Safari), version de Chrome (`chrome://version`), et le dispositif de pointage (souris ou pavé tactile).
+
+## 6. Lot 5b — dépôt, association, fichier au lancement, Cmd+Q
+Seulement si le lot 5b est fusionné (onglets). Préparer `essai-5a.roomboard` (§ 3, geste 3) et un dossier
+`~/Documents/depot-5b` qui contient une copie `copie.roomboard`. L'association n'existe qu'une fois l'application
+copiée dans Applications : `cp -R apps/desktop/src-tauri/target/release/bundle/macos/RoomBoard.app /Applications/`,
+puis la lancer une fois par le Finder.
+
+| # | geste | attendu |
+|---|---|---|
+| 5b-1 | tracer un trait, puis déposer `essai-5a.roomboard` depuis le Finder sur la fenêtre | un nouvel onglet s'ouvre avec les traits du fichier ; l'onglet d'origine garde son trait |
+| 5b-2 | déposer le dossier `depot-5b` | rien ne s'ouvre, aucun onglet neuf ; aucun fichier du dossier n'est lu (la coque n'accorde jamais un dossier) |
+| 5b-3 | déposer une image (`.png`) | message « format pris en charge dans une prochaine version » ; aucun onglet neuf |
+| 5b-4 | RoomBoard quitté, double-clic sur `essai-5a.roomboard` dans le Finder | RoomBoard démarre et ouvre le fichier dans un onglet (Finder : « Ouvrir avec » propose RoomBoard) |
+| 5b-5 | RoomBoard ouvert, double-clic sur `copie.roomboard` | le fichier s'ouvre dans un nouvel onglet de la même fenêtre |
+| 5b-6 | tracer un trait (onglet modifié), Cmd+Q | question avant de quitter ; « Annuler » : l'application reste, le trait aussi |
+| 5b-7 | Cmd+Q de nouveau, confirmer | l'application quitte |
+| 5b-8 | relancer, ne rien modifier, Cmd+Q | l'application quitte sans question |
+| 5b-9 | fermer la fenêtre par le bouton rouge (document propre), puis Cmd+Q si l'application reste dans le Dock | l'application quitte sans question (sans fenêtre, la sortie n'est pas retenue) ; noter si elle reste dans le Dock |
+
+Le geste 5b-6 remplace l'« attendu connu » du geste 7b (lot 5a). Rapporter chaque geste : conforme / écart (une ligne).
+Captures : `coque-macos-lot5b-depot.png` (geste 5b-1), `coque-macos-lot5b-cmdq.png` (geste 5b-6).

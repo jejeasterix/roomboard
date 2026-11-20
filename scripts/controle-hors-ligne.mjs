@@ -3,6 +3,7 @@
 // (1) Aucun nom d'hôte distant dans le dist de l'application (html, js, css, json, svg ; le .wasm est exclu : binaire,
 //     il ne charge rien lui-même). (2) CSP de la coque en objet : default-src 'self', script-src avec
 //     'wasm-unsafe-eval' et sans 'unsafe-inline', aucune source distante, aucun joker ni schéma nu, pas d'unsafe-eval.
+// (3) Dépôts hors de la portée fs (scopeDroppedPaths: false) et dépôt gardé sur la fenêtre main (dragDropEnabled).
 // Usage : node scripts/controle-hors-ligne.mjs <dossier dist> <tauri.conf.json>   (0 : OK ; 1 : écart)
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, relative } from "node:path";
@@ -96,6 +97,18 @@ export function checkFsScope(conf) {
   return ["plugins.fs.scopeDroppedPaths doit valoir false (un dossier déposé entrerait dans la portée fs de la page)"];
 }
 
+/**
+ * Le dépôt passe par la coque (lot 5b, CL5b-13) : elle accorde les fichiers déposés sur la fenêtre `main`, puis les
+ * annonce à la page. `dragDropEnabled: false` sur cette fenêtre couperait l'entrée des fichiers. Une fenêtre sans
+ * `label` est nommée `main` par Tauri.
+ */
+export function checkDragDrop(conf) {
+  const windows = Array.isArray(conf?.app?.windows) ? conf.app.windows : [];
+  return windows
+    .filter((w) => (w?.label ?? "main") === "main" && w?.dragDropEnabled === false)
+    .map(() => "app.windows[main].dragDropEnabled doit valoir true (le dépôt des fichiers passe par la coque)");
+}
+
 function main(argv) {
   const [dist, confPath] = argv;
   if (!dist || !confPath) {
@@ -104,12 +117,12 @@ function main(argv) {
   }
   const { errors, scanned } = checkDist(dist);
   const conf = JSON.parse(readFileSync(confPath, "utf8"));
-  errors.push(...checkCsp(conf), ...checkFsScope(conf));
+  errors.push(...checkCsp(conf), ...checkFsScope(conf), ...checkDragDrop(conf));
   if (errors.length > 0) {
     for (const e of errors) console.error(`controle-hors-ligne : ${e}`);
     return 1;
   }
-  console.log(`controle-hors-ligne : OK (${scanned} fichiers sans hôte distant, CSP stricte, dépôts hors de la portée fs)`);
+  console.log(`controle-hors-ligne : OK (${scanned} fichiers sans hôte distant, CSP stricte, dépôts hors de la portée fs, dépôt sur main)`);
   return 0;
 }
 
