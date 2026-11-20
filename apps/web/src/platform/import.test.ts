@@ -280,7 +280,7 @@ describe("import d'un objet .rbitem (Z10)", () => {
 
   it("nom en .rbitem sans en-tête ZIP : refusé, jamais lu en entier", async () => {
     const calls: Array<[Uint8Array, unknown, number]> = [];
-    const blob = vi.fn(async () => new Blob([1]));
+    const blob = vi.fn(async () => new Blob([new Uint8Array([1])]));
     const f: DroppedFile = { name: "x.rbitem", size: 4, mime: "", head: async () => new Uint8Array([1, 2, 3, 4]), blob };
     const r = await createImporter(deps(targetWith(calls))).importFiles([f]);
     expect(r.refused).toEqual(["x.rbitem"]);
