@@ -31,6 +31,7 @@ export function createAssetStore(hash: AssetHasher = webCryptoHasher): AssetStor
   return {
     async put(blob) {
       const id = await hash(blob);
+      if (!isAssetId(id)) throw new Error(`empreinte d'asset invalide : ${id}`);
       keep(id, blob);
       return id;
     },

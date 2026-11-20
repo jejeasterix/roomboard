@@ -687,7 +687,7 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     const msg = (page: string, asset: typeof png, w: number): string =>
       messageOf(() => d.apply({ type: "AddImage", page, asset, w, h: 1, matrix: I }));
     unchanged(d, () => {
-      expect(msg(p, { ...png, id: ABC.toUpperCase() }, 0)).toBe(BAD_ASSET);
+      expect(msg(p, { ...png, id: ABC.toUpperCase() } as unknown as typeof png, 0)).toBe(BAD_ASSET);
       expect(msg("nulle-part", png, 0)).toBe(BAD_IMAGE);
     });
     expect(d.citedAssets()).toEqual([]);

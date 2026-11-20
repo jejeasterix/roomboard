@@ -50,6 +50,8 @@ interface FakeElement {
   readonly text?: TextData;
   readonly image?: ImageData;
   readonly unknown?: FakeUnknown;
+  /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
+  readonly malformed?: Readonly<Record<string, unknown>>;
 }
 type RawRecord = Readonly<Record<string, unknown>>;
 interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null }
@@ -397,11 +399,11 @@ class FakeDocument implements CoreDocument {
       case "Transform": {
         const m = cmd.matrix;
         if (!validMatrix(m)) throw new Error(MESSAGES.badMatrix);
-        // Un inconnu sans transform lisible est ignoré, comme tout élément sans transform lisible (`commands.rs:458-497`).
+        // Un inconnu sans transform lisible est ignoré, comme tout élément sans transform lisible (`cmd_transform`, `crates/roomboard-core/src/commands.rs`).
         const ids = [...new Set(cmd.ids)]
           .filter((id) => {
             const found = this.find(id);
-            return found !== undefined && found.element.unknown?.hasTransform !== false;
+            return found !== undefined && found.element.unknown?.hasTransform !== false && found.element.malformed === undefined;
           })
           .sort();
         if (ids.length === 0 || isIdentity(m)) return this.unchanged();
@@ -458,7 +460,7 @@ class FakeDocument implements CoreDocument {
 
   element(id: string): ElementView | null {
     const e = this.find(id)?.element;
-    if (!e) return null;
+    if (!e || e.malformed) return null;
     const base = { id, transform: e.transform };
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...unknownBox(e.unknown.raw) } };
     if (e.image) return { ...base, kind: "image", image: e.image };
@@ -587,6 +589,7 @@ interface SavedElement {
 interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown }
 
 function savedElement(e: FakeElement): SavedElement {
+  if (e.malformed) return { id: e.id, ...e.malformed } as SavedElement;
   if (e.unknown) {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw } };
   }
@@ -614,6 +617,14 @@ function loadElement(e: SavedElement): FakeElement {
       ...(t === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
     };
     return { id: e.id, transform: t ?? IDENTITY, style: NO_STYLE, unknown };
+  }
+  if (e.kind === "image") {
+    const im: unknown = e.image;
+    const ok = isRecord(im) && isAssetId(im["asset"]) && finitePositive(im["w"]) && finitePositive(im["h"]);
+    if (!ok) {
+      const { id: _id, ...rest } = e;
+      return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, malformed: rest };
+    }
   }
   if (e.kind === "image" && e.image) return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image: e.image };
   return {
