@@ -2,8 +2,10 @@
 //! chargé par la page au premier besoin, R10) et première feuille d'un `.xlsx` (`sheet::read_first_sheet`, C10b, lue
 //! dans un Worker jetable, DAB4). Chaque fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en
 //! natif (hors wasm32, tout appel à JS panique).
+//! C5 (U30, I17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
 use roomboard_core::format::Parts;
 use roomboard_formats::container::{self, AssetBytes};
+use roomboard_formats::pixels::{self, Transparent};
 use wasm_bindgen::prelude::*;
 
 /// Fichier lu : manifeste, `document.ybin`, assets triés par empreinte, avertissements en français (K11).
@@ -107,6 +109,77 @@ pub fn write_container(
     bytes: &[u8],
 ) -> Result<Vec<u8>, JsError> {
     write_container_inner(manifest, ybin, &ids, &mimes, &sizes, bytes).map_err(|m| JsError::new(&m))
+}
+
+/// Couleur rendue transparente (C5, I17) : `px` RGBA modifié sur place ; le message d'erreur est le `Display` de
+/// `PixelError`.
+pub fn image_transparent_inner(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    t: &Transparent,
+) -> Result<(), String> {
+    pixels::transparent_color(px, w, h, t).map_err(|e| e.to_string())
+}
+
+pub fn image_adjust_inner(px: &mut [u8], brightness: i8, contrast: i8) {
+    pixels::adjust(px, brightness, contrast);
+}
+
+pub fn image_flood_fill_inner(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    seed: (u32, u32),
+    tolerance: u8,
+    rgb: [u8; 3],
+) -> Result<(), String> {
+    pixels::flood_fill(px, w, h, seed, tolerance, rgb).map_err(|e| e.to_string())
+}
+
+/// C5 (I17) : sans état ; `px` revient modifié côté JS (copie rendue par wasm-bindgen).
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn image_transparent(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    tolerance: u8,
+    soft: u8,
+    contiguous: bool,
+) -> Result<(), JsError> {
+    let t = Transparent {
+        rgb: [r, g, b],
+        tolerance,
+        soft,
+        contiguous,
+    };
+    image_transparent_inner(px, w, h, &t).map_err(|m| JsError::new(&m))
+}
+
+#[wasm_bindgen]
+pub fn image_adjust(px: &mut [u8], brightness: i8, contrast: i8) {
+    image_adjust_inner(px, brightness, contrast);
+}
+
+/// Pot sur pixels (prêt pour C6b) ; aucun appelant en C5.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn image_flood_fill(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    x: u32,
+    y: u32,
+    tolerance: u8,
+    r: u8,
+    g: u8,
+    b: u8,
+) -> Result<(), JsError> {
+    image_flood_fill_inner(px, w, h, (x, y), tolerance, [r, g, b]).map_err(|m| JsError::new(&m))
 }
 
 /// Première feuille d'un classeur (C10b, F23) : grille de textes, fusions en quadruplets, dimensions de la source.

@@ -22,7 +22,10 @@ impl std::fmt::Display for PixelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PixelError::BadSize => {
-                write!(f, "pixels incohérents (4 × largeur × hauteur octets attendus)")
+                write!(
+                    f,
+                    "pixels incohérents (4 × largeur × hauteur octets attendus)"
+                )
             }
         }
     }
@@ -52,7 +55,14 @@ fn gap100(p: &[u8], rgb: [u8; 3]) -> u32 {
 /// Pixels joints (4-connexes, comme ActCraft `imagefill.cpp:40-42`) aux départs `starts` dont l'écart à `target` reste
 /// ≤ `limit` (échelle 0 à 200) ; un départ hors de l'image ou trop loin de `target` est ignoré. Partagé par
 /// `flood_fill` (un départ, couleur de la graine) et le mode contigu (départs du bord, couleur choisie).
-fn flood_region(px: &[u8], w: u32, h: u32, starts: &[(u32, u32)], target: [u8; 3], limit: u8) -> Vec<bool> {
+fn flood_region(
+    px: &[u8],
+    w: u32,
+    h: u32,
+    starts: &[(u32, u32)],
+    target: [u8; 3],
+    limit: u8,
+) -> Vec<bool> {
     let (w, h) = (w as usize, h as usize);
     let max = u32::from(limit) * 255;
     let near = |i: usize| gap100(&px[4 * i..4 * i + 4], target) <= max;
@@ -138,7 +148,7 @@ pub fn transparent_color(px: &mut [u8], w: u32, h: u32, t: &Transparent) -> Resu
     let mask = t
         .contiguous
         .then(|| flood_region(px, w, h, &border(w, h), t.rgb, limit));
-    for (i, p) in px.chunks_exact_mut(4).enumerate() {
+    for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         if mask.as_ref().is_some_and(|m| !m[i]) {
             continue;
         }
@@ -153,11 +163,15 @@ pub fn adjust(px: &mut [u8], brightness: i8, contrast: i8) {
         return;
     }
     let k = 1.0 + f64::from(contrast) / 100.0;
-    let b = f64::from(brightness) * 2.55;
+    let b = f64::from(brightness) * 255.0 / 100.0; // exact : 50 × 2,55 flottant donnerait 127,4999…
     let lut: Vec<u8> = (0..=255u8)
-        .map(|v| ((f64::from(v) - 128.0) * k + 128.0 + b).round().clamp(0.0, 255.0) as u8)
+        .map(|v| {
+            ((f64::from(v) - 128.0) * k + 128.0 + b)
+                .round()
+                .clamp(0.0, 255.0) as u8
+        })
         .collect();
-    for p in px.chunks_exact_mut(4) {
+    for p in px.as_chunks_mut::<4>().0 {
         for c in &mut p[..3] {
             *c = lut[usize::from(*c)];
         }
@@ -181,7 +195,7 @@ pub fn flood_fill(
     let i = 4 * (seed.1 as usize * w as usize + seed.0 as usize);
     let target = [px[i], px[i + 1], px[i + 2]];
     let mask = flood_region(px, w, h, &[seed], target, tolerance);
-    for (p, on) in px.chunks_exact_mut(4).zip(mask) {
+    for (p, on) in px.as_chunks_mut::<4>().0.iter_mut().zip(mask) {
         if on {
             p[..3].copy_from_slice(&rgb);
         }
@@ -199,7 +213,9 @@ mod tests {
     /// Image `w × h` fabriquée par `at(x, y)`.
     fn img(w: u32, h: u32, at: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
         let at = &at;
-        (0..h).flat_map(|y| (0..w).flat_map(move |x| at(x, y))).collect()
+        (0..h)
+            .flat_map(|y| (0..w).flat_map(move |x| at(x, y)))
+            .collect()
     }
 
     fn px(v: &[u8], w: u32, x: u32, y: u32) -> [u8; 4] {
@@ -250,7 +266,11 @@ mod tests {
 
     #[test]
     fn contiguous_reaches_both_halves_cut_by_a_bar_touching_two_borders() {
-        let mut v = img(20, 20, |x, _| if (9..11).contains(&x) { RED } else { WHITE });
+        let mut v = img(
+            20,
+            20,
+            |x, _| if (9..11).contains(&x) { RED } else { WHITE },
+        );
         transparent_color(&mut v, 20, 20, &white(10, 0, true)).expect("calcul");
         assert_eq!(px(&v, 20, 2, 10)[3], 0, "moitié gauche");
         assert_eq!(px(&v, 20, 17, 10)[3], 0, "moitié droite");
@@ -266,13 +286,23 @@ mod tests {
         });
         transparent_color(&mut v, 3, 1, &white(10, 20, false)).expect("calcul");
         assert_eq!(px(&v, 3, 0, 0)[3], 0);
-        assert_eq!(px(&v, 3, 1, 0)[3], 73, "écart 40 : 255 × (4000 − 2550) / 5100, arrondi");
+        assert_eq!(
+            px(&v, 3, 1, 0)[3],
+            73,
+            "écart 40 : 255 × (4000 − 2550) / 5100, arrondi"
+        );
         assert_eq!(px(&v, 3, 2, 0)[3], 255);
     }
 
     #[test]
     fn tolerance_is_per_channel() {
-        let mut v = img(2, 1, |x, _| if x == 0 { [255, 255, 230, 255] } else { [255, 255, 229, 255] });
+        let mut v = img(2, 1, |x, _| {
+            if x == 0 {
+                [255, 255, 230, 255]
+            } else {
+                [255, 255, 229, 255]
+            }
+        });
         transparent_color(&mut v, 2, 1, &white(10, 0, false)).expect("calcul");
         assert_eq!(px(&v, 2, 0, 0)[3], 0, "écart 25 : 2500 ≤ 2550");
         assert_eq!(px(&v, 2, 1, 0)[3], 255, "écart 26 : 2600 > 2550");
@@ -290,10 +320,18 @@ mod tests {
     fn adjust_brightness_and_contrast_formula_keeps_alpha() {
         let mut v = vec![100, 128, 0, 77];
         adjust(&mut v, 50, 0);
-        assert_eq!(v, vec![228, 255, 128, 77], "100 + 127,5 arrondi ; 128 + 127,5 borné ; alpha gardé");
+        assert_eq!(
+            v,
+            vec![228, 255, 128, 77],
+            "100 + 127,5 arrondi ; 128 + 127,5 borné ; alpha gardé"
+        );
         let mut v = vec![100, 128, 255, 9];
         adjust(&mut v, 0, 50);
-        assert_eq!(v, vec![86, 128, 255, 9], "(100 − 128) × 1,5 + 128 ; 128 fixe ; 255 borné");
+        assert_eq!(
+            v,
+            vec![86, 128, 255, 9],
+            "(100 − 128) × 1,5 + 128 ; 128 fixe ; 255 borné"
+        );
     }
 
     #[test]
@@ -308,8 +346,16 @@ mod tests {
             }
         });
         flood_fill(&mut v, 20, 20, (0, 0), 5, [255, 0, 0]).expect("calcul");
-        assert_eq!(px(&v, 20, 0, 0), [255, 0, 0, 200], "fond rougi, alpha gardé");
-        assert_eq!(px(&v, 20, 10, 10), [255, 255, 255, 200], "intérieur enfermé inchangé");
+        assert_eq!(
+            px(&v, 20, 0, 0),
+            [255, 0, 0, 200],
+            "fond rougi, alpha gardé"
+        );
+        assert_eq!(
+            px(&v, 20, 10, 10),
+            [255, 255, 255, 200],
+            "intérieur enfermé inchangé"
+        );
         assert_eq!(px(&v, 20, 5, 10), RED);
     }
 
@@ -324,8 +370,14 @@ mod tests {
     #[test]
     fn bad_size_is_refused() {
         let mut v = vec![0u8; 3];
-        assert_eq!(transparent_color(&mut v, 1, 1, &white(10, 0, false)), Err(PixelError::BadSize));
-        assert_eq!(flood_fill(&mut v, 1, 1, (0, 0), 5, [0, 0, 0]), Err(PixelError::BadSize));
+        assert_eq!(
+            transparent_color(&mut v, 1, 1, &white(10, 0, false)),
+            Err(PixelError::BadSize)
+        );
+        assert_eq!(
+            flood_fill(&mut v, 1, 1, (0, 0), 5, [0, 0, 0]),
+            Err(PixelError::BadSize)
+        );
         assert_eq!(
             PixelError::BadSize.to_string(),
             "pixels incohérents (4 × largeur × hauteur octets attendus)"
