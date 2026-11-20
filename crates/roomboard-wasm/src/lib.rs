@@ -224,11 +224,13 @@ fn read_patch<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<TextAttr>, C
     let slots = d
         .deserialize_map(PatchVisitor)
         .map_err(|_| CommandError::BadFormat)?;
-    PATCH_KEYS
-        .iter()
-        .zip(slots)
-        .filter_map(|(k, v)| v.map(|v| wire_attr(k, v)))
-        .collect()
+    let mut attrs = Vec::new();
+    for (k, v) in PATCH_KEYS.iter().zip(slots) {
+        if let Some(v) = v {
+            attrs.push(wire_attr(k, v)?);
+        }
+    }
+    Ok(attrs)
 }
 
 /// Document exposé à JavaScript.
