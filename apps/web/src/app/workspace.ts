@@ -199,7 +199,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     textStyle: () => t.board.engine.textStyle(),
     run: (cmd) => t.board.engine.run(cmd),
     // Z10 : le `.rbitem` déposé s'insère dans cet onglet ; refus déjà dit par `fragments`.
-    insertFragment: (rbitem, at) => fragments.insert(t, rbitem, "objet", at),
+    insertFragment: (rbitem, at, index, name) => fragments.insert(t, rbitem, baseName(name), at, index),
   });
 
   async function addTab(
@@ -326,7 +326,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       return clipboard.put(bytes).then(
         async (where) => {
           if (where === "internal") await say(INTERNAL_ONLY_MESSAGE);
-          if (cut && !released.has(tab)) tab.board.engine.run({ type: "Delete", ids });
+          if (cut && !released.has(tab)) tab.board.engine.deleteElements(ids);
         },
         async (e: unknown) => {
           if (e instanceof Error && e.message === "sélection vide") return; // l'avis (images absentes) est déjà dit
@@ -339,8 +339,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(items === "newer" ? NEWER_ITEMS_MESSAGE : TOO_BIG_ITEMS_MESSAGE);
         return true;
       }
-      await fragments.insert(ws.active(), items, PASTE_NAME, null);
-      return true; // pris : inséré, ou refusé avec avis (PC1)
+      return (await fragments.insertOutcome(ws.active(), items, PASTE_NAME, null)) !== "empty"; // pris : inséré, ou refusé avec avis (PC1) ; objet vide : avis, non pris
     },
     async pasteInternal() {
       const last = clipboard.last();
@@ -350,7 +349,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const files = deps.itemFiles;
       if (files === undefined) return false;
       try {
-        const bytes = await fragments.encodeSelection(ws.active());
+        const bytes = await fragments.encodeSelection(ws.active(), "export");
         return bytes === null ? false : await files.save(`${SELECTION_NAME}${RBITEM_EXTENSION}`, bytes);
       } catch (e) {
         await say(`Export impossible : ${messageOf(e)}`);
@@ -358,6 +357,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
     },
     async insertPages() {
+      const tab = ws.active(); // onglet montré à l'appel (R3) : la boîte d'ouverture peut durer
       let file: OpenedFile | null;
       try {
         file = await host.open();
@@ -366,15 +366,18 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       }
       if (file === null) return false;
-      return fragments.insertPages(ws.active(), { ...file, name: baseName(file.name) });
+      return fragments.insertPages(tab, { ...file, name: baseName(file.name) });
     },
     selection(a) {
       const engine = ws.active().board.engine;
-      if (a === "group") engine.group();
-      else if (a === "ungroup") engine.ungroup();
-      else if (a === "copy") void ws.copySelection(false);
-      else if (a === "paste") void ws.pasteInternal();
-      else void ws.exportSelection();
+      const actions: Record<SelectionAction, () => void> = {
+        group: () => void engine.group(),
+        ungroup: () => void engine.ungroup(),
+        copy: () => void ws.copySelection(false),
+        paste: () => void ws.pasteInternal(),
+        export: () => void ws.exportSelection(),
+      };
+      actions[a]();
     },
     canPaste: () => clipboard.last() !== null,
     onClipboard: (cb) => clipboard.onChange(cb),

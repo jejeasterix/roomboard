@@ -18,7 +18,7 @@ export interface FileType {
 export const RBITEM_TYPE: FileType = {
   extension: RBITEM_EXTENSION,
   mime: RBITEM_MIME,
-  filter: { name: "Objet RoomBoard", extensions: ["rbitem"] },
+  filter: { name: "Objet RoomBoard", extensions: [RBITEM_EXTENSION.slice(1)] },
   accept: `${RBITEM_EXTENSION},${RBITEM_MIME}`,
 };
 

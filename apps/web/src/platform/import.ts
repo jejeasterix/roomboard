@@ -72,8 +72,13 @@ export interface ImportHandler {
   run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
 }
 
+/** Nom qui se termine par `ext` (minuscules, point compris) et ne s'y réduit pas. */
+function hasExtension(name: string, ext: string): boolean {
+  return name.toLowerCase().endsWith(ext) && name.length > ext.length;
+}
+
 export function isRoomboardName(name: string): boolean {
-  return name.toLowerCase().endsWith(ROOMBOARD_EXTENSION) && name.length > ROOMBOARD_EXTENSION.length;
+  return hasExtension(name, ROOMBOARD_EXTENSION);
 }
 
 function roomboardHandler(deps: ImportDeps): ImportHandler {
@@ -96,10 +101,12 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
 
 /** En-tête d'un ZIP (`PK\x03\x04`) : un `.rbitem` (Z10) comme un `.xlsx` (F28) est un ZIP ; chacun est reconnu par son
  *  nom ET cet en-tête, le nom seul les départage. */
-export const ZIP_MAGIC: Uint8Array = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+export const ZIP_MAGIC: readonly number[] = Object.freeze([0x50, 0x4b, 0x03, 0x04]);
+
+const hasZipMagic = (head: Uint8Array): boolean => head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b);
 
 export function isRbitemName(name: string): boolean {
-  return name.toLowerCase().endsWith(RBITEM_EXTENSION) && name.length > RBITEM_EXTENSION.length;
+  return hasExtension(name, RBITEM_EXTENSION);
 }
 
 /** Entrée `rbitem` (objet, Z10) : remis à l'onglet lu au début de l'appel (R3), au rang de cascade de l'appel. */
@@ -107,7 +114,7 @@ export function rbitemHandler(): ImportHandler {
   return {
     id: "rbitem",
     nature: "objet",
-    detect: (head, name) => isRbitemName(name) && head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b),
+    detect: (head, name) => isRbitemName(name) && hasZipMagic(head),
     async run(f, ctx) {
       const insert = ctx.target?.insertFragment?.bind(ctx.target);
       if (insert === undefined) {
@@ -116,7 +123,7 @@ export function rbitemHandler(): ImportHandler {
       }
       try {
         const bytes = new Uint8Array(await ctx.blob.arrayBuffer());
-        return (await insert(bytes, ctx.at, ctx.inserted)) ? "inserted" : "failed";
+        return (await insert(bytes, ctx.at, ctx.inserted, f.name)) ? "inserted" : "failed";
       } catch (e) {
         await ctx.notify(`Import impossible (${f.name}) : ${messageOf(e)}`);
         return "failed";
@@ -129,8 +136,7 @@ export function rbitemHandler(): ImportHandler {
 export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
 
 export function isSheetName(name: string): boolean {
-  const n = name.toLowerCase();
-  return (n.endsWith(".xlsx") || n.endsWith(".xlsm")) && n.length > 5;
+  return hasExtension(name, ".xlsx") || hasExtension(name, ".xlsm");
 }
 
 /** Entrée `sheet` du registre (F28) : nom `.xlsx` / `.xlsm` et en-tête ZIP ; une `ImportTable` dans l'onglet actif. */
@@ -138,7 +144,7 @@ export function sheetHandler(deps: { readSheet(file: Blob): Promise<TableGrid> }
   return {
     id: "sheet",
     nature: "objet",
-    detect: (head, name) => isSheetName(name) && ZIP_MAGIC.every((b, i) => head[i] === b),
+    detect: (head, name) => isSheetName(name) && hasZipMagic(head),
     limit: { maxBytes: SHEET_MAX_BYTES, message: SHEET_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       const target = ctx.target;

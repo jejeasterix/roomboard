@@ -15,6 +15,8 @@ export const TOO_BIG_ITEMS_MESSAGE = "objets copiés trop gros (plus de 100 Mo)"
 export const INTERNAL_ONLY_MESSAGE = "copié dans RoomBoard seulement";
 export type ItemsRefusal = "newer" | "too-big";
 
+/** Caractères admis au-delà du base64 du plafond (clés JSON, espaces). */
+const ENVELOPE_SLACK = 1024;
 const CHUNK = 0x8000;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -45,6 +47,8 @@ export function toEnvelope(rbitem: Uint8Array): string {
 export function fromEnvelope(text: string, max: number = MAX_ITEMS_BYTES): Uint8Array | ItemsRefusal | null {
   const t = text.trimStart();
   if (!t.startsWith("{") || !t.includes(`"${FORMAT_PREFIX}`)) return null;
+  // Plafond contrôlé sur la longueur du texte avant `JSON.parse` : base64 des octets permis + de quoi porter l'enveloppe.
+  if (t.length > Math.ceil(max / 3) * 4 + ENVELOPE_SLACK) return "too-big";
   let v: unknown;
   try {
     v = JSON.parse(t);
@@ -104,6 +108,8 @@ export interface Clipboard {
 
 export function createClipboard(sys: SystemClipboard | null): Clipboard {
   let last: Uint8Array | null = null;
+  let issued = 0; // rang de la dernière copie lancée
+  let applied = 0; // rang de la dernière copie retenue : une copie plus ancienne qui se résout après est ignorée
   const listeners = new Set<() => void>();
   return {
     put(rbitem) {
@@ -115,9 +121,13 @@ export function createClipboard(sys: SystemClipboard | null): Clipboard {
               () => "system" as const,
               () => "internal" as const,
             );
+      const rank = ++issued;
       return rbitem.then(async (bytes) => {
-        last = bytes;
-        for (const cb of [...listeners]) cb();
+        if (rank > applied) {
+          applied = rank;
+          last = bytes;
+          for (const cb of [...listeners]) cb();
+        }
         return system;
       });
     },

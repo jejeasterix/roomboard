@@ -706,6 +706,17 @@ describe("createEngine", () => {
     expect([...engine.state().selection].sort()).toEqual([a, b].sort());
   });
 
+  it("deleteElements (Couper) : comme Suppr, Ctrl+Z resélectionne les éléments rendus", () => {
+    const { engine, rect, sel } = editSetup();
+    const a = rect(100, 100, 200, 200);
+    const b = rect(400, 100, 500, 200);
+    sel().setSelection([a, b]);
+    engine.deleteElements([a, b]);
+    expect(engine.state().selection).toEqual([]);
+    engine.undo();
+    expect([...engine.state().selection].sort()).toEqual([a, b].sort());
+  });
+
   it("Ctrl+Z après Suppr puis un autre geste : pas de resélection", () => {
     const { engine, rect, sel } = editSetup();
     const a = rect(100, 100, 200, 200);
@@ -1234,6 +1245,34 @@ describe("moteur — C3", () => {
     expect(doc.elementIds(page)).toHaveLength(2);
     engine.undo();
     expect(doc.elementIds(page)).toHaveLength(1);
+  });
+  it("insertFragment : l'écriture de l'outil quitté (texte ouvert validé) passe avant l'insertion, Annuler retire l'insertion", () => {
+    const doc = fakeCore.blank();
+    let armed = false;
+    const tools: ToolFactories = {
+      pen: (ctx) => ({
+        ...fakeTool("pen", [], ctx),
+        leave: () => {
+          if (!armed) return;
+          armed = false;
+          ctx.run({ type: "AddShape", page: ctx.page(), shape: "rect", x0: 500, y0: 500, x1: 510, y1: 510, style: PEN, fill: null });
+        },
+      }),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => createSelectTool(ctx),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    const page = engine.state().page;
+    const s = fakeCore.blank();
+    const sp = s.pageIds()[0]!;
+    const x = s.apply({ type: "AddShape", page: sp, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: PEN, fill: null }).ids[0]!;
+    engine.setTool("pen");
+    armed = true; // à la sortie de l'outil, il écrit (comme un texte ouvert qu'on valide)
+    const c = engine.insertFragment(s.extract(sp, [x]), 24, 24);
+    expect(doc.elementIds(page)).toHaveLength(2);
+    engine.undo();
+    expect(doc.elementIds(page)).toHaveLength(1); // l'insertion est annulée, pas l'écriture de l'outil
+    expect(doc.elementIds(page)).not.toContain(c?.ids[0]);
   });
   it("insertFragment refusé : null, erreur dans l'état, outil inchangé", () => {
     const { engine } = c3();

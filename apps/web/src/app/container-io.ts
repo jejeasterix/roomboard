@@ -13,6 +13,14 @@ import { messageOf } from "../platform/controller";
 /** Repli R7 : le module du conteneur ne s'est pas chargé, le document s'ouvre par le cœur seul. */
 export const CODEC_FALLBACK_MESSAGE = "images non lues : le module des images ne s'est pas chargé";
 
+/** Fragment refusé parce qu'une image citée n'est pas dans le magasin (seule erreur que la copie dit « images absentes »). */
+export class MissingAssetError extends Error {
+  constructor() {
+    super("fragment impossible : une image citée est absente du magasin");
+    this.name = "MissingAssetError";
+  }
+}
+
 export type EncodeAs = { readonly kind: "document" } | { readonly kind: "fragment"; readonly name: string };
 export type ReadKind = "document" | "fragment";
 export interface ReadResult {
@@ -47,7 +55,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
       }
       const { present, missing } = assets.pick(cited.map((a) => a.id));
       if (as.kind === "fragment" && missing.length > 0) {
-        throw new Error("fragment impossible : une image citée est absente du magasin");
+        throw new MissingAssetError();
       }
       const [manifest, ybin] = as.kind === "document" ? doc.saveParts(now, appVersion) : doc.saveFragmentParts(now, appVersion, as.name);
       const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
@@ -71,7 +79,8 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
           return null;
         }
         const unread = doc.citedAssets().length > 0;
-        if (unread) await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
+        // Un fragment non lu est refusé par l'appelant (`fragments`) avec son propre avis : un seul avis, pas deux.
+        if (unread && kind === "document") await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
         return { doc, assets, unread };
       }
       let doc: CoreDocument;

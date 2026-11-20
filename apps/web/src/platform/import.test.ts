@@ -260,9 +260,10 @@ describe("import d'un objet .rbitem (Z10)", () => {
   const deps = (t: ImageTarget | null, extra: Partial<Parameters<typeof createImporter>[0]> = {}) => ({
     openDocument: vi.fn(async () => true), notify: vi.fn(async (_m: string) => undefined), target: () => t, ...extra,
   });
+  const names: string[] = [];
   const targetWith = (calls: Array<[Uint8Array, unknown, number]>, ok = true): ImageTarget => ({
     ...fakeTarget().target,
-    insertFragment: async (b, at, i) => (calls.push([b, at, i]), ok),
+    insertFragment: async (b, at, i, name) => (calls.push([b, at, i]), names.push(name), ok),
   });
 
   it("reconnu par le nom ET l'en-tête ZIP : isRbitemName, ZIP_MAGIC", () => {
@@ -313,6 +314,12 @@ describe("import d'un objet .rbitem (Z10)", () => {
     const calls: Array<[Uint8Array, unknown, number]> = [];
     await createImporter(deps(targetWith(calls))).importFiles([file("a.rbitem", zip), file("b.rbitem", zip), file("c.rbitem", zip)]);
     expect(calls.map((c) => c[2])).toEqual([0, 1, 2]);
+  });
+
+  it("le nom du fichier est transmis à la cible", async () => {
+    names.length = 0;
+    await createImporter(deps(targetWith([]))).importFiles([file("a.rbitem", zip), file("b.rbitem", zip)]);
+    expect(names).toEqual(["a.rbitem", "b.rbitem"]);
   });
 
   it("sans onglet ou sans insertFragment : échec signalé, rien n'est inséré", async () => {

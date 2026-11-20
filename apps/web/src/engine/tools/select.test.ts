@@ -355,6 +355,18 @@ describe("révélation d'un ombrage (F10)", () => {
     expect(s.tool.selection()).toEqual([id]);
   });
 
+  it("C3 : glisser depuis une cellule ombrée d'un tableau groupé déplace le groupe entier", () => {
+    const s = setup();
+    const { id } = shadedTable(s);
+    const r = s.rect(700, 100, 760, 160);
+    s.doc.apply({ type: "Group", ids: [id, r] });
+    gesture(s.tool, [[150, 130], [190, 130]]);
+    expect([...s.tool.selection()].sort()).toEqual([id, r].sort());
+    const t = s.runs.at(-1);
+    expect(t?.type).toBe("Transform");
+    expect(t?.type === "Transform" ? [...t.ids].sort() : []).toEqual([id, r].sort());
+  });
+
   it("F10 : une forme au-dessus de la cellule ombrée : la forme est sélectionnée, rien de révélé", () => {
     const s = setup();
     const { id } = shadedTable(s);

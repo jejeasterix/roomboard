@@ -5,7 +5,7 @@
 import {
   ensureExtension,
   hasErrorName,
-  IMPORT_EXTENSIONS,
+  IMAGE_EXTENSIONS,
   IMPORT_FILTER,
   RBITEM_EXTENSION,
   RBITEM_MIME,
@@ -40,7 +40,7 @@ export const IMPORT_TYPES: readonly PickerType[] = [
     accept: {
       [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION],
       [RBITEM_MIME]: [RBITEM_EXTENSION],
-      "image/*": IMPORT_EXTENSIONS.filter((e) => e !== "roomboard" && e !== "rbitem").map((e) => `.${e}`),
+      "image/*": IMAGE_EXTENSIONS.map((e) => `.${e}`),
     },
   },
 ];

@@ -25,7 +25,7 @@ import {
   translateMatrix,
   type HandleId,
 } from "./handles";
-import { expandToGroups, keepWholeGroups, type GroupedView } from "../groups";
+import { expandToGroups, keepWholeGroups, viewsOf, type GroupedView } from "../groups";
 import { cellContent, tableAt } from "../table-geom";
 import type { LivePart, SelectionTool, ToolContext } from "./tool";
 
@@ -59,6 +59,8 @@ interface Drag {
 }
 
 const NONE: ReadonlySet<string> = new Set<string>();
+/** `a` suivi des éléments de `b` qui n'y sont pas. */
+const union = (a: readonly string[], b: readonly string[]): string[] => [...a, ...b.filter((id) => !a.includes(id))];
 const norm = (ax: number, ay: number, bx: number, by: number): Bounds => ({
   x0: Math.min(ax, bx),
   y0: Math.min(ay, by),
@@ -94,11 +96,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
   const moved = (d: Drag): boolean => Math.hypot(d.x - d.x0, d.y - d.y0) * d.zoom >= DRAG_THRESHOLD_PX;
 
   /** Vues de la page montrée (C3, Z2), lues au geste, jamais gardées. */
-  const pageViews = (): GroupedView[] =>
-    ctx.doc.elementIds(ctx.page()).flatMap((id) => {
-      const v = ctx.doc.element(id);
-      return v === null ? [] : [v];
-    });
+  const pageViews = (): GroupedView[] => viewsOf(ctx.doc, ctx.doc.elementIds(ctx.page()));
 
   /**
    * Déplacement du glisser (C9, G7, G8) : aimanté depuis le déplacement brut, à chaque image et au relâché (l'aperçu
@@ -173,7 +171,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
         if (shift) {
           selection = selection.includes(hit)
             ? selection.filter((id) => !unit.includes(id))
-            : [...selection, ...unit.filter((id) => !selection.includes(id))];
+            : union(selection, unit);
           startDrag(pointerId, "none", x, y);
           return;
         }
@@ -193,7 +191,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       // F10 : au-delà de 8 px écran, le toucher devient un déplacement depuis le point d'appui.
       if (drag.mode === "tap-shade" && Math.hypot(x - drag.x0, y - drag.y0) * drag.zoom >= REVEAL_TAP_PX) {
         const id = drag.reveal?.id;
-        if (id !== undefined && !selection.includes(id)) selection = [id];
+        if (id !== undefined && !selection.includes(id)) selection = expandToGroups([id], pageViews());
         drag.mode = "move";
       }
     },
@@ -212,7 +210,7 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       }
       if (d.mode === "band") {
         const ids = keepWholeGroups(ctx.doc.idsInRect(ctx.page(), norm(d.x0, d.y0, d.x, d.y)), pageViews());
-        selection = d.shift ? [...selection, ...ids.filter((id) => !selection.includes(id))] : ids;
+        selection = d.shift ? union(selection, ids) : ids;
         return;
       }
       if (d.mode === "none" || selection.length === 0) return;

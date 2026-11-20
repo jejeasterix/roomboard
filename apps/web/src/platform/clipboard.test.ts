@@ -14,6 +14,13 @@ describe("enveloppe (U9, Z8)", () => {
     expect(fromEnvelope(toEnvelope(big))).toEqual(big);
     expect(fromBase64(toBase64(bytes()))).toEqual(bytes());
   });
+  it("texte plus long que le plafond : refusé avant JSON.parse", () => {
+    const spy = vi.spyOn(JSON, "parse");
+    const text = `{"format":"roomboard-items/1","rbitem":"${"A".repeat(20_000)}"}`;
+    expect(fromEnvelope(text, 100)).toBe("too-big");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
   it("texte ordinaire, JSON d'un autre format, base64 invalide : null", () => {
     for (const t of ["bonjour", "", "{}", '{"format":"autre/1","rbitem":"AQID"}', '{"format":"roomboard-items/1","rbitem":"@@@"}', '{"format":"roomboard-items/1"}', "[1,2]"]) {
       expect(fromEnvelope(t), t).toBeNull();
@@ -63,6 +70,20 @@ describe("presse-papiers (Z8)", () => {
     const cb = createClipboard(null);
     await expect(cb.put(Promise.reject(new Error("vide")))).rejects.toThrow("vide");
     expect(cb.last()).toBeNull();
+  });
+  it("deux copies : la première, résolue après la seconde, est ignorée (une seule notification)", async () => {
+    const cb = createClipboard(null);
+    const seen = vi.fn();
+    cb.onChange(seen);
+    let first!: (b: Uint8Array) => void;
+    const slow = new Promise<Uint8Array>((r) => { first = r; });
+    const p1 = cb.put(slow);
+    const p2 = cb.put(Promise.resolve(bytes(2)));
+    await p2;
+    first(bytes(1));
+    await p1;
+    expect(cb.last()).toEqual(bytes(2));
+    expect(seen).toHaveBeenCalledTimes(1);
   });
   it("browserSystemClipboard : ClipboardItem text/plain, repli writeText, null sans presse-papiers", async () => {
     const items: unknown[] = [];

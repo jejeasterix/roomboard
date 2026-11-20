@@ -8,7 +8,7 @@ import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeK
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
-import { selectionUnits, type GroupedView } from "./groups";
+import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { editAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
@@ -86,6 +86,8 @@ export interface Engine {
   group(): boolean;
   /** C3 (Z1) : retire le groupe extérieur de la sélection ; faux sans groupe. */
   ungroup(): boolean;
+  /** Supprime `ids` comme Suppr : une étape, sélection vidée, Annuler resélectionne (Couper). */
+  deleteElements(ids: readonly string[]): void;
   /** C3 (Z7) : objets de `src` en haut de la page montrée, translatés ; outil Sélection, sélection = objets insérés. */
   insertFragment(src: CoreDocument, dx: number, dy: number): Change | null;
   /** C3 (Z12) : pages de `src` après la page montrée ; la première insérée est montrée. */
@@ -250,11 +252,7 @@ export function createEngine(deps: EngineDeps): Engine {
   };
 
   /** Vues des éléments sélectionnés (C3) : unités et groupe, sans parcourir toute la page. */
-  const selectedViews = (): GroupedView[] =>
-    selectTool.selection().flatMap((id) => {
-      const v = doc.element(id);
-      return v === null ? [] : [v];
-    });
+  const selectedViews = (): GroupedView[] => viewsOf(doc, selectTool.selection());
 
   function group(): boolean {
     const sel = [...selectTool.selection()];
@@ -504,10 +502,20 @@ export function createEngine(deps: EngineDeps): Engine {
     run,
     group,
     ungroup,
+    deleteElements(ids) {
+      const list = [...ids];
+      run({ type: "Delete", ids: list });
+      lastDeleted = list;
+      selectTool.setSelection([]);
+      requestScene();
+      emit();
+    },
     insertFragment(src, dx, dy) {
+      // Un texte ouvert est validé avant l'insertion : son étape précède celle de l'insertion (Annuler retire l'insertion).
+      if (tool !== "select") leaveAll("tool");
       const change = commit(() => doc.insertFragment(src, pageId, dx, dy), false);
       if (change === null || change.ids.length === 0) return change;
-      engine.setTool("select"); // quitte l'outil courant (texte ouvert validé) avant de poser la sélection
+      engine.setTool("select");
       selectTool.setSelection(change.ids);
       requestScene();
       emit();
@@ -539,14 +547,12 @@ export function createEngine(deps: EngineDeps): Engine {
         if (edit === "escape" && tool === "table" && tableTool.clearRange()) return true;
         const sel = selectTool.selection();
         if (sel.length === 0) return false;
-        const ids = [...sel];
-        if (edit === "delete") {
-          run({ type: "Delete", ids });
-          lastDeleted = ids;
+        if (edit === "delete") engine.deleteElements(sel);
+        else {
+          selectTool.setSelection([]);
+          requestScene();
+          emit();
         }
-        selectTool.setSelection([]);
-        requestScene();
-        emit();
         return true;
       }
       const action = keyAction(e);
