@@ -224,7 +224,7 @@ async function scenario(page, url, { captures, tmp }) {
   await click("text");
   await mouse.click(600, 300);
   await fr();
-  await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
+  await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   await page.keyboard.type("trois");
   await mouse.click(900, 600);
   await fr();
