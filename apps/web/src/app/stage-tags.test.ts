@@ -35,8 +35,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -62,5 +62,14 @@ describe("stageTags (C3)", () => {
   it("units et grouped (PC9)", () => {
     expect(stageTags({ ...base, selection: ["a", "b", "c"], selectionUnits: 1, selectionGrouped: true })).toMatchObject({ units: "1", grouped: "1" });
     expect(stageTags(base)).toMatchObject({ units: "0", grouped: "0" });
+  });
+});
+
+describe("stageTags (C5, I33)", () => {
+  it("pixels et image : vides par défaut ; état des pixels et boîte affichée en pixels source", () => {
+    expect([stageTags(base).pixels, stageTags(base).image]).toEqual(["", ""]);
+    const t = stageTags(base, { pixels: "pret", image: [160, 120] });
+    expect([t.pixels, t.image]).toEqual(["pret", "160x120"]);
+    expect(stageTags(base, { pixels: "echec", image: null }).image).toBe("");
   });
 });
