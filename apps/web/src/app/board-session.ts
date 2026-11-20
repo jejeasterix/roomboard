@@ -6,7 +6,7 @@
  * une fois par l'amorce et vont à la session active : la session ne pose que ses écouteurs de scène. `dispose` rend le
  * contexte WebGL2 (`choice.release()`) : `engine.dispose()` n'arrête que la boucle.
  */
-import type { CoreDocument } from "../core/api";
+import type { CoreDocument, MediaData, MediaElement } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import type { Camera } from "../engine/camera";
@@ -34,6 +34,7 @@ import type { Measure } from "../engine/text-layout";
 import { decodeImage, kindOfMime } from "../platform/image-import";
 import { createPixelRunner, pixelNotice } from "../platform/pixel-runner";
 import type { WorkerLike } from "../platform/sheet-reader";
+import { browserPlayerPorts, createMediaPlayers, mediaTag, type MediaPlaySpec, type MediaPlayState, type MediaPlayers, type PlayerPorts } from "../platform/media-players";
 import { createEraserTool } from "../engine/tools/eraser";
 import { createFillTool } from "../engine/tools/fill";
 import { createPenTool } from "../engine/tools/pen";
@@ -64,6 +65,15 @@ export interface SessionShared {
   readonly pixels?: () => WorkerLike;
   /** C12 (DAPF1) : moteur PDF des fonds `pdf-page` ; absent : fond en « page PDF illisible ». */
   readonly pdf?: PdfEngine;
+  /** C14 (S5) : URL lisible par la page d'un fichier vidéo lié (`convertFileSrc` dans la coque) ; absent : liens illisibles. */
+  readonly mediaUrl?: (path: string) => string;
+  /** C14 : fabrique de lecteurs (tests) ; défaut : un `<video>` dans le conteneur caché de la scène. */
+  readonly createVideo?: PlayerPorts["createVideo"];
+}
+
+/** Réglages de lecture d'un média du document. */
+export function specOf(m: MediaData): MediaPlaySpec {
+  return { asset: m.asset, mediaType: m.mediaType, duration: m.duration, trimStart: m.trimStart, trimEnd: m.trimEnd, loop: m.loop, volume: m.volume };
 }
 
 /** Bitmap d'affichage d'un asset (R13, R15) : le type du Blob (posé à l'insertion ou à l'ouverture) choisit le SVG. */
@@ -80,6 +90,12 @@ export interface BoardSession {
   readonly trail: { readonly status: string };
   /** Mesure du texte partagée (CL4-4), lue par la cible d'import des tableaux (C10b, F21). */
   readonly measure: Measure;
+  /** Lecteurs de média de l'onglet (C14) : un par élément lu, créé au premier geste. */
+  readonly media: MediaPlayers;
+  /** Le seul élément sélectionné, s'il est un média hors groupe ; sinon null. */
+  selectedMedia(): MediaElement | null;
+  /** État du lecteur de l'élément ; sans lecteur, `echec` si sa source est déjà connue illisible (R8, M31), sinon null. */
+  mediaState(id: string): MediaPlayState | null;
   effective(): EffectiveEchelons;
   /** Dépendances de `createAppBench` pour cette session (celles de l'ancien main.ts, à l'identique). */
   bench(): AppBenchDeps;
@@ -173,8 +189,42 @@ async function buildBoardSession(
   };
   undo.push(freeTiles);
   stage.dataset["fond"] = "";
+  // Lecteurs de média (C14) : conteneur caché dans la scène, URL du magasin (blob:) ou du lien (M19, S5).
+  const mediaHost = document.createElement("div");
+  mediaHost.className = "rb-media-host";
+  stage.append(mediaHost);
+  const owned = new Set<string>();
+  const sourceUrl = (asset: string): string | null => {
+    const blob = assets.get(asset);
+    if (blob !== undefined && typeof URL.createObjectURL === "function") {
+      const url = URL.createObjectURL(blob);
+      owned.add(url);
+      return url;
+    }
+    const path = assets.linked(asset);
+    return path !== undefined && shared.mediaUrl !== undefined ? shared.mediaUrl(path) : null;
+  };
+  const releaseUrl = (url: string): void => {
+    if (owned.delete(url)) URL.revokeObjectURL(url);
+  };
+  const basePorts = browserPlayerPorts(mediaHost, async (a) => sourceUrl(a), releaseUrl);
+  const makeVideo = shared.createVideo ?? basePorts.createVideo;
+  const playerPorts: PlayerPorts = {
+    // Image prête (seek en pause, premier chargement) : redessin, sans quoi la scène garde l'ancienne image (note de T5).
+    createVideo() {
+      const el = makeVideo();
+      const target = el.video as unknown as { addEventListener(type: string, cb: () => void): void };
+      for (const type of ["seeked", "loadeddata"]) target.addEventListener(type, () => redraw());
+      return el;
+    },
+    source: async (a) => sourceUrl(a),
+    release: releaseUrl,
+  };
+  const players = createMediaPlayers(playerPorts);
+  undo.push(() => players.dispose());
   const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", {
     images,
+    media: players,
     ...(pdf === undefined ? {} : { backdrop }),
     onBackdrop: (s) => {
       stage.dataset["fond"] = s;
@@ -314,7 +364,76 @@ async function buildBoardSession(
     const el = id ? doc.element(id) : null;
     return el?.kind === "image" ? displaySize(el.image) : null;
   };
+  const selectedMedia = (): MediaElement | null => {
+    const sel = engine.state().selection;
+    const e = sel.length === 1 ? doc.element(sel[0]!) : null;
+    return e !== null && e.kind === "media" && (e.group === undefined || e.group.length === 0) ? e : null;
+  };
+  // R8 (M31) : un média lié sans lecteur est sondé dès sa sélection ; l'erreur du sondage le grise avant tout clic.
+  const failed = new Set<string>();
+  let probe: { readonly asset: string; readonly el: ReturnType<PlayerPorts["createVideo"]> } | null = null;
+  const dropProbe = (): void => {
+    if (probe === null) return;
+    const { el } = probe;
+    probe = null;
+    el.video.pause();
+    el.video.removeAttribute("src");
+    el.video.load();
+    el.remove();
+  };
+  undo.push(dropProbe);
+  const mediaState = (id: string): MediaPlayState | null => {
+    const st = players.state(id);
+    if (st !== null) return st;
+    const e = doc.element(id);
+    return e !== null && e.kind === "media" && failed.has(e.media.asset) ? { status: "echec", time: 0 } : null;
+  };
+  const markMedia = (): void => {
+    const m = selectedMedia();
+    stage.dataset["media"] = mediaTag(m === null ? null : specOf(m.media), m === null ? null : mediaState(m.id));
+  };
+  const probeSelected = (): void => {
+    const m = selectedMedia();
+    if (probe !== null && (m === null || probe.asset !== m.media.asset)) dropProbe();
+    if (m === null || probe !== null || players.state(m.id) !== null || failed.has(m.media.asset) || assets.get(m.media.asset) !== undefined) return;
+    const path = assets.linked(m.media.asset);
+    if (path === undefined || shared.mediaUrl === undefined) {
+      failed.add(m.media.asset);
+      return;
+    }
+    const asset = m.media.asset;
+    const el = playerPorts.createVideo();
+    probe = { asset, el };
+    el.video.preload = "metadata";
+    el.video.crossOrigin = "anonymous";
+    el.video.addEventListener("error", () => {
+      if (probe?.el !== el) return;
+      failed.add(asset);
+      dropProbe();
+      markMedia();
+    });
+    el.video.src = shared.mediaUrl(path);
+  };
+  undo.push(players.onChange(() => {
+    redraw();
+    markMedia();
+  }));
+  let markedPage = engine.state().page;
+  let markedVersion = engine.state().version;
   const mark = (s: EngineState): void => {
+    if (s.page !== markedPage) {
+      markedPage = s.page;
+      markedVersion = s.version;
+      players.clear();
+    } else if (s.version !== markedVersion) {
+      markedVersion = s.version;
+      players.sync((id) => {
+        const e = doc.element(id);
+        return e !== null && e.kind === "media" ? specOf(e.media) : null;
+      });
+    }
+    probeSelected();
+    markMedia();
     stage.dataset["elements"] = String(s.elementCount);
     stage.dataset["version"] = String(s.version);
     const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage) });
@@ -365,6 +484,9 @@ async function buildBoardSession(
     samplerOptions,
     trail,
     measure,
+    media: players,
+    selectedMedia,
+    mediaState,
     effective,
     bench: () => ({
       sampler,
@@ -398,6 +520,7 @@ async function buildBoardSession(
     },
     deactivate() {
       active = false;
+      players.pauseAll();
       stage.hidden = true;
       picker.close();
       for (const el of [stage, sceneCanvas, choice.interaction, editor.element]) el.removeAttribute("id");
@@ -418,6 +541,8 @@ async function buildBoardSession(
       sampler.dispose();
       engine.dispose();
       runner?.dispose();
+      players.dispose();
+      dropProbe();
       images.dispose();
       freeTiles();
       choice.release();

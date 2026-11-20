@@ -7,7 +7,7 @@
  */
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import type { BoardSession } from "../app/board-session";
+import { specOf, type BoardSession } from "../app/board-session";
 import type { ImageData } from "../core/api";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost } from "../app/toolbar-host";
@@ -22,6 +22,7 @@ import { resolveStartMode, visibleItems, type Toolbar as Bar } from "../toolbar"
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { layoutFor } from "./layout";
+import { MediaBar, type MediaControls } from "./MediaBar";
 import { PagesBar } from "./PagesBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
@@ -63,8 +64,11 @@ export function App(props: AppProps): JSX.Element {
     if (focused instanceof HTMLElement && props.stages.contains(focused)) focused.blur();
   };
 
+  // Lecteurs de l'onglet montré (C14) : leurs changements relisent l'état de la barre du média.
+  const [mediaTick, bumpMedia] = createSignal(undefined, { equals: false });
   let shown: TabSession | null = null;
   let stopState: (() => void) | null = null;
+  let stopMedia: (() => void) | null = null;
   const filesWatch = new Map<TabSession, () => void>();
   const follow = (): void => {
     const next = ws.tabs.active()?.session ?? null;
@@ -72,8 +76,10 @@ export function App(props: AppProps): JSX.Element {
       // Onglet changé hors de la barre des onglets (Nouveau, Ouvrir, dépôt, fermeture) : la zone quittée est validée.
       if (shown !== null) leaveEditing();
       stopState?.();
+      stopMedia?.();
       shown = next;
       stopState = next === null ? null : next.board.engine.onState(setState);
+      stopMedia = next === null ? null : next.board.media.onChange(() => bumpMedia());
       if (next !== null) setState(next.board.engine.state());
     }
     const alive = new Set(ws.tabs.list().map((t) => t.session));
@@ -93,6 +99,7 @@ export function App(props: AppProps): JSX.Element {
     stopClipboard();
     stopTabs();
     stopState?.();
+    stopMedia?.();
     for (const off of filesWatch.values()) off();
     filesWatch.clear();
   });
@@ -109,6 +116,40 @@ export function App(props: AppProps): JSX.Element {
     tick();
     state();
     return ws.active().board;
+  };
+
+  /** Média seul sélectionné de l'onglet actif (C14) ; relu à chaque état du moteur et du changement d'onglet. */
+  const selectedMedia = () => {
+    tick();
+    state();
+    return ws.active().board.selectedMedia();
+  };
+  /** Commandes de la barre du média (C14, M22) : toujours sur la session active et le média sélectionné au moment du geste. */
+  const mediaControls: MediaControls = {
+    status: () => {
+      mediaTick();
+      const m = selectedMedia();
+      return m === null ? "poster" : (ws.active().board.mediaState(m.id)?.status ?? "poster");
+    },
+    time: () => {
+      mediaTick();
+      const m = selectedMedia();
+      return m === null ? 0 : (ws.active().board.mediaState(m.id)?.time ?? 0);
+    },
+    toggle: () => {
+      const m = selectedMedia();
+      if (m !== null) void ws.active().board.media.toggle(m.id, specOf(m.media));
+    },
+    seek: (t) => {
+      const m = selectedMedia();
+      if (m !== null) void ws.active().board.media.seek(m.id, t, specOf(m.media));
+    },
+    set: (settings) => {
+      const m = selectedMedia();
+      if (m === null) return "aucun média sélectionné";
+      const b = ws.active().board;
+      return b.engine.run({ type: "SetMedia", id: m.id, ...settings }) === null ? (b.engine.state().error ?? "réglage refusé") : null;
+    },
   };
 
   /** Séance de la grille (E8, CR3) : moteur `b` figé à l'ouverture (jamais `ws.active()` au rappel : chaque onglet a son
@@ -257,6 +298,13 @@ export function App(props: AppProps): JSX.Element {
         <div class="rb-floating">
           <For each={floating()}>{(bar) => barOf(bar)}</For>
         </div>
+      </Show>
+      <Show when={selectedMedia()}>
+        {(m) => (
+          <div class="rb-popover rb-media-bar">
+            <MediaBar media={m().media} controls={mediaControls} />
+          </div>
+        )}
       </Show>
       <Show when={panel() === "settings"}>
         <div class="rb-popover">
