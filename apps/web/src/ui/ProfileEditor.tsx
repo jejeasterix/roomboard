@@ -72,7 +72,7 @@ export const syncValue = (el: HTMLSelectElement, value: () => string): void => {
     el.value = value();
   });
 };
-const pick = <T extends string>(list: readonly T[], v: string): T | undefined => list.find((x) => x === v);
+export const pick = <T extends string>(list: readonly T[], v: string): T | undefined => list.find((x) => x === v);
 const roleLabel = (bar: Toolbar): string => (Object.hasOwn(ROLE_LABELS, bar.role) ? ROLE_LABELS[bar.role]! : `Barre ${bar.id}`);
 const itemName = (it: ToolItem): string => (it.kind === "separator" ? "Séparateur" : it.label || it.id);
 const toolName = (tool: string): string => (Object.hasOwn(TOOL_TABLE, tool) ? TOOL_TABLE[tool]!.label : tool);

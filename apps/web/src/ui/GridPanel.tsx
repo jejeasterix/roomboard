@@ -6,7 +6,7 @@
  * Fermer sans appliquer, second clic sur « Grille », autre panneau, page, onglet ou version changés).
  */
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
-import type { GridKind, GridView } from "../core/api";
+import type { GridView } from "../core/api";
 import {
   colorInputValue,
   draftOf,
@@ -25,7 +25,7 @@ import {
   withSpacing,
   type GridDraft,
 } from "../grid-edit";
-import { syncValue } from "./ProfileEditor";
+import { pick, syncValue } from "./ProfileEditor";
 
 export interface GridPanelProps {
   /** Grille du document à l'ouverture ; le brouillon en est une copie. */
@@ -37,8 +37,6 @@ export interface GridPanelProps {
   cancel(): void;
 }
 
-
-const pickChoice = (v: string): GridKind | "none" | undefined => GRID_CHOICES.find((c) => c === v);
 
 export function GridPanel(props: GridPanelProps): JSX.Element {
   const [draft, setDraft] = createSignal<GridDraft>(draftOf(props.initial));
@@ -63,7 +61,7 @@ export function GridPanel(props: GridPanelProps): JSX.Element {
           data-grille="kind"
           ref={(el) => syncValue(el, () => draft().kind)}
           onChange={(e) => {
-            const k = pickChoice(e.currentTarget.value);
+            const k = pick(GRID_CHOICES, e.currentTarget.value);
             if (k !== undefined) edit(withKind(draft(), k));
           }}
         >

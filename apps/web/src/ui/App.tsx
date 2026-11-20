@@ -118,7 +118,6 @@ export function App(props: AppProps): JSX.Element {
         if (b.engine.run({ type: "SetGrid", page: b.engine.state().page, grid }) === null) {
           return b.engine.state().error ?? "grille refusée";
         }
-        b.engine.endGridPreview();
         setPanel(null);
         return null;
       }}
