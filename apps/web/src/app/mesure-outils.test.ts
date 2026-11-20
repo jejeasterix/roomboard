@@ -58,6 +58,9 @@ describe("watchDpr", () => {
           addEventListener: (_t, cb) => {
             listener = cb;
           },
+          removeEventListener: (_t, cb) => {
+            if (listener === cb) listener = undefined;
+          },
         };
       },
     };
