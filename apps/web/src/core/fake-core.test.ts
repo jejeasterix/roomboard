@@ -537,6 +537,21 @@ describe("fakeCore — C10a (tableau)", () => {
     expect(saveJson(r).pages[0]?.elements[0]?.["kind"]).toBe("table");
   });
 
+  it("JSON : un id de ligne contenant « : » est illisible comme dans le cœur (clé de cellule ambiguë) ; aucune lisible : inconnu", () => {
+    const table = (cols: unknown[]) => ({
+      cols,
+      rows: [{ id: "r1", height: 64 }],
+      cells: { "r1:c:1": { text: "A", fill: null }, "r1:c2": { text: "B", fill: null } },
+    });
+    const load = (cols: unknown[]) =>
+      fakeCore.load(new TextEncoder().encode(JSON.stringify({ pages: [{ id: "p1", elements: [{ id: "t1", kind: "table", transform: [1, 0, 0, 1, 0, 0], table: table(cols) }] }] })));
+    const v = load([{ id: "c:1", width: 240 }, { id: "c2", width: 100 }]).element("t1");
+    if (v?.kind !== "table") throw new Error(`tableau attendu : ${v?.kind ?? "absent"}`);
+    expect(v.table.cols).toEqual([{ id: "c2", width: 100 }]);
+    expect(v.table.cells).toEqual([{ row: "r1", col: "c2", text: "B", fill: null }]);
+    expect(load([{ id: "c:1", width: 240 }]).element("t1")?.kind).toBe("unknown");
+  });
+
   it("JSON : tableau mal formé (aucune ligne) : cadre inconnu 100 × 100, réécrit tel quel", () => {
     const json = { pages: [{ id: "p1", elements: [{ id: "t1", kind: "table", transform: [1, 0, 0, 1, 10, 20], table: { cols: [{ id: "c1", width: 240 }], rows: [], cells: {} } }] }] };
     const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(json)));

@@ -213,6 +213,9 @@ const newId = (): string => `fake-${++counter}`;
 const finitePath = (path: Float32Array): boolean =>
   path.length >= 2 && path.length % 2 === 0 && path.every((v) => Number.isFinite(v));
 const positive = (v: number): boolean => Number.isFinite(v) && v > 0;
+/** `fits_f32` du cœur : chaque valeur reste finie une fois arrondie en f32. */
+const fitsF32 = (vs: readonly number[]): boolean => vs.every((v) => Number.isFinite(Math.fround(v)));
+const sum = (vs: readonly number[]): number => vs.reduce((a, b) => a + b, 0);
 /** Matrice de `Transform`, donnée ou composée : six nombres finis, |dét| ≥ 1e-12 (même règle que le cœur). */
 const validMatrix = (m: Matrix): boolean => m.every((v) => Number.isFinite(v)) && Math.abs(m[0] * m[3] - m[1] * m[2]) >= 1e-12;
 
@@ -584,10 +587,10 @@ class FakeDocument implements CoreDocument {
         });
       }
       case "AddTable": {
-        // Ordre du cœur : arguments (BadTable), puis page.
+        // Ordre du cœur : arguments (BadTable), puis page ; x, y et les totaux bornés en f32 (`fits_f32`).
         const ok =
           validLines(cmd.cols) && validLines(cmd.rows) && positive(cmd.colWidth) && positive(cmd.rowHeight) && positive(cmd.size) &&
-          Number.isFinite(cmd.x) && Number.isFinite(cmd.y) && validColor(cmd.color);
+          fitsF32([cmd.x, cmd.y, cmd.cols * cmd.colWidth, cmd.rows * cmd.rowHeight]) && validColor(cmd.color);
         if (!ok) throw new Error(MESSAGES.badTable);
         this.pageOf(cmd.page);
         return this.step((s) => {
@@ -613,6 +616,7 @@ class FakeDocument implements CoreDocument {
         const cell = t.cells.get(key);
         const current = cell?.text ?? "";
         const grow = cmd.rowHeight !== undefined && cmd.rowHeight > row.height ? cmd.rowHeight : null;
+        if (grow !== null && !fitsF32([sum(t.rows.map((l) => l.height)) - row.height + grow])) throw new Error(MESSAGES.badTable);
         if (current === cmd.content && grow === null) return this.unchanged();
         const cells = new Map(t.cells);
         if (current !== cmd.content) cells.set(key, { text: cmd.content, fill: cell?.fill ?? null });
@@ -625,6 +629,8 @@ class FakeDocument implements CoreDocument {
         const at = cmd.at;
         if (!Number.isInteger(at) || at < 0 || at > n || n >= TABLE_MAX_LINES) throw new Error(MESSAGES.badTable);
         const near = Math.max(0, at - 1);
+        const sizes = cmd.axis === "row" ? t.rows.map((l) => l.height) : t.cols.map((l) => l.width);
+        if (!fitsF32([sum(sizes) + (sizes[near] ?? 0)])) throw new Error(MESSAGES.badTable);
         if (cmd.axis === "row") {
           const height = t.rows[near]?.height ?? 0;
           return this.writeTable(found, cmd.id, { ...t, rows: [...t.rows.slice(0, at), { id: newId(), height }, ...t.rows.slice(at)] });
@@ -646,6 +652,7 @@ class FakeDocument implements CoreDocument {
       case "SetTableSizes": {
         if (!positive(cmd.colWidth) || !positive(cmd.rowHeight)) throw new Error(MESSAGES.badTable);
         const { found, t } = this.tableOf(cmd.id);
+        if (!fitsF32([t.cols.length * cmd.colWidth, t.rows.length * cmd.rowHeight])) throw new Error(MESSAGES.badTable);
         if (t.cols.every((c) => c.width === cmd.colWidth) && t.rows.every((r) => r.height === cmd.rowHeight)) return this.unchanged();
         return this.writeTable(found, cmd.id, {
           ...t,
@@ -886,7 +893,8 @@ function savedElement(e: FakeElement): SavedElement {
   };
 }
 
-/** Entrées lisibles (T2) : objet avec un `id` texte non vide pas encore vu et `key` fini > 0 ; les autres retirées (PC6). */
+/** Entrées lisibles (T2) : objet avec un `id` texte non vide, sans « : » (clé de cellule ambiguë, comme le cœur), pas encore
+ * vu et `key` fini > 0 ; les autres retirées (PC6). */
 function readLines(v: unknown, key: "width" | "height"): { readonly id: string; readonly size: number }[] {
   if (!Array.isArray(v)) return [];
   const seen = new Set<string>();
@@ -895,7 +903,7 @@ function readLines(v: unknown, key: "width" | "height"): { readonly id: string; 
     if (!isRecord(x)) continue;
     const id = x["id"];
     const size = x[key];
-    if (typeof id !== "string" || id === "" || seen.has(id) || !finitePositive(size)) continue;
+    if (typeof id !== "string" || id === "" || id.includes(":") || seen.has(id) || !finitePositive(size)) continue;
     seen.add(id);
     out.push({ id, size });
   }

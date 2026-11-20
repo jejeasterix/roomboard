@@ -1511,6 +1511,30 @@ describe.each(c10aFactories)("contrat C10a : $name", ({ f }) => {
     d.free();
   });
 
+  it("borne f32 (T15) : AddTable, SetTableCell, SetTableSizes, InsertTableLine refusent un total hors f32 (BadTable, D38)", () => {
+    const d = f.blank();
+    const p = first(d);
+    // 64 × 1e37 = 6,4e38 > f32::MAX : chaque entrée finie ne suffit pas, le total compte (comme x et y).
+    for (const over of [{ cols: 64, colWidth: 1e37 }, { rows: 64, rowHeight: 1e37 }, { colWidth: 1e39 }, { x: 1e39 }, { y: -1e39 }]) {
+      unchanged(d, () => expect(messageOf(() => addTable(d, p, over))).toBe(TABLE_MESSAGE));
+    }
+    const wide = addTable(d, p, { cols: 34, rows: 1, colWidth: 1e37 });
+    const tall = addTable(d, p, { cols: 2, rows: 2 });
+    const [r0, r1, c0] = ids2(tableOf(d, tall));
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableSizes", id: tall, colWidth: 240, rowHeight: 2e38 }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SetTableCell", id: tall, row: r0, col: c0, content: "haut", rowHeight: 1.7e38 });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetTableCell", id: tall, row: r1, col: c0, content: "x", rowHeight: 1.8e38 }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "SetTableSizes", id: tall, colWidth: 240, rowHeight: 1.7e38 });
+    // Insertion : la taille voisine copiée ferait déborder le total de l'axe (3,4e38 + 1e37, 3,4e38 + 1,7e38).
+    const over = [[wide, "col", 34], [wide, "col", 0], [tall, "row", 2], [tall, "row", 1]] as const;
+    unchanged(d, () => {
+      for (const [id, axis, at] of over) expect(messageOf(() => d.apply({ type: "InsertTableLine", id, axis, at }))).toBe(TABLE_MESSAGE);
+    });
+    expect(d.apply({ type: "InsertTableLine", id: wide, axis: "row", at: 1 }).ids).toEqual([wide]);
+    expect(d.apply({ type: "InsertTableLine", id: tall, axis: "col", at: 2 }).ids).toEqual([tall]);
+    d.free();
+  });
+
   it("RemoveTableLine : les cellules de la ligne partent avec elle ; dernière ligne ou ligne absente → BadTable", () => {
     const d = f.blank();
     const id = addTable(d, first(d), { cols: 2, rows: 2 });

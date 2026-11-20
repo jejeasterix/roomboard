@@ -131,6 +131,33 @@ describe("grille de choix : bornée à la scène, touches consommées (C10a, T14
     }
   });
 
+  it("Ctrl/Méta + touche dans la grille remontent à window (Ctrl+S, Ctrl+O : workspace.key, main.ts) ; Retour arrière et Espace non (T15)", () => {
+    const { picker, pick, cell } = setup();
+    const seen: string[] = [];
+    const engine = (e: KeyboardEvent): void => {
+      seen.push(`${e.ctrlKey ? "Ctrl+" : ""}${e.metaKey ? "Méta+" : ""}${e.key}`);
+    };
+    const press = (el: Element, k: string, mods: KeyboardEventInit = {}): void => {
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...mods }));
+    };
+    window.addEventListener("keydown", engine);
+    try {
+      picker.open({ x: 0, y: 0 }, pick);
+      press(cell(1, 1), "s", { ctrlKey: true });
+      press(cell(1, 1), "o", { metaKey: true });
+      press(picker.element.querySelector("form input")!, "s", { ctrlKey: true });
+      press(cell(1, 1), "Backspace");
+      press(cell(1, 1), "Backspace", { shiftKey: true });
+      press(cell(1, 1), "Delete", { altKey: true });
+      press(cell(1, 1), " ");
+      expect(seen).toEqual(["Ctrl+s", "Méta+o", "Ctrl+s"]);
+      expect(picker.isOpen()).toBe(true);
+      expect(pick).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("keydown", engine);
+    }
+  });
+
   it("structure ARIA : pas de role=grid sans rangées ; groupe étiqueté", () => {
     const { picker } = setup();
     expect(picker.element.querySelector('[role="grid"]')).toBeNull();

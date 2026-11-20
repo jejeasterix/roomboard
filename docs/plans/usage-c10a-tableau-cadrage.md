@@ -108,7 +108,7 @@ rendu, application et barre, plateforme (reste OD56), essais et scripts, tests, 
 | `app/table-picker.ts` (nouveau) | oui | grille de choix et boîte (T6) | S |
 | `app/board-session.ts:136-157` (zone de saisie, outils), `:196-202` (`mousedown`), `:250-259` (`mark`) | oui | fabrique `table`, événements de la zone vers l'outil actif, `preventDefault` aussi pour l'outil Tableau, `data-table` | V |
 | `app/stage-tags.ts:12-19` | oui | `table` (T15) | V |
-| `app/toolbar-host.ts:7-12` (`ToolbarHost`), `:13-18` (`HostTargets`), `:22-38` (`ACTIONS`), `:45` (préréglages) | oui | cinq actions, `tableFill` ; `:45` passe par `presetsOf` (ferme le constat ouvert) | V |
+| `app/toolbar-host.ts:7-12` (`ToolbarHost`), `:13-18` (`HostTargets`), `:22-38` (`ACTIONS`), `:45` (préréglages) | oui | cinq actions, `tableFill` ; `:45` passe par `presetsOf`, mais le constat reste ouvert : `toolbar.ts:634` lit encore `from.presets[tool]` à la main (modifié à la clôture, 2026-11-20) | V |
 | `toolbar.ts:84-94` (`TOOL_TABLE`), `:97-113` (`ACTION_TABLE`) | oui | `table`, cinq actions | V |
 | `toolbar-profiles.ts:57` (`defaultToolbars`, groupe `edition`) | oui | `tool("table", "Tableau")` après Texte | V |
 | `toolbar-profiles.ts:80-97` (`simple`) | non | profil à grands boutons, gardé court | V |
@@ -187,7 +187,8 @@ rendu, application et barre, plateforme (reste OD56), essais et scripts, tests, 
   restent verts ; le test neuf `every_known_kind_has_view_and_geom` couvre le repli.
 - La porte IME de l'outil Texte est extraite (`commit-gate.ts`) : `engine/tools/text.test.ts` (composition, validation
   différée) resté vert, plus `commit-gate.test.ts`.
-- `toolbar-host.ts:45` passe par `presetsOf` (ferme le constat) : `toolbar-host.test.ts` (préréglages) resté vert.
+- `toolbar-host.ts:45` passe par `presetsOf` : `toolbar-host.test.ts` (préréglages) resté vert. Le constat reste ouvert :
+  `toolbar.ts:634` lit encore `from.presets[tool]` à la main (modifié à la clôture, 2026-11-20).
 
 **Chantiers en cours** : aucun. `git worktree list` : `~/projets/roomboard` (`main` `8247215`) et ce worktree seuls ;
 `gh pr list --state open` : vide.
