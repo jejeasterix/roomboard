@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TabsBar, type TabView } from "./TabsBar";
 
@@ -76,5 +78,24 @@ describe("TabsBar (T91)", () => {
     const { container, setT } = setup();
     setT([TABS[0]!]);
     expect(container.querySelectorAll("[role=tab]").length).toBe(1);
+  });
+
+  it("mise en forme (T101) : une rangée, classes posées, règles de rb.css", () => {
+    const { container } = setup();
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = (sel: string): string => new RegExp(`${sel.replace(/[.[\]="]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    const list = container.querySelector("[role=tablist]")!;
+    expect(list.classList.contains("rb-tabs")).toBe(true);
+    expect(rule(".rb-tabs")).toMatch(/display:\s*flex/);
+    expect(rule(".rb-tabs")).toMatch(/flex-wrap:\s*nowrap/);
+    expect(rule(".rb-tab")).toMatch(/display:\s*inline-flex/);
+    expect(rule(".rb-tab")).toMatch(/gap:/);
+    expect(rule(".rb-tab")).toMatch(/min-height:\s*var\(--rb-tab-h\)/);
+    expect(css).toMatch(/--rb-tab-h:/);
+    expect(css).toMatch(/\.rb-tab\[aria-selected="true"\]\s*\{[^}]*(background|border-color)/);
+    for (const el of container.querySelectorAll("[role=tab]")) expect(el.classList.contains("rb-tab")).toBe(true);
+    expect(container.querySelector("[data-tab-close]")!.classList.contains("rb-tab-close")).toBe(true);
+    expect(container.querySelector("[data-tab-new]")!.classList.contains("rb-tab-new")).toBe(true);
+    expect(container.querySelector("[data-tab=b] .rb-tab-dirty")).not.toBeNull();
   });
 });
