@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/roomboard-core", "crates/roomboard-wasm", "crates/roomboard-shell"]
+members = ["crates/roomboard-core", "crates/roomboard-wasm", "crates/roomboard-shell", "crates/roomboard-formats"]
 # src-tauri est exclu : son build monte à ~7,5 Go de RAM. Il a son propre Cargo.lock.
 exclude = ["apps/desktop/src-tauri"]
 
