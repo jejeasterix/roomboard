@@ -62,6 +62,8 @@ function stubGetContext(makers: Makers): () => void {
 }
 
 const IDS = ["stage", "scene", "interaction", "texte-edition"];
+/** Sondé une fois, avant tout faux contexte (detectSupport ouvre un canvas 2D). */
+const SUPPORT = detectSupport();
 
 let container: HTMLDivElement;
 let shared: SessionShared;
@@ -72,7 +74,7 @@ function sharedWith(parsed: ParsedSettings): SessionShared {
     container,
     settings: createSettingsStore(parsed.settings),
     parsed,
-    support: detectSupport(),
+    support: SUPPORT,
     measure: (s, size) => s.length * size * 0.6,
     coreVersion: "fake-core-1",
   };
