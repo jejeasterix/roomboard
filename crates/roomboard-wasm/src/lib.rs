@@ -1506,4 +1506,74 @@ mod tests {
         assert_eq!(d.snap_delta(&p, vec![b], 1.3, 0.7), vec![0.0, 0.0]);
         assert_eq!(d.snap_delta(&p, vec![], 52.0, 31.0), vec![52.0, 31.0]);
     }
+
+    // C10a (T6) : tableau par les `*_inner`.
+
+    fn table_of(d: &Document, id: &str) -> roomboard_core::table::TableView {
+        d.core.element(id).and_then(|e| e.table).expect("tableau")
+    }
+
+    #[test]
+    fn add_table_inner_creates_and_refuses() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let c = d
+            .add_table_inner(&p, [100.0, 200.0], [4, 3], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau");
+        let t = table_of(&d, &c.ids[0]);
+        assert_eq!((t.cols.len(), t.rows.len()), (4, 3));
+        assert_eq!(
+            d.add_table_inner(&p, [0.0, 0.0], [u32::MAX, 3], [240.0, 64.0], "#000000", 36.0),
+            Err(CommandError::BadTable)
+        );
+        assert_eq!(
+            d.add_table_inner(&p, [0.0, 0.0], [0, 3], [240.0, 64.0], "#000000", 36.0),
+            Err(CommandError::BadTable)
+        );
+    }
+
+    #[test]
+    fn table_cell_line_size_fill_inner() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [2, 2], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        let (r0, c0) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        d.set_table_cell_inner(&id, [r0.as_str(), c0.as_str()], "Lundi", Some(150.0)).expect("cellule");
+        assert_eq!(table_of(&d, &id).rows[0].height, 150.0);
+        d.insert_table_line_inner(&id, false, 2).expect("colonne");
+        assert_eq!(table_of(&d, &id).cols.len(), 3);
+        d.remove_table_line_inner(&id, true, &r0).expect("ligne");
+        assert!(table_of(&d, &id).cells.is_empty());
+        d.set_table_sizes_inner(&id, 200.0, 70.0).expect("uniforme");
+        assert!(table_of(&d, &id).cols.iter().all(|c| c.width == 200.0));
+        let t = table_of(&d, &id);
+        let (r1, c1) = (t.rows[0].id.clone(), t.cols[1].id.clone());
+        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], Some("#fef08a".into())).expect("jaune");
+        assert_eq!(table_of(&d, &id).cells[0].fill.as_deref(), Some("#fef08a"));
+        d.set_table_fill_inner(&id, [r1.as_str(), c1.as_str()], None).expect("aucun");
+        assert!(table_of(&d, &id).cells.is_empty());
+    }
+
+    #[test]
+    fn table_inner_refuses_with_core_errors() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_table_inner(&p, [0.0, 0.0], [1, 1], [240.0, 64.0], "#000000", 36.0)
+            .expect("tableau")
+            .ids[0]
+            .clone();
+        let t = table_of(&d, &id);
+        assert_eq!(d.insert_table_line_inner(&id, true, u32::MAX), Err(CommandError::BadTable));
+        assert_eq!(d.remove_table_line_inner(&id, true, &t.rows[0].id), Err(CommandError::BadTable));
+        assert_eq!(
+            d.set_table_cell_inner("absent", ["r", "c"], "x", None),
+            Err(CommandError::UnknownElement("absent".into()))
+        );
+    }
 }
