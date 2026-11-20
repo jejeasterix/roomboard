@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_PROFILES, builtinProfile, DEFAULT_PROFILE_JSON, SIMPLE_PROFILE_JSON } from "./toolbar-profiles";
+import {
+  ANNOTATION_PROFILE_ID,
+  ANNOTATION_PROFILE_JSON,
+  BUILTIN_PROFILES,
+  builtinProfile,
+  DEFAULT_PROFILE_JSON,
+  SIMPLE_PROFILE_JSON,
+} from "./toolbar-profiles";
 import { parseProfile, visibleItems } from "./toolbar";
 
 const ALL = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
@@ -7,12 +14,23 @@ const ids = (id: string): string[] =>
   builtinProfile(id)!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)));
 
 describe("profils livrés (T83, CL5b-9)", () => {
-  it("defaut et simple sont valides, sans avertissement", () => {
-    for (const json of [DEFAULT_PROFILE_JSON, SIMPLE_PROFILE_JSON]) {
+  it("defaut, simple et annotation sont valides, sans avertissement", () => {
+    for (const json of [DEFAULT_PROFILE_JSON, SIMPLE_PROFILE_JSON, ANNOTATION_PROFILE_JSON]) {
       const r = parseProfile(json);
       expect("errors" in r ? r.errors : r.warnings).toEqual([]);
     }
-    expect(BUILTIN_PROFILES.map((p) => p.id)).toEqual(["defaut", "simple"]);
+    expect(BUILTIN_PROFILES.map((p) => p.id)).toEqual(["defaut", "simple", "annotation"]);
+  });
+
+  it("annotation : barres et préréglages de defaut, démarrage desktop-annotation (P9, S5)", () => {
+    const a = builtinProfile(ANNOTATION_PROFILE_ID)!;
+    const d = builtinProfile("defaut")!;
+    expect(a.label).toBe("Annotation au démarrage");
+    expect(a.toolbars).toEqual(d.toolbars);
+    expect(a.presets).toEqual(d.presets);
+    expect(a.interface.buttonSize).toBe("m");
+    expect(a.behavior.startMode).toBe("desktop-annotation");
+    expect(Object.isFrozen(ANNOTATION_PROFILE_JSON)).toBe(true);
   });
 
   it("defaut porte chaque bouton de l'ancienne barre (inventaire du plan)", () => {

@@ -29,12 +29,89 @@ function userProfile(id: string, extra: Record<string, unknown> = {}) {
 }
 
 describe("ProfileStore (T89)", () => {
-  it("profil defaut en lecture seule", () => {
-    const s = createProfileStore(fakeKv(), BUILTIN_PROFILES);
+  it("copie de defaut lue au démarrage", () => {
+    const kv = fakeKv();
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
     const d = s.get("defaut")!;
-    expect(() => s.save(d)).toThrow("profil en lecture seule : defaut");
-    expect(() => s.remove("defaut")).toThrow("profil en lecture seule : defaut");
-    expect(s.isReadOnly("defaut")).toBe(true);
+    s.save({ ...d, interface: { ...d.interface, buttonSize: "s" } });
+    expect(s.list().map((p) => p.id)).toEqual(["defaut", "simple", "annotation"]);
+    expect(s.list()[0]!.interface.buttonSize).toBe("s");
+    expect(s.get("defaut")!.label).toBe("Par défaut");
+    expect(s.hasOverride("defaut")).toBe(true);
+    expect(s.isBuiltin("defaut")).toBe(true);
+    const again = createProfileStore(kv, BUILTIN_PROFILES);
+    expect(again.get("defaut")!.interface.buttonSize).toBe("s");
+    expect(again.warnings()).toEqual([]);
+  });
+
+  it("revenir à l'origine rend le livré", () => {
+    const kv = fakeKv();
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    const d = s.get("defaut")!;
+    s.save({ ...d, interface: { ...d.interface, buttonSize: "s" } });
+    expect(() => s.remove("defaut")).toThrow("profil livré : defaut");
+    s.revert("defaut");
+    expect(s.get("defaut")).toBe(BUILTIN_PROFILES[0]);
+    expect(s.hasOverride("defaut")).toBe(false);
+    expect(JSON.parse(kv.map.get(PROFILES_KEY)!)).toEqual([]);
+    s.revert("defaut"); // sans copie : rien
+    expect(s.get("defaut")).toBe(BUILTIN_PROFILES[0]);
+  });
+
+  it("copie de simple : revert la retire, simple revient", () => {
+    const s = createProfileStore(fakeKv(), BUILTIN_PROFILES);
+    s.save({ ...s.get("simple")!, label: "Ma copie" });
+    expect(s.get("simple")!.label).toBe("Ma copie");
+    s.revert("simple");
+    expect(s.get("simple")).toBe(BUILTIN_PROFILES[1]);
+  });
+
+  it("copie de simple enregistrée après un profil perso : à la place de simple, avant perso", () => {
+    const kv = fakeKv();
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    s.save({ ...s.get("defaut")!, id: "perso", label: "Perso" });
+    s.save({ ...s.get("simple")!, label: "Ma copie" });
+    const order = ["defaut", "simple", "annotation", "perso"];
+    expect(s.list().map((p) => p.id)).toEqual(order);
+    expect(s.list()[1]!.label).toBe("Ma copie");
+    expect(createProfileStore(kv, BUILTIN_PROFILES).list().map((p) => p.id)).toEqual(order);
+  });
+
+  it("revert d'un id non livré : lève ; isBuiltin faux", () => {
+    const s = createProfileStore(fakeKv(), BUILTIN_PROFILES);
+    s.save({ ...s.get("defaut")!, id: "perso", label: "Perso" });
+    expect(s.isBuiltin("perso")).toBe(false);
+    expect(s.hasOverride("perso")).toBe(false);
+    expect(() => s.revert("perso")).toThrow("profil non livré : perso");
+  });
+
+  it("tout remettre à zéro : profils, copies et actif effacés", () => {
+    const kv = fakeKv();
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    s.save({ ...s.get("defaut")!, id: "perso", label: "Perso" });
+    s.save({ ...s.get("simple")!, label: "Ma copie" });
+    s.setActive("perso");
+    s.resetAll();
+    expect(s.list()).toEqual(BUILTIN_PROFILES);
+    expect(s.activeId()).toBe("defaut");
+    expect(kv.map.has(PROFILES_KEY)).toBe(false);
+    expect(kv.map.has(ACTIVE_KEY)).toBe(false);
+    expect(createProfileStore(kv, BUILTIN_PROFILES).get("perso")).toBeNull();
+  });
+
+  it("tout remettre à zéro, stockage qui lève : mémoire vidée, avertissement, aucune exception", () => {
+    const kv: KeyValue = {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => {
+        throw new Error("SecurityError");
+      },
+    };
+    const s = createProfileStore(kv, BUILTIN_PROFILES);
+    s.save({ ...s.get("defaut")!, id: "perso", label: "Perso" });
+    expect(() => s.resetAll()).not.toThrow();
+    expect(s.get("perso")).toBeNull();
+    expect(s.warnings().some((w) => w.startsWith("stockage non effacé"))).toBe(true);
   });
 
   it("sans stockage : defaut actif, utilisable", () => {
@@ -55,10 +132,10 @@ describe("ProfileStore (T89)", () => {
     const kv = fakeKv();
     const s = createProfileStore(kv, BUILTIN_PROFILES);
     s.save(p);
-    expect(s.isReadOnly("perso")).toBe(false);
+    expect(s.isBuiltin("perso")).toBe(false);
     const again = createProfileStore(kv, BUILTIN_PROFILES);
     expect(again.get("perso")).toEqual(p);
-    expect(again.list().map((x) => x.id)).toEqual(["defaut", "simple", "perso"]);
+    expect(again.list().map((x) => x.id)).toEqual(["defaut", "simple", "annotation", "perso"]);
     expect(kv.map.get(PROFILES_KEY)).toContain('"futur"');
     expect(JSON.parse(kv.map.get(PROFILES_KEY)!)).toEqual([serializeProfile(p)]);
     again.remove("perso");
@@ -82,12 +159,14 @@ describe("ProfileStore (T89)", () => {
     expect(s.warnings().length).toBeGreaterThan(0);
   });
 
-  it("profil livré présent dans le stockage : ignoré avec avertissement", () => {
+  it("profil livré présent dans le stockage : copie lue, à la place du livré", () => {
     const kv = fakeKv();
     kv.setItem(PROFILES_KEY, JSON.stringify([userJson("defaut", { label: "Pirate" })]));
     const s = createProfileStore(kv, BUILTIN_PROFILES);
-    expect(s.get("defaut")!.label).not.toBe("Pirate");
-    expect(s.warnings().length).toBeGreaterThan(0);
+    expect(s.get("defaut")!.label).toBe("Pirate");
+    expect(s.list()[0]!.label).toBe("Pirate");
+    expect(s.list()).toHaveLength(BUILTIN_PROFILES.length);
+    expect(s.warnings()).toEqual([]);
   });
 
   it("actif inconnu", () => {
