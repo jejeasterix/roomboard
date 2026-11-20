@@ -63,6 +63,8 @@ async function start(): Promise<void> {
 
   const env = { tauri, userAgent: navigator.userAgent };
   const store = createProfileStore(browserKeyValue(window), BUILTIN_PROFILES);
+  // Avertissements de l'amorce (profil stocké écarté, stockage illisible) : rien d'autre ne les lit.
+  for (const w of store.warnings()) console.warn(w);
   const active = createActiveProfile(store, runtimeCapabilities(wasm.capabilities(detectPlatform(env)), env));
   let tabCount = 0;
   const workspace = await createWorkspace({
