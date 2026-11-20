@@ -67,7 +67,7 @@ async function scenario(page, url, captures) {
     await mouse.click(x, y);
     await frames(page);
     check(await editorOpen(), "clic sur un texte écrit : la zone se rouvre");
-    check((await page.inputValue("#texte-edition")) === expected, msg);
+    check((await page.textContent("#texte-edition")) === expected, msg);
     await page.keyboard.press("Escape");
     await frames(page);
     check(!(await editorOpen()), "Échap : la zone se referme");
@@ -111,7 +111,7 @@ async function scenario(page, url, captures) {
   await click("text");
   await mouse.click(300, 300);
   await frames(page);
-  const area = await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
+  const area = await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   check(await editorOpen(), "outil Texte : la zone de saisie s'ouvre au clic");
   check((await page.evaluate(() => document.activeElement?.id)) === "texte-edition", "la zone de saisie a le focus");
   await area.focus();
@@ -142,14 +142,14 @@ async function scenario(page, url, captures) {
   if (imeMode === "synthétique") {
     await page.$eval("#texte-edition", (t) => {
       t.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
-      t.value = "ni";
+      t.textContent = "ni";
       t.dispatchEvent(new CompositionEvent("compositionupdate", { bubbles: true, data: "ni" }));
     });
     await frames(page);
   }
   console.log(`IME : ${imeMode}`);
   check((await ime()).includes("compositionstart"), "compositionstart vu : la composition a eu lieu");
-  check((await page.inputValue("#texte-edition")) === "ni", "pendant la composition : la zone porte « ni »");
+  check((await page.textContent("#texte-edition")) === "ni", "pendant la composition : la zone porte « ni »");
   check((await elements()) === 0, "pendant la composition : rien d'écrit dans le document");
   await page.$eval("#texte-edition", (t) =>
     t.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true })),
@@ -161,7 +161,7 @@ async function scenario(page, url, captures) {
   check((await elements()) === 0 && (await editorOpen()), "clic ailleurs pendant la composition : rien n'est écrit avant compositionend");
   if (imeMode === "synthétique") {
     await page.$eval("#texte-edition", (t) => {
-      t.value = "Bonjour"; // la composition « ni » est remplacée par le texte validé
+      t.textContent = "Bonjour"; // la composition « ni » est remplacée par le texte validé
       t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "Bonjour" }));
     });
   } else {
@@ -182,12 +182,12 @@ async function scenario(page, url, captures) {
   await click("text");
   await mouse.click(300, 500);
   await frames(page);
-  await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
+  await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   await page.focus("#texte-edition");
   if (imeMode === "synthétique") {
     await page.$eval("#texte-edition", (t) => {
       t.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "" }));
-      t.value = "にほん";
+      t.textContent = "にほん";
       t.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "にほん" }));
     });
   } else {
@@ -195,7 +195,7 @@ async function scenario(page, url, captures) {
     await cdp.send("Input.insertText", { text: "にほん" });
   }
   await frames(page);
-  check((await page.inputValue("#texte-edition")) === "にほん", "seconde boîte : composition finie, la zone porte « にほん »");
+  check((await page.textContent("#texte-edition")) === "にほん", "seconde boîte : composition finie, la zone porte « にほん »");
   check((await elements()) === 1 && (await editorOpen()), "composition finie sans demande de validation : zone toujours ouverte, rien d'écrit");
   await page.keyboard.press("Escape"); // hors composition : valide
   await frames(page);
@@ -234,7 +234,7 @@ async function scenario(page, url, captures) {
   await click("text");
   await mouse.click(700, 300);
   await frames(page);
-  const area2 = await page.waitForSelector("textarea#texte-edition", { state: "visible", timeout: 5000 });
+  const area2 = await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   await area2.focus();
   await page.keyboard.type("note");
   await mouse.click(900, 600); // clic ailleurs : valide

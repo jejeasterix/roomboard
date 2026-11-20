@@ -4,7 +4,7 @@
 // Geste : outil Tableau, grille de choix 4 × 3, « Lundi », Tab, « Mardi », Tab, « Mercredi » (S1), puis les neuf autres
 // cellules par Tab (passage de ligne compris), Échap, capture (avec --captures seulement), « + Colonne », « + Ligne »,
 // Ctrl+S, Ctrl+O, relecture des trois premières cellules dans le nouvel onglet. Oracle : #stage[data-table] =
-// "<colonnes>x<lignes>@<rang>,<colonne>" et la valeur de #texte-edition. Aucune requête hors de 127.0.0.1.
+// "<colonnes>x<lignes>@<rang>,<colonne>" et le texte de #texte-edition. Aucune requête hors de 127.0.0.1.
 // Lancé par scripts/verifier.sh --e2e, sans option de capture.
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/c10a-tableau-navigateur.mjs [--captures]
 // (--captures : docs/essais/c10a-tableau-4x3.png).
@@ -43,7 +43,7 @@ async function scenario(page, url, { captures, tmp }) {
       .catch(async () => {
         throw new Echec(`data-table attendu « ${v} », lu « ${await attr("data-table")} »`);
       });
-  const editorValue = () => page.$eval("#texte-edition", (a) => a.value);
+  const editorValue = () => page.$eval("#texte-edition", (a) => a.textContent);
   const editorOpen = () => page.$eval("#texte-edition", (a) => !a.hidden && document.activeElement === a);
   const camera = async () => {
     const [zoom, tx, ty] = ((await attr("data-camera")) ?? "").split(",").map(Number);
