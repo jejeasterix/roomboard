@@ -3,7 +3,8 @@
  * (`desynchronized`, effacée à chaque image : encre vive, queue prédite, aperçu de gomme). `Path2D` en cache par id,
  * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c).
  */
-import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TextData } from "../../core/api";
+import type { Bounds, Change, ElementView, GridLines, Matrix, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
+import { plainSpans } from "../../core/rich-text";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
 import { PAGE_BACKGROUND, PAGE_WIDTH, SURROUND_COLOR, visibleGridRect, visiblePageRect, type PageRect } from "../page";
@@ -13,6 +14,7 @@ import type { ImageSource } from "./image-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
 import type { EraserPreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
+import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
   moveTo(x: number, y: number): void;
@@ -116,7 +118,7 @@ export const BASELINE_SHIFT = 0.8;
 export const UNDERLINE_OFFSET = 0.92;
 
 /**
- * Texte (D14, CL4-4, C7) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutRich`) ; un fillText par
+ * Texte (D14, CL4-4, C7, C10a ; élément `text` et cellules de tableau) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutRich`) ; un fillText par
  * segment ; une ligne d'une seule taille est dessinée comme au socle (même police, `y` = haut de la ligne).
  */
 function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], color: string): void {
@@ -146,6 +148,8 @@ export class Canvas2DRenderer implements Renderer {
   private readonly paths = new Map<string, Path2D | null>();
   /** Lignes des textes par id (clé : taille, largeur de boîte, segments), invalidées par `Change` comme `paths`. */
   private readonly textLines = new Map<string, { readonly key: string; readonly lines: readonly RichLine[] }>();
+  /** Lignes du texte des cellules, par tableau (B1) : même cache et même invalidation que `textLines`. */
+  private readonly cellLines = new Map<string, { readonly key: string; readonly lines: readonly (readonly RichLine[])[] }>();
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
   private sx = 1;
@@ -230,6 +234,19 @@ export class Canvas2DRenderer implements Renderer {
       const bmp = this.images?.bitmap(el.image.asset) ?? null;
       if (bmp !== null) ctx.drawImage(bmp, 0, 0, el.image.w, el.image.h);
       else paintPlaceholder(ctx, el.image.w, el.image.h, null);
+    } else if (el.kind === "table") {
+      paintTableGrid(ctx, el.table);
+      const boxes = cellTextBoxes(el.table);
+      const lines = this.cellLinesOf(ctx, el.id, el.table, boxes);
+      boxes.forEach((b, i) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(b.x, b.y, b.w, b.h);
+        ctx.clip();
+        ctx.transform(1, 0, 0, 1, b.x, b.y);
+        paintText(ctx, lines[i] ?? [], el.table.color);
+        ctx.restore();
+      });
     } else if (el.kind === "unknown") {
       paintPlaceholder(ctx, el.unknown.w, el.unknown.h, UNKNOWN_LABEL);
     }
@@ -307,11 +324,13 @@ export class Canvas2DRenderer implements Renderer {
     if (change.full) {
       this.paths.clear();
       this.textLines.clear();
+      this.cellLines.clear();
       return;
     }
     for (const id of [...change.ids, ...change.removed]) {
       this.paths.delete(id);
       this.textLines.delete(id);
+      this.cellLines.delete(id);
     }
   }
 
@@ -321,6 +340,17 @@ export class Canvas2DRenderer implements Renderer {
     if (cached && cached.key === key) return cached.lines;
     const lines = layoutRich(t.spans, { size: t.size }, t.boxWidth, measureWith(ctx));
     this.textLines.set(id, { key, lines });
+    return lines;
+  }
+
+  /** Lignes de chaque cellule au texte non vide (B1) : `layoutRich` du texte brut (C7b remplacera `plainSpans`). */
+  private cellLinesOf(ctx: CanvasRenderingContext2D, id: string, t: TableData, boxes: readonly CellTextBox[]): readonly (readonly RichLine[])[] {
+    const key = `${t.size}|${JSON.stringify(boxes.map((b) => [b.w, b.text]))}`;
+    const cached = this.cellLines.get(id);
+    if (cached && cached.key === key) return cached.lines;
+    const measure = measureWith(ctx);
+    const lines = boxes.map((b) => layoutRich(plainSpans(b.text), { size: t.size }, b.w, measure));
+    this.cellLines.set(id, { key, lines });
     return lines;
   }
 
