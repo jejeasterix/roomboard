@@ -45,6 +45,45 @@ export function editSpans(spans: readonly TextSpan[], content: string): TextSpan
   return spansOf([...old.slice(0, p), ...middle, ...old.slice(old.length - s)]);
 }
 
+/** Curseur `caret` (unités UTF-16 du nouveau contenu, borné au contenu) en points de code. */
+const caretCodePoints = (content: string, caret: number): number => Array.from(content.slice(0, Math.min(Math.max(0, caret), content.length))).length;
+
+/**
+ * Plus long suffixe commun borné par le curseur (`s ≤ longueur − curseur`, en points de code), puis plus long préfixe
+ * commun des restes (C7b, R3) : la différence ne passe jamais à gauche du curseur relu après la frappe. Rend [p, s].
+ */
+function anchoredEnds(old: readonly string[], fresh: readonly string[], caretCp: number): readonly [number, number] {
+  const maxS = Math.min(old.length, fresh.length - caretCp);
+  let s = 0;
+  while (s < maxS && old[old.length - 1 - s] === fresh[fresh.length - 1 - s]) s++;
+  const room = Math.min(old.length, fresh.length) - s;
+  let p = 0;
+  while (p < room && old[p] === fresh[p]) p++;
+  return [p, s];
+}
+
+/**
+ * Segments après une frappe relue du DOM (C7b, R3) : différence ancrée au curseur (`anchoredEnds`) ; le milieu neuf
+ * prend les attributs du caractère qui le précède, aucun en tête (règle T5 du cœur). `caret` en unités UTF-16 du
+ * nouveau contenu. Le cœur peut placer le même texte autrement : sans effet, l'état voulu envoyé fixe les attributs.
+ */
+export function editSpansAt(spans: readonly TextSpan[], content: string, caret: number): TextSpan[] {
+  const old = charsOf(spans);
+  const fresh = Array.from(content);
+  const [p, s] = anchoredEnds(old.map((c) => c.ch), fresh, caretCodePoints(content, caret));
+  const inherited: TextAttrs = p === 0 ? {} : (old[p - 1]?.attrs ?? {});
+  const middle = fresh.slice(p, fresh.length - s).map((ch) => ({ ch, attrs: inherited }));
+  return spansOf([...old.slice(0, p), ...middle, ...old.slice(old.length - s)]);
+}
+
+/** Milieu neuf d'`editSpansAt` dans le nouveau contenu, [début, fin) en unités UTF-16 (vide pour un effacement). */
+export function insertedRange(old: string, content: string, caret: number): readonly [number, number] {
+  const fresh = Array.from(content);
+  const [p, s] = anchoredEnds(Array.from(old), fresh, caretCodePoints(content, caret));
+  const start = fresh.slice(0, p).join("").length;
+  return [start, start + fresh.slice(p, fresh.length - s).join("").length];
+}
+
 /** Une clé à `undefined` vaut une clé absente (T7) : serde-wasm-bindgen la lirait comme `null`, donc comme un retrait. */
 export function cleanPatch(patch: TextAttrsPatch): TextAttrsPatch {
   return Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as TextAttrsPatch;
@@ -97,7 +136,7 @@ export function utf16Bounds(content: string, start: number, len: number): boolea
   return end <= content.length && boundary(content, start) && boundary(content, end);
 }
 
-function patched(attrs: TextAttrs, patch: TextAttrsPatch): TextAttrs {
+export function patched(attrs: TextAttrs, patch: TextAttrsPatch): TextAttrs {
   const out: Record<string, unknown> = { ...attrs };
   for (const [k, v] of Object.entries(patch)) {
     if (v === null || v === false || v === undefined) delete out[k];
@@ -123,3 +162,41 @@ export const sameSpans = (a: readonly TextSpan[], b: readonly TextSpan[]): boole
     const t = b[i];
     return t !== undefined && s.text === t.text && sameAttrs(s.attrs, t.attrs);
   });
+
+/** Concaténation des textes des segments. */
+export const spansText = (spans: readonly TextSpan[]): string => spans.map((s) => s.text).join("");
+
+/** `text` à la place de [start, end) (unités UTF-16, bornes vérifiées par l'appelant), avec les attributs `attrs`
+ *  (collage, Entrée : C7b, R12). */
+export function spliceSpans(spans: readonly TextSpan[], start: number, end: number, text: string, attrs: TextAttrs): TextSpan[] {
+  let at = 0;
+  const before: Char[] = [];
+  const after: Char[] = [];
+  for (const c of charsOf(spans)) {
+    if (at < start) before.push(c);
+    else if (at >= end) after.push(c);
+    at += c.ch.length;
+  }
+  return spansOf([...before, ...Array.from(text, (ch) => ({ ch, attrs })), ...after]);
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** État voulu d'un SetText ou d'un SetTableCell (C7b, R7) : segments bien formés, concaténation égale au contenu,
+ *  attributs aux valeurs permises (`validPatch` du patch nettoyé : même règle que la liaison puis le cœur). */
+export function validSpans(content: string, spans: readonly TextSpan[]): boolean {
+  return (
+    spans.every((s: unknown) => isRecord(s) && typeof s["text"] === "string" && isRecord(s["attrs"])) &&
+    spansText(spans) === content &&
+    spans.every((s) => validPatch(cleanPatch(s.attrs)))
+  );
+}
+
+/** Forme que rend la lecture d'un état voulu (`read_spans` du cœur) : false et null retirés, size en f32, voisins
+ *  égaux fusionnés, segments vides retirés ; aucun caractère : un segment vide. */
+export function normalSpans(spans: readonly TextSpan[]): TextSpan[] {
+  return spansOf(spans.flatMap((s) => {
+    const attrs = patched({}, cleanPatch(s.attrs));
+    return Array.from(s.text, (ch) => ({ ch, attrs }));
+  }));
+}
