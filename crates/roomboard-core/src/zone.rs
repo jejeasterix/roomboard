@@ -809,7 +809,6 @@ impl Document {
     /// élément : sa boîte (`bounds`). Le fond, la grille et le fond PDF ne ferment rien (HC8-2).
     pub(crate) fn zone_walls(&self, page: &str) -> Vec<Wall> {
         let mut walls = Vec::new();
-        let mut boxed = Vec::new();
         {
             let txn = self.read();
             let Some(elements) = self.page_elements(&txn, page) else {
@@ -821,14 +820,21 @@ impl Document {
                 };
                 match self.wall_of(&txn, &e) {
                     Some(w) => walls.push(w),
-                    None => boxed.extend(out_string(e.get(&txn, "id"))),
+                    None => {
+                        // Sans `id` lisible, l'élément ne ferme rien (comme `bounds`, qui le cherche par `id`).
+                        if out_string(e.get(&txn, "id")).is_none() {
+                            continue;
+                        }
+                        if let Some(b) = self.element_bounds(&txn, &e) {
+                            let (x0, y0, x1, y1) =
+                                (b.x0 as f32, b.y0 as f32, b.x1 as f32, b.y1 as f32);
+                            walls.extend(Wall::new(
+                                vec![vec![x0, y0, x1, y0, x1, y1, x0, y1]],
+                                false,
+                            ));
+                        }
+                    }
                 }
-            }
-        }
-        for id in boxed {
-            if let Some(b) = self.bounds(std::slice::from_ref(&id)) {
-                let (x0, y0, x1, y1) = (b.x0 as f32, b.y0 as f32, b.x1 as f32, b.y1 as f32);
-                walls.extend(Wall::new(vec![vec![x0, y0, x1, y0, x1, y1, x0, y1]], false));
             }
         }
         walls
@@ -1363,6 +1369,34 @@ mod tests {
         assert!(c.ids.is_empty());
         assert_eq!(d.page(&p).expect("page").background, "#ffffff");
         assert_eq!(d.element_ids(&p).len(), 3);
+    }
+
+    /// T12 : la boîte d'une image se lit sur l'élément en main ; sur une page tardive, elle ferme toujours la zone.
+    #[test]
+    fn image_box_closes_zone_on_late_page() {
+        let mut d = Document::blank();
+        d.add_page();
+        let p = d.page_ids()[1].clone();
+        d.apply(Command::AddImage {
+            page: p.clone(),
+            asset: AssetRef {
+                id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+                name: "a.png".into(),
+                mime: "image/png".into(),
+                size: 3.0,
+            },
+            w: 200.0,
+            h: 200.0,
+            matrix: [1.0, 0.0, 0.0, 1.0, 100.0, 100.0],
+        })
+        .expect("image");
+        stroke(&mut d, &p, [298.0, 100.0], [500.0, 100.0]);
+        stroke(&mut d, &p, [500.0, 100.0], [500.0, 300.0]);
+        stroke(&mut d, &p, [500.0, 300.0], [298.0, 300.0]);
+        let c = d
+            .apply(zone(&p, 400.0, 200.0, Some("#facc15")))
+            .expect("zone");
+        assert_eq!(c.ids.len(), 1);
     }
 
     /// S4, HC8-1 : une image ferme par sa boîte ; le bord du `fill` longe la boîte de l'image.

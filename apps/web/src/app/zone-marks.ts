@@ -21,11 +21,8 @@ export interface ZoneMarks {
   tags(page: string, version: number): ZoneTags;
 }
 
-interface ZoneTarget { readonly kind: string; readonly tol?: unknown }
 const zoneOf = (c: Command): { readonly page: string; readonly tol: number } | null => {
-  if (c.type !== "Fill") return null;
-  const t = c.target as ZoneTarget;
-  return t.kind === "zone" && typeof t.tol === "number" ? { page: c.page, tol: t.tol } : null;
+  return c.type === "Fill" && c.target.kind === "zone" ? { page: c.page, tol: c.target.tol } : null;
 };
 
 export function createZoneMarks(
