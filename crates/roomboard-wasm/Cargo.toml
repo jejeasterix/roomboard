@@ -8,7 +8,7 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-roomboard-core = { path = "../roomboard-core" }
+roomboard-core = { path = "../roomboard-core", features = ["zone"] }
 wasm-bindgen = "=0.2.130"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"

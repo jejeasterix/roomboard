@@ -142,6 +142,43 @@ pub fn shape_polygon(kind: ShapeKind, w: f64, h: f64, width: f32) -> Vec<f32> {
     pts.iter().map(|v| *v as f32).collect()
 }
 
+/// Anneau d'un rectangle ou d'une ellipse non remplis (C8, Q8 : murs d'une zone) : extérieur = `shape_polygon` (+½
+/// épaisseur, au moins 1), intérieur à −½ épaisseur parcouru en sens inverse (pair-impair comme non-nul) ; intérieur vide
+/// si la forme est plus fine que deux demi-épaisseurs ; `None` pour une ligne ou une flèche.
+pub fn shape_ring(kind: ShapeKind, w: f64, h: f64, width: f32) -> Option<(Vec<f32>, Vec<f32>)> {
+    if kind.is_segment() {
+        return None;
+    }
+    let outer = shape_polygon(kind, w, h, width);
+    let half = (f64::from(width) / 2.0).max(1.0);
+    if w <= 2.0 * half || h <= 2.0 * half {
+        return Some((outer, Vec::new()));
+    }
+    let inner: Vec<f64> = match kind {
+        ShapeKind::Rect => vec![
+            half,
+            half,
+            half,
+            h - half,
+            w - half,
+            h - half,
+            w - half,
+            half,
+        ],
+        _ => {
+            let (cx, cy, rx, ry) = (w / 2.0, h / 2.0, w / 2.0 - half, h / 2.0 - half);
+            (0..ELLIPSE_VERTICES)
+                .flat_map(|k| {
+                    let t = std::f64::consts::PI
+                        - 2.0 * std::f64::consts::PI * k as f64 / ELLIPSE_VERTICES as f64;
+                    [cx + rx * t.cos(), cy + ry * t.sin()]
+                })
+                .collect()
+        }
+    };
+    Some((outer, inner.into_iter().map(|v| v as f32).collect()))
+}
+
 /// Boîte locale (0, 0)-(w, h) d'un texte.
 pub fn box_polygon(w: f64, h: f64) -> Vec<f32> {
     vec![0.0, 0.0, w as f32, 0.0, w as f32, h as f32, 0.0, h as f32]
@@ -150,6 +187,23 @@ pub fn box_polygon(w: f64, h: f64) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// C8 (Q8) : anneau d'un rectangle non rempli : extérieur `shape_polygon`, intérieur à −½ épaisseur en sens inverse ;
+    /// ligne et flèche : `None` ; forme plus fine que son trait : intérieur vide.
+    #[test]
+    fn shape_ring_rect_has_reversed_inner_at_half_width() {
+        let (outer, inner) = shape_ring(ShapeKind::Rect, 50.0, 40.0, 4.0).expect("anneau");
+        assert_eq!(outer, shape_polygon(ShapeKind::Rect, 50.0, 40.0, 4.0));
+        assert_eq!(inner, vec![2.0, 2.0, 2.0, 38.0, 48.0, 38.0, 48.0, 2.0]);
+        let (_, e) = shape_ring(ShapeKind::Ellipse, 50.0, 40.0, 4.0).expect("ellipse");
+        assert_eq!(e.len(), 2 * ELLIPSE_VERTICES);
+        assert_eq!(shape_ring(ShapeKind::Line, 50.0, 40.0, 4.0), None);
+        assert_eq!(shape_ring(ShapeKind::Arrow, 50.0, 40.0, 4.0), None);
+        assert_eq!(
+            shape_ring(ShapeKind::Rect, 3.0, 40.0, 4.0).map(|r| r.1),
+            Some(Vec::new())
+        );
+    }
 
     #[test]
     fn parse_round_trip() {

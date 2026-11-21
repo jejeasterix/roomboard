@@ -10,3 +10,9 @@ freedraw = "1.0.4"
 zip = { version = "9.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+i_overlay = { version = "=9.2.0", optional = true, default-features = false }
+
+[features]
+# C8 (DA-Z1, Q4) : zone fermée du pot (rastérisation et `i_overlay`) ; activée par roomboard-wasm seul, jamais par
+# roomboard-formats (marge de 45 Ko).
+zone = ["dep:i_overlay"]
