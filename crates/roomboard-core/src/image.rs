@@ -1105,7 +1105,9 @@ mod tests {
         let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
         put(&d, &id, "sourceAsset", In::from("illisible"));
         assert_eq!(
-            d.element(&id).and_then(|e| e.image).and_then(|i| i.source_asset),
+            d.element(&id)
+                .and_then(|e| e.image)
+                .and_then(|i| i.source_asset),
             None
         );
         let next = AssetRef {

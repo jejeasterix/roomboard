@@ -82,6 +82,9 @@ pub struct ImageView {
     pub contrast: i8,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transparent: Option<TransparentView>,
+    /// C6b (B12) : asset d'avant le premier remplissage au pot, pour « Rétablir l'original » ; absent sinon (ou illisible, U3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_asset: Option<String>,
 }
 
 impl ImageView {
@@ -330,6 +333,7 @@ pub(crate) fn read_image<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, 
             brightness: p.brightness,
             contrast: p.contrast,
             transparent: p.transparent,
+            source_asset: out_string(e.get(txn, "sourceAsset")).filter(|a| is_asset_id(a)),
         },
     ))
 }

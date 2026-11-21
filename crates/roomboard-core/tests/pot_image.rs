@@ -119,7 +119,9 @@ fn sorted(mut v: Vec<String>) -> Vec<String> {
 fn fill_image_is_one_step_new_asset_source_and_baked_fields_removed() {
     let (mut d, p, id) = retouched();
     let mid = hash('1');
-    let c = d.apply(fill(&p, &id, png(&mid), Some(YELLOW))).expect("remplissage");
+    let c = d
+        .apply(fill(&p, &id, png(&mid), Some(YELLOW)))
+        .expect("remplissage");
     assert_eq!((c.pages, c.ids), (vec![p.clone()], vec![id.clone()]));
     let i = image(&d, &id);
     assert_eq!(
@@ -158,9 +160,13 @@ fn second_fill_keeps_first_source_and_two_undos_restore_start() {
     let start = image(&d, &id);
     d.apply(fill(&p, &id, png(&hash('1')), Some(YELLOW)))
         .expect("premier");
-    d.apply(fill(&p, &id, png(&hash('2')), None)).expect("second");
+    d.apply(fill(&p, &id, png(&hash('2')), None))
+        .expect("second");
     let i = image(&d, &id);
-    assert_eq!((i.asset, i.source_asset.as_deref()), (hash('2'), Some(ORIG)));
+    assert_eq!(
+        (i.asset, i.source_asset.as_deref()),
+        (hash('2'), Some(ORIG))
+    );
     assert!(d.undo() && d.undo());
     assert_eq!(image(&d, &id), start);
 }
@@ -195,7 +201,7 @@ fn restore_without_source_asset_is_c5_unchanged() {
     d.apply(restore(&id)).expect("rétablir");
     let i = image(&d, &id);
     assert_eq!(
-        (i.asset.as_str(), i.source_asset, i.params()),
+        (i.asset.as_str(), i.source_asset.clone(), i.params()),
         (ORIG, None, ImageParams::default())
     );
     assert!(
@@ -270,7 +276,8 @@ fn saved_file_cites_original_and_current_and_keeps_intermediate_meta() {
     let (mut d, p, id) = retouched();
     d.apply(fill(&p, &id, png(&hash('1')), Some(YELLOW)))
         .expect("premier");
-    d.apply(fill(&p, &id, png(&hash('2')), None)).expect("second");
+    d.apply(fill(&p, &id, png(&hash('2')), None))
+        .expect("second");
     let want = sorted(vec![hash('2'), ORIG.to_string()]);
     assert_eq!(cited(&d), want);
     let r = load(&save(&d, &meta()).expect("save")).expect("load");
@@ -293,10 +300,7 @@ fn copy_paste_of_filled_image_carries_both_assets() {
     let mut t = Document::blank();
     let tp = t.page_ids()[0].clone();
     let pasted = t.insert_fragment(&f, &tp, 10.0, 0.0).expect("collage").ids[0].clone();
-    assert_eq!(
-        sorted(cited(&t)),
-        sorted(vec![hash('1'), ORIG.to_string()])
-    );
+    assert_eq!(sorted(cited(&t)), sorted(vec![hash('1'), ORIG.to_string()]));
     assert_eq!(image(&t, &pasted).source_asset.as_deref(), Some(ORIG));
 }
 
