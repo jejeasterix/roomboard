@@ -15,7 +15,6 @@
     "fs:allow-read-dir",
     "fs:allow-mkdir",
     "fs:allow-remove",
-    "fs:allow-exists",
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "$DOCUMENT/RoomBoard/Ressources" }, { "path": "$DOCUMENT/RoomBoard/Ressources/**" }]

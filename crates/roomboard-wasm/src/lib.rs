@@ -592,7 +592,7 @@ impl Document {
     ) -> Result<Vec<u8>, JsError> {
         format::save_resource(
             &self.core,
-            &Self::fragment_meta(&now, &app_version),
+            &Self::resource_meta(&now, &app_version),
             format::KIND_GRID,
             &name,
         )
@@ -608,7 +608,7 @@ impl Document {
     ) -> Result<SavedParts, JsError> {
         let p = format::save_resource_parts(
             &self.core,
-            &Self::fragment_meta(&now, &app_version),
+            &Self::resource_meta(&now, &app_version),
             format::KIND_GRID,
             &name,
         )
@@ -1485,8 +1485,8 @@ impl Document {
         self.core.insert_pages(&src.core, after)
     }
 
-    /// Un fragment n'a pas d'historique d'enregistrement : `created` = maintenant.
-    fn fragment_meta(now: &str, app_version: &str) -> SaveMeta {
+    /// Une ressource (fragment, grille) n'a pas d'historique d'enregistrement : `created` = maintenant.
+    fn resource_meta(now: &str, app_version: &str) -> SaveMeta {
         SaveMeta {
             app_version: app_version.to_string(),
             now: now.to_string(),
@@ -1500,7 +1500,7 @@ impl Document {
         app_version: &str,
         name: &str,
     ) -> Result<Vec<u8>, FormatError> {
-        format::save_fragment(&self.core, &Self::fragment_meta(now, app_version), name)
+        format::save_fragment(&self.core, &Self::resource_meta(now, app_version), name)
     }
 
     pub fn save_fragment_parts_inner(
@@ -1509,7 +1509,7 @@ impl Document {
         app_version: &str,
         name: &str,
     ) -> Result<Parts, FormatError> {
-        format::save_fragment_parts(&self.core, &Self::fragment_meta(now, app_version), name)
+        format::save_fragment_parts(&self.core, &Self::resource_meta(now, app_version), name)
     }
 
     pub fn load_fragment_inner(bytes: &[u8]) -> Result<Document, FormatError> {

@@ -16,7 +16,8 @@ import {
   ZIP_MAX_ENTRIES,
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
-import { isPackEntry, type ZipFile } from "./rbpack";
+import { isPackEntry } from "./rbpack";
+import type { ZipFile } from "./zip-read";
 
 /** C4 : entrées d'un paquet (manifeste, ressources, vignettes) ; tout autre fichier du ZIP est ignoré. */
 export function keepPackPath(name: string): boolean {

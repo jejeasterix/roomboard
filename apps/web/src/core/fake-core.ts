@@ -1846,16 +1846,17 @@ function fakeKind(raw: Record<string, unknown>): ContainerKind {
   return kind;
 }
 
+/** Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel. */
+const NOT_ROOMBOARD = "ce fichier n'est pas un document RoomBoard";
+
 function parseFake(bytes: Uint8Array): Record<string, unknown> {
-  // Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel.
-  const notRoomboard = "ce fichier n'est pas un document RoomBoard";
   let raw: unknown;
   try {
     raw = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
-    throw new Error(notRoomboard);
+    throw new Error(NOT_ROOMBOARD);
   }
-  if (!isRecord(raw)) throw new Error(notRoomboard);
+  if (!isRecord(raw)) throw new Error(NOT_ROOMBOARD);
   return raw;
 }
 
@@ -1863,7 +1864,7 @@ function loadFake(bytes: Uint8Array, expected: ContainerKind = "document"): Core
   const raw = parseFake(bytes);
   // C3 : le type se lit à l'ouverture, avant le contenu ; kind absent : document d'avant C3.
   const kind = fakeKind(raw);
-  if (!Array.isArray(raw["pages"])) throw new Error("ce fichier n'est pas un document RoomBoard");
+  if (!Array.isArray(raw["pages"])) throw new Error(NOT_ROOMBOARD);
   if (kind !== expected) throw new Error(wrongKindMessage(kind));
   const pages = (raw["pages"] as SavedPage[]).map((p) => ({
     id: p.id,
