@@ -1508,7 +1508,7 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     return { ports, unzip, read, write, zip };
   }
   const typedFiles = () => ({ pick: vi.fn(async () => null), save: vi.fn(async (_n: string, _b: Uint8Array) => true) });
-  const droppedOf = (name: string, bytes: Uint8Array): DroppedFile => ({ name, size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]) });
+  const droppedOf = (name: string, bytes: Uint8Array): DroppedFile => ({ name, size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes as BlobPart]) });
 
   it("C13 : .iwb ZIP ouvert : nouvel onglet « Cours.roomboard », sans annulation, cible nulle, un seul avis (S1)", async () => {
     const b = fakeBoard({ warnings: ["page 1 : 1 vidéo non lue"] });
