@@ -666,4 +666,34 @@ mod tests {
         let nested = one_page(vec![Item::Group((0..n).map(|_| dot()).collect())]);
         assert!(matches!(write_iwb(&nested), Err(BoardError::TooBig)));
     }
+
+    #[test]
+    fn ubz_first_filled_rect_of_a_page_without_background_survives_a_round_trip() {
+        let full = Item::Shape {
+            kind: ShapeKind::Rect,
+            m: IDENTITY,
+            x0: 0.0,
+            y0: 0.0,
+            x1: PAGE_WIDTH,
+            y1: PAGE_HEIGHT,
+            color: [0, 0, 0],
+            width: 1.0,
+            fill: Some([255, 0, 0]),
+        };
+        let list = one_page(vec![full.clone(), full]);
+        let pages = write_ubz_pages(&list).expect("écriture");
+        let back = crate::board::read_svg(pages[0].as_bytes(), crate::board::Dialect::Ubz, 1)
+            .expect("relecture");
+        let parsed = parse(&back).expect("liste");
+        assert_eq!(parsed[0].background, None);
+        assert_eq!(parsed[0].items.len(), 2);
+    }
+
+    #[test]
+    fn huge_numbers_are_written_finite() {
+        for v in [f32::MAX, -f32::MAX, 3e38, f32::INFINITY, f32::NAN] {
+            let s = num(v);
+            assert!(s.parse::<f32>().is_ok_and(f32::is_finite), "{v} -> {s}");
+        }
+    }
 }

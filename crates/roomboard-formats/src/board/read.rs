@@ -1892,4 +1892,84 @@ mod tests {
             vec!["page 1 : 1 alignement de texte non lu".to_string()]
         );
     }
+
+    fn one_unreadable(body: &str) {
+        let (pages, warnings) = read(&iwb(body, ""), Dialect::Iwb, 1);
+        assert!(pages[0].items.is_empty(), "{body}");
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet illisible ignoré".to_string()]
+        );
+    }
+
+    #[test]
+    fn non_finite_results_make_the_object_unreadable() {
+        one_unreadable(
+            r#"<svg:g transform="scale(1e20)"><svg:g transform="scale(1e20)"><svg:rect width="1" height="1"/></svg:g></svg:g>"#,
+        );
+        one_unreadable(r#"<svg:rect x="3e38" width="3e38" height="10"/>"#);
+        one_unreadable(r#"<svg:line x1="0" y1="0" x2="1" y2="1" stroke-width="1" transform="scale(1e30) scale(1e30)"/>"#);
+        // les voisins lisibles restent lus
+        let (pages, _) = read(
+            &iwb(
+                r#"<svg:rect x="3e38" width="3e38" height="10"/><svg:rect width="2" height="2"/>"#,
+                "",
+            ),
+            Dialect::Iwb,
+            1,
+        );
+        assert_eq!(pages[0].items.len(), 1);
+    }
+
+    #[test]
+    fn view_box_whose_scale_overflows_is_refused() {
+        let xml = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1e-38 1"><rect width="1" height="1"/></svg>"#;
+        assert!(matches!(
+            read_svg(xml.as_bytes(), Dialect::Iwb, 1),
+            Err(BoardError::Broken(_))
+        ));
+    }
+
+    #[test]
+    fn background_flag_warns_for_every_kind() {
+        let body = r#"<svg:text id="t" x="0" y="20">abc</svg:text>"#;
+        let extra = r#"<iwb:element ref="t" background="true"/>"#;
+        let (pages, warnings) = read(&iwb(body, extra), Dialect::Iwb, 1);
+        assert_eq!(pages[0].items.len(), 1);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet de fond gardé comme objet".to_string()]
+        );
+    }
+
+    #[test]
+    fn too_deep_nesting_is_refused() {
+        let xml = format!(
+            "<svg>{}{}</svg>",
+            "<g>".repeat(300),
+            "</g>".repeat(300)
+        );
+        let e = read_svg(xml.as_bytes(), Dialect::Iwb, 1).expect_err("refus");
+        assert!(e.to_string().contains("imbrication trop profonde"), "{e}");
+    }
+
+    #[test]
+    fn too_many_points_or_spans_skip_the_object_only() {
+        let pts = "0 0 ".repeat(crate::board::MAX_POINTS as usize + 1);
+        let body = format!(r#"<svg:polyline points="{pts}"/><svg:rect width="2" height="2"/>"#);
+        let (pages, warnings) = read(&iwb(&body, ""), Dialect::Iwb, 1);
+        assert_eq!(pages[0].items.len(), 1);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet illisible ignoré".to_string()]
+        );
+        let spans = "<svg:tspan>a</svg:tspan>".repeat(crate::board::MAX_SPANS as usize + 1);
+        let body = format!(r#"<svg:text x="0" y="10">{spans}</svg:text>"#);
+        one_unreadable(&body);
+    }
+
+    #[test]
+    fn href_dot_slash_prefixes_are_all_removed() {
+        assert_eq!(normalize_href("./././a\\b.png"), "a/b.png");
+    }
 }

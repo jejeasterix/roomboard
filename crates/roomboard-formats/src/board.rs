@@ -31,8 +31,8 @@ pub const PAGE_HEIGHT: f32 = 1080.0;
 /// Bornes (D16, U26) : pages ouvertes au plus (comme le PDF), objets par fichier au plus (au-delà : refus).
 pub const MAX_PAGES: usize = 500;
 pub const MAX_OBJECTS: usize = 100_000;
-const MAX_POINTS: u32 = 1_000_000;
-const MAX_SPANS: u32 = 10_000;
+pub(crate) const MAX_POINTS: u32 = 1_000_000;
+pub(crate) const MAX_SPANS: u32 = 10_000;
 const MAX_INDEX: u32 = 16_777_216;
 /// Préallocation au plus (comme `path` de `pdf.rs`) : un compte annoncé ne réserve pas plus que le flux ne porte.
 const PREALLOC: usize = 4096;
@@ -844,5 +844,27 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn group_depth_is_bounded() {
+        let mut ops = vec![1.0];
+        ops.extend(std::iter::repeat_n(7.0, 20000));
+        ops.extend(std::iter::repeat_n(8.0, 20000));
+        let l = BoardList {
+            ops,
+            texts: Vec::new(),
+            warnings: Vec::new(),
+        };
+        assert!(matches!(parse(&l), Err(BoardError::BadList(_))));
+        let mut ops = vec![1.0];
+        ops.extend(std::iter::repeat_n(7.0, 256));
+        ops.extend(std::iter::repeat_n(8.0, 256));
+        let l = BoardList {
+            ops,
+            texts: Vec::new(),
+            warnings: Vec::new(),
+        };
+        assert!(parse(&l).is_ok());
     }
 }
