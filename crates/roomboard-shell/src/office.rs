@@ -372,6 +372,15 @@ fn new_conversion_dir(work_root: &Path) -> Result<(String, PathBuf), ConvertErro
     Ok((id, dir))
 }
 
+/// Copie au plus `max` octets de `src` vers `dst` ; un flux plus long est refusé (`TooLarge`).
+fn copy_bounded(
+    src: impl Read,
+    dst: &mut impl std::io::Write,
+    max: u64,
+) -> Result<u64, ConvertError> {
+    std::io::copy(&mut { src }, dst).map_err(io)
+}
+
 /// Arbre de processus d'une conversion (O11, DA-O5) : groupe de processus sous Unix (`process_group(0)` au lancement),
 /// objet Job `KILL_ON_JOB_CLOSE` sous Windows (affecté juste après `spawn` ; un enfant lancé avant échappe au Job,
 /// risque accepté, HO2-13).
@@ -1375,4 +1384,103 @@ mod tests {
         assert!(!dead.exists());
         assert!(mine.exists() && other.exists());
     }
+    /// Revue T12 (1) : une conversion réussie tue aussi les enfants laissés par le convertisseur ; après libération, le
+    /// dossier de travail est vide.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn success_kills_leftover_children() {
+        let d = dir("enfant-reussi");
+        let conv = fake_converter(
+            &d,
+            "sleep 60 &\necho $! > \"$d/enfant.pid\"\nprintf '%%PDF-1.4' > source.pdf\nexit 0",
+        );
+        let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
+        let work = d.join("travail");
+        let c = convert_granted(&g, &src, Some(&conv), &work, CONVERT_TIMEOUT).expect("converti");
+        let pid: u32 = fs::read_to_string(d.join("enfant.pid"))
+            .expect("enfant.pid")
+            .trim()
+            .parse()
+            .expect("pid");
+        assert!(gone(pid), "enfant ({pid}) encore vivant après le succès");
+        release_conversion(&g, &work, &c.id);
+        assert_eq!(left_in(&work), 0);
+    }
+
+    /// Revue T12 (2) : un dossier `<pid>-<n>` déjà présent n'échoue pas la conversion : l'identifiant suivant est pris.
+    #[test]
+    fn conversion_dir_skips_existing_id() {
+        let d = dir("collision-conv");
+        let work = d.join("travail");
+        let taken = work.join(CONVERSIONS_DIR).join(format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT_CONVERSION.load(Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&taken).unwrap();
+        let (id, dir) = new_conversion_dir(&work).expect("id suivant");
+        assert!(dir.is_dir() && dir != taken, "{id}");
+    }
+
+    /// Revue T12 (3) : racine de travail relative : `--outdir`, l'entrée et le profil sont absolus.
+    #[cfg(unix)]
+    #[test]
+    fn relative_work_root_gives_absolute_arguments() {
+        let d = dir("racine-relative");
+        let conv = fake_converter(
+            &d,
+            "printf '%s\\n' \"$@\" > \"$d/args\"\nprintf '%%PDF-1.4' > source.pdf",
+        );
+        let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
+        let rel = PathBuf::from(format!("rb-rel-{}", std::process::id()));
+        let r = convert_granted(&g, &src, Some(&conv), &rel, CONVERT_TIMEOUT);
+        let _ = fs::remove_dir_all(&rel);
+        r.expect("converti");
+        let args = fs::read_to_string(d.join("args")).unwrap();
+        let lines: Vec<&str> = args.lines().collect();
+        let after = |flag: &str| lines[lines.iter().position(|l| *l == flag).unwrap() + 1];
+        assert!(Path::new(after("--outdir")).is_absolute(), "{args}");
+        assert!(Path::new(lines.last().unwrap()).is_absolute(), "{args}");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("-env:UserInstallation=file:///")),
+            "{args}"
+        );
+    }
+
+    /// Revue T12 (4) : un fichier d'un octet de plus que le plafond est refusé, sans dossier laissé.
+    #[cfg(unix)]
+    #[test]
+    fn file_over_the_limit_is_refused() {
+        let d = dir("trop-gros");
+        let conv = fake_converter(&d, "exit 0");
+        let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&src)
+            .unwrap()
+            .set_len(OFFICE_MAX_BYTES + 1)
+            .unwrap();
+        let work = d.join("travail");
+        assert_eq!(
+            convert_granted(&g, &src, Some(&conv), &work, CONVERT_TIMEOUT).err(),
+            Some(ConvertError::TooLarge)
+        );
+        assert_eq!(left_in(&work), 0);
+    }
+
+    /// Revue T12 (4) : la copie bornée refuse un flux qui dépasse le plafond, même si la taille annoncée était bonne.
+    #[test]
+    fn bounded_copy_refuses_growth_past_the_limit() {
+        let mut out = Vec::new();
+        let src = std::io::repeat(0).take(OFFICE_MAX_BYTES + 5);
+        assert_eq!(
+            copy_bounded(src, &mut out, OFFICE_MAX_BYTES).err(),
+            Some(ConvertError::TooLarge)
+        );
+        let mut ok = Vec::new();
+        assert_eq!(copy_bounded(&b"abc"[..], &mut ok, 3), Ok(3));
+    }
+
 }

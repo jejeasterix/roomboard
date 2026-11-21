@@ -385,4 +385,16 @@ mod tests {
         assert!(!old.exists());
         assert!(recent.exists());
     }
+    /// Revue T12 (2) : un dossier `<pid>-<n>` déjà présent n'échoue pas l'écriture : l'identifiant suivant est pris.
+    #[test]
+    fn write_skips_existing_id() {
+        let d = dir("collision");
+        let o = Originals::new(d.join("originaux"));
+        let taken = format!("{}-{}", std::process::id(), o.next.load(Ordering::Relaxed));
+        fs::create_dir_all(d.join("originaux").join(&taken)).unwrap();
+        let (id, path) = o.write("cours.docx", b"PK\x03\x04x").expect("id suivant");
+        assert_ne!(id, taken);
+        assert!(path.is_file());
+    }
+
 }
