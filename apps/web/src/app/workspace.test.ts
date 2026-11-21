@@ -18,6 +18,7 @@ import { PdfEncryptedError } from "../platform/pdf-render";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
 import type { OverlayProducer, OverlayRequest } from "./pdf-export";
+import { NO_GRID_MESSAGE } from "./fragments";
 import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
@@ -231,6 +232,8 @@ interface SetupOptions {
   readonly linkMedia?: WorkspaceDeps["linkMedia"];
   readonly relinkMedia?: WorkspaceDeps["relinkMedia"];
   readonly model3d?: WorkspaceDeps["model3d"];
+  readonly importPack?: WorkspaceDeps["importPack"];
+  readonly thumbnail?: WorkspaceDeps["thumbnail"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -274,6 +277,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.linkMedia ? { linkMedia: o.linkMedia } : {}),
     ...(o.relinkMedia ? { relinkMedia: o.relinkMedia } : {}),
     ...(o.model3d ? { model3d: o.model3d } : {}),
+    ...(o.importPack ? { importPack: o.importPack } : {}),
+    ...(o.thumbnail ? { thumbnail: o.thumbnail } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -1363,5 +1368,96 @@ describe("espace de travail : objets 3D (C15)", () => {
     const r = await ws.importFiles([glbFile()], { x: 10, y: 10 });
     expect(r.refused).toEqual(["cube.glb"]);
     expect(r.inserted).toEqual([]);
+  });
+});
+
+describe("espace de travail : C4", () => {
+  const grid = {
+    visible: true,
+    snap: false,
+    above: false,
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: false, visible: true }],
+  } as const;
+  const pageOf = (tab: TabSession): string => tab.board.doc.pageIds()[0]!;
+  const setGrid = (tab: TabSession, g: unknown): void => void tab.board.engine.run({ type: "SetGrid", page: pageOf(tab), grid: g } as Command);
+  const gridOf = (tab: TabSession) => tab.board.doc.page(pageOf(tab))?.grid ?? null;
+  const rectOf = (tab: TabSession): string =>
+    tab.board.doc.apply({ type: "AddShape", page: pageOf(tab), shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!;
+  // Octets lus par le cœur seul (aucun conteneur de test) : le type du fichier se lit sur les octets.
+  const coreOnly = (): void => {
+    codec.read.mockRejectedValue(new CodecUnavailableError(new Error("pas de module")));
+  };
+
+  it("C4 : captureResource(« grid ») sans grille : null, avis dit", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.captureResource("grid")).toBeNull();
+    expect(shell.notify).toHaveBeenCalledWith(NO_GRID_MESSAGE);
+  });
+
+  it("C4 : captureResource(« selection ») sans sélection : null, avis dit", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.captureResource("selection")).toBeNull();
+    expect(shell.notify).toHaveBeenCalledWith("aucune sélection, rien n'est ajouté");
+  });
+
+  it("C4 : captureResource(« grid ») puis insertResource sur une page sans grille : la grille est posée", async () => {
+    coreOnly();
+    const ws = await setupWorkspace();
+    const tab = ws.active();
+    setGrid(tab, grid);
+    const captured = (await ws.captureResource("grid"))!;
+    expect(captured.kind).toBe("grid");
+    expect(captured.thumbnail).toBeNull(); // aucun `thumbnail` dans les dépendances
+    setGrid(tab, null);
+    expect(await ws.insertResource(captured.bytes, "Seyès", null)).toBe("inserted");
+    expect(gridOf(tab)?.levels[0]?.kind).toBe("squares");
+  });
+
+  it("C4 : un .rbitem de grille déposé remplace la grille (cible insertFragment routée)", async () => {
+    coreOnly();
+    const ws = await setupWorkspace();
+    const tab = ws.active();
+    setGrid(tab, grid);
+    const { bytes } = (await ws.captureResource("grid"))!;
+    setGrid(tab, null);
+    const r = await ws.importFiles([plainFile("Seyès.rbitem", bytes as Uint8Array<ArrayBuffer>)], null);
+    expect(r.inserted).toEqual(["Seyès.rbitem"]);
+    expect(gridOf(tab)).not.toBeNull();
+  });
+
+  it("C4 : trois .rbitem déposés ensemble : cascade R4, pas au même point (D24)", async () => {
+    coreOnly();
+    const ws = await setupWorkspace();
+    const tab = ws.active();
+    const id = rectOf(tab);
+    (tab.board.engine as unknown as { select(ids: string[]): void }).select([id]);
+    const { bytes } = (await ws.captureResource("selection"))!;
+    const files = ["a", "b", "c"].map((n) => plainFile(`${n}.rbitem`, bytes as Uint8Array<ArrayBuffer>));
+    await ws.importFiles(files, { x: 200, y: 200 });
+    const ids = tab.board.doc.elementIds(pageOf(tab)).slice(-3);
+    expect(new Set(ids.map((i) => tab.board.doc.bounds([i])!.x0)).size).toBe(3);
+  });
+
+  it("C4 : insertResource d'objets est une seule étape d'annulation", async () => {
+    coreOnly();
+    const ws = await setupWorkspace();
+    const tab = ws.active();
+    const id = rectOf(tab);
+    (tab.board.engine as unknown as { select(ids: string[]): void }).select([id]);
+    const { bytes } = (await ws.captureResource("selection"))!;
+    expect(await ws.insertResource(bytes, "Objets", null)).toBe("inserted");
+    expect(strokes(tab)).toBe(2);
+    undoOn(tab);
+    expect(strokes(tab)).toBe(1);
+  });
+
+  it("C4 : un .rbpack déposé est remis à importPack", async () => {
+    const importPack = vi.fn(async (_n: string, _b: Uint8Array) => true);
+    const ws = await setupWorkspace({ importPack });
+    const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0]);
+    await ws.importFiles([plainFile("Fractions.rbpack", zip)], null);
+    expect(importPack).toHaveBeenCalledTimes(1);
+    expect(importPack.mock.calls[0]![0]).toBe("Fractions.rbpack");
+    expect(Array.from(importPack.mock.calls[0]![1])).toEqual(Array.from(zip));
   });
 });
