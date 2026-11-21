@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Fenêtre principale : boîtes de fichiers, lecture et écriture des seuls fichiers choisis (portée ajoutée par le plugin dialog), fermeture gardée, titre. Fichiers déposés ou passés au lancement : lus par les commandes de la coque (read_granted_file, granted_file_size, launch_files), limitées aux fichiers accordés, jamais un dossier ; quit_app. Aucune portée fs pour les dépôts (scopeDroppedPaths: false).",
+  "description": "Fenêtre principale : boîtes de fichiers, lecture et écriture des seuls fichiers choisis (portée ajoutée par le plugin dialog), fermeture gardée, titre. Bibliothèque (C4) : lecture, écriture, création et suppression sous Documents/RoomBoard/Ressources, et dans le dossier partagé choisi par la boîte native (portée ajoutée par le plugin dialog, récursive, pour la session). Fichiers déposés ou passés au lancement : lus par les commandes de la coque (read_granted_file, granted_file_size, launch_files), limitées aux fichiers accordés, jamais un dossier ; quit_app. Aucune portée fs pour les dépôts (scopeDroppedPaths: false).",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -11,6 +11,14 @@
     "dialog:allow-save",
     "dialog:allow-message",
     "fs:allow-read-file",
-    "fs:allow-write-file"
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
+    "fs:allow-mkdir",
+    "fs:allow-remove",
+    "fs:allow-exists",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "$DOCUMENT/RoomBoard/Ressources" }, { "path": "$DOCUMENT/RoomBoard/Ressources/**" }]
+    }
   ]
 }
