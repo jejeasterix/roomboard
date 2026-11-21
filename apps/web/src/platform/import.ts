@@ -22,7 +22,7 @@ import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type 
 import { ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
-import { officeHandler, officeWebHandler } from "./office-import";
+import { officeHandler, officeNoConverterHandler, officeWebHandler, type OfficeOpenFile } from "./office-import";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
 /** Limite des hôtes web (R15) ; la coque n'en a pas. */
@@ -75,7 +75,10 @@ export interface ImportDeps {
    *  Office », `.xlsx` en valeurs. Rejette `OfficeConvertError` (code de la coque). */
   convertOffice?(path: string): Promise<Blob>;
   /** C16 (O5, O16) : ouvre le PDF converti dans un nouvel onglet, l'original gardé ; false si refusé (avis déjà dit). */
-  openOffice?(file: { readonly name: string; readonly original: Blob; readonly pdf: Blob }): Promise<boolean>;
+  openOffice?(file: OfficeOpenFile): Promise<boolean>;
+  /** C16 (O24) : la coque a un convertisseur ; faux : « installez LibreOffice ou Microsoft Office » sans lire le fichier,
+   *  `.xlsx` au classeur. Absent : vrai. */
+  readonly officeConverter?: boolean;
 }
 
 export interface Importer {
@@ -266,6 +269,7 @@ const linkPathOf = (handler: ImportHandler, f: DroppedFile): string | null =>
 
 export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
+  const sheet = readSheet ? sheetHandler({ readSheet }) : undefined;
   const openPdf = deps.openPdf?.bind(deps);
   const importPack = deps.importPack?.bind(deps);
   const linkMedia = deps.linkMedia?.bind(deps);
@@ -293,9 +297,11 @@ export function createImporter(deps: ImportDeps): Importer {
       // C16 (O3, O4, O33) : avant `sheet` ; coque : conversion, `.xlsx` compris (repli sur `sheet` sans convertisseur) ;
       // web : message, `.xlsx` laissé à `sheet`.
       convertOffice && openOffice
-        ? officeHandler({ convert: convertOffice, open: openOffice, ...(readSheet ? { sheet: sheetHandler({ readSheet }) } : {}) })
+        ? deps.officeConverter === false
+          ? officeNoConverterHandler()
+          : officeHandler({ convert: convertOffice, open: openOffice, ...(sheet ? { sheet } : {}) })
         : officeWebHandler(),
-      ...(readSheet ? [sheetHandler({ readSheet })] : []),
+      ...(sheet ? [sheet] : []),
       ...(model3d ? [zip3dHandler(model3d, shared3d), companionHandler()] : []), // après `sheet` : `.xlsx` d'abord
     ],
     deps,
