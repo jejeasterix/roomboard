@@ -11,7 +11,7 @@ use std::sync::Mutex;
 /// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
 /// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
-pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem"];
+pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem", "rbpack"];
 /// Extensions des médias (audio, vidéo) qu'on peut lier sans les copier.
 pub const MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "m4a", "mov", "webm", "mp3", "wav", "ogg", "oga", "ogv",

@@ -47,6 +47,13 @@
         "description": "Objet RoomBoard",
         "mimeType": "application/x-roomboard-item",
         "role": "Editor"
+      },
+      {
+        "ext": ["rbpack"],
+        "name": "Paquet RoomBoard",
+        "description": "Paquet RoomBoard",
+        "mimeType": "application/x-roomboard-pack",
+        "role": "Editor"
       }
     ]
   }
