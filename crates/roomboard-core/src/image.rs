@@ -1,10 +1,12 @@
 //! Réglages non destructifs d'une image (C5, U29, I2-I8) : lecture tolérante des champs du `Y.Map` de l'élément (un
 //! champ illisible est lu comme absent, U3), domaine (I5), boîte affichée (I8). Champ neutre = champ absent (I4) ;
 //! `crop` en `Any::Array` positionnel, `transparent` en `Y.Map` de champs scalaires, jamais `Any::Map` (I2, G4).
-//! L'écriture (`Command::SetImageParams`) suit le patron de `fill.rs` ; l'asset n'est jamais réécrit.
+//! L'écriture (`Command::SetImageParams`) suit le patron de `fill.rs` ; l'asset n'est réécrit que par le pot (C6b,
+//! `cmd_fill_image`) et par « Rétablir l'original » (`restore`).
 use yrs::{Any, In, Map, MapPrelim, MapRef, Out, ReadTxn};
 
-use crate::commands::{valid_matrix, Change, CommandError};
+use crate::asset::AssetRef;
+use crate::commands::{valid_asset, valid_matrix, Change, CommandError};
 use crate::document::Document;
 use crate::element::{any_f64, out_f64, out_string, read_image, transform_to_any, Transform};
 
@@ -251,15 +253,68 @@ fn plan<T: ReadTxn>(
         .collect()
 }
 
+/// Champs de pixels de C5 cuits dans le nouvel asset par un remplissage (B4) : retirés dans la même transaction.
+const BAKED: [&str; 3] = ["brightness", "contrast", "transparent"];
+
 impl Document {
+    /// Pot sur une image (C6b, B2-B4) : refus dans l'ordre page, élément de cette page, image lisible (`BadFill`), asset
+    /// (`BadAsset`) ; même asset que l'actuel : aucune étape (D38). Une transaction : `asset` ← nouvel asset ;
+    /// `sourceAsset` ← ancien asset s'il est absent (l'original reste celui d'avant le premier remplissage) ; luminosité,
+    /// contraste et couleur transparente retirés (cuits par la page) ; géométrie et matrice gardées ; métadonnée du nouvel
+    /// asset (K3). La couleur est contrôlée par `cmd_fill`, jamais écrite : les pixels la portent.
+    pub(crate) fn cmd_fill_image(
+        &mut self,
+        page: &str,
+        id: &str,
+        asset: &AssetRef,
+    ) -> Result<Change, CommandError> {
+        let (element, view) = {
+            let txn = self.read();
+            self.find_page(&txn, page)
+                .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+            let found = self
+                .find_element(&txn, id)
+                .filter(|f| f.page_id == page)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let (_, view) = read_image(&txn, &found.element).ok_or(CommandError::BadFill)?;
+            (found.element, view)
+        };
+        if !valid_asset(asset) {
+            return Err(CommandError::BadAsset);
+        }
+        if asset.id == view.asset {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            element.insert(&mut txn, "asset", In::from(asset.id.as_str()));
+            if view.source_asset.is_none() {
+                element.insert(&mut txn, "sourceAsset", In::from(view.asset.as_str()));
+            }
+            for key in BAKED {
+                if element.get(&txn, key).is_some() {
+                    element.remove(&mut txn, key);
+                }
+            }
+            self.insert_asset_meta(&mut txn, asset);
+        }
+        Ok(self.done(Change {
+            pages: vec![page.to_string()],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
+    }
+
     /// `SetImageParams` (I6) : refus dans l'ordre id inconnu, cible qui n'est pas une image lisible, réglages hors
     /// domaine, matrice ; plan sous une lecture fermée, puis au plus une transaction (une étape) ; aucun champ à écrire
-    /// et même matrice : aucune (D38).
+    /// et même matrice : aucune (D38). C6b (B11) : `restore` et un `sourceAsset` lisible : `asset` ← `sourceAsset` dans la
+    /// même étape ; `sourceAsset` retiré, même illisible.
     pub(crate) fn cmd_set_image_params(
         &mut self,
         id: &str,
         p: &ImageParamsInput,
         m: &Transform,
+        restore: bool,
     ) -> Result<Change, CommandError> {
         let (element, page, transform, ops) = {
             let txn = self.read();
@@ -272,7 +327,15 @@ impl Document {
             if !valid_matrix(m) {
                 return Err(CommandError::BadMatrix);
             }
-            let ops = plan(&txn, &found.element, &view.params(), &next);
+            let mut ops = plan(&txn, &found.element, &view.params(), &next);
+            if restore {
+                if let Some(src) = &view.source_asset {
+                    ops.push(("asset", Some(In::from(src.as_str()))));
+                }
+                if found.element.get(&txn, "sourceAsset").is_some() {
+                    ops.push(("sourceAsset", None));
+                }
+            }
             (found.element, found.page_id, transform, ops)
         };
         if ops.is_empty() && *m == transform {
@@ -608,6 +671,7 @@ mod tests {
             id: id.into(),
             params,
             matrix,
+            restore: false,
         })
     }
 

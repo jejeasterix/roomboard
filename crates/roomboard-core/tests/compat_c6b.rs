@@ -63,6 +63,7 @@ fn c5_document() -> Document {
             ..ImageParamsInput::default()
         },
         matrix: M,
+        restore: false,
     })
     .expect("réglages");
     d
@@ -99,4 +100,16 @@ fn image_c5_fixture_opens_retouched_and_resaves_identically() {
         save(&d, &meta()).expect("resave") == bytes,
         "fichier d'avant C6b réenregistré à l'identique"
     );
+}
+
+/// S4 : l'image d'avant C6b n'a pas de `sourceAsset`.
+#[test]
+fn image_c5_fixture_has_no_source_asset() {
+    let d = load(&fixture_bytes()).expect("load");
+    let p = d.page_ids()[0].clone();
+    let i = d
+        .element(&d.element_ids(&p)[0])
+        .and_then(|v| v.image)
+        .expect("image");
+    assert_eq!(i.source_asset, None);
 }
