@@ -15,6 +15,8 @@ import { RecordingPath } from "./engine/render/record-ctx";
 import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
 import { createPdfEngine } from "./platform/pdf-render";
+import { createModelViewLoader } from "./platform/model-view";
+import { createZipReader } from "./platform/zip-read";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
@@ -138,8 +140,11 @@ async function start(): Promise<void> {
   const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
   // Pixels des images (C5, I18, DAI3) : un Worker par onglet, avec sa propre instance du module `formats`.
   const spawnPixelWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pixel-worker.ts", import.meta.url), { type: "module" }));
+  // Objets 3D (C15, X20, DAX3) : three chargé au premier dépôt 3D ou au premier « Tourner », jamais au démarrage.
+  const modelView = createModelViewLoader(async () => (await import("./platform/model-view-three")).createThreeModelView());
+  const spawnZipWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/zip-worker.ts", import.meta.url), { type: "module" }));
   const shared: SessionShared = {
-    container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker,
+    container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
   };
 
@@ -213,6 +218,7 @@ async function start(): Promise<void> {
     // Conteneur avec images (R7) : second module chargé au premier Ouvrir ou au premier enregistrement avec image.
     codec: createPageCodec(loadFormatsModule),
     readSheet: (b) => sheets.read(b),
+    model3d: { view: () => modelView.load(), readZip: createZipReader(spawnZipWorker) },
     clipboard: createClipboard(browserSystemClipboard(navigator)),
     itemFiles,
     pdf,
