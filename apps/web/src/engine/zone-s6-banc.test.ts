@@ -159,6 +159,9 @@ describe.skipIf(wasmCore === null)("banc S6 (OE23, Q6) : vrai module, témoin sa
     const off = engine.onState((s) => {
       marks.tags(s.page, s.version);
     });
+    // Comme `mark(engine.state())` de la session (`board-session.ts:658`) avant le premier clic : le premier recompte
+    // des fill ne tombe pas dans la fenêtre du banc.
+    marks.tags(p, d.version());
     const timed = marks.timed((c) => engine.run(c));
     const inside: number[] = [];
     const outside: number[] = [];
