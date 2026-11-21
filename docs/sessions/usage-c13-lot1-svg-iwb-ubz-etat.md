@@ -1,10 +1,10 @@
 # État — usage-c13-lot1-svg-iwb-ubz
 
-Statut : PR #30 ouverte, fusion locale en cours
+Statut : clos — PR #30 fusionnée par fusion locale (main e8e112b)
 Gabarit : chantier (12 tâches, confirmé au plan)
 Objectif : Un `.iwb` (IWB/CFF, en ZIP ou en SVG brut) et un `.ubz` (OpenBoard) déposés ou ouverts deviennent des pages RoomBoard avec la liste d'avertissements de ce qui n'est pas lu (niveau A), par un lecteur SVG commun aux formats de tableaux, et « Enregistrer une copie au format » exporte en `.iwb` et en `.ubz` (niveau E).
 Avancement : 15/15 tâches terminées
-Étage : 4 — depuis 2026-11-21 16:35
+Étage : 4 — clos le 2026-11-21 16:40
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c13-lot1-svg-iwb-ubz   Branche : feat/usage-c13-lot1-svg-iwb-ubz   Base : origin/main @ afc2d8b
 Branche principale locale au lancement : afc2d8b
