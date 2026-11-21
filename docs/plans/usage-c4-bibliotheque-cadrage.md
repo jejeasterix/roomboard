@@ -40,6 +40,16 @@ contraintes `:586`) ; étude `docs/etudes/usage-ressources.md` (§ 4.1 à 4.8, �
 | D20 | Association `.rbpack` (coque) | `tauri.conf.json` gagne l'association `rbpack` (`application/x-roomboard-pack`, « Paquet RoomBoard ») ; `ASSOCIATED_EXTENSIONS` (`roomboard-shell/src/lib.rs:14`) gagne `"rbpack"` ; test Rust qui relit `tauri.conf.json` et compare les deux listes. | U8 (MIME) ; `usage-cadrage.md:150` (« association de `.rbitem`, `.rbpack` […] (C3, C4, C1) ») | oui (HU1-1) |
 | D21 | Fichiers d'avant C4 | Aucun octet changé pour `.roomboard` et `.rbitem` de `kind: "fragment"` (tests `compat_socle`, `compat_c3`, `document_manifest_has_no_kind_field` gardés verts) ; nouveau `compat_c4` : un `.rbitem` de grille rechargé garde ses octets. | U8 (« fichiers du socle lus tels quels ») | oui |
 | D22 | Licences | Aucune dépendance neuve : `fflate` (MIT, déjà là), `fake-indexeddb` (Apache-2.0, déjà en dev), plugins Tauri déjà là ; `controle-licences.mjs` reste vert. | brief (aucune AGPL/GPL/LGPL) | oui |
+| D23 | Refus du `kind` d'un paquet | `readPack` lève `unknownKindMessage(kind)` (`core/api.ts:453`), importé, jamais recopié. | contre-relecture B1 | oui |
+| D24 | Cascade d'un dépôt de plusieurs `.rbitem` | La cible `insertFragment` (`workspace.ts:267`, contrat `image-import.ts:194-197`, R4) passe son `index` à `insertResource(…, at, index)` : trois `.rbitem` déposés ensemble ne tombent pas au même point. | R4 ; contre-relecture I1 | oui |
+| D25 | Nom de ressource → nom de fichier | Nom de fichier au patron `slug` (`profile-file.ts:17` : sans accents, minuscules, `[a-z0-9-]`, vide → `ressource`, 80 caractères), « (2) », « (3) » en cas de collision ; le nom affiché reste dans le compagnon `.json`. Les dossiers gardent casse et accents ; seuls `/ \ : * ? " < > |` et un point initial deviennent `_`. | contre-relecture I2 | oui |
+| D26 | Manifeste du paquet lu par le cœur | Le manifeste du `.rbpack` porte `schema` et `modified` ; un `.rbpack` ouvert comme document passe `check_manifest` jusqu'au `kind` et reçoit « ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque » (bras de `UnknownKind` pour `pack`), jamais « endommagé : missing field ». | contre-relecture M1 | oui |
+| D27 | Limites à l'export | `exportPack` applique les limites de l'import (1 000 entrées, 256 Mio) avant d'écrire : « paquet trop gros (plus de 1 000 entrées ou de 256 Mio) : exportez un dossier plus petit ». | contre-relecture M4 | oui |
+| D28 | Lâcher sur le panneau | Dépôt seulement si l'élément du dessus au point (`elementsFromPoint`, fantôme exclu) est sous `.rb-stages` et hors de `.rb-popover`. | contre-relecture M5 | oui |
+| D29 | Vignette | Peinte depuis le document de la ressource relue (sélection extraite ou grille seule), jamais depuis la page source. | contre-relecture M6 | oui |
+| D30 | Extensions d'import | `IMPORT_EXTENSIONS` (`files.ts:75`) gagne `rbpack`. | contre-relecture M7 | oui |
+| D31 | Stockage web durable | `navigator.storage.persist()` demandé au premier enregistrement s'il existe ; absent ou refusé : rien (H1-7). | contre-relecture M8 | oui |
+| D32 | Chemins du paquet | `readPack` ne contrôle que la forme (`items/….rbitem`) ; chaque chemin passe par `safeLibraryPath` avant la première écriture de l'import, aucun second normaliseur. | contre-relecture M9 | oui |
 
 ## 3. Carte d'impact
 
@@ -78,7 +88,9 @@ dépôt, `~/.cache/graphes/` n'a que `claude-config`, `roomflow2`, `roomflow2-we
 | `apps/web/src/app/container-io.ts:40-57` (`EncodeAs`, `ReadKind`, `ContainerIO`) | oui | `EncodeAs` gagne `{kind: "grid", name}` ; `read` accepte une liste de `kind` et rend `kind` dans `ReadResult` | V |
 | `apps/web/src/app/fragments.ts:31-38,81-108` (`FragmentOps`, `insertOutcome`) | oui | `insertResource(tab, bytes, name, at)` : fragment → chemin existant ; grille → `SetGrid` sur la page montrée ; `encodeGrid(tab)` | V |
 | `apps/web/src/platform/import.ts:138-160,247` (`rbitemHandler`, registre) | oui | `rbitemHandler` passe par `insertResource` ; nouveau `rbpackHandler` | V |
-| `apps/web/src/platform/files.ts:6-9` (extensions, MIME) | oui | `RBPACK_EXTENSION`, `RBPACK_MIME` | V |
+| `apps/web/src/platform/files.ts:6-9,75` (extensions, MIME, `IMPORT_EXTENSIONS`) | oui | `RBPACK_EXTENSION`, `RBPACK_MIME`, `rbpack` dans `IMPORT_EXTENSIONS` (D30) | V |
+| `apps/web/src/platform/host-tauri.ts:24-36,217-253` (`TauriDialog`, `TauriFs`, `loadTauriPorts`) | oui | `TauriDirFs`, `dirFs`, `pickFolder`, `documentDir` (D7) | V |
+| `apps/web/src/platform/image-import.ts:194-197` (`ImageTarget.insertFragment`, `index` R4) | non | contrat réutilisé ; la cible de `workspace.ts:267` route vers `insertResource` avec `index` (D24) | V |
 | `apps/web/src/platform/typed-files.ts:18-23,40-67` (`RBITEM_TYPE`, `create*TypedFiles`) | oui | `RBPACK_TYPE` ; réalisations réutilisées | V |
 | `apps/web/src/platform/zip-worker.ts:19-66`, `zip-read.ts:27-32` | oui | lecture filtrée pour le paquet et écriture `zipSync` stockée (seul module qui importe fflate, GC17) | V |
 | `apps/web/src/platform/clipboard.ts`, `paste.ts` | non | enveloppe `roomboard-items/1` inchangée ; une grille n'est pas copiable en C4 | V |
@@ -169,6 +181,8 @@ coffre : `chercher.js "roomboard bibliothèque ressources rbpack" 8`.
 | Écrire et relire une grille en conteneur | `crates/roomboard-core/src/format/mod.rs:334,378` | `save_resource_parts(doc, meta, kind: &'static str, name) -> Result<Parts, FormatError>` ; `load_resource_parts(manifest, ybin, kind) -> Result<(Document, Manifest), FormatError>` ; `save_resource` / `load_resource` (sans asset) ; les fonctions de fragment y délèguent | étendre |
 | Connaître le `kind` d'un manifeste sans charger le document | `crates/roomboard-core/src/format/mod.rs:232` | `check_manifest` exposé en Wasm : `manifest_kind(manifest: &[u8]) -> Result<String, JsError>` | étendre |
 | Appliquer une grille | `apps/web/src/core/api.ts:133` | `{type: "SetGrid", page, grid}` | réutiliser |
+| Refus du `kind` d'un paquet | `apps/web/src/core/api.ts:453` | `unknownKindMessage` | réutiliser |
+| Nom de fichier d'une ressource | `apps/web/src/profile-file.ts:17` | patron `slug(label)` | réutiliser (patron) |
 | Rendre la vignette des objets | `apps/web/src/app/pdf-overlay.ts:46,103`, `engine/render/canvas2d.ts:426` | `loadImageSource`, `browserExportCanvas(w, h)`, `paintContent(ctx, page, rect, scale)` | réutiliser |
 | Rendre la vignette d'une grille | `apps/web/src/core/api.ts:373`, `engine/render/grid-paint.ts:102` | `gridLinesOf(page, grid, rect, …)`, `paintGrid(ctx, lines, camera, sx, sy, dpr)` | réutiliser |
 | Choisir et enregistrer un `.rbpack` | `apps/web/src/platform/typed-files.ts:40,52` | `createWebTypedFiles` / `createTauriTypedFiles` avec `RBPACK_TYPE` | réutiliser |
@@ -187,7 +201,7 @@ coffre : `chercher.js "roomboard bibliothèque ressources rbpack" 8`.
 
 Constats d'architecture des zones touchées (`docs/architecture-constats.md`) : `image-import.ts:244` (`ImageTarget` reçoit
 aussi les fragments, peu-profond) et `clipboard.ts:7` (import circulaire) restent ouverts ; C4 ne les aggrave pas :
-`insertResource` vit dans `fragments.ts`, sans passer par `ImageTarget`, et C4 ne touche pas au presse-papiers.
+`insertResource` vit dans `fragments.ts` ; le dépôt d'un `.rbitem` y arrive par la cible `ImageTarget.insertFragment` existante (`workspace.ts:267`), sans membre neuf sur `ImageTarget` (constat ni aggravé ni fermé), et C4 ne touche pas au presse-papiers.
 
 ## 4. Hypothèses à revoir
 
@@ -207,6 +221,8 @@ aussi les fragments, peu-profond) et `clipboard.ts:7` (import circulaire) resten
 - **H1-5** Coque : l'accès au dossier partagé ne survit pas au redémarrage (pas de `tauri-plugin-persisted-scope`) ;
   au démarrage la section propose « Rouvrir le dossier partagé… » (même boîte, chemin retenu en défaut).
 - **H1-6** Import d'un paquet dans un dossier neuf nommé d'après le paquet (D19), sans choix du dossier de destination.
+
+- **H1-7** Web : la durabilité du stockage dépend de `navigator.storage.persist()` (accordé ou non par le navigateur) ; refusé, le navigateur peut vider la bibliothèque sous pression d'espace.
 
 **Niveau 2**
 

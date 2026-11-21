@@ -4,20 +4,20 @@
 
 | id | titre | dépend de | fichiers touchés | worktree | subagent | preuve | scénario | section |
 |----|-------|-----------|------------------|----------|----------|--------|----------|---------|
-| T1 | Cœur : `kind: "grid"`, `WrongKind { expected, found }`, `save_resource*` / `load_resource*`, `manifest_kind`, `container_kind`, `compat_c4` | — | `crates/roomboard-core/src/format/mod.rs`, `crates/roomboard-core/tests/compat_c4.rs` (neuf), tout fichier de `crates/` qui construit `FormatError::WrongKind { … }` (relevé par `grep -rn "WrongKind {" crates/`), `docs/essais/taille-wasm.md` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T1` | concepteur-critique | `nice -n 10 cargo test -p roomboard-core --test compat_c4 --test compat_c3 --test compat_socle 2>&1 \| grep -E "^test \|test result" \| tail -30` : ≥ 5 tests, `grid_resource_round_trips_with_same_bytes ... ok`, 3 × `test result: ok` ; deux tailles relevées (principal ≤ 1 572 864 o, formats ≤ 3 145 728 o) | S2, S4 | #tache-t1 |
+| T1 | Cœur : `kind: "grid"`, `WrongKind { expected, found }`, `save_resource*` / `load_resource*`, `manifest_kind`, `container_kind`, `compat_c4` | — | `crates/roomboard-core/src/format/mod.rs` (dont le test `unknown_kind_is_refused`, `:506-513`), `crates/roomboard-core/tests/compat_c4.rs` (neuf), tout fichier de `crates/` qui construit `FormatError::WrongKind { … }` (relevé par `grep -rn "WrongKind {" crates/`), `docs/essais/taille-wasm.md` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T1` | concepteur-critique | `nice -n 10 cargo test -p roomboard-core --test compat_c4 --test compat_c3 --test compat_socle 2>&1 \| grep -E "^test \|test result" \| tail -30` : ≥ 5 tests, `grid_resource_round_trips_with_same_bytes ... ok`, 3 × `test result: ok` ; deux tailles relevées (principal ≤ 1 572 864 o, formats ≤ 3 145 728 o) | S2, S4 | #tache-t1 |
 | T2 | Pont Wasm (`save_grid*`, `load_grid*`, `manifest_kind`, `container_kind`) et liaison `wasm-core.ts` ; contrat du vrai module | T1, T3 | `crates/roomboard-wasm/src/lib.rs`, `apps/web/src/core/wasm-core.ts`, `apps/web/src/core/wasm-core.contract.test.ts`, `docs/essais/taille-wasm.md` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T2` | implementeur-tdd | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/web exec vitest run src/core/wasm-core.contract.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -12` : ≥ 3 tests « C4 », 0 échec ; deux tailles relevées | S2, S4 | #tache-t2 |
 | T3 | API TS du cœur (`ContainerKind`, `saveGrid*`, `loadGrid*`, `manifestKind`, `containerKind`, `wrongKindMessage`) et faux cœur | — | `apps/web/src/core/api.ts`, `apps/web/src/core/fake-core.ts`, `apps/web/src/core/fake-core.test.ts`, toute fabrique de test typée `CoreFactory` relevée par `grep -rln ": CoreFactory" apps/web/src` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T3` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/core/fake-core.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -12` : ≥ 4 tests « C4 », 0 échec | S2, S4 | #tache-t3 |
-| T4 | `ContainerIO` à liste de `kind` et `FragmentOps.insertResource` / `encodeGrid` | T3 | `apps/web/src/app/container-io.ts`, `apps/web/src/app/container-io.test.ts`, `apps/web/src/app/fragments.ts`, `apps/web/src/app/fragments.test.ts`, `apps/web/src/app/workspace.ts` (ligne 252 seule) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T4` | concepteur-critique | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/container-io.test.ts src/app/fragments.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -16` : ≥ 7 tests « C4 », 0 échec, `Tests` sans `failed` | S1, S2, S4 | #tache-t4 |
+| T4 | `ContainerIO` à liste de `kind` et `FragmentOps.insertResource` / `encodeGrid` (avec `index` de cascade, D24) | T3 | `apps/web/src/app/container-io.ts`, `apps/web/src/app/container-io.test.ts`, `apps/web/src/app/fragments.ts`, `apps/web/src/app/fragments.test.ts`, `apps/web/src/app/workspace.ts` (ligne 252 seule) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T4` | concepteur-critique | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/container-io.test.ts src/app/fragments.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -16` : ≥ 8 tests « C4 », 0 échec, `Tests` sans `failed` | S1, S2, S4 | #tache-t4 |
 | T5 | Vignette d'une ressource (128 px, peintre d'export) | — | `apps/web/src/app/thumbnail.ts` (neuf), `apps/web/src/app/thumbnail.test.ts` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T5` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/thumbnail.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -8` : ≥ 4 tests « C4 », 0 échec | S1, S2 | #tache-t5 |
-| T6 | Stockage `LibraryFiles` (mémoire, IndexedDB, plugin-fs), aides `idb.ts`, ports de dossiers de la coque | — | `apps/web/src/platform/idb.ts` (neuf), `apps/web/src/platform/pending.ts`, `apps/web/src/platform/library-files.ts` (neuf), `apps/web/src/platform/library-files.test.ts` (neuf), `apps/web/src/platform/host-tauri.ts` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T6` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/library-files.test.ts src/platform/pending.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -30` : ≥ 21 tests « C4 » (7 × 3 réalisations), 0 échec, `pending.test.ts` vert | S3, S5 | #tache-t6 |
+| T6 | Stockage `LibraryFiles` (mémoire, IndexedDB, plugin-fs), aides `idb.ts`, ports de dossiers de la coque | — | `apps/web/src/platform/idb.ts` (neuf), `apps/web/src/platform/pending.ts`, `apps/web/src/platform/library-files.ts` (neuf), `apps/web/src/platform/library-files.test.ts` (neuf), `apps/web/src/platform/host-tauri.ts`, `apps/web/src/platform/host-tauri-ports.test.ts` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T6` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/library-files.test.ts src/platform/host-tauri-ports.test.ts src/platform/pending.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -34` : ≥ 25 tests « C4 » (7 × 3 réalisations, `safeLibraryPath`, persistance, ports), 0 échec, `pending.test.ts` vert | S3, S5 | #tache-t6 |
 | T7 | Paquet `.rbpack` (`rbpack.ts`) et Worker ZIP (mode `pack`, écriture stockée) | — | `apps/web/src/platform/rbpack.ts` (neuf), `apps/web/src/platform/rbpack.test.ts` (neuf), `apps/web/src/platform/zip-worker.ts`, `apps/web/src/platform/zip-worker.test.ts` (neuf), `apps/web/src/platform/zip-read.ts`, `apps/web/src/platform/zip-read.test.ts` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T7` | concepteur-critique | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/rbpack.test.ts src/platform/zip-worker.test.ts src/platform/zip-read.test.ts src/platform/model3d-import.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -20` : ≥ 10 tests « C4 », 0 échec | S3, S4 | #tache-t7 |
-| T8 | `ResourceLibrary` : index, dossiers, recherche, ajout, export et import de paquet | T6, T7 | `apps/web/src/app/library.ts` (neuf), `apps/web/src/app/library.test.ts` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T8` | concepteur-critique | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/library.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -20` : ≥ 10 tests « C4 », `C4 : export puis import rend les mêmes ressources` présent, 0 échec | S1, S3, S4 | #tache-t8 |
+| T8 | `ResourceLibrary` : index, dossiers, recherche, ajout, export et import de paquet | T6, T7 | `apps/web/src/app/library.ts` (neuf), `apps/web/src/app/library.test.ts` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T8` | concepteur-critique | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/library.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -20` : ≥ 12 tests « C4 », `C4 : export puis import rend les mêmes ressources` présent, 0 échec | S1, S3, S4 | #tache-t8 |
 | T9 | Entrée `.rbpack` de l'importeur et types de fichiers | — | `apps/web/src/platform/files.ts`, `apps/web/src/platform/typed-files.ts`, `apps/web/src/platform/import.ts`, `apps/web/src/platform/import.test.ts` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T9` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/import.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -10` : ≥ 3 tests « C4 », 0 échec | S3, S5 | #tache-t9 |
 | T10 | Coque : association `rbpack`, capacités de dossiers, `ASSOCIATED_EXTENSIONS` | — | `apps/desktop/src-tauri/tauri.conf.json`, `apps/desktop/src-tauri/capabilities/default.json`, `crates/roomboard-shell/src/lib.rs`, `crates/roomboard-shell/Cargo.toml`, `Cargo.lock`, `docs/essais/taille-wasm.md` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T10` | implementeur-tdd | `nice -n 10 cargo test -p roomboard-shell 2>&1 \| grep -E "^test \|test result" \| tail -30` : `tauri_conf_associations_match_associated_extensions ... ok`, `capabilities_grant_library_folder_only ... ok`, `test result: ok` ; `node scripts/controle-hors-ligne.mjs` et `controle-icones.mjs` verts ; deux tailles relevées | S5 | #tache-t10 |
 | T11 | Action de barre `library` « Bibliothèque » | — | `apps/web/src/toolbar.ts`, `apps/web/src/toolbar-profiles.ts`, `apps/web/src/toolbar-profiles.test.ts`, `apps/web/src/app/toolbar-host.ts`, `apps/web/src/app/toolbar-host.test.ts`, `apps/web/src/ui/App.tsx` (type `Panel` seul) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T11` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/toolbar-profiles.test.ts src/app/toolbar-host.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Grille\|Tests " \| tail -10` : ≥ 2 tests « C4 », 0 échec | S1 | #tache-t11 |
-| T12 | Glisser une carte vers la scène (Pointer Events) | — | `apps/web/src/ui/resource-drag.ts` (neuf), `apps/web/src/ui/resource-drag.test.ts` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T12` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/ui/resource-drag.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -8` : ≥ 4 tests « C4 », 0 échec | S1, S2 | #tache-t12 |
+| T12 | Glisser une carte vers la scène (Pointer Events) | — | `apps/web/src/ui/resource-drag.ts` (neuf), `apps/web/src/ui/resource-drag.test.ts` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T12` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/ui/resource-drag.test.ts --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -8` : ≥ 5 tests « C4 », 0 échec | S1, S2 | #tache-t12 |
 | T13 | Panneau `LibraryPanel` (deux racines, dossiers, recherche, cartes, formulaire, paquets) | T8, T12 | `apps/web/src/ui/LibraryPanel.tsx` (neuf), `apps/web/src/ui/LibraryPanel.test.tsx` (neuf) | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T13` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/ui/LibraryPanel.test.tsx --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -14` : ≥ 8 tests « C4 », 0 échec | S1, S2, S3, S5 | #tache-t13 |
-| T14 | Branchement : `Workspace`, `main.ts`, `App.tsx`, `rb.css` | T2, T4, T5, T8, T9, T11, T13 | `apps/web/src/app/workspace.ts`, `apps/web/src/app/workspace.test.ts`, `apps/web/src/main.ts`, `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `apps/web/src/ui/rb.css` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T14` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/workspace.test.ts src/ui/App.test.tsx --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -12` : ≥ 3 tests « C4 », 0 échec ; `nice -n 10 pnpm --filter @roomboard/web build 2>&1 \| tail -3` sans `error` | S1, S2, S3 | #tache-t14 |
+| T14 | Branchement : `Workspace`, `main.ts`, `App.tsx`, `rb.css` | T2, T4, T5, T8, T9, T11, T13 | `apps/web/src/app/workspace.ts`, `apps/web/src/app/workspace.test.ts`, `apps/web/src/main.ts`, `apps/web/src/ui/App.tsx`, `apps/web/src/ui/App.test.tsx`, `apps/web/src/ui/rb.css` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T14` | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/workspace.test.ts src/ui/App.test.tsx --reporter=verbose 2>&1 \| grep -E "C4\|Tests " \| tail -12` : ≥ 5 tests « C4 », 0 échec ; `nice -n 10 pnpm --filter @roomboard/web build 2>&1 \| tail -3` sans `error` | S1, S2, S3 | #tache-t14 |
 | T15 | Essai navigateur C4 branché dans `verifier.sh --e2e`, capture, tailles finales | T1 à T14 | `scripts/essais/c4-bibliotheque-navigateur.mjs` (neuf), `scripts/verifier.sh`, `scripts/tests/verifier-e2e.test.sh`, `docs/essais/c4-bibliotheque.png` (neuf), `docs/essais/taille-wasm.md` | isolé `~/projets/roomboard-wt/usage-c4-bibliotheque--T15` | implementeur-tdd | `nice -n 10 bash scripts/verifier.sh --e2e 2>&1 \| grep -E "C4 bibliothèque\|C8 pot zones\|module Wasm\|module formats\|e2e OK\|verifier.sh : OK\|ÉCHEC" \| tail -12` : « C4 bibliothèque : OK », « verifier.sh : e2e OK », « verifier.sh : OK », deux tailles relevées | S1, S2, S3, S4 | #tache-t15 |
 
 Vagues proposées (fichiers disjoints dans chaque vague ; une seule suite lourde à la fois sur la VM) :
@@ -42,7 +42,7 @@ Playwright (Chromium).
 ## Global Constraints
 
 - GC1 — TDD : test rouge d'abord. Aucun test désactivé, sauté, ni seuil changé.
-- GC2 — Tailles : module Wasm principal plafond 1 572 864 o (avant C4 : 1 362 599 o) ; module `formats` plafond 3 145 728 o (avant C4 : 3 100 344 o, marge 45 Ko : rien d'autre que la ligne `KIND_GRID` de `check_manifest` et le message de `WrongKind`). Toute tâche qui touche le Rust mesure les deux tailles (bloc « Mesure » de sa section) et les écrit dans `docs/essais/taille-wasm.md`. Garde-fou du cadrage (H2-5) : principal < +20 Ko, `formats` < +1 Ko ; au-delà, la tâche s'arrête et le dit.
+- GC2 — Tailles : module Wasm principal plafond 1 572 864 o (avant C4 : 1 362 599 o) ; module `formats` plafond 3 145 728 o (avant C4 : 3 100 344 o, marge 45 Ko : rien d'autre que la ligne `KIND_GRID` de `check_manifest`, le message de `WrongKind` et le bras `pack` de `UnknownKind`, D26). Toute tâche qui touche le Rust mesure les deux tailles (bloc « Mesure » de sa section) et les écrit dans `docs/essais/taille-wasm.md`. Garde-fou du cadrage (H2-5) : principal < +20 Ko, `formats` < +1 Ko ; au-delà, la tâche s'arrête et le dit.
 - GC3 — Aucun build Tauri, aucun build Android. Coque prouvée par tests unitaires et lecture de `tauri.conf.json` et des capacités.
 - GC4 — La scène ne passe jamais sous 640 px (test existant `c5-image-navigateur.mjs:156` et essai C4, panneau ouvert).
 - GC5 — Commandes lourdes avec `nice -n 10`. VM chargée : un test qui échoue sur un délai est rejoué une fois ; aucun délai relevé.
@@ -58,8 +58,8 @@ Playwright (Chromium).
 1. Un `.rbitem` de grille déposé sur la scène (ou glissé) remplace la grille ; un `.rbitem` d'objets d'avant C4 s'insère comme avant, avec les mêmes messages d'erreur (effet de bord 1 et 2, S4) → T4 `C4 : read à kind seul garde les messages d'avant`, `C4 : insertResource d'une grille pose un SetGrid, une étape`.
 2. Même grille déposée deux fois : aucune étape d'annulation de plus (D2, D38) → T4 `C4 : même grille : aucune étape`.
 3. Paquet hostile : `kind: "autre"`, `formatVersion: 2`, chemin `../x.rbitem`, entrée du manifeste absente du ZIP : refus clair, bibliothèque inchangée (D18, S4) → T7 `C4 : readPack refuse …` (4 tests), T8 `C4 : import refusé : bibliothèque inchangée`.
-4. Nom de ressource ou de dossier saisi avec `/`, `..`, `:` ou un point initial : jamais de chemin hors de la racine (H1-4) → T6 `C4 : safeLibraryPath refuse …`, T8 `C4 : nom saisi assaini`.
-5. Collision de noms (deux « Moitié » dans le même dossier, paquet « Fractions » importé deux fois) : « (2) », jamais un écrasement (D19) → T8 `C4 : collision de nom : (2)`, `C4 : import deux fois : Fractions (2)`.
+4. Nom de ressource ou de dossier saisi avec `/`, `..`, `:` ou un point initial : jamais de chemin hors de la racine (H1-4) → T6 `C4 : safeLibraryPath refuse …`, T8 `C4 : nom saisi → nom de fichier (patron slug), nom affiché gardé`, `C4 : import d'un chemin non sûr refusé par safeLibraryPath`.
+5. Collision de noms (deux « Moitié » dans le même dossier, paquet « Fractions » importé deux fois) : « (2) », jamais un écrasement (D19) → T8 `C4 : deux « Moitié » dans le même dossier ne s'écrasent pas : (2)`, `C4 : import deux fois : Fractions (2)`.
 
 ## Carte des fichiers
 
@@ -98,6 +98,7 @@ type d'un manifeste ou d'un conteneur, et refuse le mauvais type avec un message
 
 **Fichiers :**
 - Modifier : `crates/roomboard-core/src/format/mod.rs:22-26` (constantes), `:84-97` (`Display`), `:65-77` (enum), `:252-260` (`check_manifest`), `:265-271` (`expect_kind`), `:334-391` (fonctions de fragment)
+- Modifier : `crates/roomboard-core/src/format/mod.rs:506-513` (test `unknown_kind_is_refused`, qui attend aujourd'hui `"grid"` refusé)
 - Créer : `crates/roomboard-core/tests/compat_c4.rs`
 - Modifier : chaque construction de `FormatError::WrongKind { expected: … }` relevée par `grep -rn "WrongKind {" crates/` (tests compris) : ajouter `found`
 - Modifier : `docs/essais/taille-wasm.md` (section C4)
@@ -141,7 +142,7 @@ Attendu : principal ≤ 1 572 864 o et < 1 362 599 + 20 480 o ; formats ≤ 3 14
 
 **Contraintes (recopiées) :**
 - GC1 — TDD : test rouge d'abord. Aucun test désactivé, sauté, ni seuil changé.
-- GC2 — Plafonds : principal 1 572 864 o (avant 1 362 599 o), `formats` 3 145 728 o (avant 3 100 344 o, marge 45 Ko : rien d'autre que la ligne `KIND_GRID` de `check_manifest` et le message de `WrongKind`). Tailles mesurées et écrites. Au-delà de +20 Ko / +1 Ko : arrêt, le dire.
+- GC2 — Plafonds : principal 1 572 864 o (avant 1 362 599 o), `formats` 3 145 728 o (avant 3 100 344 o, marge 45 Ko : rien d'autre que la ligne `KIND_GRID` de `check_manifest`, le message de `WrongKind` et le bras `pack` de `UnknownKind`, D26). Tailles mesurées et écrites. Au-delà de +20 Ko / +1 Ko : arrêt, le dire.
 - GC3 — Aucun build Tauri, aucun build Android.
 - GC5 — `nice -n 10` ; test sur délai rejoué une fois.
 - GC6 — Aucune dépendance neuve.
@@ -263,7 +264,12 @@ fn manifest_and_container_kind() {
     assert_eq!(e, Some(FormatError::UnknownKind { found: "pack".into() }));
     assert_eq!(
         e.unwrap().to_string(),
-        "type de fichier RoomBoard inconnu (« pack ») : pris en charge dans une prochaine version"
+        "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque"
+    );
+    let autre = manifest_kind(br#"{"format":"roomboard","formatVersion":1,"schema":1,"appVersion":"x","created":"c","modified":"m","kind":"autre"}"#);
+    assert_eq!(
+        autre.err().map(|e| e.to_string()).as_deref(),
+        Some("type de fichier RoomBoard inconnu (« autre ») : pris en charge dans une prochaine version")
     );
 }
 
@@ -313,6 +319,15 @@ Dans `Display`, à la place des deux bras `WrongKind` :
             FormatError::WrongKind { .. } => write!(
                 f,
                 "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page"
+            ),
+```
+
+Et, avant le bras `UnknownKind` existant (D26 : un `.rbpack` ouvert comme document ou objet a un message à lui) :
+
+```rust
+            FormatError::UnknownKind { found } if found == "pack" => write!(
+                f,
+                "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque"
             ),
 ```
 
@@ -465,6 +480,32 @@ pub fn load_fragment(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> 
 
 - [ ] **Étape 6 : constructions existantes de `WrongKind`** — `grep -rn "WrongKind {" crates/` ; à chaque `WrongKind { expected: KIND_FRAGMENT }` ajouter `found: KIND_DOCUMENT`, à chaque `WrongKind { expected: KIND_DOCUMENT }` ajouter `found: KIND_FRAGMENT` (seuls cas possibles avant C4). Aucune assertion de message changée.
 
+- [ ] **Étape 6 bis : `unknown_kind_is_refused`** (`format/mod.rs:506-513`) — `grid` est désormais connu ; réécrire le test ainsi (mêmes aides `manifest_with_kind`, `zip_of`, `load_parts`) :
+
+```rust
+    #[test]
+    fn unknown_kind_is_refused() {
+        let ybin = Document::blank().encode_v1();
+        for k in ["pack", "autre"] {
+            let e = load_parts(&manifest_with_kind(k), &ybin).err();
+            assert_eq!(e, Some(FormatError::UnknownKind { found: k.into() }));
+            assert_eq!(load_fragment_parts(&manifest_with_kind(k), &ybin).err(), e);
+            assert_eq!(check_manifest(&manifest_with_kind(k)).err(), e);
+            let z = zip_of(&[(MANIFEST, &manifest_with_kind(k)), (DOCUMENT, &ybin)]);
+            assert_eq!(open(&z).err(), e);
+            assert_eq!(load(&z).err(), e);
+        }
+        // C4 (D3) : `grid` est connu ; lu comme document ou objet, c'est le mauvais type, pas un type inconnu.
+        assert!(check_manifest(&manifest_with_kind(KIND_GRID)).is_ok());
+        assert_eq!(
+            load_parts(&manifest_with_kind(KIND_GRID), &ybin).err(),
+            Some(FormatError::WrongKind { expected: KIND_DOCUMENT, found: KIND_GRID })
+        );
+    }
+```
+
+(si le test d'origine a d'autres lignes après `load(&z)`, les garder dans la boucle.)
+
 - [ ] **Étape 7 : tests verts** — commande bornée de la section : `compat_c4` ≥ 5 `ok`, `compat_c3` et `compat_socle` `test result: ok` ; puis la suite du crate, `clippy` et `fmt`.
 
 - [ ] **Étape 8 : mesure** — bloc « Mesure » ; écrire dans `docs/essais/taille-wasm.md` :
@@ -568,9 +609,9 @@ Attendu : ≥ 3 tests « C4 : … », `Tests` sans `failed`. Garder vert : tout 
     d.free();
   });
 
-  it("C4 : kind « pack » refusé par manifestKind avec le message de UnknownKind", () => {
+  it("C4 : kind « pack » refusé par manifestKind avec le message du paquet (D26)", () => {
     const m = new TextEncoder().encode('{"format":"roomboard","formatVersion":1,"schema":1,"appVersion":"x","created":"c","modified":"m","kind":"pack"}');
-    expect(() => core.manifestKind(m)).toThrow("type de fichier RoomBoard inconnu (« pack ») : pris en charge dans une prochaine version");
+    expect(() => core.manifestKind(m)).toThrow("ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque");
   });
 ```
 
@@ -900,6 +941,7 @@ la page montrée (aucune étape si c'est la même grille) ; la grille de la page
 - Réutilise : `apps/web/src/app/fragments.ts:81` — `insertOutcome(tab, rbitem, name, at)` : son corps après lecture devient `placeFragment`, appelé par `insertOutcome` et `insertResource`.
 - Réutilise : `apps/web/src/app/fragments.ts:31-38` — `FragmentOps` étendu de `insertResource(tab, bytes: Uint8Array, name: string, at: Point | null): Promise<InsertOutcome>` (plus `index?`, pour le rang de cascade du dépôt) et `encodeGrid(tab): Promise<Uint8Array | null>` (null : page sans grille, avis dit).
 - Réutilise : `apps/web/src/app/container-io.ts:40-57` — `EncodeAs |= {kind: "grid"; name}` ; `read(name, bytes, kind: ReadKind | readonly ReadKind[], docPath?)` ; `ReadKind = "document" | "fragment" | "grid"` ; `ReadResult.kind`.
+- Réutilise : `apps/web/src/platform/image-import.ts:194-197` — contrat `ImageTarget.insertFragment(rbitem, at, index, name)` (cascade R4) : `index` transmis à `placeFragment` par `insertResource` (D24) ; la cible de `workspace.ts:267` est routée par T14.
 - Réutilise : `apps/web/src/core/api.ts:133` — `{type: "SetGrid", page, grid}`, par `tab.board.engine.run(cmd)` (une étape, comme `App.tsx:187`).
 
 **Patron à ne pas reprendre :** relire deux fois les octets (une lecture pour le type, une pour le contenu) ou
@@ -907,7 +949,7 @@ essayer les lecteurs l'un après l'autre en rattrapant les erreurs : le type se 
 manifeste déjà extrait, `containerKind` dans le repli), puis un seul lecteur. Avec un seul `kind` demandé, le chemin
 d'avant C4 est gardé à l'identique (mêmes messages). Chemin de référence : `apps/web/src/app/container-io.ts:107-151`.
 
-**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T4 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/container-io.test.ts src/app/fragments.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -16` : ≥ 7 tests « C4 », `Tests` sans `failed` (les tests C3 existants des deux fichiers restent verts). Puis `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app src/platform/import.test.ts --reporter=dot 2>&1 | tail -4` : `Tests` sans `failed`.
+**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T4 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/container-io.test.ts src/app/fragments.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -16` : ≥ 8 tests « C4 », `Tests` sans `failed` (les tests C3 existants des deux fichiers restent verts). Puis `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app src/platform/import.test.ts --reporter=dot 2>&1 | tail -4` : `Tests` sans `failed`.
 
 **Contraintes (recopiées) :**
 - GC1 — TDD : test rouge d'abord. Aucun test désactivé, sauté, ni seuil changé.
@@ -1018,6 +1060,20 @@ describe("C4 : insertResource et encodeGrid", () => {
     expect(dst.doc.elementIds(dst.doc.pageIds()[0]!)).toHaveLength(1);
   });
 
+  it("C4 : trois objets déposés ensemble (index 0, 1, 2) ne tombent pas au même point (R4, D24)", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    src.doc.apply({ type: "AddShape", page: src.doc.pageIds()[0]!, shape: "rect", x: 0, y: 0, w: 10, h: 10 } as Command);
+    src.select(src.doc.elementIds(src.doc.pageIds()[0]!));
+    const bytes = (await ops.encodeSelection(src.tab, "export"))!;
+    const dst = tabOf();
+    for (const i of [0, 1, 2]) expect(await ops.insertResource(dst.tab, bytes, "x.rbitem", { x: 100, y: 100 }, i)).toBe("inserted");
+    const ids = dst.doc.elementIds(dst.doc.pageIds()[0]!);
+    const x0s = ids.map((id) => dst.doc.bounds([id])!.x0);
+    expect(new Set(x0s).size).toBe(3);
+    expect(x0s[1]! - x0s[0]!).toBeCloseTo(CASCADE_STEP);
+  });
+
   it("C4 : encodeGrid d'une page sans grille : null, avis dit", async () => {
     const { ops, said } = opsOf();
     expect(await ops.encodeGrid(tabOf().tab)).toBeNull();
@@ -1026,7 +1082,7 @@ describe("C4 : insertResource et encodeGrid", () => {
 });
 ```
 
-(`opsOf()` : fabrique locale qui rend `{ ops, said }` avec `createFragmentOps` ci-dessus et un `ContainerIO` sur `memoryCodec()` ; pour l'objet, reprendre la commande de forme que les tests C3 du fichier utilisent déjà — `grep -n "apply({ type" apps/web/src/app/fragments.test.ts` — à la place de la ligne `AddShape` si sa forme diffère.)
+(`CASCADE_STEP` importé de `../platform/image-import`. `opsOf()` : fabrique locale qui rend `{ ops, said }` avec `createFragmentOps` ci-dessus et un `ContainerIO` sur `memoryCodec()` ; pour l'objet, reprendre la commande de forme que les tests C3 du fichier utilisent déjà — `grep -n "apply({ type" apps/web/src/app/fragments.test.ts` — à la place de la ligne `AddShape` si sa forme diffère.)
 
 - [ ] **Étape 3 : ils échouent** — commande bornée : `insertResource is not a function`, `kind` absent.
 
@@ -1256,7 +1312,7 @@ grille (D12).
 - GC7 — Commits fichier par fichier, auteur `jejeasterix <jejeasterix@users.noreply.github.com>`, message anglais terminé par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - GC10 — Tests neufs nommés « C4 : … ».
 
-**Interdits :** aucun second peintre ; aucun `document.createElement("canvas")` dans ce module (la toile vient de `deps.canvas`).
+**Interdits :** aucun second peintre ; `doc` est le document de la ressource relue (sélection extraite ou grille seule, D29), jamais la page source `tab.board.doc` ; aucun `document.createElement("canvas")` dans ce module (la toile vient de `deps.canvas`).
 
 **Critère « terminé » :** tests verts, rapport avec `Réutilisation : appelé pdf-overlay.loadImageSource, canvas2d.paintContent` et l'écart `gridLinesOf` dit.
 
@@ -1409,7 +1465,8 @@ façon en mémoire, dans IndexedDB (web) et par `plugin-fs` (coque) ; un chemin 
 - Créer : `apps/web/src/platform/idb.ts`
 - Modifier : `apps/web/src/platform/pending.ts:53-80` (ses deux aides et l'ouverture paresseuse viennent de `idb.ts`)
 - Créer : `apps/web/src/platform/library-files.ts`, `apps/web/src/platform/library-files.test.ts`
-- Modifier : `apps/web/src/platform/host-tauri.ts:24-36` (types), `:216-240` (`loadTauriPorts`)
+- Modifier : `apps/web/src/platform/host-tauri.ts:24-36` (types), `:217-253` (`loadTauriPorts`)
+- Créer : `apps/web/src/platform/host-tauri-ports.test.ts` (`loadTauriPorts` sous `vi.mock`)
 
 **Interfaces :**
 - Produit (`idb.ts`) : `export function finished(tx: IDBTransaction): Promise<void>` ; `export function result<T>(r: IDBRequest<T>): Promise<T>` ; `export function lazyDb(factory: IDBFactory, name: string, version: number, upgrade: (db: IDBDatabase) => void): () => Promise<IDBDatabase>`.
@@ -1421,13 +1478,14 @@ façon en mémoire, dans IndexedDB (web) et par `plugin-fs` (coque) ; un chemin 
   - `export const UNSAFE_PATH_MESSAGE = "chemin de bibliothèque refusé";`
   - `export function safeLibraryPath(path: string): string` (rend `path`, ou lève `UNSAFE_PATH_MESSAGE` ; `""` = la racine, accepté)
   - `export function createMemoryLibraryFiles(root: LibraryRoot): LibraryFiles`
-  - `export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, name?: string): LibraryFiles`
+  - `export async function requestPersistence(nav?: { readonly storage?: { persist?(): Promise<boolean> } }): Promise<boolean>` (D31 ; absent ou en échec : `false`, jamais de rejet)
+  - `export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, name?: string, persist?: () => Promise<boolean>): LibraryFiles` (`persist` appelé une fois, au premier `write`)
   - `export function createTauriLibraryFiles(fs: TauriFs & TauriDirFs, rootPath: string, root: LibraryRoot): LibraryFiles`
 - Produit (`host-tauri.ts`) : `export interface TauriDirFs { readDir(path: string): Promise<readonly { readonly name: string; readonly isDirectory: boolean }[]>; mkdir(path: string, o: { readonly recursive: true }): Promise<void>; remove(path: string, o: { readonly recursive: true }): Promise<void>; exists(path: string): Promise<boolean> }` ; `loadTauriPorts()` rend en plus `dirFs: TauriDirFs`, `pickFolder(defaultPath: string | null): Promise<string | null>`, `documentDir(): Promise<string>`.
 - Réutilise : `apps/web/src/platform/pending.ts:53-68` — patron `finished` / `result` / ouverture paresseuse ; les deux aides passent dans `platform/idb.ts` (exportées, appelées par les deux bases).
 - Réutilise : `apps/web/src/platform/host-tauri.ts:217` — `@tauri-apps/plugin-fs` déjà chargé par `loadTauriPorts` (`readDir`, `mkdir`, `remove`, `exists`) et `@tauri-apps/plugin-dialog` (`open({ directory: true, recursive: true })`).
 
-**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T6 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/library-files.test.ts src/platform/pending.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -30` : ≥ 21 tests « C4 » (même jeu sur les trois réalisations), `Tests` sans `failed` ; `pending.test.ts` inchangé et vert (à garder vert).
+**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T6 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/library-files.test.ts src/platform/host-tauri-ports.test.ts src/platform/pending.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -34` : ≥ 25 tests « C4 » (même jeu sur les trois réalisations, plus `safeLibraryPath`, persistance et ports), `Tests` sans `failed` ; `pending.test.ts` inchangé et vert (à garder vert).
 
 **Contraintes (recopiées) :**
 - GC1 — TDD : test rouge d'abord. Aucun test désactivé, sauté, ni seuil changé.
@@ -1440,7 +1498,7 @@ façon en mémoire, dans IndexedDB (web) et par `plugin-fs` (coque) ; un chemin 
 **Interdits :** aucune écriture dans `~/Documents` ou `$HOME` réel par un test ; `pending.ts` garde son comportement
 (base, magasin, clé inchangés).
 
-**Critère « terminé » :** tests verts, `tsc --noEmit` sans erreur dans ces fichiers, rapport avec `Réutilisation : appelé idb.finished/result (extraits de pending.ts)`. Écart à dire au rapport : la valeur IndexedDB est `{ bytes: Uint8Array, type }` et non un `Blob` (le clonage d'un `Blob` n'est pas tenu par `fake-indexeddb` sous Node, ni de façon sûre par Safari ancien) ; `read` rend un `Blob`.
+**Critère « terminé » :** tests verts, `tsc --noEmit` sans erreur dans ces fichiers, rapport avec `Réutilisation : appelé idb.finished/result (extraits de pending.ts)`. Écart à dire au rapport : la valeur IndexedDB est `{ bytes: Uint8Array, type }` et non un `Blob`, par simplicité : les octets sont lus avant d'ouvrir la transaction (elle se ferme à la première attente), et le clonage de `Blob` par IndexedDB a été longtemps fragile sous Safari (supposé) ; `fake-indexeddb` 6.2.8 sous Node 22 garde bien un `Blob` (vérifié par la contre-relecture), ce n'est donc pas la raison ; `read` rend un `Blob`.
 
 - [ ] **Étape 1 : tests qui échouent** — `library-files.test.ts` :
 
@@ -1450,9 +1508,9 @@ import "fake-indexeddb/auto";
 import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { TauriDirFs, TauriFs } from "./host-tauri";
-import { createIdbLibraryFiles, createMemoryLibraryFiles, createTauriLibraryFiles, safeLibraryPath, UNSAFE_PATH_MESSAGE, type LibraryFiles } from "./library-files";
+import { createIdbLibraryFiles, createMemoryLibraryFiles, createTauriLibraryFiles, requestPersistence, safeLibraryPath, UNSAFE_PATH_MESSAGE, type LibraryFiles } from "./library-files";
 
 const temps: string[] = [];
 afterAll(async () => {
@@ -1540,6 +1598,26 @@ describe.each(makers)("C4 : LibraryFiles (%s)", (_label, make) => {
   });
 });
 
+describe("C4 : persistance du stockage web (D31)", () => {
+  it("C4 : requestPersistence appelle navigator.storage.persist s'il existe, sans échec sinon", async () => {
+    const persist = vi.fn(async () => true);
+    expect(await requestPersistence({ storage: { persist } })).toBe(true);
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(await requestPersistence({})).toBe(false);
+    expect(await requestPersistence({ storage: { persist: async () => Promise.reject(new Error("refus")) } })).toBe(false);
+  });
+
+  it("C4 : createIdbLibraryFiles demande la persistance une fois, au premier write", async () => {
+    const persist = vi.fn(async () => true);
+    const f = createIdbLibraryFiles(indexedDB, "mine", `c4-persist-${++n}`, persist);
+    await f.list();
+    expect(persist).not.toHaveBeenCalled();
+    await f.write("a.rbitem", new Blob(["x"]));
+    await f.write("b.rbitem", new Blob(["y"]));
+    expect(persist).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("C4 : safeLibraryPath", () => {
   it("C4 : safeLibraryPath refuse les chemins qui sortent de la racine, garde les autres", () => {
     expect(safeLibraryPath("")).toBe("");
@@ -1548,6 +1626,51 @@ describe("C4 : safeLibraryPath", () => {
   });
 });
 ```
+
+Et `host-tauri-ports.test.ts` (I3 : les ports réels de la coque, sans Tauri) :
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+
+const fs = {
+  readFile: vi.fn(async () => new Uint8Array()),
+  writeFile: vi.fn(async () => undefined),
+  readDir: vi.fn(async () => [{ name: "a.rbitem", isDirectory: false, isFile: true, isSymlink: false }]),
+  mkdir: vi.fn(async () => undefined),
+  remove: vi.fn(async () => undefined),
+  exists: vi.fn(async () => true),
+};
+const dialog = { open: vi.fn(async () => "/x/Partage"), save: vi.fn(), ask: vi.fn(), message: vi.fn() };
+vi.mock("@tauri-apps/plugin-fs", () => fs);
+vi.mock("@tauri-apps/plugin-dialog", () => dialog);
+vi.mock("@tauri-apps/api/path", () => ({ documentDir: vi.fn(async () => "/home/u/Documents") }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ onCloseRequested: vi.fn(async () => () => undefined), setTitle: vi.fn(async () => undefined) }) }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: string) => p, Channel: class {} }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
+
+describe("C4 : ports de dossiers de la coque", () => {
+  it("C4 : dirFs relaie readDir, mkdir, remove, exists au plugin-fs", async () => {
+    const { loadTauriPorts } = await import("./host-tauri");
+    const p = await loadTauriPorts();
+    expect(await p.dirFs.readDir("/r")).toEqual([{ name: "a.rbitem", isDirectory: false }]);
+    await p.dirFs.mkdir("/r/A", { recursive: true });
+    await p.dirFs.remove("/r/A", { recursive: true });
+    expect(await p.dirFs.exists("/r")).toBe(true);
+    expect(fs.mkdir).toHaveBeenCalledWith("/r/A", { recursive: true });
+    expect(fs.remove).toHaveBeenCalledWith("/r/A", { recursive: true });
+  });
+
+  it("C4 : documentDir et boîte de dossier (directory: true, recursive: true)", async () => {
+    const { loadTauriPorts } = await import("./host-tauri");
+    const p = await loadTauriPorts();
+    expect(await p.documentDir()).toBe("/home/u/Documents");
+    expect(await p.pickFolder("/x/Ancien")).toBe("/x/Partage");
+    expect(dialog.open).toHaveBeenLastCalledWith(expect.objectContaining({ directory: true, recursive: true, multiple: false, defaultPath: "/x/Ancien" }));
+  });
+});
+```
+
+(si `loadTauriPorts` touche au chargement d'autres membres des modules simulés, les ajouter aux `vi.mock` ; `vi.mock` est remonté en tête du fichier, d'où ce fichier séparé.)
 
 - [ ] **Étape 2 : ils échouent** — commande bornée : `Failed to resolve import "./library-files"`.
 
@@ -1674,8 +1797,18 @@ interface Row {
   readonly type?: string;
 }
 
-export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, name: string = LIBRARY_DB): LibraryFiles {
+/** D31 : stockage durable demandé s'il existe ; absent, refusé ou en échec : faux, jamais de rejet (H1-7). */
+export async function requestPersistence(nav: { readonly storage?: { persist?(): Promise<boolean> } } | undefined = globalThis.navigator): Promise<boolean> {
+  try {
+    return (await nav?.storage?.persist?.()) === true;
+  } catch {
+    return false;
+  }
+}
+
+export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, name: string = LIBRARY_DB, persist: () => Promise<boolean> = () => requestPersistence()): LibraryFiles {
   const open = lazyDb(factory, name, 1, (d) => void d.createObjectStore(STORE));
+  let asked = false;
   const key = (path: string): string => `${root}/${path}`;
   const all = IDBKeyRange.bound(`${root}/`, `${root}/￿`);
   const tx = async (mode: IDBTransactionMode) => (await open()).transaction(STORE, mode);
@@ -1695,6 +1828,10 @@ export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, na
     },
     async write(path, data) {
       nonEmpty(path);
+      if (!asked) {
+        asked = true;
+        void persist();
+      }
       const bytes = new Uint8Array(await data.arrayBuffer()); // lu avant la transaction (elle se ferme à la première attente)
       const t = await tx("readwrite");
       const store = t.objectStore(STORE);
@@ -1812,6 +1949,7 @@ git add apps/web/src/platform/pending.ts
 git add apps/web/src/platform/library-files.ts
 git add apps/web/src/platform/library-files.test.ts
 git add apps/web/src/platform/host-tauri.ts
+git add apps/web/src/platform/host-tauri-ports.test.ts
 git -c user.name=jejeasterix -c user.email=jejeasterix@users.noreply.github.com commit -m "feat(web): library storage in memory, IndexedDB and plugin-fs
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -1833,6 +1971,7 @@ fflate.
 - Modifier : `apps/web/src/platform/zip-read.ts`, `apps/web/src/platform/zip-read.test.ts`
 
 **Interfaces :**
+- Réutilise : `apps/web/src/core/api.ts:453` — `unknownKindMessage(kind)`, importé par `rbpack.ts`, aucune copie du texte (D23).
 - Consomme : `unknownKindMessage(kind)` (`core/api.ts:453`) ; `ZIP_MAX_ENTRIES`, `ZIP_MAX_BYTES`, `ZIP_TOO_BIG_MESSAGE`, `ZIP_MALFORMED_MESSAGE`, `keepZipPath`, `normalizePath` (`platform/model3d-import.ts`) ; `runOnce`, `WorkerLike` (`one-shot-worker.ts`).
 - Produit (`rbpack.ts`) :
   - `export type PackItemKind = "fragment" | "grid";`
@@ -1850,6 +1989,8 @@ fflate.
 - Réutilise : `apps/web/src/platform/zip-read.ts:27`, `zip-worker.ts:19` — `createZipReader(spawn)` ; le Worker gagne `{op: "unzip", mode: "model3d" | "pack"}` et `{op: "zip", entries}` (ici nommé `files`, stocké, trié, date fixe).
 - Réutilise : `apps/web/src/platform/one-shot-worker.ts:18` — `runOnce`.
 - Réutilise : `apps/web/src/platform/model3d-import.ts:29-30,63` — `ZIP_MAX_ENTRIES`, `ZIP_MAX_BYTES`, `normalizePath`.
+
+**Contrôle des chemins (D32, M9) :** `readPack` ne contrôle que la forme ; le contenu de chaque chemin passe par `safeLibraryPath` (T6) dans `importPack` (T8), avant toute écriture.
 
 **Patron à ne pas reprendre :** la lecture 3D **filtre** silencieusement les entrées hors liste (`keepZipPath`) ; un
 paquet qui cite un chemin non sûr doit être **refusé**, pas lu en partie. De même, `normalizePath` résout `..` : un
@@ -1891,7 +2032,7 @@ describe("C4 : paquet .rbpack", () => {
     const files = buildPack("Fractions", [item("Seyès", { kind: "grid", thumbnail: null }), item("Moitié")], { appVersion: "c4", now: "2026-11-21T08:00:00Z" });
     expect(files.map((f) => f.path)).toEqual(["manifest.json", "items/Moitié.rbitem", "items/Moitié.rbitem.png", "items/Seyès.rbitem"]);
     expect(manifestOf(files)).toEqual({
-      format: "roomboard", formatVersion: 1, kind: "pack", name: "Fractions", appVersion: "c4", created: "2026-11-21T08:00:00Z",
+      format: "roomboard", formatVersion: 1, schema: 1, kind: "pack", name: "Fractions", appVersion: "c4", created: "2026-11-21T08:00:00Z", modified: "2026-11-21T08:00:00Z",
       items: [
         { path: "items/Moitié.rbitem", name: "Moitié", keywords: ["fraction"], description: "", kind: "fragment", thumbnail: "items/Moitié.rbitem.png" },
         { path: "items/Seyès.rbitem", name: "Seyès", keywords: ["fraction"], description: "", kind: "grid", thumbnail: null },
@@ -1915,8 +2056,8 @@ describe("C4 : paquet .rbpack", () => {
     expect(() => readPack(withManifest(buildPack("F", [], { appVersion: "c4", now: "n" }), { formatVersion: 2 }))).toThrow(PACK_NEWER_MESSAGE);
   });
 
-  it("C4 : readPack refuse un chemin non sûr", () => {
-    for (const p of ["items/../x.rbitem", "../x.rbitem", "items/a\\b.rbitem", "items/c:x.rbitem", "/items/x.rbitem", "autre/x.rbitem"]) {
+  it("C4 : readPack refuse un chemin hors de la forme items/….rbitem (le reste : safeLibraryPath à l'import, T8)", () => {
+    for (const p of ["../x.rbitem", "/items/x.rbitem", "autre/x.rbitem", "items/x.txt", "items/.rbitem"]) {
       const files = withManifest(buildPack("F", [item("x")], { appVersion: "c4", now: "n" }), {
         items: [{ path: p, name: "x", keywords: [], description: "", kind: "fragment", thumbnail: null }],
       });
@@ -2038,10 +2179,10 @@ export const PACK_UNSAFE_PATH_MESSAGE = "paquet refusé : chemin d'entrée non s
 export const packMissingMessage = (path: string): string => `paquet incomplet : ${path} absent`;
 
 const ITEM_RE = /^items\/(.+)\.rbitem$/;
-/** Chemin d'entrée sûr (D18) : sous `items/`, sans `..`, `\`, `:`, segment vide ou caché, ni début `/`. */
+/** Forme d'une entrée (D18, D32) : `items/<chemin>.rbitem`. Les `..`, `\`, `:` et segments cachés de `<chemin>` sont
+ *  refusés par `safeLibraryPath` avant la première écriture de l'import (`app/library.ts`) : aucun second normaliseur. */
 function safeEntry(p: unknown): p is string {
-  if (typeof p !== "string" || !ITEM_RE.test(p)) return false;
-  return !p.includes("\\") && !p.includes(":") && p.split("/").every((s) => s !== "" && s !== ".." && !s.startsWith("."));
+  return typeof p === "string" && ITEM_RE.test(p);
 }
 const byPath = (a: ZipFile, b: ZipFile): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
@@ -2055,7 +2196,8 @@ export function buildPack(name: string, items: readonly PackItem[], meta: { read
     kind: i.kind,
     thumbnail: i.thumbnail === null ? null : `items/${i.path}.rbitem.png`,
   }));
-  const manifest = { format: "roomboard", formatVersion: PACK_FORMAT_VERSION, kind: "pack", name, appVersion: meta.appVersion, created: meta.now, items: entries };
+  // `schema` et `modified` (D26) : un `.rbpack` ouvert par le cœur passe `check_manifest` jusqu'au `kind` et reçoit le message du paquet.
+  const manifest = { format: "roomboard", formatVersion: PACK_FORMAT_VERSION, schema: 1, kind: "pack", name, appVersion: meta.appVersion, created: meta.now, modified: meta.now, items: entries };
   const files: ZipFile[] = [];
   for (const i of sortedItems) {
     files.push({ path: `items/${i.path}.rbitem`, bytes: i.bytes });
@@ -2240,8 +2382,11 @@ D17 à D19, DA2).
   - `export interface LibraryDeps { readonly files: readonly LibraryFiles[]; readonly zip: LibraryZip; now(): string; readonly appVersion: string }`
   - `export interface ResourceLibrary { roots(): readonly LibraryRoot[]; setRoot(files: LibraryFiles): void; refresh(): Promise<void>; folder(root: LibraryRoot, path: string): LibraryFolder; search(q: string): readonly ResourceEntry[]; add(root: LibraryRoot, folder: string, r: NewResource): Promise<ResourceEntry>; read(entry: ResourceEntry): Promise<Uint8Array>; thumbnail(entry: ResourceEntry): Promise<Blob | null>; mkdir(root: LibraryRoot, parent: string, name: string): Promise<string>; remove(root: LibraryRoot, path: string): Promise<void>; exportPack(root: LibraryRoot, folder: string): Promise<{ readonly name: string; readonly bytes: Uint8Array }>; importPack(bytes: Uint8Array, fileName: string): Promise<{ readonly folder: string; readonly count: number }> }`
   - `export const ROOT_LABELS: Readonly<Record<LibraryRoot, string>> = { mine: "Mes ressources", shared: "Ressources partagées" };`
-  - `export function normalizeSearch(s: string): string` ; `export function fileNameOf(name: string): string` ; `export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary`
-- Réutilise : `apps/web/src/platform/library-files.ts` (T6) — `LibraryFiles` (DA1), seul accès au stockage.
+  - `export const PACK_TOO_BIG_MESSAGE = "paquet trop gros (plus de 1 000 entrées ou de 256 Mio) : exportez un dossier plus petit";`
+  - `export function normalizeSearch(s: string): string` ; `export function fileNameOf(name: string): string` (D25) ; `export function folderNameOf(name: string): string` ; `export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary`
+- Réutilise : `apps/web/src/platform/library-files.ts` (T6) — `LibraryFiles` (DA1), seul accès au stockage ; `safeLibraryPath` pour les chemins d'un paquet importé (D32, aucun second normaliseur).
+- Réutilise : `apps/web/src/profile-file.ts:17` — patron `slug(label)` pour `fileNameOf` (D25 ; `slug` lui-même rend `profil` pour un vide, d'où la fonction sœur).
+- Réutilise : `apps/web/src/platform/model3d-import.ts:29-30` — `ZIP_MAX_ENTRIES`, `ZIP_MAX_BYTES` à l'export (D27).
 - Réutilise : `apps/web/src/platform/rbpack.ts` (T7) — `buildPack(items): ZipInput` / `readPack(entries): PackItems` (DA2), ici `buildPack(name, items, meta): ZipFile[]` et `readPack(files)`.
 
 **Patron à ne pas reprendre :** écrire chaque ressource du paquet au fil de la lecture : un refus au milieu laisserait
@@ -2249,7 +2394,7 @@ une bibliothèque à moitié importée. Tout le paquet est lu et contrôlé (`re
 le dossier de destination est neuf. Chemin de référence : lecture 3D qui contrôle tout le ZIP avant de poser un modèle,
 `apps/web/src/platform/model3d-handlers.ts` (`zip3dHandler`).
 
-**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T8 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/library.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -20` : ≥ 10 tests « C4 », dont `C4 : export puis import rend les mêmes ressources`, `Tests` sans `failed`.
+**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T8 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/library.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -20` : ≥ 12 tests « C4 », dont `C4 : export puis import rend les mêmes ressources`, `Tests` sans `failed`.
 
 **Contraintes (recopiées) :**
 - GC1 — TDD : test rouge d'abord. Aucun test désactivé, sauté, ni seuil changé.
@@ -2271,7 +2416,8 @@ import { describe, expect, it } from "vitest";
 import { unknownKindMessage } from "../core/api";
 import { createMemoryLibraryFiles } from "../platform/library-files";
 import { zipStored } from "../platform/zip-worker";
-import { createResourceLibrary, fileNameOf, normalizeSearch, type NewResource } from "./library";
+import { PACK_UNSAFE_PATH_MESSAGE } from "../platform/rbpack";
+import { createResourceLibrary, fileNameOf, folderNameOf, normalizeSearch, PACK_TOO_BIG_MESSAGE, type NewResource } from "./library";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const zip = {
@@ -2291,8 +2437,8 @@ describe("C4 : ResourceLibrary", () => {
   it("C4 : add écrit ressource, compagnon et vignette ; l'index la montre", async () => {
     const { lib, mine } = libOf();
     const e = await lib.add("mine", "", res("Moitié", { keywords: ["fraction"] }));
-    expect(e).toMatchObject({ root: "mine", path: "Moitié.rbitem", folder: "", name: "Moitié", keywords: ["fraction"], kind: "fragment", thumbnail: "Moitié.rbitem.png" });
-    expect((await mine.list()).map((p) => p.path)).toEqual(["Moitié.rbitem", "Moitié.rbitem.json", "Moitié.rbitem.png"]);
+    expect(e).toMatchObject({ root: "mine", path: "moitie.rbitem", folder: "", name: "Moitié", keywords: ["fraction"], kind: "fragment", thumbnail: "moitie.rbitem.png" });
+    expect((await mine.list()).map((p) => p.path)).toEqual(["moitie.rbitem", "moitie.rbitem.json", "moitie.rbitem.png"]);
     expect(lib.folder("mine", "").items.map((i) => i.name)).toEqual(["Moitié"]);
     expect(await lib.read(e)).toEqual(enc("rb:Moitié"));
   });
@@ -2308,19 +2454,47 @@ describe("C4 : ResourceLibrary", () => {
     expect(normalizeSearch("Écriture Œuf")).toBe("ecriture œuf");
   });
 
-  it("C4 : collision de nom : (2)", async () => {
+  it("C4 : deux « Moitié » dans le même dossier ne s'écrasent pas : (2)", async () => {
     const { lib } = libOf();
-    await lib.add("mine", "", res("Moitié"));
+    const a = await lib.add("mine", "", res("Moitié"));
     const b = await lib.add("mine", "", res("Moitié"));
-    expect(b.path).toBe("Moitié (2).rbitem");
+    expect([a.path, b.path]).toEqual(["moitie.rbitem", "moitie (2).rbitem"]);
     expect(b.name).toBe("Moitié");
+    expect(await lib.read(a)).toEqual(enc("rb:Moitié"));
+    expect(lib.folder("mine", "").items).toHaveLength(2);
   });
 
-  it("C4 : nom saisi assaini", () => {
-    expect(fileNameOf("a/b\\c:d")).toBe("a_b_c_d");
-    expect(fileNameOf("..secret")).toBe("_.secret");
-    expect(fileNameOf("   ")).toBe("Ressource");
+  it("C4 : nom saisi → nom de fichier (patron slug), nom affiché gardé", async () => {
+    expect(fileNameOf("Moitié")).toBe("moitie");
+    expect(fileNameOf("1/2")).toBe("1-2");
+    expect(fileNameOf("Fractions : 6e")).toBe("fractions-6e");
+    expect(fileNameOf('?*"<>|')).toBe("ressource");
     expect(fileNameOf("x".repeat(200))).toHaveLength(80);
+    expect(folderNameOf("a/b\\c:d")).toBe("a_b_c_d");
+    expect(folderNameOf("..secret")).toBe("_.secret");
+    expect(folderNameOf("Fractions 6e")).toBe("Fractions 6e");
+    expect(folderNameOf("   ")).toBe("Dossier");
+    const { lib } = libOf();
+    const e = await lib.add("mine", "", res("Fractions : 6e"));
+    expect([e.path, e.name]).toEqual(["fractions-6e.rbitem", "Fractions : 6e"]);
+  });
+
+  it("C4 : export trop gros : message clair (D27)", async () => {
+    const { lib } = libOf();
+    for (let i = 0; i < 500; i++) await lib.add("mine", "", res(`R${i}`));
+    await expect(lib.exportPack("mine", "")).rejects.toThrow(PACK_TOO_BIG_MESSAGE);
+  });
+
+  it("C4 : import d'un chemin non sûr refusé par safeLibraryPath : bibliothèque inchangée (D32)", async () => {
+    const { lib, mine } = libOf();
+    for (const p of ["items/../x.rbitem", "items/a\\b.rbitem", "items/c:x.rbitem", "items/.cache/x.rbitem"]) {
+      const bad = zipStored([
+        { path: "manifest.json", bytes: enc(JSON.stringify({ format: "roomboard", formatVersion: 1, kind: "pack", name: "X", items: [{ path: p, name: "x", keywords: [], description: "", kind: "fragment", thumbnail: null }] })) },
+        { path: p, bytes: enc("x") },
+      ]);
+      await expect(lib.importPack(bad, "X.rbpack"), p).rejects.toThrow(PACK_UNSAFE_PATH_MESSAGE);
+    }
+    expect(await mine.list()).toEqual([]);
   });
 
   it("C4 : dossiers : mkdir, folder, remove récursif", async () => {
@@ -2329,7 +2503,7 @@ describe("C4 : ResourceLibrary", () => {
     expect(f).toBe("Fractions");
     await lib.add("mine", f, res("Moitié"));
     expect(lib.folder("mine", "").folders).toEqual(["Fractions"]);
-    expect(lib.folder("mine", "Fractions").items.map((i) => i.path)).toEqual(["Fractions/Moitié.rbitem"]);
+    expect(lib.folder("mine", "Fractions").items.map((i) => i.path)).toEqual(["Fractions/moitie.rbitem"]);
     await lib.remove("mine", "Fractions");
     expect(lib.folder("mine", "").folders).toEqual([]);
     expect(lib.search("moitie")).toEqual([]);
@@ -2386,7 +2560,7 @@ describe("C4 : ResourceLibrary", () => {
     const pack = await lib.exportPack("mine", "");
     expect(pack.name).toBe("Mes ressources.rbpack");
     const names = Object.keys(unzipSync(pack.bytes));
-    expect(names).toEqual(["manifest.json", "items/A.rbitem", "items/A.rbitem.png", "items/Sous/B.rbitem", "items/Sous/B.rbitem.png"]);
+    expect(names).toEqual(["manifest.json", "items/Sous/b.rbitem", "items/Sous/b.rbitem.png", "items/a.rbitem", "items/a.rbitem.png"]);
   });
 });
 ```
@@ -2402,8 +2576,9 @@ describe("C4 : ResourceLibrary", () => {
  * `<nom>.rbitem.json`, vignette `<nom>.rbitem.png`, D5), export et import de paquets `.rbpack` (D17 à D19). Le paquet
  * est lu et contrôlé en entier avant la première écriture, dans un dossier neuf de « Mes ressources ».
  */
-import type { LibraryFiles, LibraryRoot } from "../platform/library-files";
-import { buildPack, readPack, type PackItem, type PackItemKind, type ZipFile } from "../platform/rbpack";
+import { safeLibraryPath, type LibraryFiles, type LibraryRoot } from "../platform/library-files";
+import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES } from "../platform/model3d-import";
+import { buildPack, PACK_UNSAFE_PATH_MESSAGE, readPack, type PackItem, type PackItemKind, type ZipFile } from "../platform/rbpack";
 import type { ZipEntry } from "../platform/zip-read";
 
 export type ResourceKind = PackItemKind;
@@ -2464,11 +2639,28 @@ const NAME_MAX = 80;
 
 export const normalizeSearch = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Nom de fichier sûr d'un nom saisi : `/ \ : * ? " < > |` et un point initial → `_`, 80 caractères au plus. */
+/** D25 : nom de fichier d'une ressource, au patron `slug` de `profile-file.ts:17` (sans accents, minuscules,
+ *  `[a-z0-9-]`), 80 caractères au plus, vide → `ressource` ; le nom affiché reste dans le compagnon `.json`. */
 export function fileNameOf(name: string): string {
-  const s = name.trim().replace(/[/\\:*?"<>|\u0000-\u001f]/g, "_").replace(/^\./, "_").slice(0, NAME_MAX);
-  return s === "" ? "Ressource" : s;
+  const s = name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, NAME_MAX)
+    .replace(/-+$/, "");
+  return s === "" ? "ressource" : s;
 }
+
+/** D25 : nom de dossier : casse et accents gardés ; `/ \ : * ? " < > |` et un point initial → `_` ; vide → `Dossier`. */
+export function folderNameOf(name: string): string {
+  const s = name.trim().replace(/[/\\:*?"<>|\u0000-\u001f]/g, "_").replace(/^\./, "_").slice(0, NAME_MAX);
+  return s === "" ? "Dossier" : s;
+}
+
+/** D27 : mêmes limites qu'à l'import (`zip-worker.ts`). */
+export const PACK_TOO_BIG_MESSAGE = "paquet trop gros (plus de 1 000 entrées ou de 256 Mio) : exportez un dossier plus petit";
 
 const join = (folder: string, name: string): string => (folder === "" ? name : `${folder}/${name}`);
 const parentOf = (path: string): string => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
@@ -2577,7 +2769,7 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
     },
     async mkdir(root, parent, name) {
       const r = of(root);
-      const path = unique(r, parent, fileNameOf(name), "");
+      const path = unique(r, parent, folderNameOf(name), "");
       await r.files.mkdir(path);
       for (let p = path; p !== ""; p = parentOf(p)) r.dirs.add(p);
       return path;
@@ -2610,16 +2802,25 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
         });
       }
       const name = folder === "" ? ROOT_LABELS[root] : baseOf(folder);
-      const bytes = await deps.zip.zip(buildPack(name, items, { appVersion: deps.appVersion, now: deps.now() }));
-      return { name: `${fileNameOf(name)}.rbpack`, bytes };
+      const files = buildPack(name, items, { appVersion: deps.appVersion, now: deps.now() });
+      const total = files.reduce((n, f) => n + f.bytes.length, 0);
+      if (files.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) throw new Error(PACK_TOO_BIG_MESSAGE);
+      return { name: `${folderNameOf(name)}.rbpack`, bytes: await deps.zip.zip(files) };
     },
     async importPack(bytes, fileName) {
       const entries = await deps.zip.unzip(new Blob([bytes as BlobPart]));
       const files: ZipFile[] = [];
       for (const e of entries) files.push({ path: e.path, bytes: await bytesOf(e.blob) });
       const pack = readPack(files); // lève avant toute écriture (D18)
+      for (const i of pack.items) {
+        try {
+          safeLibraryPath(i.path); // D32 : le seul contrôle des chemins, avant la première écriture
+        } catch {
+          throw new Error(PACK_UNSAFE_PATH_MESSAGE);
+        }
+      }
       const r = of("mine");
-      const folder = unique(r, "", fileNameOf(pack.name || fileName.replace(/\.rbpack$/i, "")), "");
+      const folder = unique(r, "", folderNameOf(pack.name || fileName.replace(/\.rbpack$/i, "")), "");
       await r.files.mkdir(folder);
       r.dirs.add(folder);
       for (const i of pack.items) {
@@ -2664,7 +2865,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 bibliothèque (U25, D19) ; extension, MIME et type de boîte pour le paquet.
 
 **Fichiers :**
-- Modifier : `apps/web/src/platform/files.ts:6-9`
+- Modifier : `apps/web/src/platform/files.ts:6-9`, `:75` (`IMPORT_EXTENSIONS` gagne `"rbpack"`, D30)
 - Modifier : `apps/web/src/platform/typed-files.ts:18-23`
 - Modifier : `apps/web/src/platform/import.ts` (en-tête, `ImportDeps`, après `rbitemHandler` `:149-170`, registre `:247`)
 - Modifier : `apps/web/src/platform/import.test.ts`
@@ -2712,12 +2913,13 @@ describe("C4 : paquets .rbpack", () => {
     const report = await createImporter(baseDeps()).importFiles([droppedOf("X.rbpack", PK)]);
     expect(report.refused).toEqual(["X.rbpack"]);
     expect(isRbpackName("a.RBPACK")).toBe(true);
+    expect(IMPORT_EXTENSIONS).toContain("rbpack");
     expect(RBPACK_TYPE.filter).toEqual({ name: "Paquet RoomBoard", extensions: ["rbpack"] });
   });
 });
 ```
 
-(`baseDeps()`, `droppedOf(name, bytes)` : les fabriques locales du fichier, sous leur nom réel ; `importFiles` : la méthode réelle de `Importer` — `grep -n "export interface Importer" -A4 apps/web/src/platform/import.ts`.)
+(`IMPORT_EXTENSIONS` importé de `./files`. `baseDeps()`, `droppedOf(name, bytes)` : les fabriques locales du fichier, sous leur nom réel ; `importFiles` : la méthode réelle de `Importer` — `grep -n "export interface Importer" -A4 apps/web/src/platform/import.ts`.)
 
 - [ ] **Étape 2 : ils échouent** — commande bornée : `rbpackHandler is not defined`.
 
@@ -2727,6 +2929,8 @@ describe("C4 : paquets .rbpack", () => {
 export const RBPACK_EXTENSION = ".rbpack";
 export const RBPACK_MIME = "application/x-roomboard-pack";
 ```
+
+et dans `IMPORT_EXTENSIONS` (`files.ts:75`), `"rbpack",` juste après `"rbitem",` (D30 : boîte « Importer » et filtre de dépôt).
 
 `typed-files.ts` :
 
@@ -3031,18 +3235,18 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 <a id="tache-t12"></a>
 
 **Objectif :** appui sur une carte, fantôme qui suit, lâcher au-dessus de `.rb-stages` = dépôt au point client ;
-ailleurs, Échap ou annulation du pointeur : rien (D13, DA4).
+ailleurs (dont sur le panneau, qui recouvre la scène : D28), Échap ou annulation du pointeur : rien (D13, DA4).
 
 **Fichiers :**
 - Créer : `apps/web/src/ui/resource-drag.ts`, `apps/web/src/ui/resource-drag.test.ts`
 
 **Interfaces :**
 - Consomme : `Point` (`platform/files.ts:48`).
-- Produit : `export const DRAG_THRESHOLD_PX = 4;` ; `export interface DragOptions { readonly label: string; readonly thumbnail?: string | null; readonly hit?: (x: number, y: number) => Element | null }` ; `export function startResourceDrag(e: PointerEvent, onDrop: (at: Point) => void, opts: DragOptions): void`.
+- Produit : `export const DRAG_THRESHOLD_PX = 4;` ; `export interface DragOptions { readonly label: string; readonly thumbnail?: string | null; readonly hits?: (x: number, y: number) => readonly Element[] }` (défaut : `document.elementsFromPoint`) ; `export function startResourceDrag(e: PointerEvent, onDrop: (at: Point) => void, opts: DragOptions): void`.
 - Consommé par : T13 (`onPointerDown` de la carte).
 - Réutilise : aucun module existant (`dragstart`, `draggable` : rien ; `drop-web.ts:1` l'exclut) — nouveau module `ui/resource-drag.ts` (DA4).
 
-**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T12 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/ui/resource-drag.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -8` : ≥ 4 tests « C4 », 0 échec.
+**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T12 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/ui/resource-drag.test.ts --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -8` : ≥ 5 tests « C4 », 0 échec.
 
 **Contraintes (recopiées) :**
 - GC1 — TDD : test rouge d'abord. Aucun test désactivé, sauté, ni seuil changé.
@@ -3074,17 +3278,17 @@ function card() {
   return c;
 }
 const ev = (type: string, x: number, y: number) => new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, bubbles: true });
-function down(c: HTMLElement, onDrop: (p: { x: number; y: number }) => void, hit: Element | null) {
+function down(c: HTMLElement, onDrop: (p: { x: number; y: number }) => void, hits: Element[]) {
   const e = ev("pointerdown", 10, 10);
   Object.defineProperty(e, "currentTarget", { value: c });
-  startResourceDrag(e, onDrop, { label: "Moitié", hit: () => hit });
+  startResourceDrag(e, onDrop, { label: "Moitié", hits: () => hits });
 }
 
 describe("C4 : glisser une ressource", () => {
   it("C4 : lâcher au-dessus de la scène : onDrop au point client, fantôme retiré", () => {
     const c = card();
     const onDrop = vi.fn();
-    down(c, onDrop, stages);
+    down(c, onDrop, [stages]);
     c.dispatchEvent(ev("pointermove", 200, 150));
     expect(document.querySelector(".rb-drag-ghost")?.textContent).toBe("Moitié");
     c.dispatchEvent(ev("pointerup", 300, 250));
@@ -3095,16 +3299,31 @@ describe("C4 : glisser une ressource", () => {
   it("C4 : lâcher hors de la scène : rien", () => {
     const c = card();
     const onDrop = vi.fn();
-    down(c, onDrop, document.body);
+    down(c, onDrop, [document.body]);
     c.dispatchEvent(ev("pointermove", 200, 150));
     c.dispatchEvent(ev("pointerup", 200, 150));
     expect(onDrop).not.toHaveBeenCalled();
   });
 
+  it("C4 : lâcher sur le panneau, au-dessus de la scène : rien (D28)", () => {
+    const c = card();
+    const onDrop = vi.fn();
+    const popover = document.createElement("div");
+    popover.className = "rb-popover";
+    const inPanel = document.createElement("span");
+    popover.append(inPanel);
+    stages.append(popover);
+    down(c, onDrop, [inPanel, popover, stages]);
+    c.dispatchEvent(ev("pointermove", 200, 150));
+    c.dispatchEvent(ev("pointerup", 200, 150));
+    expect(onDrop).not.toHaveBeenCalled();
+    popover.remove();
+  });
+
   it("C4 : sous le seuil : un clic, pas un glisser", () => {
     const c = card();
     const onDrop = vi.fn();
-    down(c, onDrop, stages);
+    down(c, onDrop, [stages]);
     c.dispatchEvent(ev("pointermove", 10 + DRAG_THRESHOLD_PX - 1, 10));
     c.dispatchEvent(ev("pointerup", 10 + DRAG_THRESHOLD_PX - 1, 10));
     expect(onDrop).not.toHaveBeenCalled();
@@ -3114,7 +3333,7 @@ describe("C4 : glisser une ressource", () => {
   it("C4 : Échap annule", () => {
     const c = card();
     const onDrop = vi.fn();
-    down(c, onDrop, stages);
+    down(c, onDrop, [stages]);
     c.dispatchEvent(ev("pointermove", 200, 150));
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     c.dispatchEvent(ev("pointerup", 300, 250));
@@ -3141,15 +3360,20 @@ export const DRAG_THRESHOLD_PX = 4;
 export interface DragOptions {
   readonly label: string;
   readonly thumbnail?: string | null;
-  /** Élément sous le point (tests) ; défaut : `document.elementFromPoint`. */
-  readonly hit?: (x: number, y: number) => Element | null;
+  /** Éléments sous le point, du dessus au dessous (tests) ; défaut : `document.elementsFromPoint`. */
+  readonly hits?: (x: number, y: number) => readonly Element[];
 }
 
 export function startResourceDrag(e: PointerEvent, onDrop: (at: Point) => void, opts: DragOptions): void {
   const source = e.currentTarget as HTMLElement | null;
   if (source === null || e.button > 0) return;
   const doc = source.ownerDocument;
-  const hit = opts.hit ?? ((x: number, y: number) => doc.elementFromPoint(x, y));
+  const hits = opts.hits ?? ((x: number, y: number) => doc.elementsFromPoint(x, y));
+  /** D28 : l'élément du dessus (fantôme exclu) doit être sous `.rb-stages` et hors de tout `.rb-popover`. */
+  const onStage = (x: number, y: number): boolean => {
+    const top = hits(x, y).find((el) => el.closest(".rb-drag-ghost") === null);
+    return top !== undefined && top.closest(".rb-popover") === null && top.closest(".rb-stages") !== null;
+  };
   const x0 = e.clientX;
   const y0 = e.clientY;
   let ghost: HTMLElement | null = null;
@@ -3186,7 +3410,7 @@ export function startResourceDrag(e: PointerEvent, onDrop: (at: Point) => void, 
   function up(u: PointerEvent): void {
     const dragged = ghost !== null;
     end();
-    if (dragged && hit(u.clientX, u.clientY)?.closest(".rb-stages")) onDrop({ x: u.clientX, y: u.clientY });
+    if (dragged && onStage(u.clientX, u.clientY)) onDrop({ x: u.clientX, y: u.clientY });
   }
   function key(k: KeyboardEvent): void {
     if (k.key !== "Escape") return;
@@ -3257,7 +3481,7 @@ paquet (D9 à D13, D19).
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createResourceLibrary } from "../app/library";
+import { createResourceLibrary, fileNameOf } from "../app/library";
 import { createMemoryLibraryFiles } from "../platform/library-files";
 import { LibraryPanel, type LibraryPanelProps } from "./LibraryPanel";
 
@@ -3298,7 +3522,7 @@ async function addSelection(s: ReturnType<typeof setup>, name: string, keywords 
   fireEvent.input(s.q<HTMLInputElement>('[data-lib="name"]'), { target: { value: name } });
   fireEvent.input(s.q<HTMLInputElement>('[data-lib="keywords"]'), { target: { value: keywords } });
   fireEvent.click(s.q('[data-lib="submit"]'));
-  await waitFor(() => s.q(`.rb-resource[data-resource="${name}.rbitem"]`));
+  await waitFor(() => s.q(`.rb-resource[data-resource="${fileNameOf(name)}.rbitem"]`));
 }
 
 describe("C4 : panneau Bibliothèque", () => {
@@ -3319,7 +3543,7 @@ describe("C4 : panneau Bibliothèque", () => {
     const s = setup();
     await addSelection(s, "Moitié", "fraction, moitié");
     expect(s.props.capture).toHaveBeenCalledWith("selection");
-    expect(s.q('.rb-resource[data-resource="Moitié.rbitem"] img.rb-thumb')).toBeTruthy();
+    expect(s.q('.rb-resource[data-resource="moitie.rbitem"] img.rb-thumb')).toBeTruthy();
     expect(s.library.search("frac").map((e) => e.keywords)).toEqual([["fraction", "moitié"]]);
   });
 
@@ -3328,7 +3552,7 @@ describe("C4 : panneau Bibliothèque", () => {
     fireEvent.click(s.q('[data-lib="add-grid"]'));
     fireEvent.input(s.q<HTMLInputElement>('[data-lib="name"]'), { target: { value: "Seyès" } });
     fireEvent.click(s.q('[data-lib="submit"]'));
-    await waitFor(() => s.q('.rb-resource[data-resource="Seyès.rbitem"]'));
+    await waitFor(() => s.q('.rb-resource[data-resource="seyes.rbitem"]'));
     expect(s.props.capture).toHaveBeenCalledWith("grid");
   });
 
@@ -3338,13 +3562,13 @@ describe("C4 : panneau Bibliothèque", () => {
     await addSelection(s, "Carré");
     fireEvent.input(s.q<HTMLInputElement>('[data-lib="search"]'), { target: { value: "frac" } });
     await waitFor(() => expect(s.q('[data-lib="results"]').querySelectorAll(".rb-resource")).toHaveLength(1));
-    expect(s.q('[data-lib="results"] .rb-resource').getAttribute("data-resource")).toBe("Moitié.rbitem");
+    expect(s.q('[data-lib="results"] .rb-resource').getAttribute("data-resource")).toBe("moitie.rbitem");
   });
 
   it("C4 : double-clic et Entrée posent au centre (at = null)", async () => {
     const s = setup();
     await addSelection(s, "Moitié");
-    const card = s.q<HTMLElement>('.rb-resource[data-resource="Moitié.rbitem"]');
+    const card = s.q<HTMLElement>('.rb-resource[data-resource="moitie.rbitem"]');
     fireEvent.dblClick(card);
     fireEvent.keyDown(card, { key: "Enter" });
     await waitFor(() => expect(s.placed).toEqual([["Moitié", null], ["Moitié", null]]));
@@ -3358,7 +3582,7 @@ describe("C4 : panneau Bibliothèque", () => {
     await waitFor(() => s.q('button[data-folder="Fractions"]'));
     fireEvent.click(s.q('button[data-folder="Fractions"]'));
     await addSelection(s, "Moitié").catch(() => undefined);
-    await waitFor(() => s.q('.rb-resource[data-resource="Fractions/Moitié.rbitem"]'));
+    await waitFor(() => s.q('.rb-resource[data-resource="Fractions/moitie.rbitem"]'));
   });
 
   it("C4 : Vider après confirmation ; refus : rien", async () => {
@@ -3675,6 +3899,7 @@ dans la coque.
 - Produit (`WorkspaceDeps`) : `thumbnail?: ThumbDeps` ; `importPack?(name: string, bytes: Uint8Array): Promise<boolean>`.
 - Produit (`AppProps`) : `library?: { readonly library: ResourceLibrary; readonly shared: SharedFolder; readonly packs: TypedFiles }`.
 - Clé de réglage : `roomboard.bibliotheque.partage` (chemin du dossier partagé, coque).
+- Réutilise : `apps/web/src/platform/image-import.ts:194-197` — `ImageTarget.insertFragment(rbitem, at, index, name)` : la cible de `workspace.ts:267` passe `index` à `insertResource` (cascade R4, D24).
 - Réutilise : `apps/web/src/app/workspace.ts:185` — `shell.confirm(message)`, par `ask` (confirmation de suppression).
 - Réutilise : `apps/web/src/profile-store.ts:4,149` — `KeyValue`, `browserKeyValue`, pour `roomboard.bibliotheque.partage`.
 - Réutilise : `apps/web/src/platform/typed-files.ts:40,52` — `createWebTypedFiles` / `createTauriTypedFiles` avec `RBPACK_TYPE`.
@@ -3683,7 +3908,7 @@ dans la coque.
 - Réutilise : `apps/web/src/app/toolbar-host.ts:32,61`, `ui/App.tsx:55` — `toggle("library")` (posé par T11), popover ici.
 - Réutilise : `apps/web/src/platform/import.ts:149,247` — `ImportHandler` `rbpackHandler`, activé par `importPack` transmis à `createImporter`.
 
-**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T14 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/workspace.test.ts src/ui/App.test.tsx --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -12` : ≥ 3 tests « C4 », `Tests` sans `failed`. Puis `nice -n 10 pnpm --filter @roomboard/web test 2>&1 | tail -6` : `Tests` sans `failed` ; `nice -n 10 pnpm --filter @roomboard/web build 2>&1 | tail -3` : aucune ligne `error`.
+**Test et commande bornée :** `cd /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque--T14 && nice -n 10 pnpm --filter @roomboard/web exec vitest run src/app/workspace.test.ts src/ui/App.test.tsx --reporter=verbose 2>&1 | grep -E "C4|Tests " | tail -12` : ≥ 5 tests « C4 », `Tests` sans `failed`. Puis `nice -n 10 pnpm --filter @roomboard/web test 2>&1 | tail -6` : `Tests` sans `failed` ; `nice -n 10 pnpm --filter @roomboard/web build 2>&1 | tail -3` : aucune ligne `error`.
 
 **Preuve visuelle :** portée par T15 (essai Playwright, lectures `data-elements`, `data-resource`, puis capture).
 
@@ -3734,10 +3959,22 @@ describe("C4 : ressources dans l'espace de travail", () => {
     await ws.importFiles([droppedOf("Seyès.rbitem", bytes)], null);
     expect(tab.board.doc.page(page)?.grid).not.toBeNull();
   });
+
+  it("C4 : trois .rbitem déposés ensemble : cascade R4, pas au même point (D24, workspace.ts:267)", async () => {
+    const { ws } = setup();
+    const tab = ws.active();
+    const page = tab.board.engine.state().page;
+    tab.board.engine.run({ type: "AddShape", page, shape: "rect", x: 0, y: 0, w: 10, h: 10 } as Command);
+    selectAll(tab); // sélection de tous les éléments de la page, par la voie des tests C3 du fichier
+    const { bytes } = (await ws.captureResource("selection"))!;
+    await ws.importFiles([droppedOf("a.rbitem", bytes), droppedOf("b.rbitem", bytes), droppedOf("c.rbitem", bytes)], { x: 200, y: 200 });
+    const ids = tab.board.doc.elementIds(page).slice(-3);
+    expect(new Set(ids.map((id) => tab.board.doc.bounds([id])!.x0)).size).toBe(3);
+  });
 });
 ```
 
-(`setup()`, `droppedOf()` : fabriques locales du fichier, sous leur nom réel ; `said` : les avis collectés par le faux `shell.notify`.)
+(`setup()`, `droppedOf()`, `selectAll(tab)` : fabriques locales du fichier, sous leur nom réel — pour la sélection et la commande de forme, `grep -n "selection\|AddShape" apps/web/src/app/workspace.test.ts | head` ; `said` : les avis collectés par le faux `shell.notify`.)
 
 - [ ] **Étape 2 : ils échouent** — commande bornée : `captureResource is not a function`.
 
@@ -3778,6 +4015,7 @@ Dans l'objet `ws` rendu :
       const bytes = what === "grid" ? await fragments.encodeGrid(tab) : await fragments.encodeSelection(tab, "export");
       if (bytes === null) return null;
       const kind = what === "grid" ? "grid" : "fragment";
+      // D29 : vignette depuis la ressource relue (sélection extraite ou grille seule), jamais `tab.board.doc`.
       let thumbnail: Blob | null = null;
       const thumbDeps = deps.thumbnail;
       if (thumbDeps !== undefined) {
@@ -3959,7 +4197,7 @@ ouvert ; capture ; deux tailles Wasm écrites.
 2. Essai seul, avec capture : `nice -n 10 node scripts/essais/c4-bibliotheque-navigateur.mjs --captures 2>&1 | tail -30` : chaque ligne `ok …`, puis `capture : …/docs/essais/c4-bibliotheque.png`, puis `C4 bibliothèque : OK`.
 3. Suite complète : `nice -n 10 bash scripts/verifier.sh --e2e 2>&1 | grep -E "C4 bibliothèque|C8 pot zones|C3|module Wasm|module formats|e2e OK|verifier.sh : OK|ÉCHEC" | tail -12` : « C4 bibliothèque : OK », « verifier.sh : e2e OK », « verifier.sh : OK », aucune ligne `ÉCHEC` (à garder verts : `c3-groupes-navigateur.mjs`, `c9-grille-navigateur.mjs`, `c5-image-navigateur.mjs` scène ≥ 640 px, `c10a`, `c10b`, `c12`).
 
-**Preuve visuelle :** lectures d'abord, dans l'essai : `#stage[data-elements="3"]` après le lâcher, `"0"` après Annuler, `"3"` après Rétablir ; `[data-lib="results"] .rb-resource` = 1 avec `data-resource="Fractions/Moitié.rbitem"` après « frac » ; `img.rb-thumb` `naturalWidth > 0` ; `#grille [data-grille="kind"]` = `"seyes"` puis `"none"` ; `#stage` ≥ 640 × 640 px panneau ouvert. Puis la capture `docs/essais/c4-bibliotheque.png`, à décrire au rapport : panneau « Bibliothèque » ouvert à droite, champ de recherche « frac », une carte « Moitié » avec sa vignette, et sur la page les trois objets posés au point de lâcher.
+**Preuve visuelle :** lectures d'abord, dans l'essai : « Carré » (sans « frac ») absent des résultats (M3) ; `#stage[data-elements="3"]` après le lâcher, `"0"` après Annuler, `"3"` après Rétablir ; `[data-lib="results"] .rb-resource` = 1 avec `data-resource="Fractions/moitie.rbitem"` après « frac » ; `img.rb-thumb` `naturalWidth > 0` ; `#grille [data-grille="kind"]` = `"seyes"` puis `"none"` ; `#stage` ≥ 640 × 640 px panneau ouvert. Puis la capture `docs/essais/c4-bibliotheque.png`, à décrire au rapport : panneau « Bibliothèque » ouvert à droite, champ de recherche « frac », une carte « Moitié » avec sa vignette, et sur la page les trois objets posés au point de lâcher.
 
 **Contraintes (recopiées) :**
 - GC1 — Aucun test désactivé, sauté, ni seuil changé ; l'essai échoue réellement si une lecture manque.
@@ -4079,13 +4317,17 @@ async function scenario(page, url, { captures, tmp }) {
   await page.click(lib("create-folder"));
   await page.waitForSelector(`${LIB} button[data-folder="Fractions"]`).catch(() => undefined);
   await addResource("selection", "Moitié", "fraction");
-  await page.waitForSelector(card("Fractions/Moitié.rbitem"), { timeout: 15000 });
-  check(await thumbDecoded(card("Fractions/Moitié.rbitem")), "S1 : carte « Moitié » dans « Fractions », vignette décodée");
+  await page.waitForSelector(card("Fractions/moitie.rbitem"), { timeout: 15000 });
+  check(await thumbDecoded(card("Fractions/moitie.rbitem")), "S1 : carte « Moitié » dans « Fractions », vignette décodée");
+  await addResource("selection", "Carré");
+  await page.waitForSelector(card("Fractions/carre.rbitem"), { timeout: 15000 });
+  check(true, "S1 : seconde ressource « Carré », sans mot-clé « fraction »");
 
   await page.fill(lib("search"), "frac");
   await page.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${lib("results")} .rb-resource`, { timeout: 15000 });
   const found = await page.getAttribute(`${lib("results")} .rb-resource`, "data-resource");
-  check(found === "Fractions/Moitié.rbitem", `S1 : « frac » : une seule ressource, ${found}`);
+  check(found === "Fractions/moitie.rbitem", `S1 : « frac » : une seule ressource, ${found}`);
+  check(!(await page.isVisible(`${lib("results")} .rb-resource[data-resource="Fractions/carre.rbitem"]`)), "S1 : « frac » : « Carré » disparaît");
   check(await thumbDecoded(`${lib("results")} .rb-resource`), "S1 : résultat avec sa vignette");
   const box = await page.locator("#stage").boundingBox();
   check(box !== null && box.width >= 640 && box.height >= 640, `S1 : scène ≥ 640 px, panneau ouvert (${box?.width} × ${box?.height})`);
@@ -4093,7 +4335,7 @@ async function scenario(page, url, { captures, tmp }) {
   // Autre page, glisser la carte du résultat : trois objets ; Annuler ; Rétablir.
   await page.click(item("page-add"));
   await waitAttr("data-elements", "0");
-  await dragCardToStage("Fractions/Moitié.rbitem", [300, 300]);
+  await dragCardToStage("Fractions/moitie.rbitem", [300, 300]);
   await waitAttr("data-elements", "3");
   check(true, "S1 : glissée sur la page 2 : trois objets insérés");
   if (captures) {
@@ -4118,11 +4360,11 @@ async function scenario(page, url, { captures, tmp }) {
   check((await gridKind()) === "seyes", "S2 : page 3 en Seyès");
   await openLibrary();
   await addResource("grid", "Seyès");
-  await page.waitForSelector(card("Fractions/Seyès.rbitem"), { timeout: 15000 });
+  await page.waitForSelector(card("Fractions/seyes.rbitem"), { timeout: 15000 });
   await page.click(item("page-add"));
   check((await gridKind()) === "none", "S2 : page 4 sans grille");
   await openLibrary();
-  await dragCardToStage("Fractions/Seyès.rbitem", [300, 300]);
+  await dragCardToStage("Fractions/seyes.rbitem", [300, 300]);
   await page.waitForTimeout(300);
   check((await gridKind()) === "seyes", "S2 : « Seyès » déposée : la page 4 porte la grille Seyès");
   await page.click(item("undo"));
@@ -4145,9 +4387,9 @@ async function scenario(page, url, { captures, tmp }) {
   const chooser = page.waitForEvent("filechooser");
   await page.click(lib("import"));
   await (await chooser).setFiles(pack);
-  await page.waitForSelector(card("Fractions/Moitié.rbitem"), { timeout: 15000 });
-  await page.waitForSelector(card("Fractions/Seyès.rbitem"), { timeout: 15000 });
-  check(await thumbDecoded(card("Fractions/Moitié.rbitem")), "S3 : réimporté : « Moitié » (vignette) et « Seyès » dans « Fractions »");
+  await page.waitForSelector(card("Fractions/moitie.rbitem"), { timeout: 15000 });
+  await page.waitForSelector(card("Fractions/seyes.rbitem"), { timeout: 15000 });
+  check(await thumbDecoded(card("Fractions/moitie.rbitem")), "S3 : réimporté : « Moitié » (vignette) et « Seyès » dans « Fractions »");
   await page.fill(lib("search"), "frac");
   await page.waitForFunction((sel) => document.querySelectorAll(sel).length === 1, `${lib("results")} .rb-resource`, { timeout: 15000 });
   check(true, "S3 : réimporté : le mot-clé « fraction » est gardé");
@@ -4157,11 +4399,11 @@ async function scenario(page, url, { captures, tmp }) {
   await fr();
   await openLibrary();
   await page.click(`${LIB} button[data-folder="Fractions"]`);
-  await page.waitForSelector(card("Fractions/Moitié.rbitem"), { timeout: 15000 });
-  await page.waitForSelector(card("Fractions/Seyès.rbitem"), { timeout: 15000 });
+  await page.waitForSelector(card("Fractions/moitie.rbitem"), { timeout: 15000 });
+  await page.waitForSelector(card("Fractions/seyes.rbitem"), { timeout: 15000 });
   check(true, "S3 : rechargé : la bibliothèque est la même");
   const before = Number(await attr("data-elements"));
-  await dragCardToStage("Fractions/Moitié.rbitem", [300, 300]);
+  await dragCardToStage("Fractions/moitie.rbitem", [300, 300]);
   await waitAttr("data-elements", String(before + 3));
   check(true, "S3 : après rechargement, « Moitié » glissée : trois objets insérés");
 
@@ -4243,6 +4485,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ---
 
 ## Relecture du plan (writing-plans, contrôles 1 à 4)
+
+0. **Contre-relecture du cadrage, tour 1** : B1 → T7 (D23) ; I1 → T4, T14 (D24) ; I2 → T8, T13, T15 (D25) ; I3 → T6 ; M1 → T1, T2, T7 (D26) ; M2 → T1 ; M3 → T15 ; M4 → T8 (D27) ; M5 → T12 (D28) ; M6 → T5, T14 (D29) ; M7 → T9 (D30) ; M8 → T6 (D31, H1-7) ; M9 → T7, T8 (D32) ; raison de l'écart IndexedDB corrigée (T6).
 
 1. **Couverture du cadrage.** D1 → T4, T14 ; D2 → T1, T4 ; D3 → T1, T3 ; D4 → T7 ; D5 → T8 ; D6 → T6 ; D7 → T6, T10, T14 ;
    D8 → T6 ; D9 → T13 ; D10 → T8, T13 ; D11 → T8, T13 ; D12 → T5, T14 ; D13 → T12, T13 ; D14 → T4, T8 ; D15 → T14, T15 ;
