@@ -1,7 +1,7 @@
 # État — usage-c15-3d
 
-Statut : en cours
-Étage : 4 — depuis 2026-11-21 06:50
+Statut : clos
+Étage : 4 — clos le 2026-11-21 07:00
 Gabarit : chantier (provisoire, ≈ 10 tâches)
 Objectif : Un fichier glTF / GLB, OBJ + MTL, STL ou PLY déposé devient un élément `model3d` sur la page montrée : tourné à l'orbite quand il est sélectionné, instantané image sinon ; le modèle et ses fichiers liés sont inclus dans le `.roomboard`.
 Avancement : 14/14 tâches terminées
@@ -54,7 +54,7 @@ Table complète : docs/plans/usage-c15-3d-PLAN.md (128455f, 11 tâches, 33 ligne
 - Lancement en ouvrier CLI : pas de question du lancement (mode autonome imposé par le brief OD90).
 
 ## Terminé quand
-Élément `model3d` du cœur (asset principal et liés, caméra d'orbite, `transform`, une étape d'annulation par orbite validée), géométrie de collision, importeur navigateur (octets magiques puis extension, regroupement des fichiers d'un même dépôt ou d'un ZIP), `three` chargé à la demande, un seul `WebGLRenderer` partagé, instantané image hors sélection, avertissement `.obj` seul et modèle compressé non décodable, contrôle hors ligne vert, aller-retour `.roomboard`, compatibilité avant C15 · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste 3D (GLB généré, orbite, instantané, OBJ + MTL, `.obj` seul, enregistrer, rouvrir, assets dans le fichier) · capture d'un objet 3D tourné dans docs/essais/ · scène ≥ 640 px mesurée · plafond Wasm inchangé, `formats` non grossi · PR fusionnée par fusion locale --no-ff et push sans --force — fait : PR 25 (voir ci-dessous)
+Élément `model3d` du cœur (asset principal et liés, caméra d'orbite, `transform`, une étape d'annulation par orbite validée), géométrie de collision, importeur navigateur (octets magiques puis extension, regroupement des fichiers d'un même dépôt ou d'un ZIP), `three` chargé à la demande, un seul `WebGLRenderer` partagé, instantané image hors sélection, avertissement `.obj` seul et modèle compressé non décodable, contrôle hors ligne vert, aller-retour `.roomboard`, compatibilité avant C15 · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK avec un geste 3D (GLB généré, orbite, instantané, OBJ + MTL, `.obj` seul, enregistrer, rouvrir, assets dans le fichier) · capture d'un objet 3D tourné dans docs/essais/ · scène ≥ 640 px mesurée · plafond Wasm inchangé, `formats` non grossi · PR fusionnée par fusion locale --no-ff et push sans --force — fait : PR 25, main da346d7 ; verifier.sh --e2e OK sur c48cd15
 
 ## Captures
 `docs/essais/c15-3d-orbite.png` : cube GLB généré (faces bleue et violette) tourné à l'orbite (yaw 30 → 87) sur la page, barre 3D ouverte ; scène 706 px ; rendu réel par SwiftShader.
@@ -122,4 +122,4 @@ evidence: "docs/plans/usage-c15-3d-cadrage.md § DAX1 à DAX5, dépôt jejeaster
 
 ### 3. Fiche `01_Projets/roomboard.md`, ligne « Vague 2 en cours »
 
-Ajouter à la fin de la ligne (après la dernière entrée, C14 ou C6b) : « ; C15 3D (élément model3d, orbite, instantané, three à la demande, ZIP) clos (PR 25, `main` <tête après fusion>) — voir [[2026-11-21-roomboard-usage-c15-3d-clos]] et [[NNNN-roomboard-model3d-rendu-unique-a-la-demande]]. »
+Ajouter à la fin de la ligne (après la dernière entrée, C14 ou C6b) : « ; C15 3D (élément model3d, orbite, instantané, three à la demande, ZIP) clos (PR 25, `main` da346d7) — voir [[2026-11-21-roomboard-usage-c15-3d-clos]] et [[NNNN-roomboard-model3d-rendu-unique-a-la-demande]]. »
