@@ -264,10 +264,14 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     console.log("capture : docs/essais/c15-3d-orbite.png");
   }
   await mouse.up();
-  await until(async () => (await version()) === v0 + 1, "S2 : relâché : data-version + 1");
-  // L'orbite est modale : Échap la ferme (l'objet reste sélectionné, instantané de la nouvelle vue), puis clic dans le vide.
-  await press("Escape");
-  await until(async () => (await tag()) === "glb;instantane;87;20", `S2 : orbite fermée, instantané de la vue tournée : « ${await tag()} »`);
+  // L'orbite est modale ; relâcher, cliquer à côté (zone vide) : orbite fermée, le clic va à l'outil (désélection) et
+  // l'instantané montre la nouvelle vue (S2, C1).
+  await mouse.click(60, 650);
+  await until(async () => (await version()) === v0 + 1, "S2 : relâché puis clic à côté : data-version + 1");
+  await fr();
+  await until(async () => (await tag()) === "", `S2 : clic à côté : orbite fermée, désélectionné : « ${await tag()} »`);
+  await mouse.click(400, 300);
+  await until(async () => (await tag()) === "glb;instantane;87;20", `S2 : resélectionné, instantané de la vue tournée : « ${await tag()} »`);
   let turned = await centerPixel();
   for (let i = 0; i < 40 && flat(turned); i++) {
     await page.waitForTimeout(100);
@@ -275,10 +279,15 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     turned = await centerPixel();
   }
   console.log(`versions : départ ${v0}, après orbite ${await version()}`);
+  check(dist(turned, before) > 20, `S2 : pixel central change après l'orbite (${before.join(",")} -> ${turned.join(",")})`);
+  // Échap ferme aussi l'orbite, l'objet restant sélectionné.
+  await page.click('[data-model3d="orbit"]');
+  await until(async () => (await tag()).split(";")[1] === "orbite", "S2 : orbite rouverte");
+  await press("Escape");
+  await until(async () => (await tag()) === "glb;instantane;87;20", `S2 : Échap : orbite fermée, objet sélectionné : « ${await tag()} »`);
   await mouse.click(60, 650);
   await fr();
   await until(async () => (await tag()) === "", "S2 : désélectionné");
-  check(dist(turned, before) > 20, `S2 : pixel central change après l'orbite (${before.join(",")} -> ${turned.join(",")})`);
   await press("Control+z");
   // data-version est un compteur de changements (l'annulation en compte un de plus) : l'oracle est la vue relue.
   check((await version()) !== v0 + 1, "S2 : Ctrl+Z a modifié le document (data-version change)");
@@ -321,7 +330,7 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
   ];
   for (const [name, bytes] of want) check(entries.has(name) && entries.get(name).equals(bytes), `S4 : ${name} présent, octets exacts`);
   const pngs = [...entries.keys()].filter((k) => /^assets\/.*\.png$/.test(k)).length;
-  check(pngs >= 7, `S4 : ${pngs} entrées assets/*.png (>= 7 : texture + 6 instantanés)`);
+  check(pngs === 7, `S4 : ${pngs} entrées assets/*.png (=== 7 : texture + 6 instantanés)`);
   await copyFile(saved, file);
 
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);

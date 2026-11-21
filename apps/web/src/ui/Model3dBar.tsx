@@ -30,11 +30,13 @@ export function Model3dBar(props: Model3dBarProps): JSX.Element {
   const status = (): Model3dBarStatus => (tick(), props.controls.status());
   const message = (): string | null => (tick(), props.controls.message());
   const blocked = (): boolean => status() === "sans-webgl" || status() === "echec" || status() === "chargement";
+  /** « Tourner » : un échec de lecture se retente (morceau de rendu manqué une fois) ; l'absence de WebGL, non (C3). */
+  const noTurn = (): boolean => status() === "sans-webgl" || status() === "chargement";
   return (
     <div role="group" aria-label="Commandes de l'objet 3D" data-model3d-bar>
       <div class="rb-media-bar-inner">
         <span data-model3d="name">{props.name}</span>
-        <button type="button" data-model3d="orbit" aria-pressed={status() === "orbite"} disabled={blocked()} onClick={() => props.controls.toggle()}>
+        <button type="button" data-model3d="orbit" aria-pressed={status() === "orbite"} disabled={noTurn()} onClick={() => props.controls.toggle()}>
           Tourner
         </button>
         <button type="button" data-model3d="reset" disabled={blocked()} onClick={() => props.controls.reset()}>

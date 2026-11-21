@@ -38,6 +38,14 @@ describe("Model3dBar (C15, X24)", () => {
     expect([(a.q("orbit") as HTMLButtonElement).disabled, (a.q("reset") as HTMLButtonElement).disabled]).toEqual([true, true]);
     expect(a.q("message")!.textContent).toBe("3D indisponible sur ce poste : l'objet garde son image");
   });
+  it("C3 : échec : « Tourner » reste actif (nouvel essai, un clic = un toggle), « Vue initiale » grisée, message affiché", () => {
+    const a = setup("echec", "objet 3D illisible sur ce poste : il garde son image");
+    const orbit = a.q("orbit") as HTMLButtonElement;
+    expect([orbit.disabled, (a.q("reset") as HTMLButtonElement).disabled]).toEqual([false, true]);
+    orbit.click();
+    expect(a.toggle).toHaveBeenCalledTimes(1);
+    expect(a.q("message")!.textContent).toBe("objet 3D illisible sur ce poste : il garde son image");
+  });
   it("chargement : « Chargement… », boutons grisés ; aucun message sans texte", () => {
     const a = setup("chargement");
     expect(a.q("status")!.textContent).toBe(LOADING_LABEL);

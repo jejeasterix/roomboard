@@ -3,7 +3,7 @@ import type { Change, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
-import { fitWidth, type Camera } from "./camera";
+import { fitWidth, worldToScreen, type Camera } from "./camera";
 import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -1596,7 +1596,12 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     const commits: ModelCamera[] = [];
     const closed = vi.fn();
     const open = () => engine.orbitModel(id, { view: DEFAULT_CAMERA, onView: (v) => views.push(v), onCommit: (v) => commits.push(v), closed });
-    return { engine, frames, renderer, log, id, views, commits, closed, open };
+    /** Échantillon à l'écran du point de page (wx, wy), selon la caméra courante. */
+    const at = (wx: number, wy: number): InputSample => {
+      const [x, y] = worldToScreen(engine.camera(), wx, wy);
+      return { ...sample, x, y };
+    };
+    return { engine, doc, page, frames, renderer, log, id, views, commits, closed, open, at };
   }
 
   it("orbitModel : null pour un id absent de la page", () => {
@@ -1604,11 +1609,12 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(engine.orbitModel("nulle-part", { view: DEFAULT_CAMERA, onView: () => {}, onCommit: () => {} })).toBeNull();
   });
   it("les gestes vont à la séance, pas à l'outil ; onView puis onCommit au relâché ; une scène redemandée", () => {
-    const { engine, frames, renderer, log, views, commits, open } = c15();
+    const { engine, frames, renderer, log, views, commits, open, at } = c15();
     expect(open()).not.toBeNull();
     const n = renderer.scenes.length;
-    engine.sink.begin(1, "pen", [{ ...sample, x: 10 }]);
-    engine.sink.extend(1, [{ ...sample, x: 60 }], []);
+    const s0 = at(150, 150); // appui sur l'objet de la séance
+    engine.sink.begin(1, "pen", [s0]);
+    engine.sink.extend(1, [{ ...s0, x: s0.x + 50 }], []);
     engine.sink.close(1, "end");
     expect(log.filter((l) => /^pen\.(begin|extend|close)/.test(l))).toEqual([]);
     expect(views.length).toBeGreaterThan(0);
@@ -1616,6 +1622,34 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(commits[0]!.yaw).toBeCloseTo(Math.PI / 6 + 0.5, 12);
     frames.tick();
     expect(renderer.scenes.length).toBeGreaterThan(n);
+  });
+  it("C1 : un appui à côté de l'objet (zone vide) ferme la séance et le geste va à l'outil courant", () => {
+    const { engine, log, closed, commits, open, at } = c15();
+    open();
+    engine.sink.begin(3, "pen", [at(500, 500)]);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(log).toContain("pen.begin 3");
+    engine.sink.close(3, "end");
+    expect(log).toContain("pen.close 3 end");
+    expect(commits).toEqual([]);
+    engine.sink.begin(4, "pen", [at(150, 150)]); // séance fermée : même sur l'objet, l'outil reçoit le geste
+    expect(log).toContain("pen.begin 4");
+  });
+  it("C1 : un appui sur un autre élément (pas l'objet de la séance) ferme aussi la séance", () => {
+    const { engine, doc, page, log, closed, open, at } = c15();
+    doc.apply({ type: "AddShape", page, shape: "rect", x0: 300, y0: 300, x1: 400, y1: 400, style: PEN, fill: null });
+    open();
+    engine.sink.begin(5, "pen", [at(350, 350)]);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(log).toContain("pen.begin 5");
+  });
+  it("C1 : un appui sur l'objet de la séance la garde ouverte (l'outil ne reçoit rien)", () => {
+    const { engine, log, closed, open, at } = c15();
+    open();
+    engine.sink.begin(6, "pen", [at(150, 150)]);
+    engine.sink.close(6, "end");
+    expect(closed).not.toHaveBeenCalled();
+    expect(log.filter((l) => /^pen\.(begin|close)/.test(l))).toEqual([]);
   });
   it("Échap ferme la séance : closed appelé, le geste suivant va à l'outil", () => {
     const { engine, log, closed, open } = c15();
