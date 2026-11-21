@@ -30,7 +30,7 @@ Vagues : V1 = T1, T3, T5 · V2 = T2, T4, T6 · V3 = T7. Worktrees : ~/projets/ro
 | T4 rendu canvas2d | T3 | terminée | 1/3 | 006e8dd | canvas2d + record-ctx 98 tests, 3 « C8 fill » |
 | T5 marques de zone | — | terminée | 1/3 | 690f802 | zone-marks + stage-tags 11 tests (dont « C8 Fill zone : durée mesurée ») |
 | T6 outil Pot, cible zone | T3, T5 | terminée | 1/3 | 51961da | fill-target, tools/fill, image-fill, board-session 108 tests, 3 « C8 » ; 2 tests C6a remplacés comme prévu (clic dans le vide → Fill zone) |
-| T7 essai navigateur, capture, tailles | toutes | en cours (lancée avant T8, verifier.sh rejoué après T8) | 1/3 | — | — |
+| T7 essai navigateur, capture, tailles | toutes | échec 1 : porte S6 médiane 163 ms > 50 ms (VM charge 24–28 sur 8 cœurs), S1–S5 OK ; défaut : `data-zone-ms` écrit après le rendu | 1/3 | a1cbb2d (wip, porte rouge) | — |
 | T8 correctifs revue T1 (murs fins, rects, tolérance par facteur, notice i_tree) | T1 | en cours | 1/3 | — | — |
 
 ## Terminé quand
@@ -41,6 +41,12 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 - 2026-11-21 07:31 cadrage écrit et corrigé (vue rastérisée U28 rétablie ; contre-relecture 1/2 : B1 temps → porte ≤ 50 ms, S6). 20 décisions, 5 DA, 13 hypothèses dont 6 de niveau 1, scénarios S1–S6. `i_overlay` mesuré : +214 643 o dans le module principal (formats exclu, marge 45 Ko).
 
 ## Pièges trouvés
+- Porte S6 rouge (163 ms, 4 052 169 cellules, VM chargée) → repli DA-Z5 étape 1 (plafond 2²¹) décidé par l'orchestrateur, après T8 (rects en fusion).
+- `zone-marks.ts` `timed()` écrit les marques après le rendu de la commande : `data-zone-ms` périmé jusqu'au rendu suivant.
 - Prémisse démentie : `usage-cadrage.md` plaçait `i_overlay` dans `formats` ; il ne tient pas dans sa marge (45 384 o) → module principal.
 - Le dépôt n'utilise pas `wasm-opt` ; `i_overlay` et `i_key_sort` ne livrent pas de LICENSE (texte amont à reprendre).
 - Chantiers en cours sur les mêmes fichiers : aucun.
+
+## Constats d'architecture
+- T2 (revue immédiate, mineur) : `element()` d'un `fill` (`document.rs:423`) passe par `read_fill`, qui alloue tous les anneaux pour rendre `color`, `w`, `h` ; `geoms` alloue trois fois par `fill` (`query.rs:126`, `:219`). Acceptable (hitTest seulement à l'appui) ; correction propre = lecture sans allocation dans `fill_element.rs`. Reporté.
+- T2 (mineur) : un `fill` de moins de 2·tol de large n'est pas touchable (HC8-4, voulu par le cadrage).
