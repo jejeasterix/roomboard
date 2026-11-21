@@ -10,6 +10,7 @@ import type {
   Change,
   Command,
   CoreDocument,
+  ContainerKind,
   CoreFactory,
   ElementView,
   GridLevel,
@@ -669,6 +670,15 @@ class WasmCoreDocument implements CoreDocument {
       p.free();
     }
   }
+  saveGrid(now: string, appVersion: string, name: string): Uint8Array { return this.d.save_grid(now, appVersion, name); }
+  saveGridParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array] {
+    const p = this.d.save_grid_parts(now, appVersion, name);
+    try {
+      return [p.manifest(), p.ybin()] as const;
+    } finally {
+      p.free();
+    }
+  }
 
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
     const b = new this.mod.StrokeBuilder(style.width);
@@ -693,6 +703,12 @@ class WasmCoreDocument implements CoreDocument {
   }
 }
 
+/** Le cœur ne rend que ces trois valeurs ; toute autre est une erreur de liaison. */
+const asContainerKind = (k: string): ContainerKind => {
+  if (k === "document" || k === "fragment" || k === "grid") return k;
+  throw new Error(`type de conteneur inattendu : ${k}`);
+};
+
 export function createWasmCore(mod: WasmModule): CoreFactory {
   return {
     blank: () => new WasmCoreDocument(mod.Document.blank(), mod),
@@ -702,6 +718,10 @@ export function createWasmCore(mod: WasmModule): CoreFactory {
     loadParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_parts(manifest, ybin), mod),
     loadFragment: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment(bytes), mod),
     loadFragmentParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment_parts(manifest, ybin), mod),
+    loadGrid: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load_grid(bytes), mod),
+    loadGridParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_grid_parts(manifest, ybin), mod),
+    manifestKind: (manifest: Uint8Array) => asContainerKind(mod.Document.manifest_kind(manifest)),
+    containerKind: (bytes: Uint8Array) => asContainerKind(mod.Document.container_kind(bytes)),
     version: () => mod.version(),
   };
 }

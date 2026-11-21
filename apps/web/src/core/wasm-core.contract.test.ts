@@ -2707,10 +2707,11 @@ describe.skipIf(loaded === null)("contrat C3 : vrai module seulement", () => {
     const d = need().core.blank();
     const [m, y] = d.extract(first(d), []).saveFragmentParts(now, "0.1.0", "x");
     const json = JSON.parse(new TextDecoder().decode(m)) as Record<string, unknown>;
-    json["kind"] = "grid";
+    // C4 : « grid » est désormais un type connu ; l'exemple de type inconnu devient « hologram » (même intention).
+    json["kind"] = "hologram";
     const grid = new TextEncoder().encode(JSON.stringify(json));
-    expect(messageOf(() => need().core.loadFragmentParts(grid, y))).toBe(unknownKindMessage("grid"));
-    expect(messageOf(() => need().core.loadParts(grid, y))).toBe(unknownKindMessage("grid"));
+    expect(messageOf(() => need().core.loadFragmentParts(grid, y))).toBe(unknownKindMessage("hologram"));
+    expect(messageOf(() => need().core.loadParts(grid, y))).toBe(unknownKindMessage("hologram"));
   });
   it("source d'une autre liaison : erreur, rien d'écrit", () => {
     const d = need().core.blank();
