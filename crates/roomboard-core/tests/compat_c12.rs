@@ -1,6 +1,5 @@
 //! Garde de compatibilité C16 (O18, S5) : `pdf-c12.roomboard` a été écrit une fois par le code de `main` 41342b0
-//! (document d'un PDF importé par C12, aucune clé `original`). Il ne se régénère pas après C16 :
-//! `ROOMBOARD_REGENERER_FIXTURES=1` seulement avec le code d'avant C16.
+//! (document d'un PDF importé par C12, aucune clé `original`). Il ne se régénère jamais avec le code C16.
 use std::path::PathBuf;
 
 use roomboard_core::asset::AssetRef;
@@ -31,18 +30,10 @@ fn pdf_asset() -> AssetRef {
 }
 
 /// Document de C12 : deux pages (portrait puis paysage), fonds `pdf-page`.
-fn c12_document() -> Document {
-    Document::from_pdf_pages(&pdf_asset(), &[(612.0, 792.0), (792.0, 612.0)], None).expect("pdf")
-}
-
 fn fixture_bytes() -> Vec<u8> {
     let path = fixture();
-    if std::env::var("ROOMBOARD_REGENERER_FIXTURES").as_deref() == Ok("1") {
-        std::fs::write(&path, save(&c12_document(), &meta()).expect("save")).expect("écriture");
-    }
-    std::fs::read(&path).expect(
-        "fixture pdf-c12.roomboard absente : ROOMBOARD_REGENERER_FIXTURES=1 cargo test -p roomboard-core --test compat_c12 (code d'avant C16 seulement)",
-    )
+    std::fs::read(&path)
+        .expect("fixture pdf-c12.roomboard absente (écrite une fois par le code d'avant C16)")
 }
 
 /// S5, O18 : le document PDF d'avant C16 s'ouvre (2 fonds `pdf-page`, l'asset cité) et se réenregistre à l'identique.

@@ -180,8 +180,9 @@ impl Disp {
     }
 }
 
-/// Pose `AutomationSecurity` et les alertes avant toute ouverture, lance `work`, puis remet les valeurs d'origine
-/// (instance déjà ouverte par l'utilisateur).
+/// Pose `AutomationSecurity` et les alertes avant toute ouverture, lance `work`, puis remet les valeurs d'origine :
+/// utile pour PowerPoint, dont l'instance déjà ouverte par l'utilisateur est partagée (Word et Excel, `CoCreateInstance`
+/// lance toujours une instance neuve, restent sans effet visible).
 fn guarded(
     app: &Disp,
     alerts: VARIANT,
@@ -280,10 +281,14 @@ fn export_powerpoint(app: &Disp, input: &Path, out: &Path) -> Result<(), Convert
     })
 }
 
-/// Corps du fil STA : application obtenue par `CoCreateInstance` ; `Quit` seulement si elle ne tournait pas avant.
+/// Corps du fil STA : application obtenue par `CoCreateInstance` ; `Quit` sauf pour une instance PowerPoint déjà
+/// ouverte (partagée). Word et Excel sont « SingleUse » (KB 288902) : l'instance créée est toujours la nôtre, même si
+/// l'utilisateur en avait une ; l'oublier laisserait un `WINWORD.EXE` ou `EXCEL.EXE` caché.
+/// `CLSIDFromProgID` en échec (application non installée) : `NoProgram`, pour le repli de la page.
 fn run_app(app: App, input: &Path, out: &Path) -> Result<(), ConvertError> {
     // SAFETY : appels COM sur ce fil, initialisé STA par `sta`.
-    let clsid = unsafe { CLSIDFromProgID(&HSTRING::from(app.prog_id())) }.map_err(com_err)?;
+    let clsid = unsafe { CLSIDFromProgID(&HSTRING::from(app.prog_id())) }
+        .map_err(|_| ConvertError::NoProgram)?;
     let mut active: Option<IUnknown> = None;
     // SAFETY : `active` reçoit une référence comptée, libérée à la sortie de portée.
     let running = unsafe { GetActiveObject(&clsid, None, &mut active) }.is_ok();
@@ -297,7 +302,8 @@ fn run_app(app: App, input: &Path, out: &Path) -> Result<(), ConvertError> {
         App::Excel => export_excel(&d, input, out),
         App::PowerPoint => export_powerpoint(&d, input, out),
     };
-    if !running {
+    let ours = !running || !matches!(app, App::PowerPoint);
+    if ours {
         let _ = d.call("Quit", vec![]);
     }
     r

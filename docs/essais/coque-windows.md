@@ -98,5 +98,8 @@ Coque construite comme au § 2. Fichiers d'essai : `crates/roomboard-shell/tests
 | C16-4 | désinstaller LibreOffice (ou le retirer du PATH et de `%ProgramFiles%`), Office seul, relancer | mêmes conversions par Word, Excel, PowerPoint (COM), aucune fenêtre Office visible ; une instance de PowerPoint ouverte avant reste ouverte |
 | C16-5 | délai : `.pptx` protégé par mot de passe | après 120 s : « <nom> : conversion trop longue (plus de 120 s) » ; Gestionnaire des tâches : aucun `soffice.bin` ni `POWERPNT.EXE` lancé par RoomBoard restant |
 | C16-6 | ni LibreOffice ni Office, relancer | `cours.docx` : « cours.docx : installez LibreOffice ou Microsoft Office » ; `notes.xlsx` : un tableau et « notes.xlsx : importé en valeurs ; installez LibreOffice ou Microsoft Office pour ses pages » ; bouton « Modifier… » absent |
+| C16-7 | chemins `\\?\` (issus de `canonicalize`) : convertir un fichier déposé avec LibreOffice, puis avec Office seul | `--outdir`, l'entrée de `soffice` et `Documents.Open` / `Workbooks.Open` / `Presentations.Open` acceptent le préfixe `\\?\` ; sinon noter l'application et le message |
+| C16-8 | Office seul, Word seul installé : déposer `notes.xlsx` | « installez LibreOffice ou Microsoft Office » (repli en valeurs), pas une erreur de conversion |
+| C16-9 | Office seul : laisser un Word et un Excel ouverts, convertir `cours.docx` et `notes.xlsx` | l'instance de l'utilisateur reste ouverte ; aucun `WINWORD.EXE` / `EXCEL.EXE` caché restant après la conversion |
 
 Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-windows-c16-modifier.png` (geste C16-2).

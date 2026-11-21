@@ -166,6 +166,9 @@ async fn convert_office(app: AppHandle, path: String) -> Result<ConvertedPayload
     })
     .await
     .map_err(|e| e.to_string())?;
+    if let Err(e) = &done {
+        eprintln!("convert_office : {e}");
+    }
     done.map(|c| ConvertedPayload {
         id: c.id,
         pdf: c.pdf.to_string_lossy().into_owned(),
@@ -202,7 +205,7 @@ async fn open_original(
         .originals
         .write(&name, bytes)
         .map_err(|e| e.code().to_string())?;
-    open::that_detached(&path).map_err(|e| e.to_string())?;
+    originals::open_detached(&path).map_err(|e| e.to_string())?;
     if !office.watching.swap(true, Ordering::SeqCst) {
         spawn_watch(app.clone());
     }
