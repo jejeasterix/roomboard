@@ -20,9 +20,11 @@ pub const MIME: &str = "application/x-roomboard";
 pub const MANIFEST: &str = "manifest.json";
 pub const DOCUMENT: &str = "document.ybin";
 
-/// Valeurs de `kind` connues (U8) : absent ou `"document"` = document `.roomboard` ; `"fragment"` = objet `.rbitem`.
+/// Valeurs de `kind` connues (U8) : absent ou `"document"` = document `.roomboard` ; `"fragment"` = objet `.rbitem` ;
+/// `"grid"` = grille `.rbitem` (C4, U31 : document d'une page, sans élément, qui porte la seule grille).
 pub const KIND_DOCUMENT: &str = "document";
 pub const KIND_FRAGMENT: &str = "fragment";
+pub const KIND_GRID: &str = "grid";
 pub const FRAGMENT_EXTENSION: &str = "rbitem";
 pub const FRAGMENT_MIME: &str = "application/x-roomboard-item";
 
@@ -68,9 +70,11 @@ pub enum FormatError {
     UnknownKind {
         found: String,
     },
-    /// Type connu mais pas celui attendu : `expected` = `KIND_DOCUMENT` ou `KIND_FRAGMENT` (PC7).
+    /// Type connu mais pas celui attendu (PC7) : `found` choisit le message (ce que le fichier est), `expected` le dit
+    /// aux tests et aux appelants.
     WrongKind {
         expected: &'static str,
+        found: &'static str,
     },
 }
 
@@ -83,11 +87,21 @@ impl std::fmt::Display for FormatError {
                 "document créé par une version plus récente de RoomBoard (version {found}, celle-ci lit jusqu'à la {supported})"
             ),
             FormatError::Corrupt(m) => write!(f, "document RoomBoard endommagé : {m}"),
+            // D26 : un `.rbpack` ouvert comme document ou objet a un message à lui.
+            FormatError::UnknownKind { found } if found == "pack" => write!(
+                f,
+                "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque"
+            ),
             FormatError::UnknownKind { found } => write!(
                 f,
                 "type de fichier RoomBoard inconnu (« {found} ») : pris en charge dans une prochaine version"
             ),
-            FormatError::WrongKind { expected } if *expected == KIND_FRAGMENT => write!(
+            // Message choisi sur ce que le fichier est (`found`), jamais sur ce qui était attendu (C4).
+            FormatError::WrongKind { found, .. } if *found == KIND_GRID => write!(
+                f,
+                "ce fichier est une grille RoomBoard : déposez-la sur une page"
+            ),
+            FormatError::WrongKind { found, .. } if *found == KIND_DOCUMENT => write!(
                 f,
                 "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages"
             ),
@@ -247,10 +261,10 @@ pub fn check_manifest(raw: &[u8]) -> Result<Manifest, FormatError> {
             supported: SCHEMA,
         });
     }
-    // Type connu seulement : document ou fragment passent tous deux (`roomboard-formats` ouvre l'un et l'autre par
-    // `open`) ; le refus du mauvais type se fait à la lecture (`expect_kind`).
+    // Type connu seulement : document, fragment et grille passent tous (`roomboard-formats` les ouvre par `open`) ;
+    // le refus du mauvais type se fait à la lecture (`expect_kind`).
     match manifest.kind.as_deref() {
-        None | Some(KIND_DOCUMENT) | Some(KIND_FRAGMENT) => {}
+        None | Some(KIND_DOCUMENT) | Some(KIND_FRAGMENT) | Some(KIND_GRID) => {}
         Some(other) => {
             // Borné : la valeur vient d'un fichier non fiable et finit dans un message.
             return Err(FormatError::UnknownKind {
@@ -261,13 +275,33 @@ pub fn check_manifest(raw: &[u8]) -> Result<Manifest, FormatError> {
     Ok(manifest)
 }
 
-/// Le manifeste dit-il le type attendu ? `kind` absent = document (U8).
+/// Type d'un manifeste déjà contrôlé par `check_manifest` : `kind` absent = document (U8).
+pub fn kind_of(m: &Manifest) -> &'static str {
+    match m.kind.as_deref() {
+        Some(KIND_FRAGMENT) => KIND_FRAGMENT,
+        Some(KIND_GRID) => KIND_GRID,
+        _ => KIND_DOCUMENT,
+    }
+}
+
+/// Le manifeste dit-il le type attendu ? Sinon `WrongKind`, avec le type trouvé.
 fn expect_kind(m: &Manifest, expected: &'static str) -> Result<(), FormatError> {
-    if m.kind.as_deref().unwrap_or(KIND_DOCUMENT) == expected {
+    let found = kind_of(m);
+    if found == expected {
         Ok(())
     } else {
-        Err(FormatError::WrongKind { expected })
+        Err(FormatError::WrongKind { expected, found })
     }
+}
+
+/// Type d'un manifeste seul (C4) : `format`, versions et `kind` contrôlés comme à l'ouverture.
+pub fn manifest_kind(raw: &[u8]) -> Result<&'static str, FormatError> {
+    Ok(kind_of(&check_manifest(raw)?))
+}
+
+/// Type d'un conteneur entier (C4, repli sans le module des formats) : mêmes contrôles et bornes que `open`.
+pub fn container_kind(bytes: &[u8]) -> Result<&'static str, FormatError> {
+    Ok(kind_of(&open(bytes)?.manifest))
 }
 
 /// Ouvre l'archive, contrôle le manifeste **avant** de chercher `document.ybin`, puis lit `document.ybin` ; bornes R20.
@@ -329,17 +363,28 @@ pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatEr
     decode_checked(opened.manifest, &opened.parts.ybin)
 }
 
-/// Manifeste et `document.ybin` d'un fragment (Z6) : `kind: "fragment"`, `name`, `bounds` des éléments de la page
-/// unique ; `created` = maintenant (un fragment n'a pas d'historique d'enregistrement).
-pub fn save_fragment_parts(
+/// Manifeste et `document.ybin` d'une ressource (Z6, C4) : `kind` = `KIND_FRAGMENT` ou `KIND_GRID`, `name`, `bounds`
+/// des éléments de la page unique (aucune pour une grille sans élément) ; `created` = maintenant (une ressource n'a pas
+/// d'historique d'enregistrement).
+pub fn save_resource_parts(
     doc: &Document,
     meta: &SaveMeta,
+    kind: &'static str,
     name: &str,
 ) -> Result<Parts, FormatError> {
+    let label = match kind {
+        KIND_FRAGMENT => "fragment",
+        KIND_GRID => "grille",
+        other => {
+            return Err(FormatError::Corrupt(format!(
+                "type de ressource inconnu : {other}"
+            )))
+        }
+    };
     let pages = doc.page_ids();
     if pages.len() != 1 {
         return Err(FormatError::Corrupt(format!(
-            "fragment de {} pages : une seule attendue",
+            "{label} de {} pages : une seule attendue",
             pages.len()
         )));
     }
@@ -353,7 +398,7 @@ pub fn save_fragment_parts(
         app_version: meta.app_version.clone(),
         created: meta.created.clone().unwrap_or_else(|| meta.now.clone()),
         modified: meta.now.clone(),
-        kind: Some(KIND_FRAGMENT.into()),
+        kind: Some(kind.into()),
         name: Some(name.into()),
         // Une boîte non finie (transformation infinie, NaN) ne s'écrit pas : le JSON ne la relirait pas.
         bounds: doc
@@ -368,10 +413,40 @@ pub fn save_fragment_parts(
     })
 }
 
-/// `.rbitem` complet sans asset (mêmes options de date fixe que `save`).
-pub fn save_fragment(doc: &Document, meta: &SaveMeta, name: &str) -> Result<Vec<u8>, FormatError> {
-    let w = write_parts(&save_fragment_parts(doc, meta, name)?)?;
+/// Manifeste et `document.ybin` d'un fragment (Z6) : mêmes octets qu'avant C4.
+pub fn save_fragment_parts(
+    doc: &Document,
+    meta: &SaveMeta,
+    name: &str,
+) -> Result<Parts, FormatError> {
+    save_resource_parts(doc, meta, KIND_FRAGMENT, name)
+}
+
+/// Ressource complète sans asset (mêmes options de date fixe que `save`).
+pub fn save_resource(
+    doc: &Document,
+    meta: &SaveMeta,
+    kind: &'static str,
+    name: &str,
+) -> Result<Vec<u8>, FormatError> {
+    let w = write_parts(&save_resource_parts(doc, meta, kind, name)?)?;
     Ok(w.finish().map_err(zip_err)?.into_inner())
+}
+
+/// `.rbitem` complet sans asset.
+pub fn save_fragment(doc: &Document, meta: &SaveMeta, name: &str) -> Result<Vec<u8>, FormatError> {
+    save_resource(doc, meta, KIND_FRAGMENT, name)
+}
+
+/// Lit une ressource depuis ses deux moitiés ; un autre type est refusé (`WrongKind`).
+pub fn load_resource_parts(
+    manifest: &[u8],
+    ybin: &[u8],
+    kind: &'static str,
+) -> Result<(Document, Manifest), FormatError> {
+    let m = check_manifest(manifest)?;
+    expect_kind(&m, kind)?;
+    decode_checked(m, ybin)
 }
 
 /// Lit un fragment depuis ses deux moitiés ; un document est refusé (`WrongKind`).
@@ -379,16 +454,22 @@ pub fn load_fragment_parts(
     manifest: &[u8],
     ybin: &[u8],
 ) -> Result<(Document, Manifest), FormatError> {
-    let m = check_manifest(manifest)?;
-    expect_kind(&m, KIND_FRAGMENT)?;
-    decode_checked(m, ybin)
+    load_resource_parts(manifest, ybin, KIND_FRAGMENT)
+}
+
+/// Lit une ressource sans asset (repli quand le module des formats manque) ; un autre type est refusé (`WrongKind`).
+pub fn load_resource(
+    bytes: &[u8],
+    kind: &'static str,
+) -> Result<(Document, Manifest), FormatError> {
+    let opened = open(bytes)?;
+    expect_kind(&opened.manifest, kind)?;
+    decode_checked(opened.manifest, &opened.parts.ybin)
 }
 
 /// Lit un `.rbitem` sans asset (repli quand le module des formats manque) ; un document est refusé (`WrongKind`).
 pub fn load_fragment(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
-    let opened = open(bytes)?;
-    expect_kind(&opened.manifest, KIND_FRAGMENT)?;
-    decode_checked(opened.manifest, &opened.parts.ybin)
+    load_resource(bytes, KIND_FRAGMENT)
 }
 
 /// Migration (D24) : appelée pour toute version ≤ la version connue. Rien à migrer en v1 ; une version < 1 n'a
@@ -506,7 +587,7 @@ mod tests {
     #[test]
     fn unknown_kind_is_refused() {
         let ybin = Document::blank().encode_v1();
-        for k in ["grid", "pack", "autre"] {
+        for k in ["pack", "autre"] {
             let e = load_parts(&manifest_with_kind(k), &ybin).err();
             assert_eq!(e, Some(FormatError::UnknownKind { found: k.into() }));
             assert_eq!(load_fragment_parts(&manifest_with_kind(k), &ybin).err(), e);
@@ -518,10 +599,19 @@ mod tests {
         }
         assert_eq!(
             FormatError::UnknownKind {
-                found: "grid".into()
+                found: "autre".into()
             }
             .to_string(),
-            "type de fichier RoomBoard inconnu (« grid ») : pris en charge dans une prochaine version"
+            "type de fichier RoomBoard inconnu (« autre ») : pris en charge dans une prochaine version"
+        );
+        // C4 (D3) : `grid` est connu ; lu comme document ou objet, c'est le mauvais type, pas un type inconnu.
+        assert!(check_manifest(&manifest_with_kind(KIND_GRID)).is_ok());
+        assert_eq!(
+            load_parts(&manifest_with_kind(KIND_GRID), &ybin).err(),
+            Some(FormatError::WrongKind {
+                expected: KIND_DOCUMENT,
+                found: KIND_GRID
+            })
         );
     }
 
@@ -531,19 +621,22 @@ mod tests {
         assert_eq!(
             load(&bytes).err(),
             Some(FormatError::WrongKind {
-                expected: KIND_DOCUMENT
+                expected: KIND_DOCUMENT,
+                found: KIND_FRAGMENT
             })
         );
         let parts = save_fragment_parts(&one_rect(), &meta(), "Sélection").expect("parts");
         assert_eq!(
             load_parts(&parts.manifest, &parts.ybin).err(),
             Some(FormatError::WrongKind {
-                expected: KIND_DOCUMENT
+                expected: KIND_DOCUMENT,
+                found: KIND_FRAGMENT
             })
         );
         assert_eq!(
             FormatError::WrongKind {
-                expected: KIND_DOCUMENT
+                expected: KIND_DOCUMENT,
+                found: KIND_FRAGMENT
             }
             .to_string(),
             "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page"
@@ -556,19 +649,22 @@ mod tests {
         assert_eq!(
             load_fragment(&bytes).err(),
             Some(FormatError::WrongKind {
-                expected: KIND_FRAGMENT
+                expected: KIND_FRAGMENT,
+                found: KIND_DOCUMENT
             })
         );
         let parts = save_parts(&Document::blank(), &meta()).expect("parts");
         assert_eq!(
             load_fragment_parts(&parts.manifest, &parts.ybin).err(),
             Some(FormatError::WrongKind {
-                expected: KIND_FRAGMENT
+                expected: KIND_FRAGMENT,
+                found: KIND_DOCUMENT
             })
         );
         assert_eq!(
             FormatError::WrongKind {
-                expected: KIND_FRAGMENT
+                expected: KIND_FRAGMENT,
+                found: KIND_DOCUMENT
             }
             .to_string(),
             "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages"

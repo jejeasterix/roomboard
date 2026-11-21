@@ -66,7 +66,10 @@ fn grid_resource_round_trips_with_same_bytes() {
         "Seyès",
     )
     .expect("réécrite");
-    assert_eq!(again, bytes, "un .rbitem de grille rechargé garde ses octets");
+    assert_eq!(
+        again, bytes,
+        "un .rbitem de grille rechargé garde ses octets"
+    );
 }
 
 #[test]
@@ -97,8 +100,13 @@ fn grid_resource_is_refused_as_fragment_and_as_document() {
 fn messages_of_before_c4_are_unchanged() {
     let frag = save_fragment(&Document::blank(), &meta(), "Sélection").expect("fragment");
     assert_eq!(
-        load_with_manifest(&frag).err().map(|e| e.to_string()).as_deref(),
-        Some("ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page")
+        load_with_manifest(&frag)
+            .err()
+            .map(|e| e.to_string())
+            .as_deref(),
+        Some(
+            "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page"
+        )
     );
     let doc = save(&Document::blank(), &meta()).expect("document");
     assert_eq!(
