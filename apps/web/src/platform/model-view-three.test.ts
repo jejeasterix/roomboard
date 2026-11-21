@@ -7,9 +7,9 @@ import {
   dataUrlBlob,
   guardUrl,
   orbitPose,
-  placeholderPng,
   type RendererLike,
 } from "./model-view-three";
+import * as viewThree from "./model-view-three";
 
 /** Canvas factice : écouteurs, `toBlob` en PNG d'un octet, aucun contexte. */
 function fakeCanvas() {
@@ -199,15 +199,6 @@ function packGlb(json: object, bin: Uint8Array): Uint8Array {
 const view = (urls: ReturnType<typeof fakeUrls>) =>
   createThreeModelView({ createCanvas: () => fakeCanvas().canvas, createRenderer: () => fakeRenderer(), urls: urls.port });
 
-function crc32(bytes: Uint8Array): number {
-  let c = ~0;
-  for (const b of bytes) {
-    c ^= b;
-    for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
-  }
-  return ~c >>> 0;
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -241,9 +232,9 @@ describe("rendu three (C15, X22, X27)", () => {
       "blob:vide",
     ]);
   });
-  it("guardUrl : image absente ou distante → PNG de remplacement ; .bin ou autre → blob vide ; toutes absentes", () => {
+  it("guardUrl : absente ou distante → blob vide, image comprise (constat Q5 : ni PNG de remplacement ni `emptyImage`)", () => {
     const missing: string[] = [];
-    const g = (u: string) => guardUrl(u, new Map(), missing, () => "blob:neuf", "blob:vide", "blob:png");
+    const g = (u: string) => guardUrl(u, new Map(), missing, () => "blob:neuf", "blob:vide");
     expect([
       g("https://cdn.test/a.PNG?v=2"),
       g("tex/b.jpg"),
@@ -251,27 +242,12 @@ describe("rendu three (C15, X22, X27)", () => {
       g("cube.bin"),
       g("https://cdn.test/d.bin"),
       g("notes.txt"),
-    ]).toEqual(["blob:png", "blob:png", "blob:png", "blob:vide", "blob:vide", "blob:vide"]);
+    ]).toEqual(["blob:vide", "blob:vide", "blob:vide", "blob:vide", "blob:vide", "blob:vide"]);
     expect(missing).toHaveLength(6);
-  });
-  it("image de remplacement : PNG 1×1 RVBA transparent, CRC justes", async () => {
-    const blob = placeholderPng();
-    const b = new Uint8Array(await blob.arrayBuffer());
-    expect([blob.type, [...b.subarray(0, 8)]]).toEqual(["image/png", PNG_SIGNATURE]);
-    const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
-    const chunks: Array<{ type: string; data: Uint8Array; crc: boolean }> = [];
-    for (let at = 8; at + 12 <= b.length; ) {
-      const len = v.getUint32(at);
-      const typed = b.subarray(at + 4, at + 8 + len);
-      chunks.push({ type: new TextDecoder().decode(typed.subarray(0, 4)), data: typed.subarray(4), crc: crc32(typed) === v.getUint32(at + 8 + len) });
-      at += 12 + len;
-    }
-    expect(chunks.map((c) => [c.type, c.crc])).toEqual([["IHDR", true], ["IDAT", true], ["IEND", true]]);
-    expect([...chunks[0]!.data]).toEqual([0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0]);
-    const raw = new Uint8Array(
-      await new Response(new Blob([chunks[1]!.data.slice()]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer(),
-    );
-    expect([...raw]).toEqual([0, 0, 0, 0, 0]);
+    // L'ancien sixième argument (`emptyImage`) n'a plus d'effet ; `placeholderPng` n'est plus exporté.
+    const loose = guardUrl as unknown as (...a: unknown[]) => string;
+    expect(loose("tex/b.jpg", new Map(), [], () => "blob:neuf", "blob:vide", "blob:png")).toBe("blob:vide");
+    expect(Object.keys(viewThree)).not.toContain("placeholderPng");
   });
   it("dataUrlBlob : base64 et texte ; mal formée : null", async () => {
     expect(await dataUrlBlob("data:text/plain,a%20b")!.text()).toBe("a b");
@@ -410,6 +386,18 @@ describe("rendu three (C15, X22, X27)", () => {
     fire("webglcontextlost");
     fire("webglcontextlost");
     expect([v.available(), cb.mock.calls.length, v.draw(m, DEFAULT_CAMERA, { w: 8, h: 8 })]).toEqual([false, 1, null]);
+  });
+  it("webglcontextrestored (constat Q4) : available() vrai, draw rendu ; une nouvelle perte rappelle onLost", async () => {
+    const { canvas, fire } = fakeCanvas();
+    const v = createThreeModelView({ createCanvas: () => canvas, createRenderer: () => fakeRenderer(), urls: fakeUrls().port });
+    const m = await v.load(src("glb", cubeGlb()));
+    const cb = vi.fn();
+    v.onLost(cb);
+    fire("webglcontextlost");
+    fire("webglcontextrestored");
+    expect([v.available(), v.draw(m, DEFAULT_CAMERA, { w: 8, h: 8 }) !== null]).toEqual([true, true]);
+    fire("webglcontextlost");
+    expect([v.available(), cb.mock.calls.length]).toEqual([false, 2]);
   });
   it("release : URL révoquées, modèle oublié (draw null)", async () => {
     const urls = fakeUrls();
