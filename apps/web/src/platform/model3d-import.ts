@@ -5,8 +5,10 @@
  * registre vivent dans `model3d-handlers.ts` (T8).
  */
 
-/** Même liste que `Model3dFormat` d'`api.ts` (T2) ; T8 remplace cet alias par l'import (PC1). */
-export type Model3dFormat = "glb" | "gltf" | "obj" | "stl" | "ply";
+import type { Model3dFormat } from "../core/api";
+
+/** `Model3dFormat` d'`api.ts` (T2, PC1), réexporté pour les lecteurs de ce module. */
+export type { Model3dFormat };
 
 /** En-tête d'un GLB : « glTF » (X11). */
 export const GLB_MAGIC: readonly number[] = Object.freeze([0x67, 0x6c, 0x54, 0x46]);
