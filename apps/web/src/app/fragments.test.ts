@@ -330,11 +330,16 @@ describe("C4 : insertResource et encodeGrid", () => {
     src.doc.apply({ type: "SetGrid", page: src.doc.pageIds()[0]!, grid });
     const bytes = (await ops.encodeGrid(src.tab, "Seyès"))!;
     const dst = tabOf();
+    const page = dst.doc.pageIds()[0]!;
+    const before = dst.doc.page(page)?.grid ?? null;
     const runs = vi.spyOn(dst.tab.board.engine, "run");
     expect(await ops.insertResource(dst.tab, bytes, "Seyès", { x: 10, y: 10 })).toBe("inserted");
     expect(runs).toHaveBeenCalledTimes(1);
-    expect(dst.doc.page(dst.doc.pageIds()[0]!)?.grid).toEqual(grid);
+    expect(dst.doc.page(page)?.grid).toEqual(grid);
     expect(said).toEqual([]);
+    dst.doc.undo();
+    expect(dst.doc.page(page)?.grid ?? null).toEqual(before);
+    expect(before).not.toEqual(grid);
   });
 
   it("C4 : même grille : aucune étape", async () => {

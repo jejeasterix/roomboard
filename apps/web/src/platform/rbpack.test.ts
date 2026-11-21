@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { unknownKindMessage } from "../core/api";
-import { buildPack, PACK_NEWER_MESSAGE, PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE, packMissingMessage, readPack, type PackItem, type ZipFile } from "./rbpack";
+import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
+import { buildPack, PACK_MANIFEST, PACK_NEWER_MESSAGE, PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE, packMissingMessage, readPack, type PackItem, type ZipFile } from "./rbpack";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const item = (path: string, over: Partial<PackItem> = {}): PackItem => ({
@@ -71,5 +72,45 @@ describe("C4 : paquet .rbpack", () => {
   it("C4 : readPack ne normalise aucun chemin (a/../b reste a/../b pour safeLibraryPath, T8)", () => {
     const back = readPack(buildPack("F", [item("a/../b"), item("ok")], { appVersion: "c4", now: "n" }));
     expect(back.items.map((i) => i.path)).toEqual(["a/../b", "ok"]);
+  });
+
+  it("C4 : le kind inconnu est coupé à 64 caractères, pas à 64 unités UTF-16 (comme le cœur)", () => {
+    const kind = "😀".repeat(70);
+    const files = withManifest(buildPack("F", [], { appVersion: "c4", now: "n" }), { kind });
+    expect(() => readPack(files)).toThrow(unknownKindMessage("😀".repeat(64)));
+  });
+
+  it("C4 : formatVersion absent ou non numérique : paquet endommagé, pas « version plus récente »", () => {
+    for (const v of [undefined, "1", "2", null]) {
+      const base = buildPack("F", [], { appVersion: "c4", now: "n" });
+      const files = base.map((f) => (f.path === PACK_MANIFEST ? { path: f.path, bytes: enc(JSON.stringify({ ...manifestOf(base), formatVersion: v })) } : f));
+      expect(() => readPack(files), String(v)).toThrow(/endommagé/);
+    }
+  });
+
+  it("C4 : items qui n'est pas un tableau : paquet refusé (jamais un paquet vide en silence)", () => {
+    for (const items of ["x", {}, null, 3]) {
+      expect(() => readPack(withManifest(buildPack("F", [], { appVersion: "c4", now: "n" }), { items })), JSON.stringify(items)).toThrow(/endommagé/);
+    }
+  });
+
+  it("C4 : bornes de lecture : trop d'entrées ou trop d'octets refusés avant tout le reste", () => {
+    const many = Array.from({ length: ZIP_MAX_ENTRIES + 1 }, (_, i): ZipFile => ({ path: `x${i}`, bytes: new Uint8Array() }));
+    expect(() => readPack(many)).toThrow(ZIP_TOO_BIG_MESSAGE);
+    const big = { path: "x", bytes: { length: ZIP_MAX_BYTES + 1 } as unknown as Uint8Array };
+    expect(() => readPack([big])).toThrow(ZIP_TOO_BIG_MESSAGE);
+    const ok = buildPack("F", [item("a")], { appVersion: "c4", now: "n" });
+    expect(readPack(ok).items).toHaveLength(1);
+  });
+
+  it("C4 : vignette : seul `<chemin>.png` est admis, et elle doit exister dans le ZIP", () => {
+    const base = buildPack("F", [item("x")], { appVersion: "c4", now: "n" });
+    const listed = manifestOf(base).items as Array<Record<string, unknown>>;
+    const withThumb = (thumbnail: unknown, files: readonly ZipFile[] = base) => withManifest(files, { items: [{ ...listed[0], thumbnail }] });
+    expect(() => readPack(withThumb("items/autre.png"))).toThrow(PACK_UNSAFE_PATH_MESSAGE);
+    expect(() => readPack(withThumb("../x.rbitem.png"))).toThrow(PACK_UNSAFE_PATH_MESSAGE);
+    expect(() => readPack(withThumb("items/x.rbitem.png", base.filter((f) => f.path !== "items/x.rbitem.png")))).toThrow(packMissingMessage("items/x.rbitem.png"));
+    expect(readPack(withThumb(null)).items[0]!.thumbnail).toBeNull();
+    expect(readPack(withThumb("items/x.rbitem.png")).items[0]!.thumbnail).toEqual(enc("png:x"));
   });
 });

@@ -5,7 +5,7 @@ import { createMemoryLibraryFiles, type LibraryFiles } from "../platform/library
 import { zipStored } from "../platform/zip-worker";
 import { ZIP_TOO_BIG_MESSAGE } from "../platform/model3d-import";
 import { PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE } from "../platform/rbpack";
-import { createResourceLibrary, fileNameOf, folderNameOf, normalizeSearch, PACK_TOO_BIG_MESSAGE, type NewResource } from "./library";
+import { createResourceLibrary, fileNameOf, folderNameOf, normalizeSearch, PACK_TOO_BIG_MESSAGE, RESOURCE_KIND_UNKNOWN_MESSAGE, type NewResource } from "./library";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const zip = {
@@ -151,6 +151,13 @@ describe("C4 : ResourceLibrary", () => {
     expect(lib.folder("mine", "Posé").items).toEqual([
       { root: "mine", path: "Posé/Main.rbitem", folder: "Posé", name: "Main", keywords: [], description: "", kind: null, thumbnail: null },
     ]);
+  });
+
+  it("C4 : export d'une ressource sans compagnon : refusé clairement, jamais un type inventé", async () => {
+    const { lib, mine } = libOf();
+    await mine.write("Main.rbitem", new Blob([enc("x")]));
+    await lib.refresh();
+    await expect(lib.exportPack("mine", "")).rejects.toThrow(RESOURCE_KIND_UNKNOWN_MESSAGE("Main.rbitem"));
   });
 
   it("C4 : export puis import rend les mêmes ressources", async () => {
