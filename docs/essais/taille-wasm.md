@@ -80,3 +80,7 @@ Garde-fou du cadrage (Q5, HC8-9) : 1 420 000 o ; plafonds de `scripts/verifier.s
 (`cargo build --target wasm32-unknown-unknown --release`, puis `wasm-bindgen --target web --remove-name-section`).
 
 T2 : principal +5 412 o sur T1 (+6 895 o sur l'avant C4, sous les +20 Ko du garde-fou), `formats` inchangé (T2 ne touche pas son crate). Mesuré avec `CARGO_TARGET_DIR` partagé, symboles `save_grid` vérifiés dans le JS généré.
+
+| après C4 (branche complète, T15, build de `verifier.sh`) | 1 369 494 o | 3 100 845 o |
+
+Écart du module principal : +6 895 o depuis avant C4 ; `formats` : +501 o (ligne `KIND_GRID` de `check_manifest` et message de `WrongKind`). Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o).
