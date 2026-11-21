@@ -113,6 +113,7 @@ fn frame_height(pages: &[Page]) -> f32 {
         .iter()
         .flat_map(|p| p.items.iter())
         .map(bottom)
+        .filter(|b| b.is_finite())
         .fold(PAGE_HEIGHT, f32::max)
         .ceil()
 }
@@ -518,6 +519,26 @@ mod tests {
         }
         assert_eq!(xml.matches("<svg:page ").count(), 2);
         assert_eq!(w1_pages().len(), 2);
+    }
+
+    #[test]
+    fn frame_height_ignores_non_finite_bottoms() {
+        let shape = |y1: f32| Item::Shape {
+            kind: ShapeKind::Rect,
+            m: IDENTITY,
+            x0: 0.0,
+            y0: 0.0,
+            x1: 10.0,
+            y1,
+            color: [0, 0, 0],
+            width: 1.0,
+            fill: None,
+        };
+        let page = Page {
+            background: None,
+            items: vec![shape(f32::INFINITY), shape(f32::NAN), shape(2999.5)],
+        };
+        assert_eq!(frame_height(&[page]), 3000.0);
     }
 
     #[test]

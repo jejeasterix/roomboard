@@ -1242,6 +1242,14 @@ impl State<'_> {
         };
         let mut inner: Out = Vec::new();
         self.children(n, &inner_ctx, &mut inner, bg)?;
+        if !inner.is_empty()
+            && self.dialect == Dialect::Iwb
+            && id
+                .as_deref()
+                .is_some_and(|i| self.refs.flag(i, "background"))
+        {
+            self.notes.add(c.no, Sort::BackgroundObject);
+        }
         match inner.len() {
             0 => {}
             1 => {
@@ -1988,6 +1996,18 @@ mod tests {
     fn background_flag_warns_for_every_kind() {
         let body = r#"<svg:text id="t" x="0" y="20">abc</svg:text>"#;
         let extra = r#"<iwb:element ref="t" background="true"/>"#;
+        let (pages, warnings) = read(&iwb(body, extra), Dialect::Iwb, 1);
+        assert_eq!(pages[0].items.len(), 1);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet de fond gardé comme objet".to_string()]
+        );
+    }
+
+    #[test]
+    fn background_flag_on_a_group_warns() {
+        let body = r#"<svg:g id="g"><svg:rect width="2" height="2"/><svg:rect width="3" height="3"/></svg:g>"#;
+        let extra = r#"<iwb:element ref="g" background="true"/>"#;
         let (pages, warnings) = read(&iwb(body, extra), Dialect::Iwb, 1);
         assert_eq!(pages[0].items.len(), 1);
         assert_eq!(
