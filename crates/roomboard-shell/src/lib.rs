@@ -73,6 +73,15 @@ impl GrantedPaths {
             .contains(&c)
             .then_some(c)
     }
+
+    /// Retire l'accord de `path` (O35) : chemin canonique s'il se résout encore, et chemin reçu ; vrai si l'un des deux
+    /// était accordé.
+    pub fn revoke(&self, path: &Path) -> bool {
+        let mut set = self.paths.lock().unwrap_or_else(|e| e.into_inner());
+        let canonical = path.canonicalize().ok().is_some_and(|c| set.remove(&c));
+        let raw = set.remove(path);
+        canonical || raw
+    }
 }
 
 fn io(e: std::io::Error) -> ReadError {
