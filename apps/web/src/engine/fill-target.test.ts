@@ -225,7 +225,7 @@ describe("cible du pot (C6a)", () => {
     };
     const inside = s.at(200, 850);
     expect(inside).toEqual({ type: "Fill", page: s.page, target: { kind: "inside", id: b }, color: RED });
-    expect(s.doc.apply(inside!).ids).toEqual([b]);
+    expect(s.doc.apply(inside as Command).ids).toEqual([b]);
     expect([fillOf(s.rect), fillOf(b), fillOf(c)]).toEqual([null, RED, null]);
     expect(s.at(102, 850, BLUE)).toEqual({ type: "Fill", page: s.page, target: { kind: "edge", id: b }, color: BLUE });
   });

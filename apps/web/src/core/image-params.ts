@@ -5,7 +5,7 @@
  * partagés par le faux cœur et le panneau, et la clé des pixels (I19).
  */
 import type { Bounds, ImageData, ImageParams, Matrix, TransparentColor } from "./api";
-import { applyMatrix, composeMatrix } from "./shapes";
+import { applyMatrix, composeMatrix, invertMatrix } from "./shapes";
 
 /** Rognage `[x, y, w, h]` en pixels source. */
 export type Crop = readonly [number, number, number, number];
@@ -66,6 +66,21 @@ export function displayToSource(i: ImageData, x: number, y: number): [number, nu
   const [cx, cy] = cropOf(i);
   const [u, v] = displayToCrop(i, x, y);
   return [u + cx, v + cy];
+}
+
+/** Pixel source sous le point monde (x, y) d'une image de matrice `m` (C6b, B5 ; pipette, I29) : monde → boîte affichée
+ *  (0, 0)-(bw, bh) → rognage, retournements et quarts de tour défaits → pixel entier, borné au rognage (donc à l'image).
+ *  Hors de la boîte : `clamp` (pot, bande de tolérance de 6 px) y ramène le point ; sinon null (pipette). Matrice non
+ *  inversible : null. */
+export function sourcePixelAt(m: Matrix, i: ImageData, x: number, y: number, clamp: boolean): [number, number] | null {
+  const inv = invertMatrix(m);
+  if (inv === null) return null;
+  const [lx, ly] = applyMatrix(inv, x, y);
+  const [bw, bh] = displaySize(i);
+  if (!clamp && (lx < 0 || ly < 0 || lx > bw || ly > bh)) return null;
+  const [sx, sy] = displayToSource(i, Math.min(Math.max(lx, 0), bw), Math.min(Math.max(ly, 0), bh));
+  const [cx, cy, cw, ch] = cropOf(i);
+  return [Math.min(cx + cw - 1, Math.max(cx, Math.floor(sx))), Math.min(cy + ch - 1, Math.max(cy, Math.floor(sy)))];
 }
 
 /** Matrice du repère du rognage vers l'affichage (I23) : le dessin pose le rectangle source en (0, 0)-(cw, ch). */

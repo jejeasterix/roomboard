@@ -1217,31 +1217,6 @@ describe("moteur — pot (C6a)", () => {
     engine.setTool("fill");
     expect(engine.state().tool).toBe("fill");
   });
-});
-
-describe("moteur — C3", () => {
-  function c3() {
-    const doc = fakeCore.blank();
-    const tools: ToolFactories = {
-      pen: (ctx) => fakeTool("pen", [], ctx),
-      eraser: (ctx) => fakeTool("eraser", [], ctx),
-      select: (ctx) => createSelectTool(ctx),
-    };
-    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
-    const page = engine.state().page;
-    const rect = (x: number): string =>
-      doc.apply({ type: "AddShape", page, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
-    const ctrl = (key: string, shiftKey = false): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey, altKey: false, isComposing: false, target: null });
-    return { doc, engine, page, rect, ctrl };
-  }
-  /** Sélection posée par un vrai geste de rectangle de l'outil Sélection. */
-  const band = (engine: ReturnType<typeof createEngine>, x0: number, x1: number): void => {
-    engine.setTool("select");
-    engine.sink.begin(1, "select", [{ ...sample, x: x0, y: 50 }]);
-    engine.sink.extend(1, [{ ...sample, x: x1, y: 250 }], []);
-    engine.sink.close(1, "end");
-  };
-
 
   it("C6b fabrique fill : tolérance 5 par défaut, arrondie et bornée à 0-100, lue par l'outil (B10)", () => {
     const got: { tolerance?: () => number } = {};
@@ -1268,6 +1243,31 @@ describe("moteur — C3", () => {
     engine.setFillTolerance(Number.NaN);
     expect(engine.state().fillTolerance).toBe(0);
   });
+});
+
+describe("moteur — C3", () => {
+  function c3() {
+    const doc = fakeCore.blank();
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", [], ctx),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => createSelectTool(ctx),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    const page = engine.state().page;
+    const rect = (x: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    const ctrl = (key: string, shiftKey = false): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey, altKey: false, isComposing: false, target: null });
+    return { doc, engine, page, rect, ctrl };
+  }
+  /** Sélection posée par un vrai geste de rectangle de l'outil Sélection. */
+  const band = (engine: ReturnType<typeof createEngine>, x0: number, x1: number): void => {
+    engine.setTool("select");
+    engine.sink.begin(1, "select", [{ ...sample, x: x0, y: 50 }]);
+    engine.sink.extend(1, [{ ...sample, x: x1, y: 250 }], []);
+    engine.sink.close(1, "end");
+  };
+
   it("état : unités et groupe de la sélection", () => {
     const { engine, rect } = c3();
     rect(100);
