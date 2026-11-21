@@ -37,6 +37,29 @@ describe("zone-marks (C8, Q18)", () => {
     expect(d.asked).toEqual([["p", 2]]);
   });
 
+  // T11 (S6) : `emit()` du moteur, dans `run` (`engine.ts` `commit`), rappelle `mark` → `tags` à la nouvelle version ; le
+  // recompte lit chaque élément par le pont (`element(id)`) et ne doit pas tomber dans `pot-zone`. Sous le recompte
+  // immédiat, la mesure vaudrait [100, 118] (3 éléments à 5 ms + 3 ms de commande).
+  it("C8 Fill zone : le recompte des fill rappelé pendant la commande reste hors de la mesure, juste après elle", () => {
+    let clock = 0;
+    const kinds: Record<string, string> = { a: "stroke", b: "stroke" };
+    const base = doc(kinds);
+    const slow: ZoneDoc = { ...base, element: (id) => ((clock += 5), base.element(id)) };
+    const measured: [number, number][] = [];
+    const m = createZoneMarks(slow, () => clock, (s, e) => measured.push([s, e]));
+    expect(m.tags("p", 1).zones).toBe("0");
+    clock = 100;
+    const run = (_: Command): Change => {
+      kinds["f"] = "fill";
+      clock += 3;
+      m.tags("p", 2);
+      return change;
+    };
+    m.timed(run)(zone);
+    expect(measured).toEqual([[100, 103]]);
+    expect(m.tags("p", 2)).toEqual({ zones: "1", zoneMs: "3.0", zoneCells: "4032064" });
+  });
+
   it("C8 autre commande : ni mesure ni marque", () => {
     const d = doc({});
     const measured: unknown[] = [];
