@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DroppedFile } from "./files";
+import { IMPORT_EXTENSIONS, type DroppedFile } from "./files";
+import { RBPACK_TYPE } from "./typed-files";
 import type { Command } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
 import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
 import {
-  createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
+  createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
   ZIP_MAGIC, type ImportHandler,
 } from "./import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
@@ -956,5 +957,38 @@ describe("importFiles : fichiers liés (C15, DAX2)", () => {
 
   it("hasZipMagic exporté : en-tête ZIP reconnu, en-tête court refusé", () => {
     expect([hasZipMagic(new Uint8Array(ZIP_MAGIC)), hasZipMagic(new Uint8Array([0x50, 0x4b]))]).toEqual([true, false]);
+  });
+});
+
+describe("C4 : paquets .rbpack", () => {
+  const PK = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0]);
+  const baseDeps = () => ({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined) });
+
+  it("C4 : un .rbpack déposé est remis à importPack, rapport « opened »", async () => {
+    const got: [string, number][] = [];
+    const importer = importerOf([rbpackHandler({ importPack: async (n, b) => (got.push([n, b.length]), true) })], baseDeps());
+    const report = await importer.importFiles([file("Fractions.rbpack", PK)]);
+    expect(got).toEqual([["Fractions.rbpack", PK.length]]);
+    expect(report.opened).toEqual(["Fractions.rbpack"]);
+  });
+
+  it("C4 : refus de importPack : rapport « failed »", async () => {
+    const importer = importerOf([rbpackHandler({ importPack: async () => false })], baseDeps());
+    expect((await importer.importFiles([file("X.rbpack", PK)])).failed).toEqual(["X.rbpack"]);
+  });
+
+  it("C4 : sans importPack, createImporter refuse un .rbpack comme format à venir", async () => {
+    const report = await createImporter(baseDeps()).importFiles([file("X.rbpack", PK)]);
+    expect(report.refused).toEqual(["X.rbpack"]);
+    expect(isRbpackName("a.RBPACK")).toBe(true);
+    expect(IMPORT_EXTENSIONS).toContain("rbpack");
+    expect(RBPACK_TYPE.filter).toEqual({ name: "Paquet RoomBoard", extensions: ["rbpack"] });
+  });
+
+  it("C4 : createImporter route un .rbpack vers deps.importPack", async () => {
+    const importPack = vi.fn(async () => true);
+    const report = await createImporter({ ...baseDeps(), importPack }).importFiles([file("Y.rbpack", PK)]);
+    expect(importPack).toHaveBeenCalledTimes(1);
+    expect(report.opened).toEqual(["Y.rbpack"]);
   });
 });
