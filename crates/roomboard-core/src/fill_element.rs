@@ -67,9 +67,9 @@ pub(crate) fn read_fill<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<FillFields> {
 /// anneau de moins de 3 points ou non fini, ou une boîte vide.
 pub(crate) fn fill_prelim(id: &str, rings: &[Vec<f64>], color: &str) -> Option<MapPrelim> {
     if rings.is_empty()
-        || rings.iter().any(|r| {
-            r.len() < 6 || !r.len().is_multiple_of(2) || r.iter().any(|v| !v.is_finite())
-        })
+        || rings
+            .iter()
+            .any(|r| r.len() < 6 || !r.len().is_multiple_of(2) || r.iter().any(|v| !v.is_finite()))
     {
         return None;
     }
