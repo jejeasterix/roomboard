@@ -7,7 +7,7 @@
  * C14 (M30 à M32) : un média lié n'a jamais d'octets dans le conteneur ; il n'est pas « absent » (Enregistrer permis),
  * un fragment qui le cite est refusé, et l'ouverture d'un document résout ses liens par `relink`.
  */
-import type { CoreDocument, CoreFactory, LinkedAsset } from "../core/api";
+import type { ContainerKind, CoreDocument, CoreFactory, LinkedAsset } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { messageOf } from "../platform/controller";
@@ -36,12 +36,17 @@ export class LinkedMediaError extends Error {
 export const LINKED_WEB_MESSAGE = "vidéo non incluse (liée, lisible dans l'application de bureau)";
 export const linkedMissingMessage = (path: string): string => `${baseName(path)} : vidéo liée introuvable (${path})`;
 
-export type EncodeAs = { readonly kind: "document" } | { readonly kind: "fragment"; readonly name: string };
-export type ReadKind = "document" | "fragment";
+export type EncodeAs =
+  | { readonly kind: "document" }
+  | { readonly kind: "fragment"; readonly name: string }
+  | { readonly kind: "grid"; readonly name: string };
+export type ReadKind = ContainerKind;
 export interface ReadResult {
   readonly doc: CoreDocument;
   readonly assets: AssetStore;
   readonly unread: boolean;
+  /** C4 : type lu (un parmi ceux demandés). */
+  readonly kind: ReadKind;
 }
 export interface ContainerIODeps {
   readonly core: CoreFactory;
@@ -54,8 +59,9 @@ export interface ContainerIODeps {
 }
 export interface ContainerIO {
   encode(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string, as: EncodeAs): Promise<Uint8Array>;
-  /** `docPath` : chemin du document lu (liens relatifs des médias liés, C14), null s'il n'est pas connu. */
-  read(name: string, bytes: Uint8Array, kind: ReadKind, docPath?: string | null): Promise<ReadResult | null>;
+  /** `docPath` : chemin du document lu (liens relatifs des médias liés, C14), null s'il n'est pas connu. C4 : une liste
+   *  de types lit le type une fois (manifeste extrait, ou fichier entier dans le repli), puis un seul lecteur. */
+  read(name: string, bytes: Uint8Array, kind: ReadKind | readonly ReadKind[], docPath?: string | null): Promise<ReadResult | null>;
 }
 
 export const typed = (blob: Blob, mime: string | undefined): Blob =>
@@ -71,6 +77,17 @@ export const missingOf = (doc: CoreDocument, assets: AssetStore): string[] => {
 
 export function createContainerIO(deps: ContainerIODeps): ContainerIO {
   const { core, codec, say } = deps;
+  const loadWhole = (k: ReadKind, b: Uint8Array): CoreDocument =>
+    k === "document" ? core.load(b) : k === "fragment" ? core.loadFragment(b) : core.loadGrid(b);
+  const loadParts = (k: ReadKind, m: Uint8Array, y: Uint8Array): CoreDocument =>
+    k === "document" ? core.loadParts(m, y) : k === "fragment" ? core.loadFragmentParts(m, y) : core.loadGridParts(m, y);
+  /** Un seul type demandé : lui, sans détection (chemin d'avant C4) ; sinon le type lu s'il est demandé, sinon le
+   *  premier demandé (son lecteur dit le bon message du mauvais type). */
+  const choose = (wanted: readonly ReadKind[], detect: () => ReadKind): ReadKind => {
+    if (wanted.length === 1) return wanted[0]!;
+    const found = detect();
+    return wanted.includes(found) ? found : wanted[0]!;
+  };
   /** Liens d'un document lu (M31) : hors coque, un avis ; sinon chaque lien accordé au magasin, ou un avis par absent. */
   async function relinkAll(name: string, doc: CoreDocument, assets: AssetStore, docPath: string | null): Promise<void> {
     const links = doc.linkedAssets();
@@ -95,20 +112,25 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
     async encode(doc, assets, now, appVersion, as) {
       const cited = doc.citedAssets();
       if (cited.length === 0) {
-        return as.kind === "document" ? doc.save(now, appVersion) : doc.saveFragment(now, appVersion, as.name);
+        if (as.kind === "document") return doc.save(now, appVersion);
+        return as.kind === "fragment" ? doc.saveFragment(now, appVersion, as.name) : doc.saveGrid(now, appVersion, as.name);
       }
       const linked = linkedIds(doc);
-      if (as.kind === "fragment" && linked.size > 0) throw new LinkedMediaError(); // avant l'image absente (M32)
+      if (as.kind !== "document" && linked.size > 0) throw new LinkedMediaError(); // avant l'image absente (M32)
       // R9 : les octets d'un média lié ne sont jamais écrits, même si le magasin les tient.
       const { present, missing } = assets.pick(cited.map((a) => a.id).filter((id) => !linked.has(id)));
-      if (as.kind === "fragment" && missing.length > 0) {
+      if (as.kind !== "document" && missing.length > 0) {
         throw new MissingAssetError();
       }
-      const [manifest, ybin] = as.kind === "document" ? doc.saveParts(now, appVersion) : doc.saveFragmentParts(now, appVersion, as.name);
+      const [manifest, ybin] =
+        as.kind === "document" ? doc.saveParts(now, appVersion)
+        : as.kind === "fragment" ? doc.saveFragmentParts(now, appVersion, as.name)
+        : doc.saveGridParts(now, appVersion, as.name);
       const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
       return codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
     },
     async read(name, bytes, kind, docPath = null) {
+      const wanted: readonly ReadKind[] = typeof kind === "string" ? [kind] : kind;
       const assets = deps.makeAssets();
       let contents: ContainerContents;
       try {
@@ -118,9 +140,11 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
           await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
           return null;
         }
+        let k: ReadKind;
         let doc: CoreDocument;
         try {
-          doc = kind === "document" ? core.load(bytes) : core.loadFragment(bytes);
+          k = choose(wanted, () => core.containerKind(bytes));
+          doc = loadWhole(k, bytes);
         } catch (e2) {
           await say(`Ouverture impossible (${name}) : ${messageOf(e2)}`);
           return null;
@@ -128,13 +152,16 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         const linked = linkedIds(doc);
         const unread = doc.citedAssets().some((a) => !linked.has(a.id));
         // Un fragment non lu est refusé par l'appelant (`fragments`) avec son propre avis : un seul avis, pas deux.
-        if (unread && kind === "document") await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
-        if (kind === "document") await relinkAll(name, doc, assets, docPath);
-        return { doc, assets, unread };
+        if (unread && k === "document") await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
+        if (k === "document") await relinkAll(name, doc, assets, docPath);
+        return { doc, assets, unread, kind: k };
       }
+      let k: ReadKind;
       let doc: CoreDocument;
       try {
-        doc = kind === "document" ? core.loadParts(contents.manifest, contents.ybin) : core.loadFragmentParts(contents.manifest, contents.ybin);
+        // C4 : type lu sur le manifeste déjà extrait, jamais une seconde lecture des octets.
+        k = choose(wanted, () => core.manifestKind(contents.manifest));
+        doc = loadParts(k, contents.manifest, contents.ybin);
       } catch (e) {
         await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
         return null;
@@ -147,9 +174,9 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         return null;
       }
       if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
-      if (kind === "document") await relinkAll(name, doc, assets, docPath);
+      if (k === "document") await relinkAll(name, doc, assets, docPath);
       // un asset cité mais ignoré par le conteneur (trop gros…) : marqué, Enregistrer refusé (R30)
-      return { doc, assets, unread: missingOf(doc, assets).length > 0 };
+      return { doc, assets, unread: missingOf(doc, assets).length > 0, kind: k };
     },
   };
 }
