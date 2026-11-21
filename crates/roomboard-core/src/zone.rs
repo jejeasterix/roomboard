@@ -25,6 +25,8 @@ const WALL: u8 = 1;
 const REGION: u8 = 2;
 
 type Contour = Vec<[f64; 2]>;
+/// Pile de suites en cours (`Grid::stacks`) : première ligne, une suite (début, fin incluse) par ligne.
+type Stack = (usize, Vec<(usize, usize)>);
 
 /// Mur d'une zone (Q8) : anneaux monde (paires x, y), règle de remplissage, boîte des sommets finis.
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +153,19 @@ pub(crate) fn fit(walls: &[Wall], tol: f64) -> Option<Grid> {
 thread_local! {
     /// Masques alloués par le thread du test (Q10 : un clic hors de l'emprise n'en alloue aucun).
     static MASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Repères de phase de `closed_zone` (témoin S6) : nom, taille notée, instant.
+    static LAPS: std::cell::RefCell<Vec<(&'static str, usize, std::time::Instant)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Fin d'une phase de `closed_zone` et sa taille (cellules, rectangles, sommets) : notée par les tests seulement.
+#[inline]
+fn lap(_phase: &'static str, _size: usize) {
+    #[cfg(test)]
+    LAPS.with(|l| {
+        l.borrow_mut()
+            .push((_phase, _size, std::time::Instant::now()));
+    });
 }
 
 /// Masque unique (Q20) : `FREE`, `WALL`, `REGION`, une cellule par octet.
@@ -187,10 +202,23 @@ impl Mask {
         }
     }
 
+    /// Cellules [i0, i1) de la ligne `j` marquées `WALL`, agrandies de `grow` cellules (0 ou 1) dans les deux sens et
+    /// bornées à l'emprise : à 1, c'est la dilatation 3 × 3 des murs (Q6) faite au marquage, sans repasser sur le
+    /// masque (le marquage ne lit pas le masque, et la dilatation d'une réunion est la réunion des dilatations).
+    fn mark(&mut self, j: usize, i0: usize, i1: usize, grow: usize) {
+        if i0 >= i1 {
+            return;
+        }
+        let (a, b) = (i0.saturating_sub(grow), (i1 + grow).min(self.w));
+        for r in j.saturating_sub(grow)..=(j + grow).min(self.h - 1) {
+            self.cells[r * self.w + a..r * self.w + b].fill(WALL);
+        }
+    }
+
     /// Cellules dont l'intérieur ouvert est traversé par l'arête (x0, y0)-(x1, y1), marquées `WALL` : un mur plus fin
     /// qu'une cellule peut ne couvrir aucun centre, mais toute cellule qu'il touche sans en contenir le centre est
     /// traversée par son bord. Une arête portée par une frontière de cellule n'en traverse aucune.
-    fn mark_edge(&mut self, [x0, y0]: [f64; 2], [x1, y1]: [f64; 2]) {
+    fn mark_edge(&mut self, [x0, y0]: [f64; 2], [x1, y1]: [f64; 2], grow: usize) {
         let (ox, oy, c) = (self.origin[0], self.origin[1], self.cell);
         let (ya, yb) = (y0.min(y1), y0.max(y1));
         let j0 = (((ya - oy) / c).floor().max(0.0)) as usize;
@@ -220,26 +248,27 @@ impl Mask {
             let i1 = ((xb - ox) / c).ceil() - 1.0;
             if i1 >= i0 as f64 {
                 let i1 = (i1 as usize).min(self.w - 1);
-                if i0 <= i1 {
-                    self.cells[j * self.w + i0..=j * self.w + i1].fill(WALL);
-                }
+                self.mark(j, i0, i1 + 1, grow);
             }
         }
     }
 
+    /// Mur marqué sans dilatation (tests).
     #[cfg(test)]
     fn paint(&mut self, wall: &Wall) {
-        self.paint_contours(&wall.contours(), wall.even_odd, &mut Vec::new());
+        self.paint_contours(&wall.contours(), wall.even_odd, &mut Vec::new(), 0);
     }
 
     /// Balayage par lignes : chaque arête coupe les lignes dont le centre est dans [ya, yb) ; cellules dont le centre
     /// est dedans (non-nul ou pair-impair selon le mur) marquées `WALL`, puis les cellules que le bord traverse
-    /// (`mark_edge`). `xs` est un tampon réutilisé d'un mur à l'autre.
+    /// (`mark_edge`), chaque suite agrandie de `grow` cellules (`mark`). `xs` est un tampon réutilisé d'un mur à
+    /// l'autre.
     fn paint_contours(
         &mut self,
         rings: &[Contour],
         even_odd: bool,
         xs: &mut Vec<(usize, f64, i32)>,
+        grow: usize,
     ) {
         let (ox, oy, c) = (self.origin[0], self.origin[1], self.cell);
         xs.clear();
@@ -247,7 +276,7 @@ impl Mask {
             let n = ring.len();
             for k in 0..n {
                 let ([x0, y0], [x1, y1]) = (ring[k], ring[(k + 1) % n]);
-                self.mark_edge([x0, y0], [x1, y1]);
+                self.mark_edge([x0, y0], [x1, y1], grow);
                 if y0 == y1 {
                     continue;
                 }
@@ -281,23 +310,32 @@ impl Mask {
                 if was && !now {
                     let i0 = Self::first_centre(start, ox, c, self.w);
                     let i1 = Self::first_centre(x, ox, c, self.w).max(i0);
-                    self.cells[j * self.w + i0..j * self.w + i1].fill(WALL);
+                    self.mark(j, i0, i1, grow);
                 }
                 k += 1;
             }
         }
     }
 
+    /// Ligne `row` dilatée d'une cellule à gauche et à droite (cellules `v`), en 0 ou 1 ; `row` a 2 cellules au moins
+    /// (l'emprise en a 4 de marge).
+    #[cfg(test)]
     fn horiz(row: &[u8], v: u8, out: &mut [u8]) {
         let n = row.len();
-        for (i, o) in out.iter_mut().enumerate() {
-            let l = i > 0 && row[i - 1] == v;
-            let r = i + 1 < n && row[i + 1] == v;
-            *o = u8::from(l || row[i] == v || r);
+        let is = |c: u8| u8::from(c == v);
+        out[0] = is(row[0]) | is(row[1]);
+        out[n - 1] = is(row[n - 2]) | is(row[n - 1]);
+        for (o, ((a, b), c)) in out[1..n - 1]
+            .iter_mut()
+            .zip(row.iter().zip(&row[1..]).zip(&row[2..]))
+        {
+            *o = is(*a) | is(*b) | is(*c);
         }
     }
 
-    /// Dilatation 3 × 3 (voisinage 8) des cellules `v`, sur place : trois lignes de tampon (Q20).
+    /// Dilatation 3 × 3 (voisinage 8) des cellules `v`, sur place, trois lignes de tampon : l'oracle des tests pour
+    /// `mark` (murs, à 1 cellule) et `grown_runs` (région, deux fois).
+    #[cfg(test)]
     fn dilate_in_place(&mut self, v: u8) {
         let w = self.w;
         let (mut prev, mut cur, mut next) = (vec![0u8; w], vec![0u8; w], vec![0u8; w]);
@@ -308,10 +346,11 @@ impl Mask {
             } else {
                 next.fill(0);
             }
-            for (i, c) in self.cells[j * w..(j + 1) * w].iter_mut().enumerate() {
-                if prev[i] | cur[i] | next[i] != 0 {
-                    *c = v;
-                }
+            for (c, ((a, b), d)) in self.cells[j * w..(j + 1) * w]
+                .iter_mut()
+                .zip(prev.iter().zip(&cur).zip(&next))
+            {
+                *c = if a | b | d != 0 { v } else { *c };
             }
             std::mem::swap(&mut prev, &mut cur);
             std::mem::swap(&mut cur, &mut next);
@@ -319,64 +358,139 @@ impl Mask {
     }
 
     /// Diffusion 4-connexe par segments de ligne depuis (cx, cy), marquée `REGION` ; `false` dès que le bord de
-    /// l'emprise est atteint (zone ouverte).
-    fn flood_spans(&mut self, cx: usize, cy: usize) -> bool {
+    /// l'emprise est atteint (zone ouverte). Chaque segment rempli, (ligne, début, fin incluse), va dans `spans` : il
+    /// s'étend tant que la cellule voisine est libre, c'est donc une suite maximale de la région sur sa ligne.
+    fn flood_spans(
+        &mut self,
+        cx: usize,
+        cy: usize,
+        spans: &mut Vec<(usize, usize, usize)>,
+    ) -> bool {
         let (w, h) = (self.w, self.h);
         let mut stack = vec![(cx, cy)];
         while let Some((x, y)) = stack.pop() {
-            let row = y * w;
-            if self.cells[row + x] != FREE {
+            let row = &mut self.cells[y * w..(y + 1) * w];
+            if row[x] != FREE {
                 continue;
             }
-            let (mut l, mut r) = (x, x);
-            while l > 0 && self.cells[row + l - 1] == FREE {
-                l -= 1;
-            }
-            while r + 1 < w && self.cells[row + r + 1] == FREE {
-                r += 1;
-            }
+            let l = row[..x]
+                .iter()
+                .rposition(|&c| c != FREE)
+                .map_or(0, |p| p + 1);
+            let r = row[x..]
+                .iter()
+                .position(|&c| c != FREE)
+                .map_or(w, |p| x + p)
+                - 1;
             if l == 0 || r == w - 1 || y == 0 || y == h - 1 {
                 return false;
             }
-            self.cells[row + l..=row + r].fill(REGION);
+            row[l..=r].fill(REGION);
+            spans.push((y, l, r));
             for ny in [y - 1, y + 1] {
-                let nrow = ny * w;
-                let mut i = l;
-                while i <= r {
-                    if self.cells[nrow + i] == FREE {
-                        stack.push((i, ny));
-                        while i <= r && self.cells[nrow + i] == FREE {
-                            i += 1;
-                        }
-                    } else {
-                        i += 1;
+                let nrow = &self.cells[ny * w + l..=ny * w + r];
+                let mut i = 0;
+                while let Some(s) = nrow[i..].iter().position(|&c| c == FREE) {
+                    i += s;
+                    stack.push((l + i, ny));
+                    match nrow[i..].iter().position(|&c| c != FREE) {
+                        Some(e) => i += e,
+                        None => break,
                     }
                 }
             }
         }
         true
     }
+}
 
-    /// Suites de cellules `REGION` de la ligne `j` : (début, fin incluse), dans `out` (vidé d'abord).
-    fn row_runs(&self, j: usize, out: &mut Vec<(usize, usize)>) {
-        out.clear();
-        let Some(row) = self.cells.get(j * self.w..(j + 1) * self.w) else {
-            return;
-        };
-        let mut i = 0;
-        while i < row.len() {
-            if row[i] == REGION {
-                let s = i;
-                while i < row.len() && row[i] == REGION {
-                    i += 1;
-                }
-                out.push((s, i - 1));
-            } else {
-                i += 1;
-            }
-        }
+impl Grid {
+    fn at(&self, i: usize, j: usize) -> [f64; 2] {
+        [
+            self.origin[0] + i as f64 * self.cell,
+            self.origin[1] + j as f64 * self.cell,
+        ]
     }
 
+    /// Contour d'une pile de suites `rs` (une par ligne depuis `j0`, chacune recouvrant la suivante) : bords droits
+    /// en descendant, bords gauches en remontant, même sens que les rectangles ; un sommet seulement où un bord change.
+    fn stack_contour(&self, j0: usize, rs: &[(usize, usize)]) -> Contour {
+        let n = rs.len();
+        let mut c = vec![self.at(rs[0].0, j0), self.at(rs[0].1 + 1, j0)];
+        for k in 0..n {
+            if k + 1 < n && rs[k + 1].1 == rs[k].1 {
+                continue;
+            }
+            c.push(self.at(rs[k].1 + 1, j0 + k + 1));
+            if k + 1 < n {
+                c.push(self.at(rs[k + 1].1 + 1, j0 + k + 1));
+            }
+        }
+        c.push(self.at(rs[n - 1].0, j0 + n));
+        for k in (1..n).rev() {
+            if rs[k - 1].0 != rs[k].0 {
+                c.push(self.at(rs[k].0, j0 + k));
+                c.push(self.at(rs[k - 1].0, j0 + k));
+            }
+        }
+        c
+    }
+
+    /// Contours de la région agrandie de 2 cellules (Q9, aire positive) : une suite qui recouvre une seule suite de la
+    /// ligne suivante, recouverte par elle seule, prolonge sa pile ; sinon la pile se ferme. Mêmes cellules que les
+    /// rectangles des suites (`rects`, oracle des tests), au plus autant de sommets (moitié moins le long d'un bord
+    /// oblique), sans bord commun entre deux lignes d'une pile.
+    fn stacks(&self, spans: &mut [(usize, usize, usize)]) -> Vec<Contour> {
+        let first = self.row_index(spans);
+        let mut out = Vec::new();
+        let (mut prev, mut runs) = (Vec::new(), Vec::new());
+        let mut open: Vec<Option<Stack>> = Vec::new();
+        let mut next = Vec::new();
+        let (mut up, mut down, mut link) = (Vec::new(), Vec::new(), Vec::new());
+        for j in 0..=self.h {
+            self.grown_runs(spans, &first, j, &mut runs);
+            up.clear();
+            up.resize(runs.len(), 0u32);
+            link.clear();
+            link.resize(runs.len(), 0usize);
+            down.clear();
+            down.resize(prev.len(), 0u32);
+            let (mut a, mut b) = (0, 0);
+            while a < prev.len() && b < runs.len() {
+                let ((pl, pr), (l, r)) = (prev[a], runs[b]);
+                if pl <= r && l <= pr {
+                    down[a] += 1;
+                    up[b] += 1;
+                    link[b] = a;
+                }
+                if pr < r {
+                    a += 1;
+                } else {
+                    b += 1;
+                }
+            }
+            next.clear();
+            for (b, &run) in runs.iter().enumerate() {
+                let a = link[b];
+                match open.get_mut(a) {
+                    Some(s @ Some(_)) if up[b] == 1 && down[a] == 1 => {
+                        let mut s = s.take().expect("pile ouverte");
+                        s.1.push(run);
+                        next.push(Some(s));
+                    }
+                    _ => next.push(Some((j, vec![run]))),
+                }
+            }
+            for (j0, rs) in open.drain(..).flatten() {
+                out.push(self.stack_contour(j0, &rs));
+            }
+            std::mem::swap(&mut open, &mut next);
+            std::mem::swap(&mut prev, &mut runs);
+        }
+        out
+    }
+
+    #[cfg(test)]
     fn rect(&self, l: usize, r: usize, j0: usize, j1: usize) -> Contour {
         let (ox, oy, c) = (self.origin[0], self.origin[1], self.cell);
         let (x0, x1) = (ox + l as f64 * c, ox + (r + 1) as f64 * c);
@@ -384,14 +498,65 @@ impl Mask {
         vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
     }
 
-    /// Rectangles des suites (aire positive), les suites identiques de lignes voisines fusionnées : les suites d'une
-    /// ligne sont triées et disjointes, la fusion avec celles de la ligne précédente est un seul parcours.
-    fn rects(&self) -> Vec<Contour> {
+    /// Trie `spans` par ligne puis par début et rend le début des suites de chaque ligne : celles de la ligne `k` sont
+    /// `spans[first[k]..first[k + 1]]`.
+    fn row_index(&self, spans: &mut [(usize, usize, usize)]) -> Vec<usize> {
+        spans.sort_unstable();
+        let mut first = vec![0usize; self.h + 1];
+        for &(y, _, _) in spans.iter() {
+            first[y + 1] += 1;
+        }
+        let mut acc = 0;
+        for f in &mut first {
+            acc += *f;
+            *f = acc;
+        }
+        first
+    }
+
+    /// Suites de la région agrandie de 2 cellules (Q9) sur la ligne `j`, triées, dans `out` (vidé d'abord) : les
+    /// suites diffusées des lignes `j − 2` à `j + 2`, élargies de 2 cellules et bornées à l'emprise, celles qui se
+    /// touchent fusionnées. C'est la dilatation 5 × 5 de la région dans le masque, lue sans parcourir ses cellules.
+    /// `spans` est trié par ligne puis par début ; les suites de la ligne `k` sont `spans[first[k]..first[k + 1]]`.
+    fn grown_runs(
+        &self,
+        spans: &[(usize, usize, usize)],
+        first: &[usize],
+        j: usize,
+        out: &mut Vec<(usize, usize)>,
+    ) {
+        out.clear();
+        if j >= self.h {
+            return;
+        }
+        for k in j.saturating_sub(2)..=(j + 2).min(self.h - 1) {
+            out.extend(
+                spans[first[k]..first[k + 1]]
+                    .iter()
+                    .map(|&(_, l, r)| (l.saturating_sub(2), (r + 2).min(self.w - 1))),
+            );
+        }
+        out.sort_unstable();
+        out.dedup_by(|cur, kept| {
+            let touches = cur.0 <= kept.1 + 1;
+            if touches {
+                kept.1 = kept.1.max(cur.1);
+            }
+            touches
+        });
+    }
+
+    /// Rectangles de la région agrandie de 2 cellules (aire positive), les suites identiques de lignes voisines
+    /// fusionnées : les suites d'une ligne sont triées et disjointes, la fusion avec celles de la ligne précédente est
+    /// un seul parcours. Oracle des tests pour `stacks`.
+    #[cfg(test)]
+    fn rects(&self, spans: &mut [(usize, usize, usize)]) -> Vec<Contour> {
+        let first = self.row_index(spans);
         let mut out = Vec::new();
         let mut open: Vec<(usize, usize, usize)> = Vec::new();
         let (mut next, mut runs) = (Vec::new(), Vec::new());
         for j in 0..=self.h {
-            self.row_runs(j, &mut runs);
+            self.grown_runs(spans, &first, j, &mut runs);
             next.clear();
             let mut p = 0;
             for &(l, r) in &runs {
@@ -487,6 +652,7 @@ fn inside_ring(c: &[[f64; 2]], x: f64, y: f64) -> bool {
 /// diffusion jusqu'au bord : `Open` ; cellule du clic dans un mur dilaté : `OnWall` ; sinon la forme exacte qui
 /// contient le clic, extérieur d'abord (`OnWall` si le clic tombe sur un bord).
 pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
+    lap("début", walls.len());
     let Some(g) = fit(walls, tol) else {
         return if walls.is_empty() {
             Zone::Outside
@@ -498,38 +664,47 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
         return Zone::Outside;
     };
     let contours: Vec<Vec<Contour>> = walls.iter().map(Wall::contours).collect();
+    lap(
+        "contours f64",
+        contours.iter().flatten().map(Vec::len).sum(),
+    );
     let mut m = Mask::new(g);
     let mut xs = Vec::new();
     for (w, cs) in walls.iter().zip(&contours) {
-        m.paint_contours(cs, w.even_odd, &mut xs);
+        m.paint_contours(cs, w.even_odd, &mut xs, 1);
     }
     drop(xs);
-    m.dilate_in_place(WALL);
+    lap("rastérisation et dilatation", g.w * g.h);
     if m.cells[cy * m.w + cx] != FREE {
         return Zone::OnWall;
     }
-    if !m.flood_spans(cx, cy) {
+    let mut spans = Vec::new();
+    if !m.flood_spans(cx, cy, &mut spans) {
         return Zone::Open;
     }
-    m.dilate_in_place(REGION);
-    m.dilate_in_place(REGION);
-    let subj = m.rects();
     drop(m);
+    lap("diffusion", spans.len());
+    let subj = g.stacks(&mut spans);
+    lap("agrandie de 2 → piles", subj.iter().map(Vec::len).sum());
     let Some(zb) = bounds_of(&subj) else {
         return Zone::OnWall;
     };
     let clip = clip_of(walls, &contours, &zb);
-    FloatOverlay::with_subj_and_clip(subj.as_slice(), clip.as_slice())
-        .overlay(OverlayRule::Difference, FillRule::NonZero)
+    lap("murs à soustraire", clip.iter().map(Vec::len).sum());
+    let shapes = FloatOverlay::with_subj_and_clip(subj.as_slice(), clip.as_slice())
+        .overlay(OverlayRule::Difference, FillRule::NonZero);
+    lap("union et différence i_overlay", shapes.len());
+    let zone = shapes
         .into_iter()
-        .find(|s| s.iter().filter(|c| inside_ring(c, x, y)).count() % 2 == 1)
-        .map_or(Zone::OnWall, |s| {
-            Zone::Closed(
-                s.into_iter()
-                    .map(|c| c.into_iter().flatten().collect())
-                    .collect(),
-            )
-        })
+        .find(|s| s.iter().filter(|c| inside_ring(c, x, y)).count() % 2 == 1);
+    lap("choix de la forme", 0);
+    zone.map_or(Zone::OnWall, |s| {
+        Zone::Closed(
+            s.into_iter()
+                .map(|c| c.into_iter().flatten().collect())
+                .collect(),
+        )
+    })
 }
 
 /// Morceaux d'un contour à séparateurs (sommets non finis).
@@ -773,6 +948,115 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Q9 : les suites de la région agrandie de 2 cellules, lues sur les segments de la diffusion, sont celles de la
+    /// région dilatée deux fois (3 × 3) dans le masque, ligne par ligne (îlots, mur oblique, mur fin, cellule non
+    /// entière).
+    #[test]
+    fn grown_runs_match_the_twice_dilated_mask() {
+        let walls = mixed_walls();
+        for tol in [2.0, 3.0, 16.0] {
+            let g = fit(&walls, tol).expect("grille");
+            let mut m = Mask::new(g);
+            for w in &walls {
+                m.paint(w);
+            }
+            m.dilate_in_place(WALL);
+            let (cx, cy) = g.cell_of(300.0, 300.0).expect("clic dans l'emprise");
+            let mut spans = Vec::new();
+            assert!(m.flood_spans(cx, cy, &mut spans), "zone fermée à {tol}");
+            m.dilate_in_place(REGION);
+            m.dilate_in_place(REGION);
+            let first = g.row_index(&mut spans);
+            let mut grown = Vec::new();
+            for j in 0..g.h {
+                let row = &m.cells[j * g.w..(j + 1) * g.w];
+                let mut want = Vec::new();
+                let mut i = 0;
+                while i < g.w {
+                    if row[i] == REGION {
+                        let s = i;
+                        while i < g.w && row[i] == REGION {
+                            i += 1;
+                        }
+                        want.push((s, i - 1));
+                    } else {
+                        i += 1;
+                    }
+                }
+                g.grown_runs(&spans, &first, j, &mut grown);
+                assert_eq!(grown, want, "ligne {j} à {tol}");
+            }
+        }
+    }
+
+    /// Murs de garde des tests d'équivalence : carré, îlots, mur fin, mur oblique, anneau pair-impair.
+    fn mixed_walls() -> Vec<Wall> {
+        let mut walls = square(0.0);
+        walls.push(rect_wall(350.0, 350.0, 370.0, 362.0));
+        walls.push(rect_wall(400.0, 300.0, 440.0, 304.0));
+        walls.push(rect_wall(420.0, 420.0, 421.0, 460.0));
+        walls.extend(Wall::new(
+            vec![vec![150.0, 400.0, 400.0, 150.0, 404.0, 154.0, 154.0, 404.0]],
+            false,
+        ));
+        walls.extend(Wall::new(
+            vec![
+                vec![300.0, 420.0, 340.0, 420.0, 340.0, 460.0, 300.0, 460.0],
+                vec![310.0, 430.0, 330.0, 430.0, 330.0, 450.0, 310.0, 450.0],
+            ],
+            true,
+        ));
+        walls
+    }
+
+    /// Q6 : les murs marqués avec `grow` = 1 sont ceux marqués sans agrandissement puis dilatés 3 × 3 sur le masque,
+    /// cellule par cellule.
+    #[test]
+    fn marking_with_growth_is_the_dilated_mask() {
+        let walls = mixed_walls();
+        for tol in [2.0, 3.0, 16.0] {
+            let g = fit(&walls, tol).expect("grille");
+            let (mut want, mut got) = (Mask::new(g), Mask::new(g));
+            for w in &walls {
+                want.paint(w);
+                got.paint_contours(&w.contours(), w.even_odd, &mut Vec::new(), 1);
+            }
+            want.dilate_in_place(WALL);
+            assert!(got.cells == want.cells, "masques différents à {tol}");
+        }
+    }
+
+    /// Q9 : les piles de suites couvrent exactement les rectangles des suites (différence symétrique vide), avec au
+    /// plus autant de sommets (une pile ne se ferme que là où un rectangle se ferme), moins dès qu'un bord est oblique
+    /// à la tolérance de S6.
+    #[test]
+    fn run_stacks_cover_the_run_rectangles() {
+        let walls = mixed_walls();
+        for tol in [2.0, 3.0, 16.0] {
+            let g = fit(&walls, tol).expect("grille");
+            let mut m = Mask::new(g);
+            for w in &walls {
+                m.paint_contours(&w.contours(), w.even_odd, &mut Vec::new(), 1);
+            }
+            let (cx, cy) = g.cell_of(300.0, 300.0).expect("clic dans l'emprise");
+            let mut spans = Vec::new();
+            assert!(m.flood_spans(cx, cy, &mut spans), "zone fermée à {tol}");
+            let rects = g.rects(&mut spans.clone());
+            let stacks = g.stacks(&mut spans);
+            let xor = FloatOverlay::with_subj_and_clip(rects.as_slice(), stacks.as_slice())
+                .overlay(OverlayRule::Xor, FillRule::NonZero);
+            assert!(xor.is_empty(), "piles et rectangles diffèrent à {tol}");
+            let (s, r) = (
+                stacks.iter().map(Vec::len).sum::<usize>(),
+                rects.iter().map(Vec::len).sum::<usize>(),
+            );
+            assert!(
+                s < r || (s == r && tol > 2.0),
+                "{s} sommets en piles, {r} en rectangles, à {tol}"
+            );
         }
     }
 
@@ -1105,15 +1389,43 @@ mod tests {
             }
         }
         assert!(d.zone_cells(&p, 2.0) >= 4_000_000);
-        let t = std::time::Instant::now();
-        let c = d
-            .apply(zone(&p, 100.0, 100.0, Some("#facc15")))
-            .expect("zone");
+        // Trois clics, annulés entre deux comme dans l'essai ; table des phases du clic médian.
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        let mut runs = Vec::new();
+        for _ in 0..3 {
+            LAPS.with(|l| l.borrow_mut().clear());
+            let t = std::time::Instant::now();
+            let c = d
+                .apply(zone(&p, 100.0, 100.0, Some("#facc15")))
+                .expect("zone");
+            let end = std::time::Instant::now();
+            assert_eq!(c.ids.len(), 1);
+            runs.push((ms(t, end), t, end, LAPS.with(|l| l.take())));
+            assert!(d.undo());
+        }
+        runs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (total, t, end, laps) = &runs[1];
+        let mut prev = *t;
+        for (phase, size, at) in laps {
+            eprintln!(
+                "  {:<32} {:>8.2} ms  ({size})",
+                if *phase == "début" {
+                    "lecture des murs"
+                } else {
+                    phase
+                },
+                ms(prev, *at)
+            );
+            prev = *at;
+        }
+        eprintln!("  {:<32} {:>8.2} ms", "écriture du fill", ms(prev, *end));
         eprintln!(
-            "S6 natif : {} ms, {} cellules",
-            t.elapsed().as_millis(),
+            "S6 natif : médiane {total:.1} ms ({}), {} cellules",
+            runs.iter()
+                .map(|r| format!("{:.1}", r.0))
+                .collect::<Vec<_>>()
+                .join(", "),
             d.zone_cells(&p, 2.0)
         );
-        assert_eq!(c.ids.len(), 1);
     }
 }
