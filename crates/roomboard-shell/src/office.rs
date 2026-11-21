@@ -366,22 +366,34 @@ fn new_conversion_dir(work_root: &Path) -> Result<(String, PathBuf), ConvertErro
     ensure_private_dir(&conversions)?;
     // Racine absolue : `--outdir`, l'entrée et `file_url` du profil le sont alors aussi.
     let conversions = conversions.canonicalize().map_err(io)?;
+    new_numbered_dir(
+        &conversions,
+        &NEXT_CONVERSION,
+        "aucun identifiant de conversion libre",
+    )
+}
+
+/// Dossier neuf `<racine>/<pid>-<n>` créé par `create_dir` (échoue s'il existe : le numéro suivant est essayé) ;
+/// `none_free` est le message si `MAX_ID_TRIES` numéros sont pris.
+pub(crate) fn new_numbered_dir(
+    root: &Path,
+    counter: &AtomicU64,
+    none_free: &str,
+) -> Result<(String, PathBuf), ConvertError> {
     for _ in 0..MAX_ID_TRIES {
         let id = format!(
             "{}-{}",
             std::process::id(),
-            NEXT_CONVERSION.fetch_add(1, Ordering::Relaxed)
+            counter.fetch_add(1, Ordering::Relaxed)
         );
-        let dir = conversions.join(&id);
+        let dir = root.join(&id);
         match fs::create_dir(&dir) {
             Ok(()) => return Ok((id, dir)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(io(e)),
         }
     }
-    Err(ConvertError::Io(
-        "aucun identifiant de conversion libre".into(),
-    ))
+    Err(ConvertError::Io(none_free.into()))
 }
 
 /// Copie au plus `max` octets de `src` vers `dst` ; un flux plus long est refusé (`TooLarge`).
@@ -631,7 +643,11 @@ fn process_alive(_pid: u32) -> bool {
 
 /// Au lancement (O23) : supprime les dossiers de `conversions/` dont le processus n'existe plus (plantage).
 pub fn purge_conversions(work_root: &Path) {
-    let Ok(rd) = fs::read_dir(work_root.join(CONVERSIONS_DIR)) else {
+    let root = work_root.join(CONVERSIONS_DIR);
+    if !fs::symlink_metadata(&root).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
+    let Ok(rd) = fs::read_dir(&root) else {
         return;
     };
     for e in rd.flatten() {
@@ -1404,6 +1420,20 @@ mod tests {
         purge_conversions(&work);
         assert!(!dead.exists());
         assert!(mine.exists() && other.exists());
+    }
+    /// T14 (8) : `conversions/` en lien : rien n'est supprimé dans la cible.
+    #[cfg(unix)]
+    #[test]
+    fn purge_conversions_ignores_a_symlinked_root() {
+        let d = dir("purge-lien");
+        let work = d.join("travail");
+        let target = d.join("cible");
+        let dead = target.join("4294967294-0");
+        fs::create_dir_all(&dead).unwrap();
+        fs::create_dir_all(&work).unwrap();
+        std::os::unix::fs::symlink(&target, work.join(CONVERSIONS_DIR)).unwrap();
+        purge_conversions(&work);
+        assert!(dead.exists());
     }
     /// Revue T12 (1) : une conversion réussie tue aussi les enfants laissés par le convertisseur ; après libération, le
     /// dossier de travail est vide.

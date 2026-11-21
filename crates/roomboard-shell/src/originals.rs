@@ -4,12 +4,12 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use crate::office::{
-    ensure_private_dir, has_office_magic, io, office_extension, ConvertError, MAX_ID_TRIES,
+    ensure_private_dir, has_office_magic, io, new_numbered_dir, office_extension, ConvertError,
     OFFICE_MAX_BYTES,
 };
 
@@ -137,25 +137,8 @@ impl Originals {
             fs::create_dir_all(parent).map_err(io)?;
         }
         ensure_private_dir(&self.root)?;
-        let mut made = None;
-        for _ in 0..MAX_ID_TRIES {
-            let id = format!(
-                "{}-{}",
-                std::process::id(),
-                self.next.fetch_add(1, Ordering::Relaxed)
-            );
-            let dir = self.root.join(&id);
-            match fs::create_dir(&dir) {
-                Ok(()) => {
-                    made = Some((id, dir));
-                    break;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(io(e)),
-            }
-        }
         let (id, dir) =
-            made.ok_or_else(|| ConvertError::Io("aucun identifiant d'original libre".into()))?;
+            new_numbered_dir(&self.root, &self.next, "aucun identifiant d'original libre")?;
         let path = dir.join(&safe);
         fs::write(&path, bytes).map_err(io)?;
         #[cfg(windows)]
@@ -206,9 +189,18 @@ fn mark_internet(path: &Path) {
     let _ = fs::write(PathBuf::from(ads), "[ZoneTransfer]\r\nZoneId=3\r\n");
 }
 
+/// Ouvre `path` dans l'application associée sans attendre (ShellExecuteW sous Windows) : la coque Tauri ne déclare pas
+/// la crate `open`, seul `roomboard-shell` la porte.
+pub fn open_detached(path: &Path) -> std::io::Result<()> {
+    open::that_detached(path)
+}
+
 /// Au lancement (O23) : supprime les dossiers de copies plus vieux que `older_than` (date du dossier, mise à jour par
 /// chaque enregistrement qui y crée ou renomme un fichier).
 pub fn purge(root: &Path, older_than: Duration) {
+    if !fs::symlink_metadata(root).is_ok_and(|m| m.is_dir()) {
+        return;
+    }
     let Ok(rd) = fs::read_dir(root) else {
         return;
     };
@@ -234,6 +226,7 @@ pub fn purge(root: &Path, older_than: Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     fn dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("rb-originals-{}-{name}", std::process::id()));
@@ -397,6 +390,23 @@ mod tests {
         purge(&root, week);
         assert!(!old.exists());
         assert!(recent.exists());
+    }
+    /// T14 (8) : une racine qui est un lien n'est pas purgée (rien ne se supprime hors du dossier privé).
+    #[cfg(unix)]
+    #[test]
+    fn purge_ignores_a_root_that_is_a_symlink() {
+        let d = dir("purge-lien");
+        let target = d.join("cible");
+        let old = target.join("1-0");
+        fs::create_dir_all(&old).unwrap();
+        let week = Duration::from_secs(7 * 24 * 3600);
+        fs::File::open(&old)
+            .unwrap()
+            .set_modified(SystemTime::now() - week - Duration::from_secs(3600))
+            .unwrap();
+        std::os::unix::fs::symlink(&target, d.join("originaux")).unwrap();
+        purge(&d.join("originaux"), week);
+        assert!(old.exists());
     }
     /// Revue T12 (2) : un dossier `<pid>-<n>` déjà présent n'échoue pas l'écriture : l'identifiant suivant est pris.
     #[test]
