@@ -37,7 +37,7 @@
 .rb-library-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
 .rb-resource { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border: 1px solid #d0d5dd; border-radius: 6px; background: #fff; cursor: grab; touch-action: none; user-select: none; position: relative; }
 .rb-resource:focus-visible { outline: 2px solid #2563eb; }
-.rb-thumb { width: 88px; height: 88px; object-fit: contain; pointer-events: none; }
+.rb-thumb { -webkit-user-drag: none; width: 88px; height: 88px; object-fit: contain; pointer-events: none; }
 .rb-badge { width: 88px; height: 88px; display: grid; place-items: center; background: #eef2f7; color: #475467; border-radius: 4px; }
 .rb-resource-name { font-size: 12px; text-align: center; overflow-wrap: anywhere; }
 .rb-resource-folder { font-size: 11px; color: #667085; }

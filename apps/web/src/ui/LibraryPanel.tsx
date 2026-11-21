@@ -60,7 +60,7 @@ function Card(props: { entry: ResourceEntry; library: ResourceLibrary; version: 
       }}
     >
       <Show when={url()} fallback={<span class="rb-badge">{props.entry.kind === "grid" ? "Grille" : "Objets"}</span>}>
-        {(u) => <img class="rb-thumb" src={u()} alt="" draggable={false} />}
+        {(u) => <img class="rb-thumb" src={u()} alt="" />}
       </Show>
       <span class="rb-resource-name">{props.entry.name}</span>
       <Show when={props.showFolder && props.entry.folder !== ""}>
