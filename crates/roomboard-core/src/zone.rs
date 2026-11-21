@@ -158,14 +158,72 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Fin d'une phase de `closed_zone` et sa taille (cellules, rectangles, sommets) : notée par les tests seulement.
+/// Fin d'une phase de `closed_zone` et sa taille (cellules, rectangles, sommets) : notée par les tests seulement ; hors
+/// des tests, la taille n'est pas calculée.
 #[inline]
-fn lap(_phase: &'static str, _size: usize) {
+fn lap(_phase: &'static str, _size: impl FnOnce() -> usize) {
     #[cfg(test)]
-    LAPS.with(|l| {
-        l.borrow_mut()
-            .push((_phase, _size, std::time::Instant::now()));
-    });
+    {
+        let size = _size();
+        LAPS.with(|l| {
+            l.borrow_mut()
+                .push((_phase, size, std::time::Instant::now()));
+        });
+    }
+}
+
+/// Huit cellules lues d'un coup (balayages de la diffusion, sans comparer octet par octet).
+fn word(c: &[u8]) -> u64 {
+    u64::from_le_bytes(c.try_into().expect("8 octets"))
+}
+
+/// Première cellule de `row` à partir de `from` qui n'est pas `FREE` (0), sinon `row.len()`.
+fn next_set(row: &[u8], from: usize) -> usize {
+    let mut i = from;
+    while let Some(c) = row.get(i..i + 8) {
+        let v = word(c);
+        if v != 0 {
+            return i + (v.trailing_zeros() / 8) as usize;
+        }
+        i += 8;
+    }
+    row[i..]
+        .iter()
+        .position(|&c| c != FREE)
+        .map_or(row.len(), |p| i + p)
+}
+
+/// Dernière cellule de `row[..to]` qui n'est pas `FREE`.
+fn prev_set(row: &[u8], to: usize) -> Option<usize> {
+    let mut i = to;
+    while i >= 8 {
+        let v = word(&row[i - 8..i]);
+        if v != 0 {
+            return Some(i - 1 - (v.leading_zeros() / 8) as usize);
+        }
+        i -= 8;
+    }
+    row[..i].iter().rposition(|&c| c != FREE)
+}
+
+/// Première cellule `FREE` de `row` à partir de `from`, sinon `row.len()` : octet nul repéré par
+/// `(v − 0x01…) & !v & 0x80…`, dont le bit le plus bas marque toujours un vrai octet nul.
+fn next_free(row: &[u8], from: usize) -> usize {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+    let mut i = from;
+    while let Some(c) = row.get(i..i + 8) {
+        let v = word(c);
+        let z = v.wrapping_sub(LO) & !v & HI;
+        if z != 0 {
+            return i + (z.trailing_zeros() / 8) as usize;
+        }
+        i += 8;
+    }
+    row[i..]
+        .iter()
+        .position(|&c| c == FREE)
+        .map_or(row.len(), |p| i + p)
 }
 
 /// Masque unique (Q20) : `FREE`, `WALL`, `REGION`, une cellule par octet.
@@ -373,15 +431,8 @@ impl Mask {
             if row[x] != FREE {
                 continue;
             }
-            let l = row[..x]
-                .iter()
-                .rposition(|&c| c != FREE)
-                .map_or(0, |p| p + 1);
-            let r = row[x..]
-                .iter()
-                .position(|&c| c != FREE)
-                .map_or(w, |p| x + p)
-                - 1;
+            let l = prev_set(row, x).map_or(0, |p| p + 1);
+            let r = next_set(row, x) - 1;
             if l == 0 || r == w - 1 || y == 0 || y == h - 1 {
                 return false;
             }
@@ -390,12 +441,15 @@ impl Mask {
             for ny in [y - 1, y + 1] {
                 let nrow = &self.cells[ny * w + l..=ny * w + r];
                 let mut i = 0;
-                while let Some(s) = nrow[i..].iter().position(|&c| c == FREE) {
-                    i += s;
-                    stack.push((l + i, ny));
-                    match nrow[i..].iter().position(|&c| c != FREE) {
-                        Some(e) => i += e,
-                        None => break,
+                loop {
+                    let s = next_free(nrow, i);
+                    if s == nrow.len() {
+                        break;
+                    }
+                    stack.push((l + s, ny));
+                    i = next_set(nrow, s);
+                    if i == nrow.len() {
+                        break;
                     }
                 }
             }
@@ -499,9 +553,9 @@ impl Grid {
     }
 
     /// Trie `spans` par ligne puis par début et rend le début des suites de chaque ligne : celles de la ligne `k` sont
-    /// `spans[first[k]..first[k + 1]]`.
+    /// `spans[first[k]..first[k + 1]]`. Rangement sur place par ligne avec les comptes (sans tri global), puis tri de
+    /// chaque ligne, qui n'a que ses quelques suites.
     fn row_index(&self, spans: &mut [(usize, usize, usize)]) -> Vec<usize> {
-        spans.sort_unstable();
         let mut first = vec![0usize; self.h + 1];
         for &(y, _, _) in spans.iter() {
             first[y + 1] += 1;
@@ -510,6 +564,21 @@ impl Grid {
         for f in &mut first {
             acc += *f;
             *f = acc;
+        }
+        let mut next = first.clone();
+        for b in 0..self.h {
+            while next[b] < first[b + 1] {
+                let y = spans[next[b]].0;
+                if y == b {
+                    next[b] += 1;
+                } else {
+                    spans.swap(next[b], next[y]);
+                    next[y] += 1;
+                }
+            }
+        }
+        for k in 0..self.h {
+            spans[first[k]..first[k + 1]].sort_unstable();
         }
         first
     }
@@ -529,21 +598,31 @@ impl Grid {
         if j >= self.h {
             return;
         }
-        for k in j.saturating_sub(2)..=(j + 2).min(self.h - 1) {
-            out.extend(
-                spans[first[k]..first[k + 1]]
-                    .iter()
-                    .map(|&(_, l, r)| (l.saturating_sub(2), (r + 2).min(self.w - 1))),
-            );
+        // Fusion des 5 listes déjà triées (une par ligne), sans retrier : la suite de plus petit début passe d'abord.
+        let k0 = j.saturating_sub(2);
+        let n = (j + 2).min(self.h - 1) + 1 - k0;
+        let (mut cur, mut end) = ([0usize; 5], [0usize; 5]);
+        for t in 0..n {
+            (cur[t], end[t]) = (first[k0 + t], first[k0 + t + 1]);
         }
-        out.sort_unstable();
-        out.dedup_by(|cur, kept| {
-            let touches = cur.0 <= kept.1 + 1;
-            if touches {
-                kept.1 = kept.1.max(cur.1);
+        loop {
+            let mut best: Option<usize> = None;
+            for t in 0..n {
+                if cur[t] < end[t] && best.is_none_or(|b| spans[cur[t]].1 < spans[cur[b]].1) {
+                    best = Some(t);
+                }
             }
-            touches
-        });
+            let Some(t) = best else {
+                break;
+            };
+            let (_, l, r) = spans[cur[t]];
+            cur[t] += 1;
+            let (l, r) = (l.saturating_sub(2), (r + 2).min(self.w - 1));
+            match out.last_mut() {
+                Some(kept) if l <= kept.1 + 1 => kept.1 = kept.1.max(r),
+                _ => out.push((l, r)),
+            }
+        }
     }
 
     /// Rectangles de la région agrandie de 2 cellules (aire positive), les suites identiques de lignes voisines
@@ -652,7 +731,7 @@ fn inside_ring(c: &[[f64; 2]], x: f64, y: f64) -> bool {
 /// diffusion jusqu'au bord : `Open` ; cellule du clic dans un mur dilaté : `OnWall` ; sinon la forme exacte qui
 /// contient le clic, extérieur d'abord (`OnWall` si le clic tombe sur un bord).
 pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
-    lap("début", walls.len());
+    lap("début", || walls.len());
     let Some(g) = fit(walls, tol) else {
         return if walls.is_empty() {
             Zone::Outside
@@ -664,17 +743,16 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
         return Zone::Outside;
     };
     let contours: Vec<Vec<Contour>> = walls.iter().map(Wall::contours).collect();
-    lap(
-        "contours f64",
-        contours.iter().flatten().map(Vec::len).sum(),
-    );
+    lap("contours f64", || {
+        contours.iter().flatten().map(Vec::len).sum()
+    });
     let mut m = Mask::new(g);
     let mut xs = Vec::new();
     for (w, cs) in walls.iter().zip(&contours) {
         m.paint_contours(cs, w.even_odd, &mut xs, 1);
     }
     drop(xs);
-    lap("rastérisation et dilatation", g.w * g.h);
+    lap("rastérisation et dilatation", || g.w * g.h);
     if m.cells[cy * m.w + cx] != FREE {
         return Zone::OnWall;
     }
@@ -683,21 +761,23 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
         return Zone::Open;
     }
     drop(m);
-    lap("diffusion", spans.len());
+    lap("diffusion", || spans.len());
     let subj = g.stacks(&mut spans);
-    lap("agrandie de 2 → piles", subj.iter().map(Vec::len).sum());
+    lap("agrandie de 2 → piles", || {
+        subj.iter().map(Vec::len).sum()
+    });
     let Some(zb) = bounds_of(&subj) else {
         return Zone::OnWall;
     };
     let clip = clip_of(walls, &contours, &zb);
-    lap("murs à soustraire", clip.iter().map(Vec::len).sum());
+    lap("murs à soustraire", || clip.iter().map(Vec::len).sum());
     let shapes = FloatOverlay::with_subj_and_clip(subj.as_slice(), clip.as_slice())
         .overlay(OverlayRule::Difference, FillRule::NonZero);
-    lap("union et différence i_overlay", shapes.len());
+    lap("union et différence i_overlay", || shapes.len());
     let zone = shapes
         .into_iter()
         .find(|s| s.iter().filter(|c| inside_ring(c, x, y)).count() % 2 == 1);
-    lap("choix de la forme", 0);
+    lap("choix de la forme", || 0);
     zone.map_or(Zone::OnWall, |s| {
         Zone::Closed(
             s.into_iter()
@@ -1060,6 +1140,36 @@ mod tests {
         }
     }
 
+    /// Balayages de la diffusion à huit cellules : mêmes réponses que la lecture octet par octet, à toute position de
+    /// départ et toute longueur (longues suites libres, de murs, de région, cellules isolées).
+    #[test]
+    fn word_scans_match_byte_scans() {
+        let mut rows: Vec<Vec<u8>> = vec![vec![FREE; 37], vec![REGION; 29]];
+        let mut mixed = vec![FREE; 20];
+        mixed.extend(
+            (0..23u32).map(|i| [FREE, FREE, WALL, FREE, REGION, FREE, FREE][(i * 5 % 7) as usize]),
+        );
+        mixed.extend([REGION; 17]);
+        mixed.extend([FREE; 11]);
+        mixed.push(WALL);
+        rows.push(mixed);
+        for row in &rows {
+            for len in 0..=row.len() {
+                let r = &row[..len];
+                for from in 0..=len {
+                    let set = r[from..].iter().position(|&c| c != FREE);
+                    let free = r[from..].iter().position(|&c| c == FREE);
+                    assert_eq!(next_set(r, from), set.map_or(len, |p| from + p));
+                    assert_eq!(next_free(r, from), free.map_or(len, |p| from + p));
+                    assert_eq!(
+                        prev_set(r, from),
+                        r[..from].iter().rposition(|&c| c != FREE)
+                    );
+                }
+            }
+        }
+    }
+
     /// Q10 : hors de la boîte des murs agrandie : `Outside` ; dans un mur ou dans sa dilatation : `OnWall` ; sans mur : `Outside`.
     #[test]
     fn outside_box_and_on_wall() {
@@ -1379,9 +1489,34 @@ mod tests {
     fn s6_worst_case_timing_witness() {
         let mut d = Document::blank();
         let p = d.page_ids()[0].clone();
-        stroke(&mut d, &p, [-700.0, -700.0], [1300.0, -700.0]);
-        stroke(&mut d, &p, [1300.0, -700.0], [-700.0, 1300.0]);
-        stroke(&mut d, &p, [-700.0, 1300.0], [-700.0, -700.0]);
+        // Côtés à main levée, comme la fixture de l'essai (`c8-pot-zones-navigateur.mjs`, `side`) : un point tous les
+        // 10, écart normal 3 sin(7πt) sin(πt), nul aux sommets.
+        let side = |d: &mut Document, a: [f64; 2], b: [f64; 2]| {
+            let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+            let n = (len / 10.0).ceil() as usize;
+            let (nx, ny) = (-(b[1] - a[1]) / len, (b[0] - a[0]) / len);
+            let pi = std::f64::consts::PI;
+            let points: Vec<f32> = (0..=n)
+                .flat_map(|i| {
+                    let t = i as f64 / n as f64;
+                    let wob = 3.0 * (t * pi * 7.0).sin() * (t * pi).sin();
+                    [
+                        (a[0] + (b[0] - a[0]) * t + nx * wob) as f32,
+                        (a[1] + (b[1] - a[1]) * t + ny * wob) as f32,
+                        0.5,
+                    ]
+                })
+                .collect();
+            d.apply(Command::CommitStroke {
+                page: p.clone(),
+                points,
+                style: pen(),
+            })
+            .expect("côté");
+        };
+        side(&mut d, [-700.0, -700.0], [1300.0, -700.0]);
+        side(&mut d, [1300.0, -700.0], [-700.0, 1300.0]);
+        side(&mut d, [-700.0, 1300.0], [-700.0, -700.0]);
         for i in 0..20 {
             for j in 0..15 {
                 let (x, y) = (-600.0 + 40.0 * f64::from(i), -600.0 + 40.0 * f64::from(j));
