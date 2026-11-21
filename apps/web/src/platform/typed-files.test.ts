@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, type FileType } from "./typed-files";
+import { createTauriTypedFiles, createWebTypedFiles, IWB_TYPE, PDF_TYPE, UBZ_TYPE, type FileType } from "./typed-files";
 
 const T: FileType = { extension: ".rbitem", mime: "application/x-roomboard-item", filter: { name: "Objet RoomBoard", extensions: ["rbitem"] }, accept: ".rbitem,application/x-roomboard-item" };
 const b = (...x: number[]) => new Uint8Array(x);
@@ -42,5 +42,17 @@ describe("fichiers typés (DAZ4)", () => {
 describe("PDF_TYPE (C12)", () => {
   it("PDF exporté : .pdf, application/pdf, filtre « Document PDF » (PF19)", () => {
     expect(PDF_TYPE).toEqual({ extension: ".pdf", mime: "application/pdf", filter: { name: "Document PDF", extensions: ["pdf"] }, accept: ".pdf,application/pdf" });
+  });
+});
+
+describe("C13 : copies au format .iwb et .ubz (D17)", () => {
+  it("C13 : IWB_TYPE et UBZ_TYPE : extension, filtre sans « IWB/CFF », ZIP", () => {
+    expect(IWB_TYPE).toEqual({ extension: ".iwb", mime: "application/zip", filter: { name: "Tableau .iwb", extensions: ["iwb"] }, accept: ".iwb" });
+    expect(UBZ_TYPE).toEqual({ extension: ".ubz", mime: "application/zip", filter: { name: "Tableau OpenBoard .ubz", extensions: ["ubz"] }, accept: ".ubz" });
+  });
+  it("C13 : web : save télécharge la copie en application/zip", async () => {
+    const download = vi.fn();
+    expect(await createWebTypedFiles({ pickFile: vi.fn(), download }, IWB_TYPE).save("Cours.iwb", b(5))).toBe(true);
+    expect(download).toHaveBeenCalledWith("Cours.iwb", b(5), "application/zip");
   });
 });
