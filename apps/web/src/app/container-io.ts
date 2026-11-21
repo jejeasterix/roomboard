@@ -82,7 +82,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
     whole(b: Uint8Array): CoreDocument;
     parts(m: Uint8Array, y: Uint8Array): CoreDocument;
     save(d: CoreDocument, now: string, v: string, name: string): Uint8Array;
-    saveParts(d: CoreDocument, now: string, v: string, name: string): [Uint8Array, Uint8Array];
+    saveParts(d: CoreDocument, now: string, v: string, name: string): readonly [Uint8Array, Uint8Array];
   }> = {
     document: { whole: (b) => core.load(b), parts: (m, y) => core.loadParts(m, y), save: (d, now, v) => d.save(now, v), saveParts: (d, now, v) => d.saveParts(now, v) },
     fragment: { whole: (b) => core.loadFragment(b), parts: (m, y) => core.loadFragmentParts(m, y), save: (d, now, v, n) => d.saveFragment(now, v, n), saveParts: (d, now, v, n) => d.saveFragmentParts(now, v, n) },
