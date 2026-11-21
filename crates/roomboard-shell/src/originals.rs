@@ -1,8 +1,222 @@
-//! Copies des originaux (C16) : module en construction.
+//! Copies des originaux ouverts par « Modifier dans l'application d'origine » (C16, O20, O21, O23, DA-O3, DA-O4) :
+//! nom par liste blanche, extension et en-tête Office exigés, dossier privé, marque Internet sous Windows ; relevé de la
+//! taille et de la date des seules copies écrites ici (aucun `watch`, aucune permission pour la page).
+use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
-use crate::office::ConvertError;
+
+use crate::office::{
+    ensure_private_dir, has_office_magic, io, office_extension, ConvertError, OFFICE_MAX_BYTES,
+};
+
+/// Longueur maximale d'un nom de copie, en caractères (O20).
+pub const NAME_MAX_CHARS: usize = 120;
+/// Noms réservés de Windows (sans tenir compte de la casse ni de l'extension).
+const RESERVED: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Nom de copie sûr (O20) ; `None` s'il est vide ou réservé.
+pub fn safe_name(name: &str) -> Option<String> {
+    let mapped: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | ' ') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let mut s = mapped
+        .trim_start_matches(['-', '.', ' '])
+        .trim_end_matches(['.', ' '])
+        .to_string();
+    if s.chars().count() > NAME_MAX_CHARS {
+        let (stem, ext) = match s.rfind('.') {
+            Some(i) => (&s[..i], &s[i..]),
+            None => (s.as_str(), ""),
+        };
+        let keep = NAME_MAX_CHARS.saturating_sub(ext.chars().count());
+        let cut: String = stem.chars().take(keep).collect();
+        s = format!("{}{ext}", cut.trim_end_matches(['.', ' ']));
+    }
+    if s.is_empty() {
+        return None;
+    }
+    let stem = s
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_ascii_uppercase();
+    if RESERVED.contains(&stem.as_str()) {
+        return None;
+    }
+    Some(s)
+}
+
+/// Nom reçu dans l'en-tête `x-roomboard-name`, encodé en pourcentage ; `None` si l'encodage ou l'UTF-8 est faux.
+pub fn decode_name(header: &str) -> Option<String> {
+    let b = header.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = header.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stamp {
+    len: u64,
+    modified: Option<SystemTime>,
+}
+
+fn stamp_of(p: &Path) -> Option<Stamp> {
+    let m = fs::metadata(p).ok()?;
+    Some(Stamp {
+        len: m.len(),
+        modified: m.modified().ok(),
+    })
+}
+
+struct Watched {
+    name: String,
+    path: PathBuf,
+    /// Dernier état dit (ou celui de l'écriture).
+    base: Option<Stamp>,
+    /// État du relevé précédent.
+    seen: Option<Stamp>,
+}
+
+/// Copies écrites par la coque et leur relevé (O20, O21).
+pub struct Originals {
+    root: PathBuf,
+    next: AtomicU64,
+    files: Mutex<HashMap<String, Watched>>,
+}
+
+impl Originals {
+    pub fn new(root: PathBuf) -> Self {
+        Originals {
+            root,
+            next: AtomicU64::new(0),
+            files: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn files(&self) -> std::sync::MutexGuard<'_, HashMap<String, Watched>> {
+        self.files.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Écrit `<racine>/<id>/<nom assaini>` (O20) : nom sûr, extension Office, en-tête ZIP ou CFB, 100 Mio au plus ;
+    /// racine privée ; marque Internet sous Windows (mode protégé d'Office, HO1-7). Rend l'id et le chemin.
+    pub fn write(&self, name: &str, bytes: &[u8]) -> Result<(String, PathBuf), ConvertError> {
+        let safe = safe_name(name).ok_or(ConvertError::NotOffice)?;
+        let ext = office_extension(Path::new(&safe)).ok_or(ConvertError::NotOffice)?;
+        if !has_office_magic(&ext, bytes) {
+            return Err(ConvertError::NotOffice);
+        }
+        if bytes.len() as u64 > OFFICE_MAX_BYTES {
+            return Err(ConvertError::TooLarge);
+        }
+        if let Some(parent) = self.root.parent() {
+            fs::create_dir_all(parent).map_err(io)?;
+        }
+        ensure_private_dir(&self.root)?;
+        let id = format!(
+            "{}-{}",
+            std::process::id(),
+            self.next.fetch_add(1, Ordering::Relaxed)
+        );
+        let dir = self.root.join(&id);
+        fs::create_dir(&dir).map_err(io)?;
+        let path = dir.join(&safe);
+        fs::write(&path, bytes).map_err(io)?;
+        #[cfg(windows)]
+        mark_internet(&path);
+        let stamp = stamp_of(&path);
+        self.files().insert(
+            id.clone(),
+            Watched {
+                name: safe,
+                path: path.clone(),
+                base: stamp,
+                seen: stamp,
+            },
+        );
+        Ok((id, path))
+    }
+
+    pub fn path_of(&self, id: &str) -> Option<PathBuf> {
+        self.files().get(id).map(|w| w.path.clone())
+    }
+
+    pub fn name_of(&self, id: &str) -> Option<String> {
+        self.files().get(id).map(|w| w.name.clone())
+    }
+
+    /// Relevé (O21) : copies dont la taille ou la date a changé et n'a plus bougé depuis le relevé précédent ; chaque
+    /// changement est dit une fois. Trié par id.
+    pub fn changed(&self) -> Vec<(String, PathBuf)> {
+        let mut out = Vec::new();
+        for (id, w) in self.files().iter_mut() {
+            let now = stamp_of(&w.path);
+            if now.is_some() && now != w.base && now == w.seen {
+                w.base = now;
+                out.push((id.clone(), w.path.clone()));
+            }
+            w.seen = now;
+        }
+        out.sort();
+        out
+    }
+}
+
+/// Windows : flux `Zone.Identifier` (`ZoneId=3`, Internet) sur la copie.
+#[cfg(windows)]
+fn mark_internet(path: &Path) {
+    let mut ads = path.as_os_str().to_owned();
+    ads.push(":Zone.Identifier");
+    let _ = fs::write(PathBuf::from(ads), "[ZoneTransfer]\r\nZoneId=3\r\n");
+}
+
+/// Au lancement (O23) : supprime les dossiers de copies plus vieux que `older_than` (date du dossier, mise à jour par
+/// chaque enregistrement qui y crée ou renomme un fichier).
+pub fn purge(root: &Path, older_than: Duration) {
+    let Ok(rd) = fs::read_dir(root) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for e in rd.flatten() {
+        let Ok(m) = fs::symlink_metadata(e.path()) else {
+            continue;
+        };
+        if !m.is_dir() {
+            continue;
+        }
+        let old = m
+            .modified()
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age > older_than);
+        if old {
+            let _ = fs::remove_dir_all(e.path());
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -20,10 +234,24 @@ mod tests {
     #[test]
     fn safe_name_whitelist_reserved_and_length() {
         assert_eq!(safe_name("a/../b<>.docx").as_deref(), Some("a_.._b__.docx"));
-        assert_eq!(safe_name("Leçon 3 — été.pptx").as_deref(), Some("Leçon 3 _ été.pptx"));
-        assert_eq!(safe_name("-x; $(touch pwn).docx").as_deref(), Some("x_ __touch pwn_.docx"));
+        assert_eq!(
+            safe_name("Leçon 3 — été.pptx").as_deref(),
+            Some("Leçon 3 _ été.pptx")
+        );
+        assert_eq!(
+            safe_name("-x; $(touch pwn).docx").as_deref(),
+            Some("x_ __touch pwn_.docx")
+        );
         assert_eq!(safe_name(" ..cours.docx. ").as_deref(), Some("cours.docx"));
-        for r in ["CON.docx", "con.DOCX", "Nul.xlsx", "COM1.pptx", "lpt9.doc", "AUX", "prn .odt"] {
+        for r in [
+            "CON.docx",
+            "con.DOCX",
+            "Nul.xlsx",
+            "COM1.pptx",
+            "lpt9.doc",
+            "AUX",
+            "prn .odt",
+        ] {
             assert_eq!(safe_name(r), None, "{r}");
         }
         assert_eq!(safe_name(""), None);
@@ -38,7 +266,10 @@ mod tests {
     /// O20 : l'en-tête `x-roomboard-name` est encodé en pourcentage par la page (`encodeURIComponent`).
     #[test]
     fn decode_name_reads_percent_encoding() {
-        assert_eq!(decode_name("Le%C3%A7on%203.pptx").as_deref(), Some("Leçon 3.pptx"));
+        assert_eq!(
+            decode_name("Le%C3%A7on%203.pptx").as_deref(),
+            Some("Leçon 3.pptx")
+        );
         assert_eq!(decode_name("cours.docx").as_deref(), Some("cours.docx"));
         assert_eq!(decode_name("bad%2"), None);
         assert_eq!(decode_name("%zz"), None);
@@ -58,7 +289,11 @@ mod tests {
             ("CON.docx", &b"PK\x03\x04"[..]),
             ("cours.docx.exe", &b"PK\x03\x04"[..]),
         ] {
-            assert_eq!(o.write(name, bytes).err(), Some(ConvertError::NotOffice), "{name}");
+            assert_eq!(
+                o.write(name, bytes).err(),
+                Some(ConvertError::NotOffice),
+                "{name}"
+            );
         }
         let (id, path) = o.write("a/../cours.docx", b"PK\x03\x04x").expect("écrit");
         assert_eq!(path, d.join("originaux").join(&id).join("a_.._cours.docx"));
@@ -76,7 +311,14 @@ mod tests {
         let d = dir("prive");
         let o = Originals::new(d.join("originaux"));
         o.write("cours.docx", b"PK\x03\x04").expect("écrit");
-        assert_eq!(fs::metadata(d.join("originaux")).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(d.join("originaux"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
         let real = d.join("vrai");
         fs::create_dir(&real).unwrap();
         std::os::unix::fs::symlink(&real, d.join("lien")).unwrap();
@@ -96,7 +338,10 @@ mod tests {
         let (id, path) = o.write("cours.docx", b"PK\x03\x04v1").expect("écrit");
         assert!(o.changed().is_empty());
         fs::write(&path, b"PK\x03\x04version 2").unwrap();
-        assert!(o.changed().is_empty(), "premier relevé du changement : peut-être en cours d'écriture");
+        assert!(
+            o.changed().is_empty(),
+            "premier relevé du changement : peut-être en cours d'écriture"
+        );
         assert_eq!(o.changed(), vec![(id.clone(), path.clone())]);
         assert!(o.changed().is_empty(), "déjà dit");
         let tmp = path.with_file_name("~cours.tmp");
