@@ -1,10 +1,10 @@
 # État — usage-c6b-pot-image
 
-Statut : en cours
+Statut : clos — PR #24 fusionnée (main 077c743)
 Gabarit : chantier (9 tâches estimées ; cadrage fait au budget « courte », jugé suffisant : 26 décisions)
 Objectif : Le pot de peinture remplit ou efface une zone d'une image par diffusion 4-connexe avec une tolérance réglable, chaque clic est annulable, et « Rétablir l'original » rend l'image d'avant tout remplissage.
 Avancement : 11/11 tâches terminées
-Étage : 4 — depuis 2026-11-21 06:45
+Étage : 4 — clos le 2026-11-21 06:40
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c6b-pot-image   Branche : feat/usage-c6b-pot-image   Base : origin/main @ 458a90d
 Branche principale locale au lancement : 458a90d
@@ -92,7 +92,7 @@ evidence: "docs/plans/usage-c6b-pot-image-cadrage.md (DAB1, DAB2, B4, B5, B7, B1
 ---
 id: 2026-11-21-roomboard-usage-c6b-pot-image-clos
 type: journal
-summary: "RoomBoard usage C6b pot de peinture sur image clos : remplir ou effacer une zone d'une image par diffusion 4-connexe RVBA avec tolérance réglable (défaut 5), une étape par clic, nouvel asset PNG, sourceAsset et « Rétablir l'original » ; PR #PR."
+summary: "RoomBoard usage C6b pot de peinture sur image clos : remplir ou effacer une zone d'une image par diffusion 4-connexe RVBA avec tolérance réglable (défaut 5), une étape par clic, nouvel asset PNG, sourceAsset et « Rétablir l'original » ; PR #24."
 created: 2026-11-21
 project: "[[roomboard]]"
 tags: [projet/roomboard, chaine/nouvelle-feature]
@@ -110,7 +110,7 @@ evidence: "docs/sessions/usage-c6b-pot-image-etat.md (dépôt jejeasterix/roombo
 
 ### 3. Fiche `01_Projets/roomboard.md`, ligne « Vague 2 en cours » : ajouter à la fin
 
-`; C6b pot de peinture sur image (remplir, effacer, tolérance, sourceAsset, Rétablir l'original) clos (PR #PR, `main` <sha>) — voir [[2026-11-21-roomboard-usage-c6b-pot-image-clos]] et [[NNNN-roomboard-c6b-pot-image-destructif]]`
+`; C6b pot de peinture sur image (remplir, effacer, tolérance, sourceAsset, Rétablir l'original) clos (PR #24, `main` 077c743) — voir [[2026-11-21-roomboard-usage-c6b-pot-image-clos]] et [[NNNN-roomboard-c6b-pot-image-destructif]]`
 
 Et dans « Journal » : `- [[2026-11-21-roomboard-usage-c6b-pot-image-clos]]`
 
