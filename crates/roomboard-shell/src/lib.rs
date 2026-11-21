@@ -352,7 +352,10 @@ mod tests {
             .filter_map(|e| e.as_str().map(String::from))
             .collect();
         exts.sort();
-        let mut expected: Vec<String> = ASSOCIATED_EXTENSIONS.iter().map(|s| s.to_string()).collect();
+        let mut expected: Vec<String> = ASSOCIATED_EXTENSIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         expected.sort();
         assert_eq!(exts, expected);
         let pack = conf["bundle"]["fileAssociations"]
@@ -393,7 +396,10 @@ mod tests {
             .collect();
         assert_eq!(
             allow,
-            vec!["$DOCUMENT/RoomBoard/Ressources", "$DOCUMENT/RoomBoard/Ressources/**"]
+            vec![
+                "$DOCUMENT/RoomBoard/Ressources",
+                "$DOCUMENT/RoomBoard/Ressources/**"
+            ]
         );
     }
 
