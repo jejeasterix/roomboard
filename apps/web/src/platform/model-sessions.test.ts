@@ -161,6 +161,39 @@ describe("séances 3D (C15, DAX3)", () => {
     expect(MODEL3D_FAILED_MESSAGE).toBe("objet 3D illisible sur ce poste : il garde son image");
   });
 
+  it("C3 : après un échec, un nouvel essai charge l'objet : orbite, puis instantane à la fermeture (échec oublié)", async () => {
+    const { sessions, fv } = setup();
+    fv.failing.add("a");
+    expect(await sessions.open("a", DEFAULT_CAMERA)).toBe(false);
+    expect(sessions.state("a")).toBe("echec");
+    fv.failing.delete("a");
+    const retry = sessions.open("a", DEFAULT_CAMERA);
+    expect(sessions.state("a")).toBe("chargement");
+    expect(await retry).toBe(true);
+    expect(sessions.state("a")).toBe("orbite");
+    sessions.close();
+    expect(sessions.state("a")).toBe("instantane");
+  });
+  it("C3 : morceau du rendu en échec une fois : le nouvel essai le recharge et l'objet tourne", async () => {
+    const fv = fakeView();
+    let calls = 0;
+    const views = createModelViewLoader(async () => {
+      calls++;
+      if (calls === 1) throw new Error("morceau introuvable");
+      return fv.view;
+    });
+    const sessions = createModelSessions({
+      views,
+      source: (id) => ({ format: "glb", name: id, main: new Blob([new Uint8Array([1])]), files: new Map() }),
+      px: () => ({ w: 100, h: 100 }),
+      redraw: () => {},
+    });
+    expect(await sessions.open("a", DEFAULT_CAMERA)).toBe(false);
+    expect(sessions.state("a")).toBe("echec");
+    expect(await sessions.open("a", DEFAULT_CAMERA)).toBe(true);
+    expect(sessions.state("a")).toBe("orbite");
+    expect(calls).toBe(2);
+  });
   it("contexte perdu : sans-webgl, séance fermée, un seul message", async () => {
     const { sessions, fv } = setup();
     await sessions.open("a", DEFAULT_CAMERA);
