@@ -12,7 +12,8 @@ use crate::document::Document;
 use crate::element::{
     apply_transform, out_string, out_transform, read_image, read_unknown, unknown_view, Transform,
 };
-use crate::ink::hit::{hit_outline, path_hits_outline};
+use crate::fill_element::{read_fill, FILL_KIND};
+use crate::ink::hit::{dist_to_edges, hit_outline, path_hits_outline, point_in_polygon};
 use crate::ink::points::InkPoint;
 use crate::media::{read_media, MEDIA_KIND};
 use crate::model3d::{read_model3d, MODEL3D_KIND};
@@ -46,6 +47,8 @@ struct Geom {
     id: String,
     transform: Transform,
     outline: Rc<[f32]>,
+    /// Anneaux locaux d'un `fill` (C8, Q13), extérieur d'abord ; vide pour tout autre genre.
+    rings: Vec<Vec<f32>>,
 }
 
 /// Boîte (0, 0)-(w, h) d'un élément à boîte (média, objet 3D) ; mal formé : la boîte inconnue (M7, X10).
@@ -66,6 +69,7 @@ fn boxed_geom<T: ReadTxn>(
         id: raw_id?,
         transform,
         outline: box_polygon(w, h).into(),
+        rings: Vec::new(),
     })
 }
 
@@ -117,6 +121,14 @@ pub(crate) fn path_hits_stroke(t: &Transform, outline: &[f32], path: &[f32], rad
     }
 }
 
+/// `fill` (C8, Q13) : touché dedans (pair-impair sur tous ses anneaux) **et** à plus de `tol` de chacun de ses bords ;
+/// la bande de part et d'autre d'un trait du bord reste au trait (HC8-4). Jamais `hit_outline`, qui ajoute la bande.
+fn fill_hit(t: &Transform, rings: &[Vec<f32>], x: f32, y: f32, tol: f32) -> bool {
+    let world: Vec<Vec<f32>> = rings.iter().map(|r| world_outline(t, r)).collect();
+    world.iter().filter(|r| point_in_polygon(r, x, y)).count() % 2 == 1
+        && world.iter().all(|r| dist_to_edges(r, x, y) > tol)
+}
+
 impl Document {
     pub fn stroke_points(&self, id: &str) -> Option<Vec<InkPoint>> {
         let txn = self.read();
@@ -131,6 +143,20 @@ impl Document {
         Some(self.cached_outline(id, &style, &pts).to_vec())
     }
 
+    /// Anneaux locaux d'un `fill` (C8, Q12) : `[n, x0, y0, …]` par anneau, extérieur d'abord ; `None` pour tout autre
+    /// élément, un `fill` mal formé ou un id inconnu (patron `outline`).
+    pub fn fill_rings(&self, id: &str) -> Option<Vec<f32>> {
+        let txn = self.read();
+        let found = self.find_element(&txn, id)?;
+        let f = read_fill(&txn, &found.element)?;
+        let mut out = Vec::new();
+        for r in &f.rings {
+            out.push((r.len() / 2) as f32);
+            out.extend(r.iter().map(|v| *v as f32));
+        }
+        Some(out)
+    }
+
     /// Géométrie locale pour la collision et les bornes : contour en cache (trait), polygone (forme), boîte (texte,
     /// image, tableau, élément inconnu). Un élément inconnu sans `id` lisible n'a pas de géométrie (K8).
     fn element_geom<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Geom> {
@@ -142,6 +168,7 @@ impl Document {
                 id,
                 transform,
                 outline,
+                rings: Vec::new(),
             });
         }
         if out_string(e.get(txn, "kind")).as_deref() == Some(TABLE_KIND) {
@@ -157,6 +184,7 @@ impl Document {
                 id: raw_id?,
                 transform,
                 outline: box_polygon(w, h).into(),
+                rings: Vec::new(),
             });
         }
         if out_string(e.get(txn, "kind")).as_deref() == Some(MEDIA_KIND) {
@@ -175,11 +203,29 @@ impl Document {
                 read_model3d(txn, e).map(|(t, m)| (t, m.w, m.h)),
             );
         }
+        if out_string(e.get(txn, "kind")).as_deref() == Some(FILL_KIND) {
+            // C8 (Q13) : anneaux locaux ; bornes, rectangle et accroche sur l'extérieur ; mal formé : la boîte inconnue.
+            let Some(f) = read_fill(txn, e) else {
+                return boxed_geom(txn, e, raw_id, None);
+            };
+            let rings: Vec<Vec<f32>> = f
+                .rings
+                .iter()
+                .map(|r| r.iter().map(|v| *v as f32).collect())
+                .collect();
+            return Some(Geom {
+                id: raw_id?,
+                transform: f.transform,
+                outline: rings.first()?.clone().into(),
+                rings,
+            });
+        }
         if let Some((transform, u)) = read_unknown(txn, e) {
             return Some(Geom {
                 id: raw_id?,
                 transform,
                 outline: box_polygon(u.w, u.h).into(),
+                rings: Vec::new(),
             });
         }
         if let Some((transform, i)) = read_image(txn, e) {
@@ -189,6 +235,7 @@ impl Document {
                 id,
                 transform,
                 outline: box_polygon(bw, bh).into(),
+                rings: Vec::new(),
             });
         }
         let transform = out_transform(e.get(txn, "transform"))?;
@@ -197,6 +244,7 @@ impl Document {
                 id,
                 transform,
                 outline: box_polygon(t.box_width, t.box_height).into(),
+                rings: Vec::new(),
             });
         }
         let s = read_shape(txn, e)?;
@@ -204,6 +252,7 @@ impl Document {
             id,
             transform,
             outline: shape_polygon(s.kind, s.w, s.h, s.style.width).into(),
+            rings: Vec::new(),
         })
     }
 
@@ -235,12 +284,16 @@ impl Document {
             .into_iter()
             .rev()
             .find(|g| {
-                hit_outline(
-                    &world_outline(&g.transform, &g.outline),
-                    x as f32,
-                    y as f32,
-                    tol,
-                )
+                if g.rings.is_empty() {
+                    hit_outline(
+                        &world_outline(&g.transform, &g.outline),
+                        x as f32,
+                        y as f32,
+                        tol,
+                    )
+                } else {
+                    fill_hit(&g.transform, &g.rings, x as f32, y as f32, tol)
+                }
             })
             .map(|g| g.id)
     }
@@ -1053,8 +1106,8 @@ mod tests {
         assert_eq!(
             d.fill_rings(&f),
             Some(vec![
-                4.0, 0.0, 0.0, 400.0, 0.0, 400.0, 400.0, 0.0, 400.0, 4.0, 150.0, 150.0, 150.0, 170.0,
-                170.0, 170.0, 170.0, 150.0,
+                4.0, 0.0, 0.0, 400.0, 0.0, 400.0, 400.0, 0.0, 400.0, 4.0, 150.0, 150.0, 150.0,
+                170.0, 170.0, 170.0, 170.0, 150.0,
             ])
         );
         assert_eq!(d.fill_rings(&s), None);

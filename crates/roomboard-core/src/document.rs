@@ -17,7 +17,7 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 use crate::element::ImageView;
 use crate::element::{
     backdrop_view, finite_positive, out_f64, out_string, out_transform, read_backdrop, read_group,
-    read_image, read_style, read_unknown, unknown_view, ElementView, PageView, ShapeView,
+    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageView, ShapeView,
     StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
     SCHEMA,
 };
@@ -410,6 +410,26 @@ impl Document {
                         ..ElementView::bare(id, "model3d", transform)
                     },
                     // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).
+                    None => {
+                        let (transform, unknown) = unknown_view(&txn, e)?;
+                        ElementView {
+                            unknown: Some(unknown),
+                            ..ElementView::bare(id, "unknown", transform)
+                        }
+                    }
+                })
+            }
+            Some(crate::fill_element::FILL_KIND) => {
+                Some(match crate::fill_element::read_fill(&txn, e) {
+                    Some(f) => ElementView {
+                        fill: Some(FillView {
+                            color: f.color,
+                            w: f.w,
+                            h: f.h,
+                        }),
+                        ..ElementView::bare(id, "fill", f.transform)
+                    },
+                    // Q11 : `fill` mal formé → cadre inconnu de sa boîte `w`, `h` (repli du média, pas de l'image).
                     None => {
                         let (transform, unknown) = unknown_view(&txn, e)?;
                         ElementView {
@@ -1430,7 +1450,7 @@ mod tests {
         )
         .expect("fill")
         .ids[0]
-        .clone()
+            .clone()
     }
 
     /// Q11, Q12 : vue `fill` (couleur, boîte), sans anneaux ; transform au coin de la boîte.
