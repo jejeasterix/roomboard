@@ -5,7 +5,7 @@ import { ACTIONS, createLocalToolbarHost, type HostTargets } from "./toolbar-hos
 
 function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profile = BUILTIN_PROFILES[0]!) {
   const engine = {
-    setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), undo: vi.fn(), redo: vi.fn(),
+    setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
     fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
@@ -192,6 +192,12 @@ describe("ToolbarHost — pot (C6a, D16)", () => {
     expect(engine.setFillColor).toHaveBeenCalledWith(null);
     expect(engine.setTool).not.toHaveBeenCalled();
     expect(engine.setPenStyle).not.toHaveBeenCalled();
+  });
+  it("C6b fillTolerance(t) → setFillTolerance(t), sans changer d'outil (B10)", () => {
+    const { host, engine } = setup();
+    host.fillTolerance(12);
+    expect(engine.setFillTolerance).toHaveBeenCalledWith(12);
+    expect(engine.setTool).not.toHaveBeenCalled();
   });
 });
 

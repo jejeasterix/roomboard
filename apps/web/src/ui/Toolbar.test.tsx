@@ -22,7 +22,7 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
 function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
-  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), textFormat: vi.fn(), selection: vi.fn(), imagePanel: vi.fn() };
+  const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), fillTolerance: vi.fn(), textFormat: vi.fn(), selection: vi.fn(), imagePanel: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
@@ -300,6 +300,29 @@ describe("Toolbar — rangée du pot (C6a)", () => {
     expect(bar.querySelector("[data-presets-sep]")).not.toBeNull();
     const rows = [...bar.querySelectorAll("button[data-preset], button[data-fill-none]")];
     expect(rows[rows.length - 1]).toBe(none);
+  });
+  it("C6b : curseur de tolérance après « Aucune », valeur de la vue (défaut 5), libellé « Tolérance » ; seulement avec le Pot (B10, B22)", () => {
+    const { container, setV } = potSetup();
+    const input = container.querySelector<HTMLInputElement>("input[data-fill-tolerance]")!;
+    expect([input.type, input.min, input.max, input.step, input.value]).toEqual(["range", "0", "100", "1", "5"]);
+    const none = container.querySelector("button[data-fill-none]")!;
+    expect(none.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const label = container.querySelector(".rb-fill-tolerance")!;
+    expect(label.querySelector(".rb-fill-tolerance-label")?.textContent).toBe("Tolérance");
+    expect(label.getAttribute("title")).toBe("Tolérance 5");
+    expect(container.querySelector("[data-fill-tolerance-value]")?.textContent).toBe("5");
+    setV({ ...VIEW, tool: "fill", fillTolerance: 30 });
+    expect([input.value, label.getAttribute("title")]).toEqual(["30", "Tolérance 30"]);
+    setV({ ...VIEW, tool: "pen" });
+    expect(container.querySelector("input[data-fill-tolerance]")).toBeNull();
+  });
+  it("C6b : déplacer le curseur appelle host.fillTolerance(valeur), sans setTool", () => {
+    const { container, host } = potSetup();
+    const input = container.querySelector<HTMLInputElement>("input[data-fill-tolerance]")!;
+    input.value = "12";
+    fireEvent.input(input);
+    expect(host.fillTolerance).toHaveBeenCalledWith(12);
+    expect(host.setTool).not.toHaveBeenCalled();
   });
   it("un clic sur une couleur appelle host.setTool(fill, id)", () => {
     const { container, host } = potSetup();
