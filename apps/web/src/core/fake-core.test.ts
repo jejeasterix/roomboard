@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Command, CoreDocument, TextAttrsPatch } from "./api";
+import { IS_A_GRID_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage, wrongKindMessage } from "./api";
 import { fakeCore, KNOWN_KINDS } from "./fake-core";
 
 const style = { color: "#000000", width: 4 };
@@ -709,17 +710,17 @@ describe("fakeCore — C6a (fond de page)", () => {
 describe("fakeCore — C3", () => {
   const json = (v: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(v));
   it("JSON d'un kind inconnu : refusé comme le cœur ; d'un fragment ouvert comme document : refusé", () => {
-    const grid = json({ kind: "grid", pages: [] });
-    expect(() => fakeCore.load(grid)).toThrow("type de fichier RoomBoard inconnu (« grid ») : pris en charge dans une prochaine version");
-    expect(() => fakeCore.loadFragment(grid)).toThrow("(« grid »)");
+    const pack = json({ kind: "pack", pages: [] });
+    expect(() => fakeCore.load(pack)).toThrow("type de fichier RoomBoard inconnu (« pack ») : pris en charge dans une prochaine version");
+    expect(() => fakeCore.loadFragment(pack)).toThrow("(« pack »)");
   });
   // Discrimine (décision de contre-relecture) : le kind se lit à l'ouverture, avant le contenu ; un fichier d'un type à
   // venir n'a pas à porter `pages`. Contrôler `pages` d'abord rendrait « ce fichier n'est pas un document RoomBoard ».
   it("kind inconnu refusé à l'ouverture, avant le contenu (fichier sans pages)", () => {
-    const grid = json({ kind: "grid", levels: [] });
-    expect(() => fakeCore.load(grid)).toThrow("type de fichier RoomBoard inconnu (« grid »)");
-    expect(() => fakeCore.loadFragment(grid)).toThrow("type de fichier RoomBoard inconnu (« grid »)");
-    expect(() => fakeCore.loadParts(json({ format: "roomboard-fake" }), grid)).toThrow("(« grid »)");
+    const pack = json({ kind: "pack", levels: [] });
+    expect(() => fakeCore.load(pack)).toThrow("type de fichier RoomBoard inconnu (« pack »)");
+    expect(() => fakeCore.loadFragment(pack)).toThrow("type de fichier RoomBoard inconnu (« pack »)");
+    expect(() => fakeCore.loadParts(json({ format: "roomboard-fake" }), pack)).toThrow("(« pack »)");
     expect(() => fakeCore.load(json({ foo: 1 }))).toThrow("ce fichier n'est pas un document RoomBoard");
   });
   it("group illisible dans le JSON : retiré (PC6), l'élément reste", () => {
@@ -820,5 +821,44 @@ describe("fakeCore — C8 (zone fermée)", () => {
     expect(d.fillRings("f1")).toBeNull();
     const again = fakeCore.load(d.save("2026-11-21T00:00:00Z", "0.1.0"));
     expect(again.element("f1")).toEqual(d.element("f1"));
+  });
+});
+
+describe("C4 : grille en ressource (faux cœur)", () => {
+  const grid = { visible: true, snap: false, above: false, levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#7aa7d8", line: "solid", lineWidth: 1, snap: false, visible: true }] };
+  const gridDoc = () => {
+    const d = fakeCore.blank();
+    d.apply({ type: "SetGrid", page: d.pageIds()[0]!, grid });
+    return d;
+  };
+
+  it("C4 : saveGrid puis loadGrid rend la grille", () => {
+    const bytes = gridDoc().saveGrid("2026-11-21T08:00:00Z", "c4", "Seyès");
+    const g = fakeCore.loadGrid(bytes);
+    expect(g.page(g.pageIds()[0]!)?.grid).toEqual(grid);
+  });
+
+  it("C4 : containerKind et manifestKind", () => {
+    const d = gridDoc();
+    expect(fakeCore.containerKind(d.saveGrid("n", "a", "G"))).toBe("grid");
+    expect(fakeCore.containerKind(fakeCore.blank().save("n", "a"))).toBe("document");
+    expect(fakeCore.containerKind(fakeCore.blank().saveFragment("n", "a", "x"))).toBe("fragment");
+    expect(fakeCore.manifestKind(d.saveGridParts("n", "a", "G")[0])).toBe("grid");
+    expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"pack"}'))).toThrow(unknownKindMessage("pack"));
+  });
+
+  it("C4 : une grille lue comme objet ou document : message de la grille", () => {
+    const bytes = gridDoc().saveGrid("n", "a", "G");
+    expect(() => fakeCore.loadFragment(bytes)).toThrow(IS_A_GRID_MESSAGE);
+    expect(() => fakeCore.load(bytes)).toThrow(IS_A_GRID_MESSAGE);
+  });
+
+  it("C4 : messages d'avant C4 inchangés", () => {
+    expect(() => fakeCore.load(fakeCore.blank().saveFragment("n", "a", "x"))).toThrow(NOT_A_DOCUMENT_MESSAGE);
+    expect(() => fakeCore.loadFragment(fakeCore.blank().save("n", "a"))).toThrow(NOT_A_FRAGMENT_MESSAGE);
+    expect(() => fakeCore.loadGrid(fakeCore.blank().save("n", "a"))).toThrow(NOT_A_FRAGMENT_MESSAGE);
+    expect(wrongKindMessage("fragment")).toBe(NOT_A_DOCUMENT_MESSAGE);
+    expect(wrongKindMessage("document")).toBe(NOT_A_FRAGMENT_MESSAGE);
+    expect(wrongKindMessage("grid")).toBe(IS_A_GRID_MESSAGE);
   });
 });
