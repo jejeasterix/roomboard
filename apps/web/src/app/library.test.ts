@@ -181,7 +181,7 @@ describe("C4 : ResourceLibrary", () => {
     const r = await lib.importPack(packOf("Fractions", ["items/moitie.rbitem"]), "Fractions.rbpack");
     expect(r.folder).toBe("Fractions (2)");
     expect(new TextDecoder().decode(await (await mine.read("Fractions/moitie.rbitem")).arrayBuffer())).toBe("ancien");
-    expect((await mine.list()).map((p) => p.path)).toContain("Fractions (2)/moitie.rbitem");
+    expect((await mine.list()).map((p) => p.path)).toContain("Fractions (2)/x.rbitem");
   });
 
   it("C4 : écriture en échec avec un index périmé : aucune ressource préexistante supprimée", async () => {

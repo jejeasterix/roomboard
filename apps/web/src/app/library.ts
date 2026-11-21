@@ -3,7 +3,8 @@
  * recherche (nom, mots-clés, description ; sans casse ni accents, D11), ajout (`<nom>.rbitem`, compagnon
  * `<nom>.rbitem.json`, vignette `<nom>.rbitem.png`, D5), export et import de paquets `.rbpack` (D17 à D19). Le paquet
  * est lu et contrôlé en entier avant la première écriture (`readPack`, puis `safeLibraryPath` sur chaque chemin), dans
- * un dossier neuf de « Mes ressources », retiré si une écriture échoue en route : jamais de bibliothèque à moitié
+ * un dossier neuf de « Mes ressources » (nom jugé sur le stockage relu), défait si une écriture échoue en route
+ * (seuls les chemins écrits par l'import sont retirés) : jamais de bibliothèque à moitié
  * importée (même patron que `zip3dHandler`, `platform/model3d-handlers.ts`).
  */
 import { safeLibraryPath, type LibraryFiles, type LibraryRoot } from "../platform/library-files";
@@ -164,8 +165,9 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
     r.entries = r.entries.filter((e) => !within(e.path, path));
   };
 
-  async function write(r: RootIndex, folder: string, x: NewResource): Promise<ResourceEntry> {
+  async function write(r: RootIndex, folder: string, x: NewResource, written?: string[]): Promise<ResourceEntry> {
     const path = unique(r, folder, fileNameOf(x.name), EXT);
+    written?.push(path, `${path}.json`, `${path}.png`);
     await r.files.write(path, new Blob([x.bytes as BlobPart], { type: "application/x-roomboard-item" }));
     const companion = { name: x.name, keywords: [...x.keywords], description: x.description, kind: x.kind };
     await r.files.write(`${path}.json`, new Blob([JSON.stringify(companion, null, 2)], { type: "application/json" }));
@@ -226,10 +228,16 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
     },
     async remove(root, path) {
       const r = of(root);
-      await r.files.remove(path);
-      // une ressource seule : ses fichiers compagnons partent avec elle
-      if (path.endsWith(EXT)) {
-        for (const extra of [`${path}.json`, `${path}.png`]) await r.files.remove(extra).catch(() => undefined);
+      try {
+        await r.files.remove(path);
+        // une ressource seule : ses fichiers compagnons partent avec elle
+        if (path.endsWith(EXT)) {
+          for (const extra of [`${path}.json`, `${path}.png`]) await r.files.remove(extra).catch(() => undefined);
+        }
+      } catch (e) {
+        // échec en route : l'index est relu pour rester cohérent avec ce que le stockage contient vraiment
+        await load(r).catch(() => undefined);
+        throw e;
       }
       forget(r, path);
     },
@@ -280,7 +288,9 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
       }
       // 2. Dossier neuf de « Mes ressources », retiré en entier si une écriture échoue en route.
       const r = of("mine");
+      await load(r); // l'index en mémoire peut être vide ou périmé : le nom libre se juge sur le stockage
       const folder = unique(r, "", folderNameOf(pack.name || fileName.replace(/\.rbpack$/i, "")), "");
+      const written: string[] = [];
       try {
         await r.files.mkdir(folder);
         addDirs(r, folder);
@@ -292,11 +302,14 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
             name: i.name,
             keywords: i.keywords,
             description: i.description,
-          });
+          }, written);
         }
       } catch (e) {
-        await r.files.remove(folder).catch(() => undefined);
-        forget(r, folder);
+        // seulement ce que cet import a écrit ; le dossier (neuf) part s'il ne contient plus aucun fichier
+        for (const p of written) await r.files.remove(p).catch(() => undefined);
+        const left = await r.files.list().catch(() => null);
+        if (left === null || !left.some((p) => !p.dir && within(p.path, folder))) await r.files.remove(folder).catch(() => undefined);
+        await load(r).catch(() => forget(r, folder));
         throw e;
       }
       return { folder, count: pack.items.length };
