@@ -234,6 +234,28 @@ pub enum Command {
         params: crate::image::ImageParamsInput,
         matrix: Transform,
     },
+    /// Objet 3D (C15, X7) : élément, métadonnées du principal, des fichiers liés et de l'instantané ; une transaction,
+    /// une étape.
+    AddModel3d {
+        page: String,
+        asset: AssetRef,
+        format: crate::model3d::Model3dFormat,
+        files: Vec<(String, AssetRef)>,
+        w: f64,
+        h: f64,
+        yaw: f64,
+        pitch: f64,
+        snapshot: Option<AssetRef>,
+        matrix: Transform,
+    },
+    /// Vue d'un objet 3D (C15, X7) : état voulu complet (caméra et instantané, `None` le retire) ; défauts retirés ;
+    /// même état : aucune étape (D38).
+    SetModel3dView {
+        id: String,
+        yaw: f64,
+        pitch: f64,
+        snapshot: Option<AssetRef>,
+    },
 }
 
 /// Fond demandé par `SetBackdrop` : seul `fit: "width"` s'écrit (K6, HK1).
@@ -275,6 +297,7 @@ pub enum CommandError {
     BadGroup,
     BadMedia,
     BadImageParams,
+    BadModel3d,
 }
 
 impl std::fmt::Display for CommandError {
@@ -340,6 +363,10 @@ impl std::fmt::Display for CommandError {
             CommandError::BadImageParams => write!(
                 f,
                 "réglages d'image invalides (image lisible, rognage entier dans l'image, quarts de tour 0 à 3, luminosité et contraste entiers de -100 à 100, couleur #rrggbb, tolérance et plume entières de 0 à 100 attendus)"
+            ),
+            CommandError::BadModel3d => write!(
+                f,
+                "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)"
             ),
         }
     }
@@ -792,6 +819,35 @@ impl Document {
             Command::SetImageParams { id, params, matrix } => {
                 self.cmd_set_image_params(&id, &params, &matrix)
             }
+            Command::AddModel3d {
+                page,
+                asset,
+                format,
+                files,
+                w,
+                h,
+                yaw,
+                pitch,
+                snapshot,
+                matrix,
+            } => self.cmd_add_model3d(&crate::model3d::NewModel3d {
+                page: &page,
+                asset: &asset,
+                format,
+                files: &files,
+                w,
+                h,
+                yaw,
+                pitch,
+                snapshot: snapshot.as_ref(),
+                matrix: &matrix,
+            }),
+            Command::SetModel3dView {
+                id,
+                yaw,
+                pitch,
+                snapshot,
+            } => self.cmd_set_model3d_view(&id, yaw, pitch, snapshot.as_ref()),
         }?;
         self.forget_outlines(&change.removed);
         Ok(change)

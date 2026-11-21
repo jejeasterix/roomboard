@@ -15,6 +15,7 @@ use crate::element::{
 use crate::ink::hit::{hit_outline, path_hits_outline};
 use crate::ink::points::InkPoint;
 use crate::media::{read_media, MEDIA_KIND};
+use crate::model3d::{read_model3d, MODEL3D_KIND};
 use crate::shape::{box_polygon, shape_polygon};
 use crate::table::{self, TABLE_KIND};
 
@@ -45,6 +46,27 @@ struct Geom {
     id: String,
     transform: Transform,
     outline: Rc<[f32]>,
+}
+
+/// Boîte (0, 0)-(w, h) d'un élément à boîte (média, objet 3D) ; mal formé : la boîte inconnue (M7, X10).
+fn boxed_geom<T: ReadTxn>(
+    txn: &T,
+    e: &MapRef,
+    raw_id: Option<String>,
+    read: Option<(Transform, f64, f64)>,
+) -> Option<Geom> {
+    let (transform, w, h) = match read {
+        Some(r) => r,
+        None => {
+            let (transform, u) = unknown_view(txn, e)?;
+            (transform, u.w, u.h)
+        }
+    };
+    Some(Geom {
+        id: raw_id?,
+        transform,
+        outline: box_polygon(w, h).into(),
+    })
 }
 
 /// Boîte monde d'un contour local ; les sommets non finis (séparateurs éventuels) sont ignorés.
@@ -138,19 +160,20 @@ impl Document {
             });
         }
         if out_string(e.get(txn, "kind")).as_deref() == Some(MEDIA_KIND) {
-            // Boîte (0, 0)-(w, h) ; média mal formé : la boîte inconnue (M7, repli du tableau).
-            let (transform, w, h) = match read_media(txn, e) {
-                Some((transform, m)) => (transform, m.w, m.h),
-                None => {
-                    let (transform, u) = unknown_view(txn, e)?;
-                    (transform, u.w, u.h)
-                }
-            };
-            return Some(Geom {
-                id: raw_id?,
-                transform,
-                outline: box_polygon(w, h).into(),
-            });
+            return boxed_geom(
+                txn,
+                e,
+                raw_id,
+                read_media(txn, e).map(|(t, m)| (t, m.w, m.h)),
+            );
+        }
+        if out_string(e.get(txn, "kind")).as_deref() == Some(MODEL3D_KIND) {
+            return boxed_geom(
+                txn,
+                e,
+                raw_id,
+                read_model3d(txn, e).map(|(t, m)| (t, m.w, m.h)),
+            );
         }
         if let Some((transform, u)) = read_unknown(txn, e) {
             return Some(Geom {

@@ -96,7 +96,7 @@ fn valid_link(path: &str) -> bool {
 }
 
 /// Boîte d'un média : finie > 0, tenant en f32 (comme le polygone et la liaison).
-fn valid_box(w: f64, h: f64) -> bool {
+pub(crate) fn valid_box(w: f64, h: f64) -> bool {
     finite_positive(w) && finite_positive(h) && fits_f32(&[w, h])
 }
 
@@ -141,7 +141,7 @@ pub(crate) fn read_media<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, 
 }
 
 /// Pose `key` à `want`, ou le retire pour `None` ; rien si la valeur brute y est déjà.
-fn put_or_remove(e: &MapRef, txn: &mut TransactionMut, key: &str, want: Option<Any>) {
+pub(crate) fn put_or_remove(e: &MapRef, txn: &mut TransactionMut, key: &str, want: Option<Any>) {
     let same = match (e.get(txn, key), &want) {
         (None, None) => true,
         (Some(Out::Any(a)), Some(w)) => a == *w,
