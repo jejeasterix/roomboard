@@ -73,8 +73,15 @@ function fakeUrls() {
     },
   };
 }
-const src = (format: "glb" | "gltf" | "obj" | "stl" | "ply", main: BlobPart, files: Array<[string, BlobPart]> = []) =>
-  ({ format, name: `m.${format}`, main: new Blob([main]), files: new Map(files.map(([p, b]) => [p, new Blob([b])])) });
+type Part = string | Uint8Array;
+/** `slice()` : copie sur un `ArrayBuffer` (un `BlobPart`), quel que soit le tampon des fixtures. */
+const part = (p: Part): BlobPart => (typeof p === "string" ? p : p.slice());
+const src = (format: "glb" | "gltf" | "obj" | "stl" | "ply", main: Part, files: Array<[string, Part]> = []) => ({
+  format,
+  name: `m.${format}`,
+  main: new Blob([part(main)]),
+  files: new Map(files.map(([p, b]) => [p, new Blob([part(b)])])),
+});
 
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 /** PNG fait main (signature, IHDR 1×1) : le décodeur factice ne lit que la signature. */
@@ -92,6 +99,17 @@ async function decodable(b: Blob | undefined): Promise<boolean> {
  *  (`TextureLoader`, Safari < 17, et toujours pour un MTL). */
 function fakeNetwork(live: ReadonlyMap<string, Blob>, bitmap: boolean): string[] {
   const seen: string[] = [];
+  // Globaux du navigateur absents de Node : `self.URL` (GLTFLoader, images d'un bufferView), `ProgressEvent` (FileLoader).
+  vi.stubGlobal("self", globalThis);
+  vi.stubGlobal(
+    "ProgressEvent",
+    class extends Event {
+      constructor(type: string, init: { lengthComputable?: boolean; loaded?: number; total?: number } = {}) {
+        super(type);
+        Object.assign(this, init);
+      }
+    },
+  );
   const serve = (u: string): Blob | undefined => {
     seen.push(u);
     return u.startsWith("blob:") ? live.get(u) : undefined;
@@ -341,12 +359,21 @@ describe("rendu three (C15, X22, X27)", () => {
     expect(seen.length).toBeGreaterThanOrEqual(5);
     expect(seen.filter((u) => !u.startsWith("blob:"))).toEqual([]);
   });
-  it("glTF qui cite une image distante : lu, missing = [url] (texture de remplacement, deux chemins d'image)", async () => {
+  it("glTF qui cite une image distante : lu, missing = [url] (texture nulle, deux chemins d'image)", async () => {
     for (const bitmap of [true, false]) {
       const urls = fakeUrls();
       fakeNetwork(urls.live, bitmap);
-      const m = await view(urls).load(src("gltf", JSON.stringify(texturedGltf(["https://cdn.test/a.png"]))));
-      expect([bitmap, m.missing]).toEqual([bitmap, ["https://cdn.test/a.png"]]);
+      const maps: unknown[] = [];
+      const r = fakeRenderer();
+      r.render = (scene) =>
+        scene.traverse((o) => {
+          if ((o as { isMesh?: boolean }).isMesh === true) maps.push((o as unknown as { material: { map: unknown } }).material.map);
+        });
+      const v = createThreeModelView({ createCanvas: () => fakeCanvas().canvas, createRenderer: () => r, urls: urls.port });
+      const m = await v.load(src("gltf", JSON.stringify(texturedGltf(["https://cdn.test/a.png"]))));
+      v.draw(m, DEFAULT_CAMERA, { w: 8, h: 8 });
+      // Texture nulle : le matériau garde sa couleur de base (une image de remplacement noire le noircirait).
+      expect([bitmap, m.missing, maps]).toEqual([bitmap, ["https://cdn.test/a.png"], [null]]);
       vi.unstubAllGlobals();
     }
   });
