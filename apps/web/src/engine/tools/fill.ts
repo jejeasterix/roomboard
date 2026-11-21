@@ -2,6 +2,8 @@
  * Outil Pot (C6a, D2, D15) : aucun aperçu ; au relâché (`close("end")`), une commande au point d'appui, décidée par
  * `fillCommand` (couleur lue à ce moment, PC12) ; `cancel` et `abort` (paume, second doigt) n'écrivent rien (comme la
  * gomme, D39). Un clic = une commande = une étape (D2).
+ * C6b (B13) : avec une file (`queue`), toutes les actions y passent dans l'ordre des clics ; une image donne `ImageFill`
+ * avec la tolérance lue au relâché.
  */
 import { screenToWorld } from "../camera";
 import type { Change, Command } from "../../core/api";
