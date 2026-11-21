@@ -1,10 +1,10 @@
 # État — usage-c8-pot-zones
 
-Statut : en cours — PR à ouvrir, conditions de merge réunies
+Statut : clos — PR #26 fusionnée (main 71aab20)
 Gabarit : chantier (7 tâches, confirmé à l'étage 2)
 Objectif : Un clic du pot dans une zone fermée par plusieurs objets (traits, formes) pose un nouvel élément `kind: "fill"` non lié, au-dessus des objets d'origine, avec une tolérance de fermeture de 2 px ; hors de toute zone fermée, le pot garde le comportement de C6a (fond de la page) ; chaque clic est une étape d'annulation.
 Avancement : 13/13 tâches terminées
-Étage : 3 — depuis 2026-11-21 08:02
+Étage : 4 — clos le 2026-11-21 09:50
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c8-pot-zones   Branche : feat/usage-c8-pot-zones   Base : origin/main @ 94976f0
 Branche principale locale au lancement : 94976f0
@@ -148,7 +148,7 @@ evidence: "PR usage C8, relecture qualité Rust de fin de lot ; T12 (scripts/ver
 ---
 id: 2026-11-21-roomboard-usage-c8-pot-zones-clos
 type: journal
-summary: "RoomBoard usage C8 pot sur zones fermées clos : un clic du pot dans une zone fermée par plusieurs traits ou formes pose un élément fill non lié au-dessus (vue rastérisée, tolérance 2 px, forme i_overlay, trous), fond de la page hors zone, une étape par clic ; PR #PRNUM."
+summary: "RoomBoard usage C8 pot sur zones fermées clos : un clic du pot dans une zone fermée par plusieurs traits ou formes pose un élément fill non lié au-dessus (vue rastérisée, tolérance 2 px, forme i_overlay, trous), fond de la page hors zone, une étape par clic ; PR #26."
 created: 2026-11-21
 project: "[[roomboard]]"
 tags: [projet/roomboard, chaine/nouvelle-feature]
@@ -158,11 +158,11 @@ evidence: "docs/sessions/usage-c8-pot-zones-etat.md (dépôt jejeasterix/roomboa
 # RoomBoard — usage C8 pot sur zones fermées, clos (OD94)
 
 - Livré : `zone.rs` (rastérisation, diffusion, `i_overlay`), élément `fill` (vue, collision, anneaux, rendu pair-impair), commande `Fill Zone`, pont Wasm `fill_zone`/`zone_cells`/`fill_rings`, cible du pot (élément, zone, fond), marques `data-zones`, `data-zone-ms`, `data-zone-cells`, essai `c8-pot-zones-navigateur.mjs` branché dans `verifier.sh --e2e`.
-- Tailles : module Wasm principal TAILLE_P o (1 145 044 avant), module formats TAILLE_F o (3 100 344 avant). Scène 662 px Pot actif.
-- Porte S6 : médiane MEDIANE ms ≤ 50 sur 4 052 169 cellules, VM chargée ; marge mince.
+- Tailles : module Wasm principal 1 362 599 o (1 145 044 avant), module formats 3 100 344 o (3 100 344 avant). Scène 662 px Pot actif.
+- Porte S6 : médiane 40 ms ≤ 50 sur 4 052 169 cellules, VM chargée ; marge mince.
 - Décision : [[NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal]]. Pièges : [[roomboard-mesure-performance-inclut-le-rendu-synchrone]], [[cargo-workspace-unifie-les-fonctionnalites]].
 ```
 
 ### 5. Fiche `01_Projets/roomboard.md`, ligne 21 (« Vague 2 en cours … »)
 
-Ajouter à la fin de la ligne : ` ; C8 pot sur zones fermées (élément fill, vue rastérisée, i_overlay dans le module principal) clos (PR #PRNUM, \`main\` SHA) — voir [[2026-11-21-roomboard-usage-c8-pot-zones-clos]] et [[NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal]]`
+Ajouter à la fin de la ligne : ` ; C8 pot sur zones fermées (élément fill, vue rastérisée, i_overlay dans le module principal) clos (PR #26, \`main\` 71aab20) — voir [[2026-11-21-roomboard-usage-c8-pot-zones-clos]] et [[NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal]]`
