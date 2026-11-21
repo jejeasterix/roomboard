@@ -17,6 +17,9 @@
    4e rangée (scène 610 px en 1280 × 900) ; 8 px de chaque côté la ramène à 3 (658 px). Hauteur et largeur minimales
    inchangées ; `:where` garde la spécificité de la règle ci-dessus, les boutons contextuels resserrés plus bas l'emportent. */
 .rb-bar:where([data-dock="top"], [data-dock="bottom"]) button { padding: 0 var(--rb-gap); }
+/* Barre des pages (C13, D17) : avec « Enregistrer une copie au format .iwb… » et « … .ubz… » elle passait sur deux rangées
+   (scène 634 px avec l'outil Texte en 1280 × 900) ; ces deux actions resserrées la ramènent à une rangée (658 px). */
+.rb-bar[data-dock="bottom"] button[data-item^="export-"] { font-size: 12px; padding: 0 4px; }
 .rb-bar button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
 .rb-sep { align-self: stretch; border-inline-start: 1px solid #94a3b8; margin: 0 4px; }
 .rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed #94a3b8; min-height: var(--rb-btn); }
