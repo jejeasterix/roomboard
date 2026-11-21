@@ -519,6 +519,36 @@ describe("C6b : adoption, copie, budget (B14, B15)", () => {
     expect([a.close.mock.calls.length, b.close.mock.calls.length]).toEqual([1, 0]);
   });
 
+  it("budget : le brut d'une image dont un calcul C5 attend le lanceur n'est pas fermé ; calcul fini, il redevient évinçable", async () => {
+    const [X, Y] = [hash("1"), hash("2")];
+    const blobs = { [X]: new Blob([new Uint8Array([1])]), [Y]: new Blob([new Uint8Array([2])]) };
+    const raws = { [X]: sized(100, 100, "x"), [Y]: sized(100, 100, "y") };
+    const decode = async (b: Blob): Promise<BitmapLike> => (b === blobs[X] ? raws[X]! : raws[Y]!);
+    const calls: { job: PixelJob; resolve: (b: ImageBitmap | null) => void }[] = [];
+    const runner: PixelRunner = { run: (_slot, job) => new Promise((resolve) => void calls.push({ job, resolve })), dispose: () => undefined };
+    // Comme createImageBitmap : refus sur un bitmap fermé (InvalidStateError).
+    const copy = async (b: BitmapLike): Promise<ImageBitmap> => {
+      if ((b as unknown as { close: ReturnType<typeof vi.fn> }).close.mock.calls.length > 0) throw new Error("InvalidStateError");
+      return sized(100, 100, "copie") as unknown as ImageBitmap;
+    };
+    const onFailure = vi.fn();
+    const c = createImageCache(store(blobs), decode, vi.fn(), runner, { copy, budgetPx: 15_000, onFailure });
+    const ex: ImageElement = { id: "x", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset: X, w: 100, h: 100, brightness: 20 } };
+    const ey = img(Y, "y");
+    scene(c, ex, ey);
+    await flush();
+    scene(c, ex, ey); // brut prêt : calcul de x demandé, pas encore parti (le lanceur est occupé)
+    expect(calls).toHaveLength(1);
+    scene(c, ey); // x hors de la scène ; 2 × 10 000 px > 15 000
+    expect(raws[X]!.close).not.toHaveBeenCalled();
+    await expect(calls[0]!.job.bitmap()).resolves.toMatchObject({ tag: "copie" });
+    calls[0]!.resolve(sized(100, 100, "retouche") as unknown as ImageBitmap);
+    await flush();
+    expect(onFailure).not.toHaveBeenCalled();
+    scene(c, ey); // calcul fini : le brut de x, hors de la scène, part au budget
+    expect(raws[X]!.close).toHaveBeenCalledTimes(1);
+  });
+
   it("fermé par le budget puis redessiné : redécodé depuis le magasin", async () => {
     const decode = vi.fn(async () => sized(100, 100, "re"));
     const c = createImageCache(store({ [hash("a")]: new Blob([new Uint8Array([1])]) }), decode, vi.fn(), undefined, { budgetPx: 10 });

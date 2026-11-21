@@ -136,6 +136,8 @@ export function createImageCache(
   /** Assets lus par la scène en cours, puis par la dernière scène finie. */
   let markingAssets: Set<string> | null = null;
   let shownAssets: ReadonlySet<string> = new Set();
+  /** Calculs en route par asset : leur copie du bitmap brut n'est prise qu'au départ du calcul, le budget ne le ferme pas. */
+  const computing = new Map<string, number>();
   const area = (b: BitmapLike | null): number => {
     const s = b === null ? null : sizeOf(b);
     return s === null ? 0 : s[0] * s[1];
@@ -207,6 +209,13 @@ export function createImageCache(
     running++;
     publish();
     const i = el.image;
+    computing.set(i.asset, (computing.get(i.asset) ?? 0) + 1);
+    const settled = (): void => {
+      running--;
+      const n = (computing.get(i.asset) ?? 1) - 1;
+      if (n > 0) computing.set(i.asset, n);
+      else computing.delete(i.asset);
+    };
     const job = {
       key,
       bitmap: () => copy(raw),
@@ -216,7 +225,7 @@ export function createImageCache(
     };
     runner.run(name, job).then(
       (out) => {
-        running--;
+        settled();
         const cur = slots.get(name);
         if (out === null) {
           if (cur !== undefined) release(cur);
@@ -254,7 +263,7 @@ export function createImageCache(
         ready();
       },
       (e: unknown) => {
-        running--;
+        settled();
         badKeys.add(key);
         const cur = slots.get(name);
         if (cur?.wanted === key) {
@@ -272,7 +281,8 @@ export function createImageCache(
     );
   }
 
-  /** B15 : au-delà du budget, ferme d'abord les bitmaps le moins récemment dessinés hors de la dernière scène. */
+  /** B15 : au-delà du budget, ferme d'abord les bitmaps le moins récemment dessinés hors de la dernière scène ; jamais le
+   *  brut d'un asset dont un calcul est en route (sa copie part au départ du calcul, `bitmap: () => copy(raw)`). */
   function evict(): void {
     let total = 0;
     for (const b of done.values()) total += area(b);
@@ -280,7 +290,7 @@ export function createImageCache(
     if (total <= budget) return;
     const candidates: { readonly used: number; readonly px: number; readonly close: () => void }[] = [];
     for (const [asset, b] of done) {
-      if (shownAssets.has(asset)) continue;
+      if (shownAssets.has(asset) || computing.has(asset)) continue;
       candidates.push({
         used: usedAsset.get(asset) ?? 0,
         px: area(b),

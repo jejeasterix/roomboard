@@ -555,6 +555,8 @@ async function buildBoardSession(
       middlePan.dispose();
       sampler.dispose();
       engine.dispose();
+      // Avant le lanceur : un calcul arrêté rend null, la file fermée n'écrit plus ni ne relit le document (RF4).
+      fillQueue.dispose();
       runner?.dispose();
       players.dispose();
       dropProbe();
