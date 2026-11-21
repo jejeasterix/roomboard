@@ -768,3 +768,55 @@ describe("fakeCore — C12 (PDF)", () => {
     }
   });
 });
+
+// C8 (Q11, Q13, Q14, Q17) : élément `fill` lu, dessiné, touché, recoloré et sauvegardé ; `Fill zone` = fond.
+const fillFile = (fill: unknown): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify({
+    now: "2026-11-21T00:00:00Z",
+    appVersion: "0.1.0",
+    assets: {},
+    pages: [{ id: "p1", background: "#ffffff", backdrop: null, elements: [{ id: "f1", kind: "fill", transform: [1, 0, 0, 1, 100, 100], fill }] }],
+  }));
+const SQUARE = { color: "#facc15", w: 400, h: 400, contours: [[0, 0, 400, 0, 400, 400, 0, 400], [150, 150, 150, 170, 170, 170, 170, 150]] };
+
+describe("fakeCore — C8 (zone fermée)", () => {
+  it("C8 : Fill zone = fond (second écart D36) ; tol non fini ou ≤ 0 refusé", () => {
+    const d = fakeCore.blank();
+    const p = d.pageIds()[0] ?? "";
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "zone", x: 1, y: 2, tol: 2 }, color: "#1d4ed8" });
+    expect(c.ids).toEqual([]);
+    expect(d.page(p)?.background).toBe("#1d4ed8");
+    for (const tol of [0, -1, Number.NaN]) {
+      expect(() => d.apply({ type: "Fill", page: p, target: { kind: "zone", x: 1, y: 2, tol }, color: "#1d4ed8" })).toThrow("remplissage invalide");
+    }
+    expect(d.zoneCells(p, 2)).toBe(0);
+  });
+
+  it("C8 : fill chargé : vue, anneaux, touché loin des bords, recoloré, sauvé à l'identique", () => {
+    const d = fakeCore.load(fillFile(SQUARE));
+    expect(KNOWN_KINDS.has("fill")).toBe(true);
+    expect(d.element("f1")).toEqual({ id: "f1", kind: "fill", transform: [1, 0, 0, 1, 100, 100], fill: { color: "#facc15", w: 400, h: 400 } });
+    expect(Array.from(d.fillRings("f1") ?? [])).toEqual([4, 0, 0, 400, 0, 400, 400, 0, 400, 4, 150, 150, 150, 170, 170, 170, 170, 150]);
+    expect(d.hitTest("p1", 300, 300, 6)).toBe("f1");
+    expect(d.hitTest("p1", 103, 300, 6)).toBeNull();
+    expect(d.hitTest("p1", 260, 260, 6)).toBeNull();
+    expect(d.bounds(["f1"])).toEqual({ x0: 100, y0: 100, x1: 500, y1: 500 });
+    const c = d.apply({ type: "Fill", page: "p1", target: { kind: "inside", id: "f1" }, color: "#dc2626" });
+    expect(c.ids).toEqual(["f1"]);
+    const v = d.version();
+    d.apply({ type: "Fill", page: "p1", target: { kind: "inside", id: "f1" }, color: null });
+    expect(d.version()).toBe(v);
+    const r = fakeCore.load(d.save("2026-11-21T00:00:00Z", "0.1.0"));
+    expect(r.element("f1")).toEqual(d.element("f1"));
+    expect(r.fillRings("f1")).toEqual(d.fillRings("f1"));
+  });
+
+  it("C8 : fill mal formé : cadre inconnu de sa boîte, réécrit tel quel", () => {
+    const bad = { color: "#facc15", w: 300, h: 200, contours: [[0, 0, 1]] };
+    const d = fakeCore.load(fillFile(bad));
+    expect(d.element("f1")).toEqual({ id: "f1", kind: "unknown", transform: [1, 0, 0, 1, 100, 100], unknown: { sourceKind: "fill", w: 300, h: 200 } });
+    expect(d.fillRings("f1")).toBeNull();
+    const again = fakeCore.load(d.save("2026-11-21T00:00:00Z", "0.1.0"));
+    expect(again.element("f1")).toEqual(d.element("f1"));
+  });
+});
