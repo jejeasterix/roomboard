@@ -52,7 +52,7 @@ export interface AppProps {
   navigate(search: string): void;
 }
 
-type Panel = "settings" | "profiles" | "editor" | "grid" | "image";
+type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;

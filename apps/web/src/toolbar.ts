@@ -115,6 +115,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   settings: { label: "Réglages" },
   profiles: { label: "Profil" },
   grid: { label: "Grille" },
+  library: { label: "Bibliothèque" },
   "table-row-insert": { label: "+ Ligne" },
   "table-col-insert": { label: "+ Colonne" },
   "table-row-remove": { label: "− Ligne" },
