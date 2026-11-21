@@ -197,18 +197,32 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     await elements(6, "S5 : fichier rouvert, 6 éléments");
     check(!requests.some((u) => LAZY.test(u)), "S4 : rouvert et dessiné sans charger three");
     await page.click(item("select"));
-    await mouse.click(...(await center()));
-    await until(async () => (await tag()).startsWith("glb;"), "S5 : objet sélectionné");
+    // Les six objets se recouvrent : on cherche, sur une grille, un point où le clic prend le GLB (format « glb »).
+    let found = false;
+    for (let y = 40; y < box.height - 40 && !found; y += 40) {
+      for (let x = 40; x < box.width - 40 && !found; x += 40) {
+        await mouse.click(x, y);
+        await fr();
+        found = (await tag()).startsWith("glb;");
+      }
+    }
+    check(found, "S5 : objet du GLB sélectionné");
     check((await tag()) === "glb;instantane;87;20", `S5 : vue gardée « ${await tag()} »`);
     check(!flat(await centerPixel()), "S5 : instantané dessiné sans WebGL");
     await page.click('[data-model3d="orbit"]');
     await until(async () => (await tag()).split(";")[1] === "sans-webgl", "S5 : état sans-webgl après « Tourner »");
-    check(await page.$eval('[data-model3d="orbit"]', (b) => b.disabled || b.getAttribute("aria-disabled") === "true"), "S5 : « Tourner » désactivé");
+    await until(async () => page.$eval('[data-model3d="orbit"]', (b) => b.disabled || b.getAttribute("aria-disabled") === "true").catch(() => false), "S5 : « Tourner » désactivé", 5000);
+    await until(async () => (await page.locator('[data-model3d="message"]').count()) > 0, "S5 : message de la barre affiché", 5000).catch(async (e) => {
+      console.log(`diagnostic : barre = ${await page.locator("[data-model3d-bar]").innerText()}`);
+      throw e;
+    });
     const msg = await page.$eval('[data-model3d="message"]', (e) => e.textContent ?? "");
     check(msg.includes("3D indisponible sur ce poste : l'objet garde son image"), `S5 : message « ${msg} »`);
     await dropFile(page, "#stage", "cube.glb", cube, "model/gltf-binary", [700, 500]);
     await elements(7, "S5 : GLB déposé sans WebGL, 7 éléments");
     await messageSeen("3D indisponible sur ce poste");
+    await mouse.click(700, 500);
+    await fr();
     const card = await centerPixel();
     check(Math.abs(card[0] - 0xe5) <= 8 && Math.abs(card[1] - 0xe7) <= 8 && Math.abs(card[2] - 0xeb) <= 8, `S5 : carte « Objet 3D » (${card.join(",")})`);
     // Fichier d'avant C15.
@@ -217,7 +231,9 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     await until(async () => (await tabs()) === n1 + 1, "fichier d'avant C15 : nouvel onglet");
     await until(async () => Number(await attr("data-elements")) >= 1, "fichier d'avant C15 ouvert, éléments présents");
     check(((await attr("data-model3d")) ?? "") === "", "fichier d'avant C15 : data-model3d vide");
-    check(errors.length === 0, `aucune erreur dans la page (passage sans WebGL)${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
+    // Sans WebGL, three écrit lui-même « Error creating WebGL context » dans la console avant que RoomBoard le rattrape.
+    const unexpected = errors.filter((e) => !e.includes("Error creating WebGL context"));
+    check(unexpected.length === 0, `aucune erreur dans la page (passage sans WebGL)${unexpected.length > 0 ? ` : ${unexpected.join(" | ")}` : ""}`);
     return;
   }
 
@@ -228,7 +244,7 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
 
   // S2 : sélection, orbite, instantané, annulation.
   await page.click(item("select"));
-  await mouse.click(...(await center()));
+  await mouse.click(400, 300);
   await until(async () => (await tag()) === "glb;instantane;30;20", `S2 : sélectionné : data-model3d « ${await tag()} »`);
   await page.waitForSelector("[data-model3d-bar]");
   check((await stageBox(page, 640)).height >= 640, "S2 : scène >= 640 px avec la barre 3D ouverte");
@@ -249,17 +265,27 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
   }
   await mouse.up();
   await until(async () => (await version()) === v0 + 1, "S2 : relâché : data-version + 1");
-  await page.mouse.click(box.x + box.width - 40, box.y + box.height - 40);
+  // L'orbite est modale : Échap la ferme (l'objet reste sélectionné, instantané de la nouvelle vue), puis clic dans le vide.
+  await press("Escape");
+  await until(async () => (await tag()) === "glb;instantane;87;20", `S2 : orbite fermée, instantané de la vue tournée : « ${await tag()} »`);
+  let turned = await centerPixel();
+  for (let i = 0; i < 40 && flat(turned); i++) {
+    await page.waitForTimeout(100);
+    await fr();
+    turned = await centerPixel();
+  }
+  console.log(`versions : départ ${v0}, après orbite ${await version()}`);
+  await mouse.click(60, 650);
   await fr();
   await until(async () => (await tag()) === "", "S2 : désélectionné");
-  const after = await centerPixel().catch(() => before);
-  check(dist(after, before) > 20 || (await version()) === v0 + 1, "S2 : instantané de la nouvelle vue");
+  check(dist(turned, before) > 20, `S2 : pixel central change après l'orbite (${before.join(",")} -> ${turned.join(",")})`);
   await press("Control+z");
-  check((await version()) === v0, "S2 : Ctrl+Z en une étape : data-version revient");
-  await mouse.click(...(await center()));
+  // data-version est un compteur de changements (l'annulation en compte un de plus) : l'oracle est la vue relue.
+  check((await version()) !== v0 + 1, "S2 : Ctrl+Z a modifié le document (data-version change)");
+  await mouse.click(400, 300);
   await until(async () => (await tag()) === "glb;instantane;30;20", "S2 : vue d'origine rétablie par Ctrl+Z");
   await press("Control+y");
-  await mouse.click(...(await center()));
+  await mouse.click(400, 300);
   await until(async () => (await tag()) === "glb;instantane;87;20", "S2 : Ctrl+Y : vue tournée");
 
   // S3 : OBJ + MTL ensemble, .obj seul, STL, PLY, ZIP.
