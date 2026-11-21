@@ -1580,7 +1580,7 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
 
   it("C13 : .ubz de plus de 100 000 objets au total : refus, « fichier de tableau trop gros (plus de 100 000 objets) », aucun onglet (D16)", async () => {
     const many = (n: number): BoardListPage => ({ background: null, objects: Array.from({ length: n }, () => rectPage().objects[0]!) });
-    const b = fakeBoard({ pages: [many(50_000), many(50_001)] });
+    const b = fakeBoard({ entries: [{ path: "page1.svg", blob: new Blob(["1"]) }], pages: [many(50_000), many(50_001)] });
     const ws = await setupWorkspace({ board: b.ports });
     expect(await ws.openBoard({ name: "enorme.ubz", blob: new Blob([ZIP]), format: "ubz" })).toBe(false);
     expect(ws.tabs.list()).toHaveLength(1);
