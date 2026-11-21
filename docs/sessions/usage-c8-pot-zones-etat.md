@@ -3,10 +3,11 @@
 Statut : en cours
 Gabarit : chantier (7 tâches, confirmé à l'étage 2)
 Objectif : Un clic du pot dans une zone fermée par plusieurs objets (traits, formes) pose un nouvel élément `kind: "fill"` non lié, au-dessus des objets d'origine, avec une tolérance de fermeture de 2 px ; hors de toute zone fermée, le pot garde le comportement de C6a (fond de la page) ; chaque clic est une étape d'annulation.
-Avancement : 6/8 tâches terminées
+Avancement : 7/10 tâches terminées
 Étage : 3 — depuis 2026-11-21 08:02
 Tâche : T7 — essai navigateur, capture, tailles — depuis 2026-11-21 08:31
-Tâche : T8 — correctifs de la revue de T1 — depuis 2026-11-21 08:24
+Tâche : T9 — porte S6 — depuis 2026-11-21 08:43
+Tâche : T10 — marques à jour — depuis 2026-11-21 08:43
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c8-pot-zones   Branche : feat/usage-c8-pot-zones   Base : origin/main @ 94976f0
 Branche principale locale au lancement : 94976f0
@@ -31,7 +32,9 @@ Vagues : V1 = T1, T3, T5 · V2 = T2, T4, T6 · V3 = T7. Worktrees : ~/projets/ro
 | T5 marques de zone | — | terminée | 1/3 | 690f802 | zone-marks + stage-tags 11 tests (dont « C8 Fill zone : durée mesurée ») |
 | T6 outil Pot, cible zone | T3, T5 | terminée | 1/3 | 51961da | fill-target, tools/fill, image-fill, board-session 108 tests, 3 « C8 » ; 2 tests C6a remplacés comme prévu (clic dans le vide → Fill zone) |
 | T7 essai navigateur, capture, tailles | toutes | échec 1 : porte S6 médiane 163 ms > 50 ms (VM charge 24–28 sur 8 cœurs), S1–S5 OK ; défaut : `data-zone-ms` écrit après le rendu | 1/3 | a1cbb2d (wip, porte rouge) | — |
-| T8 correctifs revue T1 (murs fins, rects, tolérance par facteur, notice i_tree) | T1 | en cours | 1/3 | — | — |
+| T8 correctifs revue T1 (murs fins, rects, tolérance par facteur, notice i_tree) | T1 | terminée | 1/3 | e9ebe05 | core zone 18 tests (wall_thinner_than_a_cell_still_closes ok) ; témoin S6 natif 126 ms |
+| T9 porte S6 : profil par phase, réductions, repli DA-Z5 étape 1 | T8 | en cours | 1/3 | — | — |
+| T10 marques de zone à jour au rendu du clic | T5, T6 | en cours | 1/3 | — | — |
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK sans régression · scénarios réussis · capture dans `docs/essais/` · PR mergée par fusion locale `--no-ff` et `git push` sans force
