@@ -304,7 +304,7 @@ scripts et licences, essais et documentation, tests). Chemins de `origin/main` @
 - **HO2-3** Une conversion à la fois (O12).
 - **HO2-4** Copies d'originaux gardées 7 jours dans le dossier cache, jamais supprimées à la sortie (O23).
 - **HO2-5** COM : au délai, le processus Office lancé par nous est tué par son PID ; une instance de PowerPoint déjà ouverte
-  par l'utilisateur n'est jamais tuée (O13). Essai sur le PC.
+  par l'utilisateur n'est jamais tuée (O13). Essai sur le PC. Limite connue : une instance ouverte par l'utilisateur pendant la conversion (donc absente de la liste d'avant) peut être tuée au délai ; à vérifier sur le PC.
 - **HO2-6** Le PDF converti n'a pas de plafond propre (seule l'entrée est bornée à 100 Mio, O14) ; lu par morceaux (O35).
 - **HO2-7** Relevé toutes les secondes, changement stable sur deux relevés (O21).
 - **HO2-8** Tests `soffice` exigés par défaut, sautés seulement par `ROOMBOARD_SANS_SOFFICE=1` dit sur `stderr` (O26).

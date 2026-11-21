@@ -25,7 +25,16 @@ fn main() -> ExitCode {
     }
     let granted = GrantedPaths::default();
     granted.grant([input.clone()]);
-    let root = std::env::temp_dir().join(format!("roomboard-convertir-{}", std::process::id()));
+    // Dossier privé sous le cache de l'utilisateur, jamais sous `temp_dir()` (partagé).
+    let cache = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")));
+    let Some(cache) = cache else {
+        eprintln!("io : ni XDG_CACHE_HOME ni HOME");
+        return ExitCode::from(1);
+    };
+    let root = cache.join("roomboard-essai");
     let code = match convert_granted(&granted, input, Some(&converter), &root, CONVERT_TIMEOUT) {
         Ok(c) => {
             let copied = std::fs::copy(&c.pdf, output);
@@ -46,6 +55,6 @@ fn main() -> ExitCode {
             1
         }
     };
-    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(root.join("conversions"));
     ExitCode::from(code)
 }

@@ -5,7 +5,7 @@
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -317,6 +317,8 @@ pub fn write_profile(profile: &Path) -> Result<(), ConvertError> {
 static CONVERT_LOCK: Mutex<()> = Mutex::new(());
 /// Compteur des dossiers de conversion de ce processus (`<pid>-<n>`).
 static NEXT_CONVERSION: AtomicU64 = AtomicU64::new(0);
+/// Essais d'identifiant `<pid>-<n>` avant d'abandonner (dossier déjà présent).
+pub(crate) const MAX_ID_TRIES: u32 = 1000;
 const CONVERSIONS_DIR: &str = "conversions";
 /// Sortie attendue dans le dossier de conversion (l'entrée y est copiée sous `source.<ext>`).
 const OUTPUT_NAME: &str = "source.pdf";
@@ -362,14 +364,37 @@ fn new_conversion_dir(work_root: &Path) -> Result<(String, PathBuf), ConvertErro
     ensure_private_dir(work_root)?;
     let conversions = work_root.join(CONVERSIONS_DIR);
     ensure_private_dir(&conversions)?;
-    let id = format!(
-        "{}-{}",
-        std::process::id(),
-        NEXT_CONVERSION.fetch_add(1, Ordering::Relaxed)
-    );
-    let dir = conversions.join(&id);
-    fs::create_dir(&dir).map_err(io)?;
-    Ok((id, dir))
+    // Racine absolue : `--outdir`, l'entrée et `file_url` du profil le sont alors aussi.
+    let conversions = conversions.canonicalize().map_err(io)?;
+    for _ in 0..MAX_ID_TRIES {
+        let id = format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT_CONVERSION.fetch_add(1, Ordering::Relaxed)
+        );
+        let dir = conversions.join(&id);
+        match fs::create_dir(&dir) {
+            Ok(()) => return Ok((id, dir)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(io(e)),
+        }
+    }
+    Err(ConvertError::Io(
+        "aucun identifiant de conversion libre".into(),
+    ))
+}
+
+/// Copie au plus `max` octets de `src` vers `dst` ; un flux plus long est refusé (`TooLarge`).
+fn copy_bounded(
+    src: impl Read,
+    dst: &mut impl std::io::Write,
+    max: u64,
+) -> Result<u64, ConvertError> {
+    let n = std::io::copy(&mut src.take(max + 1), dst).map_err(io)?;
+    if n > max {
+        return Err(ConvertError::TooLarge);
+    }
+    Ok(n)
 }
 
 /// Arbre de processus d'une conversion (O11, DA-O5) : groupe de processus sous Unix (`process_group(0)` au lancement),
@@ -540,15 +565,13 @@ pub fn convert_granted(
 ) -> Result<Converted, ConvertError> {
     let src = g.granted_path(path).ok_or(ConvertError::NotGranted)?;
     let ext = office_extension(&src).ok_or(ConvertError::NotOffice)?;
-    if fs::metadata(&src).map_err(io)?.len() > OFFICE_MAX_BYTES {
+    // Une seule ouverture : taille, en-tête et copie portent sur le même descripteur.
+    let mut file = fs::File::open(&src).map_err(io)?;
+    if file.metadata().map_err(io)?.len() > OFFICE_MAX_BYTES {
         return Err(ConvertError::TooLarge);
     }
     let mut head = Vec::new();
-    fs::File::open(&src)
-        .map_err(io)?
-        .take(8)
-        .read_to_end(&mut head)
-        .map_err(io)?;
+    (&mut file).take(8).read_to_end(&mut head).map_err(io)?;
     if !has_office_magic(&ext, &head) {
         return Err(ConvertError::NotOffice);
     }
@@ -557,7 +580,10 @@ pub fn convert_granted(
     let (id, dir) = new_conversion_dir(work_root)?;
     let guard = RemoveOnDrop(Some(dir.clone()));
     let input = dir.join(format!("source.{ext}"));
-    fs::copy(&src, &input).map_err(io)?;
+    file.rewind().map_err(io)?;
+    let mut copy = fs::File::create(&input).map_err(io)?;
+    copy_bounded(&mut file, &mut copy, OFFICE_MAX_BYTES)?;
+    drop(copy);
     match converter {
         Converter::LibreOffice(program) => run_libreoffice(program, &input, &dir, timeout)?,
         #[cfg(windows)]
@@ -1057,7 +1083,11 @@ mod tests {
         match find_converter(&Search::from_env()) {
             Some(c) => Some(c),
             None if std::env::var("ROOMBOARD_SANS_SOFFICE").as_deref() == Ok("1") => {
-                eprintln!("test sauté : soffice introuvable et ROOMBOARD_SANS_SOFFICE=1");
+                // Direct sur stderr : libtest ne capture pas `io::stderr()`, le saut se voit toujours.
+                let _ = std::io::Write::write_all(
+                    &mut std::io::stderr(),
+                    b"test saute : soffice introuvable et ROOMBOARD_SANS_SOFFICE=1\n",
+                );
                 None
             }
             None => panic!("soffice introuvable : installez LibreOffice, ou posez ROOMBOARD_SANS_SOFFICE=1 pour sauter ce test"),
@@ -1374,5 +1404,103 @@ mod tests {
         purge_conversions(&work);
         assert!(!dead.exists());
         assert!(mine.exists() && other.exists());
+    }
+    /// Revue T12 (1) : une conversion réussie tue aussi les enfants laissés par le convertisseur ; après libération, le
+    /// dossier de travail est vide.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn success_kills_leftover_children() {
+        let d = dir("enfant-reussi");
+        let conv = fake_converter(
+            &d,
+            "sleep 60 &\necho $! > \"$d/enfant.pid\"\nprintf '%%PDF-1.4' > source.pdf\nexit 0",
+        );
+        let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
+        let work = d.join("travail");
+        let c = convert_granted(&g, &src, Some(&conv), &work, CONVERT_TIMEOUT).expect("converti");
+        let pid: u32 = fs::read_to_string(d.join("enfant.pid"))
+            .expect("enfant.pid")
+            .trim()
+            .parse()
+            .expect("pid");
+        assert!(gone(pid), "enfant ({pid}) encore vivant après le succès");
+        release_conversion(&g, &work, &c.id);
+        assert_eq!(left_in(&work), 0);
+    }
+
+    /// Revue T12 (2) : un dossier `<pid>-<n>` déjà présent n'échoue pas la conversion : l'identifiant suivant est pris.
+    #[test]
+    fn conversion_dir_skips_existing_id() {
+        let d = dir("collision-conv");
+        let work = d.join("travail");
+        let taken = work.join(CONVERSIONS_DIR).join(format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT_CONVERSION.load(Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&taken).unwrap();
+        let (id, dir) = new_conversion_dir(&work).expect("id suivant");
+        assert!(dir.is_dir() && dir != taken, "{id}");
+    }
+
+    /// Revue T12 (3) : racine de travail relative : `--outdir`, l'entrée et le profil sont absolus.
+    #[cfg(unix)]
+    #[test]
+    fn relative_work_root_gives_absolute_arguments() {
+        let d = dir("racine-relative");
+        let conv = fake_converter(
+            &d,
+            "printf '%s\\n' \"$@\" > \"$d/args\"\nprintf '%%PDF-1.4' > source.pdf",
+        );
+        let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
+        let rel = PathBuf::from(format!("rb-rel-{}", std::process::id()));
+        let r = convert_granted(&g, &src, Some(&conv), &rel, CONVERT_TIMEOUT);
+        let _ = fs::remove_dir_all(&rel);
+        r.expect("converti");
+        let args = fs::read_to_string(d.join("args")).unwrap();
+        let lines: Vec<&str> = args.lines().collect();
+        let after = |flag: &str| lines[lines.iter().position(|l| *l == flag).unwrap() + 1];
+        assert!(Path::new(after("--outdir")).is_absolute(), "{args}");
+        assert!(Path::new(lines.last().unwrap()).is_absolute(), "{args}");
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("-env:UserInstallation=file:///")),
+            "{args}"
+        );
+    }
+
+    /// Revue T12 (4) : un fichier d'un octet de plus que le plafond est refusé, sans dossier laissé.
+    #[cfg(unix)]
+    #[test]
+    fn file_over_the_limit_is_refused() {
+        let d = dir("trop-gros");
+        let conv = fake_converter(&d, "exit 0");
+        let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&src)
+            .unwrap()
+            .set_len(OFFICE_MAX_BYTES + 1)
+            .unwrap();
+        let work = d.join("travail");
+        assert_eq!(
+            convert_granted(&g, &src, Some(&conv), &work, CONVERT_TIMEOUT).err(),
+            Some(ConvertError::TooLarge)
+        );
+        assert_eq!(left_in(&work), 0);
+    }
+
+    /// Revue T12 (4) : la copie bornée refuse un flux qui dépasse le plafond, même si la taille annoncée était bonne.
+    #[test]
+    fn bounded_copy_refuses_growth_past_the_limit() {
+        let mut out = Vec::new();
+        let src = std::io::repeat(0).take(OFFICE_MAX_BYTES + 5);
+        assert_eq!(
+            copy_bounded(src, &mut out, OFFICE_MAX_BYTES).err(),
+            Some(ConvertError::TooLarge)
+        );
+        let mut ok = Vec::new();
+        assert_eq!(copy_bounded(&b"abc"[..], &mut ok, 3), Ok(3));
     }
 }
