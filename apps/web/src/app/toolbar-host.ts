@@ -34,6 +34,8 @@ export interface HostTargets {
   insertPages(): void;
   /** C12 (PF19) : « Exporter en PDF… » ; absent (hôte partiel) : sans effet (PC9). */
   exportPdf?(): void;
+  /** C13 (D17) : « Enregistrer une copie au format .iwb… » ou « … .ubz… » ; absent (hôte partiel) : sans effet. */
+  exportBoard?(format: "iwb" | "ubz"): void;
   /** C3 (Z13). */
   selection(a: SelectionAction): void;
 }
@@ -49,6 +51,8 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "page-remove": (t) => void t.engine().removePage(),
   "page-insert-file": (t) => t.insertPages(),
   "export-pdf": (t) => t.exportPdf?.(),
+  "export-iwb": (t) => t.exportBoard?.("iwb"),
+  "export-ubz": (t) => t.exportBoard?.("ubz"),
   "fit-page": (t) => t.engine().fitPage(),
   "eraser-mode": (t) => t.engine().setEraserMode(t.engine().state().eraserMode === "partial" ? "object" : "partial"),
   "file-new": file("new"),

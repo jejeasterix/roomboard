@@ -234,3 +234,18 @@ describe("barre : Exporter en PDF (C12, PF19)", () => {
     expect(() => createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!).runAction("export-pdf")).not.toThrow();
   });
 });
+
+describe("barre : copies au format (C13, D17)", () => {
+  it("C13 : export-iwb → exportBoard(\"iwb\") ; export-ubz → exportBoard(\"ubz\")", () => {
+    const exportBoard = vi.fn();
+    const t = { engine: () => ({}), runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn(), exportBoard } as unknown as HostTargets;
+    const host = createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!);
+    host.runAction("export-iwb");
+    host.runAction("export-ubz");
+    expect(exportBoard.mock.calls).toEqual([["iwb"], ["ubz"]]);
+  });
+  it("C13 : sans exportBoard (hôte partiel) : rien, aucune erreur", () => {
+    const t = { engine: () => ({}), runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
+    expect(() => createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!).runAction("export-iwb")).not.toThrow();
+  });
+});

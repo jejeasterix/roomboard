@@ -330,6 +330,10 @@ describe("barre : Exporter en PDF (C12, PF19)", () => {
   it("ACTION_TABLE : export-pdf « Exporter en PDF… »", () => {
     expect(ACTION_TABLE["export-pdf"]?.label).toBe("Exporter en PDF…");
   });
+  it("C13 : ACTION_TABLE : export-iwb et export-ubz, libellés sans « IWB/CFF »", () => {
+    expect(ACTION_TABLE["export-iwb"]?.label).toBe("Enregistrer une copie au format .iwb…");
+    expect(ACTION_TABLE["export-ubz"]?.label).toBe("Enregistrer une copie au format .ubz…");
+  });
 });
 
 describe("couleurs du pot (C6a, D16, D17)", () => {
