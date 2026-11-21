@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BoardSession } from "../app/board-session";
 import { createTabs } from "../app/tabs";
 import type { TabSession, Workspace } from "../app/workspace";
+import { createResourceLibrary, type ResourceLibrary } from "../app/library";
+import { createMemoryLibraryFiles } from "../platform/library-files";
 import { createAssetStore } from "../core/asset-store";
 import type { EngineState } from "../engine/engine";
 import { createSettingsStore, parseSettings } from "../engine/settings";
@@ -16,7 +18,7 @@ import { createProfileStore, type KeyValue } from "../profile-store";
 import type { RuntimeCapabilities } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { createActiveProfile } from "./active-profile";
-import { App, showStartError } from "./App";
+import { App, showStartError, type AppProps } from "./App";
 import { layoutFor } from "./layout";
 
 // Lus sur le disque : sous vitest, un import `?raw` de CSS rend une chaîne vide.
@@ -180,6 +182,10 @@ function fakeWorkspace(first: FakeTab): Workspace {
     openPdf: vi.fn(async () => true),
     exportPdf: vi.fn(async () => false),
     selection: vi.fn(),
+    insertResource: vi.fn(async () => "inserted"),
+    captureResource: vi.fn(async () => null),
+    ask: vi.fn(async () => true),
+    say: vi.fn(async () => undefined),
     canPaste: () => false,
     onClipboard: () => () => undefined,
     anyDirty: () => false,
@@ -199,7 +205,7 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"] } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
   const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
@@ -227,6 +233,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
         profileFiles={files}
         stages={stages}
         navigate={navigate}
+        {...(opts.library ? { library: opts.library } : {})}
       />
     ),
     container,
@@ -254,6 +261,19 @@ afterEach(() => {
 });
 
 describe("App (T95)", () => {
+  it("C4 : le bouton Bibliothèque ouvre le panneau, calé en popover", async () => {
+    const library: ResourceLibrary = createResourceLibrary({
+      files: [createMemoryLibraryFiles("mine")],
+      zip: { unzip: async () => [], zip: async () => new Uint8Array() },
+      now: () => "n",
+      appVersion: "t",
+    });
+    const shared = { desktop: false, chosen: () => false, choose: async () => false };
+    const { container } = renderApp({ library: { library, shared, packs: { pick: async () => null, save: async () => true } } });
+    click(container.querySelector('button[data-item="library"]'));
+    await vi.waitFor(() => expect(container.querySelector('.rb-popover[data-panel="library"] #bibliotheque')).not.toBeNull());
+  });
+
   it("App : Exporter en PDF (C12) — le bouton de la barre des pages appelle workspace.exportPdf", () => {
     const { container, workspace } = renderApp();
     click(container.querySelector('button[data-item="export-pdf"]'));
