@@ -892,6 +892,19 @@ describe("importFiles : fichiers liés (C15, DAX2)", () => {
     expect(r.refused).toEqual(["a.png"]);
   });
 
+  it("X17, coque (maxBytes nul) : un fichier réclamé au-delà du plafond du gestionnaire n'est ni lu ni passé, il est dit trop gros", async () => {
+    const { blobs, counted, times } = counter();
+    const log: string[] = [];
+    const d = deps();
+    const h: ImportHandler = { ...fake("fmod", log, true), limit: { maxBytes: 20, message: "trop gros pour fmod" } };
+    const big: DroppedFile = { ...txt("a.png", "x"), size: 21 };
+    const r = await importerOf([h, fake("png", log)], d).importFiles([counted(big), txt("m.fmod", "a.png b.png"), txt("b.png", "y")]);
+    expect(log).toEqual(["fmod:m.fmod[b.png]"]);
+    expect(times(blobs, "a.png")).toBe(0);
+    expect(r).toEqual({ opened: [], inserted: ["m.fmod"], refused: [], failed: ["a.png"] });
+    expect(d.notify.mock.calls.map((c) => c[0])).toEqual(["a.png : trop gros pour fmod"]);
+  });
+
   it("deux modèles : un fichier réclamé par le premier n'est pas offert au second", async () => {
     const log: string[] = [];
     await importerOf([fake("fmod", log, true), fake("png", log)], deps()).importFiles([txt("m1.fmod", "a.png"), txt("m2.fmod", "a.png"), txt("a.png", "x")]);

@@ -253,6 +253,38 @@ describe("gestionnaire 3D (C15)", () => {
     expect(s.messages()).toEqual([`big.glb : ${MODEL3D_TOO_BIG_MESSAGE}`]);
   });
 
+  it("X17, coque (constat Q2) : un .mtl cité de plus de 100 Mo n'est ni lu ni lié ; dit trop gros, le modèle inséré", async () => {
+    const s = setup();
+    const blob = vi.fn(async (): Promise<Blob> => {
+      throw new Error("lu en entier");
+    });
+    const big: DroppedFile = { ...file("cube.mtl", cubeMtl()), size: MODEL3D_MAX_BYTES + 1, blob };
+    const r = await s.importer.importFiles([file("cube.obj", cubeObj()), big], null);
+    expect(blob).not.toHaveBeenCalled();
+    expect(r).toEqual({ opened: [], inserted: ["cube.obj"], refused: [], failed: ["cube.mtl"] });
+    expect(s.models()[0]!.files).toEqual([]);
+    expect(s.messages()).toEqual([`cube.obj : ${MTL_MISSING_MESSAGE}`, `cube.mtl : ${MODEL3D_TOO_BIG_MESSAGE}`]);
+  });
+
+  it("X17, ZIP compris (constat Q3) : une entrée de plus de 100 Mo n'est jamais lue ni rangée ; dite trop grosse", async () => {
+    const s = setup();
+    const read = vi.fn(() => {
+      throw new Error("lu en entier");
+    });
+    const huge = { size: MODEL3D_MAX_BYTES + 1, type: "", slice: read, arrayBuffer: read, text: read, stream: read } as unknown as Blob;
+    const blobOf = (x: Uint8Array | string): Blob => new Blob([(typeof x === "string" ? enc(x) : x) as Uint8Array<ArrayBuffer>]);
+    s.model3d.readZip = vi.fn(async () => [
+      { path: "big.glb", blob: huge },
+      { path: "cube.obj", blob: blobOf(cubeObj()) },
+      { path: "cube.mtl", blob: blobOf(cubeMtl()) },
+    ]);
+    const r = await s.importer.importFiles([file("a.zip", zipOf({ "x.txt": "x" }))], null);
+    expect(read).not.toHaveBeenCalled();
+    expect(r).toEqual({ opened: [], inserted: ["a.zip"], refused: [], failed: [] });
+    expect(s.models().map((m) => [m.asset.name, m.files.map((f) => f.path)])).toEqual([["cube.obj", ["cube.mtl"]]]);
+    expect(s.messages()).toEqual([`big.glb (a.zip) : ${MODEL3D_TOO_BIG_MESSAGE}`]);
+  });
+
   it("image déposée avec un modèle qui la cite : pas d'AddImage ; non citée : AddImage (effet de bord, HX2-6)", async () => {
     const s = setup();
     const r = await s.importer.importFiles(
