@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub mod office;
+pub mod originals;
 
 /// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
