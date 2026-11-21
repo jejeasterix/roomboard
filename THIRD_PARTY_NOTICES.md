@@ -405,3 +405,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Formats de tableaux interactifs (C13)
+
+- **IWB/CFF** (Interactive Whiteboard Common File Format), version 1.0, © 1EdTech Consortium, Inc. (ex-IMS Global
+  Learning Consortium) ; travaux initiaux de Becta. RoomBoard lit et écrit des fichiers `.iwb` au titre de la licence
+  de spécification de 1EdTech (https://www.1edtech.org/standards/specification-license, § 3 : mise en œuvre sans
+  redevance). RoomBoard ne revendique aucune conformité à la norme et n'emploie pas son nom dans son interface (§ 2c ;
+  https://www.1edtech.org/about/legal/trademarks).
+- **OpenBoard** `.ubz` : format lu et écrit d'après le comportement d'OpenBoard (GPL-3.0) ; aucun code d'OpenBoard
+  n'est repris dans RoomBoard.
+- Lecteur XML : `quick-xml` 0.42 (MIT), déjà relevé par `calamine` (`scripts/licences-acceptees.json`).
