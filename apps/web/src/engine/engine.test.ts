@@ -1426,6 +1426,15 @@ describe("moteur — C5 (retouche d'image)", () => {
     return { doc, engine, renderer, colorAt, page, id, drag, image, rect, ctrl: (k: string) => key(k, { ctrlKey: true }) };
   }
 
+  it("C6b I31 : un remplissage d'image écrit pendant un brouillon du panneau : brouillon jeté, aperçu retiré", () => {
+    const { engine, renderer, id, page } = c5();
+    const edit = engine.editImage(id)!;
+    edit.preview({ brightness: 50 });
+    expect(renderer.imagePreviews.at(-1)).not.toBeNull();
+    engine.run({ type: "Fill", page, target: { kind: "image", id, asset: { id: "cd".repeat(32), name: "a.png", mime: "image/png", size: 9 } }, color: "#facc15" });
+    expect(renderer.imagePreviews.at(-1)).toBeNull();
+  });
+
   it("C5 selectionImage : l'image sélectionnée seule ; null à deux objets", () => {
     const { engine, id, drag, rect } = c5();
     expect(engine.state().selectionImage).toBe(id);
