@@ -1095,7 +1095,7 @@ mod tests {
     fn fill_bounds_and_rings_are_local() {
         let (d, _, s, f) = fill_doc();
         assert_eq!(
-            d.bounds(&[f.clone()]),
+            d.bounds(std::slice::from_ref(&f)),
             Some(Bounds {
                 x0: 100.0,
                 y0: 100.0,
