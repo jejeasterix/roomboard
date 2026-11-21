@@ -105,8 +105,8 @@ scripts et licences, essais et documentation, tests). Chemins de `origin/main` @
 | `apps/desktop/src-tauri/Cargo.lock` | oui | `tauri-plugin-opener`, `open`, sans build | S |
 | `apps/desktop/src-tauri/capabilities/default.json` | non | appels Rust seulement ; description complétée d'une phrase | V |
 | `apps/desktop/src-tauri/tauri.conf.json:29-31` (`plugins`) | non | aucune configuration d'`opener` (appel Rust) ; `fs.scopeDroppedPaths: false` gardé | V |
-| `apps/desktop/src-tauri/tauri.conf.json:12-27` (CSP) | non | aucune ressource neuve | V |
-| `apps/desktop/src-tauri/tauri.conf.json:35-58` (`fileAssociations`) | non | aucune association Office (RoomBoard n'est pas l'éditeur de ces fichiers) | V |
+| `apps/desktop/src-tauri/tauri.conf.json:13-24` (CSP) | non | aucune ressource neuve | V |
+| `apps/desktop/src-tauri/tauri.conf.json:36-58` (`fileAssociations`) | non | aucune association Office (RoomBoard n'est pas l'éditeur de ces fichiers) | V |
 
 ### Interface web (`apps/web/src`)
 
@@ -178,7 +178,7 @@ scripts et licences, essais et documentation, tests). Chemins de `origin/main` @
 | `crates/roomboard-shell/src/originals.rs` (tests) | oui | nom assaini, extension, en-tête, relevé, purge | — |
 | `crates/roomboard-shell/src/lib.rs:166-481` (tests existants) | non | à garder verts | V |
 | `crates/roomboard-core/src/document.rs:1585-1650` (tests `from_pdf_pages`) | oui | appel avec `None` ; test neuf avec `original`, rechargement à l'octet | V |
-| `crates/roomboard-core/src/element.rs:463-490` (`backdrop_tests`) | oui | `original` lu, filtré | V |
+| `crates/roomboard-core/src/element.rs:452-480` (`backdrop_tests`) | oui | `original` lu, filtré | V |
 | `crates/roomboard-wasm/src/lib.rs:2806-2825` | oui | `from_office_pages` | V |
 | `apps/web/src/core/wasm-core.contract.test.ts:2744-2770` | oui | contrat `fromPdfPages` avec `original` (vraie et fausse liaison) ; cas existants verts | V |
 | `apps/web/src/platform/import.test.ts` | oui | coque (convertisseur, sans programme, délai, sans chemin, `.xlsx` repli), web (message), en-têtes | S |
