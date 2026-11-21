@@ -92,6 +92,26 @@ export function hasPixels(m: FormatsBinding): m is PixelFormatsBinding {
   return typeof p.image_transparent === "function" && typeof p.image_adjust === "function" && typeof p.image_flood_fill === "function";
 }
 
+/** Forme du lecteur de tableaux généré par wasm-bindgen (`BoardReader` de `roomboard-formats-wasm`, C13). */
+export interface BoardBinding {
+  ops(): Float32Array;
+  texts(): string[];
+  warnings(): string[];
+  free(): void;
+}
+
+/** Module `formats` avec les tableaux `.iwb` et `.ubz` (C13, DA2) : servi seulement dans `board-worker.ts`. */
+export interface BoardFormatsBinding extends FormatsBinding {
+  readonly BoardReader: { open(xml: Uint8Array, dialect: string, firstPage: number): BoardBinding };
+  write_board_xml(ops: Float32Array, texts: string[], format: string): string[];
+}
+
+/** Vrai si le module chargé expose le lecteur et l'écrivain des tableaux (module construit après C13). */
+export function hasBoardReader(m: FormatsBinding): m is BoardFormatsBinding {
+  const b = m as Partial<BoardFormatsBinding>;
+  return typeof b.BoardReader?.open === "function" && typeof b.write_board_xml === "function";
+}
+
 export function createPageCodec(load: () => Promise<FormatsBinding>): ContainerCodec {
   let loading: Promise<FormatsBinding> | null = null;
   const binding = async (): Promise<FormatsBinding> => {
