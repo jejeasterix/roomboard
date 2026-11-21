@@ -64,6 +64,17 @@ pub fn arrow_wings(w: f64, h: f64, width: f32) -> Option<[f64; 4]> {
     ])
 }
 
+/// Sommets de l'ellipse, départ à l'angle π ; `dir` = +1 (sens direct) ou −1 (sens inverse, trou).
+fn ellipse_points(cx: f64, cy: f64, rx: f64, ry: f64, dir: f64) -> Vec<f64> {
+    (0..ELLIPSE_VERTICES)
+        .flat_map(|k| {
+            let t = std::f64::consts::PI
+                + dir * 2.0 * std::f64::consts::PI * k as f64 / ELLIPSE_VERTICES as f64;
+            [cx + rx * t.cos(), cy + ry * t.sin()]
+        })
+        .collect()
+}
+
 /// Polygone local de collision et de bornes, élargi de la demi-épaisseur (au moins 1) : rectangle entier, ellipse
 /// entière en `ELLIPSE_VERTICES` sommets inscrits (CL4-7), segment épaissi pour la ligne ; la flèche y ajoute sa pointe
 /// (constat 4 de T60) : pied de chaque aile sur le bord du fût, puis son extrémité.
@@ -83,13 +94,7 @@ pub fn shape_polygon(kind: ShapeKind, w: f64, h: f64, width: f32) -> Vec<f32> {
         ShapeKind::Ellipse => {
             // Départ à l'angle π, n multiple de 4 : les quatre extrêmes sont des sommets, les bornes restent exactes.
             let (cx, cy, rx, ry) = (w / 2.0, h / 2.0, w / 2.0 + half, h / 2.0 + half);
-            (0..ELLIPSE_VERTICES)
-                .flat_map(|k| {
-                    let t = std::f64::consts::PI
-                        + 2.0 * std::f64::consts::PI * k as f64 / ELLIPSE_VERTICES as f64;
-                    [cx + rx * t.cos(), cy + ry * t.sin()]
-                })
-                .collect()
+            ellipse_points(cx, cy, rx, ry, 1.0)
         }
         ShapeKind::Line | ShapeKind::Arrow => {
             let len = w.hypot(h);
@@ -167,13 +172,7 @@ pub fn shape_ring(kind: ShapeKind, w: f64, h: f64, width: f32) -> Option<(Vec<f3
         ],
         _ => {
             let (cx, cy, rx, ry) = (w / 2.0, h / 2.0, w / 2.0 - half, h / 2.0 - half);
-            (0..ELLIPSE_VERTICES)
-                .flat_map(|k| {
-                    let t = std::f64::consts::PI
-                        - 2.0 * std::f64::consts::PI * k as f64 / ELLIPSE_VERTICES as f64;
-                    [cx + rx * t.cos(), cy + ry * t.sin()]
-                })
-                .collect()
+            ellipse_points(cx, cy, rx, ry, -1.0)
         }
     };
     Some((outer, inner.into_iter().map(|v| v as f32).collect()))

@@ -25,6 +25,16 @@ pub(crate) struct FillFields {
 
 /// `None` si l'élément n'est pas un `fill` ou s'il est mal formé (transform, `w`, `h` finis > 0, couleur, anneaux de 3
 /// points finis au moins) : la vue en fait alors un cadre inconnu (Q11).
+impl FillFields {
+    /// Anneaux locaux en f32 (lecture de la géométrie).
+    pub(crate) fn rings_f32(&self) -> Vec<Vec<f32>> {
+        self.rings
+            .iter()
+            .map(|r| r.iter().map(|v| *v as f32).collect())
+            .collect()
+    }
+}
+
 pub(crate) fn read_fill<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<FillFields> {
     if out_string(e.get(txn, "kind"))? != FILL_KIND {
         return None;

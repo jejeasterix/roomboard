@@ -866,14 +866,9 @@ impl Document {
         }
         let f = read_fill(txn, e)?;
         let rings = f
-            .rings
+            .rings_f32()
             .iter()
-            .map(|r| {
-                world_outline(
-                    &f.transform,
-                    &r.iter().map(|v| *v as f32).collect::<Vec<f32>>(),
-                )
-            })
+            .map(|r| world_outline(&f.transform, r))
             .collect();
         Wall::new(rings, true)
     }
