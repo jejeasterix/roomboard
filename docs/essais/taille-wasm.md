@@ -88,3 +88,7 @@ T2 : principal +5 412 o sur T1 (+6 895 o sur l'avant C4, sous les +20 Ko du gard
 | final C4 (tête 6975138, après les correctifs T17 à T20, build de `verifier.sh --e2e`) | 1 368 840 o | 3 100 845 o |
 
 Final : principal +6 241 o depuis avant C4 (T17 a simplifié `load_with_manifest` et `load_parts`), `formats` +501 o. Plafonds inchangés.
+
+| OE23 T2 (`element_ids_of_kind`, sortie de `wasm-bindgen --remove-name-section`) | 1 370 577 o | non mesurée ici (crate non touché), lue dans la sortie de `verifier.sh` à la clôture |
+
+OE23 T2 : principal +1 737 o depuis 1 368 840 o (final C4). Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o).

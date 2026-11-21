@@ -1154,6 +1154,11 @@ impl Document {
         self.core.element_ids(page)
     }
 
+    /// OE23 (Q7) : ids de `page` dont le `kind` brut vaut `kind`, dans l'ordre de la page ; page inconnue : vide.
+    pub fn element_ids_of_kind(&self, page: &str, kind: &str) -> Vec<String> {
+        self.core.element_ids_of_kind(page, kind)
+    }
+
     pub fn add_page_after(&mut self, after: Option<String>) -> Result<JsValue, JsError> {
         to_js(&self.add_page_after_inner(after).map_err(cmd_err)?)
     }

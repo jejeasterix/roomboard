@@ -325,6 +325,25 @@ impl Document {
         }
     }
 
+    /// Ids des éléments de `page` dont le champ `kind` brut vaut `kind`, dans l'ordre de la page, sans lire de vue
+    /// (OE23, Q7) : les ids qu'`element_ids` rendrait (un élément sans `id` lisible n'y figure pas, K8). Un élément mal
+    /// formé y figure : l'appelant confirme chaque candidat par `element(id)` (H4). Page inconnue : vide.
+    pub fn element_ids_of_kind(&self, page: &str, kind: &str) -> Vec<String> {
+        let txn = self.doc.transact();
+        match self.page_elements(&txn, page) {
+            Some(els) => els
+                .iter(&txn)
+                .filter_map(|o| match o {
+                    Out::YMap(e) if out_string(e.get(&txn, "kind")).as_deref() == Some(kind) => {
+                        out_string(e.get(&txn, "id"))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
     pub fn element(&self, id: &str) -> Option<ElementView> {
         let txn = self.doc.transact();
         let found = self.find_element(&txn, id)?;
@@ -1106,11 +1125,23 @@ mod tests {
     #[test]
     fn element_ids_of_kind_reads_raw_kind_in_page_order() {
         let d = Document::blank();
-        push_raw(&d, vec![("id", In::from("s1")), ("kind", In::from("stroke"))]);
-        push_raw(&d, vec![("id", In::from("t1")), ("kind", In::from("table"))]);
+        push_raw(
+            &d,
+            vec![("id", In::from("s1")), ("kind", In::from("stroke"))],
+        );
+        push_raw(
+            &d,
+            vec![("id", In::from("t1")), ("kind", In::from("table"))],
+        );
         push_raw(&d, vec![("kind", In::from("table"))]);
-        push_raw(&d, vec![("id", In::from("h1")), ("kind", In::from("hologram"))]);
-        push_raw(&d, vec![("id", In::from("t2")), ("kind", In::from("table"))]);
+        push_raw(
+            &d,
+            vec![("id", In::from("h1")), ("kind", In::from("hologram"))],
+        );
+        push_raw(
+            &d,
+            vec![("id", In::from("t2")), ("kind", In::from("table"))],
+        );
         let p = d.page_ids()[0].clone();
         assert_eq!(d.element_ids(&p), vec!["s1", "t1", "h1", "t2"]);
         assert_eq!(d.element_ids_of_kind(&p, "table"), vec!["t1", "t2"]);

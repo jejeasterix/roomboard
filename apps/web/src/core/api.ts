@@ -329,6 +329,9 @@ export interface StrokeBuilderApi {
 export interface CoreDocument {
   pageIds(): string[];
   elementIds(page: string): string[];
+  /** OE23 (Q7) : ids de `page` dont le champ `kind` brut vaut `kind`, dans l'ordre de la page, sans lire de vue ; page
+   *  inconnue : []. Un élément mal formé y figure (vue `unknown`) : confirmer chaque candidat par `element(id)`. */
+  elementIdsOfKind(page: string, kind: string): readonly string[];
   /** Lève une Error dont le message dit la cause (page inconnue, dernière page, points invalides). */
   apply(cmd: Command): Change;
   element(id: string): ElementView | null;
