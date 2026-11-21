@@ -1,6 +1,6 @@
 // @vitest-environment node
 import "fake-indexeddb/auto";
-import { mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,6 @@ function nodeFs(): TauriFs & TauriDirFs {
     readDir: async (p) => (await readdir(p, { withFileTypes: true })).map((e) => ({ name: e.name, isDirectory: e.isDirectory() })),
     mkdir: async (p, o) => void (await mkdir(p, o)),
     remove: async (p, o) => rm(p, { recursive: o.recursive, force: false }),
-    exists: async (p) => stat(p).then(() => true, () => false),
   };
 }
 

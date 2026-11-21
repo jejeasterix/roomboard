@@ -352,7 +352,10 @@ mod tests {
             .filter_map(|e| e.as_str().map(String::from))
             .collect();
         exts.sort();
-        let mut expected: Vec<String> = ASSOCIATED_EXTENSIONS.iter().map(|s| s.to_string()).collect();
+        let mut expected: Vec<String> = ASSOCIATED_EXTENSIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         expected.sort();
         assert_eq!(exts, expected);
         let pack = conf["bundle"]["fileAssociations"]
@@ -370,21 +373,35 @@ mod tests {
         let raw = include_str!("../../../apps/desktop/src-tauri/capabilities/default.json");
         let caps: serde_json::Value = serde_json::from_str(raw).expect("default.json lisible");
         let perms = caps["permissions"].as_array().expect("permissions");
-        let names: Vec<&str> = perms.iter().filter_map(|p| p.as_str()).collect();
-        for p in [
-            "fs:allow-read-dir",
-            "fs:allow-mkdir",
-            "fs:allow-remove",
-            "fs:allow-exists",
-            "fs:allow-read-file",
-            "fs:allow-write-file",
-        ] {
-            assert!(names.contains(&p), "{p} absente");
-        }
-        let scope = perms
+        // Moindre privilège (C5, C8) : exactement ces permissions fs, ni `fs:default`, ni `fs:allow-home-*`, ni
+        // `fs:allow-exists` (jamais appelée), et une seule portée fs.
+        let mut names: Vec<&str> = perms
             .iter()
-            .find(|p| p["identifier"] == "fs:scope")
-            .expect("fs:scope");
+            .filter_map(|p| p.as_str())
+            .filter(|p| p.starts_with("fs:"))
+            .collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            vec![
+                "fs:allow-mkdir",
+                "fs:allow-read-dir",
+                "fs:allow-read-file",
+                "fs:allow-remove",
+                "fs:allow-write-file",
+            ]
+        );
+        let scopes: Vec<&serde_json::Value> = perms
+            .iter()
+            .filter(|p| {
+                p["identifier"]
+                    .as_str()
+                    .is_some_and(|i| i.starts_with("fs:"))
+            })
+            .collect();
+        assert_eq!(scopes.len(), 1, "une seule entrée fs objet");
+        let scope = scopes[0];
+        assert_eq!(scope["identifier"], "fs:scope");
         let allow: Vec<&str> = scope["allow"]
             .as_array()
             .expect("allow")
@@ -393,7 +410,10 @@ mod tests {
             .collect();
         assert_eq!(
             allow,
-            vec!["$DOCUMENT/RoomBoard/Ressources", "$DOCUMENT/RoomBoard/Ressources/**"]
+            vec![
+                "$DOCUMENT/RoomBoard/Ressources",
+                "$DOCUMENT/RoomBoard/Ressources/**"
+            ]
         );
     }
 

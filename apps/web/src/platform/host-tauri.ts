@@ -40,7 +40,6 @@ export interface TauriDirFs {
   readDir(path: string): Promise<readonly { readonly name: string; readonly isDirectory: boolean }[]>;
   mkdir(path: string, o: { readonly recursive: true }): Promise<void>;
   remove(path: string, o: { readonly recursive: true }): Promise<void>;
-  exists(path: string): Promise<boolean>;
 }
 
 export interface CloseEventLike {
@@ -272,7 +271,6 @@ export async function loadTauriPorts(): Promise<{
       readDir: async (p) => (await f.readDir(p)).map((e) => ({ name: e.name, isDirectory: e.isDirectory })),
       mkdir: (p, o) => f.mkdir(p, o),
       remove: (p, o) => f.remove(p, o),
-      exists: (p) => f.exists(p),
     },
     // Le dossier choisi entre dans la portée fs, récursif (plugin dialog 2.8.4, `commands.rs:163-180`).
     pickFolder: async (defaultPath) => {

@@ -17,13 +17,14 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: (p: st
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
 
 describe("C4 : ports de dossiers de la coque", () => {
-  it("C4 : dirFs relaie readDir, mkdir, remove, exists au plugin-fs", async () => {
+  it("C4 : dirFs relaie readDir, mkdir, remove au plugin-fs, sans exists (C5, moindre privilège)", async () => {
     const { loadTauriPorts } = await import("./host-tauri");
     const p = await loadTauriPorts();
     expect(await p.dirFs.readDir("/r")).toEqual([{ name: "a.rbitem", isDirectory: false }]);
     await p.dirFs.mkdir("/r/A", { recursive: true });
     await p.dirFs.remove("/r/A", { recursive: true });
-    expect(await p.dirFs.exists("/r")).toBe(true);
+    expect("exists" in p.dirFs).toBe(false);
+    expect(fs.exists).not.toHaveBeenCalled();
     expect(fs.mkdir).toHaveBeenCalledWith("/r/A", { recursive: true });
     expect(fs.remove).toHaveBeenCalledWith("/r/A", { recursive: true });
   });
