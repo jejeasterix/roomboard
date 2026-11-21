@@ -15,8 +15,13 @@ function card() {
   return c;
 }
 const ev = (type: string, x: number, y: number) => new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, bubbles: true });
-function down(c: HTMLElement, onDrop: (p: { x: number; y: number }) => void, hits: Element[]) {
-  const e = ev("pointerdown", 10, 10);
+const evAs = (type: string, x: number, y: number, pointerType: string) => {
+  const e = ev(type, x, y);
+  Object.defineProperty(e, "pointerType", { value: pointerType });
+  return e;
+};
+function down(c: HTMLElement, onDrop: (p: { x: number; y: number }) => void, hits: Element[], pointerType = "mouse") {
+  const e = evAs("pointerdown", 10, 10, pointerType);
   Object.defineProperty(e, "currentTarget", { value: c });
   startResourceDrag(e, onDrop, { label: "Moitié", hits: () => hits });
 }
@@ -65,6 +70,50 @@ describe("C4 : glisser une ressource", () => {
     c.dispatchEvent(ev("pointerup", 10 + DRAG_THRESHOLD_PX - 1, 10));
     expect(onDrop).not.toHaveBeenCalled();
     expect(document.querySelector(".rb-drag-ghost")).toBeNull();
+  });
+
+  it("C4 : au doigt, mouvement vertical dominant : la liste défile, pas de glisser (4)", () => {
+    const c = card();
+    const onDrop = vi.fn();
+    down(c, onDrop, [stages], "touch");
+    c.dispatchEvent(evAs("pointermove", 12, 60, "touch"));
+    expect(document.querySelector(".rb-drag-ghost")).toBeNull();
+    c.dispatchEvent(evAs("pointermove", 200, 60, "touch"));
+    c.dispatchEvent(evAs("pointerup", 200, 60, "touch"));
+    expect(document.querySelector(".rb-drag-ghost")).toBeNull();
+    expect(onDrop).not.toHaveBeenCalled();
+    expect(c.releasePointerCapture).toHaveBeenCalled();
+  });
+
+  it("C4 : au doigt, mouvement horizontal dominant : glisser vers la scène (4)", () => {
+    const c = card();
+    const onDrop = vi.fn();
+    down(c, onDrop, [stages], "touch");
+    c.dispatchEvent(evAs("pointermove", 60, 14, "touch"));
+    expect(document.querySelector(".rb-drag-ghost")).not.toBeNull();
+    c.dispatchEvent(evAs("pointerup", 300, 250, "touch"));
+    expect(onDrop).toHaveBeenCalledWith({ x: 300, y: 250 });
+  });
+
+  it("C4 : à la souris, mouvement vertical : glisser comme avant (4)", () => {
+    const c = card();
+    const onDrop = vi.fn();
+    down(c, onDrop, [stages]);
+    c.dispatchEvent(ev("pointermove", 12, 60));
+    expect(document.querySelector(".rb-drag-ghost")).not.toBeNull();
+    c.dispatchEvent(ev("pointerup", 12, 60));
+    expect(onDrop).toHaveBeenCalledWith({ x: 12, y: 60 });
+  });
+
+  it("C4 : capture perdue (carte démontée pendant le glisser) : glisser annulé, fantôme retiré (9)", () => {
+    const c = card();
+    const onDrop = vi.fn();
+    down(c, onDrop, [stages]);
+    c.dispatchEvent(ev("pointermove", 200, 150));
+    c.dispatchEvent(ev("lostpointercapture", 200, 150));
+    expect(document.querySelector(".rb-drag-ghost")).toBeNull();
+    c.dispatchEvent(ev("pointerup", 300, 250));
+    expect(onDrop).not.toHaveBeenCalled();
   });
 
   it("C4 : Échap annule", () => {
