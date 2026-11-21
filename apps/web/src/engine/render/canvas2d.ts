@@ -5,7 +5,7 @@
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import { PDF_PAGE_KIND } from "../../core/api";
-import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
+import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
 import type { Camera } from "../camera";
@@ -175,6 +175,32 @@ function paintMedia(
   }
 }
 
+/** C15 (X25) : carte d'un objet 3D sans image (instantané absent ou pas encore décodé). */
+export const MODEL3D_CARD_LABEL = "Objet 3D";
+
+/** Boîte (0, 0)-(w, h) d'un objet 3D : image du rendu partagé, sinon instantané, sinon carte « Objet 3D » + nom.
+ *  Même boîte pour l'image vivante et l'instantané : pas de saut au relâché. */
+function paintModel3d(
+  ctx: CanvasRenderingContext2D,
+  m: Model3dData,
+  frame: CanvasImageSource | null,
+  images: ImageSource | null,
+  name: string | null,
+): void {
+  const bmp = frame ?? (m.snapshot !== null ? (images?.bitmap(m.snapshot) ?? null) : null);
+  if (bmp !== null) {
+    ctx.drawImage(bmp, 0, 0, m.w, m.h);
+    return;
+  }
+  paintPlaceholder(ctx, m.w, m.h, MODEL3D_CARD_LABEL);
+  if (name !== null) {
+    ctx.font = textFont(16);
+    ctx.fillStyle = PLACEHOLDER_STROKE;
+    ctx.textBaseline = "top";
+    ctx.fillText(name, 8, 30);
+  }
+}
+
 /** Chemin d'une forme dans son repère local (boîte (0, 0)-(w, h) ou segment (0, 0)-(w, h)). */
 export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: number): void {
   ctx.beginPath();
@@ -255,6 +281,7 @@ export class Canvas2DRenderer implements Renderer {
   private readonly makePath: () => Path2D;
   private readonly images: ImageSource | null;
   private readonly media: MediaFrames | null;
+  private readonly models: ModelFrames | null;
   private readonly assetName: ((asset: string) => string | null) | null;
   private readonly forExport: boolean;
   private readonly backdrop: BackdropPainter | null;
@@ -284,6 +311,7 @@ export class Canvas2DRenderer implements Renderer {
     this.makePath = opts.makePath ?? (() => new Path2D());
     this.images = opts.images ?? null;
     this.media = opts.media ?? null;
+    this.models = opts.models ?? null;
     this.assetName = opts.assetName ?? null;
     this.forExport = opts.forExport === true;
     this.backdrop = opts.backdrop ?? null;
@@ -417,6 +445,8 @@ export class Canvas2DRenderer implements Renderer {
         ctx, el.media, this.media?.frame(el.id) ?? null, this.media?.progress(el.id) ?? null, this.images,
         audio ? (this.assetName?.(el.media.asset) ?? null) : null, !this.forExport,
       );
+    } else if (el.kind === "model3d") {
+      paintModel3d(ctx, el.model3d, this.models?.frame(el.id) ?? null, this.images, this.assetName?.(el.model3d.asset) ?? null);
     } else if (el.kind === "table") {
       paintTableGrid(ctx, el.table);
       const boxes = cellTextBoxes(el.table);
