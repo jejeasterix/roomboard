@@ -3720,4 +3720,25 @@ describe("contrat elementIdsOfKind : tableau et fill mal formés, élément sans
     expect(d.element("f1")?.kind).toBe("unknown");
     d.free();
   });
+
+  it("OE23 : un élément valide de chaque kind de vue, même liste qu'elementIds filtrée par la vue (toutes les branches de rawKind)", () => {
+    const d = fakeCore.load(
+      doc([{ id: "f1", kind: "fill", transform: [1, 0, 0, 1, 0, 0], fill: { color: "#ff0000", w: 10, h: 10, contours: [[0, 0, 10, 0, 10, 10, 0, 10]] } }]),
+    );
+    const p = "p1";
+    const pen = { color: "#000000", width: 4 };
+    commit(d, p, 100);
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 50, y1: 50, style: pen, fill: null });
+    d.apply({ type: "SetText", page: p, id: null, x: 10, y: 20, content: "Bonjour", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 });
+    d.apply({ type: "AddImage", page: p, asset: png, w: 640, h: 480, matrix: I });
+    c14Add(d, p);
+    c15Add(d, p);
+    d.apply({ type: "AddTable", page: p, x: 100, y: 200, cols: 2, rows: 1, colWidth: 100, rowHeight: 64, color: "#000000", size: 36 });
+    for (const kind of ["stroke", "shape", "text", "image", "media", "model3d", "table", "fill"]) {
+      const ids = d.elementIdsOfKind(p, kind);
+      expect(ids, kind).toHaveLength(1);
+      expect(ids, kind).toEqual(d.elementIds(p).filter((id) => d.element(id)?.kind === kind));
+    }
+    d.free();
+  });
 });
