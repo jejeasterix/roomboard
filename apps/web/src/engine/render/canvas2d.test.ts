@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Bounds, CoreDocument, ElementView, MediaData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
+import type { Bounds, CoreDocument, ElementView, MediaData, Model3dData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, MODEL3D_CARD_LABEL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
 import type { MediaFrames } from "./media-frames";
+import type { ModelFrames } from "./model-frames";
 import { EMPTY_OVERLAY } from "./overlay";
 import type { BackdropPainter, BackdropState, SceneSource } from "./renderer";
 
@@ -1131,5 +1132,46 @@ describe("exportPainterOptions (C14, R7, M34)", () => {
   it("le makePath du producteur vectoriel passe, forExport reste posé", () => {
     const makePath = (): Path2D => ({}) as Path2D;
     expect(exportPainterOptions({} as ImageSource, { makePath })).toMatchObject({ forExport: true, makePath });
+  });
+});
+
+describe("Canvas2DRenderer — objet 3D (C15, X25)", () => {
+  const GLB = "cc".repeat(32);
+  const SNAP = "dd".repeat(32);
+  const data = (o: Partial<Model3dData> = {}): Model3dData => ({ asset: GLB, format: "glb", w: 640, h: 480, files: [], yaw: Math.PI / 6, pitch: Math.PI / 9, snapshot: SNAP, ...o });
+  const el = (o: Partial<Model3dData> = {}): ElementView => ({ id: "o", kind: "model3d", transform: [1, 0, 0, 1, 5, 6], model3d: data(o) });
+  function sceneOf(e: ElementView, opts: { images?: ImageSource; models?: ModelFrames; assetName?: (a: string) => string | null } = {}) {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === e.id ? e : null), outline: () => null };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, opts);
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: [e.id] }, IDENTITY, new Set());
+    return scene;
+  }
+  const frame = { tag: "rendu" } as unknown as CanvasImageSource;
+  const snap = { tag: "instantane" } as unknown as CanvasImageSource;
+  const images: ImageSource = { bitmap: (a) => (a === SNAP ? snap : null) };
+
+  it("séance ouverte : image du rendu partagé dans (0,0)-(w,h)", () => {
+    const scene = sceneOf(el(), { images, models: { frame: (id) => (id === "o" ? frame : null) } });
+    expect(scene.images).toEqual([{ img: frame, x: 0, y: 0, w: 640, h: 480 }]);
+  });
+
+  it("sans image du rendu : instantané du cache, même boîte (pas de saut au relâché)", () => {
+    const scene = sceneOf(el(), { images, models: { frame: () => null } });
+    expect(scene.images).toEqual([{ img: snap, x: 0, y: 0, w: 640, h: 480 }]);
+  });
+
+  it("ni rendu ni instantané : carte grise « Objet 3D » et le nom", () => {
+    const scene = sceneOf(el({ snapshot: null }), { images, assetName: () => "cube.glb" });
+    expect(scene.images).toEqual([]);
+    expect(scene.log).toContain(`fillRect ${PLACEHOLDER_FILL}`);
+    expect(scene.log.join("\n")).toContain(MODEL3D_CARD_LABEL);
+    expect(scene.log.join("\n")).toContain("cube.glb");
+  });
+
+  it("rendu d'export : instantané, jamais le port", () => {
+    const scene = sceneOf(el(), exportPainterOptions(images));
+    expect(scene.images).toEqual([{ img: snap, x: 0, y: 0, w: 640, h: 480 }]);
   });
 });

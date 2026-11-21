@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MODEL3D_PITCH_LIMIT } from "../../core/api";
 import { clampCamera, DEFAULT_CAMERA, degrees, PITCH_LIMIT } from "./model-frames";
 
 describe("caméra d'orbite (C15, X4)", () => {
@@ -11,5 +12,9 @@ describe("caméra d'orbite (C15, X4)", () => {
   });
   it("degrees : entiers ; défauts 30° et 20°", () => {
     expect([degrees(DEFAULT_CAMERA.yaw), degrees(DEFAULT_CAMERA.pitch), degrees(Math.PI / 6 + 1)]).toEqual([30, 20, 87]);
+  });
+  it("constantes de caméra = celles du cœur (PC1)", () => {
+    expect(DEFAULT_CAMERA).toEqual({ yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH });
+    expect(PITCH_LIMIT).toBe(MODEL3D_PITCH_LIMIT);
   });
 });

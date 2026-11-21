@@ -2,13 +2,15 @@
  * Caméra d'orbite et image du rendu 3D partagé (C15, X4, X21, X25, DAX3) : le moteur ne voit jamais three ; il demande
  * l'image d'un élément `model3d` au port et retombe sur l'instantané quand il n'y en a pas.
  */
+import { DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MODEL3D_PITCH_LIMIT } from "../../core/api";
+
 export interface ModelCamera {
   readonly yaw: number;
   readonly pitch: number;
 }
-/** Mêmes valeurs que le cœur (X4, `model3d.rs`) ; T9 les reprend d'`api.ts` (PC1). */
-export const DEFAULT_CAMERA: ModelCamera = Object.freeze({ yaw: Math.PI / 6, pitch: Math.PI / 9 });
-export const PITCH_LIMIT = (85 * Math.PI) / 180;
+/** Mêmes valeurs que le cœur (X4, `model3d.rs`) ; repris d'`api.ts` (PC1). */
+export const DEFAULT_CAMERA: ModelCamera = Object.freeze({ yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH });
+export const PITCH_LIMIT = MODEL3D_PITCH_LIMIT;
 /** X21 : sensibilité, en radians par px CSS. */
 export const ORBIT_RAD_PER_PX = 0.01;
 const TAU = 2 * Math.PI;
