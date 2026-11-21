@@ -360,3 +360,16 @@ describe("Toolbar — rangée du pot (C6a)", () => {
     expect(container.querySelector("button[data-fill-none]")).toBeNull();
   });
 });
+
+describe("Toolbar : Modifier dans l'application d'origine (C16, S3)", () => {
+  it("bouton absent sans la capacité (web), présent avec elle, et clic relayé à l'hôte", () => {
+    const pages = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.role === "pages")!;
+    const { container, setC, host } = setup(pages);
+    expect(container.querySelector('[data-item="edit-original"]')).toBeNull();
+    setC({ ...NO_CAPS, officeConverter: true });
+    const btn = container.querySelector('[data-item="edit-original"]')!;
+    expect(btn).not.toBeNull();
+    fireEvent.click(btn);
+    expect(host.runAction).toHaveBeenCalledWith("edit-original");
+  });
+});

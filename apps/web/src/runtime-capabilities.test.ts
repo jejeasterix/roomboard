@@ -23,3 +23,12 @@ describe("RuntimeCapabilities (U10, DAU8)", () => {
     expect(detectPlatform({ tauri: true, userAgent: "Mozilla/5.0 (X11; Linux x86_64)" })).toBe("linux");
   });
 });
+
+describe("officeConverter (C16, O24)", () => {
+  it("vrai seulement dans la coque et si l'hôte l'annonce", () => {
+    expect(runtimeCapabilities({}, { tauri: true, officeConverter: true }).officeConverter).toBe(true);
+    expect(runtimeCapabilities({}, { tauri: true, officeConverter: false }).officeConverter).toBe(false);
+    expect(runtimeCapabilities({}, { tauri: true }).officeConverter).toBe(false);
+    expect(runtimeCapabilities({}, { tauri: false, officeConverter: true }).officeConverter).toBe(false);
+  });
+});

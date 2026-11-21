@@ -123,3 +123,17 @@ describe("outil Pot dans les profils (C6a)", () => {
     expect(simple.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)))).not.toContain("fill");
   });
 });
+
+describe("barre : Modifier dans l'application d'origine (C16, O19)", () => {
+  it("defaut et annotation : « edit-original » juste avant « Exporter en PDF… », requires officeConverter ; simple : absent", () => {
+    for (const id of ["defaut", "annotation"]) {
+      const items = builtinProfile(id)!.toolbars.find((b) => b.role === "pages")!.groups.flatMap((g) => g.items);
+      const i = items.findIndex((x) => x.id === "edit-original");
+      expect(i, id).toBeGreaterThanOrEqual(0);
+      expect(items[i], id).toMatchObject({ kind: "action", action: "edit-original", label: "Modifier dans l'application d'origine", requires: ["officeConverter"] });
+      expect(items[i + 1]!.id, id).toBe("export-pdf");
+    }
+    const simple = builtinProfile("simple")!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((x) => x.id)));
+    expect(simple).not.toContain("edit-original");
+  });
+});
