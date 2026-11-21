@@ -18,7 +18,7 @@ Avant (main 94976f0, chiffres du brief) : module Wasm principal 1 145 044 o (pla
 Complète (origin/main @ 94976f0, verifier.sh --e2e) : OK · web 123 fichiers, 2425 tests · module Wasm 1 145 044 o · module formats 3 100 344 o · scène 662 px Pot actif, 706 px ailleurs
 
 ## Compteurs
-contre-relecture cadrage 1/2 (B1 temps corrigé par porte DA-Z5) · relecture plan 1/3 (aucun bloquant ; T1 : Outside sans masque transmis ; T7 : S4 et petit cercle à ajouter à l'essai, attente de `data-zone-ms`) · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 (B1 temps corrigé par porte DA-Z5) · relecture plan 1/3 (aucun bloquant ; T1 : Outside sans masque transmis ; T7 : S4 et petit cercle à ajouter à l'essai, attente de `data-zone-ms`) · vagues sans progrès 0/2 · correctifs de fin 1/2 (T12)
 
 ## Tâches
 Vagues : V1 = T1, T3, T5 · V2 = T2, T4, T6 · V3 = T7. Worktrees : ~/projets/roomboard-wt/usage-c8-pot-zones--T<n>. Relecture du plan 1/3 lancée en parallèle de V1 (temps serré).
@@ -53,3 +53,9 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 ## Constats d'architecture
 - T2 (revue immédiate, mineur) : `element()` d'un `fill` (`document.rs:423`) passe par `read_fill`, qui alloue tous les anneaux pour rendre `color`, `w`, `h` ; `geoms` alloue trois fois par `fill` (`query.rs:126`, `:219`). Acceptable (hitTest seulement à l'appui) ; correction propre = lecture sans allocation dans `fill_element.rs`. Reporté.
 - T2 (mineur) : un `fill` de moins de 2·tol de large n'est pas touchable (HC8-4, voulu par le cadrage).
+- T9 (revue immédiate, major non bloquant) : le coût dépend du nombre de segments de diffusion (`zone.rs:504`, `:539`, tris répétés) ; S6 n'est plus forcément le pire cas (hachures denses). Transmis à T11.
+- T9 (revue, major non bloquant) : `spans` garde tous les segments avec le masque (jusqu'à ~12 Mio de plus) ; écart à la mémoire annoncée par Q20 (« à revoir »). Transmis à T11.
+- T9 (minor) : `docs/essais/taille-wasm.md:62` garde l'écart de T1 ; sondes `lap()` dans la fonction pure.
+- Fin de lot, double relecture (tête c5c9ef0, 3 relecteurs : conformité, qualité Rust, qualité TS) : aucun bloquant. Majeurs : test et clippy du cœur sans `zone` jamais lancés (`fill.rs:300`, `verifier.sh:20-21`) ; `zone_walls` appelle `bounds(&[id])` par élément « autre » (O(N²), `zone.rs:748`). → tâche corrective T12.
+- Mineurs consignés : boîte englobante (et non boîte) pour une image tournée (`zone.rs:748`) ; tolérance réelle « 2 px au moins, moins de 4 px selon l'alignement » (test `zone.rs:922`) non écrite au cadrage ; `fill_element.rs`, `zone-marks.ts`, `renderer.ts` absents de la carte ; `taille-wasm.md:62` périmé ; test I3 TS affaibli (`fake-core.test.ts:544`) ; `insert_fill` sans `valid_color` ; `allow(dead_code)` large (`fill_element.rs:4`).
+- Simplifications proposées : cast de `zone-marks.ts:22` (rend le test aveugle à un renommage de `tol`), garde unique dans `canvas2d.ts:445`, alias `c8Factories`, `FillFields::rings_f32()`, `ellipse_points` dans `shape.rs`.
