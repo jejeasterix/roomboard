@@ -15,7 +15,7 @@ import {
   type SaveTarget,
   type ShellPort,
 } from "./files";
-import { OfficeConvertError } from "./office-import";
+import { OfficeConvertError, type OriginalChange } from "./office-import";
 
 export interface DialogFilter {
   readonly name: string;
@@ -152,11 +152,11 @@ export async function openOriginal(ipc: TauriIpc, name: string, blob: Blob): Pro
 export const reimportOriginal = (ipc: TauriIpc, id: string): Promise<void> => ipc.invoke<void>("reimport_original", { id });
 
 /** C16 (O21) : abonnement à « original modifié » ; le désabonnement attend la fin de `listen` s'il le faut. */
-export function onOriginalChanged(ipc: TauriIpc, cb: (e: { readonly id: string; readonly name: string }) => void): () => void {
+export function onOriginalChanged(ipc: TauriIpc, cb: (e: OriginalChange) => void): () => void {
   let stop: (() => void) | null = null;
   let stopped = false;
   ipc
-    .listen<{ readonly id: string; readonly name: string }>(ORIGINAL_CHANGED_EVENT, (e) => cb({ id: e.payload.id, name: e.payload.name }))
+    .listen<OriginalChange>(ORIGINAL_CHANGED_EVENT, (e) => cb({ id: e.payload.id, name: e.payload.name }))
     .then(
       (s) => {
         if (stopped) s();

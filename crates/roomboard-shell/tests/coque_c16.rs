@@ -118,15 +118,16 @@ fn is_ident(c: char) -> bool {
 }
 
 /// `src-tauri` est hors du workspace : un chemin `xxx::` de premier niveau dans `main.rs` doit être une dépendance
-/// de son manifeste, `std`/`core`/`crate`/`super`/`self`, ou un nom importé ou déclaré dans le fichier.
-#[test]
-fn main_rs_paths_use_only_declared_crates() {
+/// de son manifeste, `std`/`core`/`crate`/`super`/`self`, ou un nom importé ou déclaré dans le fichier ; le premier
+/// segment de chaque `use` doit lui-même être une dépendance, un mot réservé ou un module déclaré (`use open::x;` échoue).
+/// Rend les racines refusées.
+fn undeclared_roots(main_rs: &str, toml: &str) -> Vec<String> {
     let mut allowed: Vec<String> = ["std", "core", "alloc", "crate", "super", "self"]
         .iter()
         .map(|s| s.to_string())
         .collect();
     let mut in_deps = false;
-    for line in DESKTOP_TOML.lines() {
+    for line in toml.lines() {
         let t = line.trim();
         if t.starts_with('[') {
             in_deps = t == "[dependencies]";
@@ -136,20 +137,13 @@ fn main_rs_paths_use_only_declared_crates() {
             }
         }
     }
-    let code = code_only(MAIN_RS);
+    let code = code_only(main_rs);
     let words = |text: &str| -> Vec<String> {
         text.split(|c: char| !is_ident(c))
             .filter(|w| !w.is_empty())
             .map(String::from)
             .collect()
     };
-    for stmt in code.split(';') {
-        let t = stmt.trim_start();
-        let t = t.strip_prefix("pub ").unwrap_or(t);
-        if t.starts_with("use ") {
-            allowed.extend(words(t));
-        }
-    }
     let toks = words(&code.replace("::", " :: "));
     for (i, w) in toks.iter().enumerate() {
         if matches!(
@@ -161,8 +155,21 @@ fn main_rs_paths_use_only_declared_crates() {
             }
         }
     }
-    let chars: Vec<char> = code.chars().collect();
     let mut bad = Vec::new();
+    let mut imported = Vec::new();
+    for stmt in code.split(';') {
+        let t = stmt.trim_start();
+        let t = t.strip_prefix("pub ").unwrap_or(t);
+        if let Some(path) = t.strip_prefix("use ") {
+            let root = words(path).into_iter().next().unwrap_or_default();
+            if !allowed.contains(&root) {
+                bad.push(root);
+            }
+            imported.extend(words(t));
+        }
+    }
+    allowed.extend(imported);
+    let chars: Vec<char> = code.chars().collect();
     let mut i = 0;
     while i < chars.len() {
         if is_ident(chars[i]) && (i == 0 || (!is_ident(chars[i - 1]) && chars[i - 1] != ':')) {
@@ -184,8 +191,23 @@ fn main_rs_paths_use_only_declared_crates() {
             i += 1;
         }
     }
+    bad
+}
+
+#[test]
+fn main_rs_paths_use_only_declared_crates() {
+    let bad = undeclared_roots(MAIN_RS, DESKTOP_TOML);
     assert!(
         bad.is_empty(),
         "chemins de main.rs hors des dépendances de src-tauri/Cargo.toml : {bad:?}"
     );
+}
+
+#[test]
+fn undeclared_roots_rejects_use_of_an_undeclared_crate() {
+    let toml = "[dependencies]\ntauri = \"2\"\n";
+    let ok = "use tauri::Manager;\nfn main() {}\n";
+    assert!(undeclared_roots(ok, toml).is_empty());
+    let bad = "use tauri::Manager;\nuse open::that_detached;\nfn main() {}\n";
+    assert_eq!(undeclared_roots(bad, toml), vec!["open".to_string()]);
 }

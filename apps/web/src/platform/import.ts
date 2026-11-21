@@ -22,7 +22,7 @@ import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type 
 import { ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
-import { officeHandler, officeNoConverterHandler, officeWebHandler, type OfficeOpenFile } from "./office-import";
+import { officeHandler, officeNoConverterHandler, officeSheetNoConverterHandler, officeWebHandler, type OfficeOpenFile } from "./office-import";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
 /** Limite des hôtes web (R15) ; la coque n'en a pas. */
@@ -296,11 +296,11 @@ export function createImporter(deps: ImportDeps): Importer {
       ...(model3d ? [model3dHandler(model3d, shared3d)] : []), // C15 (X12) : après `image`
       // C16 (O3, O4, O33) : avant `sheet` ; coque : conversion, `.xlsx` compris (repli sur `sheet` sans convertisseur) ;
       // web : message, `.xlsx` laissé à `sheet`.
-      convertOffice && openOffice
+      ...(convertOffice && openOffice
         ? deps.officeConverter === false
-          ? officeNoConverterHandler()
-          : officeHandler({ convert: convertOffice, open: openOffice, ...(sheet ? { sheet } : {}) })
-        : officeWebHandler(),
+          ? [officeNoConverterHandler(), ...(sheet ? [officeSheetNoConverterHandler(sheet)] : [])]
+          : [officeHandler({ convert: convertOffice, open: openOffice, ...(sheet ? { sheet } : {}) })]
+        : [officeWebHandler()]),
       ...(sheet ? [sheet] : []),
       ...(model3d ? [zip3dHandler(model3d, shared3d), companionHandler()] : []), // après `sheet` : `.xlsx` d'abord
     ],

@@ -1090,6 +1090,7 @@ describe("registre C16 : documents Office (O2, O3, O4, S3)", () => {
     expect(r.inserted).toEqual(["notes.xlsx"]);
     expect(r.failed).toEqual(["a.roomboard"]);
     expect(convertOffice).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("notes.xlsx : importé en valeurs ; installez LibreOffice ou Microsoft Office pour ses pages");
   });
 
   it("coque sans convertisseur : diapos.pptx dit « installez LibreOffice ou Microsoft Office », fichier jamais lu", async () => {

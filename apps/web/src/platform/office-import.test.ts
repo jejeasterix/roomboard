@@ -4,7 +4,7 @@ import { SHEET_MAX_BYTES, type ImportContext, type ImportHandler, type ImportOut
 import {
   CONVERSION_ATTR, convertFailureMessage, hasCfbMagic, isOfficeFile, isOfficeName, NOT_OFFICE_PAGE_MESSAGE, OFFICE_EXPORT_MESSAGE,
   OFFICE_EXTENSIONS, OFFICE_FAILED_MESSAGE, OFFICE_INSTALL_MESSAGE, OFFICE_MAX_BYTES, OFFICE_TIMEOUT_MESSAGE, OFFICE_TOO_BIG_MESSAGE,
-  OFFICE_VALUES_MESSAGE, OfficeConvertError, officeHandler, officeMimeOf, officeStemOf, officeWebHandler, originalChangedMessage,
+  OFFICE_VALUES_MESSAGE, OfficeConvertError, officeHandler, officeMimeOf, officeNoConverterHandler, officeStemOf, officeWebHandler, originalChangedMessage,
   withConversionMark,
 } from "./office-import";
 
@@ -141,6 +141,13 @@ describe("office-import (C16)", () => {
     expect(await h.run(file("cours.docx"), b.c)).toBe("failed");
     expect(b.notify.mock.calls).toEqual([[`cours.docx : ${OFFICE_EXPORT_MESSAGE}`]]);
     expect(convert).not.toHaveBeenCalled();
+  });
+
+  it("office sans convertisseur : un collage sans chemin dit « exportez en PDF depuis Office », pas « installez… » (O14)", async () => {
+    const h = officeNoConverterHandler();
+    const { c, notify } = ctx();
+    expect(await h.run(file("cours.docx"), c)).toBe("failed");
+    expect(notify.mock.calls).toEqual([[`cours.docx : ${OFFICE_EXPORT_MESSAGE}`]]);
   });
 
   it("withConversionMark : data-conversion posé pendant, retiré après succès comme après échec, imbrications comptées (O25)", async () => {
