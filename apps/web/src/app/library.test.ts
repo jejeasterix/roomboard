@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { unknownKindMessage } from "../core/api";
 import { createMemoryLibraryFiles, type LibraryFiles } from "../platform/library-files";
 import { zipStored } from "../platform/zip-worker";
-import { PACK_UNSAFE_PATH_MESSAGE } from "../platform/rbpack";
+import { ZIP_TOO_BIG_MESSAGE } from "../platform/model3d-import";
+import { PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE } from "../platform/rbpack";
 import { createResourceLibrary, fileNameOf, folderNameOf, normalizeSearch, PACK_TOO_BIG_MESSAGE, type NewResource } from "./library";
 
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -117,6 +118,18 @@ describe("C4 : ResourceLibrary", () => {
     expect(await mine.list()).toEqual(before);
     expect(lib.folder("mine", "").folders).toEqual([]);
     expect(lib.search("x")).toEqual([]);
+  });
+
+  it("C4 : un .rbpack qui n'est pas un ZIP est refusé avec un message clair", async () => {
+    const { lib, mine } = libOf();
+    await lib.add("mine", "", res("Moitié"));
+    const before = await mine.list();
+    const err = await lib.importPack(enc("bonjour, je ne suis pas un ZIP"), "faux.rbpack").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe(PACK_NOT_ROOMBOARD_MESSAGE);
+    expect(await mine.list()).toEqual(before);
+    const big = createResourceLibrary({ files: [createMemoryLibraryFiles("mine")], zip: { ...zip, unzip: () => Promise.reject(new Error(ZIP_TOO_BIG_MESSAGE)) }, now: () => "", appVersion: "c4" });
+    await expect(big.importPack(enc("PK"), "gros.rbpack")).rejects.toThrow(ZIP_TOO_BIG_MESSAGE);
   });
 
   it("C4 : dossiers : mkdir, folder, remove récursif", async () => {
