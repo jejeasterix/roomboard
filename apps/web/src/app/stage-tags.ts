@@ -23,14 +23,18 @@ export interface StageExtras {
   readonly image?: readonly [number, number] | null;
   /** C6b (B21) : état de la file du pot (`PotState`). */
   readonly pot?: string;
+  /** C8 (Q18) : nombre de `fill` de la page, durée du dernier pot de zone (ms, au dixième), cellules de son masque. */
+  readonly zones?: string;
+  readonly zoneMs?: string;
+  readonly zoneCells?: string;
 }
 
 /** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`), S1 à S4 de C10b (`tableMerges`, `tableShades`)
- *  C5 (`pixels`, `image`) et C6b (`pot`). */
+ *  C5 (`pixels`, `image`) C6b (`pot`) et C8 (`zones`, `zoneMs`, `zoneCells`). */
 export function stageTags(
   s: EngineState,
   extra: StageExtras = {},
-): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot", string> {
+): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot" | "zones" | "zoneMs" | "zoneCells", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     selection: String(s.selection.length),
@@ -43,6 +47,9 @@ export function stageTags(
     grouped: s.selectionGrouped ? "1" : "0",
     pixels: extra.pixels ?? "",
     pot: extra.pot ?? "",
+    zones: extra.zones ?? "",
+    zoneMs: extra.zoneMs ?? "",
+    zoneCells: extra.zoneCells ?? "",
     image: extra.image ? `${Math.round(extra.image[0])}x${Math.round(extra.image[1])}` : "",
   };
 }
