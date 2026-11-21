@@ -7,8 +7,9 @@
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
 import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitWidth, IDENTITY, panBy as panCamera, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitWidth, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
+import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { editAction, enterAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -20,6 +21,7 @@ import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
 import { createModelOrbit, type ModelOrbit, type ModelOrbitSession } from "./tools/model-orbit";
+import { SELECT_TOL_PX } from "./tools/select";
 import type { ModelCamera } from "./render/model-frames";
 import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
@@ -505,9 +507,19 @@ export function createEngine(deps: EngineDeps): Engine {
     if (selectTool.selection().join("\n") !== before) emit();
   };
 
+  /** Le point d'appui touche-t-il l'élément `id` (le plus haut sous le point, tolérance de la sélection) ? */
+  const touches = (id: string, s: InputSample | undefined): boolean => {
+    if (s === undefined) return false;
+    const [x, y] = screenToWorld(camera, s.x, s.y);
+    return doc.hitTest(pageId, x, y, SELECT_TOL_PX / camera.zoom) === id;
+  };
+
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
       lastDeleted = null;
+      // C15 (S2) : un appui qui ne touche pas l'objet de l'orbite (zone vide ou autre élément, hit-test de la sélection)
+      // ferme l'orbite et va à l'outil courant ; pendant un glissé de l'orbite, un second appui lui reste (ignoré).
+      if (orbit !== null && !orbit.gesture.active() && !touches(orbit.id, samples[0])) orbit.close();
       const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : orbit !== null ? orbit.gesture : tools[t];
       owner.set(pointerId, g);
       emitIfSelectionChanged(() => g.begin(pointerId, samples));
