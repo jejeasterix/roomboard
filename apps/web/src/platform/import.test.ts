@@ -890,16 +890,29 @@ describe("importFiles : fichiers liés (C15, DAX2)", () => {
     expect([times(heads, "b.png"), times(blobs, "b.png"), times(heads, "notes.xyz"), times(blobs, "notes.xyz")]).toEqual([1, 1, 1, 0]);
   });
 
-  it("en-tête qui lève pendant la pré-passe : lu une fois, l'échec dit comme avant", async () => {
+  it("en-tête d'un fichier non cité qui lève pendant la pré-passe : lu une fois, l'échec dit comme avant", async () => {
     const { heads, counted, times } = counter();
     const log: string[] = [];
     const d = deps();
     const bad: DroppedFile = { ...txt("x.png", "z"), head: async () => { throw new Error("disque"); } };
-    const r = await importerOf([fake("fmod", log, true), fake("png", log)], d).importFiles([counted(txt("m.fmod", "x.png")), counted(bad)]);
+    const r = await importerOf([fake("fmod", log, true), fake("png", log)], d).importFiles([counted(txt("m.fmod", "rien")), counted(bad)]);
     expect(log).toEqual(["fmod:m.fmod[]"]);
     expect(r.failed).toEqual(["x.png"]);
     expect(times(heads, "x.png")).toBe(1);
     expect(d.notify.mock.calls.map((c) => c[0])).toEqual(["Import impossible (x.png) : disque"]);
+  });
+
+  it("modèle que la coque lie (au-delà de link.aboveBytes) : jamais lu en entier, rien de réclamé", async () => {
+    const { blobs, counted, times } = counter();
+    const log: string[] = [];
+    const h: ImportHandler = {
+      ...fake("fmod", log, true),
+      link: { aboveBytes: 10, run: async (f, path, ctx) => (log.push(`lien:${f.name}:${path}[${ctx.companions.length}]`), "inserted") },
+    };
+    const model: DroppedFile = { ...txt("m.fmod", "a.png"), path: "/d/m.fmod", size: 50 };
+    await importerOf([h, fake("png", log)], deps()).importFiles([counted(model), counted(txt("a.png", "x"))]);
+    expect(log).toEqual(["lien:m.fmod:/d/m.fmod[0]", "png:a.png[]"]);
+    expect(times(blobs, "m.fmod")).toBe(0);
   });
 
   it("hasZipMagic exporté : en-tête ZIP reconnu, en-tête court refusé", () => {
