@@ -1586,6 +1586,28 @@ describe("espace de travail : Office (C16)", () => {
     expect(hook.fire).toBeNull();
   });
 
+  it("original modifié : deux événements pour le même id avant la réponse : une seule question", async () => {
+    const hook: { fire: ((e: { readonly id: string; readonly name: string }) => void) | null } = { fire: null };
+    const onOriginalChanged = vi.fn((cb: (e: { readonly id: string; readonly name: string }) => void) => {
+      hook.fire = cb;
+      return () => undefined;
+    });
+    const reimportOriginal = vi.fn(async (_id: string) => undefined);
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice: converting(), onOriginalChanged, reimportOriginal });
+    answer = true;
+    shell.confirm.mockClear();
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    await flush();
+    await flush();
+    expect(shell.confirm).toHaveBeenCalledTimes(1);
+    expect(reimportOriginal.mock.calls).toEqual([["1-0"]]);
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    await flush();
+    expect(shell.confirm).toHaveBeenCalledTimes(2);
+    ws.dispose();
+  });
+
   it("S5, O18 : un .roomboard d'avant C16 (PDF de C12, sans original) s'ouvre comme avant : original null partout", async () => {
     const ws = await setupWorkspace();
     const c12 = fakeCore.fromPdfPages({ id: "cd".repeat(32), name: "cours.pdf", mime: "application/pdf", size: 9 }, [{ w: 612, h: 792 }, { w: 792, h: 612 }]);
