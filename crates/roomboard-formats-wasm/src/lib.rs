@@ -488,7 +488,12 @@ mod tests {
         image_adjust_inner(&mut px, 50, 0);
         assert_eq!(px, vec![228, 228, 228, 50]);
         let mut px = vec![10, 10, 10, 255, 10, 10, 10, 255];
-        image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, [1, 2, 3]).expect("calcul");
+        assert_eq!(
+            image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, Some([1, 2, 3])),
+            Ok(2)
+        );
         assert_eq!(px, vec![1, 2, 3, 255, 1, 2, 3, 255]);
+        assert_eq!(image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, None), Ok(2));
+        assert_eq!(px, vec![0; 8], "effacer : transparent");
     }
 }

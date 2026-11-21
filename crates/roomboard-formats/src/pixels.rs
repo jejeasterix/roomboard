@@ -342,8 +342,9 @@ mod tests {
         );
     }
 
+    /// B8 : la zone de la graine prend la couleur opaque ; l'intérieur enfermé et l'anneau ne changent pas.
     #[test]
-    fn flood_fill_red_from_background_tolerance_5_keeps_alpha() {
+    fn flood_fill_paints_opaque_and_keeps_enclosed_interior() {
         let mut v = img(20, 20, |x, y| {
             let inside = (5..15).contains(&x) && (5..15).contains(&y);
             let hole = (7..13).contains(&x) && (7..13).contains(&y);
@@ -353,25 +354,73 @@ mod tests {
                 [255, 255, 255, 200]
             }
         });
-        flood_fill(&mut v, 20, 20, (0, 0), 5, [255, 0, 0]).expect("calcul");
-        assert_eq!(
-            px(&v, 20, 0, 0),
-            [255, 0, 0, 200],
-            "fond rougi, alpha gardé"
-        );
-        assert_eq!(
-            px(&v, 20, 10, 10),
-            [255, 255, 255, 200],
-            "intérieur enfermé inchangé"
-        );
+        let n = flood_fill(&mut v, 20, 20, (0, 0), 5, Some([255, 0, 0])).expect("calcul");
+        assert_eq!(n, 300, "fond extérieur : 20 × 20 − 10 × 10");
+        assert_eq!(px(&v, 20, 0, 0), [255, 0, 0, 255], "fond rougi, opaque");
+        assert_eq!(px(&v, 20, 10, 10), [255, 255, 255, 200], "intérieur enfermé inchangé");
         assert_eq!(px(&v, 20, 5, 10), RED);
+    }
+
+    /// S3 : fond transparent et trait noir : remplir le fond (tolérance 5) le rend opaque de la couleur choisie sans
+    /// toucher au noir (en RVB seul, le transparent lu 0,0,0,0 déborderait dans le noir).
+    #[test]
+    fn transparent_zone_does_not_leak_into_black() {
+        const CLEAR: [u8; 4] = [0, 0, 0, 0];
+        const BLACK: [u8; 4] = [0, 0, 0, 255];
+        let mut v = img(20, 20, |x, _| if x == 10 { BLACK } else { CLEAR });
+        let n = flood_fill(&mut v, 20, 20, (0, 0), 5, Some([250, 204, 21])).expect("calcul");
+        assert_eq!(n, 10 * 20, "colonnes 0 à 9");
+        assert_eq!(px(&v, 20, 0, 0), [250, 204, 21, 255]);
+        assert_eq!(px(&v, 20, 10, 5), BLACK);
+        assert_eq!(px(&v, 20, 15, 5), CLEAR, "de l'autre côté du trait : inchangé");
+    }
+
+    /// S3 : effacer une zone blanche donne [0, 0, 0, 0] et rend le nombre de pixels changés ; déjà transparente : 0.
+    #[test]
+    fn clear_makes_zone_transparent_and_counts() {
+        let mut v = ring();
+        assert_eq!(flood_fill(&mut v, 20, 20, (0, 0), 5, None).expect("calcul"), 300);
+        assert_eq!(px(&v, 20, 0, 0), [0, 0, 0, 0]);
+        assert_eq!(px(&v, 20, 10, 10), WHITE, "intérieur enfermé inchangé");
+        assert_eq!(px(&v, 20, 5, 10), RED);
+        assert_eq!(
+            flood_fill(&mut v, 20, 20, (0, 0), 5, None).expect("calcul"),
+            0,
+            "zone déjà transparente : rien changé"
+        );
+    }
+
+    /// HB13 : peindre la couleur déjà présente (même alpha) : 0 changé.
+    #[test]
+    fn flood_fill_same_paint_changes_nothing() {
+        let mut v = img(4, 4, |_, _| [250, 204, 21, 255]);
+        assert_eq!(
+            flood_fill(&mut v, 4, 4, (1, 1), 5, Some([250, 204, 21])).expect("calcul"),
+            0
+        );
+    }
+
+    /// B8 : échelle de C5 (écart × 100 ≤ tolérance × 255) sur les quatre canaux : gris 240 joint au blanc à 10, pas à 5.
+    #[test]
+    fn flood_fill_tolerance_scale_on_rgba() {
+        let band = |x: u32, _y: u32| if x < 2 { [240, 240, 240, 255] } else { WHITE };
+        let mut v = img(6, 1, band);
+        assert_eq!(flood_fill(&mut v, 6, 1, (5, 0), 5, None).expect("calcul"), 4);
+        let mut v = img(6, 1, band);
+        assert_eq!(flood_fill(&mut v, 6, 1, (5, 0), 10, None).expect("calcul"), 6);
+        let mut v = img(2, 1, |x, _| if x == 0 { [255, 255, 255, 240] } else { WHITE });
+        assert_eq!(
+            flood_fill(&mut v, 2, 1, (1, 0), 5, None).expect("calcul"),
+            1,
+            "un écart d'alpha seul sépare aussi les zones"
+        );
     }
 
     #[test]
     fn flood_fill_seed_outside_changes_nothing() {
         let before = ring();
         let mut v = before.clone();
-        flood_fill(&mut v, 20, 20, (20, 0), 5, [0, 0, 0]).expect("calcul");
+        assert_eq!(flood_fill(&mut v, 20, 20, (20, 0), 5, Some([0, 0, 0])).expect("calcul"), 0);
         assert_eq!(v, before);
     }
 
@@ -383,7 +432,7 @@ mod tests {
             Err(PixelError::BadSize)
         );
         assert_eq!(
-            flood_fill(&mut v, 1, 1, (0, 0), 5, [0, 0, 0]),
+            flood_fill(&mut v, 1, 1, (0, 0), 5, Some([0, 0, 0])),
             Err(PixelError::BadSize)
         );
         assert_eq!(
