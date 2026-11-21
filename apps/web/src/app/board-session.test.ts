@@ -897,7 +897,7 @@ describe("session — objets 3D (C15)", () => {
     const drag = (dx: number, end = true, pointer = 2): void => {
       const p = at(100, 50);
       s.engine.sink.begin(pointer, "select", [sample(p, 0)]);
-      s.engine.sink.extend(pointer, [sample({ x: p.x + dx, y: p.y }, 16)]);
+      s.engine.sink.extend(pointer, [sample({ x: p.x + dx, y: p.y }, 16)], []);
       if (end) s.engine.sink.close(pointer, "end");
     };
     const model = () => {
@@ -1012,20 +1012,71 @@ describe("session — objets 3D (C15)", () => {
     plain.s.dispose();
   });
 
-  it("changement de page et deactivate : séance fermée (X23)", async () => {
-    const { s, fv, click, page, tag } = await modelSession();
+  it("orbite validée : instantané puis SetModel3dView en une étape ; annuler : ancienne vue et ancien instantané, séance fermée (S2)", async () => {
+    const { s, fv, click, drag, model, tag } = await modelSession();
     click(100, 50);
+    await s.toggleOrbit();
+    const v0 = s.engine.state().version;
+    drag(100, false);
+    expect(tag()).toBe("glb;orbite;87;20");
+    expect(model()!.yaw).toBe(D_YAW);
+    s.engine.sink.close(2, "end");
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6));
+    expect(fv.snaps).toHaveLength(1);
+    expect(model()!.snapshot).not.toBe(SNAP);
+    expect(s.engine.state().version).toBe(v0 + 1);
+    expect(tag()).toBe("glb;orbite;87;20");
+    s.engine.undo();
+    expect(model()!.yaw).toBe(D_YAW);
+    expect(model()!.snapshot).toBe(SNAP);
+    expect(s.models.current()).toBeNull();
+    expect(tag()).toBe("glb;instantane;30;20");
+    s.dispose();
+  });
+
+  it("commit après suppression : aucune commande, séance fermée", async () => {
+    const { s, fv, id, click, drag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    const free = fv.holdSnapshots();
+    const run = vi.spyOn(s.engine, "run");
+    drag(100);
+    await vi.waitFor(() => expect(fv.snaps).toHaveLength(1));
+    s.engine.deleteElements([id]);
+    expect(s.models.current()).toBeNull();
+    free();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(run.mock.calls.filter(([c]) => c.type === "SetModel3dView")).toHaveLength(0);
+    expect(s.doc.element(id)).toBeNull();
+    s.dispose();
+  });
+
+  it("changement de sélection, de page, deactivate : séance fermée (X23)", async () => {
+    const { s, fv, click, page, tag } = await modelSession();
+    const other = s.engine.run({
+      type: "AddModel3d", page, asset: { id: MAIN, name: "chaise.glb", mime: "model/gltf-binary", size: 4 }, format: "glb", files: [],
+      w: 50, h: 50, yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH, snapshot: null, matrix: [1, 0, 0, 1, 400, 300] as never,
+    })!.ids[0]!;
+    click(100, 50);
+    await s.toggleOrbit();
+    s.engine.deleteElements([other]); // la sélection tombe, l'objet de l'orbite reste
+    expect(s.selectedModel3d()).toBeNull();
+    expect(s.models.current()).toBeNull();
+    expect(fv.released).toHaveLength(1);
+    s.engine.undo();
+    click(100, 50);
+    await s.toggleOrbit();
     await s.toggleOrbit();
     s.engine.addPage();
     expect(s.models.current()).toBeNull();
-    expect(fv.released).toHaveLength(1);
+    expect(fv.released).toHaveLength(2);
     s.engine.showPage(page);
     click(100, 50);
     await s.toggleOrbit();
     expect(tag()).toBe("glb;orbite;30;20");
     s.deactivate();
     expect(s.models.current()).toBeNull();
-    expect(fv.released).toHaveLength(2);
+    expect(fv.released).toHaveLength(3);
     s.dispose();
   });
 });
