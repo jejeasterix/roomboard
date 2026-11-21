@@ -23,7 +23,7 @@ export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
 export type ShapeKind = "rect" | "ellipse" | "line" | "arrow";
-export type ElementKind = "stroke" | "shape" | "text" | "image" | "media" | "model3d" | "table" | "unknown";
+export type ElementKind = "stroke" | "shape" | "text" | "image" | "media" | "model3d" | "table" | "fill" | "unknown";
 export interface AssetRef { readonly id: string; readonly name: string; readonly mime: string; readonly size: number }
 /** Métadonnée d'un asset cité (K3) : même forme que la référence ; défauts du cœur pour une entrée absente (K4). */
 export type AssetInfo = AssetRef;
@@ -40,11 +40,13 @@ export interface Change {
 
 /** Cible du pot (C6a, D12) : contour (`color` d'une forme ou d'un trait), intérieur (`fill` d'un rectangle ou d'une
  *  ellipse), fond de la page (`background`) ; C6b (B2) : image, avec le nouvel asset calculé par la page (pixels remplis
- *  ou effacés) ; `color` y est contrôlée, jamais écrite. */
+ *  ou effacés) ; `color` y est contrôlée, jamais écrite. C8 : zone fermée au point monde (x, y), tolérance de fermeture
+ *  `tol` monde (2 px / zoom) ; le cœur la calcule à l'écriture, sinon le fond. */
 export type FillTarget =
   | { readonly kind: "edge" | "inside"; readonly id: string }
   | { readonly kind: "background" }
-  | { readonly kind: "image"; readonly id: string; readonly asset: AssetRef };
+  | { readonly kind: "image"; readonly id: string; readonly asset: AssetRef }
+  | { readonly kind: "zone"; readonly x: number; readonly y: number; readonly tol: number };
 
 export type Command =
   | { readonly type: "AddPage"; readonly after: string | null }
@@ -290,7 +292,11 @@ export interface Model3dElement extends ElementBase { readonly kind: "model3d"; 
 export interface UnknownElement extends ElementBase { readonly kind: "unknown"; readonly unknown: UnknownData }
 /** Tableau (C10a) : coin en (0, 0) local, placé par transform. */
 export interface TableElement extends ElementBase { readonly kind: "table"; readonly table: TableData }
-export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | MediaElement | Model3dElement | TableElement | UnknownElement;
+/** Zone remplie au pot (C8, Q11, Q12) : couleur et boîte locale (0, 0)-(w, h) ; anneaux par `fillRings(id)` ; mal formé :
+ *  élément unknown, sourceKind "fill". */
+export interface FillData { readonly color: string; readonly w: number; readonly h: number }
+export interface FillElement extends ElementBase { readonly kind: "fill"; readonly fill: FillData }
+export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | MediaElement | Model3dElement | TableElement | FillElement | UnknownElement;
 
 /** Fond de page (U6, K6) : rect calculé par le cœur, calé sur la largeur de la page ; null si w ou h illisibles. */
 export interface BackdropView {
@@ -336,6 +342,10 @@ export interface CoreDocument {
   relinkAssets(links: readonly LinkedAsset[]): number;
   points(id: string): Float32Array | null;
   outline(id: string): Float32Array | null;
+  /** C8 (Q12) : anneaux locaux d'un `fill`, `[n, x0, y0, …]` par anneau, extérieur d'abord ; null pour tout autre élément. */
+  fillRings(id: string): Float32Array | null;
+  /** C8 (Q18) : cellules du masque d'un clic du pot sur `page` à `tol` monde ; 0 sans mur (marque `data-zone-cells`). */
+  zoneCells(page: string, tol: number): number;
   hitTest(page: string, x: number, y: number, tol: number): string | null;
   /** Bord d'un rectangle ou d'une ellipse sous (x, y) monde (C6a, DA2) : tol + demi-épaisseur à l'échelle de la forme ;
    *  faux pour tout autre élément ou un id inconnu. Rien n'est écrit. */

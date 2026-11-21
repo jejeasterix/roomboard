@@ -26,10 +26,10 @@ pub struct StrokeStyle {
     pub width: f32,
 }
 
-/// Types d'élément que ce cœur sait lire (C10a : `table`, C14 : `media`, C15 : `model3d`) ; tout autre `kind` est gardé
-/// et rendu comme élément inconnu (U3, K8).
-pub const KNOWN_KINDS: [&str; 7] = [
-    "stroke", "shape", "text", "image", "table", "media", "model3d",
+/// Types d'élément que ce cœur sait lire (C10a : `table`, C14 : `media`, C15 : `model3d`, C8 : `fill`) ; tout autre
+/// `kind` est gardé et rendu comme élément inconnu (U3, K8).
+pub const KNOWN_KINDS: [&str; 8] = [
+    "stroke", "shape", "text", "image", "table", "media", "model3d", "fill",
 ];
 /// Boîte d'un élément inconnu sans `w`, `h` lisibles (K8, HK7).
 pub const UNKNOWN_BOX: f64 = 100.0;
@@ -118,6 +118,14 @@ pub struct UnknownView {
     pub h: f64,
 }
 
+/// Élément `fill` (C8, Q12) : couleur et boîte ; les anneaux passent par `Document::fill_rings`, jamais par la vue.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FillView {
+    pub color: String,
+    pub w: f64,
+    pub h: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ElementView {
     pub id: String,
@@ -143,6 +151,9 @@ pub struct ElementView {
     /// Objet 3D (C15, X2) ; absent pour tout autre `kind`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model3d: Option<crate::model3d::Model3dView>,
+    /// Zone remplie au pot (C8, Q12) ; absent pour tout autre `kind`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill: Option<FillView>,
     /// Chemin de groupes (C3, Z1), du plus extérieur au plus intérieur ; absent sans groupe lisible.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group: Option<Vec<String>>,
@@ -163,6 +174,7 @@ impl ElementView {
             table: None,
             media: None,
             model3d: None,
+            fill: None,
             group: None,
         }
     }

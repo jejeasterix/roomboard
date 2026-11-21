@@ -194,8 +194,9 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
 });
 
 // Contrat commun (D36) : la fausse liaison, sur laquelle le lot 3 code, et le vrai module jouent les mêmes scénarios
-// et cas limites. Seule exception, la gomme partielle : la fausse liaison ne coupe pas (écart documenté dans
-// `fake-core.ts`), son scénario reste dans le bloc du vrai module.
+// et cas limites. Deux exceptions : la gomme partielle (la fausse liaison ne coupe pas) et la zone fermée du pot (C8,
+// Q17 : la fausse liaison traite `Fill { kind: "zone" }` comme le fond) ; leurs scénarios restent dans les blocs du
+// vrai module (écarts documentés dans `fake-core.ts`).
 const factories: { name: string; f: CoreFactory }[] = [
   { name: "fausse liaison", f: fakeCore },
   ...(loaded === null ? [] : [{ name: "vrai module wasm", f: loaded.core }]),
@@ -3486,5 +3487,119 @@ describe("contrôle de forme C6b (sourceAsset)", () => {
     expect(toElementView({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1, sourceAsset: EMPTY_HASH } })).toEqual({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1, sourceAsset: EMPTY_HASH } });
     expect(toElementView({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1 } })).toEqual({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1 } });
     expect(() => toElementView({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1, sourceAsset: 3 } })).toThrow("ElementView invalide");
+  });
+});
+
+describe("contrôle de forme C8 (fill)", () => {
+  const t = [1, 0, 0, 1, 100, 100];
+  it("fill : couleur et boîte gardées ; couleur absente ou boîte ≤ 0 : ElementView invalide", () => {
+    expect(toElementView({ id: "f", kind: "fill", transform: t, fill: { color: "#facc15", w: 4, h: 3 } })).toEqual({ id: "f", kind: "fill", transform: t, fill: { color: "#facc15", w: 4, h: 3 } });
+    expect(() => toElementView({ id: "f", kind: "fill", transform: t })).toThrow("ElementView invalide");
+    expect(() => toElementView({ id: "f", kind: "fill", transform: t, fill: { color: 3, w: 4, h: 3 } })).toThrow("ElementView invalide");
+    expect(() => toElementView({ id: "f", kind: "fill", transform: t, fill: { color: "#facc15", w: 0, h: 3 } })).toThrow("ElementView invalide");
+  });
+
+  it("Fill zone : fill_zone(page, x, y, tol, couleur ou undefined) ; fillRings, zoneCells relayés", () => {
+    const calls: unknown[][] = [];
+    const ok = { pages: ["p1"], ids: [], removed: [], full: false, version: 1 };
+    const doc = {
+      fill_zone: (...a: unknown[]) => (calls.push(["fill_zone", ...a]), ok),
+      fill_rings: (id: string) => (calls.push(["fill_rings", id]), undefined),
+      zone_cells: (...a: unknown[]) => (calls.push(["zone_cells", ...a]), 7),
+    };
+    const stub = { Document: { blank: () => doc, load: () => doc }, StrokeBuilder: class {}, version: () => "factice" };
+    const d = createWasmCore(stub as unknown as WasmModule).blank();
+    d.apply({ type: "Fill", page: "p1", target: { kind: "zone", x: 1, y: 2, tol: 3 }, color: null });
+    d.apply({ type: "Fill", page: "p1", target: { kind: "zone", x: 1, y: 2, tol: 3 }, color: "#facc15" });
+    expect(d.fillRings("f")).toBeNull();
+    expect(d.zoneCells("p1", 2)).toBe(7);
+    expect(calls).toEqual([
+      ["fill_zone", "p1", 1, 2, 3, undefined],
+      ["fill_zone", "p1", 1, 2, 3, "#facc15"],
+      ["fill_rings", "f"],
+      ["zone_cells", "p1", 2],
+    ]);
+  });
+});
+
+const c8Factories = factories;
+describe.each(c8Factories)("contrat C8 : $name", ({ f }) => {
+  it("C8 : page vide : Fill zone = fond, une étape ; même couleur : aucune étape ; tol ≤ 0 : refus (S2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "zone", x: 300, y: 300, tol: 2 }, color: "#1d4ed8" });
+    expect([c.pages, c.ids]).toEqual([[p], []]);
+    expect(bg(d, p)).toBe("#1d4ed8");
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "zone", x: 300, y: 300, tol: 2 }, color: "#1d4ed8" }));
+    expect(messageOf(() => d.apply({ type: "Fill", page: p, target: { kind: "zone", x: 300, y: 300, tol: 0 }, color: "#1d4ed8" }))).toBe(BAD_FILL);
+    expect(d.zoneCells(p, 2)).toBe(0);
+    d.free();
+  });
+});
+
+// C8 (S1, S2, S3, S5) : zone fermée, jouée par le vrai module seulement (second écart D36 : la fausse liaison traite
+// `Fill { kind: "zone" }` comme le fond).
+const square = (d: CoreDocument, p: string): void => {
+  const side = (x0: number, y0: number, x1: number, y1: number): void => {
+    const pts: number[] = [];
+    for (let i = 0; i <= 40; i++) pts.push(x0 + ((x1 - x0) * i) / 40, y0 + ((y1 - y0) * i) / 40, 0.5);
+    d.apply({ type: "CommitStroke", page: p, points: new Float32Array(pts), style: { color: "#000000", width: 4 } });
+  };
+  side(100, 100, 500, 100);
+  side(500, 100, 500, 500);
+  side(500, 500, 100, 500);
+  side(100, 500, 100, 100);
+};
+const zoneAt = (p: string, x: number, y: number, color: string | null): Command => ({ type: "Fill", page: p, target: { kind: "zone", x, y, tol: 2 }, color });
+
+describe.skipIf(loaded === null)("contrat C8 : vrai module seulement", () => {
+  it("zone fermée par quatre traits : un fill en haut de la page, une étape, anneaux relus à l'identique (S1, S3)", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    square(d, p);
+    expect(d.zoneCells(p, 2)).toBeGreaterThan(160_000);
+    const c = d.apply(zoneAt(p, 300, 300, "#facc15"));
+    const id = c.ids[0] ?? "";
+    expect(c.ids).toHaveLength(1);
+    expect(d.elementIds(p).slice(-1)).toEqual([id]);
+    expect(d.element(id)).toMatchObject({ kind: "fill", fill: { color: "#facc15" } });
+    const rings = d.fillRings(id);
+    expect(rings?.[0]).toBeGreaterThanOrEqual(4);
+    d.undo();
+    expect(d.elementIds(p)).toHaveLength(4);
+    d.redo();
+    expect(d.elementIds(p)).toHaveLength(5);
+    const r = need().core.load(d.save(now, "0.1.0"));
+    expect(r.element(id)).toEqual(d.element(id));
+    expect(r.fillRings(id)).toEqual(rings);
+    r.free();
+    d.free();
+  });
+
+  it("pot sur le fill : recoloré en une étape, « Aucune » sans étape ; près du bord : le trait (S5)", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    square(d, p);
+    const id = d.apply(zoneAt(p, 300, 300, "#facc15")).ids[0] ?? "";
+    expect(d.hitTest(p, 300, 300, 6)).toBe(id);
+    const edge = d.hitTest(p, 300, 103, 6);
+    expect(edge).not.toBe(id);
+    expect(d.element(edge ?? "")?.kind).toBe("stroke");
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "inside", id }, color: "#dc2626" });
+    expect(c.ids).toEqual([id]);
+    expect(d.element(id)).toMatchObject({ fill: { color: "#dc2626" } });
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "inside", id }, color: null }));
+    d.free();
+  });
+
+  it("zone ouverte ou page vide : le fond change, aucun fill, une étape (S2)", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    square(d, p);
+    d.apply(zoneAt(p, 900, 900, "#16a34a"));
+    expect(bg(d, p)).toBe("#16a34a");
+    expect(d.elementIds(p)).toHaveLength(4);
+    expect(messageOf(() => d.apply(zoneAt(p, 300, 300, "#12")))).toBe(BAD_FILL);
+    d.free();
   });
 });

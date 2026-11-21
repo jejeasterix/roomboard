@@ -202,10 +202,11 @@ describe("cible du pot (C6a)", () => {
     expect(s.at(803, 550)).toEqual({ type: "ImageFill", page: s.page, id, seed: [99, 50], color: RED });
   });
 
-  it("rien sous le pointeur : fond de la page ; « Aucune » : fond retiré (D10, D11)", () => {
+  it("C8 : rien sous le pointeur : Fill zone à 2 px / zoom ; « Aucune » gardée (Q7, Q10, DA-Z3)", () => {
     const s = setup();
-    expect(s.at(1500, 1000)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: RED });
-    expect(s.at(1500, 1000, null)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: null });
+    expect(s.at(1500, 1000)).toEqual({ type: "Fill", page: s.page, target: { kind: "zone", x: 1500, y: 1000, tol: 2 }, color: RED });
+    expect(s.at(1500, 1000, null)).toEqual({ type: "Fill", page: s.page, target: { kind: "zone", x: 1500, y: 1000, tol: 2 }, color: null });
+    expect(s.at(1500, 1000, RED, 4)).toEqual({ type: "Fill", page: s.page, target: { kind: "zone", x: 1500, y: 1000, tol: 0.5 }, color: RED });
   });
 
   // D4, D25 : un objet groupé se colore seul. Discrimine : la remontée de C3 (`expandToGroups([hit], …)`, select.ts)
@@ -230,8 +231,8 @@ describe("cible du pot (C6a)", () => {
     expect(s.at(102, 850, BLUE)).toEqual({ type: "Fill", page: s.page, target: { kind: "edge", id: b }, color: BLUE });
   });
 
-  // D1 : aucune zone fermée n'est cherchée, quatre lignes en carré ne forment pas une zone.
-  it("quatre lignes en carré, clic au centre : fond de la page (D1)", () => {
+  // C8 (DA-Z3) : la page ne cherche pas la zone ; elle envoie `Fill zone` et le cœur décide (zone fermée ou fond).
+  it("C8 : quatre lignes en carré, clic au centre : Fill zone, décidée par le cœur", () => {
     const s = setup();
     const style = { color: "#000000", width: 4 };
     const seg = (x0: number, y0: number, x1: number, y1: number): void => {
@@ -241,7 +242,19 @@ describe("cible du pot (C6a)", () => {
     seg(300, 1000, 300, 1200);
     seg(300, 1200, 100, 1200);
     seg(100, 1200, 100, 1000);
-    expect(s.at(200, 1100)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: RED });
+    expect(s.at(200, 1100)).toEqual({ type: "Fill", page: s.page, target: { kind: "zone", x: 200, y: 1100, tol: 2 }, color: RED });
+  });
+
+  // C8 (Q14) : un `fill` touché (dedans, à plus de 6 px du bord) se recolore ; « Aucune » le supprime en une étape.
+  it("C8 : fill sous le pointeur : couleur → inside, « Aucune » → Delete", () => {
+    const file = new TextEncoder().encode(JSON.stringify({
+      now: "2026-11-21T00:00:00Z", appVersion: "0.1.0", assets: {},
+      pages: [{ id: "p1", background: "#ffffff", backdrop: null, elements: [{ id: "f1", kind: "fill", transform: [1, 0, 0, 1, 100, 100], fill: { color: "#facc15", w: 400, h: 400, contours: [[0, 0, 400, 0, 400, 400, 0, 400]] } }] }],
+    }));
+    const doc = fakeCore.load(file);
+    expect(fillCommand(doc, "p1", 300, 300, 1, RED, ten)).toEqual({ type: "Fill", page: "p1", target: { kind: "inside", id: "f1" }, color: RED });
+    expect(fillCommand(doc, "p1", 300, 300, 1, null, ten)).toEqual({ type: "Delete", ids: ["f1"] });
+    expect(fillCommand(doc, "p1", 103, 300, 1, RED, ten)).toEqual({ type: "Fill", page: "p1", target: { kind: "zone", x: 103, y: 300, tol: 2 }, color: RED });
   });
 
   // HC6-11 : la fausse liaison ne sait pas créer d'élément inconnu ; une liaison factice en rend un sous le pointeur.

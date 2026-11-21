@@ -35,8 +35,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -78,5 +78,11 @@ describe("stageTags (C6b, B21)", () => {
   it("pot : état de la file du pot ; absent : vide", () => {
     expect(stageTags(base).pot).toBe("");
     expect(stageTags(base, { pot: "attente" }).pot).toBe("attente");
+  });
+});
+describe("stageTags (C8, Q18)", () => {
+  it("C8 zones, zoneMs, zoneCells : recopiés ; vides par défaut", () => {
+    expect(stageTags(base, { zones: "1", zoneMs: "12.3", zoneCells: "4032064" })).toMatchObject({ zones: "1", zoneMs: "12.3", zoneCells: "4032064" });
+    expect(stageTags(base)).toMatchObject({ zones: "", zoneMs: "", zoneCells: "" });
   });
 });

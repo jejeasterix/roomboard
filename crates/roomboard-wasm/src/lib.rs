@@ -1223,6 +1223,11 @@ impl Document {
         self.core.outline(id)
     }
 
+    /// Anneaux locaux d'un `fill` (C8, Q12) : `[n, x0, y0, …]` par anneau ; absent pour tout autre élément.
+    pub fn fill_rings(&self, id: &str) -> Option<Vec<f32>> {
+        self.core.fill_rings(id)
+    }
+
     pub fn hit_test(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<String> {
         self.core.hit_test(page, x, y, tol)
     }
@@ -1261,6 +1266,28 @@ impl Document {
                 .fill_image_inner(page, id, asset_ref(asset, name, mime, size), color)
                 .map_err(cmd_err)?,
         )
+    }
+
+    /// Pot dans une zone fermée (C8, Q10) : `x`, `y`, `tol` en monde ; `color` absent ou null : « Aucune » ; voir
+    /// `Document::cmd_fill_zone`.
+    pub fn fill_zone(
+        &mut self,
+        page: &str,
+        x: f64,
+        y: f64,
+        tol: f64,
+        color: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .fill_zone_inner(page, x, y, tol, color)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// Cellules du masque d'un clic du pot sur `page` à `tol` (C8, Q18, `data-zone-cells`), lecture seule.
+    pub fn zone_cells(&self, page: &str, tol: f64) -> u32 {
+        self.core.zone_cells(page, tol)
     }
 
     /// Bord d'un rectangle ou d'une ellipse (C6a, DA2), lecture seule ; `tol` en unités monde.
@@ -1824,6 +1851,21 @@ impl Document {
         })
     }
 
+    pub fn fill_zone_inner(
+        &mut self,
+        page: &str,
+        x: f64,
+        y: f64,
+        tol: f64,
+        color: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::Fill {
+            page: page.to_string(),
+            target: FillTarget::Zone { x, y, tol },
+            color,
+        })
+    }
+
     pub fn add_page_after_inner(&mut self, after: Option<String>) -> Result<Change, CommandError> {
         self.run(Command::AddPage { after })
     }
@@ -2012,6 +2054,32 @@ impl StrokeBuilder {
 mod tests {
     use super::*;
     use roomboard_core::rich_text::{SpanAttrs, SpanInput};
+
+    // C8 (Q10, Q18) : pot dans une zone fermée par son `_inner` ; cellules du masque.
+    #[test]
+    fn fill_zone_inner_fills_a_square_of_strokes() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        for pts in [
+            [100.0, 100.0, 0.5, 500.0, 100.0, 0.5],
+            [500.0, 100.0, 0.5, 500.0, 500.0, 0.5],
+            [500.0, 500.0, 0.5, 100.0, 500.0, 0.5],
+            [100.0, 500.0, 0.5, 100.0, 100.0, 0.5],
+        ] {
+            d.commit_stroke_inner(&p, &pts, "#000000", 4.0)
+                .expect("trait");
+        }
+        assert!(d.zone_cells(&p, 2.0) > 160_000);
+        let c = d
+            .fill_zone_inner(&p, 300.0, 300.0, 2.0, Some("#facc15".into()))
+            .expect("zone");
+        assert_eq!(c.ids.len(), 1);
+        assert_eq!(d.core.element_ids(&p).len(), 5);
+        assert_eq!(
+            d.fill_zone_inner(&p, 300.0, 300.0, 0.0, None),
+            Err(CommandError::BadFill)
+        );
+    }
 
     fn c3_rect(d: &mut Document, p: &str, x: f64) -> String {
         d.add_shape_inner(p, "rect", [x, 100.0, x + 50.0, 150.0], "#000000", 4.0, None)

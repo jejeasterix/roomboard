@@ -6,6 +6,7 @@ pub mod copy;
 pub mod document;
 pub mod element;
 pub mod fill;
+pub mod fill_element;
 pub mod format;
 pub mod grid;
 pub mod history;
@@ -17,3 +18,5 @@ pub mod query;
 pub mod rich_text;
 pub mod shape;
 pub mod table;
+#[cfg(feature = "zone")]
+pub mod zone;

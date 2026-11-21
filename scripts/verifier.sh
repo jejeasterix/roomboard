@@ -19,6 +19,9 @@ FORMATS_OUT=apps/web/src/wasm-formats
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+# Le cœur seul, sans la fonctionnalité `zone` que `roomboard-wasm` active (resolver 2 l'unifie dans le workspace).
+cargo clippy -p roomboard-core --all-targets -- -D warnings
+cargo test -p roomboard-core
 
 bash scripts/tests/controle-wasm-bindgen.test.sh
 bash scripts/controle-wasm-bindgen.sh Cargo.lock
@@ -110,6 +113,8 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/c6b-pot-image-navigateur.mjs
   node scripts/essais/c15-3d-navigateur.mjs
   echo "C15 3D : OK"
+  node scripts/essais/c8-pot-zones-navigateur.mjs
+  echo "C8 pot zones : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"

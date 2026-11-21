@@ -49,6 +49,7 @@ import { createTextTool, type TextTool } from "../engine/tools/text";
 import type { TableTool } from "../engine/tools/tool";
 import type { AppBenchDeps } from "./banc";
 import { createFillQueue } from "./image-fill";
+import { createZoneMarks } from "./zone-marks";
 import { stageTags } from "./stage-tags";
 import { watchDpr } from "./mesure-outils";
 import { createTablePicker } from "./table-picker";
@@ -195,6 +196,8 @@ async function buildBoardSession(
     onState: () => remark(),
   });
   undo.push(() => fillQueue.dispose());
+  // C8 (Q18) : durée du pot de zone (`performance.measure("pot-zone")`), cellules, nombre de `fill` (data-zones…).
+  const zoneMarks = createZoneMarks(doc, undefined, undefined, () => remark());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
   // Fond `pdf-page` (C12, DAPF2) : tuiles par palier, `redraw` à chaque arrivée (patron R16). Libérées à la
   // désactivation (PF32 : 12 onglets) et recréées au premier dessin suivant.
@@ -325,7 +328,7 @@ async function buildBoardSession(
         tableTool = createTableTool(ctx, editor, picker, style, measure);
         return tableTool;
       },
-      fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, run) }),
+      fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, zoneMarks.timed(run)) }),
     },
   });
 
@@ -631,7 +634,8 @@ async function buildBoardSession(
     markMedia();
     stage.dataset["elements"] = String(s.elementCount);
     stage.dataset["version"] = String(s.version);
-    const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage), pot: fillQueue.state() });
+    const zone = zoneMarks.tags(s.page, s.version);
+    const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage), pot: fillQueue.state(), zones: zone.zones, zoneMs: zone.zoneMs, zoneCells: zone.zoneCells });
     stage.dataset["page"] = tags.page;
     stage.dataset["selection"] = tags.selection;
     stage.dataset["bounds"] = tags.bounds;
@@ -644,6 +648,9 @@ async function buildBoardSession(
     stage.dataset["pixels"] = tags.pixels;
     stage.dataset["image"] = tags.image;
     stage.dataset["pot"] = tags.pot;
+    stage.dataset["zones"] = tags.zones;
+    stage.dataset["zoneMs"] = tags.zoneMs;
+    stage.dataset["zoneCells"] = tags.zoneCells;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());

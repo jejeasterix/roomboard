@@ -334,3 +334,74 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Crate `roomboard-core` (C8, zone fermée du pot)
+
+Crates apportés par `i_overlay`, derrière la fonctionnalité `zone` du cœur, activée par `roomboard-wasm` seul
+(`roomboard-formats` ne la reçoit pas). Relevé : `cargo tree -p roomboard-core --features zone -e normal` ; licences
+et dépôts lus dans `cargo metadata --features roomboard-core/zone`.
+
+| crate | version | licence | dépôt |
+|---|---|---|---|
+| i_overlay | 9.2.0 | MIT OR Apache-2.0 (MIT retenue) | https://github.com/iShape-Rust/iOverlay |
+| i_float | 5.0.0 | MIT | https://github.com/iShape-Rust/iFloat |
+| i_shape | 5.0.0 | MIT | https://github.com/iShape-Rust/i_shape |
+| i_tree | 0.20.0 | MIT | https://github.com/iShape-Rust/iTree |
+| i_key_sort | 0.12.0 | MIT | https://github.com/iShape-Rust/iKeySort |
+
+`libm` 0.2.16 (MIT) est déjà listé plus haut. `i_float`, `i_shape` et `i_tree` livrent leur fichier LICENSE (texte
+ci-dessous, ligne de copyright reproduite mot pour mot : « Copyright (c) 2023 iShape-Rust » pour `i_float` et `i_shape`,
+« Copyright (c) 2024 iShape-Rust » pour `i_tree`). `i_overlay` et `i_key_sort` n'en livrent pas dans leur paquet
+(auteur déclaré : Nail Sharipov, du même groupe iShape-Rust) : le même texte MIT s'applique, avec la ligne de 2023.
+
+## Texte de licence : i_float 5.0.0, i_shape 5.0.0 (MIT) ; i_overlay 9.2.0, i_key_sort 0.12.0 (même texte, sans fichier)
+
+```text
+MIT License
+
+Copyright (c) 2023 iShape-Rust
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Texte de licence : i_tree 0.20.0 (MIT)
+
+```text
+MIT License
+
+Copyright (c) 2024 iShape-Rust
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

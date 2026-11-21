@@ -72,6 +72,24 @@ export function tracePolygons(p: PathSink, flat: ArrayLike<number>): void {
   if (open) p.closePath();
 }
 
+/** Anneaux `[n, x0, y0, …]` d'un `fill` (C8, Q12) : un sous-chemin fermé par anneau ; un compte illisible (non entier,
+ *  < 3) ou un anneau tronqué arrête la lecture. */
+export function traceRings(p: PathSink, flat: ArrayLike<number>): void {
+  let k = 0;
+  while (k < flat.length) {
+    const n = flat[k] ?? 0;
+    if (!Number.isInteger(n) || n < 3 || k + 1 + 2 * n > flat.length) return;
+    for (let i = 0; i < n; i++) {
+      const x = flat[k + 1 + 2 * i] ?? 0;
+      const y = flat[k + 2 + 2 * i] ?? 0;
+      if (i === 0) p.moveTo(x, y);
+      else p.lineTo(x, y);
+    }
+    p.closePath();
+    k += 1 + 2 * n;
+  }
+}
+
 /** Bord lointain du pourtour pour la découpe de l'aperçu de gomme (unités monde). */
 const FAR = 1e7;
 
@@ -424,8 +442,8 @@ export class Canvas2DRenderer implements Renderer {
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
   private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null): void {
-    const path = el.kind === "stroke" ? this.pathOf(el.id) : null;
-    if (el.kind === "stroke" && !path) return;
+    const path = el.kind === "stroke" || el.kind === "fill" ? this.pathOf(el.id, el.kind) : null;
+    if ((el.kind === "stroke" || el.kind === "fill") && !path) return;
     ctx.save();
     if (pre) ctx.transform(pre[0], pre[1], pre[2], pre[3], pre[4], pre[5]);
     const [a, b, c, d, e, f] = el.transform;
@@ -433,6 +451,10 @@ export class Canvas2DRenderer implements Renderer {
     if (el.kind === "stroke" && path) {
       ctx.fillStyle = el.style.color;
       ctx.fill(path, "nonzero");
+    } else if (el.kind === "fill" && path) {
+      // C8 (Q15) : trous compris, en pair-impair ; l'export suit par `record-ctx`.
+      ctx.fillStyle = el.fill.color;
+      ctx.fill(path, "evenodd");
     } else if (el.kind === "shape") {
       paintShape(ctx, el.shape, el.style);
     } else if (el.kind === "text") {
@@ -640,14 +662,23 @@ export class Canvas2DRenderer implements Renderer {
     ctx.setTransform(this.sx * c.zoom, 0, 0, this.sy * c.zoom, this.sx * c.tx, this.sy * c.ty);
   }
 
-  private pathOf(id: string): Path2D | null {
+  private pathOf(id: string, kind: "stroke" | "fill" = "stroke"): Path2D | null {
     const cached = this.paths.get(id);
     if (cached !== undefined) return cached;
-    const outline = this.source.outline(id);
     let path: Path2D | null = null;
-    if (outline && outline.length >= 6) {
-      path = this.makePath();
-      tracePolygons(path, outline);
+    if (kind === "fill") {
+      // C8 (Q15) : anneaux immuables par id, lus une fois.
+      const rings = this.source.fillRings?.(id) ?? null;
+      if (rings && rings.length >= 7) {
+        path = this.makePath();
+        traceRings(path, rings);
+      }
+    } else {
+      const outline = this.source.outline(id);
+      if (outline && outline.length >= 6) {
+        path = this.makePath();
+        tracePolygons(path, outline);
+      }
     }
     this.paths.set(id, path);
     return path;

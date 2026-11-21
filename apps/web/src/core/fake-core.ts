@@ -64,6 +64,7 @@ import type {
   TableRow,
   TextData,
   TextSpan,
+  FillData,
 } from "./api";
 import {
   BAD_GROUP_MESSAGE,
@@ -113,6 +114,8 @@ interface FakeUnknown {
   /** Boîte dessinée, calculée une fois à la lecture : `raw` ne change pas. */
   readonly box: { readonly w: number; readonly h: number };
 }
+/** C8 (Q11) : `fill` lisible ; anneaux locaux, extérieur d'abord. */
+interface FakeFill extends FillData { readonly contours: readonly (readonly number[])[] }
 interface FakeElement {
   readonly id: string;
   /** Identité pour un élément inconnu sans transform lisible (hasTransform = false). */
@@ -128,6 +131,8 @@ interface FakeElement {
   readonly media?: MediaData;
   /** C15 : objet 3D lisible ; un objet 3D mal formé est un `unknown` (sourceKind "model3d"), comme un média. */
   readonly model3d?: Model3dData;
+  /** C8 : zone remplie au pot ; un `fill` mal formé est un `unknown` (sourceKind "fill"), comme un média. */
+  readonly fill?: FakeFill;
   readonly table?: FakeTable;
   readonly unknown?: FakeUnknown;
   /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
@@ -177,7 +182,7 @@ const MESSAGES = {
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
 /** Kinds lus par la fausse liaison : même liste que `KNOWN_KINDS` du cœur (`element.rs`). */
-export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table", "media", "model3d"]);
+export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table", "media", "model3d", "fill"]);
 const finitePositive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
@@ -508,6 +513,8 @@ function worldPolygon(e: FakeElement): number[] | null {
           ? boxPolygon(e.media.w, e.media.h)
         : e.model3d
           ? boxPolygon(e.model3d.w, e.model3d.h)
+        : e.fill
+          ? [...(e.fill.contours[0] ?? [])]
         : e.table
           ? boxPolygon(tableWidth(e.table), tableHeight(e.table))
           : e.unknown
@@ -532,6 +539,39 @@ function polygonHit(poly: number[], x: number, y: number, tol: number): boolean 
     edge = Math.min(edge, distToSegment(x, y, xi, yi, xj, yj));
   }
   return inside || edge <= tol;
+}
+
+/** C8 (Q13) : `fill` touché dedans (pair-impair sur ses anneaux) et à plus de `tol` de chacun de ses bords (miroir de
+ *  `fill_hit`, `query.rs`). */
+function fillHit(e: FakeElement, x: number, y: number, tol: number): boolean {
+  const f = e.fill;
+  if (!f) return false;
+  let inside = false;
+  let edge = Number.POSITIVE_INFINITY;
+  for (const r of f.contours) {
+    const n = r.length / 2;
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const [xi, yi] = applyMatrix(e.transform, r[2 * i] ?? 0, r[2 * i + 1] ?? 0);
+      const [xj, yj] = applyMatrix(e.transform, r[2 * j] ?? 0, r[2 * j + 1] ?? 0);
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      edge = Math.min(edge, distToSegment(x, y, xi, yi, xj, yj));
+    }
+  }
+  return inside && edge > tol;
+}
+
+/** C8 (Q11) : `fill` lisible depuis le brut ; sinon null (cadre inconnu). */
+function readFill(v: unknown): FakeFill | null {
+  if (!isRecord(v)) return null;
+  const { color, w, h, contours } = v;
+  if (typeof color !== "string" || !validColor(color) || !finitePositive(w) || !finitePositive(h)) return null;
+  if (!Array.isArray(contours) || contours.length === 0) return null;
+  const rings: number[][] = [];
+  for (const r of contours) {
+    if (!Array.isArray(r) || r.length < 6 || r.length % 2 !== 0 || !r.every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+    rings.push([...(r as number[])]);
+  }
+  return { color, w, h, contours: rings };
 }
 
 function polyOutline(points: Float32Array, dx: number, dy: number): Float32Array {
@@ -1172,7 +1212,9 @@ class FakeDocument implements CoreDocument {
         const page = this.pageOf(cmd.page);
         const t = cmd.target;
         const color = cmd.color;
-        if (t.kind === "background") {
+        if (t.kind === "zone" && (![t.x, t.y, t.tol].every(Number.isFinite) || t.tol <= 0)) throw new Error(MESSAGES.badFill);
+        // C8 (Q17) : second écart au contrat commun (D36) : aucune géométrie booléenne ici, une zone est le fond.
+        if (t.kind === "background" || t.kind === "zone") {
           const next = color ?? DEFAULT_BACKGROUND;
           if (page.background === next) return this.unchanged();
           return this.step((s) => {
@@ -1205,6 +1247,17 @@ class FakeDocument implements CoreDocument {
         }
         const e = page.elements.find((x) => x.id === t.id);
         if (!e) throw new Error(`élément inconnu : ${t.id}`);
+        if (e.fill) {
+          // C8 (Q14) : `field_for` rend `color` pour un `fill` ; « Aucune » : aucune étape (la page passe par Delete).
+          if (color === null || e.fill.color === color) return this.unchanged();
+          return this.step((s) => {
+            const p = s.pages.find((q) => q.id === cmd.page);
+            const i = p ? p.elements.findIndex((x) => x.id === t.id) : -1;
+            const old = p?.elements[i];
+            if (p && old?.fill) p.elements[i] = { ...old, fill: { ...old.fill, color } };
+            return { pages: [cmd.page], ids: [t.id], removed: [] };
+          });
+        }
         const shape = e.shape;
         const inside = t.kind === "inside";
         // `field_for` du cœur : contour = `color` d'un trait ou de toute forme ; intérieur = `fill` d'un rectangle ou d'une ellipse.
@@ -1263,6 +1316,7 @@ class FakeDocument implements CoreDocument {
     if (e.image) return { ...base, kind: "image", image: e.image };
     if (e.media) return { ...base, kind: "media", media: e.media };
     if (e.model3d) return { ...base, kind: "model3d", model3d: e.model3d };
+    if (e.fill) return { ...base, kind: "fill", fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h } };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
     const styled = { ...base, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
@@ -1318,11 +1372,21 @@ class FakeDocument implements CoreDocument {
     const l = this.find(id)?.element.local;
     return l ? polyOutline(l, 0, 0) : null;
   }
+  fillRings(id: string): Float32Array | null {
+    const f = this.find(id)?.element.fill;
+    return f ? new Float32Array(f.contours.flatMap((r) => [r.length / 2, ...r])) : null;
+  }
+  /** C8 (Q17) : aucune rastérisation dans la fausse liaison. */
+  zoneCells(_page: string, _tol: number): number { return 0; }
   hitTest(page: string, x: number, y: number, tol: number): string | null {
     const els = this.pageOf(page).elements;
     for (let i = els.length - 1; i >= 0; i--) {
       const e = els[i];
       if (!e) continue;
+      if (e.fill) {
+        if (fillHit(e, x, y, tol)) return e.id;
+        continue;
+      }
       const poly = worldPolygon(e);
       if (poly ? polygonHit(poly, x, y, tol) : strokeTouches(e, new Float32Array([x, y]), tol)) return e.id;
     }
@@ -1561,6 +1625,8 @@ interface SavedElement {
   media?: MediaData | unknown;
   /** C15 : écrit par `savedModel3d` ; lu : valeur brute, contrôlée par `readModel3d`. */
   model3d?: unknown;
+  /** C8 : écrit `FakeFill` ; lu : valeur brute, contrôlée par `readFill`. */
+  fill?: unknown;
   /** Écrit : `SavedTable` ; lu : valeur brute, contrôlée par `loadTable`. */
   table?: SavedTable | unknown;
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
@@ -1583,6 +1649,7 @@ function savedElement(e: FakeElement): SavedElement {
   if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image, ...group };
   if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group };
   if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...group };
+  if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group };
   return {
     id: e.id,
     transform: [...e.transform],
@@ -1708,6 +1775,22 @@ function loadElement(e: SavedElement): FakeElement {
     const unknown: FakeUnknown = {
       sourceKind: "model3d",
       raw: { model3d: source },
+      box: unknownBox(isRecord(source) ? source : {}),
+      hasTransform: m !== null,
+      ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
+    };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+  }
+  if (e.kind === "fill") {
+    // C8 (Q11) : repli du média, pas celui de l'image : un `fill` mal formé est un cadre inconnu de sa boîte, brut gardé
+    // sous `raw.fill`, réécrit tel quel.
+    const source = e.fill ?? e.raw?.["fill"];
+    const fill = readFill(source);
+    const m = toMatrix6(e.transform);
+    if (fill !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, fill, ...group };
+    const unknown: FakeUnknown = {
+      sourceKind: "fill",
+      raw: { fill: source },
       box: unknownBox(isRecord(source) ? source : {}),
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
