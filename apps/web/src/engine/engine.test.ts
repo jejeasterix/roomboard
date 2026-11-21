@@ -8,6 +8,7 @@ import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactorie
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
+import { DEFAULT_CAMERA, type ModelCamera } from "./render/model-frames";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
@@ -1576,5 +1577,66 @@ describe("moteur — C5 (retouche d'image)", () => {
     const v = doc.version();
     engine.report("retouches de l'image non affichées : x");
     expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
+  });
+});
+
+describe("moteur : séance d'orbite (C15, X23)", () => {
+  function c15() {
+    const doc = fakeCore.blank();
+    const renderer = new FakeRenderer();
+    const log: string[] = [];
+    const tools: ToolFactories = { pen: (ctx) => fakeTool("pen", log, ctx), eraser: (ctx) => fakeTool("eraser", log, ctx) };
+    const frames = new Frames();
+    const engine = createEngine({ doc, renderer, frames, tools });
+    engine.resize(800, 600, 1);
+    frames.tick();
+    const page = engine.state().page;
+    const id = doc.apply({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 200, y1: 200, style: PEN, fill: null }).ids[0] ?? "";
+    const views: ModelCamera[] = [];
+    const commits: ModelCamera[] = [];
+    const closed = vi.fn();
+    const open = () => engine.orbitModel(id, { view: DEFAULT_CAMERA, onView: (v) => views.push(v), onCommit: (v) => commits.push(v), closed });
+    return { engine, frames, renderer, log, id, views, commits, closed, open };
+  }
+
+  it("orbitModel : null pour un id absent de la page", () => {
+    const { engine } = c15();
+    expect(engine.orbitModel("nulle-part", { view: DEFAULT_CAMERA, onView: () => {}, onCommit: () => {} })).toBeNull();
+  });
+  it("les gestes vont à la séance, pas à l'outil ; onView puis onCommit au relâché ; une scène redemandée", () => {
+    const { engine, frames, renderer, log, views, commits, open } = c15();
+    expect(open()).not.toBeNull();
+    const n = renderer.scenes.length;
+    engine.sink.begin(1, "pen", [{ ...sample, x: 10 }]);
+    engine.sink.extend(1, [{ ...sample, x: 60 }], []);
+    engine.sink.close(1, "end");
+    expect(log.filter((l) => /^pen\.(begin|extend|close)/.test(l))).toEqual([]);
+    expect(views.length).toBeGreaterThan(0);
+    expect(commits).toHaveLength(1);
+    expect(commits[0]!.yaw).toBeCloseTo(Math.PI / 6 + 0.5, 12);
+    frames.tick();
+    expect(renderer.scenes.length).toBeGreaterThan(n);
+  });
+  it("Échap ferme la séance : closed appelé, le geste suivant va à l'outil", () => {
+    const { engine, log, closed, open } = c15();
+    open();
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(closed).toHaveBeenCalledTimes(1);
+    engine.sink.begin(2, "pen", [sample]);
+    expect(log).toContain("pen.begin 2");
+  });
+  it("changer de page ferme la séance", () => {
+    const { engine, closed, open } = c15();
+    open();
+    expect(engine.addPage()).toBe(true);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+  it("une seconde séance ferme la première ; dispose ferme la séance ouverte", () => {
+    const { engine, closed, open } = c15();
+    open();
+    open();
+    expect(closed).toHaveBeenCalledTimes(1);
+    engine.dispose();
+    expect(closed).toHaveBeenCalledTimes(2);
   });
 });

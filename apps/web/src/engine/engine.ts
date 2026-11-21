@@ -19,6 +19,8 @@ import { PAGE_BACKGROUND } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
+import { createModelOrbit, type ModelOrbit, type ModelOrbitSession } from "./tools/model-orbit";
+import type { ModelCamera } from "./render/model-frames";
 import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
 export interface EngineState {
@@ -86,6 +88,13 @@ export interface EngineDeps {
   readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
 }
 
+export interface OrbitOptions {
+  readonly view: ModelCamera;
+  onView(v: ModelCamera): void;
+  onCommit(v: ModelCamera): void;
+  closed?(): void;
+}
+
 export interface Engine {
   readonly sink: GestureSink;
   readonly view: ViewSink;
@@ -130,6 +139,9 @@ export interface Engine {
   endGridPreview(): void;
   /** C5 (DAI4) : séance de retouche de l'image `id` de la page montrée (une seule à la fois) ; null si ce n'en est pas une. */
   editImage(id: string): ImageEdit | null;
+  /** C15 (X23, PC2) : séance d'orbite de l'élément `id` de la page montrée (une seule séance modale : ferme la retouche
+   *  d'image et une orbite ouverte) ; null s'il n'est pas sur la page. La session vérifie que c'est un objet 3D. */
+  orbitModel(id: string, opts: OrbitOptions): ModelOrbit | null;
   /** C5 (I24) : message dans l'état (`#etat`), sans écriture. */
   report(message: string): void;
   /** Préréglage reçu de la barre : couleur et épaisseur du stylo (et des formes, texte : couleur). Invalide : ignoré. */
@@ -251,6 +263,7 @@ export function createEngine(deps: EngineDeps): Engine {
     renderer.setGridPreview(null);
   }
   let imageEdit: ImageEditSession | null = null;
+  let orbit: ModelOrbitSession | null = null;
   const stateListeners = new Set<(s: EngineState) => void>();
   const drawnListeners = new Set<(now: number) => void>();
   const owner = new Map<number, GestureTool>();
@@ -337,6 +350,7 @@ export function createEngine(deps: EngineDeps): Engine {
     leaveAll("page");
     stopPreview();
     imageEdit?.close();
+    orbit?.close();
     cameras.set(pageId, camera);
     pageId = id;
     lastIndex = doc.pageIds().indexOf(id);
@@ -479,7 +493,7 @@ export function createEngine(deps: EngineDeps): Engine {
     }
     renderer.drawLive({ strokes: parts.flatMap((p) => p.strokes), erasers: parts.flatMap((p) => p.erasers) }, camera);
     for (const cb of drawnListeners) cb(now);
-    if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true) loop.stop();
+    if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true && orbit?.gesture.active() !== true) loop.stop();
   }
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
@@ -494,7 +508,7 @@ export function createEngine(deps: EngineDeps): Engine {
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
       lastDeleted = null;
-      const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : tools[t];
+      const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : orbit !== null ? orbit.gesture : tools[t];
       owner.set(pointerId, g);
       emitIfSelectionChanged(() => g.begin(pointerId, samples));
       loop.start();
@@ -598,6 +612,10 @@ export function createEngine(deps: EngineDeps): Engine {
           return true;
         }
       }
+      if (orbit !== null && edit === "escape") {
+        orbit.close();
+        return true;
+      }
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
@@ -694,6 +712,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     editImage(id) {
       if (doc.element(id)?.kind !== "image" || !doc.elementIds(pageId).includes(id)) return null;
+      orbit?.close();
       imageEdit?.close();
       const session = createImageEdit({
         ctx,
@@ -706,6 +725,27 @@ export function createEngine(deps: EngineDeps): Engine {
         },
       });
       imageEdit = session;
+      return session;
+    },
+    orbitModel(id, opts) {
+      if (!doc.elementIds(pageId).includes(id)) return null;
+      imageEdit?.close();
+      orbit?.close();
+      const session = createModelOrbit({
+        id,
+        view: opts.view,
+        onView: (v) => {
+          opts.onView(v);
+          requestScene();
+        },
+        onCommit: (v) => opts.onCommit(v),
+        closed: () => {
+          if (orbit === session) orbit = null;
+          opts.closed?.();
+          requestScene();
+        },
+      });
+      orbit = session;
       return session;
     },
     report(message) {
@@ -769,6 +809,7 @@ export function createEngine(deps: EngineDeps): Engine {
     frameDurations: () => loop.durations(),
     dispose() {
       imageEdit?.close();
+      orbit?.close();
       closeAll("abort");
       loop.stop();
       stateListeners.clear();
