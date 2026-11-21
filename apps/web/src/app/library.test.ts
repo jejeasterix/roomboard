@@ -156,19 +156,66 @@ describe("C4 : ResourceLibrary", () => {
   it("C4 : export puis import rend les mêmes ressources", async () => {
     const { lib } = libOf();
     const f = await lib.mkdir("mine", "", "Fractions");
-    await lib.add("mine", f, res("Moitié", { keywords: ["fraction"] }));
-    await lib.add("mine", f, res("Seyès", { kind: "grid", thumbnail: null }));
+    await lib.add("mine", f, res("Moitié", { keywords: ["fraction"], description: "La moitié" }));
+    await lib.add("mine", f, res("Seyès", { kind: "grid", description: "Grille", thumbnail: null }));
     const pack = await lib.exportPack("mine", "Fractions");
     expect(pack.name).toBe("Fractions.rbpack");
     await lib.remove("mine", "");
     expect(lib.folder("mine", "").folders).toEqual([]);
     expect(await lib.importPack(pack.bytes, pack.name)).toEqual({ folder: "Fractions", count: 2 });
     const items = lib.folder("mine", "Fractions").items;
-    expect(items.map((i) => [i.name, i.kind, i.keywords, i.thumbnail !== null])).toEqual([
-      ["Moitié", "fragment", ["fraction"], true],
-      ["Seyès", "grid", [], false],
+    expect(items.map((i) => [i.name, i.kind, i.keywords, i.description, i.thumbnail !== null])).toEqual([
+      ["Moitié", "fragment", ["fraction"], "La moitié", true],
+      ["Seyès", "grid", [], "Grille", false],
     ]);
     expect(await lib.read(items[0]!)).toEqual(enc("rb:Moitié"));
+    expect(await lib.read(items[1]!)).toEqual(enc("rb:Seyès"));
+    const thumb = await lib.thumbnail(items[0]!);
+    expect(new Uint8Array(await thumb!.arrayBuffer())).toEqual(enc("png"));
+  });
+
+  it("C4 : index vide ou périmé : l'import relit le stockage, « Fractions (2) », l'ancienne ressource intacte", async () => {
+    const mine = createMemoryLibraryFiles("mine");
+    await mine.write("Fractions/moitie.rbitem", new Blob([enc("ancien")]));
+    const lib = createResourceLibrary({ files: [mine], zip, now: () => "", appVersion: "c4" });
+    const r = await lib.importPack(packOf("Fractions", ["items/moitie.rbitem"]), "Fractions.rbpack");
+    expect(r.folder).toBe("Fractions (2)");
+    expect(new TextDecoder().decode(await (await mine.read("Fractions/moitie.rbitem")).arrayBuffer())).toBe("ancien");
+    expect((await mine.list()).map((p) => p.path)).toContain("Fractions (2)/moitie.rbitem");
+  });
+
+  it("C4 : écriture en échec avec un index périmé : aucune ressource préexistante supprimée", async () => {
+    const mine = createMemoryLibraryFiles("mine");
+    await mine.write("Fractions/moitie.rbitem", new Blob([enc("ancien")]));
+    await mine.write("Fractions/moitie.rbitem.json", new Blob([enc("{}")]));
+    const before = await mine.list();
+    let writes = 0;
+    const flaky: LibraryFiles = {
+      ...mine,
+      async write(p, d) {
+        if (++writes === 3) throw new Error("stockage plein");
+        return mine.write(p, d);
+      },
+    };
+    const lib = createResourceLibrary({ files: [flaky], zip, now: () => "", appVersion: "c4" });
+    await expect(lib.importPack(packOf("Fractions", ["items/a.rbitem", "items/b.rbitem"]), "Fractions.rbpack")).rejects.toThrow("stockage plein");
+    expect(await mine.list()).toEqual(before);
+  });
+
+  it("C4 : remove en échec : l'index est relu et reste cohérent avec le stockage", async () => {
+    const mine = createMemoryLibraryFiles("mine");
+    const flaky: LibraryFiles = {
+      ...mine,
+      async remove(p) {
+        await mine.remove(p);
+        if (p === "Fractions") throw new Error("disque en erreur");
+      },
+    };
+    const lib = createResourceLibrary({ files: [flaky], zip, now: () => "", appVersion: "c4" });
+    await lib.add("mine", await lib.mkdir("mine", "", "Fractions"), res("Moitié"));
+    await expect(lib.remove("mine", "Fractions")).rejects.toThrow("disque en erreur");
+    expect(lib.folder("mine", "").folders).toEqual([]);
+    expect(lib.search("moitie")).toEqual([]);
   });
 
   it("C4 : import deux fois : Fractions (2)", async () => {
