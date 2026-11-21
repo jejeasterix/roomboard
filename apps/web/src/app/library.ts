@@ -7,8 +7,8 @@
  * importée (même patron que `zip3dHandler`, `platform/model3d-handlers.ts`).
  */
 import { safeLibraryPath, type LibraryFiles, type LibraryRoot } from "../platform/library-files";
-import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES } from "../platform/model3d-import";
-import { buildPack, PACK_UNSAFE_PATH_MESSAGE, readPack, type PackItem, type PackItemKind, type ZipFile } from "../platform/rbpack";
+import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "../platform/model3d-import";
+import { buildPack, PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE, readPack, type PackItem, type PackItemKind, type ZipFile } from "../platform/rbpack";
 import type { ZipEntry } from "../platform/zip-read";
 
 export type ResourceKind = PackItemKind;
@@ -260,7 +260,14 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
     },
     async importPack(bytes, fileName) {
       // 1. Tout le paquet est lu et contrôlé : aucune écriture tant qu'un refus reste possible (D18, D32).
-      const entries = await deps.zip.unzip(new Blob([bytes as BlobPart]));
+      let entries: readonly ZipEntry[];
+      try {
+        entries = await deps.zip.unzip(new Blob([bytes as BlobPart]));
+      } catch (e) {
+        // ZIP illisible (fflate : « invalid zip data ») : message du paquet ; les limites gardent le leur (D27).
+        if (e instanceof Error && e.message === ZIP_TOO_BIG_MESSAGE) throw e;
+        throw new Error(PACK_NOT_ROOMBOARD_MESSAGE);
+      }
       const files: ZipFile[] = [];
       for (const e of entries) files.push({ path: e.path, bytes: await bytesOf(e.blob) });
       const pack = readPack(files);
