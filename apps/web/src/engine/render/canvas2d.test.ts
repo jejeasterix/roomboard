@@ -6,7 +6,7 @@ import { orientMatrix } from "../../core/image-params";
 import { arrowWings } from "../../core/shapes";
 import { IDENTITY, type Camera } from "../camera";
 import { PAGE_BACKGROUND, SURROUND_COLOR, visibleGridRect } from "../page";
-import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, MODEL3D_CARD_LABEL, PLACEHOLDER_FILL, SELECTION_COLOR, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
+import { AUDIO_CARD_FILL, AUDIO_CARD_LABEL, BACKDROP_PLACEHOLDER, MEDIA_BADGE_FILL, MEDIA_PROGRESS_COLOR, BACKDROP_UNREADABLE_LABEL, CROP_VEIL, Canvas2DRenderer, createCanvas2DRenderer, exportPainterOptions, HANDLE_FILL, MODEL3D_CARD_LABEL, PLACEHOLDER_FILL, SELECTION_COLOR, traceRings, tracePolygons, UNKNOWN_LABEL } from "./canvas2d";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import type { ImageSource } from "./image-cache";
@@ -1173,5 +1173,61 @@ describe("Canvas2DRenderer — objet 3D (C15, X25)", () => {
   it("rendu d'export : instantané, jamais le port", () => {
     const scene = sceneOf(el(), exportPainterOptions(images));
     expect(scene.images).toEqual([{ img: snap, x: 0, y: 0, w: 640, h: 480 }]);
+  });
+});
+
+
+describe("Canvas2DRenderer — fill (C8, Q15)", () => {
+  it("C8 fill : chemin des anneaux en cache par id, rempli en pair-impair à sa couleur", () => {
+    const rings = new Float32Array([4, 0, 0, 10, 0, 10, 10, 0, 10, 4, 3, 3, 3, 6, 6, 6, 6, 3]);
+    let reads = 0;
+    const src: SceneSource = {
+      element: (id) => (id === "f" ? { id, kind: "fill", transform: [1, 0, 0, 1, 5, 6], fill: { color: "#facc15", w: 10, h: 10 } } : null),
+      outline: () => null,
+      fillRings: (id) => {
+        reads++;
+        return id === "f" ? rings : null;
+      },
+    };
+    const scene = new FakeCtx();
+    const paths: FakePath[] = [];
+    const r = new Canvas2DRenderer(asCtx(scene), asCtx(new FakeCtx()), src, {
+      makePath: () => {
+        const p = new FakePath();
+        paths.push(p);
+        return p as unknown as Path2D;
+      },
+    });
+    const fill = vi.spyOn(scene, "fill");
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: ["f"] }, IDENTITY, new Set());
+    r.drawScene({ id: "p", elementIds: ["f"] }, IDENTITY, new Set());
+    expect(reads).toBe(1);
+    expect(paths).toHaveLength(1);
+    expect([paths[0]?.moves, paths[0]?.lines, paths[0]?.closes]).toEqual([2, 6, 2]);
+    expect(fill.mock.calls.filter((c) => (c as unknown[])[1] === "evenodd")).toHaveLength(2);
+    expect(scene.log).toContain("fill #facc15");
+  });
+
+  it("C8 fill : sans anneaux lisibles, rien n'est dessiné", () => {
+    const src: SceneSource = {
+      element: (id) => ({ id, kind: "fill", transform: [1, 0, 0, 1, 0, 0], fill: { color: "#facc15", w: 10, h: 10 } }),
+      outline: () => null,
+      fillRings: () => null,
+    };
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.resize(100, 100, 1);
+    r.drawScene({ id: "p", elementIds: ["f"] }, IDENTITY, new Set());
+    expect(scene.log).not.toContain("fill #facc15");
+  });
+
+  it("C8 traceRings : un sous-chemin fermé par anneau ; compte illisible ou anneau tronqué : lecture arrêtée", () => {
+    const p = new FakePath();
+    traceRings(p, [3, 0, 0, 1, 0, 0, 1, 2.5, 9, 9]);
+    expect([p.moves, p.lines, p.closes]).toEqual([1, 2, 1]);
+    const q = new FakePath();
+    traceRings(q, [4, 0, 0, 1, 0]);
+    expect([q.moves, q.lines, q.closes]).toEqual([0, 0, 0]);
   });
 });
