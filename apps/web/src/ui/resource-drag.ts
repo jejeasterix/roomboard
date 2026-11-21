@@ -1,6 +1,6 @@
 /**
  * Glisser d'une carte de la bibliothèque vers la scène (C4, D13, DA4) : Pointer Events seuls (souris, stylet, doigt),
- * jamais HTML5 `draggable` (empêché par le glisser-déposer natif de la fenêtre Tauri sous Windows, mal joué au doigt).
+ * jamais le glisser HTML5 (empêché par le glisser-déposer natif de la fenêtre Tauri sous Windows, mal joué au doigt).
  * Capture du pointeur, fantôme qui suit au-delà de 4 px, lâcher au-dessus de `.rb-stages` = `onDrop` au point client
  * (même forme que `DropHandler`) ; ailleurs, Échap ou `pointercancel` : rien.
  */

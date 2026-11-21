@@ -33,7 +33,9 @@ import { insertTableGrid } from "../platform/table-insert";
 import type { TypedFiles } from "../platform/typed-files";
 import type { BoardSession } from "./board-session";
 import { createContainerIO, missingOf, typed } from "./container-io";
-import { createFragmentOps, SELECTION_NAME } from "./fragments";
+import { createFragmentOps, SELECTION_NAME, type InsertOutcome } from "./fragments";
+import type { CapturedResource } from "./library";
+import { renderThumbnail, type ThumbDeps } from "./thumbnail";
 import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RASTER_MISSING_MESSAGE, type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
@@ -104,6 +106,10 @@ export interface WorkspaceDeps {
   linkMedia?(path: string): Promise<LinkedMedia>;
   /** C14 (M31) : accorde à nouveau le fichier lié `path` s'il existe avec la taille `size` ; absent (web) : liens non lus. */
   relinkMedia?(path: string, size: number): Promise<boolean>;
+  /** C4 (D12) : vignette des ressources ajoutées ; absent : ressource sans vignette (pastille du type). */
+  thumbnail?: ThumbDeps;
+  /** C4 (U25, D19) : `.rbpack` déposé ou passé au lancement, importé dans la bibliothèque ; transmis à l'importeur. */
+  importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
 }
 
 export interface Workspace {
@@ -134,6 +140,13 @@ export interface Workspace {
   openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
   /** C12 (PF19 à PF21) : « Exporter en PDF… » de l'onglet actif ; faux sans port, refusé, onglet fermé ou boîte annulée. */
   exportPdf(): Promise<boolean>;
+  /** C4 (D13, D14) : ressource posée dans l'onglet actif ; `at` client, null = centre de la vue. */
+  insertResource(bytes: Uint8Array, name: string, at: Point | null): Promise<InsertOutcome>;
+  /** C4 (D1, D2, D12) : sélection ou grille de la page de l'onglet actif, en `.rbitem`, avec sa vignette ; null : avis dit. */
+  captureResource(what: "selection" | "grid"): Promise<CapturedResource | null>;
+  /** C4 (D10) : question de confirmation (suppression, Vider) ; faux si la boîte échoue. */
+  ask(message: string): Promise<boolean>;
+  say(message: string): Promise<void>;
   /** C3 : action de la rangée « Sélection ». */
   selection(a: SelectionAction): void;
   canPaste(): boolean;
@@ -264,7 +277,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     textStyle: () => t.board.engine.textStyle(),
     run: (cmd) => t.board.engine.run(cmd),
     // Z10 : le `.rbitem` déposé s'insère dans cet onglet ; refus déjà dit par `fragments`.
-    insertFragment: (rbitem, at, index, name) => fragments.insert(t, rbitem, baseName(name), at, index),
+    insertFragment: async (rbitem, at, index, name) => (await fragments.insertResource(t, rbitem, baseName(name), at, index)) === "inserted",
   });
 
   async function addTab(
@@ -332,6 +345,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const readSheet = deps.readSheet;
   const linkMedia = deps.linkMedia;
   const parseHtml = deps.parseHtml ?? ((s: string) => new DOMParser().parseFromString(s, "text/html"));
+  const importPack = deps.importPack;
   const importer = createImporter({
     openDocument: (f) => ws.openDocument(f),
     notify: say,
@@ -346,6 +360,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
     ...(linkMedia ? { linkMedia } : {}),
     ...(deps.model3d ? { model3d: deps.model3d } : {}),
+    ...(importPack ? { importPack: (name: string, bytes: Uint8Array) => importPack.call(deps, name, bytes) } : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
@@ -549,6 +564,34 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       if (file === null) return false;
       return fragments.insertPages(tab, { ...file, name: baseName(file.name) });
     },
+    insertResource: (bytes, name, at) => fragments.insertResource(ws.active(), bytes, name, at),
+    async captureResource(what) {
+      const tab = ws.active();
+      const bytes = what === "grid" ? await fragments.encodeGrid(tab) : await fragments.encodeSelection(tab, "export");
+      if (bytes === null) {
+        if (what === "selection" && tab.board.engine.state().selection.length === 0) await say("aucune sélection, rien n'est ajouté");
+        return null;
+      }
+      const kind = what === "grid" ? "grid" : "fragment";
+      // D29 : vignette depuis la ressource relue (sélection extraite ou grille seule), jamais `tab.board.doc`.
+      let thumbnail: Blob | null = null;
+      const thumbDeps = deps.thumbnail;
+      if (thumbDeps !== undefined) {
+        const read = await io.read("vignette", bytes, kind);
+        if (read !== null) {
+          try {
+            thumbnail = await renderThumbnail(read.doc, read.assets, kind, thumbDeps);
+          } catch (e) {
+            console.warn(`RoomBoard : vignette non rendue (${messageOf(e)})`);
+          } finally {
+            read.doc.free();
+          }
+        }
+      }
+      return { bytes, kind, thumbnail };
+    },
+    ask,
+    say,
     selection(a) {
       const engine = ws.active().board.engine;
       const actions: Record<SelectionAction, () => void> = {
