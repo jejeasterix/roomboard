@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Change, Command, CoreDocument, TableData, TextSpan } from "../core/api";
 import { fakeCore } from "../core/fake-core";
-import { fillCommand, type FillDoc } from "./fill-target";
+import { fillCommand, type FillDoc, type ImageFillAt } from "./fill-target";
 import type { Measure } from "./text-layout";
 
 /** 10 unités par unité UTF-16, à toute taille. */
@@ -34,7 +34,7 @@ function setup() {
   const c = t.cols.map((x) => x.id);
   doc.apply({ type: "SetTableCell", id: table, row: r[0] ?? "", col: c[0] ?? "", content: "Lundi matin" });
   const stroke = idOf(doc.apply({ type: "CommitStroke", page, points: new Float32Array([100, 700, 0.5, 200, 700, 0.5, 300, 700, 0.5]), style }));
-  const at = (x: number, y: number, color: string | null = RED, zoom = 1): Command | null => fillCommand(doc, page, x, y, zoom, color, ten);
+  const at = (x: number, y: number, color: string | null = RED, zoom = 1): Command | ImageFillAt | null => fillCommand(doc, page, x, y, zoom, color, ten);
   return { doc, page, rect, line, text, table, stroke, r, c, at };
 }
 
@@ -189,10 +189,17 @@ describe("cible du pot (C6a)", () => {
     expect(s.at(460, 432)).toEqual({ type: "SetTableFill", id: s.table, ...a, fill: RED });
   });
 
-  it("image : fond de la page (D1, S4)", () => {
+  it("image : action ImageFill au pixel source (B5, B19)", () => {
     const s = setup();
-    s.doc.apply({ type: "AddImage", page: s.page, asset: { id: "a".repeat(64), name: "x.png", mime: "image/png", size: 1 }, w: 100, h: 100, matrix: [1, 0, 0, 1, 700, 500] });
-    expect(s.at(750, 550)).toEqual({ type: "Fill", page: s.page, target: { kind: "background" }, color: RED });
+    const id = idOf(s.doc.apply({ type: "AddImage", page: s.page, asset: { id: "a".repeat(64), name: "x.png", mime: "image/png", size: 1 }, w: 100, h: 100, matrix: [1, 0, 0, 1, 700, 500] }));
+    expect(s.at(750.6, 520.2)).toEqual({ type: "ImageFill", page: s.page, id, seed: [50, 20], color: RED });
+    expect(s.at(750.6, 520.2, null)).toEqual({ type: "ImageFill", page: s.page, id, seed: [50, 20], color: null });
+  });
+
+  it("image : point de la bande de tolérance hors de la boîte ramené dans l'image (B5, HB16)", () => {
+    const s = setup();
+    const id = idOf(s.doc.apply({ type: "AddImage", page: s.page, asset: { id: "a".repeat(64), name: "x.png", mime: "image/png", size: 1 }, w: 100, h: 100, matrix: [1, 0, 0, 1, 700, 500] }));
+    expect(s.at(803, 550)).toEqual({ type: "ImageFill", page: s.page, id, seed: [99, 50], color: RED });
   });
 
   it("rien sous le pointeur : fond de la page ; « Aucune » : fond retiré (D10, D11)", () => {

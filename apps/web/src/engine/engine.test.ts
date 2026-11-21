@@ -1242,6 +1242,32 @@ describe("moteur — C3", () => {
     engine.sink.close(1, "end");
   };
 
+
+  it("C6b fabrique fill : tolérance 5 par défaut, arrondie et bornée à 0-100, lue par l'outil (B10)", () => {
+    const got: { tolerance?: () => number } = {};
+    const engine = createEngine({
+      doc: fakeCore.blank(),
+      renderer: new FakeRenderer(),
+      frames: new Frames(),
+      tools: {
+        pen: () => inert,
+        eraser: () => inert,
+        fill: (_ctx, _c, t) => {
+          got.tolerance = t;
+          return inert;
+        },
+      },
+    });
+    expect([engine.state().fillTolerance, got.tolerance?.()]).toEqual([5, 5]);
+    engine.setFillTolerance(12.6);
+    expect(got.tolerance?.()).toBe(13);
+    engine.setFillTolerance(250);
+    expect(engine.state().fillTolerance).toBe(100);
+    engine.setFillTolerance(-3);
+    expect(engine.state().fillTolerance).toBe(0);
+    engine.setFillTolerance(Number.NaN);
+    expect(engine.state().fillTolerance).toBe(0);
+  });
   it("état : unités et groupe de la sélection", () => {
     const { engine, rect } = c3();
     rect(100);
@@ -1570,6 +1596,12 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(paramsOf(image().image)).toEqual({});
     engine.undo();
     expect(paramsOf(image().image)).toEqual({ flipX: true, brightness: 20 });
+  });
+  it("C6b restore : la commande porte restore: true (B11)", () => {
+    const { engine, doc, id } = c5();
+    const apply = vi.spyOn(doc, "apply");
+    engine.editImage(id)!.restore();
+    expect(apply.mock.calls.at(-1)?.[0]).toMatchObject({ type: "SetImageParams", id, params: {}, restore: true });
   });
   it("C5 report : message dans l'état sans écriture", () => {
     const { engine, doc } = c5();
