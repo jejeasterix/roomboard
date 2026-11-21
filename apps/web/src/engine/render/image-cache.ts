@@ -9,6 +9,10 @@
  * `engine.redraw()`) est appelé quand un bitmap arrive. `data-pixels` (I33) ne compte que les images dessinées par la
  * dernière scène (`beginScene`, `endScene`) ; les emplacements des autres restent, rien n'est fermé (I22). Une instance par
  * onglet : `dispose` ferme les bitmaps, et ferme aussitôt ceux qui arrivent après.
+ * C6b (B14-B16) : `adopt` sert le bitmap rendu par le Worker pour un nouvel asset ; `copyOf` copie un bitmap décodé (SVG
+ * à remplir) ; budget de `DECODED_BUDGET_PX` pixels décodés, appliqué à `endScene` aux bitmaps hors de la scène, du moins
+ * récemment dessiné au plus récent ; l'emplacement d'un élément redevenu sans retouche est gardé (jamais dessiné), repris
+ * si sa clé revient.
  */
 import type { ImageElement } from "../../core/api";
 import type { AssetStore } from "../../core/asset-store";
@@ -36,10 +40,16 @@ export type BitmapLike = CanvasImageSource & { close?(): void };
 export type BitmapDecoder = (blob: Blob) => Promise<BitmapLike>;
 /** `#stage[data-pixels]` (I33) : "" aucune image retouchée, "attente" un calcul en cours, "pret", "echec". */
 export type PixelState = "" | "attente" | "pret" | "echec";
+/** Budget des bitmaps décodés et retouchés gardés (C6b, B15) : ≈ 192 Mo RGBA. */
+export const DECODED_BUDGET_PX = 48_000_000;
 
 export interface ImageCache extends ImageSource {
   bitmapOf(el: ImageElement, preview?: boolean): CanvasImageSource | null;
   colorAt(asset: string, x: number, y: number): string | null;
+  /** C6b (B14) : bitmap rendu par le Worker pour `asset`, servi par `bitmap(asset)` ; déjà présent ou cache fermé : fermé. */
+  adopt(asset: string, bitmap: BitmapLike): void;
+  /** C6b : copie du bitmap décodé de `asset` (source d'un SVG à remplir) ; null s'il n'est pas décodé ou si le cache est fermé. */
+  copyOf(asset: string): Promise<ImageBitmap> | null;
   forget(ids: readonly string[]): void;
   dropPreview(id: string): void;
   beginScene(): void;
@@ -57,6 +67,8 @@ export interface ImageCacheOptions {
   readonly onFailure?: (message: string) => void;
   /** Chaque changement de `pixelState()`. */
   readonly onState?: (s: PixelState) => void;
+  /** C6b (B15) : pixels décodés gardés au plus ; défaut DECODED_BUDGET_PX. */
+  readonly budgetPx?: number;
 }
 
 interface Slot {
@@ -67,6 +79,10 @@ interface Slot {
   wanted: string | null;
   /** Emplacement de l'élément qui attend ce calcul (Valider pendant le calcul de l'aperçu) : le résultat lui est transféré. */
   adopter?: string;
+  /** C6b (B16) : élément redevenu sans retouche ; bitmap gardé, jamais dessiné ; repris si la clé revient. */
+  dormant?: boolean;
+  /** Dernier usage (horloge du cache), pour le budget (B15). */
+  used: number;
 }
 
 const PREVIEW = "#apercu";
@@ -113,11 +129,23 @@ export function createImageCache(
   let shown: ReadonlySet<string> | null = null;
   /** Éléments dessinés par la scène en cours (entre `beginScene` et `endScene`). */
   let marking: Set<string> | null = null;
+  const budget = opts.budgetPx ?? DECODED_BUDGET_PX;
+  /** Dernier dessin de chaque bitmap décodé (horloge `clock`). */
+  const usedAsset = new Map<string, number>();
+  let clock = 0;
+  /** Assets lus par la scène en cours, puis par la dernière scène finie. */
+  let markingAssets: Set<string> | null = null;
+  let shownAssets: ReadonlySet<string> = new Set();
+  const area = (b: BitmapLike | null): number => {
+    const s = b === null ? null : sizeOf(b);
+    return s === null ? 0 : s[0] * s[1];
+  };
 
   const publish = (): void => {
-    if (slots.size === 0) lastFailed = false; // plus d'image retouchée : un échec passé ne s'affiche plus (I33)
-    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements des éléments de la dernière scène.
-    const visible = [...slots].filter(([n]) => shown === null || shown.has(ownerOf(n))).map(([, s]) => s);
+    const live = [...slots].filter(([, s]) => s.dormant !== true);
+    if (live.length === 0) lastFailed = false; // plus d'image retouchée : un échec passé ne s'affiche plus (I33)
+    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements dessinables des éléments de la dernière scène.
+    const visible = live.filter(([n]) => shown === null || shown.has(ownerOf(n))).map(([, s]) => s);
     const hasBitmap = visible.some((s) => s.bitmap !== null);
     const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : lastFailed ? "echec" : hasBitmap ? "pret" : "";
     if (next === state) return;
@@ -140,8 +168,12 @@ export function createImageCache(
   }
 
   function bitmap(asset: string): BitmapLike | null {
+    markingAssets?.add(asset);
     const hit = done.get(asset);
-    if (hit !== undefined) return hit;
+    if (hit !== undefined) {
+      usedAsset.set(asset, ++clock);
+      return hit;
+    }
     if (disposed || pending.has(asset) || failed.has(asset)) return null;
     const blob = assets.get(asset);
     if (blob === undefined) return null;
@@ -149,11 +181,13 @@ export function createImageCache(
     decode(blob).then(
       (b) => {
         pending.delete(asset);
-        if (disposed) {
+        // Adopté entre-temps (B14) : le décodé est fermé.
+        if (disposed || done.has(asset)) {
           b.close?.();
           return;
         }
         done.set(asset, b);
+        usedAsset.set(asset, ++clock);
         ready();
       },
       (e: unknown) => {
@@ -238,6 +272,45 @@ export function createImageCache(
     );
   }
 
+  /** B15 : au-delà du budget, ferme d'abord les bitmaps le moins récemment dessinés hors de la dernière scène. */
+  function evict(): void {
+    let total = 0;
+    for (const b of done.values()) total += area(b);
+    for (const s of slots.values()) total += area(s.bitmap);
+    if (total <= budget) return;
+    const candidates: { readonly used: number; readonly px: number; readonly close: () => void }[] = [];
+    for (const [asset, b] of done) {
+      if (shownAssets.has(asset)) continue;
+      candidates.push({
+        used: usedAsset.get(asset) ?? 0,
+        px: area(b),
+        close: () => {
+          done.delete(asset);
+          usedAsset.delete(asset);
+          b.close?.();
+        },
+      });
+    }
+    for (const [name, s] of slots) {
+      if (s.bitmap === null || (s.dormant !== true && (shown === null || shown.has(ownerOf(name))))) continue;
+      candidates.push({
+        used: s.used,
+        px: area(s.bitmap),
+        close: () => {
+          s.bitmap?.close?.();
+          s.bitmap = null;
+          s.key = null;
+        },
+      });
+    }
+    candidates.sort((a, b) => a.used - b.used);
+    for (const c of candidates) {
+      if (total <= budget) break;
+      c.close();
+      total -= c.px;
+    }
+  }
+
   return {
     bitmap,
     bitmapOf(el, preview = false) {
@@ -248,18 +321,38 @@ export function createImageCache(
       const name = preview ? `${el.id}#apercu` : el.id;
       const twinName = preview ? el.id : `${el.id}#apercu`;
       if (!needsPixels(i) || pixels === undefined || disposed) {
-        // Sans retouche de pixels : aucun Worker ; un emplacement resté (Annuler, Rétablir) est jeté.
-        drop(name);
-        if (!preview) drop(twinName);
+        // Sans retouche de pixels : aucun Worker ; l'emplacement d'un aperçu resté est jeté.
+        if (preview) drop(name);
+        else {
+          drop(twinName);
+          // B16 : l'emplacement retouché reste (Annuler le remplissage le retrouve) ; son calcul en route est abandonné.
+          const kept = slots.get(name);
+          if (kept !== undefined) {
+            release(kept);
+            kept.wanted = null;
+            kept.dormant = true;
+          }
+        }
         publish();
         return raw;
       }
       const key = pixelKey(i);
       let s = slots.get(name);
       if (s === undefined) {
-        s = { key: null, bitmap: null, wanted: null };
+        s = { key: null, bitmap: null, wanted: null, used: ++clock };
         slots.set(name, s);
       }
+      if (s.dormant === true) {
+        // Reprise (B16) : même clé, le bitmap gardé est servi sans calcul ; autre clé, il ne vaut plus rien.
+        s.dormant = false;
+        if (s.key !== key) {
+          s.bitmap?.close?.();
+          s.bitmap = null;
+          s.key = null;
+        }
+        publish();
+      }
+      s.used = ++clock;
       const twin = slots.get(twinName);
       if (s.key === key && s.bitmap !== null) {
         if (!preview && twin !== undefined) drop(twinName);
@@ -287,7 +380,23 @@ export function createImageCache(
       if (!preview && twin !== undefined) drop(twinName);
       if (badKeys.has(key)) return raw;
       if (raw !== null && s.wanted !== key) compute(pixels, name, s, key, el, raw);
-      return s.bitmap ?? (preview ? (twin?.bitmap ?? null) : null) ?? raw;
+      return s.bitmap ?? (preview && twin?.dormant !== true ? (twin?.bitmap ?? null) : null) ?? raw;
+    },
+    adopt(asset, b) {
+      if (disposed || done.has(asset)) {
+        b.close?.();
+        return;
+      }
+      failed.delete(asset);
+      done.set(asset, b);
+      usedAsset.set(asset, ++clock);
+      ready();
+    },
+    copyOf(asset) {
+      const b = done.get(asset);
+      if (b === undefined || disposed) return null;
+      usedAsset.set(asset, ++clock);
+      return copy(b);
     },
     colorAt(asset, x, y) {
       const b = done.get(asset);
@@ -312,11 +421,15 @@ export function createImageCache(
     },
     beginScene() {
       marking = new Set();
+      markingAssets = new Set();
     },
     endScene() {
       if (marking === null) return;
       shown = marking;
+      shownAssets = markingAssets ?? new Set();
       marking = null;
+      markingAssets = null;
+      evict();
       publish();
     },
     pixelState: () => state,
@@ -324,6 +437,7 @@ export function createImageCache(
       disposed = true;
       for (const b of done.values()) b.close?.();
       done.clear();
+      usedAsset.clear();
       for (const name of [...slots.keys()]) drop(name);
     },
   };
