@@ -2831,7 +2831,9 @@ describe.each(factories)("contrat C16 : $name", ({ f }) => {
     const src = f.fromPdfPages(C12_PDF, C12_SIZES.slice(0, 1), C16_DOCX);
     const host = f.blank();
     host.insertPages(src, host.pageIds()[0]!);
-    expect(originals(host)).toEqual([null, C16_DOCX.id]);
+    // Page hôte sans fond : `backdrop` null (le chaînage optionnel rendrait undefined, d'où la vérification à part).
+    expect(host.page(host.pageIds()[0]!)?.backdrop).toBeNull();
+    expect(originals(host).slice(1)).toEqual([C16_DOCX.id]);
     expect(host.citedAssets().map((a) => a.id)).toEqual([C12_PDF.id, C16_DOCX.id]);
   });
 });

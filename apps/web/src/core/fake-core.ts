@@ -384,7 +384,7 @@ const pageIndexOf = (v: unknown): number | null => (typeof v === "number" && Num
 /** Fond vu comme par le cœur (K6, K9) : null sans asset conforme ; rect sur la largeur si w et h sont lisibles. */
 function backdropView(raw: RawRecord | null, width: number): BackdropView | null {
   if (raw === null) return null;
-  const { asset, kind, page, w, h, fit } = raw;
+  const { asset, kind, page, w, h, fit, original } = raw;
   if (!isAssetId(asset)) return null;
   const bw = finitePositive(w) ? w : null;
   const bh = finitePositive(h) ? h : null;
@@ -396,6 +396,7 @@ function backdropView(raw: RawRecord | null, width: number): BackdropView | null
     h: bh,
     fit: typeof fit === "string" ? fit : "",
     rect: bw !== null && bh !== null ? { x0: 0, y0: 0, x1: width, y1: (bh * width) / bw } : null,
+    original: isAssetId(original) ? original : null,
   };
 }
 
@@ -1902,17 +1903,19 @@ function loadFake(bytes: Uint8Array, expected: ContainerKind = "document"): Core
 export const fakeCore: CoreFactory = {
   blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null, background: DEFAULT_BACKGROUND }], assets: new Map() }),
   // C12 (D37) : état construit d'emblée, comme `blank` ; jamais par SetBackdrop (une étape par page), que le cœur n'emploie pas.
-  fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[]) => {
-    if (!validAsset(asset)) throw new Error(MESSAGES.badAsset);
+  // C16 (O17) : `original` cité par chaque fond, contrôlé comme l'asset, métadonnée écrite.
+  fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[], original?: AssetRef) => {
+    if (!validAsset(asset) || (original !== undefined && !validAsset(original))) throw new Error(MESSAGES.badAsset);
     if (sizes.length === 0 || sizes.length > PDF_MAX_PAGES || sizes.some((s) => !positive(s.w) || !positive(s.h))) {
       throw new Error(MESSAGES.badImage);
     }
     const assets = new Map<string, unknown>();
     putMeta(assets, asset);
+    if (original !== undefined) putMeta(assets, original);
     const pages = sizes.map((s, i) => ({
       id: newId(),
       elements: [],
-      backdrop: { asset: asset.id, kind: PDF_PAGE_KIND, page: i, w: s.w, h: s.h, fit: "width" },
+      backdrop: { asset: asset.id, kind: PDF_PAGE_KIND, page: i, w: s.w, h: s.h, fit: "width", ...(original === undefined ? {} : { original: original.id }) },
       grid: null,
       background: DEFAULT_BACKGROUND,
     }));
