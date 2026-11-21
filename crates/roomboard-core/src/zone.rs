@@ -151,6 +151,19 @@ pub(crate) fn fit(walls: &[Wall], tol: f64) -> Option<Grid> {
 thread_local! {
     /// Masques alloués par le thread du test (Q10 : un clic hors de l'emprise n'en alloue aucun).
     static MASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Repères de phase de `closed_zone` (témoin S6) : nom, taille notée, instant.
+    static LAPS: std::cell::RefCell<Vec<(&'static str, usize, std::time::Instant)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Fin d'une phase de `closed_zone` et sa taille (cellules, rectangles, sommets) : notée par les tests seulement.
+#[inline]
+fn lap(_phase: &'static str, _size: usize) {
+    #[cfg(test)]
+    LAPS.with(|l| {
+        l.borrow_mut()
+            .push((_phase, _size, std::time::Instant::now()));
+    });
 }
 
 /// Masque unique (Q20) : `FREE`, `WALL`, `REGION`, une cellule par octet.
@@ -487,6 +500,7 @@ fn inside_ring(c: &[[f64; 2]], x: f64, y: f64) -> bool {
 /// diffusion jusqu'au bord : `Open` ; cellule du clic dans un mur dilaté : `OnWall` ; sinon la forme exacte qui
 /// contient le clic, extérieur d'abord (`OnWall` si le clic tombe sur un bord).
 pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
+    lap("début", walls.len());
     let Some(g) = fit(walls, tol) else {
         return if walls.is_empty() {
             Zone::Outside
@@ -498,38 +512,51 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
         return Zone::Outside;
     };
     let contours: Vec<Vec<Contour>> = walls.iter().map(Wall::contours).collect();
+    lap(
+        "contours f64",
+        contours.iter().flatten().map(Vec::len).sum(),
+    );
     let mut m = Mask::new(g);
     let mut xs = Vec::new();
     for (w, cs) in walls.iter().zip(&contours) {
         m.paint_contours(cs, w.even_odd, &mut xs);
     }
     drop(xs);
+    lap("rastérisation", g.w * g.h);
     m.dilate_in_place(WALL);
+    lap("dilatation des murs", g.w * g.h);
     if m.cells[cy * m.w + cx] != FREE {
         return Zone::OnWall;
     }
     if !m.flood_spans(cx, cy) {
         return Zone::Open;
     }
+    lap("diffusion", g.w * g.h);
     m.dilate_in_place(REGION);
     m.dilate_in_place(REGION);
+    lap("agrandissement de 2 cellules", g.w * g.h);
     let subj = m.rects();
     drop(m);
+    lap("suites → rectangles", subj.len());
     let Some(zb) = bounds_of(&subj) else {
         return Zone::OnWall;
     };
     let clip = clip_of(walls, &contours, &zb);
-    FloatOverlay::with_subj_and_clip(subj.as_slice(), clip.as_slice())
-        .overlay(OverlayRule::Difference, FillRule::NonZero)
+    lap("murs à soustraire", clip.iter().map(Vec::len).sum());
+    let shapes = FloatOverlay::with_subj_and_clip(subj.as_slice(), clip.as_slice())
+        .overlay(OverlayRule::Difference, FillRule::NonZero);
+    lap("union et différence i_overlay", shapes.len());
+    let zone = shapes
         .into_iter()
-        .find(|s| s.iter().filter(|c| inside_ring(c, x, y)).count() % 2 == 1)
-        .map_or(Zone::OnWall, |s| {
-            Zone::Closed(
-                s.into_iter()
-                    .map(|c| c.into_iter().flatten().collect())
-                    .collect(),
-            )
-        })
+        .find(|s| s.iter().filter(|c| inside_ring(c, x, y)).count() % 2 == 1);
+    lap("choix de la forme", 0);
+    zone.map_or(Zone::OnWall, |s| {
+        Zone::Closed(
+            s.into_iter()
+                .map(|c| c.into_iter().flatten().collect())
+                .collect(),
+        )
+    })
 }
 
 /// Morceaux d'un contour à séparateurs (sommets non finis).
@@ -1105,15 +1132,43 @@ mod tests {
             }
         }
         assert!(d.zone_cells(&p, 2.0) >= 4_000_000);
-        let t = std::time::Instant::now();
-        let c = d
-            .apply(zone(&p, 100.0, 100.0, Some("#facc15")))
-            .expect("zone");
+        // Trois clics, annulés entre deux comme dans l'essai ; table des phases du clic médian.
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        let mut runs = Vec::new();
+        for _ in 0..3 {
+            LAPS.with(|l| l.borrow_mut().clear());
+            let t = std::time::Instant::now();
+            let c = d
+                .apply(zone(&p, 100.0, 100.0, Some("#facc15")))
+                .expect("zone");
+            let end = std::time::Instant::now();
+            assert_eq!(c.ids.len(), 1);
+            runs.push((ms(t, end), t, end, LAPS.with(|l| l.take())));
+            assert!(d.undo());
+        }
+        runs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (total, t, end, laps) = &runs[1];
+        let mut prev = *t;
+        for (phase, size, at) in laps {
+            eprintln!(
+                "  {:<32} {:>8.2} ms  ({size})",
+                if *phase == "début" {
+                    "lecture des murs"
+                } else {
+                    phase
+                },
+                ms(prev, *at)
+            );
+            prev = *at;
+        }
+        eprintln!("  {:<32} {:>8.2} ms", "écriture du fill", ms(prev, *end));
         eprintln!(
-            "S6 natif : {} ms, {} cellules",
-            t.elapsed().as_millis(),
+            "S6 natif : médiane {total:.1} ms ({}), {} cellules",
+            runs.iter()
+                .map(|r| format!("{:.1}", r.0))
+                .collect::<Vec<_>>()
+                .join(", "),
             d.zone_cells(&p, 2.0)
         );
-        assert_eq!(c.ids.len(), 1);
     }
 }
