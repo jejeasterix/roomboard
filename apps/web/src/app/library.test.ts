@@ -1,25 +1,47 @@
 import { unzipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { unknownKindMessage } from "../core/api";
+import { CodecUnavailableError } from "../platform/container";
 import { createMemoryLibraryFiles, type LibraryFiles } from "../platform/library-files";
 import { zipStored } from "../platform/zip-worker";
 import { ZIP_TOO_BIG_MESSAGE } from "../platform/model3d-import";
 import { PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE } from "../platform/rbpack";
-import { createResourceLibrary, fileNameOf, folderNameOf, normalizeSearch, PACK_TOO_BIG_MESSAGE, RESOURCE_KIND_UNKNOWN_MESSAGE, type NewResource } from "./library";
+import {
+  createResourceLibrary,
+  createSharedFolder,
+  exportSkippedMessage,
+  fileNameOf,
+  folderNameOf,
+  importedMessage,
+  mineMemoryMessage,
+  mineOrMemory,
+  normalizeSearch,
+  PACK_TOO_BIG_MESSAGE,
+  resourceKindReader,
+  SHARED_FOLDER_KEY,
+  type LibraryDeps,
+  type NewResource,
+} from "./library";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const zip = {
   unzip: async (blob: Blob) => Object.entries(unzipSync(new Uint8Array(await blob.arrayBuffer()))).map(([path, b]) => ({ path, blob: new Blob([b as BlobPart]) })),
   zip: async (files: readonly { path: string; bytes: Uint8Array }[]) => zipStored(files),
 };
-const libOf = (wrap: (f: LibraryFiles) => LibraryFiles = (f) => f) => {
+const libOf = (wrap: (f: LibraryFiles) => LibraryFiles = (f) => f, over: Partial<LibraryDeps> = {}) => {
   const mine = createMemoryLibraryFiles("mine");
-  const lib = createResourceLibrary({ files: [wrap(mine)], zip, now: () => "2026-11-21T08:00:00Z", appVersion: "c4" });
+  const lib = createResourceLibrary({ files: [wrap(mine)], zip, now: () => "2026-11-21T08:00:00Z", appVersion: "c4", ...over });
   return { lib, mine };
 };
 const res = (name: string, over: Partial<NewResource> = {}): NewResource => ({
   bytes: enc(`rb:${name}`), kind: "fragment", thumbnail: new Blob([enc("png")], { type: "image/png" }), name, keywords: [], description: "", ...over,
 });
+const manifestOf = (bytes: Uint8Array) =>
+  JSON.parse(new TextDecoder().decode(unzipSync(bytes)["manifest.json"])) as { items: { name: string; kind: string }[] };
+const kvOf = (init: Record<string, string> = {}) => {
+  const m = new Map(Object.entries(init));
+  return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+};
 const packOf = (name: string, paths: readonly string[]) =>
   zipStored([
     { path: "manifest.json", bytes: enc(JSON.stringify({ format: "roomboard", formatVersion: 1, kind: "pack", name, items: paths.map((path) => ({ path, name: "x", keywords: [], description: "", kind: "fragment", thumbnail: null })) })) },
@@ -153,11 +175,95 @@ describe("C4 : ResourceLibrary", () => {
     ]);
   });
 
-  it("C4 : export d'une ressource sans compagnon : refusé clairement, jamais un type inventé", async () => {
+  it("C4 : export d'une ressource sans compagnon ni type lisible : sautée avec un avis, jamais un type inventé (K4)", async () => {
     const { lib, mine } = libOf();
     await mine.write("Main.rbitem", new Blob([enc("x")]));
+    await lib.add("mine", "", res("Moitié"));
     await lib.refresh();
-    await expect(lib.exportPack("mine", "")).rejects.toThrow(RESOURCE_KIND_UNKNOWN_MESSAGE("Main.rbitem"));
+    const p = await lib.exportPack("mine", "");
+    expect(p.skipped).toEqual(["Main.rbitem"]);
+    expect(manifestOf(p.bytes).items.map((i) => [i.name, i.kind])).toEqual([["Moitié", "fragment"]]);
+  });
+
+  it("C4 : export d'une ressource sans compagnon : type lu sur ses octets par le cœur, pas de refus global (K4)", async () => {
+    const kindOf = vi.fn(async (b: Uint8Array) => (new TextDecoder().decode(b) === "grille" ? ("grid" as const) : null));
+    const { lib, mine } = libOf(undefined, { kindOf });
+    await mine.write("Seyes.rbitem", new Blob([enc("grille")]));
+    await mine.write("Autre.rbitem", new Blob([enc("??")]));
+    await lib.add("mine", "", res("Moitié"));
+    await lib.refresh();
+    const p = await lib.exportPack("mine", "");
+    expect(p.skipped).toEqual(["Autre.rbitem"]);
+    expect(manifestOf(p.bytes).items.map((i) => [i.name, i.kind]).sort()).toEqual([["Moitié", "fragment"], ["Seyes", "grid"]]);
+    expect(kindOf).toHaveBeenCalledTimes(2); // seules les ressources sans type connu sont lues
+    expect(exportSkippedMessage(["Autre.rbitem"])).toContain("Autre.rbitem");
+  });
+
+  it("C4 : resourceKindReader : manifestKind sur le manifeste du codec ; sans module des formats : containerKind ; document ou illisible : null (K4)", async () => {
+    const core = {
+      manifestKind: vi.fn((m: Uint8Array) => (new TextDecoder().decode(m) === "g" ? ("grid" as const) : ("document" as const))),
+      containerKind: vi.fn(() => "fragment" as const),
+    };
+    const codec = (m: string | Error) => ({
+      read: async () => {
+        if (m instanceof Error) throw m;
+        return { manifest: enc(m), ybin: enc(""), assets: [], warnings: [] };
+      },
+    });
+    expect(await resourceKindReader(core, codec("g"))(enc("x"))).toBe("grid");
+    expect(core.containerKind).not.toHaveBeenCalled();
+    expect(await resourceKindReader(core, codec("d"))(enc("x"))).toBeNull();
+    expect(await resourceKindReader(core, codec(new CodecUnavailableError("absent")))(enc("x"))).toBe("fragment");
+    expect(core.containerKind).toHaveBeenCalledWith(enc("x"));
+    expect(await resourceKindReader(core, codec(new Error("pas un conteneur")))(enc("x"))).toBeNull();
+  });
+
+  it("C4 : onChange : un import fait hors du panneau prévient les abonnés ; désabonné : plus rien (K3)", async () => {
+    const { lib } = libOf();
+    await lib.add("mine", "", res("Moitié"));
+    const p = await lib.exportPack("mine", "");
+    const seen = vi.fn();
+    const off = lib.onChange(seen);
+    await lib.importPack(p.bytes, "x.rbpack");
+    expect(seen).toHaveBeenCalledTimes(1);
+    off();
+    await lib.importPack(p.bytes, "x.rbpack");
+    expect(seen).toHaveBeenCalledTimes(1);
+  });
+
+  it("C4 : dossier partagé : clé déjà remplie au démarrage → déjà choisi, et proposé à la boîte (K1, H1-5)", async () => {
+    const opened: string[] = [];
+    const host = { pickFolder: vi.fn(async (start: string | null) => start ?? "/choisi"), open: (path: string) => (opened.push(path), createMemoryLibraryFiles("shared")) };
+    const { lib } = libOf();
+    const known = createSharedFolder({ kv: kvOf({ [SHARED_FOLDER_KEY]: "/partage" }), host, library: lib });
+    expect(known.desktop).toBe(true);
+    expect(known.chosen()).toBe(true);
+    const fresh = createSharedFolder({ kv: kvOf(), host, library: lib });
+    expect(fresh.chosen()).toBe(false);
+    expect(await fresh.choose()).toBe(true);
+    expect(fresh.chosen()).toBe(true);
+    expect(opened).toEqual(["/choisi"]);
+    expect(lib.roots()).toEqual(["mine", "shared"]);
+    await known.choose();
+    expect(host.pickFolder).toHaveBeenLastCalledWith("/partage");
+    const web = createSharedFolder({ kv: kvOf({ [SHARED_FOLDER_KEY]: "/partage" }), host: null, library: lib });
+    expect(web.desktop).toBe(false);
+    expect(await web.choose()).toBe(false);
+  });
+
+  it("C4 : « Mes ressources » : dossier Documents introuvable → en mémoire, avec un avis (K8)", async () => {
+    const r = await mineOrMemory(async () => {
+      throw new Error("documentDir indisponible");
+    }, () => createMemoryLibraryFiles("mine"));
+    expect(r.files.root).toBe("mine");
+    expect(r.notice).toBe(mineMemoryMessage("documentDir indisponible"));
+    const ok = createMemoryLibraryFiles("mine");
+    expect(await mineOrMemory(async () => ok, () => createMemoryLibraryFiles("mine"))).toEqual({ files: ok, notice: null });
+  });
+
+  it("C4 : message d'import d'un paquet, partagé par le panneau et le dépôt sur la scène", () => {
+    expect(importedMessage("P.rbpack", { folder: "P", count: 1 })).toBe("P.rbpack : 1 ressource importée dans « P »");
+    expect(importedMessage("P.rbpack", { folder: "P (2)", count: 3 })).toBe("P.rbpack : 3 ressources importées dans « P (2) »");
   });
 
   it("C4 : export puis import rend les mêmes ressources", async () => {

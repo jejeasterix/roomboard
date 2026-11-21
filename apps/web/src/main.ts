@@ -8,11 +8,10 @@ import { createBoardSession, type SessionShared } from "./app/board-session";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
-import { createResourceLibrary } from "./app/library";
+import { createResourceLibrary, createSharedFolder, importedMessage, mineOrMemory, resourceKindReader } from "./app/library";
 import { createWorkspace, type TabSession } from "./app/workspace";
 import { APP_VERSION, messageOf } from "./platform/controller";
 import { createIdbLibraryFiles, createMemoryLibraryFiles, createTauriLibraryFiles } from "./platform/library-files";
-import type { SharedFolder } from "./ui/LibraryPanel";
 import type { CoreDocument } from "./core/api";
 import { Canvas2DRenderer, exportPainterOptions } from "./engine/render/canvas2d";
 import { RecordingPath } from "./engine/render/record-ctx";
@@ -218,33 +217,33 @@ async function start(): Promise<void> {
 
   // Bibliothèque (C4) : « Mes ressources » en IndexedDB sur le web, `Documents/RoomBoard/Ressources` dans la coque ;
   // « Ressources partagées » : coque seulement, dossier choisi par la boîte native (accès pour la session, H1-5).
-  const SHARED_KEY = "roomboard.bibliotheque.partage";
+  // K8 : dossier Documents introuvable : « Mes ressources » en mémoire avec un avis, le démarrage continue.
   const mine =
     ports !== null
-      ? createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, `${await ports.documentDir()}/RoomBoard/Ressources`, "mine")
-      : typeof window.indexedDB === "undefined"
-        ? createMemoryLibraryFiles("mine")
-        : createIdbLibraryFiles(window.indexedDB, "mine");
+      ? await mineOrMemory(
+          async () => createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, `${await ports.documentDir()}/RoomBoard/Ressources`, "mine"),
+          () => createMemoryLibraryFiles("mine"),
+        )
+      : { files: typeof window.indexedDB === "undefined" ? createMemoryLibraryFiles("mine") : createIdbLibraryFiles(window.indexedDB, "mine"), notice: null };
+  if (mine.notice !== null) void prepared.shell.notify(mine.notice);
+  // Un seul codec des conteneurs : celui des onglets lit aussi le type d'une ressource sans compagnon (K4).
+  const codec = createPageCodec(loadFormatsModule);
   const library = createResourceLibrary({
-    files: [mine],
+    files: [mine.files],
     zip: { unzip: createZipReader(spawnZipWorker, undefined, "pack"), zip: createZipWriter(spawnZipWorker) },
     now: () => new Date().toISOString(),
     appVersion: APP_VERSION,
+    kindOf: resourceKindReader(core, codec),
   });
-  let sharedChosen = false;
-  const sharedFolder: SharedFolder = {
-    desktop: ports !== null,
-    chosen: () => sharedChosen,
-    async choose() {
-      if (ports === null) return false;
-      const path = await ports.pickFolder(settingsKv?.getItem(SHARED_KEY) ?? null);
-      if (path === null) return false;
-      settingsKv?.setItem(SHARED_KEY, path);
-      library.setRoot(createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, path, "shared"));
-      sharedChosen = true;
-      return true;
-    },
-  };
+  // K1 (H1-5) : la clé gardée dit « déjà choisi » dès le démarrage ; l'accès se rouvre par la boîte native.
+  const sharedFolder = createSharedFolder({
+    kv: settingsKv,
+    host:
+      ports === null
+        ? null
+        : { pickFolder: (start) => ports.pickFolder(start), open: (path) => createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, path, "shared") },
+    library,
+  });
   const packFiles =
     ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBPACK_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBPACK_TYPE);
   const workspace = await createWorkspace({
@@ -253,7 +252,7 @@ async function start(): Promise<void> {
     kind: prepared.kind,
     shell: prepared.shell,
     // Conteneur avec images (R7) : second module chargé au premier Ouvrir ou au premier enregistrement avec image.
-    codec: createPageCodec(loadFormatsModule),
+    codec,
     readSheet: (b) => sheets.read(b),
     model3d: { view: () => modelView.load(), readZip: createZipReader(spawnZipWorker) },
     clipboard: createClipboard(browserSystemClipboard(navigator)),
@@ -269,7 +268,7 @@ async function start(): Promise<void> {
     importPack: async (name, bytes) => {
       try {
         const r = await library.importPack(bytes, name);
-        await prepared.shell.notify(`${name} : ${r.count} ressource${r.count > 1 ? "s" : ""} importée${r.count > 1 ? "s" : ""} dans « ${r.folder} »`);
+        await prepared.shell.notify(importedMessage(name, r));
         return true;
       } catch (e) {
         await prepared.shell.notify(`Import impossible (${name}) : ${messageOf(e)}`);

@@ -5,17 +5,14 @@
  * et import de paquets (D17 à D19). Index relu à l'ouverture et au retour du focus (H2-6).
  */
 import { createResource, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
-import { ROOT_LABELS, type CapturedResource, type ResourceEntry, type ResourceLibrary } from "../app/library";
+import { exportSkippedMessage, importedMessage, ROOT_LABELS, type CapturedResource, type ResourceEntry, type ResourceKind, type ResourceLibrary, type SharedFolder } from "../app/library";
+import { messageOf } from "../platform/controller";
 import type { Point } from "../platform/files";
 import type { LibraryRoot } from "../platform/library-files";
 import type { TypedFiles } from "../platform/typed-files";
 import { startResourceDrag } from "./resource-drag";
 
-export interface SharedFolder {
-  readonly desktop: boolean;
-  chosen(): boolean;
-  choose(): Promise<boolean>;
-}
+export type { SharedFolder } from "../app/library";
 export interface LibraryPanelProps {
   readonly library: ResourceLibrary;
   readonly shared: SharedFolder;
@@ -27,46 +24,60 @@ export interface LibraryPanelProps {
   close(): void;
 }
 
-const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const keywordsOf = (s: string): string[] => s.split(",").map((k) => k.trim()).filter((k) => k !== "");
 
-function Card(props: { entry: ResourceEntry; library: ResourceLibrary; version: () => number; place: LibraryPanelProps["place"]; remove(entry: ResourceEntry): void; showFolder?: boolean }): JSX.Element {
+/** K5 (H2-4) : pastille du type lu ; type inconnu : « ? », jamais un type inventé. */
+const KIND_BADGES: Readonly<Record<ResourceKind, string>> = { grid: "Grille", fragment: "Objets" };
+
+function Card(props: { entry: ResourceEntry; library: ResourceLibrary; place: LibraryPanelProps["place"]; remove(entry: ResourceEntry): void; showFolder?: boolean }): JSX.Element {
+  // Vignette lue une fois par entrée (une entrée relue par `refresh` est une nouvelle carte) ; l'URL d'objet est révoquée
+  // quand elle est remplacée et quand la carte disparaît, jamais laissée vivante.
+  let live: string | null = null;
+  let gone = false;
+  const revoke = (): void => {
+    if (live !== null) URL.revokeObjectURL(live);
+    live = null;
+  };
   const [url] = createResource(
-    () => ({ e: props.entry, v: props.version() }),
-    async ({ e }) => {
+    () => props.entry,
+    async (e) => {
       const b = await props.library.thumbnail(e).catch(() => null);
-      return b === null ? null : URL.createObjectURL(b);
+      revoke();
+      if (b !== null && !gone) live = URL.createObjectURL(b);
+      return live;
     },
   );
   onCleanup(() => {
-    const u = url();
-    if (u) URL.revokeObjectURL(u);
+    gone = true;
+    revoke();
   });
   return (
-    <div
-      class="rb-resource"
-      tabindex="0"
-      role="button"
-      data-resource={props.entry.path}
-      data-root={props.entry.root}
-      title={props.entry.description || props.entry.name}
-      onPointerDown={(e) => startResourceDrag(e, (at) => void props.place(props.entry, at), { label: props.entry.name, thumbnail: url() ?? null })}
-      onDblClick={() => void props.place(props.entry, null)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
+    <div class="rb-resource-item">
+      <div
+        class="rb-resource"
+        tabindex="0"
+        role="button"
+        data-resource={props.entry.path}
+        data-root={props.entry.root}
+        title={props.entry.description || props.entry.name}
+        onPointerDown={(e) => startResourceDrag(e, (at) => void props.place(props.entry, at), { label: props.entry.name, thumbnail: url() ?? null })}
+        onDblClick={() => void props.place(props.entry, null)}
+        onKeyDown={(e) => {
+          // la carte seule : une touche venue d'un élément intérieur n'est pas la sienne
+          if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
           e.preventDefault();
           void props.place(props.entry, null);
-        }
-      }}
-    >
-      <Show when={url()} fallback={<span class="rb-badge">{props.entry.kind === "grid" ? "Grille" : "Objets"}</span>}>
-        {(u) => <img class="rb-thumb" src={u()} alt="" />}
-      </Show>
-      <span class="rb-resource-name">{props.entry.name}</span>
-      <Show when={props.showFolder && props.entry.folder !== ""}>
-        <span class="rb-resource-folder">{props.entry.folder}</span>
-      </Show>
-      <button type="button" data-lib="remove" aria-label={`Supprimer ${props.entry.name}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => props.remove(props.entry)}>
+        }}
+      >
+        <Show when={url()} fallback={<span class="rb-badge">{props.entry.kind === null ? "?" : KIND_BADGES[props.entry.kind]}</span>}>
+          {(u) => <img class="rb-thumb" src={u()} alt="" />}
+        </Show>
+        <span class="rb-resource-name">{props.entry.name}</span>
+        <Show when={props.showFolder && props.entry.folder !== ""}>
+          <span class="rb-resource-folder">{props.entry.folder}</span>
+        </Show>
+      </div>
+      <button type="button" data-lib="remove" aria-label={`Supprimer ${props.entry.name}`} onClick={() => props.remove(props.entry)}>
         ×
       </button>
     </div>
@@ -91,10 +102,29 @@ export function LibraryPanel(props: LibraryPanelProps): JSX.Element {
     }
     bump();
   };
-  const refresh = (): void => void act(() => props.library.refresh());
+  // H2-6 : index relu à l'ouverture et au retour du focus. Un échec est dit dans le panneau, jamais par une boîte :
+  // fermer une boîte rend le focus à la fenêtre et relancerait la relecture, donc la boîte, en boucle (dossier débranché).
+  const [status, setStatus] = createSignal<string | null>(null);
+  let refreshing = false;
+  const refresh = (): void => {
+    if (refreshing) return;
+    refreshing = true;
+    void props.library
+      .refresh()
+      .then(
+        () => setStatus(null),
+        (e: unknown) => setStatus(`Bibliothèque : ${messageOf(e)}`),
+      )
+      .finally(() => {
+        refreshing = false;
+        bump();
+      });
+  };
   onMount(() => {
     refresh();
     window.addEventListener("focus", refresh);
+    // K3 : un paquet importé hors du panneau (déposé sur la scène) se voit sans attendre le focus
+    onCleanup(props.library.onChange(bump));
   });
   onCleanup(() => window.removeEventListener("focus", refresh));
 
@@ -143,7 +173,7 @@ export function LibraryPanel(props: LibraryPanelProps): JSX.Element {
     void act(async () => {
       const o = open();
       const pack = await props.library.exportPack(o.root, o.path);
-      await props.packs.save(pack.name, pack.bytes);
+      if ((await props.packs.save(pack.name, pack.bytes)) && pack.skipped.length > 0) await props.say(exportSkippedMessage(pack.skipped));
     });
   const importPack = (): void =>
     void act(async () => {
@@ -151,7 +181,7 @@ export function LibraryPanel(props: LibraryPanelProps): JSX.Element {
       if (f === null) return;
       const r = await props.library.importPack(f.bytes, f.name);
       setOpen({ root: "mine", path: r.folder });
-      await props.say(`${f.name} : ${r.count} ressource${r.count > 1 ? "s" : ""} importée${r.count > 1 ? "s" : ""} dans « ${r.folder} »`);
+      await props.say(importedMessage(f.name, r));
     });
   const createFolder = (): void =>
     void act(async () => {
@@ -199,7 +229,7 @@ export function LibraryPanel(props: LibraryPanelProps): JSX.Element {
           </For>
         </div>
         <div class="rb-library-cards">
-          <For each={folderOf(root).items}>{(e) => <Card entry={e} library={props.library} version={version} place={props.place} remove={remove} />}</For>
+          <For each={folderOf(root).items}>{(e) => <Card entry={e} library={props.library} place={props.place} remove={remove} />}</For>
         </div>
       </Show>
     </section>
@@ -213,6 +243,13 @@ export function LibraryPanel(props: LibraryPanelProps): JSX.Element {
           ×
         </button>
       </header>
+      <Show when={status()}>
+        {(m) => (
+          <p class="rb-library-note" data-lib="status" role="status">
+            {m()}
+          </p>
+        )}
+      </Show>
       <input type="search" data-lib="search" aria-label="Rechercher dans la bibliothèque" value={query()} onInput={(e) => setQuery(e.currentTarget.value)} />
       <div class="rb-library-actions">
         <button type="button" data-lib="add-selection" onClick={() => setForm("selection")}>Ajouter la sélection</button>
@@ -240,7 +277,7 @@ export function LibraryPanel(props: LibraryPanelProps): JSX.Element {
       </Show>
       <Show when={query().trim() !== ""} fallback={<>{section("mine")}{section("shared")}</>}>
         <div data-lib="results" class="rb-library-cards">
-          <For each={results()}>{(e) => <Card entry={e} library={props.library} version={version} place={props.place} remove={remove} showFolder />}</For>
+          <For each={results()}>{(e) => <Card entry={e} library={props.library} place={props.place} remove={remove} showFolder />}</For>
         </div>
       </Show>
     </div>

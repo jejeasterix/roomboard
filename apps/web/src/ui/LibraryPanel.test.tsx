@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { unzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createResourceLibrary, fileNameOf } from "../app/library";
+import { createResourceLibrary, exportSkippedMessage, fileNameOf, type LibraryDeps } from "../app/library";
 import { createMemoryLibraryFiles } from "../platform/library-files";
+import { zipStored } from "../platform/zip-worker";
 import { LibraryPanel, type LibraryPanelProps } from "./LibraryPanel";
 
 afterEach(cleanup);
@@ -37,6 +39,17 @@ function setup(over: Partial<LibraryPanelProps> = {}) {
   };
   return { ...r, props, library, placed, q };
 }
+const realZip = {
+  unzip: async (blob: Blob) => Object.entries(unzipSync(new Uint8Array(await blob.arrayBuffer()))).map(([path, b]) => ({ path, blob: new Blob([b as BlobPart]) })),
+  zip: async (files: readonly { path: string; bytes: Uint8Array }[]) => zipStored(files),
+};
+function libWith(over: Partial<LibraryDeps> = {}) {
+  const mine = createMemoryLibraryFiles("mine");
+  return { mine, lib: createResourceLibrary({ files: [mine], zip: realZip, now: () => "n", appVersion: "c4", ...over }) };
+}
+const item = (name: string) => ({ bytes: enc(name), kind: "fragment" as const, thumbnail: null, name, keywords: [], description: "" });
+/** Laisse finir les lectures asynchrones (vignettes, actions) avant d'affirmer qu'il ne s'est rien passé. */
+const settle = () => new Promise((r) => setTimeout(r, 30));
 async function addSelection(s: ReturnType<typeof setup>, name: string, keywords = "") {
   fireEvent.click(s.q('[data-lib="add-selection"]'));
   fireEvent.input(s.q<HTMLInputElement>('[data-lib="name"]'), { target: { value: name } });
@@ -129,11 +142,89 @@ describe("C4 : panneau Bibliothèque", () => {
     await addSelection(s, "Moitié");
     (s.props.confirm as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
     fireEvent.click(s.q('[data-lib="clear"]'));
-    await Promise.resolve();
+    await waitFor(() => expect(s.props.confirm).toHaveBeenCalledTimes(1));
+    await settle();
     expect(s.library.folder("mine", "").items).toHaveLength(1);
     fireEvent.click(s.q('[data-lib="clear"]'));
     await waitFor(() => expect(s.library.folder("mine", "").items).toHaveLength(0));
     expect(s.props.confirm).toHaveBeenLastCalledWith("Vider « Mes ressources » ? Toutes ses ressources seront supprimées.");
+  });
+
+  it("C4 : refresh en échec au retour du focus : dit dans le panneau, jamais en boîte modale ni en boucle (1)", async () => {
+    const { lib } = libWith();
+    const refresh = vi.fn<() => Promise<void>>(async () => {
+      throw new Error("dossier partagé débranché");
+    });
+    lib.refresh = refresh;
+    const s = setup({ library: lib });
+    await waitFor(() => expect(s.q('[data-lib="status"]').textContent).toContain("dossier partagé débranché"));
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(s.props.say).not.toHaveBeenCalled();
+    expect(refresh.mock.calls.length).toBeLessThanOrEqual(3);
+    refresh.mockImplementation(async () => undefined);
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(s.container.querySelector('[data-lib="status"]')).toBeNull());
+  });
+
+  it("C4 : Entrée sur « × » ne pose rien ; Espace sur la carte pose au centre ; aucun bouton dans la carte (2, 8)", async () => {
+    const s = setup({ confirm: vi.fn(async () => false) });
+    await addSelection(s, "Moitié");
+    const card = s.q<HTMLElement>('.rb-resource[data-resource="moitie.rbitem"]');
+    fireEvent.keyDown(s.q('[data-lib="remove"]'), { key: "Enter" });
+    await settle();
+    expect(s.placed).toEqual([]);
+    expect(card.querySelector("button")).toBeNull();
+    fireEvent.keyDown(card, { key: " " });
+    await waitFor(() => expect(s.placed).toEqual([["Moitié", null]]));
+  });
+
+  it("C4 : vignette : relire l'index ne laisse jamais une URL d'objet sans la révoquer (3)", async () => {
+    let n = 0;
+    const created = vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:t${++n}`);
+    const revoked = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    try {
+      const confirm = vi.fn(async () => false);
+      const s = setup({ confirm });
+      await addSelection(s, "Moitié");
+      await waitFor(() => s.q('.rb-resource[data-resource="moitie.rbitem"] img.rb-thumb'));
+      for (let i = 0; i < 3; i++) fireEvent.click(s.q('[data-lib="clear"]'));
+      await waitFor(() => expect(confirm).toHaveBeenCalledTimes(3));
+      await settle();
+      expect(created.mock.calls.length - revoked.mock.calls.length).toBe(1); // une seule carte, une seule URL vivante
+    } finally {
+      created.mockRestore();
+      revoked.mockRestore();
+    }
+  });
+
+  it("C4 : paquet importé hors du panneau (déposé sur la scène) : le panneau se relit (K3, 10)", async () => {
+    const { lib } = libWith();
+    await lib.add("mine", "", item("Moitié"));
+    const pack = await lib.exportPack("mine", "");
+    const s = setup({ library: lib });
+    await waitFor(() => s.q('.rb-resource[data-resource="moitie.rbitem"]'));
+    await lib.importPack(pack.bytes, pack.name);
+    await waitFor(() => s.q('section[data-root="mine"] [data-folder="Mes ressources"]'));
+  });
+
+  it("C4 : ressource sans type connu : pastille « ? », jamais « Objets » inventé (K5)", async () => {
+    const { lib, mine } = libWith();
+    await mine.write("Main.rbitem", new Blob([enc("x")]));
+    const s = setup({ library: lib });
+    await waitFor(() => expect(s.q('.rb-resource[data-resource="Main.rbitem"] .rb-badge').textContent).toBe("?"));
+  });
+
+  it("C4 : export avec une ressource sans type lisible : paquet enregistré, avis de la ressource sautée (K4)", async () => {
+    const { lib, mine } = libWith();
+    await mine.write("Main.rbitem", new Blob([enc("x")]));
+    await lib.add("mine", "", item("Moitié"));
+    const s = setup({ library: lib });
+    await waitFor(() => s.q('.rb-resource[data-resource="Main.rbitem"]'));
+    fireEvent.click(s.q('[data-lib="export"]'));
+    await waitFor(() => expect(s.props.say).toHaveBeenCalledWith(exportSkippedMessage(["Main.rbitem"])));
+    expect(s.props.packs.save).toHaveBeenCalledTimes(1);
   });
 
   it("C4 : Exporter (.rbpack) enregistre le paquet du dossier ouvert", async () => {

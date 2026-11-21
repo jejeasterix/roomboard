@@ -2,7 +2,9 @@
  * Glisser d'une carte de la bibliothèque vers la scène (C4, D13, DA4) : Pointer Events seuls (souris, stylet, doigt),
  * jamais le glisser HTML5 (empêché par le glisser-déposer natif de la fenêtre Tauri sous Windows, mal joué au doigt).
  * Capture du pointeur, fantôme qui suit au-delà de 4 px, lâcher au-dessus de `.rb-stages` = `onDrop` au point client
- * (même forme que `DropHandler`) ; ailleurs, Échap ou `pointercancel` : rien.
+ * (même forme que `DropHandler`) ; ailleurs, Échap, `pointercancel` ou capture perdue (carte démontée) : rien.
+ * Au doigt, la carte laisse défiler la liste (`touch-action: pan-y`, rb.css) : le glisser ne part que sur un mouvement
+ * horizontal dominant ; vertical, il est abandonné au défilement. Souris et stylet : tout mouvement au-delà du seuil.
  */
 import type { Point } from "../platform/files";
 
@@ -48,13 +50,22 @@ export function startResourceDrag(e: PointerEvent, onDrop: (at: Point) => void, 
     source.removeEventListener("pointermove", move);
     source.removeEventListener("pointerup", up);
     source.removeEventListener("pointercancel", end);
+    source.removeEventListener("lostpointercapture", end);
     doc.removeEventListener("keydown", key, true);
     source.releasePointerCapture?.(e.pointerId);
     ghost?.remove();
     ghost = null;
   };
   function move(m: PointerEvent): void {
-    if (ghost === null && Math.hypot(m.clientX - x0, m.clientY - y0) < DRAG_THRESHOLD_PX) return;
+    if (ghost === null) {
+      const dx = Math.abs(m.clientX - x0);
+      const dy = Math.abs(m.clientY - y0);
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      if (e.pointerType === "touch" && dy >= dx) {
+        end(); // la liste défile : ce n'est pas un glisser
+        return;
+      }
+    }
     place(m.clientX, m.clientY);
   }
   function up(u: PointerEvent): void {
@@ -70,5 +81,6 @@ export function startResourceDrag(e: PointerEvent, onDrop: (at: Point) => void, 
   source.addEventListener("pointermove", move);
   source.addEventListener("pointerup", up);
   source.addEventListener("pointercancel", end);
+  source.addEventListener("lostpointercapture", end);
   doc.addEventListener("keydown", key, true);
 }

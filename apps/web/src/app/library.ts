@@ -7,6 +7,9 @@
  * (seuls les chemins écrits par l'import sont retirés) : jamais de bibliothèque à moitié
  * importée (même patron que `zip3dHandler`, `platform/model3d-handlers.ts`).
  */
+import type { ContainerKind } from "../core/api";
+import { CodecUnavailableError, type ContainerCodec } from "../platform/container";
+import { messageOf } from "../platform/controller";
 import { safeLibraryPath, type LibraryFiles, type LibraryRoot } from "../platform/library-files";
 import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "../platform/model3d-import";
 import { buildPack, PACK_NOT_ROOMBOARD_MESSAGE, PACK_UNSAFE_PATH_MESSAGE, readPack, type PackItem, type PackItemKind, type ZipFile } from "../platform/rbpack";
@@ -48,6 +51,8 @@ export interface LibraryDeps {
   readonly zip: LibraryZip;
   now(): string;
   readonly appVersion: string;
+  /** K4 : type d'une ressource sans compagnon, lu sur ses octets par le cœur (`resourceKindReader`) ; absent : `null`. */
+  kindOf?(bytes: Uint8Array): Promise<ResourceKind | null>;
 }
 export interface ResourceLibrary {
   roots(): readonly LibraryRoot[];
@@ -61,8 +66,11 @@ export interface ResourceLibrary {
   mkdir(root: LibraryRoot, parent: string, name: string): Promise<string>;
   /** `path` vide : toute la racine (« Vider », `LibraryPanel`) ; un chemin de dossier ou de ressource sinon. */
   remove(root: LibraryRoot, path: string): Promise<void>;
-  exportPack(root: LibraryRoot, folder: string): Promise<{ readonly name: string; readonly bytes: Uint8Array }>;
+  /** `skipped` : ressources sans compagnon dont le cœur ne lit aucun type, laissées hors du paquet (K4, avis). */
+  exportPack(root: LibraryRoot, folder: string): Promise<{ readonly name: string; readonly bytes: Uint8Array; readonly skipped: readonly string[] }>;
   importPack(bytes: Uint8Array, fileName: string): Promise<{ readonly folder: string; readonly count: number }>;
+  /** K3 : prévient après un import, d'où qu'il vienne (panneau ou `.rbpack` déposé sur la scène) ; rend le désabonnement. */
+  onChange(listener: () => void): () => void;
 }
 
 export const ROOT_LABELS: Readonly<Record<LibraryRoot, string>> = Object.freeze({ mine: "Mes ressources", shared: "Ressources partagées" });
@@ -71,8 +79,13 @@ const NAME_MAX = 80;
 /** Diacritiques combinants, la classe de `slug` (`profile-file.ts:20`). */
 const MARKS = /[̀-ͯ]/g;
 
-export const RESOURCE_KIND_UNKNOWN_MESSAGE = (path: string): string =>
-  `ressource sans type connu : ${path} (aucun fichier compagnon) : ajoutez-la de nouveau à la bibliothèque avant de l'exporter`;
+const plural = (n: number, word: string): string => `${word}${n > 1 ? "s" : ""}`;
+/** K4 : avis d'un export qui a laissé de côté des ressources sans type lisible (jamais un refus global). */
+export const exportSkippedMessage = (paths: readonly string[]): string =>
+  `${paths.length} ${plural(paths.length, "ressource")} sans type lisible (aucun fichier compagnon), ${plural(paths.length, "laissée")} hors du paquet : ${paths.join(", ")}`;
+/** Avis d'un paquet importé, le même depuis le panneau et depuis un `.rbpack` déposé sur la scène. */
+export const importedMessage = (name: string, r: { readonly folder: string; readonly count: number }): string =>
+  `${name} : ${r.count} ${plural(r.count, "ressource")} ${plural(r.count, "importée")} dans « ${r.folder} »`;
 
 export const normalizeSearch = (s: string): string => s.normalize("NFD").replace(MARKS, "").toLowerCase();
 
@@ -112,6 +125,8 @@ interface RootIndex {
 
 export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
   const index = new Map<LibraryRoot, RootIndex>();
+  const listeners = new Set<() => void>();
+  const readKind = async (bytes: Uint8Array): Promise<ResourceKind | null> => (deps.kindOf ? deps.kindOf(bytes).catch(() => null) : null);
   for (const f of deps.files) index.set(f.root, { files: f, dirs: new Set(), entries: [] });
   const of = (root: LibraryRoot): RootIndex => {
     const r = index.get(root);
@@ -250,15 +265,23 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
       const count = 1 + chosen.length + chosen.filter((e) => e.thumbnail !== null).length;
       if (count > ZIP_MAX_ENTRIES) throw new Error(PACK_TOO_BIG_MESSAGE);
       const items: PackItem[] = [];
+      const skipped: string[] = [];
       for (const e of chosen) {
-        if (e.kind === null) throw new Error(RESOURCE_KIND_UNKNOWN_MESSAGE(e.path)); // jamais un type inventé
+        const bytes = await bytesOf(await r.files.read(e.path));
+        // K4 : sans compagnon, le type est lu sur les octets par le cœur ; illisible : laissée de côté avec un avis,
+        // jamais un type inventé ni un refus de tout le paquet.
+        const kind = e.kind ?? (await readKind(bytes));
+        if (kind === null) {
+          skipped.push(e.path);
+          continue;
+        }
         items.push({
           path: e.path.slice(prefix.length, -EXT.length),
           name: e.name,
           keywords: e.keywords,
           description: e.description,
-          kind: e.kind,
-          bytes: await bytesOf(await r.files.read(e.path)),
+          kind,
+          bytes,
           thumbnail: e.thumbnail === null ? null : await bytesOf(await r.files.read(e.thumbnail)),
         });
       }
@@ -266,7 +289,7 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
       const files = buildPack(name, items, { appVersion: deps.appVersion, now: deps.now() });
       const total = files.reduce((n, f) => n + f.bytes.length, 0);
       if (files.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) throw new Error(PACK_TOO_BIG_MESSAGE);
-      return { name: `${folderNameOf(name)}.rbpack`, bytes: await deps.zip.zip(files) };
+      return { name: `${folderNameOf(name)}.rbpack`, bytes: await deps.zip.zip(files), skipped };
     },
     async importPack(bytes) {
       // 1. Tout le paquet est lu et contrôlé : aucune écriture tant qu'un refus reste possible (D18, D32).
@@ -314,7 +337,82 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
         await load(r).catch(() => forget(r, folder));
         throw e;
       }
+      for (const l of [...listeners]) l();
       return { folder, count: pack.items.length };
     },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
   };
+}
+
+/** K4 : type d'une ressource lu par le cœur sur ses octets, au patron de `container-io.ts` (`read`) : manifeste extrait
+ *  par le codec puis `manifestKind` ; sans le module des formats, `containerKind` sur le conteneur entier. Un document,
+ *  un type inconnu ou des octets illisibles : `null` (la ressource est laissée de côté, jamais un type inventé). */
+export function resourceKindReader(
+  core: { manifestKind(manifest: Uint8Array): ContainerKind; containerKind(bytes: Uint8Array): ContainerKind },
+  codec: Pick<ContainerCodec, "read">,
+): (bytes: Uint8Array) => Promise<ResourceKind | null> {
+  return async (bytes) => {
+    let kind: ContainerKind;
+    try {
+      try {
+        kind = core.manifestKind((await codec.read(new Blob([bytes as BlobPart]))).manifest);
+      } catch (e) {
+        if (!(e instanceof CodecUnavailableError)) throw e;
+        kind = core.containerKind(bytes);
+      }
+    } catch {
+      return null;
+    }
+    return kind === "document" ? null : kind;
+  };
+}
+
+/** Clé du dossier partagé choisi (H1-5), gardée d'une session à l'autre ; l'accès, lui, se rouvre par la boîte native. */
+export const SHARED_FOLDER_KEY = "roomboard.bibliotheque.partage";
+export interface SharedFolder {
+  readonly desktop: boolean;
+  chosen(): boolean;
+  choose(): Promise<boolean>;
+}
+export interface SharedFolderDeps {
+  readonly kv: { getItem(key: string): string | null; setItem(key: string, value: string): void } | null;
+  /** Coque seulement (boîte native, racine Tauri) ; `null` sur le web. */
+  readonly host: { pickFolder(start: string | null): Promise<string | null>; open(path: string): LibraryFiles } | null;
+  readonly library: Pick<ResourceLibrary, "setRoot">;
+}
+
+/** « Ressources partagées » (H1-5, K1) : « déjà choisi » dès que la clé existe, au démarrage compris, pas seulement
+ *  après un choix fait dans cette session. */
+export function createSharedFolder(deps: SharedFolderDeps): SharedFolder {
+  let picked = false;
+  const saved = (): string | null => deps.kv?.getItem(SHARED_FOLDER_KEY) ?? null;
+  return {
+    desktop: deps.host !== null,
+    chosen: () => deps.host !== null && (picked || saved() !== null),
+    async choose() {
+      const host = deps.host;
+      if (host === null) return false;
+      const path = await host.pickFolder(saved());
+      if (path === null) return false;
+      deps.kv?.setItem(SHARED_FOLDER_KEY, path);
+      deps.library.setRoot(host.open(path));
+      picked = true;
+      return true;
+    },
+  };
+}
+
+export const mineMemoryMessage = (detail: string): string =>
+  `Bibliothèque : dossier Documents introuvable (${detail}) : « Mes ressources » est gardée en mémoire et sera perdue à la fermeture`;
+
+/** K8 : « Mes ressources » de la coque ; dossier Documents introuvable : en mémoire avec un avis, jamais un démarrage arrêté. */
+export async function mineOrMemory(open: () => Promise<LibraryFiles>, memory: () => LibraryFiles): Promise<{ readonly files: LibraryFiles; readonly notice: string | null }> {
+  try {
+    return { files: await open(), notice: null };
+  } catch (e) {
+    return { files: memory(), notice: mineMemoryMessage(messageOf(e)) };
+  }
 }
