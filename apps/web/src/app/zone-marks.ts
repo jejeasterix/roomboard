@@ -15,7 +15,9 @@ export interface ZoneTags { readonly zones: string; readonly zoneMs: string; rea
 export interface ZoneMarks {
   /** `run` mesuré quand la commande est un `Fill` de cible `zone` ; toute autre commande passe telle quelle. */
   timed(run: (c: Command) => Change | null): (c: Command) => Change | null;
-  /** Marques de la page montrée ; le compte des `fill` n'est relu que si la page ou la version change. */
+  /** Marques de la page montrée ; le compte des `fill` n'est relu que si la page ou la version change, et jamais pendant
+   * une commande mesurée : l'état du moteur, émis dans `run`, rappelle `tags`, et le recompte lit chaque élément par le
+   * pont ; `onMarked` le relance juste après la mesure. */
   tags(page: string, version: number): ZoneTags;
 }
 
@@ -38,12 +40,19 @@ export function createZoneMarks(
   let zoneMs = "";
   let zoneCells = "";
   let counted: { readonly page: string; readonly version: number; readonly zones: string } | null = null;
+  let running = false;
   return {
     timed: (run) => (c) => {
       const z = zoneOf(c);
       if (z === null) return run(c);
       const start = now();
-      const change = run(c);
+      running = true;
+      let change: Change | null;
+      try {
+        change = run(c);
+      } finally {
+        running = false;
+      }
       const end = now();
       measure(start, end);
       zoneMs = (Math.round((end - start) * 10) / 10).toFixed(1);
@@ -52,7 +61,7 @@ export function createZoneMarks(
       return change;
     },
     tags: (page, version) => {
-      if (counted === null || counted.page !== page || counted.version !== version) {
+      if (counted === null || (!running && (counted.page !== page || counted.version !== version))) {
         const zones = doc.elementIds(page).filter((id) => doc.element(id)?.kind === "fill").length;
         counted = { page, version, zones: String(zones) };
       }
