@@ -281,14 +281,20 @@ async function scenario(page, url, { captures, tmp }) {
   check(s3c.length === 1 && s3c[0][1] === "bleu", `S3 : clic sur l'espace : tout le texte devient bleu, « chat » compris (${show(s3c)})`);
   await key("Escape");
 
-  // S4 : image → fond (C6b absent) ; « Aucune » dans le vide : blanc ; Annuler : la couleur revient.
+  // S4 : image → zone de pixels (C6b) : l'image prend le vert, le fond reste bleu ; clic sur la page vide : fond vert ;
+  // « Aucune » dans le vide : blanc ; Annuler : le vert revient.
   await dropFile(page, "#stage", "sombre.png", solidPng(200, 150, [20, 20, 20]), "image/png", DROP_AT);
   await waitAttr("data-elements", "5");
   await pot();
   await pick("vert");
   await clickWorld(dropW);
-  check((await near(voidW, GREEN)) > 150, "S4 : clic sur l'image : le fond de la page change (vert)");
-  check((await inkIn(page, await sq(dropW))) > 150, "S4 : l'image reste intacte (pixels sombres gardés)");
+  await waitAttr("data-pot", "pret");
+  // Le bitmap adopté arrive au dessin suivant : quelques images d'animation au plus (15 s).
+  for (let i = 0; i < 900 && (await near(dropW, GREEN)) <= 150; i++) await fr();
+  check((await near(dropW, GREEN)) > 150, "S4 : clic sur l'image sombre : l'image prend le vert (C6b)");
+  check((await near(voidW, BLUE)) > 150, "S4 : le fond de la page ne change pas (bleu)");
+  await clickWorld(voidW);
+  check((await near(voidW, GREEN)) > 150, "S4 : clic sur la page vide : le fond devient vert");
   await none();
   await clickWorld(voidW);
   check((await near(voidW, WHITE, 6)) > 150, "S4 : « Aucune » dans le vide : fond blanc");

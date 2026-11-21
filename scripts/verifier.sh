@@ -107,6 +107,7 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/c5-image-navigateur.mjs
   node scripts/essais/c14-media-navigateur.mjs
   echo "C14 média : OK"
+  node scripts/essais/c6b-pot-image-navigateur.mjs
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"
