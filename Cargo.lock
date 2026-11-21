@@ -782,6 +782,7 @@ version = "0.1.0"
 dependencies = [
  "calamine",
  "krilla",
+ "quick-xml",
  "roomboard-core",
  "sha2",
 ]
