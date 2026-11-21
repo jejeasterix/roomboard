@@ -7,6 +7,8 @@ export const ROOMBOARD_EXTENSION = ".roomboard";
 export const ROOMBOARD_MIME = "application/x-roomboard";
 export const RBITEM_EXTENSION = ".rbitem";
 export const RBITEM_MIME = "application/x-roomboard-item";
+export const RBPACK_EXTENSION = ".rbpack";
+export const RBPACK_MIME = "application/x-roomboard-pack";
 export const UNTITLED = "Sans titre.roomboard";
 export const FILE_FILTER = { name: "Document RoomBoard", extensions: ["roomboard"] } as const;
 
@@ -75,6 +77,7 @@ export const MODEL3D_EXTENSIONS = ["glb", "gltf", "obj", "mtl", "stl", "ply", "b
 export const IMPORT_EXTENSIONS = [
   "roomboard",
   "rbitem",
+  "rbpack",
   "pdf",
   ...IMAGE_EXTENSIONS,
   ...VIDEO_EXTENSIONS,

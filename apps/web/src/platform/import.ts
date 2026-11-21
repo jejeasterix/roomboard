@@ -10,9 +10,10 @@
  * C15 (DAX2) : appel de plusieurs fichiers, pré-passe dans `importFiles` (seule chaîne, U23) : chaque gestionnaire qui a
  * `companions` reçoit les autres fichiers ; ceux qu'il réclame sortent de la boucle et lui arrivent dans `ctx.companions`.
  * Les en-têtes et le contenu lus par la pré-passe sont repris par la boucle, jamais relus.
+ * C4 (U25) : `rbpack` (paquet, nom + en-tête ZIP) importé dans la bibliothèque par `importPack`.
  */
 import { messageOf } from "./controller";
-import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
@@ -57,6 +58,8 @@ export interface ImportDeps {
   /** C12 (PF2, PF10) : ouvre un PDF dans un nouvel onglet ; false si refusé (message déjà dit) ; absente : `.pdf`
    *  refusé comme avant. */
   openPdf?(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
+  /** C4 (U25, D19) : paquet `.rbpack` importé dans la bibliothèque ; faux si refusé (avis déjà dit). Absent : refusé. */
+  importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
   /** C14 (M15) : sonde d'un média (durée, taille, poster) ; absente : la sonde du navigateur (T8). */
   readonly probe?: (url: string) => Promise<MediaProbe>;
   /** C14 : lie un fichier de la coque sans le copier (T8, T10). */
@@ -168,6 +171,28 @@ export function rbitemHandler(): ImportHandler {
   };
 }
 
+export function isRbpackName(name: string): boolean {
+  return hasExtension(name, RBPACK_EXTENSION);
+}
+
+/** Entrée `rbpack` (C4, U25 « Paquet → importé dans la bibliothèque ») : aucun onglet visé. */
+export function rbpackHandler(deps: { importPack(name: string, bytes: Uint8Array): Promise<boolean> }): ImportHandler {
+  return {
+    id: "rbpack",
+    nature: "document",
+    detect: (head, name) => isRbpackName(name) && hasZipMagic(head),
+    async run(f, ctx) {
+      try {
+        const bytes = new Uint8Array(await ctx.blob.arrayBuffer());
+        return (await deps.importPack(f.name, bytes)) ? "opened" : "failed";
+      } catch (e) {
+        await ctx.notify(`Import impossible (${f.name}) : ${messageOf(e)}`);
+        return "failed";
+      }
+    },
+  };
+}
+
 /** Plafond d'un classeur (F22), aussi dans la coque où `maxBytes` est nul. */
 export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
 
@@ -232,6 +257,7 @@ const linkPathOf = (handler: ImportHandler, f: DroppedFile): string | null =>
 export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
   const openPdf = deps.openPdf?.bind(deps);
+  const importPack = deps.importPack?.bind(deps);
   const linkMedia = deps.linkMedia?.bind(deps);
   const model3d = deps.model3d;
   const shared3d: Model3dShared = { warnedNoWebgl: false }; // X26 : « 3D indisponible » une fois par importeur
@@ -245,6 +271,7 @@ export function createImporter(deps: ImportDeps): Importer {
     [
       roomboardHandler(deps),
       rbitemHandler(),
+      ...(importPack ? [rbpackHandler({ importPack })] : []),
       ...(openPdf ? [pdfHandler({ openPdf })] : []),
       mediaHandler(media),
       unsupportedMediaHandler("mkv"),
