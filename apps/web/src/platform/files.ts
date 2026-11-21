@@ -70,8 +70,18 @@ export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ic
 /** C14 : vidéos et sons que la coque et la page savent lire (liés ou intégrés). */
 export const VIDEO_EXTENSIONS = ["mp4", "m4v", "mov", "webm", "ogv"] as const;
 export const AUDIO_EXTENSIONS = ["m4a", "mp3", "wav", "ogg", "oga"] as const;
-export const IMPORT_EXTENSIONS = ["roomboard", "rbitem", "pdf", ...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS] as const;
-export const IMPORT_FILTER = { name: "Images, vidéos, sons, PDF et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
+/** C15 (X32) : modèles 3D, leurs fichiers liés et les ZIP de modèles. */
+export const MODEL3D_EXTENSIONS = ["glb", "gltf", "obj", "mtl", "stl", "ply", "bin", "zip"] as const;
+export const IMPORT_EXTENSIONS = [
+  "roomboard",
+  "rbitem",
+  "pdf",
+  ...IMAGE_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
+  ...AUDIO_EXTENSIONS,
+  ...MODEL3D_EXTENSIONS,
+] as const;
+export const IMPORT_FILTER = { name: "Images, vidéos, sons, 3D, PDF et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
 
 export interface FileHost {
   readonly kind: HostKind;
