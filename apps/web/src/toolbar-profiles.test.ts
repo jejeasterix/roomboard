@@ -43,9 +43,14 @@ describe("profils livrés (T83, CL5b-9)", () => {
   it("Grille (E7, HE5) : dans le groupe vue de defaut et d'annotation, avant Profil ; absente de simple", () => {
     for (const id of ["defaut", "annotation"]) {
       const vue = builtinProfile(id)!.toolbars[0]!.groups.find((g) => g.id === "vue")!;
-      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "profiles", "settings"]);
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings"]);
     }
     expect(ids("simple")).not.toContain("grid");
+  });
+
+  it("C4 : Bibliothèque dans defaut et annotation, absente de simple", () => {
+    for (const id of ["defaut", "annotation"]) expect(ids(id), id).toContain("library");
+    expect(ids("simple")).not.toContain("library");
   });
 
   it("toolbars en liste : la barre des pages est une entrée (role pages), chacune avec son dock", () => {
