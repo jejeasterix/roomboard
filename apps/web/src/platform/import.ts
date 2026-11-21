@@ -10,7 +10,8 @@
  * C15 (DAX2) : appel de plusieurs fichiers, pré-passe dans `importFiles` (seule chaîne, U23) : chaque gestionnaire qui a
  * `companions` reçoit les autres fichiers ; ceux qu'il réclame sortent de la boucle et lui arrivent dans `ctx.companions`.
  * Les en-têtes et le contenu lus par la pré-passe sont repris par la boucle, jamais relus.
- * C4 (U25) : `rbpack` (paquet, nom + en-tête ZIP) importé dans la bibliothèque par `importPack`.
+ * C4 (U25) : `rbpack` (paquet, nom + en-tête ZIP) importé dans la bibliothèque par `importPack`, au plafond des ZIP ;
+ * nature `paquet` : il n'ouvre aucun onglet, les onglets pleins ne l'arrêtent pas.
  */
 import { messageOf } from "./controller";
 import { RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
@@ -18,6 +19,7 @@ import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
 import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type Model3dShared } from "./model3d-handlers";
+import { ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 
@@ -93,7 +95,8 @@ export type ImportOutcome = "opened" | "inserted" | "failed";
 
 export interface ImportHandler {
   readonly id: string;
-  readonly nature: "document" | "objet";
+  /** `document` ouvre un onglet (compte les onglets pleins) ; `objet` va dans l'onglet actif ; `paquet` dans la bibliothèque. */
+  readonly nature: "document" | "objet" | "paquet";
   detect(head: Uint8Array, name: string): boolean;
   /** Plafond propre au gestionnaire (F22), contrôlé par `importFiles` sur `f.size` **avant** `f.blob()` (la coque lit
    *  le fichier en entier) : dépassé, « <nom> : <message> », compté en échec. */
@@ -179,8 +182,9 @@ export function isRbpackName(name: string): boolean {
 export function rbpackHandler(deps: { importPack(name: string, bytes: Uint8Array): Promise<boolean> }): ImportHandler {
   return {
     id: "rbpack",
-    nature: "document",
+    nature: "paquet",
     detect: (head, name) => isRbpackName(name) && hasZipMagic(head),
+    limit: { maxBytes: ZIP_MAX_BYTES, message: ZIP_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       try {
         const bytes = new Uint8Array(await ctx.blob.arrayBuffer());

@@ -1,7 +1,8 @@
 /**
  * Stockage de la bibliothèque (C4, DA1) : une racine, chemins relatifs `/`. Trois réalisations : mémoire (tests, repli
- * sans IndexedDB), IndexedDB (web, base `roomboard-bibliotheque`, magasin `fichiers`, clé `<racine>/<chemin>`) et
- * `plugin-fs` (coque, dossier réel). Tout chemin passe par `safeLibraryPath` avant d'atteindre le stockage (H1-4).
+ * sans IndexedDB), IndexedDB (web, base `roomboard-bibliotheque` : magasin `entrees` pour les chemins, `octets` pour le
+ * contenu, même clé `<racine>/<chemin>`) et `plugin-fs` (coque, dossier réel). Tout chemin passe par `safeLibraryPath`
+ * avant d'atteindre le stockage (H1-4) ; un fichier et un dossier ne portent jamais le même chemin (C9).
  */
 import type { TauriDirFs, TauriFs } from "./host-tauri";
 import { finished, lazyDb, result } from "./idb";
@@ -17,12 +18,16 @@ export interface LibraryFiles {
   read(path: string): Promise<Blob>;
   write(path: string, data: Blob): Promise<void>;
   mkdir(path: string): Promise<void>;
+  /** Dossier (récursif) ou fichier. `""` : `clear()`, gardé pour « Vider » (`app/library.ts`). */
   remove(path: string): Promise<void>;
+  /** Vide la racine ; refusé sur « shared », dossier choisi par l'utilisateur (C6). */
+  clear(): Promise<void>;
 }
 
 export const LIBRARY_DB = "roomboard-bibliotheque";
-const STORE = "fichiers";
 export const UNSAFE_PATH_MESSAGE = "chemin de bibliothèque refusé";
+export const CLEAR_REFUSED_MESSAGE = "le dossier partagé ne se vide pas depuis RoomBoard";
+export const PATH_CONFLICT_MESSAGE = "un fichier et un dossier de la bibliothèque ne peuvent pas porter le même nom";
 
 export function safeLibraryPath(path: string): string {
   if (path === "") return "";
@@ -42,10 +47,26 @@ const parentsOf = (path: string): string[] => {
 };
 const inside = (path: string, dir: string): boolean => dir === "" || path === dir || path.startsWith(`${dir}/`);
 const sorted = (xs: LibraryPath[]): LibraryPath[] => xs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+const clearable = (root: LibraryRoot): void => {
+  if (root === "shared") throw new Error(CLEAR_REFUSED_MESSAGE);
+};
+
+/** C9 : `path` (dossier si `dir`) et ses parents ne heurtent aucune entrée de l'autre sorte. `isDir` : vrai dossier, faux
+ *  fichier, undefined absent. */
+function assertFree(path: string, dir: boolean, isDir: (p: string) => boolean | undefined): void {
+  for (const p of parentsOf(path)) if (isDir(p) === false) throw new Error(`${PATH_CONFLICT_MESSAGE} : ${p.slice(0, 120)}`);
+  if (isDir(path) === !dir) throw new Error(`${PATH_CONFLICT_MESSAGE} : ${path.slice(0, 120)}`);
+}
 
 export function createMemoryLibraryFiles(root: LibraryRoot): LibraryFiles {
   const files = new Map<string, Blob>();
   const dirs = new Set<string>();
+  const isDir = (p: string): boolean | undefined => (dirs.has(p) ? true : files.has(p) ? false : undefined);
+  async function clear(): Promise<void> {
+    clearable(root);
+    files.clear();
+    dirs.clear();
+  }
   return {
     root,
     async list() {
@@ -57,26 +78,34 @@ export function createMemoryLibraryFiles(root: LibraryRoot): LibraryFiles {
       return b;
     },
     async write(path, data) {
-      nonEmpty(path);
+      assertFree(nonEmpty(path), false, isDir);
       for (const p of parentsOf(path)) dirs.add(p);
       files.set(path, new Blob([data], { type: data.type }));
     },
     async mkdir(path) {
-      nonEmpty(path);
+      assertFree(nonEmpty(path), true, isDir);
       for (const p of [...parentsOf(path), path]) dirs.add(p);
     },
     async remove(path) {
-      safeLibraryPath(path);
+      if (safeLibraryPath(path) === "") return clear();
       for (const k of [...files.keys()]) if (inside(k, path)) files.delete(k);
       for (const k of [...dirs]) if (inside(k, path)) dirs.delete(k);
     },
+    clear,
   };
 }
 
-interface Row {
+/** Magasin des chemins : tout ce que `list()` lit, jamais d'octets (C1). */
+const ENTRIES = "entrees";
+/** Magasin du contenu, fichiers seulement, lu par `read`. */
+const BYTES = "octets";
+const STORES = [ENTRIES, BYTES];
+interface Entry {
   readonly dir: boolean;
-  readonly bytes?: Uint8Array;
-  readonly type?: string;
+}
+interface Bytes {
+  readonly bytes: Uint8Array;
+  readonly type: string;
 }
 
 /** D31 : stockage durable demandé s'il existe ; absent, refusé ou en échec : faux, jamais de rejet (H1-7). */
@@ -89,24 +118,41 @@ export async function requestPersistence(nav: { readonly storage?: { persist?():
 }
 
 export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, name: string = LIBRARY_DB, persist: () => Promise<boolean> = () => requestPersistence()): LibraryFiles {
-  const open = lazyDb(factory, name, 1, (d) => void d.createObjectStore(STORE));
+  // Version 2 : la base v1 (magasin unique `fichiers`, jamais livrée) est remplacée sans migration (C1).
+  const open = lazyDb(factory, name, 2, (d) => {
+    for (const s of Array.from(d.objectStoreNames)) if (!STORES.includes(s)) d.deleteObjectStore(s);
+    for (const s of STORES) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
+  });
   let asked = false;
   const key = (path: string): string => `${root}/${path}`;
-  const all = IDBKeyRange.bound(`${root}/`, `${root}/￿`);
-  const tx = async (mode: IDBTransactionMode) => (await open()).transaction(STORE, mode);
+  const below = (path: string): IDBKeyRange => IDBKeyRange.bound(`${key(path)}/`, `${key(path)}/\uffff`);
+  const all = IDBKeyRange.bound(`${root}/`, `${root}/\uffff`);
+  const tx = async (stores: string[], mode: IDBTransactionMode) => (await open()).transaction(stores, mode);
+  /** C9 : sorte des parents et de `path`, lue dans la transaction d'écriture avant toute écriture. */
+  const free = async (entries: IDBObjectStore, path: string, dir: boolean): Promise<void> => {
+    const paths = [...parentsOf(path), path];
+    const rows = await Promise.all(paths.map((p) => result(entries.get(key(p))) as Promise<Entry | undefined>));
+    const kinds = new Map(paths.map((p, i) => [p, rows[i]?.dir] as const));
+    assertFree(path, dir, (p) => kinds.get(p));
+  };
+  async function clear(): Promise<void> {
+    clearable(root);
+    const t = await tx(STORES, "readwrite");
+    for (const s of STORES) t.objectStore(s).delete(all);
+    await finished(t);
+  }
   return {
     root,
     async list() {
-      const t = await tx("readonly");
-      const store = t.objectStore(STORE);
+      const store = (await tx([ENTRIES], "readonly")).objectStore(ENTRIES);
       const [keys, rows] = await Promise.all([result(store.getAllKeys(all)), result(store.getAll(all))]);
-      return sorted(keys.map((k, i) => ({ path: String(k).slice(root.length + 1), dir: (rows[i] as Row).dir })));
+      return sorted(keys.map((k, i) => ({ path: String(k).slice(root.length + 1), dir: (rows[i] as Entry).dir })));
     },
     async read(path) {
-      const t = await tx("readonly");
-      const row = (await result(t.objectStore(STORE).get(key(nonEmpty(path))))) as Row | undefined;
-      if (row === undefined || row.dir || row.bytes === undefined) throw new Error(`ressource introuvable : ${path}`);
-      return new Blob([row.bytes as BlobPart], { type: row.type ?? "" });
+      const t = await tx([BYTES], "readonly");
+      const row = (await result(t.objectStore(BYTES).get(key(nonEmpty(path))))) as Bytes | undefined;
+      if (row === undefined) throw new Error(`ressource introuvable : ${path}`);
+      return new Blob([row.bytes as BlobPart], { type: row.type });
     },
     async write(path, data) {
       nonEmpty(path);
@@ -115,30 +161,32 @@ export function createIdbLibraryFiles(factory: IDBFactory, root: LibraryRoot, na
         void persist();
       }
       const bytes = new Uint8Array(await data.arrayBuffer()); // lu avant la transaction (elle se ferme à la première attente)
-      const t = await tx("readwrite");
-      const store = t.objectStore(STORE);
-      for (const p of parentsOf(path)) store.put({ dir: true } satisfies Row, key(p));
-      store.put({ dir: false, bytes, type: data.type } satisfies Row, key(path));
+      const t = await tx(STORES, "readwrite");
+      const entries = t.objectStore(ENTRIES);
+      await free(entries, path, false);
+      for (const p of parentsOf(path)) entries.put({ dir: true } satisfies Entry, key(p));
+      entries.put({ dir: false } satisfies Entry, key(path));
+      t.objectStore(BYTES).put({ bytes, type: data.type } satisfies Bytes, key(path));
       await finished(t);
     },
     async mkdir(path) {
       nonEmpty(path);
-      const t = await tx("readwrite");
-      const store = t.objectStore(STORE);
-      for (const p of [...parentsOf(path), path]) store.put({ dir: true } satisfies Row, key(p));
+      const t = await tx([ENTRIES], "readwrite");
+      const entries = t.objectStore(ENTRIES);
+      await free(entries, path, true);
+      for (const p of [...parentsOf(path), path]) entries.put({ dir: true } satisfies Entry, key(p));
       await finished(t);
     },
     async remove(path) {
-      safeLibraryPath(path);
-      const t = await tx("readwrite");
-      const store = t.objectStore(STORE);
-      if (path === "") store.delete(all);
-      else {
-        store.delete(key(path));
-        store.delete(IDBKeyRange.bound(`${key(path)}/`, `${key(path)}/￿`));
+      if (safeLibraryPath(path) === "") return clear();
+      const t = await tx(STORES, "readwrite");
+      for (const s of STORES) {
+        t.objectStore(s).delete(key(path));
+        t.objectStore(s).delete(below(path));
       }
       await finished(t);
     },
+    clear,
   };
 }
 
@@ -157,6 +205,28 @@ export function createTauriLibraryFiles(fs: TauriFs & TauriDirFs, rootPath: stri
       if (e.isDirectory) await walk(path, out);
     }
   }
+  /** C9 : un échec de `fs` est relu, et dit comme les autres réalisations quand c'est un conflit fichier/dossier. */
+  async function orConflict(path: string, dir: boolean, run: () => Promise<void>): Promise<void> {
+    try {
+      await run();
+    } catch (e) {
+      const kinds = new Map<string, boolean>();
+      for (const p of [...parentsOf(path), path]) {
+        const cut = p.lastIndexOf("/");
+        const entries = await fs.readDir(at(cut < 0 ? "" : p.slice(0, cut))).catch(() => null);
+        const hit = entries?.find((x) => x.name === p.slice(cut + 1));
+        if (hit === undefined) break;
+        kinds.set(p, hit.isDirectory);
+      }
+      assertFree(path, dir, (p) => kinds.get(p));
+      throw e;
+    }
+  }
+  async function clear(): Promise<void> {
+    clearable(root);
+    await ready();
+    for (const e of await fs.readDir(rootPath)) if (!e.name.startsWith(".")) await fs.remove(`${rootPath}/${e.name}`, { recursive: true });
+  }
   return {
     root,
     async list() {
@@ -171,19 +241,23 @@ export function createTauriLibraryFiles(fs: TauriFs & TauriDirFs, rootPath: stri
     async write(path, data) {
       nonEmpty(path);
       await ready();
+      const bytes = new Uint8Array(await data.arrayBuffer());
       const parents = parentsOf(path);
-      if (parents.length > 0) await fs.mkdir(at(parents[parents.length - 1]!), { recursive: true });
-      await fs.writeFile(at(path), new Uint8Array(await data.arrayBuffer()));
+      await orConflict(path, false, async () => {
+        if (parents.length > 0) await fs.mkdir(at(parents[parents.length - 1]!), { recursive: true });
+        await fs.writeFile(at(path), bytes);
+      });
     },
     async mkdir(path) {
+      nonEmpty(path);
       await ready();
-      await fs.mkdir(at(nonEmpty(path)), { recursive: true });
+      await orConflict(path, true, () => fs.mkdir(at(path), { recursive: true }));
     },
     async remove(path) {
-      safeLibraryPath(path);
+      if (safeLibraryPath(path) === "") return clear();
       await ready();
-      if (path !== "") return fs.remove(at(path), { recursive: true });
-      for (const e of await fs.readDir(rootPath)) if (!e.name.startsWith(".")) await fs.remove(`${rootPath}/${e.name}`, { recursive: true });
+      await fs.remove(at(path), { recursive: true });
     },
+    clear,
   };
 }
