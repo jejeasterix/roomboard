@@ -64,7 +64,10 @@ beforeEach(() => {
   opening = null;
   saved = [];
   codec = {
-    read: vi.fn<ContainerCodec["read"]>(async (b) => ({ manifest: new Uint8Array(), ybin: new Uint8Array(await b.arrayBuffer()), assets: [], warnings: [] })),
+    read: vi.fn<ContainerCodec["read"]>(async (b) => {
+      const ybin = new Uint8Array(await b.arrayBuffer());
+      return { manifest: ybin, ybin, assets: [], warnings: [] }; // le faux cœur lit le type dans le manifeste (C4)
+    }),
     write: vi.fn<ContainerCodec["write"]>(async () => new Uint8Array([0x50, 0x4b, 1])),
   };
   shell = {
@@ -905,7 +908,8 @@ describe("espace de travail — C3", () => {
     const ws = await setupWorkspace();
     const s = fakeCore.blank();
     const frag = s.extract(s.pageIds()[0]!, [s.apply({ type: "AddShape", page: s.pageIds()[0]!, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!]);
-    codec.read.mockResolvedValueOnce({ manifest: new Uint8Array(), ybin: frag.saveFragment(NOW, "0.1.0", "x"), assets: [], warnings: [] });
+    const fragBytes = frag.saveFragment(NOW, "0.1.0", "x");
+    codec.read.mockResolvedValueOnce({ manifest: fragBytes, ybin: fragBytes, assets: [], warnings: [] });
     const r = await ws.importFiles([plainFile("objet.rbitem", new Uint8Array([0x50, 0x4b, 3, 4, 0]))], { x: 10, y: 10 });
     expect(r.inserted).toEqual(["objet.rbitem"]);
     expect(strokes(ws.active())).toBe(1);
@@ -953,7 +957,7 @@ describe("espace de travail — C3", () => {
     const sp = s.pageIds()[0]!;
     const x = s.apply({ type: "AddShape", page: sp, shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!;
     const ybin = s.extract(sp, [x]).saveFragment(NOW, "0.1.0", "x");
-    codec.read.mockResolvedValue({ manifest: new Uint8Array(), ybin, assets: [], warnings: [] });
+    codec.read.mockResolvedValue({ manifest: ybin, ybin, assets: [], warnings: [] });
     const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0]);
     const r = await ws.importFiles([plainFile("a.rbitem", zip), plainFile("b.rbitem", zip)]);
     expect(r.inserted).toEqual(["a.rbitem", "b.rbitem"]);
@@ -963,7 +967,8 @@ describe("espace de travail — C3", () => {
     const b1 = tab.board.doc.bounds([ids[1]!])!;
     expect([b1.x0 - b0.x0, b1.y0 - b0.y0]).toEqual([24, 24]);
     // un import n'entame pas la cascade du presse-papiers : le premier collage du même contenu reste au centre
-    codec.read.mockResolvedValue({ manifest: new Uint8Array(), ybin: (() => { const e = fakeCore.blank(); return e.extract(e.pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x"); })(), assets: [], warnings: [] });
+    const emptyFrag = (() => { const e = fakeCore.blank(); return e.extract(e.pageIds()[0]!, []).saveFragment(NOW, "0.1.0", "x"); })();
+    codec.read.mockResolvedValue({ manifest: emptyFrag, ybin: emptyFrag, assets: [], warnings: [] });
     await ws.importFiles([plainFile("vide.rbitem", zip)]);
     expect(shell.notify.mock.calls.some((c) => String(c[0]).startsWith("vide.rbitem : "))).toBe(true);
   });
@@ -1383,10 +1388,15 @@ describe("espace de travail : C4", () => {
   const gridOf = (tab: TabSession) => tab.board.doc.page(pageOf(tab))?.grid ?? null;
   const rectOf = (tab: TabSession): string =>
     tab.board.doc.apply({ type: "AddShape", page: pageOf(tab), shape: "rect", x0: 0, y0: 0, x1: 10, y1: 10, style: { color: "#000000", width: 4 }, fill: null }).ids[0]!;
-  // Octets lus par le cœur seul (aucun conteneur de test) : le type du fichier se lit sur les octets.
-  const coreOnly = (): void => {
-    codec.read.mockRejectedValue(new CodecUnavailableError(new Error("pas de module")));
-  };
+  const zipHead = new Uint8Array([0x50, 0x4b, 3, 4, 0]);
+  /** Fichier déposé : en-tête ZIP pour la détection, contenu = les octets de la ressource. */
+  const droppedOf = (name: string, bytes: Uint8Array): DroppedFile => ({
+    name,
+    size: bytes.byteLength,
+    mime: "",
+    head: async (n: number) => zipHead.slice(0, n),
+    blob: async () => new Blob([bytes as BlobPart]),
+  });
 
   it("C4 : captureResource(« grid ») sans grille : null, avis dit", async () => {
     const ws = await setupWorkspace();
@@ -1401,7 +1411,6 @@ describe("espace de travail : C4", () => {
   });
 
   it("C4 : captureResource(« grid ») puis insertResource sur une page sans grille : la grille est posée", async () => {
-    coreOnly();
     const ws = await setupWorkspace();
     const tab = ws.active();
     setGrid(tab, grid);
@@ -1414,32 +1423,29 @@ describe("espace de travail : C4", () => {
   });
 
   it("C4 : un .rbitem de grille déposé remplace la grille (cible insertFragment routée)", async () => {
-    coreOnly();
     const ws = await setupWorkspace();
     const tab = ws.active();
     setGrid(tab, grid);
     const { bytes } = (await ws.captureResource("grid"))!;
     setGrid(tab, null);
-    const r = await ws.importFiles([plainFile("Seyès.rbitem", bytes as Uint8Array<ArrayBuffer>)], null);
+    const r = await ws.importFiles([droppedOf("Seyès.rbitem", bytes)], null);
     expect(r.inserted).toEqual(["Seyès.rbitem"]);
     expect(gridOf(tab)).not.toBeNull();
   });
 
   it("C4 : trois .rbitem déposés ensemble : cascade R4, pas au même point (D24)", async () => {
-    coreOnly();
     const ws = await setupWorkspace();
     const tab = ws.active();
     const id = rectOf(tab);
     (tab.board.engine as unknown as { select(ids: string[]): void }).select([id]);
     const { bytes } = (await ws.captureResource("selection"))!;
-    const files = ["a", "b", "c"].map((n) => plainFile(`${n}.rbitem`, bytes as Uint8Array<ArrayBuffer>));
+    const files = ["a", "b", "c"].map((n) => droppedOf(`${n}.rbitem`, bytes));
     await ws.importFiles(files, { x: 200, y: 200 });
     const ids = tab.board.doc.elementIds(pageOf(tab)).slice(-3);
     expect(new Set(ids.map((i) => tab.board.doc.bounds([i])!.x0)).size).toBe(3);
   });
 
   it("C4 : insertResource d'objets est une seule étape d'annulation", async () => {
-    coreOnly();
     const ws = await setupWorkspace();
     const tab = ws.active();
     const id = rectOf(tab);
