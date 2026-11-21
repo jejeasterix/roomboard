@@ -101,8 +101,12 @@ OE23 final (T6 `ids_where` partagé, sortie de `verifier.sh` sur 3f7c157) : prin
 |---|---|---|
 | avant C13 (`origin/main` 41342b0, sortie de `verifier.sh`) | 1 371 293 o | 3 100 845 o |
 | après T1 (22 crates tierces de `formats` en `opt-level = "z"`, sans lecteur) | 1 371 293 o | 2 903 814 o |
+| final C13 lot 1 (lecteur, écrivain, liaison ; build de `verifier.sh --e2e`) | 1 371 293 o | 3 021 707 o |
 
 T1 : `formats` −197 031 o, principal inchangé à l'octet (aucune des 22 crates n'entre dans le module principal).
 Mesure : `cargo build --target wasm32-unknown-unknown --release` puis `wasm-bindgen --target web --remove-name-section`.
 Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o). Coût de vitesse du réglage : T11
 (`docs/essais/c13-fidelite-iwb.md`), accepté jusqu'à 15 % (HU1-4).
+
+Final : principal 0 o depuis 1 371 293 o (aucune ligne du module principal ne change) ; `formats` -79 138 o depuis
+3 100 845 o, marge restante 124 021 o sous le plafond (3 145 728 o).
