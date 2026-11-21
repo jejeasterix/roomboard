@@ -17,6 +17,8 @@ import { MISSING_LABEL, SKIPPED_LABEL } from "./board-files";
 import { typed } from "./container-io";
 
 export type BoardFormat = BoardDialect;
+/** Même borne que `MAX_GROUP_DEPTH` de `board::parse` (board.rs). */
+const MAX_GROUP_DEPTH = 256;
 export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8 } as const;
 export const BOARD_BAD_LIST_PREFIX = "liste de tableau invalide : ";
 /** Code de chaque forme dans le flux ; `satisfies` oblige à en donner un à chaque `ShapeKind`. */
@@ -231,6 +233,7 @@ export function decodeBoardList(ops: ArrayLike<number>, texts: readonly string[]
         break;
       case BOARD_OP.groupBegin:
         if (pages.length === 0) throw bad("groupe avant la première page");
+        if (stack.length >= MAX_GROUP_DEPTH) throw bad(`groupes imbriqués trop profonds (${at})`);
         stack.push([]);
         break;
       case BOARD_OP.groupEnd: {

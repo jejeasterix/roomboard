@@ -67,6 +67,12 @@ describe("board-io : flux BoardList (C13, D6)", () => {
     expect(() => decodeBoardList(grouped, [], 3)).toThrow(BOARD_OBJECTS_MESSAGE);
   });
 
+  it("T15 : decodeBoardList refuse l'ouverture d'un groupe quand la pile atteint 256 (comme board::parse)", () => {
+    const nest = (n: number) => [1, ...Array<number>(n).fill(7), ...rect, ...Array<number>(n).fill(8)];
+    expect(decodeBoardList(nest(256), [])[0]!.objects).toHaveLength(1);
+    expect(() => decodeBoardList(nest(257), [])).toThrow(/trop profonds/);
+  });
+
   it("T14 : marque d'absence : exactement −1 (couleur et police de segment), comme absent() en Rust", () => {
     const span = (c: number[], f: number) => [1, 5, 1, 0, 0, 1, 0, 0, 0, 0, 10, 10, 12, 0, 0, 0, 1, 0, 0, 0, ...c, f];
     expect(() => decodeBoardList(span([-1, -1, -1], -1), ["a"])).not.toThrow();
