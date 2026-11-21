@@ -5,8 +5,14 @@
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use crate::GrantedPaths;
 
 #[cfg(windows)]
 pub mod com;
@@ -307,6 +313,318 @@ pub fn write_profile(profile: &Path) -> Result<(), ConvertError> {
     fs::write(user.join("registrymodifications.xcu"), PROFILE_XCU).map_err(io)
 }
 
+/// Une conversion à la fois (O12) : la seconde attend la première ; le délai ne court que pendant le processus.
+static CONVERT_LOCK: Mutex<()> = Mutex::new(());
+/// Compteur des dossiers de conversion de ce processus (`<pid>-<n>`).
+static NEXT_CONVERSION: AtomicU64 = AtomicU64::new(0);
+const CONVERSIONS_DIR: &str = "conversions";
+/// Sortie attendue dans le dossier de conversion (l'entrée y est copiée sous `source.<ext>`).
+const OUTPUT_NAME: &str = "source.pdf";
+
+/// PDF produit (O35) : `pdf` (chemin canonique) reste accordé jusqu'à `release_conversion(id)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Converted {
+    pub id: String,
+    pub pdf: PathBuf,
+    pub size: u64,
+}
+
+/// Supprime un dossier à la fin de sa portée (succès, erreur ou délai), sauf `keep`.
+struct RemoveOnDrop(Option<PathBuf>);
+
+impl RemoveOnDrop {
+    fn keep(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        if let Some(p) = self.0.take() {
+            let _ = fs::remove_dir_all(p);
+        }
+    }
+}
+
+/// Identifiant de conversion : `<chiffres>-<chiffres>`, jamais un chemin.
+fn is_conversion_id(id: &str) -> bool {
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let mut parts = id.split('-');
+    matches!((parts.next(), parts.next(), parts.next()), (Some(a), Some(b), None) if digits(a) && digits(b))
+}
+
+/// Dossier neuf `<racine>/conversions/<pid>-<n>` créé par `create_dir` (échoue s'il existe) ; racine et `conversions/`
+/// privées (O9).
+fn new_conversion_dir(work_root: &Path) -> Result<(String, PathBuf), ConvertError> {
+    if let Some(parent) = work_root.parent() {
+        fs::create_dir_all(parent).map_err(io)?;
+    }
+    ensure_private_dir(work_root)?;
+    let conversions = work_root.join(CONVERSIONS_DIR);
+    ensure_private_dir(&conversions)?;
+    let id = format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT_CONVERSION.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = conversions.join(&id);
+    fs::create_dir(&dir).map_err(io)?;
+    Ok((id, dir))
+}
+
+/// Arbre de processus d'une conversion (O11, DA-O5) : groupe de processus sous Unix (`process_group(0)` au lancement),
+/// objet Job `KILL_ON_JOB_CLOSE` sous Windows (affecté juste après `spawn` ; un enfant lancé avant échappe au Job,
+/// risque accepté, HO2-13).
+#[cfg(unix)]
+struct ProcessTree(libc::pid_t);
+
+#[cfg(unix)]
+impl ProcessTree {
+    fn attach(child: &Child) -> Self {
+        ProcessTree(child.id() as libc::pid_t)
+    }
+
+    fn kill(&self) {
+        // SAFETY : signal envoyé au groupe créé par `process_group(0)` ; aucune mémoire partagée.
+        unsafe {
+            libc::kill(-self.0, libc::SIGKILL);
+        }
+    }
+}
+
+#[cfg(windows)]
+struct ProcessTree(Option<windows::Win32::Foundation::HANDLE>);
+
+#[cfg(windows)]
+impl ProcessTree {
+    fn attach(child: &Child) -> Self {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::{CloseHandle, HANDLE};
+        use windows::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+        // SAFETY : poignées possédées ; le Job est fermé par `kill` (KILL_ON_JOB_CLOSE tue l'arbre).
+        unsafe {
+            let Ok(job) = CreateJobObjectW(None, windows::core::PCWSTR::null()) else {
+                return ProcessTree(None);
+            };
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let set = SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            if set.is_err() || AssignProcessToJobObject(job, HANDLE(child.as_raw_handle())).is_err()
+            {
+                let _ = CloseHandle(job);
+                return ProcessTree(None);
+            }
+            ProcessTree(Some(job))
+        }
+    }
+
+    fn kill(&self) {
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::JobObjects::TerminateJobObject;
+        if let Some(job) = self.0 {
+            // SAFETY : Job possédé, fermé une seule fois.
+            unsafe {
+                let _ = TerminateJobObject(job, 1);
+                let _ = CloseHandle(job);
+            }
+        }
+    }
+}
+
+/// Attend la fin par `try_wait` toutes les 50 ms ; au délai, après la fin, ou si l'attente échoue, tue l'arbre entier,
+/// puis `wait()` (aucun zombie) ; au délai, `Timeout`.
+fn wait_tree(mut child: Child, timeout: Duration) -> Result<ExitStatus, ConvertError> {
+    let tree = ProcessTree::attach(&child);
+    let start = Instant::now();
+    let polled = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break Ok(s),
+            Ok(None) if start.elapsed() >= timeout => break Err(ConvertError::Timeout),
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(e) => break Err(io(e)),
+        }
+    };
+    tree.kill();
+    if polled.is_err() {
+        let _ = child.kill(); // repli si le Job n'a pas pu être posé (Windows)
+    }
+    let _ = child.wait();
+    polled
+}
+
+/// Derniers `ERR_KEEP` octets d'un fichier de sortie, pour le message d'échec.
+fn tail_of(p: &Path) -> String {
+    let b = fs::read(p).unwrap_or_default();
+    String::from_utf8_lossy(&b[b.len().saturating_sub(ERR_KEEP)..])
+        .trim()
+        .to_string()
+}
+
+/// Lance LibreOffice (O8, O10, O11) : profil jetable écrit avant, supprimé à la fin (garde) ; `stdin` nul, `stdout` et
+/// `stderr` dans des fichiers du dossier (aucun tube qui se remplit) ; dossier courant = dossier de conversion.
+fn run_libreoffice(
+    program: &Path,
+    input: &Path,
+    dir: &Path,
+    timeout: Duration,
+) -> Result<(), ConvertError> {
+    let profile = dir.join("profil");
+    let _profile_guard = RemoveOnDrop(Some(profile.clone()));
+    write_profile(&profile)?;
+    let out = fs::File::create(dir.join("soffice.out")).map_err(io)?;
+    let err = fs::File::create(dir.join("soffice.err")).map_err(io)?;
+    let mut cmd = Command::new(program);
+    cmd.args(libreoffice_args(input, dir, &profile))
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(out))
+        .stderr(Stdio::from(err));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = cmd.spawn().map_err(io)?;
+    let status = wait_tree(child, timeout)?;
+    if !status.success() {
+        let mut detail = tail_of(&dir.join("soffice.err"));
+        if detail.is_empty() {
+            detail = tail_of(&dir.join("soffice.out"));
+        }
+        return Err(ConvertError::Failed(detail));
+    }
+    Ok(())
+}
+
+/// `source.pdf` exigé fichier ordinaire (jamais un lien), directement sous le dossier canonique (O9).
+fn checked_output(dir: &Path) -> Result<PathBuf, ConvertError> {
+    let pdf = dir.join(OUTPUT_NAME);
+    let Ok(m) = fs::symlink_metadata(&pdf) else {
+        return Err(ConvertError::NoOutput);
+    };
+    if !m.file_type().is_file() {
+        return Err(ConvertError::NoOutput);
+    }
+    let canon_dir = dir.canonicalize().map_err(io)?;
+    let canon = pdf.canonicalize().map_err(io)?;
+    if canon.parent() != Some(canon_dir.as_path()) {
+        return Err(ConvertError::NoOutput);
+    }
+    Ok(canon)
+}
+
+/// Convertit en PDF un fichier accordé (O8 à O12, O35). Refus dans l'ordre : non accordé, extension, taille, en-tête,
+/// aucun convertisseur ; puis copie sous `source.<ext>` dans un dossier neuf, lancement, contrôle et accord de la
+/// sortie. Tout échec supprime le dossier.
+pub fn convert_granted(
+    g: &GrantedPaths,
+    path: &Path,
+    c: Option<&Converter>,
+    work_root: &Path,
+    timeout: Duration,
+) -> Result<Converted, ConvertError> {
+    let src = g.granted_path(path).ok_or(ConvertError::NotGranted)?;
+    let ext = office_extension(&src).ok_or(ConvertError::NotOffice)?;
+    if fs::metadata(&src).map_err(io)?.len() > OFFICE_MAX_BYTES {
+        return Err(ConvertError::TooLarge);
+    }
+    let mut head = Vec::new();
+    fs::File::open(&src)
+        .map_err(io)?
+        .take(8)
+        .read_to_end(&mut head)
+        .map_err(io)?;
+    if !has_office_magic(&ext, &head) {
+        return Err(ConvertError::NotOffice);
+    }
+    let converter = c.ok_or(ConvertError::NoProgram)?;
+    let _one = CONVERT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let (id, dir) = new_conversion_dir(work_root)?;
+    let guard = RemoveOnDrop(Some(dir.clone()));
+    let input = dir.join(format!("source.{ext}"));
+    fs::copy(&src, &input).map_err(io)?;
+    match converter {
+        Converter::LibreOffice(program) => run_libreoffice(program, &input, &dir, timeout)?,
+        #[cfg(windows)]
+        Converter::MsOffice => com::convert(&input, &dir.join(OUTPUT_NAME), timeout)?,
+    }
+    let pdf = checked_output(&dir)?;
+    let size = fs::metadata(&pdf).map_err(io)?.len();
+    let pdf = g
+        .grant([pdf])
+        .into_iter()
+        .next()
+        .ok_or(ConvertError::NoOutput)?;
+    guard.keep();
+    Ok(Converted { id, pdf, size })
+}
+
+/// Retire l'accord du PDF et supprime le dossier de la conversion `id` (O35) ; tout autre identifiant est ignoré.
+pub fn release_conversion(g: &GrantedPaths, work_root: &Path, id: &str) {
+    if !is_conversion_id(id) {
+        return;
+    }
+    let dir = work_root.join(CONVERSIONS_DIR).join(id);
+    g.revoke(&dir.join(OUTPUT_NAME));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+fn process_alive(pid: u32) -> bool {
+    let Ok(p) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if p <= 0 {
+        return false;
+    }
+    // SAFETY : signal 0, sans effet ; seule l'existence du processus est testée.
+    let r = unsafe { libc::kill(p, 0) };
+    r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Windows : la vie d'un PID n'est pas testée (PC9 du plan) ; les restes d'une autre session sont supprimés.
+#[cfg(not(unix))]
+fn process_alive(_pid: u32) -> bool {
+    false
+}
+
+/// Au lancement (O23) : supprime les dossiers de `conversions/` dont le processus n'existe plus (plantage).
+pub fn purge_conversions(work_root: &Path) {
+    let Ok(rd) = fs::read_dir(work_root.join(CONVERSIONS_DIR)) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let name = e.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !is_conversion_id(name) {
+            continue;
+        }
+        let pid: u32 = name
+            .split('-')
+            .next()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0);
+        if pid != std::process::id() && !process_alive(pid) {
+            let _ = fs::remove_dir_all(e.path());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,7 +904,9 @@ mod tests {
     fn rels(items: &[(&str, &str, &str)]) -> String {
         let r: String = items
             .iter()
-            .map(|(id, kind, target)| format!(r#"<Relationship Id="{id}" Type="{R}/{kind}" Target="{target}"/>"#))
+            .map(|(id, kind, target)| {
+                format!(r#"<Relationship Id="{id}" Type="{R}/{kind}" Target="{target}"/>"#)
+            })
             .collect();
         format!(r#"{XML}<Relationships xmlns="{PR}">{r}</Relationships>"#)
     }
@@ -631,48 +951,84 @@ mod tests {
     fn pptx() -> Vec<u8> {
         let ns = format!(r#"xmlns:a="{A}" xmlns:r="{R}" xmlns:p="{P}""#);
         let tree = |shapes: &str| {
-            format!(r#"<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>{shapes}</p:spTree></p:cSld>"#)
+            format!(
+                r#"<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>{shapes}</p:spTree></p:cSld>"#
+            )
         };
         let text = |t: &str| {
-            format!(r#"<p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="7315200" cy="1371600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="fr-FR" sz="4400"/><a:t>{t}</a:t></a:r></a:p></p:txBody></p:sp>"#)
+            format!(
+                r#"<p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="7315200" cy="1371600"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="fr-FR" sz="4400"/><a:t>{t}</a:t></a:r></a:p></p:txBody></p:sp>"#
+            )
         };
-        let slide = |t: &str| format!(r#"{XML}<p:sld {ns}>{}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"#, tree(&text(t)));
+        let slide = |t: &str| {
+            format!(
+                r#"{XML}<p:sld {ns}>{}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>"#,
+                tree(&text(t))
+            )
+        };
         let master = format!(
             r#"{XML}<p:sldMaster {ns}>{}<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>"#,
             tree("")
         );
-        let layout = format!(r#"{XML}<p:sldLayout {ns} type="blank">{}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"#, tree(""));
+        let layout = format!(
+            r#"{XML}<p:sldLayout {ns} type="blank">{}<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"#,
+            tree("")
+        );
         let presentation = format!(
             r#"{XML}<p:presentation {ns}><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst><p:sldId id="256" r:id="rId2"/><p:sldId id="257" r:id="rId3"/></p:sldIdLst><p:sldSz cx="9144000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>"#
         );
         let to_layout = rels(&[("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")]);
-        let pml = |kind: &str| format!("application/vnd.openxmlformats-officedocument.presentationml.{kind}+xml");
-        let (pres_ct, master_ct, layout_ct, slide_ct) =
-            (pml("presentation.main"), pml("slideMaster"), pml("slideLayout"), pml("slide"));
+        let pml = |kind: &str| {
+            format!("application/vnd.openxmlformats-officedocument.presentationml.{kind}+xml")
+        };
+        let (pres_ct, master_ct, layout_ct, slide_ct) = (
+            pml("presentation.main"),
+            pml("slideMaster"),
+            pml("slideLayout"),
+            pml("slide"),
+        );
         zip_of(&[
-            ("[Content_Types].xml", types(&[
-                ("/ppt/presentation.xml", pres_ct.as_str()),
-                ("/ppt/slideMasters/slideMaster1.xml", master_ct.as_str()),
-                ("/ppt/slideLayouts/slideLayout1.xml", layout_ct.as_str()),
-                ("/ppt/theme/theme1.xml", "application/vnd.openxmlformats-officedocument.theme+xml"),
-                ("/ppt/slides/slide1.xml", slide_ct.as_str()),
-                ("/ppt/slides/slide2.xml", slide_ct.as_str()),
-            ])),
-            ("_rels/.rels", rels(&[("rId1", "officeDocument", "ppt/presentation.xml")])),
+            (
+                "[Content_Types].xml",
+                types(&[
+                    ("/ppt/presentation.xml", pres_ct.as_str()),
+                    ("/ppt/slideMasters/slideMaster1.xml", master_ct.as_str()),
+                    ("/ppt/slideLayouts/slideLayout1.xml", layout_ct.as_str()),
+                    (
+                        "/ppt/theme/theme1.xml",
+                        "application/vnd.openxmlformats-officedocument.theme+xml",
+                    ),
+                    ("/ppt/slides/slide1.xml", slide_ct.as_str()),
+                    ("/ppt/slides/slide2.xml", slide_ct.as_str()),
+                ]),
+            ),
+            (
+                "_rels/.rels",
+                rels(&[("rId1", "officeDocument", "ppt/presentation.xml")]),
+            ),
             ("ppt/presentation.xml", presentation),
-            ("ppt/_rels/presentation.xml.rels", rels(&[
-                ("rId1", "slideMaster", "slideMasters/slideMaster1.xml"),
-                ("rId2", "slide", "slides/slide1.xml"),
-                ("rId3", "slide", "slides/slide2.xml"),
-                ("rId4", "theme", "theme/theme1.xml"),
-            ])),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                rels(&[
+                    ("rId1", "slideMaster", "slideMasters/slideMaster1.xml"),
+                    ("rId2", "slide", "slides/slide1.xml"),
+                    ("rId3", "slide", "slides/slide2.xml"),
+                    ("rId4", "theme", "theme/theme1.xml"),
+                ]),
+            ),
             ("ppt/slideMasters/slideMaster1.xml", master),
-            ("ppt/slideMasters/_rels/slideMaster1.xml.rels", rels(&[
-                ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
-                ("rId2", "theme", "../theme/theme1.xml"),
-            ])),
+            (
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                rels(&[
+                    ("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml"),
+                    ("rId2", "theme", "../theme/theme1.xml"),
+                ]),
+            ),
             ("ppt/slideLayouts/slideLayout1.xml", layout),
-            ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", rels(&[("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")])),
+            (
+                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+                rels(&[("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")]),
+            ),
             ("ppt/theme/theme1.xml", theme()),
             ("ppt/slides/slide1.xml", slide("Diapositive 1")),
             ("ppt/slides/_rels/slide1.xml.rels", to_layout.clone()),
@@ -683,7 +1039,10 @@ mod tests {
 
     /// Fixture commitée, relue par l'essai navigateur (O27) ; régénérée par `ROOMBOARD_REGENERER_FIXTURES=1`.
     fn fixture(name: &str, make: fn() -> Vec<u8>) -> Vec<u8> {
-        let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join(name);
+        let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join(name);
         if std::env::var("ROOMBOARD_REGENERER_FIXTURES").as_deref() == Ok("1") {
             fs::create_dir_all(p.parent().expect("dossier")).expect("dossier");
             fs::write(&p, make()).expect("écriture");
@@ -723,14 +1082,20 @@ mod tests {
     }
 
     fn left_in(work: &Path) -> usize {
-        fs::read_dir(work.join(CONVERSIONS_DIR)).map(|r| r.count()).unwrap_or(0)
+        fs::read_dir(work.join(CONVERSIONS_DIR))
+            .map(|r| r.count())
+            .unwrap_or(0)
     }
 
     /// Pages d'un PDF : objets `/Type/Page` ou `/Type /Page` (jamais `/Pages`).
     fn pdf_pages(b: &[u8]) -> usize {
         [&b"/Type/Page"[..], &b"/Type /Page"[..]]
             .iter()
-            .map(|pat| b.windows(pat.len() + 1).filter(|w| w.starts_with(pat) && w[pat.len()] != b's').count())
+            .map(|pat| {
+                b.windows(pat.len() + 1)
+                    .filter(|w| w.starts_with(pat) && w[pat.len()] != b's')
+                    .count()
+            })
             .sum()
     }
 
@@ -758,7 +1123,10 @@ mod tests {
             let pdf = read_granted(&g, &c.pdf, 0, c.size).expect("PDF accordé");
             assert!(pdf.starts_with(b"%PDF-"), "{name} : %PDF- attendu");
             assert_eq!(pdf_pages(&pdf), pages, "{name} : pages");
-            assert!(!c.pdf.parent().expect("dossier").join("profil").exists(), "{name} : profil supprimé");
+            assert!(
+                !c.pdf.parent().expect("dossier").join("profil").exists(),
+                "{name} : profil supprimé"
+            );
             release_conversion(&g, &work, &c.id);
             assert_eq!(read_granted(&g, &c.pdf, 0, 1), Err(ReadError::NotGranted));
             assert_eq!(left_in(&work), 0, "{name} : dossier de conversion supprimé");
@@ -771,7 +1139,12 @@ mod tests {
         for _ in 0..40 {
             match fs::read_to_string(format!("/proc/{pid}/stat")) {
                 Err(_) => return true,
-                Ok(s) if s.rsplit_once(") ").is_some_and(|(_, rest)| rest.starts_with('Z')) => return true,
+                Ok(s)
+                    if s.rsplit_once(") ")
+                        .is_some_and(|(_, rest)| rest.starts_with('Z')) =>
+                {
+                    return true
+                }
                 Ok(_) => std::thread::sleep(Duration::from_millis(50)),
             }
         }
@@ -785,16 +1158,27 @@ mod tests {
     #[test]
     fn timeout_kills_the_launcher_and_its_child() {
         let d = dir("delai");
-        let conv = fake_converter(&d, "echo $$ > \"$d/parent.pid\"\nsleep 60 &\necho $! > \"$d/enfant.pid\"\nwait");
+        let conv = fake_converter(
+            &d,
+            "echo $$ > \"$d/parent.pid\"\nsleep 60 &\necho $! > \"$d/enfant.pid\"\nwait",
+        );
         let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
         let work = d.join("travail");
         let r = convert_granted(&g, &src, Some(&conv), &work, Duration::from_secs(2));
         assert_eq!(r.err(), Some(ConvertError::Timeout));
-        let started = fs::metadata(d.join("parent.pid")).and_then(|m| m.modified()).expect("lancé");
-        let took = SystemTime::now().duration_since(started).unwrap_or_default();
+        let started = fs::metadata(d.join("parent.pid"))
+            .and_then(|m| m.modified())
+            .expect("lancé");
+        let took = SystemTime::now()
+            .duration_since(started)
+            .unwrap_or_default();
         assert!(took < Duration::from_secs(4), "délai : {took:?}");
         for f in ["parent.pid", "enfant.pid"] {
-            let pid: u32 = fs::read_to_string(d.join(f)).expect(f).trim().parse().expect("pid");
+            let pid: u32 = fs::read_to_string(d.join(f))
+                .expect(f)
+                .trim()
+                .parse()
+                .expect("pid");
             assert!(gone(pid), "{f} ({pid}) encore vivant");
         }
         assert_eq!(left_in(&work), 0);
@@ -805,7 +1189,10 @@ mod tests {
     #[test]
     fn hostile_name_never_reaches_the_arguments() {
         let d = dir("nom");
-        let conv = fake_converter(&d, "for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$d/args.txt\"; done");
+        let conv = fake_converter(
+            &d,
+            "for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$d/args.txt\"; done",
+        );
         let (g, src) = granted(&d, "-x; $(touch pwn).docx", b"PK\x03\x04x");
         let work = d.join("travail");
         assert_eq!(
@@ -815,7 +1202,17 @@ mod tests {
         let args = fs::read_to_string(d.join("args.txt")).expect("arguments");
         let lines: Vec<&str> = args.lines().collect();
         assert_eq!(lines.len(), 12, "{args}");
-        assert_eq!(&lines[..6], &["--headless", "--invisible", "--norestore", "--nolockcheck", "--nodefault", "--nologo"]);
+        assert_eq!(
+            &lines[..6],
+            &[
+                "--headless",
+                "--invisible",
+                "--norestore",
+                "--nolockcheck",
+                "--nodefault",
+                "--nologo"
+            ]
+        );
         assert!(lines[6].starts_with("-env:UserInstallation=file://"));
         assert!(lines[11].ends_with("/source.docx"));
         assert!(!args.contains("pwn") && !args.contains("-x;"));
@@ -836,7 +1233,10 @@ mod tests {
             convert_granted(&g, &src, Some(&conv), &work, CONVERT_TIMEOUT).err(),
             Some(ConvertError::NoOutput)
         );
-        assert_eq!(read_granted(&g, &d.join("secret.txt"), 0, 1), Err(ReadError::NotGranted));
+        assert_eq!(
+            read_granted(&g, &d.join("secret.txt"), 0, 1),
+            Err(ReadError::NotGranted)
+        );
         assert_eq!(left_in(&work), 0);
     }
 
@@ -850,7 +1250,14 @@ mod tests {
         fs::write(&src, b"PK\x03\x04x").unwrap();
         let work = d.join("travail");
         assert_eq!(
-            convert_granted(&GrantedPaths::default(), &src, Some(&conv), &work, CONVERT_TIMEOUT).err(),
+            convert_granted(
+                &GrantedPaths::default(),
+                &src,
+                Some(&conv),
+                &work,
+                CONVERT_TIMEOUT
+            )
+            .err(),
             Some(ConvertError::NotGranted)
         );
         assert!(!d.join("lance").exists());
@@ -866,16 +1273,31 @@ mod tests {
         let conv = fake_converter(&d, "touch \"$d/lance\"");
         let work = d.join("travail");
         let big = d.join("gros.docx");
-        fs::File::create(&big).unwrap().set_len(OFFICE_MAX_BYTES + 1).unwrap();
+        fs::File::create(&big)
+            .unwrap()
+            .set_len(OFFICE_MAX_BYTES + 1)
+            .unwrap();
         let g = GrantedPaths::default();
         g.grant([big.clone()]);
-        assert_eq!(convert_granted(&g, &big, Some(&conv), &work, CONVERT_TIMEOUT).err(), Some(ConvertError::TooLarge));
+        assert_eq!(
+            convert_granted(&g, &big, Some(&conv), &work, CONVERT_TIMEOUT).err(),
+            Some(ConvertError::TooLarge)
+        );
         let (g2, fake) = granted(&d, "faux.docx", b"MZ\x90\x00");
-        assert_eq!(convert_granted(&g2, &fake, Some(&conv), &work, CONVERT_TIMEOUT).err(), Some(ConvertError::NotOffice));
+        assert_eq!(
+            convert_granted(&g2, &fake, Some(&conv), &work, CONVERT_TIMEOUT).err(),
+            Some(ConvertError::NotOffice)
+        );
         let (g3, pdf) = granted(&d, "cours.pdf", b"%PDF-");
-        assert_eq!(convert_granted(&g3, &pdf, Some(&conv), &work, CONVERT_TIMEOUT).err(), Some(ConvertError::NotOffice));
+        assert_eq!(
+            convert_granted(&g3, &pdf, Some(&conv), &work, CONVERT_TIMEOUT).err(),
+            Some(ConvertError::NotOffice)
+        );
         let (g4, ok) = granted(&d, "cours.docx", b"PK\x03\x04x");
-        assert_eq!(convert_granted(&g4, &ok, None, &work, CONVERT_TIMEOUT).err(), Some(ConvertError::NoProgram));
+        assert_eq!(
+            convert_granted(&g4, &ok, None, &work, CONVERT_TIMEOUT).err(),
+            Some(ConvertError::NoProgram)
+        );
         assert!(!d.join("lance").exists());
     }
 
@@ -890,7 +1312,10 @@ mod tests {
         let link = d.join("racine-lien");
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let (g, src) = granted(&d, "cours.docx", b"PK\x03\x04x");
-        assert!(matches!(convert_granted(&g, &src, Some(&conv), &link, CONVERT_TIMEOUT), Err(ConvertError::Io(_))));
+        assert!(matches!(
+            convert_granted(&g, &src, Some(&conv), &link, CONVERT_TIMEOUT),
+            Err(ConvertError::Io(_))
+        ));
         assert!(!d.join("lance").exists());
         assert!(!real.join(CONVERSIONS_DIR).exists());
     }
@@ -905,7 +1330,13 @@ mod tests {
         let (g, src) = granted(&d, "abime.docx", b"PK\x03\x04garbagegarbage");
         let work = d.join("travail");
         let r = convert_granted(&g, &src, Some(&conv), &work, CONVERT_TIMEOUT);
-        assert!(matches!(r, Err(ConvertError::Failed(_)) | Err(ConvertError::NoOutput)), "{r:?}");
+        assert!(
+            matches!(
+                r,
+                Err(ConvertError::Failed(_)) | Err(ConvertError::NoOutput)
+            ),
+            "{r:?}"
+        );
         assert_eq!(left_in(&work), 0);
     }
 
