@@ -1,6 +1,6 @@
 # État — usage-c8-pot-zones
 
-Statut : en cours
+Statut : en cours — PR à ouvrir, conditions de merge réunies
 Gabarit : chantier (7 tâches, confirmé à l'étage 2)
 Objectif : Un clic du pot dans une zone fermée par plusieurs objets (traits, formes) pose un nouvel élément `kind: "fill"` non lié, au-dessus des objets d'origine, avec une tolérance de fermeture de 2 px ; hors de toute zone fermée, le pot garde le comportement de C6a (fond de la page) ; chaque clic est une étape d'annulation.
 Avancement : 13/13 tâches terminées
@@ -12,6 +12,7 @@ Cadrage : docs/plans/usage-c8-pot-zones-cadrage.md   Plan(s) : docs/plans/usage-
 Mode : autonome, ouvrier CLI sur la VM (OD94), aucune question à Jérôme pendant le tour. Arrêt ferme : 2026-11-21 11:00 (pousser avant 10:50).
 
 ## Référence
+Finale (tête f417fbc, verifier.sh --e2e) : OK · web 124 fichiers, 2445 tests · module Wasm 1 362 599 o · module formats 3 100 344 o · scène 662 px Pot actif · C8 pot zones : OK (S6 médiane 40 ms ; 37, 40, 51 ; 4 052 169 cellules)
 Avant (main 94976f0, chiffres du brief) : module Wasm principal 1 145 044 o (plafond 1 572 864) · module formats 3 100 344 o (plafond 3 145 728, marge 45 Ko)
 Complète (origin/main @ 94976f0, verifier.sh --e2e) : OK · web 123 fichiers, 2425 tests · module Wasm 1 145 044 o · module formats 3 100 344 o · scène 662 px Pot actif, 706 px ailleurs
 
@@ -39,6 +40,14 @@ Vagues : V1 = T1, T3, T5 · V2 = T2, T4, T6 · V3 = T7. Worktrees : ~/projets/ro
 ## Scénarios et captures
 - `docs/essais/c8-pot-zones.png` : triangle pointe en bas fermé par trois traits noirs, rempli de jaune par le pot, sur un fond de page bleu (clic hors zone) ; le petit cercle noir intérieur laisse voir le fond bleu (trou du `fill`).
 
+## Rapport
+- Scénarios : S1 (triangle de trois traits à moins de 2 px, remplissage, annuler/refaire, traits inchangés), S2 (clic hors zone → fond), S3 (enregistrer, rouvrir ; `socle-v1.roomboard` d'avant C8 s'ouvre), S4 (rectangle non rempli seul → C6a, `data-zones` inchangé ; zone fermée par une boîte d'image : test natif `image_box_closes_zone`), S5 (petit cercle intérieur = trou du `fill` ; trait du bord touchable ; scène 662 px), S6 (porte ≤ 50 ms sur 4 052 169 cellules) : réussis dans l'essai `c8-pot-zones-navigateur.mjs` (S6 à 40–47 ms au rejeu, rouge une fois à 60 ms sous charge).
+- Hypothèses à revoir, niveau 1 : HC8-1 (image et texte ferment par leur boîte englobante, pas leurs pixels : « image comprise » partiel) ; HC8-2 (le fond PDF/image/grille ne ferme rien) ; HC8-3 (objets inclus = trous ; un texte laisse un trou rectangulaire) ; HC8-4 (le `fill` n'est touché qu'à plus de 6 px de ses bords) ; HC8-5 (+~214 Ko dans le module principal pour tous) ; HC8-11 (au-delà de 2²² cellules, la tolérance passe à 4 puis 8 px) ; HC8-12 (porte de 50 ms sur la VM : marge mince, 40 à 60 ms mesurés sous charge). Tolérance réelle : 2 px toujours fermé, 3 px selon l'alignement, 4 px toujours ouvert.
+- Décisions d'architecture (prises par l'agent) : DA-Z1 `i_overlay` dans le module principal derrière la fonctionnalité `zone` ; DA-Z2 rastérisation maison de la vue dans le cœur ; DA-Z4 élément `fill` à anneaux positionnels ; DA-Z5 porte de temps, repli plafond 2²¹ puis Worker (non déclenché).
+- Tâches bloquées : aucune. Hors périmètre : P2 (couleur mot par mot).
+- Constats d'architecture écrits : 4 (`crates/roomboard-core` 3, `apps/web/src/app` 1). Zones à 3 constats ouverts ou plus : `crates/roomboard-core` (4), `apps/web/src/app` (3) → audit d'architecture **proposé**, pas lancé.
+- Release : non due (aucune release ni tag dans ce chantier).
+
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK sans régression · scénarios réussis · capture dans `docs/essais/` · PR mergée par fusion locale `--no-ff` et `git push` sans force
 
@@ -62,3 +71,98 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 - Fin de lot, double relecture (tête c5c9ef0, 3 relecteurs : conformité, qualité Rust, qualité TS) : aucun bloquant. Majeurs : test et clippy du cœur sans `zone` jamais lancés (`fill.rs:300`, `verifier.sh:20-21`) ; `zone_walls` appelle `bounds(&[id])` par élément « autre » (O(N²), `zone.rs:748`). → tâche corrective T12.
 - Mineurs consignés : boîte englobante (et non boîte) pour une image tournée (`zone.rs:748`) ; tolérance réelle « 2 px au moins, moins de 4 px selon l'alignement » (test `zone.rs:922`) non écrite au cadrage ; `fill_element.rs`, `zone-marks.ts`, `renderer.ts` absents de la carte ; `taille-wasm.md:62` périmé ; test I3 TS affaibli (`fake-core.test.ts:544`) ; `insert_fill` sans `valid_color` ; `allow(dead_code)` large (`fill_element.rs:4`).
 - Simplifications proposées : cast de `zone-marks.ts:22` (rend le test aveugle à un renommage de `tol`), garde unique dans `canvas2d.ts:445`, alias `c8Factories`, `FillFields::rings_f32()`, `ellipse_points` dans `shape.rs`.
+
+## Conditions du merge
+- Point de retour : origin/main @ 94976f0 · double relecture faite (3 relecteurs), aucun bloquant ouvert · aucune tâche bloquée · verifier.sh --e2e OK sur f417fbc sans régression (2445 ≥ 2425) · aucun test retiré · S1–S6 réussis · pas de CLI · pas de CI GitHub (brief : aucun workflow).
+
+## Notes du coffre à poser
+
+### 1. `02_Decisions/NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal.md`
+
+```markdown
+---
+id: NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal
+type: decision
+summary: "RoomBoard C8 : le pot dans une zone fermée par plusieurs objets décide la région sur une rastérisation de la vue (1 cellule = 1 px, murs dilatés d'une cellule, écarts ≤ 2 px fermés), calcule la forme par i_overlay dans le module Wasm principal (formats n'a que 45 Ko de marge) et pose un élément fill non lié au-dessus ; synchrone sous une porte de 50 ms ; prise par l'agent."
+created: 2026-11-21
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c8-pot-zones-cadrage.md (Q3, Q4, Q6, Q9, Q18, Q20, DA-Z1, DA-Z5) ; crates/roomboard-core/src/zone.rs ; docs/essais/taille-wasm.md"
+---
+
+# RoomBoard — pot sur zones fermées : vue rastérisée, i_overlay dans le module principal (prise par l'agent)
+
+- Région (U28 P3 tel quel) : masque des murs à une cellule par px de la vue (`tol / 2` en monde), murs dilatés d'une cellule, diffusion 4-connexe depuis le clic ; fuite jusqu'au bord de l'emprise → fond de la page (C6a). Plafond 2²² cellules, puis la cellule double (2, puis 4 px de vue). Tolérance réelle : écart de 2 px de vue toujours fermé, 4 px toujours ouvert, 3 px selon l'alignement sur la grille.
+- Murs : traits par `ink::outline` (lu, non modifié), formes (rectangle et ellipse non remplis en anneau), `fill` existants ; image, texte et autres par leur boîte englobante (le cœur n'a ni pixels ni glyphes : « image comprise » partiel).
+- Forme : suites diffusées agrandies de 2 cellules, unies par `i_overlay`, moins les murs exacts qui touchent la zone ; les objets inclus deviennent des trous.
+- Module : `i_overlay` 9.2.0 (MIT OR Apache-2.0) derrière la fonctionnalité Cargo `zone` du cœur, activée par `roomboard-wasm` seul. Mesure : +214 643 o en principal ; `formats` exclu (marge 45 384 o). Garde-fou 1 420 000 o avant repli HU2-8.
+- Temps : synchrone dans la commande, porte S6 ≤ 50 ms (médiane de 3 clics, pire cas 4 M cellules) mesurée sous Chromium ; repli écrit : plafond 2²¹, puis Worker sur une seconde instance du même module.
+- Élément `{ id, kind: "fill", transform, w, h, color, contours }`, rendu et touché en pair-impair, touché seulement à plus de `tol` de ses bords ; un build d'avant C8 le voit comme un cadre inconnu `w × h`.
+```
+
+### 2. `04_Pieges/roomboard-mesure-performance-inclut-le-rendu-synchrone.md`
+
+```markdown
+---
+id: roomboard-mesure-performance-inclut-le-rendu-synchrone
+type: piege
+summary: "RoomBoard : une mesure performance.measure autour de run(commande) inclut tout ce que commit → emit déclenche en synchrone (marques de l'essai qui relisent chaque élément par le pont Wasm) ; au pot C8, ~32 ms sur 63 venaient d'un recompte des fill, pas du calcul de zone."
+created: 2026-11-21
+project: "[[roomboard]]"
+tags: [projet/roomboard, piege/performance]
+evidence: "PR usage C8, T11 (commits b5e2b64, 4da6e11) ; test zone-marks.test.ts « le recompte des fill rappelé pendant la commande reste hors de la mesure »"
+---
+
+# RoomBoard — une mesure autour d'une commande compte aussi le rendu synchrone
+
+- Symptôme : porte S6 à 63 ms sous Chromium alors que le calcul natif prenait 18 à 23 ms ; le témoin natif optimisé ne bougeait pas la mesure.
+- Cause : `run` → `commit` (`engine.ts`) → `emit()` → `mark` (`board-session.ts`) → `zoneMarks.tags` à la nouvelle version, qui recomptait les `fill` en lisant les 304 éléments par le pont Wasm, à l'intérieur de `pot-zone`.
+- Correction : le recompte est rappelé après la mesure par `onMarked` ; un test vérifie qu'il reste hors de la mesure. Le gel total du fil principal garde ce coût (constat d'architecture `zone-marks.ts:56`).
+- Règle : avant d'optimiser le calcul, chronométrer la commande dans le vrai module (banc vitest `ROOMBOARD_WASM_REQUIRED`) et comparer à la mesure du navigateur.
+```
+
+### 3. `04_Pieges/cargo-workspace-unifie-les-fonctionnalites.md`
+
+```markdown
+---
+id: cargo-workspace-unifie-les-fonctionnalites
+type: piege
+summary: "Cargo (resolver 2) : cargo test --workspace et cargo clippy --workspace compilent une crate avec l'union des fonctionnalités demandées par tous les membres ; un test #[cfg(not(feature = \"x\"))] ne tourne alors jamais. Ajouter cargo test -p <crate> sans la fonctionnalité."
+created: 2026-11-21
+project: "[[roomboard]]"
+tags: [projet/roomboard, piege/rust]
+evidence: "PR usage C8, relecture qualité Rust de fin de lot ; T12 (scripts/verifier.sh) ; test fill::tests::zone_without_feature_is_background"
+---
+
+# Cargo : `--workspace` unifie les fonctionnalités
+
+- Symptôme : 405 `#[test]` dans le cœur, 404 vus dans le journal ; le manquant est `zone_without_feature_is_background`, sous `#[cfg(not(feature = "zone"))]`.
+- Cause : `roomboard-wasm` active `zone` du cœur ; en workspace, la fonctionnalité vaut pour tous les membres.
+- Correction : `scripts/verifier.sh` lance aussi `cargo test -p roomboard-core` et `cargo clippy -p roomboard-core --all-targets -- -D warnings`.
+```
+
+### 4. `00_Journal/2026-11-21-roomboard-usage-c8-pot-zones-clos.md`
+
+```markdown
+---
+id: 2026-11-21-roomboard-usage-c8-pot-zones-clos
+type: journal
+summary: "RoomBoard usage C8 pot sur zones fermées clos : un clic du pot dans une zone fermée par plusieurs traits ou formes pose un élément fill non lié au-dessus (vue rastérisée, tolérance 2 px, forme i_overlay, trous), fond de la page hors zone, une étape par clic ; PR #PRNUM."
+created: 2026-11-21
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c8-pot-zones-etat.md (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — usage C8 pot sur zones fermées, clos (OD94)
+
+- Livré : `zone.rs` (rastérisation, diffusion, `i_overlay`), élément `fill` (vue, collision, anneaux, rendu pair-impair), commande `Fill Zone`, pont Wasm `fill_zone`/`zone_cells`/`fill_rings`, cible du pot (élément, zone, fond), marques `data-zones`, `data-zone-ms`, `data-zone-cells`, essai `c8-pot-zones-navigateur.mjs` branché dans `verifier.sh --e2e`.
+- Tailles : module Wasm principal TAILLE_P o (1 145 044 avant), module formats TAILLE_F o (3 100 344 avant). Scène 662 px Pot actif.
+- Porte S6 : médiane MEDIANE ms ≤ 50 sur 4 052 169 cellules, VM chargée ; marge mince.
+- Décision : [[NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal]]. Pièges : [[roomboard-mesure-performance-inclut-le-rendu-synchrone]], [[cargo-workspace-unifie-les-fonctionnalites]].
+```
+
+### 5. Fiche `01_Projets/roomboard.md`, ligne 21 (« Vague 2 en cours … »)
+
+Ajouter à la fin de la ligne : ` ; C8 pot sur zones fermées (élément fill, vue rastérisée, i_overlay dans le module principal) clos (PR #PRNUM, \`main\` SHA) — voir [[2026-11-21-roomboard-usage-c8-pot-zones-clos]] et [[NNNN-roomboard-c8-zone-vue-rasterisee-i-overlay-module-principal]]`
