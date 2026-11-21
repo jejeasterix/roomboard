@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Command, CoreDocument, TextAttrsPatch } from "./api";
-import { IS_A_GRID_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage, wrongKindMessage } from "./api";
+import { IS_A_GRID_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage, wrongKindMessage } from "./api";
 import { fakeCore, KNOWN_KINDS } from "./fake-core";
 
 const style = { color: "#000000", width: 4 };
@@ -844,7 +844,7 @@ describe("C4 : grille en ressource (faux cœur)", () => {
     expect(fakeCore.containerKind(fakeCore.blank().save("n", "a"))).toBe("document");
     expect(fakeCore.containerKind(fakeCore.blank().saveFragment("n", "a", "x"))).toBe("fragment");
     expect(fakeCore.manifestKind(d.saveGridParts("n", "a", "G")[0])).toBe("grid");
-    expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"pack"}'))).toThrow("ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque");
+    expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"pack"}'))).toThrow(PACK_MESSAGE);
     expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"hologram"}'))).toThrow(unknownKindMessage("hologram"));
   });
 

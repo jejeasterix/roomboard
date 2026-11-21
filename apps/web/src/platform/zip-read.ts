@@ -12,6 +12,7 @@ export interface ZipEntry {
 }
 export const ZIP_WORKER_TIMEOUT_MS = 60_000;
 export const ZIP_FAILED_MESSAGE = "lecture du ZIP interrompue";
+export const ZIP_WRITE_FAILED_MESSAGE = "écriture du ZIP interrompue";
 
 /** Réponse du Worker : `{ error }` rend son texte tel quel ; toute autre forme que `{ entries: [{ path, bytes }] }` lève. */
 export function checkZipReply(d: unknown): ZipEntry[] {
@@ -29,7 +30,7 @@ export function checkZipReply(d: unknown): ZipEntry[] {
 export function checkZipBytesReply(d: unknown): Uint8Array {
   const r = d as { bytes?: unknown; error?: unknown } | null;
   if (typeof r?.error === "string") throw new Error(r.error);
-  if (!(r?.bytes instanceof Uint8Array)) throw new Error(ZIP_FAILED_MESSAGE);
+  if (!(r?.bytes instanceof Uint8Array)) throw new Error(ZIP_WRITE_FAILED_MESSAGE);
   return r.bytes;
 }
 
@@ -50,5 +51,5 @@ export function createZipReader(
 
 /** C4 (D17) : ZIP stocké écrit dans un Worker jetable. */
 export function createZipWriter(spawn: () => WorkerLike, timeoutMs = ZIP_WORKER_TIMEOUT_MS): (files: readonly ZipFile[]) => Promise<Uint8Array> {
-  return (files) => runOnce(spawn, { op: "zip", files }, [], timeoutMs, checkZipBytesReply, ZIP_FAILED_MESSAGE);
+  return (files) => runOnce(spawn, { op: "zip", files }, [], timeoutMs, checkZipBytesReply, ZIP_WRITE_FAILED_MESSAGE);
 }

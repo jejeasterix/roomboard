@@ -1841,8 +1841,7 @@ function loadElement(e: SavedElement): FakeElement {
 
 function fakeKind(raw: Record<string, unknown>): ContainerKind {
   const kind = raw["kind"] ?? "document";
-  // D26 : même message que le cœur (`FormatError::UnknownKind` pour « pack »).
-  if (kind === "pack") throw new Error("ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque");
+  // D26 : « pack » a son message (`unknownKindMessage`), comme dans le cœur.
   if (kind !== "document" && kind !== "fragment" && kind !== "grid") throw new Error(unknownKindMessage(String(kind)));
   return kind;
 }

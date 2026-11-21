@@ -466,8 +466,10 @@ export const IS_A_GRID_MESSAGE = "ce fichier est une grille RoomBoard : déposez
 /** Message du mauvais type, choisi sur ce que le fichier est (même règle que `FormatError::WrongKind`). */
 export const wrongKindMessage = (found: ContainerKind): string =>
   found === "grid" ? IS_A_GRID_MESSAGE : found === "fragment" ? NOT_A_DOCUMENT_MESSAGE : NOT_A_FRAGMENT_MESSAGE;
+/** D26 : un `.rbpack` ouvert comme document ou objet (même texte que le cœur, `FormatError::UnknownKind` de « pack »). */
+export const PACK_MESSAGE = "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque";
 export const unknownKindMessage = (kind: string): string =>
-  `type de fichier RoomBoard inconnu (« ${kind} ») : pris en charge dans une prochaine version`;
+  kind === "pack" ? PACK_MESSAGE : `type de fichier RoomBoard inconnu (« ${kind} ») : pris en charge dans une prochaine version`;
 /** Source d'une insertion venue de l'autre liaison (fausse ↔ Wasm) : jamais mêlées (DAZ2). */
 export const MIXED_SOURCE_MESSAGE = "source d'une autre liaison : insertion impossible";
 
