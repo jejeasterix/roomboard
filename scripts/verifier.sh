@@ -19,6 +19,9 @@ FORMATS_OUT=apps/web/src/wasm-formats
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+# Le cœur seul, sans la fonctionnalité `zone` que `roomboard-wasm` active (resolver 2 l'unifie dans le workspace).
+cargo clippy -p roomboard-core --all-targets -- -D warnings
+cargo test -p roomboard-core
 
 bash scripts/tests/controle-wasm-bindgen.test.sh
 bash scripts/controle-wasm-bindgen.sh Cargo.lock

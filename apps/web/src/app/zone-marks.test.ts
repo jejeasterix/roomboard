@@ -3,7 +3,7 @@ import type { Change, Command } from "../core/api";
 import { createZoneMarks, type ZoneDoc } from "./zone-marks";
 
 const change: Change = { pages: ["p"], ids: ["f"], removed: [], full: false, version: 2 };
-const zone = { type: "Fill", page: "p", target: { kind: "zone", x: 1, y: 2, tol: 2 }, color: "#facc15" } as unknown as Command;
+const zone: Command = { type: "Fill", page: "p", target: { kind: "zone", x: 1, y: 2, tol: 2 }, color: "#facc15" };
 const bg: Command = { type: "Fill", page: "p", target: { kind: "background" }, color: "#facc15" };
 
 function doc(kinds: Record<string, string>): ZoneDoc & { reads: number; asked: [string, number][] } {

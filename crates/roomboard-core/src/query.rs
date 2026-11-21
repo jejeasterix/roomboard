@@ -317,6 +317,12 @@ impl Document {
             .collect()
     }
 
+    /// Boîte monde du contour d'un élément déjà en main, sans recherche par `id` (C8 : `zone_walls`).
+    pub(crate) fn element_bounds<T: ReadTxn>(&self, txn: &T, e: &MapRef) -> Option<Bounds> {
+        let g = self.element_geom(txn, e)?;
+        world_bounds(&g.transform, &g.outline)
+    }
+
     /// Boîte monde englobant les contours des éléments ; ids inconnus ignorés, `None` si aucun.
     pub fn bounds(&self, ids: &[String]) -> Option<Bounds> {
         let txn = self.read();
@@ -325,10 +331,7 @@ impl Document {
             let Some(found) = self.find_element(&txn, id) else {
                 continue;
             };
-            let Some(g) = self.element_geom(&txn, &found.element) else {
-                continue;
-            };
-            if let Some(b) = world_bounds(&g.transform, &g.outline) {
+            if let Some(b) = self.element_bounds(&txn, &found.element) {
                 acc = Some(match acc {
                     Some(a) => a.union(b),
                     None => b,
