@@ -16,11 +16,11 @@ import {
   ZIP_MAX_ENTRIES,
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
-import type { ZipFile } from "./rbpack";
+import { isPackEntry, type ZipFile } from "./rbpack";
 
 /** C4 : entrées d'un paquet (manifeste, ressources, vignettes) ; tout autre fichier du ZIP est ignoré. */
 export function keepPackPath(name: string): boolean {
-  return name === "manifest.json" || (name.startsWith("items/") && (name.endsWith(".rbitem") || name.endsWith(".rbitem.png")));
+  return isPackEntry(name);
 }
 
 /** Date fixe des entrées (D25 : octets stables), en heure locale comme le champ DOS du ZIP. */
@@ -29,7 +29,7 @@ const PACK_MTIME = new Date(1980, 0, 1, 0, 0, 0);
 /** C4 (D17) : ZIP stocké, entrées dans l'ordre reçu (déjà trié par `buildPack`), date fixe. */
 export function zipStored(files: readonly ZipFile[]): Uint8Array {
   const z: Zippable = {};
-  for (const f of files) z[f.path] = [f.bytes, { level: 0, mtime: PACK_MTIME }];
+  for (const f of files) z[f.path] = f.bytes;
   return zipSync(z, { level: 0, mtime: PACK_MTIME });
 }
 

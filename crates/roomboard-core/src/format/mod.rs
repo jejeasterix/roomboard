@@ -333,9 +333,7 @@ fn open_with_limits(
 /// Décode les deux moitiés : manifeste contrôlé, migration, décodage, accord du schéma (D24 : désaccord = `Corrupt`).
 /// Un fragment est refusé (`WrongKind`).
 pub fn load_parts(manifest: &[u8], ybin: &[u8]) -> Result<(Document, Manifest), FormatError> {
-    let m = check_manifest(manifest)?;
-    expect_kind(&m, KIND_DOCUMENT)?;
-    decode_checked(m, ybin)
+    load_resource_parts(manifest, ybin, KIND_DOCUMENT)
 }
 
 /// Suite de `load_parts` pour un manifeste déjà contrôlé : migration, décodage, accord du schéma.
@@ -358,9 +356,7 @@ fn decode_checked(manifest: Manifest, ybin: &[u8]) -> Result<(Document, Manifest
 
 /// Lit un `.roomboard` : `open` (manifeste contrôlé une fois), type document exigé, puis décodage.
 pub fn load_with_manifest(bytes: &[u8]) -> Result<(Document, Manifest), FormatError> {
-    let opened = open(bytes)?;
-    expect_kind(&opened.manifest, KIND_DOCUMENT)?;
-    decode_checked(opened.manifest, &opened.parts.ybin)
+    load_resource(bytes, KIND_DOCUMENT)
 }
 
 /// Manifeste et `document.ybin` d'une ressource (Z6, C4) : `kind` = `KIND_FRAGMENT` ou `KIND_GRID`, `name`, `bounds`

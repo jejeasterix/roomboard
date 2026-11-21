@@ -34,11 +34,14 @@ interface ManifestItem {
 export const PACK_MANIFEST = "manifest.json";
 const PACK_FORMAT_VERSION = 1;
 export const PACK_NOT_ROOMBOARD_MESSAGE = "ce fichier n'est pas un paquet RoomBoard";
+export const PACK_DAMAGED_MESSAGE = "paquet RoomBoard endommagé : manifeste incomplet";
 export const PACK_NEWER_MESSAGE = "paquet d'une version plus récente de RoomBoard";
 export const PACK_UNSAFE_PATH_MESSAGE = "paquet refusé : chemin d'entrée non sûr";
 export const packMissingMessage = (path: string): string => `paquet incomplet : ${path} absent`;
 
 const ITEM_RE = /^items\/(.+)\.rbitem$/;
+/** Entrées lues d'un ZIP de paquet (`zip-worker.ts`) : le manifeste, `items/<chemin>.rbitem` et sa vignette `.png`. */
+export const isPackEntry = (name: string): boolean => name === PACK_MANIFEST || ITEM_RE.test(name.endsWith(".png") ? name.slice(0, -4) : name);
 /** Forme d'une entrée (D18, D32) : `items/<chemin>.rbitem`. Les `..`, `\`, `:` et segments cachés de `<chemin>` sont
  *  refusés par `safeLibraryPath` avant la première écriture de l'import (`app/library.ts`) : aucun second normaliseur. */
 function safeEntry(p: unknown): p is string {
@@ -90,11 +93,13 @@ export function readPack(files: readonly ZipFile[]): { readonly name: string; re
     throw new Error(PACK_NOT_ROOMBOARD_MESSAGE);
   }
   if (!isRecord(m) || m["format"] !== "roomboard") throw new Error(PACK_NOT_ROOMBOARD_MESSAGE);
-  if (typeof m["formatVersion"] !== "number" || m["formatVersion"] > PACK_FORMAT_VERSION) throw new Error(PACK_NEWER_MESSAGE);
-  if (m["kind"] !== "pack") throw new Error(unknownKindMessage(String(m["kind"] ?? "document").slice(0, 64)));
+  if (typeof m["formatVersion"] !== "number") throw new Error(PACK_DAMAGED_MESSAGE);
+  if (m["formatVersion"] > PACK_FORMAT_VERSION) throw new Error(PACK_NEWER_MESSAGE);
+  // 64 caractères (points de code), comme le cœur (`chars().take(64)`).
+  if (m["kind"] !== "pack") throw new Error(unknownKindMessage(Array.from(String(m["kind"] ?? "document")).slice(0, 64).join("")));
+  if (!Array.isArray(m["items"])) throw new Error(PACK_DAMAGED_MESSAGE);
   const byName = new Map(files.map((f) => [f.path, f.bytes]));
-  const listed: unknown[] = Array.isArray(m["items"]) ? m["items"] : [];
-  const items = listed.map((e): PackItem => {
+  const items = (m["items"] as unknown[]).map((e): PackItem => {
     const x = isRecord(e) ? e : {};
     const path = x["path"];
     if (!safeEntry(path)) throw new Error(PACK_UNSAFE_PATH_MESSAGE);

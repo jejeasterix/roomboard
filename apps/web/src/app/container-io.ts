@@ -77,10 +77,19 @@ export const missingOf = (doc: CoreDocument, assets: AssetStore): string[] => {
 
 export function createContainerIO(deps: ContainerIODeps): ContainerIO {
   const { core, codec, say } = deps;
-  const loadWhole = (k: ReadKind, b: Uint8Array): CoreDocument =>
-    k === "document" ? core.load(b) : k === "fragment" ? core.loadFragment(b) : core.loadGrid(b);
-  const loadParts = (k: ReadKind, m: Uint8Array, y: Uint8Array): CoreDocument =>
-    k === "document" ? core.loadParts(m, y) : k === "fragment" ? core.loadFragmentParts(m, y) : core.loadGridParts(m, y);
+  /** Les quatre lectures et écritures de chaque type, en un seul endroit (`name` : ignoré pour un document). */
+  const byKind: Record<ReadKind, {
+    whole(b: Uint8Array): CoreDocument;
+    parts(m: Uint8Array, y: Uint8Array): CoreDocument;
+    save(d: CoreDocument, now: string, v: string, name: string): Uint8Array;
+    saveParts(d: CoreDocument, now: string, v: string, name: string): readonly [Uint8Array, Uint8Array];
+  }> = {
+    document: { whole: (b) => core.load(b), parts: (m, y) => core.loadParts(m, y), save: (d, now, v) => d.save(now, v), saveParts: (d, now, v) => d.saveParts(now, v) },
+    fragment: { whole: (b) => core.loadFragment(b), parts: (m, y) => core.loadFragmentParts(m, y), save: (d, now, v, n) => d.saveFragment(now, v, n), saveParts: (d, now, v, n) => d.saveFragmentParts(now, v, n) },
+    grid: { whole: (b) => core.loadGrid(b), parts: (m, y) => core.loadGridParts(m, y), save: (d, now, v, n) => d.saveGrid(now, v, n), saveParts: (d, now, v, n) => d.saveGridParts(now, v, n) },
+  };
+  const loadWhole = (k: ReadKind, b: Uint8Array): CoreDocument => byKind[k].whole(b);
+  const loadParts = (k: ReadKind, m: Uint8Array, y: Uint8Array): CoreDocument => byKind[k].parts(m, y);
   /** Un seul type demandé : lui, sans détection (chemin d'avant C4) ; sinon le type lu s'il est demandé, sinon le
    *  premier demandé (son lecteur dit le bon message du mauvais type). */
   const choose = (wanted: readonly ReadKind[], detect: () => ReadKind): ReadKind => {
@@ -111,10 +120,8 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
   return {
     async encode(doc, assets, now, appVersion, as) {
       const cited = doc.citedAssets();
-      if (cited.length === 0) {
-        if (as.kind === "document") return doc.save(now, appVersion);
-        return as.kind === "fragment" ? doc.saveFragment(now, appVersion, as.name) : doc.saveGrid(now, appVersion, as.name);
-      }
+      const name = as.kind === "document" ? "" : as.name;
+      if (cited.length === 0) return byKind[as.kind].save(doc, now, appVersion, name);
       const linked = linkedIds(doc);
       if (as.kind !== "document" && linked.size > 0) throw new LinkedMediaError(); // avant l'image absente (M32)
       // R9 : les octets d'un média lié ne sont jamais écrits, même si le magasin les tient.
@@ -122,10 +129,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
       if (as.kind !== "document" && missing.length > 0) {
         throw new MissingAssetError();
       }
-      const [manifest, ybin] =
-        as.kind === "document" ? doc.saveParts(now, appVersion)
-        : as.kind === "fragment" ? doc.saveFragmentParts(now, appVersion, as.name)
-        : doc.saveGridParts(now, appVersion, as.name);
+      const [manifest, ybin] = byKind[as.kind].saveParts(doc, now, appVersion, name);
       const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
       return codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
     },

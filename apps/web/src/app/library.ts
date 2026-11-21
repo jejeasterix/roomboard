@@ -59,6 +59,7 @@ export interface ResourceLibrary {
   read(entry: ResourceEntry): Promise<Uint8Array>;
   thumbnail(entry: ResourceEntry): Promise<Blob | null>;
   mkdir(root: LibraryRoot, parent: string, name: string): Promise<string>;
+  /** `path` vide : toute la racine (« Vider », `LibraryPanel`) ; un chemin de dossier ou de ressource sinon. */
   remove(root: LibraryRoot, path: string): Promise<void>;
   exportPack(root: LibraryRoot, folder: string): Promise<{ readonly name: string; readonly bytes: Uint8Array }>;
   importPack(bytes: Uint8Array, fileName: string): Promise<{ readonly folder: string; readonly count: number }>;
@@ -70,15 +71,15 @@ const NAME_MAX = 80;
 /** Diacritiques combinants, la classe de `slug` (`profile-file.ts:20`). */
 const MARKS = /[̀-ͯ]/g;
 
+export const RESOURCE_KIND_UNKNOWN_MESSAGE = (path: string): string =>
+  `ressource sans type connu : ${path} (aucun fichier compagnon) : ajoutez-la de nouveau à la bibliothèque avant de l'exporter`;
+
 export const normalizeSearch = (s: string): string => s.normalize("NFD").replace(MARKS, "").toLowerCase();
 
 /** D25 : nom de fichier d'une ressource, au patron `slug` de `profile-file.ts:17` (sans accents, minuscules,
  *  `[a-z0-9-]`), 80 caractères au plus, vide → `ressource` ; le nom affiché reste dans le compagnon `.json`. */
 export function fileNameOf(name: string): string {
-  const s = name
-    .normalize("NFD")
-    .replace(MARKS, "")
-    .toLowerCase()
+  const s = normalizeSearch(name)
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, NAME_MAX)
@@ -250,12 +251,13 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
       if (count > ZIP_MAX_ENTRIES) throw new Error(PACK_TOO_BIG_MESSAGE);
       const items: PackItem[] = [];
       for (const e of chosen) {
+        if (e.kind === null) throw new Error(RESOURCE_KIND_UNKNOWN_MESSAGE(e.path)); // jamais un type inventé
         items.push({
           path: e.path.slice(prefix.length, -EXT.length),
           name: e.name,
           keywords: e.keywords,
           description: e.description,
-          kind: e.kind ?? "fragment",
+          kind: e.kind,
           bytes: await bytesOf(await r.files.read(e.path)),
           thumbnail: e.thumbnail === null ? null : await bytesOf(await r.files.read(e.thumbnail)),
         });
@@ -266,7 +268,7 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
       if (files.length > ZIP_MAX_ENTRIES || total > ZIP_MAX_BYTES) throw new Error(PACK_TOO_BIG_MESSAGE);
       return { name: `${folderNameOf(name)}.rbpack`, bytes: await deps.zip.zip(files) };
     },
-    async importPack(bytes, fileName) {
+    async importPack(bytes) {
       // 1. Tout le paquet est lu et contrôlé : aucune écriture tant qu'un refus reste possible (D18, D32).
       let entries: readonly ZipEntry[];
       try {
@@ -289,7 +291,7 @@ export function createResourceLibrary(deps: LibraryDeps): ResourceLibrary {
       // 2. Dossier neuf de « Mes ressources », retiré en entier si une écriture échoue en route.
       const r = of("mine");
       await load(r); // l'index en mémoire peut être vide ou périmé : le nom libre se juge sur le stockage
-      const folder = unique(r, "", folderNameOf(pack.name || fileName.replace(/\.rbpack$/i, "")), "");
+      const folder = unique(r, "", folderNameOf(pack.name), "");
       const written: string[] = [];
       try {
         await r.files.mkdir(folder);

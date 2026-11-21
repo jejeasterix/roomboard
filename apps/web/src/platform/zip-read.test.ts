@@ -2,7 +2,7 @@ import { deflateSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ZIP_MALFORMED_MESSAGE, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import type { WorkerLike } from "./one-shot-worker";
-import { checkZipBytesReply, checkZipReply, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS } from "./zip-read";
+import { checkZipBytesReply, checkZipReply, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS, ZIP_WRITE_FAILED_MESSAGE } from "./zip-read";
 import { unzipModelEntries } from "./zip-worker";
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
@@ -176,9 +176,15 @@ describe("C4 : paquet par le Worker ZIP", () => {
 
   it("C4 : checkZipBytesReply : forme contrôlée ; erreur rendue telle quelle", () => {
     expect(() => checkZipBytesReply({ error: "x" })).toThrow("x");
-    expect(() => checkZipBytesReply({})).toThrow(ZIP_FAILED_MESSAGE);
-    expect(() => checkZipBytesReply(null)).toThrow(ZIP_FAILED_MESSAGE);
-    expect(() => checkZipBytesReply({ bytes: [1] })).toThrow(ZIP_FAILED_MESSAGE);
+    expect(() => checkZipBytesReply({})).toThrow(ZIP_WRITE_FAILED_MESSAGE);
+    expect(() => checkZipBytesReply(null)).toThrow(ZIP_WRITE_FAILED_MESSAGE);
+    expect(() => checkZipBytesReply({ bytes: [1] })).toThrow(ZIP_WRITE_FAILED_MESSAGE);
     expect(checkZipBytesReply({ bytes: new Uint8Array([3]) })).toEqual(new Uint8Array([3]));
+  });
+
+  it("C4 : un échec d'écriture du ZIP (délai, Worker en erreur) dit « écriture », pas « lecture »", async () => {
+    const mute: WorkerLike = { onmessage: null, onerror: null, postMessage() {}, terminate() {} };
+    await expect(createZipWriter(() => mute, 5)([])).rejects.toThrow("écriture du ZIP interrompue");
+    expect(ZIP_WRITE_FAILED_MESSAGE).not.toBe(ZIP_FAILED_MESSAGE);
   });
 });

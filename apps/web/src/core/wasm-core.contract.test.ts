@@ -2,7 +2,7 @@
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
 import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
-import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
+import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
@@ -950,7 +950,6 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
     visible: true, snap: false, above: false,
     levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#7aa7d8", line: "solid", lineWidth: 1, snap: false, visible: true }],
   } as unknown as GridInput;
-  const PACK_MESSAGE = "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque";
   const packManifest = new TextEncoder().encode('{"format":"roomboard","formatVersion":1,"schema":1,"appVersion":"x","created":"c","modified":"m","kind":"pack"}');
 
   it("C4 : grille en ressource écrite puis relue, kind « grid »", () => {
@@ -961,10 +960,12 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
     const bytes = d.saveGrid("2026-11-21T08:00:00Z", "c4", "Seyès");
     expect(f.containerKind(bytes)).toBe("grid");
     const g = f.loadGrid(bytes);
-    expect(g.page(g.pageIds()[0]!)?.grid).toEqual(d.page(p)?.grid);
+    expect(g.page(g.pageIds()[0]!)?.grid).toEqual(c4Grid);
     const [manifest, ybin] = d.saveGridParts("2026-11-21T08:00:00Z", "c4", "Seyès");
     expect(f.manifestKind(manifest)).toBe("grid");
-    f.loadGridParts(manifest, ybin).free();
+    const gp = f.loadGridParts(manifest, ybin);
+    expect(gp.page(gp.pageIds()[0]!)?.grid).toEqual(c4Grid);
+    gp.free();
     g.free();
     d.free();
   });
@@ -2709,9 +2710,9 @@ describe.skipIf(loaded === null)("contrat C3 : vrai module seulement", () => {
     const json = JSON.parse(new TextDecoder().decode(m)) as Record<string, unknown>;
     // C4 : « grid » est désormais un type connu ; l'exemple de type inconnu devient « hologram » (même intention).
     json["kind"] = "hologram";
-    const grid = new TextEncoder().encode(JSON.stringify(json));
-    expect(messageOf(() => need().core.loadFragmentParts(grid, y))).toBe(unknownKindMessage("hologram"));
-    expect(messageOf(() => need().core.loadParts(grid, y))).toBe(unknownKindMessage("hologram"));
+    const unknown = new TextEncoder().encode(JSON.stringify(json));
+    expect(messageOf(() => need().core.loadFragmentParts(unknown, y))).toBe(unknownKindMessage("hologram"));
+    expect(messageOf(() => need().core.loadParts(unknown, y))).toBe(unknownKindMessage("hologram"));
   });
   it("source d'une autre liaison : erreur, rien d'écrit", () => {
     const d = need().core.blank();
