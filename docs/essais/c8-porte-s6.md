@@ -49,6 +49,8 @@ Ligne du banc, recopiée telle quelle :
 
     S6 empreinte : anneaux=301 longueur=10217 sha256=b2f8da761b79e5113c5d20826428444331608c834622a853784ace43ed8ac073 boîte=-700.9893798828125,-700.9893798828125,1293.0106201171875,1293.0106201171875
 
+Non-régression : `zone-s6-banc.test.ts`, `describe` « non-régression C8 sur S6 » (S2), compare cette empreinte sur la tête a28989e : égale.
+
 ## Où vont les ms (avant)
 
 | part | ms | source |

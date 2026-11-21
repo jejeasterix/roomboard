@@ -103,6 +103,14 @@ async function fingerprint(d: CoreDocument, id: string): Promise<Fingerprint> {
   return { rings: count, length: rings.length, sha256, bounds: [b.x0, b.y0, b.x1, b.y1] };
 }
 
+/** Empreinte du `fill` S6 relevée sur afc2d8b avant tout gain (OE23, Q10, H3) : `docs/essais/c8-porte-s6.md` § Empreinte. */
+const S6_EMPREINTE_AFC2D8B: Fingerprint = {
+  rings: 301,
+  length: 10217,
+  sha256: "b2f8da761b79e5113c5d20826428444331608c834622a853784ace43ed8ac073",
+  bounds: [-700.9893798828125, -700.9893798828125, 1293.0106201171875, 1293.0106201171875],
+};
+
 /** Moteur sans rendu ni image (`requestFrame` ne rappelle jamais) : `engine.run` = commande + état du moteur (`emit`). */
 const NO_RENDERER: Renderer = { drawScene() {}, drawLive() {}, resize() {}, invalidate() {}, setGridPreview() {}, setImagePreview() {} };
 const NO_FRAMES: FrameLoopDeps = { requestFrame: () => 0, cancelFrame: () => undefined, now: () => performance.now() };
@@ -201,6 +209,53 @@ describe.skipIf(wasmCore === null)("banc S6 (OE23, Q6) : vrai module, témoin sa
       `S6 empreinte : anneaux=${print.rings} longueur=${print.length} sha256=${print.sha256} boîte=${print.bounds.join(",")}`,
     );
     engine.dispose();
+    d.free();
+  }, 120_000);
+});
+
+describe.skipIf(wasmCore === null)("non-régression C8 sur S6 (OE23, S2) : vrai module", () => {
+  it("S2 : trois clics posent chacun un fill à trous, chaque annulation le retire en une étape ; empreinte d'afc2d8b", async () => {
+    const { d, p } = buildS6(need());
+    const strokes = d.elementIds(p);
+    expect(strokes).toHaveLength(303);
+    expect(d.canUndo()).toBe(false);
+    for (let k = 0; k < 3; k++) {
+      const c = d.apply(zoneAt(p, INSIDE, YELLOW));
+      expect(c.ids).toHaveLength(1);
+      const id = c.ids[0] ?? "";
+      expect(d.elementIds(p)).toEqual([...strokes, id]);
+      expect(d.elementIdsOfKind(p, "fill")).toEqual([id]);
+      expect(d.element(id)).toMatchObject({ kind: "fill", fill: { color: YELLOW } });
+      const f = await fingerprint(d, id);
+      expect(f.rings).toBeGreaterThan(1);
+      expect(f).toEqual(S6_EMPREINTE_AFC2D8B);
+      expect(d.canUndo()).toBe(true);
+      d.undo();
+      expect(d.canUndo()).toBe(false);
+      expect(d.elementIds(p)).toEqual(strokes);
+      expect(d.elementIdsOfKind(p, "fill")).toEqual([]);
+    }
+    d.free();
+  }, 120_000);
+
+  it("S2 : enregistrer puis rouvrir rend le même fill (vue et anneaux)", () => {
+    const { d, p } = buildS6(need());
+    const id = d.apply(zoneAt(p, INSIDE, YELLOW)).ids[0] ?? "";
+    const r = need().load(d.save(FIXED, "essai-c8"));
+    expect(r.element(id)).toEqual(d.element(id));
+    expect(r.fillRings(id)).toEqual(d.fillRings(id));
+    expect(r.elementIdsOfKind(p, "fill")).toEqual([id]);
+    r.free();
+    d.free();
+  }, 120_000);
+
+  it("S2 : un clic hors du triangle change le fond, sans fill", () => {
+    const { d, p } = buildS6(need());
+    const c = d.apply(zoneAt(p, OUTSIDE, BLUE));
+    expect(c.ids).toEqual([]);
+    expect(d.page(p)?.background).toBe(BLUE);
+    expect(d.elementIdsOfKind(p, "fill")).toEqual([]);
+    expect(d.elementIds(p)).toHaveLength(303);
     d.free();
   }, 120_000);
 });
