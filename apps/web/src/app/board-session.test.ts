@@ -1034,6 +1034,50 @@ describe("session — objets 3D (C15)", () => {
     s.dispose();
   });
 
+  it("C2 : Ctrl+Z pendant l'instantané du second glissé : le second n'est pas écrit, le rétablissement reste possible", async () => {
+    const { s, fv, click, drag, model } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    drag(100); // v1 écrit
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6));
+    const free = fv.holdSnapshots();
+    drag(50, true, 3); // v2 : instantané retenu
+    await vi.waitFor(() => expect(fv.snaps).toHaveLength(2));
+    s.engine.undo(); // annule v1 ; l'orbite tombe
+    expect(model()!.yaw).toBe(D_YAW);
+    expect(s.engine.state().canRedo).toBe(true);
+    free();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(model()!.yaw).toBe(D_YAW);
+    expect(s.engine.state().canRedo).toBe(true);
+    s.engine.redo();
+    expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6);
+    s.dispose();
+  });
+
+  it("C2 : deux relâchés puis un clic à côté : écritures dans l'ordre des relâchés, la dernière vue gagne (S2)", async () => {
+    const { s, fv, click, drag, model, tag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    const v0 = s.engine.state().version;
+    const free1 = fv.holdSnapshots();
+    drag(100); // v1 : instantané retenu
+    fv.holdSnapshots()(); // v2 : instantané immédiat
+    drag(50, true, 3);
+    await vi.waitFor(() => expect(fv.snaps).toHaveLength(2));
+    const c = s.engine.camera();
+    s.engine.sink.begin(4, "select", [{ x: 400 * c.zoom + c.tx, y: 300 * c.zoom + c.ty, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }]);
+    s.engine.sink.close(4, "end"); // clic à côté : orbite fermée, désélection
+    expect(tag()).toBe("");
+    await new Promise((r) => setTimeout(r, 20));
+    free1();
+    await vi.waitFor(() => expect(s.engine.state().version).toBe(v0 + 2));
+    expect(model()!.yaw).toBeCloseTo(D_YAW + 1.5, 6);
+    s.engine.undo();
+    expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6);
+    s.dispose();
+  });
+
   it("commit après suppression : aucune commande, séance fermée", async () => {
     const { s, fv, id, click, drag } = await modelSession();
     click(100, 50);
