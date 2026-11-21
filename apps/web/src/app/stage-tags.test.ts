@@ -80,3 +80,9 @@ describe("stageTags (C6b, B21)", () => {
     expect(stageTags(base, { pot: "attente" }).pot).toBe("attente");
   });
 });
+describe("stageTags (C8, Q18)", () => {
+  it("C8 zones, zoneMs, zoneCells : recopiés ; vides par défaut", () => {
+    expect(stageTags(base, { zones: "1", zoneMs: "12.3", zoneCells: "4032064" })).toMatchObject({ zones: "1", zoneMs: "12.3", zoneCells: "4032064" });
+    expect(stageTags(base)).toMatchObject({ zones: "", zoneMs: "", zoneCells: "" });
+  });
+});
