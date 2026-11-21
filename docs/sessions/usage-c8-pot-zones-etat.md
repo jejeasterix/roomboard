@@ -3,9 +3,8 @@
 Statut : en cours
 Gabarit : chantier (7 tâches, confirmé à l'étage 2)
 Objectif : Un clic du pot dans une zone fermée par plusieurs objets (traits, formes) pose un nouvel élément `kind: "fill"` non lié, au-dessus des objets d'origine, avec une tolérance de fermeture de 2 px ; hors de toute zone fermée, le pot garde le comportement de C6a (fond de la page) ; chaque clic est une étape d'annulation.
-Avancement : 11/12 tâches terminées
+Avancement : 12/12 tâches terminées
 Étage : 3 — depuis 2026-11-21 08:02
-Tâche : T12 — correctifs de fin de lot — depuis 2026-11-21 09:33
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c8-pot-zones   Branche : feat/usage-c8-pot-zones   Base : origin/main @ 94976f0
 Branche principale locale au lancement : 94976f0
@@ -33,7 +32,7 @@ Vagues : V1 = T1, T3, T5 · V2 = T2, T4, T6 · V3 = T7. Worktrees : ~/projets/ro
 | T8 correctifs revue T1 (murs fins, rects, tolérance par facteur, notice i_tree) | T1 | terminée | 1/3 | e9ebe05 | core zone 18 tests (wall_thinner_than_a_cell_still_closes ok) ; témoin S6 natif 126 ms |
 | T9 porte S6 : profil par phase, réductions, repli DA-Z5 étape 1 | T8 | terminée | 1/3 | d65059b | core zone 21 tests ok ; témoin S6 natif release médiane 22,8 ms rejoué (17,9 rapporté), 4 032 064 cellules, sans plafond 2²¹ ni Worker ; module principal 1 373 557 o |
 | T11 coût Wasm du clic de zone (porte S6 : 63 ms en Chromium, 18–23 ms natif) | T9, T10 | terminée | 1/3 | 85f850e | core zone 17 « test result: ok » ; src/app+src/core WASM_REQUIRED 856 tests ; essai S6 médiane 45 ms (2 passes, charge 18–26) ; module 1 364 322 o ; recompte des fill (~32 ms) sorti de la mesure |
-| T12 correctifs de fin de lot (cœur sans zone testé, zone_walls O(N), cast zone-marks) | T11 | en cours | 1/3 | — | — |
+| T12 correctifs de fin de lot (cœur sans zone testé, zone_walls O(N), cast zone-marks) | T11 | terminée | 1/3 | ae3e978 | core sans zone : zone_without_feature_is_background ok ; zone 23 tests ; zone-marks 5 ; verifier.sh lance désormais test et clippy du cœur seul |
 | T10 marques de zone à jour au rendu du clic | T5, T6 | terminée | 1/3 | 13e4f6c | zone-marks, stage-tags, board-session 70 tests ; src/app 365 |
 
 ## Scénarios et captures
