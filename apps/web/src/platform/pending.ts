@@ -4,6 +4,7 @@
  * cible qui ne se clone pas est abandonnée, le fichier reste.
  */
 import { hasErrorName, type PendingOpen, type PendingStore, type SaveTarget } from "./files";
+import { finished, lazyDb, result } from "./idb";
 
 export const PENDING_DB = "roomboard-fichiers";
 const STORE = "ouverture";
@@ -50,37 +51,8 @@ export function createUnavailablePendingStore(reason: string): PendingStore {
   };
 }
 
-function finished(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB : transaction refusée"));
-    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB : transaction annulée"));
-  });
-}
-
-function result<T>(r: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error ?? new Error("IndexedDB : lecture refusée"));
-  });
-}
-
 export function createIdbPendingStore(factory: IDBFactory, name: string = PENDING_DB): PendingStore {
-  let db: Promise<IDBDatabase> | null = null;
-  const open = (): Promise<IDBDatabase> => {
-    db ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const r = factory.open(name, 1);
-      r.onupgradeneeded = () => {
-        r.result.createObjectStore(STORE);
-      };
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error ?? new Error("IndexedDB indisponible"));
-    }).catch((e: unknown) => {
-      db = null; // une ouverture refusée n'est pas gardée : l'appel suivant réessaie
-      throw e;
-    });
-    return db;
-  };
+  const open = lazyDb(factory, name, 1, (d) => void d.createObjectStore(STORE));
   const write = async (row: Row): Promise<void> => {
     const tx = (await open()).transaction(STORE, "readwrite");
     tx.objectStore(STORE).put(row, KEY); // DataCloneError levée ici, avant toute attente
