@@ -5,13 +5,11 @@
 // l'utilisateur. Aucune requête hors de 127.0.0.1. Lancé par scripts/verifier.sh --e2e, sans option de capture.
 // Code de sortie : 0 réussi, 1 échec, 2 outil absent. Usage : node scripts/essais/c2-image-navigateur.mjs [--captures]
 // (--captures : docs/essais/c2-image-deposee.png).
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inflateRawSync } from "node:zlib";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, solidPng, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, sha256, solidPng, stageMouse, zipEntries } from "./commun.mjs";
 
 const LABEL = "C2 image";
 const LATER = "format pris en charge dans une prochaine version";
@@ -20,33 +18,6 @@ const W = 200;
 const H = 150;
 /** Point de dépôt de `dropFile` (commun.mjs:143) : 50 px à droite et en dessous du coin de #stage. */
 const DROP = [50, 50];
-
-/** Entrées d'un ZIP par son répertoire central : nom → octets (stored ou deflate). */
-function zipEntries(buf) {
-  let eocd = buf.length - 22;
-  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--;
-  if (eocd < 0) throw new Echec("fichier enregistré : ZIP sans répertoire central");
-  const count = buf.readUInt16LE(eocd + 10);
-  let p = buf.readUInt32LE(eocd + 16);
-  const out = new Map();
-  for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Echec("fichier enregistré : répertoire central illisible");
-    const method = buf.readUInt16LE(p + 10);
-    const csize = buf.readUInt32LE(p + 20);
-    const nlen = buf.readUInt16LE(p + 28);
-    const xlen = buf.readUInt16LE(p + 30);
-    const clen = buf.readUInt16LE(p + 32);
-    const local = buf.readUInt32LE(p + 42);
-    const name = buf.toString("utf8", p + 46, p + 46 + nlen);
-    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
-    const data = buf.subarray(start, start + csize);
-    out.set(name, method === 0 ? Buffer.from(data) : inflateRawSync(data));
-    p += 46 + nlen + xlen + clen;
-  }
-  return out;
-}
-
-const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 async function scenario(page, url, { captures, tmp }) {
   const errors = [];
