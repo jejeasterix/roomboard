@@ -90,6 +90,11 @@ describe("C13 : Worker ZIP des tableaux (mode board, D3)", () => {
     }
   });
 
+  it("T14 : keepBoardPath garde ./content.xml et .\\page1.svg (normalisés avant comparaison)", () => {
+    for (const ok of ["./content.xml", ".\\Content.XML", "./page1.svg", "./images/a.png"]) expect(keepBoardPath(ok), ok).toBe(true);
+    expect(keepBoardPath("./../evil.png")).toBe(false);
+  });
+
   it("C13 : keepBoardPath refuse les chemins qui sortent, __MACOSX, les dossiers, médias et autres", () => {
     for (const no of ["../evil.png", "images/../../evil.png", "/abs.png", "\\abs.png", "C:/x.png", "C:\\x.png", "__MACOSX/._a.png", "images/", "videos/film.mpg", "audios/son.mp3", "flash/a.swf", "images/a.emf", "metadata.rdf", "widgets/w.wgt/index.html", ""]) {
       expect(keepBoardPath(no), no).toBe(false);

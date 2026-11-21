@@ -1048,12 +1048,22 @@ describe("importFiles : tableaux .iwb et .ubz (C13, D4, D5)", () => {
     expect([isIwbName("Cours.IWB"), isIwbName(".iwb"), isUbzName("x.ubz"), isUbzName("x.zip")]).toEqual([true, false, true, false]);
   });
 
-  it("C13 : .iwb ni ZIP ni XML, .ubz XML : refusés (prochaine version), openBoard jamais appelé", async () => {
+  it("C13 : .ubz XML : refusé (prochaine version), openBoard jamais appelé", async () => {
     const openBoard = opener();
     const n = notify();
-    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles([file("faux.iwb", new Uint8Array([1, 2, 3])), file("faux.ubz", XML)]);
-    expect(r.refused).toEqual(["faux.iwb", "faux.ubz"]);
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles([file("faux.ubz", XML)]);
+    expect(r.refused).toEqual(["faux.ubz"]);
     expect(openBoard).not.toHaveBeenCalled();
+  });
+
+  it("T14 : un .iwb se reconnaît à son extension : BOM UTF-16, commentaire ou DOCTYPE ne sont pas « prochaine version » ; openBoard dit l'état du fichier", async () => {
+    const openBoard = opener(false);
+    const n = notify();
+    const t = (s: string) => new TextEncoder().encode(s);
+    const heads = [new Uint8Array([0xff, 0xfe, 0x3c, 0x00]), t("<!-- c --><iwb/>"), t("<!DOCTYPE iwb><iwb/>")];
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles(heads.map((h, i) => file(`x${i}.iwb`, h)));
+    expect(r.refused).toEqual([]);
+    expect(openBoard).toHaveBeenCalledTimes(3);
   });
 
   it("C13 : refus de openBoard (fichier endommagé) : failed, aucun message ajouté par l'importeur", async () => {
