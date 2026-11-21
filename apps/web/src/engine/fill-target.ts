@@ -2,11 +2,12 @@
  * Cible du pot (C6a, U28, DA3) : de l'élément le plus haut sous le point (`hitTest` tel quel, 6 px écran, D3) à la
  * commande ; null = aucune étape. Forme : bord (`edgeHit` du cœur, D5, DA2) → contour, sinon intérieur ; ligne, flèche,
  * trait : contour ; texte : mot sous le pointeur (UAX 29), sinon texte entier (D6, D7) ; tableau : mot de la cellule
- * par `SetTableCell` (D8), sinon remplissage de la cellule (D9) ; image, élément inconnu ou rien : fond de la page (D1,
- * D10). Un point de la bande de tolérance hors de la boîte d'un texte ou d'un tableau y est ramené (D7, PC10). Le pot
+ * par `SetTableCell` (D8), sinon remplissage de la cellule (D9) ; image : zone de pixels sous le point (C6b, B19 ; action `ImageFill`, écrite plus tard par la file du pot de
+ * l'application) ; élément inconnu ou rien : fond de la page (D1, D10). Un point de la bande de tolérance hors de la boîte d'un texte ou d'un tableau y est ramené (D7, PC10). Le pot
  * vise l'élément touché, jamais son groupe (D4).
  */
 import type { Command, CoreDocument, TableElement, TextElement } from "../core/api";
+import { sourcePixelAt } from "../core/image-params";
 import { formatSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix, isSegment } from "../core/shapes";
 import { cellAt, cellContent, cellInnerBox } from "./table-geom";
@@ -15,6 +16,21 @@ import { offsetAt, wordAt, type Measure } from "./text-layout";
 /** Tolérance de toucher, en px d'écran (celle de l'outil Texte, D3). */
 export const FILL_HIT_TOL_PX = 6;
 export type FillDoc = Pick<CoreDocument, "hitTest" | "element" | "edgeHit">;
+
+/** C6b (B5, B19) : remplissage d'une zone d'image demandé au point ; calculé et écrit par la file du pot
+ *  (`app/image-fill.ts`), jamais par le moteur. */
+export interface ImageFillAt {
+  readonly type: "ImageFill";
+  readonly page: string;
+  readonly id: string;
+  /** Pixel source sous le clic (`sourcePixelAt`, point de la bande de tolérance ramené dans la boîte). */
+  readonly seed: readonly [number, number];
+  readonly color: string | null;
+}
+/** Remplissage d'image avec la tolérance lue au relâché (B10). */
+export type ImageFillRequest = ImageFillAt & { readonly tolerance: number };
+/** Ce que l'outil Pot confie à la file (B13) : une commande vectorielle, ou un remplissage d'image. */
+export type FillRequest = { readonly command: Command } | ImageFillRequest;
 
 const clamp = (v: number, max: number): number => Math.min(Math.max(v, 0), max);
 /** Dans [0, max) : `cellAt` exclut le bord droit et le bas. */
@@ -60,7 +76,7 @@ function tableCommand(page: string, el: TableElement, x: number, y: number, colo
 
 /** Commande du pot au point (x, y) monde de `page`, caméra au `zoom` ; null : aucune étape (« Aucune » sur un contour
  *  ou un trait, D11). */
-export function fillCommand(doc: FillDoc, page: string, x: number, y: number, zoom: number, color: string | null, measure: Measure): Command | null {
+export function fillCommand(doc: FillDoc, page: string, x: number, y: number, zoom: number, color: string | null, measure: Measure): Command | ImageFillAt | null {
   const tol = FILL_HIT_TOL_PX / zoom;
   const id = doc.hitTest(page, x, y, tol);
   const el = id === null ? null : doc.element(id);
@@ -73,5 +89,9 @@ export function fillCommand(doc: FillDoc, page: string, x: number, y: number, zo
   }
   if (el.kind === "text") return textCommand(el, x, y, color, measure);
   if (el.kind === "table") return tableCommand(page, el, x, y, color, measure);
+  if (el.kind === "image") {
+    const seed = sourcePixelAt(el.transform, el.image, x, y, true);
+    return seed === null ? background(page, color) : { type: "ImageFill", page, id: el.id, seed, color };
+  }
   return background(page, color);
 }

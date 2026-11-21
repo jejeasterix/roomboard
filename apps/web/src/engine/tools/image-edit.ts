@@ -3,10 +3,10 @@
  * cadre à huit poignées, pipette, écritures `SetImageParams` (une étape chacune, matrice par `placeAfter`). Le moteur lui
  * passe les gestes de la scène pendant le rognage et la pipette (l'outil publié reste `select`) et Échap, Entrée, Suppr,
  * Ctrl+Z, Ctrl+Y (I28). Le brouillon des pixels survit aux écritures géométriques (Retourner, Tourner, Valider le
- * rognage), qui n'écrivent que la géométrie avec les pixels du document (I27). C6b étendra `restore` (`sourceAsset`).
+ * rognage), qui n'écrivent que la géométrie avec les pixels du document (I27). C6b (B11) : `restore` écrit `restore: true` (avec un `sourceAsset`, l'asset d'origine revient).
  */
 import type { Bounds, ImageData, ImageElement, ImageParams, Matrix } from "../../core/api";
-import { cropFromDisplay, screenScale, cropOf, displaySize, displayToSource, frameOf, geometryOf, paramsOf, pixelsOf, placeAfter } from "../../core/image-params";
+import { cropFromDisplay, screenScale, cropOf, displaySize, displayToSource, frameOf, geometryOf, paramsOf, pixelsOf, placeAfter, sourcePixelAt } from "../../core/image-params";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import { screenToWorld } from "../camera";
 import type { InputSample } from "../input/sampler";
@@ -102,11 +102,11 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
     } else deps.setPreview({ id, params: { ...geometryOf(paramsOf(el.image)), ...(pixelDraft ?? {}) }, matrix: el.transform });
     ctx.requestFrame?.();
   }
-  function write(params: ImageParams, geometric: boolean): boolean {
+  function write(params: ImageParams, geometric: boolean, restore = false): boolean {
     const el = current();
     if (el === null) return false;
     writing = geometric;
-    const change = ctx.run({ type: "SetImageParams", id, params, matrix: placeAfter(el.transform, el.image, params) });
+    const change = ctx.run({ type: "SetImageParams", id, params, matrix: placeAfter(el.transform, el.image, params), ...(restore ? { restore: true } : {}) });
     writing = false;
     if (change !== null && geometric) own.add(change.version);
     return change !== null;
@@ -135,12 +135,10 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
       if (s === undefined) return;
       if (picking !== null) {
         const el = current();
-        const p = el === null ? null : local(s, el.transform);
-        if (el === null || p === null) return;
-        const [bw, bh] = displaySize(el.image);
-        if (p[0] < 0 || p[1] < 0 || p[0] > bw || p[1] > bh) return; // hors de l'image : la pipette reste armée
-        const [sx, sy] = displayToSource(el.image, p[0], p[1]);
-        const c = deps.colorAt(el.image.asset, Math.min(el.image.w - 1, Math.floor(sx)), Math.min(el.image.h - 1, Math.floor(sy)));
+        if (el === null) return;
+        const px = sourcePixelAt(el.transform, el.image, ...screenToWorld(ctx.camera(), s.x, s.y), false);
+        if (px === null) return; // hors de l'image : la pipette reste armée
+        const c = deps.colorAt(el.image.asset, px[0], px[1]);
         if (c === null) return; // bitmap pas prêt : la pipette reste armée
         const done = picking;
         picking = null;
@@ -228,7 +226,7 @@ export function createImageEdit(deps: ImageEditDeps): ImageEditSession {
     },
     restore() {
       session.cancelMode();
-      const ok = write({}, false);
+      const ok = write({}, false, true);
       if (ok) pixelDraft = null;
       refresh();
       return ok;

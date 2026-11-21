@@ -3138,3 +3138,103 @@ describe("toElementView — image (C5)", () => {
     expect([crop0.length, color0, t0.length]).toEqual([0, undefined, 0]);
   });
 });
+
+// C6b (B2-B4, B11, B12, S2) : pot sur image et « Rétablir l'original », joués contre les deux cœurs.
+const NEXT = { id: "cd".repeat(32), name: "photo.png", mime: "image/png", size: 9 } as const;
+const LAST = { id: "ef".repeat(32), name: "photo.png", mime: "image/png", size: 7 } as const;
+/** Géométrie de `FULL` (rognage, retournement, quart de tour) : ce qu'un remplissage garde (B4). */
+const GEOMETRY: ImageParams = { crop: [10, 20, 300, 200], flipX: true, quarterTurns: 1 };
+
+describe.each(factories)("contrat C6b : $name", ({ f }) => {
+  const retouched = (d: CoreDocument, p: string): string => {
+    const id = d.apply({ type: "AddImage", page: p, asset: png, w: 640, h: 480, matrix: I }).ids[0] ?? "";
+    d.apply({ type: "SetImageParams", id, params: FULL, matrix: I });
+    return id;
+  };
+  const fill = (p: string, id: string, asset: AssetRef, color: string | null = "#facc15"): Command => ({ type: "Fill", page: p, target: { kind: "image", id, asset }, color });
+
+  it("Fill image : une étape ; nouvel asset, sourceAsset, géométrie gardée, pixels retirés ; Annuler rend tout", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = retouched(d, p);
+    const c = d.apply(fill(p, id, NEXT));
+    expect([c.pages, c.ids]).toEqual([[p], [id]]);
+    expect(imageOf(d, id)).toEqual({ asset: NEXT.id, w: 640, h: 480, sourceAsset: ABC, ...GEOMETRY });
+    expect(d.asset(NEXT.id)).toEqual(NEXT);
+    d.undo();
+    expect(imageOf(d, id)).toEqual({ asset: ABC, w: 640, h: 480, ...FULL });
+    d.free();
+  });
+
+  it("second remplissage : sourceAsset gardé ; rognage ensuite : sourceAsset gardé ; restore : l'original sans aucun champ, une étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = retouched(d, p);
+    d.apply(fill(p, id, NEXT));
+    d.apply(fill(p, id, LAST, null));
+    expect(imageOf(d, id)).toMatchObject({ asset: LAST.id, sourceAsset: ABC });
+    d.apply({ type: "SetImageParams", id, params: { ...GEOMETRY, flipY: true }, matrix: I });
+    expect(imageOf(d, id)).toMatchObject({ asset: LAST.id, sourceAsset: ABC, flipY: true });
+    const c = d.apply({ type: "SetImageParams", id, params: {}, matrix: I, restore: true });
+    expect(c.ids).toEqual([id]);
+    expect(imageOf(d, id)).toEqual({ asset: ABC, w: 640, h: 480 });
+    d.undo();
+    expect(imageOf(d, id)).toMatchObject({ asset: LAST.id, sourceAsset: ABC });
+    d.free();
+  });
+
+  it("restore sans sourceAsset : comportement de C5 ; image brute : aucune étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = retouched(d, p);
+    d.apply({ type: "SetImageParams", id, params: {}, matrix: I, restore: true });
+    expect(imageOf(d, id)).toEqual({ asset: ABC, w: 640, h: 480 });
+    unchanged(d, () => d.apply({ type: "SetImageParams", id, params: {}, matrix: I, restore: true }));
+    d.free();
+  });
+
+  it("même asset : aucune étape ; refus dans l'ordre du cœur, sans étape", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = retouched(d, p);
+    const stroke = commit(d, p, 100);
+    d.apply({ type: "AddPage", after: p });
+    const p2 = d.pageIds().find((x) => x !== p) ?? "";
+    unchanged(d, () => d.apply(fill(p, id, png)));
+    const bad = { ...NEXT, id: "x" };
+    const run = (cmd: Command): string => messageOf(() => d.apply(cmd));
+    unchanged(d, () => {
+      expect(run(fill("nope", id, NEXT, "#12"))).toBe(BAD_FILL);
+      expect(run(fill("nope", id, NEXT, null))).toBe("page inconnue : nope");
+      expect(run(fill(p, "nope", NEXT, null))).toBe("élément inconnu : nope");
+      expect(run(fill(p2, id, NEXT, null))).toBe(`élément inconnu : ${id}`);
+      expect(run(fill(p, stroke, bad, null))).toBe(BAD_FILL);
+      expect(run(fill(p, id, bad, null))).toBe(BAD_ASSET);
+    });
+    d.free();
+  });
+
+  it("enregistré puis relu : sourceAsset gardé ; cités : original et version courante ; métadonnée intermédiaire gardée", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = retouched(d, p);
+    d.apply(fill(p, id, NEXT));
+    d.apply(fill(p, id, LAST, null));
+    expect(d.citedAssets().map((a) => a.id)).toEqual([ABC, LAST.id].sort());
+    const r = f.load(d.save("2026-11-21T00:00:00Z", "0.1.0"));
+    expect(imageOf(r, id)).toMatchObject({ asset: LAST.id, sourceAsset: ABC });
+    expect(r.citedAssets().map((a) => a.id)).toEqual([ABC, LAST.id].sort());
+    expect(r.asset(NEXT.id)).toEqual(NEXT);
+    r.free();
+    d.free();
+  });
+});
+
+describe("contrôle de forme C6b (sourceAsset)", () => {
+  const t = [1, 0, 0, 1, 0, 0];
+  it("sourceAsset chaîne gardé ; absent : absent ; autre type : ElementView invalide", () => {
+    expect(toElementView({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1, sourceAsset: EMPTY_HASH } })).toEqual({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1, sourceAsset: EMPTY_HASH } });
+    expect(toElementView({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1 } })).toEqual({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1 } });
+    expect(() => toElementView({ id: "i", kind: "image", transform: t, image: { asset: ABC, w: 1, h: 1, sourceAsset: 3 } })).toThrow("ElementView invalide");
+  });
+});

@@ -21,6 +21,7 @@ import {
   placeAfter,
   readParams,
   sameParams,
+  sourcePixelAt,
   sourceToDisplay,
   turnShown,
 } from "./image-params";
@@ -197,5 +198,37 @@ describe("domaine, neutres et clé des pixels (I4, I5, I19)", () => {
     expect(pixelKey(img({ brightness: 11 }))).not.toBe(k);
     expect(pixelKey({ ...img({ brightness: 10 }), asset: "cd".repeat(32) })).not.toBe(k);
     expect(pixelKey(img({ transparent: WHITE }))).not.toBe(pixelKey(img({ transparent: { ...WHITE, contiguous: false } })));
+  });
+});
+
+describe("pixel source sous le point (C6b, B5)", () => {
+  it("sans réglage : monde → pixel entier ; bord bas-droit borné à w − 1, h − 1", () => {
+    const m: Matrix = [2, 0, 0, 2, 100, 50];
+    expect(sourcePixelAt(m, img(), 100 + 2 * 10.7, 50 + 2 * 20.2, false)).toEqual([10, 20]);
+    expect(sourcePixelAt(m, img(), 100 + 2 * 200, 50 + 2 * 100, false)).toEqual([199, 99]);
+  });
+  it("hors de la boîte : null pour la pipette, ramené dans l'image pour le pot (HB16)", () => {
+    const m: Matrix = [1, 0, 0, 1, 0, 0];
+    expect(sourcePixelAt(m, img(), 203, 50, false)).toBeNull();
+    expect(sourcePixelAt(m, img(), 203, 50, true)).toEqual([199, 50]);
+    expect(sourcePixelAt(m, img(), -4, -4, true)).toEqual([0, 0]);
+  });
+  it("rognage, retournements, quarts de tour : inverse de sourceToDisplay, 16 combinaisons", () => {
+    for (const p of combos) {
+      const i = img({ ...p, crop: [10, 5, 80, 40] });
+      const [dx, dy] = sourceToDisplay(i, 30.5, 20.5);
+      expect(sourcePixelAt([1, 0, 0, 1, 0, 0], i, dx, dy, false), JSON.stringify(p)).toEqual([30, 20]);
+    }
+  });
+  it("RF5 : bord de la boîte avec quart de tour et retournement : la graine reste un pixel du rognage", () => {
+    const i = img({ crop: [10, 5, 80, 40], quarterTurns: 1, flipX: true });
+    const [bw, bh] = displaySize(i);
+    for (const [x, y] of [[bw, bh], [bw + 3, bh + 3], [0, bh + 3], [-3, 0]] as const) {
+      const s = sourcePixelAt([1, 0, 0, 1, 0, 0], i, x, y, true);
+      expect(s !== null && s[0] >= 10 && s[0] <= 89 && s[1] >= 5 && s[1] <= 44, `${x},${y} → ${String(s)}`).toBe(true);
+    }
+  });
+  it("matrice non inversible : null", () => {
+    expect(sourcePixelAt([0, 0, 0, 0, 0, 0], img(), 1, 1, true)).toBeNull();
   });
 });

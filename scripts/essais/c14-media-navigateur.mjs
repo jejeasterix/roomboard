@@ -9,20 +9,17 @@
 // la vidéo est un WebM VP8 enregistré dans une page vierge (canvas animé + MediaRecorder, 2,4 s), le son un WAV écrit
 // à la main (PCM 16 bits, en-tête RIFF). Ni ffmpeg, ni `recordVideo` de Playwright, ni fichier commité.
 // Usage : node scripts/essais/c14-media-navigateur.mjs [--captures] (docs/essais/c14-media-lecture.png).
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inflateRawSync } from "node:zlib";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, item, loadPlaywright, serve, sha256, stageBox, stageMouse, zipEntries } from "./commun.mjs";
 
 const LABEL = "C14 média";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const DURATION = 2.4;
 const COLORS = { rouge: [255, 0, 0], vert: [0, 200, 0], bleu: [0, 0, 255], jaune: [255, 255, 0] };
 const PRE_C14 = join(ROOT, "crates", "roomboard-core", "tests", "fixtures", "image-c2.roomboard");
-const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 /** WAV mono 8 kHz, PCM 16 bits, 440 Hz, en-tête RIFF écrit à la main. */
 function makeWav(seconds) {
@@ -98,31 +95,6 @@ async function makeWebm(context, seconds) {
   } finally {
     await p.close();
   }
-}
-
-/** Entrées d'un .roomboard (zip), recopié de `c2-image-navigateur.mjs` (à fondre dans `commun.mjs` après C5). */
-function zipEntries(buf) {
-  let eocd = buf.length - 22;
-  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--;
-  if (eocd < 0) throw new Echec("fichier enregistré : ZIP sans répertoire central");
-  const count = buf.readUInt16LE(eocd + 10);
-  let p = buf.readUInt32LE(eocd + 16);
-  const out = new Map();
-  for (let i = 0; i < count; i++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Echec("fichier enregistré : répertoire central illisible");
-    const method = buf.readUInt16LE(p + 10);
-    const csize = buf.readUInt32LE(p + 20);
-    const nlen = buf.readUInt16LE(p + 28);
-    const xlen = buf.readUInt16LE(p + 30);
-    const clen = buf.readUInt16LE(p + 32);
-    const local = buf.readUInt32LE(p + 42);
-    const name = buf.toString("utf8", p + 46, p + 46 + nlen);
-    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
-    const data = buf.subarray(start, start + csize);
-    out.set(name, method === 0 ? Buffer.from(data) : inflateRawSync(data));
-    p += 46 + nlen + xlen + clen;
-  }
-  return out;
 }
 
 const nearest = ([r, g, b]) => {

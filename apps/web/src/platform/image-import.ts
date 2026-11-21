@@ -11,8 +11,8 @@ import type { Measure } from "../engine/text-layout";
 import { messageOf } from "./controller";
 import type { Point } from "./files";
 import type { ImportHandler } from "./import";
-
-export type ImageKind = "png" | "jpeg" | "gif" | "webp" | "bmp" | "ico" | "svg" | "avif" | "heic";
+import { DISPLAY_MAX, decodeImage as decodeWith, ImageTooLargeError, MAX_PIXELS, TOO_MANY_PIXELS, type DecodePorts, type DecodedImage, type ImageKind } from "./image-decode";
+export { DISPLAY_MAX, ImageTooLargeError, MAX_PIXELS, TOO_MANY_PIXELS, type DecodePorts, type DecodedImage, type ImageKind } from "./image-decode";
 
 export const IMAGE_MIME: Readonly<Record<ImageKind, string>> = Object.freeze({
   png: "image/png",
@@ -27,13 +27,10 @@ export const IMAGE_MIME: Readonly<Record<ImageKind, string>> = Object.freeze({
 });
 
 export const HEAD_BYTES = 4096;
-export const MAX_PIXELS = 100_000_000;
-export const DISPLAY_MAX = 4096;
 export const CASCADE_STEP = 24;
 export const FIT_SHARE = 0.8;
 export const HEIC_UNREADABLE = "HEIC illisible sur ce poste";
 export const TAB_CLOSED_MESSAGE = "onglet fermé pendant l'import, image non insérée";
-export const TOO_MANY_PIXELS = "image trop grande (plus de 100 millions de pixels)";
 /** Le SOFn d'un JPEG est cherché dans le premier Mio (blocs EXIF compris). */
 const JPEG_SCAN = 1 << 20;
 
@@ -111,27 +108,7 @@ export async function probeSize(blob: Blob, kind: ImageKind): Promise<{ readonly
   return null;
 }
 
-export interface DecodedImage {
-  readonly bitmap: ImageBitmap;
-  /** Taille source orientée (EXIF appliqué), en pixels. */
-  readonly w: number;
-  readonly h: number;
-}
-
-export interface DecodePorts {
-  createImageBitmap(src: ImageBitmapSource, opts?: ImageBitmapOptions): Promise<ImageBitmap>;
-  /** SVG : `HTMLImageElement` hors DOM sur une URL `blob:` (R13). */
-  loadSvg(blob: Blob): Promise<ImageBitmapSource>;
-}
-
 export type ImageDecoder = (blob: Blob, kind: ImageKind) => Promise<DecodedImage>;
-
-export class ImageTooLargeError extends Error {
-  constructor() {
-    super(TOO_MANY_PIXELS);
-    this.name = "ImageTooLargeError";
-  }
-}
 
 export function browserDecodePorts(): DecodePorts {
   return {
@@ -153,34 +130,10 @@ export function browserDecodePorts(): DecodePorts {
   };
 }
 
-/** Décode ; refuse au-delà de 100 Mpx (bitmap fermé) ; côté le plus long au-delà de `max` : bitmap d'affichage réduit. */
-export async function decodeImage(
-  blob: Blob,
-  kind: ImageKind,
-  max = DISPLAY_MAX,
-  ports: DecodePorts = browserDecodePorts(),
-): Promise<DecodedImage> {
-  const source: ImageBitmapSource = kind === "svg" ? await ports.loadSvg(blob) : blob;
-  const full = await ports.createImageBitmap(source, { imageOrientation: "from-image" });
-  const w = full.width;
-  const h = full.height;
-  if (w * h > MAX_PIXELS) {
-    full.close();
-    throw new ImageTooLargeError();
-  }
-  const side = Math.max(w, h);
-  if (side <= max) return { bitmap: full, w, h };
-  const k = max / side;
-  try {
-    const bitmap = await ports.createImageBitmap(full, {
-      resizeWidth: Math.max(1, Math.round(w * k)),
-      resizeHeight: Math.max(1, Math.round(h * k)),
-      resizeQuality: "high",
-    });
-    return { bitmap, w, h };
-  } finally {
-    full.close();
-  }
+/** Décode avec les ports du navigateur par défaut (`image-decode.ts`, B25) ; refuse au-delà de 100 Mpx (bitmap fermé) ;
+ *  côté le plus long au-delà de `max` : bitmap d'affichage réduit. */
+export function decodeImage(blob: Blob, kind: ImageKind, max = DISPLAY_MAX, ports: DecodePorts = browserDecodePorts()): Promise<DecodedImage> {
+  return decodeWith(blob, kind, max, ports);
 }
 
 /** Rectangle du stage actif en px CSS de la fenêtre (`getBoundingClientRect`). */

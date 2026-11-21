@@ -39,8 +39,12 @@ export interface Change {
 }
 
 /** Cible du pot (C6a, D12) : contour (`color` d'une forme ou d'un trait), intérieur (`fill` d'un rectangle ou d'une
- *  ellipse), fond de la page (`background`). */
-export type FillTarget = { readonly kind: "edge" | "inside"; readonly id: string } | { readonly kind: "background" };
+ *  ellipse), fond de la page (`background`) ; C6b (B2) : image, avec le nouvel asset calculé par la page (pixels remplis
+ *  ou effacés) ; `color` y est contrôlée, jamais écrite. */
+export type FillTarget =
+  | { readonly kind: "edge" | "inside"; readonly id: string }
+  | { readonly kind: "background" }
+  | { readonly kind: "image"; readonly id: string; readonly asset: AssetRef };
 
 export type Command =
   | { readonly type: "AddPage"; readonly after: string | null }
@@ -152,8 +156,9 @@ export type Command =
   /** C6a (D12) : color null = « Aucune » (intérieur retiré, fond #ffffff, contour inchangé) ; même valeur : aucune étape. */
   | { readonly type: "Fill"; readonly page: string; readonly target: FillTarget; readonly color: string | null }
   /** C5 (I6) : état voulu complet des réglages (neutres retirés par le cœur) et nouvelle matrice (placeAfter, I9) ;
-   *  même état et même matrice : aucune étape ; hors domaine : BAD_IMAGE_PARAMS_MESSAGE. */
-  | { readonly type: "SetImageParams"; readonly id: string; readonly params: ImageParams; readonly matrix: Matrix }
+   *  même état et même matrice : aucune étape ; hors domaine : BAD_IMAGE_PARAMS_MESSAGE. C6b (B11) : `restore` : avec un
+   *  `sourceAsset`, l'asset d'origine revient dans la même étape. */
+  | { readonly type: "SetImageParams"; readonly id: string; readonly params: ImageParams; readonly matrix: Matrix; readonly restore?: boolean }
   /** C3 (Z1) : deux unités au moins (objet seul ou groupe extérieur entier) d'une même page ; un id d'un groupe vaut tout
    *  son groupe extérieur ; ids = éléments écrits, triés. */
   | { readonly type: "Group"; readonly ids: readonly string[] }
@@ -183,8 +188,9 @@ export interface ImageParams {
   readonly contrast?: number;
   readonly transparent?: TransparentColor;
 }
-/** Image (U5) : `w`, `h` = taille source en pixels ; réglages de C5 à plat (I8 : boîte affichée, `displaySize`). */
-export type ImageData = { readonly asset: string; readonly w: number; readonly h: number } & ImageParams;
+/** Image (U5) : `w`, `h` = taille source en pixels ; réglages de C5 à plat (I8 : boîte affichée, `displaySize`) ; C6b
+ *  (B12) : `sourceAsset` = asset d'avant le premier remplissage au pot, absent sinon. */
+export type ImageData = { readonly asset: string; readonly w: number; readonly h: number; readonly sourceAsset?: string } & ImageParams;
 /** C14 : types de média acceptés. */
 export type MediaType = "video" | "audio";
 /** Média (C14) : boîte locale (0, 0)-(w, h) ; `duration` 0 = inconnue ; `trimEnd` null = jusqu'à la fin. */

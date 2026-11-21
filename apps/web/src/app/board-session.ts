@@ -44,6 +44,7 @@ import { createTableTool } from "../engine/tools/table";
 import { createTextTool, type TextTool } from "../engine/tools/text";
 import type { TableTool } from "../engine/tools/tool";
 import type { AppBenchDeps } from "./banc";
+import { createFillQueue } from "./image-fill";
 import { stageTags } from "./stage-tags";
 import { watchDpr } from "./mesure-outils";
 import { createTablePicker } from "./table-picker";
@@ -169,6 +170,16 @@ async function buildBoardSession(
     onState: () => remark(),
   });
   undo.push(() => images.dispose());
+  // C6b (DAB2, B13) : une file du pot par onglet ; mêmes magasin, cache et lanceur que les retouches ; état dans data-pot.
+  const fillQueue = createFillQueue({
+    doc,
+    assets,
+    images,
+    ...(runner === undefined ? {} : { runner }),
+    report: (m) => report(m),
+    onState: () => remark(),
+  });
+  undo.push(() => fillQueue.dispose());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
   // Fond `pdf-page` (C12, DAPF2) : tuiles par palier, `redraw` à chaque arrivée (patron R16). Libérées à la
   // désactivation (PF32 : 12 onglets) et recréées au premier dessin suivant.
@@ -265,7 +276,7 @@ async function buildBoardSession(
         tableTool = createTableTool(ctx, editor, picker, style, measure);
         return tableTool;
       },
-      fill: (ctx, color) => createFillTool(ctx, color, measure),
+      fill: (ctx, color, tolerance) => createFillTool(ctx, color, measure, { tolerance, submit: (r, run) => fillQueue.submit(r, run) }),
     },
   });
 
@@ -439,7 +450,7 @@ async function buildBoardSession(
     markMedia();
     stage.dataset["elements"] = String(s.elementCount);
     stage.dataset["version"] = String(s.version);
-    const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage) });
+    const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage), pot: fillQueue.state() });
     stage.dataset["page"] = tags.page;
     stage.dataset["selection"] = tags.selection;
     stage.dataset["bounds"] = tags.bounds;
@@ -451,6 +462,7 @@ async function buildBoardSession(
     stage.dataset["grouped"] = tags.grouped;
     stage.dataset["pixels"] = tags.pixels;
     stage.dataset["image"] = tags.image;
+    stage.dataset["pot"] = tags.pot;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
   };
   mark(engine.state());
@@ -543,6 +555,8 @@ async function buildBoardSession(
       middlePan.dispose();
       sampler.dispose();
       engine.dispose();
+      // Avant le lanceur : un calcul arrêté rend null, la file fermée n'écrit plus ni ne relit le document (RF4).
+      fillQueue.dispose();
       runner?.dispose();
       players.dispose();
       dropProbe();

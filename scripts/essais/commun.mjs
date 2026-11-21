@@ -7,7 +7,8 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { deflateSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { deflateSync, inflateRawSync } from "node:zlib";
 
 export const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const DIST = join(ROOT, "apps", "web", "dist");
@@ -205,3 +206,31 @@ export function rgbPng(w, h, at) {
 }
 /** PNG RVB 8 bits d'une seule couleur. */
 export const solidPng = (w, h, rgb) => rgbPng(w, h, () => rgb);
+/** Entrées d'un ZIP (.roomboard) par son répertoire central : nom → octets (stored ou deflate). Repris de
+ *  `c2-image-navigateur.mjs` et `c14-media-navigateur.mjs`, qui en avaient deux copies (C6b, B24). */
+export function zipEntries(buf) {
+  let eocd = buf.length - 22;
+  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--;
+  if (eocd < 0) throw new Echec("fichier enregistré : ZIP sans répertoire central");
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  const out = new Map();
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Echec("fichier enregistré : répertoire central illisible");
+    const method = buf.readUInt16LE(p + 10);
+    const csize = buf.readUInt32LE(p + 20);
+    const nlen = buf.readUInt16LE(p + 28);
+    const xlen = buf.readUInt16LE(p + 30);
+    const clen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.toString("utf8", p + 46, p + 46 + nlen);
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + csize);
+    out.set(name, method === 0 ? Buffer.from(data) : inflateRawSync(data));
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
+}
+
+/** Empreinte SHA-256 en hexadécimal minuscule (nom d'entrée `assets/<sha>.<ext>`). */
+export const sha256 = (b) => createHash("sha256").update(b).digest("hex");

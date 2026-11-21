@@ -24,6 +24,8 @@ export interface ToolbarView {
   readonly canPaste?: boolean;
   /** C5 (I25) : id de l'image sélectionnée seule ; absent ou null : aucune (bouton « Image » grisé). */
   readonly selectionImage?: string | null;
+  /** C6b (B10) : tolérance du pot sur une image, 0 à 100 ; absente : 5 (défaut du moteur). */
+  readonly fillTolerance?: number;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 

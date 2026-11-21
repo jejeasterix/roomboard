@@ -17,9 +17,13 @@ import {
   type ToolId,
   type ToolItem,
 } from "../toolbar";
+import { DEFAULT_FILL_TOLERANCE } from "../engine/engine";
 import { FormatRow } from "./FormatRow";
 import { SelectionRow } from "./SelectionRow";
 import { itemState, type ToolbarView } from "./item-state";
+
+/** Libellé du curseur du pot (C6b, B10). */
+const FILL_TOLERANCE_LABEL = "Tolérance";
 
 /** Préréglages d'un profil, par outil (`Profile["presets"]`). */
 export type PresetTable = Readonly<Record<ToolId, readonly Preset[]>>;
@@ -83,10 +87,12 @@ function toolOf(choice: string): ToolId | null {
 }
 
 /** Rangée contextuelle (C1, P18, P19) : un bouton `data-preset` par préréglage de l'outil actif, sans état enfoncé.
- * Pot actif (C6a, D16) : ses couleurs (`fillChoices`), puis « Aucune » (`data-fill-none`). */
+ * Pot actif (C6a, D16) : ses couleurs (`fillChoices`), puis « Aucune » (`data-fill-none`).
+ * C6b (B10) : puis le curseur de tolérance (`data-fill-tolerance`). */
 function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<ToolbarView>; host: ToolbarHost }): JSX.Element {
   const tool = createMemo(() => toolOf(props.view().tool));
   const isFill = createMemo(() => tool() === "fill");
+  const tolerance = createMemo(() => props.view().fillTolerance ?? DEFAULT_FILL_TOLERANCE);
   const list = createMemo((): readonly { readonly id: string; readonly label: string; readonly color?: string }[] => {
     const t = tool();
     if (t === null) return [];
@@ -112,6 +118,20 @@ function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<Toolb
           <span class="rb-swatch" aria-hidden="true" style={{ "background-color": "transparent" }} />
           {FILL_NONE_LABEL}
         </button>
+        <label class="rb-fill-tolerance" title={`${FILL_TOLERANCE_LABEL} ${tolerance()}`}>
+          <span class="rb-fill-tolerance-label">{FILL_TOLERANCE_LABEL}</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            data-fill-tolerance
+            aria-label={FILL_TOLERANCE_LABEL}
+            value={tolerance()}
+            onInput={(e) => props.host.fillTolerance(Number(e.currentTarget.value))}
+          />
+          <span data-fill-tolerance-value>{tolerance()}</span>
+        </label>
       </Show>
     </Show>
   );

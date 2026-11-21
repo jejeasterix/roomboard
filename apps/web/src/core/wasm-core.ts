@@ -198,9 +198,12 @@ export function toElementView(v: unknown): ElementView | null {
     case "image": {
       const i = v["image"];
       if (!isRecord(i)) throw new Error(ELEMENT);
-      const { asset, w, h } = i;
-      if (typeof asset !== "string" || typeof w !== "number" || typeof h !== "number") throw new Error(ELEMENT);
-      return { ...base, kind, image: { asset, w, h, ...toImageParams(i) } };
+      const { asset, w, h, sourceAsset } = i;
+      if (typeof asset !== "string" || typeof w !== "number" || typeof h !== "number" || (sourceAsset !== undefined && typeof sourceAsset !== "string")) {
+        throw new Error(ELEMENT);
+      }
+      // C6b (B12) : `sourceAsset` absent quand le cœur ne l'envoie pas (Option::None), recopié sinon.
+      return { ...base, kind, image: { asset, w, h, ...(sourceAsset !== undefined ? { sourceAsset } : {}), ...toImageParams(i) } };
     }
     case "media": {
       const m = v["media"];
@@ -527,13 +530,17 @@ class WasmCoreDocument implements CoreDocument {
           ),
         );
       case "Fill": {
-        // null → undefined : Option::None côté Rust (« Aucune ») ; le fond n'a pas d'id.
         const t = cmd.target;
+        // C6b (B2) : une image reçoit le nouvel asset à plat ; null → undefined : Option::None (« Aucune ») ; le fond n'a pas d'id.
+        if (t.kind === "image") {
+          const a = t.asset;
+          return toChange(this.d.fill_image(cmd.page, t.id, a.id, a.name, a.mime, a.size, cmd.color ?? undefined));
+        }
         return toChange(this.d.fill(cmd.page, t.kind, t.kind === "background" ? undefined : t.id, cmd.color ?? undefined));
       }
       case "SetImageParams":
-        // C5 (I6) : réglages à plat ; seule la référence de l'asset vit dans l'élément, jamais ses octets.
-        return toChange(this.d.set_image_params(cmd.id, ...imageParamsArgs(cmd.params), new Float64Array(cmd.matrix)));
+        // C5 (I6) : réglages à plat ; seule la référence de l'asset vit dans l'élément ; C6b (B11) : `restore`.
+        return toChange(this.d.set_image_params(cmd.id, ...imageParamsArgs(cmd.params), new Float64Array(cmd.matrix), cmd.restore === true));
     }
   }
 

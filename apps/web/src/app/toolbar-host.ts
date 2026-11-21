@@ -16,6 +16,8 @@ export interface ToolbarHost {
   tableFill(fill: string | null): void;
   /** « Aucune » de la rangée du pot (C6a, PC6) : null retire ; ne change ni l'outil ni le stylo. */
   fillColor(color: string | null): void;
+  /** Curseur de tolérance de la rangée du pot (C6b, B10) : relayé au moteur ; ne change pas l'outil. */
+  fillTolerance(t: number): void;
   /** Bouton de la rangée Format (C7b, R13) : relayé au moteur, puis à l'outil actif. */
   textFormat(a: FormatAction): void;
   /** C3 (Z13) : bouton de la rangée Sélection. */
@@ -24,7 +26,7 @@ export interface ToolbarHost {
   imagePanel(): void;
 }
 export interface HostTargets {
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "tableAction" | "tableFill" | "textFormat">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
   toggle(panel: "settings" | "profiles" | "grid" | "image"): void;
@@ -87,6 +89,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     },
     dropFiles: (files, at) => t.importFiles(files, at),
     fillColor: (color) => t.engine().setFillColor(color),
+    fillTolerance: (v) => t.engine().setFillTolerance(v),
     tableFill: (fill) => t.engine().tableFill(fill),
     textFormat: (a) => t.engine().textFormat(a),
     selection: (a) => t.selection(a),

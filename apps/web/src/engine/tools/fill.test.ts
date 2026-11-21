@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Command } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
+import type { FillRequest } from "../fill-target";
 import { createFillTool } from "./fill";
 import type { ToolContext } from "./tool";
 
@@ -28,7 +29,7 @@ function setup() {
   let color: string | null = "#facc15";
   const tool = createFillTool(ctx, () => color, (s) => s.length * 10);
   const rect = doc.apply({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
-  return { doc, page, runs, tool, rect, setColor: (c: string | null) => (color = c) };
+  return { doc, page, runs, tool, rect, ctx, setColor: (c: string | null) => (color = c) };
 }
 
 describe("outil Pot (C6a, D15)", () => {
@@ -80,6 +81,33 @@ describe("outil Pot (C6a, D15)", () => {
     const s = setup();
     s.tool.close(9, "end");
     s.tool.begin(1, [at(Number.NaN, 0)]);
+    s.tool.close(1, "end");
+    expect(s.runs).toEqual([]);
+  });
+
+  it("C6b : avec la file, toutes les actions y passent ; image : ImageFill avec la tolérance lue au relâché (B13, B19)", () => {
+    const s = setup();
+    const submitted: FillRequest[] = [];
+    let tol = 5;
+    const queue = { tolerance: () => tol, submit: (r: FillRequest) => void submitted.push(r) };
+    const tool = createFillTool(s.ctx, () => "#facc15", (t) => t.length * 10, queue);
+    const img = s.doc.apply({ type: "AddImage", page: s.page, asset: { id: "a".repeat(64), name: "x.png", mime: "image/png", size: 1 }, w: 100, h: 100, matrix: [1, 0, 0, 1, 600, 100] }).ids[0] ?? "";
+    tool.begin(1, [at(410, 320)]);
+    tool.close(1, "end");
+    tool.begin(2, [at(2 * 650 + 10, 2 * 150 + 20)]);
+    tol = 12;
+    tool.close(2, "end");
+    expect(submitted).toEqual([
+      { command: { type: "Fill", page: s.page, target: { kind: "inside", id: s.rect }, color: "#facc15" } },
+      { type: "ImageFill", page: s.page, id: img, seed: [50, 50], color: "#facc15", tolerance: 12 },
+    ]);
+    expect(s.runs).toEqual([]);
+  });
+
+  it("C6b : sans file, un clic sur une image n'écrit rien (aucun repli sur le fond)", () => {
+    const s = setup();
+    s.doc.apply({ type: "AddImage", page: s.page, asset: { id: "a".repeat(64), name: "x.png", mime: "image/png", size: 1 }, w: 100, h: 100, matrix: [1, 0, 0, 1, 600, 100] });
+    s.tool.begin(1, [at(2 * 650 + 10, 2 * 150 + 20)]);
     s.tool.close(1, "end");
     expect(s.runs).toEqual([]);
   });

@@ -3,7 +3,7 @@
 //! dans un Worker jetable, DAB4) ; pages vectorielles en PDF (`pdf::write_pages`, C12, PF22, Worker jetable). Chaque
 //! fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS
 //! panique).
-//! C5 (U30, I17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
+//! C5 (U30, I17) ; C6b (B17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
 use roomboard_core::format::Parts;
 use roomboard_formats::container::{self, AssetBytes};
 use roomboard_formats::pdf::{write_pages, DisplayList, ImageInput};
@@ -193,9 +193,9 @@ pub fn image_flood_fill_inner(
     h: u32,
     seed: (u32, u32),
     tolerance: u8,
-    rgb: [u8; 3],
-) -> Result<(), String> {
-    pixels::flood_fill(px, w, h, seed, tolerance, rgb).map_err(|e| e.to_string())
+    paint: Option<[u8; 3]>,
+) -> Result<u32, String> {
+    pixels::flood_fill(px, w, h, seed, tolerance, paint).map_err(|e| e.to_string())
 }
 
 /// C5 (I17) : sans état ; `px` revient modifié côté JS (copie rendue par wasm-bindgen).
@@ -226,7 +226,8 @@ pub fn image_adjust(px: &mut [u8], brightness: i8, contrast: i8) {
     image_adjust_inner(px, brightness, contrast);
 }
 
-/// Pot sur pixels (prêt pour C6b) ; aucun appelant en C5.
+/// Pot sur une image (C6b, B17) : `clear` efface la zone (`r`, `g`, `b` ignorés), sinon peinture opaque ; rend le
+/// nombre de pixels changés ; `px` revient modifié côté JS.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn image_flood_fill(
@@ -239,8 +240,10 @@ pub fn image_flood_fill(
     r: u8,
     g: u8,
     b: u8,
-) -> Result<(), JsError> {
-    image_flood_fill_inner(px, w, h, (x, y), tolerance, [r, g, b]).map_err(|m| JsError::new(&m))
+    clear: bool,
+) -> Result<u32, JsError> {
+    let paint = (!clear).then_some([r, g, b]);
+    image_flood_fill_inner(px, w, h, (x, y), tolerance, paint).map_err(|m| JsError::new(&m))
 }
 
 /// Première feuille d'un classeur (C10b, F23) : grille de textes, fusions en quadruplets, dimensions de la source.
@@ -488,7 +491,15 @@ mod tests {
         image_adjust_inner(&mut px, 50, 0);
         assert_eq!(px, vec![228, 228, 228, 50]);
         let mut px = vec![10, 10, 10, 255, 10, 10, 10, 255];
-        image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, [1, 2, 3]).expect("calcul");
+        assert_eq!(
+            image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, Some([1, 2, 3])),
+            Ok(2)
+        );
         assert_eq!(px, vec![1, 2, 3, 255, 1, 2, 3, 255]);
+        assert_eq!(
+            image_flood_fill_inner(&mut px, 2, 1, (0, 0), 0, None),
+            Ok(2)
+        );
+        assert_eq!(px, vec![0; 8], "effacer : transparent");
     }
 }

@@ -35,8 +35,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -71,5 +71,12 @@ describe("stageTags (C5, I33)", () => {
     const t = stageTags(base, { pixels: "pret", image: [160, 120] });
     expect([t.pixels, t.image]).toEqual(["pret", "160x120"]);
     expect(stageTags(base, { pixels: "echec", image: null }).image).toBe("");
+  });
+});
+
+describe("stageTags (C6b, B21)", () => {
+  it("pot : état de la file du pot ; absent : vide", () => {
+    expect(stageTags(base).pot).toBe("");
+    expect(stageTags(base, { pot: "attente" }).pot).toBe("attente");
   });
 });

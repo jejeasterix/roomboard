@@ -91,7 +91,7 @@ import {
 import { isAssetId } from "./asset-store";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
-import { displaySize, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
+import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
 
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
 interface FakeUnknown {
@@ -1074,6 +1074,28 @@ class FakeDocument implements CoreDocument {
             return { pages: [cmd.page], ids: [], removed: [] };
           });
         }
+        if (t.kind === "image") {
+          // Ordre du cœur (`image.rs`, `cmd_fill_image`, B2) : élément de cette page, image lisible, asset ; même asset :
+          // aucune étape. Pixels de C5 retirés (cuits par la page), géométrie gardée, `sourceAsset` posé au premier
+          // remplissage seulement, métadonnée du nouvel asset (K3).
+          const e = page.elements.find((x) => x.id === t.id);
+          if (!e) throw new Error(`élément inconnu : ${t.id}`);
+          const im = e.image;
+          if (!im || e.malformed) throw new Error(MESSAGES.badFill);
+          if (!validAsset(t.asset)) throw new Error(MESSAGES.badAsset);
+          if (im.asset === t.asset.id) return this.unchanged();
+          return this.step((s) => {
+            const p = s.pages.find((q) => q.id === cmd.page);
+            const i = p ? p.elements.findIndex((x) => x.id === t.id) : -1;
+            const old = p?.elements[i];
+            if (p && old?.image) {
+              const o = old.image;
+              p.elements[i] = { ...old, image: { asset: t.asset.id, w: o.w, h: o.h, sourceAsset: o.sourceAsset ?? o.asset, ...geometryOf(paramsOf(o)) } };
+            }
+            putMeta(s.assets, t.asset);
+            return { pages: [cmd.page], ids: [t.id], removed: [] };
+          });
+        }
         const e = page.elements.find((x) => x.id === t.id);
         if (!e) throw new Error(`élément inconnu : ${t.id}`);
         const shape = e.shape;
@@ -1106,14 +1128,19 @@ class FakeDocument implements CoreDocument {
         if (next === null) throw new Error(MESSAGES.badImageParams);
         if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
         const sameMatrix = cmd.matrix.every((v, k) => v === found.element.transform[k]);
-        if (sameParams(paramsOf(im), next) && sameMatrix) return this.unchanged();
+        // C6b (B11) : `restore` avec un `sourceAsset` : l'asset d'origine revient, `sourceAsset` retiré (une étape).
+        const restoring = cmd.restore === true && im.sourceAsset !== undefined;
+        if (sameParams(paramsOf(im), next) && sameMatrix && !restoring) return this.unchanged();
         const page = found.page.id;
         return this.step((s) => {
           const p = s.pages.find((q) => q.id === page);
           const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
           const old = p?.elements[i];
           if (p && old?.image) {
-            p.elements[i] = { ...old, transform: cmd.matrix, image: { asset: old.image.asset, w: old.image.w, h: old.image.h, ...next } };
+            const o = old.image;
+            const asset = restoring ? (o.sourceAsset ?? o.asset) : o.asset;
+            const source = !restoring && o.sourceAsset !== undefined ? { sourceAsset: o.sourceAsset } : {};
+            p.elements[i] = { ...old, transform: cmd.matrix, image: { asset, w: o.w, h: o.h, ...source, ...next } };
           }
           return { pages: [page], ids: [cmd.id], removed: [] };
         });
@@ -1571,7 +1598,15 @@ function loadElement(e: SavedElement): FakeElement {
   if (e.kind === "image" && e.image) {
     // C5 : réglages relus champ par champ (un champ illisible est lu comme absent, U3).
     const im = e.image;
-    const image: ImageData = { asset: im.asset, w: im.w, h: im.h, ...readParams(im as unknown as Readonly<Record<string, unknown>>, im.w, im.h) };
+    const src = (im as unknown as Readonly<Record<string, unknown>>)["sourceAsset"];
+    const image: ImageData = {
+      asset: im.asset,
+      w: im.w,
+      h: im.h,
+      // C6b (B12) : lu tolérant, comme le cœur (non conforme = absent, U3).
+      ...(isAssetId(src) ? { sourceAsset: src } : {}),
+      ...readParams(im as unknown as Readonly<Record<string, unknown>>, im.w, im.h),
+    };
     return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...group };
   }
   return {
