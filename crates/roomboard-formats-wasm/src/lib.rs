@@ -502,4 +502,24 @@ mod tests {
         );
         assert_eq!(px, vec![0; 8], "effacer : transparent");
     }
+
+    #[test]
+    fn board_reader_open_inner_refuses_unknown_dialect() {
+        let e = BoardReader::open_inner(b"<svg/>", "pdf", 1).err().expect("refus");
+        assert_eq!(e, "format de tableau inconnu : pdf");
+    }
+
+    #[test]
+    fn board_reader_open_inner_says_broken_files_in_french() {
+        let e = BoardReader::open_inner(b"<iwb><svg:svg", "iwb", 1).err().expect("refus");
+        assert!(e.starts_with("fichier endommagé : "), "{e}");
+    }
+
+    #[test]
+    fn board_write_inner_refuses_bad_lists_and_unknown_formats() {
+        let e = write_board_xml_inner(&[9.0], Vec::new(), "iwb").err().expect("refus");
+        assert!(e.starts_with("liste de tableau invalide : "), "{e}");
+        let e = write_board_xml_inner(&[1.0], Vec::new(), "pdf").err().expect("refus");
+        assert_eq!(e, "format de tableau inconnu : pdf");
+    }
 }
