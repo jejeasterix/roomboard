@@ -1,10 +1,10 @@
 # État — usage-c4-bibliotheque
 
-Statut : PR #27 ouverte, fusion locale en cours
+Statut : clos — PR #27 fusionnée (main 3011761)
 Gabarit : chantier (15 tâches au plan, 20 avec les correctifs)
 Objectif : Un panneau « Bibliothèque » montre « Mes ressources » et « Ressources partagées », en dossiers, avec recherche par nom et mot-clé et une vignette par ressource ; on ajoute une ressource depuis la sélection (`.rbitem`, U9) ou depuis la grille d'une page (`kind: "grid"`, U31), on la glisse sur la page (insertion en une étape d'annulation), on exporte un dossier en `.rbpack` et on l'importe ailleurs avec les mêmes ressources.
 Avancement : 20/20 tâches terminées
-Étage : 4 — depuis 2026-11-21 11:40
+Étage : 4 — clos le 2026-11-21 11:50
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c4-bibliotheque   Branche : feat/usage-c4-bibliotheque   Base : origin/main @ 443edd4
 Branche principale locale au lancement : 443edd4
@@ -67,6 +67,7 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 - 2026-11-21 10:36 vague 1 lancée (8 tâches) et relecture du plan 1/3 en parallèle.
 
 - 2026-11-21 10:36–11:00 vagues 1 à 4 : T1–T14 et T16 fusionnées, preuves rejouées ; revues immédiates de T1, T2, T4, T7, T8 (concepteur-critique et T2) : 1 major (T8 → T16), mineurs regroupés en T17.
+- 2026-11-21 11:50 PR #27 fusionnée par fusion locale `--no-ff` (main 3011761), `git push` sans force ; `verifier.sh --e2e` OK sur 6975138, seuls des documents depuis.
 
 ## Pièges trouvés
 - Les sous-agents signent `Co-Authored-By: Claude Sonnet 5.5` (attribution de leur session) : réécrit en `Claude Opus 5.5` par rebase de la branche de tâche avant chaque fusion (/tmp/c4-fusion.sh).
@@ -125,5 +126,5 @@ evidence: "docs/plans/usage-c4-bibliotheque-cadrage.md (D6, D17, DA1 à DA4, H1-
 Ajouter à la fin de la ligne 21 (« Vague 2 en cours : … ») :
 
 ```
- ; C4 bibliothèque de ressources (panneau, dossiers, recherche, vignettes, glisser vers la page, paquets .rbpack ; IndexedDB sur le web, plugin-fs en coque) clos (PR #27, `main` MERGE) — voir [[2026-11-21-roomboard-usage-c4-bibliotheque-clos]] et [[NNNN-roomboard-c4-bibliotheque-indexeddb-plugin-fs-rbpack-ts]]
+ ; C4 bibliothèque de ressources (panneau, dossiers, recherche, vignettes, glisser vers la page, paquets .rbpack ; IndexedDB sur le web, plugin-fs en coque) clos (PR #27, `main` 3011761) — voir [[2026-11-21-roomboard-usage-c4-bibliotheque-clos]] et [[NNNN-roomboard-c4-bibliotheque-indexeddb-plugin-fs-rbpack-ts]]
 ```
