@@ -1,6 +1,6 @@
 # État — usage-c4-bibliotheque
 
-Statut : en cours
+Statut : PR #27 ouverte, fusion locale en cours
 Gabarit : chantier (15 tâches au plan, 20 avec les correctifs)
 Objectif : Un panneau « Bibliothèque » montre « Mes ressources » et « Ressources partagées », en dossiers, avec recherche par nom et mot-clé et une vignette par ressource ; on ajoute une ressource depuis la sélection (`.rbitem`, U9) ou depuis la grille d'une page (`kind: "grid"`, U31), on la glisse sur la page (insertion en une étape d'annulation), on exporte un dossier en `.rbpack` et on l'importe ailleurs avec les mêmes ressources.
 Avancement : 20/20 tâches terminées
@@ -81,7 +81,7 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 ---
 id: 2026-11-21-roomboard-usage-c4-bibliotheque-clos
 type: journal
-summary: "RoomBoard usage C4 bibliothèque de ressources clos : panneau « Bibliothèque » (Mes ressources, Ressources partagées), dossiers, recherche par nom et mot-clé, vignettes, ajout depuis la sélection (.rbitem) ou la grille (kind grid), glisser vers la page en une étape, paquets .rbpack en export et import ; stockage web IndexedDB, coque plugin-fs ; PR #PR."
+summary: "RoomBoard usage C4 bibliothèque de ressources clos : panneau « Bibliothèque » (Mes ressources, Ressources partagées), dossiers, recherche par nom et mot-clé, vignettes, ajout depuis la sélection (.rbitem) ou la grille (kind grid), glisser vers la page en une étape, paquets .rbpack en export et import ; stockage web IndexedDB, coque plugin-fs ; PR #27."
 created: 2026-11-21
 project: "[[roomboard]]"
 tags: [projet/roomboard, chaine/nouvelle-feature]
@@ -125,5 +125,5 @@ evidence: "docs/plans/usage-c4-bibliotheque-cadrage.md (D6, D17, DA1 à DA4, H1-
 Ajouter à la fin de la ligne 21 (« Vague 2 en cours : … ») :
 
 ```
- ; C4 bibliothèque de ressources (panneau, dossiers, recherche, vignettes, glisser vers la page, paquets .rbpack ; IndexedDB sur le web, plugin-fs en coque) clos (PR #PR, `main` MERGE) — voir [[2026-11-21-roomboard-usage-c4-bibliotheque-clos]] et [[NNNN-roomboard-c4-bibliotheque-indexeddb-plugin-fs-rbpack-ts]]
+ ; C4 bibliothèque de ressources (panneau, dossiers, recherche, vignettes, glisser vers la page, paquets .rbpack ; IndexedDB sur le web, plugin-fs en coque) clos (PR #27, `main` MERGE) — voir [[2026-11-21-roomboard-usage-c4-bibliotheque-clos]] et [[NNNN-roomboard-c4-bibliotheque-indexeddb-plugin-fs-rbpack-ts]]
 ```
