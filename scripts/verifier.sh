@@ -110,6 +110,8 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/c6b-pot-image-navigateur.mjs
   node scripts/essais/c15-3d-navigateur.mjs
   echo "C15 3D : OK"
+  node scripts/essais/c8-pot-zones-navigateur.mjs
+  echo "C8 pot zones : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"
