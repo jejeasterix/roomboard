@@ -253,6 +253,10 @@ fn model3d_and_media_are_hit_by_their_box() {
         .ids[0]
         .clone();
     assert_eq!(d.hit_test(&p, 420.0, 290.0, 0.0), Some(model.clone()));
+    // Boîte 100..740 × 50..530 : touchée près de deux coins opposés, manquée juste à droite.
+    assert_eq!(d.hit_test(&p, 110.0, 60.0, 0.0), Some(model.clone()));
+    assert_eq!(d.hit_test(&p, 730.0, 520.0, 0.0), Some(model.clone()));
+    assert_eq!(d.hit_test(&p, 745.0, 290.0, 0.0), None);
     assert_eq!(d.hit_test(&p, 1160.0, 140.0, 0.0), Some(media));
     assert_eq!(d.hit_test(&p, 900.0, 700.0, 0.0), None);
     assert_eq!(d.hit_test(&p, 50.0, 20.0, 0.0), None);

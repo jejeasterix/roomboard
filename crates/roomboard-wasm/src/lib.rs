@@ -106,7 +106,6 @@ fn table_axis(row: bool) -> TableAxis {
     }
 }
 
-/// Référence d'asset reçue de JS : métadonnées seules, jamais les octets (U4, K13).
 /// Fichiers liés d'un objet 3D (C15, X7) : listes parallèles de même longueur, sinon `BadModel3d`.
 fn linked_files(
     paths: &[String],
@@ -132,6 +131,7 @@ fn linked_files(
         .collect())
 }
 
+/// Référence d'asset reçue de JS : métadonnées seules, jamais les octets (U4, K13).
 fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
     AssetRef {
         id: id.to_string(),
