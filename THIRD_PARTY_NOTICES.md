@@ -382,10 +382,6 @@ SOFTWARE.
 
 ## Texte de licence : i_tree 0.20.0 (MIT)
 
-e de 2023.
-
-## Texte de licence : i_float 5.0.0, i_shape 5.0.0 (MIT) ; i_overlay 9.2.0, i_key_sort 0.12.0 (même texte, sans fichier)
-
 ```text
 MIT License
 
