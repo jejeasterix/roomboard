@@ -4,6 +4,7 @@
  * (CL5b-3). Une seule garde de fermeture pour la fenêtre, vraie si un onglet au moins est modifié (CL5b-6) ; le titre
  * de la fenêtre est celui de l'onglet actif. Le marquage `#stage[data-fichiers|data-modifie|data-fichier|data-tab]` est
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
+ * C13 (D5, D17) : `openBoard` ouvre un `.iwb` ou un `.ubz` dans un nouvel onglet ; `exportBoard` écrit une copie au format.
  */
 import { PDF_MAX_PAGES, type CoreDocument, type AssetRef, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
@@ -22,9 +23,9 @@ import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_IT
 import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
-import type { ImageDecoder, ImageTarget } from "../platform/image-import";
+import { decodeImage, type ImageDecoder, type ImageTarget } from "../platform/image-import";
 import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
-import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
+import { createImporter, hasZipMagic, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import { NOT_OFFICE_PAGE_MESSAGE, officeMimeOf, officeStemOf, originalChangedMessage, type OfficeOpenFile, type OriginalChange } from "../platform/office-import";
 import type { LinkedMedia } from "../platform/media-import";
 import type { Model3dDeps } from "../platform/model3d-handlers";
@@ -41,6 +42,8 @@ import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RAST
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
+import { boardListOf, buildBoardDocument, decodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts } from "./board-io";
+import { BOARD_MAX_OBJECTS, BOARD_NO_PAGE_MESSAGE, boardObjectCount, boardExportName, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, mergeBoardWarnings, stem, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 
@@ -49,10 +52,9 @@ export const PDF_NO_PAGE_MESSAGE = "PDF sans page";
 export const BUSY_MESSAGE = "Opération en cours";
 export const pdfFirstPagesMessage = (name: string, total: number): string => `${name} : ${PDF_MAX_PAGES} premières pages importées sur ${total}`;
 export const pdfExportedMessage = (pages: number): string => `PDF exporté (${pages} page${pages > 1 ? "s" : ""})`;
-const stemOf = (name: string, ext: string): string => (name.toLowerCase().endsWith(ext) && name.length > ext.length ? name.slice(0, -ext.length) : name);
 /** Nom proposé (PF19) : `<base> annoté.pdf` si une page d'origine est recopiée, sinon `<base>.pdf`. */
 export const exportPdfName = (tabName: string, annotated: boolean): string =>
-  `${stemOf(tabName, ROOMBOARD_EXTENSION)}${annotated ? " annoté" : ""}${PDF_EXTENSION}`;
+  `${stem(tabName, ROOMBOARD_EXTENSION)}${annotated ? " annoté" : ""}${PDF_EXTENSION}`;
 
 export interface TabSession {
   readonly board: BoardSession;
@@ -111,6 +113,11 @@ export interface WorkspaceDeps {
   thumbnail?: ThumbDeps;
   /** C4 (U25, D19) : `.rbpack` déposé ou passé au lancement, importé dans la bibliothèque ; transmis à l'importeur. */
   importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
+  /** C13 (D3, D6) : ZIP (Worker ZIP, mode `board`) et XML (Worker jetable du module `formats`) ; absent : `.iwb`, `.ubz` refusés. */
+  readonly board?: BoardPorts;
+  /** C13 (D17) : écriture des copies (`IWB_TYPE`, `UBZ_TYPE`) ; absentes : « Enregistrer une copie au format … » sans effet. */
+  readonly iwbFiles?: TypedFiles;
+  readonly ubzFiles?: TypedFiles;
   /** C16 (O4, O35) : conversion d'un fichier Office de la coque en PDF (lu par morceaux, dossier libéré) ; absent (web) :
    *  « exportez en PDF depuis Office ». Transmis à l'importeur. */
   convertOffice?(path: string): Promise<Blob>;
@@ -153,6 +160,10 @@ export interface Workspace {
   openPdf(file: { readonly name: string; readonly blob: Blob; readonly original?: Blob }): Promise<boolean>;
   /** C12 (PF19 à PF21) : « Exporter en PDF… » de l'onglet actif ; faux sans port, refusé, onglet fermé ou boîte annulée. */
   exportPdf(): Promise<boolean>;
+  /** C13 (D5, Q1) : tableau `.iwb` (ZIP ou XML) ou `.ubz` dans un nouvel onglet ; faux si refusé (avis déjà dit). */
+  openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardFormat }): Promise<boolean>;
+  /** C13 (D17, D18) : copie de l'onglet actif au format ; faux sans port, refusé ou boîte annulée. */
+  exportBoard(format: BoardFormat): Promise<boolean>;
   /** C4 (D13, D14) : ressource posée dans l'onglet actif ; `at` client, null = centre de la vue. */
   insertResource(bytes: Uint8Array, name: string, at: Point | null): Promise<InsertOutcome>;
   /** C4 (D1, D2, D12) : sélection ou grille de la page de l'onglet actif, en `.rbitem`, avec sa vignette ; null : avis dit. */
@@ -377,6 +388,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? { readSheet } : {}),
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
+    ...(deps.board ? { openBoard: (f: { readonly name: string; readonly blob: Blob; readonly format: BoardFormat }) => ws.openBoard(f) } : {}),
     ...(linkMedia ? { linkMedia } : {}),
     ...(deps.model3d ? { model3d: deps.model3d } : {}),
     ...(importPack ? { importPack } : {}),
@@ -445,9 +457,9 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         const blob = typed(file.blob, PDF_MIME);
         // C16 (O5, O16) : PDF converti nommé `<racine>.pdf`, original gardé (nom et type Office), onglet `<racine>.roomboard`.
         const original = file.original;
-        const stem = original === undefined ? stemOf(name, PDF_EXTENSION) : officeStemOf(name);
+        const root = original === undefined ? stem(name, PDF_EXTENSION) : officeStemOf(name);
         const id = await assets.put(blob);
-        const pdfRef: AssetRef = { id, name: original === undefined ? name : `${stem}${PDF_EXTENSION}`, mime: PDF_MIME, size: blob.size };
+        const pdfRef: AssetRef = { id, name: original === undefined ? name : `${root}${PDF_EXTENSION}`, mime: PDF_MIME, size: blob.size };
         let originalRef: AssetRef | undefined;
         if (original !== undefined) {
           const ob = typed(original, officeMimeOf(name));
@@ -455,7 +467,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         }
         const doc = core.fromPdfPages(pdfRef, sizes, originalRef);
         if (total > PDF_MAX_PAGES) await say(pdfFirstPagesMessage(name, total));
-        return (await addTab(doc, { name: `${stem}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
+        return (await addTab(doc, { name: `${root}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
       } catch (e) {
         await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
         return false;
@@ -514,6 +526,82 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         exporting = false;
         doc?.free();
         closeRaster(); // même en cas d'erreur
+      }
+    },
+    async openBoard(file) {
+      const name = baseName(file.name);
+      const board = deps.board;
+      if (board === undefined) return false;
+      if (full()) {
+        await say(TOO_MANY_TABS);
+        return false;
+      }
+      try {
+        const head = new Uint8Array(await file.blob.slice(0, 4).arrayBuffer());
+        let src: BoardSources;
+        if (hasZipMagic(head)) src = boardSources(file.format, await board.unzip(file.blob));
+        else if (file.format === "iwb") src = { xml: [file.blob], media: new Map(), total: 1 };
+        else throw new Error(UBZ_NOT_ZIP_MESSAGE);
+        const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
+        const parts = await board.read(xml, file.format);
+        // D16 : budget d'objets restant passé au décodage, part par part : la borne tient avant le pic de mémoire.
+        const pages: BoardListPage[] = [];
+        let left = BOARD_MAX_OBJECTS;
+        for (const p of parts) {
+          const got = decodeBoardList(p.ops, p.texts, left);
+          left -= boardObjectCount(got);
+          pages.push(...got);
+        }
+        if (pages.length === 0) {
+          await say(`Ouverture impossible (${name}) : ${BOARD_NO_PAGE_MESSAGE}`);
+          return false;
+        }
+        const built = await buildBoardDocument(core, pages, src.media, {
+          makeAssets,
+          decode: deps.decode ?? ((b, k) => decodeImage(b, k)),
+          now: deps.now(),
+          appVersion: APP_VERSION,
+        });
+        const warnings = [...(src.total > PDF_MAX_PAGES ? [boardFirstPagesMessage(src.total)] : []), ...mergeBoardWarnings([parts.flatMap((p) => p.warnings), built.warnings])];
+        if ((await addTab(built.doc, { name: boardTabName(name, file.format), target: null }, built.assets)) === null) return false;
+        if (warnings.length > 0) await say(boardWarningsMessage(name, warnings));
+        return true;
+      } catch (e) {
+        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+        return false;
+      }
+    },
+    async exportBoard(format) {
+      const board = deps.board;
+      const files = format === "iwb" ? deps.iwbFiles : deps.ubzFiles;
+      if (board === undefined || files === undefined) return false;
+      if (exporting) {
+        await say(BUSY_MESSAGE);
+        return false;
+      }
+      const tab = ws.active(); // onglet montré à l'appel (R3)
+      if (missingOf(tab.board.doc, tab.assets).length > 0) {
+        await say(UNREAD_ASSETS_MESSAGE);
+        return false;
+      }
+      exporting = true;
+      let doc: CoreDocument | null = null;
+      try {
+        // Copie prise au départ (comme l'export PDF, DAPF3) : fermer l'onglet pendant l'écriture ne la libère pas.
+        const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
+        doc = core.loadParts(manifest, ybin);
+        const r = await boardListOf(doc, tab.assets, format);
+        const xml = await board.write(r.list, format);
+        const bytes = await board.zip([...xml, ...r.files]);
+        const saved = await files.save(boardExportName(tab.files.name(), format), bytes);
+        if (saved) await say(boardSavedMessage(format, r.warnings));
+        return saved;
+      } catch (e) {
+        await say(`Export impossible : ${messageOf(e)}`);
+        return false;
+      } finally {
+        exporting = false;
+        doc?.free();
       }
     },
     async newBlank() {

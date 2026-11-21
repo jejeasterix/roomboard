@@ -7,7 +7,7 @@ import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
 import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
 import {
-  createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
+  BOARD_TOO_BIG_MESSAGE, hasXmlHead, isIwbName, isUbzName, createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
   ZIP_MAGIC, type ImportHandler,
 } from "./import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
@@ -1021,6 +1021,85 @@ describe("C4 : paquets .rbpack", () => {
     const report = await importer.importFiles([file("Z.rbpack", PK)]);
     expect(report.failed).toEqual(["Z.rbpack"]);
     expect(notify).toHaveBeenCalledWith("Import impossible (Z.rbpack) : disque plein");
+  });
+});
+
+describe("importFiles : tableaux .iwb et .ubz (C13, D4, D5)", () => {
+  const ZIP = new Uint8Array([80, 75, 3, 4, 20, 0]);
+  const XML = new TextEncoder().encode('<?xml version="1.0"?><iwb version="1.0">');
+  const notify = () => vi.fn(async (_m: string) => undefined);
+  const opener = (ok = true) => vi.fn(async (_f: { readonly name: string; readonly blob: Blob; readonly format: "iwb" | "ubz" }) => ok);
+
+  it("C13 : .iwb ZIP ou XML, .ubz ZIP : openBoard(nom, blob, format), un onglet chacun (S1, S2, S3)", async () => {
+    const openBoard = opener();
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles([file("a.iwb", ZIP), file("b.iwb", XML), file("c.ubz", ZIP)]);
+    expect(r).toEqual({ opened: ["a.iwb", "b.iwb", "c.ubz"], inserted: [], refused: [], failed: [] });
+    expect(openBoard.mock.calls.map((c) => [c[0].name, c[0].format])).toEqual([["a.iwb", "iwb"], ["b.iwb", "iwb"], ["c.ubz", "ubz"]]);
+    expect(new Uint8Array(await openBoard.mock.calls[1]![0].blob.arrayBuffer())).toEqual(XML);
+    expect(n).not.toHaveBeenCalled();
+  });
+
+  it("C13 : hasXmlHead : <?xml, <iwb, BOM et blancs tolérés ; autre chose refusé", () => {
+    const t = (s: string) => new TextEncoder().encode(s);
+    expect([hasXmlHead(t("<?xml ")), hasXmlHead(t("<iwb>")), hasXmlHead(new Uint8Array([0xef, 0xbb, 0xbf, ...t(" \n<?xml")])), hasXmlHead(t("<svg>")), hasXmlHead(t("bonjour"))]).toEqual([true, true, true, false, false]);
+  });
+
+  it("C13 : noms : .iwb et .ubz en toutes casses ; « .iwb » seul ne compte pas", () => {
+    expect([isIwbName("Cours.IWB"), isIwbName(".iwb"), isUbzName("x.ubz"), isUbzName("x.zip")]).toEqual([true, false, true, false]);
+  });
+
+  it("C13 : .ubz XML : refusé (prochaine version), openBoard jamais appelé", async () => {
+    const openBoard = opener();
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles([file("faux.ubz", XML)]);
+    expect(r.refused).toEqual(["faux.ubz"]);
+    expect(openBoard).not.toHaveBeenCalled();
+  });
+
+  it("T14 : un .iwb se reconnaît à son extension : BOM UTF-16, commentaire ou DOCTYPE ne sont pas « prochaine version » ; openBoard dit l'état du fichier", async () => {
+    const openBoard = opener(false);
+    const n = notify();
+    const t = (s: string) => new TextEncoder().encode(s);
+    const heads = [new Uint8Array([0xff, 0xfe, 0x3c, 0x00]), t("<!-- c --><iwb/>"), t("<!DOCTYPE iwb><iwb/>")];
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles(heads.map((h, i) => file(`x${i}.iwb`, h)));
+    expect(r.refused).toEqual([]);
+    expect(openBoard).toHaveBeenCalledTimes(3);
+  });
+
+  it("C13 : refus de openBoard (fichier endommagé) : failed, aucun message ajouté par l'importeur", async () => {
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard: opener(false) }).importFiles([file("abime.iwb", ZIP)]);
+    expect(r.failed).toEqual(["abime.iwb"]);
+    expect(n).not.toHaveBeenCalled();
+  });
+
+  it("C13 : coque : un .iwb de 300 Mio est refusé avant lecture, « fichier de tableau trop gros (plus de 256 Mio) » (D4)", async () => {
+    const blob = vi.fn(async () => new Blob([ZIP]));
+    const big: DroppedFile = { name: "gros.iwb", size: 300 * 1024 * 1024, mime: "", head: async () => ZIP, blob };
+    const n = notify();
+    const openBoard = opener();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard }).importFiles([big]);
+    expect(r.failed.concat(r.refused)).toEqual(["gros.iwb"]);
+    expect([blob.mock.calls.length, openBoard.mock.calls.length]).toEqual([0, 0]);
+    expect(n).toHaveBeenCalledWith(`gros.iwb : ${BOARD_TOO_BIG_MESSAGE}`);
+  });
+
+  it("C13 : web : un .iwb XML de 120 Mo est refusé avant lecture (100 Mo, S5)", async () => {
+    const blob = vi.fn(async () => new Blob([XML]));
+    const big: DroppedFile = { name: "gros.iwb", size: 120 * 1024 * 1024, mime: "", head: async () => XML, blob };
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n, openBoard: opener(), maxBytes: WEB_MAX_BYTES }).importFiles([big]);
+    expect(r.refused).toEqual(["gros.iwb"]);
+    expect(blob).not.toHaveBeenCalled();
+    expect(n).toHaveBeenCalledWith("gros.iwb : fichier trop gros (plus de 100 Mo)");
+  });
+
+  it("C13 : sans openBoard (amorce partielle) : .iwb refusé comme avant", async () => {
+    const n = notify();
+    const r = await createImporter({ openDocument: async () => true, notify: n }).importFiles([file("Cours.iwb", ZIP)]);
+    expect(r.refused).toEqual(["Cours.iwb"]);
+    expect(n).toHaveBeenCalledWith(`Cours.iwb : ${LATER_FORMAT_MESSAGE}`);
   });
 });
 

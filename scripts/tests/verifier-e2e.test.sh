@@ -10,7 +10,7 @@ out=$(bash scripts/verifier.sh --inconnu 2>&1); rc=$?
 [ "$rc" -eq 2 ] || ko "verifier.sh --inconnu doit rendre 2 (rendu $rc)"
 echo "$out" | grep -q "option inconnue --inconnu" || ko "message « option inconnue » absent"
 grep -q -- '--e2e' scripts/verifier.sh || ko "verifier.sh ne déclare pas --e2e"
-for s in s2-navigateur s34-navigateur fichiers-navigateur s5b-navigateur c2-image-navigateur c1-profils-navigateur c10a-tableau-navigateur c10b-tableau-navigateur c3-groupes-navigateur c12-pdf-navigateur c9-grille-navigateur c7b-texte-riche-navigateur c6a-pot-navigateur c5-image-navigateur c14-media-navigateur c6b-pot-image-navigateur c15-3d-navigateur c8-pot-zones-navigateur c4-bibliotheque-navigateur; do
+for s in s2-navigateur s34-navigateur fichiers-navigateur s5b-navigateur c2-image-navigateur c1-profils-navigateur c10a-tableau-navigateur c10b-tableau-navigateur c3-groupes-navigateur c12-pdf-navigateur c9-grille-navigateur c7b-texte-riche-navigateur c6a-pot-navigateur c5-image-navigateur c14-media-navigateur c6b-pot-image-navigateur c15-3d-navigateur c8-pot-zones-navigateur c4-bibliotheque-navigateur c13-tableaux-navigateur; do
   grep -q "scripts/essais/$s.mjs" scripts/verifier.sh || ko "$s absent de verifier.sh"
 done
 # C16 : ligne à part (la liste ci-dessus est partagée avec d'autres chantiers, O33).

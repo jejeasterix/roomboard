@@ -6,9 +6,11 @@
  * `main.ts`, arrêté par `zip-read.ts` après la réponse. Seul module qui importe fflate (GC17), API synchrone seule : la
  * forme asynchrone lance des Workers `blob:`, refusés par la CSP.
  * C4 : paquets `.rbpack` (lecture `mode: "pack"`, écriture `op: "zip"`), mêmes bornes, chemins rendus tels quels.
+ * C13 : tableaux `.iwb` et `.ubz` (lecture `mode: "board"`, `keepBoardPath`), mêmes bornes, chemins rendus tels quels.
  */
 import { unzipSync, zipSync, type Zippable } from "fflate";
 import {
+  extensionOf,
   keepZipPath,
   normalizePath,
   ZIP_MALFORMED_MESSAGE,
@@ -16,12 +18,28 @@ import {
   ZIP_MAX_ENTRIES,
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
+import { normalBoardPath } from "./board-reader";
 import { isPackEntry } from "./rbpack";
 import type { ZipFile } from "./zip-read";
 
 /** C4 : entrées d'un paquet (manifeste, ressources, vignettes) ; tout autre fichier du ZIP est ignoré. */
 export function keepPackPath(name: string): boolean {
   return isPackEntry(name);
+}
+
+/** C13 (D3, D12) : images qu'un tableau `.iwb` ou `.ubz` peut citer ; tout autre fichier n'est jamais décompressé. */
+export const BOARD_ZIP_EXTENSIONS: readonly string[] = Object.freeze(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+
+/** C13 (D3) : `content.xml` (IWB), `page<N>.svg` (OpenBoard) et images ; chemin absolu, lettre de lecteur, `..`,
+ *  `__MACOSX` et dossier refusés. Vidéos, sons, Flash et widgets ne sont pas décompressés : le lecteur les compte
+ *  depuis le XML pour l'avertissement (D15). */
+export function keepBoardPath(name: string): boolean {
+  if (name === "" || name.endsWith("/") || name.endsWith("\\") || name.startsWith("/") || name.startsWith("\\") || /^[A-Za-z]:/.test(name)) return false;
+  const segs = normalBoardPath(name).split("/");
+  if (segs.includes("..") || segs[0] === "__MACOSX") return false;
+  const lower = normalBoardPath(name).toLowerCase();
+  if (lower === "content.xml" || /^page\d+\.svg$/.test(lower)) return true;
+  return BOARD_ZIP_EXTENSIONS.includes(extensionOf(name));
 }
 
 /** Date fixe des entrées (D25 : octets stables), en heure locale comme le champ DOS du ZIP. */
@@ -80,10 +98,10 @@ export function unzipModelEntries(
   return unzipEntries(data, keepZipPath, limits, normalizePath);
 }
 
-/** `{ bytes }` seul : lecture 3D (inchangée) ; `{ op: "unzip", mode: "pack", bytes }` ; `{ op: "zip", files }`. */
+/** `{ bytes }` seul : lecture 3D (inchangée) ; `{ op: "unzip", mode: "pack" | "board", bytes }` ; `{ op: "zip", files }`. */
 interface WorkerMessage {
   readonly op?: "unzip" | "zip";
-  readonly mode?: "model3d" | "pack";
+  readonly mode?: "model3d" | "pack" | "board";
   readonly bytes?: Uint8Array;
   readonly files?: readonly ZipFile[];
 }
@@ -103,7 +121,8 @@ if (typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !==
         return;
       }
       const data = d.bytes ?? new Uint8Array();
-      const entries = d.mode === "pack" ? unzipEntries(data, keepPackPath) : unzipModelEntries(data);
+      const entries =
+        d.mode === "pack" ? unzipEntries(data, keepPackPath) : d.mode === "board" ? unzipEntries(data, keepBoardPath) : unzipModelEntries(data);
       // Deux entrées peuvent partager un tampon : cité deux fois, `postMessage` lèverait.
       scope.postMessage({ entries }, [...new Set(entries.map((x) => x.bytes.buffer as ArrayBuffer))]);
     } catch (err) {

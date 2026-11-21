@@ -17,6 +17,9 @@
    4e rangée (scène 610 px en 1280 × 900) ; 8 px de chaque côté la ramène à 3 (658 px). Hauteur et largeur minimales
    inchangées ; `:where` garde la spécificité de la règle ci-dessus, les boutons contextuels resserrés plus bas l'emportent. */
 .rb-bar:where([data-dock="top"], [data-dock="bottom"]) button { padding: 0 var(--rb-gap); }
+/* Barre des pages (C13, D17) : « Copie .iwb… » et « Copie .ubz… » (libellé complet en title et aria-label) gardent la barre
+   sur une rangée en 1280 × 900 sans écraser la liste des numéros (largeur minimale de 3 boutons). */
+.rb-bar[data-dock="bottom"] button:is([data-item="export-iwb"], [data-item="export-ubz"]) { font-size: 12px; padding: 0 4px; }
 .rb-bar button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
 .rb-sep { align-self: stretch; border-inline-start: 1px solid #94a3b8; margin: 0 4px; }
 .rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed #94a3b8; min-height: var(--rb-btn); }
@@ -58,8 +61,8 @@
 .rb-bar button[aria-current="page"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
 .rb-pages-count { margin-inline: var(--rb-gap); padding: 0 var(--rb-pad); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
-.rb-pages-list { display: flex; flex: 1 1 0; flex-wrap: nowrap; min-width: 0; gap: var(--rb-gap); overflow-x: auto; }
-.rb-bar[data-dock="left"] .rb-pages-list, .rb-bar[data-dock="right"] .rb-pages-list { flex-direction: column; overflow-x: visible; overflow-y: auto; }
+.rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
+.rb-bar[data-dock="left"] .rb-pages-list, .rb-bar[data-dock="right"] .rb-pages-list { min-width: 0; flex-direction: column; overflow-x: visible; overflow-y: auto; }
 /* Onglets (T101) : une seule rangée, sans retour à la ligne ; défile à l'horizontale si elle déborde. */
 .rb-tabs { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 4px; padding: 4px 4px 0; overflow-x: auto; background: #e4e4e7; border-bottom: 1px solid #a1a1aa; }
 .rb-tab { display: inline-flex; align-items: center; gap: var(--rb-gap); flex: 0 1 auto; min-height: var(--rb-tab-h); padding: 0 var(--rb-gap); white-space: nowrap; cursor: pointer; background: #f4f4f5; border: 1px solid #a1a1aa; border-bottom: none; border-radius: 6px 6px 0 0; }

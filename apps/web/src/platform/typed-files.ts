@@ -4,7 +4,7 @@
  * choisi. `FileHost` reste réservé au `.roomboard` (décision C1).
  */
 import type { FallbackDeps } from "./host-repli";
-import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, RBITEM_MIME, RBPACK_EXTENSION, RBPACK_MIME } from "./files";
+import { BOARD_ZIP_MIME, IWB_EXTENSION, UBZ_EXTENSION, PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, RBITEM_MIME, RBPACK_EXTENSION, RBPACK_MIME } from "./files";
 import { baseName, type TauriDialog, type TauriFs } from "./host-tauri";
 
 export interface FileType {
@@ -36,6 +36,21 @@ export const PDF_TYPE: FileType = {
   mime: PDF_MIME,
   filter: { name: "Document PDF", extensions: [PDF_EXTENSION.slice(1)] },
   accept: `${PDF_EXTENSION},${PDF_MIME}`,
+};
+
+/** C13 (D17, D21) : copies « Enregistrer une copie au format » ; le filtre ne nomme que l'extension (pas « IWB/CFF »). */
+export const IWB_TYPE: FileType = {
+  extension: IWB_EXTENSION,
+  mime: BOARD_ZIP_MIME,
+  filter: { name: "Tableau .iwb", extensions: [IWB_EXTENSION.slice(1)] },
+  accept: IWB_EXTENSION,
+};
+
+export const UBZ_TYPE: FileType = {
+  extension: UBZ_EXTENSION,
+  mime: BOARD_ZIP_MIME,
+  filter: { name: "Tableau OpenBoard .ubz", extensions: [UBZ_EXTENSION.slice(1)] },
+  accept: UBZ_EXTENSION,
 };
 
 export interface TypedFiles {

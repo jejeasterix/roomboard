@@ -14,7 +14,7 @@
  * nature `paquet` : il n'ouvre aucun onglet, les onglets pleins ne l'arrêtent pas.
  */
 import { messageOf } from "./controller";
-import { RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { IWB_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
@@ -61,6 +61,9 @@ export interface ImportDeps {
   /** C12 (PF2, PF10) : ouvre un PDF dans un nouvel onglet ; false si refusé (message déjà dit) ; absente : `.pdf`
    *  refusé comme avant. */
   openPdf?(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
+  /** C13 (D4, D5) : ouvre un tableau `.iwb` (ZIP ou XML) ou `.ubz` dans un nouvel onglet ; false si refusé (message
+   *  déjà dit) ; absente : `.iwb` et `.ubz` refusés comme avant. */
+  openBoard?(file: { readonly name: string; readonly blob: Blob; readonly format: "iwb" | "ubz" }): Promise<boolean>;
   /** C4 (U25, D19) : paquet `.rbpack` importé dans la bibliothèque ; faux si refusé (avis déjà dit). Absent : refusé. */
   importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
   /** C14 (M15) : sonde d'un média (durée, taille, poster) ; absente : la sonde du navigateur (T8). */
@@ -261,6 +264,39 @@ export function pdfHandler(deps: { openPdf(file: { readonly name: string; readon
   };
 }
 
+/** C13 (D4) : plafond d'un tableau, ZIP comme XML brut, aussi dans la coque où `maxBytes` est nul. */
+export const BOARD_TOO_BIG_MESSAGE = "fichier de tableau trop gros (plus de 256 Mio)";
+
+export function isIwbName(name: string): boolean {
+  return hasExtension(name, IWB_EXTENSION);
+}
+
+export function isUbzName(name: string): boolean {
+  return hasExtension(name, UBZ_EXTENSION);
+}
+
+/** C13 (D4) : en-tête XML d'un `.iwb` en SVG brut : `<?xml` ou `<iwb`, après un BOM UTF-8 et des blancs. */
+export function hasXmlHead(head: Uint8Array): boolean {
+  let i = head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf ? 3 : 0;
+  while (i < head.length && (head[i] === 0x20 || head[i] === 0x09 || head[i] === 0x0a || head[i] === 0x0d)) i++;
+  const text = new TextDecoder("utf-8").decode(head.subarray(i, i + 5));
+  return text === "<?xml" || text.startsWith("<iwb");
+}
+
+/** C13 (D4, D5) : `iwb` = nom `.iwb` et en-tête ZIP ou XML ; `ubz` = nom `.ubz` et en-tête ZIP. Document : nouvel onglet
+ *  par `openBoard`, qui dit ses refus (endommagé, onglets pleins). */
+export function boardHandler(format: "iwb" | "ubz", deps: { openBoard: NonNullable<ImportDeps["openBoard"]> }): ImportHandler {
+  return {
+    id: format,
+    nature: "document",
+    detect: format === "iwb" ? (_head, name) => isIwbName(name) : (head, name) => isUbzName(name) && hasZipMagic(head),
+    limit: { maxBytes: ZIP_MAX_BYTES, message: BOARD_TOO_BIG_MESSAGE },
+    async run(f, ctx) {
+      return (await deps.openBoard({ name: f.name, blob: ctx.blob, format })) ? "opened" : "failed";
+    },
+  };
+}
+
 const EMPTY = new Uint8Array(0);
 
 /** C14 (PC4, M14) : chemin du fichier quand `handler` le lie (coque, au-delà de `link.aboveBytes`) ; null : il est lu. */
@@ -271,6 +307,7 @@ export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
   const sheet = readSheet ? sheetHandler({ readSheet }) : undefined;
   const openPdf = deps.openPdf?.bind(deps);
+  const openBoard = deps.openBoard?.bind(deps);
   const importPack = deps.importPack?.bind(deps);
   const linkMedia = deps.linkMedia?.bind(deps);
   const model3d = deps.model3d;
@@ -289,6 +326,7 @@ export function createImporter(deps: ImportDeps): Importer {
       rbitemHandler(),
       ...(importPack ? [rbpackHandler({ importPack })] : []),
       ...(openPdf ? [pdfHandler({ openPdf })] : []),
+      ...(openBoard ? [boardHandler("iwb", { openBoard }), boardHandler("ubz", { openBoard })] : []), // C13 : avant `media`
       mediaHandler(media),
       unsupportedMediaHandler("mkv"),
       unsupportedMediaHandler("avi"),

@@ -16,6 +16,9 @@ export interface PagesBarProps {
   goTo(index: number): void;
 }
 
+/** C13 (D17) : libellé visible court pour que la barre tienne sur une rangée ; le libellé complet reste en `title` et `aria-label`. */
+const SHORT: Readonly<Record<string, string>> = { "export-iwb": "Copie .iwb…", "export-ubz": "Copie .ubz…" };
+
 export const pagesLabel = (v: PagesView): string => `${v.pageIndex + 1} / ${v.pageCount}`;
 
 /** Champs de la vue sans effet sur les pages ; l'application passe la vue complète (`ToolbarView`), qui les remplace. */
@@ -45,7 +48,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
             disabled={isDisabled(item, props.view())}
             onClick={() => props.runAction(item.action ?? item.id)}
           >
-            {item.label}
+            {SHORT[item.id] ?? item.label}
           </button>
         )}
       </For>

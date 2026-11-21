@@ -3,8 +3,10 @@
 //! dans un Worker jetable, DAB4) ; pages vectorielles en PDF (`pdf::write_pages`, C12, PF22, Worker jetable). Chaque
 //! fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS
 //! panique).
+//! C13 (DA2) : tableaux `.iwb` et `.ubz` (`BoardReader`, `write_board_xml`), lus et écrits dans un Worker jetable.
 //! C5 (U30, I17) ; C6b (B17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
 use roomboard_core::format::Parts;
+use roomboard_formats::board::{self, BoardList, Dialect};
 use roomboard_formats::container::{self, AssetBytes};
 use roomboard_formats::pdf::{write_pages, DisplayList, ImageInput};
 use roomboard_formats::pixels::{self, Transparent};
@@ -170,6 +172,86 @@ pub fn write_pdf_pages(
 ) -> Result<Vec<u8>, JsError> {
     write_pdf_pages_inner(ops, texts, fonts, &font_sizes, images, &image_sizes)
         .map_err(|m| JsError::new(&m))
+}
+
+/// Tableau lu (C13, D1, D6) : flux BoardList d'un `content.xml`, d'un `.iwb` en SVG brut ou d'une page `.ubz`.
+#[wasm_bindgen]
+pub struct BoardReader {
+    list: BoardList,
+}
+
+fn dialect_of(s: &str) -> Result<Dialect, String> {
+    Dialect::parse(s).ok_or_else(|| format!("format de tableau inconnu : {s}"))
+}
+
+impl BoardReader {
+    /// `board::read_svg` ; le message d'erreur est le `Display` de `BoardError`.
+    pub fn open_inner(xml: &[u8], dialect: &str, first_page: u32) -> Result<BoardReader, String> {
+        let d = dialect_of(dialect)?;
+        board::read_svg(xml, d, first_page)
+            .map(|list| BoardReader { list })
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[wasm_bindgen]
+impl BoardReader {
+    /// Lève une Error : « fichier endommagé : … », « fichier de tableau trop gros (plus de 100 000 objets) »,
+    /// « format de tableau inconnu : … ».
+    pub fn open(xml: &[u8], dialect: &str, first_page: u32) -> Result<BoardReader, JsError> {
+        Self::open_inner(xml, dialect, first_page).map_err(|m| JsError::new(&m))
+    }
+    pub fn ops(&self) -> Vec<f32> {
+        self.list.ops.clone()
+    }
+    pub fn texts(&self) -> Vec<String> {
+        self.list.texts.clone()
+    }
+    pub fn warnings(&self) -> Vec<String> {
+        self.list.warnings.clone()
+    }
+}
+
+/// Copie au format (C13, D18) : `[chemin, xml, …]` ; `iwb` : `content.xml` ; `ubz` : `page001.svg`… puis `metadata.rdf`.
+pub fn write_board_xml_inner(
+    ops: &[f32],
+    texts: Vec<String>,
+    format: &str,
+) -> Result<Vec<String>, String> {
+    let d = dialect_of(format)?;
+    let list = BoardList {
+        ops: ops.to_vec(),
+        texts,
+        warnings: Vec::new(),
+    };
+    match d {
+        Dialect::Iwb => Ok(vec![
+            "content.xml".to_string(),
+            board::write_iwb(&list).map_err(|e| e.to_string())?,
+        ]),
+        Dialect::Ubz => {
+            let pages = board::write_ubz_pages(&list).map_err(|e| e.to_string())?;
+            let mut out = Vec::with_capacity(2 * pages.len() + 2);
+            let count = pages.len();
+            for (i, xml) in pages.into_iter().enumerate() {
+                out.push(format!("page{:03}.svg", i + 1));
+                out.push(xml);
+            }
+            out.push("metadata.rdf".to_string());
+            out.push(board::ubz_metadata(count));
+            Ok(out)
+        }
+    }
+}
+
+/// Lève une Error au message de `BoardError` (« liste de tableau invalide : … ») ou « format de tableau inconnu : … ».
+#[wasm_bindgen]
+pub fn write_board_xml(
+    ops: &[f32],
+    texts: Vec<String>,
+    format: &str,
+) -> Result<Vec<String>, JsError> {
+    write_board_xml_inner(ops, texts, format).map_err(|m| JsError::new(&m))
 }
 
 /// Couleur rendue transparente (C5, I17) : `px` RGBA modifié sur place ; le message d'erreur est le `Display` de
@@ -501,5 +583,29 @@ mod tests {
             Ok(2)
         );
         assert_eq!(px, vec![0; 8], "effacer : transparent");
+    }
+
+    #[test]
+    fn board_reader_open_inner_refuses_unknown_dialect() {
+        let e = BoardReader::open_inner(b"<svg/>", "pdf", 1)
+            .err()
+            .expect("refus");
+        assert_eq!(e, "format de tableau inconnu : pdf");
+    }
+
+    #[test]
+    fn board_reader_open_inner_says_broken_files_in_french() {
+        let e = BoardReader::open_inner(b"<iwb><svg:svg", "iwb", 1)
+            .err()
+            .expect("refus");
+        assert!(e.starts_with("fichier endommagé : "), "{e}");
+    }
+
+    #[test]
+    fn board_write_inner_refuses_bad_lists_and_unknown_formats() {
+        let e = write_board_xml_inner(&[9.0], Vec::new(), "iwb").expect_err("refus");
+        assert!(e.starts_with("liste de tableau invalide : "), "{e}");
+        let e = write_board_xml_inner(&[1.0], Vec::new(), "pdf").expect_err("refus");
+        assert_eq!(e, "format de tableau inconnu : pdf");
     }
 }

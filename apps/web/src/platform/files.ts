@@ -67,7 +67,11 @@ export type DropHandler = (files: DroppedFile[], at: Point | null) => void;
 /** C12 (PF3, PF19) : extension et type MIME d'un PDF. */
 export const PDF_EXTENSION = ".pdf";
 export const PDF_MIME = "application/pdf";
-/** Extensions offertes par « Importer » (R18, PF3) : le `.roomboard`, l'objet `.rbitem`, le PDF et les images d'U33 que le registre reconnaît. */
+/** C13 (D4, D17) : tableaux interactifs ; une copie `.iwb` ou `.ubz` est une archive ZIP (aucun type déposé). */
+export const IWB_EXTENSION = ".iwb";
+export const UBZ_EXTENSION = ".ubz";
+export const BOARD_ZIP_MIME = "application/zip";
+/** Extensions offertes par « Importer » (R18, PF3) : le `.roomboard`, l'objet `.rbitem`, le PDF, les tableaux .iwb et .ubz (C13) et les images d'U33 que le registre reconnaît. */
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
 /** C14 : vidéos et sons que la coque et la page savent lire (liés ou intégrés). */
 export const VIDEO_EXTENSIONS = ["mp4", "m4v", "mov", "webm", "ogv"] as const;
@@ -79,6 +83,8 @@ export const IMPORT_EXTENSIONS = [
   "rbitem",
   "rbpack",
   "pdf",
+  "iwb",
+  "ubz",
   ...IMAGE_EXTENSIONS,
   ...VIDEO_EXTENSIONS,
   ...AUDIO_EXTENSIONS,

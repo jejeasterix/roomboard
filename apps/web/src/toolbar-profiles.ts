@@ -37,6 +37,8 @@ const pagesBar = (withEditOriginal = false) => ({
         action("page-insert-file", "Insérer des pages…"),
         ...(withEditOriginal ? [{ ...action("edit-original", "Modifier dans l'application d'origine"), requires: ["officeConverter"] }] : []),
         action("export-pdf", "Exporter en PDF…"),
+        action("export-iwb", "Enregistrer une copie au format .iwb…"),
+        action("export-ubz", "Enregistrer une copie au format .ubz…"),
       ],
     },
   ],

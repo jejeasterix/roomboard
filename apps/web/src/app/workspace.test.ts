@@ -21,6 +21,8 @@ import type { BoardSession } from "./board-session";
 import type { OverlayProducer, OverlayRequest } from "./pdf-export";
 import { NO_GRID_MESSAGE } from "./fragments";
 import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
+import type { ZipFile } from "../platform/zip-read";
+import { encodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts } from "./board-io";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
@@ -238,6 +240,9 @@ interface SetupOptions {
   readonly model3d?: WorkspaceDeps["model3d"];
   readonly importPack?: WorkspaceDeps["importPack"];
   readonly thumbnail?: WorkspaceDeps["thumbnail"];
+  readonly board?: WorkspaceDeps["board"];
+  readonly iwbFiles?: WorkspaceDeps["iwbFiles"];
+  readonly ubzFiles?: WorkspaceDeps["ubzFiles"];
   readonly convertOffice?: WorkspaceDeps["convertOffice"];
   readonly officeConverter?: WorkspaceDeps["officeConverter"];
   readonly openOriginal?: WorkspaceDeps["openOriginal"];
@@ -288,6 +293,9 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.model3d ? { model3d: o.model3d } : {}),
     ...(o.importPack ? { importPack: o.importPack } : {}),
     ...(o.thumbnail ? { thumbnail: o.thumbnail } : {}),
+    ...(o.board ? { board: o.board } : {}),
+    ...(o.iwbFiles ? { iwbFiles: o.iwbFiles } : {}),
+    ...(o.ubzFiles ? { ubzFiles: o.ubzFiles } : {}),
     ...(o.convertOffice ? { convertOffice: o.convertOffice } : {}),
     ...(o.officeConverter === undefined ? {} : { officeConverter: o.officeConverter }),
     ...(o.openOriginal ? { openOriginal: o.openOriginal } : {}),
@@ -1492,6 +1500,142 @@ describe("espace de travail : C4", () => {
     expect(importPack).toHaveBeenCalledTimes(1);
     expect(importPack.mock.calls[0]![0]).toBe("Fractions.rbpack");
     expect(Array.from(importPack.mock.calls[0]![1])).toEqual(Array.from(zip));
+  });
+});
+
+describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => {
+  const rectPage = (): BoardListPage => ({ background: null, objects: [{ kind: "shape", shape: "rect", m: [1, 0, 0, 1, 0, 0], x0: 0, y0: 0, x1: 10, y1: 10, color: "#000000", width: 2, fill: null }] });
+  const ZIP = new Uint8Array([80, 75, 3, 4, 0, 0]);
+  function fakeBoard(o: { entries?: { path: string; blob: Blob }[]; warnings?: string[]; fail?: string; pages?: BoardListPage[] } = {}) {
+    const unzip = vi.fn(async (_b: Blob) => o.entries ?? [{ path: "content.xml", blob: new Blob(["<iwb/>"]) }]);
+    const read = vi.fn(async (files: readonly Uint8Array[], _f: BoardFormat) => {
+      if (o.fail !== undefined) throw new Error(o.fail);
+      return files.map(() => ({ ...encodeBoardList(o.pages ?? [rectPage()]), warnings: o.warnings ?? [] }));
+    });
+    const write = vi.fn(async (_l: { readonly ops: Float32Array; readonly texts: readonly string[] }, format: BoardFormat): Promise<ZipFile[]> =>
+      format === "iwb" ? [{ path: "content.xml", bytes: new Uint8Array([60]) }] : [{ path: "page001.svg", bytes: new Uint8Array([60]) }, { path: "metadata.rdf", bytes: new Uint8Array([60]) }]);
+    const zip = vi.fn(async (_f: readonly ZipFile[]) => new Uint8Array([80, 75, 3, 4]));
+    const ports: BoardPorts = { unzip, read, write, zip };
+    return { ports, unzip, read, write, zip };
+  }
+  const typedFiles = () => ({ pick: vi.fn(async () => null), save: vi.fn(async (_n: string, _b: Uint8Array) => true) });
+  const droppedOf = (name: string, bytes: Uint8Array): DroppedFile => ({ name, size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes as BlobPart]) });
+
+  it("C13 : .iwb ZIP ouvert : nouvel onglet « Cours.roomboard », sans annulation, cible nulle, un seul avis (S1)", async () => {
+    const b = fakeBoard({ warnings: ["page 1 : 1 vidéo non lue"] });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(true);
+    expect(ws.tabs.list()).toHaveLength(2);
+    const tab = ws.active();
+    const doc = tab.board.doc;
+    expect([tab.files.name(), tab.files.isDirty(), doc.canUndo(), doc.elementIds(doc.pageIds()[0]!).length]).toEqual(["Cours.roomboard", false, false, 1]);
+    expect(b.read.mock.calls[0]![1]).toBe("iwb");
+    expect(new TextDecoder().decode(b.read.mock.calls[0]![0][0])).toBe("<iwb/>");
+    expect(shell.notify).toHaveBeenCalledTimes(1);
+    expect(shell.notify).toHaveBeenCalledWith("Cours.iwb : ouvert avec 1 avertissement :\n- page 1 : 1 vidéo non lue");
+    expect(await ws.active().files.run("save")).toBe(true);
+    expect(host.save.mock.calls[0]?.[1]).toEqual({ kind: "ask", name: "Cours.roomboard" });
+  });
+
+  it("T14 : avertissements du lecteur et de la page additionnés par (page, sorte) : une seule ligne", async () => {
+    const dead: BoardListPage = { background: null, objects: [{ kind: "shape", shape: "rect", m: [0, 0, 0, 0, 0, 0], x0: 0, y0: 0, x1: 10, y1: 10, color: "#000000", width: 2, fill: null }] };
+    const b = fakeBoard({ warnings: ["page 1 : 1 objet illisible ignoré"], pages: [dead] });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("Cours.iwb : ouvert avec 1 avertissement :\n- page 1 : 2 objets illisibles ignorés");
+  });
+
+  it("C13 : .iwb XML brut : lu tel quel, sans unzip, aucun avis sans avertissement (S2)", async () => {
+    const b = fakeBoard();
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "brut.iwb", blob: new Blob(['<?xml version="1.0"?><iwb/>']), format: "iwb" })).toBe(true);
+    expect(b.unzip).not.toHaveBeenCalled();
+    expect(new TextDecoder().decode(b.read.mock.calls[0]![0][0])).toBe('<?xml version="1.0"?><iwb/>');
+    expect(shell.notify).not.toHaveBeenCalled();
+  });
+
+  it("C13 : .ubz : pages triées, 501 pages : 500 lues et « 500 premières pages importées sur 501 » (S3, D16)", async () => {
+    const entries = Array.from({ length: 501 }, (_, i) => ({ path: `page${i + 1}.svg`, blob: new Blob([String(i + 1)]) })).reverse();
+    const b = fakeBoard({ entries });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "OpenBoard.ubz", blob: new Blob([ZIP]), format: "ubz" })).toBe(true);
+    const files = b.read.mock.calls[0]![0];
+    expect([files.length, new TextDecoder().decode(files[0]), new TextDecoder().decode(files[1])]).toEqual([500, "1", "2"]);
+    expect(ws.active().board.doc.pageIds()).toHaveLength(500);
+    expect(shell.notify).toHaveBeenCalledWith("OpenBoard.ubz : ouvert avec 1 avertissement :\n- 500 premières pages importées sur 501");
+  });
+
+  it("C13 : fichier endommagé : « Ouverture impossible (abime.iwb) : fichier endommagé : XML mal formé », aucun onglet (S5)", async () => {
+    const ws = await setupWorkspace({ board: fakeBoard({ fail: "fichier endommagé : XML mal formé" }).ports });
+    expect(await ws.openBoard({ name: "abime.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (abime.iwb) : fichier endommagé : XML mal formé");
+  });
+
+  it("C13 : .ubz sans en-tête ZIP : refusé, « un .ubz est une archive ZIP »", async () => {
+    const b = fakeBoard();
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "faux.ubz", blob: new Blob(["<svg/>"]), format: "ubz" })).toBe(false);
+    expect(b.read).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (faux.ubz) : fichier endommagé : un .ubz est une archive ZIP");
+  });
+
+  it("C13 : onglets pleins : « trop d'onglets », rien n'est lu", async () => {
+    const b = fakeBoard();
+    const ws = await setupWorkspace({ board: b.ports });
+    for (let i = ws.tabs.list().length; i < MAX_TABS; i++) await ws.newBlank();
+    expect(await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(false);
+    expect(b.unzip).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith(TOO_MANY_TABS);
+  });
+
+  it("C13 : un .iwb déposé passe par openBoard (registre de T4)", async () => {
+    const b = fakeBoard();
+    const ws = await setupWorkspace({ board: b.ports });
+    const r = await ws.importFiles([droppedOf("Cours.iwb", ZIP)]);
+    expect(r.opened).toEqual(["Cours.iwb"]);
+    expect(b.unzip).toHaveBeenCalledTimes(1);
+  });
+
+  it("C13 : .ubz de plus de 100 000 objets au total : refus, « fichier de tableau trop gros (plus de 100 000 objets) », aucun onglet (D16)", async () => {
+    const many = (n: number): BoardListPage => ({ background: null, objects: Array.from({ length: n }, () => rectPage().objects[0]!) });
+    const b = fakeBoard({ entries: [{ path: "page1.svg", blob: new Blob(["1"]) }], pages: [many(50_000), many(50_001)] });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "enorme.ubz", blob: new Blob([ZIP]), format: "ubz" })).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (enorme.ubz) : fichier de tableau trop gros (plus de 100 000 objets)");
+  });
+
+  it("C13 : copie .iwb : write, puis zip (content.xml d'abord), nom « Cours.iwb », « Copie enregistrée au format .iwb » (S4)", async () => {
+    const b = fakeBoard();
+    const iwbFiles = typedFiles();
+    const ws = await setupWorkspace({ board: b.ports, iwbFiles });
+    await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" });
+    expect(await ws.exportBoard("iwb")).toBe(true);
+    expect(b.write.mock.calls[0]![1]).toBe("iwb");
+    expect(b.write.mock.calls[0]![0].ops).toBeInstanceOf(Float32Array);
+    expect(b.zip.mock.calls[0]![0].map((f) => f.path)).toEqual(["content.xml"]);
+    expect(iwbFiles.save).toHaveBeenCalledWith("Cours.iwb", new Uint8Array([80, 75, 3, 4]));
+    expect(shell.notify).toHaveBeenLastCalledWith("Copie enregistrée au format .iwb");
+  });
+
+  it("C13 : copie .ubz : page001.svg et metadata.rdf, nom « Cours.ubz » (S4)", async () => {
+    const b = fakeBoard();
+    const ubzFiles = typedFiles();
+    const ws = await setupWorkspace({ board: b.ports, ubzFiles });
+    await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" });
+    expect(await ws.exportBoard("ubz")).toBe(true);
+    expect(b.zip.mock.calls[0]![0].map((f) => f.path)).toEqual(["page001.svg", "metadata.rdf"]);
+    expect(ubzFiles.save.mock.calls[0]![0]).toBe("Cours.ubz");
+  });
+
+  it("C13 : sans ports ou sans fichiers typés : exportBoard rend faux, aucun avis", async () => {
+    const ws = await setupWorkspace({ board: fakeBoard().ports });
+    expect(await ws.exportBoard("iwb")).toBe(false);
+    const bare = await setupWorkspace({ iwbFiles: typedFiles() });
+    expect(await bare.exportBoard("iwb")).toBe(false);
+    expect(await bare.openBoard({ name: "x.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(false);
+    expect(shell.notify).not.toHaveBeenCalled();
   });
 });
 
