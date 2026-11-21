@@ -1,5 +1,5 @@
 //! Zone fermée du pot (C8, U28 P3, DA-Z1, DA-Z2) : les murs de la page sont rastérisés sur la vue (1 cellule = 1 px de la
-//! vue = `tol / 2` en monde), dilatés d'une cellule (voisinage 8 : les écarts ≤ 2 px se ferment), puis le clic diffuse
+//! vue = `tol / 2` en monde ; une cellule est mur si son centre ou le bord du mur y passe), dilatés d'une cellule (voisinage 8 : les écarts ≤ 2 px se ferment), puis le clic diffuse
 //! en 4-connexité. Bord de l'emprise atteint : zone ouverte. Sinon, la région agrandie de 2 cellules, moins les polygones
 //! exacts des murs (`i_overlay`), donne la forme qui contient le clic. `closed_zone` est pure : le Worker du repli DA-Z5
 //! n'aura qu'à l'appeler. Mémoire : un seul masque `u8` (2²² cellules au plus), rendu à la fin (Q20).
@@ -187,15 +187,67 @@ impl Mask {
         }
     }
 
-    /// Balayage par lignes : chaque arête coupe les lignes dont le centre est dans [ya, yb) ; cellules dont le centre
-    /// est dedans (non-nul ou pair-impair selon le mur) marquées `WALL`.
-    fn paint(&mut self, wall: &Wall) {
+    /// Cellules dont l'intérieur ouvert est traversé par l'arête (x0, y0)-(x1, y1), marquées `WALL` : un mur plus fin
+    /// qu'une cellule peut ne couvrir aucun centre, mais toute cellule qu'il touche sans en contenir le centre est
+    /// traversée par son bord. Une arête portée par une frontière de cellule n'en traverse aucune.
+    fn mark_edge(&mut self, [x0, y0]: [f64; 2], [x1, y1]: [f64; 2]) {
         let (ox, oy, c) = (self.origin[0], self.origin[1], self.cell);
-        let mut xs: Vec<(usize, f64, i32)> = Vec::new();
-        for ring in wall.contours() {
+        let (ya, yb) = (y0.min(y1), y0.max(y1));
+        let j0 = (((ya - oy) / c).floor().max(0.0)) as usize;
+        let j1 = (((yb - oy) / c).ceil() - 1.0).min(self.h as f64 - 1.0);
+        if j1 < j0 as f64 {
+            return;
+        }
+        for j in j0..=j1 as usize {
+            let (lo, hi) = (
+                (oy + j as f64 * c).max(ya),
+                (oy + (j + 1) as f64 * c).min(yb),
+            );
+            let at = |y: f64| {
+                if y1 == y0 {
+                    x0
+                } else {
+                    x0 + (y - y0) * (x1 - x0) / (y1 - y0)
+                }
+            };
+            let (xa, xb) = (at(lo).min(at(hi)), at(lo).max(at(hi)));
+            let (xa, xb) = if y1 == y0 {
+                (x0.min(x1), x0.max(x1))
+            } else {
+                (xa, xb)
+            };
+            let i0 = ((xa - ox) / c).floor().max(0.0) as usize;
+            let i1 = ((xb - ox) / c).ceil() - 1.0;
+            if i1 >= i0 as f64 {
+                let i1 = (i1 as usize).min(self.w - 1);
+                if i0 <= i1 {
+                    self.cells[j * self.w + i0..=j * self.w + i1].fill(WALL);
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn paint(&mut self, wall: &Wall) {
+        self.paint_contours(&wall.contours(), wall.even_odd, &mut Vec::new());
+    }
+
+    /// Balayage par lignes : chaque arête coupe les lignes dont le centre est dans [ya, yb) ; cellules dont le centre
+    /// est dedans (non-nul ou pair-impair selon le mur) marquées `WALL`, puis les cellules que le bord traverse
+    /// (`mark_edge`). `xs` est un tampon réutilisé d'un mur à l'autre.
+    fn paint_contours(
+        &mut self,
+        rings: &[Contour],
+        even_odd: bool,
+        xs: &mut Vec<(usize, f64, i32)>,
+    ) {
+        let (ox, oy, c) = (self.origin[0], self.origin[1], self.cell);
+        xs.clear();
+        for ring in rings {
             let n = ring.len();
             for k in 0..n {
                 let ([x0, y0], [x1, y1]) = (ring[k], ring[(k + 1) % n]);
+                self.mark_edge([x0, y0], [x1, y1]);
                 if y0 == y1 {
                     continue;
                 }
@@ -219,10 +271,10 @@ impl Mask {
             let (mut wind, mut odd, mut start) = (0i32, false, 0.0);
             while k < xs.len() && xs[k].0 == j {
                 let (_, x, d) = xs[k];
-                let was = if wall.even_odd { odd } else { wind != 0 };
+                let was = if even_odd { odd } else { wind != 0 };
                 wind += d;
                 odd = !odd;
-                let now = if wall.even_odd { odd } else { wind != 0 };
+                let now = if even_odd { odd } else { wind != 0 };
                 if !was && now {
                     start = x;
                 }
@@ -305,25 +357,24 @@ impl Mask {
         true
     }
 
-    /// Suites de cellules `REGION` : (ligne, début, fin incluse), ligne à ligne.
-    fn runs(&self) -> impl Iterator<Item = (usize, usize, usize)> + '_ {
-        (0..self.h).flat_map(move |j| {
-            let row = &self.cells[j * self.w..(j + 1) * self.w];
-            let mut out = Vec::new();
-            let mut i = 0;
-            while i < row.len() {
-                if row[i] == REGION {
-                    let s = i;
-                    while i < row.len() && row[i] == REGION {
-                        i += 1;
-                    }
-                    out.push((j, s, i - 1));
-                } else {
+    /// Suites de cellules `REGION` de la ligne `j` : (début, fin incluse), dans `out` (vidé d'abord).
+    fn row_runs(&self, j: usize, out: &mut Vec<(usize, usize)>) {
+        out.clear();
+        let Some(row) = self.cells.get(j * self.w..(j + 1) * self.w) else {
+            return;
+        };
+        let mut i = 0;
+        while i < row.len() {
+            if row[i] == REGION {
+                let s = i;
+                while i < row.len() && row[i] == REGION {
                     i += 1;
                 }
+                out.push((s, i - 1));
+            } else {
+                i += 1;
             }
-            out
-        })
+        }
     }
 
     fn rect(&self, l: usize, r: usize, j0: usize, j1: usize) -> Contour {
@@ -333,24 +384,38 @@ impl Mask {
         vec![[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
     }
 
-    /// Rectangles des suites (aire positive), les suites identiques de lignes voisines fusionnées.
+    /// Rectangles des suites (aire positive), les suites identiques de lignes voisines fusionnées : les suites d'une
+    /// ligne sont triées et disjointes, la fusion avec celles de la ligne précédente est un seul parcours.
     fn rects(&self) -> Vec<Contour> {
-        let mut by_row: Vec<Vec<(usize, usize)>> = vec![Vec::new(); self.h + 1];
-        for (j, l, r) in self.runs() {
-            by_row[j].push((l, r));
-        }
         let mut out = Vec::new();
         let mut open: Vec<(usize, usize, usize)> = Vec::new();
-        for (j, runs) in by_row.iter().enumerate() {
-            let mut next = Vec::with_capacity(runs.len());
-            for &(l, r) in runs {
-                match open.iter().position(|o| o.0 == l && o.1 == r) {
-                    Some(k) => next.push(open.swap_remove(k)),
-                    None => next.push((l, r, j)),
+        let (mut next, mut runs) = (Vec::new(), Vec::new());
+        for j in 0..=self.h {
+            self.row_runs(j, &mut runs);
+            next.clear();
+            let mut p = 0;
+            for &(l, r) in &runs {
+                while p < open.len() && open[p].0 < l {
+                    out.push(self.rect(open[p].0, open[p].1, open[p].2, j));
+                    p += 1;
+                }
+                match open.get(p) {
+                    Some(&(ol, or, j0)) if ol == l && or == r => {
+                        next.push((l, r, j0));
+                        p += 1;
+                    }
+                    Some(&(ol, or, j0)) if ol == l => {
+                        out.push(self.rect(ol, or, j0, j));
+                        p += 1;
+                        next.push((l, r, j));
+                    }
+                    _ => next.push((l, r, j)),
                 }
             }
-            out.extend(open.drain(..).map(|(l, r, j0)| self.rect(l, r, j0, j)));
-            open = next;
+            for &(l, r, j0) in &open[p..] {
+                out.push(self.rect(l, r, j0, j));
+            }
+            std::mem::swap(&mut open, &mut next);
         }
         out
     }
@@ -381,16 +446,19 @@ fn overlaps(a: &Bounds, b: &Bounds) -> bool {
 
 /// Murs qui coupent la boîte de la zone (Q20), en anneaux d'aire positive : non-nuls orientés un par un, pair-impair
 /// (anneaux de formes, `fill`) normalisés par `i_overlay`, pour que l'union non-nulle du découpage soit juste.
-fn clip_of(walls: &[Wall], zb: &Bounds) -> Vec<Contour> {
+fn clip_of(walls: &[Wall], contours: &[Vec<Contour>], zb: &Bounds) -> Vec<Contour> {
     let mut clip = Vec::new();
-    for w in walls.iter().filter(|w| overlaps(&w.bounds, zb)) {
-        let cs = w.contours();
+    for (w, cs) in walls
+        .iter()
+        .zip(contours)
+        .filter(|(w, _)| overlaps(&w.bounds, zb))
+    {
         if w.even_odd {
             let shapes = FloatOverlay::with_subj(cs.as_slice())
                 .overlay(OverlayRule::Subject, FillRule::EvenOdd);
             clip.extend(shapes.into_iter().flatten());
         } else {
-            clip.extend(cs.into_iter().map(|mut c| {
+            clip.extend(cs.iter().cloned().map(|mut c| {
                 if area2(&c) < 0.0 {
                     c.reverse();
                 }
@@ -429,10 +497,13 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
     let Some((cx, cy)) = g.cell_of(x, y) else {
         return Zone::Outside;
     };
+    let contours: Vec<Vec<Contour>> = walls.iter().map(Wall::contours).collect();
     let mut m = Mask::new(g);
-    for w in walls {
-        m.paint(w);
+    let mut xs = Vec::new();
+    for (w, cs) in walls.iter().zip(&contours) {
+        m.paint_contours(cs, w.even_odd, &mut xs);
     }
+    drop(xs);
     m.dilate_in_place(WALL);
     if m.cells[cy * m.w + cx] != FREE {
         return Zone::OnWall;
@@ -447,7 +518,7 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
     let Some(zb) = bounds_of(&subj) else {
         return Zone::OnWall;
     };
-    let clip = clip_of(walls, &zb);
+    let clip = clip_of(walls, &contours, &zb);
     FloatOverlay::with_subj_and_clip(subj.as_slice(), clip.as_slice())
         .overlay(OverlayRule::Difference, FillRule::NonZero)
         .into_iter()
@@ -600,8 +671,8 @@ mod tests {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() <= 1e-3)
     }
 
-    /// Q6 : une cellule est un mur si son centre est dans le mur ; non-nul (anneau intérieur de même sens : plein) et
-    /// pair-impair (trou).
+    /// Q6 : une cellule est un mur si son centre est dans le mur (le bord s'y ajoute, `mark_edge`, sans effet sur des
+    /// bords alignés sur la grille) ; non-nul (anneau intérieur de même sens : plein) et pair-impair (trou).
     #[test]
     fn paint_marks_cell_centres_nonzero_and_even_odd() {
         let g = Grid {
@@ -644,6 +715,65 @@ mod tests {
             Zone::Closed(_)
         ));
         assert_eq!(closed_zone(&square(3.0), 300.0, 300.0, 2.0), Zone::Open);
+    }
+
+    /// Mur plus fin qu'une cellule (revue de T1) : à `tol` = 16 (cellule 8, origine 84), les murs du haut et de gauche
+    /// ([100, 104)) ne couvrent aucun centre de cellule ; toute cellule que le mur touche est un mur, la zone reste
+    /// fermée.
+    #[test]
+    fn wall_thinner_than_a_cell_still_closes() {
+        assert!(matches!(
+            closed_zone(&square(0.0), 300.0, 300.0, 16.0),
+            Zone::Closed(_)
+        ));
+    }
+
+    /// Carré de côté 400 dont le coin haut gauche est (`ox`, 100), murs de 4 ; le mur de gauche commence `gap` sous le
+    /// mur du haut. Un petit mur lointain (`far`, 0 = aucun) agrandit l'emprise pour imposer le facteur de cellule.
+    fn square_far(ox: f32, gap: f32, far: f32) -> Vec<Wall> {
+        let mut w = vec![
+            rect_wall(ox, 100.0, ox + 400.0, 104.0),
+            rect_wall(ox + 396.0, 100.0, ox + 400.0, 500.0),
+            rect_wall(ox, 496.0, ox + 400.0, 500.0),
+            rect_wall(ox, 104.0 + gap, ox + 4.0, 500.0),
+        ];
+        if far > 0.0 {
+            w.push(rect_wall(far - 1.0, far - 1.0, far, far));
+        }
+        w
+    }
+
+    /// Q20 : à chaque facteur de cellule (1, 2, 4), à origine entière ou non, un écart d'au plus 2 cellules se ferme
+    /// et un écart d'au moins 4 cellules fuit ; entre les deux, cela dépend de l'alignement de l'écart sur la grille.
+    #[test]
+    fn gap_tolerance_holds_at_every_cell_factor_and_alignment() {
+        for (far, f) in [(0.0f32, 1.0f64), (3000.0, 2.0), (6000.0, 4.0)] {
+            for ox in [100.0f32, 100.37] {
+                let c = f as f32;
+                let g = fit(&square_far(ox, 0.0, far), 2.0).expect("grille");
+                assert_eq!(g.cell, f, "facteur de cellule");
+                if ox > 100.0 {
+                    assert!(g.origin[0].fract() != 0.0, "origine entière");
+                }
+                let (cx, cy) = (f64::from(ox) + 200.0, 300.0);
+                for gap in [1.0 * c, 1.5 * c, 2.0 * c] {
+                    assert!(
+                        matches!(
+                            closed_zone(&square_far(ox, gap, far), cx, cy, 2.0),
+                            Zone::Closed(_)
+                        ),
+                        "écart {gap} (cellule {f}, x {ox}) devait fermer"
+                    );
+                }
+                for gap in [4.0 * c, 4.5 * c, 6.0 * c] {
+                    assert_eq!(
+                        closed_zone(&square_far(ox, gap, far), cx, cy, 2.0),
+                        Zone::Open,
+                        "écart {gap} (cellule {f}, x {ox}) devait fuir"
+                    );
+                }
+            }
+        }
     }
 
     /// Q10 : hors de la boîte des murs agrandie : `Outside` ; dans un mur ou dans sa dilatation : `OnWall` ; sans mur : `Outside`.
