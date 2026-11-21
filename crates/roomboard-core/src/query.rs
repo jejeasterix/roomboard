@@ -208,11 +208,7 @@ impl Document {
             let Some(f) = read_fill(txn, e) else {
                 return boxed_geom(txn, e, raw_id, None);
             };
-            let rings: Vec<Vec<f32>> = f
-                .rings
-                .iter()
-                .map(|r| r.iter().map(|v| *v as f32).collect())
-                .collect();
+            let rings = f.rings_f32();
             return Some(Geom {
                 id: raw_id?,
                 transform: f.transform,

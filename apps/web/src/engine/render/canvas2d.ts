@@ -442,7 +442,7 @@ export class Canvas2DRenderer implements Renderer {
 
   /** Un élément dans son repère ; `pre` : matrice provisoire posée avant la sienne (fantôme, D38). */
   private paintElement(ctx: CanvasRenderingContext2D, el: ElementView, pre: Matrix | null): void {
-    const path = el.kind === "stroke" ? this.pathOf(el.id) : el.kind === "fill" ? this.pathOf(el.id, "fill") : null;
+    const path = el.kind === "stroke" || el.kind === "fill" ? this.pathOf(el.id, el.kind) : null;
     if ((el.kind === "stroke" || el.kind === "fill") && !path) return;
     ctx.save();
     if (pre) ctx.transform(pre[0], pre[1], pre[2], pre[3], pre[4], pre[5]);
