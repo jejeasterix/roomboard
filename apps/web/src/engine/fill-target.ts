@@ -3,7 +3,7 @@
  * commande ; null = aucune étape. Forme : bord (`edgeHit` du cœur, D5, DA2) → contour, sinon intérieur ; ligne, flèche,
  * trait : contour ; texte : mot sous le pointeur (UAX 29), sinon texte entier (D6, D7) ; tableau : mot de la cellule
  * par `SetTableCell` (D8), sinon remplissage de la cellule (D9) ; image : zone de pixels sous le point (C6b, B19 ; action `ImageFill`, écrite plus tard par la file du pot de
- * l'application) ; élément inconnu ou rien : fond de la page (D1, D10). Un point de la bande de tolérance hors de la boîte d'un texte ou d'un tableau y est ramené (D7, PC10). Le pot
+ * l'application) ; élément inconnu : fond de la page (D1, D10) ; rien : zone fermée (C8, `Fill zone`, décidée par le cœur, sinon le fond) ; `fill` : recoloré, ou supprimé par « Aucune » (Q14). Un point de la bande de tolérance hors de la boîte d'un texte ou d'un tableau y est ramené (D7, PC10). Le pot
  * vise l'élément touché, jamais son groupe (D4).
  */
 import type { Command, CoreDocument, TableElement, TextElement } from "../core/api";
@@ -15,6 +15,8 @@ import { offsetAt, wordAt, type Measure } from "./text-layout";
 
 /** Tolérance de toucher, en px d'écran (celle de l'outil Texte, D3). */
 export const FILL_HIT_TOL_PX = 6;
+/** Tolérance de fermeture d'une zone, en px d'écran (C8, U28 : « tolérance de fermeture 2 px », Q7). */
+export const ZONE_CLOSE_TOL_PX = 2;
 export type FillDoc = Pick<CoreDocument, "hitTest" | "element" | "edgeHit">;
 
 /** C6b (B5, B19) : remplissage d'une zone d'image demandé au point ; calculé et écrit par la file du pot
@@ -80,7 +82,8 @@ export function fillCommand(doc: FillDoc, page: string, x: number, y: number, zo
   const tol = FILL_HIT_TOL_PX / zoom;
   const id = doc.hitTest(page, x, y, tol);
   const el = id === null ? null : doc.element(id);
-  if (!el) return background(page, color);
+  if (!el) return { type: "Fill", page, target: { kind: "zone", x, y, tol: ZONE_CLOSE_TOL_PX / zoom }, color };
+  if (el.kind === "fill") return color === null ? { type: "Delete", ids: [el.id] } : { type: "Fill", page, target: { kind: "inside", id: el.id }, color };
   const edge = (): Command | null => (color === null ? null : { type: "Fill", page, target: { kind: "edge", id: el.id }, color });
   if (el.kind === "stroke") return edge();
   if (el.kind === "shape") {
