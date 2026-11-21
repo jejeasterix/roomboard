@@ -3536,3 +3536,70 @@ describe.each(c8Factories)("contrat C8 : $name", ({ f }) => {
     d.free();
   });
 });
+
+// C8 (S1, S2, S3, S5) : zone fermée, jouée par le vrai module seulement (second écart D36 : la fausse liaison traite
+// `Fill { kind: "zone" }` comme le fond).
+const square = (d: CoreDocument, p: string): void => {
+  const side = (x0: number, y0: number, x1: number, y1: number): void => {
+    const pts: number[] = [];
+    for (let i = 0; i <= 40; i++) pts.push(x0 + ((x1 - x0) * i) / 40, y0 + ((y1 - y0) * i) / 40, 0.5);
+    d.apply({ type: "CommitStroke", page: p, points: new Float32Array(pts), style: { color: "#000000", width: 4 } });
+  };
+  side(100, 100, 500, 100);
+  side(500, 100, 500, 500);
+  side(500, 500, 100, 500);
+  side(100, 500, 100, 100);
+};
+const zoneAt = (p: string, x: number, y: number, color: string | null): Command => ({ type: "Fill", page: p, target: { kind: "zone", x, y, tol: 2 }, color });
+
+describe.skipIf(loaded === null)("contrat C8 : vrai module seulement", () => {
+  it("zone fermée par quatre traits : un fill en haut de la page, une étape, anneaux relus à l'identique (S1, S3)", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    square(d, p);
+    expect(d.zoneCells(p, 2)).toBeGreaterThan(160_000);
+    const c = d.apply(zoneAt(p, 300, 300, "#facc15"));
+    const id = c.ids[0] ?? "";
+    expect(c.ids).toHaveLength(1);
+    expect(d.elementIds(p).slice(-1)).toEqual([id]);
+    expect(d.element(id)).toMatchObject({ kind: "fill", fill: { color: "#facc15" } });
+    const rings = d.fillRings(id);
+    expect(rings?.[0]).toBeGreaterThanOrEqual(4);
+    d.undo();
+    expect(d.elementIds(p)).toHaveLength(4);
+    d.redo();
+    expect(d.elementIds(p)).toHaveLength(5);
+    const r = need().core.load(d.save(now, "0.1.0"));
+    expect(r.element(id)).toEqual(d.element(id));
+    expect(r.fillRings(id)).toEqual(rings);
+    r.free();
+    d.free();
+  });
+
+  it("pot sur le fill : recoloré en une étape, « Aucune » sans étape ; près du bord : le trait (S5)", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    square(d, p);
+    const id = d.apply(zoneAt(p, 300, 300, "#facc15")).ids[0] ?? "";
+    expect(d.hitTest(p, 300, 300, 6)).toBe(id);
+    const edge = d.hitTest(p, 300, 103, 6);
+    expect(edge).not.toBe(id);
+    expect(d.element(edge ?? "")?.kind).toBe("stroke");
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "inside", id }, color: "#dc2626" });
+    expect(c.ids).toEqual([id]);
+    expect(d.element(id)).toMatchObject({ fill: { color: "#dc2626" } });
+    unchanged(d, () => d.apply({ type: "Fill", page: p, target: { kind: "inside", id }, color: null }));
+    d.free();
+  });
+
+  it("zone ouverte ou page vide : le fond change, aucun fill, une étape (S2)", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    square(d, p);
+    d.apply(zoneAt(p, 900, 900, "#16a34a"));
+    expect(bg(d, p)).toBe("#16a34a");
+    expect(d.elementIds(p)).toHaveLength(4);
+    expect(messageOf(() => d.apply(zoneAt(p, 300, 300, "#12")))).toBe(BAD_FILL);
+    d.free();
+  });
+});

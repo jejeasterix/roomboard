@@ -17,7 +17,7 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 use crate::element::ImageView;
 use crate::element::{
     backdrop_view, finite_positive, out_f64, out_string, out_transform, read_backdrop, read_group,
-    read_image, read_style, read_unknown, unknown_view, ElementView, PageView, ShapeView,
+    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageView, ShapeView,
     StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
     SCHEMA,
 };
@@ -410,6 +410,26 @@ impl Document {
                         ..ElementView::bare(id, "model3d", transform)
                     },
                     // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).
+                    None => {
+                        let (transform, unknown) = unknown_view(&txn, e)?;
+                        ElementView {
+                            unknown: Some(unknown),
+                            ..ElementView::bare(id, "unknown", transform)
+                        }
+                    }
+                })
+            }
+            Some(crate::fill_element::FILL_KIND) => {
+                Some(match crate::fill_element::read_fill(&txn, e) {
+                    Some(f) => ElementView {
+                        fill: Some(FillView {
+                            color: f.color,
+                            w: f.w,
+                            h: f.h,
+                        }),
+                        ..ElementView::bare(id, "fill", f.transform)
+                    },
+                    // Q11 : `fill` mal formé → cadre inconnu de sa boîte `w`, `h` (repli du média, pas de l'image).
                     None => {
                         let (transform, unknown) = unknown_view(&txn, e)?;
                         ElementView {
@@ -1309,6 +1329,20 @@ mod tests {
             width: 4.0,
         };
         for kind in KNOWN_KINDS {
+            if kind == crate::fill_element::FILL_KIND {
+                let id = d
+                    .insert_fill(&p, &[vec![0.0, 0.0, 50.0, 0.0, 0.0, 40.0]], "#facc15")
+                    .expect("fill")
+                    .ids[0]
+                    .clone();
+                assert_eq!(
+                    d.element(&id).map(|v| v.kind),
+                    Some(kind.to_string()),
+                    "vue de {kind}"
+                );
+                assert!(d.bounds(&[id]).is_some(), "boîte de {kind}");
+                continue;
+            }
             let cmd = match kind {
                 "stroke" => Command::CommitStroke {
                     page: p.clone(),
@@ -1402,6 +1436,83 @@ mod tests {
                 "vue de {kind}"
             );
             assert!(d.bounds(&[id]).is_some(), "boîte de {kind}");
+        }
+    }
+
+    fn square_fill(d: &mut Document, p: &str) -> String {
+        d.insert_fill(
+            p,
+            &[
+                vec![100.0, 100.0, 500.0, 100.0, 500.0, 500.0, 100.0, 500.0],
+                vec![250.0, 250.0, 250.0, 270.0, 270.0, 270.0, 270.0, 250.0],
+            ],
+            "#facc15",
+        )
+        .expect("fill")
+        .ids[0]
+            .clone()
+    }
+
+    /// Q11, Q12 : vue `fill` (couleur, boîte), sans anneaux ; transform au coin de la boîte.
+    #[test]
+    fn fill_view_has_color_and_box() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = square_fill(&mut d, &p);
+        let v = d.element(&id).expect("vue");
+        assert_eq!(v.kind, "fill");
+        assert_eq!(v.transform, [1.0, 0.0, 0.0, 1.0, 100.0, 100.0]);
+        assert_eq!(
+            v.fill,
+            Some(crate::element::FillView {
+                color: "#facc15".into(),
+                w: 400.0,
+                h: 400.0
+            })
+        );
+    }
+
+    /// Q11 : contours illisibles : cadre inconnu de sa boîte `w × h`, `source_kind` « fill », jamais invisible.
+    #[test]
+    fn malformed_fill_is_unknown_with_its_box() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = square_fill(&mut d, &p);
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            drop(txn);
+            let mut txn = d.doc.transact_mut();
+            e.insert(&mut txn, "contours", "illisible");
+        }
+        let v = d.element(&id).expect("vue");
+        assert_eq!(v.kind, "unknown");
+        let u = v.unknown.expect("cadre");
+        assert_eq!((u.source_kind.as_str(), u.w, u.h), ("fill", 400.0, 400.0));
+        assert!(d.bounds(&[id]).is_some());
+    }
+
+    /// S3, U3 : dix rechargements gardent les octets et la vue d'un `fill`.
+    #[test]
+    fn fill_reload_keeps_bytes() {
+        use crate::format::{load, save, SaveMeta};
+        let meta = SaveMeta {
+            app_version: "0.1.0".into(),
+            now: "2026-11-21T00:00:00Z".into(),
+            created: None,
+        };
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = square_fill(&mut d, &p);
+        let file = save(&d, &meta).expect("save");
+        for i in 0..10 {
+            let r = load(&file).expect("load");
+            assert_eq!(r.element(&id), d.element(&id), "vue au rechargement {i}");
+            assert_eq!(r.fill_rings(&id), d.fill_rings(&id));
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "octets au rechargement {i}"
+            );
         }
     }
 
