@@ -197,7 +197,7 @@ async function buildBoardSession(
   });
   undo.push(() => fillQueue.dispose());
   // C8 (Q18) : durée du pot de zone (`performance.measure("pot-zone")`), cellules, nombre de `fill` (data-zones…).
-  const zoneMarks = createZoneMarks(doc);
+  const zoneMarks = createZoneMarks(doc, undefined, undefined, () => remark());
   // Échelon 4 : WebGL2 pour le canvas d'interaction si demandé, sinon (ou s'il manque) Canvas 2D.
   // Fond `pdf-page` (C12, DAPF2) : tuiles par palier, `redraw` à chaque arrivée (patron R16). Libérées à la
   // désactivation (PF32 : 12 onglets) et recréées au premier dessin suivant.
