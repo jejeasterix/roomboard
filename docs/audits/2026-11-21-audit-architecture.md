@@ -10,6 +10,8 @@ Les 3 premiers candidats :
 2. **B — Utilitaires feuilles : Blob, noms de fichiers, cycles d'import** (`app/` + `platform/`) : `courte`, Fort, ferme 4 constats.
 3. **C — Un module de géométrie dans le cœur** (`crates/roomboard-core`) : `courte`, Fort, ferme 2 constats et pose le test de parité qui manque.
 
+Note de clôture (OE23, PR #28) : le chantier `restes-od94-porte-s6` a déjà posé `elementIdsOfKind` (kind sans vue) et fermé le constat `zone-marks.ts:56` ; il reste au candidat A le `fill` sans anneaux et les réglages d'`ImageView`.
+
 Page HTML : [`2026-11-21-audit-architecture.html`](2026-11-21-audit-architecture.html) (autonome, sans ressource distante).
 
 ---

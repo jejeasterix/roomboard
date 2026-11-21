@@ -49,7 +49,7 @@ Ligne du banc, recopiée telle quelle :
 
     S6 empreinte : anneaux=301 longueur=10217 sha256=b2f8da761b79e5113c5d20826428444331608c834622a853784ace43ed8ac073 boîte=-700.9893798828125,-700.9893798828125,1293.0106201171875,1293.0106201171875
 
-Non-régression : `zone-s6-banc.test.ts`, `describe` « non-régression C8 sur S6 » (S2), compare cette empreinte sur la tête a28989e : égale.
+Non-régression : `zone-s6-banc.test.ts`, `describe` « non-régression C8 sur S6 » (S2), compare cette empreinte depuis 2cad5b5 (test ajouté par T5) jusqu'à la tête finale 3f7c157 : égale.
 
 ## Où vont les ms (avant)
 
@@ -89,7 +89,7 @@ S1 après T3 (lecture de ce seul passage) : médiane 27 <= 35 et aucun clic > 50
 
 ## T4 : sans gain retenu
 
-Lancé par l'orchestrateur après 5 passages à 2cad5b5 (médiane 27 ms ; un clic à 51 ms sous 8 boucles de calcul à côté).
+Lancé par l'orchestrateur après 5 passages à a28989e (fichiers de 13:20 et 13:22, avant 2cad5b5) (médiane 27 ms ; un clic à 51 ms sous 8 boucles de calcul à côté).
 Cible : le premier clic à froid. Code de `zone.rs` à la fin de T4 identique à 2cad5b5 (essai retiré par 151b031) ; module
 `roomboard_wasm_bg.wasm` inchangé, 1370577 octets ; aucun passage de l'essai (rien n'a changé depuis le passage d'après T3).
 
@@ -162,5 +162,21 @@ verts, `Tests  5 passed (5)`. Ligne `S6 empreinte :` comparée à l'octet à cel
 - La seule phase de notre code assez lourde pour peser (marquage, 3.97 ms natif) a été essayée sans gain ; la plus lourde,
   `i_overlay` (6.6 ms natif), est une crate dont l'entrée doit rester identique pour garder l'empreinte (H3).
 
-S1 n'est pas retenue par un gain T4 : l'état S1 reste celui des passages d'après T3 (médiane 27 ms, un clic à 51 ms sous charge
-de 6 à 8). Suite possible, hors T4 : la seconde croissance de la mémoire (écriture du `fill`, ~1 à 2 ms au second clic).
+S1 n'est pas retenue par un gain T4 : S1 tient par T3 seul (voir « S1 sur la tête finale »). Le clic à 51 ms vient de la série
+sous charge artificielle (8 boucles de calcul, information seulement, Q4), pas des passages de la porte. Suite possible, hors T4 : la seconde croissance de la mémoire (écriture du `fill`, ~1 à 2 ms au second clic).
+
+## S1 sur la tête finale (3f7c157, après `scripts/verifier.sh --e2e` : OK)
+
+5 passages de suite de `node scripts/essais/c8-pot-zones-navigateur.mjs` (lancé en `nice -n 10`), charge relevée avant chaque
+passage ; la VM portait d'autres ouvriers (charge réelle 7.9 à 9.4 sur 8 cœurs).
+
+| passage | charge 1/5/15 min | S6 trois clics triés (ms) | médiane | fond |
+|---|---|---|---|---|
+| 1 | 9.37 8.79 5.85 | 26, 30, 37 | 30 | 9 |
+| 2 | 9.02 8.73 5.85 | 25, 27, 37 | 27 | 10 |
+| 3 | 8.62 8.65 5.84 | 25, 29, 37 | 29 | 10 |
+| 4 | 8.09 8.54 5.81 | 24, 27, 38 | 27 | 10 |
+| 5 | 7.92 8.49 5.82 | 24, 27, 37 | 27 | 10 |
+
+Lecture stricte (Q3) : chaque médiane ≤ 35 ms, aucun clic > 50 ms (maximum 38) : **S1 tenue**. Avant (afc2d8b, charge 3.2 à
+3.9) : médianes 39 à 40 ms, maximum 51 ms. Passage de l'essai dans `verifier.sh` : médiane 29 ms (25, 29, 48).
