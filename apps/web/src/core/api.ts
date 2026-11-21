@@ -381,6 +381,9 @@ export interface CoreDocument {
   saveFragment(now: string, appVersion: string, name: string): Uint8Array;
   /** C3 (Z6) : manifeste et `document.ybin` d'un fragment, pour le conteneur avec assets. */
   saveFragmentParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array];
+  /** C4 (D2) : `.rbitem` de grille (une page, sans élément) sans asset. */
+  saveGrid(now: string, appVersion: string, name: string): Uint8Array;
+  saveGridParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array];
 }
 
 export interface CoreFactory {
@@ -395,6 +398,13 @@ export interface CoreFactory {
   /** C3 : lit un `.rbitem` sans asset ; un document est refusé (message du cœur). */
   loadFragment(bytes: Uint8Array): CoreDocument;
   loadFragmentParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
+  /** C4 : grille en ressource ; un autre type : `wrongKindMessage`. */
+  loadGrid(bytes: Uint8Array): CoreDocument;
+  loadGridParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;
+  /** C4 : type d'un manifeste ; format, version ou `kind` inconnus : erreur du cœur. */
+  manifestKind(manifest: Uint8Array): ContainerKind;
+  /** C4 : type d'un conteneur entier (repli sans le module des formats). */
+  containerKind(bytes: Uint8Array): ContainerKind;
 }
 
 /** Message de BadMedia du cœur (C14), repris à l'identique par la fausse liaison. */
@@ -450,8 +460,16 @@ export const BAD_IMAGE_PARAMS_MESSAGE =
   "réglages d'image invalides (image lisible, rognage entier dans l'image, quarts de tour 0 à 3, luminosité et contraste entiers de -100 à 100, couleur #rrggbb, tolérance et plume entières de 0 à 100 attendus)";
 export const NOT_A_DOCUMENT_MESSAGE = "ce fichier est un objet RoomBoard (.rbitem) : déposez-le ou importez-le sur une page";
 export const NOT_A_FRAGMENT_MESSAGE = "ce fichier est un document RoomBoard (.roomboard), pas un objet : ouvrez-le ou insérez ses pages";
+/** C4 (D3) : type d'un conteneur RoomBoard ; `kind` absent = document (U8). */
+export type ContainerKind = "document" | "fragment" | "grid";
+export const IS_A_GRID_MESSAGE = "ce fichier est une grille RoomBoard : déposez-la sur une page";
+/** Message du mauvais type, choisi sur ce que le fichier est (même règle que `FormatError::WrongKind`). */
+export const wrongKindMessage = (found: ContainerKind): string =>
+  found === "grid" ? IS_A_GRID_MESSAGE : found === "fragment" ? NOT_A_DOCUMENT_MESSAGE : NOT_A_FRAGMENT_MESSAGE;
+/** D26 : un `.rbpack` ouvert comme document ou objet (même texte que le cœur, `FormatError::UnknownKind` de « pack »). */
+export const PACK_MESSAGE = "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque";
 export const unknownKindMessage = (kind: string): string =>
-  `type de fichier RoomBoard inconnu (« ${kind} ») : pris en charge dans une prochaine version`;
+  kind === "pack" ? PACK_MESSAGE : `type de fichier RoomBoard inconnu (« ${kind} ») : pris en charge dans une prochaine version`;
 /** Source d'une insertion venue de l'autre liaison (fausse ↔ Wasm) : jamais mêlées (DAZ2). */
 export const MIXED_SOURCE_MESSAGE = "source d'une autre liaison : insertion impossible";
 

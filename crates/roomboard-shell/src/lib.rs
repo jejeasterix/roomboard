@@ -11,7 +11,7 @@ use std::sync::Mutex;
 /// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
 /// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
-pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem"];
+pub const ASSOCIATED_EXTENSIONS: &[&str] = &["roomboard", "rbitem", "rbpack"];
 /// Extensions des médias (audio, vidéo) qu'on peut lier sans les copier.
 pub const MEDIA_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "m4a", "mov", "webm", "mp3", "wav", "ogg", "oga", "ogv",
@@ -326,6 +326,7 @@ mod tests {
             "/x/photo.png",
             "/x/b.roomboard",
             "/x/objet.RBITEM",
+            "/x/Fractions.rbpack",
         ]
         .map(String::from);
         assert_eq!(
@@ -333,7 +334,85 @@ mod tests {
             vec![
                 PathBuf::from("/x/Cours.RoomBoard"),
                 PathBuf::from("/x/b.roomboard"),
-                PathBuf::from("/x/objet.RBITEM")
+                PathBuf::from("/x/objet.RBITEM"),
+                PathBuf::from("/x/Fractions.rbpack")
+            ]
+        );
+    }
+
+    #[test]
+    fn tauri_conf_associations_match_associated_extensions() {
+        let raw = include_str!("../../../apps/desktop/src-tauri/tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json lisible");
+        let mut exts: Vec<String> = conf["bundle"]["fileAssociations"]
+            .as_array()
+            .expect("fileAssociations")
+            .iter()
+            .flat_map(|a| a["ext"].as_array().cloned().unwrap_or_default())
+            .filter_map(|e| e.as_str().map(String::from))
+            .collect();
+        exts.sort();
+        let mut expected: Vec<String> = ASSOCIATED_EXTENSIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(exts, expected);
+        let pack = conf["bundle"]["fileAssociations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["ext"][0] == "rbpack")
+            .expect("association rbpack");
+        assert_eq!(pack["mimeType"], "application/x-roomboard-pack");
+        assert_eq!(pack["name"], "Paquet RoomBoard");
+    }
+
+    #[test]
+    fn capabilities_grant_library_folder_only() {
+        let raw = include_str!("../../../apps/desktop/src-tauri/capabilities/default.json");
+        let caps: serde_json::Value = serde_json::from_str(raw).expect("default.json lisible");
+        let perms = caps["permissions"].as_array().expect("permissions");
+        // Moindre privilège (C5, C8) : exactement ces permissions fs, ni `fs:default`, ni `fs:allow-home-*`, ni
+        // `fs:allow-exists` (jamais appelée), et une seule portée fs.
+        let mut names: Vec<&str> = perms
+            .iter()
+            .filter_map(|p| p.as_str())
+            .filter(|p| p.starts_with("fs:"))
+            .collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            vec![
+                "fs:allow-mkdir",
+                "fs:allow-read-dir",
+                "fs:allow-read-file",
+                "fs:allow-remove",
+                "fs:allow-write-file",
+            ]
+        );
+        let scopes: Vec<&serde_json::Value> = perms
+            .iter()
+            .filter(|p| {
+                p["identifier"]
+                    .as_str()
+                    .is_some_and(|i| i.starts_with("fs:"))
+            })
+            .collect();
+        assert_eq!(scopes.len(), 1, "une seule entrée fs objet");
+        let scope = scopes[0];
+        assert_eq!(scope["identifier"], "fs:scope");
+        let allow: Vec<&str> = scope["allow"]
+            .as_array()
+            .expect("allow")
+            .iter()
+            .filter_map(|a| a["path"].as_str())
+            .collect();
+        assert_eq!(
+            allow,
+            vec![
+                "$DOCUMENT/RoomBoard/Ressources",
+                "$DOCUMENT/RoomBoard/Ressources/**"
             ]
         );
     }

@@ -30,6 +30,7 @@
 // ImportTable (F18) : mêmes refus dans le même ordre que `table.rs`, une étape par commande, aucune étape vide.
 // C6a : Fill (contour, intérieur, fond) au modèle de `fill.rs` (même ordre de refus, mêmes messages) ; edgeHit, miroir d'`edge_hit` ; fond de page gardé dans le JSON.
 import type {
+  ContainerKind,
   AssetInfo,
   AssetRef,
   BackdropView,
@@ -89,8 +90,7 @@ import {
   MAX_GRID_LINE_WIDTH,
   MIN_GRID_LINE_WIDTH,
   MIXED_SOURCE_MESSAGE,
-  NOT_A_DOCUMENT_MESSAGE,
-  NOT_A_FRAGMENT_MESSAGE,
+  wrongKindMessage,
   PAGE_HEIGHT,
   PDF_MAX_PAGES,
   PDF_PAGE_KIND,
@@ -1478,6 +1478,15 @@ class FakeDocument implements CoreDocument {
     const manifest = new TextEncoder().encode(JSON.stringify({ format: "roomboard-fake", kind: "fragment", name, appVersion, modified: now }));
     return [manifest, this.saveFragment(now, appVersion, name)] as const;
   }
+  saveGrid(now: string, appVersion: string, name: string): Uint8Array {
+    const n = this.state.pages.length;
+    if (n !== 1) throw new Error(`document RoomBoard endommagé : grille de ${n} pages : une seule attendue`);
+    return new TextEncoder().encode(JSON.stringify({ kind: "grid", name, ...this.json(now, appVersion) }));
+  }
+  saveGridParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array] {
+    const manifest = new TextEncoder().encode(JSON.stringify({ format: "roomboard-fake", kind: "grid", name, appVersion, modified: now }));
+    return [manifest, this.saveGrid(now, appVersion, name)] as const;
+  }
   extract(page: string, ids: readonly string[]): CoreDocument {
     // Ordre du cœur : page inconnue, puis premier id absent de la page.
     const p = this.pageOf(page);
@@ -1830,22 +1839,33 @@ function loadElement(e: SavedElement): FakeElement {
   };
 }
 
-function loadFake(bytes: Uint8Array, expected: "document" | "fragment" = "document"): CoreDocument {
-  // Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel.
-  const notRoomboard = "ce fichier n'est pas un document RoomBoard";
+function fakeKind(raw: Record<string, unknown>): ContainerKind {
+  const kind = raw["kind"] ?? "document";
+  // D26 : « pack » a son message (`unknownKindMessage`), comme dans le cœur.
+  if (kind !== "document" && kind !== "fragment" && kind !== "grid") throw new Error(unknownKindMessage(String(kind)));
+  return kind;
+}
+
+/** Même message que le cœur (`FormatError::NotRoomboard`) : le lot 3 l'affiche tel quel. */
+const NOT_ROOMBOARD = "ce fichier n'est pas un document RoomBoard";
+
+function parseFake(bytes: Uint8Array): Record<string, unknown> {
   let raw: unknown;
   try {
     raw = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
-    throw new Error(notRoomboard);
+    throw new Error(NOT_ROOMBOARD);
   }
-  if (!isRecord(raw)) throw new Error(notRoomboard);
-  // C3 : le type se lit à l'ouverture, avant le contenu (un fichier d'un type à venir n'a pas à porter `pages`) ;
-  // kind absent : document d'avant C3. Le mauvais type est refusé une fois le contenu reconnu.
-  const kind = raw["kind"] ?? "document";
-  if (kind !== "document" && kind !== "fragment") throw new Error(unknownKindMessage(String(kind)));
-  if (!Array.isArray(raw["pages"])) throw new Error(notRoomboard);
-  if (kind !== expected) throw new Error(expected === "document" ? NOT_A_DOCUMENT_MESSAGE : NOT_A_FRAGMENT_MESSAGE);
+  if (!isRecord(raw)) throw new Error(NOT_ROOMBOARD);
+  return raw;
+}
+
+function loadFake(bytes: Uint8Array, expected: ContainerKind = "document"): CoreDocument {
+  const raw = parseFake(bytes);
+  // C3 : le type se lit à l'ouverture, avant le contenu ; kind absent : document d'avant C3.
+  const kind = fakeKind(raw);
+  if (!Array.isArray(raw["pages"])) throw new Error(NOT_ROOMBOARD);
+  if (kind !== expected) throw new Error(wrongKindMessage(kind));
   const pages = (raw["pages"] as SavedPage[]).map((p) => ({
     id: p.id,
     elements: p.elements.map(loadElement),
@@ -1888,6 +1908,13 @@ export const fakeCore: CoreFactory = {
     void manifest;
     return loadFake(ybin, "fragment");
   },
+  loadGrid: (bytes: Uint8Array) => loadFake(bytes, "grid"),
+  loadGridParts: (manifest: Uint8Array, ybin: Uint8Array) => {
+    void manifest;
+    return loadFake(ybin, "grid");
+  },
+  manifestKind: (manifest: Uint8Array) => fakeKind(parseFake(manifest)),
+  containerKind: (bytes: Uint8Array) => fakeKind(parseFake(bytes)),
 };
 
 // --- Grille (C9) : mêmes règles que `crates/roomboard-core/src/grid.rs` pour le modèle ; carreaux seuls pour le reste.

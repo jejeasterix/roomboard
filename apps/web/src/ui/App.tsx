@@ -31,6 +31,9 @@ import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
 import { GridPanel } from "./GridPanel";
 import { ImagePanel } from "./ImagePanel";
+import { LibraryPanel, type SharedFolder } from "./LibraryPanel";
+import type { ResourceLibrary } from "../app/library";
+import type { TypedFiles } from "../platform/typed-files";
 import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
 import type { ToolbarView } from "./item-state";
@@ -50,9 +53,11 @@ export interface AppProps {
    *  posent leur scène et leur zone de texte (`SessionShared.container`) ; l'application le place dans la case `stage`. */
   readonly stages: HTMLElement;
   navigate(search: string): void;
+  /** C4 : bibliothèque ; absente (tests anciens) : le bouton n'ouvre rien. */
+  readonly library?: { readonly library: ResourceLibrary; readonly shared: SharedFolder; readonly packs: TypedFiles };
 }
 
-type Panel = "settings" | "profiles" | "editor" | "grid" | "image";
+type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
 
 export function App(props: AppProps): JSX.Element {
   const ws = props.workspace;
@@ -407,6 +412,28 @@ export function App(props: AppProps): JSX.Element {
         {(id) => (
           <div class="rb-popover" data-panel="image">
             {imagePanelFor(ws.active().board, id())}
+          </div>
+        )}
+      </Show>
+      <Show when={panel() === "library" ? props.library : undefined}>
+        {(lib) => (
+          <div class="rb-popover" data-panel="library">
+            <LibraryPanel
+              library={lib().library}
+              shared={lib().shared}
+              packs={lib().packs}
+              capture={(what) => ws.captureResource(what)}
+              place={async (entry, at) => {
+                try {
+                  await ws.insertResource(await lib().library.read(entry), entry.name, at);
+                } catch (e) {
+                  await ws.say(`${entry.name} : ${e instanceof Error ? e.message : String(e)}`);
+                }
+              }}
+              confirm={(m) => ws.ask(m)}
+              say={(m) => ws.say(m)}
+              close={() => setPanel(null)}
+            />
           </div>
         )}
       </Show>

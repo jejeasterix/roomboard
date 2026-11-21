@@ -35,6 +35,13 @@ export interface TauriFs {
   writeFile(path: string, data: Uint8Array): Promise<void>;
 }
 
+/** C4 (D7, DA3) : dossiers de la bibliothèque (`Documents/RoomBoard/Ressources`, dossier partagé choisi). */
+export interface TauriDirFs {
+  readDir(path: string): Promise<readonly { readonly name: string; readonly isDirectory: boolean }[]>;
+  mkdir(path: string, o: { readonly recursive: true }): Promise<void>;
+  remove(path: string, o: { readonly recursive: true }): Promise<void>;
+}
+
 export interface CloseEventLike {
   preventDefault(): void;
 }
@@ -214,13 +221,23 @@ export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmP
 }
 
 /** Ports réels de la coque (imports dynamiques : absents du bundle du navigateur). Prouvé par l'essai T78. */
-export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: TauriFs; win: TauriWindow; ipc: TauriIpc; assetUrl: (path: string) => string }> {
-  const [d, f, w, core, ev] = await Promise.all([
+export async function loadTauriPorts(): Promise<{
+  dialog: TauriDialog;
+  fs: TauriFs;
+  win: TauriWindow;
+  ipc: TauriIpc;
+  assetUrl: (path: string) => string;
+  dirFs: TauriDirFs;
+  pickFolder(defaultPath: string | null): Promise<string | null>;
+  documentDir(): Promise<string>;
+}> {
+  const [d, f, w, core, ev, path] = await Promise.all([
     import("@tauri-apps/plugin-dialog"),
     import("@tauri-apps/plugin-fs"),
     import("@tauri-apps/api/window"),
     import("@tauri-apps/api/core"),
     import("@tauri-apps/api/event"),
+    import("@tauri-apps/api/path"),
   ]);
   const current = w.getCurrentWindow();
   const filters = (list: readonly DialogFilter[]) => list.map((x) => ({ name: x.name, extensions: [...x.extensions] }));
@@ -249,6 +266,17 @@ export async function loadTauriPorts(): Promise<{ dialog: TauriDialog; fs: Tauri
       invoke: (cmd, args) => core.invoke(cmd, args),
       listen: (event, cb) => ev.listen(event, cb),
     },
-    assetUrl: (path) => core.convertFileSrc(path),
+    assetUrl: (p) => core.convertFileSrc(p),
+    dirFs: {
+      readDir: async (p) => (await f.readDir(p)).map((e) => ({ name: e.name, isDirectory: e.isDirectory })),
+      mkdir: (p, o) => f.mkdir(p, o),
+      remove: (p, o) => f.remove(p, o),
+    },
+    // Le dossier choisi entre dans la portée fs, récursif (plugin dialog 2.8.4, `commands.rs:163-180`).
+    pickFolder: async (defaultPath) => {
+      const r = await d.open({ directory: true, recursive: true, multiple: false, ...(defaultPath !== null ? { defaultPath } : {}) });
+      return typeof r === "string" ? r : null;
+    },
+    documentDir: () => path.documentDir(),
   };
 }

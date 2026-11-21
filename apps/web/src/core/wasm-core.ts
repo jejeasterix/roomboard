@@ -10,6 +10,7 @@ import type {
   Change,
   Command,
   CoreDocument,
+  ContainerKind,
   CoreFactory,
   ElementView,
   GridLevel,
@@ -409,6 +410,15 @@ export function gridArgs(g: GridView): [boolean, boolean, boolean, string[], str
 
 /** Types admis par `normalizeParams` du faux cœur (le domaine reste au cœur) : `crop` quatre nombres, booléens, nombres
  *  (null vaut neutre pour ces trois-là), `transparent` aux quatre champs typés. */
+/** Manifeste et `ybin` d'un enregistrement en deux parties du cœur, l'objet Wasm libéré après lecture (C3). */
+function takeParts(p: { manifest(): Uint8Array; ybin(): Uint8Array; free(): void }): readonly [Uint8Array, Uint8Array] {
+  try {
+    return [p.manifest(), p.ybin()] as const;
+  } finally {
+    p.free();
+  }
+}
+
 function wellTyped(p: ImageParams): boolean {
   const r = p as Readonly<Record<string, unknown>>;
   const bool = (v: unknown): boolean => v === undefined || typeof v === "boolean";
@@ -643,14 +653,7 @@ class WasmCoreDocument implements CoreDocument {
   canRedo(): boolean { return this.d.can_redo(); }
   version(): number { return this.d.version(); }
   save(now: string, appVersion: string): Uint8Array { return this.d.save(now, appVersion); }
-  saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array] {
-    const p = this.d.save_parts(now, appVersion);
-    try {
-      return [p.manifest(), p.ybin()] as const;
-    } finally {
-      p.free();
-    }
-  }
+  saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array] { return takeParts(this.d.save_parts(now, appVersion)); }
 
   /** Source d'une insertion : même liaison exigée (DAZ2). */
   private other(src: CoreDocument): Wasm.Document {
@@ -662,12 +665,11 @@ class WasmCoreDocument implements CoreDocument {
   insertPages(src: CoreDocument, after: string): Change { return toChange(this.d.insert_pages(this.other(src), after)); }
   saveFragment(now: string, appVersion: string, name: string): Uint8Array { return this.d.save_fragment(now, appVersion, name); }
   saveFragmentParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array] {
-    const p = this.d.save_fragment_parts(now, appVersion, name);
-    try {
-      return [p.manifest(), p.ybin()] as const;
-    } finally {
-      p.free();
-    }
+    return takeParts(this.d.save_fragment_parts(now, appVersion, name));
+  }
+  saveGrid(now: string, appVersion: string, name: string): Uint8Array { return this.d.save_grid(now, appVersion, name); }
+  saveGridParts(now: string, appVersion: string, name: string): readonly [Uint8Array, Uint8Array] {
+    return takeParts(this.d.save_grid_parts(now, appVersion, name));
   }
 
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
@@ -693,6 +695,12 @@ class WasmCoreDocument implements CoreDocument {
   }
 }
 
+/** Le cœur ne rend que ces trois valeurs ; toute autre est une erreur de liaison. */
+const asContainerKind = (k: string): ContainerKind => {
+  if (k === "document" || k === "fragment" || k === "grid") return k;
+  throw new Error(`type de conteneur inattendu : ${k}`);
+};
+
 export function createWasmCore(mod: WasmModule): CoreFactory {
   return {
     blank: () => new WasmCoreDocument(mod.Document.blank(), mod),
@@ -702,6 +710,10 @@ export function createWasmCore(mod: WasmModule): CoreFactory {
     loadParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_parts(manifest, ybin), mod),
     loadFragment: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment(bytes), mod),
     loadFragmentParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment_parts(manifest, ybin), mod),
+    loadGrid: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load_grid(bytes), mod),
+    loadGridParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_grid_parts(manifest, ybin), mod),
+    manifestKind: (manifest: Uint8Array) => asContainerKind(mod.Document.manifest_kind(manifest)),
+    containerKind: (bytes: Uint8Array) => asContainerKind(mod.Document.container_kind(bytes)),
     version: () => mod.version(),
   };
 }

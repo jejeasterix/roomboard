@@ -65,7 +65,7 @@ describe("FileHost : onDrop (T86)", () => {
     expect(IMPORT_FILTER).toEqual({
       name: "Images, vidéos, sons, 3D, PDF et documents RoomBoard",
       extensions: [
-        "roomboard", "rbitem", "pdf",
+        "roomboard", "rbitem", "rbpack", "pdf",
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif",
         "mp4", "m4v", "mov", "webm", "ogv",
         "m4a", "mp3", "wav", "ogg", "oga",

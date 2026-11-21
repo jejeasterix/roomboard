@@ -2,10 +2,23 @@ import { deflateSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ZIP_MALFORMED_MESSAGE, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import type { WorkerLike } from "./one-shot-worker";
-import { checkZipReply, createZipReader, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS } from "./zip-read";
+import { checkZipBytesReply, checkZipReply, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS, ZIP_WRITE_FAILED_MESSAGE } from "./zip-read";
 import { unzipModelEntries } from "./zip-worker";
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
+
+/** C4 : faux Worker qui répond `reply(message)` au message reçu. */
+function fakeWorker(reply: (m: unknown) => unknown): WorkerLike {
+  const w: WorkerLike = {
+    onmessage: null,
+    onerror: null,
+    postMessage(m) {
+      queueMicrotask(() => w.onmessage?.({ data: reply(m) }));
+    },
+    terminate() {},
+  };
+  return w;
+}
 
 /** ZIP écrit à la main : une seule entrée locale stockée (méthode 0) de `data`, visée par un enregistrement du répertoire
  *  central par nom de `names` ; chacun déclare `data.length` octets lus et `declared` octets d'origine. */
@@ -135,5 +148,43 @@ describe("lecteur ZIP (C15, X16)", () => {
     await expect(createZipReader(spawn(false), 5)(new Blob([new Uint8Array([1])]))).rejects.toThrow(ZIP_FAILED_MESSAGE);
     expect(spawned).toHaveLength(3);
     expect(spawned[2]!.terminated).toBe(1);
+  });
+});
+
+describe("C4 : paquet par le Worker ZIP", () => {
+  it("C4 : createZipWriter envoie { op: \"zip\", files } et rend les octets", async () => {
+    const posted: unknown[] = [];
+    const spawn = () => fakeWorker((m) => { posted.push(m); return { bytes: new Uint8Array([1, 2]) }; });
+    const write = createZipWriter(spawn);
+    expect(await write([{ path: "manifest.json", bytes: new Uint8Array([7]) }])).toEqual(new Uint8Array([1, 2]));
+    expect((posted[0] as { op: string }).op).toBe("zip");
+  });
+
+  it("C4 : createZipReader en mode pack envoie { op: \"unzip\", mode: \"pack\" }", async () => {
+    const posted: unknown[] = [];
+    const read = createZipReader(() => fakeWorker((m) => { posted.push(m); return { entries: [] }; }), 1000, "pack");
+    expect(await read(new Blob([new Uint8Array([1])]))).toEqual([]);
+    expect(posted[0]).toMatchObject({ op: "unzip", mode: "pack" });
+  });
+
+  it("C4 : createZipReader sans mode garde le message 3D { bytes } seul", async () => {
+    const posted: unknown[] = [];
+    const read = createZipReader(() => fakeWorker((m) => { posted.push(m); return { entries: [] }; }));
+    await read(new Blob([new Uint8Array([1])]));
+    expect(Object.keys(posted[0] as object)).toEqual(["bytes"]);
+  });
+
+  it("C4 : checkZipBytesReply : forme contrôlée ; erreur rendue telle quelle", () => {
+    expect(() => checkZipBytesReply({ error: "x" })).toThrow("x");
+    expect(() => checkZipBytesReply({})).toThrow(ZIP_WRITE_FAILED_MESSAGE);
+    expect(() => checkZipBytesReply(null)).toThrow(ZIP_WRITE_FAILED_MESSAGE);
+    expect(() => checkZipBytesReply({ bytes: [1] })).toThrow(ZIP_WRITE_FAILED_MESSAGE);
+    expect(checkZipBytesReply({ bytes: new Uint8Array([3]) })).toEqual(new Uint8Array([3]));
+  });
+
+  it("C4 : un échec d'écriture du ZIP (délai, Worker en erreur) dit « écriture », pas « lecture »", async () => {
+    const mute: WorkerLike = { onmessage: null, onerror: null, postMessage() {}, terminate() {} };
+    await expect(createZipWriter(() => mute, 5)([])).rejects.toThrow("écriture du ZIP interrompue");
+    expect(ZIP_WRITE_FAILED_MESSAGE).not.toBe(ZIP_FAILED_MESSAGE);
   });
 });

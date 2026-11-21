@@ -583,6 +583,69 @@ impl Document {
         Self::load_fragment_parts_inner(manifest, ybin).map_err(fmt_err)
     }
 
+    /// `.rbitem` de grille sans asset (C4, D2).
+    pub fn save_grid(
+        &self,
+        now: String,
+        app_version: String,
+        name: String,
+    ) -> Result<Vec<u8>, JsError> {
+        format::save_resource(
+            &self.core,
+            &Self::resource_meta(&now, &app_version),
+            format::KIND_GRID,
+            &name,
+        )
+        .map_err(fmt_err)
+    }
+
+    /// Manifeste et `document.ybin` d'une grille, pour le conteneur avec assets (C4).
+    pub fn save_grid_parts(
+        &self,
+        now: String,
+        app_version: String,
+        name: String,
+    ) -> Result<SavedParts, JsError> {
+        let p = format::save_resource_parts(
+            &self.core,
+            &Self::resource_meta(&now, &app_version),
+            format::KIND_GRID,
+            &name,
+        )
+        .map_err(fmt_err)?;
+        Ok(SavedParts {
+            manifest: p.manifest,
+            ybin: p.ybin,
+        })
+    }
+
+    /// Lit un `.rbitem` de grille sans asset ; un autre type est refusé (`WrongKind`).
+    pub fn load_grid(bytes: &[u8]) -> Result<Document, JsError> {
+        let (core, _) = format::load_resource(bytes, format::KIND_GRID).map_err(fmt_err)?;
+        Ok(Self::wrap(core, None))
+    }
+
+    /// Lit une grille depuis ses deux moitiés ; mêmes erreurs que `load_grid`.
+    pub fn load_grid_parts(manifest: &[u8], ybin: &[u8]) -> Result<Document, JsError> {
+        let (core, _) =
+            format::load_resource_parts(manifest, ybin, format::KIND_GRID).map_err(fmt_err)?;
+        Ok(Self::wrap(core, None))
+    }
+
+    /// Type d'un manifeste (`document`, `fragment`, `grid`) ; format, version ou `kind` inconnus : erreur du cœur.
+    pub fn manifest_kind(manifest: &[u8]) -> Result<String, JsError> {
+        format::manifest_kind(manifest)
+            .map(String::from)
+            .map_err(fmt_err)
+    }
+
+    /// Type d'un conteneur entier (repli sans le module des formats).
+    pub fn container_kind(bytes: &[u8]) -> Result<String, JsError> {
+        format::container_kind(bytes)
+            .map(String::from)
+            .map_err(fmt_err)
+    }
+
     /// Vue de page (K7) ; `null` pour une page inconnue.
     pub fn page(&self, id: &str) -> Result<JsValue, JsError> {
         match self.core.page(id) {
@@ -1422,8 +1485,8 @@ impl Document {
         self.core.insert_pages(&src.core, after)
     }
 
-    /// Un fragment n'a pas d'historique d'enregistrement : `created` = maintenant.
-    fn fragment_meta(now: &str, app_version: &str) -> SaveMeta {
+    /// Une ressource (fragment, grille) n'a pas d'historique d'enregistrement : `created` = maintenant.
+    fn resource_meta(now: &str, app_version: &str) -> SaveMeta {
         SaveMeta {
             app_version: app_version.to_string(),
             now: now.to_string(),
@@ -1437,7 +1500,7 @@ impl Document {
         app_version: &str,
         name: &str,
     ) -> Result<Vec<u8>, FormatError> {
-        format::save_fragment(&self.core, &Self::fragment_meta(now, app_version), name)
+        format::save_fragment(&self.core, &Self::resource_meta(now, app_version), name)
     }
 
     pub fn save_fragment_parts_inner(
@@ -1446,7 +1509,7 @@ impl Document {
         app_version: &str,
         name: &str,
     ) -> Result<Parts, FormatError> {
-        format::save_fragment_parts(&self.core, &Self::fragment_meta(now, app_version), name)
+        format::save_fragment_parts(&self.core, &Self::resource_meta(now, app_version), name)
     }
 
     pub fn load_fragment_inner(bytes: &[u8]) -> Result<Document, FormatError> {

@@ -8,7 +8,10 @@ import { createBoardSession, type SessionShared } from "./app/board-session";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
+import { createResourceLibrary, createSharedFolder, importedMessage, mineOrMemory, resourceKindReader } from "./app/library";
 import { createWorkspace, type TabSession } from "./app/workspace";
+import { APP_VERSION, messageOf } from "./platform/controller";
+import { createIdbLibraryFiles, createMemoryLibraryFiles, createTauriLibraryFiles } from "./platform/library-files";
 import type { CoreDocument } from "./core/api";
 import { Canvas2DRenderer, exportPainterOptions } from "./engine/render/canvas2d";
 import { RecordingPath } from "./engine/render/record-ctx";
@@ -16,7 +19,7 @@ import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
 import { createPdfEngine } from "./platform/pdf-render";
 import { createModelViewLoader } from "./platform/model-view";
-import { createZipReader } from "./platform/zip-read";
+import { createZipReader, createZipWriter } from "./platform/zip-read";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
@@ -32,7 +35,7 @@ import { handlePaste } from "./platform/paste";
 import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
-import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, RBITEM_TYPE } from "./platform/typed-files";
+import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, RBITEM_TYPE, RBPACK_TYPE } from "./platform/typed-files";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
@@ -149,7 +152,8 @@ async function start(): Promise<void> {
   };
 
   const env = { tauri, userAgent: navigator.userAgent };
-  const store = createProfileStore(browserKeyValue(window), BUILTIN_PROFILES);
+  const settingsKv = browserKeyValue(window);
+  const store = createProfileStore(settingsKv, BUILTIN_PROFILES);
   // Avertissements de l'amorce (profil stocké écarté, stockage illisible) : rien d'autre ne les lit.
   for (const w of store.warnings()) console.warn(w);
   const active = createActiveProfile(store, runtimeCapabilities(wasm.capabilities(detectPlatform(env)), env));
@@ -210,13 +214,45 @@ async function start(): Promise<void> {
           }),
           pngOverlay(tab, doc),
         );
+
+  // Bibliothèque (C4) : « Mes ressources » en IndexedDB sur le web, `Documents/RoomBoard/Ressources` dans la coque ;
+  // « Ressources partagées » : coque seulement, dossier choisi par la boîte native (accès pour la session, H1-5).
+  // K8 : dossier Documents introuvable : « Mes ressources » en mémoire avec un avis, le démarrage continue.
+  const mine =
+    ports !== null
+      ? await mineOrMemory(
+          async () => createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, `${await ports.documentDir()}/RoomBoard/Ressources`, "mine"),
+          () => createMemoryLibraryFiles("mine"),
+        )
+      : { files: typeof window.indexedDB === "undefined" ? createMemoryLibraryFiles("mine") : createIdbLibraryFiles(window.indexedDB, "mine"), notice: null };
+  if (mine.notice !== null) void prepared.shell.notify(mine.notice);
+  // Un seul codec des conteneurs : celui des onglets lit aussi le type d'une ressource sans compagnon (K4).
+  const codec = createPageCodec(loadFormatsModule);
+  const library = createResourceLibrary({
+    files: [mine.files],
+    zip: { unzip: createZipReader(spawnZipWorker, undefined, "pack"), zip: createZipWriter(spawnZipWorker) },
+    now: () => new Date().toISOString(),
+    appVersion: APP_VERSION,
+    kindOf: resourceKindReader(core, codec),
+  });
+  // K1 (H1-5) : la clé gardée dit « déjà choisi » dès le démarrage ; l'accès se rouvre par la boîte native.
+  const sharedFolder = createSharedFolder({
+    kv: settingsKv,
+    host:
+      ports === null
+        ? null
+        : { pickFolder: (start) => ports.pickFolder(start), open: (path) => createTauriLibraryFiles({ ...ports.fs, ...ports.dirFs }, path, "shared") },
+    library,
+  });
+  const packFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBPACK_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBPACK_TYPE);
   const workspace = await createWorkspace({
     core,
     host: prepared.host,
     kind: prepared.kind,
     shell: prepared.shell,
     // Conteneur avec images (R7) : second module chargé au premier Ouvrir ou au premier enregistrement avec image.
-    codec: createPageCodec(loadFormatsModule),
+    codec,
     readSheet: (b) => sheets.read(b),
     model3d: { view: () => modelView.load(), readZip: createZipReader(spawnZipWorker) },
     clipboard: createClipboard(browserSystemClipboard(navigator)),
@@ -227,6 +263,18 @@ async function start(): Promise<void> {
     overlay,
     rasterPage,
     rasterClose,
+    // Vignettes des ressources (C4, D12) : même peintre que la superposition PNG.
+    thumbnail: { canvas: browserExportCanvas, decode: decodeBitmap, painter: (ctx, doc, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images)) },
+    importPack: async (name, bytes) => {
+      try {
+        const r = await library.importPack(bytes, name);
+        await prepared.shell.notify(importedMessage(name, r));
+        return true;
+      } catch (e) {
+        await prepared.shell.notify(`Import impossible (${name}) : ${messageOf(e)}`);
+        return false;
+      }
+    },
     first,
     makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
     dropReady: () => prepared.dropReady(),
@@ -291,6 +339,7 @@ async function start(): Promise<void> {
     shell: prepared.shell,
     profileFiles,
     stages,
+    library: { library, shared: sharedFolder, packs: packFiles },
     navigate: (search) => {
       window.location.search = search;
     },

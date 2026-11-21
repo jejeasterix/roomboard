@@ -4,7 +4,7 @@
  * choisi. `FileHost` reste réservé au `.roomboard` (décision C1).
  */
 import type { FallbackDeps } from "./host-repli";
-import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, RBITEM_MIME } from "./files";
+import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, RBITEM_MIME, RBPACK_EXTENSION, RBPACK_MIME } from "./files";
 import { baseName, type TauriDialog, type TauriFs } from "./host-tauri";
 
 export interface FileType {
@@ -20,6 +20,14 @@ export const RBITEM_TYPE: FileType = {
   mime: RBITEM_MIME,
   filter: { name: "Objet RoomBoard", extensions: [RBITEM_EXTENSION.slice(1)] },
   accept: `${RBITEM_EXTENSION},${RBITEM_MIME}`,
+};
+
+/** C4 (D17, D19) : paquet de ressources exporté ou importé par la bibliothèque. */
+export const RBPACK_TYPE: FileType = {
+  extension: RBPACK_EXTENSION,
+  mime: RBPACK_MIME,
+  filter: { name: "Paquet RoomBoard", extensions: [RBPACK_EXTENSION.slice(1)] },
+  accept: `${RBPACK_EXTENSION},${RBPACK_MIME}`,
 };
 
 /** C12 (PF19) : PDF écrit par « Exporter en PDF… » (web : téléchargement ; coque : boîte native filtrée). */
