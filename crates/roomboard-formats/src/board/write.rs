@@ -23,6 +23,11 @@ enum Kind {
 
 /// Nombre écrit au millième, sans zéro inutile ; −0 écrit 0.
 fn num(v: f32) -> String {
+    let v = if v.is_finite() {
+        v.clamp(-1e30, 1e30)
+    } else {
+        0.0
+    };
     let r = (v * 1000.0).round() / 1000.0;
     if r == 0.0 {
         "0".to_string()
@@ -218,6 +223,12 @@ impl Out {
                 .push(format!(r#"<iwb:element ref="{id}" background="true"/>"#));
         }
     }
+    fn guarded(&mut self, it: &Item) {
+        let id = self.id();
+        self.s.push_str(&format!(r#"<g id="{id}">"#));
+        self.item(it);
+        self.s.push_str("</g>");
+    }
     fn item(&mut self, it: &Item) {
         let p = self.p();
         match it {
@@ -385,8 +396,8 @@ fn parse_bounded(list: &BoardList) -> Result<Vec<Page>, BoardError> {
 /// `content.xml` d'une copie `.iwb` (un seul cadre pour toutes les pages : le plus haut).
 pub fn write_iwb(list: &BoardList) -> Result<String, BoardError> {
     let pages = parse_bounded(list)?;
-    let h = num(frame_height(&pages));
     let hf = frame_height(&pages);
+    let h = num(hf);
     let w = num(PAGE_WIDTH);
     let mut o = Out::new(Kind::Iwb);
     o.s.push_str(&format!(
@@ -427,8 +438,23 @@ pub fn write_ubz_pages(list: &BoardList) -> Result<Vec<String>, BoardError> {
             if let Some(bg) = p.background {
                 o.background(bg, hf);
             }
-            for it in &p.items {
-                o.item(it);
+            for (k, it) in p.items.iter().enumerate() {
+                // Sans fond, un premier rect plein serait relu comme fond (D14) : il est placé dans un `g`.
+                if k == 0
+                    && p.background.is_none()
+                    && matches!(
+                        it,
+                        Item::Shape {
+                            kind: ShapeKind::Rect,
+                            fill: Some(_),
+                            ..
+                        }
+                    )
+                {
+                    o.guarded(it);
+                } else {
+                    o.item(it);
+                }
                 o.s.push('\n');
             }
             o.s.push_str("</svg>\n");

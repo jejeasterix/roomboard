@@ -204,7 +204,7 @@ fn decode(raw: &str) -> String {
     while let Some(k) = rest.find('&') {
         out.push_str(&rest[..k]);
         let tail = &rest[k..];
-        match tail.find(';').filter(|&e| e <= 12) {
+        match tail.bytes().take(13).position(|b| b == b';') {
             Some(e) => {
                 match entity(&tail[1..e]) {
                     Some(ch) => out.push(ch),

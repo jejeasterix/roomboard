@@ -31,8 +31,10 @@ pub const PAGE_HEIGHT: f32 = 1080.0;
 /// Bornes (D16, U26) : pages ouvertes au plus (comme le PDF), objets par fichier au plus (au-delà : refus).
 pub const MAX_PAGES: usize = 500;
 pub const MAX_OBJECTS: usize = 100_000;
-pub(crate) const MAX_POINTS: u32 = 1_000_000;
-pub(crate) const MAX_SPANS: u32 = 10_000;
+const MAX_POINTS: u32 = 1_000_000;
+const MAX_SPANS: u32 = 10_000;
+/// Profondeur de groupes au plus (comme l'arbre XML du lecteur) : au-delà, `BadList`.
+const MAX_GROUP_DEPTH: usize = 256;
 const MAX_INDEX: u32 = 16_777_216;
 /// Préallocation au plus (comme `path` de `pdf.rs`) : un compte annoncé ne réserve pas plus que le flux ne porte.
 const PREALLOC: usize = 4096;
@@ -586,6 +588,9 @@ pub fn parse(list: &BoardList) -> Result<Vec<Page>, BoardError> {
             7 => {
                 if pages.is_empty() {
                     return Err(bad("groupe avant la première page".to_string()));
+                }
+                if stack.len() >= MAX_GROUP_DEPTH {
+                    return Err(bad(format!("groupes imbriqués trop profonds ({at})")));
                 }
                 stack.push(Vec::new());
             }
