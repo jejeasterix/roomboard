@@ -32,6 +32,8 @@ export function createZoneMarks(
   measure: (start: number, end: number) => void = (start, end) => {
     performance.measure("pot-zone", { start, end });
   },
+  /** Appelé une fois les marques écrites (après une commande `Fill` de zone seulement) : la session relit alors `tags`. */
+  onMarked: () => void = () => undefined,
 ): ZoneMarks {
   let zoneMs = "";
   let zoneCells = "";
@@ -46,6 +48,7 @@ export function createZoneMarks(
       measure(start, end);
       zoneMs = (Math.round((end - start) * 10) / 10).toFixed(1);
       zoneCells = String(doc.zoneCells(z.page, z.tol));
+      onMarked();
       return change;
     },
     tags: (page, version) => {

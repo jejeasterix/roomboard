@@ -56,4 +56,16 @@ describe("zone-marks (C8, Q18)", () => {
     m.tags("q", 2);
     expect(d.reads).toBe(3);
   });
+
+  it("C8 marques à jour au rendu du clic : onMarked rend la main une fois les marques écrites, jamais pour une autre commande", () => {
+    const d = doc({ f: "fill" });
+    const times = [10, 22.34];
+    const seen: unknown[] = [];
+    let m: ReturnType<typeof createZoneMarks>;
+    m = createZoneMarks(d, () => times.shift() ?? 0, () => undefined, () => seen.push(m.tags("p", 2)));
+    m.timed(() => change)(bg);
+    expect(seen).toEqual([]);
+    m.timed(() => change)(zone);
+    expect(seen).toEqual([{ zones: "1", zoneMs: "12.3", zoneCells: "4032064" }]);
+  });
 });
