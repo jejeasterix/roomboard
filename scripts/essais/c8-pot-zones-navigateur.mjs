@@ -249,14 +249,12 @@ async function scenario(page, url, { captures, tmp }) {
   for (let k = 0; k < 3; k++) {
     await click([ix, iy]);
     await waitAttr("data-zones", "1");
-    // Les marques `data-zone-ms` et `data-zone-cells` sont écrites après le rendu du clic : on les lit au rendu
-    // suivant (Annuler), quand elles ont changé par rapport au clic précédent.
-    await key("Control+z");
-    await waitAttr("data-zones", "0");
     await waitChange("data-zone-ms", last);
     last = (await attr("data-zone-ms")) ?? "";
     ms.push(Number(last));
     cells = Number(await attr("data-zone-cells"));
+    await key("Control+z");
+    await waitAttr("data-zones", "0");
   }
   ms.sort((a, b) => a - b);
   check(cells >= MIN_CELLS, `S6 : masque de ${cells} cellules (>= ${MIN_CELLS})`);
