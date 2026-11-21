@@ -2,7 +2,7 @@ import { unzipSync, zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { buildPack, readPack, type PackItem } from "./rbpack";
-import { keepPackPath, unzipEntries, zipStored } from "./zip-worker";
+import { keepBoardPath, keepPackPath, unzipEntries, zipStored } from "./zip-worker";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const item = (path: string): PackItem => ({ path, name: path.split("/").pop()!, keywords: [], description: "", kind: "fragment", bytes: enc(`rb:${path}`), thumbnail: enc(`png:${path}`) });
@@ -80,5 +80,36 @@ describe("C4 : Worker ZIP du paquet", () => {
     expect((posted[1] as { entries: Array<{ path: string }> }).entries.map((e) => e.path)).toEqual(["manifest.json", "items/a/../b.rbitem", "items/a/../b.rbitem.png"]);
     onmessage({ data: { bytes: zipSync({ "ok/c.obj": enc("v 1 2 3"), "items/x.rbitem": enc("x") }) } });
     expect((posted[2] as { entries: Array<{ path: string }> }).entries.map((e) => e.path)).toEqual(["ok/c.obj"]);
+  });
+});
+
+describe("C13 : Worker ZIP des tableaux (mode board, D3)", () => {
+  it("C13 : keepBoardPath garde content.xml, pageN.svg et les images", () => {
+    for (const ok of ["content.xml", "Content.XML", "page001.svg", "page12.svg", "images/a.png", "images/b.JPG", "objects/c.jpeg", "d.gif", "e.webp", "f.bmp", "g.svg"]) {
+      expect(keepBoardPath(ok), ok).toBe(true);
+    }
+  });
+
+  it("C13 : keepBoardPath refuse les chemins qui sortent, __MACOSX, les dossiers, médias et autres", () => {
+    for (const no of ["../evil.png", "images/../../evil.png", "/abs.png", "\\abs.png", "C:/x.png", "C:\\x.png", "__MACOSX/._a.png", "images/", "videos/film.mpg", "audios/son.mp3", "flash/a.swf", "images/a.emf", "metadata.rdf", "widgets/w.wgt/index.html", ""]) {
+      expect(keepBoardPath(no), no).toBe(false);
+    }
+  });
+
+  it("C13 : unzipEntries(keepBoardPath) ne rend ni ../evil.png ni /abs.png ni la vidéo (S5)", () => {
+    const zip = zipSync({
+      "content.xml": enc("<iwb/>"),
+      "images/a.png": enc("png"),
+      "../evil.png": enc("evil"),
+      "/abs.png": enc("abs"),
+      "videos/film.mpg": enc("mpg"),
+    });
+    expect(unzipEntries(zip, keepBoardPath).map((e) => e.path).sort()).toEqual(["content.xml", "images/a.png"]);
+  });
+
+  it("C13 : plus de 1 000 entrées : refus « ZIP trop gros » (U26)", () => {
+    const files: Record<string, Uint8Array> = {};
+    for (let i = 0; i < 1001; i++) files[`images/i${i}.png`] = enc("x");
+    expect(() => unzipEntries(zipSync(files), keepBoardPath)).toThrow(ZIP_TOO_BIG_MESSAGE);
   });
 });
