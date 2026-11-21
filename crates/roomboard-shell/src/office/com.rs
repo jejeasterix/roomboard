@@ -374,6 +374,8 @@ pub fn convert(input: &Path, out: &Path, timeout: Duration) -> Result<(), Conver
     match rx.recv_timeout(timeout) {
         Ok(r) => r,
         Err(_) => {
+            // Risque connu (HO2-5) : une instance de l'application ouverte par l'utilisateur pendant la conversion
+            // apparaît aussi dans la différence et sera tuée ; à vérifier sur le PC.
             for pid in pids_of(app.image()).difference(&before) {
                 kill(*pid);
             }

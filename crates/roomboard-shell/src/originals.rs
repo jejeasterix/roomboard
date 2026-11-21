@@ -9,7 +9,8 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 use crate::office::{
-    ensure_private_dir, has_office_magic, io, office_extension, ConvertError, OFFICE_MAX_BYTES,
+    ensure_private_dir, has_office_magic, io, office_extension, ConvertError, MAX_ID_TRIES,
+    OFFICE_MAX_BYTES,
 };
 
 /// Longueur maximale d'un nom de copie, en caractères (O20).
@@ -136,13 +137,25 @@ impl Originals {
             fs::create_dir_all(parent).map_err(io)?;
         }
         ensure_private_dir(&self.root)?;
-        let id = format!(
-            "{}-{}",
-            std::process::id(),
-            self.next.fetch_add(1, Ordering::Relaxed)
-        );
-        let dir = self.root.join(&id);
-        fs::create_dir(&dir).map_err(io)?;
+        let mut made = None;
+        for _ in 0..MAX_ID_TRIES {
+            let id = format!(
+                "{}-{}",
+                std::process::id(),
+                self.next.fetch_add(1, Ordering::Relaxed)
+            );
+            let dir = self.root.join(&id);
+            match fs::create_dir(&dir) {
+                Ok(()) => {
+                    made = Some((id, dir));
+                    break;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(io(e)),
+            }
+        }
+        let (id, dir) =
+            made.ok_or_else(|| ConvertError::Io("aucun identifiant d'original libre".into()))?;
         let path = dir.join(&safe);
         fs::write(&path, bytes).map_err(io)?;
         #[cfg(windows)]
@@ -396,5 +409,4 @@ mod tests {
         assert_ne!(id, taken);
         assert!(path.is_file());
     }
-
 }
