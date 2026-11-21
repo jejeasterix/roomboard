@@ -267,7 +267,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
     await readAssets.put(new Blob(["x"]));
     const doc = fakeCore.blank();
     (doc as unknown as { citedAssets: () => { id: string; mime: string }[] }).citedAssets = () => [{ id: ID, mime: "image/png" }];
-    const io: ContainerIO = { encode: async () => new Uint8Array(), read: async () => ({ doc, assets: readAssets, unread: false }) };
+    const io: ContainerIO = { encode: async () => new Uint8Array(), read: async () => ({ doc, assets: readAssets, unread: false, kind: "fragment" }) };
     const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async () => undefined, alive: () => true });
     const dst = tabOf();
     expect(await ops.insert(dst.tab, new Uint8Array([1]), "x.rbitem", null)).toBe(false);
