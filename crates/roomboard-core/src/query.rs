@@ -988,4 +988,76 @@ mod tests {
             })
         );
     }
+
+    fn fill_doc() -> (Document, String, String, String) {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let pts: Vec<f32> = (0..=40)
+            .flat_map(|i| [100.0 + i as f32 * 10.0, 100.0, 0.5])
+            .collect();
+        let s = d
+            .apply(Command::CommitStroke {
+                page: p.clone(),
+                points: pts,
+                style: pen(),
+            })
+            .expect("trait")
+            .ids[0]
+            .clone();
+        let f = d
+            .insert_fill(
+                &p,
+                &[
+                    vec![100.0, 100.0, 500.0, 100.0, 500.0, 500.0, 100.0, 500.0],
+                    vec![250.0, 250.0, 250.0, 270.0, 270.0, 270.0, 270.0, 250.0],
+                ],
+                "#facc15",
+            )
+            .expect("fill")
+            .ids[0]
+            .clone();
+        (d, p, s, f)
+    }
+
+    /// Q13, HC8-4, effet de bord 2 : `fill` touché dedans à plus de `tol` du bord ; trou et bande du bord non ; le trait
+    /// du bord, dessous, reste touché ; la gomme d'objet ne vise pas le `fill`. Sous `hit_outline` (« dedans ou à `tol`
+    /// d'une arête »), les trois dernières collisions rendraient le `fill`.
+    #[test]
+    fn fill_is_hit_inside_far_from_edges_only() {
+        let (d, p, s, f) = fill_doc();
+        assert_eq!(d.hit_test(&p, 300.0, 300.0, 6.0), Some(f.clone()));
+        assert_eq!(d.hit_test(&p, 300.0, 102.0, 6.0), Some(s.clone()));
+        assert_eq!(d.hit_test(&p, 103.0, 300.0, 6.0), None);
+        assert_eq!(d.hit_test(&p, 97.0, 300.0, 6.0), None);
+        assert_eq!(d.hit_test(&p, 260.0, 260.0, 6.0), None);
+        assert_eq!(d.hit_test(&p, 247.0, 260.0, 6.0), None);
+        assert_eq!(
+            d.hit_test_path(&p, &[300.0, 300.0, 310.0, 300.0], 6.0),
+            Vec::<String>::new()
+        );
+    }
+
+    /// Q12, Q13 : bornes = anneau extérieur ; anneaux locaux `[n, x, y, …]`, extérieur d'abord ; `None` pour un trait.
+    #[test]
+    fn fill_bounds_and_rings_are_local() {
+        let (d, _, s, f) = fill_doc();
+        assert_eq!(
+            d.bounds(&[f.clone()]),
+            Some(Bounds {
+                x0: 100.0,
+                y0: 100.0,
+                x1: 500.0,
+                y1: 500.0
+            })
+        );
+        assert_eq!(
+            d.fill_rings(&f),
+            Some(vec![
+                4.0, 0.0, 0.0, 400.0, 0.0, 400.0, 400.0, 0.0, 400.0, 4.0, 150.0, 150.0, 150.0, 170.0,
+                170.0, 170.0, 170.0, 150.0,
+            ])
+        );
+        assert_eq!(d.fill_rings(&s), None);
+        assert_eq!(d.fill_rings("inconnu"), None);
+    }
 }
