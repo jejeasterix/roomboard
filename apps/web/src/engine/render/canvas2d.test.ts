@@ -1003,7 +1003,7 @@ describe("Canvas2DRenderer — fond de page (C12)", () => {
     const scene = new FakeCtx();
     const r = new Canvas2DRenderer(asCtx(scene), null, fakeCore.blank(), { backdrop: painter("pret"), onBackdrop: (s) => void states.push(s) });
     r.resize(800, 600, 1);
-    const base = { asset: PDF.id, page: 0, w: 612, h: 792, fit: "width" };
+    const base = { asset: PDF.id, page: 0, w: 612, h: 792, fit: "width", original: null };
     r.drawScene({ id: "p", elementIds: [], backdrop: { ...base, kind: "pdf-page", rect: null } }, IDENTITY, new Set());
     r.drawScene({ id: "p", elementIds: [], backdrop: { ...base, kind: "video", rect: { x0: 0, y0: 0, x1: 1920, y1: 2000 } } }, IDENTITY, new Set());
     expect(states).toEqual(["echec", ""]);

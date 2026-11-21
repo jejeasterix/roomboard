@@ -36,6 +36,8 @@ export interface HostTargets {
   exportPdf?(): void;
   /** C13 (D17) : « Enregistrer une copie au format .iwb… » ou « … .ubz… » ; absent (hôte partiel) : sans effet. */
   exportBoard?(format: "iwb" | "ubz"): void;
+  /** C16 (O19) : « Modifier dans l'application d'origine » ; absent (hôte partiel) : sans effet. */
+  editOriginal?(): void;
   /** C3 (Z13). */
   selection(a: SelectionAction): void;
 }
@@ -50,6 +52,7 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "page-add": (t) => void t.engine().addPage(),
   "page-remove": (t) => void t.engine().removePage(),
   "page-insert-file": (t) => t.insertPages(),
+  "edit-original": (t) => t.editOriginal?.(),
   "export-pdf": (t) => t.exportPdf?.(),
   "export-iwb": (t) => t.exportBoard?.("iwb"),
   "export-ubz": (t) => t.exportBoard?.("ubz"),

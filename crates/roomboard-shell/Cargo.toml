@@ -6,6 +6,20 @@ license.workspace = true
 
 [dependencies]
 sha2 = "0.10.9"
+# C16 (O36) : ouvrir l'original avec l'application du système depuis Rust ; ShellExecuteW sous Windows (sans cette
+# feature, `open` passerait par powershell.exe -Command : interdit, aucun shell).
+open = { version = "5.4.5", default-features = false, features = ["shellexecute-on-windows"] }
+
+[target.'cfg(unix)'.dependencies]
+# C16 (O9, O11) : propriétaire du dossier de travail (geteuid), arbre de processus tué (kill du groupe).
+libc = "0.2.191"
+
+[target.'cfg(windows)'.dependencies]
+# C16 (O11, O13) : objet Job (arbre tué au délai), COM de Word, Excel et PowerPoint. Même version que
+# apps/desktop/src-tauri/Cargo.lock.
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Diagnostics_ToolHelp"] }
 
 [dev-dependencies]
 serde_json = "1"
+# C16 (O27) : fichiers d'essai .docx, .pptx, .xlsx fabriqués par les tests (mêmes features que roomboard-core).
+zip = { version = "9.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

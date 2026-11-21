@@ -16,6 +16,7 @@ import {
   POSTER_MIME, unsupportedMediaMessage, type LinkedMedia, type MediaProbe,
 } from "./media-import";
 import type { Model3dDeps } from "./model3d-handlers";
+import { OFFICE_EXPORT_MESSAGE, OFFICE_MAX_BYTES, OFFICE_TOO_BIG_MESSAGE } from "./office-import";
 import { ZIP_MAX_BYTES as PACK_CAP, ZIP_TOO_BIG_MESSAGE as PACK_CAP_MESSAGE } from "./model3d-import";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
@@ -1099,5 +1100,97 @@ describe("importFiles : tableaux .iwb et .ubz (C13, D4, D5)", () => {
     const r = await createImporter({ openDocument: async () => true, notify: n }).importFiles([file("Cours.iwb", ZIP)]);
     expect(r.refused).toEqual(["Cours.iwb"]);
     expect(n).toHaveBeenCalledWith(`Cours.iwb : ${LATER_FORMAT_MESSAGE}`);
+  });
+});
+
+describe("registre C16 : documents Office (O2, O3, O4, S3)", () => {
+  const PK = new Uint8Array([0x50, 0x4b, 3, 4, 9]);
+  const CFB = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0]);
+  const G: TableGrid = { rows: 1, cols: 1, cells: ["a"], merges: [], sourceRows: 1, sourceCols: 1, cutCells: false };
+
+  it("web : .docx, .pptx, .odt, .odp, .ods, .doc, .ppt, .xls → « <nom> : exportez en PDF depuis Office », rien d'ouvert ni d'inséré ; .xlsx → tableau (S3)", async () => {
+    const t = fakeTarget();
+    const openDocument = vi.fn(async () => true);
+    const notify = vi.fn(async (_m: string) => undefined);
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const office = [file("cours.docx", PK), file("diapos.pptx", PK), file("a.odt", PK), file("b.odp", PK), file("c.ods", PK), file("vieux.doc", CFB), file("vieux.ppt", CFB), file("vieux.xls", CFB)];
+    const r = await createImporter({ openDocument, notify, target: () => t.target, readSheet }).importFiles([...office, file("valeurs.xlsx", PK)], null);
+    expect(r).toEqual({ opened: [], inserted: ["valeurs.xlsx"], refused: [], failed: office.map((f) => f.name) });
+    expect(notify.mock.calls.map((c) => c[0])).toEqual(office.map((f) => `${f.name} : ${OFFICE_EXPORT_MESSAGE}`));
+    expect(openDocument).not.toHaveBeenCalled();
+    expect(t.cmds.map((c) => c.type)).toEqual(["ImportTable"]);
+  });
+
+  it("extension Office sans le bon en-tête : refusé comme avant, « prochaine version » (O2)", async () => {
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify }).importFiles([file("faux.docx", CFB), file("faux.doc", PK)], null);
+    expect(r.refused).toEqual(["faux.docx", "faux.doc"]);
+    expect(notify).toHaveBeenCalledWith(`faux.docx, faux.doc : ${LATER_FORMAT_MESSAGE}`);
+  });
+
+  it("coque : convertOffice(path) puis openOffice avec l'original ; .xlsx converti aussi, readSheet jamais appelé (O4, S5)", async () => {
+    const pdf = new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d])]);
+    const convertOffice = vi.fn(async (_p: string) => pdf);
+    const opened: Array<[string, number[], Blob]> = [];
+    const openOffice = vi.fn(async (f: { readonly name: string; readonly original: Blob; readonly pdf: Blob }) => {
+      opened.push([f.name, Array.from(new Uint8Array(await f.original.arrayBuffer())), f.pdf]);
+      return true;
+    });
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify: vi.fn(async () => undefined), readSheet, convertOffice, openOffice })
+      .importFiles([file("cours.docx", PK, "/home/u/cours.docx"), file("notes.xlsx", PK, "/home/u/notes.xlsx")], null);
+    expect(r).toEqual({ opened: ["cours.docx", "notes.xlsx"], inserted: [], refused: [], failed: [] });
+    expect(convertOffice.mock.calls).toEqual([["/home/u/cours.docx"], ["/home/u/notes.xlsx"]]);
+    expect(opened).toEqual([["cours.docx", Array.from(PK), pdf], ["notes.xlsx", Array.from(PK), pdf]]);
+    expect(readSheet).not.toHaveBeenCalled();
+  });
+
+  it("coque : plus de 100 Mio : « gros.pptx : fichier Office trop gros pour être converti », jamais lu ni converti (O14)", async () => {
+    const blob = vi.fn(async () => new Blob([PK]));
+    const big: DroppedFile = { name: "gros.pptx", size: OFFICE_MAX_BYTES + 1, mime: "", path: "/home/u/gros.pptx", head: async () => PK, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const convertOffice = vi.fn(async () => new Blob());
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, convertOffice, openOffice: vi.fn(async () => true) }).importFiles([big], null);
+    expect(r.failed).toEqual(["gros.pptx"]);
+    expect(notify).toHaveBeenCalledWith(`gros.pptx : ${OFFICE_TOO_BIG_MESSAGE}`);
+    expect(blob).not.toHaveBeenCalled();
+    expect(convertOffice).not.toHaveBeenCalled();
+  });
+
+  it("coque sans convertisseur, onglets pleins : a.roomboard refusé, notes.xlsx reste au classeur et s'insère en tableau (nature objet)", async () => {
+    const t = fakeTarget();
+    const notify = vi.fn(async (_m: string) => undefined);
+    const convertOffice = vi.fn(async () => new Blob());
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const r = await createImporter({
+      openDocument: vi.fn(async () => false), notify, full: () => true, target: () => t.target, readSheet, convertOffice,
+      openOffice: vi.fn(async () => true), officeConverter: false,
+    }).importFiles([file("a.roomboard", PK), file("notes.xlsx", PK, "/home/u/notes.xlsx")], null);
+    expect(r.inserted).toEqual(["notes.xlsx"]);
+    expect(r.failed).toEqual(["a.roomboard"]);
+    expect(convertOffice).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith("notes.xlsx : importé en valeurs ; installez LibreOffice ou Microsoft Office pour ses pages");
+  });
+
+  it("coque sans convertisseur : diapos.pptx dit « installez LibreOffice ou Microsoft Office », fichier jamais lu", async () => {
+    const blob = vi.fn(async () => new Blob([PK]));
+    const f: DroppedFile = { name: "diapos.pptx", size: PK.length, mime: "", path: "/home/u/diapos.pptx", head: async () => PK, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const convertOffice = vi.fn(async () => new Blob());
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, convertOffice, openOffice: vi.fn(async () => true), officeConverter: false }).importFiles([f], null);
+    expect(r.failed).toEqual(["diapos.pptx"]);
+    expect(notify).toHaveBeenCalledWith("diapos.pptx : installez LibreOffice ou Microsoft Office");
+    expect(blob).not.toHaveBeenCalled();
+    expect(convertOffice).not.toHaveBeenCalled();
+  });
+
+  it("hôte sans convertOffice : plus de 100 Mio : message de taille, jamais lu", async () => {
+    const blob = vi.fn(async () => new Blob([PK]));
+    const big: DroppedFile = { name: "gros.docx", size: OFFICE_MAX_BYTES + 1, mime: "", head: async () => PK, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify }).importFiles([big], null);
+    expect(r.failed).toEqual(["gros.docx"]);
+    expect(notify).toHaveBeenCalledWith(`gros.docx : ${OFFICE_TOO_BIG_MESSAGE}`);
+    expect(blob).not.toHaveBeenCalled();
   });
 });

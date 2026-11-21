@@ -2,9 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { IMPORT_FILTER, type SaveTarget } from "./files";
 import {
   baseName,
+  convertOffice,
   createTauriHost,
   DROPPED_EVENT,
   grantedFile,
+  NAME_HEADER,
+  officeConverter,
+  onOriginalChanged,
+  openOriginal,
+  ORIGINAL_CHANGED_EVENT,
+  reimportOriginal,
   linkMedia,
   relinkMedia,
   launchFiles,
@@ -19,6 +26,7 @@ import {
   type TauriFs,
   type TauriWindow,
 } from "./host-tauri";
+import { OfficeConvertError } from "./office-import";
 
 function fakes(o: { openPath?: string | null; savePath?: string | null; pickPaths?: string[]; answer?: boolean; failWrite?: boolean } = {}) {
   const disk = new Map<string, Uint8Array>();
@@ -414,5 +422,106 @@ describe("hôte Tauri : écoute du dépôt prête (T98, écart T87)", () => {
   it("sans onDrop : dropListening résolu (rien à attendre)", async () => {
     const m = manualIpc();
     await expect(createTauriHost({} as never, {} as never, m.ipc).dropListening()).resolves.toBeUndefined();
+  });
+});
+
+describe("coque : Office (C16)", () => {
+  type Call = { readonly cmd: string; readonly args: unknown; readonly options: unknown };
+  function officeIpc(o: { convert?: () => Promise<unknown>; size?: number; failRead?: boolean; converter?: () => Promise<boolean> } = {}) {
+    const calls: Call[] = [];
+    const listeners = new Map<string, (e: { payload: unknown }) => void>();
+    const size = o.size ?? 5;
+    const ipc: TauriIpc = {
+      async invoke<T>(cmd: string, args?: Record<string, unknown> | Uint8Array, options?: { readonly headers: Readonly<Record<string, string>> }): Promise<T> {
+        calls.push({ cmd, args, options });
+        if (cmd === "convert_office") return (await (o.convert ?? (async () => ({ id: "7-0", pdf: "/cache/conversions/7-0/source.pdf", size })))()) as T;
+        if (cmd === "read_granted_file") {
+          if (o.failRead === true) throw new Error("disque");
+          const { offset, len } = args as { offset: number; len: number };
+          return new Uint8Array(Math.max(0, Math.min(len, size - offset))).fill(0x25).buffer as T;
+        }
+        if (cmd === "office_converter") return (await (o.converter ?? (async () => true))()) as T;
+        if (cmd === "open_original") return "3-0" as T;
+        if (cmd === "release_conversion" || cmd === "reimport_original") return undefined as T;
+        throw new Error(cmd);
+      },
+      async listen(event, cb) {
+        listeners.set(event, cb as (e: { payload: unknown }) => void);
+        return () => void listeners.delete(event);
+      },
+    };
+    return { ipc, calls, listeners };
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it("convertOffice : convert_office(path), PDF lu par morceaux, release_conversion(id) à la fin (O35)", async () => {
+    const f = officeIpc({ size: READ_CHUNK + 2 });
+    const blob = await convertOffice(f.ipc, "/home/u/cours.docx");
+    expect(blob.size).toBe(READ_CHUNK + 2);
+    expect(f.calls.map((c) => c.cmd)).toEqual(["convert_office", "read_granted_file", "read_granted_file", "release_conversion"]);
+    expect(f.calls[0]!.args).toEqual({ path: "/home/u/cours.docx" });
+    expect(f.calls[1]!.args).toEqual({ path: "/cache/conversions/7-0/source.pdf", offset: 0, len: READ_CHUNK });
+    expect(f.calls.at(-1)!.args).toEqual({ id: "7-0" });
+  });
+
+  it("lecture du PDF en échec : release_conversion appelé quand même, l'erreur remonte (Review Focus 3)", async () => {
+    const f = officeIpc({ failRead: true });
+    await expect(convertOffice(f.ipc, "/home/u/cours.docx")).rejects.toThrow("disque");
+    expect(f.calls.map((c) => c.cmd)).toEqual(["convert_office", "read_granted_file", "release_conversion"]);
+  });
+
+  it("rejet de la coque (chaîne) : OfficeConvertError au même code, ni lecture ni libération (O14)", async () => {
+    const f = officeIpc({ convert: () => Promise.reject("timeout") });
+    const e = await convertOffice(f.ipc, "/x/cours.docx").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(OfficeConvertError);
+    expect((e as OfficeConvertError).code).toBe("timeout");
+    expect(f.calls.map((c) => c.cmd)).toEqual(["convert_office"]);
+  });
+
+  it("openOriginal : corps brut (Uint8Array), nom dans l'en-tête encodé en pourcentage, jamais en JSON (O20)", async () => {
+    const f = officeIpc();
+    await openOriginal(f.ipc, "Leçon 3.pptx", new Blob([new Uint8Array([0x50, 0x4b, 3, 4])]));
+    const c = f.calls[0]!;
+    expect(c.cmd).toBe("open_original");
+    expect(c.args).toBeInstanceOf(Uint8Array);
+    expect(Array.from(c.args as Uint8Array)).toEqual([0x50, 0x4b, 3, 4]);
+    expect(c.options).toEqual({ headers: { [NAME_HEADER]: "Le%C3%A7on%203.pptx" } });
+  });
+
+  it("reimportOriginal : l'id seul ; onOriginalChanged : rappel puis désabonnement ; officeConverter : vrai, faux si l'appel échoue (O22, O24)", async () => {
+    const f = officeIpc();
+    await reimportOriginal(f.ipc, "3-0");
+    expect(f.calls.at(-1)).toEqual({ cmd: "reimport_original", args: { id: "3-0" }, options: undefined });
+    const seen: Array<{ id: string; name: string }> = [];
+    const stop = onOriginalChanged(f.ipc, (e) => void seen.push({ id: e.id, name: e.name }));
+    await tick();
+    f.listeners.get(ORIGINAL_CHANGED_EVENT)!({ payload: { id: "3-0", path: "/cache/originaux/3-0/cours.docx", name: "cours.docx" } });
+    expect(seen).toEqual([{ id: "3-0", name: "cours.docx" }]);
+    stop();
+    await tick();
+    expect(f.listeners.has(ORIGINAL_CHANGED_EVENT)).toBe(false);
+    expect(await officeConverter(f.ipc)).toBe(true);
+    expect(await officeConverter(officeIpc({ converter: () => Promise.reject(new Error("absente")) }).ipc)).toBe(false);
+  });
+
+  it("onOriginalChanged désabonné avant que listen soit tenu : l'écoute est levée dès qu'elle l'est ; listen rejeté : avertissement, pas de rejet", async () => {
+    let release: (stop: () => void) => void = () => undefined;
+    let stopped = 0;
+    const late: TauriIpc = {
+      invoke: async <T>() => undefined as T,
+      listen: () => new Promise<() => void>((r) => { release = r; }),
+    };
+    const stop = onOriginalChanged(late, () => undefined);
+    stop();
+    release(() => void (stopped += 1));
+    await tick();
+    expect(stopped).toBe(1);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const broken: TauriIpc = { invoke: async <T>() => undefined as T, listen: () => Promise.reject(new Error("refusé")) };
+    const stop2 = onOriginalChanged(broken, () => undefined);
+    await tick();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(() => stop2()).not.toThrow();
+    warn.mockRestore();
   });
 });

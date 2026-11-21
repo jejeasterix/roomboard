@@ -133,3 +133,6 @@
 .rb-media-bar-inner [data-media="failed"], .rb-media-bar-inner [data-media="error"] { color: #b91c1c; }
 /* Hôte des lecteurs : dans la page (la lecture l'exige) mais invisible et hors de la scène. */
 .rb-media-host { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; overflow: hidden; }
+/* C16 (O25) : conversion Office en cours : curseur d'attente sur la scène (le moteur pose son curseur en ligne). */
+:root[data-conversion="en-cours"] .rb-stage,
+:root[data-conversion="en-cours"] .rb-stage * { cursor: progress !important; }

@@ -29,6 +29,7 @@ import type {
   TextSpan,
 } from "./api";
 import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
+import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
@@ -306,13 +307,23 @@ const numberOrNull = (v: unknown, err: string): number | null => {
   return v;
 };
 
-// wasm-bindgen rend `undefined` pour une `Option::None` (backdrop, w, h, rect) ; le contrat dit `null`.
+// wasm-bindgen rend `undefined` pour une `Option::None` (backdrop, w, h, rect, original) ; le contrat dit `null`.
 function toBackdropView(v: unknown): BackdropView | null {
   if (v === null || v === undefined) return null;
   if (!isRecord(v)) throw new Error(PAGE);
-  const { asset, kind, fit } = v;
+  const { asset, kind, fit, original } = v;
   if (typeof asset !== "string" || typeof kind !== "string" || typeof fit !== "string") throw new Error(PAGE);
-  return { asset, kind, page: numberOrNull(v["page"], PAGE), w: numberOrNull(v["w"], PAGE), h: numberOrNull(v["h"], PAGE), fit, rect: toBounds(v["rect"]) };
+  if (original !== undefined && original !== null && typeof original !== "string") throw new Error(PAGE);
+  return {
+    asset,
+    kind,
+    page: numberOrNull(v["page"], PAGE),
+    w: numberOrNull(v["w"], PAGE),
+    h: numberOrNull(v["h"], PAGE),
+    fit,
+    rect: toBounds(v["rect"]),
+    original: isAssetId(original) ? original : null,
+  };
 }
 
 function toGridLevel(v: unknown): GridLevel {
@@ -705,8 +716,15 @@ const asContainerKind = (k: string): ContainerKind => {
 export function createWasmCore(mod: WasmModule): CoreFactory {
   return {
     blank: () => new WasmCoreDocument(mod.Document.blank(), mod),
-    fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[]) =>
-      new WasmCoreDocument(mod.Document.from_pdf_pages(asset.id, asset.name, asset.mime, asset.size, new Float64Array(sizes.flatMap((s) => [s.w, s.h]))), mod),
+    fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[], original?: AssetRef) => {
+      const flat = new Float64Array(sizes.flatMap((s) => [s.w, s.h]));
+      return new WasmCoreDocument(
+        original === undefined
+          ? mod.Document.from_pdf_pages(asset.id, asset.name, asset.mime, asset.size, flat)
+          : mod.Document.from_office_pages(asset.id, asset.name, asset.mime, asset.size, flat, original.id, original.name, original.mime, original.size),
+        mod,
+      );
+    },
     load: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load(bytes), mod),
     loadParts: (manifest: Uint8Array, ybin: Uint8Array) => new WasmCoreDocument(mod.Document.load_parts(manifest, ybin), mod),
     loadFragment: (bytes: Uint8Array) => new WasmCoreDocument(mod.Document.load_fragment(bytes), mod),

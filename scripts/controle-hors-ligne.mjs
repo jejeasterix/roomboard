@@ -141,6 +141,23 @@ export function checkAssetProtocol(conf, cargoToml) {
   return errors;
 }
 
+/**
+ * Office (C16, O29, O36) : l'original s'ouvre depuis Rust (crate `open`) et le relevé des enregistrements se fait en
+ * Rust : ni `tauri-plugin-opener`, ni feature `watch` de `tauri-plugin-fs`, ni permission `opener:*` ou `fs:*watch`.
+ */
+export function checkOpener(cargoToml, capabilities) {
+  const toml = cargoToml ?? "";
+  const errors = [];
+  if (/tauri-plugin-opener/.test(toml)) errors.push("tauri-plugin-opener dans src-tauri/Cargo.toml (l'original s'ouvre depuis Rust, crate open)");
+  if (/^\s*tauri-plugin-fs\s*=\s*\{[^}]*["']watch["']/m.test(toml)) errors.push("feature watch de tauri-plugin-fs (le relevé des originaux se fait en Rust)");
+  const perms = Array.isArray(capabilities?.permissions) ? capabilities.permissions : [];
+  for (const p of perms) {
+    const id = typeof p === "string" ? p : typeof p?.identifier === "string" ? p.identifier : "";
+    if (id.startsWith("opener:") || /^fs:(allow|deny)-(un)?watch$/.test(id)) errors.push(`permission ${id} interdite (C16 : aucune permission pour la page)`);
+  }
+  return errors;
+}
+
 function main(argv) {
   const [dist, confPath] = argv;
   if (!dist || !confPath) {
@@ -155,7 +172,13 @@ function main(argv) {
   } catch {
     cargoToml = "";
   }
-  errors.push(...checkCsp(conf), ...checkFsScope(conf), ...checkDragDrop(conf), ...checkAssetProtocol(conf, cargoToml));
+  let capabilities = null;
+  try {
+    capabilities = JSON.parse(readFileSync(join(dirname(confPath), "capabilities", "default.json"), "utf8"));
+  } catch {
+    capabilities = null;
+  }
+  errors.push(...checkCsp(conf), ...checkFsScope(conf), ...checkDragDrop(conf), ...checkAssetProtocol(conf, cargoToml), ...checkOpener(cargoToml, capabilities));
   if (errors.length > 0) {
     for (const e of errors) console.error(`controle-hors-ligne : ${e}`);
     return 1;

@@ -1,8 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
+use roomboard_shell::office::{self, Converter, Search, CONVERT_TIMEOUT};
+use roomboard_shell::originals::{self, Originals};
 use roomboard_shell::{
     check_linked_media, launch_paths, read_granted, sha256_granted, size_granted, GrantedPaths,
     ReadError, ASSOCIATED_EXTENSIONS,
@@ -12,6 +16,12 @@ use tauri::{AppHandle, DragDropEvent, Emitter, Manager, RunEvent, Runtime, State
 use tauri_plugin_fs::FsExt;
 
 const DROPPED_EVENT: &str = "roomboard://dropped";
+/// C16 (O21) : une copie d'original a été enregistrée dans l'application d'origine.
+const ORIGINAL_CHANGED_EVENT: &str = "roomboard://original-changed";
+/// C16 (O20) : nom de l'original, encodé en pourcentage par la page.
+const NAME_HEADER: &str = "x-roomboard-name";
+/// C16 (O23) : copies d'originaux gardées 7 jours.
+const ORIGINALS_KEEP: Duration = Duration::from_secs(7 * 24 * 3600);
 #[cfg(target_os = "macos")]
 const QUIT_EVENT: &str = "roomboard://quit-requested";
 
@@ -109,6 +119,130 @@ fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// État Office de la coque (C16) : racine de travail privée (cache de l'application, jamais `/tmp` partagé, O9),
+/// convertisseur trouvé au lancement (O24), copies d'originaux surveillées (O21).
+struct Office {
+    root: PathBuf,
+    converter: Option<Converter>,
+    originals: Originals,
+    watching: AtomicBool,
+}
+
+#[derive(Serialize)]
+struct ConvertedPayload {
+    id: String,
+    pdf: String,
+    size: u64,
+}
+
+#[derive(Clone, Serialize)]
+struct OriginalChanged {
+    id: String,
+    path: String,
+    name: String,
+}
+
+/// O24 : vrai si LibreOffice ou Microsoft Office a été trouvé au lancement.
+#[tauri::command]
+fn office_converter(office: State<'_, Office>) -> bool {
+    office.converter.is_some()
+}
+
+/// O8 à O12, O35 : conversion hors du fil principal (jusqu'à 120 s, une à la fois) ; le PDF accordé est lu ensuite par
+/// `read_granted_file`, puis libéré par `release_conversion`. Rejet : code stable (`no-program`, `timeout`, …).
+#[tauri::command]
+async fn convert_office(app: AppHandle, path: String) -> Result<ConvertedPayload, String> {
+    let handle = app.clone();
+    let done = tauri::async_runtime::spawn_blocking(move || {
+        let office = handle.state::<Office>();
+        let granted = handle.state::<GrantedPaths>();
+        office::convert_granted(
+            &granted,
+            &PathBuf::from(path),
+            office.converter.as_ref(),
+            &office.root,
+            CONVERT_TIMEOUT,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if let Err(e) = &done {
+        eprintln!("convert_office : {e}");
+    }
+    done.map(|c| ConvertedPayload {
+        id: c.id,
+        pdf: c.pdf.to_string_lossy().into_owned(),
+        size: c.size,
+    })
+    .map_err(|e| e.code().to_string())
+}
+
+/// O35 : retire l'accord du PDF converti et supprime son dossier.
+#[tauri::command]
+fn release_conversion(office: State<'_, Office>, granted: State<'_, GrantedPaths>, id: String) {
+    office::release_conversion(&granted, &office.root, &id);
+}
+
+/// O20 : octets de l'original en corps brut, nom dans l'en-tête `x-roomboard-name` ; copie contrôlée par
+/// `roomboard_shell::originals`, ouverte depuis Rust (`open`, ShellExecuteW sous Windows) ; aucune permission pour la
+/// page. Le fil de relevé part au premier appel. Rend l'id de la copie.
+#[tauri::command]
+async fn open_original(
+    app: AppHandle,
+    office: State<'_, Office>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("corps brut attendu".into());
+    };
+    let name = request
+        .headers()
+        .get(NAME_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(originals::decode_name)
+        .ok_or_else(|| "nom absent".to_string())?;
+    let (id, path) = office
+        .originals
+        .write(&name, bytes)
+        .map_err(|e| e.code().to_string())?;
+    originals::open_detached(&path).map_err(|e| e.to_string())?;
+    if !office.watching.swap(true, Ordering::SeqCst) {
+        spawn_watch(app.clone());
+    }
+    Ok(id)
+}
+
+/// O21 : relevé chaque seconde des seules copies écrites par `open_original` ; un changement stable est émis.
+fn spawn_watch(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(1));
+        let office = app.state::<Office>();
+        for (id, path) in office.originals.changed() {
+            let name = office.originals.name_of(&id).unwrap_or_default();
+            let payload = OriginalChanged {
+                id,
+                path: path.to_string_lossy().into_owned(),
+                name,
+            };
+            if let Err(e) = app.emit(ORIGINAL_CHANGED_EVENT, payload) {
+                eprintln!("RoomBoard : modification de l'original non transmise ({e})");
+            }
+        }
+    });
+}
+
+/// O22 : la coque accorde la copie et émet un dépôt (patron `grant_and_emit`) : nouvel onglet par `importFiles` ; la
+/// page ne nomme jamais un chemin.
+#[tauri::command]
+fn reimport_original(app: AppHandle, office: State<'_, Office>, id: String) -> Result<(), String> {
+    let path = office
+        .originals
+        .path_of(&id)
+        .ok_or_else(|| "original inconnu".to_string())?;
+    grant_and_emit(&app, &[path], None);
+    Ok(())
+}
+
 /// Accorde d'abord, émet ensuite (CL5b-13) : la page ne lit jamais un chemin pas encore accordé.
 fn grant_and_emit<R: Runtime>(app: &AppHandle<R>, paths: &[PathBuf], position: Option<Point>) {
     let kept = app.state::<GrantedPaths>().grant(paths.iter().cloned());
@@ -170,13 +304,32 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .manage(granted)
         .manage(Launch(Mutex::new((strings(&at_launch), false))))
+        // C16 (O9, O23, O24) : racine privée dans le cache de l'application ; restes purgés ; convertisseur cherché une fois.
+        .setup(|app| {
+            let root = app.path().app_cache_dir()?;
+            std::fs::create_dir_all(&root)?;
+            office::purge_conversions(&root);
+            originals::purge(&root.join("originaux"), ORIGINALS_KEEP);
+            app.manage(Office {
+                converter: office::find_converter(&Search::from_env()),
+                originals: Originals::new(root.join("originaux")),
+                root,
+                watching: AtomicBool::new(false),
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             read_granted_file,
             granted_file_size,
             link_media,
             relink_media,
             launch_files,
-            quit_app
+            quit_app,
+            office_converter,
+            convert_office,
+            release_conversion,
+            open_original,
+            reimport_original
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) = event {

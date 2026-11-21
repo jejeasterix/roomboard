@@ -250,6 +250,7 @@ export function App(props: AppProps): JSX.Element {
       insertPages: () => void ws.insertPages(),
       exportPdf: () => void ws.exportPdf(),
       exportBoard: (format) => void ws.exportBoard(format),
+      editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
       toggle: (p) => setPanel((cur) => (cur === p ? null : p)),
     },

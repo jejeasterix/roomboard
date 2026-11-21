@@ -9,7 +9,8 @@ import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
 import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
-import { PASTE_MAX_CHARS, PASTE_TOO_BIG } from "../platform/html-table";
+import { PASTE_MAX_CHARS, PASTE_TOO_BIG, type TableGrid } from "../platform/html-table";
+import { NOT_OFFICE_PAGE_MESSAGE, OFFICE_VALUES_MESSAGE, OfficeConvertError, originalChangedMessage } from "../platform/office-import";
 import { createImporter, LATER_FORMAT_MESSAGE } from "../platform/import";
 import type { LinkedMedia } from "../platform/media-import";
 import { cubeGlb } from "../platform/model3d-fixtures";
@@ -242,6 +243,11 @@ interface SetupOptions {
   readonly board?: WorkspaceDeps["board"];
   readonly iwbFiles?: WorkspaceDeps["iwbFiles"];
   readonly ubzFiles?: WorkspaceDeps["ubzFiles"];
+  readonly convertOffice?: WorkspaceDeps["convertOffice"];
+  readonly officeConverter?: WorkspaceDeps["officeConverter"];
+  readonly openOriginal?: WorkspaceDeps["openOriginal"];
+  readonly reimportOriginal?: WorkspaceDeps["reimportOriginal"];
+  readonly onOriginalChanged?: WorkspaceDeps["onOriginalChanged"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -290,6 +296,11 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.board ? { board: o.board } : {}),
     ...(o.iwbFiles ? { iwbFiles: o.iwbFiles } : {}),
     ...(o.ubzFiles ? { ubzFiles: o.ubzFiles } : {}),
+    ...(o.convertOffice ? { convertOffice: o.convertOffice } : {}),
+    ...(o.officeConverter === undefined ? {} : { officeConverter: o.officeConverter }),
+    ...(o.openOriginal ? { openOriginal: o.openOriginal } : {}),
+    ...(o.reimportOriginal ? { reimportOriginal: o.reimportOriginal } : {}),
+    ...(o.onOriginalChanged ? { onOriginalChanged: o.onOriginalChanged } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -1625,5 +1636,156 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     expect(await bare.exportBoard("iwb")).toBe(false);
     expect(await bare.openBoard({ name: "x.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(false);
     expect(shell.notify).not.toHaveBeenCalled();
+  });
+});
+
+describe("espace de travail : Office (C16)", () => {
+  const PDF_HEAD = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a]);
+  const DOCX = new Uint8Array([0x50, 0x4b, 3, 4, 1, 2, 3]);
+  const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  const G: TableGrid = { rows: 1, cols: 1, cells: ["a"], merges: [], sourceRows: 1, sourceCols: 1, cutCells: false };
+  const engine = (pages = 2): PdfEngine => ({
+    open: async (_b: Blob): Promise<PdfFile> => ({ pageCount: pages, pageSize: async () => ({ w: 612, h: 792 }), renderTile: async () => ({}) as TileBitmap, destroy: () => undefined }),
+  });
+  const office = (name: string, bytes: Uint8Array<ArrayBuffer> = DOCX, path: string | null = `/home/u/${name}`): DroppedFile => ({
+    name, size: bytes.byteLength, mime: "", ...(path === null ? {} : { path }), head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
+  });
+  const converting = () => vi.fn(async (_p: string) => new Blob([PDF_HEAD]));
+  const originals = (doc: CoreDocument) => doc.pageIds().map((id) => doc.page(id)?.backdrop?.original ?? null);
+
+  it("S5 : cours.docx déposé avec un chemin : convertOffice(path), onglet « cours.roomboard », chaque fond porte original, PDF « cours.pdf » et original « cours.docx » au magasin", async () => {
+    const convertOffice = converting();
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice });
+    const r = await ws.importFiles([office("cours.docx")], null);
+    expect(r.opened).toEqual(["cours.docx"]);
+    expect(convertOffice.mock.calls).toEqual([["/home/u/cours.docx"]]);
+    const tab = ws.active();
+    const doc = tab.board.doc;
+    expect([tab.files.name(), tab.files.isDirty(), doc.canUndo()]).toEqual(["cours.roomboard", false, false]);
+    const orig = doc.citedAssets().find((a) => a.name === "cours.docx");
+    const pdf = doc.citedAssets().find((a) => a.name === "cours.pdf");
+    expect([orig?.mime, orig?.size, pdf?.mime]).toEqual([DOCX_MIME, DOCX.byteLength, "application/pdf"]);
+    expect(originals(doc)).toEqual([orig!.id, orig!.id]);
+    expect(Array.from(new Uint8Array(await tab.assets.get(orig!.id)!.arrayBuffer()))).toEqual(Array.from(DOCX));
+    expect(tab.assets.get(orig!.id)!.type).toBe(DOCX_MIME);
+  });
+
+  it("S5 : enregistrer puis rouvrir : l'original est écrit dans les assets, même empreinte, chaque fond garde original", async () => {
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice: converting() });
+    await ws.importFiles([office("cours.docx")], null);
+    const doc = ws.active().board.doc;
+    const orig = doc.citedAssets().find((a) => a.name === "cours.docx")!;
+    expect(await ws.active().files.run("save")).toBe(true);
+    const [manifest, ybin, assets] = codec.write.mock.calls[0]!;
+    expect(assets.map((a) => a.id).sort()).toEqual(doc.citedAssets().map((a) => a.id).sort());
+    expect(assets.find((a) => a.id === orig.id)?.mime).toBe(DOCX_MIME);
+    codec.read.mockResolvedValueOnce({ manifest, ybin, assets: assets.map((a) => [a.id, a.blob] as const), warnings: [] });
+    expect(await ws.openDocument({ name: "cours.roomboard", bytes: new Uint8Array([1]), target: null })).toBe(true);
+    expect(originals(ws.active().board.doc)).toEqual([orig.id, orig.id]);
+    expect(ws.active().assets.has(orig.id)).toBe(true);
+  });
+
+  it("S5 : « Modifier dans l'application d'origine » envoie le nom et les octets de l'original de la page montrée", async () => {
+    const openOriginal = vi.fn(async (_f: { readonly name: string; readonly blob: Blob }) => undefined);
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice: converting(), openOriginal });
+    await ws.importFiles([office("cours.docx")], null);
+    expect(await ws.editOriginal()).toBe(true);
+    const arg = openOriginal.mock.calls[0]![0];
+    expect(arg.name).toBe("cours.docx");
+    expect(Array.from(new Uint8Array(await arg.blob.arrayBuffer()))).toEqual(Array.from(DOCX));
+  });
+
+  it("page sans original : avis « cette page ne vient pas d'un fichier Word, Excel ou PowerPoint », rien envoyé (O19)", async () => {
+    const openOriginal = vi.fn(async () => undefined);
+    const ws = await setupWorkspace({ openOriginal });
+    expect(await ws.editOriginal()).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith(NOT_OFFICE_PAGE_MESSAGE);
+    expect(openOriginal).not.toHaveBeenCalled();
+  });
+
+  it("S5, Review Focus 5 : original modifié : question ; oui : reimportOriginal(id) seul, le dépôt émis par la coque ouvre un second onglet, l'onglet d'origine intact ; non : rien ; dispose désabonne", async () => {
+    const hook: { fire: ((e: { readonly id: string; readonly name: string }) => void) | null } = { fire: null };
+    const onOriginalChanged = vi.fn((cb: (e: { readonly id: string; readonly name: string }) => void) => {
+      hook.fire = cb;
+      return () => {
+        hook.fire = null;
+      };
+    });
+    const reimportOriginal = vi.fn(async (_id: string) => {
+      dropHandler?.([office("cours.docx", DOCX, "/cache/originaux/1-0/cours.docx")], null);
+    });
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice: converting(), onOriginalChanged, reimportOriginal });
+    await ws.importFiles([office("cours.docx")], null);
+    const origin = ws.active();
+    const pages = origin.board.doc.pageIds();
+    answer = true;
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    await vi.waitFor(() => expect(ws.tabs.list()).toHaveLength(3));
+    expect(shell.confirm).toHaveBeenCalledWith(originalChangedMessage("cours.docx"));
+    expect(reimportOriginal.mock.calls).toEqual([["1-0"]]);
+    expect(origin.board.doc.pageIds()).toEqual(pages);
+    answer = false;
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    await flush();
+    expect(reimportOriginal).toHaveBeenCalledTimes(1);
+    ws.dispose();
+    expect(hook.fire).toBeNull();
+  });
+
+  it("original modifié : deux événements pour le même id avant la réponse : une seule question", async () => {
+    const hook: { fire: ((e: { readonly id: string; readonly name: string }) => void) | null } = { fire: null };
+    const onOriginalChanged = vi.fn((cb: (e: { readonly id: string; readonly name: string }) => void) => {
+      hook.fire = cb;
+      return () => undefined;
+    });
+    const reimportOriginal = vi.fn(async (_id: string) => undefined);
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice: converting(), onOriginalChanged, reimportOriginal });
+    answer = true;
+    shell.confirm.mockClear();
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    await flush();
+    await flush();
+    expect(shell.confirm).toHaveBeenCalledTimes(1);
+    expect(reimportOriginal.mock.calls).toEqual([["1-0"]]);
+    hook.fire!({ id: "1-0", name: "cours.docx" });
+    await flush();
+    expect(shell.confirm).toHaveBeenCalledTimes(2);
+    ws.dispose();
+  });
+
+  it("S5, O18 : un .roomboard d'avant C16 (PDF de C12, sans original) s'ouvre comme avant : original null partout", async () => {
+    const ws = await setupWorkspace();
+    const c12 = fakeCore.fromPdfPages({ id: "cd".repeat(32), name: "cours.pdf", mime: "application/pdf", size: 9 }, [{ w: 612, h: 792 }, { w: 792, h: 612 }]);
+    const [manifest, ybin] = c12.saveParts(NOW, "0.1.0");
+    codec.read.mockResolvedValueOnce({ manifest, ybin, assets: [], warnings: [] });
+    expect(await ws.openDocument({ name: "cours.roomboard", bytes: new Uint8Array([1]), target: null })).toBe(true);
+    const doc = ws.active().board.doc;
+    expect(doc.pageIds().map((id) => doc.page(id)?.backdrop?.kind)).toEqual(["pdf-page", "pdf-page"]);
+    expect(originals(doc)).toEqual([null, null]);
+  });
+
+  it("S5, O4 : sans convertisseur (no-program), notes.xlsx donne un tableau et l'avis « importé en valeurs… » ; cours.docx : « installez… »", async () => {
+    const convertOffice = vi.fn(async (_p: string): Promise<Blob> => {
+      throw new OfficeConvertError("no-program");
+    });
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice, readSheet });
+    const r = await ws.importFiles([office("notes.xlsx"), office("cours.docx")], null);
+    expect([r.inserted, r.failed]).toEqual([["notes.xlsx"], ["cours.docx"]]);
+    expect(readSheet).toHaveBeenCalledTimes(1);
+    expect(shell.notify).toHaveBeenCalledWith(`notes.xlsx : ${OFFICE_VALUES_MESSAGE}`);
+    expect(shell.notify).toHaveBeenCalledWith("cours.docx : installez LibreOffice ou Microsoft Office");
+    expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("S5, O4 : coque sans convertisseur (officeConverter: false) : notes.xlsx donne un tableau ET l'avis « importé en valeurs… »", async () => {
+    const convertOffice = vi.fn(async (_p: string): Promise<Blob> => new Blob());
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice, readSheet, officeConverter: false });
+    const r = await ws.importFiles([office("notes.xlsx")], null);
+    expect(r.inserted).toEqual(["notes.xlsx"]);
+    expect(convertOffice).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith(`notes.xlsx : ${OFFICE_VALUES_MESSAGE}`);
   });
 });

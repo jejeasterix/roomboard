@@ -105,6 +105,7 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "page-add": { label: "Ajouter une page" },
   "page-remove": { label: "Retirer la page" },
   "page-insert-file": { label: "Insérer des pages…" },
+  "edit-original": { label: "Modifier dans l'application d'origine" },
   "export-pdf": { label: "Exporter en PDF…" },
   "export-iwb": { label: "Enregistrer une copie au format .iwb…" },
   "export-ubz": { label: "Enregistrer une copie au format .ubz…" },

@@ -416,3 +416,74 @@ SOFTWARE.
 - **OpenBoard** `.ubz` : format lu et écrit d'après le comportement d'OpenBoard (GPL-3.0) ; aucun code d'OpenBoard
   n'est repris dans RoomBoard.
 - Lecteur XML : `quick-xml` 0.42 (MIT), déjà relevé par `calamine` (`scripts/licences-acceptees.json`).
+
+## Coque (C16, conversion Office)
+
+Crates ajoutées à `roomboard-shell` (et donc à `apps/desktop/src-tauri`). LibreOffice et Microsoft Office sont des
+programmes externes, lancés comme processus (LibreOffice) ou appelés par COM (Office) ; ils ne sont ni liés ni
+distribués.
+
+| crate | version | licence | dépôt | cible |
+|---|---|---|---|---|
+| open | 5.4.5 | MIT | https://github.com/Byron/open-rs | toutes |
+| is-wsl | 0.4.0 | MIT | https://github.com/TheLarkInn/is-wsl | Linux |
+| is-docker | 0.2.0 | MIT | https://github.com/TheLarkInn/is-docker | Linux |
+| dunce | 1.0.5 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://gitlab.com/kornelski/dunce | Windows |
+| windows (et `windows-*` tirées) | 0.62.2 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | Windows |
+| libc | 0.2.191 | MIT OR Apache-2.0 | https://github.com/rust-lang/libc | Unix |
+
+## Texte de licence : open 5.4.5 (MIT)
+
+```text
+The MIT License (MIT)
+=====================
+
+Copyright © `2015` `Sebastian Thiel`
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the “Software”), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+```
+
+## Texte de licence : is-wsl 0.4.0, is-docker 0.2.0 (MIT, même texte)
+
+```text
+MIT License
+
+Copyright (c) 2023 Sean Larkin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

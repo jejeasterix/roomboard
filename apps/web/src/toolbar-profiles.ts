@@ -21,7 +21,8 @@ const tool = (id: string, label: string) => ({ id, kind: "tool", tool: id, label
 const action = (id: string, label: string) => ({ id, kind: "action", action: id, label });
 const sep = (id: string) => ({ id, kind: "separator", label: "" });
 
-const pagesBar = () => ({
+/** `withEditOriginal` : « Modifier dans l'application d'origine » (C16, O19), absent du profil simple. */
+const pagesBar = (withEditOriginal = false) => ({
   id: "pages",
   role: "pages",
   dock: "bottom",
@@ -34,6 +35,7 @@ const pagesBar = () => ({
         action("page-add", "Ajouter une page"),
         action("page-remove", "Retirer la page"),
         action("page-insert-file", "Insérer des pages…"),
+        ...(withEditOriginal ? [{ ...action("edit-original", "Modifier dans l'application d'origine"), requires: ["officeConverter"] }] : []),
         action("export-pdf", "Exporter en PDF…"),
         action("export-iwb", "Enregistrer une copie au format .iwb…"),
         action("export-ubz", "Enregistrer une copie au format .ubz…"),
@@ -64,7 +66,7 @@ const defaultToolbars = () => [
       { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("library", "Bibliothèque"), action("profiles", "Profil"), action("settings", "Réglages")] },
     ],
   },
-  pagesBar(),
+  pagesBar(true),
 ];
 
 export const DEFAULT_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze({
