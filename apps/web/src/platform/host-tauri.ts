@@ -15,6 +15,7 @@ import {
   type SaveTarget,
   type ShellPort,
 } from "./files";
+import { OfficeConvertError } from "./office-import";
 
 export interface DialogFilter {
   readonly name: string;
@@ -59,13 +60,18 @@ export function baseName(path: string): string {
 }
 
 export interface TauriIpc {
-  invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+  /** C16 (O20) : `args` peut être un corps brut (`Uint8Array`), avec des en-têtes. */
+  invoke<T>(cmd: string, args?: Record<string, unknown> | Uint8Array, options?: { readonly headers: Readonly<Record<string, string>> }): Promise<T>;
   listen<T>(event: string, cb: (e: { readonly payload: T }) => void): Promise<() => void>;
 }
 
 export const DROPPED_EVENT = "roomboard://dropped";
 export const QUIT_EVENT = "roomboard://quit-requested";
 export const READ_CHUNK = 8 * 1024 * 1024;
+/** C16 (O21) : une copie d'original a été enregistrée dans l'application d'origine. */
+export const ORIGINAL_CHANGED_EVENT = "roomboard://original-changed";
+/** C16 (O20) : nom de l'original, encodé en pourcentage (lu par `originals::decode_name`). */
+export const NAME_HEADER = "x-roomboard-name";
 
 /** Positions en pixels physiques ; la coque accorde les chemins avant d'émettre (CL5b-13). */
 export interface DropPayload {
@@ -109,6 +115,60 @@ export const onQuitRequested = (ipc: TauriIpc, cb: () => void): Promise<() => vo
 export const linkMedia = (ipc: TauriIpc, path: string): Promise<string> => ipc.invoke<string>("link_media", { path });
 /** C14 : revérifie un média lié à l'ouverture (taille) et le ré-accorde ; false : introuvable. */
 export const relinkMedia = (ipc: TauriIpc, path: string, size: number): Promise<boolean> => ipc.invoke<boolean>("relink_media", { path, size });
+
+/** C16 (O24) : vrai si la coque a trouvé LibreOffice ou Microsoft Office au lancement ; appel en échec : faux. */
+export async function officeConverter(ipc: TauriIpc): Promise<boolean> {
+  try {
+    return (await ipc.invoke<boolean>("office_converter")) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** C16 (O35) : conversion par la coque ; le PDF accordé est lu par morceaux (`read_granted_file`), puis
+ *  `release_conversion` retire l'accord et le dossier, que la lecture réussisse ou non. Rejet de la coque (chaîne) :
+ *  `OfficeConvertError(code)`. */
+export async function convertOffice(ipc: TauriIpc, path: string): Promise<Blob> {
+  type Converted = { readonly id: string; readonly pdf: string; readonly size: number };
+  let converted: Converted;
+  try {
+    converted = await ipc.invoke<Converted>("convert_office", { path });
+  } catch (e) {
+    throw new OfficeConvertError(typeof e === "string" ? e : "failed");
+  }
+  try {
+    return await grantedFile(ipc, converted.pdf, converted.size).blob();
+  } finally {
+    await ipc.invoke<void>("release_conversion", { id: converted.id }).catch(() => undefined);
+  }
+}
+
+/** C16 (O20) : l'original en corps brut, le nom dans l'en-tête ; la coque l'écrit, le contrôle et l'ouvre. */
+export async function openOriginal(ipc: TauriIpc, name: string, blob: Blob): Promise<void> {
+  await ipc.invoke<string>("open_original", new Uint8Array(await blob.arrayBuffer()), { headers: { [NAME_HEADER]: encodeURIComponent(name) } });
+}
+
+/** C16 (O22) : la coque accorde sa copie `id` et émet un dépôt ; aucun chemin ne part de la page. */
+export const reimportOriginal = (ipc: TauriIpc, id: string): Promise<void> => ipc.invoke<void>("reimport_original", { id });
+
+/** C16 (O21) : abonnement à « original modifié » ; le désabonnement attend la fin de `listen` s'il le faut. */
+export function onOriginalChanged(ipc: TauriIpc, cb: (e: { readonly id: string; readonly name: string }) => void): () => void {
+  let stop: (() => void) | null = null;
+  let stopped = false;
+  ipc
+    .listen<{ readonly id: string; readonly name: string }>(ORIGINAL_CHANGED_EVENT, (e) => cb({ id: e.payload.id, name: e.payload.name }))
+    .then(
+      (s) => {
+        if (stopped) s();
+        else stop = s;
+      },
+      (err: unknown) => console.warn("RoomBoard : écoute des originaux indisponible", err),
+    );
+  return () => {
+    stopped = true;
+    stop?.();
+  };
+}
 export const quitApp = (ipc: TauriIpc): Promise<void> => ipc.invoke<void>("quit_app");
 
 export interface TauriFileHost extends FileHost {
@@ -263,7 +323,7 @@ export async function loadTauriPorts(): Promise<{
       setTitle: (t) => current.setTitle(t),
     },
     ipc: {
-      invoke: (cmd, args) => core.invoke(cmd, args),
+      invoke: (cmd, args, options) => core.invoke(cmd, args, options === undefined ? undefined : { headers: { ...options.headers } }),
       listen: (event, cb) => ev.listen(event, cb),
     },
     assetUrl: (p) => core.convertFileSrc(p),
