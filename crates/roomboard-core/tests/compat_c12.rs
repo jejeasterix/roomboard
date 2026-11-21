@@ -47,7 +47,7 @@ fn fixture_bytes() -> Vec<u8> {
 
 /// S5, O18 : le document PDF d'avant C16 s'ouvre (2 fonds `pdf-page`, l'asset cité) et se réenregistre à l'identique.
 #[test]
-fn pdf_c12_fixture_opens_and_resaves_identically() {
+fn pdf_c12_fixture_opens_without_original_and_resaves_identically() {
     let bytes = fixture_bytes();
     let d = load(&bytes).expect("load");
     let kinds: Vec<Option<(String, Option<u32>)>> = d
@@ -63,6 +63,12 @@ fn pdf_c12_fixture_opens_and_resaves_identically() {
         ]
     );
     assert_eq!(d.cited_assets(), vec![pdf_asset()]);
+    assert!(
+        d.page_ids()
+            .iter()
+            .all(|id| d.page(id).and_then(|p| p.backdrop).is_some_and(|b| b.original.is_none())),
+        "aucun fond d'avant C16 n'a d'original"
+    );
     assert!(
         save(&d, &meta()).expect("resave") == bytes,
         "fichier d'avant C16 réenregistré à l'identique"

@@ -163,7 +163,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(toPageView(undefined)).toBeNull();
     expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null, grid: null });
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: undefined, h: 5, fit: "contain", rect: undefined };
-    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, page: null, w: null, rect: null }, grid: null });
+    expect(toPageView({ ...page, backdrop: b })).toEqual({ ...page, backdrop: { ...b, page: null, w: null, rect: null, original: null }, grid: null });
     expect(() => toPageView({ ...page, width: "1920" })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, backdrop: { ...b, asset: 3 } })).toThrow("PageView invalide");
     const info = { id: "a".repeat(64), name: "n", mime: "image/png", size: 3 };
@@ -733,7 +733,7 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     const fond = { asset: png, w: 1000, h: 500, fit: "width" };
     expect(d.apply({ type: "SetBackdrop", page: p, backdrop: fond }).pages).toEqual([p]);
     const rect = { x0: 0, y0: 0, x1: 1920, y1: 960 };
-    expect(d.page(p)).toEqual({ ...before, backdrop: { asset: ABC, kind: "image", page: null, w: 1000, h: 500, fit: "width", rect } });
+    expect(d.page(p)).toEqual({ ...before, backdrop: { asset: ABC, kind: "image", page: null, w: 1000, h: 500, fit: "width", rect, original: null } });
     expect(d.hitTest(p, 960, 480, 0)).toBeNull();
     expect(d.elementIds(p)).toEqual([]);
     expect(d.citedAssets()).toEqual([png]);
@@ -2749,7 +2749,7 @@ describe.each(factories)("contrat C12 : $name", ({ f }) => {
       const s = C12_SIZES[i]!;
       const p = d.page(id);
       expect([p?.width, p?.height]).toEqual([1920, 1080]);
-      expect(p?.backdrop).toEqual({ asset: C12_PDF.id, kind: "pdf-page", page: i, w: s.w, h: s.h, fit: "width", rect: { x0: 0, y0: 0, x1: 1920, y1: (s.h * 1920) / s.w } });
+      expect(p?.backdrop).toEqual({ asset: C12_PDF.id, kind: "pdf-page", page: i, w: s.w, h: s.h, fit: "width", rect: { x0: 0, y0: 0, x1: 1920, y1: (s.h * 1920) / s.w }, original: null });
     });
     expect(d.citedAssets()).toEqual([C12_PDF]);
     expect([d.version(), d.canUndo()]).toEqual([0, false]);
@@ -2801,6 +2801,48 @@ describe("contrôle de forme C12 (fond pdf-page)", () => {
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.page).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, page: 2 } })?.backdrop?.page).toBe(2);
     expect(() => toPageView({ ...page, backdrop: { ...b, page: "2" } })).toThrow();
+  });
+});
+
+// C16 (O16 à O18) : PDF d'un fichier Office converti, contrat commun aux deux fabriques ; l'original est cité par chaque
+// fond, construit d'emblée comme C12 (aucune étape), refusé comme l'asset.
+const C16_DOCX = { id: "ef".repeat(32), name: "cours.docx", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", size: 4321 };
+describe.each(factories)("contrat C16 : $name", ({ f }) => {
+  const originals = (d: CoreDocument) => d.pageIds().map((id) => d.page(id)?.backdrop?.original);
+  it("fromPdfPages avec original : chaque fond porte original, deux assets cités, rien à annuler (S5, O17)", () => {
+    const d = f.fromPdfPages(C12_PDF, C12_SIZES, C16_DOCX);
+    expect(originals(d)).toEqual([C16_DOCX.id, C16_DOCX.id, C16_DOCX.id]);
+    expect(d.citedAssets()).toEqual([C12_PDF, C16_DOCX]);
+    expect([d.version(), d.canUndo()]).toEqual([0, false]);
+  });
+  it("PDF seul : original null sur chaque fond (O18)", () => {
+    expect(originals(f.fromPdfPages(C12_PDF, C12_SIZES))).toEqual([null, null, null]);
+  });
+  it("original non conforme : BadAsset, avant les tailles (O17)", () => {
+    expect(messageOf(() => f.fromPdfPages(C12_PDF, [], { ...C16_DOCX, mime: "" }))).toBe(C12_BAD_ASSET);
+  });
+  it("enregistré en deux moitiés puis relu : original gardé et cité (S5)", () => {
+    const [manifest, ybin] = f.fromPdfPages(C12_PDF, C12_SIZES, C16_DOCX).saveParts(now, "0.1.0");
+    const back = f.loadParts(manifest, ybin);
+    expect(originals(back)).toEqual([C16_DOCX.id, C16_DOCX.id, C16_DOCX.id]);
+    expect(back.citedAssets()).toEqual([C12_PDF, C16_DOCX]);
+  });
+  it("Insérer des pages d'un document converti emporte l'original (HO2-10, Review Focus 4)", () => {
+    const src = f.fromPdfPages(C12_PDF, C12_SIZES.slice(0, 1), C16_DOCX);
+    const host = f.blank();
+    host.insertPages(src, host.pageIds()[0]!);
+    expect(originals(host)).toEqual([null, C16_DOCX.id]);
+    expect(host.citedAssets().map((a) => a.id)).toEqual([C12_PDF.id, C16_DOCX.id]);
+  });
+});
+
+describe("contrôle de forme C16 (original du fond)", () => {
+  it("toPageView : original absent → null, chaîne gardée, nombre → erreur", () => {
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const b = { asset: "a".repeat(64), kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", rect: undefined };
+    expect(toPageView({ ...page, backdrop: b })?.backdrop?.original).toBeNull();
+    expect(toPageView({ ...page, backdrop: { ...b, original: "b".repeat(64) } })?.backdrop?.original).toBe("b".repeat(64));
+    expect(() => toPageView({ ...page, backdrop: { ...b, original: 3 } })).toThrow("PageView invalide");
   });
 });
 

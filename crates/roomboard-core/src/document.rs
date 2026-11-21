@@ -1577,6 +1577,76 @@ mod tests {
         }
     }
 
+    /// Empreinte conforme (SHA-256 du vide) d'un original Office.
+    const ORIGINAL: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    fn docx_asset() -> AssetRef {
+        AssetRef {
+            id: ORIGINAL.into(),
+            name: "cours.docx".into(),
+            mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document".into(),
+            size: 4321.0,
+        }
+    }
+
+    fn originals_of(d: &Document) -> Vec<Option<String>> {
+        d.page_ids()
+            .iter()
+            .map(|id| d.page(id).and_then(|p| p.backdrop).and_then(|b| b.original))
+            .collect()
+    }
+
+    /// C16 (O16, O17, S5) : chaque fond porte `original` ; PDF et original cités, métadonnées écrites ; un PDF seul
+    /// garde `original: None` (O18) ; rien à annuler.
+    #[test]
+    fn from_pdf_pages_with_original_cites_it_on_every_page() {
+        let d = Document::from_pdf_pages(&pdf_asset(), &SIZES[..2], Some(&docx_asset()))
+            .expect("document");
+        assert_eq!(
+            originals_of(&d),
+            vec![Some(ORIGINAL.to_string()), Some(ORIGINAL.to_string())]
+        );
+        assert_eq!(d.cited_assets(), vec![pdf_asset(), docx_asset()]);
+        assert_eq!((d.version(), d.can_undo()), (0, false));
+        let plain = Document::from_pdf_pages(&pdf_asset(), &SIZES[..1], None).expect("pdf");
+        assert_eq!(originals_of(&plain), vec![None]);
+    }
+
+    /// O17 : un original non conforme est refusé comme l'asset (`BadAsset`), avant les tailles.
+    #[test]
+    fn from_pdf_pages_refuses_bad_original_as_bad_asset() {
+        let mut bad = docx_asset();
+        bad.mime = String::new();
+        assert_eq!(
+            Document::from_pdf_pages(&pdf_asset(), &[], Some(&bad)).err(),
+            Some(CommandError::BadAsset)
+        );
+    }
+
+    /// HO2-10 (Review Focus 4) : encodé puis relu, l'original reste ; « Insérer des pages » d'un document converti
+    /// l'emporte dans le document hôte.
+    #[test]
+    fn insert_pages_and_encode_carry_the_original() {
+        let d = Document::from_pdf_pages(&pdf_asset(), &SIZES[..1], Some(&docx_asset()))
+            .expect("document");
+        let back = Document::from_update_v1(&d.encode_v1()).expect("relu");
+        assert_eq!(originals_of(&back), vec![Some(ORIGINAL.to_string())]);
+        let mut host = Document::blank();
+        let first = host.page_ids()[0].clone();
+        host.insert_pages(&d, &first).expect("insertion");
+        assert_eq!(
+            originals_of(&host),
+            vec![None, Some(ORIGINAL.to_string())]
+        );
+        assert_eq!(
+            host.cited_assets()
+                .into_iter()
+                .map(|a| a.id)
+                .collect::<Vec<_>>(),
+            vec![ABC.to_string(), ORIGINAL.to_string()]
+        );
+    }
+
     const SIZES: [(f64, f64); 3] = [(612.0, 792.0), (792.0, 612.0), (595.0, 842.0)];
 
     /// C12 (PF4 à PF6, S1) : une page par taille, 1920 × 1080, fond `pdf-page` d'indice i calé sur la largeur ; asset

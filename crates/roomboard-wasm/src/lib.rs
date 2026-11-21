@@ -2824,6 +2824,32 @@ mod tests {
         );
     }
 
+    /// C16 (O17) : `from_office_pages` = `from_pdf_pages` + `original` sur chaque fond.
+    #[test]
+    fn from_pdf_pages_inner_with_original_sets_it_on_each_backdrop() {
+        let sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let pdf = AssetRef {
+            id: ABC.into(),
+            name: "cours.pdf".into(),
+            mime: "application/pdf".into(),
+            size: 10.0,
+        };
+        let docx = AssetRef {
+            id: sha.into(),
+            name: "cours.docx".into(),
+            mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document".into(),
+            size: 7.0,
+        };
+        let d = Document::from_pdf_pages_inner(pdf, &[612.0, 792.0, 792.0, 612.0], Some(docx))
+            .expect("document");
+        let o: Vec<Option<String>> = d
+            .page_ids()
+            .iter()
+            .map(|id| d.core.page(id).and_then(|p| p.backdrop).and_then(|b| b.original))
+            .collect();
+        assert_eq!(o, vec![Some(sha.to_string()), Some(sha.to_string())]);
+    }
+
     #[test]
     fn save_parts_then_load_parts_inner_keeps_document_and_created() {
         let mut d = Document::blank();

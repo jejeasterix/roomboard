@@ -460,6 +460,25 @@ mod backdrop_tests {
             w: Some(w),
             h: Some(h),
             fit: Some("width".into()),
+            original: None,
+        }
+    }
+
+    /// C16 (O17) : `original` gardé s'il est une empreinte conforme ; sinon `None`, le fond reste lisible.
+    #[test]
+    fn backdrop_view_keeps_only_a_conforming_original() {
+        let sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let mut r = raw(1000.0, 500.0);
+        r.original = Some(sha.into());
+        assert_eq!(
+            backdrop_view(r, 1920.0).and_then(|v| v.original).as_deref(),
+            Some(sha)
+        );
+        for bad in ["E3B0C442", "../x", ""] {
+            let mut r = raw(1000.0, 500.0);
+            r.original = Some(bad.into());
+            let v = backdrop_view(r, 1920.0).expect("fond lisible");
+            assert_eq!(v.original, None, "{bad}");
         }
     }
 
