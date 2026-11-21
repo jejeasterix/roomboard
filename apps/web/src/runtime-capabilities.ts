@@ -11,14 +11,14 @@ export function detectPlatform(env: { readonly tauri: boolean; readonly userAgen
   return "linux";
 }
 
-export function runtimeCapabilities(staticCaps: unknown, env: { readonly tauri: boolean }): RuntimeCapabilities {
+export function runtimeCapabilities(staticCaps: unknown, env: { readonly tauri: boolean; readonly officeConverter?: boolean }): RuntimeCapabilities {
   const s = typeof staticCaps === "object" && staticCaps !== null ? (staticCaps as Record<string, unknown>) : {};
   const flag = (k: string): boolean => env.tauri && s[k] === true;
   const caps = {
     desktopAnnotation: flag("desktopAnnotation"),
     multiWindow: flag("multiWindow"),
     dropPaths: env.tauri,
-    officeConverter: false,
+    officeConverter: env.tauri && env.officeConverter === true,
   };
   return Object.fromEntries(CAPABILITY_KEYS.map((k) => [k, caps[k]])) as RuntimeCapabilities;
 }

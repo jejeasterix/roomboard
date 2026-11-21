@@ -308,6 +308,8 @@ export interface BackdropView {
   readonly h: number | null;
   readonly fit: string;
   readonly rect: Bounds | null;
+  /** C16 (O17) : empreinte de l'original Office d'un PDF converti ; null si absente ou non conforme (PDF seul, image). */
+  readonly original: string | null;
 }
 export interface PageView {
   readonly id: string;
@@ -393,8 +395,9 @@ export interface CoreDocument {
 export interface CoreFactory {
   blank(): CoreDocument;
   /** C12 (PF6) : une page par taille, fond `pdf-page` d'indice i, asset cité ; aucune étape (D37). Lève le message
-   *  BadAsset, puis BadImage (0 ou plus de PDF_MAX_PAGES pages, taille non finie ou ≤ 0). */
-  fromPdfPages(asset: AssetRef, sizes: readonly PdfPageSize[]): CoreDocument;
+   *  BadAsset, puis BadImage (0 ou plus de PDF_MAX_PAGES pages, taille non finie ou ≤ 0). C16 (O17) : `original`
+   *  (fichier Office converti) cité par chaque fond (`backdrop.original`), contrôlé comme l'asset. */
+  fromPdfPages(asset: AssetRef, sizes: readonly PdfPageSize[], original?: AssetRef): CoreDocument;
   /** Lève une Error lisible si le fichier n'est pas un .roomboard, est plus récent, ou est corrompu. */
   load(bytes: Uint8Array): CoreDocument;
   loadParts(manifest: Uint8Array, ybin: Uint8Array): CoreDocument;

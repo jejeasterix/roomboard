@@ -146,6 +146,21 @@ mkdir -p "$tmp/three-dist" && cp -r "$tmp/propre/." "$tmp/three-dist/"
 printf 'const r=/^https?:\\/\\//i.test(u);\n' > "$tmp/three-dist/three-essai.js"
 node "$script" "$tmp/three-dist" "$tmp/bonne.json" > "$tmp/out" 2>&1 || echec "cas 26 : i.test de three refusé ($(cat "$tmp/out"))"
 cas=$((cas + 1))
+# 27-30. Office (C16, O29, O36) : l'original s'ouvre depuis Rust (crate open) et le relevé se fait en Rust :
+# ni tauri-plugin-opener, ni feature watch de tauri-plugin-fs, ni permission opener: ou fs:allow-watch.
+for d in opener watch perm-opener perm-watch; do
+  mkdir -p "$tmp/c16-$d/capabilities"
+  cp "$tmp/coque/tauri.conf.json" "$tmp/coque/Cargo.toml" "$tmp/c16-$d/"
+  echo '{ "permissions": ["core:default"] }' > "$tmp/c16-$d/capabilities/default.json"
+done
+printf 'tauri-plugin-opener = "2"\n' >> "$tmp/c16-opener/Cargo.toml"
+printf 'tauri-plugin-fs = { version = "2", features = ["watch"] }\n' >> "$tmp/c16-watch/Cargo.toml"
+echo '{ "permissions": ["core:default", "opener:default"] }' > "$tmp/c16-perm-opener/capabilities/default.json"
+echo '{ "permissions": ["core:default", { "identifier": "fs:allow-watch" }] }' > "$tmp/c16-perm-watch/capabilities/default.json"
+refuse 27 "$tmp/propre" "$tmp/c16-opener/tauri.conf.json" "tauri-plugin-opener"
+refuse 28 "$tmp/propre" "$tmp/c16-watch/tauri.conf.json" "feature watch"
+refuse 29 "$tmp/propre" "$tmp/c16-perm-opener/tauri.conf.json" "opener:default"
+refuse 30 "$tmp/propre" "$tmp/c16-perm-watch/tauri.conf.json" "fs:allow-watch"
 node "$script" "$tmp/propre" "$racine/apps/desktop/src-tauri/tauri.conf.json" > "$tmp/out" 2>&1 || echec "cas 23 : vraie configuration refusée ($(cat "$tmp/out"))"
 cas=$((cas + 1))
 

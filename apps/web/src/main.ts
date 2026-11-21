@@ -28,7 +28,7 @@ import { measureWith, type Measure } from "./engine/text-layout";
 import { browserFallbackDeps } from "./platform/host-repli";
 import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
-import { launchFiles, linkMedia, loadTauriPorts, onQuitRequested, quitApp, relinkMedia, type TauriIpc } from "./platform/host-tauri";
+import { convertOffice, launchFiles, linkMedia, loadTauriPorts, officeConverter, onOriginalChanged, onQuitRequested, openOriginal, quitApp, reimportOriginal, relinkMedia, type TauriIpc } from "./platform/host-tauri";
 import { prepareHost, startDocument } from "./platform/mount";
 import { browserSystemClipboard, createClipboard, handleCopy } from "./platform/clipboard";
 import { handlePaste } from "./platform/paste";
@@ -42,6 +42,7 @@ import { BUILTIN_PROFILES } from "./toolbar-profiles";
 import { createActiveProfile } from "./ui/active-profile";
 import { mountApp, showStartError } from "./ui/App";
 import init, * as wasm from "./wasm/roomboard_wasm";
+import { withConversionMark, type OriginalChange } from "./platform/office-import";
 
 function keyOf(e: KeyboardEvent): KeyLike {
   return {
@@ -151,7 +152,8 @@ async function start(): Promise<void> {
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
   };
 
-  const env = { tauri, userAgent: navigator.userAgent };
+  // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).
+  const env = { tauri, userAgent: navigator.userAgent, officeConverter: ipc === null ? false : await officeConverter(ipc) };
   const settingsKv = browserKeyValue(window);
   const store = createProfileStore(settingsKv, BUILTIN_PROFILES);
   // Avertissements de l'amorce (profil stocké écarté, stockage illisible) : rien d'autre ne les lit.
@@ -246,6 +248,7 @@ async function start(): Promise<void> {
   });
   const packFiles =
     ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBPACK_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBPACK_TYPE);
+  const markConversion = withConversionMark(document.documentElement);
   const workspace = await createWorkspace({
     core,
     host: prepared.host,
@@ -286,6 +289,17 @@ async function start(): Promise<void> {
       : {
           linkMedia: async (p: string) => ({ id: await linkMedia(ipc, p), url: ports.assetUrl(p) }),
           relinkMedia: (p: string, size: number) => relinkMedia(ipc, p, size),
+        }),
+    // Office (C16) : coque seulement ; conversion marquée sur la racine (curseur d'attente, O25), original ouvert,
+    // surveillé et réimporté par la coque (O20 à O22).
+    ...(ipc === null
+      ? {}
+      : {
+          convertOffice: (p: string) => markConversion(() => convertOffice(ipc, p)),
+          officeConverter: env.officeConverter,
+          openOriginal: (f: { readonly name: string; readonly blob: Blob }) => openOriginal(ipc, f.name, f.blob),
+          reimportOriginal: (id: string) => reimportOriginal(ipc, id),
+          onOriginalChanged: (cb: (e: OriginalChange) => void) => onOriginalChanged(ipc, cb),
         }),
     now: () => new Date().toISOString(),
     newId: () => `t${++tabCount}`,

@@ -92,3 +92,13 @@ Seulement si C1 est fusionné. Aucun build de plus que celui du § 2.
 | C1-6 | choisir « Par défaut » ; Profil → Modifier… : taille « Petits », Enregistrer ; fermer RoomBoard (Cmd+Q), relancer ; puis Profil → Remettre à zéro ce profil | après la relance : « Par défaut » toujours actif, en petits boutons ; après la remise à zéro : boutons moyens, « Remettre à zéro ce profil » grisé |
 
 Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-macos-c1-export.png` (geste C1-2).
+
+## 8. Office (C16) — LibreOffice.app (R3)
+
+| geste | action | attendu |
+|---|---|---|
+| C16-1 | `LibreOffice.app` dans `/Applications`, RoomBoard lancé du Finder (PATH minimal) ; déposer `diapos.pptx` | onglet `diapos.roomboard` de 2 pages (chemin connu `/Applications/LibreOffice.app/Contents/MacOS/soffice`) |
+| C16-2 | « Modifier dans l'application d'origine », enregistrer dans Impress | la question de réimport arrive ; Oui : nouvel onglet |
+| C16-3 | `LibreOffice.app` déplacé hors d'`/Applications` et de `~/Applications`, relancer | « <nom> : installez LibreOffice ou Microsoft Office » |
+
+Rapporter chaque geste : conforme / écart (une ligne).

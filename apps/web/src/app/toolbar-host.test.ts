@@ -234,3 +234,18 @@ describe("barre : Exporter en PDF (C12, PF19)", () => {
     expect(() => createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!).runAction("export-pdf")).not.toThrow();
   });
 });
+
+describe("barre : Modifier dans l'application d'origine (C16, O19)", () => {
+  it("edit-original → editOriginal() ; libellé dans ACTION_TABLE", () => {
+    const { t, host } = setup();
+    (t as unknown as { editOriginal: () => void }).editOriginal = vi.fn();
+    host.runAction("edit-original");
+    expect(vi.mocked((t as unknown as { editOriginal: () => void }).editOriginal)).toHaveBeenCalledTimes(1);
+    expect(Object.hasOwn(ACTIONS, "edit-original")).toBe(true);
+    expect(ACTION_TABLE["edit-original"]?.label).toBe("Modifier dans l'application d'origine");
+  });
+  it("sans editOriginal (hôte partiel) : rien, aucune erreur", () => {
+    const t = { engine: () => ({}), runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), insertPages: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
+    expect(() => createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!).runAction("edit-original")).not.toThrow();
+  });
+});
