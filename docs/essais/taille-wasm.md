@@ -102,6 +102,7 @@ OE23 final (T6 `ids_where` partagé, sortie de `verifier.sh` sur 3f7c157) : prin
 | avant C13 (`origin/main` 41342b0, sortie de `verifier.sh`) | 1 371 293 o | 3 100 845 o |
 | après T1 (22 crates tierces de `formats` en `opt-level = "z"`, sans lecteur) | 1 371 293 o | 2 903 814 o |
 | final C13 lot 1 (lecteur, écrivain, liaison ; build de `verifier.sh --e2e`) | 1 371 293 o | 3 024 532 o |
+| C13 lot 1 fusionné avec `origin/main` bea54d7 (C16 Office, PR #29 ; sortie de `verifier.sh --e2e` sur 5848edb) | 1 374 141 o | 3 024 532 o |
 
 T1 : `formats` −197 031 o, principal inchangé à l'octet (aucune des 22 crates n'entre dans le module principal).
 Mesure : `cargo build --target wasm32-unknown-unknown --release` puis `wasm-bindgen --target web --remove-name-section`.
@@ -111,3 +112,5 @@ Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o). Coût d
 Final : principal 0 o depuis 1 371 293 o (aucune ligne du module principal ne change) ; `formats` -76 313 o depuis
 3 100 845 o (3 024 532 o, sortie de `verifier.sh --e2e` sur la tête finale de T15), marge restante 121 196 o sous le plafond
 (3 145 728 o) ; principal 1 371 293 o (plafond 1 572 864 o).
+
+Après la fusion d'`origin/main` (C16) : le principal passe à 1 374 141 o par C16 seul (+2 848 o, marge 198 723 o) ; `formats` reste à 3 024 532 o (marge 121 196 o). Plafonds inchangés (1 572 864 o, 3 145 728 o).
