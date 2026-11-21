@@ -403,6 +403,22 @@ impl Document {
                     }
                 }
             }),
+            Some(crate::model3d::MODEL3D_KIND) => {
+                Some(match crate::model3d::read_model3d(&txn, e) {
+                    Some((transform, model3d)) => ElementView {
+                        model3d: Some(model3d),
+                        ..ElementView::bare(id, "model3d", transform)
+                    },
+                    // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).
+                    None => {
+                        let (transform, unknown) = unknown_view(&txn, e)?;
+                        ElementView {
+                            unknown: Some(unknown),
+                            ..ElementView::bare(id, "unknown", transform)
+                        }
+                    }
+                })
+            }
             _ => {
                 let (transform, unknown) = read_unknown(&txn, e)?;
                 Some(ElementView {

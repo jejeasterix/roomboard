@@ -3,12 +3,301 @@
 //! `pitch` (facultatifs, défauts 30° et 20°), `snapshot` (facultatif). Mal formé : cadre inconnu, jamais `None` (X8).
 use std::f64::consts::PI;
 
+use yrs::{Any, Array, ArrayPrelim, ArrayRef, In, Map, MapPrelim, MapRef, Out, ReadTxn};
+
+use crate::asset::{is_asset_id, AssetRef};
+use crate::commands::{valid_asset, valid_matrix, Change, CommandError};
+use crate::document::Document;
+use crate::element::{out_f64, out_string, out_transform, transform_to_any, Transform};
+use crate::media::{put_or_remove, valid_box};
+
 pub const MODEL3D_KIND: &str = "model3d";
 pub const MAX_FILES: usize = 256;
 pub const MAX_PATH_CHARS: usize = 1024;
 pub const DEFAULT_YAW: f64 = PI / 6.0;
 pub const DEFAULT_PITCH: f64 = PI / 9.0;
 pub const PITCH_LIMIT: f64 = 85.0 * PI / 180.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Model3dFormat {
+    Glb,
+    Gltf,
+    Obj,
+    Stl,
+    Ply,
+}
+
+impl Model3dFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Model3dFormat::Glb => "glb",
+            Model3dFormat::Gltf => "gltf",
+            Model3dFormat::Obj => "obj",
+            Model3dFormat::Stl => "stl",
+            Model3dFormat::Ply => "ply",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Model3dFormat> {
+        match s {
+            "glb" => Some(Model3dFormat::Glb),
+            "gltf" => Some(Model3dFormat::Gltf),
+            "obj" => Some(Model3dFormat::Obj),
+            "stl" => Some(Model3dFormat::Stl),
+            "ply" => Some(Model3dFormat::Ply),
+            _ => None,
+        }
+    }
+}
+
+/// Fichier lié (X3) : référence normalisée telle qu'écrite dans le modèle, et empreinte de son asset.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Model3dFile {
+    pub path: String,
+    pub asset: String,
+}
+
+/// Vue d'un objet 3D (X2) : boîte locale (0, 0)-(w, h) ; caméra et instantané aux défauts s'ils manquent.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Model3dView {
+    pub asset: String,
+    pub format: String,
+    pub w: f64,
+    pub h: f64,
+    pub files: Vec<Model3dFile>,
+    pub yaw: f64,
+    pub pitch: f64,
+    pub snapshot: Option<String>,
+}
+
+/// Entrée d'`AddModel3d` (X7).
+pub struct NewModel3d<'a> {
+    pub page: &'a str,
+    pub asset: &'a AssetRef,
+    pub format: Model3dFormat,
+    pub files: &'a [(String, AssetRef)],
+    pub w: f64,
+    pub h: f64,
+    pub yaw: f64,
+    pub pitch: f64,
+    pub snapshot: Option<&'a AssetRef>,
+    pub matrix: &'a Transform,
+}
+
+fn valid_yaw(y: f64) -> bool {
+    y.is_finite() && y > -PI && y <= PI
+}
+
+fn valid_pitch(p: f64) -> bool {
+    p.is_finite() && p.abs() <= PITCH_LIMIT
+}
+
+/// Chemin d'un fichier lié (X3) : 1 à 1 024 caractères, `/` seul séparateur, ni absolu, ni segment vide, `.` ou `..`,
+/// ni `\` ni `:` (aucun schéma, aucun lecteur).
+pub fn valid_path(p: &str) -> bool {
+    (1..=MAX_PATH_CHARS).contains(&p.chars().count())
+        && !p.contains('\\')
+        && !p.contains(':')
+        && p.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
+}
+
+/// Entrées lisibles de `files` (X8) : `Y.Map` à `path` valide et `asset` empreinte ; illisible ou doublon : ignorée ;
+/// 256 au plus.
+fn read_files<T: ReadTxn>(txn: &T, a: &ArrayRef) -> Vec<Model3dFile> {
+    let mut out: Vec<Model3dFile> = Vec::new();
+    for v in a.iter(txn) {
+        let Out::YMap(m) = v else { continue };
+        let (Some(path), Some(asset)) = (
+            out_string(m.get(txn, "path")),
+            out_string(m.get(txn, "asset")),
+        ) else {
+            continue;
+        };
+        if out.len() == MAX_FILES
+            || !valid_path(&path)
+            || !is_asset_id(&asset)
+            || out.iter().any(|f| f.path == path)
+        {
+            continue;
+        }
+        out.push(Model3dFile { path, asset });
+    }
+    out
+}
+
+/// Objet 3D (X8) : `None` si l'élément n'en est pas un, ou si `transform`, `asset`, `format`, `w` ou `h` manque ou
+/// sort du domaine (l'appelant rend le cadre inconnu). Facultatif illisible = défaut.
+pub(crate) fn read_model3d<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<(Transform, Model3dView)> {
+    if out_string(e.get(txn, "kind"))? != MODEL3D_KIND {
+        return None;
+    }
+    let transform = out_transform(e.get(txn, "transform"))?;
+    let asset = out_string(e.get(txn, "asset")).filter(|a| is_asset_id(a))?;
+    let format = out_string(e.get(txn, "format")).filter(|f| Model3dFormat::parse(f).is_some())?;
+    let w = out_f64(e.get(txn, "w")).filter(|v| valid_box(*v, 1.0))?;
+    let h = out_f64(e.get(txn, "h")).filter(|v| valid_box(1.0, *v))?;
+    let files = match e.get(txn, "files") {
+        Some(Out::YArray(a)) => read_files(txn, &a),
+        _ => Vec::new(),
+    };
+    Some((
+        transform,
+        Model3dView {
+            asset,
+            format,
+            w,
+            h,
+            files,
+            yaw: out_f64(e.get(txn, "yaw"))
+                .filter(|v| valid_yaw(*v))
+                .unwrap_or(DEFAULT_YAW),
+            pitch: out_f64(e.get(txn, "pitch"))
+                .filter(|v| valid_pitch(*v))
+                .unwrap_or(DEFAULT_PITCH),
+            snapshot: out_string(e.get(txn, "snapshot")).filter(|a| is_asset_id(a)),
+        },
+    ))
+}
+
+impl Document {
+    /// X7 : refus sans transaction, dans l'ordre BadAsset → BadModel3d → BadMatrix → UnknownPage ; sinon une
+    /// transaction `"local"` (une étape) : l'élément puis les métadonnées du principal, des liés et de l'instantané.
+    pub(crate) fn cmd_add_model3d(&mut self, m: &NewModel3d<'_>) -> Result<Change, CommandError> {
+        if !valid_asset(m.asset)
+            || m.files.iter().any(|(_, a)| !valid_asset(a))
+            || m.snapshot.is_some_and(|s| !valid_asset(s))
+        {
+            return Err(CommandError::BadAsset);
+        }
+        let unique = m
+            .files
+            .iter()
+            .enumerate()
+            .all(|(i, (p, _))| m.files[..i].iter().all(|(q, _)| q != p));
+        if !valid_box(m.w, m.h)
+            || !valid_yaw(m.yaw)
+            || !valid_pitch(m.pitch)
+            || m.files.len() > MAX_FILES
+            || !unique
+            || m.files.iter().any(|(p, _)| !valid_path(p))
+        {
+            return Err(CommandError::BadModel3d);
+        }
+        if !valid_matrix(m.matrix) {
+            return Err(CommandError::BadMatrix);
+        }
+        let elements = self.page_elements_or_err(m.page)?;
+        let id = yrs::uuid_v4().to_string();
+        let mut fields = vec![
+            ("id", In::from(id.as_str())),
+            ("kind", In::from(MODEL3D_KIND)),
+            ("transform", In::Any(transform_to_any(m.matrix))),
+            ("asset", In::from(m.asset.id.as_str())),
+            ("format", In::from(m.format.as_str())),
+            ("w", In::Any(Any::from(m.w))),
+            ("h", In::Any(Any::from(m.h))),
+        ];
+        if !m.files.is_empty() {
+            let list: Vec<In> = m
+                .files
+                .iter()
+                .map(|(p, a)| {
+                    In::Map(MapPrelim::from_iter([
+                        ("path", In::from(p.as_str())),
+                        ("asset", In::from(a.id.as_str())),
+                    ]))
+                })
+                .collect();
+            fields.push(("files", In::Array(ArrayPrelim::from(list))));
+        }
+        if m.yaw != DEFAULT_YAW {
+            fields.push(("yaw", In::Any(Any::from(m.yaw))));
+        }
+        if m.pitch != DEFAULT_PITCH {
+            fields.push(("pitch", In::Any(Any::from(m.pitch))));
+        }
+        if let Some(s) = m.snapshot {
+            fields.push(("snapshot", In::from(s.id.as_str())));
+        }
+        {
+            let mut txn = self.transact_local();
+            elements.push_back(&mut txn, MapPrelim::from_iter(fields));
+            self.insert_asset_meta(&mut txn, m.asset);
+            for (_, a) in m.files {
+                self.insert_asset_meta(&mut txn, a);
+            }
+            if let Some(s) = m.snapshot {
+                self.insert_asset_meta(&mut txn, s);
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![m.page.to_string()],
+            ids: vec![id],
+            ..Default::default()
+        }))
+    }
+
+    /// X7 : état voulu complet (vue et instantané) ; `snapshot: None` retire l'instantané. Ordre : UnknownElement →
+    /// BadModel3d (pas un objet 3D lisible) → BadAsset → BadModel3d (vue hors domaine). Même état : aucune
+    /// transaction (D38). Sinon une étape : défauts retirés, instantané posé avec sa métadonnée.
+    pub(crate) fn cmd_set_model3d_view(
+        &mut self,
+        id: &str,
+        yaw: f64,
+        pitch: f64,
+        snapshot: Option<&AssetRef>,
+    ) -> Result<Change, CommandError> {
+        let (page, element, current) = {
+            let txn = self.read();
+            let found = self
+                .find_element(&txn, id)
+                .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
+            let (_, view) = read_model3d(&txn, &found.element).ok_or(CommandError::BadModel3d)?;
+            (found.page_id, found.element, view)
+        };
+        if snapshot.is_some_and(|s| !valid_asset(s)) {
+            return Err(CommandError::BadAsset);
+        }
+        if !valid_yaw(yaw) || !valid_pitch(pitch) {
+            return Err(CommandError::BadModel3d);
+        }
+        if yaw == current.yaw
+            && pitch == current.pitch
+            && snapshot.map(|s| s.id.as_str()) == current.snapshot.as_deref()
+        {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            put_or_remove(
+                &element,
+                &mut txn,
+                "yaw",
+                (yaw != DEFAULT_YAW).then(|| Any::from(yaw)),
+            );
+            put_or_remove(
+                &element,
+                &mut txn,
+                "pitch",
+                (pitch != DEFAULT_PITCH).then(|| Any::from(pitch)),
+            );
+            put_or_remove(
+                &element,
+                &mut txn,
+                "snapshot",
+                snapshot.map(|s| Any::String(s.id.as_str().into())),
+            );
+            if let Some(s) = snapshot {
+                self.insert_asset_meta(&mut txn, s);
+            }
+        }
+        Ok(self.done(Change {
+            pages: vec![page],
+            ids: vec![id.to_string()],
+            ..Default::default()
+        }))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -102,10 +391,7 @@ mod tests {
 
     fn add(d: &mut Document, files: Vec<(String, AssetRef)>, snapshot: bool) -> String {
         let p = d.page_ids()[0].clone();
-        d.apply(add_cmd(&p, files, snapshot))
-            .expect("objet 3D")
-            .ids[0]
-            .clone()
+        d.apply(add_cmd(&p, files, snapshot)).expect("objet 3D").ids[0].clone()
     }
 
     fn view(id: &str, yaw: f64, pitch: f64, snapshot: Option<AssetRef>) -> Command {
@@ -118,9 +404,7 @@ mod tests {
     }
 
     fn model3d(d: &Document, id: &str) -> Model3dView {
-        d.element(id)
-            .and_then(|v| v.model3d)
-            .expect("vue objet 3D")
+        d.element(id).and_then(|v| v.model3d).expect("vue objet 3D")
     }
 
     fn camera(v: &Model3dView) -> (f64, f64, Option<String>) {
@@ -177,7 +461,17 @@ mod tests {
         assert_eq!(d.bounds(std::slice::from_ref(&id)), Some(BOX));
         assert_eq!(
             raw_keys(&d, &id),
-            ["asset", "files", "format", "h", "id", "kind", "snapshot", "transform", "w"],
+            [
+                "asset",
+                "files",
+                "format",
+                "h",
+                "id",
+                "kind",
+                "snapshot",
+                "transform",
+                "w"
+            ],
             "défauts de la caméra non écrits"
         );
         assert!(d.undo());
@@ -208,7 +502,9 @@ mod tests {
                 }
             })
         };
-        let many: Vec<(String, AssetRef)> = (0..=MAX_FILES).map(|i| (format!("f{i}.bin"), bin())).collect();
+        let many: Vec<(String, AssetRef)> = (0..=MAX_FILES)
+            .map(|i| (format!("f{i}.bin"), bin()))
+            .collect();
         assert_eq!(many.len(), 257);
         let cases: Vec<(Command, CommandError)> = vec![
             (
@@ -315,7 +611,11 @@ mod tests {
         // Ordre des refus : l'asset avant l'objet, l'objet avant la matrice, la matrice avant la page.
         let bad = |asset_ok: bool, model_ok: bool| Command::AddModel3d {
             page: "nope".into(),
-            asset: if asset_ok { glb() } else { asset("ABC", "a.glb", "model/gltf-binary", 1.0) },
+            asset: if asset_ok {
+                glb()
+            } else {
+                asset("ABC", "a.glb", "model/gltf-binary", 1.0)
+            },
             format: Model3dFormat::Obj,
             files: vec![],
             w: if model_ok { 640.0 } else { 0.0 },
@@ -366,7 +666,8 @@ mod tests {
             })
         );
         assert_eq!(n.since(), 1, "même état : aucune écriture");
-        d.apply(view(&id, -1.0, 0.2, Some(png2()))).expect("deuxième vue");
+        d.apply(view(&id, -1.0, 0.2, Some(png2())))
+            .expect("deuxième vue");
         let s2 = (-1.0, 0.2, Some(PNG2.to_string()));
         assert_eq!(camera(&model3d(&d, &id)), s2);
         d.apply(view(&id, DEFAULT_YAW, DEFAULT_PITCH, None))
@@ -375,7 +676,16 @@ mod tests {
         assert_eq!(camera(&model3d(&d, &id)), initial);
         assert_eq!(
             raw_keys(&d, &id),
-            ["asset", "files", "format", "h", "id", "kind", "transform", "w"],
+            [
+                "asset",
+                "files",
+                "format",
+                "h",
+                "id",
+                "kind",
+                "transform",
+                "w"
+            ],
             "défauts et instantané retirés"
         );
         for s in [s2, s1, initial] {
@@ -420,7 +730,12 @@ mod tests {
             Err(CommandError::BadAsset),
             "l'asset avant la vue"
         );
-        for (yaw, pitch) in [(1.0, 2.0), (-PI, 0.0), (f64::NAN, 0.0), (0.0, f64::INFINITY)] {
+        for (yaw, pitch) in [
+            (1.0, 2.0),
+            (-PI, 0.0),
+            (f64::NAN, 0.0),
+            (0.0, f64::INFINITY),
+        ] {
             assert_eq!(
                 d.apply(view(&id, yaw, pitch, None)),
                 Err(CommandError::BadModel3d),
