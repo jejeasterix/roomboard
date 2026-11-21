@@ -916,4 +916,170 @@ mod tests {
         assert_eq!(clock(&d), before, "un retrait n'insère rien");
         assert!(!present(&d, &id).contains(&"flipY"));
     }
+
+    /// Clés de l'élément `id` touchées par `f`, triées, et nombre de transactions de `f`.
+    fn touched(d: &mut Document, id: &str, f: impl FnOnce(&mut Document)) -> (Vec<String>, usize) {
+        use std::sync::Mutex;
+        use yrs::Observable;
+        let element = {
+            let txn = d.read();
+            d.find_element(&txn, id).expect("élément").element
+        };
+        let keys = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = Arc::clone(&keys);
+        element.observe("cles-touchees", move |txn, e| {
+            sink.lock()
+                .expect("verrou")
+                .extend(e.keys(txn).keys().map(|k| k.to_string()));
+        });
+        let w = writes(d);
+        f(d);
+        element.unobserve("cles-touchees");
+        let mut got = keys.lock().expect("verrou").clone();
+        got.sort();
+        (got, w.since())
+    }
+
+    fn fill_image(d: &mut Document, page: &str, id: &str, c: char) -> Change {
+        d.apply(Command::Fill {
+            page: page.into(),
+            target: crate::fill::FillTarget::Image {
+                id: id.into(),
+                asset: AssetRef {
+                    id: c.to_string().repeat(64),
+                    name: "a.png".into(),
+                    mime: "image/png".into(),
+                    size: 9.0,
+                },
+            },
+            color: Some("#facc15".into()),
+        })
+        .expect("remplissage")
+    }
+
+    /// Patron écarté (C6b, B2-B4, B11) : `cmd_fill` écrit une clé par transaction, `cmd_set_backdrop` réécrit tout le
+    /// `Y.Map`. Un remplissage est **une** transaction (donc une étape) qui n'écrit que les clés qui changent ; le second
+    /// ne réécrit pas `sourceAsset` ; « Rétablir » rend l'asset dans la même transaction que les réglages.
+    #[test]
+    fn fill_and_restore_are_one_transaction_writing_only_changed_keys() {
+        let mut d = Document::blank();
+        let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        set(
+            &mut d,
+            &id,
+            ImageParamsInput {
+                crop: Some([10.0, 20.0, 300.0, 200.0]),
+                quarter_turns: 1.0,
+                brightness: 30.0,
+                transparent: Some(white_input(true)),
+                ..ImageParamsInput::default()
+            },
+            IDENTITY,
+        )
+        .expect("réglages");
+        let first = touched(&mut d, &id, |d| {
+            fill_image(d, &p, &id, '1');
+        });
+        assert_eq!(
+            first,
+            (
+                vec![
+                    "asset".to_string(),
+                    "brightness".into(),
+                    "sourceAsset".into(),
+                    "transparent".into()
+                ],
+                1
+            ),
+            "premier remplissage : asset, original, champs cuits retirés ; géométrie et matrice non réécrites"
+        );
+        let second = touched(&mut d, &id, |d| {
+            fill_image(d, &p, &id, '2');
+        });
+        assert_eq!(
+            second,
+            (vec!["asset".to_string()], 1),
+            "second remplissage : sourceAsset gardé, non réécrit"
+        );
+        let restored = touched(&mut d, &id, |d| {
+            set_restore(d, &id, ImageParamsInput::default(), IDENTITY, true).expect("rétablir");
+        });
+        assert_eq!(
+            restored,
+            (
+                vec![
+                    "asset".to_string(),
+                    "crop".into(),
+                    "quarterTurns".into(),
+                    "sourceAsset".into()
+                ],
+                1
+            ),
+            "Rétablir : asset d'origine et réglages dans la même transaction"
+        );
+    }
+
+    fn set_restore(
+        d: &mut Document,
+        id: &str,
+        params: ImageParamsInput,
+        matrix: Transform,
+        restore: bool,
+    ) -> Result<Change, CommandError> {
+        d.apply(Command::SetImageParams {
+            id: id.into(),
+            params,
+            matrix,
+            restore,
+        })
+    }
+
+    /// B12 : `sourceAsset` lu tolérant (non conforme = absent, U3) ; un premier remplissage le remplace par l'original.
+    #[test]
+    fn source_asset_read_tolerant_and_first_fill_overwrites_unreadable() {
+        let mut d = Document::blank();
+        let (p, id) = add(&mut d, 640.0, 480.0, IDENTITY);
+        put(&d, &id, "sourceAsset", In::from("illisible"));
+        assert_eq!(
+            d.element(&id).and_then(|e| e.image).and_then(|i| i.source_asset),
+            None
+        );
+        let next = AssetRef {
+            id: "cd".repeat(32),
+            name: "a.png".into(),
+            mime: "image/png".into(),
+            size: 9.0,
+        };
+        d.apply(Command::Fill {
+            page: p,
+            target: crate::fill::FillTarget::Image {
+                id: id.clone(),
+                asset: next,
+            },
+            color: None,
+        })
+        .expect("remplissage");
+        assert_eq!(
+            d.element(&id)
+                .and_then(|e| e.image)
+                .and_then(|i| i.source_asset)
+                .as_deref(),
+            Some(ABC)
+        );
+    }
+
+    #[test]
+    fn image_view_serializes_source_asset_camel_case() {
+        let v = ImageView {
+            asset: ABC.into(),
+            w: 1.0,
+            h: 1.0,
+            source_asset: Some(ABC.into()),
+            ..ImageView::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&v).expect("json"),
+            serde_json::json!({ "asset": ABC, "w": 1.0, "h": 1.0, "sourceAsset": ABC })
+        );
+    }
 }
