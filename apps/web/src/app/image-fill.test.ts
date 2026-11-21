@@ -180,6 +180,28 @@ describe("file du pot (C6b, DAB2, B13, B14)", () => {
     expect("bitmap" in src ? src.bitmap : null).toBe(copy);
   });
 
+  it("SVG, lanceur fermé avant le calcul (fill rend null sans lire la source) : la copie du bitmap est fermée ; lue, elle ne l'est pas", async () => {
+    const w = world();
+    w.blobs.set(A, new Blob([new Uint8Array([1])], { type: "image/svg+xml" }));
+    const copy = bmp("copie");
+    w.images.copyOf.mockReturnValue(Promise.resolve(copy));
+    const q = createFillQueue(w.deps);
+    q.submit(at(), w.run);
+    await flush();
+    w.jobs[0]?.resolve(null);
+    await flush();
+    expect(copy.close).toHaveBeenCalledTimes(1);
+    // Source lue par le lanceur : la copie lui appartient, la file ne la ferme pas.
+    const read = bmp("lue");
+    w.images.copyOf.mockReturnValue(Promise.resolve(read));
+    q.submit(at(), w.run);
+    await flush();
+    await w.jobs[1]!.job.source();
+    w.jobs[1]?.resolve(filled(bmp("2")));
+    await flush();
+    expect(read.close).not.toHaveBeenCalled();
+  });
+
   it("S5 e : module formats absent (erreur du Worker) ou lanceur absent : echec, aucune étape", async () => {
     const w = world();
     createFillQueue(w.deps).submit(at(), w.run);

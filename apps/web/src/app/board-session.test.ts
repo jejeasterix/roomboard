@@ -806,12 +806,12 @@ describe("session — pot sur image (C6b, B13, B21)", () => {
   const ORIGINAL = "cd".repeat(32);
   const NEW = "ef".repeat(32);
   /** Image 10 × 10 en (0, 0) ; magasin à empreinte fixe ; Worker factice qui garde les messages. */
-  async function setup(withPixels = true) {
+  async function setup(withPixels = true, hash: () => Promise<string> = async () => NEW) {
     vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 10, height: 10, close: vi.fn() })));
     const doc = fakeCore.blank();
     const page = doc.pageIds()[0]!;
     const el = doc.apply({ type: "AddImage", page, asset: { id: ORIGINAL, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
-    const assets = createAssetStore(async () => NEW);
+    const assets = createAssetStore(hash);
     assets.adopt(ORIGINAL, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
     const decode = vi.fn(async (_b: Blob) => ({ width: 10, height: 10, close: vi.fn() }) as unknown as ImageBitmap);
     const posted: { id: number; type?: string }[] = [];
@@ -878,6 +878,60 @@ describe("session — pot sur image (C6b, B13, B21)", () => {
       s.engine.redo();
       expect(doc.elementIds(page)).toHaveLength(2);
       s.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+  /** Accès au document à partir de maintenant (le vrai cœur lève sur un document libéré). */
+  const watchDoc = (doc: ReturnType<typeof fakeCore.blank>) => {
+    const spies = [vi.spyOn(doc, "version"), vi.spyOn(doc, "element"), vi.spyOn(doc, "apply")];
+    return {
+      reset: (): void => spies.forEach((x) => x.mockClear()),
+      counts: (): number[] => spies.map((x) => x.mock.calls.length),
+    };
+  };
+
+  it("RF4 (session) : onglet fermé pendant un calcul, un clic en file : ni message ni accès au document libéré, data-pot reste attente", async () => {
+    const { s, doc, posted, click } = await setup();
+    try {
+      click(5, 5);
+      await vi.waitFor(() => expect(posted.some((m) => m.type === "fill")).toBe(true), { timeout: 5000 });
+      click(6, 6); // en file derrière le calcul : il lirait le document au départ de son calcul
+      const error = s.engine.state().error;
+      const access = watchDoc(doc);
+      s.dispose();
+      access.reset();
+      await tick();
+      await tick();
+      expect(access.counts()).toEqual([0, 0, 0]);
+      expect(s.stage.dataset["pot"]).toBe("attente");
+      expect(s.engine.state().error).toBe(error);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("RF4 (session) : onglet fermé pendant l'enregistrement du PNG : bitmap fermé, rien d'écrit, document libéré jamais relu", async () => {
+    let release!: () => void;
+    const hash = vi.fn(() => new Promise<string>((r) => (release = () => r(NEW))));
+    const { s, doc, posted, click, reply } = await setup(true, hash);
+    try {
+      click(5, 5);
+      await vi.waitFor(() => expect(posted.some((m) => m.type === "fill")).toBe(true), { timeout: 5000 });
+      const out = { width: 10, height: 10, close: vi.fn() };
+      reply({ changed: 4, png: new Blob([new Uint8Array([9])], { type: "image/png" }), bitmap: out });
+      await vi.waitFor(() => expect(hash).toHaveBeenCalled(), { timeout: 5000 });
+      const access = watchDoc(doc);
+      s.dispose();
+      access.reset();
+      release();
+      await tick();
+      await tick();
+      expect(out.close).toHaveBeenCalledTimes(1);
+      expect(access.counts()).toEqual([0, 0, 0]);
+      expect(s.stage.dataset["pot"]).toBe("attente");
     } finally {
       vi.unstubAllGlobals();
     }
