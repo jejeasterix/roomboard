@@ -57,6 +57,7 @@ du cœur, et ce coût n'est pas mesuré ici. La marge suffit : la piste est éca
 |---|---|---|
 | avant C8 (main 94976f0, remesuré dans le worktree T1) | 1 145 044 o | 3 100 344 o |
 | après la tâche T1 (`i_overlay` 9.2.0, `zone.rs`) | 1 350 143 o | 3 100 344 o |
+| après la tâche T9 (porte S6 : dilatation au marquage, piles de suites ; branche T1 à T6 et T8) | 1 373 557 o | non remesuré (sans `zone`) |
 
 Écart du module principal : +205 099 o. Mesure : `cargo build --target wasm32-unknown-unknown --release`, puis
 `wasm-bindgen --target web --remove-name-section`, comme `scripts/verifier.sh` (l'asset de vite en est la copie).
