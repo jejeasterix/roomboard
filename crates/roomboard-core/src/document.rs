@@ -1101,6 +1101,26 @@ mod tests {
             .is_empty());
     }
 
+    /// OE23 (Q7, H4, K8) : ids filtrés par le `kind` brut, dans l'ordre de la page ; un tableau mal formé y figure, un
+    /// élément sans `id` lisible non ; page inconnue : vide.
+    #[test]
+    fn element_ids_of_kind_reads_raw_kind_in_page_order() {
+        let d = Document::blank();
+        push_raw(&d, vec![("id", In::from("s1")), ("kind", In::from("stroke"))]);
+        push_raw(&d, vec![("id", In::from("t1")), ("kind", In::from("table"))]);
+        push_raw(&d, vec![("kind", In::from("table"))]);
+        push_raw(&d, vec![("id", In::from("h1")), ("kind", In::from("hologram"))]);
+        push_raw(&d, vec![("id", In::from("t2")), ("kind", In::from("table"))]);
+        let p = d.page_ids()[0].clone();
+        assert_eq!(d.element_ids(&p), vec!["s1", "t1", "h1", "t2"]);
+        assert_eq!(d.element_ids_of_kind(&p, "table"), vec!["t1", "t2"]);
+        assert_eq!(d.element_ids_of_kind(&p, "stroke"), vec!["s1"]);
+        assert_eq!(d.element_ids_of_kind(&p, "hologram"), vec!["h1"]);
+        assert!(d.element_ids_of_kind(&p, "unknown").is_empty());
+        assert!(d.element_ids_of_kind(&p, "fill").is_empty());
+        assert!(d.element_ids_of_kind("page-inconnue", "table").is_empty());
+    }
+
     use std::sync::Arc;
 
     use crate::asset::AssetInfo;
