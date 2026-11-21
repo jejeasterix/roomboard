@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : courte (provisoire)
 Objectif : Le pire cas S6 du pot (C8) répond sous 35 ms de médiane même sur la VM chargée, et un audit d'architecture classe les zones à refondre pour que Jérôme choisisse.
-Étage : 3 (vague 2) — depuis 2026-11-21 13:20
-Avancement : 1/5 tâches terminées
+Étage : 4 — depuis 2026-11-21 13:40
+Avancement : 5/5 tâches terminées
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/restes-od94-porte-s6   Branche : fix/restes-od94-porte-s6   Base : origin/main @ afc2d8b
 Branche principale locale au lancement : afc2d8b
@@ -39,10 +39,29 @@ porte S6 : médiane ≤ 35 ms sur 5 passages C8 de suite sur la VM, aucun > 50 m
 | id | dépend | état | dernier commit vert | preuve rejouée |
 |---|---|---|---|---|
 | T1 | — | terminée | 8fddb99 | banc 2 passed ; fenêtre médiane 36.6 ms, element(id) 17.1 ms, empreinte sha256 b2f8da76… |
-| T2 | T1 | en cours | — | — |
-| T3 | T2 | à faire | — | — |
-| T5 | T2, T3 | à faire (avancée avant T4, relecture du plan point 1) | — | — |
-| T4 | T3, T5 | conditionnelle : seulement si 5 passages C8 après T3 ratent S1 | — | — |
+| T2 | T1 | terminée | 1cb53da | core element_ids_of_kind ok ; contrat 374 passed ; module 1 370 577 o |
+| T3 | T2 | terminée | a28989e | banc fenêtre 37.0 → 19.8 ms ; 5 passages C8 médiane 27, max 37 |
+| T5 | T2, T3 | terminée | 2cad5b5 | banc 5 passed, 3 S2 verts ; mutation du sha256 → rouge |
+| T4 | T3, T5 | terminée — sans gain retenu | 31537c9 | zone.rs identique à 2cad5b5 ; premier clic = compilation V8 (~17 ms) + mémoire (~3,5 ms) |
+
+## Mesure après T3 (5 passages C8 de suite, ~13:15, charge réelle)
+| passage | charge 1/5/15 min | S6 trois clics triés | médiane | fond |
+|---|---|---|---|---|
+| 1 | 1.77 1.76 1.67 | 25, 27, 37 | 27 | 10 |
+| 2 | 1.71 1.75 1.66 | 25, 27, 37 | 27 | 9 |
+| 3 | 1.65 1.74 1.66 | 25, 27, 37 | 27 | 9 |
+| 4 | 1.68 1.74 1.66 | 25, 27, 37 | 27 | 9 |
+| 5 | 1.70 1.75 1.66 | 25, 27, 37 | 27 | 9 |
+
+## Série d'information sous charge artificielle (8 boucles `nice -n 10`, après T3)
+| passage | charge | clics triés | médiane | fond |
+|---|---|---|---|---|
+| 1 | 6.36 3.07 2.13 | 25, 27, 51 | 27 | 10 |
+| 2 | 7.14 3.35 2.23 | 25, 28, 40 | 28 | 10 |
+| 3 | 7.73 3.60 2.32 | 28, 29, 39 | 29 | 9 |
+| 4 | 8.08 3.81 2.40 | 25, 27, 40 | 27 | 10 |
+| 5 | 8.23 3.91 2.45 | 27, 28, 39 | 28 | 14 |
+Un clic sur 15 à 51 ms : le premier clic à froid (compilation paresseuse de V8), pas une porte (choix tranché).
 
 ## Corrections de la relecture du plan (portées par les briefs, pas par le plan)
 - Ordre V4 = T5, V5 = T4 ; T4 décidée par l'orchestrateur sur 5 passages C8, pas sur un seul.
@@ -51,6 +70,8 @@ porte S6 : médiane ≤ 35 ms sur 5 passages C8 de suite sur la VM, aucun > 50 m
 - T3 : banc (c) appelle `marks.tags` avant la boucle ; témoin natif « sans objet » ; clôture du constat `zone-marks.ts:56` à la clôture (4.3).
 
 ## Choix tranchés seul (suite)
+- T4 menée malgré S1 tenue, pour le premier clic à froid ; aucun gain retenu (le seul essai ralentissait le natif), code rétabli.
+- Pas de préchauffage du module pour le premier clic : interdit par le brief (cacher le coût).
 - Cible S1 en lecture stricte : chacune des 5 médianes ≤ 35 ms, aucun clic > 50 ms.
 - « VM chargée » = VM dans son état réel, charge relevée ; pas de charge artificielle comme porte.
 - Interface `elementIdsOfKind(page, kind)` plutôt qu'`elementKinds` (pas d'alignement de tableaux).
