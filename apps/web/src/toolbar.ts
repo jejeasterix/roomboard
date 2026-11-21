@@ -106,6 +106,8 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "page-remove": { label: "Retirer la page" },
   "page-insert-file": { label: "Insérer des pages…" },
   "export-pdf": { label: "Exporter en PDF…" },
+  "export-iwb": { label: "Enregistrer une copie au format .iwb…" },
+  "export-ubz": { label: "Enregistrer une copie au format .ubz…" },
   "fit-page": { label: "Ajuster la page" },
   "file-new": { label: "Nouveau" },
   "file-open": { label: "Ouvrir" },

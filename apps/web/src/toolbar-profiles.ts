@@ -35,6 +35,8 @@ const pagesBar = () => ({
         action("page-remove", "Retirer la page"),
         action("page-insert-file", "Insérer des pages…"),
         action("export-pdf", "Exporter en PDF…"),
+        action("export-iwb", "Enregistrer une copie au format .iwb…"),
+        action("export-ubz", "Enregistrer une copie au format .ubz…"),
       ],
     },
   ],
