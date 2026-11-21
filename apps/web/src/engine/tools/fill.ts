@@ -2,9 +2,12 @@
  * Outil Pot (C6a, D2, D15) : aucun aperçu ; au relâché (`close("end")`), une commande au point d'appui, décidée par
  * `fillCommand` (couleur lue à ce moment, PC12) ; `cancel` et `abort` (paume, second doigt) n'écrivent rien (comme la
  * gomme, D39). Un clic = une commande = une étape (D2).
+ * C6b (B13) : avec une file (`queue`), toutes les actions y passent dans l'ordre des clics ; une image donne `ImageFill`
+ * avec la tolérance lue au relâché.
  */
 import { screenToWorld } from "../camera";
-import { fillCommand } from "../fill-target";
+import type { Change, Command } from "../../core/api";
+import { fillCommand, type FillRequest } from "../fill-target";
 import type { CloseReason } from "../input/gesture";
 import type { Measure } from "../text-layout";
 import { NO_LIVE, type GestureTool, type ToolContext } from "./tool";
@@ -16,7 +19,14 @@ interface Press {
   readonly zoom: number;
 }
 
-export function createFillTool(ctx: ToolContext, color: () => string | null, measure: Measure): GestureTool {
+/** File du pot (C6b, B13, DAB2), tenue par l'application : toutes les actions du pot y passent dans l'ordre des clics. */
+export interface FillToolQueue {
+  /** Tolérance courante (0 à 100), lue au relâché comme la couleur (PC12). */
+  tolerance(): number;
+  submit(r: FillRequest, run: (c: Command) => Change | null): void;
+}
+
+export function createFillTool(ctx: ToolContext, color: () => string | null, measure: Measure, queue?: FillToolQueue): GestureTool {
   const presses = new Map<number, Press>();
   return {
     begin(pointerId, samples) {
@@ -32,8 +42,14 @@ export function createFillTool(ctx: ToolContext, color: () => string | null, mea
       const p = presses.get(pointerId);
       presses.delete(pointerId);
       if (!p || how !== "end") return;
-      const cmd = fillCommand(ctx.doc, p.page, p.x, p.y, p.zoom, color(), measure);
-      if (cmd !== null) ctx.run(cmd);
+      const out = fillCommand(ctx.doc, p.page, p.x, p.y, p.zoom, color(), measure);
+      if (out === null) return;
+      if (queue === undefined) {
+        // Sans file (tests du moteur, amorce partielle) : commandes vectorielles seules ; une image ne change pas.
+        if (out.type !== "ImageFill") ctx.run(out);
+        return;
+      }
+      queue.submit(out.type === "ImageFill" ? { ...out, tolerance: queue.tolerance() } : { command: out }, (c) => ctx.run(c));
     },
     live: () => NO_LIVE,
     active: () => presses.size > 0,
