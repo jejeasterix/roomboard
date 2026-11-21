@@ -1223,6 +1223,11 @@ impl Document {
         self.core.outline(id)
     }
 
+    /// Anneaux locaux d'un `fill` (C8, Q12) : `[n, x0, y0, …]` par anneau ; absent pour tout autre élément.
+    pub fn fill_rings(&self, id: &str) -> Option<Vec<f32>> {
+        self.core.fill_rings(id)
+    }
+
     pub fn hit_test(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<String> {
         self.core.hit_test(page, x, y, tol)
     }
