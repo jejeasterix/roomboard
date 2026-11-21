@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createImageCache, type BitmapLike } from "./image-cache";
+import { createImageCache, DECODED_BUDGET_PX, type BitmapLike, type ImageCache } from "./image-cache";
 import type { ImageData, ImageElement } from "../../core/api";
 import { pixelKey } from "../../core/image-params";
 import type { PixelJob, PixelRunner } from "../../platform/pixel-runner";
@@ -393,5 +393,140 @@ describe("bitmaps retouchés par élément (C5, I19, I22)", () => {
     c.bitmapOf(el({ brightness: 20 }));
     c.endScene();
     expect(c.pixelState()).toBe("echec");
+  });
+
+  it("C6b B16 : annuler un remplissage d'image retouchée : bitmap retouché aussitôt, aucun calcul", async () => {
+    const { c, calls, runner } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    const k1 = out("k1");
+    calls[0]?.resolve(k1);
+    await flush();
+    const filled = { width: 4, height: 2, close: vi.fn() } as unknown as BitmapLike;
+    c.adopt("cd".repeat(32), filled);
+    expect(c.bitmapOf(el({ asset: "cd".repeat(32) }))).toBe(filled);
+    expect(k1.close).not.toHaveBeenCalled();
+    expect(c.pixelState()).toBe("");
+    expect(c.bitmapOf(el({ brightness: 20 }))).toBe(k1);
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(c.pixelState()).toBe("pret");
+  });
+
+  it("C6b B16 : emplacement gardé puis autre retouche : l'ancien bitmap est fermé, l'image brute est dessinée pendant le calcul", async () => {
+    const { c, calls, raw } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    const k1 = out("k1");
+    calls[0]?.resolve(k1);
+    await flush();
+    c.bitmapOf(el());
+    expect(c.bitmapOf(el({ contrast: 30 }))).toBe(raw);
+    expect(k1.close).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("C6b B16 : l'aperçu ne retombe jamais sur un emplacement gardé d'une autre clé", async () => {
+    const { c, calls, raw } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    calls[0]?.resolve(out("k1"));
+    await flush();
+    c.bitmapOf(el());
+    expect(c.bitmapOf(el({ contrast: 30 }), true)).toBe(raw);
+  });
+
+  it("C6b B16 : forget ferme l'emplacement gardé", async () => {
+    const { c, calls } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    const k1 = out("k1");
+    calls[0]?.resolve(k1);
+    await flush();
+    c.bitmapOf(el());
+    c.forget(["e"]);
+    expect(k1.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("C6b : adoption, copie, budget (B14, B15)", () => {
+  const sized = (w: number, h: number, tag = "") => ({ tag, width: w, height: h, close: vi.fn() }) as unknown as BitmapLike & { close: ReturnType<typeof vi.fn> };
+  const hash = (c: string): string => c.repeat(64);
+  const img = (asset: string, id = "e"): ImageElement => ({ id, kind: "image", transform: [1, 0, 0, 1, 0, 0], image: { asset, w: 3000, h: 2000 } });
+  const scene = (c: ImageCache, ...els: ImageElement[]): void => {
+    c.beginScene();
+    for (const e of els) c.bitmapOf(e);
+    c.endScene();
+  };
+
+  it("adopt : servi sans décodage, ready appelé ; déjà présent ou cache fermé : le bitmap reçu est fermé", () => {
+    const decode = vi.fn(async () => sized(1, 1));
+    const ready = vi.fn();
+    const c = createImageCache(store({}), decode, ready);
+    const a = sized(10, 10);
+    c.adopt(hash("1"), a);
+    expect(c.bitmap(hash("1"))).toBe(a);
+    expect([decode.mock.calls.length, ready.mock.calls.length]).toEqual([0, 1]);
+    const twice = sized(10, 10);
+    c.adopt(hash("1"), twice);
+    expect(twice.close).toHaveBeenCalledTimes(1);
+    c.dispose();
+    const late = sized(1, 1);
+    c.adopt(hash("2"), late);
+    expect(late.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("adopt pendant un décodage : le décodé arrivé ensuite est fermé, l'adopté reste", async () => {
+    let resolve!: (b: BitmapLike) => void;
+    const c = createImageCache(store(), () => new Promise<BitmapLike>((r) => (resolve = r)), vi.fn());
+    expect(c.bitmap(ID)).toBeNull();
+    const adopted = sized(4, 2);
+    c.adopt(ID, adopted);
+    const decoded = sized(4, 2);
+    resolve(decoded);
+    await flush();
+    expect(c.bitmap(ID)).toBe(adopted);
+    expect(decoded.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("copyOf : copie du bitmap décodé ; null avant le décodage", async () => {
+    const copy = vi.fn(async (b: BitmapLike) => ({ copied: b }) as unknown as ImageBitmap);
+    const decoded = sized(4, 2);
+    const c = createImageCache(store(), async () => decoded, vi.fn(), undefined, { copy });
+    expect(c.copyOf(ID)).toBeNull();
+    c.bitmap(ID);
+    await flush();
+    await expect(c.copyOf(ID)).resolves.toEqual({ copied: decoded });
+  });
+
+  it("S5 g : dix remplissages d'une image de 3000 × 2000 restent sous le budget ; le bitmap de la scène n'est jamais fermé", () => {
+    const c = createImageCache(store({}), async () => sized(1, 1), vi.fn());
+    const bitmaps = Array.from({ length: 10 }, (_, k) => sized(3000, 2000, String(k)));
+    bitmaps.forEach((b, k) => {
+      c.adopt(hash(String(k)), b);
+      scene(c, img(hash(String(k))));
+    });
+    const open = bitmaps.filter((b) => b.close.mock.calls.length === 0);
+    expect(open.length * 6_000_000).toBeLessThanOrEqual(DECODED_BUDGET_PX);
+    expect(bitmaps[9]?.close).not.toHaveBeenCalled();
+    expect(bitmaps[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("un bitmap de la scène n'est jamais fermé, même au-delà du budget ; hors scène, le moins récemment dessiné part", () => {
+    const c = createImageCache(store({}), async () => sized(1, 1), vi.fn(), undefined, { budgetPx: 10 });
+    const a = sized(100, 100);
+    const b = sized(100, 100);
+    c.adopt(hash("a"), a);
+    c.adopt(hash("b"), b);
+    scene(c, img(hash("a")), img(hash("b"), "f"));
+    expect([a.close.mock.calls.length, b.close.mock.calls.length]).toEqual([0, 0]);
+    scene(c, img(hash("b"), "f"));
+    expect([a.close.mock.calls.length, b.close.mock.calls.length]).toEqual([1, 0]);
+  });
+
+  it("fermé par le budget puis redessiné : redécodé depuis le magasin", async () => {
+    const decode = vi.fn(async () => sized(100, 100, "re"));
+    const c = createImageCache(store({ [hash("a")]: new Blob([new Uint8Array([1])]) }), decode, vi.fn(), undefined, { budgetPx: 10 });
+    c.adopt(hash("a"), sized(100, 100));
+    c.adopt(hash("b"), sized(100, 100));
+    scene(c, img(hash("b")));
+    expect(c.bitmap(hash("a"))).toBeNull();
+    await flush();
+    expect(c.bitmap(hash("a"))).toMatchObject({ tag: "re" });
   });
 });
