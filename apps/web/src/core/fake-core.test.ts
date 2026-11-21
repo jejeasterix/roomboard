@@ -540,6 +540,8 @@ describe("fakeCore — C10a (tableau)", () => {
       model3d: () => ({ type: "AddModel3d", page: p, asset: { id: "ef".repeat(32), name: "a.glb", mime: "model/gltf-binary", size: 3 }, format: "glb", files: [], w: 640, h: 480, yaw: Math.PI / 6, pitch: Math.PI / 9, snapshot: null, matrix: [1, 0, 0, 1, 0, 0] }),
     };
     for (const kind of KNOWN_KINDS) {
+      // C8 (Q17) : la fausse liaison ne crée pas de `fill` (une zone y est le fond) ; il est couvert par « C8 : fill chargé ».
+      if (kind === "fill") continue;
       const build = make[kind];
       if (build === undefined) throw new Error(`kind sans fabrique : ${kind}`);
       const id = d.apply(build()).ids[0] ?? "";

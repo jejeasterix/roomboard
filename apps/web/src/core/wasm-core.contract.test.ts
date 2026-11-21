@@ -194,8 +194,9 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
 });
 
 // Contrat commun (D36) : la fausse liaison, sur laquelle le lot 3 code, et le vrai module jouent les mêmes scénarios
-// et cas limites. Seule exception, la gomme partielle : la fausse liaison ne coupe pas (écart documenté dans
-// `fake-core.ts`), son scénario reste dans le bloc du vrai module.
+// et cas limites. Deux exceptions : la gomme partielle (la fausse liaison ne coupe pas) et la zone fermée du pot (C8,
+// Q17 : la fausse liaison traite `Fill { kind: "zone" }` comme le fond) ; leurs scénarios restent dans les blocs du
+// vrai module (écarts documentés dans `fake-core.ts`).
 const factories: { name: string; f: CoreFactory }[] = [
   { name: "fausse liaison", f: fakeCore },
   ...(loaded === null ? [] : [{ name: "vrai module wasm", f: loaded.core }]),
