@@ -8,6 +8,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+pub mod office;
+
 /// Taille maximale d'un morceau lu par `read_granted` (8 Mio).
 pub const MAX_CHUNK: u64 = 8 * 1024 * 1024;
 /// Extensions associées à RoomBoard (sans point, comparées sans tenir compte de la casse).
@@ -316,6 +318,21 @@ mod tests {
         let g = GrantedPaths::default();
         assert!(g.grant([d.join("absent.roomboard")]).is_empty());
         assert_eq!(g.granted_path(&d.join("absent.roomboard")), None);
+    }
+
+    /// C16 (O35) : le PDF converti, accordé le temps de sa lecture, ne l'est plus après `revoke` ; un chemin jamais
+    /// accordé rend faux.
+    #[test]
+    fn revoke_removes_the_grant() {
+        let d = dir("revoke");
+        let f = d.join("source.pdf");
+        fs::write(&f, b"%PDF-").unwrap();
+        let g = GrantedPaths::default();
+        g.grant([f.clone()]);
+        assert!(g.revoke(&f));
+        assert_eq!(read_granted(&g, &f, 0, 1), Err(ReadError::NotGranted));
+        assert!(!g.revoke(&f));
+        assert!(!g.revoke(&d.join("absent.pdf")));
     }
 
     #[test]
