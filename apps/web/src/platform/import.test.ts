@@ -16,6 +16,7 @@ import {
   POSTER_MIME, unsupportedMediaMessage, type LinkedMedia, type MediaProbe,
 } from "./media-import";
 import type { Model3dDeps } from "./model3d-handlers";
+import { ZIP_MAX_BYTES as PACK_CAP, ZIP_TOO_BIG_MESSAGE as PACK_CAP_MESSAGE } from "./model3d-import";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
   name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
@@ -990,5 +991,34 @@ describe("C4 : paquets .rbpack", () => {
     const report = await createImporter({ ...baseDeps(), importPack }).importFiles([file("Y.rbpack", PK)]);
     expect(importPack).toHaveBeenCalledTimes(1);
     expect(report.opened).toEqual(["Y.rbpack"]);
+  });
+
+  it("K2 : .rbpack au-delà du plafond ZIP : refusé avant lecture, avis du plafond", async () => {
+    const importPack = vi.fn(async () => true);
+    const blob = vi.fn(async () => new Blob([PK]));
+    const big: DroppedFile = { ...file("Gros.rbpack", PK), size: PACK_CAP + 1, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const report = await importerOf([rbpackHandler({ importPack })], { ...baseDeps(), notify }).importFiles([big]);
+    expect(importPack).not.toHaveBeenCalled();
+    expect(blob).not.toHaveBeenCalled();
+    expect(report.failed).toEqual(["Gros.rbpack"]);
+    expect(notify).toHaveBeenCalledWith(`Gros.rbpack : ${PACK_CAP_MESSAGE}`);
+  });
+
+  it("K2 : onglets pleins : un .rbpack s'importe quand même, il n'ouvre aucun onglet", async () => {
+    const importPack = vi.fn(async () => true);
+    const importer = createImporter({ ...baseDeps(), openDocument: vi.fn(async () => false), full: () => true, importPack });
+    const report = await importer.importFiles([file("A.roomboard"), file("P.rbpack", PK)]);
+    expect(report.failed).toEqual(["A.roomboard"]);
+    expect(importPack).toHaveBeenCalledTimes(1);
+    expect(report.opened).toEqual(["P.rbpack"]);
+  });
+
+  it("C11 : importPack qui lève : avis « Import impossible », rapport « failed »", async () => {
+    const notify = vi.fn(async (_m: string) => undefined);
+    const importer = importerOf([rbpackHandler({ importPack: async () => Promise.reject(new Error("disque plein")) })], { ...baseDeps(), notify });
+    const report = await importer.importFiles([file("Z.rbpack", PK)]);
+    expect(report.failed).toEqual(["Z.rbpack"]);
+    expect(notify).toHaveBeenCalledWith("Import impossible (Z.rbpack) : disque plein");
   });
 });

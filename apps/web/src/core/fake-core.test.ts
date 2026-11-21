@@ -838,6 +838,14 @@ describe("C4 : grille en ressource (faux cœur)", () => {
     expect(g.page(g.pageIds()[0]!)?.grid).toEqual(grid);
   });
 
+  it("C11 : saveGrid d'un document de deux pages : refus « grille de 2 pages »", () => {
+    const saved = JSON.parse(new TextDecoder().decode(fakeCore.blank().save("n", "a"))) as { pages: { id: string }[] };
+    saved.pages = [saved.pages[0]!, { ...saved.pages[0]!, id: "p-deux" }];
+    const d = fakeCore.load(new TextEncoder().encode(JSON.stringify(saved)));
+    expect(d.pageIds()).toHaveLength(2);
+    expect(() => d.saveGrid("n", "a", "G")).toThrow("grille de 2 pages : une seule attendue");
+  });
+
   it("C4 : containerKind et manifestKind", () => {
     const d = gridDoc();
     expect(fakeCore.containerKind(d.saveGrid("n", "a", "G"))).toBe("grid");
