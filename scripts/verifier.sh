@@ -117,6 +117,8 @@ if [ "$E2E" = 1 ]; then
   echo "C8 pot zones : OK"
   node scripts/essais/c4-bibliotheque-navigateur.mjs
   echo "C4 bibliothèque : OK"
+  node scripts/essais/c13-tableaux-navigateur.mjs
+  echo "C13 tableaux : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"

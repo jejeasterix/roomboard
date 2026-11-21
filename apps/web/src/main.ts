@@ -35,7 +35,8 @@ import { handlePaste } from "./platform/paste";
 import { createSheetReader, type WorkerLike } from "./platform/sheet-reader";
 import { createIdbPendingStore, createUnavailablePendingStore } from "./platform/pending";
 import { createTauriProfileFiles, createWebProfileFiles } from "./platform/profile-files";
-import { createTauriTypedFiles, createWebTypedFiles, PDF_TYPE, RBITEM_TYPE, RBPACK_TYPE } from "./platform/typed-files";
+import { createTauriTypedFiles, createWebTypedFiles, IWB_TYPE, PDF_TYPE, RBITEM_TYPE, RBPACK_TYPE, UBZ_TYPE } from "./platform/typed-files";
+import { createBoardCodec } from "./platform/board-reader";
 import { browserKeyValue, createProfileStore } from "./profile-store";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
@@ -84,6 +85,11 @@ async function start(): Promise<void> {
   const pdf = createPdfEngine(loadPdfjs);
   const pdfFiles =
     ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), PDF_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, PDF_TYPE);
+  // Tableaux (C13, D17) : copies « Enregistrer une copie au format .iwb / .ubz » ; web : téléchargement, coque : boîte native.
+  const iwbFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), IWB_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, IWB_TYPE);
+  const ubzFiles =
+    ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), UBZ_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, UBZ_TYPE);
   const decodeBitmap = async (blob: Blob) => (await decodeImage(blob, kindOfMime(blob.type) ?? "png")).bitmap;
   // Superposition PNG (lot b) ; T13 la garde en repli du producteur vectoriel. `doc` est la copie de l'export.
   const pngOverlay = (tab: TabSession, doc: CoreDocument) =>
@@ -173,6 +179,9 @@ async function start(): Promise<void> {
   // Classeurs (C10b, F28, DAB4) : un Worker jetable par lecture, avec sa propre instance du module `formats`.
   const spawnSheetWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/sheet-worker.ts", import.meta.url), { type: "module" }));
   const sheets = createSheetReader(spawnSheetWorker);
+  // Tableaux (C13, D1, D3, D6) : XML lu et écrit par un Worker jetable du module `formats` ; ZIP par le Worker ZIP (mode board).
+  const spawnBoardWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/board-worker.ts", import.meta.url), { type: "module" }));
+  const boards = createBoardCodec(spawnBoardWorker);
   // Superposition vectorielle (C12 lot c, PF22) : un Worker jetable du module `formats` par export, jamais l'instance
   // de la page qui enregistre les `.roomboard` (HR6) ; PNG en repli (PC14). Polices lues en local, une fois.
   const spawnPdfWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pdf-vector-worker.ts", import.meta.url), { type: "module" }));
@@ -259,6 +268,14 @@ async function start(): Promise<void> {
     itemFiles,
     pdf,
     pdfFiles,
+    board: {
+      unzip: createZipReader(spawnZipWorker, undefined, "board"),
+      zip: createZipWriter(spawnZipWorker),
+      read: (files, format) => boards.read(files, format),
+      write: (list, format) => boards.write(list, format),
+    },
+    iwbFiles,
+    ubzFiles,
     loadPdfLib,
     overlay,
     rasterPage,
