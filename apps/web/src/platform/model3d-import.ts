@@ -40,6 +40,7 @@ export const COMPRESSED_MESSAGE = "modèle 3D compressé (Draco, meshopt ou KTX2
 export const COMPANION_ALONE_MESSAGE = "fichier lié d'un modèle 3D : déposez-le avec son modèle";
 export const ZIP_EMPTY_MESSAGE = "aucun modèle 3D dans ce ZIP";
 export const ZIP_TOO_BIG_MESSAGE = "ZIP trop gros (plus de 1 000 entrées ou de 256 Mio décompressés)";
+export const ZIP_MALFORMED_MESSAGE = "ZIP malformé (taille déclarée d'une entrée incohérente)";
 export const NO_WEBGL_MESSAGE = "3D indisponible sur ce poste : l'objet garde son image";
 export const MODEL3D_TOO_BIG_MESSAGE = "fichier trop gros pour un objet 3D (plus de 100 Mo)";
 export const missingFilesMessage = (name: string, missing: readonly string[]): string =>

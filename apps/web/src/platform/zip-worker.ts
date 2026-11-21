@@ -1,11 +1,20 @@
 /**
  * Worker de lecture d'un ZIP de modèles 3D (C15, X16, DAX5) : entrées gardées par `keepZipPath`, 1 000 entrées et
- * 256 Mio décompressés au plus (comptés avant décompression, par la taille d'origine du répertoire central). Créé par
+ * 256 Mio décompressés au plus, comptés avant décompression sur chaque enregistrement du répertoire central, au plus
+ * grand de ses deux tailles : fflate copie `size` octets d'une entrée stockée et alloue `originalSize` octets pour une
+ * entrée déflatée. Entrée stockée dont les deux tailles diffèrent : refusée (ZIP malformé). Créé par
  * `main.ts`, arrêté par `zip-read.ts` après la réponse. Seul module qui importe fflate (GC17), API synchrone seule : la
  * forme asynchrone lance des Workers `blob:`, refusés par la CSP.
  */
 import { unzipSync } from "fflate";
-import { keepZipPath, normalizePath, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
+import {
+  keepZipPath,
+  normalizePath,
+  ZIP_MALFORMED_MESSAGE,
+  ZIP_MAX_BYTES,
+  ZIP_MAX_ENTRIES,
+  ZIP_TOO_BIG_MESSAGE,
+} from "./model3d-import";
 
 export function unzipModelEntries(
   data: Uint8Array,
@@ -14,6 +23,7 @@ export function unzipModelEntries(
   let count = 0;
   let total = 0;
   let tooBig = false;
+  let malformed = false;
   const files = unzipSync(data, {
     filter(f) {
       count++;
@@ -21,8 +31,12 @@ export function unzipModelEntries(
         tooBig = true;
         return false;
       }
-      if (tooBig || !keepZipPath(f.name)) return false;
-      total += f.originalSize;
+      if (tooBig || malformed || !keepZipPath(f.name)) return false;
+      if (f.compression === 0 && f.size !== f.originalSize) {
+        malformed = true;
+        return false;
+      }
+      total += Math.max(f.size, f.originalSize);
       if (total > limits.bytes) {
         tooBig = true;
         return false;
@@ -30,6 +44,7 @@ export function unzipModelEntries(
       return true;
     },
   });
+  if (malformed) throw new Error(ZIP_MALFORMED_MESSAGE);
   if (tooBig) throw new Error(ZIP_TOO_BIG_MESSAGE);
   return Object.entries(files)
     .map(([name, bytes]) => ({ path: normalizePath(name), bytes }))

@@ -29,10 +29,8 @@ import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import type { ModelCamera } from "../engine/render/model-frames";
 import {
-  COMPANION_EXTENSIONS,
   COMPRESSED_MESSAGE,
   baseName,
-  extensionOf,
   glbJsonText,
   gltfCompression,
   normalizePath,
@@ -45,11 +43,6 @@ export const MESH_GREY = "#b8bec6";
 const TEXTURE_WAIT_MS = 15_000;
 /** Schéma (`http:`, `file:`…) ou `//hôte` : jamais ouvert (même règle que `resolveReference`, T3). */
 const REMOTE = /^(?:[a-z][a-z0-9+.-]+:|\/\/)/i;
-/** Images liées (X3) : les fichiers liés hors `.mtl` et `.bin`. */
-const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(COMPANION_EXTENSIONS.filter((e) => e !== "mtl" && e !== "bin"));
-/** PNG 1×1 RVBA transparent, image de remplacement possible d'une texture absente (non branchée dans `load`). */
-const PLACEHOLDER_PNG =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=";
 const DRACO = "KHR_draco_mesh_compression";
 
 export interface UrlPort {
@@ -97,21 +90,15 @@ export function dataUrlBlob(url: string): Blob | null {
   }
 }
 
-/** Image de remplacement d'une texture absente ou distante : PNG 1×1 transparent. */
-export function placeholderPng(): Blob {
-  return dataUrlBlob(PLACEHOLDER_PNG)!;
-}
-
 /** X27, DAX4 : URL demandée par three → URL sûre. `blob:` inchangée ; `data:` → `blob:` neuve ; distante → vide et
  *  absente ; connue (chemin normalisé, puis nom de base unique, URI décodée) → sa `blob:` ; inconnue → vide et absente.
- *  « Vide » : `emptyImage` pour une image (extension, requête et ancre ôtées), `empty` sinon. */
+ *  « Vide » : `empty`, image comprise (GLTFLoader rend alors une texture nulle, voir `load`). */
 export function guardUrl(
   url: string,
   known: ReadonlyMap<string, string>,
   missing: string[],
   toBlobUrl: (b: Blob) => string,
   empty: string,
-  emptyImage: string = empty,
 ): string {
   if (url.startsWith("blob:")) return url;
   if (/^data:/i.test(url)) {
@@ -127,7 +114,7 @@ export function guardUrl(
     if (b !== "" && hits.length === 1) return known.get(hits[0]!)!;
   }
   if (!missing.includes(decoded)) missing.push(decoded);
-  return IMAGE_EXTENSIONS.has(extensionOf(decoded.replace(/[?#].*$/s, ""))) ? emptyImage : empty;
+  return empty;
 }
 
 /** X4 : caméra sur la sphère englobante (centre à l'origine), à la distance qui la fait tenir dans le champ. */
@@ -302,6 +289,10 @@ export function createThreeModelView(deps: ThreeViewDeps = {}): ModelView {
     alive = false;
     for (const cb of [...lost]) cb();
   });
+  // three restaure lui-même son état sur le contexte rendu ; la vue redevient disponible (une nouvelle perte est redite).
+  canvas.addEventListener("webglcontextrestored", () => {
+    alive = renderer !== null;
+  });
   const scene = new Scene();
   const camera = new PerspectiveCamera(FIELD_OF_VIEW, 4 / 3, 0.01, 1000);
   scene.add(new HemisphereLight(0xffffff, 0x444444, 1.2));
@@ -348,7 +339,7 @@ export function createThreeModelView(deps: ThreeViewDeps = {}): ModelView {
       const missing: string[] = [];
       const manager = new LoadingManager();
       // Image absente : `blob:` vide aussi. GLTFLoader 0.187 rend alors une texture nulle (`loadTextureImage` rattrape
-      // l'erreur) et le matériau garde sa couleur de base ; `placeholderPng()` (noir transparent) la noircirait.
+      // l'erreur) et le matériau garde sa couleur de base ; un PNG transparent de remplacement la noircirait.
       manager.setURLModifier((u) => guardUrl(u, known, missing, mk, empty));
       const wait = settled(manager);
       try {

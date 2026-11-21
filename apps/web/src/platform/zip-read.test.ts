@@ -1,11 +1,46 @@
-import { zipSync } from "fflate";
+import { deflateSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
-import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
+import { ZIP_MALFORMED_MESSAGE, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import type { WorkerLike } from "./one-shot-worker";
 import { checkZipReply, createZipReader, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS } from "./zip-read";
 import { unzipModelEntries } from "./zip-worker";
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
+
+/** ZIP écrit à la main : une seule entrée locale stockée (méthode 0) de `data`, visée par un enregistrement du répertoire
+ *  central par nom de `names` ; chacun déclare `data.length` octets lus et `declared` octets d'origine. */
+function storedZip(data: Uint8Array, declared: number, names: readonly string[]): Uint8Array {
+  const raw = names.map(enc);
+  const body = 30 + raw[0]!.length;
+  const cdStart = body + data.length;
+  const cdSize = raw.reduce((s, n) => s + 46 + n.length, 0);
+  const out = new Uint8Array(cdStart + cdSize + 22);
+  const v = new DataView(out.buffer);
+  v.setUint32(0, 0x04034b50, true);
+  v.setUint16(4, 20, true);
+  v.setUint32(18, data.length, true);
+  v.setUint32(22, declared, true);
+  v.setUint16(26, raw[0]!.length, true);
+  out.set(raw[0]!, 30);
+  out.set(data, body);
+  let o = cdStart;
+  for (const n of raw) {
+    v.setUint32(o, 0x02014b50, true);
+    v.setUint16(o + 4, 20, true);
+    v.setUint16(o + 6, 20, true);
+    v.setUint32(o + 20, data.length, true);
+    v.setUint32(o + 24, declared, true);
+    v.setUint16(o + 28, n.length, true);
+    out.set(n, o + 46); // décalage de l'en-tête local (o + 42) : 0, la même entrée pour tous
+    o += 46 + n.length;
+  }
+  v.setUint32(o, 0x06054b50, true);
+  v.setUint16(o + 8, names.length, true);
+  v.setUint16(o + 10, names.length, true);
+  v.setUint32(o + 12, cdSize, true);
+  v.setUint32(o + 16, cdStart, true);
+  return out;
+}
 
 describe("lecteur ZIP (C15, X16)", () => {
   it("ZIP : chemins .. et absolus ignorés, 1 000 entrées, 256 Mio", () => {
@@ -32,6 +67,27 @@ describe("lecteur ZIP (C15, X16)", () => {
     const many = (n: number) => zipSync(Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}.txt`, enc("x")])));
     expect(unzipModelEntries(many(1000))).toEqual([]);
     expect(() => unzipModelEntries(many(1001))).toThrow(ZIP_TOO_BIG_MESSAGE);
+  });
+
+  it("ZIP hostile écrit à la main : entrée stockée déclarée plus petite, répertoire central répété (Q1)", () => {
+    const body = new Uint8Array(100).fill(0x76); // 100 octets réels
+    // Témoin : honnête, le ZIP fabriqué se lit (fflate copie `size` octets d'une entrée stockée).
+    expect(unzipModelEntries(storedZip(body, 100, ["a.obj"])).map((e) => e.bytes.length)).toEqual([100]);
+    // Déclarée 0 : sous le compte de la taille d'origine, 0 octet compté pour 100 copiés.
+    expect(() => unzipModelEntries(storedZip(body, 0, ["a.obj"]))).toThrow(ZIP_MALFORMED_MESSAGE);
+    // La bombe en petit : cinq enregistrements sur la même entrée, 500 octets copiés pour 0 déclaré, borne 250.
+    const bomb = storedZip(body, 0, ["a.obj", "b.obj", "c.obj", "d.obj", "e.obj"]);
+    expect(() => unzipModelEntries(bomb, { entries: 1000, bytes: 250 })).toThrow(ZIP_MALFORMED_MESSAGE);
+    // Honnête mais répété : chaque enregistrement compte ses octets.
+    const repeated = storedZip(body, 100, ["a.obj", "b.obj", "c.obj"]);
+    expect(() => unzipModelEntries(repeated, { entries: 1000, bytes: 299 })).toThrow(ZIP_TOO_BIG_MESSAGE);
+    expect(unzipModelEntries(repeated, { entries: 1000, bytes: 300 })).toHaveLength(3);
+    // Déflatée : comptée au plus grand de ses deux tailles (« v » : 1 octet d'origine, plus une fois compressé).
+    const sc = deflateSync(enc("v")).length;
+    expect(sc).toBeGreaterThan(1);
+    const v = zipSync({ "a.obj": enc("v") });
+    expect(() => unzipModelEntries(v, { entries: 1000, bytes: sc - 1 })).toThrow(ZIP_TOO_BIG_MESSAGE);
+    expect(unzipModelEntries(v, { entries: 1000, bytes: sc })).toHaveLength(1);
   });
 
   it("checkZipReply : forme contrôlée ; erreur rendue telle quelle", async () => {
