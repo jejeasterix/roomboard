@@ -151,7 +151,8 @@ export function officeWebHandler(): ImportHandler {
 }
 
 /** Coque sans convertisseur (O24) : les documents disent « installez… » sans être lus (`link` dès le premier octet quand
- *  le fichier a un chemin) ; `.xlsx` et `.xlsm` laissés au classeur, comme sur le web. */
+ *  le fichier a un chemin ; un collage sans chemin dit « exportez en PDF », comme le web, O14) ; `.xlsx` et `.xlsm`
+ *  vont à `officeSheetNoConverterHandler`. */
 export function officeNoConverterHandler(): ImportHandler {
   const say = async (f: DroppedFile, notify: (m: string) => Promise<void>): Promise<ImportOutcome> => {
     await notify(`${f.name} : ${OFFICE_INSTALL_MESSAGE}`);
@@ -163,7 +164,26 @@ export function officeNoConverterHandler(): ImportHandler {
     detect: (head, name) => !isSheetName(name) && isOfficeFile(head, name),
     limit: { maxBytes: OFFICE_MAX_BYTES, message: OFFICE_TOO_BIG_MESSAGE },
     link: { aboveBytes: -1, run: (f, _path, ctx) => say(f, ctx.notify) },
-    run: (f, ctx) => say(f, ctx.notify),
+    async run(f, ctx) {
+      await ctx.notify(`${f.name} : ${OFFICE_EXPORT_MESSAGE}`);
+      return "failed";
+    },
+  };
+}
+
+/** Coque sans convertisseur (O4) : `.xlsx` et `.xlsm` s'insèrent en tableau par `sheet` (nature `objet` : les onglets
+ *  pleins ne les arrêtent pas), puis l'avis « importé en valeurs ; installez… » après une insertion réussie. */
+export function officeSheetNoConverterHandler(sheet: ImportHandler): ImportHandler {
+  return {
+    id: "office-sheet-sans-convertisseur",
+    nature: "objet",
+    detect: (head, name) => isSheetName(name) && isOfficeFile(head, name),
+    ...(sheet.limit ? { limit: sheet.limit } : {}),
+    async run(f, ctx) {
+      const out = await sheet.run(f, ctx);
+      if (out === "inserted") await ctx.notify(`${f.name} : ${OFFICE_VALUES_MESSAGE}`);
+      return out;
+    },
   };
 }
 

@@ -239,6 +239,7 @@ interface SetupOptions {
   readonly importPack?: WorkspaceDeps["importPack"];
   readonly thumbnail?: WorkspaceDeps["thumbnail"];
   readonly convertOffice?: WorkspaceDeps["convertOffice"];
+  readonly officeConverter?: WorkspaceDeps["officeConverter"];
   readonly openOriginal?: WorkspaceDeps["openOriginal"];
   readonly reimportOriginal?: WorkspaceDeps["reimportOriginal"];
   readonly onOriginalChanged?: WorkspaceDeps["onOriginalChanged"];
@@ -288,6 +289,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.importPack ? { importPack: o.importPack } : {}),
     ...(o.thumbnail ? { thumbnail: o.thumbnail } : {}),
     ...(o.convertOffice ? { convertOffice: o.convertOffice } : {}),
+    ...(o.officeConverter === undefined ? {} : { officeConverter: o.officeConverter }),
     ...(o.openOriginal ? { openOriginal: o.openOriginal } : {}),
     ...(o.reimportOriginal ? { reimportOriginal: o.reimportOriginal } : {}),
     ...(o.onOriginalChanged ? { onOriginalChanged: o.onOriginalChanged } : {}),
@@ -1631,5 +1633,15 @@ describe("espace de travail : Office (C16)", () => {
     expect(shell.notify).toHaveBeenCalledWith(`notes.xlsx : ${OFFICE_VALUES_MESSAGE}`);
     expect(shell.notify).toHaveBeenCalledWith("cours.docx : installez LibreOffice ou Microsoft Office");
     expect(ws.tabs.list()).toHaveLength(1);
+  });
+
+  it("S5, O4 : coque sans convertisseur (officeConverter: false) : notes.xlsx donne un tableau ET l'avis « importé en valeurs… »", async () => {
+    const convertOffice = vi.fn(async (_p: string): Promise<Blob> => new Blob());
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const ws = await setupWorkspace({ kind: "tauri", pdf: engine(), convertOffice, readSheet, officeConverter: false });
+    const r = await ws.importFiles([office("notes.xlsx")], null);
+    expect(r.inserted).toEqual(["notes.xlsx"]);
+    expect(convertOffice).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith(`notes.xlsx : ${OFFICE_VALUES_MESSAGE}`);
   });
 });

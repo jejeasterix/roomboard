@@ -29,7 +29,7 @@ fn pdf_asset() -> AssetRef {
     }
 }
 
-/// Document de C12 : deux pages (portrait puis paysage), fonds `pdf-page`.
+/// Octets de la fixture : le document de C12, deux pages (portrait puis paysage), fonds `pdf-page`.
 fn fixture_bytes() -> Vec<u8> {
     let path = fixture();
     std::fs::read(&path)
