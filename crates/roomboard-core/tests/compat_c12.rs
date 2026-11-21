@@ -79,3 +79,23 @@ fn pdf_c12_fixture_opens_without_original_and_resaves_identically() {
         "fichier d'avant C16 réenregistré à l'identique"
     );
 }
+
+/// HO2-10 : un document AVEC original (C16) recharge sans perte, octet pour octet.
+#[test]
+fn reloading_a_document_with_original_keeps_the_bytes() {
+    let docx = AssetRef {
+        id: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+        name: "cours.docx".into(),
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document".into(),
+        size: 4321.0,
+    };
+    let d = Document::from_pdf_pages(&pdf_asset(), &[(612.0, 792.0), (792.0, 612.0)], Some(&docx))
+        .expect("pdf converti");
+    let first = save(&d, &meta()).expect("save");
+    let back = load(&first).expect("load");
+    assert_eq!(back.cited_assets(), vec![pdf_asset(), docx]);
+    assert!(
+        save(&back, &meta()).expect("resave") == first,
+        "recharger garde les octets"
+    );
+}

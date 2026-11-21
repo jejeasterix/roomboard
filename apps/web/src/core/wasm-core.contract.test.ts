@@ -2835,6 +2835,8 @@ describe.each(factories)("contrat C16 : $name", ({ f }) => {
     expect(host.page(host.pageIds()[0]!)?.backdrop).toBeNull();
     expect(originals(host).slice(1)).toEqual([C16_DOCX.id]);
     expect(host.citedAssets().map((a) => a.id)).toEqual([C12_PDF.id, C16_DOCX.id]);
+    // La métadonnée de l'original (nom, mime, taille) suit aussi, pas seulement son empreinte.
+    expect(host.citedAssets()).toEqual([C12_PDF, C16_DOCX]);
   });
 });
 
@@ -2845,6 +2847,22 @@ describe("contrôle de forme C16 (original du fond)", () => {
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.original).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, original: "b".repeat(64) } })?.backdrop?.original).toBe("b".repeat(64));
     expect(() => toPageView({ ...page, backdrop: { ...b, original: 3 } })).toThrow("PageView invalide");
+  });
+  it("toPageView : original non conforme (chemin, majuscules) → null, le fond reste lisible (parité avec le cœur)", () => {
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const b = { asset: "a".repeat(64), kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", rect: undefined };
+    for (const bad of ["../x", "B".repeat(64), ""]) {
+      expect(toPageView({ ...page, backdrop: { ...b, original: bad } })?.backdrop?.original, bad).toBeNull();
+    }
+  });
+  it("fausse liaison, fond chargé : original « ../x » ou 3 → null, l'asset du fond reste", () => {
+    for (const bad of ["../x", 3]) {
+      const backdrop = { asset: ABC, kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", original: bad };
+      const bytes = new TextEncoder().encode(JSON.stringify({ now, appVersion: "1.0.0", assets: {}, pages: [{ id: "p1", background: "#ffffff", backdrop, elements: [] }] }));
+      const b = fakeCore.load(bytes).page("p1")?.backdrop;
+      expect(b?.original, String(bad)).toBeNull();
+      expect(b?.asset).toBe(ABC);
+    }
   });
 });
 

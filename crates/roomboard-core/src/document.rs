@@ -1654,6 +1654,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![ABC.to_string(), ORIGINAL.to_string()]
         );
+        // La métadonnée de l'original (nom, mime, taille) suit aussi, pas seulement son empreinte.
+        assert_eq!(host.cited_assets(), vec![pdf_asset(), docx_asset()]);
     }
 
     const SIZES: [(f64, f64); 3] = [(612.0, 792.0), (792.0, 612.0), (595.0, 842.0)];

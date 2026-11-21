@@ -29,6 +29,7 @@ import type {
   TextSpan,
 } from "./api";
 import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
+import { isAssetId } from "./asset-store";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
@@ -321,7 +322,7 @@ function toBackdropView(v: unknown): BackdropView | null {
     h: numberOrNull(v["h"], PAGE),
     fit,
     rect: toBounds(v["rect"]),
-    original: typeof original === "string" ? original : null,
+    original: isAssetId(original) ? original : null,
   };
 }
 
