@@ -487,25 +487,54 @@ async function buildBoardSession(
   const closeOrbit = (): void => {
     orbit?.close(); // `closed` libère la séance et remet l'oracle à jour
   };
-  /** Instantané puis `SetModel3dView` (une étape) ; rien si l'élément a disparu ou si l'image manque (contexte perdu). */
-  const commitView = async (id: string, v: ModelCamera): Promise<void> => {
-    const e = doc.element(id);
-    if (e === null || e.kind !== "model3d") return;
-    const [w, h] = modelBox(e);
-    const png = await models.snapshot(id, v, snapshotSize(w, h));
+  // C2 : les écritures de vue passent une à une, dans l'ordre des relâchés ; `own` relie la version d'avant chacune
+  // à celle d'après, pour reconnaître un document que seules ces écritures ont changé depuis un relâché.
+  let commits: Promise<void> = Promise.resolve();
+  let pending = 0;
+  const own = new Map<number, number>();
+  const untouched = (base: number): boolean => {
+    let v = base;
+    for (let i = 0, n = own.get(v); n !== undefined && i <= own.size; i++, n = own.get(v)) v = n;
+    return doc.version() === v;
+  };
+  /** Écrit la vue `v` relâchée à la version `base` ; abandonnée si le document a changé d'ailleurs (annulation…). */
+  const writeView = async (id: string, v: ModelCamera, base: number, shot: Promise<Blob | null>): Promise<void> => {
+    const png = await shot;
     const now = doc.element(id);
     if (png === null || now === null || now.kind !== "model3d") {
       if (now === null && orbit?.id === id) closeOrbit();
       return;
     }
+    if (!untouched(base)) return;
     const snapshot = { id: await assets.put(png), name: `${doc.asset(now.model3d.asset)?.name ?? "objet 3D"}.png`, mime: SNAPSHOT_MIME, size: png.size };
     const last = doc.element(id);
     if (last === null || last.kind !== "model3d") {
       if (orbit?.id === id) closeOrbit();
       return;
     }
+    if (!untouched(base)) return;
     if (orbit?.id === id) written = v;
+    const before = doc.version();
     engine.run({ type: "SetModel3dView", id, yaw: v.yaw, pitch: v.pitch, snapshot });
+    if (doc.version() !== before) own.set(before, doc.version());
+  };
+  /**
+   * Instantané puis `SetModel3dView` (une étape) ; rien si l'élément a disparu, si l'image manque (contexte perdu) ou si
+   * le document a changé autrement que par ces écritures depuis le relâché. L'image est prise au relâché (l'orbite peut
+   * se fermer juste après, clic à côté) ; l'écriture attend la précédente.
+   */
+  const commitView = (id: string, v: ModelCamera): Promise<void> => {
+    const e = doc.element(id);
+    if (e === null || e.kind !== "model3d") return Promise.resolve();
+    const base = doc.version();
+    const [w, h] = modelBox(e);
+    const shot = models.snapshot(id, v, snapshotSize(w, h)).catch(() => null);
+    pending++;
+    const turn = commits.then(() => writeView(id, v, base, shot)).finally(() => {
+      if (--pending === 0) own.clear();
+    });
+    commits = turn.catch(() => {});
+    return turn;
   };
   const toggleOrbit = async (): Promise<void> => {
     const m = selectedModel3d();
