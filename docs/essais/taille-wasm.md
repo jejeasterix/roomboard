@@ -94,3 +94,15 @@ Final : principal +6 241 o depuis avant C4 (T17 a simplifié `load_with_manifest
 OE23 T2 : principal +1 737 o depuis 1 368 840 o (final C4). Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o).
 
 OE23 final (T6 `ids_where` partagé, sortie de `verifier.sh` sur 3f7c157) : principal 1 371 293 o (+2 453 o depuis 1 368 840 o), `formats` 3 100 845 o (inchangé). Plafonds inchangés (1 572 864 o, 3 145 728 o).
+
+## C13 lot 1 (tableaux `.iwb`, `.ubz` : lecteur SVG dans `formats`, réglage `z`, D2, DA1)
+
+| mesure | module principal | module formats |
+|---|---|---|
+| avant C13 (`origin/main` 41342b0, sortie de `verifier.sh`) | 1 371 293 o | 3 100 845 o |
+| après T1 (22 crates tierces de `formats` en `opt-level = "z"`, sans lecteur) | 1 371 293 o | 2 903 814 o |
+
+T1 : `formats` −197 031 o, principal inchangé à l'octet (aucune des 22 crates n'entre dans le module principal).
+Mesure : `cargo build --target wasm32-unknown-unknown --release` puis `wasm-bindgen --target web --remove-name-section`.
+Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o). Coût de vitesse du réglage : T11
+(`docs/essais/c13-fidelite-iwb.md`), accepté jusqu'à 15 % (HU1-4).

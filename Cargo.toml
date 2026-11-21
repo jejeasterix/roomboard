@@ -16,3 +16,51 @@ lto = true
 # paquet roomboard-wasm, il est sans effet : il vaut donc pour tout le workspace. La section `name` est retirée par
 # `wasm-bindgen --remove-name-section`, pas par `strip` (qui retirerait `target_features`).
 codegen-units = 1
+
+# C13 (D2, DA1) : crates tierces propres au module `formats` compilées en `z` (taille). `roomboard-core`,
+# `roomboard-formats`, `sha2`, `zip` et `yrs` restent en `s` ; le module principal est inchangé à l'octet. Mesures :
+# docs/essais/taille-wasm.md, section C13. Retour arrière : retirer ces blocs.
+[profile.release.package.krilla]
+opt-level = "z"
+[profile.release.package.pdf-writer]
+opt-level = "z"
+[profile.release.package.skrifa]
+opt-level = "z"
+[profile.release.package.read-fonts]
+opt-level = "z"
+[profile.release.package.write-fonts]
+opt-level = "z"
+[profile.release.package.font-types]
+opt-level = "z"
+[profile.release.package.subsetter]
+opt-level = "z"
+[profile.release.package.rustybuzz]
+opt-level = "z"
+[profile.release.package.ttf-parser]
+opt-level = "z"
+[profile.release.package.calamine]
+opt-level = "z"
+[profile.release.package.encoding_rs]
+opt-level = "z"
+[profile.release.package.quick-xml]
+opt-level = "z"
+[profile.release.package.zune-jpeg]
+opt-level = "z"
+[profile.release.package.png]
+opt-level = "z"
+[profile.release.package.gif]
+opt-level = "z"
+[profile.release.package.image-webp]
+opt-level = "z"
+[profile.release.package.zopfli]
+opt-level = "z"
+[profile.release.package.tiny-skia-path]
+opt-level = "z"
+[profile.release.package.kurbo]
+opt-level = "z"
+[profile.release.package.fdeflate]
+opt-level = "z"
+[profile.release.package.miniz_oxide]
+opt-level = "z"
+[profile.release.package.xmp-writer]
+opt-level = "z"
