@@ -14,6 +14,7 @@ import { faceOf, layoutRich, measureWith, textFont, type RichLine } from "../tex
 import { HANDLE_PX, handlesOf } from "../tools/handles";
 import type { ImageSource } from "./image-cache";
 import type { MediaFrames } from "./media-frames";
+import type { ModelFrames } from "./model-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
@@ -37,6 +38,8 @@ export interface Canvas2DOptions {
   readonly onBackdrop?: (s: BackdropState) => void;
   /** C14 (M20) : image courante des lecteurs de média ; absent (export PDF, M34) : poster. */
   readonly media?: MediaFrames;
+  /** C15 (X25) : image du rendu 3D partagé, par élément ; absent (export PDF, vignette) : instantané. */
+  readonly models?: ModelFrames;
   /** C14 (R7) : nom de l'asset d'un son, pour sa carte ; absent ou null : « Son ». */
   readonly assetName?: (asset: string) => string | null;
   /** C14 (R7) : rendu d'export : le badge « lecture » n'est pas dessiné. */
