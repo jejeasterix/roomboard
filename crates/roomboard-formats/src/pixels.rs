@@ -1,5 +1,5 @@
 //! Calculs de pixels des images (C5, U30, DAI2) : couleur rendue transparente (tolérance par canal, plume, contigu ou
-//! global), luminosité et contraste, pot sur pixels (prêt pour C6b). RGBA 8 bits, `4 × w × h` octets, modifiés sur place ;
+//! global), luminosité et contraste, pot sur une image (C6b : écart RVBA, peinture opaque ou effacement). RGBA 8 bits, `4 × w × h` octets, modifiés sur place ;
 //! Rust pur, aucune crate d'image ; servis par `roomboard-formats-wasm` au Worker de pixels de la page (I17, I18).
 
 /// Couleur à rendre transparente (I12-I14) : écart par canal RVB (échelle 0 à 100), rampe d'alpha de largeur `soft` ;
@@ -52,20 +52,29 @@ fn gap100(p: &[u8], rgb: [u8; 3]) -> u32 {
         * 100
 }
 
-/// Pixels joints (4-connexes, comme ActCraft `imagefill.cpp:40-42`) aux départs `starts` dont l'écart à `target` reste
-/// ≤ `limit` (échelle 0 à 200) ; un départ hors de l'image ou trop loin de `target` est ignoré. Partagé par
-/// `flood_fill` (un départ, couleur de la graine) et le mode contigu (départs du bord, couleur choisie).
+/// Plus grand écart des quatre canaux RVBA entre le pixel `p` et `q`, × 100 (pot sur une image, C6b, B8).
+fn gap100_rgba(p: &[u8], q: [u8; 4]) -> u32 {
+    p[..4]
+        .iter()
+        .zip(q)
+        .map(|(a, b)| u32::from(a.abs_diff(b)))
+        .max()
+        .unwrap_or(0)
+        * 100
+}
+
+/// Pixels joints (4-connexes, comme ActCraft `imagefill.cpp:40-42`) aux départs `starts` dont les octets satisfont
+/// `close_to` ; un départ hors de l'image ou refusé est ignoré. Partagé par `flood_fill` (un départ, écart RVBA à la
+/// graine) et le mode contigu de la couleur transparente (départs du bord, écart RVB à la couleur choisie).
 fn flood_region(
     px: &[u8],
     w: u32,
     h: u32,
     starts: &[(u32, u32)],
-    target: [u8; 3],
-    limit: u8,
+    close_to: impl Fn(&[u8]) -> bool,
 ) -> Vec<bool> {
     let (w, h) = (w as usize, h as usize);
-    let max = u32::from(limit) * 255;
-    let near = |i: usize| gap100(&px[4 * i..4 * i + 4], target) <= max;
+    let near = |i: usize| close_to(&px[4 * i..4 * i + 4]);
     let mut seen = vec![false; w * h];
     let mut stack: Vec<usize> = Vec::new();
     for &(x, y) in starts {
@@ -145,9 +154,10 @@ fn ramp(alpha: u8, g: u32, tolerance: u8, soft: u8) -> u8 {
 pub fn transparent_color(px: &mut [u8], w: u32, h: u32, t: &Transparent) -> Result<(), PixelError> {
     check(px, w, h)?;
     let limit = t.tolerance.saturating_add(t.soft);
+    let max = u32::from(limit) * 255;
     let mask = t
         .contiguous
-        .then(|| flood_region(px, w, h, &border(w, h), t.rgb, limit));
+        .then(|| flood_region(px, w, h, &border(w, h), |p| gap100(p, t.rgb) <= max));
     for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         if mask.as_ref().is_some_and(|m| !m[i]) {
             continue;
@@ -178,29 +188,34 @@ pub fn adjust(px: &mut [u8], brightness: i8, contrast: i8) {
     }
 }
 
-/// Pot sur pixels (prêt pour C6b) : la zone 4-connexe de la graine (écart à la couleur de la graine ≤ `tolerance`)
-/// prend `rgb`, alpha gardé ; graine hors de l'image : rien ne change (comme ActCraft).
+/// Pot sur une image (C6b, B8, B17) : la zone 4-connexe de la graine dont l'écart RVBA à la couleur de la graine reste
+/// ≤ `tolerance` (échelle 0 à 100, comme C5 I12) prend `paint` opaque (alpha 255) ; `None` (« Aucune ») l'efface
+/// (`[0, 0, 0, 0]`). Rend le nombre de pixels changés ; graine hors de l'image : 0, rien ne change.
 pub fn flood_fill(
     px: &mut [u8],
     w: u32,
     h: u32,
     seed: (u32, u32),
     tolerance: u8,
-    rgb: [u8; 3],
-) -> Result<(), PixelError> {
+    paint: Option<[u8; 3]>,
+) -> Result<u32, PixelError> {
     check(px, w, h)?;
     if seed.0 >= w || seed.1 >= h {
-        return Ok(());
+        return Ok(0);
     }
     let i = 4 * (seed.1 as usize * w as usize + seed.0 as usize);
-    let target = [px[i], px[i + 1], px[i + 2]];
-    let mask = flood_region(px, w, h, &[seed], target, tolerance);
+    let target = [px[i], px[i + 1], px[i + 2], px[i + 3]];
+    let max = u32::from(tolerance) * 255;
+    let mask = flood_region(px, w, h, &[seed], |p| gap100_rgba(p, target) <= max);
+    let value = paint.map_or([0, 0, 0, 0], |[r, g, b]| [r, g, b, 255]);
+    let mut changed = 0;
     for (p, on) in px.as_chunks_mut::<4>().0.iter_mut().zip(mask) {
-        if on {
-            p[..3].copy_from_slice(&rgb);
+        if on && *p != value {
+            *p = value;
+            changed += 1;
         }
     }
-    Ok(())
+    Ok(changed)
 }
 
 #[cfg(test)]
@@ -357,7 +372,11 @@ mod tests {
         let n = flood_fill(&mut v, 20, 20, (0, 0), 5, Some([255, 0, 0])).expect("calcul");
         assert_eq!(n, 300, "fond extérieur : 20 × 20 − 10 × 10");
         assert_eq!(px(&v, 20, 0, 0), [255, 0, 0, 255], "fond rougi, opaque");
-        assert_eq!(px(&v, 20, 10, 10), [255, 255, 255, 200], "intérieur enfermé inchangé");
+        assert_eq!(
+            px(&v, 20, 10, 10),
+            [255, 255, 255, 200],
+            "intérieur enfermé inchangé"
+        );
         assert_eq!(px(&v, 20, 5, 10), RED);
     }
 
@@ -372,14 +391,21 @@ mod tests {
         assert_eq!(n, 10 * 20, "colonnes 0 à 9");
         assert_eq!(px(&v, 20, 0, 0), [250, 204, 21, 255]);
         assert_eq!(px(&v, 20, 10, 5), BLACK);
-        assert_eq!(px(&v, 20, 15, 5), CLEAR, "de l'autre côté du trait : inchangé");
+        assert_eq!(
+            px(&v, 20, 15, 5),
+            CLEAR,
+            "de l'autre côté du trait : inchangé"
+        );
     }
 
     /// S3 : effacer une zone blanche donne [0, 0, 0, 0] et rend le nombre de pixels changés ; déjà transparente : 0.
     #[test]
     fn clear_makes_zone_transparent_and_counts() {
         let mut v = ring();
-        assert_eq!(flood_fill(&mut v, 20, 20, (0, 0), 5, None).expect("calcul"), 300);
+        assert_eq!(
+            flood_fill(&mut v, 20, 20, (0, 0), 5, None).expect("calcul"),
+            300
+        );
         assert_eq!(px(&v, 20, 0, 0), [0, 0, 0, 0]);
         assert_eq!(px(&v, 20, 10, 10), WHITE, "intérieur enfermé inchangé");
         assert_eq!(px(&v, 20, 5, 10), RED);
@@ -405,10 +431,20 @@ mod tests {
     fn flood_fill_tolerance_scale_on_rgba() {
         let band = |x: u32, _y: u32| if x < 2 { [240, 240, 240, 255] } else { WHITE };
         let mut v = img(6, 1, band);
-        assert_eq!(flood_fill(&mut v, 6, 1, (5, 0), 5, None).expect("calcul"), 4);
+        assert_eq!(
+            flood_fill(&mut v, 6, 1, (5, 0), 5, None).expect("calcul"),
+            4
+        );
         let mut v = img(6, 1, band);
-        assert_eq!(flood_fill(&mut v, 6, 1, (5, 0), 10, None).expect("calcul"), 6);
-        let mut v = img(2, 1, |x, _| if x == 0 { [255, 255, 255, 240] } else { WHITE });
+        assert_eq!(
+            flood_fill(&mut v, 6, 1, (5, 0), 10, None).expect("calcul"),
+            6
+        );
+        let mut v = img(
+            2,
+            1,
+            |x, _| if x == 0 { [255, 255, 255, 240] } else { WHITE },
+        );
         assert_eq!(
             flood_fill(&mut v, 2, 1, (1, 0), 5, None).expect("calcul"),
             1,
@@ -420,7 +456,10 @@ mod tests {
     fn flood_fill_seed_outside_changes_nothing() {
         let before = ring();
         let mut v = before.clone();
-        assert_eq!(flood_fill(&mut v, 20, 20, (20, 0), 5, Some([0, 0, 0])).expect("calcul"), 0);
+        assert_eq!(
+            flood_fill(&mut v, 20, 20, (20, 0), 5, Some([0, 0, 0])).expect("calcul"),
+            0
+        );
         assert_eq!(v, before);
     }
 
