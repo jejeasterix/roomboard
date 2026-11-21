@@ -65,10 +65,15 @@ du cœur, et ce coût n'est pas mesuré ici. La marge suffit : la piste est éca
 Garde-fou du cadrage (Q5, HC8-9) : 1 420 000 o ; plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o).
 `roomboard-formats` ne reçoit pas la fonctionnalité `zone` (DA-Z1) : son module est inchangé à l'octet.
 
-## C4 (bibliothèque de ressources)
+## C4 (bibliothèque : `kind: "grid"`, ressources généralisées)
 
 | mesure | module principal | module formats |
 |---|---|---|
-| après la tâche T10 (coque, sans effet attendu ; branche sans T1 ni T2) | 1 362 599 o | 3 100 845 o |
+| avant C4 (main 443edd4) | 1 362 599 o | 3 100 344 o |
+| après la tâche T1 (`KIND_GRID`, `WrongKind { found }`, `save_resource*`) | 1 364 082 o | 3 100 845 o |
+| après la tâche T10 (coque, hors Wasm ; mesurée sur le dossier de build partagé pendant que T1 y compilait, d'où le formats de T1) | 1 362 599 o | 3 100 845 o |
 
-La coque n'entre dans aucun module Wasm. Plafonds inchangés (1 572 864 o, 3 145 728 o).
+Écarts de T1 : principal +1 483 o, formats +501 o (les deux messages neufs, grille et paquet, et la ligne `KIND_GRID` de
+`check_manifest`, présents dans chacun des deux modules mesurés). Garde-fou du cadrage (H2-5) : principal < +20 Ko,
+`formats` < +1 Ko ; plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o). Même mesure que C8
+(`cargo build --target wasm32-unknown-unknown --release`, puis `wasm-bindgen --target web --remove-name-section`).
