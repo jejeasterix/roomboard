@@ -152,7 +152,7 @@ describe("C4 : panneau Bibliothèque", () => {
 
   it("C4 : refresh en échec au retour du focus : dit dans le panneau, jamais en boîte modale ni en boucle (1)", async () => {
     const { lib } = libWith();
-    const refresh = vi.fn(async () => {
+    const refresh = vi.fn<() => Promise<void>>(async () => {
       throw new Error("dossier partagé débranché");
     });
     lib.refresh = refresh;

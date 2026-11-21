@@ -261,6 +261,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     }
   };
   const io = createContainerIO({ core, codec: deps.codec, say, makeAssets, ...(relinkMedia ? { relink } : {}) });
+  // Vignette (D29) : une relecture en échec n'est qu'une vignette en moins, dite à la console, jamais par une boîte.
+  const thumbIo = createContainerIO({ core, codec: deps.codec, say: async (m) => console.warn(`RoomBoard : vignette non rendue (${m})`), makeAssets });
   const clipboard = deps.clipboard ?? createClipboard(null);
   const fragments = createFragmentOps({ io, core, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
   /** Nom dit dans les messages d'un collage (aucun fichier). */
@@ -360,7 +362,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
     ...(linkMedia ? { linkMedia } : {}),
     ...(deps.model3d ? { model3d: deps.model3d } : {}),
-    ...(importPack ? { importPack: (name: string, bytes: Uint8Array) => importPack.call(deps, name, bytes) } : {}),
+    ...(importPack ? { importPack } : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
@@ -577,7 +579,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       let thumbnail: Blob | null = null;
       const thumbDeps = deps.thumbnail;
       if (thumbDeps !== undefined) {
-        const read = await io.read("vignette", bytes, kind);
+        const read = await thumbIo.read("vignette", bytes, kind);
         if (read !== null) {
           try {
             thumbnail = await renderThumbnail(read.doc, read.assets, kind, thumbDeps);

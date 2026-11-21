@@ -1,6 +1,7 @@
 import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { unknownKindMessage } from "../core/api";
+import { CodecUnavailableError } from "../platform/container";
 import { createMemoryLibraryFiles, type LibraryFiles } from "../platform/library-files";
 import { zipStored } from "../platform/zip-worker";
 import { ZIP_TOO_BIG_MESSAGE } from "../platform/model3d-import";
@@ -16,6 +17,7 @@ import {
   mineOrMemory,
   normalizeSearch,
   PACK_TOO_BIG_MESSAGE,
+  resourceKindReader,
   SHARED_FOLDER_KEY,
   type LibraryDeps,
   type NewResource,
@@ -195,6 +197,25 @@ describe("C4 : ResourceLibrary", () => {
     expect(manifestOf(p.bytes).items.map((i) => [i.name, i.kind]).sort()).toEqual([["Moitié", "fragment"], ["Seyes", "grid"]]);
     expect(kindOf).toHaveBeenCalledTimes(2); // seules les ressources sans type connu sont lues
     expect(exportSkippedMessage(["Autre.rbitem"])).toContain("Autre.rbitem");
+  });
+
+  it("C4 : resourceKindReader : manifestKind sur le manifeste du codec ; sans module des formats : containerKind ; document ou illisible : null (K4)", async () => {
+    const core = {
+      manifestKind: vi.fn((m: Uint8Array) => (new TextDecoder().decode(m) === "g" ? ("grid" as const) : ("document" as const))),
+      containerKind: vi.fn(() => "fragment" as const),
+    };
+    const codec = (m: string | Error) => ({
+      read: async () => {
+        if (m instanceof Error) throw m;
+        return { manifest: enc(m), ybin: enc(""), assets: [], warnings: [] };
+      },
+    });
+    expect(await resourceKindReader(core, codec("g"))(enc("x"))).toBe("grid");
+    expect(core.containerKind).not.toHaveBeenCalled();
+    expect(await resourceKindReader(core, codec("d"))(enc("x"))).toBeNull();
+    expect(await resourceKindReader(core, codec(new CodecUnavailableError("absent")))(enc("x"))).toBe("fragment");
+    expect(core.containerKind).toHaveBeenCalledWith(enc("x"));
+    expect(await resourceKindReader(core, codec(new Error("pas un conteneur")))(enc("x"))).toBeNull();
   });
 
   it("C4 : onChange : un import fait hors du panneau prévient les abonnés ; désabonné : plus rien (K3)", async () => {

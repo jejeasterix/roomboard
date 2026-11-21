@@ -1422,6 +1422,22 @@ describe("espace de travail : C4", () => {
     expect(gridOf(tab)?.levels[0]?.kind).toBe("squares");
   });
 
+  it("C4 : captureResource : relecture de la vignette en échec → console, jamais une boîte (12)", async () => {
+    const ws = await setupWorkspace({ thumbnail: {} as never });
+    setGrid(ws.active(), grid);
+    codec.read.mockRejectedValueOnce(new Error("illisible"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const captured = await ws.captureResource("grid");
+      expect(captured?.kind).toBe("grid");
+      expect(captured?.thumbnail).toBeNull();
+      expect(shell.notify).not.toHaveBeenCalledWith(expect.stringContaining("vignette"));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("vignette non rendue"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("C4 : un .rbitem de grille déposé remplace la grille (cible insertFragment routée)", async () => {
     const ws = await setupWorkspace();
     const tab = ws.active();
