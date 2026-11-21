@@ -84,3 +84,7 @@ T2 : principal +5 412 o sur T1 (+6 895 o sur l'avant C4, sous les +20 Ko du gard
 | après C4 (branche complète, T15, build de `verifier.sh`) | 1 369 494 o | 3 100 845 o |
 
 Écart du module principal : +6 895 o depuis avant C4 ; `formats` : +501 o (ligne `KIND_GRID` de `check_manifest` et message de `WrongKind`). Plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o).
+
+| final C4 (tête 6975138, après les correctifs T17 à T20, build de `verifier.sh --e2e`) | 1 368 840 o | 3 100 845 o |
+
+Final : principal +6 241 o depuis avant C4 (T17 a simplifié `load_with_manifest` et `load_parts`), `formats` +501 o. Plafonds inchangés.
