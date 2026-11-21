@@ -23,6 +23,9 @@ import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { layoutFor } from "./layout";
 import { MediaBar, type MediaControls } from "./MediaBar";
+import { Model3dBar, type Model3dControls } from "./Model3dBar";
+import { NO_WEBGL_MESSAGE } from "../platform/model3d-import";
+import { MODEL3D_FAILED_MESSAGE } from "../platform/model-sessions";
 import { PagesBar } from "./PagesBar";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
@@ -123,6 +126,26 @@ export function App(props: AppProps): JSX.Element {
     tick();
     state();
     return ws.active().board.selectedMedia();
+  };
+  /** Objet 3D seul sélectionné de l'onglet actif (C15, X24) ; relu à chaque état du moteur et changement d'onglet. */
+  const selectedModel3d = () => {
+    tick();
+    state();
+    return ws.active().board.selectedModel3d();
+  };
+  /** Commandes de la barre 3D : toujours sur la session active et l'objet sélectionné au moment du geste. */
+  const model3dControls: Model3dControls = {
+    status: () => {
+      const b = ws.active().board;
+      const m = b.selectedModel3d();
+      return m === null ? "instantane" : b.modelState(m.id);
+    },
+    message: () => {
+      const s = model3dControls.status();
+      return s === "sans-webgl" ? NO_WEBGL_MESSAGE : s === "echec" ? MODEL3D_FAILED_MESSAGE : null;
+    },
+    toggle: () => void ws.active().board.toggleOrbit(),
+    reset: () => void ws.active().board.resetModelView(),
   };
   /** Commandes de la barre du média (C14, M22) : toujours sur la session active et le média sélectionné au moment du geste. */
   const mediaControls: MediaControls = {
@@ -303,6 +326,13 @@ export function App(props: AppProps): JSX.Element {
         {(m) => (
           <div class="rb-popover rb-media-bar">
             <MediaBar media={m().media} controls={mediaControls} />
+          </div>
+        )}
+      </Show>
+      <Show when={selectedModel3d()}>
+        {(m) => (
+          <div class="rb-popover rb-media-bar">
+            <Model3dBar name={ws.active().board.doc.asset(m().model3d.asset)?.name ?? "Objet 3D"} controls={model3dControls} />
           </div>
         )}
       </Show>

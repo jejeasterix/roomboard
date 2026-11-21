@@ -15,6 +15,8 @@ import { readSelection, readText, setSelection } from "./rich-dom";
 import type { WorkerLike } from "../platform/sheet-reader";
 import { stageTags } from "./stage-tags";
 import { createBoardSession, type SessionShared } from "./board-session";
+import { DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW } from "../core/api";
+import { createModelViewLoader, snapshotSize, type ModelView, type PixelSize } from "../platform/model-view";
 
 /** Caméras reçues par `follow` de chaque zone de texte créée (le module réel, enveloppé). */
 const follows = vi.hoisted(() => [] as Camera[]);
@@ -797,6 +799,284 @@ describe("session — médias (C14)", () => {
     expect(s.mediaState(id)?.status).toBe("echec");
     assets.adopt(ASSET, new Blob([new Uint8Array([1, 2, 3, 4])], { type: "video/webm" }));
     expect(s.mediaState(id)?.status).not.toBe("echec");
+    s.dispose();
+  });
+});
+
+describe("session — objets 3D (C15)", () => {
+  const MAIN = "ef".repeat(32);
+  const SNAP = "12".repeat(32);
+  const D_YAW = DEFAULT_MODEL3D_YAW;
+
+  /** Vue 3D factice (aucun three) : `draw` rend un repère, `snapshot` passe par une porte quand on la tient. */
+  function fakeView3d(webgl: boolean) {
+    let ok = webgl;
+    let lost: (() => void) | null = null;
+    const image = { repere: "rendu partagé" } as unknown as CanvasImageSource;
+    const loads: unknown[] = [];
+    const released: unknown[] = [];
+    const draws: PixelSize[] = [];
+    const snaps: PixelSize[] = [];
+    let hold: { open: Promise<void>; release: () => void } | null = null;
+    const view: ModelView = {
+      available: () => ok,
+      load: async (src) => {
+        loads.push(src);
+        return { missing: [] };
+      },
+      draw: (_m, _v, px) => {
+        draws.push(px);
+        return ok ? image : null;
+      },
+      snapshot: async (_m, _v, px) => {
+        snaps.push(px);
+        if (hold !== null) await hold.open;
+        return ok ? new Blob([new Uint8Array([137, 80, 78, 71, snaps.length])], { type: "image/png" }) : null;
+      },
+      release: (m) => void released.push(m),
+      onLost: (cb) => {
+        lost = cb;
+        return () => {
+          lost = null;
+        };
+      },
+    };
+    return {
+      view, image, loads, released, draws, snaps,
+      lose() {
+        ok = false;
+        lost?.();
+      },
+      /** Retient les instantanés jusqu'à l'appel rendu. */
+      holdSnapshots(): () => void {
+        let release!: () => void;
+        const open = new Promise<void>((r) => {
+          release = r;
+        });
+        hold = { open, release };
+        return () => {
+          hold = null;
+          release();
+        };
+      },
+    };
+  }
+
+  async function modelSession(o: { webgl?: boolean; matrix?: readonly number[]; yaw?: number; pitch?: number; snapshot?: boolean } = {}) {
+    const fv = fakeView3d(o.webgl ?? true);
+    const loader = { calls: 0 };
+    const modelView = createModelViewLoader(async () => {
+      loader.calls++;
+      return fv.view;
+    });
+    const assets = createAssetStore();
+    assets.adopt(MAIN, new Blob([new Uint8Array([103, 108, 84, 70])], { type: "model/gltf-binary" }));
+    const snap = o.snapshot === false ? null : { id: SNAP, name: "chaise.glb.png", mime: "image/png", size: 4 };
+    if (snap !== null) assets.adopt(SNAP, new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }));
+    const s = await createBoardSession(fakeCore.blank(), { ...shared, modelView }, assets);
+    Object.defineProperty(s.stage, "clientWidth", { configurable: true, value: 640 });
+    Object.defineProperty(s.stage, "clientHeight", { configurable: true, value: 480 });
+    s.activate();
+    const page = s.engine.state().page;
+    const id = s.engine.run({
+      type: "AddModel3d", page, asset: { id: MAIN, name: "chaise.glb", mime: "model/gltf-binary", size: 4 }, format: "glb", files: [],
+      w: 200, h: 100, yaw: o.yaw ?? DEFAULT_MODEL3D_YAW, pitch: o.pitch ?? DEFAULT_MODEL3D_PITCH, snapshot: snap,
+      matrix: (o.matrix ?? [1, 0, 0, 1, 0, 0]) as never,
+    })!.ids[0]!;
+    const at = (px: number, py: number) => {
+      const c = s.engine.camera();
+      return { x: px * c.zoom + c.tx, y: py * c.zoom + c.ty };
+    };
+    const sample = (p: { x: number; y: number }, t: number) => ({ x: p.x, y: p.y, pressure: 0.5, tiltX: 0, tiltY: 0, t });
+    const click = (px: number, py: number): void => {
+      s.engine.setTool("select");
+      s.engine.sink.begin(1, "select", [sample(at(px, py), 0)]);
+      s.engine.sink.close(1, "end");
+    };
+    /** Glisser horizontal de `dx` px d'écran depuis (100, 50) ; `end` faux : laissé ouvert. */
+    const drag = (dx: number, end = true, pointer = 2): void => {
+      const p = at(100, 50);
+      s.engine.sink.begin(pointer, "select", [sample(p, 0)]);
+      s.engine.sink.extend(pointer, [sample({ x: p.x + dx, y: p.y }, 16)], []);
+      if (end) s.engine.sink.close(pointer, "end");
+    };
+    const model = () => {
+      const e = s.doc.element(id);
+      return e !== null && e.kind === "model3d" ? e.model3d : null;
+    };
+    const tag = () => s.stage.dataset["model3d"];
+    return { s, fv, loader, id, click, drag, model, tag, assets, page };
+  }
+
+  it("data-model3d vide sans objet 3D ; « glb;instantane;30;20 » sélectionné ; aucun chargement du rendu (X20, X36)", async () => {
+    const { s, fv, loader, id, click, tag } = await modelSession();
+    expect(tag()).toBe("");
+    expect(s.selectedModel3d()).toBeNull();
+    click(100, 50);
+    expect(s.selectedModel3d()?.id).toBe(id);
+    expect(tag()).toBe("glb;instantane;30;20");
+    expect(s.modelState(id)).toBe("instantane");
+    await Promise.resolve();
+    expect(loader.calls).toBe(0);
+    expect(fv.loads).toHaveLength(0);
+    expect(s.models.current()).toBeNull();
+    s.dispose();
+  });
+
+  it("toggleOrbit : orbite, le port rend l'image ; Tourner à nouveau : instantane, modèle libéré", async () => {
+    const { s, fv, id, click, tag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    expect(tag()).toBe("glb;orbite;30;20");
+    expect(s.models.current()).toBe(id);
+    expect(s.models.frames.frame(id)).toBe(fv.image);
+    await s.toggleOrbit();
+    expect(tag()).toBe("glb;instantane;30;20");
+    expect(fv.released).toHaveLength(1);
+    expect(s.models.frames.frame(id)).toBeNull();
+    s.dispose();
+  });
+
+  it("un seul aspect : rendu vivant et instantané au ratio de la boîte à l'écran après un étirement non uniforme", async () => {
+    const { s, fv, click, drag, model } = await modelSession({ matrix: [2, 0, 0, 1, 0, 0] });
+    click(100, 50);
+    await s.toggleOrbit();
+    s.models.frames.frame(s.models.current()!);
+    const live = fv.draws[fv.draws.length - 1]!;
+    expect(live.w / live.h).toBeCloseTo(4, 1);
+    drag(100);
+    await vi.waitFor(() => expect(model()!.snapshot).not.toBe(SNAP));
+    expect(fv.snaps[0]).toEqual(snapshotSize(400, 100));
+    expect(fv.snaps[0]!.w / fv.snaps[0]!.h).toBeCloseTo(live.w / live.h, 1);
+    s.dispose();
+  });
+
+  it("contexte perdu pendant l'orbite : orbite fermée, le glisser ne tourne plus l'objet", async () => {
+    const { s, fv, click, drag, model, tag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    fv.lose();
+    expect(tag()).toBe("glb;sans-webgl;30;20");
+    drag(100);
+    expect(tag()).toBe("glb;sans-webgl;30;20");
+    await Promise.resolve();
+    expect(model()!.yaw).toBe(D_YAW);
+    s.dispose();
+  });
+
+  it("second glissé rapide : l'écriture du premier ne ferme pas l'orbite", async () => {
+    const { s, click, drag, model, tag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    drag(100);
+    drag(50, false, 3);
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6));
+    expect(tag()).toBe("glb;orbite;116;20");
+    s.engine.sink.close(3, "end");
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1.5, 6));
+    expect(tag()).toBe("glb;orbite;116;20");
+    s.dispose();
+  });
+
+  it("sans WebGL : sans-webgl après le premier Tourner, aucune séance (S5, PC4)", async () => {
+    const { s, fv, loader, id, click, tag } = await modelSession({ webgl: false });
+    click(100, 50);
+    expect(tag()).toBe("glb;instantane;30;20");
+    expect(loader.calls).toBe(0);
+    await s.toggleOrbit();
+    expect(tag()).toBe("glb;sans-webgl;30;20");
+    expect(s.modelState(id)).toBe("sans-webgl");
+    expect(s.models.current()).toBeNull();
+    expect(fv.loads).toHaveLength(0);
+    s.dispose();
+  });
+
+  it("Vue initiale sans séance : vue par défaut et instantané en une étape ; déjà à la vue par défaut avec instantané : aucune étape", async () => {
+    const turned = await modelSession({ yaw: 1.5, pitch: 0.3 });
+    turned.click(100, 50);
+    const v0 = turned.s.engine.state().version;
+    await turned.s.resetModelView();
+    expect(turned.model()!.yaw).toBe(DEFAULT_MODEL3D_YAW);
+    expect(turned.model()!.pitch).toBe(DEFAULT_MODEL3D_PITCH);
+    expect(turned.model()!.snapshot).not.toBe(SNAP);
+    expect(turned.model()!.snapshot).not.toBeNull();
+    expect(turned.s.engine.state().version).toBe(v0 + 1);
+    expect(turned.s.models.current()).toBeNull();
+    turned.s.dispose();
+    const plain = await modelSession();
+    plain.click(100, 50);
+    const v1 = plain.s.engine.state().version;
+    await plain.s.resetModelView();
+    expect(plain.s.engine.state().version).toBe(v1);
+    expect(plain.loader.calls).toBe(0);
+    plain.s.dispose();
+  });
+
+  it("orbite validée : instantané puis SetModel3dView en une étape ; annuler : ancienne vue et ancien instantané, séance fermée (S2)", async () => {
+    const { s, fv, click, drag, model, tag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    const v0 = s.engine.state().version;
+    drag(100, false);
+    expect(tag()).toBe("glb;orbite;87;20");
+    expect(model()!.yaw).toBe(D_YAW);
+    s.engine.sink.close(2, "end");
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6));
+    expect(fv.snaps).toHaveLength(1);
+    expect(model()!.snapshot).not.toBe(SNAP);
+    expect(s.engine.state().version).toBe(v0 + 1);
+    expect(tag()).toBe("glb;orbite;87;20");
+    s.engine.undo();
+    expect(model()!.yaw).toBe(D_YAW);
+    expect(model()!.snapshot).toBe(SNAP);
+    expect(s.models.current()).toBeNull();
+    expect(tag()).toBe("glb;instantane;30;20");
+    s.dispose();
+  });
+
+  it("commit après suppression : aucune commande, séance fermée", async () => {
+    const { s, fv, id, click, drag } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    const free = fv.holdSnapshots();
+    const run = vi.spyOn(s.engine, "run");
+    drag(100);
+    await vi.waitFor(() => expect(fv.snaps).toHaveLength(1));
+    s.engine.deleteElements([id]);
+    expect(s.models.current()).toBeNull();
+    free();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(run.mock.calls.filter(([c]) => c.type === "SetModel3dView")).toHaveLength(0);
+    expect(s.doc.element(id)).toBeNull();
+    s.dispose();
+  });
+
+  it("changement de sélection, de page, deactivate : séance fermée (X23)", async () => {
+    const { s, fv, click, page, tag } = await modelSession();
+    const other = s.engine.run({
+      type: "AddModel3d", page, asset: { id: MAIN, name: "chaise.glb", mime: "model/gltf-binary", size: 4 }, format: "glb", files: [],
+      w: 50, h: 50, yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH, snapshot: null, matrix: [1, 0, 0, 1, 400, 300] as never,
+    })!.ids[0]!;
+    click(100, 50);
+    await s.toggleOrbit();
+    s.engine.deleteElements([other]); // la sélection tombe, l'objet de l'orbite reste
+    expect(s.selectedModel3d()).toBeNull();
+    expect(s.models.current()).toBeNull();
+    expect(fv.released).toHaveLength(1);
+    s.engine.undo();
+    click(100, 50);
+    await s.toggleOrbit();
+    await s.toggleOrbit();
+    s.engine.addPage();
+    expect(s.models.current()).toBeNull();
+    expect(fv.released).toHaveLength(2);
+    s.engine.showPage(page);
+    click(100, 50);
+    await s.toggleOrbit();
+    expect(tag()).toBe("glb;orbite;30;20");
+    s.deactivate();
+    expect(s.models.current()).toBeNull();
+    expect(fv.released).toHaveLength(3);
     s.dispose();
   });
 });
