@@ -217,6 +217,7 @@ async function scenario(page, url, { tmp, lesson }) {
   check("page001.svg" in b && "metadata.rdf" in b, "S4 : copie .ubz : page001.svg et metadata.rdf");
   for (const [file, name, fmt] of [[iwbCopy, "copie.iwb", "iwb"], [ubzCopy, "copie.ubz", "ubz"]]) {
     await drop(name, await readFile(file), 8);
+    await page.click(item("select"));
     await clickWorld(120, 540);
     await waitAttr("data-selection", "2");
     check((await attr("data-units")) === "1", `S4 : ${name} rouvert : 8 objets, le groupe tient`);
