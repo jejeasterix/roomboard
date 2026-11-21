@@ -39,11 +39,11 @@ export function checkZipBytesReply(d: unknown): Uint8Array {
 }
 
 /** Un Worker neuf par ZIP (`spawn`), le contenu transféré, arrêté après la réponse ou au bout de `timeoutMs`.
- *  `mode: "pack"` (C4) garde les chemins du paquet tels quels ; le message 3D reste `{ bytes }` seul. */
+ *  `mode: "pack"` (C4) et `mode: "board"` (C13) gardent les chemins tels quels ; le message 3D reste `{ bytes }` seul. */
 export function createZipReader(
   spawn: () => WorkerLike,
   timeoutMs = ZIP_WORKER_TIMEOUT_MS,
-  mode: "model3d" | "pack" = "model3d",
+  mode: "model3d" | "pack" | "board" = "model3d",
 ): (blob: Blob) => Promise<ZipEntry[]> {
   return async (blob) => {
     const buf = await blob.arrayBuffer();
