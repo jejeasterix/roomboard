@@ -1,11 +1,22 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
-import type { CoreDocument } from "../core/api";
+import { describe, expect, it, vi } from "vitest";
+import { NOT_A_FRAGMENT_MESSAGE, type Command, type CoreDocument, type GridInput } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { createContainerIO, LINKED_COPY_MESSAGE, type ContainerIO } from "./container-io";
-import { createFragmentOps, EMPTY_ITEMS_MESSAGE, MISSING_EXPORT_MESSAGE, MISSING_ITEMS_MESSAGE, SELECTION_NAME, TAB_GONE_MESSAGE, UNREAD_ITEMS_MESSAGE } from "./fragments";
+import { CASCADE_STEP } from "../platform/image-import";
+import {
+  createFragmentOps,
+  EMPTY_GRID_MESSAGE,
+  EMPTY_ITEMS_MESSAGE,
+  MISSING_EXPORT_MESSAGE,
+  MISSING_ITEMS_MESSAGE,
+  NO_GRID_MESSAGE,
+  SELECTION_NAME,
+  TAB_GONE_MESSAGE,
+  UNREAD_ITEMS_MESSAGE,
+} from "./fragments";
 import type { TabSession } from "./workspace";
 
 const ID = "ab".repeat(32);
@@ -37,6 +48,7 @@ function tabOf(doc: CoreDocument = fakeCore.blank()) {
     camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
     insertFragment: (src: CoreDocument, dx: number, dy: number) => doc.insertFragment(src, doc.pageIds()[0]!, dx, dy),
     insertPages: (src: CoreDocument) => doc.insertPages(src, doc.pageIds()[0]!),
+    run: (cmd: Command) => doc.apply(cmd),
   };
   const stage = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }) };
   const tab = { board: { doc, engine, stage }, assets, files: {} } as unknown as TabSession;
@@ -47,7 +59,7 @@ function opsOf(codec: ContainerCodec = memoryCodec(), alive = (_t: TabSession) =
   const said: string[] = [];
   const say = async (m: string) => void said.push(m);
   const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID) });
-  return { ops: createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say, alive }), said };
+  return { ops: createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive }), said };
 }
 
 const rectIn = (d: CoreDocument, x0: number, y0: number, x1: number, y1: number): string =>
@@ -193,7 +205,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
       encode: async () => { throw new CodecUnavailableError(new Error("module absent")); },
       read: async () => null,
     };
-    const ops = createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say: async (m) => void said.push(m), alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async (m) => void said.push(m), alive: () => true });
     const src = tabOf();
     src.select([rectIn(src.doc, 0, 0, 10, 10)]);
     await expect(ops.encodeSelection(src.tab)).rejects.toBeInstanceOf(CodecUnavailableError);
@@ -239,7 +251,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
     const codec = memoryCodec();
     const say = async () => undefined;
     const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID) });
-    const ops = createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say, alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true });
     const src = tabOf();
     src.doc.apply({ type: "AddImage", page: src.doc.pageIds()[0]!, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
     src.assets.adopt(ID, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
@@ -256,7 +268,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
     const doc = fakeCore.blank();
     (doc as unknown as { citedAssets: () => { id: string; mime: string }[] }).citedAssets = () => [{ id: ID, mime: "image/png" }];
     const io: ContainerIO = { encode: async () => new Uint8Array(), read: async () => ({ doc, assets: readAssets, unread: false }) };
-    const ops = createFragmentOps({ io, now: () => NOW, appVersion: "0.1.0", say: async () => undefined, alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async () => undefined, alive: () => true });
     const dst = tabOf();
     expect(await ops.insert(dst.tab, new Uint8Array([1]), "x.rbitem", null)).toBe(false);
     expect(dst.assets.has(ID)).toBe(false);
@@ -301,5 +313,100 @@ describe("opérations sur la sélection : médias liés (C14)", () => {
     expect(dst.doc.citedAssets().map((a) => a.id)).not.toContain(VID);
     expect(dst.assets.linked(VID)).toBeUndefined();
     expect(said).toContain(`b.roomboard : ${LINKED_COPY_MESSAGE}`);
+  });
+});
+
+describe("C4 : insertResource et encodeGrid", () => {
+  const grid: GridInput = {
+    visible: true,
+    snap: false,
+    above: false,
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: false, visible: true }],
+  };
+
+  it("C4 : insertResource d'une grille pose un SetGrid, une étape", async () => {
+    const { ops, said } = opsOf();
+    const src = tabOf();
+    src.doc.apply({ type: "SetGrid", page: src.doc.pageIds()[0]!, grid });
+    const bytes = (await ops.encodeGrid(src.tab, "Seyès"))!;
+    const dst = tabOf();
+    const runs = vi.spyOn(dst.tab.board.engine, "run");
+    expect(await ops.insertResource(dst.tab, bytes, "Seyès", { x: 10, y: 10 })).toBe("inserted");
+    expect(runs).toHaveBeenCalledTimes(1);
+    expect(dst.doc.page(dst.doc.pageIds()[0]!)?.grid).toEqual(grid);
+    expect(said).toEqual([]);
+  });
+
+  it("C4 : même grille : aucune étape", async () => {
+    const { ops } = opsOf();
+    const t = tabOf();
+    t.doc.apply({ type: "SetGrid", page: t.doc.pageIds()[0]!, grid });
+    const bytes = (await ops.encodeGrid(t.tab))!;
+    const runs = vi.spyOn(t.tab.board.engine, "run");
+    expect(await ops.insertResource(t.tab, bytes, "G", null)).toBe("inserted");
+    expect(runs).not.toHaveBeenCalled();
+  });
+
+  it("C4 : ressource de grille sans grille : avis, rien n'est appliqué", async () => {
+    const { ops, said } = opsOf();
+    const dst = tabOf();
+    const runs = vi.spyOn(dst.tab.board.engine, "run");
+    expect(await ops.insertResource(dst.tab, fakeCore.blank().saveGrid(NOW, "0.1.0", "G"), "G.rbitem", null)).toBe("empty");
+    expect(runs).not.toHaveBeenCalled();
+    expect(said).toEqual([`G.rbitem : ${EMPTY_GRID_MESSAGE}`]);
+  });
+
+  it("C4 : insertResource d'objets suit l'insertion existante", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    src.select([rectIn(src.doc, 0, 0, 10, 10)]);
+    const bytes = (await ops.encodeSelection(src.tab, "export"))!;
+    const dst = tabOf();
+    expect(await ops.insertResource(dst.tab, bytes, "Moitié", { x: 100, y: 100 })).toBe("inserted");
+    const ids = dst.doc.elementIds(dst.doc.pageIds()[0]!);
+    expect(ids).toHaveLength(1);
+    expect(centre(dst.doc, ids)).toEqual([100, 100]);
+  });
+
+  it("C4 : objets en ressource puis collés : une seule cascade, celle de l'insertion existante (Z7)", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    src.select([rectIn(src.doc, 0, 0, 100, 100)]);
+    const bytes = (await ops.encodeSelection(src.tab))!;
+    const dst = tabOf();
+    expect(await ops.insert(dst.tab, bytes, "p", null)).toBe(true);
+    expect(await ops.insertResource(dst.tab, bytes.slice(), "p", null)).toBe("inserted");
+    const ids = dst.doc.elementIds(dst.doc.pageIds()[0]!);
+    expect(centre(dst.doc, [ids[0]!])).toEqual([400, 300]);
+    expect(centre(dst.doc, [ids[1]!])).toEqual([424, 324]);
+  });
+
+  it("C4 : trois objets déposés ensemble (index 0, 1, 2) ne tombent pas au même point (R4, D24)", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    src.select([rectIn(src.doc, 0, 0, 10, 10)]);
+    const bytes = (await ops.encodeSelection(src.tab, "export"))!;
+    const dst = tabOf();
+    for (const i of [0, 1, 2]) expect(await ops.insertResource(dst.tab, bytes, "x.rbitem", { x: 100, y: 100 }, i)).toBe("inserted");
+    const ids = dst.doc.elementIds(dst.doc.pageIds()[0]!);
+    const x0s = ids.map((id) => dst.doc.bounds([id])!.x0);
+    expect(new Set(x0s).size).toBe(3);
+    expect(x0s[1]! - x0s[0]!).toBeCloseTo(CASCADE_STEP);
+  });
+
+  it("C4 : un document donné en ressource : un seul avis, rien inséré", async () => {
+    const { ops, said } = opsOf();
+    const dst = tabOf();
+    const runs = vi.spyOn(dst.tab.board.engine, "run");
+    expect(await ops.insertResource(dst.tab, fakeCore.blank().save(NOW, "0.1.0"), "d.rbitem", null)).toBe("refused");
+    expect(said).toEqual([`Ouverture impossible (d.rbitem) : ${NOT_A_FRAGMENT_MESSAGE}`]);
+    expect(runs).not.toHaveBeenCalled();
+    expect(dst.doc.elementIds(dst.doc.pageIds()[0]!)).toEqual([]);
+  });
+
+  it("C4 : encodeGrid d'une page sans grille : null, avis dit", async () => {
+    const { ops, said } = opsOf();
+    expect(await ops.encodeGrid(tabOf().tab)).toBeNull();
+    expect(said).toEqual([NO_GRID_MESSAGE]);
   });
 });

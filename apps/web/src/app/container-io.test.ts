@@ -1,6 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
-import type { CoreDocument, CoreFactory, LinkedAsset } from "../core/api";
+import {
+  IS_A_GRID_MESSAGE,
+  NOT_A_DOCUMENT_MESSAGE,
+  NOT_A_FRAGMENT_MESSAGE,
+  wrongKindMessage,
+  type ContainerKind,
+  type CoreDocument,
+  type CoreFactory,
+  type GridInput,
+  type LinkedAsset,
+} from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec } from "../platform/container";
@@ -236,5 +246,115 @@ describe("conteneurs : médias (C14)", () => {
     expect(r?.unread).toBe(false);
     expect(r?.assets.linked(VID)).toBe("/v/clip.webm");
     expect(said).toEqual([]);
+  });
+});
+
+/**
+ * C4 : doublure du cœur qui note chaque appel. `found` = type que le fichier porte : `manifestKind` (manifeste déjà
+ * extrait) et `containerKind` (octets entiers, repli) le rendent ; un lecteur d'un autre type lève `wrongKindMessage`,
+ * comme le cœur. Longueurs notées : manifeste extrait 1 octet, fichier entier 3 octets.
+ */
+function kindCore(doc: CoreDocument, found: ContainerKind) {
+  const calls: string[] = [];
+  const loader = (label: string, own: ContainerKind) => (...b: Uint8Array[]) => {
+    calls.push(`${label} ${b.map((x) => x.length).join(" ")}`);
+    if (own !== found) throw new Error(wrongKindMessage(found));
+    return doc;
+  };
+  const core = {
+    manifestKind: (m: Uint8Array) => (calls.push(`manifestKind ${m.length}`), found),
+    containerKind: (b: Uint8Array) => (calls.push(`containerKind ${b.length}`), found),
+    load: loader("load", "document"),
+    loadParts: loader("loadParts", "document"),
+    loadFragment: loader("loadFragment", "fragment"),
+    loadFragmentParts: loader("loadFragmentParts", "fragment"),
+    loadGrid: loader("loadGrid", "grid"),
+    loadGridParts: loader("loadGridParts", "grid"),
+  } as unknown as CoreFactory;
+  return { core, calls };
+}
+
+describe("C4 : read à liste de kind", () => {
+  const grid: GridInput = {
+    visible: true,
+    snap: false,
+    above: false,
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: false, visible: true }],
+  };
+  const gridDoc = () => {
+    const d = fakeCore.blank();
+    d.apply({ type: "SetGrid", page: d.pageIds()[0]!, grid });
+    return d;
+  };
+  /** Sans asset, les octets ne sont pas ceux d'un conteneur à images : lecture par le cœur seul (comme `memoryCodec`). */
+  const setup = () => {
+    const said: string[] = [];
+    const io = createContainerIO({ core: fakeCore, codec: codecDown, say: async (m) => void said.push(m), makeAssets: () => createAssetStore(async () => "x") });
+    return { io, said };
+  };
+
+  it("C4 : une grille sans asset s'écrit par saveGrid et se lit kind « grid »", async () => {
+    const { io, said } = setup();
+    const bytes = await io.encode(gridDoc(), createAssetStore(async () => "x"), "n", "a", { kind: "grid", name: "Seyès" });
+    const r = await io.read("Seyès.rbitem", bytes, ["fragment", "grid"]);
+    expect(r?.kind).toBe("grid");
+    expect(r?.doc.page(r.doc.pageIds()[0]!)?.grid).toEqual(grid);
+    expect(said).toEqual([]);
+  });
+
+  it("C4 : un objet lu avec la liste rend kind « fragment »", async () => {
+    const { io } = setup();
+    const r = await io.read("x.rbitem", fakeCore.blank().saveFragment("n", "a", "x"), ["fragment", "grid"]);
+    expect(r?.kind).toBe("fragment");
+  });
+
+  it("C4 : un document lu avec la liste objet/grille : message du document", async () => {
+    const { io, said } = setup();
+    expect(await io.read("d.rbitem", fakeCore.blank().save("n", "a"), ["fragment", "grid"])).toBeNull();
+    expect(said).toEqual([`Ouverture impossible (d.rbitem) : ${NOT_A_FRAGMENT_MESSAGE}`]);
+  });
+
+  it("C4 : read à kind seul garde les messages d'avant", async () => {
+    const { io, said } = setup();
+    expect(await io.read("o.roomboard", fakeCore.blank().saveFragment("n", "a", "x"), "document")).toBeNull();
+    expect(await io.read("g.rbitem", gridDoc().saveGrid("n", "a", "G"), "fragment")).toBeNull();
+    expect(said).toEqual([`Ouverture impossible (o.roomboard) : ${NOT_A_DOCUMENT_MESSAGE}`, `Ouverture impossible (g.rbitem) : ${IS_A_GRID_MESSAGE}`]);
+  });
+
+  it("C4 : conteneur lu avec la liste : type lu une fois sur le manifeste extrait, puis un seul lecteur", async () => {
+    const said: string[] = [];
+    const { core, calls } = kindCore(docStub().d, "grid");
+    const codec = codecOk();
+    const r = await io(core, codec, said).read("g.rbitem", u8(1, 2, 3), ["fragment", "grid"]);
+    expect(r?.kind).toBe("grid");
+    expect(calls).toEqual(["manifestKind 1", "loadGridParts 1 1"]);
+    expect(codec.read).toHaveBeenCalledTimes(1);
+    expect(said).toEqual([]);
+  });
+
+  it("C4 : repli (module absent) avec la liste : containerKind une fois, puis un seul lecteur", async () => {
+    const { core, calls } = kindCore(docStub().d, "grid");
+    const r = await io(core, codecDown).read("g.rbitem", u8(1, 2, 3), ["fragment", "grid"]);
+    expect(r?.kind).toBe("grid");
+    expect(calls).toEqual(["containerKind 3", "loadGrid 3"]);
+  });
+
+  it("C4 : type lu hors de la liste : le seul lecteur du premier demandé, son message, un seul avis", async () => {
+    const said: string[] = [];
+    const { core, calls } = kindCore(docStub().d, "document");
+    expect(await io(core, codecOk(), said).read("d.rbitem", u8(1, 2, 3), ["fragment", "grid"])).toBeNull();
+    expect(calls).toEqual(["manifestKind 1", "loadFragmentParts 1 1"]);
+    expect(said).toEqual([`Ouverture impossible (d.rbitem) : ${NOT_A_FRAGMENT_MESSAGE}`]);
+  });
+
+  it("C4 : un seul kind demandé : aucune lecture du type (chemin d'avant C4)", async () => {
+    const said: string[] = [];
+    const { core, calls } = kindCore(docStub().d, "grid");
+    expect(await io(core, codecOk(), said).read("g.rbitem", u8(1, 2, 3), "fragment")).toBeNull();
+    const fallback = kindCore(docStub().d, "fragment");
+    expect((await io(fallback.core, codecDown, said).read("x.rbitem", u8(1, 2, 3), "fragment"))?.kind).toBe("fragment");
+    expect(calls).toEqual(["loadFragmentParts 1 1"]);
+    expect(fallback.calls).toEqual(["loadFragment 3"]);
+    expect(said).toEqual([`Ouverture impossible (g.rbitem) : ${IS_A_GRID_MESSAGE}`]);
   });
 });
