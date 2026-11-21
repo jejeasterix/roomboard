@@ -7,7 +7,8 @@ import type { Change, Command } from "../core/api";
 
 /** Ce que les marques lisent du document (structurel : `CoreDocument` convient). */
 export interface ZoneDoc {
-  elementIds(page: string): readonly string[];
+  /** OE23 (Q7) : ids des éléments de `page` dont le `kind` brut vaut `kind` ; chaque candidat est confirmé par `element`. */
+  elementIdsOfKind(page: string, kind: string): readonly string[];
   element(id: string): { readonly kind: string } | null;
   zoneCells(page: string, tol: number): number;
 }
@@ -16,8 +17,8 @@ export interface ZoneMarks {
   /** `run` mesuré quand la commande est un `Fill` de cible `zone` ; toute autre commande passe telle quelle. */
   timed(run: (c: Command) => Change | null): (c: Command) => Change | null;
   /** Marques de la page montrée ; le compte des `fill` n'est relu que si la page ou la version change, et jamais pendant
-   * une commande mesurée : l'état du moteur, émis dans `run`, rappelle `tags`, et le recompte lit chaque élément par le
-   * pont ; `onMarked` le relance juste après la mesure. */
+   * une commande mesurée : l'état du moteur, émis dans `run`, rappelle `tags`, et le recompte lit la vue des seuls
+   * candidats `fill` (OE23) ; `onMarked` le relance juste après la mesure. */
   tags(page: string, version: number): ZoneTags;
 }
 
@@ -59,7 +60,7 @@ export function createZoneMarks(
     },
     tags: (page, version) => {
       if (counted === null || (!running && (counted.page !== page || counted.version !== version))) {
-        const zones = doc.elementIds(page).filter((id) => doc.element(id)?.kind === "fill").length;
+        const zones = doc.elementIdsOfKind(page, "fill").filter((id) => doc.element(id)?.kind === "fill").length;
         counted = { page, version, zones: String(zones) };
       }
       return { zones: counted.zones, zoneMs, zoneCells };

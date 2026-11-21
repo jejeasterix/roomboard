@@ -1208,9 +1208,9 @@ describe("session — pot sur image (C6b, B13, B21)", () => {
   });
 
   const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-  /** Accès au document à partir de maintenant (le vrai cœur lève sur un document libéré). */
+  /** Accès au document à partir de maintenant (le vrai cœur lève sur un document libéré) ; OE23 : listes d'ids comprises. */
   const watchDoc = (doc: ReturnType<typeof fakeCore.blank>) => {
-    const spies = [vi.spyOn(doc, "version"), vi.spyOn(doc, "element"), vi.spyOn(doc, "apply")];
+    const spies = [vi.spyOn(doc, "version"), vi.spyOn(doc, "element"), vi.spyOn(doc, "apply"), vi.spyOn(doc, "elementIds"), vi.spyOn(doc, "elementIdsOfKind")];
     return {
       reset: (): void => spies.forEach((x) => x.mockClear()),
       counts: (): number[] => spies.map((x) => x.mock.calls.length),
@@ -1229,7 +1229,7 @@ describe("session — pot sur image (C6b, B13, B21)", () => {
       access.reset();
       await tick();
       await tick();
-      expect(access.counts()).toEqual([0, 0, 0]);
+      expect(access.counts()).toEqual([0, 0, 0, 0, 0]);
       expect(s.stage.dataset["pot"]).toBe("attente");
       expect(s.engine.state().error).toBe(error);
     } finally {
@@ -1254,7 +1254,7 @@ describe("session — pot sur image (C6b, B13, B21)", () => {
       await tick();
       await tick();
       expect(out.close).toHaveBeenCalledTimes(1);
-      expect(access.counts()).toEqual([0, 0, 0]);
+      expect(access.counts()).toEqual([0, 0, 0, 0, 0]);
       expect(s.stage.dataset["pot"]).toBe("attente");
     } finally {
       vi.unstubAllGlobals();

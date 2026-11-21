@@ -276,14 +276,15 @@ export function createEngine(deps: EngineDeps): Engine {
   const drawnListeners = new Set<(now: number) => void>();
   const owner = new Map<number, GestureTool>();
 
-  /** Comptes de `#stage[data-table-merges|data-table-shades]` (F29), recalculés quand la version ou la page change (PC12). */
+  /** Comptes de `#stage[data-table-merges|data-table-shades]` (F29), recalculés quand la version ou la page change (PC12).
+   *  OE23 (Q7) : seuls les candidats `table` (kind brut) sont lus, chacun confirmé par sa vue (un mal formé est `unknown`). */
   let counted = { key: "", merges: 0, shades: 0 };
   const tableCounts = (): { readonly merges: number; readonly shades: number } => {
     const key = `${pageId}|${doc.version()}`;
     if (counted.key !== key) {
       let merges = 0;
       let shades = 0;
-      for (const id of doc.elementIds(pageId)) {
+      for (const id of doc.elementIdsOfKind(pageId, "table")) {
         const el = doc.element(id);
         if (el?.kind !== "table") continue;
         merges += el.table.merges.length;
