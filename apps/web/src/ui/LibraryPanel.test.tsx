@@ -81,7 +81,7 @@ describe("C4 : panneau Bibliothèque", () => {
     const s = setup();
     await addSelection(s, "Moitié", "fraction, moitié");
     expect(s.props.capture).toHaveBeenCalledWith("selection");
-    expect(s.q('.rb-resource[data-resource="moitie.rbitem"] img.rb-thumb')).toBeTruthy();
+    await waitFor(() => s.q('.rb-resource[data-resource="moitie.rbitem"] img.rb-thumb')); // vignette lue de façon asynchrone
     expect(s.library.search("frac").map((e) => e.keywords)).toEqual([["fraction", "moitié"]]);
   });
 
