@@ -111,6 +111,17 @@ pub(crate) struct Grid {
     pub origin: [f64; 2],
 }
 
+impl Grid {
+    /// Cellule du point (x, y) monde, `None` hors de l'emprise : calculée avant d'allouer le masque (Q10, « sans
+    /// rastériser »).
+    fn cell_of(&self, x: f64, y: f64) -> Option<(usize, usize)> {
+        let i = ((x - self.origin[0]) / self.cell).floor();
+        let j = ((y - self.origin[1]) / self.cell).floor();
+        (i >= 0.0 && j >= 0.0 && i < self.w as f64 && j < self.h as f64)
+            .then_some((i as usize, j as usize))
+    }
+}
+
 fn walls_bounds(walls: &[Wall]) -> Option<Bounds> {
     walls.iter().map(|w| w.bounds).reduce(|a, b| Bounds {
         x0: a.x0.min(b.x0),
@@ -127,7 +138,7 @@ pub(crate) fn fit(walls: &[Wall], tol: f64) -> Option<Grid> {
         let cell = tol / 2.0 * f;
         let w = ((b.x1 - b.x0) / cell).ceil() + 4.0;
         let h = ((b.y1 - b.y0) / cell).ceil() + 4.0;
-        (w * h <= MAX_CELLS as f64).then(|| Grid {
+        (w * h <= MAX_CELLS as f64).then_some(Grid {
             w: w as usize,
             h: h as usize,
             cell,
@@ -162,13 +173,6 @@ impl Mask {
             origin: g.origin,
             cells: vec![FREE; g.w * g.h],
         }
-    }
-
-    fn cell_of(&self, x: f64, y: f64) -> Option<(usize, usize)> {
-        let i = ((x - self.origin[0]) / self.cell).floor();
-        let j = ((y - self.origin[1]) / self.cell).floor();
-        (i >= 0.0 && j >= 0.0 && i < self.w as f64 && j < self.h as f64)
-            .then(|| (i as usize, j as usize))
     }
 
     /// Première cellule dont le centre est ≥ `v` sur un axe d'origine `o`, bornée à [0, n].
@@ -422,10 +426,10 @@ pub fn closed_zone(walls: &[Wall], x: f64, y: f64, tol: f64) -> Zone {
             Zone::Open
         };
     };
-    let mut m = Mask::new(g);
-    let Some((cx, cy)) = m.cell_of(x, y) else {
+    let Some((cx, cy)) = g.cell_of(x, y) else {
         return Zone::Outside;
     };
+    let mut m = Mask::new(g);
     for w in walls {
         m.paint(w);
     }
@@ -575,7 +579,7 @@ mod tests {
         ]
     }
     fn ring_box(r: &[f64]) -> [f64; 4] {
-        r.chunks_exact(2).fold(
+        r.as_chunks::<2>().0.iter().fold(
             [
                 f64::INFINITY,
                 f64::INFINITY,
@@ -678,8 +682,15 @@ mod tests {
     fn click_outside_grid_allocates_no_mask() {
         MASKS.with(|n| n.set(0));
         assert_eq!(closed_zone(&square(0.0), 900.0, 900.0, 2.0), Zone::Outside);
-        assert_eq!(MASKS.with(std::cell::Cell::get), 0, "masque alloué pour un clic hors des murs");
-        assert!(matches!(closed_zone(&square(0.0), 300.0, 300.0, 2.0), Zone::Closed(_)));
+        assert_eq!(
+            MASKS.with(std::cell::Cell::get),
+            0,
+            "masque alloué pour un clic hors des murs"
+        );
+        assert!(matches!(
+            closed_zone(&square(0.0), 300.0, 300.0, 2.0),
+            Zone::Closed(_)
+        ));
         assert_eq!(MASKS.with(std::cell::Cell::get), 1);
     }
 
@@ -771,7 +782,9 @@ mod tests {
         let f = fill_of(&d, &c.ids[0]);
         assert_eq!(f.color, "#facc15");
         let min_x = f.rings[0]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|q| q[0] + f.transform[4])
             .fold(f64::INFINITY, f64::min);
         assert!(min_x > 100.0 && min_x < 104.0, "{min_x}");
@@ -855,7 +868,9 @@ mod tests {
         assert_eq!(c.ids.len(), 1);
         let f = fill_of(&d, &c.ids[0]);
         let min_x = f.rings[0]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|q| q[0] + f.transform[4])
             .fold(f64::INFINITY, f64::min);
         assert!((min_x - 300.0).abs() < 1e-3, "{min_x}");

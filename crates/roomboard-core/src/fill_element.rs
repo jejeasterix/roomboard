@@ -79,7 +79,7 @@ pub(crate) fn fill_prelim(id: &str, rings: &[Vec<f64>], color: &str) -> Option<M
         f64::NEG_INFINITY,
         f64::NEG_INFINITY,
     );
-    for p in rings.iter().flat_map(|r| r.chunks_exact(2)) {
+    for p in rings.iter().flat_map(|r| r.as_chunks::<2>().0) {
         x0 = x0.min(p[0]);
         y0 = y0.min(p[1]);
         x1 = x1.max(p[0]);
@@ -93,7 +93,9 @@ pub(crate) fn fill_prelim(id: &str, rings: &[Vec<f64>], color: &str) -> Option<M
         .iter()
         .map(|r| {
             let local: Vec<Any> = r
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .flat_map(|p| [Any::from(p[0] - x0), Any::from(p[1] - y0)])
                 .collect();
             Any::Array(local.into())
