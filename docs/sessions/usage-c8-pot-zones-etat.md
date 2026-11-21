@@ -3,9 +3,10 @@
 Statut : en cours
 Gabarit : chantier (7 tâches, confirmé à l'étage 2)
 Objectif : Un clic du pot dans une zone fermée par plusieurs objets (traits, formes) pose un nouvel élément `kind: "fill"` non lié, au-dessus des objets d'origine, avec une tolérance de fermeture de 2 px ; hors de toute zone fermée, le pot garde le comportement de C6a (fond de la page) ; chaque clic est une étape d'annulation.
-Avancement : 5/7 tâches terminées
+Avancement : 6/8 tâches terminées
 Étage : 3 — depuis 2026-11-21 08:02
-Tâche : T2 — vue, collision, anneaux ; contrat — depuis 2026-11-21 08:15
+Tâche : T7 — essai navigateur, capture, tailles — depuis 2026-11-21 08:31
+Tâche : T8 — correctifs de la revue de T1 — depuis 2026-11-21 08:24
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c8-pot-zones   Branche : feat/usage-c8-pot-zones   Base : origin/main @ 94976f0
 Branche principale locale au lancement : 94976f0
@@ -24,12 +25,13 @@ Vagues : V1 = T1, T3, T5 · V2 = T2, T4, T6 · V3 = T7. Worktrees : ~/projets/ro
 | id | dépend | état | essais | commit vert | preuve rejouée |
 |----|--------|------|--------|-------------|----------------|
 | T1 cœur zone, i_overlay, Fill Zone, pont Wasm | — | terminée | 1/3 | f388463 | core --features zone 470 tests ok (25 zone/fill/shape, square_gap_1px_closes_3px_leaks ok, témoin S6 ignoré comme prévu) ; module principal 1 350 143 o, formats 3 100 344 o |
-| T2 vue, collision, anneaux ; contrat | T1, T3 | en cours | 1/3 | — | — |
+| T2 vue, collision, anneaux ; contrat | T1, T3 | terminée | 1/3 | da044b5 | core fill 18 tests (fill_is_hit_inside_far_from_edges_only ok) ; contrat WASM_REQUIRED 364 tests, 3 « vrai module seulement » ; tsc 0 ; module principal 1 355 945 o |
 | T3 interface TS, fausse liaison | — | terminée | 1/3 | cb5a511 | fake-core + contrat 251 tests, 6 « C8 » (bloc vrai module sauté faute de .wasm dans le worktree de tâche, joué en T2) ; écart : `continue` pour fill dans le test I3 TS |
 | T4 rendu canvas2d | T3 | terminée | 1/3 | 006e8dd | canvas2d + record-ctx 98 tests, 3 « C8 fill » |
 | T5 marques de zone | — | terminée | 1/3 | 690f802 | zone-marks + stage-tags 11 tests (dont « C8 Fill zone : durée mesurée ») |
 | T6 outil Pot, cible zone | T3, T5 | terminée | 1/3 | 51961da | fill-target, tools/fill, image-fill, board-session 108 tests, 3 « C8 » ; 2 tests C6a remplacés comme prévu (clic dans le vide → Fill zone) |
-| T7 essai navigateur, capture, tailles | toutes | à faire | 0/3 | — | — |
+| T7 essai navigateur, capture, tailles | toutes | en cours (lancée avant T8, verifier.sh rejoué après T8) | 1/3 | — | — |
+| T8 correctifs revue T1 (murs fins, rects, tolérance par facteur, notice i_tree) | T1 | en cours | 1/3 | — | — |
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK sans régression · scénarios réussis · capture dans `docs/essais/` · PR mergée par fusion locale `--no-ff` et `git push` sans force
