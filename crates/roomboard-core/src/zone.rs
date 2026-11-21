@@ -646,6 +646,65 @@ mod tests {
         assert_eq!(closed_zone(&square(3.0), 300.0, 300.0, 2.0), Zone::Open);
     }
 
+    /// Mur plus fin qu'une cellule (revue de T1) : à `tol` = 16 (cellule 8, origine 84), les murs du haut et de gauche
+    /// ([100, 104)) ne couvrent aucun centre de cellule ; toute cellule que le mur touche est un mur, la zone reste
+    /// fermée.
+    #[test]
+    fn wall_thinner_than_a_cell_still_closes() {
+        assert!(matches!(
+            closed_zone(&square(0.0), 300.0, 300.0, 16.0),
+            Zone::Closed(_)
+        ));
+    }
+
+    /// Carré de côté 400 dont le coin haut gauche est (`ox`, 100), murs de 4 ; le mur de gauche commence `gap` sous le
+    /// mur du haut. Un petit mur lointain (`far`, 0 = aucun) agrandit l'emprise pour imposer le facteur de cellule.
+    fn square_far(ox: f32, gap: f32, far: f32) -> Vec<Wall> {
+        let mut w = vec![
+            rect_wall(ox, 100.0, ox + 400.0, 104.0),
+            rect_wall(ox + 396.0, 100.0, ox + 400.0, 500.0),
+            rect_wall(ox, 496.0, ox + 400.0, 500.0),
+            rect_wall(ox, 104.0 + gap, ox + 4.0, 500.0),
+        ];
+        if far > 0.0 {
+            w.push(rect_wall(far - 1.0, far - 1.0, far, far));
+        }
+        w
+    }
+
+    /// Q20 : à chaque facteur de cellule (1, 2, 4), à origine entière ou non, un écart d'au plus 2 cellules se ferme
+    /// et un écart d'au moins 4 cellules fuit ; entre les deux, cela dépend de l'alignement de l'écart sur la grille.
+    #[test]
+    fn gap_tolerance_holds_at_every_cell_factor_and_alignment() {
+        for (far, f) in [(0.0f32, 1.0f64), (3000.0, 2.0), (6000.0, 4.0)] {
+            for ox in [100.0f32, 100.37] {
+                let c = f as f32;
+                let g = fit(&square_far(ox, 0.0, far), 2.0).expect("grille");
+                assert_eq!(g.cell, f, "facteur de cellule");
+                if ox > 100.0 {
+                    assert!(g.origin[0].fract() != 0.0, "origine entière");
+                }
+                let (cx, cy) = (f64::from(ox) + 200.0, 300.0);
+                for gap in [1.0 * c, 1.5 * c, 2.0 * c] {
+                    assert!(
+                        matches!(
+                            closed_zone(&square_far(ox, gap, far), cx, cy, 2.0),
+                            Zone::Closed(_)
+                        ),
+                        "écart {gap} (cellule {f}, x {ox}) devait fermer"
+                    );
+                }
+                for gap in [4.0 * c, 4.5 * c, 6.0 * c] {
+                    assert_eq!(
+                        closed_zone(&square_far(ox, gap, far), cx, cy, 2.0),
+                        Zone::Open,
+                        "écart {gap} (cellule {f}, x {ox}) devait fuir"
+                    );
+                }
+            }
+        }
+    }
+
     /// Q10 : hors de la boîte des murs agrandie : `Outside` ; dans un mur ou dans sa dilatation : `OnWall` ; sans mur : `Outside`.
     #[test]
     fn outside_box_and_on_wall() {
