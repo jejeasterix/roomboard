@@ -148,10 +148,15 @@ impl Document {
 
     /// Document d'un PDF importé (C12, PF6, DAPF5) : une page par taille `(w, h)` en points (après /Rotate et CropBox),
     /// fond `pdf-page` d'indice i calé sur la largeur, métadonnée de l'asset ; tout est écrit sans origine avant
-    /// `History` (D37) : rien ne s'annule. Refus : `BadAsset`, puis `BadImage` (0 ou plus de 500 pages, taille non
-    /// finie ou ≤ 0).
-    pub fn from_pdf_pages(asset: &AssetRef, sizes: &[(f64, f64)]) -> Result<Self, CommandError> {
-        if !valid_asset(asset) {
+    /// `History` (D37) : rien ne s'annule. C16 (O16, O17, DA-O2) : `original` (fichier Office converti) est cité par
+    /// chaque fond (clé `original`) et sa métadonnée écrite ; il est contrôlé comme l'asset. Refus : `BadAsset`, puis
+    /// `BadImage` (0 ou plus de 500 pages, taille non finie ou ≤ 0).
+    pub fn from_pdf_pages(
+        asset: &AssetRef,
+        sizes: &[(f64, f64)],
+        original: Option<&AssetRef>,
+    ) -> Result<Self, CommandError> {
+        if !valid_asset(asset) || original.is_some_and(|o| !valid_asset(o)) {
             return Err(CommandError::BadAsset);
         }
         if sizes.is_empty()
@@ -169,21 +174,28 @@ impl Document {
                 let index = i as u32;
                 insert_page(&pages, &mut txn, index);
                 if let Some(Out::YMap(page)) = pages.get(&txn, index) {
+                    let mut fields = vec![
+                        ("asset", In::from(asset.id.as_str())),
+                        ("kind", In::from(PDF_PAGE_KIND)),
+                        ("page", In::Any(Any::from(f64::from(index)))),
+                        ("w", In::Any(Any::from(w))),
+                        ("h", In::Any(Any::from(h))),
+                        ("fit", In::from(FIT_WIDTH)),
+                    ];
+                    if let Some(o) = original {
+                        fields.push(("original", In::from(o.id.as_str())));
+                    }
                     page.insert(
                         &mut txn,
                         "backdrop",
-                        MapPrelim::from([
-                            ("asset", In::from(asset.id.as_str())),
-                            ("kind", In::from(PDF_PAGE_KIND)),
-                            ("page", In::Any(Any::from(f64::from(index)))),
-                            ("w", In::Any(Any::from(w))),
-                            ("h", In::Any(Any::from(h))),
-                            ("fit", In::from(FIT_WIDTH)),
-                        ]),
+                        fields.into_iter().collect::<MapPrelim>(),
                     );
                 }
             }
             write_asset_meta(&assets, &mut txn, asset);
+            if let Some(o) = original {
+                write_asset_meta(&assets, &mut txn, o);
+            }
         }
         Ok(Self::assemble(doc, meta, pages, assets))
     }
@@ -1634,10 +1646,7 @@ mod tests {
         let mut host = Document::blank();
         let first = host.page_ids()[0].clone();
         host.insert_pages(&d, &first).expect("insertion");
-        assert_eq!(
-            originals_of(&host),
-            vec![None, Some(ORIGINAL.to_string())]
-        );
+        assert_eq!(originals_of(&host), vec![None, Some(ORIGINAL.to_string())]);
         assert_eq!(
             host.cited_assets()
                 .into_iter()
@@ -1653,7 +1662,7 @@ mod tests {
     /// cité une fois, métadonnée écrite ; rien à annuler, version 0.
     #[test]
     fn from_pdf_pages_builds_one_backdrop_page_per_size() {
-        let mut d = Document::from_pdf_pages(&pdf_asset(), &SIZES).expect("document");
+        let mut d = Document::from_pdf_pages(&pdf_asset(), &SIZES, None).expect("document");
         let ids = d.page_ids();
         assert_eq!(ids.len(), 3);
         for (i, (id, (w, h))) in ids.iter().zip(SIZES).enumerate() {
@@ -1696,7 +1705,7 @@ mod tests {
         let mut bad = pdf_asset();
         bad.id = ABC.to_uppercase();
         assert_eq!(
-            Document::from_pdf_pages(&bad, &[]).err(),
+            Document::from_pdf_pages(&bad, &[], None).err(),
             Some(CommandError::BadAsset)
         );
         let a = pdf_asset();
@@ -1709,21 +1718,21 @@ mod tests {
             vec![(612.0, f64::INFINITY)],
         ] {
             assert_eq!(
-                Document::from_pdf_pages(&a, &sizes).err(),
+                Document::from_pdf_pages(&a, &sizes, None).err(),
                 Some(CommandError::BadImage),
                 "{} tailles",
                 sizes.len()
             );
         }
-        let full =
-            Document::from_pdf_pages(&a, &vec![(612.0, 792.0); PDF_MAX_PAGES]).expect("500 pages");
+        let full = Document::from_pdf_pages(&a, &vec![(612.0, 792.0); PDF_MAX_PAGES], None)
+            .expect("500 pages");
         assert_eq!(full.page_count(), 500);
     }
 
     /// PF17, PF18, S4 : encodé puis relu, fonds et asset restent ; « Insérer des pages » recopie fonds et indices.
     #[test]
     fn pdf_backdrops_survive_encode_and_insert_pages() {
-        let d = Document::from_pdf_pages(&pdf_asset(), &SIZES[..2]).expect("document");
+        let d = Document::from_pdf_pages(&pdf_asset(), &SIZES[..2], None).expect("document");
         let backdrops = |x: &Document| {
             x.page_ids()
                 .iter()

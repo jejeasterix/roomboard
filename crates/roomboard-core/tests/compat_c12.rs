@@ -32,7 +32,7 @@ fn pdf_asset() -> AssetRef {
 
 /// Document de C12 : deux pages (portrait puis paysage), fonds `pdf-page`.
 fn c12_document() -> Document {
-    Document::from_pdf_pages(&pdf_asset(), &[(612.0, 792.0), (792.0, 612.0)]).expect("pdf")
+    Document::from_pdf_pages(&pdf_asset(), &[(612.0, 792.0), (792.0, 612.0)], None).expect("pdf")
 }
 
 fn fixture_bytes() -> Vec<u8> {
@@ -53,7 +53,11 @@ fn pdf_c12_fixture_opens_without_original_and_resaves_identically() {
     let kinds: Vec<Option<(String, Option<u32>)>> = d
         .page_ids()
         .iter()
-        .map(|id| d.page(id).and_then(|p| p.backdrop).map(|b| (b.kind, b.page)))
+        .map(|id| {
+            d.page(id)
+                .and_then(|p| p.backdrop)
+                .map(|b| (b.kind, b.page))
+        })
         .collect();
     assert_eq!(
         kinds,
@@ -64,9 +68,10 @@ fn pdf_c12_fixture_opens_without_original_and_resaves_identically() {
     );
     assert_eq!(d.cited_assets(), vec![pdf_asset()]);
     assert!(
-        d.page_ids()
-            .iter()
-            .all(|id| d.page(id).and_then(|p| p.backdrop).is_some_and(|b| b.original.is_none())),
+        d.page_ids().iter().all(|id| d
+            .page(id)
+            .and_then(|p| p.backdrop)
+            .is_some_and(|b| b.original.is_none())),
         "aucun fond d'avant C16 n'a d'original"
     );
     assert!(

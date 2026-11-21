@@ -2950,7 +2950,8 @@ pub(crate) mod tests {
             mime: "application/pdf".into(),
             size: 0.0,
         };
-        let d = Document::from_pdf_pages(&pdf, &[(612.0, 792.0), (792.0, 612.0)]).expect("pdf");
+        let d =
+            Document::from_pdf_pages(&pdf, &[(612.0, 792.0), (792.0, 612.0)], None).expect("pdf");
         let ybin = d.encode_v1();
         let file = save(&d, &meta).expect("save");
         for i in 0..30 {
