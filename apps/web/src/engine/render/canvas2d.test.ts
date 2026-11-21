@@ -1205,7 +1205,7 @@ describe("Canvas2DRenderer — fill (C8, Q15)", () => {
     expect(reads).toBe(1);
     expect(paths).toHaveLength(1);
     expect([paths[0]?.moves, paths[0]?.lines, paths[0]?.closes]).toEqual([2, 6, 2]);
-    expect(fill.mock.calls.filter((c) => c[1] === "evenodd")).toHaveLength(2);
+    expect(fill.mock.calls.filter((c) => (c as unknown[])[1] === "evenodd")).toHaveLength(2);
     expect(scene.log).toContain("fill #facc15");
   });
 
