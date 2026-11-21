@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateRawSync } from "node:zlib";
 
 export const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const DIST = join(ROOT, "apps", "web", "dist");
@@ -151,6 +151,42 @@ export async function dropFile(page, selector, name, bytes, type = "", at = [50,
       target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + at[0], clientY: r.y + at[1] }));
     }
   }, { selector, name, bytes: Array.from(bytes), type, at });
+}
+/** Dépôt simulé de plusieurs fichiers ensemble (C15, X13) : un seul DataTransfer, un seul `drop`. */
+export async function dropFiles(page, selector, files, at = [50, 50]) {
+  await page.evaluate(({ selector, files, at }) => {
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(new File([new Uint8Array(f.bytes)], f.name, { type: f.type ?? "" }));
+    const target = document.querySelector(selector);
+    const r = target.getBoundingClientRect();
+    for (const t of ["dragover", "drop"]) {
+      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + at[0], clientY: r.y + at[1] }));
+    }
+  }, { selector, files: files.map((f) => ({ name: f.name, type: f.type ?? "", bytes: Array.from(f.bytes) })), at });
+}
+/** Entrées d'un .roomboard (zip), recopié de `c14-media-navigateur.mjs` (les copies de C2 et C14 restent). */
+export function zipEntries(buf) {
+  let eocd = buf.length - 22;
+  while (eocd >= 0 && buf.readUInt32LE(eocd) !== 0x06054b50) eocd--;
+  if (eocd < 0) throw new Echec("fichier enregistré : ZIP sans répertoire central");
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  const out = new Map();
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Echec("fichier enregistré : répertoire central illisible");
+    const method = buf.readUInt16LE(p + 10);
+    const csize = buf.readUInt32LE(p + 20);
+    const nlen = buf.readUInt16LE(p + 28);
+    const xlen = buf.readUInt16LE(p + 30);
+    const clen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.toString("utf8", p + 46, p + 46 + nlen);
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + csize);
+    out.set(name, method === 0 ? Buffer.from(data) : inflateRawSync(data));
+    p += 46 + nlen + xlen + clen;
+  }
+  return out;
 }
 /** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
 export const TAB = '[role="tab"][data-tab]';
