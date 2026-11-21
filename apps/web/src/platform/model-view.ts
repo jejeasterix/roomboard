@@ -2,10 +2,9 @@
  * Rendu 3D vu de la page (C15, DAX3) : types du rendu partagé et son chargement à la demande. Le morceau `three`
  * (`model-view-three.ts`, T7) n'est jamais importé ici : l'amorce passe `() => import(…)` à `createModelViewLoader` (X20).
  */
+import type { Model3dFormat } from "../core/api";
 import type { ModelCamera } from "../engine/render/model-frames";
-
-/** Alias provisoire, identique à `Model3dFormat` d'`api.ts` ; T7 le remplace par l'import (PC1). */
-export type Model3dFormat = "glb" | "gltf" | "obj" | "stl" | "ply";
+export type { Model3dFormat };
 
 export interface ModelSource {
   readonly format: Model3dFormat;
