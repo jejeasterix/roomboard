@@ -5,7 +5,7 @@
  * de la fenêtre est celui de l'onglet actif. Le marquage `#stage[data-fichiers|data-modifie|data-fichier|data-tab]` est
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
  */
-import { PDF_MAX_PAGES, type CoreDocument, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
+import { PDF_MAX_PAGES, type CoreDocument, type AssetRef, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import type { ContainerCodec } from "../platform/container";
 import {
@@ -25,6 +25,7 @@ import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from ".
 import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
+import { NOT_OFFICE_PAGE_MESSAGE, officeMimeOf, officeStemOf, originalChangedMessage } from "../platform/office-import";
 import type { LinkedMedia } from "../platform/media-import";
 import type { Model3dDeps } from "../platform/model3d-handlers";
 import { isAbsoluteLink, relativeLink, resolveLink } from "../platform/media-link";
@@ -110,6 +111,15 @@ export interface WorkspaceDeps {
   thumbnail?: ThumbDeps;
   /** C4 (U25, D19) : `.rbpack` déposé ou passé au lancement, importé dans la bibliothèque ; transmis à l'importeur. */
   importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
+  /** C16 (O4, O35) : conversion d'un fichier Office de la coque en PDF (lu par morceaux, dossier libéré) ; absent (web) :
+   *  « exportez en PDF depuis Office ». Transmis à l'importeur. */
+  convertOffice?(path: string): Promise<Blob>;
+  /** C16 (O20) : envoie l'original à la coque, qui l'ouvre avec l'application du système. */
+  openOriginal?(file: { readonly name: string; readonly blob: Blob }): Promise<void>;
+  /** C16 (O22) : la coque accorde sa copie `id` et émet un dépôt ; la page ne nomme jamais un chemin. */
+  reimportOriginal?(id: string): Promise<void>;
+  /** C16 (O21) : « original modifié » émis par la coque ; rend le désabonnement. */
+  onOriginalChanged?(cb: (e: { readonly id: string; readonly name: string }) => void): () => void;
 }
 
 export interface Workspace {
@@ -136,8 +146,9 @@ export interface Workspace {
   exportSelection(): Promise<boolean>;
   /** C3 (Z12) : « Insérer des pages… » : boîte d'ouverture, pages après la page montrée. */
   insertPages(): Promise<boolean>;
-  /** C12 (PF2, PF7 à PF10, Q1) : PDF ouvert dans un nouvel onglet ; faux si refusé (avis déjà dit). */
-  openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
+  /** C12 (PF2, PF7 à PF10, Q1) : PDF ouvert dans un nouvel onglet ; faux si refusé (avis déjà dit).
+   *  C16 (O16) : `original`, fichier Office converti, gardé comme second asset. */
+  openPdf(file: { readonly name: string; readonly blob: Blob; readonly original?: Blob }): Promise<boolean>;
   /** C12 (PF19 à PF21) : « Exporter en PDF… » de l'onglet actif ; faux sans port, refusé, onglet fermé ou boîte annulée. */
   exportPdf(): Promise<boolean>;
   /** C4 (D13, D14) : ressource posée dans l'onglet actif ; `at` client, null = centre de la vue. */
@@ -156,6 +167,9 @@ export interface Workspace {
   key(e: FileKey): boolean;
   /** Cmd+Q (macOS) : question si un onglet est modifié, puis `quit`. */
   quitRequested(quit: () => Promise<void>): Promise<void>;
+  /** C16 (O19, O20) : « Modifier dans l'application d'origine » sur la page montrée ; faux sans port, sans original ou
+   *  refusé (avis dit). */
+  editOriginal(): Promise<boolean>;
   dispose(): void;
 }
 
@@ -348,6 +362,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const linkMedia = deps.linkMedia;
   const parseHtml = deps.parseHtml ?? ((s: string) => new DOMParser().parseFromString(s, "text/html"));
   const importPack = deps.importPack;
+  const convertOffice = deps.convertOffice;
   const importer = createImporter({
     openDocument: (f) => ws.openDocument(f),
     notify: say,
@@ -363,6 +378,13 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(linkMedia ? { linkMedia } : {}),
     ...(deps.model3d ? { model3d: deps.model3d } : {}),
     ...(importPack ? { importPack } : {}),
+    // C16 (O4, O5) : coque seulement ; le PDF converti s'ouvre par `openPdf`, l'original gardé.
+    ...(convertOffice && deps.pdf
+      ? {
+          convertOffice,
+          openOffice: (f: { readonly name: string; readonly original: Blob; readonly pdf: Blob }) => ws.openPdf({ name: f.name, blob: f.pdf, original: f.original }),
+        }
+      : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 
@@ -418,10 +440,19 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         for (let i = 0; i < Math.min(total, PDF_MAX_PAGES); i++) sizes.push(await opened.pageSize(i));
         const assets = makeAssets();
         const blob = typed(file.blob, PDF_MIME);
+        // C16 (O5, O16) : PDF converti nommé `<racine>.pdf`, original gardé (nom et type Office), onglet `<racine>.roomboard`.
+        const original = file.original;
+        const stem = original === undefined ? stemOf(name, PDF_EXTENSION) : officeStemOf(name);
         const id = await assets.put(blob);
-        const doc = core.fromPdfPages({ id, name, mime: PDF_MIME, size: blob.size }, sizes);
+        const pdfRef: AssetRef = { id, name: original === undefined ? name : `${stem}${PDF_EXTENSION}`, mime: PDF_MIME, size: blob.size };
+        let originalRef: AssetRef | undefined;
+        if (original !== undefined) {
+          const ob = typed(original, officeMimeOf(name));
+          originalRef = { id: await assets.put(ob), name, mime: ob.type, size: ob.size };
+        }
+        const doc = originalRef === undefined ? core.fromPdfPages(pdfRef, sizes) : core.fromPdfPages(pdfRef, sizes, originalRef);
         if (total > PDF_MAX_PAGES) await say(pdfFirstPagesMessage(name, total));
-        return (await addTab(doc, { name: `${stemOf(name, PDF_EXTENSION)}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
+        return (await addTab(doc, { name: `${stem}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
       } catch (e) {
         await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
         return false;
@@ -613,9 +644,33 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       if (anyDirty() && !(await ask(DISCARD_MESSAGE))) return;
       await quit();
     },
+    async editOriginal() {
+      const open = deps.openOriginal;
+      if (open === undefined) return false;
+      const tab = ws.active(); // onglet montré à l'appel (R3)
+      const id = tab.board.doc.page(tab.board.engine.state().page)?.backdrop?.original ?? null;
+      if (id === null) {
+        await say(NOT_OFFICE_PAGE_MESSAGE);
+        return false;
+      }
+      const blob = tab.assets.get(id);
+      const info = tab.board.doc.asset(id);
+      if (blob === undefined || info === null) {
+        await say(UNREAD_ASSETS_MESSAGE);
+        return false;
+      }
+      try {
+        await open({ name: info.name, blob });
+        return true;
+      } catch (e) {
+        await say(`Ouverture impossible (${info.name}) : ${messageOf(e)}`);
+        return false;
+      }
+    },
     dispose() {
       stopGuard();
       stopDrop();
+      stopOriginal();
       stopTabs();
       for (const t of tabs.list()) release(t.session);
     },
@@ -652,6 +707,17 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       console.warn(`RoomBoard : dépôt abandonné (${messageOf(e)})`);
     });
   });
+  // C16 (O22) : « original modifié » → question ; oui : la coque réimporte (dépôt émis, nouvel onglet) ; non : rien, la
+  // surveillance continue.
+  const reimport = deps.reimportOriginal;
+  const stopOriginal =
+    deps.onOriginalChanged?.((e) => {
+      void (async () => {
+        if (reimport !== undefined && (await ask(originalChangedMessage(e.name)))) await reimport(e.id);
+      })().catch((err: unknown) => {
+        console.warn(`RoomBoard : réimport abandonné (${messageOf(err)})`);
+      });
+    }) ?? (() => undefined);
   try {
     await deps.dropReady(); // sinon un fichier émis par la coque avant l'écoute se perd (écart T87)
   } catch (e) {
