@@ -84,3 +84,19 @@ Seulement si C1 est fusionné. Aucun build de plus que celui du § 2.
 | C1-6 | choisir « Par défaut » ; Profil → Modifier… : taille « Petits », Enregistrer ; fermer RoomBoard (Alt+F4), relancer ; puis Profil → Remettre à zéro ce profil | après la relance : « Par défaut » toujours actif, en petits boutons ; après la remise à zéro : boutons moyens, « Remettre à zéro ce profil » grisé |
 
 Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-windows-c1-export.png` (geste C1-2).
+
+## 8. Office (C16) — conversion, « Modifier dans l'application d'origine », réimport (R2, file d'attente du PC)
+
+Coque construite comme au § 2. Fichiers d'essai : `crates/roomboard-shell/tests/fixtures/cours.docx`, `notes.xlsx`,
+`diapos.pptx` (2 diapositives). Premier essai de compilation de `main.rs` et `office/com.rs` (HO2-11).
+
+| geste | action | attendu |
+|---|---|---|
+| C16-1 | LibreOffice installé : déposer `cours.docx`, `notes.xlsx`, `diapos.pptx` | trois onglets `cours.roomboard`, `notes.roomboard`, `diapos.roomboard` (2 pages) ; curseur d'attente pendant chaque conversion |
+| C16-2 | page 1 de `diapos.roomboard` → « Modifier dans l'application d'origine » | Impress ouvre la copie ; avec Office : PowerPoint en mode protégé (« Activer la modification », HO1-7) |
+| C16-3 | modifier, enregistrer, revenir à RoomBoard | « diapos.pptx a été modifié. Le réimporter dans un nouvel onglet ? » ; Oui : un onglet de plus, l'ancien intact ; second enregistrement : la question revient |
+| C16-4 | désinstaller LibreOffice (ou le retirer du PATH et de `%ProgramFiles%`), Office seul, relancer | mêmes conversions par Word, Excel, PowerPoint (COM), aucune fenêtre Office visible ; une instance de PowerPoint ouverte avant reste ouverte |
+| C16-5 | délai : `.pptx` protégé par mot de passe | après 120 s : « <nom> : conversion trop longue (plus de 120 s) » ; Gestionnaire des tâches : aucun `soffice.bin` ni `POWERPNT.EXE` lancé par RoomBoard restant |
+| C16-6 | ni LibreOffice ni Office, relancer | `cours.docx` : « cours.docx : installez LibreOffice ou Microsoft Office » ; `notes.xlsx` : un tableau et « notes.xlsx : importé en valeurs ; installez LibreOffice ou Microsoft Office pour ses pages » ; bouton « Modifier… » absent |
+
+Rapporter chaque geste : conforme / écart (une ligne). Capture : `coque-windows-c16-modifier.png` (geste C16-2).
