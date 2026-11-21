@@ -243,6 +243,16 @@ describe("IMPORT_TYPES : filtre « Importer » (Z10)", () => {
       "image/*": [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg", ".avif", ".heic", ".heif"],
       "video/*": [".mp4", ".m4v", ".mov", ".webm", ".ogv"],
       "audio/*": [".m4a", ".mp3", ".wav", ".ogg", ".oga"],
+      "application/octet-stream": [".glb", ".gltf", ".obj", ".mtl", ".stl", ".ply", ".bin"],
+      "application/zip": [".zip"],
     });
+  });
+
+  it("objets 3D : .glb … .bin en application/octet-stream, .zip en application/zip (C15, X32)", () => {
+    const accept = IMPORT_TYPES[0]!.accept;
+    expect([accept["application/octet-stream"], accept["application/zip"]]).toEqual([
+      [".glb", ".gltf", ".obj", ".mtl", ".stl", ".ply", ".bin"],
+      [".zip"],
+    ]);
   });
 });

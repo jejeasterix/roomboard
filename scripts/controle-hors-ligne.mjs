@@ -17,6 +17,7 @@ export const NON_FETCHED_HOSTS = new Map([
   ["foo.bar", "base d'URL fictive de pdf.js pour analyser une adresse relative (C12), jamais chargée"],
   ["github.com", "licence de core-js citée par pdf.js et nom de producteur de pdf-lib (C12), jamais chargés"],
   ["ns.adobe.com", "espaces de noms XFA et XMP comparés comme chaînes par pdf.js (C12), jamais chargés"],
+  ["i.test", "fin de l'expression /^https?:\\/\\//i.test de three (LoaderUtils.js), lue comme un hôte ; .test est réservé (RFC 2606), jamais chargé (C15)"],
   ["www.xfa.org", "espaces de noms XFA comparés comme chaînes par pdf.js (C12), jamais chargés"],
 ]);
 // Schéma explicite (insensible à la casse) ou `//hôte` sans schéma (précédé ni de « : », ni d'un caractère de mot, ni de « / »).
@@ -26,7 +27,7 @@ const FORBIDDEN_TOKENS = new Set(["*", "http:", "https:", "ws:", "wss:", "'unsaf
 const SCHEME_TOKENS = new Map([
   ["ipc:", new Set(["connect-src"])],
   ["data:", new Set(["img-src", "font-src", "media-src"])],
-  ["blob:", new Set(["img-src", "media-src"])],
+  ["blob:", new Set(["img-src", "media-src", "connect-src"])],
   ["asset:", new Set(["media-src"])],
 ]);
 const SCRIPT_TOKENS = new Set(["'self'", "'wasm-unsafe-eval'"]);

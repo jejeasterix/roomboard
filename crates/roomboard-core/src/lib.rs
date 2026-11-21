@@ -12,6 +12,7 @@ pub mod history;
 pub mod image;
 pub mod ink;
 pub mod media;
+pub mod model3d;
 pub mod query;
 pub mod rich_text;
 pub mod shape;

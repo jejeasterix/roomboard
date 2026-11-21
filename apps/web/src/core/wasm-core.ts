@@ -17,6 +17,8 @@ import type {
   GridView,
   ImageParams,
   Matrix,
+  Model3dFile,
+  Model3dFormat,
   PageView,
   PdfPageSize,
   StrokeBuilderApi,
@@ -25,7 +27,7 @@ import type {
   TextAttrs,
   TextSpan,
 } from "./api";
-import { MIXED_SOURCE_MESSAGE, UNKNOWN_BOX } from "./api";
+import { MIXED_SOURCE_MESSAGE, MODEL3D_FORMATS, UNKNOWN_BOX } from "./api";
 import { cleanPatch } from "./rich-text";
 import type * as Wasm from "../wasm/roomboard_wasm";
 import { isShapeKind } from "./shapes";
@@ -222,6 +224,39 @@ export function toElementView(v: unknown): ElementView | null {
         ...base,
         kind,
         media: { asset, mediaType, w, h, duration, poster: poster ?? null, trimStart, trimEnd: trimEnd ?? null, loop, volume },
+      };
+    }
+    case "model3d": {
+      const m = v["model3d"];
+      if (!isRecord(m)) throw new Error(ELEMENT);
+      const { asset, format, w, h, files, yaw, pitch, snapshot } = m;
+      if (
+        typeof asset !== "string" || typeof format !== "string" || !(MODEL3D_FORMATS as readonly string[]).includes(format) ||
+        !finitePositive(w) || !finitePositive(h) || typeof yaw !== "number" || !Number.isFinite(yaw) ||
+        typeof pitch !== "number" || !Number.isFinite(pitch) || !Array.isArray(files)
+      ) {
+        throw new Error(ELEMENT);
+      }
+      // Option::None → undefined côté serde-wasm-bindgen ; le contrat dit null.
+      if (snapshot !== undefined && snapshot !== null && typeof snapshot !== "string") throw new Error(ELEMENT);
+      return {
+        ...base,
+        kind,
+        model3d: {
+          asset,
+          format: format as Model3dFormat,
+          w,
+          h,
+          files: files.map((x: unknown): Model3dFile => {
+            if (!isRecord(x)) throw new Error(ELEMENT);
+            const { path, asset: a } = x;
+            if (typeof path !== "string" || typeof a !== "string") throw new Error(ELEMENT);
+            return { path, asset: a };
+          }),
+          yaw,
+          pitch,
+          snapshot: snapshot ?? null,
+        },
       };
     }
     case "table":
@@ -481,6 +516,25 @@ class WasmCoreDocument implements CoreDocument {
       }
       case "SetMedia":
         return toChange(this.d.set_media(cmd.id, cmd.trimStart, cmd.trimEnd ?? undefined, cmd.loop, cmd.volume));
+      case "AddModel3d": {
+        // Seules les références des assets traversent la liaison ; liés en listes parallèles ; instantané absent : nom et
+        // type vides, taille 0, ignorés.
+        const a = cmd.asset;
+        const q = cmd.snapshot;
+        const files = cmd.files;
+        return toChange(
+          this.d.add_model3d(
+            cmd.page, a.id, a.name, a.mime, a.size, cmd.format,
+            files.map((x) => x.path), files.map((x) => x.asset.id), files.map((x) => x.asset.name), files.map((x) => x.asset.mime),
+            new Float64Array(files.map((x) => x.asset.size)),
+            cmd.w, cmd.h, cmd.yaw, cmd.pitch, q?.id ?? undefined, q?.name ?? "", q?.mime ?? "", q?.size ?? 0, new Float64Array(cmd.matrix),
+          ),
+        );
+      }
+      case "SetModel3dView": {
+        const q = cmd.snapshot;
+        return toChange(this.d.set_model3d_view(cmd.id, cmd.yaw, cmd.pitch, q?.id ?? undefined, q?.name ?? "", q?.mime ?? "", q?.size ?? 0));
+      }
       case "SetBackdrop": {
         const b = cmd.backdrop;
         if (b === null) return toChange(this.d.clear_backdrop(cmd.page));

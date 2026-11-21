@@ -7,12 +7,16 @@
  * C10b (F28) : `sheet` (objet, `.xlsx`/`.xlsm` et en-tête ZIP) lit la première feuille dans un Worker jetable et pose un tableau.
  * C14 (M10 à M15) : `media` (objet, reconnu par ses octets, avant `image`) ; MKV et AVI refusés avant lecture ; dans la
  * coque, un média qui a un chemin et dépasse 50 Mo est lié (`link`), sans lecture ni plafond.
+ * C15 (DAX2) : appel de plusieurs fichiers, pré-passe dans `importFiles` (seule chaîne, U23) : chaque gestionnaire qui a
+ * `companions` reçoit les autres fichiers ; ceux qu'il réclame sortent de la boucle et lui arrivent dans `ctx.companions`.
+ * Les en-têtes et le contenu lus par la pré-passe sont repris par la boucle, jamais relus.
  */
 import { messageOf } from "./controller";
 import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
+import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type Model3dShared } from "./model3d-handlers";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 
@@ -59,6 +63,8 @@ export interface ImportDeps {
   linkMedia?(path: string): Promise<LinkedMedia>;
   /** URL `blob:` de la sonde (tests) ; défaut : `URL.createObjectURL` / `URL.revokeObjectURL`. */
   readonly mediaUrls?: MediaHandlerDeps["urls"];
+  /** C15 (X39) : rendu partagé et lecteur de ZIP ; absent : fichiers 3D et `.zip` refusés comme avant. */
+  readonly model3d?: Model3dDeps;
 }
 
 export interface Importer {
@@ -76,6 +82,8 @@ export interface ImportContext {
   readonly inserted: number;
   readonly target: ImageTarget | null;
   notify(message: string): Promise<void>;
+  /** C15 (DAX2) : fichiers du même appel réclamés par `companions` ; [] sinon (appel d'un seul fichier, lien). */
+  readonly companions: readonly DroppedFile[];
 }
 
 export type ImportOutcome = "opened" | "inserted" | "failed";
@@ -93,6 +101,9 @@ export interface ImportHandler {
     readonly aboveBytes: number;
     run(file: DroppedFile, path: string, ctx: Omit<ImportContext, "blob">): Promise<ImportOutcome>;
   };
+  /** C15 (DAX2) : fichiers de `siblings` que ce fichier cite ; ils sortent de la boucle et arrivent dans `ctx.companions`.
+   *  Appelé seulement pour un appel de plusieurs fichiers, après les plafonds, avec l'en-tête et le contenu déjà lus. */
+  readonly companions?: (file: DroppedFile, blob: Blob, head: Uint8Array, siblings: readonly DroppedFile[]) => Promise<readonly DroppedFile[]>;
   /** Dit lui-même ses messages d'échec. */
   run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
 }
@@ -128,7 +139,7 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
  *  nom ET cet en-tête, le nom seul les départage. */
 export const ZIP_MAGIC: readonly number[] = Object.freeze([0x50, 0x4b, 0x03, 0x04]);
 
-const hasZipMagic = (head: Uint8Array): boolean => head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b);
+export const hasZipMagic = (head: Uint8Array): boolean => head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b);
 
 export function isRbitemName(name: string): boolean {
   return hasExtension(name, RBITEM_EXTENSION);
@@ -214,26 +225,41 @@ export function pdfHandler(deps: { openPdf(file: { readonly name: string; readon
 
 const EMPTY = new Uint8Array(0);
 
+/** C14 (PC4, M14) : chemin du fichier quand `handler` le lie (coque, au-delà de `link.aboveBytes`) ; null : il est lu. */
+const linkPathOf = (handler: ImportHandler, f: DroppedFile): string | null =>
+  handler.link !== undefined && f.path !== undefined && f.path !== "" && f.size > handler.link.aboveBytes ? f.path : null;
+
 export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
   const openPdf = deps.openPdf?.bind(deps);
   const linkMedia = deps.linkMedia?.bind(deps);
+  const model3d = deps.model3d;
+  const shared3d: Model3dShared = { warnedNoWebgl: false }; // X26 : « 3D indisponible » une fois par importeur
   const media: MediaHandlerDeps = {
     probe: deps.probe ?? ((url) => probeMedia(url)),
     urls: deps.mediaUrls ?? { create: (b) => URL.createObjectURL(b), revoke: (u) => URL.revokeObjectURL(u) },
     ...(linkMedia ? { linkMedia } : {}),
   };
   // C14 (M11) : `media` avant `image` ; `sniffMedia` laisse à l'image tout en-tête que `sniffImage` revendique.
-  const registry: readonly ImportHandler[] = [
-    roomboardHandler(deps),
-    rbitemHandler(),
-    ...(openPdf ? [pdfHandler({ openPdf })] : []),
-    mediaHandler(media),
-    unsupportedMediaHandler("mkv"),
-    unsupportedMediaHandler("avi"),
-    imageHandler(deps.decode ? { decode: deps.decode } : {}),
-    ...(readSheet ? [sheetHandler({ readSheet })] : []),
-  ];
+  return importerOf(
+    [
+      roomboardHandler(deps),
+      rbitemHandler(),
+      ...(openPdf ? [pdfHandler({ openPdf })] : []),
+      mediaHandler(media),
+      unsupportedMediaHandler("mkv"),
+      unsupportedMediaHandler("avi"),
+      imageHandler(deps.decode ? { decode: deps.decode } : {}),
+      ...(model3d ? [model3dHandler(model3d, shared3d)] : []), // C15 (X12) : après `image`
+      ...(readSheet ? [sheetHandler({ readSheet })] : []),
+      ...(model3d ? [zip3dHandler(model3d, shared3d), companionHandler()] : []), // après `sheet` : `.xlsx` d'abord
+    ],
+    deps,
+  );
+}
+
+/** Importeur sur un registre donné (tests, `createImporter`). */
+export function importerOf(registry: readonly ImportHandler[], deps: ImportDeps): Importer {
   return {
     async importFiles(files, at = null) {
       const opened: string[] = [];
@@ -244,7 +270,69 @@ export function createImporter(deps: ImportDeps): Importer {
       const target = deps.target?.() ?? null; // onglet actif au début de l'appel (R3)
       const max = deps.maxBytes ?? null;
       let stopped = false; // onglets pleins : une seule boîte, les documents suivants ne sont pas tentés
+      // C15 (DAX2) : un en-tête ou un contenu lu par la pré-passe est repris par la boucle (la coque lit par morceaux,
+      // `grantedFile`) ; une lecture en échec n'est pas retentée, la boucle dit l'échec comme avant.
+      const heads = new Map<DroppedFile, Promise<Uint8Array>>();
+      const headOf = (f: DroppedFile): Promise<Uint8Array> => {
+        let read = heads.get(f);
+        if (read === undefined) {
+          read = (async () => (await f.head(HEAD_BYTES)).subarray(0, HEAD_BYTES))();
+          heads.set(f, read);
+        }
+        return read;
+      };
+      const blobs = new Map<DroppedFile, Promise<Blob>>();
+      // C15 (DAX2) : pré-passe des appels de plusieurs fichiers ; un fichier réclamé passe à son modèle, pas au registre.
+      const companionsOf = new Map<DroppedFile, readonly DroppedFile[]>();
+      const claimed = new Set<DroppedFile>();
+      // X17 : fichier réclamé au-delà du plafond de son réclamant (la coque n'a pas `maxBytes`) : jamais passé, dit trop gros.
+      const overLimit = new Map<DroppedFile, string>();
+      if (files.length > 1 && registry.some((h) => h.companions !== undefined)) {
+        const fits = (o: DroppedFile): boolean => max === null || o.size <= max;
+        for (const f of files) {
+          if (claimed.has(f) || !fits(f) || isRoomboardName(f.name)) continue;
+          let head: Uint8Array;
+          try {
+            head = await headOf(f);
+          } catch {
+            continue; // la boucle reprend l'échec et le dit
+          }
+          const handler = registry.find((h) => h.detect(head, f.name));
+          const claim = handler?.companions;
+          if (handler === undefined || claim === undefined) continue;
+          if (handler.limit !== undefined && f.size > handler.limit.maxBytes) continue;
+          if (linkPathOf(handler, f) !== null) continue; // C14 : la boucle le lie sans le lire ; rien de réclamé
+          const read = (async () => f.blob())();
+          blobs.set(f, read);
+          let blob: Blob;
+          try {
+            blob = await read;
+          } catch {
+            continue;
+          }
+          const siblings = files.filter((o) => o !== f && !claimed.has(o) && !companionsOf.has(o) && fits(o) && !isRoomboardName(o.name));
+          let companions: readonly DroppedFile[] = [];
+          try {
+            companions = (await claim(f, blob, head, siblings)).filter((c) => siblings.includes(c));
+          } catch {
+            companions = [];
+          }
+          for (const c of companions) claimed.add(c);
+          const cap = handler.limit;
+          if (cap !== undefined) for (const c of companions) if (c.size > cap.maxBytes) overLimit.set(c, cap.message);
+          companionsOf.set(f, companions.filter((c) => !overLimit.has(c)));
+        }
+      }
       for (const f of files) {
+        if (claimed.has(f)) {
+          // C15 : fichier lié, passé à son modèle ; au-delà du plafond, dit comme le plafond du gestionnaire plus bas (F22).
+          const over = overLimit.get(f);
+          if (over !== undefined) {
+            failed.push(f.name);
+            await deps.notify(`${f.name} : ${over}`);
+          }
+          continue;
+        }
         if (max !== null && f.size > max) {
           tooBig.push(f.name);
           continue;
@@ -262,7 +350,7 @@ export function createImporter(deps: ImportDeps): Importer {
         // OD56 (DAC5) : l'en-tête seul avant la détection ; un fichier non reconnu n'est jamais lu en entier.
         let head: Uint8Array;
         try {
-          head = roomboard ? EMPTY : (await f.head(HEAD_BYTES)).subarray(0, HEAD_BYTES);
+          head = roomboard ? EMPTY : await headOf(f);
         } catch (e) {
           await fail(e);
           continue;
@@ -279,9 +367,10 @@ export function createImporter(deps: ImportDeps): Importer {
         }
         let outcome: ImportOutcome;
         const link = handler.link;
-        if (link !== undefined && f.path !== undefined && f.path !== "" && f.size > link.aboveBytes) {
+        const path = linkPathOf(handler, f);
+        if (link !== undefined && path !== null) {
           // C14 (PC4, M14) : lié avant le plafond et sans `f.blob()` ; la coque lirait 2 Go en entier.
-          outcome = await link.run(f, f.path, { head, at, inserted: inserted.length, target, notify: deps.notify });
+          outcome = await link.run(f, path, { head, at, inserted: inserted.length, target, notify: deps.notify, companions: [] });
         } else {
           // F22 : plafond du gestionnaire avant toute lecture du fichier (un `.xlsx` de 2 Go n'est jamais lu).
           if (handler.limit !== undefined && f.size > handler.limit.maxBytes) {
@@ -291,12 +380,12 @@ export function createImporter(deps: ImportDeps): Importer {
           }
           let blob: Blob;
           try {
-            blob = await f.blob();
+            blob = await (blobs.get(f) ?? f.blob());
           } catch (e) {
             await fail(e);
             continue;
           }
-          outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify });
+          outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify, companions: companionsOf.get(f) ?? [] });
         }
         if (outcome === "opened") opened.push(f.name);
         else if (outcome === "inserted") inserted.push(f.name);

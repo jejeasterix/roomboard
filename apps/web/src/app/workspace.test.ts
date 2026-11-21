@@ -12,6 +12,8 @@ import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarg
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG } from "../platform/html-table";
 import { createImporter, LATER_FORMAT_MESSAGE } from "../platform/import";
 import type { LinkedMedia } from "../platform/media-import";
+import { cubeGlb } from "../platform/model3d-fixtures";
+import type { ModelView } from "../platform/model-view";
 import { PdfEncryptedError } from "../platform/pdf-render";
 import type { StartedDocument } from "../platform/mount";
 import type { BoardSession } from "./board-session";
@@ -228,6 +230,7 @@ interface SetupOptions {
   readonly rasterClose?: WorkspaceDeps["rasterClose"];
   readonly linkMedia?: WorkspaceDeps["linkMedia"];
   readonly relinkMedia?: WorkspaceDeps["relinkMedia"];
+  readonly model3d?: WorkspaceDeps["model3d"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -270,6 +273,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.rasterClose ? { rasterClose: o.rasterClose } : {}),
     ...(o.linkMedia ? { linkMedia: o.linkMedia } : {}),
     ...(o.relinkMedia ? { relinkMedia: o.relinkMedia } : {}),
+    ...(o.model3d ? { model3d: o.model3d } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -1323,5 +1327,41 @@ describe("espace de travail : médias (C14)", () => {
     await ws.copySelection(false);
     expect(shell.notify).toHaveBeenCalledWith("Copie impossible : vidéo liée : copie non prise en charge, déposez le fichier à nouveau");
     expect(ws.canPaste()).toBe(false);
+  });
+});
+
+describe("espace de travail : objets 3D (C15)", () => {
+  const glbFile = (): DroppedFile => plainFile("cube.glb", cubeGlb() as Uint8Array<ArrayBuffer>);
+  const view = (): ModelView => ({
+    available: () => true,
+    load: vi.fn(async () => ({ missing: [] })),
+    draw: () => null,
+    snapshot: vi.fn(async () => new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })),
+    release: vi.fn(),
+    onLost: () => () => undefined,
+  });
+
+  it("un .glb déposé atteint model3d.view de l'importeur", async () => {
+    const v = view();
+    const model3d = { view: vi.fn(async () => v), readZip: vi.fn(async () => []) };
+    const ws = await setupWorkspace({ model3d });
+    const tab = ws.active();
+    const applied: string[] = [];
+    const orig = tab.board.doc.apply.bind(tab.board.doc);
+    tab.board.doc.apply = ((c: Command) => {
+      applied.push(c.type);
+      return orig(c);
+    }) as typeof tab.board.doc.apply;
+    const r = await ws.importFiles([glbFile()], { x: 10, y: 10 });
+    expect(model3d.view).toHaveBeenCalled();
+    expect(r.inserted).toEqual(["cube.glb"]);
+    expect(applied).toContain("AddModel3d");
+  });
+
+  it("sans model3d : .glb refusé comme avant", async () => {
+    const ws = await setupWorkspace();
+    const r = await ws.importFiles([glbFile()], { x: 10, y: 10 });
+    expect(r.refused).toEqual(["cube.glb"]);
+    expect(r.inserted).toEqual([]);
   });
 });

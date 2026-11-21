@@ -45,7 +45,13 @@ function pdfjsAssets(): Plugin {
 }
 
 const chunkOf = (id: string): string | undefined =>
-  id.includes("/node_modules/pdfjs-dist/") ? "pdfjs" : /\/node_modules\/(?:pdf-lib|@pdf-lib\/[^/]+|pako)\//.test(id) ? "pdf-lib" : undefined;
+  id.includes("/node_modules/pdfjs-dist/")
+    ? "pdfjs"
+    : /\/node_modules\/(?:pdf-lib|@pdf-lib\/[^/]+|pako)\//.test(id)
+      ? "pdf-lib"
+      : id.includes("/node_modules/three/")
+        ? "three"
+        : undefined;
 
 export default defineConfig({
   base: "./",

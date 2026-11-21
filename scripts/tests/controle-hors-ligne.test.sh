@@ -137,6 +137,15 @@ refuse 22 "$tmp/propre" "$tmp/coque-sans/tauri.conf.json" "protocol-asset"
 # 24. `http://asset.localhost` (forme Windows et Android de `asset:`) admis dans media-src seulement, comme `asset:`
 conf asset-host-img "\"script-src\": \"$S $W\", \"img-src\": \"$S http://asset.localhost\""
 refuse 24 "$tmp/propre" "$tmp/asset-host-img.json" "asset.localhost"
+# 25. `blob:` admis dans connect-src (C15, X28) : three lit ses textures et ses tampons par fetch(blob:).
+conf blob-connect "\"script-src\": \"$S $W\", \"connect-src\": \"$S ipc: http://ipc.localhost blob:\""
+node "$script" "$tmp/propre" "$tmp/blob-connect.json" > "$tmp/out" 2>&1 || echec "cas 25 : blob: refusé dans connect-src ($(cat "$tmp/out"))"
+cas=$((cas + 1))
+# 26. faux hôte `i.test` de three (/^https?:\/\//i.test, LoaderUtils.js) : admis, jamais chargé (C15, X29).
+mkdir -p "$tmp/three-dist" && cp -r "$tmp/propre/." "$tmp/three-dist/"
+printf 'const r=/^https?:\\/\\//i.test(u);\n' > "$tmp/three-dist/three-essai.js"
+node "$script" "$tmp/three-dist" "$tmp/bonne.json" > "$tmp/out" 2>&1 || echec "cas 26 : i.test de three refusé ($(cat "$tmp/out"))"
+cas=$((cas + 1))
 node "$script" "$tmp/propre" "$racine/apps/desktop/src-tauri/tauri.conf.json" > "$tmp/out" 2>&1 || echec "cas 23 : vraie configuration refusée ($(cat "$tmp/out"))"
 cas=$((cas + 1))
 

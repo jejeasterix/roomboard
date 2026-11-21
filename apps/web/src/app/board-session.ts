@@ -6,7 +6,7 @@
  * une fois par l'amorce et vont à la session active : la session ne pose que ses écouteurs de scène. `dispose` rend le
  * contexte WebGL2 (`choice.release()`) : `engine.dispose()` n'arrête que la boucle.
  */
-import type { CoreDocument, MediaData, MediaElement } from "../core/api";
+import { SNAPSHOT_MIME, type CoreDocument, type MediaData, type MediaElement, type Model3dElement } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import type { Camera } from "../engine/camera";
@@ -22,6 +22,8 @@ import type { PdfEngine, PdfFile } from "../engine/render/pdf-port";
 import { createPdfTiles, type PdfTiles } from "../engine/render/pdf-tiles";
 import type { BackdropPainter } from "../engine/render/renderer";
 import { chooseRenderer, type RendererChoice } from "../engine/render/select";
+import { DEFAULT_CAMERA, type ModelCamera } from "../engine/render/model-frames";
+import type { ModelOrbit } from "../engine/tools/model-orbit";
 import { trailStyleFor } from "../engine/render/trail-style";
 import {
   echelonsTag,
@@ -34,6 +36,8 @@ import type { Measure } from "../engine/text-layout";
 import { decodeImage, kindOfMime } from "../platform/image-import";
 import { createPixelRunner, pixelNotice } from "../platform/pixel-runner";
 import type { WorkerLike } from "../platform/sheet-reader";
+import { createModelSessions, model3dTag, type ModelSessions, type ModelState } from "../platform/model-sessions";
+import { createModelViewLoader, drawSize, snapshotSize, type ModelViewLoader } from "../platform/model-view";
 import { browserPlayerPorts, createMediaPlayers, mediaTag, type MediaPlaySpec, type MediaPlayState, type MediaPlayers, type PlayerPorts } from "../platform/media-players";
 import { createEraserTool } from "../engine/tools/eraser";
 import { createFillTool } from "../engine/tools/fill";
@@ -70,6 +74,8 @@ export interface SessionShared {
   readonly mediaUrl?: (path: string) => string;
   /** C14 : fabrique de lecteurs (tests) ; défaut : un `<video>` dans le conteneur caché de la scène. */
   readonly createVideo?: PlayerPorts["createVideo"];
+  /** C15 (DAX3) : rendu 3D partagé, chargé au premier « Tourner » ; absent : objets 3D dessinés par leur instantané, « echec » au clic. */
+  readonly modelView?: ModelViewLoader;
 }
 
 /** Réglages de lecture d'un média du document. */
@@ -97,6 +103,15 @@ export interface BoardSession {
   selectedMedia(): MediaElement | null;
   /** État du lecteur de l'élément ; sans lecteur, `echec` si sa source est déjà connue illisible (R8, M31), sinon null. */
   mediaState(id: string): MediaPlayState | null;
+  /** Séance 3D de l'onglet (C15, DAX3) : au plus un objet chargé, rien avant « Tourner » ou « Vue initiale » (X20). */
+  readonly models: ModelSessions;
+  /** Le seul élément sélectionné, s'il est un objet 3D hors groupe ; sinon null. */
+  selectedModel3d(): Model3dElement | null;
+  modelState(id: string): ModelState;
+  /** « Tourner » : ouvre l'orbite de l'objet sélectionné (chargement du rendu au premier clic), ou la ferme. */
+  toggleOrbit(): Promise<void>;
+  /** « Vue initiale » : vue par défaut et son instantané, une étape ; aucune étape si l'objet y est déjà avec son image. */
+  resetModelView(): Promise<void>;
   effective(): EffectiveEchelons;
   /** Dépendances de `createAppBench` pour cette session (celles de l'ancien main.ts, à l'identique). */
   bench(): AppBenchDeps;
@@ -233,9 +248,43 @@ async function buildBoardSession(
   };
   const players = createMediaPlayers(playerPorts);
   undo.push(() => players.dispose());
+  // C15 (DAX3) : une séance 3D, pas un lecteur par élément ; rien n'est chargé avant « Tourner » ou « Vue initiale » (X20).
+  const views = shared.modelView ?? createModelViewLoader(async () => {
+    throw new Error("rendu 3D absent");
+  });
+  /** Boîte de l'objet à l'écran, hors zoom (`w·sx`, `h·sy`) : le rendu vivant et l'instantané ont le même aspect. */
+  const modelBox = (e: Model3dElement): readonly [number, number] => {
+    const [a, b, c, d] = e.transform;
+    return [e.model3d.w * Math.hypot(a, b), e.model3d.h * Math.hypot(c, d)];
+  };
+  const models = createModelSessions({
+    views,
+    source(id) {
+      const e = doc.element(id);
+      if (e === null || e.kind !== "model3d") return null;
+      const main = assets.get(e.model3d.asset);
+      if (main === undefined) return null;
+      const files = new Map<string, Blob>();
+      for (const f of e.model3d.files) {
+        const blob = assets.get(f.asset);
+        if (blob !== undefined) files.set(f.path, blob);
+      }
+      return { format: e.model3d.format, name: doc.asset(e.model3d.asset)?.name ?? "objet 3D", main, files };
+    },
+    px(id) {
+      const e = doc.element(id);
+      if (e === null || e.kind !== "model3d") return { w: 1, h: 1 };
+      const [w, h] = modelBox(e);
+      const zoom = engine.camera().zoom;
+      return drawSize(w * zoom, h * zoom, globalThis.devicePixelRatio ?? 1);
+    },
+    redraw: () => redraw(),
+  });
+  undo.push(() => models.dispose());
   const choice = chooseRenderer(sceneCanvas, liveCanvas, doc, parsed.settings.webgl === "on", {
     images,
     media: players,
+    models: models.frames,
     assetName: (id) => doc.asset(id)?.name ?? null,
     ...(pdf === undefined ? {} : { backdrop }),
     onBackdrop: (s) => {
@@ -432,6 +481,129 @@ async function buildBoardSession(
     redraw();
     markMedia();
   }));
+  // C15 (X23) : orbite de l'objet 3D sélectionné ; fermée par Échap, sélection, page, onglet, annulation, suppression.
+  let orbit: ModelOrbit | null = null;
+  /** Dernière vue écrite par `commitView` pour l'orbite ouverte : sa propre écriture ne la ferme pas (second glissé). */
+  let written: ModelCamera | null = null;
+  const selectedModel3d = (): Model3dElement | null => {
+    const sel = engine.state().selection;
+    const e = sel.length === 1 ? doc.element(sel[0]!) : null;
+    return e !== null && e.kind === "model3d" && (e.group === undefined || e.group.length === 0) ? e : null;
+  };
+  const markModel3d = (): void => {
+    const m = selectedModel3d();
+    const camera = m === null ? null : orbit?.id === m.id ? orbit.view() : { yaw: m.model3d.yaw, pitch: m.model3d.pitch };
+    stage.dataset["model3d"] = model3dTag(m?.model3d ?? null, m === null ? null : models.state(m.id), camera);
+  };
+  const closeOrbit = (): void => {
+    orbit?.close(); // `closed` libère la séance et remet l'oracle à jour
+  };
+  // C2 : les écritures de vue passent une à une, dans l'ordre des relâchés ; `own` relie la version d'avant chacune
+  // à celle d'après, pour reconnaître un document que seules ces écritures ont changé depuis un relâché.
+  let commits: Promise<void> = Promise.resolve();
+  let pending = 0;
+  const own = new Map<number, number>();
+  const untouched = (base: number): boolean => {
+    let v = base;
+    for (let i = 0, n = own.get(v); n !== undefined && i <= own.size; i++, n = own.get(v)) v = n;
+    return doc.version() === v;
+  };
+  /** Écrit la vue `v` relâchée à la version `base` ; abandonnée si le document a changé d'ailleurs (annulation…). */
+  const writeView = async (id: string, v: ModelCamera, base: number, shot: Promise<Blob | null>): Promise<void> => {
+    const png = await shot;
+    const now = doc.element(id);
+    if (png === null || now === null || now.kind !== "model3d") {
+      if (now === null && orbit?.id === id) closeOrbit();
+      return;
+    }
+    if (!untouched(base)) return;
+    const snapshot = { id: await assets.put(png), name: `${doc.asset(now.model3d.asset)?.name ?? "objet 3D"}.png`, mime: SNAPSHOT_MIME, size: png.size };
+    const last = doc.element(id);
+    if (last === null || last.kind !== "model3d") {
+      if (orbit?.id === id) closeOrbit();
+      return;
+    }
+    if (!untouched(base)) return;
+    if (orbit?.id === id) written = v;
+    const before = doc.version();
+    engine.run({ type: "SetModel3dView", id, yaw: v.yaw, pitch: v.pitch, snapshot });
+    if (doc.version() !== before) own.set(before, doc.version());
+  };
+  /**
+   * Instantané puis `SetModel3dView` (une étape) ; rien si l'élément a disparu, si l'image manque (contexte perdu) ou si
+   * le document a changé autrement que par ces écritures depuis le relâché. L'image est prise au relâché (l'orbite peut
+   * se fermer juste après, clic à côté) ; l'écriture attend la précédente.
+   */
+  const commitView = (id: string, v: ModelCamera): Promise<void> => {
+    const e = doc.element(id);
+    if (e === null || e.kind !== "model3d") return Promise.resolve();
+    const base = doc.version();
+    const [w, h] = modelBox(e);
+    const shot = models.snapshot(id, v, snapshotSize(w, h)).catch(() => null);
+    pending++;
+    const turn = commits.then(() => writeView(id, v, base, shot)).finally(() => {
+      if (--pending === 0) own.clear();
+    });
+    commits = turn.catch(() => {});
+    return turn;
+  };
+  const toggleOrbit = async (): Promise<void> => {
+    const m = selectedModel3d();
+    if (m === null) return;
+    if (orbit !== null && orbit.id === m.id) {
+      closeOrbit();
+      return;
+    }
+    closeOrbit(); // une orbite ouverte sur un autre objet : fermée avant d'en charger un autre
+    const ready = await models.open(m.id, { yaw: m.model3d.yaw, pitch: m.model3d.pitch });
+    const now = selectedModel3d();
+    if (!ready || now === null || now.id !== m.id || orbit !== null) {
+      if (ready && orbit?.id !== m.id && models.current() === m.id) models.close();
+      markModel3d();
+      return;
+    }
+    const start: ModelCamera = { yaw: now.model3d.yaw, pitch: now.model3d.pitch };
+    models.look(m.id, start);
+    written = null;
+    orbit = engine.orbitModel(m.id, {
+      view: start,
+      onView: (v) => {
+        models.look(m.id, v);
+        markModel3d();
+      },
+      onCommit: (v) => void commitView(m.id, v),
+      closed: () => {
+        orbit = null;
+        written = null;
+        if (models.current() === m.id) models.close(); // jamais le modèle d'une séance plus récente
+        markModel3d();
+      },
+    });
+    if (orbit === null && models.current() === m.id) models.close();
+    markModel3d();
+  };
+  const resetModelView = async (): Promise<void> => {
+    const m = selectedModel3d();
+    if (m === null) return;
+    if (orbit !== null && orbit.id === m.id) {
+      orbit.reset();
+      return;
+    }
+    const d = m.model3d;
+    if (d.yaw === DEFAULT_CAMERA.yaw && d.pitch === DEFAULT_CAMERA.pitch && d.snapshot !== null) return;
+    if (!(await models.open(m.id, DEFAULT_CAMERA))) {
+      markModel3d();
+      return;
+    }
+    await commitView(m.id, DEFAULT_CAMERA);
+    if (orbit?.id !== m.id && models.current() === m.id) models.close();
+  };
+  // Contexte perdu pendant l'orbite (X26) : la séance tombe, l'orbite aussi (sinon elle capterait les gestes).
+  const offModels = models.onChange(() => {
+    if (orbit !== null && models.current() !== orbit.id) closeOrbit();
+    markModel3d();
+  });
+  undo.push(offModels);
   let markedPage = engine.state().page;
   let markedVersion = engine.state().version;
   const mark = (s: EngineState): void => {
@@ -445,7 +617,16 @@ async function buildBoardSession(
         const e = doc.element(id);
         return e !== null && e.kind === "media" ? specOf(e.media) : null;
       });
+      // Élément disparu ou vue changée d'ailleurs (annulation, rétablissement) : orbite fermée ; sa propre écriture non.
+      if (orbit !== null) {
+        const e = doc.element(orbit.id);
+        const at = (c: ModelCamera | null): boolean =>
+          c !== null && e !== null && e.kind === "model3d" && e.model3d.yaw === c.yaw && e.model3d.pitch === c.pitch;
+        if (!at(orbit.view()) && !at(written)) closeOrbit();
+      }
     }
+    if (orbit !== null && selectedModel3d()?.id !== orbit.id) closeOrbit();
+    markModel3d();
     probeSelected();
     markMedia();
     stage.dataset["elements"] = String(s.elementCount);
@@ -502,6 +683,11 @@ async function buildBoardSession(
     media: players,
     selectedMedia,
     mediaState,
+    models,
+    selectedModel3d,
+    modelState: (id) => models.state(id),
+    toggleOrbit,
+    resetModelView,
     effective,
     bench: () => ({
       sampler,
@@ -535,6 +721,7 @@ async function buildBoardSession(
     },
     deactivate() {
       active = false;
+      closeOrbit();
       players.pauseAll();
       stage.hidden = true;
       picker.close();
@@ -550,6 +737,8 @@ async function buildBoardSession(
       offSettings();
       offState();
       offCamera();
+      closeOrbit();
+      offModels();
       listening.abort();
       trail.dispose();
       middlePan.dispose();
@@ -559,6 +748,7 @@ async function buildBoardSession(
       fillQueue.dispose();
       runner?.dispose();
       players.dispose();
+      models.dispose();
       dropProbe();
       images.dispose();
       freeTiles();

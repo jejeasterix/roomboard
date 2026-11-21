@@ -26,6 +26,7 @@ import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
 import type { LinkedMedia } from "../platform/media-import";
+import type { Model3dDeps } from "../platform/model3d-handlers";
 import { isAbsoluteLink, relativeLink, resolveLink } from "../platform/media-link";
 import type { StartedDocument } from "../platform/mount";
 import { insertTableGrid } from "../platform/table-insert";
@@ -58,6 +59,8 @@ export interface TabSession {
 }
 
 export interface WorkspaceDeps {
+  /** C15 (X39) : rendu 3D partagé et lecteur de ZIP pour l'import ; absent : fichiers 3D refusés comme avant. */
+  readonly model3d?: Model3dDeps;
   readonly core: CoreFactory;
   readonly host: FileHost;
   /** Pour `data-fichiers`. */
@@ -342,6 +345,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(readSheet ? { readSheet } : {}),
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
     ...(linkMedia ? { linkMedia } : {}),
+    ...(deps.model3d ? { model3d: deps.model3d } : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
 

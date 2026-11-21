@@ -23,7 +23,7 @@ export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
 export type EraseMode = "partial" | "object";
 export type ShapeKind = "rect" | "ellipse" | "line" | "arrow";
-export type ElementKind = "stroke" | "shape" | "text" | "image" | "media" | "table" | "unknown";
+export type ElementKind = "stroke" | "shape" | "text" | "image" | "media" | "model3d" | "table" | "unknown";
 export interface AssetRef { readonly id: string; readonly name: string; readonly mime: string; readonly size: number }
 /** Métadonnée d'un asset cité (K3) : même forme que la référence ; défauts du cœur pour une entrée absente (K4). */
 export type AssetInfo = AssetRef;
@@ -97,6 +97,24 @@ export type Command =
     }
   /** C14 (M6) : état voulu des réglages ; neutres : début 0, fin null, loop false, volume 1 ; même état : aucune étape. */
   | { readonly type: "SetMedia"; readonly id: string; readonly trimStart: number; readonly trimEnd: number | null; readonly loop: boolean; readonly volume: number }
+  /** C15 (X7) : objet 3D, une étape ; refus sans écriture dans l'ordre BadAsset (principal, liés, instantané), BadModel3d
+   *  (format, boîte finie > 0 en f32, yaw dans ]−π, π], |pitch| ≤ 85°, 256 liés au plus, chemins valides et uniques),
+   *  BadMatrix, page inconnue. Métadonnées du principal, des liés et de l'instantané écrites si absentes. */
+  | {
+      readonly type: "AddModel3d";
+      readonly page: string;
+      readonly asset: AssetRef;
+      readonly format: Model3dFormat;
+      readonly files: readonly { readonly path: string; readonly asset: AssetRef }[];
+      readonly w: number;
+      readonly h: number;
+      readonly yaw: number;
+      readonly pitch: number;
+      readonly snapshot: AssetRef | null;
+      readonly matrix: Matrix;
+    }
+  /** C15 (X7) : état voulu complet de la vue (caméra et instantané, null le retire) ; même état : aucune étape. */
+  | { readonly type: "SetModel3dView"; readonly id: string; readonly yaw: number; readonly pitch: number; readonly snapshot: AssetRef | null }
   /** backdrop null : retire le fond ; même valeur : aucune étape (D38). */
   | { readonly type: "SetBackdrop"; readonly page: string; readonly backdrop: BackdropInput | null }
   /** C7 : start, len en unités UTF-16 du contenu ; attrs = patch (absent ou undefined : inchangé ; false, null : retiré). */
@@ -206,6 +224,21 @@ export interface MediaData {
   readonly loop: boolean;
   readonly volume: number;
 }
+/** C15 : formats d'objet 3D acceptés. */
+export type Model3dFormat = "glb" | "gltf" | "obj" | "stl" | "ply";
+/** C15 (X3) : fichier lié d'un objet 3D, chemin normalisé tel qu'écrit dans le modèle et empreinte de son asset. */
+export interface Model3dFile { readonly path: string; readonly asset: string }
+/** Objet 3D (C15, X2) : boîte locale (0, 0)-(w, h) ; caméra (yaw, pitch en radians) et instantané aux défauts s'ils manquent. */
+export interface Model3dData {
+  readonly asset: string;
+  readonly format: Model3dFormat;
+  readonly w: number;
+  readonly h: number;
+  readonly files: readonly Model3dFile[];
+  readonly yaw: number;
+  readonly pitch: number;
+  readonly snapshot: string | null;
+}
 /** C14 : asset lié à un fichier local (chemin) ; `relinkAssets` lit les mêmes paires. */
 export interface LinkedAsset { readonly id: string; readonly path: string }
 export interface UnknownData { readonly sourceKind: string; readonly w: number; readonly h: number }
@@ -251,11 +284,13 @@ export interface TextElement extends ElementBase { readonly kind: "text"; readon
 export interface ImageElement extends ElementBase { readonly kind: "image"; readonly image: ImageData }
 /** Média (C14) : boîte locale (0, 0)-(w, h) ; mal formé : élément unknown, sourceKind "media". */
 export interface MediaElement extends ElementBase { readonly kind: "media"; readonly media: MediaData }
+/** Objet 3D (C15) : boîte locale (0, 0)-(w, h) ; mal formé : élément unknown, sourceKind "model3d". */
+export interface Model3dElement extends ElementBase { readonly kind: "model3d"; readonly model3d: Model3dData }
 /** Élément d'un kind inconnu (U3) : gardé, dessiné comme un cadre, boîte (0, 0)-(w, h). */
 export interface UnknownElement extends ElementBase { readonly kind: "unknown"; readonly unknown: UnknownData }
 /** Tableau (C10a) : coin en (0, 0) local, placé par transform. */
 export interface TableElement extends ElementBase { readonly kind: "table"; readonly table: TableData }
-export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | MediaElement | TableElement | UnknownElement;
+export type ElementView = StrokeElement | ShapeElement | TextElement | ImageElement | MediaElement | Model3dElement | TableElement | UnknownElement;
 
 /** Fond de page (U6, K6) : rect calculé par le cœur, calé sur la largeur de la page ; null si w ou h illisibles. */
 export interface BackdropView {
@@ -359,6 +394,23 @@ export const BAD_MEDIA_MESSAGE =
 export const MAX_LINK_CHARS = 4096;
 /** Genre de l'élément média (`MEDIA_KIND` du cœur, C14). */
 export const MEDIA_KIND = "media";
+/** Genre de l'élément objet 3D (`MODEL3D_KIND` du cœur, C15). */
+export const MODEL3D_KIND = "model3d";
+export const MODEL3D_FORMATS: readonly Model3dFormat[] = ["glb", "gltf", "obj", "stl", "ply"];
+/** Caméra par défaut d'un objet 3D (`DEFAULT_YAW`, `DEFAULT_PITCH` du cœur) : 30° et 20°, en radians. */
+export const DEFAULT_MODEL3D_YAW = Math.PI / 6;
+export const DEFAULT_MODEL3D_PITCH = Math.PI / 9;
+/** |pitch| ≤ 85° (`PITCH_LIMIT` du cœur). */
+export const MODEL3D_PITCH_LIMIT = (85 * Math.PI) / 180;
+/** Fichiers liés d'un objet 3D au plus (`MAX_FILES` du cœur). */
+export const MAX_MODEL3D_FILES = 256;
+/** Longueur maximale du chemin d'un fichier lié, en points de code (`MAX_PATH_CHARS` du cœur). */
+export const MAX_MODEL3D_PATH = 1024;
+/** Type de l'instantané d'un objet 3D. */
+export const SNAPSHOT_MIME = "image/png";
+/** Message de BadModel3d du cœur (C15), repris à l'identique par la fausse liaison. */
+export const BAD_MODEL3D_MESSAGE =
+  "objet 3D invalide (format glb, gltf, obj, stl ou ply, boîte finie > 0, pitch de −85° à 85°, yaw dans ]−180°, 180°], 256 fichiers liés au plus, chemins de 1 à 1 024 caractères normalisés et uniques attendus)";
 export const NO_CHANGE: Change = { pages: [], ids: [], removed: [], full: false, version: 0 };
 export const DEFAULT_ASSET_MIME = "application/octet-stream";
 export const UNKNOWN_BOX = 100;

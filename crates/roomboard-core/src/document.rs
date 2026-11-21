@@ -403,6 +403,22 @@ impl Document {
                     }
                 }
             }),
+            Some(crate::model3d::MODEL3D_KIND) => {
+                Some(match crate::model3d::read_model3d(&txn, e) {
+                    Some((transform, model3d)) => ElementView {
+                        model3d: Some(model3d),
+                        ..ElementView::bare(id, "model3d", transform)
+                    },
+                    // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).
+                    None => {
+                        let (transform, unknown) = unknown_view(&txn, e)?;
+                        ElementView {
+                            unknown: Some(unknown),
+                            ..ElementView::bare(id, "unknown", transform)
+                        }
+                    }
+                })
+            }
             _ => {
                 let (transform, unknown) = read_unknown(&txn, e)?;
                 Some(ElementView {
@@ -1358,6 +1374,23 @@ mod tests {
                     h: 180.0,
                     duration: 2.5,
                     poster: None,
+                    matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                },
+                "model3d" => Command::AddModel3d {
+                    page: p.clone(),
+                    asset: AssetRef {
+                        id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".into(),
+                        name: "a.glb".into(),
+                        mime: "model/gltf-binary".into(),
+                        size: 3.0,
+                    },
+                    format: crate::model3d::Model3dFormat::Glb,
+                    files: vec![],
+                    w: 640.0,
+                    h: 480.0,
+                    yaw: crate::model3d::DEFAULT_YAW,
+                    pitch: crate::model3d::DEFAULT_PITCH,
+                    snapshot: None,
                     matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
                 },
                 other => panic!("kind sans fabrique : {other} (ajouter sa commande ici, son bras dans element() et element_geom)"),

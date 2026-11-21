@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, unknownKindMessage } from "./api";
+import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
 import { Canvas2DRenderer } from "../engine/render/canvas2d";
 import { asCtx, FakeCtx } from "../engine/render/fake-ctx";
@@ -3136,6 +3137,255 @@ describe("toElementView — image (C5)", () => {
     expect([Array.from(crop), fx, fy, q, b, c, color, Array.from(t)]).toEqual([[10, 20, 300, 200], true, false, 1, 30, -20, "#ffffff", [10, 0, 1]]);
     const [crop0, , , , , , color0, t0] = imageParamsArgs({});
     expect([crop0.length, color0, t0.length]).toEqual([0, undefined, 0]);
+  });
+});
+
+// C15 (élément model3d) : contrat commun aux deux fabriques ; l'objet 3D mal formé (cadre inconnu) n'est fabricable que
+// par la fausse liaison (octets JSON), le vrai module le couvre côté Rust (`model3d.rs`, `tests/model3d.rs`).
+const GLB = { id: ABC, name: "chaise.glb", mime: "model/gltf-binary", size: 3000 } as const;
+const SNAP = { id: EMPTY_HASH, name: "vue.png", mime: "image/png", size: 0 } as const;
+const SNAP2 = { id: "e".repeat(64), name: "vue-2.png", mime: "image/png", size: 210 } as const;
+const TEX = { id: "c".repeat(64), name: "bois.png", mime: "image/png", size: 50 } as const;
+const BIN = { id: "d".repeat(64), name: "chaise.bin", mime: "application/octet-stream", size: 80 } as const;
+const C15_FILES = [
+  { path: "tex/bois.png", asset: TEX },
+  { path: "chaise.bin", asset: BIN },
+] as const;
+const C15_MATRIX: Matrix = [1, 0, 0, 1, 100, 50];
+const C15_BOX = { x0: 100, y0: 50, x1: 740, y1: 530 };
+type AddModel3dCmd = Extract<Command, { type: "AddModel3d" }>;
+const c15Add = (d: CoreDocument, page: string, over: Partial<Omit<AddModel3dCmd, "type">> = {}): string => {
+  const cmd: AddModel3dCmd = {
+    type: "AddModel3d", page, asset: GLB, format: "glb", files: C15_FILES, w: 640, h: 480,
+    yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH, snapshot: SNAP, matrix: C15_MATRIX, ...over,
+  };
+  return d.apply(cmd).ids[0] ?? "";
+};
+const c15View = (d: CoreDocument, id: string, yaw: number, pitch: number, snapshot: AssetRef | null) =>
+  d.apply({ type: "SetModel3dView", id, yaw, pitch, snapshot });
+const c15Model = (d: CoreDocument, id: string) => {
+  const v = d.element(id);
+  if (v === null || v.kind !== "model3d") throw new Error(`pas un objet 3D : ${JSON.stringify(v)}`);
+  return v.model3d;
+};
+const c15Camera = (d: CoreDocument, id: string) => {
+  const m = c15Model(d, id);
+  return [m.yaw, m.pitch, m.snapshot];
+};
+
+describe.each(factories)("contrat C15 : $name", ({ f }) => {
+  it("AddModel3d : une étape, vue aux défauts, principal, liés et instantané cités ; annuler retire tout (S1, X7)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const c = d.apply({
+      type: "AddModel3d", page: p, asset: GLB, format: "glb", files: C15_FILES, w: 640, h: 480,
+      yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH, snapshot: SNAP, matrix: C15_MATRIX,
+    });
+    expect(c.pages).toEqual([p]);
+    expect(c.ids).toHaveLength(1);
+    const a = c.ids[0] ?? "";
+    expect(d.element(a)).toEqual({
+      id: a,
+      kind: "model3d",
+      transform: [1, 0, 0, 1, 100, 50],
+      model3d: {
+        asset: ABC, format: "glb", w: 640, h: 480,
+        files: [{ path: "tex/bois.png", asset: TEX.id }, { path: "chaise.bin", asset: BIN.id }],
+        yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH, snapshot: EMPTY_HASH,
+      },
+    });
+    expect(d.bounds([a])).toEqual(C15_BOX);
+    expect(d.hitTest(p, 420, 290, 0)).toBe(a);
+    expect(d.hitTest(p, 800, 600, 0)).toBeNull();
+    expect(d.citedAssets()).toEqual([GLB, TEX, BIN, SNAP]);
+    expect(d.canUndo()).toBe(true);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([]);
+    expect(d.citedAssets()).toEqual([]);
+    expect(d.canUndo()).toBe(false);
+    // Sans liés ni instantané : `files` vide, `snapshot` null.
+    const b = c15Add(d, p, { files: [], snapshot: null, format: "stl" });
+    expect(c15Model(d, b)).toMatchObject({ format: "stl", files: [], snapshot: null });
+    expect(d.citedAssets()).toEqual([GLB]);
+  });
+
+  it("AddModel3d : refus sans étape (X8)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const path = (s: string) => ({ files: [{ path: s, asset: TEX }, { path: "chaise.bin", asset: BIN }] });
+    const many = Array.from({ length: MAX_MODEL3D_FILES + 1 }, (_, i) => ({ path: `f${i}.bin`, asset: BIN }));
+    const cases: [string, Partial<Omit<AddModel3dCmd, "type">>, string][] = [
+      ["asset invalide", { asset: { ...GLB, id: "ABC" } }, BAD_ASSET],
+      ["lié invalide", { files: [{ path: "tex/bois.png", asset: TEX }, { path: "chaise.bin", asset: { ...BIN, mime: "" } }] }, BAD_ASSET],
+      ["instantané invalide", { snapshot: { ...SNAP, mime: "" } }, BAD_ASSET],
+      ["largeur nulle", { w: 0 }, BAD_MODEL3D_MESSAGE],
+      ["hauteur hors f32", { h: 1e39 }, BAD_MODEL3D_MESSAGE],
+      ["yaw NaN", { yaw: Number.NaN }, BAD_MODEL3D_MESSAGE],
+      ["yaw = −π", { yaw: -Math.PI }, BAD_MODEL3D_MESSAGE],
+      ["pitch 1,5", { pitch: 1.5 }, BAD_MODEL3D_MESSAGE],
+      ["chemin vide", path(""), BAD_MODEL3D_MESSAGE],
+      ["chemin ../", path("../a.png"), BAD_MODEL3D_MESSAGE],
+      ["chemin à barre inverse", path("a\\b.png"), BAD_MODEL3D_MESSAGE],
+      ["chemin à lecteur", path("c:/a.png"), BAD_MODEL3D_MESSAGE],
+      ["chemin en double", path("chaise.bin"), BAD_MODEL3D_MESSAGE],
+      ["257 fichiers liés", { files: many }, BAD_MODEL3D_MESSAGE],
+      ["matrice nulle", { matrix: [0, 0, 0, 0, 0, 0] }, BAD_MATRIX_C14],
+      ["page inconnue", { page: "nope" }, "page inconnue : nope"],
+      ["chemin de 1 025 caractères", path("a".repeat(MAX_MODEL3D_PATH + 1)), BAD_MODEL3D_MESSAGE],
+      ["segment vide", path("tex//a.png"), BAD_MODEL3D_MESSAGE],
+      ["chemin absolu", path("/a.png"), BAD_MODEL3D_MESSAGE],
+      ["segment .", path("./a.png"), BAD_MODEL3D_MESSAGE],
+      // Ordre des refus : l'asset avant l'objet, l'objet avant la matrice, la matrice avant la page.
+      ["ordre asset", { asset: { ...GLB, id: "ABC" }, w: 0, matrix: [0, 0, 0, 0, 0, 0], page: "nope" }, BAD_ASSET],
+      ["ordre objet", { w: 0, matrix: [0, 0, 0, 0, 0, 0], page: "nope" }, BAD_MODEL3D_MESSAGE],
+      ["ordre matrice", { matrix: [0, 0, 0, 0, 0, 0], page: "nope" }, BAD_MATRIX_C14],
+    ];
+    for (const [name, over, message] of cases) {
+      unchanged(d, () => expect(messageOf(() => c15Add(d, p, over)), name).toBe(message));
+    }
+    expect(d.citedAssets()).toEqual([]);
+    // Bornes acceptées : 1 024 points de code (hors BMP compris), 256 fichiers, yaw = π, pitch = ±85°.
+    expect(() => c15Add(d, p, path("\u{1F600}".repeat(MAX_MODEL3D_PATH)))).not.toThrow();
+    expect(() => c15Add(d, p, { files: many.slice(0, MAX_MODEL3D_FILES) })).not.toThrow();
+    expect(() => c15Add(d, p, { yaw: Math.PI, pitch: -MODEL3D_PITCH_LIMIT })).not.toThrow();
+  });
+
+  it("SetModel3dView : une étape par vue validée, défauts retirés, même état sans étape ; annuler rend vue et instantané (S2)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c15Add(d, p, { snapshot: null });
+    const initial = d.element(a);
+    expect(c15Camera(d, a)).toEqual([DEFAULT_MODEL3D_YAW, DEFAULT_MODEL3D_PITCH, null]);
+    unchanged(d, () => c15View(d, a, DEFAULT_MODEL3D_YAW, DEFAULT_MODEL3D_PITCH, null));
+    const steps: [number, number, AssetRef | null][] = [
+      [1, 0.5, SNAP],
+      [-1, 0.2, SNAP2],
+      [DEFAULT_MODEL3D_YAW, DEFAULT_MODEL3D_PITCH, null],
+    ];
+    const seen = [];
+    for (const [yaw, pitch, snap] of steps) {
+      const c = c15View(d, a, yaw, pitch, snap);
+      expect(c.pages).toEqual([p]);
+      expect(c.ids).toEqual([a]);
+      expect(c15Camera(d, a)).toEqual([yaw, pitch, snap?.id ?? null]);
+      seen.push(d.element(a));
+      unchanged(d, () => c15View(d, a, yaw, pitch, snap));
+    }
+    expect(d.citedAssets().map((x) => x.id)).not.toContain(SNAP.id);
+    expect(d.element(a)).toEqual(initial);
+    d.undo();
+    expect(d.element(a)).toEqual(seen[1]);
+    expect(d.citedAssets()).toContainEqual(SNAP2);
+    d.undo();
+    expect(d.element(a)).toEqual(seen[0]);
+    expect(d.citedAssets()).toContainEqual(SNAP);
+    d.undo();
+    expect(d.element(a)).toEqual(initial);
+    expect(d.canUndo()).toBe(true);
+  });
+
+  it("SetModel3dView : id inconnu, image, vue hors domaine (X8)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c15Add(d, p, { snapshot: null });
+    const i = d.apply({ type: "AddImage", page: p, asset: png, w: 10, h: 10, matrix: I }).ids[0] ?? "";
+    const bad = { ...SNAP, id: "ABC" };
+    unchanged(d, () => {
+      expect(messageOf(() => c15View(d, "nope", 1, 0.5, null))).toBe("élément inconnu : nope");
+      expect(messageOf(() => c15View(d, i, 1, 0.5, bad)), "une image avant l'asset").toBe(BAD_MODEL3D_MESSAGE);
+      expect(messageOf(() => c15View(d, a, 1, 2, bad)), "l'asset avant la vue").toBe(BAD_ASSET);
+      for (const [yaw, pitch] of [[1, 2], [-Math.PI, 0], [Number.NaN, 0], [0, Number.POSITIVE_INFINITY], [4, 0]] as const) {
+        expect(messageOf(() => c15View(d, a, yaw, pitch, null)), `${yaw} ${pitch}`).toBe(BAD_MODEL3D_MESSAGE);
+      }
+    });
+    c15View(d, a, Math.PI, MODEL3D_PITCH_LIMIT, null);
+    expect(c15Camera(d, a)).toEqual([Math.PI, MODEL3D_PITCH_LIMIT, null]);
+  });
+
+  it("enregistré puis relu : vue, fichiers liés et instantané gardés (S4)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c15Add(d, p, { snapshot: null, format: "gltf" });
+    c15View(d, a, 1, -0.5, SNAP);
+    const r = f.load(d.save(now, "1.0.0"));
+    expect(r.elementIds(first(r))).toEqual([a]);
+    expect(r.element(a)).toEqual(d.element(a));
+    expect(c15Model(r, a)).toMatchObject({ format: "gltf", yaw: 1, pitch: -0.5, snapshot: EMPTY_HASH });
+    expect(c15Model(r, a).files.map((x) => x.path)).toEqual(["tex/bois.png", "chaise.bin"]);
+    expect(r.citedAssets()).toEqual([GLB, TEX, BIN, SNAP]);
+    expect(r.citedAssets()).toEqual(d.citedAssets());
+  });
+
+  it("copie (extract) : objet 3D à fichiers liés garde ses assets (X31)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = c15Add(d, p);
+    const other = c15Add(d, p, { asset: { ...GLB, id: "1".repeat(64) }, files: [], snapshot: null });
+    const copy = d.extract(p, [a]);
+    const ids = copy.elementIds(first(copy));
+    expect(ids).toHaveLength(1);
+    expect(c15Model(copy, ids[0] ?? "")).toEqual(c15Model(d, a));
+    expect(copy.citedAssets()).toEqual([GLB, TEX, BIN, SNAP]);
+    expect(copy.citedAssets().map((x) => x.id)).not.toContain(c15Model(d, other).asset);
+  });
+});
+
+// Un objet 3D mal formé suit le repli du média (cadre inconnu, brut gardé), pas celui de l'image (`malformed`,
+// `element()` null). Seule la fausse liaison peut en fabriquer un à partir d'octets (JSON) ; sous le patron de l'image,
+// `element()` rendrait null, `bounds` et `hitTest` null : ce test serait rouge.
+describe("contrat C15 : model3d mal formé = cadre inconnu (fausse liaison)", () => {
+  const doc = (elements: unknown[]): Uint8Array =>
+    new TextEncoder().encode(
+      JSON.stringify({ now, appVersion: "1.0.0", assets: {}, pages: [{ id: "p1", background: "#ffffff", backdrop: null, elements }] }),
+    );
+  it("model3d mal formé : cadre inconnu, brut gardé (X33)", () => {
+    const files = [{ path: "tex/bois.png", asset: TEX.id }];
+    const m1 = { id: "m1", kind: "model3d", transform: [1, 0, 0, 1, 100, 50], model3d: { asset: ABC, format: "fbx", w: 640, h: 480, files, yaw: 0.5 } };
+    const m2 = { id: "m2", kind: "model3d", transform: [1, 0, 0, 1, 1000, 50], model3d: { format: "glb", w: 640, h: 480, snapshot: EMPTY_HASH } };
+    const d = fakeCore.load(doc([m1, m2]));
+    for (const id of ["m1", "m2"]) {
+      expect(d.element(id)).toMatchObject({ id, kind: "unknown", unknown: { sourceKind: "model3d", w: 640, h: 480 } });
+      expect(d.bounds([id])).not.toBeNull();
+    }
+    expect(d.bounds(["m1"])).toEqual(C15_BOX);
+    expect(d.hitTest("p1", 420, 290, 0)).toBe("m1");
+    expect(d.hitTest("p1", 1320, 290, 0)).toBe("m2");
+    expect(d.citedAssets().map((x) => x.id)).toEqual([ABC, TEX.id, EMPTY_HASH]);
+    const once = d.save(now, "1.0.0");
+    const text = new TextDecoder().decode(once);
+    expect(text).toContain('"format":"fbx"');
+    expect(text).toContain('"path":"tex/bois.png"');
+    const twice = fakeCore.load(once).save(now, "1.0.0");
+    expect(new TextDecoder().decode(twice)).toBe(text);
+    expect(fakeCore.load(once).element("m2")).toMatchObject({ kind: "unknown", unknown: { sourceKind: "model3d" } });
+  });
+  it("model3d lisible relu de JSON : facultatifs illisibles = défauts, entrées de files illisibles ignorées (X8)", () => {
+    const files = [{ path: "tex/bois.png", asset: TEX.id }, { path: "b.bin" }, { path: "tex/bois.png", asset: BIN.id }, 3, { path: "../x", asset: BIN.id }];
+    const m = { id: "m", kind: "model3d", transform: [1, 0, 0, 1, 0, 0], model3d: { asset: ABC, format: "ply", w: 64, h: 48, files, yaw: "x", pitch: 9, snapshot: "x" } };
+    const d = fakeCore.load(doc([m]));
+    expect(d.element("m")).toEqual({
+      id: "m", kind: "model3d", transform: [1, 0, 0, 1, 0, 0],
+      model3d: { asset: ABC, format: "ply", w: 64, h: 48, files: [{ path: "tex/bois.png", asset: TEX.id }], yaw: DEFAULT_MODEL3D_YAW, pitch: DEFAULT_MODEL3D_PITCH, snapshot: null },
+    });
+  });
+});
+
+describe("contrôle de forme C15 (objet 3D)", () => {
+  const t = [1, 0, 0, 1, 5, 6];
+  const model3d = { asset: ABC, format: "obj", w: 640, h: 480, files: [{ path: "a.mtl", asset: TEX.id }], yaw: 0.5, pitch: 0.25, snapshot: undefined };
+  const view = (m: Record<string, unknown>) => toElementView({ id: "o1", kind: "model3d", transform: t, model3d: m });
+  it("snapshot undefined (Option::None) → null ; valeurs gardées", () => {
+    expect(view(model3d)).toEqual({ id: "o1", kind: "model3d", transform: t, model3d: { ...model3d, snapshot: null } });
+    expect(view({ ...model3d, snapshot: EMPTY_HASH })).toMatchObject({ model3d: { snapshot: EMPTY_HASH } });
+  });
+  it("format hors liste, w ou h non finis > 0, yaw ou pitch non finis, files mal formé : ElementView invalide", () => {
+    for (const bad of [
+      { format: "fbx" }, { w: 0 }, { h: Number.POSITIVE_INFINITY }, { yaw: Number.NaN }, { pitch: "1" },
+      { files: 3 }, { files: [{ path: "a" }] }, { files: [{ path: 1, asset: TEX.id }] }, { asset: 3 }, { snapshot: 3 },
+    ]) {
+      expect(() => view({ ...model3d, ...bad }), JSON.stringify(bad)).toThrow("ElementView invalide");
+    }
+    expect(() => toElementView({ id: "o1", kind: "model3d", transform: t })).toThrow("ElementView invalide");
   });
 });
 

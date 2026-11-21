@@ -53,6 +53,9 @@ interface FakeTab {
   readonly media: { toggle: ReturnType<typeof vi.fn>; seek: ReturnType<typeof vi.fn> };
   /** Pose le média « sélectionné » du faux onglet et prévient l'application (état et lecteurs). */
   readonly showMedia: (m: unknown, status?: string) => void;
+  /** C15 : pose l'objet 3D « sélectionné » du faux onglet et son état, puis prévient l'application. */
+  readonly showModel3d: (m: unknown, status?: string) => void;
+  readonly model3d: { toggleOrbit: ReturnType<typeof vi.fn>; resetModelView: ReturnType<typeof vi.fn> };
 }
 
 function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): FakeTab {
@@ -90,6 +93,8 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     seek: vi.fn(async () => undefined),
   };
   const mediaView: { current: unknown; status: string } = { current: null, status: "poster" };
+  const modelView: { current: unknown; status: string } = { current: null, status: "instantane" };
+  const model3d = { toggleOrbit: vi.fn(async () => undefined), resetModelView: vi.fn(async () => undefined) };
   let dirty = false;
   const dirtyListeners = new Set<() => void>();
   const run = vi.fn();
@@ -110,8 +115,13 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
     doc: {
       pageIds: () => ["p1", "p2", "p3"],
       page: (id: string) => ({ id, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null }),
+      asset: (id: string) => (id === "ef".repeat(32) ? { id, name: "chaise.glb", mime: "model/gltf-binary", size: 4 } : null),
     },
     media,
+    selectedModel3d: () => modelView.current,
+    modelState: () => modelView.status,
+    toggleOrbit: model3d.toggleOrbit,
+    resetModelView: model3d.resetModelView,
     selectedMedia: () => mediaView.current,
     mediaState: () => ({ status: mediaView.status, time: 0 }),
     choice: { note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }) },
@@ -133,6 +143,13 @@ function fakeTab(name: string, over: Partial<Record<string, unknown>> = {}): Fak
       mediaView.current = m;
       mediaView.status = status;
       for (const cb of mediaListeners) cb();
+      state = baseState({ ...(state as unknown as Record<string, unknown>), version: Number((state as unknown as { version: number }).version) + 1 });
+      for (const cb of listeners) cb(state);
+    },
+    model3d,
+    showModel3d(m, status = "instantane") {
+      modelView.current = m;
+      modelView.status = status;
       state = baseState({ ...(state as unknown as Record<string, unknown>), version: Number((state as unknown as { version: number }).version) + 1 });
       for (const cb of listeners) cb(state);
     },
@@ -759,5 +776,52 @@ describe("App : barre du média (C14)", () => {
     tab.showMedia(MEDIA, "echec");
     await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
     expect(container.querySelector<HTMLButtonElement>('[data-media="toggle"]')!.disabled).toBe(true);
+  });
+});
+
+describe("App : barre 3D (C15)", () => {
+  const MODEL = {
+    id: "o1",
+    kind: "model3d",
+    model3d: { asset: "ef".repeat(32), format: "glb", w: 200, h: 100, files: [], yaw: Math.PI / 6, pitch: Math.PI / 9, snapshot: null },
+  };
+  const MEDIA = {
+    id: "m1",
+    kind: "media",
+    media: { asset: "ab".repeat(32), mediaType: "video", w: 200, h: 100, duration: 2.5, poster: null, trimStart: 0, trimEnd: null, loop: false, volume: 1 },
+  };
+
+  it("barre visible pour un objet 3D seul sélectionné, absente pour un groupe ou un autre élément", async () => {
+    const { container, tab } = renderApp();
+    expect(container.querySelector("[data-model3d-bar]")).toBeNull();
+    tab.showModel3d(MODEL);
+    await vi.waitFor(() => expect(container.querySelector("[data-model3d-bar]")).not.toBeNull());
+    // Même enveloppe flottante que la barre du média (X24), aucune rangée.
+    expect(container.querySelector("[data-model3d-bar]")!.parentElement!.className).toBe("rb-popover rb-media-bar");
+    expect(container.querySelector('[data-model3d="name"]')?.textContent).toBe("chaise.glb");
+    tab.showModel3d(null); // groupe : la session ne rend aucun objet 3D seul
+    await vi.waitFor(() => expect(container.querySelector("[data-model3d-bar]")).toBeNull());
+    tab.showMedia(MEDIA);
+    await vi.waitFor(() => expect(container.querySelector("[data-media-bar]")).not.toBeNull());
+    expect(container.querySelector("[data-model3d-bar]")).toBeNull();
+  });
+
+  it("Tourner et Vue initiale appellent la session active", async () => {
+    const { container, tab } = renderApp();
+    tab.showModel3d(MODEL);
+    await vi.waitFor(() => expect(container.querySelector("[data-model3d-bar]")).not.toBeNull());
+    container.querySelector<HTMLButtonElement>('[data-model3d="orbit"]')!.click();
+    expect(tab.model3d.toggleOrbit).toHaveBeenCalledTimes(1);
+    container.querySelector<HTMLButtonElement>('[data-model3d="reset"]')!.click();
+    expect(tab.model3d.resetModelView).toHaveBeenCalledTimes(1);
+  });
+
+  it("sans WebGL : message « 3D indisponible sur ce poste : l'objet garde son image », boutons grisés", async () => {
+    const { container, tab } = renderApp();
+    tab.showModel3d(MODEL, "sans-webgl");
+    await vi.waitFor(() => expect(container.querySelector("[data-model3d-bar]")).not.toBeNull());
+    expect(container.querySelector('[data-model3d="message"]')?.textContent).toBe("3D indisponible sur ce poste : l'objet garde son image");
+    expect(container.querySelector<HTMLButtonElement>('[data-model3d="orbit"]')!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[data-model3d="reset"]')!.disabled).toBe(true);
   });
 });

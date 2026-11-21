@@ -153,6 +153,18 @@ export async function dropFile(page, selector, name, bytes, type = "", at = [50,
     }
   }, { selector, name, bytes: Array.from(bytes), type, at });
 }
+/** Dépôt simulé de plusieurs fichiers ensemble (C15, X13) : un seul DataTransfer, un seul `drop`. */
+export async function dropFiles(page, selector, files, at = [50, 50]) {
+  await page.evaluate(({ selector, files, at }) => {
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(new File([new Uint8Array(f.bytes)], f.name, { type: f.type ?? "" }));
+    const target = document.querySelector(selector);
+    const r = target.getBoundingClientRect();
+    for (const t of ["dragover", "drop"]) {
+      target.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + at[0], clientY: r.y + at[1] }));
+    }
+  }, { selector, files: files.map((f) => ({ name: f.name, type: f.type ?? "", bytes: Array.from(f.bytes) })), at });
+}
 /** Onglets de la barre (`[data-tab]` seul attrape aussi les scènes cachées `.rb-stage[data-tab]`). */
 export const TAB = '[role="tab"][data-tab]';
 

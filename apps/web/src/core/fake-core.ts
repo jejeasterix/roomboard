@@ -46,6 +46,9 @@ import type {
   GridView,
   ImageData,
   MediaData,
+  Model3dData,
+  Model3dFile,
+  Model3dFormat,
   LinkedAsset,
   LevelLines,
   Matrix,
@@ -65,7 +68,14 @@ import type {
 import {
   BAD_GROUP_MESSAGE,
   BAD_MEDIA_MESSAGE,
+  BAD_MODEL3D_MESSAGE,
+  DEFAULT_MODEL3D_PITCH,
+  DEFAULT_MODEL3D_YAW,
   MAX_LINK_CHARS,
+  MAX_MODEL3D_FILES,
+  MAX_MODEL3D_PATH,
+  MODEL3D_FORMATS,
+  MODEL3D_PITCH_LIMIT,
   BAD_IMAGE_PARAMS_MESSAGE,
   DEFAULT_ASSET_MIME,
   DEFAULT_BACKGROUND,
@@ -116,6 +126,8 @@ interface FakeElement {
   readonly image?: ImageData;
   /** C14 : média lisible ; un média mal formé est un `unknown` (sourceKind "media"), comme un tableau. */
   readonly media?: MediaData;
+  /** C15 : objet 3D lisible ; un objet 3D mal formé est un `unknown` (sourceKind "model3d"), comme un média. */
+  readonly model3d?: Model3dData;
   readonly table?: FakeTable;
   readonly unknown?: FakeUnknown;
   /** Élément connu mal formé (K8) : champs bruts gardés, illisible par element(), jamais réécrit en trait. */
@@ -165,7 +177,7 @@ const MESSAGES = {
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
 /** Kinds lus par la fausse liaison : même liste que `KNOWN_KINDS` du cœur (`element.rs`). */
-export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table", "media"]);
+export const KNOWN_KINDS: ReadonlySet<string> = new Set(["stroke", "shape", "text", "image", "table", "media", "model3d"]);
 const finitePositive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
@@ -297,6 +309,49 @@ function readMedia(v: unknown): MediaData | null {
     volume: vol !== null && vol >= 0 && vol <= 1 ? vol : 1,
   };
 }
+const isModel3dFormat = (v: unknown): v is Model3dFormat => typeof v === "string" && (MODEL3D_FORMATS as readonly string[]).includes(v);
+/** `valid_box` du cœur : finie > 0, tenant en f32. */
+const validBox = (w: unknown, h: unknown): boolean =>
+  finitePositive(w) && finitePositive(h) && Number.isFinite(Math.fround(w)) && Number.isFinite(Math.fround(h));
+const validYaw = (y: unknown): y is number => typeof y === "number" && Number.isFinite(y) && y > -Math.PI && y <= Math.PI;
+const validPitch = (p: unknown): p is number => typeof p === "number" && Number.isFinite(p) && Math.abs(p) <= MODEL3D_PITCH_LIMIT;
+/** `valid_path` du cœur (C15, X3) : 1 à 1 024 points de code, ni `\` ni `:`, segments non vides, ni `.` ni `..`. */
+const validPath = (p: string): boolean => {
+  const n = [...p].length;
+  return n >= 1 && n <= MAX_MODEL3D_PATH && !p.includes("\\") && !p.includes(":") && p.split("/").every((x) => x !== "" && x !== "." && x !== "..");
+};
+/** Lecture tolérante d'un objet 3D (C15, X8) : obligatoires asset, format, w, h (f32) ; facultatifs aux défauts s'ils
+ *  sont illisibles ; entrée de `files` illisible, hors domaine ou en double : ignorée ; 256 au plus. */
+function readModel3d(v: unknown): Model3dData | null {
+  if (!isRecord(v)) return null;
+  const { asset, format, w, h } = v;
+  if (!isAssetId(asset) || !isModel3dFormat(format) || !validBox(w, 1) || !validBox(1, h)) return null;
+  const files: Model3dFile[] = [];
+  const raw = v["files"];
+  if (Array.isArray(raw)) {
+    for (const f of raw) {
+      if (!isRecord(f)) continue;
+      const { path, asset: a } = f;
+      if (typeof path !== "string" || typeof a !== "string") continue;
+      if (files.length === MAX_MODEL3D_FILES || !validPath(path) || !isAssetId(a) || files.some((x) => x.path === path)) continue;
+      files.push({ path, asset: a });
+    }
+  }
+  return {
+    asset, format, w: w as number, h: h as number, files,
+    yaw: validYaw(v["yaw"]) ? v["yaw"] : DEFAULT_MODEL3D_YAW,
+    pitch: validPitch(v["pitch"]) ? v["pitch"] : DEFAULT_MODEL3D_PITCH,
+    snapshot: isAssetId(v["snapshot"]) ? v["snapshot"] : null,
+  };
+}
+/** Forme enregistrée d'un objet 3D : comme le cœur, défauts de la caméra, liés vides et instantané absent non écrits. */
+const savedModel3d = (m: Model3dData): Record<string, unknown> => ({
+  asset: m.asset, format: m.format, w: m.w, h: m.h,
+  ...(m.files.length > 0 ? { files: m.files } : {}),
+  ...(m.yaw !== DEFAULT_MODEL3D_YAW ? { yaw: m.yaw } : {}),
+  ...(m.pitch !== DEFAULT_MODEL3D_PITCH ? { pitch: m.pitch } : {}),
+  ...(m.snapshot !== null ? { snapshot: m.snapshot } : {}),
+});
 /** Métadonnées des assets cités, recopiées seulement si absentes de la cible (K3). */
 function adoptMeta(into: Map<string, unknown>, from: ReadonlyMap<string, unknown>, cited: readonly string[]): void {
   for (const id of cited) {
@@ -451,6 +506,8 @@ function worldPolygon(e: FakeElement): number[] | null {
         ? boxPolygon(...displaySize(e.image))
         : e.media
           ? boxPolygon(e.media.w, e.media.h)
+        : e.model3d
+          ? boxPolygon(e.model3d.w, e.model3d.h)
         : e.table
           ? boxPolygon(tableWidth(e.table), tableHeight(e.table))
           : e.unknown
@@ -774,6 +831,56 @@ class FakeDocument implements CoreDocument {
           const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
           const old = p?.elements[i];
           if (p && old) p.elements[i] = { ...old, media: next };
+          return { pages: [pageId], ids: [cmd.id], removed: [] };
+        });
+      }
+      case "AddModel3d": {
+        // Même ordre que le cœur : assets (principal, liés, instantané), objet (boîte, caméra, liés), matrice, puis page.
+        if (!validAsset(cmd.asset) || cmd.files.some((x) => !validAsset(x.asset)) || (cmd.snapshot !== null && !validAsset(cmd.snapshot))) {
+          throw new Error(MESSAGES.badAsset);
+        }
+        const unique = cmd.files.every((x, i) => cmd.files.slice(0, i).every((y) => y.path !== x.path));
+        if (
+          !validBox(cmd.w, cmd.h) || !validYaw(cmd.yaw) || !validPitch(cmd.pitch) || cmd.files.length > MAX_MODEL3D_FILES || !unique ||
+          cmd.files.some((x) => !validPath(x.path)) || !isModel3dFormat(cmd.format)
+        ) {
+          throw new Error(BAD_MODEL3D_MESSAGE);
+        }
+        if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
+        this.pageOf(cmd.page);
+        return this.step((s) => {
+          const id = newId();
+          const model3d: Model3dData = {
+            asset: cmd.asset.id, format: cmd.format, w: cmd.w, h: cmd.h,
+            files: cmd.files.map((x) => ({ path: x.path, asset: x.asset.id })),
+            yaw: cmd.yaw, pitch: cmd.pitch, snapshot: cmd.snapshot?.id ?? null,
+          };
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: cmd.matrix, style: NO_STYLE, model3d });
+          putMeta(s.assets, cmd.asset);
+          for (const x of cmd.files) putMeta(s.assets, x.asset);
+          if (cmd.snapshot !== null) putMeta(s.assets, cmd.snapshot);
+          return { pages: [cmd.page], ids: [id], removed: [] };
+        });
+      }
+      case "SetModel3dView": {
+        // Ordre du cœur : élément inconnu, pas un objet 3D lisible, instantané (BadAsset), vue hors domaine.
+        const found = this.find(cmd.id);
+        if (!found) throw new Error(`élément inconnu : ${cmd.id}`);
+        const m = found.element.model3d;
+        if (!m) throw new Error(BAD_MODEL3D_MESSAGE);
+        if (cmd.snapshot !== null && !validAsset(cmd.snapshot)) throw new Error(MESSAGES.badAsset);
+        if (!validYaw(cmd.yaw) || !validPitch(cmd.pitch)) throw new Error(BAD_MODEL3D_MESSAGE);
+        const snapshot = cmd.snapshot?.id ?? null;
+        if (m.yaw === cmd.yaw && m.pitch === cmd.pitch && m.snapshot === snapshot) return this.unchanged();
+        const next: Model3dData = { ...m, yaw: cmd.yaw, pitch: cmd.pitch, snapshot };
+        const pageId = found.page.id;
+        const snap = cmd.snapshot;
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === pageId);
+          const i = p ? p.elements.findIndex((x) => x.id === cmd.id) : -1;
+          const old = p?.elements[i];
+          if (p && old) p.elements[i] = { ...old, model3d: next };
+          if (snap !== null) putMeta(s.assets, snap);
           return { pages: [pageId], ids: [cmd.id], removed: [] };
         });
       }
@@ -1155,6 +1262,7 @@ class FakeDocument implements CoreDocument {
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
     if (e.image) return { ...base, kind: "image", image: e.image };
     if (e.media) return { ...base, kind: "media", media: e.media };
+    if (e.model3d) return { ...base, kind: "model3d", model3d: e.model3d };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
     const styled = { ...base, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
@@ -1451,6 +1559,8 @@ interface SavedElement {
   image?: ImageData;
   /** C14 : écrit `MediaData` ; lu : valeur brute, contrôlée par `readMedia`. */
   media?: MediaData | unknown;
+  /** C15 : écrit par `savedModel3d` ; lu : valeur brute, contrôlée par `readModel3d`. */
+  model3d?: unknown;
   /** Écrit : `SavedTable` ; lu : valeur brute, contrôlée par `loadTable`. */
   table?: SavedTable | unknown;
   /** Champs bruts d'un élément inconnu, réécrits tels quels. */
@@ -1472,6 +1582,7 @@ function savedElement(e: FakeElement): SavedElement {
   if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group };
   if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image, ...group };
   if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group };
+  if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...group };
   return {
     id: e.id,
     transform: [...e.transform],
@@ -1581,6 +1692,22 @@ function loadElement(e: SavedElement): FakeElement {
     const unknown: FakeUnknown = {
       sourceKind: "media",
       raw: { media: source },
+      box: unknownBox(isRecord(source) ? source : {}),
+      hasTransform: m !== null,
+      ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),
+    };
+    return { id: e.id, transform: m ?? IDENTITY, style: NO_STYLE, unknown, ...group };
+  }
+  if (e.kind === "model3d") {
+    // Repli du média, pas celui de l'image (C15, X8) : un objet 3D mal formé est un cadre inconnu, jamais invisible ;
+    // brut gardé sous `raw.model3d`, réécrit tel quel, boîte lue dans le brut.
+    const source = e.model3d ?? e.raw?.["model3d"];
+    const model3d = readModel3d(source);
+    const m = toMatrix6(e.transform);
+    if (model3d !== null && m !== null) return { id: e.id, transform: m, style: NO_STYLE, model3d, ...group };
+    const unknown: FakeUnknown = {
+      sourceKind: "model3d",
+      raw: { model3d: source },
       box: unknownBox(isRecord(source) ? source : {}),
       hasTransform: m !== null,
       ...(m === null && e.transform !== undefined ? { rawTransform: e.transform } : {}),

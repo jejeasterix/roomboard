@@ -217,6 +217,18 @@ leurs enveloppes Mozilla (`LICENSE_PDFJS_*`, Apache-2.0). Le module QuickJS (scr
 copié. Textes : MIT (https://opensource.org/licenses/MIT), Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0),
 OFL-1.1 (https://openfontlicense.org).
 
+## Paquets npm de l'application (C15, objets 3D)
+
+`three` est chargé par import dynamique au premier objet 3D (`apps/web/src/platform/model-view-three.ts`), jamais au
+démarrage ; `fflate` ne sert qu'au Worker de lecture des ZIP (`apps/web/src/platform/zip-worker.ts`).
+
+| paquet | version | licence | dépôt |
+|---|---|---|---|
+| three | 0.187.0 | MIT | https://github.com/mrdoob/three.js |
+| fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate |
+
+`@types/three` (0.187.0, MIT) ne sert qu'à la compilation et n'entre pas dans `dist`.
+
 ## Crate `roomboard-formats` (C12, PDF vectoriel par krilla)
 
 Crates apportés par `krilla` 0.8 (features `simple-text` et `raster-images` seules, sans les features par défaut) et

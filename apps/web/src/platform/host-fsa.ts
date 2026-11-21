@@ -8,6 +8,7 @@ import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
   IMPORT_FILTER,
+  MODEL3D_EXTENSIONS,
   RBITEM_EXTENSION,
   PDF_EXTENSION,
   PDF_MIME,
@@ -37,7 +38,7 @@ export const FSA_TYPES: readonly PickerType[] = [
   { description: "Document RoomBoard", accept: { [ROOMBOARD_MIME]: [ROOMBOARD_EXTENSION] } },
 ];
 
-/** Filtre de « Importer » (R18) : documents RoomBoard, PDF (PF3) et images d'U33. */
+/** Filtre de « Importer » (R18) : documents RoomBoard, PDF (PF3), images d'U33, vidéos et sons (C14) et objets 3D (C15). */
 export const IMPORT_TYPES: readonly PickerType[] = [
   {
     description: IMPORT_FILTER.name,
@@ -48,6 +49,8 @@ export const IMPORT_TYPES: readonly PickerType[] = [
       "image/*": IMAGE_EXTENSIONS.map((e) => `.${e}`),
       "video/*": VIDEO_EXTENSIONS.map((e) => `.${e}`),
       "audio/*": AUDIO_EXTENSIONS.map((e) => `.${e}`),
+      "application/octet-stream": MODEL3D_EXTENSIONS.filter((e) => e !== "zip").map((e) => `.${e}`),
+      "application/zip": [".zip"],
     },
   },
 ];
