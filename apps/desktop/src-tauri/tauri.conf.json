@@ -17,7 +17,7 @@
         "img-src": "'self' data: blob:",
         "font-src": "'self'",
         "media-src": "'self' blob: asset: http://asset.localhost",
-        "connect-src": "'self' ipc: http://ipc.localhost",
+        "connect-src": "'self' ipc: http://ipc.localhost blob:",
         "object-src": "'none'",
         "base-uri": "'self'",
         "form-action": "'none'"
