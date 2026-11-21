@@ -261,6 +261,13 @@ export function toElementView(v: unknown): ElementView | null {
     }
     case "table":
       return { ...base, kind, table: toTable(v["table"]) };
+    case "fill": {
+      const fl = v["fill"];
+      if (!isRecord(fl)) throw new Error(ELEMENT);
+      const { color, w, h } = fl;
+      if (typeof color !== "string" || !finitePositive(w) || !finitePositive(h)) throw new Error(ELEMENT);
+      return { ...base, kind, fill: { color, w, h } };
+    }
     case "unknown": {
       const u = v["unknown"];
       if (!isRecord(u)) throw new Error(ELEMENT);
@@ -590,6 +597,8 @@ class WasmCoreDocument implements CoreDocument {
           const a = t.asset;
           return toChange(this.d.fill_image(cmd.page, t.id, a.id, a.name, a.mime, a.size, cmd.color ?? undefined));
         }
+        // C8 (Q10) : zone fermée calculée par le cœur à l'écriture ; null → undefined : « Aucune ».
+        if (t.kind === "zone") return toChange(this.d.fill_zone(cmd.page, t.x, t.y, t.tol, cmd.color ?? undefined));
         return toChange(this.d.fill(cmd.page, t.kind, t.kind === "background" ? undefined : t.id, cmd.color ?? undefined));
       }
       case "SetImageParams":
@@ -621,6 +630,8 @@ class WasmCoreDocument implements CoreDocument {
   relinkAssets(links: readonly LinkedAsset[]): number { return this.d.relink_assets(links.map((l) => l.id), links.map((l) => l.path)); }
   points(id: string): Float32Array | null { return this.d.points(id) ?? null; }
   outline(id: string): Float32Array | null { return this.d.outline(id) ?? null; }
+  fillRings(id: string): Float32Array | null { return this.d.fill_rings(id) ?? null; }
+  zoneCells(page: string, tol: number): number { return this.d.zone_cells(page, tol); }
   hitTest(page: string, x: number, y: number, tol: number): string | null { return this.d.hit_test(page, x, y, tol) ?? null; }
   edgeHit(id: string, x: number, y: number, tol: number): boolean { return this.d.edge_hit(id, x, y, tol); }
   hitTestPath(page: string, path: Float32Array, radius: number): string[] { return this.d.hit_test_path(page, path, radius); }
