@@ -50,7 +50,8 @@ export function model3dTag(m: { readonly format: string } | null, state: ModelSt
 
 export function createModelSessions(deps: ModelSessionDeps): ModelSessions {
   let cur: Session | null = null;
-  let noWebgl = false;
+  let noWebgl = false; // la machine n'a pas WebGL du tout (définitif)
+  let contextLost = false; // contexte perdu (X26) : ne rend pas « sans WebGL » définitif ; levé au prochain open disponible
   let disposed = false;
   let offLost: (() => void) | null = null;
   const failed = new Set<string>();
@@ -88,17 +89,18 @@ export function createModelSessions(deps: ModelSessionDeps): ModelSessions {
         const v = await deps.views.load();
         if (cur !== s) return false;
         offLost ??= v.onLost(() => {
-          noWebgl = true;
+          contextLost = true;
           release();
           emit();
           deps.redraw();
         });
         if (!v.available()) {
-          noWebgl = true;
+          if (!contextLost) noWebgl = true;
           cur = null;
           emit();
           return false;
         }
+        contextLost = false;
         const src = deps.source(id);
         if (src === null) throw new Error("source de l'objet 3D absente");
         const m = await v.load(src);

@@ -64,6 +64,9 @@ function fakeView(available = true) {
       ok = false;
       lost?.();
     },
+    restore() {
+      ok = true;
+    },
   };
 }
 
@@ -88,6 +91,17 @@ function setup(available = true) {
 const TURNED: ModelCamera = { yaw: (87 * Math.PI) / 180, pitch: (20 * Math.PI) / 180 };
 
 describe("séances 3D (C15, DAX3)", () => {
+  it("contexte perdu puis rétabli : « Tourner » redevient possible, l'état n'est plus sans-webgl (T14)", async () => {
+    const { sessions, fv } = setup();
+    expect(await sessions.open("a", DEFAULT_CAMERA)).toBe(true);
+    fv.lose();
+    expect(sessions.state("a")).toBe("sans-webgl");
+    fv.restore();
+    expect(sessions.state("a")).toBe("instantane");
+    expect(await sessions.open("a", DEFAULT_CAMERA)).toBe(true);
+    expect(sessions.state("a")).toBe("orbite");
+  });
+
   it("rien n'est chargé avant open : state, frame et snapshot ne chargent pas le rendu (X20)", async () => {
     const { sessions, renders, fv } = setup();
     expect(sessions.state("a")).toBe("instantane");
