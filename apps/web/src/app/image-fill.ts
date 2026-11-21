@@ -10,7 +10,9 @@
 import type { Change, Command, CoreDocument } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import type { FillRequest, ImageFillRequest } from "../engine/fill-target";
+import { pixelsOf } from "../core/image-params";
 import type { ImageCache } from "../engine/render/image-cache";
+import { messageOf } from "../platform/controller";
 import { kindOfMime } from "../platform/image-import";
 import { FILL_UNREADABLE_MESSAGE, type PixelFillJob, type PixelFillResult, type PixelFillRunner } from "../platform/pixel-runner";
 
@@ -50,7 +52,6 @@ interface Item {
   readonly run: Run;
 }
 const isImage = (r: FillRequest): r is ImageFillRequest => !("command" in r);
-const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export function createFillQueue(deps: FillQueueDeps): FillQueue {
   const items: Item[] = [];
@@ -117,25 +118,25 @@ export function createFillQueue(deps: FillQueueDeps): FillQueue {
     if (runner === undefined) return stop("echec", fillFailure(FILL_NO_RUNNER));
     const kind = kindOfMime(blob.type) ?? kindOfMime(deps.doc.asset(i.asset)?.mime ?? "") ?? "png";
     let source: PixelFillJob["source"];
+    /** Copie du SVG que le lanceur n'a jamais lue (fermé avant le calcul) : fermée ici, sinon elle est à lui. */
+    let unread = (): void => undefined;
     if (kind === "svg") {
       // Le Worker ne rastérise pas un SVG (pas de DOM) : copie du bitmap décodé par le cache (B7, HB12).
       const copy = deps.images.copyOf(i.asset);
       if (copy === null) return stop("refus", FILL_NOT_READY_MESSAGE);
-      source = () => copy.then((bitmap) => ({ bitmap }));
+      let read = false;
+      source = () => {
+        read = true;
+        return copy.then((bitmap) => ({ bitmap }));
+      };
+      unread = () => {
+        if (!read) void copy.then((b) => b.close(), () => undefined);
+      };
     } else {
       // Original pleine résolution du magasin, jamais la copie d'affichage (S5 h).
       source = async () => ({ blob, kind });
     }
-    const job: PixelFillJob = {
-      source,
-      seed: r.seed,
-      size: [i.w, i.h],
-      tolerance: r.tolerance,
-      color: r.color,
-      ...(i.transparent !== undefined ? { transparent: i.transparent } : {}),
-      ...(i.brightness ? { brightness: i.brightness } : {}),
-      ...(i.contrast ? { contrast: i.contrast } : {}),
-    };
+    const job: PixelFillJob = { source, seed: r.seed, size: [i.w, i.h], tolerance: r.tolerance, color: r.color, ...pixelsOf(i) };
     let res: PixelFillResult | null;
     try {
       res = await runner.fill(job);
@@ -144,6 +145,8 @@ export function createFillQueue(deps: FillQueueDeps): FillQueue {
       if (stale()) return abandon();
       const m = messageOf(e);
       return m === FILL_UNREADABLE_MESSAGE ? stop("refus", m) : stop("echec", fillFailure(m));
+    } finally {
+      unread();
     }
     if (disposed) {
       if (res !== null) closeResult(res);

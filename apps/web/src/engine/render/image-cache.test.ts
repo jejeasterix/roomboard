@@ -528,7 +528,7 @@ describe("C6b : adoption, copie, budget (B14, B15)", () => {
     const runner: PixelRunner = { run: (_slot, job) => new Promise((resolve) => void calls.push({ job, resolve })), dispose: () => undefined };
     // Comme createImageBitmap : refus sur un bitmap fermé (InvalidStateError).
     const copy = async (b: BitmapLike): Promise<ImageBitmap> => {
-      if ((b as { close: ReturnType<typeof vi.fn> }).close.mock.calls.length > 0) throw new Error("InvalidStateError");
+      if ((b as unknown as { close: ReturnType<typeof vi.fn> }).close.mock.calls.length > 0) throw new Error("InvalidStateError");
       return sized(100, 100, "copie") as unknown as ImageBitmap;
     };
     const onFailure = vi.fn();
