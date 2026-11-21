@@ -109,6 +109,7 @@ dépôt, `~/.cache/graphes/` n'a que `claude-config`, `roomflow2`, `roomflow2-we
 | `apps/web/src/ui/rb.css:28-30` | oui | `.rb-popover[data-panel="library"]` calé à droite, cartes, fantôme du glisser | V |
 | `apps/web/src/ui/layout.ts` | non | aucune colonne neuve (D15) | V |
 | `apps/web/src/toolbar.ts:117`, `toolbar-profiles.ts:62`, `app/toolbar-host.ts:32,61` | oui | action `library` (D16) | V |
+| `apps/web/src/app/thumbnail.ts` | oui (nouveau, ajouté par la relecture de fin de lot) | vignette de 128 px peinte par le peintre d'export (D12, D29) | V |
 | `apps/web/src/ui/GridPanel.tsx`, `SelectionRow.tsx` | non | le panneau de grille garde son rôle ; l'ajout se fait depuis la bibliothèque | V |
 
 ### 3.5 Persistance
@@ -116,7 +117,8 @@ dépôt, `~/.cache/graphes/` n'a que `claude-config`, `roomflow2`, `roomflow2-we
 | endroit | touché ? | pourquoi | V/S |
 |---|---|---|---|
 | IndexedDB `roomboard-bibliotheque` (nouvelle base) | oui | stockage web (D6) | S |
-| `apps/web/src/platform/pending.ts:8,68` (base `roomboard-fichiers`) | non | patron repris, base distincte | V |
+| `apps/web/src/platform/pending.ts:8,68` (base `roomboard-fichiers`) | oui (correction de la relecture de fin de lot) | ses aides `finished` / `result` passent dans `platform/idb.ts` ; base distincte, comportement couvert par `pending.test.ts` existant | V |
+| `apps/web/src/platform/idb.ts` | oui (nouveau) | aides IndexedDB partagées par les deux bases | V |
 | `KeyValue` des réglages (`profile-store.ts:4-10`) | oui | clé `roomboard.bibliotheque.partage` (chemin du dossier partagé, coque) | V |
 | `$DOCUMENT/RoomBoard/Ressources` (coque) | oui | « Mes ressources » (D7) | S |
 
@@ -127,6 +129,7 @@ dépôt, `~/.cache/graphes/` n'a que `claude-config`, `roomflow2`, `roomflow2-we
 | `apps/desktop/src-tauri/capabilities/default.json` | oui | `fs:allow-read-dir`, `fs:allow-mkdir`, `fs:allow-remove`, `fs:allow-exists`, `fs:scope` `$DOCUMENT/RoomBoard/Ressources` et `/**` ; description réécrite (DA3) | V |
 | `apps/desktop/src-tauri/tauri.conf.json` (`bundle.fileAssociations`, `plugins.fs`) | oui | association `rbpack` (D20) ; `scopeDroppedPaths: false` inchangé | V |
 | `crates/roomboard-shell/src/lib.rs:14,332` (`ASSOCIATED_EXTENSIONS`, test) | oui | `"rbpack"` ; test qui relit `tauri.conf.json` | V |
+| `crates/roomboard-shell/Cargo.toml`, `Cargo.lock` | oui (ajouté par la relecture de fin de lot) | `serde_json` en dépendance de développement du test des capacités (déjà dans le lockfile : aucune dépendance neuve) | V |
 | `apps/desktop/src-tauri/src/main.rs:162-180` | non | aucune commande neuve (D7) | V |
 | `scripts/controle-hors-ligne.mjs`, `controle-icones.mjs` (lisent `tauri.conf.json`) | non | à garder verts après l'ajout de l'association | V |
 
