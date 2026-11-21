@@ -6,15 +6,15 @@ const change: Change = { pages: ["p"], ids: ["f"], removed: [], full: false, ver
 const zone: Command = { type: "Fill", page: "p", target: { kind: "zone", x: 1, y: 2, tol: 2 }, color: "#facc15" };
 const bg: Command = { type: "Fill", page: "p", target: { kind: "background" }, color: "#facc15" };
 
-function doc(kinds: Record<string, string>): ZoneDoc & { reads: number; asked: [string, number][] } {
+function doc(kinds: Record<string, string>, views: Record<string, string> = kinds): ZoneDoc & { reads: number; asked: [string, number][] } {
   const d = {
     reads: 0,
     asked: [] as [string, number][],
-    elementIds: () => {
+    elementIdsOfKind: (_page: string, kind: string) => {
       d.reads++;
-      return Object.keys(kinds);
+      return Object.keys(kinds).filter((id) => kinds[id] === kind);
     },
-    element: (id: string) => (kinds[id] === undefined ? null : { kind: kinds[id] ?? "" }),
+    element: (id: string) => (views[id] === undefined ? null : { kind: views[id] ?? "" }),
     zoneCells: (page: string, tol: number) => {
       d.asked.push([page, tol]);
       return 4_032_064;
@@ -90,5 +90,14 @@ describe("zone-marks (C8, Q18)", () => {
     expect(seen).toEqual([]);
     m.timed(() => change)(zone);
     expect(seen).toEqual([{ zones: "1", zoneMs: "12.3", zoneCells: "4032064" }]);
+  });
+
+  it("OE23 (H4) : un fill mal formé (vue unknown) n'est pas compté ; seule la vue des candidats « fill » est lue", () => {
+    const d = doc({ a: "stroke", f: "fill", g: "fill" }, { a: "stroke", f: "fill", g: "unknown" });
+    const seen: string[] = [];
+    const spy: ZoneDoc = { ...d, element: (id) => (seen.push(id), d.element(id)) };
+    const m = createZoneMarks(spy, () => 0, () => undefined);
+    expect(m.tags("p", 1).zones).toBe("1");
+    expect(seen).toEqual(["f", "g"]);
   });
 });
