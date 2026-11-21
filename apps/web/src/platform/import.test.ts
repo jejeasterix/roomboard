@@ -14,6 +14,7 @@ import {
   AUDIO_BOX, CODEC_UNREADABLE, MEDIA_INCLUDE_MAX_BYTES, MEDIA_LINKED_NOTE, MEDIA_NOT_LINKED, MEDIA_PASTE_MAX_BYTES, MEDIA_TOO_BIG,
   POSTER_MIME, unsupportedMediaMessage, type LinkedMedia, type MediaProbe,
 } from "./media-import";
+import type { Model3dDeps } from "./model3d-handlers";
 
 const file = (name: string, bytes = new Uint8Array([80, 75, 3, 4]), path?: string): DroppedFile => ({
   name, size: bytes.length, mime: "", path, head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes]),
@@ -360,6 +361,31 @@ describe("registre : .rbitem et .xlsx, deux ZIP départagés par le nom (fusion 
     expect(fragments).toEqual([PK]);
     expect(t.cmds).toHaveLength(1);
     expect(t.cmds[0]).toMatchObject({ type: "ImportTable" });
+  });
+
+  it("registre C15 : model3d après image, zip3d et fichier lié après sheet (X12)", async () => {
+    const t = fakeTarget();
+    const fragments: Uint8Array[] = [];
+    const target: ImageTarget = { ...t.target, insertFragment: async (b) => (fragments.push(b), true) };
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const model3d: Model3dDeps = {
+      view: vi.fn(async () => {
+        throw new Error("vue 3D demandée");
+      }),
+      readZip: vi.fn(async (_b: Blob) => []),
+    };
+    const notify = vi.fn(async (_m: string) => undefined);
+    // `photo.stl` porte des octets PNG : `sniffModel3d` le revendique (`.stl`), l'image doit passer avant.
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, target: () => target, readSheet, decode: decoded(20, 10), model3d })
+      .importFiles([file("v.xlsx", PK), file("o.rbitem", PK), file("photo.stl", pngHead(20, 10)), file("m.zip", PK)], null);
+    expect(r).toEqual({ opened: [], inserted: ["v.xlsx", "o.rbitem", "photo.stl"], refused: [], failed: ["m.zip"] });
+    expect(readSheet).toHaveBeenCalledTimes(1);
+    expect(fragments).toEqual([PK]);
+    expect(t.cmds.map((c) => c.type)).toEqual(["ImportTable", "AddImage"]);
+    expect(model3d.view).not.toHaveBeenCalled();
+    // Seul le `.zip` va au lecteur 3D ; le `.xlsx` et le `.rbitem`, ZIP eux aussi, restent à leurs gestionnaires.
+    expect(model3d.readZip).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls.map((c) => c[0])).toEqual(["m.zip : aucun modèle 3D dans ce ZIP"]);
   });
 });
 
