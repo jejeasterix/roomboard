@@ -11,7 +11,7 @@ use quick_xml::{Reader, XmlVersion};
 use super::qt_html::read_qt_html;
 use super::{
     apply, compose, encode, BoardError, BoardList, Dialect, Item, Mat, Page, Rgb, ShapeKind, Span,
-    IDENTITY, MAX_OBJECTS, MAX_PAGES, PAGE_WIDTH,
+    IDENTITY, MAX_OBJECTS, MAX_PAGES, MAX_POINTS, MAX_SPANS, PAGE_WIDTH,
 };
 use crate::pdf::ASCENT;
 
@@ -390,6 +390,8 @@ fn frame_of(svg: &Node) -> Result<Frame, BoardError> {
         && f.y.is_finite()
         && f.w > 0.0
         && f.h > 0.0
+        && f.base().iter().all(|v| v.is_finite())
+        && (f.h * PAGE_WIDTH / f.w).is_finite()
     {
         Ok(f)
     } else {
@@ -537,12 +539,47 @@ fn group_top(out: &mut Vec<(Option<String>, Item)>, ids: &[String]) {
     out.insert(first, (None, Item::Group(members)));
 }
 
+/// Tout nombre de l'objet est fini (produits et sommes de nombres finis compris).
+fn finite(it: &Item) -> bool {
+    let ok = |v: &[f32]| v.iter().all(|x| x.is_finite());
+    match it {
+        Item::Shape {
+            m,
+            x0,
+            y0,
+            x1,
+            y1,
+            width,
+            ..
+        } => ok(m) && ok(&[*x0, *y0, *x1, *y1, *width]),
+        Item::Stroke {
+            m, width, points, ..
+        } => ok(m) && width.is_finite() && points.iter().all(|p| ok(p)),
+        Item::Text {
+            m,
+            x,
+            y,
+            w,
+            h,
+            size,
+            spans,
+            ..
+        } => {
+            ok(m)
+                && ok(&[*x, *y, *w, *h, *size])
+                && spans.iter().all(|s| s.size.is_none_or(f32::is_finite))
+        }
+        Item::Image { m, x, y, w, h, .. } => ok(m) && ok(&[*x, *y, *w, *h]),
+        Item::Group(items) => items.iter().all(finite),
+    }
+}
+
 /// Attribut absent : `default` ; présent mais illisible : l'objet est illisible.
 struct Bad;
 type Got = Result<Option<Item>, Bad>;
 type Out = Vec<(Option<String>, Item)>;
 
-fn f(n: &Node, k: &str, default: f32) -> Result<f32, Bad> {
+fn length_attr(n: &Node, k: &str, default: f32) -> Result<f32, Bad> {
     match n.attr(k) {
         None => Ok(default),
         Some(v) => length(v).ok_or(Bad),
@@ -774,11 +811,10 @@ fn ext_of(href: &str) -> String {
 }
 
 fn normalize_href(href: &str) -> String {
-    let mut h = href.trim().replace('\\', "/");
-    while let Some(r) = h.strip_prefix("./") {
-        h = r.to_string();
-    }
-    h
+    href.trim()
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_string()
 }
 
 fn is_flash(n: &Node) -> bool {
@@ -971,12 +1007,12 @@ fn pressure_stroke(n: &Node, c: &Ctx) -> Option<Item> {
 }
 
 fn ellipse(n: &Node, c: &Ctx) -> Got {
-    let (cx, cy) = (f(n, "cx", 0.0)?, f(n, "cy", 0.0)?);
+    let (cx, cy) = (length_attr(n, "cx", 0.0)?, length_attr(n, "cy", 0.0)?);
     let (rx, ry) = if n.name == "circle" {
-        let r = f(n, "r", 0.0)?;
+        let r = length_attr(n, "r", 0.0)?;
         (r, r)
     } else {
-        (f(n, "rx", 0.0)?, f(n, "ry", 0.0)?)
+        (length_attr(n, "rx", 0.0)?, length_attr(n, "ry", 0.0)?)
     };
     if rx < 0.0 || ry < 0.0 {
         return Err(Bad);
@@ -1162,7 +1198,16 @@ impl State<'_> {
             }
         };
         match got {
+            Ok(Some(item)) if !finite(&item) => self.notes.add(c.no, Sort::Unreadable),
             Ok(Some(item)) => {
+                if self.dialect == Dialect::Iwb
+                    && !matches!(n.name.as_str(), "rect" | "image")
+                    && id
+                        .as_deref()
+                        .is_some_and(|i| self.refs.flag(i, "background"))
+                {
+                    self.notes.add(c.no, Sort::BackgroundObject);
+                }
                 self.count()?;
                 out.push((id, item));
             }
@@ -1182,6 +1227,10 @@ impl State<'_> {
     ) -> Result<(), BoardError> {
         if self.dialect == Dialect::Ubz {
             if let Some(stroke) = pressure_stroke(n, c) {
+                if !finite(&stroke) {
+                    self.notes.add(c.no, Sort::Unreadable);
+                    return Ok(());
+                }
                 self.count()?;
                 out.push((id, stroke));
                 return Ok(());
@@ -1214,10 +1263,10 @@ impl State<'_> {
         bg: &mut Option<Rgb>,
     ) -> Got {
         let (x, y, w, h) = (
-            f(n, "x", 0.0)?,
-            f(n, "y", 0.0)?,
-            f(n, "width", 0.0)?,
-            f(n, "height", 0.0)?,
+            length_attr(n, "x", 0.0)?,
+            length_attr(n, "y", 0.0)?,
+            length_attr(n, "width", 0.0)?,
+            length_attr(n, "height", 0.0)?,
         );
         if w < 0.0 || h < 0.0 {
             return Err(Bad);
@@ -1257,10 +1306,10 @@ impl State<'_> {
 
     fn line(&mut self, n: &Node, c: &Ctx, id: Option<&str>) -> Got {
         let (x1, y1, x2, y2) = (
-            f(n, "x1", 0.0)?,
-            f(n, "y1", 0.0)?,
-            f(n, "x2", 0.0)?,
-            f(n, "y2", 0.0)?,
+            length_attr(n, "x1", 0.0)?,
+            length_attr(n, "y1", 0.0)?,
+            length_attr(n, "x2", 0.0)?,
+            length_attr(n, "y2", 0.0)?,
         );
         let arrow = id.is_some_and(|i| self.refs.value(i, "stroke-lineshape-end") == Some("arrow"));
         let (color, width) = outline(&c.style, fill_of(&c.style));
@@ -1284,7 +1333,7 @@ impl State<'_> {
 
     fn poly(&mut self, n: &Node, c: &Ctx) -> Got {
         let v = numbers(n.attr("points").unwrap_or("")).ok_or(Bad)?;
-        if v.len() < 2 {
+        if v.len() < 2 || v.len() / 2 > MAX_POINTS as usize {
             return Err(Bad);
         }
         let mut points: Vec<[f32; 3]> = v
@@ -1346,6 +1395,9 @@ impl State<'_> {
         let mut chars = Vec::new();
         collect(n, 0, &mut looks, &mut chars);
         let spans = spans_of(chars, &looks, n.attr("space") == Some("preserve"));
+        if spans.len() > MAX_SPANS as usize {
+            return Err(Bad);
+        }
         if spans.iter().all(|s| s.text.trim().is_empty()) {
             return Ok(None);
         }
@@ -1389,10 +1441,10 @@ impl State<'_> {
             return Ok(None);
         }
         let (x, y, w, h) = (
-            f(n, "x", 0.0)?,
-            f(n, "y", 0.0)?,
-            f(n, "width", 0.0)?,
-            f(n, "height", 0.0)?,
+            length_attr(n, "x", 0.0)?,
+            length_attr(n, "y", 0.0)?,
+            length_attr(n, "width", 0.0)?,
+            length_attr(n, "height", 0.0)?,
         );
         if w <= 0.0 || h <= 0.0 {
             return Err(Bad);
@@ -1891,5 +1943,84 @@ mod tests {
             warnings,
             vec!["page 1 : 1 alignement de texte non lu".to_string()]
         );
+    }
+
+    fn one_unreadable(body: &str) {
+        let (pages, warnings) = read(&iwb(body, ""), Dialect::Iwb, 1);
+        assert!(pages[0].items.is_empty(), "{body}");
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet illisible ignoré".to_string()]
+        );
+    }
+
+    #[test]
+    fn non_finite_results_make_the_object_unreadable() {
+        one_unreadable(
+            r#"<svg:g transform="scale(1e20)"><svg:g transform="scale(1e20)"><svg:rect width="1" height="1"/></svg:g></svg:g>"#,
+        );
+        one_unreadable(r#"<svg:rect x="3e38" width="3e38" height="10"/>"#);
+        one_unreadable(
+            r#"<svg:line x1="0" y1="0" x2="1" y2="1" stroke-width="1" transform="scale(1e30) scale(1e30)"/>"#,
+        );
+        // les voisins lisibles restent lus
+        let (pages, _) = read(
+            &iwb(
+                r#"<svg:rect x="3e38" width="3e38" height="10"/><svg:rect width="2" height="2"/>"#,
+                "",
+            ),
+            Dialect::Iwb,
+            1,
+        );
+        assert_eq!(pages[0].items.len(), 1);
+    }
+
+    #[test]
+    fn view_box_whose_scale_overflows_is_refused() {
+        let xml = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1e-38 1"><rect width="1" height="1"/></svg>"#;
+        assert!(matches!(
+            read_svg(xml.as_bytes(), Dialect::Iwb, 1),
+            Err(BoardError::Broken(_))
+        ));
+    }
+
+    #[test]
+    fn background_flag_warns_for_every_kind() {
+        let body = r#"<svg:text id="t" x="0" y="20">abc</svg:text>"#;
+        let extra = r#"<iwb:element ref="t" background="true"/>"#;
+        let (pages, warnings) = read(&iwb(body, extra), Dialect::Iwb, 1);
+        assert_eq!(pages[0].items.len(), 1);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet de fond gardé comme objet".to_string()]
+        );
+    }
+
+    #[test]
+    fn too_deep_nesting_is_refused() {
+        let xml = format!("<svg>{}{}</svg>", "<g>".repeat(300), "</g>".repeat(300));
+        let e = read_svg(xml.as_bytes(), Dialect::Iwb, 1).expect_err("refus");
+        assert!(e.to_string().contains("imbrication trop profonde"), "{e}");
+    }
+
+    #[test]
+    fn too_many_points_or_spans_skip_the_object_only() {
+        let pts = "0 0 ".repeat(crate::board::MAX_POINTS as usize + 1);
+        let body = format!(r#"<svg:polyline points="{pts}"/><svg:rect width="2" height="2"/>"#);
+        let (pages, warnings) = read(&iwb(&body, ""), Dialect::Iwb, 1);
+        assert_eq!(pages[0].items.len(), 1);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet illisible ignoré".to_string()]
+        );
+        let spans = r#"<svg:tspan font-weight="bold">a</svg:tspan><svg:tspan>b</svg:tspan>"#
+            .repeat(crate::board::MAX_SPANS as usize / 2 + 1);
+        let body = format!(r#"<svg:text x="0" y="10">{spans}</svg:text>"#);
+        one_unreadable(&body);
+    }
+
+    #[test]
+    fn href_dot_slash_prefixes_are_all_removed() {
+        assert_eq!(normalize_href("./././a\\b.png"), "a/b.png");
     }
 }

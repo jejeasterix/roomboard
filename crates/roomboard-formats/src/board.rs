@@ -33,6 +33,8 @@ pub const MAX_PAGES: usize = 500;
 pub const MAX_OBJECTS: usize = 100_000;
 const MAX_POINTS: u32 = 1_000_000;
 const MAX_SPANS: u32 = 10_000;
+/// Profondeur de groupes au plus (comme l'arbre XML du lecteur) : au-delà, `BadList`.
+const MAX_GROUP_DEPTH: usize = 256;
 const MAX_INDEX: u32 = 16_777_216;
 /// Préallocation au plus (comme `path` de `pdf.rs`) : un compte annoncé ne réserve pas plus que le flux ne porte.
 const PREALLOC: usize = 4096;
@@ -587,6 +589,9 @@ pub fn parse(list: &BoardList) -> Result<Vec<Page>, BoardError> {
                 if pages.is_empty() {
                     return Err(bad("groupe avant la première page".to_string()));
                 }
+                if stack.len() >= MAX_GROUP_DEPTH {
+                    return Err(bad(format!("groupes imbriqués trop profonds ({at})")));
+                }
                 stack.push(Vec::new());
             }
             8 => {
@@ -844,5 +849,27 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn group_depth_is_bounded() {
+        let mut ops = vec![1.0];
+        ops.extend(std::iter::repeat_n(7.0, 20000));
+        ops.extend(std::iter::repeat_n(8.0, 20000));
+        let l = BoardList {
+            ops,
+            texts: Vec::new(),
+            warnings: Vec::new(),
+        };
+        assert!(matches!(parse(&l), Err(BoardError::BadList(_))));
+        let mut ops = vec![1.0];
+        ops.extend(std::iter::repeat_n(7.0, 256));
+        ops.extend(std::iter::repeat_n(8.0, 256));
+        let l = BoardList {
+            ops,
+            texts: Vec::new(),
+            warnings: Vec::new(),
+        };
+        assert!(parse(&l).is_ok());
     }
 }

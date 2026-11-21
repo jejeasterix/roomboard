@@ -232,12 +232,13 @@ pub fn write_board_xml_inner(
         Dialect::Ubz => {
             let pages = board::write_ubz_pages(&list).map_err(|e| e.to_string())?;
             let mut out = Vec::with_capacity(2 * pages.len() + 2);
-            for (i, xml) in pages.iter().enumerate() {
+            let count = pages.len();
+            for (i, xml) in pages.into_iter().enumerate() {
                 out.push(format!("page{:03}.svg", i + 1));
-                out.push(xml.clone());
+                out.push(xml);
             }
             out.push("metadata.rdf".to_string());
-            out.push(board::ubz_metadata(pages.len()));
+            out.push(board::ubz_metadata(count));
             Ok(out)
         }
     }
