@@ -330,7 +330,8 @@ export interface CoreDocument {
   pageIds(): string[];
   elementIds(page: string): string[];
   /** OE23 (Q7) : ids de `page` dont le champ `kind` brut vaut `kind`, dans l'ordre de la page, sans lire de vue ; page
-   *  inconnue : []. Un élément mal formé y figure (vue `unknown`) : confirmer chaque candidat par `element(id)`. */
+   *  inconnue : []. Un élément de kind inconnu y figure sous son kind brut ; un élément mal formé y figure aussi, mais `element(id)` peut
+   *  rendre `null` pour lui (image, trait, forme, texte) : confirmer chaque candidat par `element(id)`. */
   elementIdsOfKind(page: string, kind: string): readonly string[];
   /** Lève une Error dont le message dit la cause (page inconnue, dernière page, points invalides). */
   apply(cmd: Command): Change;

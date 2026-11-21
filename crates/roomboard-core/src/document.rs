@@ -311,13 +311,19 @@ impl Document {
         self.find_page(&txn, id).map(|(i, _)| i)
     }
 
-    pub fn element_ids(&self, page: &str) -> Vec<String> {
+    /// Ids lisibles des éléments de `page` que `keep` retient (lu sur la map brute de l'élément), dans l'ordre de la page ;
+    /// un élément sans `id` lisible n'y figure pas (K8). Page inconnue : vide.
+    fn ids_where(
+        &self,
+        page: &str,
+        keep: impl Fn(&MapRef, &yrs::Transaction) -> bool,
+    ) -> Vec<String> {
         let txn = self.doc.transact();
         match self.page_elements(&txn, page) {
             Some(els) => els
                 .iter(&txn)
                 .filter_map(|o| match o {
-                    Out::YMap(e) => out_string(e.get(&txn, "id")),
+                    Out::YMap(e) if keep(&e, &txn) => out_string(e.get(&txn, "id")),
                     _ => None,
                 })
                 .collect(),
@@ -325,23 +331,18 @@ impl Document {
         }
     }
 
+    pub fn element_ids(&self, page: &str) -> Vec<String> {
+        self.ids_where(page, |_, _| true)
+    }
+
     /// Ids des éléments de `page` dont le champ `kind` brut vaut `kind`, dans l'ordre de la page, sans lire de vue
-    /// (OE23, Q7) : les ids qu'`element_ids` rendrait (un élément sans `id` lisible n'y figure pas, K8). Un élément mal
-    /// formé y figure : l'appelant confirme chaque candidat par `element(id)` (H4). Page inconnue : vide.
+    /// (OE23, Q7) : les ids qu'`element_ids` rendrait (un élément sans `id` lisible n'y figure pas, K8). Un élément dont
+    /// la vue est `unknown` y figure sous son kind brut ; un élément mal formé dont `element()` rend `None` (image, trait,
+    /// forme, texte) y figure aussi : l'appelant confirme chaque candidat par `element(id)` (H4). Page inconnue : vide.
     pub fn element_ids_of_kind(&self, page: &str, kind: &str) -> Vec<String> {
-        let txn = self.doc.transact();
-        match self.page_elements(&txn, page) {
-            Some(els) => els
-                .iter(&txn)
-                .filter_map(|o| match o {
-                    Out::YMap(e) if out_string(e.get(&txn, "kind")).as_deref() == Some(kind) => {
-                        out_string(e.get(&txn, "id"))
-                    }
-                    _ => None,
-                })
-                .collect(),
-            None => Vec::new(),
-        }
+        self.ids_where(page, |e, txn| {
+            out_string(e.get(txn, "kind")).as_deref() == Some(kind)
+        })
     }
 
     pub fn element(&self, id: &str) -> Option<ElementView> {
