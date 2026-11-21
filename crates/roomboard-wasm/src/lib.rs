@@ -18,6 +18,7 @@ use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
 use roomboard_core::media::{LinkedAsset, MediaType};
+use roomboard_core::model3d::Model3dFormat;
 use roomboard_core::query::Bounds;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput, TextAttr};
 use roomboard_core::shape::ShapeKind;
@@ -106,6 +107,31 @@ fn table_axis(row: bool) -> TableAxis {
 }
 
 /// Référence d'asset reçue de JS : métadonnées seules, jamais les octets (U4, K13).
+/// Fichiers liés d'un objet 3D (C15, X7) : listes parallèles de même longueur, sinon `BadModel3d`.
+fn linked_files(
+    paths: &[String],
+    ids: &[String],
+    names: &[String],
+    mimes: &[String],
+    sizes: &[f64],
+) -> Result<Vec<(String, AssetRef)>, CommandError> {
+    let n = paths.len();
+    if [ids.len(), names.len(), mimes.len(), sizes.len()]
+        .iter()
+        .any(|l| *l != n)
+    {
+        return Err(CommandError::BadModel3d);
+    }
+    Ok((0..n)
+        .map(|i| {
+            (
+                paths[i].clone(),
+                asset_ref(&ids[i], &names[i], &mimes[i], sizes[i]),
+            )
+        })
+        .collect())
+}
+
 fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
     AssetRef {
         id: id.to_string(),
@@ -646,6 +672,77 @@ impl Document {
         to_js(
             &self
                 .set_media_inner(id, trim_start, trim_end, looped, volume)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// C15 (X7) : objet 3D ; `file_*` : fichiers liés, listes de même longueur (sinon `BadModel3d`) ; `snapshot` `null` :
+    /// sans instantané (ses `snapshot_*` sont ignorés). Seules les références traversent la liaison.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_model3d(
+        &mut self,
+        page: &str,
+        asset: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        format: &str,
+        file_paths: Vec<String>,
+        file_ids: Vec<String>,
+        file_names: Vec<String>,
+        file_mimes: Vec<String>,
+        file_sizes: Vec<f64>,
+        w: f64,
+        h: f64,
+        yaw: f64,
+        pitch: f64,
+        snapshot: Option<String>,
+        snapshot_name: &str,
+        snapshot_mime: &str,
+        snapshot_size: f64,
+        matrix: &[f64],
+    ) -> Result<JsValue, JsError> {
+        let files = linked_files(
+            &file_paths,
+            &file_ids,
+            &file_names,
+            &file_mimes,
+            &file_sizes,
+        )
+        .map_err(cmd_err)?;
+        let snapshot =
+            snapshot.map(|id| asset_ref(&id, snapshot_name, snapshot_mime, snapshot_size));
+        to_js(
+            &self
+                .add_model3d_inner(
+                    page,
+                    asset_ref(asset, name, mime, size),
+                    format,
+                    files,
+                    [w, h, yaw, pitch],
+                    snapshot,
+                    matrix,
+                )
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// C15 (X7) : vue voulue d'un objet 3D et son instantané (`null` : retiré).
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_model3d_view(
+        &mut self,
+        id: &str,
+        yaw: f64,
+        pitch: f64,
+        snapshot: Option<String>,
+        snapshot_name: &str,
+        snapshot_mime: &str,
+        snapshot_size: f64,
+    ) -> Result<JsValue, JsError> {
+        let snapshot = snapshot.map(|s| asset_ref(&s, snapshot_name, snapshot_mime, snapshot_size));
+        to_js(
+            &self
+                .set_model3d_view_inner(id, yaw, pitch, snapshot)
                 .map_err(cmd_err)?,
         )
     }
@@ -1392,6 +1489,49 @@ impl Document {
             trim_end,
             looped,
             volume,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_model3d_inner(
+        &mut self,
+        page: &str,
+        asset: AssetRef,
+        format: &str,
+        files: Vec<(String, AssetRef)>,
+        box_view: [f64; 4],
+        snapshot: Option<AssetRef>,
+        matrix: &[f64],
+    ) -> Result<Change, CommandError> {
+        let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
+        let format = Model3dFormat::parse(format).ok_or(CommandError::BadModel3d)?;
+        let [w, h, yaw, pitch] = box_view;
+        self.run(Command::AddModel3d {
+            page: page.to_string(),
+            asset,
+            format,
+            files,
+            w,
+            h,
+            yaw,
+            pitch,
+            snapshot,
+            matrix: m,
+        })
+    }
+
+    pub fn set_model3d_view_inner(
+        &mut self,
+        id: &str,
+        yaw: f64,
+        pitch: f64,
+        snapshot: Option<AssetRef>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetModel3dView {
+            id: id.to_string(),
+            yaw,
+            pitch,
+            snapshot,
         })
     }
 
@@ -2270,6 +2410,75 @@ mod tests {
                 id: ABC.into(),
                 path: "../clips/clip.webm".into()
             }]
+        );
+    }
+
+    /// C15 : objet 3D ajouté et relu, format inconnu et matrice de 5 refusés, vue relue, listes inégales refusées.
+    #[test]
+    fn add_model3d_inner_then_set_view() {
+        use roomboard_core::model3d::{DEFAULT_PITCH, DEFAULT_YAW};
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let glb = AssetRef {
+            id: ABC.into(),
+            name: "chaise.glb".into(),
+            mime: "model/gltf-binary".into(),
+            size: 10.0,
+        };
+        let m = [1.0, 0.0, 0.0, 1.0, 5.0, 6.0];
+        let view = [640.0, 480.0, DEFAULT_YAW, DEFAULT_PITCH];
+        let files = linked_files(
+            &["tex/a.png".to_string()],
+            &[ABC.to_string()],
+            &["a.png".to_string()],
+            &["image/png".to_string()],
+            &[3.0],
+        )
+        .expect("listes de même longueur");
+        let c = d
+            .add_model3d_inner(&p, glb.clone(), "glb", files, view, None, &m)
+            .expect("objet 3D");
+        let id = c.ids[0].clone();
+        let e = d.core.element(&id).expect("vue");
+        assert_eq!(e.kind, "model3d");
+        assert_eq!(
+            e.model3d
+                .as_ref()
+                .map(|v| (v.format.as_str(), v.w, v.h, v.files.len(), v.yaw)),
+            Some(("glb", 640.0, 480.0, 1, DEFAULT_YAW))
+        );
+        assert_eq!(
+            d.add_model3d_inner(&p, glb.clone(), "fbx", vec![], view, None, &m),
+            Err(CommandError::BadModel3d)
+        );
+        assert_eq!(
+            d.add_model3d_inner(&p, glb.clone(), "glb", vec![], view, None, &m[..5]),
+            Err(CommandError::BadMatrix)
+        );
+        d.set_model3d_view_inner(&id, 1.0, -0.5, Some(glb))
+            .expect("vue");
+        let v = d
+            .core
+            .element(&id)
+            .and_then(|v| v.model3d)
+            .expect("objet 3D");
+        assert_eq!(
+            (v.yaw, v.pitch, v.snapshot.as_deref()),
+            (1.0, -0.5, Some(ABC))
+        );
+        assert_eq!(
+            linked_files(
+                &["a.png".to_string(), "b.bin".to_string()],
+                &[ABC.to_string()],
+                &["a.png".to_string()],
+                &["image/png".to_string()],
+                &[3.0],
+            ),
+            Err(CommandError::BadModel3d)
+        );
+        assert_eq!(
+            linked_files(&[], &[], &[], &[], &[1.0]),
+            Err(CommandError::BadModel3d)
         );
     }
 
