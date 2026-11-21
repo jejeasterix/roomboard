@@ -156,6 +156,8 @@ thread_local! {
     /// Repères de phase de `closed_zone` (témoin S6) : nom, taille notée, instant.
     static LAPS: std::cell::RefCell<Vec<(&'static str, usize, std::time::Instant)>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// Suites de ligne écrites `WALL` dans le masque (T4 : une arête écrit chaque ligne dilatée une fois).
+    static ROW_FILLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Fin d'une phase de `closed_zone` et sa taille (cellules, rectangles, sommets) : notée par les tests seulement ; hors
@@ -269,8 +271,15 @@ impl Mask {
         }
         let (a, b) = (i0.saturating_sub(grow), (i1 + grow).min(self.w));
         for r in j.saturating_sub(grow)..=(j + grow).min(self.h - 1) {
-            self.cells[r * self.w + a..r * self.w + b].fill(WALL);
+            self.fill_row(r, a, b);
         }
+    }
+
+    /// Cellules [a, b) de la ligne `r` marquées `WALL`.
+    fn fill_row(&mut self, r: usize, a: usize, b: usize) {
+        #[cfg(test)]
+        ROW_FILLS.with(|n| n.set(n.get() + 1));
+        self.cells[r * self.w + a..r * self.w + b].fill(WALL);
     }
 
     /// Cellules dont l'intérieur ouvert est traversé par l'arête (x0, y0)-(x1, y1), marquées `WALL` : un mur plus fin
@@ -1107,6 +1116,42 @@ mod tests {
             }
             want.dilate_in_place(WALL);
             assert!(got.cells == want.cells, "masques différents à {tol}");
+        }
+    }
+
+    /// T4 (S6) : une arête traversant k lignes écrit ses k + 2 lignes dilatées une fois chacune (le marquage ligne par
+    /// ligne en écrivait 3 k), et le masque reste celui marqué sans agrandissement puis dilaté 3 × 3 : arêtes obliques,
+    /// à pente faible ou forte, portées par une frontière de cellule, au bord de l'emprise, dans les deux sens.
+    #[test]
+    fn edge_marking_writes_each_grown_row_once() {
+        let g = Grid {
+            w: 64,
+            h: 48,
+            cell: 1.0,
+            origin: [0.0, 0.0],
+        };
+        let mut m = Mask::new(g);
+        ROW_FILLS.with(|n| n.set(0));
+        m.mark_edge([10.3, 10.2], [30.7, 25.6], 1);
+        assert_eq!(ROW_FILLS.with(std::cell::Cell::get), 18, "16 lignes, 18 écrites");
+        let edges: [([f64; 2], [f64; 2]); 10] = [
+            ([10.3, 10.2], [30.7, 25.6]),
+            ([30.7, 25.6], [10.3, 10.2]),
+            ([5.5, 3.1], [60.2, 7.9]),
+            ([40.0, 2.0], [40.0, 30.0]),
+            ([12.0, 20.0], [50.0, 20.0]),
+            ([0.0, 0.0], [63.9, 47.9]),
+            ([63.5, 1.5], [0.5, 46.5]),
+            ([20.0, 5.0], [21.0, 40.0]),
+            ([33.25, 9.75], [33.75, 10.25]),
+            ([7.0, 44.0], [9.0, 40.0]),
+        ];
+        for (p0, p1) in edges {
+            let (mut want, mut got) = (Mask::new(g), Mask::new(g));
+            want.mark_edge(p0, p1, 0);
+            want.dilate_in_place(WALL);
+            got.mark_edge(p0, p1, 1);
+            assert!(got.cells == want.cells, "masques différents pour {p0:?} → {p1:?}");
         }
     }
 
