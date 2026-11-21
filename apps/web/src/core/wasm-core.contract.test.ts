@@ -945,6 +945,51 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
     expect(need().capabilities("windows")).toEqual({ desktopAnnotation: true, multiWindow: true });
     expect(need().capabilities("ipados")).toEqual({ desktopAnnotation: false, multiWindow: false });
   });
+
+  const c4Grid = {
+    visible: true, snap: false, above: false,
+    levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#7aa7d8", line: "solid", lineWidth: 1, snap: false, visible: true }],
+  } as unknown as GridInput;
+  const PACK_MESSAGE = "ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque";
+  const packManifest = new TextEncoder().encode('{"format":"roomboard","formatVersion":1,"schema":1,"appVersion":"x","created":"c","modified":"m","kind":"pack"}');
+
+  it("C4 : grille en ressource écrite puis relue, kind « grid »", () => {
+    const f = need().core;
+    const d = f.blank();
+    const p = d.pageIds()[0]!;
+    d.apply({ type: "SetGrid", page: p, grid: c4Grid });
+    const bytes = d.saveGrid("2026-11-21T08:00:00Z", "c4", "Seyès");
+    expect(f.containerKind(bytes)).toBe("grid");
+    const g = f.loadGrid(bytes);
+    expect(g.page(g.pageIds()[0]!)?.grid).toEqual(d.page(p)?.grid);
+    const [manifest, ybin] = d.saveGridParts("2026-11-21T08:00:00Z", "c4", "Seyès");
+    expect(f.manifestKind(manifest)).toBe("grid");
+    f.loadGridParts(manifest, ybin).free();
+    g.free();
+    d.free();
+  });
+
+  it("C4 : une grille lue comme objet ou comme document : message de la grille", () => {
+    const f = need().core;
+    const d = f.blank();
+    d.apply({ type: "SetGrid", page: d.pageIds()[0]!, grid: c4Grid });
+    const bytes = d.saveGrid("2026-11-21T08:00:00Z", "c4", "G");
+    expect(() => f.loadFragment(bytes)).toThrow("ce fichier est une grille RoomBoard : déposez-la sur une page");
+    expect(() => f.load(bytes)).toThrow("ce fichier est une grille RoomBoard : déposez-la sur une page");
+    d.free();
+  });
+
+  it("C4 : kind « pack » refusé par manifestKind avec le message du paquet (D26)", () => {
+    expect(() => need().core.manifestKind(packManifest)).toThrow(PACK_MESSAGE);
+  });
+
+  it("C4 : faux cœur et vrai module disent la même chose pour « pack » et un type inconnu", () => {
+    const f = need().core;
+    expect(() => fakeCore.manifestKind(packManifest)).toThrow(PACK_MESSAGE);
+    const autre = new TextEncoder().encode('{"format":"roomboard","formatVersion":1,"schema":1,"appVersion":"x","created":"c","modified":"m","kind":"autre"}');
+    expect(() => f.manifestKind(autre)).toThrow(unknownKindMessage("autre"));
+    expect(() => fakeCore.manifestKind(autre)).toThrow(unknownKindMessage("autre"));
+  });
 });
 
 const BAD_FORMAT =
@@ -2662,10 +2707,11 @@ describe.skipIf(loaded === null)("contrat C3 : vrai module seulement", () => {
     const d = need().core.blank();
     const [m, y] = d.extract(first(d), []).saveFragmentParts(now, "0.1.0", "x");
     const json = JSON.parse(new TextDecoder().decode(m)) as Record<string, unknown>;
-    json["kind"] = "grid";
+    // C4 : « grid » est désormais un type connu ; l'exemple de type inconnu devient « hologram » (même intention).
+    json["kind"] = "hologram";
     const grid = new TextEncoder().encode(JSON.stringify(json));
-    expect(messageOf(() => need().core.loadFragmentParts(grid, y))).toBe(unknownKindMessage("grid"));
-    expect(messageOf(() => need().core.loadParts(grid, y))).toBe(unknownKindMessage("grid"));
+    expect(messageOf(() => need().core.loadFragmentParts(grid, y))).toBe(unknownKindMessage("hologram"));
+    expect(messageOf(() => need().core.loadParts(grid, y))).toBe(unknownKindMessage("hologram"));
   });
   it("source d'une autre liaison : erreur, rien d'écrit", () => {
     const d = need().core.blank();
