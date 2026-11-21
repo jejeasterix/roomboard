@@ -710,17 +710,17 @@ describe("fakeCore — C6a (fond de page)", () => {
 describe("fakeCore — C3", () => {
   const json = (v: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(v));
   it("JSON d'un kind inconnu : refusé comme le cœur ; d'un fragment ouvert comme document : refusé", () => {
-    const pack = json({ kind: "pack", pages: [] });
-    expect(() => fakeCore.load(pack)).toThrow("type de fichier RoomBoard inconnu (« pack ») : pris en charge dans une prochaine version");
-    expect(() => fakeCore.loadFragment(pack)).toThrow("(« pack »)");
+    const hologram = json({ kind: "hologram", pages: [] });
+    expect(() => fakeCore.load(hologram)).toThrow("type de fichier RoomBoard inconnu (« hologram ») : pris en charge dans une prochaine version");
+    expect(() => fakeCore.loadFragment(hologram)).toThrow("(« hologram »)");
   });
   // Discrimine (décision de contre-relecture) : le kind se lit à l'ouverture, avant le contenu ; un fichier d'un type à
   // venir n'a pas à porter `pages`. Contrôler `pages` d'abord rendrait « ce fichier n'est pas un document RoomBoard ».
   it("kind inconnu refusé à l'ouverture, avant le contenu (fichier sans pages)", () => {
-    const pack = json({ kind: "pack", levels: [] });
-    expect(() => fakeCore.load(pack)).toThrow("type de fichier RoomBoard inconnu (« pack »)");
-    expect(() => fakeCore.loadFragment(pack)).toThrow("type de fichier RoomBoard inconnu (« pack »)");
-    expect(() => fakeCore.loadParts(json({ format: "roomboard-fake" }), pack)).toThrow("(« pack »)");
+    const hologram = json({ kind: "hologram", levels: [] });
+    expect(() => fakeCore.load(hologram)).toThrow("type de fichier RoomBoard inconnu (« hologram »)");
+    expect(() => fakeCore.loadFragment(hologram)).toThrow("type de fichier RoomBoard inconnu (« hologram »)");
+    expect(() => fakeCore.loadParts(json({ format: "roomboard-fake" }), hologram)).toThrow("(« hologram »)");
     expect(() => fakeCore.load(json({ foo: 1 }))).toThrow("ce fichier n'est pas un document RoomBoard");
   });
   it("group illisible dans le JSON : retiré (PC6), l'élément reste", () => {
@@ -844,7 +844,8 @@ describe("C4 : grille en ressource (faux cœur)", () => {
     expect(fakeCore.containerKind(fakeCore.blank().save("n", "a"))).toBe("document");
     expect(fakeCore.containerKind(fakeCore.blank().saveFragment("n", "a", "x"))).toBe("fragment");
     expect(fakeCore.manifestKind(d.saveGridParts("n", "a", "G")[0])).toBe("grid");
-    expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"pack"}'))).toThrow(unknownKindMessage("pack"));
+    expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"pack"}'))).toThrow("ce fichier est un paquet RoomBoard (.rbpack) : importez-le dans la bibliothèque");
+    expect(() => fakeCore.manifestKind(new TextEncoder().encode('{"kind":"hologram"}'))).toThrow(unknownKindMessage("hologram"));
   });
 
   it("C4 : une grille lue comme objet ou document : message de la grille", () => {
