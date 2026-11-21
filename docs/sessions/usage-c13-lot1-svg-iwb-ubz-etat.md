@@ -1,6 +1,6 @@
 # État — usage-c13-lot1-svg-iwb-ubz
 
-Statut : en cours
+Statut : PR #30 ouverte, fusion locale en cours
 Gabarit : chantier (12 tâches, confirmé au plan)
 Objectif : Un `.iwb` (IWB/CFF, en ZIP ou en SVG brut) et un `.ubz` (OpenBoard) déposés ou ouverts deviennent des pages RoomBoard avec la liste d'avertissements de ce qui n'est pas lu (niveau A), par un lecteur SVG commun aux formats de tableaux, et « Enregistrer une copie au format » exporte en `.iwb` et en `.ubz` (niveau E).
 Avancement : 15/15 tâches terminées
@@ -59,6 +59,7 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 - Attribution : 9 commits de sous-agents portaient `Claude Sonnet 5.5` ; réécrits en local avant toute poussée (T11, T12, T14), sans `--force`.
 
 ## Rapport
+- Conditions de merge : double relecture faite (2 tours, aucun bloquant ouvert ; le major du tour 2 corrigé par T15) · aucune tâche bloquée · suite complète sans baisse (2738 tests ≥ 2608, scène égale à la référence) · aucun test retiré ni sauté (un test d'import.test.ts réécrit par la consigne : `.iwb` reconnu par extension) · scénarios S1–S5 joués et réussis · CLI non touchée · point de retour : origin/main bea54d7 · aucune CI sur le dépôt.
 - Suite complète finale (tête 5848edb = chantier + T15 + origin/main bea54d7, `verifier.sh --e2e`, ~/projets/roomboard-wt/c13-verifier-final.out) : « C16 Office : OK », « C13 tableaux : OK », « verifier.sh : e2e OK », « verifier.sh : OK », code 0 ; web 2738 tests (2608 avant C13, 2685 avec C13 seul) ; module Wasm principal 1 374 141 o (C16 ; 1 371 293 o sans), module formats 3 024 532 o (3 100 845 o avant) ; scène 706 px, 662 Pot, 658 Tableau ou Texte (égal à la référence), 706 px dans l'essai C13 après import, liste des pages 276 px.
 - Scénarios (essai `scripts/essais/c13-tableaux-navigateur.mjs` dans `verifier.sh --e2e`) : S1 `.iwb` ZIP, 8 objets, avis « page 1 : 1 vidéo non lue », groupe déplacé d'un bloc, texte éditable ; S2 `.iwb` SVG brut de 3 pages, 2 objets par page ; S3 `.ubz` 4 objets, fond noir, avis « règle non lue », un trait ajouté ; S4 copies `.iwb` et `.ubz` rouvertes (8 objets, groupe tenu, réécriture identique), `.roomboard` rouvert (8 objets), `socle-v1.roomboard` d'avant C13 ouvert, scène ≥ 640 ; S5 script, entité externe et DOCTYPE dits, jamais exécutés (`window.__pwned` absent), zéro requête hors 127.0.0.1 ; `../`, chemins absolus et bornes U26 par tests unitaires (zip-worker, workspace, board::read).
 - Capture : `docs/essais/c13-iwb-lecon.png`, leçon `.iwb` fabriquée de 3 pages (« Magic Square », carré 3 × 3), 1280 × 900, barre des pages sur une rangée.
