@@ -4,10 +4,12 @@
  * point) ; insérer les pages d'un `.roomboard` après la page montrée (Z12). Assets adoptés par le magasin de l'onglet ;
  * un asset cité non lu : refus (HZ2-6, PC8). Lecture et écriture par `container-io.ts`. Pages d'un fichier : ses médias
  * liés ne sont pas insérés, avec l'avis de la copie d'un média lié (C14, R2) ; le reste l'est.
+ * C4 : une ressource lue décide seule de son chemin (objets → `placeFragment`, grille → un `SetGrid`) ; la grille de
+ * la page montrée s'écrit en `.rbitem` de grille.
  */
 import { anchorOf, CASCADE_STEP } from "../platform/image-import";
 import type { OpenedFile, Point } from "../platform/files";
-import type { CoreDocument } from "../core/api";
+import type { CoreDocument, CoreFactory } from "../core/api";
 import { LINKED_COPY_MESSAGE, MissingAssetError, type ContainerIO, type ReadResult } from "./container-io";
 import type { TabSession } from "./workspace";
 
@@ -17,9 +19,14 @@ export const MISSING_ITEMS_MESSAGE = "images absentes du magasin, rien n'est cop
 export const MISSING_EXPORT_MESSAGE = "images absentes du magasin, rien n'est exporté";
 export const EMPTY_ITEMS_MESSAGE = "objet sans élément, rien n'est inséré";
 export const TAB_GONE_MESSAGE = "onglet fermé pendant la lecture, rien n'est inséré";
+export const GRID_NAME = "Grille";
+export const NO_GRID_MESSAGE = "cette page n'a pas de grille, rien n'est ajouté";
+export const EMPTY_GRID_MESSAGE = "grille vide, rien n'est appliqué";
 
 export interface FragmentDeps {
   readonly io: ContainerIO;
+  /** C4 : document neuf de la grille en ressource. */
+  readonly core: Pick<CoreFactory, "blank">;
   now(): string;
   readonly appVersion: string;
   say(message: string): Promise<void>;
@@ -36,6 +43,11 @@ export interface FragmentOps {
   insert(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<boolean>;
   insertOutcome(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome>;
   insertPages(tab: TabSession, file: OpenedFile): Promise<boolean>;
+  /** C4 (D2, D14) : objets → insertion de `insertOutcome` ; grille → un `SetGrid` sur la page montrée (même grille :
+   *  aucune étape). Le type se lit une fois, par `ContainerIO.read`. */
+  insertResource(tab: TabSession, bytes: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome>;
+  /** C4 (D2) : grille de la page montrée en `.rbitem` de grille ; null : page sans grille (avis dit). */
+  encodeGrid(tab: TabSession, name?: string): Promise<Uint8Array | null>;
   resetCascade(): void;
 }
 
@@ -78,9 +90,8 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
     await deps.say(`${name} : ${LINKED_COPY_MESSAGE}`);
   }
 
-  async function insertOutcome(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
-    const read = await deps.io.read(name, rbitem, "fragment");
-    if (read === null) return "refused";
+  /** Seul chemin d'insertion d'objets lus (collage, dépôt, ressource) : cascade, centre, adoption des assets. */
+  async function placeFragment(tab: TabSession, read: ReadResult, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
     if (!(await accept(tab, read, name))) return "refused";
     const src = read.doc;
     try {
@@ -107,6 +118,31 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
     }
   }
 
+  async function insertOutcome(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
+    const read = await deps.io.read(name, rbitem, "fragment");
+    if (read === null) return "refused";
+    return placeFragment(tab, read, rbitem, name, at, index);
+  }
+
+  /** D2, D38 : la grille de la ressource sur la page montrée, en un `SetGrid` ; même grille : rien. */
+  async function placeGrid(tab: TabSession, read: ReadResult, name: string): Promise<InsertOutcome> {
+    if (!(await accept(tab, read, name))) return "refused";
+    const src = read.doc;
+    try {
+      const grid = src.page(src.pageIds()[0] ?? "")?.grid ?? null;
+      if (grid === null) {
+        await deps.say(`${name} : ${EMPTY_GRID_MESSAGE}`);
+        return "empty";
+      }
+      const page = tab.board.engine.state().page;
+      const current = tab.board.doc.page(page)?.grid ?? null;
+      if (current !== null && JSON.stringify(current) === JSON.stringify(grid)) return "inserted";
+      return tab.board.engine.run({ type: "SetGrid", page, grid }) !== null ? "inserted" : "refused";
+    } finally {
+      src.free();
+    }
+  }
+
   return {
     async encodeSelection(tab, action = "copy") {
       const { selection, page } = tab.board.engine.state();
@@ -123,6 +159,25 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       }
     },
     insertOutcome,
+    async insertResource(tab, bytes, name, at, index) {
+      const read = await deps.io.read(name, bytes, ["fragment", "grid"]);
+      if (read === null) return "refused";
+      return read.kind === "grid" ? placeGrid(tab, read, name) : placeFragment(tab, read, bytes, name, at, index);
+    },
+    async encodeGrid(tab, name = GRID_NAME) {
+      const grid = tab.board.doc.page(tab.board.engine.state().page)?.grid ?? null;
+      if (grid === null) {
+        await deps.say(NO_GRID_MESSAGE);
+        return null;
+      }
+      const doc = deps.core.blank();
+      try {
+        doc.apply({ type: "SetGrid", page: doc.pageIds()[0]!, grid });
+        return await deps.io.encode(doc, tab.assets, deps.now(), deps.appVersion, { kind: "grid", name });
+      } finally {
+        doc.free();
+      }
+    },
     async insert(tab, rbitem, name, at, index) {
       return (await insertOutcome(tab, rbitem, name, at, index)) === "inserted";
     },

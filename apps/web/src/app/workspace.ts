@@ -249,7 +249,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   };
   const io = createContainerIO({ core, codec: deps.codec, say, makeAssets, ...(relinkMedia ? { relink } : {}) });
   const clipboard = deps.clipboard ?? createClipboard(null);
-  const fragments = createFragmentOps({ io, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
+  const fragments = createFragmentOps({ io, core, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
   /** Nom dit dans les messages d'un collage (aucun fichier). */
   const PASTE_NAME = "presse-papiers";
 
