@@ -273,5 +273,7 @@ describe("hôte de repli : save passe la cible choisie (C14)", () => {
   it("IMPORT_ACCEPT suit IMPORT_EXTENSIONS : vidéos et sons compris", () => {
     expect(IMPORT_ACCEPT).toContain(".webm");
     expect(IMPORT_ACCEPT).toContain(".mp3");
+    expect(IMPORT_ACCEPT).toContain(".glb");
+    expect(IMPORT_ACCEPT).toContain(".zip");
   });
 });

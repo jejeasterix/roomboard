@@ -5,7 +5,10 @@ import { createAssetStore } from "../core/asset-store";
 import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
 import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
-import { createImporter, hasPdfMagic, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES, ZIP_MAGIC } from "./import";
+import {
+  createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRoomboardName, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
+  ZIP_MAGIC, type ImportHandler,
+} from "./import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import {
   AUDIO_BOX, CODEC_UNREADABLE, MEDIA_INCLUDE_MAX_BYTES, MEDIA_LINKED_NOTE, MEDIA_NOT_LINKED, MEDIA_PASTE_MAX_BYTES, MEDIA_TOO_BIG,
@@ -771,5 +774,135 @@ describe("importFiles : médias (C14)", () => {
     const notify = vi.fn(async () => undefined);
     await createImporter({ openDocument, notify }).importFiles([file("Cours.roomboard", new Uint8Array([1, 2]), "/docs/Cours.roomboard")]);
     expect(openDocument).toHaveBeenCalledWith({ name: "Cours.roomboard", bytes: new Uint8Array([1, 2]), target: null, path: "/docs/Cours.roomboard" });
+  });
+});
+
+/** Gestionnaire factice : reconnu par l'extension ; un « modèle » réclame les noms écrits dans son contenu. */
+function fake(ext: string, log: string[], cites = false): ImportHandler {
+  return {
+    id: ext,
+    nature: "objet",
+    detect: (_h, name) => name.endsWith(`.${ext}`),
+    ...(cites
+      ? {
+          companions: async (_f: DroppedFile, blob: Blob, _h: Uint8Array, siblings: readonly DroppedFile[]) => {
+            const text = await blob.text();
+            return siblings.filter((s) => text.split(" ").includes(s.name));
+          },
+        }
+      : {}),
+    async run(f, ctx) {
+      log.push(`${ext}:${f.name}[${ctx.companions.map((c) => c.name).join(",")}]`);
+      return "inserted";
+    },
+  };
+}
+const txt = (name: string, body: string): DroppedFile => file(name, new TextEncoder().encode(body));
+const deps = () => ({ openDocument: vi.fn(async () => true), notify: vi.fn(async (_m: string) => undefined) });
+/** Compte les lectures (`head`, `blob`) par nom de fichier. */
+function counter() {
+  const heads: string[] = [];
+  const blobs: string[] = [];
+  const counted = (f: DroppedFile): DroppedFile => ({
+    ...f,
+    head: async (n) => {
+      heads.push(f.name);
+      return f.head(n);
+    },
+    blob: async () => {
+      blobs.push(f.name);
+      return f.blob();
+    },
+  });
+  const times = (list: string[], name: string): number => list.filter((n) => n === name).length;
+  return { heads, blobs, counted, times };
+}
+
+describe("importFiles : fichiers liés (C15, DAX2)", () => {
+  it("image citée réclamée, image non citée importée (HX2-6)", async () => {
+    const log: string[] = [];
+    const d = deps();
+    const r = await importerOf([fake("fmod", log, true), fake("png", log)], d).importFiles([txt("a.png", "x"), txt("m.fmod", "a.png"), txt("b.png", "y")]);
+    expect(log).toEqual(["fmod:m.fmod[a.png]", "png:b.png[]"]);
+    expect(r).toEqual({ opened: [], inserted: ["m.fmod", "b.png"], refused: [], failed: [] });
+  });
+
+  it("appel mixte image, PDF, modèle : ordre et messages inchangés", async () => {
+    const log: string[] = [];
+    const d = deps();
+    const files = [txt("a.png", "x"), txt("doc.pdf", "%PDF-1.7"), txt("m.fmod", "rien"), txt("notes.xyz", "?")];
+    const r = await importerOf([fake("png", log), fake("pdf", log), fake("fmod", log, true)], d).importFiles(files);
+    expect(log).toEqual(["png:a.png[]", "pdf:doc.pdf[]", "fmod:m.fmod[]"]);
+    expect(r.refused).toEqual(["notes.xyz"]);
+    expect(d.notify.mock.calls.map((c) => c[0])).toEqual([`notes.xyz : ${LATER_FORMAT_MESSAGE}`]);
+  });
+
+  it("fichier seul : companions jamais appelé, ctx.companions vide", async () => {
+    const log: string[] = [];
+    const h = fake("fmod", log, true);
+    const spy = vi.spyOn(h, "companions" as never);
+    await importerOf([h], deps()).importFiles([txt("m.fmod", "a.png")]);
+    expect([log, spy.mock.calls.length]).toEqual([["fmod:m.fmod[]"], 0]);
+  });
+
+  it("companions lève : rien de réclamé, le modèle et les autres importés", async () => {
+    const log: string[] = [];
+    const h: ImportHandler = {
+      ...fake("fmod", log),
+      companions: async () => {
+        throw new Error("x");
+      },
+    };
+    await importerOf([h, fake("png", log)], deps()).importFiles([txt("m.fmod", "a.png"), txt("a.png", "x")]);
+    expect(log).toEqual(["fmod:m.fmod[]", "png:a.png[]"]);
+  });
+
+  it("fichier au-delà du plafond web jamais offert ; refusé comme avant", async () => {
+    const log: string[] = [];
+    const big: DroppedFile = { ...txt("a.png", "x"), size: WEB_MAX_BYTES + 1 };
+    const d = deps();
+    const r = await importerOf([fake("fmod", log, true), fake("png", log)], { ...d, maxBytes: WEB_MAX_BYTES }).importFiles([txt("m.fmod", "a.png"), big]);
+    expect(log).toEqual(["fmod:m.fmod[]"]);
+    expect(r.refused).toEqual(["a.png"]);
+  });
+
+  it("deux modèles : un fichier réclamé par le premier n'est pas offert au second", async () => {
+    const log: string[] = [];
+    await importerOf([fake("fmod", log, true), fake("png", log)], deps()).importFiles([txt("m1.fmod", "a.png"), txt("m2.fmod", "a.png"), txt("a.png", "x")]);
+    expect(log).toEqual(["fmod:m1.fmod[a.png]", "fmod:m2.fmod[]"]);
+  });
+
+  it("en-tête et contenu du modèle lus une seule fois ; un .roomboard jamais lu par la pré-passe", async () => {
+    const { heads, blobs, counted, times } = counter();
+    const log: string[] = [];
+    await importerOf([fake("fmod", log, true)], deps()).importFiles([counted(txt("m.fmod", "x")), counted(txt("c.roomboard", "x"))]);
+    expect([times(heads, "m.fmod"), times(blobs, "m.fmod")]).toEqual([1, 1]);
+    expect(heads.includes("c.roomboard")).toBe(false);
+  });
+
+  it("appel de plusieurs fichiers : l'en-tête d'un fichier non réclamé lu une seule fois, comme avant", async () => {
+    const { heads, blobs, counted, times } = counter();
+    const log: string[] = [];
+    const r = await importerOf([fake("fmod", log, true), fake("png", log)], deps())
+      .importFiles([counted(txt("m.fmod", "rien")), counted(txt("b.png", "y")), counted(txt("notes.xyz", "?"))]);
+    expect(log).toEqual(["fmod:m.fmod[]", "png:b.png[]"]);
+    expect(r.refused).toEqual(["notes.xyz"]);
+    expect([times(heads, "b.png"), times(blobs, "b.png"), times(heads, "notes.xyz"), times(blobs, "notes.xyz")]).toEqual([1, 1, 1, 0]);
+  });
+
+  it("en-tête qui lève pendant la pré-passe : lu une fois, l'échec dit comme avant", async () => {
+    const { heads, counted, times } = counter();
+    const log: string[] = [];
+    const d = deps();
+    const bad: DroppedFile = { ...txt("x.png", "z"), head: async () => { throw new Error("disque"); } };
+    const r = await importerOf([fake("fmod", log, true), fake("png", log)], d).importFiles([counted(txt("m.fmod", "x.png")), counted(bad)]);
+    expect(log).toEqual(["fmod:m.fmod[]"]);
+    expect(r.failed).toEqual(["x.png"]);
+    expect(times(heads, "x.png")).toBe(1);
+    expect(d.notify.mock.calls.map((c) => c[0])).toEqual(["Import impossible (x.png) : disque"]);
+  });
+
+  it("hasZipMagic exporté : en-tête ZIP reconnu, en-tête court refusé", () => {
+    expect([hasZipMagic(new Uint8Array(ZIP_MAGIC)), hasZipMagic(new Uint8Array([0x50, 0x4b]))]).toEqual([true, false]);
   });
 });
