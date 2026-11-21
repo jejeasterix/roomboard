@@ -7,6 +7,7 @@
  */
 import { unknownKindMessage } from "../core/api";
 import { ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
+import type { ZipFile } from "./zip-read";
 
 export type PackItemKind = "fragment" | "grid";
 export interface PackItem {
@@ -18,10 +19,7 @@ export interface PackItem {
   readonly bytes: Uint8Array;
   readonly thumbnail: Uint8Array | null;
 }
-export interface ZipFile {
-  readonly path: string;
-  readonly bytes: Uint8Array;
-}
+export type { ZipFile };
 interface ManifestItem {
   readonly path: string;
   readonly name: string;

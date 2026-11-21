@@ -4,11 +4,15 @@
  * C4 : lecture d'un paquet (`mode: "pack"`, chemins tels quels) et écriture d'un ZIP stocké (`createZipWriter`).
  */
 import { runOnce, type WorkerLike } from "./one-shot-worker";
-import type { ZipFile } from "./rbpack";
 
 export interface ZipEntry {
   readonly path: string;
   readonly blob: Blob;
+}
+/** Fichier à écrire dans un ZIP (C4) : chemin et octets ; déclaré ici, sous `rbpack.ts` qui le réexporte. */
+export interface ZipFile {
+  readonly path: string;
+  readonly bytes: Uint8Array;
 }
 export const ZIP_WORKER_TIMEOUT_MS = 60_000;
 export const ZIP_FAILED_MESSAGE = "lecture du ZIP interrompue";
