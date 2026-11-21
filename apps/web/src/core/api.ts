@@ -308,7 +308,7 @@ export interface BackdropView {
   readonly h: number | null;
   readonly fit: string;
   readonly rect: Bounds | null;
-  /** C16 (O17) : empreinte de l'original Office d'un PDF converti ; null pour un PDF, une image ou une valeur non conforme. */
+  /** C16 (O17) : empreinte de l'original Office d'un PDF converti ; null si absente ou non conforme (PDF seul, image). */
   readonly original: string | null;
 }
 export interface PageView {
