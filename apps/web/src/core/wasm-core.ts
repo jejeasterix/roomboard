@@ -494,6 +494,7 @@ class WasmCoreDocument implements CoreDocument {
 
   pageIds(): string[] { return this.d.page_ids(); }
   elementIds(page: string): string[] { return this.d.element_ids(page); }
+  elementIdsOfKind(page: string, kind: string): readonly string[] { return this.d.element_ids_of_kind(page, kind); }
 
   apply(cmd: Command): Change {
     switch (cmd.type) {

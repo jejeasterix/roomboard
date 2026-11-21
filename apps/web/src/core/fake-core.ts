@@ -582,6 +582,21 @@ function polyOutline(points: Float32Array, dx: number, dy: number): Float32Array
 
 interface Found { readonly page: FakePage; readonly index: number; readonly element: FakeElement }
 
+/** Champ `kind` brut d'un élément (OE23, H4) : celui du fichier, même quand la vue est `unknown` ou absente (`malformed`) ;
+ *  ordre des champs d'`element()`. */
+function rawKind(e: FakeElement): string {
+  if (e.unknown) return e.unknown.sourceKind;
+  if (e.malformed) return typeof e.malformed["kind"] === "string" ? e.malformed["kind"] : "";
+  if (e.image) return "image";
+  if (e.media) return "media";
+  if (e.model3d) return "model3d";
+  if (e.fill) return "fill";
+  if (e.table) return "table";
+  if (e.shape) return "shape";
+  if (e.text) return "text";
+  return "stroke";
+}
+
 class FakeDocument implements CoreDocument {
   private state: State;
   private undoStack: State[] = [];
@@ -669,6 +684,12 @@ class FakeDocument implements CoreDocument {
 
   pageIds(): string[] { return this.state.pages.map((p) => p.id); }
   elementIds(page: string): string[] { return this.pageOf(page).elements.map((e) => e.id); }
+  /** Page inconnue : [] (comme le cœur, `page_elements` → `None`), sans lever ; un élément chargé sans `id` lisible (JSON
+   *  sans le champ, K8) n'y figure pas. */
+  elementIdsOfKind(page: string, kind: string): readonly string[] {
+    const p = this.state.pages.find((q) => q.id === page);
+    return p === undefined ? [] : p.elements.filter((e) => typeof e.id === "string" && rawKind(e) === kind).map((e) => e.id);
+  }
 
   apply(cmd: Command): Change {
     switch (cmd.type) {

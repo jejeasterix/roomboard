@@ -311,18 +311,38 @@ impl Document {
         self.find_page(&txn, id).map(|(i, _)| i)
     }
 
-    pub fn element_ids(&self, page: &str) -> Vec<String> {
+    /// Ids lisibles des éléments de `page` que `keep` retient (lu sur la map brute de l'élément), dans l'ordre de la page ;
+    /// un élément sans `id` lisible n'y figure pas (K8). Page inconnue : vide.
+    fn ids_where(
+        &self,
+        page: &str,
+        keep: impl Fn(&MapRef, &yrs::Transaction) -> bool,
+    ) -> Vec<String> {
         let txn = self.doc.transact();
         match self.page_elements(&txn, page) {
             Some(els) => els
                 .iter(&txn)
                 .filter_map(|o| match o {
-                    Out::YMap(e) => out_string(e.get(&txn, "id")),
+                    Out::YMap(e) if keep(&e, &txn) => out_string(e.get(&txn, "id")),
                     _ => None,
                 })
                 .collect(),
             None => Vec::new(),
         }
+    }
+
+    pub fn element_ids(&self, page: &str) -> Vec<String> {
+        self.ids_where(page, |_, _| true)
+    }
+
+    /// Ids des éléments de `page` dont le champ `kind` brut vaut `kind`, dans l'ordre de la page, sans lire de vue
+    /// (OE23, Q7) : les ids qu'`element_ids` rendrait (un élément sans `id` lisible n'y figure pas, K8). Un élément dont
+    /// la vue est `unknown` y figure sous son kind brut ; un élément mal formé dont `element()` rend `None` (image, trait,
+    /// forme, texte) y figure aussi : l'appelant confirme chaque candidat par `element(id)` (H4). Page inconnue : vide.
+    pub fn element_ids_of_kind(&self, page: &str, kind: &str) -> Vec<String> {
+        self.ids_where(page, |e, txn| {
+            out_string(e.get(txn, "kind")).as_deref() == Some(kind)
+        })
     }
 
     pub fn element(&self, id: &str) -> Option<ElementView> {
@@ -1099,6 +1119,38 @@ mod tests {
                 }
             )
             .is_empty());
+    }
+
+    /// OE23 (Q7, H4, K8) : ids filtrés par le `kind` brut, dans l'ordre de la page ; un tableau mal formé y figure, un
+    /// élément sans `id` lisible non ; page inconnue : vide.
+    #[test]
+    fn element_ids_of_kind_reads_raw_kind_in_page_order() {
+        let d = Document::blank();
+        push_raw(
+            &d,
+            vec![("id", In::from("s1")), ("kind", In::from("stroke"))],
+        );
+        push_raw(
+            &d,
+            vec![("id", In::from("t1")), ("kind", In::from("table"))],
+        );
+        push_raw(&d, vec![("kind", In::from("table"))]);
+        push_raw(
+            &d,
+            vec![("id", In::from("h1")), ("kind", In::from("hologram"))],
+        );
+        push_raw(
+            &d,
+            vec![("id", In::from("t2")), ("kind", In::from("table"))],
+        );
+        let p = d.page_ids()[0].clone();
+        assert_eq!(d.element_ids(&p), vec!["s1", "t1", "h1", "t2"]);
+        assert_eq!(d.element_ids_of_kind(&p, "table"), vec!["t1", "t2"]);
+        assert_eq!(d.element_ids_of_kind(&p, "stroke"), vec!["s1"]);
+        assert_eq!(d.element_ids_of_kind(&p, "hologram"), vec!["h1"]);
+        assert!(d.element_ids_of_kind(&p, "unknown").is_empty());
+        assert!(d.element_ids_of_kind(&p, "fill").is_empty());
+        assert!(d.element_ids_of_kind("page-inconnue", "table").is_empty());
     }
 
     use std::sync::Arc;

@@ -1046,12 +1046,40 @@ describe("moteur — C10b (F29, F14)", () => {
     const realIds = doc.elementIds.bind(doc);
     const realEl = doc.element.bind(doc);
     doc.elementIds = (p) => (p === page ? [...realIds(p), ...els.keys()] : realIds(p));
+    const realKind = doc.elementIdsOfKind.bind(doc);
+    doc.elementIdsOfKind = (p, k) => (p === page && k === "table" ? [...realKind(p, k), ...els.keys()] : realKind(p, k));
     doc.element = (id) => els.get(id) ?? realEl(id);
     engine.run({ type: "AddPage", after: page });
     expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 3]);
     engine.setTool("pen");
     expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 3]);
     els.delete("b");
+    engine.run({ type: "AddPage", after: page });
+    expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 2]);
+  });
+
+  it("OE23 (Q7) : tableMerges, tableShades : seule la vue des candidats « table » est lue, jamais celle d'un trait", () => {
+    const { doc, engine } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const stroke = doc.apply({ type: "CommitStroke", page, points: new Float32Array([10, 10, 0.5, 20, 20, 0.5]), style: PEN }).ids[0] ?? "";
+    const table = doc.apply({ type: "AddTable", page, x: 100, y: 200, cols: 2, rows: 1, colWidth: 100, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    const read = vi.spyOn(doc, "element");
+    expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([0, 0]);
+    const ids = read.mock.calls.map(([id]) => id);
+    expect(ids).toContain(table);
+    expect(ids).not.toContain(stroke);
+  });
+
+  it("OE23 (H4) : un candidat « table » dont la vue n'est pas un tableau (mal formé, vue unknown) ne compte pas", () => {
+    const { doc, engine } = setup();
+    const page = doc.pageIds()[0] ?? "";
+    const views = new Map<string, ElementView>([
+      ["a", tableEl("a", true, 2)],
+      ["m", { id: "m", kind: "unknown", transform: [1, 0, 0, 1, 0, 0], unknown: { sourceKind: "table", w: 10, h: 10 } }],
+    ]);
+    const realEl = doc.element.bind(doc);
+    doc.elementIdsOfKind = (p, k) => (p === page && k === "table" ? [...views.keys()] : []);
+    doc.element = (id) => views.get(id) ?? realEl(id);
     engine.run({ type: "AddPage", after: page });
     expect([engine.state().tableMerges, engine.state().tableShades]).toEqual([1, 2]);
   });
