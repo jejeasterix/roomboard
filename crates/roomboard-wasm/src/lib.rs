@@ -486,7 +486,26 @@ impl Document {
         size: f64,
         sizes: Vec<f64>,
     ) -> Result<Document, JsError> {
-        Self::from_pdf_pages_inner(asset_ref(id, name, mime, size), &sizes).map_err(cmd_err)
+        Self::from_pdf_pages_inner(asset_ref(id, name, mime, size), &sizes, None).map_err(cmd_err)
+    }
+
+    /// Document d'un fichier Office converti en PDF (C16, O17) : comme `from_pdf_pages`, chaque fond cite l'original
+    /// (`original_*`, métadonnée écrite). Lève une Error au message du cœur (`BadAsset`, `BadImage`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_office_pages(
+        id: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        sizes: Vec<f64>,
+        original_id: &str,
+        original_name: &str,
+        original_mime: &str,
+        original_size: f64,
+    ) -> Result<Document, JsError> {
+        let original = asset_ref(original_id, original_name, original_mime, original_size);
+        Self::from_pdf_pages_inner(asset_ref(id, name, mime, size), &sizes, Some(original))
+            .map_err(cmd_err)
     }
 
     /// Lève une Error dont le message est le `Display` de `FormatError`.
@@ -1413,8 +1432,13 @@ impl Document {
         Ok(Self::wrap(core, Some(manifest.created)))
     }
 
-    /// Couples `(w, h)` lus bout à bout ; une longueur impaire est refusée en `BadImage`.
-    pub fn from_pdf_pages_inner(asset: AssetRef, sizes: &[f64]) -> Result<Document, CommandError> {
+    /// Couples `(w, h)` lus bout à bout ; une longueur impaire est refusée en `BadImage`. C16 : `original` cité par
+    /// chaque fond.
+    pub fn from_pdf_pages_inner(
+        asset: AssetRef,
+        sizes: &[f64],
+        original: Option<AssetRef>,
+    ) -> Result<Document, CommandError> {
         if !sizes.len().is_multiple_of(2) {
             return Err(CommandError::BadImage);
         }
@@ -1424,7 +1448,8 @@ impl Document {
             .iter()
             .map(|c| (c[0], c[1]))
             .collect();
-        CoreDocument::from_pdf_pages(&asset, &pairs).map(|core| Self::wrap(core, None))
+        CoreDocument::from_pdf_pages(&asset, &pairs, original.as_ref())
+            .map(|core| Self::wrap(core, None))
     }
 
     fn save_meta(&self, now: &str, app_version: &str) -> SaveMeta {
@@ -2810,7 +2835,7 @@ mod tests {
             mime: "application/pdf".into(),
             size: 10.0,
         };
-        let d = Document::from_pdf_pages_inner(pdf.clone(), &[612.0, 792.0, 792.0, 612.0])
+        let d = Document::from_pdf_pages_inner(pdf.clone(), &[612.0, 792.0, 792.0, 612.0], None)
             .expect("document");
         let ids = d.page_ids();
         let b = d.core.page(&ids[1]).and_then(|p| p.backdrop).expect("fond");
@@ -2819,9 +2844,40 @@ mod tests {
             (2, Some(1), Some(792.0), Some(612.0))
         );
         assert_eq!(
-            Document::from_pdf_pages_inner(pdf, &[612.0]).err(),
+            Document::from_pdf_pages_inner(pdf, &[612.0], None).err(),
             Some(CommandError::BadImage)
         );
+    }
+
+    /// C16 (O17) : `from_office_pages` = `from_pdf_pages` + `original` sur chaque fond.
+    #[test]
+    fn from_pdf_pages_inner_with_original_sets_it_on_each_backdrop() {
+        let sha = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        let pdf = AssetRef {
+            id: ABC.into(),
+            name: "cours.pdf".into(),
+            mime: "application/pdf".into(),
+            size: 10.0,
+        };
+        let docx = AssetRef {
+            id: sha.into(),
+            name: "cours.docx".into(),
+            mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document".into(),
+            size: 7.0,
+        };
+        let d = Document::from_pdf_pages_inner(pdf, &[612.0, 792.0, 792.0, 612.0], Some(docx))
+            .expect("document");
+        let o: Vec<Option<String>> = d
+            .page_ids()
+            .iter()
+            .map(|id| {
+                d.core
+                    .page(id)
+                    .and_then(|p| p.backdrop)
+                    .and_then(|b| b.original)
+            })
+            .collect();
+        assert_eq!(o, vec![Some(sha.to_string()), Some(sha.to_string())]);
     }
 
     #[test]
