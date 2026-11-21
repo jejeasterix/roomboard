@@ -50,3 +50,15 @@ du cœur, et ce coût n'est pas mesuré ici. La marge suffit : la piste est éca
   lancées à la main (`--ignored`) : comparer leurs chiffres à ceux d'avant OD55 avec prudence.
 
 `scripts/verifier.sh` : OK, `module Wasm : 896616 octets`.
+
+## C8 (zone fermée du pot, `i_overlay` derrière la fonctionnalité `zone`)
+
+| mesure | module principal | module formats |
+|---|---|---|
+| avant C8 (main 94976f0, remesuré dans le worktree T1) | 1 145 044 o | 3 100 344 o |
+| après la tâche T1 (`i_overlay` 9.2.0, `zone.rs`) | 1 350 143 o | 3 100 344 o |
+
+Écart du module principal : +205 099 o. Mesure : `cargo build --target wasm32-unknown-unknown --release`, puis
+`wasm-bindgen --target web --remove-name-section`, comme `scripts/verifier.sh` (l'asset de vite en est la copie).
+Garde-fou du cadrage (Q5, HC8-9) : 1 420 000 o ; plafonds de `scripts/verifier.sh` inchangés (1 572 864 o, 3 145 728 o).
+`roomboard-formats` ne reçoit pas la fonctionnalité `zone` (DA-Z1) : son module est inchangé à l'octet.
