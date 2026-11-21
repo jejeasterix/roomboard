@@ -16,6 +16,7 @@ import { RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, ty
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
+import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type Model3dShared } from "./model3d-handlers";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 
@@ -62,6 +63,8 @@ export interface ImportDeps {
   linkMedia?(path: string): Promise<LinkedMedia>;
   /** URL `blob:` de la sonde (tests) ; défaut : `URL.createObjectURL` / `URL.revokeObjectURL`. */
   readonly mediaUrls?: MediaHandlerDeps["urls"];
+  /** C15 (X39) : rendu partagé et lecteur de ZIP ; absent : fichiers 3D et `.zip` refusés comme avant. */
+  readonly model3d?: Model3dDeps;
 }
 
 export interface Importer {
@@ -230,6 +233,8 @@ export function createImporter(deps: ImportDeps): Importer {
   const readSheet = deps.readSheet;
   const openPdf = deps.openPdf?.bind(deps);
   const linkMedia = deps.linkMedia?.bind(deps);
+  const model3d = deps.model3d;
+  const shared3d: Model3dShared = { warnedNoWebgl: false }; // X26 : « 3D indisponible » une fois par importeur
   const media: MediaHandlerDeps = {
     probe: deps.probe ?? ((url) => probeMedia(url)),
     urls: deps.mediaUrls ?? { create: (b) => URL.createObjectURL(b), revoke: (u) => URL.revokeObjectURL(u) },
@@ -245,7 +250,9 @@ export function createImporter(deps: ImportDeps): Importer {
       unsupportedMediaHandler("mkv"),
       unsupportedMediaHandler("avi"),
       imageHandler(deps.decode ? { decode: deps.decode } : {}),
+      ...(model3d ? [model3dHandler(model3d, shared3d)] : []), // C15 (X12) : après `image`
       ...(readSheet ? [sheetHandler({ readSheet })] : []),
+      ...(model3d ? [zip3dHandler(model3d, shared3d), companionHandler()] : []), // après `sheet` : `.xlsx` d'abord
     ],
     deps,
   );

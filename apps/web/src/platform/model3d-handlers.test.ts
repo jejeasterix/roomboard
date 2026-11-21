@@ -20,7 +20,7 @@ import { unzipModelEntries } from "./zip-worker";
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 const file = (name: string, bytes: Uint8Array | string): DroppedFile => {
   const b = typeof bytes === "string" ? enc(bytes) : bytes;
-  return { name, size: b.length, mime: "", head: async (n: number) => b.slice(0, n), blob: async () => new Blob([b]) };
+  return { name, size: b.length, mime: "", head: async (n: number) => b.slice(0, n), blob: async () => new Blob([b as Uint8Array<ArrayBuffer>]) };
 };
 function pngHead(w: number, h: number): Uint8Array<ArrayBuffer> {
   const b = new Uint8Array(33);
