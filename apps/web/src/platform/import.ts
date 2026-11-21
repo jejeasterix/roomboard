@@ -285,6 +285,8 @@ export function importerOf(registry: readonly ImportHandler[], deps: ImportDeps)
       // C15 (DAX2) : pré-passe des appels de plusieurs fichiers ; un fichier réclamé passe à son modèle, pas au registre.
       const companionsOf = new Map<DroppedFile, readonly DroppedFile[]>();
       const claimed = new Set<DroppedFile>();
+      // X17 : fichier réclamé au-delà du plafond de son réclamant (la coque n'a pas `maxBytes`) : jamais passé, dit trop gros.
+      const overLimit = new Map<DroppedFile, string>();
       if (files.length > 1 && registry.some((h) => h.companions !== undefined)) {
         const fits = (o: DroppedFile): boolean => max === null || o.size <= max;
         for (const f of files) {
@@ -316,11 +318,21 @@ export function importerOf(registry: readonly ImportHandler[], deps: ImportDeps)
             companions = [];
           }
           for (const c of companions) claimed.add(c);
-          companionsOf.set(f, companions);
+          const cap = handler.limit;
+          if (cap !== undefined) for (const c of companions) if (c.size > cap.maxBytes) overLimit.set(c, cap.message);
+          companionsOf.set(f, companions.filter((c) => !overLimit.has(c)));
         }
       }
       for (const f of files) {
-        if (claimed.has(f)) continue; // C15 : fichier lié, passé à son modèle
+        if (claimed.has(f)) {
+          // C15 : fichier lié, passé à son modèle ; au-delà du plafond, dit comme le plafond du gestionnaire plus bas (F22).
+          const over = overLimit.get(f);
+          if (over !== undefined) {
+            failed.push(f.name);
+            await deps.notify(`${f.name} : ${over}`);
+          }
+          continue;
+        }
         if (max !== null && f.size > max) {
           tooBig.push(f.name);
           continue;

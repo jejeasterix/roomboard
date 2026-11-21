@@ -49,6 +49,10 @@ export function linkedMime(path: string): string {
 
 const bytesOf = async (b: Blob): Promise<Uint8Array<ArrayBuffer>> => new Uint8Array(await b.arrayBuffer());
 const siblingOf = (f: DroppedFile): Sibling => ({ path: f.name, bytes: async () => bytesOf(await f.blob()) });
+/** X17 : pour la réclamation, un fichier au-delà de `MODEL3D_MAX_BYTES` est cité sans être lu (contenu vide) ; `importFiles`
+ *  le retire ensuite des fichiers passés au modèle et le dit trop gros. */
+const claimSiblingOf = (f: DroppedFile): Sibling =>
+  f.size > MODEL3D_MAX_BYTES ? { path: f.name, bytes: async () => new Uint8Array(0) } : siblingOf(f);
 
 interface Model {
   readonly name: string;
@@ -147,7 +151,7 @@ export function model3dHandler(deps: Model3dDeps, shared: Model3dShared = { warn
     async companions(file, blob, head, siblings) {
       const format = sniffModel3d(head, file.name);
       if (format === null) return [];
-      const g = await gatherFiles(format, file.name, await bytesOf(blob), siblings.map(siblingOf));
+      const g = await gatherFiles(format, file.name, await bytesOf(blob), siblings.map(claimSiblingOf));
       const names = new Set(g.files.map((f) => f.sibling.path));
       return siblings.filter((s) => names.has(s.name));
     },
@@ -168,13 +172,19 @@ export function zip3dHandler(deps: Model3dDeps, shared: Model3dShared = { warned
     detect: (head, name) => extensionOf(name) === "zip" && hasZipMagic(head),
     limit: { maxBytes: MODEL3D_MAX_BYTES, message: MODEL3D_TOO_BIG_MESSAGE },
     async run(file, ctx) {
-      let entries: ZipEntry[];
+      let all: ZipEntry[];
       try {
-        entries = await deps.readZip(ctx.blob);
+        all = await deps.readZip(ctx.blob);
       } catch (e) {
         const msg = messageOf(e);
         await ctx.notify(msg === ZIP_TOO_BIG_MESSAGE ? `${file.name} : ${msg}` : `Import impossible (${file.name}) : ${msg}`);
         return "failed";
+      }
+      // X17, ZIP compris : une entrée au-delà de `MODEL3D_MAX_BYTES` n'est ni lue ni rangée, et dite trop grosse.
+      const entries: ZipEntry[] = [];
+      for (const e of all) {
+        if (e.blob.size <= MODEL3D_MAX_BYTES) entries.push(e);
+        else await ctx.notify(`${e.path} (${file.name}) : ${MODEL3D_TOO_BIG_MESSAGE}`);
       }
       const siblings: Sibling[] = entries.map((e) => ({ path: e.path, bytes: () => bytesOf(e.blob) }));
       const mains: Array<{ readonly entry: ZipEntry; readonly format: Model3dFormat }> = [];
