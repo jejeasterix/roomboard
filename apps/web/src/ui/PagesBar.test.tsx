@@ -139,4 +139,24 @@ describe("PagesBar (T91)", () => {
     const css = readFileSync(join(__dirname, "rb.css"), "utf8");
     expect(css).toMatch(/\.rb-pages-list\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/);
   });
+
+  it("C13 (D17) : libellé visible court pour .iwb et .ubz, libellé complet en title et aria-label ; la liste garde une largeur utile", () => {
+    const full = { iwb: "Enregistrer une copie au format .iwb…", ubz: "Enregistrer une copie au format .ubz…" };
+    const items = [
+      { ...item("export-iwb"), label: full.iwb },
+      { ...item("export-ubz"), label: full.ubz },
+      { ...item("export-pdf"), label: "Exporter en PDF" },
+    ];
+    const { container } = setup({ pageIndex: 0, pageCount: 3 }, items);
+    const iwb = btn(container, "[data-item=export-iwb]");
+    expect(iwb.textContent).toBe("Copie .iwb…");
+    expect(iwb.getAttribute("title")).toBe(full.iwb);
+    expect(iwb.getAttribute("aria-label")).toBe(full.iwb);
+    expect(btn(container, "[data-item=export-ubz]").textContent).toBe("Copie .ubz…");
+    expect(btn(container, "[data-item=export-pdf]").textContent).toBe("Exporter en PDF");
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    expect(css).toMatch(/\.rb-pages-list\s*\{[^}]*min-width:\s*calc\(3 \* var\(--rb-btn\)/);
+    expect(css).toMatch(/:is\(\[data-item="export-iwb"\],\s*\[data-item="export-ubz"\]\)/);
+    expect(css).not.toMatch(/data-item\^="export-"/);
+  });
 });

@@ -171,14 +171,20 @@ async function scenario(page, url, { tmp, lesson }) {
   await fr();
   check((await page.isVisible(item("export-iwb"))) && (await page.isVisible(item("export-ubz"))), "D17 : « Enregistrer une copie au format .iwb… » et « … .ubz… » dans la barre des pages");
   const box0 = await stageBox(page, 640);
-  check(box0.width >= 640, `S4 : scène de ${Math.round(box0.width)} × ${Math.round(box0.height)} px (≥ 640) avec les deux actions`);
+  check(box0.height >= 640, `S4 : scène de ${Math.round(box0.width)} × ${Math.round(box0.height)} px (hauteur ≥ 640) avec les deux actions`);
+  const list = await page.evaluate(() => {
+    const l = document.querySelector(".rb-pages-list");
+    const b = l?.querySelector("button");
+    return { visible: l?.clientWidth ?? 0, button: b?.getBoundingClientRect().width ?? 0, first: b ? l.getBoundingClientRect().left <= b.getBoundingClientRect().left + 0.5 && b.getBoundingClientRect().right <= l.getBoundingClientRect().right + 0.5 : false };
+  });
+  check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles (≥ 3 boutons de ${Math.round(list.button)} px), le bouton « 1 » entier`);
 
   // S1 : .iwb ZIP.
   await drop("lecon.iwb", iwbZip(), 8);
   await waitDialog("page 1 : 1 vidéo non lue");
   check(true, 'S1 : .iwb ZIP : nouvel onglet, data-elements="8", avis « page 1 : 1 vidéo non lue »');
   const box1 = await stageBox(page, 640);
-  check(box1.width >= 640, `S4 : après l'import et l'avis, scène de ${Math.round(box1.width)} × ${Math.round(box1.height)} px`);
+  check(box1.height >= 640, `S4 : après l'import et l'avis, scène de ${Math.round(box1.width)} × ${Math.round(box1.height)} px (hauteur ≥ 640)`);
   await page.click(item("select"));
   await clickWorld(120, 540);
   await waitAttr("data-selection", "2");
@@ -248,6 +254,14 @@ async function scenario(page, url, { tmp, lesson }) {
   // S2 : .iwb SVG brut de 3 pages.
   await drop("brut.iwb", enc(iwbRaw3()), 2, "1/3");
   check(true, 'S2 : .iwb SVG brut de 3 pages : data-page="1/3", 2 objets');
+  for (const p of [2, 3]) {
+    await page.click(`.rb-pages-list [data-page="${p}"]`);
+    await waitAttr("data-page", `${p}/3`);
+    await waitAttr("data-elements", "2");
+    check(true, `S2 : page ${p}/3 du .iwb SVG brut : 2 objets`);
+  }
+  await page.click('.rb-pages-list [data-page="1"]');
+  await waitAttr("data-page", "1/3");
 
   // S5 : fichier hostile.
   const before = dialogs.length;
