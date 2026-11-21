@@ -22,6 +22,7 @@ import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type 
 import { ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
+import { officeHandler, officeWebHandler } from "./office-import";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
 /** Limite des hôtes web (R15) ; la coque n'en a pas. */
@@ -70,6 +71,11 @@ export interface ImportDeps {
   readonly mediaUrls?: MediaHandlerDeps["urls"];
   /** C15 (X39) : rendu partagé et lecteur de ZIP ; absent : fichiers 3D et `.zip` refusés comme avant. */
   readonly model3d?: Model3dDeps;
+  /** C16 (O4, O35) : conversion par la coque du fichier `path` en PDF ; absente (web, iPad) : « exportez en PDF depuis
+   *  Office », `.xlsx` en valeurs. Rejette `OfficeConvertError` (code de la coque). */
+  convertOffice?(path: string): Promise<Blob>;
+  /** C16 (O5, O16) : ouvre le PDF converti dans un nouvel onglet, l'original gardé ; false si refusé (avis déjà dit). */
+  openOffice?(file: { readonly name: string; readonly original: Blob; readonly pdf: Blob }): Promise<boolean>;
 }
 
 export interface Importer {
@@ -115,7 +121,7 @@ export interface ImportHandler {
 }
 
 /** Nom qui se termine par `ext` (minuscules, point compris) et ne s'y réduit pas. */
-function hasExtension(name: string, ext: string): boolean {
+export function hasExtension(name: string, ext: string): boolean {
   return name.toLowerCase().endsWith(ext) && name.length > ext.length;
 }
 
@@ -270,6 +276,8 @@ export function createImporter(deps: ImportDeps): Importer {
     urls: deps.mediaUrls ?? { create: (b) => URL.createObjectURL(b), revoke: (u) => URL.revokeObjectURL(u) },
     ...(linkMedia ? { linkMedia } : {}),
   };
+  const convertOffice = deps.convertOffice?.bind(deps);
+  const openOffice = deps.openOffice?.bind(deps);
   // C14 (M11) : `media` avant `image` ; `sniffMedia` laisse à l'image tout en-tête que `sniffImage` revendique.
   return importerOf(
     [
@@ -282,6 +290,11 @@ export function createImporter(deps: ImportDeps): Importer {
       unsupportedMediaHandler("avi"),
       imageHandler(deps.decode ? { decode: deps.decode } : {}),
       ...(model3d ? [model3dHandler(model3d, shared3d)] : []), // C15 (X12) : après `image`
+      // C16 (O3, O4, O33) : avant `sheet` ; coque : conversion, `.xlsx` compris (repli sur `sheet` sans convertisseur) ;
+      // web : message, `.xlsx` laissé à `sheet`.
+      convertOffice && openOffice
+        ? officeHandler({ convert: convertOffice, open: openOffice, ...(readSheet ? { sheet: sheetHandler({ readSheet }) } : {}) })
+        : officeWebHandler(),
       ...(readSheet ? [sheetHandler({ readSheet })] : []),
       ...(model3d ? [zip3dHandler(model3d, shared3d), companionHandler()] : []), // après `sheet` : `.xlsx` d'abord
     ],
