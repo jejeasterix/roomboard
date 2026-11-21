@@ -167,6 +167,15 @@ describe("C4 : paquet par le Worker ZIP", () => {
     expect(posted[0]).toMatchObject({ op: "unzip", mode: "pack" });
   });
 
+  it("C13 : createZipReader en mode board envoie { op: \"unzip\", mode: \"board\" }", async () => {
+    const posted: unknown[] = [];
+    const read = createZipReader(() => fakeWorker((m) => { posted.push(m); return { entries: [{ path: "content.xml", bytes: new Uint8Array([60]) }] }; }), 1000, "board");
+    const got = await read(new Blob([new Uint8Array([1])]));
+    expect(posted[0]).toMatchObject({ op: "unzip", mode: "board" });
+    expect(got.map((e) => e.path)).toEqual(["content.xml"]);
+    expect(got[0]!.blob).toBeInstanceOf(Blob);
+  });
+
   it("C4 : createZipReader sans mode garde le message 3D { bytes } seul", async () => {
     const posted: unknown[] = [];
     const read = createZipReader(() => fakeWorker((m) => { posted.push(m); return { entries: [] }; }));
