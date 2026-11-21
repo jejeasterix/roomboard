@@ -57,7 +57,7 @@ type Shape = Extract<BoardObject, { kind: "shape" }>;
 type Text = Extract<BoardObject, { kind: "text" }>;
 
 describe("board-io : flux BoardList (C13, D6)", () => {
-  const rect = [3, 0, 1, 0, 0, 1, 0, 0, 0, 0, 10, 10, 0, 0, 0, 2, 0];
+  const rect = [3, 0, 1, 0, 0, 1, 0, 0, 0, 0, 10, 10, 0, 0, 0, 2, 0, 0, 0, 0];
   it("T14 : decodeBoardList lève BOARD_OBJECTS_MESSAGE dès que le budget d'objets est dépassé (feuilles seules, groupes non comptés)", () => {
     const three = [1, ...rect, ...rect, ...rect];
     expect(decodeBoardList(three, [], 3)[0]!.objects).toHaveLength(3);
@@ -150,6 +150,16 @@ describe("board-io : document importé (C13, D7, D8b)", () => {
     const v = viewsOf(r.doc)[0]!;
     if (v.kind !== "image") throw new Error(v.kind);
     expect([v.image.w, v.image.h, v.transform]).toEqual([64, 32, [2, 0, 0, 2, 10, 20]]);
+  });
+
+  it("T14 : l'asset n'entre dans le magasin que si l'image est posée (matrice refusée : aucun asset)", async () => {
+    const media = new Map([["images/a.png", PNG]]);
+    const ok = await buildBoardDocument(fakeCore, onePage([{ kind: "image", m: ID, x: 0, y: 0, w: 64, h: 32, path: "images/a.png" }]), media, deps());
+    const id = await fakeHasher(PNG);
+    expect(ok.assets.has(id)).toBe(true);
+    const dead = await buildBoardDocument(fakeCore, onePage([{ kind: "image", m: [0, 0, 0, 0, 0, 0], x: 0, y: 0, w: 64, h: 32, path: "images/a.png" }]), media, deps());
+    expect(dead.assets.has(id)).toBe(false);
+    expect(dead.warnings).toEqual(["page 1 : 1 objet illisible ignoré"]);
   });
 
   it("C13 : groupe d'un seul objet lisible : aucun groupe (D13)", async () => {

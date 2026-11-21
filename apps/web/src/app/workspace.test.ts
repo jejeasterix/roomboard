@@ -1527,7 +1527,7 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
   });
 
   it("T14 : avertissements du lecteur et de la page additionnés par (page, sorte) : une seule ligne", async () => {
-    const dead: BoardListPage = { background: null, objects: [{ ...(rectPage().objects[0] as object), m: [0, 0, 0, 0, 0, 0] } as BoardListPage["objects"][number]] };
+    const dead: BoardListPage = { background: null, objects: [{ kind: "shape", shape: "rect", m: [0, 0, 0, 0, 0, 0], x0: 0, y0: 0, x1: 10, y1: 10, color: "#000000", width: 2, fill: null }] };
     const b = fakeBoard({ warnings: ["page 1 : 1 objet illisible ignoré"], pages: [dead] });
     const ws = await setupWorkspace({ board: b.ports });
     expect(await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(true);

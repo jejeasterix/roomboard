@@ -41,8 +41,8 @@ import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RAST
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
-import { boardListOf, buildBoardDocument, decodeBoardList, type BoardFormat, type BoardPorts } from "./board-io";
-import { BOARD_MAX_OBJECTS, BOARD_NO_PAGE_MESSAGE, BOARD_OBJECTS_MESSAGE, boardObjectCount, boardExportName, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
+import { boardListOf, buildBoardDocument, decodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts } from "./board-io";
+import { BOARD_MAX_OBJECTS, BOARD_NO_PAGE_MESSAGE, boardObjectCount, boardExportName, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, mergeBoardWarnings, stem, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 
@@ -51,10 +51,9 @@ export const PDF_NO_PAGE_MESSAGE = "PDF sans page";
 export const BUSY_MESSAGE = "Opération en cours";
 export const pdfFirstPagesMessage = (name: string, total: number): string => `${name} : ${PDF_MAX_PAGES} premières pages importées sur ${total}`;
 export const pdfExportedMessage = (pages: number): string => `PDF exporté (${pages} page${pages > 1 ? "s" : ""})`;
-const stemOf = (name: string, ext: string): string => (name.toLowerCase().endsWith(ext) && name.length > ext.length ? name.slice(0, -ext.length) : name);
 /** Nom proposé (PF19) : `<base> annoté.pdf` si une page d'origine est recopiée, sinon `<base>.pdf`. */
 export const exportPdfName = (tabName: string, annotated: boolean): string =>
-  `${stemOf(tabName, ROOMBOARD_EXTENSION)}${annotated ? " annoté" : ""}${PDF_EXTENSION}`;
+  `${stem(tabName, ROOMBOARD_EXTENSION)}${annotated ? " annoté" : ""}${PDF_EXTENSION}`;
 
 export interface TabSession {
   readonly board: BoardSession;
@@ -434,7 +433,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         const id = await assets.put(blob);
         const doc = core.fromPdfPages({ id, name, mime: PDF_MIME, size: blob.size }, sizes);
         if (total > PDF_MAX_PAGES) await say(pdfFirstPagesMessage(name, total));
-        return (await addTab(doc, { name: `${stemOf(name, PDF_EXTENSION)}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
+        return (await addTab(doc, { name: `${stem(name, PDF_EXTENSION)}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
       } catch (e) {
         await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
         return false;
@@ -511,19 +510,25 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         else throw new Error(UBZ_NOT_ZIP_MESSAGE);
         const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
         const parts = await board.read(xml, file.format);
-        const pages = parts.flatMap((p) => decodeBoardList(p.ops, p.texts));
+        // D16 : budget d'objets restant passé au décodage, part par part : la borne tient avant le pic de mémoire.
+        const pages: BoardListPage[] = [];
+        let left = BOARD_MAX_OBJECTS;
+        for (const p of parts) {
+          const got = decodeBoardList(p.ops, p.texts, left);
+          left -= boardObjectCount(got);
+          pages.push(...got);
+        }
         if (pages.length === 0) {
           await say(`Ouverture impossible (${name}) : ${BOARD_NO_PAGE_MESSAGE}`);
           return false;
         }
-        if (boardObjectCount(pages) > BOARD_MAX_OBJECTS) throw new Error(BOARD_OBJECTS_MESSAGE); // D16 : par fichier, toutes pages
         const built = await buildBoardDocument(core, pages, src.media, {
           makeAssets,
           decode: deps.decode ?? ((b, k) => decodeImage(b, k)),
           now: deps.now(),
           appVersion: APP_VERSION,
         });
-        const warnings = [...(src.total > PDF_MAX_PAGES ? [boardFirstPagesMessage(src.total)] : []), ...parts.flatMap((p) => p.warnings), ...built.warnings];
+        const warnings = [...(src.total > PDF_MAX_PAGES ? [boardFirstPagesMessage(src.total)] : []), ...mergeBoardWarnings([parts.flatMap((p) => p.warnings), built.warnings])];
         if ((await addTab(built.doc, { name: boardTabName(name, file.format), target: null }, built.assets)) === null) return false;
         if (warnings.length > 0) await say(boardWarningsMessage(name, warnings));
         return true;

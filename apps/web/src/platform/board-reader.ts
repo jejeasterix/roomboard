@@ -25,11 +25,15 @@ export function boardErrorMessage(err: unknown, failure: string): string {
   return m === BOARD_OBJECTS_MESSAGE || KNOWN_PREFIXES.some((p) => m.startsWith(p)) ? m : failure;
 }
 
+/** Un fichier XML lu : flux BoardList (le Worker rend un `Float32Array`), textes et avertissements du lecteur. */
 export interface BoardPart {
-  readonly ops: Float32Array;
+  readonly ops: ArrayLike<number>;
   readonly texts: readonly string[];
   readonly warnings: readonly string[];
 }
+
+/** Chemin d'une entrée d'archive : barres droites, sans `./` en tête (ZIP écrits sous Windows). */
+export const normalBoardPath = (path: string): string => path.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
 
