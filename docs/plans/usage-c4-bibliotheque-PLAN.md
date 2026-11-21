@@ -2374,7 +2374,7 @@ D17 à D19, DA2).
 - Consomme (T7) : `buildPack(name, items, meta): ZipFile[]`, `readPack(files)`, `PackItem`, `PackItemKind`, `ZipFile` ; `ZipEntry` (`zip-read.ts`).
 - Produit :
   - `export type ResourceKind = PackItemKind;`
-  - `export interface ResourceEntry { readonly root: LibraryRoot; readonly path: string; readonly folder: string; readonly name: string; readonly keywords: readonly string[]; readonly description: string; readonly kind: ResourceKind | null; readonly thumbnail: string | null }` — `path` : `"Fractions/Moitié.rbitem"`, `folder` : `"Fractions"`, `thumbnail` : chemin du `.png` ou null, `kind` null sans compagnon (H2-4).
+  - `export interface ResourceEntry { readonly root: LibraryRoot; readonly path: string; readonly folder: string; readonly name: string; readonly keywords: readonly string[]; readonly description: string; readonly kind: ResourceKind | null; readonly thumbnail: string | null }` — `path` : `"Fractions/moitie.rbitem"` (nom de fichier D25), `folder` : `"Fractions"`, `thumbnail` : chemin du `.png` ou null, `kind` null sans compagnon (H2-4).
   - `export interface LibraryFolder { readonly root: LibraryRoot; readonly path: string; readonly folders: readonly string[]; readonly items: readonly ResourceEntry[] }` (`folders` : chemins complets des sous-dossiers directs)
   - `export interface CapturedResource { readonly bytes: Uint8Array; readonly kind: ResourceKind; readonly thumbnail: Blob | null }`
   - `export interface NewResource extends CapturedResource { readonly name: string; readonly keywords: readonly string[]; readonly description: string }`
