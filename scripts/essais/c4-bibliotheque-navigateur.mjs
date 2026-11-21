@@ -94,7 +94,7 @@ async function scenario(page, url, { captures, tmp }) {
   await page.click(item("select")); // le blur valide le texte
   await waitAttr("data-elements", "3");
   await fr();
-  await drag(90, 90, 400, 300);
+  await drag(90, 90, 760, 330);
   await waitAttr("data-selection", "3");
   await page.keyboard.press("Control+g");
   await waitAttr("data-grouped", "1");
