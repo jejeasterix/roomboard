@@ -18,6 +18,7 @@ import {
   ZIP_MAX_ENTRIES,
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
+import { normalBoardPath } from "./board-reader";
 import { isPackEntry } from "./rbpack";
 import type { ZipFile } from "./zip-read";
 
@@ -34,9 +35,9 @@ export const BOARD_ZIP_EXTENSIONS: readonly string[] = Object.freeze(["png", "jp
  *  depuis le XML pour l'avertissement (D15). */
 export function keepBoardPath(name: string): boolean {
   if (name === "" || name.endsWith("/") || name.endsWith("\\") || name.startsWith("/") || name.startsWith("\\") || /^[A-Za-z]:/.test(name)) return false;
-  const segs = name.replace(/\\/g, "/").split("/");
+  const segs = normalBoardPath(name).split("/");
   if (segs.includes("..") || segs[0] === "__MACOSX") return false;
-  const lower = name.toLowerCase();
+  const lower = normalBoardPath(name).toLowerCase();
   if (lower === "content.xml" || /^page\d+\.svg$/.test(lower)) return true;
   return BOARD_ZIP_EXTENSIONS.includes(extensionOf(name));
 }

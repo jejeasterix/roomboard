@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  boardExportName, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, IWB_NO_CONTENT_MESSAGE, UBZ_NO_PAGE_MESSAGE,
+  boardExportName, boardObjectCount, boardSavedMessage, mergeBoardWarnings, boardSources, boardTabName, boardWarningsMessage, IWB_NO_CONTENT_MESSAGE, UBZ_NO_PAGE_MESSAGE,
 } from "./board-files";
 
 const blob = (s: string): Blob => new Blob([s]);
@@ -42,5 +42,22 @@ describe("board-files (C13, D3, D5)", () => {
     expect(boardWarningsMessage("a.ubz", ["x", "y"])).toBe("a.ubz : ouvert avec 2 avertissements :\n- x\n- y");
     expect(boardSavedMessage("iwb", [])).toBe("Copie enregistrée au format .iwb");
     expect(boardSavedMessage("ubz", ["1 flèche écrite en ligne (.ubz)"])).toBe("Copie enregistrée au format .ubz, avec 1 avertissement :\n- 1 flèche écrite en ligne (.ubz)");
+  });
+});
+
+describe("board-files : bornes et avis (T14)", () => {
+  const line = { kind: "shape", shape: "line", m: [1, 0, 0, 1, 0, 0], x0: 0, y0: 0, x1: 1, y1: 1, color: "#000000", width: 1, fill: null } as const;
+  it("T14 : boardObjectCount compte les feuilles, pas les groupes (comme le lecteur Rust)", () => {
+    const groups = Array.from({ length: 50_000 }, () => ({ kind: "group", children: [line, line] }) as const);
+    expect(boardObjectCount([{ background: null, objects: groups }])).toBe(100_000);
+  });
+
+  it("T14 : mergeBoardWarnings additionne par (page, sorte), singulier et pluriel, dans l'ordre des pages", () => {
+    expect(mergeBoardWarnings([["page 2 : 1 objet illisible ignoré", "page 1 : 1 objet illisible ignoré", "1 vidéo non lue"], ["page 1 : 1 objet illisible ignoré", "page 2 : 1 image absente de l'archive"]])).toEqual([
+      "1 vidéo non lue",
+      "page 1 : 2 objets illisibles ignorés",
+      "page 2 : 1 objet illisible ignoré",
+      "page 2 : 1 image absente de l'archive",
+    ]);
   });
 });

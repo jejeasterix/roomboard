@@ -3,6 +3,7 @@ import type { CoreDocument, Matrix, TextSpan } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { applyMatrix } from "../core/shapes";
+import { BOARD_OBJECTS_MESSAGE } from "../platform/board-reader";
 import { boardListOf, buildBoardDocument, decodeBoardList, encodeBoardList, mediaOf, type BoardListPage, type BoardObject } from "./board-io";
 
 const ID: Matrix = [1, 0, 0, 1, 0, 0];
@@ -56,6 +57,24 @@ type Shape = Extract<BoardObject, { kind: "shape" }>;
 type Text = Extract<BoardObject, { kind: "text" }>;
 
 describe("board-io : flux BoardList (C13, D6)", () => {
+  const rect = [3, 0, 1, 0, 0, 1, 0, 0, 0, 0, 10, 10, 0, 0, 0, 2, 0, 0, 0, 0];
+  it("T14 : decodeBoardList lève BOARD_OBJECTS_MESSAGE dès que le budget d'objets est dépassé (feuilles seules, groupes non comptés)", () => {
+    const three = [1, ...rect, ...rect, ...rect];
+    expect(decodeBoardList(three, [], 3)[0]!.objects).toHaveLength(3);
+    expect(() => decodeBoardList(three, [], 2)).toThrow(BOARD_OBJECTS_MESSAGE);
+    const grouped = [1, 7, ...rect, ...rect, 8, 7, ...rect, ...rect, 8];
+    expect(decodeBoardList(grouped, [], 4)[0]!.objects).toHaveLength(2);
+    expect(() => decodeBoardList(grouped, [], 3)).toThrow(BOARD_OBJECTS_MESSAGE);
+  });
+
+  it("T14 : marque d'absence : exactement −1 (couleur et police de segment), comme absent() en Rust", () => {
+    const span = (c: number[], f: number) => [1, 5, 1, 0, 0, 1, 0, 0, 0, 0, 10, 10, 12, 0, 0, 0, 1, 0, 0, 0, ...c, f];
+    expect(() => decodeBoardList(span([-1, -1, -1], -1), ["a"])).not.toThrow();
+    expect(() => decodeBoardList(span([-2, -2, -2], -1), ["a"])).toThrow(/^liste de tableau invalide : /);
+    expect(() => decodeBoardList(span([-1, -1, -1], -2), ["a"])).toThrow(/^liste de tableau invalide : /);
+    expect(() => decodeBoardList(span([-1, 0, 0], -1), ["a"])).toThrow(/^liste de tableau invalide : /);
+  });
+
   it("C13 : flux témoin W1 : decodeBoardList rend les pages attendues (parité avec board.rs)", () => {
     expect(decodeBoardList(W1_OPS, W1_TEXTS)).toEqual(W1_PAGES);
   });
@@ -131,6 +150,16 @@ describe("board-io : document importé (C13, D7, D8b)", () => {
     const v = viewsOf(r.doc)[0]!;
     if (v.kind !== "image") throw new Error(v.kind);
     expect([v.image.w, v.image.h, v.transform]).toEqual([64, 32, [2, 0, 0, 2, 10, 20]]);
+  });
+
+  it("T14 : l'asset n'entre dans le magasin que si l'image est posée (matrice refusée : aucun asset)", async () => {
+    const media = new Map([["images/a.png", PNG]]);
+    const ok = await buildBoardDocument(fakeCore, onePage([{ kind: "image", m: ID, x: 0, y: 0, w: 64, h: 32, path: "images/a.png" }]), media, deps());
+    const id = await fakeHasher(PNG);
+    expect(ok.assets.has(id)).toBe(true);
+    const dead = await buildBoardDocument(fakeCore, onePage([{ kind: "image", m: [0, 0, 0, 0, 0, 0], x: 0, y: 0, w: 64, h: 32, path: "images/a.png" }]), media, deps());
+    expect(dead.assets.has(id)).toBe(false);
+    expect(dead.warnings).toEqual(["page 1 : 1 objet illisible ignoré"]);
   });
 
   it("C13 : groupe d'un seul objet lisible : aucun groupe (D13)", async () => {

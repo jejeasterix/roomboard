@@ -1526,6 +1526,14 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     expect(host.save.mock.calls[0]?.[1]).toEqual({ kind: "ask", name: "Cours.roomboard" });
   });
 
+  it("T14 : avertissements du lecteur et de la page additionnés par (page, sorte) : une seule ligne", async () => {
+    const dead: BoardListPage = { background: null, objects: [{ kind: "shape", shape: "rect", m: [0, 0, 0, 0, 0, 0], x0: 0, y0: 0, x1: 10, y1: 10, color: "#000000", width: 2, fill: null }] };
+    const b = fakeBoard({ warnings: ["page 1 : 1 objet illisible ignoré"], pages: [dead] });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "Cours.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("Cours.iwb : ouvert avec 1 avertissement :\n- page 1 : 2 objets illisibles ignorés");
+  });
+
   it("C13 : .iwb XML brut : lu tel quel, sans unzip, aucun avis sans avertissement (S2)", async () => {
     const b = fakeBoard();
     const ws = await setupWorkspace({ board: b.ports });

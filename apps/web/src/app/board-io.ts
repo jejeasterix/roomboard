@@ -9,15 +9,19 @@
 import { DEFAULT_BACKGROUND, PAGE_WIDTH, type AssetRef, type Change, type Command, type CoreDocument, type CoreFactory, type ElementView, type Matrix, type ShapeKind, type TextSpan } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { applyMatrix, composeMatrix } from "../core/shapes";
+import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardDialect, type BoardPart } from "../platform/board-reader";
 import type { ImageKind } from "../platform/image-decode";
 import { IMAGE_MIME, type ImageDecoder } from "../platform/image-import";
 import type { ZipFile } from "../platform/zip-read";
+import { MISSING_LABEL, SKIPPED_LABEL } from "./board-files";
 import { typed } from "./container-io";
 
-export type BoardFormat = "iwb" | "ubz";
+export type BoardFormat = BoardDialect;
 export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8 } as const;
 export const BOARD_BAD_LIST_PREFIX = "liste de tableau invalide : ";
-const SHAPES: readonly ShapeKind[] = ["rect", "ellipse", "line", "arrow"];
+/** Code de chaque forme dans le flux ; `satisfies` oblige à en donner un à chaque `ShapeKind`. */
+const SHAPE_CODE = { rect: 0, ellipse: 1, line: 2, arrow: 3 } satisfies Record<ShapeKind, number>;
+const SHAPES = (Object.keys(SHAPE_CODE) as ShapeKind[]).sort((a, b) => SHAPE_CODE[a] - SHAPE_CODE[b]);
 const MAX_POINTS = 1_000_000;
 const MAX_SPANS = 10_000;
 const MAX_INDEX = 16_777_216;
@@ -36,12 +40,6 @@ export interface BoardListPage {
 export interface BoardListData {
   readonly ops: Float32Array;
   readonly texts: string[];
-}
-/** Réponse du Worker des tableaux pour un fichier XML (`BoardReader`). */
-export interface BoardPart {
-  readonly ops: ArrayLike<number>;
-  readonly texts: readonly string[];
-  readonly warnings: readonly string[];
 }
 /** Ports de l'espace de travail (amorce : Worker ZIP en mode `board`, Worker jetable du module `formats`). */
 export interface BoardPorts {
@@ -89,12 +87,17 @@ class Cursor {
   /** −1, −1, −1 : absente. */
   optRgb(): string | undefined {
     if ((this.v[this.i] ?? 0) < 0) {
-      this.num();
-      this.num();
-      this.num();
+      this.absent();
+      this.absent();
+      this.absent();
       return undefined;
     }
     return this.rgb();
+  }
+  /** Marque d'absence : exactement −1 (`absent()` de `board::parse`). */
+  private absent(): void {
+    const x = this.num();
+    if (x !== -1) throw bad(`marque d'absence −1 attendue à ${this.i - 1}, lu ${x}`);
   }
   text(): string {
     const k = this.int(MAX_INDEX);
@@ -105,7 +108,7 @@ class Cursor {
   /** −1 : absent. */
   optText(): string | undefined {
     if ((this.v[this.i] ?? 0) < 0) {
-      this.num();
+      this.absent();
       return undefined;
     }
     return this.text();
@@ -180,12 +183,16 @@ class Cursor {
   }
 }
 
-/** Flux contrôlé en entier ; tout défaut lève `liste de tableau invalide : …` (règles de `board::parse`). */
-export function decodeBoardList(ops: ArrayLike<number>, texts: readonly string[]): BoardListPage[] {
+/** Flux contrôlé en entier ; tout défaut lève `liste de tableau invalide : …` (règles de `board::parse`). Plus de `budget`
+ *  objets (feuilles) : lève `BOARD_OBJECTS_MESSAGE` dès le premier de trop. */
+export function decodeBoardList(ops: ArrayLike<number>, texts: readonly string[], budget: number = Number.POSITIVE_INFINITY): BoardListPage[] {
+  let leaves = 0;
   const c = new Cursor(ops, texts);
   const pages: Array<{ background: string | null; objects: BoardObject[] }> = [];
   const stack: BoardObject[][] = [];
   const push = (o: BoardObject): void => {
+    // D16 : feuilles seules ; contrôlé à chaque objet, avant que le flux entier ne devienne des objets.
+    if (o.kind !== "group" && ++leaves > budget) throw new Error(BOARD_OBJECTS_MESSAGE);
     const top = stack.at(-1);
     if (top !== undefined) {
       top.push(o);
@@ -264,7 +271,7 @@ export function encodeBoardList(pages: readonly BoardListPage[]): BoardListData 
   const obj = (o: BoardObject): void => {
     switch (o.kind) {
       case "shape":
-        ops.push(BOARD_OP.shape, SHAPES.indexOf(o.shape));
+        ops.push(BOARD_OP.shape, SHAPE_CODE[o.shape]);
         mat(o.m);
         ops.push(o.x0, o.y0, o.x1, o.y1);
         rgb(o.color);
@@ -331,8 +338,8 @@ export interface BoardBuildDeps {
   readonly appVersion: string;
 }
 
-export const skippedMessage = (page: number, n: number): string => `page ${page} : ${n} ${n > 1 ? "objets illisibles ignorés" : "objet illisible ignoré"}`;
-export const missingImagesMessage = (page: number, n: number): string => `page ${page} : ${n} ${n > 1 ? "images absentes" : "image absente"} de l'archive`;
+export const skippedMessage = (page: number, n: number): string => `page ${page} : ${n} ${SKIPPED_LABEL[n > 1 ? 1 : 0]}`;
+export const missingImagesMessage = (page: number, n: number): string => `page ${page} : ${n} ${MISSING_LABEL[n > 1 ? 1 : 0]}`;
 
 const IMAGE_KIND_OF_EXT: Readonly<Record<string, ImageKind>> = { png: "png", jpg: "jpeg", jpeg: "jpeg", gif: "gif", webp: "webp", bmp: "bmp", svg: "svg" };
 const extOf = (path: string): string => {
@@ -340,15 +347,14 @@ const extOf = (path: string): string => {
   const i = b.lastIndexOf(".");
   return i > 0 ? b.slice(i + 1).toLowerCase() : "";
 };
-const normalPath = (path: string): string => path.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
 
 /** Entrée du ZIP citée par `path` : à l'identique, sinon sans tenir compte de la casse (ZIP écrits sous Windows). */
 export function mediaOf(media: ReadonlyMap<string, Blob>, path: string): Blob | undefined {
-  const p = normalPath(path);
+  const p = normalBoardPath(path);
   const exact = media.get(p);
   if (exact !== undefined) return exact;
   const lower = p.toLowerCase();
-  for (const [k, v] of media) if (normalPath(k).toLowerCase() === lower) return v;
+  for (const [k, v] of media) if (normalBoardPath(k).toLowerCase() === lower) return v;
   return undefined;
 }
 
@@ -370,6 +376,8 @@ interface Ctx {
   readonly page: string;
   readonly media: ReadonlyMap<string, Blob>;
   readonly assets: AssetStore;
+  /** Magasin jetable : calcule l'empreinte et garde le Blob jusqu'à l'acceptation de la commande. */
+  readonly scratch: AssetStore;
   readonly decode: ImageDecoder;
   readonly notes: PageNotes;
 }
@@ -427,9 +435,11 @@ async function placeImage(ctx: Ctx, o: Extract<BoardObject, { kind: "image" }>):
     ctx.notes.skipped++;
     return [];
   }
-  const id = await ctx.assets.put(file);
+  const id = await ctx.scratch.put(file); // empreinte seule : l'asset n'entre dans le magasin que si AddImage est accepté
   const asset: AssetRef = { id, name: o.path.slice(o.path.lastIndexOf("/") + 1), mime, size: file.size };
-  return placed(ctx, { type: "AddImage", page: ctx.page, asset, w, h, matrix: composeMatrix(o.m, [o.w / w, 0, 0, o.h / h, o.x, o.y]) }, null);
+  const ids = placed(ctx, { type: "AddImage", page: ctx.page, asset, w, h, matrix: composeMatrix(o.m, [o.w / w, 0, 0, o.h / h, o.x, o.y]) }, null);
+  if (ids.length > 0) ctx.assets.adopt(id, ctx.scratch.get(id)!);
+  return ids;
 }
 
 /** Ids écrits pour `o` (tous les objets d'un groupe) ; un groupe de deux unités au moins devient `Group` (D13). */
@@ -509,6 +519,7 @@ export async function buildBoardDocument(
   deps: BoardBuildDeps,
 ): Promise<{ doc: CoreDocument; assets: AssetStore; warnings: string[] }> {
   const assets = deps.makeAssets();
+  const scratch = deps.makeAssets();
   const draft = core.blank();
   const warnings: string[] = [];
   try {
@@ -522,7 +533,7 @@ export async function buildBoardDocument(
         page = ids[ids.indexOf(prev) + 1] ?? prev;
       }
       const notes: PageNotes = { skipped: 0, missing: 0 };
-      const ctx: Ctx = { draft, page, media, assets, decode: deps.decode, notes };
+      const ctx: Ctx = { draft, page, media, assets, scratch, decode: deps.decode, notes };
       if (p.background !== null) run(ctx, { type: "Fill", page, target: { kind: "background" }, color: p.background });
       for (const o of p.objects) await place(ctx, o);
       if (notes.skipped > 0) warnings.push(skippedMessage(i + 1, notes.skipped));

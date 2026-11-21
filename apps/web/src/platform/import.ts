@@ -280,7 +280,7 @@ export function boardHandler(format: "iwb" | "ubz", deps: { openBoard: NonNullab
   return {
     id: format,
     nature: "document",
-    detect: format === "iwb" ? (head, name) => isIwbName(name) && (hasZipMagic(head) || hasXmlHead(head)) : (head, name) => isUbzName(name) && hasZipMagic(head),
+    detect: format === "iwb" ? (_head, name) => isIwbName(name) : (head, name) => isUbzName(name) && hasZipMagic(head),
     limit: { maxBytes: ZIP_MAX_BYTES, message: BOARD_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       return (await deps.openBoard({ name: f.name, blob: ctx.blob, format })) ? "opened" : "failed";
