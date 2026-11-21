@@ -503,4 +503,25 @@ describe("coque : Office (C16)", () => {
     expect(await officeConverter(f.ipc)).toBe(true);
     expect(await officeConverter(officeIpc({ converter: () => Promise.reject(new Error("absente")) }).ipc)).toBe(false);
   });
+
+  it("onOriginalChanged désabonné avant que listen soit tenu : l'écoute est levée dès qu'elle l'est ; listen rejeté : avertissement, pas de rejet", async () => {
+    let release: (stop: () => void) => void = () => undefined;
+    let stopped = 0;
+    const late: TauriIpc = {
+      invoke: async <T>() => undefined as T,
+      listen: () => new Promise<() => void>((r) => { release = r; }),
+    };
+    const stop = onOriginalChanged(late, () => undefined);
+    stop();
+    release(() => void (stopped += 1));
+    await tick();
+    expect(stopped).toBe(1);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const broken: TauriIpc = { invoke: async <T>() => undefined as T, listen: () => Promise.reject(new Error("refusé")) };
+    const stop2 = onOriginalChanged(broken, () => undefined);
+    await tick();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(() => stop2()).not.toThrow();
+    warn.mockRestore();
+  });
 });

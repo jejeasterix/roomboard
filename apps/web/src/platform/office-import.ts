@@ -7,7 +7,7 @@
  * Cycle d'import avec `import.ts` : aucune constante de ce module ne lit une valeur importée (fonctions seulement).
  */
 import type { DroppedFile } from "./files";
-import { hasExtension, hasZipMagic, isSheetName, type ImportHandler } from "./import";
+import { hasExtension, hasZipMagic, isSheetName, type ImportHandler, type ImportOutcome } from "./import";
 
 export const OFFICE_ZIP_EXTENSIONS: readonly string[] = Object.freeze([".docx", ".odt", ".xlsx", ".xlsm", ".ods", ".pptx", ".odp"]);
 export const OFFICE_CFB_EXTENSIONS: readonly string[] = Object.freeze([".doc", ".xls", ".ppt"]);
@@ -73,14 +73,28 @@ export function officeStemOf(name: string): string {
 export function convertFailureMessage(name: string, code: string): string {
   if (code === "no-program") return `${name} : ${OFFICE_INSTALL_MESSAGE}`;
   if (code === "timeout") return `${name} : ${OFFICE_TIMEOUT_MESSAGE}`;
+  if (code === "too-large") return `${name} : ${OFFICE_TOO_BIG_MESSAGE}`;
   return `Import impossible (${name}) : ${OFFICE_FAILED_MESSAGE}`;
+}
+
+/** Document converti à ouvrir : nom, original gardé, PDF obtenu. */
+export interface OfficeOpenFile {
+  readonly name: string;
+  readonly original: Blob;
+  readonly pdf: Blob;
+}
+
+/** « Original modifié » émis par la coque (O21). */
+export interface OriginalChange {
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface OfficeHandlerDeps {
   /** Conversion par la coque (PDF lu par morceaux, dossier libéré) ; rejette `OfficeConvertError` (code de la coque). */
   convert(path: string): Promise<Blob>;
   /** Ouvre le PDF converti dans un nouvel onglet, l'original gardé (O5, O16) ; false si refusé (avis déjà dit). */
-  open(f: { readonly name: string; readonly original: Blob; readonly pdf: Blob }): Promise<boolean>;
+  open(f: OfficeOpenFile): Promise<boolean>;
   /** Repli du `.xlsx` sans convertisseur ou sans chemin (O4, O14) : le gestionnaire `sheet` de C10b. */
   readonly sheet?: ImportHandler;
 }
@@ -128,10 +142,28 @@ export function officeWebHandler(): ImportHandler {
     id: "office-web",
     nature: "document",
     detect: (head, name) => !isSheetName(name) && isOfficeFile(head, name),
+    limit: { maxBytes: OFFICE_MAX_BYTES, message: OFFICE_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       await ctx.notify(`${f.name} : ${OFFICE_EXPORT_MESSAGE}`);
       return "failed";
     },
+  };
+}
+
+/** Coque sans convertisseur (O24) : les documents disent « installez… » sans être lus (`link` dès le premier octet quand
+ *  le fichier a un chemin) ; `.xlsx` et `.xlsm` laissés au classeur, comme sur le web. */
+export function officeNoConverterHandler(): ImportHandler {
+  const say = async (f: DroppedFile, notify: (m: string) => Promise<void>): Promise<ImportOutcome> => {
+    await notify(`${f.name} : ${OFFICE_INSTALL_MESSAGE}`);
+    return "failed";
+  };
+  return {
+    id: "office-sans-convertisseur",
+    nature: "document",
+    detect: (head, name) => !isSheetName(name) && isOfficeFile(head, name),
+    limit: { maxBytes: OFFICE_MAX_BYTES, message: OFFICE_TOO_BIG_MESSAGE },
+    link: { aboveBytes: -1, run: (f, _path, ctx) => say(f, ctx.notify) },
+    run: (f, ctx) => say(f, ctx.notify),
   };
 }
 

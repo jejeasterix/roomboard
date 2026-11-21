@@ -105,6 +105,7 @@ describe("office-import (C16)", () => {
     await h.run(file("cours.docx", "/x/cours.docx"), c);
     expect(notify.mock.calls).toEqual([[`Import impossible (cours.docx) : ${OFFICE_FAILED_MESSAGE}`]]);
     expect(convertFailureMessage("a.pptx", "timeout")).toBe(`a.pptx : ${OFFICE_TIMEOUT_MESSAGE}`);
+    expect(convertFailureMessage("a.pptx", "too-large")).toBe(`a.pptx : ${OFFICE_TOO_BIG_MESSAGE}`);
   });
 
   it("office : .xlsx sans convertisseur (no-program) → classeur puis l'avis « importé en valeurs… » ; classeur en échec : aucun avis de plus (O4)", async () => {

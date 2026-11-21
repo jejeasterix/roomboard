@@ -1077,4 +1077,40 @@ describe("registre C16 : documents Office (O2, O3, O4, S3)", () => {
     expect(blob).not.toHaveBeenCalled();
     expect(convertOffice).not.toHaveBeenCalled();
   });
+
+  it("coque sans convertisseur, onglets pleins : a.roomboard refusé, notes.xlsx reste au classeur et s'insère en tableau (nature objet)", async () => {
+    const t = fakeTarget();
+    const notify = vi.fn(async (_m: string) => undefined);
+    const convertOffice = vi.fn(async () => new Blob());
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const r = await createImporter({
+      openDocument: vi.fn(async () => false), notify, full: () => true, target: () => t.target, readSheet, convertOffice,
+      openOffice: vi.fn(async () => true), officeConverter: false,
+    }).importFiles([file("a.roomboard", PK), file("notes.xlsx", PK, "/home/u/notes.xlsx")], null);
+    expect(r.inserted).toEqual(["notes.xlsx"]);
+    expect(r.failed).toEqual(["a.roomboard"]);
+    expect(convertOffice).not.toHaveBeenCalled();
+  });
+
+  it("coque sans convertisseur : diapos.pptx dit « installez LibreOffice ou Microsoft Office », fichier jamais lu", async () => {
+    const blob = vi.fn(async () => new Blob([PK]));
+    const f: DroppedFile = { name: "diapos.pptx", size: PK.length, mime: "", path: "/home/u/diapos.pptx", head: async () => PK, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const convertOffice = vi.fn(async () => new Blob());
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify, convertOffice, openOffice: vi.fn(async () => true), officeConverter: false }).importFiles([f], null);
+    expect(r.failed).toEqual(["diapos.pptx"]);
+    expect(notify).toHaveBeenCalledWith("diapos.pptx : installez LibreOffice ou Microsoft Office");
+    expect(blob).not.toHaveBeenCalled();
+    expect(convertOffice).not.toHaveBeenCalled();
+  });
+
+  it("hôte sans convertOffice : plus de 100 Mio : message de taille, jamais lu", async () => {
+    const blob = vi.fn(async () => new Blob([PK]));
+    const big: DroppedFile = { name: "gros.docx", size: OFFICE_MAX_BYTES + 1, mime: "", head: async () => PK, blob };
+    const notify = vi.fn(async (_m: string) => undefined);
+    const r = await createImporter({ openDocument: vi.fn(async () => true), notify }).importFiles([big], null);
+    expect(r.failed).toEqual(["gros.docx"]);
+    expect(notify).toHaveBeenCalledWith(`gros.docx : ${OFFICE_TOO_BIG_MESSAGE}`);
+    expect(blob).not.toHaveBeenCalled();
+  });
 });

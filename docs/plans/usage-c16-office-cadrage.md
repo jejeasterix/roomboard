@@ -317,6 +317,7 @@ scripts et licences, essais et documentation, tests). Chemins de `origin/main` @
   (O11). Essai sur le PC : délai provoqué, aucun `soffice.bin` restant.
 - **HO2-14** Sous Linux, `xdg-open` est lui-même un script : lancé comme programme, le chemin en argument, jamais une
   ligne de commande assemblée (O36).
+- **HO2-15** La boîte « Importer… » (`files.ts`, `IMPORT_EXTENSIONS`) ne propose pas encore les extensions Office (PC11 du plan) : visible pour l'utilisateur, qui ne les voit pas dans le sélecteur ; à trancher.
 - **HO2-12** Un fichier Office protégé par mot de passe échoue ou atteint le délai sous LibreOffice sans interface : message
   générique, pas de message « chiffré ».
 

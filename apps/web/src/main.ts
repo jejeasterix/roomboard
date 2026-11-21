@@ -42,7 +42,7 @@ import { BUILTIN_PROFILES } from "./toolbar-profiles";
 import { createActiveProfile } from "./ui/active-profile";
 import { mountApp, showStartError } from "./ui/App";
 import init, * as wasm from "./wasm/roomboard_wasm";
-import { withConversionMark } from "./platform/office-import";
+import { withConversionMark, type OriginalChange } from "./platform/office-import";
 
 function keyOf(e: KeyboardEvent): KeyLike {
   return {
@@ -296,9 +296,10 @@ async function start(): Promise<void> {
       ? {}
       : {
           convertOffice: (p: string) => markConversion(() => convertOffice(ipc, p)),
+          officeConverter: env.officeConverter,
           openOriginal: (f: { readonly name: string; readonly blob: Blob }) => openOriginal(ipc, f.name, f.blob),
           reimportOriginal: (id: string) => reimportOriginal(ipc, id),
-          onOriginalChanged: (cb: (e: { readonly id: string; readonly name: string }) => void) => onOriginalChanged(ipc, cb),
+          onOriginalChanged: (cb: (e: OriginalChange) => void) => onOriginalChanged(ipc, cb),
         }),
     now: () => new Date().toISOString(),
     newId: () => `t${++tabCount}`,

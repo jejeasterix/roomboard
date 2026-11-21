@@ -25,7 +25,7 @@ import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from ".
 import type { ImageDecoder, ImageTarget } from "../platform/image-import";
 import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
-import { NOT_OFFICE_PAGE_MESSAGE, officeMimeOf, officeStemOf, originalChangedMessage } from "../platform/office-import";
+import { NOT_OFFICE_PAGE_MESSAGE, officeMimeOf, officeStemOf, originalChangedMessage, type OfficeOpenFile, type OriginalChange } from "../platform/office-import";
 import type { LinkedMedia } from "../platform/media-import";
 import type { Model3dDeps } from "../platform/model3d-handlers";
 import { isAbsoluteLink, relativeLink, resolveLink } from "../platform/media-link";
@@ -114,12 +114,14 @@ export interface WorkspaceDeps {
   /** C16 (O4, O35) : conversion d'un fichier Office de la coque en PDF (lu par morceaux, dossier libéré) ; absent (web) :
    *  « exportez en PDF depuis Office ». Transmis à l'importeur. */
   convertOffice?(path: string): Promise<Blob>;
+  /** C16 (O24) : la coque a un convertisseur ; faux : « installez… » sans lire le fichier, `.xlsx` en valeurs. Absent : vrai. Transmis à l'importeur. */
+  readonly officeConverter?: boolean;
   /** C16 (O20) : envoie l'original à la coque, qui l'ouvre avec l'application du système. */
   openOriginal?(file: { readonly name: string; readonly blob: Blob }): Promise<void>;
   /** C16 (O22) : la coque accorde sa copie `id` et émet un dépôt ; la page ne nomme jamais un chemin. */
   reimportOriginal?(id: string): Promise<void>;
   /** C16 (O21) : « original modifié » émis par la coque ; rend le désabonnement. */
-  onOriginalChanged?(cb: (e: { readonly id: string; readonly name: string }) => void): () => void;
+  onOriginalChanged?(cb: (e: OriginalChange) => void): () => void;
 }
 
 export interface Workspace {
@@ -382,7 +384,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(convertOffice && deps.pdf
       ? {
           convertOffice,
-          openOffice: (f: { readonly name: string; readonly original: Blob; readonly pdf: Blob }) => ws.openPdf({ name: f.name, blob: f.pdf, original: f.original }),
+          ...(deps.officeConverter === undefined ? {} : { officeConverter: deps.officeConverter }),
+          openOffice: (f: OfficeOpenFile) => ws.openPdf({ name: f.name, blob: f.pdf, original: f.original }),
         }
       : {}),
   });
@@ -450,7 +453,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
           const ob = typed(original, officeMimeOf(name));
           originalRef = { id: await assets.put(ob), name, mime: ob.type, size: ob.size };
         }
-        const doc = originalRef === undefined ? core.fromPdfPages(pdfRef, sizes) : core.fromPdfPages(pdfRef, sizes, originalRef);
+        const doc = core.fromPdfPages(pdfRef, sizes, originalRef);
         if (total > PDF_MAX_PAGES) await say(pdfFirstPagesMessage(name, total));
         return (await addTab(doc, { name: `${stem}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
       } catch (e) {
@@ -710,10 +713,17 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   // C16 (O22) : « original modifié » → question ; oui : la coque réimporte (dépôt émis, nouvel onglet) ; non : rien, la
   // surveillance continue.
   const reimport = deps.reimportOriginal;
+  const asking = new Set<string>(); // ids dont la question est ouverte : un second événement n'en pose pas une deuxième
   const stopOriginal =
     deps.onOriginalChanged?.((e) => {
+      if (reimport === undefined || asking.has(e.id)) return;
+      asking.add(e.id);
       void (async () => {
-        if (reimport !== undefined && (await ask(originalChangedMessage(e.name)))) await reimport(e.id);
+        try {
+          if (await ask(originalChangedMessage(e.name))) await reimport(e.id);
+        } finally {
+          asking.delete(e.id);
+        }
       })().catch((err: unknown) => {
         console.warn(`RoomBoard : réimport abandonné (${messageOf(err)})`);
       });
