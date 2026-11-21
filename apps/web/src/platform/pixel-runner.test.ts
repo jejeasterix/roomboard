@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasPixels } from "./container";
-import { applyPixels, createPixelRunner, pixelErrorMessage, pixelNotice, PIXELS_FAILED_MESSAGE, rgbOf, type PixelJob } from "./pixel-runner";
+import { applyFill, applyPixels, createPixelRunner, FILL_MODULE_OLD_MESSAGE, FILL_UNREADABLE_MESSAGE, pixelErrorMessage, pixelNotice, PIXELS_FAILED_MESSAGE, rgbOf, type PixelFillJob, type PixelJob } from "./pixel-runner";
 import type { WorkerLike } from "./sheet-reader";
 
 class FakeWorker implements WorkerLike {
@@ -185,5 +185,93 @@ describe("calcul dans le Worker (I10, I17)", () => {
     expect(hasPixels(base as never)).toBe(false);
     expect(hasPixels({ ...base, image_transparent: vi.fn(), image_adjust: vi.fn() } as never)).toBe(false); // image_flood_fill manque (m3)
     expect(hasPixels({ ...base, image_transparent: vi.fn(), image_adjust: vi.fn(), image_flood_fill: vi.fn() } as never)).toBe(true);
+  });
+});
+
+describe("remplissage d'image dans le lanceur (C6b, B14)", () => {
+  const original = new Blob([new Uint8Array([1, 2])], { type: "image/png" });
+  const fillJob = (extra: Partial<PixelFillJob> = {}): PixelFillJob => ({
+    seed: [3, 4],
+    size: [10, 8],
+    tolerance: 5,
+    color: "#facc15",
+    brightness: 20,
+    source: async () => ({ blob: original, kind: "png" }),
+    ...extra,
+  });
+  const result = () => ({ changed: 12, png: new Blob([new Uint8Array([9])], { type: "image/png" }), bitmap: bmp("rempli") });
+
+  it("message : type fill, graine, taille, tolérance, couleur, pixels de C5, Blob de l'original sans transfert", async () => {
+    const { workers, runner } = setup();
+    void runner.fill(fillJob());
+    await tick();
+    expect(workers[0]?.posted[0]).toMatchObject({ type: "fill", seed: [3, 4], size: [10, 8], tolerance: 5, color: "#facc15", brightness: 20, blob: original, kind: "png" });
+    expect(workers[0]?.transfers[0]).toEqual([]);
+  });
+
+  it("source bitmap (SVG) : transférée", async () => {
+    const { workers, runner } = setup();
+    const copy = bmp("svg");
+    void runner.fill(fillJob({ source: async () => ({ bitmap: copy }) }));
+    await tick();
+    expect(workers[0]?.posted[0]).toMatchObject({ type: "fill", bitmap: copy });
+    expect(workers[0]?.transfers[0]).toEqual([copy]);
+  });
+
+  it("un remplissage n'est jamais remplacé : deux remplissages, deux résultats dans l'ordre", async () => {
+    const { workers, runner } = setup();
+    const a = runner.fill(fillJob());
+    const b = runner.fill(fillJob({ color: null }));
+    await tick();
+    const r = result();
+    workers[0]?.reply(0, r);
+    await expect(a).resolves.toEqual(r);
+    await tick();
+    expect(workers[0]?.posted[1]).toMatchObject({ type: "fill", color: null });
+    workers[0]?.reply(1, { changed: 0 });
+    await expect(b).resolves.toEqual({ changed: 0 });
+  });
+
+  it("réponse mal formée : PIXELS_FAILED_MESSAGE ; erreur du Worker (image illisible) : son message", async () => {
+    const { workers, runner } = setup();
+    const a = runner.fill(fillJob());
+    await tick();
+    workers[0]?.reply(0, { changed: 3 });
+    await expect(a).rejects.toThrow(PIXELS_FAILED_MESSAGE);
+    const b = runner.fill(fillJob());
+    await tick();
+    workers[1]?.reply(0, { error: FILL_UNREADABLE_MESSAGE });
+    await expect(b).rejects.toThrow(FILL_UNREADABLE_MESSAGE);
+  });
+
+  it("S5 e : module des pixels absent : rejet avec le message du Worker", async () => {
+    const { workers, runner } = setup();
+    const a = runner.fill(fillJob());
+    await tick();
+    workers[0]?.reply(0, { error: "module des pixels indisponible" });
+    await expect(a).rejects.toThrow("module des pixels indisponible");
+  });
+
+  it("dispose : remplissage en attente → null", async () => {
+    const { runner } = setup();
+    const a = runner.fill(fillJob());
+    runner.dispose();
+    await expect(a).resolves.toBeNull();
+    await expect(runner.fill(fillJob())).resolves.toBeNull();
+  });
+});
+
+describe("applyFill (C6b, B8)", () => {
+  const mod = () => ({ image_flood_fill: vi.fn((..._a: unknown[]) => 7) });
+  it("graine en pixels source mise à l'échelle du bitmap décodé ; couleur en majuscules acceptée (RF2) ; effacer", () => {
+    const m = mod();
+    expect(applyFill(m, new Uint8Array(4 * 5 * 4), 5, 4, { seed: [9, 7], size: [10, 8], tolerance: 5, color: "#FACC15" })).toBe(7);
+    expect(m.image_flood_fill.mock.calls[0]?.slice(1)).toEqual([5, 4, 4, 3, 5, 250, 204, 21, false]);
+    applyFill(m, new Uint8Array(4 * 10 * 8), 10, 8, { seed: [9, 7], size: [10, 8], tolerance: 0, color: null });
+    expect(m.image_flood_fill.mock.calls[1]?.slice(1)).toEqual([10, 8, 9, 7, 0, 0, 0, 0, true]);
+  });
+  it("module d'avant C6b (ne rend pas de nombre) : erreur lisible", () => {
+    const old = { image_flood_fill: vi.fn((..._a: unknown[]) => undefined as unknown as number) };
+    expect(() => applyFill(old, new Uint8Array(4), 1, 1, { seed: [0, 0], size: [1, 1], tolerance: 5, color: null })).toThrow(FILL_MODULE_OLD_MESSAGE);
   });
 });

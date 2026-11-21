@@ -82,7 +82,8 @@ export function hasPdfWriter(m: FormatsBinding): m is PdfFormatsBinding {
 export interface PixelFormatsBinding extends FormatsBinding {
   image_transparent(px: Uint8Array, w: number, h: number, r: number, g: number, b: number, tolerance: number, soft: number, contiguous: boolean): void;
   image_adjust(px: Uint8Array, brightness: number, contrast: number): void;
-  image_flood_fill(px: Uint8Array, w: number, h: number, x: number, y: number, tolerance: number, r: number, g: number, b: number): void;
+  /** C6b (B17) : `clear` efface la zone (`r`, `g`, `b` ignorés) ; rend le nombre de pixels changés. */
+  image_flood_fill(px: Uint8Array, w: number, h: number, x: number, y: number, tolerance: number, r: number, g: number, b: number, clear: boolean): number;
 }
 
 /** Vrai si le module chargé expose les calculs de pixels (module construit après C5). */

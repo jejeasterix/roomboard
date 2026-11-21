@@ -200,7 +200,8 @@ pub enum Command {
         size: f64,
     },
     /// Pot (C6a, D12, DA1) : contour (`color`), intérieur (`fill`) ou fond de la page (`background`) ; `None` = « Aucune »
-    /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38).
+    /// (intérieur retiré, fond blanc, contour inchangé). Une transaction, aucune étape sans effet (D38). C6b : image
+    /// (nouvel asset, `sourceAsset`, B2-B4).
     Fill {
         page: String,
         target: crate::fill::FillTarget,
@@ -233,6 +234,8 @@ pub enum Command {
         id: String,
         params: crate::image::ImageParamsInput,
         matrix: Transform,
+        /// « Rétablir l'original » (C6b, B11) : avec un `sourceAsset` lisible, l'asset d'origine revient dans la même étape.
+        restore: bool,
     },
     /// Objet 3D (C15, X7) : élément, métadonnées du principal, des fichiers liés et de l'instantané ; une transaction,
     /// une étape.
@@ -816,9 +819,12 @@ impl Document {
                     volume,
                 },
             ),
-            Command::SetImageParams { id, params, matrix } => {
-                self.cmd_set_image_params(&id, &params, &matrix)
-            }
+            Command::SetImageParams {
+                id,
+                params,
+                matrix,
+                restore,
+            } => self.cmd_set_image_params(&id, &params, &matrix, restore),
             Command::AddModel3d {
                 page,
                 asset,

@@ -52,6 +52,8 @@ export interface EngineState {
   readonly textFormat: FormatState | null;
   /** Couleur du pot (C6a, D16) ; null = « Aucune ». Facultative (PC5) : le moteur la publie toujours. */
   readonly fillColor?: string | null;
+  /** Tolérance du pot sur une image (C6b, B10), entier de 0 à 100 ; facultative comme fillColor (le moteur la publie). */
+  readonly fillTolerance?: number;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -77,7 +79,7 @@ export interface ToolFactories {
   /** Outil Tableau (C10a) ; absent : outil inerte. */
   table?(ctx: ToolContext, style: () => TextStyle): TableTool;
   /** Outil Pot (C6a, D15) ; `color` lue au relâché ; absent : outil inerte. */
-  fill?(ctx: ToolContext, color: () => string | null): GestureTool;
+  fill?(ctx: ToolContext, color: () => string | null, tolerance: () => number): GestureTool;
 }
 
 export interface EngineDeps {
@@ -151,6 +153,8 @@ export interface Engine {
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
+  /** Tolérance du pot (C6b, B10) : arrondie, bornée à 0-100 ; non finie : ignorée. */
+  setFillTolerance(t: number): void;
   /** Bouton de structure de la rangée du tableau (C10a, DAC4) : sur la cellule active de l'outil Tableau. */
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
@@ -176,6 +180,7 @@ export interface Engine {
 export const DEFAULT_PEN_STYLE: StrokeStyle = { color: "#000000", width: 4 };
 /** Couleur du pot au démarrage (D16). */
 export const DEFAULT_FILL_COLOR = "#dc2626";
+export const DEFAULT_FILL_TOLERANCE = 5;
 /** Ctrl+molette : facteur exp(-deltaY × vitesse) (HL3-6). */
 export const WHEEL_ZOOM_SPEED = 0.002;
 /** Durées d'image retenues (une minute à 60 Hz) : le banc et son export en lisent au plus autant (HL3b-8). */
@@ -234,6 +239,7 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastIndex = 0;
   let style = deps.penStyle ?? DEFAULT_PEN_STYLE;
   let fillColor: string | null = DEFAULT_FILL_COLOR;
+  let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
   const cameraListeners = new Set<(c: Camera) => void>();
   const setCamera = (c: Camera): void => {
@@ -325,6 +331,7 @@ export function createEngine(deps: EngineDeps): Engine {
       tableShades: tableCounts().shades,
       textFormat: tool === "text" ? textTool.formatState() : tool === "table" ? tableTool.formatState() : null,
       fillColor,
+      fillTolerance,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -463,7 +470,7 @@ export function createEngine(deps: EngineDeps): Engine {
     arrow: shapeTool("arrow"),
     table: tableTool,
     text: textTool,
-    fill: deps.tools.fill?.(ctx, () => fillColor) ?? inertTool(),
+    fill: deps.tools.fill?.(ctx, () => fillColor, () => fillTolerance) ?? inertTool(),
   };
   const toolList: readonly GestureTool[] = Object.values(tools);
 
@@ -767,6 +774,11 @@ export function createEngine(deps: EngineDeps): Engine {
     setFillColor(c) {
       if (c !== null && (typeof c !== "string" || !validColor(c))) return;
       fillColor = c;
+      emit();
+    },
+    setFillTolerance(t) {
+      if (typeof t !== "number" || !Number.isFinite(t)) return;
+      fillTolerance = Math.min(100, Math.max(0, Math.round(t)));
       emit();
     },
     setPenStyle(s) {

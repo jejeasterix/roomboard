@@ -21,14 +21,16 @@ const tableTag = (c: TableCellState | null): string => {
 export interface StageExtras {
   readonly pixels?: string;
   readonly image?: readonly [number, number] | null;
+  /** C6b (B21) : état de la file du pot (`PotState`). */
+  readonly pot?: string;
 }
 
 /** Attributs de `#stage` lus par les scénarios S3/S4, S1 de C10a (`table`), S1 à S4 de C10b (`tableMerges`, `tableShades`)
- *  et C5 (`pixels`, `image`). */
+ *  C5 (`pixels`, `image`) et C6b (`pot`). */
 export function stageTags(
   s: EngineState,
   extra: StageExtras = {},
-): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image", string> {
+): Record<"page" | "selection" | "bounds" | "tool" | "table" | "tableMerges" | "tableShades" | "units" | "grouped" | "pixels" | "image" | "pot", string> {
   return {
     page: `${s.pageIndex + 1}/${s.pageCount}`,
     selection: String(s.selection.length),
@@ -40,6 +42,7 @@ export function stageTags(
     units: String(s.selectionUnits),
     grouped: s.selectionGrouped ? "1" : "0",
     pixels: extra.pixels ?? "",
+    pot: extra.pot ?? "",
     image: extra.image ? `${Math.round(extra.image[0])}x${Math.round(extra.image[1])}` : "",
   };
 }

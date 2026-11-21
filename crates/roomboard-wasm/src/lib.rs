@@ -748,7 +748,7 @@ impl Document {
     }
 
     /// Réglages d'une image (C5, I6) : état voulu complet et nouvelle matrice ; voir `image_params_input` pour la forme
-    /// de `crop`, `color` et `transparent`.
+    /// de `crop`, `color` et `transparent`. `restore` : « Rétablir l'original » (C6b, B11).
     #[allow(clippy::too_many_arguments)]
     pub fn set_image_params(
         &mut self,
@@ -762,6 +762,7 @@ impl Document {
         color: Option<String>,
         transparent: &[f64],
         matrix: &[f64],
+        restore: bool,
     ) -> Result<JsValue, JsError> {
         let params = image_params_input(
             crop,
@@ -776,7 +777,7 @@ impl Document {
         .map_err(cmd_err)?;
         to_js(
             &self
-                .set_image_params_inner(id, params, matrix)
+                .set_image_params_inner(id, params, matrix, restore)
                 .map_err(cmd_err)?,
         )
     }
@@ -1242,6 +1243,26 @@ impl Document {
         )
     }
 
+    /// Pot sur une image (C6b, B2) : nouvel asset (empreinte, nom, type, taille) et couleur contrôlée (absente ou null :
+    /// « Aucune », zone effacée) ; voir `Document::cmd_fill_image`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn fill_image(
+        &mut self,
+        page: &str,
+        id: &str,
+        asset: &str,
+        name: &str,
+        mime: &str,
+        size: f64,
+        color: Option<String>,
+    ) -> Result<JsValue, JsError> {
+        to_js(
+            &self
+                .fill_image_inner(page, id, asset_ref(asset, name, mime, size), color)
+                .map_err(cmd_err)?,
+        )
+    }
+
     /// Bord d'un rectangle ou d'une ellipse (C6a, DA2), lecture seule ; `tol` en unités monde.
     pub fn edge_hit(&self, id: &str, x: f64, y: f64, tol: f32) -> bool {
         self.core.edge_hit(id, x, y, tol)
@@ -1466,12 +1487,14 @@ impl Document {
         id: &str,
         params: ImageParamsInput,
         matrix: &[f64],
+        restore: bool,
     ) -> Result<Change, CommandError> {
         let m: Transform = matrix.try_into().map_err(|_| CommandError::BadMatrix)?;
         self.run(Command::SetImageParams {
             id: id.to_string(),
             params,
             matrix: m,
+            restore,
         })
     }
 
@@ -1780,6 +1803,23 @@ impl Document {
         self.run(Command::Fill {
             page: page.to_string(),
             target,
+            color,
+        })
+    }
+
+    pub fn fill_image_inner(
+        &mut self,
+        page: &str,
+        id: &str,
+        asset: AssetRef,
+        color: Option<String>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::Fill {
+            page: page.to_string(),
+            target: FillTarget::Image {
+                id: id.to_string(),
+                asset,
+            },
             color,
         })
     }
@@ -2505,7 +2545,7 @@ mod tests {
         )
         .expect("entrée");
         let c = d
-            .set_image_params_inner(&id, params, &[1.0, 0.0, 0.0, 1.0, 5.0, 6.0])
+            .set_image_params_inner(&id, params, &[1.0, 0.0, 0.0, 1.0, 5.0, 6.0], false)
             .expect("réglages");
         assert_eq!(c.ids, vec![id.clone()]);
         let i = d.core.element(&id).and_then(|e| e.image).expect("image");
@@ -2519,9 +2559,57 @@ mod tests {
             Some(("#ffffff".to_string(), 10, 5, true))
         );
         assert_eq!(
-            d.set_image_params_inner(&id, ImageParamsInput::default(), &[1.0, 0.0]),
+            d.set_image_params_inner(&id, ImageParamsInput::default(), &[1.0, 0.0], false),
             Err(CommandError::BadMatrix)
         );
+    }
+
+    // C6b (B2, B11) : pot sur image et « Rétablir l'original » par leurs `_inner`.
+    #[test]
+    fn fill_image_inner_and_restore_flag() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_image_inner(&p, png(), [640.0, 480.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        let next = AssetRef {
+            id: "cd".repeat(32),
+            name: "photo.png".into(),
+            mime: "image/png".into(),
+            size: 9.0,
+        };
+        let c = d
+            .fill_image_inner(&p, &id, next.clone(), Some("#facc15".into()))
+            .expect("remplissage");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let i = d.core.element(&id).and_then(|e| e.image).expect("image");
+        assert_eq!(
+            (i.asset.as_str(), i.source_asset.as_deref()),
+            (next.id.as_str(), Some(ABC))
+        );
+        assert_eq!(
+            d.fill_image_inner(
+                &p,
+                &id,
+                AssetRef {
+                    id: "x".into(),
+                    ..next.clone()
+                },
+                None
+            ),
+            Err(CommandError::BadAsset)
+        );
+        d.set_image_params_inner(
+            &id,
+            ImageParamsInput::default(),
+            &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            true,
+        )
+        .expect("rétablir");
+        let i = d.core.element(&id).and_then(|e| e.image).expect("image");
+        assert_eq!((i.asset.as_str(), i.source_asset), (ABC, None));
     }
 
     #[test]

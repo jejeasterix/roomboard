@@ -1,9 +1,10 @@
 //! Pot de peinture (C6a, DA1, DA2) : commande `Fill` (contour, intérieur, fond de page), une transaction, aucune étape
 //! sans effet (D38), et requête `edge_hit` (bord d'un rectangle ou d'une ellipse, mesuré comme `hit_test`). Mots et
-//! cellules gardent `FormatText`, `SetTableCell`, `SetTableFill` (D6, D8, D9). C6b et C8 ajouteront une variante de
-//! `FillTarget`.
+//! cellules gardent `FormatText`, `SetTableCell`, `SetTableFill` (D6, D8, D9). C6b : zone d'une image
+//! (`FillTarget::Image`, écrite par `image.rs`, `cmd_fill_image`) ; C8 ajoutera une variante.
 use yrs::{In, Map, MapRef, ReadTxn};
 
+use crate::asset::AssetRef;
 use crate::commands::{read_shape, Change, CommandError};
 use crate::document::Document;
 use crate::element::{out_string, out_transform, DEFAULT_BACKGROUND};
@@ -13,12 +14,13 @@ use crate::rich_text::valid_color;
 use crate::shape::shape_polygon;
 
 /// Cible du pot (D12) : contour d'une forme ou d'un trait (`color`), intérieur d'un rectangle ou d'une ellipse (`fill`),
-/// fond de la page (`background`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// fond de la page (`background`) ; C6b (B2) : image, avec le nouvel asset calculé par la page (pixels remplis ou effacés).
+#[derive(Debug, Clone, PartialEq)]
 pub enum FillTarget {
     Edge { id: String },
     Inside { id: String },
     Background,
+    Image { id: String, asset: AssetRef },
 }
 
 /// Clé écrite pour une cible d'élément ; `None` si la cible ne convient pas (intérieur d'une ligne, d'une flèche, d'un
@@ -50,6 +52,9 @@ impl Document {
         if color.is_some_and(|c| !valid_color(c)) {
             return Err(CommandError::BadFill);
         }
+        if let FillTarget::Image { id, asset } = target {
+            return self.cmd_fill_image(page, id, asset);
+        }
         let (map, key, value, ids) = {
             let txn = self.read();
             let (_, page_map) = self
@@ -80,6 +85,7 @@ impl Document {
                         vec![id.clone()],
                     )
                 }
+                FillTarget::Image { .. } => return Err(CommandError::BadFill),
             }
         };
         let current = {
