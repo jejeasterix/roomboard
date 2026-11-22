@@ -7,7 +7,7 @@
  * Cycle d'import avec `import.ts` : aucune constante de ce module ne lit une valeur importée (fonctions seulement).
  */
 import type { DroppedFile } from "./files";
-import { hasExtension, hasZipMagic, isSheetName, type ImportHandler, type ImportOutcome } from "./import";
+import { hasExtension, hasZipMagic, isSheetName, type ImportContext, type ImportHandler, type ImportOutcome } from "./import";
 
 export const OFFICE_ZIP_EXTENSIONS: readonly string[] = Object.freeze([".docx", ".odt", ".xlsx", ".xlsm", ".ods", ".pptx", ".odp"]);
 export const OFFICE_CFB_EXTENSIONS: readonly string[] = Object.freeze([".doc", ".xls", ".ppt"]);
@@ -77,6 +77,16 @@ export function convertFailureMessage(name: string, code: string): string {
   return `Import impossible (${name}) : ${OFFICE_FAILED_MESSAGE}`;
 }
 
+/** Chemin d'un fichier déposé ; `undefined` pour un collage (aucun chemin, ou chemin vide). */
+const pathOf = (f: DroppedFile): string | undefined => (f.path === "" ? undefined : f.path);
+
+/** O4 : `.xlsx` en valeurs par `sheet`, puis l'avis « importé en valeurs ; installez… » après une insertion réussie. */
+async function runSheetWithValuesNotice(sheet: ImportHandler, f: DroppedFile, ctx: ImportContext): Promise<ImportOutcome> {
+  const out = await sheet.run(f, ctx);
+  if (out === "inserted") await ctx.notify(`${f.name} : ${OFFICE_VALUES_MESSAGE}`);
+  return out;
+}
+
 /** Document converti à ouvrir : nom, original gardé, PDF obtenu. */
 export interface OfficeOpenFile {
   readonly name: string;
@@ -109,8 +119,8 @@ export function officeHandler(deps: OfficeHandlerDeps): ImportHandler {
     detect: (head, name) => isOfficeFile(head, name),
     limit: { maxBytes: OFFICE_MAX_BYTES, message: OFFICE_TOO_BIG_MESSAGE },
     async run(f, ctx) {
-      const path = f.path;
-      if (path === undefined || path === "") {
+      const path = pathOf(f);
+      if (path === undefined) {
         // Collage dans la coque : comme le web (O14).
         const s = asSheet(f);
         if (s !== null) return s.run(f, ctx);
@@ -123,11 +133,7 @@ export function officeHandler(deps: OfficeHandlerDeps): ImportHandler {
       } catch (e) {
         const code = e instanceof OfficeConvertError ? e.code : "failed";
         const s = code === "no-program" ? asSheet(f) : null;
-        if (s !== null) {
-          const out = await s.run(f, ctx);
-          if (out === "inserted") await ctx.notify(`${f.name} : ${OFFICE_VALUES_MESSAGE}`);
-          return out;
-        }
+        if (s !== null) return runSheetWithValuesNotice(s, f, ctx);
         await ctx.notify(convertFailureMessage(f.name, code));
         return "failed";
       }
@@ -172,18 +178,15 @@ export function officeNoConverterHandler(): ImportHandler {
 }
 
 /** Coque sans convertisseur (O4) : `.xlsx` et `.xlsm` s'insèrent en tableau par `sheet` (nature `objet` : les onglets
- *  pleins ne les arrêtent pas), puis l'avis « importé en valeurs ; installez… » après une insertion réussie. */
+ *  pleins ne les arrêtent pas), puis l'avis « importé en valeurs ; installez… » après une insertion réussie d'un fichier
+ *  déposé ; un collage sans chemin se lit en valeurs sans avis, comme le web (O14). */
 export function officeSheetNoConverterHandler(sheet: ImportHandler): ImportHandler {
   return {
     id: "office-sheet-sans-convertisseur",
     nature: "objet",
-    detect: (head, name) => isSheetName(name) && isOfficeFile(head, name),
+    detect: (head, name) => sheet.detect(head, name),
     ...(sheet.limit ? { limit: sheet.limit } : {}),
-    async run(f, ctx) {
-      const out = await sheet.run(f, ctx);
-      if (out === "inserted") await ctx.notify(`${f.name} : ${OFFICE_VALUES_MESSAGE}`);
-      return out;
-    },
+    run: (f, ctx) => (pathOf(f) !== undefined ? runSheetWithValuesNotice(sheet, f, ctx) : sheet.run(f, ctx)),
   };
 }
 

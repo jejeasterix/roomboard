@@ -1,6 +1,6 @@
 # État — usage-c16-office
 
-Statut : en cours
+Statut : clos (PR 29 fusionnée ; restes faibles fermés par OE31, branche `fix/restes-oe25-office`)
 Gabarit : chantier
 Objectif : Un document Word, Excel ou PowerPoint déposé sur RoomBoard s'importe : converti en PDF en coque, lu en valeurs ou refusé avec un message clair sur le web.
 Avancement : 16/16 tâches terminées
@@ -47,6 +47,14 @@ Worktrees : `~/projets/roomboard-wt/usage-c16-office--T<n>`, branche `feat/usage
 Suites rapides sur `badf1d5` : `/tmp/c16/rapide-badf1d5.log` (cargo 0 FAILED ; web 134 fichiers, 2667 passed). Double relecture (`badf1d5`) : qualité Rust — 1 bloquant (`open::` absent du manifeste de la coque), 1 important (COM `Quit`) ; qualité web — 6 mineurs, 3 simplifications ; conformité — 1 important (COM `NoProgram`), 4 mineurs. Tour 1 : T14, T15. Relecture du tour (`75bff9e`) : 1 bloquant (avis O4 absent sans convertisseur) → T16. Relecture finale de T16 (`b1cffd0`) : constats corrigés, 3 mineurs restants (avis O4 sur un `.xlsx` collé sans chemin, `office-import.ts:184` ; bloc « sheet + avis » écrit deux fois ; `detect` recopié au lieu de `sheet.detect`).
 `verifier.sh --e2e` sur `b1cffd0` : « C16 Office : OK », « verifier.sh : e2e OK », « verifier.sh : OK » ; module Wasm 1 374 141 o ; formats 3 100 845 o ; 0 FAILED.
 Simplifications appliquées dans T14/T15 (`new_numbered_dir`, types `OfficeOpenFile`/`OriginalChange`, `sheetHandler` unique, ternaire retiré).
+
+## Clôture (OE31, 2026-11-22)
+Les trois mineurs de la relecture finale sont fermés dans `apps/web/src/platform/office-import.ts` :
+- avis O4 : `officeSheetNoConverterHandler` ne dit « importé en valeurs ; installez… » que pour un fichier déposé (chemin connu) ; un `.xlsx` collé sans chemin se lit en valeurs sans avis, comme le web (O14). Test : `office-import.test.ts`, « office sans convertisseur : .xlsx collé sans chemin… » (rouge avant le correctif) ;
+- bloc « sheet + avis » écrit deux fois : une seule fonction, `runSheetWithValuesNotice`, appelée par `officeHandler` et `officeSheetNoConverterHandler` ; le test de chemin vide est aussi commun (`pathOf`) ;
+- `detect` recopié : `officeSheetNoConverterHandler` délègue à `sheet.detect` (même règle : nom `.xlsx` / `.xlsm` et en-tête ZIP).
+
+Restes de plateforme, à essayer sur les machines réelles : la coque Windows (LibreOffice puis COM seul, mode protégé, chemins `\\?\`) et la coque macOS (`LibreOffice.app`), essais réels R1 à R3 dans la file du PC et sur le Mac : `docs/essais/coque-windows.md` § 8, `docs/essais/coque-macos.md` § 8.
 
 ## Scénarios et captures
 S1 conversion réelle .docx/.pptx/.xlsx (`/usr/bin/soffice`) — réussi (2,3–4,1 s ; 1,0–3,0 s ; 1,2–1,3 s).
