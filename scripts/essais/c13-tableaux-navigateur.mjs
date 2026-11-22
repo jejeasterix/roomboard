@@ -7,15 +7,19 @@
 // toute requête hors de 127.0.0.1 est comptée et coupée. Code : 0 réussi, 1 échec, 2 outil absent.
 // Lot 2 (S1 à S3 de usage-c13-lots2-3) : un .notebook et un .olf fabriqués ici sont déposés, pages et avertissements lus,
 // enregistrés en .roomboard puis rouverts ; .flipchart signé Bamboo refusé ; fichiers hostiles ; socle-v1.roomboard.
+// Lot 3 (S4 et S5 de usage-c13-lots2-3) : des .flipchart générés par la fabrique de T12 sont déposés (pages, avis, aller-retour
+// .roomboard) ; des .flipchart hostiles (bombe, taille mensongère, .fpg imbriqué, trop d'entrées…) sont refusés sans plantage.
 // Usage : node scripts/essais/c13-tableaux-navigateur.mjs [--captures <leçon.iwb>] [--captures-notebook]
 // (docs/essais/c13-iwb-lecon.png : la leçon, hors dépôt, n'est jamais copiée ; docs/essais/c13-notebook-lecon.png :
 // .notebook fabriqué). Sans option, aucune capture n'est réécrite.
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { deflateSync, inflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, solidPng, stageBox, stageMouse } from "./commun.mjs";
+import { bambooContainer, makeFlipchart } from "./fabriques/flipchart.mjs";
 
 const LABEL = "C13 tableaux";
 const FIXED = new Date("2026-11-21T08:00:00.000Z");
@@ -162,6 +166,81 @@ const deepOlf = () => Buffer.from(zipSync({ "content.json": enc(`{"olf":{"pagese
 const emptyNotebook = () => Buffer.from(zipSync({ "lisez-moi.txt": enc("rien") }));
 /** S3 : paperboard ActivInspire fabriqué (signature `Bamboo` + 32 octets). */
 const flipchart = () => Buffer.concat([enc(" Bamboo "), Buffer.alloc(32)]);
+
+// ---- Lot 3 (C13) : .flipchart fabriqués par la fabrique de T12 (jamais un fichier d'exemple). ----
+const TIFF = Uint8Array.of(0x49, 0x49, 0x2a, 0x00, 8, 0, 0, 0);
+const flip = (pages, opts) => Buffer.from(makeFlipchart(pages, deflateSync, opts));
+/** S4 : page 1 = trait, ligne, rectangle plein, texte à deux runs, PNG, TIFF, action ; page 2 = un rectangle. */
+const flipPages = () => [
+  {
+    strokes: [{ points: [[10, 300], [60, 330], [110, 300]], color: 0xff0000, width: 4 }],
+    lines: [{ points: [[10, 400], [300, 400]], color: 0x0000ff, width: 3 }],
+    rects: [{ x: 10, y: 10, w: 80, h: 40, fill: 0x3366cc }],
+    texts: [{ x: 200, y: 20, runs: [{ text: "Bonjour ", size: 30 }, { text: "monde", size: 30, bold: true }] }],
+    images: [
+      { name: "photo.png", bytes: solidPng(8, 8, [255, 128, 0]), x: 400, y: 200, w: 64, h: 64 },
+      { name: "scan.tif", bytes: TIFF, x: 500, y: 300, w: 32, h: 32 },
+    ],
+    actions: 1,
+  },
+  { rects: [{ x: 5, y: 5, w: 40, h: 30, fill: 0x00ff00 }] },
+];
+/** Entrées d'un conteneur Bamboo (lecture de l'essai seul : fabrique de tests, tailles et noms connus). */
+function bambooEntriesOf(buf) {
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let at = 8 + 2;
+  const qstr = () => {
+    const n = dv.getUint32(at, true);
+    at += 4 + n;
+    return Buffer.from(buf.subarray(at - n, at)).toString("utf16le");
+  };
+  qstr();
+  at += 8;
+  const out = [];
+  while (at < buf.length) {
+    const name = qstr();
+    qstr();
+    qstr();
+    qstr();
+    at += 8;
+    const compressed = buf[at++] === 1;
+    const len = Number(dv.getBigUint64(at, true));
+    at += 8;
+    const stored = buf.subarray(at, at + len);
+    at += len;
+    out.push({ name, compressed, data: compressed ? inflateSync(stored.subarray(4)) : stored });
+  }
+  return out;
+}
+const enter = (entries, name, fn) => entries.map((e) => (e.name === name ? { ...e, data: fn(e.data) } : e));
+/** S5 : flux d'objets de `levels` niveaux d'objets embarqués (au-delà de 32, le lecteur écarte et compte). */
+function deepStream(levels, type) {
+  const parts = [Buffer.from(" Bamboo "), Buffer.from([1, 0, 7, 0])];
+  for (let k = 0; k < levels - 1; k++) {
+    const head = Buffer.alloc(16);
+    head.write("O", 0);
+    head.writeUInt16LE(type, 1);
+    head.write("M", 7);
+    head.writeUInt32LE(1, 8);
+    head.writeUInt32LE(8 + 14 + 26 * (levels - 2 - k), 12);
+    parts.push(head, Buffer.from([0x6d, 0x50, 2, 0, 127, 0, 4, 0]));
+  }
+  const tail = Buffer.alloc(14);
+  tail.write("O", 0);
+  tail.writeUInt16LE(type, 1);
+  tail.write("M", 7);
+  tail.write("po", 12);
+  parts.push(tail, Buffer.from("po".repeat(levels - 1)));
+  return Buffer.concat(parts);
+}
+/** S5 : une page à deux rectangles dont le flux du second (1013.io) est une chaîne de 40 objets embarqués. */
+function deepFlipchart() {
+  const root = bambooEntriesOf(makeFlipchart([{ rects: [{ x: 5, y: 5, w: 40, h: 30, fill: 0x00ff00 }, { x: 60, y: 5, w: 40, h: 30, fill: 0xff0000 }] }], deflateSync));
+  const page = bambooEntriesOf(root.find((e) => e.name === "1003.fpg").data);
+  const patched = enter(page, "1013.io", () => deepStream(40, 7));
+  const fpg = bambooContainer(patched.map(({ name, data, compressed }) => ({ name, data, compressed })), deflateSync);
+  return Buffer.from(bambooContainer(enter(root, "1003.fpg", () => fpg).map(({ name, data, compressed }) => ({ name, data, compressed })), deflateSync));
+}
 
 const NUMERIC = ["x", "y", "width", "height", "cx", "cy", "rx", "ry", "x1", "y1", "x2", "y2", "stroke-width", "font-size"];
 function tagsOf(xml) {
@@ -453,7 +532,7 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await refuse("gros.olf", bigOlf(), "trop gros");
   // JSON.parse lit 200 000 niveaux sans pile dépassée (V8) : le refus vient du pageset vide, pas de content.json.
   await refuse("profond.olf", deepOlf(), "tableau sans page");
-  await refuse("cours.flipchart", flipchart(), "exporter en .iwb ou PDF depuis ActivInspire");
+  await refuse("cours.flipchart", flipchart(), "fichier endommagé");
   const hn = await tabs();
   const hd = dialogs.length;
   await dropFile(page, "#stage", "hostile.notebook", hostileNotebook(), "");
@@ -466,7 +545,60 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   check(true, "S3 (lot 2) : socle-v1.roomboard (d'avant ce chantier) s'ouvre toujours");
   const nbBox = await stageBox(page, 640);
   check(nbBox.width >= 640 && nbBox.height >= 640, `S3 (lot 2) : scène de ${Math.round(nbBox.width)} × ${Math.round(nbBox.height)} px (≥ 640 × 640), avis rendus`);
-  console.log('ok — S3 : .olf renommé, .notebook sans page, .olf cassé/trop gros/trop profond, .flipchart refusé, hostile, fichier ancien, scène ≥ 640');
+  console.log('ok — S3 : .olf renommé, .notebook sans page, .olf cassé/trop gros/trop profond, .flipchart tronqué refusé, hostile, fichier ancien, scène ≥ 640');
+
+  // ---- Lot 3 : .flipchart générés par la fabrique de T12 (page rechargée : la barre garde 12 onglets au plus). ----
+  await page.goto(url);
+  await page.waitForSelector("#stage");
+  await fr();
+  // S4 : deux pages, avis TIFF et action, aller-retour .roomboard, scène ≥ 640.
+  const k4 = dialogs.length;
+  await drop("cours.flipchart", flip(flipPages()), 5, "1/2");
+  await waitDialog("image TIFF non lue", k4);
+  await waitDialog("action non lue", k4);
+  check((await lastTab()).includes("cours.roomboard"), 'S4 (lot 3) : .flipchart généré : onglet cours.roomboard, data-page="1/2", data-elements="5", avis « image TIFF non lue » et « action non lue »');
+  await fr();
+  const fc = await camera();
+  await fr();
+  const blue = await inkIn(page, [30 * fc.zoom + fc.tx, 25 * fc.zoom + fc.ty, 50 * fc.zoom + fc.tx, 35 * fc.zoom + fc.ty], { rgb: [0x33, 0x66, 0xcc], tol: 10 });
+  check(blue > 50, `S4 (lot 3) : rectangle plein #3366CC dessiné (${blue} pixels)`);
+  await page.click('.rb-pages-list [data-page="2"]');
+  await waitAttr("data-page", "2/2");
+  await waitAttr("data-elements", "1");
+  await page.click('.rb-pages-list [data-page="1"]');
+  await waitAttr("data-page", "1/2");
+  const kSave = dialogs.length;
+  const fcSaved = await download(() => page.keyboard.press("Control+s"), "cours.roomboard");
+  await drop("cours.roomboard", await readFile(fcSaved), 5, "1/2");
+  check(dialogs.length >= kSave, 'S4 (lot 3) : enregistré en .roomboard puis rouvert : data-page="1/2", data-elements="5"');
+  const fcBox = await stageBox(page, 640);
+  check(fcBox.width >= 640 && fcBox.height >= 640, `S4 (lot 3) : scène de ${Math.round(fcBox.width)} × ${Math.round(fcBox.height)} px (≥ 640 × 640), avis rendus`);
+  console.log("ok — S4 : .flipchart généré déposé : 2 pages, 5 objets, TIFF et action dits non lus, aller-retour .roomboard, scène ≥ 640");
+
+  // S5 : .flipchart hostiles refusés sans onglet ni plantage ; flux à 40 niveaux ouvert avec avis.
+  const bad = [
+    ["bombe.flipchart", flip([{}], { lie: { entry: "100.io", announced: 16 } }), "taille mensongère"],
+    ["mensonge.flipchart", flip([{}], { lie: { entry: "100.io", announced: 5_000_000 } }), "taille mensongère"],
+    ["budget.flipchart", flip([{}], { lie: { entry: "100.io", announced: 300 * 1024 * 1024 } }), "trop gros une fois décompressé"],
+    ["imbrique.flipchart", flip([{}, {}], { nestFpg: true }), "imbriqué trop profond"],
+    ["entrees.flipchart", flip([{}], { extraEntries: 20_001 }), "trop d'entrées"],
+    ["utf16.flipchart", flip([{}], { oddUtf16: true }), "nom d'entrée illisible"],
+    ["sans-signature.flipchart", Buffer.alloc(64, 7), "ce n'est pas un paperboard"],
+  ];
+  for (const [name, bytes, part] of bad) await refuse(name, bytes, part);
+  const k5 = dialogs.length;
+  await drop("profond.flipchart", deepFlipchart(), 1, "1/1");
+  await waitDialog("objets trop imbriqués ignorés", k5);
+  check(true, 'S5 (lot 3) : flux à 40 niveaux : onglet ouvert, data-elements="1", avis « 8 objets trop imbriqués ignorés »');
+  const kTxt = dialogs.length;
+  const nTxt = await tabs();
+  await dropFile(page, "#stage", "renomme.txt", enc("bonjour, ce n'est pas un tableau"), "text/plain");
+  await waitDialog("", kTxt);
+  await page.waitForTimeout(300);
+  check((await tabs()) === nTxt, `S5 (lot 3) : renomme.txt refusé (« ${dialogs.slice(kTxt).join(" ").slice(0, 90)} »), aucun onglet`);
+  await drop("encore.flipchart", flip([{ rects: [{ x: 5, y: 5, w: 40, h: 30, fill: 0x00ff00 }] }]), 1, "1/1");
+  check(true, "S5 (lot 3) : après les refus, l'onglet suivant s'ouvre encore (Worker non gelé)");
+  console.log("ok — S5 : .flipchart hostiles (bombe, taille mensongère, budget, .fpg imbriqué, 20 001 entrées, UTF-16 impair, sans signature) refusés sans onglet, flux à 40 niveaux ouvert avec avis, .txt refusé, Worker non gelé");
 
   if (lesson !== null) {
     const before = await tabs();
