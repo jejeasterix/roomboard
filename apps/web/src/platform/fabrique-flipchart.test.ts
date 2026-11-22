@@ -213,7 +213,7 @@ describe("fabrique de .flipchart", () => {
   it("fabrique : .fpg dans un .fpg (nestFpg)", () => {
     const root = readContainer(makeFlipchart([STROKE, STROKE], deflate, { nestFpg: true }));
     const first = readContainer(inflate(entry(root, "1003.fpg")));
-    expect(readContainer(inflate(entry(first, "9003.fpg"))).signature).toBe(" Bamboo ");
+    expect(readContainer(inflate(entry(first, "3003.fpg"))).signature).toBe(" Bamboo ");
     const second = readContainer(inflate(entry(root, "2003.fpg")));
     expect(second.entries.some((e) => e.name.endsWith(".fpg"))).toBe(false);
   });

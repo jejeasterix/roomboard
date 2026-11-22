@@ -71,7 +71,7 @@ export interface FabOptions {
    * taille réelle (bombe si plus petite, taille plus grande que la réalité ou au-delà du budget sinon).
    */
   lie?: { entry: string; announced: number };
-  /** Un `.fpg` (`9003.fpg`) dans le `.fpg` de la première page. */
+  /** Un `.fpg` dans le `.fpg` de la première page, au nœud de la page qui suivrait la dernière (`3003.fpg` pour deux pages). */
   nestFpg?: boolean;
   /** Entrées vides ajoutées au conteneur racine (`extra-<k>.bin`, non compressées). */
   extraEntries?: number;
