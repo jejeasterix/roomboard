@@ -1259,8 +1259,11 @@ describe("importFiles : .notebook, .olf et palier .flipchart (C13 lot 2)", () =>
   });
 
   it("C13 palier : .png signé Bamboo reste une image", async () => {
-    const { notify } = await run([file("a.png", BAMBOO)]);
+    const { notify, report } = await run([file("a.png", BAMBOO)]);
     expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
+    // Traité par le gestionnaire d'image, pas refusé comme flipchart ; l'échec ordinaire n'a pas le message du palier.
+    expect(report).toEqual({ opened: [], inserted: [], refused: ["a.png"], failed: [] });
+    expect(notify).toHaveBeenCalledWith(`a.png : ${LATER_FORMAT_MESSAGE}`);
   });
 
   it("C13 palier : .flipchart sans signature reste inconnu", async () => {

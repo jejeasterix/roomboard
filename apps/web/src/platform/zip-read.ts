@@ -5,6 +5,7 @@
  * C13 lot 2 : `content.json` d'un `.olf` lu dans le même Worker (`createOlfReader`), rendu en flux BoardList.
  */
 import { BOARD_FAILED_MESSAGE, checkBoardParts, type BoardPart } from "./board-reader";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE } from "../app/olf-read";
 import { runOnce, type WorkerLike } from "./one-shot-worker";
 
 export interface ZipEntry {
@@ -80,6 +81,8 @@ export function checkOlfReply(d: unknown): OlfPart {
 /** C13 lot 2 (N8) : `content.json` lu dans un Worker ZIP jetable, contenu transféré ; jamais de `JSON.parse` sur la page. */
 export function createOlfReader(spawn: () => WorkerLike, timeoutMs = ZIP_WORKER_TIMEOUT_MS): (json: Blob) => Promise<OlfPart> {
   return async (json) => {
+    // Borne de 64 Mio avant la copie : le Worker la contrôle encore (`olfPart`), mais la page n'alloue rien au-delà.
+    if (json.size > OLF_MAX_JSON_BYTES) throw new Error(OLF_TOO_BIG_MESSAGE);
     const buf = await json.arrayBuffer();
     return runOnce(spawn, { op: "olf", bytes: new Uint8Array(buf) }, [buf], timeoutMs, checkOlfReply, BOARD_FAILED_MESSAGE);
   };

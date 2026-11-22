@@ -1575,6 +1575,19 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (abime.iwb) : fichier endommagé : XML mal formé");
   });
 
+  it("C13 : .iwb ZIP sans content.xml et .ubz ZIP sans page : le message réellement affiché (resolveBoardFormat avant boardSources)", async () => {
+    const iwb = fakeBoard({ entries: [{ path: "images/a.png", blob: new Blob(["x"]) }] });
+    const ws = await setupWorkspace({ board: iwb.ports });
+    expect(await ws.openBoard({ name: "vide.iwb", blob: new Blob([ZIP]), format: "iwb" })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (vide.iwb) : fichier endommagé : contenu de tableau introuvable dans ce .iwb");
+    const ubz = fakeBoard({ entries: [{ path: "metadata.rdf", blob: new Blob(["x"]) }] });
+    const ws2 = await setupWorkspace({ board: ubz.ports });
+    expect(await ws2.openBoard({ name: "vide.ubz", blob: new Blob([ZIP]), format: "ubz" })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (vide.ubz) : fichier endommagé : contenu de tableau introuvable dans ce .ubz");
+    expect(iwb.read).not.toHaveBeenCalled();
+    expect(ubz.read).not.toHaveBeenCalled();
+  });
+
   it("C13 : .ubz sans en-tête ZIP : refusé, « un .ubz est une archive ZIP »", async () => {
     const b = fakeBoard();
     const ws = await setupWorkspace({ board: b.ports });

@@ -4,7 +4,7 @@ import { ZIP_MALFORMED_MESSAGE, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESS
 import type { WorkerLike } from "./one-shot-worker";
 import { checkZipBytesReply, checkZipReply, createOlfReader, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS, ZIP_WRITE_FAILED_MESSAGE } from "./zip-read";
 import { BOARD_FAILED_MESSAGE } from "./board-reader";
-import { OLF_TOO_BIG_MESSAGE } from "../app/olf-read";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE } from "../app/olf-read";
 import { unzipModelEntries } from "./zip-worker";
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
@@ -233,5 +233,17 @@ describe("C13 lot 2 : lecteur de content.json (.olf) par le Worker ZIP", () => {
     await expect(createOlfReader(spawn({ part: { ops: [1], texts: [], warnings: [], total: 1 } }))(new Blob(["x"]))).rejects.toThrowError(new Error(BOARD_FAILED_MESSAGE));
     await expect(createOlfReader(spawn({ part: { ops, texts: [], warnings: [], total: -1 } }))(new Blob(["x"]))).rejects.toThrowError(new Error(BOARD_FAILED_MESSAGE));
     await expect(createOlfReader(spawn({ entries: [] }))(new Blob(["x"]))).rejects.toThrowError(new Error(BOARD_FAILED_MESSAGE));
+  });
+
+  it("C13 N8 : content.json de plus de 64 Mio refusé côté page, avant la copie et sans Worker", async () => {
+    let spawned = 0;
+    let copied = 0;
+    const huge = { size: OLF_MAX_JSON_BYTES + 1, arrayBuffer: async () => { copied++; return new ArrayBuffer(0); } } as unknown as Blob;
+    const spawn = (): WorkerLike => {
+      spawned++;
+      throw new Error("ne doit pas être créé");
+    };
+    await expect(createOlfReader(spawn)(huge)).rejects.toThrowError(new Error(OLF_TOO_BIG_MESSAGE));
+    expect([spawned, copied]).toEqual([0, 0]);
   });
 });

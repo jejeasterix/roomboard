@@ -9,10 +9,9 @@
 import { DEFAULT_BACKGROUND, PAGE_WIDTH, type AssetRef, type Change, type Command, type CoreDocument, type CoreFactory, type ElementView, type Matrix, type ShapeKind, type TextSpan } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { applyMatrix, composeMatrix } from "../core/shapes";
-import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardPart } from "../platform/board-reader";
+import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardDialect, type BoardPart, type BoardReadOptions, type BoardSourceFormat } from "../platform/board-reader";
 import type { ImageKind } from "../platform/image-decode";
 import { IMAGE_MIME, type ImageDecoder } from "../platform/image-import";
-import type { BoardDialect, BoardReadOptions } from "../platform/board-reader";
 import type { OlfPart, ZipFile } from "../platform/zip-read";
 import { MISSING_LABEL, SKIPPED_LABEL } from "./board-files";
 import { typed } from "./container-io";
@@ -20,7 +19,7 @@ import { typed } from "./container-io";
 /** Dialectes que le module `formats` lit et écrit. */
 export type BoardFormat = "iwb" | "ubz";
 /** C13 (N5) : format lu à l'import (plus large que le format d'export). */
-export type BoardSourceFormat = BoardFormat | "notebook" | "olf" | "flipchart";
+export type { BoardSourceFormat };
 /** Même borne que `MAX_GROUP_DEPTH` de `board::parse` (board.rs). */
 export const MAX_GROUP_DEPTH = 256;
 export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8 } as const;

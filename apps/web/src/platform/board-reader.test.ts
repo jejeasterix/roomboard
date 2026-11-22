@@ -9,6 +9,8 @@ import {
   checkBoardParts,
   createBoardCodec,
   notebookOrder,
+  withLeadingWarnings,
+  type BoardPart,
 } from "./board-reader";
 import boardWorkerSource from "./board-worker.ts?raw";
 import { hasBoardReader, type FormatsBinding } from "./container";
@@ -159,6 +161,33 @@ describe("Worker des tableaux, .notebook (C13 lot 2, N6)", () => {
     const lot1 = { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open: fail }, write_board_xml: fail };
     expect(hasBoardReader(lot1 as unknown as FormatsBinding)).toBe(false);
     expect(hasBoardReader({ ...lot1, notebook_order: fail } as unknown as FormatsBinding)).toBe(true);
+  });
+
+  it("C13 N6 : une panique Wasm du manifeste remonte, seul « fichier endommagé » est avalé", () => {
+    const files = [new Uint8Array([1])];
+    const manifest = new Uint8Array([9]);
+    const panic = (): string[] => {
+      throw new WebAssembly.RuntimeError("unreachable");
+    };
+    expect(() => notebookOrder(panic, files, ["page0.svg"], manifest, 500)).toThrow(WebAssembly.RuntimeError);
+    const other = (): string[] => {
+      throw new Error("autre chose");
+    };
+    expect(() => notebookOrder(other, files, ["page0.svg"], manifest, 500)).toThrow("autre chose");
+    const damaged = (): string[] => {
+      throw new Error("fichier endommagé : manifeste illisible");
+    };
+    expect(notebookOrder(damaged, files, ["page0.svg"], manifest, 500).warnings).toEqual([NOTEBOOK_ORDER_GUESSED]);
+  });
+
+  it("C13 N6 : withLeadingWarnings met l'avis d'ordre en tête de la première part", () => {
+    const p = (w: string[]): BoardPart => ({ ops: new Float32Array(), texts: [], warnings: w });
+    const parts = [p(["a"]), p(["b"])];
+    const out = withLeadingWarnings(parts, [NOTEBOOK_ORDER_GUESSED]);
+    expect(out.map((x) => x.warnings)).toEqual([[NOTEBOOK_ORDER_GUESSED, "a"], ["b"]]);
+    expect(parts[0]!.warnings).toEqual(["a"]);
+    expect(withLeadingWarnings(parts, [])).toBe(parts);
+    expect(withLeadingWarnings([], ["x"])).toEqual([]);
   });
 
   it("C13 N6 : le Worker ordonne par notebookOrder et la liaison, sans tri ni DOMParser", () => {
