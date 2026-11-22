@@ -1770,8 +1770,11 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
       const b = fakeBoard({ bamboo: async () => parts(), pages: [page] });
       const ws = await setupWorkspace({ board: b.ports, decode: fakeDecode });
       expect(await ws.openBoard({ name: "x.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(true);
-      expect(b.readFlipchart.mock.calls[0]![0].map((e) => e.path)).toEqual(["version", "1.in", "2.io", "3.ir"]);
-      expect(new TextDecoder().decode(b.readFlipchart.mock.calls[0]![0][1]!.bytes)).toBe("in");
+      // Depuis T23 le lecteur reçoit le nom de chaque image (il la trouve par son nom), jamais ses octets : 0 octet.
+      const sent = b.readFlipchart.mock.calls[0]![0];
+      expect(sent.map((e) => e.path)).toEqual(["version", "1.in", "2.io", "3.ir", "4.fpg/img.png"]);
+      expect(new TextDecoder().decode(sent[1]!.bytes)).toBe("in");
+      expect(sent.filter((e) => e.path.endsWith(".png")).every((e) => e.bytes.length === 0)).toBe(true);
       const doc = ws.active().board.doc;
       expect(doc.elementIds(doc.pageIds()[0]!)).toHaveLength(1);
       expect(shell.notify).not.toHaveBeenCalled();

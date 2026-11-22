@@ -24,6 +24,25 @@ function summarize(msgs, name) {
   return [...count].map(([t, n]) => (n > 1 ? `${t} (×${n})` : t)).join(" ; ");
 }
 
+/** Avertissements regroupés par sorte sur toutes les pages (« page 3 : 2 actions non lues » → « 2 actions non lues »), plus fréquents d'abord. */
+function byKind(msgs) {
+  const sum = new Map();
+  for (const m of msgs) {
+    for (const line of m.split("\n").slice(1)) {
+      const g = /^- (?:page \d+ : )?(\d+) (.+)$/.exec(line);
+      const [n, what] = g ? [Number(g[1]), g[2]] : [1, line.replace(/^- /, "")];
+      const key = what
+        .replace(/^objets? illisibles? ignorés?/, "objet illisible ignoré")
+        .replace(/^(action|grille|rideau|projecteur|image TIFF|étiquette|connecteur)(?:s|x)?/, "$1")
+        .replace(/^sons? ou vidéos?/, "son ou vidéo")
+        .replace(/^(?:repères? XY)/, "repère XY")
+        .replace(/ non lue?s?$/, " non lu");
+      sum.set(key, (sum.get(key) ?? 0) + n);
+    }
+  }
+  return [...sum].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${cell(k)}`).join(" ; ");
+}
+
 async function measure(context, port, file) {
   const name = basename(file);
   const bytes = await readFile(file);
@@ -70,7 +89,7 @@ async function measure(context, port, file) {
     // « ouvert avec N avertissement(s) » : N est le vrai compte ; sans cette formule, un avis compte pour un.
     const ns = dialogs.reduce((a, m) => a + Number(/avec (\d+) avertissement/.exec(m)?.[1] ?? 1), 0);
     return {
-      row: `| ${name} | ${total} | ${objects} | ${ns}${ns > 0 ? ` : ${summarize(dialogs, name).replace(/^«f» : ouvert avec \d+ avertissements? : /, "")}` : ""} | lu |`,
+      row: `| ${name} | ${total} | ${objects} | ${ns}${ns > 0 ? ` : ${byKind(dialogs)}` : ""} | lu |`,
       loaded: true,
       pages: total,
       objects,
