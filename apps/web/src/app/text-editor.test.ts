@@ -410,6 +410,24 @@ describe("zone de saisie riche (C7b)", () => {
     expect(editor.value()).toBe("Total");
   });
 
+  it("repli beforeinput insertFromPaste (moteur sans `paste`) : même texte simple, une étape ; vide : rien (R12)", () => {
+    const { zone, editor } = mount(() => null);
+    editor.open(withText([{ text: "Total", attrs: B }]), IDENTITY);
+    caret(zone, 3);
+    const pasted = (text: string, inputType = "insertFromPaste"): Event => {
+      const e = new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType });
+      Object.defineProperty(e, "dataTransfer", { value: { getData: (t: string) => (t === "text/plain" ? text : "<b>z</b>") } });
+      return fire(zone, e);
+    };
+    expect(pasted("x\r\ny").defaultPrevented).toBe(true);
+    expect(editor.spans()).toEqual([{ text: "Totx\nyal", attrs: B }]);
+    expect(zone.querySelector("b")).toBeNull();
+    expect(pasted("", "insertFromPasteAsQuotation").defaultPrevented).toBe(true);
+    expect(editor.value()).toBe("Totx\nyal");
+    fire(zone, key("z", { ctrlKey: true }));
+    expect(editor.value()).toBe("Total");
+  });
+
   it("dépôt dans la zone : refusé, ne remonte pas (R12, PC17)", () => {
     const { parent, zone, editor } = mount(() => null);
     editor.open(session, IDENTITY);
