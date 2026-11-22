@@ -193,19 +193,7 @@ fn read_with(
         .get(tree.storage_name().as_str())
         .copied()
         .ok_or_else(|| broken(format!("objet paperboard {} absent", tree.storage_name())))?;
-    let mut reader = Reader {
-        files,
-        register: HashMap::new(),
-        resources: HashMap::new(),
-        ios: HashMap::new(),
-        notes: BTreeMap::new(),
-        page: 0,
-        limits,
-        used_points: 0,
-        used_text: 0,
-        leaves: 0,
-        over: false,
-    };
+    let mut reader = Reader::new(files, limits);
     let mut head = Vec::new();
     let mut side_out_of_bounds = false;
     let mut start = DEFAULT_PAGE;
@@ -263,7 +251,7 @@ fn read_with(
 
     let mut pages = Vec::with_capacity(trees.len());
     for (k, (node, tree)) in page_nodes.iter().zip(&trees).enumerate() {
-        reader.page = first_page.saturating_add(u32::try_from(k).unwrap_or(u32::MAX));
+        reader.start_page(first_page.saturating_add(u32::try_from(k).unwrap_or(u32::MAX)));
         let page = tree
             .as_deref()
             .and_then(|t| reader.page(node.node_id, t, start, &mut side_out_of_bounds));
@@ -362,7 +350,7 @@ struct Reader<'a> {
     register: HashMap<u32, (String, String)>,
     /// Objets `.ir` déjà lus (ou illisibles), par numéro.
     resources: HashMap<u32, Option<StreamObject>>,
-    /// Flux `.io` lus, par chemin : un nœud partagé ne relit ni ne réalloue le flux (avec ce qu'il a laissé de côté).
+    /// Flux `.io` de la page en cours lus, par chemin (vidés par `start_page`) : un nœud partagé ne relit ni ne réalloue le flux (avec ce qu'il a laissé de côté).
     ios: HashMap<String, Option<(Rc<StreamObject>, Stats)>>,
     notes: BTreeMap<(u32, Sort), u32>,
     /// Numéro de la page en cours.
@@ -377,6 +365,28 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    fn new(files: HashMap<&'a str, &'a [u8]>, limits: Limits) -> Self {
+        Reader {
+            files,
+            register: HashMap::new(),
+            resources: HashMap::new(),
+            ios: HashMap::new(),
+            notes: BTreeMap::new(),
+            page: 0,
+            limits,
+            used_points: 0,
+            used_text: 0,
+            leaves: 0,
+            over: false,
+        }
+    }
+
+    /// Page suivante : ses flux `.io` sont sous `<page>.fpg/`, ceux des pages lues ne servent plus (mémoire rendue).
+    fn start_page(&mut self, page: u32) {
+        self.page = page;
+        self.ios.clear();
+    }
+
     fn note(&mut self, sort: Sort) {
         self.note_n(sort, 1);
     }
@@ -1362,6 +1372,19 @@ mod tests {
     }
 
     /// Pages relues par `board::parse` (le flux est celui de `encode`, DA5) et avertissements.
+    /// Les flux `.io` d'une page ne restent pas en mémoire pendant la lecture des suivantes (chemins `<page>.fpg/…`).
+    #[test]
+    fn io_cache_is_emptied_between_pages() {
+        let files: Vec<(&str, &[u8])> = vec![("10.fpg/5.io", &[0u8; 4])];
+        let mut reader = super::Reader::new(files.into_iter().collect(), super::LIMITS);
+        reader.start_page(1);
+        let _ = reader.io("10.fpg/5.io");
+        assert_eq!(reader.ios.len(), 1);
+        reader.start_page(2);
+        assert!(reader.ios.is_empty());
+        assert_eq!(reader.page, 2);
+    }
+
     fn pages_of(entries: &[(String, Vec<u8>)]) -> (Vec<Page>, Vec<String>) {
         let list = run(entries, 1).expect("fichier lu");
         (
