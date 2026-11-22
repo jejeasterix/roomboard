@@ -13,7 +13,7 @@ import {
   type BoardPart,
 } from "./board-reader";
 import boardWorkerSource from "./board-worker.ts?raw";
-import { hasBoardReader, type FormatsBinding } from "./container";
+import { hasBoardReader, hasFlipchartReader, type FormatsBinding } from "./container";
 import type { WorkerLike } from "./one-shot-worker";
 
 function fakeWorker(reply: (m: unknown) => unknown, sent: unknown[] = [], transfers: Transferable[][] = []): WorkerLike {
@@ -193,5 +193,41 @@ describe("Worker des tableaux, .notebook (C13 lot 2, N6)", () => {
   it("C13 N6 : le Worker ordonne par notebookOrder et la liaison, sans tri ni DOMParser", () => {
     expect(boardWorkerSource).toContain("notebookOrder(mod.notebook_order");
     expect(boardWorkerSource).not.toMatch(/DOMParser|\.sort\(|localeCompare/);
+  });
+  it("C13 N11 : readFlipchart envoie noms, données et bornes", async () => {
+    const sent: unknown[] = [];
+    const transfers: Transferable[][] = [];
+    const codec = createBoardCodec(() => fakeWorker(() => ({ parts: [part] }), sent, transfers));
+    const a = new Uint8Array([1, 2]);
+    const b = new Uint8Array([3, 4, 5]);
+    const out = await codec.readFlipchart([
+      { path: "1.in", bytes: a },
+      { path: "version", bytes: b },
+    ]);
+    expect(out).toEqual(part);
+    expect(sent[0]).toEqual({ op: "flipchart", names: ["1.in", "version"], data: new Uint8Array([1, 2, 3, 4, 5]), ends: new Uint32Array([2, 5]) });
+    // Un seul tampon transféré (les octets de l'appelant restent) : les bornes sont de petits entiers, copiés.
+    const m = sent[0] as { data: Uint8Array };
+    expect(transfers[0]).toEqual([m.data.buffer]);
+    expect(transfers[0]).not.toContain(a.buffer);
+  });
+
+  it("C13 N11 : readFlipchart rend l'erreur du Worker, un échec reste le message d'échec", async () => {
+    const broken = createBoardCodec(() => fakeWorker(() => ({ error: "fichier endommagé : index du paperboard absent" })));
+    await expect(broken.readFlipchart([])).rejects.toThrow("fichier endommagé : index du paperboard absent");
+    const odd = createBoardCodec(() => fakeWorker(() => ({ parts: [] })));
+    await expect(odd.readFlipchart([])).rejects.toThrow(BOARD_FAILED_MESSAGE);
+  });
+
+  it("C13 N11 : hasFlipchartReader", () => {
+    const fail = (): never => {
+      throw new Error("non appelé");
+    };
+    expect(hasFlipchartReader({ ContainerReader: { open: fail }, write_container: fail } as unknown as FormatsBinding)).toBe(false);
+    expect(hasFlipchartReader({ ContainerReader: { open: fail }, write_container: fail, FlipchartReader: { open: fail } } as unknown as FormatsBinding)).toBe(true);
+  });
+
+  it("C13 N11 : le Worker ouvre le paperboard par FlipchartReader, sans le tableau des pages", () => {
+    expect(boardWorkerSource).toContain("FlipchartReader.open(");
   });
 });

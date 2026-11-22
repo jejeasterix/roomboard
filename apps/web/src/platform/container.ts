@@ -108,6 +108,16 @@ export interface BoardFormatsBinding extends FormatsBinding {
   notebook_order(manifest: Uint8Array): string[];
 }
 
+/** Module `formats` avec le lecteur de paperboards `.flipchart` (C13 lot 3) : entrées i = `data[ends[i-1]..ends[i]]`. */
+export interface FlipchartBinding extends FormatsBinding {
+  readonly FlipchartReader: { open(names: string[], data: Uint8Array, ends: Uint32Array): BoardBinding };
+}
+
+/** Vrai si le module chargé expose `FlipchartReader` (module construit après C13 lot 3). */
+export function hasFlipchartReader(m: FormatsBinding): m is FlipchartBinding {
+  return typeof (m as Partial<FlipchartBinding>).FlipchartReader?.open === "function";
+}
+
 /** Vrai si le module chargé expose le lecteur, l'écrivain et l'ordre des tableaux (module construit après C13 lot 2). */
 export function hasBoardReader(m: FormatsBinding): m is BoardFormatsBinding {
   const b = m as Partial<BoardFormatsBinding>;
