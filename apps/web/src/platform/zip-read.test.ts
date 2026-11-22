@@ -2,7 +2,9 @@ import { deflateSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ZIP_MALFORMED_MESSAGE, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import type { WorkerLike } from "./one-shot-worker";
-import { checkZipBytesReply, checkZipReply, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS, ZIP_WRITE_FAILED_MESSAGE } from "./zip-read";
+import { checkZipBytesReply, checkZipReply, createOlfReader, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS, ZIP_WRITE_FAILED_MESSAGE } from "./zip-read";
+import { BOARD_FAILED_MESSAGE } from "./board-reader";
+import { OLF_TOO_BIG_MESSAGE } from "../app/olf-read";
 import { unzipModelEntries } from "./zip-worker";
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
@@ -195,5 +197,41 @@ describe("C4 : paquet par le Worker ZIP", () => {
     const mute: WorkerLike = { onmessage: null, onerror: null, postMessage() {}, terminate() {} };
     await expect(createZipWriter(() => mute, 5)([])).rejects.toThrow("écriture du ZIP interrompue");
     expect(ZIP_WRITE_FAILED_MESSAGE).not.toBe(ZIP_FAILED_MESSAGE);
+  });
+});
+
+describe("C13 lot 2 : lecteur de content.json (.olf) par le Worker ZIP", () => {
+  it("C13 N8 : createOlfReader transfère le flux et rend l'erreur telle quelle", async () => {
+    const posted: Array<{ m: unknown; t: readonly Transferable[] }> = [];
+    let terminated = 0;
+    const spawn = (reply: unknown) => (): WorkerLike => {
+      const w: WorkerLike = {
+        onmessage: null,
+        onerror: null,
+        postMessage(m, t) {
+          posted.push({ m, t });
+          queueMicrotask(() => w.onmessage?.({ data: reply }));
+        },
+        terminate() {
+          terminated++;
+        },
+      };
+      return w;
+    };
+    const ops = Float32Array.from([1, 2]);
+    const got = await createOlfReader(spawn({ part: { ops, texts: ["a"], warnings: ["page 1 : 1 widget non lu"], total: 3 } }), 1000)(new Blob([enc('{"olf":{}}')]));
+    expect(got).toEqual({ ops, texts: ["a"], warnings: ["page 1 : 1 widget non lu"], total: 3 });
+    expect(got.ops).toBeInstanceOf(Float32Array);
+    const sent = posted[0]!.m as { op: string; bytes: Uint8Array };
+    expect(sent.op).toBe("olf");
+    expect(new TextDecoder().decode(sent.bytes)).toBe('{"olf":{}}');
+    // Le contenu est transféré (pas copié) au Worker, arrêté après la réponse.
+    expect(posted[0]!.t).toEqual([sent.bytes.buffer]);
+    expect(terminated).toBe(1);
+    // `{ error }` rendu tel quel ; toute autre forme : « lecture du tableau interrompue ».
+    await expect(createOlfReader(spawn({ error: OLF_TOO_BIG_MESSAGE }))(new Blob(["x"]))).rejects.toThrowError(new Error(OLF_TOO_BIG_MESSAGE));
+    await expect(createOlfReader(spawn({ part: { ops: [1], texts: [], warnings: [], total: 1 } }))(new Blob(["x"]))).rejects.toThrowError(new Error(BOARD_FAILED_MESSAGE));
+    await expect(createOlfReader(spawn({ part: { ops, texts: [], warnings: [], total: -1 } }))(new Blob(["x"]))).rejects.toThrowError(new Error(BOARD_FAILED_MESSAGE));
+    await expect(createOlfReader(spawn({ entries: [] }))(new Blob(["x"]))).rejects.toThrowError(new Error(BOARD_FAILED_MESSAGE));
   });
 });
