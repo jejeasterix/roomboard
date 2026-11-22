@@ -23,6 +23,8 @@ import { NO_GRID_MESSAGE } from "./fragments";
 import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
 import type { ZipFile } from "../platform/zip-read";
 import { encodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts } from "./board-io";
+import type { BoardDialect, BoardReadOptions } from "../platform/board-reader";
+import type { OlfPart } from "../platform/zip-read";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
@@ -1506,17 +1508,18 @@ describe("espace de travail : C4", () => {
 describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => {
   const rectPage = (): BoardListPage => ({ background: null, objects: [{ kind: "shape", shape: "rect", m: [1, 0, 0, 1, 0, 0], x0: 0, y0: 0, x1: 10, y1: 10, color: "#000000", width: 2, fill: null }] });
   const ZIP = new Uint8Array([80, 75, 3, 4, 0, 0]);
-  function fakeBoard(o: { entries?: { path: string; blob: Blob }[]; warnings?: string[]; fail?: string; pages?: BoardListPage[] } = {}) {
+  function fakeBoard(o: { entries?: { path: string; blob: Blob }[]; warnings?: string[]; fail?: string; pages?: BoardListPage[]; olf?: () => Promise<OlfPart> } = {}) {
     const unzip = vi.fn(async (_b: Blob) => o.entries ?? [{ path: "content.xml", blob: new Blob(["<iwb/>"]) }]);
-    const read = vi.fn(async (files: readonly Uint8Array[], _f: BoardFormat) => {
+    const read = vi.fn(async (files: readonly Uint8Array[], _f: BoardDialect, _opts?: BoardReadOptions) => {
       if (o.fail !== undefined) throw new Error(o.fail);
       return files.map(() => ({ ...encodeBoardList(o.pages ?? [rectPage()]), warnings: o.warnings ?? [] }));
     });
     const write = vi.fn(async (_l: { readonly ops: Float32Array; readonly texts: readonly string[] }, format: BoardFormat): Promise<ZipFile[]> =>
       format === "iwb" ? [{ path: "content.xml", bytes: new Uint8Array([60]) }] : [{ path: "page001.svg", bytes: new Uint8Array([60]) }, { path: "metadata.rdf", bytes: new Uint8Array([60]) }]);
     const zip = vi.fn(async (_f: readonly ZipFile[]) => new Uint8Array([80, 75, 3, 4]));
-    const ports: BoardPorts = { unzip, read, write, zip };
-    return { ports, unzip, read, write, zip };
+    const readOlf = vi.fn(o.olf ?? (async (_j: Blob): Promise<OlfPart> => ({ ...encodeBoardList(o.pages ?? [rectPage()]), warnings: o.warnings ?? [], total: 1 })));
+    const ports: BoardPorts = { unzip, read, write, zip, readOlf };
+    return { ports, unzip, read, readOlf, write, zip };
   }
   const typedFiles = () => ({ pick: vi.fn(async () => null), save: vi.fn(async (_n: string, _b: Uint8Array) => true) });
   const droppedOf = (name: string, bytes: Uint8Array): DroppedFile => ({ name, size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes as BlobPart]) });
@@ -1627,6 +1630,109 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     expect(await ws.exportBoard("ubz")).toBe(true);
     expect(b.zip.mock.calls[0]![0].map((f) => f.path)).toEqual(["page001.svg", "metadata.rdf"]);
     expect(ubzFiles.save.mock.calls[0]![0]).toBe("Cours.ubz");
+  });
+
+  const NB = (n: number) => Array.from({ length: n }, (_, i) => ({ path: `page${i + 1}.svg`, blob: new Blob([String(i + 1)]) }));
+  const dec = (u: Uint8Array) => new TextDecoder().decode(u);
+
+  it("C13 S1 : .notebook dans l'ordre du manifeste", async () => {
+    const entries = [{ path: "imsmanifest.xml", blob: new Blob(["<m/>"]) }, ...NB(3)];
+    const b = fakeBoard({ entries });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "lecon.notebook", blob: new Blob([ZIP]), format: "notebook" })).toBe(true);
+    expect(b.read.mock.calls[0]![1]).toBe("notebook");
+    const opts = b.read.mock.calls[0]![2]!;
+    expect([opts.names, dec(opts.manifest!), opts.max]).toEqual([["page1.svg", "page2.svg", "page3.svg"], "<m/>", 500]);
+    expect(ws.active().files.name()).toBe("lecon.roomboard");
+    expect(b.readOlf).not.toHaveBeenCalled();
+  });
+
+  it("C13 S1 : .notebook sans manifeste : opts.manifest nul", async () => {
+    const b = fakeBoard({ entries: NB(2) });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "a.notebook", blob: new Blob([ZIP]), format: "notebook" })).toBe(true);
+    expect(b.read.mock.calls[0]![2]!.manifest).toBeNull();
+  });
+
+  it("C13 S1 : .notebook de 501 pages : « 500 premières pages importées sur 501 »", async () => {
+    const b = fakeBoard({ entries: NB(501) });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "gros.notebook", blob: new Blob([ZIP]), format: "notebook" })).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("gros.notebook : ouvert avec 1 avertissement :\n- 500 premières pages importées sur 501");
+  });
+
+  it("C13 S2 : .olf ouvert par le Worker ZIP", async () => {
+    const page: BoardListPage = { background: "#ffffff", objects: [
+      { kind: "stroke", m: [1, 0, 0, 1, 0, 0], color: "#000000", width: 2, points: [0, 0, 1, 10, 10, 0.5] },
+      { kind: "image", m: [1, 0, 0, 1, 0, 0], x: 0, y: 0, w: 10, h: 10, path: "a.png" },
+    ] };
+    const json = new Blob(["{}"]);
+    const b = fakeBoard({ entries: [{ path: "content.json", blob: json }, { path: "a.png", blob: new Blob(["png"]) }], pages: [page], warnings: ["page 1 : 1 widget non lu"] });
+    const ws = await setupWorkspace({ board: b.ports, decode: fakeDecode });
+    expect(await ws.openBoard({ name: "cours.olf", blob: new Blob([ZIP]), format: "olf" })).toBe(true);
+    expect(b.readOlf).toHaveBeenCalledTimes(1);
+    expect(b.readOlf.mock.calls[0]![0]).toBe(json);
+    expect(b.read).not.toHaveBeenCalled();
+    const doc = ws.active().board.doc;
+    expect(doc.elementIds(doc.pageIds()[0]!)).toHaveLength(2);
+    expect(shell.notify).toHaveBeenCalledWith("cours.olf : ouvert avec 1 avertissement :\n- page 1 : 1 widget non lu");
+  });
+
+  it("C13 S2 : .olf de 501 pages : avis des 500 premières pages écrit par la page", async () => {
+    const b = fakeBoard({ entries: [{ path: "content.json", blob: new Blob(["{}"]) }], olf: async () => ({ ...encodeBoardList([rectPage()]), warnings: [], total: 501 }) });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "gros.olf", blob: new Blob([ZIP]), format: "olf" })).toBe(true);
+    expect(shell.notify).toHaveBeenCalledWith("gros.olf : ouvert avec 1 avertissement :\n- 500 premières pages importées sur 501");
+  });
+
+  it("C13 N13 : part .olf hors bornes refusée par decodeBoardList", async () => {
+    const many = (n: number): BoardListPage => ({ background: null, objects: Array.from({ length: n }, () => rectPage().objects[0]!) });
+    const b = fakeBoard({ entries: [{ path: "content.json", blob: new Blob(["{}"]) }], olf: async () => ({ ...encodeBoardList([many(100_001)]), warnings: [], total: 1 }) });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "x.olf", blob: new Blob([ZIP]), format: "olf" })).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.olf) : fichier de tableau trop gros (plus de 100 000 objets)");
+  });
+
+  it("C13 S3 : .olf renommé .notebook s'ouvre comme .olf", async () => {
+    const b = fakeBoard({ entries: [{ path: "content.json", blob: new Blob(["{}"]) }] });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "x.notebook", blob: new Blob([ZIP]), format: "notebook" })).toBe(true);
+    expect(b.readOlf).toHaveBeenCalledTimes(1);
+    expect(b.read).not.toHaveBeenCalled();
+    expect(ws.active().files.name()).toBe("x.roomboard");
+  });
+
+  it("C13 S3 : .notebook sans page refusé", async () => {
+    const b = fakeBoard({ entries: [{ path: "a.png", blob: new Blob(["p"]) }] });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "x.notebook", blob: new Blob([ZIP]), format: "notebook" })).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.notebook) : fichier endommagé : contenu de tableau introuvable dans ce .notebook");
+  });
+
+  it("C13 S3 : content.json invalide → fichier endommagé", async () => {
+    const b = fakeBoard({ entries: [{ path: "content.json", blob: new Blob(["{"]) }], olf: async () => { throw new Error("fichier endommagé : JSON mal formé"); } });
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "x.olf", blob: new Blob([ZIP]), format: "olf" })).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(1);
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.olf) : fichier endommagé : JSON mal formé");
+  });
+
+  it("C13 N3 : un tableau ouvre toujours un nouvel onglet", async () => {
+    const b = fakeBoard({ entries: NB(1) });
+    const ws = await setupWorkspace({ board: b.ports });
+    await ws.openBoard({ name: "a.notebook", blob: new Blob([ZIP]), format: "notebook" });
+    await ws.openBoard({ name: "a.notebook", blob: new Blob([ZIP]), format: "notebook" });
+    expect(ws.tabs.list()).toHaveLength(3);
+    expect(host.save).not.toHaveBeenCalled();
+  });
+
+  it("C13 : .notebook non ZIP refusé", async () => {
+    const b = fakeBoard();
+    const ws = await setupWorkspace({ board: b.ports });
+    expect(await ws.openBoard({ name: "x.notebook", blob: new Blob(["<svg/>"]), format: "notebook" })).toBe(false);
+    expect(b.read).not.toHaveBeenCalled();
+    expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.notebook) : fichier endommagé : contenu de tableau introuvable dans ce .notebook");
   });
 
   it("C13 : sans ports ou sans fichiers typés : exportBoard rend faux, aucun avis", async () => {

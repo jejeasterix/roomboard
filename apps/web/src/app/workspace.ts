@@ -42,8 +42,9 @@ import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RAST
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
-import { boardListOf, buildBoardDocument, decodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts } from "./board-io";
-import { BOARD_MAX_OBJECTS, BOARD_NO_PAGE_MESSAGE, boardObjectCount, boardExportName, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, mergeBoardWarnings, stem, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
+import type { BoardPart } from "../platform/board-reader";
+import { boardListOf, buildBoardDocument, decodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts, type BoardSourceFormat } from "./board-io";
+import { BOARD_MAX_OBJECTS, boardNoContentMessage, resolveBoardFormat, BOARD_NO_PAGE_MESSAGE, boardObjectCount, boardExportName, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, mergeBoardWarnings, stem, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 
@@ -161,7 +162,7 @@ export interface Workspace {
   /** C12 (PF19 à PF21) : « Exporter en PDF… » de l'onglet actif ; faux sans port, refusé, onglet fermé ou boîte annulée. */
   exportPdf(): Promise<boolean>;
   /** C13 (D5, Q1) : tableau `.iwb` (ZIP ou XML) ou `.ubz` dans un nouvel onglet ; faux si refusé (avis déjà dit). */
-  openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardFormat }): Promise<boolean>;
+  openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
   /** C13 (D17, D18) : copie de l'onglet actif au format ; faux sans port, refusé ou boîte annulée. */
   exportBoard(format: BoardFormat): Promise<boolean>;
   /** C4 (D13, D14) : ressource posée dans l'onglet actif ; `at` client, null = centre de la vue. */
@@ -388,7 +389,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? { readSheet } : {}),
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
-    ...(deps.board ? { openBoard: (f: { readonly name: string; readonly blob: Blob; readonly format: BoardFormat }) => ws.openBoard(f) } : {}),
+    ...(deps.board ? { openBoard: (f: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }) => ws.openBoard(f) } : {}),
     ...(linkMedia ? { linkMedia } : {}),
     ...(deps.model3d ? { model3d: deps.model3d } : {}),
     ...(importPack ? { importPack } : {}),
@@ -539,11 +540,29 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       try {
         const head = new Uint8Array(await file.blob.slice(0, 4).arrayBuffer());
         let src: BoardSources;
-        if (hasZipMagic(head)) src = boardSources(file.format, await board.unzip(file.blob));
-        else if (file.format === "iwb") src = { xml: [file.blob], names: ["content.xml"], manifest: null, json: null, media: new Map(), total: 1 };
-        else throw new Error(UBZ_NOT_ZIP_MESSAGE);
-        const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
-        const parts = await board.read(xml, file.format);
+        let parts: readonly BoardPart[];
+        let total: number;
+        if (file.format === "flipchart") throw new Error(boardNoContentMessage("flipchart")); // lot 3 (T16) remplace cette ligne
+        if (hasZipMagic(head)) {
+          const entries = await board.unzip(file.blob);
+          const fmt = resolveBoardFormat(file.format, entries.map((e) => e.path));
+          if (fmt === null) throw new Error(boardNoContentMessage(file.format));
+          src = boardSources(fmt, entries);
+          if (fmt === "olf") {
+            const part = await board.readOlf(src.json!); // Worker ZIP : JSON lu hors du fil principal
+            parts = [part];
+            total = part.total;
+          } else {
+            const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
+            const manifest = src.manifest === null ? null : new Uint8Array(await src.manifest.arrayBuffer());
+            parts = await board.read(xml, fmt, fmt === "notebook" ? { names: src.names, manifest, max: PDF_MAX_PAGES } : undefined);
+            total = src.total;
+          }
+        } else if (file.format === "iwb") {
+          src = { xml: [file.blob], names: ["content.xml"], manifest: null, json: null, media: new Map(), total: 1 };
+          parts = await board.read([new Uint8Array(await file.blob.arrayBuffer())], "iwb");
+          total = 1;
+        } else throw new Error(file.format === "ubz" ? UBZ_NOT_ZIP_MESSAGE : boardNoContentMessage(file.format));
         // D16 : budget d'objets restant passé au décodage, part par part : la borne tient avant le pic de mémoire.
         const pages: BoardListPage[] = [];
         let left = BOARD_MAX_OBJECTS;
@@ -562,7 +581,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
           now: deps.now(),
           appVersion: APP_VERSION,
         });
-        const warnings = [...(src.total > PDF_MAX_PAGES ? [boardFirstPagesMessage(src.total)] : []), ...mergeBoardWarnings([parts.flatMap((p) => p.warnings), built.warnings])];
+        const warnings = [...(total > PDF_MAX_PAGES ? [boardFirstPagesMessage(total)] : []), ...mergeBoardWarnings([parts.flatMap((p) => p.warnings), built.warnings])];
         if ((await addTab(built.doc, { name: boardTabName(name, file.format), target: null }, built.assets)) === null) return false;
         if (warnings.length > 0) await say(boardWarningsMessage(name, warnings));
         return true;

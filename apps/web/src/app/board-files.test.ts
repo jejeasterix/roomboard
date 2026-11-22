@@ -33,6 +33,8 @@ describe("board-files (C13, D3, D5)", () => {
   it("C13 : noms : onglet « Cours.roomboard », copies « Cours.iwb » et « Sans titre.ubz »", () => {
     expect(boardTabName("Cours.IWB", "iwb")).toBe("Cours.roomboard");
     expect(boardTabName("OpenBoard.ubz", "ubz")).toBe("OpenBoard.roomboard");
+    expect(boardTabName("lecon.Notebook", "notebook")).toBe("lecon.roomboard");
+    expect(boardTabName("cours.olf", "olf")).toBe("cours.roomboard");
     expect(boardExportName("Cours.roomboard", "iwb")).toBe("Cours.iwb");
     expect(boardExportName("Sans titre", "ubz")).toBe("Sans titre.ubz");
   });
