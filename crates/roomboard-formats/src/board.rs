@@ -6,10 +6,12 @@
 use std::collections::HashMap;
 use std::fmt;
 
+mod notebook;
 pub mod qt_html;
 mod read;
 mod write;
 
+pub use notebook::notebook_order;
 pub use read::read_svg;
 pub use write::{ubz_metadata, write_iwb, write_ubz_pages};
 
@@ -58,6 +60,8 @@ pub enum Dialect {
     Iwb,
     /// Une page `pageNNN.svg` d'un `.ubz` (OpenBoard).
     Ubz,
+    /// Une page `pageN.svg` d'un `.notebook` SMART (lot 2, N5) ; import seul, aucune copie (N2).
+    Notebook,
 }
 
 impl Dialect {
@@ -195,6 +199,13 @@ pub fn compose(a: &Mat, b: &Mat) -> Mat {
 
 pub fn apply(m: &Mat, x: f32, y: f32) -> (f32, f32) {
     (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
+}
+
+/// Rectangle d'un polygone fermé de 4 sommets (5 si le dernier répète le premier), côtés alignés sur les axes
+/// (N7, N12) ; `None` sinon. Tolérance 1e-3 ; rectangle plat (largeur ou hauteur nulle) refusé.
+pub fn rect_of(points: &[[f32; 2]]) -> Option<[f32; 4]> {
+    let _ = points;
+    todo!("T3 : rect_of")
 }
 
 struct Encoder {
@@ -801,10 +812,50 @@ mod tests {
     }
 
     #[test]
-    fn dialect_parse_knows_iwb_and_ubz_only() {
+    fn dialect_parse_knows_board_dialects() {
         assert_eq!(Dialect::parse("iwb"), Some(Dialect::Iwb));
         assert_eq!(Dialect::parse("ubz"), Some(Dialect::Ubz));
+        assert_eq!(Dialect::parse("notebook"), Some(Dialect::Notebook));
         assert_eq!(Dialect::parse("pdf"), None);
+        assert_eq!(Dialect::parse("olf"), None);
+        assert_eq!(Dialect::parse("flipchart"), None);
+    }
+
+    fn near(got: Option<[f32; 4]>, want: [f32; 4]) -> bool {
+        got.is_some_and(|g| g.iter().zip(want).all(|(a, b)| (a - b).abs() <= 1e-3))
+    }
+
+    #[test]
+    fn rect_of_reads_four_and_five_point_rectangles() {
+        let r = [[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]];
+        let want = [0.0, 0.0, 10.0, 5.0];
+        assert_eq!(rect_of(&r), Some(want));
+        assert_eq!(rect_of(&[r[0], r[1], r[2], r[3], r[0]]), Some(want));
+        assert_eq!(rect_of(&[r[3], r[2], r[1], r[0]]), Some(want));
+        // Premier côté vertical.
+        assert_eq!(rect_of(&[r[1], r[2], r[3], r[0]]), Some(want));
+        // Tolérance 1e-3, pas `==` : sommets bruités et 5e point presque égal au premier.
+        let noisy = [[0.0, 0.0], [10.0, 0.0005], [10.0005, 5.0], [0.0, 5.0004], [0.0004, -0.0003]];
+        assert!(near(rect_of(&noisy), want), "{:?}", rect_of(&noisy));
+        assert!(near(rect_of(&noisy[..4]), want), "{:?}", rect_of(&noisy[..4]));
+    }
+
+    #[test]
+    fn rect_of_refuses_slanted_flat_and_short() {
+        let diamond = [[5.0, 0.0], [10.0, 5.0], [5.0, 10.0], [0.0, 5.0]];
+        assert_eq!(rect_of(&diamond), None);
+        assert_eq!(rect_of(&[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0]]), None);
+        let r = [[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]];
+        assert_eq!(rect_of(&[r[0], r[1], r[2], r[3], [3.0, 3.0]]), None);
+        assert_eq!(rect_of(&[r[0], r[1], r[2], r[3], r[0], r[1]]), None);
+        // Côtés croisés (alignés deux à deux mais non consécutifs).
+        assert_eq!(rect_of(&[r[0], r[1], r[3], r[2]]), None);
+        let flat = [[0.0, 0.0], [10.0, 0.0], [10.0, 0.0], [0.0, 0.0]];
+        assert_eq!(rect_of(&flat), None);
+        let thin = [[0.0, 0.0], [10.0, 0.0], [10.0, 0.0005], [0.0, 0.0005]];
+        assert_eq!(rect_of(&thin), None);
+        assert_eq!(rect_of(&[[0.0, 0.0], [f32::NAN, 0.0], [10.0, 5.0], [0.0, 5.0]]), None);
+        assert_eq!(rect_of(&[]), None);
     }
 
     #[test]
@@ -841,6 +892,7 @@ mod tests {
             ("board/read.rs", include_str!("board/read.rs")),
             ("board/write.rs", include_str!("board/write.rs")),
             ("board/qt_html.rs", include_str!("board/qt_html.rs")),
+            ("board/notebook.rs", include_str!("board/notebook.rs")),
         ] {
             for f in forbidden {
                 assert!(

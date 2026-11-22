@@ -1283,6 +1283,7 @@ impl State<'_> {
         let wants_bg = match self.dialect {
             Dialect::Iwb => id.is_some_and(|i| self.refs.flag(i, "background")),
             Dialect::Ubz => c.top && first_child && bg.is_none() && fill.is_some(),
+            Dialect::Notebook => c.top && first_child && bg.is_none() && fill.is_some(),
         };
         if wants_bg {
             if let Some(color) = fill.filter(|_| self.covers(&c.m, x, y, w, h)) {
