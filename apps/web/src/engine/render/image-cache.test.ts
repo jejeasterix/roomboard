@@ -395,6 +395,43 @@ describe("bitmaps retouchés par élément (C5, I19, I22)", () => {
     expect(c.pixelState()).toBe("echec");
   });
 
+  it("C5 (I33) : l'échec d'une image n'est pas affiché sur une page dont l'image retouchée est saine", async () => {
+    const { c, calls } = await ready();
+    c.beginScene(); // page 2 : image f retouchée, calcul réussi
+    c.bitmapOf(el({ brightness: 40 }, "f"));
+    c.endScene();
+    calls[0]?.resolve(out("f"));
+    await flush();
+    expect(c.pixelState()).toBe("pret");
+    c.beginScene(); // page 1 : image e, calcul en échec
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    calls[1]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    c.beginScene(); // retour à la page 2, aucun nouveau calcul
+    c.bitmapOf(el({ brightness: 40 }, "f"));
+    c.endScene();
+    expect(c.pixelState()).toBe("pret");
+    c.beginScene(); // retour à la page 1 : l'image brute de e est toujours un échec
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    expect(c.pixelState()).toBe("echec");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("C5 (I33) : Valider après l'échec de l'aperçu : l'élément, brut, reste en échec", async () => {
+    const { c, raw, calls } = await ready();
+    c.bitmapOf(el({ brightness: 20 }), true);
+    calls[0]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    c.dropPreview("e");
+    expect(c.bitmapOf(el({ brightness: 20 }))).toBe(raw);
+    expect(c.pixelState()).toBe("echec");
+    expect(calls).toHaveLength(1);
+  });
+
   it("C6b B16 : annuler un remplissage d'image retouchée : bitmap retouché aussitôt, aucun calcul", async () => {
     const { c, calls, runner } = await ready();
     c.bitmapOf(el({ brightness: 20 }));

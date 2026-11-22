@@ -81,6 +81,8 @@ interface Slot {
   adopter?: string;
   /** C6b (B16) : élément redevenu sans retouche ; bitmap gardé, jamais dessiné ; repris si la clé revient. */
   dormant?: boolean;
+  /** C5 (I33) : le calcul de sa clé a échoué, l'image brute est dessinée ; `data-pixels` dit `echec` s'il est visible. */
+  failed?: boolean;
   /** Dernier usage (horloge du cache), pour le budget (B15). */
   used: number;
 }
@@ -121,7 +123,6 @@ export function createImageCache(
   const copy = opts.copy ?? defaultCopy;
   const readPixel = opts.readPixel ?? defaultReadPixel;
   let running = 0;
-  let lastFailed = false;
   let warned = false;
   let disposed = false;
   let state: PixelState = "";
@@ -145,11 +146,12 @@ export function createImageCache(
 
   const publish = (): void => {
     const live = [...slots].filter(([, s]) => s.dormant !== true);
-    if (live.length === 0) lastFailed = false; // plus d'image retouchée : un échec passé ne s'affiche plus (I33)
-    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements dessinables des éléments de la dernière scène.
+    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements dessinables des éléments de la dernière scène ;
+    // un échec n'est dit que s'il touche l'une d'elles.
     const visible = live.filter(([n]) => shown === null || shown.has(ownerOf(n))).map(([, s]) => s);
     const hasBitmap = visible.some((s) => s.bitmap !== null);
-    const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : lastFailed ? "echec" : hasBitmap ? "pret" : "";
+    const failed = visible.some((s) => s.failed === true);
+    const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : failed ? "echec" : hasBitmap ? "pret" : "";
     if (next === state) return;
     state = next;
     opts.onState?.(next);
@@ -258,7 +260,7 @@ export function createImageCache(
         target.bitmap = out;
         target.key = key;
         target.wanted = null;
-        lastFailed = false;
+        target.failed = false;
         publish();
         ready();
       },
@@ -267,10 +269,13 @@ export function createImageCache(
         badKeys.add(key);
         const cur = slots.get(name);
         if (cur?.wanted === key) {
+          // L'élément qui attendait ce calcul (Valider) dessine lui aussi l'image brute.
+          const heir = cur.adopter === undefined ? undefined : slots.get(cur.adopter);
+          if (heir?.wanted === key) heir.failed = true;
           release(cur);
           cur.wanted = null;
+          cur.failed = true;
         }
-        lastFailed = true;
         publish();
         if (!warned && !disposed) {
           warned = true;
@@ -359,6 +364,7 @@ export function createImageCache(
           s.bitmap?.close?.();
           s.bitmap = null;
           s.key = null;
+          s.failed = false;
         }
         publish();
       }
@@ -388,7 +394,14 @@ export function createImageCache(
       }
       // Élément dessiné sans aperçu : l'aperçu est fini ; son emplacement et son calcul en route sont jetés.
       if (!preview && twin !== undefined) drop(twinName);
-      if (badKeys.has(key)) return raw;
+      if (badKeys.has(key)) {
+        // Clé déjà en échec (aperçu validé, page revue) : l'image brute est dessinée, l'échec reste dit (I33).
+        if (s.failed !== true) {
+          s.failed = true;
+          publish();
+        }
+        return raw;
+      }
       if (raw !== null && s.wanted !== key) compute(pixels, name, s, key, el, raw);
       return s.bitmap ?? (preview && twin?.dormant !== true ? (twin?.bitmap ?? null) : null) ?? raw;
     },
