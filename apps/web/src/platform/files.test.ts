@@ -4,6 +4,7 @@ import {
   detectHostEnvironment,
   ensureExtension,
   FILE_FILTER,
+  IMPORT_EXTENSIONS,
   IMPORT_FILTER,
   parseHostChoice,
   ROOMBOARD_MIME,
@@ -63,14 +64,26 @@ describe("FileHost : onDrop (T86)", () => {
 
   it("filtre « Importer » : .roomboard, .rbitem, .pdf, images d'U33 (sans TIFF ni RAW), vidéos, sons et objets 3D, C13 .iwb et .ubz (R14, R18, PF3, C14, C15 X32)", () => {
     expect(IMPORT_FILTER).toEqual({
-      name: "Images, vidéos, sons, 3D, PDF et documents RoomBoard",
+      name: "Images, vidéos, sons, 3D, PDF, tableaux et documents RoomBoard",
       extensions: [
-        "roomboard", "rbitem", "rbpack", "pdf", "iwb", "ubz",
+        "roomboard", "rbitem", "rbpack", "pdf", "iwb", "ubz", "notebook", "olf",
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif",
         "mp4", "m4v", "mov", "webm", "ogv",
         "m4a", "mp3", "wav", "ogg", "oga",
         "glb", "gltf", "obj", "mtl", "stl", "ply", "bin", "zip",
       ],
     });
+  });
+});
+
+describe("IMPORT_EXTENSIONS (C13 lot 2)", () => {
+  it("C13 N22 : IMPORT_EXTENSIONS offre notebook et olf", () => {
+    const l = IMPORT_EXTENSIONS as readonly string[];
+    expect(l.indexOf("notebook")).toBe(l.indexOf("ubz") + 1);
+    expect(l.indexOf("olf")).toBe(l.indexOf("notebook") + 1);
+    expect(l).not.toContain("flipchart");
+  });
+  it("C13 N22 : le filtre nomme les tableaux", () => {
+    expect(IMPORT_FILTER.name).toContain("tableaux");
   });
 });

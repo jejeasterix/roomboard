@@ -6,10 +6,12 @@
 use std::collections::HashMap;
 use std::fmt;
 
+mod notebook;
 pub mod qt_html;
 mod read;
 mod write;
 
+pub use notebook::notebook_order;
 pub use read::read_svg;
 pub use write::{ubz_metadata, write_iwb, write_ubz_pages};
 
@@ -58,6 +60,8 @@ pub enum Dialect {
     Iwb,
     /// Une page `pageNNN.svg` d'un `.ubz` (OpenBoard).
     Ubz,
+    /// Une page `pageN.svg` d'un `.notebook` SMART (lot 2, N5) ; import seul, aucune copie (N2).
+    Notebook,
 }
 
 impl Dialect {
@@ -65,6 +69,7 @@ impl Dialect {
         match s {
             "iwb" => Some(Dialect::Iwb),
             "ubz" => Some(Dialect::Ubz),
+            "notebook" => Some(Dialect::Notebook),
             _ => None,
         }
     }
@@ -195,6 +200,52 @@ pub fn compose(a: &Mat, b: &Mat) -> Mat {
 
 pub fn apply(m: &Mat, x: f32, y: f32) -> (f32, f32) {
     (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
+}
+
+/// Rectangle d'un polygone fermé de 4 sommets (5 si le dernier répète le premier), côtés alignés sur les axes
+/// (N7, N12) ; `None` sinon. Tolérance 1e-3 ; rectangle plat (largeur ou hauteur nulle) refusé.
+pub fn rect_of(points: &[[f32; 2]]) -> Option<[f32; 4]> {
+    const EPS: f32 = 1e-3;
+    let same = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() <= EPS && (a[1] - b[1]).abs() <= EPS;
+    let p = match points.len() {
+        4 => points,
+        5 if same(points[0], points[4]) => &points[..4],
+        _ => return None,
+    };
+    if !p.iter().all(|q| q[0].is_finite() && q[1].is_finite()) {
+        return None;
+    }
+    let horiz = |a: [f32; 2], b: [f32; 2]| (a[1] - b[1]).abs() <= EPS;
+    let vert = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() <= EPS;
+    let edges = [(p[0], p[1]), (p[1], p[2]), (p[2], p[3]), (p[3], p[0])];
+    let alt_a = edges.iter().enumerate().all(
+        |(i, &(a, b))| {
+            if i % 2 == 0 {
+                horiz(a, b)
+            } else {
+                vert(a, b)
+            }
+        },
+    );
+    let alt_b = edges.iter().enumerate().all(
+        |(i, &(a, b))| {
+            if i % 2 == 0 {
+                vert(a, b)
+            } else {
+                horiz(a, b)
+            }
+        },
+    );
+    if !(alt_a || alt_b) {
+        return None;
+    }
+    let (x0, x1) = p
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(l, h), q| (l.min(q[0]), h.max(q[0])));
+    let (y0, y1) = p
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(l, h), q| (l.min(q[1]), h.max(q[1])));
+    (x1 - x0 > EPS && y1 - y0 > EPS).then_some([x0, y0, x1, y1])
 }
 
 struct Encoder {
@@ -801,10 +852,63 @@ mod tests {
     }
 
     #[test]
-    fn dialect_parse_knows_iwb_and_ubz_only() {
+    fn dialect_parse_knows_board_dialects() {
         assert_eq!(Dialect::parse("iwb"), Some(Dialect::Iwb));
         assert_eq!(Dialect::parse("ubz"), Some(Dialect::Ubz));
+        assert_eq!(Dialect::parse("notebook"), Some(Dialect::Notebook));
         assert_eq!(Dialect::parse("pdf"), None);
+        assert_eq!(Dialect::parse("olf"), None);
+        assert_eq!(Dialect::parse("flipchart"), None);
+    }
+
+    fn near(got: Option<[f32; 4]>, want: [f32; 4]) -> bool {
+        got.is_some_and(|g| g.iter().zip(want).all(|(a, b)| (a - b).abs() <= 1e-3))
+    }
+
+    #[test]
+    fn rect_of_reads_four_and_five_point_rectangles() {
+        let r = [[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]];
+        let want = [0.0, 0.0, 10.0, 5.0];
+        assert_eq!(rect_of(&r), Some(want));
+        assert_eq!(rect_of(&[r[0], r[1], r[2], r[3], r[0]]), Some(want));
+        assert_eq!(rect_of(&[r[3], r[2], r[1], r[0]]), Some(want));
+        // Premier côté vertical.
+        assert_eq!(rect_of(&[r[1], r[2], r[3], r[0]]), Some(want));
+        // Tolérance 1e-3, pas `==` : sommets bruités et 5e point presque égal au premier.
+        let noisy = [
+            [0.0, 0.0],
+            [10.0, 0.0005],
+            [10.0005, 5.0],
+            [0.0, 5.0004],
+            [0.0004, -0.0003],
+        ];
+        assert!(near(rect_of(&noisy), want), "{:?}", rect_of(&noisy));
+        assert!(
+            near(rect_of(&noisy[..4]), want),
+            "{:?}",
+            rect_of(&noisy[..4])
+        );
+    }
+
+    #[test]
+    fn rect_of_refuses_slanted_flat_and_short() {
+        let diamond = [[5.0, 0.0], [10.0, 5.0], [5.0, 10.0], [0.0, 5.0]];
+        assert_eq!(rect_of(&diamond), None);
+        assert_eq!(rect_of(&[[0.0, 0.0], [10.0, 0.0], [10.0, 5.0]]), None);
+        let r = [[0.0, 0.0], [10.0, 0.0], [10.0, 5.0], [0.0, 5.0]];
+        assert_eq!(rect_of(&[r[0], r[1], r[2], r[3], [3.0, 3.0]]), None);
+        assert_eq!(rect_of(&[r[0], r[1], r[2], r[3], r[0], r[1]]), None);
+        // Côtés croisés (alignés deux à deux mais non consécutifs).
+        assert_eq!(rect_of(&[r[0], r[1], r[3], r[2]]), None);
+        let flat = [[0.0, 0.0], [10.0, 0.0], [10.0, 0.0], [0.0, 0.0]];
+        assert_eq!(rect_of(&flat), None);
+        let thin = [[0.0, 0.0], [10.0, 0.0], [10.0, 0.0005], [0.0, 0.0005]];
+        assert_eq!(rect_of(&thin), None);
+        assert_eq!(
+            rect_of(&[[0.0, 0.0], [f32::NAN, 0.0], [10.0, 5.0], [0.0, 5.0]]),
+            None
+        );
+        assert_eq!(rect_of(&[]), None);
     }
 
     #[test]
@@ -841,6 +945,7 @@ mod tests {
             ("board/read.rs", include_str!("board/read.rs")),
             ("board/write.rs", include_str!("board/write.rs")),
             ("board/qt_html.rs", include_str!("board/qt_html.rs")),
+            ("board/notebook.rs", include_str!("board/notebook.rs")),
         ] {
             for f in forbidden {
                 assert!(

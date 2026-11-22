@@ -4,7 +4,7 @@ import { createAssetStore } from "../core/asset-store";
 import { fakeCore } from "../core/fake-core";
 import { applyMatrix } from "../core/shapes";
 import { BOARD_OBJECTS_MESSAGE } from "../platform/board-reader";
-import { boardListOf, buildBoardDocument, decodeBoardList, encodeBoardList, mediaOf, type BoardListPage, type BoardObject } from "./board-io";
+import { boardListOf, buildBoardDocument, decodeBoardList, encodeBoardList, MAX_GROUP_DEPTH, MAX_POINTS, MAX_SPANS, mediaOf, type BoardListPage, type BoardObject } from "./board-io";
 
 const ID: Matrix = [1, 0, 0, 1, 0, 0];
 /** Flux témoin W1, recopié de `crates/roomboard-formats/src/board.rs` (fixtures) : parité du codage (D6). */
@@ -223,5 +223,11 @@ describe("board-io : copie au format (C13, D18)", () => {
     expect(s.points).toEqual(Array.from(built.doc.points(el.id)!));
     // Placés par `m`, les points retombent à leur place monde ; des points déjà en monde seraient décalés deux fois.
     expect([...applyMatrix(s.m, s.points[0]!, s.points[1]!), ...applyMatrix(s.m, s.points[3]!, s.points[4]!)]).toEqual([100, 0, 120, 10]);
+  });
+});
+
+describe("board-io : bornes (C13 lot 2)", () => {
+  it("C13 : bornes exportées", () => {
+    expect([MAX_POINTS, MAX_SPANS, MAX_GROUP_DEPTH]).toEqual([1_000_000, 10_000, 256]);
   });
 });

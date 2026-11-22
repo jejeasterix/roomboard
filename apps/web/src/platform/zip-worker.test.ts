@@ -2,7 +2,9 @@ import { unzipSync, zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { buildPack, readPack, type PackItem } from "./rbpack";
-import { keepBoardPath, keepPackPath, unzipEntries, zipStored } from "./zip-worker";
+import { keepBoardPath, keepPackPath, olfPart, unzipEntries, zipStored } from "./zip-worker";
+import { decodeBoardList } from "../app/board-io";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const item = (path: string): PackItem => ({ path, name: path.split("/").pop()!, keywords: [], description: "", kind: "fragment", bytes: enc(`rb:${path}`), thumbnail: enc(`png:${path}`) });
@@ -90,6 +92,25 @@ describe("C13 : Worker ZIP des tableaux (mode board, D3)", () => {
     }
   });
 
+  it("C13 N15 : keepBoardPath garde imsmanifest.xml et content.json", () => {
+    expect(keepBoardPath("imsmanifest.xml")).toBe(true);
+    expect(keepBoardPath("content.json")).toBe(true);
+    expect(keepBoardPath("sub/content.json")).toBe(false);
+    expect(keepBoardPath("sub/imsmanifest.xml")).toBe(false);
+  });
+
+  it("C13 N15 : keepBoardPath refuse vidéo, Flash et miniature", () => {
+    for (const no of ["video.wmv", "a.swf", "preview.thm"]) expect(keepBoardPath(no), no).toBe(false);
+  });
+
+  it("C13 N16 : keepBoardPath refuse a/__MACOSX/x.png", () => {
+    expect(keepBoardPath("a/__MACOSX/x.png")).toBe(false);
+  });
+
+  it("C13 S3 : ../evil.png refusé", () => {
+    expect(keepBoardPath("../evil.png")).toBe(false);
+  });
+
   it("T14 : keepBoardPath garde ./content.xml et .\\page1.svg (normalisés avant comparaison)", () => {
     for (const ok of ["./content.xml", ".\\Content.XML", "./page1.svg", "./images/a.png"]) expect(keepBoardPath(ok), ok).toBe(true);
     expect(keepBoardPath("./../evil.png")).toBe(false);
@@ -116,5 +137,90 @@ describe("C13 : Worker ZIP des tableaux (mode board, D3)", () => {
     const files: Record<string, Uint8Array> = {};
     for (let i = 0; i < 1001; i++) files[`images/i${i}.png`] = enc("x");
     expect(() => unzipEntries(zipSync(files), keepBoardPath)).toThrow(ZIP_TOO_BIG_MESSAGE);
+  });
+});
+
+describe("C13 lot 2 : content.json d'un .olf lu par le Worker ZIP (N8, N13)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  const json = JSON.stringify({
+    olf: {
+      width: 1920,
+      pageset: [
+        {
+          page: {
+            viewbox: "0 0 3840 2160",
+            matrix: "1,0,-10,0,1,-480,0,0,1",
+            backgrounds: [{ background: { type: "color", fill: "#FFFFFF" } }],
+            elements: [
+              { stroke: { points: "10,20 30,40", stroke: "#FF0000", "pen-width": 9, matrix: "0,-1,100,1,0,50,0,0,1" } },
+              {
+                textarea: {
+                  x: 0,
+                  y: 0,
+                  width: 300,
+                  height: 100,
+                  "text-blocks-container": [
+                    { paragraph: { "text-list-container": [{ text: { text: "Piano", "font-size": 64, "font-weight": "bold", fill: "#FF000000", "font-family": "Calibri" } }] } },
+                    { paragraph: { "text-list-container": [{ text: { text: "Keys", "text-decoration": "underline" } }] } },
+                  ],
+                },
+              },
+              { image: { source: "images/a.png", x: 0, y: 0, width: 294, height: 300 } },
+              { "widget-player": { source: "https://x" } },
+            ],
+          },
+        },
+      ],
+    },
+  });
+
+  it("C13 N8 : op olf rend un flux", async () => {
+    // Le flux redécodé par `decodeBoardList` (le contrôle de la page) rend les pages de `readOlf`.
+    const part = olfPart(enc(json));
+    const read = readOlf(json);
+    expect(part.ops).toBeInstanceOf(Float32Array);
+    expect(decodeBoardList(part.ops, part.texts)).toEqual(read.pages);
+    expect(part.warnings).toEqual(["page 1 : 1 widget non lu"]);
+    expect(part.total).toBe(1);
+    // Dans un Worker : `{ op: "olf", bytes }` → `{ part }`, tampon `ops` transféré.
+    const post = vi.fn();
+    vi.stubGlobal("WorkerGlobalScope", class {});
+    vi.stubGlobal("postMessage", post);
+    vi.stubGlobal("onmessage", null);
+    vi.resetModules();
+    await import("./zip-worker");
+    const handler = (globalThis as unknown as { onmessage: (e: { data: unknown }) => void }).onmessage;
+    handler({ data: { op: "olf", bytes: enc(json) } });
+    expect(post).toHaveBeenCalledTimes(1);
+    const [reply, transfer] = post.mock.calls[0] as [{ part: { ops: Float32Array; texts: string[]; warnings: string[]; total: number } }, Transferable[]];
+    expect(decodeBoardList(reply.part.ops, reply.part.texts)).toEqual(read.pages);
+    expect(transfer).toEqual([reply.part.ops.buffer]);
+    handler({ data: { op: "olf", bytes: enc("{") } });
+    expect(post.mock.calls[1]).toEqual([{ error: "fichier endommagé : content.json illisible" }, []]);
+  });
+
+  it("C13 N13 : content.json de plus de 64 Mio refusé avant décodage", () => {
+    const read = vi.fn((_: string) => ({ pages: [], warnings: [], total: 0 }));
+    const decoded: number[] = [];
+    vi.stubGlobal(
+      "TextDecoder",
+      class {
+        decode(b: Uint8Array): string {
+          decoded.push(b.length);
+          return "";
+        }
+      },
+    );
+    expect(() => olfPart(new Uint8Array(OLF_MAX_JSON_BYTES + 1), read)).toThrowError(new Error(OLF_TOO_BIG_MESSAGE));
+    expect(read).not.toHaveBeenCalled();
+    expect(decoded).toEqual([]);
+    // À la borne : décodé puis lu.
+    olfPart(new Uint8Array(OLF_MAX_JSON_BYTES), read);
+    expect(decoded).toEqual([OLF_MAX_JSON_BYTES]);
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

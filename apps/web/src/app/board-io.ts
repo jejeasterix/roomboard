@@ -9,23 +9,26 @@
 import { DEFAULT_BACKGROUND, PAGE_WIDTH, type AssetRef, type Change, type Command, type CoreDocument, type CoreFactory, type ElementView, type Matrix, type ShapeKind, type TextSpan } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { applyMatrix, composeMatrix } from "../core/shapes";
-import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardDialect, type BoardPart } from "../platform/board-reader";
+import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardDialect, type BoardPart, type BoardReadOptions, type BoardSourceFormat } from "../platform/board-reader";
 import type { ImageKind } from "../platform/image-decode";
 import { IMAGE_MIME, type ImageDecoder } from "../platform/image-import";
-import type { ZipFile } from "../platform/zip-read";
+import type { OlfPart, ZipFile } from "../platform/zip-read";
 import { MISSING_LABEL, SKIPPED_LABEL } from "./board-files";
 import { typed } from "./container-io";
 
-export type BoardFormat = BoardDialect;
+/** Dialectes que le module `formats` lit et écrit. */
+export type BoardFormat = "iwb" | "ubz";
+/** C13 (N5) : format lu à l'import (plus large que le format d'export). */
+export type { BoardSourceFormat };
 /** Même borne que `MAX_GROUP_DEPTH` de `board::parse` (board.rs). */
-const MAX_GROUP_DEPTH = 256;
+export const MAX_GROUP_DEPTH = 256;
 export const BOARD_OP = { page: 1, background: 2, shape: 3, stroke: 4, text: 5, image: 6, groupBegin: 7, groupEnd: 8 } as const;
 export const BOARD_BAD_LIST_PREFIX = "liste de tableau invalide : ";
 /** Code de chaque forme dans le flux ; `satisfies` oblige à en donner un à chaque `ShapeKind`. */
 const SHAPE_CODE = { rect: 0, ellipse: 1, line: 2, arrow: 3 } satisfies Record<ShapeKind, number>;
 const SHAPES = (Object.keys(SHAPE_CODE) as ShapeKind[]).sort((a, b) => SHAPE_CODE[a] - SHAPE_CODE[b]);
-const MAX_POINTS = 1_000_000;
-const MAX_SPANS = 10_000;
+export const MAX_POINTS = 1_000_000;
+export const MAX_SPANS = 10_000;
 const MAX_INDEX = 16_777_216;
 
 export type BoardObject =
@@ -47,7 +50,9 @@ export interface BoardListData {
 export interface BoardPorts {
   unzip(blob: Blob): Promise<readonly { readonly path: string; readonly blob: Blob }[]>;
   zip(files: readonly ZipFile[]): Promise<Uint8Array>;
-  read(files: readonly Uint8Array[], format: BoardFormat): Promise<readonly BoardPart[]>;
+  read(files: readonly Uint8Array[], dialect: BoardDialect, opts?: BoardReadOptions): Promise<readonly BoardPart[]>;
+  /** C13 lot 2 : `content.json` d'un `.olf` lu dans le Worker ZIP (jamais de `JSON.parse` sur la page). */
+  readOlf(json: Blob): Promise<OlfPart>;
   write(list: { readonly ops: Float32Array; readonly texts: readonly string[] }, format: BoardFormat): Promise<readonly ZipFile[]>;
 }
 

@@ -100,16 +100,18 @@ export interface BoardBinding {
   free(): void;
 }
 
-/** Module `formats` avec les tableaux `.iwb` et `.ubz` (C13, DA2) : servi seulement dans `board-worker.ts`. */
+/** Module `formats` avec les tableaux `.iwb`, `.ubz` et `.notebook` (C13, DA2) : servi seulement dans `board-worker.ts`. */
 export interface BoardFormatsBinding extends FormatsBinding {
   readonly BoardReader: { open(xml: Uint8Array, dialect: string, firstPage: number): BoardBinding };
   write_board_xml(ops: Float32Array, texts: string[], format: string): string[];
+  /** Ordre des pages d'un `.notebook` lu dans `imsmanifest.xml` (lot 2, N6) ; lève « fichier endommagé : … ». */
+  notebook_order(manifest: Uint8Array): string[];
 }
 
-/** Vrai si le module chargé expose le lecteur et l'écrivain des tableaux (module construit après C13). */
+/** Vrai si le module chargé expose le lecteur, l'écrivain et l'ordre des tableaux (module construit après C13 lot 2). */
 export function hasBoardReader(m: FormatsBinding): m is BoardFormatsBinding {
   const b = m as Partial<BoardFormatsBinding>;
-  return typeof b.BoardReader?.open === "function" && typeof b.write_board_xml === "function";
+  return typeof b.BoardReader?.open === "function" && typeof b.write_board_xml === "function" && typeof b.notebook_order === "function";
 }
 
 export function createPageCodec(load: () => Promise<FormatsBinding>): ContainerCodec {
