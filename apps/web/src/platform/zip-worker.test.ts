@@ -90,6 +90,25 @@ describe("C13 : Worker ZIP des tableaux (mode board, D3)", () => {
     }
   });
 
+  it("C13 N15 : keepBoardPath garde imsmanifest.xml et content.json", () => {
+    expect(keepBoardPath("imsmanifest.xml")).toBe(true);
+    expect(keepBoardPath("content.json")).toBe(true);
+    expect(keepBoardPath("sub/content.json")).toBe(false);
+    expect(keepBoardPath("sub/imsmanifest.xml")).toBe(false);
+  });
+
+  it("C13 N15 : keepBoardPath refuse vidéo, Flash et miniature", () => {
+    for (const no of ["video.wmv", "a.swf", "preview.thm"]) expect(keepBoardPath(no), no).toBe(false);
+  });
+
+  it("C13 N16 : keepBoardPath refuse a/__MACOSX/x.png", () => {
+    expect(keepBoardPath("a/__MACOSX/x.png")).toBe(false);
+  });
+
+  it("C13 S3 : ../evil.png refusé", () => {
+    expect(keepBoardPath("../evil.png")).toBe(false);
+  });
+
   it("T14 : keepBoardPath garde ./content.xml et .\\page1.svg (normalisés avant comparaison)", () => {
     for (const ok of ["./content.xml", ".\\Content.XML", "./page1.svg", "./images/a.png"]) expect(keepBoardPath(ok), ok).toBe(true);
     expect(keepBoardPath("./../evil.png")).toBe(false);
