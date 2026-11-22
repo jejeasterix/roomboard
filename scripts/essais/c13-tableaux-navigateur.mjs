@@ -428,7 +428,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await drop("cours.olf", olfZip(), 3);
   await waitDialog("widget non lu", k420);
   check((await lastTab()).includes("cours.roomboard"), "S2 (lot 2) : onglet cours.roomboard, data-elements=\"3\"");
+  await fr(); // la scène se redessine après l'ouverture (deux images) avant que les pixels soient lus
   const oc = await camera();
+  await fr();
   const cream = await inkIn(page, [1700 * oc.zoom + oc.tx, 950 * oc.zoom + oc.ty, 1720 * oc.zoom + oc.tx, 970 * oc.zoom + oc.ty], { rgb: [255, 238, 204], tol: 10 });
   check(cream > 50, `S2 (lot 2) : fond #FFEECC lu (${cream} pixels)`);
   console.log('ok — S2 : .olf déposé : 3 objets (trait, image, texte), widget dit non lu, fond #FFEECC');
