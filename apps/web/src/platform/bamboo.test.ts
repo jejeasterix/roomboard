@@ -232,7 +232,7 @@ describe("bamboo : conteneur borné (C13 lot 3, N11, N13, N15, N16)", () => {
     );
     expect(bambooEntries(data).map((e) => e.path)).toEqual(["100.io", "1500.ek1056", "4.ird"]);
     for (const name of ["4.ird", "1500.ek1056", "1501.CZ2880"]) expect(keepBambooPath(name), name).toBe(true);
-    for (const name of ["notes.txt", "1500.ek", "1500.e1056", "1500.abc"]) expect(keepBambooPath(name), name).toBe(false);
+    for (const name of ["notes.txt", "1500.ek", "1500.e1056", "1500.abc", "1500.ek105", "1500.ek10560"]) expect(keepBambooPath(name), name).toBe(false);
   });
 
   it("C13 N13 : bornes du conteneur", () => {

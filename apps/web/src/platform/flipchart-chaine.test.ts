@@ -7,8 +7,7 @@ import { zlibSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { makeFlipchart } from "../../../../scripts/essais/fabriques/flipchart.mjs";
 import { flipchartSources } from "../app/board-files";
-import { BAMBOO_LIMITS, readBamboo } from "./bamboo";
-import { keepBambooPath } from "./zip-worker";
+import { bambooEntries } from "./zip-worker";
 
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
 const fs = (await import(/* @vite-ignore */ `node:${"fs"}`)) as NodeFs;
@@ -45,7 +44,7 @@ function entriesOfS4(): { path: string; blob: Blob }[] {
     ],
     zlibSync,
   ) as Uint8Array;
-  return readBamboo(data, keepBambooPath, BAMBOO_LIMITS).map((e) => ({ path: e.path, blob: new Blob([new Uint8Array(e.bytes)]) }));
+  return bambooEntries(data).map((e) => ({ path: e.path, blob: new Blob([new Uint8Array(e.bytes)]) }));
 }
 
 /** Même mise bout à bout que le Worker des tableaux : `names`, octets concaténés, fins cumulées. */

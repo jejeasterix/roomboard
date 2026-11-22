@@ -52,8 +52,9 @@ export function keepBoardPath(name: string): boolean {
 const BAMBOO_ENTRY_EXTENSIONS: readonly string[] = Object.freeze([...BAMBOO_STRUCTURE_EXTENSIONS, "fpg"]);
 
 /** C13 lot 3 (N15, N16) : entrées lues d'un paperboard : index `.in`, objets `.io`, ressources `.ir`, pages `.fpg`,
- *  `version`, images de `BOARD_ZIP_EXTENSIONS` et noms de `BAMBOO_IMAGE_NAME` ; chemin sûr selon `safeArchivePath`. Miniatures `.thm`, `.tif`,
- *  sons, vidéos et Flash ne sont jamais décompressés. */
+ *  `version`, images de `BOARD_ZIP_EXTENSIONS` et noms de `BAMBOO_IMAGE_NAME` ; chemin sûr selon `safeArchivePath`.
+ *  Miniatures `.thm`, `.tif`, sons, vidéos et Flash nommés par leur extension ne sont jamais décompressés ; une entrée
+ *  de `BAMBOO_IMAGE_NAME` l'est, compte dans `BAMBOO_LIMITS`, puis est jetée si sa signature n'est pas une image. */
 export function keepBambooPath(name: string): boolean {
   const p = safeArchivePath(name);
   if (p === null) return false;
@@ -63,8 +64,9 @@ export function keepBambooPath(name: string): boolean {
 }
 
 /** Image d'un paperboard sans extension d'image : `{rid}.ird` (ActCraft `resourceFile`), ou extension d'ActivInspire
- *  `<2 lettres><chiffres>` (BMP nommées `1500.ek1056` dans les exemples) ; gardée sur sa signature seule. */
-const BAMBOO_IMAGE_NAME = /\.(?:ird|[a-z]{2}\d{3,})$/i;
+ *  `<2 lettres><4 chiffres>` (les sept vues dans les exemples, `2747.EK1056`, `4670.gq4184`…, sont des BMP) ; gardée sur
+ *  sa signature seule. Motif étroit : un gros média ainsi nommé compterait dans le budget du conteneur. */
+const BAMBOO_IMAGE_NAME = /\.(?:ird|[a-z]{2}\d{4})$/i;
 
 /** Entrées lues d'un paperboard (`keepBambooPath`) ; une image nommée par `BAMBOO_IMAGE_NAME` n'est transmise que si
  *  ses premiers octets sont ceux d'une image (comme `extensionOf` d'ActCraft) : le lecteur Rust l'affiche alors. */
