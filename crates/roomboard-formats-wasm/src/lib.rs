@@ -241,7 +241,8 @@ pub fn write_board_xml_inner(
             out.push(board::ubz_metadata(count));
             Ok(out)
         }
-        Dialect::Notebook => todo!("T3 : copie notebook"),
+        // Import seul (N2) : aucune copie `.notebook`, refus au préfixe connu de `boardErrorMessage`.
+        Dialect::Notebook => Err(format!("format de tableau inconnu : {format}")),
     }
 }
 

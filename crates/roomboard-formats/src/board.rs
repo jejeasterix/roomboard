@@ -69,6 +69,7 @@ impl Dialect {
         match s {
             "iwb" => Some(Dialect::Iwb),
             "ubz" => Some(Dialect::Ubz),
+            "notebook" => Some(Dialect::Notebook),
             _ => None,
         }
     }
@@ -204,8 +205,47 @@ pub fn apply(m: &Mat, x: f32, y: f32) -> (f32, f32) {
 /// Rectangle d'un polygone fermé de 4 sommets (5 si le dernier répète le premier), côtés alignés sur les axes
 /// (N7, N12) ; `None` sinon. Tolérance 1e-3 ; rectangle plat (largeur ou hauteur nulle) refusé.
 pub fn rect_of(points: &[[f32; 2]]) -> Option<[f32; 4]> {
-    let _ = points;
-    todo!("T3 : rect_of")
+    const EPS: f32 = 1e-3;
+    let same = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() <= EPS && (a[1] - b[1]).abs() <= EPS;
+    let p = match points.len() {
+        4 => points,
+        5 if same(points[0], points[4]) => &points[..4],
+        _ => return None,
+    };
+    if !p.iter().all(|q| q[0].is_finite() && q[1].is_finite()) {
+        return None;
+    }
+    let horiz = |a: [f32; 2], b: [f32; 2]| (a[1] - b[1]).abs() <= EPS;
+    let vert = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() <= EPS;
+    let edges = [(p[0], p[1]), (p[1], p[2]), (p[2], p[3]), (p[3], p[0])];
+    let alt_a = edges.iter().enumerate().all(
+        |(i, &(a, b))| {
+            if i % 2 == 0 {
+                horiz(a, b)
+            } else {
+                vert(a, b)
+            }
+        },
+    );
+    let alt_b = edges.iter().enumerate().all(
+        |(i, &(a, b))| {
+            if i % 2 == 0 {
+                vert(a, b)
+            } else {
+                horiz(a, b)
+            }
+        },
+    );
+    if !(alt_a || alt_b) {
+        return None;
+    }
+    let (x0, x1) = p
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(l, h), q| (l.min(q[0]), h.max(q[0])));
+    let (y0, y1) = p
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(l, h), q| (l.min(q[1]), h.max(q[1])));
+    (x1 - x0 > EPS && y1 - y0 > EPS).then_some([x0, y0, x1, y1])
 }
 
 struct Encoder {
@@ -835,9 +875,19 @@ mod tests {
         // Premier côté vertical.
         assert_eq!(rect_of(&[r[1], r[2], r[3], r[0]]), Some(want));
         // Tolérance 1e-3, pas `==` : sommets bruités et 5e point presque égal au premier.
-        let noisy = [[0.0, 0.0], [10.0, 0.0005], [10.0005, 5.0], [0.0, 5.0004], [0.0004, -0.0003]];
+        let noisy = [
+            [0.0, 0.0],
+            [10.0, 0.0005],
+            [10.0005, 5.0],
+            [0.0, 5.0004],
+            [0.0004, -0.0003],
+        ];
         assert!(near(rect_of(&noisy), want), "{:?}", rect_of(&noisy));
-        assert!(near(rect_of(&noisy[..4]), want), "{:?}", rect_of(&noisy[..4]));
+        assert!(
+            near(rect_of(&noisy[..4]), want),
+            "{:?}",
+            rect_of(&noisy[..4])
+        );
     }
 
     #[test]
@@ -854,7 +904,10 @@ mod tests {
         assert_eq!(rect_of(&flat), None);
         let thin = [[0.0, 0.0], [10.0, 0.0], [10.0, 0.0005], [0.0, 0.0005]];
         assert_eq!(rect_of(&thin), None);
-        assert_eq!(rect_of(&[[0.0, 0.0], [f32::NAN, 0.0], [10.0, 5.0], [0.0, 5.0]]), None);
+        assert_eq!(
+            rect_of(&[[0.0, 0.0], [f32::NAN, 0.0], [10.0, 5.0], [0.0, 5.0]]),
+            None
+        );
         assert_eq!(rect_of(&[]), None);
     }
 

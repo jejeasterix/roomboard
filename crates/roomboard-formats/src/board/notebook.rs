@@ -1,10 +1,38 @@
 //! Ordre des pages d'un `.notebook` (N6) : `<resource identifier="pages">` de `imsmanifest.xml`, ses `<file href>` dans
 //! l'ordre du document. Lecture par `read::parse_tree` (D16 : DOCTYPE ignoré, aucune entité externe).
+use super::read::{parse_tree, Node, Notes};
 use super::BoardError;
 
+/// `href` normalisés (`\` en `/`, `./` retiré), sans doublon ; aucune ressource `pages` : `Ok(vec![])` (le repli
+/// sur l'ordre des noms est celui de l'appelant). Un `href` illisible (entité inconnue) est sauté, comme dans `read.rs`.
 pub fn notebook_order(manifest: &[u8]) -> Result<Vec<String>, BoardError> {
-    let _ = manifest;
-    todo!("T3 : notebook_order")
+    let body = manifest
+        .strip_prefix(&[0xEF, 0xBB, 0xBF][..])
+        .unwrap_or(manifest);
+    let text =
+        std::str::from_utf8(body).map_err(|_| BoardError::Broken("manifeste non UTF-8".into()))?;
+    let mut notes = Notes::default();
+    let root = parse_tree(text, &mut notes)?;
+    let mut out: Vec<String> = Vec::new();
+    if let Some(pages) = find_pages(&root) {
+        for f in pages.nodes().filter(|n| n.name == "file") {
+            if let Some(h) = f.attr("href") {
+                let p = h.replace('\\', "/").trim_start_matches("./").to_string();
+                if !p.is_empty() && !out.contains(&p) {
+                    out.push(p);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Première ressource `identifier="pages"` dans l'ordre du document (nom local, comme `read.rs`).
+fn find_pages(n: &Node) -> Option<&Node> {
+    if n.name == "resource" && n.attr("identifier") == Some("pages") {
+        return Some(n);
+    }
+    n.nodes().find_map(find_pages)
 }
 
 #[cfg(test)]
@@ -67,10 +95,12 @@ mod tests {
         let xml = r#"<?xml version="1.0"?>
 <!DOCTYPE m [<!ENTITY x SYSTEM "file:///etc/passwd">]>
 <manifest><resources><resource identifier="pages"><file href="&x;"/><file href="page0.svg"/></resource></resources></manifest>"#;
-        let got = notebook_order(xml.as_bytes()).expect("DOCTYPE et entité ne refusent pas le manifeste");
+        let got =
+            notebook_order(xml.as_bytes()).expect("DOCTYPE et entité ne refusent pas le manifeste");
         assert_eq!(got, vec!["page0.svg"]);
         assert!(
-            got.iter().all(|p| !p.contains("passwd") && !p.contains('&')),
+            got.iter()
+                .all(|p| !p.contains("passwd") && !p.contains('&')),
             "{got:?}"
         );
     }
@@ -81,7 +111,7 @@ mod tests {
         assert!(matches!(notebook_order(xml), Err(BoardError::Broken(_))));
     }
 
-    /// Patron écarté : un `quick_xml::Reader` à la main dans ce fichier contournerait la règle DOCTYPE et entités de
+    /// Patron écarté : un lecteur du crate quick-xml écrit à la main ici contournerait la règle DOCTYPE et entités de
     /// `parse_tree` (`read.rs`, D16). Le manifeste passe par `parse_tree`, seul lecteur XML du module `board`.
     #[test]
     fn notebook_reads_the_manifest_through_parse_tree() {

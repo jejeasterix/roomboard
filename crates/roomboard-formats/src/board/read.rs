@@ -164,7 +164,7 @@ fn label(sort: Sort, n: u32) -> &'static str {
 
 /// Avertissements comptés par (page, sorte) ; page 0 : le document entier.
 #[derive(Default)]
-struct Notes {
+pub(super) struct Notes {
     counts: BTreeMap<(u32, Sort), u32>,
 }
 
@@ -187,9 +187,9 @@ impl Notes {
 }
 
 #[derive(Debug, Default)]
-struct Node {
+pub(super) struct Node {
     /// Nom local (sans préfixe) : `svg:rect` et `rect` se lisent pareil (Becta, 1EdTech, OpenBoard).
-    name: String,
+    pub(super) name: String,
     /// Attributs par nom local ; un attribut répété garde sa première valeur.
     attrs: Vec<(String, String)>,
     /// Un attribut illisible (entité inconnue, attribut mal formé) : l'objet est sauté et compté (D16).
@@ -204,13 +204,13 @@ enum Child {
 }
 
 impl Node {
-    fn attr(&self, k: &str) -> Option<&str> {
+    pub(super) fn attr(&self, k: &str) -> Option<&str> {
         self.attrs
             .iter()
             .find(|(n, _)| n == k)
             .map(|(_, v)| v.as_str())
     }
-    fn nodes(&self) -> impl Iterator<Item = &Node> {
+    pub(super) fn nodes(&self) -> impl Iterator<Item = &Node> {
         self.children.iter().filter_map(|c| match c {
             Child::Node(n) => Some(n),
             Child::Text(_) => None,
@@ -278,7 +278,7 @@ fn predefined(name: &str) -> Option<&'static str> {
 }
 
 /// Arbre du document ; XML mal formé (balise fermée par une autre, comme `rectangle2.iwb`) : refus du fichier.
-fn parse_tree(text: &str, notes: &mut Notes) -> Result<Node, BoardError> {
+pub(super) fn parse_tree(text: &str, notes: &mut Notes) -> Result<Node, BoardError> {
     let mut reader = Reader::from_str(text);
     let mut stack: Vec<Node> = vec![Node::default()];
     loop {
