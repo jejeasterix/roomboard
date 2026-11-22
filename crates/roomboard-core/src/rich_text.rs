@@ -402,10 +402,18 @@ pub(crate) fn valid_spans(content: &str, spans: &[SpanInput]) -> bool {
         && spans.iter().all(|s| valid_attrs(&entries(&s.attrs)))
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Appels de `differing` (test du plan d'alignement).
+    static DIFFERING_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Clés connues dont la vue normalisée `current` diffère de `target`, avec la valeur à écrire (`Any::Null` retire) ;
 /// `size` comparé après arrondi en `f32` (T11, `same_value`) ; vide si rien ne change. La valeur brute n'entre pas
 /// dans la comparaison : une valeur hors domaine que la cible laisse au défaut n'est jamais réécrite.
 fn differing(current: &SpanAttrs, target: &SpanAttrs) -> Attrs {
+    #[cfg(test)]
+    DIFFERING_CALLS.with(|n| n.set(n.get() + 1));
     let mut out = Attrs::new();
     for (now, want) in entries(current).iter().zip(entries(target).iter()) {
         let (key, have) = entry(now);
@@ -426,24 +434,35 @@ fn align_plan<T: ReadTxn>(
     spans: &[SpanInput],
 ) -> Option<Vec<(u32, u32, Attrs)>> {
     let (chars, raw) = char_table(txn, text)?;
-    let want: Vec<&SpanAttrs> = spans
+    let want: Vec<usize> = spans
         .iter()
-        .flat_map(|s| s.text.chars().map(move |_| &s.attrs))
+        .enumerate()
+        .flat_map(|(i, s)| s.text.chars().map(move |_| i))
         .collect();
     if want.len() != chars.len() {
         return None;
     }
     let norm: Vec<SpanAttrs> = raw.iter().map(|a| normalize(Some(a))).collect();
     let mut runs: Vec<(u32, u32, Attrs)> = Vec::new();
-    for (c, t) in chars.iter().zip(want) {
-        let patch = differing(&norm[c.chunk], t);
+    // Patch de la dernière paire (morceau, segment) comparée : le même pour tous ses caractères.
+    let mut last: Option<((usize, usize), Attrs)> = None;
+    for (c, i) in chars.iter().zip(want) {
+        let key = (c.chunk, i);
+        let patch = match &last {
+            Some((k, p)) if *k == key => p,
+            _ => {
+                &last
+                    .insert((key, differing(&norm[c.chunk], &spans[i].attrs)))
+                    .1
+            }
+        };
         if patch.is_empty() {
             continue;
         }
         let len = c.ch.len_utf8() as u32;
         match runs.last_mut() {
-            Some((start, n, p)) if *start + *n == c.yrs && *p == patch => *n += len,
-            _ => runs.push((c.yrs, len, patch)),
+            Some((start, n, p)) if *start + *n == c.yrs && p == patch => *n += len,
+            _ => runs.push((c.yrs, len, patch.clone())),
         }
     }
     Some(runs)
@@ -512,6 +531,31 @@ mod tests {
         let text = doc.get_or_insert_text("t");
         text.insert(&mut doc.transact_mut(), 0, s);
         (doc, text)
+    }
+
+    /// C7b : le plan compare une fois chaque paire (morceau Yrs, segment voulu), jamais une fois par caractère.
+    #[test]
+    fn align_plan_compares_once_per_chunk_and_span() {
+        let (doc, text) = doc_with(&"a".repeat(1000));
+        let bold = SpanAttrs {
+            bold: true,
+            ..SpanAttrs::default()
+        };
+        let target = [
+            SpanInput {
+                text: "a".repeat(400),
+                attrs: bold,
+            },
+            SpanInput {
+                text: "a".repeat(600),
+                attrs: SpanAttrs::default(),
+            },
+        ];
+        DIFFERING_CALLS.with(|n| n.set(0));
+        let runs = align_plan(&doc.transact(), &text, &target).expect("plan");
+        assert_eq!(DIFFERING_CALLS.with(|n| n.get()), 2);
+        assert_eq!(runs.len(), 1);
+        assert_eq!((runs[0].0, runs[0].1), (0, 400));
     }
 
     fn spans(doc: &Doc, text: &TextRef) -> Vec<TextSpanView> {
