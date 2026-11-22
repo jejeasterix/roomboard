@@ -76,11 +76,21 @@ export function sameRender(root: HTMLElement, spans: readonly TextSpan[]): boole
   return spansOk && (!end || (last !== undefined && last.nodeName === "BR" && (last as Element).hasAttribute(END_BR)));
 }
 
-/** Texte du DOM (R3, PC8) : nœuds texte ; `<br>` = « \n » ; entrée dans un bloc = « \n » si un bloc vient de se
- *  fermer, ou si du texte précède sans finir par « \n ». */
-export function readText(root: Node): string {
+/** Borne DOM (nœud, décalage), comme celles d'une `Selection`. */
+interface DomPoint {
+  readonly node: Node;
+  readonly offset: number;
+}
+
+/** Parcours de `readText` ; `stop` : position, dans le texte lu, de cette borne (null si elle n'est pas rencontrée).
+ *  Le parcours se fait sur le vrai DOM : un `<br>` qui finit son bloc y est jugé tel, jamais sur une copie partielle. */
+function scan(root: Node, stop: DomPoint | null): { readonly text: string; readonly at: number | null } {
   let out = "";
   let closed = false;
+  let at: number | null = null;
+  const mark = (): void => {
+    if (at === null) at = out.length;
+  };
   const emit = (s: string): void => {
     if (closed) out += "\n";
     closed = false;
@@ -89,10 +99,18 @@ export function readText(root: Node): string {
   const walk = (n: Node): void => {
     const kids = Array.from(n.childNodes);
     kids.forEach((c, i) => {
+      if (n === stop?.node && i === stop.offset) mark();
       if (c.nodeType === TEXT_NODE) {
         const v = c.nodeValue ?? "";
-        if (v !== "") emit(v);
+        if (c === stop?.node) {
+          const head = v.slice(0, stop.offset);
+          if (head !== "") emit(head);
+          mark();
+          const tail = v.slice(stop.offset);
+          if (tail !== "") emit(tail);
+        } else if (v !== "") emit(v);
       } else if (c.nodeName === "BR") {
+        if (c === stop?.node) mark(); // borne posée sur le <br> : devant son saut de ligne
         const lineMark = BLOCKS.has(n.nodeName) && i === kids.length - 1;
         if (!(c as Element).hasAttribute(END_BR) && !lineMark) emit("\n");
       } else if (c.nodeType === ELEMENT_NODE) {
@@ -105,18 +123,22 @@ export function readText(root: Node): string {
         if (block) closed = true;
       }
     });
+    if (n === stop?.node && stop.offset >= kids.length) mark();
   };
   walk(root);
-  return out;
+  return { text: out, at };
+}
+
+/** Texte du DOM (R3, PC8) : nœuds texte ; `<br>` = « \n » ; entrée dans un bloc = « \n » si un bloc vient de se
+ *  fermer, ou si du texte précède sans finir par « \n ». */
+export function readText(root: Node): string {
+  return scan(root, null).text;
 }
 
 /** Position UTF-16, dans le texte lu, d'une borne DOM ; null hors de `root`. */
 function offsetOf(root: HTMLElement, node: Node, offset: number): number | null {
   if (node !== root && !root.contains(node)) return null;
-  const r = root.ownerDocument.createRange();
-  r.setStart(root, 0);
-  r.setEnd(node, offset);
-  return readText(r.cloneContents()).length;
+  return scan(root, { node, offset }).at;
 }
 
 export function readSelection(root: HTMLElement): DomSelection | null {

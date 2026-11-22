@@ -11,7 +11,7 @@ import type { AssetStore } from "../core/asset-store";
 import { applyMatrix, composeMatrix } from "../core/shapes";
 import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardDialect, type BoardPart, type BoardReadOptions, type BoardSourceFormat } from "../platform/board-reader";
 import type { ImageKind } from "../platform/image-decode";
-import { IMAGE_MIME, type ImageDecoder } from "../platform/image-import";
+import { IMAGE_MIME, sniffImage, type ImageDecoder } from "../platform/image-import";
 import type { OlfPart, ZipFile } from "../platform/zip-read";
 import { MISSING_LABEL, SKIPPED_LABEL } from "./board-files";
 import { typed } from "./container-io";
@@ -420,9 +420,10 @@ function placed(ctx: Ctx, cmd: Command, m: Matrix | null): string[] {
 }
 
 async function placeImage(ctx: Ctx, o: Extract<BoardObject, { kind: "image" }>): Promise<string[]> {
-  const kind = IMAGE_KIND_OF_EXT[extOf(o.path)];
   const blob = mediaOf(ctx.media, o.path);
-  if (kind === undefined || blob === undefined) {
+  // Nom sans extension d'image (`.ird`, `.ek1056` d'un paperboard) : format lu sur la signature, comme le Worker.
+  const kind = IMAGE_KIND_OF_EXT[extOf(o.path)] ?? (blob === undefined ? null : sniffImage(new Uint8Array(await blob.slice(0, 4096).arrayBuffer()), o.path));
+  if (kind === undefined || kind === null || blob === undefined) {
     ctx.notes.missing++;
     return [];
   }

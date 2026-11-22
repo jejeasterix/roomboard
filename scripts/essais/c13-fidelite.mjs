@@ -9,6 +9,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { byKind } from "./avis.mjs";
 import { DIST, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, loadPlaywright, serve } from "./commun.mjs";
 
 const LABEL = "C13 fidélité";
@@ -22,25 +23,6 @@ function summarize(msgs, name) {
     count.set(t, (count.get(t) ?? 0) + 1);
   }
   return [...count].map(([t, n]) => (n > 1 ? `${t} (×${n})` : t)).join(" ; ");
-}
-
-/** Avertissements regroupés par sorte sur toutes les pages (« page 3 : 2 actions non lues » → « 2 actions non lues »), plus fréquents d'abord. */
-function byKind(msgs) {
-  const sum = new Map();
-  for (const m of msgs) {
-    for (const line of m.split("\n").slice(1)) {
-      const g = /^- (?:page \d+ : )?(\d+) (.+)$/.exec(line);
-      const [n, what] = g ? [Number(g[1]), g[2]] : [1, line.replace(/^- /, "")];
-      const key = what
-        .replace(/^objets? illisibles? ignorés?/, "objet illisible ignoré")
-        .replace(/^(action|grille|rideau|projecteur|image TIFF|étiquette|connecteur)(?:s|x)?/, "$1")
-        .replace(/^sons? ou vidéos?/, "son ou vidéo")
-        .replace(/^(?:repères? XY)/, "repère XY")
-        .replace(/ non lue?s?$/, " non lu");
-      sum.set(key, (sum.get(key) ?? 0) + n);
-    }
-  }
-  return [...sum].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${cell(k)}`).join(" ; ");
 }
 
 async function measure(context, port, file) {

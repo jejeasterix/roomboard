@@ -519,13 +519,13 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await drop("renomme.notebook", olfZip(), 3);
   await waitDialog("widget non lu", k429);
   check((await lastTab()).includes("renomme.roomboard"), "S3 (lot 2) : .olf renommé .notebook : mêmes lectures que S2");
-  const refuse = async (name, bytes, part) => {
+  const refuse = async (name, bytes, part, step = "S3 (lot 2)") => {
     const n = await tabs();
     const k434 = dialogs.length;
     await dropFile(page, "#stage", name, bytes, "");
     await waitDialog(part, k434);
     await page.waitForTimeout(300);
-    check((await tabs()) === n, `S3 (lot 2) : ${name} refusé (« ${part} »), aucun onglet`);
+    check((await tabs()) === n, `${step} : ${name} refusé (« ${part} »), aucun onglet`);
   };
   await refuse("vide.notebook", emptyNotebook(), "contenu de tableau introuvable");
   await refuse("casse.olf", badOlf(), "content.json illisible");
@@ -562,22 +562,43 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await fr();
   const blue = await inkIn(page, [30 * fc.zoom + fc.tx, 25 * fc.zoom + fc.ty, 50 * fc.zoom + fc.tx, 35 * fc.zoom + fc.ty], { rgb: [0x33, 0x66, 0xcc], tol: 10 });
   check(blue > 50, `S4 (lot 3) : rectangle plein #3366CC dessiné (${blue} pixels)`);
-  await page.click('.rb-pages-list [data-page="2"]');
-  await waitAttr("data-page", "2/2");
-  await waitAttr("data-elements", "1");
-  await page.click('.rb-pages-list [data-page="1"]');
-  await waitAttr("data-page", "1/2");
-  const kSave = dialogs.length;
+  // PNG 8 × 8 orange posée en (400, 200), 64 × 64 sur la page de 1024 de large de la fabrique, mise à 1920 de large
+  // par le lecteur (× 1920 / 1024) : lue au pixel, pas seulement comptée. Centre du carré de l'image, ± 20.
+  const orangeOf = async () => {
+    const c = await camera();
+    const k = 1920 / 1024;
+    const [cx, cy] = [(400 + 32) * k, (200 + 32) * k];
+    return inkIn(page, [(cx - 20) * c.zoom + c.tx, (cy - 20) * c.zoom + c.ty, (cx + 20) * c.zoom + c.tx, (cy + 20) * c.zoom + c.ty], { rgb: [255, 128, 0], tol: 10 });
+  };
+  const orange = await orangeOf();
+  check(orange > 50, `S4 (lot 3) : image PNG #FF8000 dessinée (${orange} pixels)`);
+  const secondPage = async (when) => {
+    await page.click('.rb-pages-list [data-page="2"]');
+    await waitAttr("data-page", "2/2");
+    await waitAttr("data-elements", "1");
+    await page.click('.rb-pages-list [data-page="1"]');
+    await waitAttr("data-page", "1/2");
+    check(true, `S4 (lot 3) : page 2 ${when} : data-elements="1"`);
+  };
+  await secondPage("lue");
   const fcSaved = await download(() => page.keyboard.press("Control+s"), "cours.roomboard");
+  const kSave = dialogs.length;
   await drop("cours.roomboard", await readFile(fcSaved), 5, "1/2");
-  check(dialogs.length >= kSave, 'S4 (lot 3) : enregistré en .roomboard puis rouvert : data-page="1/2", data-elements="5"');
+  await page.waitForTimeout(300);
+  check(dialogs.length === kSave, `S4 (lot 3) : enregistré en .roomboard puis rouvert sans avis : data-page="1/2", data-elements="5"${dialogs.length > kSave ? ` (avis : ${dialogs.slice(kSave).join(" | ")})` : ""}`);
+  await fr();
+  await fr();
+  const orange2 = await orangeOf();
+  check(orange2 > 50, `S4 (lot 3) : image PNG redessinée après la réouverture (${orange2} pixels)`);
+  await secondPage("relue après la réouverture");
   const fcBox = await stageBox(page, 640);
   check(fcBox.width >= 640 && fcBox.height >= 640, `S4 (lot 3) : scène de ${Math.round(fcBox.width)} × ${Math.round(fcBox.height)} px (≥ 640 × 640), avis rendus`);
   console.log("ok — S4 : .flipchart généré déposé : 2 pages, 5 objets, TIFF et action dits non lus, aller-retour .roomboard, scène ≥ 640");
 
-  // S5 : .flipchart hostiles refusés sans onglet ni plantage ; flux à 40 niveaux ouvert avec avis.
+  // S5 : .flipchart hostiles refusés sans onglet ni plantage ; flux à 40 niveaux ouvert avec avis. La bombe qCompress
+  // de 300 Mio (≈ 2 Mo compressés) n'est jouée qu'en vitest (`bamboo.test.ts`, « bombe ») : ici, tailles annoncées fausses.
   const bad = [
-    ["bombe.flipchart", flip([{}], { lie: { entry: "100.io", announced: 16 } }), "taille mensongère"],
+    ["annonce-courte.flipchart", flip([{}], { lie: { entry: "100.io", announced: 16 } }), "taille mensongère"],
     ["mensonge.flipchart", flip([{}], { lie: { entry: "100.io", announced: 5_000_000 } }), "taille mensongère"],
     ["budget.flipchart", flip([{}], { lie: { entry: "100.io", announced: 300 * 1024 * 1024 } }), "trop gros une fois décompressé"],
     ["imbrique.flipchart", flip([{}, {}], { nestFpg: true }), "imbriqué trop profond"],
@@ -585,20 +606,15 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
     ["utf16.flipchart", flip([{}], { oddUtf16: true }), "nom d'entrée illisible"],
     ["sans-signature.flipchart", Buffer.alloc(64, 7), "ce n'est pas un paperboard"],
   ];
-  for (const [name, bytes, part] of bad) await refuse(name, bytes, part);
+  for (const [name, bytes, part] of bad) await refuse(name, bytes, part, "S5 (lot 3)");
   const k5 = dialogs.length;
   await drop("profond.flipchart", deepFlipchart(), 1, "1/1");
   await waitDialog("objets trop imbriqués ignorés", k5);
   check(true, 'S5 (lot 3) : flux à 40 niveaux : onglet ouvert, data-elements="1", avis « 8 objets trop imbriqués ignorés »');
-  const kTxt = dialogs.length;
-  const nTxt = await tabs();
-  await dropFile(page, "#stage", "renomme.txt", enc("bonjour, ce n'est pas un tableau"), "text/plain");
-  await waitDialog("", kTxt);
-  await page.waitForTimeout(300);
-  check((await tabs()) === nTxt, `S5 (lot 3) : renomme.txt refusé (« ${dialogs.slice(kTxt).join(" ").slice(0, 90)} »), aucun onglet`);
+  await refuse("renomme.flipchart", enc("bonjour, ce n'est pas un tableau"), "ce n'est pas un paperboard", "S5 (lot 3) : .txt renommé");
   await drop("encore.flipchart", flip([{ rects: [{ x: 5, y: 5, w: 40, h: 30, fill: 0x00ff00 }] }]), 1, "1/1");
   check(true, "S5 (lot 3) : après les refus, l'onglet suivant s'ouvre encore (Worker non gelé)");
-  console.log("ok — S5 : .flipchart hostiles (bombe, taille mensongère, budget, .fpg imbriqué, 20 001 entrées, UTF-16 impair, sans signature) refusés sans onglet, flux à 40 niveaux ouvert avec avis, .txt refusé, Worker non gelé");
+  console.log("ok — S5 : .flipchart hostiles (tailles annoncées trop courte, mensongère et hors budget, .fpg imbriqué, 20 001 entrées, UTF-16 impair, sans signature) refusés sans onglet, flux à 40 niveaux ouvert avec avis, .txt renommé .flipchart refusé, Worker non gelé");
 
   if (lesson !== null) {
     const before = await tabs();

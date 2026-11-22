@@ -81,6 +81,8 @@ interface Slot {
   adopter?: string;
   /** C6b (B16) : élément redevenu sans retouche ; bitmap gardé, jamais dessiné ; repris si la clé revient. */
   dormant?: boolean;
+  /** C5 (I33) : le calcul de sa clé a échoué, l'image brute est dessinée ; `data-pixels` dit `echec` s'il est visible. */
+  failed?: boolean;
   /** Dernier usage (horloge du cache), pour le budget (B15). */
   used: number;
 }
@@ -121,7 +123,6 @@ export function createImageCache(
   const copy = opts.copy ?? defaultCopy;
   const readPixel = opts.readPixel ?? defaultReadPixel;
   let running = 0;
-  let lastFailed = false;
   let warned = false;
   let disposed = false;
   let state: PixelState = "";
@@ -145,11 +146,17 @@ export function createImageCache(
 
   const publish = (): void => {
     const live = [...slots].filter(([, s]) => s.dormant !== true);
-    if (live.length === 0) lastFailed = false; // plus d'image retouchée : un échec passé ne s'affiche plus (I33)
-    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements dessinables des éléments de la dernière scène.
-    const visible = live.filter(([n]) => shown === null || shown.has(ownerOf(n))).map(([, s]) => s);
+    // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements dessinables des éléments de la dernière scène ;
+    // un échec n'est dit que s'il touche l'une d'elles.
+    // Pendant un aperçu vivant, seul `<id>#apercu` est dessiné : l'emplacement `<id>` ne compte pas.
+    const covered = (n: string): boolean => {
+      const twin = n.endsWith(PREVIEW) ? undefined : slots.get(`${n}${PREVIEW}`);
+      return twin !== undefined && twin.dormant !== true;
+    };
+    const visible = live.filter(([n]) => (shown === null || shown.has(ownerOf(n))) && !covered(n)).map(([, s]) => s);
     const hasBitmap = visible.some((s) => s.bitmap !== null);
-    const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : lastFailed ? "echec" : hasBitmap ? "pret" : "";
+    const failed = visible.some((s) => s.failed === true);
+    const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : failed ? "echec" : hasBitmap ? "pret" : "";
     if (next === state) return;
     state = next;
     opts.onState?.(next);
@@ -258,7 +265,7 @@ export function createImageCache(
         target.bitmap = out;
         target.key = key;
         target.wanted = null;
-        lastFailed = false;
+        target.failed = false;
         publish();
         ready();
       },
@@ -267,10 +274,13 @@ export function createImageCache(
         badKeys.add(key);
         const cur = slots.get(name);
         if (cur?.wanted === key) {
+          // L'élément qui attendait ce calcul (Valider) dessine lui aussi l'image brute.
+          const heir = cur.adopter === undefined ? undefined : slots.get(cur.adopter);
+          if (heir?.wanted === key) heir.failed = true;
           release(cur);
           cur.wanted = null;
+          cur.failed = true;
         }
-        lastFailed = true;
         publish();
         if (!warned && !disposed) {
           warned = true;
@@ -328,8 +338,8 @@ export function createImageCache(
       const i = el.image;
       sizes.set(i.asset, [i.w, i.h]);
       const raw = bitmap(i.asset);
-      const name = preview ? `${el.id}#apercu` : el.id;
-      const twinName = preview ? el.id : `${el.id}#apercu`;
+      const name = preview ? `${el.id}${PREVIEW}` : el.id;
+      const twinName = preview ? el.id : `${el.id}${PREVIEW}`;
       if (!needsPixels(i) || pixels === undefined || disposed) {
         // Sans retouche de pixels : aucun Worker ; l'emplacement d'un aperçu resté est jeté.
         if (preview) drop(name);
@@ -359,22 +369,34 @@ export function createImageCache(
           s.bitmap?.close?.();
           s.bitmap = null;
           s.key = null;
+          s.failed = false;
         }
         publish();
       }
       s.used = ++clock;
       const twin = slots.get(twinName);
+      /** Le bitmap de `key` est dessiné : un échec passé d'une autre clé ne se dit plus (I33). */
+      const sound = (): void => {
+        if (s.failed !== true) return;
+        s.failed = false;
+        publish();
+      };
       if (s.key === key && s.bitmap !== null) {
         if (!preview && twin !== undefined) drop(twinName);
+        sound();
         return s.bitmap;
       }
       if (twin !== undefined && twin.key === key && twin.bitmap !== null) {
-        if (preview) return twin.bitmap;
+        if (preview) {
+          sound();
+          return twin.bitmap;
+        }
         // Valider (I22) : l'élément reprend le bitmap de l'aperçu de même clé, sans recalcul.
         s.bitmap?.close?.();
         s.bitmap = twin.bitmap;
         s.key = key;
         s.wanted = null;
+        s.failed = false;
         slots.delete(twinName);
         publish();
         return s.bitmap;
@@ -388,7 +410,14 @@ export function createImageCache(
       }
       // Élément dessiné sans aperçu : l'aperçu est fini ; son emplacement et son calcul en route sont jetés.
       if (!preview && twin !== undefined) drop(twinName);
-      if (badKeys.has(key)) return raw;
+      if (badKeys.has(key)) {
+        // Clé déjà en échec (aperçu validé, page revue) : l'image brute est dessinée, l'échec reste dit (I33).
+        if (s.failed !== true) {
+          s.failed = true;
+          publish();
+        }
+        return raw;
+      }
       if (raw !== null && s.wanted !== key) compute(pixels, name, s, key, el, raw);
       return s.bitmap ?? (preview && twin?.dormant !== true ? (twin?.bitmap ?? null) : null) ?? raw;
     },
@@ -421,12 +450,12 @@ export function createImageCache(
     forget(ids) {
       for (const id of ids) {
         drop(id);
-        drop(`${id}#apercu`);
+        drop(`${id}${PREVIEW}`);
       }
       publish();
     },
     dropPreview(id) {
-      drop(`${id}#apercu`);
+      drop(`${id}${PREVIEW}`);
       publish();
     },
     beginScene() {

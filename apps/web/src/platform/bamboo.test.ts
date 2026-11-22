@@ -8,7 +8,7 @@ import {
   hasBambooMagic,
   readBamboo,
 } from "./bamboo";
-import { keepBambooPath } from "./zip-worker";
+import { bambooEntries, keepBambooPath } from "./zip-worker";
 
 describe("bamboo (C13 lot 2)", () => {
   it("C13 N4 : hasBambooMagic", () => {
@@ -215,6 +215,24 @@ describe("bamboo : conteneur borné (C13 lot 3, N11, N13, N15, N16)", () => {
     for (const name of ["scan.tif", "1003.thm", "son.wav", "anim.swf", "../x.io", "__MACOSX/1.io", "notes.txt"]) {
       expect(keepBambooPath(name), name).toBe(false);
     }
+  });
+
+  it("C13 lot 3 : image d'extension inconnue gardée sur sa signature (ActCraft `extensionOf`), le reste écarté", () => {
+    const BMP = Uint8Array.of(0x42, 0x4d, ...new Array(30).fill(0));
+    const PNG = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13);
+    const data = bambooContainer(
+      [
+        { name: "100.io", data: new Uint8Array(8).fill(1), compressed: true },
+        { name: "1500.ek1056", data: BMP, compressed: true },
+        { name: "4.ird", data: PNG, compressed: true },
+        { name: "1501.cz2880", data: new Uint8Array(32).fill(7), compressed: true },
+        { name: "notes.txt", data: poisoned(), compressed: true },
+      ],
+      deflate,
+    );
+    expect(bambooEntries(data).map((e) => e.path)).toEqual(["100.io", "1500.ek1056", "4.ird"]);
+    for (const name of ["4.ird", "1500.ek1056", "1501.CZ2880"]) expect(keepBambooPath(name), name).toBe(true);
+    for (const name of ["notes.txt", "1500.ek", "1500.e1056", "1500.abc", "1500.ek105", "1500.ek10560"]) expect(keepBambooPath(name), name).toBe(false);
   });
 
   it("C13 N13 : bornes du conteneur", () => {

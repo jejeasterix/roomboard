@@ -193,19 +193,7 @@ fn read_with(
         .get(tree.storage_name().as_str())
         .copied()
         .ok_or_else(|| broken(format!("objet paperboard {} absent", tree.storage_name())))?;
-    let mut reader = Reader {
-        files,
-        register: HashMap::new(),
-        resources: HashMap::new(),
-        ios: HashMap::new(),
-        notes: BTreeMap::new(),
-        page: 0,
-        limits,
-        used_points: 0,
-        used_text: 0,
-        leaves: 0,
-        over: false,
-    };
+    let mut reader = Reader::new(files, limits);
     let mut head = Vec::new();
     let mut side_out_of_bounds = false;
     let mut start = DEFAULT_PAGE;
@@ -263,7 +251,7 @@ fn read_with(
 
     let mut pages = Vec::with_capacity(trees.len());
     for (k, (node, tree)) in page_nodes.iter().zip(&trees).enumerate() {
-        reader.page = first_page.saturating_add(u32::try_from(k).unwrap_or(u32::MAX));
+        reader.start_page(first_page.saturating_add(u32::try_from(k).unwrap_or(u32::MAX)));
         let page = tree
             .as_deref()
             .and_then(|t| reader.page(node.node_id, t, start, &mut side_out_of_bounds));
@@ -362,7 +350,7 @@ struct Reader<'a> {
     register: HashMap<u32, (String, String)>,
     /// Objets `.ir` déjà lus (ou illisibles), par numéro.
     resources: HashMap<u32, Option<StreamObject>>,
-    /// Flux `.io` lus, par chemin : un nœud partagé ne relit ni ne réalloue le flux (avec ce qu'il a laissé de côté).
+    /// Flux `.io` de la page en cours lus, par chemin (vidés par `start_page`) : un nœud partagé ne relit ni ne réalloue le flux (avec ce qu'il a laissé de côté).
     ios: HashMap<String, Option<(Rc<StreamObject>, Stats)>>,
     notes: BTreeMap<(u32, Sort), u32>,
     /// Numéro de la page en cours.
@@ -377,6 +365,28 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    fn new(files: HashMap<&'a str, &'a [u8]>, limits: Limits) -> Self {
+        Reader {
+            files,
+            register: HashMap::new(),
+            resources: HashMap::new(),
+            ios: HashMap::new(),
+            notes: BTreeMap::new(),
+            page: 0,
+            limits,
+            used_points: 0,
+            used_text: 0,
+            leaves: 0,
+            over: false,
+        }
+    }
+
+    /// Page suivante : ses flux `.io` sont sous `<page>.fpg/`, ceux des pages lues ne servent plus (mémoire rendue).
+    fn start_page(&mut self, page: u32) {
+        self.page = page;
+        self.ios.clear();
+    }
+
     fn note(&mut self, sort: Sort) {
         self.note_n(sort, 1);
     }
@@ -793,7 +803,7 @@ impl<'a> Reader<'a> {
                     .iter()
                     .find_map(|n| match picture_kind(n) {
                         Picture::Tiff => Some(Sort::Tiff),
-                        Picture::Other if is_unshown_image(n) => Some(Sort::ImageFormat),
+                        Picture::Unshown => Some(Sort::ImageFormat),
                         _ => None,
                     })
                     .unwrap_or(Sort::Unreadable);
@@ -818,8 +828,12 @@ impl<'a> Reader<'a> {
                 self.note(Sort::Tiff);
                 None
             }
-            Picture::Other => {
+            Picture::Unshown => {
                 self.note(Sort::ImageFormat);
+                None
+            }
+            Picture::NotImage => {
+                self.note(Sort::Unreadable);
                 None
             }
         }
@@ -1084,21 +1098,22 @@ fn placement(o: &StreamObject, b: &[f32; 4]) -> Mat {
 enum Picture {
     Shown,
     Tiff,
-    Other,
+    Unshown,
+    /// Entrée de structure (`.in`, `.io`, `.ir`, `.fpg`, `version`, nom sans extension) : jamais une image.
+    NotImage,
 }
 
-/// Format jugé sur l'extension du nom (la page garde les octets, DA4).
+/// Format d'une image présente, jugé sur l'extension du nom (la page garde les octets, DA4). TIFF et EMF/WMF ne sont
+/// jamais transmises (N14, N15) ; une entrée de structure n'est jamais une image. Les autres noms présents sont des
+/// images d'extension connue, ou des `.ird` et extensions d'ActivInspire (`.ek1056`) que le Worker ZIP n'a transmis
+/// qu'après leur signature (`bambooEntries`, comme `extensionOf` d'ActCraft) ; la page relit la signature.
 fn picture_kind(name: &str) -> Picture {
     match extension(name).as_deref() {
-        Some("png" | "jpg" | "jpeg" | "gif" | "bmp") => Picture::Shown,
         Some("tif" | "tiff") => Picture::Tiff,
-        _ => Picture::Other,
+        Some("emf" | "wmf") => Picture::Unshown,
+        Some("in" | "io" | "ir" | "fpg") | None => Picture::NotImage,
+        _ => Picture::Shown,
     }
-}
-
-/// Image d'un format que la page n'affiche pas (N14), reconnue sur la seule extension.
-fn is_unshown_image(name: &str) -> bool {
-    matches!(extension(name).as_deref(), Some("emf" | "wmf"))
 }
 
 fn extension(name: &str) -> Option<String> {
@@ -1359,6 +1374,19 @@ mod tests {
             .map(|(n, d)| (n.as_str(), d.as_slice()))
             .collect();
         crate::flipchart::read(&refs, first_page)
+    }
+
+    /// Les flux `.io` d'une page ne restent pas en mémoire pendant la lecture des suivantes (chemins `<page>.fpg/…`).
+    #[test]
+    fn io_cache_is_emptied_between_pages() {
+        let files: Vec<(&str, &[u8])> = vec![("10.fpg/5.io", &[0u8; 4])];
+        let mut reader = super::Reader::new(files.into_iter().collect(), super::LIMITS);
+        reader.start_page(1);
+        let _ = reader.io("10.fpg/5.io");
+        assert_eq!(reader.ios.len(), 1);
+        reader.start_page(2);
+        assert!(reader.ios.is_empty());
+        assert_eq!(reader.page, 2);
     }
 
     /// Pages relues par `board::parse` (le flux est celui de `encode`, DA5) et avertissements.
@@ -1670,6 +1698,86 @@ mod tests {
             .collect();
         hrefs.sort_unstable();
         assert_eq!(hrefs, vec!["fond.png", "photo.png"]);
+    }
+
+    /// La page ne transmet que des images reconnues à leur signature (`bambooEntries`) : un nom d'extension inconnue
+    /// (`.ek1056`, BMP chez ActivInspire), `{rid}.ird`, une WebP ou une SVG présents s'affichent, comme chez ActCraft.
+    #[test]
+    fn present_images_of_any_extension_are_read() {
+        let image = |rid: u32| {
+            Obj::new(ids::IMAGE, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 10.0, 10.0)
+                .integer(REF_38, int(rid))
+        };
+        let named = |id: u32, name: &'static str| Res {
+            id,
+            object: Obj::new(0, id).string(3, name),
+            file: Some((name, Vec::new())),
+        };
+        let resources = [
+            named(101, "1500.ek1056"),
+            named(102, "photo.webp"),
+            named(103, "dessin.svg"),
+        ];
+        let mut entries = flipchart(
+            document(),
+            &resources,
+            vec![Sheet::new(10)
+                .put(11, ids::IMAGE, image(101))
+                .put(12, ids::IMAGE, image(102))
+                .put(13, ids::IMAGE, image(103))
+                .put(14, ids::IMAGE, image(104))],
+        );
+        entries.push(("104.ird".to_string(), Vec::new()));
+        let (pages, warnings) = pages_of(&entries);
+        assert_eq!(warnings, Vec::<String>::new());
+        let mut hrefs: Vec<&str> = pages[0]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Image { href, .. } => Some(href.as_str()),
+                _ => None,
+            })
+            .collect();
+        hrefs.sort_unstable();
+        assert_eq!(
+            hrefs,
+            vec!["104.ird", "1500.ek1056", "dessin.svg", "photo.webp"]
+        );
+    }
+
+    /// Un nom déclaré qui désigne une entrée de structure (`.io`, `.ir`, `.in`, `version`) n'est jamais une image : objet
+    /// illisible, aucun `href` émis.
+    #[test]
+    fn structure_entry_declared_as_image_is_unreadable() {
+        let image = |rid: u32| {
+            Obj::new(ids::IMAGE, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 10.0, 10.0)
+                .integer(REF_38, int(rid))
+        };
+        let named = |id: u32, name: &'static str| Res {
+            id,
+            object: Obj::new(0, id).string(3, name),
+            file: Some((name, Vec::new())),
+        };
+        let entries = flipchart(
+            document(),
+            &[
+                named(101, "7.io"),
+                named(102, "8.ir"),
+                named(103, "version"),
+            ],
+            vec![Sheet::new(10)
+                .put(11, ids::IMAGE, image(101))
+                .put(12, ids::IMAGE, image(102))
+                .put(13, ids::IMAGE, image(103))],
+        );
+        let (pages, warnings) = pages_of(&entries);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 3 objets illisibles ignorés".to_string()]
+        );
+        assert!(pages[0].items.is_empty(), "{:?}", pages[0].items);
     }
 
     /// S4 : les actions, médias, formules et textes verticaux sont avertis par sorte ; le trait est lu.

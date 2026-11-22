@@ -196,11 +196,13 @@ ActCraft `d9bf289f`). Aucune dépendance n'est ajoutée.
 ## Code repris d'ActCraft (C13, lecteur `.flipchart`)
 
 Le lecteur de paperboards ActivInspire reprend, réécrits en Rust et en TypeScript, des morceaux d'ActCraft : le conteneur
-« Bamboo » (`formats/src/bamboo.cpp` → `apps/web/src/platform/bamboo.ts`), l'index « culm », le flux d'objets, les numéros
-de genres et de propriétés (`formats/src/flipchartids.h`) et la lecture du document (`formats/src/flipchart.cpp`) →
+« Bamboo » (`formats/src/bamboo.cpp` → `apps/web/src/platform/bamboo.ts`), l'index « culm », le flux d'objets
+(`formats/src/objectstream.cpp`), les numéros de genres et de propriétés (`formats/src/flipchartids.h`) et la lecture du
+document (`formats/src/flipchart.cpp`) →
 `crates/roomboard-formats/src/flipchart/` (`index.rs`, `stream.rs`, `ids.rs`, `read.rs`) ; l'écrivain de test
 `tests/support/flipchartwriter.h` devient la fabrique `scripts/essais/fabriques/flipchart.mjs`. ActCraft est publié sous
-GPL-3.0-only ; son auteur, seul, est aussi celui de RoomBoard (jejeasterix, titulaire des droits). Exception de licence
+GPL-3.0-only ; son auteur, seul, est aussi celui de RoomBoard (jejeasterix, titulaire des droits ; seul auteur des fichiers
+cités, état lu : ActCraft `29d551ae`). Exception de licence
 U39 sur le précédent C9 ci-dessus ; reprise sous la licence de RoomBoard (PolyForm Shield) à confirmer par l'auteur
 (HU1-6). Aucune dépendance n'est ajoutée ; aucun fichier réel n'est copié dans le dépôt, les exemples servent seulement
 à mesurer la fidélité (`docs/essais/c13-fidelite-lots2-3.md`).
