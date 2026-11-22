@@ -2051,7 +2051,7 @@ pub(crate) mod tests {
     }
 
     /// C7b : cellule dont le `text` n'est pas un `Y.Text` (pair ancien ou hostile) : un `Y.Text` neuf est posé, ses
-    /// segments appliqués dans la même transaction, les autres clés gardées.
+    /// segments appliqués par la même commande, une clé inconnue de la cellule gardée.
     #[test]
     fn set_cell_replaces_a_text_that_is_not_a_ytext() {
         let mut d = Document::blank();
@@ -2069,6 +2069,7 @@ pub(crate) mod tests {
                 panic!("cellule")
             };
             cell.insert(&mut txn, "text", In::Any(Any::from("vieux")));
+            cell.insert(&mut txn, "pair", In::Any(Any::from("gardé")));
         }
         assert!(
             view(&d, &id).cells.iter().all(|x| x.text.is_empty()),
@@ -2122,6 +2123,7 @@ pub(crate) mod tests {
             panic!("cellule")
         };
         assert!(matches!(raw.get(&txn, "text"), Some(Out::YText(_))));
+        assert_eq!(out_string(raw.get(&txn, "pair")).as_deref(), Some("gardé"));
     }
 
     #[test]
