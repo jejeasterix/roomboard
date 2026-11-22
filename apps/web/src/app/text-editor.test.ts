@@ -439,6 +439,22 @@ describe("zone de saisie riche (C7b)", () => {
     expect(c.count()).toBeGreaterThanOrEqual(afterOpen + 4);
   });
 
+  it("une frappe publie formatChanged une seule fois ; un selectionchange sans déplacement n'en publie pas, un déplacement oui (R15)", () => {
+    const c = counter();
+    const { zone, editor } = mount(() => c.events);
+    editor.open(withText([plain("ab")]), IDENTITY);
+    caret(zone, 2);
+    selectionChange();
+    const before = c.count();
+    typeIn(zone, "c");
+    selectionChange();
+    expect(editor.value()).toBe("abc");
+    expect(c.count()).toBe(before + 1);
+    caret(zone, 1);
+    selectionChange();
+    expect(c.count()).toBe(before + 2);
+  });
+
   it("zone fermée : un segment vide, formatState null, format sans effet", () => {
     const { zone, editor } = mount(() => null);
     expect([editor.value(), editor.spans(), editor.formatState()]).toEqual(["", [plain("")], null]);

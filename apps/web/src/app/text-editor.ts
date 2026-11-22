@@ -184,8 +184,11 @@ export function createTextEditor(parent: HTMLElement, events: () => TextEditorEv
     if (readText(zone) !== model.text()) return;
     const sel = readSelection(zone);
     if (sel === null) return;
+    const was = model.state();
     model.select(sel.start, sel.end);
-    changed();
+    // Le `selectionchange` qui suit une frappe ou un redessin ne déplace rien : `sync` a déjà publié.
+    const now = model.state();
+    if (now.start !== was.start || now.end !== was.end || now.pending !== was.pending) changed();
   };
 
   zone.addEventListener("beforeinput", (e: InputEvent) => {
