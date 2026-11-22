@@ -333,8 +333,8 @@ export function createImageCache(
       const i = el.image;
       sizes.set(i.asset, [i.w, i.h]);
       const raw = bitmap(i.asset);
-      const name = preview ? `${el.id}#apercu` : el.id;
-      const twinName = preview ? el.id : `${el.id}#apercu`;
+      const name = preview ? `${el.id}${PREVIEW}` : el.id;
+      const twinName = preview ? el.id : `${el.id}${PREVIEW}`;
       if (!needsPixels(i) || pixels === undefined || disposed) {
         // Sans retouche de pixels : aucun Worker ; l'emplacement d'un aperçu resté est jeté.
         if (preview) drop(name);
@@ -434,12 +434,12 @@ export function createImageCache(
     forget(ids) {
       for (const id of ids) {
         drop(id);
-        drop(`${id}#apercu`);
+        drop(`${id}${PREVIEW}`);
       }
       publish();
     },
     dropPreview(id) {
-      drop(`${id}#apercu`);
+      drop(`${id}${PREVIEW}`);
       publish();
     },
     beginScene() {
