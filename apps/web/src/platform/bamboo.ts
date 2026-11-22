@@ -81,12 +81,18 @@ class Cur {
   }
 }
 
-/** Pas de la décompression : la sortie transitoire de fflate par pas reste bornée par ce pas (taux de zlib ≤ 1 032). */
-const STEP = 64 * 1024;
+/** Pas de la décompression, réglé sur ce qui reste à décompresser : zlib rend au plus 1 032 octets par octet poussé,
+ *  donc un pas de `ceil(reste / 1 032) + 1 024` octets produit au plus le reste plus ≈ 1 Mio ; 1 Kio au moins, 64 Kio
+ *  au plus (≈ 66 Mio d'un pas, seulement quand l'annonce les permet). Un pas fixe de 64 Kio laisserait une bombe
+ *  produire ≈ 64 Mio dès le premier pas, quelle que soit l'annonce. */
+const ZLIB_MAX_RATIO = 1032;
+const STEP_MIN = 1024;
+const STEP_MAX = 64 * 1024;
+const stepFor = (left: number): number => Math.min(STEP_MAX, Math.max(STEP_MIN, Math.ceil(left / ZLIB_MAX_RATIO) + STEP_MIN));
 
 /**
  * qCompress borné. `announced` (taille de l'entrée, déjà comptée au budget) doit égaler l'en-tête ; décompression en
- * flux (`Unzlib`), arrêtée au premier pas qui dépasse l'annonce ; la sortie doit l'atteindre exactement. Jamais
+ * flux (`Unzlib`, pas `stepFor`), arrêtée au premier pas qui dépasse l'annonce ; la sortie doit l'atteindre exactement. Jamais
  * `unzlibSync` puis comparaison : la bombe entière serait décompressée avant (ActCraft `bamboo.cpp:157-171`, tampon de
  * la taille annoncée, jamais plus). Les morceaux sont gardés à mesure : rien n'est alloué sur la seule foi de l'annonce.
  */
@@ -104,7 +110,11 @@ function inflateBounded(raw: Uint8Array, announced: number, name: string): Uint8
     at += chunk.length;
   });
   try {
-    for (let i = 4; i < raw.length; i += STEP) z.push(raw.subarray(i, Math.min(raw.length, i + STEP)), i + STEP >= raw.length);
+    for (let i = 4; i < raw.length; ) {
+      const end = Math.min(raw.length, i + stepFor(announced - at));
+      z.push(raw.subarray(i, end), end >= raw.length);
+      i = end;
+    }
   } catch {
     throw lie(); // dépassement ci-dessus, ou flux zlib illisible
   }

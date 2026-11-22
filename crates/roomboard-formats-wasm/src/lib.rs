@@ -218,7 +218,8 @@ impl BoardReader {
     }
 }
 
-/// Paperboard `.flipchart` lu (C13 lot 3) : entrées `.in`, `.io`, `.ir` et `version` du conteneur Bamboo.
+/// Paperboard `.flipchart` lu (C13 lot 3) : entrées `.in`, `.io`, `.ir` et `version` du conteneur Bamboo, images par
+/// leur seul nom (octets vides, DA4 : `flipchartSources`).
 #[wasm_bindgen]
 pub struct FlipchartReader {
     list: BoardList,

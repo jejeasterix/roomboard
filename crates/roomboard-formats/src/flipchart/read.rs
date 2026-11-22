@@ -138,7 +138,8 @@ fn broken(m: impl Into<String>) -> BoardError {
     BoardError::Broken(m.into())
 }
 
-/// Lit les entrées `.in`, `.io`, `.ir` et `version` d'un `.flipchart` ; chemins de page `<page>.fpg/<nom>`. Les
+/// Lit les entrées `.in`, `.io`, `.ir` et `version` d'un `.flipchart`, et les images par leur seul nom (octets ignorés,
+/// DA4) ; chemins de page `<page>.fpg/<nom>`. Les
 /// avertissements de page sont numérotés à partir de `first_page`.
 pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, BoardError> {
     read_with(entries, first_page, LIMITS)
@@ -465,27 +466,28 @@ impl<'a> Reader<'a> {
         self.resources.get(&rid).and_then(Option::as_ref)
     }
 
-    /// Fichier de données de la ressource `rid`, à la racine : fichier de la table, nom d'origine, puis
-    /// `<rid>.png`… (ActCraft `resourceFile`).
-    fn data_file(&mut self, rid: u32) -> Option<(&'a str, &'a [u8])> {
-        let mut names: Vec<String> = Vec::new();
+    /// Fichier de données de la ressource `rid`, à la racine : fichier de la table, nom d'origine, puis `<rid>.png`…
+    /// (ActCraft `resourceFile`). Seul le nom compte : la page garde les octets des images (DA4) et n'en transmet que
+    /// le nom. `Ok` : l'entrée transmise ; `Err` : les noms déclarés (table, nom d'origine), aucun transmis.
+    fn data_file(&mut self, rid: u32) -> Result<&'a str, Vec<String>> {
+        let mut declared: Vec<String> = Vec::new();
         if let Some((_, file)) = self.register.get(&rid) {
-            names.push(file.clone());
+            declared.push(file.clone());
         }
         if let Some(n) = self
             .resource(rid)
             .and_then(|r| r.find(key::RES_SOURCE_NAME))
             .and_then(Value::as_str)
         {
-            names.push(n.to_string());
+            declared.push(n.to_string());
         }
-        for ext in ["png", "jpg", "ird", "gif", "bmp", "tif"] {
-            names.push(format!("{rid}.{ext}"));
-        }
-        names
+        declared.retain(|n| !n.is_empty() && !n.contains('/'));
+        let guessed = ["png", "jpg", "ird", "gif", "bmp", "tif"].map(|ext| format!("{rid}.{ext}"));
+        declared
             .iter()
-            .filter(|n| !n.is_empty() && !n.contains('/'))
-            .find_map(|n| self.files.get_key_value(n.as_str()).map(|(k, v)| (*k, *v)))
+            .chain(guessed.iter())
+            .find_map(|n| self.files.get_key_value(n.as_str()).map(|(k, _)| *k))
+            .ok_or(declared)
     }
 
     /// Index de la page : `<page>.fpg/<page>.in`, sinon le nœud de l'index du document ; illisible : `None`.
@@ -781,12 +783,29 @@ impl<'a> Reader<'a> {
     }
 
     /// Image de la ressource `rid`, si son format s'affiche (N14 : TIFF, EMF, WMF avertis).
+    /// Une image jamais transmise (TIFF, EMF, WMF : jamais décompressées, N15) est avertie sur l'extension de son nom
+    /// déclaré ; une autre, absente, est illisible.
     fn picture(&mut self, rid: Option<u32>, m: Mat, b: &[f32; 4]) -> Option<Item> {
-        let Some((name, data)) = rid.and_then(|r| self.data_file(r)) else {
-            self.note(Sort::Unreadable);
-            return None;
+        let name = match rid.map(|r| self.data_file(r)) {
+            Some(Ok(name)) => name,
+            Some(Err(declared)) => {
+                let sort = declared
+                    .iter()
+                    .find_map(|n| match picture_kind(n) {
+                        Picture::Tiff => Some(Sort::Tiff),
+                        Picture::Other if is_unshown_image(n) => Some(Sort::ImageFormat),
+                        _ => None,
+                    })
+                    .unwrap_or(Sort::Unreadable);
+                self.note(sort);
+                return None;
+            }
+            None => {
+                self.note(Sort::Unreadable);
+                return None;
+            }
         };
-        match picture_kind(name, data) {
+        match picture_kind(name) {
             Picture::Shown => Some(Item::Image {
                 m,
                 x: b[0],
@@ -1068,27 +1087,22 @@ enum Picture {
     Other,
 }
 
-/// Format deviné par la signature, sinon par l'extension (ActCraft `extensionOf`).
-fn picture_kind(name: &str, data: &[u8]) -> Picture {
-    let shown: [&[u8]; 5] = [
-        b"\x89PNG\r\n\x1a\n",
-        b"\xff\xd8\xff",
-        b"GIF87a",
-        b"GIF89a",
-        b"BM",
-    ];
-    if shown.iter().any(|s| data.starts_with(s)) {
-        return Picture::Shown;
-    }
-    if data.starts_with(b"II*\0") || data.starts_with(b"MM\0*") {
-        return Picture::Tiff;
-    }
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
-    match ext.as_deref() {
+/// Format jugé sur l'extension du nom (la page garde les octets, DA4).
+fn picture_kind(name: &str) -> Picture {
+    match extension(name).as_deref() {
         Some("png" | "jpg" | "jpeg" | "gif" | "bmp") => Picture::Shown,
         Some("tif" | "tiff") => Picture::Tiff,
         _ => Picture::Other,
     }
+}
+
+/// Image d'un format que la page n'affiche pas (N14), reconnue sur la seule extension.
+fn is_unshown_image(name: &str) -> bool {
+    matches!(extension(name).as_deref(), Some("emf" | "wmf"))
+}
+
+fn extension(name: &str) -> Option<String> {
+    name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase())
 }
 
 fn span_of(run: &StreamObject) -> Span {
@@ -1203,6 +1217,7 @@ mod tests {
     const PEN_FILL: u16 = 8;
     const PEN_TINT: u16 = 9;
     const FILL_SOURCE: u16 = 2;
+    const FILL_PICTURE: u16 = 4;
     const FILL_STYLE: u16 = 3;
     const STROKE_POINTS: u16 = 39;
     const REF_38: u16 = 38;
@@ -1602,6 +1617,59 @@ mod tests {
             "{:?}",
             pages[0].items
         );
+    }
+
+    /// T23 (DA4, N14, N15) : la page ne transmet que le nom des images gardées (octets vides) et jamais une TIFF ni
+    /// une WMF. La PNG et le fond image sont lus sur leur nom ; TIFF et WMF sont averties sur l'extension du nom de
+    /// la table des ressources, jamais comptées illisibles.
+    #[test]
+    fn named_images_are_read_and_absent_tiff_is_warned() {
+        let image = |rid: u32| {
+            Obj::new(ids::IMAGE, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 10.0, 10.0)
+                .integer(REF_38, int(rid))
+        };
+        let named = |id: u32, name: &'static str| Res {
+            id,
+            object: Obj::new(0, id).string(3, name),
+            file: Some((name, Vec::new())),
+        };
+        let resources = [
+            named(101, "photo.png"),
+            named(102, "scan.tif"),
+            named(103, "fond.png"),
+            named(104, "dessin.wmf"),
+        ];
+        let background = Obj::new(ids::BACKGROUND, 0)
+            .integer(FILL_SOURCE, 1)
+            .pointer(FILL_PICTURE, 90, 90, ids::IMAGE);
+        let mut sheet = Sheet::new(10)
+            .put(11, ids::BACKGROUND, background)
+            .put(12, ids::IMAGE, image(101))
+            .put(13, ids::IMAGE, image(102))
+            .put(14, ids::IMAGE, image(104));
+        sheet.streams.push((90, image(103).stream()));
+        let mut entries = flipchart(document(), &resources, vec![sheet]);
+        entries.retain(|(n, _)| n != "scan.tif" && n != "dessin.wmf");
+        let (pages, mut warnings) = pages_of(&entries);
+        warnings.sort();
+        assert_eq!(
+            warnings,
+            vec![
+                "page 1 : 1 image TIFF non lue".to_string(),
+                "page 1 : 1 image d'un format non lu (EMF, WMF…)".to_string(),
+            ]
+        );
+        let mut hrefs: Vec<&str> = pages[0]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Image { href, .. } => Some(href.as_str()),
+                _ => None,
+            })
+            .collect();
+        hrefs.sort_unstable();
+        assert_eq!(hrefs, vec!["fond.png", "photo.png"]);
     }
 
     /// S4 : les actions, médias, formules et textes verticaux sont avertis par sorte ; le trait est lu.

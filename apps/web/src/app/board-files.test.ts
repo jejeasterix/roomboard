@@ -112,7 +112,9 @@ describe("board-files : paperboards .flipchart (C13 lot 3)", () => {
       { path: "8.fpg/img.PNG", blob: blob("png") },
       { path: "./12.ir", blob: blob("d") },
     ]);
-    expect(s.structure.map((e) => e.path)).toEqual(["version", "7.IN", "8.fpg/9.io", "8.fpg/10.ir", "12.ir"]);
+    // T23 (DA4) : l'image figure aussi dans la structure, par son seul nom (octets vides) ; ses octets restent en media.
+    expect(s.structure.map((e) => e.path)).toEqual(["version", "7.IN", "8.fpg/9.io", "8.fpg/10.ir", "8.fpg/img.PNG", "12.ir"]);
+    expect(s.structure.find((e) => e.path === "8.fpg/img.PNG")?.blob.size).toBe(0);
     expect([...s.media.keys()]).toEqual(["8.fpg/img.PNG"]);
     expect(await text(s.media.get("8.fpg/img.PNG")!)).toBe("png");
   });
