@@ -23,7 +23,7 @@ import {
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
 import { safeArchivePath } from "./archive-path";
-import { BAMBOO_LIMITS, readBamboo } from "./bamboo";
+import { BAMBOO_LIMITS, BAMBOO_STRUCTURE_EXTENSIONS, readBamboo } from "./bamboo";
 import { isPackEntry } from "./rbpack";
 import { encodeBoardList } from "../app/board-io";
 import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
@@ -48,7 +48,7 @@ export function keepBoardPath(name: string): boolean {
   return BOARD_ZIP_EXTENSIONS.includes(extensionOf(p));
 }
 
-const BAMBOO_ENTRY_EXTENSIONS: readonly string[] = Object.freeze(["in", "io", "ir", "fpg"]);
+const BAMBOO_ENTRY_EXTENSIONS: readonly string[] = Object.freeze([...BAMBOO_STRUCTURE_EXTENSIONS, "fpg"]);
 
 /** C13 lot 3 (N15, N16) : entrées lues d'un paperboard : index `.in`, objets `.io`, ressources `.ir`, pages `.fpg`,
  *  `version` et images de `BOARD_ZIP_EXTENSIONS` ; chemin sûr selon `safeArchivePath`. Miniatures `.thm`, `.tif`,

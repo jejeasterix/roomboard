@@ -4,6 +4,7 @@
  */
 import { PDF_MAX_PAGES } from "../core/api";
 import { BOARD_OBJECTS_MESSAGE, normalBoardPath } from "../platform/board-reader";
+import { BAMBOO_STRUCTURE_EXTENSIONS } from "../platform/bamboo";
 import { ROOMBOARD_EXTENSION } from "../platform/files";
 import type { BoardFormat, BoardListPage, BoardObject, BoardSourceFormat } from "./board-io";
 
@@ -87,7 +88,7 @@ export function boardSources(format: ZipBoard, entries: readonly { readonly path
 /** C13 lot 3 (N11, T23) : entrées `.in`, `.io`, `.ir` et `version` d'un paperboard (lues par le Rust) ; le reste (images)
  *  va en `media`, clé = chemin normalisé. Chaque image y figure aussi par son seul nom, octets vides (DA4 : ses octets ne
  *  partent jamais au Worker des tableaux) : le Rust y résout la table des ressources et rend le `href` de `media`. */
-const FLIPCHART_STRUCTURE = /(^|\/)version$|\.(in|io|ir)$/i;
+const FLIPCHART_STRUCTURE = new RegExp(`(^|/)version$|\\.(${BAMBOO_STRUCTURE_EXTENSIONS.join("|")})$`, "i");
 const NAME_ONLY = new Blob([]);
 export function flipchartSources(entries: readonly { readonly path: string; readonly blob: Blob }[]): {
   readonly structure: readonly { readonly path: string; readonly blob: Blob }[];

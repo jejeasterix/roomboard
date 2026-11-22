@@ -539,13 +539,13 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       }
       try {
-        const head = new Uint8Array(await file.blob.slice(0, 4).arrayBuffer());
+        const head = new Uint8Array(await file.blob.slice(0, 8).arrayBuffer()); // signature ZIP (4 octets) ou Bamboo (8)
         let src: BoardSources;
         let parts: readonly BoardPart[];
         let total: number;
         if (file.format === "flipchart") {
           // Signature contrôlée ici aussi (le registre l'a vue, un appel direct non) ; le Worker ZIP la contrôle encore.
-          if (!hasBambooMagic(new Uint8Array(await file.blob.slice(0, 8).arrayBuffer()))) throw new Error(BAMBOO_NOT_FLIPCHART);
+          if (!hasBambooMagic(head)) throw new Error(BAMBOO_NOT_FLIPCHART);
           const split = flipchartSources(await board.unbamboo(file.blob));
           src = { xml: [], names: [], manifest: null, json: null, media: split.media, total: 1 };
           const structure = await Promise.all(split.structure.map(async (e) => ({ path: e.path, bytes: new Uint8Array(await e.blob.arrayBuffer()) })));

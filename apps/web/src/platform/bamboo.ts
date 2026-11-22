@@ -7,6 +7,7 @@
  */
 import { Unzlib } from "fflate";
 import { safeArchivePath } from "./archive-path";
+import { ZIP_MAX_BYTES } from "./model3d-import";
 
 const BAMBOO_MAGIC = [0x20, 0x42, 0x61, 0x6d, 0x62, 0x6f, 0x6f, 0x20] as const;
 
@@ -17,7 +18,7 @@ export function hasBambooMagic(head: Uint8Array): boolean {
 /** Bornes N13 (U26) : entrées comptées à tous les niveaux, octets décompressés annoncés, `.fpg` compris. */
 export const BAMBOO_LIMITS: { readonly entries: number; readonly bytes: number } = Object.freeze({
   entries: 20_000,
-  bytes: 256 * 1024 * 1024,
+  bytes: ZIP_MAX_BYTES,
 });
 
 export const BAMBOO_NOT_FLIPCHART = "fichier endommagé : ce n'est pas un paperboard ActivInspire";
@@ -28,7 +29,10 @@ const TOO_BIG_MESSAGE = "fichier endommagé : paperboard trop gros une fois déc
 const NAME_MESSAGE = "fichier endommagé : nom d'entrée illisible";
 const trunc = (): Error => new Error("fichier endommagé : entrée tronquée");
 
-const UTF16 = new TextDecoder("utf-16le", { fatal: false });
+/** Extensions des entrées de structure d'un paperboard (index, objets, ressources), lues par le Rust ; `version` s'y ajoute. */
+export const BAMBOO_STRUCTURE_EXTENSIONS: readonly string[] = Object.freeze(["in", "io", "ir"]);
+
+let utf16: TextDecoder | undefined; // créé à la première lecture, pas au chargement de la page
 
 /** Curseur borné : toute lecture hors des données lève, jamais d'octet lu au-delà. */
 class Cur {
@@ -77,7 +81,7 @@ class Cur {
     const n = this.u32();
     if (n === 0xffffffff) return "";
     if (n % 2 !== 0 || !this.has(n)) throw new Error(NAME_MESSAGE);
-    return UTF16.decode(this.bytes(n));
+    return (utf16 ??= new TextDecoder("utf-16le", { fatal: false })).decode(this.bytes(n));
   }
 }
 

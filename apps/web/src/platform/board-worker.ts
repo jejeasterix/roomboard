@@ -32,6 +32,15 @@ type Job =
   | { readonly op: "flipchart"; readonly names: string[]; readonly data: Uint8Array; readonly ends: Uint32Array }
   | { readonly op: "write"; readonly format: BoardWriteFormat; readonly ops: Float32Array; readonly texts: string[] };
 
+/** Une part lue (`ops`, `texts`, `warnings`) ; le lecteur est libéré même en cas d'erreur. */
+function partOf(r: { ops(): Float32Array; texts(): string[]; warnings(): string[]; free(): void }): { ops: Float32Array; texts: string[]; warnings: string[] } {
+  try {
+    return { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
+  } finally {
+    r.free();
+  }
+}
+
 self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
   const j = e.data;
   try {
@@ -39,12 +48,8 @@ self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
     if (j.op === "flipchart") {
       if (!hasFlipchartReader(mod)) throw new Error("module des tableaux indisponible");
       const r = mod.FlipchartReader.open(j.names, j.data, j.ends);
-      try {
-        const part = { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
-        self.postMessage({ parts: [part] }, { transfer: [part.ops.buffer as ArrayBuffer] });
-      } finally {
-        r.free();
-      }
+      const part = partOf(r);
+      self.postMessage({ parts: [part] }, { transfer: [part.ops.buffer as ArrayBuffer] });
       return;
     }
     if (!hasBoardReader(mod)) throw new Error("module des tableaux indisponible");
@@ -57,12 +62,7 @@ self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
         ? notebookOrder(mod.notebook_order, j.files, j.names ?? [], j.manifest ?? null, j.max ?? j.files.length)
         : { files: j.files, warnings: [] };
     const read = files.map((xml, i) => {
-      const r = mod.BoardReader.open(xml, j.dialect, j.dialect === "iwb" ? 1 : i + 1);
-      try {
-        return { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
-      } finally {
-        r.free();
-      }
+      return partOf(mod.BoardReader.open(xml, j.dialect, j.dialect === "iwb" ? 1 : i + 1));
     });
     const parts = withLeadingWarnings(read, warnings);
     self.postMessage({ parts }, { transfer: parts.map((p) => p.ops.buffer as ArrayBuffer) });
