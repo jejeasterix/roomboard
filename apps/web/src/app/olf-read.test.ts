@@ -209,12 +209,16 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
   });
 
   it("C13 N13 : 100 001 objets refusés", () => {
-    const strokes = (n: number): El[] => Array.from({ length: n }, () => stroke());
-    expect(() => readOlf(olf([page(strokes(BOARD_MAX_OBJECTS + 1))]))).toThrowError(new Error(BOARD_OBJECTS_MESSAGE));
+    // Texte fabriqué une fois, à la main : un trait minimal (sans matrice, lue comme l'identité) répété par `join`, sans objets ni `JSON.stringify` par élément.
+    const one = '{"stroke":{"points":"1,1 2,2","stroke":"#000000","pen-width":1}}';
+    const exact = Array(BOARD_MAX_OBJECTS).fill(one).join(","); // construit une seule fois, partagé par les trois bords
+    const file = (elements: string, backgrounds = "[]"): string =>
+      `{"olf":{"width":3840,"height":2160,"pageset":[{"page":{"viewbox":"0 0 3840 2160","matrix":"1,0,0,0,1,0,0,0,1","backgrounds":${backgrounds},"elements":[${elements}]}}]}}`;
+    expect(() => readOlf(file(`${exact},${one}`))).toThrowError(new Error(BOARD_OBJECTS_MESSAGE));
     // Le fond image compte comme un objet.
-    const bg = { backgrounds: [{ background: { type: "image", "image-source": "f.png" } }] };
-    expect(() => readOlf(olf([page(strokes(BOARD_MAX_OBJECTS), bg)]))).toThrowError(new Error(BOARD_OBJECTS_MESSAGE));
-    expect(readOlf(olf([page(strokes(BOARD_MAX_OBJECTS))])).pages[0]!.objects).toHaveLength(BOARD_MAX_OBJECTS);
+    const bg = '[{"background":{"type":"image","image-source":"f.png"}}]';
+    expect(() => readOlf(file(exact, bg))).toThrowError(new Error(BOARD_OBJECTS_MESSAGE));
+    expect(readOlf(file(exact)).pages[0]!.objects).toHaveLength(BOARD_MAX_OBJECTS);
   });
 
   it("C13 N13 : trait de plus de MAX_POINTS points illisible", () => {
