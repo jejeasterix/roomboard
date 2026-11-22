@@ -5,8 +5,11 @@
 // .roomboard puis rouvrir ; socle-v1.roomboard (d'avant C13) s'ouvre ; fichier hostile : rien n'est exécuté ni chargé.
 // Application construite servie avec la CSP de la coque, Chromium headless, repli (`?fichiers=repli`), heure figée ;
 // toute requête hors de 127.0.0.1 est comptée et coupée. Code : 0 réussi, 1 échec, 2 outil absent.
-// Usage : node scripts/essais/c13-tableaux-navigateur.mjs [--captures <leçon.iwb>] (docs/essais/c13-iwb-lecon.png ;
-// la leçon, hors dépôt, n'est jamais copiée).
+// Lot 2 (S1 à S3 de usage-c13-lots2-3) : un .notebook et un .olf fabriqués ici sont déposés, pages et avertissements lus,
+// enregistrés en .roomboard puis rouverts ; .flipchart signé Bamboo refusé ; fichiers hostiles ; socle-v1.roomboard.
+// Usage : node scripts/essais/c13-tableaux-navigateur.mjs [--captures <leçon.iwb>] [--captures-notebook]
+// (docs/essais/c13-iwb-lecon.png : la leçon, hors dépôt, n'est jamais copiée ; docs/essais/c13-notebook-lecon.png :
+// .notebook fabriqué). Sans option, aucune capture n'est réécrite.
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -73,6 +76,93 @@ const hostileIwb = () => `<?xml version="1.0" encoding="UTF-8"?>
 <svg:image xlink:href="http://exemple.invalid/x.png" x="100" y="100" width="50" height="50"/>
 </svg:page></svg:pageset></svg:svg></iwb>`;
 
+// ---- Lot 2 (C13) : .notebook SMART et .olf myViewBoard, fabriqués ici (jamais un fichier d'exemple). ----
+const NB_MANIFEST = `<?xml version="1.0" encoding="UTF-8"?>
+<manifest identifier="SMARTNotebook" xmlns="http://www.imsglobal.org/xsd/imscp_v1p1" xmlns:adlcp="http://www.adlnet.org/xsd/adlcp_rootv1p2">
+  <organizations/>
+  <resources>
+    <resource identifier="pages" href="page1.svg" type="webcontent" adlcp:scormType="asset">
+      <file href="page1.svg"/>
+      <file href="page0.svg"/>
+    </resource>
+    <resource identifier="images" type="webcontent" adlcp:scormType="asset">
+      <file href="images/a b[1].png"/>
+    </resource>
+  </resources>
+</manifest>`;
+const nbSvg = (body, head = "") =>
+  `<?xml version="1.0" encoding="UTF-8"?>${head}<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="600" viewBox="0 0 800 600">${body}</svg>`;
+
+/** S1 : .notebook de 2 pages ; le manifeste met page1.svg (4 objets lus, 1 Flash) avant page0.svg (1 objet). */
+function notebookZip() {
+  const page0 = nbSvg('<rect x="10" y="10" width="100" height="50" fill="#00ff00"/>');
+  const page1 = nbSvg(
+    '<path d="M50 50 L250 50 L250 130 L50 130 z" fill="#ff0000"/>' +
+      '<ellipse cx="400" cy="90" rx="60" ry="40" fill="#00aa00"/>' +
+      '<text x="50" y="250" font-size="30" fill="#000000"><tspan font-weight="bold">Leçon<tspan> SMART</tspan></tspan></text>' +
+      '<image xlink:href="images/a%20b[1].png" x="500" y="200" width="80" height="80"/>' +
+      '<flash x="50" y="400" width="100" height="80"/>',
+  );
+  return Buffer.from(
+    zipSync({ "imsmanifest.xml": enc(NB_MANIFEST), "page0.svg": enc(page0), "page1.svg": enc(page1), "images/a b[1].png": solidPng(8, 8, [255, 128, 0]) }),
+  );
+}
+
+/** S2 : .olf 3840 × 2160 (échelle 0,5), fond #FFEECC, trait et image à matrice, zone de texte à deux paragraphes, un widget. */
+function olfZip() {
+  const M = "1,0,200,0,1,200,0,0,1";
+  const seg = (text) => ({ text: { text, "font-size": 60, fill: "#FF000000" } });
+  const content = {
+    olf: {
+      width: 3840,
+      height: 2160,
+      pageset: [
+        {
+          page: {
+            viewbox: "0 0 3840 2160",
+            matrix: "1,0,0,0,1,0,0,0,1",
+            backgrounds: [{ background: { type: "color", fill: "#FFEECC", opacity: 1 } }],
+            elements: [
+              { stroke: { points: "0,0 400,100 800,0", stroke: "#0000FF", "pen-width": 12, "is-highlighter": false, matrix: M } },
+              { image: { source: "images/p.png", x: 0, y: 0, width: 400, height: 300, matrix: "1,0,1000,0,1,200,0,0,1" } },
+              {
+                textarea: {
+                  x: 0,
+                  y: 0,
+                  width: 900,
+                  height: 300,
+                  matrix: "1,0,200,0,1,800,0,0,1",
+                  "text-blocks-container": [{ paragraph: { "text-list-container": [seg("Bonjour")] } }, { paragraph: { "text-list-container": [seg("le monde")] } }],
+                },
+              },
+              { "widget-player": { x: 0, y: 0 } },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  return Buffer.from(zipSync({ "content.json": enc(JSON.stringify(content)), "images/p.png": solidPng(8, 8, [0, 128, 255]) }));
+}
+
+/** S3 : DOCTYPE à entité externe, script, entrée ZIP `../evil.png`. */
+function hostileNotebook() {
+  const head = '<!DOCTYPE svg [<!ENTITY e SYSTEM "file:///etc/passwd">]>';
+  const page = nbSvg('<text x="10" y="40">avant &e; après</text><script>window.__pwned = 1</script><rect x="10" y="100" width="50" height="50" fill="red" onload="window.__pwned = 2"/>', head);
+  return Buffer.from(zipSync({ "page0.svg": enc(page), "../evil.png": solidPng(4, 4, [1, 2, 3]) }));
+}
+
+/** S3 : `content.json` illisible. */
+const badOlf = () => Buffer.from(zipSync({ "content.json": enc("{") }));
+/** S3 : `content.json` de 64 Mio + 1 (espaces, compressés par le ZIP). */
+const bigOlf = () => Buffer.from(zipSync({ "content.json": Buffer.concat([enc('{"olf":{"pageset":[]}}'), Buffer.alloc(64 * 1024 * 1024, 0x20)]) }));
+/** S3 : `content.json` de 200 000 niveaux. */
+const deepOlf = () => Buffer.from(zipSync({ "content.json": enc(`{"olf":{"pageset":[]},"x":${"[".repeat(200000)}${"]".repeat(200000)}}`) }));
+/** S3 : ZIP sans page ni contenu de tableau. */
+const emptyNotebook = () => Buffer.from(zipSync({ "lisez-moi.txt": enc("rien") }));
+/** S3 : paperboard ActivInspire fabriqué (signature `Bamboo` + 32 octets). */
+const flipchart = () => Buffer.concat([enc(" Bamboo "), Buffer.alloc(32)]);
+
 const NUMERIC = ["x", "y", "width", "height", "cx", "cy", "rx", "ry", "x1", "y1", "x2", "y2", "stroke-width", "font-size"];
 function tagsOf(xml) {
   const out = [];
@@ -108,7 +198,7 @@ function sameDrawing(a, b, label) {
   console.log(`ok — S4 : ${label} rouvert puis réécrit : ${ta.length} balises, formes à 1 px, traits à 2 px, textes et segments identiques`);
 }
 
-async function scenario(page, url, { tmp, lesson }) {
+async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   const errors = [];
   const dialogs = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -277,6 +367,94 @@ async function scenario(page, url, { tmp, lesson }) {
   await waitTabs(n + 1);
   check(!dialogs.some((d) => d.startsWith("Ouverture impossible")), "S4 : socle-v1.roomboard (d'avant C13) s'ouvre comme avant");
 
+  // ---- Lot 2 : .notebook et .olf générés ici (page rechargée : la barre garde 12 onglets au plus). ----
+  await page.goto(url);
+  await page.waitForSelector("#stage");
+  await fr();
+  const lastTab = async () => (await page.locator(TAB).last().textContent()) ?? "";
+  const settle = async (n, dlg) => {
+    for (let i = 0; i < 150; i++) {
+      if ((await tabs()) > n || dialogs.length > dlg) {
+        await page.waitForTimeout(300);
+        return;
+      }
+      await page.waitForTimeout(100);
+    }
+    throw new Echec(`ni onglet ni avis après le dépôt ; erreurs : ${errors.join(" | ")}`);
+  };
+  // S1 : .notebook.
+  await drop("lecon.notebook", notebookZip(), 4, "1/2");
+  await waitDialog("Flash non lu");
+  check((await lastTab()).includes("lecon.roomboard"), "S1 (lot 2) : onglet lecon.roomboard");
+  if (captureNotebook) {
+    await fr();
+    const path = join(ROOT, "docs", "essais", "c13-notebook-lecon.png");
+    await page.screenshot({ path });
+    console.log(`capture : ${path} (lecon.notebook fabriqué, data-page="${await attr("data-page")}", data-elements=${await attr("data-elements")})`);
+  }
+  const redPx = await (async () => {
+    const c0 = await camera();
+    return inkIn(page, [200 * c0.zoom + c0.tx, 200 * c0.zoom + c0.ty, 220 * c0.zoom + c0.tx, 220 * c0.zoom + c0.ty], { rgb: [255, 0, 0], tol: 30 });
+  })();
+  check(redPx > 50, `S1 (lot 2) : rectangle \`path\` rempli de rouge dessiné (${redPx} pixels rouges)`);
+  await page.click(item("text"));
+  await clickWorld(160, 560);
+  await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
+  const nbText = await page.$eval("#texte-edition", (a) => ("value" in a ? a.value : a.textContent) ?? "");
+  check(nbText.includes("Leçon SMART"), `S1 (lot 2) : le texte « ${nbText} » s'ouvre dans la zone de saisie (éditable)`);
+  await page.keyboard.press("Escape");
+  await page.click(item("select"));
+  await page.click('.rb-pages-list [data-page="2"]');
+  await waitAttr("data-page", "2/2");
+  await waitAttr("data-elements", "1");
+  check(true, 'S1 (lot 2) : page 2 = page0.svg (ordre du manifeste inverse des noms) : data-elements="1"');
+  await page.click('.rb-pages-list [data-page="1"]');
+  await waitAttr("data-page", "1/2");
+  await waitAttr("data-elements", "4");
+  const nbSaved = await download(() => page.keyboard.press("Control+s"), "lecon.roomboard");
+  await drop("lecon.roomboard", await readFile(nbSaved), 4, "1/2");
+  check(true, 'S1 (lot 2) : enregistré en .roomboard puis rouvert : data-page="1/2", data-elements="4"');
+  console.log('ok — S1 : .notebook déposé : 2 pages dans l\'ordre du manifeste, 4 objets + Flash dit non lu, texte éditable, aller-retour .roomboard');
+
+  // S2 : .olf.
+  await drop("cours.olf", olfZip(), 3);
+  await waitDialog("widget non lu");
+  check((await lastTab()).includes("cours.roomboard"), "S2 (lot 2) : onglet cours.roomboard, data-elements=\"3\"");
+  const oc = await camera();
+  const cream = await inkIn(page, [1700 * oc.zoom + oc.tx, 950 * oc.zoom + oc.ty, 1720 * oc.zoom + oc.tx, 970 * oc.zoom + oc.ty], { rgb: [255, 238, 204], tol: 10 });
+  check(cream > 50, `S2 (lot 2) : fond #FFEECC lu (${cream} pixels)`);
+  console.log('ok — S2 : .olf déposé : 3 objets (trait, image, texte), widget dit non lu, fond #FFEECC');
+
+  // S3 : .olf renommé, vide, hostiles, flipchart, ancien fichier, scène.
+  await drop("renomme.notebook", olfZip(), 3);
+  await waitDialog("widget non lu");
+  check((await lastTab()).includes("renomme.roomboard"), "S3 (lot 2) : .olf renommé .notebook : mêmes lectures que S2");
+  const refuse = async (name, bytes, part) => {
+    const n = await tabs();
+    await dropFile(page, "#stage", name, bytes, "");
+    await waitDialog(part);
+    await page.waitForTimeout(300);
+    check((await tabs()) === n, `S3 (lot 2) : ${name} refusé (« ${part} »), aucun onglet`);
+  };
+  await refuse("vide.notebook", emptyNotebook(), "contenu de tableau introuvable");
+  await refuse("casse.olf", badOlf(), "content.json illisible");
+  await refuse("gros.olf", bigOlf(), "trop gros");
+  await refuse("profond.olf", deepOlf(), "content.json illisible");
+  await refuse("cours.flipchart", flipchart(), "exporter en .iwb ou PDF depuis ActivInspire");
+  const hn = await tabs();
+  const hd = dialogs.length;
+  await dropFile(page, "#stage", "hostile.notebook", hostileNotebook(), "");
+  await settle(hn, hd);
+  const hostileSaid = dialogs.slice(hd).join("\n");
+  check(!hostileSaid.includes("root:") && (await page.evaluate(() => window.__pwned)) === undefined, `S3 (lot 2) : .notebook hostile ${(await tabs()) > hn ? "ouvert" : "refusé"} (« ${hostileSaid.slice(0, 90).replace(/\n/g, " ")} »), ni script ni entité lus`);
+  const sn = await tabs();
+  await dropFile(page, "#stage", "socle-v1.roomboard", await readFile(SOCLE), "application/x-roomboard");
+  await waitTabs(sn + 1);
+  check(true, "S3 (lot 2) : socle-v1.roomboard (d'avant ce chantier) s'ouvre toujours");
+  const nbBox = await stageBox(page, 640);
+  check(nbBox.width >= 640 && nbBox.height >= 640, `S3 (lot 2) : scène de ${Math.round(nbBox.width)} × ${Math.round(nbBox.height)} px (≥ 640 × 640), avis rendus`);
+  console.log('ok — S3 : .olf renommé, .notebook sans page, .olf cassé/trop gros/trop profond, .flipchart refusé, hostile, fichier ancien, scène ≥ 640');
+
   if (lesson !== null) {
     const before = await tabs();
     await dropFile(page, "#stage", basename(lesson), await readFile(lesson), "");
@@ -294,6 +472,7 @@ async function main() {
   console.log(`sha ${gitSha()}`);
   const k = process.argv.indexOf("--captures");
   const lesson = k >= 0 ? (process.argv[k + 1] ?? null) : null;
+  const captureNotebook = process.argv.includes("--captures-notebook");
   if (k >= 0 && (lesson === null || !existsSync(lesson))) {
     console.error(`${LABEL} : ÉCHEC — --captures attend le chemin d'une leçon .iwb existante`);
     return 1;
@@ -328,7 +507,7 @@ async function main() {
     });
     const page = await context.newPage();
     await page.clock.setFixedTime(FIXED);
-    await scenario(page, `http://127.0.0.1:${port}/?fichiers=repli`, { tmp, lesson });
+    await scenario(page, `http://127.0.0.1:${port}/?fichiers=repli`, { tmp, lesson, captureNotebook });
     if (external.length > 0) throw new Echec(`requêtes hors de 127.0.0.1 : ${external.join(", ")}`);
     console.log("ok — S5 : zéro requête hors de 127.0.0.1 pendant tout l'essai");
     console.log(`${LABEL} : OK`);
