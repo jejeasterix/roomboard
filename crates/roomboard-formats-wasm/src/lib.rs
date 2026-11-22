@@ -181,8 +181,12 @@ pub struct BoardReader {
     list: BoardList,
 }
 
+fn unknown_format(s: &str) -> String {
+    format!("format de tableau inconnu : {s}")
+}
+
 fn dialect_of(s: &str) -> Result<Dialect, String> {
-    Dialect::parse(s).ok_or_else(|| format!("format de tableau inconnu : {s}"))
+    Dialect::parse(s).ok_or_else(|| unknown_format(s))
 }
 
 impl BoardReader {
@@ -232,6 +236,10 @@ pub fn write_board_xml_inner(
     format: &str,
 ) -> Result<Vec<String>, String> {
     let d = dialect_of(format)?;
+    // Import seul (N2) : aucune copie `.notebook`, refus avant la copie des opérations.
+    if d == Dialect::Notebook {
+        return Err(unknown_format(format));
+    }
     let list = BoardList {
         ops: ops.to_vec(),
         texts,
@@ -254,8 +262,8 @@ pub fn write_board_xml_inner(
             out.push(board::ubz_metadata(count));
             Ok(out)
         }
-        // Import seul (N2) : aucune copie `.notebook`, refus au préfixe connu de `boardErrorMessage`.
-        Dialect::Notebook => Err(format!("format de tableau inconnu : {format}")),
+        // Garde-fou : déjà refusé plus haut, avant la copie.
+        Dialect::Notebook => Err(unknown_format(format)),
     }
 }
 

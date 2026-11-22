@@ -2,6 +2,7 @@
 //! l'ordre du document. Lecture par `read::parse_tree` (D16 : DOCTYPE ignoré, aucune entité externe).
 use super::read::{parse_tree, Node, Notes};
 use super::BoardError;
+use std::collections::HashSet;
 
 /// `href` normalisés (`\` en `/`, `./` retiré), sans doublon ; aucune ressource `pages` : `Ok(vec![])` (le repli
 /// sur l'ordre des noms est celui de l'appelant). Un `href` illisible (entité inconnue) est sauté, comme dans `read.rs`.
@@ -14,11 +15,12 @@ pub fn notebook_order(manifest: &[u8]) -> Result<Vec<String>, BoardError> {
     let mut notes = Notes::default();
     let root = parse_tree(text, &mut notes)?;
     let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     if let Some(pages) = find_pages(&root) {
         for f in pages.nodes().filter(|n| n.name == "file") {
             if let Some(h) = f.attr("href") {
                 let p = h.replace('\\', "/").trim_start_matches("./").to_string();
-                if !p.is_empty() && !out.contains(&p) {
+                if !p.is_empty() && seen.insert(p.clone()) {
                     out.push(p);
                 }
             }

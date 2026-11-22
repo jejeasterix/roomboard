@@ -459,13 +459,7 @@ impl Style {
 
 /// SMART (N7) : `justification` vaut `text-align` quand l'élément ne déclare pas `text-align` (attribut ou `style`).
 fn justify(s: &mut Style, n: &Node) {
-    let own = n.attr("text-align").is_some()
-        || n.attr("style").is_some_and(|css| {
-            css.split(';').any(|d| {
-                d.split_once(':')
-                    .is_some_and(|(k, _)| k.trim() == "text-align")
-            })
-        });
+    let own = Style::default().inherit(n).text_align.is_some();
     if let Some(j) = n.attr("justification").filter(|_| !own) {
         s.text_align = Some(j.trim().to_string());
     }
@@ -1084,6 +1078,14 @@ fn minmax(v: impl Iterator<Item = f32>) -> (f32, f32) {
     v.fold((f32::MAX, f32::MIN), |(lo, hi), x| (lo.min(x), hi.max(x)))
 }
 
+/// Feuilles d'un objet : un `path` rend un `Item::Group` d'un trait par sous-chemin, chacun compte pour `MAX_OBJECTS` (U26).
+fn leaves(item: &Item) -> usize {
+    match item {
+        Item::Group(items) => items.iter().map(leaves).sum(),
+        _ => 1,
+    }
+}
+
 struct State<'a> {
     frame: &'a Frame,
     dialect: Dialect,
@@ -1236,6 +1238,7 @@ impl State<'_> {
                 {
                     self.notes.add(c.no, Sort::BackgroundObject);
                 }
+                self.objects += leaves(&item).saturating_sub(1);
                 self.count()?;
                 out.push((id, item));
             }
@@ -1317,8 +1320,9 @@ impl State<'_> {
         let fill = fill_of(&c.style);
         let wants_bg = match self.dialect {
             Dialect::Iwb => id.is_some_and(|i| self.refs.flag(i, "background")),
-            Dialect::Ubz => c.top && first_child && bg.is_none() && fill.is_some(),
-            Dialect::Notebook => c.top && first_child && bg.is_none() && fill.is_some(),
+            Dialect::Ubz | Dialect::Notebook => {
+                c.top && first_child && bg.is_none() && fill.is_some()
+            }
         };
         if wants_bg {
             if let Some(color) = fill.filter(|_| self.covers(&c.m, x, y, w, h)) {
@@ -1782,6 +1786,7 @@ enum PathTok {
 fn path_tokens(d: &str) -> Option<Vec<PathTok>> {
     let b = d.as_bytes();
     let mut out = Vec::new();
+    let mut nums = 0usize;
     let mut i = 0;
     while i < b.len() {
         let c = b[i];
@@ -1822,6 +1827,11 @@ fn path_tokens(d: &str) -> Option<Vec<PathTok>> {
         }
         let v: f32 = std::str::from_utf8(&b[start..i]).ok()?.parse().ok()?;
         if !v.is_finite() {
+            return None;
+        }
+        // Chaque nombre donne au moins un demi-point : au-delà, `MAX_POINTS` est dépassé, inutile de tout lire.
+        nums += 1;
+        if nums > 2 * MAX_POINTS as usize {
             return None;
         }
         out.push(PathTok::Num(v));
@@ -2626,6 +2636,63 @@ mod tests {
             warnings,
             vec!["page 1 : 1 objet illisible ignoré".to_string()]
         );
+    }
+
+    /// Dernier point du trait unique d'un `path` ouvert `fill="none"` (tests des commandes relatives).
+    fn last_point(d: &str) -> ([f32; 2], Vec<String>) {
+        let (pages, warnings) = nb(&format!(
+            r##"<path d="{d}" fill="none" stroke="#000000"/>"##
+        ));
+        match &pages[0].items[..] {
+            [Item::Stroke { points, .. }] => {
+                let p = points.last().unwrap();
+                ([p[0], p[1]], warnings)
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn path_relative_curves_and_smooth_commands() {
+        assert_eq!(last_point("M0 0 c1 1 2 2 3 3").0, [3.0, 3.0]);
+        assert_eq!(last_point("M1 1 c1 1 2 2 3 3 s1 1 2 2").0, [6.0, 6.0]);
+        assert_eq!(last_point("M10 10 q5 5 10 0").0, [20.0, 10.0]);
+        assert_eq!(last_point("M10 10 q5 5 10 0 t10 0").0, [30.0, 10.0]);
+        assert_eq!(last_point("M10 10 Q15 15 20 10 T40 10").0, [40.0, 10.0]);
+        assert_eq!(last_point("M0 0 C1 1 2 2 3 3 S5 5 9 9").0, [9.0, 9.0]);
+    }
+
+    #[test]
+    fn path_implicit_repetition_of_c() {
+        let (p, warnings) = last_point("M0 0 C0 0 0 0 5 5 0 0 0 0 9 9");
+        assert_eq!(p, [9.0, 9.0]);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 courbe approchée par des segments".to_string()]
+        );
+    }
+
+    /// U26 : la borne d'objets compte les traits d'un `path`, pas le `path` seul.
+    #[test]
+    fn path_with_more_than_max_objects_subpaths_is_too_big() {
+        let d = "M0 0L1 1".repeat(crate::board::MAX_OBJECTS + 1);
+        let xml = notebook(&format!(r#"<path d="{d}" fill="none"/>"#));
+        assert!(matches!(
+            read_svg(xml.as_bytes(), Dialect::Notebook, 1),
+            Err(BoardError::TooBig)
+        ));
+    }
+
+    /// La tokenisation s'arrête à la borne : plus de `2 * MAX_POINTS` nombres ne peuvent pas tenir en `MAX_POINTS` points.
+    #[test]
+    fn path_tokens_stop_past_the_point_bound() {
+        let d = format!(
+            "M0 0{}",
+            " 1".repeat(2 * crate::board::MAX_POINTS as usize + 1)
+        );
+        assert!(path_tokens(&d).is_none());
+        let ok = format!("M0 0{}", " 1".repeat(1000));
+        assert_eq!(path_tokens(&ok).map(|t| t.len()), Some(1003));
     }
 
     /// Arbitrage F1 : `path` n'est lu qu'en `Dialect::Notebook` ; en `.iwb` et `.ubz` il reste un type non lu.
