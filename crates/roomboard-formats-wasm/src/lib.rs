@@ -3,7 +3,8 @@
 //! dans un Worker jetable, DAB4) ; pages vectorielles en PDF (`pdf::write_pages`, C12, PF22, Worker jetable). Chaque
 //! fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS
 //! panique).
-//! C13 (DA2) : tableaux `.iwb` et `.ubz` (`BoardReader`, `write_board_xml`), lus et écrits dans un Worker jetable.
+//! C13 (DA2) : tableaux `.iwb` et `.ubz` (`BoardReader`, `write_board_xml`), lus et écrits dans un Worker jetable ;
+//! `.notebook` lu seulement (lot 2, N2), pages dans l'ordre du manifeste (`notebook_order`, N6).
 //! C5 (U30, I17) ; C6b (B17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
 use roomboard_core::format::Parts;
 use roomboard_formats::board::{self, BoardList, Dialect};
@@ -210,6 +211,18 @@ impl BoardReader {
     pub fn warnings(&self) -> Vec<String> {
         self.list.warnings.clone()
     }
+}
+
+/// Ordre des pages d'un `.notebook` (C13 lot 2, N6) : `href` de la ressource `pages` de `imsmanifest.xml`, lus par le
+/// Rust (D16) ; aucune ressource `pages` : liste vide (repli sur l'ordre des noms, `notebookOrder` de `board-reader.ts`).
+pub fn notebook_order_inner(manifest: &[u8]) -> Result<Vec<String>, String> {
+    board::notebook_order(manifest).map_err(|e| e.to_string())
+}
+
+/// Lève une Error au message de `BoardError` (« fichier endommagé : … »).
+#[wasm_bindgen]
+pub fn notebook_order(manifest: &[u8]) -> Result<Vec<String>, JsError> {
+    notebook_order_inner(manifest).map_err(|m| JsError::new(&m))
 }
 
 /// Copie au format (C13, D18) : `[chemin, xml, …]` ; `iwb` : `content.xml` ; `ubz` : `page001.svg`… puis `metadata.rdf`.
@@ -618,5 +631,31 @@ mod tests {
         let e = write_board_xml_inner(&[], vec![], "notebook").expect_err("refus");
         assert!(e.starts_with("format de tableau inconnu : "), "{e}");
         assert_eq!(e, "format de tableau inconnu : notebook");
+    }
+
+    /// C13 lot 2 (N6) : `.notebook` lu par la liaison existante, ordre des pages lu par le Rust (D16).
+    mod board_notebook {
+        use super::super::*;
+
+        /// `Dialect::parse` connaît `notebook` (T3) : `BoardReader.open` lit une page sans changement de la liaison.
+        #[test]
+        fn board_reader_opens_notebook_dialect() {
+            let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect x="10" y="10" width="100" height="50" fill="red"/></svg>"##;
+            let r = BoardReader::open_inner(svg, "notebook", 2).expect("page notebook");
+            assert!(!r.ops().is_empty());
+        }
+
+        /// Patron écarté : l'ordre des noms (`page0`, `page1`). La liaison rend l'ordre de la ressource `pages`, et un
+        /// manifeste illisible lève au préfixe connu de `boardErrorMessage` (le Worker retombe alors sur l'ordre reçu).
+        #[test]
+        fn notebook_order_binding_reads_the_manifest() {
+            let xml = br#"<manifest><resources><resource identifier="pages"><file href="page1.svg"/><file href="page0.svg"/></resource></resources></manifest>"#;
+            assert_eq!(
+                notebook_order_inner(xml),
+                Ok(vec!["page1.svg".to_string(), "page0.svg".to_string()])
+            );
+            let e = notebook_order_inner(b"\xff").expect_err("manifeste non UTF-8");
+            assert!(e.starts_with("fichier endommagé : "), "{e}");
+        }
     }
 }
