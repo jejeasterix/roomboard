@@ -4,6 +4,10 @@
 //! Bornes (N13) : toute longueur lue est comparée aux octets restants avant d'allouer ; l'imbrication est bornée
 //! à [`MAX_NESTING`] ; au-delà, l'objet devient [`Value::Skipped`] et son contenu est parcouru sans récursion pour
 //! compter les objets sautés.
+//!
+//! Une valeur illisible (type inconnu, chaîne impaire, longueur mensongère) reste locale à son enregistrement, dont
+//! la taille est déjà bornée : la propriété devient [`Value::Unread`] et la lecture continue (U2, comme ActCraft
+//! qui garde une valeur brute). Seuls l'en-tête d'un objet et la table de ses enregistrements restent fatals.
 
 /// Objets et listes gardés jusqu'à cette profondeur (ActCraft `kMaxNesting`) ; plus profond : [`Value::Skipped`].
 pub(crate) const MAX_NESTING: usize = 32;
@@ -34,13 +38,19 @@ pub(crate) enum Value {
     List(Vec<Value>),
     Polyline(Vec<[f32; 2]>),
     Skipped,
+    /// Valeur illisible, laissée de côté avec son enregistrement.
+    Unread,
 }
 
 /// Ce que la lecture a laissé de côté.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Stats {
     /// Objets plus profonds que [`MAX_NESTING`], non gardés.
     pub skipped_deep: u32,
+    /// Propriétés illisibles, devenues [`Value::Unread`].
+    pub unread: u32,
+    /// Raison de la première d'entre elles.
+    pub first_error: Option<String>,
 }
 
 impl StreamObject {
@@ -278,12 +288,18 @@ const LEAST_RECORD: usize = 6;
 /// Sous-types de variante utilisateur (127) qui portent un objet embarqué.
 const OBJECT_SUBTYPES: [u16; 7] = [4, 6, 7, 8, 12, 14, 18];
 
-/// Lit un fichier `.io` ou `.ir`.
+/// Lit un fichier `.io` ou `.ir` sans rien tolérer : la première propriété illisible est une erreur.
+#[cfg(test)]
 pub(crate) fn parse_object_stream(data: &[u8]) -> Result<StreamObject, String> {
-    parse_object_stream_with_stats(data).map(|(object, _)| object)
+    let (object, stats) = parse_object_stream_with_stats(data)?;
+    match stats.first_error {
+        Some(e) => Err(e),
+        None => Ok(object),
+    }
 }
 
-/// Lit un fichier `.io` ou `.ir` et dit ce qui a été laissé de côté.
+/// Lit un fichier `.io` ou `.ir` et dit ce qui a été laissé de côté ; une propriété illisible devient
+/// [`Value::Unread`].
 pub(crate) fn parse_object_stream_with_stats(data: &[u8]) -> Result<(StreamObject, Stats), String> {
     if data.len() < HEADER || !data.starts_with(SIGNATURE) {
         return Err(String::from("signature de flux d'objets absente"));
@@ -355,7 +371,15 @@ fn read_object(r: &mut Reader, depth: usize, stats: &mut Stats) -> Result<Stream
     let mut fields = Vec::with_capacity(n);
     for _ in 0..n {
         let (key, mut record) = next_record(r, &mut sizes)?;
-        fields.push((key, read_value(&mut record, depth, stats)?));
+        let value = match read_value(&mut record, depth, stats) {
+            Ok(v) => v,
+            Err(e) => {
+                stats.unread = stats.unread.saturating_add(1);
+                stats.first_error.get_or_insert(e);
+                Value::Unread
+            }
+        };
+        fields.push((key, value));
     }
     object_end(r)?;
     Ok(StreamObject { class, id, fields })
@@ -1045,6 +1069,24 @@ mod tests {
         assert!(parse_object_stream(&deep.stream())
             .unwrap_err()
             .contains("inconnu"));
+    }
+
+    /// U2 : une valeur illisible reste dans son enregistrement ; les propriétés voisines sont lues.
+    #[test]
+    fn stream_unreadable_value_stays_in_its_record() {
+        let data = Obj::new(ids::STROKE, 1)
+            .integer(1, 1)
+            .raw(2, Bytes::default().u16(0x77).u32(0))
+            .raw(3, Bytes::default().u16(10).u16(1).u32(3).raw(b"a\0b"))
+            .integer(4, 4)
+            .stream();
+        let (o, stats) = parse_object_stream_with_stats(&data).expect("flux lu");
+        assert_eq!(o.find(1), Some(&Value::Int(1)));
+        assert_eq!(o.find(2), Some(&Value::Unread));
+        assert_eq!(o.find(3), Some(&Value::Unread));
+        assert_eq!(o.find(4), Some(&Value::Int(4)));
+        assert_eq!(stats.unread, 2);
+        assert!(stats.first_error.unwrap_or_default().contains("inconnu"));
     }
 
     /// Aucune panique sur une entrée hostile : chaque octet d'un flux riche, remplacé par des valeurs extrêmes.

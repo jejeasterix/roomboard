@@ -1,12 +1,13 @@
 //! Lecteur `.flipchart` (C13 lot 3, N12, N13, DA5) : flux d'objets Qt des entrées `.io` et `.ir`, index « culm »
 //! de l'entrée `.in`, numéros des sortes d'objets. Porté d'ActCraft (même auteur, U39, 0246). Ni ZIP, ni Bamboo, ni
 //! zlib ici : ces lecteurs reçoivent les octets déjà extraits.
-// Appelés par `flipchart::read` (tâche suivante) ; d'ici là, seuls les tests les appellent.
-#![cfg_attr(not(test), allow(dead_code))]
 
 pub(crate) mod ids;
 pub(crate) mod index;
+mod read;
 pub(crate) mod stream;
+
+pub use read::read;
 
 /// Écrivain minimal du flux d'objets et de l'index, sur la forme de `flipchartwriter.h` d'ActCraft (tests seuls).
 #[cfg(test)]
