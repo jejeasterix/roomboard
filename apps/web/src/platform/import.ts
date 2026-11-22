@@ -14,7 +14,8 @@
  * nature `paquet` : il n'ouvre aucun onglet, les onglets pleins ne l'arrêtent pas.
  */
 import { messageOf } from "./controller";
-import { IWB_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { hasBambooMagic, FLIPCHART_LATER_MESSAGE } from "./bamboo";
+import { IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
@@ -63,7 +64,7 @@ export interface ImportDeps {
   openPdf?(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
   /** C13 (D4, D5) : ouvre un tableau `.iwb` (ZIP ou XML) ou `.ubz` dans un nouvel onglet ; false si refusé (message
    *  déjà dit) ; absente : `.iwb` et `.ubz` refusés comme avant. */
-  openBoard?(file: { readonly name: string; readonly blob: Blob; readonly format: "iwb" | "ubz" }): Promise<boolean>;
+  openBoard?(file: { readonly name: string; readonly blob: Blob; readonly format: "iwb" | "ubz" | "notebook" | "olf" | "flipchart" }): Promise<boolean>;
   /** C4 (U25, D19) : paquet `.rbpack` importé dans la bibliothèque ; faux si refusé (avis déjà dit). Absent : refusé. */
   importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
   /** C14 (M15) : sonde d'un média (durée, taille, poster) ; absente : la sonde du navigateur (T8). */
@@ -283,13 +284,33 @@ export function hasXmlHead(head: Uint8Array): boolean {
   return text === "<?xml" || text.startsWith("<iwb");
 }
 
+const BOARD_ZIP_EXTENSION = { ubz: UBZ_EXTENSION, notebook: NOTEBOOK_EXTENSION, olf: OLF_EXTENSION } as const;
+
+/** Extension en minuscules, sans le point ; "" sans point. */
+const extensionOf = (name: string): string => (name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "");
+
+/** C13 (lot 2, palier bas) : un fichier signé `Bamboo` d'extension `.flipchart` ou inconnue (jamais `.as4a`, ni une extension
+ *  connue) est refusé avec un message clair, sans lecture ; le lot 3 remplace ce gestionnaire. */
+export function flipchartRefusalHandler(): ImportHandler {
+  return {
+    id: "flipchart-later",
+    nature: "objet",
+    detect: (head, name) => {
+      const ext = extensionOf(name);
+      return hasBambooMagic(head) && ext !== "as4a" && (ext === "flipchart" || !(IMPORT_EXTENSIONS as readonly string[]).includes(ext));
+    },
+    limit: { maxBytes: -1, message: FLIPCHART_LATER_MESSAGE },
+    run: async () => "failed",
+  };
+}
+
 /** C13 (D4, D5) : `iwb` = nom `.iwb` et en-tête ZIP ou XML ; `ubz` = nom `.ubz` et en-tête ZIP. Document : nouvel onglet
  *  par `openBoard`, qui dit ses refus (endommagé, onglets pleins). */
-export function boardHandler(format: "iwb" | "ubz", deps: { openBoard: NonNullable<ImportDeps["openBoard"]> }): ImportHandler {
+export function boardHandler(format: "iwb" | "ubz" | "notebook" | "olf", deps: { openBoard: NonNullable<ImportDeps["openBoard"]> }): ImportHandler {
   return {
     id: format,
     nature: "document",
-    detect: format === "iwb" ? (_head, name) => isIwbName(name) : (head, name) => isUbzName(name) && hasZipMagic(head),
+    detect: format === "iwb" ? (_head, name) => isIwbName(name) : (head, name) => hasExtension(name, BOARD_ZIP_EXTENSION[format]) && hasZipMagic(head),
     limit: { maxBytes: ZIP_MAX_BYTES, message: BOARD_TOO_BIG_MESSAGE },
     async run(f, ctx) {
       return (await deps.openBoard({ name: f.name, blob: ctx.blob, format })) ? "opened" : "failed";
@@ -326,7 +347,8 @@ export function createImporter(deps: ImportDeps): Importer {
       rbitemHandler(),
       ...(importPack ? [rbpackHandler({ importPack })] : []),
       ...(openPdf ? [pdfHandler({ openPdf })] : []),
-      ...(openBoard ? [boardHandler("iwb", { openBoard }), boardHandler("ubz", { openBoard })] : []), // C13 : avant `media`
+      ...(openBoard ? [boardHandler("iwb", { openBoard }), boardHandler("ubz", { openBoard }), boardHandler("notebook", { openBoard }), boardHandler("olf", { openBoard })] : []), // C13 : avant `media`
+      flipchartRefusalHandler(),
       mediaHandler(media),
       unsupportedMediaHandler("mkv"),
       unsupportedMediaHandler("avi"),

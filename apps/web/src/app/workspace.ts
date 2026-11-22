@@ -540,7 +540,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         const head = new Uint8Array(await file.blob.slice(0, 4).arrayBuffer());
         let src: BoardSources;
         if (hasZipMagic(head)) src = boardSources(file.format, await board.unzip(file.blob));
-        else if (file.format === "iwb") src = { xml: [file.blob], media: new Map(), total: 1 };
+        else if (file.format === "iwb") src = { xml: [file.blob], names: ["content.xml"], manifest: null, json: null, media: new Map(), total: 1 };
         else throw new Error(UBZ_NOT_ZIP_MESSAGE);
         const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
         const parts = await board.read(xml, file.format);
