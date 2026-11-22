@@ -199,7 +199,8 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
     // JSON valide et profond : à la racine, fichier endommagé (pile dépassée ou racine illisible), jamais une autre erreur.
     const deep = (n: number): string => `${"[".repeat(n)}${"]".repeat(n)}`;
     expect(() => readOlf(deep(1e6))).toThrowError(new Error(OLF_BROKEN_MESSAGE));
-    expect(readOlf(`{"olf":{"pageset":[]},"x":${deep(1e6)}}`).pages).toEqual([]);
+    // Dix fois au-delà de ce qu'une pile récursive supporte (~1e4 niveaux) suffit pour le champ ignoré.
+    expect(readOlf(`{"olf":{"pageset":[]},"x":${deep(1e5)}}`).pages).toEqual([]);
     // Profond dans un champ lu : objet illisible, pas d'exception.
     const inner = JSON.parse(olf([page([stroke()])])) as { olf: { pageset: Array<{ page: { elements: unknown[] } }> } };
     const json = JSON.stringify(inner).replace('"points":"10,20 30,40"', `"points":${deep(1e4)}`);
@@ -222,12 +223,17 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
   });
 
   it("C13 N13 : trait de plus de MAX_POINTS points illisible", () => {
-    const pts = (n: number): string => Array.from({ length: n }, (_, i) => `${i % 7},1`).join(" ");
-    const { pages, warnings } = readOlf(olf([page([stroke({ points: pts(MAX_POINTS + 1) }), stroke({ points: pts(2) })])]));
+    // Chaînes jointes une seule fois (MAX_POINTS points, puis un de plus), insérées dans un texte minimal sans `JSON.stringify`.
+    const exactPts = Array(MAX_POINTS).fill("1,1").join(" ");
+    const file = (points: string[]): string =>
+      `{"olf":{"width":3840,"height":2160,"pageset":[{"page":{"viewbox":"0 0 3840 2160","elements":[${points
+        .map((p) => `{"stroke":{"points":"${p}","stroke":"#000000","pen-width":9}}`)
+        .join(",")}]}}]}}`;
+    const { pages, warnings } = readOlf(file([`${exactPts} 1,1`, "1,1 2,2"]));
     expect(pages[0]!.objects).toHaveLength(1);
     expect(warnings).toEqual(["page 1 : 1 objet illisible ignoré"]);
     // Borne exacte : MAX_POINTS points acceptés.
-    const exact = readOlf(olf([page([stroke({ points: pts(MAX_POINTS) })])]));
+    const exact = readOlf(file([exactPts]));
     expect(exact.pages[0]!.objects).toHaveLength(1);
     expect(exact.warnings).toEqual([]);
   });
