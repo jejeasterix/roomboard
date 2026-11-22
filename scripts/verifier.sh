@@ -42,6 +42,9 @@ wasm-bindgen --target web --remove-name-section --out-dir "$FORMATS_OUT" \
   target/wasm32-unknown-unknown/release/roomboard_formats_wasm.wasm
 
 pnpm install --frozen-lockfile
+# Marge du module formats (OE71, docs/essais/taille-wasm.md) : wasm-opt -Oz du paquet npm `binaryen` (Apache-2.0),
+# après wasm-bindgen, comme le fait wasm-pack ; la colle JS reste celle de wasm-bindgen. Le module principal n'y passe pas.
+pnpm exec wasm-opt -Oz "$FORMATS_OUT/roomboard_formats_wasm_bg.wasm" -o "$FORMATS_OUT/roomboard_formats_wasm_bg.wasm"
 # Licences des dépendances (U39, R21) : après pnpm install, sur le node_modules réel.
 bash scripts/tests/controle-licences.test.sh
 node scripts/controle-licences.mjs

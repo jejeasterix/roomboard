@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      binaryen:
+        specifier: 132.0.0
+        version: 132.0.0
 
   apps/desktop:
     devDependencies:
@@ -760,6 +764,10 @@ packages:
   baseline-browser-mapping@2.11.38:
     resolution: {integrity: sha512-rMgy5YW7x28SMfXHLlVZDBqlWzYZ0x2rVR/6FWrNBF0chjigARK1H6nM0hKA1Um3kPOlkQFVtjJs00d2N1ezuw==}
     engines: {node: '>=6.0.0'}
+    hasBin: true
+
+  binaryen@132.0.0:
+    resolution: {integrity: sha512-4Usg7yEvwO3FMso3Oov6qkOOHSod1IEv+boKkh77kTljM+eNBouqCTbqWswGzbG+vDNO/b/v2C4gfEh1WgB9Lg==}
     hasBin: true
 
   browserslist@4.29.6:
@@ -1721,6 +1729,8 @@ snapshots:
       solid-js: 1.9.20
 
   baseline-browser-mapping@2.11.38: {}
+
+  binaryen@132.0.0: {}
 
   browserslist@4.29.6:
     dependencies:
