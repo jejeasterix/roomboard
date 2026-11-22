@@ -225,12 +225,13 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
     page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, n, { timeout: 30000 }).catch(async () => {
       throw new Echec(`onglets attendus ${n}, lus ${await tabs()} ; avis : ${JSON.stringify(dialogs)} ; erreurs : ${errors.join(" | ")}`);
     });
-  const waitDialog = async (part) => {
+  // Cherche l'avis parmi ceux reçus depuis `k` (dialogs.length relevé avant le geste), jamais parmi les précédents.
+  const waitDialog = async (part, k) => {
     for (let i = 0; i < 100; i++) {
-      if (dialogs.some((d) => d.includes(part))) return;
+      if (dialogs.slice(k).some((d) => d.includes(part))) return;
       await page.waitForTimeout(100);
     }
-    throw new Echec(`avis attendu « ${part} », reçus : ${JSON.stringify(dialogs)}`);
+    throw new Echec(`avis attendu « ${part} », reçus : ${JSON.stringify(dialogs.slice(k))}`);
   };
   const download = async (click, name) => {
     const dl = page.waitForEvent("download");
@@ -270,8 +271,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   check(list.button > 0 && list.visible >= 3 * list.button && list.first, `S4 : liste des pages de ${Math.round(list.visible)} px visibles (≥ 3 boutons de ${Math.round(list.button)} px), le bouton « 1 » entier`);
 
   // S1 : .iwb ZIP.
+  const k273 = dialogs.length;
   await drop("lecon.iwb", iwbZip(), 8);
-  await waitDialog("page 1 : 1 vidéo non lue");
+  await waitDialog("page 1 : 1 vidéo non lue", k273);
   check(true, 'S1 : .iwb ZIP : nouvel onglet, data-elements="8", avis « page 1 : 1 vidéo non lue »');
   const box1 = await stageBox(page, 640);
   check(box1.height >= 640, `S4 : après l'import et l'avis, scène de ${Math.round(box1.width)} × ${Math.round(box1.height)} px (hauteur ≥ 640)`);
@@ -301,10 +303,12 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await fr();
 
   // S4 : copies .iwb puis .ubz de cet onglet ; chaque copie rouverte puis réécrite à l'identique.
+  const k304 = dialogs.length;
   const iwbCopy = await download(() => page.click(item("export-iwb")), "copie.iwb");
-  await waitDialog("Copie enregistrée au format .iwb");
+  await waitDialog("Copie enregistrée au format .iwb", k304);
+  const k306 = dialogs.length;
   const ubzCopy = await download(() => page.click(item("export-ubz")), "copie.ubz");
-  await waitDialog("Copie enregistrée au format .ubz");
+  await waitDialog("Copie enregistrée au format .ubz", k306);
   const a = unzipSync(await readFile(iwbCopy));
   check(Object.keys(a)[0] === "content.xml" && Object.keys(a).some((k) => /^images\/[0-9a-f]{64}\.png$/.test(k)), "S4 : copie .iwb : content.xml d'abord, puis images/<empreinte>.png");
   const xmlA = Buffer.from(a["content.xml"]).toString("utf8");
@@ -326,8 +330,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   check(true, "S4 : enregistré en .roomboard puis rouvert : 8 objets");
 
   // S3 : .ubz déposé et édité.
+  const k329 = dialogs.length;
   await drop("openboard.ubz", ubzZip(), 4);
-  await waitDialog("page 1 : 1 règle non lue");
+  await waitDialog("page 1 : 1 règle non lue", k329);
   const c = await camera();
   const black = await inkIn(page, [100 * c.zoom + c.tx, 600 * c.zoom + c.ty, 120 * c.zoom + c.tx, 620 * c.zoom + c.ty], { rgb: [0, 0, 0], tol: 30 });
   check(black > 50, `S3 : .ubz : 4 objets, fond noir (${black} pixels noirs), avis « règle non lue »`);
@@ -355,8 +360,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
 
   // S5 : fichier hostile.
   const before = dialogs.length;
+  const k358 = dialogs.length;
   await drop("hostile.iwb", enc(hostileIwb()), 2);
-  await waitDialog("image distante");
+  await waitDialog("image distante", k358);
   const said = dialogs.slice(before).join("\n");
   check(said.includes("1 script ignoré") && said.includes("1 entité inconnue ignorée") && said.includes("1 déclaration DOCTYPE ignorée"), "S5 : script, entité externe et DOCTYPE dits, jamais lus");
   check((await page.evaluate(() => window.__pwned)) === undefined, "S5 : ni le script ni onload n'ont tourné (window.__pwned absent)");
@@ -383,8 +389,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
     throw new Echec(`ni onglet ni avis après le dépôt ; erreurs : ${errors.join(" | ")}`);
   };
   // S1 : .notebook.
+  const k386 = dialogs.length;
   await drop("lecon.notebook", notebookZip(), 4, "1/2");
-  await waitDialog("Flash non lu");
+  await waitDialog("Flash non lu", k386);
   check((await lastTab()).includes("lecon.roomboard"), "S1 (lot 2) : onglet lecon.roomboard");
   if (captureNotebook) {
     await fr();
@@ -417,8 +424,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   console.log('ok — S1 : .notebook déposé : 2 pages dans l\'ordre du manifeste, 4 objets + Flash dit non lu, texte éditable, aller-retour .roomboard');
 
   // S2 : .olf.
+  const k420 = dialogs.length;
   await drop("cours.olf", olfZip(), 3);
-  await waitDialog("widget non lu");
+  await waitDialog("widget non lu", k420);
   check((await lastTab()).includes("cours.roomboard"), "S2 (lot 2) : onglet cours.roomboard, data-elements=\"3\"");
   const oc = await camera();
   const cream = await inkIn(page, [1700 * oc.zoom + oc.tx, 950 * oc.zoom + oc.ty, 1720 * oc.zoom + oc.tx, 970 * oc.zoom + oc.ty], { rgb: [255, 238, 204], tol: 10 });
@@ -426,20 +434,23 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   console.log('ok — S2 : .olf déposé : 3 objets (trait, image, texte), widget dit non lu, fond #FFEECC');
 
   // S3 : .olf renommé, vide, hostiles, flipchart, ancien fichier, scène.
+  const k429 = dialogs.length;
   await drop("renomme.notebook", olfZip(), 3);
-  await waitDialog("widget non lu");
+  await waitDialog("widget non lu", k429);
   check((await lastTab()).includes("renomme.roomboard"), "S3 (lot 2) : .olf renommé .notebook : mêmes lectures que S2");
   const refuse = async (name, bytes, part) => {
     const n = await tabs();
+    const k434 = dialogs.length;
     await dropFile(page, "#stage", name, bytes, "");
-    await waitDialog(part);
+    await waitDialog(part, k434);
     await page.waitForTimeout(300);
     check((await tabs()) === n, `S3 (lot 2) : ${name} refusé (« ${part} »), aucun onglet`);
   };
   await refuse("vide.notebook", emptyNotebook(), "contenu de tableau introuvable");
   await refuse("casse.olf", badOlf(), "content.json illisible");
   await refuse("gros.olf", bigOlf(), "trop gros");
-  await refuse("profond.olf", deepOlf(), "content.json illisible");
+  // JSON.parse lit 200 000 niveaux sans pile dépassée (V8) : le refus vient du pageset vide, pas de content.json.
+  await refuse("profond.olf", deepOlf(), "tableau sans page");
   await refuse("cours.flipchart", flipchart(), "exporter en .iwb ou PDF depuis ActivInspire");
   const hn = await tabs();
   const hd = dialogs.length;

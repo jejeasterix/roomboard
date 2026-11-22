@@ -8,14 +8,13 @@
 // Code : 0 réussi, 1 échec, 2 outil absent.
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { DIST, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, loadPlaywright, serve } from "./commun.mjs";
 
 const LABEL = "C13 fidélité";
 
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
-/** Avis résumés : « texte (×n) », sans le nom du fichier, tronqués à 160 signes. */
+/** Avis résumés : « texte (×n) », sans le nom du fichier, tronqués à 400 signes. */
 function summarize(msgs, name) {
   const count = new Map();
   for (const m of msgs) {
@@ -76,7 +75,6 @@ async function measure(context, port, file) {
       pages: total,
       objects,
       warns: ns,
-      empty: per.filter((n) => n === 0).length,
     };
   } finally {
     await page.close();
