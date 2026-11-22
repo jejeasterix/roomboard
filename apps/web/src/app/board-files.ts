@@ -84,9 +84,11 @@ export function boardSources(format: ZipBoard, entries: readonly { readonly path
   return { xml: kept.map((p) => p.blob), names: kept.map((p) => p.name), manifest, json: null, media, total: pages.length };
 }
 
-/** C13 lot 3 (N11) : entrées `.in`, `.io`, `.ir` et `version` d'un paperboard (lues par le Rust) ; le reste (images) va en
- *  `media`, clé = chemin normalisé : jamais envoyé au Worker des tableaux. */
+/** C13 lot 3 (N11, T23) : entrées `.in`, `.io`, `.ir` et `version` d'un paperboard (lues par le Rust) ; le reste (images)
+ *  va en `media`, clé = chemin normalisé. Chaque image y figure aussi par son seul nom, octets vides (DA4 : ses octets ne
+ *  partent jamais au Worker des tableaux) : le Rust y résout la table des ressources et rend le `href` de `media`. */
 const FLIPCHART_STRUCTURE = /(^|\/)version$|\.(in|io|ir)$/i;
+const NAME_ONLY = new Blob([]);
 export function flipchartSources(entries: readonly { readonly path: string; readonly blob: Blob }[]): {
   readonly structure: readonly { readonly path: string; readonly blob: Blob }[];
   readonly media: ReadonlyMap<string, Blob>;
@@ -96,7 +98,10 @@ export function flipchartSources(entries: readonly { readonly path: string; read
   for (const e of entries) {
     const path = normalBoardPath(e.path);
     if (FLIPCHART_STRUCTURE.test(path)) structure.push({ path, blob: e.blob });
-    else media.set(path, e.blob);
+    else {
+      media.set(path, e.blob);
+      structure.push({ path, blob: NAME_ONLY });
+    }
   }
   return { structure, media };
 }

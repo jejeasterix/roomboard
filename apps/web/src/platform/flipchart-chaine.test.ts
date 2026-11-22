@@ -45,7 +45,7 @@ function entriesOfS4(): { path: string; blob: Blob }[] {
     ],
     zlibSync,
   ) as Uint8Array;
-  return readBamboo(data, keepBambooPath, BAMBOO_LIMITS).map((e) => ({ path: e.path, blob: new Blob([e.bytes]) }));
+  return readBamboo(data, keepBambooPath, BAMBOO_LIMITS).map((e) => ({ path: e.path, blob: new Blob([new Uint8Array(e.bytes)]) }));
 }
 
 /** Même mise bout à bout que le Worker des tableaux : `names`, octets concaténés, fins cumulées. */
