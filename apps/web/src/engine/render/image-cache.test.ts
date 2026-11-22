@@ -432,6 +432,34 @@ describe("bitmaps retouchés par élément (C5, I19, I22)", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("C5 (I33) : échec puis aperçu réussi puis Valider : l'élément dessine l'aperçu, data-pixels pret", async () => {
+    const { c, calls } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    calls[0]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    c.bitmapOf(el({ brightness: 40 }), true);
+    const p = out("apercu");
+    calls[1]?.resolve(p);
+    await flush();
+    expect(c.bitmapOf(el({ brightness: 40 }))).toBe(p);
+    expect(c.pixelState()).toBe("pret");
+  });
+
+  it("C5 (I33) : K1 réussi, K2 en échec, retour à K1 : bitmap de K1 servi, data-pixels pret", async () => {
+    const { c, calls } = await ready();
+    c.bitmapOf(el({ brightness: 20 }));
+    const k1 = out("k1");
+    calls[0]?.resolve(k1);
+    await flush();
+    c.bitmapOf(el({ brightness: 40 }));
+    calls[1]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    expect(c.bitmapOf(el({ brightness: 20 }))).toBe(k1);
+    expect(c.pixelState()).toBe("pret");
+  });
+
   it("C6b B16 : annuler un remplissage d'image retouchée : bitmap retouché aussitôt, aucun calcul", async () => {
     const { c, calls, runner } = await ready();
     c.bitmapOf(el({ brightness: 20 }));

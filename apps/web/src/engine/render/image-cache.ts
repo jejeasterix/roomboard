@@ -370,17 +370,28 @@ export function createImageCache(
       }
       s.used = ++clock;
       const twin = slots.get(twinName);
+      /** Le bitmap de `key` est dessiné : un échec passé d'une autre clé ne se dit plus (I33). */
+      const sound = (): void => {
+        if (s.failed !== true) return;
+        s.failed = false;
+        publish();
+      };
       if (s.key === key && s.bitmap !== null) {
         if (!preview && twin !== undefined) drop(twinName);
+        sound();
         return s.bitmap;
       }
       if (twin !== undefined && twin.key === key && twin.bitmap !== null) {
-        if (preview) return twin.bitmap;
+        if (preview) {
+          sound();
+          return twin.bitmap;
+        }
         // Valider (I22) : l'élément reprend le bitmap de l'aperçu de même clé, sans recalcul.
         s.bitmap?.close?.();
         s.bitmap = twin.bitmap;
         s.key = key;
         s.wanted = null;
+        s.failed = false;
         slots.delete(twinName);
         publish();
         return s.bitmap;
