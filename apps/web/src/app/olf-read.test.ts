@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_POINTS, MAX_SPANS, type BoardObject } from "./board-io";
 import { BOARD_MAX_OBJECTS, BOARD_OBJECTS_MESSAGE, boardFirstPagesMessage } from "./board-files";
 import { OLF_BROKEN_MESSAGE, olfColor, olfMatrix, readOlf } from "./olf-read";
@@ -30,6 +30,9 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
     expect(olfMatrix(undefined, 2)).toEqual([2, 0, 0, 2, 0, 0]);
     expect(olfMatrix("1,0,x,0,1,0,0,0,1", 1)).toBeNull();
     expect(olfMatrix("1,0,0", 1)).toBeNull();
+    // Une valeur absurde (ni absente ni chaîne) rend l'objet illisible, jamais l'identité.
+    for (const bad of [5, [1, 0, 0, 0, 1, 0], null, true, {}]) expect(olfMatrix(bad, 1)).toBeNull();
+    expect(readOlf(olf([page([stroke({ matrix: 5 }), stroke({ matrix: [1, 0, 0, 0, 1, 0] })])])).warnings).toEqual(["page 1 : 2 objets illisibles ignorés"]);
   });
 
   it("C13 S2 : trait avec matrice à l'échelle 1920", () => {
@@ -196,7 +199,7 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
     // JSON valide et profond : à la racine, fichier endommagé (pile dépassée ou racine illisible), jamais une autre erreur.
     const deep = (n: number): string => `${"[".repeat(n)}${"]".repeat(n)}`;
     expect(() => readOlf(deep(1e6))).toThrowError(new Error(OLF_BROKEN_MESSAGE));
-    expect(() => readOlf(`{"olf":{"pageset":[]},"x":${deep(1e6)}}`)).not.toThrowError(RangeError);
+    expect(readOlf(`{"olf":{"pageset":[]},"x":${deep(1e6)}}`).pages).toEqual([]);
     // Profond dans un champ lu : objet illisible, pas d'exception.
     const inner = JSON.parse(olf([page([stroke()])])) as { olf: { pageset: Array<{ page: { elements: unknown[] } }> } };
     const json = JSON.stringify(inner).replace('"points":"10,20 30,40"', `"points":${deep(1e4)}`);
@@ -219,6 +222,26 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
     const { pages, warnings } = readOlf(olf([page([stroke({ points: pts(MAX_POINTS + 1) }), stroke({ points: pts(2) })])]));
     expect(pages[0]!.objects).toHaveLength(1);
     expect(warnings).toEqual(["page 1 : 1 objet illisible ignoré"]);
+    // Borne exacte : MAX_POINTS points acceptés.
+    const exact = readOlf(olf([page([stroke({ points: pts(MAX_POINTS) })])]));
+    expect(exact.pages[0]!.objects).toHaveLength(1);
+    expect(exact.warnings).toEqual([]);
+  });
+
+  it("C13 N13 : trop de points refusés avant tout découpage de la chaîne", () => {
+    const big = Array.from({ length: MAX_POINTS + 1 }, () => "1,1").join(" ");
+    const lengths: number[] = [];
+    const real = String.prototype.split;
+    const spy = vi.spyOn(String.prototype, "split").mockImplementation(function (this: string, ...args: Parameters<typeof real>) {
+      lengths.push(this.length);
+      return real.apply(this, args);
+    });
+    try {
+      readOlf(olf([page([stroke({ points: big })])]));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(lengths).not.toContain(big.length);
   });
 
   it("C13 N13 : texte de plus de MAX_SPANS segments illisible", () => {
@@ -227,5 +250,19 @@ describe("readOlf (C13 lot 2, N8, N9, DA3)", () => {
     const { pages, warnings } = readOlf(olf([page([box(MAX_SPANS + 1), box(MAX_SPANS)])]));
     expect(pages[0]!.objects).toHaveLength(1);
     expect(warnings).toEqual(["page 1 : 1 objet illisible ignoré"]);
+    // La borne tient dans la boucle : le tableau des segments ne dépasse jamais MAX_SPANS (+ le segment refusé), même pour un bloc géant.
+    let max = 0;
+    const real = Array.prototype.push;
+    Array.prototype.push = function (this: unknown[], ...items: unknown[]): number {
+      const n = real.apply(this, items);
+      if (n > max && items.length === 1 && typeof (items[0] as { text?: unknown } | undefined)?.text === "string") max = n;
+      return n;
+    };
+    try {
+      readOlf(olf([page([box(2 * MAX_SPANS)])]));
+    } finally {
+      Array.prototype.push = real;
+    }
+    expect(max).toBeLessThanOrEqual(MAX_SPANS + 1);
   });
 });
