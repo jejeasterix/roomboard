@@ -96,6 +96,22 @@ describe("segments ↔ DOM (C7b)", () => {
     expect(readSelection(r)).toBeNull();
   });
 
+  it("readSelection : <br> de fin de zone ou de bloc posé par le navigateur, jugé dans le vrai DOM (PC8)", () => {
+    const r = root();
+    r.innerHTML = "<span>abc</span><br>";
+    expect(readText(r)).toBe("abc");
+    document.getSelection()!.setBaseAndExtent(r, 2, r, 2);
+    expect(readSelection(r)).toEqual({ start: 3, end: 3 });
+    r.innerHTML = "<div>a<br>b</div>";
+    expect(readText(r)).toBe("a\nb");
+    const div = r.firstChild!;
+    document.getSelection()!.setBaseAndExtent(div, 2, div, 2);
+    expect(readSelection(r)).toEqual({ start: 2, end: 2 });
+    r.innerHTML = "<div>ab<br></div><div>c</div>";
+    document.getSelection()!.setBaseAndExtent(r.firstChild!, 2, r.firstChild!, 2);
+    expect(readSelection(r)).toEqual({ start: 2, end: 2 });
+  });
+
   it("readSelection sur un DOM du navigateur (blocs) : curseur au début du second bloc = 2", () => {
     const r = root();
     r.innerHTML = "<div>a</div><div>b</div>";
