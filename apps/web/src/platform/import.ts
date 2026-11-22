@@ -15,12 +15,13 @@
  */
 import { messageOf } from "./controller";
 import { hasBambooMagic, FLIPCHART_LATER_MESSAGE } from "./bamboo";
+import type { BoardSourceFormat } from "./board-reader";
 import { IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
 import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type Model3dShared } from "./model3d-handlers";
-import { ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
+import { extensionOf, ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 import { officeHandler, officeNoConverterHandler, officeSheetNoConverterHandler, officeWebHandler, type OfficeOpenFile } from "./office-import";
@@ -64,7 +65,7 @@ export interface ImportDeps {
   openPdf?(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
   /** C13 (D4, D5) : ouvre un tableau `.iwb` (ZIP ou XML) ou `.ubz` dans un nouvel onglet ; false si refusé (message
    *  déjà dit) ; absente : `.iwb` et `.ubz` refusés comme avant. */
-  openBoard?(file: { readonly name: string; readonly blob: Blob; readonly format: "iwb" | "ubz" | "notebook" | "olf" | "flipchart" }): Promise<boolean>;
+  openBoard?(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
   /** C4 (U25, D19) : paquet `.rbpack` importé dans la bibliothèque ; faux si refusé (avis déjà dit). Absent : refusé. */
   importPack?(name: string, bytes: Uint8Array): Promise<boolean>;
   /** C14 (M15) : sonde d'un média (durée, taille, poster) ; absente : la sonde du navigateur (T8). */
@@ -286,9 +287,6 @@ export function hasXmlHead(head: Uint8Array): boolean {
 
 const BOARD_ZIP_EXTENSION = { ubz: UBZ_EXTENSION, notebook: NOTEBOOK_EXTENSION, olf: OLF_EXTENSION } as const;
 
-/** Extension en minuscules, sans le point ; "" sans point. */
-const extensionOf = (name: string): string => (name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "");
-
 /** C13 (lot 2, palier bas) : un fichier signé `Bamboo` d'extension `.flipchart` ou inconnue (jamais `.as4a`, ni une extension
  *  connue) est refusé avec un message clair, sans lecture ; le lot 3 remplace ce gestionnaire. */
 export function flipchartRefusalHandler(): ImportHandler {
@@ -306,7 +304,7 @@ export function flipchartRefusalHandler(): ImportHandler {
 
 /** C13 (D4, D5) : `iwb` = nom `.iwb` et en-tête ZIP ou XML ; `ubz` = nom `.ubz` et en-tête ZIP. Document : nouvel onglet
  *  par `openBoard`, qui dit ses refus (endommagé, onglets pleins). */
-export function boardHandler(format: "iwb" | "ubz" | "notebook" | "olf", deps: { openBoard: NonNullable<ImportDeps["openBoard"]> }): ImportHandler {
+export function boardHandler(format: Exclude<BoardSourceFormat, "flipchart">, deps: { openBoard: NonNullable<ImportDeps["openBoard"]> }): ImportHandler {
   return {
     id: format,
     nature: "document",

@@ -8,10 +8,13 @@
  * `.notebook` (lot 2, N6) : pages dans l'ordre du manifeste, lu par le Rust (`notebook_order`, D16), choisi par
  * `notebookOrder` dans le Worker.
  */
+import { normalArchivePath } from "./archive-path";
 import { runOnce, type WorkerLike } from "./one-shot-worker";
 import type { ZipFile } from "./zip-read";
 
 export type BoardDialect = "iwb" | "ubz" | "notebook";
+/** C13 (N5) : format lu à l'import (plus large que le dialecte du module `formats`) ; seule définition, `board-io` la réexporte. */
+export type BoardSourceFormat = BoardDialect | "olf" | "flipchart";
 /** Formats de copie (N5) : `.notebook` est lu seulement (N2). */
 export type BoardWriteFormat = "iwb" | "ubz";
 /** Lecture d'un `.notebook` : `names[i]` = chemin normalisé de `files[i]`, manifeste `imsmanifest.xml`, `max` pages. */
@@ -28,7 +31,8 @@ export const BOARD_WRITE_FAILED_MESSAGE = "écriture du tableau interrompue";
 /** `BoardError::TooBig` (`board.rs`). */
 export const BOARD_OBJECTS_MESSAGE = "fichier de tableau trop gros (plus de 100 000 objets)";
 /** Débuts des messages de `BoardError` et de la liaison, rendus tels quels. */
-const KNOWN_PREFIXES = ["fichier endommagé : ", "liste de tableau invalide : ", "format de tableau inconnu : "] as const;
+const DAMAGED_PREFIX = "fichier endommagé : ";
+const KNOWN_PREFIXES = [DAMAGED_PREFIX, "liste de tableau invalide : ", "format de tableau inconnu : "] as const;
 
 /** Message rendu par le Worker : un message du module connu tel quel ; toute autre erreur (panique Wasm, module absent) : `failure`. */
 export function boardErrorMessage(err: unknown, failure: string): string {
@@ -44,8 +48,8 @@ export interface BoardPart {
   readonly warnings: readonly string[];
 }
 
-/** Chemin d'une entrée d'archive : barres droites, sans `./` en tête (ZIP écrits sous Windows). */
-export const normalBoardPath = (path: string): string => path.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+/** Chemin d'une entrée d'archive (alias de `normalArchivePath`). */
+export const normalBoardPath = normalArchivePath;
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
 
@@ -93,7 +97,10 @@ export function notebookOrder(
   if (manifest !== null) {
     try {
       listed = order(manifest).map((n) => n.toLowerCase());
-    } catch {
+    } catch (err) {
+      // Seul « fichier endommagé » (manifeste illisible) est avalé : une panique Wasm ou toute autre erreur remonte.
+      const m = err instanceof WebAssembly.RuntimeError ? null : err instanceof Error ? err.message : typeof err === "string" ? err : null;
+      if (m === null || !m.startsWith(DAMAGED_PREFIX)) throw err;
       listed = [];
     }
   }
@@ -106,6 +113,13 @@ export function notebookOrder(
   const guessed = picked.length < files.length || files.length === 0;
   for (let i = 0; i < files.length; i++) if (!picked.includes(i)) picked.push(i);
   return { files: picked.slice(0, max).map((i) => files[i]!), warnings: guessed ? [NOTEBOOK_ORDER_GUESSED] : [] };
+}
+
+/** N6 : avis de l'ordre des pages mis en tête de la première part (les autres parts et le tableau d'entrée restent tels quels). */
+export function withLeadingWarnings<P extends BoardPart>(parts: readonly P[], warnings: readonly string[]): readonly P[] {
+  const [first, ...rest] = parts;
+  if (first === undefined || warnings.length === 0) return parts;
+  return [{ ...first, warnings: [...warnings, ...first.warnings] }, ...rest];
 }
 
 export interface BoardCodec {

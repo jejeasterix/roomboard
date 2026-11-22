@@ -11,6 +11,7 @@ import {
   BOARD_WRITE_FAILED_MESSAGE,
   boardErrorMessage,
   notebookOrder,
+  withLeadingWarnings,
   type BoardDialect,
   type BoardWriteFormat,
 } from "./board-reader";
@@ -42,7 +43,7 @@ self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
       j.dialect === "notebook"
         ? notebookOrder(mod.notebook_order, j.files, j.names ?? [], j.manifest ?? null, j.max ?? j.files.length)
         : { files: j.files, warnings: [] };
-    const parts = files.map((xml, i) => {
+    const read = files.map((xml, i) => {
       const r = mod.BoardReader.open(xml, j.dialect, j.dialect === "iwb" ? 1 : i + 1);
       try {
         return { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
@@ -50,7 +51,7 @@ self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
         r.free();
       }
     });
-    if (parts[0] !== undefined && warnings.length > 0) parts[0] = { ...parts[0], warnings: [...warnings, ...parts[0].warnings] };
+    const parts = withLeadingWarnings(read, warnings);
     self.postMessage({ parts }, { transfer: parts.map((p) => p.ops.buffer as ArrayBuffer) });
   } catch (err) {
     self.postMessage({ error: boardErrorMessage(err, j.op === "write" ? BOARD_WRITE_FAILED_MESSAGE : BOARD_FAILED_MESSAGE) });

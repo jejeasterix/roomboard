@@ -34,9 +34,10 @@ export function olfColor(s: unknown): string | null {
   return m === null ? null : `#${m[2]!.toLowerCase()}`;
 }
 
-/** Matrice 3×3 par lignes `a,c,e,b,d,f,0,0,1` → `[a, b, c, d, e, f]`, échelle `s` appliquée ; null si illisible. */
+/** Matrice 3×3 par lignes `a,c,e,b,d,f,0,0,1` → `[a, b, c, d, e, f]`, échelle `s` appliquée ; absente : l'échelle seule ; null si illisible (dont toute valeur non chaîne). */
 export function olfMatrix(s: unknown, scale: number): Matrix | null {
-  if (typeof s !== "string") return [scale, 0, 0, scale, 0, 0];
+  if (s === undefined) return [scale, 0, 0, scale, 0, 0];
+  if (typeof s !== "string") return null;
   const v = s.split(",").map((x) => Number(x.trim()));
   if (v.length < 6 || v.slice(0, 6).some((x) => !Number.isFinite(x))) return null;
   const [a, c, e, b, d, f] = v as [number, number, number, number, number, number];
@@ -89,8 +90,13 @@ const positive = (v: number | null): v is number => v !== null && v > 0;
 /** `x,y x,y …` (repère local) → triplets `x, y, pression` (1) ; null si moins de 2 points, plus de `MAX_POINTS`, ou illisible. */
 function olfPoints(v: unknown): number[] | null {
   if (typeof v !== "string") return null;
-  const pairs = v.trim().split(/\s+/);
-  if (pairs.length < 2 || pairs.length > MAX_POINTS) return null;
+  const text = v.trim();
+  // Borne avant l'allocation : les jetons sont comptés un à un, sans tableau, et le décompte s'arrête à `MAX_POINTS + 1`.
+  const token = /\S+/g;
+  let tokens = 0;
+  while (token.exec(text) !== null) if (++tokens > MAX_POINTS) return null;
+  const pairs = text.split(/\s+/);
+  if (pairs.length < 2) return null;
   const out: number[] = [];
   for (const p of pairs) {
     const xy = p.split(",");
@@ -159,14 +165,17 @@ function readText(b: Rec, scale: number): BoardObject | null {
     const para = rec(rec(block)?.paragraph);
     const list = para?.["text-list-container"] ?? [];
     if (para === null || !Array.isArray(list)) return null;
-    if (i > 0) spans.push({ text: "\n", attrs: {} });
+    // `MAX_SPANS` tient à chaque ajout : un bloc géant n'est jamais lu en entier.
+    if (i > 0) {
+      if (spans.length >= MAX_SPANS) return null;
+      spans.push({ text: "\n", attrs: {} });
+    }
     for (const item of list) {
       const span = readSpan(rec(rec(item)?.text));
-      if (span === null) return null;
+      if (span === null || spans.length >= MAX_SPANS) return null;
       first ??= span;
       spans.push(span);
     }
-    if (spans.length > MAX_SPANS) return null;
   }
   const size = first?.attrs.size ?? DEFAULT_TEXT_SIZE;
   const color = first?.attrs.color ?? DEFAULT_TEXT_COLOR;
