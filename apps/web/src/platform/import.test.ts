@@ -1172,6 +1172,19 @@ describe("registre C16 : documents Office (O2, O3, O4, S3)", () => {
     expect(notify).toHaveBeenCalledWith("notes.xlsx : importé en valeurs ; installez LibreOffice ou Microsoft Office pour ses pages");
   });
 
+  it("coque sans convertisseur : casse.xlsx sans en-tête PK refusé (prochaine version) ; notes.xlsx collé sans chemin : tableau sans avis (O4, O14)", async () => {
+    const t = fakeTarget();
+    const notify = vi.fn(async (_m: string) => undefined);
+    const readSheet = vi.fn(async (_b: Blob) => G);
+    const r = await createImporter({
+      openDocument: vi.fn(async () => true), notify, target: () => t.target, readSheet, convertOffice: vi.fn(async () => new Blob()),
+      openOffice: vi.fn(async () => true), officeConverter: false,
+    }).importFiles([file("casse.xlsx", new Uint8Array([1, 2, 3, 4]), "/home/u/casse.xlsx"), file("notes.xlsx", PK)], null);
+    expect([r.refused, r.inserted]).toEqual([["casse.xlsx"], ["notes.xlsx"]]);
+    expect(readSheet).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls).toEqual([[`casse.xlsx : ${LATER_FORMAT_MESSAGE}`]]);
+  });
+
   it("coque sans convertisseur : diapos.pptx dit « installez LibreOffice ou Microsoft Office », fichier jamais lu", async () => {
     const blob = vi.fn(async () => new Blob([PK]));
     const f: DroppedFile = { name: "diapos.pptx", size: PK.length, mime: "", path: "/home/u/diapos.pptx", head: async () => PK, blob };
