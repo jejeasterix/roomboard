@@ -1,0 +1,37 @@
+{
+  "now": "2026-11-22T00:00:00Z",
+  "appVersion": "0.1.0",
+  "assets": {},
+  "pages": [
+    {
+      "id": "p1",
+      "backdrop": null,
+      "elements": [
+        {
+          "id": "i1",
+          "kind": "image",
+          "transform": [1, 0, 0, 1, 0, 0],
+          "image": { "asset": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "w": 640, "h": 480, "quarterTurns": 1, "brightness": 500, "transparent": "blanc" }
+        },
+        {
+          "id": "i2",
+          "kind": "image",
+          "transform": [1, 0, 0, 1, 0, 0],
+          "image": { "asset": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "w": 640, "h": 480, "quarterTurns": 1, "crop": [0, 0, 0, 5], "flipX": "oui" }
+        },
+        {
+          "id": "i3",
+          "kind": "image",
+          "transform": [1, 0, 0, 1, 0, 0],
+          "image": { "asset": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "w": 640, "h": 480, "quarterTurns": 1, "sourceAsset": "illisible" }
+        },
+        {
+          "id": "i4",
+          "kind": "image",
+          "transform": [1, 0, 0, 1, 0, 0],
+          "image": { "asset": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "w": 640, "h": 480, "quarterTurns": 1, "flipX": false, "brightness": 0, "contrast": null }
+        }
+      ]
+    }
+  ]
+}

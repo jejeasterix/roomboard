@@ -21,7 +21,9 @@
 // `table.rs` : mêmes refus dans le même ordre, mêmes messages, une étape par commande, aucune étape sans effet ; vue
 // = cellules non vides dans l'ordre de lecture ; tableau mal formé lu comme cadre inconnu (sourceKind "table").
 // Écart assumé, hors contrat (PC6) : les entrées illisibles d'un JSON de la fausse liaison sont retirées au
-// chargement, là où le cœur les garde dans le document.
+// chargement, là où le cœur les garde dans le document. Exception (OE43) : les réglages et le `sourceAsset` d'une image
+// présents mais lus absents sont gardés bruts (`imageRaw`), comme le cœur : ils font une étape quand une commande les
+// retire (`SetImageParams`, `restore`, `Fill`), et sont réécrits tels quels.
 // C3 : chemin group (Group, Ungroup), extract, insertFragment, insertPages, fragments JSON { kind: "fragment", name, … } ;
 // mêmes refus et messages que le cœur, dans le même ordre, joués par le bloc « contrat C3 » (aucun écart exclu). Group : un
 // id d'un groupe vaut tout son groupe extérieur ; le type du fichier (kind) se lit avant son contenu.
@@ -104,6 +106,17 @@ import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans,
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
 
+/** Réglages d'une image (C5), tels que le cœur les range à plat sur l'élément. */
+const IMAGE_PARAM_KEYS = ["crop", "flipX", "flipY", "quarterTurns", "brightness", "contrast", "transparent"] as const;
+/** Miroir de `BAKED` (`image.rs`) : champs cuits dans le nouvel asset par un remplissage, retirés même bruts. */
+const BAKED = ["brightness", "contrast", "transparent"] as const;
+/** OE43 : `imageRaw` sans `keys` ; vide : absent. */
+function withoutRaw(raw: Readonly<Record<string, unknown>> | undefined, keys: readonly string[]): { imageRaw?: Readonly<Record<string, unknown>> } {
+  if (raw === undefined) return {};
+  const rest = Object.fromEntries(Object.entries(raw).filter(([k]) => !keys.includes(k)));
+  return Object.keys(rest).length > 0 ? { imageRaw: rest } : {};
+}
+
 /** Élément d'un kind inconnu (U3, K8) : champs bruts gardés tels quels, réécrits par save. */
 interface FakeUnknown {
   readonly sourceKind: string;
@@ -127,6 +140,8 @@ interface FakeElement {
   readonly shape?: ShapeData;
   readonly text?: TextData;
   readonly image?: ImageData;
+  /** OE43 : champs d'image présents dans le fichier mais lus absents (illisibles ou neutres), gardés bruts comme le cœur. */
+  readonly imageRaw?: Readonly<Record<string, unknown>>;
   /** C14 : média lisible ; un média mal formé est un `unknown` (sourceKind "media"), comme un tableau. */
   readonly media?: MediaData;
   /** C15 : objet 3D lisible ; un objet 3D mal formé est un `unknown` (sourceKind "model3d"), comme un média. */
@@ -1260,8 +1275,12 @@ class FakeDocument implements CoreDocument {
             const i = p ? p.elements.findIndex((x) => x.id === t.id) : -1;
             const old = p?.elements[i];
             if (p && old?.image) {
+              // Comme `cmd_fill_image` : champs cuits retirés même bruts (`BAKED`), géométrie gardée (brute comprise),
+              // `sourceAsset` brut remplacé par l'asset courant au premier remplissage.
+              const { imageRaw: _raw, ...rest } = old;
               const o = old.image;
-              p.elements[i] = { ...old, image: { asset: t.asset.id, w: o.w, h: o.h, sourceAsset: o.sourceAsset ?? o.asset, ...geometryOf(paramsOf(o)) } };
+              const image = { asset: t.asset.id, w: o.w, h: o.h, sourceAsset: o.sourceAsset ?? o.asset, ...geometryOf(paramsOf(o)) };
+              p.elements[i] = { ...rest, image, ...withoutRaw(old.imageRaw, [...BAKED, "sourceAsset"]) };
             }
             putMeta(s.assets, t.asset);
             return { pages: [cmd.page], ids: [t.id], removed: [] };
@@ -1312,7 +1331,10 @@ class FakeDocument implements CoreDocument {
         const sameMatrix = cmd.matrix.every((v, k) => v === found.element.transform[k]);
         // C6b (B11) : `restore` avec un `sourceAsset` : l'asset d'origine revient, `sourceAsset` retiré (une étape).
         const restoring = cmd.restore === true && im.sourceAsset !== undefined;
-        if (sameParams(paramsOf(im), next) && sameMatrix && !restoring) return this.unchanged();
+        // OE43, `plan` du cœur : un réglage brut est retiré ou remplacé ; `restore` retire un `sourceAsset` brut.
+        const raw = found.element.imageRaw ?? {};
+        const rawOps = IMAGE_PARAM_KEYS.some((k) => k in raw) || (cmd.restore === true && "sourceAsset" in raw);
+        if (sameParams(paramsOf(im), next) && sameMatrix && !restoring && !rawOps) return this.unchanged();
         const page = found.page.id;
         return this.step((s) => {
           const p = s.pages.find((q) => q.id === page);
@@ -1322,7 +1344,9 @@ class FakeDocument implements CoreDocument {
             const o = old.image;
             const asset = restoring ? (o.sourceAsset ?? o.asset) : o.asset;
             const source = !restoring && o.sourceAsset !== undefined ? { sourceAsset: o.sourceAsset } : {};
-            p.elements[i] = { ...old, transform: cmd.matrix, image: { asset, w: o.w, h: o.h, ...source, ...next } };
+            const { imageRaw: _raw, ...rest } = old;
+            const gone = cmd.restore === true ? [...IMAGE_PARAM_KEYS, "sourceAsset"] : [...IMAGE_PARAM_KEYS];
+            p.elements[i] = { ...rest, transform: cmd.matrix, image: { asset, w: o.w, h: o.h, ...source, ...next }, ...withoutRaw(old.imageRaw, gone) };
           }
           return { pages: [page], ids: [cmd.id], removed: [] };
         });
@@ -1677,7 +1701,7 @@ function savedElement(e: FakeElement): SavedElement {
     return { id: e.id, kind: e.unknown.sourceKind, ...(e.unknown.hasTransform ? { transform: [...e.transform] } : e.unknown.rawTransform !== undefined ? { transform: e.unknown.rawTransform } : {}), raw: { ...e.unknown.raw }, ...group };
   }
   if (e.table) return { id: e.id, kind: "table", transform: [...e.transform], table: { ...e.table, cells: Object.fromEntries(e.table.cells) }, ...group };
-  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: e.image, ...group };
+  if (e.image) return { id: e.id, kind: "image", transform: [...e.transform], image: { ...e.imageRaw, ...e.image }, ...group };
   if (e.media) return { id: e.id, kind: "media", transform: [...e.transform], media: e.media, ...group };
   if (e.model3d) return { id: e.id, kind: "model3d", transform: [...e.transform], model3d: savedModel3d(e.model3d), ...group };
   if (e.fill) return { id: e.id, kind: "fill", transform: [...e.transform], fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h, contours: e.fill.contours.map((r) => [...r]) }, ...group };
@@ -1839,16 +1863,21 @@ function loadElement(e: SavedElement): FakeElement {
   if (e.kind === "image" && e.image) {
     // C5 : réglages relus champ par champ (un champ illisible est lu comme absent, U3).
     const im = e.image;
-    const src = (im as unknown as Readonly<Record<string, unknown>>)["sourceAsset"];
+    const all = im as unknown as Readonly<Record<string, unknown>>;
+    const src = all["sourceAsset"];
     const image: ImageData = {
       asset: im.asset,
       w: im.w,
       h: im.h,
       // C6b (B12) : lu tolérant, comme le cœur (non conforme = absent, U3).
       ...(isAssetId(src) ? { sourceAsset: src } : {}),
-      ...readParams(im as unknown as Readonly<Record<string, unknown>>, im.w, im.h),
+      ...readParams(all, im.w, im.h),
     };
-    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...group };
+    // OE43 : présents mais lus absents (illisibles ou neutres) : gardés bruts, comme le cœur.
+    const kept = image as unknown as Readonly<Record<string, unknown>>;
+    const imageRaw = Object.fromEntries([...IMAGE_PARAM_KEYS, "sourceAsset"].filter((k) => all[k] !== undefined && kept[k] === undefined).map((k) => [k, all[k]]));
+    const rawField = Object.keys(imageRaw).length > 0 ? { imageRaw } : {};
+    return { id: e.id, transform: toMatrix6(e.transform) ?? IDENTITY, style: NO_STYLE, image, ...rawField, ...group };
   }
   return {
     id: e.id,

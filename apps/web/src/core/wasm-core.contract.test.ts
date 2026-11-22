@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CellIds, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
@@ -3587,6 +3587,71 @@ describe.each(factories)("contrat C6b : $name", ({ f }) => {
     expect(r.asset(NEXT.id)).toEqual(NEXT);
     r.free();
     d.free();
+  });
+});
+
+// Parité C6b (OE43, reste d'OD91) : champs bruts illisibles d'un fichier chargé. Le cœur garde chaque champ brut
+// (`image.rs`) : un remplissage retire les seuls champs cuits (`BAKED`) et garde la géométrie brute ; « Rétablir
+// l'original » retire un `sourceAsset` illisible en une étape. Mêmes commandes sur `image-c6b-brut.roomboard` (vrai
+// module) et `image-c6b-brut.fake.json` (fausse liaison) ; vues, étapes et versions comparées à chaque temps.
+describe.skipIf(loaded === null)("parité C6b : champs bruts d'un fichier chargé", () => {
+  const fixtureOf = (path: string): Uint8Array => new Uint8Array(fs.readFileSync(new URL(path, import.meta.url)));
+  const both = (): { real: CoreDocument; fake: CoreDocument } => ({
+    real: need().core.load(fixtureOf("../../../../crates/roomboard-core/tests/fixtures/image-c6b-brut.roomboard")),
+    fake: fakeCore.load(fixtureOf("./fixtures/image-c6b-brut.fake.json")),
+  });
+  const reload = (f: CoreFactory, d: CoreDocument): CoreDocument => {
+    const r = f.load(d.save(now, "0.1.0"));
+    d.free();
+    return r;
+  };
+  /** Ce qu'un écran voit et ce que l'annulation garde : vues des trois images, pouvoir annuler, version avancée ou non. */
+  const state = (d: CoreDocument, run: () => Change | undefined): unknown => {
+    const v = d.version();
+    const c = run();
+    const change = c === undefined ? null : { pages: c.pages, ids: c.ids, removed: c.removed, full: c.full };
+    return { views: ["i1", "i2", "i3", "i4"].map((id) => d.element(id)), undo: d.canUndo(), step: d.version() !== v, change };
+  };
+  const same = (id: string, restore = false): Command => ({ type: "SetImageParams", id, params: { quarterTurns: 1 }, matrix: I, restore });
+  const fill = (id: string): Command => ({ type: "Fill", page: "p1", target: { kind: "image", id, asset: NEXT }, color: null });
+
+  /** Une suite de temps (commande, annuler, rétablir, relire) jouée sur les deux cœurs, comparée temps par temps. */
+  const play = (steps: readonly (Command | "undo" | "redo" | "reload")[]): void => {
+    let { real, fake } = both();
+    expect(state(fake, () => undefined)).toEqual(state(real, () => undefined));
+    for (const [k, s] of steps.entries()) {
+      if (s === "reload") {
+        real = reload(need().core, real);
+        fake = reload(fakeCore, fake);
+        expect(state(fake, () => undefined), `temps ${k} : ${s}`).toEqual(state(real, () => undefined));
+        continue;
+      }
+      const run = (d: CoreDocument) => (): Change => (s === "undo" ? d.undo() : s === "redo" ? d.redo() : d.apply(s));
+      expect(state(fake, run(fake)), `temps ${k} : ${JSON.stringify(s)}`).toEqual(state(real, run(real)));
+    }
+    real.free();
+    fake.free();
+  };
+
+  it("chargé : les champs illisibles ou neutres sont lus absents, les mêmes vues des deux côtés", () => {
+    const { real, fake } = both();
+    expect(real.element("i1")).toEqual({ id: "i1", kind: "image", transform: I, image: { asset: ABC, w: 640, h: 480, quarterTurns: 1 } });
+    for (const id of ["i1", "i2", "i3", "i4"]) expect(fake.element(id)).toEqual(real.element(id));
+    real.free();
+    fake.free();
+  });
+
+  it("réglages inchangés sur un fichier chargé : une étape qui retire les champs bruts, puis aucune", () => {
+    play([same("i1"), same("i1"), same("i2"), "undo", "reload", same("i2"), same("i2")]);
+  });
+
+  it("remplissage : pixels bruts retirés (aucune étape ensuite), géométrie brute gardée (une étape ensuite), annulé, relu", () => {
+    play([fill("i1"), same("i1"), fill("i2"), "undo", same("i2"), "undo", "redo", "reload", same("i2"), same("i2"), "undo", "reload", same("i2")]);
+    play([fill("i4"), same("i4"), "undo", "undo", same("i4"), same("i4"), "reload", same("i4", true)]);
+  });
+
+  it("Rétablir l'original : sourceAsset illisible retiré en une étape, gardé par un fichier relu, remplacé au premier remplissage", () => {
+    play([same("i3", true), same("i3", true), "undo", "reload", same("i3", true), "undo", fill("i3"), "reload", same("i3", true)]);
   });
 });
 

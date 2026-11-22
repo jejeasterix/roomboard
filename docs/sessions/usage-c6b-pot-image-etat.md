@@ -54,7 +54,7 @@ ouvertes : — · passées : —
 ## Pièges trouvés
 - Revue immédiate des tâches `concepteur-critique` (T1, T5, T6, T7) reportée à la double relecture de fin, faute de temps (borne 4 h).
 - T7 : le code du plan bloquait la file quand le lanceur rend `null` (dispose) ; corrigé et testé.
-- T6 hors périmètre : `sourceAsset` illisible dans un fichier chargé — Rust `restore` le retire (une étape), le faux cœur l'oublie à la lecture.
+- T6 hors périmètre : `sourceAsset` illisible dans un fichier chargé — Rust `restore` le retire (une étape), le faux cœur l'oublie à la lecture. **Fermé (OE43, 2026-11-22)** : le faux cœur garde bruts les champs d'image présents mais lus absents (`imageRaw`) ; `restore` les retire en une étape comme le cœur.
 - Prémisses démenties : `flood_fill` ne compare que le RVB et n'efface pas (à étendre) ; essai C6a `c6a-pot-navigateur.mjs:284-303` repose sur « clic image → fond » (à réécrire) ; aucune fixture C5.
 - Chantier parallèle OD90 (C15 3D) : conflits probables `element.rs`, `commands.rs`, `roomboard-wasm/src/lib.rs`, `api.ts`, `wasm-core.ts`, `fake-core.ts`, `image-cache.ts`, `board-session.ts`, `fill-target.ts`, `verifier.sh`, `commun.mjs`.
 
@@ -121,3 +121,11 @@ Qualité : 2 major corrigés en T11 (dispose de la session sans `fillQueue.dispo
 
 ## Constats d'architecture
 simplification · pixel-worker · apps/web/src/platform/pixel-worker.ts · lecture RVBA (OffscreenCanvas, drawImage, getImageData) écrite deux fois, extraire `readRgba`.
+
+## Parité du faux cœur (OE43, 2026-11-22) — constat fermé
+- Constat de la relecture (parité `geometryOf` contre `BAKED`) : le cœur Rust range les champs d'image à plat et les garde bruts ; un remplissage retire les seuls champs cuits (`BAKED`) et garde la géométrie, même illisible. Le faux cœur jetait à la lecture tout champ illisible : il ne faisait aucune étape là où le cœur en fait une (réglages inchangés sur un fichier chargé, remplissage puis réglages, `restore` d'un `sourceAsset` illisible).
+- Correctif : `fake-core.ts` garde ces champs sous `imageRaw` (lecture, réécriture, `Fill` sans `BAKED` ni `sourceAsset`, `SetImageParams` qui les retire et fait une étape). Le Rust n'a pas changé.
+- Preuve : `crates/roomboard-core/tests/parite_c6b.rs` (fixture `image-c6b-brut.roomboard`, 3 tests) ; bloc « parité C6b : champs bruts d'un fichier chargé » de `wasm-core.contract.test.ts` (fixture `image-c6b-brut.fake.json`), mêmes commandes sur les deux cœurs, vues, étapes et versions comparées après remplissage, annulation, rétablissement et relecture.
+- Reste hors périmètre (PC6) : un champ inconnu d'une image (clé hors des réglages et de `sourceAsset`) est gardé par le cœur, oublié par le faux cœur.
+
+- Relecture adverse (OE43) : aucun blocker ni major ; 4 minor et 1 simplification corrigés (neutres lisibles et `null` dans les fixtures, `Change` comparé, annulation d'un remplissage avant relecture, tests Rust qui prouvent les champs bruts avant et après l'enregistrement, cast unique). Un minor laissé : `IMAGE_PARAM_KEYS` et `BAKED` de `fake-core.ts` recopient `KEYS` et `pixelsOf` d'`image-params.ts` ; `BAKED` reste le miroir nommé du Rust.
