@@ -1,6 +1,7 @@
 # Cadrage — usage-c13-lots2-3 (C13, lots 2 et 3 : `.notebook`, `.olf`, puis `.flipchart`)
 
-Date : 2026-11-22. Mode autonome (brief OE32), aucune question à Jérôme. Base `origin/main` @ 3b73c27 (PR #31 comprise).
+Date : 2026-11-22. Mode autonome (brief OE32), aucune question à Jérôme. Amendé après la contre-relecture, tour 1
+(arbitrages de l'orchestrateur I1 à I4 et M1 à M6, écrits tels quels). Base `origin/main` @ 3b73c27 (PR #31 comprise).
 Ce cadrage **étend** le lot 1 (`docs/plans/usage-c13-lot1-svg-iwb-ubz-cadrage.md`, D1 à D24, DA1, DA2) sans le refaire :
 toute règle du lot 1 non reprise ici vaut telle quelle (D7 construction par commandes, D8 coordonnées, D8b valeurs
 refusées, D11 texte, D12 images, D13 groupes, D15 avertissements par sorte, D16 sécurité XML, D23 fichiers de test).
@@ -11,12 +12,12 @@ Un `.notebook` (SMART), un `.olf` (myViewBoard), puis un `.flipchart` (ActivInsp
 document RoomBoard dans un nouvel onglet, au niveau de la section 10 du cadrage de l'usage, avec la liste
 d'avertissements de ce qui n'est pas lu (U2) ; lot 2 (`.notebook` puis `.olf`) fusionnable seul, lot 3 (`.flipchart`)
 ensuite.
-Gabarit : **chantier**, cadrage court (25 questions au plus ; **22 consommées**, N1 à N22).
+Gabarit : **chantier**, cadrage court (25 questions au plus ; **23 consommées**, N1 à N23).
 
 Sources appliquées telles quelles : `docs/plans/usage-cadrage.md` ligne C13 (:560), U1 (:54), U2 (:55), U23 (:76), U25
 (:78, amendée par Q1 :619), U26 (:79), U36 (:89), U39 (:92), § 10 (:578-608), Q5 (:641-643) ; étude
 `docs/etudes/usage-formats-tableaux.md` § 5, § 6, § 11, § 14 q. 6 ; coffre `02_Decisions/0266` (lecteur SVG dans
-`formats`, ZIP en TS), `0246` et `0069` (ActCraft) ; lecteur `.flipchart` d'ActCraft (`~/projets/actcraft` @ 29d551ae,
+`formats`, ZIP en TS) et `0069` (ActCraft) ; précédent C9 de reprise d'ActCraft (`THIRD_PARTY_NOTICES.md:187-194`) ; lecteur `.flipchart` d'ActCraft (`~/projets/actcraft` @ 29d551ae,
 `formats/src/{bamboo,objectstream,flipchart}.cpp`, `flipchartids.h`, `tests/support/flipchartwriter.h`) ; exemples hors
 dépôt `~/telechargements-roomboard/` (lecture seule, sondés par scripts Python `-I` dans `/tmp/sonde-fpg-cadreur/`).
 
@@ -25,27 +26,28 @@ dépôt `~/telechargements-roomboard/` (lecture seule, sondés par scripts Pytho
 | # | point | décision | source | réversible ? |
 |---|---|---|---|---|
 | N1 | Niveaux visés | `.notebook` **B** ; `.olf` **A** pour traits, images, fonds (vérifiés sur les exemples), textes en B ; `.flipchart` **B** (pages, fond, traits, lignes, formes, images, textes ; le reste en avertissements). | § 10 (:588, :591, :593) ; U36 | oui |
-| N2 | Export, R | **Import seul** pour les trois formats. Aucune action « Enregistrer une copie au format .notebook / .olf » : l'édition passe par import puis export `.iwb` ou PDF, déjà livrés. Conflit : la § 10 donne R au `.notebook` et R, E au `.olf` ; Q5 (décision de Jérôme, rang 1) l'emporte : « Q5 = a » et « Idem pour des fichier smartboard, myViewBoard ou .iwb » (importer, éditer, exporter en `.iwb` ou PDF ; jamais réécrire le format d'origine), et répond à la q. 6 de l'étude (§ 14). La § 10 est à amender à la clôture (HU1-1). | Q5 (:641-643) ; étude § 14 q. 6 ; brief (« seulement si la section 10 fixe un niveau E ») | oui (HU1-1) |
+| N2 | Export, R | **Import seul** pour les trois formats. Aucune action « Enregistrer une copie au format .notebook / .olf » : l'édition passe par import puis export `.iwb` ou PDF, déjà livrés. Conflit : la § 10 donne R au `.notebook` et R, E au `.olf` ; Q5 (décision de Jérôme, rang 1) l'emporte : « Q5 = a » et « Idem pour des fichier smartboard, myViewBoard ou .iwb » (importer, éditer, exporter en `.iwb` ou PDF ; jamais réécrire le format d'origine), et répond à la q. 6 de l'étude (§ 14). La § 10, U1 (:54), U36 (:89) et la ligne C13 (:560) sont à amender à la clôture (HU1-1, M1). | Q5 (:641-643) ; étude § 14 q. 6 ; brief (« seulement si la section 10 fixe un niveau E ») | oui (HU1-1) |
 | N3 | Ce que fait le dépôt | Nouvel onglet `<nom>.roomboard`, `target: null`, comme le lot 1 (D5) ; jamais d'insertion. | Q1 (:619) ; lot 1 D5 | oui |
-| N4 | Détection (U23) | **Octets magiques, puis extension, puis contenu.** Famille ZIP : en-tête ZIP + extension `.iwb`, `.ubz`, `.notebook` ou `.olf` → un même chemin `openBoard` ; après décompression, `resolveBoardFormat(ext, paths)` choisit le dialecte **sur le contenu** : `content.xml` → `iwb` ; `imsmanifest.xml` + `page<N>.svg` → `notebook` ; `content.json` → `olf` (racine `olf` contrôlée à la lecture, N13) ; `page<N>.svg` sans manifeste → `ubz`. Le format de l'extension gagne si ses marques sont là ; sinon le format reconnu ; aucun → refus « fichier endommagé : contenu de tableau introuvable dans ce .<ext> ». Un ZIP d'autre extension reste hors de cette famille (inchangé). `.flipchart` : signature ` Bamboo ` (8 octets) suffit, quelle que soit l'extension (signature propre, comme `looksLikeFlipchart` d'ActCraft) ; un nom `.flipchart` sans signature → refus « fichier endommagé : ce n'est pas un paperboard ActivInspire ». Gestionnaires placés avec ceux du lot 1, avant `media`. | U23 (:76) ; brief ; `import.ts:288-329` ; ActCraft `flipchart.h:36` | oui |
+| N4 | Détection (U23) | **Octets magiques, puis extension, puis contenu.** Famille ZIP : en-tête ZIP + extension `.iwb`, `.ubz`, `.notebook` ou `.olf` → un même chemin `openBoard` ; après décompression, `resolveBoardFormat(ext, paths)` choisit le dialecte **sur le contenu** : `content.xml` → `iwb` ; `imsmanifest.xml` + `page<N>.svg` → `notebook` ; `content.json` → `olf` (racine `olf` contrôlée à la lecture, N13) ; `page<N>.svg` sans manifeste → `ubz`. Le format de l'extension gagne si ses marques sont là ; sinon le format reconnu ; aucun → refus « fichier endommagé : contenu de tableau introuvable dans ce .<ext> ». Extension `.notebook` : des pages `page<N>.svg` sans manifeste restent en dialecte `notebook`, avec le repli d'N6 (I4). Un ZIP d'autre extension reste hors de cette famille (inchangé). `.flipchart` : signature ` Bamboo ` (8 octets), retenue **seulement** pour l'extension `.flipchart` ou une extension inconnue du registre (M5 ; signature propre, comme `looksLikeFlipchart` d'ActCraft). **Lot 2** : ce fichier est détecté et refusé avec « exporter en .iwb ou PDF depuis ActivInspire » (0 o dans le Wasm) ; **lot 3** : ce refus devient l'import (I1) ; un nom `.flipchart` sans signature → refus « fichier endommagé : ce n'est pas un paperboard ActivInspire ». Gestionnaires placés avec ceux du lot 1, avant `media`. | U23 (:76) ; brief ; `import.ts:288-329` ; ActCraft `flipchart.h:36` | oui |
 | N5 | Types de format | `BoardFormat` (`"iwb" \| "ubz"`) reste le type de l'**export** ; nouveau `BoardSourceFormat = BoardFormat \| "notebook" \| "olf" \| "flipchart"` pour la lecture (`openBoard`, `BoardDialect` du Worker). Aucune action d'export ne peut naître par erreur. | N2 ; `board-io.ts:19`, `board-reader.ts:12`, `workspace.ts:164-166` | oui |
 | N6 | `.notebook` : lecture | Dialecte `Notebook` de `board::read_svg` (même lecteur SVG, DA2 du lot 1). Ordre des pages : `<resource identifier="pages">` de `imsmanifest.xml` (lu en Rust, `quick-xml`), repli sur l'ordre numérique de `page<N>.svg` (base 0 ou 1 selon l'écrivain, vu sur les exemples) avec avertissement « ordre des pages déduit des noms ». Le Worker ZIP garde `imsmanifest.xml` (filtre `keepBoardPath` étendu). | étude § 5 (:83) ; sonde des 6 exemples ; `read.rs:1519` | oui |
-| N7 | `.notebook` : dialecte SMART | Nouveau : élément `path` (commandes `M L H V Z`, absolues et relatives ; `C Q S T A` aplaties en segments, avertissement « courbes approchées ») → trait fermé ou ouvert (patron D10 du lot 1), **sauf** un chemin fermé de 4 sommets alignés sur les axes → forme `rect` avec son remplissage ; `rect` à `width/height="100%"` → fond de page (D14) ; `xbk_transform` ignoré (doublon de `transform`) ; `tspan` imbriqués et `justification` lus comme `text-align` ; `xlink:href` d'image décodé (`%20`, crochets) avant `mediaOf` ; `flash`, `persistence*`, `scrollingText`, `hr` et inconnus → avertissements par sorte (Flash, objet inconnu). | sonde : 166 `path` (seulement `M L z`), 70 `ellipse`, 46 `image`, 1 412 `tspan`, attributs `shapename`, `xbk_transform`, `locked` ; lot 1 D10, D14, D15 | oui (HU1-3) |
-| N8 | `.olf` : où lire | **TypeScript**, `app/olf-read.ts` (nouveau), sur le main thread après le Worker ZIP : `JSON.parse` du `content.json` puis `BoardListPage[]` directement, qui vont à `buildBoardDocument` du lot 1. **Écart à U23** (qui place les formats lus par calcul pur en Rust), du même ordre que D3 du lot 1 : un lecteur JSON en Rust coûterait du module `formats` (aucune `serde`, D6 du lot 1), alors que `JSON.parse` est natif, sans entité ni script, et que la marge de 121 Ko est gardée pour le lot 3. | U23 ; lot 1 D3, D6 ; 0266 ; DA3 | oui (DA3) |
+| N7 | `.notebook` : dialecte SMART | Nouveau : élément `path` (commandes `M L H V Z`, absolues et relatives ; `C Q S T` aplaties en segments, avertissement « courbes approchées » ; arc `A` : objet sauté, avertissement « arc non lu », pas d'aplatissement (M6)) → trait fermé ou ouvert (patron D10 du lot 1), **sauf** un chemin fermé de 4 sommets alignés sur les axes → forme `rect` avec son remplissage ; `rect` à `width/height="100%"` → fond de page (D14) ; `xbk_transform` ignoré (doublon de `transform`) ; `tspan` imbriqués et `justification` lus comme `text-align` ; `xlink:href` d'image décodé (`%20`, crochets) avant `mediaOf` ; `flash`, `persistence*`, `scrollingText`, `hr` et inconnus → avertissements par sorte (Flash, objet inconnu). | sonde : 166 `path` (seulement `M L z`), 70 `ellipse`, 46 `image`, 1 412 `tspan`, attributs `shapename`, `xbk_transform`, `locked` ; lot 1 D10, D14, D15 | oui (HU1-3) |
+| N8 | `.olf` : où lire | **TypeScript**, `app/olf-read.ts` (nouveau), **exécuté dans le Worker ZIP** (jamais sur le fil principal, I3) : `content.json` borné à 64 Mio avant `JSON.parse` (au-delà : refus « fichier endommagé : content.json trop gros »), puis `BoardListPage[]` rendus à la page, qui passent par les bornes existantes de `board-io.ts` (budget d'objets `BOARD_MAX_OBJECTS`, `MAX_POINTS`, `MAX_SPANS`, `MAX_GROUP_DEPTH`, exportées et réutilisées, jamais recopiées) puis par `buildBoardDocument` du lot 1. **Écart à U23** (qui place les formats lus par calcul pur en Rust), du même ordre que D3 du lot 1 : un lecteur JSON en Rust coûterait du module `formats` (aucune `serde`, D6 du lot 1), alors que `JSON.parse` est natif, sans entité ni script, et que la marge de 121 Ko est gardée pour le lot 3. | U23 ; lot 1 D3, D6 ; 0266 ; DA3 | oui (DA3) |
 | N9 | `.olf` : correspondances | `stroke` → trait (`points` « x,y x,y … » en repère local, `matrix` 3×3 par lignes `a,c,e,b,d,f,0,0,1` → matrice `[a,b,c,d,e,f]`, `pen-width` → épaisseur, `stroke` couleur, `is-highlighter` → avertissement « surligneur rendu en trait ») ; `image` → image (`source` relatif à l'archive, `matrix`) ; `textarea` → texte, segments depuis `text-blocks-container` (paragraphes, `font-size`, `font-weight`, `font-style`, `text-decoration`, `font-family`, `fill` en `#AARRGGBB`), `custom-data` (XAML) **jamais lu** ; `backgrounds` : `color` → fond, `image` → image en bas de pile couvrant la page ; `widget-player` → avertissement « widget non lu » ; page `is-hidden` → lue, avertissement ; échelle `1920 / width` du `viewbox` (3840 × 2160 et 1919,99 vus). | sonde des 6 `.olf` (`stroke` 2 926, `textarea` 30, `image` 5, `widget-player` 16 ; translation de `analisis.olf` recalculée : y local 104 − 483 ≈ bbox −383) ; lot 1 D8 | oui (HU1-4) |
 | N10 | `.flipchart` : ce que contient un `.fpg` (sonde) | Un `.fpg` décompressé est **un conteneur Bamboo imbriqué** (même signature, version 7), d'une entrée `<page>.in` (index « culm ») et de `<id>.io` (flux d'objets binaires Qt, en-tête ` Bamboo ` u16 1 u16 7, puis balises `O`, `M`…). Les images sont des entrées **du conteneur racine** (TIFF en majorité, puis BMP, PNG, JPEG), les ressources partagées sont des `.ir`, les miniatures `.thm` sont des BMP 320 × 240. Taille annoncée = en-tête qCompress = taille réelle sur les 5 exemples ; aucun `.fpg` dans un `.fpg`. Le contenu est lisible : ActCraft le lit déjà (même auteur, U39). | sonde (`/tmp/sonde-fpg-cadreur/sonde.py`, 5 fichiers, 319 à 1 853 entrées en tout, 2,4 à 32,7 Mo décompressés, plus grosse entrée 12,7 Mo) ; ActCraft `bamboo.h:24-27`, `objectstream.h:85-87` | — |
 | N11 | `.flipchart` : partage TS / Rust | **Conteneur en TypeScript, objets en Rust** (DA4). TS (`platform/bamboo.ts`, nouveau, appelé par le Worker ZIP) lit le conteneur racine et chaque `.fpg`, décompresse par `fflate` (`Unzlib` en flux, déjà présent) ; images en `Blob`, jamais copiées dans le Wasm. Rust (`roomboard-formats::flipchart`, nouveau) reçoit les seules entrées `.in`, `.io`, `.ir`, `version` et rend une BoardList (`board::encode`). Aucune décompression zlib en Rust, aucun troisième module Wasm. | brief ; lot 1 D3 ; 0266 ; DAU1 | oui (DA4) |
-| N12 | `.flipchart` : lecture des objets | Portage en Rust du lecteur d'ActCraft, réduit au niveau B : flux d'objets (`objectstream.cpp`), index culm (`parseIndex`), document (taille de page par défaut, table des ressources), page (taille, fond couleur ou image), objets `kStrokeObject` (3) → trait, `kLineObject` (5) → trait ouvert, `kShapeObject` (7) → trait fermé ou `rect` (règle de N7), `kImageObject` (9) → image, `kTextObject` (11) → texte à segments (police, taille en points, graisse, italique, souligné, couleur des runs), `kGroupObject` (18) → groupe, ordre de dessin couche, profondeur, arbre (§ 7.3 d'ActCraft). Tables d'identifiants recopiées à la main de `flipchartids.h`, sans nom de Promethean. Non lus, avertis par sorte : actions (22 à 28, 50, 463), grille (13, 14), étiquettes (53), connecteurs (52), son et vidéo (253), MathML (460), texte vertical (469), rideau, projecteur, repère XY. | U36 (:89) ; U39 (:92), 0246 ; ActCraft `flipchart.cpp:850-1040`, `flipchartids.h:14-41` | oui |
-| N13 | Bornes et sécurité (U26) | Toutes les bornes du lot 1 tiennent (100 Mo par fichier web, 256 Mio décompressés, 100 000 objets, 500 premières pages avec avis). En plus : **Bamboo** : 20 000 entrées en tout, imbrication 1 (un `.fpg` dans un `.fpg` → refus), taille annoncée lue avant de décompresser (au-delà du budget restant → refus sans rien décompresser), en-tête qCompress différent de la taille annoncée → refus, décompression arrêtée dès que la sortie dépasse l'annonce (bombe) ou finit plus courte → refus « fichier endommagé : entrée <nom> de taille mensongère », chaîne UTF-16 de longueur impaire ou plus longue que la donnée → refus ; **flux d'objets** : toute longueur lue bornée par les octets restants avant allocation, imbrication 32 (comme ActCraft `kMaxNesting`), pointeurs de groupe en cycle ignorés avec avertissement, côté de page hors `]0, 100 000]` → 1024 × 768 et avertissement ; **ZIP** : `keepBoardPath` refuse toujours absolu, `..`, `__MACOSX` ; **XML** du `.notebook` : D16 du lot 1 (DOCTYPE ignoré, aucune entité externe) ; **JSON** : erreur de `JSON.parse` (y compris pile dépassée) → « fichier endommagé » ; chemins d'image `http(s):`, `file:`, `data:` ou hors archive → avertissement, jamais chargés. Un test par cas. | U26 (:79) ; brief ; ActCraft `bamboo.h:15`, `flipchart.cpp:23-31` ; lot 1 D3, D12, D16 | oui (HU2-1) |
+| N12 | `.flipchart` : lecture des objets | Portage en Rust du lecteur d'ActCraft, réduit au niveau B : flux d'objets (`objectstream.cpp`), index culm (`parseIndex`), document (taille de page par défaut, table des ressources), page (taille, fond couleur ou image), objets `kStrokeObject` (3) → trait, `kLineObject` (5) → trait ouvert, `kShapeObject` (7) → trait fermé ou `rect` (règle de N7), `kImageObject` (9) → image, `kTextObject` (11) → texte à segments (police, taille en points, graisse, italique, souligné, couleur des runs), `kGroupObject` (18) → groupe, ordre de dessin couche, profondeur, arbre (§ 7.3 d'ActCraft). Tables d'identifiants recopiées à la main de `flipchartids.h`, sans nom de Promethean. Non lus, avertis par sorte : actions (22 à 28, 50, 463), grille (13, 14), étiquettes (53), connecteurs (52), son et vidéo (253), MathML (460), texte vertical (469), rideau, projecteur, repère XY. Le message d'U36 (« exportez en `.iwb` ou PDF depuis le logiciel d'origine ») n'existe pas dans le code : c'est le refus Bamboo du lot 2 qui le livre (M2, I1). | U36 (:89) ; U39 (:92) ; ActCraft `flipchart.cpp:850-1040`, `flipchartids.h:14-41` | oui |
+| N13 | Bornes et sécurité (U26) | Toutes les bornes du lot 1 tiennent (100 Mo par fichier web, 256 Mio décompressés, 100 000 objets, 500 premières pages avec avis). En plus : **Bamboo** : 20 000 entrées en tout, imbrication 1 (un `.fpg` dans un `.fpg` → refus), taille annoncée lue avant de décompresser (au-delà du budget restant → refus sans rien décompresser), en-tête qCompress différent de la taille annoncée → refus, décompression arrêtée dès que la sortie dépasse l'annonce (bombe) ou finit plus courte → refus « fichier endommagé : entrée <nom> de taille mensongère », chaîne UTF-16 de longueur impaire ou plus longue que la donnée → refus ; **flux d'objets** : toute longueur lue bornée par les octets restants avant allocation, imbrication 32 (comme ActCraft `kMaxNesting`), pointeurs de groupe en cycle ignorés avec avertissement, côté de page hors `]0, 100 000]` → 1024 × 768 et avertissement ; **ZIP** : `keepBoardPath` refuse toujours absolu, lettre de lecteur, et tout segment `..` ou `__MACOSX` (contrôle de chaque segment, comme `keepZipPath`, M3) ; **XML** du `.notebook` : D16 du lot 1 (DOCTYPE ignoré, aucune entité externe) ; **JSON** : erreur de `JSON.parse` (y compris pile dépassée) → « fichier endommagé » ; chemins d'image `http(s):`, `file:`, `data:` ou hors archive → avertissement, jamais chargés. Un test par cas. | U26 (:79) ; brief ; ActCraft `bamboo.h:15`, `flipchart.cpp:23-31` ; lot 1 D3, D12, D16 | oui (HU2-1) |
 | N14 | Images non décodables | TIFF (35 dans `NAPLAN`, plusieurs dans `History`), EMF, WMF : **avertissement** « page N : K images TIFF non lues », pas de décodage ajouté. Prémisse démentie : la § 10 donne TIFF en A (C2), mais le code le refuse (`image-import.test.ts:64`, « R14 : TIFF refusé »). | § 10 ; `image-import.test.ts:64` ; lot 1 D12 | oui (HU1-2) |
 | N15 | Médias du ZIP gardés | `keepBoardPath` ajoute `imsmanifest.xml` et `content.json` ; `BOARD_ZIP_EXTENSIONS` inchangé (PNG, JPEG, GIF, WebP, BMP, SVG). Vidéos, sons, Flash, widgets, miniatures jamais décompressés. Le filtre Bamboo garde `.in`, `.io`, `.ir`, `.fpg`, `version` et les images de la même liste ; `.tif`, `.thm`, `.wmv`, `.avi`, `.swf`, `.wav` jamais décompressés. | lot 1 D3 ; sonde | oui |
-| N16 | Constat à fermer en passant | `keepBoardPath` refait les contrôles de `keepZipPath` (constat `zip-worker.ts:35`, ouvert) : le chantier touche ce filtre, il en tire `safeArchivePath(name): string \| null` partagé par `keepZipPath`, `keepBoardPath` et le filtre Bamboo (même règle pour `__MACOSX`). Autres constats des zones touchées (`board.rs:358` curseur, `qt_html.rs:19` doublons) : non aggravés, le lecteur `.flipchart` a son propre curseur binaire (format différent). | `docs/architecture-constats.md` (lignes C13 lot 1) ; référence anti-refactorisation | oui |
-| N17 | Taille des modules | Plafonds inchangés (principal 1 572 864 o, `formats` 3 145 728 o). Le principal ne bouge pas d'un octet (aucune ligne du cœur ni de `roomboard-wasm`). Budget du module `formats` (marge 121 196 o) : lot 2 ≤ 20 Ko (dialecte et manifeste), lot 3 ≤ 80 Ko, marge finale ≥ 20 Ko. **Tâche de mesure en tête de chaque lot** : taille avant, puis après chaque tâche Rust (`verifier.sh`). Dépassement au lot 3 → retirer d'abord la lecture fine du texte (segments → texte brut), puis les groupes (aplatis). | brief ; `docs/essais/taille-wasm.md` (C13 lot 1) ; H2-13 | oui |
-| N18 | Bibliothèques (U39) | Aucune dépendance neuve (crate ou npm) : `quick-xml`, `fflate` déjà acceptés. Code repris d'ActCraft (GPL-3.0-only, seul auteur : Jérôme) noté dans `THIRD_PARTY_NOTICES.md`. | U39 (:92) ; 0246 | oui |
+| N16 | Constat à fermer en passant | `keepBoardPath` refait les contrôles de `keepZipPath` (constat `zip-worker.ts:35`, ouvert) : le chantier touche ce filtre, il en tire `safeArchivePath(name): string \| null` partagé par `keepZipPath`, `keepBoardPath` et le filtre Bamboo, qui contrôle **chaque segment** (`..`, `__MACOSX`), comme `keepZipPath` (M3). Autres constats des zones touchées (`board.rs:358` curseur, `qt_html.rs:19` doublons) : non aggravés, le lecteur `.flipchart` a son propre curseur binaire (format différent). | `docs/architecture-constats.md` (lignes C13 lot 1) ; référence anti-refactorisation | oui |
+| N17 | Taille des modules | Plafonds inchangés (principal 1 572 864 o, `formats` 3 145 728 o). Le principal ne bouge pas d'un octet (aucune ligne du cœur ni de `roomboard-wasm`). Budget du module `formats` (marge 121 196 o) : lot 2 ≤ 20 Ko (dialecte et manifeste) ; **rappel de l'orchestrateur (I1) : il ne reste qu'environ 1 Ko de jeu** au-delà des budgets prévus. **Tâche de mesure en tête de chaque lot** : taille avant, puis après chaque tâche Rust (`verifier.sh`) ; en tête du lot 3, estimation mesurée du lecteur et **arrêt du lot 3 si l'estimation dépasse** la marge restante. En cours de lot 3 : retirer d'abord la lecture fine du texte (segments → texte brut), puis les groupes (aplatis). | brief ; `docs/essais/taille-wasm.md` (C13 lot 1) ; H2-13 | oui |
+| N18 | Bibliothèques (U39) | Aucune dépendance neuve (crate ou npm) : `quick-xml`, `fflate` déjà acceptés. Code repris d'ActCraft (GPL-3.0-only, seul auteur : jejeasterix) noté dans `THIRD_PARTY_NOTICES.md`, sur le patron de la section C9. | U39 (`usage-cadrage.md:92`) ; précédent C9 (`THIRD_PARTY_NOTICES.md:187-194`) | oui (HU1-6) |
 | N19 | Fichiers de test | Tous fabriqués : `.notebook` et `.olf` par des ZIP générés dans les tests (`zipStored`) ; `.flipchart` par un générateur repris de `flipchartwriter.h` d'ActCraft, en **un seul exemplaire** `scripts/essais/fabriques/flipchart.mjs` (Bamboo + qCompress par `node:zlib` côté essai, `fflate` côté vitest via le même module), et pour `cargo test` un écrivain de test minimal du flux d'objets (`#[cfg(test)]`). Exemples réels jamais copiés ni commités. | U36 (Q6) ; lot 1 D23 ; brief | oui |
 | N20 | Mesure de fidélité | `docs/essais/c13-fidelite-lots2-3.md`, un tableau par format (fichier, pages, objets lus par sorte, avertissements, résultat), patron `c13-fidelite-iwb.md` ; mesure hors de `verifier.sh` par un script qui reçoit les chemins en argument (navigateur sur le dist, avis lu), jamais lancé depuis le dossier des exemples. | brief ; `docs/essais/c13-fidelite-iwb.md` | oui |
 | N21 | Essai navigateur | Étendre `scripts/essais/c13-tableaux-navigateur.mjs` (déjà dans `verifier.sh --e2e`, :122) : lot 2 dépose un `.notebook` et un `.olf` générés ; lot 3 un `.flipchart` généré ; pour chacun : pages, objets, avis d'avertissements, enregistrement `.roomboard`, réouverture ; `#stage` ≥ 640 px de large et de haut (mesure du lot 1) ; requêtes hors origine comptées (zéro). Capture `docs/essais/c13-notebook-lecon.png` d'un `.notebook` fabriqué. | brief ; lot 1 S4, S5 ; `c13-tableaux-navigateur.mjs:127-163` | oui |
 | N22 | Choix visuels | Aucun composant neuf : avis d'ouverture existant (`say`, `boardWarningsMessage`) ; seul changement visible hors import : le libellé du filtre « Importer » (`IMPORT_FILTER`) nomme les tableaux. Porte visuelle de fin de lot : la capture N21. | design existant ; `files.ts:81-93` | oui |
+| N23 | Ordre et livraison des lots (I1) | Le lot 2 a sa propre PR, fusionnée dès qu'elle est verte. Le lot 3 ne démarre que si le lot 2 est fusionné avant 11:45, sur une branche neuve tirée de `main` ; sinon il reste en chantier à part (rien fusionné, 0 o). Le lot 2 inclut le palier bas du `.flipchart` : détection et refus clair (N4). | arbitrage I1 de l'orchestrateur | oui |
 
 ## 3. Carte d'impact
 
@@ -64,6 +66,7 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
 | `crates/roomboard-formats/src/flipchart/` (nouveau : `stream.rs`, `index.rs`, `ids.rs`, `read.rs`) | oui [3] | N12 | S |
 | `crates/roomboard-formats/src/lib.rs:5-9` | oui [3] | `pub mod flipchart` | V |
 | `crates/roomboard-formats-wasm/src/lib.rs:177-216` (`BoardReader`) | oui [2][3] | dialecte `notebook`, `notebook_order` ; `FlipchartReader` [3] | V |
+| `crates/roomboard-formats-wasm/src/lib.rs:217-245` (`write_board_xml_inner`) | oui [2] | bras `Dialect::Notebook` qui refuse l'écriture `notebook` (« format sans export »), avec son test (M4) | V |
 | `crates/roomboard-formats/Cargo.toml`, `Cargo.toml` racine (`opt-level`) | non | aucune crate neuve (N18) ; réglage D2 du lot 1 inchangé | V |
 | `crates/roomboard-core/**`, `crates/roomboard-wasm/**` | non | aucune commande neuve (D7 du lot 1) ; principal inchangé à l'octet | V |
 | `crates/roomboard-formats/src/{pdf,sheet,pixels,container}.rs` | non | tests à garder verts | V |
@@ -80,8 +83,8 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
 | `apps/web/src/platform/board-worker.ts:8-31` | oui [2][3] | ordre du manifeste puis lecture [2] ; `FlipchartReader` [3] | V |
 | `apps/web/src/platform/container.ts:110` (`hasBoardReader`) | oui [2][3] | méthodes neuves du binding | V |
 | `apps/web/src/app/board-files.ts:25-50` (`boardSources`), `:63` (`boardTabName`) | oui [2][3] | `resolveBoardFormat` (N4), sources par format | V |
-| `apps/web/src/app/olf-read.ts` (nouveau) | oui [2] | N8, N9 | S |
-| `apps/web/src/app/board-io.ts:19` (`BoardFormat`), `:518` (`buildBoardDocument`) | oui [2] | type de lecture séparé (N5) ; construction réutilisée | V |
+| `apps/web/src/app/olf-read.ts` (nouveau) | oui [2] | N8, N9 ; appelé par le Worker ZIP (I3) | S |
+| `apps/web/src/app/board-io.ts:19` (`BoardFormat`), `:20-28` (`MAX_GROUP_DEPTH`, `MAX_POINTS`, `MAX_SPANS`), `:518` (`buildBoardDocument`) | oui [2] | type de lecture séparé (N5) ; bornes exportées pour `olf-read.ts` (I3) ; construction réutilisée | V |
 | `apps/web/src/app/workspace.ts:531-572` (`openBoard`), `:164` | oui [2][3] | trois formats de plus ; chemin `.flipchart` sans ZIP | V |
 | `apps/web/src/platform/files.ts:70-93` (`IMPORT_EXTENSIONS`, `IMPORT_FILTER`) | oui [2][3] | `notebook`, `olf` [2], `flipchart` [3] | V |
 | `apps/web/src/main.ts:184-185` (`spawnBoardWorker`) | non | même Worker | V |
@@ -104,17 +107,18 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
 | `scripts/verifier.sh:122` (`--e2e`), `:51-75` (tailles) | non | essai déjà appelé ; plafonds inchangés | V |
 | `scripts/controle-hors-ligne.mjs` | non | aucune chaîne d'hôte neuve ; à garder vert | V |
 | `scripts/controle-licences.mjs`, `scripts/licences-acceptees.json` | non | aucune dépendance neuve | V |
-| `THIRD_PARTY_NOTICES.md` | oui [3] | reprise d'ActCraft (N18) | V |
+| `THIRD_PARTY_NOTICES.md:187-194` (section C9, patron) | oui [3] | section neuve : reprise du lecteur `.flipchart` d'ActCraft (N18) | V |
 | `docs/essais/taille-wasm.md` | oui [2][3] | tailles avant et après chaque lot (N17) | V |
 | `docs/essais/c13-fidelite-lots2-3.md`, `docs/essais/c13-notebook-lecon.png` (nouveaux) | oui [2][3] | N20, N21 | S |
-| `docs/plans/usage-cadrage.md:588-593` (§ 10) | non (clôture) | amendement N2 et N14, par l'orchestrateur | V |
+| `docs/plans/usage-cadrage.md:54` (U1), `:89` (U36), `:560` (C13), `:588-593` (§ 10) | non (clôture) | amendement N2, N14 et M1, par l'orchestrateur | V |
 | `apps/desktop/**` | non | aucun build Tauri | V |
 
 **Tests**
 
 | endroit | touché ? | pourquoi | V/S |
 |---|---|---|---|
-| `crates/roomboard-formats/src/board/read.rs` (tests) | oui [2] | dialecte SMART, `path`, ordre du manifeste, XML hostile | V |
+| `crates/roomboard-formats/src/board/read.rs` (tests) | oui [2] | dialecte SMART, `path`, arc `A` averti, ordre du manifeste, XML hostile | V |
+| `crates/roomboard-formats-wasm/src/lib.rs` (tests) | oui [2] | écriture `notebook` refusée (M4) | V |
 | `crates/roomboard-formats/src/flipchart/*` (tests) | oui [3] | flux d'objets, index, page, bornes (N13) | S |
 | `apps/web/src/platform/import.test.ts:1027` (tableaux) | oui [2][3] | détection (N4), refus `.flipchart` sans signature | V |
 | `apps/web/src/platform/zip-worker.test.ts` | oui [2][3] | filtres, `safeArchivePath`, `op: "bamboo"` | V |
@@ -159,7 +163,7 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
 
 | besoin du chantier | module existant (chemin:ligne) | interface appelée ou étendue | décision |
 |---|---|---|---|
-| Entrée unique des fichiers | `apps/web/src/platform/import.ts:288` (`boardHandler`) | `boardHandler(format: BoardSourceFormat, deps)` ; `ImportDeps.openBoard?(f: { name; blob; format: BoardSourceFormat }): Promise<boolean>` ; `flipchartHandler(deps)` avec `detect: (head) => hasBambooMagic(head)` | étendre |
+| Entrée unique des fichiers | `apps/web/src/platform/import.ts:288` (`boardHandler`) | `boardHandler(format: BoardSourceFormat, deps)` ; `ImportDeps.openBoard?(f: { name; blob; format: BoardSourceFormat }): Promise<boolean>` ; `flipchartHandler(deps)` avec `detect: (head, name) => hasBambooMagic(head) && (isFlipchartName(name) \|\| !knownExtension(name))` ; lot 2 : `run` rend le refus « exporter en .iwb ou PDF depuis ActivInspire » ; lot 3 : `run` ouvre | étendre |
 | Reconnaître un ZIP | `import.ts:160` (`hasZipMagic`) | `hasZipMagic(head)` | réutiliser |
 | Reconnaître un Bamboo | aucun (`Bamboo`, `bamboo` cherchés : rien) | `hasBambooMagic(head: Uint8Array): boolean` dans `platform/bamboo.ts` | nouveau module (DA4) |
 | Choisir le dialecte d'un ZIP | `app/board-files.ts:25` (`boardSources`) | `resolveBoardFormat(ext: BoardSourceFormat, paths: readonly string[]): BoardSourceFormat \| null` ; `boardSources(format: BoardSourceFormat, entries)` → `{ xml, json?, manifest?, media, total }` | étendre |
@@ -175,7 +179,8 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
 | Texte riche Qt | `board/qt_html.rs:249` (`read_qt_html`) | non utilisé : les runs du `.flipchart` sont déjà découpés (N12) | — |
 | Liaison Wasm | `crates/roomboard-formats-wasm/src/lib.rs:177` (`BoardReader`) | `BoardReader.open(xml, "notebook", first_page)` ; `notebook_order(manifest) -> Vec<String>` ; `FlipchartReader.open(names: Vec<String>, data: &[u8], ends: &[u32])` → `ops()`, `texts()`, `warnings()` | étendre |
 | Worker du module `formats` | `platform/board-worker.ts:12`, `board-reader.ts:68` (`BoardCodec`) | `read(files, dialect: "iwb" \| "ubz" \| "notebook", names?)` ; `readFlipchart(entries: readonly { path: string; bytes: Uint8Array }[]): Promise<BoardPart>` | étendre |
-| Lecteur `.olf` | aucun (`olf`, `content.json` cherchés : rien) | `readOlf(json: string): { pages: BoardListPage[]; warnings: string[] }` dans `app/olf-read.ts` | nouveau module (DA3) |
+| Lecteur `.olf` | aucun (`olf`, `content.json` cherchés : rien) | `readOlf(json: string): { pages: BoardListPage[]; warnings: string[] }` dans `app/olf-read.ts`, appelé par le Worker ZIP (`{ op: "unzip", mode: "board" }` rend `content.json` lu, borné à 64 Mio) | nouveau module (DA3) |
+| Bornes de la sortie `.olf` (I3) | `apps/web/src/app/board-io.ts:20-28` (`MAX_GROUP_DEPTH`, `MAX_POINTS`, `MAX_SPANS`), `board-files.ts:15` (`BOARD_MAX_OBJECTS`) | constantes exportées de `board-io.ts`, importées par `olf-read.ts` ; jamais recopiées | étendre (export) |
 | Construction du document | `app/board-io.ts:518` (`buildBoardDocument`) | `buildBoardDocument(core, pages, media, deps)` | réutiliser |
 | Onglet, avis, bornes | `workspace.ts:531` (`openBoard`), `board-files.ts` (`boardWarningsMessage`, `BOARD_MAX_OBJECTS`, `boardFirstPagesMessage`, `boardTabName`) | mêmes fonctions | réutiliser |
 | Taille d'une image | `platform/image-import.ts` (`decodeImage`) | `decode(blob, kind)` | réutiliser |
@@ -198,8 +203,10 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
   couleur `#AARRGGBB` des textes supposée (vue `#FF000000`) ; images et textes en B tant qu'aucun aller-retour avec
   myViewBoard n'est vérifié.
 - **HU1-5** Lot 3 au niveau B par portage d'ActCraft (N12) : vérifié chez ActCraft sur ses propres tests synthétiques,
-  pas encore dans RoomBoard sur les 5 exemples ; la mesure N20 fixe le niveau réel. Si le lot 3 ne tient pas dans la
-  borne de temps, il reste non fusionné (le lot 2 est fusionnable seul).
+  pas encore dans RoomBoard sur les 5 exemples ; la mesure N20 fixe le niveau réel. Le lot 3 ne démarre que si le lot 2 est
+  fusionné avant 11:45 (N23, I1) ; sinon il reste en chantier à part.
+- **HU1-6** Reprise du lecteur ActCraft entier sous PolyForm Shield, déduite de la seule qualité d'auteur (jejeasterix
+  seul auteur) ; à confirmer par Jérôme à la clôture, avant le transfert à RoomFlow (D40) (I2).
 
 **Niveau 2**
 
@@ -209,7 +216,8 @@ graphify pour ce dépôt dans `~/.cache/graphes/`). Lot entre crochets.
   mais aucune commande de grille n'est appelée par la construction du lot 1) ; avertis.
 - **HU2-3** Page `is-hidden` d'un `.olf` importée comme les autres, avec avertissement.
 - **HU2-4** Ordre des pages SMART par le manifeste ; repli numérique quand il manque.
-- **HU2-5** Budget de taille (N17) : 20 Ko pour le lot 2, 80 Ko pour le lot 3 ; estimation, pas mesure.
+- **HU2-5** Budget de taille (N17) : 20 Ko pour le lot 2 ; environ 1 Ko de jeu au-delà (I1) ; le lot 3 s'arrête si sa
+  mesure de tête dépasse ; estimation, pas mesure.
 
 ## 5. Décisions d'architecture
 
@@ -226,17 +234,17 @@ que les flux d'objets. Même partage que le lot 1 (ZIP en TS, contenu en Rust, 0
 Conséquences : bornes de décompression testées en vitest (`bamboo.test.ts`) ; images jamais copiées dans le Wasm.
 
 **DA5 — Le lecteur `.flipchart` est un portage d'ActCraft dans `roomboard-formats::flipchart`.**
-Contexte : U36 demande ce portage ; le format est binaire, non documenté publiquement, déjà lu par ActCraft (même auteur, U39).
+Contexte : U36 demande ce portage ; le format est binaire, non documenté publiquement, déjà lu par ActCraft (même auteur, U39 `usage-cadrage.md:92`, précédent C9 `THIRD_PARTY_NOTICES.md:187-194`, HU1-6).
 Décision : module Rust neuf (`stream`, `index`, `ids`, `read`), sortie `Vec<Page>` encodée par `board::encode` :
 une seule forme d'échange (BoardList) et une seule construction (`buildBoardDocument`) pour les cinq formats.
-Conséquences : `flipchart.rs` ne connaît ni le `Doc` ni le ZIP ; avertissements en français dans la BoardList ; coût ≤ 80 Ko (N17).
+Conséquences : `flipchart.rs` ne connaît ni le `Doc` ni le ZIP ; avertissements en français ; coût mesuré en tête du lot 3, arrêt s'il dépasse (N17).
 
 **Découpage suggéré pour le plan**
 
-- **Lot 2** (fusionnable seul) : T0 mesure de taille ; `safeArchivePath` (N16) ; `BoardSourceFormat` et
+- **Lot 2** (PR propre, fusionnée dès qu'elle est verte, N23) : T0 mesure de taille ; détection Bamboo et refus clair (N4) ; `safeArchivePath` (N16) ; `BoardSourceFormat` et
   `resolveBoardFormat` (N4, N5) ; dialecte SMART et `notebook_order` (N6, N7) ; `readOlf` (N8, N9) ; gestionnaires et
   `openBoard` ; essais S1 à S3 ; capture ; fidélité `.notebook` et `.olf` ; mesure de taille finale.
-- **Lot 3** : T0 mesure ; `bamboo.ts` + `op: "bamboo"` (N11, N13) ; générateur de test (N19) ; `flipchart::stream` et
+- **Lot 3** (seulement si le lot 2 est fusionné avant 11:45, branche neuve tirée de `main`) : T0 mesure et arrêt si l'estimation dépasse ; `bamboo.ts` + `op: "bamboo"` (N11, N13) ; générateur de test (N19) ; `flipchart::stream` et
   `index` ; `flipchart::read` ; `FlipchartReader` et `openBoard` ; essais S4 et S5 ; fidélité `.flipchart` ;
   `THIRD_PARTY_NOTICES.md` ; mesure de taille finale.
 
@@ -254,7 +262,9 @@ Conséquences : `flipchart.rs` ne connaît ni le `Doc` ni le ZIP ; avertissement
 - **S3 — Détection, enregistrement, hostiles.** Un `.olf` renommé `.notebook` s'ouvre comme `.olf` ; un `.notebook`
   sans page est refusé avec message ; un `.notebook` avec `<!DOCTYPE … SYSTEM "file:///etc/passwd">`, un `<script>` et
   une entrée `../evil.png` : rien d'externe, rien d'exécuté, entrée refusée, zéro requête hors origine ; un
-  `content.json` invalide : « fichier endommagé ». Enregistrer l'onglet du S1 en `.roomboard`, le rouvrir : identique ;
+  `content.json` invalide : « fichier endommagé » ; un fichier signé `Bamboo` nommé `.flipchart` (ou d'extension
+  inconnue) : refus « exporter en .iwb ou PDF depuis ActivInspire » ; un `.png` signé `Bamboo` n'est pas pris pour
+  un paperboard (refus ordinaire d'image illisible, M5). Enregistrer l'onglet du S1 en `.roomboard`, le rouvrir : identique ;
   `socle-v1.roomboard` s'ouvre comme avant ; `#stage` ≥ 640 px de large et de haut avec l'avis visible.
 
 **Lot 3**
@@ -274,9 +284,10 @@ Conséquences : `flipchart.rs` ne connaît ni le `Doc` ni le ZIP ; avertissement
 - Écrivains `.notebook`, `.olf`, `.flipchart` (N2, Q5) ; export : celui du lot 1 (`.iwb`, `.ubz`) et le PDF, inchangés.
 - Décodage TIFF, EMF, WMF (N14) ; médias (son, vidéo, Flash) vers C14 ; miniatures `.thm` comme fond de page.
 - Grille, actions, étiquettes, connecteurs, MathML, rideau et projecteur du `.flipchart` (HU2-2) ; questionnaires et
-  galeries SMART ; `.xbk`, `.gallery`, `.enb`, `.vboard`, `.flp`, `.as4a` (message d'U36 inchangé).
+  galeries SMART ; `.xbk`, `.gallery`, `.enb`, `.vboard`, `.flp`, `.as4a` (le message d'U36 n'existe pas dans le code, M2 ; seul le refus Bamboo du lot 2 le livre pour `.flipchart`).
 - Niveau R du `.ubz` (D20 du lot 1) ; essais dans SMART, ActivInspire, myViewBoard réels ; build Tauri ou Android.
-- Amendement de la § 10 de `docs/plans/usage-cadrage.md` (N2, N14) : par l'orchestrateur à la clôture.
+- Amendement de `docs/plans/usage-cadrage.md` : § 10, U1 (:54), U36 (:89), ligne C13 (:560) (N2, N14, M1) : par
+  l'orchestrateur à la clôture.
 
 ## 8. Portes immédiates
 
