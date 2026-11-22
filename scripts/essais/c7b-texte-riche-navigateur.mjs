@@ -14,7 +14,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, noOverlap, serve, stageBox, stageMouse } from "./commun.mjs";
 
 const LABEL = "C7b texte riche";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
@@ -177,15 +177,49 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   check(back.i.every((s) => !s[1]) && same(back.r, s1), "S2 : Ctrl+Z : texte remis à « chat » gras rouge, sans italique");
   check(sameBox(boxTool, await stageBox(page)), "la boîte de #stage est immobile après S2");
 
+  // S3 : composition « にほん » au milieu de « chat » gras rouge (CDP Input.imeSetComposition, trois étapes) : elle
+  // prend le gras et le rouge du mot ; Ctrl+Z dans la zone la retire.
+  await mouse.click(TEXT_AT[0] + 10, TEXT_AT[1] + 10);
+  await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
+  await fr();
+  await key("Home");
+  for (let i = 0; i < 5; i++) await key("ArrowRight"); // « Le ch|at »
+  await page.evaluate(() => {
+    window.__ime3 = [];
+    for (const t of ["compositionstart", "compositionend"]) window.addEventListener(t, () => window.__ime3.push(t), true);
+  });
+  for (const step of ["に", "にほ", "にほん"]) await cdp.send("Input.imeSetComposition", { text: step, selectionStart: step.length, selectionEnd: step.length });
+  await fr();
+  check((await page.textContent("#texte-edition")).includes("にほん"), "S3 : pendant la composition, la zone porte « にほん »");
+  await cdp.send("Input.insertText", { text: "にほん" });
+  await fr();
+  check(same(await page.evaluate(() => window.__ime3), ["compositionstart", "compositionend"]), "S3 : une composition (compositionstart puis compositionend)");
+  const ime3 = await tr();
+  console.log(`texte : ${show(ime3)}`);
+  check(same(ime3, [["Le ", false, false], ["chにほんat", true, true], [" noir", false, false]]), "S3 : « にほん » composé dans « chat » : gras et rouge du mot");
+  await key("Control+z");
+  check(same(await tr(), s1), "S3 : Ctrl+Z dans la zone : la composition part en une étape");
+  await key("Escape");
+  check((await attr("data-elements")) === "1", "S3 : Échap : toujours un seul texte");
+
   // S1 : outil Tableau 2 × 2, « aa », curseur au milieu, Ctrl+B, « a », Fin, Ctrl+B, « Total ».
   await page.click(item("table"));
   await fr();
+  const boxTable = await stageBox(page);
   await mouse.click(...TABLE_AT);
   await page.waitForSelector(".rb-table-picker:not([hidden])", { timeout: 5000 });
   await page.click('button[aria-label="2 colonnes, 2 lignes"]');
   await waitTable("2x2@0,0");
   check(await editorOpen(), 'S1 : tableau 2 × 2, saisie ouverte sur la première cellule (data-table="2x2@0,0")');
   check(await page.isEnabled('button[data-format="bold"]'), "S1 : la rangée Format est active dans la cellule");
+  const boxCell = await stageBox(page);
+  check(sameBox(boxTable, boxCell) && boxCell.height >= 640, `la boîte de #stage est immobile à l'ouverture de la cellule (${Math.round(boxCell.width)} × ${Math.round(boxCell.height)} px, ≥ 640)`);
+  const bars = await page.$$eval("[data-toolbar]", (els) => els.filter((e) => e.getBoundingClientRect().height > 0).map((e) => e.getAttribute("data-toolbar")));
+  for (const id of bars) {
+    const { apart } = await noOverlap(page, `[data-toolbar="${id}"]`);
+    check(apart, `la barre « ${id} » ne recouvre pas #stage, cellule ouverte`);
+  }
+  check(bars.length > 0, `barres visibles mesurées : ${bars.join(", ")}`);
   await page.keyboard.type("aa");
   await key("ArrowLeft");
   await key("Control+b");
