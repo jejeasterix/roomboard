@@ -6,7 +6,10 @@
 
 pub(crate) mod ids;
 pub(crate) mod index;
+mod read;
 pub(crate) mod stream;
+
+pub use read::read;
 
 /// Écrivain minimal du flux d'objets et de l'index, sur la forme de `flipchartwriter.h` d'ActCraft (tests seuls).
 #[cfg(test)]
