@@ -832,6 +832,10 @@ impl<'a> Reader<'a> {
                 self.note(Sort::ImageFormat);
                 None
             }
+            Picture::NotImage => {
+                self.note(Sort::Unreadable);
+                None
+            }
         }
     }
 
@@ -1095,15 +1099,19 @@ enum Picture {
     Shown,
     Tiff,
     Unshown,
+    /// Entrée de structure (`.in`, `.io`, `.ir`, `.fpg`, `version`, nom sans extension) : jamais une image.
+    NotImage,
 }
 
-/// Format d'une image présente, jugé sur l'extension du nom (la page garde les octets, DA4) : TIFF et EMF/WMF ne sont
-/// jamais transmises (N14, N15) ; tout autre nom présent a passé la signature d'image dans le Worker ZIP
-/// (`bambooEntries`, comme `extensionOf` d'ActCraft) : `.ird`, extensions d'ActivInspire (`.ek1056`), WebP, SVG.
+/// Format d'une image présente, jugé sur l'extension du nom (la page garde les octets, DA4). TIFF et EMF/WMF ne sont
+/// jamais transmises (N14, N15) ; une entrée de structure n'est jamais une image. Les autres noms présents sont des
+/// images d'extension connue, ou des `.ird` et extensions d'ActivInspire (`.ek1056`) que le Worker ZIP n'a transmis
+/// qu'après leur signature (`bambooEntries`, comme `extensionOf` d'ActCraft) ; la page relit la signature.
 fn picture_kind(name: &str) -> Picture {
     match extension(name).as_deref() {
         Some("tif" | "tiff") => Picture::Tiff,
         Some("emf" | "wmf") => Picture::Unshown,
+        Some("in" | "io" | "ir" | "fpg") | None => Picture::NotImage,
         _ => Picture::Shown,
     }
 }
@@ -1368,7 +1376,6 @@ mod tests {
         crate::flipchart::read(&refs, first_page)
     }
 
-    /// Pages relues par `board::parse` (le flux est celui de `encode`, DA5) et avertissements.
     /// Les flux `.io` d'une page ne restent pas en mémoire pendant la lecture des suivantes (chemins `<page>.fpg/…`).
     #[test]
     fn io_cache_is_emptied_between_pages() {
@@ -1382,6 +1389,7 @@ mod tests {
         assert_eq!(reader.page, 2);
     }
 
+    /// Pages relues par `board::parse` (le flux est celui de `encode`, DA5) et avertissements.
     fn pages_of(entries: &[(String, Vec<u8>)]) -> (Vec<Page>, Vec<String>) {
         let list = run(entries, 1).expect("fichier lu");
         (
@@ -1736,6 +1744,40 @@ mod tests {
             hrefs,
             vec!["104.ird", "1500.ek1056", "dessin.svg", "photo.webp"]
         );
+    }
+
+    /// Un nom déclaré qui désigne une entrée de structure (`.io`, `.ir`, `.in`, `version`) n'est jamais une image : objet
+    /// illisible, aucun `href` émis.
+    #[test]
+    fn structure_entry_declared_as_image_is_unreadable() {
+        let image = |rid: u32| {
+            Obj::new(ids::IMAGE, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 10.0, 10.0)
+                .integer(REF_38, int(rid))
+        };
+        let named = |id: u32, name: &'static str| Res {
+            id,
+            object: Obj::new(0, id).string(3, name),
+            file: Some((name, Vec::new())),
+        };
+        let entries = flipchart(
+            document(),
+            &[
+                named(101, "7.io"),
+                named(102, "8.ir"),
+                named(103, "version"),
+            ],
+            vec![Sheet::new(10)
+                .put(11, ids::IMAGE, image(101))
+                .put(12, ids::IMAGE, image(102))
+                .put(13, ids::IMAGE, image(103))],
+        );
+        let (pages, warnings) = pages_of(&entries);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 3 objets illisibles ignorés".to_string()]
+        );
+        assert!(pages[0].items.is_empty(), "{:?}", pages[0].items);
     }
 
     /// S4 : les actions, médias, formules et textes verticaux sont avertis par sorte ; le trait est lu.
