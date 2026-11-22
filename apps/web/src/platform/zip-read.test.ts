@@ -178,6 +178,16 @@ describe("C4 : paquet par le Worker ZIP", () => {
     expect(got[0]!.blob).toBeInstanceOf(Blob);
   });
 
+  it("C13 N11 : createZipReader mode bamboo", async () => {
+    const posted: unknown[] = [];
+    const read = createZipReader(() => fakeWorker((m) => { posted.push(m); return { entries: [{ path: "1003.fpg/1003.in", bytes: new Uint8Array([35]) }] }; }), 1000, "bamboo");
+    const input = new Uint8Array([0x20, 0x42, 0x61, 0x6d, 0x62, 0x6f, 0x6f, 0x20]);
+    const got = await read(new Blob([input]));
+    expect(posted[0]).toMatchObject({ op: "unzip", mode: "bamboo", bytes: input });
+    expect(got.map((e) => e.path)).toEqual(["1003.fpg/1003.in"]);
+    expect(got[0]!.blob).toBeInstanceOf(Blob);
+  });
+
   it("C4 : createZipReader sans mode garde le message 3D { bytes } seul", async () => {
     const posted: unknown[] = [];
     const read = createZipReader(() => fakeWorker((m) => { posted.push(m); return { entries: [] }; }));

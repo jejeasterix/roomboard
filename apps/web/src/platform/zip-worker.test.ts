@@ -1,10 +1,12 @@
-import { unzipSync, zipSync } from "fflate";
+import { unzipSync, zipSync, zlibSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { buildPack, readPack, type PackItem } from "./rbpack";
 import { keepBoardPath, keepPackPath, olfPart, unzipEntries, zipStored } from "./zip-worker";
 import { decodeBoardList } from "../app/board-io";
 import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
+import { BAMBOO_NOT_FLIPCHART } from "./bamboo";
+import { makeFlipchart } from "../../../../scripts/essais/fabriques/flipchart.mjs";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const item = (path: string): PackItem => ({ path, name: path.split("/").pop()!, keywords: [], description: "", kind: "fragment", bytes: enc(`rb:${path}`), thumbnail: enc(`png:${path}`) });
@@ -222,5 +224,29 @@ describe("C13 lot 2 : content.json d'un .olf lu par le Worker ZIP (N8, N13)", ()
     olfPart(new Uint8Array(OLF_MAX_JSON_BYTES), read);
     expect(decoded).toEqual([OLF_MAX_JSON_BYTES]);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("C13 lot 3 : conteneur Bamboo par le Worker ZIP (N11)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("C13 N11 : mode bamboo rend les entrées", async () => {
+    const post = vi.fn();
+    vi.stubGlobal("WorkerGlobalScope", class {});
+    vi.stubGlobal("postMessage", post);
+    vi.stubGlobal("onmessage", null);
+    vi.resetModules();
+    await import("./zip-worker");
+    const handler = (globalThis as unknown as { onmessage: (e: { data: unknown }) => void }).onmessage;
+    handler({ data: { op: "unzip", mode: "bamboo", bytes: makeFlipchart([{}], zlibSync) } });
+    const [reply, transfer] = post.mock.calls[0] as [{ entries: Array<{ path: string; bytes: Uint8Array }> }, Transferable[]];
+    expect(reply.entries.map((e) => e.path)).toEqual(["101.in", "100.io", "1003.fpg/1003.in", "1003.fpg/1002.io"]);
+    expect(new TextDecoder().decode(reply.entries[0]!.bytes.subarray(0, 8))).toBe("# culm #");
+    expect(transfer).toEqual([...new Set(reply.entries.map((e) => e.bytes.buffer))]);
+    // Le mode board ne lit pas le paperboard : seul le mode bamboo passe par le conteneur.
+    handler({ data: { op: "unzip", mode: "board", bytes: makeFlipchart([{}], zlibSync) } });
+    expect(post.mock.calls[1]![0]).toHaveProperty("error");
+    handler({ data: { op: "unzip", mode: "bamboo", bytes: zipSync({ "content.xml": enc("<x/>") }) } });
+    expect(post.mock.calls[2]).toEqual([{ error: BAMBOO_NOT_FLIPCHART }, []]);
   });
 });

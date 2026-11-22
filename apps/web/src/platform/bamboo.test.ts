@@ -7,9 +7,9 @@ import {
   bambooLieMessage,
   FLIPCHART_LATER_MESSAGE,
   hasBambooMagic,
-  keepBambooPath,
   readBamboo,
 } from "./bamboo";
+import { keepBambooPath } from "./zip-worker";
 
 describe("bamboo (C13 lot 2)", () => {
   it("C13 N4 : hasBambooMagic", () => {
@@ -140,11 +140,11 @@ describe("bamboo : conteneur borné (C13 lot 3, N11, N13, N15, N16)", () => {
   });
 
   it("C13 N13 : 20 001 entrées refusées", () => {
-    // Racine d'un paperboard sans page : 101.in, 100.io, puis les entrées vides.
-    expect(() => paths(makeFlipchart([], zlibSync, { extraEntries: 19_999 }))).toThrow(
-      "fichier endommagé : trop d'entrées dans le paperboard",
-    );
-    expect(paths(makeFlipchart([], zlibSync, { extraEntries: 19_998 }))).toEqual(["101.in", "100.io"]);
+    // Racine d'un paperboard sans page : 101.in, 100.io, puis 19 999 entrées vides (fabriqué une fois, test léger).
+    const data = makeFlipchart([], zlibSync, { extraEntries: 19_999 });
+    expect(() => paths(data)).toThrow("fichier endommagé : trop d'entrées dans le paperboard");
+    // Témoin : une entrée de plus permise, le même conteneur se lit.
+    expect(readBamboo(data, keepBambooPath, { ...BAMBOO_LIMITS, entries: 20_001 }).map((e) => e.path)).toEqual(["101.in", "100.io"]);
   });
 
   it("C13 N13 : chaîne UTF-16 de longueur impaire", () => {
