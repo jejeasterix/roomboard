@@ -19,7 +19,7 @@ const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 function summarize(msgs, name) {
   const count = new Map();
   for (const m of msgs) {
-    const t = cell(m.split(name).join("«f»")).slice(0, 160);
+    const t = cell(m.split(name).join("«f»")).slice(0, 400);
     count.set(t, (count.get(t) ?? 0) + 1);
   }
   return [...count].map(([t, n]) => (n > 1 ? `${t} (×${n})` : t)).join(" ; ");
@@ -68,9 +68,10 @@ async function measure(context, port, file) {
       per.push(n);
       objects += n;
     }
-    const ns = dialogs.length;
+    // « ouvert avec N avertissement(s) » : N est le vrai compte ; sans cette formule, un avis compte pour un.
+    const ns = dialogs.reduce((a, m) => a + Number(/avec (\d+) avertissement/.exec(m)?.[1] ?? 1), 0);
     return {
-      row: `| ${name} | ${total} | ${objects} | ${ns}${ns > 0 ? ` : ${summarize(dialogs, name)}` : ""} | lu |`,
+      row: `| ${name} | ${total} | ${objects} | ${ns}${ns > 0 ? ` : ${summarize(dialogs, name).replace(/^«f» : ouvert avec \d+ avertissements? : /, "")}` : ""} | lu |`,
       loaded: true,
       pages: total,
       objects,
