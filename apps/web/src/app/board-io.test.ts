@@ -158,6 +158,20 @@ describe("board-io : document importé (C13, D7, D8b)", () => {
     expect([v.image.w, v.image.h, v.transform]).toEqual([64, 32, [2, 0, 0, 2, 10, 20]]);
   });
 
+  it("C13 lot 3 : image d'extension inconnue (BMP nommée .ek1056 par ActivInspire) reconnue à sa signature", async () => {
+    const BMP = new Blob([new Uint8Array([0x42, 0x4d, ...new Array(30).fill(0)])]);
+    const media = new Map([["1500.ek1056", BMP], ["4.ird", PNG], ["5.ird", new Blob([new Uint8Array([1, 2, 3, 4])])]]);
+    decode.mockClear();
+    const r = await buildBoardDocument(fakeCore, onePage([
+      { kind: "image", m: ID, x: 0, y: 0, w: 64, h: 32, path: "1500.ek1056" },
+      { kind: "image", m: ID, x: 0, y: 0, w: 64, h: 32, path: "4.ird" },
+      { kind: "image", m: ID, x: 0, y: 0, w: 64, h: 32, path: "5.ird" },
+    ]), media, deps());
+    expect(viewsOf(r.doc).map((v) => v.kind)).toEqual(["image", "image"]);
+    expect(decode.mock.calls.map((c) => c[1])).toEqual(["bmp", "png"]);
+    expect(r.warnings).toEqual(["page 1 : 1 image absente de l'archive"]);
+  });
+
   it("T14 : l'asset n'entre dans le magasin que si l'image est posée (matrice refusée : aucun asset)", async () => {
     const media = new Map([["images/a.png", PNG]]);
     const ok = await buildBoardDocument(fakeCore, onePage([{ kind: "image", m: ID, x: 0, y: 0, w: 64, h: 32, path: "images/a.png" }]), media, deps());

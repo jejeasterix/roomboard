@@ -24,6 +24,7 @@ import {
 } from "./model3d-import";
 import { safeArchivePath } from "./archive-path";
 import { BAMBOO_LIMITS, BAMBOO_STRUCTURE_EXTENSIONS, readBamboo } from "./bamboo";
+import { sniffImage } from "./image-import";
 import { isPackEntry } from "./rbpack";
 import { encodeBoardList } from "../app/board-io";
 import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
@@ -51,14 +52,26 @@ export function keepBoardPath(name: string): boolean {
 const BAMBOO_ENTRY_EXTENSIONS: readonly string[] = Object.freeze([...BAMBOO_STRUCTURE_EXTENSIONS, "fpg"]);
 
 /** C13 lot 3 (N15, N16) : entrées lues d'un paperboard : index `.in`, objets `.io`, ressources `.ir`, pages `.fpg`,
- *  `version` et images de `BOARD_ZIP_EXTENSIONS` ; chemin sûr selon `safeArchivePath`. Miniatures `.thm`, `.tif`,
+ *  `version`, images de `BOARD_ZIP_EXTENSIONS` et noms de `BAMBOO_IMAGE_NAME` ; chemin sûr selon `safeArchivePath`. Miniatures `.thm`, `.tif`,
  *  sons, vidéos et Flash ne sont jamais décompressés. */
 export function keepBambooPath(name: string): boolean {
   const p = safeArchivePath(name);
   if (p === null) return false;
   if (p.toLowerCase() === "version") return true;
   const ext = extensionOf(p);
-  return BAMBOO_ENTRY_EXTENSIONS.includes(ext) || BOARD_ZIP_EXTENSIONS.includes(ext);
+  return BAMBOO_ENTRY_EXTENSIONS.includes(ext) || BOARD_ZIP_EXTENSIONS.includes(ext) || BAMBOO_IMAGE_NAME.test(p);
+}
+
+/** Image d'un paperboard sans extension d'image : `{rid}.ird` (ActCraft `resourceFile`), ou extension d'ActivInspire
+ *  `<2 lettres><chiffres>` (BMP nommées `1500.ek1056` dans les exemples) ; gardée sur sa signature seule. */
+const BAMBOO_IMAGE_NAME = /\.(?:ird|[a-z]{2}\d{3,})$/i;
+
+/** Entrées lues d'un paperboard (`keepBambooPath`) ; une image nommée par `BAMBOO_IMAGE_NAME` n'est transmise que si
+ *  ses premiers octets sont ceux d'une image (comme `extensionOf` d'ActCraft) : le lecteur Rust l'affiche alors. */
+export function bambooEntries(data: Uint8Array): { path: string; bytes: Uint8Array }[] {
+  return readBamboo(data, keepBambooPath, BAMBOO_LIMITS).filter(
+    (e) => !BAMBOO_IMAGE_NAME.test(e.path) || sniffImage(e.bytes.subarray(0, 4096), e.path) !== null,
+  );
 }
 
 /** Date fixe des entrées (D25 : octets stables), en heure locale comme le champ DOS du ZIP. */
@@ -160,7 +173,7 @@ if (typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !==
           : d.mode === "board"
             ? unzipEntries(data, keepBoardPath)
             : d.mode === "bamboo"
-              ? readBamboo(data, keepBambooPath, BAMBOO_LIMITS)
+              ? bambooEntries(data)
               : unzipModelEntries(data);
       // Deux entrées peuvent partager un tampon : cité deux fois, `postMessage` lèverait.
       scope.postMessage({ entries }, [...new Set(entries.map((x) => x.bytes.buffer as ArrayBuffer))]);

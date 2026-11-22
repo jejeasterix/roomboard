@@ -803,7 +803,7 @@ impl<'a> Reader<'a> {
                     .iter()
                     .find_map(|n| match picture_kind(n) {
                         Picture::Tiff => Some(Sort::Tiff),
-                        Picture::Other if is_unshown_image(n) => Some(Sort::ImageFormat),
+                        Picture::Unshown => Some(Sort::ImageFormat),
                         _ => None,
                     })
                     .unwrap_or(Sort::Unreadable);
@@ -828,7 +828,7 @@ impl<'a> Reader<'a> {
                 self.note(Sort::Tiff);
                 None
             }
-            Picture::Other => {
+            Picture::Unshown => {
                 self.note(Sort::ImageFormat);
                 None
             }
@@ -1094,21 +1094,18 @@ fn placement(o: &StreamObject, b: &[f32; 4]) -> Mat {
 enum Picture {
     Shown,
     Tiff,
-    Other,
+    Unshown,
 }
 
-/// Format jugé sur l'extension du nom (la page garde les octets, DA4).
+/// Format d'une image présente, jugé sur l'extension du nom (la page garde les octets, DA4) : TIFF et EMF/WMF ne sont
+/// jamais transmises (N14, N15) ; tout autre nom présent a passé la signature d'image dans le Worker ZIP
+/// (`bambooEntries`, comme `extensionOf` d'ActCraft) : `.ird`, extensions d'ActivInspire (`.ek1056`), WebP, SVG.
 fn picture_kind(name: &str) -> Picture {
     match extension(name).as_deref() {
-        Some("png" | "jpg" | "jpeg" | "gif" | "bmp") => Picture::Shown,
         Some("tif" | "tiff") => Picture::Tiff,
-        _ => Picture::Other,
+        Some("emf" | "wmf") => Picture::Unshown,
+        _ => Picture::Shown,
     }
-}
-
-/// Image d'un format que la page n'affiche pas (N14), reconnue sur la seule extension.
-fn is_unshown_image(name: &str) -> bool {
-    matches!(extension(name).as_deref(), Some("emf" | "wmf"))
 }
 
 fn extension(name: &str) -> Option<String> {
@@ -1693,6 +1690,52 @@ mod tests {
             .collect();
         hrefs.sort_unstable();
         assert_eq!(hrefs, vec!["fond.png", "photo.png"]);
+    }
+
+    /// La page ne transmet que des images reconnues à leur signature (`bambooEntries`) : un nom d'extension inconnue
+    /// (`.ek1056`, BMP chez ActivInspire), `{rid}.ird`, une WebP ou une SVG présents s'affichent, comme chez ActCraft.
+    #[test]
+    fn present_images_of_any_extension_are_read() {
+        let image = |rid: u32| {
+            Obj::new(ids::IMAGE, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 10.0, 10.0)
+                .integer(REF_38, int(rid))
+        };
+        let named = |id: u32, name: &'static str| Res {
+            id,
+            object: Obj::new(0, id).string(3, name),
+            file: Some((name, Vec::new())),
+        };
+        let resources = [
+            named(101, "1500.ek1056"),
+            named(102, "photo.webp"),
+            named(103, "dessin.svg"),
+        ];
+        let mut entries = flipchart(
+            document(),
+            &resources,
+            vec![Sheet::new(10)
+                .put(11, ids::IMAGE, image(101))
+                .put(12, ids::IMAGE, image(102))
+                .put(13, ids::IMAGE, image(103))
+                .put(14, ids::IMAGE, image(104))],
+        );
+        entries.push(("104.ird".to_string(), Vec::new()));
+        let (pages, warnings) = pages_of(&entries);
+        assert_eq!(warnings, Vec::<String>::new());
+        let mut hrefs: Vec<&str> = pages[0]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Image { href, .. } => Some(href.as_str()),
+                _ => None,
+            })
+            .collect();
+        hrefs.sort_unstable();
+        assert_eq!(
+            hrefs,
+            vec!["104.ird", "1500.ek1056", "dessin.svg", "photo.webp"]
+        );
     }
 
     /// S4 : les actions, médias, formules et textes verticaux sont avertis par sorte ; le trait est lu.
