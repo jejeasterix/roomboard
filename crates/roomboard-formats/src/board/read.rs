@@ -2044,4 +2044,387 @@ mod tests {
     fn href_dot_slash_prefixes_are_all_removed() {
         assert_eq!(normalize_href("./././a\\b.png"), "a/b.png");
     }
+
+    /// Cadre 800 × 600 d'une page `.notebook` : échelle 1920 / 800.
+    const S24: Mat = [2.4, 0.0, 0.0, 2.4, 0.0, 0.0];
+
+    fn notebook(body: &str) -> String {
+        format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="600" viewBox="0 0 800 600">{body}</svg>"#
+        )
+    }
+
+    fn nb(body: &str) -> (Vec<Page>, Vec<String>) {
+        read(&notebook(body), Dialect::Notebook, 1)
+    }
+
+    fn rect_item(x0: f32, y0: f32, x1: f32, y1: f32, color: Rgb, width: f32, fill: Option<Rgb>) -> Item {
+        Item::Shape {
+            kind: ShapeKind::Rect,
+            m: S24,
+            x0,
+            y0,
+            x1,
+            y1,
+            color,
+            width,
+            fill,
+        }
+    }
+
+    fn stroke_item(points: &[[f32; 2]], color: Rgb, width: f32) -> Item {
+        Item::Stroke {
+            m: S24,
+            color,
+            width,
+            points: points.iter().map(|p| [p[0], p[1], 1.0]).collect(),
+        }
+    }
+
+    /// S1 : rectangle en `path` rempli. Chemin de référence `rect` : même objet qu'un `<rect>` de même style ; le
+    /// patron `poly` en ferait un trait fermé averti « remplissage de polygone non lu ».
+    #[test]
+    fn notebook_closed_axis_path_becomes_filled_rect() {
+        let (pages, warnings) =
+            nb(r##"<path d="M10 20 L110 20 L110 70 L10 70 z" fill="#ff0000"/>"##);
+        assert_eq!(
+            pages[0].items,
+            vec![rect_item(10.0, 20.0, 110.0, 70.0, [255, 0, 0], 1.0, Some([255, 0, 0]))]
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (same, _) = nb(r##"<rect x="10" y="20" width="100" height="50" fill="#ff0000"/>"##);
+        assert_eq!(pages[0].items, same[0].items);
+        // Sens inverse, commandes relatives, retour explicite au départ avant `z`, contour lu comme pour `rect`.
+        let (pages, warnings) = nb(
+            r##"<path d="m110 70 h-100 v-50 h100 L110 70 z" fill="#ff0000" stroke="#0000ff" stroke-width="3"/>"##,
+        );
+        assert_eq!(
+            pages[0].items,
+            vec![rect_item(10.0, 20.0, 110.0, 70.0, [0, 0, 255], 3.0, Some([255, 0, 0]))]
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn notebook_open_path_is_a_stroke_with_relative_commands() {
+        let (pages, warnings) = nb(
+            r##"<path d="m10 10 l5 0 h5 v5" fill="none" stroke="#000000" stroke-width="2"/>"##,
+        );
+        assert_eq!(
+            pages[0].items,
+            vec![stroke_item(
+                &[[10.0, 10.0], [15.0, 10.0], [20.0, 10.0], [20.0, 15.0]],
+                [0, 0, 0],
+                2.0
+            )]
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// Patron à ne pas reprendre : `numbers()` rendrait `10-5` et `.5.5` illisibles.
+    #[test]
+    fn path_numbers_without_separators() {
+        let (pages, warnings) = nb(r#"<path d="M10-5L.5.5" fill="none"/>"#);
+        assert_eq!(
+            pages[0].items,
+            vec![stroke_item(&[[10.0, -5.0], [0.5, 0.5]], [0, 0, 0], 1.0)]
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        // Exposants et paires implicites après `M` (lignes).
+        let (pages, _) = nb(r#"<path d="M0,0 1e1,2 l-5E-1 0" fill="none"/>"#);
+        assert_eq!(
+            pages[0].items,
+            vec![stroke_item(&[[0.0, 0.0], [10.0, 2.0], [9.5, 2.0]], [0, 0, 0], 1.0)]
+        );
+    }
+
+    fn points_of(it: &Item) -> Vec<[f32; 2]> {
+        match it {
+            Item::Stroke { points, .. } => points.iter().map(|p| [p[0], p[1]]).collect(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn near2(a: [f32; 2], b: [f32; 2]) -> bool {
+        (a[0] - b[0]).abs() < 1e-4 && (a[1] - b[1]).abs() < 1e-4
+    }
+
+    #[test]
+    fn path_curves_are_flattened_and_warned() {
+        let (pages, warnings) = nb(r#"<path d="M0 0 C0 10 10 10 10 0" fill="none"/>"#);
+        let p = points_of(&pages[0].items[0]);
+        assert_eq!(p.len(), 9);
+        assert!(near2(p[0], [0.0, 0.0]) && near2(p[4], [5.0, 7.5]) && near2(p[8], [10.0, 0.0]), "{p:?}");
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 courbe approchée par des segments".to_string()]
+        );
+        // `S` reflète le dernier point de contrôle ; `Q` quadratique ; un avertissement par objet.
+        let (pages, warnings) = nb(
+            r#"<path d="M0 0 C0 10 10 10 10 0 S20 -10 20 0" fill="none"/><path d="M0 0 Q5 10 10 0" fill="none"/>"#,
+        );
+        let p = points_of(&pages[0].items[0]);
+        assert_eq!(p.len(), 17);
+        assert!(near2(p[12], [15.0, -7.5]) && near2(p[16], [20.0, 0.0]), "{p:?}");
+        let q = points_of(&pages[0].items[1]);
+        assert_eq!(q.len(), 9);
+        assert!(near2(q[4], [5.0, 5.0]), "{q:?}");
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 2 courbes approchées par des segments".to_string()]
+        );
+    }
+
+    /// Arbitrage F2 : un chemin qui contient un arc ne donne aucun objet (pas de segment de remplacement).
+    #[test]
+    fn path_arc_is_warned_not_flattened() {
+        let (pages, warnings) = nb(r#"<path d="M0 0 A5 5 0 0 1 10 0" fill="none"/>"#);
+        assert!(pages[0].items.is_empty(), "{:?}", pages[0].items);
+        assert_eq!(warnings, vec!["page 1 : 1 arc non lu".to_string()]);
+        // Arc relatif aux drapeaux collés, après un segment : tout le chemin est laissé ; le voisin reste lu.
+        let (pages, warnings) = nb(
+            r#"<path d="M0 0 L5 5 a5 5 0 0110 0" fill="none"/><path d="M0 0 A1 1 0 0 1 2 2"/><line x1="0" y1="0" x2="1" y2="1" stroke="black"/>"#,
+        );
+        assert_eq!(pages[0].items.len(), 1);
+        assert!(matches!(&pages[0].items[0], Item::Shape { kind: ShapeKind::Line, .. }));
+        assert_eq!(warnings, vec!["page 1 : 2 arcs non lus".to_string()]);
+    }
+
+    #[test]
+    fn path_two_subpaths_make_a_group() {
+        let (pages, warnings) = nb(
+            r##"<path d="M0 0 L10 0 M20 20 L30 20 L30 30 L20 30 Z" fill="#00ff00" stroke="#000000"/>"##,
+        );
+        assert_eq!(
+            pages[0].items,
+            vec![Item::Group(vec![
+                stroke_item(&[[0.0, 0.0], [10.0, 0.0]], [0, 0, 0], 1.0),
+                rect_item(20.0, 20.0, 30.0, 30.0, [0, 0, 0], 1.0, Some([0, 255, 0])),
+            ])]
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn path_closed_non_rect_fill_warns_polygon_fill() {
+        let (pages, warnings) = nb(r##"<path d="M0 0 L10 0 L5 5 Z" fill="#ff0000"/>"##);
+        assert_eq!(
+            pages[0].items,
+            vec![stroke_item(
+                &[[0.0, 0.0], [10.0, 0.0], [5.0, 5.0], [0.0, 0.0]],
+                [255, 0, 0],
+                1.0
+            )]
+        );
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 remplissage de polygone non lu".to_string()]
+        );
+        let (_, warnings) = nb(r##"<path d="M0 0 L10 0 L5 5 Z" fill="none" stroke="#ff0000"/>"##);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn path_garbage_is_unreadable() {
+        let (pages, warnings) = nb(
+            r#"<path d="M x"/><path d="L0 0 L1 1"/><path d="M0 0 L1"/><path d="M0 0 L1e39 0"/><path d="M0 0 Z 5 5"/><rect width="2" height="2"/>"#,
+        );
+        assert_eq!(pages[0].items.len(), 1);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 5 objets illisibles ignorés".to_string()]
+        );
+    }
+
+    #[test]
+    fn path_with_too_many_points_is_unreadable() {
+        let d = format!(
+            "M0 0{}",
+            " C0 0 0 0 0 0".repeat(crate::board::MAX_POINTS as usize / 8 + 1)
+        );
+        let (pages, warnings) = nb(&format!(r#"<path d="{d}" fill="none"/>"#));
+        assert!(pages[0].items.is_empty());
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet illisible ignoré".to_string()]
+        );
+    }
+
+    /// Arbitrage F1 : `path` n'est lu qu'en `Dialect::Notebook` ; en `.iwb` et `.ubz` il reste un type non lu.
+    #[test]
+    fn iwb_path_stays_a_warning() {
+        let (pages, warnings) = read(&iwb(r#"<svg:path d="M0 0 L10 10"/>"#, ""), Dialect::Iwb, 1);
+        assert!(pages[0].items.is_empty());
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet d'un type non lu".to_string()]
+        );
+        let ubz = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080"><path d="M0 0 L10 10"/></svg>"#;
+        let (pages, warnings) = read(ubz, Dialect::Ubz, 1);
+        assert!(pages[0].items.is_empty());
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 objet d'un type non lu".to_string()]
+        );
+    }
+
+    #[test]
+    fn notebook_full_size_rect_is_background() {
+        let (pages, warnings) = nb(
+            r##"<rect width="100%" height="100%" fill="#00ff00"/><rect x="0" y="0" width="100%" height="100%" fill="#0000ff"/>"##,
+        );
+        assert_eq!(pages[0].background, Some([0, 255, 0]));
+        assert!(pages[0].items.is_empty(), "{:?}", pages[0].items);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// Comparaisons de dialecte de T3 : en `Notebook`, pas de trait à pression (propre à OpenBoard), premier `rect`
+    /// couvrant = fond comme en `.ubz`, aucun avertissement de fond IWB.
+    #[test]
+    fn notebook_dialect_checks_follow_ubz_background_not_pressure() {
+        let (pages, warnings) = nb(
+            r##"<g fill="#ffffff"><polygon points="100,100 200,100 200,110 100,110"/><polygon points="200,98 300,98 300,112 200,112"/></g>"##,
+        );
+        assert!(matches!(&pages[0].items[..], [Item::Group(g)] if g.len() == 2), "{:?}", pages[0].items);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 2 remplissages de polygones non lus".to_string()]
+        );
+        let (pages, warnings) = nb(
+            r##"<rect x="0" y="0" width="800" height="600" fill="#123456"/><rect width="5" height="5" fill="#ff0000"/>"##,
+        );
+        assert_eq!(pages[0].background, Some([0x12, 0x34, 0x56]));
+        assert_eq!(pages[0].items.len(), 1);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let (pages, warnings) = nb(r##"<rect width="5" height="5" fill="#ff0000"/>"##);
+        assert_eq!(pages[0].background, None);
+        assert_eq!(pages[0].items.len(), 1);
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn notebook_xbk_transform_is_ignored() {
+        let (pages, _) = nb(
+            r##"<rect x="0" y="0" width="10" height="10" fill="#ff0000" transform="translate(10,0)" xbk_transform="translate(999,0)"/>"##,
+        );
+        match &pages[0].items[..] {
+            [Item::Shape { m, .. }] => assert!((m[4] - 24.0).abs() < 1e-3 && m[5] == 0.0, "{m:?}"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn notebook_justification_is_text_align() {
+        let (_, warnings) = nb(r#"<text x="0" y="20" justification="center">a</text>"#);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 alignement de texte non lu".to_string()]
+        );
+        let (_, warnings) = nb(
+            r#"<text x="0" y="20" justification="left">a</text><text x="0" y="40" text-align="left" justification="right">b</text>"#,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        // Propre au dialecte SMART.
+        let (_, warnings) = read(
+            &iwb(r#"<svg:textarea x="0" y="0" justification="center">a</svg:textarea>"#, ""),
+            Dialect::Iwb,
+            1,
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    /// S1 : texte gras à `tspan` imbriqués.
+    #[test]
+    fn notebook_tspans_nested_keep_bold() {
+        let (pages, _) = nb(
+            r#"<text x="0" y="20"><tspan font-weight="bold">a<tspan>b</tspan></tspan></text>"#,
+        );
+        match &pages[0].items[..] {
+            [Item::Text { spans, .. }] => assert_eq!(
+                spans,
+                &vec![Span {
+                    text: "ab".into(),
+                    bold: true,
+                    ..Span::default()
+                }]
+            ),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn href_of(it: &Item) -> &str {
+        match it {
+            Item::Image { href, .. } => href,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// S1 et S3 : `%XX` décodés avant les contrôles (`%2e%2e` reste hors de l'archive) ; `+` gardé ; SMART seul.
+    #[test]
+    fn notebook_image_href_is_percent_decoded() {
+        let img = |h: &str| format!(r#"<image xlink:href="{h}" x="0" y="0" width="10" height="10"/>"#);
+        let (pages, warnings) = nb(&format!(
+            "{}{}{}",
+            img("images/a%20b[1].png"),
+            img("images/a+b.png"),
+            img("images/%2e%2e/%2E%2E/x.png")
+        ));
+        let it = &pages[0].items;
+        assert_eq!(it.len(), 2);
+        assert_eq!(href_of(&it[0]), "images/a b[1].png");
+        assert_eq!(href_of(&it[1]), "images/a+b.png");
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 image distante ou hors de l'archive non chargée".to_string()]
+        );
+        let (pages, _) = read(
+            &iwb(
+                r#"<svg:image xlink:href="images/a%20b.png" x="0" y="0" width="10" height="10"/>"#,
+                "",
+            ),
+            Dialect::Iwb,
+            1,
+        );
+        assert_eq!(href_of(&pages[0].items[0]), "images/a%20b.png");
+    }
+
+    /// S1 : Flash dit comme tel ; les autres objets SMART restent d'un type non lu.
+    #[test]
+    fn notebook_flash_is_warned() {
+        let (pages, warnings) = nb(
+            r#"<flash x="0" y="0" width="10" height="10"/><scrollingText/><hr/><persistenceData/>"#,
+        );
+        assert!(pages[0].items.is_empty());
+        assert_eq!(
+            warnings,
+            vec![
+                "page 1 : 1 animation Flash non lue".to_string(),
+                "page 1 : 3 objets d'un type non lu".to_string()
+            ]
+        );
+    }
+
+    /// S3 : DTD externe, entité inconnue et script : lecture faite, rien de résolu ni de rendu.
+    #[test]
+    fn notebook_doctype_script_and_external_entity() {
+        let xml = format!(
+            "<?xml version=\"1.0\"?>\n<!DOCTYPE svg SYSTEM \"file:///etc/passwd\">\n{}",
+            notebook(r#"<script>alert(1)</script><text x="0" y="20">avant &e; après</text>"#)
+        );
+        let l = read_svg(xml.as_bytes(), Dialect::Notebook, 1).expect("lecture");
+        assert_eq!(
+            l.warnings,
+            [
+                "1 déclaration DOCTYPE ignorée",
+                "1 entité inconnue ignorée",
+                "page 1 : 1 script ignoré"
+            ]
+            .map(String::from)
+        );
+        assert!(!l.texts.iter().any(|t| t.contains("alert") || t.contains("root")));
+        match &parse(&l).expect("liste")[0].items[..] {
+            [Item::Text { spans, .. }] => assert_eq!(spans[0].text, "avant après"),
+            other => panic!("{other:?}"),
+        }
+    }
 }
