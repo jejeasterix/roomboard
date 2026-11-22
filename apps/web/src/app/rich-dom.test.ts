@@ -110,6 +110,11 @@ describe("segments ↔ DOM (C7b)", () => {
     r.innerHTML = "<div>ab<br></div><div>c</div>";
     document.getSelection()!.setBaseAndExtent(r.firstChild!, 2, r.firstChild!, 2);
     expect(readSelection(r)).toEqual({ start: 2, end: 2 });
+    // Borne posée sur le <br> lui-même (br, 0) : devant le saut de ligne.
+    r.innerHTML = "<span>ab</span><br><span>c</span>";
+    const br = r.querySelector("br")!;
+    document.getSelection()!.setBaseAndExtent(br, 0, br, 0);
+    expect(readSelection(r)).toEqual({ start: 2, end: 2 });
   });
 
   it("readSelection sur un DOM du navigateur (blocs) : curseur au début du second bloc = 2", () => {

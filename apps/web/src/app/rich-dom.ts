@@ -110,6 +110,7 @@ function scan(root: Node, stop: DomPoint | null): { readonly text: string; reado
           if (tail !== "") emit(tail);
         } else if (v !== "") emit(v);
       } else if (c.nodeName === "BR") {
+        if (c === stop?.node) mark(); // borne posée sur le <br> : devant son saut de ligne
         const lineMark = BLOCKS.has(n.nodeName) && i === kids.length - 1;
         if (!(c as Element).hasAttribute(END_BR) && !lineMark) emit("\n");
       } else if (c.nodeType === ELEMENT_NODE) {
