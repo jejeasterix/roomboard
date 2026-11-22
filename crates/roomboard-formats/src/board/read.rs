@@ -10,8 +10,8 @@ use quick_xml::{Reader, XmlVersion};
 
 use super::qt_html::read_qt_html;
 use super::{
-    apply, compose, encode, BoardError, BoardList, Dialect, Item, Mat, Page, Rgb, ShapeKind, Span,
-    IDENTITY, MAX_OBJECTS, MAX_PAGES, MAX_POINTS, MAX_SPANS, PAGE_WIDTH,
+    apply, compose, encode, rect_of, BoardError, BoardList, Dialect, Item, Mat, Page, Rgb,
+    ShapeKind, Span, IDENTITY, MAX_OBJECTS, MAX_PAGES, MAX_POINTS, MAX_SPANS, PAGE_WIDTH,
 };
 use crate::pdf::ASCENT;
 
@@ -50,6 +50,8 @@ enum Sort {
     Axes,
     Rounded,
     PolygonFill,
+    Curves,
+    Arc,
     TextAlign,
     TextReduced,
     RemoteImage,
@@ -60,7 +62,7 @@ enum Sort {
     Unreadable,
 }
 
-const LABELS: [(Sort, &str, &str); 27] = [
+const LABELS: [(Sort, &str, &str); 29] = [
     (
         Sort::Doctype,
         "déclaration DOCTYPE ignorée",
@@ -112,6 +114,12 @@ const LABELS: [(Sort, &str, &str); 27] = [
         "remplissage de polygone non lu",
         "remplissages de polygones non lus",
     ),
+    (
+        Sort::Curves,
+        "courbe approchée par des segments",
+        "courbes approchées par des segments",
+    ),
+    (Sort::Arc, "arc non lu", "arcs non lus"),
     (
         Sort::TextAlign,
         "alignement de texte non lu",
@@ -446,6 +454,20 @@ impl Style {
             }
         }
         s
+    }
+}
+
+/// SMART (N7) : `justification` vaut `text-align` quand l'élément ne déclare pas `text-align` (attribut ou `style`).
+fn justify(s: &mut Style, n: &Node) {
+    let own = n.attr("text-align").is_some()
+        || n.attr("style").is_some_and(|css| {
+            css.split(';').any(|d| {
+                d.split_once(':')
+                    .is_some_and(|(k, _)| k.trim() == "text-align")
+            })
+        });
+    if let Some(j) = n.attr("justification").filter(|_| !own) {
+        s.text_align = Some(j.trim().to_string());
     }
 }
 
@@ -1033,8 +1055,9 @@ fn ellipse(n: &Node, c: &Ctx) -> Got {
 }
 
 /// Éléments connus qui ne dessinent rien : `Some(Some(sorte))` à dire, `Some(None)` muets ; `None` : type inconnu.
-fn ignored(n: &Node) -> Option<Option<Sort>> {
+fn ignored(n: &Node, dialect: Dialect) -> Option<Option<Sort>> {
     Some(match n.name.as_str() {
+        "flash" if dialect == Dialect::Notebook => Some(Sort::Flash),
         "video" => Some(if is_flash(n) {
             Sort::Flash
         } else {
@@ -1153,9 +1176,13 @@ impl State<'_> {
             self.notes.add(c.no, Sort::Unreadable);
             return Ok(());
         };
+        let mut style = c.style.inherit(n);
+        if self.dialect == Dialect::Notebook {
+            justify(&mut style, n);
+        }
         let ctx = Ctx {
             m: compose(&c.m, &local),
-            style: c.style.inherit(n),
+            style,
             no: c.no,
             top: c.top,
         };
@@ -1185,11 +1212,12 @@ impl State<'_> {
             "circle" | "ellipse" => ellipse(n, &ctx),
             "line" => self.line(n, &ctx, id.as_deref()),
             "polyline" | "polygon" => self.poly(n, &ctx),
+            "path" if self.dialect == Dialect::Notebook => self.path(n, &ctx),
             "text" | "textarea" => self.text(n, &ctx),
             "image" => self.image(n, &ctx, id.as_deref()),
             "foreignObject" => self.foreign(n, &ctx),
             _ => {
-                match ignored(n) {
+                match ignored(n, self.dialect) {
                     Some(Some(sort)) => self.notes.add(c.no, sort),
                     Some(None) => {}
                     None => self.notes.add(c.no, Sort::UnknownObject),
@@ -1270,6 +1298,13 @@ impl State<'_> {
         first_child: bool,
         bg: &mut Option<Rgb>,
     ) -> Got {
+        let full = |k: &str| n.attr(k).map(str::trim) == Some("100%");
+        if self.dialect == Dialect::Notebook && full("width") && full("height") {
+            if bg.is_none() {
+                *bg = fill_of(&c.style);
+            }
+            return Ok(None);
+        }
         let (x, y, w, h) = (
             length_attr(n, "x", 0.0)?,
             length_attr(n, "y", 0.0)?,
@@ -1369,6 +1404,56 @@ impl State<'_> {
         }))
     }
 
+    /// `path` SMART (N7) : un trait par sous-chemin ; un sous-chemin fermé d'axes est le même objet qu'un `rect` de même
+    /// style (`fill_of`, `outline`) ; un arc : chemin non lu (F2).
+    fn path(&mut self, n: &Node, c: &Ctx) -> Got {
+        let read = path_subpaths(n.attr("d").unwrap_or("")).ok_or(Bad)?;
+        if read.arc {
+            self.notes.add(c.no, Sort::Arc);
+            return Ok(None);
+        }
+        let fill = fill_of(&c.style);
+        let (color, width) = outline(&c.style, fill);
+        let mut polygon = false;
+        let mut items: Vec<Item> = Vec::with_capacity(read.subs.len());
+        for (pts, closed) in read.subs {
+            if closed {
+                if let Some([x0, y0, x1, y1]) = rect_of(&pts) {
+                    items.push(Item::Shape {
+                        kind: ShapeKind::Rect,
+                        m: c.m,
+                        x0,
+                        y0,
+                        x1,
+                        y1,
+                        color,
+                        width,
+                        fill,
+                    });
+                    continue;
+                }
+                polygon |= fill.is_some();
+            }
+            items.push(Item::Stroke {
+                m: c.m,
+                color,
+                width,
+                points: pts.iter().map(|p| [p[0], p[1], 1.0]).collect(),
+            });
+        }
+        if polygon {
+            self.notes.add(c.no, Sort::PolygonFill);
+        }
+        if read.curves {
+            self.notes.add(c.no, Sort::Curves);
+        }
+        Ok(match items.len() {
+            0 => None,
+            1 => items.pop(),
+            _ => Some(Item::Group(items)),
+        })
+    }
+
     fn text(&mut self, n: &Node, c: &Ctx) -> Got {
         let size = c
             .style
@@ -1440,7 +1525,14 @@ impl State<'_> {
     }
 
     fn image(&mut self, n: &Node, c: &Ctx, id: Option<&str>) -> Got {
-        let href = n.attr("href").unwrap_or("").trim();
+        let raw = n.attr("href").unwrap_or("");
+        let decoded;
+        let href = if self.dialect == Dialect::Notebook {
+            decoded = percent_decode(raw);
+            decoded.trim()
+        } else {
+            raw.trim()
+        };
         if !is_local(href) {
             self.notes.add(c.no, Sort::RemoteImage);
             return Ok(None);
@@ -1513,6 +1605,253 @@ impl State<'_> {
             spans: qt.spans,
         }))
     }
+}
+
+/// Sous-chemin : points (le premier répété s'il est fermé) et fermé ?
+type Subpath = (Vec<[f32; 2]>, bool);
+
+/// `d` lu (N7) : sous-chemins, courbes vues ; `arc` : un arc `A` vu, le chemin entier n'est pas lu (F2).
+struct PathRead {
+    subs: Vec<Subpath>,
+    curves: bool,
+    arc: bool,
+}
+
+fn flush(cur: &mut Vec<[f32; 2]>, out: &mut Vec<Subpath>, done: &mut usize, closed: bool) {
+    if cur.len() >= 2 {
+        *done += cur.len();
+        out.push((std::mem::take(cur), closed));
+    } else {
+        cur.clear();
+    }
+}
+
+fn flatten(cur: &mut Vec<[f32; 2]>, f: impl Fn(f32) -> [f32; 2]) {
+    for k in 1..=8 {
+        cur.push(f(k as f32 / 8.0));
+    }
+}
+
+/// Sous-chemins d'un attribut `d` (N7) : `M L H V Z` absolus et relatifs exacts ; `C S Q T` aplaties en 8 segments ;
+/// `A` : arrêt, chemin non lu. `None` : illisible (commande inconnue, nombre manquant, non fini, plus de `MAX_POINTS`).
+fn path_subpaths(d: &str) -> Option<PathRead> {
+    let toks = path_tokens(d)?;
+    let mut out: Vec<Subpath> = Vec::new();
+    let mut cur: Vec<[f32; 2]> = Vec::new();
+    let mut done = 0usize;
+    let (mut x, mut y, mut sx, mut sy) = (0f32, 0f32, 0f32, 0f32);
+    // Dernier point de contrôle, pour `S` (après `C`/`S`) et `T` (après `Q`/`T`).
+    let (mut last_c, mut last_q): (Option<[f32; 2]>, Option<[f32; 2]>) = (None, None);
+    let mut curves = false;
+    let mut i = 0;
+    let mut cmd = b'M';
+    while i < toks.len() {
+        if let PathTok::Cmd(c) = toks[i] {
+            cmd = c;
+            i += 1;
+            match c.to_ascii_uppercase() {
+                b'Z' => {
+                    if let (Some(&f), Some(&l)) = (cur.first(), cur.last()) {
+                        if f != l {
+                            cur.push(f);
+                        }
+                    }
+                    flush(&mut cur, &mut out, &mut done, true);
+                    (x, y) = (sx, sy);
+                    (last_c, last_q) = (None, None);
+                    continue;
+                }
+                b'A' => {
+                    return Some(PathRead {
+                        subs: Vec::new(),
+                        curves,
+                        arc: true,
+                    })
+                }
+                _ => {}
+            }
+        }
+        let rel = cmd.is_ascii_lowercase();
+        let (bx, by) = if rel { (x, y) } else { (0.0, 0.0) };
+        let up = cmd.to_ascii_uppercase();
+        let need = match up {
+            b'M' | b'L' | b'T' => 2,
+            b'H' | b'V' => 1,
+            b'C' => 6,
+            b'S' | b'Q' => 4,
+            _ => return None,
+        };
+        let mut a = [0f32; 6];
+        for (k, v) in a.iter_mut().enumerate().take(need) {
+            match toks.get(i + k) {
+                Some(PathTok::Num(n)) => *v = *n,
+                _ => return None,
+            }
+        }
+        i += need;
+        if up != b'M' && cur.is_empty() {
+            cur.push([x, y]);
+        }
+        let p0 = [x, y];
+        let (mut nc, mut nq) = (None, None);
+        match up {
+            b'M' => {
+                flush(&mut cur, &mut out, &mut done, false);
+                (x, y) = (bx + a[0], by + a[1]);
+                (sx, sy) = (x, y);
+                cur.push([x, y]);
+                cmd = if rel { b'l' } else { b'L' };
+            }
+            b'L' => {
+                (x, y) = (bx + a[0], by + a[1]);
+                cur.push([x, y]);
+            }
+            b'H' => {
+                x = bx + a[0];
+                cur.push([x, y]);
+            }
+            b'V' => {
+                y = by + a[0];
+                cur.push([x, y]);
+            }
+            b'C' | b'S' => {
+                curves = true;
+                let (c1, c2, p3) = if up == b'C' {
+                    (
+                        [bx + a[0], by + a[1]],
+                        [bx + a[2], by + a[3]],
+                        [bx + a[4], by + a[5]],
+                    )
+                } else {
+                    let r = last_c.map_or(p0, |c| [2.0 * x - c[0], 2.0 * y - c[1]]);
+                    (r, [bx + a[0], by + a[1]], [bx + a[2], by + a[3]])
+                };
+                flatten(&mut cur, |t| {
+                    let u = 1.0 - t;
+                    let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+                    [
+                        w[0] * p0[0] + w[1] * c1[0] + w[2] * c2[0] + w[3] * p3[0],
+                        w[0] * p0[1] + w[1] * c1[1] + w[2] * c2[1] + w[3] * p3[1],
+                    ]
+                });
+                nc = Some(c2);
+                (x, y) = (p3[0], p3[1]);
+            }
+            _ => {
+                curves = true;
+                let (c1, p2) = if up == b'Q' {
+                    ([bx + a[0], by + a[1]], [bx + a[2], by + a[3]])
+                } else {
+                    (
+                        last_q.map_or(p0, |c| [2.0 * x - c[0], 2.0 * y - c[1]]),
+                        [bx + a[0], by + a[1]],
+                    )
+                };
+                flatten(&mut cur, |t| {
+                    let u = 1.0 - t;
+                    [
+                        u * u * p0[0] + 2.0 * u * t * c1[0] + t * t * p2[0],
+                        u * u * p0[1] + 2.0 * u * t * c1[1] + t * t * p2[1],
+                    ]
+                });
+                nq = Some(c1);
+                (x, y) = (p2[0], p2[1]);
+            }
+        }
+        (last_c, last_q) = (nc, nq);
+        if !(x.is_finite() && y.is_finite()) || done + cur.len() > MAX_POINTS as usize {
+            return None;
+        }
+    }
+    flush(&mut cur, &mut out, &mut done, false);
+    Some(PathRead {
+        subs: out,
+        curves,
+        arc: false,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum PathTok {
+    Cmd(u8),
+    Num(f32),
+}
+
+/// Jetons d'un `d` : commandes et nombres (`10-5` = deux nombres, `1.5.5` = 1.5 puis .5, exposants, virgules et
+/// blancs) ; jamais `numbers()`, qui découpe sur les seuls séparateurs. `None` : caractère ou nombre illisible.
+fn path_tokens(d: &str) -> Option<Vec<PathTok>> {
+    let b = d.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if c.is_ascii_whitespace() || c == b',' {
+            i += 1;
+            continue;
+        }
+        if b"MmLlHhVvCcSsQqTtAaZz".contains(&c) {
+            out.push(PathTok::Cmd(c));
+            i += 1;
+            continue;
+        }
+        let start = i;
+        if c == b'+' || c == b'-' {
+            i += 1;
+        }
+        let mut dot = false;
+        while i < b.len() && (b[i].is_ascii_digit() || (b[i] == b'.' && !dot)) {
+            dot |= b[i] == b'.';
+            i += 1;
+        }
+        if i < b.len() && (b[i] == b'e' || b[i] == b'E') {
+            let save = i;
+            i += 1;
+            if i < b.len() && (b[i] == b'+' || b[i] == b'-') {
+                i += 1;
+            }
+            if i < b.len() && b[i].is_ascii_digit() {
+                while i < b.len() && b[i].is_ascii_digit() {
+                    i += 1;
+                }
+            } else {
+                i = save;
+            }
+        }
+        if i == start {
+            return None;
+        }
+        let v: f32 = std::str::from_utf8(&b[start..i]).ok()?.parse().ok()?;
+        if !v.is_finite() {
+            return None;
+        }
+        out.push(PathTok::Num(v));
+    }
+    match out.first() {
+        None | Some(PathTok::Cmd(b'M' | b'm')) => Some(out),
+        _ => None,
+    }
+}
+
+/// `%XX` décodés en UTF-8 (N7, `href` SMART) ; `+` gardé ; une séquence invalide est gardée telle quelle.
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (
+                (b[i + 1] as char).to_digit(16),
+                (b[i + 2] as char).to_digit(16),
+            ) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
 }
 
 /// Lit un `content.xml` IWB, un `.iwb` en SVG brut (`dialect` Iwb) ou une page `pageNNN.svg` (Ubz) ; `first_page`
@@ -2058,7 +2397,15 @@ mod tests {
         read(&notebook(body), Dialect::Notebook, 1)
     }
 
-    fn rect_item(x0: f32, y0: f32, x1: f32, y1: f32, color: Rgb, width: f32, fill: Option<Rgb>) -> Item {
+    fn rect_item(
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        color: Rgb,
+        width: f32,
+        fill: Option<Rgb>,
+    ) -> Item {
         Item::Shape {
             kind: ShapeKind::Rect,
             m: S24,
@@ -2089,7 +2436,15 @@ mod tests {
             nb(r##"<path d="M10 20 L110 20 L110 70 L10 70 z" fill="#ff0000"/>"##);
         assert_eq!(
             pages[0].items,
-            vec![rect_item(10.0, 20.0, 110.0, 70.0, [255, 0, 0], 1.0, Some([255, 0, 0]))]
+            vec![rect_item(
+                10.0,
+                20.0,
+                110.0,
+                70.0,
+                [255, 0, 0],
+                1.0,
+                Some([255, 0, 0])
+            )]
         );
         assert!(warnings.is_empty(), "{warnings:?}");
         let (same, _) = nb(r##"<rect x="10" y="20" width="100" height="50" fill="#ff0000"/>"##);
@@ -2100,16 +2455,23 @@ mod tests {
         );
         assert_eq!(
             pages[0].items,
-            vec![rect_item(10.0, 20.0, 110.0, 70.0, [0, 0, 255], 3.0, Some([255, 0, 0]))]
+            vec![rect_item(
+                10.0,
+                20.0,
+                110.0,
+                70.0,
+                [0, 0, 255],
+                3.0,
+                Some([255, 0, 0])
+            )]
         );
         assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     #[test]
     fn notebook_open_path_is_a_stroke_with_relative_commands() {
-        let (pages, warnings) = nb(
-            r##"<path d="m10 10 l5 0 h5 v5" fill="none" stroke="#000000" stroke-width="2"/>"##,
-        );
+        let (pages, warnings) =
+            nb(r##"<path d="m10 10 l5 0 h5 v5" fill="none" stroke="#000000" stroke-width="2"/>"##);
         assert_eq!(
             pages[0].items,
             vec![stroke_item(
@@ -2134,7 +2496,11 @@ mod tests {
         let (pages, _) = nb(r#"<path d="M0,0 1e1,2 l-5E-1 0" fill="none"/>"#);
         assert_eq!(
             pages[0].items,
-            vec![stroke_item(&[[0.0, 0.0], [10.0, 2.0], [9.5, 2.0]], [0, 0, 0], 1.0)]
+            vec![stroke_item(
+                &[[0.0, 0.0], [10.0, 2.0], [9.5, 2.0]],
+                [0, 0, 0],
+                1.0
+            )]
         );
     }
 
@@ -2154,7 +2520,10 @@ mod tests {
         let (pages, warnings) = nb(r#"<path d="M0 0 C0 10 10 10 10 0" fill="none"/>"#);
         let p = points_of(&pages[0].items[0]);
         assert_eq!(p.len(), 9);
-        assert!(near2(p[0], [0.0, 0.0]) && near2(p[4], [5.0, 7.5]) && near2(p[8], [10.0, 0.0]), "{p:?}");
+        assert!(
+            near2(p[0], [0.0, 0.0]) && near2(p[4], [5.0, 7.5]) && near2(p[8], [10.0, 0.0]),
+            "{p:?}"
+        );
         assert_eq!(
             warnings,
             vec!["page 1 : 1 courbe approchée par des segments".to_string()]
@@ -2165,7 +2534,10 @@ mod tests {
         );
         let p = points_of(&pages[0].items[0]);
         assert_eq!(p.len(), 17);
-        assert!(near2(p[12], [15.0, -7.5]) && near2(p[16], [20.0, 0.0]), "{p:?}");
+        assert!(
+            near2(p[12], [15.0, -7.5]) && near2(p[16], [20.0, 0.0]),
+            "{p:?}"
+        );
         let q = points_of(&pages[0].items[1]);
         assert_eq!(q.len(), 9);
         assert!(near2(q[4], [5.0, 5.0]), "{q:?}");
@@ -2186,7 +2558,13 @@ mod tests {
             r#"<path d="M0 0 L5 5 a5 5 0 0110 0" fill="none"/><path d="M0 0 A1 1 0 0 1 2 2"/><line x1="0" y1="0" x2="1" y2="1" stroke="black"/>"#,
         );
         assert_eq!(pages[0].items.len(), 1);
-        assert!(matches!(&pages[0].items[0], Item::Shape { kind: ShapeKind::Line, .. }));
+        assert!(matches!(
+            &pages[0].items[0],
+            Item::Shape {
+                kind: ShapeKind::Line,
+                ..
+            }
+        ));
         assert_eq!(warnings, vec!["page 1 : 2 arcs non lus".to_string()]);
     }
 
@@ -2285,7 +2663,11 @@ mod tests {
         let (pages, warnings) = nb(
             r##"<g fill="#ffffff"><polygon points="100,100 200,100 200,110 100,110"/><polygon points="200,98 300,98 300,112 200,112"/></g>"##,
         );
-        assert!(matches!(&pages[0].items[..], [Item::Group(g)] if g.len() == 2), "{:?}", pages[0].items);
+        assert!(
+            matches!(&pages[0].items[..], [Item::Group(g)] if g.len() == 2),
+            "{:?}",
+            pages[0].items
+        );
         assert_eq!(
             warnings,
             vec!["page 1 : 2 remplissages de polygones non lus".to_string()]
@@ -2326,7 +2708,10 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         // Propre au dialecte SMART.
         let (_, warnings) = read(
-            &iwb(r#"<svg:textarea x="0" y="0" justification="center">a</svg:textarea>"#, ""),
+            &iwb(
+                r#"<svg:textarea x="0" y="0" justification="center">a</svg:textarea>"#,
+                "",
+            ),
             Dialect::Iwb,
             1,
         );
@@ -2336,9 +2721,8 @@ mod tests {
     /// S1 : texte gras à `tspan` imbriqués.
     #[test]
     fn notebook_tspans_nested_keep_bold() {
-        let (pages, _) = nb(
-            r#"<text x="0" y="20"><tspan font-weight="bold">a<tspan>b</tspan></tspan></text>"#,
-        );
+        let (pages, _) =
+            nb(r#"<text x="0" y="20"><tspan font-weight="bold">a<tspan>b</tspan></tspan></text>"#);
         match &pages[0].items[..] {
             [Item::Text { spans, .. }] => assert_eq!(
                 spans,
@@ -2362,7 +2746,8 @@ mod tests {
     /// S1 et S3 : `%XX` décodés avant les contrôles (`%2e%2e` reste hors de l'archive) ; `+` gardé ; SMART seul.
     #[test]
     fn notebook_image_href_is_percent_decoded() {
-        let img = |h: &str| format!(r#"<image xlink:href="{h}" x="0" y="0" width="10" height="10"/>"#);
+        let img =
+            |h: &str| format!(r#"<image xlink:href="{h}" x="0" y="0" width="10" height="10"/>"#);
         let (pages, warnings) = nb(&format!(
             "{}{}{}",
             img("images/a%20b[1].png"),
@@ -2386,6 +2771,18 @@ mod tests {
             1,
         );
         assert_eq!(href_of(&pages[0].items[0]), "images/a%20b.png");
+    }
+
+    #[test]
+    fn percent_decode_keeps_short_and_invalid_sequences() {
+        assert_eq!(percent_decode("a%20b"), "a b");
+        assert_eq!(percent_decode("%C3%A9t%C3%A9"), "été");
+        assert_eq!(percent_decode("fin%2"), "fin%2");
+        assert_eq!(percent_decode("fin%"), "fin%");
+        assert_eq!(percent_decode("%zz%2g"), "%zz%2g");
+        assert_eq!(percent_decode("a+b"), "a+b");
+        // UTF-8 invalide : chaîne gardée telle quelle.
+        assert_eq!(percent_decode("x%FF.png"), "x%FF.png");
     }
 
     /// S1 : Flash dit comme tel ; les autres objets SMART restent d'un type non lu.
@@ -2421,7 +2818,10 @@ mod tests {
             ]
             .map(String::from)
         );
-        assert!(!l.texts.iter().any(|t| t.contains("alert") || t.contains("root")));
+        assert!(!l
+            .texts
+            .iter()
+            .any(|t| t.contains("alert") || t.contains("root")));
         match &parse(&l).expect("liste")[0].items[..] {
             [Item::Text { spans, .. }] => assert_eq!(spans[0].text, "avant après"),
             other => panic!("{other:?}"),
