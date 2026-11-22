@@ -6,6 +6,7 @@
  */
 
 import type { Model3dFormat } from "../core/api";
+import { safeArchivePath } from "./archive-path";
 
 /** `Model3dFormat` d'`api.ts` (T2, PC1), réexporté pour les lecteurs de ce module. */
 export type { Model3dFormat };
@@ -258,12 +259,10 @@ export async function gatherFiles(
   return { files, missing: mtl ? missing : [], mtl };
 }
 
-/** X16 : entrée de ZIP gardée : fichier (pas un dossier), ni absolu ni `..`, hors `__MACOSX`, extension 3D ou liée. */
+/** X16 : entrée de ZIP gardée : chemin sûr selon `safeArchivePath` (C13 N16), extension 3D ou liée. */
 export function keepZipPath(path: string): boolean {
-  const p = path.replace(/\\/g, "/");
-  if (p.endsWith("/") || ABSOLUTE.test(p)) return false;
-  const segs = p.split("/");
-  if (segs.some((s) => s === ".." || s === "__MACOSX")) return false;
+  const p = safeArchivePath(path);
+  if (p === null) return false;
   const ext = extensionOf(p);
   return (MODEL_EXTENSIONS as readonly string[]).includes(ext) || (COMPANION_EXTENSIONS as readonly string[]).includes(ext);
 }

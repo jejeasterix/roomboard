@@ -18,7 +18,7 @@ import {
   ZIP_MAX_ENTRIES,
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
-import { normalBoardPath } from "./board-reader";
+import { safeArchivePath } from "./archive-path";
 import { isPackEntry } from "./rbpack";
 import type { ZipFile } from "./zip-read";
 
@@ -30,16 +30,15 @@ export function keepPackPath(name: string): boolean {
 /** C13 (D3, D12) : images qu'un tableau `.iwb` ou `.ubz` peut citer ; tout autre fichier n'est jamais décompressé. */
 export const BOARD_ZIP_EXTENSIONS: readonly string[] = Object.freeze(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
 
-/** C13 (D3) : `content.xml` (IWB), `page<N>.svg` (OpenBoard) et images ; chemin absolu, lettre de lecteur, `..`,
- *  `__MACOSX` et dossier refusés. Vidéos, sons, Flash et widgets ne sont pas décompressés : le lecteur les compte
- *  depuis le XML pour l'avertissement (D15). */
+/** C13 (D3, N15, N16) : `content.xml` (IWB), `imsmanifest.xml` et `content.json` (racine seulement), `page<N>.svg`
+ *  (OpenBoard) et images ; chemin sûr selon `safeArchivePath`. Vidéos, sons, Flash et widgets ne sont pas décompressés :
+ *  le lecteur les compte depuis le XML pour l'avertissement (D15). */
 export function keepBoardPath(name: string): boolean {
-  if (name === "" || name.endsWith("/") || name.endsWith("\\") || name.startsWith("/") || name.startsWith("\\") || /^[A-Za-z]:/.test(name)) return false;
-  const segs = normalBoardPath(name).split("/");
-  if (segs.includes("..") || segs[0] === "__MACOSX") return false;
-  const lower = normalBoardPath(name).toLowerCase();
-  if (lower === "content.xml" || /^page\d+\.svg$/.test(lower)) return true;
-  return BOARD_ZIP_EXTENSIONS.includes(extensionOf(name));
+  const p = safeArchivePath(name);
+  if (p === null) return false;
+  const lower = p.toLowerCase();
+  if (lower === "content.xml" || lower === "imsmanifest.xml" || lower === "content.json" || /^page\d+\.svg$/.test(lower)) return true;
+  return BOARD_ZIP_EXTENSIONS.includes(extensionOf(p));
 }
 
 /** Date fixe des entrées (D25 : octets stables), en heure locale comme le champ DOS du ZIP. */
