@@ -219,7 +219,7 @@ describe("C13 lot 2 : lecteur de content.json (.olf) par le Worker ZIP", () => {
       return w;
     };
     const ops = Float32Array.from([1, 2]);
-    const got = await createOlfReader(spawn({ part: { ops, texts: ["a"], warnings: ["page 1 : 1 widget non lu"], total: 3 } }), 1000)(new Blob([enc('{"olf":{}}')]));
+    const got = await createOlfReader(spawn({ part: { ops, texts: ["a"], warnings: ["page 1 : 1 widget non lu"], total: 3 } }), 1000)(new Blob(['{"olf":{}}']));
     expect(got).toEqual({ ops, texts: ["a"], warnings: ["page 1 : 1 widget non lu"], total: 3 });
     expect(got.ops).toBeInstanceOf(Float32Array);
     const sent = posted[0]!.m as { op: string; bytes: Uint8Array };
