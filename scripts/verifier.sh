@@ -29,6 +29,7 @@ bash scripts/tests/controle-hors-ligne.test.sh
 bash scripts/tests/verifier-e2e.test.sh
 bash scripts/tests/controle-icones.test.sh
 bash scripts/tests/coque-csp.test.sh
+node --test scripts/tests/avis.test.mjs
 cargo build -p roomboard-wasm --target wasm32-unknown-unknown --release
 rm -rf "$WASM_OUT"
 # --remove-name-section : ~510 Ko de noms de fonctions en moins (OD55, docs/essais/taille-wasm.md).
