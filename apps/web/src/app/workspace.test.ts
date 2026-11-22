@@ -1765,13 +1765,23 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
       expect(shell.notify).toHaveBeenCalledWith("x.flipchart : ouvert avec 2 avertissements :\n- page 1 : 1 image TIFF non lue\n- page 2 : 1 action non lue");
     });
 
-    it("C13 S4 : images en media, jamais dans le Worker des tableaux", async () => {
+    it("C13 S4 : images en media ; au lecteur, seulement la tête de chaque image (type reconnu : PNG, TIFF…)", async () => {
       const page: BoardListPage = { background: null, objects: [{ kind: "image", m: [1, 0, 0, 1, 0, 0], x: 0, y: 0, w: 10, h: 10, path: "4.fpg/img.png" }] };
       const b = fakeBoard({ bamboo: async () => parts(), pages: [page] });
       const ws = await setupWorkspace({ board: b.ports, decode: fakeDecode });
       expect(await ws.openBoard({ name: "x.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(true);
-      expect(b.readFlipchart.mock.calls[0]![0].map((e) => e.path)).toEqual(["version", "1.in", "2.io", "3.ir"]);
-      expect(new TextDecoder().decode(b.readFlipchart.mock.calls[0]![0][1]!.bytes)).toBe("in");
+      // Sans la tête de l'image, le lecteur ne la trouve pas (« objet illisible ignoré ») et ne peut pas dire « image TIFF non lue » :
+      // l'image entière reste hors du Worker des tableaux, seuls ses 16 premiers octets passent.
+      const sent = b.readFlipchart.mock.calls[0]![0];
+      expect(sent.map((e) => e.path)).toEqual(["version", "1.in", "2.io", "3.ir", "4.fpg/img.png"]);
+      expect(new TextDecoder().decode(sent[1]!.bytes)).toBe("in");
+      expect(new TextDecoder().decode(sent[4]!.bytes)).toBe("png");
+      const big = parts();
+      big[4] = { path: "photo.png", blob: new Blob([new Uint8Array(1000).fill(7)]) };
+      const b2 = fakeBoard({ bamboo: async () => big, pages: [page] });
+      const ws2 = await setupWorkspace({ board: b2.ports, decode: fakeDecode });
+      expect(await ws2.openBoard({ name: "y.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(true);
+      expect(b2.readFlipchart.mock.calls[0]![0][4]!.bytes).toHaveLength(16);
       const doc = ws.active().board.doc;
       expect(doc.elementIds(doc.pageIds()[0]!)).toHaveLength(1);
       expect(shell.notify).not.toHaveBeenCalled();
