@@ -129,3 +129,60 @@ Budget (N17) : lot 2 ≤ 20 Ko (formats ≤ 3 045 012 o), lot 3 ≤ 80 Ko (≤ 3
 Final lot 3 : principal inchangé à l'octet (1 374 141 o, marge 198 723 o) ; `formats` +80 912 o depuis 3 037 458 o, soit
 3 118 370 o, marge 27 358 o sous le plafond de 3 145 728 o (≥ 20 Ko) et 6 642 o sous le budget de lot 3 (3 125 012 o).
 Plafonds inchangés.
+
+## OE71 (marge du module formats, 2026-11-23)
+
+Départ : `origin/main` 0566cef. Module formats 3 118 426 o (marge 27 302 o sous 3 145 728 o) ; principal 1 374 398 o.
+Cible : marge d'au moins 100 Ko, soit 3 045 728 o au plus. Plafonds de `scripts/verifier.sh` inchangés.
+Mesure : `cargo build -p roomboard-formats-wasm --target wasm32-unknown-unknown --release`, puis
+`wasm-bindgen --target web --remove-name-section` ; chaque réglage du profil est essayé par la variable
+`CARGO_PROFILE_RELEASE_*` dans un dossier de build à part (`/tmp`).
+
+### Part de chaque crate (code, section `name` gardée pour la lecture)
+
+Section de code 2 493 913 o, section de données 609 248 o. Code par crate (fonctions génériques comptées dans la crate
+de leur définition) : `read_fonts` 382 523, `skrifa` 282 570, `core` 248 586, `alloc` 203 397, `roomboard_formats`
+150 161, `ttf_parser` 148 825, `krilla` 128 232, `rustybuzz` 112 010, `calamine` 78 379, `hashbrown` 77 535, `zip`
+71 570, `zlib_rs` 52 472, `png` 42 654, `encoding_rs` 37 506, `write_fonts` 37 426, `subsetter` 37 126, `zopfli`
+32 994, `pdf_writer` 32 732, `quick_xml` 31 443, le reste sous 25 000 o. Les deux piles de polices font 37 % du code :
+`skrifa` et `read_fonts` sont une dépendance fixe de `krilla` ; `rustybuzz` et `ttf_parser` (environ 261 Ko, 10 %)
+viennent de sa fonctionnalité `simple-text`, qui sert au texte des PDF. `twiggy` et `cargo bloat` sont absents de la VM : décompte par un script hors dépôt qui lit les sections
+`code` et `name`.
+
+### Réglages
+
+| Réglage | Module formats (o) | Gain (o) | Module principal (o) | Gardé | Pourquoi |
+|---|---:|---:|---:|---|---|
+| Départ | 3 118 426 | — | 1 374 398 | — | référence |
+| `wasm-opt -Oz` (paquet npm `binaryen` 132.0.0, Apache-2.0), après `wasm-bindgen` | 2 794 511 | 323 915 | 1 374 398 (n'y passe pas) | **oui** | marge 351 217 o ; banc sans perte de vitesse (ci-dessous) |
+| `wasm-opt -Os` | 2 814 230 | 304 196 | — | non | moins bon que `-Oz` |
+| `panic = "abort"` | 3 119 361 | −935 | — | non | plus gros ; `wasm32-unknown-unknown` ne déroule déjà pas la pile |
+| `opt-level = "z"` sur tout le module formats (profil à part) | 3 057 664 | 60 762 | — | non | cible non tenue seul ; coût de vitesse sur le cœur non mesuré |
+| `opt-level = "z"` + `wasm-opt -Oz` | 2 715 283 | 403 143 | — | non | 79 228 o de plus que `-Oz` seul, mais coût de vitesse du cœur non mesuré ; réserve pour plus tard |
+| `lto = "fat"` | — | 0 | — | déjà là | `lto = true` vaut `"fat"` |
+| `codegen-units = 1` | — | 0 | — | déjà là | posé pour tout le workspace (OD55) |
+| fonctionnalités Cargo de `krilla`, `calamine`, `quick-xml`, `zip` | — | — | — | non | celles en trop (`skrifa/autohint_shaping`, `subsetter/variable-fonts`, `quick-xml/encoding`, `zip/deflate-zopfli`) sont posées par `krilla` et `calamine` eux-mêmes ; aucun réglage de notre côté ne les retire |
+
+`wasm-opt` tourne dans `scripts/verifier.sh` après `pnpm install --frozen-lockfile`, sur
+`apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm`, avant les tests du vrai module et le build de vite.
+La colle JS reste celle de `wasm-bindgen` (mêmes exports) ; `-Oz` lit les fonctionnalités Wasm dans la section
+`target_features`. Durée : environ 1 min 35 s de plus par vérification. Le module principal n'y passe pas.
+Les recettes de l'installeur (`docs/essais/coque-windows.md`, `docs/essais/coque-macos.md`) lancent le même
+`wasm-opt` : sans lui, l'installeur livrerait le module non optimisé, que `verifier.sh` ne mesure pas.
+
+### Banc de vitesse (Node, hors dépôt, 5 passages, médianes en ms, deux séries)
+
+| essai | départ | `wasm-opt -Oz` |
+|---|---:|---:|
+| lecture `.iwb` de 60 pages × 450 objets | 227 ; 223 | 216 ; 216 |
+| écriture `.iwb` de ces pages | 410 ; 408 | 391 ; 391 |
+| 200 lectures de `valeurs.xlsx` | 407 ; 398 | 385 ; 384 |
+| `image_adjust` 2000 × 2000, 5 fois | 32 ; 32 | 32 ; 32 |
+| `image_flood_fill` 2000 × 2000, 3 fois | 693 ; 686 | 684 ; 678 |
+
+Charge de la VM (`uptime`, 1 min) : 6,5. Aucun essai n'est plus lent. L'export PDF (`write_pdf_pages`) n'est pas
+chronométré ici ; ses tests et ses essais e2e passent sur le module optimisé.
+
+`scripts/verifier.sh --e2e` : OK sur la branche, essais de fidélité de C13 compris (`C13 tableaux : OK`) ;
+`module Wasm : 1374398 octets`, `module formats : 2794511 octets`. Marge du module formats : 351 217 o
+(cible : 100 Ko). Plafonds inchangés (1 572 864 o, 3 145 728 o).
