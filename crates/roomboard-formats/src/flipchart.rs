@@ -75,7 +75,12 @@ pub(crate) mod writer {
 
     impl Obj {
         pub(crate) fn new(class: u16, storage: u32) -> Self {
-            Obj { class, storage, props: Vec::new(), owner: None }
+            Obj {
+                class,
+                storage,
+                props: Vec::new(),
+                owner: None,
+            }
         }
         /// Variante quelconque (type et octets donnés) : types inconnus, valeurs mensongères.
         pub(crate) fn raw(mut self, id: u16, variant: Bytes) -> Self {
@@ -98,7 +103,10 @@ pub(crate) mod writer {
             self.raw(id, Bytes::default().u16(10).str16(v))
         }
         pub(crate) fn string_list(self, id: u16, v: &[&str]) -> Self {
-            let mut b = Bytes::default().u16(11).u16(1).i32(i32::try_from(v.len()).unwrap_or(i32::MAX));
+            let mut b = Bytes::default()
+                .u16(11)
+                .u16(1)
+                .i32(i32::try_from(v.len()).unwrap_or(i32::MAX));
             for s in v {
                 b = b.qstr(s);
             }
@@ -130,15 +138,23 @@ pub(crate) mod writer {
             self.raw(id, Bytes::default().u16(127).u16(1).i32(n).points(pts))
         }
         pub(crate) fn polygons(self, id: u16, polys: &[&[(f64, f64)]]) -> Self {
-            let mut b = Bytes::default().u16(127).u16(2).i32(i32::try_from(polys.len()).unwrap_or(i32::MAX));
+            let mut b = Bytes::default()
+                .u16(127)
+                .u16(2)
+                .i32(i32::try_from(polys.len()).unwrap_or(i32::MAX));
             for poly in polys {
-                b = b.i32(i32::try_from(poly.len()).unwrap_or(i32::MAX)).points(poly);
+                b = b
+                    .i32(i32::try_from(poly.len()).unwrap_or(i32::MAX))
+                    .points(poly);
             }
             self.raw(id, b)
         }
         /// Registre de ressources (sous-type 3) : (numéro, entrée, fichier, empreinte, références).
         pub(crate) fn resources(self, id: u16, items: &[(u32, &str, &str, &str, u32)]) -> Self {
-            let mut b = Bytes::default().u16(127).u16(3).i32(i32::try_from(items.len()).unwrap_or(i32::MAX));
+            let mut b = Bytes::default()
+                .u16(127)
+                .u16(3)
+                .i32(i32::try_from(items.len()).unwrap_or(i32::MAX));
             for &(rid, entry, file, digest, refs) in items {
                 b = b.u32(rid).str16(entry).str16(file).str16(digest).u32(refs);
             }
@@ -146,17 +162,34 @@ pub(crate) mod writer {
         }
         /// Objet embarqué (sous-types 4, 6, 7, 8, 12, 14, 18).
         pub(crate) fn object(self, id: u16, subtype: u16, inner: &Obj) -> Self {
-            self.raw(id, Bytes::default().u16(127).u16(subtype).raw(&inner.body()))
+            self.raw(
+                id,
+                Bytes::default().u16(127).u16(subtype).raw(&inner.body()),
+            )
         }
         pub(crate) fn user_rect(self, id: u16, x: f64, y: f64, w: f64, h: f64) -> Self {
-            self.raw(id, Bytes::default().u16(127).u16(5).f64(x).f64(y).f64(w).f64(h))
+            self.raw(
+                id,
+                Bytes::default().u16(127).u16(5).f64(x).f64(y).f64(w).f64(h),
+            )
         }
         pub(crate) fn pointer(self, id: u16, node: u32, storage: u32, kind: u16) -> Self {
-            self.raw(id, Bytes::default().u16(127).u16(9).u32(node).u32(storage).u16(kind))
+            self.raw(
+                id,
+                Bytes::default()
+                    .u16(127)
+                    .u16(9)
+                    .u32(node)
+                    .u32(storage)
+                    .u16(kind),
+            )
         }
         /// Liste d'objets (sous-type 10, segments d'un texte).
         pub(crate) fn objects(self, id: u16, list: &[Obj]) -> Self {
-            let mut b = Bytes::default().u16(127).u16(10).i32(i32::try_from(list.len()).unwrap_or(i32::MAX));
+            let mut b = Bytes::default()
+                .u16(127)
+                .u16(10)
+                .i32(i32::try_from(list.len()).unwrap_or(i32::MAX));
             for o in list {
                 b = b.raw(&o.body());
             }
@@ -174,11 +207,21 @@ pub(crate) mod writer {
                 .iter()
                 .enumerate()
                 .map(|(i, (id, variant))| {
-                    Bytes::default().tag(if i == 0 { b'm' } else { b'p' }).tag(b'P').u16(*id).raw(variant).0
+                    Bytes::default()
+                        .tag(if i == 0 { b'm' } else { b'p' })
+                        .tag(b'P')
+                        .u16(*id)
+                        .raw(variant)
+                        .0
                 })
                 .collect();
             let count = u32::try_from(records.len()).unwrap_or(u32::MAX);
-            let mut b = Bytes::default().tag(b'O').u16(self.class).u32(self.storage).tag(b'M').u32(count);
+            let mut b = Bytes::default()
+                .tag(b'O')
+                .u16(self.class)
+                .u32(self.storage)
+                .tag(b'M')
+                .u32(count);
             for r in &records {
                 b = b.u32(len32(r));
             }
@@ -193,7 +236,12 @@ pub(crate) mod writer {
         }
         /// Fichier `.io` ou `.ir` : en-tête de flux " Bamboo " u16 1 u16 7, puis l'objet.
         pub(crate) fn stream(&self) -> Vec<u8> {
-            Bytes::default().raw(b" Bamboo ").u16(1).u16(7).raw(&self.body()).0
+            Bytes::default()
+                .raw(b" Bamboo ")
+                .u16(1)
+                .u16(7)
+                .raw(&self.body())
+                .0
         }
     }
 
@@ -207,8 +255,20 @@ pub(crate) mod writer {
     }
 
     impl Node {
-        pub(crate) fn new(id: u32, kind: u16, storage: u32, children: Vec<Node>, refs: Vec<u32>) -> Self {
-            Node { id, kind, storage, refs, children }
+        pub(crate) fn new(
+            id: u32,
+            kind: u16,
+            storage: u32,
+            children: Vec<Node>,
+            refs: Vec<u32>,
+        ) -> Self {
+            Node {
+                id,
+                kind,
+                storage,
+                refs,
+                children,
+            }
         }
         fn write(&self, mut b: Bytes) -> Bytes {
             b = b.tag(b'N').u32(self.id).u16(self.kind).u32(self.storage);
@@ -224,6 +284,7 @@ pub(crate) mod writer {
 
     /// Entrée `.in` : en-tête « # culm # » u16 1 u16 7, puis l'arbre.
     pub(crate) fn index(root: &Node) -> Vec<u8> {
-        root.write(Bytes::default().raw(b"# culm #").u16(1).u16(7)).0
+        root.write(Bytes::default().raw(b"# culm #").u16(1).u16(7))
+            .0
     }
 }

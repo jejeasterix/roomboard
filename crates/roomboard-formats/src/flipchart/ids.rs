@@ -55,19 +55,34 @@ mod tests {
 
     #[test]
     fn ids_have_the_kinds_of_n12() {
-        let read = [(STROKE, 3), (LINE, 5), (SHAPE, 7), (IMAGE, 9), (TEXT, 11), (GROUP, 18)];
+        let read = [
+            (STROKE, 3),
+            (LINE, 5),
+            (SHAPE, 7),
+            (IMAGE, 9),
+            (TEXT, 11),
+            (GROUP, 18),
+        ];
         for (id, n) in read {
             assert_eq!(id, n);
         }
         assert_eq!((DOCUMENT, PAGE, BACKGROUND), (1, 2, 29));
-        let unread = [(CONNECTOR, 52), (TAG, 53), (MEDIA, 253), (MATHML, 460), (VERTICAL_TEXT, 469)];
+        let unread = [
+            (CONNECTOR, 52),
+            (TAG, 53),
+            (MEDIA, 253),
+            (MATHML, 460),
+            (VERTICAL_TEXT, 469),
+        ];
         for (id, n) in unread {
             assert_eq!(id, n);
         }
         for k in [22, 23, 24, 25, 26, 27, 28, 50, 463] {
             assert!(is_action(k), "{k} est une action");
         }
-        for k in [1, 2, 3, 5, 7, 9, 11, 13, 14, 18, 21, 29, 49, 51, 52, 53, 253, 460, 462, 464, 469] {
+        for k in [
+            1, 2, 3, 5, 7, 9, 11, 13, 14, 18, 21, 29, 49, 51, 52, 53, 253, 460, 462, 464, 469,
+        ] {
             assert!(!is_action(k), "{k} n'est pas une action");
         }
         assert!(is_grid(13) && is_grid(14) && !is_grid(12) && !is_grid(15));

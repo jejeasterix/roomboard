@@ -29,8 +29,62 @@ impl IndexNode {
 
 /// Lit l'index : une seule racine, chaque nœud fermé, au plus [`MAX_DEPTH`] nœuds ouverts.
 pub(crate) fn parse_index(data: &[u8]) -> Result<IndexNode, String> {
-    let _ = (data, SIGNATURE, HEADER, Reader::new(data, 0, 0));
-    Err(String::from("index : lecteur à écrire"))
+    if data.len() < HEADER || !data.starts_with(SIGNATURE) {
+        return Err(String::from("signature d'index absente"));
+    }
+    let mut r = Reader::new(data, HEADER, data.len());
+    let mut root = None;
+    // Chemin de la racine au nœud ouvert ; un nœud fermé rejoint son parent.
+    let mut open: Vec<IndexNode> = Vec::new();
+    while let Some(tag) = r.peek() {
+        let at = r.pos();
+        r.u8()?;
+        match tag {
+            b'N' => {
+                let node = (|| Ok::<_, String>((r.u32()?, r.u16()?, r.u32()?)))();
+                let (node_id, kind, storage_id) =
+                    node.map_err(|_| format!("nœud tronqué à l'octet {at}"))?;
+                if open.is_empty() && root.is_some() {
+                    return Err(String::from("plusieurs racines dans l'index"));
+                }
+                if open.len() >= MAX_DEPTH {
+                    return Err(String::from("arbre d'index trop profond"));
+                }
+                let kind = u32::from(kind);
+                open.push(IndexNode {
+                    node_id,
+                    kind,
+                    storage_id,
+                    refs: Vec::new(),
+                    children: Vec::new(),
+                });
+            }
+            b'S' => {
+                let reference = (|| Ok::<_, String>((r.u32()?, r.u8()?)))();
+                let Ok((id, b's')) = reference else {
+                    return Err(format!("référence mal fermée à l'octet {at}"));
+                };
+                let node = open
+                    .last_mut()
+                    .ok_or_else(|| format!("référence hors nœud à l'octet {at}"))?;
+                node.refs.push(id);
+            }
+            b'n' => {
+                let node = open
+                    .pop()
+                    .ok_or_else(|| format!("'n' sans nœud ouvert à l'octet {at}"))?;
+                match open.last_mut() {
+                    Some(parent) => parent.children.push(node),
+                    None => root = Some(node),
+                }
+            }
+            _ => return Err(format!("balise d'index inconnue à l'octet {at}")),
+        }
+    }
+    if !open.is_empty() {
+        return Err(String::from("nœud non fermé en fin d'index"));
+    }
+    root.ok_or_else(|| String::from("index vide"))
 }
 
 #[cfg(test)]
@@ -44,19 +98,40 @@ mod tests {
 
     #[test]
     fn index_reads_nested_nodes_and_refs() {
-        let page = Node::new(1003, 2, 1002, vec![leaf(1010, 3, 1009), leaf(1011, 18, 1012)], vec![1010, 1011]);
+        let page = Node::new(
+            1003,
+            2,
+            1002,
+            vec![leaf(1010, 3, 1009), leaf(1011, 18, 1012)],
+            vec![1010, 1011],
+        );
         let root = Node::new(1000, 1, 100, vec![page, leaf(1004, 2, 1005)], vec![7]);
         let tree = parse_index(&index(&root)).expect("index valide");
-        assert_eq!((tree.node_id, tree.kind, tree.storage_id, tree.refs.clone()), (1000, 1, 100, vec![7]));
+        assert_eq!(
+            (tree.node_id, tree.kind, tree.storage_id, tree.refs.clone()),
+            (1000, 1, 100, vec![7])
+        );
         assert_eq!(tree.storage_name(), "100.io");
         assert_eq!(tree.children.len(), 2);
         let page = &tree.children[0];
         assert_eq!((page.node_id, page.kind, page.storage_id), (1003, 2, 1002));
         assert_eq!(page.refs, vec![1010, 1011]);
-        let kids: Vec<(u32, u32, String)> =
-            page.children.iter().map(|c| (c.node_id, c.kind, c.storage_name())).collect();
-        assert_eq!(kids, vec![(1010, 3, "1009.io".to_string()), (1011, 18, "1012.io".to_string())]);
-        assert!(page.children.iter().all(|c| c.children.is_empty() && c.refs.is_empty()));
+        let kids: Vec<(u32, u32, String)> = page
+            .children
+            .iter()
+            .map(|c| (c.node_id, c.kind, c.storage_name()))
+            .collect();
+        assert_eq!(
+            kids,
+            vec![
+                (1010, 3, "1009.io".to_string()),
+                (1011, 18, "1012.io".to_string())
+            ]
+        );
+        assert!(page
+            .children
+            .iter()
+            .all(|c| c.children.is_empty() && c.refs.is_empty()));
         assert_eq!(tree.children[1].storage_name(), "1005.io");
     }
 
@@ -75,7 +150,9 @@ mod tests {
 
         let mut two_roots = good.clone();
         two_roots.extend_from_slice(&good[12..]);
-        assert!(parse_index(&two_roots).unwrap_err().contains("plusieurs racines"));
+        assert!(parse_index(&two_roots)
+            .unwrap_err()
+            .contains("plusieurs racines"));
 
         // Chaque coupure de l'index valide est une erreur, jamais une panique.
         for cut in 0..good.len() {
@@ -107,6 +184,8 @@ mod tests {
             b
         };
         assert!(parse_index(&deep(MAX_DEPTH)).is_ok());
-        assert!(parse_index(&deep(MAX_DEPTH + 1)).unwrap_err().contains("trop profond"));
+        assert!(parse_index(&deep(MAX_DEPTH + 1))
+            .unwrap_err()
+            .contains("trop profond"));
     }
 }
