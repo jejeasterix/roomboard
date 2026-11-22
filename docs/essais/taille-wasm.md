@@ -144,9 +144,9 @@ Section de code 2 493 913 o, section de données 609 248 o. Code par crate (fonc
 de leur définition) : `read_fonts` 382 523, `skrifa` 282 570, `core` 248 586, `alloc` 203 397, `roomboard_formats`
 150 161, `ttf_parser` 148 825, `krilla` 128 232, `rustybuzz` 112 010, `calamine` 78 379, `hashbrown` 77 535, `zip`
 71 570, `zlib_rs` 52 472, `png` 42 654, `encoding_rs` 37 506, `write_fonts` 37 426, `subsetter` 37 126, `zopfli`
-32 994, `pdf_writer` 32 732, `quick_xml` 31 443, le reste sous 25 000 o. Les deux piles de polices (`skrifa` et
-`read_fonts` d'un côté, `ttf_parser` et `rustybuzz` de l'autre) viennent de `krilla` (`simple-text`) ; elles font 37 %
-du code. `twiggy` et `cargo bloat` sont absents de la VM : décompte par un script hors dépôt qui lit les sections
+32 994, `pdf_writer` 32 732, `quick_xml` 31 443, le reste sous 25 000 o. Les deux piles de polices font 37 % du code :
+`skrifa` et `read_fonts` sont une dépendance fixe de `krilla` ; `rustybuzz` et `ttf_parser` (environ 261 Ko, 10 %)
+viennent de sa fonctionnalité `simple-text`, qui sert au texte des PDF. `twiggy` et `cargo bloat` sont absents de la VM : décompte par un script hors dépôt qui lit les sections
 `code` et `name`.
 
 ### Réglages
@@ -167,6 +167,8 @@ du code. `twiggy` et `cargo bloat` sont absents de la VM : décompte par un scri
 `apps/web/src/wasm-formats/roomboard_formats_wasm_bg.wasm`, avant les tests du vrai module et le build de vite.
 La colle JS reste celle de `wasm-bindgen` (mêmes exports) ; `-Oz` lit les fonctionnalités Wasm dans la section
 `target_features`. Durée : environ 1 min 35 s de plus par vérification. Le module principal n'y passe pas.
+Les recettes de l'installeur (`docs/essais/coque-windows.md`, `docs/essais/coque-macos.md`) lancent le même
+`wasm-opt` : sans lui, l'installeur livrerait le module non optimisé, que `verifier.sh` ne mesure pas.
 
 ### Banc de vitesse (Node, hors dépôt, 5 passages, médianes en ms, deux séries)
 
