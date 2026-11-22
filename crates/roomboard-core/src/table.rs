@@ -2050,6 +2050,80 @@ pub(crate) mod tests {
         assert!(matches!(cell.get(&txn, "text"), Some(Out::YText(_))));
     }
 
+    /// C7b : cellule dont le `text` n'est pas un `Y.Text` (pair ancien ou hostile) : un `Y.Text` neuf est posé, ses
+    /// segments appliqués dans la même transaction, les autres clés gardées.
+    #[test]
+    fn set_cell_replaces_a_text_that_is_not_a_ytext() {
+        let mut d = Document::blank();
+        let id = add(&mut d, 2, 2);
+        let t = view(&d, &id);
+        let (r, c) = (t.rows[0].id.clone(), t.cols[0].id.clone());
+        set(&mut d, &id, &r, &c, "Lundi", None).expect("texte");
+        {
+            let mut txn = d.transact_local();
+            let e = d.find_element(&txn, &id).expect("élément").element;
+            let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+                panic!("cells")
+            };
+            let Some(Out::YMap(cell)) = cells.get(&txn, &cell_key(&r, &c)) else {
+                panic!("cellule")
+            };
+            cell.insert(&mut txn, "text", In::Any(Any::from("vieux")));
+        }
+        assert!(
+            view(&d, &id).cells.iter().all(|x| x.text.is_empty()),
+            "texte illisible : cellule vide"
+        );
+        use crate::rich_text::SpanAttrs;
+        let bold = SpanAttrs {
+            bold: true,
+            ..SpanAttrs::default()
+        };
+        let spans = [
+            SpanInput {
+                text: "Mar".into(),
+                attrs: bold.clone(),
+            },
+            SpanInput {
+                text: "di".into(),
+                attrs: SpanAttrs::default(),
+            },
+        ];
+        d.apply(Command::SetTableCell {
+            id: id.clone(),
+            row: r.clone(),
+            col: c.clone(),
+            content: "Mardi".into(),
+            row_height: None,
+            spans: Some(spans.to_vec()),
+        })
+        .expect("texte neuf");
+        let cell = view(&d, &id).cells[0].clone();
+        assert_eq!(cell.text, "Mardi");
+        assert_eq!(
+            cell.spans,
+            vec![
+                TextSpanView {
+                    text: "Mar".into(),
+                    attrs: bold
+                },
+                TextSpanView {
+                    text: "di".into(),
+                    attrs: SpanAttrs::default()
+                },
+            ]
+        );
+        let txn = d.read();
+        let e = d.find_element(&txn, &id).expect("élément").element;
+        let Some(Out::YMap(cells)) = e.get(&txn, "cells") else {
+            panic!("cells")
+        };
+        let Some(Out::YMap(raw)) = cells.get(&txn, &cell_key(&r, &c)) else {
+            panic!("cellule")
+        };
+        assert!(matches!(raw.get(&txn, "text"), Some(Out::YText(_))));
+    }
+
     #[test]
     fn set_cell_refuses_unknown_line_and_non_table() {
         let mut d = Document::blank();
