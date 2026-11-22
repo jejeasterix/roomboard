@@ -148,7 +148,12 @@ export function createImageCache(
     const live = [...slots].filter(([, s]) => s.dormant !== true);
     // « Aucune image retouchée visible » (I33) : seuls comptent les emplacements dessinables des éléments de la dernière scène ;
     // un échec n'est dit que s'il touche l'une d'elles.
-    const visible = live.filter(([n]) => shown === null || shown.has(ownerOf(n))).map(([, s]) => s);
+    // Pendant un aperçu vivant, seul `<id>#apercu` est dessiné : l'emplacement `<id>` ne compte pas.
+    const covered = (n: string): boolean => {
+      const twin = n.endsWith(PREVIEW) ? undefined : slots.get(`${n}${PREVIEW}`);
+      return twin !== undefined && twin.dormant !== true;
+    };
+    const visible = live.filter(([n]) => (shown === null || shown.has(ownerOf(n))) && !covered(n)).map(([, s]) => s);
     const hasBitmap = visible.some((s) => s.bitmap !== null);
     const failed = visible.some((s) => s.failed === true);
     const next: PixelState = running > 0 ? "attente" : visible.length === 0 ? "" : failed ? "echec" : hasBitmap ? "pret" : "";

@@ -446,6 +446,30 @@ describe("bitmaps retouchés par élément (C5, I19, I22)", () => {
     expect(c.pixelState()).toBe("pret");
   });
 
+  it("C5 (I33) : pendant un aperçu sain, l'échec de l'élément (non dessiné) ne se dit pas", async () => {
+    const { c, calls } = await ready();
+    c.beginScene();
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    calls[0]?.reject(new Error("module des pixels indisponible"));
+    await flush();
+    expect(c.pixelState()).toBe("echec");
+    c.beginScene(); // séance de retouche : seul l'aperçu est dessiné
+    c.bitmapOf(el({ brightness: 40 }), true);
+    c.endScene();
+    calls[1]?.resolve(out("apercu"));
+    await flush();
+    c.beginScene();
+    c.bitmapOf(el({ brightness: 40 }), true);
+    c.endScene();
+    expect(c.pixelState()).toBe("pret");
+    c.dropPreview("e"); // Annuler : l'élément en échec est de nouveau dessiné
+    c.beginScene();
+    c.bitmapOf(el({ brightness: 20 }));
+    c.endScene();
+    expect(c.pixelState()).toBe("echec");
+  });
+
   it("C5 (I33) : K1 réussi, K2 en échec, retour à K1 : bitmap de K1 servi, data-pixels pret", async () => {
     const { c, calls } = await ready();
     c.bitmapOf(el({ brightness: 20 }));
