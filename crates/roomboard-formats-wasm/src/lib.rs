@@ -619,4 +619,30 @@ mod tests {
         assert!(e.starts_with("format de tableau inconnu : "), "{e}");
         assert_eq!(e, "format de tableau inconnu : notebook");
     }
+
+    /// C13 lot 2 (N6) : `.notebook` lu par la liaison existante, ordre des pages lu par le Rust (D16).
+    mod board_notebook {
+        use super::super::*;
+
+        /// `Dialect::parse` connaît `notebook` (T3) : `BoardReader.open` lit une page sans changement de la liaison.
+        #[test]
+        fn board_reader_opens_notebook_dialect() {
+            let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect x="10" y="10" width="100" height="50" fill="red"/></svg>"##;
+            let r = BoardReader::open_inner(svg, "notebook", 2).expect("page notebook");
+            assert!(!r.ops().is_empty());
+        }
+
+        /// Patron écarté : l'ordre des noms (`page0`, `page1`). La liaison rend l'ordre de la ressource `pages`, et un
+        /// manifeste illisible lève au préfixe connu de `boardErrorMessage` (le Worker retombe alors sur l'ordre reçu).
+        #[test]
+        fn notebook_order_binding_reads_the_manifest() {
+            let xml = br#"<manifest><resources><resource identifier="pages"><file href="page1.svg"/><file href="page0.svg"/></resource></resources></manifest>"#;
+            assert_eq!(
+                notebook_order_inner(xml),
+                Ok(vec!["page1.svg".to_string(), "page0.svg".to_string()])
+            );
+            let e = notebook_order_inner(b"\xff").expect_err("manifeste non UTF-8");
+            assert!(e.starts_with("fichier endommagé : "), "{e}");
+        }
+    }
 }

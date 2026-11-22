@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { BOARD_FAILED_MESSAGE, BOARD_OBJECTS_MESSAGE, BOARD_WRITE_FAILED_MESSAGE, boardErrorMessage, checkBoardFiles, checkBoardParts, createBoardCodec } from "./board-reader";
+import {
+  BOARD_FAILED_MESSAGE,
+  BOARD_OBJECTS_MESSAGE,
+  BOARD_WRITE_FAILED_MESSAGE,
+  NOTEBOOK_ORDER_GUESSED,
+  boardErrorMessage,
+  checkBoardFiles,
+  checkBoardParts,
+  createBoardCodec,
+  notebookOrder,
+} from "./board-reader";
+import boardWorkerSource from "./board-worker.ts?raw";
+import { hasBoardReader, type FormatsBinding } from "./container";
 import type { WorkerLike } from "./one-shot-worker";
 
 function fakeWorker(reply: (m: unknown) => unknown, sent: unknown[] = [], transfers: Transferable[][] = []): WorkerLike {
@@ -63,5 +75,94 @@ describe("Worker des tableaux (C13, D1, D6)", () => {
     expect(() => checkBoardParts({ parts: [{ ops: new Float32Array(), texts: [1], warnings: [] }] })).toThrow(BOARD_FAILED_MESSAGE);
     expect(() => checkBoardFiles({ files: ["content.xml"] })).toThrow(BOARD_WRITE_FAILED_MESSAGE);
     expect(() => checkBoardFiles({ files: [1, 2] })).toThrow(BOARD_WRITE_FAILED_MESSAGE);
+  });
+});
+
+describe("Worker des tableaux, .notebook (C13 lot 2, N6)", () => {
+  const part = { ops: new Float32Array([1]), texts: [], warnings: [] };
+
+  it("C13 N6 : ordre du manifeste", async () => {
+    const sent: unknown[] = [];
+    const transfers: Transferable[][] = [];
+    const codec = createBoardCodec(() => fakeWorker(() => ({ parts: [part, part] }), sent, transfers));
+    const a = new Uint8Array([60, 97]);
+    const b = new Uint8Array([60, 98]);
+    const manifest = new Uint8Array([60, 109]);
+    const names = ["page0.svg", "page1.svg"];
+    await codec.read([a, b], "notebook", { names, manifest, max: 500 });
+    // Les fichiers partent dans l'ordre reçu : l'ordre du manifeste se décide dans le Worker, par le Rust (D16).
+    expect(sent[0]).toEqual({ op: "read", dialect: "notebook", files: [a, b], names, manifest, max: 500 });
+    const m = sent[0] as { files: Uint8Array[]; manifest: Uint8Array };
+    expect(m.files[0]).not.toBe(a);
+    expect(m.manifest).not.toBe(manifest);
+    expect(transfers[0]).toHaveLength(3);
+    for (const own of [a.buffer, b.buffer, manifest.buffer]) expect(transfers[0]).not.toContain(own);
+  });
+
+  it("C13 N6 : write refuse un dialecte de lecture", async () => {
+    const codec = createBoardCodec(() => fakeWorker(() => ({ error: "format de tableau inconnu : notebook" })));
+    // @ts-expect-error N5 : import seul, aucune copie `.notebook`.
+    const out = codec.write({ ops: new Float32Array(), texts: [] }, "notebook");
+    await expect(out).rejects.toThrow("format de tableau inconnu : notebook");
+  });
+
+  it("C13 N6 : notebookOrder", () => {
+    const [a, b, c] = [new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])];
+    // Pas du XML : seul `order` (la liaison Rust) lit le manifeste ; un `DOMParser` ou un tri par `page<N>` ne rendrait pas [b, a].
+    const manifest = new Uint8Array([9, 9, 9]);
+    const seen: Uint8Array[] = [];
+    const order = (m: Uint8Array): string[] => {
+      seen.push(m);
+      return ["page1.svg", "page0.svg"];
+    };
+    const byManifest = notebookOrder(order, [a, b], ["page0.svg", "page1.svg"], manifest, 500);
+    expect(byManifest.files).toHaveLength(2);
+    expect(byManifest.files[0]).toBe(b);
+    expect(byManifest.files[1]).toBe(a);
+    expect(byManifest.warnings).toEqual([]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(manifest);
+    // Casse et chemins : `Page1.SVG` du manifeste désigne `page1.svg`.
+    expect(notebookOrder(() => ["Page1.SVG", "page0.svg"], [a, b], ["page0.svg", "page1.svg"], manifest, 500).files).toEqual([b, a]);
+
+    // Repli : l'ordre reçu (numérique, `boardSources`), jamais retrié ici (page10 reste avant page2), avec l'avertissement.
+    const reçu = ["page2.svg", "page10.svg"];
+    expect(notebookOrder(() => [], [a, b], reçu, manifest, 500)).toEqual({ files: [a, b], warnings: [NOTEBOOK_ORDER_GUESSED] });
+    let called = 0;
+    const counted = (): string[] => {
+      called++;
+      return [];
+    };
+    expect(notebookOrder(counted, [a, b], reçu, null, 500)).toEqual({ files: [a, b], warnings: [NOTEBOOK_ORDER_GUESSED] });
+    expect(called).toBe(0);
+    const broken = (): string[] => {
+      throw new Error("fichier endommagé : manifeste non UTF-8");
+    };
+    expect(notebookOrder(broken, [a, b], reçu, manifest, 500)).toEqual({ files: [a, b], warnings: [NOTEBOOK_ORDER_GUESSED] });
+
+    // Page absente du manifeste : ajoutée à la fin, avec l'avertissement ; une entrée inconnue du manifeste est ignorée.
+    const partial = notebookOrder(() => ["page2.svg", "page9.svg"], [a, b, c], ["page0.svg", "page1.svg", "page2.svg"], manifest, 500);
+    expect(partial).toEqual({ files: [c, a, b], warnings: [NOTEBOOK_ORDER_GUESSED] });
+    expect(partial.files[0]).toBe(c);
+
+    // `max` : les premières pages dans l'ordre du manifeste.
+    const one = notebookOrder(order, [a, b], ["page0.svg", "page1.svg"], manifest, 1);
+    expect(one.files).toHaveLength(1);
+    expect(one.files[0]).toBe(b);
+    expect(one.warnings).toEqual([]);
+  });
+
+  it("C13 N6 : hasBoardReader exige notebook_order", () => {
+    const fail = (): never => {
+      throw new Error("non appelé");
+    };
+    const lot1 = { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open: fail }, write_board_xml: fail };
+    expect(hasBoardReader(lot1 as unknown as FormatsBinding)).toBe(false);
+    expect(hasBoardReader({ ...lot1, notebook_order: fail } as unknown as FormatsBinding)).toBe(true);
+  });
+
+  it("C13 N6 : le Worker ordonne par notebookOrder et la liaison, sans tri ni DOMParser", () => {
+    expect(boardWorkerSource).toContain("notebookOrder(mod.notebook_order");
+    expect(boardWorkerSource).not.toMatch(/DOMParser|\.sort\(|localeCompare/);
   });
 });
