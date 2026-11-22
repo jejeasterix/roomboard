@@ -3,12 +3,14 @@
  * 256 Mio décompressés au plus, comptés avant décompression sur chaque enregistrement du répertoire central, au plus
  * grand de ses deux tailles : fflate copie `size` octets d'une entrée stockée et alloue `originalSize` octets pour une
  * entrée déflatée. Entrée stockée dont les deux tailles diffèrent : refusée (ZIP malformé). Créé par
- * `main.ts`, arrêté par `zip-read.ts` après la réponse. Seul module qui importe fflate (GC17), API synchrone seule : la
- * forme asynchrone lance des Workers `blob:`, refusés par la CSP.
+ * `main.ts`, arrêté par `zip-read.ts` après la réponse. Seul module qui importe fflate (GC17), avec `bamboo.ts` (`Unzlib`,
+ * appelé d'ici seul), API synchrone seule : la forme asynchrone lance des Workers `blob:`, refusés par la CSP.
  * C4 : paquets `.rbpack` (lecture `mode: "pack"`, écriture `op: "zip"`), mêmes bornes, chemins rendus tels quels.
  * C13 : tableaux `.iwb` et `.ubz` (lecture `mode: "board"`, `keepBoardPath`), mêmes bornes, chemins rendus tels quels.
  * C13 lot 2 (N8, N13) : `content.json` d'un `.olf` (`op: "olf"`) lu ici, jamais sur le fil principal : 64 Mio au plus
  * (refus avant décodage), `readOlf`, puis flux BoardList (`encodeBoardList`) que la page repasse par `decodeBoardList`.
+ * C13 lot 3 (N11, N13) : paperboards ActivInspire (`mode: "bamboo"`) : conteneur Bamboo lu par `readBamboo` sous
+ * `BAMBOO_LIMITS`, entrées gardées par `keepBambooPath`, chemins `<page>.fpg/<nom>`.
  */
 import { unzipSync, zipSync, type Zippable } from "fflate";
 import {
@@ -21,6 +23,7 @@ import {
   ZIP_TOO_BIG_MESSAGE,
 } from "./model3d-import";
 import { safeArchivePath } from "./archive-path";
+import { BAMBOO_LIMITS, BAMBOO_STRUCTURE_EXTENSIONS, readBamboo } from "./bamboo";
 import { isPackEntry } from "./rbpack";
 import { encodeBoardList } from "../app/board-io";
 import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
@@ -43,6 +46,19 @@ export function keepBoardPath(name: string): boolean {
   const lower = p.toLowerCase();
   if (lower === "content.xml" || lower === "imsmanifest.xml" || lower === "content.json" || /^page\d+\.svg$/.test(lower)) return true;
   return BOARD_ZIP_EXTENSIONS.includes(extensionOf(p));
+}
+
+const BAMBOO_ENTRY_EXTENSIONS: readonly string[] = Object.freeze([...BAMBOO_STRUCTURE_EXTENSIONS, "fpg"]);
+
+/** C13 lot 3 (N15, N16) : entrées lues d'un paperboard : index `.in`, objets `.io`, ressources `.ir`, pages `.fpg`,
+ *  `version` et images de `BOARD_ZIP_EXTENSIONS` ; chemin sûr selon `safeArchivePath`. Miniatures `.thm`, `.tif`,
+ *  sons, vidéos et Flash ne sont jamais décompressés. */
+export function keepBambooPath(name: string): boolean {
+  const p = safeArchivePath(name);
+  if (p === null) return false;
+  if (p.toLowerCase() === "version") return true;
+  const ext = extensionOf(p);
+  return BAMBOO_ENTRY_EXTENSIONS.includes(ext) || BOARD_ZIP_EXTENSIONS.includes(ext);
 }
 
 /** Date fixe des entrées (D25 : octets stables), en heure locale comme le champ DOS du ZIP. */
@@ -110,10 +126,10 @@ export function olfPart(bytes: Uint8Array, read: typeof readOlf = readOlf): OlfP
   return { ops, texts, warnings, total };
 }
 
-/** `{ bytes }` seul : lecture 3D (inchangée) ; `{ op: "unzip", mode: "pack" | "board", bytes }` ; `{ op: "zip", files }` ; `{ op: "olf", bytes }`. */
+/** `{ bytes }` seul : lecture 3D (inchangée) ; `{ op: "unzip", mode: "pack" | "board" | "bamboo", bytes }` ; `{ op: "zip", files }` ; `{ op: "olf", bytes }`. */
 interface WorkerMessage {
   readonly op?: "unzip" | "zip" | "olf";
-  readonly mode?: "model3d" | "pack" | "board";
+  readonly mode?: "model3d" | "pack" | "board" | "bamboo";
   readonly bytes?: Uint8Array;
   readonly files?: readonly ZipFile[];
 }
@@ -139,7 +155,13 @@ if (typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !==
       }
       const data = d.bytes ?? new Uint8Array();
       const entries =
-        d.mode === "pack" ? unzipEntries(data, keepPackPath) : d.mode === "board" ? unzipEntries(data, keepBoardPath) : unzipModelEntries(data);
+        d.mode === "pack"
+          ? unzipEntries(data, keepPackPath)
+          : d.mode === "board"
+            ? unzipEntries(data, keepBoardPath)
+            : d.mode === "bamboo"
+              ? readBamboo(data, keepBambooPath, BAMBOO_LIMITS)
+              : unzipModelEntries(data);
       // Deux entrées peuvent partager un tampon : cité deux fois, `postMessage` lèverait.
       scope.postMessage({ entries }, [...new Set(entries.map((x) => x.bytes.buffer as ArrayBuffer))]);
     } catch (err) {

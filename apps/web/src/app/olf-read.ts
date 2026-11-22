@@ -87,22 +87,38 @@ function localPath(v: string): string | null {
 
 const positive = (v: number | null): v is number => v !== null && v > 0;
 
+const SPACE = /\s/;
+/** Nombre de suites de caractères non blancs (au sens de `\s`) dans un texte déjà rogné, sans tableau ; s'arrête à `MAX_POINTS + 1`. */
+function countTokens(text: string): number {
+  let tokens = 0;
+  let inside = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    const blank = c < 128 ? c === 32 || (c >= 9 && c <= 13) : SPACE.test(text[i]!);
+    if (blank) inside = false;
+    else if (!inside) {
+      inside = true;
+      if (++tokens > MAX_POINTS) return tokens;
+    }
+  }
+  return tokens;
+}
+
 /** `x,y x,y …` (repère local) → triplets `x, y, pression` (1) ; null si moins de 2 points, plus de `MAX_POINTS`, ou illisible. */
 function olfPoints(v: unknown): number[] | null {
   if (typeof v !== "string") return null;
   const text = v.trim();
   // Borne avant l'allocation : les jetons sont comptés un à un, sans tableau, et le décompte s'arrête à `MAX_POINTS + 1`.
-  const token = /\S+/g;
-  let tokens = 0;
-  while (token.exec(text) !== null) if (++tokens > MAX_POINTS) return null;
+  // Un jeton occupe au moins un caractère et un séparateur : en deçà de `2 * MAX_POINTS` caractères, la borne tient d'office.
+  if (text.length >= 2 * MAX_POINTS && countTokens(text) > MAX_POINTS) return null;
   const pairs = text.split(/\s+/);
   if (pairs.length < 2) return null;
   const out: number[] = [];
   for (const p of pairs) {
-    const xy = p.split(",");
-    if (xy.length !== 2 || xy[0] === "" || xy[1] === "") return null;
-    const x = Number(xy[0]);
-    const y = Number(xy[1]);
+    const comma = p.indexOf(",");
+    if (comma <= 0 || comma === p.length - 1 || p.indexOf(",", comma + 1) >= 0) return null;
+    const x = Number(p.slice(0, comma));
+    const y = Number(p.slice(comma + 1));
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     out.push(x, y, 1);
   }
@@ -191,7 +207,8 @@ interface Ctx {
 
 function readElement(el: unknown, c: Ctx): void {
   const r = rec(el);
-  const type = r === null ? undefined : Object.keys(r)[0];
+  let type: string | undefined;
+  if (r !== null) for (const k in r) { type = k; break; }
   if (r === null || type === undefined) {
     c.notes.add(c.n, SKIPPED_LABEL);
     return;

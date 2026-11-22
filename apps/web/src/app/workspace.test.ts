@@ -23,8 +23,9 @@ import { NO_GRID_MESSAGE } from "./fragments";
 import { MAX_TABS, TOO_MANY_TABS } from "./tabs";
 import type { ZipFile } from "../platform/zip-read";
 import { encodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts } from "./board-io";
-import type { BoardDialect, BoardReadOptions } from "../platform/board-reader";
+import type { BoardDialect, BoardPart, BoardReadOptions } from "../platform/board-reader";
 import type { OlfPart } from "../platform/zip-read";
+import { BAMBOO_NOT_FLIPCHART, bambooLieMessage } from "../platform/bamboo";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
@@ -1508,7 +1509,7 @@ describe("espace de travail : C4", () => {
 describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => {
   const rectPage = (): BoardListPage => ({ background: null, objects: [{ kind: "shape", shape: "rect", m: [1, 0, 0, 1, 0, 0], x0: 0, y0: 0, x1: 10, y1: 10, color: "#000000", width: 2, fill: null }] });
   const ZIP = new Uint8Array([80, 75, 3, 4, 0, 0]);
-  function fakeBoard(o: { entries?: { path: string; blob: Blob }[]; warnings?: string[]; fail?: string; pages?: BoardListPage[]; olf?: () => Promise<OlfPart> } = {}) {
+  function fakeBoard(o: { entries?: { path: string; blob: Blob }[]; warnings?: string[]; fail?: string; pages?: BoardListPage[]; olf?: () => Promise<OlfPart>; bamboo?: () => Promise<{ path: string; blob: Blob }[]> } = {}) {
     const unzip = vi.fn(async (_b: Blob) => o.entries ?? [{ path: "content.xml", blob: new Blob(["<iwb/>"]) }]);
     const read = vi.fn(async (files: readonly Uint8Array[], _f: BoardDialect, _opts?: BoardReadOptions) => {
       if (o.fail !== undefined) throw new Error(o.fail);
@@ -1518,8 +1519,13 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
       format === "iwb" ? [{ path: "content.xml", bytes: new Uint8Array([60]) }] : [{ path: "page001.svg", bytes: new Uint8Array([60]) }, { path: "metadata.rdf", bytes: new Uint8Array([60]) }]);
     const zip = vi.fn(async (_f: readonly ZipFile[]) => new Uint8Array([80, 75, 3, 4]));
     const readOlf = vi.fn(o.olf ?? (async (_j: Blob): Promise<OlfPart> => ({ ...encodeBoardList(o.pages ?? [rectPage()]), warnings: o.warnings ?? [], total: 1 })));
-    const ports: BoardPorts = { unzip, read, write, zip, readOlf };
-    return { ports, unzip, read, readOlf, write, zip };
+    const unbamboo = vi.fn(o.bamboo ?? (async (_b: Blob) => [] as { path: string; blob: Blob }[]));
+    const readFlipchart = vi.fn(async (_e: readonly { readonly path: string; readonly bytes: Uint8Array }[]): Promise<BoardPart> => {
+      if (o.fail !== undefined) throw new Error(o.fail);
+      return { ...encodeBoardList(o.pages ?? [rectPage()]), warnings: o.warnings ?? [] };
+    });
+    const ports: BoardPorts = { unzip, unbamboo, read, readFlipchart, write, zip, readOlf };
+    return { ports, unzip, unbamboo, read, readFlipchart, readOlf, write, zip };
   }
   const typedFiles = () => ({ pick: vi.fn(async () => null), save: vi.fn(async (_n: string, _b: Uint8Array) => true) });
   const droppedOf = (name: string, bytes: Uint8Array): DroppedFile => ({ name, size: bytes.length, mime: "", head: async (n: number) => bytes.slice(0, n), blob: async () => new Blob([bytes as BlobPart]) });
@@ -1729,6 +1735,83 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     expect(await ws.openBoard({ name: "x.olf", blob: new Blob([ZIP]), format: "olf" })).toBe(false);
     expect(ws.tabs.list()).toHaveLength(1);
     expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (x.olf) : fichier endommagé : JSON mal formé");
+  });
+
+  describe("paperboards .flipchart (C13 lot 3, S4, S5)", () => {
+    const BAMBOO = new Uint8Array([0x20, 0x42, 0x61, 0x6d, 0x62, 0x6f, 0x6f, 0x20, 0, 0]);
+    const blobOf = (text: string): Blob => new Blob([text]);
+    const parts = (): { path: string; blob: Blob }[] => [
+      { path: "version", blob: blobOf("1") },
+      { path: "1.in", blob: blobOf("in") },
+      { path: "2.io", blob: blobOf("io") },
+      { path: "3.ir", blob: blobOf("ir") },
+      { path: "4.fpg/img.png", blob: blobOf("png") },
+    ];
+
+    it("C13 S4 : .flipchart ouvert", async () => {
+      const b = fakeBoard({
+        bamboo: async () => parts(),
+        pages: [rectPage(), rectPage()],
+        warnings: ["page 1 : 1 image TIFF non lue", "page 2 : 1 action non lue"],
+      });
+      const ws = await setupWorkspace({ board: b.ports });
+      expect(await ws.openBoard({ name: "x.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(true);
+      expect(ws.tabs.list()).toHaveLength(2);
+      const doc = ws.active().board.doc;
+      expect([ws.active().files.name(), ws.active().files.isDirty(), doc.pageIds().length]).toEqual(["x.roomboard", false, 2]);
+      expect(b.unzip).not.toHaveBeenCalled();
+      expect(b.read).not.toHaveBeenCalled();
+      expect(shell.notify).toHaveBeenCalledTimes(1);
+      expect(shell.notify).toHaveBeenCalledWith("x.flipchart : ouvert avec 2 avertissements :\n- page 1 : 1 image TIFF non lue\n- page 2 : 1 action non lue");
+    });
+
+    it("C13 S4 : images en media, jamais dans le Worker des tableaux", async () => {
+      const page: BoardListPage = { background: null, objects: [{ kind: "image", m: [1, 0, 0, 1, 0, 0], x: 0, y: 0, w: 10, h: 10, path: "4.fpg/img.png" }] };
+      const b = fakeBoard({ bamboo: async () => parts(), pages: [page] });
+      const ws = await setupWorkspace({ board: b.ports, decode: fakeDecode });
+      expect(await ws.openBoard({ name: "x.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(true);
+      // Depuis T23 le lecteur reçoit le nom de chaque image (il la trouve par son nom), jamais ses octets : 0 octet.
+      const sent = b.readFlipchart.mock.calls[0]![0];
+      expect(sent.map((e) => e.path)).toEqual(["version", "1.in", "2.io", "3.ir", "4.fpg/img.png"]);
+      expect(new TextDecoder().decode(sent[1]!.bytes)).toBe("in");
+      expect(sent.filter((e) => e.path.endsWith(".png")).every((e) => e.bytes.length === 0)).toBe(true);
+      const doc = ws.active().board.doc;
+      expect(doc.elementIds(doc.pageIds()[0]!)).toHaveLength(1);
+      expect(shell.notify).not.toHaveBeenCalled();
+    });
+
+    it("C13 S5 : bombe refusée sans plantage", async () => {
+      const b = fakeBoard({ bamboo: async () => { throw new Error(bambooLieMessage("5.io")); } });
+      const ws = await setupWorkspace({ board: b.ports });
+      expect(await ws.openBoard({ name: "bombe.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(false);
+      expect(ws.tabs.list()).toHaveLength(1);
+      expect(b.readFlipchart).not.toHaveBeenCalled();
+      expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (bombe.flipchart) : fichier endommagé : entrée 5.io de taille mensongère");
+    });
+
+    it("C13 S5 : sans signature, refus avant toute lecture", async () => {
+      const b = fakeBoard();
+      const ws = await setupWorkspace({ board: b.ports });
+      expect(await ws.openBoard({ name: "t.flipchart", blob: new Blob(["bonjour le monde"]), format: "flipchart" })).toBe(false);
+      expect(b.unbamboo).not.toHaveBeenCalled();
+      expect(shell.notify).toHaveBeenCalledWith(`Ouverture impossible (t.flipchart) : ${BAMBOO_NOT_FLIPCHART}`);
+    });
+
+    it("C13 S5 : paperboard sans index lisible : refus du lecteur, aucun onglet", async () => {
+      const b = fakeBoard({ bamboo: async () => parts(), fail: "fichier endommagé : index du paperboard absent" });
+      const ws = await setupWorkspace({ board: b.ports });
+      expect(await ws.openBoard({ name: "v.flipchart", blob: new Blob([BAMBOO]), format: "flipchart" })).toBe(false);
+      expect(ws.tabs.list()).toHaveLength(1);
+      expect(shell.notify).toHaveBeenCalledWith("Ouverture impossible (v.flipchart) : fichier endommagé : index du paperboard absent");
+    });
+
+    it("C13 S4 : un .flipchart déposé passe par le gestionnaire puis openBoard", async () => {
+      const b = fakeBoard({ bamboo: async () => parts() });
+      const ws = await setupWorkspace({ board: b.ports, decode: fakeDecode });
+      const r = await ws.importFiles([droppedOf("Cours.flipchart", BAMBOO)]);
+      expect(r.opened).toEqual(["Cours.flipchart"]);
+      expect(b.unbamboo).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("C13 N3 : un tableau ouvre toujours un nouvel onglet", async () => {

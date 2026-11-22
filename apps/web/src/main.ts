@@ -273,8 +273,10 @@ async function start(): Promise<void> {
     pdfFiles,
     board: {
       unzip: createZipReader(spawnZipWorker, undefined, "board"),
+      unbamboo: createZipReader(spawnZipWorker, undefined, "bamboo"),
       zip: createZipWriter(spawnZipWorker),
       read: (files, format, opts) => boards.read(files, format, opts),
+      readFlipchart: (entries) => boards.readFlipchart(entries),
       readOlf: createOlfReader(spawnZipWorker),
       write: (list, format) => boards.write(list, format),
     },

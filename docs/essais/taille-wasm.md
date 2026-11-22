@@ -122,5 +122,10 @@ Après la fusion d'`origin/main` (C16) : le principal passe à 1 374 141 o par C
 | avant C13 lots 2-3 (`origin/main` 3b73c27, sortie de `verifier.sh --e2e` de référence) | 1 374 141 o | 3 024 532 o |
 | C13 lot 2 avant les correctifs de fin de lot (sortie de `verifier.sh --e2e` de T9) | 1 374 141 o | 3 033 889 o |
 | final C13 lot 2 (sortie de `verifier.sh --e2e` sur e0fc4cb, après T18 : comptage des feuilles, bornes de `path`) | 1 374 141 o | 3 037 458 o |
+| final C13 lot 3 (sortie de `verifier.sh --e2e` sur la tête fusionnée de T17, avec T23 et T24) | 1 374 141 o | 3 118 370 o |
 
 Budget (N17) : lot 2 ≤ 20 Ko (formats ≤ 3 045 012 o), lot 3 ≤ 80 Ko (≤ 3 125 012 o), marge finale ≥ 20 Ko. Principal inchangé à l'octet.
+
+Final lot 3 : principal inchangé à l'octet (1 374 141 o, marge 198 723 o) ; `formats` +80 912 o depuis 3 037 458 o, soit
+3 118 370 o, marge 27 358 o sous le plafond de 3 145 728 o (≥ 20 Ko) et 6 642 o sous le budget de lot 3 (3 125 012 o).
+Plafonds inchangés.

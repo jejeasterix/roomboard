@@ -49,7 +49,11 @@ export interface BoardListData {
 /** Ports de l'espace de travail (amorce : Worker ZIP en mode `board`, Worker jetable du module `formats`). */
 export interface BoardPorts {
   unzip(blob: Blob): Promise<readonly { readonly path: string; readonly blob: Blob }[]>;
+  /** C13 lot 3 : conteneur Bamboo d'un `.flipchart` lu par le Worker ZIP en mode `bamboo` (bornes de `BAMBOO_LIMITS`). */
+  unbamboo(blob: Blob): Promise<readonly { readonly path: string; readonly blob: Blob }[]>;
   zip(files: readonly ZipFile[]): Promise<Uint8Array>;
+  /** C13 lot 3 : paperboard lu en entier par `FlipchartReader` (une seule partie, toutes les pages). */
+  readFlipchart(entries: readonly { readonly path: string; readonly bytes: Uint8Array }[]): Promise<BoardPart>;
   read(files: readonly Uint8Array[], dialect: BoardDialect, opts?: BoardReadOptions): Promise<readonly BoardPart[]>;
   /** C13 lot 2 : `content.json` d'un `.olf` lu dans le Worker ZIP (jamais de `JSON.parse` sur la page). */
   readOlf(json: Blob): Promise<OlfPart>;
