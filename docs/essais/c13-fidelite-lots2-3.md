@@ -59,3 +59,20 @@ comptent (+226 objets).
 
 Niveau atteint : B. Reste signalé : actions, rideaux, projecteurs, grilles, repères XY, sons et vidéos, TIFF, et des
 propriétés illisibles (74 sur `STUDIO_BEGINNER_FLIPCHART`, 29 sur `Demonstration_Flipchart_Sentence_Diagrams`).
+
+## Remesure des `.flipchart` après les mineurs du lot 3 (OE38, 2026-11-22)
+
+Même méthode, branche `fix/mineurs-relecture-c13-c5-c7b` (images d'extension inconnue jugées sur leur signature,
+avis regroupés au singulier). Mêmes pages, mêmes objets, mêmes 523 avertissements ; chaque sorte tient sur une ligne.
+Le Worker garde maintenant `2747.EK1056`, `3175.cz2880` (Our_Solar_System) et cinq noms de ce genre (STUDIO_BEGINNER),
+tous des BMP ; aucun objet image ne les cite, d'où aucun objet de plus.
+
+| fichier | pages | objets | avertissements | résultat |
+|---|---|---|---|---|
+| Demonstration_Flipchart_Sentence_Diagrams.flipchart | 4 | 96 | 22 : 29 × propriété illisible ignorée ; 5 × action non lu ; 4 × image TIFF non lu ; 4 × rideau non lu ; 4 × projecteur non lu ; 3 × grille non lu | lu |
+| History_Industrial_revolution_with_film.flipchart | 13 | 226 | 59 : 15 × image TIFF non lu ; 13 × rideau non lu ; 13 × projecteur non lu ; 13 × repère XY non lu ; 7 × action non lu ; 3 × propriété illisible ignorée | lu |
+| NAPLAN_Yr_5_Numeracy.flipchart | 42 | 204 | 202 : 42 × grille non lu ; 42 × rideau non lu ; 42 × projecteur non lu ; 42 × repère XY non lu ; 35 × image TIFF non lu ; 9 × propriété illisible ignorée ; 4 × objet illisible ignoré ; 2 × action non lu | lu |
+| Our_Solar_System.flipchart | 9 | 111 | 51 : 50 × action non lu ; 9 × grille non lu ; 9 × rideau non lu ; 9 × projecteur non lu ; 9 × repère XY non lu ; 3 × son ou vidéo non lu ; 3 × objet illisible ignoré ; 2 × propriété illisible ignorée | lu |
+| STUDIO_BEGINNER_FLIPCHART.flipchart | 50 | 612 | 189 : 82 × propriété illisible ignorée ; 60 × action non lu ; 48 × rideau non lu ; 48 × projecteur non lu ; 22 × grille non lu ; 2 × son ou vidéo non lu ; 2 × page illisible laissée vide | lu |
+
+Synthèse : `.flipchart` 5 lus, 0 refusés, 118 pages, 1249 objets, 523 avertissements.
