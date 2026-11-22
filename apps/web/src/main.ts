@@ -19,7 +19,7 @@ import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
 import { createPdfEngine } from "./platform/pdf-render";
 import { createModelViewLoader } from "./platform/model-view";
-import { createZipReader, createZipWriter } from "./platform/zip-read";
+import { createOlfReader, createZipReader, createZipWriter } from "./platform/zip-read";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
@@ -274,7 +274,8 @@ async function start(): Promise<void> {
     board: {
       unzip: createZipReader(spawnZipWorker, undefined, "board"),
       zip: createZipWriter(spawnZipWorker),
-      read: (files, format) => boards.read(files, format),
+      read: (files, format, opts) => boards.read(files, format, opts),
+      readOlf: createOlfReader(spawnZipWorker),
       write: (list, format) => boards.write(list, format),
     },
     iwbFiles,

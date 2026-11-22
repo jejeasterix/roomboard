@@ -5,7 +5,7 @@
 import { PDF_MAX_PAGES } from "../core/api";
 import { BOARD_OBJECTS_MESSAGE, normalBoardPath } from "../platform/board-reader";
 import { ROOMBOARD_EXTENSION } from "../platform/files";
-import type { BoardFormat, BoardListPage, BoardObject } from "./board-io";
+import type { BoardFormat, BoardListPage, BoardObject, BoardSourceFormat } from "./board-io";
 
 export const BOARD_NO_PAGE_MESSAGE = "tableau sans page";
 export const IWB_NO_CONTENT_MESSAGE = "fichier endommagé : aucun content.xml dans ce .iwb";
@@ -17,15 +17,37 @@ export const UBZ_NOT_ZIP_MESSAGE = "fichier endommagé : un .ubz est une archive
 
 export interface BoardSources {
   readonly xml: readonly Blob[];
+  readonly names: readonly string[];
+  readonly manifest: Blob | null;
+  readonly json: Blob | null;
   readonly media: ReadonlyMap<string, Blob>;
   readonly total: number;
 }
 
-/** Entrées gardées par le Worker ZIP (`keepBoardPath`) → XML à lire (500 pages au plus) et images par chemin normalisé. */
-export function boardSources(format: BoardFormat, entries: readonly { readonly path: string; readonly blob: Blob }[]): BoardSources {
+type ZipBoard = "iwb" | "ubz" | "notebook" | "olf";
+
+/** C13 (N4) : dialecte d'un ZIP de tableau sur son contenu ; celui de l'extension gagne si ses marques sont là. */
+export function resolveBoardFormat(ext: ZipBoard, paths: readonly string[]): ZipBoard | null {
+  const lower = paths.map((p) => normalBoardPath(p).toLowerCase());
+  const has = (n: string): boolean => lower.includes(n);
+  const pages = lower.some((p) => /^page\d+\.svg$/.test(p));
+  // N6 : un `.notebook` sans manifeste reste un `notebook` (ordre déduit des noms, T5) ; un autre ZIP de pages sans manifeste est un `.ubz`.
+  const marks = { iwb: has("content.xml"), notebook: pages && (has("imsmanifest.xml") || ext === "notebook"), olf: has("content.json"), ubz: pages && !has("imsmanifest.xml") } as const;
+  if (marks[ext]) return ext;
+  for (const f of ["iwb", "notebook", "olf", "ubz"] as const) if (marks[f]) return f;
+  return null;
+}
+
+export const boardNoContentMessage = (ext: string): string => `fichier endommagé : contenu de tableau introuvable dans ce .${ext}`;
+
+/** Entrées gardées par le Worker ZIP (`keepBoardPath`) → XML à lire et images par chemin normalisé.
+ *  `ubz` : 500 pages au plus ; `notebook` : toutes les pages (la coupe est au Worker) ; `olf` : `content.json`. */
+export function boardSources(format: ZipBoard, entries: readonly { readonly path: string; readonly blob: Blob }[]): BoardSources {
   const media = new Map<string, Blob>();
-  const pages: Array<{ n: number; blob: Blob }> = [];
+  const pages: Array<{ n: number; name: string; blob: Blob }> = [];
   let content: Blob | null = null;
+  let manifest: Blob | null = null;
+  let json: Blob | null = null;
   for (const e of entries) {
     const path = normalBoardPath(e.path);
     const lower = path.toLowerCase();
@@ -33,20 +55,33 @@ export function boardSources(format: BoardFormat, entries: readonly { readonly p
       content = e.blob;
       continue;
     }
+    if (format === "olf" && lower === "content.json") {
+      json = e.blob;
+      continue;
+    }
+    if (format === "notebook" && lower === "imsmanifest.xml") {
+      manifest = e.blob;
+      continue;
+    }
     const page = /^page(\d+)\.svg$/.exec(lower);
-    if (format === "ubz" && page !== null) {
-      pages.push({ n: Number(page[1]), blob: e.blob });
+    if ((format === "ubz" || format === "notebook") && page !== null) {
+      pages.push({ n: Number(page[1]), name: path, blob: e.blob });
       continue;
     }
     media.set(path, e.blob);
   }
   if (format === "iwb") {
     if (content === null) throw new Error(IWB_NO_CONTENT_MESSAGE);
-    return { xml: [content], media, total: 1 };
+    return { xml: [content], names: ["content.xml"], manifest: null, json: null, media, total: 1 };
   }
-  if (pages.length === 0) throw new Error(UBZ_NO_PAGE_MESSAGE);
+  if (format === "olf") {
+    if (json === null) throw new Error(boardNoContentMessage("olf"));
+    return { xml: [], names: [], manifest: null, json, media, total: 1 };
+  }
+  if (pages.length === 0) throw new Error(format === "notebook" ? boardNoContentMessage("notebook") : UBZ_NO_PAGE_MESSAGE);
   pages.sort((a, b) => a.n - b.n);
-  return { xml: pages.slice(0, PDF_MAX_PAGES).map((p) => p.blob), media, total: pages.length };
+  const kept = format === "ubz" ? pages.slice(0, PDF_MAX_PAGES) : pages;
+  return { xml: kept.map((p) => p.blob), names: kept.map((p) => p.name), manifest, json: null, media, total: pages.length };
 }
 
 const listOf = (warnings: readonly string[]): string => warnings.map((w) => `- ${w}`).join("\n");
@@ -60,7 +95,7 @@ export const boardWarningsMessage = (name: string, warnings: readonly string[]):
 export const boardSavedMessage = (format: BoardFormat, warnings: readonly string[]): string =>
   warnings.length === 0 ? `Copie enregistrée au format .${format}` : `Copie enregistrée au format .${format}, avec ${count(warnings.length)} :\n${listOf(warnings)}`;
 /** D5 : onglet `<nom>.roomboard`, jamais l'original. */
-export const boardTabName = (name: string, format: BoardFormat): string => `${stem(name, `.${format}`)}${ROOMBOARD_EXTENSION}`;
+export const boardTabName = (name: string, format: BoardSourceFormat): string => `${stem(name, `.${format}`)}${ROOMBOARD_EXTENSION}`;
 export const boardExportName = (tabName: string, format: BoardFormat): string => `${stem(tabName, ROOMBOARD_EXTENSION)}.${format}`;
 
 const countObjects = (objects: readonly BoardObject[]): number => objects.reduce((n, o) => n + (o.kind === "group" ? countObjects(o.children) : 1), 0);

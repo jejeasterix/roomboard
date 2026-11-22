@@ -10,6 +10,7 @@ import {
   BOARD_TOO_BIG_MESSAGE, hasXmlHead, isIwbName, isUbzName, createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
   ZIP_MAGIC, type ImportHandler,
 } from "./import";
+import { FLIPCHART_LATER_MESSAGE } from "./bamboo";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import {
   AUDIO_BOX, CODEC_UNREADABLE, MEDIA_INCLUDE_MAX_BYTES, MEDIA_LINKED_NOTE, MEDIA_NOT_LINKED, MEDIA_PASTE_MAX_BYTES, MEDIA_TOO_BIG,
@@ -1205,5 +1206,68 @@ describe("registre C16 : documents Office (O2, O3, O4, S3)", () => {
     expect(r.failed).toEqual(["gros.docx"]);
     expect(notify).toHaveBeenCalledWith(`gros.docx : ${OFFICE_TOO_BIG_MESSAGE}`);
     expect(blob).not.toHaveBeenCalled();
+  });
+});
+
+describe("importFiles : .notebook, .olf et palier .flipchart (C13 lot 2)", () => {
+  const ZIP = new Uint8Array([80, 75, 3, 4, 20, 0]);
+  const BAMBOO = new Uint8Array([0x20, 0x42, 0x61, 0x6d, 0x62, 0x6f, 0x6f, 0x20, 0, 0]);
+  const opener = () => vi.fn(async (_f: { readonly name: string; readonly blob: Blob; readonly format: string }) => true);
+  const run = (files: DroppedFile[], openBoard = opener(), notify = vi.fn(async (_m: string) => undefined)) =>
+    createImporter({ openDocument: async () => true, notify, openBoard }).importFiles(files).then((report) => ({ report, openBoard, notify }));
+
+  it("C13 N4 : .notebook ZIP va à openBoard format notebook", async () => {
+    const { report, openBoard } = await run([file("Cours.notebook", ZIP)]);
+    expect(report.opened).toEqual(["Cours.notebook"]);
+    expect(openBoard.mock.calls[0]![0].format).toBe("notebook");
+  });
+
+  it("C13 N4 : .olf ZIP va à openBoard format olf", async () => {
+    const { report, openBoard } = await run([file("Cours.OLF", ZIP)]);
+    expect(report.opened).toEqual(["Cours.OLF"]);
+    expect(openBoard.mock.calls[0]![0].format).toBe("olf");
+  });
+
+  it("C13 N4 : .notebook sans en-tête ZIP n'est pas un tableau", async () => {
+    const { report, openBoard } = await run([file("faux.notebook", new Uint8Array([1, 2, 3, 4]))]);
+    expect(openBoard).not.toHaveBeenCalled();
+    expect(report.opened).toEqual([]);
+  });
+
+  it("C13 : .olf n'est plus un fichier inconnu", async () => {
+    const { report } = await run([file("a.olf", ZIP)]);
+    expect(report.refused).toEqual([]);
+    expect(report.failed).toEqual([]);
+  });
+
+  it("C13 palier : .flipchart signé refusé", async () => {
+    const { report, openBoard, notify } = await run([file("Cours.flipchart", BAMBOO)]);
+    expect(openBoard).not.toHaveBeenCalled();
+    expect(report.opened).toEqual([]);
+    expect(notify).toHaveBeenCalledWith(`Cours.flipchart : ${FLIPCHART_LATER_MESSAGE}`);
+  });
+
+  it("C13 palier : fichier sans extension signé Bamboo refusé", async () => {
+    const { openBoard, notify } = await run([file("Cours", BAMBOO)]);
+    expect(openBoard).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(`Cours : ${FLIPCHART_LATER_MESSAGE}`);
+  });
+
+  it("C13 palier : .as4a signé non pris par le palier", async () => {
+    const { notify } = await run([file("a.as4a", BAMBOO)]);
+    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
+  });
+
+  it("C13 palier : .png signé Bamboo reste une image", async () => {
+    const { notify, report } = await run([file("a.png", BAMBOO)]);
+    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
+    // Traité par le gestionnaire d'image, pas refusé comme flipchart ; l'échec ordinaire n'a pas le message du palier.
+    expect(report).toEqual({ opened: [], inserted: [], refused: ["a.png"], failed: [] });
+    expect(notify).toHaveBeenCalledWith(`a.png : ${LATER_FORMAT_MESSAGE}`);
+  });
+
+  it("C13 palier : .flipchart sans signature reste inconnu", async () => {
+    const { notify } = await run([file("a.flipchart", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))]);
+    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  boardExportName, boardObjectCount, boardSavedMessage, mergeBoardWarnings, boardSources, boardTabName, boardWarningsMessage, IWB_NO_CONTENT_MESSAGE, UBZ_NO_PAGE_MESSAGE,
+  boardExportName, boardNoContentMessage, boardObjectCount, resolveBoardFormat, boardSavedMessage, mergeBoardWarnings, boardSources, boardTabName, boardWarningsMessage, IWB_NO_CONTENT_MESSAGE, UBZ_NO_PAGE_MESSAGE,
 } from "./board-files";
 
 const blob = (s: string): Blob => new Blob([s]);
@@ -33,6 +33,8 @@ describe("board-files (C13, D3, D5)", () => {
   it("C13 : noms : onglet « Cours.roomboard », copies « Cours.iwb » et « Sans titre.ubz »", () => {
     expect(boardTabName("Cours.IWB", "iwb")).toBe("Cours.roomboard");
     expect(boardTabName("OpenBoard.ubz", "ubz")).toBe("OpenBoard.roomboard");
+    expect(boardTabName("lecon.Notebook", "notebook")).toBe("lecon.roomboard");
+    expect(boardTabName("cours.olf", "olf")).toBe("cours.roomboard");
     expect(boardExportName("Cours.roomboard", "iwb")).toBe("Cours.iwb");
     expect(boardExportName("Sans titre", "ubz")).toBe("Sans titre.ubz");
   });
@@ -59,5 +61,42 @@ describe("board-files : bornes et avis (T14)", () => {
       "page 2 : 1 objet illisible ignoré",
       "page 2 : 1 image absente de l'archive",
     ]);
+  });
+});
+
+describe("board-files : dialecte et sources (C13 lot 2)", () => {
+  it("C13 N4 : contenu avant extension", () => {
+    expect(resolveBoardFormat("notebook", ["content.json"])).toBe("olf");
+    expect(resolveBoardFormat("iwb", ["imsmanifest.xml", "page0.svg"])).toBe("notebook");
+    expect(resolveBoardFormat("ubz", ["page1.svg"])).toBe("ubz");
+    expect(resolveBoardFormat("notebook", ["imsmanifest.xml", "page0.svg", "content.json"])).toBe("notebook");
+    expect(resolveBoardFormat("olf", ["a.png"])).toBeNull();
+  });
+
+  it("C13 N6 : .notebook sans manifeste reste notebook", () => {
+    expect(resolveBoardFormat("notebook", ["page0.svg"])).toBe("notebook");
+    expect(resolveBoardFormat("iwb", ["page0.svg"])).toBe("ubz");
+  });
+
+  it("C13 N6 : boardSources notebook garde toutes les pages et leurs noms", async () => {
+    const s = boardSources("notebook", [
+      { path: "page10.svg", blob: blob("p10") }, { path: "page2.svg", blob: blob("p2") }, { path: "imsmanifest.xml", blob: blob("<m/>") }, { path: "images/a b[1].png", blob: blob("png") },
+    ]);
+    expect(s.names).toEqual(["page2.svg", "page10.svg"]);
+    expect(await Promise.all(s.xml.map(text))).toEqual(["p2", "p10"]);
+    expect(s.manifest).not.toBeNull();
+    expect([...s.media.keys()]).toEqual(["images/a b[1].png"]);
+    expect(s.total).toBe(2);
+  });
+
+  it("C13 N8 : boardSources olf rend content.json", async () => {
+    const s = boardSources("olf", [{ path: "content.json", blob: blob("{}") }, { path: "media/x.png", blob: blob("png") }]);
+    expect(await text(s.json!)).toBe("{}");
+    expect(s.xml).toEqual([]);
+    expect([...s.media.keys()]).toEqual(["media/x.png"]);
+  });
+
+  it("C13 : boardNoContentMessage", () => {
+    expect(boardNoContentMessage("notebook")).toBe("fichier endommagé : contenu de tableau introuvable dans ce .notebook");
   });
 });

@@ -70,6 +70,8 @@ export const PDF_MIME = "application/pdf";
 /** C13 (D4, D17) : tableaux interactifs ; une copie `.iwb` ou `.ubz` est une archive ZIP (aucun type déposé). */
 export const IWB_EXTENSION = ".iwb";
 export const UBZ_EXTENSION = ".ubz";
+export const NOTEBOOK_EXTENSION = ".notebook";
+export const OLF_EXTENSION = ".olf";
 export const BOARD_ZIP_MIME = "application/zip";
 /** Extensions offertes par « Importer » (R18, PF3) : le `.roomboard`, l'objet `.rbitem`, le PDF, les tableaux .iwb et .ubz (C13) et les images d'U33 que le registre reconnaît. */
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
@@ -85,12 +87,14 @@ export const IMPORT_EXTENSIONS = [
   "pdf",
   "iwb",
   "ubz",
+  "notebook",
+  "olf",
   ...IMAGE_EXTENSIONS,
   ...VIDEO_EXTENSIONS,
   ...AUDIO_EXTENSIONS,
   ...MODEL3D_EXTENSIONS,
 ] as const;
-export const IMPORT_FILTER = { name: "Images, vidéos, sons, 3D, PDF et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
+export const IMPORT_FILTER = { name: "Images, vidéos, sons, 3D, PDF, tableaux et documents RoomBoard", extensions: IMPORT_EXTENSIONS } as const;
 
 export interface FileHost {
   readonly kind: HostKind;
