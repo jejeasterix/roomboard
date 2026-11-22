@@ -9,6 +9,7 @@
 use roomboard_core::format::Parts;
 use roomboard_formats::board::{self, BoardList, Dialect};
 use roomboard_formats::container::{self, AssetBytes};
+use roomboard_formats::flipchart;
 use roomboard_formats::pdf::{write_pages, DisplayList, ImageInput};
 use roomboard_formats::pixels::{self, Transparent};
 use wasm_bindgen::prelude::*;
@@ -205,6 +206,54 @@ impl BoardReader {
     /// « format de tableau inconnu : … ».
     pub fn open(xml: &[u8], dialect: &str, first_page: u32) -> Result<BoardReader, JsError> {
         Self::open_inner(xml, dialect, first_page).map_err(|m| JsError::new(&m))
+    }
+    pub fn ops(&self) -> Vec<f32> {
+        self.list.ops.clone()
+    }
+    pub fn texts(&self) -> Vec<String> {
+        self.list.texts.clone()
+    }
+    pub fn warnings(&self) -> Vec<String> {
+        self.list.warnings.clone()
+    }
+}
+
+/// Paperboard `.flipchart` lu (C13 lot 3) : entrées `.in`, `.io`, `.ir` et `version` du conteneur Bamboo.
+#[wasm_bindgen]
+pub struct FlipchartReader {
+    list: BoardList,
+}
+
+impl FlipchartReader {
+    /// Entrée i = `data[ends[i-1]..ends[i]]` ; bornes incohérentes : « fichier endommagé : … ».
+    pub fn open_inner(
+        names: &[String],
+        data: &[u8],
+        ends: &[u32],
+    ) -> Result<FlipchartReader, String> {
+        let bad = || "fichier endommagé : bornes des entrées invalides".to_string();
+        if names.len() != ends.len() {
+            return Err(bad());
+        }
+        let mut entries: Vec<(&str, &[u8])> = Vec::with_capacity(names.len());
+        let mut start = 0usize;
+        for (name, &end) in names.iter().zip(ends) {
+            let end = end as usize;
+            let bytes = data.get(start..end).ok_or_else(bad)?;
+            entries.push((name.as_str(), bytes));
+            start = end;
+        }
+        flipchart::read(&entries, 1)
+            .map(|list| FlipchartReader { list })
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[wasm_bindgen]
+impl FlipchartReader {
+    /// Lève une Error : « fichier endommagé : … » ou « fichier de tableau trop gros (plus de 100 000 objets) ».
+    pub fn open(names: Vec<String>, data: &[u8], ends: &[u32]) -> Result<FlipchartReader, JsError> {
+        Self::open_inner(&names, data, ends).map_err(|m| JsError::new(&m))
     }
     pub fn ops(&self) -> Vec<f32> {
         self.list.ops.clone()
@@ -664,6 +713,37 @@ mod tests {
             );
             let e = notebook_order_inner(b"\xff").expect_err("manifeste non UTF-8");
             assert!(e.starts_with("fichier endommagé : "), "{e}");
+        }
+    }
+    mod flipchart_reader {
+        use super::*;
+
+        #[test]
+        fn flipchart_reader_opens_entries_by_ends() {
+            // Entrée i = data[ends[i-1]..ends[i]] : le chemin et les octets de chaque entrée arrivent au lecteur.
+            let names = vec!["7.in".to_string(), "version".to_string()];
+            let e = FlipchartReader::open_inner(&names, b"zz1", &[2, 3])
+                .err()
+                .expect("index illisible");
+            assert!(
+                e.starts_with("fichier endommagé : index du paperboard 7.in illisible"),
+                "{e}"
+            );
+            let e = FlipchartReader::open_inner(&[], b"", &[])
+                .err()
+                .expect("aucune entrée");
+            assert_eq!(e, "fichier endommagé : index du paperboard absent");
+        }
+
+        #[test]
+        fn flipchart_reader_refuses_bad_ends() {
+            let names = vec!["a".to_string(), "b".to_string()];
+            for ends in [&[1u32][..], &[2, 1], &[1, 9], &[1, 2, 2]] {
+                let e = FlipchartReader::open_inner(&names, b"abc", ends)
+                    .err()
+                    .expect("bornes refusées");
+                assert!(e.starts_with("fichier endommagé : "), "{e}");
+            }
         }
     }
 }

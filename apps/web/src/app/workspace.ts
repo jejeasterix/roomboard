@@ -43,8 +43,9 @@ import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
 import type { BoardPart } from "../platform/board-reader";
+import { BAMBOO_NOT_FLIPCHART, hasBambooMagic } from "../platform/bamboo";
 import { boardListOf, buildBoardDocument, decodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts, type BoardSourceFormat } from "./board-io";
-import { BOARD_MAX_OBJECTS, boardNoContentMessage, resolveBoardFormat, BOARD_NO_PAGE_MESSAGE, boardObjectCount, boardExportName, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, mergeBoardWarnings, stem, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
+import { BOARD_MAX_OBJECTS, boardNoContentMessage, resolveBoardFormat, BOARD_NO_PAGE_MESSAGE, boardObjectCount, boardExportName, flipchartSources, boardFirstPagesMessage, boardSavedMessage, boardSources, boardTabName, boardWarningsMessage, mergeBoardWarnings, stem, UBZ_NOT_ZIP_MESSAGE, type BoardSources } from "./board-files";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 
@@ -542,8 +543,15 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         let src: BoardSources;
         let parts: readonly BoardPart[];
         let total: number;
-        if (file.format === "flipchart") throw new Error(boardNoContentMessage("flipchart")); // lot 3 (T16) remplace cette ligne
-        if (hasZipMagic(head)) {
+        if (file.format === "flipchart") {
+          // Signature contrôlée ici aussi (le registre l'a vue, un appel direct non) ; le Worker ZIP la contrôle encore.
+          if (!hasBambooMagic(new Uint8Array(await file.blob.slice(0, 8).arrayBuffer()))) throw new Error(BAMBOO_NOT_FLIPCHART);
+          const split = flipchartSources(await board.unbamboo(file.blob));
+          src = { xml: [], names: [], manifest: null, json: null, media: split.media, total: 1 };
+          const structure = await Promise.all(split.structure.map(async (e) => ({ path: e.path, bytes: new Uint8Array(await e.blob.arrayBuffer()) })));
+          parts = [await board.readFlipchart(structure)];
+          total = 1; // l'avis des 500 premières pages vient du lecteur Rust
+        } else if (hasZipMagic(head)) {
           const entries = await board.unzip(file.blob);
           const fmt = resolveBoardFormat(file.format, entries.map((e) => e.path));
           if (fmt === null) throw new Error(boardNoContentMessage(file.format));

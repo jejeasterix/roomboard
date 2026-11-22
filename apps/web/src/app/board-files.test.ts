@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  boardExportName, boardNoContentMessage, boardObjectCount, resolveBoardFormat, boardSavedMessage, mergeBoardWarnings, boardSources, boardTabName, boardWarningsMessage, IWB_NO_CONTENT_MESSAGE, UBZ_NO_PAGE_MESSAGE,
+  boardExportName, boardNoContentMessage, boardObjectCount, resolveBoardFormat, boardSavedMessage, mergeBoardWarnings, boardSources, boardTabName, boardWarningsMessage, flipchartSources, IWB_NO_CONTENT_MESSAGE, UBZ_NO_PAGE_MESSAGE,
 } from "./board-files";
 
 const blob = (s: string): Blob => new Blob([s]);
@@ -35,6 +35,7 @@ describe("board-files (C13, D3, D5)", () => {
     expect(boardTabName("OpenBoard.ubz", "ubz")).toBe("OpenBoard.roomboard");
     expect(boardTabName("lecon.Notebook", "notebook")).toBe("lecon.roomboard");
     expect(boardTabName("cours.olf", "olf")).toBe("cours.roomboard");
+    expect(boardTabName("Paper.FlipChart", "flipchart")).toBe("Paper.roomboard");
     expect(boardExportName("Cours.roomboard", "iwb")).toBe("Cours.iwb");
     expect(boardExportName("Sans titre", "ubz")).toBe("Sans titre.ubz");
   });
@@ -98,5 +99,24 @@ describe("board-files : dialecte et sources (C13 lot 2)", () => {
 
   it("C13 : boardNoContentMessage", () => {
     expect(boardNoContentMessage("notebook")).toBe("fichier endommagé : contenu de tableau introuvable dans ce .notebook");
+  });
+});
+
+describe("board-files : paperboards .flipchart (C13 lot 3)", () => {
+  it("C13 S4 : flipchartSources sépare la structure (Rust) des images (media, clé = chemin normalisé)", async () => {
+    const s = flipchartSources([
+      { path: "version", blob: blob("1") },
+      { path: "7.IN", blob: blob("a") },
+      { path: "8.fpg/9.io", blob: blob("b") },
+      { path: "8.fpg\\10.ir", blob: blob("c") },
+      { path: "8.fpg/img.PNG", blob: blob("png") },
+      { path: "./12.ir", blob: blob("d") },
+    ]);
+    expect(s.structure.map((e) => e.path)).toEqual(["version", "7.IN", "8.fpg/9.io", "8.fpg/10.ir", "12.ir"]);
+    expect([...s.media.keys()]).toEqual(["8.fpg/img.PNG"]);
+    expect(await text(s.media.get("8.fpg/img.PNG")!)).toBe("png");
+  });
+  it("C13 S4 : flipchartSources sans entrée : structure vide", () => {
+    expect(flipchartSources([]).structure).toEqual([]);
   });
 });

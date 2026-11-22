@@ -84,6 +84,23 @@ export function boardSources(format: ZipBoard, entries: readonly { readonly path
   return { xml: kept.map((p) => p.blob), names: kept.map((p) => p.name), manifest, json: null, media, total: pages.length };
 }
 
+/** C13 lot 3 (N11) : entrées `.in`, `.io`, `.ir` et `version` d'un paperboard (lues par le Rust) ; le reste (images) va en
+ *  `media`, clé = chemin normalisé : jamais envoyé au Worker des tableaux. */
+const FLIPCHART_STRUCTURE = /(^|\/)version$|\.(in|io|ir)$/i;
+export function flipchartSources(entries: readonly { readonly path: string; readonly blob: Blob }[]): {
+  readonly structure: readonly { readonly path: string; readonly blob: Blob }[];
+  readonly media: ReadonlyMap<string, Blob>;
+} {
+  const structure: { path: string; blob: Blob }[] = [];
+  const media = new Map<string, Blob>();
+  for (const e of entries) {
+    const path = normalBoardPath(e.path);
+    if (FLIPCHART_STRUCTURE.test(path)) structure.push({ path, blob: e.blob });
+    else media.set(path, e.blob);
+  }
+  return { structure, media };
+}
+
 const listOf = (warnings: readonly string[]): string => warnings.map((w) => `- ${w}`).join("\n");
 const count = (n: number): string => `${n} avertissement${n > 1 ? "s" : ""}`;
 export const stem = (name: string, ext: string): string => (name.toLowerCase().endsWith(ext) && name.length > ext.length ? name.slice(0, -ext.length) : name);

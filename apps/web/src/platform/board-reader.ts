@@ -125,6 +125,8 @@ export function withLeadingWarnings<P extends BoardPart>(parts: readonly P[], wa
 export interface BoardCodec {
   read(files: readonly Uint8Array[], dialect: BoardDialect, opts?: BoardReadOptions): Promise<BoardPart[]>;
   write(list: { readonly ops: Float32Array; readonly texts: readonly string[] }, format: BoardWriteFormat): Promise<ZipFile[]>;
+  /** Paperboard `.flipchart` (lot 3) : entrées `.in`, `.io`, `.ir`, `version` du conteneur ; une seule partie (toutes les pages). */
+  readFlipchart(entries: readonly { readonly path: string; readonly bytes: Uint8Array }[]): Promise<BoardPart>;
 }
 
 /** Un Worker neuf par tâche, jamais gardé ; les octets sont copiés puis transférés (les tampons de l'appelant restent). */
@@ -138,6 +140,21 @@ export function createBoardCodec(spawn: () => WorkerLike, timeoutMs = BOARD_WORK
       if (manifest !== null) transfer.push(manifest.buffer as ArrayBuffer);
       const job = { op: "read", dialect, files: copies, names: [...opts.names], manifest, max: opts.max };
       return runOnce(spawn, job, transfer, timeoutMs, checkBoardParts, BOARD_FAILED_MESSAGE);
+    },
+    async readFlipchart(entries) {
+      const total = entries.reduce((n, e) => n + e.bytes.length, 0);
+      const data = new Uint8Array(total);
+      const ends = new Uint32Array(entries.length);
+      let at = 0;
+      entries.forEach((e, i) => {
+        data.set(e.bytes, at);
+        at += e.bytes.length;
+        ends[i] = at;
+      });
+      const job = { op: "flipchart", names: entries.map((e) => e.path), data, ends };
+      const parts = await runOnce(spawn, job, [data.buffer as ArrayBuffer], timeoutMs, checkBoardParts, BOARD_FAILED_MESSAGE);
+      if (parts.length !== 1) throw new Error(BOARD_FAILED_MESSAGE);
+      return parts[0]!;
     },
     write(list, format) {
       const ops = list.ops.slice();

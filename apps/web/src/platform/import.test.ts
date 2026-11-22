@@ -10,7 +10,7 @@ import {
   BOARD_TOO_BIG_MESSAGE, hasXmlHead, isIwbName, isUbzName, createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
   ZIP_MAGIC, type ImportHandler,
 } from "./import";
-import { FLIPCHART_LATER_MESSAGE } from "./bamboo";
+import { BAMBOO_NOT_FLIPCHART } from "./bamboo";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import {
   AUDIO_BOX, CODEC_UNREADABLE, MEDIA_INCLUDE_MAX_BYTES, MEDIA_LINKED_NOTE, MEDIA_NOT_LINKED, MEDIA_PASTE_MAX_BYTES, MEDIA_TOO_BIG,
@@ -38,11 +38,11 @@ describe("importFiles (T86, usage § 8 point 12, Q1)", () => {
     const openDocument = vi.fn(async () => true);
     const notify = vi.fn(async (_m: string) => undefined);
     const r = await createImporter({ openDocument, notify })
-      .importFiles([file("photo.tif", new Uint8Array([0x49, 0x49, 0x2a, 0x00])), file("cours.flipchart")]);
+      .importFiles([file("photo.tif", new Uint8Array([0x49, 0x49, 0x2a, 0x00])), file("cours.mkv2")]);
     expect(openDocument).not.toHaveBeenCalled();
-    expect(r.refused).toEqual(["photo.tif", "cours.flipchart"]);
+    expect(r.refused).toEqual(["photo.tif", "cours.mkv2"]);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify.mock.calls[0]![0]).toBe(`photo.tif, cours.flipchart : ${LATER_FORMAT_MESSAGE}`);
+    expect(notify.mock.calls[0]![0]).toBe(`photo.tif, cours.mkv2 : ${LATER_FORMAT_MESSAGE}`);
   });
 
   it("mélange : chaque .roomboard ouvert dans l'ordre, les autres refusés en un seul message", async () => {
@@ -1209,7 +1209,7 @@ describe("registre C16 : documents Office (O2, O3, O4, S3)", () => {
   });
 });
 
-describe("importFiles : .notebook, .olf et palier .flipchart (C13 lot 2)", () => {
+describe("importFiles : .notebook, .olf et .flipchart (C13 lots 2 et 3)", () => {
   const ZIP = new Uint8Array([80, 75, 3, 4, 20, 0]);
   const BAMBOO = new Uint8Array([0x20, 0x42, 0x61, 0x6d, 0x62, 0x6f, 0x6f, 0x20, 0, 0]);
   const opener = () => vi.fn(async (_f: { readonly name: string; readonly blob: Blob; readonly format: string }) => true);
@@ -1240,34 +1240,50 @@ describe("importFiles : .notebook, .olf et palier .flipchart (C13 lot 2)", () =>
     expect(report.failed).toEqual([]);
   });
 
-  it("C13 palier : .flipchart signé refusé", async () => {
-    const { report, openBoard, notify } = await run([file("Cours.flipchart", BAMBOO)]);
-    expect(openBoard).not.toHaveBeenCalled();
-    expect(report.opened).toEqual([]);
-    expect(notify).toHaveBeenCalledWith(`Cours.flipchart : ${FLIPCHART_LATER_MESSAGE}`);
+  it("C13 N4 : signature Bamboo ouvre un .flipchart quelle que soit l'extension", async () => {
+    const { report, openBoard, notify } = await run([file("Cours.flipchart", BAMBOO), file("Cours", BAMBOO), file("lecon.xyz", BAMBOO)]);
+    expect(report.opened).toEqual(["Cours.flipchart", "Cours", "lecon.xyz"]);
+    expect(openBoard.mock.calls.map((c) => c[0].format)).toEqual(["flipchart", "flipchart", "flipchart"]);
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it("C13 palier : fichier sans extension signé Bamboo refusé", async () => {
-    const { openBoard, notify } = await run([file("Cours", BAMBOO)]);
-    expect(openBoard).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledWith(`Cours : ${FLIPCHART_LATER_MESSAGE}`);
+  it("C13 palier bas remplacé : aucun avis « pas encore lu »", async () => {
+    const { notify } = await run([file("Cours.flipchart", BAMBOO)]);
+    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining("pas encore lu"));
+    expect(Object.keys(await import("./bamboo"))).not.toContain("FLIPCHART_LATER_MESSAGE");
   });
 
-  it("C13 palier : .as4a signé non pris par le palier", async () => {
-    const { notify } = await run([file("a.as4a", BAMBOO)]);
-    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
+  it("C13 S5 : .flipchart sans signature refusé", async () => {
+    const { report, openBoard, notify } = await run([file("a.flipchart", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))]);
+    expect(openBoard).not.toHaveBeenCalled();
+    expect(report).toEqual({ opened: [], inserted: [], refused: [], failed: ["a.flipchart"] });
+    expect(notify).toHaveBeenCalledWith(`a.flipchart : ${BAMBOO_NOT_FLIPCHART}`);
+  });
+
+  it("C13 S5 : .txt renommé .flipchart refusé", async () => {
+    const { report, openBoard, notify } = await run([file("notes.flipchart", new TextEncoder().encode("bonjour, ceci est un texte"))]);
+    expect(openBoard).not.toHaveBeenCalled();
+    expect(report.failed).toEqual(["notes.flipchart"]);
+    expect(notify).toHaveBeenCalledWith(`notes.flipchart : ${BAMBOO_NOT_FLIPCHART}`);
+  });
+
+  it("C13 S5 : un .flipchart vide est refusé de la même façon", async () => {
+    const { report, notify } = await run([file("vide.flipchart")]);
+    expect(report.failed).toEqual(["vide.flipchart"]);
+    expect(notify).toHaveBeenCalledWith(`vide.flipchart : ${BAMBOO_NOT_FLIPCHART}`);
+  });
+
+  it("C13 N4 : .as4a signé non pris pour un paperboard", async () => {
+    const { notify, openBoard } = await run([file("a.as4a", BAMBOO)]);
+    expect(openBoard).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(BAMBOO_NOT_FLIPCHART));
   });
 
   it("C13 palier : .png signé Bamboo reste une image", async () => {
     const { notify, report } = await run([file("a.png", BAMBOO)]);
-    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
-    // Traité par le gestionnaire d'image, pas refusé comme flipchart ; l'échec ordinaire n'a pas le message du palier.
+    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(BAMBOO_NOT_FLIPCHART));
+    // Traité par le gestionnaire d'image, pas ouvert comme paperboard ; l'échec ordinaire n'a pas le message du refus.
     expect(report).toEqual({ opened: [], inserted: [], refused: ["a.png"], failed: [] });
     expect(notify).toHaveBeenCalledWith(`a.png : ${LATER_FORMAT_MESSAGE}`);
-  });
-
-  it("C13 palier : .flipchart sans signature reste inconnu", async () => {
-    const { notify } = await run([file("a.flipchart", new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))]);
-    expect(notify).not.toHaveBeenCalledWith(expect.stringContaining(FLIPCHART_LATER_MESSAGE));
   });
 });
