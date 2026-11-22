@@ -22,11 +22,16 @@ test("singulier et pluriel d'une même sorte comptent sur une seule ligne", () =
   ];
   assert.equal(
     byKind(msgs),
-    "4 × propriété illisible ignorée ; 3 × image TIFF non lu ; 3 × rideau non lu ; 3 × texte vertical non lu ; 3 × page illisible laissée vide",
+    "4 × propriété illisible ignorée ; 3 × image TIFF non lue ; 3 × rideau non lu ; 3 × texte vertical non lu ; 3 × page illisible laissée vide",
   );
 });
 
-test("sigles et ponctuation gardés, ligne sans nombre comptée une fois", () => {
+test("sigles et ponctuation gardés, pluriel montré tel quel sans singulier reçu, ligne sans nombre comptée une fois", () => {
   const msgs = [notice("page 1 : 2 sons ou vidéos non lus", "page 2 : 1 repère XY non lu", "page 3 : 2 repères XY non lus", "côté de page hors bornes : 1920 × 1080")];
-  assert.equal(byKind(msgs), "3 × repère XY non lu ; 2 × son ou vidéo non lu ; 1 × côté de page hors bornes : 1920 × 1080");
+  assert.equal(byKind(msgs), "3 × repère XY non lu ; 2 × sons ou vidéos non lus ; 1 × côté de page hors bornes : 1920 × 1080");
+});
+
+test("mots invariables jamais coupés : le libellé montré est celui d'un avis réel, au singulier s'il en existe un", () => {
+  const msgs = [notice("page 1 : 2 images distantes ou hors de l'archive non chargées", "page 2 : 1 image distante ou hors de l'archive non chargée", "page 3 : 3 assets trop gros")];
+  assert.equal(byKind(msgs), "3 × image distante ou hors de l'archive non chargée ; 3 × assets trop gros");
 });
