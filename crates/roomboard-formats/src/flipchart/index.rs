@@ -14,7 +14,7 @@ pub(crate) const MAX_DEPTH: usize = 256;
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct IndexNode {
     pub node_id: u32,
-    pub kind: u32,
+    pub kind: u16,
     pub storage_id: u32,
     pub refs: Vec<u32>,
     pub children: Vec<IndexNode>,
@@ -50,7 +50,6 @@ pub(crate) fn parse_index(data: &[u8]) -> Result<IndexNode, String> {
                 if open.len() >= MAX_DEPTH {
                     return Err(String::from("arbre d'index trop profond"));
                 }
-                let kind = u32::from(kind);
                 open.push(IndexNode {
                     node_id,
                     kind,
@@ -116,7 +115,7 @@ mod tests {
         let page = &tree.children[0];
         assert_eq!((page.node_id, page.kind, page.storage_id), (1003, 2, 1002));
         assert_eq!(page.refs, vec![1010, 1011]);
-        let kids: Vec<(u32, u32, String)> = page
+        let kids: Vec<(u32, u16, String)> = page
             .children
             .iter()
             .map(|c| (c.node_id, c.kind, c.storage_name()))
