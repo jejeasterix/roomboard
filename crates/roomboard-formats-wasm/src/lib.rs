@@ -241,6 +241,8 @@ pub fn write_board_xml_inner(
             out.push(board::ubz_metadata(count));
             Ok(out)
         }
+        // Import seul (N2) : aucune copie `.notebook`, refus au préfixe connu de `boardErrorMessage`.
+        Dialect::Notebook => Err(format!("format de tableau inconnu : {format}")),
     }
 }
 
@@ -607,5 +609,14 @@ mod tests {
         assert!(e.starts_with("liste de tableau invalide : "), "{e}");
         let e = write_board_xml_inner(&[1.0], Vec::new(), "pdf").expect_err("refus");
         assert_eq!(e, "format de tableau inconnu : pdf");
+    }
+
+    /// Import seul (N2) : aucune copie `.notebook`, même pour une liste vide qu'un écrivain voisin accepterait ; le
+    /// message garde le préfixe connu de `boardErrorMessage` (`board-reader.ts`).
+    #[test]
+    fn write_board_xml_refuses_notebook() {
+        let e = write_board_xml_inner(&[], vec![], "notebook").expect_err("refus");
+        assert!(e.starts_with("format de tableau inconnu : "), "{e}");
+        assert_eq!(e, "format de tableau inconnu : notebook");
     }
 }
