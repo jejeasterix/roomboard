@@ -3,7 +3,8 @@
 //! dans un Worker jetable, DAB4) ; pages vectorielles en PDF (`pdf::write_pages`, C12, PF22, Worker jetable). Chaque
 //! fonction exposée délègue à une fonction `_inner` sans JsValue, seule testée en natif (hors wasm32, tout appel à JS
 //! panique).
-//! C13 (DA2) : tableaux `.iwb` et `.ubz` (`BoardReader`, `write_board_xml`), lus et écrits dans un Worker jetable.
+//! C13 (DA2) : tableaux `.iwb` et `.ubz` (`BoardReader`, `write_board_xml`), lus et écrits dans un Worker jetable ;
+//! `.notebook` lu seulement (lot 2, N2), pages dans l'ordre du manifeste (`notebook_order`, N6).
 //! C5 (U30, I17) ; C6b (B17) : calculs de pixels sans état (`image_transparent`, `image_adjust`, `image_flood_fill`) pour le Worker de pixels.
 use roomboard_core::format::Parts;
 use roomboard_formats::board::{self, BoardList, Dialect};
@@ -210,6 +211,18 @@ impl BoardReader {
     pub fn warnings(&self) -> Vec<String> {
         self.list.warnings.clone()
     }
+}
+
+/// Ordre des pages d'un `.notebook` (C13 lot 2, N6) : `href` de la ressource `pages` de `imsmanifest.xml`, lus par le
+/// Rust (D16) ; aucune ressource `pages` : liste vide (repli sur l'ordre des noms, `notebookOrder` de `board-reader.ts`).
+pub fn notebook_order_inner(manifest: &[u8]) -> Result<Vec<String>, String> {
+    board::notebook_order(manifest).map_err(|e| e.to_string())
+}
+
+/// Lève une Error au message de `BoardError` (« fichier endommagé : … »).
+#[wasm_bindgen]
+pub fn notebook_order(manifest: &[u8]) -> Result<Vec<String>, JsError> {
+    notebook_order_inner(manifest).map_err(|m| JsError::new(&m))
 }
 
 /// Copie au format (C13, D18) : `[chemin, xml, …]` ; `iwb` : `content.xml` ; `ubz` : `page001.svg`… puis `metadata.rdf`.
