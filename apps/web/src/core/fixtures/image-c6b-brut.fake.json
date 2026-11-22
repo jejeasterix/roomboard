@@ -24,6 +24,12 @@
           "kind": "image",
           "transform": [1, 0, 0, 1, 0, 0],
           "image": { "asset": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "w": 640, "h": 480, "quarterTurns": 1, "sourceAsset": "illisible" }
+        },
+        {
+          "id": "i4",
+          "kind": "image",
+          "transform": [1, 0, 0, 1, 0, 0],
+          "image": { "asset": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "w": 640, "h": 480, "quarterTurns": 1, "flipX": false, "brightness": 0, "contrast": null }
         }
       ]
     }

@@ -4,6 +4,7 @@
 //! - `i1` : luminosité 500 et couleur transparente « blanc » (illisibles, cuites par un remplissage : `BAKED`).
 //! - `i2` : rognage `[0, 0, 0, 5]` et `flipX: "oui"` (illisibles, géométrie gardée par un remplissage).
 //! - `i3` : `sourceAsset: "illisible"` (lu absent, retiré par « Rétablir l'original », remplacé au premier remplissage).
+//! - `i4` : `flipX: false`, `brightness: 0` (neutres lisibles) et `contrast: null` : présents, lus absents.
 //!
 //! Toutes trois tournées d'un quart (lisible).
 use std::path::PathBuf;
@@ -74,6 +75,14 @@ fn brut_ybin() -> Vec<u8> {
                 ],
             ),
             image("i3", vec![("sourceAsset", In::from("illisible"))]),
+            image(
+                "i4",
+                vec![
+                    ("flipX", In::from(false)),
+                    ("brightness", In::from(0.0)),
+                    ("contrast", In::Any(Any::Null)),
+                ],
+            ),
         ];
         let page = MapPrelim::from([
             ("id", In::from("p1")),
@@ -138,27 +147,50 @@ fn fill(d: &mut Document, id: &str) {
 #[test]
 fn raw_fields_read_absent_and_survive_save() {
     let d = load(&bytes()).expect("ouverture");
-    for id in ["i1", "i2", "i3"] {
+    for id in ["i1", "i2", "i3", "i4"] {
         let im = d.element(id).and_then(|e| e.image).expect("image");
         assert_eq!(
-            (im.crop, im.flip_x, im.quarter_turns, im.brightness, im.transparent, im.source_asset),
+            (
+                im.crop,
+                im.flip_x,
+                im.quarter_turns,
+                im.brightness,
+                im.transparent,
+                im.source_asset
+            ),
             (None, false, 1, 0, None, None),
             "{id}"
         );
     }
     let again = load(&save(&d, &meta()).expect("save")).expect("relu");
-    for id in ["i1", "i2", "i3"] {
+    let mut again = again;
+    for id in ["i1", "i2", "i3", "i4"] {
         assert_eq!(again.element(id), d.element(id), "{id} relu");
+        assert!(
+            params(&mut again, id, true),
+            "{id} : champs bruts gardés par l'enregistrement"
+        );
     }
 }
 
 #[test]
 fn fill_removes_baked_raw_fields_and_keeps_raw_geometry() {
     let mut d = load(&bytes()).expect("ouverture");
+    assert!(
+        params(&mut d, "i1", false),
+        "i1 : pixels bruts présents avant"
+    );
+    d.undo();
     fill(&mut d, "i1");
     fill(&mut d, "i2");
-    assert!(!params(&mut d, "i1", false), "i1 : pixels bruts retirés par le remplissage");
-    assert!(params(&mut d, "i2", false), "i2 : géométrie brute gardée, retirée par les réglages");
+    assert!(
+        !params(&mut d, "i1", false),
+        "i1 : pixels bruts retirés par le remplissage"
+    );
+    assert!(
+        params(&mut d, "i2", false),
+        "i2 : géométrie brute gardée, retirée par les réglages"
+    );
     assert!(!params(&mut d, "i2", false));
 }
 

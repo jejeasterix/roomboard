@@ -1863,17 +1863,17 @@ function loadElement(e: SavedElement): FakeElement {
   if (e.kind === "image" && e.image) {
     // C5 : réglages relus champ par champ (un champ illisible est lu comme absent, U3).
     const im = e.image;
-    const src = (im as unknown as Readonly<Record<string, unknown>>)["sourceAsset"];
+    const all = im as unknown as Readonly<Record<string, unknown>>;
+    const src = all["sourceAsset"];
     const image: ImageData = {
       asset: im.asset,
       w: im.w,
       h: im.h,
       // C6b (B12) : lu tolérant, comme le cœur (non conforme = absent, U3).
       ...(isAssetId(src) ? { sourceAsset: src } : {}),
-      ...readParams(im as unknown as Readonly<Record<string, unknown>>, im.w, im.h),
+      ...readParams(all, im.w, im.h),
     };
     // OE43 : présents mais lus absents (illisibles ou neutres) : gardés bruts, comme le cœur.
-    const all = im as unknown as Readonly<Record<string, unknown>>;
     const kept = image as unknown as Readonly<Record<string, unknown>>;
     const imageRaw = Object.fromEntries([...IMAGE_PARAM_KEYS, "sourceAsset"].filter((k) => all[k] !== undefined && kept[k] === undefined).map((k) => [k, all[k]]));
     const rawField = Object.keys(imageRaw).length > 0 ? { imageRaw } : {};
