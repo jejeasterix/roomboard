@@ -1663,7 +1663,7 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
 
   it("C13 S2 : .olf ouvert par le Worker ZIP", async () => {
     const page: BoardListPage = { background: "#ffffff", objects: [
-      { kind: "stroke", m: [1, 0, 0, 1, 0, 0], color: "#000000", width: 2, points: [0, 0, 10, 10] },
+      { kind: "stroke", m: [1, 0, 0, 1, 0, 0], color: "#000000", width: 2, points: [0, 0, 1, 10, 10, 0.5] },
       { kind: "image", m: [1, 0, 0, 1, 0, 0], x: 0, y: 0, w: 10, h: 10, path: "a.png" },
     ] };
     const json = new Blob(["{}"]);

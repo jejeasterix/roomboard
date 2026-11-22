@@ -5,7 +5,7 @@
 import { PDF_MAX_PAGES } from "../core/api";
 import { BOARD_OBJECTS_MESSAGE, normalBoardPath } from "../platform/board-reader";
 import { ROOMBOARD_EXTENSION } from "../platform/files";
-import type { BoardFormat, BoardListPage, BoardObject } from "./board-io";
+import type { BoardFormat, BoardListPage, BoardObject, BoardSourceFormat } from "./board-io";
 
 export const BOARD_NO_PAGE_MESSAGE = "tableau sans page";
 export const IWB_NO_CONTENT_MESSAGE = "fichier endommagé : aucun content.xml dans ce .iwb";
@@ -95,7 +95,7 @@ export const boardWarningsMessage = (name: string, warnings: readonly string[]):
 export const boardSavedMessage = (format: BoardFormat, warnings: readonly string[]): string =>
   warnings.length === 0 ? `Copie enregistrée au format .${format}` : `Copie enregistrée au format .${format}, avec ${count(warnings.length)} :\n${listOf(warnings)}`;
 /** D5 : onglet `<nom>.roomboard`, jamais l'original. */
-export const boardTabName = (name: string, format: BoardFormat): string => `${stem(name, `.${format}`)}${ROOMBOARD_EXTENSION}`;
+export const boardTabName = (name: string, format: BoardSourceFormat): string => `${stem(name, `.${format}`)}${ROOMBOARD_EXTENSION}`;
 export const boardExportName = (tabName: string, format: BoardFormat): string => `${stem(tabName, ROOMBOARD_EXTENSION)}.${format}`;
 
 const countObjects = (objects: readonly BoardObject[]): number => objects.reduce((n, o) => n + (o.kind === "group" ? countObjects(o.children) : 1), 0);

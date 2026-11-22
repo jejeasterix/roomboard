@@ -12,7 +12,8 @@ import { applyMatrix, composeMatrix } from "../core/shapes";
 import { BOARD_OBJECTS_MESSAGE, normalBoardPath, type BoardPart } from "../platform/board-reader";
 import type { ImageKind } from "../platform/image-decode";
 import { IMAGE_MIME, type ImageDecoder } from "../platform/image-import";
-import type { ZipFile } from "../platform/zip-read";
+import type { BoardDialect, BoardReadOptions } from "../platform/board-reader";
+import type { OlfPart, ZipFile } from "../platform/zip-read";
 import { MISSING_LABEL, SKIPPED_LABEL } from "./board-files";
 import { typed } from "./container-io";
 
@@ -50,7 +51,9 @@ export interface BoardListData {
 export interface BoardPorts {
   unzip(blob: Blob): Promise<readonly { readonly path: string; readonly blob: Blob }[]>;
   zip(files: readonly ZipFile[]): Promise<Uint8Array>;
-  read(files: readonly Uint8Array[], format: BoardFormat): Promise<readonly BoardPart[]>;
+  read(files: readonly Uint8Array[], dialect: BoardDialect, opts?: BoardReadOptions): Promise<readonly BoardPart[]>;
+  /** C13 lot 2 : `content.json` d'un `.olf` lu dans le Worker ZIP (jamais de `JSON.parse` sur la page). */
+  readOlf(json: Blob): Promise<OlfPart>;
   write(list: { readonly ops: Float32Array; readonly texts: readonly string[] }, format: BoardFormat): Promise<readonly ZipFile[]>;
 }
 
