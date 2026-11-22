@@ -1,10 +1,10 @@
 # État — usage-c13-lots2-3
 
-Statut : en cours — lot 2 clos (PR #32 fusionnée par fusion locale, main 13c61f1, 10:45) ; lot 3 en cours sur feat/usage-c13-lot3-flipchart
+Statut : clos — lot 2 (PR #32, main 13c61f1) et lot 3 (PR #33, main 69ae924) fusionnés par fusion locale le 2026-11-22
 Gabarit : chantier (17 tâches, confirmé au plan : lot 2 = T1–T10, PR propre ; lot 3 = T11–T17 sur `feat/usage-c13-lot3-flipchart`, seulement si le lot 2 est fusionné avant 11:45)
 Objectif : Un `.notebook` (SMART Notebook), un `.olf` et un `.flipchart` (ActivInspire) déposés ou ouverts deviennent des pages RoomBoard, au niveau de la section 10 du cadrage de l'usage, avec la liste d'avertissements de ce qui n'est pas lu, par le lecteur SVG commun et la chaîne d'import du lot 1.
-Avancement : lot 2 15/15 tâches terminées ; lot 3 10/10
-Étage : 3 (lot 3) — depuis 2026-11-22 10:45
+Avancement : 25/25 tâches terminées (lot 2 : 15, lot 3 : 10)
+Étage : 4 — clos le 2026-11-22 11:55
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c13-lot3   Branche : feat/usage-c13-lot3-flipchart   Base : origin/main 3b73c27, puis origin/main 13c61f1 fusionné (6c5ffee)
 Branche principale locale au lancement : 3b73c27
@@ -116,3 +116,113 @@ Point de retour : origin/main 3b73c27 · double relecture faite (tour 1 et tour 
 
 ## Conditions de la fusion du lot 3
 Point de retour : origin/main 13c61f1 · double relecture faite (tours 1 et 2), aucun bloquant ni major ouvert · aucune tâche bloquée · suite complète sans régression (2857 ≥ 2812, code 0) · aucun test retiré hors plan (tests du palier bas réécrits en tests d'ouverture, prévu par T16) · scénarios S4–S5 joués et réussis · CLI non touchée · CI : aucune · fusion locale `--no-ff`.
+
+## Notes du coffre à poser (lot 2, PR #32)
+
+### 1. `00_Journal/2026-11-22-roomboard-usage-c13-lot2-notebook-olf-clos.md`
+
+```markdown
+---
+id: 2026-11-22-roomboard-usage-c13-lot2-notebook-olf-clos
+type: journal
+summary: "RoomBoard usage C13 lot 2 clos : import .notebook (SMART, dialecte du lecteur SVG commun, ordre du manifeste) et .olf (myViewBoard, content.json lu en TypeScript dans le Worker ZIP) en nouvel onglet avec avis des objets non lus ; .flipchart signé Bamboo refusé avec un message clair ; import seul (Q5) ; 12 exemples sur 12 lus ; PR #32."
+created: 2026-11-22
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c13-lots2-3-etat.md ; docs/essais/c13-fidelite-lots2-3.md ; docs/essais/taille-wasm.md (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — usage C13 lot 2 (.notebook, .olf), clos (OE32)
+
+- Livré : `Dialect::Notebook` du lecteur SVG commun (`path` en `M L H V Z C S Q T` dans ce seul dialecte, arcs sautés avec avis, rectangles d'axe remplis par `rect_of`, fond 100 %, `justification`, Flash averti), `notebook_order` (ordre de `imsmanifest.xml` par `parse_tree`, repli sur les noms) ; `readOlf` (matrice 3×3 par lignes, page caméra ignorée, médias de l'archive seulement) dans le Worker ZIP ; `safeArchivePath` partagé (tout segment) ; détection octets magiques, extension puis contenu (`resolveBoardFormat`) ; palier bas `.flipchart` (signature Bamboo, message « exporter en .iwb ou PDF depuis ActivInspire »).
+- Niveaux : `.notebook` B, `.olf` B (A pour `analisis.olf`) ; import seul, le cadrage de l'usage est amendé (U1, U36, C13, § 10) d'après Q5.
+- Sécurité : DOCTYPE et entités jamais résolus, script jamais exécuté, chemins d'archive `..`, absolus, `C:`, `__MACOSX` refusés dans tout segment, `content.json` ≤ 64 Mio (contrôlé sur la page et dans le Worker), borne de 100 000 objets comptée en feuilles (un `path` à sous-chemins compte chaque sous-chemin), nombres d'un `d` bornés avant allocation, zéro requête hors origine dans l'essai.
+- Fidélité sur les exemples hors dépôt : `.notebook` 6 lus sur 6 (31 pages, 557 objets, 14 avis : Flash, remplissages de polygones, une image absente) ; `.olf` 6 sur 6 (36 pages, 2 967 objets, 19 avis, surtout widgets).
+- Tailles (`main` après fusion) : module principal 1 374 141 o (plafond 1 572 864) ; module formats 3 037 458 o (plafond 3 145 728), +12 926 o.
+- Reste : lot 3 (`.flipchart`, branche `feat/usage-c13-lot3-flipchart`) ; HU1-1 (import seul), HU1-3 (dialecte SMART vu en `M L z` seulement), HU1-4 (matrice `.olf` sur un trait) à revoir.
+- Décision : [[NNNN-roomboard-c13-notebook-formats-olf-typescript]] ; piège : [[cargo-target-dir-partage-entre-worktrees]].
+```
+
+### 2. `02_Decisions/NNNN-roomboard-c13-notebook-formats-olf-typescript.md`
+
+```markdown
+---
+id: NNNN-roomboard-c13-notebook-formats-olf-typescript
+type: decision
+summary: "RoomBoard C13 lot 2 : le .notebook est lu par le lecteur SVG commun du module Wasm formats (dialecte Notebook, +12 926 o) ; le .olf est lu en TypeScript dans le Worker ZIP (JSON.parse natif, 0 o dans le Wasm) puis repasse par decodeBoardList et ses bornes ; le .flipchart reçoit un refus clair en attendant le lot 3 ; import seul pour les trois (Q5) ; prise par l'agent."
+created: 2026-11-22
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c13-lots2-3-cadrage.md (N2, N4, N7, N9, DA3, DA4, DA5, N23) ; docs/essais/taille-wasm.md (section C13 lots 2 et 3)"
+---
+
+# RoomBoard — .notebook dans formats, .olf en TypeScript (prise par l'agent)
+
+- `.notebook` : ses pages sont des SVG ; un dialecte du lecteur commun évite un second lecteur XML. Coût : +12 926 o sur formats (budget du lot 2 : 20 Ko).
+- `.olf` : `content.json` est du JSON ; un lecteur JSON en Rust aurait pris de la marge réservée au lot 3 (`.flipchart`, environ 80 Ko). `JSON.parse` est natif ; la lecture se fait dans le Worker ZIP (jamais sur le fil principal) et la page repasse le flux par `decodeBoardList`, donc par les mêmes bornes que les lecteurs Rust. Écart assumé à U23, comme la décision 0266.
+- `.flipchart` (lot 2) : la signature Bamboo est reconnue pour `.flipchart` ou une extension inconnue, jamais `.as4a` ni une extension connue ; refus avec message clair (0 o).
+- Import seul : Q5 (« Idem pour des fichier smartboard, myViewBoard ou .iwb ») retire l'écriture dans le format d'origine ; l'édition passe par export `.iwb` ou PDF.
+- Effet connu : première dépendance `platform → app` (le Worker ZIP importe `encodeBoardList` de `board-io.ts`), sans DOM grâce au tree-shaking seul ; constat ouvert dans `docs/architecture-constats.md`.
+```
+
+### 3. Fiche `01_Projets/roomboard.md`, ligne 21 (Avancement, vague 2) : ajouter à la fin de la ligne
+
+```
+ ; C13 lot 2 formats de tableaux blancs (import .notebook par le dialecte SMART du lecteur SVG commun, import .olf lu en TypeScript dans le Worker ZIP, refus clair du .flipchart en attendant le lot 3 ; import seul par Q5) clos (PR #32, `main` 13c61f1) — voir [[2026-11-22-roomboard-usage-c13-lot2-notebook-olf-clos]] et [[NNNN-roomboard-c13-notebook-formats-olf-typescript]]
+```
+
+## Notes du coffre à poser (lot 3, PR #33)
+
+### 1. `00_Journal/2026-11-22-roomboard-usage-c13-lot3-flipchart-clos.md`
+
+```markdown
+---
+id: 2026-11-22-roomboard-usage-c13-lot3-flipchart-clos
+type: journal
+summary: "RoomBoard usage C13 lot 3 clos : import .flipchart (ActivInspire) au niveau B ; conteneur Bamboo et qCompress lus en TypeScript dans le Worker ZIP (fflate en flux, bornes de bombe), objets Qt lus en Rust par un portage du lecteur d'ActCraft (module formats) ; images lues par leur nom, TIFF avouées ; import seul ; PR #33."
+created: 2026-11-22
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c13-lots2-3-etat.md ; docs/essais/c13-fidelite-lots2-3.md ; docs/essais/taille-wasm.md (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — usage C13 lot 3 (.flipchart), clos (OE32)
+
+- Livré : `readBamboo` (conteneur Bamboo v7, qCompress gros-boutiste, décompression `Unzlib` en flux avec un pas réglé sur le reste annoncé, jamais d'allocation de la taille annoncée) et mode `bamboo` du Worker ZIP ; `roomboard_formats::flipchart` (`stream` flux d'objets Qt, `index` culm, `ids`, `read` niveau B : traits, lignes, formes, texte à segments, images PNG/JPEG/BMP/GIF, groupes, fonds) ; liaison `FlipchartReader` ; `openBoard` du `.flipchart` (remplace le refus du lot 2).
+- Sécurité : bombe zlib, taille annoncée mensongère, 20 000 entrées, `.fpg` imbriqué, chemins `safeArchivePath`, imbrication du flux bornée à 32 sans récursion au-delà, budget cumulé de points (5 000 000) et de texte (16 Mio), 100 000 objets comptés en feuilles, cycles de groupes coupés.
+- Avis (U2) : TIFF, EMF, WMF, actions, grille, étiquettes, connecteurs, sons, MathML, rideau, projecteur, propriétés illisibles ; une page illisible devient une page vide avec avis.
+- Fidélité : 5 `.flipchart` lus sur 5 (118 pages, 1249 objets, 523 avis : actions, grilles, rideaux, projecteurs, repères XY, TIFF, propriétés illisibles).
+- Tailles (`main` après fusion) : module principal 1 374 141 o ; module formats 3 118 370 o (plafond 3 145 728).
+- Reste : HU1-6 (reprise du lecteur ActCraft sous PolyForm Shield, à confirmer par Jérôme avant le transfert à RoomFlow) ; HU1-2 (TIFF non affichées) ; HU1-5 (niveau B vérifié sur cinq exemples).
+- Décision : [[NNNN-roomboard-c13-flipchart-conteneur-ts-objets-rust]].
+```
+
+### 2. `02_Decisions/NNNN-roomboard-c13-flipchart-conteneur-ts-objets-rust.md`
+
+```markdown
+---
+id: NNNN-roomboard-c13-flipchart-conteneur-ts-objets-rust
+type: decision
+summary: "RoomBoard C13 lot 3 : le conteneur Bamboo et la décompression qCompress du .flipchart se font en TypeScript dans le Worker ZIP (fflate déjà présent, aucune zlib dans le Wasm) ; les objets Qt se lisent en Rust dans le module formats par un portage du lecteur d'ActCraft (U39, même auteur), sortie par board::encode ; les images restent des Blob côté page et le Rust ne reçoit que leurs noms ; prise par l'agent."
+created: 2026-11-22
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c13-lots2-3-cadrage.md (DA4, DA5, N10 à N18) ; docs/essais/taille-wasm.md (section C13 lots 2 et 3)"
+---
+
+# RoomBoard — .flipchart : conteneur en TS, objets en Rust (prise par l'agent)
+
+- Conteneur et zlib en TypeScript : `fflate` est déjà dans le Worker ZIP ; une zlib en Rust aurait pris de la marge du module formats.
+- Objets en Rust : le flux d'objets Qt est binaire et profond ; le portage du lecteur d'ActCraft (jejeasterix seul auteur) réutilise une grammaire éprouvée ; sortie par `board::encode`, un seul format d'échange pour les cinq formats de tableaux.
+- Images : le Rust juge le format sur l'extension du nom de la table des ressources ; les octets restent en `media` (aucune copie vers le Wasm).
+- Coût : formats 3 037 458 → 3 118 370 o.
+- Licence : exception U39 et précédent C9 ; hypothèse HU1-6 à confirmer par Jérôme.
+```
+
+### 3. Fiche `01_Projets/roomboard.md`, ligne 21 : ajouter à la fin de la ligne, après l'ajout du lot 2
+
+```
+ ; C13 lot 3 formats de tableaux blancs (import .flipchart au niveau B : conteneur Bamboo et qCompress en TypeScript dans le Worker ZIP, objets Qt en Rust par portage d'ActCraft ; import seul) clos (PR #33, `main` 69ae924) — voir [[2026-11-22-roomboard-usage-c13-lot3-flipchart-clos]] et [[NNNN-roomboard-c13-flipchart-conteneur-ts-objets-rust]]
+```
