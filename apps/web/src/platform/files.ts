@@ -72,6 +72,8 @@ export const IWB_EXTENSION = ".iwb";
 export const UBZ_EXTENSION = ".ubz";
 export const NOTEBOOK_EXTENSION = ".notebook";
 export const OLF_EXTENSION = ".olf";
+/** C13 lot 3 : paperboard ActivInspire (conteneur Bamboo), import seul. */
+export const FLIPCHART_EXTENSION = ".flipchart";
 export const BOARD_ZIP_MIME = "application/zip";
 /** Extensions offertes par « Importer » (R18, PF3) : le `.roomboard`, l'objet `.rbitem`, le PDF, les tableaux .iwb et .ubz (C13) et les images d'U33 que le registre reconnaît. */
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif"] as const;
@@ -89,6 +91,7 @@ export const IMPORT_EXTENSIONS = [
   "ubz",
   "notebook",
   "olf",
+  "flipchart",
   ...IMAGE_EXTENSIONS,
   ...VIDEO_EXTENSIONS,
   ...AUDIO_EXTENSIONS,

@@ -4,6 +4,7 @@ import {
   detectHostEnvironment,
   ensureExtension,
   FILE_FILTER,
+  FLIPCHART_EXTENSION,
   IMPORT_EXTENSIONS,
   IMPORT_FILTER,
   parseHostChoice,
@@ -66,7 +67,7 @@ describe("FileHost : onDrop (T86)", () => {
     expect(IMPORT_FILTER).toEqual({
       name: "Images, vidéos, sons, 3D, PDF, tableaux et documents RoomBoard",
       extensions: [
-        "roomboard", "rbitem", "rbpack", "pdf", "iwb", "ubz", "notebook", "olf",
+        "roomboard", "rbitem", "rbpack", "pdf", "iwb", "ubz", "notebook", "olf", "flipchart",
         "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg", "avif", "heic", "heif",
         "mp4", "m4v", "mov", "webm", "ogv",
         "m4a", "mp3", "wav", "ogg", "oga",
@@ -76,12 +77,16 @@ describe("FileHost : onDrop (T86)", () => {
   });
 });
 
-describe("IMPORT_EXTENSIONS (C13 lot 2)", () => {
+describe("IMPORT_EXTENSIONS (C13 lots 2 et 3)", () => {
   it("C13 N22 : IMPORT_EXTENSIONS offre notebook et olf", () => {
     const l = IMPORT_EXTENSIONS as readonly string[];
     expect(l.indexOf("notebook")).toBe(l.indexOf("ubz") + 1);
     expect(l.indexOf("olf")).toBe(l.indexOf("notebook") + 1);
-    expect(l).not.toContain("flipchart");
+  });
+  it("C13 : IMPORT_EXTENSIONS offre flipchart", () => {
+    const l = IMPORT_EXTENSIONS as readonly string[];
+    expect(l.indexOf("flipchart")).toBe(l.indexOf("olf") + 1);
+    expect(FLIPCHART_EXTENSION).toBe(".flipchart");
   });
   it("C13 N22 : le filtre nomme les tableaux", () => {
     expect(IMPORT_FILTER.name).toContain("tableaux");

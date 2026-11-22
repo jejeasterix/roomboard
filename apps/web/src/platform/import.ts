@@ -14,9 +14,9 @@
  * nature `paquet` : il n'ouvre aucun onglet, les onglets pleins ne l'arrêtent pas.
  */
 import { messageOf } from "./controller";
-import { hasBambooMagic, FLIPCHART_LATER_MESSAGE } from "./bamboo";
+import { BAMBOO_NOT_FLIPCHART, hasBambooMagic } from "./bamboo";
 import type { BoardSourceFormat } from "./board-reader";
-import { IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { FLIPCHART_EXTENSION, IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
@@ -287,18 +287,25 @@ export function hasXmlHead(head: Uint8Array): boolean {
 
 const BOARD_ZIP_EXTENSION = { ubz: UBZ_EXTENSION, notebook: NOTEBOOK_EXTENSION, olf: OLF_EXTENSION } as const;
 
-/** C13 (lot 2, palier bas) : un fichier signé `Bamboo` d'extension `.flipchart` ou inconnue (jamais `.as4a`, ni une extension
- *  connue) est refusé avec un message clair, sans lecture ; le lot 3 remplace ce gestionnaire. */
-export function flipchartRefusalHandler(): ImportHandler {
+/** C13 (lot 3) : paperboard ActivInspire. Pris si le nom est `.flipchart`, ou si l'en-tête est signé `Bamboo` et l'extension
+ *  inconnue de l'import (jamais `.as4a`, ni une extension connue : un `.png` signé Bamboo reste une image). Un `.flipchart`
+ *  sans signature est refusé ici, sans lecture ; la lecture et ses refus (endommagé, onglets pleins) sont à `openBoard`. */
+export function flipchartHandler(deps: { openBoard: NonNullable<ImportDeps["openBoard"]> }): ImportHandler {
   return {
-    id: "flipchart-later",
-    nature: "objet",
+    id: "flipchart",
+    nature: "document",
     detect: (head, name) => {
       const ext = extensionOf(name);
-      return hasBambooMagic(head) && ext !== "as4a" && (ext === "flipchart" || !(IMPORT_EXTENSIONS as readonly string[]).includes(ext));
+      return ext !== "as4a" && (hasExtension(name, FLIPCHART_EXTENSION) || (hasBambooMagic(head) && !(IMPORT_EXTENSIONS as readonly string[]).includes(ext)));
     },
-    limit: { maxBytes: -1, message: FLIPCHART_LATER_MESSAGE },
-    run: async () => "failed",
+    limit: { maxBytes: ZIP_MAX_BYTES, message: BOARD_TOO_BIG_MESSAGE },
+    async run(f, ctx) {
+      if (!hasBambooMagic(ctx.head)) {
+        await ctx.notify(`${f.name} : ${BAMBOO_NOT_FLIPCHART}`);
+        return "failed";
+      }
+      return (await deps.openBoard({ name: f.name, blob: ctx.blob, format: "flipchart" })) ? "opened" : "failed";
+    },
   };
 }
 
@@ -345,8 +352,7 @@ export function createImporter(deps: ImportDeps): Importer {
       rbitemHandler(),
       ...(importPack ? [rbpackHandler({ importPack })] : []),
       ...(openPdf ? [pdfHandler({ openPdf })] : []),
-      ...(openBoard ? [boardHandler("iwb", { openBoard }), boardHandler("ubz", { openBoard }), boardHandler("notebook", { openBoard }), boardHandler("olf", { openBoard })] : []), // C13 : avant `media`
-      flipchartRefusalHandler(),
+      ...(openBoard ? [boardHandler("iwb", { openBoard }), boardHandler("ubz", { openBoard }), boardHandler("notebook", { openBoard }), boardHandler("olf", { openBoard }), flipchartHandler({ openBoard })] : []), // C13 : avant `media`
       mediaHandler(media),
       unsupportedMediaHandler("mkv"),
       unsupportedMediaHandler("avi"),

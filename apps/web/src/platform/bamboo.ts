@@ -10,8 +10,6 @@ import { safeArchivePath } from "./archive-path";
 
 const BAMBOO_MAGIC = [0x20, 0x42, 0x61, 0x6d, 0x62, 0x6f, 0x6f, 0x20] as const;
 
-export const FLIPCHART_LATER_MESSAGE = "paperboard ActivInspire pas encore lu : exporter en .iwb ou PDF depuis ActivInspire";
-
 export function hasBambooMagic(head: Uint8Array): boolean {
   return head.length >= BAMBOO_MAGIC.length && BAMBOO_MAGIC.every((b, i) => head[i] === b);
 }
