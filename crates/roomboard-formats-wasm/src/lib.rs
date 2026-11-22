@@ -666,4 +666,35 @@ mod tests {
             assert!(e.starts_with("fichier endommagé : "), "{e}");
         }
     }
+    mod flipchart_reader {
+        use super::*;
+
+        #[test]
+        fn flipchart_reader_opens_entries_by_ends() {
+            // Entrée i = data[ends[i-1]..ends[i]] : le chemin et les octets de chaque entrée arrivent au lecteur.
+            let names = vec!["7.in".to_string(), "version".to_string()];
+            let e = FlipchartReader::open_inner(&names, b"zz1", &[2, 3])
+                .err()
+                .expect("index illisible");
+            assert!(
+                e.starts_with("fichier endommagé : index du paperboard 7.in illisible"),
+                "{e}"
+            );
+            let e = FlipchartReader::open_inner(&[], b"", &[])
+                .err()
+                .expect("aucune entrée");
+            assert_eq!(e, "fichier endommagé : index du paperboard absent");
+        }
+
+        #[test]
+        fn flipchart_reader_refuses_bad_ends() {
+            let names = vec!["a".to_string(), "b".to_string()];
+            for ends in [&[1u32][..], &[2, 1], &[1, 9], &[1, 2, 2]] {
+                let e = FlipchartReader::open_inner(&names, b"abc", ends)
+                    .err()
+                    .expect("bornes refusées");
+                assert!(e.starts_with("fichier endommagé : "), "{e}");
+            }
+        }
+    }
 }
