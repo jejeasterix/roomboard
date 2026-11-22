@@ -8,14 +8,16 @@
 //! cycle est coupé et averti). Un `.io` illisible est averti par objet ou par page (U2), jamais fatal.
 
 use std::borrow::Cow;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use super::ids;
 use super::index::{parse_index, IndexNode};
-use super::stream::{parse_object_stream_with_stats, StreamObject, Value, MAX_NESTING};
+use super::stream::{parse_object_stream_with_stats, Stats, StreamObject, Value, MAX_NESTING};
 use crate::board::{
-    compose, encode, BoardError, BoardList, Item, Mat, Page, Rgb, ShapeKind, Span, IDENTITY,
-    MAX_OBJECTS, MAX_PAGES, PAGE_WIDTH,
+    compose, encode, rect_of, BoardError, BoardList, Item, Mat, Page, Rgb, ShapeKind, Span,
+    IDENTITY, MAX_OBJECTS, MAX_PAGES, MAX_POINTS, MAX_SPANS, PAGE_WIDTH,
 };
 
 /// Numéros de propriétés, recopiés à la main de `flipchartids.h` d'ActCraft, sous des noms à nous.
@@ -66,9 +68,6 @@ mod key {
 /// Côté de page au plus (ActCraft `kMaxPageSide`) et taille par défaut.
 const MAX_PAGE_SIDE: f64 = 100_000.0;
 const DEFAULT_PAGE: (f64, f64) = (1024.0, 768.0);
-/// Bornes de `board::parse` (points d'un trait, segments d'un texte), tenues ici pour que la page relise le flux.
-const MAX_POINTS: usize = 1_000_000;
-const MAX_SPANS: usize = 10_000;
 const BLACK: Rgb = [0, 0, 0];
 const WHITE: Rgb = [255, 255, 255];
 
@@ -91,6 +90,7 @@ enum Sort {
     TooDeep,
     UnknownKind,
     Unreadable,
+    Property,
     PageUnreadable,
 }
 
@@ -118,6 +118,10 @@ fn label(sort: Sort, n: u32) -> &'static str {
         ),
         Sort::UnknownKind => ("objet d'un type non lu", "objets d'un type non lu"),
         Sort::Unreadable => ("objet illisible ignoré", "objets illisibles ignorés"),
+        Sort::Property => (
+            "propriété illisible ignorée",
+            "propriétés illisibles ignorées",
+        ),
         Sort::PageUnreadable => (
             "page illisible laissée vide",
             "pages illisibles laissées vides",
@@ -134,9 +138,34 @@ fn broken(m: impl Into<String>) -> BoardError {
     BoardError::Broken(m.into())
 }
 
-/// Lit les entrées `.in`, `.io`, `.ir` et `version` d'un `.flipchart` ; chemins de page `<page>.fpg/<nom>`. Les
+/// Lit les entrées `.in`, `.io`, `.ir` et `version` d'un `.flipchart`, et les images par leur seul nom (octets ignorés,
+/// DA4) ; chemins de page `<page>.fpg/<nom>`. Les
 /// avertissements de page sont numérotés à partir de `first_page`.
 pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, BoardError> {
+    read_with(entries, first_page, LIMITS)
+}
+
+/// Budgets cumulés de la lecture (points émis, octets de texte émis, objets feuilles) ; `LIMITS` en production.
+#[derive(Clone, Copy)]
+struct Limits {
+    objects: usize,
+    points: usize,
+    text: usize,
+}
+
+/// Plusieurs nœuds peuvent viser une même ressource : la mémoire émise ne dépend plus seulement de la taille de
+/// l'entrée, d'où un budget par fichier (au-delà : `TooBig`).
+const LIMITS: Limits = Limits {
+    objects: MAX_OBJECTS,
+    points: 5 * MAX_POINTS as usize,
+    text: 16 << 20,
+};
+
+fn read_with(
+    entries: &[(&str, &[u8])],
+    first_page: u32,
+    limits: Limits,
+) -> Result<BoardList, BoardError> {
     let files: HashMap<&str, &[u8]> = entries.iter().copied().collect();
     // Index de la racine : le premier `.in` dont la racine est le paperboard, sinon le premier lisible.
     let mut tree = None;
@@ -146,7 +175,7 @@ pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, Boa
         .filter(|(n, _)| !n.contains('/') && n.ends_with(".in"))
     {
         match parse_index(data) {
-            Ok(t) if t.kind == u32::from(ids::DOCUMENT) => {
+            Ok(t) if t.kind == ids::DOCUMENT => {
                 tree = Some(t);
                 break;
             }
@@ -168,14 +197,27 @@ pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, Boa
         files,
         register: HashMap::new(),
         resources: HashMap::new(),
+        ios: HashMap::new(),
         notes: BTreeMap::new(),
         page: 0,
+        limits,
+        used_points: 0,
+        used_text: 0,
+        leaves: 0,
+        over: false,
     };
     let mut head = Vec::new();
     let mut side_out_of_bounds = false;
     let mut start = DEFAULT_PAGE;
     match parse_object_stream_with_stats(doc_data) {
-        Ok((doc, _)) => {
+        Ok((doc, stats)) => {
+            if stats.unread > 0 {
+                head.push(format!(
+                    "paperboard : {} propriété(s) illisible(s) ignorée(s) ({})",
+                    stats.unread,
+                    stats.first_error.as_deref().unwrap_or("raison inconnue")
+                ));
+            }
             reader.register_resources(&doc);
             match doc.find(key::DOC_START_SIZE).and_then(Value::as_size) {
                 Some(s) if usable(s) => start = s,
@@ -191,7 +233,7 @@ pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, Boa
     let page_nodes: Vec<&IndexNode> = tree
         .children
         .iter()
-        .filter(|n| n.kind == u32::from(ids::PAGE))
+        .filter(|n| n.kind == ids::PAGE)
         .collect();
     if page_nodes.is_empty() {
         return Err(broken("aucune page dans l'index du paperboard"));
@@ -215,7 +257,7 @@ pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, Boa
         .flatten()
         .map(|t| u64::from(descendants(t)))
         .sum();
-    if objects > MAX_OBJECTS as u64 {
+    if objects > limits.objects as u64 {
         return Err(BoardError::TooBig);
     }
 
@@ -225,6 +267,9 @@ pub fn read(entries: &[(&str, &[u8])], first_page: u32) -> Result<BoardList, Boa
         let page = tree
             .as_deref()
             .and_then(|t| reader.page(node.node_id, t, start, &mut side_out_of_bounds));
+        if reader.over {
+            return Err(BoardError::TooBig);
+        }
         pages.push(page.unwrap_or_else(|| {
             reader.note(Sort::PageUnreadable);
             Page::default()
@@ -290,6 +335,25 @@ struct Sheet<'t> {
     tree: &'t IndexNode,
     base: Mat,
     side: (f32, f32),
+    /// Numéro de nœud → stockage, construit une fois par page au premier fond (le premier nœud rencontré l'emporte).
+    storages: OnceCell<HashMap<u32, u32>>,
+}
+
+impl Sheet<'_> {
+    fn storage_of(&self, node: u32) -> Option<u32> {
+        self.storages
+            .get_or_init(|| {
+                let mut map = HashMap::new();
+                let mut stack = vec![self.tree];
+                while let Some(n) = stack.pop() {
+                    map.entry(n.node_id).or_insert(n.storage_id);
+                    stack.extend(n.children.iter());
+                }
+                map
+            })
+            .get(&node)
+            .copied()
+    }
 }
 
 struct Reader<'a> {
@@ -298,9 +362,18 @@ struct Reader<'a> {
     register: HashMap<u32, (String, String)>,
     /// Objets `.ir` déjà lus (ou illisibles), par numéro.
     resources: HashMap<u32, Option<StreamObject>>,
+    /// Flux `.io` lus, par chemin : un nœud partagé ne relit ni ne réalloue le flux (avec ce qu'il a laissé de côté).
+    ios: HashMap<String, Option<(Rc<StreamObject>, Stats)>>,
     notes: BTreeMap<(u32, Sort), u32>,
     /// Numéro de la page en cours.
     page: u32,
+    limits: Limits,
+    /// Budgets cumulés sur le fichier : points, octets de texte, feuilles émis.
+    used_points: usize,
+    used_text: usize,
+    leaves: usize,
+    /// Un budget est dépassé : la lecture finit en `TooBig`.
+    over: bool,
 }
 
 impl<'a> Reader<'a> {
@@ -317,8 +390,43 @@ impl<'a> Reader<'a> {
     /// Flux d'objets ; les objets trop profonds sont comptés, une propriété illisible reste locale.
     fn stream(&mut self, data: &[u8]) -> Option<StreamObject> {
         let (o, stats) = parse_object_stream_with_stats(data).ok()?;
-        self.note_n(Sort::TooDeep, stats.skipped_deep);
+        self.note_stats(&stats);
         Some(o)
+    }
+
+    fn note_stats(&mut self, stats: &Stats) {
+        self.note_n(Sort::TooDeep, stats.skipped_deep);
+        self.note_n(Sort::Property, stats.unread);
+    }
+
+    /// Flux `.io` du chemin `path`, lu une fois ; ses avis sont comptés à chaque usage.
+    fn io(&mut self, path: &str) -> Option<Rc<StreamObject>> {
+        if !self.ios.contains_key(path) {
+            let parsed = self
+                .files
+                .get(path)
+                .and_then(|d| parse_object_stream_with_stats(d).ok())
+                .map(|(o, s)| (Rc::new(o), s));
+            self.ios.insert(path.to_string(), parsed);
+        }
+        let (o, stats) = self.ios.get(path)?.as_ref()?.clone();
+        self.note_stats(&stats);
+        Some(o)
+    }
+
+    /// Ajoute `n` à un budget ; faux (et lecture à refuser) s'il est dépassé.
+    fn charge(
+        &mut self,
+        used: fn(&mut Self) -> &mut usize,
+        max: fn(&Limits) -> usize,
+        n: usize,
+    ) -> bool {
+        let total = used(self).saturating_add(n);
+        *used(self) = total;
+        if total > max(&self.limits) {
+            self.over = true;
+        }
+        !self.over
     }
 
     /// Lignes `[numéro, entrée, fichier, empreinte, références]` de toutes les propriétés de la table.
@@ -358,27 +466,28 @@ impl<'a> Reader<'a> {
         self.resources.get(&rid).and_then(Option::as_ref)
     }
 
-    /// Fichier de données de la ressource `rid`, à la racine : fichier de la table, nom d'origine, puis
-    /// `<rid>.png`… (ActCraft `resourceFile`).
-    fn data_file(&mut self, rid: u32) -> Option<(&'a str, &'a [u8])> {
-        let mut names: Vec<String> = Vec::new();
+    /// Fichier de données de la ressource `rid`, à la racine : fichier de la table, nom d'origine, puis `<rid>.png`…
+    /// (ActCraft `resourceFile`). Seul le nom compte : la page garde les octets des images (DA4) et n'en transmet que
+    /// le nom. `Ok` : l'entrée transmise ; `Err` : les noms déclarés (table, nom d'origine), aucun transmis.
+    fn data_file(&mut self, rid: u32) -> Result<&'a str, Vec<String>> {
+        let mut declared: Vec<String> = Vec::new();
         if let Some((_, file)) = self.register.get(&rid) {
-            names.push(file.clone());
+            declared.push(file.clone());
         }
         if let Some(n) = self
             .resource(rid)
             .and_then(|r| r.find(key::RES_SOURCE_NAME))
             .and_then(Value::as_str)
         {
-            names.push(n.to_string());
+            declared.push(n.to_string());
         }
-        for ext in ["png", "jpg", "ird", "gif", "bmp", "tif"] {
-            names.push(format!("{rid}.{ext}"));
-        }
-        names
+        declared.retain(|n| !n.is_empty() && !n.contains('/'));
+        let guessed = ["png", "jpg", "ird", "gif", "bmp", "tif"].map(|ext| format!("{rid}.{ext}"));
+        declared
             .iter()
-            .filter(|n| !n.is_empty() && !n.contains('/'))
-            .find_map(|n| self.files.get_key_value(n.as_str()).map(|(k, v)| (*k, *v)))
+            .chain(guessed.iter())
+            .find_map(|n| self.files.get_key_value(n.as_str()).map(|(k, _)| *k))
+            .ok_or(declared)
     }
 
     /// Index de la page : `<page>.fpg/<page>.in`, sinon le nœud de l'index du document ; illisible : `None`.
@@ -439,6 +548,7 @@ impl<'a> Reader<'a> {
             tree,
             base: [s, 0.0, 0.0, s, 0.0, 0.0],
             side: (w as f32, h as f32),
+            storages: OnceCell::new(),
         };
         let mut page = Page::default();
         let mut backdrop = None;
@@ -491,7 +601,10 @@ impl<'a> Reader<'a> {
         parent: &Mat,
         nesting: usize,
     ) -> Option<Pending> {
-        let kind = u16::try_from(n.kind).unwrap_or(u16::MAX);
+        if self.over {
+            return None;
+        }
+        let kind = n.kind;
         let warned = match kind {
             k if ids::is_action(k) => Some(Sort::Action),
             k if ids::is_grid(k) => Some(Sort::Grid),
@@ -502,11 +615,8 @@ impl<'a> Reader<'a> {
             self.note(sort);
             return None;
         }
-        let data = self
-            .files
-            .get(format!("{}{}", sheet.prefix, n.storage_name()).as_str())
-            .copied();
-        let Some(o) = data.and_then(|d| self.stream(d)) else {
+        let path = format!("{}{}", sheet.prefix, n.storage_name());
+        let Some(o) = self.io(&path) else {
             self.note(Sort::Unreadable);
             return None;
         };
@@ -541,6 +651,10 @@ impl<'a> Reader<'a> {
                 What::Nothing
             }
         };
+        if let What::Item(item) = &what {
+            let k = leaves(item);
+            self.charge(|r| &mut r.leaves, |l| l.objects, k);
+        }
         let children = if n.children.is_empty() {
             Vec::new()
         } else if nesting >= MAX_NESTING {
@@ -568,6 +682,18 @@ impl<'a> Reader<'a> {
     fn stroke(&mut self, o: &StreamObject, m: Mat, points: u16) -> What {
         let pen = pen_of(o);
         let (color, width) = (rgb(pen, key::PEN_COLOR, BLACK), pen_width(pen));
+        let wanted = resource_id(o, points)
+            .and_then(|r| self.resource(r))
+            .and_then(|res| res.find(key::RES_DATA))
+            .and_then(|v| {
+                v.as_polylines()
+                    .first()
+                    .map(|p| p.len().min(MAX_POINTS as usize))
+            })
+            .unwrap_or(0);
+        if !self.charge(|r| &mut r.used_points, |l| l.points, wanted) {
+            return What::Nothing;
+        }
         let pts = resource_id(o, points)
             .and_then(|r| self.resource(r))
             .and_then(|res| res.find(key::RES_DATA))
@@ -590,6 +716,20 @@ impl<'a> Reader<'a> {
         let (color, width) = (rgb(pen, key::PEN_COLOR, BLACK), pen_width(pen));
         let fill = (pen.and_then(|p| number(p, key::PEN_FILL)).unwrap_or(0.0) != 0.0)
             .then(|| rgb(pen, key::PEN_TINT, WHITE));
+        let wanted: usize = resource_id(o, key::REF)
+            .and_then(|r| self.resource(r))
+            .and_then(|res| res.find(key::RES_DATA))
+            .map_or(0, |v| v.as_polylines().iter().map(|p| p.len()).sum());
+        let inline: usize = o
+            .find(key::SHAPE_INLINE)
+            .map_or(0, |v| v.as_polylines().iter().map(|p| p.len()).sum());
+        if !self.charge(
+            |r| &mut r.used_points,
+            |l| l.points,
+            wanted.saturating_add(inline),
+        ) {
+            return What::Nothing;
+        }
         let mut polys: Vec<Vec<[f32; 2]>> = resource_id(o, key::REF)
             .and_then(|r| self.resource(r))
             .and_then(|res| res.find(key::RES_DATA))
@@ -605,7 +745,7 @@ impl<'a> Reader<'a> {
         }
         let open = flag(o, key::SHAPE_UNCLOSED);
         if let ([only], false) = (polys.as_slice(), open) {
-            if let Some((x0, y0, x1, y1)) = rect_of(only) {
+            if let Some([x0, y0, x1, y1]) = rect_of(only) {
                 return What::Item(Item::Shape {
                     kind: ShapeKind::Rect,
                     m,
@@ -643,12 +783,29 @@ impl<'a> Reader<'a> {
     }
 
     /// Image de la ressource `rid`, si son format s'affiche (N14 : TIFF, EMF, WMF avertis).
+    /// Une image jamais transmise (TIFF, EMF, WMF : jamais décompressées, N15) est avertie sur l'extension de son nom
+    /// déclaré ; une autre, absente, est illisible.
     fn picture(&mut self, rid: Option<u32>, m: Mat, b: &[f32; 4]) -> Option<Item> {
-        let Some((name, data)) = rid.and_then(|r| self.data_file(r)) else {
-            self.note(Sort::Unreadable);
-            return None;
+        let name = match rid.map(|r| self.data_file(r)) {
+            Some(Ok(name)) => name,
+            Some(Err(declared)) => {
+                let sort = declared
+                    .iter()
+                    .find_map(|n| match picture_kind(n) {
+                        Picture::Tiff => Some(Sort::Tiff),
+                        Picture::Other if is_unshown_image(n) => Some(Sort::ImageFormat),
+                        _ => None,
+                    })
+                    .unwrap_or(Sort::Unreadable);
+                self.note(sort);
+                return None;
+            }
+            None => {
+                self.note(Sort::Unreadable);
+                return None;
+            }
         };
-        match picture_kind(name, data) {
+        match picture_kind(name) {
             Picture::Shown => Some(Item::Image {
                 m,
                 x: b[0],
@@ -677,6 +834,24 @@ impl<'a> Reader<'a> {
     /// souligné, couleur) ; une ligne de base plus basse commence une ligne.
     fn text(&mut self, o: &StreamObject, m: Mat, b: &[f32; 4]) -> What {
         let mut spans: Vec<Span> = Vec::new();
+        let wanted: usize = resource_id(o, key::REF)
+            .and_then(|r| self.resource(r))
+            .and_then(|res| res.find(key::RES_DATA))
+            .map_or(0, |v| {
+                v.as_objects()
+                    .into_iter()
+                    .take(MAX_SPANS as usize)
+                    .map(|run| {
+                        [key::RUN_TEXT, key::RUN_FONT]
+                            .iter()
+                            .map(|&k| run.find(k).and_then(Value::as_str).map_or(0, str::len))
+                            .sum::<usize>()
+                    })
+                    .sum()
+            });
+        if !self.charge(|r| &mut r.used_text, |l| l.text, wanted) {
+            return What::Nothing;
+        }
         if let Some(res) = resource_id(o, key::REF).and_then(|r| self.resource(r)) {
             let mut baseline: Option<f64> = None;
             for run in res
@@ -684,7 +859,7 @@ impl<'a> Reader<'a> {
                 .map(Value::as_objects)
                 .unwrap_or_default()
                 .into_iter()
-                .take(MAX_SPANS)
+                .take(MAX_SPANS as usize)
             {
                 let mut span = span_of(run);
                 let y = run
@@ -725,7 +900,7 @@ impl<'a> Reader<'a> {
         let pointer = fill.find(key::FILL_PICTURE).and_then(Value::as_pointer);
         let image = match pointer {
             Some(node) if node != 0 && (source == 1.0 || source == 2.0) => {
-                let storage = find_node(sheet.tree, node).map_or(node, |n| n.storage_id);
+                let storage = sheet.storage_of(node).unwrap_or(node);
                 let name = format!("{storage}.io");
                 let data = self
                     .files
@@ -857,16 +1032,12 @@ fn build(
     }
 }
 
-/// Nœud `id` de l'index d'une page, sans récursion.
-fn find_node(tree: &IndexNode, id: u32) -> Option<&IndexNode> {
-    let mut stack = vec![tree];
-    while let Some(n) = stack.pop() {
-        if n.node_id == id {
-            return Some(n);
-        }
-        stack.extend(n.children.iter());
+/// Feuilles d'un objet produit (un groupe vaut ses membres) : la borne d'objets compte celles-ci.
+fn leaves(item: &Item) -> usize {
+    match item {
+        Item::Group(items) => items.iter().map(leaves).sum(),
+        _ => 1,
     }
-    None
 }
 
 /// Transformation locale (§ 7.4) : translate(décalage + pivot) ∘ rotation ∘ échelle ∘ translate(−pivot), le
@@ -910,56 +1081,28 @@ fn placement(o: &StreamObject, b: &[f32; 4]) -> Mat {
     }
 }
 
-/// Règle de N7 (celle de `rect_of` de T3, absent de cette branche) : un contour fermé de quatre sommets distincts
-/// (le premier éventuellement répété), côtés alignés sur les axes → `(x0, y0, x1, y1)`.
-fn rect_of(poly: &[[f32; 2]]) -> Option<(f32, f32, f32, f32)> {
-    let pts = match poly {
-        [first, .., last] if poly.len() == 5 && first == last => &poly[..4],
-        _ if poly.len() == 4 => poly,
-        _ => return None,
-    };
-    let x0 = pts.iter().map(|p| p[0]).fold(f32::INFINITY, f32::min);
-    let x1 = pts.iter().map(|p| p[0]).fold(f32::NEG_INFINITY, f32::max);
-    let y0 = pts.iter().map(|p| p[1]).fold(f32::INFINITY, f32::min);
-    let y1 = pts.iter().map(|p| p[1]).fold(f32::NEG_INFINITY, f32::max);
-    let edges = (0..4).all(|i| {
-        let (a, b) = (pts[i], pts[(i + 1) % 4]);
-        (a[0] == b[0]) != (a[1] == b[1])
-    });
-    let corners = pts
-        .iter()
-        .all(|p| (p[0] == x0 || p[0] == x1) && (p[1] == y0 || p[1] == y1));
-    let finite = [x0, y0, x1, y1].iter().all(|v| v.is_finite());
-    (edges && corners && finite && x0 < x1 && y0 < y1).then_some((x0, y0, x1, y1))
-}
-
 enum Picture {
     Shown,
     Tiff,
     Other,
 }
 
-/// Format deviné par la signature, sinon par l'extension (ActCraft `extensionOf`).
-fn picture_kind(name: &str, data: &[u8]) -> Picture {
-    let shown: [&[u8]; 5] = [
-        b"\x89PNG\r\n\x1a\n",
-        b"\xff\xd8\xff",
-        b"GIF87a",
-        b"GIF89a",
-        b"BM",
-    ];
-    if shown.iter().any(|s| data.starts_with(s)) {
-        return Picture::Shown;
-    }
-    if data.starts_with(b"II*\0") || data.starts_with(b"MM\0*") {
-        return Picture::Tiff;
-    }
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase());
-    match ext.as_deref() {
+/// Format jugé sur l'extension du nom (la page garde les octets, DA4).
+fn picture_kind(name: &str) -> Picture {
+    match extension(name).as_deref() {
         Some("png" | "jpg" | "jpeg" | "gif" | "bmp") => Picture::Shown,
         Some("tif" | "tiff") => Picture::Tiff,
         _ => Picture::Other,
     }
+}
+
+/// Image d'un format que la page n'affiche pas (N14), reconnue sur la seule extension.
+fn is_unshown_image(name: &str) -> bool {
+    matches!(extension(name).as_deref(), Some("emf" | "wmf"))
+}
+
+fn extension(name: &str) -> Option<String> {
+    name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase())
 }
 
 fn span_of(run: &StreamObject) -> Span {
@@ -1045,7 +1188,7 @@ fn fin(v: f64) -> f32 {
 fn points_of(poly: &[[f32; 2]]) -> Vec<[f32; 3]> {
     poly.iter()
         .filter(|p| p[0].is_finite() && p[1].is_finite())
-        .take(MAX_POINTS)
+        .take(MAX_POINTS as usize)
         .map(|&[x, y]| [x, y, 1.0])
         .collect()
 }
@@ -1074,6 +1217,7 @@ mod tests {
     const PEN_FILL: u16 = 8;
     const PEN_TINT: u16 = 9;
     const FILL_SOURCE: u16 = 2;
+    const FILL_PICTURE: u16 = 4;
     const FILL_STYLE: u16 = 3;
     const STROKE_POINTS: u16 = 39;
     const REF_38: u16 = 38;
@@ -1475,6 +1619,59 @@ mod tests {
         );
     }
 
+    /// T23 (DA4, N14, N15) : la page ne transmet que le nom des images gardées (octets vides) et jamais une TIFF ni
+    /// une WMF. La PNG et le fond image sont lus sur leur nom ; TIFF et WMF sont averties sur l'extension du nom de
+    /// la table des ressources, jamais comptées illisibles.
+    #[test]
+    fn named_images_are_read_and_absent_tiff_is_warned() {
+        let image = |rid: u32| {
+            Obj::new(ids::IMAGE, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 10.0, 10.0)
+                .integer(REF_38, int(rid))
+        };
+        let named = |id: u32, name: &'static str| Res {
+            id,
+            object: Obj::new(0, id).string(3, name),
+            file: Some((name, Vec::new())),
+        };
+        let resources = [
+            named(101, "photo.png"),
+            named(102, "scan.tif"),
+            named(103, "fond.png"),
+            named(104, "dessin.wmf"),
+        ];
+        let background = Obj::new(ids::BACKGROUND, 0)
+            .integer(FILL_SOURCE, 1)
+            .pointer(FILL_PICTURE, 90, 90, ids::IMAGE);
+        let mut sheet = Sheet::new(10)
+            .put(11, ids::BACKGROUND, background)
+            .put(12, ids::IMAGE, image(101))
+            .put(13, ids::IMAGE, image(102))
+            .put(14, ids::IMAGE, image(104));
+        sheet.streams.push((90, image(103).stream()));
+        let mut entries = flipchart(document(), &resources, vec![sheet]);
+        entries.retain(|(n, _)| n != "scan.tif" && n != "dessin.wmf");
+        let (pages, mut warnings) = pages_of(&entries);
+        warnings.sort();
+        assert_eq!(
+            warnings,
+            vec![
+                "page 1 : 1 image TIFF non lue".to_string(),
+                "page 1 : 1 image d'un format non lu (EMF, WMF…)".to_string(),
+            ]
+        );
+        let mut hrefs: Vec<&str> = pages[0]
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Image { href, .. } => Some(href.as_str()),
+                _ => None,
+            })
+            .collect();
+        hrefs.sort_unstable();
+        assert_eq!(hrefs, vec!["fond.png", "photo.png"]);
+    }
+
     /// S4 : les actions, médias, formules et textes verticaux sont avertis par sorte ; le trait est lu.
     #[test]
     fn action_is_warned() {
@@ -1695,10 +1892,14 @@ mod tests {
             );
         let entries = flipchart(doc, &[points(101, &[(1.0, 1.0), (2.0, 2.0)])], vec![sheet]);
         let (pages, warnings) = pages_of(&entries);
-        assert_eq!(
-            warnings,
-            vec!["page 1 : 1 objet illisible ignoré".to_string()]
+        // Constat 6 de T24 : la propriété illisible n'est plus perdue sans avis (un pour le paperboard, un par page).
+        assert_eq!(warnings.len(), 3, "{warnings:?}");
+        assert!(
+            warnings[0].starts_with("paperboard : 1 propriété(s) illisible(s) ignorée(s)"),
+            "{warnings:?}"
         );
+        assert_eq!(warnings[1], "page 1 : 1 objet illisible ignoré");
+        assert_eq!(warnings[2], "page 1 : 2 propriétés illisibles ignorées");
         let Some(Item::Stroke { color, points, .. }) = pages[0].items.first() else {
             panic!("trait attendu : {:?}", pages[0].items);
         };
@@ -1726,6 +1927,164 @@ mod tests {
         let half = board::MAX_OBJECTS / 2 + 1;
         let two = flipchart(document(), &pts, vec![crowded(10, half), crowded(20, half)]);
         assert_eq!(run(&two, 1), Err(BoardError::TooBig));
+    }
+
+    fn run_with(
+        entries: &[(String, Vec<u8>)],
+        objects: usize,
+        points: usize,
+        text: usize,
+    ) -> Result<BoardList, BoardError> {
+        let refs: Vec<(&str, &[u8])> = entries
+            .iter()
+            .map(|(n, d)| (n.as_str(), d.as_slice()))
+            .collect();
+        super::read_with(
+            &refs,
+            1,
+            super::Limits {
+                objects,
+                points,
+                text,
+            },
+        )
+    }
+
+    /// N13 (T24) : `n` nœuds `kind` d'une page partagent un seul flux `.io` (stockage 77).
+    fn shared(node: u32, kind: u16, n: u32, stream: Obj) -> Sheet {
+        let mut s = Sheet::new(node);
+        s.streams.push((77, stream.stream()));
+        for i in 0..n {
+            s.kids.push(leaf(node * 1_000_000 + i, kind, 77));
+        }
+        s
+    }
+
+    /// T24 : un seul `.ir` visé par plusieurs nœuds est recopié à chaque nœud ; le budget de points émis, cumulé
+    /// sur le fichier, refuse l'excès (échelle réduite : 50 points au lieu de 5 millions).
+    #[test]
+    fn shared_points_beyond_the_budget_are_too_big() {
+        let pts: Vec<(f64, f64)> = (0..20).map(|i| (f64::from(i), 0.0)).collect();
+        let build = |n| {
+            flipchart(
+                document(),
+                &[points(101, &pts)],
+                vec![shared(10, ids::STROKE, n, stroke(101, (1, 1, 1)))],
+            )
+        };
+        assert!(run_with(&build(2), 1000, 50, 1 << 20).is_ok());
+        assert_eq!(
+            run_with(&build(3), 1000, 50, 1 << 20),
+            Err(BoardError::TooBig)
+        );
+    }
+
+    /// T24 : même budget pour les octets de texte émis (20 octets de texte au plus, 10 par nœud).
+    #[test]
+    fn shared_text_beyond_the_budget_is_too_big() {
+        let res = Res {
+            id: 104,
+            object: Obj::new(0, 104).objects(
+                RES_DATA,
+                &[Obj::new(0, 0)
+                    .string(RUN_TEXT, "0123456789")
+                    .real(RUN_SIZE, 12.0)],
+            ),
+            file: None,
+        };
+        let text = || {
+            Obj::new(ids::TEXT, 0)
+                .float_rect(ITEM_BOX, 0.0, 0.0, 100.0, 20.0)
+                .integer(REF_38, 104)
+        };
+        let build = |n| {
+            flipchart(
+                document(),
+                std::slice::from_ref(&res),
+                vec![shared(10, ids::TEXT, n, text())],
+            )
+        };
+        assert!(run_with(&build(2), 1000, 1 << 20, 20).is_ok());
+        assert_eq!(
+            run_with(&build(3), 1000, 1 << 20, 20),
+            Err(BoardError::TooBig)
+        );
+    }
+
+    /// T24 : la borne d'objets compte les feuilles produites, pas les nœuds d'index : une forme à quatre contours
+    /// rend un groupe de quatre traits (3 nœuds, 12 feuilles, borne 10).
+    #[test]
+    fn shape_leaves_count_toward_the_object_bound() {
+        let poly: &[(f64, f64)] = &[(0.0, 0.0), (5.0, 9.0)];
+        let res = Res {
+            id: 103,
+            object: Obj::new(0, 103).polygons(RES_DATA, &[poly, poly, poly, poly]),
+            file: None,
+        };
+        let shape = Obj::new(ids::SHAPE, 0).integer(REF_38, 103);
+        let build = |n| {
+            flipchart(
+                document(),
+                std::slice::from_ref(&res),
+                vec![shared(10, ids::SHAPE, n, shape.clone())],
+            )
+        };
+        assert!(run_with(&build(2), 10, 1 << 20, 1 << 20).is_ok());
+        assert_eq!(
+            run_with(&build(3), 10, 1 << 20, 1 << 20),
+            Err(BoardError::TooBig)
+        );
+    }
+
+    /// T24 : exactement 100 000 objets sont acceptés (la borne refuse au-delà, pas à l'égalité).
+    #[test]
+    fn exactly_100000_objects_are_accepted() {
+        let sheet = shared(10, ids::STROKE, 100_000, stroke(101, (1, 1, 1)));
+        let entries = flipchart(document(), &[points(101, &[(1.0, 1.0)])], vec![sheet]);
+        let list = run(&entries, 1).expect("100 000 objets acceptés");
+        assert_eq!(
+            board::parse(&list).expect("flux valide")[0].items.len(),
+            100_000
+        );
+    }
+
+    /// T24 : chaque fond de page résolvait son pointeur par un parcours de tout l'index (n fonds : n² visites).
+    #[test]
+    fn many_backgrounds_resolve_in_linear_time() {
+        let mut sheet = Sheet::new(10);
+        for i in 0..50_000u32 {
+            let bg = Obj::new(ids::BACKGROUND, 0)
+                .integer(FILL_SOURCE, 1)
+                .pointer(4, 999_999_999, 0, 0);
+            sheet = sheet.put(100 + i, ids::BACKGROUND, bg);
+        }
+        let entries = flipchart(document(), &[], vec![sheet]);
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(run(&entries, 1).is_ok());
+        });
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(20)),
+            Ok(true),
+            "50 000 fonds se lisent en temps linéaire"
+        );
+    }
+
+    /// U2 (T24) : une propriété illisible n'est plus perdue sans avis : un avis par page (et un pour le paperboard).
+    #[test]
+    fn unreadable_property_is_warned_per_page() {
+        let unknown = || Bytes::default().u16(0x77).u32(0);
+        let sheet = Sheet::new(10).put(11, ids::STROKE, stroke(101, (4, 5, 6)).raw(4, unknown()));
+        let entries = flipchart(
+            document(),
+            &[points(101, &[(1.0, 1.0), (2.0, 2.0)])],
+            vec![sheet],
+        );
+        let (_, warnings) = pages_of(&entries);
+        assert_eq!(
+            warnings,
+            vec!["page 1 : 1 propriété illisible ignorée".to_string()]
+        );
     }
 
     /// S5 : objets imbriqués dans l'index au-delà de 32 niveaux, ou dans un flux au-delà de 32 : ignorés, comptés.

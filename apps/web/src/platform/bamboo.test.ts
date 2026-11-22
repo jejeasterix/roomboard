@@ -221,3 +221,51 @@ describe("bamboo : conteneur borné (C13 lot 3, N11, N13, N15, N16)", () => {
     expect(BAMBOO_LIMITS).toEqual({ entries: 20_000, bytes: 256 * 1024 * 1024 });
   });
 });
+
+describe("bamboo : allocation et pas de décompression (T23)", () => {
+  const pushed = (spy: { mock: { calls: unknown[][] } }): number => spy.mock.calls.reduce((n, c) => n + (c[0] as Uint8Array).length, 0);
+
+  it("C13 N13 : aucune allocation de la taille annoncée (≈ 200 Mio annoncés, flux de ≈ 10 octets)", () => {
+    // Fausse donnée de longueur 200 Mio (u64 et en-tête qCompress) dont la « compression » rend un flux de 9 octets.
+    const announced = 200 * 1024 * 1024;
+    const shown = { length: announced } as unknown as Uint8Array;
+    const stream = zlibSync(Uint8Array.of(7));
+    const data = bambooContainer([{ name: "1.io", data: shown, compressed: true }], (b) => (b === shown ? stream : zlibSync(b)));
+    const push = vi.spyOn(Unzlib.prototype, "push");
+    const sizes: number[] = [];
+    const Real = Uint8Array;
+    vi.stubGlobal(
+      "Uint8Array",
+      new Proxy(Real, {
+        construct(t, args: unknown[], nt) {
+          const a = args[0];
+          sizes.push(typeof a === "number" ? a : a instanceof ArrayBuffer ? a.byteLength : 0);
+          return Reflect.construct(t, args, nt) as object;
+        },
+      }),
+    );
+    try {
+      expect(() => readBamboo(data, keepBambooPath, BAMBOO_LIMITS)).toThrow(bambooLieMessage("1.io"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(push).toHaveBeenCalled(); // l'en-tête égale l'annonce : la décompression a bien commencé
+    push.mockRestore();
+    expect(Math.max(0, ...sizes)).toBeLessThan(1024 * 1024);
+  });
+
+  it("C13 N13 : le pas suit le reste à décompresser (taux de zlib ≤ 1 032), jamais un pas fixe", () => {
+    // 8 Mio de zéros : ≈ 8 Kio compressés ; annonce de 1 000 octets. Pas fixe de 64 Kio ou de 4 Kio : tout le flux
+    // poussé d'un coup (fflate produit alors 8 Mio) ; pas réglé : ceil(1000 / 1032) + 1024 = 1 025 octets poussés.
+    const shown = new Uint8Array(1000);
+    const stream = zlibSync(new Uint8Array(8 * 1024 * 1024));
+    expect(stream.length).toBeGreaterThan(4 * 1024);
+    const data = bambooContainer([{ name: "1.io", data: shown, compressed: true }], (b) => (b === shown ? stream : zlibSync(b)));
+    const push = vi.spyOn(Unzlib.prototype, "push");
+    expect(() => readBamboo(data, keepBambooPath, BAMBOO_LIMITS)).toThrow(bambooLieMessage("1.io"));
+    const n = pushed(push);
+    push.mockRestore();
+    expect(n).toBeGreaterThan(0);
+    expect(n).toBeLessThanOrEqual(1025);
+  });
+});
