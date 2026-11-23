@@ -143,3 +143,24 @@ describe("barre : Modifier dans l'application d'origine (C16, O19)", () => {
     expect(simple).not.toContain("edit-original");
   });
 });
+
+describe("C11a : éléments livrés (P6, P19)", () => {
+  const NEW = ["desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"];
+  const items = (id: string) => builtinProfile(id)!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items));
+  it("defaut et annotation : entrée, bascule, écran suivant et zone ; simple : sans zone", () => {
+    for (const id of ["defaut", "annotation"]) expect(ids(id)).toEqual(expect.arrayContaining(NEW));
+    expect(ids("simple")).toEqual(expect.arrayContaining(["desktop-annotation", "annotation-pointer", "annotation-screen"]));
+    expect(ids("simple")).not.toContain("depot-annotation");
+  });
+  it("chaque élément C11a exige desktopAnnotation ; la zone est une dropzone « Déposer ici »", () => {
+    for (const id of ["defaut", "simple", "annotation"]) {
+      for (const it of items(id).filter((i) => NEW.includes(i.id))) expect(it.requires).toContain("desktopAnnotation");
+    }
+    const zone = items("defaut").find((i) => i.id === "depot-annotation")!;
+    expect(zone).toMatchObject({ kind: "dropzone", label: "Déposer ici" });
+  });
+  it("web (capacité fausse) : la barre de defaut ne change pas", () => {
+    const web = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
+    expect(visibleItems(builtinProfile("defaut")!.toolbars[0]!, web).some((it) => NEW.includes(it.id))).toBe(false);
+  });
+});

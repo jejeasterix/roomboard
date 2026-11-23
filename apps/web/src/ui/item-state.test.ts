@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TableCellState } from "../engine/table-geom";
-import type { ToolItem } from "../toolbar";
+import { ACTION_TABLE, type ToolItem } from "../toolbar";
 import { ACTION_STATE, itemState, type ToolbarView } from "./item-state";
 
 const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({
@@ -110,5 +110,32 @@ describe("« − Ligne » / « − Colonne » selon l'étendue réelle (constat 
     const part = { ...base, rows: 3, cols: 3, merged: true, zone: { r0: 0, c0: 0, r1: 1, c1: 0 } };
     expect(itemState(action("table-row-remove"), view({ tableCell: part })).disabled).toBe(false);
     expect(itemState(action("table-col-remove"), view({ tableCell: part })).disabled).toBe(false);
+  });
+});
+
+describe("annotation (C11a, P6, P8, P15, P20)", () => {
+  const base: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: true, pageIndex: 0, pageCount: 1 };
+  const act = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: ACTION_TABLE[a]?.label ?? a, requires: [], rest: {} });
+  const on = (pointer: "draw" | "mouse" = "draw", screens = 2): ToolbarView => ({ ...base, annotation: { active: true, pointer, screens } });
+  it("desktop-annotation : « Annotation du bureau » au tableau, « Quitter l'annotation » enfoncé en annotation", () => {
+    expect(itemState(act("desktop-annotation"), base)).toMatchObject({ pressed: false, label: "Annotation du bureau", disabled: false });
+    expect(itemState(act("desktop-annotation"), on())).toMatchObject({ pressed: true, label: "Quitter l'annotation", disabled: false });
+  });
+  it("annotation-pointer : « Souris » en dessin, « Dessin » enfoncé en souris ; grisé hors annotation", () => {
+    expect(itemState(act("annotation-pointer"), on("draw"))).toMatchObject({ pressed: false, label: "Souris", disabled: false });
+    expect(itemState(act("annotation-pointer"), on("mouse"))).toMatchObject({ pressed: true, label: "Dessin" });
+    expect(itemState(act("annotation-pointer"), base).disabled).toBe(true);
+  });
+  it("annotation-screen : grisé à un écran ou hors annotation", () => {
+    expect(itemState(act("annotation-screen"), on("draw", 2)).disabled).toBe(false);
+    expect(itemState(act("annotation-screen"), on("draw", 1)).disabled).toBe(true);
+    expect(itemState(act("annotation-screen"), base).disabled).toBe(true);
+  });
+  it("en annotation : action non transmise grisée (file-save), transmise active (undo)", () => {
+    expect(itemState(act("file-save"), on()).disabled).toBe(true);
+    expect(itemState(act("undo"), on()).disabled).toBe(false);
+  });
+  it("sans champ annotation : rien ne change (file-save actif)", () => {
+    expect(itemState(act("file-save"), base).disabled).toBe(false);
   });
 });
