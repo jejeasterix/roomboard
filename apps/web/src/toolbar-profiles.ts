@@ -50,6 +50,10 @@ const annotationItems = () => [
   needs(action("desktop-annotation", "Annotation du bureau")),
   needs(action("annotation-pointer", "Souris")),
   needs(action("annotation-screen", "Écran suivant")),
+  // C11b (P29) : figer le bureau, envoyer au tableau, envoyer dans un nouvel onglet.
+  needs(action("annotation-freeze", "Figer le bureau")),
+  needs(action("annotation-send", "Envoyer au tableau")),
+  needs(action("annotation-send-new", "Envoyer dans un nouvel onglet")),
 ];
 const annotationZone = () => needs({ id: "depot-annotation", kind: "dropzone", label: "Déposer ici" });
 

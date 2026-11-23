@@ -43,7 +43,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
   it("Grille (E7, HE5) : dans le groupe vue de defaut et d'annotation, avant Profil ; absente de simple", () => {
     for (const id of ["defaut", "annotation"]) {
       const vue = builtinProfile(id)!.toolbars[0]!.groups.find((g) => g.id === "vue")!;
-      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings", "desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"]);
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings", "desktop-annotation", "annotation-pointer", "annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new", "depot-annotation"]);
     }
     expect(ids("simple")).not.toContain("grid");
   });
@@ -162,5 +162,18 @@ describe("C11a : éléments livrés (P6, P19)", () => {
   it("web (capacité fausse) : la barre de defaut ne change pas", () => {
     const web = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
     expect(visibleItems(builtinProfile("defaut")!.toolbars[0]!, web).some((it) => NEW.includes(it.id))).toBe(false);
+  });
+});
+
+describe("C11b : profils livrés (P29)", () => {
+  it("defaut, annotation et simple portent figer, envoyer et envoyer dans un nouvel onglet, chacun requires desktopAnnotation", () => {
+    for (const id of ["defaut", "annotation", "simple"]) {
+      const items = builtinProfile(id)!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items));
+      for (const a of ["annotation-freeze", "annotation-send", "annotation-send-new"]) {
+        const it = items.find((x) => x.kind === "action" && x.action === a);
+        expect(it, `${id} : ${a}`).toBeDefined();
+        expect(it!.requires).toEqual(["desktopAnnotation"]);
+      }
+    }
   });
 });

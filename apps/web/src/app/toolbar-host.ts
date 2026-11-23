@@ -2,7 +2,7 @@ import type { FormatAction } from "../engine/rich-edit";
 import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
-import type { AnnotationControl } from "../platform/annotation-port";
+import type { AnnotationControl, SendTarget } from "../platform/annotation-port";
 import { messageOf } from "../platform/controller";
 import { fillChoices, isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
@@ -29,7 +29,10 @@ export interface ToolbarHost {
 }
 export interface HostTargets {
   /** C11a (P6, P8, P15, P22) : contrôleur d'annotation ; absent (web sans faux hôte, tests) : sans effet (PC9). */
-  annotation?: Pick<AnnotationControl, "state" | "enter" | "exit" | "toggle" | "nextScreen">;
+  annotation?: Pick<AnnotationControl, "state" | "enter" | "exit" | "toggle" | "nextScreen"> & {
+    freeze?(): Promise<void>;
+    send?(to: SendTarget): Promise<void>;
+  };
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
@@ -62,6 +65,9 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   },
   "annotation-pointer": (t) => settle(t.annotation?.toggle()),
   "annotation-screen": (t) => settle(t.annotation?.nextScreen()),
+  "annotation-freeze": (t) => settle(t.annotation?.freeze?.()),
+  "annotation-send": (t) => settle(t.annotation?.send?.("origin")),
+  "annotation-send-new": (t) => settle(t.annotation?.send?.("new")),
   undo: (t) => t.engine().undo(),
   redo: (t) => t.engine().redo(),
   "page-prev": (t) => void t.engine().prevPage(),
