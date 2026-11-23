@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "annotate",
+  "description": "Fenêtre d'annotation (C11a, P12) : événements avec la fenêtre principale (emitTo, listen) et commandes de la coque (annotation_cursor, annotation_ignore), appelées depuis Rust. Ni fichiers, ni boîtes, ni réglage de fenêtre par la page.",
+  "windows": ["annotate"],
+  "permissions": ["core:default"]
+}
