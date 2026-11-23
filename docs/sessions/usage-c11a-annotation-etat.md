@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : En coque (Windows, macOS, Linux X11), Jérôme annote par-dessus son bureau vivant dans une fenêtre transparente, avec la barre d'outils seule cliquable, une bascule dessin / souris, un démarrage direct en annotation et une zone de dépôt qui insère des pages.
-Avancement : 0/? tâches terminées
-Étage : 2 — depuis 2026-11-23 07:40
+Avancement : 3/10 tâches terminées
+Étage : 3 (vague 2) — depuis 2026-11-23 08:13
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -20,10 +20,19 @@ Tailles avant : module principal 1 374 398 o (plafond 1 572 864) · formats 2 79
 Complète (origin/main @ 6c97661, verifier.sh --e2e) : vert, sauf C8 pot zones (data-zone-ms inchangé) au premier passage ; rejoué seul : OK (délai sous charge). C4 et C13 rejoués : OK. Tailles mesurées : 1 374 398 o et 2 794 511 o.
 
 ## Compteurs
-contre-relecture cadrage 1/2 · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
 
 ## Tâches
-(à l'étage 2)
+Table : `docs/plans/usage-c11a-annotation-PLAN.md` lignes 5-16. Vagues : 1 = T1, T2, T3 · 2 = T4…T8 · 3 = T9, T10.
+| id | état | essais | commit | preuve rejouée |
+|----|------|--------|--------|----------------|
+| T1 | terminée | 1/3 | e116c38 | cargo test annotation : 13 passed, `relance_memes_arguments_et_gdk_x11` |
+| T2 | terminée | 1/3 | ea4050a | Vitest 5 fichiers 128 passed, tsc 0 ; `toolbar-host.test.ts` rouge attendu, corrigé par T8 |
+| T3 | terminée | 1/3 | e04e49c | Vitest platform+tabs 675 passed ; test `ANNOTATION_NOT_YET` réécrit (prévu au cadrage) |
+| T4…T10 | à faire | — | — | — |
+
+Relecture du plan tour 1 (sans bloquant) : corrections portées dans les prompts des tâches (pas de nouvelle passe du planificateur, pour le temps) — T4/T7 littéraux `DroppedFile` complets (`head`, `blob`) ; T6 `poll` annulé après l'`await` + test ; T10 vrai cœur ou écart déclaré + mutation ; T6 symptôme de la gomme sur fond transparent dans la fiche C11a-2 (T5) ; écart `collect/leave/place` déclaré au rapport.
+Vague 2 à 5 tâches en parallèle (choix : le jeton borne les suites à 3).
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · tailles Wasm sous plafond, inchangés · scène ≥ 640 px mesurée · PR mergée par fusion locale `--no-ff` puis push sans force
