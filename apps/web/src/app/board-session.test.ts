@@ -1088,6 +1088,26 @@ describe("session — objets 3D (C15)", () => {
     s.dispose();
   });
 
+  it("mineur C15 (C2, contre-relecture) : deux relâchés, le premier écrit, Ctrl+Z puis une autre action pendant l'instantané du second : le second n'est pas écrit", async () => {
+    const { s, fv, click, drag, model } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    const free1 = fv.holdSnapshots();
+    drag(100); // R1 : instantané retenu
+    const free2 = fv.holdSnapshots();
+    drag(50, true, 3); // R2 : même état de départ que R1
+    await vi.waitFor(() => expect(fv.snaps).toHaveLength(2));
+    free1();
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6));
+    s.engine.undo(); // l'objet revient à son état de départ
+    const page = s.engine.state().page;
+    s.engine.run({ type: "AddShape", page, shape: "rect", x0: 300, y0: 300, x1: 350, y1: 350, style: { color: "#000000", width: 4 }, fill: null });
+    free2();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(model()!.yaw).toBe(D_YAW);
+    s.dispose();
+  });
+
   it("C2 : deux relâchés puis un clic à côté : écritures dans l'ordre des relâchés, la dernière vue gagne (S2)", async () => {
     const { s, fv, click, drag, model, tag } = await modelSession();
     click(100, 50);
