@@ -49,6 +49,15 @@ describe("chooseRenderer (échelon 4 et repli)", () => {
     expect(scene.asked).toEqual(["2d"]);
   });
 
+  it("C11a : transparent → Canvas 2D même si WebGL2 demandé, WebGL2 jamais demandé", () => {
+    const scene = new FakeCanvas({ "2d": ctx2d() });
+    const live = new FakeCanvas({ "2d": ctx2d(), webgl2: new FakeGL() });
+    const c = chooseRenderer(el(scene), el(live), SRC, true, { transparent: true });
+    expect(c.renderer).toBeInstanceOf(Canvas2DRenderer);
+    expect(c.webgl).toBe(false);
+    expect(live.asked).toEqual(["2d"]);
+  });
+
   it("contexte WebGL2 nul : repli Canvas 2D, note dite", () => {
     const scene = new FakeCanvas({ "2d": ctx2d() });
     const live = new FakeCanvas({ "2d": ctx2d() });

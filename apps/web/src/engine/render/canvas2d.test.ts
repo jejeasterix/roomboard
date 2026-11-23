@@ -1231,3 +1231,33 @@ describe("Canvas2DRenderer — fill (C8, Q15)", () => {
     expect([q.moves, q.lines, q.closes]).toEqual([0, 0, 0]);
   });
 });
+
+describe("C11a : rendu transparent (P14)", () => {
+  const page = { id: "p", elementIds: [] };
+  const src: SceneSource = { element: () => null, outline: () => null };
+  it("transparent : clearRect, ni pourtour ni fond peints", () => {
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D, transparent: true });
+    r.resize(800, 600, 1);
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.log).toContain("clearRect");
+    expect(scene.log).not.toContain(`fillRect ${SURROUND_COLOR}`);
+    expect(scene.log.some((l) => l.startsWith("fillRect") && l.includes(PAGE_BACKGROUND))).toBe(false);
+  });
+  it("défaut : pourtour puis fond peints, aucun clearRect (rendu inchangé)", () => {
+    const scene = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(scene), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.resize(800, 600, 1);
+    r.drawScene(page, IDENTITY, new Set());
+    expect(scene.log).toContain(`fillRect ${SURROUND_COLOR}`);
+    expect(scene.log).not.toContain("clearRect");
+  });
+  it("createCanvas2DRenderer : scène alpha seulement si transparent", () => {
+    const asked: unknown[] = [];
+    const canvas = (ctx: FakeCtx) => ({ getContext: (_k: string, o?: unknown) => { asked.push(o); return asCtx(ctx); } }) as unknown as HTMLCanvasElement;
+    createCanvas2DRenderer(canvas(new FakeCtx()), canvas(new FakeCtx()), src, { transparent: true });
+    createCanvas2DRenderer(canvas(new FakeCtx()), canvas(new FakeCtx()), src);
+    expect(asked[0]).toEqual({ alpha: true });
+    expect(asked[2]).toEqual({ alpha: false });
+  });
+});
