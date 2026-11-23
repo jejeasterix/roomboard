@@ -436,12 +436,9 @@ fn annotation_cursor(window: tauri::WebviewWindow) -> Option<(f64, f64)> {
 #[tauri::command]
 fn relaunch_compat(app: AppHandle) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(err)?;
-    let mut cmd = std::process::Command::new(exe);
-    cmd.args(ann::relaunch_args(std::env::args_os()));
-    for (k, v) in ann::compat_env() {
-        cmd.env(k, v);
-    }
-    cmd.spawn().map_err(|e| format!("relance impossible : {e}"))?;
+    let args = ann::relaunch_args(std::env::args_os());
+    ann::relaunch(&exe, &args, &ann::compat_env())
+        .map_err(|e| format!("relance impossible : {e}"))?;
     app.exit(0);
     Ok(())
 }

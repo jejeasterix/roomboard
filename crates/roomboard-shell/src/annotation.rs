@@ -183,3 +183,17 @@ pub fn compat_env() -> [(&'static str, &'static str); 1] {
 pub fn relaunch_args(args: impl Iterator<Item = OsString>) -> Vec<OsString> {
     args.skip(1).collect()
 }
+
+/// Lance `exe` avec `args` et l'environnement `env`, sans attendre sa fin (relance P16).
+pub fn relaunch(
+    exe: &std::path::Path,
+    args: &[OsString],
+    env: &[(&str, &str)],
+) -> std::io::Result<()> {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(args);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.spawn().map(|_| ())
+}

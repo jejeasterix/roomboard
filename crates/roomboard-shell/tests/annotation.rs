@@ -1,7 +1,7 @@
 //! C11a (P9, P10, P11, P15, P16) : logique pure de l'annotation de bureau.
 use roomboard_shell::annotation::{
-    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch_args, side_of, split,
-    supported, Rect, Session, Side, Unsupported,
+    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch, relaunch_args, side_of,
+    split, supported, Rect, Session, Side, Unsupported,
 };
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -177,4 +177,14 @@ fn relance_garde_un_argument_non_utf8() {
         relaunch_args([OsString::from("rb"), raw.clone()].into_iter()),
         vec![raw]
     );
+}
+
+#[test]
+fn relaunch_fails_cleanly_on_missing_executable() {
+    let r = relaunch(
+        std::path::Path::new("/nonexistent/roomboard-absent"),
+        &[],
+        &compat_env(),
+    );
+    assert!(r.is_err());
 }
