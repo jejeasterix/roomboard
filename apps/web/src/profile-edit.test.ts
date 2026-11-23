@@ -98,6 +98,18 @@ describe("profile-edit (C1, DAC1-1)", () => {
     }
   });
 
+  it("ajouter une action à capacité : l'élément porte les requires de l'action (C11a, edit-original)", () => {
+    const base = catalog(SIMPLE, "outils");
+    for (const [ref, requires] of [["desktop-annotation", ["desktopAnnotation"]], ["annotation-pointer", ["desktopAnnotation"]], ["annotation-screen", ["desktopAnnotation"]], ["edit-original", ["officeConverter"]]] as const) {
+      const entry = base.find((e) => e.ref === ref);
+      if (entry === undefined) continue;
+      const p = addItem(SIMPLE, "outils", entry);
+      expect(item(p, ref).requires).toEqual(requires);
+    }
+    const a = base.find((e) => e.ref === "annotation-pointer")!;
+    expect(item(addItem(SIMPLE, "outils", a), "annotation-pointer").requires).toEqual(["desktopAnnotation"]);
+  });
+
   it("ajouter : en fin de barre ; id de l'outil s'il est libre, sinon <id>-<n> (P15)", () => {
     const rect = catalog(SIMPLE, "outils").find((e) => e.ref === "rect")!;
     const p = addItem(SIMPLE, "outils", rect);
