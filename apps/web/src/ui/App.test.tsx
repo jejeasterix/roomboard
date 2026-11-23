@@ -267,6 +267,8 @@ function fakeAnnotationUi(start = false, activateOnEnter = true) {
     close: vi.fn(async () => true),
     toggle: vi.fn(async () => undefined),
     nextScreen: vi.fn(async () => undefined),
+    freeze: vi.fn(async () => undefined),
+    send: vi.fn(async () => undefined),
     onTool: vi.fn(),
     command: vi.fn(),
     sendProfile: vi.fn(),

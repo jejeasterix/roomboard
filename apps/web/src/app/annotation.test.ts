@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeAnnotationWindows, type FakeAnnotationOptions } from "../platform/annotation-fake";
-import { addedToPageMessage, INK_LOST_MESSAGE, type AnnotationCommand } from "../platform/annotation-port";
+import { addedToPageMessage, INK_LOST_MESSAGE, type AnnotationCommand, type CapturedImage, type CaptureOutcome, type SendRequest, type SendResult } from "../platform/annotation-port";
 import type { DroppedFile } from "../platform/files";
 import type { ImportReport } from "../platform/import";
-import { ANNOTATION_REMOTE_ACTIONS } from "../toolbar";
+import { ANNOTATION_REMOTE_ACTIONS, type StartMode } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { createAnnotationController, createRemoteToolbarHost, offerCompatRelaunch, RELAUNCH_QUESTION, type AnnotationDeps } from "./annotation";
 import type { ToolbarHost } from "./toolbar-host";
@@ -18,7 +18,17 @@ const dropped = (name: string, size: number, mime: string): DroppedFile => ({
 });
 const png: DroppedFile = dropped("carre.png", 10, "image/png");
 
-function setup(o: FakeAnnotationOptions & { tab?: string | null; screens?: number; report?: ImportReport } = {}) {
+function setup(
+  o: FakeAnnotationOptions & {
+    tab?: string | null;
+    screens?: number;
+    report?: ImportReport;
+    backdrop?: boolean;
+    startMode?: StartMode;
+    originKind?: "board" | "annotation" | null;
+    sent?: SendResult | null;
+  } = {},
+) {
   const windows = createFakeAnnotationWindows(o);
   const log: string[] = [];
   let active = "t1";
@@ -46,6 +56,20 @@ function setup(o: FakeAnnotationOptions & { tab?: string | null; screens?: numbe
     bar: () => ({ dock: "top", thickness: 48 }),
     profile: () => BUILTIN_PROFILES[0]!,
     screens: o.screens ?? 1,
+    annotationBackdrop: vi.fn(() =>
+      o.backdrop === true ? { ref: { id: "ab".repeat(32), name: "capture-du-bureau.png", mime: "image/png", size: 8 }, w: 320, h: 180 } : null,
+    ),
+    setAnnotationBackdrop: vi.fn(async (img: CapturedImage | null, page?: number) => {
+      log.push(`backdrop ${img === null ? "null" : `${img.width}x${img.height}`} ${page ?? "-"}`);
+      return true;
+    }),
+    sendCapture: vi.fn(async (r: SendRequest) => {
+      log.push(`send ${r.to} ${r.origin} ${r.image === null ? "blanc" : "image"}`);
+      return o.sent === undefined ? { to: r.to, page: 2 } : o.sent;
+    }),
+    startMode: () => o.startMode ?? "board",
+    originKind: (id: string | null) => (o.originKind === undefined ? (id === null ? null : "board") : o.originKind),
+    ...(o.transparent === undefined ? {} : { transparent: o.transparent }),
   };
   const ctl = createAnnotationController(deps);
   return { ctl, windows, deps, log, setActive: (id: string) => { active = id; } };
@@ -261,5 +285,180 @@ describe("relance en mode compatibilité (P16)", () => {
     await offerCompatRelaunch({ supported: true, reason: null, screens: 1 }, "desktop-annotation", ask, relaunch);
     expect(ask).not.toHaveBeenCalled();
     expect(relaunch).not.toHaveBeenCalled();
+  });
+});
+
+describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
+  const shot: CaptureOutcome = { ok: true, image: { blob: new Blob([new Uint8Array([1])], { type: "image/png" }), width: 640, height: 360 } };
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  it("entrée vivante, document sans fond : document reçu comme en C11a, opaque faux, aucune capture", async () => {
+    const { ctl, windows } = setup();
+    await ctl.enter();
+    expect(windows.opaque()).toBe(false);
+    expect(windows.captures()).toBe(0);
+    expect(windows.received()).toEqual(new Uint8Array([5, 6, 7]));
+    expect(ctl.state()).toMatchObject({ active: true, frozen: false, live: true, sendTarget: "origin" });
+  });
+  it("Envoyer au tableau (vivant) : capture avant la collecte, sortie, sendCapture vers l'origine, avis « envoyé au tableau : page 2 » (P7, P12)", async () => {
+    const view = { page: 0, matrix: [2, 0, 0, 2, 0, 0] as const };
+    const { ctl, windows, deps, log } = setup({ capture: shot, view });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(windows.log.indexOf("capture")).toBeGreaterThan(-1);
+    expect(windows.log.indexOf("capture")).toBeLessThan(windows.log.indexOf("collect"));
+    expect(deps.sendCapture).toHaveBeenCalledTimes(1);
+    expect(deps.sendCapture).toHaveBeenCalledWith({ to: "origin", origin: "t1", image: shot.ok ? shot.image : null, view });
+    expect(ctl.state().active).toBe(false);
+    expect(log.indexOf("show t1")).toBeLessThan(log.indexOf("send origin t1 image"));
+    expect(log.at(-1)).toBe("say envoyé au tableau : page 2");
+  });
+  it("Envoyer dans un nouvel onglet : cible « new » (P5)", async () => {
+    const { ctl, deps } = setup({ capture: shot });
+    await ctl.enter();
+    await ctl.send("new");
+    expect(deps.sendCapture).toHaveBeenCalledWith(expect.objectContaining({ to: "new" }));
+  });
+  it("profil « Annotation au démarrage » : « Envoyer au tableau » va dans un nouvel onglet ; sendTarget « new » (P6, Q2)", async () => {
+    const { ctl, deps } = setup({ capture: shot, startMode: "desktop-annotation" });
+    await ctl.enter();
+    expect(ctl.state().sendTarget).toBe("new");
+    await ctl.send("origin");
+    expect(deps.sendCapture).toHaveBeenCalledWith(expect.objectContaining({ to: "new" }));
+  });
+  it("origine = onglet d'annotation : nouvel onglet (P6)", async () => {
+    const { ctl, deps } = setup({ capture: shot, originKind: "annotation" });
+    await ctl.enter();
+    expect(ctl.state().sendTarget).toBe("new");
+    await ctl.send("origin");
+    expect(deps.sendCapture).toHaveBeenCalledWith(expect.objectContaining({ to: "new" }));
+  });
+  it("capture refusée : page blanche (image null), avis de refus puis avis d'envoi (P10)", async () => {
+    const { ctl, deps, log } = setup({ capture: { ok: false, reason: "denied" } });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(deps.sendCapture).toHaveBeenCalledWith(expect.objectContaining({ image: null }));
+    const says = log.filter((l) => l.startsWith("say "));
+    expect(says).toEqual([
+      "say capture du bureau impossible (autorisation “Enregistrement de l'écran” refusée : l'accorder dans Réglages Système › Confidentialité et sécurité, puis relancer RoomBoard) : page à fond blanc",
+      "say envoyé au tableau : page 2",
+    ]);
+  });
+  it("rien à envoyer : sendCapture rend null → ni avis de capture ni avis d'envoi (P11)", async () => {
+    const { ctl, log } = setup({ capture: { ok: false, reason: "wayland" }, sent: null });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(log.some((l) => l.startsWith("say capture") || l.startsWith("say envoyé"))).toBe(false);
+    expect(ctl.state().active).toBe(false);
+  });
+  it("Envoyer, collecte sans réponse (vivant) : aucune page envoyée, l'avis d'encre perdue reste seul (relecture du plan)", async () => {
+    vi.useFakeTimers();
+    const { ctl, deps, log } = setup({ capture: shot, mute: true });
+    await ctl.enter();
+    const done = ctl.send("origin");
+    await vi.advanceTimersByTimeAsync(5000);
+    await done;
+    expect(ctl.state().active).toBe(false);
+    expect(deps.sendCapture).not.toHaveBeenCalled();
+    expect(log.filter((l) => l.startsWith("say "))).toEqual([`say ${INK_LOST_MESSAGE}`]);
+    expect(log).toContain("show t1");
+  });
+  it("Envoyer, réponse illisible (figé) : aucune page envoyée, l'avis d'encre perdue reste seul (relecture du plan)", async () => {
+    const { ctl, windows, deps, log } = setup({ capture: shot });
+    await ctl.enter();
+    await ctl.freeze();
+    windows.collect = async () => null;
+    await ctl.send("origin");
+    expect(ctl.state().active).toBe(false);
+    expect(deps.sendCapture).not.toHaveBeenCalled();
+    expect(log.filter((l) => l.startsWith("say "))).toEqual([`say ${INK_LOST_MESSAGE}`]);
+  });
+  it("Envoyer, document rendu sans vue : la page part quand même, vue null (P13)", async () => {
+    const { ctl, deps, log } = setup({ capture: shot });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(deps.sendCapture).toHaveBeenCalledWith(expect.objectContaining({ to: "origin", view: null }));
+    expect(log.at(-1)).toBe("say envoyé au tableau : page 2");
+  });
+  it("Figer le bureau : capture, collecte, fond posé sur la page rendue, document rechargé opaque ; état figé (P14, P16)", async () => {
+    const { ctl, windows, log } = setup({ capture: shot, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] } });
+    await ctl.enter();
+    await ctl.freeze();
+    const w = windows.log;
+    expect(w.indexOf("capture")).toBeLessThan(w.indexOf("collect"));
+    expect(w.indexOf("collect")).toBeLessThan(w.indexOf("load opaque"));
+    expect(log).toContain("backdrop 640x360 1");
+    expect(ctl.state()).toMatchObject({ active: true, frozen: true });
+    expect(windows.opaque()).toBe(true);
+  });
+  it("figé : Sélection ne coupe jamais le clic, aucun pointer mouse (P15)", async () => {
+    const { ctl, windows } = setup({ capture: shot });
+    await ctl.enter();
+    await ctl.freeze();
+    ctl.command({ kind: "setTool", tool: "select" });
+    await flush();
+    expect(ctl.state().pointer).toBe("mouse");
+    expect(windows.log.filter((l) => l === "pointer mouse")).toHaveLength(0);
+  });
+  it("Bureau vivant : fond retiré, document rechargé transparent, pointeur rendu ; aucune nouvelle capture (P16)", async () => {
+    const { ctl, windows, log } = setup({ capture: shot });
+    await ctl.enter();
+    await ctl.freeze();
+    ctl.command({ kind: "setTool", tool: "select" });
+    await flush();
+    await ctl.freeze();
+    expect(windows.captures()).toBe(1);
+    expect(log.some((l) => l.startsWith("backdrop null"))).toBe(true);
+    expect(windows.log).toContain("load transparent");
+    expect(windows.log.at(-1)).toBe("pointer mouse");
+    expect(ctl.state().frozen).toBe(false);
+  });
+  it("Figer en échec (vivant) : avis, reste vivant, aucune collecte (P16)", async () => {
+    const { ctl, windows, log } = setup({ capture: { ok: false, reason: "failed" } });
+    await ctl.enter();
+    await ctl.freeze();
+    expect(windows.log).not.toContain("collect");
+    expect(ctl.state().frozen).toBe(false);
+    expect(log).toContain("say capture du bureau impossible (échec de la capture) : page à fond blanc");
+  });
+  it("figé, Envoyer : aucune nouvelle capture, vue identité sur la page rendue, fond de l'annotation (P13)", async () => {
+    const { ctl, windows, deps } = setup({ capture: shot, view: { page: 1, matrix: [2, 0, 0, 2, 5, 5] } });
+    await ctl.enter();
+    await ctl.freeze();
+    await ctl.send("origin");
+    expect(windows.captures()).toBe(1);
+    expect(deps.sendCapture).toHaveBeenCalledWith({ to: "origin", origin: "t1", image: null, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] } });
+  });
+  it("réentrée figée quand la page d'annotation a un fond (P17)", async () => {
+    const { ctl, windows } = setup({ backdrop: true });
+    await ctl.enter();
+    expect(windows.opaque()).toBe(true);
+    expect(windows.captures()).toBe(0);
+    expect(ctl.state().frozen).toBe(true);
+  });
+  it("repli sans transparence : l'entrée capture, pose le fond, entre opaque ; live faux ; « Recapturer » recapture (P18)", async () => {
+    const { ctl, windows, log } = setup({ capture: shot, transparent: false });
+    await ctl.enter();
+    expect(windows.captures()).toBe(1);
+    expect(log).toContain("backdrop 640x360 -");
+    expect(windows.opaque()).toBe(true);
+    expect(ctl.state()).toMatchObject({ live: false, frozen: true });
+    await ctl.freeze();
+    expect(windows.captures()).toBe(2);
+    expect(windows.log.at(-2)).toBe("load opaque");
+    expect(ctl.state().frozen).toBe(true);
+  });
+  it("repli, capture en échec : entrée figée blanche, avis, aucun fond posé (P18)", async () => {
+    const { ctl, windows, log } = setup({ capture: { ok: false, reason: "failed" }, transparent: false });
+    await ctl.enter();
+    expect(windows.opaque()).toBe(true);
+    expect(log.some((l) => l.startsWith("backdrop"))).toBe(false);
+    expect(log).toContain("say capture du bureau impossible (échec de la capture) : page à fond blanc");
+  });
+  it("Review : double clic sur « Envoyer au tableau » : une seule capture, une seule page, aucun rejet (RF1, P3, P7)", async () => {
+    const { ctl, windows, deps } = setup({ capture: shot });
+    await ctl.enter();
+    await expect(Promise.all([ctl.send("origin"), ctl.send("origin")])).resolves.toBeDefined();
+    expect(windows.captures()).toBe(1);
+    expect(deps.sendCapture).toHaveBeenCalledTimes(1);
   });
 });

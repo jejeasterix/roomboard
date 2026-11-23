@@ -182,6 +182,12 @@ export interface AnnotationState {
   /** Écran retenu (null avant la première entrée). */
   readonly screen: number | null;
   readonly screens: number;
+  /** C11b (P14 à P17) : fenêtre opaque, fond capturé ; absent : faux. */
+  readonly frozen?: boolean;
+  /** C11b (P18) : bureau vivant offert (transparence peinte) ; faux : repli, « Recapturer le bureau » ; absent : vrai. */
+  readonly live?: boolean;
+  /** C11b (P6) : cible de « Envoyer au tableau » ; "new" grise « Envoyer dans un nouvel onglet » ; absent : "origin". */
+  readonly sendTarget?: SendTarget;
 }
 
 /** Contrôleur de la fenêtre principale (`app/annotation.ts`). */
@@ -194,6 +200,10 @@ export interface AnnotationControl {
   /** Bascule dessin / souris (P8). */
   toggle(): Promise<void>;
   nextScreen(): Promise<void>;
+  /** C11b (P16, P18) : « Figer le bureau » / « Bureau vivant » / « Recapturer le bureau ». */
+  freeze(): Promise<void>;
+  /** C11b (P5, P7) : « Envoyer au tableau » (`origin`) ou « … dans un nouvel onglet » (`new`) : capture, sortie, page. */
+  send(to: SendTarget): Promise<void>;
   onTool(tool: string): void;
   /** Commande de barre envoyée à `annotate` (suit l'outil pour la bascule). */
   command(m: AnnotationCommand): void;

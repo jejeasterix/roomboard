@@ -3,24 +3,37 @@
  * (document de l'onglet d'annotation envoyé une fois, en base64 par l'hôte), sortie (document demandé, délai de 5 s,
  * remplacement s'il a changé, onglet d'origine montré), bascule dessin / souris liée à l'outil, écran suivant, dépôt
  * sur la zone (sortie d'abord, puis l'import ordinaire). Les transitions passent par une file : jamais deux entrées.
- * Générique en `T` (la session d'onglet) : aucune dépendance à l'espace de travail ni au DOM.
+ * C11b (P5 à P18, DA3, DA4) : bureau figé (capture en fond du document d'annotation, fenêtre opaque, jamais de clic à
+ * travers), repli figé sans transparence, réentrée figée sur une page à fond, envoi au tableau (capture d'abord, puis
+ * sortie, puis page insérée par l'espace de travail). Générique en `T` : aucune dépendance à l'espace de travail ni au DOM.
  */
 import type { DroppedFile, Point } from "../platform/files";
 import type { ImportReport } from "../platform/import";
 import { messageOf } from "../platform/controller";
 import {
   addedToPageMessage,
+  captureFailedMessage,
   EXIT_TIMEOUT_MS,
   INK_LOST_MESSAGE,
+  sendTarget,
+  sentToBoardMessage,
   type AnnotationCommand,
   type AnnotationControl,
+  type AnnotationPlace,
   type AnnotationState,
   type AnnotationSupport,
+  type AnnotationViewport,
   type AnnotationWindows,
+  type CapturedImage,
+  type CaptureFailure,
   type PointerMode,
   type Returned,
+  type SendRequest,
+  type SendResult,
+  type SendTarget,
 } from "../platform/annotation-port";
 import { ANNOTATION_MAIN_ACTIONS, type Dock, type Profile, type StartMode } from "../toolbar";
+import { IDENTITY_MATRIX, type PageBackdrop } from "./desktop-page";
 import type { ToolbarHost } from "./toolbar-host";
 
 export const RELAUNCH_QUESTION = "Annotation du bureau indisponible sous Wayland. Relancer en mode compatibilité ?";
@@ -43,6 +56,19 @@ export interface AnnotationDeps<T> {
   profile(): Profile;
   readonly screens?: number;
   readonly timeoutMs?: number;
+  /** C11b (P17) : fond de la page montrée du document d'annotation ; null : aucun (entrée vivante). */
+  annotationBackdrop?(): PageBackdrop | null;
+  /** C11b (P14) : pose (image) ou retire (null) le fond de la page `page` (rang ; absent : page montrée) du document
+   *  d'annotation. */
+  setAnnotationBackdrop?(image: CapturedImage | null, page?: number): Promise<boolean>;
+  /** C11b (P3, P6 à P12) : page envoyée ; null : rien inséré (avis déjà dit). Absent (tests C11a) : aucun envoi. */
+  sendCapture?(o: SendRequest): Promise<SendResult | null>;
+  /** C11b (P6) : mode rendu par `resolveStartMode` pour le profil actif ; absent : "board". */
+  startMode?(): StartMode;
+  /** C11b (P6) : sorte de l'onglet `id` ; absent : "board" (null pour un id null). */
+  originKind?(id: string | null): "board" | "annotation" | null;
+  /** C11b (P18) : `annotation_support.transparent` ; absent : vrai. */
+  readonly transparent?: boolean;
 }
 
 /** Réponse ou null après `ms` (minuteur toujours retiré). */
@@ -56,7 +82,15 @@ function within(p: Promise<Returned | null>, ms: number): Promise<Returned | nul
 
 export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationControl {
   const timeout = d.timeoutMs ?? EXIT_TIMEOUT_MS;
-  let st: AnnotationState = { active: false, pointer: "draw", screen: null, screens: Math.max(1, d.screens ?? 1) };
+  let st: AnnotationState = {
+    active: false,
+    pointer: "draw",
+    screen: null,
+    screens: Math.max(1, d.screens ?? 1),
+    frozen: false,
+    live: d.transparent ?? true,
+    sendTarget: "origin",
+  };
   let origin: string | null = null;
   let lastDraw = "pen";
   let queue: Promise<void> = Promise.resolve();
@@ -71,33 +105,53 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     queue = run.catch(() => undefined);
     return run;
   };
+  const startMode = (): StartMode => d.startMode?.() ?? "board";
+  const originKind = (id: string | null): "board" | "annotation" | null =>
+    d.originKind ? d.originKind(id) : id === null ? null : "board";
+  /** P6 : cible de l'envoi pour l'origine de la séance. */
+  const targetOf = (wanted: SendTarget): SendTarget => sendTarget(wanted, startMode(), originKind(origin));
+  /** Côté et épaisseur de la barre mesurés maintenant, écran retenu. */
+  const placeNow = (): AnnotationPlace => {
+    const bar = d.bar();
+    return { screen: st.screen, dock: bar.dock, thickness: bar.thickness };
+  };
   const setPointer = async (mode: PointerMode): Promise<void> => {
     if (st.pointer === mode) return;
     set({ pointer: mode });
-    if (st.active) await d.windows.pointer(mode);
+    // C11b (P15) : en figé, la fenêtre opaque ne laisse jamais passer le clic ; Sélection y sélectionne des objets.
+    if (st.active && !(st.frozen === true && mode === "mouse")) await d.windows.pointer(mode);
   };
 
   async function doEnter(): Promise<void> {
     if (st.active) return;
-    let document: Uint8Array;
+    let tab: T | null;
     try {
-      const tab = await d.annotationTab();
-      if (tab === null) return;
-      document = await d.encodeTab(tab);
+      tab = await d.annotationTab();
     } catch (e) {
       await d.say(annotationFailedMessage(messageOf(e)));
       return;
     }
+    if (tab === null) return;
     origin = d.activeTabId();
-    set({ active: true, pointer: "draw" });
+    set({ active: true, pointer: "draw", sendTarget: targetOf("origin") });
     try {
-      const bar = d.bar(); // mesurée après le passage en barre seule
-      const screen = await d.windows.enter({ screen: st.screen, dock: bar.dock, thickness: bar.thickness, document, profile: d.profile() });
-      set({ screen });
+      const place = placeNow(); // mesurée après le passage en barre seule
+      // P17 : réentrée figée si la page montrée du document d'annotation a déjà un fond.
+      let frozen = (d.annotationBackdrop?.() ?? null) !== null;
+      if (st.live === false) {
+        // P18 : sans transparence, l'entrée capture d'abord et entre figée (blanche si la capture échoue).
+        const shot = await d.windows.capture(place);
+        if (shot.ok) await d.setAnnotationBackdrop?.(shot.image);
+        else await d.say(captureFailedMessage(shot.reason));
+        frozen = true;
+      }
+      const document = await d.encodeTab(tab);
+      const screen = await d.windows.enter({ ...place, document, profile: d.profile(), opaque: frozen });
+      set({ screen, frozen });
       d.windows.send({ kind: "setTool", tool: lastDraw });
       await d.windows.pointer("draw");
     } catch (e) {
-      set({ active: false });
+      set({ active: false, frozen: false });
       try {
         await d.windows.leave();
       } catch {
@@ -107,15 +161,17 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     }
   }
 
-  async function doExit(): Promise<void> {
-    if (!st.active) return;
+  /** Sortie C11a. Rend ce qui a été collecté (C11b, P13 : vue d'`annotate`, null si absente), ou null si rien ne l'a
+   *  été (inactive, réponse illisible, délai dépassé : l'avis d'encre perdue est alors dit). */
+  async function doExit(): Promise<{ readonly view: AnnotationViewport | null } | null> {
+    if (!st.active) return null;
     const got = await within(d.windows.collect(), timeout);
     try {
       await d.windows.leave();
     } catch (e) {
       console.warn(`RoomBoard : fenêtre d'annotation non cachée (${messageOf(e)})`);
     }
-    set({ active: false, pointer: "draw" });
+    set({ active: false, pointer: "draw", frozen: false });
     if (got === null) await d.say(INK_LOST_MESSAGE);
     else if (got.changed) {
       try {
@@ -126,6 +182,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     }
     if (origin !== null) d.showTab(origin);
     origin = null;
+    return got === null ? null : { view: got.view ?? null };
   }
 
   const ctl: AnnotationControl = {
@@ -162,6 +219,69 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         const bar = d.bar();
         const screen = await d.windows.place({ screen: ((st.screen ?? 0) + 1) % st.screens, dock: bar.dock, thickness: bar.thickness });
         set({ screen });
+      }),
+    freeze: () =>
+      serial(async () => {
+        if (!st.active) return;
+        // P16 : figé → vivant si la transparence est offerte ; sinon capture : vivant → figé, ou « Recapturer » (P18).
+        const toLive = st.frozen === true && st.live !== false;
+        let image: CapturedImage | null = null;
+        if (!toLive) {
+          const shot = await d.windows.capture(placeNow());
+          if (!shot.ok) {
+            await d.say(captureFailedMessage(shot.reason));
+            return; // vivant reste vivant ; un figé garde son fond
+          }
+          image = shot.image;
+        }
+        // P14 : le fond va dans le document d'annotation, renvoyé par l'aller-retour existant.
+        const got = await within(d.windows.collect(), timeout);
+        if (got === null) {
+          await d.say(INK_LOST_MESSAGE);
+          return;
+        }
+        try {
+          if (got.changed) await d.replaceAnnotation(got.bytes);
+          await d.setAnnotationBackdrop?.(image, got.view?.page);
+          const tab = await d.annotationTab();
+          if (tab === null) return;
+          await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive });
+          set({ frozen: !toLive });
+          await d.windows.pointer(toLive ? st.pointer : "draw");
+        } catch (e) {
+          await d.say(annotationFailedMessage(messageOf(e)));
+        }
+      }),
+    send: (wanted) =>
+      serial(async () => {
+        if (!st.active) return;
+        const to = targetOf(wanted);
+        const frozen = st.frozen === true;
+        let image: CapturedImage | null = null;
+        let failure: CaptureFailure | null = null;
+        if (!frozen) {
+          // P7 : la capture vient avant la sortie (l'encre est sur le bureau ; la coque cache nos fenêtres).
+          const shot = await d.windows.capture(placeNow());
+          if (shot.ok) image = shot.image;
+          else failure = shot.reason;
+        }
+        const from = origin;
+        const exited = await doExit();
+        // Collecte perdue : le document d'annotation garde l'encre de la séance précédente ; rien n'est envoyé, l'avis
+        // d'encre perdue reste seul.
+        if (exited === null) return;
+        const view = exited.view;
+        const request: SendRequest = {
+          to,
+          origin: from,
+          image,
+          // P13 : en figé, l'encre et le fond sont déjà dans le même repère.
+          view: frozen ? { page: view?.page ?? 0, matrix: IDENTITY_MATRIX } : view,
+        };
+        const r = d.sendCapture === undefined ? null : await d.sendCapture(request);
+        if (r === null) return; // rien inséré : l'avis est déjà dit (rien à envoyer, 12 onglets)
+        if (failure !== null) await d.say(captureFailedMessage(failure));
+        await d.say(sentToBoardMessage(r.page));
       }),
     onTool(tool) {
       if (tool !== "select") lastDraw = tool;
