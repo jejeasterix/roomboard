@@ -3,7 +3,8 @@ import { chmod, lstat, readFile, readlink, realpath, rename, rm, stat, writeFile
 import { basename, dirname, join, resolve } from "node:path";
 import { CliError } from "./contract";
 
-const reason = (e: unknown): string => (e as NodeJS.ErrnoException).code ?? (e instanceof Error ? e.message : String(e));
+const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).code;
+const reason = (e: unknown): string => codeOf(e) ?? (e instanceof Error ? e.message : String(e));
 
 export async function readBytes(path: string): Promise<Uint8Array> {
   try {
@@ -12,8 +13,6 @@ export async function readBytes(path: string): Promise<Uint8Array> {
     throw new CliError("io", `lecture impossible (${path}) : ${reason(e)}`);
   }
 }
-
-const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).code;
 
 /** Vrai si `path` existe, lien symbolique pendant compris ; io si l'accès échoue autrement. */
 export async function exists(path: string): Promise<boolean> {
