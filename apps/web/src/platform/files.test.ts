@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   chooseHostKind,
@@ -7,6 +9,8 @@ import {
   FLIPCHART_EXTENSION,
   IMPORT_EXTENSIONS,
   IMPORT_FILTER,
+  AUDIO_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   parseHostChoice,
   ROOMBOARD_MIME,
   UNTITLED,
@@ -90,5 +94,16 @@ describe("IMPORT_EXTENSIONS (C13 lots 2 et 3)", () => {
   });
   it("C13 N22 : le filtre nomme les tableaux", () => {
     expect(IMPORT_FILTER.name).toContain("tableaux");
+  });
+});
+
+describe("extensions des médias (C14, mineur de relecture)", () => {
+  it("VIDEO_EXTENSIONS et AUDIO_EXTENSIONS valent MEDIA_EXTENSIONS de la coque (roomboard-shell)", () => {
+    const rs = readFileSync(join(__dirname, "../../../../crates/roomboard-shell/src/lib.rs"), "utf8");
+    const block = /pub const MEDIA_EXTENSIONS: &\[&str\] = &\[([^\]]*)\]/.exec(rs);
+    expect(block).not.toBeNull();
+    const rust = [...(block?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+    expect(rust.length).toBeGreaterThan(0);
+    expect([...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS].sort()).toEqual(rust);
   });
 });

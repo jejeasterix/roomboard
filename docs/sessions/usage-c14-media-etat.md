@@ -58,6 +58,16 @@ Table complète : docs/plans/usage-c14-media-PLAN.md (745c669, 11 tâches, 31 li
 - Essai réel en coque (Tauri non construit) : vidéo liée > 50 Mo, protocole d'assets, `link_media`/`relink_media` (H1-7, H1-4).
 - MP4/H.264 (S16 parent, 20 Mo) non joué : Chromium Linux sans H.264, WebM à la place.
 - Minors non corrigés : `write_asset_meta` dupliqué par `insert_media_asset_meta` (simplification) ; ordre BadMedia/BadAsset du vrai module ≠ fausse liaison pour une entrée que TS interdit ; hachage synchrone dans `link_media` ; `MEDIA_EXTENSIONS` Rust/TS sans test de parité ; `relink_media` accorde sans consentement un chemin de média de taille connue (conforme M29) ; « Insérer les pages » : relink inutile avant `dropLinked`, deux avis sur le web ; `aria-valuetext` absent du curseur de position ; description de `capabilities/default.json` non complétée ; peintres d'export sans test de câblage dans `main.ts`.
+- Mineurs, suite (OF4, 2026-11-23, branche `fix/mineurs-c7b-c13-c14-c15`) : six corrigés, trois fermés sans correctif.
+  1. Corrigé : `write_asset_meta` prend le chemin lié en option ; `insert_media_asset_meta` l'appelle sans le recopier (tests `media` du cœur inchangés et verts).
+  2. Fermé sans correctif : ordre BadMedia/BadAsset. L'entrée en cause (type ni `video` ni `audio`, matrice de longueur ≠ 6) est interdite par les types TS ; aligner la liaison demanderait de recopier dans `roomboard-wasm` le contrôle d'asset du cœur. Coût sans rapport avec le gain.
+  3. Fermé sans correctif : hachage dans `link_media`. La commande est `async` : Tauri la lance sur un fil de son runtime, pas sur le fil de la fenêtre ; la page ne gèle pas. Un `spawn_blocking` ne se vérifie pas ici (`src-tauri` hors du workspace, aucun build Tauri).
+  4. Corrigé : test de parité `files.test.ts` (« VIDEO_EXTENSIONS et AUDIO_EXTENSIONS valent MEDIA_EXTENSIONS de la coque »), rouge vu en retirant `m4v` du Rust.
+  5. Fermé sans correctif : `relink_media` sans consentement. Conforme à M29 (même taille, extension de média, fichier seul) ; un changement serait une décision de produit.
+  6. Corrigé : « Insérer les pages » lit le document avec `links: false` (`ContainerIO.read`) : aucun `relink`, un seul avis (`LINKED_COPY_MESSAGE`) ; tests `fragments.test.ts`.
+  7. Corrigé : `aria-valuetext` du curseur de position (« 0:12 sur 1:30 ») ; test `MediaBar.test.tsx`.
+  8. Corrigé : description de `capabilities/default.json` complétée (médias liés, annotation et capture) ; `coque-csp.test.sh` vérifie que chaque commande de `generate_handler` est nommée dans une description (rouge vu : 9 commandes absentes).
+  9. Corrigé : `canvas2d.test.ts` lit `main.ts` : chaque peintre d'export passe par `exportPainterOptions` (rouge vu par mutation).
 - Compatibilité inverse : une version d'avant C14 compte un asset lié comme absent et refuse d'enregistrer (R30).
 
 ## Pièges trouvés

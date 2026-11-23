@@ -29,6 +29,9 @@ import { officeHandler, officeNoConverterHandler, officeSheetNoConverterHandler,
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
 /** Limite des hôtes web (R15) ; la coque n'en a pas. */
 export const WEB_MAX_BYTES = 100 * 1024 * 1024;
+/** Mineur C15 : contenus lus par la pré-passe et gardés pour la boucle, en octets au plus ; au-delà, relus (coque :
+ *  un dépôt de 20 modèles de 100 Mo n'est pas tenu en mémoire d'un coup). */
+export const PREPASS_KEEP_BYTES = 128 * 1024 * 1024;
 
 export const tooBigMessage = (names: readonly string[], max: number): string =>
   `${names.join(", ")} : fichier trop gros (plus de ${Math.round(max / (1024 * 1024))} Mo)`;
@@ -103,6 +106,8 @@ export interface ImportContext {
   notify(message: string): Promise<void>;
   /** C15 (DAX2) : fichiers du même appel réclamés par `companions` ; [] sinon (appel d'un seul fichier, lien). */
   readonly companions: readonly DroppedFile[];
+  /** Mineur C15 : noms des fichiers réclamés écartés car au-delà du plafond, déjà dits trop gros ; [] ou absent sinon. */
+  readonly tooBig?: readonly string[];
 }
 
 export type ImportOutcome = "opened" | "inserted" | "failed";
@@ -396,11 +401,13 @@ export function importerOf(registry: readonly ImportHandler[], deps: ImportDeps)
         return read;
       };
       const blobs = new Map<DroppedFile, Promise<Blob>>();
+      let kept = 0;
       // C15 (DAX2) : pré-passe des appels de plusieurs fichiers ; un fichier réclamé passe à son modèle, pas au registre.
       const companionsOf = new Map<DroppedFile, readonly DroppedFile[]>();
       const claimed = new Set<DroppedFile>();
       // X17 : fichier réclamé au-delà du plafond de son réclamant (la coque n'a pas `maxBytes`) : jamais passé, dit trop gros.
       const overLimit = new Map<DroppedFile, string>();
+      const tooBigOf = new Map<DroppedFile, readonly string[]>();
       if (files.length > 1 && registry.some((h) => h.companions !== undefined)) {
         const fits = (o: DroppedFile): boolean => max === null || o.size <= max;
         for (const f of files) {
@@ -432,9 +439,12 @@ export function importerOf(registry: readonly ImportHandler[], deps: ImportDeps)
             companions = [];
           }
           for (const c of companions) claimed.add(c);
+          if (kept + f.size > PREPASS_KEEP_BYTES) blobs.delete(f);
+          else kept += f.size;
           const cap = handler.limit;
           if (cap !== undefined) for (const c of companions) if (c.size > cap.maxBytes) overLimit.set(c, cap.message);
           companionsOf.set(f, companions.filter((c) => !overLimit.has(c)));
+          tooBigOf.set(f, companions.filter((c) => overLimit.has(c)).map((c) => c.name));
         }
       }
       for (const f of files) {
@@ -495,11 +505,12 @@ export function importerOf(registry: readonly ImportHandler[], deps: ImportDeps)
           let blob: Blob;
           try {
             blob = await (blobs.get(f) ?? f.blob());
+            blobs.delete(f);
           } catch (e) {
             await fail(e);
             continue;
           }
-          outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify, companions: companionsOf.get(f) ?? [] });
+          outcome = await handler.run(f, { blob, head, at, inserted: inserted.length, target, notify: deps.notify, companions: companionsOf.get(f) ?? [], tooBig: tooBigOf.get(f) ?? [] });
         }
         if (outcome === "opened") opened.push(f.name);
         else if (outcome === "inserted") inserted.push(f.name);

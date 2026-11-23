@@ -13,7 +13,7 @@ import { anchorOf, HEAD_BYTES, placement, visibleOf } from "./image-import";
 import { hasZipMagic, type ImportContext, type ImportHandler, type ImportOutcome } from "./import";
 import {
   baseName, COMPANION_ALONE_MESSAGE, COMPRESSED_MESSAGE, extensionOf, gatherFiles, glbJsonText, gltfCompression,
-  isCompanionName, missingFilesMessage, MODEL3D_MAX_BYTES, MODEL3D_MIME, MODEL3D_TOO_BIG_MESSAGE, MTL_MISSING_MESSAGE,
+  isCompanionName, missingFilesMessage, resolveReference, MODEL3D_MAX_BYTES, MODEL3D_MIME, MODEL3D_TOO_BIG_MESSAGE, MTL_MISSING_MESSAGE,
   NO_WEBGL_MESSAGE, sniffModel3d, ZIP_EMPTY_MESSAGE, ZIP_MAX_MODELS, ZIP_TOO_BIG_MESSAGE, type Sibling,
 } from "./model3d-import";
 import { snapshotSize, type ModelView } from "./model-view";
@@ -61,6 +61,8 @@ interface Model {
   readonly format: Model3dFormat;
   readonly main: Uint8Array<ArrayBuffer>;
   readonly siblings: readonly Sibling[];
+  /** Mineur C15 : fichiers liés écartés car trop gros, déjà dits : ni « absents », ni « sans son .mtl ». */
+  readonly tooBig: readonly string[];
 }
 
 /** État d'un importeur, partagé par ses gestionnaires 3D : « 3D indisponible » n'est dit qu'une fois (X26). */
@@ -91,7 +93,7 @@ async function insertModel(
   const mainBlob = new Blob([m.main], { type: MODEL3D_MIME[m.format] });
   const files: Array<{ readonly path: string; readonly blob: Blob }> = [];
   try {
-    const g = await gatherFiles(m.format, m.path, m.main, m.siblings);
+    const g = await gatherFiles(m.format, m.path, m.main, m.siblings, m.tooBig);
     for (const f of g.files) files.push({ path: f.path, blob: new Blob([(await f.sibling.bytes()) as Uint8Array<ArrayBuffer>], { type: linkedMime(f.path) }) });
     view = await deps.view();
     const loaded = await view.load({ format: m.format, name: m.name, main: mainBlob, files: new Map(files.map((f) => [f.path, f.blob])) });
@@ -100,7 +102,9 @@ async function insertModel(
     } finally {
       view.release(loaded);
     }
-    missing = [...g.missing, ...loaded.missing.filter((x) => !g.missing.includes(x))];
+    // Un fichier cité écarté car trop gros (déjà dit) n'est pas redit absent par le rendu (mineur C15).
+    const unsaid = (x: string): boolean => !g.missing.includes(x) && resolveReference(x, m.path, g.skipped) === null;
+    missing = [...g.missing, ...loaded.missing.filter(unsaid)];
     mtl = g.mtl;
   } catch (e) {
     await ctx.notify(`Import impossible (${m.name}) : ${MODEL3D_UNREADABLE} (${messageOf(e)})`);
@@ -159,7 +163,8 @@ export function model3dHandler(deps: Model3dDeps, shared: Model3dShared = { warn
       const format = sniffModel3d(ctx.head, file.name);
       if (format === null) return "failed";
       const main = await bytesOf(ctx.blob);
-      return insertModel(deps, shared, { name: file.name, path: file.name, format, main, siblings: ctx.companions.map(siblingOf) }, ctx, ctx.inserted);
+      const model = { name: file.name, path: file.name, format, main, siblings: ctx.companions.map(siblingOf), tooBig: ctx.tooBig ?? [] };
+      return insertModel(deps, shared, model, ctx, ctx.inserted);
     },
   };
 }
@@ -182,9 +187,13 @@ export function zip3dHandler(deps: Model3dDeps, shared: Model3dShared = { warned
       }
       // X17, ZIP compris : une entrée au-delà de `MODEL3D_MAX_BYTES` n'est ni lue ni rangée, et dite trop grosse.
       const entries: ZipEntry[] = [];
+      const tooBig: string[] = [];
       for (const e of all) {
         if (e.blob.size <= MODEL3D_MAX_BYTES) entries.push(e);
-        else await ctx.notify(`${e.path} (${file.name}) : ${MODEL3D_TOO_BIG_MESSAGE}`);
+        else {
+          tooBig.push(e.path);
+          await ctx.notify(`${e.path} (${file.name}) : ${MODEL3D_TOO_BIG_MESSAGE}`);
+        }
       }
       const siblings: Sibling[] = entries.map((e) => ({ path: e.path, bytes: () => bytesOf(e.blob) }));
       const mains: Array<{ readonly entry: ZipEntry; readonly format: Model3dFormat }> = [];
@@ -205,6 +214,7 @@ export function zip3dHandler(deps: Model3dDeps, shared: Model3dShared = { warned
           format,
           main: await bytesOf(entry.blob),
           siblings: siblings.filter((s) => s.path !== entry.path),
+          tooBig,
         };
         if ((await insertModel(deps, shared, model, ctx, ctx.inserted + i)) === "inserted") any = true;
       }

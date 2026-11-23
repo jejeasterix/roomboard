@@ -89,7 +89,7 @@ describe("objets 3D, partie pure (C15)", () => {
   });
 
   it("gatherFiles : OBJ sans mtllib ou .mtl introuvable : mtl faux, rien d'absent listé (X15)", async () => {
-    expect(await gatherFiles("obj", "seul.obj", bytes(cubeObj(null)), [])).toEqual({ files: [], missing: [], mtl: false });
+    expect(await gatherFiles("obj", "seul.obj", bytes(cubeObj(null)), [])).toEqual({ files: [], missing: [], mtl: false, skipped: [] });
     expect((await gatherFiles("obj", "seul.obj", bytes(cubeObj()), [sib("autre.mtl")])).mtl).toBe(false);
   });
 
@@ -99,7 +99,7 @@ describe("objets 3D, partie pure (C15)", () => {
     expect(g.files.map((f) => f.path)).toEqual(["cube.bin", "tex/a.png"]);
     const h = await gatherFiles("gltf", "scene.gltf", bytes(gltf), [sib("cube.bin", bin)]);
     expect([h.files.map((f) => f.path), h.missing]).toEqual([["cube.bin"], ["tex/a.png"]]);
-    expect(await gatherFiles("glb", "cube.glb", cubeGlb(), [sib("x.png")])).toEqual({ files: [], missing: [], mtl: null });
+    expect(await gatherFiles("glb", "cube.glb", cubeGlb(), [sib("x.png")])).toEqual({ files: [], missing: [], mtl: null, skipped: [] });
     expect((await gatherFiles("stl", "p.stl", stlBinary(), [sib("x.png")])).files).toEqual([]);
     expect((await gatherFiles("ply", "n.ply", bytes(plyAscii()), [])).mtl).toBeNull();
   });
