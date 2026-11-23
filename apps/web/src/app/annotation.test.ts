@@ -557,4 +557,81 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     expect(log.slice(-3)).toEqual(["backdrop 640x360 1", "backdrop null 1", "say Annotation impossible : rechargement"]);
     expect(ctl.state().frozen).toBe(false);
   });
+  /** Modèle du moteur d'`annotate` (toolbar-host.ts, rejeu d'annotation-page.ts) : ce que les commandes y règlent. */
+  function engineAfter(cmds: readonly AnnotationCommand[]) {
+    const e: { tool: string; style: string | null; fill: string | null; tolerance: number | null } = { tool: "pen", style: null, fill: null, tolerance: null };
+    for (const m of cmds) {
+      if (m.kind === "setTool") {
+        if (m.preset !== undefined && m.tool === "fill") e.fill = `préréglage ${m.preset}`;
+        else if (m.preset !== undefined) e.style = `${m.tool} ${m.preset}`;
+        e.tool = m.tool;
+      } else if (m.kind === "fillColor") e.fill = String(m.color);
+      else if (m.kind === "fillTolerance") e.tolerance = m.value;
+    }
+    return e;
+  }
+  const settings: readonly AnnotationCommand[] = [
+    { kind: "setTool", tool: "pen", preset: "rouge" },
+    { kind: "fillTolerance", value: 30 },
+    { kind: "setTool", tool: "fill", preset: "bleu" },
+    { kind: "fillColor", color: "#00ff00" },
+  ];
+  it("revue T16 : Figer recharge `annotate` avec le style du stylo, la couleur et la tolérance du pot choisis (pas leurs défauts)", async () => {
+    const { ctl, windows } = setup({ capture: shot });
+    await ctl.enter();
+    for (const m of settings) ctl.command(m);
+    await flush();
+    const wanted = engineAfter(windows.sent);
+    expect(wanted).toEqual({ tool: "fill", style: "pen rouge", fill: "#00ff00", tolerance: 30 });
+    const before = windows.sent.length;
+    await ctl.freeze();
+    expect(windows.log).toContain("load opaque");
+    expect(engineAfter(windows.sent.slice(before))).toEqual(wanted);
+  });
+  it("revue T16 : préréglage stylo rouge, Figer, retour au stylo : le stylo de la session rechargée reste rouge", async () => {
+    const { ctl, windows } = setup({ capture: shot });
+    await ctl.enter();
+    ctl.command({ kind: "setTool", tool: "pen", preset: "rouge" });
+    ctl.command({ kind: "setTool", tool: "eraser" });
+    ctl.command({ kind: "setTool", tool: "pen" });
+    await flush();
+    const before = windows.sent.length;
+    await ctl.freeze();
+    expect(engineAfter(windows.sent.slice(before))).toEqual({ tool: "pen", style: "pen rouge", fill: null, tolerance: null });
+  });
+  it("revue T16 : réentrée, la nouvelle session d'`annotate` reçoit les réglages de la précédente", async () => {
+    const { ctl, windows } = setup();
+    await ctl.enter();
+    for (const m of settings) ctl.command(m);
+    await flush();
+    const wanted = engineAfter(windows.sent);
+    await ctl.exit();
+    const before = windows.sent.length;
+    await ctl.enter();
+    expect(engineAfter(windows.sent.slice(before))).toEqual(wanted);
+  });
+  it("revue T16 : « Recapturer » sans transparence, rechargement en échec : le fond reste posé (jamais d'onglet sans fond), reste figé", async () => {
+    const { ctl, windows, log } = setup({ capture: shot, transparent: false, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] } });
+    await ctl.enter();
+    vi.spyOn(windows, "load").mockRejectedValueOnce(new Error("rechargement"));
+    await ctl.freeze();
+    expect(log.slice(-2)).toEqual(["backdrop 640x360 1", "say Annotation impossible : rechargement"]);
+    expect(log.some((l) => l.startsWith("backdrop null"))).toBe(false);
+    expect(ctl.state()).toMatchObject({ active: true, frozen: true });
+  });
+  it("revue T16 : repli, fond refusé par le cœur sur une page à fond : l'ancien fond est retiré, comme l'avis le dit", async () => {
+    const { ctl, deps, log } = setup({ capture: shot, transparent: false, backdrop: true });
+    (deps.setAnnotationBackdrop as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await ctl.enter();
+    expect(log.slice(-2)).toEqual(["backdrop null 0", "say capture du bureau impossible (échec de la capture) : page à fond blanc"]);
+    expect(ctl.state()).toMatchObject({ active: true, frozen: true });
+  });
+  it("revue T16 : « Recapturer », fond refusé par le cœur : l'ancien fond de la page est retiré, comme l'avis le dit", async () => {
+    const { ctl, deps, log } = setup({ capture: shot, transparent: false, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] } });
+    await ctl.enter();
+    (deps.setAnnotationBackdrop as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await ctl.freeze();
+    expect(log.slice(-2)).toEqual(["backdrop null 1", "say capture du bureau impossible (échec de la capture) : page à fond blanc"]);
+    expect(ctl.state().frozen).toBe(true);
+  });
 });
