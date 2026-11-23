@@ -1,11 +1,11 @@
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { CASCADE_STEP } from "../../web/src/platform/image-import";
 import { streamLines } from "./contract";
 import { main } from "./main";
-import { describeWasm, memoryIO, pngBytes, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
+import { describeWasm, memoryIO, pngBytes, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
   const dir = tmpDir();
@@ -58,13 +58,13 @@ describeWasm("S3 — images et classeur", () => {
     const { dir, a } = await board();
     const pdf = join(dir, "doc.pdf");
     writeFileSync(pdf, "%PDF-1.4\n%%EOF\n");
-    const before = readFileSync(a);
+    const before = stampOf(a);
     const io = memoryIO();
     expect(await main(["import", a, pdf], io)).toBe(3);
     expect(io.stdout).toEqual([]);
     expect(io.errors()[0].error.code).toBe("unsupported");
     expect(io.errors()[0].error.message).toContain("lot 3");
-    expect(readFileSync(a).equals(before)).toBe(true);
+    expect(stampOf(a)).toEqual(before);
     // Rien lu : tableau et source absents du disque, une lecture rendrait io (code 1) au lieu de 3.
     const docx = memoryIO();
     expect(await main(["import", join(dir, "absent.roomboard"), join(dir, "lettre.docx")], docx)).toBe(3);
@@ -84,12 +84,12 @@ describeWasm("S3 — images et classeur", () => {
     const { dir, a } = await board();
     const txt = join(dir, "notes.txt");
     writeFileSync(txt, "bonjour");
-    const before = readFileSync(a);
+    const before = stampOf(a);
     const io = memoryIO();
     expect(await main(["import", a, txt], io)).toBe(1);
     expect(io.json()[0]).toMatchObject({ inserted: [], refused: ["notes.txt"] });
     expect(io.errors()[0].error.code).toBe("command");
-    expect(readFileSync(a).equals(before)).toBe(true);
+    expect(stampOf(a)).toEqual(before);
   });
   it("run : op import (at) puis op export dans la même session", async () => {
     const { dir, a } = await board();

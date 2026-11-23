@@ -83,3 +83,13 @@ describeWasm("session (D5, D6, D7, DA4)", () => {
     expect(st.state.pages[0].elements[0].transform).toEqual([1, 0, 0, 1, 10.375, 19.875]);
   });
 });
+
+describeWasm("session : commande du cœur incomplète", () => {
+  it("le message nomme l'opération et dit « champ manquant ou mal formé », jamais le message JS brut seul ; code 1", async () => {
+    const s = await fresh();
+    const err: unknown = await s.exec('{"type":"AddShape","page":"$page:0","shape":"rect","x0":0,"y0":0,"x1":1,"y1":1}').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect(err).toMatchObject({ code: "command" });
+    expect((err as CliError).message).toMatch(/^AddShape : champ manquant ou mal formé/);
+  });
+});

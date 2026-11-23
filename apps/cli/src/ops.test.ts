@@ -44,3 +44,20 @@ describe("lecture d'une opération (D6)", () => {
     expect(new Set(COMMAND_TYPES).size).toBe(30);
   });
 });
+
+describe("échappement des références (D6)", () => {
+  it("$$ donne un $ littéral dans toute chaîne, jamais résolu", () => {
+    const to = (text: string): unknown => {
+      const op = parseOp(JSON.stringify({ op: "save", to: text }), ctx());
+      if (op.kind !== "cli") throw new Error("forme inattendue");
+      return op.args["to"];
+    };
+    expect(to("$$1")).toBe("$1");
+    expect(to("$$page:0")).toBe("$page:0");
+    expect(to("$$")).toBe("$");
+    expect(to("prix : 5 $$")).toBe("prix : 5 $");
+    expect(to("$$$1")).toBe("$$1");
+    expect(to("5 $")).toBe("5 $");
+    expect(to("$1")).toBe("e1");
+  });
+});

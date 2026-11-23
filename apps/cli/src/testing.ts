@@ -1,6 +1,6 @@
 // Aides des tests de la CLI : vrai Wasm (sauté s'il manque, exigé sous ROOMBOARD_WASM_REQUIRED=1, D2), entrées et
 // sorties en mémoire, dossier temporaire sous os.tmpdir() (nettoyé), PNG fabriqué, ids du cœur normalisés par rang.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +60,15 @@ export function tmpDir(): string {
   const d = mkdtempSync(join(tmpdir(), "roomboard-cli-t-"));
   made.push(d);
   return d;
+}
+
+/**
+ * Empreinte d'un fichier : octets, date de modification et inode. Un `writeAtomic` à l'identique change l'inode (rename
+ * d'un temporaire) : comparer les empreintes distingue « non écrit » de « réécrit avec les mêmes octets » (H4).
+ */
+export function stampOf(path: string): { readonly bytes: string; readonly mtimeMs: number; readonly ino: number } {
+  const st = statSync(path);
+  return { bytes: readFileSync(path).toString("base64"), mtimeMs: st.mtimeMs, ino: st.ino };
 }
 
 /** Code de la `CliError` levée par `f`, « autre » pour une autre erreur, « aucune » sans erreur. */

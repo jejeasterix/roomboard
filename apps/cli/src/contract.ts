@@ -52,6 +52,19 @@ export interface CliIO {
   readonly wasmDir: URL;
 }
 
+/** Flux de sortie du processus, réduit à ce qu'en utilise `lineWriter`. */
+export interface OutStream {
+  write(chunk: string): unknown;
+  on(event: "error", listener: (e: Error) => void): unknown;
+}
+
+/** Une ligne par appel sur `stream` (stdout ou stderr de `bin.ts`). */
+export function lineWriter(stream: OutStream): (line: string) => void {
+  return (line) => {
+    stream.write(`${line}\n`);
+  };
+}
+
 /**
  * Lignes d'un flux (stdin de `run -`), paresseuses : readline lit dès sa création et perd les lignes, puis la fin, émises
  * avant que l'itération ne s'y branche ; il n'est donc créé qu'à la première lecture, après les attentes de la commande.
