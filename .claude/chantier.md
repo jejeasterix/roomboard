@@ -43,6 +43,14 @@ Go requis : oui
 Porte avant merge : non
 CI couverte par la suite complète : non
 
+## CLI
+- La CLI `apps/cli` (`node apps/cli/dist/roomboard.mjs`) : construction `pnpm install --frozen-lockfile`, les modules Wasm construits comme `scripts/verifier.sh`, puis `pnpm --filter @roomboard/cli build`.
+- Mise à jour obligatoire (D15 du cadrage) : tout chantier qui ajoute ou change une commande, une opération, un format ou un champ de l'état met à jour la CLI, sa ligne de `FORMAT_LOTS`, ses tests **et** `scripts/essais/cli-essai.mjs`.
+- Fumée : `node apps/cli/dist/roomboard.mjs --help` (code 0), `version`, `formats`.
+- Écritures (`new`, `run --save`, `import`, `export`) seulement sur des fichiers temporaires, jamais sur un fichier de Jérôme ; l'essai type est `node scripts/essais/cli-essai.mjs` (affiche `CLI : OK`), joué par `scripts/verifier.sh` hors `--e2e`.
+- Lots restants (formats non livrés) : `docs/plans/cli-cadrage.md`, section 7 (lots).
+- Codes de sortie : 0 succès ; 1 refus (cœur, fichier, import partiel) ; 2 usage ; 3 format d'un lot non livré.
+
 ## Règles propres au projet
 - Trois couches testables seules : `crates/` (cœur Rust, sans dépendance au navigateur), `apps/web` (interface TS), `apps/desktop` (coque Tauri).
 - Le chemin de l'encre ne traverse jamais la frontière page ↔ Rust natif (le cœur tourne en Wasm dans la page).

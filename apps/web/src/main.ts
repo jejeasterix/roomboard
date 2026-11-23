@@ -32,7 +32,7 @@ import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
 import { createSettingsStore, parseSettings } from "./engine/settings";
-import { measureWith, type Measure } from "./engine/text-layout";
+import { measureOrFallback } from "./engine/text-layout";
 import { browserFallbackDeps } from "./platform/host-repli";
 import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
@@ -212,7 +212,7 @@ async function start(): Promise<void> {
   root.append(stages);
   // Mesure du texte (CL4-4) : la même police que le rendu, par un Canvas 2D hors page.
   const measureCtx = document.createElement("canvas").getContext("2d");
-  const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
+  const measure = measureOrFallback(measureCtx);
   // Pixels des images (C5, I18, DAI3) : un Worker par onglet, avec sa propre instance du module `formats`.
   const spawnPixelWorker = (): WorkerLike => asWorkerLike(new Worker(new URL("./platform/pixel-worker.ts", import.meta.url), { type: "module" }));
   // Objets 3D (C15, X20, DAX3) : three chargé au premier dépôt 3D ou au premier « Tourner », jamais au démarrage.

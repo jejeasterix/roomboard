@@ -34,6 +34,13 @@ export const measureWith =
     return ctx.measureText(text).width;
   };
 
+/** Largeur d'un caractère du repli sans contexte 2D, en fraction de la taille (D11). */
+export const FALLBACK_CHAR_WIDTH = 0.6;
+
+/** Mesure par `ctx` s'il existe, sinon le repli `0,6 × taille × longueur` : amorces sans toile et CLI (D11). */
+export const measureOrFallback = (ctx: CanvasRenderingContext2D | null): Measure =>
+  ctx ? measureWith(ctx) : (text, size) => text.length * size * FALLBACK_CHAR_WIDTH;
+
 let cache: { readonly ctor: typeof Intl.Segmenter; readonly seg: Intl.Segmenter } | null = null;
 
 /** Graphèmes (emoji ZWJ, drapeaux, teintes entiers) ; repli par points de code sans Intl.Segmenter. */

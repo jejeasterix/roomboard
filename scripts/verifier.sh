@@ -78,6 +78,11 @@ if [ "$taille_formats" -gt 3145728 ]; then
   exit 1
 fi
 
+# CLI (cadrage cli, D14) : construite, puis essayée de bout en bout sur des fichiers temporaires. Hors du bloc --e2e :
+# aucun navigateur. Après les modules Wasm et pnpm install ; un module absent fait échouer l'essai.
+pnpm --filter @roomboard/cli build
+node scripts/essais/cli-essai.mjs
+
 # Hors ligne (cadrage D27) : aucun hôte distant dans l'application construite, CSP stricte de la coque.
 node scripts/controle-hors-ligne.mjs apps/web/dist apps/desktop/src-tauri/tauri.conf.json
 # Icônes de l'installeur (OD47) : chaque fichier de bundle.icon existe, dont un .ico (bundle Windows).

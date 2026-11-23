@@ -11,7 +11,7 @@ import { createAssetStore } from "./core/asset-store";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";
 import { createSettingsStore, parseSettings } from "./engine/settings";
-import { measureWith, type Measure } from "./engine/text-layout";
+import { measureOrFallback } from "./engine/text-layout";
 import { MAIN_LABEL } from "./platform/annotation-port";
 import { createPageCodec } from "./platform/container";
 import { loadFormatsModule } from "./platform/container-load";
@@ -29,7 +29,7 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
   root.append(stages);
   const parsed = parseSettings(window.location.search);
   const measureCtx = document.createElement("canvas").getContext("2d");
-  const measure: Measure = measureCtx ? measureWith(measureCtx) : (s, size) => s.length * size * 0.6;
+  const measure = measureOrFallback(measureCtx);
   const shared: SessionShared = {
     container: stages,
     settings: createSettingsStore(parsed.settings),

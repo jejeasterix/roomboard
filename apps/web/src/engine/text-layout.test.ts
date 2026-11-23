@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { faceOf, graphemes, layoutRich, offsetAt, wordAt, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
+import { faceOf, graphemes, layoutRich, measureOrFallback, offsetAt, wordAt, layoutText, richBoxHeight, styleOf, textBoxHeight, textFont, type Face, type Measure, type RichLine } from "./text-layout";
 import type { TextSpan } from "../core/api";
 
 /** Chaque caractère vaut 100 unités, quelle que soit la taille. */
@@ -176,5 +176,22 @@ describe("wordAt (C6a, D6, D26)", () => {
     } finally {
       Object.defineProperty(Intl, "Segmenter", { value: saved, configurable: true, writable: true });
     }
+  });
+});
+
+describe("measureOrFallback (D11, constat C11a)", () => {
+  it("sans contexte 2D : 0,6 × taille par unité UTF-16", () => {
+    expect(measureOrFallback(null)("abcd", 10)).toBeCloseTo(24);
+  });
+  it("avec un contexte : la police du rendu puis measureText, comme measureWith", () => {
+    const fonts: string[] = [];
+    const ctx = {
+      set font(f: string) {
+        fonts.push(f);
+      },
+      measureText: (t: string) => ({ width: t.length * 7 }),
+    } as unknown as CanvasRenderingContext2D;
+    expect(measureOrFallback(ctx)("abc", 24, { bold: true })).toBe(21);
+    expect(fonts).toEqual([textFont(24, { bold: true })]);
   });
 });
