@@ -1,7 +1,9 @@
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FORMAT_LOTS } from "./formats";
 import { main } from "./main";
-import { describeWasm, memoryIO } from "./testing";
+import { describeWasm, memoryIO, tmpDir, type Json } from "./testing";
 
 describe("main : commandes sans module (D9)", () => {
   it("formats rend la table entière, code 0", async () => {
@@ -33,5 +35,123 @@ describeWasm("main : version au vrai module", () => {
     const io = memoryIO();
     expect(await main(["version"], io)).toBe(0);
     expect(io.json()).toEqual([{ cli: "0.1.0", core: expect.any(String), app: "0.1.0", schema: "roomboard-cli/1" }]);
+  });
+});
+
+const rectOp = (page: string, x1 = 110, y1 = 220) => ({ type: "AddShape", page, shape: "rect", x0: 10, y0: 20, x1, y1, style: { color: "#1e40af", width: 4 }, fill: null });
+
+describeWasm("S1 — créer, dessiner, annuler, enregistrer, relire", () => {
+  it("S1 — new, run --save puis state : 2 éléments, forme déplacée, canUndo faux", async () => {
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    const made = memoryIO();
+    expect(await main(["new", a], made)).toBe(0);
+    expect(made.json()).toEqual([{ file: a, pages: [expect.any(String)] }]);
+    const ops = join(dir, "ops.jsonl");
+    writeFileSync(
+      ops,
+      [
+        rectOp("$page:0"),
+        { type: "SetText", page: "$page:0", id: null, x: 300, y: 300, content: "Bonjour", color: "#000000", size: 36, boxWidth: 600, boxHeight: 45 },
+        { type: "CommitStroke", page: "$page:0", points: [100, 500, 0.5, 200, 520, 0.5, 300, 500, 0.5], style: { color: "#dc2626", width: 4 } },
+        { op: "undo" },
+        { op: "redo" },
+        { type: "Transform", ids: ["$1"], matrix: [1, 0, 0, 1, 50, 0] },
+        { type: "Delete", ids: ["$2"] },
+      ].map((o) => JSON.stringify(o)).join("\r\n") + "\r\n",
+    );
+    const run = memoryIO();
+    expect(await main(["run", a, "--ops", ops, "--save"], run)).toBe(0);
+    const lines = run.json();
+    expect(lines.map((l: Json) => [l.op, l.ok])).toEqual([[1, true], [2, true], [3, true], [4, true], [5, true], [6, true], [7, true]]);
+    const st = memoryIO();
+    expect(await main(["state", a], st)).toBe(0);
+    const [state] = st.json();
+    expect(state).toMatchObject({ schema: "roomboard-cli/1", file: a, canUndo: false, canRedo: false });
+    const els = state.pages[0].elements;
+    expect(els.map((e: Json) => e.kind)).toEqual(["shape", "stroke"]);
+    expect(els[0].transform).toEqual([1, 0, 0, 1, 60, 20]);
+  });
+});
+
+describeWasm("S2 — pages et onglets", () => {
+  it("S2 — AddPage, RemovePage, tab.new, rectangle dans t2, deux fichiers relus", async () => {
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    const b = join(dir, "b.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const io = memoryIO(
+      [
+        { type: "AddPage", after: "$page:0" },
+        { type: "RemovePage", page: "$page:0" },
+        { op: "tab.new" },
+        rectOp("$page:0", 60, 60),
+        { op: "save", to: b },
+        { op: "tab.select", tab: "$tab:0" },
+        { op: "save" },
+      ].map((o) => JSON.stringify(o)),
+    );
+    expect(await main(["run", a, "--ops", "-"], io)).toBe(0);
+    const lines = io.json();
+    expect(lines.map((l: Json) => l.op)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(lines[2].tabs).toEqual([{ id: "t1", file: a, active: false }, { id: "t2", file: null, active: true }]);
+    expect(lines[4].file).toBe(b);
+    const added = lines[0].change.pages[0];
+    const sa = memoryIO();
+    expect(await main(["state", a], sa)).toBe(0);
+    expect(sa.json()[0].pages.map((p: Json) => [p.page.id, p.elements.length])).toEqual([[added, 0]]);
+    const sb = memoryIO();
+    expect(await main(["state", b], sb)).toBe(0);
+    expect(sb.json()[0].pages.map((p: Json) => p.elements.map((e: Json) => e.kind))).toEqual([["shape"]]);
+  });
+  it("S2 — RemovePage de la dernière page : code 1, fichier inchangé (run --save puis apply)", async () => {
+    const a = join(tmpDir(), "a.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const before = readFileSync(a);
+    const remove = JSON.stringify({ type: "RemovePage", page: "$page:0" });
+    const err = { code: "command", message: "la dernière page ne se supprime pas" };
+    const io = memoryIO([remove]);
+    expect(await main(["run", a, "--save"], io)).toBe(1);
+    expect(io.json()).toEqual([{ op: 1, ok: false, error: err }]);
+    expect(io.errors()).toEqual([{ error: err }]);
+    expect(readFileSync(a).equals(before)).toBe(true);
+    const ap = memoryIO();
+    expect(await main(["apply", a, remove], ap)).toBe(1);
+    expect(readFileSync(a).equals(before)).toBe(true);
+  });
+});
+
+describeWasm("run et apply : entrées, usages, sortie", () => {
+  it("run - : lignes vides ignorées, CRLF accepté, une ligne par opération", async () => {
+    const io = memoryIO(["", '{"op":"tab.list"}\r', "   "]);
+    expect(await main(["run", "--new", "--ops", "-"], io)).toBe(0);
+    expect(io.json()).toEqual([{ op: 1, ok: true, tabs: [{ id: "t1", file: null, active: true }] }]);
+  });
+  it("usages : run sans fichier ni --new, fichier et --new, --new --save sans --out, option inconnue, ligne non JSON", async () => {
+    for (const argv of [["run"], ["run", "a.roomboard", "--new"], ["run", "--new", "--save"], ["state", "a.roomboard", "--bidule"], ["new"]]) {
+      const io = memoryIO();
+      expect(await main(argv, io)).toBe(2);
+      expect(io.errors()[0].error.code).toBe("usage");
+    }
+    const bad = memoryIO(["{pas du json"]);
+    expect(await main(["run", "--new"], bad)).toBe(2);
+    expect(bad.json()).toEqual([{ op: 1, ok: false, error: expect.objectContaining({ code: "usage" }) }]);
+  });
+  it("apply enregistre à --out et laisse la source ; state d'un fichier absent : code 1", async () => {
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    const out = join(dir, "out.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const before = readFileSync(a);
+    const io = memoryIO();
+    expect(await main(["apply", a, JSON.stringify(rectOp("$page:0")), "--out", out], io)).toBe(0);
+    expect(io.json()[0]).toMatchObject({ op: 1, ok: true });
+    expect(readFileSync(a).equals(before)).toBe(true);
+    const st = memoryIO();
+    expect(await main(["state", out], st)).toBe(0);
+    expect(st.json()[0].pages[0].elements).toHaveLength(1);
+    const missing = memoryIO();
+    expect(await main(["state", join(dir, "absent.roomboard")], missing)).toBe(1);
+    expect(missing.errors()[0].error.code).toBe("io");
   });
 });
