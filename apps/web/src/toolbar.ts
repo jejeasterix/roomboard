@@ -631,14 +631,22 @@ export function visibleItems(bar: Toolbar, caps: RuntimeCapabilities): ToolItem[
   return out;
 }
 
+/** Capacités qu'exige une action ajoutée depuis le catalogue (même source que les profils livrés) ; absente : aucune. */
+export const ACTION_REQUIRES: Readonly<Record<string, readonly CapabilityKey[]>> = Object.freeze({
+  "desktop-annotation": ["desktopAnnotation"],
+  "annotation-pointer": ["desktopAnnotation"],
+  "annotation-screen": ["desktopAnnotation"],
+  "edit-original": ["officeConverter"],
+});
+
 /** C11a (P6, P8, P15) : entrée et sortie, bascule dessin / souris, écran suivant. */
-export const ANNOTATION_EXIT_ACTION: ActionId = "desktop-annotation";
-export const ANNOTATION_POINTER_ACTION: ActionId = "annotation-pointer";
-export const ANNOTATION_SCREEN_ACTION: ActionId = "annotation-screen";
+const ANNOTATION_ACTION: ActionId = "desktop-annotation";
+const ANNOTATION_POINTER_ACTION: ActionId = "annotation-pointer";
+const ANNOTATION_SCREEN_ACTION: ActionId = "annotation-screen";
 /** C11a (P20) : actions rejouées dans `annotate` (outils, préréglages, pot et format y vont par leurs méthodes de l'hôte). */
 export const ANNOTATION_REMOTE_ACTIONS: ReadonlySet<ActionId> = new Set(["undo", "redo", "eraser-mode"]);
 /** C11a (P20) : actions de la fenêtre principale en annotation ; toute autre action y est grisée. */
-export const ANNOTATION_MAIN_ACTIONS: ReadonlySet<ActionId> = new Set([ANNOTATION_EXIT_ACTION, ANNOTATION_POINTER_ACTION, ANNOTATION_SCREEN_ACTION]);
+export const ANNOTATION_MAIN_ACTIONS: ReadonlySet<ActionId> = new Set([ANNOTATION_ACTION, ANNOTATION_POINTER_ACTION, ANNOTATION_SCREEN_ACTION]);
 
 /** Zone de dépôt d'annotation (P19) : `dropzone` qui exige `desktopAnnotation` ; toute autre zone garde son comportement. */
 export function isAnnotationZone(it: ToolItem): boolean {
@@ -654,7 +662,7 @@ export function itemsForMode(bar: Toolbar, caps: RuntimeCapabilities, mode: Star
   const shown = visibleItems(bar, caps);
   if (mode === "board") return shown.filter((it) => !isAnnotationZone(it));
   const out = [...shown];
-  for (const action of [ANNOTATION_EXIT_ACTION, ANNOTATION_POINTER_ACTION]) {
+  for (const action of [ANNOTATION_ACTION, ANNOTATION_POINTER_ACTION]) {
     if (out.some((it) => it.kind === "action" && it.action === action)) continue;
     out.push({ id: `${action}-ajout`, kind: "action", action, label: ACTION_TABLE[action]!.label, requires: [], rest: {} });
   }

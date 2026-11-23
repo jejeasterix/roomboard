@@ -267,6 +267,8 @@ export function App(props: AppProps): JSX.Element {
     });
   }
   const annotating = (): boolean => annState().active;
+  // La vue de `annotate` est périmée dès la sortie : à la réentrée, elle attend sa première publication.
+  createEffect(on(annotating, (a) => { if (!a) setRemoteView(null); }));
   const mode = (): StartMode => (annotating() ? "desktop-annotation" : "board");
 
   const local = createLocalToolbarHost(
@@ -320,8 +322,9 @@ export function App(props: AppProps): JSX.Element {
   const docked = createMemo(() => profile().toolbars.filter((b) => b.dock !== "floating"));
   const floating = createMemo(() => profile().toolbars.filter((b) => b.dock === "floating"));
   /** C11a (P20) : en annotation, seule la première barre `tools` (une barre flottante y est posée en haut). */
+  const firstToolsBar = createMemo(() => profile().toolbars.find((x) => x.role === "tools"));
   const annotationBar = createMemo((): Bar | null => {
-    const b = profile().toolbars.find((x) => x.role === "tools");
+    const b = firstToolsBar();
     if (b === undefined) return null;
     return b.dock === "floating" ? { ...b, dock: "top" } : b;
   });
@@ -342,7 +345,7 @@ export function App(props: AppProps): JSX.Element {
   };
 
   /** La rangée des préréglages n'est que dans la première barre de rôle `tools` (C1, P18). */
-  const presetsBarId = createMemo(() => profile().toolbars.find((b) => b.role === "tools")?.id);
+  const presetsBarId = createMemo(() => firstToolsBar()?.id);
   const toolbarOf = (bar: Bar): JSX.Element => (
     <Toolbar bar={bar} caps={props.active.capabilities} view={view} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} mode={mode} />
   );
