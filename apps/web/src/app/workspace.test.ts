@@ -33,6 +33,7 @@ import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { createWasmCore, type WasmModule } from "../core/wasm-core";
 import { createPageCodec, type FormatsBinding } from "../platform/container";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
+import { linkedMissingMessage } from "./container-io";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
 vi.mock("../platform/import", async (importOriginal) => {
@@ -2215,11 +2216,18 @@ describe("C11a — aller-retour bout à bout (S4)", () => {
     d.free();
     return out;
   };
-  async function wire(o: { mute?: boolean; quit?: () => Promise<void>; real?: boolean } = {}) {
+  async function wire(
+    o: { mute?: boolean; quit?: () => Promise<void>; real?: boolean; unchanged?: boolean; relinkMedia?: WorkspaceDeps["relinkMedia"] } = {},
+  ) {
     let ctl: AnnotationControl | null = null;
     const rc = o.real === true ? real : null;
-    const ws = await setupWorkspace({ annotation: () => ctl, ...(o.quit ? { quit: o.quit } : {}), ...(rc ? { core: rc.core, codec: rc.codec } : {}) });
-    const windows = createFakeAnnotationWindows({ draw: drawWith(rc?.core ?? fakeCore), ...(o.mute ? { mute: true } : {}) });
+    const ws = await setupWorkspace({
+      annotation: () => ctl,
+      ...(o.quit ? { quit: o.quit } : {}),
+      ...(rc ? { core: rc.core, codec: rc.codec } : {}),
+      ...(o.relinkMedia ? { kind: "tauri" as const, relinkMedia: o.relinkMedia } : {}),
+    });
+    const windows = createFakeAnnotationWindows({ ...(o.unchanged ? {} : { draw: drawWith(rc?.core ?? fakeCore) }), ...(o.mute ? { mute: true } : {}) });
     const c = createAnnotationController<TabSession>({
       windows,
       annotationTab: () => ws.annotationTab(),
@@ -2280,6 +2288,89 @@ describe("C11a — aller-retour bout à bout (S4)", () => {
     expect(annTab().files.key({ key: "s", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(true);
     await vi.waitFor(() => expect(host.save).toHaveBeenCalledTimes(1));
     expect(host.save.mock.calls[0]![1]).toEqual(target);
+  });
+  describe("OE77 : médias liés de l'onglet d'annotation gardés au retour (C14)", () => {
+    const VID = "cd".repeat(32);
+    const ABS = "/cours/videos/clip.webm";
+    const TARGET: SaveTarget = { kind: "tauri", name: "a.roomboard", path: "/cours/a.roomboard" };
+    /** Onglet d'annotation à vidéo liée (déposée : chemin absolu), puis enregistré en coque : lien relatif dans le document. */
+    async function savedWithLinkedVideo(o: { unchanged?: boolean } = {}) {
+      const relinkMedia = vi.fn(async (_p: string, _s: number) => true);
+      const w = await wire({ relinkMedia, ...(o.unchanged ? { unchanged: true } : {}) });
+      // Conteneur fidèle : le faux cœur relit le ybin écrit (manifeste = ybin, comme le faux `read`).
+      codec.write.mockImplementation(async (_m, ybin) => ybin);
+      const a = (await w.ws.annotationTab())!;
+      a.board.doc.apply({
+        type: "AddMedia",
+        page: a.board.doc.pageIds()[0]!,
+        asset: { id: VID, name: "clip.webm", mime: "video/webm", size: 300_000_000 },
+        poster: null,
+        linked: ABS,
+        mediaType: "video",
+        w: 640,
+        h: 360,
+        duration: 12,
+        matrix: [1, 0, 0, 1, 0, 0],
+      });
+      a.assets.link(VID, ABS);
+      host.save.mockImplementationOnce(async (encode: (t: SaveTarget) => Promise<Uint8Array>) => {
+        saved.push(await encode(TARGET));
+        return TARGET;
+      });
+      expect(await a.files.run("saveAs")).toBe(true);
+      expect(a.board.doc.linkedAssets()).toEqual([{ id: VID, path: "videos/clip.webm" }]);
+      relinkMedia.mockClear();
+      shell.notify.mockClear();
+      return { ...w, relinkMedia };
+    }
+    /** Enregistrer (même cible), puis rouvrir le fichier écrit : le lien se résout vers le même fichier. */
+    async function saveAndReopen(w: Awaited<ReturnType<typeof savedWithLinkedVideo>>, path = "videos/clip.webm"): Promise<void> {
+      host.save.mockClear();
+      expect(await w.annTab().files.run("save")).toBe(true);
+      expect(host.save.mock.calls.map((c) => c[1])).toEqual([TARGET]);
+      expect(fakeCore.load(saved.at(-1)!).linkedAssets()).toEqual([{ id: VID, path }]);
+      expect(await w.ws.openDocument({ name: "a.roomboard", bytes: saved.at(-1)!, target: TARGET })).toBe(true);
+    }
+
+    it("modifié : au retour, le lien relatif se résout vers le même fichier, sans avis ; enregistrer puis rouvrir le garde", async () => {
+      const w = await savedWithLinkedVideo();
+      await w.ctl.enter();
+      await w.ctl.exit();
+      expect(strokes(w.annTab())).toBe(2); // la vidéo et le trait
+      expect(w.annTab().files.isDirty()).toBe(true);
+      expect(w.annTab().assets.linked(VID)).toBe(ABS);
+      expect(w.relinkMedia).toHaveBeenCalledWith(ABS, 300_000_000);
+      expect(shell.notify).not.toHaveBeenCalled();
+      await saveAndReopen(w);
+      expect(w.ws.active().assets.linked(VID)).toBe(ABS);
+    });
+    it("non modifié : l'onglet est gardé tel quel, lien compris ; enregistrer puis rouvrir le garde", async () => {
+      const w = await savedWithLinkedVideo({ unchanged: true });
+      const before = w.annTab();
+      await w.ctl.enter();
+      await w.ctl.exit();
+      expect(w.annTab()).toBe(before);
+      expect(w.annTab().assets.linked(VID)).toBe(ABS);
+      expect(shell.notify).not.toHaveBeenCalled();
+      await saveAndReopen(w);
+      expect(w.ws.active().assets.linked(VID)).toBe(ABS);
+    });
+    it("M31 : fichier disparu pendant l'annotation : un avis, lien gardé, réécrit relatif à « Enregistrer sous »", async () => {
+      const w = await savedWithLinkedVideo();
+      w.relinkMedia.mockResolvedValue(false);
+      await w.ctl.enter();
+      await w.ctl.exit();
+      expect(w.annTab().assets.linked(VID)).toBeUndefined();
+      expect(w.relinkMedia).toHaveBeenCalledWith(ABS, 300_000_000);
+      expect(shell.notify.mock.calls).toEqual([[linkedMissingMessage(ABS)]]);
+      host.save.mockImplementationOnce(async (encode: (t: SaveTarget) => Promise<Uint8Array>) => {
+        const t: SaveTarget = { kind: "tauri", name: "a.roomboard", path: "/b/a.roomboard" };
+        saved.push(await encode(t));
+        return t;
+      });
+      expect(await w.annTab().files.run("saveAs")).toBe(true);
+      expect(fakeCore.load(saved.at(-1)!).linkedAssets()).toEqual([{ id: VID, path: "../cours/videos/clip.webm" }]);
+    });
   });
   it("fermeture de l'application en annotation : refusée, sortie, puis question de l'onglet modifié, puis quit", async () => {
     const quit = vi.fn(async () => undefined);

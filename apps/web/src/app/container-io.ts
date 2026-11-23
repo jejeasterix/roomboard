@@ -60,8 +60,15 @@ export interface ContainerIODeps {
 export interface ContainerIO {
   encode(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string, as: EncodeAs): Promise<Uint8Array>;
   /** `docPath` : chemin du document lu (liens relatifs des médias liés, C14), null s'il n'est pas connu. C4 : une liste
-   *  de types lit le type une fois (manifeste extrait, ou fichier entier dans le repli), puis un seul lecteur. */
-  read(name: string, bytes: Uint8Array, kind: ReadKind | readonly ReadKind[], docPath?: string | null): Promise<ReadResult | null>;
+   *  de types lit le type une fois (manifeste extrait, ou fichier entier dans le repli), puis un seul lecteur.
+   *  `known` (OE77) : chemin absolu déjà connu d'un lien, par id ; il passe avant `docPath` (retour d'annotation). */
+  read(
+    name: string,
+    bytes: Uint8Array,
+    kind: ReadKind | readonly ReadKind[],
+    docPath?: string | null,
+    known?: ReadonlyMap<string, string>,
+  ): Promise<ReadResult | null>;
 }
 
 export const typed = (blob: Blob, mime: string | undefined): Blob =>
@@ -98,7 +105,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
     return wanted.includes(found) ? found : wanted[0]!;
   };
   /** Liens d'un document lu (M31) : hors coque, un avis ; sinon chaque lien accordé au magasin, ou un avis par absent. */
-  async function relinkAll(name: string, doc: CoreDocument, assets: AssetStore, docPath: string | null): Promise<void> {
+  async function relinkAll(name: string, doc: CoreDocument, assets: AssetStore, docPath: string | null, known: ReadonlyMap<string, string>): Promise<void> {
     const links = doc.linkedAssets();
     if (links.length === 0) return;
     const relink = deps.relink;
@@ -106,10 +113,12 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
       await say(`${name} : ${LINKED_WEB_MESSAGE}`);
       return;
     }
-    for (const l of links) {
+    for (const linked of links) {
+      const abs = known.get(linked.id);
+      const l = abs === undefined ? linked : { id: linked.id, path: abs };
       let found: string | null;
       try {
-        found = await relink(docPath, l, doc.asset(l.id)?.size ?? 0);
+        found = await relink(abs === undefined ? docPath : null, l, doc.asset(l.id)?.size ?? 0);
       } catch {
         found = null;
       }
@@ -133,7 +142,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
       const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
       return codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
     },
-    async read(name, bytes, kind, docPath = null) {
+    async read(name, bytes, kind, docPath = null, known = new Map()) {
       const wanted: readonly ReadKind[] = typeof kind === "string" ? [kind] : kind;
       const assets = deps.makeAssets();
       let contents: ContainerContents;
@@ -157,7 +166,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         const unread = doc.citedAssets().some((a) => !linked.has(a.id));
         // Un fragment non lu est refusé par l'appelant (`fragments`) avec son propre avis : un seul avis, pas deux.
         if (unread && k === "document") await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
-        if (k === "document") await relinkAll(name, doc, assets, docPath);
+        if (k === "document") await relinkAll(name, doc, assets, docPath, known);
         return { doc, assets, unread, kind: k };
       }
       let k: ReadKind;
@@ -178,7 +187,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         return null;
       }
       if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
-      if (k === "document") await relinkAll(name, doc, assets, docPath);
+      if (k === "document") await relinkAll(name, doc, assets, docPath, known);
       // un asset cité mais ignoré par le conteneur (trop gros…) : marqué, Enregistrer refusé (R30)
       return { doc, assets, unread: missingOf(doc, assets).length > 0, kind: k };
     },
