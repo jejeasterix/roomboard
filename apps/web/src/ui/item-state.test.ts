@@ -121,9 +121,9 @@ describe("annotation (C11a, P6, P8, P15, P20)", () => {
     expect(itemState(act("desktop-annotation"), base)).toMatchObject({ pressed: false, label: "Annotation du bureau", disabled: false });
     expect(itemState(act("desktop-annotation"), on())).toMatchObject({ pressed: true, label: "Quitter l'annotation", disabled: false });
   });
-  it("annotation-pointer : « Souris » en dessin, « Dessin » enfoncé en souris ; grisé hors annotation", () => {
-    expect(itemState(act("annotation-pointer"), on("draw"))).toMatchObject({ pressed: false, label: "Souris", disabled: false });
-    expect(itemState(act("annotation-pointer"), on("mouse"))).toMatchObject({ pressed: true, label: "Dessin" });
+  it("annotation-pointer : « Souris » en dessin, « Dessin » en souris, jamais enfoncé (P8) ; grisé hors annotation", () => {
+    expect(itemState(act("annotation-pointer"), on("draw"))).toMatchObject({ pressed: null, label: "Souris", disabled: false });
+    expect(itemState(act("annotation-pointer"), on("mouse"))).toMatchObject({ pressed: null, label: "Dessin" });
     expect(itemState(act("annotation-pointer"), base).disabled).toBe(true);
   });
   it("annotation-screen : grisé à un écran ou hors annotation", () => {

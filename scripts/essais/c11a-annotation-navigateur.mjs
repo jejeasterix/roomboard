@@ -108,16 +108,16 @@ async function s2s3(page, base, captures) {
   }
   await page.click(item("select"));
   await waitBody(page, "pointeur", "mouse");
-  check(true, "S2 : Sélection → data-pointeur=mouse");
+  check((await body(page, "pointeur")) === "mouse", "S2 : Sélection → data-pointeur=mouse");
   await page.click(item("pen"));
   await waitBody(page, "pointeur", "draw");
-  check(true, "S2 : Stylo → data-pointeur=draw");
+  check((await body(page, "pointeur")) === "draw", "S2 : Stylo → data-pointeur=draw");
   await page.click(item("annotation-pointer"));
   await waitBody(page, "pointeur", "mouse");
   check((await text(page, item("annotation-pointer"))) === "Dessin", "S2 : bouton « Souris » → souris, libellé « Dessin »");
   await page.click(item("annotation-pointer"));
   await waitBody(page, "pointeur", "draw");
-  check(true, "S2 : bouton « Dessin » → dessin (aller-retour)");
+  check((await body(page, "pointeur")) === "draw" && (await text(page, item("annotation-pointer"))) === "Souris", "S2 : bouton « Dessin » → dessin (aller-retour)");
   await page.click(item("desktop-annotation"));
   await waitMode(page, "board");
   await waitBody(page, "annotation", "0");

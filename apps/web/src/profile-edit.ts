@@ -4,6 +4,7 @@
  * L'éditeur (`ui/ProfileEditor.tsx`) ne fait qu'appeler ces fonctions sur son brouillon.
  */
 import {
+  ACTION_REQUIRES,
   ACTION_TABLE,
   TABLE_ACTIONS,
   isKnownItem,
@@ -127,7 +128,7 @@ export function addItem(p: Profile, barId: string, entry: CatalogEntry): Profile
     kind: entry.kind,
     ...(entry.kind === "tool" ? { tool: entry.ref } : { action: entry.ref }),
     label: entry.label,
-    requires: [],
+    requires: entry.kind === "action" ? (ACTION_REQUIRES[entry.ref] ?? []) : [],
     rest: {},
   };
   return mapBar(p, barId, (bar) => appendToLastGroup(bar, item, "groupe"));

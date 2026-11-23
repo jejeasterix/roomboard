@@ -119,7 +119,10 @@ export interface FileHost {
 export interface ShellPort {
   confirm(message: string): Promise<boolean>;
   notify(message: string): Promise<void>;
-  /** Garde la fermeture tant que `isDirty()` ; rend la fonction qui retire la garde. */
+  /**
+   * Garde la fermeture tant que `isDirty()` ou `divert()` (si fourni) est vrai ; rend la fonction qui retire la garde.
+   * Le web retient `beforeunload` ; Tauri détourne la fermeture (`divert`) au lieu de la laisser aboutir.
+   */
   guardClose(isDirty: () => boolean, message: string, divert?: () => boolean): () => void;
   setTitle(title: string): void;
 }

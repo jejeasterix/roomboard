@@ -582,6 +582,18 @@ describe("App — profils (C1)", () => {
     expect(exit?.textContent).toBe("Quitter l'annotation");
     expect(exit?.getAttribute("aria-pressed")).toBe("true");
   });
+  it("C11a : la vue de annotate est oubliée à la sortie : à la réentrée, pas l'ancienne vue", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    await a.control.enter();
+    const pressed = () => container.querySelector('[data-item="eraser-mode"]')?.getAttribute("aria-pressed");
+    const before = pressed();
+    a.view({ tool: "select", eraserMode: "object", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 });
+    expect(pressed()).toBe("true");
+    await a.control.exit();
+    await a.control.enter();
+    expect(pressed()).toBe(before);
+  });
   it("C11a : profil d'avant C11a en annotation : « Quitter l'annotation » ajouté au rendu (P7)", async () => {
     const a = fakeAnnotationUi();
     const { container, store, active } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });

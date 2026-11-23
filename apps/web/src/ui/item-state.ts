@@ -56,7 +56,7 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   },
   "annotation-pointer": (v) => {
     const mouse = v.annotation?.pointer === "mouse";
-    return { pressed: mouse, label: mouse ? "Dessin" : "Souris", disabled: v.annotation?.active !== true };
+    return { pressed: null, label: mouse ? "Dessin" : "Souris", disabled: v.annotation?.active !== true };
   },
   "annotation-screen": (v) => ({ disabled: v.annotation?.active !== true || v.annotation.screens <= 1 }),
   undo: (v) => ({ disabled: !v.canUndo }),
