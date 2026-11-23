@@ -46,13 +46,14 @@ let boards: FakeBoard[];
 let answer: boolean;
 let guard: () => boolean;
 let guardStops: number;
+let divert: (() => boolean) | null;
 let dropHandler: DropHandler | null;
 let dropStops: number;
 let opening: OpenedFile | null;
 let shell: {
   confirm: ReturnType<typeof vi.fn<(m: string) => Promise<boolean>>>;
   notify: ReturnType<typeof vi.fn<(m: string) => Promise<void>>>;
-  guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string) => () => void>>;
+  guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string, divert?: () => boolean) => () => void>>;
   setTitle: ReturnType<typeof vi.fn<(t: string) => void>>;
 };
 let host: FileHost & { save: ReturnType<typeof vi.fn<(e: (t: SaveTarget) => Promise<Uint8Array>, t: SaveTarget) => Promise<SaveTarget | null>>> };
@@ -65,6 +66,7 @@ beforeEach(() => {
   answer = true;
   guard = () => false;
   guardStops = 0;
+  divert = null;
   dropHandler = null;
   dropStops = 0;
   opening = null;
@@ -79,8 +81,9 @@ beforeEach(() => {
   shell = {
     confirm: vi.fn(async (_m: string) => answer),
     notify: vi.fn(async (_m: string) => undefined),
-    guardClose: vi.fn((isDirty: () => boolean, _message: string) => {
+    guardClose: vi.fn((isDirty: () => boolean, _message: string, d?: () => boolean) => {
       guard = isDirty;
+      divert = d ?? null;
       return () => {
         guardStops += 1;
       };
@@ -251,6 +254,8 @@ interface SetupOptions {
   readonly openOriginal?: WorkspaceDeps["openOriginal"];
   readonly reimportOriginal?: WorkspaceDeps["reimportOriginal"];
   readonly onOriginalChanged?: WorkspaceDeps["onOriginalChanged"];
+  readonly annotation?: WorkspaceDeps["annotation"];
+  readonly quit?: WorkspaceDeps["quit"];
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -304,6 +309,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.openOriginal ? { openOriginal: o.openOriginal } : {}),
     ...(o.reimportOriginal ? { reimportOriginal: o.reimportOriginal } : {}),
     ...(o.onOriginalChanged ? { onOriginalChanged: o.onOriginalChanged } : {}),
+    ...(o.annotation ? { annotation: o.annotation } : {}),
+    ...(o.quit ? { quit: o.quit } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -493,7 +500,7 @@ describe("espace de travail : fermeture et garde (CL5b-5, CL5b-6)", () => {
     drawOn(ws.active());
     expect(guard()).toBe(true);
     expect(shell.guardClose).toHaveBeenCalledTimes(1);
-    expect(shell.guardClose).toHaveBeenCalledWith(expect.any(Function), DISCARD_MESSAGE);
+    expect(shell.guardClose).toHaveBeenCalledWith(expect.any(Function), DISCARD_MESSAGE, expect.any(Function));
     expect(await ws.active().files.run("save")).toBe(true);
     expect(guard()).toBe(false);
     drawOn(first); // onglet caché modifié : la fenêtre reste gardée
@@ -1989,5 +1996,169 @@ describe("espace de travail : Office (C16)", () => {
     expect(r.inserted).toEqual(["notes.xlsx"]);
     expect(convertOffice).not.toHaveBeenCalled();
     expect(shell.notify).toHaveBeenCalledWith(`notes.xlsx : ${OFFICE_VALUES_MESSAGE}`);
+  });
+});
+
+function fakeGate(active = true) {
+  const log: string[] = [];
+  let on = active;
+  const g = {
+    state: () => ({ active: on, pointer: "draw" as const, screen: null, screens: 1 }),
+    exit: vi.fn(async () => {
+      log.push("exit");
+      on = false;
+    }),
+    dropOnZone: vi.fn(async () => {
+      log.push("drop");
+    }),
+    close: vi.fn(async () => {
+      log.push("close");
+      return true;
+    }),
+  };
+  return { g, log };
+}
+
+describe("C11a : onglet d'annotation (P3, P4, P13, P17, P25)", () => {
+  it("annotationTab : crée un onglet annotation vierge, non montré, puis rend le même", async () => {
+    const ws = await setupWorkspace();
+    const first = ws.active();
+    const a = await ws.annotationTab();
+    expect(a).not.toBeNull();
+    expect(ws.tabs.list().map((t) => t.kind)).toEqual(["board", "annotation"]);
+    expect(ws.active()).toBe(first);
+    expect(await ws.annotationTab()).toBe(a);
+    expect(ws.tabs.list()).toHaveLength(2);
+  });
+  it("plafond : 12 onglets sans onglet d'annotation → null, avis, aucun onglet ajouté", async () => {
+    const ws = await setupWorkspace();
+    while (ws.tabs.list().length < MAX_TABS) await ws.newBlank();
+    expect(await ws.annotationTab()).toBeNull();
+    expect(shell.notify).toHaveBeenCalledWith(TOO_MANY_TABS);
+    expect(ws.tabs.list().some((t) => t.kind === "annotation")).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(MAX_TABS);
+  });
+  it("plafond : à 12 onglets, l'onglet d'annotation existant est réutilisé, sans avis", async () => {
+    const ws = await setupWorkspace();
+    const a = await ws.annotationTab();
+    while (ws.tabs.list().length < MAX_TABS) await ws.newBlank();
+    shell.notify.mockClear();
+    expect(await ws.annotationTab()).toBe(a);
+    expect(shell.notify).not.toHaveBeenCalled();
+    expect(ws.tabs.list()).toHaveLength(MAX_TABS);
+  });
+  it("replaceAnnotation : même place, même cible, modifié ; ancienne session libérée ; onglet actif inchangé", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    await ws.newBlank();
+    const shownBefore = ws.active();
+    await a.files.run("saveAs");
+    const target = a.files.target();
+    expect(target).not.toBeNull();
+    const entry = ws.tabs.list().find((t) => t.kind === "annotation")!;
+    const doc = fakeCore.blank();
+    doc.apply({ type: "CommitStroke", page: doc.pageIds()[0]!, points: new Float32Array([0, 10, 0.5, 50, 10, 0.5]), style: { color: "#000000", width: 4 } });
+    expect(await ws.replaceAnnotation(doc.save("2026-11-23T00:00:00Z", APP_VERSION))).toBe(true);
+    const after = ws.tabs.list().find((t) => t.kind === "annotation")!;
+    expect(after.id).toBe(entry.id);
+    expect(ws.tabs.list().indexOf(after)).toBe(1);
+    expect(ws.tabs.list()).toHaveLength(3);
+    expect(after.session).not.toBe(a);
+    expect(after.session.files.isDirty()).toBe(true);
+    expect(after.session.files.target()).toEqual(target);
+    expect(after.session.board.doc.elementIds(after.session.board.doc.pageIds()[0]!)).toHaveLength(1);
+    expect(a.board.dispose as ReturnType<typeof vi.fn>).toHaveBeenCalled();
+    expect(ws.active()).toBe(shownBefore);
+    expect(shell.confirm).not.toHaveBeenCalled(); // aucune question « modifié » : l'onglet n'est pas fermé
+  });
+  it("replaceAnnotation : l'onglet d'annotation montré reste montré, l'ancienne session désactivée avant d'être libérée", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    const id = ws.tabs.list().find((t) => t.kind === "annotation")!.id;
+    ws.tabs.activate(id);
+    const n = fakeOf(a).n;
+    log.length = 0;
+    expect(await ws.replaceAnnotation(validBytes())).toBe(true);
+    expect(ws.tabs.active()!.id).toBe(id);
+    expect(ws.active()).not.toBe(a);
+    expect(log.indexOf(`deactivate ${n}`)).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf(`deactivate ${n}`)).toBeLessThan(log.indexOf(`dispose ${n}`));
+  });
+  it("replaceAnnotation : octets illisibles → false, onglet gardé", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    codec.read.mockRejectedValueOnce(new Error("illisible"));
+    expect(await ws.replaceAnnotation(new Uint8Array([1, 2, 3]))).toBe(false);
+    expect(ws.tabs.list().find((t) => t.kind === "annotation")!.session).toBe(a);
+  });
+  it("encodeTab : l'onglet d'annotation s'enregistre en document ordinaire (le kind n'est pas écrit) et se rouvre en onglet board", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    const bytes = await ws.encodeTab(a);
+    expect(await ws.openDocument({ name: "x.roomboard", bytes, target: null })).toBe(true);
+    expect(ws.tabs.list().at(-1)!.kind).toBe("board");
+  });
+  it("un .roomboard d'avant C11a s'ouvre toujours (GC6)", async () => {
+    const ws = await setupWorkspace();
+    const old = fakeCore.blank().save("2026-11-20T00:00:00Z", "0.1.0");
+    expect(await ws.openDocument({ name: "ancien.roomboard", bytes: old, target: null })).toBe(true);
+  });
+  it("fermeture de l'application en annotation : refusée (divert vrai), sortie, puis quitRequested(quit)", async () => {
+    const { g, log } = fakeGate(true);
+    const quit = vi.fn(async () => {
+      log.push("quit");
+    });
+    await setupWorkspace({ annotation: () => g, quit });
+    expect(divert).not.toBeNull();
+    expect(divert!()).toBe(true);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalled());
+    expect(log).toEqual(["exit", "quit"]);
+  });
+  it("hors annotation (ou sans contrôleur) : divert faux", async () => {
+    await setupWorkspace({ annotation: () => fakeGate(false).g });
+    expect(divert!()).toBe(false);
+    await setupWorkspace();
+    expect(divert!()).toBe(false);
+  });
+  it("le contrôleur d'annotation est relu à chaque appel (créé après l'espace de travail)", async () => {
+    const { g } = fakeGate(true);
+    let late: ReturnType<typeof fakeGate>["g"] | null = null;
+    await setupWorkspace({ annotation: () => late });
+    expect(divert!()).toBe(false);
+    late = g;
+    expect(divert!()).toBe(true);
+  });
+  it("quitRequested en annotation : sortie d'abord, puis la garde ordinaire", async () => {
+    const { g, log } = fakeGate(true);
+    const ws = await setupWorkspace({ annotation: () => g });
+    await ws.quitRequested(async () => {
+      log.push("quit");
+    });
+    expect(log).toEqual(["exit", "quit"]);
+  });
+  it("dépôt natif en annotation → dropOnZone ; hors annotation → importFiles", async () => {
+    const { g, log } = fakeGate(true);
+    await setupWorkspace({ annotation: () => g });
+    const files: DroppedFile[] = [{ name: "a.png", size: 1, mime: "image/png", head: async () => new Uint8Array(), blob: async () => new Blob([]) }];
+    dropHandler!(files, { x: 1, y: 2 });
+    await vi.waitFor(() => expect(g.dropOnZone).toHaveBeenCalledWith(files, { x: 1, y: 2 }));
+    expect(log).toEqual(["drop"]);
+    const idle = fakeGate(false);
+    const ws = await setupWorkspace({ annotation: () => idle.g });
+    dropHandler!([roomboardFile("/tmp/d.roomboard")], { x: 10, y: 10 });
+    await vi.waitFor(() => expect(ws.tabs.list()).toHaveLength(2));
+    expect(idle.g.dropOnZone).not.toHaveBeenCalled();
+  });
+  it("fermer l'onglet d'annotation : la règle des onglets, puis annotate détruite (close)", async () => {
+    const { g } = fakeGate(false);
+    const ws = await setupWorkspace({ annotation: () => g });
+    await ws.newBlank();
+    const board = ws.tabs.active()!.id;
+    await ws.annotationTab();
+    expect(await ws.close(board)).toBe(true);
+    expect(g.close).not.toHaveBeenCalled(); // un onglet ordinaire fermé ne détruit pas annotate
+    const id = ws.tabs.list().find((t) => t.kind === "annotation")!.id;
+    expect(await ws.close(id)).toBe(true);
+    await vi.waitFor(() => expect(g.close).toHaveBeenCalledTimes(1));
   });
 });
