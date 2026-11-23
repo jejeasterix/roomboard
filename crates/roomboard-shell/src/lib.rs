@@ -8,6 +8,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+pub mod annotation;
 pub mod office;
 pub mod originals;
 

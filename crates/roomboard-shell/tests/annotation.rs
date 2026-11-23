@@ -1,13 +1,16 @@
 //! C11a (P9, P10, P11, P15, P16) : logique pure de l'annotation de bureau.
 use roomboard_shell::annotation::{
-    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch_args, side_of, split, supported, Rect,
-    Session, Side, Unsupported,
+    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch_args, side_of, split,
+    supported, Rect, Session, Side, Unsupported,
 };
 use std::collections::HashMap;
 use std::ffi::OsString;
 
 fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-    let m: HashMap<String, String> = pairs.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect();
+    let m: HashMap<String, String> = pairs
+        .iter()
+        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .collect();
     move |k| m.get(k).cloned()
 }
 
@@ -16,37 +19,64 @@ fn r(x: i32, y: i32, w: u32, h: u32) -> Rect {
 }
 
 fn disjoint(a: Rect, b: Rect) -> bool {
-    let (ax1, ay1) = (i64::from(a.x) + i64::from(a.w), i64::from(a.y) + i64::from(a.h));
-    let (bx1, by1) = (i64::from(b.x) + i64::from(b.w), i64::from(b.y) + i64::from(b.h));
+    let (ax1, ay1) = (
+        i64::from(a.x) + i64::from(a.w),
+        i64::from(a.y) + i64::from(a.h),
+    );
+    let (bx1, by1) = (
+        i64::from(b.x) + i64::from(b.w),
+        i64::from(b.y) + i64::from(b.h),
+    );
     ax1 <= i64::from(b.x) || bx1 <= i64::from(a.x) || ay1 <= i64::from(b.y) || by1 <= i64::from(a.y)
 }
 
 #[test]
 fn wayland_natif_sans_gdk_x11() {
-    assert_eq!(detect_session("linux", env(&[("WAYLAND_DISPLAY", "wayland-0")])), Session::WaylandNative);
-    assert_eq!(detect_session("linux", env(&[("XDG_SESSION_TYPE", "wayland")])), Session::WaylandNative);
+    assert_eq!(
+        detect_session("linux", env(&[("WAYLAND_DISPLAY", "wayland-0")])),
+        Session::WaylandNative
+    );
+    assert_eq!(
+        detect_session("linux", env(&[("XDG_SESSION_TYPE", "wayland")])),
+        Session::WaylandNative
+    );
     assert_eq!(supported(Session::WaylandNative), Err(Unsupported::Wayland));
 }
 
 #[test]
 fn xwayland_quand_gdk_backend_x11() {
-    let s = detect_session("linux", env(&[("WAYLAND_DISPLAY", "wayland-0"), ("GDK_BACKEND", "x11")]));
+    let s = detect_session(
+        "linux",
+        env(&[("WAYLAND_DISPLAY", "wayland-0"), ("GDK_BACKEND", "x11")]),
+    );
     assert_eq!(s, Session::XWayland);
     assert_eq!(supported(s), Ok(()));
-    let liste = detect_session("linux", env(&[("XDG_SESSION_TYPE", "wayland"), ("GDK_BACKEND", "x11,wayland")]));
+    let liste = detect_session(
+        "linux",
+        env(&[
+            ("XDG_SESSION_TYPE", "wayland"),
+            ("GDK_BACKEND", "x11,wayland"),
+        ]),
+    );
     assert_eq!(liste, Session::XWayland);
 }
 
 #[test]
 fn x11_sans_wayland() {
-    let s = detect_session("linux", env(&[("DISPLAY", ":0"), ("XDG_SESSION_TYPE", "x11")]));
+    let s = detect_session(
+        "linux",
+        env(&[("DISPLAY", ":0"), ("XDG_SESSION_TYPE", "x11")]),
+    );
     assert_eq!(s, Session::X11);
     assert_eq!(supported(s), Ok(()));
 }
 
 #[test]
 fn wayland_display_vide_ne_compte_pas() {
-    assert_eq!(detect_session("linux", env(&[("WAYLAND_DISPLAY", "")])), Session::X11);
+    assert_eq!(
+        detect_session("linux", env(&[("WAYLAND_DISPLAY", "")])),
+        Session::X11
+    );
 }
 
 #[test]
@@ -80,7 +110,10 @@ fn split_deux_ecrans_echelles_differentes() {
     let second = r(1920, 0, 3840, 2160);
     let t = physical(48.0, 2.0);
     assert_eq!(t, 96);
-    assert_eq!(split(second, Side::Top, t), (r(1920, 0, 3840, 96), r(1920, 96, 3840, 2064)));
+    assert_eq!(
+        split(second, Side::Top, t),
+        (r(1920, 0, 3840, 96), r(1920, 96, 3840, 2064))
+    );
     // 48,4 px CSS à 125 % = 60,5 px : arrondi au-dessus, la barre n'est jamais rognée.
     assert_eq!(physical(48.4, 1.25), 61);
     assert_eq!(physical(-3.0, 2.0), 0);
@@ -140,5 +173,8 @@ fn relance_memes_arguments_et_gdk_x11() {
 fn relance_garde_un_argument_non_utf8() {
     use std::os::unix::ffi::OsStringExt;
     let raw = OsString::from_vec(vec![0x66, 0xff, 0x6f]);
-    assert_eq!(relaunch_args([OsString::from("rb"), raw.clone()].into_iter()), vec![raw]);
+    assert_eq!(
+        relaunch_args([OsString::from("rb"), raw.clone()].into_iter()),
+        vec![raw]
+    );
 }
