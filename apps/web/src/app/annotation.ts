@@ -97,6 +97,21 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
   };
   let origin: string | null = null;
   let lastDraw = "pen";
+  /** Réglages d'`annotate` portés par les commandes (toolbar-host.ts) : style du stylo (préréglage d'un outil autre que
+   *  le pot), couleur du pot (préréglage du pot ou `fillColor`), tolérance du pot. Chaque champ ne dépend que de sa
+   *  dernière commande. */
+  const settings = new Map<"style" | "fill" | "tolerance", AnnotationCommand>();
+  const remember = (m: AnnotationCommand): void => {
+    if (m.kind === "setTool" && m.preset !== undefined) settings.set(m.tool === "fill" ? "fill" : "style", m);
+    else if (m.kind === "fillColor") settings.set("fill", m);
+    else if (m.kind === "fillTolerance") settings.set("tolerance", m);
+  };
+  /** Session neuve d'`annotate` (entrée, rechargement de « Figer ») : son moteur repart des défauts. Les réglages lui
+   *  sont rejoués, puis l'outil affiché, sans préréglage (il réécrirait un réglage plus récent). */
+  const sendSession = (tool: string): void => {
+    for (const m of settings.values()) d.windows.send(m);
+    d.windows.send({ kind: "setTool", tool });
+  };
   let queue: Promise<void> = Promise.resolve();
   /** « Figer » en file ou en cours (double clic). */
   let freezing: Promise<void> | null = null;
@@ -148,8 +163,11 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         // P18 : sans transparence, l'entrée capture d'abord et entre figée (blanche si la capture échoue).
         const shot = await d.windows.capture(place);
         if (shot.ok) {
-          // Fond refusé par le cœur : figé blanc, avec l'avis.
-          if ((await d.setAnnotationBackdrop?.(shot.image, ENTRY_PAGE)) === false) await d.say(captureFailedMessage("failed"));
+          if ((await d.setAnnotationBackdrop?.(shot.image, ENTRY_PAGE)) === false) {
+            // Fond refusé par le cœur : figé blanc, avec l'avis ; le fond d'une séance précédente ne reste pas sous l'encre.
+            if (frozen) await d.setAnnotationBackdrop?.(null, ENTRY_PAGE);
+            await d.say(captureFailedMessage("failed"));
+          }
         } else {
           // P18 : figé blanc ; le fond d'une séance précédente ne reste pas sous l'encre.
           if (frozen) await d.setAnnotationBackdrop?.(null, ENTRY_PAGE);
@@ -160,7 +178,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
       const document = await d.encodeTab(tab);
       const screen = await d.windows.enter({ ...place, document, profile: d.profile(), opaque: frozen });
       set({ screen, frozen });
-      d.windows.send({ kind: "setTool", tool: lastDraw });
+      sendSession(lastDraw);
       await d.windows.pointer("draw");
     } catch (e) {
       set({ active: false, frozen: false });
@@ -242,7 +260,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
       const run = serial(async () => {
         if (!st.active) return;
         // P16 : figé → vivant si la transparence est offerte ; sinon capture : vivant → figé, ou « Recapturer » (P18).
-        const toLive = st.frozen === true && st.live !== false;
+        const wasFrozen = st.frozen === true;
+        const toLive = wasFrozen && st.live !== false;
         let image: CapturedImage | null = null;
         if (!toLive) {
           const shot = await d.windows.capture(placeNow());
@@ -266,19 +285,22 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
           const page = got.view?.page ?? 0; // P13 : vue absente : page 0
           const kept = await d.setAnnotationBackdrop?.(image, page);
           if (image !== null) {
-            // Fond refusé par le cœur : figé blanc, avec l'avis.
-            if (kept === false) await d.say(captureFailedMessage("failed"));
-            else posed = page;
+            if (kept === false) {
+              // Fond refusé par le cœur : figé blanc, avec l'avis ; l'ancien fond de la page ne reste pas sous l'encre.
+              await d.setAnnotationBackdrop?.(null, page);
+              await d.say(captureFailedMessage("failed"));
+            } else posed = page;
           }
           const tab = await d.annotationTab();
           if (tab === null) return;
           await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive });
           set({ frozen: !toLive });
-          // La session rechargée d'`annotate` repart sur le stylo par défaut : l'outil affiché lui est renvoyé.
-          d.windows.send({ kind: "setTool", tool: st.pointer === "mouse" ? "select" : lastDraw });
+          sendSession(st.pointer === "mouse" ? "select" : lastDraw);
           await d.windows.pointer(toLive ? st.pointer : "draw");
         } catch (e) {
-          if (posed !== null) await d.setAnnotationBackdrop?.(null, posed).catch(() => false);
+          // Le fond posé n'est retiré que si l'état était vivant : en « Recapturer » (figé → figé), `annotate` reste figé
+          // et l'onglet garde un fond (le nouveau ; l'ancien n'est plus disponible sous forme d'image).
+          if (posed !== null && !wasFrozen) await d.setAnnotationBackdrop?.(null, posed).catch(() => false);
           await d.say(annotationFailedMessage(messageOf(e)));
         }
       }).finally(() => {
@@ -327,6 +349,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
       });
     },
     command(m: AnnotationCommand) {
+      remember(m);
       d.windows.send(m);
       if (m.kind === "setTool") ctl.onTool(m.tool);
     },
