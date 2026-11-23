@@ -461,4 +461,52 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     expect(windows.captures()).toBe(1);
     expect(deps.sendCapture).toHaveBeenCalledTimes(1);
   });
+  const changed = async (b: Uint8Array) => new Uint8Array([...b, 1]);
+  it.each([
+    ["exception", (f: ReturnType<typeof vi.fn>) => f.mockRejectedValueOnce(new Error("remplacement")), ["say Annotation impossible : remplacement"]],
+    ["false", (f: ReturnType<typeof vi.fn>) => f.mockResolvedValueOnce(false), []],
+  ] as const)("Envoyer, remplacement en échec (%s) : sendCapture non appelé, seul l'avis d'échec reste (revue)", async (_, fail, says) => {
+    const { ctl, deps, log } = setup({ capture: shot, draw: changed });
+    fail(deps.replaceAnnotation as ReturnType<typeof vi.fn>);
+    await ctl.enter();
+    await expect(ctl.send("origin")).resolves.toBeUndefined();
+    expect(deps.replaceAnnotation).toHaveBeenCalledTimes(1);
+    expect(deps.sendCapture).not.toHaveBeenCalled();
+    expect(log.filter((l) => l.startsWith("say "))).toEqual(says);
+    expect(ctl.state().active).toBe(false);
+    expect(log).toContain("show t1");
+  });
+  it("repli, capture en échec sur une page à fond : fond retiré avant l'envoi du document, figé blanc et opaque, avis (P18, revue)", async () => {
+    const { ctl, windows, deps, log } = setup({ capture: { ok: false, reason: "failed" }, transparent: false, backdrop: true });
+    await ctl.enter();
+    expect(log).toContain("backdrop null -");
+    const removed = (deps.setAnnotationBackdrop as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(removed).toBeLessThan((deps.encodeTab as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!);
+    expect(windows.opaque()).toBe(true);
+    expect(ctl.state()).toMatchObject({ active: true, frozen: true });
+    expect(log).toContain("say capture du bureau impossible (échec de la capture) : page à fond blanc");
+  });
+  it("Figer, remplacement refusé (false) : ni fond posé ni rechargement, reste vivant, les traits restent dans annotate (revue)", async () => {
+    const { ctl, windows, deps, log } = setup({ capture: shot, draw: changed });
+    (deps.replaceAnnotation as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await ctl.enter();
+    await ctl.freeze();
+    expect(deps.replaceAnnotation).toHaveBeenCalledTimes(1);
+    expect(log.some((l) => l.startsWith("backdrop"))).toBe(false);
+    expect(windows.log.some((l) => l.startsWith("load"))).toBe(false);
+    expect(ctl.state()).toMatchObject({ active: true, frozen: false });
+    expect(windows.opaque()).toBe(false);
+  });
+  it("double clic sur « Figer le bureau » : un seul figé, aucun dé-figé ; le clic suivant rend le bureau vivant (revue)", async () => {
+    const { ctl, windows } = setup({ capture: shot });
+    await ctl.enter();
+    await expect(Promise.all([ctl.freeze(), ctl.freeze()])).resolves.toBeDefined();
+    expect(windows.captures()).toBe(1);
+    expect(windows.log.filter((l) => l.startsWith("load"))).toEqual(["load opaque"]);
+    expect(ctl.state().frozen).toBe(true);
+    expect(windows.opaque()).toBe(true);
+    await ctl.freeze();
+    expect(ctl.state().frozen).toBe(false);
+    expect(windows.log.filter((l) => l.startsWith("load"))).toEqual(["load opaque", "load transparent"]);
+  });
 });

@@ -94,6 +94,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
   let origin: string | null = null;
   let lastDraw = "pen";
   let queue: Promise<void> = Promise.resolve();
+  /** « Figer » en file ou en cours (double clic). */
+  let freezing: Promise<void> | null = null;
   const listeners = new Set<() => void>();
   const set = (next: Partial<AnnotationState>): void => {
     st = { ...st, ...next };
@@ -142,7 +144,11 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         // P18 : sans transparence, l'entrée capture d'abord et entre figée (blanche si la capture échoue).
         const shot = await d.windows.capture(place);
         if (shot.ok) await d.setAnnotationBackdrop?.(shot.image);
-        else await d.say(captureFailedMessage(shot.reason));
+        else {
+          // P18 : figé blanc ; le fond d'une séance précédente ne reste pas sous l'encre.
+          if (frozen) await d.setAnnotationBackdrop?.(null);
+          await d.say(captureFailedMessage(shot.reason));
+        }
         frozen = true;
       }
       const document = await d.encodeTab(tab);
@@ -161,9 +167,10 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     }
   }
 
-  /** Sortie C11a. Rend ce qui a été collecté (C11b, P13 : vue d'`annotate`, null si absente), ou null si rien ne l'a
-   *  été (inactive, réponse illisible, délai dépassé : l'avis d'encre perdue est alors dit). */
-  async function doExit(): Promise<{ readonly view: AnnotationViewport | null } | null> {
+  /** Sortie C11a. Rend ce qui a été collecté (C11b, P13 : vue d'`annotate`, null si absente ; `kept` : document
+   *  d'annotation à jour, faux si son remplacement a levé ou a été refusé), ou null si rien ne l'a été (inactive,
+   *  réponse illisible, délai dépassé : l'avis d'encre perdue est alors dit). */
+  async function doExit(): Promise<{ readonly view: AnnotationViewport | null; readonly kept: boolean } | null> {
     if (!st.active) return null;
     const got = await within(d.windows.collect(), timeout);
     try {
@@ -172,17 +179,19 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
       console.warn(`RoomBoard : fenêtre d'annotation non cachée (${messageOf(e)})`);
     }
     set({ active: false, pointer: "draw", frozen: false });
+    let kept = true;
     if (got === null) await d.say(INK_LOST_MESSAGE);
     else if (got.changed) {
       try {
-        await d.replaceAnnotation(got.bytes);
+        kept = (await d.replaceAnnotation(got.bytes)) === true;
       } catch (e) {
+        kept = false;
         await d.say(annotationFailedMessage(messageOf(e)));
       }
     }
     if (origin !== null) d.showTab(origin);
     origin = null;
-    return got === null ? null : { view: got.view ?? null };
+    return got === null ? null : { view: got.view ?? null, kept };
   }
 
   const ctl: AnnotationControl = {
@@ -220,8 +229,11 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         const screen = await d.windows.place({ screen: ((st.screen ?? 0) + 1) % st.screens, dock: bar.dock, thickness: bar.thickness });
         set({ screen });
       }),
-    freeze: () =>
-      serial(async () => {
+    freeze: () => {
+      // Double clic : un second « Figer » pendant qu'un premier attend ou court dans la file est ignoré (sinon : figé
+      // puis aussitôt vivant).
+      if (freezing !== null) return freezing;
+      const run = serial(async () => {
         if (!st.active) return;
         // P16 : figé → vivant si la transparence est offerte ; sinon capture : vivant → figé, ou « Recapturer » (P18).
         const toLive = st.frozen === true && st.live !== false;
@@ -241,7 +253,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
           return;
         }
         try {
-          if (got.changed) await d.replaceAnnotation(got.bytes);
+          // Remplacement refusé : poser le fond puis recharger l'ancien document effacerait les traits de la séance.
+          if (got.changed && (await d.replaceAnnotation(got.bytes)) !== true) return;
           await d.setAnnotationBackdrop?.(image, got.view?.page);
           const tab = await d.annotationTab();
           if (tab === null) return;
@@ -251,7 +264,12 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         } catch (e) {
           await d.say(annotationFailedMessage(messageOf(e)));
         }
-      }),
+      }).finally(() => {
+        freezing = null;
+      });
+      freezing = run;
+      return run;
+    },
     send: (wanted) =>
       serial(async () => {
         if (!st.active) return;
@@ -267,9 +285,9 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         }
         const from = origin;
         const exited = await doExit();
-        // Collecte perdue : le document d'annotation garde l'encre de la séance précédente ; rien n'est envoyé, l'avis
-        // d'encre perdue reste seul.
-        if (exited === null) return;
+        // Collecte perdue, ou remplacement en échec (levé ou refusé) : le document d'annotation garde l'encre de la
+        // séance précédente ; rien n'est envoyé, l'avis d'échec reste seul.
+        if (exited === null || !exited.kept) return;
         const view = exited.view;
         const request: SendRequest = {
           to,
