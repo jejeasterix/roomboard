@@ -155,6 +155,24 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     expect(await f.close()).toBe(false);
   });
 
+  it("C11a : divert vrai → fermeture empêchée sans question (P25)", async () => {
+    const f = fakes({ answer: true });
+    let calls = 0;
+    createTauriShell(f.dialog, f.win).guardClose(() => true, "Abandonner ?", () => { calls += 1; return true; });
+    await f.tick();
+    expect(await f.close()).toBe(true);
+    expect(f.calls.ask).toEqual([]);
+    expect(calls).toBe(1);
+  });
+
+  it("C11a : divert faux → garde ordinaire", async () => {
+    const f = fakes({ answer: false });
+    createTauriShell(f.dialog, f.win).guardClose(() => true, "Abandonner ?", () => false);
+    await f.tick();
+    expect(await f.close()).toBe(true);
+    expect(f.calls.ask).toEqual([["Abandonner ?", "warning"]]);
+  });
+
   it("fermeture, document non modifié : aucune question", async () => {
     const f = fakes();
     createTauriShell(f.dialog, f.win).guardClose(() => false, "Abandonner ?");

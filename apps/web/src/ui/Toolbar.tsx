@@ -9,7 +9,8 @@ import {
   TABLE_ACTIONS,
   TABLE_FILLS,
   TOOL_TABLE,
-  visibleItems,
+  itemsForMode,
+  type StartMode,
   type ButtonSize,
   type Preset,
   type RuntimeCapabilities,
@@ -36,6 +37,8 @@ export interface ToolbarProps {
   readonly host: ToolbarHost;
   /** Préréglages du profil : une barre de rôle `tools` montre ceux de l'outil actif en fin de barre (C1, P18). */
   readonly presets?: Accessor<PresetTable>;
+  /** C11a (P7, P19) : mode de la fenêtre ; absent : tableau. */
+  readonly mode?: Accessor<StartMode>;
 }
 
 interface Ctx { readonly view: Accessor<ToolbarView>; readonly host: ToolbarHost }
@@ -175,7 +178,7 @@ function TableActionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost 
 }
 
 export function Toolbar(props: ToolbarProps): JSX.Element {
-  const items = createMemo(() => visibleItems(props.bar, props.caps()));
+  const items = createMemo(() => itemsForMode(props.bar, props.caps(), props.mode?.() ?? "board"));
   const ctx: Ctx = { view: props.view, host: props.host };
   return (
     <div

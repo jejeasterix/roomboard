@@ -4,6 +4,12 @@
  * (un onglet = une `BoardSession`, T93/T98), puis l'interface SolidJS (`ui/App.tsx`). Les touches sont écoutées une
  * fois ici et vont à l'onglet actif. `?banc` ajoute le banc du lot 1 rejoué sur l'onglet actif.
  */
+import { annotationFailedMessage, createAnnotationController, createRemoteToolbarHost, offerCompatRelaunch } from "./app/annotation";
+import { startAnnotateWindow } from "./annotate-start";
+import { createFakeAnnotationWindows } from "./platform/annotation-fake";
+import type { AnnotationControl, AnnotationSupport, AnnotationWindows } from "./platform/annotation-port";
+import { createTauriAnnotationWindows } from "./platform/annotation-tauri";
+import { ANNOTATION_REMOTE_ACTIONS, type Dock } from "./toolbar";
 import { createBoardSession, type SessionShared } from "./app/board-session";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
@@ -60,6 +66,13 @@ function keyOf(e: KeyboardEvent): KeyLike {
 async function start(): Promise<void> {
   await init();
   const core = createWasmCore(wasm);
+  // C11a (P13) : la fenêtre `annotate` n'a ni fichiers, ni profils, ni espace de travail.
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("fenetre") === "annotation") {
+    const p = await loadTauriPorts();
+    await startAnnotateWindow(core, p.ipc, keyOf);
+    return;
+  }
   const parsed = parseSettings(window.location.search);
   const settings = createSettingsStore(parsed.settings);
   // Fichiers (D26) : le premier onglet reprend le fichier mis en attente par une version précédente, sinon une page vide.
@@ -159,7 +172,29 @@ async function start(): Promise<void> {
   };
 
   // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).
-  const env = { tauri, userAgent: navigator.userAgent, officeConverter: ipc === null ? false : await officeConverter(ipc) };
+  // C11a (P16, P22, P29) : hôte des fenêtres d'annotation (coque, ou faux hôte `?annotation=faux` hors coque seulement),
+  // et support lu avant les capacités.
+  const fakeAnnotation = !tauri && params.get("annotation") === "faux";
+  const emitTo = ipc?.emitTo;
+  const windows: AnnotationWindows | null =
+    ipc !== null && emitTo !== undefined
+      ? createTauriAnnotationWindows({
+          invoke: <T>(c: string, a?: Record<string, unknown>) => ipc.invoke<T>(c, a),
+          listen: <T>(e: string, cb: (x: { readonly payload: T }) => void) => ipc.listen<T>(e, cb),
+          emitTo,
+        })
+      : fakeAnnotation
+        ? createFakeAnnotationWindows({ dataset: document.body.dataset as Record<string, string | undefined> })
+        : null;
+  const support: AnnotationSupport | null =
+    windows === null ? null : await windows.support().catch((): AnnotationSupport => ({ supported: false, reason: null, screens: 1 }));
+  const env = {
+    tauri,
+    userAgent: navigator.userAgent,
+    officeConverter: ipc === null ? false : await officeConverter(ipc),
+    ...(tauri && support !== null ? { annotationSupported: support.supported } : {}),
+    ...(fakeAnnotation ? { forceAnnotation: true } : {}),
+  };
   const settingsKv = browserKeyValue(window);
   const store = createProfileStore(settingsKv, BUILTIN_PROFILES);
   // Avertissements de l'amorce (profil stocké écarté, stockage illisible) : rien d'autre ne les lit.
@@ -258,7 +293,11 @@ async function start(): Promise<void> {
   const packFiles =
     ports === null ? createWebTypedFiles(browserFallbackDeps(document, URL), RBPACK_TYPE) : createTauriTypedFiles(ports.dialog, ports.fs, RBPACK_TYPE);
   const markConversion = withConversionMark(document.documentElement);
+  let annotation: AnnotationControl | null = null;
   const workspace = await createWorkspace({
+    // C11a (P17, P18, P25) : contrôleur relu à chaque appel (créé juste après) ; sortie relancée après l'annotation.
+    annotation: () => annotation,
+    ...(ipc === null ? {} : { quit: () => quitApp(ipc) }),
     core,
     host: prepared.host,
     kind: prepared.kind,
@@ -363,6 +402,39 @@ async function start(): Promise<void> {
     });
   });
 
+  // C11a : côté et épaisseur de la première barre `tools`, mesurés dans la page (px CSS).
+  const measureBar = (): { readonly dock: Dock; readonly thickness: number } => {
+    const bar = active.profile().toolbars.find((b) => b.role === "tools");
+    const dock: Dock = bar === undefined || bar.dock === "floating" ? "top" : bar.dock;
+    const el = bar === undefined ? null : document.querySelector(`[data-toolbar="${CSS.escape(bar.id)}"]`);
+    const r = el?.getBoundingClientRect();
+    const thickness = r === undefined ? 64 : Math.ceil(dock === "top" || dock === "bottom" ? r.height : r.width);
+    return { dock, thickness };
+  };
+  const ctl =
+    windows === null
+      ? null
+      : createAnnotationController({
+          windows,
+          annotationTab: () => workspace.annotationTab(),
+          encodeTab: (t) => workspace.encodeTab(t),
+          replaceAnnotation: (b) => workspace.replaceAnnotation(b),
+          activeTabId: () => workspace.tabs.active()?.id ?? null,
+          showTab: (id) => void workspace.tabs.activate(id),
+          importFiles: (f, at) => workspace.importFiles(f, at),
+          pageNumber: () => workspace.active().board.engine.state().pageIndex + 1,
+          say: (m) => workspace.say(m),
+          bar: measureBar,
+          profile: () => active.profile(),
+          screens: support?.screens ?? 1,
+        });
+  annotation = ctl;
+  if (windows !== null && support !== null) {
+    void offerCompatRelaunch(support, active.profile().behavior.startMode, (m) => workspace.ask(m), () => windows.relaunchCompat()).catch((e: unknown) => {
+      void workspace.say(annotationFailedMessage(messageOf(e)));
+    });
+  }
+
   const note = workspace.active().board.choice.note;
   mountApp(root, {
     workspace,
@@ -374,6 +446,9 @@ async function start(): Promise<void> {
     profileFiles,
     stages,
     library: { library, shared: sharedFolder, packs: packFiles },
+    ...(ctl === null || windows === null
+      ? {}
+      : { annotation: { control: ctl, remote: (local) => createRemoteToolbarHost((m) => ctl.command(m), local, ANNOTATION_REMOTE_ACTIONS), onView: (cb) => windows.onView(cb) } }),
     navigate: (search) => {
       window.location.search = search;
     },

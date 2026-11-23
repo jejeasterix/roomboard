@@ -46,7 +46,7 @@ export function chooseRenderer(
   wantWebgl: boolean,
   opts: Canvas2DOptions = {},
 ): RendererChoice {
-  if (!wantWebgl) {
+  if (!wantWebgl || opts.transparent === true) {
     return { renderer: createCanvas2DRenderer(scene, live, source, opts), webgl: false, interaction: live, note: null, diagnostics: () => ({ webgl: "off", lost: false, badColors: [] }), release() {} };
   }
   const gl = live.getContext("webgl2", WEBGL2_CONTEXT);

@@ -44,6 +44,8 @@ export interface Canvas2DOptions {
   readonly assetName?: (asset: string) => string | null;
   /** C14 (R7) : rendu d'export : le badge « lecture » n'est pas dessiné. */
   readonly forExport?: boolean;
+  /** C11a (P14) : fenêtre d'annotation : pourtour et fond de page effacés au lieu d'être peints ; défaut faux. */
+  readonly transparent?: boolean;
 }
 
 /** Options du peintre d'un export (PDF, superposition PNG ou vectorielle) : rendu d'export (sans badge « lecture », R7),
@@ -318,6 +320,7 @@ export class Canvas2DRenderer implements Renderer {
   /** Largeur CSS et devicePixelRatio retenus par `resize` : partie visible et épaisseur de la grille (C9). */
   private cssWidth = 0;
   private dpr = 1;
+  private readonly transparent: boolean;
 
   constructor(
     private readonly scene: CanvasRenderingContext2D,
@@ -334,6 +337,7 @@ export class Canvas2DRenderer implements Renderer {
     this.forExport = opts.forExport === true;
     this.backdrop = opts.backdrop ?? null;
     this.onBackdrop = opts.onBackdrop ?? null;
+    this.transparent = opts.transparent === true;
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -357,8 +361,11 @@ export class Canvas2DRenderer implements Renderer {
     this.images?.beginScene?.(); // `data-pixels` ne compte que les images de cette scène (I33)
     this.zoom = camera.zoom;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = SURROUND_COLOR;
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    if (this.transparent) ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    else {
+      ctx.fillStyle = SURROUND_COLOR;
+      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    }
     this.setView(ctx, camera);
     // Blanc d'abord : le canvas ignore une couleur qu'il ne sait pas lire (un nom CSS accepté par le cœur) ; on retient
     // ce qu'il a vraiment accepté (relu normalisé), que l'aperçu de gomme repeint et que WebGL2 relit (`pageColor`).
@@ -366,7 +373,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = page.background ?? PAGE_BACKGROUND;
     this.background = String(ctx.fillStyle);
     const rect = visiblePageRect(camera, this.cssHeight);
-    if (rect) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    if (rect && !this.transparent) ctx.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
     // Fond de page (U6, C12 PF14) : sous la grille et sous les éléments (G11).
     const state = page.backdrop ? this.paintBackdrop(ctx, page.backdrop, camera) : "";
     this.onBackdrop?.(state);
@@ -705,7 +712,9 @@ export class Canvas2DRenderer implements Renderer {
    * (blanc dedans, pourtour dehors). Gomme d'objet : rien ici, les traits touchés sont masqués de la scène.
    */
   private paintEraser(ctx: CanvasRenderingContext2D, e: EraserPreview, page: PageRect | null): void {
-    if (e.mode !== "partial" || e.path.length < 2) return;
+    // Rendu transparent (C11a) : aucun fond à repeindre, l'aperçu ne laisse pas de traînée sur le bureau ; l'effacement
+    // réel s'applique au relâchement.
+    if (this.transparent || e.mode !== "partial" || e.path.length < 2) return;
     const x0 = e.path[0] ?? 0;
     const y0 = e.path[1] ?? 0;
     const along = (color: string, region: () => void): void => {
@@ -742,7 +751,7 @@ export function createCanvas2DRenderer(
   source: SceneSource,
   opts: Canvas2DOptions = {},
 ): Canvas2DRenderer {
-  const sceneCtx = scene.getContext("2d", { alpha: false });
+  const sceneCtx = scene.getContext("2d", { alpha: opts.transparent === true });
   const liveCtx = live.getContext("2d", { desynchronized: true });
   if (!sceneCtx || !liveCtx) throw new Error("canvas 2D indisponible");
   return new Canvas2DRenderer(sceneCtx, liveCtx, source, opts);

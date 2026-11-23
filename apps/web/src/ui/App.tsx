@@ -10,7 +10,8 @@ import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import type { ImageData } from "../core/api";
 import { createProfileActions } from "../app/profile-actions";
-import { createLocalToolbarHost } from "../app/toolbar-host";
+import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
+import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
 import type { TabSession, Workspace } from "../app/workspace";
 import type { EngineState } from "../engine/engine";
 import type { SettingsStore } from "../engine/settings";
@@ -18,7 +19,7 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
-import { resolveStartMode, visibleItems, type Toolbar as Bar } from "../toolbar";
+import { resolveStartMode, visibleItems, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { layoutFor } from "./layout";
@@ -40,7 +41,18 @@ import type { ToolbarView } from "./item-state";
 import { Toolbar } from "./Toolbar";
 import "./rb.css";
 
+/** C11a (P21) : annotation de bureau ; absente (web, tests anciens) : tableau seul. */
+export interface AnnotationUi {
+  readonly control: AnnotationControl;
+  /** Hôte de barre en annotation (commandes vers `annotate`), bâti sur l'hôte local. */
+  remote(local: ToolbarHost): ToolbarHost;
+  /** Vue de barre publiée par `annotate`. */
+  onView(cb: (v: ToolbarView) => void): () => void;
+}
+
 export interface AppProps {
+  /** C11a : annotation de bureau ; absente : tableau seul. */
+  readonly annotation?: AnnotationUi;
   readonly workspace: Workspace;
   readonly active: ActiveProfile;
   readonly store: ProfileStore;
@@ -242,20 +254,57 @@ export function App(props: AppProps): JSX.Element {
     return <ImagePanel image={image} version={() => state().version} tick={state} edit={edit} close={() => setPanel(null)} />;
   };
 
-  const host = createLocalToolbarHost(
+  // C11a : état de l'annotation et vue de barre venue de `annotate`.
+  const ann = props.annotation;
+  const [annState, setAnnState] = createSignal<AnnotationState>(ann?.control.state() ?? { active: false, pointer: "draw", screen: null, screens: 1 });
+  const [remoteView, setRemoteView] = createSignal<ToolbarView | null>(null);
+  if (ann !== undefined) {
+    const offChange = ann.control.onChange(() => setAnnState(ann.control.state()));
+    const offView = ann.onView(setRemoteView);
+    onCleanup(() => {
+      offChange();
+      offView();
+    });
+  }
+  const annotating = (): boolean => annState().active;
+  // La vue de `annotate` est périmée dès la sortie : à la réentrée, elle attend sa première publication.
+  createEffect(on(annotating, (a) => { if (!a) setRemoteView(null); }));
+  const mode = (): StartMode => (annotating() ? "desktop-annotation" : "board");
+
+  const local = createLocalToolbarHost(
     {
       engine: () => ws.active().board.engine,
       runFile: (cmd) => void ws.active().files.run(cmd),
-      importFiles: (files, at) => void ws.importFiles(files, at),
+      // P17 : un dépôt HTML5 sur la zone en annotation va au contrôleur (sortie d'abord) ; sinon l'import ordinaire.
+      importFiles: (files, at) => void (ann !== undefined && annotating() ? ann.control.dropOnZone(files, at ?? null) : ws.importFiles(files, at)),
       insertPages: () => void ws.insertPages(),
       exportPdf: () => void ws.exportPdf(),
       exportBoard: (format) => void ws.exportBoard(format),
       editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
       toggle: (p) => setPanel((cur) => (cur === p ? null : p)),
+      ...(ann === undefined ? {} : { annotation: ann.control }),
     },
     () => props.active.profile(),
   );
+  const remote = ann === undefined ? local : ann.remote(local);
+  /** P21 : en annotation, la barre parle à `annotate` ; sinon au moteur local. */
+  const pick = (): ToolbarHost => (annotating() ? remote : local);
+  const host: ToolbarHost = {
+    setTool: (tool, preset) => pick().setTool(tool, preset),
+    runAction: (id) => pick().runAction(id),
+    dropFiles: (files, at) => pick().dropFiles(files, at),
+    setMode: (m) => pick().setMode(m),
+    tableFill: (f) => pick().tableFill(f),
+    fillColor: (c) => pick().fillColor(c),
+    fillTolerance: (v) => pick().fillTolerance(v),
+    textFormat: (a) => pick().textFormat(a),
+    selection: (a) => pick().selection(a),
+    imagePanel: () => pick().imagePanel(),
+  };
+  // Panneau fermé à l'entrée ; profil renvoyé à `annotate` s'il change pendant l'annotation (RF5).
+  createEffect(on(annotating, (a) => { if (a) setPanel(null); }, { defer: true }));
+  createEffect(on(() => props.active.profile(), (p) => { if (annotating()) ann?.control.sendProfile(p); }, { defer: true }));
 
   // Mode de démarrage (U14, C1 P10) : une seule fois, au montage ; changer de profil ensuite ne le rejoue pas (P11).
   host.setMode(resolveStartMode(props.active.profile(), props.active.capabilities()).mode);
@@ -272,18 +321,33 @@ export function App(props: AppProps): JSX.Element {
   const size = () => profile().interface.buttonSize;
   const docked = createMemo(() => profile().toolbars.filter((b) => b.dock !== "floating"));
   const floating = createMemo(() => profile().toolbars.filter((b) => b.dock === "floating"));
-  const grid = createMemo(() => layoutFor(docked()));
+  /** C11a (P20) : en annotation, seule la première barre `tools` (une barre flottante y est posée en haut). */
+  const firstToolsBar = createMemo(() => profile().toolbars.find((x) => x.role === "tools"));
+  const annotationBar = createMemo((): Bar | null => {
+    const b = firstToolsBar();
+    if (b === undefined) return null;
+    return b.dock === "floating" ? { ...b, dock: "top" } : b;
+  });
+  const shownDocked = createMemo((): readonly Bar[] => {
+    if (!annotating()) return docked();
+    const b = annotationBar();
+    return b === null ? [] : [b];
+  });
+  const shownFloating = createMemo((): readonly Bar[] => (annotating() ? [] : floating()));
+  const grid = createMemo(() => layoutFor(shownDocked()));
 
-  /** Vue de la barre (C3) : état du moteur et presse-papiers interne (bouton « Coller »). */
+  /** Vue de la barre (C3) ; C11a : en annotation, celle de `annotate`, avec l'état de l'annotation. */
   const view = (): ToolbarView => {
     tick();
-    return { ...state(), canPaste: ws.canPaste() };
+    const a = annState();
+    const base: ToolbarView = a.active ? (remoteView() ?? { ...state(), canPaste: false }) : { ...state(), canPaste: ws.canPaste() };
+    return ann === undefined ? base : { ...base, annotation: { active: a.active, pointer: a.pointer, screens: a.screens } };
   };
 
   /** La rangée des préréglages n'est que dans la première barre de rôle `tools` (C1, P18). */
-  const presetsBarId = createMemo(() => profile().toolbars.find((b) => b.role === "tools")?.id);
+  const presetsBarId = createMemo(() => firstToolsBar()?.id);
   const toolbarOf = (bar: Bar): JSX.Element => (
-    <Toolbar bar={bar} caps={props.active.capabilities} view={view} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} />
+    <Toolbar bar={bar} caps={props.active.capabilities} view={view} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} mode={mode} />
   );
   /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. */
   const BY_ROLE: Readonly<Record<string, (bar: Bar) => JSX.Element>> = {
@@ -307,6 +371,7 @@ export function App(props: AppProps): JSX.Element {
   return (
     <div
       class="rb-layout"
+      data-mode={annotating() ? "annotation" : "board"}
       style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows }}
     >
       <div class="rb-slot rb-head" style={{ "grid-area": "tabs" }}>
@@ -322,11 +387,11 @@ export function App(props: AppProps): JSX.Element {
         />
         <p id="etat" role="status">{state().error ?? ""}</p>
       </div>
-      <For each={docked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
+      <For each={shownDocked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
       {props.stages}
-      <Show when={floating().length > 0}>
+      <Show when={shownFloating().length > 0}>
         <div class="rb-floating">
-          <For each={floating()}>{(bar) => barOf(bar)}</For>
+          <For each={shownFloating()}>{(bar) => barOf(bar)}</For>
         </div>
       </Show>
       <Show when={selectedMedia()}>

@@ -16,9 +16,12 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { createProfileStore, type KeyValue } from "../profile-store";
 import type { RuntimeCapabilities } from "../toolbar";
-import { BUILTIN_PROFILES } from "../toolbar-profiles";
+import { BUILTIN_PROFILES, DEFAULT_PROFILE_JSON } from "../toolbar-profiles";
 import { createActiveProfile } from "./active-profile";
-import { App, showStartError, type AppProps } from "./App";
+import { App, showStartError, type AnnotationUi, type AppProps } from "./App";
+import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
+import type { ToolbarView } from "./item-state";
+import { parseProfile, type Profile } from "../toolbar";
 import { layoutFor } from "./layout";
 
 // Lus sur le disque : sous vitest, un import `?raw` de CSS rend une chaîne vide.
@@ -205,7 +208,7 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"] } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
   const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
@@ -234,6 +237,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
         stages={stages}
         navigate={navigate}
         {...(opts.library ? { library: opts.library } : {})}
+        {...(opts.annotation ? { annotation: opts.annotation } : {})}
       />
     ),
     container,
@@ -244,6 +248,57 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
     style.remove();
   });
   return { container, workspace, tab, store, active, settings, navigate, files };
+}
+
+/** `activateOnEnter` faux : `enter` ne change pas l'état (la barre reste celle du tableau, menu Profil utilisable). */
+function fakeAnnotationUi(start = false, activateOnEnter = true) {
+  let st: AnnotationState = { active: start, pointer: "draw", screen: null, screens: 1 };
+  const cbs = new Set<() => void>();
+  const views = new Set<(v: ToolbarView) => void>();
+  const remoteCalls: string[] = [];
+  const set = (n: Partial<AnnotationState>) => {
+    st = { ...st, ...n };
+    for (const cb of [...cbs]) cb();
+  };
+  const control: AnnotationControl = {
+    state: () => st,
+    enter: vi.fn(async () => (activateOnEnter ? set({ active: true }) : undefined)),
+    exit: vi.fn(async () => set({ active: false })),
+    close: vi.fn(async () => true),
+    toggle: vi.fn(async () => undefined),
+    nextScreen: vi.fn(async () => undefined),
+    onTool: vi.fn(),
+    command: vi.fn(),
+    sendProfile: vi.fn(),
+    dropOnZone: vi.fn(async () => undefined),
+    onChange: (cb) => {
+      cbs.add(cb);
+      return () => {
+        cbs.delete(cb);
+      };
+    },
+  };
+  const ui: AnnotationUi = {
+    control,
+    remote: (local) => ({ ...local, setTool: (tool) => void remoteCalls.push(`setTool ${tool}`) }),
+    onView: (cb) => {
+      views.add(cb);
+      return () => {
+        views.delete(cb);
+      };
+    },
+  };
+  return { ui, control, remoteCalls, view: (v: ToolbarView) => { for (const cb of [...views]) cb(v); } };
+}
+
+/** Copie de `defaut` faite avant C11a (aucun élément C11a), id « ma-copie ». */
+function oldCopy(): Profile {
+  const NEW = ["desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"];
+  const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+  for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !NEW.includes(i.id));
+  const r = parseProfile({ ...json, id: "ma-copie", label: "Ma copie" });
+  if ("errors" in r) throw new Error(r.errors.join("; "));
+  return r.profile;
 }
 
 const click = (el: Element | null): void => {
@@ -501,18 +556,58 @@ describe("App — profils (C1)", () => {
     warn.mockRestore();
   });
 
-  it("S5 : capacité vraie : setMode(desktop-annotation) une fois au montage, pas au changement de profil", () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const { container, tab } = renderApp({ profile: "annotation", caps: { ...CAPS, desktopAnnotation: true } });
-    expect(info).toHaveBeenCalledTimes(1);
-    expect(String(info.mock.calls[0]![0])).toContain("C11a");
+  it("C11a : profil annotation et capacité : enter une fois au montage, pas au changement de profil (P22)", () => {
+    const a = fakeAnnotationUi(false, false);
+    const { container } = renderApp({ profile: "annotation", caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    expect(a.control.enter).toHaveBeenCalledTimes(1);
     openMenu(container);
     click(container.querySelector('[data-profile="defaut"]'));
     openMenu(container);
     click(container.querySelector('[data-profile="annotation"]'));
-    expect(info).toHaveBeenCalledTimes(1);
-    expect(tab.engine["setTool"]).not.toHaveBeenCalled();
-    info.mockRestore();
+    expect(a.control.enter).toHaveBeenCalledTimes(1);
+  });
+  it("C11a : en annotation, barre seule (data-mode), barre des pages absente, outils vers l'hôte distant, vue de annotate", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    expect(container.querySelector(".rb-layout")?.getAttribute("data-mode")).toBe("board");
+    await a.control.enter();
+    expect(container.querySelector(".rb-layout")?.getAttribute("data-mode")).toBe("annotation");
+    expect(container.querySelector('[data-toolbar="outils"]')).not.toBeNull();
+    expect(container.querySelector('[data-toolbar="pages"]')).toBeNull();
+    click(container.querySelector('[data-item="pen"]'));
+    expect(a.remoteCalls).toEqual(["setTool pen"]);
+    a.view({ tool: "select", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
+    expect(container.querySelector('[data-item="select"]')?.getAttribute("aria-pressed")).toBe("true");
+    const exit = container.querySelector('[data-item="desktop-annotation"]');
+    expect(exit?.textContent).toBe("Quitter l'annotation");
+    expect(exit?.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("C11a : la vue de annotate est oubliée à la sortie : à la réentrée, pas l'ancienne vue", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    await a.control.enter();
+    const pressed = () => container.querySelector('[data-item="eraser-mode"]')?.getAttribute("aria-pressed");
+    const before = pressed();
+    a.view({ tool: "select", eraserMode: "object", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 });
+    expect(pressed()).toBe("true");
+    await a.control.exit();
+    await a.control.enter();
+    expect(pressed()).toBe(before);
+  });
+  it("C11a : profil d'avant C11a en annotation : « Quitter l'annotation » ajouté au rendu (P7)", async () => {
+    const a = fakeAnnotationUi();
+    const { container, store, active } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    store.save(oldCopy());
+    active.choose("ma-copie");
+    await a.control.enter();
+    expect(container.querySelector('[data-item="desktop-annotation-ajout"]')?.textContent).toBe("Quitter l'annotation");
+  });
+  it("C11a : profil changé en annotation : renvoyé à annotate (RF5, P21)", async () => {
+    const a = fakeAnnotationUi();
+    const { active } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    await a.control.enter();
+    active.choose("simple");
+    expect(a.control.sendProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "simple" }));
   });
 
   it("menu Profil : commandes sous les profils ; livré sans copie : remise grisée, pas de Supprimer ; Modifier… ouvre l'éditeur", () => {

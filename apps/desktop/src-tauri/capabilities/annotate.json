@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "annotate",
+  "description": "Fenêtre d'annotation (C11a, P12) : événements avec la fenêtre principale (emitTo, listen) et commandes de la coque (annotation_cursor, annotation_ignore, etc.), que la page invoque. Permissions Tauri minimales (core:event:default : listen, unlisten, emit, emit_to). Limite connue : sans manifeste de commandes dans build.rs, les commandes de l'application ne sont pas filtrées par capacité (durcissement à faire).",
+  "windows": ["annotate"],
+  "permissions": ["core:event:default"]
+}

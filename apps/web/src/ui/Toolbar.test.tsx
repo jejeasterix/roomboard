@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ButtonSize, RuntimeCapabilities, Toolbar as Bar, ToolItem } from "../toolbar";
+import type { ButtonSize, RuntimeCapabilities, StartMode, Toolbar as Bar, ToolItem } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ToolbarHost } from "../app/toolbar-host";
 import { Toolbar, type PresetTable } from "./Toolbar";
@@ -21,18 +21,30 @@ const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
 });
 const tool = (id: string, t = id): ToolItem => ({ id, kind: "tool", tool: t, label: id, requires: [], rest: {} });
 
-function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable) {
+function setup(bar: Bar = outils, caps: RuntimeCapabilities = NO_CAPS, size: ButtonSize = "m", presets?: PresetTable, mode?: StartMode) {
   const host: ToolbarHost = { setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), fillTolerance: vi.fn(), textFormat: vi.fn(), selection: vi.fn(), imagePanel: vi.fn() };
   const [c, setC] = createSignal(caps);
   const [v, setV] = createSignal(VIEW);
   const [s, setS] = createSignal(size);
   const r = render(() => (
-    <Toolbar bar={bar} caps={c} view={v} size={s} host={host} presets={presets === undefined ? undefined : () => presets} />
+    <Toolbar bar={bar} caps={c} view={v} size={s} host={host} presets={presets === undefined ? undefined : () => presets} mode={mode === undefined ? undefined : () => mode} />
   ));
   return { ...r, host, setC, setV, setS };
 }
 
 describe("Toolbar", () => {
+  it("C11a : mode annotation → itemsForMode (zone d'annotation visible, sortie ajoutée) ; sans mode → tableau", () => {
+    const zone: ToolItem = { id: "depot-annotation", kind: "dropzone", label: "Déposer ici", requires: ["desktopAnnotation"], rest: {} };
+    const bar = mkBar([tool("pen"), zone]);
+    const caps = { ...NO_CAPS, desktopAnnotation: true };
+    const board = setup(bar, caps);
+    expect(board.container.querySelector('[data-item="depot-annotation"]')).toBeNull();
+    cleanup();
+    const ann = setup(bar, caps, "m", undefined, "desktop-annotation");
+    expect(ann.container.querySelector('[data-item="depot-annotation"]')).not.toBeNull();
+    expect(ann.container.querySelector('[data-item="desktop-annotation-ajout"]')).not.toBeNull();
+    expect(ann.container.querySelector('[data-item="annotation-pointer-ajout"]')).not.toBeNull();
+  });
   it("rangée Sélection dans la barre d'outils : outil Sélection seulement (C3)", () => {
     const { container, setV } = setup();
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);

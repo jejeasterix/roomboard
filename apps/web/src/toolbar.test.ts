@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_TABLE, CAPABILITY_KEYS, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
+  ACTION_TABLE, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
   resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
+import { builtinProfile, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
 import { layoutFor } from "./ui/layout";
 import profilesSource from "./toolbar-profiles.ts?raw";
 import toolbarSource from "./toolbar.ts?raw";
@@ -358,5 +359,51 @@ describe("couleurs du pot (C6a, D16, D17)", () => {
   });
   it("fillChoices : clé présente mais vide = aucune couleur (le retrait de la clé est fait par l'éditeur)", () => {
     expect(fillChoices({ fill: [] })).toEqual([]);
+  });
+});
+
+describe("itemsForMode (C11a, P7, P19)", () => {
+  const caps = { desktopAnnotation: true, multiWindow: false, dropPaths: true, officeConverter: false };
+  const NEW = ["desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"];
+  /** Copie de `defaut` faite avant C11a : aucun élément C11a. */
+  const oldDefault = () => {
+    const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+    for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !NEW.includes(i.id));
+    const r = parseProfile({ ...json, id: "ma-copie", label: "Ma copie" });
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    return r;
+  };
+  it("tableau : zone d'annotation masquée, entrée visible", () => {
+    const items = itemsForMode(builtinProfile("defaut")!.toolbars[0]!, caps, "board");
+    expect(items.some((it) => it.id === "depot-annotation")).toBe(false);
+    expect(items.some((it) => it.action === "desktop-annotation")).toBe(true);
+  });
+  it("annotation : zone visible ; sortie et bascule déjà là, pas de doublon", () => {
+    const items = itemsForMode(builtinProfile("defaut")!.toolbars[0]!, caps, "desktop-annotation");
+    expect(items.some((it) => it.id === "depot-annotation")).toBe(true);
+    expect(items.filter((it) => it.action === "desktop-annotation")).toHaveLength(1);
+    expect(items.filter((it) => it.action === "annotation-pointer")).toHaveLength(1);
+  });
+  it("profil d'avant C11a : il s'ouvre sans avertissement ; en annotation, sortie et bascule ajoutées au rendu, profil inchangé", () => {
+    const old = oldDefault();
+    expect(old.warnings).toEqual([]);
+    const bar = old.profile.toolbars[0]!;
+    const before = JSON.stringify(bar);
+    const items = itemsForMode(bar, caps, "desktop-annotation");
+    expect(items.filter((it) => it.action === "desktop-annotation").map((it) => it.label)).toEqual(["Annotation du bureau"]);
+    expect(items.some((it) => it.action === "annotation-pointer")).toBe(true);
+    expect(itemsForMode(bar, caps, "board").some((it) => it.action === "desktop-annotation")).toBe(false);
+    expect(JSON.stringify(bar)).toBe(before);
+  });
+  it("entrée masquée par l'utilisateur : rendue en annotation (jamais enfermé)", () => {
+    const bar = builtinProfile("defaut")!.toolbars[0]!;
+    const hidden = { ...bar, groups: bar.groups.map((g) => ({ ...g, items: g.items.map((it) => (it.action === "desktop-annotation" ? { ...it, hidden: true } : it)) })) };
+    expect(itemsForMode(hidden, caps, "desktop-annotation").some((it) => it.action === "desktop-annotation")).toBe(true);
+  });
+  it("une dropzone sans desktopAnnotation garde son comportement", () => {
+    const zone = { id: "drop", kind: "dropzone" as const, label: "Déposer", requires: ["dropPaths" as const], rest: {} };
+    expect(isAnnotationZone(zone)).toBe(false);
+    const bar = { id: "b", role: "tools", dock: "top" as const, collapsed: false, groups: [{ id: "g", items: [zone], rest: {} }], rest: {} };
+    expect(itemsForMode(bar, caps, "board").map((it) => it.id)).toEqual(["drop"]);
   });
 });

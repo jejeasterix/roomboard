@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
+import { visibleItems } from "./toolbar";
+import { builtinProfile } from "./toolbar-profiles";
 
 describe("RuntimeCapabilities (U10, DAU8)", () => {
   it("web : rien de la coque, même si le cœur dit oui", () => {
@@ -30,5 +32,28 @@ describe("officeConverter (C16, O24)", () => {
     expect(runtimeCapabilities({}, { tauri: true, officeConverter: false }).officeConverter).toBe(false);
     expect(runtimeCapabilities({}, { tauri: true }).officeConverter).toBe(false);
     expect(runtimeCapabilities({}, { tauri: false, officeConverter: true }).officeConverter).toBe(false);
+  });
+});
+
+describe("annotation de bureau à l'exécution (C11a, P16, P29)", () => {
+  it("coque : statique ∧ détecté ; champ absent : statique gardé", () => {
+    expect(runtimeCapabilities({ desktopAnnotation: true }, { tauri: true, annotationSupported: true }).desktopAnnotation).toBe(true);
+    expect(runtimeCapabilities({ desktopAnnotation: true }, { tauri: true, annotationSupported: false }).desktopAnnotation).toBe(false);
+    expect(runtimeCapabilities({ desktopAnnotation: true }, { tauri: true }).desktopAnnotation).toBe(true);
+    expect(runtimeCapabilities({ desktopAnnotation: false }, { tauri: true, annotationSupported: true }).desktopAnnotation).toBe(false);
+  });
+  it("Wayland natif (support faux) : entrée masquée par visibleItems", () => {
+    const caps = runtimeCapabilities({ desktopAnnotation: true }, { tauri: true, annotationSupported: false });
+    const bar = builtinProfile("defaut")!.toolbars[0]!;
+    expect(visibleItems(bar, caps).some((it) => it.action === "desktop-annotation")).toBe(false);
+  });
+  it("X11 et XWayland (support vrai) : entrée visible", () => {
+    const caps = runtimeCapabilities({ desktopAnnotation: true }, { tauri: true, annotationSupported: true });
+    expect(visibleItems(builtinProfile("defaut")!.toolbars[0]!, caps).some((it) => it.action === "desktop-annotation")).toBe(true);
+  });
+  it("forceAnnotation (?annotation=faux) : vrai hors coque seulement", () => {
+    expect(runtimeCapabilities({}, { tauri: false, forceAnnotation: true }).desktopAnnotation).toBe(true);
+    expect(runtimeCapabilities({}, { tauri: false }).desktopAnnotation).toBe(false);
+    expect(runtimeCapabilities({ desktopAnnotation: true }, { tauri: true, annotationSupported: false, forceAnnotation: true }).desktopAnnotation).toBe(false);
   });
 });

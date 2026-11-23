@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Command, CoreDocument } from "../core/api";
+import type { Command, CoreDocument, CoreFactory } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";
 import { createClipboard } from "../platform/clipboard";
@@ -26,6 +26,12 @@ import { encodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts 
 import type { BoardDialect, BoardPart, BoardReadOptions } from "../platform/board-reader";
 import type { OlfPart } from "../platform/zip-read";
 import { BAMBOO_NOT_FLIPCHART, bambooLieMessage } from "../platform/bamboo";
+import { createAnnotationController } from "./annotation";
+import { createFakeAnnotationWindows } from "../platform/annotation-fake";
+import { INK_LOST_MESSAGE, type AnnotationControl } from "../platform/annotation-port";
+import { BUILTIN_PROFILES } from "../toolbar-profiles";
+import { createWasmCore, type WasmModule } from "../core/wasm-core";
+import { createPageCodec, type FormatsBinding } from "../platform/container";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
@@ -46,13 +52,14 @@ let boards: FakeBoard[];
 let answer: boolean;
 let guard: () => boolean;
 let guardStops: number;
+let divert: (() => boolean) | null;
 let dropHandler: DropHandler | null;
 let dropStops: number;
 let opening: OpenedFile | null;
 let shell: {
   confirm: ReturnType<typeof vi.fn<(m: string) => Promise<boolean>>>;
   notify: ReturnType<typeof vi.fn<(m: string) => Promise<void>>>;
-  guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string) => () => void>>;
+  guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string, divert?: () => boolean) => () => void>>;
   setTitle: ReturnType<typeof vi.fn<(t: string) => void>>;
 };
 let host: FileHost & { save: ReturnType<typeof vi.fn<(e: (t: SaveTarget) => Promise<Uint8Array>, t: SaveTarget) => Promise<SaveTarget | null>>> };
@@ -65,6 +72,7 @@ beforeEach(() => {
   answer = true;
   guard = () => false;
   guardStops = 0;
+  divert = null;
   dropHandler = null;
   dropStops = 0;
   opening = null;
@@ -79,8 +87,9 @@ beforeEach(() => {
   shell = {
     confirm: vi.fn(async (_m: string) => answer),
     notify: vi.fn(async (_m: string) => undefined),
-    guardClose: vi.fn((isDirty: () => boolean, _message: string) => {
+    guardClose: vi.fn((isDirty: () => boolean, _message: string, d?: () => boolean) => {
       guard = isDirty;
+      divert = d ?? null;
       return () => {
         guardStops += 1;
       };
@@ -251,6 +260,10 @@ interface SetupOptions {
   readonly openOriginal?: WorkspaceDeps["openOriginal"];
   readonly reimportOriginal?: WorkspaceDeps["reimportOriginal"];
   readonly onOriginalChanged?: WorkspaceDeps["onOriginalChanged"];
+  readonly annotation?: WorkspaceDeps["annotation"];
+  readonly quit?: WorkspaceDeps["quit"];
+  readonly core?: CoreFactory;
+  readonly codec?: ContainerCodec;
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -273,12 +286,12 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
   };
   let n = 0;
   return createWorkspace({
-    core: fakeCore,
+    core: o.core ?? fakeCore,
     host,
     kind: host.kind,
     shell,
-    codec,
-    first: o.first ?? { doc: fakeCore.blank(), opened: null, error: null },
+    codec: o.codec ?? codec,
+    first: o.first ?? { doc: (o.core ?? fakeCore).blank(), opened: null, error: null },
     makeSession: async (doc, _assets) => fakeSession(doc).board,
     makeAssets: () => createAssetStore(fakeHasher),
     ...(o.decode ? { decode: o.decode } : {}),
@@ -304,6 +317,8 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     ...(o.openOriginal ? { openOriginal: o.openOriginal } : {}),
     ...(o.reimportOriginal ? { reimportOriginal: o.reimportOriginal } : {}),
     ...(o.onOriginalChanged ? { onOriginalChanged: o.onOriginalChanged } : {}),
+    ...(o.annotation ? { annotation: o.annotation } : {}),
+    ...(o.quit ? { quit: o.quit } : {}),
     dropReady: o.dropReady ?? (() => Promise.resolve()),
     ...(o.launch ? { launch: o.launch } : {}),
     now: () => "2026-11-20T00:00:00Z",
@@ -493,7 +508,7 @@ describe("espace de travail : fermeture et garde (CL5b-5, CL5b-6)", () => {
     drawOn(ws.active());
     expect(guard()).toBe(true);
     expect(shell.guardClose).toHaveBeenCalledTimes(1);
-    expect(shell.guardClose).toHaveBeenCalledWith(expect.any(Function), DISCARD_MESSAGE);
+    expect(shell.guardClose).toHaveBeenCalledWith(expect.any(Function), DISCARD_MESSAGE, expect.any(Function));
     expect(await ws.active().files.run("save")).toBe(true);
     expect(guard()).toBe(false);
     drawOn(first); // onglet caché modifié : la fenêtre reste gardée
@@ -1989,5 +2004,307 @@ describe("espace de travail : Office (C16)", () => {
     expect(r.inserted).toEqual(["notes.xlsx"]);
     expect(convertOffice).not.toHaveBeenCalled();
     expect(shell.notify).toHaveBeenCalledWith(`notes.xlsx : ${OFFICE_VALUES_MESSAGE}`);
+  });
+});
+
+function fakeGate(active = true) {
+  const log: string[] = [];
+  let on = active;
+  const g = {
+    state: () => ({ active: on, pointer: "draw" as const, screen: null, screens: 1 }),
+    exit: vi.fn(async () => {
+      log.push("exit");
+      on = false;
+    }),
+    dropOnZone: vi.fn(async () => {
+      log.push("drop");
+    }),
+    close: vi.fn(async () => {
+      log.push("close");
+      return true;
+    }),
+  };
+  return { g, log };
+}
+
+describe("C11a : onglet d'annotation (P3, P4, P13, P17, P25)", () => {
+  it("annotationTab : crée un onglet annotation vierge, non montré, puis rend le même", async () => {
+    const ws = await setupWorkspace();
+    const first = ws.active();
+    const a = await ws.annotationTab();
+    expect(a).not.toBeNull();
+    expect(ws.tabs.list().map((t) => t.kind)).toEqual(["board", "annotation"]);
+    expect(ws.active()).toBe(first);
+    expect(await ws.annotationTab()).toBe(a);
+    expect(ws.tabs.list()).toHaveLength(2);
+  });
+  it("plafond : 12 onglets sans onglet d'annotation → null, avis, aucun onglet ajouté", async () => {
+    const ws = await setupWorkspace();
+    while (ws.tabs.list().length < MAX_TABS) await ws.newBlank();
+    expect(await ws.annotationTab()).toBeNull();
+    expect(shell.notify).toHaveBeenCalledWith(TOO_MANY_TABS);
+    expect(ws.tabs.list().some((t) => t.kind === "annotation")).toBe(false);
+    expect(ws.tabs.list()).toHaveLength(MAX_TABS);
+  });
+  it("plafond : à 12 onglets, l'onglet d'annotation existant est réutilisé, sans avis", async () => {
+    const ws = await setupWorkspace();
+    const a = await ws.annotationTab();
+    while (ws.tabs.list().length < MAX_TABS) await ws.newBlank();
+    shell.notify.mockClear();
+    expect(await ws.annotationTab()).toBe(a);
+    expect(shell.notify).not.toHaveBeenCalled();
+    expect(ws.tabs.list()).toHaveLength(MAX_TABS);
+  });
+  it("replaceAnnotation : même place, même cible, modifié ; ancienne session libérée ; onglet actif inchangé", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    await ws.newBlank();
+    const shownBefore = ws.active();
+    await a.files.run("saveAs");
+    const target = a.files.target();
+    expect(target).not.toBeNull();
+    const entry = ws.tabs.list().find((t) => t.kind === "annotation")!;
+    const doc = fakeCore.blank();
+    doc.apply({ type: "CommitStroke", page: doc.pageIds()[0]!, points: new Float32Array([0, 10, 0.5, 50, 10, 0.5]), style: { color: "#000000", width: 4 } });
+    expect(await ws.replaceAnnotation(doc.save("2026-11-23T00:00:00Z", APP_VERSION))).toBe(true);
+    const after = ws.tabs.list().find((t) => t.kind === "annotation")!;
+    expect(after.id).toBe(entry.id);
+    expect(ws.tabs.list().indexOf(after)).toBe(1);
+    expect(ws.tabs.list()).toHaveLength(3);
+    expect(after.session).not.toBe(a);
+    expect(after.session.files.isDirty()).toBe(true);
+    expect(after.session.files.target()).toEqual(target);
+    expect(after.session.board.doc.elementIds(after.session.board.doc.pageIds()[0]!)).toHaveLength(1);
+    expect(a.board.dispose as ReturnType<typeof vi.fn>).toHaveBeenCalled();
+    expect(ws.active()).toBe(shownBefore);
+    expect(shell.confirm).not.toHaveBeenCalled(); // aucune question « modifié » : l'onglet n'est pas fermé
+  });
+  it("replaceAnnotation : l'onglet d'annotation montré reste montré, l'ancienne session désactivée avant d'être libérée", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    const id = ws.tabs.list().find((t) => t.kind === "annotation")!.id;
+    ws.tabs.activate(id);
+    const n = fakeOf(a).n;
+    log.length = 0;
+    expect(await ws.replaceAnnotation(validBytes())).toBe(true);
+    expect(ws.tabs.active()!.id).toBe(id);
+    expect(ws.active()).not.toBe(a);
+    expect(log.indexOf(`deactivate ${n}`)).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf(`deactivate ${n}`)).toBeLessThan(log.indexOf(`dispose ${n}`));
+  });
+  it("replaceAnnotation : octets illisibles → false, onglet gardé", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    codec.read.mockRejectedValueOnce(new Error("illisible"));
+    expect(await ws.replaceAnnotation(new Uint8Array([1, 2, 3]))).toBe(false);
+    expect(ws.tabs.list().find((t) => t.kind === "annotation")!.session).toBe(a);
+  });
+  it("encodeTab : l'onglet d'annotation s'enregistre en document ordinaire (le kind n'est pas écrit) et se rouvre en onglet board", async () => {
+    const ws = await setupWorkspace();
+    const a = (await ws.annotationTab())!;
+    const bytes = await ws.encodeTab(a);
+    expect(await ws.openDocument({ name: "x.roomboard", bytes, target: null })).toBe(true);
+    expect(ws.tabs.list().at(-1)!.kind).toBe("board");
+  });
+  it("un .roomboard d'avant C11a s'ouvre toujours (GC6)", async () => {
+    const ws = await setupWorkspace();
+    const old = fakeCore.blank().save("2026-11-20T00:00:00Z", "0.1.0");
+    expect(await ws.openDocument({ name: "ancien.roomboard", bytes: old, target: null })).toBe(true);
+  });
+  it("fermeture de l'application en annotation : refusée (divert vrai), sortie, puis quitRequested(quit)", async () => {
+    const { g, log } = fakeGate(true);
+    const quit = vi.fn(async () => {
+      log.push("quit");
+    });
+    await setupWorkspace({ annotation: () => g, quit });
+    expect(divert).not.toBeNull();
+    expect(divert!()).toBe(true);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalled());
+    expect(log).toEqual(["exit", "quit"]);
+  });
+  it("deux fermetures détournées en parallèle : une seule sortie, un seul quit (la seconde est absorbée)", async () => {
+    const { g, log } = fakeGate(true);
+    const quit = vi.fn(async () => {
+      log.push("quit");
+    });
+    await setupWorkspace({ annotation: () => g, quit });
+    expect(divert!()).toBe(true);
+    expect(divert!()).toBe(true);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(log).toEqual(["exit", "quit"]);
+  });
+  it("hors annotation (ou sans contrôleur) : divert faux", async () => {
+    await setupWorkspace({ annotation: () => fakeGate(false).g });
+    expect(divert!()).toBe(false);
+    await setupWorkspace();
+    expect(divert!()).toBe(false);
+  });
+  it("le contrôleur d'annotation est relu à chaque appel (créé après l'espace de travail)", async () => {
+    const { g } = fakeGate(true);
+    let late: ReturnType<typeof fakeGate>["g"] | null = null;
+    await setupWorkspace({ annotation: () => late });
+    expect(divert!()).toBe(false);
+    late = g;
+    expect(divert!()).toBe(true);
+  });
+  it("quitRequested en annotation : sortie d'abord, puis la garde ordinaire", async () => {
+    const { g, log } = fakeGate(true);
+    const ws = await setupWorkspace({ annotation: () => g });
+    await ws.quitRequested(async () => {
+      log.push("quit");
+    });
+    expect(log).toEqual(["exit", "quit"]);
+  });
+  it("dépôt natif en annotation → dropOnZone ; hors annotation → importFiles", async () => {
+    const { g, log } = fakeGate(true);
+    await setupWorkspace({ annotation: () => g });
+    const files: DroppedFile[] = [{ name: "a.png", size: 1, mime: "image/png", head: async () => new Uint8Array(), blob: async () => new Blob([]) }];
+    dropHandler!(files, { x: 1, y: 2 });
+    await vi.waitFor(() => expect(g.dropOnZone).toHaveBeenCalledWith(files, { x: 1, y: 2 }));
+    expect(log).toEqual(["drop"]);
+    const idle = fakeGate(false);
+    const ws = await setupWorkspace({ annotation: () => idle.g });
+    dropHandler!([roomboardFile("/tmp/d.roomboard")], { x: 10, y: 10 });
+    await vi.waitFor(() => expect(ws.tabs.list()).toHaveLength(2));
+    expect(idle.g.dropOnZone).not.toHaveBeenCalled();
+  });
+  it("fermer l'onglet d'annotation : la règle des onglets, puis annotate détruite (close)", async () => {
+    const { g } = fakeGate(false);
+    const ws = await setupWorkspace({ annotation: () => g });
+    await ws.newBlank();
+    const board = ws.tabs.active()!.id;
+    await ws.annotationTab();
+    expect(await ws.close(board)).toBe(true);
+    expect(g.close).not.toHaveBeenCalled(); // un onglet ordinaire fermé ne détruit pas annotate
+    const id = ws.tabs.list().find((t) => t.kind === "annotation")!.id;
+    expect(await ws.close(id)).toBe(true);
+    await vi.waitFor(() => expect(g.close).toHaveBeenCalledTimes(1));
+  });
+});
+
+// Vrai cœur Wasm et vrai module des formats, chargés en Node comme les contrats (`wasm-core.contract.test.ts`).
+interface NodeFs { existsSync(p: string): boolean; readFileSync(p: string): Uint8Array }
+const nodeFs = (await import(/* @vite-ignore */ `node:${"fs"}`)) as NodeFs;
+const nodeProc = (globalThis as { process?: { env: Record<string, string | undefined>; cwd(): string } }).process;
+const wasmEnv = nodeProc?.env ?? {};
+const webRoot = nodeProc?.cwd() ?? "."; // vitest tourne depuis `apps/web` ; `import.meta.url` n'est pas un `file:` sous happy-dom
+const coreWasm = `${webRoot}/src/wasm/roomboard_wasm_bg.wasm`;
+const formatsWasm = `${webRoot}/src/wasm-formats/roomboard_formats_wasm_bg.wasm`;
+const realPresent = nodeFs.existsSync(coreWasm) && nodeFs.existsSync(formatsWasm);
+interface RealCore { readonly core: CoreFactory; readonly codec: ContainerCodec }
+async function loadReal(): Promise<RealCore> {
+  const coreMod = (await import(/* @vite-ignore */ `file://${webRoot}/src/wasm/roomboard_wasm.js`)) as WasmModule & { initSync(o: { module: Uint8Array }): unknown };
+  coreMod.initSync({ module: nodeFs.readFileSync(coreWasm) });
+  const fmtMod = (await import(/* @vite-ignore */ `file://${webRoot}/src/wasm-formats/roomboard_formats_wasm.js`)) as FormatsBinding & { initSync(o: { module: Uint8Array }): unknown };
+  fmtMod.initSync({ module: nodeFs.readFileSync(formatsWasm) });
+  return { core: createWasmCore(coreMod), codec: createPageCodec(async () => fmtMod) };
+}
+const real: RealCore | null = realPresent ? await loadReal() : null;
+
+it("C11a : le vrai cœur et le vrai module des formats sont présents quand ils sont exigés", () => {
+  if (wasmEnv["ROOMBOARD_WASM_REQUIRED"] === "1") expect(realPresent).toBe(true);
+});
+
+describe("C11a — aller-retour bout à bout (S4)", () => {
+  /** Ce que `annotate` trace : un trait sur la première page du document reçu, par le cœur donné. */
+  const drawWith = (core: CoreFactory) => async (bytes: Uint8Array): Promise<Uint8Array> => {
+    const d = core.load(bytes);
+    d.apply({ type: "CommitStroke", page: d.pageIds()[0]!, points: new Float32Array([0, 10, 0.5, 50, 10, 0.5]), style: { color: "#000000", width: 4 } });
+    const out = d.save("2026-11-23T00:00:00Z", APP_VERSION);
+    d.free();
+    return out;
+  };
+  async function wire(o: { mute?: boolean; quit?: () => Promise<void>; real?: boolean } = {}) {
+    let ctl: AnnotationControl | null = null;
+    const rc = o.real === true ? real : null;
+    const ws = await setupWorkspace({ annotation: () => ctl, ...(o.quit ? { quit: o.quit } : {}), ...(rc ? { core: rc.core, codec: rc.codec } : {}) });
+    const windows = createFakeAnnotationWindows({ draw: drawWith(rc?.core ?? fakeCore), ...(o.mute ? { mute: true } : {}) });
+    const c = createAnnotationController<TabSession>({
+      windows,
+      annotationTab: () => ws.annotationTab(),
+      encodeTab: (t) => ws.encodeTab(t),
+      replaceAnnotation: (b) => ws.replaceAnnotation(b),
+      activeTabId: () => ws.tabs.active()?.id ?? null,
+      showTab: (id) => void ws.tabs.activate(id),
+      importFiles: (f, at) => ws.importFiles(f, at),
+      pageNumber: () => 1,
+      say: (m) => ws.say(m),
+      bar: () => ({ dock: "top", thickness: 48 }),
+      profile: () => BUILTIN_PROFILES[0]!,
+    });
+    ctl = c;
+    const annTab = () => ws.tabs.list().find((t) => t.kind === "annotation")!.session;
+    return { ws, ctl: c, windows, annTab };
+  }
+
+  it.skipIf(real === null)("S4 aller-retour : le trait est là après réouverture", async () => {
+    const { ws, ctl, annTab } = await wire({ real: true });
+    const origin = ws.active();
+    await ctl.enter();
+    await ctl.exit();
+    expect(ws.active()).toBe(origin);
+    expect(strokes(annTab())).toBe(1);
+    expect(annTab().files.isDirty()).toBe(true);
+    expect(await annTab().files.run("saveAs")).toBe(true);
+    const bytes = saved.at(-1)!;
+    expect(await ws.openDocument({ name: "x.roomboard", bytes, target: null })).toBe(true);
+    expect(strokes(ws.tabs.list().at(-1)!.session)).toBe(1);
+  });
+  it("S4 aller-retour avec le faux cœur : le trait est là après réouverture", async () => {
+    const { ws, ctl, annTab } = await wire();
+    await ctl.enter();
+    await ctl.exit();
+    expect(strokes(annTab())).toBe(1);
+    expect(await annTab().files.run("saveAs")).toBe(true);
+    expect(await ws.openDocument({ name: "x.roomboard", bytes: saved.at(-1)!, target: null })).toBe(true);
+    expect(strokes(ws.tabs.list().at(-1)!.session)).toBe(1);
+  });
+  it.skipIf(real === null)("un .roomboard d'avant C11a (vrai cœur) s'ouvre toujours (GC6)", async () => {
+    const { ws } = await wire({ real: true });
+    const old = real!.core.blank().save("2026-11-20T00:00:00Z", "0.1.0");
+    expect(await ws.openDocument({ name: "ancien.roomboard", bytes: old, target: null })).toBe(true);
+  });
+  it("enregistré sous x.roomboard, rentrer, tracer, sortir : modifié, Ctrl+S réécrit la même cible", async () => {
+    const { ctl, annTab } = await wire();
+    await ctl.enter();
+    await ctl.exit();
+    await annTab().files.run("saveAs");
+    const target = annTab().files.target();
+    expect(annTab().files.isDirty()).toBe(false);
+    await ctl.enter();
+    await ctl.exit();
+    expect(annTab().files.isDirty()).toBe(true);
+    expect(strokes(annTab())).toBe(2);
+    host.save.mockClear();
+    expect(annTab().files.key({ key: "s", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(true);
+    await vi.waitFor(() => expect(host.save).toHaveBeenCalledTimes(1));
+    expect(host.save.mock.calls[0]![1]).toEqual(target);
+  });
+  it("fermeture de l'application en annotation : refusée, sortie, puis question de l'onglet modifié, puis quit", async () => {
+    const quit = vi.fn(async () => undefined);
+    const { ctl } = await wire({ quit });
+    await ctl.enter();
+    answer = true;
+    expect(divert!()).toBe(true);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalledTimes(1));
+    expect(ctl.state().active).toBe(false);
+    expect(shell.confirm).toHaveBeenCalledWith(DISCARD_MESSAGE);
+  });
+  it("faux hôte muet : sortie après 5 s avec l'avis, onglet d'annotation inchangé", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctl, annTab } = await wire({ mute: true });
+      await ctl.enter();
+      const before = annTab();
+      const done = ctl.exit();
+      await vi.advanceTimersByTimeAsync(5000);
+      await done;
+      expect(ctl.state().active).toBe(false);
+      expect(shell.notify).toHaveBeenCalledWith(INK_LOST_MESSAGE);
+      expect(annTab()).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

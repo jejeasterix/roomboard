@@ -116,6 +116,7 @@ function fakeShell(answer: boolean) {
 
 interface SetupOptions {
   readonly opened?: FileControllerDeps["opened"];
+  readonly dirty?: boolean;
   readonly answer?: boolean;
   readonly encode?: FileControllerDeps["encode"];
   readonly saveBlocked?: FileControllerDeps["saveBlocked"];
@@ -134,6 +135,7 @@ function setup(o: SetupOptions = {}) {
     encode: o.encode ?? (async (now, v) => doc.save(now, v)),
     importFiles: o.importFiles ?? (async () => undefined),
     ...(o.saveBlocked ? { saveBlocked: o.saveBlocked } : {}),
+    ...(o.dirty ? { dirty: true } : {}),
     versions,
     host: h.host,
     shell: s.shell,
@@ -544,5 +546,26 @@ describe("contrôleur : encode, import, refus R30 (R11, R18, R30)", () => {
     const t = setup({ importFiles });
     expect(await t.ctl.run("import")).toBe(false);
     expect([t.h.calls.pick, importFiles.mock.calls.length]).toEqual([1, 0]);
+  });
+});
+
+describe("C11a : onglet remplacé (P4)", () => {
+  it("dirty : modifié d'emblée, puis propre après Enregistrer", async () => {
+    const { ctl } = setup({ dirty: true, opened: { name: "x.roomboard", target: { kind: "download", name: "x.roomboard" } } });
+    expect(ctl.isDirty()).toBe(true);
+    expect(await ctl.run("save")).toBe(true);
+    expect(ctl.isDirty()).toBe(false);
+  });
+  it("target() : cible d'ouverture, puis celle de l'enregistrement", async () => {
+    const t: SaveTarget = { kind: "download", name: "x.roomboard" };
+    const { ctl } = setup({ opened: { name: "x.roomboard", target: t } });
+    expect(ctl.target()).toEqual(t);
+    const fresh = setup();
+    expect(fresh.ctl.target()).toBeNull();
+    await fresh.ctl.run("saveAs");
+    expect(fresh.ctl.target()).not.toBeNull();
+  });
+  it("sans dirty : état initial « non modifié » (rien ne change)", () => {
+    expect(setup().ctl.isDirty()).toBe(false);
   });
 });
