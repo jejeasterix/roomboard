@@ -17,7 +17,7 @@ export const COMMAND_TYPES = [
 type Missing = Exclude<Command["type"], (typeof COMMAND_TYPES)[number]>;
 export const ALL_COMMANDS: [Missing] extends [never] ? true : Missing = true;
 
-export const CLI_OPS = ["undo", "redo", "state", "save", "tab.new", "tab.open", "tab.select", "tab.close", "tab.list"] as const;
+export const CLI_OPS = ["undo", "redo", "state", "save", "import", "export", "tab.new", "tab.open", "tab.select", "tab.close", "tab.list"] as const;
 export type CliOpName = (typeof CLI_OPS)[number];
 
 export type Op =

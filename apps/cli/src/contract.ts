@@ -3,6 +3,8 @@
  * du processus. Toute commande ou option ajoutée plus tard est additive ; un champ renommé passe le schéma à
  * `roomboard-cli/2` (DA2).
  */
+import { createInterface } from "node:readline";
+
 export const CLI_VERSION = "0.1.0";
 export const SCHEMA = "roomboard-cli/1";
 
@@ -48,4 +50,14 @@ export interface CliIO {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Dossier qui contient `wasm/` et `wasm-formats/` : `apps/cli/dist/`, ou `apps/web/src/` dans les tests. */
   readonly wasmDir: URL;
+}
+
+/**
+ * Lignes d'un flux (stdin de `run -`), paresseuses : readline lit dès sa création et perd les lignes, puis la fin, émises
+ * avant que l'itération ne s'y branche ; il n'est donc créé qu'à la première lecture, après les attentes de la commande.
+ */
+export function streamLines(input: NodeJS.ReadableStream): AsyncIterable<string> {
+  return (async function* () {
+    yield* createInterface({ input, crlfDelay: Infinity });
+  })();
 }

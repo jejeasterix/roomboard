@@ -11,8 +11,11 @@ import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
 import { createPageCodec, type SheetFormatsBinding } from "../../web/src/platform/container";
 import { APP_VERSION } from "../../web/src/platform/controller";
+import type { Point } from "../../web/src/platform/files";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
+import { exportFragment } from "./exporter";
+import { atOf, importInto, partialMessage } from "./importer";
 import { needString, optString, parseOp, type CliOpName, type RefContext } from "./ops";
 import { stateOf } from "./state";
 import { loadCore, loadFormats } from "./wasm-node";
@@ -139,6 +142,28 @@ export function createSession(deps: SessionDeps): Session {
       }
       case "save":
         return { file: await save(active(), optString(args, "to") ?? null) };
+      case "import": {
+        const files = args["files"];
+        if (!Array.isArray(files) || files.length === 0 || !files.every((f) => typeof f === "string")) {
+          throw new CliError("usage", "files : liste de chemins attendue");
+        }
+        const at = args["at"];
+        let point: Point | null = null;
+        if (at !== undefined) {
+          if (!Array.isArray(at) || at.length !== 2) throw new CliError("usage", "at : [x, y] attendu");
+          point = atOf(at[0], at[1]);
+        }
+        const report = await importInto(session, { sources: files as string[], page: optString(args, "page"), at: point });
+        if (report.failed.length + report.refused.length > 0) throw new CliError("command", partialMessage(report), { ...report });
+        return { ...report };
+      }
+      case "export": {
+        const ids = args["ids"];
+        if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) {
+          throw new CliError("usage", "ids : liste d'ids attendue");
+        }
+        return { ...(await exportFragment(session, { to: needString(args, "to"), page: optString(args, "page"), ids: ids as string[] | undefined })) };
+      }
       case "tab.new":
         newTab();
         return { tabs: tabList() };

@@ -8,7 +8,9 @@ import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { readBytes } from "./disk";
-import { formatRows } from "./formats";
+import { checkExportTarget, exportFragment } from "./exporter";
+import { extOf, formatRows } from "./formats";
+import { checkSources, importInto, parseAt, partialMessage } from "./importer";
 import { nodeSession, type Session } from "./session";
 import { stateOf } from "./state";
 import { loadCore } from "./wasm-node";
@@ -19,9 +21,11 @@ const USAGE = {
   version: "version",
   formats: "formats",
   new: "new <sortie.roomboard>",
-  state: "state <fichier.roomboard> [--page <id>] [--points]",
+  state: "state <fichier.roomboard | fichier.rbitem> [--page <id>] [--points]",
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
+  import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
+  export: "export <fichier.roomboard> <sortie.rbitem> [--page <id>] [--ids a,b | --all] [--name <nom>]",
 } as const;
 
 const none = (args: readonly string[], name: keyof typeof USAGE): void => {
@@ -74,7 +78,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const file = p.positional[0];
     if (file === undefined || p.positional.length !== 1) throw usage(USAGE.state);
     const session = await nodeSession(io);
-    const read = await session.readDoc(file, "document");
+    const read = await session.readDoc(file, extOf(file) === ".rbitem" ? "fragment" : "document");
     io.out(JSON.stringify(stateOf(read.doc, file, { page: flagStr(p, "--page"), points: p.flags.has("--points") })));
     return 0;
   },
@@ -107,6 +111,34 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     await session.open(file);
     await play(session, [op], io);
     await session.save(session.active(), flagStr(p, "--out") ?? file);
+    return 0;
+  },
+  import: async (args, io) => {
+    const p = parseArgs(args, { "--page": "value", "--at": "value", "--out": "value" });
+    const [file, ...sources] = p.positional;
+    if (file === undefined || sources.length === 0) throw usage(USAGE.import);
+    checkSources(sources); // code 3 avant toute lecture (D9)
+    const atText = flagStr(p, "--at");
+    const at = atText === undefined ? null : parseAt(atText); // code 2 avant tout import (H7)
+    const session = await nodeSession(io);
+    const tab = (await session.open(file)).session;
+    const report = await importInto(session, { sources, page: flagStr(p, "--page"), at });
+    if (report.inserted.length > 0) await session.save(tab, flagStr(p, "--out") ?? file);
+    io.out(JSON.stringify(report));
+    if (report.failed.length + report.refused.length > 0) throw new CliError("command", partialMessage(report)); // H10
+    return 0;
+  },
+  export: async (args, io) => {
+    const p = parseArgs(args, { "--page": "value", "--ids": "value", "--all": "bool", "--name": "value" });
+    const [file, to] = p.positional;
+    if (file === undefined || to === undefined || p.positional.length !== 2) throw usage(USAGE.export);
+    const idsText = flagStr(p, "--ids");
+    if (idsText !== undefined && p.flags.has("--all")) throw new CliError("usage", "--ids et --all s'excluent");
+    checkExportTarget(to); // code 2 ou 3 avant toute lecture
+    const session = await nodeSession(io);
+    await session.open(file);
+    const ids = idsText?.split(",").map((s) => s.trim()).filter((s) => s !== "");
+    io.out(JSON.stringify(await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name") })));
     return 0;
   },
 };

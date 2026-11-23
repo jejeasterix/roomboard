@@ -1,6 +1,5 @@
 // Entrée du binaire `roomboard` (D3) : branche le processus sur `main` ; les `.wasm` sont à côté du fichier construit.
-import { createInterface } from "node:readline";
-import type { CliIO } from "./contract";
+import { streamLines, type CliIO } from "./contract";
 import { main } from "./main";
 
 const io: CliIO = {
@@ -10,7 +9,7 @@ const io: CliIO = {
   err: (line) => {
     process.stderr.write(`${line}\n`);
   },
-  lines: () => createInterface({ input: process.stdin, crlfDelay: Infinity }),
+  lines: () => streamLines(process.stdin),
   env: process.env,
   wasmDir: new URL("./", import.meta.url),
 };
