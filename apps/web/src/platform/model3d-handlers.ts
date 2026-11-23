@@ -61,6 +61,8 @@ interface Model {
   readonly format: Model3dFormat;
   readonly main: Uint8Array<ArrayBuffer>;
   readonly siblings: readonly Sibling[];
+  /** Mineur C15 : fichiers liés écartés car trop gros, déjà dits : ni « absents », ni « sans son .mtl ». */
+  readonly tooBig: readonly string[];
 }
 
 /** État d'un importeur, partagé par ses gestionnaires 3D : « 3D indisponible » n'est dit qu'une fois (X26). */
@@ -100,8 +102,9 @@ async function insertModel(
     } finally {
       view.release(loaded);
     }
-    missing = [...g.missing, ...loaded.missing.filter((x) => !g.missing.includes(x))];
-    mtl = g.mtl;
+    const said = new Set(m.tooBig.map(baseName));
+    missing = [...g.missing, ...loaded.missing.filter((x) => !g.missing.includes(x))].filter((x) => !said.has(baseName(x)));
+    mtl = g.mtl === false && [...said].some((n) => extensionOf(n) === "mtl") ? null : g.mtl;
   } catch (e) {
     await ctx.notify(`Import impossible (${m.name}) : ${MODEL3D_UNREADABLE} (${messageOf(e)})`);
     return "failed";
@@ -159,7 +162,8 @@ export function model3dHandler(deps: Model3dDeps, shared: Model3dShared = { warn
       const format = sniffModel3d(ctx.head, file.name);
       if (format === null) return "failed";
       const main = await bytesOf(ctx.blob);
-      return insertModel(deps, shared, { name: file.name, path: file.name, format, main, siblings: ctx.companions.map(siblingOf) }, ctx, ctx.inserted);
+      const model = { name: file.name, path: file.name, format, main, siblings: ctx.companions.map(siblingOf), tooBig: ctx.tooBig ?? [] };
+      return insertModel(deps, shared, model, ctx, ctx.inserted);
     },
   };
 }
@@ -182,9 +186,13 @@ export function zip3dHandler(deps: Model3dDeps, shared: Model3dShared = { warned
       }
       // X17, ZIP compris : une entrée au-delà de `MODEL3D_MAX_BYTES` n'est ni lue ni rangée, et dite trop grosse.
       const entries: ZipEntry[] = [];
+      const tooBig: string[] = [];
       for (const e of all) {
         if (e.blob.size <= MODEL3D_MAX_BYTES) entries.push(e);
-        else await ctx.notify(`${e.path} (${file.name}) : ${MODEL3D_TOO_BIG_MESSAGE}`);
+        else {
+          tooBig.push(e.path);
+          await ctx.notify(`${e.path} (${file.name}) : ${MODEL3D_TOO_BIG_MESSAGE}`);
+        }
       }
       const siblings: Sibling[] = entries.map((e) => ({ path: e.path, bytes: () => bytesOf(e.blob) }));
       const mains: Array<{ readonly entry: ZipEntry; readonly format: Model3dFormat }> = [];
@@ -205,6 +213,7 @@ export function zip3dHandler(deps: Model3dDeps, shared: Model3dShared = { warned
           format,
           main: await bytesOf(entry.blob),
           siblings: siblings.filter((s) => s.path !== entry.path),
+          tooBig,
         };
         if ((await insertModel(deps, shared, model, ctx, ctx.inserted + i)) === "inserted") any = true;
       }

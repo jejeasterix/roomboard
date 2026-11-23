@@ -7,7 +7,7 @@ import { IDENTITY } from "../engine/camera";
 import type { TableGrid } from "./html-table";
 import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
 import {
-  BOARD_TOO_BIG_MESSAGE, hasXmlHead, isIwbName, isUbzName, createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
+  BOARD_TOO_BIG_MESSAGE, hasXmlHead, PREPASS_KEEP_BYTES, isIwbName, isUbzName, createImporter, hasPdfMagic, hasZipMagic, importerOf, isRbitemName, isRbpackName, isRoomboardName, rbpackHandler, LATER_FORMAT_MESSAGE, SHEET_MAX_BYTES, WEB_MAX_BYTES,
   ZIP_MAGIC, type ImportHandler,
 } from "./import";
 import { BAMBOO_NOT_FLIPCHART } from "./bamboo";
@@ -921,6 +921,16 @@ describe("importFiles : fichiers liés (C15, DAX2)", () => {
     await importerOf([fake("fmod", log, true)], deps()).importFiles([counted(txt("m.fmod", "x")), counted(txt("c.roomboard", "x"))]);
     expect([times(heads, "m.fmod"), times(blobs, "m.fmod")]).toEqual([1, 1]);
     expect(heads.includes("c.roomboard")).toBe(false);
+  });
+
+  it("mineur C15 : la pré-passe garde au plus PREPASS_KEEP_BYTES de contenus ; au-delà, la boucle relit le modèle", async () => {
+    const { blobs, counted, times } = counter();
+    const log: string[] = [];
+    const half = PREPASS_KEEP_BYTES / 2 + 1;
+    const m = (name: string): DroppedFile => counted({ ...txt(name, "rien"), size: half });
+    await importerOf([fake("fmod", log, true)], deps()).importFiles([m("m1.fmod"), m("m2.fmod"), m("m3.fmod")]);
+    expect(log).toEqual(["fmod:m1.fmod[]", "fmod:m2.fmod[]", "fmod:m3.fmod[]"]);
+    expect([times(blobs, "m1.fmod"), times(blobs, "m2.fmod"), times(blobs, "m3.fmod")]).toEqual([1, 2, 2]);
   });
 
   it("appel de plusieurs fichiers : l'en-tête d'un fichier non réclamé lu une seule fois, comme avant", async () => {
