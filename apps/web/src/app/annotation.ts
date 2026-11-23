@@ -33,7 +33,8 @@ import {
   type SendTarget,
 } from "../platform/annotation-port";
 import { ANNOTATION_MAIN_ACTIONS, type Dock, type Profile, type StartMode } from "../toolbar";
-import { IDENTITY_MATRIX, type PageBackdrop } from "./desktop-page";
+import { IDENTITY_MATRIX } from "../core/shapes";
+import type { PageBackdrop } from "./desktop-page";
 import type { ToolbarHost } from "./toolbar-host";
 
 export const RELAUNCH_QUESTION = "Annotation du bureau indisponible sous Wayland. Relancer en mode compatibilité ?";
