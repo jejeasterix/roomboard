@@ -1,4 +1,5 @@
 import { createMemo, For, Show, type Accessor, type JSX } from "solid-js";
+import { UNTITLED } from "../platform/files";
 
 export interface TabView {
   readonly id: string;
@@ -13,6 +14,11 @@ export interface TabsBarProps {
   activate(id: string): void;
   close(id: string): void;
   newTab(): void;
+}
+
+/** C11a (P3) : l'onglet d'annotation se lit « Annotation », puis « Annotation — nom » une fois enregistré. */
+export function annotationTabLabel(title: string): string {
+  return title === UNTITLED || title === "" ? "Annotation" : `Annotation — ${title}`;
 }
 
 export function TabsBar(props: TabsBarProps): JSX.Element {
@@ -44,7 +50,7 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
             aria-selected={props.active() === t.id}
             onClick={() => props.activate(t.id)}
           >
-            <span>{t.title}</span>
+            <span>{t.kind === "annotation" ? annotationTabLabel(t.title) : t.title}</span>
             <Show when={t.dirty}>
               <span class="rb-tab-dirty" aria-hidden="true">
                 •

@@ -250,7 +250,8 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
   return { container, workspace, tab, store, active, settings, navigate, files };
 }
 
-function fakeAnnotationUi(start = false) {
+/** `activateOnEnter` faux : `enter` ne change pas l'état (la barre reste celle du tableau, menu Profil utilisable). */
+function fakeAnnotationUi(start = false, activateOnEnter = true) {
   let st: AnnotationState = { active: start, pointer: "draw", screen: null, screens: 1 };
   const cbs = new Set<() => void>();
   const views = new Set<(v: ToolbarView) => void>();
@@ -261,7 +262,7 @@ function fakeAnnotationUi(start = false) {
   };
   const control: AnnotationControl = {
     state: () => st,
-    enter: vi.fn(async () => set({ active: true })),
+    enter: vi.fn(async () => (activateOnEnter ? set({ active: true }) : undefined)),
     exit: vi.fn(async () => set({ active: false })),
     close: vi.fn(async () => true),
     toggle: vi.fn(async () => undefined),
@@ -556,7 +557,7 @@ describe("App — profils (C1)", () => {
   });
 
   it("C11a : profil annotation et capacité : enter une fois au montage, pas au changement de profil (P22)", () => {
-    const a = fakeAnnotationUi();
+    const a = fakeAnnotationUi(false, false);
     const { container } = renderApp({ profile: "annotation", caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
     expect(a.control.enter).toHaveBeenCalledTimes(1);
     openMenu(container);
