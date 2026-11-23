@@ -2344,6 +2344,7 @@ describe("C11a — aller-retour bout à bout (S4)", () => {
       await saveAndReopen(w);
       expect(w.ws.active().assets.linked(VID)).toBe(ABS);
     });
+    // Garde du chemin « non modifié » : `replaceAnnotation` n'est pas appelé, l'onglet est le même.
     it("non modifié : l'onglet est gardé tel quel, lien compris ; enregistrer puis rouvrir le garde", async () => {
       const w = await savedWithLinkedVideo({ unchanged: true });
       const before = w.annTab();
@@ -2370,6 +2371,22 @@ describe("C11a — aller-retour bout à bout (S4)", () => {
       });
       expect(await w.annTab().files.run("saveAs")).toBe(true);
       expect(fakeCore.load(saved.at(-1)!).linkedAssets()).toEqual([{ id: VID, path: "../cours/videos/clip.webm" }]);
+    });
+    it("M31 : fichier disparu puis revenu : au second retour, le lien gardé se résout de nouveau, sans avis", async () => {
+      const w = await savedWithLinkedVideo();
+      w.relinkMedia.mockResolvedValueOnce(false);
+      await w.ctl.enter();
+      await w.ctl.exit();
+      expect(w.annTab().assets.linked(VID)).toBeUndefined();
+      shell.notify.mockClear();
+      w.relinkMedia.mockClear();
+      await w.ctl.enter();
+      await w.ctl.exit();
+      expect(w.relinkMedia).toHaveBeenCalledWith(ABS, 300_000_000);
+      expect(w.annTab().assets.linked(VID)).toBe(ABS);
+      expect(shell.notify).not.toHaveBeenCalled();
+      await saveAndReopen(w);
+      expect(w.ws.active().assets.linked(VID)).toBe(ABS);
     });
   });
   it("fermeture de l'application en annotation : refusée, sortie, puis question de l'onglet modifié, puis quit", async () => {

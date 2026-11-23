@@ -218,7 +218,7 @@ interface Slot {
   title: string;
   /** Onglet aux assets non lus (R30) : Enregistrer refusé. */
   unread: boolean;
-  /** M31 : chemin absolu de chaque lien introuvable à l'ouverture, par id (gardé au retour d'annotation, OE77). */
+  /** M31 : chemin absolu de chaque lien tenté à l'ouverture, par id (le magasin passe avant) ; repris au retour d'annotation (OE77). */
   readonly lost: ReadonlyMap<string, string>;
 }
 
