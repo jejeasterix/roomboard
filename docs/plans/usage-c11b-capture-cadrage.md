@@ -129,7 +129,7 @@ toute la carte vient de la recherche texte et de la lecture.
 | `toolbar-profiles.ts:48-54` (`annotationItems`) | oui | trois actions | V |
 | `ui/item-state.ts:7-11` (`AnnotationView`), `:53-61` (`ACTION_STATE`) | oui | `frozen`, `live`, `sendTarget` ; libellés, enfoncé, grisé (P6, P16, P18) | V |
 | `app/toolbar-host.ts:31-32, :59-64` (`HostTargets.annotation`, `ACTIONS`) | oui | `freeze`, `send("origin")`, `send("new")` par `settle` | V |
-| `ui/Toolbar.tsx`, `ui/App.tsx`, `ui/TabsBar.tsx` | non | rendu inchangé (les éléments passent par `itemsForMode`) | V |
+| `ui/App.tsx:339-350` (`view`) ; `ui/Toolbar.tsx`, `ui/TabsBar.tsx` | oui (App) ; non (Toolbar, TabsBar) | App : recopie de `frozen`, `live`, `sendTarget` de l'état d'annotation dans `ToolbarView.annotation` ; Toolbar, TabsBar : rendu inchangé (les éléments passent par `itemsForMode`) | V |
 | `ui/rb.css` | non | aucun style nouveau (boutons d'action ordinaires) | S |
 | `runtime-capabilities.ts:15-24` | non | `desktopAnnotation` inchangé ; la transparence n'est pas une capacité de barre | V |
 
