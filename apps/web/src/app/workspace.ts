@@ -8,6 +8,7 @@
  */
 import { PDF_MAX_PAGES, type CoreDocument, type AssetRef, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
+import type { AnnotationControl } from "../platform/annotation-port";
 import type { ContainerCodec } from "../platform/container";
 import {
   APP_VERSION,
@@ -39,7 +40,7 @@ import { createFragmentOps, SELECTION_NAME, type InsertOutcome } from "./fragmen
 import type { CapturedResource } from "./library";
 import { renderThumbnail, type ThumbDeps } from "./thumbnail";
 import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RASTER_MISSING_MESSAGE, type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
-import { createTabs, MAX_TABS, TOO_MANY_TABS, type Tabs } from "./tabs";
+import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabKind, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
 import type { BoardPart } from "../platform/board-reader";
@@ -63,6 +64,17 @@ export interface TabSession {
   readonly files: FileController;
   /** Octets des images de l'onglet (R12). */
   readonly assets: AssetStore;
+}
+
+/** C11a : ce que l'espace de travail demande au contrôleur d'annotation (`app/annotation.ts`). */
+export type AnnotationGate = Pick<AnnotationControl, "state" | "exit" | "dropOnZone" | "close">;
+
+/** C11a (P3, P4) : sorte, état « modifié », activation, onglet remplacé. */
+interface TabOptions {
+  readonly kind?: TabKind;
+  readonly dirty?: boolean;
+  readonly activate?: boolean;
+  readonly replace?: string;
 }
 
 export interface WorkspaceDeps {
@@ -131,6 +143,10 @@ export interface WorkspaceDeps {
   reimportOriginal?(id: string): Promise<void>;
   /** C16 (O21) : « original modifié » émis par la coque ; rend le désabonnement. */
   onOriginalChanged?(cb: (e: OriginalChange) => void): () => void;
+  /** C11a (P17, P18, P25) : contrôleur d'annotation, relu à chaque appel (il est créé après l'espace de travail). */
+  annotation?(): AnnotationGate | null;
+  /** C11a (P25) : sortie de l'application, relancée après la sortie de l'annotation ; absent (web) : rien n'est relancé. */
+  quit?(): Promise<void>;
 }
 
 export interface Workspace {
@@ -185,6 +201,13 @@ export interface Workspace {
   /** C16 (O19, O20) : « Modifier dans l'application d'origine » sur la page montrée ; faux sans port, sans original ou
    *  refusé (avis dit). */
   editOriginal(): Promise<boolean>;
+  /** C11a (P3) : l'onglet d'annotation, créé vierge et non montré s'il n'existe pas ; null à 12 onglets (avis dit). */
+  annotationTab(): Promise<TabSession | null>;
+  /** C11a (P4) : document de l'onglet en `.roomboard` (la sorte d'onglet n'est pas écrite, P26). */
+  encodeTab(tab: TabSession): Promise<Uint8Array>;
+  /** C11a (P4) : document de l'onglet d'annotation remplacé (même place, même id, même cible, « modifié ») ; false si
+   *  illisible ou sans onglet d'annotation. */
+  replaceAnnotation(bytes: Uint8Array): Promise<boolean>;
   dispose(): void;
 }
 
@@ -317,6 +340,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     assets: AssetStore = makeAssets(),
     unread = false,
     lost: ReadonlyMap<string, string> = new Map(),
+    opts: TabOptions = {},
   ): Promise<TabSession | null> {
     let board: BoardSession;
     try {
@@ -351,6 +375,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       host: tabHost,
       shell: tabShell(slot),
       opened,
+      ...(opts.dirty === true ? { dirty: true } : {}),
       openInTab: (f) => ws.openDocument(f),
       newTab: () => ws.newBlank(),
       now: deps.now,
@@ -360,13 +385,23 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     slot.tab = tab;
     slots.set(tab, slot);
     let id: string;
+    let replaced: TabSession | null = null;
     try {
-      id = tabs.add("board", tab).id;
+      if (opts.replace !== undefined) {
+        // C11a (P4) : même entrée (id, sorte, place, actif) ; jamais `close` + `openDocument`, qui déplaceraient l'onglet.
+        const old = tabs.list().find((t) => t.id === opts.replace);
+        if (old === undefined || tabs.replace(opts.replace, tab) === null) throw new Error("onglet d'annotation introuvable");
+        replaced = old.session;
+        id = opts.replace;
+      } else {
+        id = tabs.add(opts.kind ?? "board", tab, opts.activate ?? true).id;
+      }
     } catch (e) {
       release(tab);
       await say(messageOf(e));
       return null;
     }
+    if (replaced !== null) release(replaced); // après le `show()` de `tabs.replace` : désactivée avant d'être libérée
     slot.id = id;
     mark(slot);
     files.onChange(() => mark(slot));
@@ -404,6 +439,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       : {}),
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
+  const gate = (): AnnotationGate | null => deps.annotation?.() ?? null;
 
   let exporting = false;
   const ws: Workspace = {
@@ -638,6 +674,25 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
       await addTab(core.blank(), null);
     },
+    async annotationTab() {
+      const existing = tabs.list().find((t) => t.kind === "annotation");
+      if (existing !== undefined) return existing.session;
+      if (full()) {
+        await say(TOO_MANY_TABS);
+        return null;
+      }
+      return addTab(core.blank(), null, makeAssets(), false, new Map(), { kind: "annotation", activate: false });
+    },
+    encodeTab: (tab) => io.encode(tab.board.doc, tab.assets, deps.now(), APP_VERSION, { kind: "document" }),
+    async replaceAnnotation(bytes) {
+      const entry = tabs.list().find((t) => t.kind === "annotation");
+      if (entry === undefined) return false;
+      const old = entry.session;
+      const read = await io.read(old.files.name(), bytes, "document");
+      if (read === null) return false;
+      const opened = { name: old.files.name(), target: old.files.target() };
+      return (await addTab(read.doc, opened, read.assets, read.unread, new Map(), { kind: "annotation", dirty: true, replace: entry.id })) !== null;
+    },
     async close(id) {
       if (closing.has(id)) return false; // double clic : le second appel ne fait rien
       closing.add(id);
@@ -759,6 +814,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     anyDirty,
     key: (e) => ws.active().files.key(e),
     async quitRequested(quit) {
+      const a = gate();
+      if (a !== null && a.state().active) await a.exit(); // P25 : sortie d'abord (document récupéré)
       if (anyDirty() && !(await ask(DISCARD_MESSAGE))) return;
       await quit();
     },
@@ -802,6 +859,12 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     if (tabs.list().length === 1 && (await addTab(core.blank(), null)) === null) return false;
     if (tabs.remove(id) === null) return false;
     release(tab);
+    // C11a (P13) : onglet d'annotation fermé, `annotate` détruite (sortie d'abord si active).
+    if (entry.kind === "annotation") {
+      void gate()
+        ?.close()
+        .catch((e: unknown) => console.warn(`RoomBoard : fenêtre d'annotation non fermée (${messageOf(e)})`));
+    }
     return true;
   }
 
@@ -819,9 +882,22 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     first.board.stage.dataset["fichierErreur"] = deps.first.error;
     void say(deps.first.error);
   }
-  const stopGuard = shell.guardClose(anyDirty, DISCARD_MESSAGE);
+  // C11a (P25) : en annotation, fermeture refusée sans question, sortie, puis fermeture relancée (garde ordinaire).
+  const stopGuard = shell.guardClose(anyDirty, DISCARD_MESSAGE, () => {
+    const a = gate();
+    if (a === null || !a.state().active) return false;
+    const quit = deps.quit;
+    void a
+      .exit()
+      .then(() => (quit === undefined ? undefined : ws.quitRequested(quit)))
+      .catch((e: unknown) => console.warn(`RoomBoard : fermeture abandonnée (${messageOf(e)})`));
+    return true;
+  });
+  // C11a (P17, P18) : en annotation, tout dépôt natif sur la fenêtre principale compte comme un dépôt sur la zone.
   const stopDrop = host.onDrop((files, at) => {
-    void ws.importFiles(files, at).catch((e: unknown) => {
+    const a = gate();
+    const done: Promise<unknown> = a !== null && a.state().active ? a.dropOnZone(files, at) : ws.importFiles(files, at);
+    void done.catch((e: unknown) => {
       console.warn(`RoomBoard : dépôt abandonné (${messageOf(e)})`);
     });
   });
