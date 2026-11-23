@@ -2,6 +2,7 @@ import type { FormatAction } from "../engine/rich-edit";
 import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
+import type { AnnotationControl } from "../platform/annotation-port";
 import { fillChoices, isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
 export type SelectionAction = "group" | "ungroup" | "copy" | "paste" | "export";
@@ -26,6 +27,8 @@ export interface ToolbarHost {
   imagePanel(): void;
 }
 export interface HostTargets {
+  /** C11a (P6, P8, P15, P22) : contrôleur d'annotation ; absent (web sans faux hôte, tests) : sans effet (PC9). */
+  annotation?: Pick<AnnotationControl, "state" | "enter" | "exit" | "toggle" | "nextScreen">;
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
@@ -45,6 +48,12 @@ export interface HostTargets {
 const file = (cmd: FileCommand) => (t: HostTargets): void => t.runFile(cmd);
 
 export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
+  "desktop-annotation": (t) => {
+    const a = t.annotation;
+    if (a !== undefined) void (a.state().active ? a.exit() : a.enter());
+  },
+  "annotation-pointer": (t) => void t.annotation?.toggle(),
+  "annotation-screen": (t) => void t.annotation?.nextScreen(),
   undo: (t) => t.engine().undo(),
   redo: (t) => t.engine().redo(),
   "page-prev": (t) => void t.engine().prevPage(),
@@ -103,9 +112,8 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     selection: (a) => t.selection(a),
     imagePanel: () => t.toggle("image"),
     setMode(mode) {
-      // Tableau : déjà affiché, rien à faire ni à dire. Annotation du bureau : point d'accroche de C11a, sans effet ici.
-      if (mode === "board") return;
-      console.info(`mode de démarrage ${mode} : la fenêtre d'annotation arrive avec C11a, le tableau reste affiché`);
+      // U14, P22 : « Annotation du bureau » entre en annotation ; sans contrôleur, rien (repli silencieux sur le tableau).
+      if (mode === "desktop-annotation") void t.annotation?.enter();
     },
   };
 }

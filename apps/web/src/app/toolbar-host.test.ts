@@ -14,6 +14,19 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
   return { engine, t, host };
 }
 
+function setupWithAnnotation(active: boolean) {
+  const s = setup();
+  const annotation = {
+    state: () => ({ active, pointer: "draw" as const, screen: null, screens: 1 }),
+    enter: vi.fn(async () => undefined),
+    exit: vi.fn(async () => undefined),
+    toggle: vi.fn(async () => undefined),
+    nextScreen: vi.fn(async () => undefined),
+  };
+  const t = { ...s.t, annotation } as HostTargets;
+  return { ...s, t, host: createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!) };
+}
+
 describe("ToolbarHost local", () => {
   it('imagePanel → toggle("image") (C5, I25)', () => {
     const { host, t } = setup();
@@ -91,17 +104,33 @@ describe("ToolbarHost local", () => {
     expect(() => host.runAction("toString")).not.toThrow();
     expect(t.runFile).not.toHaveBeenCalled();
   });
-  it("setMode desktop-annotation : aucun effet, message C11a", () => {
+  it("C11a : setMode desktop-annotation → annotation.enter, aucun message", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const { host, engine } = setup();
+    const { host, t, engine } = setupWithAnnotation(false);
     host.setMode("desktop-annotation");
-    expect(info).toHaveBeenCalledTimes(1);
-    expect(String(info.mock.calls[0]![0])).toContain("C11a");
-    expect(warn).not.toHaveBeenCalled();
+    expect(t.annotation!.enter).toHaveBeenCalledTimes(1);
+    expect(info).not.toHaveBeenCalled();
     expect(engine.setTool).not.toHaveBeenCalled();
     info.mockRestore();
-    warn.mockRestore();
+  });
+  it("C11a : setMode desktop-annotation sans contrôleur (web) : rien, aucun message", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { host } = setup();
+    host.setMode("desktop-annotation");
+    expect(info).not.toHaveBeenCalled();
+    info.mockRestore();
+  });
+  it("C11a : desktop-annotation entre ou sort selon l'état ; pointer → toggle ; screen → nextScreen", () => {
+    const off = setupWithAnnotation(false);
+    off.host.runAction("desktop-annotation");
+    expect(off.t.annotation!.enter).toHaveBeenCalledTimes(1);
+    const on = setupWithAnnotation(true);
+    on.host.runAction("desktop-annotation");
+    on.host.runAction("annotation-pointer");
+    on.host.runAction("annotation-screen");
+    expect(on.t.annotation!.exit).toHaveBeenCalledTimes(1);
+    expect(on.t.annotation!.toggle).toHaveBeenCalledTimes(1);
+    expect(on.t.annotation!.nextScreen).toHaveBeenCalledTimes(1);
   });
   it('setMode("board") : rien, aucun message', () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);

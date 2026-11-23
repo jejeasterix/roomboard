@@ -26,6 +26,16 @@
 /* Mise en page (T95, CL5b-10) : la grille vient de `layoutFor` ; chaque barre ancrée a sa case, la scène la sienne. Seuls
    une barre `floating` et les menus passagers (réglages, profils) se superposent à la scène, dans sa case. */
 .rb-layout { display: grid; height: 100vh; overflow: hidden; }
+/* C11a (P20) : en annotation, la fenêtre principale n'est que la première barre d'outils. */
+.rb-layout[data-mode="annotation"] > .rb-head,
+.rb-layout[data-mode="annotation"] > .rb-stages,
+.rb-layout[data-mode="annotation"] > .rb-floating,
+.rb-layout[data-mode="annotation"] > .rb-popover { display: none; }
+/* C11a (P14) : page de la fenêtre `annotate`, transparente sur le bureau, scène sur toute la fenêtre. */
+html[data-fenetre="annotation"],
+html[data-fenetre="annotation"] body,
+html[data-fenetre="annotation"] #app { background: transparent; margin: 0; height: 100%; overflow: hidden; }
+html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; background: transparent; }
 .rb-slot { min-width: 0; min-height: 0; overflow: auto; }
 .rb-head { display: flex; align-items: center; gap: 8px; }
 #etat { margin: 0 8px; color: #b91c1c; }

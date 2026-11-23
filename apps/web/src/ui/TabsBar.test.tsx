@@ -4,7 +4,7 @@ import { createSignal } from "solid-js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TabsBar, type TabView } from "./TabsBar";
+import { annotationTabLabel, TabsBar, type TabView } from "./TabsBar";
 
 afterEach(cleanup);
 
@@ -25,6 +25,15 @@ function setup(tabs: readonly TabView[] = TABS, active: string | null = "a") {
 const tab = (c: HTMLElement, id: string) => c.querySelector<HTMLElement>(`[data-tab="${id}"]`)!;
 
 describe("TabsBar (T91)", () => {
+  it("C11a : onglet annotation libellé « Annotation », puis « Annotation — nom » une fois enregistré", () => {
+    expect(annotationTabLabel("Sans titre.roomboard")).toBe("Annotation");
+    expect(annotationTabLabel("x.roomboard")).toBe("Annotation — x.roomboard");
+    const { container } = setup([...TABS, { id: "n", title: "Sans titre.roomboard", dirty: false, kind: "annotation" }]);
+    expect(tab(container, "n").getAttribute("data-kind")).toBe("annotation");
+    expect(tab(container, "n").textContent).toContain("Annotation");
+    expect(tab(container, "n").textContent).not.toContain("Sans titre");
+    expect(tab(container, "a").textContent).toContain("Plan");
+  });
   it("un onglet par document, actif aria-selected", () => {
     const { container, setA } = setup();
     expect(container.querySelector("[role=tablist][data-tabs]")).not.toBeNull();
