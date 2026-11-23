@@ -8,7 +8,7 @@
  */
 import { PDF_MAX_PAGES, type CoreDocument, type AssetRef, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
-import type { AnnotationControl } from "../platform/annotation-port";
+import { NOTHING_TO_SEND_MESSAGE, type AnnotationControl, type CapturedImage, type SendRequest, type SendResult, type SendTarget } from "../platform/annotation-port";
 import type { ContainerCodec } from "../platform/container";
 import {
   APP_VERSION,
@@ -37,6 +37,8 @@ import type { TypedFiles } from "../platform/typed-files";
 import type { BoardSession } from "./board-session";
 import { createContainerIO, missingOf, typed } from "./container-io";
 import { createFragmentOps, SELECTION_NAME, type InsertOutcome } from "./fragments";
+import { IDENTITY_MATRIX } from "../core/shapes";
+import { capturePage, type PageBackdrop } from "./desktop-page";
 import type { CapturedResource } from "./library";
 import { renderThumbnail, type ThumbDeps } from "./thumbnail";
 import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RASTER_MISSING_MESSAGE, type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
@@ -58,6 +60,11 @@ export const pdfExportedMessage = (pages: number): string => `PDF exporté (${pa
 /** Nom proposé (PF19) : `<base> annoté.pdf` si une page d'origine est recopiée, sinon `<base>.pdf`. */
 export const exportPdfName = (tabName: string, annotated: boolean): string =>
   `${stem(tabName, ROOMBOARD_EXTENSION)}${annotated ? " annoté" : ""}${PDF_EXTENSION}`;
+/** C11b (P9) : nom du nouvel onglet d'un envoi. */
+export const CAPTURE_TAB_NAME = "Capture du bureau";
+/** C11b (P25) : asset de la capture (empreinte SHA-256 par le magasin). */
+export const CAPTURE_ASSET_NAME = "capture-du-bureau.png";
+export const CAPTURE_MIME = "image/png";
 
 export interface TabSession {
   readonly board: BoardSession;
@@ -208,6 +215,15 @@ export interface Workspace {
   /** C11a (P4) : document de l'onglet d'annotation remplacé (même place, même id, même cible, « modifié ») ; false si
    *  illisible ou sans onglet d'annotation. */
   replaceAnnotation(bytes: Uint8Array): Promise<boolean>;
+  /** C11b (P14) : pose (image) ou retire (null) le fond de la page `page` (rang ; absent : page montrée) de l'onglet
+   *  d'annotation ; faux sans onglet d'annotation. */
+  setAnnotationBackdrop(image: CapturedImage | null, page?: number): Promise<boolean>;
+  /** C11b (P17) : fond image de la première page de l'onglet d'annotation, celle où `annotate` s'ouvre (jamais la page
+   *  montrée dans la fenêtre principale) ; null : aucun. */
+  annotationBackdrop(): PageBackdrop | null;
+  /** C11b (P3, P6 à P11) : page envoyée (capture ou fond figé, encre de la page de la vue) après la page montrée de
+   *  l'origine, en une étape, ou dans un nouvel onglet ; null : rien inséré (avis dit). */
+  sendCapture(o: SendRequest): Promise<SendResult | null>;
   dispose(): void;
 }
 
@@ -453,6 +469,22 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   });
   const anyDirty = (): boolean => tabs.list().some((t) => t.session.files.isDirty());
   const gate = (): AnnotationGate | null => deps.annotation?.() ?? null;
+
+  /** C11b : onglet d'annotation, s'il existe. */
+  const annotationEntry = () => tabs.list().find((t) => t.kind === "annotation");
+  /** C11b (P14, P17) : fond image d'une page (asset cité, taille lue) ; null : aucun, ou fond d'une autre sorte. */
+  const imageBackdropOf = (tab: TabSession, page: string): PageBackdrop | null => {
+    const b = tab.board.doc.page(page)?.backdrop ?? null;
+    if (b === null || b.kind !== "image" || b.w === null || b.h === null) return null;
+    const ref = tab.board.doc.asset(b.asset);
+    return ref === null ? null : { ref, w: b.w, h: b.h };
+  };
+  /** C11b (P25) : capture mise au magasin `assets` (empreinte SHA-256). */
+  const putCapture = async (assets: AssetStore, image: CapturedImage): Promise<PageBackdrop> => {
+    const blob = typed(image.blob, CAPTURE_MIME);
+    const id = await assets.put(blob);
+    return { ref: { id, name: CAPTURE_ASSET_NAME, mime: CAPTURE_MIME, size: blob.size }, w: image.width, h: image.height };
+  };
 
   let exporting = false;
   const ws: Workspace = {
@@ -706,6 +738,76 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       if (read === null) return false;
       const opened = { name: old.files.name(), target: old.files.target() };
       return (await addTab(read.doc, opened, read.assets, read.unread, lost, { kind: "annotation", dirty: true, replace: entry.id })) !== null;
+    },
+    async setAnnotationBackdrop(image, page) {
+      const tab = annotationEntry()?.session;
+      if (tab === undefined) return false;
+      const id = (page === undefined ? undefined : tab.board.doc.pageIds()[page]) ?? tab.board.engine.state().page;
+      const b = image === null ? null : await putCapture(tab.assets, image);
+      const backdrop = b === null ? null : { asset: b.ref, w: b.w, h: b.h, fit: "width" as const };
+      return tab.board.engine.run({ type: "SetBackdrop", page: id, backdrop }) !== null;
+    },
+    annotationBackdrop() {
+      const tab = annotationEntry()?.session;
+      const first = tab?.board.doc.pageIds()[0];
+      return tab === undefined || first === undefined ? null : imageBackdropOf(tab, first);
+    },
+    async sendCapture(o) {
+      const src = annotationEntry()?.session ?? null;
+      const srcPages = src?.board.doc.pageIds() ?? [];
+      const inkPage = srcPages[o.view?.page ?? 0] ?? srcPages[0] ?? null;
+      const origin = o.to === "origin" ? tabs.list().find((t) => t.id === o.origin && t.kind === "board") : undefined;
+      const to: SendTarget = origin === undefined ? "new" : "origin"; // P6 : origine fermée → nouvel onglet
+      if (to === "new" && full()) {
+        await say(TOO_MANY_TABS);
+        return null;
+      }
+      const assets = origin?.session.assets ?? makeAssets();
+      let doc: CoreDocument | null;
+      try {
+        let backdrop: PageBackdrop | null = null;
+        if (o.image !== null) backdrop = await putCapture(assets, o.image);
+        else if (o.frozen === true && src !== null && inkPage !== null) {
+          // P14 : bureau figé : le fond de la page d'annotation part avec la page.
+          const frozen = imageBackdropOf(src, inkPage);
+          const blob = frozen === null ? undefined : src.assets.get(frozen.ref.id);
+          if (frozen !== null && blob !== undefined) {
+            assets.adopt(frozen.ref.id, blob);
+            backdrop = frozen;
+          }
+        }
+        const ink = src === null || inkPage === null ? null : { doc: src.board.doc, page: inkPage };
+        doc = capturePage(core, ink, backdrop, o.view?.matrix ?? IDENTITY_MATRIX);
+      } catch (e) {
+        await say(`Envoi impossible : ${messageOf(e)}`);
+        return null;
+      }
+      if (doc === null) {
+        await say(NOTHING_TO_SEND_MESSAGE);
+        return null;
+      }
+      if (origin === undefined) {
+        // P9 : nouvel onglet ; copie sans historique (Ctrl+Z n'y retire pas le fond).
+        let fresh: CoreDocument;
+        try {
+          const [manifest, ybin] = doc.saveParts(deps.now(), APP_VERSION);
+          fresh = core.loadParts(manifest, ybin);
+        } finally {
+          doc.free();
+        }
+        const tab = await addTab(fresh, { name: CAPTURE_TAB_NAME, target: null }, assets, false, new Map(), { dirty: true });
+        return tab === null ? null : { to, page: 1 };
+      }
+      const target = origin.session;
+      const before = new Set(target.board.doc.pageIds());
+      try {
+        // P3 : une transaction, une étape ; la page insérée est montrée.
+        if (target.board.engine.insertPages(doc) === null) return null;
+      } finally {
+        doc.free();
+      }
+      tabs.activate(origin.id);
+      return { to, page: target.board.doc.pageIds().findIndex((p) => !before.has(p)) + 1 };
     },
     async close(id) {
       if (closing.has(id)) return false; // double clic : le second appel ne fait rien

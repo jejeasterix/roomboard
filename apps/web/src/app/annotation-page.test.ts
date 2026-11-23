@@ -7,7 +7,7 @@ import { ANNOTATION_EVENTS } from "../platform/annotation-port";
 import { toBase64 } from "../platform/clipboard";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { BoardSession } from "./board-session";
-import { createAnnotationPage, passThrough, type PageChannel } from "./annotation-page";
+import { createAnnotationPage, passThrough, viewMatrix, type PageChannel } from "./annotation-page";
 
 function channel() {
   const listeners = new Map<string, (p: unknown) => void>();
@@ -42,7 +42,8 @@ function fakeBoard(doc: CoreDocument) {
   return { board, engine };
 }
 
-function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean } = {}) {
+function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth?: number } = {}) {
+  const opaques: boolean[] = [];
   const c = channel();
   const boards: ReturnType<typeof fakeBoard>[] = [];
   const ignores: boolean[] = [];
@@ -58,12 +59,14 @@ function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean } = {}) {
       return { doc: fakeCore.load(bytes), assets: createAssetStore() };
     },
     encode: async (doc: CoreDocument, _a: AssetStore) => doc.save("2026-11-23T00:00:00Z", "0.1.0"),
-    makeSession: async (doc) => {
+    makeSession: async (doc, _assets, opaque) => {
+      opaques.push(opaque);
       const b = fakeBoard(doc);
       if (o.hit !== undefined) (doc as unknown as { hitTest: () => string | null }).hitTest = () => (o.hit ? "e1" : null);
       boards.push(b);
       return b.board;
     },
+    viewWidth: () => o.viewWidth ?? 960,
     cursor: () =>
       (calls.push("cursor"), o.gate === true)
         ? new Promise<readonly [number, number] | null>((resolve) => {
@@ -82,7 +85,7 @@ function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean } = {}) {
       };
     },
   });
-  return { page, c, boards, ignores, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
+  return { page, c, boards, ignores, opaques, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
 }
 const blank = () => toBase64(fakeCore.blank().save("2026-11-23T00:00:00Z", "0.1.0"));
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -287,5 +290,60 @@ describe("page annotate : corrections de relecture (T12)", () => {
     await flush();
     expect(s.c.out.filter((m) => m.event === ANNOTATION_EVENTS.exitRequest)).toHaveLength(0);
     expect(s.c.out).toHaveLength(n);
+  });
+});
+
+describe("page annotate (C11b, P13, P15, P16)", () => {
+  it("viewMatrix : monde → page envoyée (PAGE_WIDTH / largeur de vue) ; largeur nulle : identité", () => {
+    expect(viewMatrix({ zoom: 0.5, tx: 30, ty: 16 }, 960)).toEqual([1, 0, 0, 1, 60, 32]);
+    expect(viewMatrix({ zoom: 1, tx: 0, ty: 0 }, 1920)).toEqual([1, 0, 0, 1, 0, 0]);
+    expect(viewMatrix({ zoom: 2, tx: 5, ty: 5 }, 0)).toEqual([1, 0, 0, 1, 0, 0]);
+    expect(viewMatrix({ zoom: 2, tx: 5, ty: 5 }, Number.NaN)).toEqual([1, 0, 0, 1, 0, 0]);
+  });
+  it("opaque : session opaque, aucun sondage en Sélection, clic à travers coupé (P15)", async () => {
+    const { page, c, boards, ignores, opaques, polling } = setup({ hit: false });
+    await page.start();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), opaque: true });
+    await flush();
+    expect(opaques).toEqual([true]);
+    expect(ignores).toEqual([false]);
+    boards[0]!.engine.setTool("select");
+    await flush();
+    expect(polling()).toBe(false);
+    expect(ignores.includes(true)).toBe(false);
+  });
+  it("sans opaque (charge d'avant C11b) : session transparente, Sélection sonde comme en C11a", async () => {
+    const { page, c, boards, opaques, polling } = setup({ hit: false });
+    await page.start();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    expect(opaques).toEqual([false]);
+    boards[0]!.engine.setTool("select");
+    await flush();
+    expect(polling()).toBe(true);
+  });
+  it("figé puis vivant (P16) : un nouveau document sans opaque rend le sondage en Sélection", async () => {
+    const { page, c, boards, opaques, polling } = setup({ hit: false });
+    await page.start();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), opaque: true });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), opaque: false });
+    await flush();
+    expect(opaques).toEqual([true, false]);
+    boards.at(-1)!.engine.setTool("select");
+    await flush();
+    expect(polling()).toBe(true);
+  });
+  it("collect rend la vue (P13) : page montrée 0, matrice PAGE_WIDTH / largeur de vue", async () => {
+    const { page, c } = setup({ viewWidth: 960 });
+    await page.start();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    c.send(ANNOTATION_EVENTS.collect, { id: 9 });
+    await flush();
+    expect(c.out.at(-1)).toMatchObject({
+      event: ANNOTATION_EVENTS.returned,
+      payload: { id: 9, view: { page: 0, matrix: [2, 0, 0, 2, 0, 0] } },
+    });
   });
 });

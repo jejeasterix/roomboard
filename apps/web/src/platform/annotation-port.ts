@@ -5,8 +5,9 @@
  * et le document entier, une fois à l'entrée et une fois à la sortie. Deux noms distincts pour l'aller et le retour du
  * document : `listen` de Tauri 2 écoute toutes les cibles, une fenêtre entendrait sinon son propre envoi.
  */
+import type { Matrix } from "../core/api";
 import type { FormatAction } from "../engine/rich-edit";
-import type { Dock, Profile } from "../toolbar";
+import type { Dock, Profile, StartMode } from "../toolbar";
 import type { ToolbarView } from "../ui/item-state";
 import type { DroppedFile, Point } from "./files";
 
@@ -41,6 +42,71 @@ export const INK_LOST_MESSAGE = "encre de l'annotation non récupérée";
 /** P17 : objet déposé sur la zone, inséré sur la page montrée de l'onglet d'origine. */
 export const addedToPageMessage = (n: number): string => `ajouté à la page ${n}`;
 
+/** C11b (P11) : ni capture ni élément. */
+export const NOTHING_TO_SEND_MESSAGE = "rien à envoyer";
+/** C11b (P12) : rang de la page insérée dans l'onglet cible. */
+export const sentToBoardMessage = (n: number): string => `envoyé au tableau : page ${n}`;
+/** C11b (P10, P27) : rejets de `annotation_capture`. */
+export type CaptureFailure = "denied" | "wayland" | "failed";
+export const CAPTURE_REASONS: Readonly<Record<CaptureFailure, string>> = Object.freeze({
+  denied:
+    "autorisation “Enregistrement de l'écran” refusée : l'accorder dans Réglages Système › Confidentialité et sécurité, puis relancer RoomBoard",
+  wayland: "Wayland",
+  failed: "échec de la capture",
+});
+export const captureFailedMessage = (r: CaptureFailure): string => `capture du bureau impossible (${CAPTURE_REASONS[r]}) : page à fond blanc`;
+/** Rejet de la coque (chaîne) en raison connue ; toute autre valeur : `failed`. */
+export const captureFailureOf = (e: unknown): CaptureFailure => (e === "denied" || e === "wayland" ? e : "failed");
+
+/** C11b (P24, P25) : PNG lu du fichier accordé (coque) ou fourni par le faux hôte ; dimensions en pixels. */
+export interface CapturedImage {
+  readonly blob: Blob;
+  readonly width: number;
+  readonly height: number;
+}
+export type CaptureOutcome = { readonly ok: true; readonly image: CapturedImage } | { readonly ok: false; readonly reason: CaptureFailure };
+/** C11b (P13) : rang de la page montrée dans `annotate` et matrice de son monde vers la page envoyée. */
+export interface AnnotationViewport {
+  readonly page: number;
+  readonly matrix: Matrix;
+}
+export type SendTarget = "origin" | "new";
+/** C11b (P3, P7) : demande d'envoi à l'espace de travail ; `view` null : page 0, identité. */
+export interface SendRequest {
+  readonly to: SendTarget;
+  readonly origin: string | null;
+  readonly image: CapturedImage | null;
+  readonly view: AnnotationViewport | null;
+  /** C11b (P14) : vrai : bureau figé, le fond de la page de la vue part avec la page ; faux ou absent : `image` seule
+   *  (vivant sans capture : fond blanc, jamais le fond d'une page). */
+  readonly frozen?: boolean;
+}
+/** Onglet effectivement servi et rang (1 = première) de la page insérée. */
+export interface SendResult {
+  readonly to: SendTarget;
+  readonly page: number;
+}
+
+/** C11b (P6) : nouvel onglet si demandé, si le profil rend « Annotation au démarrage » (Q2), ou si l'origine est absente
+ *  ou est l'onglet d'annotation lui-même ; sinon l'onglet d'origine. */
+export function sendTarget(wanted: SendTarget, startMode: StartMode, originKind: "board" | "annotation" | null): SendTarget {
+  return wanted === "new" || startMode === "desktop-annotation" || originKind !== "board" ? "new" : "origin";
+}
+
+/** C11b (P13) : vue lue d'une charge JSON ; page entière ≥ 0, matrice de 6 nombres finis ; sinon rejetée. */
+export function isViewport(v: unknown): v is AnnotationViewport {
+  if (typeof v !== "object" || v === null) return false;
+  const { page, matrix } = v as { readonly page?: unknown; readonly matrix?: unknown };
+  return (
+    typeof page === "number" &&
+    Number.isInteger(page) &&
+    page >= 0 &&
+    Array.isArray(matrix) &&
+    matrix.length === 6 &&
+    matrix.every((x) => typeof x === "number" && Number.isFinite(x))
+  );
+}
+
 export type PointerMode = "draw" | "mouse";
 
 /** Appels `ToolbarHost` rejoués dans `annotate` (P20). */
@@ -53,21 +119,26 @@ export type AnnotationCommand =
 
 export interface DocumentPayload {
   readonly base64: string;
+  /** C11b (P15) : fenêtre opaque (bureau figé) ; absent : faux (charge C11a). */
+  readonly opaque?: boolean;
 }
 export interface CollectPayload {
   readonly id: number;
 }
-/** `changed` : version du moteur différente de celle du chargement. */
+/** `changed` : version du moteur différente de celle du chargement. C11b (P13) : `view` absent : page 0, identité. */
 export interface ReturnedPayload {
   readonly id: number;
   readonly base64: string;
   readonly changed: boolean;
+  readonly view?: AnnotationViewport;
 }
 
 export interface AnnotationSupport {
   readonly supported: boolean;
   readonly reason: "wayland" | null;
   readonly screens: number;
+  /** C11b (P18) : transparence peinte ; absent (coque d'avant C11b) : vrai. */
+  readonly transparent?: boolean;
 }
 /** `screen` null : écran de la fenêtre principale (P15) ; `thickness` en px CSS (convertie par la coque). */
 export interface AnnotationPlace {
@@ -78,13 +149,20 @@ export interface AnnotationPlace {
 export interface Returned {
   readonly bytes: Uint8Array;
   readonly changed: boolean;
+  /** C11b (P13) : vue d'`annotate` lue et contrôlée (`isViewport`). */
+  readonly view?: AnnotationViewport;
 }
 
 /** Hôte des fenêtres : coque (`annotation-tauri.ts`) ou faux (`annotation-fake.ts`). */
 export interface AnnotationWindows {
   support(): Promise<AnnotationSupport>;
-  /** Crée ou montre `annotate`, place les deux fenêtres, attend `ready`, envoie le profil puis le document ; rend l'écran retenu. */
-  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile }): Promise<number>;
+  /** Crée ou montre `annotate`, place les deux fenêtres, attend `ready`, envoie le profil puis le document ; rend l'écran retenu.
+   *  C11b (P15) : `opaque` vrai : bureau figé (absent : transparent). */
+  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean }): Promise<number>;
+  /** C11b (P14, P28) : renvoie le document seul (bascule figé / vivant), sans replacer les fenêtres. */
+  load(o: { readonly document: Uint8Array; readonly opaque: boolean }): Promise<void>;
+  /** C11b (P22, P27) : capture de l'écran de l'annotation sans nos fenêtres ; refus en raison connue, jamais de rejet. */
+  capture(o: AnnotationPlace): Promise<CaptureOutcome>;
   /** Replace les deux fenêtres (écran suivant) sans renvoyer le document ; rend l'écran retenu. */
   place(o: AnnotationPlace): Promise<number>;
   /** Demande le document à `annotate` ; null si sa réponse est illisible. Peut ne jamais se résoudre (délai : contrôleur). */
@@ -107,6 +185,12 @@ export interface AnnotationState {
   /** Écran retenu (null avant la première entrée). */
   readonly screen: number | null;
   readonly screens: number;
+  /** C11b (P14 à P17) : fenêtre opaque, fond capturé ; absent : faux. */
+  readonly frozen?: boolean;
+  /** C11b (P18) : bureau vivant offert (transparence peinte) ; faux : repli, « Recapturer le bureau » ; absent : vrai. */
+  readonly live?: boolean;
+  /** C11b (P6) : cible de « Envoyer au tableau » ; "new" grise « Envoyer dans un nouvel onglet » ; absent : "origin". */
+  readonly sendTarget?: SendTarget;
 }
 
 /** Contrôleur de la fenêtre principale (`app/annotation.ts`). */
@@ -119,6 +203,10 @@ export interface AnnotationControl {
   /** Bascule dessin / souris (P8). */
   toggle(): Promise<void>;
   nextScreen(): Promise<void>;
+  /** C11b (P16, P18) : « Figer le bureau » / « Bureau vivant » / « Recapturer le bureau ». */
+  freeze(): Promise<void>;
+  /** C11b (P5, P7) : « Envoyer au tableau » (`origin`) ou « … dans un nouvel onglet » (`new`) : capture, sortie, page. */
+  send(to: SendTarget): Promise<void>;
   onTool(tool: string): void;
   /** Commande de barre envoyée à `annotate` (suit l'outil pour la bascule). */
   command(m: AnnotationCommand): void;

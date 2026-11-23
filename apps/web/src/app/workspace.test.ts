@@ -28,12 +28,12 @@ import type { OlfPart } from "../platform/zip-read";
 import { BAMBOO_NOT_FLIPCHART, bambooLieMessage } from "../platform/bamboo";
 import { createAnnotationController } from "./annotation";
 import { createFakeAnnotationWindows } from "../platform/annotation-fake";
-import { INK_LOST_MESSAGE, type AnnotationControl } from "../platform/annotation-port";
+import { INK_LOST_MESSAGE, type AnnotationControl, type CapturedImage } from "../platform/annotation-port";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import { createWasmCore, type WasmModule } from "../core/wasm-core";
 import { createPageCodec, type FormatsBinding } from "../platform/container";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
-import { linkedMissingMessage } from "./container-io";
+import { linkedMissingMessage, missingOf } from "./container-io";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
 vi.mock("../platform/import", async (importOriginal) => {
@@ -265,6 +265,8 @@ interface SetupOptions {
   readonly quit?: WorkspaceDeps["quit"];
   readonly core?: CoreFactory;
   readonly codec?: ContainerCodec;
+  /** C11b : magasin à empreinte SHA-256 réelle (vrai cœur, aller-retour). */
+  readonly realHash?: boolean;
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -294,7 +296,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     codec: o.codec ?? codec,
     first: o.first ?? { doc: (o.core ?? fakeCore).blank(), opened: null, error: null },
     makeSession: async (doc, _assets) => fakeSession(doc).board,
-    makeAssets: () => createAssetStore(fakeHasher),
+    makeAssets: () => (o.realHash === true ? createAssetStore() : createAssetStore(fakeHasher)),
     ...(o.decode ? { decode: o.decode } : {}),
     ...(o.readSheet ? { readSheet: o.readSheet } : {}),
     ...(o.clipboard ? { clipboard: o.clipboard } : {}),
@@ -2414,5 +2416,175 @@ describe("C11a — aller-retour bout à bout (S4)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () => {
+  const IMG: CapturedImage = { blob: new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3])], { type: "image/png" }), width: 320, height: 180 };
+  const pages = (t: TabSession): string[] => t.board.doc.pageIds();
+  /** Onglet d'origine de deux pages (page 1 montrée) ; onglet d'annotation avec un trait (`drawOn`). */
+  async function twoPagesAndInk(o: SetupOptions = {}) {
+    const ws = await setupWorkspace(o);
+    const origin = ws.active();
+    const originId = ws.tabs.active()!.id;
+    origin.board.doc.apply({ type: "AddPage", after: pages(origin)[0]! });
+    const ann = (await ws.annotationTab())!;
+    drawOn(ann);
+    return { ws, origin, originId, ann };
+  }
+  const centre = (t: TabSession, page: string): [number, number] => {
+    const b = t.board.doc.bounds(t.board.doc.elementIds(page))!;
+    return [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+  };
+
+  it("C11b setAnnotationBackdrop : fond image fit width sur la page montrée, asset au magasin ; null le retire (P14, P17)", async () => {
+    const ws = await setupWorkspace();
+    const ann = (await ws.annotationTab())!;
+    expect(ws.annotationBackdrop()).toBeNull();
+    expect(await ws.setAnnotationBackdrop(IMG)).toBe(true);
+    const b = ann.board.doc.page(pages(ann)[0]!)!.backdrop!;
+    expect(b).toMatchObject({ kind: "image", w: 320, h: 180, fit: "width" });
+    expect(ann.assets.get(b.asset)).toBeDefined();
+    expect(ws.annotationBackdrop()).toMatchObject({ ref: { id: b.asset, name: "capture-du-bureau.png", mime: "image/png" }, w: 320, h: 180 });
+    expect(await ws.setAnnotationBackdrop(null)).toBe(true);
+    expect(ann.board.doc.page(pages(ann)[0]!)!.backdrop).toBeNull();
+    expect(ws.annotationBackdrop()).toBeNull();
+  });
+  it("C11b setAnnotationBackdrop sans onglet d'annotation : faux", async () => {
+    const ws = await setupWorkspace();
+    expect(await ws.setAnnotationBackdrop(IMG)).toBe(false);
+  });
+  it("C11b origine : page insérée après la page montrée, fond et trait, onglet montré, une étape (P3, P4, P12)", async () => {
+    const { ws, origin, originId, ann } = await twoPagesAndInk();
+    expect(await ws.sendCapture({ to: "origin", origin: originId, image: IMG, view: null })).toEqual({ to: "origin", page: 2 });
+    expect(pages(origin)).toHaveLength(3);
+    const sent = pages(origin)[1]!;
+    const b = origin.board.doc.page(sent)!.backdrop!;
+    expect(b).toMatchObject({ kind: "image", w: 320, h: 180, fit: "width" });
+    expect(origin.assets.get(b.asset)).toBeDefined();
+    expect(origin.board.doc.elementIds(sent)).toHaveLength(1);
+    expect(ws.active()).toBe(origin);
+    expect(strokes(ann)).toBe(1); // P8 : l'onglet d'annotation garde son encre
+    origin.board.doc.undo();
+    expect(pages(origin)).toHaveLength(2);
+    origin.board.doc.redo();
+    expect(pages(origin)).toHaveLength(3);
+  });
+  it("C11b nouvel onglet : « Capture du bureau », une page, montré, modifié, sans historique ; origine inchangée (P9)", async () => {
+    const { ws, origin, ann } = await twoPagesAndInk();
+    const before = ws.tabs.list().length;
+    expect(await ws.sendCapture({ to: "new", origin: null, image: IMG, view: null })).toEqual({ to: "new", page: 1 });
+    expect(ws.tabs.list()).toHaveLength(before + 1);
+    const shown = ws.active();
+    expect(shown).not.toBe(origin);
+    expect(shown.files.name()).toBe("Capture du bureau");
+    expect(shown.files.isDirty()).toBe(true);
+    const p = pages(shown);
+    expect(p).toHaveLength(1);
+    expect(shown.board.doc.page(p[0]!)!.backdrop).toMatchObject({ kind: "image", w: 320, h: 180 });
+    expect(shown.assets.get(shown.board.doc.page(p[0]!)!.backdrop!.asset)).toBeDefined();
+    expect(shown.board.doc.elementIds(p[0]!)).toHaveLength(1);
+    expect(shown.board.doc.canUndo()).toBe(false);
+    expect(pages(origin)).toHaveLength(2);
+    expect(strokes(ann)).toBe(1);
+  });
+  it("C11b sans capture : page à fond blanc avec le trait (P10)", async () => {
+    const { ws, origin, originId } = await twoPagesAndInk();
+    expect(await ws.sendCapture({ to: "origin", origin: originId, image: null, view: null })).toEqual({ to: "origin", page: 2 });
+    const sent = pages(origin)[1]!;
+    expect(origin.board.doc.page(sent)!.backdrop).toBeNull();
+    expect(origin.board.doc.elementIds(sent)).toHaveLength(1);
+  });
+  it("C11b figé : sans nouvelle image, le fond de la page d'annotation part avec la page, asset adopté (P14)", async () => {
+    const { ws, origin, originId, ann } = await twoPagesAndInk();
+    await ws.setAnnotationBackdrop(IMG);
+    const frozen = ann.board.doc.page(pages(ann)[0]!)!.backdrop!.asset;
+    expect(origin.assets.get(frozen)).toBeUndefined();
+    await ws.sendCapture({ to: "origin", origin: originId, image: null, view: { page: 0, matrix: [1, 0, 0, 1, 0, 0] }, frozen: true });
+    const sent = pages(origin)[1]!;
+    expect(origin.board.doc.page(sent)!.backdrop).toMatchObject({ asset: frozen, kind: "image" });
+    expect(origin.assets.get(frozen)).toBeDefined();
+  });
+  it("C11b rien à envoyer : ni fond ni élément → null, avis « rien à envoyer », aucune page (P11)", async () => {
+    const ws = await setupWorkspace();
+    const origin = ws.active();
+    const originId = ws.tabs.active()!.id;
+    await ws.annotationTab();
+    expect(await ws.sendCapture({ to: "origin", origin: originId, image: null, view: null })).toBeNull();
+    expect(shell.notify).toHaveBeenCalledWith("rien à envoyer");
+    expect(pages(origin)).toHaveLength(1);
+  });
+  it("C11b vue : la matrice de la vue place le trait (P13)", async () => {
+    const { ws, origin, originId, ann } = await twoPagesAndInk();
+    const [x, y] = centre(ann, pages(ann)[0]!);
+    await ws.sendCapture({ to: "origin", origin: originId, image: IMG, view: { page: 0, matrix: [0.5, 0, 0, 0.5, 0, 0] } });
+    const [sx, sy] = centre(origin, pages(origin)[1]!);
+    expect(Math.abs(sx - x / 2)).toBeLessThan(2);
+    expect(Math.abs(sy - y / 2)).toBeLessThan(2);
+  });
+  it("C11b Review : onglet d'origine fermé pendant l'annotation → nouvel onglet, rien ne se perd (RF2, P6)", async () => {
+    const { ws } = await twoPagesAndInk();
+    const before = ws.tabs.list().length;
+    expect(await ws.sendCapture({ to: "origin", origin: "onglet-ferme", image: IMG, view: null })).toEqual({ to: "new", page: 1 });
+    expect(ws.tabs.list()).toHaveLength(before + 1);
+    expect(ws.active().files.name()).toBe("Capture du bureau");
+  });
+  it("C11b Review : 12 onglets et cible nouvel onglet → avis « 12 onglets au plus ; fermez-en un », null, aucune page ; l'encre reste (RF3, P8, P9)", async () => {
+    const { ws, ann } = await twoPagesAndInk();
+    while (ws.tabs.list().length < MAX_TABS) await ws.newBlank();
+    expect(await ws.sendCapture({ to: "new", origin: null, image: IMG, view: null })).toBeNull();
+    expect(shell.notify).toHaveBeenCalledWith(TOO_MANY_TABS);
+    expect(ws.tabs.list()).toHaveLength(MAX_TABS);
+    expect(strokes(ann)).toBe(1);
+  });
+  it("C11b revue A : le fond lu est celui de la page 1, où `annotate` s'ouvre, même si l'onglet d'annotation montre sa page 2", async () => {
+    const ws = await setupWorkspace();
+    const ann = (await ws.annotationTab())!;
+    ann.board.doc.apply({ type: "AddPage", after: pages(ann)[0]! });
+    const shown = ann.board.engine.state.bind(ann.board.engine);
+    vi.spyOn(ann.board.engine, "state").mockImplementation(() => ({ ...shown(), page: pages(ann)[1]! })); // page 2 montrée
+    expect(ann.board.engine.state().page).toBe(pages(ann)[1]);
+    expect(await ws.setAnnotationBackdrop(IMG, 0)).toBe(true);
+    expect(ann.board.doc.page(pages(ann)[1]!)!.backdrop).toBeNull();
+    expect(ws.annotationBackdrop()).toMatchObject({ w: 320, h: 180 }); // fond sur la page 1 : réentrée figée
+    expect(await ws.setAnnotationBackdrop(null, 0)).toBe(true);
+    expect(await ws.setAnnotationBackdrop(IMG, 1)).toBe(true);
+    expect(ws.annotationBackdrop()).toBeNull(); // fond sur la page 2 seulement : la page 1 s'ouvre vivante
+  });
+  it("C11b revue A : vivant sans capture (frozen faux), page à fond blanc même si la page de la vue a un fond", async () => {
+    const { ws, origin, originId } = await twoPagesAndInk();
+    await ws.setAnnotationBackdrop(IMG, 0);
+    await ws.sendCapture({ to: "origin", origin: originId, image: null, view: { page: 0, matrix: [1, 0, 0, 1, 0, 0] }, frozen: false });
+    const sent = pages(origin)[1]!;
+    expect(origin.board.doc.page(sent)!.backdrop).toBeNull();
+    expect(origin.board.doc.elementIds(sent)).toHaveLength(1);
+  });
+  it.skipIf(real === null)("C11b vrai cœur : enregistrer puis rouvrir rend la page envoyée, fond et trait (S1, P31)", async () => {
+    const { ws, origin, originId } = await twoPagesAndInk({ core: real!.core, codec: real!.codec, realHash: true });
+    expect(await ws.sendCapture({ to: "origin", origin: originId, image: IMG, view: null })).toEqual({ to: "origin", page: 2 });
+    origin.board.doc.undo();
+    expect(pages(origin)).toHaveLength(2); // une étape (vrai cœur)
+    origin.board.doc.redo();
+    expect(await origin.files.run("saveAs")).toBe(true);
+    expect(await ws.openDocument({ name: "envoi.roomboard", bytes: saved.at(-1)!, target: null })).toBe(true);
+    const back = ws.tabs.list().at(-1)!.session;
+    const p = pages(back);
+    expect(p).toHaveLength(3);
+    expect(back.board.doc.page(p[1]!)!.backdrop).toMatchObject({ kind: "image", w: 320, h: 180, fit: "width" });
+    expect(back.board.doc.elementIds(p[1]!)).toHaveLength(1);
+    expect(missingOf(back.board.doc, back.assets)).toEqual([]);
+  });
+  it.skipIf(real === null)("C11b compatibilité : socle-v1.roomboard s'ouvre ; un document C11a sans fond rend une entrée vivante (P31)", async () => {
+    const ws = await setupWorkspace({ core: real!.core, codec: real!.codec, realHash: true });
+    const socle = nodeFs.readFileSync(`${webRoot}/../../crates/roomboard-core/tests/fixtures/socle-v1.roomboard`);
+    expect(await ws.openDocument({ name: "socle-v1.roomboard", bytes: new Uint8Array(socle), target: null })).toBe(true);
+    const c11a = real!.core.blank();
+    c11a.apply({ type: "CommitStroke", page: c11a.pageIds()[0]!, points: new Float32Array([0, 10, 0.5, 50, 10, 0.5]), style: { color: "#000000", width: 4 } });
+    const bytes = c11a.save("2026-11-23T00:00:00Z", APP_VERSION);
+    c11a.free();
+    await ws.annotationTab();
+    expect(await ws.replaceAnnotation(bytes)).toBe(true);
+    expect(ws.annotationBackdrop()).toBeNull();
+    expect(strokes(ws.tabs.list().find((t) => t.kind === "annotation")!.session)).toBe(1);
   });
 });

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANNOTATION_EVENTS } from "./annotation-port";
+import { READ_CHUNK } from "./host-tauri";
 import { createTauriAnnotationWindows, type AnnotationIpc } from "./annotation-tauri";
 import { toBase64 } from "./clipboard";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 
-function fakeIpc(o: { autoReady?: boolean } = {}) {
+const SHOT = { id: "4242-1", path: "/cache/captures/4242-1.png", size: 3, width: 320, height: 180 };
+function fakeIpc(o: { autoReady?: boolean; shot?: typeof SHOT | string; bytes?: Uint8Array | null; transparent?: boolean; release?: string } = {}) {
   const listeners = new Map<string, Set<(e: { payload: unknown }) => void>>();
   const invokes: [string, unknown][] = [];
   const emitted: { target: string; event: string; payload: unknown }[] = [];
@@ -18,7 +20,16 @@ function fakeIpc(o: { autoReady?: boolean } = {}) {
         if (o.autoReady !== false) queueMicrotask(() => fire(ANNOTATION_EVENTS.ready, {}));
         return 0 as T;
       }
-      if (cmd === "annotation_support") return { supported: true, reason: null, screens: 2 } as T;
+      if (cmd === "annotation_support") return { supported: true, reason: null, screens: 2, ...(o.transparent === undefined ? {} : { transparent: o.transparent }) } as T;
+      if (cmd === "annotation_capture") {
+        if (typeof o.shot === "string") throw o.shot;
+        return (o.shot ?? SHOT) as T;
+      }
+      if (cmd === "read_granted_file") {
+        if (o.bytes === null) throw "lecture impossible";
+        return (o.bytes ?? new Uint8Array([1, 2, 3])).slice().buffer as T;
+      }
+      if (cmd === "release_capture" && o.release !== undefined) throw o.release;
       return undefined as T;
     },
     async listen<T>(event: string, cb: (e: { readonly payload: T }) => void) {
@@ -48,7 +59,7 @@ describe("hôte des fenêtres de la coque (C11a, P13, P21)", () => {
       ["annotate", ANNOTATION_EVENTS.profile],
       ["annotate", ANNOTATION_EVENTS.document],
     ]);
-    expect(f.emitted[1]!.payload).toEqual({ base64: toBase64(doc) });
+    expect(f.emitted[1]!.payload).toEqual({ base64: toBase64(doc), opaque: false });
   });
   it("réentrée sans recréation : pas d'attente d'un nouveau ready", async () => {
     const f = fakeIpc();
@@ -129,5 +140,73 @@ describe("hôte des fenêtres de la coque (C11a, P13, P21)", () => {
     expect(await w.support()).toEqual({ supported: true, reason: null, screens: 2 });
     await w.relaunchCompat();
     expect(f.invokes.at(-1)).toEqual(["relaunch_compat", undefined]);
+  });
+});
+
+describe("hôte des fenêtres de la coque (C11b, P24, P27, P28)", () => {
+  it("capture : annotation_capture (écran, côté, épaisseur), lecture du fichier accordé, puis release_capture ; PNG 320 × 180", async () => {
+    const f = fakeIpc();
+    const w = createTauriAnnotationWindows(f.ipc);
+    const r = await w.capture(place);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect([r.image.width, r.image.height, r.image.blob.type, r.image.blob.size]).toEqual([320, 180, "image/png", 3]);
+    expect(f.invokes.map(([c]) => c)).toEqual(["annotation_capture", "read_granted_file", "release_capture"]);
+    expect(f.invokes[0]![1]).toEqual({ screen: null, dock: "top", thickness: 48 });
+    expect(f.invokes[1]![1]).toEqual({ path: SHOT.path, offset: 0, len: READ_CHUNK });
+    expect(f.invokes[2]![1]).toEqual({ id: SHOT.id });
+  });
+  it("capture refusée par la coque : denied, wayland ; tout autre rejet → failed ; aucun release (aucun fichier)", async () => {
+    for (const [shot, reason] of [["denied", "denied"], ["wayland", "wayland"], ["io", "failed"]] as const) {
+      const f = fakeIpc({ shot });
+      expect(await createTauriAnnotationWindows(f.ipc).capture(place)).toEqual({ ok: false, reason });
+      expect(f.invokes.some(([c]) => c === "release_capture")).toBe(false);
+    }
+  });
+  it("lecture du fichier en échec : failed, et release_capture appelé quand même (P24)", async () => {
+    const f = fakeIpc({ bytes: null });
+    expect(await createTauriAnnotationWindows(f.ipc).capture(place)).toEqual({ ok: false, reason: "failed" });
+    expect(f.invokes.at(-1)).toEqual(["release_capture", { id: SHOT.id }]);
+  });
+  it("revue C : lecture du PNG et release_capture en échec : chaque cause est dite par console.warn, le refus reste failed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const f = fakeIpc({ bytes: null, release: "fichier introuvable" });
+      expect(await createTauriAnnotationWindows(f.ipc).capture(place)).toEqual({ ok: false, reason: "failed" });
+      const said = warn.mock.calls.map((c) => String(c[0]));
+      expect(said).toHaveLength(2);
+      expect(said[0]).toContain("lecture impossible");
+      expect(said[1]).toContain("fichier introuvable");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it("enter porte opaque (vrai sur demande) ; load renvoie le document sans annotation_enter (P15, P28)", async () => {
+    const f = fakeIpc();
+    const w = createTauriAnnotationWindows(f.ipc);
+    await w.enter({ ...place, document: doc, profile: BUILTIN_PROFILES[0]!, opaque: true });
+    expect(f.emitted.at(-1)!.payload).toEqual({ base64: toBase64(doc), opaque: true });
+    const enters = f.invokes.filter(([c]) => c === "annotation_enter").length;
+    await w.load({ document: new Uint8Array([7]), opaque: false });
+    expect(f.emitted.at(-1)).toEqual({ target: "annotate", event: ANNOTATION_EVENTS.document, payload: { base64: toBase64(new Uint8Array([7])), opaque: false } });
+    expect(f.invokes.filter(([c]) => c === "annotation_enter").length).toBe(enters);
+  });
+  it("collect : vue lisible rendue ; vue illisible ignorée (RF5)", async () => {
+    const f = fakeIpc();
+    const w = createTauriAnnotationWindows(f.ipc);
+    const p = w.collect();
+    await vi.waitFor(() => expect(f.emitted.at(-1)?.event).toBe(ANNOTATION_EVENTS.collect));
+    const id = (f.emitted.at(-1)!.payload as { id: number }).id;
+    f.fire(ANNOTATION_EVENTS.returned, { id, base64: toBase64(doc), changed: true, view: { page: 1, matrix: [2, 0, 0, 2, 3, 4] } });
+    expect(await p).toEqual({ bytes: doc, changed: true, view: { page: 1, matrix: [2, 0, 0, 2, 3, 4] } });
+    const q = w.collect();
+    await vi.waitFor(() => expect((f.emitted.at(-1)!.payload as { id: number }).id).toBe(id + 1));
+    f.fire(ANNOTATION_EVENTS.returned, { id: id + 1, base64: toBase64(doc), changed: true, view: { page: -1, matrix: [Number.NaN, 0, 0, 1, 0, 0] } });
+    const back = await q;
+    expect(back).toEqual({ bytes: doc, changed: true });
+  });
+  it("support : transparent relayé ; absent (coque d'avant C11b) laissé absent", async () => {
+    expect((await createTauriAnnotationWindows(fakeIpc({ transparent: false }).ipc).support()).transparent).toBe(false);
+    expect((await createTauriAnnotationWindows(fakeIpc().ipc).support()).transparent).toBeUndefined();
   });
 });

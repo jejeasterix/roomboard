@@ -42,7 +42,7 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 - [ ] Profil « Annotation au démarrage » : démarrage sur le tableau, question « Annotation du bureau indisponible sous Wayland. Relancer en mode compatibilité ? ».
 - [ ] Non : le tableau reste, l'entrée « Annotation du bureau » est absente de la barre.
 - [ ] Oui : RoomBoard se relance (même fichier s'il était passé au lancement) ; sous XWayland, l'annotation fonctionne (refaire C11a-1 et C11a-3).
-- [ ] Si la transparence n'est pas peinte (WebKitGTK) : le noter ; le repli sur le bureau figé arrive avec C11b (HC11-16).
+- [ ] Si la transparence n'est pas peinte (WebKitGTK) : le noter, puis jouer C11b-4 de `c11b-coque.md` (repli figé automatique sans compositeur ; avec compositeur, « Figer le bureau » à la main, HC11b-6).
 
 ## C11a-8 — Points d'essai de la revue (T13)
 - [ ] Fenêtre principale maximisée : entrer en annotation puis sortir ; elle redevient maximisée (Windows, macOS, Linux X11).

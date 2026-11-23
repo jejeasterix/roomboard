@@ -57,3 +57,47 @@ describe("faux hôte des fenêtres (C11a, P28, P29)", () => {
     expect(views).toEqual(["select"]);
   });
 });
+
+describe("faux hôte (C11b, P28, P30)", () => {
+  it("support : transparent vrai par défaut, faux sur demande", async () => {
+    expect((await createFakeAnnotationWindows().support()).transparent).toBe(true);
+    expect((await createFakeAnnotationWindows({ transparent: false }).support()).transparent).toBe(false);
+  });
+  it("capture : PNG 320 × 180 par défaut ; résultat injecté ou fonction ; compte publié sur dataset", async () => {
+    const ds: Record<string, string | undefined> = {};
+    const f = createFakeAnnotationWindows({ dataset: ds });
+    const a = await f.capture(place);
+    expect(a.ok && a.image.width === 320 && a.image.height === 180 && a.image.blob.type === "image/png").toBe(true);
+    expect(ds["annotationCaptures"]).toBe("1");
+    expect(f.captures()).toBe(1);
+    expect(f.log).toContain("capture");
+    const refus = createFakeAnnotationWindows({ capture: { ok: false, reason: "denied" } });
+    expect(await refus.capture(place)).toEqual({ ok: false, reason: "denied" });
+    const fn = createFakeAnnotationWindows({ capture: async () => ({ ok: false, reason: "wayland" }) });
+    expect(await fn.capture(place)).toEqual({ ok: false, reason: "wayland" });
+  });
+  it("enter et load : opaque publié (annotationOpaque), document reçu par le canal JSON ; load ne compte pas d'entrée", async () => {
+    const ds: Record<string, string | undefined> = {};
+    const f = createFakeAnnotationWindows({ dataset: ds });
+    await f.enter({ ...place, document: new Uint8Array([1]), profile: BUILTIN_PROFILES[0]! });
+    expect(ds["annotationOpaque"]).toBe("0");
+    expect(f.opaque()).toBe(false);
+    await f.load({ document: new Uint8Array([1, 2]), opaque: true });
+    expect(ds).toMatchObject({ annotationOpaque: "1", annotationEntrees: "1", annotationRecu: "2" });
+    expect(f.opaque()).toBe(true);
+    expect(Array.from(f.received()!)).toEqual([1, 2]);
+    expect(f.log).toContain("load opaque");
+    await f.enter({ ...place, document: new Uint8Array([1]), profile: BUILTIN_PROFILES[0]!, opaque: true });
+    expect(ds["annotationOpaque"]).toBe("1");
+  });
+  it("collect : la vue passe le canal JSON ; une vue illisible est ignorée (RF5)", async () => {
+    const f = createFakeAnnotationWindows({ view: { page: 1, matrix: [2, 0, 0, 2, 3, 4] } });
+    await f.enter({ ...place, document: new Uint8Array([1]), profile: BUILTIN_PROFILES[0]! });
+    expect((await f.collect())?.view).toEqual({ page: 1, matrix: [2, 0, 0, 2, 3, 4] });
+    const g = createFakeAnnotationWindows({ view: { page: -1, matrix: [Number.NaN, 0, 0, 1, 0, 0] } });
+    await g.enter({ ...place, document: new Uint8Array([1]), profile: BUILTIN_PROFILES[0]! });
+    const back = await g.collect();
+    expect(back).not.toBeNull();
+    expect(back!.view).toBeUndefined();
+  });
+});

@@ -22,6 +22,8 @@ function setupWithAnnotation(active: boolean) {
     exit: vi.fn(async () => undefined),
     toggle: vi.fn(async () => undefined),
     nextScreen: vi.fn(async () => undefined),
+    freeze: vi.fn(async () => undefined),
+    send: vi.fn(async (_to: "origin" | "new") => undefined),
   };
   const t = { ...s.t, annotation } as HostTargets;
   return { ...s, t, host: createLocalToolbarHost(t, () => BUILTIN_PROFILES[0]!) };
@@ -131,6 +133,21 @@ describe("ToolbarHost local", () => {
     expect(on.t.annotation!.exit).toHaveBeenCalledTimes(1);
     expect(on.t.annotation!.toggle).toHaveBeenCalledTimes(1);
     expect(on.t.annotation!.nextScreen).toHaveBeenCalledTimes(1);
+  });
+  it("C11b : annotation-freeze → freeze ; annotation-send → send(origin) ; annotation-send-new → send(new) ; sans contrôleur : rien", () => {
+    const on = setupWithAnnotation(true);
+    on.host.runAction("annotation-freeze");
+    on.host.runAction("annotation-send");
+    on.host.runAction("annotation-send-new");
+    expect(on.t.annotation!.freeze).toHaveBeenCalledTimes(1);
+    expect(on.t.annotation!.send).toHaveBeenNthCalledWith(1, "origin");
+    expect(on.t.annotation!.send).toHaveBeenNthCalledWith(2, "new");
+    const off = setup();
+    expect(() => {
+      off.host.runAction("annotation-freeze");
+      off.host.runAction("annotation-send");
+      off.host.runAction("annotation-send-new");
+    }).not.toThrow();
   });
   it("C11a : un enter ou exit rejeté est rattrapé (avertissement, aucun rejet non géré)", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

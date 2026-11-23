@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_TABLE, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
+  ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
   resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
 import { builtinProfile, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
@@ -405,5 +405,40 @@ describe("itemsForMode (C11a, P7, P19)", () => {
     expect(isAnnotationZone(zone)).toBe(false);
     const bar = { id: "b", role: "tools", dock: "top" as const, collapsed: false, groups: [{ id: "g", items: [zone], rest: {} }], rest: {} };
     expect(itemsForMode(bar, caps, "board").map((it) => it.id)).toEqual(["drop"]);
+  });
+});
+
+describe("C11b : figer et envoyer (P5, P29)", () => {
+  const caps = { desktopAnnotation: true, multiWindow: false, dropPaths: true, officeConverter: false };
+  const C11B = ["annotation-freeze", "annotation-send", "annotation-send-new"];
+  it("trois actions connues, libellés du cadrage, exigent desktopAnnotation, actions de la fenêtre principale", () => {
+    expect(C11B.map((a) => ACTION_TABLE[a]?.label)).toEqual(["Figer le bureau", "Envoyer au tableau", "Envoyer dans un nouvel onglet"]);
+    for (const a of C11B) {
+      expect(ACTION_REQUIRES[a]).toEqual(["desktopAnnotation"]);
+      expect(ANNOTATION_MAIN_ACTIONS.has(a)).toBe(true);
+      expect(ANNOTATION_ONLY_ACTIONS.has(a)).toBe(true);
+    }
+  });
+  it("tableau : les trois masquées (la barre du tableau ne s'allonge pas) ; annotation : visibles, une fois chacune", () => {
+    const bar = builtinProfile("defaut")!.toolbars[0]!;
+    const board = itemsForMode(bar, caps, "board");
+    for (const a of C11B) expect(board.some((it) => it.action === a)).toBe(false);
+    expect(board.some((it) => it.action === "desktop-annotation")).toBe(true);
+    const ann = itemsForMode(bar, caps, "desktop-annotation");
+    for (const a of C11B) expect(ann.filter((it) => it.action === a)).toHaveLength(1);
+  });
+  it("profil d'avant C11b : en annotation, « Envoyer au tableau » ajoutée au rendu, profil inchangé (HC11b-14)", () => {
+    const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+    for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !C11B.includes(i.id));
+    const r = parseProfile({ ...json, id: "avant-c11b", label: "Avant C11b" });
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    expect(r.warnings).toEqual([]);
+    const bar = r.profile.toolbars[0]!;
+    const before = JSON.stringify(bar);
+    const ann = itemsForMode(bar, caps, "desktop-annotation");
+    expect(ann.filter((it) => it.action === "annotation-send").map((it) => it.label)).toEqual(["Envoyer au tableau"]);
+    expect(ann.some((it) => it.action === "annotation-freeze")).toBe(false);
+    expect(itemsForMode(bar, caps, "board").some((it) => it.action === "annotation-send")).toBe(false);
+    expect(JSON.stringify(bar)).toBe(before);
   });
 });

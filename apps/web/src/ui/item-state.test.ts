@@ -139,3 +139,28 @@ describe("annotation (C11a, P6, P8, P15, P20)", () => {
     expect(itemState(act("file-save"), base).disabled).toBe(false);
   });
 });
+
+describe("annotation (C11b, P6, P16, P18, P29)", () => {
+  const base: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: true, pageIndex: 0, pageCount: 1 };
+  const act = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: ACTION_TABLE[a]?.label ?? a, requires: [], rest: {} });
+  const on = (o: { frozen?: boolean; live?: boolean; sendTarget?: "origin" | "new" } = {}): ToolbarView => ({
+    ...base,
+    annotation: { active: true, pointer: "draw", screens: 1, ...o },
+  });
+  it("annotation-freeze : « Figer le bureau » en vivant, « Bureau vivant » enfoncé en figé, « Recapturer le bureau » sans transparence ; grisé hors annotation", () => {
+    expect(itemState(act("annotation-freeze"), on())).toMatchObject({ pressed: false, label: "Figer le bureau", disabled: false });
+    expect(itemState(act("annotation-freeze"), on({ frozen: true }))).toMatchObject({ pressed: true, label: "Bureau vivant", disabled: false });
+    expect(itemState(act("annotation-freeze"), on({ frozen: true, live: false }))).toMatchObject({ pressed: null, label: "Recapturer le bureau", disabled: false });
+    expect(itemState(act("annotation-freeze"), base).disabled).toBe(true);
+  });
+  it("annotation-send actif en annotation ; annotation-send-new grisé quand la cible est déjà un nouvel onglet (P6)", () => {
+    expect(itemState(act("annotation-send"), on()).disabled).toBe(false);
+    expect(itemState(act("annotation-send-new"), on()).disabled).toBe(false);
+    expect(itemState(act("annotation-send-new"), on({ sendTarget: "new" })).disabled).toBe(true);
+    expect(itemState(act("annotation-send"), base).disabled).toBe(true);
+    expect(itemState(act("annotation-send-new"), base).disabled).toBe(true);
+  });
+  it("les trois ne sont pas grisées par la règle d'annotation (actions de la fenêtre principale, P20)", () => {
+    for (const a of ["annotation-freeze", "annotation-send", "annotation-send-new"]) expect(itemState(act(a), on()).disabled).toBe(false);
+  });
+});
