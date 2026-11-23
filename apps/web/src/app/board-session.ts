@@ -77,6 +77,8 @@ export interface SessionShared {
   readonly createVideo?: PlayerPorts["createVideo"];
   /** C15 (DAX3) : rendu 3D partagé, chargé au premier « Tourner » ; absent : objets 3D dessinés par leur instantané, « echec » au clic. */
   readonly modelView?: ModelViewLoader;
+  /** C11a (P14) : fenêtre `annotate` : rendu Canvas 2D transparent, jamais WebGL2 ; absent : rendu ordinaire. */
+  readonly transparent?: boolean;
 }
 
 /** Réglages de lecture d'un média du document. */
@@ -290,6 +292,7 @@ async function buildBoardSession(
     models: models.frames,
     assetName: (id) => doc.asset(id)?.name ?? null,
     ...(pdf === undefined ? {} : { backdrop }),
+    ...(shared.transparent === true ? { transparent: true } : {}),
     onBackdrop: (s) => {
       stage.dataset["fond"] = s;
     },
