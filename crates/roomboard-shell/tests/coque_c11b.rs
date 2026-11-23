@@ -25,7 +25,10 @@ fn capture_commands_are_registered_and_thin() {
             handler.split(',').any(|x| x.trim() == c),
             "{c} absente de generate_handler!"
         );
-        assert!(MAIN_RS.contains(&format!("fn {c}(")), "fonction {c} absente");
+        assert!(
+            MAIN_RS.contains(&format!("fn {c}(")),
+            "fonction {c} absente"
+        );
     }
     for needle in [
         "capture::allowed(",
@@ -38,7 +41,14 @@ fn capture_commands_are_registered_and_thin() {
     ] {
         assert!(MAIN_RS.contains(needle), "{needle} absent de main.rs");
     }
-    for forbidden in ["xcap::", "x11_dl::", "XGetImage", "png::", "objc2", "Command::new"] {
+    for forbidden in [
+        "xcap::",
+        "x11_dl::",
+        "XGetImage",
+        "png::",
+        "objc2",
+        "Command::new",
+    ] {
         assert!(
             !MAIN_RS.contains(forbidden),
             "{forbidden} dans main.rs (la capture vit dans roomboard_shell::capture)"
@@ -50,7 +60,10 @@ fn capture_commands_are_registered_and_thin() {
 fn enter_and_capture_share_placement() {
     for f in ["annotation_enter", "annotation_capture"] {
         let body = body_of(f);
-        assert!(body.contains("ann::placement("), "{f} doit passer par ann::placement");
+        assert!(
+            body.contains("ann::placement("),
+            "{f} doit passer par ann::placement"
+        );
         assert!(
             !body.contains("ann::split(") && !body.contains("ann::pick_screen("),
             "{f} recalcule la géométrie"
@@ -65,7 +78,10 @@ fn capture_hides_then_shows_windows_after_the_blocking_capture() {
     let hide = body.find("main.hide()").expect("main.hide()");
     let blocking = body.find("spawn_blocking").expect("spawn_blocking");
     let show = body.find("main.show()").expect("main.show()");
-    assert!(allowed < hide, "Wayland refusé avant de cacher les fenêtres");
+    assert!(
+        allowed < hide,
+        "Wayland refusé avant de cacher les fenêtres"
+    );
     assert!(
         hide < blocking && blocking < show,
         "ordre attendu : cacher, capturer hors du fil principal, remontrer"
@@ -79,7 +95,10 @@ fn support_reports_transparency() {
         .nth(1)
         .and_then(|s| s.split('}').next())
         .expect("struct AnnotationSupport");
-    assert!(s.contains("transparent: bool"), "annotation_support doit rendre transparent (P18)");
+    assert!(
+        s.contains("transparent: bool"),
+        "annotation_support doit rendre transparent (P18)"
+    );
 }
 
 #[test]
