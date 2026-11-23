@@ -127,6 +127,8 @@ if [ "$E2E" = 1 ]; then
   echo "C13 tableaux : OK"
   node scripts/essais/c11a-annotation-navigateur.mjs
   echo "C11a annotation : OK"
+  node scripts/essais/c11b-capture-navigateur.mjs
+  echo "C11b capture : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"
