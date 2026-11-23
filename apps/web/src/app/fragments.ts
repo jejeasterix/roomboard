@@ -182,7 +182,7 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       return (await insertOutcome(tab, rbitem, name, at, index)) === "inserted";
     },
     async insertPages(tab, file) {
-      const read = await deps.io.read(file.name, file.bytes, "document");
+      const read = await deps.io.read(file.name, file.bytes, "document", null, undefined, false); // liens retirés par dropLinked
       if (read === null) return false;
       if (!(await accept(tab, read, file.name))) return false;
       try {

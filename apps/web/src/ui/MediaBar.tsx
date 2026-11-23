@@ -83,6 +83,7 @@ export function MediaBar(props: MediaBarProps): JSX.Element {
           type="range"
           data-media="position"
           aria-label="Position"
+          aria-valuetext={`${clock(time())} sur ${clock(props.media.duration)}`}
           min={0}
           max={props.media.duration}
           step={POSITION_STEP}

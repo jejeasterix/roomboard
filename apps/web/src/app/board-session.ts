@@ -504,51 +504,69 @@ async function buildBoardSession(
   const closeOrbit = (): void => {
     orbit?.close(); // `closed` libère la séance et remet l'oracle à jour
   };
-  // C2 : les écritures de vue passent une à une, dans l'ordre des relâchés ; `own` relie la version d'avant chacune
-  // à celle d'après, pour reconnaître un document que seules ces écritures ont changé depuis un relâché.
+  // C2 : les écritures de vue passent une à une, dans l'ordre des relâchés. `lastWritten` garde, par objet, l'état
+  // laissé par sa dernière écriture et son numéro (`writes`) ; `ownVersions` relie la version du document d'avant chaque
+  // écriture à celle d'après. Seul l'objet compte (un autre élément changé pendant l'instantané n'abandonne pas
+  // l'écriture, mineur C15), sauf si l'écriture viderait un rétablissement apparu depuis le relâché (Ctrl+Z, même d'un
+  // autre élément).
   let commits: Promise<void> = Promise.resolve();
   let pending = 0;
-  const own = new Map<number, number>();
-  const untouched = (base: number): boolean => {
-    let v = base;
-    for (let i = 0, n = own.get(v); n !== undefined && i <= own.size; i++, n = own.get(v)) v = n;
-    return doc.version() === v;
+  let writes = 0;
+  const lastWritten = new Map<string, { readonly state: string; readonly n: number }>();
+  const ownVersions = new Map<number, number>();
+  const stateOf = (id: string): string => JSON.stringify(doc.element(id));
+  /** `base` mène-t-il à `now` par les écritures de `ownVersions` (versions croissantes) ? */
+  const reached = (base: number, now: number): boolean => {
+    let v: number | undefined = base;
+    for (let i = 0; v !== undefined && i <= ownVersions.size; i++, v = ownVersions.get(v)) if (v === now) return true;
+    return false;
   };
-  /** Écrit la vue `v` relâchée à la version `base` ; abandonnée si le document a changé d'ailleurs (annulation…). */
-  const writeView = async (id: string, v: ModelCamera, base: number, shot: Promise<Blob | null>): Promise<void> => {
+  type Base = { readonly state: string; readonly version: number; readonly writes: number };
+  /** L'objet est dans l'état de son relâché, ou dans celui de sa dernière écriture faite depuis ; rien d'autre. */
+  const untouched = (id: string, base: Base): boolean => {
+    const last = lastWritten.get(id);
+    const expected = last !== undefined && last.n > base.writes ? last.state : base.state;
+    return stateOf(id) === expected && (!engine.state().canRedo || reached(base.version, doc.version()));
+  };
+  /** Écrit la vue `v` relâchée sur l'objet dans l'état `base` ; abandonnée si l'objet a changé d'ailleurs (annulation…). */
+  const writeView = async (id: string, v: ModelCamera, base: Base, shot: Promise<Blob | null>): Promise<void> => {
     const png = await shot;
     const now = doc.element(id);
     if (png === null || now === null || now.kind !== "model3d") {
       if (now === null && orbit?.id === id) closeOrbit();
       return;
     }
-    if (!untouched(base)) return;
+    if (!untouched(id, base)) return;
     const snapshot = { id: await assets.put(png), name: `${doc.asset(now.model3d.asset)?.name ?? "objet 3D"}.png`, mime: SNAPSHOT_MIME, size: png.size };
     const last = doc.element(id);
     if (last === null || last.kind !== "model3d") {
       if (orbit?.id === id) closeOrbit();
       return;
     }
-    if (!untouched(base)) return;
+    if (!untouched(id, base)) return;
     if (orbit?.id === id) written = v;
-    const before = doc.version();
+    const beforeVersion = doc.version();
     engine.run({ type: "SetModel3dView", id, yaw: v.yaw, pitch: v.pitch, snapshot });
-    if (doc.version() !== before) own.set(before, doc.version());
+    lastWritten.set(id, { state: stateOf(id), n: ++writes });
+    if (doc.version() !== beforeVersion) ownVersions.set(beforeVersion, doc.version());
   };
   /**
    * Instantané puis `SetModel3dView` (une étape) ; rien si l'élément a disparu, si l'image manque (contexte perdu) ou si
-   * le document a changé autrement que par ces écritures depuis le relâché. L'image est prise au relâché (l'orbite peut
+   * l'objet a changé autrement que par ces écritures depuis le relâché. L'image est prise au relâché (l'orbite peut
    * se fermer juste après, clic à côté) ; l'écriture attend la précédente.
    */
   const commitView = (id: string, v: ModelCamera): Promise<void> => {
     const e = doc.element(id);
     if (e === null || e.kind !== "model3d") return Promise.resolve();
-    const base = doc.version();
+    const base: Base = { state: stateOf(id), version: doc.version(), writes };
     const [w, h] = modelBox(e);
     const shot = models.snapshot(id, v, snapshotSize(w, h)).catch(() => null);
     pending++;
     const turn = commits.then(() => writeView(id, v, base, shot)).finally(() => {
-      if (--pending === 0) own.clear();
+      if (--pending === 0) {
+        lastWritten.clear();
+        ownVersions.clear();
+      }
     });
     commits = turn.catch(() => {});
     return turn;

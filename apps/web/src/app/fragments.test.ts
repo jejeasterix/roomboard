@@ -312,7 +312,36 @@ describe("opérations sur la sélection : médias liés (C14)", () => {
     expect(added.flatMap((p) => dst.doc.elementIds(p)).map((id) => dst.doc.element(id)?.kind)).toEqual(["shape"]);
     expect(dst.doc.citedAssets().map((a) => a.id)).not.toContain(VID);
     expect(dst.assets.linked(VID)).toBeUndefined();
-    expect(said).toContain(`b.roomboard : ${LINKED_COPY_MESSAGE}`);
+    expect(said).toEqual([`b.roomboard : ${LINKED_COPY_MESSAGE}`]); // un seul avis, même sur le web (mineur C14)
+  });
+
+  it("mineur C14 : insérer les pages ne cherche pas la vidéo liée qui sera retirée (aucun relink)", async () => {
+    const VID = "cd".repeat(32);
+    const codec = memoryCodec();
+    const said: string[] = [];
+    const say = async (m: string) => void said.push(m);
+    const relink = vi.fn(async () => "/cours/videos/clip.webm");
+    const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID), relink });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true });
+    const s = fakeCore.blank();
+    rectIn(s, 0, 0, 100, 100);
+    s.apply({
+      type: "AddMedia",
+      page: s.pageIds()[0]!,
+      asset: { id: VID, name: "clip.webm", mime: "video/webm", size: 300_000_000 },
+      poster: null,
+      linked: "/cours/videos/clip.webm",
+      mediaType: "video",
+      w: 640,
+      h: 360,
+      duration: 12,
+      matrix: [1, 0, 0, 1, 0, 0],
+    });
+    const bytes = await io.encode(s, createAssetStore(async () => ID), NOW, "0.1.0", { kind: "document" });
+    const dst = tabOf();
+    expect(await ops.insertPages(dst.tab, { name: "b.roomboard", bytes, target: { kind: "download", name: "b.roomboard" } })).toBe(true);
+    expect(relink).not.toHaveBeenCalled();
+    expect(said).toEqual([`b.roomboard : ${LINKED_COPY_MESSAGE}`]);
   });
 });
 

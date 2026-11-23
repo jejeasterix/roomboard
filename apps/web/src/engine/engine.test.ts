@@ -1654,7 +1654,7 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     const doc = fakeCore.blank();
     const renderer = new FakeRenderer();
     const log: string[] = [];
-    const tools: ToolFactories = { pen: (ctx) => fakeTool("pen", log, ctx), eraser: (ctx) => fakeTool("eraser", log, ctx) };
+    const tools: ToolFactories = { pen: (ctx) => fakeTool("pen", log, ctx), eraser: (ctx) => fakeTool("eraser", log, ctx), select: (ctx) => createSelectTool(ctx) };
     const frames = new Frames();
     const engine = createEngine({ doc, renderer, frames, tools });
     engine.resize(800, 600, 1);
@@ -1696,19 +1696,56 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     const { engine, log, closed, commits, open, at } = c15();
     open();
     engine.sink.begin(3, "pen", [at(500, 500)]);
+    engine.sink.close(3, "end");
     expect(closed).toHaveBeenCalledTimes(1);
     expect(log).toContain("pen.begin 3");
-    engine.sink.close(3, "end");
     expect(log).toContain("pen.close 3 end");
     expect(commits).toEqual([]);
     engine.sink.begin(4, "pen", [at(150, 150)]); // séance fermée : même sur l'objet, l'outil reçoit le geste
     expect(log).toContain("pen.begin 4");
+  });
+  it("mineur C15 (C1) : pincement dont le premier doigt tombe à côté de l'objet : la séance reste, l'outil ne reçoit rien", () => {
+    const { engine, log, closed, open, at } = c15();
+    open();
+    const s0 = at(500, 500);
+    engine.sink.begin(7, "pen", [s0]);
+    engine.sink.extend(7, [{ ...s0, x: s0.x + 2 }], []); // le doigt bouge un peu avant le second
+    engine.sink.close(7, "abort"); // le routeur passe au pincement
+    expect(closed).not.toHaveBeenCalled();
+    expect(log.filter((l) => /^pen\.(begin|extend|close)/.test(l))).toEqual([]);
+    engine.sink.begin(8, "pen", [at(150, 150)]); // la séance garde les gestes sur l'objet
+    expect(log.filter((l) => /^pen\.begin/.test(l))).toEqual([]);
+  });
+  it("mineur C15 (C1) : un glissé à côté de l'objet ferme la séance dès qu'il dépasse le seuil ; l'outil reçoit tous les points", () => {
+    const { engine, log, closed, open, at } = c15();
+    open();
+    const s0 = at(500, 500);
+    engine.sink.begin(9, "pen", [s0]);
+    expect(closed).not.toHaveBeenCalled();
+    engine.sink.extend(9, [{ ...s0, x: s0.x + 30 }], []);
+    expect(closed).toHaveBeenCalledTimes(1);
+    engine.sink.extend(9, [{ ...s0, x: s0.x + 60 }], []);
+    engine.sink.close(9, "end");
+    // premier point à `begin`, les suivants à `extend` (un outil ne lit que le premier point de `begin`)
+    expect(log.filter((l) => /^pen\.(begin|extend|close) 9/.test(l))).toEqual(["pen.begin 9", "pen.extend 9", "pen.extend 9", "pen.close 9 end"]);
+  });
+  it("mineur C15 (C1, relecture) : rectangle de sélection à côté de l'objet, un seul pas au-delà du seuil : la sélection le suit", () => {
+    const { engine, doc, page, frames, open, at } = c15();
+    const other = doc.apply({ type: "AddShape", page, shape: "rect", x0: 300, y0: 300, x1: 400, y1: 400, style: PEN, fill: null }).ids[0]!;
+    engine.setTool("select");
+    open();
+    engine.sink.begin(10, "select", [at(250, 250)]);
+    engine.sink.extend(10, [at(450, 450)], []);
+    frames.tick();
+    engine.sink.close(10, "end");
+    expect(engine.state().selection).toEqual([other]);
   });
   it("C1 : un appui sur un autre élément (pas l'objet de la séance) ferme aussi la séance", () => {
     const { engine, doc, page, log, closed, open, at } = c15();
     doc.apply({ type: "AddShape", page, shape: "rect", x0: 300, y0: 300, x1: 400, y1: 400, style: PEN, fill: null });
     open();
     engine.sink.begin(5, "pen", [at(350, 350)]);
+    engine.sink.close(5, "end");
     expect(closed).toHaveBeenCalledTimes(1);
     expect(log).toContain("pen.begin 5");
   });

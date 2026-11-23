@@ -216,8 +216,10 @@ export interface Gathered {
   readonly files: readonly GatheredFile[];
   /** Références citées sans fichier (telles qu'écrites) ; vide quand `mtl` est faux (X15 prime). */
   readonly missing: readonly string[];
-  /** OBJ : vrai si au moins un `.mtl` cité est résolu ; null pour les autres formats. */
+  /** OBJ : vrai si au moins un `.mtl` cité est résolu (ou écarté car trop gros) ; null pour les autres formats. */
   readonly mtl: boolean | null;
+  /** Mineur C15 : noms de `tooBig` cités par ce modèle (écartés car trop gros, déjà dits) ; jamais dans `missing`. */
+  readonly skipped: readonly string[];
 }
 
 /** X13, X14 : fichiers liés d'un modèle parmi `siblings` (OBJ → MTL → textures du MTL, résolues depuis le MTL ; glTF et
@@ -227,14 +229,21 @@ export async function gatherFiles(
   mainPath: string,
   main: Uint8Array,
   siblings: readonly Sibling[],
+  tooBig: readonly string[] = [],
 ): Promise<Gathered> {
   const names = siblings.map((s) => s.path);
   const files: GatheredFile[] = [];
   const missing: string[] = [];
-  const take = (ref: string, from: string): Sibling | null => {
+  const skipped: string[] = [];
+  const take = (ref: string, from: string): Sibling | "trop-gros" | null => {
     const hit = resolveReference(ref, from, names);
     const path = storedPath(ref);
     if (hit === null || path === null) {
+      const big = hit === null ? resolveReference(ref, from, tooBig) : null;
+      if (big !== null) {
+        if (!skipped.includes(big)) skipped.push(big);
+        return "trop-gros";
+      }
       if (!missing.includes(ref)) missing.push(ref);
       return null;
     }
@@ -246,17 +255,18 @@ export async function gatherFiles(
   if (format === "gltf" || format === "glb") {
     const json = format === "gltf" ? text(main) : glbJsonText(main);
     for (const ref of json === null ? [] : references("gltf", json)) take(ref, mainPath);
-    return { files, missing, mtl: null };
+    return { files, missing, mtl: null, skipped };
   }
-  if (format !== "obj") return { files, missing, mtl: null };
+  if (format !== "obj") return { files, missing, mtl: null, skipped };
   let mtl = false;
   for (const ref of references("obj", text(main))) {
     const s = take(ref, mainPath);
     if (s === null) continue;
     mtl = true;
+    if (s === "trop-gros") continue;
     for (const tex of references("mtl", text(await s.bytes()))) take(tex, s.path);
   }
-  return { files, missing: mtl ? missing : [], mtl };
+  return { files, missing: mtl ? missing : [], mtl, skipped };
 }
 
 /** X16 : entrée de ZIP gardée : chemin sûr selon `safeArchivePath` (C13 N16), extension 3D ou liée. */

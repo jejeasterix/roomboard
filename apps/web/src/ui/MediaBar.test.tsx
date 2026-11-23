@@ -49,6 +49,11 @@ describe("MediaBar (C14, M22)", () => {
     expect([q("start").textContent, q("end").textContent, q("keep").textContent]).toEqual(["Début ici", "Fin ici", "Tout garder"]);
   });
 
+  it("Position : aria-valuetext lit le temps (« 0:12 sur 1:30 »), pas un nombre de secondes", () => {
+    const { q } = setup(media(), { time: 12.4 });
+    expect(q("position").getAttribute("aria-valuetext")).toBe("0:12 sur 1:30");
+  });
+
   it("Boucle : aria-pressed, bascule", () => {
     const { q, set } = setup();
     expect(q("loop").getAttribute("aria-pressed")).toBe("false");
