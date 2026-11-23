@@ -13,7 +13,7 @@ import { anchorOf, HEAD_BYTES, placement, visibleOf } from "./image-import";
 import { hasZipMagic, type ImportContext, type ImportHandler, type ImportOutcome } from "./import";
 import {
   baseName, COMPANION_ALONE_MESSAGE, COMPRESSED_MESSAGE, extensionOf, gatherFiles, glbJsonText, gltfCompression,
-  isCompanionName, missingFilesMessage, MODEL3D_MAX_BYTES, MODEL3D_MIME, MODEL3D_TOO_BIG_MESSAGE, MTL_MISSING_MESSAGE,
+  isCompanionName, missingFilesMessage, resolveReference, MODEL3D_MAX_BYTES, MODEL3D_MIME, MODEL3D_TOO_BIG_MESSAGE, MTL_MISSING_MESSAGE,
   NO_WEBGL_MESSAGE, sniffModel3d, ZIP_EMPTY_MESSAGE, ZIP_MAX_MODELS, ZIP_TOO_BIG_MESSAGE, type Sibling,
 } from "./model3d-import";
 import { snapshotSize, type ModelView } from "./model-view";
@@ -93,7 +93,7 @@ async function insertModel(
   const mainBlob = new Blob([m.main], { type: MODEL3D_MIME[m.format] });
   const files: Array<{ readonly path: string; readonly blob: Blob }> = [];
   try {
-    const g = await gatherFiles(m.format, m.path, m.main, m.siblings);
+    const g = await gatherFiles(m.format, m.path, m.main, m.siblings, m.tooBig);
     for (const f of g.files) files.push({ path: f.path, blob: new Blob([(await f.sibling.bytes()) as Uint8Array<ArrayBuffer>], { type: linkedMime(f.path) }) });
     view = await deps.view();
     const loaded = await view.load({ format: m.format, name: m.name, main: mainBlob, files: new Map(files.map((f) => [f.path, f.blob])) });
@@ -102,9 +102,10 @@ async function insertModel(
     } finally {
       view.release(loaded);
     }
-    const said = new Set(m.tooBig.map(baseName));
-    missing = [...g.missing, ...loaded.missing.filter((x) => !g.missing.includes(x))].filter((x) => !said.has(baseName(x)));
-    mtl = g.mtl === false && [...said].some((n) => extensionOf(n) === "mtl") ? null : g.mtl;
+    // Un fichier cité écarté car trop gros (déjà dit) n'est pas redit absent par le rendu (mineur C15).
+    const unsaid = (x: string): boolean => !g.missing.includes(x) && resolveReference(x, m.path, g.skipped) === null;
+    missing = [...g.missing, ...loaded.missing.filter(unsaid)];
+    mtl = g.mtl;
   } catch (e) {
     await ctx.notify(`Import impossible (${m.name}) : ${MODEL3D_UNREADABLE} (${messageOf(e)})`);
     return "failed";

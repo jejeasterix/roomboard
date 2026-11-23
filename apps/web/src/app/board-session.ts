@@ -504,20 +504,30 @@ async function buildBoardSession(
   const closeOrbit = (): void => {
     orbit?.close(); // `closed` libère la séance et remet l'oracle à jour
   };
-  // C2 : les écritures de vue passent une à une, dans l'ordre des relâchés ; `own` relie l'état de l'objet d'avant
-  // chacune à celui d'après, pour reconnaître un objet que seules ces écritures ont changé depuis un relâché. Seul
-  // l'objet compte : un autre élément changé pendant l'instantané n'abandonne pas l'écriture (mineur C15).
+  // C2 : les écritures de vue passent une à une, dans l'ordre des relâchés. `own` relie l'état de l'objet d'avant
+  // chacune à celui d'après, `ownVersions` la version du document d'avant à celle d'après : on reconnaît ainsi un objet,
+  // ou un document, que seules ces écritures ont changé depuis un relâché. Seul l'objet compte (un autre élément changé
+  // pendant l'instantané n'abandonne pas l'écriture, mineur C15), sauf si l'écriture viderait un rétablissement apparu
+  // depuis (Ctrl+Z d'un autre élément pendant l'instantané).
   let commits: Promise<void> = Promise.resolve();
   let pending = 0;
   const own = new Map<string, string>();
+  const ownVersions = new Map<number, number>();
   const stateOf = (id: string): string => JSON.stringify(doc.element(id));
-  const untouched = (id: string, base: string): boolean => {
-    let v = base;
-    for (let i = 0, n = own.get(v); n !== undefined && i <= own.size; i++, n = own.get(v)) v = n;
-    return stateOf(id) === v;
+  /** `base` mène-t-il à `now` par la chaîne `links` ? Un état déjà vu arrête le parcours (deux états égaux, A → B → A). */
+  const reaches = <T>(links: ReadonlyMap<T, T>, base: T, now: T): boolean => {
+    const seen = new Set<T>();
+    for (let v: T | undefined = base; v !== undefined && !seen.has(v); v = links.get(v)) {
+      if (v === now) return true;
+      seen.add(v);
+    }
+    return false;
   };
+  type Base = { readonly state: string; readonly version: number };
+  const untouched = (id: string, base: Base): boolean =>
+    reaches(own, base.state, stateOf(id)) && (!engine.state().canRedo || reaches(ownVersions, base.version, doc.version()));
   /** Écrit la vue `v` relâchée sur l'objet dans l'état `base` ; abandonnée si l'objet a changé d'ailleurs (annulation…). */
-  const writeView = async (id: string, v: ModelCamera, base: string, shot: Promise<Blob | null>): Promise<void> => {
+  const writeView = async (id: string, v: ModelCamera, base: Base, shot: Promise<Blob | null>): Promise<void> => {
     const png = await shot;
     const now = doc.element(id);
     if (png === null || now === null || now.kind !== "model3d") {
@@ -534,9 +544,11 @@ async function buildBoardSession(
     if (!untouched(id, base)) return;
     if (orbit?.id === id) written = v;
     const before = stateOf(id);
+    const beforeVersion = doc.version();
     engine.run({ type: "SetModel3dView", id, yaw: v.yaw, pitch: v.pitch, snapshot });
     const after = stateOf(id);
     if (after !== before) own.set(before, after);
+    if (doc.version() !== beforeVersion) ownVersions.set(beforeVersion, doc.version());
   };
   /**
    * Instantané puis `SetModel3dView` (une étape) ; rien si l'élément a disparu, si l'image manque (contexte perdu) ou si
@@ -546,12 +558,15 @@ async function buildBoardSession(
   const commitView = (id: string, v: ModelCamera): Promise<void> => {
     const e = doc.element(id);
     if (e === null || e.kind !== "model3d") return Promise.resolve();
-    const base = stateOf(id);
+    const base: Base = { state: stateOf(id), version: doc.version() };
     const [w, h] = modelBox(e);
     const shot = models.snapshot(id, v, snapshotSize(w, h)).catch(() => null);
     pending++;
     const turn = commits.then(() => writeView(id, v, base, shot)).finally(() => {
-      if (--pending === 0) own.clear();
+      if (--pending === 0) {
+        own.clear();
+        ownVersions.clear();
+      }
     });
     commits = turn.catch(() => {});
     return turn;

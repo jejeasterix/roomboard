@@ -530,13 +530,17 @@ export function createEngine(deps: EngineDeps): Engine {
    * passe au pincement) ou une fin anormale laisse l'orbite ouverte et l'outil sans rien.
    */
   const missedOrbit = (g: GestureTool, pointerId: number, first: readonly InputSample[]): GestureTool => {
-    const held = [...first];
+    const held: InputSample[] = [];
     const origin = first[0];
     let started = false;
-    const start = (): void => {
+    /** Premier point à `begin` (un outil ne lit que lui), les points retenus ensuite à `extend`. */
+    const start = (predicted: readonly InputSample[]): void => {
       started = true;
       orbit?.close();
-      emitIfSelectionChanged(() => g.begin(pointerId, held));
+      emitIfSelectionChanged(() => {
+        g.begin(pointerId, first);
+        if (held.length > 0) g.extend(pointerId, held, predicted);
+      });
       loop.start();
     };
     const far = (s: InputSample): boolean => origin !== undefined && Math.hypot(s.x - origin.x, s.y - origin.y) > ORBIT_MISS_SLOP_PX;
@@ -545,12 +549,12 @@ export function createEngine(deps: EngineDeps): Engine {
       extend(id, samples, predicted) {
         if (started) return g.extend(id, samples, predicted);
         held.push(...samples);
-        if (samples.some(far)) start();
+        if (samples.some(far)) start(predicted);
       },
       frame() {},
       close(id, how) {
         if (!started && how !== "end") return;
-        if (!started) start();
+        if (!started) start([]);
         g.close(id, how);
       },
       live: () => NO_LIVE,

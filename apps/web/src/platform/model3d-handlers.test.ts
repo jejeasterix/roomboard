@@ -313,6 +313,23 @@ describe("gestionnaire 3D (C15)", () => {
     expect(s.messages()).toEqual([`big.glb (a.zip) : ${MODEL3D_TOO_BIG_MESSAGE}`]);
   });
 
+  it("mineur C15 (relecture) : ZIP à deux modèles, le .mtl trop gros de l'un ne tait pas le .mtl absent de l'autre", async () => {
+    const s = setup();
+    const read = vi.fn(() => {
+      throw new Error("lu en entier");
+    });
+    const huge = { size: MODEL3D_MAX_BYTES + 1, type: "", slice: read, arrayBuffer: read, text: read, stream: read } as unknown as Blob;
+    const blobOf = (x: Uint8Array | string): Blob => new Blob([(typeof x === "string" ? enc(x) : x) as Uint8Array<ArrayBuffer>]);
+    s.model3d.readZip = vi.fn(async () => [
+      { path: "a.obj", blob: blobOf(cubeObj("a.mtl")) },
+      { path: "a.mtl", blob: huge },
+      { path: "b.obj", blob: blobOf(cubeObj("b.mtl")) },
+    ]);
+    const r = await s.importer.importFiles([file("x.zip", zipOf({ "x.txt": "x" }))], null);
+    expect(r.inserted).toEqual(["x.zip"]);
+    expect(s.messages()).toEqual([`a.mtl (x.zip) : ${MODEL3D_TOO_BIG_MESSAGE}`, `b.obj : ${MTL_MISSING_MESSAGE}`]);
+  });
+
   it("image déposée avec un modèle qui la cite : pas d'AddImage ; non citée : AddImage (effet de bord, HX2-6)", async () => {
     const s = setup();
     const r = await s.importer.importFiles(
