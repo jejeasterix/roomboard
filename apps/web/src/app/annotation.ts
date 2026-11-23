@@ -38,6 +38,8 @@ import type { ToolbarHost } from "./toolbar-host";
 
 export const RELAUNCH_QUESTION = "Annotation du bureau indisponible sous Wayland. Relancer en mode compatibilité ?";
 export const annotationFailedMessage = (why: string): string => `Annotation impossible : ${why}`;
+/** Rang de la page où `annotate` s'ouvre à chaque chargement (`createEngine` part de la première page). */
+const ENTRY_PAGE = 0;
 
 export interface AnnotationDeps<T> {
   readonly windows: AnnotationWindows;
@@ -56,7 +58,8 @@ export interface AnnotationDeps<T> {
   profile(): Profile;
   readonly screens?: number;
   readonly timeoutMs?: number;
-  /** C11b (P17) : fond de la page montrée du document d'annotation ; null : aucun (entrée vivante). */
+  /** C11b (P17) : fond de la première page du document d'annotation, celle où `annotate` s'ouvre (`createEngine`) ;
+   *  null : aucun (entrée vivante). */
   annotationBackdrop?(): PageBackdrop | null;
   /** C11b (P14) : pose (image) ou retire (null) le fond de la page `page` (rang ; absent : page montrée) du document
    *  d'annotation. */
@@ -138,15 +141,17 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     set({ active: true, pointer: "draw", sendTarget: targetOf("origin") });
     try {
       const place = placeNow(); // mesurée après le passage en barre seule
-      // P17 : réentrée figée si la page montrée du document d'annotation a déjà un fond.
+      // P17 : réentrée figée si la page où `annotate` s'ouvre (la première, pas la page montrée de l'onglet) a un fond.
       let frozen = (d.annotationBackdrop?.() ?? null) !== null;
       if (st.live === false) {
         // P18 : sans transparence, l'entrée capture d'abord et entre figée (blanche si la capture échoue).
         const shot = await d.windows.capture(place);
-        if (shot.ok) await d.setAnnotationBackdrop?.(shot.image);
-        else {
+        if (shot.ok) {
+          // Fond refusé par le cœur : figé blanc, avec l'avis.
+          if ((await d.setAnnotationBackdrop?.(shot.image, ENTRY_PAGE)) === false) await d.say(captureFailedMessage("failed"));
+        } else {
           // P18 : figé blanc ; le fond d'une séance précédente ne reste pas sous l'encre.
-          if (frozen) await d.setAnnotationBackdrop?.(null);
+          if (frozen) await d.setAnnotationBackdrop?.(null, ENTRY_PAGE);
           await d.say(captureFailedMessage(shot.reason));
         }
         frozen = true;
@@ -252,16 +257,27 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
           await d.say(INK_LOST_MESSAGE);
           return;
         }
+        /** Page dont le fond vient d'être posé (retiré si le rechargement échoue). */
+        let posed: number | null = null;
         try {
           // Remplacement refusé : poser le fond puis recharger l'ancien document effacerait les traits de la séance.
           if (got.changed && (await d.replaceAnnotation(got.bytes)) !== true) return;
-          await d.setAnnotationBackdrop?.(image, got.view?.page);
+          const page = got.view?.page ?? 0; // P13 : vue absente : page 0
+          const kept = await d.setAnnotationBackdrop?.(image, page);
+          if (image !== null) {
+            // Fond refusé par le cœur : figé blanc, avec l'avis.
+            if (kept === false) await d.say(captureFailedMessage("failed"));
+            else posed = page;
+          }
           const tab = await d.annotationTab();
           if (tab === null) return;
           await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive });
           set({ frozen: !toLive });
+          // La session rechargée d'`annotate` repart sur le stylo par défaut : l'outil affiché lui est renvoyé.
+          d.windows.send({ kind: "setTool", tool: st.pointer === "mouse" ? "select" : lastDraw });
           await d.windows.pointer(toLive ? st.pointer : "draw");
         } catch (e) {
+          if (posed !== null) await d.setAnnotationBackdrop?.(null, posed).catch(() => false);
           await d.say(annotationFailedMessage(messageOf(e)));
         }
       }).finally(() => {
@@ -295,6 +311,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
           image,
           // P13 : en figé, l'encre et le fond sont déjà dans le même repère.
           view: frozen ? { page: view?.page ?? 0, matrix: IDENTITY_MATRIX } : view,
+          // P14 : le fond de la page ne part qu'en figé ; vivant sans capture : fond blanc, comme l'avis le dit.
+          frozen,
         };
         const r = d.sendCapture === undefined ? null : await d.sendCapture(request);
         if (r === null) return; // rien inséré : l'avis est déjà dit (rien à envoyer, 12 onglets)
