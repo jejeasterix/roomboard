@@ -3,8 +3,9 @@
  * stdout, une ligne `{"error":…}` sur stderr en échec ; code de sortie 0, 1, 2 ou 3 (D9). Table des commandes : clés
  * propres seulement (`toString`, `__proto__` sont des usages inconnus). `run` s'arrête à la première opération refusée
  * (H4) ; le fichier n'est écrit que par `save`, `--save` ou `--out` en fin de session réussie. `--save` et `--out`
- * enregistrent toujours le document passé à `run` (onglet t1), quel que soit l'onglet actif ; les autres onglets
- * s'enregistrent par l'opération `save`. `help`, `--help`, `-h` : usage sur stdout ; sans commande : usage sur stderr.
+ * enregistrent toujours le document passé à `run` (onglet t1), quel que soit l'onglet actif ; `--save` l'écrit dans le
+ * fichier passé à `run`, même si une opération `save` avec `to` l'a enregistré ailleurs entre-temps ; les autres
+ * onglets s'enregistrent par l'opération `save`. `help`, `--help`, `-h` : usage sur stdout ; sans commande : usage sur stderr.
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
@@ -116,7 +117,8 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     // stdin ouvert ici seulement : readline lit dès sa création, une attente entre les deux perdrait lignes et fin.
     await play(session, fromFile ?? io.lines(), io);
     if (save) {
-      await saveOpened(session, opened, out ?? null);
+      // Le fichier passé à run, jamais le chemin courant de t1 : une opération save avec « to » le change (H4, DA2).
+      await saveOpened(session, opened, out ?? file ?? null);
       io.out(JSON.stringify({ written: session.written() }));
     }
     return 0;

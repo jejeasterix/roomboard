@@ -59,19 +59,49 @@ export interface OutStream {
   on(event: "error", listener: (e: Error) => void): unknown;
 }
 
+/** Écriture d'une ligne, et l'erreur d'écriture retenue par `lineWriter`. */
+export interface LineWriter {
+  (line: string): void;
+  /** Première erreur d'écriture du flux, EPIPE excepté ; null s'il n'y en a pas. */
+  failure(): Error | null;
+}
+
+const errnoOf = (e: Error): string | undefined => (e as NodeJS.ErrnoException).code;
+
 /**
- * Une ligne par appel sur `stream` (stdout ou stderr de `bin.ts`). Lecteur parti (`| head -1` : EPIPE) ou toute autre
- * erreur du flux : les lignes suivantes sont ignorées, sans pile ; la commande va au bout (enregistrement compris) et
- * rend son propre code de sortie.
+ * Une ligne par appel sur `stream` (stdout ou stderr de `bin.ts`). Après une erreur du flux, les lignes suivantes sont
+ * ignorées, sans pile ; la commande va au bout (enregistrement compris). Lecteur parti (`| head -1` : EPIPE) : pas un
+ * échec. Toute autre erreur (disque plein : ENOSPC) est retenue par `failure` et fait échouer le processus
+ * (`exitAfterWrites`).
  */
-export function lineWriter(stream: OutStream): (line: string) => void {
+export function lineWriter(stream: OutStream): LineWriter {
   let closed = false;
-  stream.on("error", () => {
+  let failure: Error | null = null;
+  stream.on("error", (e) => {
     closed = true;
+    if (failure === null && errnoOf(e) !== "EPIPE") failure = e;
   });
-  return (line) => {
-    if (!closed) stream.write(`${line}\n`);
-  };
+  return Object.assign(
+    (line: string) => {
+      if (!closed) stream.write(`${line}\n`);
+    },
+    { failure: () => failure },
+  );
+}
+
+/**
+ * Code de sortie après les écritures (`bin.ts`, à la sortie du processus) : une écriture perdue sur stdout ou stderr
+ * fait échouer une commande réussie (code 1), avec une ligne `{"error":…}` io sur stderr si stderr écrit encore ; un
+ * code d'échec de la commande reste le sien.
+ */
+export function exitAfterWrites(code: number, out: LineWriter, err: LineWriter): number {
+  const lost = out.failure();
+  const mute = err.failure();
+  if (lost === null && mute === null) return code;
+  if (lost !== null && mute === null) {
+    err(JSON.stringify({ error: new CliError("io", `écriture impossible (stdout) : ${errnoOf(lost) ?? lost.message}`) }));
+  }
+  return code === 0 ? 1 : code;
 }
 
 /**
