@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { lineWriter } from "./contract";
+import { exitAfterWrites, lineWriter, type OutStream } from "./contract";
 import { main } from "./main";
 import { describeWasm, memoryIO, tmpDir } from "./testing";
 
@@ -32,6 +32,61 @@ describe("sortie du processus (bin.ts) : tube fermé", () => {
     expect(() => out("a")).not.toThrow();
     expect(() => out("b")).not.toThrow();
     expect(pipe.writes).toBe(1);
+  });
+});
+
+/** Flux dont chaque écriture échoue (`>/dev/full`) ; l'erreur arrive après coup, comme sur un flux de Node. */
+class FullDisk extends EventEmitter {
+  writes = 0;
+  write(): boolean {
+    this.writes++;
+    process.nextTick(() => this.emit("error", Object.assign(new Error("write ENOSPC"), { code: "ENOSPC" })));
+    return false;
+  }
+}
+
+/** Flux qui garde ses lignes (stderr d'un essai). */
+const keeper = (): OutStream & { readonly lines: string[] } => {
+  const lines: string[] = [];
+  return { lines, write: (chunk: string) => lines.push(chunk), on: () => undefined };
+};
+
+const tick = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+describe("sortie du processus (bin.ts) : écriture impossible", () => {
+  // Discrimine le patron écarté : ignorer toute erreur du flux rendrait 0 sans rien écrire (`version >/dev/full`).
+  it("ENOSPC sur stdout : erreur retenue, code 1 pour une commande réussie, ligne io sur stderr", async () => {
+    const full = new FullDisk();
+    const stderr = keeper();
+    const out = lineWriter(full);
+    const err = lineWriter(stderr);
+    expect(() => out('{"cli":"0.1.0"}')).not.toThrow();
+    await tick();
+    expect(out.failure()).toMatchObject({ code: "ENOSPC" });
+    expect(exitAfterWrites(0, out, err)).toBe(1);
+    expect(stderr.lines.map((l) => JSON.parse(l))).toEqual([{ error: { code: "io", message: expect.stringContaining("ENOSPC") } }]);
+  });
+  it("ENOSPC : un code d'échec de la commande reste le sien", async () => {
+    const out = lineWriter(new FullDisk());
+    out("x");
+    await tick();
+    expect(exitAfterWrites(2, out, lineWriter(keeper()))).toBe(2);
+  });
+  it("ENOSPC sur stderr seul : code 1, rien de plus écrit", async () => {
+    const full = new FullDisk();
+    const err = lineWriter(full);
+    err("x");
+    await tick();
+    expect(exitAfterWrites(0, lineWriter(keeper()), err)).toBe(1);
+    expect(full.writes).toBe(1);
+  });
+  it("EPIPE n'est pas un échec : code inchangé, rien sur stderr", () => {
+    const stderr = keeper();
+    const out = lineWriter(new ClosedPipe(0));
+    out("a");
+    expect(out.failure()).toBeNull();
+    expect(exitAfterWrites(0, out, lineWriter(stderr))).toBe(0);
+    expect(stderr.lines).toEqual([]);
   });
 });
 

@@ -35,11 +35,13 @@ describe("main : commandes sans module (D9)", () => {
       expect(out.usage).toContain("roomboard run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]");
       expect(out.usage).toContain("roomboard new <sortie.roomboard> [--replace]");
       expect(JSON.stringify(out)).toContain("$$");
+      expect(out.env).toContain("ROOMBOARD_NOW=<millisecondes depuis 1970>");
     }
     const bare = memoryIO();
     expect(await main([], bare)).toBe(2);
     expect(bare.stdout).toEqual([]);
     expect(bare.errors()).toEqual([{ error: { code: "usage", message: expect.stringContaining("roomboard run <fichier.roomboard | --new>") } }]);
+    expect(bare.errors()[0].error.message).toContain("ROOMBOARD_NOW");
   });
   it("module Wasm absent : code 1, erreur io", async () => {
     const io = memoryIO([], {}, new URL("file:///roomboard-absent/"));
@@ -240,6 +242,20 @@ describeWasm("run --save et --out : le fichier passé à run, quel que soit l'on
     expect(io.json().at(-1)).toEqual({ written: [b, a] });
     expect(await elementsOf(b)).toBe(1);
     expect(await elementsOf(a)).toBe(0);
+  });
+  it("op save to b sur t1 puis --save : a écrit (le fichier passé à run), b garde l'état du save", async () => {
+    // Discrimine le patron écarté : --save sur le chemin courant de t1 réécrirait b (op save avec « to ») et jamais a.
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    const b = join(dir, "b.roomboard");
+    const ops = join(dir, "ops.jsonl");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    writeFileSync(ops, [rectOp("$page:0"), { op: "save", to: b }, rectOp("$page:0", 60, 60)].map((o) => JSON.stringify(o)).join("\n"));
+    const io = memoryIO();
+    expect(await main(["run", a, "--ops", ops, "--save"], io)).toBe(0);
+    expect(io.json().at(-1)).toEqual({ written: [b, a] });
+    expect(await elementsOf(b)).toBe(1);
+    expect(await elementsOf(a)).toBe(2);
   });
   it("apply a '<tab.new>' : a reste le document de a (jamais l'onglet neuf)", async () => {
     const a = join(tmpDir(), "a.roomboard");

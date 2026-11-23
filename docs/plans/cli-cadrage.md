@@ -204,7 +204,9 @@ Graphe : aucune requête (graphe absent). Recherche texte (`grep -rn` dans le wo
   fichier n'est écrit que par un `save` explicite (ou `--save` en fin de session). Pas de `--continuer`.
 - H5 — Build par `vite build --ssr` (vite déjà au verrou) et `@types/node` épinglé à `26.6.6` sans `^` (MIT, déjà au
   verrou, `pnpm-lock.yaml:688`), en devDependency de `apps/cli` seul.
-- H6 — Date du manifeste : `ROOMBOARD_NOW` si posée (essais reproductibles), sinon l'heure du système.
+- H6 — Date du manifeste : `ROOMBOARD_NOW` si posée (essais reproductibles), en **millisecondes depuis 1970** (entier
+  positif, ex. `1767225600000`), sinon l'heure du système ; toute autre valeur est une erreur d'usage (code 2) avant tout
+  chargement ni écriture. Rappelée par l'aide (`roomboard --help`, champ `env`).
 - H7 — Scène fixe de la CLI : 1920 × 1080 à l'origine, caméra identité. Un objet sans `--at` va au centre (960, 540) ;
   une image plus grande que 80 % de la scène (1536 × 864) est réduite comme dans l'application (`placement`,
   `image-import.ts:166-178`) ; cascade de 24 px. `--at x,y` hors de la scène : la page retomberait au centre sans avis
@@ -303,10 +305,11 @@ avec le lot dans le message).
 - `{"op":"tab.new"}`, `{"op":"tab.open","file":…}`, `{"op":"tab.select","tab":id}`, `{"op":"tab.close","tab":id}`,
   `{"op":"tab.list"}` → `{"op":n,"ok":true,"tabs":[{"id":…,"file":…|null,"active":bool}]}` ;
 - échec : `{"op":n,"ok":false,"error":{…}}` sur stdout, la même erreur sur stderr, arrêt. Code **2** pour une opération mal formée
-  (ligne non JSON, référence `$n` inconnue, commande inconnue) ; code **1** pour un refus du cœur ou un champ manquant ; code 3
-  pour un format d'un lot non livré.
+  (ligne non JSON, référence `$n` inconnue, commande inconnue, champ manquant ou mal formé d'une **opération de la CLI**
+  `{"op":…}`, ex. `{"op":"tab.open"}` sans `file`) ; code **1** pour un refus du cœur, ou un champ manquant ou mal formé
+  d'une **commande du cœur** `{"type":…}` ; code 3 pour un format d'un lot non livré.
 
-Ajouts de T5 au contrat : `roomboard help`, `--help` et `-h` impriment l'usage (`{"usage":[…],"refs":"…"}`), code 0 ;
+Ajouts de T5 au contrat : `roomboard help`, `--help` et `-h` impriment l'usage (`{"usage":[…],"refs":"…","env":"…"}`, `env` : `ROOMBOARD_NOW`, H6), code 0 ;
 `new <sortie> --replace` remplace un fichier existant (sans lui, un fichier existant rend code 1, `io`) ; avec `--save` ou
 `--out`, `run` imprime une **dernière ligne** `{"written":[…]}` (chemins écrits pendant la session) ; `$$` donne un `$`
 littéral (la substitution ne porte que sur une chaîne entière de la forme d'une référence) ; `--save` enregistre le
