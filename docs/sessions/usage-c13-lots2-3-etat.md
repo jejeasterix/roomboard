@@ -110,6 +110,8 @@ Suite (OE38, 2026-11-22, branche `fix/mineurs-relecture-c13-c5-c7b`) : les six s
 5. Fermé : refus étiquetés « S5 (lot 3) » ; `bombe.flipchart` devient `annonce-courte.flipchart` (la bombe de 300 Mio reste prouvée en vitest, dit en commentaire) ; le `.txt` est joué renommé `.flipchart`.
 6. Fermé : la notice cite `formats/src/objectstream.cpp` et l'état lu, ActCraft `29d551ae` (seul auteur jejeasterix des fichiers cités).
 
+Revue OF4 (2026-11-23, branche `fix/mineurs-c7b-c13-c14-c15`) : les six sont déjà fermés par OE38 ; aucun reste ouvert, aucun correctif.
+
 ## Rapport (lot 3)
 - Scénarios joués dans Chromium (`scripts/essais/c13-tableaux-navigateur.mjs`, dans `verifier.sh --e2e`) : S4 `.flipchart` généré par la fabrique (2 pages, 5 objets, image PNG placée, avis « image TIFF non lue » et action non lue, aller-retour `.roomboard`, scène ≥ 640) · S5 `.flipchart` hostiles refusés sans onglet (taille mensongère, `.fpg` imbriqué, trop d'entrées, `.txt` renommé), flux à 40 niveaux ouvert avec avis, Worker non gelé ; bombe qCompress de 300 Mio prouvée en vitest (`bamboo.test.ts`) ; test de bout en bout sur le vrai module (`flipchart-chaine.test.ts`).
 - Fidélité (`docs/essais/c13-fidelite-lots2-3.md`) : `.flipchart` 5 lus sur 5, 118 pages, 1249 objets, 523 avis (actions, grilles, rideaux, projecteurs, repères XY, TIFF, propriétés illisibles) — niveau B.
