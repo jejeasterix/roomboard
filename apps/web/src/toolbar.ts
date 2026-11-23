@@ -119,6 +119,9 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   profiles: { label: "Profil" },
   grid: { label: "Grille" },
   library: { label: "Bibliothèque" },
+  "desktop-annotation": { label: "Annotation du bureau" },
+  "annotation-pointer": { label: "Souris" },
+  "annotation-screen": { label: "Écran suivant" },
   "table-row-insert": { label: "+ Ligne" },
   "table-col-insert": { label: "+ Colonne" },
   "table-row-remove": { label: "− Ligne" },
@@ -625,6 +628,36 @@ export function visibleItems(bar: Toolbar, caps: RuntimeCapabilities): ToolItem[
     out.push(it);
   }
   while (out.length > 0 && out[out.length - 1]!.kind === "separator") out.pop();
+  return out;
+}
+
+/** C11a (P6, P8, P15) : entrée et sortie, bascule dessin / souris, écran suivant. */
+export const ANNOTATION_EXIT_ACTION: ActionId = "desktop-annotation";
+export const ANNOTATION_POINTER_ACTION: ActionId = "annotation-pointer";
+export const ANNOTATION_SCREEN_ACTION: ActionId = "annotation-screen";
+/** C11a (P20) : actions rejouées dans `annotate` (outils, préréglages, pot et format y vont par leurs méthodes de l'hôte). */
+export const ANNOTATION_REMOTE_ACTIONS: ReadonlySet<ActionId> = new Set(["undo", "redo", "eraser-mode"]);
+/** C11a (P20) : actions de la fenêtre principale en annotation ; toute autre action y est grisée. */
+export const ANNOTATION_MAIN_ACTIONS: ReadonlySet<ActionId> = new Set([ANNOTATION_EXIT_ACTION, ANNOTATION_POINTER_ACTION, ANNOTATION_SCREEN_ACTION]);
+
+/** Zone de dépôt d'annotation (P19) : `dropzone` qui exige `desktopAnnotation` ; toute autre zone garde son comportement. */
+export function isAnnotationZone(it: ToolItem): boolean {
+  return it.kind === "dropzone" && it.requires.includes("desktopAnnotation");
+}
+
+/**
+ * Éléments selon le mode (C11a, P7, P19) : tableau = `visibleItems` sans zone d'annotation ; annotation = `visibleItems`,
+ * plus « Annotation du bureau » (sortie) et « Souris » en fin s'ils manquent (masqués ou absents d'un profil d'avant
+ * C11a). Ajout au rendu, comme `ensureProfilesAccess` : le profil n'est pas réécrit.
+ */
+export function itemsForMode(bar: Toolbar, caps: RuntimeCapabilities, mode: StartMode): ToolItem[] {
+  const shown = visibleItems(bar, caps);
+  if (mode === "board") return shown.filter((it) => !isAnnotationZone(it));
+  const out = [...shown];
+  for (const action of [ANNOTATION_EXIT_ACTION, ANNOTATION_POINTER_ACTION]) {
+    if (out.some((it) => it.kind === "action" && it.action === action)) continue;
+    out.push({ id: `${action}-ajout`, kind: "action", action, label: ACTION_TABLE[action]!.label, requires: [], rest: {} });
+  }
   return out;
 }
 

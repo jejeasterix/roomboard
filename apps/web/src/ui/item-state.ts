@@ -1,7 +1,14 @@
 import { TABLE_MAX_LINES } from "../core/api";
 import type { FormatState } from "../engine/rich-edit";
 import { rangeSize, type Range, type TableCellState } from "../engine/table-geom";
-import { TOOL_TABLE, type ToolItem } from "../toolbar";
+import { ANNOTATION_MAIN_ACTIONS, ANNOTATION_REMOTE_ACTIONS, TOOL_TABLE, type ToolItem } from "../toolbar";
+
+/** C11a : état de l'annotation vu par la barre de la fenêtre principale. */
+export interface AnnotationView {
+  readonly active: boolean;
+  readonly pointer: "draw" | "mouse";
+  readonly screens: number;
+}
 
 export interface ToolbarView {
   readonly tool: string;
@@ -26,6 +33,8 @@ export interface ToolbarView {
   readonly selectionImage?: string | null;
   /** C6b (B10) : tolérance du pot sur une image, 0 à 100 ; absente : 5 (défaut du moteur). */
   readonly fillTolerance?: number;
+  /** C11a (P6, P8, P15) : absent (tests, coque sans annotation) : tableau. */
+  readonly annotation?: AnnotationView;
 }
 export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
 
@@ -41,6 +50,15 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
     pressed: v.eraserMode === "object",
     label: `Gomme : ${v.eraserMode === "object" ? "objet" : "partielle"}`,
   }),
+  "desktop-annotation": (v) => {
+    const on = v.annotation?.active === true;
+    return { pressed: on, label: on ? "Quitter l'annotation" : "Annotation du bureau" };
+  },
+  "annotation-pointer": (v) => {
+    const mouse = v.annotation?.pointer === "mouse";
+    return { pressed: mouse, label: mouse ? "Dessin" : "Souris", disabled: v.annotation?.active !== true };
+  },
+  "annotation-screen": (v) => ({ disabled: v.annotation?.active !== true || v.annotation.screens <= 1 }),
   undo: (v) => ({ disabled: !v.canUndo }),
   redo: (v) => ({ disabled: !v.canRedo }),
   "page-prev": (v) => ({ disabled: v.pageIndex <= 0 }),
@@ -73,6 +91,14 @@ const BY_KIND: Readonly<Record<ToolItem["kind"], Rule>> = {
   separator: () => ({}),
 };
 
+/** C11a (P20) : en annotation, une action ni transmise à `annotate` ni propre à la fenêtre principale est grisée. */
+const offInAnnotation = (item: ToolItem, v: ToolbarView): boolean =>
+  v.annotation?.active === true &&
+  item.kind === "action" &&
+  !ANNOTATION_REMOTE_ACTIONS.has(item.action ?? "") &&
+  !ANNOTATION_MAIN_ACTIONS.has(item.action ?? "");
+
 export function itemState(item: ToolItem, v: ToolbarView): ItemState {
-  return { pressed: null, disabled: false, label: item.label, ...BY_KIND[item.kind](item, v) };
+  const st: ItemState = { pressed: null, disabled: false, label: item.label, ...BY_KIND[item.kind](item, v) };
+  return offInAnnotation(item, v) ? { ...st, disabled: true } : st;
 }
