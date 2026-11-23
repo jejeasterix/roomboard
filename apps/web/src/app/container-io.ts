@@ -61,13 +61,15 @@ export interface ContainerIO {
   encode(doc: CoreDocument, assets: AssetStore, now: string, appVersion: string, as: EncodeAs): Promise<Uint8Array>;
   /** `docPath` : chemin du document lu (liens relatifs des médias liés, C14), null s'il n'est pas connu. C4 : une liste
    *  de types lit le type une fois (manifeste extrait, ou fichier entier dans le repli), puis un seul lecteur.
-   *  `known` (OE77) : chemin absolu déjà connu d'un lien, par id ; il passe avant `docPath` (retour d'annotation). */
+   *  `known` (OE77) : chemin absolu déjà connu d'un lien, par id ; il passe avant `docPath` (retour d'annotation).
+   *  `links` à false : liens laissés non résolus et sans avis (« Insérer les pages » retire les médias liés, R2). */
   read(
     name: string,
     bytes: Uint8Array,
     kind: ReadKind | readonly ReadKind[],
     docPath?: string | null,
     known?: ReadonlyMap<string, string>,
+    links?: boolean,
   ): Promise<ReadResult | null>;
 }
 
@@ -142,7 +144,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
       const mimeOf = new Map(cited.map((a) => [a.id, a.mime]));
       return codec.write(manifest, ybin, present.map(([id, blob]) => ({ id, mime: mimeOf.get(id) ?? blob.type, blob })));
     },
-    async read(name, bytes, kind, docPath = null, known = new Map()) {
+    async read(name, bytes, kind, docPath = null, known = new Map(), links = true) {
       const wanted: readonly ReadKind[] = typeof kind === "string" ? [kind] : kind;
       const assets = deps.makeAssets();
       let contents: ContainerContents;
@@ -166,7 +168,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         const unread = doc.citedAssets().some((a) => !linked.has(a.id));
         // Un fragment non lu est refusé par l'appelant (`fragments`) avec son propre avis : un seul avis, pas deux.
         if (unread && k === "document") await say(`${name} : ${CODEC_FALLBACK_MESSAGE}`);
-        if (k === "document") await relinkAll(name, doc, assets, docPath, known);
+        if (k === "document" && links) await relinkAll(name, doc, assets, docPath, known);
         return { doc, assets, unread, kind: k };
       }
       let k: ReadKind;
@@ -187,7 +189,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         return null;
       }
       if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);
-      if (k === "document") await relinkAll(name, doc, assets, docPath, known);
+      if (k === "document" && links) await relinkAll(name, doc, assets, docPath, known);
       // un asset cité mais ignoré par le conteneur (trop gros…) : marqué, Enregistrer refusé (R30)
       return { doc, assets, unread: missingOf(doc, assets).length > 0, kind: k };
     },

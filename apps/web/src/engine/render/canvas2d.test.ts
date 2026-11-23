@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Bounds, CoreDocument, ElementView, MediaData, Model3dData, GridInput, GridLevel, GridView, ImageElement, TableElement, TextElement } from "../../core/api";
 import { NO_CHANGE } from "../../core/api";
@@ -1132,6 +1134,12 @@ describe("exportPainterOptions (C14, R7, M34)", () => {
   it("le makePath du producteur vectoriel passe, forExport reste posé", () => {
     const makePath = (): Path2D => ({}) as Path2D;
     expect(exportPainterOptions({} as ImageSource, { makePath })).toMatchObject({ forExport: true, makePath });
+  });
+  it("mineur C14 : main.ts câble chaque peintre d'export (PNG, PDF vectoriel, vignettes) sur exportPainterOptions", () => {
+    const main = readFileSync(join(__dirname, "../../main.ts"), "utf8");
+    const painters = [...main.matchAll(/new Canvas2DRenderer\(ctx, null, doc, ([A-Za-z]+)\(/g)].map((m) => m[1]);
+    expect(main.match(/new Canvas2DRenderer\(/g)?.length).toBe(painters.length);
+    expect(painters).toEqual(["exportPainterOptions", "exportPainterOptions", "exportPainterOptions"]);
   });
 });
 
