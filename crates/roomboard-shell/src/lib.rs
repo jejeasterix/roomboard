@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub mod annotation;
+pub mod capture;
 pub mod office;
 pub mod originals;
 

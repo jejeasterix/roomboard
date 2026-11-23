@@ -9,6 +9,8 @@ sha2 = "0.10.9"
 # C16 (O36) : ouvrir l'original avec l'application du système depuis Rust ; ShellExecuteW sous Windows (sans cette
 # feature, `open` passerait par powershell.exe -Command : interdit, aucun shell).
 open = { version = "5.4.5", default-features = false, features = ["shellexecute-on-windows"] }
+# C11b (P19, P25) : encodage PNG de la capture (MIT OU Apache-2.0), même version que le verrou du workspace.
+png = "0.18.1"
 
 [target.'cfg(unix)'.dependencies]
 # C16 (O9, O11) : propriétaire du dossier de travail (geteuid), arbre de processus tué (kill du groupe).
@@ -18,6 +20,19 @@ libc = "0.2.191"
 # C16 (O11, O13) : objet Job (arbre tué au délai), COM de Word, Excel et PowerPoint. Même version que
 # apps/desktop/src-tauri/Cargo.lock.
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Com", "Win32_System_Ole", "Win32_System_Variant", "Win32_System_Diagnostics_ToolHelp"] }
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+# C11b (P19) : capture d'un écran (Apache-2.0). Linux exclu : PipeWire y est obligatoire (essai du 2026-11-23).
+xcap = { version = "0.9.10", default-features = false }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# C11b (P10, P19) : autorisation « Enregistrement de l'écran » (Zlib OU Apache-2.0 OU MIT) ; xcap ne la vérifie pas.
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGWindow"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# C11b (P18, P19) : XGetImage sur la racine et sélection du compositeur, Xlib chargée à l'exécution (MIT) ; déjà dans
+# l'arbre de tao.
+x11-dl = "2.21.0"
 
 [dev-dependencies]
 serde_json = "1"
