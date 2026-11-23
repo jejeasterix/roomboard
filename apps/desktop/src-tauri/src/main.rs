@@ -327,6 +327,16 @@ fn main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
     app.get_webview_window(MAIN).ok_or_else(|| "fenêtre principale absente".to_string())
 }
 
+/// Écrans de la géométrie d'annotation : rectangle physique et échelle de chacun.
+fn screens_of(monitors: &[tauri::Monitor]) -> Vec<(AnnRect, f64)> {
+    monitors.iter().map(|m| (rect_of(m), m.scale_factor())).collect()
+}
+
+/// Centre de la fenêtre principale (position externe, taille intérieure), en pixels physiques.
+fn center_of(pos: PhysicalPosition<i32>, size: PhysicalSize<u32>) -> (i32, i32) {
+    (pos.x + (size.width / 2) as i32, pos.y + (size.height / 2) as i32)
+}
+
 fn rect_of(m: &tauri::Monitor) -> AnnRect {
     let (p, s) = (m.position(), m.size());
     AnnRect { x: p.x, y: p.y, w: s.width, h: s.height }
@@ -360,7 +370,7 @@ async fn annotation_enter(
     if monitors.is_empty() {
         return Err("aucun écran".into());
     }
-    let screens: Vec<(AnnRect, f64)> = monitors.iter().map(|m| (rect_of(m), m.scale_factor())).collect();
+    let screens = screens_of(&monitors);
     // Déjà réduite à la barre (réentrée) : la géométrie mémorisée reste celle d'avant la première entrée.
     let already = saved.0.lock().unwrap_or_else(|e| e.into_inner()).is_some();
     let maximized = main.is_maximized().map_err(err)?;
@@ -375,7 +385,7 @@ async fn annotation_enter(
             *s = Some(Saved { pos, size, maximized });
         }
     }
-    let center = (pos.x + (size.width / 2) as i32, pos.y + (size.height / 2) as i32);
+    let center = center_of(pos, size);
     // C11b (P22) : même géométrie que `annotation_capture`, par la fonction pure partagée.
     let ann::Placement { index: i, bar, area, .. } = ann::placement(&screens, screen, center, &dock, thickness);
     let annotate = match app.get_webview_window(ANNOTATE) {
@@ -501,15 +511,19 @@ async fn annotation_capture(
 ) -> Result<CapturedPayload, String> {
     let session = ann::detect_session(std::env::consts::OS, |k| std::env::var(k).ok());
     capture::allowed(session).map_err(|e| e.code().to_string())?;
+    // Avant de cacher quoi que ce soit : sans autorisation (macOS), la barre et l'annotation restent visibles.
+    if !capture::authorized() {
+        return Err(capture::CaptureError::Denied.code().to_string());
+    }
     let main = main_window(&app).map_err(capture_failed)?;
     let monitors = main.available_monitors().map_err(capture_failed)?;
     if monitors.is_empty() {
         return Err(capture_failed("aucun écran"));
     }
-    let screens: Vec<(AnnRect, f64)> = monitors.iter().map(|m| (rect_of(m), m.scale_factor())).collect();
+    let screens = screens_of(&monitors);
     let pos = main.outer_position().map_err(capture_failed)?;
     let size = main.inner_size().map_err(capture_failed)?;
-    let center = (pos.x + (size.width / 2) as i32, pos.y + (size.height / 2) as i32);
+    let center = center_of(pos, size);
     let place = ann::placement(&screens, screen, center, &dock, thickness);
     let annotate = app
         .get_webview_window(ANNOTATE)

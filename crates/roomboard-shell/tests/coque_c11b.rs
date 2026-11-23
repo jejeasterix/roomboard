@@ -122,17 +122,31 @@ fn capture_shows_windows_again_even_if_hiding_fails() {
 #[test]
 fn capture_probes_authorization_before_hiding() {
     let body = body_of("annotation_capture");
-    let probe = body.find("capture::authorized()").expect("sonde d'autorisation");
+    let probe = body
+        .find("capture::authorized()")
+        .expect("sonde d'autorisation");
     let hide = body.find("main.hide()").expect("main.hide()");
-    assert!(probe < hide, "l'autorisation est sondée avant de cacher les fenêtres");
+    assert!(
+        probe < hide,
+        "l'autorisation est sondée avant de cacher les fenêtres"
+    );
 }
 
 #[test]
 fn screens_and_center_are_shared() {
     for name in ["annotation_enter", "annotation_capture"] {
         let body = body_of(name);
-        assert!(body.contains("screens_of(") && body.contains("center_of("), "{name} : aides partagées");
-        assert!(!body.contains("rect_of(m)"), "{name} : calcul des écrans recopié");
-        assert!(!body.contains("width / 2"), "{name} : calcul du centre recopié");
+        assert!(
+            body.contains("screens_of(") && body.contains("center_of("),
+            "{name} : aides partagées"
+        );
+        assert!(
+            !body.contains("rect_of(m)"),
+            "{name} : calcul des écrans recopié"
+        );
+        assert!(
+            !body.contains("width / 2"),
+            "{name} : calcul du centre recopié"
+        );
     }
 }
