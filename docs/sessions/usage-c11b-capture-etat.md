@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : En coque, Jérôme fige son bureau en fond d'annotation et envoie capture et encre au tableau comme une nouvelle page après la page montrée, avec un fond blanc et un avis quand la capture est impossible.
-Avancement : 3/11 tâches terminées
-Étage : 3 (vague 1) — depuis 2026-11-23 10:55
+Avancement : 12/12 tâches terminées
+Étage : 3 (fin du lot) — depuis 2026-11-23 11:25
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c11b-capture   Branche : feat/usage-c11b-capture   Base : origin/main @ a4accb3
 Branche principale locale au lancement : a4accb3
@@ -28,6 +28,15 @@ Correctifs de la relecture du plan, passés dans les briefs : T3 (cacher `main` 
 | T2 | terminée | 1/3 | fa5026c | `capture` : 17 passed, 1 ignored, `fichier_accorde_lisible_puis_retire` ok ; xcap sous cfg(windows, macos) ; licences OK (rapport) |
 | T6 | terminée | 1/3 | 5718208 | `desktop-page.test.ts` 11 passed avec ROOMBOARD_WASM_REQUIRED=1 ; tsc 0 |
 | T11 | terminée | 1/3 | 759f034 | 33 cases ; renvoi c11a = 1 |
+| T1 | terminée | 1/3 | fdd7fd6 | `annotation` : 22 passed, `placement_reprend_pick_screen_physical_et_split` ok |
+| T4 | terminée | 1/3 | eba4a06 | Vitest 3 fichiers 31 passed ; tsc 0 |
+| T3 | terminée | 1/3 | 2746188 | `coque_c11b` 5 passed (`capture_hides_then_shows…` ok), `coque_c16` 6 passed ; clippy src-tauri -D warnings `Finished` |
+| T5 | terminée | 1/3 | face1ef | `annotation-page.test.ts` 20 passed, nom « opaque : session opaque… » présent ; tsc 0 |
+| T7 | terminée | 1/3 | 6a6120e | 89 passed (2 fichiers), noms « capture avant la collecte », « double clic », « collecte sans réponse » présents ; tsc 0 ; revue immédiate : 2 importants, 3 mineurs → T12 |
+| T8 | terminée | 1/3 | 30b8901 | `workspace.test.ts` 168 passed, ROOMBOARD_WASM_REQUIRED=1, « compatibilité : socle-v1.roomboard » présent ; `skipIf(real === null)` = patron du dépôt, forcé par la variable |
+| T9 | terminée | 1/3 | 9568638 | 5 fichiers 167 passed, « C11b : figer et envoyer » ×3 ; tsc 0 |
+| T10 | terminée | 1/3 | 059da0b | essai C11b : code 0, 54 `ok —`, scène 706 px (S1), 658 px (S2), Ctrl+Z retire la page, rouvert : trait et fond sur la page 2 |
+| T12 | terminée | 1/3 | 1fb100b | correctifs de revue 1, 2, 3, 5 ; `annotation.test.ts` 46 passed ; tsc 0 ; constat 4 consigné |
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · scénarios réussis · tailles Wasm sous plafond, inchangés · scène ≥ 640 px mesurée · PR mergée par `git merge --no-ff` + `git push` sans force
@@ -36,7 +45,10 @@ toutes les tâches terminées (aucune bloquée) · double relecture sans bloquan
 HC11b-1 (niveau 1, relevée par la relecture du plan) : les trois issues de Q2 deviennent trois boutons de la barre pendant l'annotation, et non une proposition au retour. À faire valider par Jérôme en tête du rapport.
 
 ## Hors périmètre
-—
+- Revue T7/T8, constat 4 (mineur, non vérifié) : en vivant sans capture, `sendCapture` recopie le fond de la page de la vue ; atteignable seulement si `annotate` montre une page à fond alors que l'entrée était vivante. Correction : passer « figé » à l'espace de travail (contrat `SendRequest`).
+- T12 : quand `replaceAnnotation` rend `false`, le contrôleur ne dit aucun avis lui-même.
+- T12 : la réentrée figée (P17) lit la page montrée dans la fenêtre principale, pas forcément celle d'`annotate`.
+- `crates/roomboard-shell/tests/coque_c11b.rs` non formaté (T3) : corrigé par 730225f.
 
 ## Portes
 ouvertes : — · passées : —
