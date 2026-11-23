@@ -1,7 +1,8 @@
 //! C11a (P9, P10, P11, P15, P16) : logique pure de l'annotation de bureau.
 use roomboard_shell::annotation::{
-    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch, relaunch_args,
-    restore_steps, side_of, split, supported, Rect, RestoreStep, Session, Side, Unsupported,
+    compat_env, cursor_in, detect_session, physical, pick_screen, placement, relaunch,
+    relaunch_args, restore_steps, side_of, split, supported, transparency, Placement, Rect,
+    RestoreStep, Session, Side, Unsupported,
 };
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -244,4 +245,59 @@ fn relaunch_runs_program_with_args_and_env() {
     }
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(got, "a b.roomboard|--x|x11");
+}
+
+#[test]
+fn placement_reprend_pick_screen_physical_et_split() {
+    let screens = [(r(0, 0, 1920, 1080), 1.0), (r(1920, 0, 3840, 2160), 2.0)];
+    let p = placement(&screens, None, (2500, 400), "top", 48.0);
+    assert_eq!(p.index, 1);
+    assert_eq!(p.monitor, r(1920, 0, 3840, 2160));
+    let (bar, area) = split(r(1920, 0, 3840, 2160), Side::Top, physical(48.0, 2.0));
+    assert_eq!((p.bar, p.area), (bar, area));
+    assert_eq!(p.bar.h, 96);
+}
+
+#[test]
+fn placement_ecran_demande_et_cote() {
+    let screens = [(r(0, 0, 1920, 1080), 1.0), (r(1920, 0, 1920, 1080), 1.5)];
+    let p = placement(&screens, Some(0), (2500, 400), "left", 40.0);
+    assert_eq!(p.index, 0);
+    assert_eq!(p.bar, r(0, 0, 40, 1080));
+    assert_eq!(p.area, r(40, 0, 1880, 1080));
+    assert!(disjoint(p.bar, p.area));
+}
+
+#[test]
+fn placement_quatre_cotes_comme_split() {
+    let screens = [(r(-1280, 0, 1280, 1024), 1.25)];
+    for dock in ["top", "bottom", "left", "right", "floating"] {
+        let p = placement(&screens, None, (0, 0), dock, 64.0);
+        let want = split(r(-1280, 0, 1280, 1024), side_of(dock), physical(64.0, 1.25));
+        assert_eq!((p.bar, p.area), want, "{dock}");
+    }
+}
+
+#[test]
+fn placement_sans_ecran_tout_a_zero() {
+    let z = r(0, 0, 0, 0);
+    assert_eq!(
+        placement(&[], None, (0, 0), "top", 48.0),
+        Placement {
+            index: 0,
+            bar: z,
+            area: z,
+            monitor: z
+        }
+    );
+}
+
+#[test]
+fn transparency_x11_sans_compositeur_seulement() {
+    assert!(!transparency(Session::X11, Some(false)));
+    assert!(transparency(Session::X11, Some(true)));
+    assert!(transparency(Session::X11, None));
+    assert!(!transparency(Session::XWayland, Some(false)));
+    assert!(transparency(Session::WaylandNative, Some(false)));
+    assert!(transparency(Session::Other, None));
 }

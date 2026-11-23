@@ -159,6 +159,60 @@ pub fn pick_screen(screens: &[Rect], wanted: Option<usize>, main_center: (i32, i
         .map_or(0, |(i, _)| i)
 }
 
+/// C11b (P22, P23) : écran retenu, bande de la barre et zone d'annotation (px physiques), rectangle de l'écran.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Placement {
+    pub index: usize,
+    pub bar: Rect,
+    pub area: Rect,
+    pub monitor: Rect,
+}
+
+/// C11b (P22) : géométrie de l'entrée C11a (`pick_screen`, `physical`, `split`) en une fonction, partagée par
+/// `annotation_enter` et `annotation_capture`. `screens` : rectangle et facteur d'échelle de chaque écran. Liste vide :
+/// tout à zéro (l'appelant refuse « aucun écran » avant).
+pub fn placement(
+    screens: &[(Rect, f64)],
+    wanted: Option<usize>,
+    main_center: (i32, i32),
+    dock: &str,
+    thickness_css: f64,
+) -> Placement {
+    let rects: Vec<Rect> = screens.iter().map(|(r, _)| *r).collect();
+    let index = pick_screen(&rects, wanted, main_center);
+    let Some(&(monitor, scale)) = screens.get(index) else {
+        let zero = Rect {
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
+        };
+        return Placement {
+            index: 0,
+            bar: zero,
+            area: zero,
+            monitor: zero,
+        };
+    };
+    let (bar, area) = split(monitor, side_of(dock), physical(thickness_css, scale));
+    Placement {
+        index,
+        bar,
+        area,
+        monitor,
+    }
+}
+
+/// C11b (P18) : la transparence de `annotate` se peint-elle ? Session X11 (XWayland compris) : non seulement quand la
+/// sonde dit qu'aucun compositeur ne tient `_NET_WM_CM_S<écran>` (`Some(false)`) ; sonde en échec (`None`) : oui.
+/// Wayland natif (annotation refusée), Windows et macOS : oui.
+pub fn transparency(session: Session, composited: Option<bool>) -> bool {
+    match session {
+        Session::X11 | Session::XWayland => composited != Some(false),
+        Session::WaylandNative | Session::Other => true,
+    }
+}
+
 /// Curseur du bureau (px physiques) en px CSS relatifs au coin de la fenêtre ; `None` hors de la fenêtre (P9).
 pub fn cursor_in(cursor: (f64, f64), window: Rect, scale: f64) -> Option<(f64, f64)> {
     let dx = cursor.0 - f64::from(window.x);
