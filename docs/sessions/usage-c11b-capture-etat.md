@@ -3,7 +3,7 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : En coque, Jérôme fige son bureau en fond d'annotation et envoie capture et encre au tableau comme une nouvelle page après la page montrée, avec un fond blanc et un avis quand la capture est impossible.
-Avancement : 0/11 tâches terminées
+Avancement : 3/11 tâches terminées
 Étage : 3 (vague 1) — depuis 2026-11-23 10:55
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c11b-capture   Branche : feat/usage-c11b-capture   Base : origin/main @ a4accb3
@@ -25,6 +25,9 @@ Table : `docs/plans/usage-c11b-capture-PLAN.md` en tête. Vagues : 1 = T1, T2, T
 Correctifs de la relecture du plan, passés dans les briefs : T3 (cacher `main` d'abord ou remontrer `annotate` sur erreur) ; T7 (`send` s'arrête si la collecte échoue, avec test) ; écart déclaré : `setAnnotationBackdrop(image, page?)`.
 | id | état | essais | commit | preuve rejouée |
 |----|------|--------|--------|----------------|
+| T2 | terminée | 1/3 | fa5026c | `capture` : 17 passed, 1 ignored, `fichier_accorde_lisible_puis_retire` ok ; xcap sous cfg(windows, macos) ; licences OK (rapport) |
+| T6 | terminée | 1/3 | 5718208 | `desktop-page.test.ts` 11 passed avec ROOMBOARD_WASM_REQUIRED=1 ; tsc 0 |
+| T11 | terminée | 1/3 | 759f034 | 33 cases ; renvoi c11a = 1 |
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · scénarios réussis · tailles Wasm sous plafond, inchangés · scène ≥ 640 px mesurée · PR mergée par `git merge --no-ff` + `git push` sans force
@@ -43,6 +46,7 @@ ouvertes : — · passées : —
 Capture : `xcap` 0.9.10 (Apache-2.0) sous Windows et macOS seulement ; Linux X11 par `x11-dl` (MIT) + `png` (MIT OU Apache-2.0) ; macOS : `objc2-core-graphics` pour l'autorisation.
 
 ## Pièges trouvés
+- `main` locale a bougé pendant le chantier : a4accb3 → 4d11442 (autre session) ; intégrer `origin/main` avant la fusion.
 - Prémisse démentie : `xcap` sous Linux exige PipeWire (`libspa-sys`, non optionnel) ; essai `cargo check` sur la VM.
 - Prémisse démentie : l'encre n'a pas besoin d'un fichier temporaire ; le document d'annotation revient déjà à la fenêtre principale (0272) ; le fragment se fait par `extract` dans la page, seule la capture passe par un fichier accordé.
 - Prémisse démentie : sans autorisation macOS, `xcap` rend le fond d'écran seul, sans erreur.
