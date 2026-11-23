@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Command, CoreDocument } from "../core/api";
+import type { Command, CoreDocument, CoreFactory } from "../core/api";
 import { createAssetStore } from "../core/asset-store";
 import type { PdfEngine, PdfFile, TileBitmap } from "../engine/render/pdf-port";
 import { createClipboard } from "../platform/clipboard";
@@ -26,6 +26,12 @@ import { encodeBoardList, type BoardFormat, type BoardListPage, type BoardPorts 
 import type { BoardDialect, BoardPart, BoardReadOptions } from "../platform/board-reader";
 import type { OlfPart } from "../platform/zip-read";
 import { BAMBOO_NOT_FLIPCHART, bambooLieMessage } from "../platform/bamboo";
+import { createAnnotationController } from "./annotation";
+import { createFakeAnnotationWindows } from "../platform/annotation-fake";
+import { INK_LOST_MESSAGE, type AnnotationControl } from "../platform/annotation-port";
+import { BUILTIN_PROFILES } from "../toolbar-profiles";
+import { createWasmCore, type WasmModule } from "../core/wasm-core";
+import { createPageCodec, type FormatsBinding } from "../platform/container";
 import { CODEC_FALLBACK_MESSAGE, createWorkspace, type TabSession, type Workspace, type WorkspaceDeps } from "./workspace";
 
 // Passe-plat : l'importeur reste le vrai ; seul l'appel est observé (C14 : `linkMedia` transmis).
@@ -256,6 +262,8 @@ interface SetupOptions {
   readonly onOriginalChanged?: WorkspaceDeps["onOriginalChanged"];
   readonly annotation?: WorkspaceDeps["annotation"];
   readonly quit?: WorkspaceDeps["quit"];
+  readonly core?: CoreFactory;
+  readonly codec?: ContainerCodec;
 }
 
 async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
@@ -278,12 +286,12 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
   };
   let n = 0;
   return createWorkspace({
-    core: fakeCore,
+    core: o.core ?? fakeCore,
     host,
     kind: host.kind,
     shell,
-    codec,
-    first: o.first ?? { doc: fakeCore.blank(), opened: null, error: null },
+    codec: o.codec ?? codec,
+    first: o.first ?? { doc: (o.core ?? fakeCore).blank(), opened: null, error: null },
     makeSession: async (doc, _assets) => fakeSession(doc).board,
     makeAssets: () => createAssetStore(fakeHasher),
     ...(o.decode ? { decode: o.decode } : {}),
@@ -2160,5 +2168,131 @@ describe("C11a : onglet d'annotation (P3, P4, P13, P17, P25)", () => {
     const id = ws.tabs.list().find((t) => t.kind === "annotation")!.id;
     expect(await ws.close(id)).toBe(true);
     await vi.waitFor(() => expect(g.close).toHaveBeenCalledTimes(1));
+  });
+});
+
+// Vrai cœur Wasm et vrai module des formats, chargés en Node comme les contrats (`wasm-core.contract.test.ts`).
+interface NodeFs { existsSync(p: string): boolean; readFileSync(p: string): Uint8Array }
+const nodeFs = (await import(/* @vite-ignore */ `node:${"fs"}`)) as NodeFs;
+const nodeProc = (globalThis as { process?: { env: Record<string, string | undefined>; cwd(): string } }).process;
+const wasmEnv = nodeProc?.env ?? {};
+const webRoot = nodeProc?.cwd() ?? "."; // vitest tourne depuis `apps/web` ; `import.meta.url` n'est pas un `file:` sous happy-dom
+const coreWasm = `${webRoot}/src/wasm/roomboard_wasm_bg.wasm`;
+const formatsWasm = `${webRoot}/src/wasm-formats/roomboard_formats_wasm_bg.wasm`;
+const realPresent = nodeFs.existsSync(coreWasm) && nodeFs.existsSync(formatsWasm);
+interface RealCore { readonly core: CoreFactory; readonly codec: ContainerCodec }
+async function loadReal(): Promise<RealCore> {
+  const coreMod = (await import(/* @vite-ignore */ `file://${webRoot}/src/wasm/roomboard_wasm.js`)) as WasmModule & { initSync(o: { module: Uint8Array }): unknown };
+  coreMod.initSync({ module: nodeFs.readFileSync(coreWasm) });
+  const fmtMod = (await import(/* @vite-ignore */ `file://${webRoot}/src/wasm-formats/roomboard_formats_wasm.js`)) as FormatsBinding & { initSync(o: { module: Uint8Array }): unknown };
+  fmtMod.initSync({ module: nodeFs.readFileSync(formatsWasm) });
+  return { core: createWasmCore(coreMod), codec: createPageCodec(async () => fmtMod) };
+}
+const real: RealCore | null = realPresent ? await loadReal() : null;
+
+it("C11a : le vrai cœur et le vrai module des formats sont présents quand ils sont exigés", () => {
+  if (wasmEnv["ROOMBOARD_WASM_REQUIRED"] === "1") expect(realPresent).toBe(true);
+});
+
+describe("C11a — aller-retour bout à bout (S4)", () => {
+  /** Ce que `annotate` trace : un trait sur la première page du document reçu, par le cœur donné. */
+  const drawWith = (core: CoreFactory) => async (bytes: Uint8Array): Promise<Uint8Array> => {
+    const d = core.load(bytes);
+    d.apply({ type: "CommitStroke", page: d.pageIds()[0]!, points: new Float32Array([0, 10, 0.5, 50, 10, 0.5]), style: { color: "#000000", width: 4 } });
+    const out = d.save("2026-11-23T00:00:00Z", APP_VERSION);
+    d.free();
+    return out;
+  };
+  async function wire(o: { mute?: boolean; quit?: () => Promise<void>; real?: boolean } = {}) {
+    let ctl: AnnotationControl | null = null;
+    const rc = o.real === true ? real : null;
+    const ws = await setupWorkspace({ annotation: () => ctl, ...(o.quit ? { quit: o.quit } : {}), ...(rc ? { core: rc.core, codec: rc.codec } : {}) });
+    const windows = createFakeAnnotationWindows({ draw: drawWith(rc?.core ?? fakeCore), ...(o.mute ? { mute: true } : {}) });
+    const c = createAnnotationController<TabSession>({
+      windows,
+      annotationTab: () => ws.annotationTab(),
+      encodeTab: (t) => ws.encodeTab(t),
+      replaceAnnotation: (b) => ws.replaceAnnotation(b),
+      activeTabId: () => ws.tabs.active()?.id ?? null,
+      showTab: (id) => void ws.tabs.activate(id),
+      importFiles: (f, at) => ws.importFiles(f, at),
+      pageNumber: () => 1,
+      say: (m) => ws.say(m),
+      bar: () => ({ dock: "top", thickness: 48 }),
+      profile: () => BUILTIN_PROFILES[0]!,
+    });
+    ctl = c;
+    const annTab = () => ws.tabs.list().find((t) => t.kind === "annotation")!.session;
+    return { ws, ctl: c, windows, annTab };
+  }
+
+  it.skipIf(real === null)("S4 aller-retour : le trait est là après réouverture", async () => {
+    const { ws, ctl, annTab } = await wire({ real: true });
+    const origin = ws.active();
+    await ctl.enter();
+    await ctl.exit();
+    expect(ws.active()).toBe(origin);
+    expect(strokes(annTab())).toBe(1);
+    expect(annTab().files.isDirty()).toBe(true);
+    expect(await annTab().files.run("saveAs")).toBe(true);
+    const bytes = saved.at(-1)!;
+    expect(await ws.openDocument({ name: "x.roomboard", bytes, target: null })).toBe(true);
+    expect(strokes(ws.tabs.list().at(-1)!.session)).toBe(1);
+  });
+  it("S4 aller-retour avec le faux cœur : le trait est là après réouverture", async () => {
+    const { ws, ctl, annTab } = await wire();
+    await ctl.enter();
+    await ctl.exit();
+    expect(strokes(annTab())).toBe(1);
+    expect(await annTab().files.run("saveAs")).toBe(true);
+    expect(await ws.openDocument({ name: "x.roomboard", bytes: saved.at(-1)!, target: null })).toBe(true);
+    expect(strokes(ws.tabs.list().at(-1)!.session)).toBe(1);
+  });
+  it.skipIf(real === null)("un .roomboard d'avant C11a (vrai cœur) s'ouvre toujours (GC6)", async () => {
+    const { ws } = await wire({ real: true });
+    const old = real!.core.blank().save("2026-11-20T00:00:00Z", "0.1.0");
+    expect(await ws.openDocument({ name: "ancien.roomboard", bytes: old, target: null })).toBe(true);
+  });
+  it("enregistré sous x.roomboard, rentrer, tracer, sortir : modifié, Ctrl+S réécrit la même cible", async () => {
+    const { ctl, annTab } = await wire();
+    await ctl.enter();
+    await ctl.exit();
+    await annTab().files.run("saveAs");
+    const target = annTab().files.target();
+    expect(annTab().files.isDirty()).toBe(false);
+    await ctl.enter();
+    await ctl.exit();
+    expect(annTab().files.isDirty()).toBe(true);
+    expect(strokes(annTab())).toBe(2);
+    host.save.mockClear();
+    expect(annTab().files.key({ key: "s", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false })).toBe(true);
+    await vi.waitFor(() => expect(host.save).toHaveBeenCalledTimes(1));
+    expect(host.save.mock.calls[0]![1]).toEqual(target);
+  });
+  it("fermeture de l'application en annotation : refusée, sortie, puis question de l'onglet modifié, puis quit", async () => {
+    const quit = vi.fn(async () => undefined);
+    const { ctl } = await wire({ quit });
+    await ctl.enter();
+    answer = true;
+    expect(divert!()).toBe(true);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalledTimes(1));
+    expect(ctl.state().active).toBe(false);
+    expect(shell.confirm).toHaveBeenCalledWith(DISCARD_MESSAGE);
+  });
+  it("faux hôte muet : sortie après 5 s avec l'avis, onglet d'annotation inchangé", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctl, annTab } = await wire({ mute: true });
+      await ctl.enter();
+      const before = annTab();
+      const done = ctl.exit();
+      await vi.advanceTimersByTimeAsync(5000);
+      await done;
+      expect(ctl.state().active).toBe(false);
+      expect(shell.notify).toHaveBeenCalledWith(INK_LOST_MESSAGE);
+      expect(annTab()).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
