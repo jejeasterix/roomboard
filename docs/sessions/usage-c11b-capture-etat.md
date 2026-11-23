@@ -1,10 +1,10 @@
 # État — usage-c11b-capture
 
 Statut : en cours
-Gabarit : chantier (provisoire)
+Gabarit : chantier
 Objectif : En coque, Jérôme fige son bureau en fond d'annotation et envoie capture et encre au tableau comme une nouvelle page après la page montrée, avec un fond blanc et un avis quand la capture est impossible.
-Avancement : —
-Étage : 2 — depuis 2026-11-23 09:59
+Avancement : 0/11 tâches terminées
+Étage : 3 (vague 1) — depuis 2026-11-23 10:55
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c11b-capture   Branche : feat/usage-c11b-capture   Base : origin/main @ a4accb3
 Branche principale locale au lancement : a4accb3
@@ -18,16 +18,19 @@ Tailles avant : module principal 1 374 398 o (plafond 1 572 864) · formats 2 79
 Complète (origin/main @ a4accb3, verifier.sh --e2e) : OK du premier coup (« verifier.sh : e2e OK », « verifier.sh : OK »). Tailles mesurées : 1 374 398 o et 2 794 511 o.
 
 ## Compteurs
-contre-relecture cadrage 0/2 (sautée, choix tranché : le temps borné à 4 h 30 ; la relecture du plan vérifie aussi les décisions du cadrage) · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 0/2 (sautée, choix tranché : le temps borné à 4 h 30 ; la relecture du plan vérifie aussi les décisions du cadrage) · relecture plan 1/3 (aucun bloquant) · vagues sans progrès 0/2 · correctifs de fin 0/2
 
 ## Tâches
-(après l'étage 2)
+Table : `docs/plans/usage-c11b-capture-PLAN.md` en tête. Vagues : 1 = T1, T2, T4, T6, T11 · 2 = T3, T5, T7, T8, T9 · 3 = T10.
+Correctifs de la relecture du plan, passés dans les briefs : T3 (cacher `main` d'abord ou remontrer `annotate` sur erreur) ; T7 (`send` s'arrête si la collecte échoue, avec test) ; écart déclaré : `setAnnotationBackdrop(image, page?)`.
+| id | état | essais | commit | preuve rejouée |
+|----|------|--------|--------|----------------|
 
 ## Terminé quand
 toutes les tâches terminées (aucune bloquée) · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · scénarios réussis · tailles Wasm sous plafond, inchangés · scène ≥ 640 px mesurée · PR mergée par `git merge --no-ff` + `git push` sans force
 
 ## Hypothèses à revoir
-—
+HC11b-1 (niveau 1, relevée par la relecture du plan) : les trois issues de Q2 deviennent trois boutons de la barre pendant l'annotation, et non une proposition au retour. À faire valider par Jérôme en tête du rapport.
 
 ## Hors périmètre
 —
