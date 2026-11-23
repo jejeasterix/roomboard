@@ -13,13 +13,15 @@ use roomboard_shell::{
 };
 use serde::Serialize;
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, RunEvent, Runtime, State, WindowEvent};
-use roomboard_shell::annotation::{self as ann, Rect as AnnRect};
+use roomboard_shell::annotation::{self as ann, Rect as AnnRect, RestoreStep};
 use tauri::{PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_fs::FsExt;
 
 const DROPPED_EVENT: &str = "roomboard://dropped";
 /// C11a (P13) : fenêtre d'annotation, créée à la première entrée.
 const ANNOTATE: &str = "annotate";
+/// Étiquette de la fenêtre principale.
+const MAIN: &str = "main";
 /// C11a (P13) : `CloseRequested` de `annotate` (Alt+F4, Cmd+W) traité comme Échap.
 const EXIT_REQUEST_EVENT: &str = "roomboard://annotation-exit-request";
 /// C16 (O21) : une copie d'original a été enregistrée dans l'application d'origine.
@@ -284,7 +286,7 @@ fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
         }
         RunEvent::ExitRequested {
             code: None, api, ..
-        } if app.get_webview_window("main").is_some() => {
+        } if app.get_webview_window(MAIN).is_some() => {
             api.prevent_exit();
             if let Err(e) = app.emit(QUIT_EVENT, ()) {
                 eprintln!("RoomBoard : demande de sortie non transmise ({e})");
@@ -300,7 +302,13 @@ fn on_run_event<R: Runtime>(_app: &AppHandle<R>, _event: RunEvent) {}
 
 /// C11a (P1) : position et taille de `main` avant l'annotation, rendues à la sortie.
 #[derive(Default)]
-struct SavedGeometry(Mutex<Option<(PhysicalPosition<i32>, PhysicalSize<u32>)>>);
+struct SavedGeometry(Mutex<Option<Saved>>);
+
+struct Saved {
+    pos: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+    maximized: bool,
+}
 
 #[derive(Serialize)]
 struct AnnotationSupport {
@@ -311,6 +319,10 @@ struct AnnotationSupport {
 
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
+}
+
+fn main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    app.get_webview_window(MAIN).ok_or_else(|| "fenêtre principale absente".to_string())
 }
 
 fn rect_of(m: &tauri::Monitor) -> AnnRect {
@@ -339,18 +351,24 @@ async fn annotation_enter(
     dock: String,
     thickness: f64,
 ) -> Result<usize, String> {
-    let main = app.get_webview_window("main").ok_or("fenêtre principale absente")?;
+    let main = main_window(&app)?;
     let monitors = main.available_monitors().map_err(err)?;
     if monitors.is_empty() {
         return Err("aucun écran".into());
     }
     let rects: Vec<AnnRect> = monitors.iter().map(rect_of).collect();
+    // Déjà réduite à la barre (réentrée) : la géométrie mémorisée reste celle d'avant la première entrée.
+    let already = saved.0.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+    let maximized = main.is_maximized().map_err(err)?;
+    if maximized && !already {
+        main.unmaximize().map_err(err)?;
+    }
     let pos = main.outer_position().map_err(err)?;
     let size = main.inner_size().map_err(err)?;
     {
         let mut s = saved.0.lock().unwrap_or_else(|e| e.into_inner());
         if s.is_none() {
-            *s = Some((pos, size));
+            *s = Some(Saved { pos, size, maximized });
         }
     }
     let center = (pos.x + (size.width / 2) as i32, pos.y + (size.height / 2) as i32);
@@ -384,14 +402,21 @@ async fn annotation_enter(
 }
 
 fn restore_main(app: &AppHandle, saved: &SavedGeometry) -> Result<(), String> {
-    let Some((pos, size)) = saved.0.lock().unwrap_or_else(|e| e.into_inner()).take() else {
+    let Some(Saved { pos, size, maximized }) = saved.0.lock().unwrap_or_else(|e| e.into_inner()).take() else {
         return Ok(());
     };
-    let main = app.get_webview_window("main").ok_or("fenêtre principale absente")?;
-    main.set_always_on_top(false).map_err(err)?;
-    main.set_decorations(true).map_err(err)?;
-    main.set_size(size).map_err(err)?;
-    main.set_position(pos).map_err(err)
+    let main = main_window(app)?;
+    for step in ann::restore_steps(maximized) {
+        match step {
+            RestoreStep::AlwaysOnTop(on) => main.set_always_on_top(on),
+            RestoreStep::Decorations(on) => main.set_decorations(on),
+            RestoreStep::Position => main.set_position(pos),
+            RestoreStep::Size => main.set_size(size),
+            RestoreStep::Maximize => main.maximize(),
+        }
+        .map_err(err)?;
+    }
+    Ok(())
 }
 
 /// C11a (P5) : `annotate` cachée (gardée pour la réentrée), `main` rendue à sa géométrie d'avant.
@@ -435,7 +460,8 @@ fn annotation_cursor(window: tauri::WebviewWindow) -> Option<(f64, f64)> {
 /// C11a (P16) : même exécutable, mêmes arguments, `GDK_BACKEND=x11` ; puis sortie (rien n'est modifié au démarrage).
 #[tauri::command]
 fn relaunch_compat(app: AppHandle) -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(err)?;
+    // `$APPIMAGE` sous AppImage : `current_exe()` pointerait dans un montage temporaire qui disparaît à la sortie.
+    let exe = tauri::process::current_binary(&app.env()).map_err(err)?;
     let args = ann::relaunch_args(std::env::args_os());
     ann::relaunch(&exe, &args, &ann::compat_env())
         .map_err(|e| format!("relance impossible : {e}"))?;
@@ -492,7 +518,7 @@ fn main() {
         ])
         .on_window_event(|window, event| match event {
             // C11a (P18) : seuls les dépôts de `main` (réduite à la barre en annotation) sont accordés et émis.
-            WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) if window.label() == "main" => {
+            WindowEvent::DragDrop(DragDropEvent::Drop { paths, position }) if window.label() == MAIN => {
                 let at = Point {
                     x: position.x,
                     y: position.y,
@@ -502,12 +528,12 @@ fn main() {
             // C11a (P13) : Alt+F4 ou Cmd+W sur `annotate` : comme Échap, la page principale sort de l'annotation.
             WindowEvent::CloseRequested { api, .. } if window.label() == ANNOTATE => {
                 api.prevent_close();
-                if let Err(e) = window.app_handle().emit_to("main", EXIT_REQUEST_EVENT, ()) {
+                if let Err(e) = window.app_handle().emit_to(MAIN, EXIT_REQUEST_EVENT, ()) {
                     eprintln!("RoomBoard : demande de sortie de l'annotation non transmise ({e})");
                 }
             }
             // C11a (P13) : `main` détruite : `annotate` aussi, aucun processus caché ne reste.
-            WindowEvent::Destroyed if window.label() == "main" => {
+            WindowEvent::Destroyed if window.label() == MAIN => {
                 if let Some(w) = window.app_handle().get_webview_window(ANNOTATE) {
                     let _ = w.destroy();
                 }

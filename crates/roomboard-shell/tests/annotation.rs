@@ -1,7 +1,7 @@
 //! C11a (P9, P10, P11, P15, P16) : logique pure de l'annotation de bureau.
 use roomboard_shell::annotation::{
-    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch, relaunch_args, side_of,
-    split, restore_steps, supported, Rect, RestoreStep, Session, Side, Unsupported,
+    compat_env, cursor_in, detect_session, physical, pick_screen, relaunch, relaunch_args,
+    restore_steps, side_of, split, supported, Rect, RestoreStep, Session, Side, Unsupported,
 };
 use std::collections::HashMap;
 use std::ffi::OsString;
