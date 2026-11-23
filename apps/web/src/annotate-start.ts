@@ -55,7 +55,7 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
       return r === null ? null : { doc: r.doc, assets: r.assets };
     },
     encode: (doc, assets) => io.encode(doc, assets, new Date().toISOString(), APP_VERSION, { kind: "document" }),
-    makeSession: (doc, assets) => createBoardSession(doc, shared, assets),
+    makeSession: (doc, assets, opaque) => createBoardSession(doc, { ...shared, transparent: !opaque }, assets),
     cursor: () => ipc.invoke<[number, number] | null>("annotation_cursor"),
     ignore: (on) => ipc.invoke<void>("annotation_ignore", { ignore: on }),
   });
