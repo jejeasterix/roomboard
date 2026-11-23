@@ -43,3 +43,12 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 - [ ] Non : le tableau reste, l'entrée « Annotation du bureau » est absente de la barre.
 - [ ] Oui : RoomBoard se relance (même fichier s'il était passé au lancement) ; sous XWayland, l'annotation fonctionne (refaire C11a-1 et C11a-3).
 - [ ] Si la transparence n'est pas peinte (WebKitGTK) : le noter ; le repli sur le bureau figé arrive avec C11b (HC11-16).
+
+## C11a-8 — Points d'essai de la revue (T13)
+- [ ] Fenêtre principale maximisée : entrer en annotation puis sortir ; elle redevient maximisée (Windows, macOS, Linux X11).
+- [ ] Deux écrans d'échelles différentes (Windows) : à la sortie, la taille et la position d'avant sont exactes.
+- [ ] AppImage (Linux) : « Relancer en mode compatibilité » relance bien l'AppImage (`$APPIMAGE`), pas un chemin `/tmp/.mount_*`.
+- [ ] Alt+F4 sur `annotate` est toujours empêché (la page principale cache la fenêtre) : si `annotate` est cachée ou la principale ne répond pas, la fermeture ne se fait pas ; noter si un cas réel se présente.
+
+## Point de durcissement connu
+La capacité `annotate` ne donne que `core:event:default` (listen, unlisten, emit_to). Mais `build.rs` ne déclare pas de manifeste de commandes (`AppManifest`) : les commandes de l'application (`annotation_*`, `read_granted_file`, etc.) ne sont donc pas filtrées par capacité et la page `annotate` pourrait les appeler. À durcir plus tard avec un manifeste de commandes.

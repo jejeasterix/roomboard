@@ -197,3 +197,28 @@ pub fn relaunch(
     }
     cmd.spawn().map(|_| ())
 }
+
+/// Action de restauration de la fenêtre principale à la sortie de l'annotation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreStep {
+    AlwaysOnTop(bool),
+    Decorations(bool),
+    Position,
+    Size,
+    Maximize,
+}
+
+/// Actions de restauration selon l'état mémorisé à l'entrée : position avant taille (même ordre qu'à l'entrée, la
+/// taille serait recalculée sous Windows entre écrans d'échelles différentes), puis maximisation si elle l'était.
+pub fn restore_steps(was_maximized: bool) -> Vec<RestoreStep> {
+    let mut steps = vec![
+        RestoreStep::AlwaysOnTop(false),
+        RestoreStep::Decorations(true),
+        RestoreStep::Position,
+        RestoreStep::Size,
+    ];
+    if was_maximized {
+        steps.push(RestoreStep::Maximize);
+    }
+    steps
+}
