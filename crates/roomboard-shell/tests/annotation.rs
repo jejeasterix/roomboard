@@ -1,7 +1,7 @@
 //! C11a (P9, P10, P11, P15, P16) : logique pure de l'annotation de bureau.
 use roomboard_shell::annotation::{
     compat_env, cursor_in, detect_session, physical, pick_screen, relaunch, relaunch_args, side_of,
-    split, supported, Rect, Session, Side, Unsupported,
+    split, restore_steps, supported, Rect, RestoreStep, Session, Side, Unsupported,
 };
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -187,4 +187,61 @@ fn relaunch_fails_cleanly_on_missing_executable() {
         &compat_env(),
     );
     assert!(r.is_err());
+}
+
+#[test]
+fn restauration_normale_pose_position_puis_taille() {
+    assert_eq!(
+        restore_steps(false),
+        vec![
+            RestoreStep::AlwaysOnTop(false),
+            RestoreStep::Decorations(true),
+            RestoreStep::Position,
+            RestoreStep::Size,
+        ]
+    );
+}
+
+#[test]
+fn restauration_maximisee_remaximise_en_dernier() {
+    let steps = restore_steps(true);
+    assert_eq!(steps.last(), Some(&RestoreStep::Maximize));
+    let pos = steps.iter().position(|s| *s == RestoreStep::Position);
+    let size = steps.iter().position(|s| *s == RestoreStep::Size);
+    assert!(pos < size && size < Some(steps.len() - 1));
+}
+
+#[cfg(unix)]
+#[test]
+fn relaunch_runs_program_with_args_and_env() {
+    let dir = std::env::temp_dir().join(format!("rb-relaunch-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("out.txt");
+    let script = dir.join("run.sh");
+    std::fs::write(
+        &script,
+        "#!/bin/sh\nprintf '%s|%s|%s' \"$1\" \"$2\" \"$GDK_BACKEND\" > \"$OUT\"\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let args = [OsString::from("a b.roomboard"), OsString::from("--x")];
+    relaunch(
+        &script,
+        &args,
+        &[("GDK_BACKEND", "x11"), ("OUT", out.to_str().unwrap())],
+    )
+    .unwrap();
+    let mut got = String::new();
+    for _ in 0..200 {
+        got = std::fs::read_to_string(&out).unwrap_or_default();
+        if !got.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(got, "a b.roomboard|--x|x11");
 }
