@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { CASCADE_STEP } from "../../web/src/platform/image-import";
 import { streamLines } from "./contract";
 import { main } from "./main";
-import { describeWasm, memoryIO, pngBytes, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
+import { describeWasm, jpegBytes, memoryIO, pngBytes, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
   const dir = tmpDir();
@@ -118,5 +118,70 @@ describe("lignes de stdin (bin.ts)", () => {
     };
     const stalled = new Promise<string>((r) => setTimeout(() => r("fin de stdin perdue"), 1000));
     expect(await Promise.race([collect(), stalled])).toEqual(['{"op":"tab.list"}', '{"op":"undo"}']);
+  });
+});
+
+describeWasm("chemins du lot 1 : tab.open, .roomboard importé, JPEG, placement sans --at (H7)", () => {
+  it("tab.open : t2 actif sur le fichier ; fichier absent : ligne d'échec io, code 1", async () => {
+    const { dir, a } = await board();
+    const b = join(dir, "b.roomboard");
+    expect(await main(["new", b], memoryIO())).toBe(0);
+    const io = memoryIO([JSON.stringify({ op: "tab.open", file: b }), JSON.stringify({ op: "tab.open", file: join(dir, "absent.roomboard") })]);
+    expect(await main(["run", a], io)).toBe(1);
+    const [opened, missing] = io.json();
+    expect(opened).toEqual({ op: 1, ok: true, tabs: [{ id: "t1", file: a, active: false }, { id: "t2", file: b, active: true }] });
+    expect(missing).toMatchObject({ op: 2, ok: false, error: { code: "io" } });
+  });
+  it("import d'un .roomboard : ouvert en onglet (opened), rien inséré, tableau non écrit ; dans run, t2 actif sur ce fichier", async () => {
+    const { dir, a } = await board();
+    const b = join(dir, "b.roomboard");
+    expect(await main(["new", b], memoryIO())).toBe(0);
+    const before = stampOf(a);
+    const io = memoryIO();
+    expect(await main(["import", a, b], io)).toBe(0);
+    expect(io.json()[0]).toMatchObject({ opened: ["b.roomboard"], inserted: [], refused: [], failed: [] });
+    expect(stampOf(a)).toEqual(before);
+    const run = memoryIO([JSON.stringify({ op: "import", files: [b] }), JSON.stringify({ op: "tab.list" })]);
+    expect(await main(["run", a], run)).toBe(0);
+    const [imp, list] = run.json();
+    expect(imp).toMatchObject({ op: 1, ok: true, opened: ["b.roomboard"], inserted: [] });
+    expect(list.tabs).toEqual([{ id: "t1", file: a, active: false }, { id: "t2", file: b, active: true }]);
+  });
+  it("import d'un JPEG : taille de l'en-tête (SOF0), type image/jpeg", async () => {
+    const { dir, a } = await board();
+    const jpg = join(dir, "photo.jpg");
+    writeFileSync(jpg, jpegBytes(64, 48));
+    const io = memoryIO();
+    expect(await main(["import", a, jpg, "--at", "400,300"], io)).toBe(0);
+    expect(io.json()[0]).toMatchObject({ inserted: ["photo.jpg"], refused: [], failed: [] });
+    const st = memoryIO();
+    expect(await main(["state", a], st)).toBe(0);
+    const [state] = st.json();
+    const [image] = state.pages[0].elements;
+    expect([image.image.w, image.image.h]).toEqual([64, 48]);
+    expect(image.transform).toEqual([1, 0, 0, 1, 368, 276]);
+    expect(state.assets).toEqual([expect.objectContaining({ name: "photo.jpg", mime: "image/jpeg" })]);
+  });
+  it("sans --at : centrée sur la scène (960, 540), réduite à 80 % du visible (3840 × 1080 → échelle 0,4)", async () => {
+    const { dir, a } = await board();
+    const png = join(dir, "large.png");
+    writeFileSync(png, pngBytes(3840, 1080));
+    expect(await main(["import", a, png], memoryIO())).toBe(0);
+    const st = memoryIO();
+    expect(await main(["state", a], st)).toBe(0);
+    const [image] = st.json()[0].pages[0].elements;
+    // échelle = min(1, 0,8 × 1920 / 3840, 0,8 × 1080 / 1080) = 0,4 ; coin = centre − échelle × taille / 2.
+    const expected = [0.4, 0, 0, 0.4, 960 - (0.4 * 3840) / 2, 540 - (0.4 * 1080) / 2];
+    expect(image.transform).toHaveLength(6);
+    image.transform.forEach((v: number, i: number) => expect(v).toBeCloseTo(expected[i]!, 3));
+  });
+  it("sans --at, image plus petite que 80 % du visible : jamais agrandie, centrée", async () => {
+    const { dir, a } = await board();
+    const png = join(dir, "petite.png");
+    writeFileSync(png, pngBytes(100, 50));
+    expect(await main(["import", a, png], memoryIO())).toBe(0);
+    const st = memoryIO();
+    expect(await main(["state", a], st)).toBe(0);
+    expect(st.json()[0].pages[0].elements[0].transform).toEqual([1, 0, 0, 1, 910, 515]);
   });
 });

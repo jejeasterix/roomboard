@@ -108,6 +108,15 @@ export function pngBytes(w: number, h: number): Uint8Array {
   ]);
 }
 
+/** En-tête JPEG `w × h` (SOI, SOF0 à 3 composantes, EOI) : assez pour la sonde de taille, pas pour un décodeur. */
+export function jpegBytes(w: number, h: number): Uint8Array {
+  return new Uint8Array([
+    0xff, 0xd8,
+    0xff, 0xc0, 0x00, 0x11, 0x08, h >> 8, h & 0xff, w >> 8, w & 0xff, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
+    0xff, 0xd9,
+  ]);
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** Ids du cœur (UUID) remplacés par leur rang d'apparition (`#1`, `#2`…) ; les empreintes d'assets restent. */
 export function normalizeIds(v: unknown, seen: Map<string, string> = new Map()): unknown {
