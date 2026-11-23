@@ -3,8 +3,8 @@
 Statut : en cours
 Gabarit : chantier
 Objectif : En coque (Windows, macOS, Linux X11), Jérôme annote par-dessus son bureau vivant dans une fenêtre transparente, avec la barre d'outils seule cliquable, une bascule dessin / souris, un démarrage direct en annotation et une zone de dépôt qui insère des pages.
-Avancement : 3/10 tâches terminées
-Étage : 3 (vague 2) — depuis 2026-11-23 08:13
+Avancement : 8/10 tâches terminées
+Étage : 3 (vague 3) — depuis 2026-11-23 08:23
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -29,7 +29,13 @@ Table : `docs/plans/usage-c11a-annotation-PLAN.md` lignes 5-16. Vagues : 1 = T1,
 | T1 | terminée | 1/3 | e116c38 | cargo test annotation : 13 passed, `relance_memes_arguments_et_gdk_x11` |
 | T2 | terminée | 1/3 | ea4050a | Vitest 5 fichiers 128 passed, tsc 0 ; `toolbar-host.test.ts` rouge attendu, corrigé par T8 |
 | T3 | terminée | 1/3 | e04e49c | Vitest platform+tabs 675 passed ; test `ANNOTATION_NOT_YET` réécrit (prévu au cadrage) |
-| T4…T10 | à faire | — | — | — |
+| T4 | terminée | 1/3 | 45e3a74 | Vitest 2 fichiers 26 passed |
+| T5 | terminée | 1/3 | f86e690 | Vitest 8 passed ; `cargo check` src-tauri Finished ; coque-csp OK |
+| T6 | terminée | 1/3 | d4096c5 | Vitest 3 fichiers 117 passed ; course de `poll` corrigée (génération) |
+| T7 | terminée | 1/3 | 491144b | workspace.test.ts 144 passed |
+| T8 | terminée | 1/3 | 5fef5ac | toolbar-host + ui 290 passed ; 2 tests de l'attente C11a remplacés (prévu) |
+| T9, T10 | à faire | — | — | — |
+Intégration après vague 2 : Vitest web 146 fichiers / 2958 tests verts, tsc 0.
 
 Relecture du plan tour 1 (sans bloquant) : corrections portées dans les prompts des tâches (pas de nouvelle passe du planificateur, pour le temps) — T4/T7 littéraux `DroppedFile` complets (`head`, `blob`) ; T6 `poll` annulé après l'`await` + test ; T10 vrai cœur ou écart déclaré + mutation ; T6 symptôme de la gomme sur fond transparent dans la fiche C11a-2 (T5) ; écart `collect/leave/place` déclaré au rapport.
 Vague 2 à 5 tâches en parallèle (choix : le jeton borne les suites à 3).
