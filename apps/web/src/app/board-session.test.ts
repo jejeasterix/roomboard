@@ -1056,6 +1056,20 @@ describe("session — objets 3D (C15)", () => {
     s.dispose();
   });
 
+  it("mineur C15 (C2) : un autre élément change pendant l'instantané : l'orbite est quand même écrite", async () => {
+    const { s, fv, click, drag, model } = await modelSession();
+    click(100, 50);
+    await s.toggleOrbit();
+    const free = fv.holdSnapshots();
+    drag(100); // instantané retenu
+    await vi.waitFor(() => expect(fv.snaps).toHaveLength(1));
+    const page = s.engine.state().page;
+    s.engine.run({ type: "AddShape", page, shape: "rect", x0: 300, y0: 300, x1: 350, y1: 350, style: { color: "#000000", width: 4 }, fill: null });
+    free();
+    await vi.waitFor(() => expect(model()!.yaw).toBeCloseTo(D_YAW + 1, 6));
+    s.dispose();
+  });
+
   it("C2 : deux relâchés puis un clic à côté : écritures dans l'ordre des relâchés, la dernière vue gagne (S2)", async () => {
     const { s, fv, click, drag, model, tag } = await modelSession();
     click(100, 50);

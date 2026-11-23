@@ -185,6 +185,8 @@ export const DEFAULT_FILL_TOLERANCE = 5;
 export const WHEEL_ZOOM_SPEED = 0.002;
 /** Durées d'image retenues (une minute à 60 Hz) : le banc et son export en lisent au plus autant (HL3b-8). */
 export const ENGINE_FRAME_HISTORY = 3600;
+/** Mineur C15 (C1) : déplacement, en px d'écran, au-delà duquel un appui à côté de l'objet de l'orbite la ferme. */
+export const ORBIT_MISS_SLOP_PX = 8;
 
 const sameSet = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
   a.size === b.size && [...a].every((x) => b.has(x));
@@ -522,12 +524,50 @@ export function createEngine(deps: EngineDeps): Engine {
     return doc.hitTest(pageId, x, y, SELECT_TOL_PX / camera.zoom) === id;
   };
 
+  /**
+   * Mineur C15 (C1) : appui à côté de l'objet de l'orbite. Rien n'est décidé tant que le doigt reste sous le seuil :
+   * au relâché ou au-delà du seuil, l'orbite se ferme et l'outil `g` reçoit tous les points ; un abandon (le routeur
+   * passe au pincement) ou une fin anormale laisse l'orbite ouverte et l'outil sans rien.
+   */
+  const missedOrbit = (g: GestureTool, pointerId: number, first: readonly InputSample[]): GestureTool => {
+    const held = [...first];
+    const origin = first[0];
+    let started = false;
+    const start = (): void => {
+      started = true;
+      orbit?.close();
+      emitIfSelectionChanged(() => g.begin(pointerId, held));
+      loop.start();
+    };
+    const far = (s: InputSample): boolean => origin !== undefined && Math.hypot(s.x - origin.x, s.y - origin.y) > ORBIT_MISS_SLOP_PX;
+    return {
+      begin() {},
+      extend(id, samples, predicted) {
+        if (started) return g.extend(id, samples, predicted);
+        held.push(...samples);
+        if (samples.some(far)) start();
+      },
+      frame() {},
+      close(id, how) {
+        if (!started && how !== "end") return;
+        if (!started) start();
+        g.close(id, how);
+      },
+      live: () => NO_LIVE,
+      active: () => started && g.active(),
+    };
+  };
+
   const sink: GestureSink = {
     begin(pointerId, t, samples) {
       lastDeleted = null;
       // C15 (S2) : un appui qui ne touche pas l'objet de l'orbite (zone vide ou autre élément, hit-test de la sélection)
-      // ferme l'orbite et va à l'outil courant ; pendant un glissé de l'orbite, un second appui lui reste (ignoré).
-      if (orbit !== null && !orbit.gesture.active() && !touches(orbit.id, samples[0])) orbit.close();
+      // ferme l'orbite et va à l'outil courant (`missedOrbit`) ; pendant un glissé de l'orbite, un second appui lui
+      // reste (ignoré).
+      if (orbit !== null && !orbit.gesture.active() && !touches(orbit.id, samples[0])) {
+        owner.set(pointerId, missedOrbit(tools[t], pointerId, samples));
+        return;
+      }
       const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : orbit !== null ? orbit.gesture : tools[t];
       owner.set(pointerId, g);
       emitIfSelectionChanged(() => g.begin(pointerId, samples));

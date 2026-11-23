@@ -1696,19 +1696,45 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     const { engine, log, closed, commits, open, at } = c15();
     open();
     engine.sink.begin(3, "pen", [at(500, 500)]);
+    engine.sink.close(3, "end");
     expect(closed).toHaveBeenCalledTimes(1);
     expect(log).toContain("pen.begin 3");
-    engine.sink.close(3, "end");
     expect(log).toContain("pen.close 3 end");
     expect(commits).toEqual([]);
     engine.sink.begin(4, "pen", [at(150, 150)]); // séance fermée : même sur l'objet, l'outil reçoit le geste
     expect(log).toContain("pen.begin 4");
+  });
+  it("mineur C15 (C1) : pincement dont le premier doigt tombe à côté de l'objet : la séance reste, l'outil ne reçoit rien", () => {
+    const { engine, log, closed, open, at } = c15();
+    open();
+    const s0 = at(500, 500);
+    engine.sink.begin(7, "pen", [s0]);
+    engine.sink.extend(7, [{ ...s0, x: s0.x + 2 }], []); // le doigt bouge un peu avant le second
+    engine.sink.close(7, "abort"); // le routeur passe au pincement
+    expect(closed).not.toHaveBeenCalled();
+    expect(log.filter((l) => /^pen\.(begin|extend|close)/.test(l))).toEqual([]);
+    engine.sink.begin(8, "pen", [at(150, 150)]); // la séance garde les gestes sur l'objet
+    expect(log.filter((l) => /^pen\.begin/.test(l))).toEqual([]);
+  });
+  it("mineur C15 (C1) : un glissé à côté de l'objet ferme la séance dès qu'il dépasse le seuil ; l'outil reçoit tous les points", () => {
+    const { engine, log, closed, open, at } = c15();
+    open();
+    const s0 = at(500, 500);
+    engine.sink.begin(9, "pen", [s0]);
+    expect(closed).not.toHaveBeenCalled();
+    engine.sink.extend(9, [{ ...s0, x: s0.x + 30 }], []);
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(log).toContain("pen.begin 9");
+    engine.sink.extend(9, [{ ...s0, x: s0.x + 60 }], []);
+    engine.sink.close(9, "end");
+    expect(log).toContain("pen.close 9 end");
   });
   it("C1 : un appui sur un autre élément (pas l'objet de la séance) ferme aussi la séance", () => {
     const { engine, doc, page, log, closed, open, at } = c15();
     doc.apply({ type: "AddShape", page, shape: "rect", x0: 300, y0: 300, x1: 400, y1: 400, style: PEN, fill: null });
     open();
     engine.sink.begin(5, "pen", [at(350, 350)]);
+    engine.sink.close(5, "end");
     expect(closed).toHaveBeenCalledTimes(1);
     expect(log).toContain("pen.begin 5");
   });
