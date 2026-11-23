@@ -8,6 +8,12 @@ export interface AnnotationView {
   readonly active: boolean;
   readonly pointer: "draw" | "mouse";
   readonly screens: number;
+  /** C11b (P16) : bureau figé ; absent : faux. */
+  readonly frozen?: boolean;
+  /** C11b (P18) : bureau vivant offert ; faux : « Recapturer le bureau » ; absent : vrai. */
+  readonly live?: boolean;
+  /** C11b (P6) : cible de « Envoyer au tableau » ; "new" grise « Envoyer dans un nouvel onglet ». */
+  readonly sendTarget?: "origin" | "new";
 }
 
 export interface ToolbarView {
@@ -59,6 +65,15 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
     return { pressed: null, label: mouse ? "Dessin" : "Souris", disabled: v.annotation?.active !== true };
   },
   "annotation-screen": (v) => ({ disabled: v.annotation?.active !== true || v.annotation.screens <= 1 }),
+  "annotation-freeze": (v) => {
+    const a = v.annotation;
+    const disabled = a?.active !== true;
+    if (a?.live === false) return { pressed: null, label: "Recapturer le bureau", disabled };
+    const frozen = a?.frozen === true;
+    return { pressed: frozen, label: frozen ? "Bureau vivant" : "Figer le bureau", disabled };
+  },
+  "annotation-send": (v) => ({ disabled: v.annotation?.active !== true }),
+  "annotation-send-new": (v) => ({ disabled: v.annotation?.active !== true || v.annotation.sendTarget === "new" }),
   undo: (v) => ({ disabled: !v.canUndo }),
   redo: (v) => ({ disabled: !v.canRedo }),
   "page-prev": (v) => ({ disabled: v.pageIndex <= 0 }),

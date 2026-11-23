@@ -122,6 +122,9 @@ export const ACTION_TABLE: Readonly<Record<ActionId, { readonly label: string }>
   "desktop-annotation": { label: "Annotation du bureau" },
   "annotation-pointer": { label: "Souris" },
   "annotation-screen": { label: "Écran suivant" },
+  "annotation-freeze": { label: "Figer le bureau" },
+  "annotation-send": { label: "Envoyer au tableau" },
+  "annotation-send-new": { label: "Envoyer dans un nouvel onglet" },
   "table-row-insert": { label: "+ Ligne" },
   "table-col-insert": { label: "+ Colonne" },
   "table-row-remove": { label: "− Ligne" },
@@ -636,6 +639,9 @@ export const ACTION_REQUIRES: Readonly<Record<string, readonly CapabilityKey[]>>
   "desktop-annotation": ["desktopAnnotation"],
   "annotation-pointer": ["desktopAnnotation"],
   "annotation-screen": ["desktopAnnotation"],
+  "annotation-freeze": ["desktopAnnotation"],
+  "annotation-send": ["desktopAnnotation"],
+  "annotation-send-new": ["desktopAnnotation"],
   "edit-original": ["officeConverter"],
 });
 
@@ -645,8 +651,13 @@ const ANNOTATION_POINTER_ACTION: ActionId = "annotation-pointer";
 const ANNOTATION_SCREEN_ACTION: ActionId = "annotation-screen";
 /** C11a (P20) : actions rejouées dans `annotate` (outils, préréglages, pot et format y vont par leurs méthodes de l'hôte). */
 export const ANNOTATION_REMOTE_ACTIONS: ReadonlySet<ActionId> = new Set(["undo", "redo", "eraser-mode"]);
-/** C11a (P20) : actions de la fenêtre principale en annotation ; toute autre action y est grisée. */
-export const ANNOTATION_MAIN_ACTIONS: ReadonlySet<ActionId> = new Set([ANNOTATION_ACTION, ANNOTATION_POINTER_ACTION, ANNOTATION_SCREEN_ACTION]);
+/** C11b (P5, P16, P29) : figer le bureau, envoyer au tableau, envoyer dans un nouvel onglet ; masquées en mode tableau. */
+const ANNOTATION_FREEZE_ACTION: ActionId = "annotation-freeze";
+const ANNOTATION_SEND_ACTION: ActionId = "annotation-send";
+const ANNOTATION_SEND_NEW_ACTION: ActionId = "annotation-send-new";
+export const ANNOTATION_ONLY_ACTIONS: ReadonlySet<ActionId> = new Set([ANNOTATION_FREEZE_ACTION, ANNOTATION_SEND_ACTION, ANNOTATION_SEND_NEW_ACTION]);
+/** C11a (P20) : actions de la fenêtre principale en annotation ; toute autre action y est grisée. C11b : les trois en plus. */
+export const ANNOTATION_MAIN_ACTIONS: ReadonlySet<ActionId> = new Set([ANNOTATION_ACTION, ANNOTATION_POINTER_ACTION, ANNOTATION_SCREEN_ACTION, ...ANNOTATION_ONLY_ACTIONS]);
 
 /** Zone de dépôt d'annotation (P19) : `dropzone` qui exige `desktopAnnotation` ; toute autre zone garde son comportement. */
 export function isAnnotationZone(it: ToolItem): boolean {
@@ -654,15 +665,17 @@ export function isAnnotationZone(it: ToolItem): boolean {
 }
 
 /**
- * Éléments selon le mode (C11a, P7, P19) : tableau = `visibleItems` sans zone d'annotation ; annotation = `visibleItems`,
+ * Éléments selon le mode (C11a, P7, P19 ; C11b, P29) : tableau = `visibleItems` sans zone d'annotation ni actions propres à l'annotation ; annotation = `visibleItems`,
  * plus « Annotation du bureau » (sortie) et « Souris » en fin s'ils manquent (masqués ou absents d'un profil d'avant
  * C11a). Ajout au rendu, comme `ensureProfilesAccess` : le profil n'est pas réécrit.
  */
 export function itemsForMode(bar: Toolbar, caps: RuntimeCapabilities, mode: StartMode): ToolItem[] {
   const shown = visibleItems(bar, caps);
-  if (mode === "board") return shown.filter((it) => !isAnnotationZone(it));
+  if (mode === "board") {
+    return shown.filter((it) => !isAnnotationZone(it) && !(it.kind === "action" && ANNOTATION_ONLY_ACTIONS.has(it.action ?? "")));
+  }
   const out = [...shown];
-  for (const action of [ANNOTATION_ACTION, ANNOTATION_POINTER_ACTION]) {
+  for (const action of [ANNOTATION_ACTION, ANNOTATION_POINTER_ACTION, ANNOTATION_SEND_ACTION]) {
     if (out.some((it) => it.kind === "action" && it.action === action)) continue;
     out.push({ id: `${action}-ajout`, kind: "action", action, label: ACTION_TABLE[action]!.label, requires: [], rest: {} });
   }
