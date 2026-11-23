@@ -4,7 +4,7 @@ Statut : en cours
 Gabarit : chantier
 Objectif : En coque (Windows, macOS, Linux X11), Jérôme annote par-dessus son bureau vivant dans une fenêtre transparente, avec la barre d'outils seule cliquable, une bascule dessin / souris, un démarrage direct en annotation et une zone de dépôt qui insère des pages.
 Avancement : 0/? tâches terminées
-Étage : 1 — depuis 2026-11-23 07:06
+Étage : 2 — depuis 2026-11-23 07:40
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -20,13 +20,21 @@ Tailles avant : module principal 1 374 398 o (plafond 1 572 864) · formats 2 79
 Complète (origin/main @ 6c97661, verifier.sh --e2e) : vert, sauf C8 pot zones (data-zone-ms inchangé) au premier passage ; rejoué seul : OK (délai sous charge). C4 et C13 rejoués : OK. Tailles mesurées : 1 374 398 o et 2 794 511 o.
 
 ## Compteurs
-contre-relecture cadrage 0/2 · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
 
 ## Tâches
 (à l'étage 2)
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · tailles Wasm sous plafond, inchangés · scène ≥ 640 px mesurée · PR mergée par fusion locale `--no-ff` puis push sans force
+
+## Cadrage
+Corrigé après contre-relecture tour 1 (1 bloquant : charge JSON de `emitTo` → base64 ; 7 à corriger ; coupes : pas de machine Rust, sondage du curseur depuis la page). Hypothèses HC11-1…7 (niveau 1). Scénarios : S1 web sans annotation · S2 faux hôte, bascule, aller-retour `.roomboard` · S3 dépôt sur la zone · S4 cargo test + Vitest · S5 en coque (essais de Jérôme).
+
+## Pièges trouvés
+- Prémisse démentie : U22 (menu « Insérer ses pages / Ouvrir », on reste en annotation) est amendé par Q2 de Jérôme (2026-11-20) : le dépôt sur la barre quitte l'annotation, un document s'ouvre en nouvel onglet (Q1).
+- Charge d'un événement Tauri = JSON : un `Uint8Array` y devient un objet ; le document voyage en base64.
+- Chantiers en cours sur les mêmes fichiers : aucun.
 
 ## Hors périmètre
 - C11b (bureau figé, capture, « Envoyer au tableau »)
