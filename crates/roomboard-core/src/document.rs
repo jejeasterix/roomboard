@@ -89,18 +89,19 @@ pub(crate) fn insert_page(pages: &ArrayRef, txn: &mut TransactionMut, index: u32
     id.to_string()
 }
 
-/// Métadonnée écrite seulement si absente (K3) : champs scalaires d'un `Y.Map`, jamais `Any::Map` (G4).
-fn write_asset_meta(assets: &MapRef, txn: &mut TransactionMut, a: &AssetRef) {
+/// Métadonnée écrite seulement si absente (K3) : champs scalaires d'un `Y.Map`, jamais `Any::Map` (G4). Un média lié
+/// (C14, M30) porte `linked` en plus.
+fn write_asset_meta(assets: &MapRef, txn: &mut TransactionMut, a: &AssetRef, linked: Option<&str>) {
     if assets.get(txn, &a.id).is_none() {
-        assets.insert(
-            txn,
-            a.id.as_str(),
-            MapPrelim::from([
-                ("name", In::from(a.name.as_str())),
-                ("mime", In::from(a.mime.as_str())),
-                ("size", In::Any(Any::from(a.size))),
-            ]),
-        );
+        let mut meta = MapPrelim::from([
+            ("name", In::from(a.name.as_str())),
+            ("mime", In::from(a.mime.as_str())),
+            ("size", In::Any(Any::from(a.size))),
+        ]);
+        if let Some(path) = linked {
+            meta.insert("linked".into(), In::from(path));
+        }
+        assets.insert(txn, a.id.as_str(), meta);
     }
 }
 
@@ -192,9 +193,9 @@ impl Document {
                     );
                 }
             }
-            write_asset_meta(&assets, &mut txn, asset);
+            write_asset_meta(&assets, &mut txn, asset, None);
             if let Some(o) = original {
-                write_asset_meta(&assets, &mut txn, o);
+                write_asset_meta(&assets, &mut txn, o, None);
             }
         }
         Ok(Self::assemble(doc, meta, pages, assets))
@@ -285,32 +286,17 @@ impl Document {
     /// Métadonnée écrite seulement si absente (K3), dans la transaction de la commande qui cite l'asset : champs
     /// scalaires d'un `Y.Map`, jamais `Any::Map` (G4).
     pub(crate) fn insert_asset_meta(&self, txn: &mut TransactionMut, a: &AssetRef) {
-        write_asset_meta(&self.assets, txn, a);
+        write_asset_meta(&self.assets, txn, a, None);
     }
 
-    /// Métadonnée d'un média (C14, M30) : sans lien, celle de `write_asset_meta` ; avec lien, `linked` en plus. Écrite
-    /// seulement si absente (K3), champs scalaires d'un `Y.Map` (G4).
+    /// Métadonnée d'un média (C14, M30) : celle de `write_asset_meta`, avec `linked` quand le média est lié.
     pub(crate) fn insert_media_asset_meta(
         &self,
         txn: &mut TransactionMut,
         a: &AssetRef,
         linked: Option<&str>,
     ) {
-        let Some(path) = linked else {
-            return write_asset_meta(&self.assets, txn, a);
-        };
-        if self.assets.get(txn, &a.id).is_none() {
-            self.assets.insert(
-                txn,
-                a.id.as_str(),
-                MapPrelim::from([
-                    ("name", In::from(a.name.as_str())),
-                    ("mime", In::from(a.mime.as_str())),
-                    ("size", In::Any(Any::from(a.size))),
-                    ("linked", In::from(path)),
-                ]),
-            );
-        }
+        write_asset_meta(&self.assets, txn, a, linked);
     }
 
     /// Racine `assets` (C14, M30) : lue et réécrite par `media::linked_assets` et `media::relink_assets`.

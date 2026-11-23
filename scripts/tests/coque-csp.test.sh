@@ -12,5 +12,13 @@ echo "$csp" | grep -q "media-src 'self' blob:" || ko "media-src de la coque abse
 echo "$csp" | grep -q "connect-src 'self' ipc: http://ipc.localhost blob:" || ko "connect-src blob: de la coque absent : $csp"
 n=$(grep -l "function coqueCsp" scripts/essais/*.mjs | wc -l)
 [ "$n" -eq 1 ] || ko "coqueCsp définie dans $n fichiers (une seule copie attendue, commun.mjs)"
+# Mineur C14 : chaque commande de la coque (generate_handler de main.rs) est nommée dans la description d'une capacité.
+caps=apps/desktop/src-tauri/capabilities
+cmds=$(sed -n '/generate_handler!\[/,/\])/p' apps/desktop/src-tauri/src/main.rs | grep -oE '^ *[a-z_]+,?$' | tr -d ' ,')
+[ -n "$cmds" ] || ko "aucune commande lue dans generate_handler de main.rs"
+for c in $cmds; do
+  node -e 'const fs=require("fs");const [d,c]=process.argv.slice(1);process.exit(fs.readdirSync(d).some(f=>JSON.parse(fs.readFileSync(d+"/"+f,"utf8")).description.includes(c))?0:1)' "$caps" "$c" \
+    || ko "commande $c absente des descriptions de $caps"
+done
 [ "$fail" -eq 0 ] && echo "coque-csp.test.sh : OK"
 exit "$fail"
