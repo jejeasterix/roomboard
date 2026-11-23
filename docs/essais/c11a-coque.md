@@ -11,7 +11,7 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 
 ## C11a-2 — Encre et stylet
 - [ ] Écrire au stylet sur le bureau : le trait suit sans retard visible.
-- [ ] Gomme partielle sur fond transparent : `paintEraser` (`canvas2d.ts` ~l. 730) peint `this.background` / `SURROUND_COLOR` ; symptôme possible pendant le geste : une traînée opaque (fond plein) à la place d'un trou transparent sur le bureau. À vérifier : le bureau reste visible sous le passage de la gomme, pendant le geste et après son relâchement ; noter la traînée si elle apparaît.
+- [ ] Gomme partielle sur fond transparent : aucun aperçu pendant le geste ; l'effacement s'applique au relâchement. Écart à HC11-15, qui demandait `destination-out` : impossible, la couche live ne peut pas creuser la scène. À vérifier en coque : le bureau reste visible sous le passage de la gomme après le relâchement, sans traînée opaque.
 - [ ] Mesure de pression et de latence avec `proto-stylet.html` ouvert dans la fenêtre transparente (P30) : noter les valeurs.
 - [ ] Ctrl+Z, Ctrl+Y dans l'annotation : annulent et rétablissent les traits de la séance.
 
@@ -46,9 +46,10 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 
 ## C11a-8 — Points d'essai de la revue (T13)
 - [ ] Fenêtre principale maximisée : entrer en annotation puis sortir ; elle redevient maximisée (Windows, macOS, Linux X11).
+- [ ] Fenêtre maximisée, entrer puis sortir, puis cliquer sur Restaurer : la taille d'avant la maximisation revient-elle ? (sous Linux, tao met `set_maximized` en file : la géométrie lue juste après `unmaximize` peut être celle de la fenêtre maximisée.)
 - [ ] Deux écrans d'échelles différentes (Windows) : à la sortie, la taille et la position d'avant sont exactes.
 - [ ] AppImage (Linux) : « Relancer en mode compatibilité » relance bien l'AppImage (`$APPIMAGE`), pas un chemin `/tmp/.mount_*`.
 - [ ] Alt+F4 sur `annotate` est toujours empêché (la page principale cache la fenêtre) : si `annotate` est cachée ou la principale ne répond pas, la fermeture ne se fait pas ; noter si un cas réel se présente.
 
 ## Point de durcissement connu
-La capacité `annotate` ne donne que `core:event:default` (listen, unlisten, emit_to). Mais `build.rs` ne déclare pas de manifeste de commandes (`AppManifest`) : les commandes de l'application (`annotation_*`, `read_granted_file`, etc.) ne sont donc pas filtrées par capacité et la page `annotate` pourrait les appeler. À durcir plus tard avec un manifeste de commandes.
+La capacité `annotate` ne donne que `core:event:default` (listen, unlisten, emit, emit_to). Mais `build.rs` ne déclare pas de manifeste de commandes (`AppManifest`) : les commandes de l'application (`annotation_*`, `read_granted_file`, etc.) ne sont donc pas filtrées par capacité et la page `annotate`, qui invoque les commandes `annotation_*`, pourrait aussi appeler les autres. À durcir plus tard avec un manifeste de commandes.

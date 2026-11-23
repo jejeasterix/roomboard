@@ -3,6 +3,7 @@ import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
 import type { AnnotationControl } from "../platform/annotation-port";
+import { messageOf } from "../platform/controller";
 import { fillChoices, isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
 export type SelectionAction = "group" | "ungroup" | "copy" | "paste" | "export";
@@ -48,7 +49,7 @@ export interface HostTargets {
 /** Une transition d'annotation refusée ne doit jamais devenir un rejet non géré (le contrôleur dit l'échec par `say`). */
 function settle(p: Promise<void> | undefined): void {
   p?.catch((e: unknown) => {
-    console.warn(`RoomBoard : annotation non réalisée (${e instanceof Error ? e.message : String(e)})`);
+    console.warn(`RoomBoard : annotation non réalisée (${messageOf(e)})`);
   });
 }
 

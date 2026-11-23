@@ -2782,7 +2782,7 @@ dans `drawScene`, remplacer les deux peintures :
 `board-session.ts`, `SessionShared` :
 `/** C11a (P14) : fenêtre `annotate` : rendu Canvas 2D transparent, jamais WebGL2 ; absent : rendu ordinaire. */ readonly transparent?: boolean;` ;
 dans l'appel `chooseRenderer(…, {`, ajouter `...(shared.transparent === true ? { transparent: true } : {}),`.
-L'aperçu de la gomme partielle (`canvas2d.ts:730`, HC11-15) n'est pas changé : il reste « à vérifier à l'exécution » (fiche C11a-2).
+Gomme partielle en mode transparent : aucun aperçu pendant le geste ; l'effacement s'applique au relâchement. Écart à HC11-15, qui demandait `destination-out` : impossible, la couche live ne peut pas creuser la scène. Point d'essai en coque (fiche C11a-2).
 
 - [ ] **Étape 6 : écrire `app/annotation-page.ts`.**
 ```ts
