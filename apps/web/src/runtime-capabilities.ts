@@ -11,11 +11,19 @@ export function detectPlatform(env: { readonly tauri: boolean; readonly userAgen
   return "linux";
 }
 
-export function runtimeCapabilities(staticCaps: unknown, env: { readonly tauri: boolean; readonly officeConverter?: boolean }): RuntimeCapabilities {
+/**
+ * Capacités du poste (U10, DAU8) ; C11a (P16, P29) : `annotationSupported` (commande `annotation_support`) abaisse
+ * `desktopAnnotation` (statique ∧ détecté ; absent : statique gardé) ; `forceAnnotation` (`?annotation=faux`) la rend
+ * vraie hors coque seulement, jamais sans ce paramètre.
+ */
+export function runtimeCapabilities(
+  staticCaps: unknown,
+  env: { readonly tauri: boolean; readonly officeConverter?: boolean; readonly annotationSupported?: boolean; readonly forceAnnotation?: boolean },
+): RuntimeCapabilities {
   const s = typeof staticCaps === "object" && staticCaps !== null ? (staticCaps as Record<string, unknown>) : {};
   const flag = (k: string): boolean => env.tauri && s[k] === true;
   const caps = {
-    desktopAnnotation: flag("desktopAnnotation"),
+    desktopAnnotation: (!env.tauri && env.forceAnnotation === true) || (flag("desktopAnnotation") && env.annotationSupported !== false),
     multiWindow: flag("multiWindow"),
     dropPaths: env.tauri,
     officeConverter: env.tauri && env.officeConverter === true,

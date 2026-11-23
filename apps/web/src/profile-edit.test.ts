@@ -75,7 +75,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
     const up = moveItem(DEFAUT, "outils", "sep-1", -1);
     expect(groupsOf(up)[0]).toEqual(["pen", "eraser", "eraser-mode", "hand", "sep-1"]);
     expect(moveItem(DEFAUT, "outils", "pen", -1)).toEqual(DEFAUT);
-    expect(moveItem(DEFAUT, "outils", "settings", 1)).toEqual(DEFAUT);
+    expect(moveItem(DEFAUT, "outils", "depot-annotation", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "outils", "absent", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "pages", "eraser", 1)).toEqual(DEFAUT);
   });

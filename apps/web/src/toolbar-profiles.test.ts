@@ -43,7 +43,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
   it("Grille (E7, HE5) : dans le groupe vue de defaut et d'annotation, avant Profil ; absente de simple", () => {
     for (const id of ["defaut", "annotation"]) {
       const vue = builtinProfile(id)!.toolbars[0]!.groups.find((g) => g.id === "vue")!;
-      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings"]);
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings", "desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"]);
     }
     expect(ids("simple")).not.toContain("grid");
   });
@@ -141,5 +141,26 @@ describe("barre : Modifier dans l'application d'origine (C16, O19)", () => {
     }
     const simple = builtinProfile("simple")!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((x) => x.id)));
     expect(simple).not.toContain("edit-original");
+  });
+});
+
+describe("C11a : éléments livrés (P6, P19)", () => {
+  const NEW = ["desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"];
+  const items = (id: string) => builtinProfile(id)!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items));
+  it("defaut et annotation : entrée, bascule, écran suivant et zone ; simple : sans zone", () => {
+    for (const id of ["defaut", "annotation"]) expect(ids(id)).toEqual(expect.arrayContaining(NEW));
+    expect(ids("simple")).toEqual(expect.arrayContaining(["desktop-annotation", "annotation-pointer", "annotation-screen"]));
+    expect(ids("simple")).not.toContain("depot-annotation");
+  });
+  it("chaque élément C11a exige desktopAnnotation ; la zone est une dropzone « Déposer ici »", () => {
+    for (const id of ["defaut", "simple", "annotation"]) {
+      for (const it of items(id).filter((i) => NEW.includes(i.id))) expect(it.requires).toContain("desktopAnnotation");
+    }
+    const zone = items("defaut").find((i) => i.id === "depot-annotation")!;
+    expect(zone).toMatchObject({ kind: "dropzone", label: "Déposer ici" });
+  });
+  it("web (capacité fausse) : la barre de defaut ne change pas", () => {
+    const web = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
+    expect(visibleItems(builtinProfile("defaut")!.toolbars[0]!, web).some((it) => NEW.includes(it.id))).toBe(false);
   });
 });

@@ -44,6 +44,15 @@ const pagesBar = (withEditOriginal = false) => ({
   ],
 });
 
+/** C11a (P6, P19) : éléments qui exigent la capacité (masqués sur le web, l'iPad et Android). */
+const needs = <T extends object>(item: T) => ({ ...item, requires: ["desktopAnnotation"] });
+const annotationItems = () => [
+  needs(action("desktop-annotation", "Annotation du bureau")),
+  needs(action("annotation-pointer", "Souris")),
+  needs(action("annotation-screen", "Écran suivant")),
+];
+const annotationZone = () => needs({ id: "depot-annotation", kind: "dropzone", label: "Déposer ici" });
+
 const presets = () => ({
   pen: [
     { id: "noir", label: "Noir", color: "#000000", width: 4 },
@@ -63,7 +72,7 @@ const defaultToolbars = () => [
       { id: "edition", items: [sep("sep-1"), tool("select", "Sélection"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
       { id: "historique", items: [sep("sep-2"), action("undo", "Annuler"), action("redo", "Rétablir")] },
       { id: "fichier", items: [sep("sep-3"), action("file-new", "Nouveau"), action("file-open", "Ouvrir"), action("file-import", "Importer"), action("file-save", "Enregistrer"), action("file-save-as", "Enregistrer sous")] },
-      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("library", "Bibliothèque"), action("profiles", "Profil"), action("settings", "Réglages")] },
+      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("library", "Bibliothèque"), action("profiles", "Profil"), action("settings", "Réglages"), ...annotationItems(), annotationZone()] },
     ],
   },
   pagesBar(true),
@@ -94,7 +103,7 @@ export const SIMPLE_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze
       groups: [
         { id: "dessin", items: [tool("pen", "Stylo"), tool("eraser", "Gomme"), tool("hand", "Main")] },
         { id: "historique", items: [sep("sep-1"), action("undo", "Annuler"), action("redo", "Rétablir")] },
-        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages")] },
+        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), ...annotationItems()] },
       ],
     },
     pagesBar(),
