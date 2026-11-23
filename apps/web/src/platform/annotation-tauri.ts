@@ -7,6 +7,8 @@ import type { ToolbarView } from "../ui/item-state";
 import {
   ANNOTATE_LABEL,
   ANNOTATION_EVENTS,
+  captureFailureOf,
+  isViewport,
   READY_TIMEOUT_MS,
   type AnnotationSupport,
   type AnnotationWindows,
@@ -16,6 +18,7 @@ import {
   type ReturnedPayload,
 } from "./annotation-port";
 import { fromBase64, toBase64 } from "./clipboard";
+import { grantedFile } from "./host-tauri";
 
 export interface AnnotationIpc {
   invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
@@ -44,7 +47,8 @@ export function createTauriAnnotationWindows(ipc: AnnotationIpc, readyTimeoutMs:
       if (p === null || e.payload?.id !== p.id) return;
       pending = null;
       const bytes = typeof e.payload.base64 === "string" ? fromBase64(e.payload.base64) : null;
-      p.resolve(bytes === null ? null : { bytes, changed: e.payload.changed === true });
+      const view = isViewport(e.payload.view) ? e.payload.view : null;
+      p.resolve(bytes === null ? null : { bytes, changed: e.payload.changed === true, ...(view === null ? {} : { view }) });
     }),
     ipc.listen<unknown>(ANNOTATION_EVENTS.exitRequest, () => {
       for (const cb of [...exits]) cb();
@@ -75,12 +79,36 @@ export function createTauriAnnotationWindows(ipc: AnnotationIpc, readyTimeoutMs:
       const screen = await ipc.invoke<number>("annotation_enter", placeArgs(o));
       await waitReady();
       await ipc.emitTo(ANNOTATE_LABEL, ANNOTATION_EVENTS.profile, o.profile);
-      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document) });
+      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document), opaque: o.opaque === true });
       return screen;
     },
     async place(o) {
       await subscribed;
       return ipc.invoke<number>("annotation_enter", placeArgs(o));
+    },
+    async load(o) {
+      await subscribed;
+      await waitReady();
+      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document), opaque: o.opaque });
+    },
+    async capture(o) {
+      await subscribed;
+      type Shot = { readonly id: string; readonly path: string; readonly size: number; readonly width: number; readonly height: number };
+      let shot: Shot;
+      try {
+        shot = await ipc.invoke<Shot>("annotation_capture", placeArgs(o));
+      } catch (e) {
+        return { ok: false, reason: captureFailureOf(e) };
+      }
+      try {
+        // P24 : le PNG accordé est lu par morceaux (`read_granted_file`), puis toujours libéré.
+        const raw = await grantedFile(ipc, shot.path, shot.size).blob();
+        return { ok: true, image: { blob: new Blob([raw], { type: "image/png" }), width: shot.width, height: shot.height } };
+      } catch {
+        return { ok: false, reason: "failed" };
+      } finally {
+        await ipc.invoke<void>("release_capture", { id: shot.id }).catch(() => undefined);
+      }
     },
     collect() {
       return new Promise<Returned | null>((resolve) => {
