@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { FORMAT_LOTS } from "./formats";
 import { main } from "./main";
@@ -126,6 +128,13 @@ describeWasm("run et apply : entrées, usages, sortie", () => {
     const io = memoryIO(["", '{"op":"tab.list"}\r', "   "]);
     expect(await main(["run", "--new", "--ops", "-"], io)).toBe(0);
     expect(io.json()).toEqual([{ op: 1, ok: true, tabs: [{ id: "t1", file: null, active: true }] }]);
+  });
+  it("run - : stdin lu par readline comme bin.ts, ouvert seulement après le chargement du cœur", async () => {
+    // readline lit son flux dès sa création : créé avant les attentes de la session, il perd ses lignes et sa fin,
+    // et la boucle ne se règle jamais (binaire : « unsettled top-level await », code 13).
+    const io = { ...memoryIO(), lines: () => createInterface({ input: Readable.from(['{"op":"tab.list"}\r\n', '{"op":"undo"}\n']), crlfDelay: Infinity }) };
+    expect(await main(["run", "--new", "--ops", "-"], io)).toBe(0);
+    expect(io.json().map((l: Json) => [l.op, l.ok])).toEqual([[1, true], [2, true]]);
   });
   it("usages : run sans fichier ni --new, fichier et --new, --new --save sans --out, option inconnue, ligne non JSON", async () => {
     for (const argv of [["run"], ["run", "a.roomboard", "--new"], ["run", "--new", "--save"], ["state", "a.roomboard", "--bidule"], ["new"]]) {
