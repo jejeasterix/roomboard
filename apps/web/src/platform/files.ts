@@ -120,7 +120,7 @@ export interface ShellPort {
   confirm(message: string): Promise<boolean>;
   notify(message: string): Promise<void>;
   /** Garde la fermeture tant que `isDirty()` ; rend la fonction qui retire la garde. */
-  guardClose(isDirty: () => boolean, message: string): () => void;
+  guardClose(isDirty: () => boolean, message: string, divert?: () => boolean): () => void;
   setTitle(title: string): void;
 }
 

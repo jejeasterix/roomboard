@@ -63,6 +63,8 @@ export interface TauriIpc {
   /** C16 (O20) : `args` peut être un corps brut (`Uint8Array`), avec des en-têtes. */
   invoke<T>(cmd: string, args?: Record<string, unknown> | Uint8Array, options?: { readonly headers: Readonly<Record<string, string>> }): Promise<T>;
   listen<T>(event: string, cb: (e: { readonly payload: T }) => void): Promise<() => void>;
+  /** C11a (P21) : événement vers une seule fenêtre ; charge JSON (octets en base64). Absent (faux des tests) : pas d'annotation. */
+  emitTo?<T>(target: string, event: string, payload: T): Promise<void>;
 }
 
 export const DROPPED_EVENT = "roomboard://dropped";
@@ -244,11 +246,15 @@ export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmP
   return {
     confirm: (message) => dialog.ask(message, { title: APP_TITLE, kind: "warning" }),
     notify: (message) => dialog.message(message, { title: APP_TITLE, kind: "error" }),
-    guardClose(isDirty, message) {
+    guardClose(isDirty, message, divert) {
       let stop: (() => void) | null = null;
       let stopped = false;
       void win
         .onCloseRequested(async (e) => {
+          if (divert?.() === true) {
+            e.preventDefault();
+            return;
+          }
           if (!isDirty()) return;
           try {
             const ok = await dialog.ask(message, { title: APP_TITLE, kind: "warning" });
@@ -325,6 +331,7 @@ export async function loadTauriPorts(): Promise<{
     ipc: {
       invoke: (cmd, args, options) => core.invoke(cmd, args, options === undefined ? undefined : { headers: { ...options.headers } }),
       listen: (event, cb) => ev.listen(event, cb),
+      emitTo: (target, event, payload) => ev.emitTo(target, event, payload),
     },
     assetUrl: (p) => core.convertFileSrc(p),
     dirFs: {

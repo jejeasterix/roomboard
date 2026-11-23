@@ -23,9 +23,9 @@ export function createWebShell(w: WebShellWindow): ShellPort {
     notify: async (message) => {
       w.alert(message);
     },
-    guardClose(isDirty) {
+    guardClose(isDirty, _message, divert) {
       const onBeforeUnload = (e: BeforeUnloadEventLike): void => {
-        if (!isDirty()) return;
+        if (divert?.() !== true && !isDirty()) return;
         e.preventDefault();
         e.returnValue = "";
       };

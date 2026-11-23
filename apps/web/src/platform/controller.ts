@@ -38,6 +38,8 @@ export interface FileControllerDeps {
   readonly shell: ShellPort;
   /** Fichier d'où vient le document (attente prise au démarrage, onglet ouvert), sinon null. */
   readonly opened: { readonly name: string; readonly target: SaveTarget | null } | null;
+  /** C11a (P4) : document remplacé au retour de l'annotation, « modifié » d'emblée ; absent : non modifié. */
+  readonly dirty?: boolean;
   /** Ouvre le fichier dans un nouvel onglet ; false si illisible (le message est déjà dit). */
   openInTab(file: OpenedFile): Promise<boolean>;
   /** Ouvre un onglet vierge. */
@@ -60,6 +62,8 @@ export interface FileController {
    */
   key(e: FileKey): boolean;
   isDirty(): boolean;
+  /** C11a (P4) : cible d'enregistrement actuelle, gardée au remplacement du document. */
+  target(): SaveTarget | null;
   name(): string;
   onChange(cb: () => void): () => void;
   dispose(): void;
@@ -85,7 +89,7 @@ export function messageOf(e: unknown): string {
 }
 
 export function createFileController(d: FileControllerDeps): FileController {
-  let savedVersion = d.versions.state().version;
+  let savedVersion = d.dirty === true ? -1 : d.versions.state().version; // versions ≥ 0 : -1 n'est jamais égal
   let target: SaveTarget | null = d.opened?.target ?? null;
   let name = d.opened?.name ?? UNTITLED;
   let busy: FileCommand | null = null;
@@ -206,6 +210,7 @@ export function createFileController(d: FileControllerDeps): FileController {
       return true;
     },
     isDirty,
+    target: () => target,
     name: () => name,
     onChange(cb) {
       listeners.add(cb);
