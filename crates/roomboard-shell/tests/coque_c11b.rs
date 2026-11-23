@@ -104,16 +104,35 @@ fn support_reports_transparency() {
 #[test]
 fn capture_shows_windows_again_even_if_hiding_fails() {
     let body = body_of("annotation_capture");
-    let hide_line = body
-        .lines()
-        .find(|l| l.contains("main.hide()"))
-        .expect("main.hide()");
+    let between = body
+        .split("main.hide()")
+        .nth(1)
+        .and_then(|s| s.split("main.show()").next())
+        .expect("texte entre main.hide() et main.show()");
     assert!(
-        !hide_line.contains(".map_err(") && !hide_line.trim_end().ends_with('?'),
-        "un échec de hide() ne doit pas sortir avant le show() des fenêtres"
+        !between.contains('?') && !between.contains("return"),
+        "aucune sortie anticipée entre hide() et show()"
     );
     assert!(
         !body.contains("w.hide().map_err(capture_failed)?"),
         "annotate.hide() ne doit pas sortir avant le show()"
     );
+}
+
+#[test]
+fn capture_probes_authorization_before_hiding() {
+    let body = body_of("annotation_capture");
+    let probe = body.find("capture::authorized()").expect("sonde d'autorisation");
+    let hide = body.find("main.hide()").expect("main.hide()");
+    assert!(probe < hide, "l'autorisation est sondée avant de cacher les fenêtres");
+}
+
+#[test]
+fn screens_and_center_are_shared() {
+    for name in ["annotation_enter", "annotation_capture"] {
+        let body = body_of(name);
+        assert!(body.contains("screens_of(") && body.contains("center_of("), "{name} : aides partagées");
+        assert!(!body.contains("rect_of(m)"), "{name} : calcul des écrans recopié");
+        assert!(!body.contains("width / 2"), "{name} : calcul du centre recopié");
+    }
 }
