@@ -32,6 +32,15 @@ describe("coquille du navigateur", () => {
     expect(e.returnValue).toBe("");
   });
 
+  it("C11a : divert vrai → beforeunload retenu même sans modification (P25)", () => {
+    const f = fakeWindow();
+    let annotating = true;
+    createWebShell(f.w).guardClose(() => false, "message", () => annotating);
+    expect(f.unload().prevented).toBe(true);
+    annotating = false;
+    expect(f.unload().prevented).toBe(false);
+  });
+
   it("guardClose rendu : l'écouteur est retiré", () => {
     const f = fakeWindow();
     const stop = createWebShell(f.w).guardClose(() => true, "message");

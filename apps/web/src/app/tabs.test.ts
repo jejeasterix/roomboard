@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ANNOTATION_NOT_YET, createTabs, MAX_TABS, TOO_MANY_TABS } from "./tabs";
+import { createTabs, MAX_TABS, ONE_ANNOTATION_TAB, TOO_MANY_TABS } from "./tabs";
 
 function make() {
   let n = 0;
@@ -55,10 +55,30 @@ describe("onglets (CL5b-1, CL5b-5, CL5b-20)", () => {
     expect(tabs.list()).toEqual([b]);
   });
 
-  it("annotation : lève ANNOTATION_NOT_YET", () => {
-    const tabs = make();
-    expect(() => tabs.add("annotation", "X")).toThrow(ANNOTATION_NOT_YET);
-    expect(tabs.list()).toEqual([]);
+  it("annotation : acceptée, une seule à la fois (C11a, P3)", () => {
+    let n = 0;
+    const tabs = createTabs<string>(() => `t${++n}`);
+    tabs.add("board", "A");
+    const a = tabs.add("annotation", "X", false);
+    expect(a.kind).toBe("annotation");
+    expect(tabs.active()?.session).toBe("A");
+    expect(() => tabs.add("annotation", "Y")).toThrow(ONE_ANNOTATION_TAB);
+  });
+
+  it("replace : même place, même id, même actif (C11a, P4)", () => {
+    let n = 0;
+    const tabs = createTabs<string>(() => `t${++n}`);
+    tabs.add("board", "A");
+    const x = tabs.add("annotation", "X", false);
+    tabs.add("board", "B");
+    const seen: number[] = [];
+    tabs.onChange(() => seen.push(1));
+    const r = tabs.replace(x.id, "X2");
+    expect(r).toEqual({ id: x.id, kind: "annotation", session: "X2" });
+    expect(tabs.list().map((t) => t.session)).toEqual(["A", "X2", "B"]);
+    expect(tabs.active()?.session).toBe("B");
+    expect(seen).toHaveLength(1);
+    expect(tabs.replace("absent", "Z")).toBeNull();
   });
 
   it("13e onglet refusé : TOO_MANY_TABS", () => {
