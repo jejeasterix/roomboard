@@ -205,7 +205,8 @@ pub fn save_granted(
     ensure_private_dir(&root.join(CAPTURES_DIR)).map_err(failed)?;
     // `create_new` refuse un fichier existant (reste d'un plantage de même pid, jeune donc non purgé) : numéro
     // suivant essayé. Le fichier d'une autre instance n'est jamais écrasé ni supprimé.
-    let mut attempt = 0;
+    // Rang de l'essai en cours (1 = premier) : `MAX_ID_ATTEMPTS` essais au plus.
+    let mut attempt = 1;
     let (id, path) = loop {
         let id = format!(
             "{}-{}",
