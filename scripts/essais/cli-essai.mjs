@@ -2,7 +2,7 @@
 // exporter en .rbitem, relire, comparer l'état de session au fichier rouvert (ids compris) et le .rbitem relu (ids par rang).
 // Aucun navigateur. Écrit sous un dossier temporaire retiré en fin d'essai. `CLI : OK` ou `CLI : ÉCHEC — <écart>`.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
@@ -124,10 +124,10 @@ try {
   egal(".rbitem : mêmes éléments que la page exportée (ids par rang)", normalise(e2.pages[0].elements), normalise(fin.pages[0].elements));
   egal(".rbitem : mêmes assets", normalise(e2.assets), normalise(fin.assets));
 
-  const avant = readFileSync(a);
+  const avant = empreinte(a);
   const refuse = cli(["run", a, "--ops", "-", "--save"], `${JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: 0, y0: 0, x1: 5, y1: 5, style: { color: "#000000", width: -1 }, fill: null })}\n`);
   verifie("opération refusée : code 1 et erreur sur stderr", refuse.code === 1 && refuse.err?.error?.code === "command", refuse.brut);
-  verifie("fichier inchangé après un refus", readFileSync(a).equals(avant));
+  verifie("fichier inchangé après un refus (mtimeMs, ino)", empreinte(a) === avant);
 
   const pdfFichier = join(dir, "x.pdf");
   writeFileSync(pdfFichier, "%PDF-1.4\n%%EOF\n");
