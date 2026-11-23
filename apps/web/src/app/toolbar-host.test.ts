@@ -132,6 +132,19 @@ describe("ToolbarHost local", () => {
     expect(on.t.annotation!.toggle).toHaveBeenCalledTimes(1);
     expect(on.t.annotation!.nextScreen).toHaveBeenCalledTimes(1);
   });
+  it("C11a : un enter ou exit rejeté est rattrapé (avertissement, aucun rejet non géré)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const off = setupWithAnnotation(false);
+    (off.t.annotation!.enter as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("refusée"));
+    off.host.runAction("desktop-annotation");
+    off.host.setMode("desktop-annotation");
+    const on = setupWithAnnotation(true);
+    (on.t.annotation!.exit as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("refusée"));
+    on.host.runAction("desktop-annotation");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
+  });
   it('setMode("board") : rien, aucun message', () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);

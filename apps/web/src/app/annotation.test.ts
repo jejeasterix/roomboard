@@ -177,6 +177,31 @@ describe("contrôleur d'annotation (C11a)", () => {
     expect(await ctl.close()).toBe(true);
     expect(windows.log.slice(-2)).toEqual(["leave", "close"]);
   });
+  it("encodeTab qui lève : enter ne rejette pas, avis « Annotation impossible », état inactif", async () => {
+    const { ctl, deps, log } = setup();
+    (deps.encodeTab as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("encodage"));
+    await expect(ctl.enter()).resolves.toBeUndefined();
+    expect(ctl.state().active).toBe(false);
+    expect(log.some((l) => l.startsWith("say Annotation impossible"))).toBe(true);
+  });
+  it("replaceAnnotation qui lève : exit ne rejette pas, avis, onglet d'origine montré", async () => {
+    const { ctl, deps, log } = setup({ draw: async (b) => new Uint8Array([...b, 1]) });
+    (deps.replaceAnnotation as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("remplacement"));
+    await ctl.enter();
+    await expect(ctl.exit()).resolves.toBeUndefined();
+    expect(log.some((l) => l.startsWith("say Annotation impossible"))).toBe(true);
+    expect(log).toContain("show t1");
+  });
+  it("demande de sortie alors que la principale n'est plus en annotation : annotate est quand même cachée", async () => {
+    const { ctl, windows } = setup();
+    await ctl.enter();
+    await ctl.exit();
+    const leaves = () => windows.log.filter((l) => l === "leave").length;
+    const before = leaves();
+    windows.requestExit();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(leaves()).toBe(before + 1);
+  });
   it("onChange : prévenu à l'entrée et à la sortie", async () => {
     const { ctl } = setup();
     const seen: boolean[] = [];
