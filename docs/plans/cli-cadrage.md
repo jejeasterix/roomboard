@@ -302,7 +302,15 @@ avec le lot dans le message).
 - `{"op":"export","to":"x.rbitem","page"?:id,"ids"?:[…]}` → `{"op":n,"ok":true,"file":"…"}` (sans `ids` : toute la page) ;
 - `{"op":"tab.new"}`, `{"op":"tab.open","file":…}`, `{"op":"tab.select","tab":id}`, `{"op":"tab.close","tab":id}`,
   `{"op":"tab.list"}` → `{"op":n,"ok":true,"tabs":[{"id":…,"file":…|null,"active":bool}]}` ;
-- échec : `{"op":n,"ok":false,"error":{…}}` sur stdout, la même erreur sur stderr, arrêt, code 1 (ou 3).
+- échec : `{"op":n,"ok":false,"error":{…}}` sur stdout, la même erreur sur stderr, arrêt. Code **2** pour une opération mal formée
+  (ligne non JSON, référence `$n` inconnue, commande inconnue) ; code **1** pour un refus du cœur ou un champ manquant ; code 3
+  pour un format d'un lot non livré.
+
+Ajouts de T5 au contrat : `roomboard help`, `--help` et `-h` impriment l'usage (`{"usage":[…],"refs":"…"}`), code 0 ;
+`new <sortie> --replace` remplace un fichier existant (sans lui, un fichier existant rend code 1, `io`) ; avec `--save` ou
+`--out`, `run` imprime une **dernière ligne** `{"written":[…]}` (chemins écrits pendant la session) ; `$$` donne un `$`
+littéral (la substitution ne porte que sur une chaîne entière de la forme d'une référence) ; `--save` enregistre le
+fichier passé à `run` (avec `--new`, `--out` est exigé).
 
 **État `roomboard-cli/1`** :
 
