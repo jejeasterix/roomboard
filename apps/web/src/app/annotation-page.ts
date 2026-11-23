@@ -7,6 +7,7 @@
  */
 import { PAGE_WIDTH, type CoreDocument, type Matrix } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
+import { IDENTITY_MATRIX } from "../core/shapes";
 import { screenToWorld, type Camera } from "../engine/camera";
 import type { EngineState } from "../engine/engine";
 import type { KeyLike } from "../engine/input/keys";
@@ -34,7 +35,7 @@ export function passThrough(hit: boolean, holding: boolean): boolean {
 /** C11b (P13) : matrice du monde d'`annotate` vers la page envoyée : écran = monde × zoom + (tx, ty) (px CSS), puis
  *  × PAGE_WIDTH / largeur de la vue. Largeur nulle ou non finie : identité. */
 export function viewMatrix(cam: Camera, viewWidth: number): Matrix {
-  if (!Number.isFinite(viewWidth) || viewWidth <= 0) return [1, 0, 0, 1, 0, 0];
+  if (!Number.isFinite(viewWidth) || viewWidth <= 0) return IDENTITY_MATRIX;
   const s = PAGE_WIDTH / viewWidth;
   return [s * cam.zoom, 0, 0, s * cam.zoom, s * cam.tx, s * cam.ty];
 }

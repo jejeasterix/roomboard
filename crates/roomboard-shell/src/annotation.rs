@@ -19,7 +19,7 @@ pub enum Unsupported {
 }
 
 /// Rectangle en pixels physiques du bureau.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
     pub y: i32,
@@ -160,7 +160,7 @@ pub fn pick_screen(screens: &[Rect], wanted: Option<usize>, main_center: (i32, i
 }
 
 /// C11b (P22, P23) : écran retenu, bande de la barre et zone d'annotation (px physiques), rectangle de l'écran.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Placement {
     pub index: usize,
     pub bar: Rect,
@@ -181,18 +181,7 @@ pub fn placement(
     let rects: Vec<Rect> = screens.iter().map(|(r, _)| *r).collect();
     let index = pick_screen(&rects, wanted, main_center);
     let Some(&(monitor, scale)) = screens.get(index) else {
-        let zero = Rect {
-            x: 0,
-            y: 0,
-            w: 0,
-            h: 0,
-        };
-        return Placement {
-            index: 0,
-            bar: zero,
-            area: zero,
-            monitor: zero,
-        };
+        return Placement::default();
     };
     let (bar, area) = split(monitor, side_of(dock), physical(thickness_css, scale));
     Placement {

@@ -6,14 +6,14 @@
 import type { AssetRef, CoreDocument, CoreFactory, Matrix } from "../core/api";
 import { isIdentity } from "../core/shapes";
 
+export { IDENTITY_MATRIX } from "../core/shapes";
+
 /** Fond de la page envoyée : asset déjà dans le magasin de l'onglet cible ; taille de l'image en pixels. */
 export interface PageBackdrop {
   readonly ref: AssetRef;
   readonly w: number;
   readonly h: number;
 }
-
-export const IDENTITY_MATRIX: Matrix = [1, 0, 0, 1, 0, 0];
 
 /** Document temporaire d'une page : fond (ou blanc), encre de `ink.page` recopiée puis transformée par `matrix` ;
  *  null : ni fond ni élément. Le document rendu appartient à l'appelant (free) ; `ink.doc` n'est pas modifié. */
