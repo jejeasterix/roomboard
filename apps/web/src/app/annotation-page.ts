@@ -5,9 +5,9 @@
  * Sélection), sonde le curseur et coupe le clic à travers sur un objet ou pendant un geste tenu. Aucun point d'encre ne
  * sort de la page.
  */
-import type { CoreDocument } from "../core/api";
+import { PAGE_WIDTH, type CoreDocument, type Matrix } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
-import { screenToWorld } from "../engine/camera";
+import { screenToWorld, type Camera } from "../engine/camera";
 import type { EngineState } from "../engine/engine";
 import type { KeyLike } from "../engine/input/keys";
 import { SELECT_TOL_PX } from "../engine/tools/select";
@@ -29,6 +29,14 @@ import { createLocalToolbarHost, type HostTargets } from "./toolbar-host";
 /** P9 : clic à travers seulement hors objet et hors geste tenu. */
 export function passThrough(hit: boolean, holding: boolean): boolean {
   return !hit && !holding;
+}
+
+/** C11b (P13) : matrice du monde d'`annotate` vers la page envoyée : écran = monde × zoom + (tx, ty) (px CSS), puis
+ *  × PAGE_WIDTH / largeur de la vue. Largeur nulle ou non finie : identité. */
+export function viewMatrix(cam: Camera, viewWidth: number): Matrix {
+  if (!Number.isFinite(viewWidth) || viewWidth <= 0) return [1, 0, 0, 1, 0, 0];
+  const s = PAGE_WIDTH / viewWidth;
+  return [s * cam.zoom, 0, 0, s * cam.zoom, s * cam.tx, s * cam.ty];
 }
 
 /** Vue de barre publiée : les champs de `ToolbarView` que l'état du moteur porte, sans la sélection ni le tableau. */
@@ -55,7 +63,10 @@ export interface AnnotationPageDeps {
   readonly channel: PageChannel;
   read(bytes: Uint8Array): Promise<{ readonly doc: CoreDocument; readonly assets: AssetStore } | null>;
   encode(doc: CoreDocument, assets: AssetStore): Promise<Uint8Array>;
-  makeSession(doc: CoreDocument, assets: AssetStore): Promise<BoardSession>;
+  /** C11b (P15) : `opaque` vrai : session non transparente (bureau figé). */
+  makeSession(doc: CoreDocument, assets: AssetStore, opaque: boolean): Promise<BoardSession>;
+  /** C11b (P13) : largeur de la vue en px CSS ; absente : `window.innerWidth`. */
+  readonly viewWidth?: () => number;
   /** `annotation_cursor` : px CSS relatifs à la fenêtre, ou null hors d'elle. */
   cursor(): Promise<readonly [number, number] | null>;
   /** `annotation_ignore`. */
@@ -83,6 +94,7 @@ const defaultEvery = (ms: number, cb: () => void): (() => void) => {
 
 export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   const every = d.every ?? defaultEvery;
+  const viewWidth = d.viewWidth ?? (() => window.innerWidth);
   let board: BoardSession | null = null;
   let assets: AssetStore | null = null;
   let loaded = 0;
@@ -96,6 +108,8 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   /** Génération des chargements : un chargement révolu libère sa session au lieu de la poser. */
   let loadGen = 0;
   let busy = false;
+  /** C11b (P15) : fenêtre opaque : jamais de clic à travers. */
+  let opaque = false;
   /** Commandes reçues pendant un chargement, rejouées sur la nouvelle session. */
   let pending: AnnotationCommand[] = [];
   /** Génération du sondage : un sondage en vol d'une génération révolue ne touche plus à la fenêtre. */
@@ -136,7 +150,8 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   };
   /** Sélection = souris (P8) : sondage tant que l'outil est Sélection ; ailleurs, la fenêtre capte tout. */
   const follow = (tool: string): void => {
-    const mouse = tool === "select" && !stopped;
+    // C11b (P15) : fenêtre opaque (bureau figé) : jamais de sondage, jamais de clic à travers.
+    const mouse = tool === "select" && !stopped && !opaque;
     if (mouse && stopPoll === null) {
       through = null;
       pollGen += 1;
@@ -179,12 +194,13 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
       const read = await d.read(bytes);
       if (read === null || gen !== loadGen) return;
       release();
-      const b = await d.makeSession(read.doc, read.assets);
+      const wantOpaque = p?.opaque === true;
+      const b = await d.makeSession(read.doc, read.assets, wantOpaque);
       if (gen !== loadGen) {
         b.dispose();
         return;
       }
-      install(b, read.assets);
+      install(b, read.assets, wantOpaque);
       busy = false;
       const queued = pending;
       pending = [];
@@ -197,8 +213,9 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
     }
   }
 
-  function install(b: BoardSession, a: AssetStore): void {
+  function install(b: BoardSession, a: AssetStore, wantOpaque: boolean): void {
     stopped = false;
+    opaque = wantOpaque;
     board = b;
     assets = a;
     b.activate();
@@ -208,6 +225,10 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
       publish(s);
     });
     follow(b.engine.state().tool);
+    if (opaque) {
+      through = null;
+      void setThrough(false).catch(() => undefined);
+    }
     publish(b.engine.state());
   }
 
@@ -222,7 +243,12 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
     const payload: ReturnedPayload =
       b === null || a === null
         ? { id: r.id, base64: "", changed: false }
-        : { id: r.id, base64: toBase64(await d.encode(b.doc, a)), changed: b.engine.state().version !== loaded };
+        : {
+            id: r.id,
+            base64: toBase64(await d.encode(b.doc, a)),
+            changed: b.engine.state().version !== loaded,
+            view: { page: b.engine.state().pageIndex, matrix: viewMatrix(b.engine.camera(), viewWidth()) },
+          };
     await d.channel.emit(ANNOTATION_EVENTS.returned, payload);
   }
 
