@@ -15,6 +15,8 @@ for s in s2-navigateur s34-navigateur fichiers-navigateur s5b-navigateur c2-imag
 done
 # C16 : ligne à part (la liste ci-dessus est partagée avec d'autres chantiers, O33).
 grep -q "scripts/essais/c16-office-navigateur.mjs" scripts/verifier.sh || ko "c16-office-navigateur absent de verifier.sh"
+# C11a : ligne à part, comme C16.
+grep -q "scripts/essais/c11a-annotation-navigateur.mjs" scripts/verifier.sh || ko "c11a-annotation-navigateur absent de verifier.sh"
 if grep -E 'essais/.*-navigateur\.mjs.*--captures?' scripts/verifier.sh >/dev/null; then ko "--e2e ne doit passer aucune option de capture"; fi
 # Les essais ne sont lancés que dans le bloc --e2e.
 awk '/essais\/.*-navigateur\.mjs/ && !in_e2e {print "hors bloc e2e : " $0; bad=1} /if \[ "\$E2E" = 1 \]/ {in_e2e=1} /^fi/ {in_e2e=0} END {exit bad}' scripts/verifier.sh >&2 || ko "un essai navigateur est lancé hors du bloc --e2e"
