@@ -1,12 +1,10 @@
 # État — usage-c11a-annotation
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier
 Objectif : En coque (Windows, macOS, Linux X11), Jérôme annote par-dessus son bureau vivant dans une fenêtre transparente, avec la barre d'outils seule cliquable, une bascule dessin / souris, un démarrage direct en annotation et une zone de dépôt qui insère des pages.
 Avancement : 15/15 tâches terminées
-Étage : 4 — depuis 2026-11-23 09:00
-Lot : —
-Tâche : —
+Étage : 4 — clos le 2026-11-23 09:05 (PR #37 fusionnée, `main` 12805eb)
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/usage-c11a-annotation   Branche : feat/usage-c11a-annotation   Base : origin/main @ 6c97661
 Branche principale locale au lancement : 6c97661
@@ -81,4 +79,112 @@ Release : non due (aucune demandée ; aucun tag).
 ouvertes : — · passées : —
 
 ## Notes du coffre à poser
-(à l'étage 4)
+
+### Note 1 — journal du chantier clos
+
+Chemin : `00_Journal/2026-11-23-roomboard-usage-c11a-annotation-clos.md`
+
+```markdown
+---
+id: 2026-11-23-roomboard-usage-c11a-annotation-clos
+type: journal
+summary: "RoomBoard usage C11a clos : annotation de bureau en coque (fenêtre annotate transparente au premier plan sur l'écran choisi, fenêtre principale réduite à sa barre, bascule dessin / souris par clic à travers, démarrage en annotation, zone de dépôt qui quitte l'annotation) ; document en aller-retour .roomboard base64 entre fenêtres ; Wayland natif refusé avec relance XWayland ; masqué sur web, iPad, Android ; PR #37."
+created: 2026-11-23
+project: "[[roomboard]]"
+tags: [projet/roomboard, chaine/nouvelle-feature]
+evidence: "docs/sessions/usage-c11a-annotation-etat.md ; docs/plans/usage-c11a-annotation-cadrage.md ; docs/essais/c11a-coque.md (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — usage C11a (annotation de bureau), clos (OE76)
+
+- Livré : `roomboard_shell::annotation` (session Wayland/X11, découpe de l'écran barre / zone d'annotation, choix de l'écran, curseur dans la fenêtre, restauration de la fenêtre principale, relance XWayland) ; commandes Tauri minces `annotation_*` et capacité `annotate.json` (`core:event:default` seul) ; contrôleur `app/annotation.ts`, page `annotate` (rendu transparent, sondage du curseur à 30 ms pour le mode souris), onglet `kind: "annotation"`, barre distante, zone de dépôt, `startMode` « Annotation au démarrage ».
+- Choix : la décision Q2 de Jérôme (2026-11-20) remplace U22 : un dépôt sur la barre quitte l'annotation ; image → page + avis « ajouté à la page N » ; document → nouvel onglet.
+- Document : il appartient à la fenêtre principale ; il part en `.roomboard` base64 vers `annotate` et revient à la sortie (5 s au plus) ; jamais un trait point par point.
+- Preuves sans coque : `verifier.sh --e2e` OK ; essai Playwright C11a (31 contrôles, scène 706 px) ; Vitest avec le vrai cœur Wasm pour l'aller-retour ; `cargo check` et `clippy -D warnings` de `src-tauri`.
+- Tailles inchangées : module principal 1 374 398 o, formats 2 794 511 o.
+- Reste aux essais en coque (`docs/essais/c11a-coque.md`) : Windows 10/11, macOS 14, X11, Wayland, stylet dans la fenêtre transparente (DAU8), deux écrans d'échelles différentes, fenêtre maximisée, AppImage, gomme partielle sur fond transparent.
+- Limites connues : un onglet d'annotation avec médias liés perd ses liens au retour ; un toucher sur un objet en mode souris passe au bureau (HC11-7) ; les commandes de l'app ne sont pas filtrées par capacité (pas de manifeste dans `build.rs`).
+- Décisions : [[NNNN-roomboard-c11a-document-aller-retour-roomboard]], [[NNNN-roomboard-c11a-fenetres-coque-decoupe-ecran]], [[NNNN-roomboard-c11a-mode-souris-sondage-page]].
+```
+
+### Note 2 — décision
+
+Chemin : `02_Decisions/NNNN-roomboard-c11a-document-aller-retour-roomboard.md`
+
+```markdown
+---
+id: NNNN-roomboard-c11a-document-aller-retour-roomboard
+type: decision
+summary: "RoomBoard C11a : le document de l'onglet d'annotation appartient à la fenêtre principale ; il part en .roomboard base64 en un message vers la fenêtre annotate et revient de même à la sortie ; entre les pages ne passent que des commandes de barre et une vue de barre ; prise par l'agent."
+created: 2026-11-23
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c11a-annotation-cadrage.md (P4, DA1, DA2) ; apps/web/src/app/annotation.ts ; apps/web/src/platform/annotation-fake.ts (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — document d'annotation en aller-retour .roomboard (prise par l'agent)
+
+- Pourquoi : la demande exige que l'encre de l'annotation aille dans le document principal, et la règle d'architecture interdit que l'encre traverse la frontière page ↔ Rust.
+- Entrée : `ContainerIO.encode` → base64 → `emitTo("annotate", …)` ; sortie : `{ base64, changed }` ; si `changed`, `replaceAnnotation` remplace la session (même place, même cible d'enregistrement, marquée modifiée).
+- Piège évité : la charge d'un événement Tauri est du JSON ; un `Uint8Array` y devient `{"0": …}`. Le faux hôte fait `JSON.parse(JSON.stringify(m))` pour échouer comme la coque.
+- Sans réponse sous 5 s : sortie quand même, onglet inchangé, avis.
+- Écarté : un document vivant dans `annotate` seule (encre perdue à la fermeture), des traits envoyés un par un.
+```
+
+### Note 3 — décision
+
+Chemin : `02_Decisions/NNNN-roomboard-c11a-fenetres-coque-decoupe-ecran.md`
+
+```markdown
+---
+id: NNNN-roomboard-c11a-fenetres-coque-decoupe-ecran
+type: decision
+summary: "RoomBoard C11a : deux fenêtres qui ne se chevauchent pas (bande de barre et zone d'annotation découpées dans l'écran choisi), réglées par des commandes Rust minces ; logique pure dans roomboard_shell::annotation ; capacité annotate.json réduite à core:event:default ; Wayland natif non pris en charge, relance XWayland proposée ; prise par l'agent."
+created: 2026-11-23
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c11a-annotation-cadrage.md (P10, P12, P16, DA3, DA4) ; crates/roomboard-shell/src/annotation.rs ; apps/desktop/src-tauri/src/main.rs (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — fenêtres d'annotation réglées par la coque (prise par l'agent)
+
+- Le clic à travers est tout ou rien par fenêtre : la barre et la zone d'annotation sont deux fenêtres côte à côte, sans ordre d'empilement à tenir.
+- La page n'a aucune permission de fenêtre : `annotation_enter` (async, à cause de Windows), `annotation_ignore`, `annotation_cursor`, restauration de la fenêtre principale (position, puis taille, puis maximisation si elle l'était).
+- `main.rs` reste mince (test `coque_c16` : aucun `Command::new`) : la relance XWayland passe par `roomboard_shell::annotation::relaunch` et `tauri::process::current_binary` (chemin `$APPIMAGE`).
+- Wayland natif : capacité fausse, l'application le dit et propose la relance en `GDK_BACKEND=x11`.
+- Durcissement connu : sans manifeste de commandes dans `build.rs`, les commandes de l'app ne sont pas filtrées par capacité.
+```
+
+### Note 4 — décision
+
+Chemin : `02_Decisions/NNNN-roomboard-c11a-mode-souris-sondage-page.md`
+
+```markdown
+---
+id: NNNN-roomboard-c11a-mode-souris-sondage-page
+type: decision
+summary: "RoomBoard C11a : en mode souris, la page annotate sonde le curseur toutes les 30 ms (commande annotation_cursor) et coupe le clic à travers seulement sur un objet (hitTest du cœur) ; pas de fil Rust ; limite au toucher acceptée (HC11-7) ; prise par l'agent."
+created: 2026-11-23
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture]
+evidence: "docs/plans/usage-c11a-annotation-cadrage.md (P9, DA5, HC11-7) ; apps/web/src/app/annotation-page.ts (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — mode souris par sondage depuis la page (prise par l'agent)
+
+- Q2 de Jérôme : l'outil Sélection devient le curseur du système, mais les objets restent sélectionnables.
+- La page sonde, teste l'objet par `doc.hitTest`, et règle `annotation_ignore` ; un compteur de génération arrête un sondage périmé (sortie, retour au stylo).
+- Écarté : un fil Rust qui compare le curseur à des rectangles envoyés par la page (plus lourd, double la logique).
+- Limite : le toucher et le stylet sans survol ne déplacent pas le curseur avant le contact ; un toucher sur un objet en mode souris passe au bureau. Repli : mode dessin. À revoir aux essais.
+```
+
+### Note 5 — fiche projet
+
+Chemin : `01_Projets/roomboard.md`, ligne 21 : ajouter à la fin de la ligne, après « — voir [[0271-roomboard-wasm-opt-module-formats]] » :
+
+```markdown
+ ; C11a annotation de bureau (fenêtre annotate transparente au premier plan, barre seule cliquable, bascule dessin / souris, démarrage en annotation, zone de dépôt ; document en aller-retour .roomboard base64 ; Wayland natif refusé avec relance XWayland) clos (PR #37, `main` 12805eb) — voir [[2026-11-23-roomboard-usage-c11a-annotation-clos]], [[NNNN-roomboard-c11a-document-aller-retour-roomboard]], [[NNNN-roomboard-c11a-fenetres-coque-decoupe-ecran]] et [[NNNN-roomboard-c11a-mode-souris-sondage-page]]
+```
