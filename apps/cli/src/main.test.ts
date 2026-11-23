@@ -35,11 +35,13 @@ describe("main : commandes sans module (D9)", () => {
       expect(out.usage).toContain("roomboard run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]");
       expect(out.usage).toContain("roomboard new <sortie.roomboard> [--replace]");
       expect(JSON.stringify(out)).toContain("$$");
+      expect(out.env).toContain("ROOMBOARD_NOW=<millisecondes depuis 1970>");
     }
     const bare = memoryIO();
     expect(await main([], bare)).toBe(2);
     expect(bare.stdout).toEqual([]);
     expect(bare.errors()).toEqual([{ error: { code: "usage", message: expect.stringContaining("roomboard run <fichier.roomboard | --new>") } }]);
+    expect(bare.errors()[0].error.message).toContain("ROOMBOARD_NOW");
   });
   it("module Wasm absent : code 1, erreur io", async () => {
     const io = memoryIO([], {}, new URL("file:///roomboard-absent/"));

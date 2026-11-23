@@ -37,6 +37,7 @@ const USAGE_HELP = "help | --help | -h";
 const REFS =
   "opérations : une ligne JSON par commande du cœur ({\"type\":…}) ou de la CLI ({\"op\":…}) ; références (chaîne entière) : " +
   "$n, $n.k, $page:i, $tab:i ; $$ donne un $ littéral";
+const ENV = "ROOMBOARD_NOW=<millisecondes depuis 1970> : date du manifeste (essais reproductibles), sinon l'heure du système";
 const usageLines = (): string[] => [...Object.values(USAGE), USAGE_HELP].map((u) => `roomboard ${u}`);
 
 const none = (args: readonly string[], name: keyof typeof USAGE): void => {
@@ -168,10 +169,10 @@ export async function main(argv: readonly string[], io: CliIO): Promise<number> 
   try {
     if (name !== undefined && HELP.includes(name)) {
       if (rest.length > 0) throw usage(USAGE_HELP);
-      io.out(JSON.stringify({ usage: usageLines(), refs: REFS }));
+      io.out(JSON.stringify({ usage: usageLines(), refs: REFS, env: ENV }));
       return 0;
     }
-    if (name === undefined) throw new CliError("usage", `aucune commande ; usage : ${usageLines().join(" ; ")} ; ${REFS}`);
+    if (name === undefined) throw new CliError("usage", `aucune commande ; usage : ${usageLines().join(" ; ")} ; ${REFS} ; ${ENV}`);
     const handler = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
     if (handler === undefined) {
       throw new CliError("usage", `commande inconnue : ${name} ; commandes : ${[...Object.keys(COMMANDS), "help"].join(", ")}`);
