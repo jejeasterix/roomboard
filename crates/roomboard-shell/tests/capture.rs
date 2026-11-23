@@ -1,9 +1,9 @@
 //! C11b (P19, P21 à P26) : capture d'écran, découpe, PNG, fichier accordé, purge.
 use roomboard_shell::annotation::{Rect, Session};
 use roomboard_shell::capture::{
-    allowed, area_in_frame, bgrx_to_rgba, capture_area, capture_monitor, crop, encode_png,
-    inside_root, nearest, purge, purge_older, release, save_granted, CaptureError, Frame,
-    CAPTURES_DIR, HIDDEN_SETTLE_MS, PURGE_AGE,
+    allowed, area_in_frame, authorized, bgrx_to_rgba, capture_area, capture_monitor, crop,
+    encode_png, inside_root, nearest, purge, purge_older, release, save_granted, CaptureError,
+    Frame, CAPTURES_DIR, HIDDEN_SETTLE_MS, PURGE_AGE,
 };
 use roomboard_shell::{read_granted, GrantedPaths, MAX_CHUNK};
 use std::fs;
@@ -289,4 +289,30 @@ fn capture_x11_reelle() {
     let f = capture_monitor(Session::X11, r(0, 0, 64, 64)).expect("capture X11");
     assert_eq!((f.width, f.height, f.rgba.len()), (64, 64, 64 * 64 * 4));
     assert!(f.rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
+}
+
+#[test]
+fn une_capture_existante_du_meme_pid_n_arrete_pas_la_suivante() {
+    let root = dir("meme-pid");
+    let g = GrantedPaths::default();
+    let first = save_granted(&g, &root, b"a", 1, 1).unwrap();
+    let n: u64 = first.id.rsplit('-').next().unwrap().parse().unwrap();
+    // Reste d'un plantage de même pid : les prochains numéros sont déjà pris.
+    for k in n + 1..=n + 20 {
+        let p = root
+            .join(CAPTURES_DIR)
+            .join(format!("{}-{k}.png", std::process::id()));
+        fs::write(p, b"reste").unwrap();
+    }
+    let next = save_granted(&g, &root, b"b", 1, 1).expect("numéro suivant libre essayé");
+    assert_ne!(next.id, first.id);
+    assert_eq!(fs::read(&next.path).unwrap(), b"b");
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn autorisation_vraie_hors_macos() {
+    if !cfg!(target_os = "macos") {
+        assert!(authorized());
+    }
 }

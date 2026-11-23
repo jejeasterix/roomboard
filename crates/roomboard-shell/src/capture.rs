@@ -20,6 +20,8 @@ pub const HIDDEN_SETTLE_MS: u64 = 250;
 /// P24 : au lancement, un reste d'une autre instance plus vieux que ce délai est supprimé (une capture vit quelques ms).
 pub const PURGE_AGE: Duration = Duration::from_secs(60);
 
+/// Numéros essayés au plus pour une capture avant d'abandonner.
+const MAX_ID_ATTEMPTS: u32 = 100;
 static NEXT_CAPTURE: AtomicU64 = AtomicU64::new(1);
 
 /// Image RGBA 8 bits, lignes contiguës (`width * 4` octets par ligne).
@@ -176,7 +178,7 @@ fn capture_path(root: &Path, id: &str) -> PathBuf {
     root.join(CAPTURES_DIR).join(format!("{id}.png"))
 }
 
-fn write_new(path: &Path, bytes: &[u8]) -> Result<(), CaptureError> {
+fn write_new(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut o = fs::OpenOptions::new();
     o.write(true).create_new(true);
     #[cfg(unix)]
@@ -184,8 +186,8 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), CaptureError> {
         use std::os::unix::fs::OpenOptionsExt;
         o.mode(0o600);
     }
-    let mut f = o.open(path).map_err(failed)?;
-    f.write_all(bytes).map_err(failed)
+    let mut f = o.open(path)?;
+    f.write_all(bytes)
 }
 
 /// P24 : PNG écrit sous `<root>/captures/<pid>-<n>.png` (dossiers privés, fichier neuf en 0600), puis accordé à la page.
@@ -201,13 +203,26 @@ pub fn save_granted(
     }
     ensure_private_dir(root).map_err(failed)?;
     ensure_private_dir(&root.join(CAPTURES_DIR)).map_err(failed)?;
-    let id = format!(
-        "{}-{}",
-        std::process::id(),
-        NEXT_CAPTURE.fetch_add(1, Ordering::Relaxed)
-    );
-    let path = capture_path(root, &id);
-    write_new(&path, png)?;
+    // `create_new` refuse un fichier existant (reste d'un plantage de même pid, jeune donc non purgé) : numéro
+    // suivant essayé. Le fichier d'une autre instance n'est jamais écrasé ni supprimé.
+    let mut attempt = 0;
+    let (id, path) = loop {
+        let id = format!(
+            "{}-{}",
+            std::process::id(),
+            NEXT_CAPTURE.fetch_add(1, Ordering::Relaxed)
+        );
+        let path = capture_path(root, &id);
+        match write_new(&path, png) {
+            Ok(()) => break (id, path),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::AlreadyExists && attempt < MAX_ID_ATTEMPTS =>
+            {
+                attempt += 1
+            }
+            Err(e) => return Err(failed(e)),
+        }
+    };
     let Some(granted) = g.grant([path.clone()]).into_iter().next() else {
         let _ = fs::remove_file(&path);
         return Err(CaptureError::Failed("capture non accordée".into()));
@@ -316,6 +331,12 @@ pub fn composited() -> Option<bool> {
     platform::composited()
 }
 
+/// P10 : autorisation de capturer l'écran ; vraie hors macOS. Sous macOS : sans autorisation, l'invite du système est
+/// demandée (l'octroi ne vaut qu'après une relance) et le résultat est faux. À sonder avant de cacher nos fenêtres.
+pub fn authorized() -> bool {
+    platform::authorized()
+}
+
 #[cfg(target_os = "linux")]
 mod platform {
     use super::{bgrx_to_rgba, failed, inside_root, CaptureError, Frame};
@@ -410,6 +431,10 @@ mod platform {
         }
     }
 
+    pub fn authorized() -> bool {
+        true
+    }
+
     pub fn composited() -> Option<bool> {
         let x = Xlib::open().ok()?;
         let c = open(&x)?;
@@ -474,6 +499,16 @@ mod platform {
     pub fn composited() -> Option<bool> {
         None
     }
+
+    #[cfg(target_os = "macos")]
+    pub fn authorized() -> bool {
+        authorize().is_ok()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn authorized() -> bool {
+        true
+    }
 }
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -485,6 +520,10 @@ mod platform {
         Err(CaptureError::Failed(
             "capture non prise en charge sur cette plateforme".into(),
         ))
+    }
+
+    pub fn authorized() -> bool {
+        true
     }
 
     pub fn composited() -> Option<bool> {
