@@ -218,6 +218,8 @@ interface Slot {
   title: string;
   /** Onglet aux assets non lus (R30) : Enregistrer refusé. */
   unread: boolean;
+  /** M31 : chemin absolu de chaque lien tenté à l'ouverture, par id (le magasin passe avant) ; repris au retour d'annotation (OE77). */
+  readonly lost: ReadonlyMap<string, string>;
 }
 
 /** C14 (M30) : à l'enregistrement en coque, chaque lien connu du magasin est réécrit relatif au document cible ; hors
@@ -312,6 +314,17 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       return null;
     }
   };
+  /** M31 : liens tentés par la dernière lecture de `docPath`, retirés de `lostLinks` (ceux du magasin n'y servent pas). */
+  const takeLost = (docPath: string | null, doc: CoreDocument | undefined): Map<string, string> => {
+    const lost = new Map<string, string>();
+    for (const l of doc?.linkedAssets() ?? []) {
+      const key = `${docPath ?? ""}\0${l.id}`;
+      const abs = lostLinks.get(key);
+      if (abs !== undefined) lost.set(l.id, abs);
+      lostLinks.delete(key);
+    }
+    return lost;
+  };
   const io = createContainerIO({ core, codec: deps.codec, say, makeAssets, ...(relinkMedia ? { relink } : {}) });
   // Vignette (D29) : une relecture en échec n'est qu'une vignette en moins, dite à la console, jamais par une boîte.
   const thumbIo = createContainerIO({ core, codec: deps.codec, say: async (m) => console.warn(`RoomBoard : vignette non rendue (${m})`), makeAssets });
@@ -354,7 +367,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       await say(`Nouvel onglet impossible : ${messageOf(e)}`);
       return null;
     }
-    const slot: Slot = { tab: null, id: "", title: "", unread };
+    const slot: Slot = { tab: null, id: "", title: "", unread, lost };
     // PC3 : hôte de l'onglet ; la cible choisie par la boîte fixe les chemins relatifs des médias liés avant l'encodage.
     const tabHost: FileHost = {
       kind: host.kind,
@@ -458,13 +471,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const target = file.target;
       const docPath = target?.kind === "tauri" ? target.path : (file.path ?? null); // R1
       const read = await io.read(name, file.bytes, "document", docPath);
-      const lost = new Map<string, string>();
-      for (const l of read?.doc.linkedAssets() ?? []) {
-        const key = `${docPath ?? ""}\0${l.id}`;
-        const abs = lostLinks.get(key);
-        if (abs !== undefined) lost.set(l.id, abs);
-        lostLinks.delete(key);
-      }
+      const lost = takeLost(docPath, read?.doc);
       if (read === null) return false;
       return (await addTab(read.doc, { name, target: file.target }, read.assets, read.unread, lost)) !== null;
     },
@@ -688,10 +695,17 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const entry = tabs.list().find((t) => t.kind === "annotation");
       if (entry === undefined) return false;
       const old = entry.session;
-      const read = await io.read(old.files.name(), bytes, "document");
+      // OE77 : les liens du document rendu (relatifs après un enregistrement) se résolvent par l'onglet remplacé.
+      const known = new Map(slots.get(old)?.lost ?? []);
+      for (const l of old.board.doc.linkedAssets()) {
+        const abs = old.assets.linked(l.id);
+        if (abs !== undefined) known.set(l.id, abs);
+      }
+      const read = await io.read(old.files.name(), bytes, "document", null, known);
+      const lost = takeLost(null, read?.doc);
       if (read === null) return false;
       const opened = { name: old.files.name(), target: old.files.target() };
-      return (await addTab(read.doc, opened, read.assets, read.unread, new Map(), { kind: "annotation", dirty: true, replace: entry.id })) !== null;
+      return (await addTab(read.doc, opened, read.assets, read.unread, lost, { kind: "annotation", dirty: true, replace: entry.id })) !== null;
     },
     async close(id) {
       if (closing.has(id)) return false; // double clic : le second appel ne fait rien

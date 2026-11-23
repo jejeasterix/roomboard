@@ -72,7 +72,7 @@ Release : non due (aucune demandée ; aucun tag).
 
 ## Hors périmètre
 - C11b (bureau figé, capture, « Envoyer au tableau »)
-- Onglet d'annotation avec médias liés : liens perdus au retour (`replaceAnnotation` relit sans `docPath`, T12 point 9).
+- ~~Onglet d'annotation avec médias liés : liens perdus au retour (`replaceAnnotation` relit sans `docPath`, T12 point 9).~~ Fermé par OE77 (branche `fix/annotation-medias-lies`) : au retour, chaque lien se résout par le chemin absolu que tenait l'onglet remplacé (magasin, ou lien introuvable gardé, M31) ; tests « OE77 » de `workspace.test.ts`.
 - Essais réels en coque (Windows, macOS, X11, stylet, mesure DAU8) : séances de Jérôme
 
 ## Portes
