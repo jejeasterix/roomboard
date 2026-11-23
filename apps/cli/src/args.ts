@@ -1,4 +1,7 @@
-/** Options d'une commande (DA2) : `--nom valeur` ou `--nom` ; tout autre mot est positionnel (« - » compris). */
+/**
+ * Options d'une commande (DA2) : `--nom valeur` ou `--nom` ; tout autre mot est positionnel (« - » compris). Une valeur ne
+ * commence jamais par `--` (option oubliée) : un fichier de ce nom s'écrit `./--nom`.
+ */
 import { CliError } from "./contract";
 
 export type FlagSpec = Readonly<Record<string, "value" | "bool">>;
@@ -25,6 +28,7 @@ export function parseArgs(args: readonly string[], spec: FlagSpec): ParsedArgs {
     }
     const v = args[i + 1];
     if (v === undefined) throw new CliError("usage", `${a} : valeur attendue`);
+    if (v.startsWith("--")) throw new CliError("usage", `${a} : valeur attendue, pas l'option ${v} (fichier de ce nom : ./${v})`);
     flags.set(a, v);
     i++;
   }

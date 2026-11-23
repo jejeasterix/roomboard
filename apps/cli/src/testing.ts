@@ -19,7 +19,8 @@ export const REQUIRED = process.env["ROOMBOARD_WASM_REQUIRED"] === "1";
 /** Blocs au vrai module : sautés sans `.wasm`, jamais sous `ROOMBOARD_WASM_REQUIRED=1` (le test de présence échoue). */
 export const describeWasm = PRESENT ? describe : describe.skip;
 export const XLSX_FIXTURE = fileURLToPath(new URL("../../../crates/roomboard-formats/tests/fixtures/valeurs.xlsx", import.meta.url));
-export const FIXED_NOW = "2026-11-23T00:00:00.000Z";
+/** `ROOMBOARD_NOW` des tests : 2026-11-23T00:00:00.000Z en millisecondes. */
+export const FIXED_NOW = "1795392000000";
 
 export interface MemoryIO extends CliIO {
   readonly stdout: string[];

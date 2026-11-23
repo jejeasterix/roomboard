@@ -6,6 +6,14 @@
 import type { AssetInfo, CoreDocument, ElementView, PageView } from "../../web/src/core/api";
 import { CliError, SCHEMA } from "./contract";
 
+/** Page visée d'un onglet : `page`, ou la première sans `page` ; command si elle n'existe pas. */
+export function pageOf(tab: { readonly doc: CoreDocument }, page: string | undefined): string {
+  const pages = tab.doc.pageIds();
+  const id = page ?? pages[0];
+  if (id === undefined || !pages.includes(id)) throw new CliError("command", `page inconnue : ${page ?? "(aucune)"}`);
+  return id;
+}
+
 export type ElementState = ElementView & { readonly points?: readonly number[] };
 export interface PageState {
   readonly index: number;

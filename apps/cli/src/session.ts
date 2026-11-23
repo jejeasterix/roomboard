@@ -55,6 +55,10 @@ export interface Session {
   /** Ouverture par l'importeur (`openDocument`) : null si refusé, l'avis est déjà dans `notices`. */
   openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null>;
   save(tab: CliTab, to?: string | null): Promise<string>;
+  /** Écriture atomique d'un fichier de la session (document ou fragment), retenue par `written`. */
+  write(path: string, bytes: Uint8Array): Promise<void>;
+  /** Fichiers écrits par la session, sans doublon, dans l'ordre de leur première écriture. */
+  written(): readonly string[];
   tabList(): TabInfo[];
   exec(line: unknown): Promise<OpResult>;
 }
@@ -64,6 +68,11 @@ export function createSession(deps: SessionDeps): Session {
   const tabs = createTabs<CliTab>(() => `t${++next}`);
   /** recorded[n - 1] : ids retenus de l'opération n. */
   const recorded: (readonly string[])[] = [];
+  const written = new Set<string>();
+  async function write(path: string, bytes: Uint8Array): Promise<void> {
+    await writeAtomic(path, bytes);
+    written.add(path);
+  }
 
   const active = (): CliTab => {
     const t = tabs.active();
@@ -109,7 +118,7 @@ export function createSession(deps: SessionDeps): Session {
     } catch (e) {
       throw asCliError(e, "command");
     }
-    await writeAtomic(path, bytes);
+    await write(path, bytes);
     tab.file = path;
     return path;
   }
@@ -190,6 +199,8 @@ export function createSession(deps: SessionDeps): Session {
     open,
     openBytes,
     save,
+    write,
+    written: () => [...written],
     tabList,
     async exec(line) {
       const n = recorded.length + 1;
@@ -203,6 +214,8 @@ export function createSession(deps: SessionDeps): Session {
         try {
           change = doc.apply(op.cmd);
         } catch (e) {
+          // Champ absent ou d'un autre type : la colle du cœur lève un TypeError JS (« reading 'color' »), enveloppé ici.
+          if (e instanceof TypeError) throw new CliError("command", `${op.cmd.type} : champ manquant ou mal formé (${e.message})`);
           throw asCliError(e, "command");
         }
         recorded[n - 1] = change.ids.length > 0 ? change.ids : change.pages;
@@ -223,6 +236,7 @@ export function createSession(deps: SessionDeps): Session {
 
 /** Session branchée sur les vrais modules : cœur, conteneur (module formats chargé au premier besoin), date du manifeste. */
 export async function nodeSession(io: CliIO): Promise<Session> {
+  nowOf(io.env); // ROOMBOARD_NOW mal formée : usage (code 2) avant tout chargement ni écriture
   const core = await loadCore(io.wasmDir);
   const formats = loadFormats(io.wasmDir);
   const notices: string[] = [];

@@ -39,11 +39,13 @@ export async function loadCore(dir: URL): Promise<CoreFactory> {
   return createWasmCore(await glueOf<WasmModule>(dir, CORE_FILES));
 }
 
-/** Chargeur du module formats pour `createPageCodec` (qui le garde) et la lecture des classeurs. */
+/** Chargeur du module formats pour `createPageCodec` et la lecture des classeurs : lu au premier appel, puis gardé. */
 export function loadFormats(dir: URL): () => Promise<SheetFormatsBinding> {
-  return async () => {
-    const mod = await glueOf<SheetFormatsBinding>(dir, FORMATS_FILES);
-    if (!hasSheetReader(mod)) throw new CliError("io", "module des formats sans lecteur de classeur");
-    return mod;
-  };
+  let loaded: Promise<SheetFormatsBinding> | null = null;
+  return () =>
+    (loaded ??= (async () => {
+      const mod = await glueOf<SheetFormatsBinding>(dir, FORMATS_FILES);
+      if (!hasSheetReader(mod)) throw new CliError("io", "module des formats sans lecteur de classeur");
+      return mod;
+    })());
 }

@@ -7,9 +7,9 @@ import { basename } from "node:path";
 import type { CoreDocument } from "../../web/src/core/api";
 import { APP_VERSION } from "../../web/src/platform/controller";
 import { asCliError, CliError } from "./contract";
-import { writeAtomic } from "./disk";
 import { exportBlocked, extOf, unsupportedMessage } from "./formats";
 import type { Session } from "./session";
+import { pageOf } from "./state";
 
 export interface ExportRequest {
   readonly to: string;
@@ -29,9 +29,7 @@ export function checkExportTarget(to: string): void {
 export async function exportFragment(session: Session, req: ExportRequest): Promise<{ file: string; kind: "fragment"; elements: number }> {
   checkExportTarget(req.to);
   const tab = session.active();
-  const pages = tab.doc.pageIds();
-  const page = req.page ?? pages[0];
-  if (page === undefined || !pages.includes(page)) throw new CliError("command", `page inconnue : ${req.page ?? "(aucune)"}`);
+  const page = pageOf(tab, req.page);
   const ids = req.ids ?? tab.doc.elementIds(page);
   if (ids.length === 0) throw new CliError("command", "rien à exporter : aucun objet");
   let frag: CoreDocument;
@@ -50,7 +48,7 @@ export async function exportFragment(session: Session, req: ExportRequest): Prom
     } catch (e) {
       throw asCliError(e, "command");
     }
-    await writeAtomic(req.to, bytes);
+    await session.write(req.to, bytes);
     return { file: req.to, kind: "fragment", elements };
   } finally {
     frag.free();

@@ -26,4 +26,10 @@ describeWasm("chargement du vrai module (D2)", () => {
     expect(typeof mod.SheetReader.open).toBe("function");
     expect(typeof mod.write_container).toBe("function");
   });
+  it("loadFormats : module lu une fois puis gardé en mémoire (un classeur de plus ne relit pas les 2,8 Mo)", async () => {
+    const load = loadFormats(WEB_SRC);
+    const first = load();
+    expect(load()).toBe(first);
+    expect(await load()).toBe(await first);
+  });
 });

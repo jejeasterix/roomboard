@@ -4,6 +4,7 @@
  * `roomboard-cli/2` (DA2).
  */
 import { createInterface } from "node:readline";
+import { messageOf } from "../../web/src/platform/controller";
 
 export const CLI_VERSION = "0.1.0";
 export const SCHEMA = "roomboard-cli/1";
@@ -34,7 +35,7 @@ export class CliError extends Error {
 /** Toute erreur en `CliError` ; une erreur du cœur ou d'un module web garde son message. */
 export function asCliError(e: unknown, code: ErrorCode = "command"): CliError {
   if (e instanceof CliError) return e;
-  return new CliError(code, e instanceof Error ? e.message : String(e));
+  return new CliError(code, messageOf(e));
 }
 
 export const usage = (text: string): CliError => new CliError("usage", `usage : roomboard ${text}`);
@@ -58,10 +59,18 @@ export interface OutStream {
   on(event: "error", listener: (e: Error) => void): unknown;
 }
 
-/** Une ligne par appel sur `stream` (stdout ou stderr de `bin.ts`). */
+/**
+ * Une ligne par appel sur `stream` (stdout ou stderr de `bin.ts`). Lecteur parti (`| head -1` : EPIPE) ou toute autre
+ * erreur du flux : les lignes suivantes sont ignorées, sans pile ; la commande va au bout (enregistrement compris) et
+ * rend son propre code de sortie.
+ */
 export function lineWriter(stream: OutStream): (line: string) => void {
+  let closed = false;
+  stream.on("error", () => {
+    closed = true;
+  });
   return (line) => {
-    stream.write(`${line}\n`);
+    if (!closed) stream.write(`${line}\n`);
   };
 }
 

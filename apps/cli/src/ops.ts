@@ -3,6 +3,7 @@
  * (`{"type":…}`, union `Command` de `core/api.ts`, `points` et `path` en tableaux JSON convertis en `Float32Array`), ou
  * une opération de la CLI (`{"op":…}`). Références sur les chaînes entières : `$n` (1er id de l'opération n, comptée à
  * partir de 1), `$n.k` (k-ième, à partir de 1), `$page:i` (page d'indice i de l'onglet actif), `$tab:i` (onglet d'indice i).
+ * Dans toute autre chaîne, `$$` donne un `$` littéral (`"$$1"` est le texte « $1 », jamais une référence).
  */
 import type { Command } from "../../web/src/core/api";
 import { CliError } from "./contract";
@@ -37,7 +38,7 @@ const FLOAT_KEYS = ["points", "path"] as const;
 export function resolveRefs(v: unknown, ctx: RefContext): unknown {
   if (typeof v === "string") {
     const m = REF.exec(v);
-    if (m === null) return v;
+    if (m === null) return v.replaceAll("$$", "$");
     const [, n, k, page, tab] = m;
     let id: string | undefined;
     if (n !== undefined) id = ctx.idsOf(Number(n))?.[k === undefined ? 0 : Number(k) - 1];

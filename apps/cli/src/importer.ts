@@ -17,6 +17,7 @@ import { CliError } from "./contract";
 import { readBytes } from "./disk";
 import { importBlocked, unsupportedMessage } from "./formats";
 import type { Session } from "./session";
+import { pageOf } from "./state";
 import { headlessTarget, SCENE } from "./target";
 
 export interface ImportRequest {
@@ -86,9 +87,7 @@ async function readSheet(mod: SheetFormatsBinding, blob: Blob): Promise<TableGri
 export async function importInto(session: Session, req: ImportRequest): Promise<ImportResult> {
   checkSources(req.sources);
   const tab = session.active();
-  const pages = tab.doc.pageIds();
-  const page = req.page ?? pages[0];
-  if (page === undefined || !pages.includes(page)) throw new CliError("command", `page inconnue : ${req.page ?? "(aucune)"}`);
+  const page = pageOf(tab, req.page);
   const files = await Promise.all(req.sources.map(async (s) => nodeFile(s, await readBytes(s))));
   const { notices, formats } = session.deps;
   const before = notices.length;
@@ -103,11 +102,5 @@ export async function importInto(session: Session, req: ImportRequest): Promise<
     readSheet: async (blob) => readSheet(await formats(), blob),
   });
   const report = await importer.importFiles(files, req.at ?? null);
-  return {
-    opened: [...report.opened],
-    inserted: [...report.inserted],
-    refused: [...report.refused],
-    failed: [...report.failed],
-    notices: notices.slice(before),
-  };
+  return { ...report, notices: notices.slice(before) };
 }
