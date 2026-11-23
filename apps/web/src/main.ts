@@ -6,10 +6,12 @@
  */
 import { annotationFailedMessage, createAnnotationController, createRemoteToolbarHost, offerCompatRelaunch } from "./app/annotation";
 import { startAnnotateWindow } from "./annotate-start";
-import { createFakeAnnotationWindows } from "./platform/annotation-fake";
-import type { AnnotationControl, AnnotationSupport, AnnotationWindows } from "./platform/annotation-port";
+import { createFakeAnnotationWindows, type FakeAnnotationOptions } from "./platform/annotation-fake";
+import type { AnnotationControl, AnnotationSupport, AnnotationWindows, CapturedImage, CaptureOutcome } from "./platform/annotation-port";
 import { createTauriAnnotationWindows } from "./platform/annotation-tauri";
-import { ANNOTATION_REMOTE_ACTIONS, type Dock } from "./toolbar";
+import { ANNOTATION_REMOTE_ACTIONS, resolveStartMode, type Dock } from "./toolbar";
+import { createContainerIO } from "./app/container-io";
+import { createAssetStore } from "./core/asset-store";
 import { createBoardSession, type SessionShared } from "./app/board-session";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
@@ -18,7 +20,7 @@ import { createResourceLibrary, createSharedFolder, importedMessage, mineOrMemor
 import { createWorkspace, type TabSession } from "./app/workspace";
 import { APP_VERSION, messageOf } from "./platform/controller";
 import { createIdbLibraryFiles, createMemoryLibraryFiles, createTauriLibraryFiles } from "./platform/library-files";
-import type { CoreDocument } from "./core/api";
+import type { CoreDocument, CoreFactory } from "./core/api";
 import { Canvas2DRenderer, exportPainterOptions } from "./engine/render/canvas2d";
 import { RecordingPath } from "./engine/render/record-ctx";
 import { decodeImage, kindOfMime } from "./platform/image-import";
@@ -60,6 +62,56 @@ function keyOf(e: KeyboardEvent): KeyLike {
     altKey: e.altKey,
     isComposing: e.isComposing,
     target: e.target instanceof HTMLElement ? e.target : null,
+  };
+}
+
+/** C11b (P30) : capture du faux hôte (`?annotation=faux`) : PNG 320 × 180 uni `#3366cc`, peint par un canvas. */
+async function fakeDesktopCapture(): Promise<CaptureOutcome> {
+  const c = document.createElement("canvas");
+  c.width = 320;
+  c.height = 180;
+  const ctx = c.getContext("2d");
+  if (ctx === null) return { ok: false, reason: "failed" };
+  ctx.fillStyle = "#3366cc";
+  ctx.fillRect(0, 0, 320, 180);
+  const blob = await new Promise<Blob | null>((resolve) => c.toBlob(resolve, "image/png"));
+  if (blob === null) return { ok: false, reason: "failed" };
+  const image: CapturedImage = { blob, width: 320, height: 180 };
+  return { ok: true, image };
+}
+
+/** C11b (P30) : options du faux hôte lues de l'adresse : `&capture=refus|wayland`, `&transparence=non`, `&encre=1`
+ *  (le `draw` du faux trace un trait connu, de (200, 200) à (600, 200), épaisseur 8, sur la première page, à chaque
+ *  collecte ; le document passe par le conteneur, assets compris). */
+function fakeAnnotationOptions(params: URLSearchParams, core: CoreFactory): FakeAnnotationOptions {
+  const shot = params.get("capture");
+  const capture: CaptureOutcome | (() => Promise<CaptureOutcome>) =
+    shot === "refus" ? { ok: false, reason: "denied" } : shot === "wayland" ? { ok: false, reason: "wayland" } : fakeDesktopCapture;
+  const io = createContainerIO({
+    core,
+    codec: createPageCodec(loadFormatsModule),
+    say: async (m) => console.warn(`RoomBoard (faux hôte) : ${m}`),
+    makeAssets: () => createAssetStore(),
+  });
+  const draw = async (bytes: Uint8Array): Promise<Uint8Array> => {
+    const read = await io.read("annotation.roomboard", bytes, "document");
+    if (read === null) return bytes;
+    try {
+      const page = read.doc.pageIds()[0];
+      if (page !== undefined) {
+        const points = new Float32Array([200, 200, 0.5, 400, 200, 0.5, 600, 200, 0.5]);
+        read.doc.apply({ type: "CommitStroke", page, points, style: { color: "#000000", width: 8 } });
+      }
+      return await io.encode(read.doc, read.assets, new Date().toISOString(), APP_VERSION, { kind: "document" });
+    } finally {
+      read.doc.free();
+    }
+  };
+  return {
+    dataset: document.body.dataset as Record<string, string | undefined>,
+    transparent: params.get("transparence") !== "non",
+    capture,
+    ...(params.get("encre") === "1" ? { draw } : {}),
   };
 }
 
@@ -184,10 +236,10 @@ async function start(): Promise<void> {
           emitTo,
         })
       : fakeAnnotation
-        ? createFakeAnnotationWindows({ dataset: document.body.dataset as Record<string, string | undefined> })
+        ? createFakeAnnotationWindows(fakeAnnotationOptions(params, core))
         : null;
   const support: AnnotationSupport | null =
-    windows === null ? null : await windows.support().catch((): AnnotationSupport => ({ supported: false, reason: null, screens: 1 }));
+    windows === null ? null : await windows.support().catch((): AnnotationSupport => ({ supported: false, reason: null, screens: 1, transparent: true }));
   const env = {
     tauri,
     userAgent: navigator.userAgent,
@@ -427,6 +479,13 @@ async function start(): Promise<void> {
           bar: measureBar,
           profile: () => active.profile(),
           screens: support?.screens ?? 1,
+          // C11b (P6, P14, P17, P18) : fond figé, envoi, cible et repli.
+          annotationBackdrop: () => workspace.annotationBackdrop(),
+          setAnnotationBackdrop: (image, page) => workspace.setAnnotationBackdrop(image, page),
+          sendCapture: (r) => workspace.sendCapture(r),
+          startMode: () => resolveStartMode(active.profile(), active.capabilities()).mode,
+          originKind: (id) => (id === null ? null : (workspace.tabs.list().find((t) => t.id === id)?.kind ?? null)),
+          transparent: support?.transparent ?? true,
         });
   annotation = ctl;
   if (windows !== null && support !== null) {

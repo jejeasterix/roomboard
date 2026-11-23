@@ -341,7 +341,12 @@ export function App(props: AppProps): JSX.Element {
     tick();
     const a = annState();
     const base: ToolbarView = a.active ? (remoteView() ?? { ...state(), canPaste: false }) : { ...state(), canPaste: ws.canPaste() };
-    return ann === undefined ? base : { ...base, annotation: { active: a.active, pointer: a.pointer, screens: a.screens } };
+    return ann === undefined
+      ? base
+      : {
+          ...base,
+          annotation: { active: a.active, pointer: a.pointer, screens: a.screens, frozen: a.frozen === true, live: a.live !== false, sendTarget: a.sendTarget ?? "origin" },
+        };
   };
 
   /** La rangée des préréglages n'est que dans la première barre de rôle `tools` (C1, P18). */
