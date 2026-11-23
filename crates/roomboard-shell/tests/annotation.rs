@@ -283,7 +283,12 @@ fn placement_sans_ecran_tout_a_zero() {
     let z = r(0, 0, 0, 0);
     assert_eq!(
         placement(&[], None, (0, 0), "top", 48.0),
-        Placement { index: 0, bar: z, area: z, monitor: z }
+        Placement {
+            index: 0,
+            bar: z,
+            area: z,
+            monitor: z
+        }
     );
 }
 
