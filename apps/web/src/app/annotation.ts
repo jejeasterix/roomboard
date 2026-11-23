@@ -79,9 +79,15 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
 
   async function doEnter(): Promise<void> {
     if (st.active) return;
-    const tab = await d.annotationTab();
-    if (tab === null) return;
-    const document = await d.encodeTab(tab);
+    let document: Uint8Array;
+    try {
+      const tab = await d.annotationTab();
+      if (tab === null) return;
+      document = await d.encodeTab(tab);
+    } catch (e) {
+      await d.say(annotationFailedMessage(messageOf(e)));
+      return;
+    }
     origin = d.activeTabId();
     set({ active: true, pointer: "draw" });
     try {
@@ -111,7 +117,13 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     }
     set({ active: false, pointer: "draw" });
     if (got === null) await d.say(INK_LOST_MESSAGE);
-    else if (got.changed) await d.replaceAnnotation(got.bytes);
+    else if (got.changed) {
+      try {
+        await d.replaceAnnotation(got.bytes);
+      } catch (e) {
+        await d.say(annotationFailedMessage(messageOf(e)));
+      }
+    }
     if (origin !== null) d.showTab(origin);
     origin = null;
   }
@@ -119,7 +131,19 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
   const ctl: AnnotationControl = {
     state: () => st,
     enter: () => serial(doEnter),
-    exit: () => serial(doExit),
+    exit: () =>
+      serial(async () => {
+        if (!st.active) {
+          // Sortie demandée par `annotate` alors que la principale n'est plus en annotation : la cacher quand même.
+          try {
+            await d.windows.leave();
+          } catch {
+            // fenêtre jamais montrée
+          }
+          return;
+        }
+        await doExit();
+      }),
     close: async () => {
       await serial(async () => {
         await doExit();

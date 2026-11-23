@@ -72,6 +72,10 @@ export interface AnnotationPage {
   dispose(): void;
 }
 
+/** Cible d'édition (comme `keys.ts`) : Échap lui appartient. */
+const isEditable = (t: KeyLike["target"]): boolean =>
+  t !== null && (t.isContentEditable === true || (t.tagName !== undefined && ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName.toUpperCase())));
+
 const defaultEvery = (ms: number, cb: () => void): (() => void) => {
   const h = setInterval(cb, ms);
   return () => clearInterval(h);
@@ -87,6 +91,13 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   let stopPoll: (() => void) | null = null;
   let holding = false;
   let through: boolean | null = null;
+  /** Après `collect` (sortie) : plus de sondage tant qu'aucun document n'est reçu. */
+  let stopped = false;
+  /** Génération des chargements : un chargement révolu libère sa session au lieu de la poser. */
+  let loadGen = 0;
+  let busy = false;
+  /** Commandes reçues pendant un chargement, rejouées sur la nouvelle session. */
+  let pending: AnnotationCommand[] = [];
   /** Génération du sondage : un sondage en vol d'une génération révolue ne touche plus à la fenêtre. */
   let pollGen = 0;
   const offs: Array<() => void> = [];
@@ -125,7 +136,7 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   };
   /** Sélection = souris (P8) : sondage tant que l'outil est Sélection ; ailleurs, la fenêtre capte tout. */
   const follow = (tool: string): void => {
-    const mouse = tool === "select";
+    const mouse = tool === "select" && !stopped;
     if (mouse && stopPoll === null) {
       through = null;
       pollGen += 1;
@@ -162,12 +173,34 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
       console.warn("RoomBoard : document d'annotation illisible (base64)");
       return;
     }
-    const read = await d.read(bytes);
-    if (read === null) return;
-    release();
-    const b = await d.makeSession(read.doc, read.assets);
+    const gen = ++loadGen;
+    busy = true;
+    try {
+      const read = await d.read(bytes);
+      if (read === null || gen !== loadGen) return;
+      release();
+      const b = await d.makeSession(read.doc, read.assets);
+      if (gen !== loadGen) {
+        b.dispose();
+        return;
+      }
+      install(b, read.assets);
+      busy = false;
+      const queued = pending;
+      pending = [];
+      for (const m of queued) replay(m);
+    } finally {
+      if (gen === loadGen) {
+        busy = false;
+        pending = [];
+      }
+    }
+  }
+
+  function install(b: BoardSession, a: AssetStore): void {
+    stopped = false;
     board = b;
-    assets = read.assets;
+    assets = a;
     b.activate();
     loaded = b.engine.state().version;
     stopState = b.engine.onState((s) => {
@@ -179,6 +212,11 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   }
 
   async function collect(r: CollectPayload): Promise<void> {
+    stopPoll?.();
+    stopPoll = null;
+    pollGen += 1;
+    through = null;
+    stopped = true;
     const b = board;
     const a = assets;
     const payload: ReturnedPayload =
@@ -189,6 +227,10 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
   }
 
   function replay(m: AnnotationCommand): void {
+    if (busy) {
+      pending.push(m);
+      return;
+    }
     if (board === null) return;
     if (m.kind === "setTool") host.setTool(m.tool, m.preset);
     else if (m.kind === "runAction") host.runAction(m.id);
@@ -214,7 +256,7 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
       await d.channel.emit(ANNOTATION_EVENTS.ready, {});
     },
     key(e) {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.isComposing && !isEditable(e.target)) {
         void d.channel.emit(ANNOTATION_EVENTS.exitRequest, {});
         return true;
       }

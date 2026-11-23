@@ -883,14 +883,20 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     void say(deps.first.error);
   }
   // C11a (P25) : en annotation, fermeture refusée sans question, sortie, puis fermeture relancée (garde ordinaire).
+  let diverting = false; // une sortie détournée en cours absorbe la suivante : une seule question
   const stopGuard = shell.guardClose(anyDirty, DISCARD_MESSAGE, () => {
     const a = gate();
-    if (a === null || !a.state().active) return false;
+    if (a === null || !a.state().active) return diverting;
+    if (diverting) return true;
+    diverting = true;
     const quit = deps.quit;
     void a
       .exit()
       .then(() => (quit === undefined ? undefined : ws.quitRequested(quit)))
-      .catch((e: unknown) => console.warn(`RoomBoard : fermeture abandonnée (${messageOf(e)})`));
+      .catch((e: unknown) => console.warn(`RoomBoard : fermeture abandonnée (${messageOf(e)})`))
+      .finally(() => {
+        diverting = false;
+      });
     return true;
   });
   // C11a (P17, P18) : en annotation, tout dépôt natif sur la fenêtre principale compte comme un dépôt sur la zone.

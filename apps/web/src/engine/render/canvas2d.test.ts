@@ -1244,6 +1244,22 @@ describe("C11a : rendu transparent (P14)", () => {
     expect(scene.log).not.toContain(`fillRect ${SURROUND_COLOR}`);
     expect(scene.log.some((l) => l.startsWith("fillRect") && l.includes(PAGE_BACKGROUND))).toBe(false);
   });
+  it("transparent : l'aperçu de la gomme partielle ne peint ni fond ni pourtour (pas de traînée sur le bureau)", () => {
+    const live = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(new FakeCtx()), asCtx(live), src, { makePath: () => new FakePath() as unknown as Path2D, transparent: true });
+    r.resize(100, 100, 1);
+    r.drawScene(page, IDENTITY, new Set());
+    r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
+  });
+  it("opaque : l'aperçu de la gomme partielle repeint toujours fond puis pourtour", () => {
+    const live = new FakeCtx();
+    const r = new Canvas2DRenderer(asCtx(new FakeCtx()), asCtx(live), src, { makePath: () => new FakePath() as unknown as Path2D });
+    r.resize(100, 100, 1);
+    r.drawScene(page, IDENTITY, new Set());
+    r.drawLive({ strokes: [], erasers: [{ path: new Float32Array([0, 0, 50, 50]), radius: 6, mode: "partial" }] }, IDENTITY);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
+  });
   it("défaut : pourtour puis fond peints, aucun clearRect (rendu inchangé)", () => {
     const scene = new FakeCtx();
     const r = new Canvas2DRenderer(asCtx(scene), asCtx(new FakeCtx()), src, { makePath: () => new FakePath() as unknown as Path2D });

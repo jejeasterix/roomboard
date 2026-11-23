@@ -2122,6 +2122,18 @@ describe("C11a : onglet d'annotation (P3, P4, P13, P17, P25)", () => {
     await vi.waitFor(() => expect(quit).toHaveBeenCalled());
     expect(log).toEqual(["exit", "quit"]);
   });
+  it("deux fermetures détournées en parallèle : une seule sortie, un seul quit (la seconde est absorbée)", async () => {
+    const { g, log } = fakeGate(true);
+    const quit = vi.fn(async () => {
+      log.push("quit");
+    });
+    await setupWorkspace({ annotation: () => g, quit });
+    expect(divert!()).toBe(true);
+    expect(divert!()).toBe(true);
+    await vi.waitFor(() => expect(quit).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(log).toEqual(["exit", "quit"]);
+  });
   it("hors annotation (ou sans contrôleur) : divert faux", async () => {
     await setupWorkspace({ annotation: () => fakeGate(false).g });
     expect(divert!()).toBe(false);

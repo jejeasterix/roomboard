@@ -4,7 +4,7 @@
  * (un onglet = une `BoardSession`, T93/T98), puis l'interface SolidJS (`ui/App.tsx`). Les touches sont écoutées une
  * fois ici et vont à l'onglet actif. `?banc` ajoute le banc du lot 1 rejoué sur l'onglet actif.
  */
-import { createAnnotationController, createRemoteToolbarHost, offerCompatRelaunch } from "./app/annotation";
+import { annotationFailedMessage, createAnnotationController, createRemoteToolbarHost, offerCompatRelaunch } from "./app/annotation";
 import { startAnnotateWindow } from "./annotate-start";
 import { createFakeAnnotationWindows } from "./platform/annotation-fake";
 import type { AnnotationControl, AnnotationSupport, AnnotationWindows } from "./platform/annotation-port";
@@ -430,7 +430,9 @@ async function start(): Promise<void> {
         });
   annotation = ctl;
   if (windows !== null && support !== null) {
-    void offerCompatRelaunch(support, active.profile().behavior.startMode, (m) => workspace.ask(m), () => windows.relaunchCompat());
+    void offerCompatRelaunch(support, active.profile().behavior.startMode, (m) => workspace.ask(m), () => windows.relaunchCompat()).catch((e: unknown) => {
+      void workspace.say(annotationFailedMessage(messageOf(e)));
+    });
   }
 
   const note = workspace.active().board.choice.note;

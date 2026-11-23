@@ -712,7 +712,9 @@ export class Canvas2DRenderer implements Renderer {
    * (blanc dedans, pourtour dehors). Gomme d'objet : rien ici, les traits touchés sont masqués de la scène.
    */
   private paintEraser(ctx: CanvasRenderingContext2D, e: EraserPreview, page: PageRect | null): void {
-    if (e.mode !== "partial" || e.path.length < 2) return;
+    // Rendu transparent (C11a) : aucun fond à repeindre, l'aperçu ne laisse pas de traînée sur le bureau ; l'effacement
+    // réel s'applique au relâchement.
+    if (this.transparent || e.mode !== "partial" || e.path.length < 2) return;
     const x0 = e.path[0] ?? 0;
     const y0 = e.path[1] ?? 0;
     const along = (color: string, region: () => void): void => {

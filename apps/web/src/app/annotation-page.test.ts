@@ -42,16 +42,21 @@ function fakeBoard(doc: CoreDocument) {
   return { board, engine };
 }
 
-function setup(o: { hit?: boolean; gate?: boolean } = {}) {
+function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean } = {}) {
   const c = channel();
   const boards: ReturnType<typeof fakeBoard>[] = [];
   const ignores: boolean[] = [];
   const gates: Array<() => void> = [];
   let tick: (() => void) | null = null;
   let stops = 0;
+  const reads: Array<() => void> = [];
+  const calls: string[] = [];
   const page = createAnnotationPage({
     channel: c.ch,
-    read: async (bytes) => ({ doc: fakeCore.load(bytes), assets: createAssetStore() }),
+    read: async (bytes) => {
+      if (o.slowRead === true) await new Promise<void>((resolve) => reads.push(resolve));
+      return { doc: fakeCore.load(bytes), assets: createAssetStore() };
+    },
     encode: async (doc: CoreDocument, _a: AssetStore) => doc.save("2026-11-23T00:00:00Z", "0.1.0"),
     makeSession: async (doc) => {
       const b = fakeBoard(doc);
@@ -60,12 +65,13 @@ function setup(o: { hit?: boolean; gate?: boolean } = {}) {
       return b.board;
     },
     cursor: () =>
-      o.gate === true
+      (calls.push("cursor"), o.gate === true)
         ? new Promise<readonly [number, number] | null>((resolve) => {
             gates.push(() => resolve([10, 10] as const));
           })
         : Promise.resolve([10, 10] as const),
     ignore: async (on) => {
+      calls.push("ignore");
       ignores.push(on);
     },
     every: (_ms, cb) => {
@@ -76,7 +82,7 @@ function setup(o: { hit?: boolean; gate?: boolean } = {}) {
       };
     },
   });
-  return { page, c, boards, ignores, gates, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
+  return { page, c, boards, ignores, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
 }
 const blank = () => toBase64(fakeCore.blank().save("2026-11-23T00:00:00Z", "0.1.0"));
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -205,5 +211,81 @@ describe("page annotate (C11a, P2, P4, P9, P24)", () => {
     for (const release of s.gates) release();
     await flush();
     expect(s.ignores.at(-1)).toBe(false);
+  });
+});
+
+describe("page annotate : corrections de relecture (T12)", () => {
+  const key = (k: string, o: Record<string, unknown> = {}) => ({ key: k, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+  it("collect arrête le sondage : plus aucun appel cursor/ignore après la sortie", async () => {
+    const s = setup({ hit: false });
+    await s.page.start();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    s.c.send(ANNOTATION_EVENTS.command, { kind: "setTool", tool: "select" });
+    await s.tick();
+    s.c.send(ANNOTATION_EVENTS.collect, { id: 1 });
+    await flush();
+    expect(s.polling()).toBe(false);
+    const before = s.calls.length;
+    await s.tick();
+    s.c.send(ANNOTATION_EVENTS.command, { kind: "setTool", tool: "select" });
+    await flush();
+    await s.tick();
+    expect(s.calls).toHaveLength(before);
+    expect(s.polling()).toBe(false);
+  });
+  it("un nouveau document relance le sondage après une sortie", async () => {
+    const s = setup({ hit: false });
+    await s.page.start();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    s.c.send(ANNOTATION_EVENTS.collect, { id: 1 });
+    await flush();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    s.c.send(ANNOTATION_EVENTS.command, { kind: "setTool", tool: "select" });
+    expect(s.polling()).toBe(true);
+  });
+  it("commande reçue pendant un chargement : mise en file et rejouée sur la nouvelle session", async () => {
+    const s = setup({ slowRead: true });
+    await s.page.start();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    s.reads.shift()!();
+    await flush();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() }); // rentrée : lecture lente
+    await flush();
+    s.c.send(ANNOTATION_EVENTS.command, { kind: "setTool", tool: "rect" });
+    expect(s.boards[0]!.engine.setTool).not.toHaveBeenCalledWith("rect");
+    s.reads.shift()!();
+    await flush();
+    expect(s.boards).toHaveLength(2);
+    expect(s.boards[1]!.engine.setTool).toHaveBeenCalledWith("rect");
+    expect(s.boards[0]!.engine.setTool).not.toHaveBeenCalledWith("rect");
+  });
+  it("deux chargements concurrents : une seule session reste, l'autre est libérée", async () => {
+    const s = setup({ slowRead: true });
+    await s.page.start();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    for (const r of s.reads.splice(0)) r();
+    await flush();
+    const alive = s.boards.filter((b) => (b.board.dispose as ReturnType<typeof vi.fn>).mock.calls.length === 0);
+    expect(alive).toHaveLength(1);
+    expect(s.page.board()).toBe(alive[0]!.board);
+  });
+  it("Échap pendant une composition IME ou dans un champ éditable : pas de sortie", async () => {
+    const s = setup();
+    await s.page.start();
+    s.c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    const n = s.c.out.length;
+    s.page.key(key("Escape", { isComposing: true }));
+    s.page.key(key("Escape", { target: { tagName: "INPUT" } }));
+    s.page.key(key("Escape", { target: { isContentEditable: true } }));
+    await flush();
+    expect(s.c.out.filter((m) => m.event === ANNOTATION_EVENTS.exitRequest)).toHaveLength(0);
+    expect(s.c.out).toHaveLength(n);
   });
 });

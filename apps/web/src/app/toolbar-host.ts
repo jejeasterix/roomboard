@@ -45,15 +45,22 @@ export interface HostTargets {
   selection(a: SelectionAction): void;
 }
 
+/** Une transition d'annotation refusée ne doit jamais devenir un rejet non géré (le contrôleur dit l'échec par `say`). */
+function settle(p: Promise<void> | undefined): void {
+  p?.catch((e: unknown) => {
+    console.warn(`RoomBoard : annotation non réalisée (${e instanceof Error ? e.message : String(e)})`);
+  });
+}
+
 const file = (cmd: FileCommand) => (t: HostTargets): void => t.runFile(cmd);
 
 export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "desktop-annotation": (t) => {
     const a = t.annotation;
-    if (a !== undefined) void (a.state().active ? a.exit() : a.enter());
+    if (a !== undefined) settle(a.state().active ? a.exit() : a.enter());
   },
-  "annotation-pointer": (t) => void t.annotation?.toggle(),
-  "annotation-screen": (t) => void t.annotation?.nextScreen(),
+  "annotation-pointer": (t) => settle(t.annotation?.toggle()),
+  "annotation-screen": (t) => settle(t.annotation?.nextScreen()),
   undo: (t) => t.engine().undo(),
   redo: (t) => t.engine().redo(),
   "page-prev": (t) => void t.engine().prevPage(),
@@ -113,7 +120,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     imagePanel: () => t.toggle("image"),
     setMode(mode) {
       // U14, P22 : « Annotation du bureau » entre en annotation ; sans contrôleur, rien (repli silencieux sur le tableau).
-      if (mode === "desktop-annotation") void t.annotation?.enter();
+      if (mode === "desktop-annotation") settle(t.annotation?.enter());
     },
   };
 }
