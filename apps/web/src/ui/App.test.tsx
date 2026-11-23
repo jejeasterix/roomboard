@@ -290,7 +290,7 @@ function fakeAnnotationUi(start = false, activateOnEnter = true) {
       };
     },
   };
-  return { ui, control, remoteCalls, view: (v: ToolbarView) => { for (const cb of [...views]) cb(v); } };
+  return { ui, control, remoteCalls, set, view: (v: ToolbarView) => { for (const cb of [...views]) cb(v); } };
 }
 
 /** Copie de `defaut` faite avant C11a (aucun élément C11a), id « ma-copie ». */
@@ -583,6 +583,19 @@ describe("App — profils (C1)", () => {
     const exit = container.querySelector('[data-item="desktop-annotation"]');
     expect(exit?.textContent).toBe("Quitter l'annotation");
     expect(exit?.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("C11b revue E : l'état figé et la cible d'envoi du contrôleur arrivent à la barre (« Bureau vivant », envoi en nouvel onglet grisé)", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    await a.control.enter();
+    const freeze = () => container.querySelector('[data-item="annotation-freeze"]');
+    const sendNew = () => container.querySelector<HTMLButtonElement>('[data-item="annotation-send-new"]');
+    expect(freeze()?.textContent).toBe("Figer le bureau");
+    expect(sendNew()?.disabled).toBe(false);
+    a.set({ frozen: true, sendTarget: "new" });
+    expect(freeze()?.textContent).toBe("Bureau vivant");
+    expect(freeze()?.getAttribute("aria-pressed")).toBe("true");
+    expect(sendNew()?.disabled).toBe(true);
   });
   it("C11a : la vue de annotate est oubliée à la sortie : à la réentrée, pas l'ancienne vue", async () => {
     const a = fakeAnnotationUi();

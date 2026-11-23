@@ -205,6 +205,8 @@ async function s2(browser, base) {
   await page.waitForTimeout(300);
   check(w.dialogs.length === d0 + 1, "S2 sans encre ni capture : un seul avis");
   check((await stageAttr(page, "data-page")) === "1/1", "S2 sans encre ni capture : nombre de pages inchangé");
+  const rien = await stageBox(page);
+  check(rien.height >= 640, `S2 sans encre ni capture : scène ${rien.height} px ≥ 640 après le retour`);
   noErrors(w, "S2 rien à envoyer");
   await ctx.close();
 }
@@ -249,6 +251,8 @@ async function s3(browser, base) {
   check((await text(page, item("annotation-freeze"))) === "Figer le bureau", "S3 : « Bureau vivant » → transparent (annotationOpaque=0), bouton « Figer le bureau »");
   await page.click(item("desktop-annotation"));
   await waitMode(page, "board");
+  const fige = await stageBox(page);
+  check(fige.height >= 640, `S3 figé : scène ${fige.height} px ≥ 640 après la sortie`);
   noErrors(w, "S3 figé");
   await ctx.close();
 
@@ -266,6 +270,8 @@ async function s3(browser, base) {
   check((await body(page, "annotationOpaque")) === "1", "S3 « Recapturer le bureau » : nouvelle capture, toujours figé");
   await page.click(item("desktop-annotation"));
   await waitMode(page, "board");
+  const opaque = await stageBox(page);
+  check(opaque.height >= 640, `S3 sans transparence : scène ${opaque.height} px ≥ 640 après la sortie`);
   noErrors(w, "S3 sans transparence");
   await ctx.close();
 

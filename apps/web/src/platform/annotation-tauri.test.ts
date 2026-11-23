@@ -6,7 +6,7 @@ import { toBase64 } from "./clipboard";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 
 const SHOT = { id: "4242-1", path: "/cache/captures/4242-1.png", size: 3, width: 320, height: 180 };
-function fakeIpc(o: { autoReady?: boolean; shot?: typeof SHOT | string; bytes?: Uint8Array | null; transparent?: boolean } = {}) {
+function fakeIpc(o: { autoReady?: boolean; shot?: typeof SHOT | string; bytes?: Uint8Array | null; transparent?: boolean; release?: string } = {}) {
   const listeners = new Map<string, Set<(e: { payload: unknown }) => void>>();
   const invokes: [string, unknown][] = [];
   const emitted: { target: string; event: string; payload: unknown }[] = [];
@@ -29,6 +29,7 @@ function fakeIpc(o: { autoReady?: boolean; shot?: typeof SHOT | string; bytes?: 
         if (o.bytes === null) throw "lecture impossible";
         return (o.bytes ?? new Uint8Array([1, 2, 3])).slice().buffer as T;
       }
+      if (cmd === "release_capture" && o.release !== undefined) throw o.release;
       return undefined as T;
     },
     async listen<T>(event: string, cb: (e: { readonly payload: T }) => void) {
@@ -166,6 +167,19 @@ describe("hôte des fenêtres de la coque (C11b, P24, P27, P28)", () => {
     const f = fakeIpc({ bytes: null });
     expect(await createTauriAnnotationWindows(f.ipc).capture(place)).toEqual({ ok: false, reason: "failed" });
     expect(f.invokes.at(-1)).toEqual(["release_capture", { id: SHOT.id }]);
+  });
+  it("revue C : lecture du PNG et release_capture en échec : chaque cause est dite par console.warn, le refus reste failed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const f = fakeIpc({ bytes: null, release: "fichier introuvable" });
+      expect(await createTauriAnnotationWindows(f.ipc).capture(place)).toEqual({ ok: false, reason: "failed" });
+      const said = warn.mock.calls.map((c) => String(c[0]));
+      expect(said).toHaveLength(2);
+      expect(said[0]).toContain("lecture impossible");
+      expect(said[1]).toContain("fichier introuvable");
+    } finally {
+      warn.mockRestore();
+    }
   });
   it("enter porte opaque (vrai sur demande) ; load renvoie le document sans annotation_enter (P15, P28)", async () => {
     const f = fakeIpc();

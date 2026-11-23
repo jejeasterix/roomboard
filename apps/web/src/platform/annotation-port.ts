@@ -77,6 +77,9 @@ export interface SendRequest {
   readonly origin: string | null;
   readonly image: CapturedImage | null;
   readonly view: AnnotationViewport | null;
+  /** C11b (P14) : vrai : bureau figé, le fond de la page de la vue part avec la page ; faux ou absent : `image` seule
+   *  (vivant sans capture : fond blanc, jamais le fond d'une page). */
+  readonly frozen?: boolean;
 }
 /** Onglet effectivement servi et rang (1 = première) de la page insérée. */
 export interface SendResult {

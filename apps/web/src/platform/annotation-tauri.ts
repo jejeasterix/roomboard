@@ -20,6 +20,9 @@ import {
 import { fromBase64, toBase64 } from "./clipboard";
 import { grantedFile } from "./host-tauri";
 
+/** Cause d'un rejet de la coque (chaîne) ou d'une lecture (`Error`). */
+const causeOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
 export interface AnnotationIpc {
   invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
   listen<T>(event: string, cb: (e: { readonly payload: T }) => void): Promise<() => void>;
@@ -104,10 +107,13 @@ export function createTauriAnnotationWindows(ipc: AnnotationIpc, readyTimeoutMs:
         // P24 : le PNG accordé est lu par morceaux (`read_granted_file`), puis toujours libéré.
         const raw = await grantedFile(ipc, shot.path, shot.size).blob();
         return { ok: true, image: { blob: new Blob([raw], { type: "image/png" }), width: shot.width, height: shot.height } };
-      } catch {
+      } catch (e) {
+        console.warn(`RoomBoard : capture du bureau non lue (${causeOf(e)})`);
         return { ok: false, reason: "failed" };
       } finally {
-        await ipc.invoke<void>("release_capture", { id: shot.id }).catch(() => undefined);
+        await ipc.invoke<void>("release_capture", { id: shot.id }).catch((e: unknown) => {
+          console.warn(`RoomBoard : capture du bureau non libérée (${causeOf(e)})`);
+        });
       }
     },
     collect() {

@@ -217,7 +217,8 @@ export interface Workspace {
   /** C11b (P14) : pose (image) ou retire (null) le fond de la page `page` (rang ; absent : page montrée) de l'onglet
    *  d'annotation ; faux sans onglet d'annotation. */
   setAnnotationBackdrop(image: CapturedImage | null, page?: number): Promise<boolean>;
-  /** C11b (P17) : fond image de la page montrée de l'onglet d'annotation ; null : aucun. */
+  /** C11b (P17) : fond image de la première page de l'onglet d'annotation, celle où `annotate` s'ouvre (jamais la page
+   *  montrée dans la fenêtre principale) ; null : aucun. */
   annotationBackdrop(): PageBackdrop | null;
   /** C11b (P3, P6 à P11) : page envoyée (capture ou fond figé, encre de la page de la vue) après la page montrée de
    *  l'origine, en une étape, ou dans un nouvel onglet ; null : rien inséré (avis dit). */
@@ -747,7 +748,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     },
     annotationBackdrop() {
       const tab = annotationEntry()?.session;
-      return tab === undefined ? null : imageBackdropOf(tab, tab.board.engine.state().page);
+      const first = tab?.board.doc.pageIds()[0];
+      return tab === undefined || first === undefined ? null : imageBackdropOf(tab, first);
     },
     async sendCapture(o) {
       const src = annotationEntry()?.session ?? null;
@@ -764,7 +766,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       try {
         let backdrop: PageBackdrop | null = null;
         if (o.image !== null) backdrop = await putCapture(assets, o.image);
-        else if (src !== null && inkPage !== null) {
+        else if (o.frozen === true && src !== null && inkPage !== null) {
           // P14 : bureau figé : le fond de la page d'annotation part avec la page.
           const frozen = imageBackdropOf(src, inkPage);
           const blob = frozen === null ? undefined : src.assets.get(frozen.ref.id);

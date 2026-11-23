@@ -2500,7 +2500,7 @@ describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () =
     await ws.setAnnotationBackdrop(IMG);
     const frozen = ann.board.doc.page(pages(ann)[0]!)!.backdrop!.asset;
     expect(origin.assets.get(frozen)).toBeUndefined();
-    await ws.sendCapture({ to: "origin", origin: originId, image: null, view: { page: 0, matrix: [1, 0, 0, 1, 0, 0] } });
+    await ws.sendCapture({ to: "origin", origin: originId, image: null, view: { page: 0, matrix: [1, 0, 0, 1, 0, 0] }, frozen: true });
     const sent = pages(origin)[1]!;
     expect(origin.board.doc.page(sent)!.backdrop).toMatchObject({ asset: frozen, kind: "image" });
     expect(origin.assets.get(frozen)).toBeDefined();
@@ -2536,6 +2536,28 @@ describe("C11b : envoi au tableau et fond figé (P3, P6 à P14, P17, P31)", () =
     expect(shell.notify).toHaveBeenCalledWith(TOO_MANY_TABS);
     expect(ws.tabs.list()).toHaveLength(MAX_TABS);
     expect(strokes(ann)).toBe(1);
+  });
+  it("C11b revue A : le fond lu est celui de la page 1, où `annotate` s'ouvre, même si l'onglet d'annotation montre sa page 2", async () => {
+    const ws = await setupWorkspace();
+    const ann = (await ws.annotationTab())!;
+    ann.board.doc.apply({ type: "AddPage", after: pages(ann)[0]! });
+    const shown = ann.board.engine.state.bind(ann.board.engine);
+    vi.spyOn(ann.board.engine, "state").mockImplementation(() => ({ ...shown(), page: pages(ann)[1]! })); // page 2 montrée
+    expect(ann.board.engine.state().page).toBe(pages(ann)[1]);
+    expect(await ws.setAnnotationBackdrop(IMG, 0)).toBe(true);
+    expect(ann.board.doc.page(pages(ann)[1]!)!.backdrop).toBeNull();
+    expect(ws.annotationBackdrop()).toMatchObject({ w: 320, h: 180 }); // fond sur la page 1 : réentrée figée
+    expect(await ws.setAnnotationBackdrop(null, 0)).toBe(true);
+    expect(await ws.setAnnotationBackdrop(IMG, 1)).toBe(true);
+    expect(ws.annotationBackdrop()).toBeNull(); // fond sur la page 2 seulement : la page 1 s'ouvre vivante
+  });
+  it("C11b revue A : vivant sans capture (frozen faux), page à fond blanc même si la page de la vue a un fond", async () => {
+    const { ws, origin, originId } = await twoPagesAndInk();
+    await ws.setAnnotationBackdrop(IMG, 0);
+    await ws.sendCapture({ to: "origin", origin: originId, image: null, view: { page: 0, matrix: [1, 0, 0, 1, 0, 0] }, frozen: false });
+    const sent = pages(origin)[1]!;
+    expect(origin.board.doc.page(sent)!.backdrop).toBeNull();
+    expect(origin.board.doc.elementIds(sent)).toHaveLength(1);
   });
   it.skipIf(real === null)("C11b vrai cœur : enregistrer puis rouvrir rend la page envoyée, fond et trait (S1, P31)", async () => {
     const { ws, origin, originId } = await twoPagesAndInk({ core: real!.core, codec: real!.codec, realHash: true });
