@@ -14,6 +14,7 @@ use roomboard_shell::{
 use serde::Serialize;
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, RunEvent, Runtime, State, WindowEvent};
 use roomboard_shell::annotation::{self as ann, Rect as AnnRect, RestoreStep};
+use roomboard_shell::capture;
 use tauri::{PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_fs::FsExt;
 
@@ -315,6 +316,7 @@ struct AnnotationSupport {
     supported: bool,
     reason: Option<&'static str>,
     screens: usize,
+    transparent: bool,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -330,14 +332,16 @@ fn rect_of(m: &tauri::Monitor) -> AnnRect {
     AnnRect { x: p.x, y: p.y, w: s.width, h: s.height }
 }
 
-/// C11a (P16) : session détectée par l'environnement ; nombre d'écrans pour « Écran suivant » (P15).
+/// C11a (P16) : session détectée par l'environnement ; nombre d'écrans pour « Écran suivant » (P15). C11b (P18) :
+/// transparence peinte ou non (compositeur X11 sondé par `capture::composited`).
 #[tauri::command]
 fn annotation_support(app: AppHandle) -> AnnotationSupport {
     let session = ann::detect_session(std::env::consts::OS, |k| std::env::var(k).ok());
     let screens = app.available_monitors().map(|m| m.len()).unwrap_or(1).max(1);
+    let transparent = ann::transparency(session, capture::composited());
     match ann::supported(session) {
-        Ok(()) => AnnotationSupport { supported: true, reason: None, screens },
-        Err(ann::Unsupported::Wayland) => AnnotationSupport { supported: false, reason: Some("wayland"), screens },
+        Ok(()) => AnnotationSupport { supported: true, reason: None, screens, transparent },
+        Err(ann::Unsupported::Wayland) => AnnotationSupport { supported: false, reason: Some("wayland"), screens, transparent },
     }
 }
 
@@ -356,7 +360,7 @@ async fn annotation_enter(
     if monitors.is_empty() {
         return Err("aucun écran".into());
     }
-    let rects: Vec<AnnRect> = monitors.iter().map(rect_of).collect();
+    let screens: Vec<(AnnRect, f64)> = monitors.iter().map(|m| (rect_of(m), m.scale_factor())).collect();
     // Déjà réduite à la barre (réentrée) : la géométrie mémorisée reste celle d'avant la première entrée.
     let already = saved.0.lock().unwrap_or_else(|e| e.into_inner()).is_some();
     let maximized = main.is_maximized().map_err(err)?;
@@ -372,9 +376,8 @@ async fn annotation_enter(
         }
     }
     let center = (pos.x + (size.width / 2) as i32, pos.y + (size.height / 2) as i32);
-    let i = ann::pick_screen(&rects, screen, center);
-    let px = ann::physical(thickness, monitors[i].scale_factor());
-    let (bar, area) = ann::split(rects[i], ann::side_of(&dock), px);
+    // C11b (P22) : même géométrie que `annotation_capture`, par la fonction pure partagée.
+    let ann::Placement { index: i, bar, area, .. } = ann::placement(&screens, screen, center, &dock, thickness);
     let annotate = match app.get_webview_window(ANNOTATE) {
         Some(w) => w,
         None => {
@@ -469,6 +472,90 @@ fn relaunch_compat(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// C11b (P27) : PNG accordé à la page, lu par `read_granted_file` puis libéré par `release_capture`.
+#[derive(Serialize)]
+struct CapturedPayload {
+    id: String,
+    path: String,
+    size: u64,
+    width: u32,
+    height: u32,
+}
+
+/// C11b : échec technique (fenêtre, écran, fil) : journalisé, rendu à la page sous le code stable `failed`.
+fn capture_failed(e: impl std::fmt::Display) -> String {
+    eprintln!("annotation_capture : {e}");
+    "failed".to_string()
+}
+
+/// C11b (P21 à P24, P27) : capture de l'écran de l'annotation (même géométrie que `annotation_enter`) sans nos
+/// fenêtres : Wayland refusé avant tout, `annotate` (si montrée) et `main` cachées, 250 ms puis capture hors du fil
+/// principal, fenêtres remontrées quoi qu'il arrive ; zone découpée, PNG écrit et accordé. Rejet : `denied`, `wayland`
+/// ou `failed`. La logique vit dans `roomboard_shell::capture`.
+#[tauri::command]
+async fn annotation_capture(
+    app: AppHandle,
+    screen: Option<usize>,
+    dock: String,
+    thickness: f64,
+) -> Result<CapturedPayload, String> {
+    let session = ann::detect_session(std::env::consts::OS, |k| std::env::var(k).ok());
+    capture::allowed(session).map_err(|e| e.code().to_string())?;
+    let main = main_window(&app).map_err(capture_failed)?;
+    let monitors = main.available_monitors().map_err(capture_failed)?;
+    if monitors.is_empty() {
+        return Err(capture_failed("aucun écran"));
+    }
+    let screens: Vec<(AnnRect, f64)> = monitors.iter().map(|m| (rect_of(m), m.scale_factor())).collect();
+    let pos = main.outer_position().map_err(capture_failed)?;
+    let size = main.inner_size().map_err(capture_failed)?;
+    let center = (pos.x + (size.width / 2) as i32, pos.y + (size.height / 2) as i32);
+    let place = ann::placement(&screens, screen, center, &dock, thickness);
+    let annotate = app
+        .get_webview_window(ANNOTATE)
+        .filter(|w| w.is_visible().unwrap_or(false));
+    // Aucun `?` entre cacher et remontrer : un échec de `hide()` n'empêche pas de remontrer les deux fenêtres.
+    let hidden = main.hide().and_then(|()| annotate.as_ref().map_or(Ok(()), |w| w.hide()));
+    let done = if hidden.is_ok() {
+        let handle = app.clone();
+        Some(
+            tauri::async_runtime::spawn_blocking(move || {
+                std::thread::sleep(Duration::from_millis(capture::HIDDEN_SETTLE_MS));
+                let office = handle.state::<Office>();
+                let granted = handle.state::<GrantedPaths>();
+                capture::capture_area(&granted, &office.root, session, place.monitor, place.area)
+            })
+            .await,
+        )
+    } else {
+        None
+    };
+    // Remontrées quoi qu'il arrive : la principale (barre), puis l'annotation (chacune tentée).
+    let shown_main = main.show();
+    let shown_annotate = annotate.as_ref().map_or(Ok(()), |w| w.show());
+    if let Err(e) = shown_main.and(shown_annotate) {
+        eprintln!("annotation_capture : fenêtres non remontrées ({e})");
+    }
+    hidden.map_err(capture_failed)?;
+    let captured = done.ok_or_else(|| capture_failed("capture non lancée"))?.map_err(capture_failed)?.map_err(|e| {
+        eprintln!("annotation_capture : {e}");
+        e.code().to_string()
+    })?;
+    Ok(CapturedPayload {
+        id: captured.id,
+        path: captured.path.to_string_lossy().into_owned(),
+        size: captured.size,
+        width: captured.width,
+        height: captured.height,
+    })
+}
+
+/// C11b (P24) : accord du PNG retiré et fichier supprimé, que la lecture ait réussi ou non.
+#[tauri::command]
+fn release_capture(office: State<'_, Office>, granted: State<'_, GrantedPaths>, id: String) {
+    capture::release(&granted, &office.root, &id);
+}
+
 fn main() {
     let granted = GrantedPaths::default();
     // Arguments non UTF-8 ignorés (`args()` paniquerait) : ils ne pourraient pas être relus par la page.
@@ -488,6 +575,7 @@ fn main() {
             std::fs::create_dir_all(&root)?;
             office::purge_conversions(&root);
             originals::purge(&root.join("originaux"), ORIGINALS_KEEP);
+            capture::purge(&root);
             app.manage(Office {
                 converter: office::find_converter(&Search::from_env()),
                 originals: Originals::new(root.join("originaux")),
@@ -514,7 +602,9 @@ fn main() {
             annotation_close,
             annotation_ignore,
             annotation_cursor,
-            relaunch_compat
+            relaunch_compat,
+            annotation_capture,
+            release_capture
         ])
         .on_window_event(|window, event| match event {
             // C11a (P18) : seuls les dépôts de `main` (réduite à la barre en annotation) sont accordés et émis.
