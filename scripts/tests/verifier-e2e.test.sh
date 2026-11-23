@@ -22,5 +22,8 @@ grep -q "scripts/essais/c11b-capture-navigateur.mjs" scripts/verifier.sh || ko "
 if grep -E 'essais/.*-navigateur\.mjs.*--captures?' scripts/verifier.sh >/dev/null; then ko "--e2e ne doit passer aucune option de capture"; fi
 # Les essais ne sont lancés que dans le bloc --e2e.
 awk '/essais\/.*-navigateur\.mjs/ && !in_e2e {print "hors bloc e2e : " $0; bad=1} /if \[ "\$E2E" = 1 \]/ {in_e2e=1} /^fi/ {in_e2e=0} END {exit bad}' scripts/verifier.sh >&2 || ko "un essai navigateur est lancé hors du bloc --e2e"
+# CLI : essai de bout en bout joué par verifier.sh, hors du bloc --e2e (aucun navigateur, D14).
+grep -q "scripts/essais/cli-essai.mjs" scripts/verifier.sh || ko "cli-essai absent de verifier.sh"
+grep -q "pnpm --filter @roomboard/cli build" scripts/verifier.sh || ko "build de la CLI absent de verifier.sh"
 [ "$fail" -eq 0 ] && echo "verifier-e2e.test.sh : OK"
 exit "$fail"
