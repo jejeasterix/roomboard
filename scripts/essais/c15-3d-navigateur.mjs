@@ -177,6 +177,17 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
   };
   const flat = ([r, g, b]) => (r === 255 && g === 255 && b === 255) || (Math.abs(r - 0xe5) <= 8 && Math.abs(g - 0xe7) <= 8 && Math.abs(b - 0xeb) <= 8);
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  /** Pixel central une fois l'image de l'objet dessinée. Le PNG de l'instantané se décode à part (`image-cache.ts`,
+   *  `bitmap`) : jusque-là la scène dessine la carte « Objet 3D » (#e5e7eb), même avec `data-model3d` déjà à jour (OE80). */
+  const drawnPixel = async (msg) => {
+    let px = null;
+    try {
+      await until(async () => !flat((px = await centerPixel())), `${msg} : image dessinée`);
+    } catch (e) {
+      throw e instanceof Echec ? new Echec(`${e.message} ; pixel central (${px?.join(",")})`) : e;
+    }
+    return px;
+  };
   const version = async () => Number(await attr("data-version"));
   const cube = cubeGlb();
   const mz = modelZip();
@@ -208,7 +219,8 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     }
     check(found, "S5 : objet du GLB sélectionné");
     check((await tag()) === "glb;instantane;87;20", `S5 : vue gardée « ${await tag()} »`);
-    check(!flat(await centerPixel()), "S5 : instantané dessiné sans WebGL");
+    const shown = await drawnPixel("S5 : instantané sans WebGL");
+    check(!flat(shown), `S5 : instantané dessiné sans WebGL (${shown.join(",")})`);
     await page.click('[data-model3d="orbit"]');
     await until(async () => (await tag()).split(";")[1] === "sans-webgl", "S5 : état sans-webgl après « Tourner »");
     await until(async () => page.$eval('[data-model3d="orbit"]', (b) => b.disabled || b.getAttribute("aria-disabled") === "true").catch(() => false), "S5 : « Tourner » désactivé", 5000);
@@ -248,7 +260,7 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
   await until(async () => (await tag()) === "glb;instantane;30;20", `S2 : sélectionné : data-model3d « ${await tag()} »`);
   await page.waitForSelector("[data-model3d-bar]");
   check((await stageBox(page, 640)).height >= 640, "S2 : scène >= 640 px avec la barre 3D ouverte");
-  const before = await centerPixel();
+  const before = await drawnPixel("S2 : instantané");
   check(!flat(before), `S2 : instantané coloré (${before.join(",")})`);
   const v0 = await version();
   await page.click('[data-model3d="orbit"]');
@@ -272,12 +284,7 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
   await until(async () => (await tag()) === "", `S2 : clic à côté : orbite fermée, désélectionné : « ${await tag()} »`);
   await mouse.click(400, 300);
   await until(async () => (await tag()) === "glb;instantane;87;20", `S2 : resélectionné, instantané de la vue tournée : « ${await tag()} »`);
-  let turned = await centerPixel();
-  for (let i = 0; i < 40 && flat(turned); i++) {
-    await page.waitForTimeout(100);
-    await fr();
-    turned = await centerPixel();
-  }
+  const turned = await drawnPixel("S2 : instantané de la vue tournée");
   console.log(`versions : départ ${v0}, après orbite ${await version()}`);
   check(dist(turned, before) > 20, `S2 : pixel central change après l'orbite (${before.join(",")} -> ${turned.join(",")})`);
   // Échap ferme aussi l'orbite, l'objet restant sélectionné.
@@ -302,7 +309,7 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
   await elements(2, "S3 : OBJ + MTL : 2 éléments");
   await noMessage("déposé sans son .mtl", "S3 : aucun avertissement « sans son .mtl »");
   await noMessage("fichier lié d'un modèle 3D", "S3 : aucun message « fichier lié d'un modèle 3D »");
-  const blue = await centerPixel();
+  const blue = await drawnPixel("S3 : OBJ");
   check(blue[2] > blue[0] + 40 && blue[2] > blue[1] + 40, `S3 : OBJ bleu (${blue.join(",")})`);
   await dropFile(page, "#stage", "seul.obj", cubeObj(null), "", [600, 520]);
   await messageSeen("déposé sans son .mtl");
