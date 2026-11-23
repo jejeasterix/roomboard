@@ -307,7 +307,7 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     expect(windows.log.indexOf("capture")).toBeGreaterThan(-1);
     expect(windows.log.indexOf("capture")).toBeLessThan(windows.log.indexOf("collect"));
     expect(deps.sendCapture).toHaveBeenCalledTimes(1);
-    expect(deps.sendCapture).toHaveBeenCalledWith({ to: "origin", origin: "t1", image: shot.ok ? shot.image : null, view });
+    expect(deps.sendCapture).toHaveBeenCalledWith({ to: "origin", origin: "t1", image: shot.ok ? shot.image : null, view, frozen: false });
     expect(ctl.state().active).toBe(false);
     expect(log.indexOf("show t1")).toBeLessThan(log.indexOf("send origin t1 image"));
     expect(log.at(-1)).toBe("say envoyé au tableau : page 2");
@@ -405,8 +405,11 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     await ctl.freeze();
     ctl.command({ kind: "setTool", tool: "select" });
     await flush();
+    const before = windows.sent.length;
     await ctl.freeze();
     expect(windows.captures()).toBe(1);
+    // Revue B : la session rechargée repart sur Sélection, pas sur le stylo par défaut d'`annotate`.
+    expect(windows.sent.slice(before)).toEqual([{ kind: "setTool", tool: "select" }]);
     expect(log.some((l) => l.startsWith("backdrop null"))).toBe(true);
     expect(windows.log).toContain("load transparent");
     expect(windows.log.at(-1)).toBe("pointer mouse");
@@ -426,7 +429,7 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     await ctl.freeze();
     await ctl.send("origin");
     expect(windows.captures()).toBe(1);
-    expect(deps.sendCapture).toHaveBeenCalledWith({ to: "origin", origin: "t1", image: null, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] } });
+    expect(deps.sendCapture).toHaveBeenCalledWith({ to: "origin", origin: "t1", image: null, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] }, frozen: true });
   });
   it("réentrée figée quand la page d'annotation a un fond (P17)", async () => {
     const { ctl, windows } = setup({ backdrop: true });
@@ -439,7 +442,7 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     const { ctl, windows, log } = setup({ capture: shot, transparent: false });
     await ctl.enter();
     expect(windows.captures()).toBe(1);
-    expect(log).toContain("backdrop 640x360 -");
+    expect(log).toContain("backdrop 640x360 0"); // revue A : page 0, celle qu'annotate montre en entrant
     expect(windows.opaque()).toBe(true);
     expect(ctl.state()).toMatchObject({ live: false, frozen: true });
     await ctl.freeze();
@@ -479,7 +482,7 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
   it("repli, capture en échec sur une page à fond : fond retiré avant l'envoi du document, figé blanc et opaque, avis (P18, revue)", async () => {
     const { ctl, windows, deps, log } = setup({ capture: { ok: false, reason: "failed" }, transparent: false, backdrop: true });
     await ctl.enter();
-    expect(log).toContain("backdrop null -");
+    expect(log).toContain("backdrop null 0"); // revue A : page 0
     const removed = (deps.setAnnotationBackdrop as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
     expect(removed).toBeLessThan((deps.encodeTab as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!);
     expect(windows.opaque()).toBe(true);
@@ -508,5 +511,50 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     await ctl.freeze();
     expect(ctl.state().frozen).toBe(false);
     expect(windows.log.filter((l) => l.startsWith("load"))).toEqual(["load opaque", "load transparent"]);
+  });
+  it("revue A : repli sans transparence, le fond capturé va sur la page 0 (celle qu'annotate montre), jamais sur la page montrée de l'onglet", async () => {
+    const { ctl, log } = setup({ capture: shot, transparent: false });
+    await ctl.enter();
+    expect(log.filter((l) => l.startsWith("backdrop"))).toEqual(["backdrop 640x360 0"]);
+  });
+  it("revue A : vivant, capture en échec, Envoyer : demande non figée (fond blanc, jamais le fond de la page de la vue)", async () => {
+    const { ctl, deps } = setup({ capture: { ok: false, reason: "failed" } });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(deps.sendCapture).toHaveBeenCalledWith(expect.objectContaining({ image: null, frozen: false }));
+  });
+  it("revue B : Figer recharge le document ; l'outil de dessin choisi est renvoyé à la session rechargée", async () => {
+    const { ctl, windows } = setup({ capture: shot });
+    await ctl.enter();
+    ctl.command({ kind: "setTool", tool: "highlighter" });
+    await flush();
+    const before = windows.sent.length;
+    await ctl.freeze();
+    expect(windows.sent.slice(before)).toEqual([{ kind: "setTool", tool: "highlighter" }]);
+    expect(ctl.state()).toMatchObject({ frozen: true, pointer: "draw" });
+  });
+  it("revue D : repli, fond refusé par le cœur : entrée figée blanche avec l'avis de capture impossible", async () => {
+    const { ctl, windows, deps, log } = setup({ capture: shot, transparent: false });
+    (deps.setAnnotationBackdrop as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await ctl.enter();
+    expect(windows.opaque()).toBe(true);
+    expect(ctl.state()).toMatchObject({ active: true, frozen: true });
+    expect(log).toContain("say capture du bureau impossible (échec de la capture) : page à fond blanc");
+  });
+  it("revue D : Figer, fond refusé par le cœur : figé blanc avec l'avis de capture impossible", async () => {
+    const { ctl, deps, log } = setup({ capture: shot });
+    await ctl.enter();
+    (deps.setAnnotationBackdrop as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await ctl.freeze();
+    expect(ctl.state().frozen).toBe(true);
+    expect(log).toContain("say capture du bureau impossible (échec de la capture) : page à fond blanc");
+  });
+  it("revue D : Figer, rechargement en échec après la pose : le fond posé est retiré, avis d'échec, reste vivant", async () => {
+    const { ctl, windows, log } = setup({ capture: shot, view: { page: 1, matrix: [1, 0, 0, 1, 0, 0] } });
+    await ctl.enter();
+    vi.spyOn(windows, "load").mockRejectedValueOnce(new Error("rechargement"));
+    await ctl.freeze();
+    expect(log.slice(-3)).toEqual(["backdrop 640x360 1", "backdrop null 1", "say Annotation impossible : rechargement"]);
+    expect(ctl.state().frozen).toBe(false);
   });
 });
