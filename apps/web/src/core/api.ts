@@ -323,7 +323,8 @@ export interface PageView {
 export interface Bounds { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }
 
 export interface StrokeBuilderApi {
-  push(points: Float32Array): Float32Array;
+  /** `ahead` : triplets provisoires (points prédits) qui prolongent le contour rendu, jamais gardés (OF44). */
+  push(points: Float32Array, ahead?: Float32Array): Float32Array;
   finish(): Float32Array;
   free(): void;
 }

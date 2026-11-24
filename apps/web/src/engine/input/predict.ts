@@ -1,6 +1,6 @@
 /**
  * Échelon 2 de DA9 : prédiction linéaire en TS, pour les navigateurs sans `getPredictedEvents` (WebKit). Les points
- * prédits sont dessinés en queue provisoire par le stylo, jamais enregistrés (D20). Décorateur du GestureSink : le
+ * prédits prolongent le contour vif du stylo (OF44), jamais enregistrés (D20). Décorateur du GestureSink : le
  * routeur, les outils et le moteur ne changent pas. Allumée : elle remplace les prédits natifs (comparaison sous Edge,
  * HL3b-2) ; éteinte : les prédits natifs passent tels quels.
  */

@@ -1,6 +1,6 @@
 /**
  * Rendu Canvas 2D à deux canvas (D19, DA2) : scène fixe (redessinée sur changement ou caméra) et interaction
- * (`desynchronized`, effacée à chaque image : encre vive, queue prédite, aperçu de gomme). `Path2D` en cache par id,
+ * (`desynchronized`, effacée à chaque image : encre vive, prédits compris, aperçu de gomme). `Path2D` en cache par id,
  * invalidé par `Change`. Échelle exacte tampon / CSS : l'arrondi du tampon ne décale pas l'encre (lot 1, T6c). Lignes de
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
@@ -696,15 +696,6 @@ export class Canvas2DRenderer implements Renderer {
     ctx.beginPath();
     tracePolygons(ctx, s.outline);
     ctx.fill("nonzero");
-    if (s.predicted.length < 4) return;
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = s.width;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(s.predicted[0] ?? 0, s.predicted[1] ?? 0);
-    for (let i = 2; i + 1 < s.predicted.length; i += 2) ctx.lineTo(s.predicted[i] ?? 0, s.predicted[i + 1] ?? 0);
-    ctx.stroke();
   }
 
   /**

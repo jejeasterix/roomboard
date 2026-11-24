@@ -47,8 +47,8 @@ function make() {
 const f32 = (v: readonly number[]): number[] => Array.from(new Float32Array(v));
 /** Contour concave en U (8 sommets) : un éventail en couleur depuis le premier sommet déborderait dans le creux. */
 const U = new Float32Array([0, 0, 30, 0, 30, 30, 20, 30, 20, 10, 10, 10, 10, 30, 0, 30]);
-const stroke = (outline: Float32Array, predicted = new Float32Array(0)): LiveLayer => ({
-  strokes: [{ outline, predicted, color: "#ff0000", width: 4 }],
+const stroke = (outline: Float32Array): LiveLayer => ({
+  strokes: [{ outline, color: "#ff0000" }],
   erasers: [],
 });
 
@@ -131,15 +131,10 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
     expect(gl.draws.map((d) => d.mode)).toEqual([gl.TRIANGLE_FAN, gl.TRIANGLE_STRIP, gl.TRIANGLE_FAN, gl.TRIANGLE_STRIP]);
   });
 
-  it("queue prédite : triangles épais à la largeur du trait, en couleur, hors stencil", () => {
+  it("trait vif : remplissage du contour seul, aucune queue dessinée à part (OF44)", () => {
     const { gl, r } = make();
-    r.drawLive(stroke(U, new Float32Array([30, 30, 40, 30])), IDENTITY);
-    expect(gl.draws[2]).toMatchObject({
-      mode: gl.TRIANGLES,
-      color: true,
-      stencil: false,
-      count: thickPolyline([30, 30, 40, 30], 2).length / 2,
-    });
+    r.drawLive(stroke(U), IDENTITY);
+    expect(gl.draws.map((d) => d.mode)).toEqual([gl.TRIANGLE_FAN, gl.TRIANGLE_STRIP]);
   });
 
   it("drawLive sans aperçu : effacé seulement (couleur et stencil), aucun dessin", () => {
@@ -199,14 +194,14 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
   it("couleur non reconnue : noir en direct, mais signalée dans badColors", () => {
     const { gl, r } = make();
     expect(r.badColors.size).toBe(0);
-    r.drawLive({ strokes: [{ outline: U, predicted: new Float32Array(0), color: "teal", width: 4 }], erasers: [] }, IDENTITY);
+    r.drawLive({ strokes: [{ outline: U, color: "teal" }], erasers: [] }, IDENTITY);
     expect(gl.draws[1]?.rgba).toEqual([0, 0, 0, 1]);
     expect([...r.badColors]).toEqual(["teal"]);
   });
 
   it("couleur rgba : alpha transmis au dessin", () => {
     const { gl, r } = make();
-    r.drawLive({ strokes: [{ outline: U, predicted: new Float32Array(0), color: "rgba(255,0,0,0.5)", width: 4 }], erasers: [] }, IDENTITY);
+    r.drawLive({ strokes: [{ outline: U, color: "rgba(255,0,0,0.5)" }], erasers: [] }, IDENTITY);
     expect(gl.draws[1]?.rgba).toEqual(f32([1, 0, 0, 0.5]));
     expect(r.badColors.size).toBe(0);
   });
@@ -259,7 +254,7 @@ describe("WebGL2LiveRenderer (échelon 4)", () => {
 
   it("couleur à canal non numérique : noir, signalée dans badColors, jamais NaN dans l'uniform", () => {
     const { gl, r } = make();
-    r.drawLive({ strokes: [{ outline: U, predicted: new Float32Array(0), color: "rgb(1.2.3,0,0)", width: 4 }], erasers: [] }, IDENTITY);
+    r.drawLive({ strokes: [{ outline: U, color: "rgb(1.2.3,0,0)" }], erasers: [] }, IDENTITY);
     expect([...r.badColors]).toEqual(["rgb(1.2.3,0,0)"]);
     expect(gl.draws[1]?.rgba).toEqual(f32([0, 0, 0, 1]));
   });

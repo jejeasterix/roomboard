@@ -686,7 +686,11 @@ class WasmCoreDocument implements CoreDocument {
 
   newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
     const b = new this.mod.StrokeBuilder(style.width);
-    return { push: (p: Float32Array) => b.push(p), finish: () => b.finish(), free: () => b.free() };
+    return {
+      push: (p: Float32Array, ahead?: Float32Array) => (ahead && ahead.length > 0 ? b.push_ahead(p, ahead) : b.push(p)),
+      finish: () => b.finish(),
+      free: () => b.free(),
+    };
   }
 
   free(): void { this.d.free(); }

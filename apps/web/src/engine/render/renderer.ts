@@ -25,14 +25,10 @@ export interface BackdropPainter {
   ): Exclude<BackdropState, "">;
 }
 
-/** Trait en cours : contour du StrokeBuilder (polygones x, y monde séparés par NaN, NaN) et queue prédite. */
+/** Trait en cours : contour du StrokeBuilder (polygones x, y monde séparés par NaN, NaN), points prédits compris (OF44). */
 export interface LiveStrokeView {
   readonly outline: Float32Array;
-  /** x, y monde : dernier point reçu puis points prédits ; vide si aucun. Jamais enregistrés (D20). */
-  readonly predicted: Float32Array;
   readonly color: string;
-  /** Épaisseur en unités monde. */
-  readonly width: number;
 }
 
 /** Passage de gomme en cours (D38) : chemin x, y monde, rayon en unités monde. */
