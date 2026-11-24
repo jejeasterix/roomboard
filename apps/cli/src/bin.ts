@@ -1,4 +1,6 @@
 // Entrée du binaire `roomboard` (D3) : branche le processus sur `main` ; les `.wasm` sont à côté du fichier construit.
+// cli-lot3 (D34) : `quiet` d'abord, avant que le fichier construit n'évalue pdf.js (trois avertissements de chargement).
+import "./quiet";
 import { exitAfterWrites, lineWriter, streamLines, type CliIO } from "./contract";
 import { main } from "./main";
 

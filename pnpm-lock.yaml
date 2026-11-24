@@ -13,6 +13,10 @@ importers:
         version: 132.0.0
 
   apps/cli:
+    dependencies:
+      pdfjs-dist:
+        specifier: 6.5.438
+        version: 6.5.438
     devDependencies:
       '@types/node':
         specifier: 26.6.6
