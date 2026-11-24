@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PDFJS_WARNINGS, quietWarn } from "./quiet";
+import { PDFJS_WARNINGS, quietError, quietWarn, THREE_ERRORS } from "./quiet";
 
 describe("quietWarn (cli-lot3, D34)", () => {
   it("quietWarn — retire les trois avertissements de chargement de pdf.js", () => {
@@ -36,6 +36,37 @@ describe("quietWarn (cli-lot3, D34)", () => {
       console.warn("garde");
     } finally {
       console.warn = original;
+    }
+    expect(calls).toEqual([["garde"]]);
+  });
+});
+
+describe("quietError (cli-lot4, D77)", () => {
+  it("quietError — retire le message de texture absente de GLTFLoader (déjà dit par missing)", () => {
+    const error = vi.fn();
+    quietError(error)("THREE.GLTFLoader: Couldn't load texture", "blob:nodedata:1234");
+    expect(error).not.toHaveBeenCalled();
+    expect(THREE_ERRORS).toEqual(["THREE.GLTFLoader: Couldn't load texture"]);
+  });
+  it("quietError — garde tout autre message, préfixe lu au début du premier argument seul", () => {
+    const error = vi.fn();
+    const q = quietError(error);
+    q("THREE.GLTFLoader: autre chose");
+    q("erreur\nTHREE.GLTFLoader: Couldn't load texture");
+    q(new Error("x"));
+    expect(error.mock.calls.map((c) => String(c[0]))).toEqual(["THREE.GLTFLoader: autre chose", "erreur\nTHREE.GLTFLoader: Couldn't load texture", "Error: x"]);
+  });
+  it("quietError — à l'import, console.error est enveloppé", async () => {
+    const original = console.error;
+    const calls: unknown[][] = [];
+    console.error = (...a: unknown[]) => void calls.push(a);
+    try {
+      vi.resetModules();
+      await import("./quiet");
+      console.error("THREE.GLTFLoader: Couldn't load texture", "blob:nodedata:1");
+      console.error("garde");
+    } finally {
+      console.error = original;
     }
     expect(calls).toEqual([["garde"]]);
   });
