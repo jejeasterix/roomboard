@@ -79,7 +79,11 @@ describeWasm("avis de lecture d'un tableau (constat 4)", () => {
     const f = boardFixtures(dir);
     const io = memoryIO();
     expect(await main(["run", f.iwb, "--out", join(dir, "l.roomboard")], io)).toBe(0);
-    expect(io.json().some((l: Json) => Array.isArray(l.notices) && l.notices.join(" ").includes("vidéo"))).toBe(true);
+    // Place et forme (T13) : une seule ligne, la dernière (`written`), qui porte les avis d'ouverture ; aucune ligne `{"notices"}` seule.
+    const lines = io.json();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].written).toEqual([join(dir, "l.roomboard")]);
+    expect(lines[0].notices.join(" ")).toContain("vidéo");
   });
   it("state d'un document sans avis : aucun champ notices", async () => {
     const a = join(tmpDir(), "a.roomboard");
@@ -106,5 +110,66 @@ describeWasm("save et exportFragment (constats 5 et 6)", () => {
     const out = join(tmpDir(), "x.iwb");
     await expect(exportFragment(s, { to: out })).rejects.toMatchObject({ code: "usage" });
     expect(existsSync(out)).toBe(false);
+  });
+});
+
+describeWasm("avis d'ouverture : aucune ligne en plus (T13, constat 1)", () => {
+  it("run lecon.iwb : la ligne 0 est le résultat de l'opération 1, avis d'ouverture en tête de notices", async () => {
+    const f = boardFixtures(tmpDir());
+    const io = memoryIO([JSON.stringify({ op: "tab.list" }), JSON.stringify({ op: "tab.list" })]);
+    expect(await main(["run", f.iwb], io)).toBe(0);
+    const lines = io.json();
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ op: 1, ok: true });
+    expect(lines[0].notices[0]).toContain("vidéo");
+    expect(lines[1]).toMatchObject({ op: 2, ok: true });
+    expect(lines[1]).not.toHaveProperty("notices");
+  });
+  it("run lecon.iwb sans opération ni enregistrement : l'avis sort sur la seule ligne qui existe", async () => {
+    const f = boardFixtures(tmpDir());
+    const io = memoryIO();
+    expect(await main(["run", f.iwb], io)).toBe(0);
+    expect(io.json()).toHaveLength(1);
+    expect(io.json()[0].notices.join(" ")).toContain("vidéo");
+  });
+  it("apply sur un .roomboard à lien manquant : une seule ligne, parsable, avec l'avis en tête", async () => {
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    const media = { type: "AddMedia", page: "$page:0", asset: { id: "cd".repeat(32), name: "clip.webm", mime: "video/webm", size: 3 }, linked: "videos/clip.webm", mediaType: "video", w: 320, h: 180, duration: 2.5, poster: null, matrix: [1, 0, 0, 1, 0, 0] };
+    expect(await main(["run", "--new", "--out", a], memoryIO([JSON.stringify(media)]))).toBe(0);
+    const io = memoryIO();
+    expect(await main(["apply", a, JSON.stringify({ op: "tab.list" })], io)).toBe(0);
+    expect(io.stdout).toHaveLength(1);
+    const line = JSON.parse(io.stdout[0]!);
+    expect(line).toMatchObject({ op: 1, ok: true });
+    expect(line.notices).toHaveLength(1);
+  });
+});
+
+describeWasm("sources lues par la session (T13, constats 2 et 3)", () => {
+  it("run --new : import de lecon.iwb, tab.select t2, export vers lecon.iwb : code 2, source intacte", async () => {
+    const f = boardFixtures(tmpDir());
+    const before = bytesOf(f.iwb);
+    const io = memoryIO([JSON.stringify({ op: "import", files: [f.iwb] }), JSON.stringify({ op: "tab.select", tab: "t2" }), JSON.stringify({ op: "export", to: f.iwb })]);
+    expect(await main(["run", "--new"], io)).toBe(2);
+    expect(bytesOf(f.iwb)).toBe(before);
+  });
+  it("run lecon.iwb --out lien.roomboard (lien vers lecon.iwb) : code 2, source intacte", async () => {
+    const dir = tmpDir();
+    const f = boardFixtures(dir);
+    const before = bytesOf(f.iwb);
+    const link = join(dir, "lien.roomboard");
+    symlinkSync(f.iwb, link);
+    const io = memoryIO();
+    expect(await main(["run", f.iwb, "--out", link], io)).toBe(2);
+    expect(io.errors()[0].error.code).toBe("usage");
+    expect(bytesOf(f.iwb)).toBe(before);
+  });
+  it("save d'un .roomboard ouvert à son propre chemin : toujours accepté", async () => {
+    const a = join(tmpDir(), "a.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const s = await nodeSession(memoryIO());
+    const tab = (await s.open(a)).session;
+    await expect(s.save(tab, a)).resolves.toBe(a);
   });
 });
