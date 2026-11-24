@@ -35,14 +35,15 @@ export async function loadPlaywright() {
   return found ? import(pathToFileURL(found).href) : null;
 }
 
-/** `headers` : en-têtes ajoutés à chaque réponse 200 (ex. la CSP de la coque). */
-export function serve({ headers = {} } = {}) {
+/** `headers` : en-têtes ajoutés à chaque réponse 200 (ex. la CSP de la coque). `dist` : dossier servi (défaut
+ *  apps/web/dist ; design-l1 sert le build « avant » d'un autre worktree). */
+export function serve({ headers = {}, dist = DIST } = {}) {
   const server = createServer(async (req, res) => {
     try {
       const path = decodeURIComponent(new URL(req.url ?? "/", "http://local").pathname);
       const rel = normalize(path).replace(/^[/\\]+/, "");
-      const file = join(DIST, rel === "" ? "index.html" : rel);
-      if (file !== DIST && !file.startsWith(DIST + sep)) {
+      const file = join(dist, rel === "" ? "index.html" : rel);
+      if (file !== dist && !file.startsWith(dist + sep)) {
         res.writeHead(403).end();
         return;
       }
