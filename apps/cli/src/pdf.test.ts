@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { PDF_CUT_MESSAGE, PDF_RASTER_MISSING_MESSAGE } from "../../web/src/app/pdf-export";
 import { PDF_WRITE_FAILED_MESSAGE } from "../../web/src/app/pdf-overlay-vector";
+import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import { exportPdfFile } from "./exporter";
 import { main } from "./main";
@@ -222,6 +223,14 @@ describeWasm("S2 à S4 — écrire un PDF (cli-lot3)", () => {
     await s.exec(JSON.stringify({ type: "AddImage", page: "$page:0", asset: { id, name: "a.gif", mime: "image/gif", size: gif.size }, w: 40, h: 40, matrix: [1, 0, 0, 1, 100, 100] }));
     const out = join(tmpDir(), "gif.pdf");
     await expect(exportPdfFile(s, out)).rejects.toMatchObject({ code: "command", message: expect.stringContaining("image/gif") });
+    expect(existsSync(out)).toBe(false);
+  });
+  it("D41 — image du document non lue : UNREAD_ASSETS_MESSAGE, code 1, rien d'écrit", async () => {
+    const s = await nodeSession(memoryIO());
+    const tab = s.newTab().session;
+    tab.doc.apply({ type: "AddImage", page: tab.doc.pageIds()[0]!, asset: { id: "ab".repeat(32), name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
+    const out = join(tmpDir(), "x.pdf");
+    await expect(exportPdfFile(s, out)).rejects.toMatchObject({ code: "command", exit: 1, message: UNREAD_ASSETS_MESSAGE });
     expect(existsSync(out)).toBe(false);
   });
   it("S4 — formats : .pdf lu et écrit ; import a.roomboard x.docx : 3 « lot 4 » ; convert a.roomboard x.docx : 2", async () => {
