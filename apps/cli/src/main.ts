@@ -9,6 +9,7 @@
  * cli-lot2 : `convert` (D25), `library` (DA9, H13).
  * cli-lot2 (D23) : toute écriture de document vise un `.roomboard`, contrôlé avant tout chargement par `documentTarget`.
  * cli-lot3 : `.pdf` lu (`state`, `run`, `import`, source de `convert`) et écrit (`export`, `convert`, D41).
+ * cli-lot4 (D59, D72) : un fichier Office (`state`, `run`, source de `convert`) est converti par `roomboard-office`.
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
@@ -29,12 +30,13 @@ const USAGE = {
   version: "version",
   formats: "formats",
   new: "new <sortie.roomboard> [--replace]",
-  state: "state <fichier.roomboard | fichier.rbitem | fichier.pdf | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]",
+  state:
+    "state <fichier.roomboard | fichier.rbitem | fichier.pdf | fichier Office .docx .odt .pptx .odp .doc .ppt .xls .ods | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]",
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
   export: "export <fichier> <sortie.rbitem | .iwb | .ubz | .pdf> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
-  convert: "convert <source> <sortie.roomboard | .iwb | .ubz | .pdf>",
+  convert: "convert <source .roomboard | .pdf | tableau | Office> <sortie.roomboard | .iwb | .ubz | .pdf>",
   library: "library list <dossier> [--folder <f>] | library import <dossier> <paquet.rbpack> | library export <dossier> <sortie.rbpack> [--folder <f>]",
 } as const;
 
@@ -43,7 +45,9 @@ const USAGE_HELP = "help | --help | -h";
 const REFS =
   "opérations : une ligne JSON par commande du cœur ({\"type\":…}) ou de la CLI ({\"op\":…}) ; références (chaîne entière) : " +
   "$n, $n.k, $page:i, $tab:i ; $$ donne un $ littéral";
-const ENV = "ROOMBOARD_NOW=<millisecondes depuis 1970> : date du manifeste (essais reproductibles), sinon l'heure du système";
+const ENV =
+  "ROOMBOARD_NOW=<millisecondes depuis 1970> : date du manifeste (essais reproductibles), sinon l'heure du système ; " +
+  "ROOMBOARD_OFFICE=<chemin> : binaire roomboard-office des fichiers Office, sinon target/debug/ puis target/release/ du dépôt";
 const usageLines = (): string[] => [...Object.values(USAGE), USAGE_HELP].map((u) => `roomboard ${u}`);
 
 const none = (args: readonly string[], name: keyof typeof USAGE): void => {
