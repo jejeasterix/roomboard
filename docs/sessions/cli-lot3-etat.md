@@ -85,7 +85,7 @@ Coffre de la VM en lecture seule (OD81) : quatre écritures à faire depuis le M
 ---
 id: 2026-11-24-roomboard-cli-lot3-clos
 type: journal
-summary: "RoomBoard CLI lot 3 clos (OF8) : lecture d'un PDF en onglet avec fonds pdf-page, écriture d'un PDF annoté (pdf-lib + krilla) depuis un .roomboard, convert vers et depuis le PDF ; pdf.js joué en processus par globalThis.pdfjsWorker, sans canvas ; polices Liberation lues dans pdfjs-dist ; PR #__PR__."
+summary: "RoomBoard CLI lot 3 clos (OF8) : lecture d'un PDF en onglet avec fonds pdf-page, écriture d'un PDF annoté (pdf-lib + krilla) depuis un .roomboard, convert vers et depuis le PDF ; pdf.js joué en processus par globalThis.pdfjsWorker, sans canvas ; polices Liberation lues dans pdfjs-dist ; PR #46."
 created: 2026-11-24
 project: "[[roomboard]]"
 tags: [projet/roomboard, chaine/nouvelle-feature, cli, pdf]
@@ -152,5 +152,5 @@ evidence: "apps/cli/src/bin.ts (commits 98e3026 et c72947a) ; échecs « Cannot 
 ### 4. Fiche projet — `01_Projets/roomboard.md`, ligne 21, segment à ajouter à la fin
 
 ```
- ; CLI lot 3 (OF8 : lecture d'un PDF en onglet avec fonds pdf-page, écriture d'un PDF annoté pdf-lib + krilla, convert vers et depuis le PDF ; pdf.js en processus sans canvas ; polices Liberation GPL v2 avec exception, lues dans pdfjs-dist ; lot 4 Office, médias, 3D, autres images restant) clos (PR #__PR__, `main` __MAIN__) — voir [[2026-11-24-roomboard-cli-lot3-clos]] et [[NNNN-roomboard-cli-lot3-pdfjs-en-processus]]
+ ; CLI lot 3 (OF8 : lecture d'un PDF en onglet avec fonds pdf-page, écriture d'un PDF annoté pdf-lib + krilla, convert vers et depuis le PDF ; pdf.js en processus sans canvas ; polices Liberation GPL v2 avec exception, lues dans pdfjs-dist ; lot 4 Office, médias, 3D, autres images restant) clos (PR #46, fusion locale dans `main`) — voir [[2026-11-24-roomboard-cli-lot3-clos]] et [[NNNN-roomboard-cli-lot3-pdfjs-en-processus]]
 ```
