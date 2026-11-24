@@ -13,7 +13,10 @@ const BIN: &str = env!("CARGO_BIN_EXE_roomboard-office");
 struct Scratch(PathBuf);
 impl Scratch {
     fn new(name: &str) -> Self {
-        let p = std::env::temp_dir().join(format!("roomboard-office-bin-{}-{name}", std::process::id()));
+        let p = std::env::temp_dir().join(format!(
+            "roomboard-office-bin-{}-{name}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).expect("dossier d'essai");
         Scratch(p)
@@ -32,7 +35,10 @@ impl Drop for Scratch {
 }
 
 fn fixture(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join(name)
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
 }
 
 fn run(s: &Scratch, args: &[&OsStr]) -> Output {
@@ -54,7 +60,8 @@ fn soffice(s: &Scratch) -> bool {
         return true;
     }
     if std::env::var("ROOMBOARD_SANS_SOFFICE").as_deref() == Ok("1") {
-        let _ = std::io::stderr().write_all(b"test saute : soffice introuvable et ROOMBOARD_SANS_SOFFICE=1\n");
+        let _ = std::io::stderr()
+            .write_all(b"test saute : soffice introuvable et ROOMBOARD_SANS_SOFFICE=1\n");
         return false;
     }
     panic!("soffice introuvable : installez LibreOffice, ou posez ROOMBOARD_SANS_SOFFICE=1 pour sauter ce test");
@@ -63,9 +70,16 @@ fn soffice(s: &Scratch) -> bool {
 /// Processus vivants dont la ligne de commande contient `needle` (Linux : `/proc`) ; vide ailleurs.
 fn processes_with(needle: &Path) -> Vec<String> {
     let needle = needle.to_string_lossy().into_owned();
-    let Ok(rd) = fs::read_dir("/proc") else { return Vec::new() };
+    let Ok(rd) = fs::read_dir("/proc") else {
+        return Vec::new();
+    };
     rd.flatten()
-        .filter(|e| e.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit()))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .bytes()
+                .all(|b| b.is_ascii_digit())
+        })
         .filter_map(|e| fs::read(e.path().join("cmdline")).ok())
         .map(|c| text(&c).replace('\0', " "))
         .filter(|c| c.contains(&needle))
@@ -77,7 +91,11 @@ fn usage_is_2() {
     let s = Scratch::new("usage");
     let out = run(&s, &[]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(text(&out.stderr).starts_with("usage : roomboard-office --check"), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stderr).starts_with("usage : roomboard-office --check"),
+        "{}",
+        text(&out.stderr)
+    );
     let out = run(&s, &[OsStr::new("a"), OsStr::new("b"), OsStr::new("c")]);
     assert_eq!(out.status.code(), Some(2));
 }
@@ -104,7 +122,10 @@ fn converts_docx_then_releases_only_its_conversion() {
         return;
     }
     // Conversion d'un autre processus vivant (le test lui-même) : jamais effacée par ce lancement (D51).
-    let other = s.root().join("conversions").join(format!("{}-1", std::process::id()));
+    let other = s
+        .root()
+        .join("conversions")
+        .join(format!("{}-1", std::process::id()));
     fs::create_dir_all(&other).unwrap();
     let pdf = s.0.join("cours.pdf");
     let out = run(&s, &[fixture("cours.docx").as_os_str(), pdf.as_os_str()]);
@@ -117,7 +138,11 @@ fn converts_docx_then_releases_only_its_conversion() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(left, vec![format!("{}-1", std::process::id())]);
-    assert_eq!(processes_with(&s.cache()), Vec::<String>::new(), "soffice encore vivant (G4)");
+    assert_eq!(
+        processes_with(&s.cache()),
+        Vec::<String>::new(),
+        "soffice encore vivant (G4)"
+    );
 }
 
 #[test]
