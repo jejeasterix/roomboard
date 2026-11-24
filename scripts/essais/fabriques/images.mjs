@@ -59,9 +59,10 @@ const full = (type, version, flags, ...parts) => box(type, Uint8Array.of(version
 /**
  * AVIF (`avif`) ou HEIC (`heic`) : `ftyp`, puis `meta` avec `pitm` (élément 1, sauf `pitm: false`), `ipco` (`ispe` 64 × 64
  * de la vignette, puis `ispe` w × h) et `ipma` (élément 2 → propriété 1, élément 1 → propriété 2) : la taille lue est
- * celle de l'élément principal, ni la première ni (si w × h < 64 × 64) la plus grande.
+ * celle de l'élément principal, ni la première ni (si w × h < 64 × 64) la plus grande ; `wide` : `ipma` en version 1,
+ * drapeau large (éléments sur 32 bits, indices sur 16).
  */
-export function heif(brand, w, h, { pitm = true } = {}) {
+export function heif(brand, w, h, { pitm = true, wide = false } = {}) {
   const ispe = (a, b) => full("ispe", 0, 0, be32(a), be32(b));
   const meta = full(
     "meta",
@@ -69,7 +70,13 @@ export function heif(brand, w, h, { pitm = true } = {}) {
     0,
     full("hdlr", 0, 0, be32(0), enc("pict"), new Uint8Array(12), Uint8Array.of(0)),
     ...(pitm ? [full("pitm", 0, 0, be16(1))] : []),
-    box("iprp", box("ipco", ispe(64, 64), ispe(w, h)), full("ipma", 0, 0, be32(2), be16(2), Uint8Array.of(1, 0x81), be16(1), Uint8Array.of(1, 0x82))),
+    box(
+      "iprp",
+      box("ipco", ispe(64, 64), ispe(w, h)),
+      wide
+        ? full("ipma", 1, 1, be32(2), be32(2), Uint8Array.of(1), be16(0x8001), be32(1), Uint8Array.of(1), be16(0x0002))
+        : full("ipma", 0, 0, be32(2), be16(2), Uint8Array.of(1, 0x81), be16(1), Uint8Array.of(1, 0x82)),
+    ),
   );
   return cat(box("ftyp", enc(brand), be32(0), enc("mif1"), enc(brand)), meta, box("mdat", new Uint8Array(4)));
 }

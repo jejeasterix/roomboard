@@ -6,7 +6,7 @@
  * (DA20). Durée arrondie au ms comme `probeMedia` ; vidéo si `width > 0` (règle M16 d'`addMedia`). null : illisible.
  */
 import type { MediaFormat } from "./media-import";
-import { isoBoxes, type IsoBox } from "./image-size";
+import { ascii, at, isoBoxes, u16be, u16le, u32be, u32le, type IsoBox } from "./image-size";
 
 export interface MediaHeader {
   /** Secondes, arrondies au ms. */
@@ -16,17 +16,7 @@ export interface MediaHeader {
   readonly height: number;
 }
 
-const at = (b: Uint8Array, i: number): number => b[i] ?? 0;
-const ascii = (b: Uint8Array, from: number, to: number): string => {
-  let s = "";
-  for (let i = from; i < to && i < b.length; i++) s += String.fromCharCode(at(b, i));
-  return s;
-};
-const u16le = (b: Uint8Array, i: number): number => at(b, i) | (at(b, i + 1) << 8);
-const u32le = (b: Uint8Array, i: number): number => (u16le(b, i) | (at(b, i + 2) << 16) | (at(b, i + 3) << 24)) >>> 0;
-const u16be = (b: Uint8Array, i: number): number => (at(b, i) << 8) | at(b, i + 1);
 const u24be = (b: Uint8Array, i: number): number => (at(b, i) << 16) | u16be(b, i + 1);
-const u32be = (b: Uint8Array, i: number): number => ((at(b, i) << 24) | u24be(b, i + 1)) >>> 0;
 const u64be = (b: Uint8Array, i: number): number => u32be(b, i) * 2 ** 32 + u32be(b, i + 4);
 const uintBe = (b: Uint8Array, i: number, n: number): number => {
   let v = 0;
@@ -58,8 +48,12 @@ function videoSize(b: Uint8Array, trak: IsoBox): { readonly width: number; reado
   if (!video || tkhd === null) return null;
   const w = tkhd.start + (at(b, tkhd.start) === 1 ? 88 : 76);
   if (w + 8 > tkhd.end) return null;
-  const width = Math.round(u32be(b, w) / 65536);
-  const height = Math.round(u32be(b, w + 4) / 65536);
+  const matrix = tkhd.start + (at(b, tkhd.start) === 1 ? 52 : 40); // ISO/IEC 14496-12 : matrice de 9 × 32 bits, a au début, d en 4e rang
+  const turned = u32be(b, matrix) === 0 && u32be(b, matrix + 16) === 0; // a = d = 0 : rotation de 90° ou 270°
+  const first = Math.round(u32be(b, w) / 65536);
+  const second = Math.round(u32be(b, w + 4) / 65536);
+  const width = turned ? second : first;
+  const height = turned ? first : second;
   return width > 0 && height > 0 ? { width, height } : null;
 }
 

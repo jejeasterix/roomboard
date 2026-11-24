@@ -19,7 +19,7 @@ import type { SheetFormatsBinding } from "../../web/src/platform/container";
 import { gridOf } from "../../web/src/platform/sheet-reader";
 import { CliError } from "./contract";
 import { readBytes } from "./disk";
-import { extOf, importBlocked, leftAsideReason, packMessage, unsupportedMessage } from "./formats";
+import { extOf, leftAsideReason, packMessage } from "./formats";
 import { headerBlocked, nodeMedia } from "./media-node";
 import { nodeModel3d } from "./model3d-node";
 import { checkOffice, convertOfficeFile } from "./office-node";
@@ -77,15 +77,13 @@ export function parseAt(text: string): Point {
   return atOf(Number(parts[0]), Number(parts[1]));
 }
 
-/** Code 3 avant toute lecture ni écriture (D9) : format laissé de côté (H48) ou lot non livré ; un paquet `.rbpack` :
+/** Code 3 avant toute lecture ni écriture (D9) : format laissé de côté (H48) ; un paquet `.rbpack` :
  *  code 2, renvoi à `library` (D26). Le convertisseur Office (`checkOffice`) se contrôle à la suite, avant toute lecture. */
 export function checkSources(sources: readonly string[]): void {
   for (const s of sources) {
     if (extOf(s) === ".rbpack") throw new CliError("usage", packMessage(s)); // D26 : un paquet va dans une bibliothèque
     const why = leftAsideReason(s);
     if (why !== null) throw new CliError("unsupported", `${basename(s)} : format non lu par la CLI : ${why}`);
-    const lot = importBlocked(s);
-    if (lot !== null) throw new CliError("unsupported", unsupportedMessage(s, lot));
   }
 }
 

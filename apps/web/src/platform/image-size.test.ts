@@ -62,6 +62,25 @@ describe("headerSize (cli-lot4, D63, DA19)", () => {
     ];
     for (const [bytes, kind] of all) for (let n = 0; n <= bytes.length; n++) expect(() => headerSize(bytes.subarray(0, n), kind)).not.toThrow();
   });
+  it("SVG hostile de 1 Mio (chiffres, attribut sans fin) : résultat en moins de 200 ms", () => {
+    const digits = text(`<svg width="${"1".repeat(1 << 20)}!" height="10">`);
+    const letters = text(`<svg ${"a".repeat(1 << 20)}>`);
+    for (const bytes of [digits, letters]) {
+      const t0 = performance.now();
+      expect(() => headerSize(bytes, "svg")).not.toThrow();
+      expect(performance.now() - t0).toBeLessThan(200);
+    }
+  });
+  it("HEIF : ipma en version 1 à drapeau large lu ; boîtes de taille 0 ou 1 : taille ou null, sans exception", () => {
+    expect(headerSize(heif("avif", 120, 80, { wide: true }), "avif")).toEqual({ w: 120, h: 80 });
+    const real = heif("avif", 7, 5);
+    const head = (n: number) => Uint8Array.of(n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+    const mk = (size: number[], rest: Uint8Array) => Uint8Array.from([...size, ...text("meta"), ...rest]);
+    const hostile = [mk([0, 0, 0, 0], real.subarray(20)), mk([0, 0, 0, 1], real.subarray(20)), mk([0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 3], new Uint8Array(0)), Uint8Array.from([...real, ...head(0), ...text("free")]), Uint8Array.from([...real, ...head(1), ...text("free")])];
+    for (const bytes of hostile) for (const kind of ["avif", "heic"] as const) expect(() => headerSize(bytes, kind)).not.toThrow();
+    expect([...isoBoxes(Uint8Array.from([...head(0), ...text("free"), 1, 2]), 0, 10)].map((x) => x.end)).toEqual([10]);
+    expect([...isoBoxes(Uint8Array.from([...head(1), ...text("free"), ...head(0), ...head(16)]), 0, 16)].map((x) => x.end)).toEqual([16]);
+  });
   it("isoBoxes — boîtes d'un fichier HEIF ; boîte trop longue rendue jusqu'à la fin puis arrêt", () => {
     const b = heif("heic", 8, 8);
     expect([...isoBoxes(b, 0, b.length)].map((x) => x.type)).toEqual(["ftyp", "meta", "mdat"]);
