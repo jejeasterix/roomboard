@@ -375,7 +375,7 @@ async function start(): Promise<void> {
     importPack: async (name, bytes) => {
       try {
         const r = await library.importPack(bytes, name);
-        await prepared.shell.notify(importedMessage(name, r));
+        await prepared.shell.notify(importedMessage(name, r), "info");
         return true;
       } catch (e) {
         await prepared.shell.notify(`Import impossible (${name}) : ${messageOf(e)}`);
@@ -468,7 +468,7 @@ async function start(): Promise<void> {
           showTab: (id) => void workspace.tabs.activate(id),
           importFiles: (f, at) => workspace.importFiles(f, at),
           pageNumber: () => workspace.active().board.engine.state().pageIndex + 1,
-          say: (m) => workspace.say(m),
+          say: (...a) => workspace.say(...a),
           bar: measureBar,
           profile: () => active.profile(),
           screens: support?.screens ?? 1,

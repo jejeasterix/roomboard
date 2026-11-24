@@ -16,7 +16,7 @@
 import { messageOf } from "./controller";
 import { BAMBOO_NOT_FLIPCHART, hasBambooMagic } from "./bamboo";
 import type { BoardSourceFormat } from "./board-reader";
-import { FLIPCHART_EXTENSION, IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Point, type SaveTarget } from "./files";
+import { FLIPCHART_EXTENSION, IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Notify, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
 import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
@@ -52,7 +52,7 @@ export interface ImportDeps {
     readonly target: SaveTarget | null;
     readonly path?: string | null;
   }): Promise<boolean>;
-  notify(message: string): Promise<void>;
+  notify: Notify;
   /** Vrai quand plus aucun onglet ne peut s'ouvrir : un refus de `openDocument` arrête alors les documents suivants. */
   full?(): boolean;
   /** Onglet qui reçoit les objets, lu une fois au début de `importFiles` (R3) ; absent ou null : aucun objet inséré. */
@@ -103,7 +103,7 @@ export interface ImportContext {
   /** Images déjà insérées par cet appel (cascade, R4). */
   readonly inserted: number;
   readonly target: ImageTarget | null;
-  notify(message: string): Promise<void>;
+  notify: Notify;
   /** C15 (DAX2) : fichiers du même appel réclamés par `companions` ; [] sinon (appel d'un seul fichier, lien). */
   readonly companions: readonly DroppedFile[];
   /** Mineur C15 : noms des fichiers réclamés écartés car au-delà du plafond, déjà dits trop gros ; [] ou absent sinon. */
