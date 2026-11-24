@@ -98,7 +98,7 @@ Coffre de la VM en lecture seule (OD81) : trois écritures à faire depuis le Ma
 ---
 id: 2026-11-24-roomboard-cli-lot2-clos
 type: journal
-summary: "RoomBoard CLI lot 2 clos (OF5) : insertion d'un .rbitem (tableau neuf ou existant, --grid), lecture des tableaux blancs .iwb .ubz .notebook .olf .flipchart, écriture .iwb .ubz, commande convert, bibliothèque .rbpack (library list|import|export) ; corps des Workers en fonctions jouées en processus ; cible de document .roomboard seule ; PR #__PR__."
+summary: "RoomBoard CLI lot 2 clos (OF5) : insertion d'un .rbitem (tableau neuf ou existant, --grid), lecture des tableaux blancs .iwb .ubz .notebook .olf .flipchart, écriture .iwb .ubz, commande convert, bibliothèque .rbpack (library list|import|export) ; corps des Workers en fonctions jouées en processus ; cible de document .roomboard seule ; PR #45."
 created: 2026-11-24
 project: "[[roomboard]]"
 tags: [projet/roomboard, chaine/nouvelle-feature, cli]
@@ -143,5 +143,5 @@ evidence: "docs/plans/cli-lot2-cadrage.md (D17 à D31, DA7 à DA10) ; apps/web/s
 ### 3. Fiche projet — `01_Projets/roomboard.md`, ligne 21, segment à ajouter à la fin
 
 ```
- ; CLI lot 2 (OF5 : insertion .rbitem, lecture .iwb .ubz .notebook .olf .flipchart, écriture .iwb .ubz, convert, bibliothèque .rbpack par `library` ; Workers joués en processus ; cible de document .roomboard seule ; lots 3 PDF et 4 Office, médias, 3D restants) clos (PR #__PR__, `main` __MAIN__) — voir [[2026-11-24-roomboard-cli-lot2-clos]] et [[NNNN-roomboard-cli-lot2-workers-en-processus]]
+ ; CLI lot 2 (OF5 : insertion .rbitem, lecture .iwb .ubz .notebook .olf .flipchart, écriture .iwb .ubz, convert, bibliothèque .rbpack par `library` ; Workers joués en processus ; cible de document .roomboard seule ; lots 3 PDF et 4 Office, médias, 3D restants) clos (PR #45, `main` 48118ae) — voir [[2026-11-24-roomboard-cli-lot2-clos]] et [[NNNN-roomboard-cli-lot2-workers-en-processus]]
 ```
