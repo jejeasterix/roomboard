@@ -48,7 +48,7 @@ function videoSize(b: Uint8Array, trak: IsoBox): { readonly width: number; reado
   if (!video || tkhd === null) return null;
   const w = tkhd.start + (at(b, tkhd.start) === 1 ? 88 : 76);
   if (w + 8 > tkhd.end) return null;
-  const matrix = tkhd.start + (at(b, tkhd.start) === 1 ? 52 : 40); // ISO/IEC 14496-12 : matrice de 9 × 32 bits, a au début, d en 4e rang
+  const matrix = tkhd.start + (at(b, tkhd.start) === 1 ? 52 : 40); // ISO/IEC 14496-12 : matrice de 9 × 32 bits, a = 1er élément, d = 5e (décalage 16)
   const turned = u32be(b, matrix) === 0 && u32be(b, matrix + 16) === 0; // a = d = 0 : rotation de 90° ou 270°
   const first = Math.round(u32be(b, w) / 65536);
   const second = Math.round(u32be(b, w + 4) / 65536);

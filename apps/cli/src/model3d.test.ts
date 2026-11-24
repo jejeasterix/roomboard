@@ -1,11 +1,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { cubeMtl, cubeObj, glbTextured, gltfDataUri, gltfPair, plyTriangle, texturePng, stlTriangle } from "../../../scripts/essais/fabriques/modeles.mjs";
 import { mp4, wav } from "../../../scripts/essais/fabriques/medias.mjs";
 import { COMPANION_ALONE_MESSAGE, NO_WEBGL_MESSAGE } from "../../web/src/platform/model3d-import";
 import { MODEL3D_UNREADABLE } from "../../web/src/platform/model3d-handlers";
 import { main } from "./main";
+import { nodeSession } from "./session";
 import { describeWasm, fabZip, memoryIO, pdfFixture, tmpDir, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
@@ -21,6 +22,12 @@ const put = (dir: string, files: Record<string, Uint8Array>): string[] =>
   });
 
 describeWasm("S4 — 3D sans vignette (cli-lot4)", () => {
+  // Chargement à froid (three.js, Wasm du cœur et des formats) fait une fois ici, hors du délai du premier test : sous
+  // charge, le premier test dépassait 5000 ms en le payant seul (même patron que pdf.test.ts).
+  beforeAll(async () => {
+    await import("../../web/src/platform/model-view-three");
+    await (await nodeSession(memoryIO())).deps.formats();
+  });
   it("S4 — import cube.obj cube.mtl tex.png tri.stl tri.gltf tri.bin tex.glb : quatre objets, instantané nul, avis une fois, stderr vide", async () => {
     const { dir, a } = await board();
     const { gltf, bin } = gltfPair();
