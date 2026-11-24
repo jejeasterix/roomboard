@@ -3,9 +3,9 @@
  * (`content.xml` ou pages `pageNNN.svg` triées par numéro, images à côté), noms d'onglet et de copie, avis. Aucun DOM.
  */
 import { PDF_MAX_PAGES } from "../core/api";
-import { BOARD_OBJECTS_MESSAGE, normalBoardPath } from "../platform/board-reader";
+import { normalBoardPath } from "../platform/board-reader";
 import { BAMBOO_STRUCTURE_EXTENSIONS } from "../platform/bamboo";
-import { SKIPPED_LABEL } from "../platform/board-list";
+import { BOARD_OBJECTS_MESSAGE, SKIPPED_LABEL } from "../platform/board-list";
 import { ROOMBOARD_EXTENSION } from "../platform/files";
 import type { BoardFormat, BoardListPage, BoardObject, BoardSourceFormat } from "./board-io";
 

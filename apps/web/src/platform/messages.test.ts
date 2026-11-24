@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import * as openExport from "../app/open-export";
 import * as controller from "./controller";
@@ -22,7 +23,7 @@ describe("messages (OF13, D9)", () => {
   });
 
   it("feuille : aucun import", () => {
-    expect(readFileSync(new URL("./messages.ts", import.meta.url), "utf8")).not.toMatch(/^\s*(import|export .* from)\s/m);
+    expect(ts.preProcessFile(readFileSync(new URL("./messages.ts", import.meta.url), "utf8"), true, true).importedFiles.map((f) => f.fileName)).toEqual([]);
   });
 
   it("gabarit écrit une seule fois : aucun autre module (page, CLI) ne compose « Ouverture impossible (${…}) »", () => {

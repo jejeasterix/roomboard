@@ -50,27 +50,35 @@ function resolveSpec(from: string, spec: string): string | null {
   return candidates.find((c) => existsSync(c)) ?? null;
 }
 
-/** Fichiers non-test de `platform/`, chemins absolus triés. */
-function sourceFiles(): string[] {
-  return readdirSync(PLATFORM)
-    .filter((n) => /\.tsx?$/.test(n) && !/\.test\.tsx?$/.test(n))
-    .sort()
-    .map((n) => join(PLATFORM, n));
+/** Fichiers `.ts`/`.tsx` non-test sous `dir` (récursif, hors `.d.ts` et dossiers générés), chemins absolus triés. */
+function sourceFilesUnder(dir: string): string[] {
+  return readdirSync(dir, { recursive: true, encoding: "utf8" })
+    .map((n) => join(dir, n))
+    .filter((f) => /\.tsx?$/.test(f) && !/\.(test|d)\.tsx?$/.test(f) && !GENERATED.some((g) => inside(g, f)))
+    .sort();
 }
 
-/** Imports relatifs des fichiers non-test de `platform/` ; `unresolved` : `fichier:ligne → spécificateur`. */
-function platformEdges(): { readonly edges: Edge[]; readonly unresolved: string[] } {
+/** Fichiers non-test de `platform/`, sous-dossiers compris. */
+const sourceFiles = (): string[] => sourceFilesUnder(PLATFORM);
+
+/**
+ * Imports relatifs des fichiers non-test de `src/` ; `unresolved` : `fichier:ligne → spécificateur`, limité à `platform/`
+ * (ailleurs, un spécificateur non résolu — asset, `?url`, module généré — est ignoré).
+ */
+function srcEdges(): { readonly edges: Edge[]; readonly unresolved: string[] } {
   const edges: Edge[] = [];
   const unresolved: string[] = [];
-  for (const from of sourceFiles()) {
+  for (const from of sourceFilesUnder(SRC)) {
+    const inPlatform = inside(PLATFORM, from);
     for (const { spec, line } of importsOf(readFileSync(from, "utf8"))) {
       if (!spec.startsWith(".")) continue;
       const target = resolve(dirname(from), spec);
       if (GENERATED.some((g) => inside(g, target))) continue;
-      // Un import vers `src/app/` compte même si le fichier manque (D3).
-      const to = resolveSpec(from, spec) ?? (inside(APP, target) ? target : null);
-      if (to === null) unresolved.push(`${basename(from)}:${line} → ${spec}`);
-      else edges.push({ from, line, to });
+      // Un import de `platform/` vers `src/app/` compte même si le fichier manque (D3).
+      const to = resolveSpec(from, spec) ?? (inPlatform && inside(APP, target) ? target : null);
+      if (to === null) {
+        if (inPlatform) unresolved.push(`${basename(from)}:${line} → ${spec}`);
+      } else edges.push({ from, line, to });
     }
   }
   return { edges, unresolved };
@@ -156,14 +164,15 @@ describe("détecteur de la garde (D2)", () => {
 });
 
 describe("couches de platform/ (OF13, D2)", () => {
-  const { edges, unresolved } = platformEdges();
+  const { edges: allEdges, unresolved } = srcEdges();
+  const edges = allEdges.filter((e) => inside(PLATFORM, e.from));
 
   it("lit bien le dossier : au moins 53 fichiers et 150 imports relatifs", () => {
     expect(sourceFiles().length).toBeGreaterThanOrEqual(53);
     expect(edges.length).toBeGreaterThanOrEqual(150);
   });
 
-  it("tout import relatif se résout (sauf wasm-formats/, généré)", () => {
+  it("tout import relatif de platform/ se résout (sauf wasm-formats/, généré)", () => {
     expect(unresolved).toEqual([]);
   });
 
@@ -171,9 +180,10 @@ describe("couches de platform/ (OF13, D2)", () => {
     expect(edges.filter((e) => inside(APP, e.to)).map((e) => `${basename(e.from)}:${e.line} → ${relative(SRC, e.to)}`)).toEqual([]);
   });
 
-  it("aucun cycle d'import entre les fichiers non-test de platform/", () => {
-    const graph = new Map<string, string[]>(sourceFiles().map((f) => [f, []]));
-    for (const e of edges) graph.get(e.from)?.push(e.to);
-    expect(findCycles(graph).map((c) => c.map((f) => basename(f)).join(" → "))).toEqual([]);
+  it("aucun cycle d'import, dans src/, qui touche un fichier non-test de platform/", () => {
+    const graph = new Map<string, string[]>(sourceFilesUnder(SRC).map((f) => [f, []]));
+    for (const e of allEdges) graph.get(e.from)?.push(e.to);
+    const touching = findCycles(graph).filter((c) => c.some((f) => inside(PLATFORM, f)));
+    expect(touching.map((c) => c.map((f) => relative(SRC, f)).join(" → "))).toEqual([]);
   });
 });

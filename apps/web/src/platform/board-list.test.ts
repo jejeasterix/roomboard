@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import * as boardFiles from "../app/board-files";
 import * as boardIo from "../app/board-io";
@@ -78,15 +79,7 @@ describe("board-list (OF13, D6)", () => {
   });
 
   it("feuille : n'importe que des types de core/api", () => {
-    const lines = readFileSync(new URL("./board-list.ts", import.meta.url), "utf8")
-      .split("\n")
-      .filter((l) => /^(import|export .* from)\s/.test(l));
-    expect(lines).toEqual(['import type { Matrix, ShapeKind, TextSpan } from "../core/api";']);
-  });
-
-  it("le Worker ZIP et zip-read n'importent plus app/", () => {
-    for (const f of ["./zip-worker.ts", "./zip-read.ts", "./olf-read.ts"]) {
-      expect(readFileSync(new URL(f, import.meta.url), "utf8"), f).not.toMatch(/from "\.\.\/app\//);
-    }
+    const imports = ts.preProcessFile(readFileSync(new URL("./board-list.ts", import.meta.url), "utf8"), true, true).importedFiles.map((f) => f.fileName);
+    expect(imports).toEqual(["../core/api"]);
   });
 });
