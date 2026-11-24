@@ -6,9 +6,11 @@
  * s'écrit au lot 1 et ne s'insère qu'au lot 2 ; `formats` rend toujours `{ ext, read, write, readLot, writeLot, notes }` (DA2).
  * D27 (cli-lot2) : le code 3 se lit sur `covered`, par format et par sens ; `LOT_LIVRE` = plus haut lot dont toutes les
  * entrées sont couvertes, un test l'exige. Un chantier qui livre un format change ses lots ici et passe son `covered` (§ 7).
+ * cli-lot3 (D42) : `.pdf` couvert, `LOT_LIVRE = 3` ; plus aucune écriture d'un lot non livré, le code 3 ne sort plus que
+ * d'un `import` du lot 4.
  */
 export type Lot = 1 | 2 | 3 | 4;
-export const LOT_LIVRE: Lot = 2;
+export const LOT_LIVRE: Lot = 3;
 
 export interface Coverage {
   readonly read: boolean;
@@ -51,7 +53,7 @@ const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".roomboard", entry(1, 1, "roomboard")],
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", branched(2, 2, "rbpack", { read: true, write: true }, "par `library import` / `library export`")],
-  [".pdf", entry(3, 3, "pdf")],
+  [".pdf", branched(3, 3, "pdf", { read: true, write: true }, "fond `pdf-page`, PDF d'origine gardé en asset", "export : pages d'origine recopiées, annotation vectorielle ; sans repli en image (code 1)", "couleurs nommées et texte mesurés comme H25, H26")],
   [".iwb", branched(2, 2, "iwb", { read: true, write: true }, UNREAD_IMAGES)],
   [".ubz", branched(2, 2, "ubz", { read: true, write: true }, UNREAD_IMAGES)],
   [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
@@ -95,12 +97,6 @@ export function lotOf(name: string): Lot | null {
 export function importBlocked(name: string): Lot | null {
   const e = formatOf(name);
   return e === null || e.read === null || e.covered.read ? null : e.read;
-}
-
-/** Lot d'un format reconnu dont l'export arrive plus tard ; null si écrit aujourd'hui, jamais écrit ou inconnu. */
-export function exportBlocked(name: string): Lot | null {
-  const e = formatOf(name);
-  return e === null || e.write === null || e.covered.write ? null : e.write;
 }
 
 /** D26 : un paquet `.rbpack` ne s'importe pas dans un document ; message qui renvoie à `library`. */

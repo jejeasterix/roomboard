@@ -6,6 +6,8 @@
  * cli-lot2 (D22, D23, D29) : un tableau `.iwb .ubz .notebook .olf .flipchart` est lu par `readBoardFile` du produit en
  * onglet sans fichier ; un document ne s'enregistre qu'en `.roomboard` (`documentTarget`) ; après une panique du module
  * des formats (`interrupted`), plus aucune écriture.
+ * cli-lot3 (D40) : un `.pdf` est lu par `readPdfFile` du produit en onglet sans fichier ; pdf-lib, moteur pdf.js et écrivain
+ * krilla en dépendances (T6 écrit le PDF).
  */
 import { basename } from "node:path";
 import { readBoardFile } from "../../web/src/app/board-convert";
@@ -13,20 +15,26 @@ import { boardWarningsMessage } from "../../web/src/app/board-files";
 import type { BoardPorts, BoardSourceFormat } from "../../web/src/app/board-io";
 import type { FragmentOps } from "../../web/src/app/fragments";
 import { createContainerIO, type ContainerIO, type ReadKind, type ReadResult } from "../../web/src/app/container-io";
+import { readPdfFile, type PdfRead } from "../../web/src/app/pdf-convert";
+import type { PdfLib } from "../../web/src/app/pdf-export";
+import type { PdfWriter } from "../../web/src/app/pdf-overlay-vector";
+import type { PdfEngine } from "../../web/src/engine/render/pdf-port";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabEntry, type Tabs } from "../../web/src/app/tabs";
 import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
 import { createPageCodec, type ContainerCodec, type FormatsBinding, type SheetFormatsBinding } from "../../web/src/platform/container";
 import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
+import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
-import { checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
 import { needString, optString, parseOp, type CliOpName, type RefContext } from "./ops";
+import { nodePdfEngine, nodePdfWriter } from "./pdf-node";
 import { stateOf } from "./state";
 import { loadCore, loadFormats } from "./wasm-node";
 
@@ -46,6 +54,12 @@ export interface SessionDeps {
   readonly formats: () => Promise<SheetFormatsBinding>;
   readonly fragments: FragmentOps<CliPage>;
   readonly board: BoardPorts;
+  /** cli-lot3 (D44) : pdf-lib résolu depuis `apps/web` ; `TestableIO.pdfLib` le remplace dans les tests. */
+  loadPdfLib(): Promise<PdfLib>;
+  /** cli-lot3 (D32) : pdf.js en processus, sans rendu (`nodePdfEngine`). */
+  readonly pdf: PdfEngine;
+  /** cli-lot3 (D38) : écrivain krilla en processus (`nodePdfWriter`) ; panique → `interrupted` (D29). */
+  readonly pdfWriter: PdfWriter;
   /** D29 : vrai après une panique du module des formats dans ce processus. */
   interrupted(): boolean;
   now(): string;
@@ -88,6 +102,8 @@ export interface Session {
   openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null>;
   /** Tableau ouvert par l'importeur (`openBoard`) en onglet sans fichier : false si refusé, l'avis est dans `notices`. */
   openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
+  /** PDF ouvert par l'importeur (`openPdf`) en onglet sans fichier : false si refusé, l'avis est dans `notices`. */
+  openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
   save(tab: CliTab, to?: string | null): Promise<string>;
   /** Retient un fichier lu par la session hors onglet (source d'import) : une sortie ne le remplace pas. */
   noteSource(path: string): void;
@@ -151,9 +167,25 @@ export function createSession(deps: SessionDeps): Session {
     return read;
   }
 
+  /** Lit un PDF (D35, D40) ; échec : message complet du produit ; avis d'ouverture (500 pages) dans les notices (D31). */
+  async function readPdfNoticed(name: string, blob: Blob): Promise<PdfRead> {
+    let read: PdfRead;
+    try {
+      read = await readPdfFile({ name, blob }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() });
+    } catch (e) {
+      throw new CliError("format", messageOf(e));
+    }
+    deps.notices.push(...read.warnings);
+    return read;
+  }
+
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
     sources.add(path);
+    if (kind === "document" && isPdfOut(path)) {
+      const read = await readPdfNoticed(basename(path), new Blob([bytes as BlobPart]));
+      return { doc: read.doc, assets: read.assets };
+    }
     const format = kind === "document" ? boardFormatOf(path) : null;
     if (format !== null) {
       const read = await readBoardNoticed(basename(path), new Blob([bytes as BlobPart]), format);
@@ -167,29 +199,36 @@ export function createSession(deps: SessionDeps): Session {
   async function open(path: string): Promise<TabEntry<CliTab>> {
     if (tabs.list().length >= MAX_TABS) throw new CliError("command", TOO_MANY_TABS);
     const read = await readDoc(path, "document");
-    // D22 : un tableau ouvert est un onglet sans fichier (comme `target: null` de la page) : jamais réécrit à son chemin.
-    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null ? path : null });
+    // D22, D40 : un tableau ou un PDF ouvert est un onglet sans fichier (comme `target: null` de la page) : jamais réécrit à son chemin.
+    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null && !isPdfOut(path) ? path : null });
   }
-  async function openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> {
+  /**
+   * D22, D40 : fichier lu par l'importeur (`read`, lancé après le contrôle du nombre d'onglets) en onglet sans fichier ;
+   * false si refusé, l'avis est dans `notices`.
+   */
+  async function openReadTab(name: string, read: () => Promise<Pick<ReadResult, "doc" | "assets">>): Promise<boolean> {
     if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
+      deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
       return false;
     }
-    let read: Awaited<ReturnType<typeof readBoard>>;
+    let r: Pick<ReadResult, "doc" | "assets">;
     try {
-      read = await readBoardNoticed(file.name, file.blob, file.format);
+      r = await read();
     } catch (e) {
-      deps.notices.push(messageOf(e)); // déjà « Ouverture impossible (nom) : … »
+      deps.notices.push(messageOf(e)); // déjà le message complet du produit (« Ouverture impossible (nom) : … »)
       return false;
     }
     try {
-      add({ doc: read.doc, assets: read.assets, file: null });
+      add({ doc: r.doc, assets: r.assets, file: null });
       return true;
     } catch (e) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
+      deps.notices.push(`Ouverture impossible (${name}) : ${messageOf(e)}`);
       return false;
     }
   }
+  const openBoard = (file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> =>
+    openReadTab(file.name, () => readBoardNoticed(file.name, file.blob, file.format));
+  const openPdf = (file: { readonly name: string; readonly blob: Blob }): Promise<boolean> => openReadTab(file.name, () => readPdfNoticed(file.name, file.blob));
   async function openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null> {
     if (tabs.list().length >= MAX_TABS) {
       deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
@@ -263,11 +302,11 @@ export function createSession(deps: SessionDeps): Session {
       }
       case "export": {
         const to = needString(args, "to");
-        if (isBoardOut(to)) {
+        if (isBoardOut(to) || isPdfOut(to)) {
           for (const k of ["ids", "page", "grid", "name"]) {
             if (args[k] !== undefined) throw new CliError("usage", `export ${extOf(to)} : document entier, « ${k} » ne s'y applique pas`);
           }
-          return { ...(await exportBoardFile(session, to)) };
+          return { ...(await exportWhole(session, to)) };
         }
         const ids = args["ids"];
         if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) throw new CliError("usage", "ids : liste d'ids attendue");
@@ -301,6 +340,7 @@ export function createSession(deps: SessionDeps): Session {
     open,
     openBytes,
     openBoard,
+    openPdf,
     save,
     noteSource: (path) => void sources.add(path),
     write,
@@ -341,6 +381,8 @@ export function createSession(deps: SessionDeps): Session {
 export interface TestableIO extends CliIO {
   /** Test seulement : module des formats des tableaux, à la place du vrai (câblage de D29). */
   readonly formats?: () => Promise<FormatsBinding>;
+  /** Test seulement : pdf-lib à la place du vrai (PDF d'origine refusé, D39). */
+  readonly pdfLib?: () => Promise<PdfLib>;
 }
 /** Session branchée sur les vrais modules : cœur, conteneur (module formats chargé au premier besoin), date du manifeste. */
 export async function nodeSession(io: TestableIO): Promise<Session> {
@@ -359,6 +401,9 @@ export async function nodeSession(io: TestableIO): Promise<Session> {
   });
   const now = (): string => nowOf(io.env);
   let interrupted = false;
+  const onPanic = (): void => {
+    interrupted = true;
+  };
   return createSession({
     core,
     io: containerIO,
@@ -367,9 +412,10 @@ export async function nodeSession(io: TestableIO): Promise<Session> {
     formats,
     now,
     fragments: cliFragments({ io: containerIO, core, now, notices }),
-    board: nodeBoardPorts(io.formats ?? formats, () => {
-      interrupted = true;
-    }),
+    board: nodeBoardPorts(io.formats ?? formats, onPanic),
+    loadPdfLib: io.pdfLib ?? loadPdfLib,
+    pdf: nodePdfEngine(),
+    pdfWriter: nodePdfWriter(io.formats ?? formats, onPanic),
     interrupted: () => interrupted,
   });
 }

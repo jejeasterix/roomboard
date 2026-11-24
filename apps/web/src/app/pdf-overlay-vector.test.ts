@@ -1,10 +1,11 @@
 import { PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib";
 import { describe, expect, it, vi } from "vitest";
 import type { AssetInfo } from "../core/api";
+import { fakeCore } from "../core/fake-core";
 import { RecordingContext2D, type RecordedList } from "../engine/render/record-ctx";
 import { hasPdfWriter, type FormatsBinding } from "../platform/container";
 import type { WorkerLike } from "../platform/one-shot-worker";
-import { createVectorOverlay, fallbackOverlay, PDF_WRITE_FAILED_MESSAGE, workerPdfWriter, type PdfWriter } from "./pdf-overlay-vector";
+import { createVectorOverlay, fallbackOverlay, PDF_WRITE_FAILED_MESSAGE, vectorPainter, workerPdfWriter, type PdfWriter } from "./pdf-overlay-vector";
 import type { OverlayProducer } from "./pdf-export";
 
 interface NodeFs { existsSync(p: URL): boolean; readFileSync(p: URL): Uint8Array }
@@ -198,3 +199,67 @@ describe("superposition vectorielle (C12, PF22)", () => {
     expect(text).toContain("RoomBoard vectoriel");
   });
 });
+
+describe("vectorPainter (cli-lot3, D37)", () => {
+  it("vectorPainter — peint le contenu de la page avec des chemins enregistrés : un rectangle → un dessin, une page krilla demandée", async () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0]!;
+    doc.apply({ type: "AddShape", page, shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style: { color: "#1e40af", width: 4 }, fill: null });
+    const lists: RecordedList[] = [];
+    const out = await createVectorOverlay({
+      doc,
+      assets: { get: () => undefined },
+      alive: () => true,
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: vectorPainter(doc),
+      fonts: async () => [new Uint8Array([9])],
+      toPng: async () => new Uint8Array(0),
+      write: async (l) => {
+        lists.push(l);
+        return new Uint8Array([7]);
+      },
+    }).pages([req(page)]);
+    expect(out).toEqual([{ kind: "pdf", bytes: new Uint8Array([7]), index: 0 }]);
+    expect(lists).toHaveLength(1);
+    expect(lists[0]!.drawn[0]).toBeGreaterThan(0);
+  });
+  it("vectorPainter — trait d'encre : contour tracé par RecordingPath, jamais Path2D (piégé : le peintre de l'écran lèverait)", async () => {
+    // pdf.js (legacy) pose un Path2D de remplacement dans Node : piégé ici, indépendamment de l'ordre des tests.
+    vi.stubGlobal(
+      "Path2D",
+      class {
+        constructor() {
+          throw new Error("Path2D appelé");
+        }
+      },
+    );
+    try {
+      await paintStroke();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+/** Un trait d'encre peint par `vectorPainter` : son contour passe par `makePath` (`Canvas2DRenderer.pathOf`). */
+async function paintStroke(): Promise<void> {
+  const doc = fakeCore.blank();
+  const page = doc.pageIds()[0]!;
+  doc.apply({ type: "CommitStroke", page, points: new Float32Array([100, 700, 0.5, 200, 700, 0.5, 300, 760, 0.5]), style: { color: "#000000", width: 4 } });
+  const lists: RecordedList[] = [];
+  const out = await createVectorOverlay({
+    doc,
+    assets: { get: () => undefined },
+    alive: () => true,
+    measure: new Real() as unknown as CanvasRenderingContext2D,
+    painter: vectorPainter(doc),
+    fonts: async () => [new Uint8Array([9])],
+    toPng: async () => new Uint8Array(0),
+    write: async (l) => {
+      lists.push(l);
+      return new Uint8Array([7]);
+    },
+  }).pages([req(page)]);
+  expect(out).toEqual([{ kind: "pdf", bytes: new Uint8Array([7]), index: 0 }]);
+  expect(lists[0]!.drawn[0]).toBeGreaterThan(0);
+}

@@ -8,12 +8,13 @@
  * onglets s'enregistrent par l'opération `save`. `help`, `--help`, `-h` : usage sur stdout ; sans commande : usage sur stderr.
  * cli-lot2 : `convert` (D25), `library` (DA9, H13).
  * cli-lot2 (D23) : toute écriture de document vise un `.roomboard`, contrôlé avant tout chargement par `documentTarget`.
+ * cli-lot3 : `.pdf` lu (`state`, `run`, `import`, source de `convert`) et écrit (`export`, `convert`, D41).
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
-import { checkConvert, checkExportTarget, checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkConvert, checkExportTarget, checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { libraryExport, libraryImport, libraryList, openLibrary } from "./library";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
@@ -28,12 +29,12 @@ const USAGE = {
   version: "version",
   formats: "formats",
   new: "new <sortie.roomboard> [--replace]",
-  state: "state <fichier.roomboard | fichier.rbitem | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]",
+  state: "state <fichier.roomboard | fichier.rbitem | fichier.pdf | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]",
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
-  export: "export <fichier> <sortie.rbitem | .iwb | .ubz> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
-  convert: "convert <source> <sortie.roomboard | .iwb | .ubz>",
+  export: "export <fichier> <sortie.rbitem | .iwb | .ubz | .pdf> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
+  convert: "convert <source> <sortie.roomboard | .iwb | .ubz | .pdf>",
   library: "library list <dossier> [--folder <f>] | library import <dossier> <paquet.rbpack> | library export <dossier> <sortie.rbpack> [--folder <f>]",
 } as const;
 
@@ -193,17 +194,16 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     if (idsText !== undefined && p.flags.has("--all")) throw new CliError("usage", "--ids et --all s'excluent");
     const grid = p.flags.has("--grid");
     if (grid && (idsText !== undefined || p.flags.has("--all"))) throw new CliError("usage", "--grid exclut --ids et --all");
-    checkExportTarget(to); // code 2 ou 3 avant toute lecture
+    checkExportTarget(to); // code 2 avant toute lecture
     await checkNotSource(file, to); // code 2 : jamais la source
-    if (isBoardOut(to) && (p.flags.has("--page") || idsText !== undefined || p.flags.has("--all") || grid || p.flags.has("--name"))) {
+    const whole = isBoardOut(to) || isPdfOut(to);
+    if (whole && (p.flags.has("--page") || idsText !== undefined || p.flags.has("--all") || grid || p.flags.has("--name"))) {
       throw new CliError("usage", `export ${extOf(to)} : document entier ; --page, --ids, --all, --grid et --name ne s'y appliquent pas`);
     }
     const session = await nodeSession(io);
     await session.open(file);
     const ids = idsText?.split(",").map((s) => s.trim()).filter((s) => s !== "");
-    const result = isBoardOut(to)
-      ? await exportBoardFile(session, to)
-      : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
+    const result = whole ? await exportWhole(session, to) : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
     const notices = session.deps.notices;
     io.out(JSON.stringify({ ...result, ...(notices.length > 0 ? { notices } : {}) }));
     return 0;
@@ -212,12 +212,12 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const p = parseArgs(args, {});
     const [from, to] = p.positional;
     if (from === undefined || to === undefined || p.positional.length !== 2) throw usage(USAGE.convert);
-    checkConvert(from, to); // code 2 ou 3 avant tout chargement (D25)
+    checkConvert(from, to); // code 2 avant tout chargement (D25, D42)
     await checkNotSource(from, to); // code 2 : jamais la source
     const session = await nodeSession(io);
     const tab = (await session.open(from)).session;
     if (extOf(to) === ".roomboard") await session.save(tab, to);
-    else await exportBoardFile(session, to);
+    else await exportWhole(session, to);
     io.out(JSON.stringify({ file: to, from, pages: tab.doc.pageIds().length, notices: session.deps.notices }));
     return 0;
   },

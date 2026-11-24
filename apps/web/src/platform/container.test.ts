@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CodecUnavailableError, createPageCodec, type FormatsBinding, type ReaderBinding } from "./container";
+import { CodecUnavailableError, createPageCodec, pdfJobReply, type FormatsBinding, type PdfJob, type ReaderBinding } from "./container";
 
 function fakeBinding(o: { assets?: Array<[string, Uint8Array]>; warnings?: string[]; refuse?: string } = {}) {
   const freed: number[] = [];
@@ -85,5 +85,46 @@ describe("codec du conteneur dans la page (R10, DAR1)", () => {
     const [wm, wy, ids, mimes, sizes, bytes] = f.writes[0]!;
     expect([wm, wy, ids, mimes]).toEqual([m, y, ["a", "b"], ["image/png", "image/gif"]]);
     expect([Array.from(sizes as Uint32Array), Array.from(bytes as Uint8Array)]).toEqual([[2, 1], [1, 2, 3]]);
+  });
+});
+
+describe("pdfJobReply (cli-lot3, D38)", () => {
+  const job = (): PdfJob => ({ ops: new Float32Array([1]), texts: ["t"], fonts: new Uint8Array([9]), fontSizes: Uint32Array.of(1), images: new Uint8Array(0), imageSizes: new Uint32Array(0) });
+  const fail = (): never => {
+    throw new Error("non appelé");
+  };
+  const withWriter = (write: (...a: unknown[]) => Uint8Array): FormatsBinding =>
+    ({ ContainerReader: { open: fail }, write_container: fail, write_pdf_pages: write }) as unknown as FormatsBinding;
+  it("pdfJobReply — réponse { bytes }, tampon transféré, arguments passés dans l'ordre", () => {
+    const j = job();
+    const seen: unknown[][] = [];
+    const out = new Uint8Array([1, 2, 3]);
+    const r = pdfJobReply(withWriter((...a) => (seen.push(a), out)), j);
+    expect(r.data).toEqual({ bytes: out });
+    expect(r.transfer).toEqual([out.buffer]);
+    expect(seen).toEqual([[j.ops, j.texts, j.fonts, j.fontSizes, j.images, j.imageSizes]]);
+  });
+  it("pdfJobReply — module sans écrivain : { error: « module de l'écrivain PDF indisponible » }", () => {
+    const r = pdfJobReply({ ContainerReader: { open: fail }, write_container: fail } as unknown as FormatsBinding, job());
+    expect(r).toEqual({ data: { error: "module de l'écrivain PDF indisponible" }, transfer: [] });
+  });
+  it("pdfJobReply — erreur ordinaire de krilla : { error: message }, rien de transféré", () => {
+    const r = pdfJobReply(
+      withWriter(() => {
+        throw new Error("page refusée");
+      }),
+      job(),
+    );
+    expect(r).toEqual({ data: { error: "page refusée" }, transfer: [] });
+  });
+  it("pdfJobReply — panique Wasm (RuntimeError) : relancée, jamais rendue en { error } (D29)", () => {
+    expect(() =>
+      pdfJobReply(
+        withWriter(() => {
+          throw new WebAssembly.RuntimeError("unreachable");
+        }),
+        job(),
+      ),
+    ).toThrow(WebAssembly.RuntimeError);
   });
 });

@@ -3,26 +3,16 @@
  * ou `{ error }`, puis arrêté par `runOnce` (`one-shot-worker.ts`). Une panique Wasm (krilla) arrive en `RuntimeError`
  * et ne touche jamais l'instance de la page qui enregistre le `.roomboard` (HR6). Module sans écrivain (construit avant
  * C12) : `{ error }`, le producteur retombe sur le PNG. Créé par `main.ts`, jamais par un test.
+ * Corps dans `pdfJobReply` (cli-lot3, D38, DA13) : cette coquille charge le module, poste la réponse et son tampon, et
+ * rend en `{ error }` ce qui en sort (panique relancée par `pdfJobReply`, module absent).
  */
-import { hasPdfWriter } from "./container";
+import { pdfJobReply, type PdfJob } from "./container";
 import { loadFormatsModule } from "./container-load";
 
-interface Job {
-  readonly ops: Float32Array;
-  readonly texts: string[];
-  readonly fonts: Uint8Array;
-  readonly fontSizes: Uint32Array;
-  readonly images: Uint8Array;
-  readonly imageSizes: Uint32Array;
-}
-
-self.onmessage = async (e: MessageEvent<Job>): Promise<void> => {
+self.onmessage = async (e: MessageEvent<PdfJob>): Promise<void> => {
   try {
-    const mod = await loadFormatsModule();
-    if (!hasPdfWriter(mod)) throw new Error("module de l'écrivain PDF indisponible");
-    const j = e.data;
-    const bytes = mod.write_pdf_pages(j.ops, j.texts, j.fonts, j.fontSizes, j.images, j.imageSizes);
-    self.postMessage({ bytes }, { transfer: [bytes.buffer] });
+    const r = pdfJobReply(await loadFormatsModule(), e.data);
+    self.postMessage(r.data, { transfer: r.transfer });
   } catch (err) {
     self.postMessage({ error: err instanceof Error ? err.message : String(err) });
   }

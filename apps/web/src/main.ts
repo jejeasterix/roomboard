@@ -16,14 +16,13 @@ import { createAssetStore } from "./core/asset-store";
 import { createBoardSession, type SessionShared } from "./app/board-session";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
-import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, workerPdfWriter } from "./app/pdf-overlay-vector";
+import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, vectorPainter, workerPdfWriter } from "./app/pdf-overlay-vector";
 import { createResourceLibrary, createSharedFolder, importedMessage, mineOrMemory, resourceKindReader } from "./app/library";
 import { createWorkspace, type TabSession } from "./app/workspace";
 import { APP_VERSION, messageOf } from "./platform/controller";
 import { createIdbLibraryFiles, createMemoryLibraryFiles, createTauriLibraryFiles } from "./platform/library-files";
 import type { CoreDocument, CoreFactory } from "./core/api";
 import { Canvas2DRenderer, exportPainterOptions } from "./engine/render/canvas2d";
-import { RecordingPath } from "./engine/render/record-ctx";
 import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
 import { createPdfEngine } from "./platform/pdf-render";
@@ -306,7 +305,7 @@ async function start(): Promise<void> {
             assets: tab.assets,
             alive: () => true,
             measure: vectorMeasure,
-            painter: (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images, { makePath: () => new RecordingPath() as unknown as Path2D })),
+            painter: vectorPainter(doc),
             fonts,
             toPng,
             write: workerPdfWriter(spawnPdfWorker),

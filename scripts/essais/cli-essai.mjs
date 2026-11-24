@@ -3,8 +3,10 @@
 // Aucun navigateur. Écrit sous un dossier temporaire retiré en fin d'essai. `CLI : OK` ou `CLI : ÉCHEC — <écart>`.
 // Lot 2 (cadrage cli-lot2, S5) : réimport d'un `.rbitem`, grille, `convert` des cinq tableaux fabriqués, export `.iwb`/`.ubz` relus,
 // aller-retour `.rbpack` par `library`, règle D23.
+// Lot 3 (cadrage cli-lot3, S5) : PDF fabriqué (fabriques/pdf.mjs), page comptée, texte retrouvé, fond présent (avant et
+// après aller-retour), stderr vide des commandes PDF, D23 pour .pdf ; code 3 sur import … x.docx.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
@@ -13,8 +15,10 @@ import { deflateSync } from "node:zlib";
 import { ROOT, solidPng } from "./commun.mjs";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 import { makeFlipchart } from "./fabriques/flipchart.mjs";
+import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
 
-const { zipSync } = createRequire(join(ROOT, "apps", "web", "package.json"))("fflate");
+const web = createRequire(join(ROOT, "apps", "web", "package.json"));
+const { zipSync } = web("fflate");
 
 const BIN = join(ROOT, "apps", "cli", "dist", "roomboard.mjs");
 const XLSX = join(ROOT, "crates", "roomboard-formats", "tests", "fixtures", "valeurs.xlsx");
@@ -28,12 +32,21 @@ const verifie = (nom, cond, detail = "") => {
   ok(nom);
 };
 
-/** Lance le binaire ; rend code, lignes JSON de stdout, objet de stderr. */
+/** Lance le binaire ; rend code, lignes JSON de stdout, objet de stderr, stderr brut (contrôle « stderr vide », D34). */
 function cli(args, input) {
   const r = spawnSync("node", [BIN, ...args], { encoding: "utf8", input, env: { ...process.env, ROOMBOARD_NOW: "1700000000000" } });
   const lignes = (r.stdout ?? "").split("\n").filter((l) => l !== "").map((l) => JSON.parse(l));
-  const err = (r.stderr ?? "").trim();
-  return { code: r.status, lignes, err: err === "" ? null : JSON.parse(err), brut: `${r.stdout}${r.stderr}` };
+  const stderr = r.stderr ?? "";
+  const err = stderr.trim();
+  let objet = null;
+  if (err !== "") {
+    try {
+      objet = JSON.parse(err);
+    } catch {
+      objet = { brut: err };
+    }
+  }
+  return { code: r.status, lignes, err: objet, stderr, brut: `${r.stdout}${r.stderr}` };
 }
 
 /** Ids remplacés par leur rang d'apparition (stable entre deux fichiers) ; le champ `file` garde sa place, valeur neutre. */
@@ -80,7 +93,7 @@ try {
   const f = cli(["formats"]).lignes[0].formats;
   const rb = f.find((x) => x.ext === ".roomboard");
   verifie("formats : .roomboard lu et écrit", rb?.read === true && rb?.write === true);
-  verifie("formats : .pdf pas encore pris en charge", f.find((x) => x.ext === ".pdf")?.read === false);
+  verifie("formats : .pdf lu et écrit (lot 3)", f.find((x) => x.ext === ".pdf")?.read === true && f.find((x) => x.ext === ".pdf")?.write === true);
 
   const a = join(dir, "a.roomboard");
   const nouveau = cli(["new", a]);
@@ -137,12 +150,12 @@ try {
   verifie("opération refusée : code 1 et erreur sur stderr", refuse.code === 1 && refuse.err?.error?.code === "command", refuse.brut);
   verifie("fichier inchangé après un refus (mtimeMs, ino)", empreinte(a) === avant);
 
-  const pdfFichier = join(dir, "x.pdf");
-  writeFileSync(pdfFichier, "%PDF-1.4\n%%EOF\n");
-  const avantPdf = empreinte(a);
-  const pdf = cli(["import", a, pdfFichier]);
-  verifie("import d'un .pdf : code 3, erreur unsupported, « lot 3 »", pdf.code === 3 && pdf.err?.error?.code === "unsupported" && String(pdf.err.error.message).includes("lot 3"), pdf.brut);
-  verifie("import d'un .pdf : fichier non écrit (mtimeMs, ino)", empreinte(a) === avantPdf);
+  const docx = join(dir, "x.docx");
+  writeFileSync(docx, "PK\u0003\u0004");
+  const avantDocx = empreinte(a);
+  const rd = cli(["import", a, docx]);
+  verifie("import d'un .docx : code 3, erreur unsupported, « lot 4 »", rd.code === 3 && rd.err?.error?.code === "unsupported" && String(rd.err.error.message).includes("lot 4"), rd.brut);
+  verifie("import d'un .docx : fichier non écrit (mtimeMs, ino)", empreinte(a) === avantDocx);
   verifie("option inconnue : code 2", cli(["state", a, "--nope"]).code === 2);
   // ---- Lot 2 (cadrage cli-lot2, S5) ----
   const lot2 = f.filter((x) => x.readLot === 2 || x.writeLot === 2);
@@ -230,7 +243,65 @@ try {
   verifie("D23 : new z.iwb : code 2, rien d'écrit", nz.code === 2 && !existsSync(z), nz.brut);
   const cs = cli(["convert", iwbSrc, iwbSrc]);
   verifie("convert vers la source : code 2, source intacte", cs.code === 2 && empreinte(iwbSrc) === avantIwb, cs.brut);
-  verifie(".pdf toujours au lot 3 : convert vers .pdf code 3", cli(["convert", a, join(dir, "a.pdf")]).code === 3);
+  verifie("convert vers .docx : code 2 (règle T11)", cli(["convert", a, join(dir, "a.docx")]).code === 2 && !existsSync(join(dir, "a.docx")));
+  verifie("convert depuis .docx : code 2", cli(["convert", docx, join(dir, "docx.roomboard")]).code === 2 && !existsSync(join(dir, "docx.roomboard")));
+
+  // ---- Lot 3 (cadrage cli-lot3, S5) : fichier construit, PDF fabriqué par pdfPages, relu par readPdf ----
+  const pdfLib = web("pdf-lib");
+  const lecture = await readLibs(web, { worker: true }); // worker de pdf.js importé d'abord : pose globalThis.pdfjsWorker
+  const fondsPdf = (st) => st.pages.length > 0 && st.pages.every((pg, i) => pg.page.backdrop?.kind === "pdf-page" && pg.page.backdrop.page === i && st.assets.some((x) => x.id === pg.page.backdrop.asset && x.mime === "application/pdf"));
+  const fondsDe = (st) => JSON.stringify(st.pages.map((x) => x.page.backdrop));
+
+  const trois = join(dir, "three.pdf");
+  writeFileSync(trois, await pdfPages(pdfLib, 3));
+  const t = join(dir, "t.roomboard");
+  const ct = cli(["convert", trois, t]);
+  verifie("page comptée : convert three.pdf t.roomboard, 3 pages", ct.code === 0 && ct.lignes[0]?.pages === 3, ct.brut);
+  verifie("stderr vide : convert three.pdf", ct.stderr === "", ct.stderr);
+  const etatT = etat(t);
+  verifie("page comptée : state t.roomboard, 3 pages", etatT.pages.length === 3, String(etatT.pages.length));
+  verifie("fond présent : pdf-page 0, 1, 2 et asset application/pdf cité", fondsPdf(etatT), fondsDe(etatT));
+  const st = cli(["state", trois]);
+  verifie("fond présent : state three.pdf, mêmes fonds", st.code === 0 && fondsDe(st.lignes[0]) === fondsDe(etatT), st.brut);
+  verifie("stderr vide : state three.pdf", st.stderr === "", st.stderr);
+  const note = { type: "SetText", page: "$page:1", id: null, x: 200, y: 400, content: "Note CLI", color: "#000000", size: 48, boxWidth: 800, boxHeight: 60 };
+  const rt = cli(["run", t, "--save", "--ops", "-"], `${JSON.stringify(note)}\n`);
+  verifie("run t.roomboard --save : texte en page 2", rt.code === 0 && rt.lignes[0]?.ok === true, rt.brut);
+  verifie("stderr vide : run t.roomboard --save", rt.stderr === "", rt.stderr);
+  const outPdf = join(dir, "out.pdf");
+  const ep = cli(["export", t, outPdf]);
+  verifie("export t.roomboard out.pdf : kind pdf, 3 pages, annoté", ep.code === 0 && ep.lignes[0]?.kind === "pdf" && ep.lignes[0].pages === 3 && ep.lignes[0].annotated === true, ep.brut);
+  verifie("stderr vide : export out.pdf", ep.stderr === "", ep.stderr);
+  const relu3 = await readPdf(readFileSync(outPdf), lecture);
+  verifie("page comptée : out.pdf relu, 3 pages", relu3.pages === 3, String(relu3.pages));
+  verifie("texte retrouvé : « RoomBoard page 2 » et « Note CLI » en page 2", relu3.texts[1]?.includes("RoomBoard page 2") === true && relu3.texts[1]?.includes("Note CLI") === true, JSON.stringify(relu3.texts));
+  egal("superposition vectorielle (/Form) en page 2 seule", relu3.overlays, [[], ["/Form"], []]);
+  const retour = join(dir, "retour.roomboard");
+  const cr = cli(["convert", outPdf, retour]);
+  verifie("page comptée : aller-retour convert out.pdf, 3 pages", cr.code === 0 && cr.lignes[0]?.pages === 3, cr.brut);
+  verifie("stderr vide : convert out.pdf", cr.stderr === "", cr.stderr);
+  const etatRetour = etat(retour);
+  verifie("fond présent après l'aller-retour", fondsPdf(etatRetour), fondsDe(etatRetour));
+  const cPdf = join(dir, "c.pdf");
+  const cc = cli(["convert", trois, cPdf]);
+  verifie("D46 : convert three.pdf c.pdf : code 0", cc.code === 0 && existsSync(cPdf), cc.brut);
+  verifie("stderr vide : convert three.pdf c.pdf", cc.stderr === "", cc.stderr);
+  const reluC = await readPdf(readFileSync(cPdf), lecture);
+  verifie("page comptée : c.pdf relu, 3 pages", reluC.pages === 3, String(reluC.pages));
+  const ci = cli(["convert", trois, join(dir, "t.iwb")]);
+  verifie("convert three.pdf t.iwb : avis « fonds PDF non exportés »", ci.code === 0 && ci.lignes[0]?.notices.join(" ").includes("fonds PDF non exportés"), ci.brut);
+  verifie("stderr vide : convert three.pdf t.iwb", ci.stderr === "", ci.stderr);
+  const eb = cli(["export", b, join(dir, "b.pdf")]);
+  verifie("export b.pdf (sans fond PDF) : 1 page, annotated faux", eb.code === 0 && eb.lignes[0]?.pages === 1 && eb.lignes[0].annotated === false, eb.brut);
+  verifie("stderr vide : export b.pdf", eb.stderr === "", eb.stderr);
+  verifie("export vers .pdf avec --ids : code 2", cli(["export", t, join(dir, "x.pdf"), "--ids", "a"]).code === 2 && !existsSync(join(dir, "x.pdf")));
+  const avantTrois = empreinte(trois);
+  const rs = cli(["run", trois, "--save", "--ops", "-"], "");
+  verifie("D23 : run three.pdf --save : code 2, fichier intact", rs.code === 2 && empreinte(trois) === avantTrois, rs.brut);
+  const zp = join(dir, "z.pdf");
+  verifie("D23 : new z.pdf : code 2, rien d'écrit", cli(["new", zp]).code === 2 && !existsSync(zp));
+  const avantOut = empreinte(outPdf);
+  verifie("convert out.pdf vers out.PDF (la source) : code 2, source intacte", cli(["convert", outPdf, join(dir, "out.PDF")]).code === 2 && empreinte(outPdf) === avantOut);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

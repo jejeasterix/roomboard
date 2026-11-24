@@ -8,37 +8,15 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
 
 const LABEL = "C12 PDF";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const web = createRequire(join(ROOT, "apps", "web", "package.json"));
-const { PDFDict, PDFDocument, PDFName, PDFStream, StandardFonts } = web("pdf-lib");
+const { PDFDocument, StandardFonts } = web("pdf-lib");
 const LAZY = /\/assets\/(?:pdfjs|pdf-lib|pdf-worker)-[^/]*\.js$/;
-
-async function threePages() {
-  const d = await PDFDocument.create();
-  const font = await d.embedFont(StandardFonts.Helvetica);
-  for (let i = 1; i <= 3; i++) d.addPage([612, 792]).drawText(`RoomBoard page ${i}`, { x: 72, y: 700, size: 36, font });
-  return d.save();
-}
-
-async function readBack(bytes) {
-  const pdfjs = await import(pathToFileURL(web.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
-  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), isEvalSupported: false, verbosity: 0, standardFontDataUrl: pathToFileURL(join(dirname(web.resolve("pdfjs-dist/package.json")), "standard_fonts") + sep).href });
-  const doc = await task.promise;
-  const texts = [];
-  for (let i = 1; i <= doc.numPages; i++) texts.push((await (await doc.getPage(i)).getTextContent()).items.map((it) => it.str ?? "").join(""));
-  const pages = doc.numPages;
-  await task.destroy();
-  const overlays = (await PDFDocument.load(bytes)).getPages().map((p) => {
-    const xo = p.node.Resources()?.lookupMaybe(PDFName.of("XObject"), PDFDict);
-    return xo ? xo.keys().map((k) => String(xo.lookup(k, PDFStream).dict.get(PDFName.of("Subtype")))) : [];
-  });
-  return { pages, texts, overlays };
-}
 
 async function scenario(page, url, { captures, tmp, requests }) {
   const errors = [];
@@ -85,7 +63,7 @@ async function scenario(page, url, { captures, tmp, requests }) {
 
   // S1 : dépôt d'un PDF de 3 pages généré ici.
   const n0 = await tabs();
-  await dropFile(page, "#stage", "essai-3-pages.pdf", await threePages(), "application/pdf");
+  await dropFile(page, "#stage", "essai-3-pages.pdf", await pdfPages({ PDFDocument, StandardFonts }), "application/pdf");
   await waitTabs(n0 + 1);
   await waitAttr("data-page", "1/3");
   await waitAttr("data-fond", "pret");
@@ -116,7 +94,7 @@ async function scenario(page, url, { captures, tmp, requests }) {
   const proposed = (names.at(-1) ?? "").normalize("NFC");
   check(proposed === "essai-3-pages annoté.pdf", `S1 : « Exporter en PDF… » propose « ${proposed} »`);
   check(requests.some((u) => /\/pdf-lib-/.test(u)), "PF26 : pdf-lib chargé à l'export seulement");
-  const back = await readBack(await readFile(exported));
+  const back = await readPdf(await readFile(exported), await readLibs(web));
   check(back.pages === 3 && back.texts[1]?.includes("RoomBoard page 2"), "S1 : PDF exporté relu : 3 pages, « RoomBoard page 2 » toujours en texte");
   const [o1, o2, o3] = back.overlays;
   check(o1?.length === 0 && o3?.length === 0 && o2?.length === 1, `S1 : page 2 : une superposition (${o2?.[0] ?? "aucune"}), pages 1 et 3 : aucune`);

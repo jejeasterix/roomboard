@@ -14,7 +14,7 @@ describe("main : commandes sans module (D9)", () => {
     const [out] = io.json();
     expect(out.formats).toHaveLength(Object.keys(FORMAT_LOTS).length);
     expect(out.formats).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
-    expect(out.formats).toContainEqual(expect.objectContaining({ ext: ".pdf", read: false, write: false, readLot: 3, writeLot: 3 }));
+    expect(out.formats).toContainEqual(expect.objectContaining({ ext: ".pdf", read: true, write: true, readLot: 3, writeLot: 3 }));
     expect(io.stderr).toEqual([]);
   });
   it("commande inconnue, absente, clé d'Object ou argument en trop : code 2, une erreur JSON sur stderr", async () => {
@@ -34,7 +34,9 @@ describe("main : commandes sans module (D9)", () => {
       const [out] = io.json();
       expect(out.usage).toContain("roomboard run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]");
       expect(out.usage).toContain("roomboard new <sortie.roomboard> [--replace]");
-      expect(out.usage).toContain("roomboard convert <source> <sortie.roomboard | .iwb | .ubz>");
+      expect(out.usage).toContain("roomboard convert <source> <sortie.roomboard | .iwb | .ubz | .pdf>");
+      expect(out.usage).toContain("roomboard export <fichier> <sortie.rbitem | .iwb | .ubz | .pdf> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]");
+      expect(out.usage.some((u: string) => u.startsWith("roomboard state <fichier.roomboard | fichier.rbitem | fichier.pdf |"))).toBe(true);
       expect(out.usage.some((u: string) => u.startsWith("roomboard library list <dossier>"))).toBe(true);
       expect(JSON.stringify(out)).toContain("$$");
       expect(out.env).toContain("ROOMBOARD_NOW=<millisecondes depuis 1970>");

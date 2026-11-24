@@ -4,6 +4,7 @@
  * un Worker pourra le servir sans changer les appelants. Module qui ne se charge pas : `CodecUnavailableError` (repli R7).
  */
 import type { SheetBinding } from "./sheet-reader";
+import type { WorkerReply } from "./one-shot-worker";
 
 export interface ContainerAsset {
   readonly id: string;
@@ -76,6 +77,32 @@ export interface PdfFormatsBinding extends FormatsBinding {
 /** Vrai si le module chargé expose `write_pdf_pages` (module construit après C12) ; faux : PNG en repli (PC14). */
 export function hasPdfWriter(m: FormatsBinding): m is PdfFormatsBinding {
   return typeof (m as Partial<PdfFormatsBinding>).write_pdf_pages === "function";
+}
+
+/** Message reçu par le corps du Worker d'écriture PDF (`pdfJobReply`, cli-lot3, D38) : listes et octets concaténés. */
+export interface PdfJob {
+  readonly ops: Float32Array;
+  readonly texts: string[];
+  readonly fonts: Uint8Array;
+  readonly fontSizes: Uint32Array;
+  readonly images: Uint8Array;
+  readonly imageSizes: Uint32Array;
+}
+export const PDF_WRITER_MISSING_MESSAGE = "module de l'écrivain PDF indisponible";
+
+/**
+ * Corps du Worker d'écriture PDF (cli-lot3, D38, DA13) : `{ bytes }` (tampon transféré) ou `{ error }`. Une panique Wasm
+ * (`RuntimeError`) est relancée (D29) : la coquille du Worker la rend en `{ error }`, `inlineWorker` en `onerror`.
+ */
+export function pdfJobReply(mod: FormatsBinding, job: PdfJob): WorkerReply {
+  try {
+    if (!hasPdfWriter(mod)) throw new Error(PDF_WRITER_MISSING_MESSAGE);
+    const bytes = mod.write_pdf_pages(job.ops, job.texts, job.fonts, job.fontSizes, job.images, job.imageSizes);
+    return { data: { bytes }, transfer: [bytes.buffer as ArrayBuffer] };
+  } catch (err) {
+    if (err instanceof WebAssembly.RuntimeError) throw err; // D29 : la panique remonte (coquille ou inlineWorker)
+    return { data: { error: err instanceof Error ? err.message : String(err) }, transfer: [] };
+  }
 }
 
 /** Module `formats` avec les calculs de pixels (C5, I17) : servi seulement dans le Worker de `pixel-worker.ts`. */
