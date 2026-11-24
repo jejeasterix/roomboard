@@ -165,8 +165,8 @@ export const formatsWith = (open: () => unknown): FormatsBinding => {
 
 /**
  * D29 : lecteur de tableau dont `ops()` panique (piège Wasm) et dont `free()` lève ensuite l'erreur de wasm-bindgen sur
- * une valeur restée empruntée. `partOf` (board-reader.ts) libère dans un `finally` : l'`Error` de `free()` remplace la
- * `RuntimeError`, et `boardJobReply` rend `{ error: BOARD_FAILED_MESSAGE }` au lieu de relancer.
+ * une valeur restée empruntée. `partOf` (board-reader.ts) garde la `RuntimeError` malgré l'`Error` de `free()` :
+ * `boardJobReply` la relance, `nodeBoardPorts` appelle `onPanic`.
  */
 export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warnings(): string[]; free(): never } => ({
   ops: () => {
@@ -178,7 +178,7 @@ export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warning
     throw new Error("attempted to take ownership of Rust value while it was borrowed");
   },
 });
-/** Module des formats dont le lecteur de tableau panique puis masque la panique par `free()` (D29), pour `main`. */
+/** Module des formats dont le lecteur de tableau panique, `free()` levant ensuite à son tour (D29), pour `main`. */
 export const panickingFormats = (): (() => Promise<FormatsBinding>) => {
   const mod = formatsWith(borrowedAfterPanic);
   return async () => mod;

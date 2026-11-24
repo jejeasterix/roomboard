@@ -20,9 +20,15 @@ describe("nodeBoardPorts (D20, D29)", () => {
     await expect(ports.read(xml, "iwb")).rejects.toThrow(BOARD_FAILED_MESSAGE);
     expect(panics).toBe(1);
   });
-  it("D29 — panique dans ops() masquée par l'erreur de free() : onPanic quand même", async () => {
+  it("D29 — panique dans ops() suivie d'une erreur de free() : la RuntimeError est relancée, onPanic une fois", async () => {
     let panics = 0;
     const ports = nodeBoardPorts(async () => formatsWith(borrowedAfterPanic), () => void panics++);
+    await expect(ports.read(xml, "iwb")).rejects.toThrow(BOARD_FAILED_MESSAGE);
+    expect(panics).toBe(1);
+  });
+  it("D29 — échec générique inconnu (Error ordinaire, pas une RuntimeError) : traité comme non sûr, onPanic une fois", async () => {
+    let panics = 0;
+    const ports = nodeBoardPorts(async () => formatsWith(() => { throw new Error("échec inattendu du module"); }), () => void panics++);
     await expect(ports.read(xml, "iwb")).rejects.toThrow(BOARD_FAILED_MESSAGE);
     expect(panics).toBe(1);
   });

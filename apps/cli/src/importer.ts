@@ -89,7 +89,13 @@ export async function importInto(session: Session, req: ImportRequest): Promise<
   checkSources(req.sources);
   const tab = session.active();
   const page = pageOf(tab, req.page);
-  const files = await Promise.all(req.sources.map(async (s) => nodeFile(s, await readBytes(s))));
+  const files = await Promise.all(
+    req.sources.map(async (s) => {
+      const bytes = await readBytes(s);
+      session.noteSource(s); // un tableau importé n'a pas de chemin dans `openBoard` : la source est retenue ici
+      return nodeFile(s, bytes);
+    }),
+  );
   const { notices, formats } = session.deps;
   const before = notices.length;
   const importer = createImporter({

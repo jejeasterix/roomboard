@@ -98,8 +98,7 @@ describeWasm("S2 — lire les cinq tableaux (D22)", () => {
     await expect(s.write(out, pngBytes(1, 1))).rejects.toMatchObject({ code: "command", message: INTERRUPTED_MESSAGE });
     expect(existsSync(out)).toBe(false);
   });
-  it("D29 — panique masquée par free() pendant la lecture d'un tableau : la session refuse ensuite d'écrire", async () => {
-    // Sous le seul critère « RuntimeError relancée », la panique passerait pour une erreur ordinaire et `save` écrirait.
+  it("D29 — panique (puis free() qui lève) pendant la lecture d'un tableau : la session refuse ensuite d'écrire", async () => {
     const dir = tmpDir();
     const raw = join(dir, "brut.iwb");
     writeFileSync(raw, "<iwb/>");
@@ -122,7 +121,7 @@ describeWasm("S2 — lire les cinq tableaux (D22)", () => {
     expect((await s.open(doc)).session.file).toBe(doc);
     expect(s.tabs.list().map((t) => t.session.file)).toEqual([null, doc]);
   });
-  it("D29 — main import : panique masquée pendant la lecture d'un tableau, rapport imprimé puis refus (code 1), a.roomboard intact (H15)", async () => {
+  it("D29 — main import : panique (puis free() qui lève) pendant la lecture d'un tableau, rapport imprimé puis refus (code 1), a.roomboard intact (H15)", async () => {
     const dir = tmpDir();
     const a = join(dir, "a.roomboard");
     expect(await main(["new", a], memoryIO())).toBe(0);

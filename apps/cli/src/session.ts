@@ -89,6 +89,8 @@ export interface Session {
   /** Tableau ouvert par l'importeur (`openBoard`) en onglet sans fichier : false si refusé, l'avis est dans `notices`. */
   openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
   save(tab: CliTab, to?: string | null): Promise<string>;
+  /** Retient un fichier lu par la session hors onglet (source d'import) : une sortie ne le remplace pas. */
+  noteSource(path: string): void;
   /** Écriture atomique d'un fichier de la session (document ou fragment), retenue par `written`. */
   write(path: string, bytes: Uint8Array): Promise<void>;
   /** Fichiers écrits par la session, sans doublon, dans l'ordre de leur première écriture. */
@@ -201,6 +203,9 @@ export function createSession(deps: SessionDeps): Session {
     const path = to ?? tab.file;
     if (path === null) throw new CliError("usage", "enregistrer : aucun chemin (champ « to » ou option --out)");
     documentTarget(path); // l'usage avant l'interruption : x.iwb rend 2, jamais 1
+    // Un chemin qui désigne un fichier source autre qu'un .roomboard (lien symbolique) ne le remplace pas ; un
+    // .roomboard ouvert garde le droit de s'enregistrer à son propre chemin.
+    for (const source of sources) if (extOf(source) !== ".roomboard") await checkNotSource(source, path);
     writable();
     let bytes: Uint8Array;
     try {
@@ -208,7 +213,7 @@ export function createSession(deps: SessionDeps): Session {
     } catch (e) {
       throw asCliError(e, "command");
     }
-    await put(path, bytes); // un .roomboard ouvert s'enregistre à son propre chemin : pas de garde « source »
+    await put(path, bytes);
     tab.file = path;
     return path;
   }
@@ -297,6 +302,7 @@ export function createSession(deps: SessionDeps): Session {
     openBytes,
     openBoard,
     save,
+    noteSource: (path) => void sources.add(path),
     write,
     written: () => [...written],
     tabList,
