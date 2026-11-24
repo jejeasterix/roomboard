@@ -34,12 +34,14 @@ describe("main : commandes sans module (D9)", () => {
       const [out] = io.json();
       expect(out.usage).toContain("roomboard run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]");
       expect(out.usage).toContain("roomboard new <sortie.roomboard> [--replace]");
-      expect(out.usage).toContain("roomboard convert <source> <sortie.roomboard | .iwb | .ubz | .pdf>");
+      expect(out.usage).toContain("roomboard convert <source .roomboard | .pdf | tableau | Office> <sortie.roomboard | .iwb | .ubz | .pdf>");
       expect(out.usage).toContain("roomboard export <fichier> <sortie.rbitem | .iwb | .ubz | .pdf> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]");
       expect(out.usage.some((u: string) => u.startsWith("roomboard state <fichier.roomboard | fichier.rbitem | fichier.pdf |"))).toBe(true);
       expect(out.usage.some((u: string) => u.startsWith("roomboard library list <dossier>"))).toBe(true);
       expect(JSON.stringify(out)).toContain("$$");
       expect(out.env).toContain("ROOMBOARD_NOW=<millisecondes depuis 1970>");
+      expect(out.env).toContain("ROOMBOARD_OFFICE=<chemin>");
+      expect(out.usage.some((u: string) => u.startsWith("roomboard state <fichier.roomboard | fichier.rbitem | fichier.pdf | fichier Office"))).toBe(true);
     }
     const bare = memoryIO();
     expect(await main([], bare)).toBe(2);

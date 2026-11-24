@@ -12,6 +12,8 @@ import { MISSING_EXPORT_MESSAGE, NO_GRID_MESSAGE } from "../../web/src/app/fragm
 import { writePdfFile, type PdfWritten } from "../../web/src/app/pdf-convert";
 import { PDF_RASTER_MISSING_MESSAGE } from "../../web/src/app/pdf-export";
 import { messageOf, UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
+import { isSheetName } from "../../web/src/platform/import";
+import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
 import { asCliError, CliError } from "./contract";
 import { sameFile } from "./disk";
 import { extOf, packMessage } from "./formats";
@@ -95,14 +97,25 @@ export function exportWhole(session: Session, to: string): Promise<Awaited<Retur
   return isPdfOut(to) ? exportPdfFile(session, to) : exportBoardFile(session, to);
 }
 
-const CONVERT_SOURCES: ReadonlySet<string> = new Set([".roomboard", ".pdf", ".iwb", ".ubz", ".notebook", ".olf", ".flipchart"]);
+/** cli-lot4 (D59) : fichiers Office convertis (`.xlsx`, `.xlsm` exclus : tableaux en valeurs, D58), constante importée. */
+const CONVERT_SOURCES: ReadonlySet<string> = new Set([
+  ".roomboard",
+  ".pdf",
+  ".iwb",
+  ".ubz",
+  ".notebook",
+  ".olf",
+  ".flipchart",
+  ...OFFICE_EXTENSIONS.filter((e) => !isSheetName(`x${e}`)),
+]);
 const CONVERT_TARGETS: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz", ".pdf"]);
 function convertSide(path: string, allowed: ReadonlySet<string>, what: string): void {
   if (allowed.has(extOf(path))) return;
   if (extOf(path) === ".rbpack") throw new CliError("usage", packMessage(path));
   throw new CliError("usage", `convert : ${basename(path)} : ${what} ${[...allowed].join(" ")} attendue (export pour un .rbitem)`);
 }
-/** D25, D42 : avant tout chargement ; toute source ou sortie hors des listes : 2 (le code 3 ne sort plus que d'un `import`). */
+/** D25, D42 : avant tout chargement ; toute source ou sortie hors des listes : 2 ; une source Office sans convertisseur :
+ *  3 (cli-lot4, D56, au chargement). */
 export function checkConvert(from: string, to: string): void {
   convertSide(from, CONVERT_SOURCES, "source");
   convertSide(to, CONVERT_TARGETS, "sortie");
