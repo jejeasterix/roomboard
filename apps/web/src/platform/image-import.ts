@@ -33,7 +33,7 @@ export const FIT_SHARE = 0.8;
 export const HEIC_UNREADABLE = "HEIC illisible sur ce poste";
 export const TAB_CLOSED_MESSAGE = "onglet fermé pendant l'import, image non insérée";
 /** Le SOFn d'un JPEG est cherché dans le premier Mio (blocs EXIF compris). */
-const JPEG_SCAN = 1 << 20;
+const HEADER_SCAN = 1 << 20;
 
 const starts = (h: Uint8Array, sig: readonly number[]): boolean => sig.every((b, i) => h[i] === b);
 const ascii = (h: Uint8Array, from: number, to: number): string => String.fromCharCode(...h.subarray(from, to));
@@ -106,8 +106,8 @@ export async function probeSize(blob: Blob, kind: ImageKind): Promise<{ readonly
     const v = new DataView(h.buffer, h.byteOffset, h.byteLength);
     return { w: v.getUint32(16), h: v.getUint32(20) };
   }
-  if (kind === "jpeg") return jpegSize(new Uint8Array(await blob.slice(0, JPEG_SCAN).arrayBuffer()));
-  return headerSize(new Uint8Array(await blob.slice(0, JPEG_SCAN).arrayBuffer()), kind);
+  if (kind === "jpeg") return jpegSize(new Uint8Array(await blob.slice(0, HEADER_SCAN).arrayBuffer()));
+  return headerSize(new Uint8Array(await blob.slice(0, HEADER_SCAN).arrayBuffer()), kind);
 }
 
 export type ImageDecoder = (blob: Blob, kind: ImageKind) => Promise<DecodedImage>;

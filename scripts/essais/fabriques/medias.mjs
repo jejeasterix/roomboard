@@ -28,17 +28,19 @@ const box = (type, ...parts) => {
 };
 const full = (type, version, flags, ...parts) => box(type, Uint8Array.of(version, (flags >>> 16) & 0xff, (flags >>> 8) & 0xff, flags & 0xff), ...parts);
 const MATRIX = cat(...[0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000].map(be32));
+/** Rotation de 90° (téléphone en portrait) : a = d = 0, b = 1, c = -1. */
+const MATRIX_PORTRAIT = cat(...[0, 0x10000, 0, 0xffff0000, 0, 0, 0, 0, 0x40000000].map(be32));
 
 /**
  * MP4 (MOV avec `brand: "qt  "`, M4A avec `brand: "M4A "`) : `ftyp`, `moov` (`mvhd`, une piste : `tkhd` w × h en 16.16,
  * `mdia/hdlr` `vide` si w > 0, sinon `soun`) et `mdat` ; `moovLast` : `moov` après `mdat` ; `version1` : `mvhd` et `tkhd`
- * en version 1 (dates et durée sur 64 bits).
+ * en version 1 (dates et durée sur 64 bits) ; `rotate` : matrice de `tkhd` tournée de 90° (a = d = 0).
  */
-export function mp4({ duration, timescale = 1000, width = 0, height = 0, brand = "isom", moovLast = false, version1 = false }) {
+export function mp4({ duration, timescale = 1000, width = 0, height = 0, brand = "isom", moovLast = false, version1 = false, rotate = false }) {
   const units = Math.round(duration * timescale);
   const t = (v) => (version1 ? cat(be32(0), be32(v)) : be32(v));
   const mvhd = full("mvhd", version1 ? 1 : 0, 0, t(0), t(0), be32(timescale), t(units), be32(0x10000), be16(0x100), new Uint8Array(10), MATRIX, new Uint8Array(24), be32(2));
-  const tkhd = full("tkhd", version1 ? 1 : 0, 3, t(0), t(0), be32(1), be32(0), t(units), new Uint8Array(8), be16(0), be16(0), be16(width > 0 ? 0 : 0x100), be16(0), MATRIX, be32(width * 65536), be32(height * 65536));
+  const tkhd = full("tkhd", version1 ? 1 : 0, 3, t(0), t(0), be32(1), be32(0), t(units), new Uint8Array(8), be16(0), be16(0), be16(width > 0 ? 0 : 0x100), be16(0), rotate ? MATRIX_PORTRAIT : MATRIX, be32(width * 65536), be32(height * 65536));
   const hdlr = full("hdlr", 0, 0, be32(0), enc(width > 0 ? "vide" : "soun"), new Uint8Array(12), Uint8Array.of(0));
   const moov = box("moov", mvhd, box("trak", tkhd, box("mdia", hdlr)));
   const ftyp = box("ftyp", enc(brand), be32(0), enc("isom"), enc("mp41"));

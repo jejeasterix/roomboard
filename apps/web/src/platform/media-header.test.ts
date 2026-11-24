@@ -6,6 +6,20 @@ import { sniffMedia, type MediaFormat } from "./media-import";
 const head = (b: Uint8Array, name: string) => sniffMedia(b.subarray(0, 4096), name);
 
 describe("readMediaHeader (cli-lot4, D61, DA18)", () => {
+  it("tkhd tourné de 90° (téléphone en portrait) : largeur et hauteur échangées", () => {
+    expect(readMediaHeader(mp4({ duration: 2, width: 1920, height: 1080, rotate: true }), "mov")).toEqual({ duration: 2, width: 1080, height: 1920 });
+    expect(readMediaHeader(mp4({ duration: 2, width: 1920, height: 1080, rotate: true, version1: true }), "mp4")).toEqual({ duration: 2, width: 1080, height: 1920 });
+  });
+  it("boîte ISO de taille 0 ou 1 : durée ou null, jamais d'exception", () => {
+    const real = mp4({ duration: 1, width: 8, height: 8 });
+    const be = (n: number) => Uint8Array.of(n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+    const tag = (s: string) => new TextEncoder().encode(s);
+    const cat = (...p: Uint8Array[]) => Uint8Array.from(p.flatMap((x) => [...x]));
+    const zero = cat(be(0), tag("moov"), real.subarray(real.length - 40));
+    const one = cat(be(1), tag("moov"), be(0), be(2), real);
+    const oneShort = cat(be(1), tag("moov"), be(0));
+    for (const bytes of [zero, one, oneShort, cat(real, be(0), tag("free")), cat(real, be(1), tag("free"))]) expect(() => readMediaHeader(bytes, "mp4")).not.toThrow();
+  });
   it("readMediaHeader — MP4 vidéo 2,5 s 640 × 360 (S3, clip.mp4)", () =>
     expect(readMediaHeader(mp4({ duration: 2.5, width: 640, height: 360 }), "mp4")).toEqual({ duration: 2.5, width: 640, height: 360 }));
   it("readMediaHeader — MP4 moov après mdat, mvhd et tkhd en version 1", () =>

@@ -9,18 +9,18 @@ import type { ImageKind } from "./image-decode";
 export type HeaderKind = Exclude<ImageKind, "png" | "jpeg">;
 type Size = { readonly w: number; readonly h: number };
 
-const at = (b: Uint8Array, i: number): number => b[i] ?? 0;
-const ascii = (b: Uint8Array, from: number, to: number): string => {
+export const at = (b: Uint8Array, i: number): number => b[i] ?? 0;
+export const ascii = (b: Uint8Array, from: number, to: number): string => {
   let s = "";
   for (let i = from; i < to && i < b.length; i++) s += String.fromCharCode(at(b, i));
   return s;
 };
-const u16le = (b: Uint8Array, i: number): number => at(b, i) | (at(b, i + 1) << 8);
+export const u16le = (b: Uint8Array, i: number): number => at(b, i) | (at(b, i + 1) << 8);
 const u24le = (b: Uint8Array, i: number): number => u16le(b, i) | (at(b, i + 2) << 16);
-const u32le = (b: Uint8Array, i: number): number => (u24le(b, i) | (at(b, i + 3) << 24)) >>> 0;
+export const u32le = (b: Uint8Array, i: number): number => (u24le(b, i) | (at(b, i + 3) << 24)) >>> 0;
 const i32le = (b: Uint8Array, i: number): number => u24le(b, i) | (at(b, i + 3) << 24);
-const u16be = (b: Uint8Array, i: number): number => (at(b, i) << 8) | at(b, i + 1);
-const u32be = (b: Uint8Array, i: number): number => ((at(b, i) << 24) | (at(b, i + 1) << 16) | (at(b, i + 2) << 8) | at(b, i + 3)) >>> 0;
+export const u16be = (b: Uint8Array, i: number): number => (at(b, i) << 8) | at(b, i + 1);
+export const u32be = (b: Uint8Array, i: number): number => ((at(b, i) << 24) | (at(b, i + 1) << 16) | (at(b, i + 2) << 8) | at(b, i + 3)) >>> 0;
 const sized = (w: number, h: number): Size | null => (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0 ? { w, h } : null);
 
 function gifSize(b: Uint8Array): Size | null {
@@ -145,7 +145,8 @@ const UNITS: Readonly<Record<string, number>> = Object.freeze({ "": 1, px: 1, pt
 
 function lengthOf(v: string | undefined): number | null {
   if (v === undefined) return null;
-  const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*([a-z]*)\s*$/i.exec(v);
+  if (v.length > 64) return null;
+  const m = /^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)\s*([a-z]*)\s*$/i.exec(v);
   if (m === null) return null;
   const unit = (m[2] ?? "").toLowerCase();
   if (!Object.hasOwn(UNITS, unit)) return null;
@@ -155,8 +156,20 @@ function lengthOf(v: string | undefined): number | null {
 
 function attributesOf(tag: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const m of tag.matchAll(/([A-Za-z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) out.set((m[1] ?? "").toLowerCase(), m[2] ?? m[3] ?? "");
+  for (const m of tag.matchAll(/(?<=\s)([A-Za-z_:][-\w:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) out.set((m[1] ?? "").toLowerCase(), m[2] ?? m[3] ?? "");
   return out;
+}
+
+const ROOT_MAX = 8192;
+
+/** Attributs de la balise racine `<svg …>` (borné à `ROOT_MAX` signes, parcours linéaire) ; null : aucune balise. */
+function rootTag(text: string): string | null {
+  const open = /<svg(?=[\s>/])/gi;
+  const m = open.exec(text);
+  if (m === null) return null;
+  const from = m.index + 4;
+  const close = text.indexOf(">", from);
+  return close < 0 || close - from > ROOT_MAX ? null : text.slice(from, close);
 }
 
 /**
@@ -165,9 +178,9 @@ function attributesOf(tag: string): Map<string, string> {
  * 300 × 300·h/w, sinon 300 × 150. `%` n'est pas absolu. Arrondi au pixel.
  */
 function svgSize(b: Uint8Array): Size | null {
-  const m = /<svg(?=[\s>/])([^>]*)>/i.exec(new TextDecoder("utf-8").decode(b));
-  if (m === null) return null;
-  const a = attributesOf(m[1] ?? "");
+  const root = rootTag(new TextDecoder("utf-8").decode(b));
+  if (root === null) return null;
+  const a = attributesOf(root);
   const w = lengthOf(a.get("width"));
   const h = lengthOf(a.get("height"));
   const vb = (a.get("viewbox") ?? "").trim().split(/[\s,]+/).map(Number);
