@@ -8,9 +8,9 @@
 | T2 | `image-size.ts` (GIF, WebP, BMP, ICO, AVIF, HEIC, SVG), `probeSize` étendu, fabriques d'images | — | `apps/web/src/platform/image-size.ts`, `apps/web/src/platform/image-size.test.ts`, `apps/web/src/platform/image-import.ts`, `apps/web/src/platform/image-import.test.ts`, `scripts/essais/fabriques/images.mjs`, `scripts/essais/fabriques/images.d.mts` | isolé (`~/projets/roomboard-wt/cli-lot4--T2`) | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/image-size.test.ts src/platform/image-import.test.ts 2>&1 \| tail -15` : `Test Files  2 passed`, aucun `FAIL ` ; `… exec vitest run src/platform/image-size.test.ts -t "headerSize" 2>&1 \| tail -5` : ≥ 12 tests | S5 | #tache-t2 |
 | T3 | `media-header.ts` (MP4/MOV/M4A, WebM, WAV, Ogg, MP3), fabriques de médias | — | `apps/web/src/platform/media-header.ts`, `apps/web/src/platform/media-header.test.ts`, `scripts/essais/fabriques/medias.mjs`, `scripts/essais/fabriques/medias.d.mts` | isolé (`~/projets/roomboard-wt/cli-lot4--T3`) | implementeur-tdd | `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/media-header.test.ts src/platform/media-import.test.ts 2>&1 \| tail -15` : `Test Files  2 passed` ; `-t "readMediaHeader"` ≥ 14 tests | S3 | #tache-t3 |
 | T4 | CLI 3D : `model3d-node.ts` (globaux de three, D76), `quietError`, erreurs non rattrapées (D77), fabriques 3D | — | `apps/cli/src/model3d-node.ts`, `apps/cli/src/model3d-node.test.ts`, `apps/cli/src/quiet.ts`, `apps/cli/src/quiet.test.ts`, `apps/cli/src/bin.ts`, `apps/cli/src/bin.test.ts`, `scripts/essais/fabriques/modeles.mjs`, `scripts/essais/fabriques/modeles.d.mts` | isolé (`~/projets/roomboard-wt/cli-lot4--T4`) | concepteur-critique | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run src/model3d-node.test.ts src/quiet.test.ts src/bin.test.ts 2>&1 \| tail -15` : `Test Files  3 passed`, ≥ 14 tests, nom `D76` présent ; puis build et `node apps/cli/dist/roomboard.mjs formats 2>&1 >/dev/null \| wc -c` → `0` | S4 | #tache-t4 |
-| T5 | CLI médias et images : `media-node.ts` (`nodeMedia`, `headerBlocked`) ; parcours ISO partagé | T2, T3 | `apps/cli/src/media-node.ts`, `apps/cli/src/media-node.test.ts`, `apps/web/src/platform/media-header.ts` | isolé (`~/projets/roomboard-wt/cli-lot4--T5`) | implementeur-tdd | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run src/media-node.test.ts 2>&1 \| tail -15` : `Test Files  1 passed`, ≥ 9 tests ; `nice -n 10 pnpm --filter @roomboard/web exec vitest run src/platform/media-header.test.ts 2>&1 \| tail -5` : `1 passed` | S3, S5 | #tache-t5 |
-| T6 | CLI Office : `office-node.ts` (binaire, `--check`, signaux D79), `readDoc`, `convert`, aide | T1 | `apps/cli/src/office-node.ts`, `apps/cli/src/office-node.test.ts`, `apps/cli/src/office.test.ts`, `apps/cli/src/session.ts`, `apps/cli/src/exporter.ts`, `apps/cli/src/main.ts`, `apps/cli/src/main.test.ts`, `apps/cli/src/guards.test.ts`, `apps/cli/src/convert.test.ts` | isolé (`~/projets/roomboard-wt/cli-lot4--T6`) | concepteur-critique | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run src/office-node.test.ts src/office.test.ts src/guards.test.ts src/convert.test.ts src/main.test.ts 2>&1 \| tail -15` : `Test Files  5 passed`, `-t "S1"` ≥ 3 tests, `-t "S2"` ≥ 2 tests ; `for p in /proc/[0-9]*; do tr '\0' ' ' < $p/cmdline; echo; done 2>/dev/null \| grep -c roomboard-cli-t-` → `0` | S1, S2 | #tache-t6 |
-| T7 | Branchement : `importInto`, `FORMAT_LOTS` (`LOT_LIVRE = 4`), scénarios S1 à S5 en Vitest | T4, T5, T6 | `apps/cli/src/importer.ts`, `apps/cli/src/formats.ts`, `apps/cli/src/main.ts`, `apps/cli/src/formats.test.ts`, `apps/cli/src/import.test.ts`, `apps/cli/src/pdf.test.ts`, `apps/cli/src/pdf-node.ts`, `apps/cli/src/contract.ts`, `apps/cli/src/boards.test.ts`, `apps/cli/src/images.test.ts`, `apps/cli/src/media.test.ts`, `apps/cli/src/model3d.test.ts`, `apps/cli/src/office.test.ts` | isolé (`~/projets/roomboard-wt/cli-lot4--T7`) | implementeur-tdd | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli test 2>&1 \| tail -15` : tous verts, aucun `FAIL ` ; `… exec vitest run src/images.test.ts src/media.test.ts src/model3d.test.ts src/office.test.ts src/formats.test.ts 2>&1 \| tail -8` : `Test Files  5 passed`, ≥ 20 tests | S1, S2, S3, S4, S5 | #tache-t7 |
+| T5 | CLI médias et images : `media-node.ts` (`nodeMedia`, `headerBlocked`) ; parcours ISO partagé | T2, T3 | `apps/cli/src/media-node.ts`, `apps/cli/src/media-node.test.ts`, `apps/web/src/platform/media-header.ts` | isolé (`~/projets/roomboard-wt/cli-lot4--T5`) | implementeur-tdd | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run --reporter=verbose src/media-node.test.ts 2>&1 \| tail -30` : `Test Files  1 passed`, ≥ 9 tests, noms `headerBlocked — S3` et `RF4` présents ; `nice -n 10 pnpm --filter @roomboard/web exec vitest run --reporter=verbose src/platform/media-header.test.ts 2>&1 \| tail -25` : `1 passed`, nom `RF1` présent | S3, S5 | #tache-t5 |
+| T6 | CLI Office : `office-node.ts` (binaire, `--check`, signaux D79), `readDoc`, `convert`, aide | T1 | `apps/cli/src/office-node.ts`, `apps/cli/src/office-node.test.ts`, `apps/cli/src/office.test.ts`, `apps/cli/src/session.ts`, `apps/cli/src/exporter.ts`, `apps/cli/src/main.ts`, `apps/cli/src/main.test.ts`, `apps/cli/src/guards.test.ts`, `apps/cli/src/convert.test.ts` | isolé (`~/projets/roomboard-wt/cli-lot4--T6`) | concepteur-critique | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run --reporter=verbose src/office-node.test.ts src/office.test.ts src/guards.test.ts src/convert.test.ts src/main.test.ts 2>&1 \| grep -E "✓\|×\|↓\|Test Files"` : `Test Files  5 passed`, ≥ 3 lignes `✓ … S1 —`, ≥ 2 lignes `✓ … S2 —`, ligne `✓ … D79 — SIGINT dès que LibreOffice cite la racine` présente, aucune ligne `↓` (sauté) ni `×` ; `for p in /proc/[0-9]*; do tr '\0' ' ' < $p/cmdline; echo; done 2>/dev/null \| grep -c roomboard-cli-t-` → `0` | S1, S2 | #tache-t6 |
+| T7 | Branchement : `importInto`, `FORMAT_LOTS` (`LOT_LIVRE = 4`), scénarios S1 à S5 en Vitest | T4, T5, T6 | `apps/cli/src/importer.ts`, `apps/cli/src/formats.ts`, `apps/cli/src/main.ts`, `apps/cli/src/formats.test.ts`, `apps/cli/src/import.test.ts`, `apps/cli/src/pdf.test.ts`, `apps/cli/src/pdf-node.ts`, `apps/cli/src/contract.ts`, `apps/cli/src/boards.test.ts`, `apps/cli/src/images.test.ts`, `apps/cli/src/media.test.ts`, `apps/cli/src/model3d.test.ts`, `apps/cli/src/office.test.ts` | isolé (`~/projets/roomboard-wt/cli-lot4--T7`) | implementeur-tdd | `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli test 2>&1 \| tail -15` : tous verts, aucun `FAIL ` ; `… exec vitest run --reporter=verbose src/images.test.ts src/media.test.ts src/model3d.test.ts src/office.test.ts src/formats.test.ts 2>&1 \| grep -E "✓\|×\|↓\|Test Files"` : `Test Files  5 passed`, ≥ 20 lignes `✓`, noms `S5 — huit images`, `S3 — import son.wav`, `S4 — import cube.obj`, `RF3 — deux .docx`, `D68 — aucune entrée` présents, aucune ligne `↓` ni `×` | S1, S2, S3, S4, S5 | #tache-t7 |
 | T8 | Essai `cli-essai.mjs` (S1 à S5, Ctrl-C), `objets.mjs`, profil, mesure du démarrage, `verifier.sh --e2e` | T7 | `scripts/essais/cli-essai.mjs`, `scripts/essais/fabriques/objets.mjs`, `scripts/essais/fabriques/objets.d.mts`, `.claude/chantier.md` | isolé (`~/projets/roomboard-wt/cli-lot4--T8`) | implementeur-tdd | `nice -n 10 scripts/verifier.sh --e2e 2>&1 \| tail -40` : lignes `CLI : OK`, `verifier.sh : e2e OK`, `module formats : 2794511 octets` ; `grep -c "Lots restants : aucun" .claude/chantier.md` → `1` | S5, S1, S2, S3, S4 | #tache-t8 |
 
 Vagues (dépendances) : 1 = T1 ∥ T2 ∥ T3 ∥ T4 ; 2 = T5 (dès T2 et T3 fusionnées) ∥ T6 (dès T1 fusionnée) ; 3 = T7 ; 4 = T8.
@@ -18,11 +18,24 @@ Aucune paire d'une même vague ne partage un fichier : `importer.ts` et `formats
 d'intégration) ; `media-header.ts` par T3 puis T5 (vagues différentes) ; `office.test.ts` par T6 puis T7. Chemin
 critique : T1 → T6 → T7 → T8 (~35 + 50 + 50 + 35 min). Coupe H48 à 07:30.
 
+**Chemin critique recalculé (vague 1 lancée à 05:50 ; arrêt ferme 09:09 ; poussée de sauvegarde 08:59)** : T1 ~05:50–06:25 →
+T6 ~06:25–07:20 (T5 ~06:40–07:15 en parallèle, après T3) → T7 ~07:20–08:15 → T8 ~08:15–08:50, dont `verifier.sh --e2e`
+(~25 min, non mesuré) : fin ~08:50, **9 min avant la poussée de sauvegarde**, 19 min avant l'arrêt ferme. Marge nulle pour
+un correctif de fin. Leviers, dans l'ordre : appliquer la coupe H48 à 07:30 sans attendre ; lancer `verifier.sh --e2e` dès
+le commit de l'essai (T8 étape 6), sans attendre le profil ; si T7 n'est pas fusionnée à 08:20, pousser la branche telle
+quelle à 08:59 (sauvegarde) et reporter T8.
+
 **Écart au découpage DA21 (7 tâches)** : 8 tâches. Les branchements de `importer.ts` et de `formats.ts` que DA21 confiait à
 T4, T5 et T6 en parallèle (fusion par l'orchestrateur) passent dans une seule tâche d'intégration (T7), pour qu'aucune
 vague ne partage un fichier ; la 3D (sans dépendance) avance en vague 1. `checkOffice` vit dans `office-node.ts` et
 `headerBlocked` dans `media-node.ts` (T6, T5) ; `importer.ts` les réexporte (T7) : l'interface de DA17 reste importable
 depuis `importer.ts`.
+
+**Écart à D70 et à la carte d'impact (fabriques)** : D70 prévoyait un seul module neuf `scripts/essais/fabriques/objets.mjs`
+(+ `.d.mts`). Le plan en écrit quatre, pour qu'aucune vague ne partage un fichier : `images.mjs` + `.d.mts` (T2),
+`medias.mjs` + `.d.mts` (T3), `modeles.mjs` + `.d.mts` (T4), et `objets.mjs` + `.d.mts` (T8) qui les réexporte et, lancé
+seul, écrit le jeu des scénarios (interface de D70 tenue). Entrées ajoutées à la carte 3.5 : ces six fichiers, tous
+« touché, neuf ».
 
 **Écart à la carte d'impact** : `scripts/essais/c16-office-navigateur.mjs:97` lance `cargo run … --example
 convertir_office` (la carte le disait non touché, D50 « aucun script ne l'appelle ») : T1 le passe à `--bin
@@ -108,7 +121,7 @@ Recopiées dans chaque section concernée (un sous-agent ne lit que la sienne).
 | `crates/roomboard-shell/tests/office_bin.rs` | tests d'intégration du binaire (vrai LibreOffice) | T1 |
 | `apps/web/src/platform/image-size.ts` | `headerSize`, `isoBoxes` : tailles dans l'en-tête | T2 |
 | `apps/web/src/platform/media-header.ts` | `readMediaHeader` : durée et taille dans l'en-tête | T3, T5 |
-| `scripts/essais/fabriques/{images,medias,modeles}.mjs` (+ `.d.mts`) | octets d'essai écrits par le code | T2, T3, T4 |
+| `scripts/essais/fabriques/{images,medias,modeles}.mjs` (+ `.d.mts`) | octets d'essai écrits par le code (écart à D70 : trois modules au lieu d'un, réexportés par `objets.mjs`) | T2, T3, T4 |
 | `scripts/essais/fabriques/objets.mjs` (+ `.d.mts`) | réexporte les trois fabriques ; lancé seul, écrit le jeu des scénarios | T8 |
 | `apps/cli/src/model3d-node.ts` | `nodeModel3d`, `withThreeGlobals` | T4 |
 | `apps/cli/src/media-node.ts` | `nodeMedia`, `headerBlocked` | T5 |
@@ -2430,8 +2443,8 @@ distincts (`video/mp4` pour `mp4`, `audio/mp4` pour `m4a`).
 
 - [ ] **Étape 4 : vert**
 
-Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run src/media-node.test.ts 2>&1 | tail -10`
-Attendu : `Test Files  1 passed`, ≥ 9 tests.
+Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run --reporter=verbose src/media-node.test.ts 2>&1 | tail -30`
+Attendu : `Test Files  1 passed`, ≥ 9 lignes `✓`, dont `headerBlocked — S3 : casse.mp4` et `RF4 — x.png qui contient un GIF`.
 
 - [ ] **Étape 5 : un seul parcours ISO** — `apps/web/src/platform/media-header.ts`
 
@@ -2504,7 +2517,9 @@ binaire>-` sont visés (G4). Chemins de référence : la page câble l'Office en
   export function officeBinary(env?: Env): string | null;
   export function officeReady(env?: Env): Promise<OfficeReady>;              // `--check` une fois par binaire et par processus
   export async function checkOffice(sources: readonly string[], env?: Env): Promise<void>; // CliError("unsupported") si une source au lecteur `office` et pas de convertisseur
-  export async function convertOfficeFile(path: string, env?: Env): Promise<Blob>;         // rejette OfficeConvertError(code)
+  export async function convertOfficeFile(path: string, env?: Env, onInterrupt?: (sig: NodeJS.Signals, code: number) => void): Promise<Blob>; // rejette OfficeConvertError(code)
+  export const interruptedExitCode: (sig: NodeJS.Signals) => number;                     // 130 (SIGINT), 143 (SIGTERM)
+  export function exitInterrupted(sig: NodeJS.Signals, code: number): void;              // ligne {"error":…} puis process.exit(code)
   export function killLeftovers(root: string, pid: number, procDir?: string, kill?: (pid: number, sig: NodeJS.Signals) => void): number[];
   // apps/cli/src/session.ts
   SessionDeps.env?: Readonly<Record<string, string | undefined>>;                        // posé par nodeSession (io.env)
@@ -2541,14 +2556,16 @@ binaire>-` sont visés (G4). Chemins de référence : la page câble l'Office en
   apps/web/src/`, puis `nice -n 10 cargo build -p roomboard-shell --bin roomboard-office -j 4` (le binaire est lu dans
   `target/debug/` du worktree, D55).
 - G13 — stderr de la CLI réservé à la ligne `{"error":…}` : aucun `console.*` ajouté ; la seule écriture directe sur
-  `process.stderr` est la ligne `{"error":…}` d'une conversion interrompue (D79).
+  `process.stderr` est la ligne `{"error":…}` d'une conversion interrompue (D79, `exitInterrupted`, appelée après le
+  retrait du dossier `mkdtemp` : aucun `process.exit` dans la promesse de conversion).
 - G14 — Aucun import neuf entre `import.ts` et `office-import.ts`.
 
 **Interdits :** toucher `importer.ts` ou `formats.ts` (T7) ; lancer `soffice`/`libreoffice` depuis Node ; un délai propre
 côté Node (H46 : 120 s du binaire) ; `shell: true` ou une chaîne de commande (RF2 : `spawn`/`execFile` avec un tableau
 d'arguments) ; `process.kill` d'un pid qui ne cite pas la conversion du binaire lancé.
 
-**Terminé quand :** `office-node.test.ts`, `office.test.ts`, `guards.test.ts`, `convert.test.ts`, `main.test.ts` verts avec
+**Terminé quand :** le test réel `D79 — SIGINT dès que LibreOffice cite la racine` vert (code 130, aucun processus restant,
+aucun dossier `roomboard-office-*` laissé) ; `office-node.test.ts`, `office.test.ts`, `guards.test.ts`, `convert.test.ts`, `main.test.ts` verts avec
 le vrai binaire et le vrai LibreOffice ; aucun `soffice` dont la ligne de commande cite un dossier de test après la suite ;
 suite CLI entière verte. Rapport : `Réutilisation : appelé readPdfFile (original), convertFailureMessage,
 OfficeConvertError, OFFICE_EXTENSIONS, isSheetName ; binaire roomboard-office`.
@@ -2569,9 +2586,10 @@ nice -n 10 cargo build -p roomboard-shell --bin roomboard-office -j 4 2>&1 | tai
 - [ ] **Étape 2 : tests unitaires rouges** — `apps/cli/src/office-node.test.ts`
 
 ```ts
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OfficeConvertError } from "../../web/src/platform/office-import";
 import { CliError } from "./contract";
 import { BINARY_MISSING, checkOffice, convertOfficeFile, killLeftovers, NO_SOFFICE, officeBinary, officeReady } from "./office-node";
@@ -2650,6 +2668,37 @@ describe("convertOfficeFile (cli-lot4, D57)", () => {
   });
 });
 
+describe("officeReady, clé du cache (cli-lot4, D79)", () => {
+  it("officeReady — même binaire, autre XDG_CACHE_HOME : --check relancé, racine de cet environnement", async () => {
+    const dir = tmpDir();
+    const log = join(dir, "appels.log");
+    const bin = join(dir, "faux-office");
+    writeFileSync(bin, `#!/bin/sh\necho "$1" >> '${log}'\necho "racine : $XDG_CACHE_HOME/roomboard-office"\nexit 0\n`);
+    chmodSync(bin, 0o755);
+    const a = await officeReady({ ROOMBOARD_OFFICE: bin, XDG_CACHE_HOME: join(dir, "a") });
+    const b = await officeReady({ ROOMBOARD_OFFICE: bin, XDG_CACHE_HOME: join(dir, "b") });
+    expect([a, b]).toEqual([{ root: join(dir, "a", "roomboard-office") }, { root: join(dir, "b", "roomboard-office") }]);
+    expect(readFileSync(log, "utf8")).toBe("--check\n--check\n");
+  });
+});
+
+describe("Ctrl-C, faux binaire (cli-lot4, D79)", () => {
+  it("D79 — SIGINT transmis : onInterrupt(SIGINT, 130) après le retrait du dossier mkdtemp", async () => {
+    const dir = tmpDir();
+    const mark = join(dir, "lance");
+    const bin = fakeBinary(dir, { check: 0, convert: `echo go > '${mark}'\nexec sleep 30` });
+    const temp = (): string[] => readdirSync(tmpdir()).filter((n) => n.startsWith("roomboard-office-"));
+    const before = new Set(temp());
+    const onInterrupt = vi.fn();
+    const pending = convertOfficeFile(join(dir, "x.docx"), { ROOMBOARD_OFFICE: bin }, onInterrupt).catch((e: unknown) => e);
+    for (let i = 0; i < 100 && !existsSync(mark); i++) await new Promise((r) => setTimeout(r, 50));
+    process.emit("SIGINT");
+    expect(await pending).toEqual(new OfficeConvertError("interrupted"));
+    expect(onInterrupt).toHaveBeenCalledWith("SIGINT", 130);
+    expect(temp().filter((n) => !before.has(n))).toEqual([]);
+  });
+});
+
 describe("killLeftovers (cli-lot4, D79, G4)", () => {
   it("D79 — seuls les processus qui citent <racine>/conversions/<pid>- sont tués (groupe d'abord)", () => {
     const proc = tmpDir();
@@ -2683,9 +2732,11 @@ describe("killLeftovers (cli-lot4, D79, G4)", () => {
 import { chmodSync, copyFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { describe, expect, it, vi } from "vitest";
+import { OfficeConvertError } from "../../web/src/platform/office-import";
 import { main } from "./main";
-import { BINARY_MISSING, NO_SOFFICE } from "./office-node";
+import { BINARY_MISSING, convertOfficeFile, NO_SOFFICE } from "./office-node";
 import { describeWasm, memoryIO, tmpDir, type Json } from "./testing";
 
 const REAL = process.env["ROOMBOARD_SANS_SOFFICE"] !== "1";
@@ -2769,6 +2820,31 @@ describeWasm("S1 — Office converti, puis chemin PDF (convert, state)", () => {
     expect(await main(["state", out], st)).toBe(0);
     expect(st.json()[0].assets.map((a: Json) => a.name).sort()).toEqual(["Cours d'été 2.docx", "Cours d'été 2.pdf"]);
     cleanAfter(cache);
+  });
+});
+
+describe("D79 — Ctrl-C pendant une vraie conversion (cli-lot4)", () => {
+  itReal("D79 — SIGINT dès que LibreOffice cite la racine : code 130, aucun processus restant, dossier mkdtemp retiré", SLOW, async () => {
+    const { dir, cache, env } = scratch();
+    const src = join(dir, "diapos.pptx");
+    copyFileSync(join(FIX, "diapos.pptx"), src);
+    const temp = (): string[] => readdirSync(tmpdir()).filter((n) => n.startsWith("roomboard-office-"));
+    const before = new Set(temp());
+    const onInterrupt = vi.fn();
+    const pending = convertOfficeFile(src, env, onInterrupt).then(
+      () => "converti",
+      (e: unknown) => (e instanceof OfficeConvertError ? e.code : String(e)),
+    );
+    const conversions = join(cache, "roomboard-office", "conversions");
+    for (let i = 0; i < 600 && processesWith(conversions).length === 0; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(processesWith(conversions).length, "LibreOffice jamais vu sous la racine").toBeGreaterThan(0);
+    // L'écouteur posé par runConversion, sans signal du système : le processus de Vitest ne doit pas en recevoir.
+    process.emit("SIGINT");
+    expect(await pending).toBe("interrupted");
+    expect(onInterrupt).toHaveBeenCalledWith("SIGINT", 130);
+    for (let i = 0; i < 50 && processesWith(cache).length > 0; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(processesWith(cache)).toEqual([]);
+    expect(temp().filter((n) => !before.has(n))).toEqual([]);
   });
 });
 
@@ -2885,12 +2961,17 @@ export function officeBinary(env: Env = process.env): string | null {
 
 const childEnv = (env: Env): NodeJS.ProcessEnv => ({ ...process.env, ...env });
 const checked = new Map<string, Promise<OfficeReady>>();
+/** Clé du cache de `--check` : binaire ET variables qui fixent sa racine (`XDG_CACHE_HOME`, `HOME`) ; une autre racine
+ *  (autre test, autre environnement) relance `--check`, et `killLeftovers` ne reçoit jamais une racine périmée. */
+const checkKey = (bin: string, env: Env): string =>
+  [bin, env["XDG_CACHE_HOME"] ?? process.env["XDG_CACHE_HOME"] ?? "", env["HOME"] ?? process.env["HOME"] ?? ""].join("\0");
 
-/** `--check` du binaire, une fois par binaire et par processus (D56) ; raison du code 3 sinon. */
+/** `--check` du binaire, une fois par binaire, par racine et par processus (D56) ; raison du code 3 sinon. */
 export function officeReady(env: Env = process.env): Promise<OfficeReady> {
   const bin = officeBinary(env);
   if (bin === null) return Promise.resolve({ reason: BINARY_MISSING });
-  let ready = checked.get(bin);
+  const key = checkKey(bin, env);
+  let ready = checked.get(key);
   if (ready === undefined) {
     ready = new Promise<OfficeReady>((resolve) => {
       execFile(bin, ["--check"], { env: childEnv(env), encoding: "utf8" }, (error, stdout) => {
@@ -2900,7 +2981,7 @@ export function officeReady(env: Env = process.env): Promise<OfficeReady> {
         } else resolve({ reason: error.code === 3 ? NO_SOFFICE : `roomboard-office --check a échoué (${String(error.code ?? error.message)})` });
       });
     });
-    checked.set(bin, ready);
+    checked.set(key, ready);
   }
   return ready;
 }
@@ -2954,7 +3035,19 @@ export function killLeftovers(root: string, pid: number, procDir = "/proc", kill
   return killed;
 }
 
-function runConversion(bin: string, args: readonly string[], env: Env, root: string): Promise<{ readonly code: number | null; readonly stderr: string }> {
+/** Code de sortie d'une conversion interrompue (D79) : 130 pour SIGINT, 143 pour SIGTERM. */
+export const interruptedExitCode = (sig: NodeJS.Signals): number => (sig === "SIGINT" ? 130 : 143);
+
+/** Sortie d'une conversion interrompue (D79) : une ligne `{"error":…}`, puis 130 ou 143 ; appelée après le retrait du
+ *  dossier `mkdtemp` (aucun `finally` sauté). Remplacée dans les tests (le processus de Vitest ne sort pas). */
+export function exitInterrupted(sig: NodeJS.Signals, code: number): void {
+  process.stderr.write(`${JSON.stringify({ error: new CliError("command", interruptedMessage(sig)) })}\n`);
+  process.exit(code);
+}
+
+type Run = { readonly code: number | null; readonly stderr: string; readonly caught: NodeJS.Signals | null };
+
+function runConversion(bin: string, args: readonly string[], env: Env, root: string): Promise<Run> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { env: childEnv(env), stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
@@ -2981,31 +3074,34 @@ function runConversion(bin: string, args: readonly string[], env: Env, root: str
     });
     child.on("close", (code) => {
       done();
-      if (caught !== null) {
-        if (child.pid !== undefined) killLeftovers(root, child.pid);
-        process.stderr.write(`${JSON.stringify({ error: new CliError("command", interruptedMessage(caught)) })}\n`);
-        process.exit(caught === "SIGINT" ? 130 : 143);
-      }
-      resolve({ code, stderr });
+      if (caught !== null && child.pid !== undefined) killLeftovers(root, child.pid); // D79 : LibreOffice de cette conversion
+      resolve({ code, stderr, caught }); // aucun process.exit ici : le dossier mkdtemp est retiré d'abord
     });
   });
 }
 
-/** D57 : PDF du fichier Office `path`, écrit par le binaire dans un dossier `mkdtemp` (0700) retiré à la fin ; rejette
- *  `OfficeConvertError(code)` (code = premier mot de stderr ; `no-program` pour le code 3, H49). */
-export async function convertOfficeFile(path: string, env: Env = process.env): Promise<Blob> {
+/** D57 : PDF du fichier Office `path`, écrit par le binaire dans un dossier `mkdtemp` (0700) retiré à la fin, Ctrl-C
+ *  compris ; rejette `OfficeConvertError(code)` (code = premier mot de stderr ; `no-program` pour le code 3, H49). Après
+ *  un Ctrl-C (D79) : dossier retiré, puis `onInterrupt(signal, 130 | 143)` (par défaut : ligne `{"error":…}` et sortie). */
+export async function convertOfficeFile(
+  path: string,
+  env: Env = process.env,
+  onInterrupt: (sig: NodeJS.Signals, code: number) => void = exitInterrupted,
+): Promise<Blob> {
   const ready = await officeReady(env);
   const bin = officeBinary(env);
   if ("reason" in ready || bin === null) throw new OfficeConvertError("no-program");
   const dir = await mkdtemp(join(tmpdir(), "roomboard-office-"));
-  try {
-    const out = join(dir, "sortie.pdf");
-    const { code, stderr } = await runConversion(bin, [path, out], env, ready.root);
-    if (code !== 0) throw new OfficeConvertError(code === 3 ? "no-program" : (/^\s*([a-z-]+)/.exec(stderr)?.[1] ?? "failed"));
-    return new Blob([await readFile(out)], { type: "application/pdf" });
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+  const out = join(dir, "sortie.pdf");
+  const run = await runConversion(bin, [path, out], env, ready.root)
+    .then(async (r) => ({ ...r, pdf: r.caught === null && r.code === 0 ? new Blob([await readFile(out)], { type: "application/pdf" }) : null }))
+    .finally(() => rm(dir, { recursive: true, force: true }));
+  if (run.caught !== null) {
+    onInterrupt(run.caught, interruptedExitCode(run.caught));
+    throw new OfficeConvertError("interrupted"); // atteint seulement si `onInterrupt` ne sort pas (tests)
   }
+  if (run.pdf === null) throw new OfficeConvertError(run.code === 3 ? "no-program" : (/^\s*([a-z-]+)/.exec(run.stderr)?.[1] ?? "failed"));
+  return run.pdf;
 }
 ```
 
@@ -3114,8 +3210,10 @@ const ENV =
 
 - [ ] **Étape 9 : vert**
 
-Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run src/office-node.test.ts src/office.test.ts src/guards.test.ts src/convert.test.ts src/main.test.ts 2>&1 | tail -15`
-Attendu : `Test Files  5 passed`, aucun `FAIL `, aucun `skipped` (LibreOffice présent sur la VM).
+Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run --reporter=verbose src/office-node.test.ts src/office.test.ts src/guards.test.ts src/convert.test.ts src/main.test.ts 2>&1 | grep -E "✓|×|↓|Test Files"`
+Attendu : `Test Files  5 passed`, aucune ligne `×` ni `↓` (LibreOffice présent sur la VM) ; lignes `✓` de `S1 — convert
+diapos.pptx`, `RF2 — nom avec espace`, `S2 — faux binaire`, `D79 — SIGINT dès que LibreOffice cite la racine`, `D79 — SIGINT
+transmis`, `officeReady — même binaire, autre XDG_CACHE_HOME`.
 Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli test 2>&1 | tail -8` — aucun `FAIL ` (garde :
 `pdf.test.ts`, `session.test.ts`, `export.test.ts`).
 Run : `for p in /proc/[0-9]*; do tr '\0' ' ' < $p/cmdline 2>/dev/null; echo; done | grep -c "roomboard-cli-t-"` → `0`
@@ -3210,7 +3308,8 @@ toucher `apps/web` ; changer `exporter.ts`, `session.ts`, `office-node.ts`, `med
 défaut prouvé par un test rouge : le dire au rapport).
 
 **Terminé quand :** suite CLI entière verte ; `images.test.ts`, `media.test.ts`, `model3d.test.ts`, `office.test.ts`,
-`formats.test.ts` verts (≥ 20 tests) ; `node apps/cli/dist/roomboard.mjs formats` : chaque ligne `read: true` ;
+`formats.test.ts` verts (≥ 20 tests) ; `node apps/cli/dist/roomboard.mjs formats` : chaque ligne `read: true` ou portant
+la note `laissé de côté : …` (coupe H48) ;
 `grep -rn "lot 4" apps/cli/src/*.ts | grep -v test` → rien. Rapport : `Réutilisation : appelé createImporter (probe,
 mediaUrls, model3d, convertOffice, openOffice, officeConverter), nodeDecode, checkSources (étendu)`, et la liste des
 formats laissés de côté (vide si aucun).
@@ -3286,7 +3385,7 @@ describeWasm("S5 — autres images (cli-lot4)", () => {
     const io = memoryIO();
     expect(await main(["formats"], io)).toBe(0);
     const rows = io.json()[0].formats as Json[];
-    expect(rows.filter((r) => r.read !== true).map((r) => r.ext)).toEqual([]);
+    expect(rows.filter((r) => r.read !== true && !r.notes.some((n: string) => n.startsWith("laissé de côté : "))).map((r) => r.ext)).toEqual([]);
     expect(rows.flatMap((r) => r.notes).filter((n: string) => /\blots?\b/i.test(n))).toEqual([]);
   });
   it("D69 — export .pdf d'un tableau qui porte une image GIF : code 1, raison « aucun décodeur d'image »", async () => {
@@ -3531,7 +3630,7 @@ Modifier `apps/cli/src/formats.test.ts` : le test « lots livrés (LOT_LIVRE = 3
   it("lots livrés (LOT_LIVRE = 4, cli-lot4 D68) : tout format est lu ; écrits inchangés", () => {
     expect(LOT_LIVRE).toBe(4);
     const rows = formatRows();
-    expect(rows.filter((r) => !r.read).map((r) => r.ext)).toEqual([]);
+    expect(rows.filter((r) => !r.read && !r.notes.some((n) => n.startsWith(LEFT_ASIDE))).map((r) => r.ext)).toEqual([]);
     expect(rows.find((r) => r.ext === ".rbpack")?.notes.join(" ")).toContain("library import");
     expect(rows.find((r) => r.ext === ".notebook")?.notes.join(" ")).toContain("lecture seule");
     expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".pdf", ".rbitem", ".rbpack", ".roomboard", ".ubz"]);
@@ -3765,13 +3864,14 @@ Si `boards.test.ts` attendait un avis d'image sautée pour une image désormais 
 
 - [ ] **Étape 7 : vert**
 
-Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run src/images.test.ts src/media.test.ts src/model3d.test.ts src/office.test.ts src/formats.test.ts src/import.test.ts src/pdf.test.ts 2>&1 | tail -15`
-Attendu : `Test Files  7 passed`.
+Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli exec vitest run --reporter=verbose src/images.test.ts src/media.test.ts src/model3d.test.ts src/office.test.ts src/formats.test.ts src/import.test.ts src/pdf.test.ts 2>&1 | grep -E "✓|×|↓|Test Files"`
+Attendu : `Test Files  7 passed`, aucune ligne `×` ni `↓` ; lignes `✓` de `S5 — huit images`, `S3 — import son.wav`, `S4 — import
+cube.obj`, `D76 — session run`, `S1 — import a.roomboard cours.docx`, `RF3 — deux .docx`, `D68 — aucune entrée`.
 Run : `ROOMBOARD_WASM_REQUIRED=1 nice -n 10 pnpm --filter @roomboard/cli test 2>&1 | tail -10` — tous verts (garde :
 `boards`, `export`, `library`, `main`, `rbitem`, `session`, `target`, `pdf-node`, `guards`, `convert`).
 Run : `nice -n 10 pnpm --filter @roomboard/web test 2>&1 | tail -6` — aucun `FAIL ` (garde : `media-import`,
 `model-view-three`, `model3d-handlers`, `office-import`, `import`, `zip-read`).
-Run : `nice -n 10 pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node apps/cli/dist/roomboard.mjs formats | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).formats;console.log(r.filter(x=>!x.read).length)'` → `0`.
+Run : `nice -n 10 pnpm --filter @roomboard/cli build 2>&1 | tail -3 && node apps/cli/dist/roomboard.mjs formats | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).formats;console.log(r.filter(x=>!x.read&&!x.notes.some(n=>n.startsWith("laissé de côté : "))).length)'` → `0` (lue, ou laissée de côté avec sa raison, H48).
 Run : `grep -rn "lot 4" apps/cli/src/*.ts | grep -v "\.test\.ts"` → rien.
 Run : `for p in /proc/[0-9]*; do tr '\0' ' ' < $p/cmdline; echo; done 2>/dev/null | grep -c roomboard-cli-t-` → `0`.
 
@@ -4014,7 +4114,8 @@ Ligne 247, remplacer `verifie("convert depuis .docx : code 2", …)` par :
   const de = (...noms) => noms.map((x) => join(lot4, x));
   const nomDe = (st, id) => st.assets.find((x) => x.id === id)?.name;
   const f4 = cli(["formats"]).lignes[0].formats;
-  verifie("formats : chaque format lu (D68)", f4.every((x) => x.read === true), JSON.stringify(f4.filter((x) => !x.read).map((x) => x.ext)));
+  const nonLus = f4.filter((x) => x.read !== true && !x.notes.some((t) => t.startsWith("laissé de côté : ")));
+  verifie("formats : chaque format lu, ou laissé de côté avec sa raison (D68, H48)", nonLus.length === 0, JSON.stringify(nonLus.map((x) => x.ext)));
   verifie("formats : aucune note ne cite un lot", f4.every((x) => x.notes.every((t) => !/\blots?\b/i.test(t))));
   const b4 = join(dir, "b4.roomboard");
   verifie("new b4.roomboard", cli(["new", b4]).code === 0);
