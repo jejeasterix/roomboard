@@ -9,7 +9,7 @@
  * Corps dans `boardJobReply` (cli-lot2, D20) : cette coquille charge le module, poste la réponse et ses tampons, et
  * rend en `{ error }` ce qui en sort (panique relancée par `boardJobReply`, D29 ; module absent).
  */
-import { BOARD_FAILED_MESSAGE, BOARD_WRITE_FAILED_MESSAGE, boardErrorMessage, boardJobReply, type BoardJob } from "./board-reader";
+import { boardErrorMessage, boardJobFailure, boardJobReply, type BoardJob } from "./board-reader";
 import { loadFormatsModule } from "./container-load";
 
 self.onmessage = async (e: MessageEvent<BoardJob>): Promise<void> => {
@@ -18,6 +18,6 @@ self.onmessage = async (e: MessageEvent<BoardJob>): Promise<void> => {
     const r = boardJobReply(await loadFormatsModule(), j);
     self.postMessage(r.data, { transfer: r.transfer });
   } catch (err) {
-    self.postMessage({ error: boardErrorMessage(err, j.op === "write" ? BOARD_WRITE_FAILED_MESSAGE : BOARD_FAILED_MESSAGE) });
+    self.postMessage({ error: boardErrorMessage(err, boardJobFailure(j)) });
   }
 };

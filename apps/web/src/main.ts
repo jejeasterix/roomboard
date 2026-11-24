@@ -28,7 +28,7 @@ import { decodeImage, kindOfMime } from "./platform/image-import";
 import { loadPdfjs, loadPdfLib, PDFJS_BASE } from "./platform/pdf-load";
 import { createPdfEngine } from "./platform/pdf-render";
 import { createModelViewLoader } from "./platform/model-view";
-import { createOlfReader, createZipReader, createZipWriter } from "./platform/zip-read";
+import { createZipReader, createZipWriter } from "./platform/zip-read";
 import { createWasmCore } from "./core/wasm-core";
 import type { KeyLike } from "./engine/input/keys";
 import { detectSupport } from "./engine/input/support";

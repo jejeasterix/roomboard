@@ -141,11 +141,25 @@ export type BoardJob =
 
 /** Une part lue (`ops`, `texts`, `warnings`) ; le lecteur est libéré même en cas d'erreur. */
 function partOf(r: { ops(): Float32Array; texts(): string[]; warnings(): string[]; free(): void }): { ops: Float32Array; texts: string[]; warnings: string[] } {
+  let part: { ops: Float32Array; texts: string[]; warnings: string[] };
   try {
-    return { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
-  } finally {
-    r.free();
+    part = { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
+  } catch (err) {
+    // D29 : après une panique, un emprunt reste ouvert et `free()` lève une Error ordinaire qui masquerait la RuntimeError.
+    try {
+      r.free();
+    } catch {
+      // l'erreur d'origine prime
+    }
+    throw err;
   }
+  r.free();
+  return part;
+}
+
+/** Message d'échec du Worker pour une tâche (écriture ou lecture) : seule définition, la coquille et `boardJobReply` l'appellent. */
+export function boardJobFailure(job: BoardJob): string {
+  return job.op === "write" ? BOARD_WRITE_FAILED_MESSAGE : BOARD_FAILED_MESSAGE;
 }
 
 /**
@@ -173,7 +187,7 @@ export function boardJobReply(mod: FormatsBinding, job: BoardJob): WorkerReply {
     return { data: { parts }, transfer: parts.map((p) => p.ops.buffer as ArrayBuffer) };
   } catch (err) {
     if (err instanceof WebAssembly.RuntimeError) throw err; // D29 : la panique remonte (coquille ou inlineWorker)
-    return { data: { error: boardErrorMessage(err, job.op === "write" ? BOARD_WRITE_FAILED_MESSAGE : BOARD_FAILED_MESSAGE) }, transfer: [] };
+    return { data: { error: boardErrorMessage(err, boardJobFailure(job)) }, transfer: [] };
   }
 }
 

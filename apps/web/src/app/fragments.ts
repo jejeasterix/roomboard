@@ -180,7 +180,7 @@ export function createFragmentOps<T>(deps: FragmentDeps<T>): FragmentOps<T> {
     const frag = v.doc.extract(page, ids);
     try {
       const fp = frag.pageIds()[0];
-      const elements = fp === undefined ? 0 : frag.elementIds(fp).length; // règle d'exporter.ts:42-43, déplacée ici
+      const elements = fp === undefined ? 0 : frag.elementIds(fp).length; // règle de `exporter` (nombre d'éléments de la première page), déplacée ici
       const bytes = await deps.io.encode(frag, v.assets, deps.now(), deps.appVersion, { kind: "fragment", name });
       return { bytes, elements };
     } catch (e) {
