@@ -13,7 +13,7 @@ import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
-import { checkConvert, checkExportTarget, checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkConvert, checkExportTarget, checkNotSource, exportBoardFile, exportFragment, exportPdfFile, isBoardOut, isPdfOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { libraryExport, libraryImport, libraryList, openLibrary } from "./library";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
@@ -193,17 +193,20 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     if (idsText !== undefined && p.flags.has("--all")) throw new CliError("usage", "--ids et --all s'excluent");
     const grid = p.flags.has("--grid");
     if (grid && (idsText !== undefined || p.flags.has("--all"))) throw new CliError("usage", "--grid exclut --ids et --all");
-    checkExportTarget(to); // code 2 ou 3 avant toute lecture
+    checkExportTarget(to); // code 2 avant toute lecture
     await checkNotSource(file, to); // code 2 : jamais la source
-    if (isBoardOut(to) && (p.flags.has("--page") || idsText !== undefined || p.flags.has("--all") || grid || p.flags.has("--name"))) {
+    const whole = isBoardOut(to) || isPdfOut(to);
+    if (whole && (p.flags.has("--page") || idsText !== undefined || p.flags.has("--all") || grid || p.flags.has("--name"))) {
       throw new CliError("usage", `export ${extOf(to)} : document entier ; --page, --ids, --all, --grid et --name ne s'y appliquent pas`);
     }
     const session = await nodeSession(io);
     await session.open(file);
     const ids = idsText?.split(",").map((s) => s.trim()).filter((s) => s !== "");
-    const result = isBoardOut(to)
-      ? await exportBoardFile(session, to)
-      : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
+    const result = isPdfOut(to)
+      ? await exportPdfFile(session, to)
+      : isBoardOut(to)
+        ? await exportBoardFile(session, to)
+        : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
     const notices = session.deps.notices;
     io.out(JSON.stringify({ ...result, ...(notices.length > 0 ? { notices } : {}) }));
     return 0;
@@ -212,11 +215,12 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const p = parseArgs(args, {});
     const [from, to] = p.positional;
     if (from === undefined || to === undefined || p.positional.length !== 2) throw usage(USAGE.convert);
-    checkConvert(from, to); // code 2 ou 3 avant tout chargement (D25)
+    checkConvert(from, to); // code 2 avant tout chargement (D25, D42)
     await checkNotSource(from, to); // code 2 : jamais la source
     const session = await nodeSession(io);
     const tab = (await session.open(from)).session;
     if (extOf(to) === ".roomboard") await session.save(tab, to);
+    else if (isPdfOut(to)) await exportPdfFile(session, to);
     else await exportBoardFile(session, to);
     io.out(JSON.stringify({ file: to, from, pages: tab.doc.pageIds().length, notices: session.deps.notices }));
     return 0;

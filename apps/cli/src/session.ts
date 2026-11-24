@@ -33,7 +33,7 @@ import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
-import { checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkNotSource, exportBoardFile, exportFragment, exportPdfFile, isBoardOut, isPdfOut } from "./exporter";
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
@@ -324,11 +324,11 @@ export function createSession(deps: SessionDeps): Session {
       }
       case "export": {
         const to = needString(args, "to");
-        if (isBoardOut(to)) {
+        if (isBoardOut(to) || isPdfOut(to)) {
           for (const k of ["ids", "page", "grid", "name"]) {
             if (args[k] !== undefined) throw new CliError("usage", `export ${extOf(to)} : document entier, « ${k} » ne s'y applique pas`);
           }
-          return { ...(await exportBoardFile(session, to)) };
+          return { ...(isPdfOut(to) ? await exportPdfFile(session, to) : await exportBoardFile(session, to)) };
         }
         const ids = args["ids"];
         if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) throw new CliError("usage", "ids : liste d'ids attendue");

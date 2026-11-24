@@ -224,7 +224,7 @@ export const pdfPanickingFormats = (): (() => Promise<FormatsBinding>) => {
   return async () => mod;
 };
 
-/** D39 : pdf-lib qui refuse tout PDF d'origine (`load` lève), `create` gardé (patron de `pdf-export.test.ts:297`). */
+/** D39 : pdf-lib qui refuse tout PDF (`load` lève, superposition krilla comprise), `create` gardé (patron de `pdf-export.test.ts:297`). */
 export const refusingPdfLib = (): (() => Promise<PdfLib>) => async () => {
   const base = await loadPdfLib();
   return {

@@ -187,7 +187,11 @@ describeWasm("S2 à S4 — écrire un PDF (cli-lot3)", () => {
   });
   it("S4 — pdf-lib refuse le PDF d'origine : code 1, message de D39, aucun fichier", async () => {
     const dir = tmpDir();
-    const { p } = await annotatedBoard(dir);
+    // Sans annotation : aucune superposition krilla, que `refusingPdfLib` refuserait aussi (`pdf-export.ts:258`) ;
+    // seul le PDF d'origine passe par `load`, refusé : `rasterMissing`.
+    const three = await pdfFixture(dir);
+    const p = join(dir, "p.roomboard");
+    expect(await main(["convert", three, p], memoryIO())).toBe(0);
     const out = join(dir, "refus.pdf");
     const io = memoryIO([], {}, WEB_SRC, undefined, refusingPdfLib());
     expect(await main(["export", p, out], io)).toBe(1);
