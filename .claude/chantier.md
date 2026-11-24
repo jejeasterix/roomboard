@@ -44,12 +44,12 @@ Porte avant merge : non
 CI couverte par la suite complète : non
 
 ## CLI
-- La CLI `apps/cli` (`node apps/cli/dist/roomboard.mjs`) : construction `pnpm install --frozen-lockfile`, les modules Wasm construits comme `scripts/verifier.sh`, puis `pnpm --filter @roomboard/cli build`.
+- La CLI `apps/cli` (`node apps/cli/dist/roomboard.mjs`) : construction `pnpm install --frozen-lockfile`, les modules Wasm construits comme `scripts/verifier.sh`, puis `pnpm --filter @roomboard/cli build` ; les fichiers Office passent par `cargo build -p roomboard-shell --bin roomboard-office` (binaire lu dans `target/debug/`, ou `ROOMBOARD_OFFICE=<chemin>`) et LibreOffice.
 - Mise à jour obligatoire (D15 du cadrage) : tout chantier qui ajoute ou change une commande, une opération, un format ou un champ de l'état met à jour la CLI, sa ligne de `FORMAT_LOTS`, ses tests **et** `scripts/essais/cli-essai.mjs`.
 - Fumée : `node apps/cli/dist/roomboard.mjs --help` (code 0), `version`, `formats`.
 - Écritures (`new`, `run --save`, `import`, `export`, `convert`, `library import|export`) seulement sur des fichiers temporaires, jamais sur un fichier de Jérôme ; l'essai type est `node scripts/essais/cli-essai.mjs` (affiche `CLI : OK`), joué par `scripts/verifier.sh` hors `--e2e`.
-- Lots restants : 4 (Office, médias, 3D, autres images) — `docs/plans/cli-cadrage.md` § 7 ; lot 2 livré : `docs/plans/cli-lot2-cadrage.md` ; lot 3 (PDF) livré : `docs/plans/cli-lot3-cadrage.md`.
-- Codes de sortie : 0 succès ; 1 refus (cœur, fichier, import partiel) ; 2 usage ; 3 format d'un lot non livré ; toute écriture de document (`new`, `save`, `--save`, `--out`, `apply`, `import`) vise un `.roomboard`, sinon 2 (D23).
+- Lots restants : aucun. Lots livrés : 2 (`docs/plans/cli-lot2-cadrage.md`), 3, PDF (`docs/plans/cli-lot3-cadrage.md`), 4, Office, médias, 3D, autres images (`docs/plans/cli-lot4-cadrage.md`).
+- Codes de sortie : 0 succès ; 1 refus (cœur, fichier, import partiel) ; 2 usage ; 3 variante que la CLI ne lit pas (en-tête d'image ou de média illisible, convertisseur Office absent, format laissé de côté) ; toute écriture de document (`new`, `save`, `--save`, `--out`, `apply`, `import`) vise un `.roomboard`, sinon 2 (D23).
 
 ## Règles propres au projet
 - Trois couches testables seules : `crates/` (cœur Rust, sans dépendance au navigateur), `apps/web` (interface TS), `apps/desktop` (coque Tauri).
