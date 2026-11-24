@@ -60,6 +60,14 @@ describeWasm("S3 — écrire et relire .iwb et .ubz (D24, D25)", () => {
     expect(await main(["export", a, join(dir, "a.rbpack")], pack)).toBe(2);
     expect(pack.errors()[0].error.message).toContain("library");
   });
+  it("module des formats interrompu (D29) : export .iwb refusé en code command, rien d'écrit", async () => {
+    const s = await nodeSession(memoryIO());
+    s.newTab();
+    s.deps.interrupted = () => true;
+    const out = join(tmpDir(), "x.iwb");
+    await expect(exportBoardFile(s, out)).rejects.toMatchObject({ code: "command" });
+    expect(existsSync(out)).toBe(false);
+  });
   it("op export vers .iwb dans run : kind iwb ; avec ids : code 2", async () => {
     const dir = tmpDir();
     const a = await board(dir);

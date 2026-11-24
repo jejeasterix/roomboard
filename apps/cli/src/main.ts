@@ -12,7 +12,7 @@ import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
-import { checkExportTarget, exportFragment } from "./exporter";
+import { checkConvert, checkExportTarget, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
 import { documentTarget, nodeSession, type CliTab, type Session } from "./session";
@@ -30,7 +30,8 @@ const USAGE = {
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
-  export: "export <fichier.roomboard> <sortie.rbitem> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
+  export: "export <fichier> <sortie.rbitem | .iwb | .ubz> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
+  convert: "convert <source> <sortie.roomboard | .iwb | .ubz>",
 } as const;
 
 const HELP = ["help", "--help", "-h"];
@@ -168,10 +169,29 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const grid = p.flags.has("--grid");
     if (grid && (idsText !== undefined || p.flags.has("--all"))) throw new CliError("usage", "--grid exclut --ids et --all");
     checkExportTarget(to); // code 2 ou 3 avant toute lecture
+    if (isBoardOut(to) && (p.flags.has("--page") || idsText !== undefined || p.flags.has("--all") || grid || p.flags.has("--name"))) {
+      throw new CliError("usage", `export ${extOf(to)} : document entier ; --page, --ids, --all, --grid et --name ne s'y appliquent pas`);
+    }
     const session = await nodeSession(io);
     await session.open(file);
     const ids = idsText?.split(",").map((s) => s.trim()).filter((s) => s !== "");
-    io.out(JSON.stringify(await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid })));
+    const result = isBoardOut(to)
+      ? await exportBoardFile(session, to)
+      : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
+    const notices = session.deps.notices;
+    io.out(JSON.stringify({ ...result, ...(notices.length > 0 ? { notices } : {}) }));
+    return 0;
+  },
+  convert: async (args, io) => {
+    const p = parseArgs(args, {});
+    const [from, to] = p.positional;
+    if (from === undefined || to === undefined || p.positional.length !== 2) throw usage(USAGE.convert);
+    checkConvert(from, to); // code 2 ou 3 avant tout chargement (D25)
+    const session = await nodeSession(io);
+    const tab = (await session.open(from)).session;
+    if (extOf(to) === ".roomboard") await session.save(tab, to);
+    else await exportBoardFile(session, to);
+    io.out(JSON.stringify({ file: to, from, pages: tab.doc.pageIds().length, notices: session.deps.notices }));
     return 0;
   },
 };
