@@ -14,5 +14,12 @@ export interface PdfReadLibs {
 }
 /** PDF de `n` pages (3) 612 × 792, « <label> i » (« RoomBoard page ») sur la page i. */
 export function pdfPages(lib: PdfMakeLib, n?: number, label?: string): Promise<Uint8Array>;
+/** `require` résolu depuis apps/web (`createRequire`). */
+export interface WebRequire {
+  (id: string): unknown;
+  resolve(id: string): string;
+}
+/** pdf.js et pdf-lib d'apps/web, polices de pdfjs-dist ; `worker` : worker de pdf.js importé d'abord (dans le processus). */
+export function readLibs(web: WebRequire, opts?: { readonly worker?: boolean }): Promise<PdfReadLibs & { readonly standardFontDataUrl: string }>;
 /** Pages, texte par page, sous-types des XObject par page. */
 export function readPdf(bytes: Uint8Array, libs: PdfReadLibs): Promise<{ pages: number; texts: string[]; overlays: string[][] }>;

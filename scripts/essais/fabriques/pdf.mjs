@@ -27,3 +27,18 @@ export async function readPdf(bytes, libs) {
   });
   return { pages, texts, overlays };
 }
+
+/**
+ * Bibliothèques de `readPdf` : pdf.js et pdf-lib résolus par `web` (le `require` d'apps/web, jamais copiés), polices
+ * de pdfjs-dist. `worker` : importe d'abord le worker de pdf.js, qui pose `globalThis.pdfjsWorker` (relecture dans le
+ * processus, cli-essai.mjs) ; c12-pdf-navigateur.mjs s'en passe.
+ */
+export async function readLibs(web, { worker = false } = {}) {
+  const { pathToFileURL } = await import("node:url");
+  const { dirname, join, sep } = await import("node:path");
+  const href = (id) => pathToFileURL(web.resolve(id)).href;
+  if (worker) await import(href("pdfjs-dist/legacy/build/pdf.worker.mjs"));
+  const pdfjs = await import(href("pdfjs-dist/legacy/build/pdf.mjs"));
+  const { PDFDocument, PDFName, PDFDict, PDFStream } = web("pdf-lib");
+  return { pdfjs, PDFDocument, PDFName, PDFDict, PDFStream, standardFontDataUrl: pathToFileURL(join(dirname(web.resolve("pdfjs-dist/package.json")), "standard_fonts") + sep).href };
+}
