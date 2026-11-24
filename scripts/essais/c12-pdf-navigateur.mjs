@@ -8,22 +8,15 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
-import { pdfPages, readPdf } from "./fabriques/pdf.mjs";
+import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
 
 const LABEL = "C12 PDF";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const web = createRequire(join(ROOT, "apps", "web", "package.json"));
-const { PDFDict, PDFDocument, PDFName, PDFStream, StandardFonts } = web("pdf-lib");
+const { PDFDocument, StandardFonts } = web("pdf-lib");
 const LAZY = /\/assets\/(?:pdfjs|pdf-lib|pdf-worker)-[^/]*\.js$/;
-
-/** Bibliothèques de relecture (fabriques PDF, cli-lot3 D43) : pdf.js et pdf-lib d'apps/web, polices de pdfjs-dist. */
-async function readLibs() {
-  const pdfjs = await import(pathToFileURL(web.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
-  return { pdfjs, PDFDocument, PDFName, PDFDict, PDFStream, standardFontDataUrl: pathToFileURL(join(dirname(web.resolve("pdfjs-dist/package.json")), "standard_fonts") + sep).href };
-}
 
 async function scenario(page, url, { captures, tmp, requests }) {
   const errors = [];
@@ -101,7 +94,7 @@ async function scenario(page, url, { captures, tmp, requests }) {
   const proposed = (names.at(-1) ?? "").normalize("NFC");
   check(proposed === "essai-3-pages annoté.pdf", `S1 : « Exporter en PDF… » propose « ${proposed} »`);
   check(requests.some((u) => /\/pdf-lib-/.test(u)), "PF26 : pdf-lib chargé à l'export seulement");
-  const back = await readPdf(await readFile(exported), await readLibs());
+  const back = await readPdf(await readFile(exported), await readLibs(web));
   check(back.pages === 3 && back.texts[1]?.includes("RoomBoard page 2"), "S1 : PDF exporté relu : 3 pages, « RoomBoard page 2 » toujours en texte");
   const [o1, o2, o3] = back.overlays;
   check(o1?.length === 0 && o3?.length === 0 && o2?.length === 1, `S1 : page 2 : une superposition (${o2?.[0] ?? "aucune"}), pages 1 et 3 : aucune`);

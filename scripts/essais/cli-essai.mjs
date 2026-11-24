@@ -8,15 +8,14 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
 import { createRequire } from "node:module";
 import { deflateSync } from "node:zlib";
 import { ROOT, solidPng } from "./commun.mjs";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 import { makeFlipchart } from "./fabriques/flipchart.mjs";
-import { pdfPages, readPdf } from "./fabriques/pdf.mjs";
+import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
 
 const web = createRequire(join(ROOT, "apps", "web", "package.json"));
 const { zipSync } = web("fflate");
@@ -249,10 +248,7 @@ try {
 
   // ---- Lot 3 (cadrage cli-lot3, S5) : fichier construit, PDF fabriqué par pdfPages, relu par readPdf ----
   const pdfLib = web("pdf-lib");
-  await import(pathToFileURL(web.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")).href); // pose globalThis.pdfjsWorker
-  const pdfjs = await import(pathToFileURL(web.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
-  const standardFontDataUrl = pathToFileURL(join(dirname(web.resolve("pdfjs-dist/package.json")), "standard_fonts") + sep).href;
-  const lecture = { pdfjs, PDFDocument: pdfLib.PDFDocument, PDFName: pdfLib.PDFName, PDFDict: pdfLib.PDFDict, PDFStream: pdfLib.PDFStream, standardFontDataUrl };
+  const lecture = await readLibs(web, { worker: true }); // worker de pdf.js importé d'abord : pose globalThis.pdfjsWorker
   const fondsPdf = (st) => st.pages.length > 0 && st.pages.every((pg, i) => pg.page.backdrop?.kind === "pdf-page" && pg.page.backdrop.page === i && st.assets.some((x) => x.id === pg.page.backdrop.asset && x.mime === "application/pdf"));
   const fondsDe = (st) => JSON.stringify(st.pages.map((x) => x.page.backdrop));
 
@@ -286,6 +282,12 @@ try {
   verifie("stderr vide : convert out.pdf", cr.stderr === "", cr.stderr);
   const etatRetour = etat(retour);
   verifie("fond présent après l'aller-retour", fondsPdf(etatRetour), fondsDe(etatRetour));
+  const cPdf = join(dir, "c.pdf");
+  const cc = cli(["convert", trois, cPdf]);
+  verifie("D46 : convert three.pdf c.pdf : code 0", cc.code === 0 && existsSync(cPdf), cc.brut);
+  verifie("stderr vide : convert three.pdf c.pdf", cc.stderr === "", cc.stderr);
+  const reluC = await readPdf(readFileSync(cPdf), lecture);
+  verifie("page comptée : c.pdf relu, 3 pages", reluC.pages === 3, String(reluC.pages));
   const ci = cli(["convert", trois, join(dir, "t.iwb")]);
   verifie("convert three.pdf t.iwb : avis « fonds PDF non exportés »", ci.code === 0 && ci.lignes[0]?.notices.join(" ").includes("fonds PDF non exportés"), ci.brut);
   verifie("stderr vide : convert three.pdf t.iwb", ci.stderr === "", ci.stderr);

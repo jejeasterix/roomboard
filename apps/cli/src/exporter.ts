@@ -30,6 +30,7 @@ export interface ExportRequest {
 const BOARD_OUT: ReadonlySet<string> = new Set([".iwb", ".ubz"]);
 export const isBoardOut = (to: string): boolean => BOARD_OUT.has(extOf(to));
 
+/** D40 : un chemin `.pdf` (sans casse), lu (`session.ts`) ou écrit ; seul prédicat PDF de la CLI. */
 export const isPdfOut = (to: string): boolean => extOf(to) === ".pdf";
 
 /** `.rbitem`, `.iwb`, `.ubz`, `.pdf` ; `.rbpack` : usage (bibliothèque) ; toute autre sortie : usage (D42). */
@@ -87,6 +88,11 @@ export async function exportPdfFile(session: Session, to: string): Promise<{ fil
   await session.write(to, r.bytes);
   deps.notices.push(...r.notices); // `cut` (H12, H27) : avis, code 0
   return { file: to, kind: "pdf", pages: r.pages, annotated: r.annotated };
+}
+
+/** D41 : document entier de l'onglet actif, `.pdf` par `exportPdfFile`, tableau `.iwb .ubz` par `exportBoardFile`. */
+export function exportWhole(session: Session, to: string): Promise<Awaited<ReturnType<typeof exportBoardFile>> | Awaited<ReturnType<typeof exportPdfFile>>> {
+  return isPdfOut(to) ? exportPdfFile(session, to) : exportBoardFile(session, to);
 }
 
 const CONVERT_SOURCES: ReadonlySet<string> = new Set([".roomboard", ".pdf", ".iwb", ".ubz", ".notebook", ".olf", ".flipchart"]);

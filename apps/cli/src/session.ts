@@ -29,7 +29,7 @@ import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
-import { checkNotSource, exportBoardFile, exportFragment, exportPdfFile, isBoardOut, isPdfOut } from "./exporter";
+import { checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
@@ -67,11 +67,6 @@ export interface SessionDeps {
 
 export const INTERRUPTED_MESSAGE = "module des formats interrompu : rien n'est enregistré";
 const BOARD_HANDLERS: ReadonlySet<string> = new Set(["iwb", "ubz", "notebook", "olf", "flipchart"]);
-
-/** D40 : un chemin `.pdf` (sans casse). */
-export function isPdfPath(path: string): boolean {
-  return formatOf(path)?.handler === "pdf";
-}
 
 /** D22 : format de tableau d'un chemin, null pour un conteneur. */
 export function boardFormatOf(path: string): BoardSourceFormat | null {
@@ -187,7 +182,7 @@ export function createSession(deps: SessionDeps): Session {
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
     sources.add(path);
-    if (kind === "document" && isPdfPath(path)) {
+    if (kind === "document" && isPdfOut(path)) {
       const read = await readPdfNoticed(basename(path), new Blob([bytes as BlobPart]));
       return { doc: read.doc, assets: read.assets };
     }
@@ -205,48 +200,35 @@ export function createSession(deps: SessionDeps): Session {
     if (tabs.list().length >= MAX_TABS) throw new CliError("command", TOO_MANY_TABS);
     const read = await readDoc(path, "document");
     // D22, D40 : un tableau ou un PDF ouvert est un onglet sans fichier (comme `target: null` de la page) : jamais réécrit à son chemin.
-    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null && !isPdfPath(path) ? path : null });
+    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null && !isPdfOut(path) ? path : null });
   }
-  async function openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> {
+  /**
+   * D22, D40 : fichier lu par l'importeur (`read`, lancé après le contrôle du nombre d'onglets) en onglet sans fichier ;
+   * false si refusé, l'avis est dans `notices`.
+   */
+  async function openReadTab(name: string, read: () => Promise<Pick<ReadResult, "doc" | "assets">>): Promise<boolean> {
     if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
+      deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
       return false;
     }
-    let read: Awaited<ReturnType<typeof readBoard>>;
+    let r: Pick<ReadResult, "doc" | "assets">;
     try {
-      read = await readBoardNoticed(file.name, file.blob, file.format);
+      r = await read();
     } catch (e) {
-      deps.notices.push(messageOf(e)); // déjà « Ouverture impossible (nom) : … »
+      deps.notices.push(messageOf(e)); // déjà le message complet du produit (« Ouverture impossible (nom) : … »)
       return false;
     }
     try {
-      add({ doc: read.doc, assets: read.assets, file: null });
+      add({ doc: r.doc, assets: r.assets, file: null });
       return true;
     } catch (e) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
+      deps.notices.push(`Ouverture impossible (${name}) : ${messageOf(e)}`);
       return false;
     }
   }
-  async function openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean> {
-    if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
-      return false;
-    }
-    let read: PdfRead;
-    try {
-      read = await readPdfNoticed(file.name, file.blob);
-    } catch (e) {
-      deps.notices.push(messageOf(e)); // déjà le message complet du produit
-      return false;
-    }
-    try {
-      add({ doc: read.doc, assets: read.assets, file: null });
-      return true;
-    } catch (e) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
-      return false;
-    }
-  }
+  const openBoard = (file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> =>
+    openReadTab(file.name, () => readBoardNoticed(file.name, file.blob, file.format));
+  const openPdf = (file: { readonly name: string; readonly blob: Blob }): Promise<boolean> => openReadTab(file.name, () => readPdfNoticed(file.name, file.blob));
   async function openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null> {
     if (tabs.list().length >= MAX_TABS) {
       deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
@@ -324,7 +306,7 @@ export function createSession(deps: SessionDeps): Session {
           for (const k of ["ids", "page", "grid", "name"]) {
             if (args[k] !== undefined) throw new CliError("usage", `export ${extOf(to)} : document entier, « ${k} » ne s'y applique pas`);
           }
-          return { ...(isPdfOut(to) ? await exportPdfFile(session, to) : await exportBoardFile(session, to)) };
+          return { ...(await exportWhole(session, to)) };
         }
         const ids = args["ids"];
         if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) throw new CliError("usage", "ids : liste d'ids attendue");

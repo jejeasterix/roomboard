@@ -38,7 +38,13 @@ export interface MemoryIO extends TestableIO {
   errors(): Json[];
 }
 
-export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC, formats?: () => Promise<FormatsBinding>, pdfLib?: () => Promise<PdfLib>): MemoryIO {
+/** Remplaçants du module des formats et de pdf-lib (`TestableIO`), absents : les vrais. */
+export interface MemoryOptions {
+  readonly formats?: () => Promise<FormatsBinding>;
+  readonly pdfLib?: () => Promise<PdfLib>;
+}
+
+export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC, { formats, pdfLib }: MemoryOptions = {}): MemoryIO {
   const stdout: string[] = [];
   const stderr: string[] = [];
   return {

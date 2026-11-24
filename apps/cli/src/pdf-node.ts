@@ -14,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { hexOf } from "../../web/src/app/board-io";
 import type { OverlayProducer } from "../../web/src/app/pdf-export";
 import { createVectorOverlay, PDF_FONT_FILES, vectorPainter, workerPdfWriter, type PdfWriter } from "../../web/src/app/pdf-overlay-vector";
 import type { CoreDocument } from "../../web/src/core/api";
@@ -69,7 +70,7 @@ export function nodeMeasureContext(): Pick<CanvasRenderingContext2D, "fillStyle"
       const c = typeof v === "string" ? tryParseColor(v) : null;
       if (c === null) return;
       const [r, g, b, a] = c;
-      fill = a === 1 ? `#${[r, g, b].map((x) => channel(x).toString(16).padStart(2, "0")).join("")}` : `rgba(${channel(r)}, ${channel(g)}, ${channel(b)}, ${a})`;
+      fill = a === 1 ? hexOf(channel(r), channel(g), channel(b)) : `rgba(${channel(r)}, ${channel(g)}, ${channel(b)}, ${a})`;
     },
     measureText(text: string): TextMetrics {
       const size = /(\d+(?:\.\d+)?)px/.exec(this.font);
