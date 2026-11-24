@@ -5,6 +5,7 @@
  * ou échouée ne résout rien. Une opération refusée lève une `CliError` ; l'appelant arrête la session (H4).
  */
 import { basename } from "node:path";
+import type { FragmentOps } from "../../web/src/app/fragments";
 import { createContainerIO, type ContainerIO, type ReadKind, type ReadResult } from "../../web/src/app/container-io";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabEntry, type Tabs } from "../../web/src/app/tabs";
 import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
@@ -15,6 +16,7 @@ import type { Point } from "../../web/src/platform/files";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
 import { exportFragment } from "./exporter";
+import { cliFragments, type CliPage } from "./fragment-view";
 import { atOf, importInto, partialMessage } from "./importer";
 import { needString, optString, parseOp, type CliOpName, type RefContext } from "./ops";
 import { stateOf } from "./state";
@@ -34,6 +36,7 @@ export interface SessionDeps {
   readonly notices: string[];
   readonly formats: () => Promise<SheetFormatsBinding>;
   now(): string;
+  readonly fragments: FragmentOps<CliPage>;
 }
 
 export type OpResult = { readonly op: number; readonly ok: true } & Readonly<Record<string, unknown>>;
@@ -168,10 +171,10 @@ export function createSession(deps: SessionDeps): Session {
       }
       case "export": {
         const ids = args["ids"];
-        if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) {
-          throw new CliError("usage", "ids : liste d'ids attendue");
-        }
-        return { ...(await exportFragment(session, { to: needString(args, "to"), page: optString(args, "page"), ids: ids as string[] | undefined })) };
+        if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) throw new CliError("usage", "ids : liste d'ids attendue");
+        const grid = args["grid"];
+        if (grid !== undefined && typeof grid !== "boolean") throw new CliError("usage", "grid : booléen attendu");
+        return { ...(await exportFragment(session, { to: needString(args, "to"), page: optString(args, "page"), ids: ids as string[] | undefined, name: optString(args, "name"), grid: grid === true })) };
       }
       case "tab.new":
         newTab();
@@ -248,5 +251,6 @@ export async function nodeSession(io: CliIO): Promise<Session> {
     },
     makeAssets: () => createAssetStore(),
   });
-  return createSession({ core, io: containerIO, notices, formats, now: () => nowOf(io.env) });
+  const now = (): string => nowOf(io.env);
+  return createSession({ core, io: containerIO, notices, formats, now, fragments: cliFragments({ io: containerIO, core, now, notices }) });
 }

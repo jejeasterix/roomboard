@@ -29,7 +29,7 @@ const USAGE = {
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
-  export: "export <fichier.roomboard> <sortie.rbitem> [--page <id>] [--ids a,b | --all] [--name <nom>]",
+  export: "export <fichier.roomboard> <sortie.rbitem> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
 } as const;
 
 const HELP = ["help", "--help", "-h"];
@@ -150,16 +150,18 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     return 0;
   },
   export: async (args, io) => {
-    const p = parseArgs(args, { "--page": "value", "--ids": "value", "--all": "bool", "--name": "value" });
+    const p = parseArgs(args, { "--page": "value", "--ids": "value", "--all": "bool", "--grid": "bool", "--name": "value" });
     const [file, to] = p.positional;
     if (file === undefined || to === undefined || p.positional.length !== 2) throw usage(USAGE.export);
     const idsText = flagStr(p, "--ids");
     if (idsText !== undefined && p.flags.has("--all")) throw new CliError("usage", "--ids et --all s'excluent");
+    const grid = p.flags.has("--grid");
+    if (grid && (idsText !== undefined || p.flags.has("--all"))) throw new CliError("usage", "--grid exclut --ids et --all");
     checkExportTarget(to); // code 2 ou 3 avant toute lecture
     const session = await nodeSession(io);
     await session.open(file);
     const ids = idsText?.split(",").map((s) => s.trim()).filter((s) => s !== "");
-    io.out(JSON.stringify(await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name") })));
+    io.out(JSON.stringify(await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid })));
     return 0;
   },
 };

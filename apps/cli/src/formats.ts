@@ -4,17 +4,32 @@
  * `write` : lot où l'import et l'export arrivent (null : jamais) ; `handler` : id du lecteur de `import.ts`.
  * Précision de forme par rapport au cadrage (`{ lot, read, write, handler }`) : un lot par sens, parce que `.rbitem`
  * s'écrit au lot 1 et ne s'insère qu'au lot 2 ; `formats` rend toujours `{ ext, read, write, readLot, writeLot, notes }` (DA2).
- * Un chantier qui livre un format change ses lots ici et passe `read` / `write` à vrai dans `formats` (§ 7).
+ * D27 (cli-lot2) : le code 3 se lit sur `covered`, par format et par sens ; `LOT_LIVRE` = plus haut lot dont toutes les
+ * entrées sont couvertes, un test l'exige. Un chantier qui livre un format change ses lots ici et passe `read` / `write` à vrai dans `formats` (§ 7).
  */
 export type Lot = 1 | 2 | 3 | 4;
 export const LOT_LIVRE: Lot = 1;
 
+export interface Coverage {
+  readonly read: boolean;
+  readonly write: boolean;
+}
 export interface FormatEntry {
   readonly read: Lot | null;
   readonly write: Lot | null;
   readonly handler: string;
+  /** D27 : sens branchés dans la CLI. */
+  readonly covered: Coverage;
   readonly notes: readonly string[];
 }
+const make = (read: Lot | null, write: Lot | null, handler: string, covered: Coverage, notes: readonly string[]): FormatEntry =>
+  Object.freeze({ read, write, handler, covered: Object.freeze({ ...covered }), notes: Object.freeze([...notes]) });
+/** Entrée dont seuls les sens du lot 1 sont couverts. */
+const entry = (read: Lot | null, write: Lot | null, handler: string, ...notes: string[]): FormatEntry =>
+  make(read, write, handler, { read: read === 1, write: write === 1 }, notes);
+/** Entrée branchée par un chantier du lot 2 : sens couverts donnés. */
+const branched = (read: Lot | null, write: Lot | null, handler: string, covered: Coverage, ...notes: string[]): FormatEntry =>
+  make(read, write, handler, covered, notes);
 
 export interface FormatRow {
   readonly ext: string;
@@ -27,13 +42,11 @@ export interface FormatRow {
   readonly notes: readonly string[];
 }
 
-const entry = (read: Lot | null, write: Lot | null, handler: string, ...notes: string[]): FormatEntry =>
-  Object.freeze({ read, write, handler, notes: Object.freeze(notes) });
 const each = (exts: readonly string[], e: FormatEntry): Array<readonly [string, FormatEntry]> => exts.map((x) => [x, e] as const);
 
 const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".roomboard", entry(1, 1, "roomboard")],
-  [".rbitem", entry(2, 1, "rbitem", "`state x.rbitem` le lit déjà ; l'insertion arrive au lot 2")],
+  [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", entry(2, 2, "rbpack")],
   [".pdf", entry(3, 3, "pdf")],
   [".iwb", entry(2, 2, "iwb")],
@@ -68,7 +81,6 @@ export function formatOf(name: string): FormatEntry | null {
   return Object.hasOwn(FORMAT_LOTS, ext) ? (FORMAT_LOTS[ext] ?? null) : null;
 }
 
-const delivered = (lot: Lot | null): boolean => lot !== null && lot <= LOT_LIVRE;
 const lastLot = (e: FormatEntry): Lot => Math.max(e.read ?? 1, e.write ?? 1) as Lot;
 
 export function lotOf(name: string): Lot | null {
@@ -79,18 +91,18 @@ export function lotOf(name: string): Lot | null {
 /** Lot d'un format reconnu dont l'import n'est pas livré ; null si lisible ou inconnu (le registre décide). */
 export function importBlocked(name: string): Lot | null {
   const e = formatOf(name);
-  return e === null || e.read === null || delivered(e.read) ? null : e.read;
+  return e === null || e.read === null || e.covered.read ? null : e.read;
 }
 
 /** Lot d'un format reconnu dont l'export arrive plus tard ; null si écrit aujourd'hui, jamais écrit ou inconnu. */
 export function exportBlocked(name: string): Lot | null {
   const e = formatOf(name);
-  return e === null || e.write === null || delivered(e.write) ? null : e.write;
+  return e === null || e.write === null || e.covered.write ? null : e.write;
 }
 
 export const unsupportedMessage = (name: string, lot: Lot): string => `${baseOf(name)} : format pris en charge par la CLI au lot ${lot}`;
 
 /** Lignes de `formats`, tirées de la table (aucune liste recopiée). */
 export function formatRows(): FormatRow[] {
-  return Object.entries(FORMAT_LOTS).map(([ext, e]) => ({ ext, read: delivered(e.read), write: delivered(e.write), readLot: e.read, writeLot: e.write, notes: [...e.notes] }));
+  return Object.entries(FORMAT_LOTS).map(([ext, e]) => ({ ext, read: e.covered.read, write: e.covered.write, readLot: e.read, writeLot: e.write, notes: [...e.notes] }));
 }
