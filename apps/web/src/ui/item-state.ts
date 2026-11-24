@@ -42,7 +42,7 @@ export interface ToolbarView {
   /** C11a (P6, P8, P15) : absent (tests, coque sans annotation) : tableau. */
   readonly annotation?: AnnotationView;
 }
-export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string }
+export interface ItemState { readonly pressed: boolean | null; readonly disabled: boolean; readonly label: string; readonly icon?: string }
 
 const cells = (r: Range | null | undefined): number => (r ? rangeSize(r) : 0);
 /** Étendue réelle de « − Ligne » / « − Colonne » (F5, F6) : la plage, sinon la zone, sinon la cellule active. */
@@ -62,13 +62,14 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   },
   "annotation-pointer": (v) => {
     const mouse = v.annotation?.pointer === "mouse";
-    return { pressed: null, label: mouse ? "Dessin" : "Souris", disabled: v.annotation?.active !== true };
+    // design-l1 (L1-3, H5) : l'icône suit le libellé ; `pen-line` reste distinct de l'outil Stylo `pen`.
+    return { pressed: null, label: mouse ? "Dessin" : "Souris", icon: mouse ? "pen-line" : "pointer", disabled: v.annotation?.active !== true };
   },
   "annotation-screen": (v) => ({ disabled: v.annotation?.active !== true || v.annotation.screens <= 1 }),
   "annotation-freeze": (v) => {
     const a = v.annotation;
     const disabled = a?.active !== true;
-    if (a?.live === false) return { pressed: null, label: "Recapturer le bureau", disabled };
+    if (a?.live === false) return { pressed: null, label: "Recapturer le bureau", icon: "reset", disabled };
     const frozen = a?.frozen === true;
     return { pressed: frozen, label: frozen ? "Bureau vivant" : "Figer le bureau", disabled };
   },
