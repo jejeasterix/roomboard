@@ -22,10 +22,10 @@ describe("pdf.js en processus (cli-lot3, D32, D33)", () => {
   // `globalThis.pdfjsWorker` (pdf.worker.mjs) ; ce chemin relatif casse dans le fichier construit. Le worker doit donc
   // être posé par `loadNodePdfjs` lui-même, avant tout document, sans toucher `GlobalWorkerOptions`.
   it("loadNodePdfjs — worker posé sur globalThis.pdfjsWorker avant tout document ; GlobalWorkerOptions laissé à pdf.js", async () => {
-    const g = globalThis as { pdfjsWorker?: { WorkerMessageHandler?: unknown } };
-    delete g.pdfjsWorker;
+    type WithWorker = { pdfjsWorker?: { WorkerMessageHandler?: unknown } };
+    delete (globalThis as WithWorker).pdfjsWorker;
     await loadNodePdfjs();
-    expect(typeof g.pdfjsWorker?.WorkerMessageHandler).toBe("function");
+    expect(typeof (globalThis as WithWorker).pdfjsWorker?.WorkerMessageHandler).toBe("function");
     expect(GlobalWorkerOptions.workerPort).toBeNull();
     expect(GlobalWorkerOptions.workerSrc).toBe("./pdf.worker.mjs");
   });
