@@ -10,10 +10,10 @@
  * cli-lot2 (D20, D29, DA7) : ce corps est `boardJobReply`, appelé par la coquille du Worker de la page et, en
  * processus, par `inlineWorker` ; une panique Wasm y est relancée, jamais rendue en `{ error }`.
  */
-import { normalArchivePath } from "./archive-path";
+import { normalArchivePath, type ZipFile } from "./archive-path";
+import { BOARD_OBJECTS_MESSAGE } from "./board-list";
 import { hasBoardReader, hasFlipchartReader, type FormatsBinding } from "./container";
 import { runOnce, type WorkerLike, type WorkerReply } from "./one-shot-worker";
-import type { ZipFile } from "./zip-read";
 
 export type BoardDialect = "iwb" | "ubz" | "notebook";
 /** C13 (N5) : format lu à l'import (plus large que le dialecte du module `formats`) ; seule définition, `board-io` la réexporte. */
@@ -31,8 +31,8 @@ export const NOTEBOOK_ORDER_GUESSED = "ordre des pages déduit des noms";
 export const BOARD_WORKER_TIMEOUT_MS = 60_000;
 export const BOARD_FAILED_MESSAGE = "lecture du tableau interrompue";
 export const BOARD_WRITE_FAILED_MESSAGE = "écriture du tableau interrompue";
-/** `BoardError::TooBig` (`board.rs`). */
-export const BOARD_OBJECTS_MESSAGE = "fichier de tableau trop gros (plus de 100 000 objets)";
+/** `BoardError::TooBig` (`board.rs`) : `board-list.ts` (OF13, D6), réexporté ici pour ses importeurs. */
+export { BOARD_OBJECTS_MESSAGE };
 /** Débuts des messages de `BoardError` et de la liaison, rendus tels quels. */
 const DAMAGED_PREFIX = "fichier endommagé : ";
 const KNOWN_PREFIXES = [DAMAGED_PREFIX, "liste de tableau invalide : ", "format de tableau inconnu : "] as const;
