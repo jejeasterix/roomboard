@@ -50,8 +50,8 @@ bash scripts/tests/controle-licences.test.sh
 node scripts/controle-licences.mjs
 # cli-lot4 (D53, D55) : binaire de conversion Office, construit AVANT `pnpm -r test` (les tests de la CLI le lancent).
 nice -n 10 cargo build -p roomboard-shell --bin roomboard-office -j 4
-# Contrat du vrai module (D33) : exigé ici, il échoue au lieu de se sauter si le .wasm manque.
-ROOMBOARD_WASM_REQUIRED=1 pnpm -r test
+# Contrat du vrai module (D33) : exigé ici, il échoue au lieu de se sauter si le .wasm manque. cli-partage (D10) : 3 workers vitest par processus, sauf valeur donnée.
+ROOMBOARD_WASM_REQUIRED=1 VITEST_MAX_WORKERS="${VITEST_MAX_WORKERS:-3}" pnpm -r test
 pnpm --filter @roomboard/web build
 
 # Taille du module que la page charge (H2-13) : l'asset émis par vite, copie de la sortie de wasm-bindgen.
