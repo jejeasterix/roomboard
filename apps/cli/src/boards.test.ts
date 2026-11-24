@@ -1,10 +1,18 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { nodeBoardPorts } from "./board-node";
 import { main } from "./main";
 import { createSession, INTERRUPTED_MESSAGE, nodeSession } from "./session";
-import { boardFixtures, borrowedAfterPanic, describeWasm, formatsWith, memoryIO, panickingFormats, pngBytes, stampOf, tmpDir, type Json } from "./testing";
+import { loadPdfLib } from "../../web/src/platform/pdf-load";
+import { loadNodePdfjs } from "./pdf-node";
+import { readBoardFile } from "../../web/src/app/board-convert";
+import { boardWarningsMessage } from "../../web/src/app/board-files";
+import { TOO_MANY_TABS } from "../../web/src/app/tabs";
+import { createAssetStore } from "../../web/src/core/asset-store";
+import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
+import { nodeDecode } from "./importer";
+import { boardFixtures, borrowedAfterPanic, describeWasm, formatsWith, memoryIO, panickingFormats, pdfFixture, pngBytes, stampOf, tmpDir, type Json } from "./testing";
 
 async function stateOf(path: string): Promise<Json> {
   const io = memoryIO();
@@ -137,5 +145,78 @@ describeWasm("S2 — lire les cinq tableaux (D22)", () => {
     expect(report.failed.length + report.refused.length).toBeGreaterThan(0);
     expect(io.errors()[0].error.message).toContain(INTERRUPTED_MESSAGE);
     expect(stampOf(a)).toEqual(before);
+  });
+});
+
+describeWasm("caractérisation cli-partage (D13) : ouverture d'un tableau par la CLI", () => {
+  beforeAll(async () => {
+    await loadNodePdfjs();
+    await loadPdfLib();
+    await (await nodeSession(memoryIO())).deps.formats();
+  });
+  async function readerOf(path: string): Promise<{ why: string | null; warnings: string[] }> {
+    const s = await nodeSession(memoryIO());
+    const deps = { core: s.deps.core, ports: s.deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => s.deps.now(), appVersion: APP_VERSION };
+    try {
+      const r = await readBoardFile({ name: "x.iwb", blob: new Blob([readFileSync(path) as BlobPart]), format: "iwb" }, deps);
+      r.doc.free();
+      return { why: null, warnings: r.warnings };
+    } catch (e) {
+      return { why: messageOf(e), warnings: [] };
+    }
+  }
+  const abimeIn = (dir: string): string => {
+    const p = join(dir, "abime.iwb");
+    writeFileSync(p, "<iwb");
+    return p;
+  };
+
+  it("caractérisation cli-partage — state abime.iwb : code 1, stderr { code format, « Ouverture impossible (abime.iwb) : <message du lecteur> » }", async () => {
+    const abime = abimeIn(tmpDir());
+    const { why } = await readerOf(abime);
+    expect(why).not.toBeNull();
+    const io = memoryIO();
+    expect(await main(["state", abime], io)).toBe(1);
+    expect(io.errors()).toEqual([{ error: { code: "format", message: `Ouverture impossible (abime.iwb) : ${why}` } }]);
+  });
+
+  it("caractérisation cli-partage — import a.roomboard lecon.iwb three.pdf : code 0, deux ouverts, un seul avis = boardWarningsMessage du lecteur", async () => {
+    const dir = tmpDir();
+    const f = boardFixtures(dir);
+    const three = await pdfFixture(dir);
+    const a = join(dir, "a.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const { warnings } = await readerOf(f.iwb);
+    expect(warnings.length).toBeGreaterThan(0);
+    const io = memoryIO();
+    expect(await main(["import", a, f.iwb, three], io)).toBe(0);
+    const [r] = io.json();
+    expect(r).toMatchObject({ opened: ["lecon.iwb", "three.pdf"], inserted: [], refused: [], failed: [] });
+    expect(r.notices).toEqual([boardWarningsMessage("lecon.iwb", warnings)]);
+    expect(io.stderr).toEqual([]);
+  });
+
+  it("caractérisation cli-partage — import a.roomboard abime.iwb : code 1, « import partiel : abime.iwb (en échec) », avis « Ouverture impossible (abime.iwb) : … »", async () => {
+    const dir = tmpDir();
+    const abime = abimeIn(dir);
+    const { why } = await readerOf(abime);
+    const a = join(dir, "a.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const io = memoryIO();
+    expect(await main(["import", a, abime], io)).toBe(1);
+    const [r] = io.json();
+    expect(r).toMatchObject({ opened: [], inserted: [], refused: [], failed: ["abime.iwb"] });
+    expect(r.notices).toEqual([`Ouverture impossible (abime.iwb) : ${why}`]);
+    expect(io.errors()).toEqual([{ error: { code: "command", message: "import partiel : abime.iwb (en échec)" } }]);
+  });
+
+  it("caractérisation cli-partage — 12 onglets (run --new, 11 tab.new) puis op import lecon.iwb : op 12 en échec, avis nommé « 12 onglets au plus »", async () => {
+    const f = boardFixtures(tmpDir());
+    const lines = [...Array.from({ length: 11 }, () => JSON.stringify({ op: "tab.new" })), JSON.stringify({ op: "import", files: [f.iwb] })];
+    const io = memoryIO(lines);
+    expect(await main(["run", "--new"], io)).toBe(1);
+    const failed = io.json().find((l: Json) => l.op === 12);
+    expect(failed).toMatchObject({ ok: false, error: { code: "command", message: "import partiel : lecon.iwb (en échec)" }, opened: [], failed: ["lecon.iwb"] });
+    expect(failed.notices).toEqual([`Ouverture impossible (lecon.iwb) : ${TOO_MANY_TABS}`]);
   });
 });
