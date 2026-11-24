@@ -279,6 +279,19 @@ describe("boardJobReply (cli-lot2, D20, D29)", () => {
     expect(() => boardJobReply(panicked, { op: "read", dialect: "iwb", files: [enc("x")] })).toThrow(WebAssembly.RuntimeError);
   });
 
+  it("D29 : free() masque la panique — la RuntimeError d'origine est relancée, pas l'Error de free()", () => {
+    const masked = {
+      ops: panic,
+      texts: () => [],
+      warnings: () => [],
+      free: () => {
+        throw new Error("attempted to take ownership of Rust value while it was borrowed");
+      },
+    };
+    const m = mod({ open: () => masked });
+    expect(() => boardJobReply(m, { op: "read", dialect: "iwb", files: [enc("x")] })).toThrow(WebAssembly.RuntimeError);
+  });
+
   // Chemin de référence (DA7) : le codec de la page, inchangé, reçoit le corps en processus comme `spawn` ; les réponses
   // passent par `checkBoardParts`/`checkBoardFiles` et une panique par `onerror` → message d'échec de `runOnce`.
   // Un appel direct de `BoardReader.open` (patron écarté) rendrait l'erreur brute « unreachable ».
