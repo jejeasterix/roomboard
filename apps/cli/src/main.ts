@@ -14,7 +14,7 @@ import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
-import { checkConvert, checkExportTarget, checkNotSource, exportBoardFile, exportFragment, exportPdfFile, isBoardOut, isPdfOut } from "./exporter";
+import { checkConvert, checkExportTarget, checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { libraryExport, libraryImport, libraryList, openLibrary } from "./library";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
@@ -203,11 +203,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const session = await nodeSession(io);
     await session.open(file);
     const ids = idsText?.split(",").map((s) => s.trim()).filter((s) => s !== "");
-    const result = isPdfOut(to)
-      ? await exportPdfFile(session, to)
-      : isBoardOut(to)
-        ? await exportBoardFile(session, to)
-        : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
+    const result = whole ? await exportWhole(session, to) : await exportFragment(session, { to, page: flagStr(p, "--page"), ids, name: flagStr(p, "--name"), grid });
     const notices = session.deps.notices;
     io.out(JSON.stringify({ ...result, ...(notices.length > 0 ? { notices } : {}) }));
     return 0;
@@ -221,8 +217,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const session = await nodeSession(io);
     const tab = (await session.open(from)).session;
     if (extOf(to) === ".roomboard") await session.save(tab, to);
-    else if (isPdfOut(to)) await exportPdfFile(session, to);
-    else await exportBoardFile(session, to);
+    else await exportWhole(session, to);
     io.out(JSON.stringify({ file: to, from, pages: tab.doc.pageIds().length, notices: session.deps.notices }));
     return 0;
   },
