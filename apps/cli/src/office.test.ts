@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { OfficeConvertError } from "../../web/src/platform/office-import";
 import { main } from "./main";
-import { BINARY_MISSING, convertOfficeFile, NO_SOFFICE } from "./office-node";
-import { describeWasm, memoryIO, tmpDir, type Json } from "./testing";
+import { BINARY_MISSING, convertOfficeFile, NO_SOFFICE, officeBinary } from "./office-node";
+import { describeWasm, memoryIO, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
 
 const REAL = process.env["ROOMBOARD_SANS_SOFFICE"] !== "1";
 const itReal = REAL ? it : it.skip; // D54
@@ -149,5 +149,63 @@ describeWasm("S2 — Office impossible : code 3, rien écrit (convert, state)", 
     const io = memoryIO([], { ...env, ROOMBOARD_OFFICE: bin });
     expect(await main(["convert", docx, join(dir, "x.roomboard")], io)).toBe(1);
     expect(io.errors()[0].error).toEqual({ code: "format", message: "Import impossible (x.docx) : la conversion en PDF a échoué" });
+  });
+});
+
+describeWasm("S1, S2 — import d'un fichier Office (cli-lot4, T7)", () => {
+  const fresh = async (dir: string): Promise<string> => {
+    const a = join(dir, "a.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    return a;
+  };
+  itReal("S1 — import a.roomboard cours.docx : opened [cours.docx], conversions/ vide, aucun soffice", SLOW, async () => {
+    const { dir, cache, env } = scratch();
+    const a = await fresh(dir);
+    const io = memoryIO([], env);
+    expect(await main(["import", a, join(FIX, "cours.docx")], io)).toBe(0);
+    expect(io.json()[0]).toMatchObject({ opened: ["cours.docx"], inserted: [], refused: [], failed: [] });
+    cleanAfter(cache);
+  });
+  it("D58 — import valeurs.xlsx : tableau inséré, aucun binaire lancé (même avec un convertisseur)", async () => {
+    const { dir, env } = scratch();
+    const a = await fresh(dir);
+    const log = join(dir, "appels.log");
+    const bin = join(dir, "faux-office");
+    writeFileSync(bin, `#!/bin/sh\necho "$1" >> '${log}'\nexit 1\n`);
+    chmodSync(bin, 0o755);
+    const io = memoryIO([], { ...env, ROOMBOARD_OFFICE: bin });
+    expect(await main(["import", a, XLSX_FIXTURE], io)).toBe(0);
+    expect(io.json()[0]).toMatchObject({ inserted: ["valeurs.xlsx"] });
+    expect(existsSync(log)).toBe(false);
+  });
+  it("S2 — import avec ROOMBOARD_OFFICE absent : code 3, message de DA17, a.roomboard inchangé, rien lu", async () => {
+    const { dir, env } = scratch();
+    const a = await fresh(dir);
+    const before = stampOf(a);
+    const io = memoryIO([], { ...env, ROOMBOARD_OFFICE: join(dir, "absent") });
+    expect(await main(["import", a, join(FIX, "cours.docx")], io)).toBe(3);
+    expect(io.errors()[0].error).toEqual({ code: "unsupported", message: `cours.docx : conversion Office indisponible : ${BINARY_MISSING}` });
+    expect(stampOf(a)).toEqual(before);
+    const absent = memoryIO([], { ...env, ROOMBOARD_OFFICE: join(dir, "absent") });
+    expect(await main(["import", join(dir, "absent.roomboard"), join(dir, "absent.docx")], absent)).toBe(3); // rien lu : sinon io (1)
+  });
+  itReal("RF3 — deux .docx dans une session run : --check une fois, deux onglets de plus, conversions/ vide", SLOW, async () => {
+    const { dir, cache, env } = scratch();
+    const real = officeBinary({});
+    expect(real).not.toBeNull();
+    const log = join(dir, "appels.log");
+    const bin = join(dir, "enveloppe");
+    writeFileSync(bin, `#!/bin/sh\necho "$1" >> '${log}'\nexec '${real}' "$@"\n`);
+    chmodSync(bin, 0o755);
+    const two = join(dir, "deux.docx");
+    copyFileSync(join(FIX, "cours.docx"), two);
+    const ops = [{ op: "import", files: [join(FIX, "cours.docx")] }, { op: "import", files: [two] }, { op: "tab.list" }].map((o) => JSON.stringify(o));
+    const io = memoryIO(ops, { ...env, ROOMBOARD_OFFICE: bin });
+    expect(await main(["run", "--new", "--ops", "-"], io)).toBe(0);
+    const calls = readFileSync(log, "utf8").trim().split("\n");
+    expect(calls.filter((c) => c === "--check")).toHaveLength(1);
+    expect(calls).toHaveLength(3);
+    expect(io.json().filter((l: Json) => Array.isArray(l.tabs)).at(-1).tabs).toHaveLength(3);
+    cleanAfter(cache);
   });
 });

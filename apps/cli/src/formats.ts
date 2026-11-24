@@ -6,11 +6,12 @@
  * s'écrit au lot 1 et ne s'insère qu'au lot 2 ; `formats` rend toujours `{ ext, read, write, readLot, writeLot, notes }` (DA2).
  * D27 (cli-lot2) : le code 3 se lit sur `covered`, par format et par sens ; `LOT_LIVRE` = plus haut lot dont toutes les
  * entrées sont couvertes, un test l'exige. Un chantier qui livre un format change ses lots ici et passe son `covered` (§ 7).
- * cli-lot3 (D42) : `.pdf` couvert, `LOT_LIVRE = 3` ; plus aucune écriture d'un lot non livré, le code 3 ne sort plus que
- * d'un `import` du lot 4.
+ * cli-lot3 (D42) : `.pdf` couvert. cli-lot4 (D68, D73) : le dernier lot couvert en lecture (écriture `null`), `LOT_LIVRE = 4` ;
+ * le code 3 ne sort plus que d'une variante non lue : en-tête illisible, convertisseur Office absent, format laissé de côté
+ * (H48).
  */
 export type Lot = 1 | 2 | 3 | 4;
-export const LOT_LIVRE: Lot = 3;
+export const LOT_LIVRE: Lot = 4;
 
 export interface Coverage {
   readonly read: boolean;
@@ -44,8 +45,12 @@ export interface FormatRow {
   readonly notes: readonly string[];
 }
 
-/** Images d'un tableau que la CLI ne sait pas mesurer sans décodeur (lot 4). */
-const UNREAD_IMAGES = "images GIF, WebP, BMP, SVG non lues (lot 4)";
+/** cli-lot4 (H48) : préfixe de la note d'un format laissé de côté (`read: null`), suivi de sa raison. */
+export const LEFT_ASIDE = "laissé de côté : ";
+/** cli-lot4 : entrée lue par la CLI, jamais écrite (lecture seule, comme la page). */
+const lot4 = (handler: string, ...notes: string[]): FormatEntry => branched(4, null, handler, { read: true, write: false }, ...notes);
+const HEADER_SIZE = "taille lue dans l'en-tête ; illisible : code 3";
+const PDF_EXPORT = "export .pdf : refusé, aucun décodeur d'image dans la CLI (code 1, D69)";
 
 const each = (exts: readonly string[], e: FormatEntry): Array<readonly [string, FormatEntry]> => exts.map((x) => [x, e] as const);
 
@@ -53,21 +58,23 @@ const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".roomboard", entry(1, 1, "roomboard")],
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", branched(2, 2, "rbpack", { read: true, write: true }, "par `library import` / `library export`")],
-  [".pdf", branched(3, 3, "pdf", { read: true, write: true }, "fond `pdf-page`, PDF d'origine gardé en asset", "export : pages d'origine recopiées, annotation vectorielle ; sans repli en image (code 1)", "couleurs nommées et texte mesurés comme H25, H26")],
-  [".iwb", branched(2, 2, "iwb", { read: true, write: true }, UNREAD_IMAGES)],
-  [".ubz", branched(2, 2, "ubz", { read: true, write: true }, UNREAD_IMAGES)],
-  [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
-  [".olf", branched(2, null, "olf", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
-  [".flipchart", branched(2, null, "flipchart", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
+  [".pdf", branched(3, 3, "pdf", { read: true, write: true }, "fond `pdf-page`, PDF d'origine gardé en asset", "export : pages d'origine recopiées, annotation vectorielle ; sans repli en image (code 1)", "couleurs nommées et texte mesurés comme H25, H26", "image GIF, WebP, BMP, ICO, SVG, AVIF, HEIC : export refusé, krilla ne prend que PNG et JPEG et aucun décodeur d'image dans la CLI (code 1, D69)")],
+  [".iwb", branched(2, 2, "iwb", { read: true, write: true }, "images lues par leur en-tête")],
+  [".ubz", branched(2, 2, "ubz", { read: true, write: true }, "images lues par leur en-tête")],
+  [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", "images lues par leur en-tête")],
+  [".olf", branched(2, null, "olf", { read: true, write: false }, "lecture seule", "images lues par leur en-tête")],
+  [".flipchart", branched(2, null, "flipchart", { read: true, write: false }, "lecture seule", "images lues par leur en-tête")],
   [".png", entry(1, null, "image", "taille lue dans l'en-tête")],
   ...each([".jpg", ".jpeg"], entry(1, null, "image", "taille lue dans l'en-tête, orientation EXIF non appliquée (H2)")),
-  ...each([".gif", ".webp", ".bmp", ".ico", ".svg", ".avif", ".heic", ".heif"], entry(4, null, "image")),
-  ...each([".mp4", ".m4v", ".mov", ".webm", ".ogv", ".m4a", ".mp3", ".wav", ".ogg", ".oga"], entry(4, null, "media")),
-  ...each([".glb", ".gltf", ".obj", ".stl", ".ply"], entry(4, null, "model3d")),
-  ...each([".mtl", ".bin"], entry(4, null, "model3d-companion")),
-  [".zip", entry(4, null, "zip3d")],
-  ...each([".xlsx", ".xlsm"], entry(1, null, "sheet", "valeurs de la première feuille ; largeur du texte approchée (H1)")),
-  ...each([".docx", ".odt", ".ods", ".pptx", ".odp", ".doc", ".xls", ".ppt"], entry(4, null, "office")),
+  ...each([".gif", ".webp", ".bmp", ".ico"], lot4("image", HEADER_SIZE, PDF_EXPORT)),
+  [".svg", lot4("image", "taille du navigateur (300 × 150 sans dimensions, H39) ; illisible : code 3", PDF_EXPORT)],
+  ...each([".avif", ".heic", ".heif"], lot4("image", HEADER_SIZE, "rotation irot non appliquée (H43)", PDF_EXPORT)),
+  ...each([".mp4", ".m4v", ".mov", ".webm", ".ogv", ".m4a", ".mp3", ".wav", ".ogg", ".oga"], lot4("media", "durée lue dans l'en-tête, sans poster (H40) ; illisible : code 3", "inclus, 100 Mo au plus (H45)")),
+  ...each([".glb", ".gltf", ".obj", ".stl", ".ply"], lot4("model3d", "validé par three, sans instantané (cadre gris dans l'application, H40)")),
+  ...each([".mtl", ".bin"], lot4("model3d-companion", "avec son modèle seulement")),
+  [".zip", lot4("zip3d", "modèles 3D d'un ZIP, validés par three, sans instantané")],
+  ...each([".xlsx", ".xlsm"], entry(1, null, "sheet", "valeurs de la première feuille ; largeur du texte approchée (H1)", "jamais converti en pages, même avec LibreOffice (H37)")),
+  ...each([".docx", ".odt", ".ods", ".pptx", ".odp", ".doc", ".xls", ".ppt"], lot4("office", "converti par roomboard-office et LibreOffice (code 3 sans eux) ; original gardé en asset", "lecture seule")),
 ];
 
 export const FORMAT_LOTS: Readonly<Record<string, FormatEntry>> = Object.freeze(Object.fromEntries(ROWS));
@@ -101,6 +108,13 @@ export function importBlocked(name: string): Lot | null {
 
 /** D26 : un paquet `.rbpack` ne s'importe pas dans un document ; message qui renvoie à `library`. */
 export const packMessage = (name: string): string => `${baseOf(name)} : un paquet .rbpack passe par la bibliothèque : roomboard library import | library export`;
+
+/** H48 : raison d'un format laissé de côté (`read: null`, note `laissé de côté : …`) ; null sinon. */
+export function leftAsideReason(name: string): string | null {
+  const e = formatOf(name);
+  const note = e !== null && e.read === null ? e.notes.find((n) => n.startsWith(LEFT_ASIDE)) : undefined;
+  return note === undefined ? null : note.slice(LEFT_ASIDE.length);
+}
 
 export const unsupportedMessage = (name: string, lot: Lot): string => `${baseOf(name)} : format pris en charge par la CLI au lot ${lot}`;
 

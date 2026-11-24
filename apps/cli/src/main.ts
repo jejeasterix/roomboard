@@ -18,7 +18,7 @@ import { exists, readBytes } from "./disk";
 import { checkConvert, checkExportTarget, checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { libraryExport, libraryImport, libraryList, openLibrary } from "./library";
-import { checkSources, importInto, parseAt, partialMessage } from "./importer";
+import { checkOffice, checkSources, importInto, parseAt, partialMessage } from "./importer";
 import { documentTarget, nodeSession, type CliTab, type Session } from "./session";
 import { stateOf } from "./state";
 import type { TabEntry } from "../../web/src/app/tabs";
@@ -175,6 +175,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     if (file === undefined || sources.length === 0) throw usage(USAGE.import);
     documentTarget(flagStr(p, "--out") ?? file);
     checkSources(sources); // code 3 avant toute lecture (D9)
+    await checkOffice(sources, io.env); // D56 : convertisseur Office, code 3 avant toute lecture (document compris)
     const atText = flagStr(p, "--at");
     const at = atText === undefined ? null : parseAt(atText); // code 2 avant tout import (H7)
     const session = await nodeSession(io);
