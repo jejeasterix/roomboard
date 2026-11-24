@@ -120,6 +120,42 @@ describe("Ctrl-C, faux binaire (cli-lot4, D79)", () => {
   });
 });
 
+describe("Ctrl-C, restes de LibreOffice (cli-lot4, D79)", () => {
+  const waitFor = async (mark: string): Promise<void> => {
+    for (let i = 0; i < 100 && !existsSync(mark); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(mark), "faux binaire jamais lancé").toBe(true);
+  };
+  it("D79 — SIGINT transmis : killLeftovers(racine, pid du binaire) est appelé", async () => {
+    const dir = tmpDir();
+    const mark = join(dir, "lance");
+    const bin = fakeBinary(dir, { check: 0, convert: `echo go > '${mark}'\nexec sleep 30` });
+    const leftovers = vi.fn(() => []);
+    const pending = convertOfficeFile(join(dir, "x.docx"), { ROOMBOARD_OFFICE: bin }, vi.fn(), leftovers).catch((e: unknown) => e);
+    await waitFor(mark);
+    process.emit("SIGINT");
+    expect(await pending).toEqual(new OfficeConvertError("interrupted"));
+    expect(leftovers).toHaveBeenCalledTimes(1);
+    expect(leftovers).toHaveBeenCalledWith(join(dir, "racine"), expect.any(Number));
+  });
+  it("D79 — Ctrl-C de groupe : binaire tué par SIGINT sans relais reçu : restes tués, onInterrupt(SIGINT, 130)", async () => {
+    const dir = tmpDir();
+    const bin = fakeBinary(dir, { check: 0, convert: "kill -INT $$\nsleep 5" });
+    const leftovers = vi.fn(() => []);
+    const onInterrupt = vi.fn();
+    const e = await convertOfficeFile(join(dir, "x.docx"), { ROOMBOARD_OFFICE: bin }, onInterrupt, leftovers).catch((x: unknown) => x);
+    expect(e).toEqual(new OfficeConvertError("interrupted"));
+    expect(onInterrupt).toHaveBeenCalledWith("SIGINT", 130);
+    expect(leftovers).toHaveBeenCalledTimes(1);
+  });
+  it("D79 — binaire tué par SIGTERM : 143", async () => {
+    const dir = tmpDir();
+    const bin = fakeBinary(dir, { check: 0, convert: "kill -TERM $$\nsleep 5" });
+    const onInterrupt = vi.fn();
+    await convertOfficeFile(join(dir, "x.docx"), { ROOMBOARD_OFFICE: bin }, onInterrupt, vi.fn(() => [])).catch(() => undefined);
+    expect(onInterrupt).toHaveBeenCalledWith("SIGTERM", 143);
+  });
+});
+
 describe("killLeftovers (cli-lot4, D79, G4)", () => {
   it("D79 — seuls les processus qui citent <racine>/conversions/<pid>- sont tués (groupe d'abord)", () => {
     const proc = tmpDir();
@@ -138,6 +174,15 @@ describe("killLeftovers (cli-lot4, D79, G4)", () => {
     };
     expect(killLeftovers(root, 77, proc, kill)).toEqual([100]);
     expect(calls).toEqual([[-100, "SIGKILL"]]);
+  });
+  it("D79 — racine accentuée : cmdline lue en UTF-8, le processus est tué (HOME ou XDG_CACHE_HOME accentué)", () => {
+    const proc = tmpDir();
+    const root = join(tmpDir(), "caché-é");
+    mkdirSync(join(proc, "100"));
+    writeFileSync(join(proc, "100", "cmdline"), `soffice\0${root}/conversions/77-1/source.docx\0`, "utf8");
+    const calls: number[] = [];
+    expect(killLeftovers(root, 77, proc, (p) => void calls.push(p))).toEqual([100]);
+    expect(calls).toEqual([-100]);
   });
   it("D79 — pas de /proc (hors Linux) : rien tué", () => expect(killLeftovers("/r", 1, join(tmpDir(), "absent"), () => undefined)).toEqual([]));
 });

@@ -36,7 +36,7 @@ import { checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } fro
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
-import { checkOffice, convertOfficeFile, NO_SOFFICE, unavailableMessage } from "./office-node";
+import { checkOffice, convertOfficeFile, isOfficeDoc, NO_SOFFICE, unavailableMessage } from "./office-node";
 import { needString, optString, parseOp, type CliOpName, type RefContext } from "./ops";
 import { nodePdfEngine, nodePdfWriter } from "./pdf-node";
 import { stateOf } from "./state";
@@ -79,9 +79,6 @@ export function boardFormatOf(path: string): BoardSourceFormat | null {
   const e = formatOf(path);
   return e !== null && BOARD_HANDLERS.has(e.handler) ? (e.handler as BoardSourceFormat) : null;
 }
-
-/** cli-lot4 (D59) : fichier converti par roomboard-office (`.xlsx`, `.xlsm` : lecteur `sheet`, jamais converti, D58). */
-const isOfficeDoc = (path: string): boolean => formatOf(path)?.handler === "office";
 
 /** D23 : extension .roomboard (sans casse), sinon CliError usage. */
 export function documentTarget(path: string): string {
@@ -195,7 +192,7 @@ export function createSession(deps: SessionDeps): Session {
     if (kind === "document" && isOfficeDoc(path)) {
       // D56, D59 : le fichier est lu d'abord (absent : `io`, code 1), le convertisseur contrôlé ensuite (code 3).
       const name = basename(path);
-      const env = deps.env ?? process.env;
+      const env = deps.env;
       await checkOffice([path], env);
       let pdf: Blob;
       try {

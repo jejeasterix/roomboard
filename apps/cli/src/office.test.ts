@@ -28,7 +28,7 @@ function processesWith(needle: string): string[] {
   }
   return names.flatMap((n) => {
     try {
-      const c = readFileSync(join("/proc", n, "cmdline"), "latin1").replaceAll("\0", " ");
+      const c = readFileSync(join("/proc", n, "cmdline"), "utf8").replaceAll("\0", " ");
       return c.includes(needle) ? [c] : [];
     } catch {
       return [];

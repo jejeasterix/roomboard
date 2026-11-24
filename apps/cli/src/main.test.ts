@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
 import { FORMAT_LOTS } from "./formats";
 import { main } from "./main";
 import { describeWasm, memoryIO, normalizeIds, stampOf, tmpDir, type Json } from "./testing";
@@ -42,6 +43,9 @@ describe("main : commandes sans module (D9)", () => {
       expect(out.env).toContain("ROOMBOARD_NOW=<millisecondes depuis 1970>");
       expect(out.env).toContain("ROOMBOARD_OFFICE=<chemin>");
       expect(out.usage.some((u: string) => u.startsWith("roomboard state <fichier.roomboard | fichier.rbitem | fichier.pdf | fichier Office"))).toBe(true);
+      const state: string = out.usage.find((u: string) => u.startsWith("roomboard state"));
+      const listed = (/fichier Office ([^|]+) \|/.exec(state) ?? [])[1]?.trim().split(" ") ?? [];
+      expect([...listed].sort()).toEqual(OFFICE_EXTENSIONS.filter((e) => ![".xlsx", ".xlsm"].includes(e)).sort()); // D58 : tableur lu, jamais converti
     }
     const bare = memoryIO();
     expect(await main([], bare)).toBe(2);
