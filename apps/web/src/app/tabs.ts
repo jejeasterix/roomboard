@@ -20,6 +20,8 @@ export interface Tabs<S> {
   active(): TabEntry<S> | null;
   /** Lève ONE_ANNOTATION_TAB pour un second "annotation", et TOO_MANY_TABS au-delà de MAX_TABS. */
   add(kind: TabKind, session: S, activate?: boolean): TabEntry<S>;
+  /** cli-partage (D5) : vrai quand `add` refuserait faute de place (MAX_TABS atteint), même règle que `add`. */
+  full(): boolean;
   activate(id: string): boolean;
   /** Retire ; si c'était l'actif, active le précédent (le suivant s'il était premier). Rend l'onglet retiré. */
   remove(id: string): TabEntry<S> | null;
@@ -39,6 +41,7 @@ export function createTabs<S>(newId: () => string): Tabs<S> {
   return {
     list: () => entries.slice(),
     active: () => entries.find((t) => t.id === activeId) ?? null,
+    full: () => entries.length >= MAX_TABS,
     add(kind, session, activate = true) {
       if (kind === "annotation" && entries.some((t) => t.kind === "annotation")) throw new Error(ONE_ANNOTATION_TAB);
       if (entries.length >= MAX_TABS) throw new Error(TOO_MANY_TABS);
