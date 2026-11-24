@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cubeMtl, cubeObj, glbPlain, glbTextured, gltfPair, plyTriangle, texturePng, stlTriangle } from "../../../scripts/essais/fabriques/modeles.mjs";
 import { DEFAULT_CAMERA } from "../../web/src/engine/render/model-frames";
 import type { ModelSource } from "../../web/src/platform/model-view";
@@ -35,6 +35,10 @@ afterEach(() => {
 });
 
 describe("nodeModel3d (cli-lot4, D67)", () => {
+  // D11 (cli-partage) : three chargé une fois ici, hors du délai de 5 s du premier test (dépassement de la référence).
+  beforeAll(async () => {
+    await import("../../web/src/platform/model-view-three");
+  });
   it("S4 — GLB sans et avec texture, glTF + .bin, OBJ + MTL + texture, STL, PLY : lus sans WebGL, missing vide, instantané null", async () => {
     const view = await nodeModel3d().view();
     expect(view.available()).toBe(false);

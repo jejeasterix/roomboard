@@ -2,11 +2,11 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
 import { FORMAT_LOTS } from "./formats";
 import { main } from "./main";
-import { describeWasm, memoryIO, normalizeIds, stampOf, tmpDir, type Json } from "./testing";
+import { describeWasm, memoryIO, normalizeIds, stampOf, tmpDir, warmModules, type Json } from "./testing";
 
 describe("main : commandes sans module (D9)", () => {
   it("formats rend la table entière, code 0", async () => {
@@ -61,6 +61,7 @@ describe("main : commandes sans module (D9)", () => {
 });
 
 describeWasm("main : version au vrai module", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("version : cli, core, app et schéma", async () => {
     const io = memoryIO();
     expect(await main(["version"], io)).toBe(0);

@@ -1,10 +1,10 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { bmp, gif, heif, ico, svg, webp } from "../../../scripts/essais/fabriques/images.mjs";
 import { IWB_HEAD } from "../../../scripts/essais/fabriques/tableaux.mjs";
 import { main } from "./main";
-import { describeWasm, fabZip, memoryIO, stampOf, tmpDir, type Json } from "./testing";
+import { describeWasm, fabZip, memoryIO, stampOf, tmpDir, warmModules, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
   const dir = tmpDir();
@@ -15,6 +15,7 @@ async function board(): Promise<{ dir: string; a: string }> {
 const nameOf = (state: Json, id: string): string => state.assets.find((x: Json) => x.id === id)?.name;
 
 describeWasm("S5 — autres images (cli-lot4)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S5 — huit images insérées aux tailles de l'en-tête (vb.svg à viewBox seul : 300 × 75)", async () => {
     const { dir, a } = await board();
     const files: Record<string, Uint8Array> = {

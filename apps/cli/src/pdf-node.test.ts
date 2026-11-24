@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GlobalWorkerOptions } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { pdfPages } from "../../../scripts/essais/fabriques/pdf.mjs";
 import { PDF_FONT_FILES, PDF_WRITE_FAILED_MESSAGE } from "../../web/src/app/pdf-overlay-vector";
 import type { RecordedList } from "../../web/src/engine/render/record-ctx";
@@ -9,7 +9,7 @@ import type { FormatsBinding } from "../../web/src/platform/container";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import { loadNodePdfjs, NO_RASTER_SUFFIX, NO_RENDER_MESSAGE, nodeMeasureContext, nodeOverlay, nodePdfEngine, nodePdfFonts, nodePdfWriter, pdfjsFontsDir } from "./pdf-node";
 import { nodeSession } from "./session";
-import { describeWasm, memoryIO, tmpDir, WEB_SRC } from "./testing";
+import { describeWasm, memoryIO, tmpDir, WEB_SRC, warmModules } from "./testing";
 import { loadFormats } from "./wasm-node";
 
 const LIST: RecordedList = { ops: new Float32Array([0]), texts: [], images: [], drawn: [1] };
@@ -129,6 +129,7 @@ describe("krilla en processus (D38, D29)", () => {
 });
 
 describeWasm("superposition vectorielle de la CLI sur le vrai module (D37)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   async function drawn() {
     const s = await nodeSession(memoryIO());
     const tab = s.newTab().session;

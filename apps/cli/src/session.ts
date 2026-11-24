@@ -10,18 +10,18 @@
  * krilla en dépendances (T6 écrit le PDF).
  * cli-lot4 (D57, D59) : un fichier Office (lecteur `office` de `FORMAT_LOTS`) est converti par `roomboard-office`
  * (`office-node.ts`), puis lu comme un PDF, l'original gardé, en onglet sans fichier.
+ * cli-partage (D3, D5) : ouverture par `open-export.ts` du produit (`openBoardDocument`, `openPdfDocument`), onglets
+ * pleins par `tabs.full()` ; messages et canaux de la CLI inchangés.
  */
 import { basename } from "node:path";
-import { readBoardFile } from "../../web/src/app/board-convert";
-import { boardWarningsMessage } from "../../web/src/app/board-files";
 import type { BoardPorts, BoardSourceFormat } from "../../web/src/app/board-io";
 import type { FragmentOps } from "../../web/src/app/fragments";
 import { createContainerIO, type ContainerIO, type ReadKind, type ReadResult } from "../../web/src/app/container-io";
-import { readPdfFile, type PdfRead } from "../../web/src/app/pdf-convert";
+import { openBoardDocument, openFailedMessage, openPdfDocument, type OpenedDocument } from "../../web/src/app/open-export";
 import type { PdfLib } from "../../web/src/app/pdf-export";
 import type { PdfWriter } from "../../web/src/app/pdf-overlay-vector";
 import type { PdfEngine } from "../../web/src/engine/render/pdf-port";
-import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabEntry, type Tabs } from "../../web/src/app/tabs";
+import { createTabs, TOO_MANY_TABS, type TabEntry, type Tabs } from "../../web/src/app/tabs";
 import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
 import { createPageCodec, type ContainerCodec, type FormatsBinding, type SheetFormatsBinding } from "../../web/src/platform/container";
@@ -159,32 +159,26 @@ export function createSession(deps: SessionDeps): Session {
   };
   const newTab = (): TabEntry<CliTab> => add({ doc: deps.core.blank(), assets: createAssetStore(), file: null });
 
-  const readBoard = (name: string, blob: Blob, format: BoardSourceFormat) =>
-    readBoardFile({ name, blob, format }, { core: deps.core, ports: deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => deps.now(), appVersion: APP_VERSION });
-
-  /** Lit un tableau ; échec : « Ouverture impossible (nom) : … » ; avis du lecteur poussés dans les notices. */
-  async function readBoardNoticed(name: string, blob: Blob, format: BoardSourceFormat): Promise<Awaited<ReturnType<typeof readBoard>>> {
-    let read: Awaited<ReturnType<typeof readBoard>>;
+  /** Ouvre un document ; échec : message complet du produit en CliError format ; avis du lecteur poussés dans les
+   *  notices, avant l'ajout de l'onglet (D4, D31). */
+  async function noticed(open: () => Promise<OpenedDocument>): Promise<OpenedDocument> {
+    let read: OpenedDocument;
     try {
-      read = await readBoard(name, blob, format);
-    } catch (e) {
-      throw new CliError("format", `Ouverture impossible (${name}) : ${messageOf(e)}`);
-    }
-    if (read.warnings.length > 0) deps.notices.push(boardWarningsMessage(name, read.warnings));
-    return read;
-  }
-
-  /** Lit un PDF (D35, D40) ; échec : message complet du produit ; avis d'ouverture (500 pages) dans les notices (D31). */
-  async function readPdfNoticed(name: string, blob: Blob, original?: Blob): Promise<PdfRead> {
-    let read: PdfRead;
-    try {
-      read = await readPdfFile({ name, blob, ...(original === undefined ? {} : { original }) }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() });
+      read = await open();
     } catch (e) {
       throw new CliError("format", messageOf(e));
     }
-    deps.notices.push(...read.warnings);
+    deps.notices.push(...read.notices);
     return read;
   }
+
+  /** Lit un tableau (`openBoardDocument`) ; échec : « Ouverture impossible (nom) : … ». */
+  const readBoardNoticed = (name: string, blob: Blob, format: BoardSourceFormat): Promise<OpenedDocument> =>
+    noticed(() => openBoardDocument({ name, blob, format }, { core: deps.core, ports: deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => deps.now(), appVersion: APP_VERSION }));
+
+  /** Lit un PDF (D35, D40) ; avis d'ouverture (500 pages) dans les notices (D31). */
+  const readPdfNoticed = (name: string, blob: Blob, original?: Blob): Promise<OpenedDocument> =>
+    noticed(() => openPdfDocument({ name, blob, ...(original === undefined ? {} : { original }) }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() }));
 
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
@@ -220,7 +214,7 @@ export function createSession(deps: SessionDeps): Session {
     return read;
   }
   async function open(path: string): Promise<TabEntry<CliTab>> {
-    if (tabs.list().length >= MAX_TABS) throw new CliError("command", TOO_MANY_TABS);
+    if (tabs.full()) throw new CliError("command", TOO_MANY_TABS);
     const read = await readDoc(path, "document");
     // D22, D40, D59 : un tableau, un PDF ou un Office ouvert est un onglet sans fichier (comme `target: null` de la page) :
     // jamais réécrit à son chemin.
@@ -231,8 +225,8 @@ export function createSession(deps: SessionDeps): Session {
    * false si refusé, l'avis est dans `notices`.
    */
   async function openReadTab(name: string, read: () => Promise<Pick<ReadResult, "doc" | "assets">>): Promise<boolean> {
-    if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
+    if (tabs.full()) {
+      deps.notices.push(openFailedMessage(name, TOO_MANY_TABS));
       return false;
     }
     let r: Pick<ReadResult, "doc" | "assets">;
@@ -246,7 +240,7 @@ export function createSession(deps: SessionDeps): Session {
       add({ doc: r.doc, assets: r.assets, file: null });
       return true;
     } catch (e) {
-      deps.notices.push(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+      deps.notices.push(openFailedMessage(name, e));
       return false;
     }
   }
@@ -255,8 +249,8 @@ export function createSession(deps: SessionDeps): Session {
   const openPdf = (file: { readonly name: string; readonly blob: Blob; readonly original?: Blob }): Promise<boolean> =>
     openReadTab(file.name, () => readPdfNoticed(file.name, file.blob, file.original));
   async function openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null> {
-    if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
+    if (tabs.full()) {
+      deps.notices.push(openFailedMessage(name, TOO_MANY_TABS));
       return null;
     }
     if (path !== null) sources.add(path);

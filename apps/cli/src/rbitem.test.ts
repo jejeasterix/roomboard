@@ -1,11 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import type { CoreDocument } from "../../web/src/core/api";
 import { NO_GRID_MESSAGE } from "../../web/src/app/fragments";
 import { main } from "./main";
 import { nodeSession } from "./session";
-import { describeWasm, memoryIO, pngBytes, tmpDir, type Json } from "./testing";
+import { describeWasm, memoryIO, pngBytes, tmpDir, warmModules, type Json } from "./testing";
 
 const rect = { type: "AddShape", page: "$page:0", shape: "rect", x0: 10, y0: 20, x1: 110, y1: 220, style: { color: "#1e40af", width: 4 }, fill: "#fde68a" };
 const GRID = { visible: true, snap: false, above: false, levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: false, visible: true }] };
@@ -29,6 +29,7 @@ async function source(dir: string): Promise<{ a: string; sel: string }> {
 }
 
 describeWasm("S1 — insérer un .rbitem (D18, D19)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S1 — import --at 400,300 dans un tableau existant : sortes, styles, tailles, centre des bornes, assets", async () => {
     const dir = tmpDir();
     const { a, sel } = await source(dir);
