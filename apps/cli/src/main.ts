@@ -59,23 +59,36 @@ async function saveOpened(session: Session, entry: TabEntry<CliTab>, to: string 
   await session.save(entry.session, to);
 }
 
-/** Avis de lecture poussés à l'ouverture d'un tableau (vidéo, TIFF…) : une ligne `{"notices":[…]}` avant les opérations. */
-function openingNotices(session: Session, io: CliIO): void {
-  if (session.deps.notices.length > 0) io.out(JSON.stringify({ notices: [...session.deps.notices] }));
+/**
+ * Sortie d'une commande qui joue des opérations (DA3) : une ligne JSON par opération, jamais une ligne en plus. Les avis
+ * d'ouverture d'un tableau (vidéo, TIFF…) entrent en tête du champ `notices` de la première ligne imprimée ; `finish`
+ * les écrit seuls si la commande n'a rien imprimé.
+ */
+function opening(session: Session, io: CliIO): { emit(line: Record<string, unknown>): void; finish(): void } {
+  let lead: string[] = [...session.deps.notices];
+  const emit = (line: Record<string, unknown>): void => {
+    if (lead.length > 0) {
+      const own = Array.isArray(line["notices"]) ? (line["notices"] as string[]) : [];
+      line = { ...line, notices: [...lead, ...own] };
+      lead = [];
+    }
+    io.out(JSON.stringify(line));
+  };
+  return { emit, finish: () => (lead.length > 0 ? emit({}) : undefined) };
 }
 
 /** Joue les lignes (vides ignorées) ; la première refusée est écrite sur stdout, puis levée (stderr et code par `main`). */
-async function play(session: Session, lines: AsyncIterable<string> | Iterable<string>, io: CliIO): Promise<void> {
+async function play(session: Session, lines: AsyncIterable<string> | Iterable<string>, emit: (line: Record<string, unknown>) => void): Promise<void> {
   let n = 0;
   for await (const raw of lines) {
     const line = raw.trim();
     if (line === "") continue;
     n++;
     try {
-      io.out(JSON.stringify(await session.exec(line)));
+      emit(await session.exec(line));
     } catch (e) {
       const err = asCliError(e, "command");
-      io.out(JSON.stringify({ op: n, ok: false, error: err, ...err.detail }));
+      emit({ op: n, ok: false, error: err, ...err.detail });
       throw err;
     }
   }
@@ -128,14 +141,15 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const fromFile = ops === undefined || ops === "-" ? null : linesOf(await readBytes(ops));
     const session = await nodeSession(io);
     const opened = file === undefined ? session.newTab() : await session.open(file);
-    openingNotices(session, io);
+    const out1 = opening(session, io);
     // stdin ouvert ici seulement : readline lit dès sa création, une attente entre les deux perdrait lignes et fin.
-    await play(session, fromFile ?? io.lines(), io);
+    await play(session, fromFile ?? io.lines(), out1.emit);
     if (save) {
       // Le fichier passé à run, jamais le chemin courant de t1 : une opération save avec « to » le change (H4, DA2).
       await saveOpened(session, opened, out ?? file ?? null);
-      io.out(JSON.stringify({ written: session.written() }));
+      out1.emit({ written: session.written() });
     }
+    out1.finish();
     return 0;
   },
   apply: async (args, io) => {
@@ -145,8 +159,8 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     documentTarget(flagStr(p, "--out") ?? file);
     const session = await nodeSession(io);
     const opened = await session.open(file);
-    openingNotices(session, io);
-    await play(session, [op], io);
+    const out1 = opening(session, io);
+    await play(session, [op], out1.emit);
     await saveOpened(session, opened, flagStr(p, "--out") ?? file);
     return 0;
   },
