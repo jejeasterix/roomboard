@@ -1,4 +1,4 @@
-/** Tableaux blancs sans onglet (cadrage cli-lot2, DA8, D21) : lecture d'un .iwb .ubz .notebook .olf .flipchart en document, écriture d'un .iwb .ubz, ports branchés sur les Workers ; code déplacé de workspace.ts (openBoard, exportBoard) et de main.ts. La page et la CLI passent par ici. Constats suivis, non corrigés : workspace.ts:552 (BoardSources), board-files.ts:89 (flipchartSources). */
+/** Tableaux blancs sans onglet (cadrage cli-lot2, DA8, D21) : lecture d'un .iwb .ubz .notebook .olf .flipchart en document, écriture d'un .iwb .ubz, ports branchés sur les Workers ; code déplacé de workspace.ts (openBoard, exportBoard) et de main.ts. La page et la CLI passent par ici. Constats suivis, non corrigés : le type `BoardSources` (workspace.ts), `flipchartSources` (board-files.ts). */
 import { PDF_MAX_PAGES, type CoreDocument, type CoreFactory } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { BAMBOO_NOT_FLIPCHART, hasBambooMagic } from "../platform/bamboo";
@@ -27,46 +27,46 @@ export interface BoardReadDeps {
 /** Lève une Error au message du produit (endommagé, trop gros, sans page…). */
 export async function readBoardFile(file: BoardFile, deps: BoardReadDeps): Promise<{ doc: CoreDocument; assets: AssetStore; warnings: string[] }> {
   const board = deps.ports;
-    const head = new Uint8Array(await file.blob.slice(0, 8).arrayBuffer()); // signature ZIP (4 octets) ou Bamboo (8)
-    let src: BoardSources;
-    let parts: readonly BoardPart[];
-    let total: number;
-    if (file.format === "flipchart") {
-      // Signature contrôlée ici aussi (le registre l'a vue, un appel direct non) ; le Worker ZIP la contrôle encore.
-      if (!hasBambooMagic(head)) throw new Error(BAMBOO_NOT_FLIPCHART);
-      const split = flipchartSources(await board.unbamboo(file.blob));
-      src = { xml: [], names: [], manifest: null, json: null, media: split.media, total: 1 };
-      const structure = await Promise.all(split.structure.map(async (e) => ({ path: e.path, bytes: new Uint8Array(await e.blob.arrayBuffer()) })));
-      parts = [await board.readFlipchart(structure)];
-      total = 1; // l'avis des 500 premières pages vient du lecteur Rust
-    } else if (hasZipMagic(head)) {
-      const entries = await board.unzip(file.blob);
-      const fmt = resolveBoardFormat(file.format, entries.map((e) => e.path));
-      if (fmt === null) throw new Error(boardNoContentMessage(file.format));
-      src = boardSources(fmt, entries);
-      if (fmt === "olf") {
-        const part = await board.readOlf(src.json!); // Worker ZIP : JSON lu hors du fil principal
-        parts = [part];
-        total = part.total;
-      } else {
-        const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
-        const manifest = src.manifest === null ? null : new Uint8Array(await src.manifest.arrayBuffer());
-        parts = await board.read(xml, fmt, fmt === "notebook" ? { names: src.names, manifest, max: PDF_MAX_PAGES } : undefined);
-        total = src.total;
-      }
-    } else if (file.format === "iwb") {
-      src = { xml: [file.blob], names: ["content.xml"], manifest: null, json: null, media: new Map(), total: 1 };
-      parts = await board.read([new Uint8Array(await file.blob.arrayBuffer())], "iwb");
-      total = 1;
-    } else throw new Error(file.format === "ubz" ? UBZ_NOT_ZIP_MESSAGE : boardNoContentMessage(file.format));
-    // D16 : budget d'objets restant passé au décodage, part par part : la borne tient avant le pic de mémoire.
-    const pages: BoardListPage[] = [];
-    let left = BOARD_MAX_OBJECTS;
-    for (const p of parts) {
-      const got = decodeBoardList(p.ops, p.texts, left);
-      left -= boardObjectCount(got);
-      pages.push(...got);
+  const head = new Uint8Array(await file.blob.slice(0, 8).arrayBuffer()); // signature ZIP (4 octets) ou Bamboo (8)
+  let src: BoardSources;
+  let parts: readonly BoardPart[];
+  let total: number;
+  if (file.format === "flipchart") {
+    // Signature contrôlée ici aussi (le registre l'a vue, un appel direct non) ; le Worker ZIP la contrôle encore.
+    if (!hasBambooMagic(head)) throw new Error(BAMBOO_NOT_FLIPCHART);
+    const split = flipchartSources(await board.unbamboo(file.blob));
+    src = { xml: [], names: [], manifest: null, json: null, media: split.media, total: 1 };
+    const structure = await Promise.all(split.structure.map(async (e) => ({ path: e.path, bytes: new Uint8Array(await e.blob.arrayBuffer()) })));
+    parts = [await board.readFlipchart(structure)];
+    total = 1; // l'avis des 500 premières pages vient du lecteur Rust
+  } else if (hasZipMagic(head)) {
+    const entries = await board.unzip(file.blob);
+    const fmt = resolveBoardFormat(file.format, entries.map((e) => e.path));
+    if (fmt === null) throw new Error(boardNoContentMessage(file.format));
+    src = boardSources(fmt, entries);
+    if (fmt === "olf") {
+      const part = await board.readOlf(src.json!); // Worker ZIP : JSON lu hors du fil principal
+      parts = [part];
+      total = part.total;
+    } else {
+      const xml = await Promise.all(src.xml.map(async (b) => new Uint8Array(await b.arrayBuffer())));
+      const manifest = src.manifest === null ? null : new Uint8Array(await src.manifest.arrayBuffer());
+      parts = await board.read(xml, fmt, fmt === "notebook" ? { names: src.names, manifest, max: PDF_MAX_PAGES } : undefined);
+      total = src.total;
     }
+  } else if (file.format === "iwb") {
+    src = { xml: [file.blob], names: ["content.xml"], manifest: null, json: null, media: new Map(), total: 1 };
+    parts = await board.read([new Uint8Array(await file.blob.arrayBuffer())], "iwb");
+    total = 1;
+  } else throw new Error(file.format === "ubz" ? UBZ_NOT_ZIP_MESSAGE : boardNoContentMessage(file.format));
+  // D16 : budget d'objets restant passé au décodage, part par part : la borne tient avant le pic de mémoire.
+  const pages: BoardListPage[] = [];
+  let left = BOARD_MAX_OBJECTS;
+  for (const p of parts) {
+    const got = decodeBoardList(p.ops, p.texts, left);
+    left -= boardObjectCount(got);
+    pages.push(...got);
+  }
 
   if (pages.length === 0) throw new Error(BOARD_NO_PAGE_MESSAGE);
   const built = await buildBoardDocument(deps.core, pages, src.media, {

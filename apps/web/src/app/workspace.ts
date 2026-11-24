@@ -45,8 +45,8 @@ import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RAST
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabKind, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
-import { readBoardFile, writeBoardFile } from "./board-convert";
-import type { BoardFormat, BoardPorts, BoardSourceFormat } from "./board-io";
+import { readBoardFile, writeBoardFile, type BoardFile } from "./board-convert";
+import type { BoardFormat, BoardPorts } from "./board-io";
 import { boardExportName, boardSavedMessage, boardTabName, boardWarningsMessage, stem } from "./board-files";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
@@ -185,7 +185,7 @@ export interface Workspace {
   /** C12 (PF19 à PF21) : « Exporter en PDF… » de l'onglet actif ; faux sans port, refusé, onglet fermé ou boîte annulée. */
   exportPdf(): Promise<boolean>;
   /** C13 (D5, Q1) : tableau `.iwb` (ZIP ou XML) ou `.ubz` dans un nouvel onglet ; faux si refusé (avis déjà dit). */
-  openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
+  openBoard(file: BoardFile): Promise<boolean>;
   /** C13 (D17, D18) : copie de l'onglet actif au format ; faux sans port, refusé ou boîte annulée. */
   exportBoard(format: BoardFormat): Promise<boolean>;
   /** C4 (D13, D14) : ressource posée dans l'onglet actif ; `at` client, null = centre de la vue. */
@@ -453,7 +453,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     ...(deps.decode ? { decode: deps.decode } : {}),
     ...(readSheet ? { readSheet } : {}),
     ...(deps.pdf ? { openPdf: (f: { readonly name: string; readonly blob: Blob }) => ws.openPdf(f) } : {}),
-    ...(deps.board ? { openBoard: (f: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }) => ws.openBoard(f) } : {}),
+    ...(deps.board ? { openBoard: (f: BoardFile) => ws.openBoard(f) } : {}),
     ...(linkMedia ? { linkMedia } : {}),
     ...(deps.model3d ? { model3d: deps.model3d } : {}),
     ...(importPack ? { importPack } : {}),
