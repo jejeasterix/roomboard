@@ -12,6 +12,8 @@
  * cli-lot4 (D59, D72) : un fichier Office (`state`, `run`, source de `convert`) est converti par `roomboard-office`.
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
+import { isSheetName } from "../../web/src/platform/import";
+import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
@@ -26,12 +28,14 @@ import { loadCore } from "./wasm-node";
 
 type Handler = (args: readonly string[], io: CliIO) => Promise<number>;
 
+/** Extensions converties par roomboard-office (`.xlsx`, `.xlsm` : lecteur `sheet`, D58), pour l'usage de `state`. */
+const CONVERTED_OFFICE = OFFICE_EXTENSIONS.filter((e) => !isSheetName(`x${e}`)).join(" ");
+
 const USAGE = {
   version: "version",
   formats: "formats",
   new: "new <sortie.roomboard> [--replace]",
-  state:
-    "state <fichier.roomboard | fichier.rbitem | fichier.pdf | fichier Office .docx .odt .pptx .odp .doc .ppt .xls .ods | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]",
+  state: `state <fichier.roomboard | fichier.rbitem | fichier.pdf | fichier Office ${CONVERTED_OFFICE} | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]`,
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",

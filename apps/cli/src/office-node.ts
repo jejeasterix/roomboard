@@ -70,10 +70,13 @@ export function officeReady(env: Env = process.env): Promise<OfficeReady> {
   return ready;
 }
 
+/** cli-lot4 (D59) : fichier converti par roomboard-office (`.xlsx`, `.xlsm` : lecteur `sheet`, jamais converti, D58). */
+export const isOfficeDoc = (path: string): boolean => formatOf(path)?.handler === "office";
+
 /** D56 : avant la conversion, une source au lecteur `office` de `FORMAT_LOTS` (`.xlsx`, `.xlsm` : `sheet`, D58) exige le
  *  convertisseur ; sinon `CliError("unsupported")`, code 3. */
 export async function checkOffice(sources: readonly string[], env: Env = process.env): Promise<void> {
-  const first = sources.find((s) => formatOf(s)?.handler === "office");
+  const first = sources.find(isOfficeDoc);
   if (first === undefined) return;
   const r = await officeReady(env);
   if ("reason" in r) throw new CliError("unsupported", unavailableMessage(first, r.reason));
@@ -104,7 +107,7 @@ export function killLeftovers(
   for (const n of names) {
     let cmd: string;
     try {
-      cmd = readFileSync(join(procDir, n, "cmdline"), "latin1").replaceAll("\0", " ");
+      cmd = readFileSync(join(procDir, n, "cmdline"), "utf8").replaceAll("\0", " ");
     } catch {
       continue;
     }
@@ -134,11 +137,12 @@ export function exitInterrupted(sig: NodeJS.Signals, code: number): void {
   process.exit(code);
 }
 
+type Leftovers = (root: string, pid: number) => unknown;
 type Run = { readonly code: number | null; readonly stderr: string; readonly caught: NodeJS.Signals | null };
 
 /** Lance le binaire (`spawn`, tableau d'arguments) ; SIGINT et SIGTERM transmis le temps de la conversion. Ne sort jamais
  *  du processus : la promesse se résout, le dossier `mkdtemp` de l'appelant est retiré ensuite. */
-function runConversion(bin: string, args: readonly string[], env: Env, root: string): Promise<Run> {
+function runConversion(bin: string, args: readonly string[], env: Env, root: string, leftovers: Leftovers): Promise<Run> {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { env: childEnv(env), stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
@@ -163,9 +167,12 @@ function runConversion(bin: string, args: readonly string[], env: Env, root: str
       done();
       reject(e);
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       done();
-      if (caught !== null && child.pid !== undefined) killLeftovers(root, child.pid); // D79 : LibreOffice de cette conversion
+      // Ctrl-C de groupe : le binaire (sans gestionnaire) peut mourir de SIGINT avant le relais ; son signal vaut alors
+      // interruption (D79). Tout signal ou toute interruption reçue : les restes de LibreOffice sont tués.
+      if (caught === null && (signal === "SIGINT" || signal === "SIGTERM")) caught = signal;
+      if ((caught !== null || signal !== null) && child.pid !== undefined) leftovers(root, child.pid); // D79 : LibreOffice de cette conversion
       resolve({ code, stderr, caught }); // aucun process.exit ici : le dossier mkdtemp est retiré d'abord
     });
   });
@@ -178,13 +185,14 @@ export async function convertOfficeFile(
   path: string,
   env: Env = process.env,
   onInterrupt: (sig: NodeJS.Signals, code: number) => void = exitInterrupted,
+  leftovers: Leftovers = killLeftovers,
 ): Promise<Blob> {
   const ready = await officeReady(env);
   const bin = officeBinary(env);
   if ("reason" in ready || bin === null) throw new OfficeConvertError("no-program");
   const dir = await mkdtemp(join(tmpdir(), "roomboard-office-"));
   const out = join(dir, "sortie.pdf");
-  const run = await runConversion(bin, [path, out], env, ready.root)
+  const run = await runConversion(bin, [path, out], env, ready.root, leftovers)
     .then(async (r) => ({ ...r, pdf: r.caught === null && r.code === 0 ? new Blob([await readFile(out)], { type: "application/pdf" }) : null }))
     .finally(() => rm(dir, { recursive: true, force: true }));
   if (run.caught !== null) {
