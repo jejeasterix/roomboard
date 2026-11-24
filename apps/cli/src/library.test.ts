@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { PACK_NOT_ROOMBOARD_MESSAGE } from "../../web/src/platform/rbpack";
 import { createPageCodec } from "../../web/src/platform/container";
 import { libraryExport, libraryImport, libraryList, nodeDirFs, openLibrary } from "./library";
 import { main } from "./main";
-import { describeWasm, FIXED_NOW, memoryIO, tmpDir, WEB_SRC } from "./testing";
+import { describeWasm, FIXED_NOW, memoryIO, tmpDir, WEB_SRC, warmModules } from "./testing";
 import { loadCore, loadFormats } from "./wasm-node";
 
 const shape = (x: number) => JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: 0, x1: x + 50, y1: 50, style: { color: "#000000", width: 2 }, fill: null });
@@ -33,6 +33,7 @@ it("nodeDirFs : readDir, mkdir récursif, writeFile atomique, remove", async () 
 });
 
 describeWasm("S4 — bibliothèque sur disque (DA9)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S4 — export du dossier Formes en .rbpack puis import dans une autre bibliothèque, list", async () => {
     const root = tmpDir();
     const libA = join(root, "lib");

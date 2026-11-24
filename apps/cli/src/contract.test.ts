@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { exitAfterWrites, lineWriter, type OutStream } from "./contract";
 import { main } from "./main";
-import { describeWasm, memoryIO, tmpDir } from "./testing";
+import { describeWasm, memoryIO, tmpDir, warmModules } from "./testing";
 
 /** Tube dont le lecteur s'est arrêté après `accepted` écritures (`| head -1`) : les suivantes émettent EPIPE. */
 class ClosedPipe extends EventEmitter {
@@ -91,6 +91,7 @@ describe("sortie du processus (bin.ts) : écriture impossible", () => {
 });
 
 describeWasm("sortie du processus (bin.ts) : le travail se termine malgré un tube fermé", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("run a --ops x.jsonl --out c | head -1 : c écrit, code 0, aucune erreur", async () => {
     const dir = tmpDir();
     const a = join(dir, "a.roomboard");

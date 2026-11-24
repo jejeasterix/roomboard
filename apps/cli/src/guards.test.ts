@@ -2,16 +2,17 @@
 // `run`, contrôle d'usage avant l'interruption, garde de `exportFragment`, image absente d'un export .rbitem (D19).
 import { existsSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { MISSING_EXPORT_MESSAGE } from "../../web/src/app/fragments";
 import { exportFragment } from "./exporter";
 import { main } from "./main";
 import { INTERRUPTED_MESSAGE, nodeSession } from "./session";
-import { boardFixtures, describeWasm, memoryIO, tmpDir, type Json } from "./testing";
+import { boardFixtures, describeWasm, memoryIO, tmpDir, warmModules, type Json } from "./testing";
 
 const bytesOf = (p: string): string => readFileSync(p).toString("base64");
 
 describeWasm("sortie ≠ source (relecture T11, constat 1)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("convert lecon.iwb lecon.iwb, même chemin en casse différente, ou lien : code 2, source intacte", async () => {
     const dir = tmpDir();
     const f = boardFixtures(dir);

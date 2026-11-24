@@ -6,11 +6,11 @@ import { chmodSync, copyFileSync, existsSync, readdirSync, readFileSync, writeFi
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { OfficeConvertError } from "../../web/src/platform/office-import";
 import { main } from "./main";
 import { BINARY_MISSING, convertOfficeFile, NO_SOFFICE, officeBinary } from "./office-node";
-import { describeWasm, memoryIO, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
+import { describeWasm, memoryIO, stampOf, tmpDir, XLSX_FIXTURE, warmModules, type Json } from "./testing";
 
 const REAL = process.env["ROOMBOARD_SANS_SOFFICE"] !== "1";
 const itReal = REAL ? it : it.skip; // D54
@@ -122,6 +122,7 @@ describe("D79 — Ctrl-C pendant une vraie conversion (cli-lot4)", () => {
 });
 
 describeWasm("S2 — Office impossible : code 3, rien écrit (convert, state)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S2 — ROOMBOARD_OFFICE absent : convert cours.docx x.roomboard → 3, message de DA17, rien écrit", async () => {
     const { dir, env } = scratch();
     const out = join(dir, "x.roomboard");

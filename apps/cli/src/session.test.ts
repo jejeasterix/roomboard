@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { CliError } from "./contract";
 import { nodeSession } from "./session";
 import { describeWasm, memoryIO, warmModules, type Json } from "./testing";
@@ -11,6 +11,7 @@ const fresh = async () => {
 };
 
 describeWasm("session (D5, D6, D7, DA4)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("D11 (cli-partage) — warmModules : cœur et module des formats chargés, rend undefined", async () => {
     await expect(warmModules()).resolves.toBeUndefined();
   });

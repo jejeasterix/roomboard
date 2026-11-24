@@ -69,6 +69,16 @@ export function memoryIO(input: readonly string[] = [], env: Readonly<Record<str
   };
 }
 
+/**
+ * D11 (cli-partage) : charge le cœur et le module des formats une fois, dans le `beforeAll` du premier bloc qui exécute
+ * un test sans condition, hors du délai de 5 s de ce test (patron de `pdf.test.ts:21-27`). Import dynamique : un
+ * fichier qui n'appelle pas `warmModules` ne charge pas la session.
+ */
+export async function warmModules(): Promise<void> {
+  const { nodeSession } = await import("./session");
+  await (await nodeSession(memoryIO())).deps.formats();
+}
+
 const made: string[] = [];
 afterAll(() => {
   for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
