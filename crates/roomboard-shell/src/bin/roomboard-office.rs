@@ -4,7 +4,7 @@
 //! `roomboard-office --check` : 0 « convertisseur : <chemin> » puis « racine : <racine> » ; 3 sans convertisseur.
 //! `roomboard-office <entrée> <sortie.pdf>` : 0 succès, 1 échec (code de `ConvertError` en premier mot de stderr),
 //! 2 usage, 3 aucun convertisseur.
-//! `ROOMBOARD_OFFICE_PATH_ONLY=1` : seul `PATH` cherche le convertisseur (essais).
+//! `ROOMBOARD_OFFICE_PATH_ONLY=1` : seul `PATH` cherche le convertisseur (essais ; builds de debug seulement).
 //! Racine de travail : `$XDG_CACHE_HOME/roomboard-office` (absolu), sinon `$HOME/.cache/roomboard-office`, jamais
 //! `temp_dir()` (partagé). Au démarrage, les conversions des processus morts sont purgées ; à la fin, seule la conversion
 //! de ce lancement est libérée (une autre peut être en cours). Aucun gestionnaire de signal : LibreOffice vit dans son
@@ -12,9 +12,11 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+#[cfg(not(windows))]
+use roomboard_shell::office::purge_conversions;
 use roomboard_shell::office::{
-    convert_granted, find_converter, purge_conversions, release_conversion, ConvertError,
-    Converter, Search, CONVERT_TIMEOUT,
+    convert_granted, find_converter, release_conversion, ConvertError, Converter, Search,
+    CONVERT_TIMEOUT,
 };
 use roomboard_shell::GrantedPaths;
 
@@ -81,6 +83,8 @@ fn convert(c: Option<&Converter>, input: &Path, output: &Path, root: &Path) -> E
 /// ces derniers (essais du code 3 sur une machine où LibreOffice est installé).
 fn search() -> Search {
     let mut s = Search::from_env();
+    // Levier d'essai : absent des builds de release.
+    #[cfg(debug_assertions)]
     if std::env::var_os("ROOMBOARD_OFFICE_PATH_ONLY").is_some_and(|v| v == "1") {
         s.known.clear();
     }
@@ -94,7 +98,7 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     };
     // Windows : `process_alive` y rend toujours false (office.rs), la purge effacerait la conversion en cours d'un autre
-    // processus ; elle n'y est donc pas faite (limite : les restes d'un plantage y attendent le prochain nettoyage).
+    // processus ; elle n'y est donc pas faite (limite : sous Windows rien ne purge cette racine, les restes d'un plantage y demeurent jusqu'à un nettoyage manuel).
     #[cfg(not(windows))]
     purge_conversions(&root);
     match args.as_slice() {

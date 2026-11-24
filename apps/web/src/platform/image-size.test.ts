@@ -62,9 +62,9 @@ describe("headerSize (cli-lot4, D63, DA19)", () => {
     ];
     for (const [bytes, kind] of all) for (let n = 0; n <= bytes.length; n++) expect(() => headerSize(bytes.subarray(0, n), kind)).not.toThrow();
   });
-  it("SVG hostile de 1 Mio (chiffres, attribut sans fin) : résultat en moins de 200 ms", () => {
-    const digits = text(`<svg width="${"1".repeat(1 << 20)}!" height="10">`);
-    const letters = text(`<svg ${"a".repeat(1 << 20)}>`);
+  it("SVG hostile tenant sous ROOT_MAX (chiffres, attribut sans fin) : résultat en moins de 200 ms", () => {
+    const digits = text(`<svg width="${"1".repeat(8000)}!" height="10">`);
+    const letters = text(`<svg ${"a".repeat(8000)}>`);
     for (const bytes of [digits, letters]) {
       const t0 = performance.now();
       expect(() => headerSize(bytes, "svg")).not.toThrow();
