@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { CASCADE_STEP } from "../../web/src/platform/image-import";
 import { streamLines } from "./contract";
 import { main } from "./main";
+import { BINARY_MISSING } from "./office-node";
 import { describeWasm, jpegBytes, memoryIO, pngBytes, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
@@ -54,19 +55,19 @@ describeWasm("S3 — images et classeur", () => {
     expect(first.transform).toEqual([1, 0, 0, 1, 380, 285]);
     expect(second.transform).toEqual([1, 0, 0, 1, 390 + CASCADE_STEP, 295 + CASCADE_STEP]);
   });
-  it("import x.docx : code 3 « lot 4 », rien lu ni écrit (cli-lot3 : .pdf est lu)", async () => {
+  it("import x.docx sans convertisseur : code 3 « conversion Office indisponible », rien lu ni écrit (cli-lot4, D56)", async () => {
     const { dir, a } = await board();
     const docx = join(dir, "lettre.docx");
     writeFileSync(docx, "pas un docx");
     const before = stampOf(a);
-    const io = memoryIO();
+    const env = { ROOMBOARD_OFFICE: join(dir, "absent") };
+    const io = memoryIO([], env);
     expect(await main(["import", a, docx], io)).toBe(3);
     expect(io.stdout).toEqual([]);
-    expect(io.errors()[0].error).toEqual({ code: "unsupported", message: "lettre.docx : format pris en charge par la CLI au lot 4" });
+    expect(io.errors()[0].error).toEqual({ code: "unsupported", message: `lettre.docx : conversion Office indisponible : ${BINARY_MISSING}` });
     expect(stampOf(a)).toEqual(before);
     // Rien lu : tableau et source absents du disque, une lecture rendrait io (code 1) au lieu de 3.
-    const absent = memoryIO();
-    expect(await main(["import", join(dir, "absent.roomboard"), join(dir, "absent.docx")], absent)).toBe(3);
+    expect(await main(["import", join(dir, "absent.roomboard"), join(dir, "absent.docx")], memoryIO([], env))).toBe(3);
   });
   it("--at hors de la scène (5000,10) ou mal formé : code 2 avant tout import", async () => {
     const { dir, a } = await board();

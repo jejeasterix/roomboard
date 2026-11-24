@@ -8,6 +8,8 @@
  * des formats (`interrupted`), plus aucune écriture.
  * cli-lot3 (D40) : un `.pdf` est lu par `readPdfFile` du produit en onglet sans fichier ; pdf-lib, moteur pdf.js et écrivain
  * krilla en dépendances (T6 écrit le PDF).
+ * cli-lot4 (D57, D59) : un fichier Office (lecteur `office` de `FORMAT_LOTS`) est converti par `roomboard-office`
+ * (`office-node.ts`), puis lu comme un PDF, l'original gardé, en onglet sans fichier.
  */
 import { basename } from "node:path";
 import { readBoardFile } from "../../web/src/app/board-convert";
@@ -24,6 +26,7 @@ import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
 import { createPageCodec, type ContainerCodec, type FormatsBinding, type SheetFormatsBinding } from "../../web/src/platform/container";
 import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
+import { convertFailureMessage, OfficeConvertError } from "../../web/src/platform/office-import";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
@@ -33,6 +36,7 @@ import { checkNotSource, exportFragment, exportWhole, isBoardOut, isPdfOut } fro
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
+import { checkOffice, convertOfficeFile, isOfficeDoc, NO_SOFFICE, unavailableMessage } from "./office-node";
 import { needString, optString, parseOp, type CliOpName, type RefContext } from "./ops";
 import { nodePdfEngine, nodePdfWriter } from "./pdf-node";
 import { stateOf } from "./state";
@@ -60,6 +64,8 @@ export interface SessionDeps {
   readonly pdf: PdfEngine;
   /** cli-lot3 (D38) : écrivain krilla en processus (`nodePdfWriter`) ; panique → `interrupted` (D29). */
   readonly pdfWriter: PdfWriter;
+  /** cli-lot4 (D55, D56) : variables du processus (`ROOMBOARD_OFFICE`, `XDG_CACHE_HOME`) ; absent : `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
   /** D29 : vrai après une panique du module des formats dans ce processus. */
   interrupted(): boolean;
   now(): string;
@@ -102,8 +108,9 @@ export interface Session {
   openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null>;
   /** Tableau ouvert par l'importeur (`openBoard`) en onglet sans fichier : false si refusé, l'avis est dans `notices`. */
   openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
-  /** PDF ouvert par l'importeur (`openPdf`) en onglet sans fichier : false si refusé, l'avis est dans `notices`. */
-  openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean>;
+  /** PDF ouvert par l'importeur (`openPdf`, `openOffice` : `original` gardé, D57) en onglet sans fichier : false si
+   *  refusé, l'avis est dans `notices`. */
+  openPdf(file: { readonly name: string; readonly blob: Blob; readonly original?: Blob }): Promise<boolean>;
   save(tab: CliTab, to?: string | null): Promise<string>;
   /** Retient un fichier lu par la session hors onglet (source d'import) : une sortie ne le remplace pas. */
   noteSource(path: string): void;
@@ -168,10 +175,10 @@ export function createSession(deps: SessionDeps): Session {
   }
 
   /** Lit un PDF (D35, D40) ; échec : message complet du produit ; avis d'ouverture (500 pages) dans les notices (D31). */
-  async function readPdfNoticed(name: string, blob: Blob): Promise<PdfRead> {
+  async function readPdfNoticed(name: string, blob: Blob, original?: Blob): Promise<PdfRead> {
     let read: PdfRead;
     try {
-      read = await readPdfFile({ name, blob }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() });
+      read = await readPdfFile({ name, blob, ...(original === undefined ? {} : { original }) }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() });
     } catch (e) {
       throw new CliError("format", messageOf(e));
     }
@@ -182,6 +189,22 @@ export function createSession(deps: SessionDeps): Session {
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
     sources.add(path);
+    if (kind === "document" && isOfficeDoc(path)) {
+      // D56, D59 : le fichier est lu d'abord (absent : `io`, code 1), le convertisseur contrôlé ensuite (code 3).
+      const name = basename(path);
+      const env = deps.env;
+      await checkOffice([path], env);
+      let pdf: Blob;
+      try {
+        pdf = await convertOfficeFile(path, env);
+      } catch (e) {
+        const code = e instanceof OfficeConvertError ? e.code : "failed";
+        if (code === "no-program") throw new CliError("unsupported", unavailableMessage(name, NO_SOFFICE)); // course après --check
+        throw new CliError("format", convertFailureMessage(name, code));
+      }
+      const read = await readPdfNoticed(name, pdf, new Blob([bytes as BlobPart]));
+      return { doc: read.doc, assets: read.assets };
+    }
     if (kind === "document" && isPdfOut(path)) {
       const read = await readPdfNoticed(basename(path), new Blob([bytes as BlobPart]));
       return { doc: read.doc, assets: read.assets };
@@ -199,8 +222,9 @@ export function createSession(deps: SessionDeps): Session {
   async function open(path: string): Promise<TabEntry<CliTab>> {
     if (tabs.list().length >= MAX_TABS) throw new CliError("command", TOO_MANY_TABS);
     const read = await readDoc(path, "document");
-    // D22, D40 : un tableau ou un PDF ouvert est un onglet sans fichier (comme `target: null` de la page) : jamais réécrit à son chemin.
-    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null && !isPdfOut(path) ? path : null });
+    // D22, D40, D59 : un tableau, un PDF ou un Office ouvert est un onglet sans fichier (comme `target: null` de la page) :
+    // jamais réécrit à son chemin.
+    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null && !isPdfOut(path) && !isOfficeDoc(path) ? path : null });
   }
   /**
    * D22, D40 : fichier lu par l'importeur (`read`, lancé après le contrôle du nombre d'onglets) en onglet sans fichier ;
@@ -228,7 +252,8 @@ export function createSession(deps: SessionDeps): Session {
   }
   const openBoard = (file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> =>
     openReadTab(file.name, () => readBoardNoticed(file.name, file.blob, file.format));
-  const openPdf = (file: { readonly name: string; readonly blob: Blob }): Promise<boolean> => openReadTab(file.name, () => readPdfNoticed(file.name, file.blob));
+  const openPdf = (file: { readonly name: string; readonly blob: Blob; readonly original?: Blob }): Promise<boolean> =>
+    openReadTab(file.name, () => readPdfNoticed(file.name, file.blob, file.original));
   async function openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null> {
     if (tabs.list().length >= MAX_TABS) {
       deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
@@ -417,5 +442,6 @@ export async function nodeSession(io: TestableIO): Promise<Session> {
     pdf: nodePdfEngine(),
     pdfWriter: nodePdfWriter(io.formats ?? formats, onPanic),
     interrupted: () => interrupted,
+    env: io.env,
   });
 }

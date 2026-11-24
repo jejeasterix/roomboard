@@ -45,13 +45,13 @@ describeWasm("sortie ≠ source (relecture T11, constat 1)", () => {
   });
 });
 
-describeWasm("D25 — sources du lot 4 (constat 2)", () => {
-  it("convert : .webp, .gif et .docx : 2 ; .pdf absent : 1 (lu depuis le lot 3)", async () => {
+describeWasm("D25 — sources du lot 4 (constat 2 ; cli-lot4 D59 : Office lu)", () => {
+  it("convert : .webp et .gif : 2 ; .docx et .pdf absents : 1 (lus depuis les lots 3 et 4, fichier lu avant le convertisseur)", async () => {
     const dir = tmpDir();
     const out = join(dir, "x.roomboard");
     expect(await main(["convert", join(dir, "photo.webp"), out], memoryIO())).toBe(2);
     expect(await main(["convert", join(dir, "photo.gif"), out], memoryIO())).toBe(2);
-    expect(await main(["convert", join(dir, "texte.docx"), out], memoryIO())).toBe(2);
+    expect(await main(["convert", join(dir, "texte.docx"), out], memoryIO())).toBe(1);
     expect(await main(["convert", join(dir, "doc.pdf"), out], memoryIO())).toBe(1);
   });
 });

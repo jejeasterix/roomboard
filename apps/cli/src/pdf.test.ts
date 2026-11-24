@@ -240,16 +240,13 @@ describeWasm("S2 à S4 — écrire un PDF (cli-lot3)", () => {
     await expect(exportPdfFile(s, out)).rejects.toMatchObject({ code: "command", exit: 1, message: UNREAD_ASSETS_MESSAGE });
     expect(existsSync(out)).toBe(false);
   });
-  it("S4 — formats : .pdf lu et écrit ; import a.roomboard x.docx : 3 « lot 4 » ; convert a.roomboard x.docx : 2", async () => {
+  it("S4 — formats : .pdf lu et écrit ; convert a.roomboard x.docx : 2 (l'import d'un .docx : office.test.ts, cli-lot4)", async () => {
     const dir = tmpDir();
     const f = memoryIO();
     expect(await main(["formats"], f)).toBe(0);
     expect(f.json()[0].formats).toContainEqual(expect.objectContaining({ ext: ".pdf", read: true, write: true, readLot: 3, writeLot: 3 }));
     const a = join(dir, "a.roomboard");
     expect(await main(["new", a], memoryIO())).toBe(0);
-    const imp = memoryIO();
-    expect(await main(["import", a, join(dir, "x.docx")], imp)).toBe(3);
-    expect(imp.errors()[0].error.message).toContain("lot 4");
     expect(await main(["convert", a, join(dir, "x.docx")], memoryIO())).toBe(2);
   });
   it("RF3 — convert d'un PDF vers un PDF (H33) : 3 pages, texte et superposition d'origine gardés", async () => {

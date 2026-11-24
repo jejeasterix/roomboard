@@ -124,7 +124,7 @@ const SHARED_FONTS = nodePdfFonts();
 
 /**
  * Superposition vectorielle de la CLI (D37) : `createVectorOverlay` du produit ; image autre que PNG ou JPEG : lève
- * (lot 4, H24) ; tout échec lève « superposition vectorielle impossible (…) (repli en image indisponible dans la CLI) ».
+ * (aucun décodeur d'image dans la CLI, H24, D69) ; tout échec lève « superposition vectorielle impossible (…) (repli en image indisponible dans la CLI) ».
  */
 export function nodeOverlay(doc: CoreDocument, assets: Pick<AssetStore, "get">, write: PdfWriter, fonts: () => Promise<readonly Uint8Array[]> = SHARED_FONTS): OverlayProducer {
   const vector = createVectorOverlay({
@@ -135,7 +135,7 @@ export function nodeOverlay(doc: CoreDocument, assets: Pick<AssetStore, "get">, 
     painter: vectorPainter(doc),
     fonts,
     toPng: async (_blob, mime) => {
-      throw new Error(`image ${mime} : conversion en PNG indisponible dans la CLI (lot 4)`);
+      throw new Error(`image ${mime} : conversion en PNG indisponible dans la CLI (aucun décodeur d'image, D69)`);
     },
     write,
   });

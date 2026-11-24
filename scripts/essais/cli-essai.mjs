@@ -4,9 +4,12 @@
 // Lot 2 (cadrage cli-lot2, S5) : réimport d'un `.rbitem`, grille, `convert` des cinq tableaux fabriqués, export `.iwb`/`.ubz` relus,
 // aller-retour `.rbpack` par `library`, règle D23.
 // Lot 3 (cadrage cli-lot3, S5) : PDF fabriqué (fabriques/pdf.mjs), page comptée, texte retrouvé, fond présent (avant et
-// après aller-retour), stderr vide des commandes PDF, D23 pour .pdf ; code 3 sur import … x.docx.
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+// après aller-retour), stderr vide des commandes PDF, D23 pour .pdf.
+// Lot 4 (cadrage cli-lot4, S1 à S5, D71, D79) : médias, images et 3D fabriqués par objets.mjs ; Office par le binaire
+// roomboard-office et LibreOffice (sauté sous ROOMBOARD_SANS_SOFFICE=1, ligne « Office sauté ») ; conversions/ vide et aucun
+// processus ne citant la racine XDG_CACHE_HOME de l'essai ; Ctrl-C d'une conversion : 130 et une ligne {"error":…}.
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
@@ -16,6 +19,7 @@ import { ROOT, solidPng } from "./commun.mjs";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 import { makeFlipchart } from "./fabriques/flipchart.mjs";
 import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
+import { ecrireJeu, TAILLES } from "./fabriques/objets.mjs";
 
 const web = createRequire(join(ROOT, "apps", "web", "package.json"));
 const { zipSync } = web("fflate");
@@ -33,8 +37,8 @@ const verifie = (nom, cond, detail = "") => {
 };
 
 /** Lance le binaire ; rend code, lignes JSON de stdout, objet de stderr, stderr brut (contrôle « stderr vide », D34). */
-function cli(args, input) {
-  const r = spawnSync("node", [BIN, ...args], { encoding: "utf8", input, env: { ...process.env, ROOMBOARD_NOW: "1700000000000" } });
+function cli(args, input, env = {}) {
+  const r = spawnSync("node", [BIN, ...args], { encoding: "utf8", input, env: { ...process.env, ROOMBOARD_NOW: "1700000000000", ...env } });
   const lignes = (r.stdout ?? "").split("\n").filter((l) => l !== "").map((l) => JSON.parse(l));
   const stderr = r.stderr ?? "";
   const err = stderr.trim();
@@ -82,6 +86,19 @@ const egal = (nom, a, b) => {
   }
   ok(nom);
 };
+
+/** Processus vivants dont la ligne de commande cite `needle` (Linux, `/proc`). */
+const processusAvec = (needle) =>
+  readdirSync("/proc")
+    .filter((n) => /^\d+$/.test(n))
+    .flatMap((n) => {
+      try {
+        const c = readFileSync(join("/proc", n, "cmdline"), "latin1").replaceAll("\0", " ");
+        return c.includes(needle) ? [c] : [];
+      } catch {
+        return [];
+      }
+    });
 
 try {
   verifie("CLI construite", existsSync(BIN), BIN);
@@ -152,10 +169,6 @@ try {
 
   const docx = join(dir, "x.docx");
   writeFileSync(docx, "PK\u0003\u0004");
-  const avantDocx = empreinte(a);
-  const rd = cli(["import", a, docx]);
-  verifie("import d'un .docx : code 3, erreur unsupported, « lot 4 »", rd.code === 3 && rd.err?.error?.code === "unsupported" && String(rd.err.error.message).includes("lot 4"), rd.brut);
-  verifie("import d'un .docx : fichier non écrit (mtimeMs, ino)", empreinte(a) === avantDocx);
   verifie("option inconnue : code 2", cli(["state", a, "--nope"]).code === 2);
   // ---- Lot 2 (cadrage cli-lot2, S5) ----
   const lot2 = f.filter((x) => x.readLot === 2 || x.writeLot === 2);
@@ -244,7 +257,9 @@ try {
   const cs = cli(["convert", iwbSrc, iwbSrc]);
   verifie("convert vers la source : code 2, source intacte", cs.code === 2 && empreinte(iwbSrc) === avantIwb, cs.brut);
   verifie("convert vers .docx : code 2 (règle T11)", cli(["convert", a, join(dir, "a.docx")]).code === 2 && !existsSync(join(dir, "a.docx")));
-  verifie("convert depuis .docx : code 2", cli(["convert", docx, join(dir, "docx.roomboard")]).code === 2 && !existsSync(join(dir, "docx.roomboard")));
+  const sansOffice = { ROOMBOARD_OFFICE: join(dir, "absent") };
+  const cdx = cli(["convert", docx, join(dir, "docx.roomboard")], undefined, sansOffice);
+  verifie("convert depuis .docx sans convertisseur : code 3, rien écrit (D56, D59)", cdx.code === 3 && cdx.err?.error?.code === "unsupported" && !existsSync(join(dir, "docx.roomboard")), cdx.brut);
 
   // ---- Lot 3 (cadrage cli-lot3, S5) : fichier construit, PDF fabriqué par pdfPages, relu par readPdf ----
   const pdfLib = web("pdf-lib");
@@ -302,6 +317,126 @@ try {
   verifie("D23 : new z.pdf : code 2, rien d'écrit", cli(["new", zp]).code === 2 && !existsSync(zp));
   const avantOut = empreinte(outPdf);
   verifie("convert out.pdf vers out.PDF (la source) : code 2, source intacte", cli(["convert", outPdf, join(dir, "out.PDF")]).code === 2 && empreinte(outPdf) === avantOut);
+  // ---- Lot 4 (cadrage cli-lot4, S1 à S5) : fichiers écrits par objets.mjs, binaire roomboard-office ----
+  const cache = join(dir, "cache");
+  const envOffice = { XDG_CACHE_HOME: cache };
+  const lot4 = join(dir, "lot4");
+  ecrireJeu(lot4, zipSync);
+  const de = (...noms) => noms.map((x) => join(lot4, x));
+  const nomDe = (st, id) => st.assets.find((x) => x.id === id)?.name;
+  const f4 = cli(["formats"]).lignes[0].formats;
+  const nonLus = f4.filter((x) => x.read !== true && !x.notes.some((t) => t.startsWith("laissé de côté : ")));
+  verifie("formats : chaque format lu, ou laissé de côté avec sa raison (D68, H48)", nonLus.length === 0, JSON.stringify(nonLus.map((x) => x.ext)));
+  verifie("formats : aucune note ne cite un lot", f4.every((x) => x.notes.every((t) => !/\blots?\b/i.test(t))));
+  const b4 = join(dir, "b4.roomboard");
+  verifie("new b4.roomboard", cli(["new", b4]).code === 0);
+
+  // S3 — médias
+  const m3 = cli(["import", b4, ...de("son.wav", "clip.mp4", "clip.webm", "a.mp3", "b.ogg")]);
+  verifie("S3 : import son.wav clip.mp4 clip.webm a.mp3 b.ogg : cinq insérés", m3.code === 0 && m3.lignes[0]?.inserted.length === 5, m3.brut);
+  verifie("stderr vide : import des médias", m3.stderr === "", m3.stderr);
+  const em3 = etat(b4);
+  const medias = Object.fromEntries(em3.pages[0].elements.filter((x) => x.kind === "media").map((x) => [nomDe(em3, x.media.asset), x.media]));
+  const decrit = (x) => (x === undefined ? "absent" : `${x.mediaType} ${x.w}x${x.h} ${x.duration}s ${x.poster === null ? "sans poster" : "poster"}`);
+  egal("S3 : durées et tailles lues dans l'en-tête", Object.fromEntries(Object.entries(medias).map(([k, x]) => [k, decrit(x)])), {
+    "son.wav": "audio 480x120 1s sans poster",
+    "clip.mp4": "video 640x360 2.5s sans poster",
+    "clip.webm": "video 320x240 3.2s sans poster",
+    "a.mp3": "audio 480x120 2.612s sans poster",
+    "b.ogg": "audio 480x120 2s sans poster",
+  });
+  const avantCasse = empreinte(b4);
+  const cm = cli(["import", b4, ...de("casse.mp4")]);
+  verifie("S3 : casse.mp4 : code 3 « durée du média illisible dans l'en-tête », fichier inchangé", cm.code === 3 && cm.err?.error?.message === "casse.mp4 : durée du média illisible dans l'en-tête (la CLI ne décode pas les médias)" && empreinte(b4) === avantCasse, cm.brut);
+
+  // S5 — autres images, aussi dans un tableau blanc
+  const im = cli(["import", b4, ...de(...Object.keys(TAILLES))]);
+  verifie("S5 : huit images insérées", im.code === 0 && im.lignes[0]?.inserted.length === 8, im.brut);
+  verifie("stderr vide : import des images", im.stderr === "", im.stderr);
+  const e5 = etat(b4);
+  egal("S5 : tailles lues dans l'en-tête (vb.svg : 300 × 75)", Object.fromEntries(e5.pages[0].elements.filter((x) => x.kind === "image").map((x) => [nomDe(e5, x.image.asset), `${x.image.w}x${x.image.h}`])), { ...TAILLES });
+  const cg = cli(["import", b4, ...de("casse.gif")]);
+  verifie("S5 : casse.gif : code 3 « taille de l'image gif illisible dans l'en-tête »", cg.code === 3 && cg.err?.error?.message === "casse.gif : taille de l'image gif illisible dans l'en-tête (la CLI ne décode pas les images)", cg.brut);
+  const g4 = join(dir, "g.roomboard");
+  const gi = cli(["convert", ...de("gif.iwb"), g4]);
+  verifie("S5 : convert gif.iwb : aucun avis d'image", gi.code === 0 && !/image/i.test(gi.lignes[0].notices.join(" ")), gi.brut);
+  verifie("S5 : l'image GIF du tableau est lue", etat(g4).pages[0].elements.filter((x) => x.kind === "image").length === 1);
+
+  // S4 — 3D sans vignette
+  const t4 = cli(["import", b4, ...de("cube.obj", "cube.mtl", "tex.png", "tri.stl", "tri.gltf", "tri.bin", "tex.glb")]);
+  verifie("S4 : quatre objets 3D insérés", t4.code === 0 && JSON.stringify(t4.lignes[0]?.inserted) === JSON.stringify(["cube.obj", "tri.stl", "tri.gltf", "tex.glb"]), t4.brut);
+  verifie("S4 : « 3D indisponible sur ce poste » dit une fois", t4.lignes[0].notices.filter((t) => t.startsWith("3D indisponible sur ce poste")).length === 1, JSON.stringify(t4.lignes[0].notices));
+  verifie("stderr vide : import 3D (S4)", t4.stderr === "", t4.stderr);
+  const e4 = etat(b4);
+  const modeles = e4.pages[0].elements.filter((x) => x.kind === "model3d");
+  verifie("S4 : quatre model3d, instantanés nuls", modeles.length === 4 && modeles.every((x) => x.model3d.snapshot === null), String(modeles.length));
+  const sg = cli(["import", b4, ...de("seul.gltf")]);
+  verifie("S4 : .gltf sans .bin : code 1, aucune pile", sg.code === 1 && !/\n\s+at /.test(sg.stderr), sg.brut);
+  const sm = cli(["import", b4, ...de("seul.mtl")]);
+  verifie("S4 : seul.mtl : code 1, « déposez-le avec son modèle »", sm.code === 1 && sm.lignes[0]?.notices.join(" ").includes("déposez-le avec son modèle"), sm.brut);
+  const r4 = cli(["run", "--new", "--ops", "-"], `${JSON.stringify({ op: "import", files: de("tri.stl") })}\n${JSON.stringify({ op: "tab.open", file: trois })}\n`);
+  verifie("S4 : run import 3D puis tab.open d'un PDF : code 0 (D76)", r4.code === 0, r4.brut);
+
+  // S1 — Office converti, puis chemin PDF
+  const FIXO = join(ROOT, "crates", "roomboard-shell", "tests", "fixtures");
+  if (process.env.ROOMBOARD_SANS_SOFFICE === "1") console.log("Office sauté : ROOMBOARD_SANS_SOFFICE=1");
+  else {
+    const dr = join(dir, "diapos.roomboard");
+    const cd = cli(["convert", join(FIXO, "diapos.pptx"), dr], undefined, envOffice);
+    verifie("S1 : convert diapos.pptx : 2 pages, aucun avis", cd.code === 0 && cd.lignes[0]?.pages === 2 && cd.lignes[0].notices.length === 0, cd.brut);
+    verifie("stderr vide : convert diapos.pptx", cd.stderr === "", cd.stderr);
+    const ed = etat(dr);
+    verifie("S1 : fonds pdf-page, diapos.pdf et l'original diapos.pptx en assets", fondsPdf(ed) && ed.assets.some((x) => x.name === "diapos.pdf" && x.mime === "application/pdf") && ed.assets.some((x) => x.name === "diapos.pptx" && x.mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation"), JSON.stringify(ed.assets));
+    const cp = join(dir, "cours.pdf");
+    const cdo = cli(["convert", join(FIXO, "cours.docx"), cp], undefined, envOffice);
+    verifie("S1 : convert cours.docx cours.pdf : %PDF-", cdo.code === 0 && readFileSync(cp).subarray(0, 5).toString("latin1") === "%PDF-", cdo.brut);
+    const idx = cli(["import", b4, join(FIXO, "cours.docx")], undefined, envOffice);
+    verifie("S1 : import cours.docx : ouvert", idx.code === 0 && JSON.stringify(idx.lignes[0]?.opened) === JSON.stringify(["cours.docx"]), idx.brut);
+    const ixl = cli(["import", b4, XLSX], undefined, envOffice);
+    verifie("S1 : import valeurs.xlsx : tableau en valeurs (D58)", ixl.code === 0 && ixl.lignes[0]?.inserted.includes("valeurs.xlsx"), ixl.brut);
+    const conv = join(cache, "roomboard-office", "conversions");
+    verifie("S1 : conversions/ existe (conversion réelle) et vide", existsSync(conv) && readdirSync(conv).length === 0, existsSync(conv) ? readdirSync(conv).join(" ") : "dossier absent");
+    verifie("S1 : aucun processus ne cite la racine de l'essai (G4)", processusAvec(cache).length === 0, processusAvec(cache).join(" | "));
+  }
+
+  // S2 — Office impossible : code 3, rien écrit
+  const avantS2 = empreinte(b4);
+  const s2 = cli(["import", b4, join(FIXO, "cours.docx")], undefined, { ...envOffice, ROOMBOARD_OFFICE: join(dir, "absent") });
+  verifie("S2 : ROOMBOARD_OFFICE absent : code 3, « conversion Office indisponible », fichier inchangé", s2.code === 3 && s2.err?.error?.code === "unsupported" && String(s2.err.error.message).startsWith("cours.docx : conversion Office indisponible : convertisseur roomboard-office introuvable") && empreinte(b4) === avantS2, s2.brut);
+
+  const messageErreur = (texte) => {
+    try {
+      return JSON.parse(texte).error?.message;
+    } catch {
+      return undefined; // stderr vide ou non JSON : le contrôle « D79 » échoue sous son propre nom
+    }
+  };
+  // D79 — Ctrl-C pendant une conversion : transmis au binaire, sortie 130, une ligne {"error":…}
+  const faux = join(dir, "faux-office");
+  const marque = join(dir, "faux-office.pid");
+  writeFileSync(faux, `#!/bin/sh\nif [ "$1" = "--check" ]; then echo "racine : ${join(dir, "racine")}"; exit 0; fi\necho $$ > '${marque}.tmp' && mv '${marque}.tmp' '${marque}'\nexec sleep 30\n`, { mode: 0o755 });
+  const lent = join(dir, "lent.docx");
+  writeFileSync(lent, "PK\u0003\u0004");
+  const enfant = spawn("node", [BIN, "convert", lent, join(dir, "lent.roomboard")], { env: { ...process.env, ROOMBOARD_OFFICE: faux }, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  let errEnfant = "";
+  enfant.stderr.setEncoding("utf8").on("data", (c) => (errEnfant += c));
+  const finEnfant = new Promise((r) => enfant.on("close", (code, signal) => r({ code, signal })));
+  for (let i = 0; i < 300 && !existsSync(marque); i++) await new Promise((r) => setTimeout(r, 100));
+  const lu = existsSync(marque) ? Number(readFileSync(marque, "utf8").trim()) : null;
+  const pidFaux = Number.isInteger(lu) && lu > 0 ? lu : null;
+  // Un vrai Ctrl-C frappe le groupe de premier plan : la CLI est chef de son groupe (detached), le signal part au groupe.
+  if (Number.isInteger(enfant.pid) && enfant.pid > 0) process.kill(-enfant.pid, "SIGINT");
+  const sortie = await finEnfant;
+  if (pidFaux !== null) {
+    try {
+      process.kill(pidFaux, "SIGKILL"); // seulement le faux binaire de l'essai, s'il vivait encore
+    } catch {
+      // déjà sorti
+    }
+  }
+  verifie("D79 : Ctrl-C pendant une conversion : code 130", pidFaux !== null && sortie.code === 130, JSON.stringify(sortie));
+  verifie("D79 : une ligne {\"error\":…} « conversion Office interrompue »", errEnfant.trim().split("\n").length === 1 && messageErreur(errEnfant)?.startsWith("conversion Office interrompue (SIGINT)"), errEnfant);
+  verifie("D79 : rien écrit", !existsSync(join(dir, "lent.roomboard")));
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

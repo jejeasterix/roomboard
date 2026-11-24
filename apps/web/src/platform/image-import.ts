@@ -1,6 +1,6 @@
 /**
- * Module image (DAR3, U26, U33) : reconnaissance par octets magiques, taille lue dans l'en-tête (PNG, JPEG seulement,
- * R15), décodage par le navigateur (R13), géométrie d'insertion (R4, R5) et l'entrée `image` du registre d'import (R1).
+ * Module image (DAR3, U26, U33) : reconnaissance par octets magiques, taille lue dans l'en-tête (R15 ; tous les formats
+ * depuis cli-lot4, D63), décodage par le navigateur (R13), géométrie d'insertion (R4, R5) et l'entrée `image` du registre d'import (R1).
  * Partagé par le dépôt, le collage, « Importer » et le cache des bitmaps du rendu. Jamais de SVG dans le DOM.
  */
 import type { Change, Command, Matrix } from "../core/api";
@@ -12,6 +12,7 @@ import { messageOf } from "./controller";
 import type { Point } from "./files";
 import type { ImportHandler } from "./import";
 import { DISPLAY_MAX, decodeImage as decodeWith, ImageTooLargeError, MAX_PIXELS, TOO_MANY_PIXELS, type DecodePorts, type DecodedImage, type ImageKind } from "./image-decode";
+import { headerSize } from "./image-size";
 export { DISPLAY_MAX, ImageTooLargeError, MAX_PIXELS, TOO_MANY_PIXELS, type DecodePorts, type DecodedImage, type ImageKind } from "./image-decode";
 
 export const IMAGE_MIME: Readonly<Record<ImageKind, string>> = Object.freeze({
@@ -32,7 +33,7 @@ export const FIT_SHARE = 0.8;
 export const HEIC_UNREADABLE = "HEIC illisible sur ce poste";
 export const TAB_CLOSED_MESSAGE = "onglet fermé pendant l'import, image non insérée";
 /** Le SOFn d'un JPEG est cherché dans le premier Mio (blocs EXIF compris). */
-const JPEG_SCAN = 1 << 20;
+const HEADER_SCAN = 1 << 20;
 
 const starts = (h: Uint8Array, sig: readonly number[]): boolean => sig.every((b, i) => h[i] === b);
 const ascii = (h: Uint8Array, from: number, to: number): string => String.fromCharCode(...h.subarray(from, to));
@@ -96,7 +97,8 @@ export function jpegSize(b: Uint8Array): { readonly w: number; readonly h: numbe
   return null;
 }
 
-/** Taille lue dans l'en-tête, avant tout décodage (R15) : PNG (IHDR) et JPEG (SOFn) ; null pour les autres. */
+/** Taille lue dans l'en-tête, avant tout décodage (R15) : PNG (IHDR), JPEG (SOFn), puis (cli-lot4, D63) GIF, WebP, BMP,
+ *  ICO, AVIF, HEIC et SVG par `headerSize` sur le premier Mio ; null : illisible. */
 export async function probeSize(blob: Blob, kind: ImageKind): Promise<{ readonly w: number; readonly h: number } | null> {
   if (kind === "png") {
     const h = new Uint8Array(await blob.slice(0, 24).arrayBuffer());
@@ -104,8 +106,8 @@ export async function probeSize(blob: Blob, kind: ImageKind): Promise<{ readonly
     const v = new DataView(h.buffer, h.byteOffset, h.byteLength);
     return { w: v.getUint32(16), h: v.getUint32(20) };
   }
-  if (kind === "jpeg") return jpegSize(new Uint8Array(await blob.slice(0, JPEG_SCAN).arrayBuffer()));
-  return null;
+  if (kind === "jpeg") return jpegSize(new Uint8Array(await blob.slice(0, HEADER_SCAN).arrayBuffer()));
+  return headerSize(new Uint8Array(await blob.slice(0, HEADER_SCAN).arrayBuffer()), kind);
 }
 
 export type ImageDecoder = (blob: Blob, kind: ImageKind) => Promise<DecodedImage>;
