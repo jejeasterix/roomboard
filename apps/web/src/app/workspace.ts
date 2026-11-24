@@ -6,7 +6,7 @@
  * tenu sur le stage de chaque onglet : l'id `stage` suivant l'onglet actif (CL5b-2), `#stage` décrit l'onglet montré.
  * C13 (D5, D17) : `openBoard` ouvre un `.iwb` ou un `.ubz` dans un nouvel onglet ; `exportBoard` écrit une copie au format.
  */
-import { PDF_MAX_PAGES, type CoreDocument, type AssetRef, type CoreFactory, type LinkedAsset, type PdfPageSize } from "../core/api";
+import { type CoreDocument, type CoreFactory, type LinkedAsset } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { NOTHING_TO_SEND_MESSAGE, type AnnotationControl, type CapturedImage, type SendRequest, type SendResult, type SendTarget } from "../platform/annotation-port";
 import type { ContainerCodec } from "../platform/container";
@@ -19,15 +19,14 @@ import {
   type FileController,
   type FileKey,
 } from "../platform/controller";
-import type { PdfEngine, PdfFile } from "../engine/render/pdf-port";
+import type { PdfEngine } from "../engine/render/pdf-port";
 import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_ITEMS_MESSAGE, type Clipboard, type ItemsRefusal } from "../platform/clipboard";
-import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type Notify, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
+import { PDF_EXTENSION, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type Notify, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
 import { decodeImage, type ImageDecoder, type ImageTarget } from "../platform/image-import";
-import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
 import { createImporter, WEB_MAX_BYTES, type ImportReport } from "../platform/import";
-import { NOT_OFFICE_PAGE_MESSAGE, officeMimeOf, officeStemOf, originalChangedMessage, type OfficeOpenFile, type OriginalChange } from "../platform/office-import";
+import { NOT_OFFICE_PAGE_MESSAGE, originalChangedMessage, type OfficeOpenFile, type OriginalChange } from "../platform/office-import";
 import type { LinkedMedia } from "../platform/media-import";
 import type { Model3dDeps } from "../platform/model3d-handlers";
 import { isAbsoluteLink, relativeLink, resolveLink } from "../platform/media-link";
@@ -41,20 +40,20 @@ import { IDENTITY_MATRIX } from "../core/shapes";
 import { capturePage, type PageBackdrop } from "./desktop-page";
 import type { CapturedResource } from "./library";
 import { renderThumbnail, type ThumbDeps } from "./thumbnail";
-import { exportPdf as assemblePdf, PDF_CUT_MESSAGE, PDF_RASTER_MESSAGE, PDF_RASTER_MISSING_MESSAGE, type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
+import { type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabKind, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
 import { readBoardFile, writeBoardFile, type BoardFile } from "./board-convert";
+import { readPdfFile, writePdfFile, type PdfRead } from "./pdf-convert";
 import type { BoardFormat, BoardPorts } from "./board-io";
 import { boardExportName, boardSavedMessage, boardTabName, boardWarningsMessage, stem } from "./board-files";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
+export { PDF_NO_PAGE_MESSAGE, pdfFirstPagesMessage } from "./pdf-convert";
 
 /** C12 : avis de l'import et de l'export PDF (PF7, PF19, PC10). */
-export const PDF_NO_PAGE_MESSAGE = "PDF sans page";
 export const BUSY_MESSAGE = "Opération en cours";
-export const pdfFirstPagesMessage = (name: string, total: number): string => `${name} : ${PDF_MAX_PAGES} premières pages importées sur ${total}`;
 export const pdfExportedMessage = (pages: number): string => `PDF exporté (${pages} page${pages > 1 ? "s" : ""})`;
 /** Nom proposé (PF19) : `<base> annoté.pdf` si une page d'origine est recopiée, sinon `<base>.pdf`. */
 export const exportPdfName = (tabName: string, annotated: boolean): string =>
@@ -515,42 +514,15 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return false;
       }
-      let opened: PdfFile;
+      let read: PdfRead;
       try {
-        opened = await pdf.open(file.blob);
+        read = await readPdfFile({ name, blob: file.blob, original: file.original }, { core, pdf, makeAssets });
       } catch (e) {
-        await say(e instanceof PdfEncryptedError ? `${name} : ${PDF_ENCRYPTED_MESSAGE}` : `Ouverture impossible (${name}) : ${messageOf(e)}`);
+        await say(messageOf(e)); // message complet du produit (chiffré, illisible, sans page) : rien à préfixer
         return false;
       }
-      try {
-        const total = opened.pageCount;
-        if (total === 0) {
-          await say(`Ouverture impossible (${name}) : ${PDF_NO_PAGE_MESSAGE}`);
-          return false;
-        }
-        const sizes: PdfPageSize[] = [];
-        for (let i = 0; i < Math.min(total, PDF_MAX_PAGES); i++) sizes.push(await opened.pageSize(i));
-        const assets = makeAssets();
-        const blob = typed(file.blob, PDF_MIME);
-        // C16 (O5, O16) : PDF converti nommé `<racine>.pdf`, original gardé (nom et type Office), onglet `<racine>.roomboard`.
-        const original = file.original;
-        const root = original === undefined ? stem(name, PDF_EXTENSION) : officeStemOf(name);
-        const id = await assets.put(blob);
-        const pdfRef: AssetRef = { id, name: original === undefined ? name : `${root}${PDF_EXTENSION}`, mime: PDF_MIME, size: blob.size };
-        let originalRef: AssetRef | undefined;
-        if (original !== undefined) {
-          const ob = typed(original, officeMimeOf(name));
-          originalRef = { id: await assets.put(ob), name, mime: ob.type, size: ob.size };
-        }
-        const doc = core.fromPdfPages(pdfRef, sizes, originalRef);
-        if (total > PDF_MAX_PAGES) await say(pdfFirstPagesMessage(name, total));
-        return (await addTab(doc, { name: `${root}${ROOMBOARD_EXTENSION}`, target: null }, assets)) !== null;
-      } catch (e) {
-        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
-        return false;
-      } finally {
-        opened.destroy(); // l'onglet rouvre le PDF au premier dessin (PC11, HPF2-10)
-      }
+      for (const w of read.warnings) await say(w);
+      return (await addTab(read.doc, { name: read.tabName, target: null }, read.assets)) !== null;
     },
     async exportPdf() {
       const { pdfFiles, loadPdfLib, overlay } = deps;
@@ -565,34 +537,19 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       }
       exporting = true;
-      let doc: CoreDocument | null = null;
-      let rasterClosed = false;
-      /** Sessions de rendu ouvertes par `rasterPage` : fermées dès l'assemblage fini (avant la feuille d'enregistrement, longue), une fois. */
-      const closeRaster = (): void => {
-        if (rasterClosed) return;
-        rasterClosed = true;
-        deps.rasterClose?.();
-      };
       try {
-        // Copie prise au départ (DAPF3) : fermer l'onglet pendant l'export libère son document, pas celle-ci.
-        const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
-        doc = core.loadParts(manifest, ybin);
-        const blobs = new Map<string, Blob>(); // un seul `Blob` par asset pendant l'export : `rasterPage` ouvre le PDF une fois
-        const r = await assemblePdf(doc, tab.assets, {
+        // Copie (DAPF3), assemblage et repli fermé avant l'enregistrement : `writePdfFile` (cli-lot3, D36).
+        const r = await writePdfFile(tab.board.doc, tab.assets, {
+          core,
+          now: () => deps.now(),
           loadPdfLib: () => loadPdfLib(),
-          overlay: overlay(tab, doc),
+          overlay: (copy) => overlay(tab, copy),
           alive: () => !released.has(tab),
-          rasterPage: async (asset, index) => {
-            const blob = blobs.get(asset) ?? tab.assets.get(asset);
-            if (blob !== undefined) blobs.set(asset, blob);
-            return blob === undefined || deps.rasterPage === undefined ? null : deps.rasterPage(blob, index);
-          },
+          rasterPage: (blob, index) => (deps.rasterPage === undefined ? Promise.resolve(null) : deps.rasterPage(blob, index)),
+          rasterClose: () => deps.rasterClose?.(),
         });
-        closeRaster();
         if (r === null) return false; // onglet fermé pendant l'export : rien à dire
-        if (r.rasterized) await say(PDF_RASTER_MESSAGE);
-        if (r.rasterMissing) await say(PDF_RASTER_MISSING_MESSAGE);
-        if (r.cut) await say(PDF_CUT_MESSAGE);
+        for (const n of r.notices) await say(n);
         const saved = await pdfFiles.save(exportPdfName(tab.files.name(), r.annotated), r.bytes);
         if (saved) await say(pdfExportedMessage(r.pages), "info");
         return saved;
@@ -601,8 +558,6 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       } finally {
         exporting = false;
-        doc?.free();
-        closeRaster(); // même en cas d'erreur
       }
     },
     async openBoard(file) {
