@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { isEditable } from "./editable";
 import * as paste from "./paste";
@@ -28,6 +29,6 @@ describe("isEditable (OF13, D4)", () => {
   });
 
   it("feuille : aucun import", () => {
-    expect(readFileSync(new URL("./editable.ts", import.meta.url), "utf8")).not.toMatch(/^\s*(import|export .* from)\s/m);
+    expect(readFileSync(join(__dirname, "editable.ts"), "utf8")).not.toMatch(/^\s*(import|export .* from)\s/m);
   });
 });

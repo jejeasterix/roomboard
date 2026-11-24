@@ -4,7 +4,7 @@
  * part pendant le geste (`ClipboardItem` avec promesse), repli `writeText` ; un échec laisse l'interne seul (HZ2-3).
  * Le format natif de la coque se branchera derrière `SystemClipboard` (DAZ4).
  */
-import { isEditable } from "./paste";
+import { isEditable } from "./editable";
 
 export const ITEMS_FORMAT = "roomboard-items/1";
 const FORMAT_PREFIX = "roomboard-items/";
