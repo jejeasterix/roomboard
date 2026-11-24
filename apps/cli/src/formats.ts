@@ -6,7 +6,7 @@
  * s'écrit au lot 1 et ne s'insère qu'au lot 2 ; `formats` rend toujours `{ ext, read, write, readLot, writeLot, notes }` (DA2).
  * D27 (cli-lot2) : le code 3 se lit sur `covered`, par format et par sens ; `LOT_LIVRE` = plus haut lot dont toutes les
  * entrées sont couvertes, un test l'exige. Un chantier qui livre un format change ses lots ici et passe son `covered` (§ 7).
- * cli-lot3 (D42) : `.pdf` couvert. cli-lot4 (D68, D73) : tout le lot 4 couvert en lecture (écriture `null`), `LOT_LIVRE = 4` ;
+ * cli-lot3 (D42) : `.pdf` couvert. cli-lot4 (D68, D73) : le dernier lot couvert en lecture (écriture `null`), `LOT_LIVRE = 4` ;
  * le code 3 ne sort plus que d'une variante non lue : en-tête illisible, convertisseur Office absent, format laissé de côté
  * (H48).
  */
