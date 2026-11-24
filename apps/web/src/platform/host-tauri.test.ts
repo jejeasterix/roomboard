@@ -201,6 +201,19 @@ describe("hôte Tauri (plugin-dialog, plugin-fs)", () => {
     expect(f.calls.titles).toEqual(["• cours.roomboard — RoomBoard"]);
   });
 
+  it("OF6 : un avis d'information part avec l'icône info, une erreur (ou un avis sans nature) avec l'icône error", async () => {
+    const f = fakes();
+    const shell = createTauriShell(f.dialog, f.win);
+    await shell.notify("envoyé au tableau : page 2", "info");
+    await shell.notify("Import impossible (a.png) : illisible", "error");
+    await shell.notify("Ouverture impossible");
+    expect(f.calls.message).toEqual([
+      ["envoyé au tableau : page 2", "info"],
+      ["Import impossible (a.png) : illisible", "error"],
+      ["Ouverture impossible", "error"],
+    ]);
+  });
+
   it("baseName : chemins Windows et Unix", () => {
     expect(baseName("C:\\Users\\j\\cours.roomboard")).toBe("cours.roomboard");
     expect(baseName("/home/j/a.roomboard")).toBe("a.roomboard");

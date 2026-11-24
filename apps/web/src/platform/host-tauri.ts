@@ -10,6 +10,7 @@ import {
   type DroppedFile,
   type DropHandler,
   type FileHost,
+  type NoticeKind,
   type OpenedFile,
   type Point,
   type SaveTarget,
@@ -28,7 +29,7 @@ export interface TauriDialog {
   openMany(o: { readonly filters: readonly DialogFilter[] }): Promise<readonly string[]>;
   save(o: { readonly defaultPath: string; readonly filters: readonly DialogFilter[] }): Promise<string | null>;
   ask(message: string, o: { readonly title: string; readonly kind: "warning" }): Promise<boolean>;
-  message(message: string, o: { readonly title: string; readonly kind: "error" }): Promise<void>;
+  message(message: string, o: { readonly title: string; readonly kind: NoticeKind }): Promise<void>;
 }
 
 export interface TauriFs {
@@ -245,7 +246,7 @@ const pageConfirm = (message: string): boolean => globalThis.confirm(message);
 export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmPage: (message: string) => boolean = pageConfirm): ShellPort {
   return {
     confirm: (message) => dialog.ask(message, { title: APP_TITLE, kind: "warning" }),
-    notify: (message) => dialog.message(message, { title: APP_TITLE, kind: "error" }),
+    notify: (message, kind = "error") => dialog.message(message, { title: APP_TITLE, kind }),
     guardClose(isDirty, message, divert) {
       let stop: (() => void) | null = null;
       let stopped = false;

@@ -115,10 +115,18 @@ export interface FileHost {
   onDrop(handler: DropHandler): () => void;
 }
 
+/**
+ * Nature d'un avis (OF6) : `info` pour un succès (« envoyé au tableau », « PDF exporté »), `error` pour un échec, une
+ * limite ou une perte. Sans nature : `error`, le cas de presque tous les avis. La coque en tire l'icône de la boîte.
+ */
+export type NoticeKind = "info" | "error";
+/** Avis à l'utilisateur ; `kind` absent : erreur. */
+export type Notify = (message: string, kind?: NoticeKind) => Promise<void>;
+
 /** Ce que la fenêtre offre autour des fichiers : question, message, fermeture gardée, titre. */
 export interface ShellPort {
   confirm(message: string): Promise<boolean>;
-  notify(message: string): Promise<void>;
+  notify: Notify;
   /**
    * Garde la fermeture tant que `isDirty()` ou `divert()` (si fourni) est vrai ; rend la fonction qui retire la garde.
    * Le web retient `beforeunload` ; Tauri détourne la fermeture (`divert`) au lieu de la laisser aboutir.
