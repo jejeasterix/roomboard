@@ -4,6 +4,7 @@
  * (un onglet = une `BoardSession`, T93/T98), puis l'interface SolidJS (`ui/App.tsx`). Les touches sont écoutées une
  * fois ici et vont à l'onglet actif. `?banc` ajoute le banc du lot 1 rejoué sur l'onglet actif.
  */
+import { createBoardPorts } from "./app/board-convert";
 import { annotationFailedMessage, createAnnotationController, createRemoteToolbarHost, offerCompatRelaunch } from "./app/annotation";
 import { startAnnotateWindow } from "./annotate-start";
 import { createFakeAnnotationWindows, type FakeAnnotationOptions } from "./platform/annotation-fake";
@@ -362,15 +363,7 @@ async function start(): Promise<void> {
     itemFiles,
     pdf,
     pdfFiles,
-    board: {
-      unzip: createZipReader(spawnZipWorker, undefined, "board"),
-      unbamboo: createZipReader(spawnZipWorker, undefined, "bamboo"),
-      zip: createZipWriter(spawnZipWorker),
-      read: (files, format, opts) => boards.read(files, format, opts),
-      readFlipchart: (entries) => boards.readFlipchart(entries),
-      readOlf: createOlfReader(spawnZipWorker),
-      write: (list, format) => boards.write(list, format),
-    },
+    board: createBoardPorts({ zip: spawnZipWorker }, boards),
     iwbFiles,
     ubzFiles,
     loadPdfLib,
