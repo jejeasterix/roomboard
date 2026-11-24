@@ -8,6 +8,7 @@
 // Lot 4 (cadrage cli-lot4, S1 à S5, D71, D79) : médias, images et 3D fabriqués par objets.mjs ; Office par le binaire
 // roomboard-office et LibreOffice (sauté sous ROOMBOARD_SANS_SOFFICE=1, ligne « Office sauté ») ; conversions/ vide et aucun
 // processus ne citant la racine XDG_CACHE_HOME de l'essai ; Ctrl-C d'une conversion : 130 et une ligne {"error":…}.
+// cli-partage (cadrage cli-partage, S2, D12) : tableau abîmé, import d'un tableau et d'un PDF, import partiel, 12 onglets, PDF illisible (E1 à E5).
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -317,6 +318,27 @@ try {
   verifie("D23 : new z.pdf : code 2, rien d'écrit", cli(["new", zp]).code === 2 && !existsSync(zp));
   const avantOut = empreinte(outPdf);
   verifie("convert out.pdf vers out.PDF (la source) : code 2, source intacte", cli(["convert", outPdf, join(dir, "out.PDF")]).code === 2 && empreinte(outPdf) === avantOut);
+  // ---- cli-partage (cadrage cli-partage, S2, D12) : ouverture par le module partagé, fichiers fabriqués ici ----
+  const messageDe = (r) => String(r.err?.error?.message ?? "");
+  const abime = join(dir, "abime.iwb");
+  writeFileSync(abime, Buffer.from("<iwb")); // XML mal formé (workspace.test.ts:1602)
+  const p1 = cli(["state", abime]);
+  verifie("E1 : state abime.iwb : code 1, « Ouverture impossible (abime.iwb) : fichier endommagé : … »", p1.code === 1 && messageDe(p1).startsWith("Ouverture impossible (abime.iwb) : fichier endommagé : "), p1.brut);
+  const partage = join(dir, "partage.roomboard");
+  verifie("E2 : new partage.roomboard", cli(["new", partage]).code === 0);
+  const p2 = cli(["import", partage, iwbSrc, trois]);
+  const avisLecon = (p2.lignes[0]?.notices ?? []).filter((x) => x.startsWith("lecon.iwb : ouvert avec "));
+  verifie("E2 : import lecon.iwb three.pdf : code 0, les deux ouverts, un avis « lecon.iwb : ouvert avec … »", p2.code === 0 && JSON.stringify(p2.lignes[0]?.opened) === JSON.stringify(["lecon.iwb", "three.pdf"]) && avisLecon.length === 1, p2.brut);
+  const p3 = cli(["import", partage, abime]);
+  verifie("E3 : import abime.iwb : code 1, « import partiel », avis « Ouverture impossible (abime.iwb) »", p3.code === 1 && messageDe(p3).startsWith("import partiel") && (p3.lignes[0]?.notices ?? []).some((x) => x.startsWith("Ouverture impossible (abime.iwb) : ")), p3.brut);
+  const douze = `${[...Array.from({ length: 11 }, () => JSON.stringify({ op: "tab.new" })), JSON.stringify({ op: "import", files: [iwbSrc] })].join("\n")}\n`;
+  const p4 = cli(["run", "--new", "--ops", "-"], douze);
+  const echec12 = p4.lignes.find((l) => l.op === 12);
+  verifie("E4 : 12 onglets puis import lecon.iwb : avis « Ouverture impossible (lecon.iwb) : 12 onglets au plus ; fermez-en un »", p4.code === 1 && echec12?.ok === false && (echec12.notices ?? []).includes("Ouverture impossible (lecon.iwb) : 12 onglets au plus ; fermez-en un"), p4.brut);
+  const pdfAbime = join(dir, "bad.pdf");
+  writeFileSync(pdfAbime, Buffer.from("%PDF-1.4\n%%EOF\n"));
+  const p5 = cli(["state", pdfAbime]);
+  verifie("E5 : state bad.pdf : code 1, « Ouverture impossible (bad.pdf) : … »", p5.code === 1 && messageDe(p5).startsWith("Ouverture impossible (bad.pdf) : "), p5.brut);
   // ---- Lot 4 (cadrage cli-lot4, S1 à S5) : fichiers écrits par objets.mjs, binaire roomboard-office ----
   const cache = join(dir, "cache");
   const envOffice = { XDG_CACHE_HOME: cache };
