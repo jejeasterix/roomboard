@@ -13,7 +13,7 @@
  * C4 (U25) : `rbpack` (paquet, nom + en-tête ZIP) importé dans la bibliothèque par `importPack`, au plafond des ZIP ;
  * nature `paquet` : il n'ouvre aucun onglet, les onglets pleins ne l'arrêtent pas.
  */
-import { messageOf } from "./controller";
+import { messageOf, openFailedMessage } from "./messages";
 import { BAMBOO_NOT_FLIPCHART, hasBambooMagic } from "./bamboo";
 import type { BoardSourceFormat } from "./board-reader";
 import { FLIPCHART_EXTENSION, IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Notify, type Point, type SaveTarget } from "./files";
@@ -152,7 +152,7 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
       try {
         bytes = new Uint8Array(await ctx.blob.arrayBuffer());
       } catch (e) {
-        await ctx.notify(`Ouverture impossible (${f.name}) : ${messageOf(e)}`);
+        await ctx.notify(openFailedMessage(f.name, e));
         return "failed";
       }
       return (await deps.openDocument({ name: f.name, bytes, target: null, path: f.path ?? null })) ? "opened" : "failed";
