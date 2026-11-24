@@ -313,7 +313,6 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     tab.board.dispose();
   };
 
-  const full = (): boolean => tabs.full();
   const makeAssets = deps.makeAssets ?? (() => createAssetStore());
   const relinkMedia = deps.relinkMedia;
   /** M31 : chemin absolu (résolu contre le dossier d'origine) de chaque lien tenté à l'ouverture, par `docPath` puis id. */
@@ -445,7 +444,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const importer = createImporter({
     openDocument: (f) => ws.openDocument(f),
     notify: say,
-    full,
+    full: () => tabs.full(),
     target: () => {
       const t = tabs.active()?.session;
       return t === undefined ? null : imageTarget(t);
@@ -496,7 +495,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     },
     async openDocument(file) {
       const name = baseName(file.name); // jamais un chemin affiché (`\\?\C:\…` compris)
-      if (full()) {
+      if (tabs.full()) {
         await say(TOO_MANY_TABS);
         return false;
       }
@@ -511,7 +510,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const name = baseName(file.name);
       const pdf = deps.pdf;
       if (pdf === undefined) return false;
-      if (full()) {
+      if (tabs.full()) {
         await say(TOO_MANY_TABS);
         return false;
       }
@@ -566,7 +565,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const name = baseName(file.name);
       const board = deps.board;
       if (board === undefined) return false;
-      if (full()) {
+      if (tabs.full()) {
         await say(TOO_MANY_TABS);
         return false;
       }
@@ -612,7 +611,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       }
     },
     async newBlank() {
-      if (full()) {
+      if (tabs.full()) {
         await say(TOO_MANY_TABS);
         return;
       }
@@ -621,7 +620,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     async annotationTab() {
       const existing = tabs.list().find((t) => t.kind === "annotation");
       if (existing !== undefined) return existing.session;
-      if (full()) {
+      if (tabs.full()) {
         await say(TOO_MANY_TABS);
         return null;
       }
@@ -663,7 +662,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
       const inkPage = srcPages[o.view?.page ?? 0] ?? srcPages[0] ?? null;
       const origin = o.to === "origin" ? tabs.list().find((t) => t.id === o.origin && t.kind === "board") : undefined;
       const to: SendTarget = origin === undefined ? "new" : "origin"; // P6 : origine fermée → nouvel onglet
-      if (to === "new" && full()) {
+      if (to === "new" && tabs.full()) {
         await say(TOO_MANY_TABS);
         return null;
       }

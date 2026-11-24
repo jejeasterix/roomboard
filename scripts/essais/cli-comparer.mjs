@@ -23,6 +23,10 @@ if (args.length !== 2) {
   process.exit(2);
 }
 const [B, N] = args.map((p) => resolve(p));
+if (B === N) {
+  console.error("usage : B et N doivent désigner deux CLI différentes");
+  process.exit(2);
+}
 const web = createRequire(join(ROOT, "apps", "web", "package.json"));
 const { zipSync } = web("fflate");
 const NOW = "1795392000000"; // ROOMBOARD_NOW du cadrage (S1, préalable)
@@ -64,8 +68,8 @@ function cli(bin, cwd, argv, input = "", now = NOW) {
       });
   return { code: r.status, out: lire(r.stdout), err: lire(r.stderr), brut: `${r.stdout ?? ""}${r.stderr ?? ""}`.slice(0, 600) };
 }
-/** Code, stdout et stderr comparables (UUID par rang sur toute la sortie, `file` neutre). */
-const sortie = (r) => ({ code: r.code, out: normalise(r.out), err: normalise(r.err) });
+/** Code, stdout et stderr comparables (UUID par rang sur toute la sortie, `file` neutre) ; JSON.stringify garde l'ordre des clés. */
+const sortie = (r) => ({ code: r.code, out: JSON.stringify(normalise(r.out)), err: JSON.stringify(normalise(r.err)) });
 
 const ENTREES = ["lecon.iwb", "three.pdf", "abime.iwb", "bad.pdf", "l.roomboard", "t.roomboard"];
 const prep = join(racine, "prep");

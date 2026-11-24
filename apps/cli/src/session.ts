@@ -159,30 +159,26 @@ export function createSession(deps: SessionDeps): Session {
   };
   const newTab = (): TabEntry<CliTab> => add({ doc: deps.core.blank(), assets: createAssetStore(), file: null });
 
-  /** Lit un tableau (`openBoardDocument`) ; échec : « Ouverture impossible (nom) : … » en CliError format ; avis du
-   *  lecteur poussés dans les notices, avant l'ajout de l'onglet (D4). */
-  async function readBoardNoticed(name: string, blob: Blob, format: BoardSourceFormat): Promise<OpenedDocument> {
+  /** Ouvre un document ; échec : message complet du produit en CliError format ; avis du lecteur poussés dans les
+   *  notices, avant l'ajout de l'onglet (D4, D31). */
+  async function noticed(open: () => Promise<OpenedDocument>): Promise<OpenedDocument> {
     let read: OpenedDocument;
     try {
-      read = await openBoardDocument({ name, blob, format }, { core: deps.core, ports: deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => deps.now(), appVersion: APP_VERSION });
-    } catch (e) {
-      throw new CliError("format", messageOf(e)); // déjà « Ouverture impossible (nom) : … »
-    }
-    deps.notices.push(...read.notices);
-    return read;
-  }
-
-  /** Lit un PDF (D35, D40) ; échec : message complet du produit ; avis d'ouverture (500 pages) dans les notices (D31). */
-  async function readPdfNoticed(name: string, blob: Blob, original?: Blob): Promise<OpenedDocument> {
-    let read: OpenedDocument;
-    try {
-      read = await openPdfDocument({ name, blob, ...(original === undefined ? {} : { original }) }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() });
+      read = await open();
     } catch (e) {
       throw new CliError("format", messageOf(e));
     }
     deps.notices.push(...read.notices);
     return read;
   }
+
+  /** Lit un tableau (`openBoardDocument`) ; échec : « Ouverture impossible (nom) : … ». */
+  const readBoardNoticed = (name: string, blob: Blob, format: BoardSourceFormat): Promise<OpenedDocument> =>
+    noticed(() => openBoardDocument({ name, blob, format }, { core: deps.core, ports: deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => deps.now(), appVersion: APP_VERSION }));
+
+  /** Lit un PDF (D35, D40) ; avis d'ouverture (500 pages) dans les notices (D31). */
+  const readPdfNoticed = (name: string, blob: Blob, original?: Blob): Promise<OpenedDocument> =>
+    noticed(() => openPdfDocument({ name, blob, ...(original === undefined ? {} : { original }) }, { core: deps.core, pdf: deps.pdf, makeAssets: () => createAssetStore() }));
 
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
