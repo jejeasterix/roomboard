@@ -49,13 +49,12 @@ describeWasm("S3 — écrire et relire .iwb et .ubz (D24, D25)", () => {
       bb.forEach((x, i) => expect(x.slice(1).every((v, k) => near(v as number, ba[i]![k + 1] as number)), JSON.stringify([x, ba[i]])).toBe(true));
     });
   }
-  it("S3 — export .ubz avec --ids : code 2 ; vers .pdf : code 3 (lot 3) ; vers .rbpack : code 2, renvoi à library", async () => {
+  it("S3 — export .ubz avec --ids : code 2 ; vers .docx : code 2 ; vers .rbpack : code 2, renvoi à library", async () => {
     const dir = tmpDir();
     const a = await board(dir);
     expect(await main(["export", a, join(dir, "a.ubz"), "--ids", "x"], memoryIO())).toBe(2);
-    const pdf = memoryIO();
-    expect(await main(["export", a, join(dir, "a.pdf")], pdf)).toBe(3);
-    expect(pdf.errors()[0].error.message).toContain("lot 3");
+    const docx = memoryIO();
+    expect(await main(["export", a, join(dir, "a.docx")], docx)).toBe(2);
     const pack = memoryIO();
     expect(await main(["export", a, join(dir, "a.rbpack")], pack)).toBe(2);
     expect(pack.errors()[0].error.message).toContain("library");
@@ -113,10 +112,10 @@ describeWasm("S2 — convert des cinq tableaux (D25)", () => {
       }
     }
   });
-  it("convert : sources et sorties refusées (sortie .pdf : 3 ; source .docx, .rbitem, .rbpack, .png : 2)", async () => {
+  it("convert : sources et sorties refusées (.docx, .rbitem, .rbpack, .png : 2)", async () => {
     const dir = tmpDir();
     const a = await board(dir);
-    expect(await main(["convert", a, join(dir, "x.pdf")], memoryIO())).toBe(3);
+    expect(await main(["convert", a, join(dir, "x.docx")], memoryIO())).toBe(2);
     expect(await main(["convert", join(dir, "doc.docx"), join(dir, "x.roomboard")], memoryIO())).toBe(2);
     expect(await main(["convert", join(dir, "s.rbitem"), join(dir, "x.roomboard")], memoryIO())).toBe(2);
     expect(await main(["convert", a, join(dir, "x.rbpack")], memoryIO())).toBe(2);

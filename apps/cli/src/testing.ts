@@ -210,3 +210,30 @@ export async function readPdfBack(path: string): Promise<{ pages: number; texts:
     standardFontDataUrl: pathToFileURL(pdfjsFontsDir() + sep).href,
   });
 }
+
+/** D29, D38 : module des formats dont `write_pdf_pages` panique (piège Wasm) ; seul l'écrivain PDF est donné. */
+export const pdfPanickingFormats = (): (() => Promise<FormatsBinding>) => {
+  const mod = {
+    ...formatsWith(() => {
+      throw new Error("non appelé");
+    }),
+    write_pdf_pages: () => {
+      throw new WebAssembly.RuntimeError("unreachable");
+    },
+  } as unknown as FormatsBinding;
+  return async () => mod;
+};
+
+/** D39 : pdf-lib qui refuse tout PDF (`load` lève, superposition krilla comprise), `create` gardé (patron de `pdf-export.test.ts:297`). */
+export const refusingPdfLib = (): (() => Promise<PdfLib>) => async () => {
+  const base = await loadPdfLib();
+  return {
+    ...base,
+    PDFDocument: {
+      create: base.PDFDocument.create,
+      load: async () => {
+        throw new Error("refusé par pdf-lib");
+      },
+    },
+  } as unknown as PdfLib;
+};

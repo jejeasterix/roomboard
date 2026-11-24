@@ -1,16 +1,21 @@
 /**
  * Export en `.rbitem` (cadrage cli-lot2, D19) : objets par `encodeIds`, grille par `encodeGrid` (`fragments.ts`) ;
  * image absente : avis du produit `MISSING_EXPORT_MESSAGE`, code 1 ; page sans grille : `NO_GRID_MESSAGE`, code 1 (H21).
+ * cli-lot3 (D39, D41) : `.pdf` par `writePdfFile` du produit, superposition `nodeOverlay` ; replis absents : code 1, rien
+ * d'écrit.
  */
 import { basename } from "node:path";
 import { writeBoardFile } from "../../web/src/app/board-convert";
 import type { BoardFormat } from "../../web/src/app/board-io";
 import { missingOf } from "../../web/src/app/container-io";
 import { MISSING_EXPORT_MESSAGE, NO_GRID_MESSAGE } from "../../web/src/app/fragments";
-import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
+import { writePdfFile, type PdfWritten } from "../../web/src/app/pdf-convert";
+import { PDF_RASTER_MISSING_MESSAGE } from "../../web/src/app/pdf-export";
+import { messageOf, UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { asCliError, CliError } from "./contract";
 import { sameFile } from "./disk";
-import { exportBlocked, extOf, importBlocked, packMessage, unsupportedMessage, type Lot } from "./formats";
+import { extOf, packMessage } from "./formats";
+import { nodeOverlay, NO_RASTER_SUFFIX } from "./pdf-node";
 import type { Session } from "./session";
 import { pageOf } from "./state";
 
@@ -25,14 +30,14 @@ export interface ExportRequest {
 const BOARD_OUT: ReadonlySet<string> = new Set([".iwb", ".ubz"]);
 export const isBoardOut = (to: string): boolean => BOARD_OUT.has(extOf(to));
 
-/** `.rbitem`, `.iwb`, `.ubz` ; `.rbpack` : usage (bibliothèque) ; un format écrit plus tard : code 3 ; tout autre : usage. */
+export const isPdfOut = (to: string): boolean => extOf(to) === ".pdf";
+
+/** `.rbitem`, `.iwb`, `.ubz`, `.pdf` ; `.rbpack` : usage (bibliothèque) ; toute autre sortie : usage (D42). */
 export function checkExportTarget(to: string): void {
   const ext = extOf(to);
-  if (ext === ".rbitem" || BOARD_OUT.has(ext)) return;
+  if (ext === ".rbitem" || BOARD_OUT.has(ext) || ext === ".pdf") return;
   if (ext === ".rbpack") throw new CliError("usage", packMessage(to));
-  const lot = exportBlocked(to);
-  if (lot !== null) throw new CliError("unsupported", unsupportedMessage(to, lot));
-  throw new CliError("usage", `export : ${basename(to)} : sorties .rbitem, .iwb ou .ubz`);
+  throw new CliError("usage", `export : ${basename(to)} : sorties .rbitem, .iwb, .ubz ou .pdf`);
 }
 
 /** Constat T11 : une sortie ne remplace jamais un fichier source ouvert (chemin résolu, casse, `realpath`) ; usage, avant toute écriture. */
@@ -56,19 +61,45 @@ export async function exportBoardFile(session: Session, to: string): Promise<{ f
   return { file: to, kind: format };
 }
 
+/**
+ * D41 : document entier de l'onglet actif en PDF (`writePdfFile`, D36). D39 : PDF d'origine refusé par pdf-lib
+ * (`rasterMissing`, la page le rendrait en image) ou superposition en échec : code 1, rien d'écrit ; `cut` : avis.
+ */
+export async function exportPdfFile(session: Session, to: string): Promise<{ file: string; kind: "pdf"; pages: number; annotated: boolean }> {
+  checkExportTarget(to);
+  const tab = session.active();
+  if (missingOf(tab.doc, tab.assets).length > 0) throw new CliError("command", UNREAD_ASSETS_MESSAGE);
+  const { deps } = session;
+  let r: PdfWritten | null;
+  try {
+    r = await writePdfFile(tab.doc, tab.assets, {
+      core: deps.core,
+      now: () => deps.now(),
+      loadPdfLib: () => deps.loadPdfLib(),
+      overlay: (copy) => nodeOverlay(copy, tab.assets, deps.pdfWriter),
+      alive: () => true,
+    });
+  } catch (e) {
+    throw new CliError("command", `Export impossible : ${messageOf(e)}`);
+  }
+  if (r === null) throw new CliError("command", "Export impossible : export interrompu");
+  if (r.rasterMissing) throw new CliError("command", `${PDF_RASTER_MISSING_MESSAGE}${NO_RASTER_SUFFIX}`);
+  await session.write(to, r.bytes);
+  deps.notices.push(...r.notices); // `cut` (H12, H27) : avis, code 0
+  return { file: to, kind: "pdf", pages: r.pages, annotated: r.annotated };
+}
+
 const CONVERT_SOURCES: ReadonlySet<string> = new Set([".roomboard", ".pdf", ".iwb", ".ubz", ".notebook", ".olf", ".flipchart"]);
-const CONVERT_TARGETS: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz"]);
-function convertSide(path: string, allowed: ReadonlySet<string>, blocked: (p: string) => Lot | null, what: string): void {
+const CONVERT_TARGETS: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz", ".pdf"]);
+function convertSide(path: string, allowed: ReadonlySet<string>, what: string): void {
   if (allowed.has(extOf(path))) return;
-  const lot = blocked(path);
-  if (lot === 3) throw new CliError("unsupported", unsupportedMessage(path, lot));
   if (extOf(path) === ".rbpack") throw new CliError("usage", packMessage(path));
   throw new CliError("usage", `convert : ${basename(path)} : ${what} ${[...allowed].join(" ")} attendue (export pour un .rbitem)`);
 }
-/** D25 : avant tout chargement ; `.pdf` : 3 (seul format du lot 3) ; `.rbitem`, `.rbpack` et tout autre : 2. */
+/** D25, D42 : avant tout chargement ; toute source ou sortie hors des listes : 2 (le code 3 ne sort plus que d'un `import`). */
 export function checkConvert(from: string, to: string): void {
-  convertSide(from, CONVERT_SOURCES, importBlocked, "source");
-  convertSide(to, CONVERT_TARGETS, exportBlocked, "sortie");
+  convertSide(from, CONVERT_SOURCES, "source");
+  convertSide(to, CONVERT_TARGETS, "sortie");
 }
 
 export async function exportFragment(session: Session, req: ExportRequest): Promise<{ file: string; kind: "fragment"; elements: number } | { file: string; kind: "grid" }> {

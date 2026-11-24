@@ -14,7 +14,7 @@ describe("main : commandes sans module (D9)", () => {
     const [out] = io.json();
     expect(out.formats).toHaveLength(Object.keys(FORMAT_LOTS).length);
     expect(out.formats).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
-    expect(out.formats).toContainEqual(expect.objectContaining({ ext: ".pdf", read: true, write: false, readLot: 3, writeLot: 3 }));
+    expect(out.formats).toContainEqual(expect.objectContaining({ ext: ".pdf", read: true, write: true, readLot: 3, writeLot: 3 }));
     expect(io.stderr).toEqual([]);
   });
   it("commande inconnue, absente, clé d'Object ou argument en trop : code 2, une erreur JSON sur stderr", async () => {

@@ -14,6 +14,9 @@ import { basename } from "node:path";
 // `await main(…)` du binaire (« Cannot access 'pdf_worker' before initialization ») ; l'effet de bord pose `globalThis.pdfjsWorker`.
 import "pdfjs-dist/legacy/build/pdf.worker.mjs";
 import "pdfjs-dist/legacy/build/pdf.mjs"; // idem pour le module principal (`import()` de `loadNodePdfjs`)
+// idem pour pdf-lib (`import()` de `loadPdfLib`, `platform/pdf-load.ts`) : sans lui, « Cannot access 'index' before
+// initialization » à l'export PDF du fichier construit ; résolu depuis `apps/web`, sans dépendance de la CLI (G6).
+import "../../web/node_modules/pdf-lib";
 import { readBoardFile } from "../../web/src/app/board-convert";
 import { boardWarningsMessage } from "../../web/src/app/board-files";
 import type { BoardPorts, BoardSourceFormat } from "../../web/src/app/board-io";
@@ -33,7 +36,7 @@ import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
-import { checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkNotSource, exportBoardFile, exportFragment, exportPdfFile, isBoardOut, isPdfOut } from "./exporter";
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
@@ -324,11 +327,11 @@ export function createSession(deps: SessionDeps): Session {
       }
       case "export": {
         const to = needString(args, "to");
-        if (isBoardOut(to)) {
+        if (isBoardOut(to) || isPdfOut(to)) {
           for (const k of ["ids", "page", "grid", "name"]) {
             if (args[k] !== undefined) throw new CliError("usage", `export ${extOf(to)} : document entier, « ${k} » ne s'y applique pas`);
           }
-          return { ...(await exportBoardFile(session, to)) };
+          return { ...(isPdfOut(to) ? await exportPdfFile(session, to) : await exportBoardFile(session, to)) };
         }
         const ids = args["ids"];
         if (ids !== undefined && (!Array.isArray(ids) || !ids.every((i) => typeof i === "string"))) throw new CliError("usage", "ids : liste d'ids attendue");
