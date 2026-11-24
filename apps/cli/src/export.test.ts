@@ -50,13 +50,13 @@ describeWasm("S4 — export .rbitem relu", () => {
     const both = memoryIO();
     expect(await main(["export", a, frag, "--ids", first, "--all"], both)).toBe(2);
   });
-  it("export vers .iwb : code 3 (lot 2) ; vers .png : code 2 ; page vide : code 1", async () => {
+  it("export vers .pdf : code 3 (lot 3) ; vers .png : code 2 ; page vide : code 1", async () => {
     const dir = tmpDir();
     const a = join(dir, "a.roomboard");
     expect(await main(["new", a], memoryIO())).toBe(0);
-    const iwb = memoryIO();
-    expect(await main(["export", a, join(dir, "x.iwb")], iwb)).toBe(3);
-    expect(iwb.errors()[0].error.message).toContain("lot 2");
+    const pdf = memoryIO();
+    expect(await main(["export", a, join(dir, "x.pdf")], pdf)).toBe(3);
+    expect(pdf.errors()[0].error.message).toContain("lot 3");
     expect(await main(["export", a, join(dir, "x.png")], memoryIO())).toBe(2);
     const empty = memoryIO();
     expect(await main(["export", a, join(dir, "vide.rbitem")], empty)).toBe(1);

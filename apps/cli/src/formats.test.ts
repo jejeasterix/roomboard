@@ -19,7 +19,7 @@ describe("FORMAT_LOTS (D9)", () => {
     const rows = formatRows();
     expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".png", ".rbitem", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
     expect(rows.find((r) => r.ext === ".notebook")?.notes.join(" ")).toContain("lecture seule");
-    expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".rbitem", ".roomboard"]);
+    expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".rbitem", ".roomboard", ".ubz"]);
     expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
     expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("--grid");
     expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: true, write: true, readLot: 2, writeLot: 1 }));
@@ -36,7 +36,7 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(unsupportedMessage("/tmp/doc.pdf", 3)).toBe("doc.pdf : format pris en charge par la CLI au lot 3");
   });
   it("exportBlocked : .iwb → 2, .pdf → 3 ; .rbitem et .png → null ; lotOf", () => {
-    expect(exportBlocked("a.iwb")).toBe(2);
+    expect(exportBlocked("a.iwb")).toBeNull();
     expect(exportBlocked("a.pdf")).toBe(3);
     expect(exportBlocked("a.rbitem")).toBeNull();
     expect(exportBlocked("a.png")).toBeNull();
