@@ -1,12 +1,15 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import type { CoreDocument } from "../../web/src/core/api";
 import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { exportBoardFile } from "./exporter";
 import { main } from "./main";
-import { INTERRUPTED_MESSAGE, nodeSession } from "./session";
-import { boardFixtures, describeWasm, memoryIO, pngBytes, stampOf, tmpDir, type Json } from "./testing";
+import { createSession, INTERRUPTED_MESSAGE, nodeSession } from "./session";
+import { writeBoardFile } from "../../web/src/app/board-convert";
+import { loadPdfLib } from "../../web/src/platform/pdf-load";
+import { loadNodePdfjs } from "./pdf-node";
+import { boardFixtures, describeWasm, memoryIO, pdfFixture, pngBytes, stampOf, tmpDir, type Json } from "./testing";
 
 const style = { color: "#1e40af", width: 4 };
 async function board(dir: string): Promise<string> {
@@ -132,5 +135,58 @@ describeWasm("S2 — convert des cinq tableaux (D25)", () => {
     expect(io.json()[0]).toMatchObject({ file: out, pages: 1 });
     expect(stampOf(out)).not.toEqual(before);
     expect(await main(["convert", out, join(dir, "o.roomboard")], memoryIO())).toBe(0);
+  });
+});
+
+describeWasm("caractérisation cli-partage (D7, D8) : export d'un tableau par la CLI, sans copie", () => {
+  beforeAll(async () => {
+    await loadNodePdfjs();
+    await loadPdfLib();
+    await (await nodeSession(memoryIO())).deps.formats();
+  });
+  it("caractérisation cli-partage — D8 (b) : notices d'un export .iwb et .ubz = avertissements bruts de writeBoardFile (fonds PDF), sans boardSavedMessage", async () => {
+    const dir = tmpDir();
+    const three = await pdfFixture(dir);
+    for (const format of ["iwb", "ubz"] as const) {
+      const s = await nodeSession(memoryIO());
+      const tab = (await s.open(three)).session;
+      const ref = await writeBoardFile(tab.doc, tab.assets, format, s.deps.board);
+      expect(ref.warnings.length).toBeGreaterThan(0);
+      const before = s.deps.notices.length;
+      await exportBoardFile(s, join(dir, `t.${format}`));
+      expect(s.deps.notices.slice(before)).toEqual(ref.warnings);
+    }
+  });
+  it("caractérisation cli-partage — D7 : document neuf, now qui avance à chaque appel, export x.iwb puis save : created === modified", async () => {
+    const s0 = await nodeSession(memoryIO());
+    const t0 = Date.UTC(2026, 10, 24);
+    let n = 0;
+    const s = createSession({ ...s0.deps, now: () => new Date(t0 + ++n * 60_000).toISOString() });
+    const tab = s.newTab().session;
+    await s.exec(JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style, fill: null }));
+    const dir = tmpDir();
+    await exportBoardFile(s, join(dir, "x.iwb"));
+    const a = join(dir, "a.roomboard");
+    await s.save(tab, a);
+    const { manifest } = await s.deps.codec.read(new Blob([readFileSync(a) as BlobPart]));
+    const m = JSON.parse(new TextDecoder().decode(manifest)) as { created: string; modified: string };
+    expect(n).toBeGreaterThan(0);
+    expect(m.created).toBe(m.modified);
+  });
+  it("caractérisation cli-partage — D8 : écriture .iwb refusée par le port : CliError command au message brut, sans « Export impossible : », rien d'écrit", async () => {
+    const s0 = await nodeSession(memoryIO());
+    const s = createSession({
+      ...s0.deps,
+      board: {
+        ...s0.deps.board,
+        write: async () => {
+          throw new Error("écriture refusée");
+        },
+      },
+    });
+    s.newTab();
+    const out = join(tmpDir(), "x.iwb");
+    await expect(exportBoardFile(s, out)).rejects.toMatchObject({ code: "command", message: "écriture refusée" });
+    expect(existsSync(out)).toBe(false);
   });
 });
