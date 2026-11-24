@@ -6,6 +6,7 @@
  * enregistrent toujours le document passé à `run` (onglet t1), quel que soit l'onglet actif ; `--save` l'écrit dans le
  * fichier passé à `run`, même si une opération `save` avec `to` l'a enregistré ailleurs entre-temps ; les autres
  * onglets s'enregistrent par l'opération `save`. `help`, `--help`, `-h` : usage sur stdout ; sans commande : usage sur stderr.
+ * cli-lot2 : `convert` (D25), `library` (DA9, H13).
  * cli-lot2 (D23) : toute écriture de document vise un `.roomboard`, contrôlé avant tout chargement par `documentTarget`.
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
@@ -14,6 +15,7 @@ import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./
 import { exists, readBytes } from "./disk";
 import { checkConvert, checkExportTarget, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
+import { libraryExport, libraryImport, libraryList, openLibrary } from "./library";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
 import { documentTarget, nodeSession, type CliTab, type Session } from "./session";
 import { stateOf } from "./state";
@@ -32,6 +34,7 @@ const USAGE = {
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
   export: "export <fichier> <sortie.rbitem | .iwb | .ubz> [--page <id>] [--ids a,b | --all | --grid] [--name <nom>]",
   convert: "convert <source> <sortie.roomboard | .iwb | .ubz>",
+  library: "library list <dossier> [--folder <f>] | library import <dossier> <paquet.rbpack> | library export <dossier> <sortie.rbpack> [--folder <f>]",
 } as const;
 
 const HELP = ["help", "--help", "-h"];
@@ -192,6 +195,22 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     if (extOf(to) === ".roomboard") await session.save(tab, to);
     else await exportBoardFile(session, to);
     io.out(JSON.stringify({ file: to, from, pages: tab.doc.pageIds().length, notices: session.deps.notices }));
+    return 0;
+  },
+  library: async (args, io) => {
+    const [sub, ...rest] = args;
+    const p = parseArgs(rest, { "--folder": "value" });
+    const [dir, file] = p.positional;
+    const n = p.positional.length;
+    const ok = (sub === "list" && n === 1) || (sub === "import" && n === 2 && !p.flags.has("--folder")) || (sub === "export" && n === 2);
+    if (!ok || dir === undefined) throw usage(USAGE.library);
+    if (file !== undefined && extOf(file) !== ".rbpack") throw new CliError("usage", `library ${sub} : ${file} : un paquet .rbpack est attendu`);
+    const folder = flagStr(p, "--folder") ?? "";
+    const session = await nodeSession(io);
+    const lib = openLibrary(dir, { core: session.deps.core, codec: session.deps.codec, now: () => session.deps.now() });
+    if (sub === "list") io.out(JSON.stringify({ library: dir, ...(await libraryList(lib, folder)) }));
+    else if (sub === "import") io.out(JSON.stringify({ library: dir, ...(await libraryImport(lib, file!)) }));
+    else io.out(JSON.stringify(await libraryExport(lib, file!, folder)));
     return 0;
   },
 };

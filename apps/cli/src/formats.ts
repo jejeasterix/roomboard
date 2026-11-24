@@ -5,10 +5,10 @@
  * Précision de forme par rapport au cadrage (`{ lot, read, write, handler }`) : un lot par sens, parce que `.rbitem`
  * s'écrit au lot 1 et ne s'insère qu'au lot 2 ; `formats` rend toujours `{ ext, read, write, readLot, writeLot, notes }` (DA2).
  * D27 (cli-lot2) : le code 3 se lit sur `covered`, par format et par sens ; `LOT_LIVRE` = plus haut lot dont toutes les
- * entrées sont couvertes, un test l'exige. Un chantier qui livre un format change ses lots ici et passe `read` / `write` à vrai dans `formats` (§ 7).
+ * entrées sont couvertes, un test l'exige. Un chantier qui livre un format change ses lots ici et passe son `covered` (§ 7).
  */
 export type Lot = 1 | 2 | 3 | 4;
-export const LOT_LIVRE: Lot = 1;
+export const LOT_LIVRE: Lot = 2;
 
 export interface Coverage {
   readonly read: boolean;
@@ -50,7 +50,7 @@ const each = (exts: readonly string[], e: FormatEntry): Array<readonly [string, 
 const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".roomboard", entry(1, 1, "roomboard")],
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
-  [".rbpack", entry(2, 2, "rbpack")],
+  [".rbpack", branched(2, 2, "rbpack", { read: true, write: true }, "par `library import` / `library export`")],
   [".pdf", entry(3, 3, "pdf")],
   [".iwb", branched(2, 2, "iwb", { read: true, write: true }, UNREAD_IMAGES)],
   [".ubz", branched(2, 2, "ubz", { read: true, write: true }, UNREAD_IMAGES)],
