@@ -64,6 +64,7 @@ function spyCore(): { core: CoreFactory; copies: CoreDocument[]; freed: CoreDocu
     ...fakeCore,
     loadParts: (m, y) => {
       const d = fakeCore.loadParts(m, y);
+      vi.spyOn(d, "pageIds"); // lu par writeBoardFile : prouve que la copie est écrite
       const free = d.free.bind(d);
       d.free = () => {
         freed.push(d);
@@ -147,12 +148,16 @@ describe("exportBoardDocument (cli-partage, R4, D7, D8)", () => {
     rect(doc);
     const { core, copies, freed } = spyCore();
     const save = vi.spyOn(doc, "saveParts");
+    const read = vi.spyOn(doc, "pageIds");
     const withCopy = await exportBoardDocument(doc, createAssetStore(), "iwb", { ports: ports(), copy: { core, now: () => T1 } });
     expect(save).toHaveBeenCalledTimes(1);
     expect(save).toHaveBeenCalledWith(T1, APP_VERSION);
     expect(copies).toHaveLength(1);
     expect(freed).toEqual(copies);
     save.mockRestore();
+    expect(copies[0]!.pageIds).toHaveBeenCalled(); // writeBoardFile écrit la copie…
+    expect(read).not.toHaveBeenCalled(); // …jamais le document d'origine
+    read.mockRestore();
     const without = await exportBoardDocument(doc, createAssetStore(), "iwb", { ports: ports() });
     expect(withCopy.bytes).toEqual(without.bytes);
     expect(withCopy.warnings).toEqual(without.warnings);
