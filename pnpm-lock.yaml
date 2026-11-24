@@ -67,6 +67,9 @@ importers:
       '@solidjs/testing-library':
         specifier: 0.8.10
         version: 0.8.10(solid-js@1.9.20)
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
       '@types/three':
         specifier: 0.187.0
         version: 0.187.0

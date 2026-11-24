@@ -870,7 +870,7 @@ describe("importFiles : fichiers liés (C15, DAX2)", () => {
   it("fichier seul : companions jamais appelé, ctx.companions vide", async () => {
     const log: string[] = [];
     const h = fake("fmod", log, true);
-    const spy = vi.spyOn(h, "companions" as never);
+    const spy = vi.spyOn(h as Required<ImportHandler>, "companions");
     await importerOf([h], deps()).importFiles([txt("m.fmod", "a.png")]);
     expect([log, spy.mock.calls.length]).toEqual([["fmod:m.fmod[]"], 0]);
   });
