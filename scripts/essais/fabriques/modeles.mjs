@@ -49,7 +49,7 @@ const glb = (json, bin) => {
 };
 
 /** PNG 2 × 2 (texture). */
-export const png1 = () => new Uint8Array(solidPng(2, 2, [200, 60, 40]));
+export const texturePng = () => new Uint8Array(solidPng(2, 2, [200, 60, 40]));
 
 /** OBJ : carré de deux faces, coordonnées de texture, matériau `rouge` de `cube.mtl`. */
 export const cubeObj = () => enc("mtllib cube.mtl\nusemtl rouge\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nf 1/1 2/2 3/3\nf 1/1 3/3 4/4\n");
@@ -77,6 +77,20 @@ export function gltfPair({ image = null } = {}) {
   return { gltf: enc(JSON.stringify(json)), bin };
 }
 
+/** glTF autonome (un seul fichier) : tampon binaire et, si `texture`, PNG en ressources `data:` base64 (D67). */
+export function gltfDataUri({ texture = false } = {}) {
+  const b64 = (b) => Buffer.from(b).toString("base64");
+  const bin = cat(f32s(TRI), f32s(UV));
+  const json = {
+    ...scene(texture),
+    ...(texture ? { ...TEXTURED, images: [{ uri: `data:image/png;base64,${b64(texturePng())}` }] } : {}),
+    buffers: [{ uri: `data:application/octet-stream;base64,${b64(bin)}`, byteLength: bin.length }],
+    bufferViews: GEOMETRY_VIEWS,
+    accessors: ACCESSORS,
+  };
+  return enc(JSON.stringify(json));
+}
+
 /** GLB : triangle sans matériau ni texture, tampon binaire incorporé. */
 export function glbPlain() {
   const bin = cat(f32s(TRI), f32s(UV));
@@ -85,7 +99,7 @@ export function glbPlain() {
 
 /** GLB : triangle texturé, PNG incorporé dans le tampon binaire (`images[0].bufferView`). */
 export function glbTextured() {
-  const png = png1();
+  const png = texturePng();
   const bin = cat(f32s(TRI), f32s(UV), pad4(png, 0));
   const json = {
     ...scene(true),

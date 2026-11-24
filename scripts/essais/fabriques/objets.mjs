@@ -5,16 +5,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ROOT } from "../commun.mjs";
 import { bmp, gif, heif, ico, svg, webp } from "./images.mjs";
 import { mp3, mp4, mp4Broken, ogg, wav, webm } from "./medias.mjs";
-import { cubeMtl, cubeObj, glbTextured, gltfPair, plyTriangle, png1, stlTriangle } from "./modeles.mjs";
+import { cubeMtl, cubeObj, glbTextured, gltfPair, plyTriangle, texturePng, stlTriangle } from "./modeles.mjs";
 import { IWB_HEAD } from "./tableaux.mjs";
 
 export * from "./images.mjs";
 export * from "./medias.mjs";
 export * from "./modeles.mjs";
 
-const ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const enc = (s) => new TextEncoder().encode(s);
 
 /** Tailles attendues des images de S5 (`<w>x<h>`) ; `vb.svg` (viewBox 400 × 100 seul) : 300 × 75 (D64). */
@@ -41,7 +41,7 @@ export function jeu(zip) {
     "casse.gif": enc("GIF89a"),
     "cube.obj": cubeObj(),
     "cube.mtl": cubeMtl(),
-    "tex.png": png1(),
+    "tex.png": texturePng(),
     "tri.stl": stlTriangle(),
     "tri.ply": plyTriangle(),
     "tri.gltf": gltf,

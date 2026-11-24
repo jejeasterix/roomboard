@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cubeMtl, cubeObj, glbPlain, glbTextured, gltfPair, plyTriangle, png1, stlTriangle } from "../../../scripts/essais/fabriques/modeles.mjs";
+import { cubeMtl, cubeObj, glbPlain, glbTextured, gltfPair, plyTriangle, texturePng, stlTriangle } from "../../../scripts/essais/fabriques/modeles.mjs";
 import { DEFAULT_CAMERA } from "../../web/src/engine/render/model-frames";
 import type { ModelSource } from "../../web/src/platform/model-view";
 import { quietError } from "./quiet";
@@ -23,7 +23,7 @@ const s4 = (): ModelSource[] => {
     src("glb", "tri.glb", glbPlain()),
     src("glb", "tex.glb", glbTextured()),
     src("gltf", "tri.gltf", gltf, [["tri.bin", bin]]),
-    src("obj", "cube.obj", cubeObj(), [["cube.mtl", cubeMtl()], ["tex.png", png1()]]),
+    src("obj", "cube.obj", cubeObj(), [["cube.mtl", cubeMtl()], ["tex.png", texturePng()]]),
     src("stl", "tri.stl", stlTriangle()),
     src("ply", "tri.ply", plyTriangle()),
   ];
@@ -95,6 +95,19 @@ describe("withThreeGlobals (cli-lot4, D76)", () => {
     expect(present()).toEqual([false, false, false]);
     expect(globalThis.fetch).toBe(nodeFetch);
   });
+  it("D76 — deux withThreeGlobals qui se chevauchent : les globaux restent posés jusqu'à la fin du dernier", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const long = withThreeGlobals(async () => {
+      await gate;
+      return present();
+    });
+    await withThreeGlobals(async () => undefined);
+    expect(present()).toEqual([true, true, true]);
+    release();
+    expect(await long).toEqual([true, true, true]);
+    expect(present()).toEqual([false, false, false]);
+  });
   it("D76 — un global déjà présent n'est ni remplacé ni retiré", async () => {
     const mine = { mine: true };
     vi.stubGlobal("document", mine);
@@ -113,7 +126,7 @@ describe("withThreeGlobals (cli-lot4, D76)", () => {
             img.src = URL.createObjectURL(b);
           }),
       );
-    expect(await outcome(blob(png1()))).toBe("load");
+    expect(await outcome(blob(texturePng()))).toBe("load");
     expect(await outcome(new Blob([]))).toBe("error");
   });
   it("D76 — ProgressEvent : lengthComputable, loaded, total", async () => {

@@ -395,7 +395,7 @@ try {
     const ixl = cli(["import", b4, XLSX], undefined, envOffice);
     verifie("S1 : import valeurs.xlsx : tableau en valeurs (D58)", ixl.code === 0 && ixl.lignes[0]?.inserted.includes("valeurs.xlsx"), ixl.brut);
     const conv = join(cache, "roomboard-office", "conversions");
-    verifie("S1 : conversions/ vide", !existsSync(conv) || readdirSync(conv).length === 0);
+    verifie("S1 : conversions/ existe (conversion réelle) et vide", existsSync(conv) && readdirSync(conv).length === 0, existsSync(conv) ? readdirSync(conv).join(" ") : "dossier absent");
     verifie("S1 : aucun processus ne cite la racine de l'essai (G4)", processusAvec(cache).length === 0, processusAvec(cache).join(" | "));
   }
 
@@ -404,19 +404,28 @@ try {
   const s2 = cli(["import", b4, join(FIXO, "cours.docx")], undefined, { ...envOffice, ROOMBOARD_OFFICE: join(dir, "absent") });
   verifie("S2 : ROOMBOARD_OFFICE absent : code 3, « conversion Office indisponible », fichier inchangé", s2.code === 3 && s2.err?.error?.code === "unsupported" && String(s2.err.error.message).startsWith("cours.docx : conversion Office indisponible : convertisseur roomboard-office introuvable") && empreinte(b4) === avantS2, s2.brut);
 
+  const messageErreur = (texte) => {
+    try {
+      return JSON.parse(texte).error?.message;
+    } catch {
+      return undefined; // stderr vide ou non JSON : le contrôle « D79 » échoue sous son propre nom
+    }
+  };
   // D79 — Ctrl-C pendant une conversion : transmis au binaire, sortie 130, une ligne {"error":…}
   const faux = join(dir, "faux-office");
   const marque = join(dir, "faux-office.pid");
-  writeFileSync(faux, `#!/bin/sh\nif [ "$1" = "--check" ]; then echo "racine : ${join(dir, "racine")}"; exit 0; fi\necho $$ > '${marque}'\nexec sleep 30\n`, { mode: 0o755 });
+  writeFileSync(faux, `#!/bin/sh\nif [ "$1" = "--check" ]; then echo "racine : ${join(dir, "racine")}"; exit 0; fi\necho $$ > '${marque}.tmp' && mv '${marque}.tmp' '${marque}'\nexec sleep 30\n`, { mode: 0o755 });
   const lent = join(dir, "lent.docx");
   writeFileSync(lent, "PK\u0003\u0004");
-  const enfant = spawn("node", [BIN, "convert", lent, join(dir, "lent.roomboard")], { env: { ...process.env, ROOMBOARD_OFFICE: faux }, stdio: ["ignore", "pipe", "pipe"] });
+  const enfant = spawn("node", [BIN, "convert", lent, join(dir, "lent.roomboard")], { env: { ...process.env, ROOMBOARD_OFFICE: faux }, stdio: ["ignore", "pipe", "pipe"], detached: true });
   let errEnfant = "";
   enfant.stderr.setEncoding("utf8").on("data", (c) => (errEnfant += c));
   const finEnfant = new Promise((r) => enfant.on("close", (code, signal) => r({ code, signal })));
   for (let i = 0; i < 300 && !existsSync(marque); i++) await new Promise((r) => setTimeout(r, 100));
-  const pidFaux = existsSync(marque) ? Number(readFileSync(marque, "utf8").trim()) : null;
-  enfant.kill("SIGINT");
+  const lu = existsSync(marque) ? Number(readFileSync(marque, "utf8").trim()) : null;
+  const pidFaux = Number.isInteger(lu) && lu > 0 ? lu : null;
+  // Un vrai Ctrl-C frappe le groupe de premier plan : la CLI est chef de son groupe (detached), le signal part au groupe.
+  if (Number.isInteger(enfant.pid) && enfant.pid > 0) process.kill(-enfant.pid, "SIGINT");
   const sortie = await finEnfant;
   if (pidFaux !== null) {
     try {
@@ -426,7 +435,7 @@ try {
     }
   }
   verifie("D79 : Ctrl-C pendant une conversion : code 130", pidFaux !== null && sortie.code === 130, JSON.stringify(sortie));
-  verifie("D79 : une ligne {\"error\":…} « conversion Office interrompue »", errEnfant.trim().split("\n").length === 1 && JSON.parse(errEnfant).error?.message?.startsWith("conversion Office interrompue (SIGINT)"), errEnfant);
+  verifie("D79 : une ligne {\"error\":…} « conversion Office interrompue »", errEnfant.trim().split("\n").length === 1 && messageErreur(errEnfant)?.startsWith("conversion Office interrompue (SIGINT)"), errEnfant);
   verifie("D79 : rien écrit", !existsSync(join(dir, "lent.roomboard")));
   console.log("CLI : OK");
 } catch (e) {

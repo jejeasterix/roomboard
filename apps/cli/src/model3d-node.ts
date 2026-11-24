@@ -108,14 +108,7 @@ export function nodeModel3d(): Model3dDeps {
       },
       urls: { create: (b) => URL.createObjectURL(b), revoke: (u) => URL.revokeObjectURL(u) },
     });
-    return {
-      available: () => view.available(),
-      load: (src) => withThreeGlobals(() => view.load(src)),
-      draw: (m, v, px) => view.draw(m, v, px),
-      snapshot: (m, v, px) => view.snapshot(m, v, px),
-      release: (m) => view.release(m),
-      onLost: (cb) => view.onLost(cb),
-    };
+    return { ...view, load: (src) => withThreeGlobals(() => view.load(src)) };
   });
   return {
     view: () => loader.load(),
