@@ -41,13 +41,14 @@ import { capturePage, type PageBackdrop } from "./desktop-page";
 import type { CapturedResource } from "./library";
 import { renderThumbnail, type ThumbDeps } from "./thumbnail";
 import { type OverlayProducer, type PdfLib, type RasterPage } from "./pdf-export";
-import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabKind, type Tabs } from "./tabs";
+import { createTabs, TOO_MANY_TABS, type TabKind, type Tabs } from "./tabs";
 
 import type { SelectionAction } from "./toolbar-host";
-import { readBoardFile, writeBoardFile, type BoardFile } from "./board-convert";
-import { readPdfFile, writePdfFile, type PdfRead } from "./pdf-convert";
+import type { BoardFile } from "./board-convert";
+import { writePdfFile } from "./pdf-convert";
 import type { BoardFormat, BoardPorts } from "./board-io";
-import { boardExportName, boardSavedMessage, boardTabName, boardWarningsMessage, stem } from "./board-files";
+import { boardExportName, boardSavedMessage, stem } from "./board-files";
+import { exportBlocked, exportBoardDocument, exportFailedMessage, openBoardDocument, openFailedMessage, openPdfDocument, type OpenedDocument } from "./open-export";
 
 export { CODEC_FALLBACK_MESSAGE } from "./container-io";
 export { PDF_NO_PAGE_MESSAGE, pdfFirstPagesMessage } from "./pdf-convert";
@@ -312,7 +313,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     tab.board.dispose();
   };
 
-  const full = (): boolean => tabs.list().length >= MAX_TABS;
+  const full = (): boolean => tabs.full();
   const makeAssets = deps.makeAssets ?? (() => createAssetStore());
   const relinkMedia = deps.relinkMedia;
   /** M31 : chemin absolu (résolu contre le dossier d'origine) de chaque lien tenté à l'ouverture, par `docPath` puis id. */
@@ -514,15 +515,15 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return false;
       }
-      let read: PdfRead;
+      let opened: OpenedDocument;
       try {
-        read = await readPdfFile({ name, blob: file.blob, original: file.original }, { core, pdf, makeAssets });
+        opened = await openPdfDocument({ name, blob: file.blob, original: file.original }, { core, pdf, makeAssets });
       } catch (e) {
         await say(messageOf(e)); // message complet du produit (chiffré, illisible, sans page) : rien à préfixer
         return false;
       }
-      for (const w of read.warnings) await say(w);
-      return (await addTab(read.doc, { name: read.tabName, target: null }, read.assets)) !== null;
+      for (const n of opened.notices) await say(n); // avant l'onglet, comme avant (D4)
+      return (await addTab(opened.doc, { name: opened.tabName, target: null }, opened.assets)) !== null;
     },
     async exportPdf() {
       const { pdfFiles, loadPdfLib, overlay } = deps;
@@ -532,8 +533,9 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       }
       const tab = ws.active(); // onglet montré à l'appel (R3)
-      if (missingOf(tab.board.doc, tab.assets).length > 0) {
-        await say(UNREAD_ASSETS_MESSAGE);
+      const blocked = exportBlocked(tab.board.doc, tab.assets);
+      if (blocked !== null) {
+        await say(blocked);
         return false;
       }
       exporting = true;
@@ -554,7 +556,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         if (saved) await say(pdfExportedMessage(r.pages), "info");
         return saved;
       } catch (e) {
-        await say(`Export impossible : ${messageOf(e)}`);
+        await say(exportFailedMessage(e));
         return false;
       } finally {
         exporting = false;
@@ -568,15 +570,16 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await say(TOO_MANY_TABS);
         return false;
       }
+      let opened: OpenedDocument;
       try {
-        const built = await readBoardFile(file, { core, ports: board, makeAssets, decode: deps.decode ?? ((b, k) => decodeImage(b, k)), now: deps.now, appVersion: APP_VERSION });
-        if ((await addTab(built.doc, { name: boardTabName(name, file.format), target: null }, built.assets)) === null) return false;
-        if (built.warnings.length > 0) await say(boardWarningsMessage(name, built.warnings));
-        return true;
+        opened = await openBoardDocument({ ...file, name }, { core, ports: board, makeAssets, decode: deps.decode ?? ((b, k) => decodeImage(b, k)), now: deps.now, appVersion: APP_VERSION });
       } catch (e) {
-        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+        await say(messageOf(e)); // « Ouverture impossible (<nom>) : … », composé par openBoardDocument
         return false;
       }
+      if ((await addTab(opened.doc, { name: opened.tabName, target: null }, opened.assets)) === null) return false;
+      for (const n of opened.notices) await say(n); // après l'onglet, comme avant (D4)
+      return true;
     },
     async exportBoard(format) {
       const board = deps.board;
@@ -587,27 +590,25 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         return false;
       }
       const tab = ws.active(); // onglet montré à l'appel (R3)
-      if (missingOf(tab.board.doc, tab.assets).length > 0) {
-        await say(UNREAD_ASSETS_MESSAGE);
+      const blocked = exportBlocked(tab.board.doc, tab.assets);
+      if (blocked !== null) {
+        await say(blocked);
         return false;
       }
       exporting = true;
-      let doc: CoreDocument | null = null;
       try {
-        // Copie prise au départ (comme l'export PDF, DAPF3) : fermer l'onglet pendant l'écriture ne la libère pas.
-        const [manifest, ybin] = tab.board.doc.saveParts(deps.now(), APP_VERSION);
-        doc = core.loadParts(manifest, ybin);
-        const r = await writeBoardFile(doc, tab.assets, format, board);
+        // Copie prise au départ (DAPF3) par exportBoardDocument : fermer l'onglet pendant l'écriture ne la libère pas ;
+        // libérée dès l'écriture faite, avant la boîte d'enregistrement (cli-partage, D7).
+        const r = await exportBoardDocument(tab.board.doc, tab.assets, format, { ports: board, copy: { core, now: () => deps.now() } });
         const saved = await files.save(boardExportName(tab.files.name(), format), r.bytes);
         // OF6 : succès sans avertissement en information ; avec avertissements, l'avis signale une perte (erreur).
         if (saved) await say(boardSavedMessage(format, r.warnings), r.warnings.length === 0 ? "info" : "error");
         return saved;
       } catch (e) {
-        await say(`Export impossible : ${messageOf(e)}`);
+        await say(exportFailedMessage(e));
         return false;
       } finally {
         exporting = false;
-        doc?.free();
       }
     },
     async newBlank() {
@@ -774,7 +775,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         const bytes = await fragments.encodeSelection(ws.active(), "export");
         return bytes === null ? false : await files.save(`${SELECTION_NAME}${RBITEM_EXTENSION}`, bytes);
       } catch (e) {
-        await say(`Export impossible : ${messageOf(e)}`);
+        await say(exportFailedMessage(e));
         return false;
       }
     },
@@ -858,7 +859,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         await open({ name: info.name, blob });
         return true;
       } catch (e) {
-        await say(`Ouverture impossible (${info.name}) : ${messageOf(e)}`);
+        await say(openFailedMessage(info.name, e));
         return false;
       }
     },
