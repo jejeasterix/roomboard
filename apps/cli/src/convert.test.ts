@@ -9,7 +9,7 @@ import { createSession, INTERRUPTED_MESSAGE, nodeSession } from "./session";
 import { writeBoardFile } from "../../web/src/app/board-convert";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import { loadNodePdfjs } from "./pdf-node";
-import { boardFixtures, describeWasm, memoryIO, pdfFixture, pngBytes, stampOf, tmpDir, type Json } from "./testing";
+import { boardFixtures, describeWasm, memoryIO, pdfFixture, pngBytes, stampOf, tmpDir, warmModules, type Json } from "./testing";
 
 const style = { color: "#1e40af", width: 4 };
 async function board(dir: string): Promise<string> {
@@ -33,6 +33,7 @@ const boxes = (d: CoreDocument): Array<[string, number, number, number, number]>
 const near = (a: number, b: number): boolean => Math.abs(a - b) <= 2;
 
 describeWasm("S3 — écrire et relire .iwb et .ubz (D24, D25)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   for (const ext of ["iwb", "ubz"] as const) {
     it(`S3 — export a.${ext} puis convert en .roomboard : mêmes sortes et géométries (2 px)`, async () => {
       const dir = tmpDir();

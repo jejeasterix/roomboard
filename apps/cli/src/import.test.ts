@@ -1,12 +1,12 @@
 import { copyFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { CASCADE_STEP } from "../../web/src/platform/image-import";
 import { streamLines } from "./contract";
 import { main } from "./main";
 import { BINARY_MISSING } from "./office-node";
-import { describeWasm, jpegBytes, memoryIO, pngBytes, stampOf, tmpDir, XLSX_FIXTURE, type Json } from "./testing";
+import { describeWasm, jpegBytes, memoryIO, pngBytes, stampOf, tmpDir, XLSX_FIXTURE, warmModules, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
   const dir = tmpDir();
@@ -16,6 +16,7 @@ async function board(): Promise<{ dir: string; a: string }> {
 }
 
 describeWasm("S3 — images et classeur", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S3 — import image.png valeurs.xlsx --at 400,300 : deux insérés, image aux dimensions PNG, tableau du classeur", async () => {
     const { dir, a } = await board();
     const png = join(dir, "image.png");

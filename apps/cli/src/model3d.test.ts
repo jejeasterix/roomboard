@@ -7,6 +7,7 @@ import { COMPANION_ALONE_MESSAGE, NO_WEBGL_MESSAGE } from "../../web/src/platfor
 import { MODEL3D_UNREADABLE } from "../../web/src/platform/model3d-handlers";
 import { main } from "./main";
 import { nodeSession } from "./session";
+import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import { describeWasm, fabZip, memoryIO, pdfFixture, tmpDir, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
@@ -26,6 +27,7 @@ describeWasm("S4 — 3D sans vignette (cli-lot4)", () => {
   // charge, le premier test dépassait 5000 ms en le payant seul (même patron que pdf.test.ts).
   beforeAll(async () => {
     await import("../../web/src/platform/model-view-three");
+    await loadPdfLib(); // D11 (cli-partage) : pdf-lib chargé ici ; pdf.js reste dans le test D76 (son chargement est le sujet)
     await (await nodeSession(memoryIO())).deps.formats();
   });
   it("S4 — import cube.obj cube.mtl tex.png tri.stl tri.gltf tri.bin tex.glb : quatre objets, instantané nul, avis une fois, stderr vide", async () => {

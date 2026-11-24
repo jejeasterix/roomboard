@@ -1,9 +1,9 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { mp3, mp4, mp4Broken, ogg, wav, webm } from "../../../scripts/essais/fabriques/medias.mjs";
 import { main } from "./main";
-import { describeWasm, memoryIO, stampOf, tmpDir, type Json } from "./testing";
+import { describeWasm, memoryIO, stampOf, tmpDir, warmModules, type Json } from "./testing";
 
 async function board(): Promise<{ dir: string; a: string }> {
   const dir = tmpDir();
@@ -20,6 +20,7 @@ async function mediaByName(a: string): Promise<Record<string, Json>> {
 }
 
 describeWasm("S3 — médias (cli-lot4)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S3 — import son.wav clip.mp4 clip.webm : trois médias, durée et taille de l'en-tête, poster nul", async () => {
     const { dir, a } = await board();
     const files: Record<string, Uint8Array> = { "son.wav": wav(1), "clip.mp4": mp4({ duration: 2.5, width: 640, height: 360 }), "clip.webm": webm({ duration: 3.2, width: 320, height: 240 }) };

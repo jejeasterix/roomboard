@@ -1,7 +1,7 @@
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { CliError } from "./contract";
 import { nodeSession } from "./session";
-import { describeWasm, memoryIO, type Json } from "./testing";
+import { describeWasm, memoryIO, warmModules, type Json } from "./testing";
 
 const rect = (page: string) => ({ type: "AddShape", page, shape: "rect", x0: 10, y0: 20, x1: 110, y1: 220, style: { color: "#1e40af", width: 4 }, fill: null });
 const fresh = async () => {
@@ -11,6 +11,11 @@ const fresh = async () => {
 };
 
 describeWasm("session (D5, D6, D7, DA4)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
+  it("D11 (cli-partage) — warmModules : cœur et module des formats chargés, rend undefined", async () => {
+    await expect(warmModules()).resolves.toBeUndefined();
+  });
+
   it("undo sans rien à annuler : change nul ; après une forme, annule puis l'état le dit", async () => {
     const s = await fresh();
     expect(await s.exec('{"op":"undo"}')).toEqual({ op: 1, ok: true, change: null });

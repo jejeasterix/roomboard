@@ -1,10 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { main } from "./main";
-import { describeWasm, memoryIO, normalizeIds, pngBytes, tmpDir, type Json } from "./testing";
+import { describeWasm, memoryIO, normalizeIds, pngBytes, tmpDir, warmModules, type Json } from "./testing";
 
 describeWasm("S4 — export .rbitem relu", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S4 — export --all puis state du .rbitem : mêmes sortes, styles, géométries et assets, ids mis à part", async () => {
     const dir = tmpDir();
     const a = join(dir, "a.roomboard");

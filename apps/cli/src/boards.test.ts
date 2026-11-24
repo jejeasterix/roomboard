@@ -12,7 +12,7 @@ import { TOO_MANY_TABS } from "../../web/src/app/tabs";
 import { createAssetStore } from "../../web/src/core/asset-store";
 import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
 import { nodeDecode } from "./importer";
-import { boardFixtures, borrowedAfterPanic, describeWasm, formatsWith, memoryIO, panickingFormats, pdfFixture, pngBytes, stampOf, tmpDir, type Json } from "./testing";
+import { boardFixtures, borrowedAfterPanic, describeWasm, formatsWith, memoryIO, panickingFormats, pdfFixture, pngBytes, stampOf, tmpDir, warmModules, type Json } from "./testing";
 
 async function stateOf(path: string): Promise<Json> {
   const io = memoryIO();
@@ -26,6 +26,7 @@ async function noticesOf(path: string): Promise<string> {
 }
 
 describeWasm("S2 — lire les cinq tableaux (D22)", () => {
+  beforeAll(warmModules); // D11 (cli-partage) : cœur et formats chargés hors du délai du premier test
   it("S2 — .iwb ZIP : 1 page, 8 objets, avis de la vidéo non lue ; .iwb XML brut : 3 pages", async () => {
     const f = boardFixtures(tmpDir());
     const st = await stateOf(f.iwb);
