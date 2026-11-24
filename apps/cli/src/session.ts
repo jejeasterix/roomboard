@@ -10,13 +10,6 @@
  * krilla en dépendances (T6 écrit le PDF).
  */
 import { basename } from "node:path";
-// Worker de pdf.js évalué AVANT le code de la session : sous `inlineDynamicImports`, un `import()` seul le placerait après
-// `await main(…)` du binaire (« Cannot access 'pdf_worker' before initialization ») ; l'effet de bord pose `globalThis.pdfjsWorker`.
-import "pdfjs-dist/legacy/build/pdf.worker.mjs";
-import "pdfjs-dist/legacy/build/pdf.mjs"; // idem pour le module principal (`import()` de `loadNodePdfjs`)
-// idem pour pdf-lib (`import()` de `loadPdfLib`, `platform/pdf-load.ts`) : sans lui, « Cannot access 'index' before
-// initialization » à l'export PDF du fichier construit ; résolu depuis `apps/web`, sans dépendance de la CLI (G6).
-import "../../web/node_modules/pdf-lib";
 import { readBoardFile } from "../../web/src/app/board-convert";
 import { boardWarningsMessage } from "../../web/src/app/board-files";
 import type { BoardPorts, BoardSourceFormat } from "../../web/src/app/board-io";

@@ -19,4 +19,10 @@ const io: CliIO = {
 process.on("exit", (code) => {
   process.exitCode = exitAfterWrites(code, out, err);
 });
-process.exitCode = await main(process.argv.slice(2), io);
+// Pas d'`await` de premier niveau : sous `inlineDynamicImports`, les modules des `import()` (pdf.js, pdf-lib) sont
+// placés après ce code dans le fichier construit ; un `await` ici suspendrait son évaluation avant eux, et le premier
+// `import()` de `main` lirait une liaison non initialisée (« Cannot access 'pdf_worker' before initialization »).
+// Le code de sortie passe toujours par `process.exitCode` : Node vide stdout et stderr avant de quitter.
+void main(process.argv.slice(2), io).then((code) => {
+  process.exitCode = code;
+});
