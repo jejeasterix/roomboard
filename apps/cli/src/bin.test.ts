@@ -1,6 +1,7 @@
 // `bin.ts` (cli-lot3, T8) : sans `await` de premier niveau (T7), une promesse de `main` jamais réglée laissait le
 // processus sortir en 0 sans rien dire ; le filet la fait sortir en 13 avec une ligne `{"error":…}` sur stderr.
-// `bin.ts` est importé tel quel, `main` remplacé ; l'écouteur `exit` est relevé sans être branché sur le processus.
+// `bin.ts` est importé tel quel, `main` remplacé ; les écouteurs `exit`, `uncaughtException` et `unhandledRejection` sont
+// relevés sans être branchés sur le processus (cli-lot4, D77 : sinon ils captureraient les erreurs de Vitest).
 import { afterEach, expect, it, vi } from "vitest";
 
 type ExitListener = (code: number) => void;
@@ -12,14 +13,18 @@ afterEach(() => {
   vi.resetModules();
 });
 
-/** Importe `bin.ts` avec `main` remplacé ; rend l'écouteur `exit` qu'il pose, les autres `process.on` passent. */
-async function loadBin(main: () => Promise<number>): Promise<ExitListener> {
+type Listener = (...a: unknown[]) => void;
+const CAUGHT = new Set(["exit", "uncaughtException", "unhandledRejection"]);
+
+/** Importe `bin.ts` avec `main` remplacé ; rend les écouteurs `exit`, `uncaughtException`, `unhandledRejection` qu'il
+ *  pose (jamais branchés sur le processus de test) ; les autres `process.on` passent. */
+async function loadListeners(main: () => Promise<number>): Promise<Map<string, Listener>> {
   vi.resetModules();
   vi.doMock("./main", () => ({ main }));
-  let listener: ExitListener | null = null;
+  const caught = new Map<string, Listener>();
   const on = process.on.bind(process);
-  const spy = vi.spyOn(process, "on").mockImplementation(((event: string | symbol, l: (...a: unknown[]) => void) => {
-    if (event === "exit") listener = l as ExitListener;
+  const spy = vi.spyOn(process, "on").mockImplementation(((event: string | symbol, l: Listener) => {
+    if (typeof event === "string" && CAUGHT.has(event)) caught.set(event, l);
     else on(event as never, l as never);
     return process;
   }) as never);
@@ -29,8 +34,13 @@ async function loadBin(main: () => Promise<number>): Promise<ExitListener> {
     spy.mockRestore();
   }
   await new Promise((r) => setImmediate(r)); // une promesse réglée l'est avant la sortie : son `.then` est passé
-  if (listener === null) throw new Error("bin.ts n'a posé aucun écouteur exit");
-  return listener;
+  return caught;
+}
+
+async function loadBin(main: () => Promise<number>): Promise<ExitListener> {
+  const listener = (await loadListeners(main)).get("exit");
+  if (listener === undefined) throw new Error("bin.ts n'a posé aucun écouteur exit");
+  return listener as ExitListener;
 }
 
 /** Joue l'écouteur `exit` avec `code` ; rend le code de sortie posé et les lignes écrites sur stderr. */
@@ -65,5 +75,27 @@ it("promesse réglée : son code reste, rien sur stderr (0 comme 2)", async () =
   for (const code of [0, 2]) {
     const listener = await loadBin(async () => code);
     expect(atExit(listener, code)).toEqual({ exitCode: code, stderr: [] });
+  }
+});
+
+it("D77 — uncaughtException et unhandledRejection : une ligne {\"error\":{code:command, message:erreur interne : …}}, code 1, aucune pile", async () => {
+  for (const event of ["uncaughtException", "unhandledRejection"]) {
+    const listener = (await loadListeners(() => new Promise<number>(() => {}))).get(event);
+    expect(listener, event).toBeDefined();
+    const stderr: string[] = [];
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as never);
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    try {
+      listener!(new Error("boum"));
+      expect(exit).toHaveBeenCalledWith(1);
+    } finally {
+      write.mockRestore();
+      exit.mockRestore();
+    }
+    expect(stderr.map((l) => JSON.parse(l) as unknown)).toEqual([{ error: { code: "command", message: "erreur interne : boum" } }]);
+    expect(stderr.join("")).not.toMatch(/\n\s+at /);
   }
 });

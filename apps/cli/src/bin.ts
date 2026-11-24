@@ -3,6 +3,7 @@
 import "./quiet";
 import { CliError, exitAfterWrites, lineWriter, streamLines, type CliIO } from "./contract";
 import { main } from "./main";
+import { messageOf } from "../../web/src/platform/controller";
 
 /** Code de Node pour un `await` de premier niveau jamais réglé : celui que donnait l'ancienne entrée dans ce cas. */
 const UNSETTLED_EXIT = 13;
@@ -22,6 +23,16 @@ const io: CliIO = {
 // Filet de l'ancien `await` de premier niveau : une promesse de `main` jamais réglée (boucle d'événements vidée avant
 // sa fin) ne sort pas en 0 sans rien dire, mais en 13 avec une ligne `{"error":…}` sur stderr.
 let settled = false;
+// cli-lot4 (D77) : une erreur jamais rattrapée (three, pdf.js, un écouteur) sort en une ligne `{"error":…}`, code 1,
+// jamais en pile Node (D9) ; l'écriture atomique (D3) garantit qu'aucun fichier n'est à moitié écrit.
+const fatal = (e: unknown): void => {
+  settled = true;
+  err(JSON.stringify({ error: new CliError("command", `erreur interne : ${messageOf(e)}`) }));
+  process.exitCode = 1;
+  process.exit(1);
+};
+process.on("uncaughtException", fatal);
+process.on("unhandledRejection", fatal);
 process.on("exit", (code) => {
   if (!settled && code === 0) {
     err(JSON.stringify({ error: new CliError("command", "commande inachevée : le processus s'est arrêté avant la fin de la commande") }));
