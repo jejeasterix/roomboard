@@ -41,4 +41,9 @@ describe("headlessTarget (DA5, H7)", () => {
     expect(await t.insertFragment!(bytes, { x: 1, y: 2 }, 3, "x.rbitem")).toBe(true);
     expect(seen).toEqual([[{ tab, page: "p1" }, bytes, "x.rbitem", { x: 1, y: 2 }, 3]]);
   });
+  it("insertFragment : tout résultat autre que « inserted » rend faux", async () => {
+    const tab = { doc: {} as CoreDocument, assets: createAssetStore(), file: null };
+    const fragments = { insertResource: async () => "refused" } as unknown as FragmentOps<CliPage>;
+    expect(await headlessTarget(tab, "p1", [], fragments).insertFragment!(new Uint8Array([1]), { x: 0, y: 0 }, 0, "x.rbitem")).toBe(false);
+  });
 });

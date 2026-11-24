@@ -5,7 +5,7 @@ import type { CoreDocument } from "../../web/src/core/api";
 import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { exportBoardFile } from "./exporter";
 import { main } from "./main";
-import { nodeSession } from "./session";
+import { INTERRUPTED_MESSAGE, nodeSession } from "./session";
 import { boardFixtures, describeWasm, memoryIO, pngBytes, stampOf, tmpDir, type Json } from "./testing";
 
 const style = { color: "#1e40af", width: 4 };
@@ -65,7 +65,7 @@ describeWasm("S3 — écrire et relire .iwb et .ubz (D24, D25)", () => {
     s.newTab();
     s.deps.interrupted = () => true;
     const out = join(tmpDir(), "x.iwb");
-    await expect(exportBoardFile(s, out)).rejects.toMatchObject({ code: "command" });
+    await expect(exportBoardFile(s, out)).rejects.toMatchObject({ code: "command", message: INTERRUPTED_MESSAGE });
     expect(existsSync(out)).toBe(false);
   });
   it("op export vers .iwb dans run : kind iwb ; avec ids : code 2", async () => {

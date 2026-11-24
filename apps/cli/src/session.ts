@@ -22,7 +22,7 @@ import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
-import { exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
 import { cliFragments, type CliPage } from "./fragment-view";
 import { extOf, formatOf } from "./formats";
 import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
@@ -103,13 +103,20 @@ export function createSession(deps: SessionDeps): Session {
   /** recorded[n - 1] : ids retenus de l'opération n. */
   const recorded: (readonly string[])[] = [];
   const written = new Set<string>();
+  /** Fichiers lus par la session : une sortie d'export ne les remplace pas (`checkNotSource`). */
+  const sources = new Set<string>();
   const writable = (): void => {
     if (deps.interrupted()) throw new CliError("command", INTERRUPTED_MESSAGE);
   };
-  async function write(path: string, bytes: Uint8Array): Promise<void> {
+  async function put(path: string, bytes: Uint8Array): Promise<void> {
     writable();
     await writeAtomic(path, bytes);
     written.add(path);
+  }
+  /** Écriture d'une sortie (export) : refusée si elle vise un fichier source de la session. */
+  async function write(path: string, bytes: Uint8Array): Promise<void> {
+    for (const source of sources) await checkNotSource(source, path);
+    await put(path, bytes);
   }
 
   const active = (): CliTab => {
@@ -144,6 +151,7 @@ export function createSession(deps: SessionDeps): Session {
 
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
+    sources.add(path);
     const format = kind === "document" ? boardFormatOf(path) : null;
     if (format !== null) {
       const read = await readBoardNoticed(basename(path), new Blob([bytes as BlobPart]), format);
@@ -185,21 +193,22 @@ export function createSession(deps: SessionDeps): Session {
       deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
       return null;
     }
+    if (path !== null) sources.add(path);
     const read = await deps.io.read(name, bytes, "document", path);
     return read === null ? null : add({ doc: read.doc, assets: read.assets, file: path });
   }
   async function save(tab: CliTab, to: string | null = null): Promise<string> {
-    writable();
     const path = to ?? tab.file;
     if (path === null) throw new CliError("usage", "enregistrer : aucun chemin (champ « to » ou option --out)");
-    documentTarget(path);
+    documentTarget(path); // l'usage avant l'interruption : x.iwb rend 2, jamais 1
+    writable();
     let bytes: Uint8Array;
     try {
       bytes = await deps.io.encode(tab.doc, tab.assets, deps.now(), APP_VERSION, { kind: "document" });
     } catch (e) {
       throw asCliError(e, "command");
     }
-    await write(path, bytes);
+    await put(path, bytes); // un .roomboard ouvert s'enregistre à son propre chemin : pas de garde « source »
     tab.file = path;
     return path;
   }

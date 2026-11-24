@@ -155,19 +155,19 @@ export function boardFixtures(dir: string): { readonly iwb: string; readonly iwb
   };
 }
 
+/** Module des formats simulé : seul `BoardReader.open` est donné, tout autre accès au conteneur lève « non appelé ». */
+export const formatsWith = (open: () => unknown): FormatsBinding => {
+  const fail = (): never => {
+    throw new Error("non appelé");
+  };
+  return { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open }, write_board_xml: () => [], notebook_order: () => [] } as unknown as FormatsBinding;
+};
+
 /**
  * D29 : lecteur de tableau dont `ops()` panique (piège Wasm) et dont `free()` lève ensuite l'erreur de wasm-bindgen sur
  * une valeur restée empruntée. `partOf` (board-reader.ts) libère dans un `finally` : l'`Error` de `free()` remplace la
  * `RuntimeError`, et `boardJobReply` rend `{ error: BOARD_FAILED_MESSAGE }` au lieu de relancer.
  */
-/** Module des formats dont le lecteur de tableau panique puis masque la panique par `free()` (D29), pour `main`. */
-export const panickingFormats = (): (() => Promise<FormatsBinding>) => {
-  const fail = (): never => {
-    throw new Error("non appelé");
-  };
-  const mod = { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open: borrowedAfterPanic }, write_board_xml: () => [], notebook_order: () => [] } as unknown as FormatsBinding;
-  return async () => mod;
-};
 export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warnings(): string[]; free(): never } => ({
   ops: () => {
     throw new WebAssembly.RuntimeError("unreachable");
@@ -178,3 +178,8 @@ export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warning
     throw new Error("attempted to take ownership of Rust value while it was borrowed");
   },
 });
+/** Module des formats dont le lecteur de tableau panique puis masque la panique par `free()` (D29), pour `main`. */
+export const panickingFormats = (): (() => Promise<FormatsBinding>) => {
+  const mod = formatsWith(borrowedAfterPanic);
+  return async () => mod;
+};
