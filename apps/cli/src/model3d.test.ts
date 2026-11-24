@@ -1,7 +1,8 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { cubeMtl, cubeObj, glbTextured, gltfPair, plyTriangle, png1, stlTriangle } from "../../../scripts/essais/fabriques/modeles.mjs";
+import { cubeMtl, cubeObj, glbTextured, gltfDataUri, gltfPair, plyTriangle, texturePng, stlTriangle } from "../../../scripts/essais/fabriques/modeles.mjs";
+import { mp4, wav } from "../../../scripts/essais/fabriques/medias.mjs";
 import { COMPANION_ALONE_MESSAGE, NO_WEBGL_MESSAGE } from "../../web/src/platform/model3d-import";
 import { MODEL3D_UNREADABLE } from "../../web/src/platform/model3d-handlers";
 import { main } from "./main";
@@ -23,7 +24,7 @@ describeWasm("S4 — 3D sans vignette (cli-lot4)", () => {
   it("S4 — import cube.obj cube.mtl tex.png tri.stl tri.gltf tri.bin tex.glb : quatre objets, instantané nul, avis une fois, stderr vide", async () => {
     const { dir, a } = await board();
     const { gltf, bin } = gltfPair();
-    const paths = put(dir, { "cube.obj": cubeObj(), "cube.mtl": cubeMtl(), "tex.png": png1(), "tri.stl": stlTriangle(), "tri.gltf": gltf, "tri.bin": bin, "tex.glb": glbTextured() });
+    const paths = put(dir, { "cube.obj": cubeObj(), "cube.mtl": cubeMtl(), "tex.png": texturePng(), "tri.stl": stlTriangle(), "tri.gltf": gltf, "tri.bin": bin, "tex.glb": glbTextured() });
     const io = memoryIO();
     expect(await main(["import", a, ...paths], io)).toBe(0);
     const [r] = io.json();
@@ -54,6 +55,27 @@ describeWasm("S4 — 3D sans vignette (cli-lot4)", () => {
     expect(await main(["import", a, ...put(dir, { "seul.mtl": cubeMtl(null) })], io)).toBe(1);
     expect(io.json()[0]).toMatchObject({ failed: ["seul.mtl"] });
     expect(io.json()[0].notices.join(" ")).toContain(COMPANION_ALONE_MESSAGE);
+  });
+  it("D67 — .gltf à ressources `data:` (tampon et texture) : un objet 3D, aucun fichier lié, instantané nul", async () => {
+    const { dir, a } = await board();
+    const io = memoryIO();
+    expect(await main(["import", a, ...put(dir, { "data.gltf": gltfDataUri({ texture: true }) })], io)).toBe(0);
+    expect(io.json()[0]).toMatchObject({ inserted: ["data.gltf"], refused: [], failed: [] });
+    expect(io.stderr).toEqual([]);
+    const st = memoryIO();
+    expect(await main(["state", a], st)).toBe(0);
+    const [m] = st.json()[0].pages[0].elements.filter((e: Json) => e.kind === "model3d");
+    expect(m.model3d.snapshot).toBeNull();
+    expect(m.model3d.files).toEqual([]);
+  });
+  it("D69 — médias sans poster et 3D sans instantané : l'export .pdf passe, code 0, %PDF-", async () => {
+    const { dir, a } = await board();
+    const paths = put(dir, { "son.wav": wav(1), "clip.mp4": mp4({ duration: 2.5, width: 640, height: 360 }), "tri.stl": stlTriangle() });
+    expect(await main(["import", a, ...paths], memoryIO())).toBe(0);
+    const out = join(dir, "x.pdf");
+    const io = memoryIO();
+    expect(await main(["export", a, out], io)).toBe(0);
+    expect(readFileSync(out).subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
   it("S4 — ZIP de deux modèles : deux objets 3D", async () => {
     const { dir, a } = await board();
