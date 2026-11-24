@@ -1,13 +1,13 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { PDF_CUT_MESSAGE, PDF_RASTER_MISSING_MESSAGE } from "../../web/src/app/pdf-export";
 import { PDF_WRITE_FAILED_MESSAGE } from "../../web/src/app/pdf-overlay-vector";
 import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import { exportPdfFile } from "./exporter";
 import { main } from "./main";
-import { NO_RASTER_SUFFIX } from "./pdf-node";
+import { loadNodePdfjs, NO_RASTER_SUFFIX } from "./pdf-node";
 import { INTERRUPTED_MESSAGE, nodeSession } from "./session";
 import { describeWasm, memoryIO, pdfFixture, pdfPanickingFormats, readPdfBack, refusingPdfLib, stampOf, tmpDir, WEB_SRC, type Json } from "./testing";
 
@@ -18,6 +18,13 @@ const backdropsOf = async (file: string): Promise<Json[]> => {
 };
 
 describeWasm("S1 — lire un PDF (cli-lot3)", () => {
+  // Premier chargement du fichier (pdf.js et son worker, pdf-lib, Wasm du cœur et des formats) fait une fois ici, hors
+  // du délai du premier test : sous charge, S1 dépassait 5000 ms en le payant seul (T8).
+  beforeAll(async () => {
+    await loadNodePdfjs();
+    await loadPdfLib();
+    await (await nodeSession(memoryIO())).deps.formats();
+  });
   it("S1 — convert three.pdf p.roomboard : 3 pages de 1920, fonds pdf-page 0..2, un asset application/pdf ; state three.pdf identique", async () => {
     const dir = tmpDir();
     const three = await pdfFixture(dir);
@@ -194,7 +201,7 @@ describeWasm("S2 à S4 — écrire un PDF (cli-lot3)", () => {
     const p = join(dir, "p.roomboard");
     expect(await main(["convert", three, p], memoryIO())).toBe(0);
     const out = join(dir, "refus.pdf");
-    const io = memoryIO([], {}, WEB_SRC, undefined, refusingPdfLib());
+    const io = memoryIO([], {}, WEB_SRC, { pdfLib: refusingPdfLib() });
     expect(await main(["export", p, out], io)).toBe(1);
     expect(io.errors()[0].error).toEqual({ code: "command", message: `${PDF_RASTER_MISSING_MESSAGE}${NO_RASTER_SUFFIX}` });
     expect(existsSync(out)).toBe(false);
@@ -203,11 +210,11 @@ describeWasm("S2 à S4 — écrire un PDF (cli-lot3)", () => {
     const dir = tmpDir();
     const { p } = await annotatedBoard(dir);
     const out = join(dir, "panique.pdf");
-    const io = memoryIO([], {}, WEB_SRC, pdfPanickingFormats());
+    const io = memoryIO([], {}, WEB_SRC, { formats: pdfPanickingFormats() });
     expect(await main(["export", p, out], io)).toBe(1);
     expect(io.errors()[0].error.message).toBe(`Export impossible : superposition vectorielle impossible (${PDF_WRITE_FAILED_MESSAGE})${NO_RASTER_SUFFIX}`);
     expect(existsSync(out)).toBe(false);
-    const s = await nodeSession(memoryIO([], {}, WEB_SRC, pdfPanickingFormats()));
+    const s = await nodeSession(memoryIO([], {}, WEB_SRC, { formats: pdfPanickingFormats() }));
     const tab = (await s.open(p)).session;
     await expect(exportPdfFile(s, out)).rejects.toMatchObject({ code: "command" });
     expect(s.deps.interrupted()).toBe(true);

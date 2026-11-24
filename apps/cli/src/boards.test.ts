@@ -130,7 +130,7 @@ describeWasm("S2 — lire les cinq tableaux (D22)", () => {
     const bad = join(dir, "bad.iwb");
     writeFileSync(bad, "<iwb/>");
     const before = stampOf(a);
-    const io = memoryIO([], {}, undefined, panickingFormats());
+    const io = memoryIO([], {}, undefined, { formats: panickingFormats() });
     expect(await main(["import", a, img, bad], io)).toBe(1);
     const report = io.json()[0];
     expect(report.inserted.length).toBeGreaterThan(0);
