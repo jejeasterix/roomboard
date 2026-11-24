@@ -6,6 +6,7 @@
  * (DA20). Durée arrondie au ms comme `probeMedia` ; vidéo si `width > 0` (règle M16 d'`addMedia`). null : illisible.
  */
 import type { MediaFormat } from "./media-import";
+import { isoBoxes, type IsoBox } from "./image-size";
 
 export interface MediaHeader {
   /** Secondes, arrondies au ms. */
@@ -38,33 +39,6 @@ const i16be = (b: Uint8Array, i: number): number => {
 };
 const found = (seconds: number, width = 0, height = 0): MediaHeader | null =>
   Number.isFinite(seconds) && seconds > 0 ? { duration: Math.round(seconds * 1000) / 1000, width, height } : null;
-
-interface IsoBox {
-  readonly type: string;
-  readonly start: number;
-  readonly end: number;
-}
-/** Boîtes ISO entre `from` et `to` (même contrat qu'`isoBoxes` d'`image-size.ts`, que T5 branche ici). */
-function* isoBoxes(b: Uint8Array, from: number, to: number): Generator<IsoBox> {
-  let i = from;
-  while (i + 8 <= to) {
-    let size = u32be(b, i);
-    const type = ascii(b, i + 4, i + 8);
-    let head = 8;
-    if (size === 1) {
-      if (i + 16 > to) return;
-      size = u64be(b, i + 8);
-      head = 16;
-    } else if (size === 0) size = to - i;
-    if (size < head) return;
-    if (i + size > to) {
-      yield { type, start: i + head, end: to };
-      return;
-    }
-    yield { type, start: i + head, end: i + size };
-    i += size;
-  }
-}
 
 function mvhdSeconds(b: Uint8Array, x: IsoBox): number | null {
   const v1 = at(b, x.start) === 1;
