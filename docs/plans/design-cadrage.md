@@ -137,7 +137,7 @@ Réversibles, tranchées dans ce tour ; chacune reste ouverte à la correction d
 | Fichier | Changement prévu | Lot |
 |---|---|---|
 | `apps/web/src/ui/rb.css` | jetons de la charte en variables CSS (`--rf-*`), îlots, états, tailles S 44 / M 48 / L 64 | L1 |
-| `apps/web/src/ui/icons.ts` (neuf) | table `id d'outil ou d'action → tracé Lucide` (ISC, tracés recopiés avec la licence dans `THIRD_PARTY_NOTICES.md`), sans dépendance npm ajoutée ; trois icônes dessinées | L1 |
+| `apps/web/src/ui/icons.ts` (neuf) | table `id d'outil ou d'action → tracé Lucide` (ISC, tracés recopiés avec la licence dans `THIRD_PARTY_NOTICES.md`), sans dépendance npm ajoutée ; cinq icônes dessinées (`annotate`, `eraser-part`, `line`, `row-remove`, `col-remove`) | L1 |
 | `apps/web/src/ui/Toolbar.tsx` | bouton = icône + `aria-label` + infobulle ; `item.icon` du profil prioritaire sur la table | L1 |
 | `apps/web/src/toolbar-profiles.ts` | profils fournis réordonnés (barre d'outils sans les actions de fichier) | L2 |
 | `apps/web/src/ui/App.tsx`, `layout.ts` | îlots flottants au-dessus de la scène au lieu de la grille à bandes ; menu ; îlot des pages | L2 |

@@ -306,7 +306,7 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   check(await editorOpen(), 'S1 : Tab : deuxième cellule active, saisie ouverte (data-table="2x2@0,1")');
   await shot("c7b-cellule-riche.png");
   await key("Escape");
-  check(sameBox(boxTool, await stageBox(page)), "la boîte de #stage est immobile après la validation du tableau");
+  check(sameBox(boxTable, await stageBox(page)), "la boîte de #stage est immobile après la validation du tableau");
 
   // Ctrl+S, Ctrl+O : nouvel onglet, tout relu.
   const before = await page.locator(TAB).count();

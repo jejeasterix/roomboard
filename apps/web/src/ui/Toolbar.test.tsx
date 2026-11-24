@@ -385,3 +385,75 @@ describe("Toolbar : Modifier dans l'application d'origine (C16, S3)", () => {
     expect(host.runAction).toHaveBeenCalledWith("edit-original");
   });
 });
+
+describe("Toolbar — icônes (design-l1, S3, S4)", () => {
+  const iconOf = (root: ParentNode, sel: string): string | null =>
+    root.querySelector(`${sel} svg.rb-icon`)?.getAttribute("data-icon") ?? null;
+  const ALL: RuntimeCapabilities = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
+
+  it("S4 : item.icon inconnu ou hérité → icône de la table ; item.icon connu → prioritaire", () => {
+    const { container } = setup(mkBar([{ ...tool("pen"), icon: "inconnue" }, { ...tool("eraser"), icon: "rect" }, { ...tool("hand"), icon: "__proto__" }]));
+    expect(iconOf(container, '[data-item="pen"]')).toBe("pen");
+    expect(iconOf(container, '[data-item="eraser"]')).toBe("rect");
+    expect(iconOf(container, '[data-item="hand"]')).toBe("hand");
+    cleanup();
+    const stylo = setup(mkBar([{ ...tool("pen"), icon: "rect" }]));
+    expect(iconOf(stylo.container, '[data-item="pen"]')).toBe("rect");
+  });
+  it("S4 : jamais un bouton vide — chaque bouton des profils livrés a icône, nom accessible et libellé en texte", () => {
+    let n = 0;
+    for (const p of BUILTIN_PROFILES) {
+      for (const bar of p.toolbars) {
+        const { container, unmount } = setup(bar, ALL);
+        for (const b of container.querySelectorAll<HTMLButtonElement>("button[data-item]")) {
+          const id = b.getAttribute("data-item") ?? "?";
+          expect(b.querySelector("svg.rb-icon"), id).not.toBeNull();
+          expect(b.getAttribute("aria-label"), id).toBeTruthy();
+          expect(b.textContent, id).toBe(b.getAttribute("aria-label"));
+          expect(b.hasAttribute("title"), id).toBe(false);
+          n++;
+        }
+        unmount();
+      }
+    }
+    expect(n).toBeGreaterThan(20);
+  });
+  it("S3 : « Annuler » a le nom accessible « Annuler », svg caché aux lecteurs d'écran", () => {
+    const { container } = setup();
+    const undo = container.querySelector('button[data-item="undo"]')!;
+    expect(undo.getAttribute("aria-label")).toBe("Annuler");
+    expect(undo.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
+    expect(iconOf(container, '[data-item="undo"]')).toBe("undo");
+  });
+  it("S3 : bascule Souris / Dessin en annotation : l'icône suit le libellé", () => {
+    const { container, setV } = setup(mkBar([tool("pen")]), { ...NO_CAPS, desktopAnnotation: true }, "m", undefined, "desktop-annotation");
+    const sel = '[data-item="annotation-pointer-ajout"]';
+    setV({ ...VIEW, annotation: { active: true, pointer: "draw", screens: 1 } });
+    expect(container.querySelector(sel)!.textContent).toBe("Souris");
+    expect(iconOf(container, sel)).toBe("pointer");
+    setV({ ...VIEW, annotation: { active: true, pointer: "mouse", screens: 1 } });
+    expect(container.querySelector(sel)!.textContent).toBe("Dessin");
+    expect(iconOf(container, sel)).toBe("pen-line");
+  });
+  it("rangée du tableau : 9 actions en icônes ; pastilles sans title, pastille + rb-sr", () => {
+    const { container, setV } = setup();
+    setV({ ...VIEW, tool: "table", tableCell: { id: "t", row: 0, col: 0, rows: 3, cols: 4 } });
+    expect([...container.querySelectorAll("[data-table-action] svg.rb-icon")].map((s) => s.getAttribute("data-icon"))).toEqual([
+      "between-horizontal-start", "between-vertical-start", "row-remove", "col-remove", "columns-3", "table-cells-merge", "table-cells-split", "droplet", "droplet-off",
+    ]);
+    for (const f of container.querySelectorAll("button[data-table-fill]")) {
+      expect(f.hasAttribute("title")).toBe(false);
+      expect(f.querySelector(".rb-swatch.rb-swatch-square")).not.toBeNull();
+      expect(f.querySelector(".rb-sr")?.textContent).toBe(f.getAttribute("aria-label"));
+    }
+  });
+  it("préréglages et « Aucune » : pastille seule, libellé en rb-sr, aucun title", () => {
+    const { container, setV } = setup(outils, NO_CAPS, "m", PEN);
+    const rouge = container.querySelector('button[data-preset="rouge"]')!;
+    expect([rouge.hasAttribute("title"), rouge.getAttribute("aria-label"), rouge.querySelector(".rb-sr")?.textContent]).toEqual([false, "Rouge", "Rouge"]);
+    expect(rouge.classList.contains("rb-preset")).toBe(true);
+    setV({ ...VIEW, tool: "fill" });
+    const none = container.querySelector("button[data-fill-none]")!;
+    expect([none.hasAttribute("title"), none.getAttribute("aria-label")]).toEqual([false, "Aucune"]);
+  });
+});

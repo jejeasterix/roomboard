@@ -1,18 +1,46 @@
 :root {
-  --rb-btn-s: 36px;
-  --rb-btn-m: 44px;
+  /* Jetons de la charte RoomFlow (design-l1, L1-6), recopiés de docs/design/maquettes/01-tableau.html:12-33 ; source de
+     chaque valeur dans docs/design/charte.md. rf2 = roomflow2@ddaba7ca RoomFlow2.App/Themes ; web = roomflow2-web@07cc047c src/index.css */
+  --rf-violet-600: #6044EB; /* rf2 Tokens.Base.xaml:12 RF.Base.Violet600Color = RF.Accent.Brush */
+  --rf-violet-700: #4F35C4; /* rf2 Tokens.Base.xaml:13 = RF.Accent.HoverBrush */
+  --rf-violet-400: #8B6FEF; /* rf2 Tokens.Base.xaml:14 = RF.Nav.AccentBrush (accent sur fond sombre) */
+  --rf-violet-100: #EDE8FD; /* rf2 Tokens.Base.xaml:15 = RF.Accent.SubtleBrush */
+  --rf-navy-900: #0D1B2A;   /* rf2 Tokens.Base.xaml:18 */
+  --rf-navy-700: #1E3355;   /* rf2 Tokens.Base.xaml:20 */
+  --rf-navy-500: #182946;   /* rf2 Tokens.Base.xaml:22 = RF.Text.HeadingBrush, RF.Studio.TextBrush */
+  --rf-gray-50: #F5F5F8;    /* rf2 Tokens.Base.xaml:26 = RF.App.BackgroundBrush, RF.Studio.CanvasBrush */
+  --rf-gray-100: #FAFAFE;   /* rf2 Tokens.Base.xaml:27 */
+  --rf-gray-300: #E0E0E8;   /* rf2 Tokens.Base.xaml:28 = RF.Border.Brush */
+  --rf-gray-500: #888888;   /* rf2 Tokens.Base.xaml:29 = RF.Text.SecondaryBrush (icône désactivée seulement) */
+  --rf-gray-800: #333333;   /* rf2 Tokens.Base.xaml:30 = RF.Text.PrimaryBrush */
+  --rf-text-muted-aa: #6B7280; /* web index.css:34 --color-text-muted-aa (texte secondaire lisible) */
+  --rf-white: #FFFFFF;      /* rf2 Tokens.Base.xaml:31 */
+  --rf-danger: #E74C3C;     /* rf2 Tokens.Base.xaml:44 = RF.Status.DangerBrush */
+  --rf-success: #27AE60;    /* rf2 Tokens.Base.xaml:36 = RF.Status.SuccessBrush */
+  --rf-shadow-card: 0 2px 8px rgba(24, 41, 70, 0.08);   /* web index.css:63 = RF.Shadow.Card */
+  --rf-shadow-hover: 0 6px 16px rgba(24, 41, 70, 0.12); /* web index.css:64 = RF.Shadow.Hover */
+  --rf-shadow-modal: 0 13px 27px rgba(24, 41, 70, 0.15); /* web index.css:65 = RF.Shadow.Modal */
+  --rf-radius-sm: 4px; --rf-radius-md: 6px; --rf-radius-lg: 8px; --rf-radius-xl: 12px; /* rf2 Tokens.Semantic.xaml:99-102 */
+  --rf-space-xs: 4px; --rf-space-sm: 8px; --rf-space-md: 16px; --rf-space-lg: 24px; --rf-space-xl: 32px; /* rf2 Tokens.Semantic.xaml:91-95 */
+  --rf-font: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; /* rf2 Tokens.Semantic.xaml:77 ; déclaré, non appliqué : Inter n'est pas embarquée (Q6, H6) */
+  /* RoomBoard : tailles de bouton S / M / L et icône (design-cadrage D-DS3, D-DS4 ; noms des jetons de profil inchangés). */
+  --rb-btn-s: 44px;
+  --rb-btn-m: 48px;
   --rb-btn-l: 64px;
+  --rb-icon: 24px;
+  /* Cases du sélecteur de tableau : seules hors de la règle S/M/L (H8). */
+  --rb-cell: 36px;
   --rb-tab-h: 36px;
   --rb-gap: 8px;
   --rb-pad: 12px;
 }
-.rb-bar { display: flex; align-items: center; gap: 4px; padding: 4px; --rb-btn: var(--rb-btn-m); }
+.rb-bar { display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--rf-white); --rb-btn: var(--rb-btn-m); }
 .rb-bar[data-size="s"] { --rb-btn: var(--rb-btn-s); }
 .rb-bar[data-size="m"] { --rb-btn: var(--rb-btn-m); }
 .rb-bar[data-size="l"] { --rb-btn: var(--rb-btn-l); }
 .rb-bar[data-dock="top"], .rb-bar[data-dock="bottom"] { flex-direction: row; flex-wrap: wrap; }
 .rb-bar[data-dock="left"], .rb-bar[data-dock="right"] { flex-direction: column; flex-wrap: wrap; }
-.rb-bar button { min-width: var(--rb-btn); min-height: var(--rb-btn); padding: 0 var(--rb-pad); }
+.rb-bar button { min-width: var(--rb-btn); min-height: var(--rb-btn); padding: 0 var(--rb-pad); border: none; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); }
 /* Barres horizontales resserrées (C4, T18) : avec « Bibliothèque » dans la rangée « vue », l'outil Tableau actif ouvrait une
    4e rangée (scène 610 px en 1280 × 900) ; 8 px de chaque côté la ramène à 3 (658 px). Hauteur et largeur minimales
    inchangées ; `:where` garde la spécificité de la règle ci-dessus, les boutons contextuels resserrés plus bas l'emportent. */
@@ -20,9 +48,22 @@
 /* Barre des pages (C13, D17) : « Copie .iwb… » et « Copie .ubz… » (libellé complet en title et aria-label) gardent la barre
    sur une rangée en 1280 × 900 sans écraser la liste des numéros (largeur minimale de 3 boutons). */
 .rb-bar[data-dock="bottom"] button:is([data-item="export-iwb"], [data-item="export-ubz"]) { font-size: 12px; padding: 0 4px; }
-.rb-bar button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
-.rb-sep { align-self: stretch; border-inline-start: 1px solid #94a3b8; margin: 0 4px; }
-.rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed #94a3b8; min-height: var(--rb-btn); }
+.rb-bar button[aria-pressed="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
+.rb-bar button:not(:disabled, [aria-pressed="true"], [aria-current="page"]):hover { background: var(--rf-gray-50); }
+.rb-bar button:disabled { color: var(--rf-text-muted-aa); }
+.rb-bar button.rb-ib:disabled { color: var(--rf-gray-500); }
+.rb-bar button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
+/* Bouton à icône ou pastille (design-l1, L1-4 à L1-6) : carré de --rb-btn, icône centrée ; l'emporte (0,2,1) sur les
+   boutons resserrés des rangées contextuelles (0,2,0) et des barres horizontales (0,1,1). */
+.rb-bar button.rb-ib { display: inline-grid; place-items: center; inline-size: var(--rb-btn); block-size: var(--rb-btn); padding: 0; flex: none; }
+.rb-bar button.rb-ib .rb-swatch { inline-size: var(--rb-icon); block-size: var(--rb-icon); }
+.rb-icon { display: block; flex: none; inline-size: var(--rb-icon); block-size: var(--rb-icon); }
+/* Libellé lu par les lecteurs d'écran et par textContent, masqué à l'œil ; règle de premier niveau (App.test.tsx:389). */
+.rb-sr { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Infobulle (L1-4) : rendue dans body, jamais dans la barre ; left/top en px entiers posés par IconButton, aucun transform. */
+.rb-tip { position: fixed; z-index: 10; pointer-events: none; padding: 6px 10px; background: var(--rf-navy-500); color: var(--rf-white); font-size: 14px; font-weight: 500; line-height: 20px; border-radius: var(--rf-radius-md); white-space: nowrap; box-shadow: var(--rf-shadow-card); }
+.rb-sep { align-self: center; block-size: var(--rb-icon); border-inline-start: 1px solid var(--rf-gray-300); margin: 0 4px; }
+.rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed var(--rf-gray-300); min-height: var(--rb-btn); }
 /* Mise en page (T95, CL5b-10) : la grille vient de `layoutFor` ; chaque barre ancrée a sa case, la scène la sienne. Seuls
    une barre `floating` et les menus passagers (réglages, profils) se superposent à la scène, dans sa case. */
 .rb-layout { display: grid; height: 100vh; overflow: hidden; }
@@ -42,7 +83,7 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 #pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
 #echelons-notes { margin-left: 8px; color: #b45309; }
 .rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
-.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: 100%; max-height: 100%; overflow: auto; background: #ffffff; border: 1px solid #a1a1aa; }
+.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: 100%; max-height: 100%; overflow: auto; background: #ffffff; border: 1px solid var(--rf-gray-300); }
 /* Panneau de l'image (C5, I26) : calé à droite, l'image déposée au centre ou à gauche reste visible. */
 .rb-popover[data-panel="image"] { justify-self: end; }
 /* Panneau de la bibliothèque (C4, D15) : recouvre la scène, calé à droite comme celui de l'image ; aucune colonne de la grille. */
@@ -68,7 +109,7 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 .rb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
 .rb-stage[hidden] { display: none; }
 /* Barre des pages (T101) : même allure que la barre d'outils ; compteur lisible, chiffres de largeur fixe. */
-.rb-bar button[aria-current="page"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+.rb-bar button[aria-current="page"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
 .rb-pages-count { margin-inline: var(--rb-gap); padding: 0 var(--rb-pad); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
 .rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
@@ -76,7 +117,7 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 /* Onglets (T101) : une seule rangée, sans retour à la ligne ; défile à l'horizontale si elle déborde. */
 .rb-tabs { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 4px; padding: 4px 4px 0; overflow-x: auto; background: #e4e4e7; border-bottom: 1px solid #a1a1aa; }
 .rb-tab { display: inline-flex; align-items: center; gap: var(--rb-gap); flex: 0 1 auto; min-height: var(--rb-tab-h); padding: 0 var(--rb-gap); white-space: nowrap; cursor: pointer; background: #f4f4f5; border: 1px solid #a1a1aa; border-bottom: none; border-radius: 6px 6px 0 0; }
-.rb-tab[aria-selected="true"] { background: #ffffff; border-color: #1e3a8a; font-weight: 600; }
+.rb-tab[aria-selected="true"] { background: #ffffff; border-color: var(--rf-violet-600); font-weight: 600; }
 .rb-tab-dirty { color: #b45309; }
 .rb-tab-close, .rb-tab-new { min-height: var(--rb-tab-h); min-width: var(--rb-tab-h); padding: 0; }
 .rb-tab-close { min-height: 0; border: none; background: transparent; cursor: pointer; }
@@ -93,11 +134,11 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 .rb-fill-tolerance [data-fill-tolerance-value] { min-inline-size: 2ch; text-align: end; font-variant-numeric: tabular-nums; }
 @media (max-width: 1100px) { .rb-fill-tolerance-label { display: none; } }
 .rb-swatch-square { border-radius: 2px; }
-.rb-table-picker { position: absolute; z-index: 4; display: grid; gap: var(--rb-gap); padding: var(--rb-pad); background: #ffffff; border: 1px solid #a1a1aa; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+.rb-table-picker { position: absolute; z-index: 4; display: grid; gap: var(--rb-gap); padding: var(--rb-pad); background: #ffffff; border: 1px solid var(--rf-gray-300); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 .rb-table-picker[hidden] { display: none; }
-.rb-table-picker-grid { display: grid; grid-template-columns: repeat(8, var(--rb-btn-s)); gap: 2px; }
-.rb-table-picker-grid button { inline-size: var(--rb-btn-s); block-size: var(--rb-btn-s); padding: 0; border: 1px solid #a1a1aa; background: #ffffff; }
-.rb-table-picker-grid button[data-on] { background: #bfdbfe; border-color: #1e3a8a; }
+.rb-table-picker-grid { display: grid; grid-template-columns: repeat(8, var(--rb-cell)); gap: 2px; }
+.rb-table-picker-grid button { inline-size: var(--rb-cell); block-size: var(--rb-cell); padding: 0; border: 1px solid var(--rf-gray-300); background: #ffffff; }
+.rb-table-picker-grid button[data-on] { background: var(--rf-violet-100); border-color: var(--rf-violet-600); }
 .rb-table-picker [data-picker-label] { font-variant-numeric: tabular-nums; }
 .rb-table-picker form { display: flex; align-items: center; gap: var(--rb-gap); }
 .rb-table-picker input { inline-size: 4em; min-block-size: var(--rb-btn-m); }
@@ -106,7 +147,7 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 /* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
 [data-profiles] { display: grid; gap: 4px; padding: 4px; }
 [data-profiles] button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); text-align: start; }
-.rb-menu-sep { border-block-start: 1px solid #a1a1aa; margin: 4px 0; }
+.rb-menu-sep { border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 .rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
 .rb-editor section { display: grid; gap: var(--rb-gap); }
 .rb-editor h3 { margin: 0; font-size: 1rem; }
@@ -120,7 +161,7 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 /* Barre verticale (left/right) : prend la hauteur de sa case et passe en plusieurs colonnes quand elle en manque ;
    chaque colonne a la largeur de son bouton le plus large (align-items: stretch). */
 .rb-slot > .rb-bar[data-dock="left"], .rb-slot > .rb-bar[data-dock="right"] { height: 100%; box-sizing: border-box; align-items: stretch; align-content: flex-start; }
-.rb-bar[data-dock="left"] .rb-sep, .rb-bar[data-dock="right"] .rb-sep { align-self: auto; border-inline-start: 0; border-block-start: 1px solid #94a3b8; margin: 4px 0; }
+.rb-bar[data-dock="left"] .rb-sep, .rb-bar[data-dock="right"] .rb-sep { align-self: auto; block-size: auto; border-inline-start: 0; border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 /* Rangée Format (C7b, R13) : G, I, S lisibles d'un coup d'œil ; mêmes cibles que la barre (--rb-btn), aucun saut de
    hauteur à l'ouverture ni à la validation (boutons toujours présents, seulement grisés). */
 .rb-format { font-variant-numeric: tabular-nums; }
@@ -133,10 +174,10 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 .rb-bar [data-table-fill], .rb-bar .rb-format.rb-preset { gap: calc(var(--rb-gap) / 2); }
 
 /* Barre flottante du média (C14, M22) : posée en bas de la scène (case « stage »), jamais une rangée ; la scène garde ses 640 px. */
-.rb-media-bar { align-self: end; justify-self: center; margin-block-end: var(--rb-gap); z-index: 3; max-width: 100%; background: #ffffff; border: 1px solid #a1a1aa; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+.rb-media-bar { align-self: end; justify-self: center; margin-block-end: var(--rb-gap); z-index: 3; max-width: 100%; background: #ffffff; border: 1px solid var(--rf-gray-300); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 .rb-media-bar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); padding: var(--rb-pad); }
 .rb-media-bar-inner button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); }
-.rb-media-bar-inner button[aria-pressed="true"] { background: #1e3a8a; border-color: #1e3a8a; color: #ffffff; }
+.rb-media-bar-inner button[aria-pressed="true"] { background: var(--rf-violet-100); border-color: var(--rf-violet-600); color: var(--rf-violet-700); }
 .rb-media-bar-inner input[type="range"] { min-height: var(--rb-btn-m); }
 .rb-media-bar-inner [data-media="position"] { flex: 1 1 12em; --rb-trim-start: 0%; --rb-trim-end: 100%; background: linear-gradient(to right, #e4e4e7 var(--rb-trim-start), #93c5fd var(--rb-trim-start), #93c5fd var(--rb-trim-end), #e4e4e7 var(--rb-trim-end)); }
 .rb-media-bar-inner [data-media="time"] { font-variant-numeric: tabular-nums; white-space: nowrap; }

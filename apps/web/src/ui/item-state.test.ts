@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TableCellState } from "../engine/table-geom";
 import { ACTION_TABLE, type ToolItem } from "../toolbar";
+import { ICONS } from "./icons";
 import { ACTION_STATE, itemState, type ToolbarView } from "./item-state";
 
 const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({
@@ -162,5 +163,26 @@ describe("annotation (C11b, P6, P16, P18, P29)", () => {
   });
   it("les trois ne sont pas grisées par la règle d'annotation (actions de la fenêtre principale, P20)", () => {
     for (const a of ["annotation-freeze", "annotation-send", "annotation-send-new"]) expect(itemState(act(a), on()).disabled).toBe(false);
+  });
+});
+
+describe("icône d'état (design-l1, L1-3)", () => {
+  const ann = (over: Partial<NonNullable<ToolbarView["annotation"]>> = {}): ToolbarView =>
+    view({ annotation: { active: true, pointer: "draw", screens: 1, ...over } });
+  it("annotation-pointer : « Souris » → pointer, « Dessin » → pen-line", () => {
+    expect(itemState(action("annotation-pointer"), ann())).toMatchObject({ label: "Souris", icon: "pointer" });
+    expect(itemState(action("annotation-pointer"), ann({ pointer: "mouse" }))).toMatchObject({ label: "Dessin", icon: "pen-line" });
+  });
+  it("annotation-freeze : « Recapturer le bureau » → reset ; figer et bureau vivant : aucune icône d'état", () => {
+    expect(itemState(action("annotation-freeze"), ann({ live: false }))).toMatchObject({ label: "Recapturer le bureau", icon: "reset" });
+    expect(itemState(action("annotation-freeze"), ann()).icon).toBeUndefined();
+    expect(itemState(action("annotation-freeze"), ann({ frozen: true })).icon).toBeUndefined();
+  });
+  it("eraser-mode : aucune icône d'état dans les deux modes (H13)", () => {
+    expect(itemState(action("eraser-mode"), view()).icon).toBeUndefined();
+    expect(itemState(action("eraser-mode"), view({ eraserMode: "object" })).icon).toBeUndefined();
+  });
+  it("chaque icône d'état est une clé d'ICONS", () => {
+    for (const icon of ["pointer", "pen-line", "reset"]) expect(Object.hasOwn(ICONS, icon), icon).toBe(true);
   });
 });

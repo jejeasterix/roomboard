@@ -21,6 +21,8 @@ import {
 import { DEFAULT_FILL_TOLERANCE } from "../engine/engine";
 import { FormatRow } from "./FormatRow";
 import { SelectionRow } from "./SelectionRow";
+import { IconButton } from "./IconButton";
+import { iconFor } from "./icons";
 import { itemState, type ToolbarView } from "./item-state";
 
 /** Libellé du curseur du pot (C6b, B10). */
@@ -46,15 +48,14 @@ interface Ctx { readonly view: Accessor<ToolbarView>; readonly host: ToolbarHost
 function Button(props: { item: ToolItem; ctx: Ctx; onPress: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.ctx.view()));
   return (
-    <button
-      type="button"
-      data-item={props.item.id}
-      aria-pressed={st().pressed ?? undefined}
+    <IconButton
+      icon={iconFor(props.item, st().icon)}
+      label={st().label}
+      pressed={st().pressed}
       disabled={st().disabled}
-      onClick={() => props.onPress()}
-    >
-      {st().label}
-    </button>
+      attrs={{ "data-item": props.item.id }}
+      onPress={() => props.onPress()}
+    />
   );
 }
 
@@ -110,17 +111,15 @@ function PresetRow(props: { presets: Accessor<PresetTable>; view: Accessor<Toolb
       <span class="rb-sep" role="separator" data-presets-sep />
       <For each={list()}>
         {(p) => (
-          <button type="button" class="rb-preset" data-preset={p.id} title={p.label} onClick={() => press(p.id)}>
+          <IconButton icon={null} label={p.label} attrs={{ class: "rb-preset", "data-preset": p.id }} onPress={() => press(p.id)}>
             <span class="rb-swatch" aria-hidden="true" style={{ "background-color": p.color ?? "transparent" }} />
-            {p.label}
-          </button>
+          </IconButton>
         )}
       </For>
       <Show when={isFill()}>
-        <button type="button" class="rb-preset" data-fill-none title={FILL_NONE_LABEL} onClick={() => props.host.fillColor(null)}>
+        <IconButton icon={null} label={FILL_NONE_LABEL} attrs={{ class: "rb-preset", "data-fill-none": "" }} onPress={() => props.host.fillColor(null)}>
           <span class="rb-swatch" aria-hidden="true" style={{ "background-color": "transparent" }} />
-          {FILL_NONE_LABEL}
-        </button>
+        </IconButton>
         <label class="rb-fill-tolerance" title={`${FILL_TOLERANCE_LABEL} ${tolerance()}`}>
           <span class="rb-fill-tolerance-label">{FILL_TOLERANCE_LABEL}</span>
           <input
@@ -150,27 +149,30 @@ function TableActionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost 
       <span class="rb-sep" role="separator" data-table-sep />
       <For each={TABLE_ACTIONS}>
         {(id) => {
-          const st = createMemo(() => itemState(tableItem(id), props.view()));
+          const item = tableItem(id);
+          const st = createMemo(() => itemState(item, props.view()));
           return (
-            <button type="button" data-table-action={id} disabled={st().disabled} onClick={() => props.host.runAction(id)}>
-              {st().label}
-            </button>
+            <IconButton
+              icon={iconFor(item, st().icon)}
+              label={st().label}
+              disabled={st().disabled}
+              attrs={{ "data-table-action": id }}
+              onPress={() => props.host.runAction(id)}
+            />
           );
         }}
       </For>
       <For each={TABLE_FILLS}>
         {(f) => (
-          <button
-            type="button"
-            class="rb-preset"
-            data-table-fill={f.id}
-            title={f.label}
+          <IconButton
+            icon={null}
+            label={f.label}
             disabled={!props.view().tableCell}
-            onClick={() => props.host.tableFill(f.color)}
+            attrs={{ class: "rb-preset", "data-table-fill": f.id }}
+            onPress={() => props.host.tableFill(f.color)}
           >
             <span class="rb-swatch rb-swatch-square" aria-hidden="true" style={{ "background-color": f.color ?? "transparent" }} />
-            {f.label}
-          </button>
+          </IconButton>
         )}
       </For>
     </Show>
