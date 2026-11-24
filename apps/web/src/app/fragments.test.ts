@@ -15,7 +15,9 @@ import {
   NO_GRID_MESSAGE,
   SELECTION_NAME,
   TAB_GONE_MESSAGE,
+  tabSessionView,
   UNREAD_ITEMS_MESSAGE,
+  type FragmentTab,
 } from "./fragments";
 import type { TabSession } from "./workspace";
 
@@ -59,7 +61,7 @@ function opsOf(codec: ContainerCodec = memoryCodec(), alive = (_t: TabSession) =
   const said: string[] = [];
   const say = async (m: string) => void said.push(m);
   const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID) });
-  return { ops: createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive }), said };
+  return { ops: createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive, view: tabSessionView }), said };
 }
 
 const rectIn = (d: CoreDocument, x0: number, y0: number, x1: number, y1: number): string =>
@@ -205,7 +207,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
       encode: async () => { throw new CodecUnavailableError(new Error("module absent")); },
       read: async () => null,
     };
-    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async (m) => void said.push(m), alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async (m) => void said.push(m), alive: () => true, view: tabSessionView });
     const src = tabOf();
     src.select([rectIn(src.doc, 0, 0, 10, 10)]);
     await expect(ops.encodeSelection(src.tab)).rejects.toBeInstanceOf(CodecUnavailableError);
@@ -251,7 +253,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
     const codec = memoryCodec();
     const say = async () => undefined;
     const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID) });
-    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true, view: tabSessionView });
     const src = tabOf();
     src.doc.apply({ type: "AddImage", page: src.doc.pageIds()[0]!, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] });
     src.assets.adopt(ID, new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }));
@@ -268,7 +270,7 @@ describe("opérations sur la sélection (DAZ3)", () => {
     const doc = fakeCore.blank();
     (doc as unknown as { citedAssets: () => { id: string; mime: string }[] }).citedAssets = () => [{ id: ID, mime: "image/png" }];
     const io: ContainerIO = { encode: async () => new Uint8Array(), read: async () => ({ doc, assets: readAssets, unread: false, kind: "fragment" }) };
-    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async () => undefined, alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say: async () => undefined, alive: () => true, view: tabSessionView });
     const dst = tabOf();
     expect(await ops.insert(dst.tab, new Uint8Array([1]), "x.rbitem", null)).toBe(false);
     expect(dst.assets.has(ID)).toBe(false);
@@ -322,7 +324,7 @@ describe("opérations sur la sélection : médias liés (C14)", () => {
     const say = async (m: string) => void said.push(m);
     const relink = vi.fn(async () => "/cours/videos/clip.webm");
     const io = createContainerIO({ core: fakeCore, codec, say, makeAssets: () => createAssetStore(async () => ID), relink });
-    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true });
+    const ops = createFragmentOps({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true, view: tabSessionView });
     const s = fakeCore.blank();
     rectIn(s, 0, 0, 100, 100);
     s.apply({
@@ -442,5 +444,61 @@ describe("C4 : insertResource et encodeGrid", () => {
     const { ops, said } = opsOf();
     expect(await ops.encodeGrid(tabOf().tab)).toBeNull();
     expect(said).toEqual([NO_GRID_MESSAGE]);
+  });
+});
+
+describe("port FragmentTab générique (cli-lot2, D17, D19)", () => {
+  it("vue générique : un onglet sans BoardSession encode et insère par sa vue seule", async () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0]!;
+    const assets = createAssetStore(async () => ID);
+    const view: FragmentTab = {
+      assets,
+      doc,
+      state: () => ({ page, selection: [] }),
+      anchor: () => [1000, 500],
+      run: (cmd) => doc.apply(cmd),
+      insertFragment: (src, dx, dy) => doc.insertFragment(src, page, dx, dy),
+      insertPages: (src) => doc.insertPages(src, page),
+    };
+    const said: string[] = [];
+    const say = async (m: string) => void said.push(m);
+    const io = createContainerIO({ core: fakeCore, codec: memoryCodec(), say, makeAssets: () => createAssetStore(async () => ID) });
+    const ops = createFragmentOps<{ readonly name: string }>({ io, core: fakeCore, now: () => NOW, appVersion: "0.1.0", say, alive: () => true, view: () => view });
+    const tab = { name: "sans écran" };
+    const id = rectIn(doc, 0, 0, 100, 100);
+    const out = (await ops.encodeIds(tab, page, [id], "carré", "export"))!;
+    expect(out.elements).toBe(1);
+    expect(await ops.insertResource(tab, out.bytes, "carré.rbitem", null)).toBe("inserted");
+    const ids = doc.elementIds(page);
+    expect(ids).toHaveLength(2);
+    expect(centre(doc, [ids[1]!])).toEqual([1000, 500]);
+    expect(said).toEqual([]);
+  });
+  it("encodeIds : nombre d'éléments de la première page du fragment ; ids vides → null", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    const a = rectIn(src.doc, 0, 0, 10, 10);
+    const b = rectIn(src.doc, 20, 0, 30, 10);
+    const page = src.doc.pageIds()[0]!;
+    expect((await ops.encodeIds(src.tab, page, [a, b]))?.elements).toBe(2);
+    expect(await ops.encodeIds(src.tab, page, [])).toBeNull();
+  });
+  it("encodeIds à l'export : image absente → null et MISSING_EXPORT_MESSAGE", async () => {
+    const { ops, said } = opsOf();
+    const src = tabOf();
+    const page = src.doc.pageIds()[0]!;
+    const i = src.doc.apply({ type: "AddImage", page, asset: { id: ID, name: "a.png", mime: "image/png", size: 3 }, w: 10, h: 10, matrix: [1, 0, 0, 1, 0, 0] }).ids[0]!;
+    expect(await ops.encodeIds(src.tab, page, [i], "x", "export")).toBeNull();
+    expect(said).toEqual([MISSING_EXPORT_MESSAGE]);
+  });
+  it("encodeSelection = octets d'encodeIds sur la sélection (même nombre d'éléments relus)", async () => {
+    const { ops } = opsOf();
+    const src = tabOf();
+    src.select([rectIn(src.doc, 0, 0, 10, 10)]);
+    const bytes = (await ops.encodeSelection(src.tab))!;
+    const dst = tabOf();
+    expect(await ops.insert(dst.tab, bytes, "x", null)).toBe(true);
+    expect(dst.doc.elementIds(dst.doc.pageIds()[0]!)).toHaveLength(1);
   });
 });
