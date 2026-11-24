@@ -10,7 +10,6 @@
  * un classeur n'a pas de chemin : tableau en valeurs.
  */
 import { basename } from "node:path";
-import { MAX_TABS } from "../../web/src/app/tabs";
 import type { DroppedFile, Point } from "../../web/src/platform/files";
 import type { TableGrid } from "../../web/src/platform/html-table";
 import { probeSize, type ImageDecoder } from "../../web/src/platform/image-import";
@@ -123,7 +122,7 @@ export async function importInto(session: Session, req: ImportRequest): Promise<
     notify: async (m) => {
       notices.push(m);
     },
-    full: () => session.tabs.list().length >= MAX_TABS,
+    full: () => session.tabs.full(),
     target: () => headlessTarget(tab, page, notices, session.deps.fragments),
     decode: nodeDecode,
     readSheet: async (blob) => readSheet(await formats(), blob),

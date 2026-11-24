@@ -3,15 +3,15 @@
  * image absente : avis du produit `MISSING_EXPORT_MESSAGE`, code 1 ; page sans grille : `NO_GRID_MESSAGE`, code 1 (H21).
  * cli-lot3 (D39, D41) : `.pdf` par `writePdfFile` du produit, superposition `nodeOverlay` ; replis absents : code 1, rien
  * d'écrit.
+ * cli-partage (D6, D7, D8) : garde, écriture d'un tableau (sans copie) et message d'échec du PDF par `open-export.ts` ;
+ * un échec d'écriture d'un tableau reste sans préfixe.
  */
 import { basename } from "node:path";
-import { writeBoardFile } from "../../web/src/app/board-convert";
 import type { BoardFormat } from "../../web/src/app/board-io";
-import { missingOf } from "../../web/src/app/container-io";
 import { MISSING_EXPORT_MESSAGE, NO_GRID_MESSAGE } from "../../web/src/app/fragments";
+import { exportBlocked, exportBoardDocument, exportFailedMessage } from "../../web/src/app/open-export";
 import { writePdfFile, type PdfWritten } from "../../web/src/app/pdf-convert";
 import { PDF_RASTER_MISSING_MESSAGE } from "../../web/src/app/pdf-export";
-import { messageOf, UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { isSheetName } from "../../web/src/platform/import";
 import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
 import { asCliError, CliError } from "./contract";
@@ -51,13 +51,14 @@ export async function checkNotSource(source: string, to: string): Promise<void> 
 export async function exportBoardFile(session: Session, to: string): Promise<{ file: string; kind: BoardFormat }> {
   checkExportTarget(to);
   const tab = session.active();
-  if (missingOf(tab.doc, tab.assets).length > 0) throw new CliError("command", UNREAD_ASSETS_MESSAGE);
+  const blocked = exportBlocked(tab.doc, tab.assets);
+  if (blocked !== null) throw new CliError("command", blocked);
   const format = extOf(to).slice(1) as BoardFormat;
   let r: { bytes: Uint8Array; warnings: string[] };
   try {
-    r = await writeBoardFile(tab.doc, tab.assets, format, session.deps.board);
+    r = await exportBoardDocument(tab.doc, tab.assets, format, { ports: session.deps.board }); // sans copie (D7)
   } catch (e) {
-    throw asCliError(e, "command");
+    throw asCliError(e, "command"); // sans préfixe (D8)
   }
   await session.write(to, r.bytes);
   session.deps.notices.push(...r.warnings); // D24 : avertissements d'écriture dans notices
@@ -71,7 +72,8 @@ export async function exportBoardFile(session: Session, to: string): Promise<{ f
 export async function exportPdfFile(session: Session, to: string): Promise<{ file: string; kind: "pdf"; pages: number; annotated: boolean }> {
   checkExportTarget(to);
   const tab = session.active();
-  if (missingOf(tab.doc, tab.assets).length > 0) throw new CliError("command", UNREAD_ASSETS_MESSAGE);
+  const blocked = exportBlocked(tab.doc, tab.assets);
+  if (blocked !== null) throw new CliError("command", blocked);
   const { deps } = session;
   let r: PdfWritten | null;
   try {
@@ -83,9 +85,9 @@ export async function exportPdfFile(session: Session, to: string): Promise<{ fil
       alive: () => true,
     });
   } catch (e) {
-    throw new CliError("command", `Export impossible : ${messageOf(e)}`);
+    throw new CliError("command", exportFailedMessage(e));
   }
-  if (r === null) throw new CliError("command", "Export impossible : export interrompu");
+  if (r === null) throw new CliError("command", exportFailedMessage("export interrompu"));
   if (r.rasterMissing) throw new CliError("command", `${PDF_RASTER_MISSING_MESSAGE}${NO_RASTER_SUFFIX}`);
   await session.write(to, r.bytes);
   deps.notices.push(...r.notices); // `cut` (H12, H27) : avis, code 0
