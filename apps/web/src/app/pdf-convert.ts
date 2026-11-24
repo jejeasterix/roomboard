@@ -9,6 +9,7 @@ import type { AssetStore } from "../core/asset-store";
 import type { PdfEngine, PdfFile } from "../engine/render/pdf-port";
 import { APP_VERSION, messageOf } from "../platform/controller";
 import { PDF_EXTENSION, PDF_MIME, ROOMBOARD_EXTENSION } from "../platform/files";
+import { openFailedMessage } from "../platform/messages";
 import { officeMimeOf, officeStemOf } from "../platform/office-import";
 import { PDF_ENCRYPTED_MESSAGE, PdfEncryptedError } from "../platform/pdf-render";
 import { stem } from "./board-files";
@@ -40,7 +41,7 @@ export interface PdfRead {
   readonly warnings: string[];
 }
 
-const failed = (name: string, why: string): Error => new Error(`Ouverture impossible (${name}) : ${why}`);
+const failed = (name: string, why: string): Error => new Error(openFailedMessage(name, why));
 
 /**
  * Rejette avec le message complet du produit (chiffré, illisible, sans page), un seul préfixe : l'appelant le dit tel

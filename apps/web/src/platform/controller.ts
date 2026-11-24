@@ -6,6 +6,7 @@
  * fermeture n'est pas posée ici : une seule pour la fenêtre, tenue par l'espace de travail (CL5b-6).
  */
 import { UNTITLED, type DroppedFile, type FileHost, type OpenedFile, type SaveTarget, type ShellPort } from "./files";
+import { messageOf, openFailedMessage } from "./messages";
 
 export const APP_VERSION = "0.1.0";
 export const UNREAD_ASSETS_MESSAGE = "images non lues : enregistrer les perdrait";
@@ -84,9 +85,8 @@ export function titleOf(name: string, dirty: boolean): string {
   return `${dirty ? "• " : ""}${name} — RoomBoard`;
 }
 
-export function messageOf(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
+/** Texte d'une erreur : `messages.ts` (OF13, D9), réexporté ici pour ses importeurs. */
+export { messageOf };
 
 export function createFileController(d: FileControllerDeps): FileController {
   let savedVersion = d.dirty === true ? -1 : d.versions.state().version; // versions ≥ 0 : -1 n'est jamais égal
@@ -105,8 +105,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     }
     for (const cb of listeners) cb();
   };
-  const fail = async (prefix: string, e: unknown): Promise<false> => {
-    const text = `${prefix} : ${messageOf(e)}`;
+  const say = async (text: string): Promise<false> => {
     try {
       await d.shell.notify(text);
     } catch (boxError) {
@@ -115,6 +114,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     }
     return false;
   };
+  const fail = (prefix: string, e: unknown): Promise<false> => say(`${prefix} : ${messageOf(e)}`);
   async function save(as: boolean): Promise<boolean> {
     const blocked = d.saveBlocked?.() ?? null;
     if (blocked !== null) {
@@ -163,7 +163,7 @@ export function createFileController(d: FileControllerDeps): FileController {
     try {
       return await d.openInTab(file);
     } catch (e) {
-      return fail(`Ouverture impossible (${file.name})`, e);
+      return say(openFailedMessage(file.name, e));
     }
   }
 

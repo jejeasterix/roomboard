@@ -10,7 +10,7 @@
 import type { ContainerKind, CoreDocument, CoreFactory, LinkedAsset } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
-import { messageOf } from "../platform/controller";
+import { openFailedMessage } from "../platform/messages";
 import { baseName } from "../platform/host-tauri";
 
 /** Repli R7 : le module du conteneur ne s'est pas chargé, le document s'ouvre par le cœur seul. */
@@ -152,7 +152,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         contents = await codec.read(new Blob([bytes as BlobPart]) /* le Blob copie déjà les octets */);
       } catch (e) {
         if (!(e instanceof CodecUnavailableError)) {
-          await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+          await say(openFailedMessage(name, e));
           return null;
         }
         let k: ReadKind;
@@ -161,7 +161,7 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
           k = choose(wanted, () => core.containerKind(bytes));
           doc = loadWhole(k, bytes);
         } catch (e2) {
-          await say(`Ouverture impossible (${name}) : ${messageOf(e2)}`);
+          await say(openFailedMessage(name, e2));
           return null;
         }
         const linked = linkedIds(doc);
@@ -178,14 +178,14 @@ export function createContainerIO(deps: ContainerIODeps): ContainerIO {
         k = choose(wanted, () => core.manifestKind(contents.manifest));
         doc = loadParts(k, contents.manifest, contents.ybin);
       } catch (e) {
-        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+        await say(openFailedMessage(name, e));
         return null;
       }
       try {
         for (const [id, blob] of contents.assets) assets.adopt(id, typed(blob, doc.asset(id)?.mime));
       } catch (e) {
         doc.free();
-        await say(`Ouverture impossible (${name}) : ${messageOf(e)}`);
+        await say(openFailedMessage(name, e));
         return null;
       }
       if (contents.warnings.length > 0) await say(`${name} : ${contents.warnings.join(" ; ")}`);

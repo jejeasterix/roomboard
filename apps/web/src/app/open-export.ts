@@ -8,6 +8,7 @@
 import type { CoreDocument, CoreFactory } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import { APP_VERSION, messageOf, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
+import { openFailedMessage } from "../platform/messages";
 import { readBoardFile, writeBoardFile, type BoardFile, type BoardReadDeps } from "./board-convert";
 import type { BoardFormat, BoardPorts } from "./board-io";
 import { boardTabName, boardWarningsMessage } from "./board-files";
@@ -29,8 +30,8 @@ export interface BoardExportDeps {
   readonly copy?: { readonly core: CoreFactory; now(): string };
 }
 
-/** « Ouverture impossible (<nom>) : <message> » ; `name` est le nom affiché, jamais un chemin. */
-export const openFailedMessage = (name: string, e: unknown): string => `Ouverture impossible (${name}) : ${messageOf(e)}`;
+/** « Ouverture impossible (<nom>) : <message> » : `platform/messages.ts` (OF13, D9), réexporté ici (page, CLI). */
+export { openFailedMessage };
 /** « Export impossible : <message> ». */
 export const exportFailedMessage = (e: unknown): string => `Export impossible : ${messageOf(e)}`;
 

@@ -10,3 +10,9 @@ export function safeArchivePath(name: string): string | null {
   if (segs.some((s) => s === ".." || s === "__MACOSX")) return null;
   return p;
 }
+
+/** Fichier à écrire dans une archive (C4) : chemin et octets. `zip-read.ts` (et `rbpack.ts` par lui) le réexporte (OF13, D7). */
+export interface ZipFile {
+  readonly path: string;
+  readonly bytes: Uint8Array;
+}

@@ -4,7 +4,7 @@ import { ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { buildPack, readPack, type PackItem } from "./rbpack";
 import { keepBoardPath, keepPackPath, olfPart, unzipEntries, unzipModelEntries, zipJobReply, zipStored, type ZipJob } from "./zip-worker";
 import { decodeBoardList } from "../app/board-io";
-import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "./olf-read";
 import { BAMBOO_NOT_FLIPCHART } from "./bamboo";
 import { makeFlipchart } from "../../../../scripts/essais/fabriques/flipchart.mjs";
 

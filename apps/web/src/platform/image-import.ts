@@ -3,17 +3,17 @@
  * depuis cli-lot4, D63), décodage par le navigateur (R13), géométrie d'insertion (R4, R5) et l'entrée `image` du registre d'import (R1).
  * Partagé par le dépôt, le collage, « Importer » et le cache des bitmaps du rendu. Jamais de SVG dans le DOM.
  */
-import type { Change, Command, Matrix } from "../core/api";
-import type { AssetStore } from "../core/asset-store";
+import type { Matrix } from "../core/api";
 import { screenToWorld, type Camera } from "../engine/camera";
 import { PAGE_WIDTH } from "../engine/page";
-import type { Measure } from "../engine/text-layout";
 import { messageOf } from "./controller";
 import type { Point } from "./files";
-import type { ImportHandler } from "./import";
+import type { ImportHandler, StageRect } from "./import-handler";
 import { DISPLAY_MAX, decodeImage as decodeWith, ImageTooLargeError, MAX_PIXELS, TOO_MANY_PIXELS, type DecodePorts, type DecodedImage, type ImageKind } from "./image-decode";
 import { headerSize } from "./image-size";
 export { DISPLAY_MAX, ImageTooLargeError, MAX_PIXELS, TOO_MANY_PIXELS, type DecodePorts, type DecodedImage, type ImageKind } from "./image-decode";
+/** Cible d'import et rectangle du stage : `import-handler.ts` (OF13, D5), réexportés ici pour leurs importeurs. */
+export type { ImageTarget, StageRect } from "./import-handler";
 
 export const IMAGE_MIME: Readonly<Record<ImageKind, string>> = Object.freeze({
   png: "image/png",
@@ -138,14 +138,6 @@ export function decodeImage(blob: Blob, kind: ImageKind, max = DISPLAY_MAX, port
   return decodeWith(blob, kind, max, ports);
 }
 
-/** Rectangle du stage actif en px CSS de la fenêtre (`getBoundingClientRect`). */
-export interface StageRect {
-  readonly left: number;
-  readonly top: number;
-  readonly width: number;
-  readonly height: number;
-}
-
 /** Point d'insertion monde (R4) : `at` dans le stage → monde ; `at` nul ou hors du stage → centre de la vue. */
 export function anchorOf(rect: StageRect, camera: Camera, at: Point | null): readonly [number, number] {
   const inside =
@@ -176,27 +168,6 @@ export function placement(
   const s = Math.min(1, fit(visible.w, w), fit(visible.h, h));
   const d = CASCADE_STEP * index;
   return [s, 0, 0, s, anchor[0] - (s * w) / 2 + d, anchor[1] - (s * h) / 2 + d];
-}
-
-/** Onglet qui reçoit les objets (R3) : branché par l'espace de travail sur la session active. */
-export interface ImageTarget {
-  readonly assets: Pick<AssetStore, "put">;
-  page(): string;
-  camera(): Camera;
-  stageRect(): StageRect;
-  /** Mesure du texte de la session (C10b, F21) : hauteurs exigées d'un tableau importé ou collé. */
-  measure(): Measure;
-  /** Style de texte du moteur (couleur du stylo, taille par défaut) d'un tableau importé ou collé (F21). */
-  textStyle(): { readonly color: string; readonly size: number };
-  /** Faux une fois l'onglet fermé (décodage en cours) : plus aucun appel au moteur libéré. */
-  alive?(): boolean;
-  /** `engine.run` : null si le cœur refuse (message dans l'état du moteur). */
-  run(cmd: Command): Change | null;
-  /**
-   * Z10 : insère un objet `.rbitem` (fragment, pas une `Command`) dans cet onglet ; `index` = rang dans l'appel
-   * (cascade, R4). Absent : `.rbitem` refusé. Faux : refus, le message est déjà dit.
-   */
-  insertFragment?(rbitem: Uint8Array, at: Point | null, index: number, name: string): Promise<boolean>;
 }
 
 /** Entrée `image` du registre (R1) : en-tête, décodage, empreinte, `AddImage` en une étape (R6). */

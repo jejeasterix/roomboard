@@ -4,7 +4,7 @@
  * fenêtre ; l'espace de travail (`app/workspace.ts`) tient ensuite les onglets, leurs contrôleurs et leur marquage.
  */
 import type { CoreDocument, CoreFactory } from "../core/api";
-import { messageOf } from "./controller";
+import { messageOf, openFailedMessage } from "./messages";
 import {
   chooseHostKind,
   detectHostEnvironment,
@@ -45,7 +45,7 @@ export async function startDocument(core: CoreFactory, pending: PendingStore): P
   try {
     return { doc: core.load(opened.bytes), opened, error: null };
   } catch (e) {
-    return { doc: core.blank(), opened: null, error: `Ouverture impossible (${opened.name}) : ${messageOf(e)}` };
+    return { doc: core.blank(), opened: null, error: openFailedMessage(opened.name, e) };
   }
 }
 

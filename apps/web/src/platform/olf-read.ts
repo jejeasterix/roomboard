@@ -7,9 +7,8 @@
  * racine illisible). Aucun DOM.
  */
 import { PAGE_HEIGHT, PAGE_WIDTH, PDF_MAX_PAGES, type Matrix, type TextAttrs, type TextSpan } from "../core/api";
-import { safeArchivePath } from "../platform/archive-path";
-import { MAX_POINTS, MAX_SPANS, type BoardListPage, type BoardObject } from "./board-io";
-import { BOARD_MAX_OBJECTS, BOARD_OBJECTS_MESSAGE, SKIPPED_LABEL } from "./board-files";
+import { safeArchivePath } from "./archive-path";
+import { BOARD_MAX_OBJECTS, BOARD_OBJECTS_MESSAGE, MAX_POINTS, MAX_SPANS, SKIPPED_LABEL, type BoardListPage, type BoardObject } from "./board-list";
 
 export const OLF_BROKEN_MESSAGE = "fichier endommagé : content.json illisible";
 /** Plus gros exemple relevé : 2,6 Mo. */

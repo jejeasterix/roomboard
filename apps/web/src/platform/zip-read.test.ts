@@ -4,7 +4,7 @@ import { ZIP_MALFORMED_MESSAGE, ZIP_MAX_BYTES, ZIP_MAX_ENTRIES, ZIP_TOO_BIG_MESS
 import type { WorkerLike } from "./one-shot-worker";
 import { checkZipBytesReply, checkZipReply, createOlfReader, createZipReader, createZipWriter, ZIP_FAILED_MESSAGE, ZIP_WORKER_TIMEOUT_MS, ZIP_WRITE_FAILED_MESSAGE } from "./zip-read";
 import { BOARD_FAILED_MESSAGE } from "./board-reader";
-import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE } from "../app/olf-read";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE } from "./olf-read";
 import { unzipModelEntries } from "./zip-worker";
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);

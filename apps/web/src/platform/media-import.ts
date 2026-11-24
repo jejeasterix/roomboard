@@ -7,7 +7,7 @@ import type { AssetStore } from "../core/asset-store";
 import { messageOf } from "./controller";
 import type { DroppedFile } from "./files";
 import { anchorOf, placement, visibleOf, type ImageTarget } from "./image-import";
-import type { ImportContext, ImportHandler, ImportOutcome } from "./import";
+import type { ImportContext, ImportHandler, ImportOutcome } from "./import-handler";
 
 export type MediaFormat = "mp4" | "mov" | "webm" | "mp3" | "wav" | "ogg" | "m4a";
 export type MediaSniff = { readonly format: MediaFormat; readonly mime: string } | { readonly unsupported: "mkv" | "avi" };

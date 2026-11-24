@@ -26,7 +26,7 @@ import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
 import { createPageCodec, type ContainerCodec, type FormatsBinding, type SheetFormatsBinding } from "../../web/src/platform/container";
 import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
-import { convertFailureMessage, OfficeConvertError } from "../../web/src/platform/office-import";
+import { convertFailureMessage, officeErrorCode } from "../../web/src/platform/office-import";
 import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
@@ -192,7 +192,7 @@ export function createSession(deps: SessionDeps): Session {
       try {
         pdf = await convertOfficeFile(path, env);
       } catch (e) {
-        const code = e instanceof OfficeConvertError ? e.code : "failed";
+        const code = officeErrorCode(e);
         if (code === "no-program") throw new CliError("unsupported", unavailableMessage(name, NO_SOFFICE)); // course après --check
         throw new CliError("format", convertFailureMessage(name, code));
       }
