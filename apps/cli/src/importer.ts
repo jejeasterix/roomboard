@@ -101,6 +101,7 @@ export async function importInto(session: Session, req: ImportRequest): Promise<
   const importer = createImporter({
     openDocument: async (f) => (await session.openBytes(f.name, f.bytes, f.path ?? null)) !== null,
     openBoard: (f) => session.openBoard(f), // D22 : tableau en onglet sans fichier
+    openPdf: (f) => session.openPdf(f), // D40 : PDF en onglet sans fichier
     notify: async (m) => {
       notices.push(m);
     },

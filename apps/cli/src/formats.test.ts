@@ -17,7 +17,7 @@ describe("FORMAT_LOTS (D9)", () => {
   it("lots livrés (LOT_LIVRE = 2) : lus et écrits", () => {
     expect(LOT_LIVRE).toBe(2);
     const rows = formatRows();
-    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".png", ".rbitem", ".rbpack", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
+    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".pdf", ".png", ".rbitem", ".rbpack", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
     expect(rows.find((r) => r.ext === ".rbpack")?.notes.join(" ")).toContain("library import");
     expect(rows.find((r) => r.ext === ".notebook")?.notes.join(" ")).toContain("lecture seule");
     expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".rbitem", ".rbpack", ".roomboard", ".ubz"]);
@@ -26,7 +26,7 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: true, write: true, readLot: 2, writeLot: 1 }));
   });
   it("importBlocked : lot d'un format reconnu non livré, null pour un format lisible ou inconnu", () => {
-    expect(importBlocked("doc.pdf")).toBe(3);
+    expect(importBlocked("doc.pdf")).toBeNull();
     expect(importBlocked("x.rbitem")).toBeNull();
     expect(importBlocked("r.DOCX")).toBe(4);
     expect(importBlocked("image.png")).toBeNull();
@@ -34,7 +34,7 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(importBlocked("notes.txt")).toBeNull();
     expect(importBlocked("a.iwb")).toBeNull();
     expect(importBlocked("a.flipchart")).toBeNull();
-    expect(unsupportedMessage("/tmp/doc.pdf", 3)).toBe("doc.pdf : format pris en charge par la CLI au lot 3");
+    expect(unsupportedMessage("/tmp/lettre.docx", 4)).toBe("lettre.docx : format pris en charge par la CLI au lot 4");
   });
   it("exportBlocked : .iwb → 2, .pdf → 3 ; .rbitem et .png → null ; lotOf", () => {
     expect(exportBlocked("a.iwb")).toBeNull();

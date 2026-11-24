@@ -113,11 +113,11 @@ describeWasm("S2 — convert des cinq tableaux (D25)", () => {
       }
     }
   });
-  it("convert : sources et sorties refusées (.pdf : 3 ; .rbitem, .rbpack, .png : 2)", async () => {
+  it("convert : sources et sorties refusées (sortie .pdf : 3 ; source .docx, .rbitem, .rbpack, .png : 2)", async () => {
     const dir = tmpDir();
     const a = await board(dir);
     expect(await main(["convert", a, join(dir, "x.pdf")], memoryIO())).toBe(3);
-    expect(await main(["convert", join(dir, "doc.pdf"), join(dir, "x.roomboard")], memoryIO())).toBe(3);
+    expect(await main(["convert", join(dir, "doc.docx"), join(dir, "x.roomboard")], memoryIO())).toBe(2);
     expect(await main(["convert", join(dir, "s.rbitem"), join(dir, "x.roomboard")], memoryIO())).toBe(2);
     expect(await main(["convert", a, join(dir, "x.rbpack")], memoryIO())).toBe(2);
     expect(await main(["convert", a, join(dir, "x.png")], memoryIO())).toBe(2);

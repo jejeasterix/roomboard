@@ -56,7 +56,7 @@ export async function exportBoardFile(session: Session, to: string): Promise<{ f
   return { file: to, kind: format };
 }
 
-const CONVERT_SOURCES: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz", ".notebook", ".olf", ".flipchart"]);
+const CONVERT_SOURCES: ReadonlySet<string> = new Set([".roomboard", ".pdf", ".iwb", ".ubz", ".notebook", ".olf", ".flipchart"]);
 const CONVERT_TARGETS: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz"]);
 function convertSide(path: string, allowed: ReadonlySet<string>, blocked: (p: string) => Lot | null, what: string): void {
   if (allowed.has(extOf(path))) return;
