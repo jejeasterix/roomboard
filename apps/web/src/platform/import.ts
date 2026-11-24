@@ -18,13 +18,17 @@ import { BAMBOO_NOT_FLIPCHART, hasBambooMagic } from "./bamboo";
 import type { BoardSourceFormat } from "./board-reader";
 import { FLIPCHART_EXTENSION, IMPORT_EXTENSIONS, IWB_EXTENSION, NOTEBOOK_EXTENSION, OLF_EXTENSION, UBZ_EXTENSION, RBITEM_EXTENSION, RBPACK_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type Notify, type Point, type SaveTarget } from "./files";
 import type { TableGrid } from "./html-table";
-import { HEAD_BYTES, imageHandler, type ImageDecoder, type ImageTarget } from "./image-import";
+import { hasExtension, hasZipMagic, isSheetName, SHEET_MAX_BYTES, type ImageTarget, type ImportHandler, type ImportOutcome } from "./import-handler";
+import { HEAD_BYTES, imageHandler, type ImageDecoder } from "./image-import";
 import { mediaHandler, probeMedia, unsupportedMediaHandler, type LinkedMedia, type MediaHandlerDeps, type MediaProbe } from "./media-import";
 import { companionHandler, model3dHandler, zip3dHandler, type Model3dDeps, type Model3dShared } from "./model3d-handlers";
 import { extensionOf, ZIP_MAX_BYTES, ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { EMPTY_SHEET_MESSAGE, SHEET_TOO_BIG_MESSAGE } from "./sheet-reader";
 import { insertTableGrid } from "./table-insert";
 import { officeHandler, officeNoConverterHandler, officeSheetNoConverterHandler, officeWebHandler, type OfficeOpenFile } from "./office-import";
+
+/** Contrat d'un gestionnaire et aides sans registre : `import-handler.ts` (OF13, D5), réexportés ici pour leurs importeurs. */
+export { hasExtension, hasZipMagic, isSheetName, SHEET_MAX_BYTES, ZIP_MAGIC, type ImageTarget, type ImportContext, type ImportHandler, type ImportOutcome, type StageRect } from "./import-handler";
 
 export const LATER_FORMAT_MESSAGE = "format pris en charge dans une prochaine version";
 /** Limite des hôtes web (R15) ; la coque n'en a pas. */
@@ -93,51 +97,6 @@ export interface Importer {
   importFiles(files: readonly DroppedFile[], at?: Point | null): Promise<ImportReport>;
 }
 
-export interface ImportContext {
-  /** Contenu du fichier, lu une fois (la coque le lit par morceaux, `grantedFile`). */
-  readonly blob: Blob;
-  /** `HEAD_BYTES` premiers octets ; vide pour un `.roomboard` (reconnu par son nom). */
-  readonly head: Uint8Array;
-  /** Point de dépôt en px CSS de la fenêtre ; null : collage, « Importer », lancement. */
-  readonly at: Point | null;
-  /** Images déjà insérées par cet appel (cascade, R4). */
-  readonly inserted: number;
-  readonly target: ImageTarget | null;
-  notify: Notify;
-  /** C15 (DAX2) : fichiers du même appel réclamés par `companions` ; [] sinon (appel d'un seul fichier, lien). */
-  readonly companions: readonly DroppedFile[];
-  /** Mineur C15 : noms des fichiers réclamés écartés car au-delà du plafond, déjà dits trop gros ; [] ou absent sinon. */
-  readonly tooBig?: readonly string[];
-}
-
-export type ImportOutcome = "opened" | "inserted" | "failed";
-
-export interface ImportHandler {
-  readonly id: string;
-  /** `document` ouvre un onglet (compte les onglets pleins) ; `objet` va dans l'onglet actif ; `paquet` dans la bibliothèque. */
-  readonly nature: "document" | "objet" | "paquet";
-  detect(head: Uint8Array, name: string): boolean;
-  /** Plafond propre au gestionnaire (F22), contrôlé par `importFiles` sur `f.size` **avant** `f.blob()` (la coque lit
-   *  le fichier en entier) : dépassé, « <nom> : <message> », compté en échec. */
-  readonly limit?: { readonly maxBytes: number; readonly message: string };
-  /** C14 (PC4, M14) : fichier qui a un chemin (coque) et dépasse `aboveBytes` : `run` lie le fichier sans le lire ;
-   *  appelé par `importFiles` avant `limit` et sans `f.blob()`. Dit lui-même ses messages. */
-  readonly link?: {
-    readonly aboveBytes: number;
-    run(file: DroppedFile, path: string, ctx: Omit<ImportContext, "blob">): Promise<ImportOutcome>;
-  };
-  /** C15 (DAX2) : fichiers de `siblings` que ce fichier cite ; ils sortent de la boucle et arrivent dans `ctx.companions`.
-   *  Appelé seulement pour un appel de plusieurs fichiers, après les plafonds, avec l'en-tête et le contenu déjà lus. */
-  readonly companions?: (file: DroppedFile, blob: Blob, head: Uint8Array, siblings: readonly DroppedFile[]) => Promise<readonly DroppedFile[]>;
-  /** Dit lui-même ses messages d'échec. */
-  run(file: DroppedFile, ctx: ImportContext): Promise<ImportOutcome>;
-}
-
-/** Nom qui se termine par `ext` (minuscules, point compris) et ne s'y réduit pas. */
-export function hasExtension(name: string, ext: string): boolean {
-  return name.toLowerCase().endsWith(ext) && name.length > ext.length;
-}
-
 export function isRoomboardName(name: string): boolean {
   return hasExtension(name, ROOMBOARD_EXTENSION);
 }
@@ -159,12 +118,6 @@ function roomboardHandler(deps: ImportDeps): ImportHandler {
     },
   };
 }
-
-/** En-tête d'un ZIP (`PK\x03\x04`) : un `.rbitem` (Z10) comme un `.xlsx` (F28) est un ZIP ; chacun est reconnu par son
- *  nom ET cet en-tête, le nom seul les départage. */
-export const ZIP_MAGIC: readonly number[] = Object.freeze([0x50, 0x4b, 0x03, 0x04]);
-
-export const hasZipMagic = (head: Uint8Array): boolean => head.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((b, i) => head[i] === b);
 
 export function isRbitemName(name: string): boolean {
   return hasExtension(name, RBITEM_EXTENSION);
@@ -214,13 +167,6 @@ export function rbpackHandler(deps: { importPack(name: string, bytes: Uint8Array
       }
     },
   };
-}
-
-/** Plafond d'un classeur (F22), aussi dans la coque où `maxBytes` est nul. */
-export const SHEET_MAX_BYTES = 100 * 1024 * 1024;
-
-export function isSheetName(name: string): boolean {
-  return hasExtension(name, ".xlsx") || hasExtension(name, ".xlsm");
 }
 
 /** Entrée `sheet` du registre (F28) : nom `.xlsx` / `.xlsm` et en-tête ZIP ; une `ImportTable` dans l'onglet actif. */
