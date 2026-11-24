@@ -1,12 +1,20 @@
 // Essai de bout en bout de la CLI (cadrage cli, S5, D14) : créer un tableau, y ajouter des éléments, enregistrer,
 // exporter en .rbitem, relire, comparer l'état de session au fichier rouvert (ids compris) et le .rbitem relu (ids par rang).
 // Aucun navigateur. Écrit sous un dossier temporaire retiré en fin d'essai. `CLI : OK` ou `CLI : ÉCHEC — <écart>`.
+// Lot 2 (cadrage cli-lot2, S5) : réimport d'un `.rbitem`, grille, `convert` des cinq tableaux fabriqués, export `.iwb`/`.ubz` relus,
+// aller-retour `.rbpack` par `library`, règle D23.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deepStrictEqual } from "node:assert";
+import { createRequire } from "node:module";
+import { deflateSync } from "node:zlib";
 import { ROOT, solidPng } from "./commun.mjs";
+import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
+import { makeFlipchart } from "./fabriques/flipchart.mjs";
+
+const { zipSync } = createRequire(join(ROOT, "apps", "web", "package.json"))("fflate");
 
 const BIN = join(ROOT, "apps", "cli", "dist", "roomboard.mjs");
 const XLSX = join(ROOT, "crates", "roomboard-formats", "tests", "fixtures", "valeurs.xlsx");
@@ -136,6 +144,93 @@ try {
   verifie("import d'un .pdf : code 3, erreur unsupported, « lot 3 »", pdf.code === 3 && pdf.err?.error?.code === "unsupported" && String(pdf.err.error.message).includes("lot 3"), pdf.brut);
   verifie("import d'un .pdf : fichier non écrit (mtimeMs, ino)", empreinte(a) === avantPdf);
   verifie("option inconnue : code 2", cli(["state", a, "--nope"]).code === 2);
+  // ---- Lot 2 (cadrage cli-lot2, S5) ----
+  const lot2 = f.filter((x) => x.readLot === 2 || x.writeLot === 2);
+  verifie("formats : les 7 formats du lot 2 lus et écrits", lot2.length === 7 && lot2.every((x) => (x.readLot !== 2 || x.read) && (x.writeLot !== 2 || x.write)), JSON.stringify(lot2.map((x) => [x.ext, x.read, x.write])));
+
+  const grille = { visible: true, snap: false, above: false, levels: [{ kind: "squares", spacingX: 40, spacingY: 40, originX: 0, originY: 0, color: "#000000", line: "solid", lineWidth: 1, snap: false, visible: true }] };
+  const b = join(dir, "b.roomboard");
+  const tb = cli(["run", "--new", "--out", b, "--ops", "-"], `${[
+    { type: "AddShape", page: "$page:0", shape: "rect", x0: 100, y0: 100, x1: 300, y1: 200, style, fill: "#fde68a" },
+    { type: "SetGrid", page: "$page:0", grid: grille },
+  ].map((o) => JSON.stringify(o)).join("\n")}\n`);
+  verifie("tableau b : un rectangle et une grille", tb.code === 0, tb.brut);
+  const etatB = etat(b);
+
+  const carre = join(dir, "carre.rbitem");
+  const ec = cli(["export", b, carre, "--all"]);
+  verifie("export --all de b : un objet", ec.code === 0 && ec.lignes[0].elements === 1, ec.brut);
+  const c = join(dir, "c.roomboard");
+  const ri = cli(["run", "--new", "--out", c, "--ops", "-"], `${JSON.stringify({ op: "import", files: [carre], at: [200, 150] })}\n`);
+  verifie("réimport du .rbitem dans un tableau neuf : inséré", ri.code === 0 && ri.lignes[0].inserted?.length === 1, ri.brut);
+  egal("réimport : même élément que l'original (ids par rang, centre gardé)", normalise(etat(c).pages[0].elements), normalise(etatB.pages[0].elements));
+
+  const g = join(dir, "grille.rbitem");
+  const eg = cli(["export", b, g, "--grid"]);
+  verifie("export --grid : .rbitem de grille", eg.code === 0 && eg.lignes[0].kind === "grid", eg.brut);
+  const ig = cli(["import", c, g]);
+  verifie("import du .rbitem de grille : appliqué", ig.code === 0 && ig.lignes[0].inserted?.length === 1, ig.brut);
+  egal("grille de c = grille de b", etat(c).pages[0].page.grid, etatB.pages[0].page.grid);
+
+  const tableaux = [
+    ["lecon.iwb", iwbZip(zipSync), 1, 8, "vidéo"],
+    ["brut.iwb", Buffer.from(iwbRaw3(), "utf8"), 3, null, null],
+    ["openboard.ubz", ubzZip(zipSync), 1, 4, null],
+    ["lecon.notebook", notebookZip(zipSync), 2, 4, null],
+    ["cours.olf", olfZip(zipSync), 1, 3, null],
+    ["cours.flipchart", Buffer.from(makeFlipchart(flipPages(), deflateSync)), 2, 5, "TIFF"],
+  ];
+  for (const [nom, octets, pages, objets, avis] of tableaux) {
+    const src = join(dir, nom);
+    writeFileSync(src, octets);
+    const out = join(dir, `${nom}.roomboard`);
+    const cv = cli(["convert", src, out]);
+    verifie(`convert ${nom} : ${pages} page(s)`, cv.code === 0 && cv.lignes[0].pages === pages, cv.brut);
+    if (objets !== null) {
+      const nb = etat(out).pages[0].elements.length;
+      verifie(`convert ${nom} : ${objets} objets en page 1`, nb === objets, String(nb));
+    }
+    if (avis !== null) verifie(`convert ${nom} : avis « ${avis} »`, cv.lignes[0].notices.join(" ").includes(avis), JSON.stringify(cv.lignes[0].notices));
+  }
+  verifie(".olf : fond #ffeecc", etat(join(dir, "cours.olf.roomboard")).pages[0].page.background.toLowerCase() === "#ffeecc");
+
+  for (const ext of ["iwb", "ubz"]) {
+    const outB = join(dir, `b.${ext}`);
+    const e = cli(["export", b, outB]);
+    verifie(`export b.${ext}`, e.code === 0 && e.lignes[0].kind === ext, e.brut);
+    const back = join(dir, `b-${ext}.roomboard`);
+    const cv = cli(["convert", outB, back]);
+    verifie(`relecture de b.${ext} : une page`, cv.code === 0 && cv.lignes[0].pages === 1, cv.brut);
+    egal(`relecture de b.${ext} : mêmes sortes`, etat(back).pages[0].elements.map((x) => x.kind), etatB.pages[0].elements.map((x) => x.kind));
+  }
+
+  const lib = join(dir, "lib");
+  mkdirSync(join(lib, "Formes"), { recursive: true });
+  const e1 = cli(["export", b, join(lib, "Formes", "carre.rbitem"), "--all"]);
+  const e3 = cli(["export", a, join(lib, "Formes", "page.rbitem"), "--page", page0, "--all"]);
+  verifie("deux .rbitem dans lib/Formes", e1.code === 0 && e3.code === 0, `${e1.brut}${e3.brut}`);
+  const pack = join(dir, "p.rbpack");
+  const le = cli(["library", "export", lib, pack, "--folder", "Formes"]);
+  verifie("library export : paquet écrit, rien laissé de côté", le.code === 0 && le.lignes[0].skipped.length === 0 && existsSync(pack), le.brut);
+  const lib2 = join(dir, "lib2");
+  const li = cli(["library", "import", lib2, pack]);
+  verifie("library import : dossier Formes, 2 ressources", li.code === 0 && li.lignes[0].folder === "Formes" && li.lignes[0].count === 2, li.brut);
+  const ll = cli(["library", "list", lib2, "--folder", "Formes"]);
+  verifie("library list : 2 ressources", ll.code === 0 && ll.lignes[0].items.length === 2, ll.brut);
+  egal("ressource relue = original (ids par rang)", normalise(etat(join(lib2, "Formes", "carre.rbitem"))), normalise(etat(join(lib, "Formes", "carre.rbitem"))));
+  const ip = cli(["import", a, pack]);
+  verifie("import d'un .rbpack dans un tableau : code 2, renvoi à library", ip.code === 2 && String(ip.err?.error?.message).includes("library"), ip.brut);
+
+  const iwbSrc = join(dir, "lecon.iwb");
+  const avantIwb = empreinte(iwbSrc);
+  const sv = cli(["run", iwbSrc, "--save", "--ops", "-"], "");
+  verifie("D23 : run lecon.iwb --save : code 2, fichier intact", sv.code === 2 && empreinte(iwbSrc) === avantIwb, sv.brut);
+  const z = join(dir, "z.iwb");
+  const nz = cli(["new", z]);
+  verifie("D23 : new z.iwb : code 2, rien d'écrit", nz.code === 2 && !existsSync(z), nz.brut);
+  const cs = cli(["convert", iwbSrc, iwbSrc]);
+  verifie("convert vers la source : code 2, source intacte", cs.code === 2 && empreinte(iwbSrc) === avantIwb, cs.brut);
+  verifie(".pdf toujours au lot 3 : convert vers .pdf code 3", cli(["convert", a, join(dir, "a.pdf")]).code === 3);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

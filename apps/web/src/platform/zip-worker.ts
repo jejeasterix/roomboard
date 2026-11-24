@@ -11,6 +11,7 @@
  * (refus avant décodage), `readOlf`, puis flux BoardList (`encodeBoardList`) que la page repasse par `decodeBoardList`.
  * C13 lot 3 (N11, N13) : paperboards ActivInspire (`mode: "bamboo"`) : conteneur Bamboo lu par `readBamboo` sous
  * `BAMBOO_LIMITS`, entrées gardées par `keepBambooPath`, chemins `<page>.fpg/<nom>`.
+ * cli-lot2 (D20, DA7) : corps dans `zipJobReply`, joué par la coquille ci-dessous et, en processus, par `inlineWorker`.
  */
 import { unzipSync, zipSync, type Zippable } from "fflate";
 import {
@@ -28,6 +29,7 @@ import { sniffImage } from "./image-import";
 import { isPackEntry } from "./rbpack";
 import { encodeBoardList } from "../app/board-io";
 import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
+import type { WorkerReply } from "./one-shot-worker";
 import type { OlfPart, ZipFile } from "./zip-read";
 
 /** C4 : entrées d'un paquet (manifeste, ressources, vignettes) ; tout autre fichier du ZIP est ignoré. */
@@ -142,45 +144,56 @@ export function olfPart(bytes: Uint8Array, read: typeof readOlf = readOlf): OlfP
 }
 
 /** `{ bytes }` seul : lecture 3D (inchangée) ; `{ op: "unzip", mode: "pack" | "board" | "bamboo", bytes }` ; `{ op: "zip", files }` ; `{ op: "olf", bytes }`. */
-interface WorkerMessage {
+export interface ZipJob {
   readonly op?: "unzip" | "zip" | "olf";
   readonly mode?: "model3d" | "pack" | "board" | "bamboo";
   readonly bytes?: Uint8Array;
   readonly files?: readonly ZipFile[];
 }
 
+/** Erreur rendue en `{ error }` : son message, ou sa forme texte. */
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/** Corps du Worker ZIP (cli-lot2, D20) : `{ bytes }`, `{ part }`, `{ entries }` (tampons transférés) ou `{ error }` sans transfert. */
+export function zipJobReply(d: ZipJob): WorkerReply {
+  try {
+    if (d.op === "zip") {
+      const bytes = zipStored(d.files ?? []);
+      return { data: { bytes }, transfer: [bytes.buffer as ArrayBuffer] };
+    }
+    if (d.op === "olf") {
+      const part = olfPart(d.bytes ?? new Uint8Array());
+      return { data: { part }, transfer: [part.ops.buffer as ArrayBuffer] };
+    }
+    const data = d.bytes ?? new Uint8Array();
+    const entries =
+      d.mode === "pack"
+        ? unzipEntries(data, keepPackPath)
+        : d.mode === "board"
+          ? unzipEntries(data, keepBoardPath)
+          : d.mode === "bamboo"
+            ? bambooEntries(data)
+            : unzipModelEntries(data);
+    // Deux entrées peuvent partager un tampon : cité deux fois, `postMessage` lèverait.
+    return { data: { entries }, transfer: [...new Set(entries.map((x) => x.bytes.buffer as ArrayBuffer))] };
+  } catch (err) {
+    return { data: { error: errorText(err) }, transfer: [] };
+  }
+}
+
 // Branché seulement dans un Worker (le test l'importe sous Node).
 if (typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !== "undefined") {
   const scope = globalThis as unknown as {
-    onmessage: ((e: MessageEvent<WorkerMessage>) => void) | null;
+    onmessage: ((e: MessageEvent<ZipJob>) => void) | null;
     postMessage(m: unknown, t: Transferable[]): void;
   };
   scope.onmessage = (e) => {
-    const d = e.data;
+    const r = zipJobReply(e.data);
     try {
-      if (d.op === "zip") {
-        const bytes = zipStored(d.files ?? []);
-        scope.postMessage({ bytes }, [bytes.buffer as ArrayBuffer]);
-        return;
-      }
-      if (d.op === "olf") {
-        const part = olfPart(d.bytes ?? new Uint8Array());
-        scope.postMessage({ part }, [part.ops.buffer as ArrayBuffer]);
-        return;
-      }
-      const data = d.bytes ?? new Uint8Array();
-      const entries =
-        d.mode === "pack"
-          ? unzipEntries(data, keepPackPath)
-          : d.mode === "board"
-            ? unzipEntries(data, keepBoardPath)
-            : d.mode === "bamboo"
-              ? bambooEntries(data)
-              : unzipModelEntries(data);
-      // Deux entrées peuvent partager un tampon : cité deux fois, `postMessage` lèverait.
-      scope.postMessage({ entries }, [...new Set(entries.map((x) => x.bytes.buffer as ArrayBuffer))]);
+      scope.postMessage(r.data, r.transfer);
     } catch (err) {
-      scope.postMessage({ error: err instanceof Error ? err.message : String(err) }, []);
+      // Comme avant l'extraction : un envoi qui lève (tampon non clonable) devient `{ error }`.
+      scope.postMessage({ error: errorText(err) }, []);
     }
   };
 }

@@ -4,12 +4,15 @@
  * (`BoardReader`) ou écrit les XML d'une copie (`write_board_xml`), répond, puis est arrêté — après la réponse, après
  * `onerror`, ou au bout de `BOARD_WORKER_TIMEOUT_MS`. Une panique Wasm revient en `BOARD_FAILED_MESSAGE` (ou
  * `BOARD_WRITE_FAILED_MESSAGE`) et ne touche jamais l'instance de la page (HR6). Créé par l'amorce (`main.ts`) : aucun
- * test n'exécute `board-worker.ts` (lu en texte seulement) ni ne résout `src/wasm-formats/`.
+ * test ne résout `src/wasm-formats/` ; la coquille `board-worker.ts` est exécutée par le test, module simulé.
  * `.notebook` (lot 2, N6) : pages dans l'ordre du manifeste, lu par le Rust (`notebook_order`, D16), choisi par
- * `notebookOrder` dans le Worker.
+ * `notebookOrder` dans le corps du Worker.
+ * cli-lot2 (D20, D29, DA7) : ce corps est `boardJobReply`, appelé par la coquille du Worker de la page et, en
+ * processus, par `inlineWorker` ; une panique Wasm y est relancée, jamais rendue en `{ error }`.
  */
 import { normalArchivePath } from "./archive-path";
-import { runOnce, type WorkerLike } from "./one-shot-worker";
+import { hasBoardReader, hasFlipchartReader, type FormatsBinding } from "./container";
+import { runOnce, type WorkerLike, type WorkerReply } from "./one-shot-worker";
 import type { ZipFile } from "./zip-read";
 
 export type BoardDialect = "iwb" | "ubz" | "notebook";
@@ -120,6 +123,72 @@ export function withLeadingWarnings<P extends BoardPart>(parts: readonly P[], wa
   const [first, ...rest] = parts;
   if (first === undefined || warnings.length === 0) return parts;
   return [{ ...first, warnings: [...warnings, ...first.warnings] }, ...rest];
+}
+
+/** Message reçu par le corps du Worker des tableaux (`boardJobReply`). */
+export type BoardJob =
+  | {
+      readonly op: "read";
+      readonly dialect: BoardDialect;
+      readonly files: readonly Uint8Array[];
+      /** `BoardReadOptions` (`.notebook`) ; absents pour `.iwb` et `.ubz`. */
+      readonly names?: readonly string[];
+      readonly manifest?: Uint8Array | null;
+      readonly max?: number;
+    }
+  | { readonly op: "flipchart"; readonly names: string[]; readonly data: Uint8Array; readonly ends: Uint32Array }
+  | { readonly op: "write"; readonly format: BoardWriteFormat; readonly ops: Float32Array; readonly texts: string[] };
+
+/** Une part lue (`ops`, `texts`, `warnings`) ; le lecteur est libéré même en cas d'erreur. */
+function partOf(r: { ops(): Float32Array; texts(): string[]; warnings(): string[]; free(): void }): { ops: Float32Array; texts: string[]; warnings: string[] } {
+  let part: { ops: Float32Array; texts: string[]; warnings: string[] };
+  try {
+    part = { ops: r.ops(), texts: r.texts(), warnings: r.warnings() };
+  } catch (err) {
+    // D29 : après une panique, un emprunt reste ouvert et `free()` lève une Error ordinaire qui masquerait la RuntimeError.
+    try {
+      r.free();
+    } catch {
+      // l'erreur d'origine prime
+    }
+    throw err;
+  }
+  r.free();
+  return part;
+}
+
+/** Message d'échec du Worker pour une tâche (écriture ou lecture) : seule définition, la coquille et `boardJobReply` l'appellent. */
+export function boardJobFailure(job: BoardJob): string {
+  return job.op === "write" ? BOARD_WRITE_FAILED_MESSAGE : BOARD_FAILED_MESSAGE;
+}
+
+/**
+ * Corps du Worker des tableaux (cli-lot2, D20) : `{ parts }` (tampons des `ops` transférés), `{ files }` ou `{ error }`.
+ * Pages `.ubz` : une par fichier, numérotées dans l'ordre reçu pour leurs avertissements ; `.notebook` : remises dans
+ * l'ordre du manifeste par `notebookOrder`, l'avis d'ordre en tête de la première part ; `.flipchart` : une seule part.
+ * D29 : une panique Wasm (`RuntimeError`) est relancée ; la coquille du Worker la rend en `{ error }`, `inlineWorker`
+ * en `onerror`.
+ */
+export function boardJobReply(mod: FormatsBinding, job: BoardJob): WorkerReply {
+  try {
+    if (job.op === "flipchart") {
+      if (!hasFlipchartReader(mod)) throw new Error("module des tableaux indisponible");
+      const part = partOf(mod.FlipchartReader.open(job.names, job.data, job.ends));
+      return { data: { parts: [part] }, transfer: [part.ops.buffer as ArrayBuffer] };
+    }
+    if (!hasBoardReader(mod)) throw new Error("module des tableaux indisponible");
+    if (job.op === "write") return { data: { files: mod.write_board_xml(job.ops, job.texts, job.format) }, transfer: [] };
+    const { files, warnings } =
+      job.dialect === "notebook"
+        ? notebookOrder(mod.notebook_order, job.files, job.names ?? [], job.manifest ?? null, job.max ?? job.files.length)
+        : { files: job.files, warnings: [] };
+    const read = files.map((xml, i) => partOf(mod.BoardReader.open(xml, job.dialect, job.dialect === "iwb" ? 1 : i + 1)));
+    const parts = withLeadingWarnings(read, warnings);
+    return { data: { parts }, transfer: parts.map((p) => p.ops.buffer as ArrayBuffer) };
+  } catch (err) {
+    if (err instanceof WebAssembly.RuntimeError) throw err; // D29 : la panique remonte (coquille ou inlineWorker)
+    return { data: { error: boardErrorMessage(err, boardJobFailure(job)) }, transfer: [] };
+  }
 }
 
 export interface BoardCodec {

@@ -1,12 +1,17 @@
 // Aides des tests de la CLI : vrai Wasm (sauté s'il manque, exigé sous ROOMBOARD_WASM_REQUIRED=1, D2), entrées et
 // sorties en mémoire, dossier temporaire sous os.tmpdir() (nettoyé), PNG fabriqué, ids du cœur normalisés par rang.
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import { afterAll, describe } from "vitest";
-import { CliError, type CliIO } from "./contract";
+import { zipStored } from "../../web/src/platform/zip-worker";
+import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "../../../scripts/essais/fabriques/tableaux.mjs";
+import { makeFlipchart } from "../../../scripts/essais/fabriques/flipchart.mjs";
+import type { FormatsBinding } from "../../web/src/platform/container";
+import { CliError } from "./contract";
+import type { TestableIO } from "./session";
 import { wasmPresent } from "./wasm-node";
 
 // Sorties JSON lues par les tests : forme libre, vérifiée par les assertions.
@@ -22,14 +27,14 @@ export const XLSX_FIXTURE = fileURLToPath(new URL("../../../crates/roomboard-for
 /** `ROOMBOARD_NOW` des tests : 2026-11-23T00:00:00.000Z en millisecondes. */
 export const FIXED_NOW = "1795392000000";
 
-export interface MemoryIO extends CliIO {
+export interface MemoryIO extends TestableIO {
   readonly stdout: string[];
   readonly stderr: string[];
   json(): Json[];
   errors(): Json[];
 }
 
-export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC): MemoryIO {
+export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC, formats?: () => Promise<FormatsBinding>): MemoryIO {
   const stdout: string[] = [];
   const stderr: string[] = [];
   return {
@@ -45,6 +50,7 @@ export function memoryIO(input: readonly string[] = [], env: Readonly<Record<str
       })(),
     env: { ROOMBOARD_NOW: FIXED_NOW, ...env },
     wasmDir,
+    ...(formats === undefined ? {} : { formats }),
     stdout,
     stderr,
     json: () => stdout.map((l) => JSON.parse(l) as Json),
@@ -128,3 +134,52 @@ export function normalizeIds(v: unknown, seen: Map<string, string> = new Map()):
   if (typeof v === "object" && v !== null) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, normalizeIds(x, seen)]));
   return v;
 }
+
+/** ZIP des fabriques (D28) : `zipStored` du produit, aucune dépendance ajoutée. */
+export const fabZip = (files: Record<string, Uint8Array>): Uint8Array => zipStored(Object.entries(files).map(([path, bytes]) => ({ path, bytes })));
+
+/** Les cinq tableaux fabriqués (D28) écrits dans `dir`. */
+export function boardFixtures(dir: string): { readonly iwb: string; readonly iwbRaw: string; readonly ubz: string; readonly notebook: string; readonly olf: string; readonly flipchart: string } {
+  const put = (name: string, bytes: Uint8Array): string => {
+    const p = join(dir, name);
+    writeFileSync(p, bytes);
+    return p;
+  };
+  return {
+    iwb: put("lecon.iwb", iwbZip(fabZip)),
+    iwbRaw: put("brut.iwb", new TextEncoder().encode(iwbRaw3())),
+    ubz: put("openboard.ubz", ubzZip(fabZip)),
+    notebook: put("lecon.notebook", notebookZip(fabZip)),
+    olf: put("cours.olf", olfZip(fabZip)),
+    flipchart: put("cours.flipchart", makeFlipchart(flipPages(), deflateSync)),
+  };
+}
+
+/** Module des formats simulé : seul `BoardReader.open` est donné, tout autre accès au conteneur lève « non appelé ». */
+export const formatsWith = (open: () => unknown): FormatsBinding => {
+  const fail = (): never => {
+    throw new Error("non appelé");
+  };
+  return { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open }, write_board_xml: () => [], notebook_order: () => [] } as unknown as FormatsBinding;
+};
+
+/**
+ * D29 : lecteur de tableau dont `ops()` panique (piège Wasm) et dont `free()` lève ensuite l'erreur de wasm-bindgen sur
+ * une valeur restée empruntée. `partOf` (board-reader.ts) garde la `RuntimeError` malgré l'`Error` de `free()` :
+ * `boardJobReply` la relance, `nodeBoardPorts` appelle `onPanic`.
+ */
+export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warnings(): string[]; free(): never } => ({
+  ops: () => {
+    throw new WebAssembly.RuntimeError("unreachable");
+  },
+  texts: () => [],
+  warnings: () => [],
+  free: () => {
+    throw new Error("attempted to take ownership of Rust value while it was borrowed");
+  },
+});
+/** Module des formats dont le lecteur de tableau panique, `free()` levant ensuite à son tour (D29), pour `main`. */
+export const panickingFormats = (): (() => Promise<FormatsBinding>) => {
+  const mod = formatsWith(borrowedAfterPanic);
+  return async () => mod;
+};

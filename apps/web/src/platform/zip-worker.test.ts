@@ -2,7 +2,7 @@ import { unzipSync, zipSync, zlibSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ZIP_TOO_BIG_MESSAGE } from "./model3d-import";
 import { buildPack, readPack, type PackItem } from "./rbpack";
-import { keepBoardPath, keepPackPath, olfPart, unzipEntries, zipStored } from "./zip-worker";
+import { keepBoardPath, keepPackPath, olfPart, unzipEntries, unzipModelEntries, zipJobReply, zipStored, type ZipJob } from "./zip-worker";
 import { decodeBoardList } from "../app/board-io";
 import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
 import { BAMBOO_NOT_FLIPCHART } from "./bamboo";
@@ -248,5 +248,80 @@ describe("C13 lot 3 : conteneur Bamboo par le Worker ZIP (N11)", () => {
     expect(post.mock.calls[1]![0]).toHaveProperty("error");
     handler({ data: { op: "unzip", mode: "bamboo", bytes: zipSync({ "content.xml": enc("<x/>") }) } });
     expect(post.mock.calls[2]).toEqual([{ error: BAMBOO_NOT_FLIPCHART }, []]);
+  });
+});
+
+describe("zipJobReply (cli-lot2, D20)", () => {
+  type Reply = { entries?: { path: string; bytes: Uint8Array }[]; bytes?: Uint8Array; error?: string };
+  const data = (j: ZipJob) => zipJobReply(j).data as Reply;
+  it("op zip : ZIP stocké, son tampon transféré", () => {
+    const r = zipJobReply({ op: "zip", files: [{ path: "a.txt", bytes: enc("a") }] });
+    const bytes = (r.data as Reply).bytes!;
+    expect(Object.keys(unzipSync(bytes))).toEqual(["a.txt"]);
+    expect(r.transfer).toEqual([bytes.buffer]);
+  });
+  it("unzip mode board et mode pack : entrées gardées par keepBoardPath, keepPackPath", () => {
+    const input = { "content.xml": enc("<iwb/>"), "videos/film.mpg": enc("v"), "manifest.json": enc("{}"), "autre.txt": enc("t") };
+    const z = zipSync(input);
+    expect(data({ op: "unzip", mode: "board", bytes: z }).entries!.map((e) => e.path).sort()).toEqual(Object.keys(input).filter(keepBoardPath).sort());
+    expect(data({ op: "unzip", mode: "pack", bytes: z }).entries!.map((e) => e.path).sort()).toEqual(Object.keys(input).filter(keepPackPath).sort());
+  });
+  it("{ bytes } seul : lecture 3D inchangée", () => {
+    const z = zipSync({ "a.obj": enc("o"), "b.txt": enc("t") });
+    expect(data({ bytes: z }).entries!.map((e) => e.path)).toEqual(unzipModelEntries(z).map((e) => e.path));
+  });
+  it("erreurs (ZIP illisible, paperboard faux, .olf illisible) : { error } texte, aucun transfert", () => {
+    for (const j of [{ op: "unzip", mode: "pack", bytes: enc("pas un zip") }, { op: "unzip", mode: "bamboo", bytes: enc("pas un paperboard") }, { op: "olf", bytes: enc("{") }] as ZipJob[]) {
+      const r = zipJobReply(j);
+      expect(typeof (r.data as Reply).error).toBe("string");
+      expect(r.transfer).toEqual([]);
+    }
+  });
+
+  // La coquille du Worker de la page poste exactement la réponse de `zipJobReply` (données et tampons), et garde son
+  // comportement d'aujourd'hui quand `postMessage` lève : `{ error }` posté sans transfert.
+  describe("coquille de zip-worker.ts", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    });
+    async function shell(post: (m: unknown, t: Transferable[]) => void) {
+      vi.stubGlobal("WorkerGlobalScope", class {});
+      vi.stubGlobal("postMessage", post);
+      vi.stubGlobal("onmessage", null);
+      vi.resetModules();
+      await import("./zip-worker");
+      return (globalThis as unknown as { onmessage: (e: { data: unknown }) => void }).onmessage;
+    }
+    it("poste data et transfer de zipJobReply pour chaque sorte de message", async () => {
+      const posted: unknown[][] = [];
+      const handler = await shell((m, t) => void posted.push([m, t]));
+      const jobs: ZipJob[] = [
+        { op: "zip", files: [{ path: "a.txt", bytes: enc("a") }, { path: "b/c.txt", bytes: enc("bc") }] },
+        { op: "unzip", mode: "pack", bytes: zipSync({ "manifest.json": enc("{}"), "autre.txt": enc("t") }) },
+        { op: "unzip", mode: "board", bytes: zipSync({ "content.xml": enc("<iwb/>"), "i.png": enc("p") }) },
+        { bytes: zipSync({ "a.obj": enc("o") }) },
+        { op: "olf", bytes: enc("{") },
+        { op: "unzip", mode: "bamboo", bytes: enc("pas un paperboard") },
+      ];
+      for (const j of jobs) {
+        handler({ data: j });
+        const r = zipJobReply(j);
+        expect(posted.splice(0)).toEqual([[r.data, r.transfer]]);
+      }
+    });
+    it("postMessage qui lève (tampon non clonable) : { error } posté sans transfert, comme avant", async () => {
+      const posted: unknown[][] = [];
+      let first = true;
+      const handler = await shell((m, t) => {
+        if (first) {
+          first = false;
+          throw new Error("DataCloneError");
+        }
+        posted.push([m, t]);
+      });
+      handler({ data: { op: "zip", files: [] } });
+      expect(posted).toEqual([[{ error: "DataCloneError" }, []]]);
+    });
   });
 });

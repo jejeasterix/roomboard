@@ -14,26 +14,30 @@ describe("FORMAT_LOTS (D9)", () => {
   it("chaque lecteur nommé est un id du registre d'import", () => {
     for (const [ext, e] of Object.entries(FORMAT_LOTS)) expect(HANDLER_IDS.has(e.handler), ext).toBe(true);
   });
-  it("lot 1 : lus .roomboard, PNG, JPEG, .xlsx, .xlsm ; écrits .roomboard et .rbitem", () => {
-    expect(LOT_LIVRE).toBe(1);
+  it("lots livrés (LOT_LIVRE = 2) : lus et écrits", () => {
+    expect(LOT_LIVRE).toBe(2);
     const rows = formatRows();
-    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".jpeg", ".jpg", ".png", ".roomboard", ".xlsm", ".xlsx"]);
-    expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".rbitem", ".roomboard"]);
+    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".png", ".rbitem", ".rbpack", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
+    expect(rows.find((r) => r.ext === ".rbpack")?.notes.join(" ")).toContain("library import");
+    expect(rows.find((r) => r.ext === ".notebook")?.notes.join(" ")).toContain("lecture seule");
+    expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".rbitem", ".rbpack", ".roomboard", ".ubz"]);
     expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
-    expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("state");
-    expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: false, write: true, readLot: 2, writeLot: 1 }));
+    expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("--grid");
+    expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: true, write: true, readLot: 2, writeLot: 1 }));
   });
   it("importBlocked : lot d'un format reconnu non livré, null pour un format lisible ou inconnu", () => {
     expect(importBlocked("doc.pdf")).toBe(3);
-    expect(importBlocked("x.rbitem")).toBe(2);
+    expect(importBlocked("x.rbitem")).toBeNull();
     expect(importBlocked("r.DOCX")).toBe(4);
     expect(importBlocked("image.png")).toBeNull();
     expect(importBlocked("valeurs.xlsx")).toBeNull();
     expect(importBlocked("notes.txt")).toBeNull();
+    expect(importBlocked("a.iwb")).toBeNull();
+    expect(importBlocked("a.flipchart")).toBeNull();
     expect(unsupportedMessage("/tmp/doc.pdf", 3)).toBe("doc.pdf : format pris en charge par la CLI au lot 3");
   });
   it("exportBlocked : .iwb → 2, .pdf → 3 ; .rbitem et .png → null ; lotOf", () => {
-    expect(exportBlocked("a.iwb")).toBe(2);
+    expect(exportBlocked("a.iwb")).toBeNull();
     expect(exportBlocked("a.pdf")).toBe(3);
     expect(exportBlocked("a.rbitem")).toBeNull();
     expect(exportBlocked("a.png")).toBeNull();
@@ -47,5 +51,14 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(extOf(".bashrc")).toBe("");
     expect(importBlocked("a.constructor")).toBeNull();
     expect(lotOf("a.__proto__")).toBeNull();
+  });
+
+  it("D27 : covered — toute entrée d'un lot ≤ LOT_LIVRE est couverte ; un sens couvert a un lot", () => {
+    for (const [ext, e] of Object.entries(FORMAT_LOTS)) {
+      if (e.read !== null && e.read <= LOT_LIVRE) expect(e.covered.read, ext).toBe(true);
+      if (e.write !== null && e.write <= LOT_LIVRE) expect(e.covered.write, ext).toBe(true);
+      if (e.covered.read) expect(e.read, ext).not.toBeNull();
+      if (e.covered.write) expect(e.write, ext).not.toBeNull();
+    }
   });
 });

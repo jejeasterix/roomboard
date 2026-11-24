@@ -6,10 +6,12 @@
  * liés ne sont pas insérés, avec l'avis de la copie d'un média lié (C14, R2) ; le reste l'est.
  * C4 : une ressource lue décide seule de son chemin (objets → `placeFragment`, grille → un `SetGrid`) ; la grille de
  * la page montrée s'écrit en `.rbitem` de grille.
+ * cli-lot2 (D17, D19) : générique sur l'onglet `T`, lu par `view` ; `encodeIds` sert la CLI.
  */
 import { anchorOf, CASCADE_STEP } from "../platform/image-import";
 import type { OpenedFile, Point } from "../platform/files";
-import type { CoreDocument, CoreFactory } from "../core/api";
+import type { Change, Command, CoreDocument, CoreFactory } from "../core/api";
+import type { AssetStore } from "../core/asset-store";
 import { LINKED_COPY_MESSAGE, MissingAssetError, type ContainerIO, type ReadResult } from "./container-io";
 import type { TabSession } from "./workspace";
 
@@ -23,42 +25,68 @@ export const GRID_NAME = "Grille";
 export const NO_GRID_MESSAGE = "cette page n'a pas de grille, rien n'est ajouté";
 export const EMPTY_GRID_MESSAGE = "grille vide, rien n'est appliqué";
 
-export interface FragmentDeps {
+/** Ce que `fragments.ts` lit d'un onglet : la page l'adapte par `tabSessionView`, la CLI par son propre onglet. */
+export interface FragmentTab {
+  readonly assets: AssetStore;
+  readonly doc: CoreDocument;
+  state(): { readonly page: string; readonly selection: readonly string[] };
+  anchor(at: Point | null): readonly [number, number];
+  run(cmd: Command): Change | null;
+  insertFragment(src: CoreDocument, dx: number, dy: number): Change | null;
+  insertPages(src: CoreDocument): Change | null;
+}
+
+export interface FragmentDeps<T> {
   readonly io: ContainerIO;
   /** C4 : document neuf de la grille en ressource. */
   readonly core: Pick<CoreFactory, "blank">;
   now(): string;
   readonly appVersion: string;
   say(message: string): Promise<void>;
-  alive(tab: TabSession): boolean;
+  alive(tab: T): boolean;
+  view(tab: T): FragmentTab;
 }
 
 /** Issue d'une insertion : refusée (avis dit), objet sans élément (avis dit) ou insérée. */
 export type InsertOutcome = "inserted" | "refused" | "empty";
 
-export interface FragmentOps {
+export interface FragmentOps<T> {
   /** Octets du `.rbitem` de la sélection, ou null (rien de sélectionné, image absente : avis dit). Autre erreur : rejet. */
-  encodeSelection(tab: TabSession, action?: "copy" | "export"): Promise<Uint8Array | null>;
+  encodeSelection(tab: T, action?: "copy" | "export"): Promise<Uint8Array | null>;
+  /** Ids d'une page en `.rbitem` et nombre d'éléments de sa première page ; ids vides ou image absente : null. */
+  encodeIds(tab: T, page: string, ids: readonly string[], name?: string, action?: "copy" | "export"): Promise<{ readonly bytes: Uint8Array; readonly elements: number } | null>;
   /** `index` : rang dans un import (cascade, R4) ; absent, un collage suit la cascade du presse-papiers (Z7) si `at` est null. */
-  insert(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<boolean>;
-  insertOutcome(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome>;
-  insertPages(tab: TabSession, file: OpenedFile): Promise<boolean>;
+  insert(tab: T, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<boolean>;
+  insertOutcome(tab: T, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome>;
+  insertPages(tab: T, file: OpenedFile): Promise<boolean>;
   /** C4 (D2, D14) : objets → insertion de `insertOutcome` ; grille → un `SetGrid` sur la page montrée (même grille :
    *  aucune étape). Le type se lit une fois, par `ContainerIO.read`. */
-  insertResource(tab: TabSession, bytes: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome>;
+  insertResource(tab: T, bytes: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome>;
   /** C4 (D2) : grille de la page montrée en `.rbitem` de grille ; null : page sans grille (avis dit). */
-  encodeGrid(tab: TabSession, name?: string): Promise<Uint8Array | null>;
+  encodeGrid(tab: T, name?: string): Promise<Uint8Array | null>;
   resetCascade(): void;
 }
 
 const sameBytes = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
 
-export function createFragmentOps(deps: FragmentDeps): FragmentOps {
+export function tabSessionView(t: TabSession): FragmentTab {
+  return {
+    assets: t.assets,
+    doc: t.board.doc,
+    state: () => t.board.engine.state(),
+    anchor: (at) => anchorOf(t.board.stage.getBoundingClientRect(), t.board.engine.camera(), at),
+    run: (cmd) => t.board.engine.run(cmd),
+    insertFragment: (src, dx, dy) => t.board.engine.insertFragment(src, dx, dy),
+    insertPages: (src) => t.board.engine.insertPages(src),
+  };
+}
+
+export function createFragmentOps<T>(deps: FragmentDeps<T>): FragmentOps<T> {
   let last: Uint8Array | null = null;
   let cascade = 0;
 
   /** Refus (doc libéré) si un asset cité n'a pas été lu ou si l'onglet est fermé. */
-  async function accept(tab: TabSession, read: ReadResult, name: string): Promise<boolean> {
+  async function accept(tab: T, read: ReadResult, name: string): Promise<boolean> {
     if (read.unread) {
       read.doc.free();
       await deps.say(`${name} : ${UNREAD_ITEMS_MESSAGE}`);
@@ -73,9 +101,10 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
   }
 
   /** Assets de l'objet adoptés par l'onglet : après tous les contrôles, juste avant l'insertion. */
-  function adopt(tab: TabSession, read: ReadResult): void {
+  function adopt(tab: T, read: ReadResult): void {
     const { present } = read.assets.pick(read.doc.citedAssets().map((a) => a.id));
-    for (const [id, blob] of present) tab.assets.adopt(id, blob);
+    const assets = deps.view(tab).assets;
+    for (const [id, blob] of present) assets.adopt(id, blob);
   }
 
   /** R2 (C14) : médias liés de l'autre document retirés de la copie lue (jamais du fichier), avec un avis. */
@@ -91,7 +120,7 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
   }
 
   /** Seul chemin d'insertion d'objets lus (collage, dépôt, ressource) : cascade, centre, adoption des assets. */
-  async function placeFragment(tab: TabSession, read: ReadResult, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
+  async function placeFragment(tab: T, read: ReadResult, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
     if (!(await accept(tab, read, name))) return "refused";
     const src = read.doc;
     try {
@@ -101,7 +130,8 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
         await deps.say(`${name} : ${EMPTY_ITEMS_MESSAGE}`);
         return "empty";
       }
-      const [ax, ay] = anchorOf(tab.board.stage.getBoundingClientRect(), tab.board.engine.camera(), at);
+      const v = deps.view(tab);
+      const [ax, ay] = v.anchor(at);
       let n = 0;
       if (index !== undefined) n = index;
       else if (at === null) {
@@ -112,20 +142,20 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       const dx = ax + CASCADE_STEP * n - (box.x0 + box.x1) / 2;
       const dy = ay + CASCADE_STEP * n - (box.y0 + box.y1) / 2;
       adopt(tab, read);
-      return tab.board.engine.insertFragment(src, dx, dy) !== null ? "inserted" : "refused";
+      return v.insertFragment(src, dx, dy) !== null ? "inserted" : "refused";
     } finally {
       src.free();
     }
   }
 
-  async function insertOutcome(tab: TabSession, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
+  async function insertOutcome(tab: T, rbitem: Uint8Array, name: string, at: Point | null, index?: number): Promise<InsertOutcome> {
     const read = await deps.io.read(name, rbitem, "fragment");
     if (read === null) return "refused";
     return placeFragment(tab, read, rbitem, name, at, index);
   }
 
   /** D2, D38 : la grille de la ressource sur la page montrée, en un `SetGrid` ; même grille : rien. */
-  async function placeGrid(tab: TabSession, read: ReadResult, name: string): Promise<InsertOutcome> {
+  async function placeGrid(tab: T, read: ReadResult, name: string): Promise<InsertOutcome> {
     if (!(await accept(tab, read, name))) return "refused";
     const src = read.doc;
     try {
@@ -134,30 +164,40 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
         await deps.say(`${name} : ${EMPTY_GRID_MESSAGE}`);
         return "empty";
       }
-      const page = tab.board.engine.state().page;
-      const current = tab.board.doc.page(page)?.grid ?? null;
+      const v = deps.view(tab);
+      const page = v.state().page;
+      const current = v.doc.page(page)?.grid ?? null;
       if (current !== null && JSON.stringify(current) === JSON.stringify(grid)) return "inserted";
-      return tab.board.engine.run({ type: "SetGrid", page, grid }) !== null ? "inserted" : "refused";
+      return v.run({ type: "SetGrid", page, grid }) !== null ? "inserted" : "refused";
     } finally {
       src.free();
     }
   }
 
+  async function encodeIds(tab: T, page: string, ids: readonly string[], name: string = SELECTION_NAME, action: "copy" | "export" = "copy"): Promise<{ readonly bytes: Uint8Array; readonly elements: number } | null> {
+    if (ids.length === 0) return null;
+    const v = deps.view(tab);
+    const frag = v.doc.extract(page, ids);
+    try {
+      const fp = frag.pageIds()[0];
+      const elements = fp === undefined ? 0 : frag.elementIds(fp).length; // règle de `exporter` (nombre d'éléments de la première page), déplacée ici
+      const bytes = await deps.io.encode(frag, v.assets, deps.now(), deps.appVersion, { kind: "fragment", name });
+      return { bytes, elements };
+    } catch (e) {
+      if (!(e instanceof MissingAssetError)) throw e; // les autres (module absent…) portent leur propre avis
+      await deps.say(action === "export" ? MISSING_EXPORT_MESSAGE : MISSING_ITEMS_MESSAGE);
+      return null;
+    } finally {
+      frag.free();
+    }
+  }
+
   return {
     async encodeSelection(tab, action = "copy") {
-      const { selection, page } = tab.board.engine.state();
-      if (selection.length === 0) return null;
-      const frag = tab.board.doc.extract(page, selection);
-      try {
-        return await deps.io.encode(frag, tab.assets, deps.now(), deps.appVersion, { kind: "fragment", name: SELECTION_NAME });
-      } catch (e) {
-        if (!(e instanceof MissingAssetError)) throw e; // les autres (module absent…) portent leur propre avis
-        await deps.say(action === "export" ? MISSING_EXPORT_MESSAGE : MISSING_ITEMS_MESSAGE);
-        return null;
-      } finally {
-        frag.free();
-      }
+      const { page, selection } = deps.view(tab).state();
+      return (await encodeIds(tab, page, selection, SELECTION_NAME, action))?.bytes ?? null;
     },
+    encodeIds,
     insertOutcome,
     async insertResource(tab, bytes, name, at, index) {
       const read = await deps.io.read(name, bytes, ["fragment", "grid"]);
@@ -165,7 +205,8 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       return read.kind === "grid" ? placeGrid(tab, read, name) : placeFragment(tab, read, bytes, name, at, index);
     },
     async encodeGrid(tab, name = GRID_NAME) {
-      const grid = tab.board.doc.page(tab.board.engine.state().page)?.grid ?? null;
+      const v = deps.view(tab);
+      const grid = v.doc.page(v.state().page)?.grid ?? null;
       if (grid === null) {
         await deps.say(NO_GRID_MESSAGE);
         return null;
@@ -173,7 +214,7 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       const doc = deps.core.blank();
       try {
         doc.apply({ type: "SetGrid", page: doc.pageIds()[0]!, grid });
-        return await deps.io.encode(doc, tab.assets, deps.now(), deps.appVersion, { kind: "grid", name });
+        return await deps.io.encode(doc, v.assets, deps.now(), deps.appVersion, { kind: "grid", name });
       } finally {
         doc.free();
       }
@@ -188,7 +229,7 @@ export function createFragmentOps(deps: FragmentDeps): FragmentOps {
       try {
         await dropLinked(read.doc, file.name);
         adopt(tab, read);
-        return tab.board.engine.insertPages(read.doc) !== null;
+        return deps.view(tab).insertPages(read.doc) !== null;
       } finally {
         read.doc.free();
       }

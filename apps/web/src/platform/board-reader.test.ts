@@ -1,20 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BOARD_FAILED_MESSAGE,
   BOARD_OBJECTS_MESSAGE,
   BOARD_WRITE_FAILED_MESSAGE,
   NOTEBOOK_ORDER_GUESSED,
   boardErrorMessage,
+  boardJobReply,
   checkBoardFiles,
   checkBoardParts,
   createBoardCodec,
   notebookOrder,
   withLeadingWarnings,
+  type BoardJob,
   type BoardPart,
 } from "./board-reader";
-import boardWorkerSource from "./board-worker.ts?raw";
 import { hasBoardReader, hasFlipchartReader, type FormatsBinding } from "./container";
-import type { WorkerLike } from "./one-shot-worker";
+import { inlineWorker, type WorkerLike, type WorkerReply } from "./one-shot-worker";
 
 function fakeWorker(reply: (m: unknown) => unknown, sent: unknown[] = [], transfers: Transferable[][] = []): WorkerLike {
   const w: WorkerLike = {
@@ -190,10 +191,6 @@ describe("Worker des tableaux, .notebook (C13 lot 2, N6)", () => {
     expect(withLeadingWarnings([], ["x"])).toEqual([]);
   });
 
-  it("C13 N6 : le Worker ordonne par notebookOrder et la liaison, sans tri ni DOMParser", () => {
-    expect(boardWorkerSource).toContain("notebookOrder(mod.notebook_order");
-    expect(boardWorkerSource).not.toMatch(/DOMParser|\.sort\(|localeCompare/);
-  });
   it("C13 N11 : readFlipchart envoie noms, données et bornes", async () => {
     const sent: unknown[] = [];
     const transfers: Transferable[][] = [];
@@ -226,8 +223,141 @@ describe("Worker des tableaux, .notebook (C13 lot 2, N6)", () => {
     expect(hasFlipchartReader({ ContainerReader: { open: fail }, write_container: fail } as unknown as FormatsBinding)).toBe(false);
     expect(hasFlipchartReader({ ContainerReader: { open: fail }, write_container: fail, FlipchartReader: { open: fail } } as unknown as FormatsBinding)).toBe(true);
   });
+});
 
-  it("C13 N11 : le Worker ouvre le paperboard par FlipchartReader, sans le tableau des pages", () => {
-    expect(boardWorkerSource).toContain("FlipchartReader.open(");
+describe("boardJobReply (cli-lot2, D20, D29)", () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const dec = (b: Uint8Array) => new TextDecoder().decode(b);
+  const reader = (tag: string) => ({ ops: () => new Float32Array([tag.length]), texts: () => [tag], warnings: () => [], free: () => undefined });
+  const fail = (): never => {
+    throw new Error("non appelé");
+  };
+  function mod(over: { open?: (xml: Uint8Array) => unknown; order?: (m: Uint8Array) => string[]; flip?: (n: string[], d: Uint8Array, e: Uint32Array) => unknown; write?: () => string[] } = {}): FormatsBinding {
+    return {
+      ContainerReader: { open: fail },
+      write_container: fail,
+      BoardReader: { open: (xml: Uint8Array) => (over.open ?? ((x: Uint8Array) => reader(dec(x))))(xml) },
+      write_board_xml: over.write ?? (() => ["content.xml", "<iwb/>"]),
+      notebook_order: over.order ?? (() => []),
+      FlipchartReader: { open: over.flip ?? (() => reader("flip")) },
+    } as unknown as FormatsBinding;
+  }
+  const panic = (): never => {
+    throw new WebAssembly.RuntimeError("unreachable");
+  };
+  it("C13 N6 : un .notebook est ordonné par notebookOrder et la liaison notebook_order, sans tri", () => {
+    const r = boardJobReply(mod({ order: () => ["page1.svg", "page0.svg"] }), { op: "read", dialect: "notebook", files: [enc("A"), enc("B")], names: ["page0.svg", "page1.svg"], manifest: enc("<m/>"), max: 10 });
+    expect((r.data as { parts: BoardPart[] }).parts.map((p) => p.texts[0])).toEqual(["B", "A"]);
+    expect(r.transfer).toHaveLength(2);
+  });
+  it("C13 N6 : sans manifeste, ordre reçu (jamais trié par nom) et avis NOTEBOOK_ORDER_GUESSED", () => {
+    const r = boardJobReply(mod(), { op: "read", dialect: "notebook", files: [enc("X10"), enc("X2")], names: ["page10.svg", "page2.svg"], manifest: null, max: 10 });
+    const parts = (r.data as { parts: BoardPart[] }).parts;
+    expect(parts.map((p) => p.texts[0])).toEqual(["X10", "X2"]);
+    expect(parts[0]!.warnings).toEqual([NOTEBOOK_ORDER_GUESSED]);
+  });
+  it("C13 N11 : un .flipchart est ouvert par FlipchartReader en une part", () => {
+    const seen: unknown[] = [];
+    const r = boardJobReply(mod({ flip: (n, d, e) => (seen.push(n, d, e), reader("flip")) }), { op: "flipchart", names: ["1.in"], data: new Uint8Array([1]), ends: new Uint32Array([1]) });
+    expect((r.data as { parts: BoardPart[] }).parts).toHaveLength(1);
+    expect(seen[0]).toEqual(["1.in"]);
+  });
+  it("write : fichiers de write_board_xml, aucun transfert", () => {
+    const r = boardJobReply(mod(), { op: "write", format: "iwb", ops: new Float32Array(), texts: [] });
+    expect(r).toEqual({ data: { files: ["content.xml", "<iwb/>"] }, transfer: [] });
+  });
+  it("erreur connue rendue telle quelle ; inconnue → message d'échec du sens", () => {
+    const damaged = mod({ open: () => { throw new Error("fichier endommagé : xml"); } });
+    expect(boardJobReply(damaged, { op: "read", dialect: "iwb", files: [enc("x")] }).data).toEqual({ error: "fichier endommagé : xml" });
+    const broken = mod({ write: () => { throw new Error("autre"); } });
+    expect(boardJobReply(broken, { op: "write", format: "ubz", ops: new Float32Array(), texts: [] }).data).toEqual({ error: BOARD_WRITE_FAILED_MESSAGE });
+    const bare = { ContainerReader: { open: fail }, write_container: fail } as unknown as FormatsBinding;
+    expect(boardJobReply(bare, { op: "read", dialect: "iwb", files: [] }).data).toEqual({ error: BOARD_FAILED_MESSAGE });
+  });
+  it("D29 : une panique Wasm (RuntimeError) est relancée, jamais rendue en { error }", () => {
+    const panicked = mod({ open: () => { throw new WebAssembly.RuntimeError("unreachable"); } });
+    expect(() => boardJobReply(panicked, { op: "read", dialect: "iwb", files: [enc("x")] })).toThrow(WebAssembly.RuntimeError);
+  });
+
+  it("D29 : free() masque la panique — la RuntimeError d'origine est relancée, pas l'Error de free()", () => {
+    const masked = {
+      ops: panic,
+      texts: () => [],
+      warnings: () => [],
+      free: () => {
+        throw new Error("attempted to take ownership of Rust value while it was borrowed");
+      },
+    };
+    const m = mod({ open: () => masked });
+    expect(() => boardJobReply(m, { op: "read", dialect: "iwb", files: [enc("x")] })).toThrow(WebAssembly.RuntimeError);
+  });
+
+  // Chemin de référence (DA7) : le codec de la page, inchangé, reçoit le corps en processus comme `spawn` ; les réponses
+  // passent par `checkBoardParts`/`checkBoardFiles` et une panique par `onerror` → message d'échec de `runOnce`.
+  // Un appel direct de `BoardReader.open` (patron écarté) rendrait l'erreur brute « unreachable ».
+  it("DA7 : createBoardCodec(inlineWorker(boardJobReply)) : parts contrôlées, erreur connue, panique → message d'échec", async () => {
+    const codec = (m: FormatsBinding) => createBoardCodec(inlineWorker((job) => boardJobReply(m, job as BoardJob)), 1000);
+    const parts = await codec(mod()).read([enc("A"), enc("BB")], "ubz");
+    expect(parts.map((p) => p.texts)).toEqual([["A"], ["BB"]]);
+    expect(parts[1]!.ops).toEqual(new Float32Array([2]));
+    expect((await codec(mod()).readFlipchart([{ path: "1.in", bytes: enc("i") }])).texts).toEqual(["flip"]);
+    expect(await codec(mod()).write({ ops: new Float32Array(), texts: [] }, "iwb")).toEqual([{ path: "content.xml", bytes: enc("<iwb/>") }]);
+    await expect(codec(mod({ open: () => { throw new Error("fichier endommagé : xml"); } })).read([enc("x")], "iwb")).rejects.toThrow("fichier endommagé : xml");
+    await expect(codec(mod({ open: panic })).read([enc("x")], "iwb")).rejects.toThrow(BOARD_FAILED_MESSAGE);
+    await expect(codec(mod({ write: panic })).write({ ops: new Float32Array(), texts: [] }, "iwb")).rejects.toThrow(BOARD_WRITE_FAILED_MESSAGE);
+  });
+
+  // La coquille de `board-worker.ts`, exécutée (plus lue en texte) : elle poste la réponse de `boardJobReply` telle
+  // quelle et attrape la panique relancée pour poster le même `{ error }` qu'avant l'extraction (rien ne change pour la page).
+  describe("coquille de board-worker.ts", () => {
+    afterEach(() => {
+      vi.doUnmock("./board-reader");
+      vi.doUnmock("./container-load");
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    });
+    async function shell(load: () => Promise<FormatsBinding>, reply?: (m: FormatsBinding, j: BoardJob) => WorkerReply) {
+      const posted: unknown[][] = [];
+      const scope: { onmessage: ((e: { data: unknown }) => Promise<void>) | null; postMessage: (...a: unknown[]) => void } = {
+        onmessage: null,
+        postMessage: (...a) => void posted.push(a),
+      };
+      vi.stubGlobal("self", scope);
+      vi.resetModules();
+      vi.doMock("./container-load", () => ({ loadFormatsModule: load }));
+      if (reply) vi.doMock("./board-reader", async (orig) => ({ ...(await orig<typeof import("./board-reader")>()), boardJobReply: reply }));
+      await import("./board-worker");
+      return async (job: BoardJob) => {
+        await scope.onmessage!({ data: job });
+        return posted.splice(0);
+      };
+    }
+    it("le Worker poste la réponse de boardJobReply(module chargé, message), tampons transférés", async () => {
+      const m = mod();
+      const buf = new ArrayBuffer(4);
+      const calls: unknown[][] = [];
+      const run = await shell(async () => m, (...a) => (calls.push(a), { data: { parts: "réponse du corps" }, transfer: [buf] }));
+      const job: BoardJob = { op: "read", dialect: "iwb", files: [enc("x")] };
+      expect(await run(job)).toEqual([[{ parts: "réponse du corps" }, { transfer: [buf] }]]);
+      expect(calls).toEqual([[m, job]]);
+    });
+    it("lecture réelle : les tampons transférés sont ceux des parts", async () => {
+      const run = await shell(async () => mod());
+      const [[data, opts]] = (await run({ op: "read", dialect: "ubz", files: [enc("A"), enc("B")] })) as [[{ parts: BoardPart[] }, { transfer: ArrayBuffer[] }]];
+      expect(data.parts.map((p) => p.texts)).toEqual([["A"], ["B"]]);
+      expect(opts.transfer).toEqual(data.parts.map((p) => (p.ops as Float32Array).buffer));
+      expect(opts.transfer[0]).toBe((data.parts[0]!.ops as Float32Array).buffer);
+    });
+    it("D29 : panique relancée par boardJobReply → la coquille poste { error } du sens, comme avant", async () => {
+      expect((await (await shell(async () => mod({ open: panic })))({ op: "read", dialect: "iwb", files: [enc("x")] })).map((a) => a[0])).toEqual([{ error: BOARD_FAILED_MESSAGE }]);
+      vi.resetModules();
+      expect((await (await shell(async () => mod({ write: panic })))({ op: "write", format: "iwb", ops: new Float32Array(), texts: [] })).map((a) => a[0])).toEqual([{ error: BOARD_WRITE_FAILED_MESSAGE }]);
+    });
+    it("erreur connue et module absent : même { error } qu'avant", async () => {
+      const damaged = mod({ open: () => { throw new Error("fichier endommagé : xml"); } });
+      expect((await (await shell(async () => damaged))({ op: "read", dialect: "iwb", files: [enc("x")] })).map((a) => a[0])).toEqual([{ error: "fichier endommagé : xml" }]);
+      const absent = await shell(() => Promise.reject(new Error("module formats absent")));
+      expect((await absent({ op: "flipchart", names: [], data: new Uint8Array(), ends: new Uint32Array() })).map((a) => a[0])).toEqual([{ error: BOARD_FAILED_MESSAGE }]);
+    });
   });
 });

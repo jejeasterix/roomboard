@@ -1,11 +1,11 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { FORMAT_LOTS } from "./formats";
 import { main } from "./main";
-import { describeWasm, memoryIO, stampOf, tmpDir, type Json } from "./testing";
+import { describeWasm, memoryIO, normalizeIds, stampOf, tmpDir, type Json } from "./testing";
 
 describe("main : commandes sans module (D9)", () => {
   it("formats rend la table entière, code 0", async () => {
@@ -34,6 +34,8 @@ describe("main : commandes sans module (D9)", () => {
       const [out] = io.json();
       expect(out.usage).toContain("roomboard run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]");
       expect(out.usage).toContain("roomboard new <sortie.roomboard> [--replace]");
+      expect(out.usage).toContain("roomboard convert <source> <sortie.roomboard | .iwb | .ubz>");
+      expect(out.usage.some((u: string) => u.startsWith("roomboard library list <dossier>"))).toBe(true);
       expect(JSON.stringify(out)).toContain("$$");
       expect(out.env).toContain("ROOMBOARD_NOW=<millisecondes depuis 1970>");
     }
@@ -297,5 +299,75 @@ describeWasm("new : jamais d'écrasement sans --replace", () => {
     expect(await main(["new", a], io)).toBe(2);
     expect(io.errors()[0].error.code).toBe("usage");
     expect(existsSync(a)).toBe(false);
+  });
+});
+
+describe("main : D23, toute écriture de document vise un .roomboard (avant tout chargement)", () => {
+  const absent = () => memoryIO([], {}, new URL("file:///roomboard-absent/")); // un chargement donnerait le code 1
+  it("D23 — new, run --out, run <tableau> --save, apply --out, import sans --out : code 2 sans charger le module", async () => {
+    const dir = tmpDir();
+    for (const argv of [
+      ["new", join(dir, "z.iwb")],
+      ["run", "--new", "--out", join(dir, "x.txt")],
+      ["run", join(dir, "lecon.iwb"), "--save"],
+      ["apply", join(dir, "a.roomboard"), "{}", "--out", join(dir, "a.ubz")],
+      ["import", join(dir, "lecon.iwb"), join(dir, "i.png")],
+    ]) {
+      const io = absent();
+      expect(await main(argv, io), argv.join(" ")).toBe(2);
+      expect(io.errors()[0].error.code).toBe("usage");
+    }
+    expect(existsSync(join(dir, "z.iwb"))).toBe(false);
+  });
+});
+
+describeWasm("main : D23 dans run", () => {
+  it("D23 — op save vers un .iwb : ligne d'échec usage, code 2", async () => {
+    const dir = tmpDir();
+    const io = memoryIO([JSON.stringify({ op: "save", to: join(dir, "x.iwb") })]);
+    expect(await main(["run", "--new"], io)).toBe(2);
+    expect(io.json()[0]).toMatchObject({ op: 1, ok: false, error: { code: "usage" } });
+  });
+});
+
+describe("main : library (DA9, DA10)", () => {
+  it("usage : sous-commande inconnue, arguments manquants, sortie non .rbpack : code 2 sans charger", async () => {
+    for (const argv of [["library"], ["library", "add", "/tmp/x"], ["library", "import", "/tmp/x"], ["library", "export", "/tmp/x", "/tmp/p.zip"], ["library", "import", "/tmp/x", "/tmp/p.rbpack", "--folder", "F"]]) {
+      const io = memoryIO([], {}, new URL("file:///roomboard-absent/"));
+      expect(await main(argv, io), argv.join(" ")).toBe(2);
+    }
+  });
+});
+
+describeWasm("S4 — library par la commande", () => {
+  it("S4 — export --folder, import, list ; state de la ressource relue = original ; import d'un .rbpack dans un tableau : 2", async () => {
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    const lib = join(dir, "lib");
+    mkdirSync(join(lib, "Formes"), { recursive: true });
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const shape = (x: number) => JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: 0, x1: x + 50, y1: 50, style: { color: "#000000", width: 2 }, fill: null });
+    const run = memoryIO([shape(0), shape(100)]);
+    expect(await main(["run", a, "--save"], run)).toBe(0);
+    const [first, second] = run.json().slice(0, 2).map((l: Json) => l.change.ids[0]); // 3e ligne : { written }
+    expect(await main(["export", a, join(lib, "Formes", "carre.rbitem"), "--ids", first], memoryIO())).toBe(0);
+    expect(await main(["export", a, join(lib, "Formes", "rond.rbitem"), "--ids", second], memoryIO())).toBe(0);
+    const pack = join(dir, "p.rbpack");
+    const ex = memoryIO();
+    expect(await main(["library", "export", lib, pack, "--folder", "Formes"], ex)).toBe(0);
+    expect(ex.json()[0]).toEqual({ file: pack, name: "Formes.rbpack", skipped: [] });
+    const lib2 = join(dir, "lib2");
+    const im = memoryIO();
+    expect(await main(["library", "import", lib2, pack], im)).toBe(0);
+    expect(im.json()[0]).toMatchObject({ library: lib2, folder: "Formes", count: 2, notices: [expect.stringContaining("p.rbpack")] });
+    const ls = memoryIO();
+    expect(await main(["library", "list", lib2, "--folder", "Formes"], ls)).toBe(0);
+    expect(ls.json()[0].items.map((i: Json) => i.name).sort()).toEqual(["carre", "rond"]);
+    const s1 = memoryIO();
+    const s2 = memoryIO();
+    await main(["state", join(lib, "Formes", "carre.rbitem")], s1);
+    await main(["state", join(lib2, "Formes", "carre.rbitem")], s2);
+    expect(normalizeIds(s2.json()[0].pages)).toEqual(normalizeIds(s1.json()[0].pages));
+    expect(await main(["import", a, pack], memoryIO())).toBe(2);
   });
 });
