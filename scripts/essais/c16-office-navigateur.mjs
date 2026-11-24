@@ -3,7 +3,7 @@
 // cours.docx puis diapos.pptx (fabriqués par les tests de roomboard-shell) → « <nom> : exportez en PDF depuis Office »,
 // rien d'ajouté ; valeurs.xlsx (C10b) → un tableau en valeurs ; enregistrer puis rouvrir ; scène ≥ 640 px ; bouton
 // « Modifier dans l'application d'origine » absent. `--captures` : S4, diapos.pptx converti par LibreOffice (exemple
-// convertir_office de roomboard-shell, même code que la coque), le PDF déposé (2 pages), capture
+// roomboard-office de roomboard-shell, même code que la coque), le PDF déposé (2 pages), capture
 // docs/essais/c16-pptx-libreoffice.png. Code : 0 réussi, 1 échec, 2 outil absent.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -92,10 +92,10 @@ async function scenario(page, url, { captures, tmp }) {
   check(box2.height >= 640, `S3 : scène de ${box2.height} px (≥ 640) après réouverture`);
 
   if (captures) {
-    // S4 : conversion réelle par le code de la coque (exemple convertir_office), puis dépôt du PDF.
+    // S4 : conversion réelle par le code de la coque (binaire roomboard-office), puis dépôt du PDF.
     const pdfPath = join(tmp, "diapos.pdf");
-    const run = spawnSync("cargo", ["run", "-q", "-p", "roomboard-shell", "--example", "convertir_office", "--", join(FIX, "diapos.pptx"), pdfPath], { cwd: ROOT, encoding: "utf8" });
-    if (run.status !== 0) throw new Echec(`convertir_office : code ${run.status} ; ${run.stderr}`);
+    const run = spawnSync("cargo", ["run", "-q", "-p", "roomboard-shell", "--bin", "roomboard-office", "--", join(FIX, "diapos.pptx"), pdfPath], { cwd: ROOT, encoding: "utf8" });
+    if (run.status !== 0) throw new Echec(`roomboard-office : code ${run.status} ; ${run.stderr}`);
     const converter = (run.stdout.match(/convertisseur : (.+)/) ?? [])[1] ?? "?";
     const pdf = await readFile(pdfPath);
     check(pdf.subarray(0, 5).toString("latin1") === "%PDF-", `S4 : diapos.pptx converti par ${converter} : %PDF-`);

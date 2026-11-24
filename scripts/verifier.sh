@@ -80,6 +80,8 @@ fi
 
 # CLI (cadrage cli, D14) : construite, puis essayée de bout en bout sur des fichiers temporaires. Hors du bloc --e2e :
 # aucun navigateur. Après les modules Wasm et pnpm install ; un module absent fait échouer l'essai.
+# cli-lot4 (D53, D55) : binaire de conversion Office lu par la CLI dans target/debug/.
+nice -n 10 cargo build -p roomboard-shell --bin roomboard-office -j 4
 pnpm --filter @roomboard/cli build
 node scripts/essais/cli-essai.mjs
 
