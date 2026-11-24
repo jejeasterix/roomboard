@@ -97,7 +97,7 @@ export async function importInto(session: Session, req: ImportRequest): Promise<
       notices.push(m);
     },
     full: () => session.tabs.list().length >= MAX_TABS,
-    target: () => headlessTarget(tab, page, notices),
+    target: () => headlessTarget(tab, page, notices, session.deps.fragments),
     decode: nodeDecode,
     readSheet: async (blob) => readSheet(await formats(), blob),
   });

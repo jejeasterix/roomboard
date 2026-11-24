@@ -17,15 +17,15 @@ describe("FORMAT_LOTS (D9)", () => {
   it("lot 1 : lus .roomboard, PNG, JPEG, .xlsx, .xlsm ; écrits .roomboard et .rbitem", () => {
     expect(LOT_LIVRE).toBe(1);
     const rows = formatRows();
-    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".jpeg", ".jpg", ".png", ".roomboard", ".xlsm", ".xlsx"]);
+    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".jpeg", ".jpg", ".png", ".rbitem", ".roomboard", ".xlsm", ".xlsx"]);
     expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".rbitem", ".roomboard"]);
     expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
-    expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("state");
-    expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: false, write: true, readLot: 2, writeLot: 1 }));
+    expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("--grid");
+    expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: true, write: true, readLot: 2, writeLot: 1 }));
   });
   it("importBlocked : lot d'un format reconnu non livré, null pour un format lisible ou inconnu", () => {
     expect(importBlocked("doc.pdf")).toBe(3);
-    expect(importBlocked("x.rbitem")).toBe(2);
+    expect(importBlocked("x.rbitem")).toBeNull();
     expect(importBlocked("r.DOCX")).toBe(4);
     expect(importBlocked("image.png")).toBeNull();
     expect(importBlocked("valeurs.xlsx")).toBeNull();
@@ -47,5 +47,14 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(extOf(".bashrc")).toBe("");
     expect(importBlocked("a.constructor")).toBeNull();
     expect(lotOf("a.__proto__")).toBeNull();
+  });
+
+  it("D27 : covered — toute entrée d'un lot ≤ LOT_LIVRE est couverte ; un sens couvert a un lot", () => {
+    for (const [ext, e] of Object.entries(FORMAT_LOTS)) {
+      if (e.read !== null && e.read <= LOT_LIVRE) expect(e.covered.read, ext).toBe(true);
+      if (e.write !== null && e.write <= LOT_LIVRE) expect(e.covered.write, ext).toBe(true);
+      if (e.covered.read) expect(e.read, ext).not.toBeNull();
+      if (e.covered.write) expect(e.write, ext).not.toBeNull();
+    }
   });
 });

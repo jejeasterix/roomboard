@@ -2,20 +2,20 @@
  * Cible sans écran des objets importés (cadrage cli, DA5 lot 1, H7) : la même interface `ImageTarget` que l'onglet de la
  * page (`workspace.ts`, `imageTarget`), sur une scène fixe 1920 × 1080 à l'origine et une caméra identité : un point
  * `--at x,y` est un point monde de la page. Mesure de repli (H1), style du stylo par défaut (même règle que
- * `engine.ts`, `textStyle`). `insertFragment` absent au lot 1 (insertion `.rbitem` au lot 2).
+ * `engine.ts`, `textStyle`). `insertFragment` : `fragments.insertResource` (lot 2, D18).
  */
-import type { Command } from "../../web/src/core/api";
-import { PAGE_HEIGHT, PAGE_WIDTH } from "../../web/src/core/api";
+import type { FragmentOps } from "../../web/src/app/fragments";
 import { IDENTITY } from "../../web/src/engine/camera";
 import { DEFAULT_PEN_STYLE } from "../../web/src/engine/engine";
 import { DEFAULT_TEXT_SIZE, measureOrFallback } from "../../web/src/engine/text-layout";
-import { messageOf } from "../../web/src/platform/controller";
-import type { ImageTarget, StageRect } from "../../web/src/platform/image-import";
+import type { ImageTarget } from "../../web/src/platform/image-import";
+import { cliView, SCENE, type CliPage } from "./fragment-view";
 import type { CliTab } from "./session";
 
-export const SCENE: StageRect = Object.freeze({ left: 0, top: 0, width: PAGE_WIDTH, height: PAGE_HEIGHT });
+export { SCENE } from "./fragment-view";
 
-export function headlessTarget(tab: CliTab, page: string, notices: string[]): ImageTarget {
+export function headlessTarget(tab: CliTab, page: string, notices: string[], fragments: FragmentOps<CliPage>): ImageTarget {
+  const view = cliView({ tab, page }, notices);
   return {
     assets: tab.assets,
     page: () => page,
@@ -23,13 +23,7 @@ export function headlessTarget(tab: CliTab, page: string, notices: string[]): Im
     stageRect: () => SCENE,
     measure: () => measureOrFallback(null),
     textStyle: () => ({ color: DEFAULT_PEN_STYLE.color, size: DEFAULT_TEXT_SIZE }),
-    run: (cmd: Command) => {
-      try {
-        return tab.doc.apply(cmd);
-      } catch (e) {
-        notices.push(messageOf(e));
-        return null;
-      }
-    },
+    run: (cmd) => view.run(cmd),
+    insertFragment: async (bytes, at, index, name) => (await fragments.insertResource({ tab, page }, bytes, name, at, index)) === "inserted",
   };
 }
