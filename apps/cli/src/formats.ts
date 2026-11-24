@@ -49,6 +49,7 @@ export interface FormatRow {
 export const LEFT_ASIDE = "laissé de côté : ";
 /** cli-lot4 : entrée lue par la CLI, jamais écrite (lecture seule, comme la page). */
 const lot4 = (handler: string, ...notes: string[]): FormatEntry => branched(4, null, handler, { read: true, write: false }, ...notes);
+const IMAGES_BY_HEADER = "images lues par leur en-tête";
 const HEADER_SIZE = "taille lue dans l'en-tête ; illisible : code 3";
 const PDF_EXPORT = "export .pdf : refusé, aucun décodeur d'image dans la CLI (code 1, D69)";
 
@@ -59,11 +60,11 @@ const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", branched(2, 2, "rbpack", { read: true, write: true }, "par `library import` / `library export`")],
   [".pdf", branched(3, 3, "pdf", { read: true, write: true }, "fond `pdf-page`, PDF d'origine gardé en asset", "export : pages d'origine recopiées, annotation vectorielle ; sans repli en image (code 1)", "couleurs nommées et texte mesurés comme H25, H26", "image GIF, WebP, BMP, ICO, SVG, AVIF, HEIC : export refusé, krilla ne prend que PNG et JPEG et aucun décodeur d'image dans la CLI (code 1, D69)")],
-  [".iwb", branched(2, 2, "iwb", { read: true, write: true }, "images lues par leur en-tête")],
-  [".ubz", branched(2, 2, "ubz", { read: true, write: true }, "images lues par leur en-tête")],
-  [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", "images lues par leur en-tête")],
-  [".olf", branched(2, null, "olf", { read: true, write: false }, "lecture seule", "images lues par leur en-tête")],
-  [".flipchart", branched(2, null, "flipchart", { read: true, write: false }, "lecture seule", "images lues par leur en-tête")],
+  [".iwb", branched(2, 2, "iwb", { read: true, write: true }, IMAGES_BY_HEADER)],
+  [".ubz", branched(2, 2, "ubz", { read: true, write: true }, IMAGES_BY_HEADER)],
+  [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", IMAGES_BY_HEADER)],
+  [".olf", branched(2, null, "olf", { read: true, write: false }, "lecture seule", IMAGES_BY_HEADER)],
+  [".flipchart", branched(2, null, "flipchart", { read: true, write: false }, "lecture seule", IMAGES_BY_HEADER)],
   [".png", entry(1, null, "image", "taille lue dans l'en-tête")],
   ...each([".jpg", ".jpeg"], entry(1, null, "image", "taille lue dans l'en-tête, orientation EXIF non appliquée (H2)")),
   ...each([".gif", ".webp", ".bmp", ".ico"], lot4("image", HEADER_SIZE, PDF_EXPORT)),
@@ -100,23 +101,20 @@ export function lotOf(name: string): Lot | null {
   return e === null ? null : lastLot(e);
 }
 
-/** Lot d'un format reconnu dont l'import n'est pas livré ; null si lisible ou inconnu (le registre décide). */
-export function importBlocked(name: string): Lot | null {
-  const e = formatOf(name);
-  return e === null || e.read === null || e.covered.read ? null : e.read;
-}
-
 /** D26 : un paquet `.rbpack` ne s'importe pas dans un document ; message qui renvoie à `library`. */
 export const packMessage = (name: string): string => `${baseOf(name)} : un paquet .rbpack passe par la bibliothèque : roomboard library import | library export`;
 
-/** H48 : raison d'un format laissé de côté (`read: null`, note `laissé de côté : …`) ; null sinon. */
-export function leftAsideReason(name: string): string | null {
-  const e = formatOf(name);
-  const note = e !== null && e.read === null ? e.notes.find((n) => n.startsWith(LEFT_ASIDE)) : undefined;
-  return note === undefined ? null : note.slice(LEFT_ASIDE.length);
+/** H48 : raison d'une lecture non branchée (`covered.read` faux : note `laissé de côté : …`, sinon une raison par défaut) ; null si lue. */
+export function asideReasonOf(e: FormatEntry): string | null {
+  if (e.covered.read) return null;
+  const note = e.notes.find((n) => n.startsWith(LEFT_ASIDE));
+  return note === undefined ? "lecture non branchée" : note.slice(LEFT_ASIDE.length);
 }
 
-export const unsupportedMessage = (name: string, lot: Lot): string => `${baseOf(name)} : format pris en charge par la CLI au lot ${lot}`;
+export function leftAsideReason(name: string): string | null {
+  const e = formatOf(name);
+  return e === null ? null : asideReasonOf(e);
+}
 
 /** Lignes de `formats`, tirées de la table (aucune liste recopiée). */
 export function formatRows(): FormatRow[] {

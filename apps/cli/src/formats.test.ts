@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { IMPORT_EXTENSIONS } from "../../web/src/platform/files";
 import { OFFICE_EXTENSIONS } from "../../web/src/platform/office-import";
-import { extOf, FORMAT_LOTS, formatRows, importBlocked, LEFT_ASIDE, leftAsideReason, lotOf, LOT_LIVRE, unsupportedMessage } from "./formats";
+import { asideReasonOf, extOf, FORMAT_LOTS, formatRows, LEFT_ASIDE, leftAsideReason, lotOf, LOT_LIVRE, type FormatEntry } from "./formats";
 
 /** Ids des lecteurs du registre d'import (`import.ts`, `image-import.ts`, `media-import.ts`, `model3d-handlers.ts`, `office-import.ts`). */
 const HANDLER_IDS = new Set(["roomboard", "rbitem", "rbpack", "pdf", "iwb", "ubz", "notebook", "olf", "flipchart", "image", "media", "model3d", "model3d-companion", "zip3d", "sheet", "office"]);
@@ -30,24 +30,19 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(rows.find((r) => r.ext === ".docx")?.notes.join(" ")).toContain("roomboard-office");
     expect(rows.find((r) => r.ext === ".xlsx")?.notes.join(" ")).toContain("H37");
   });
-  it("importBlocked : lot d'un format reconnu non livré, null pour un format lisible ou inconnu", () => {
-    expect(importBlocked("doc.pdf")).toBeNull();
-    expect(importBlocked("x.rbitem")).toBeNull();
-    expect(importBlocked("r.DOCX")).toBeNull();
-    expect(importBlocked("image.png")).toBeNull();
-    expect(importBlocked("valeurs.xlsx")).toBeNull();
-    expect(importBlocked("notes.txt")).toBeNull();
-    expect(importBlocked("a.iwb")).toBeNull();
-    expect(importBlocked("a.flipchart")).toBeNull();
-    expect(unsupportedMessage("/tmp/lettre.docx", 4)).toBe("lettre.docx : format pris en charge par la CLI au lot 4");
-  });
-  it("D68 — aucune entrée « au lot N » : importBlocked null pour chaque clé, aucune note ne cite un lot", () => {
-    for (const ext of Object.keys(FORMAT_LOTS)) expect(importBlocked(`x${ext}`), ext).toBeNull();
+  it("D68 — aucune entrée « au lot N » : aucune note ne cite un lot", () => {
     for (const r of formatRows()) for (const n of r.notes) expect(n, r.ext).not.toMatch(/\blots?\b/i);
   });
   it("H48 — leftAsideReason : null pour tout format livré ; la note de coupe a son préfixe", () => {
     for (const ext of Object.keys(FORMAT_LOTS)) expect(leftAsideReason(`x${ext}`), ext).toBeNull();
     expect(LEFT_ASIDE).toBe("laissé de côté : ");
+  });
+  it("H48 — asideReasonOf : une entrée non lue donne sa raison (code 3), couverte ou non branchée sans note", () => {
+    const entry = (read: 4 | null, covered: boolean, notes: string[]): FormatEntry => ({ read, write: null, handler: "image", covered: { read: covered, write: false }, notes });
+    expect(asideReasonOf(entry(null, false, [`${LEFT_ASIDE}format propriétaire sans spécification`]))).toBe("format propriétaire sans spécification");
+    expect(asideReasonOf(entry(4, false, [`${LEFT_ASIDE}lecteur absent`]))).toBe("lecteur absent");
+    expect(asideReasonOf(entry(4, false, []))).toBe("lecture non branchée");
+    expect(asideReasonOf(entry(4, true, [`${LEFT_ASIDE}ignoré`]))).toBeNull();
   });
   it("lotOf : .pdf → 3, .notebook → 2, inconnu → null (cli-lot3 : plus aucun code 3 à l'export)", () => {
     expect(lotOf("a.pdf")).toBe(3);
@@ -59,7 +54,7 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(extOf("C:\\x\\t.Roomboard")).toBe(".roomboard");
     expect(extOf("README")).toBe("");
     expect(extOf(".bashrc")).toBe("");
-    expect(importBlocked("a.constructor")).toBeNull();
+    expect(leftAsideReason("a.constructor")).toBeNull();
     expect(lotOf("a.__proto__")).toBeNull();
   });
 
