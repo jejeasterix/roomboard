@@ -81,7 +81,7 @@ demandé de reprendre.
 - **Calage sur la grille** : `viewBox="-0.25 -0.25 24 24"`. À `devicePixelRatio` 2, chaque trait vertical ou horizontal
   de Lucide fait alors 3 pixels pleins, sans pixel de bord à demi-teinte (mesure dans la PR).
 - **Icônes dessinées pour RoomBoard** (même grille, même trait) : `annotate` (l'écran de Lucide `monitor` et un trait
-  d'encre dedans), `eraser-part` (la gomme de Lucide, base en pointillés), `line` (segment diagonal).
+  d'encre dedans), `eraser-part` (la gomme de Lucide, base en pointillés), `line` (segment diagonal), `row-remove` et `col-remove` (deux blocs séparés d'un trait, rangée et colonne retirées).
 
 ## Logos existants
 
