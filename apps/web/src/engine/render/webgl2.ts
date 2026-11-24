@@ -356,7 +356,7 @@ export class WebGL2LiveRenderer implements Renderer {
     this.gl.uniform4fv(this.res.uColor, new Float32Array(rgba ?? [0, 0, 0, 1]));
   }
 
-  /** Remplissage nonzero (parité avec `ctx.fill("nonzero")` du Canvas 2D), puis queue prédite à la largeur du trait. */
+  /** Remplissage nonzero (parité avec `ctx.fill("nonzero")` du Canvas 2D). */
   private paintStroke(s: LiveStrokeView): void {
     const gl = this.gl;
     this.color(s.color);
@@ -374,7 +374,6 @@ export class WebGL2LiveRenderer implements Renderer {
       this.draw(gl.TRIANGLE_STRIP, new Float32Array([x0, y0, x1, y0, x0, y1, x1, y1]));
       gl.disable(gl.STENCIL_TEST);
     }
-    if (s.predicted.length >= 4) this.draw(gl.TRIANGLES, thickPolyline(s.predicted, s.width / 2));
   }
 
   /**

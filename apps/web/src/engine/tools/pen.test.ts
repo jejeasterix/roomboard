@@ -13,15 +13,16 @@ function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
-  const builders = { created: 0, pushes: 0, freed: 0 };
+  const builders = { created: 0, pushes: 0, freed: 0, aheads: [] as number[][] };
   const original = doc.newStrokeBuilder.bind(doc);
   doc.newStrokeBuilder = (st: StrokeStyle): StrokeBuilderApi => {
     builders.created++;
     const b = original(st);
     return {
-      push: (p) => {
+      push: (p, ahead) => {
         builders.pushes++;
-        return b.push(p);
+        builders.aheads.push(Array.from(ahead ?? []));
+        return b.push(p, ahead);
       },
       finish: () => b.finish(),
       free: () => {
@@ -108,14 +109,36 @@ describe("createPenTool (D20, D38)", () => {
     expect(tool.live().strokes).toHaveLength(0);
   });
 
-  it("queue prédite : du dernier point reçu aux prédits, effacée sur une image sans point nouveau", () => {
-    const { tool } = setup();
+  it("points prédits (OF44) : contour du builder prolongé, à la pression du dernier point reçu, sans queue à part", () => {
+    const { builders, tool } = setup();
+    tool.begin(1, [s(0, 0, 0.3)]);
+    tool.extend(1, [s(10, 0, 0.3)], [s(14, 0, 0.9), s(18, 0, 0.9)]);
+    tool.frame();
+    expect(builders.aheads).toEqual([[14, 0, 0.3, 18, 0, 0.3].map((v) => Math.fround(v))]);
+    const view = tool.live().strokes[0];
+    expect(Array.from(view?.outline ?? [])).toEqual([0, 0, 10, 0, 14, 0, 18, 0]);
+    expect(view && "predicted" in view).toBe(false);
+  });
+
+  it("points prédits retirés sur la première image sans point nouveau, puis plus aucun push", () => {
+    const { builders, tool } = setup();
     tool.begin(1, [s(0, 0)]);
     tool.extend(1, [s(10, 0)], [s(14, 0), s(18, 0)]);
     tool.frame();
-    expect(Array.from(tool.live().strokes[0]?.predicted ?? [])).toEqual([10, 0, 14, 0, 18, 0]);
     tool.frame();
-    expect(tool.live().strokes[0]?.predicted.length).toBe(0);
+    expect(Array.from(tool.live().strokes[0]?.outline ?? [])).toEqual([0, 0, 10, 0]);
+    expect(builders.aheads).toEqual([[14, 0, 0.5, 18, 0, 0.5], []]);
+    tool.frame();
+    expect(builders.pushes).toBe(2);
+  });
+
+  it("le relâché n'enregistre aucun point prédit", () => {
+    const { runs, tool } = setup();
+    tool.begin(1, [s(0, 0)]);
+    tool.extend(1, [s(10, 0)], [s(14, 0), s(18, 0)]);
+    tool.frame();
+    tool.close(1, "end");
+    expect(Array.from(commitOf(runs).points)).toEqual([0, 0, 0.5, 10, 0, 0.5]);
   });
 
   it("échantillon non fini ignoré : aucune erreur « points invalides »", () => {

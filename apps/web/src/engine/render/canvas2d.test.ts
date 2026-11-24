@@ -104,17 +104,14 @@ describe("Canvas2DRenderer (D19, DA2)", () => {
     expect([p.moves, p.lines, p.closes]).toEqual([2, 4, 2]);
   });
 
-  it("drawLive : efface, puis trait vif rempli et queue prédite tracée", () => {
+  it("drawLive : efface, puis trait vif rempli, sans queue tracée à part (OF44)", () => {
     const { r, live } = make({});
     r.resize(100, 100, 1);
-    r.drawLive(
-      { strokes: [{ outline: square, predicted: new Float32Array([10, 10, 14, 12]), color: "#1e40af", width: 4 }], erasers: [] },
-      IDENTITY,
-    );
+    r.drawLive({ strokes: [{ outline: square, color: "#1e40af" }], erasers: [] }, IDENTITY);
     expect(live.log[0]).toBe("setTransform 1,0,0,1,0,0");
     expect(live.log[1]).toBe("clearRect");
     expect(live.log).toContain("fill #1e40af");
-    expect(live.log).toContain("stroke #1e40af 4");
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([]);
   });
 
   it("drawLive sans aperçu : effacé seulement", () => {

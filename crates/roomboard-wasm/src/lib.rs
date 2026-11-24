@@ -2134,6 +2134,11 @@ impl StrokeBuilder {
         self.0.push(points)
     }
 
+    /// Comme `push`, contour prolongé par des points provisoires (prédits) que le trait ne garde pas (OF44).
+    pub fn push_ahead(&mut self, points: &[f32], ahead: &[f32]) -> Vec<f32> {
+        self.0.push_ahead(points, ahead)
+    }
+
     pub fn finish(&self) -> Vec<f32> {
         self.0.finish()
     }

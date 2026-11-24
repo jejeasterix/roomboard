@@ -1584,7 +1584,10 @@ class FakeDocument implements CoreDocument {
     const pts: number[] = [];
     void style;
     return {
-      push: (p: Float32Array) => { pts.push(...p); return polyOutline(new Float32Array(pts), 0, 0); },
+      push: (p: Float32Array, ahead?: Float32Array) => {
+        pts.push(...p);
+        return polyOutline(new Float32Array(ahead && ahead.length > 0 ? [...pts, ...ahead] : pts), 0, 0);
+      },
       finish: () => polyOutline(new Float32Array(pts), 0, 0),
       free: () => undefined,
     };

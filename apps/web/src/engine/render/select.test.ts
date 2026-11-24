@@ -97,7 +97,7 @@ describe("chooseRenderer (échelon 4 et repli)", () => {
     const c = chooseRenderer(el(mk()), el(new FakeCanvas({ webgl2: gl })), SRC, true);
     expect(c.diagnostics()).toEqual({ webgl: "on", lost: false, badColors: [] });
     (c.renderer as WebGL2LiveRenderer).drawLive(
-      { strokes: [{ outline: new Float32Array([0, 0, 1, 0, 1, 1]), predicted: new Float32Array(0), color: "pas-une-couleur", width: 1 }], erasers: [] },
+      { strokes: [{ outline: new Float32Array([0, 0, 1, 0, 1, 1]), color: "pas-une-couleur" }], erasers: [] },
       { zoom: 1, tx: 0, ty: 0 },
     );
     gl.fire("webglcontextlost");

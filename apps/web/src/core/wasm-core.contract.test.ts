@@ -914,6 +914,19 @@ describe.skipIf(loaded === null)("contrat du vrai module wasm", () => {
     d.free();
   });
 
+  it("StrokeBuilder : points prédits prolongent le contour vif sans être gardés (OF44)", () => {
+    const d = core.blank();
+    const b = d.newStrokeBuilder(style);
+    const maxX = (o: Float32Array): number => o.reduce((m, v, i) => (i % 2 === 0 && Number.isFinite(v) ? Math.max(m, v) : m), -Infinity);
+    const line = (x0: number, n: number): Float32Array => new Float32Array(Array.from({ length: n }, (_, i) => [x0 + i * 4, 0, 0.5]).flat());
+    const plain = b.push(line(0, 30));
+    const ahead = b.push(new Float32Array(0), line(120, 4));
+    expect(maxX(ahead)).toBeGreaterThan(maxX(plain) + 8);
+    expect(Array.from(b.push(new Float32Array(0)))).toEqual(Array.from(plain));
+    b.free();
+    d.free();
+  });
+
   it("load d'octets quelconques lève une erreur lisible", () => {
     expect(() => core.load(new Uint8Array([1, 2, 3]))).toThrow(/n'est pas un document RoomBoard/);
   });

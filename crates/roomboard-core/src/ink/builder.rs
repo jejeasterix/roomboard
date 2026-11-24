@@ -5,6 +5,16 @@ use super::outline::{outline_with, InkStyle};
 use super::points::{dist, from_flat, InkPoint, MIN_STEP};
 
 pub const FULL_LIMIT: usize = 2000;
+
+/// Ajoute les triplets en sautant un point à moins de MIN_STEP du précédent.
+fn append_spaced(points: &mut Vec<InkPoint>, flat: &[f32]) {
+    for p in from_flat(flat) {
+        match points.last() {
+            Some(last) if dist(last, &p) < MIN_STEP => {}
+            _ => points.push(p),
+        }
+    }
+}
 pub const BLOCK: usize = 256;
 
 pub struct StrokeBuilder {
@@ -38,14 +48,21 @@ impl StrokeBuilder {
 
     /// Ajoute des triplets x, y, pression ; rend le contour courant.
     pub fn push(&mut self, flat: &[f32]) -> Vec<f32> {
-        for p in from_flat(flat) {
-            match self.points.last() {
-                Some(last) if dist(last, &p) < MIN_STEP => {}
-                _ => self.points.push(p),
-            }
-        }
+        self.push_ahead(flat, &[])
+    }
+
+    /// Comme `push`, puis prolonge le contour rendu par des points provisoires (`ahead`, triplets x, y, pression :
+    /// les points prédits du navigateur) sans les garder. Même géométrie que le trait (lissage, largeur de la
+    /// pression), un seul polygone pour le dernier bloc : aucune queue dessinée à part (OF44).
+    /// Un seul calcul de contour par appel, prédits compris.
+    pub fn push_ahead(&mut self, flat: &[f32], ahead: &[f32]) -> Vec<f32> {
+        append_spaced(&mut self.points, flat);
         self.freeze();
-        self.current(false)
+        let kept = self.points.len();
+        append_spaced(&mut self.points, ahead);
+        let tail = outline_with(&self.points[self.frozen_upto..], &self.style, false);
+        self.points.truncate(kept);
+        self.assemble(tail)
     }
 
     /// Contour final du geste (fin du trait connue).
@@ -68,7 +85,15 @@ impl StrokeBuilder {
     }
 
     fn current(&self, last: bool) -> Vec<f32> {
-        let tail = outline_with(&self.points[self.frozen_upto..], &self.style, last);
+        self.assemble(outline_with(
+            &self.points[self.frozen_upto..],
+            &self.style,
+            last,
+        ))
+    }
+
+    /// Blocs figés, puis le contour du dernier bloc.
+    fn assemble(&self, tail: Vec<f32>) -> Vec<f32> {
         if self.frozen.is_empty() {
             return tail;
         }
@@ -202,6 +227,59 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// OF44 : les points prédits prolongent le contour vif avec la même géométrie (lissage, largeur de la pression),
+    /// sans être gardés : le push suivant ne les connaît plus.
+    #[test]
+    fn push_ahead_extends_outline_without_storing() {
+        let line = |x0: usize, x1: usize, p: f32| -> Vec<f32> {
+            (x0..x1).flat_map(|i| [i as f32 * 4.0, 0.0, p]).collect()
+        };
+        let mut plain = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let without = plain.push(&line(0, 60, 0.15));
+        let mut ahead = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let with = ahead.push_ahead(&line(0, 60, 0.15), &line(60, 64, 0.15));
+        assert_eq!(ahead.points().len(), plain.points().len());
+        let max_x = |o: &[f32]| x_ranges(o)[0].1;
+        assert!(
+            max_x(&with) > max_x(&without) + 8.0,
+            "le contour doit avancer vers les prédits : {} puis {}",
+            max_x(&without),
+            max_x(&with)
+        );
+        // Même largeur qu'au corps du trait (pression 0,15), pas la largeur du style.
+        let half = |o: &[f32]| {
+            o.as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| c[1].abs())
+                .fold(0.0f32, f32::max)
+        };
+        assert!((half(&with) - half(&without)).abs() < 0.01);
+        // Le push suivant sans prédits rend le contour des seuls points reçus.
+        let mut again = StrokeBuilder::new(InkStyle { width: 6.0 });
+        again.push(&line(0, 60, 0.15));
+        let bits = |o: Vec<f32>| o.into_iter().map(f32::to_bits).collect::<Vec<u32>>();
+        assert_eq!(bits(ahead.push(&[])), bits(again.push(&[])));
+    }
+
+    /// OF44, au-delà de FULL_LIMIT : les blocs figés ne changent pas, seul le dernier bloc avance vers les prédits.
+    #[test]
+    fn push_ahead_keeps_frozen_blocks_past_limit() {
+        let straight = |x0: usize, x1: usize| -> Vec<f32> {
+            (x0..x1).flat_map(|i| [i as f32 * 4.0, 0.0, 0.5]).collect()
+        };
+        let mut b = StrokeBuilder::new(InkStyle { width: 6.0 });
+        let plain = b.push(&straight(0, 2500));
+        let blocks = b.frozen_blocks();
+        let with = b.push_ahead(&[], &straight(2500, 2504));
+        assert_eq!(b.frozen_blocks(), blocks);
+        assert_eq!(b.points().len(), 2500);
+        assert_eq!(nan_pairs(&with), nan_pairs(&plain));
+        let (p, w) = (x_ranges(&plain), x_ranges(&with));
+        assert_eq!(p[..p.len() - 1], w[..w.len() - 1]);
+        assert!(w[w.len() - 1].1 > p[p.len() - 1].1 + 8.0);
     }
 
     /// Mesure (constat des lots 2 et 3, lot 3b T37) : coût d'un `push` d'une image (4 points) sur un trait déjà long,
