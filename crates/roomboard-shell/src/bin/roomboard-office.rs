@@ -4,6 +4,7 @@
 //! `roomboard-office --check` : 0 « convertisseur : <chemin> » puis « racine : <racine> » ; 3 sans convertisseur.
 //! `roomboard-office <entrée> <sortie.pdf>` : 0 succès, 1 échec (code de `ConvertError` en premier mot de stderr),
 //! 2 usage, 3 aucun convertisseur.
+//! `ROOMBOARD_OFFICE_PATH_ONLY=1` : seul `PATH` cherche le convertisseur (essais).
 //! Racine de travail : `$XDG_CACHE_HOME/roomboard-office` (absolu), sinon `$HOME/.cache/roomboard-office`, jamais
 //! `temp_dir()` (partagé). Au démarrage, les conversions des processus morts sont purgées ; à la fin, seule la conversion
 //! de ce lancement est libérée (une autre peut être en cours). Aucun gestionnaire de signal : LibreOffice vit dans son
@@ -76,23 +77,29 @@ fn convert(c: Option<&Converter>, input: &Path, output: &Path, root: &Path) -> E
     }
 }
 
+/// Recherche du convertisseur : `PATH`, puis les emplacements connus de la coque ; `ROOMBOARD_OFFICE_PATH_ONLY=1` ignore
+/// ces derniers (essais du code 3 sur une machine où LibreOffice est installé).
+fn search() -> Search {
+    let mut s = Search::from_env();
+    if std::env::var_os("ROOMBOARD_OFFICE_PATH_ONLY").is_some_and(|v| v == "1") {
+        s.known.clear();
+    }
+    s
+}
+
 fn main() -> ExitCode {
     let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     let Some(root) = work_root() else {
         eprintln!("io : ni XDG_CACHE_HOME ni HOME");
         return ExitCode::from(1);
     };
+    // Windows : `process_alive` y rend toujours false (office.rs), la purge effacerait la conversion en cours d'un autre
+    // processus ; elle n'y est donc pas faite (limite : les restes d'un plantage y attendent le prochain nettoyage).
+    #[cfg(not(windows))]
     purge_conversions(&root);
     match args.as_slice() {
-        [flag] if flag.as_os_str() == "--check" => {
-            check(find_converter(&Search::from_env()).as_ref(), &root)
-        }
-        [input, output] => convert(
-            find_converter(&Search::from_env()).as_ref(),
-            input,
-            output,
-            &root,
-        ),
+        [flag] if flag.as_os_str() == "--check" => check(find_converter(&search()).as_ref(), &root),
+        [input, output] => convert(find_converter(&search()).as_ref(), input, output, &root),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::from(2)

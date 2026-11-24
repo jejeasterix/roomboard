@@ -96,7 +96,9 @@ async function scenario(page, url, { captures, tmp }) {
     const pdfPath = join(tmp, "diapos.pdf");
     const run = spawnSync("cargo", ["run", "-q", "-p", "roomboard-shell", "--bin", "roomboard-office", "--", join(FIX, "diapos.pptx"), pdfPath], { cwd: ROOT, encoding: "utf8" });
     if (run.status !== 0) throw new Echec(`roomboard-office : code ${run.status} ; ${run.stderr}`);
-    const converter = (run.stdout.match(/convertisseur : (.+)/) ?? [])[1] ?? "?";
+    // Le nom du convertisseur n'est imprimé que par `--check`, pas par la conversion.
+    const probe = spawnSync("cargo", ["run", "-q", "-p", "roomboard-shell", "--bin", "roomboard-office", "--", "--check"], { cwd: ROOT, encoding: "utf8" });
+    const converter = (probe.stdout.match(/convertisseur : (.+)/) ?? [])[1] ?? "?";
     const pdf = await readFile(pdfPath);
     check(pdf.subarray(0, 5).toString("latin1") === "%PDF-", `S4 : diapos.pptx converti par ${converter} : %PDF-`);
     const n2 = await tabs();

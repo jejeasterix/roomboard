@@ -48,6 +48,8 @@ pnpm exec wasm-opt -Oz "$FORMATS_OUT/roomboard_formats_wasm_bg.wasm" -o "$FORMAT
 # Licences des dépendances (U39, R21) : après pnpm install, sur le node_modules réel.
 bash scripts/tests/controle-licences.test.sh
 node scripts/controle-licences.mjs
+# cli-lot4 (D53, D55) : binaire de conversion Office, construit AVANT `pnpm -r test` (les tests de la CLI le lancent).
+nice -n 10 cargo build -p roomboard-shell --bin roomboard-office -j 4
 # Contrat du vrai module (D33) : exigé ici, il échoue au lieu de se sauter si le .wasm manque.
 ROOMBOARD_WASM_REQUIRED=1 pnpm -r test
 pnpm --filter @roomboard/web build
@@ -80,8 +82,8 @@ fi
 
 # CLI (cadrage cli, D14) : construite, puis essayée de bout en bout sur des fichiers temporaires. Hors du bloc --e2e :
 # aucun navigateur. Après les modules Wasm et pnpm install ; un module absent fait échouer l'essai.
-# cli-lot4 (D53, D55) : binaire de conversion Office lu par la CLI dans target/debug/.
-nice -n 10 cargo build -p roomboard-shell --bin roomboard-office -j 4
+# cli-lot4 (D53, D55) : binaire de conversion Office lu par la CLI dans target/debug/ (construit plus haut, avant les
+# tests Vitest qui le lancent).
 pnpm --filter @roomboard/cli build
 node scripts/essais/cli-essai.mjs
 

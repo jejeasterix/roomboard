@@ -178,3 +178,36 @@ fn not_office_is_1_with_code_first() {
     assert_eq!(text(&out.stderr).trim_end(), "not-office");
     assert!(!s.0.join("x.pdf").exists());
 }
+
+/// H49 : sans convertisseur (`PATH` sur un dossier vide, emplacements connus ignorés), `--check` et la conversion rendent 3
+/// avec « no-program » sur stderr, et rien n'est écrit.
+#[test]
+fn no_converter_is_3() {
+    let s = Scratch::new("sans-programme");
+    let empty = s.0.join("vide");
+    fs::create_dir_all(&empty).unwrap();
+    let pdf = s.0.join("x.pdf");
+    let go = |args: &[&OsStr]| {
+        Command::new(BIN)
+            .args(args)
+            .env("XDG_CACHE_HOME", s.cache())
+            .env("PATH", &empty)
+            .env("ROOMBOARD_OFFICE_PATH_ONLY", "1")
+            .output()
+            .expect("lancement de roomboard-office")
+    };
+    let docx = fixture("cours.docx");
+    for args in [
+        vec![OsStr::new("--check")],
+        vec![docx.as_os_str(), pdf.as_os_str()],
+    ] {
+        let out = go(&args);
+        assert_eq!(out.status.code(), Some(3), "{}", text(&out.stderr));
+        assert!(
+            text(&out.stderr).starts_with("no-program"),
+            "{}",
+            text(&out.stderr)
+        );
+    }
+    assert!(!pdf.exists());
+}
