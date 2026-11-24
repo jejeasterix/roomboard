@@ -3,10 +3,10 @@
 Statut : en cours
 Gabarit : courte (provisoire)
 Objectif : Les cycles d'import de `apps/web/src/platform/` sont cassés par de petits modules feuilles, sans changer ce que voient la page, la coque et la CLI.
-Avancement : —
-Étage : 2 — depuis 2026-11-24 15:35
+Avancement : 4/5 tâches terminées
+Étage : 3 (vague 3) — depuis 2026-11-24 16:15
 Lot : —
-Tâche : —
+Tâche : T5 — garde import-graph et preuves S1–S5 — depuis 2026-11-24 16:15
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/platform-feuilles   Branche : refactor/platform-feuilles   Base : origin/main @ 34d4d61
 Branche principale locale au lancement : 34d4d61
@@ -17,10 +17,16 @@ Complète (origin/main @ 34d4d61, `scripts/verifier.sh --e2e`) : OK au 2e passag
 Wasm : principal 1 374 215 o (plafond 1 572 864) · formats 2 794 511 o (plafond 3 145 728).
 
 ## Compteurs
-contre-relecture cadrage 1/2 (aucun bloquant ; 1 important corrigé : feuille de messages dans platform/) · relecture plan 0/3 · vagues sans progrès 0/2 · correctifs de fin 0/2
+contre-relecture cadrage 1/2 (aucun bloquant ; 1 important corrigé : feuille de messages dans platform/) · relecture plan 1/3 (aucun bloquant ; tail -25, GC11/GC12 transmis aux tâches) · vagues sans progrès 0/2 · correctifs de fin 0/2
 
 ## Tâches
-—
+| id | dépend | worktree | état | essais | dernier commit vert | preuve rejouée |
+|----|--------|----------|------|--------|---------------------|----------------|
+| T1 editable.ts | — | --T1 (retiré) | terminée | 1/3 | 664e1de | web 10 fichiers 122 tests (avec T2, T4) · tsc 0 |
+| T2 messages.ts | — | --T2 (retiré) | terminée | 1/3 | 139bc62 | idem |
+| T4 board-list / olf-read | — | --T4 (retiré) | terminée | 1/3 | 61b29d8 | idem |
+| T3 import-handler / officeErrorCode | T2 | --T3 (retiré) | terminée | 1/3 | dee74b3 | web 8 fichiers 199 · CLI 4 fichiers 50 · tsc web/cli 0 |
+| T5 garde + preuves | T1–T4 | chantier | en cours | 0/3 | — | — |
 
 ## Terminé quand
 toutes les tâches terminées · cycles de `platform/` fermés et gardés par un test · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · tailles Wasm sous leurs plafonds, inchangés · PR fusionnée par `git merge --no-ff` et poussée sans `--force`
