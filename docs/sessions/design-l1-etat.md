@@ -3,7 +3,7 @@
 Statut : en cours
 Gabarit : courte (provisoire)
 Objectif : Donner à RoomBoard les couleurs de la charte RoomFlow, des icônes Lucide nettes et fines sur des boutons à icône avec infobulle, et des tailles de bouton S 44, M 48, L 64.
-Avancement : 0/6 tâches terminées
+Avancement : 4/6 tâches terminées
 Étage : 3 (vague 1) — depuis 2026-11-24 20:43
 Lot : —
 Tâche : —
@@ -22,11 +22,11 @@ contre-relecture cadrage 1/2 · relecture plan 1/3 · vagues sans progrès 0/2 �
 ## Tâches
 | id | dépend | fichiers touchés | worktree | état | essais | dernier commit vert | preuve rejouée |
 |----|--------|------------------|----------|------|--------|---------------------|----------------|
-| T1 | — | ui/icons.ts(+test), THIRD_PARTY_NOTICES.md | partagé | à faire | 0/3 | — | — |
-| T2 | T1 | ui/tooltip.ts, ui/IconButton.tsx (+tests) | partagé | à faire | 0/3 | — | — |
-| T3 | T2 | ui/item-state.ts, ui/Toolbar.tsx (+tests) | partagé | à faire | 0/3 | — | — |
-| T4 | T3 | ui/rb.css, ui/rb-css.test.ts, c7b:309 | partagé | à faire | 0/3 | — | — |
-| T5 | T4 | essais/nettete.mjs, design-l1-navigateur.mjs, commun.mjs, verifier.sh (+tests) | partagé | à faire | 0/3 | — | — |
+| T1 | — | ui/icons.ts(+test), THIRD_PARTY_NOTICES.md | partagé | terminée | 1/3 | 55bc29c | icons.test 9/9 |
+| T2 | T1 | ui/tooltip.ts, ui/IconButton.tsx (+tests) | partagé | terminée | 1/3 | 55bc29c | icons.test 9/9 |
+| T3 | T2 | ui/item-state.ts, ui/Toolbar.tsx (+tests) | partagé | terminée | 1/3 | fa0f96f | tooltip+IconButton 30/30 |
+| T4 | T3 | ui/rb.css, ui/rb-css.test.ts, c7b:309 | partagé | terminée | 1/3 | c075993 | src/ui 307, tsc 0 |
+| T5 | T4 | essais/nettete.mjs, design-l1-navigateur.mjs, commun.mjs, verifier.sh (+tests) | partagé | terminée | 1/3 | abff341 | src/ui 314, c7b OK (scène Tableau 642 px) |
 | T6 | T5 | docs/essais/design-l1-*.png | partagé | à faire | 0/3 | — | — |
 
 Corrections de la relecture du plan (passées aux briefs, plan non réécrit) : T2 commentaire sans le mot innerHTML ; T2 infobulle au focus seulement si :focus-visible (byPointer en repli happy-dom) ; T4 commande bornée par grep ; T6 avant = merge-base, tailles relevées non figées.
