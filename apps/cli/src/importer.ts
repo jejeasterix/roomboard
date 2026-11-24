@@ -15,7 +15,7 @@ import type { SheetFormatsBinding } from "../../web/src/platform/container";
 import { gridOf } from "../../web/src/platform/sheet-reader";
 import { CliError } from "./contract";
 import { readBytes } from "./disk";
-import { importBlocked, unsupportedMessage } from "./formats";
+import { extOf, importBlocked, packMessage, unsupportedMessage } from "./formats";
 import type { Session } from "./session";
 import { pageOf } from "./state";
 import { headlessTarget, SCENE } from "./target";
@@ -64,9 +64,10 @@ export function parseAt(text: string): Point {
   return atOf(Number(parts[0]), Number(parts[1]));
 }
 
-/** Code 3 avant toute lecture ni écriture (D9). */
+/** Code 3 avant toute lecture ni écriture (D9) ; un paquet `.rbpack` : code 2, renvoi à `library` (D26). */
 export function checkSources(sources: readonly string[]): void {
   for (const s of sources) {
+    if (extOf(s) === ".rbpack") throw new CliError("usage", packMessage(s)); // D26 : un paquet va dans une bibliothèque
     const lot = importBlocked(s);
     if (lot !== null) throw new CliError("unsupported", unsupportedMessage(s, lot));
   }
@@ -93,6 +94,7 @@ export async function importInto(session: Session, req: ImportRequest): Promise<
   const before = notices.length;
   const importer = createImporter({
     openDocument: async (f) => (await session.openBytes(f.name, f.bytes, f.path ?? null)) !== null,
+    openBoard: (f) => session.openBoard(f), // D22 : tableau en onglet sans fichier
     notify: async (m) => {
       notices.push(m);
     },

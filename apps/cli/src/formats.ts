@@ -42,6 +42,9 @@ export interface FormatRow {
   readonly notes: readonly string[];
 }
 
+/** Images d'un tableau que la CLI ne sait pas mesurer sans décodeur (lot 4). */
+const UNREAD_IMAGES = "images GIF, WebP, BMP, SVG non lues (lot 4)";
+
 const each = (exts: readonly string[], e: FormatEntry): Array<readonly [string, FormatEntry]> => exts.map((x) => [x, e] as const);
 
 const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
@@ -49,11 +52,11 @@ const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", entry(2, 2, "rbpack")],
   [".pdf", entry(3, 3, "pdf")],
-  [".iwb", entry(2, 2, "iwb")],
-  [".ubz", entry(2, 2, "ubz")],
-  [".notebook", entry(2, null, "notebook")],
-  [".olf", entry(2, null, "olf")],
-  [".flipchart", entry(2, null, "flipchart")],
+  [".iwb", branched(2, 2, "iwb", { read: true, write: false }, UNREAD_IMAGES)],
+  [".ubz", branched(2, 2, "ubz", { read: true, write: false }, UNREAD_IMAGES)],
+  [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
+  [".olf", branched(2, null, "olf", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
+  [".flipchart", branched(2, null, "flipchart", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],
   [".png", entry(1, null, "image", "taille lue dans l'en-tête")],
   ...each([".jpg", ".jpeg"], entry(1, null, "image", "taille lue dans l'en-tête, orientation EXIF non appliquée (H2)")),
   ...each([".gif", ".webp", ".bmp", ".ico", ".svg", ".avif", ".heic", ".heif"], entry(4, null, "image")),
@@ -99,6 +102,9 @@ export function exportBlocked(name: string): Lot | null {
   const e = formatOf(name);
   return e === null || e.write === null || e.covered.write ? null : e.write;
 }
+
+/** D26 : un paquet `.rbpack` ne s'importe pas dans un document ; message qui renvoie à `library`. */
+export const packMessage = (name: string): string => `${baseOf(name)} : un paquet .rbpack passe par la bibliothèque : roomboard library import | library export`;
 
 export const unsupportedMessage = (name: string, lot: Lot): string => `${baseOf(name)} : format pris en charge par la CLI au lot ${lot}`;
 
