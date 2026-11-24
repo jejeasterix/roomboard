@@ -207,46 +207,33 @@ export function createSession(deps: SessionDeps): Session {
     // D22, D40 : un tableau ou un PDF ouvert est un onglet sans fichier (comme `target: null` de la page) : jamais réécrit à son chemin.
     return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null && !isPdfPath(path) ? path : null });
   }
-  async function openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> {
+  /**
+   * D22, D40 : fichier lu par l'importeur (`read`, lancé après le contrôle du nombre d'onglets) en onglet sans fichier ;
+   * false si refusé, l'avis est dans `notices`.
+   */
+  async function openReadTab(name: string, read: () => Promise<Pick<ReadResult, "doc" | "assets">>): Promise<boolean> {
     if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
+      deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
       return false;
     }
-    let read: Awaited<ReturnType<typeof readBoard>>;
+    let r: Pick<ReadResult, "doc" | "assets">;
     try {
-      read = await readBoardNoticed(file.name, file.blob, file.format);
+      r = await read();
     } catch (e) {
-      deps.notices.push(messageOf(e)); // déjà « Ouverture impossible (nom) : … »
+      deps.notices.push(messageOf(e)); // déjà le message complet du produit (« Ouverture impossible (nom) : … »)
       return false;
     }
     try {
-      add({ doc: read.doc, assets: read.assets, file: null });
+      add({ doc: r.doc, assets: r.assets, file: null });
       return true;
     } catch (e) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
+      deps.notices.push(`Ouverture impossible (${name}) : ${messageOf(e)}`);
       return false;
     }
   }
-  async function openPdf(file: { readonly name: string; readonly blob: Blob }): Promise<boolean> {
-    if (tabs.list().length >= MAX_TABS) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
-      return false;
-    }
-    let read: PdfRead;
-    try {
-      read = await readPdfNoticed(file.name, file.blob);
-    } catch (e) {
-      deps.notices.push(messageOf(e)); // déjà le message complet du produit
-      return false;
-    }
-    try {
-      add({ doc: read.doc, assets: read.assets, file: null });
-      return true;
-    } catch (e) {
-      deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
-      return false;
-    }
-  }
+  const openBoard = (file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> =>
+    openReadTab(file.name, () => readBoardNoticed(file.name, file.blob, file.format));
+  const openPdf = (file: { readonly name: string; readonly blob: Blob }): Promise<boolean> => openReadTab(file.name, () => readPdfNoticed(file.name, file.blob));
   async function openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null> {
     if (tabs.list().length >= MAX_TABS) {
       deps.notices.push(`Ouverture impossible (${name}) : ${TOO_MANY_TABS}`);
