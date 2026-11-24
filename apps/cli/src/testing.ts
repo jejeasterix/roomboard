@@ -2,16 +2,20 @@
 // sorties en mémoire, dossier temporaire sous os.tmpdir() (nettoyé), PNG fabriqué, ids du cœur normalisés par rang.
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import { afterAll, describe } from "vitest";
 import { zipStored } from "../../web/src/platform/zip-worker";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "../../../scripts/essais/fabriques/tableaux.mjs";
 import { makeFlipchart } from "../../../scripts/essais/fabriques/flipchart.mjs";
+import { pdfPages, readPdf } from "../../../scripts/essais/fabriques/pdf.mjs";
+import type { PdfLib } from "../../web/src/app/pdf-export";
 import type { FormatsBinding } from "../../web/src/platform/container";
+import { loadPdfLib } from "../../web/src/platform/pdf-load";
 import { CliError } from "./contract";
 import type { TestableIO } from "./session";
+import { loadNodePdfjs, pdfjsFontsDir } from "./pdf-node";
 import { wasmPresent } from "./wasm-node";
 
 // Sorties JSON lues par les tests : forme libre, vérifiée par les assertions.
@@ -34,7 +38,7 @@ export interface MemoryIO extends TestableIO {
   errors(): Json[];
 }
 
-export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC, formats?: () => Promise<FormatsBinding>): MemoryIO {
+export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC, formats?: () => Promise<FormatsBinding>, pdfLib?: () => Promise<PdfLib>): MemoryIO {
   const stdout: string[] = [];
   const stderr: string[] = [];
   return {
@@ -51,6 +55,7 @@ export function memoryIO(input: readonly string[] = [], env: Readonly<Record<str
     env: { ROOMBOARD_NOW: FIXED_NOW, ...env },
     wasmDir,
     ...(formats === undefined ? {} : { formats }),
+    ...(pdfLib === undefined ? {} : { pdfLib }),
     stdout,
     stderr,
     json: () => stdout.map((l) => JSON.parse(l) as Json),
@@ -183,3 +188,25 @@ export const panickingFormats = (): (() => Promise<FormatsBinding>) => {
   const mod = formatsWith(borrowedAfterPanic);
   return async () => mod;
 };
+
+/** PDF fabriqué (D43) de `n` pages « RoomBoard page i » 612 × 792, écrit dans `dir`. */
+export async function pdfFixture(dir: string, name = "three.pdf", n = 3): Promise<string> {
+  const p = join(dir, name);
+  writeFileSync(p, await pdfPages(await loadPdfLib(), n));
+  return p;
+}
+
+/** Relecture d'un PDF écrit (D43) : pages, texte par page, sous-types des XObject par page. */
+export async function readPdfBack(path: string): Promise<{ pages: number; texts: string[]; overlays: string[][] }> {
+  await loadNodePdfjs(); // worker de pdf.js posé dans le processus, comme la CLI (D32)
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const lib = await loadPdfLib();
+  return readPdf(new Uint8Array(readFileSync(path)), {
+    pdfjs,
+    PDFDocument: lib.PDFDocument,
+    PDFName: lib.PDFName,
+    PDFDict: lib.PDFDict,
+    PDFStream: lib.PDFStream,
+    standardFontDataUrl: pathToFileURL(pdfjsFontsDir() + sep).href,
+  });
+}
