@@ -109,4 +109,15 @@ describe("onglets (CL5b-1, CL5b-5, CL5b-20)", () => {
     tabs.add("board", "C");
     expect(cb).toHaveBeenCalledTimes(4);
   });
+
+  it("full (cli-partage, D5) : faux à 11 onglets, vrai à 12 (add refuserait), faux après un retrait", () => {
+    const tabs = make();
+    for (let i = 0; i < MAX_TABS - 1; i++) tabs.add("board", `S${i}`);
+    expect(tabs.full()).toBe(false);
+    const last = tabs.add("board", "S11");
+    expect(tabs.full()).toBe(true);
+    expect(() => tabs.add("board", "X")).toThrow(TOO_MANY_TABS);
+    tabs.remove(last.id);
+    expect(tabs.full()).toBe(false);
+  });
 });
