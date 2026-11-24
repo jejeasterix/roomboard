@@ -51,6 +51,13 @@ Ligne du banc, recopiée telle quelle :
 
 Non-régression : `zone-s6-banc.test.ts`, `describe` « non-régression C8 sur S6 » (S2), compare cette empreinte depuis 2cad5b5 (test ajouté par T5) jusqu'à la tête finale 3f7c157 : égale.
 
+OF45 (2026-11-24) change exprès le contour des traits : la calotte de départ de freedraw 1.0.4 bombait vers l'intérieur
+du trait (encoche) et bombe désormais vers l'arrière (`crates/roomboard-core/src/ink/outline.rs`,
+`turn_start_cap_backward`). Les traits de S6 bordent le `fill` : son hash change, ses anneaux (301), sa longueur (10217)
+et sa boîte restent égaux. Empreinte comparée depuis OF45 :
+
+    S6 empreinte : anneaux=301 longueur=10217 sha256=07661146ffeb3d8631e591055668717bf732897077e558e62b2eb77f4cc76768 boîte=-700.9893798828125,-700.9893798828125,1293.0106201171875,1293.0106201171875
+
 ## Où vont les ms (avant)
 
 | part | ms | source |

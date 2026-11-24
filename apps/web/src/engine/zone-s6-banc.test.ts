@@ -103,11 +103,12 @@ async function fingerprint(d: CoreDocument, id: string): Promise<Fingerprint> {
   return { rings: count, length: rings.length, sha256, bounds: [b.x0, b.y0, b.x1, b.y1] };
 }
 
-/** Empreinte du `fill` S6 relevée sur afc2d8b avant tout gain (OE23, Q10, H3) : `docs/essais/c8-porte-s6.md` § Empreinte. */
+/** Empreinte du `fill` S6 relevée sur afc2d8b avant tout gain (OE23, Q10, H3) : `docs/essais/c8-porte-s6.md` § Empreinte.
+ *  Hash relevé de nouveau par OF45 (calotte de départ des traits tournée vers l'arrière) : mêmes anneaux, longueur et boîte. */
 const S6_EMPREINTE_AFC2D8B: Fingerprint = {
   rings: 301,
   length: 10217,
-  sha256: "b2f8da761b79e5113c5d20826428444331608c834622a853784ace43ed8ac073",
+  sha256: "07661146ffeb3d8631e591055668717bf732897077e558e62b2eb77f4cc76768",
   bounds: [-700.9893798828125, -700.9893798828125, 1293.0106201171875, 1293.0106201171875],
 };
 
