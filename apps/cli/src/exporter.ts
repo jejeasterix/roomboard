@@ -9,6 +9,7 @@ import { missingOf } from "../../web/src/app/container-io";
 import { MISSING_EXPORT_MESSAGE, NO_GRID_MESSAGE } from "../../web/src/app/fragments";
 import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { asCliError, CliError } from "./contract";
+import { sameFile } from "./disk";
 import { exportBlocked, extOf, importBlocked, packMessage, unsupportedMessage, type Lot } from "./formats";
 import type { Session } from "./session";
 import { pageOf } from "./state";
@@ -34,6 +35,11 @@ export function checkExportTarget(to: string): void {
   throw new CliError("usage", `export : ${basename(to)} : sorties .rbitem, .iwb ou .ubz`);
 }
 
+/** Constat T11 : une sortie ne remplace jamais un fichier source ouvert (chemin résolu, casse, `realpath`) ; usage, avant toute écriture. */
+export async function checkNotSource(source: string, to: string): Promise<void> {
+  if (await sameFile(source, to)) throw new CliError("usage", `${basename(to)} : la sortie est le fichier source, il ne serait pas relu fidèlement ; choisis une autre sortie`);
+}
+
 export async function exportBoardFile(session: Session, to: string): Promise<{ file: string; kind: BoardFormat }> {
   checkExportTarget(to);
   const tab = session.active();
@@ -55,11 +61,11 @@ const CONVERT_TARGETS: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ub
 function convertSide(path: string, allowed: ReadonlySet<string>, blocked: (p: string) => Lot | null, what: string): void {
   if (allowed.has(extOf(path))) return;
   const lot = blocked(path);
-  if (lot !== null && lot >= 3) throw new CliError("unsupported", unsupportedMessage(path, lot));
+  if (lot === 3) throw new CliError("unsupported", unsupportedMessage(path, lot));
   if (extOf(path) === ".rbpack") throw new CliError("usage", packMessage(path));
   throw new CliError("usage", `convert : ${basename(path)} : ${what} ${[...allowed].join(" ")} attendue (export pour un .rbitem)`);
 }
-/** D25 : avant tout chargement ; `.pdf` : 3 (lot 3) ; `.rbitem`, `.rbpack` et tout autre : 2. */
+/** D25 : avant tout chargement ; `.pdf` : 3 (seul format du lot 3) ; `.rbitem`, `.rbpack` et tout autre : 2. */
 export function checkConvert(from: string, to: string): void {
   convertSide(from, CONVERT_SOURCES, importBlocked, "source");
   convertSide(to, CONVERT_TARGETS, exportBlocked, "sortie");
@@ -67,6 +73,7 @@ export function checkConvert(from: string, to: string): void {
 
 export async function exportFragment(session: Session, req: ExportRequest): Promise<{ file: string; kind: "fragment"; elements: number } | { file: string; kind: "grid" }> {
   checkExportTarget(req.to);
+  if (extOf(req.to) !== ".rbitem") throw new CliError("usage", `export : ${basename(req.to)} : un fragment s'écrit en .rbitem`);
   const tab = session.active();
   const page = pageOf(tab, req.page);
   const name = req.name ?? basename(req.to).replace(/\.rbitem$/i, "");

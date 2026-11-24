@@ -228,6 +228,8 @@ try {
   const z = join(dir, "z.iwb");
   const nz = cli(["new", z]);
   verifie("D23 : new z.iwb : code 2, rien d'écrit", nz.code === 2 && !existsSync(z), nz.brut);
+  const cs = cli(["convert", iwbSrc, iwbSrc]);
+  verifie("convert vers la source : code 2, source intacte", cs.code === 2 && empreinte(iwbSrc) === avantIwb, cs.brut);
   verifie(".pdf toujours au lot 3 : convert vers .pdf code 3", cli(["convert", a, join(dir, "a.pdf")]).code === 3);
   console.log("CLI : OK");
 } catch (e) {

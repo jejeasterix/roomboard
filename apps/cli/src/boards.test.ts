@@ -1,11 +1,10 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import type { FormatsBinding } from "../../web/src/platform/container";
 import { nodeBoardPorts } from "./board-node";
 import { main } from "./main";
 import { createSession, INTERRUPTED_MESSAGE, nodeSession } from "./session";
-import { boardFixtures, borrowedAfterPanic, describeWasm, memoryIO, panickingFormats, pngBytes, stampOf, tmpDir, type Json } from "./testing";
+import { boardFixtures, borrowedAfterPanic, describeWasm, formatsWith, memoryIO, panickingFormats, pngBytes, stampOf, tmpDir, type Json } from "./testing";
 
 async function stateOf(path: string): Promise<Json> {
   const io = memoryIO();
@@ -104,10 +103,7 @@ describeWasm("S2 — lire les cinq tableaux (D22)", () => {
     const dir = tmpDir();
     const raw = join(dir, "brut.iwb");
     writeFileSync(raw, "<iwb/>");
-    const fail = (): never => {
-      throw new Error("non appelé");
-    };
-    const mod = { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open: borrowedAfterPanic }, write_board_xml: () => [], notebook_order: () => [] } as unknown as FormatsBinding;
+    const mod = formatsWith(borrowedAfterPanic);
     let hit = false;
     const s0 = await nodeSession(memoryIO());
     const s = createSession({ ...s0.deps, board: nodeBoardPorts(async () => mod, () => void (hit = true)), interrupted: () => hit });

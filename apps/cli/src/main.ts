@@ -13,7 +13,7 @@ import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
 import { asCliError, CLI_VERSION, CliError, SCHEMA, usage, type CliIO } from "./contract";
 import { exists, readBytes } from "./disk";
-import { checkConvert, checkExportTarget, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
+import { checkConvert, checkExportTarget, checkNotSource, exportBoardFile, exportFragment, isBoardOut } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { libraryExport, libraryImport, libraryList, openLibrary } from "./library";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
@@ -57,6 +57,11 @@ async function saveOpened(session: Session, entry: TabEntry<CliTab>, to: string 
     throw new CliError("command", `onglet ${entry.id} fermé pendant la session : rien à enregistrer`);
   }
   await session.save(entry.session, to);
+}
+
+/** Avis de lecture poussés à l'ouverture d'un tableau (vidéo, TIFF…) : une ligne `{"notices":[…]}` avant les opérations. */
+function openingNotices(session: Session, io: CliIO): void {
+  if (session.deps.notices.length > 0) io.out(JSON.stringify({ notices: [...session.deps.notices] }));
 }
 
 /** Joue les lignes (vides ignorées) ; la première refusée est écrite sur stdout, puis levée (stderr et code par `main`). */
@@ -106,7 +111,8 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     if (file === undefined || p.positional.length !== 1) throw usage(USAGE.state);
     const session = await nodeSession(io);
     const read = await session.readDoc(file, extOf(file) === ".rbitem" ? "fragment" : "document");
-    io.out(JSON.stringify(stateOf(read.doc, file, { page: flagStr(p, "--page"), points: p.flags.has("--points") })));
+    const notices = session.deps.notices; // avis de lecture d'un tableau (vidéo, TIFF…)
+    io.out(JSON.stringify({ ...stateOf(read.doc, file, { page: flagStr(p, "--page"), points: p.flags.has("--points") }), ...(notices.length > 0 ? { notices } : {}) }));
     return 0;
   },
   run: async (args, io) => {
@@ -122,6 +128,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const fromFile = ops === undefined || ops === "-" ? null : linesOf(await readBytes(ops));
     const session = await nodeSession(io);
     const opened = file === undefined ? session.newTab() : await session.open(file);
+    openingNotices(session, io);
     // stdin ouvert ici seulement : readline lit dès sa création, une attente entre les deux perdrait lignes et fin.
     await play(session, fromFile ?? io.lines(), io);
     if (save) {
@@ -138,6 +145,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     documentTarget(flagStr(p, "--out") ?? file);
     const session = await nodeSession(io);
     const opened = await session.open(file);
+    openingNotices(session, io);
     await play(session, [op], io);
     await saveOpened(session, opened, flagStr(p, "--out") ?? file);
     return 0;
@@ -172,6 +180,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const grid = p.flags.has("--grid");
     if (grid && (idsText !== undefined || p.flags.has("--all"))) throw new CliError("usage", "--grid exclut --ids et --all");
     checkExportTarget(to); // code 2 ou 3 avant toute lecture
+    await checkNotSource(file, to); // code 2 : jamais la source
     if (isBoardOut(to) && (p.flags.has("--page") || idsText !== undefined || p.flags.has("--all") || grid || p.flags.has("--name"))) {
       throw new CliError("usage", `export ${extOf(to)} : document entier ; --page, --ids, --all, --grid et --name ne s'y appliquent pas`);
     }
@@ -190,6 +199,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const [from, to] = p.positional;
     if (from === undefined || to === undefined || p.positional.length !== 2) throw usage(USAGE.convert);
     checkConvert(from, to); // code 2 ou 3 avant tout chargement (D25)
+    await checkNotSource(from, to); // code 2 : jamais la source
     const session = await nodeSession(io);
     const tab = (await session.open(from)).session;
     if (extOf(to) === ".roomboard") await session.save(tab, to);

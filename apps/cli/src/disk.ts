@@ -77,3 +77,14 @@ export function nowOf(env: Readonly<Record<string, string | undefined>>): string
   if (!(ms <= MAX_TIME)) throw new CliError("usage", `ROOMBOARD_NOW : entier positif attendu (millisecondes depuis 1970), reçu « ${v} »`);
   return new Date(ms).toISOString();
 }
+
+/** Vrai si les deux chemins désignent le même fichier : chemins résolus égaux, à la casse près, ou `realpath` égaux. */
+export async function sameFile(a: string, b: string): Promise<boolean> {
+  const [ra, rb] = [resolve(a), resolve(b)];
+  if (ra.toLowerCase() === rb.toLowerCase()) return true;
+  try {
+    return (await realpath(ra)) === (await realpath(rb));
+  } catch {
+    return false; // l'un des deux n'existe pas : seuls les chemins comptent
+  }
+}
