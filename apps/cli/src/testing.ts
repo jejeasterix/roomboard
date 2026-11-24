@@ -9,7 +9,9 @@ import { afterAll, describe } from "vitest";
 import { zipStored } from "../../web/src/platform/zip-worker";
 import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "../../../scripts/essais/fabriques/tableaux.mjs";
 import { makeFlipchart } from "../../../scripts/essais/fabriques/flipchart.mjs";
-import { CliError, type CliIO } from "./contract";
+import type { FormatsBinding } from "../../web/src/platform/container";
+import { CliError } from "./contract";
+import type { TestableIO } from "./session";
 import { wasmPresent } from "./wasm-node";
 
 // Sorties JSON lues par les tests : forme libre, vérifiée par les assertions.
@@ -25,14 +27,14 @@ export const XLSX_FIXTURE = fileURLToPath(new URL("../../../crates/roomboard-for
 /** `ROOMBOARD_NOW` des tests : 2026-11-23T00:00:00.000Z en millisecondes. */
 export const FIXED_NOW = "1795392000000";
 
-export interface MemoryIO extends CliIO {
+export interface MemoryIO extends TestableIO {
   readonly stdout: string[];
   readonly stderr: string[];
   json(): Json[];
   errors(): Json[];
 }
 
-export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC): MemoryIO {
+export function memoryIO(input: readonly string[] = [], env: Readonly<Record<string, string>> = {}, wasmDir: URL = WEB_SRC, formats?: () => Promise<FormatsBinding>): MemoryIO {
   const stdout: string[] = [];
   const stderr: string[] = [];
   return {
@@ -48,6 +50,7 @@ export function memoryIO(input: readonly string[] = [], env: Readonly<Record<str
       })(),
     env: { ROOMBOARD_NOW: FIXED_NOW, ...env },
     wasmDir,
+    ...(formats === undefined ? {} : { formats }),
     stdout,
     stderr,
     json: () => stdout.map((l) => JSON.parse(l) as Json),
@@ -157,6 +160,14 @@ export function boardFixtures(dir: string): { readonly iwb: string; readonly iwb
  * une valeur restée empruntée. `partOf` (board-reader.ts) libère dans un `finally` : l'`Error` de `free()` remplace la
  * `RuntimeError`, et `boardJobReply` rend `{ error: BOARD_FAILED_MESSAGE }` au lieu de relancer.
  */
+/** Module des formats dont le lecteur de tableau panique puis masque la panique par `free()` (D29), pour `main`. */
+export const panickingFormats = (): (() => Promise<FormatsBinding>) => {
+  const fail = (): never => {
+    throw new Error("non appelé");
+  };
+  const mod = { ContainerReader: { open: fail }, write_container: fail, BoardReader: { open: borrowedAfterPanic }, write_board_xml: () => [], notebook_order: () => [] } as unknown as FormatsBinding;
+  return async () => mod;
+};
 export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warnings(): string[]; free(): never } => ({
   ops: () => {
     throw new WebAssembly.RuntimeError("unreachable");

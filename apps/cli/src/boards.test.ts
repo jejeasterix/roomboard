@@ -5,7 +5,7 @@ import type { FormatsBinding } from "../../web/src/platform/container";
 import { nodeBoardPorts } from "./board-node";
 import { main } from "./main";
 import { createSession, INTERRUPTED_MESSAGE, nodeSession } from "./session";
-import { boardFixtures, borrowedAfterPanic, describeWasm, memoryIO, pngBytes, stampOf, tmpDir, type Json } from "./testing";
+import { boardFixtures, borrowedAfterPanic, describeWasm, memoryIO, panickingFormats, pngBytes, stampOf, tmpDir, type Json } from "./testing";
 
 async function stateOf(path: string): Promise<Json> {
   const io = memoryIO();
@@ -115,5 +115,32 @@ describeWasm("S2 — lire les cinq tableaux (D22)", () => {
     const out = join(dir, "x.roomboard");
     await expect(s.save(s.newTab().session, out)).rejects.toMatchObject({ code: "command", message: INTERRUPTED_MESSAGE });
     expect(existsSync(out)).toBe(false);
+  });
+  it("D22 — un tableau ouvert est un onglet sans fichier (file: null), un .roomboard garde son chemin", async () => {
+    const f = boardFixtures(tmpDir());
+    const s = await nodeSession(memoryIO());
+    const board = await s.open(f.iwb);
+    expect(board.session.file).toBeNull();
+    const doc = join(tmpDir(), "a.roomboard");
+    expect(await main(["new", doc], memoryIO())).toBe(0);
+    expect((await s.open(doc)).session.file).toBe(doc);
+    expect(s.tabs.list().map((t) => t.session.file)).toEqual([null, doc]);
+  });
+  it("D29 — main import : panique masquée pendant la lecture d'un tableau, rapport imprimé puis refus (code 1), a.roomboard intact (H15)", async () => {
+    const dir = tmpDir();
+    const a = join(dir, "a.roomboard");
+    expect(await main(["new", a], memoryIO())).toBe(0);
+    const img = join(dir, "img.png");
+    writeFileSync(img, pngBytes(2, 2));
+    const bad = join(dir, "bad.iwb");
+    writeFileSync(bad, "<iwb/>");
+    const before = stampOf(a);
+    const io = memoryIO([], {}, undefined, panickingFormats());
+    expect(await main(["import", a, img, bad], io)).toBe(1);
+    const report = io.json()[0];
+    expect(report.inserted.length).toBeGreaterThan(0);
+    expect(report.failed.length + report.refused.length).toBeGreaterThan(0);
+    expect(io.errors()[0].error.message).toContain(INTERRUPTED_MESSAGE);
+    expect(stampOf(a)).toEqual(before);
   });
 });
