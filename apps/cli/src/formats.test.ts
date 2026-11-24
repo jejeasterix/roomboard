@@ -14,12 +14,13 @@ describe("FORMAT_LOTS (D9)", () => {
   it("chaque lecteur nommé est un id du registre d'import", () => {
     for (const [ext, e] of Object.entries(FORMAT_LOTS)) expect(HANDLER_IDS.has(e.handler), ext).toBe(true);
   });
-  it("lot 1 : lus .roomboard, PNG, JPEG, .xlsx, .xlsm, et les cinq tableaux (cli-lot2) ; écrits .roomboard et .rbitem", () => {
-    expect(LOT_LIVRE).toBe(1);
+  it("lots livrés (LOT_LIVRE = 2) : lus et écrits", () => {
+    expect(LOT_LIVRE).toBe(2);
     const rows = formatRows();
-    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".png", ".rbitem", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
+    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".png", ".rbitem", ".rbpack", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
+    expect(rows.find((r) => r.ext === ".rbpack")?.notes.join(" ")).toContain("library import");
     expect(rows.find((r) => r.ext === ".notebook")?.notes.join(" ")).toContain("lecture seule");
-    expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".rbitem", ".roomboard", ".ubz"]);
+    expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".iwb", ".rbitem", ".rbpack", ".roomboard", ".ubz"]);
     expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
     expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("--grid");
     expect(rows).toContainEqual(expect.objectContaining({ ext: ".rbitem", read: true, write: true, readLot: 2, writeLot: 1 }));
