@@ -51,7 +51,7 @@ const ROWS: ReadonlyArray<readonly [string, FormatEntry]> = [
   [".roomboard", entry(1, 1, "roomboard")],
   [".rbitem", branched(2, 1, "rbitem", { read: true, write: true }, "insertion par `import` ; `--grid`")],
   [".rbpack", branched(2, 2, "rbpack", { read: true, write: true }, "par `library import` / `library export`")],
-  [".pdf", entry(3, 3, "pdf")],
+  [".pdf", branched(3, 3, "pdf", { read: true, write: false }, "fond `pdf-page`, PDF d'origine gardé en asset")],
   [".iwb", branched(2, 2, "iwb", { read: true, write: true }, UNREAD_IMAGES)],
   [".ubz", branched(2, 2, "ubz", { read: true, write: true }, UNREAD_IMAGES)],
   [".notebook", branched(2, null, "notebook", { read: true, write: false }, "lecture seule", UNREAD_IMAGES)],

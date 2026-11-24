@@ -54,21 +54,19 @@ describeWasm("S3 — images et classeur", () => {
     expect(first.transform).toEqual([1, 0, 0, 1, 380, 285]);
     expect(second.transform).toEqual([1, 0, 0, 1, 390 + CASCADE_STEP, 295 + CASCADE_STEP]);
   });
-  it("import doc.pdf : code 3 « lot 3 », rien lu ni écrit", async () => {
+  it("import x.docx : code 3 « lot 4 », rien lu ni écrit (cli-lot3 : .pdf est lu)", async () => {
     const { dir, a } = await board();
-    const pdf = join(dir, "doc.pdf");
-    writeFileSync(pdf, "%PDF-1.4\n%%EOF\n");
+    const docx = join(dir, "lettre.docx");
+    writeFileSync(docx, "pas un docx");
     const before = stampOf(a);
     const io = memoryIO();
-    expect(await main(["import", a, pdf], io)).toBe(3);
+    expect(await main(["import", a, docx], io)).toBe(3);
     expect(io.stdout).toEqual([]);
-    expect(io.errors()[0].error.code).toBe("unsupported");
-    expect(io.errors()[0].error.message).toContain("lot 3");
+    expect(io.errors()[0].error).toEqual({ code: "unsupported", message: "lettre.docx : format pris en charge par la CLI au lot 4" });
     expect(stampOf(a)).toEqual(before);
     // Rien lu : tableau et source absents du disque, une lecture rendrait io (code 1) au lieu de 3.
-    const docx = memoryIO();
-    expect(await main(["import", join(dir, "absent.roomboard"), join(dir, "lettre.docx")], docx)).toBe(3);
-    expect(docx.errors()[0].error).toEqual({ code: "unsupported", message: "lettre.docx : format pris en charge par la CLI au lot 4" });
+    const absent = memoryIO();
+    expect(await main(["import", join(dir, "absent.roomboard"), join(dir, "absent.docx")], absent)).toBe(3);
   });
   it("--at hors de la scène (5000,10) ou mal formé : code 2 avant tout import", async () => {
     const { dir, a } = await board();
