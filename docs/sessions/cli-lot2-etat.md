@@ -3,10 +3,10 @@
 Statut : en cours
 Gabarit : chantier (9 tâches, confirmé à l'étage 2)
 Objectif : La CLI de RoomBoard insère un fragment `.rbitem`, lit et écrit les tableaux blancs et les paquets `.rbpack`, et convertit un fichier d'un format à l'autre.
-Avancement : 6/9 tâches terminées
-Étage : 3 (vague 3) — depuis 2026-11-24 01:27
+Avancement : 8/10 tâches terminées
+Étage : 3 (vague 5) — depuis 2026-11-24 01:40
 Lot : —
-Tâche : T6 — CLI lecture des cinq tableaux — depuis 2026-11-24 01:28
+Tâche : T9 — library, LOT_LIVRE, essai, profil — depuis 2026-11-24 01:40
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/cli-lot2   Branche : feat/cli-lot2   Base : origin/main @ 3b3c88a
 Branche principale locale au lancement : 3b3c88a
@@ -33,9 +33,10 @@ Vagues : 1 = T1 ∥ T2 ∥ T3 ; 2 = T4 ∥ T5 ∥ T8 ; 3 = T6 ; 4 = T7 ; 5 = T9.
 | T4 | T1, T2 | implementeur-tdd | terminée | 1/3 | 2ada481 (fusion c84e5ae) | web 6 fichiers 358 tests ; suite web 3126 (rapport) |
 | T5 | T1 | implementeur-tdd | terminée | 1/3 | 3b8fabe | cli 93 tests, `-t S1` 6 tests |
 | T8 | T2 | implementeur-tdd | terminée | 1/3 | 62e3e93 (fusion b3de80e) | cli `library.test.ts` 4 tests |
-| T6 | T3, T4, T5 | concepteur-critique | en cours | 1/3 | — | — |
-| T7 | T6 | implementeur-tdd | à faire | 0/3 | — | — |
-| T9 | T7, T8 | implementeur-tdd | à faire | 0/3 | — | — |
+| T6 | T3, T4, T5 | concepteur-critique | terminée | 1/3 | 54cab2a (fusion 36286d4) | cli 113 tests ; `-t S2|D23|D29` 19 ; relecture immédiate : 0 bloquant, 1 majeur (câblage D29 non testé de bout en bout), 1 simplification, 1 mineur → T10 |
+| T7 | T6 | implementeur-tdd | terminée | 1/3 | dc6c409 (fusion 9e98ca3) | cli 122 tests ; `-t S3` 12 |
+| T9 | T7, T8 | implementeur-tdd | en cours | 1/3 | — | — |
+| T10 | T9 | implementeur-tdd | à faire | 0/3 | — | correctif de la relecture T6 : `nodeSession` testable (D29 de bout en bout par `main import`, H15), `file: null` d'un onglet tableau affirmé, simplification `readBoardNoticed` |
 
 ## Scénarios
 S1 insérer un `.rbitem` (tableau existant et neuf) · S2 lire les cinq tableaux blancs, jamais réécrits à leur chemin · S3 écrire puis relire `.iwb`/`.ubz`, `.pdf` en code 3 · S4 aller-retour `.rbpack` par `library` · S5 `cli-essai.mjs` : `CLI : OK`
