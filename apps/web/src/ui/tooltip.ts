@@ -35,6 +35,8 @@ export function createTip(opts: TipOptions = {}): Tip {
   let holding = false;
   /** Le focus qui suit un appui n'est pas un focus clavier, ni celui que le navigateur rend au retour dans la fenêtre. */
   let byPointer = false;
+  /** Le bouton a le focus : sans lui (WebKit ne focalise pas au clic), `up()` rend la main au clavier. */
+  let focused = false;
   const clear = (): void => {
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
@@ -73,15 +75,18 @@ export function createTip(opts: TipOptions = {}): Tip {
       after(holdMs, show);
     },
     up: () => {
+      if (!focused) byPointer = false;
       if (!holding) return;
       holding = false;
       if (current() === id) after(lingerMs, hide);
       else clear();
     },
     focus: () => {
+      focused = true;
       if (!byPointer) show();
     },
     blur: (pageKeepsFocus = true) => {
+      focused = false;
       if (pageKeepsFocus) byPointer = false;
       holding = false;
       hide();

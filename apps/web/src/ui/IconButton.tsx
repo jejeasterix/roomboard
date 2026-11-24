@@ -75,7 +75,7 @@ export interface IconButtonProps {
 export function IconButton(props: IconButtonProps): JSX.Element {
   const tip = createTip();
   const kids = children(() => props.children);
-  const graphic = (): boolean => props.icon !== null || kids.toArray().length > 0;
+  const graphic = (): boolean => (props.icon !== null && Object.hasOwn(ICONS, props.icon)) || kids.toArray().length > 0;
   const cls = (): string | undefined =>
     [props.attrs?.class, graphic() ? "rb-ib" : undefined].filter((c) => c !== undefined).join(" ") || undefined;
   let button: HTMLButtonElement | undefined;
@@ -105,7 +105,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         onBlur={() => tip.blur(document.hasFocus())}
       >
         <Show when={graphic()} fallback={props.label}>
-          <Show when={props.icon} fallback={kids()}>
+          <Show when={props.icon !== null && Object.hasOwn(ICONS, props.icon) ? props.icon : null} fallback={kids()}>
             {(name) => <Icon name={name()} />}
           </Show>
           <span class="rb-sr">{props.label}</span>

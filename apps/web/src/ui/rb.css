@@ -48,9 +48,10 @@
 /* Barre des pages (C13, D17) : « Copie .iwb… » et « Copie .ubz… » (libellé complet en title et aria-label) gardent la barre
    sur une rangée en 1280 × 900 sans écraser la liste des numéros (largeur minimale de 3 boutons). */
 .rb-bar[data-dock="bottom"] button:is([data-item="export-iwb"], [data-item="export-ubz"]) { font-size: 12px; padding: 0 4px; }
-.rb-bar button[aria-pressed="true"] { background: var(--rf-violet-100); border-color: var(--rf-violet-600); color: var(--rf-violet-700); }
+.rb-bar button[aria-pressed="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
 .rb-bar button:not(:disabled, [aria-pressed="true"], [aria-current="page"]):hover { background: var(--rf-gray-50); }
-.rb-bar button:disabled { color: var(--rf-gray-500); }
+.rb-bar button:disabled { color: var(--rf-text-muted-aa); }
+.rb-bar button.rb-ib:disabled { color: var(--rf-gray-500); }
 .rb-bar button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
 /* Bouton à icône ou pastille (design-l1, L1-4 à L1-6) : carré de --rb-btn, icône centrée ; l'emporte (0,2,1) sur les
    boutons resserrés des rangées contextuelles (0,2,0) et des barres horizontales (0,1,1). */
@@ -108,7 +109,7 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 .rb-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; pointer-events: none; }
 .rb-stage[hidden] { display: none; }
 /* Barre des pages (T101) : même allure que la barre d'outils ; compteur lisible, chiffres de largeur fixe. */
-.rb-bar button[aria-current="page"] { background: var(--rf-violet-100); border-color: var(--rf-violet-600); color: var(--rf-violet-700); }
+.rb-bar button[aria-current="page"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
 .rb-pages-count { margin-inline: var(--rb-gap); padding: 0 var(--rb-pad); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
 .rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
