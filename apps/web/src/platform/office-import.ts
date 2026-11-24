@@ -4,18 +4,17 @@
  * par l'extension ET l'en-tête : ZIP pour OOXML et ODF, CFB pour `.doc`, `.xls`, `.ppt` (U23). Placés avant `sheet` dans
  * le registre : sur le web, `.xlsx` et `.xlsm` restent au classeur (C10b) ; dans la coque, ils sont convertis, avec repli
  * sur le classeur sans convertisseur ou sans chemin.
- * Cycle d'import avec `import.ts` : aucune constante de ce module ne lit une valeur importée (fonctions seulement).
  */
 import type { DroppedFile } from "./files";
-import { hasExtension, hasZipMagic, isSheetName, type ImportContext, type ImportHandler, type ImportOutcome } from "./import";
+import { hasExtension, hasZipMagic, isSheetName, SHEET_MAX_BYTES, type ImportContext, type ImportHandler, type ImportOutcome } from "./import-handler";
 
 export const OFFICE_ZIP_EXTENSIONS: readonly string[] = Object.freeze([".docx", ".odt", ".xlsx", ".xlsm", ".ods", ".pptx", ".odp"]);
 export const OFFICE_CFB_EXTENSIONS: readonly string[] = Object.freeze([".doc", ".xls", ".ppt"]);
 export const OFFICE_EXTENSIONS: readonly string[] = Object.freeze([...OFFICE_ZIP_EXTENSIONS, ...OFFICE_CFB_EXTENSIONS]);
 /** En-tête d'un fichier composé (CFB) : `.doc`, `.xls`, `.ppt`. */
 export const CFB_MAGIC: readonly number[] = Object.freeze([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-/** Plafond de tout fichier Office (O14) : 100 Mio, la valeur de `SHEET_MAX_BYTES` (littérale : cycle d'import). */
-export const OFFICE_MAX_BYTES = 100 * 1024 * 1024;
+/** Plafond de tout fichier Office (O14) : 100 Mio, la valeur de `SHEET_MAX_BYTES`. */
+export const OFFICE_MAX_BYTES = SHEET_MAX_BYTES;
 
 export const OFFICE_EXPORT_MESSAGE = "exportez en PDF depuis Office";
 export const OFFICE_INSTALL_MESSAGE = "installez LibreOffice ou Microsoft Office";
@@ -32,6 +31,12 @@ export class OfficeConvertError extends Error {
     super(code);
     this.name = "OfficeConvertError";
   }
+}
+
+/** Code d'échec d'une conversion (OF13, D8) : `code` d'un `OfficeConvertError`, sinon `failed`. Lu par `officeHandler` et
+ *  par `readDoc` de la CLI, qui garde ses règles (code 3 sur `no-program` : D56, D59 du cadrage cli-lot4). */
+export function officeErrorCode(e: unknown): string {
+  return e instanceof OfficeConvertError ? e.code : "failed";
 }
 
 export const hasCfbMagic = (head: Uint8Array): boolean => head.length >= CFB_MAGIC.length && CFB_MAGIC.every((b, i) => head[i] === b);
@@ -131,7 +136,7 @@ export function officeHandler(deps: OfficeHandlerDeps): ImportHandler {
       try {
         pdf = await deps.convert(path);
       } catch (e) {
-        const code = e instanceof OfficeConvertError ? e.code : "failed";
+        const code = officeErrorCode(e);
         const s = code === "no-program" ? asSheet(f) : null;
         if (s !== null) return runSheetWithValuesNotice(s, f, ctx);
         await ctx.notify(convertFailureMessage(f.name, code));

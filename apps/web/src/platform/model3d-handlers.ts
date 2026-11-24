@@ -10,7 +10,7 @@ import { DEFAULT_CAMERA } from "../engine/render/model-frames";
 import { messageOf } from "./controller";
 import type { DroppedFile } from "./files";
 import { anchorOf, HEAD_BYTES, placement, visibleOf } from "./image-import";
-import { hasZipMagic, type ImportContext, type ImportHandler, type ImportOutcome } from "./import";
+import { hasZipMagic, type ImportContext, type ImportHandler, type ImportOutcome } from "./import-handler";
 import {
   baseName, COMPANION_ALONE_MESSAGE, COMPRESSED_MESSAGE, extensionOf, gatherFiles, glbJsonText, gltfCompression,
   isCompanionName, missingFilesMessage, resolveReference, MODEL3D_MAX_BYTES, MODEL3D_MIME, MODEL3D_TOO_BIG_MESSAGE, MTL_MISSING_MESSAGE,
