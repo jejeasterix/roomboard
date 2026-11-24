@@ -21,7 +21,7 @@ import {
 } from "../platform/controller";
 import type { PdfEngine, PdfFile } from "../engine/render/pdf-port";
 import { createClipboard, INTERNAL_ONLY_MESSAGE, NEWER_ITEMS_MESSAGE, TOO_BIG_ITEMS_MESSAGE, type Clipboard, type ItemsRefusal } from "../platform/clipboard";
-import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
+import { PDF_EXTENSION, PDF_MIME, RBITEM_EXTENSION, ROOMBOARD_EXTENSION, type DroppedFile, type FileHost, type HostKind, type Notify, type OpenedFile, type Point, type SaveTarget, type ShellPort } from "../platform/files";
 import { baseName } from "../platform/host-tauri";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG, tableFromHtml, type TableGrid } from "../platform/html-table";
 import { decodeImage, type ImageDecoder, type ImageTarget } from "../platform/image-import";
@@ -195,7 +195,7 @@ export interface Workspace {
   captureResource(what: "selection" | "grid"): Promise<CapturedResource | null>;
   /** C4 (D10) : question de confirmation (suppression, Vider) ; faux si la boîte échoue. */
   ask(message: string): Promise<boolean>;
-  say(message: string): Promise<void>;
+  say: Notify;
   /** C3 : action de la rangée « Sélection ». */
   selection(a: SelectionAction): void;
   canPaste(): boolean;
@@ -256,11 +256,12 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   const slots = new Map<TabSession, Slot>();
   let shown: TabSession | null = null;
 
-  const say = async (message: string): Promise<void> => {
+  // Relais tel quel (OF6) : la nature de l'avis n'est transmise que si l'appelant l'a donnée.
+  const say: Notify = async (...a) => {
     try {
-      await shell.notify(message);
+      await shell.notify(...a);
     } catch (e) {
-      console.warn(`RoomBoard : ${message} (boîte indisponible : ${messageOf(e)})`);
+      console.warn(`RoomBoard : ${a[0]} (boîte indisponible : ${messageOf(e)})`);
     }
   };
   const ask = async (message: string): Promise<boolean> => {
@@ -297,7 +298,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   /** Shell d'un onglet : aucune garde (celle de la fenêtre suffit), titre transmis seulement s'il est montré. */
   const tabShell = (slot: Slot): ShellPort => ({
     confirm: (m) => shell.confirm(m),
-    notify: (m) => shell.notify(m),
+    notify: (...a) => shell.notify(...a),
     guardClose: () => () => undefined,
     setTitle(title) {
       slot.title = title;
@@ -594,7 +595,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         if (r.rasterMissing) await say(PDF_RASTER_MISSING_MESSAGE);
         if (r.cut) await say(PDF_CUT_MESSAGE);
         const saved = await pdfFiles.save(exportPdfName(tab.files.name(), r.annotated), r.bytes);
-        if (saved) await say(pdfExportedMessage(r.pages));
+        if (saved) await say(pdfExportedMessage(r.pages), "info");
         return saved;
       } catch (e) {
         await say(`Export impossible : ${messageOf(e)}`);
@@ -696,7 +697,8 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
         const xml = await board.write(r.list, format);
         const bytes = await board.zip([...xml, ...r.files]);
         const saved = await files.save(boardExportName(tab.files.name(), format), bytes);
-        if (saved) await say(boardSavedMessage(format, r.warnings));
+        // OF6 : succès sans avertissement en information ; avec avertissements, l'avis signale une perte (erreur).
+        if (saved) await say(boardSavedMessage(format, r.warnings), r.warnings.length === 0 ? "info" : "error");
         return saved;
       } catch (e) {
         await say(`Export impossible : ${messageOf(e)}`);

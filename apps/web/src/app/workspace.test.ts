@@ -8,7 +8,7 @@ import { createClipboard } from "../platform/clipboard";
 import { fakeCore } from "../core/fake-core";
 import { CodecUnavailableError, type ContainerCodec, type ContainerContents } from "../platform/container";
 import { APP_VERSION, DISCARD_MESSAGE, UNREAD_ASSETS_MESSAGE } from "../platform/controller";
-import type { DropHandler, DroppedFile, FileHost, HostKind, OpenedFile, SaveTarget } from "../platform/files";
+import type { DropHandler, DroppedFile, FileHost, HostKind, NoticeKind, OpenedFile, SaveTarget } from "../platform/files";
 import { PASTE_MAX_CHARS, PASTE_TOO_BIG, type TableGrid } from "../platform/html-table";
 import { NOT_OFFICE_PAGE_MESSAGE, OFFICE_VALUES_MESSAGE, OfficeConvertError, originalChangedMessage } from "../platform/office-import";
 import { createImporter, LATER_FORMAT_MESSAGE } from "../platform/import";
@@ -59,7 +59,7 @@ let dropStops: number;
 let opening: OpenedFile | null;
 let shell: {
   confirm: ReturnType<typeof vi.fn<(m: string) => Promise<boolean>>>;
-  notify: ReturnType<typeof vi.fn<(m: string) => Promise<void>>>;
+  notify: ReturnType<typeof vi.fn<(m: string, kind?: NoticeKind) => Promise<void>>>;
   guardClose: ReturnType<typeof vi.fn<(isDirty: () => boolean, message: string, divert?: () => boolean) => () => void>>;
   setTitle: ReturnType<typeof vi.fn<(t: string) => void>>;
 };
@@ -87,7 +87,7 @@ beforeEach(() => {
   };
   shell = {
     confirm: vi.fn(async (_m: string) => answer),
-    notify: vi.fn(async (_m: string) => undefined),
+    notify: vi.fn(async (_m: string, _kind?: NoticeKind) => undefined),
     guardClose: vi.fn((isDirty: () => boolean, _message: string, d?: () => boolean) => {
       guard = isDirty;
       divert = d ?? null;
@@ -1149,7 +1149,7 @@ describe("espace de travail : PDF (C12)", () => {
     const [name, out] = pdfFiles.save.mock.calls[0] ?? ["", new Uint8Array()];
     expect(name).toBe("Cours annoté.pdf");
     expect((await PDFDocument.load(out)).getPageCount()).toBe(3);
-    expect(shell.notify).toHaveBeenCalledWith("PDF exporté (3 pages)");
+    expect(shell.notify).toHaveBeenCalledWith("PDF exporté (3 pages)", "info"); // OF6 : succès, icône d'information
   });
 
   it("export d'un document sans PDF : « Sans titre.pdf », 1 page, avis au singulier (PF19, PC10)", async () => {
@@ -1158,7 +1158,14 @@ describe("espace de travail : PDF (C12)", () => {
     drawOn(ws.active());
     expect(await ws.exportPdf()).toBe(true);
     expect(pdfFiles.save.mock.calls[0]?.[0]).toBe("Sans titre.pdf");
-    expect(shell.notify).toHaveBeenCalledWith("PDF exporté (1 page)");
+    expect(shell.notify).toHaveBeenCalledWith("PDF exporté (1 page)", "info");
+  });
+
+  it("OF6 : say relaie la nature de l'avis à la boîte ; sans nature, la boîte reçoit le message seul (erreur)", async () => {
+    const ws = await setupWorkspace();
+    await ws.say("envoyé au tableau : page 2", "info");
+    await ws.say("Annotation impossible : pas d'écran");
+    expect(shell.notify.mock.calls).toEqual([["envoyé au tableau : page 2", "info"], ["Annotation impossible : pas d'écran"]]);
   });
 
   it("export : asset absent du magasin : UNREAD_ASSETS_MESSAGE, rien écrit (PF20)", async () => {
@@ -1656,7 +1663,7 @@ describe("espace de travail : tableaux .iwb et .ubz (C13, D5, D15, D17)", () => 
     expect(b.write.mock.calls[0]![0].ops).toBeInstanceOf(Float32Array);
     expect(b.zip.mock.calls[0]![0].map((f) => f.path)).toEqual(["content.xml"]);
     expect(iwbFiles.save).toHaveBeenCalledWith("Cours.iwb", new Uint8Array([80, 75, 3, 4]));
-    expect(shell.notify).toHaveBeenLastCalledWith("Copie enregistrée au format .iwb");
+    expect(shell.notify).toHaveBeenLastCalledWith("Copie enregistrée au format .iwb", "info"); // OF6 : succès sans avertissement
   });
 
   it("C13 : copie .ubz : page001.svg et metadata.rdf, nom « Cours.ubz » (S4)", async () => {

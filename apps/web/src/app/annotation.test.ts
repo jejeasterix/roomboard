@@ -160,6 +160,7 @@ describe("contrôleur d'annotation (C11a)", () => {
     await ctl.enter();
     await ctl.dropOnZone([png], { x: 3, y: 4 });
     expect(log).toEqual(["show t1", "import carre.png", `say ${addedToPageMessage(1)}`]);
+    expect(deps.say).toHaveBeenLastCalledWith(addedToPageMessage(1), "info"); // OF6 : succès, icône d'information
     expect(deps.importFiles).toHaveBeenCalledWith([png], null);
   });
   it("dépôt d'un document : nouvel onglet par importFiles, aucun avis d'ajout", async () => {
@@ -311,6 +312,7 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     expect(ctl.state().active).toBe(false);
     expect(log.indexOf("show t1")).toBeLessThan(log.indexOf("send origin t1 image"));
     expect(log.at(-1)).toBe("say envoyé au tableau : page 2");
+    expect(deps.say).toHaveBeenLastCalledWith("envoyé au tableau : page 2", "info"); // OF6 : icône d'information
   });
   it("Envoyer dans un nouvel onglet : cible « new » (P5)", async () => {
     const { ctl, deps } = setup({ capture: shot });

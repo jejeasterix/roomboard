@@ -179,17 +179,14 @@ fn is_executable_file(p: &Path) -> bool {
     let Ok(m) = fs::metadata(p) else {
         return false;
     };
-    if !m.is_file() {
-        return false;
-    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        m.permissions().mode() & 0o111 != 0
+        m.is_file() && m.permissions().mode() & 0o111 != 0
     }
     #[cfg(not(unix))]
     {
-        true
+        m.is_file()
     }
 }
 
@@ -294,13 +291,15 @@ pub fn ensure_private_dir(p: &Path) -> Result<(), ConvertError> {
             Ok(())
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            let mut b = fs::DirBuilder::new();
+            // `mode` n'existe que sous Unix : une variable mutable commune serait inutile ailleurs (clippy Windows).
             #[cfg(unix)]
-            {
+            let created = {
                 use std::os::unix::fs::DirBuilderExt;
-                b.mode(0o700);
-            }
-            b.create(p).map_err(io)
+                fs::DirBuilder::new().mode(0o700).create(p)
+            };
+            #[cfg(not(unix))]
+            let created = fs::DirBuilder::new().create(p);
+            created.map_err(io)
         }
         Err(e) => Err(io(e)),
     }

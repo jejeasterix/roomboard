@@ -7,7 +7,7 @@
  * travers), repli figé sans transparence, réentrée figée sur une page à fond, envoi au tableau (capture d'abord, puis
  * sortie, puis page insérée par l'espace de travail). Générique en `T` : aucune dépendance à l'espace de travail ni au DOM.
  */
-import type { DroppedFile, Point } from "../platform/files";
+import type { DroppedFile, Notify, Point } from "../platform/files";
 import type { ImportReport } from "../platform/import";
 import { messageOf } from "../platform/controller";
 import {
@@ -53,7 +53,7 @@ export interface AnnotationDeps<T> {
   importFiles(files: readonly DroppedFile[], at: Point | null): Promise<ImportReport>;
   /** Rang (1 = première) de la page montrée de l'onglet actif. */
   pageNumber(): number;
-  say(message: string): Promise<void>;
+  say: Notify;
   /** Côté et épaisseur (px CSS) de la première barre `tools`, mesurés dans la page. */
   bar(): { readonly dock: Dock; readonly thickness: number };
   profile(): Profile;
@@ -340,7 +340,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         const r = d.sendCapture === undefined ? null : await d.sendCapture(request);
         if (r === null) return; // rien inséré : l'avis est déjà dit (rien à envoyer, 12 onglets)
         if (failure !== null) await d.say(captureFailedMessage(failure));
-        await d.say(sentToBoardMessage(r.page));
+        await d.say(sentToBoardMessage(r.page), "info");
       }),
     onTool(tool) {
       if (tool !== "select") lastDraw = tool;
@@ -364,7 +364,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         }
         await doExit();
         const r = await d.importFiles(files, null);
-        if (r.inserted.length > 0) await d.say(addedToPageMessage(d.pageNumber()));
+        if (r.inserted.length > 0) await d.say(addedToPageMessage(d.pageNumber()), "info");
       }),
     onChange(cb) {
       listeners.add(cb);
