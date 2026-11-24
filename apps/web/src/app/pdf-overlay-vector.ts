@@ -12,7 +12,9 @@
 import type { CoreDocument } from "../core/api";
 import type { AssetStore } from "../core/asset-store";
 import type { ImageSource } from "../engine/render/image-cache";
-import { RecordingContext2D, type RecordedList } from "../engine/render/record-ctx";
+import { Canvas2DRenderer, exportPainterOptions } from "../engine/render/canvas2d";
+import { RecordingContext2D, RecordingPath, type RecordedList } from "../engine/render/record-ctx";
+import type { PdfJob } from "../platform/container";
 import { runOnce, type WorkerLike } from "../platform/one-shot-worker";
 import { typed } from "./container-io";
 import type { Overlay, OverlayProducer } from "./pdf-export";
@@ -53,7 +55,7 @@ const cat = (xs: readonly Uint8Array[]): Uint8Array => {
  *  liste de l'appelant n'est pas détachée par le transfert. */
 export function workerPdfWriter(spawn: () => WorkerLike): PdfWriter {
   return (list, fonts, images) => {
-    const job = {
+    const job: PdfJob = {
       ops: list.ops.slice(),
       texts: [...list.texts],
       fonts: cat(fonts),
@@ -74,6 +76,12 @@ export function workerPdfWriter(spawn: () => WorkerLike): PdfWriter {
       PDF_WRITE_FAILED_MESSAGE,
     );
   };
+}
+
+/** Peintre du contenu pour la superposition vectorielle (cli-lot3, D37) : celui de l'écran, chemins enregistrés
+ *  (`RecordingPath`, aucun `Path2D`) ; seule définition, l'amorce de la page et la CLI l'appellent. */
+export function vectorPainter(doc: CoreDocument): VectorOverlayDeps["painter"] {
+  return (ctx, images) => new Canvas2DRenderer(ctx, null, doc, exportPainterOptions(images, { makePath: () => new RecordingPath() as unknown as Path2D }));
 }
 
 /** Jeton d'une image citée : `drawImage` l'enregistre tel quel, ses octets sont lus après le dessin. */
