@@ -3,9 +3,13 @@
  * image absente : avis du produit `MISSING_EXPORT_MESSAGE`, code 1 ; page sans grille : `NO_GRID_MESSAGE`, code 1 (H21).
  */
 import { basename } from "node:path";
+import { writeBoardFile } from "../../web/src/app/board-convert";
+import type { BoardFormat } from "../../web/src/app/board-io";
+import { missingOf } from "../../web/src/app/container-io";
 import { MISSING_EXPORT_MESSAGE, NO_GRID_MESSAGE } from "../../web/src/app/fragments";
+import { UNREAD_ASSETS_MESSAGE } from "../../web/src/platform/controller";
 import { asCliError, CliError } from "./contract";
-import { exportBlocked, extOf, unsupportedMessage } from "./formats";
+import { exportBlocked, extOf, importBlocked, packMessage, unsupportedMessage, type Lot } from "./formats";
 import type { Session } from "./session";
 import { pageOf } from "./state";
 
@@ -17,12 +21,48 @@ export interface ExportRequest {
   readonly grid?: boolean | undefined;
 }
 
-/** `.rbitem` seul au lot 1 ; un format écrit plus tard : code 3 ; tout autre : usage. Avant toute lecture. */
+const BOARD_OUT: ReadonlySet<string> = new Set([".iwb", ".ubz"]);
+export const isBoardOut = (to: string): boolean => BOARD_OUT.has(extOf(to));
+
+/** `.rbitem`, `.iwb`, `.ubz` ; `.rbpack` : usage (bibliothèque) ; un format écrit plus tard : code 3 ; tout autre : usage. */
 export function checkExportTarget(to: string): void {
-  if (extOf(to) === ".rbitem") return;
+  const ext = extOf(to);
+  if (ext === ".rbitem" || BOARD_OUT.has(ext)) return;
+  if (ext === ".rbpack") throw new CliError("usage", packMessage(to));
   const lot = exportBlocked(to);
   if (lot !== null) throw new CliError("unsupported", unsupportedMessage(to, lot));
-  throw new CliError("usage", `export : ${basename(to)} : seul .rbitem est écrit par la CLI au lot 1`);
+  throw new CliError("usage", `export : ${basename(to)} : sorties .rbitem, .iwb ou .ubz`);
+}
+
+export async function exportBoardFile(session: Session, to: string): Promise<{ file: string; kind: BoardFormat }> {
+  checkExportTarget(to);
+  const tab = session.active();
+  if (missingOf(tab.doc, tab.assets).length > 0) throw new CliError("command", UNREAD_ASSETS_MESSAGE);
+  const format = extOf(to).slice(1) as BoardFormat;
+  let r: { bytes: Uint8Array; warnings: string[] };
+  try {
+    r = await writeBoardFile(tab.doc, tab.assets, format, session.deps.board);
+  } catch (e) {
+    throw asCliError(e, "command");
+  }
+  await session.write(to, r.bytes);
+  session.deps.notices.push(...r.warnings); // D24 : avertissements d'écriture dans notices
+  return { file: to, kind: format };
+}
+
+const CONVERT_SOURCES: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz", ".notebook", ".olf", ".flipchart"]);
+const CONVERT_TARGETS: ReadonlySet<string> = new Set([".roomboard", ".iwb", ".ubz"]);
+function convertSide(path: string, allowed: ReadonlySet<string>, blocked: (p: string) => Lot | null, what: string): void {
+  if (allowed.has(extOf(path))) return;
+  const lot = blocked(path);
+  if (lot !== null && lot >= 3) throw new CliError("unsupported", unsupportedMessage(path, lot));
+  if (extOf(path) === ".rbpack") throw new CliError("usage", packMessage(path));
+  throw new CliError("usage", `convert : ${basename(path)} : ${what} ${[...allowed].join(" ")} attendue (export pour un .rbitem)`);
+}
+/** D25 : avant tout chargement ; `.pdf` : 3 (lot 3) ; `.rbitem`, `.rbpack` et tout autre : 2. */
+export function checkConvert(from: string, to: string): void {
+  convertSide(from, CONVERT_SOURCES, importBlocked, "source");
+  convertSide(to, CONVERT_TARGETS, exportBlocked, "sortie");
 }
 
 export async function exportFragment(session: Session, req: ExportRequest): Promise<{ file: string; kind: "fragment"; elements: number } | { file: string; kind: "grid" }> {
