@@ -172,10 +172,27 @@ async function sizes(page) {
 }
 
 /** (5) Appui long au doigt (S2), contexte tactile, séance CDP : infobulle, clic au relâcher, aucun menu contextuel. */
+/** Bouton à icône grisé (`disabled`) : l'infobulle dépend de `pointerenter` sur un `<button disabled>`. */
+async function disabledTip(page) {
+  check(await page.locator(item("redo")).isDisabled(), "« Rétablir » est grisé au démarrage");
+  await page.hover(item("redo"), { force: true });
+  const tip = page.locator(TIP);
+  const vu = await tip.waitFor({ state: "visible", timeout: 3000 }).then(() => true, () => false);
+  console.log(`survol de « Rétablir » grisé : infobulle ${vu ? "montrée" : "absente"}`);
+  check(vu && (await tip.textContent()) === "Rétablir", "S2 : survol de « Rétablir » grisé : infobulle « Rétablir »");
+  await page.mouse.move(VIEW.width / 2, VIEW.height / 2);
+  await tip.waitFor({ state: "detached", timeout: 5000 });
+}
+
 async function longPress(browser, url) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1, hasTouch: true });
   try {
     const page = await ctx.newPage();
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("console", (m) => {
+      if (m.type() === "error") errors.push(m.text());
+    });
     await page.goto(url);
     await ready(page);
     await page.evaluate(() => {
@@ -196,6 +213,7 @@ async function longPress(browser, url) {
     console.log(`appui long : ${ev.join(", ")}`);
     check(["pointerdown", "pointerup", "click"].every((t) => ev.includes(t)) && !ev.includes("contextmenu"), "S2 : appui long : pointerdown, pointerup, click reçus, aucun contextmenu");
     check((await page.getAttribute(item("eraser"), "aria-pressed")) === "true", "S2 : au relâcher, la gomme est choisie");
+    check(errors.length === 0, `aucune erreur dans la page après l'appui long${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
   } finally {
     await ctx.close();
   }
@@ -249,6 +267,7 @@ async function main() {
     await rectEdge(page);
     await counterProof(page);
     await hoverTip(page, captures);
+    await disabledTip(page);
     await keyboardTip(page);
     await sizes(page);
     check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
