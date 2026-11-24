@@ -1,11 +1,14 @@
 // Aides des tests de la CLI : vrai Wasm (sauté s'il manque, exigé sous ROOMBOARD_WASM_REQUIRED=1, D2), entrées et
 // sorties en mémoire, dossier temporaire sous os.tmpdir() (nettoyé), PNG fabriqué, ids du cœur normalisés par rang.
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32, deflateSync } from "node:zlib";
 import { afterAll, describe } from "vitest";
+import { zipStored } from "../../web/src/platform/zip-worker";
+import { flipPages, iwbRaw3, iwbZip, notebookZip, olfZip, ubzZip } from "../../../scripts/essais/fabriques/tableaux.mjs";
+import { makeFlipchart } from "../../../scripts/essais/fabriques/flipchart.mjs";
 import { CliError, type CliIO } from "./contract";
 import { wasmPresent } from "./wasm-node";
 
@@ -128,3 +131,39 @@ export function normalizeIds(v: unknown, seen: Map<string, string> = new Map()):
   if (typeof v === "object" && v !== null) return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, normalizeIds(x, seen)]));
   return v;
 }
+
+/** ZIP des fabriques (D28) : `zipStored` du produit, aucune dépendance ajoutée. */
+export const fabZip = (files: Record<string, Uint8Array>): Uint8Array => zipStored(Object.entries(files).map(([path, bytes]) => ({ path, bytes })));
+
+/** Les cinq tableaux fabriqués (D28) écrits dans `dir`. */
+export function boardFixtures(dir: string): { readonly iwb: string; readonly iwbRaw: string; readonly ubz: string; readonly notebook: string; readonly olf: string; readonly flipchart: string } {
+  const put = (name: string, bytes: Uint8Array): string => {
+    const p = join(dir, name);
+    writeFileSync(p, bytes);
+    return p;
+  };
+  return {
+    iwb: put("lecon.iwb", iwbZip(fabZip)),
+    iwbRaw: put("brut.iwb", new TextEncoder().encode(iwbRaw3())),
+    ubz: put("openboard.ubz", ubzZip(fabZip)),
+    notebook: put("lecon.notebook", notebookZip(fabZip)),
+    olf: put("cours.olf", olfZip(fabZip)),
+    flipchart: put("cours.flipchart", makeFlipchart(flipPages(), deflateSync)),
+  };
+}
+
+/**
+ * D29 : lecteur de tableau dont `ops()` panique (piège Wasm) et dont `free()` lève ensuite l'erreur de wasm-bindgen sur
+ * une valeur restée empruntée. `partOf` (board-reader.ts) libère dans un `finally` : l'`Error` de `free()` remplace la
+ * `RuntimeError`, et `boardJobReply` rend `{ error: BOARD_FAILED_MESSAGE }` au lieu de relancer.
+ */
+export const borrowedAfterPanic = (): { ops(): never; texts(): string[]; warnings(): string[]; free(): never } => ({
+  ops: () => {
+    throw new WebAssembly.RuntimeError("unreachable");
+  },
+  texts: () => [],
+  warnings: () => [],
+  free: () => {
+    throw new Error("attempted to take ownership of Rust value while it was borrowed");
+  },
+});

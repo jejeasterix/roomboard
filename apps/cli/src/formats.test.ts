@@ -14,10 +14,11 @@ describe("FORMAT_LOTS (D9)", () => {
   it("chaque lecteur nommé est un id du registre d'import", () => {
     for (const [ext, e] of Object.entries(FORMAT_LOTS)) expect(HANDLER_IDS.has(e.handler), ext).toBe(true);
   });
-  it("lot 1 : lus .roomboard, PNG, JPEG, .xlsx, .xlsm ; écrits .roomboard et .rbitem", () => {
+  it("lot 1 : lus .roomboard, PNG, JPEG, .xlsx, .xlsm, et les cinq tableaux (cli-lot2) ; écrits .roomboard et .rbitem", () => {
     expect(LOT_LIVRE).toBe(1);
     const rows = formatRows();
-    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".jpeg", ".jpg", ".png", ".rbitem", ".roomboard", ".xlsm", ".xlsx"]);
+    expect(rows.filter((r) => r.read).map((r) => r.ext).sort()).toEqual([".flipchart", ".iwb", ".jpeg", ".jpg", ".notebook", ".olf", ".png", ".rbitem", ".roomboard", ".ubz", ".xlsm", ".xlsx"]);
+    expect(rows.find((r) => r.ext === ".notebook")?.notes.join(" ")).toContain("lecture seule");
     expect(rows.filter((r) => r.write).map((r) => r.ext).sort()).toEqual([".rbitem", ".roomboard"]);
     expect(rows).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
     expect(rows.find((r) => r.ext === ".rbitem")?.notes.join(" ")).toContain("--grid");
@@ -30,6 +31,8 @@ describe("FORMAT_LOTS (D9)", () => {
     expect(importBlocked("image.png")).toBeNull();
     expect(importBlocked("valeurs.xlsx")).toBeNull();
     expect(importBlocked("notes.txt")).toBeNull();
+    expect(importBlocked("a.iwb")).toBeNull();
+    expect(importBlocked("a.flipchart")).toBeNull();
     expect(unsupportedMessage("/tmp/doc.pdf", 3)).toBe("doc.pdf : format pris en charge par la CLI au lot 3");
   });
   it("exportBlocked : .iwb → 2, .pdf → 3 ; .rbitem et .png → null ; lotOf", () => {

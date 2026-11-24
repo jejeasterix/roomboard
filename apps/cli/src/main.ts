@@ -6,6 +6,7 @@
  * enregistrent toujours le document passé à `run` (onglet t1), quel que soit l'onglet actif ; `--save` l'écrit dans le
  * fichier passé à `run`, même si une opération `save` avec `to` l'a enregistré ailleurs entre-temps ; les autres
  * onglets s'enregistrent par l'opération `save`. `help`, `--help`, `-h` : usage sur stdout ; sans commande : usage sur stderr.
+ * cli-lot2 (D23) : toute écriture de document vise un `.roomboard`, contrôlé avant tout chargement par `documentTarget`.
  */
 import { APP_VERSION } from "../../web/src/platform/controller";
 import { flagStr, parseArgs } from "./args";
@@ -14,7 +15,7 @@ import { exists, readBytes } from "./disk";
 import { checkExportTarget, exportFragment } from "./exporter";
 import { extOf, formatRows } from "./formats";
 import { checkSources, importInto, parseAt, partialMessage } from "./importer";
-import { nodeSession, type CliTab, type Session } from "./session";
+import { documentTarget, nodeSession, type CliTab, type Session } from "./session";
 import { stateOf } from "./state";
 import type { TabEntry } from "../../web/src/app/tabs";
 import { loadCore } from "./wasm-node";
@@ -25,7 +26,7 @@ const USAGE = {
   version: "version",
   formats: "formats",
   new: "new <sortie.roomboard> [--replace]",
-  state: "state <fichier.roomboard | fichier.rbitem> [--page <id>] [--points]",
+  state: "state <fichier.roomboard | fichier.rbitem | tableau .iwb .ubz .notebook .olf .flipchart> [--page <id>] [--points]",
   run: "run <fichier.roomboard | --new> [--ops <fichier.jsonl> | -] [--save] [--out <fichier>]",
   apply: "apply <fichier.roomboard> '<opération JSON>' [--out <fichier>]",
   import: "import <fichier.roomboard> <source>… [--page <id>] [--at x,y] [--out <fichier>]",
@@ -87,6 +88,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const p = parseArgs(args, { "--replace": "bool" });
     const out = p.positional[0];
     if (out === undefined || p.positional.length !== 1) throw usage(USAGE.new);
+    documentTarget(out);
     if (!p.flags.has("--replace") && (await exists(out))) throw new CliError("io", `${out} existe déjà (--replace pour le remplacer)`);
     const session = await nodeSession(io);
     const tab = session.newTab().session;
@@ -111,6 +113,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const out = flagStr(p, "--out");
     const save = p.flags.has("--save") || out !== undefined;
     if (save && isNew && out === undefined) throw new CliError("usage", "run --new --save : --out <fichier> exigé");
+    if (save) documentTarget(out ?? file ?? "");
     const ops = flagStr(p, "--ops");
     const fromFile = ops === undefined || ops === "-" ? null : linesOf(await readBytes(ops));
     const session = await nodeSession(io);
@@ -128,6 +131,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const p = parseArgs(args, { "--out": "value" });
     const [file, op] = p.positional;
     if (file === undefined || op === undefined || p.positional.length !== 2) throw usage(USAGE.apply);
+    documentTarget(flagStr(p, "--out") ?? file);
     const session = await nodeSession(io);
     const opened = await session.open(file);
     await play(session, [op], io);
@@ -138,13 +142,19 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     const p = parseArgs(args, { "--page": "value", "--at": "value", "--out": "value" });
     const [file, ...sources] = p.positional;
     if (file === undefined || sources.length === 0) throw usage(USAGE.import);
+    documentTarget(flagStr(p, "--out") ?? file);
     checkSources(sources); // code 3 avant toute lecture (D9)
     const atText = flagStr(p, "--at");
     const at = atText === undefined ? null : parseAt(atText); // code 2 avant tout import (H7)
     const session = await nodeSession(io);
     const tab = (await session.open(file)).session;
     const report = await importInto(session, { sources, page: flagStr(p, "--page"), at });
-    if (report.inserted.length > 0) await session.save(tab, flagStr(p, "--out") ?? file);
+    try {
+      if (report.inserted.length > 0) await session.save(tab, flagStr(p, "--out") ?? file);
+    } catch (e) {
+      if (session.deps.interrupted()) io.out(JSON.stringify(report)); // D29 : rapport imprimé, puis le refus d'enregistrer
+      throw e;
+    }
     io.out(JSON.stringify(report));
     if (report.failed.length + report.refused.length > 0) throw new CliError("command", partialMessage(report)); // H10
     return 0;

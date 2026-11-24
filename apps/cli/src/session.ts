@@ -3,21 +3,29 @@
  * opérations jouées dans un seul processus, historique du cœur le temps de la session ; rien n'est écrit sans `save`.
  * `$n` vise les ids de l'opération n, ou ses pages quand elle n'a créé aucun élément (AddPage) ; une opération en cours
  * ou échouée ne résout rien. Une opération refusée lève une `CliError` ; l'appelant arrête la session (H4).
+ * cli-lot2 (D22, D23, D29) : un tableau `.iwb .ubz .notebook .olf .flipchart` est lu par `readBoardFile` du produit en
+ * onglet sans fichier ; un document ne s'enregistre qu'en `.roomboard` (`documentTarget`) ; après une panique du module
+ * des formats (`interrupted`), plus aucune écriture.
  */
 import { basename } from "node:path";
+import { readBoardFile } from "../../web/src/app/board-convert";
+import { boardWarningsMessage } from "../../web/src/app/board-files";
+import type { BoardPorts, BoardSourceFormat } from "../../web/src/app/board-io";
 import type { FragmentOps } from "../../web/src/app/fragments";
 import { createContainerIO, type ContainerIO, type ReadKind, type ReadResult } from "../../web/src/app/container-io";
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabEntry, type Tabs } from "../../web/src/app/tabs";
 import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
-import { createPageCodec, type SheetFormatsBinding } from "../../web/src/platform/container";
-import { APP_VERSION } from "../../web/src/platform/controller";
+import { createPageCodec, type ContainerCodec, type SheetFormatsBinding } from "../../web/src/platform/container";
+import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
 import type { Point } from "../../web/src/platform/files";
+import { nodeBoardPorts } from "./board-node";
 import { asCliError, CliError, type CliIO } from "./contract";
 import { nowOf, readBytes, writeAtomic } from "./disk";
 import { exportFragment } from "./exporter";
 import { cliFragments, type CliPage } from "./fragment-view";
-import { atOf, importInto, partialMessage } from "./importer";
+import { extOf, formatOf } from "./formats";
+import { atOf, importInto, nodeDecode, partialMessage } from "./importer";
 import { needString, optString, parseOp, type CliOpName, type RefContext } from "./ops";
 import { stateOf } from "./state";
 import { loadCore, loadFormats } from "./wasm-node";
@@ -32,11 +40,32 @@ export interface CliTab {
 export interface SessionDeps {
   readonly core: CoreFactory;
   readonly io: ContainerIO;
+  readonly codec: ContainerCodec;
   /** Avis du produit (`say`, `notify`), dans l'ordre. */
   readonly notices: string[];
   readonly formats: () => Promise<SheetFormatsBinding>;
-  now(): string;
   readonly fragments: FragmentOps<CliPage>;
+  readonly board: BoardPorts;
+  /** D29 : vrai après une panique du module des formats dans ce processus. */
+  interrupted(): boolean;
+  now(): string;
+}
+
+export const INTERRUPTED_MESSAGE = "module des formats interrompu : rien n'est enregistré";
+const BOARD_HANDLERS: ReadonlySet<string> = new Set(["iwb", "ubz", "notebook", "olf", "flipchart"]);
+
+/** D22 : format de tableau d'un chemin, null pour un conteneur. */
+export function boardFormatOf(path: string): BoardSourceFormat | null {
+  const e = formatOf(path);
+  return e !== null && BOARD_HANDLERS.has(e.handler) ? (e.handler as BoardSourceFormat) : null;
+}
+
+/** D23 : extension .roomboard (sans casse), sinon CliError usage. */
+export function documentTarget(path: string): string {
+  if (extOf(path) !== ".roomboard") {
+    throw new CliError("usage", `${basename(path)} : un document s'enregistre en .roomboard (convert ou export pour un autre format)`);
+  }
+  return path;
 }
 
 export type OpResult = { readonly op: number; readonly ok: true } & Readonly<Record<string, unknown>>;
@@ -52,11 +81,13 @@ export interface Session {
   /** Onglet actif ; CliError command s'il n'y en a aucun. */
   active(): CliTab;
   newTab(): TabEntry<CliTab>;
-  /** Lit un conteneur ; CliError format avec l'avis du produit s'il est refusé. */
-  readDoc(path: string, kind: ReadKind): Promise<ReadResult>;
+  /** Lit un conteneur ou, en document, un tableau (D22) ; CliError format avec l'avis du produit s'il est refusé. */
+  readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">>;
   open(path: string): Promise<TabEntry<CliTab>>;
   /** Ouverture par l'importeur (`openDocument`) : null si refusé, l'avis est déjà dans `notices`. */
   openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null>;
+  /** Tableau ouvert par l'importeur (`openBoard`) en onglet sans fichier : false si refusé, l'avis est dans `notices`. */
+  openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean>;
   save(tab: CliTab, to?: string | null): Promise<string>;
   /** Écriture atomique d'un fichier de la session (document ou fragment), retenue par `written`. */
   write(path: string, bytes: Uint8Array): Promise<void>;
@@ -72,7 +103,11 @@ export function createSession(deps: SessionDeps): Session {
   /** recorded[n - 1] : ids retenus de l'opération n. */
   const recorded: (readonly string[])[] = [];
   const written = new Set<string>();
+  const writable = (): void => {
+    if (deps.interrupted()) throw new CliError("command", INTERRUPTED_MESSAGE);
+  };
   async function write(path: string, bytes: Uint8Array): Promise<void> {
+    writable();
     await writeAtomic(path, bytes);
     written.add(path);
   }
@@ -92,8 +127,23 @@ export function createSession(deps: SessionDeps): Session {
   };
   const newTab = (): TabEntry<CliTab> => add({ doc: deps.core.blank(), assets: createAssetStore(), file: null });
 
-  async function readDoc(path: string, kind: ReadKind): Promise<ReadResult> {
+  const readBoard = (name: string, blob: Blob, format: BoardSourceFormat) =>
+    readBoardFile({ name, blob, format }, { core: deps.core, ports: deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => deps.now(), appVersion: APP_VERSION });
+
+  async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
+    const format = kind === "document" ? boardFormatOf(path) : null;
+    if (format !== null) {
+      const name = basename(path);
+      let read: Awaited<ReturnType<typeof readBoard>>;
+      try {
+        read = await readBoard(name, new Blob([bytes as BlobPart]), format);
+      } catch (e) {
+        throw new CliError("format", `Ouverture impossible (${name}) : ${messageOf(e)}`);
+      }
+      if (read.warnings.length > 0) deps.notices.push(boardWarningsMessage(name, read.warnings));
+      return { doc: read.doc, assets: read.assets };
+    }
     const before = deps.notices.length;
     const read = await deps.io.read(basename(path), bytes, kind, path);
     if (read === null) throw new CliError("format", deps.notices.slice(before).join(" ; ") || `ouverture impossible : ${path}`);
@@ -102,7 +152,23 @@ export function createSession(deps: SessionDeps): Session {
   async function open(path: string): Promise<TabEntry<CliTab>> {
     if (tabs.list().length >= MAX_TABS) throw new CliError("command", TOO_MANY_TABS);
     const read = await readDoc(path, "document");
-    return add({ doc: read.doc, assets: read.assets, file: path });
+    // D22 : un tableau ouvert est un onglet sans fichier (comme `target: null` de la page) : jamais réécrit à son chemin.
+    return add({ doc: read.doc, assets: read.assets, file: boardFormatOf(path) === null ? path : null });
+  }
+  async function openBoard(file: { readonly name: string; readonly blob: Blob; readonly format: BoardSourceFormat }): Promise<boolean> {
+    if (tabs.list().length >= MAX_TABS) {
+      deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
+      return false;
+    }
+    try {
+      const read = await readBoard(file.name, file.blob, file.format);
+      add({ doc: read.doc, assets: read.assets, file: null });
+      if (read.warnings.length > 0) deps.notices.push(boardWarningsMessage(file.name, read.warnings));
+      return true;
+    } catch (e) {
+      deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
+      return false;
+    }
   }
   async function openBytes(name: string, bytes: Uint8Array, path: string | null): Promise<TabEntry<CliTab> | null> {
     if (tabs.list().length >= MAX_TABS) {
@@ -113,8 +179,10 @@ export function createSession(deps: SessionDeps): Session {
     return read === null ? null : add({ doc: read.doc, assets: read.assets, file: path });
   }
   async function save(tab: CliTab, to: string | null = null): Promise<string> {
+    writable();
     const path = to ?? tab.file;
     if (path === null) throw new CliError("usage", "enregistrer : aucun chemin (champ « to » ou option --out)");
+    documentTarget(path);
     let bytes: Uint8Array;
     try {
       bytes = await deps.io.encode(tab.doc, tab.assets, deps.now(), APP_VERSION, { kind: "document" });
@@ -201,6 +269,7 @@ export function createSession(deps: SessionDeps): Session {
     readDoc,
     open,
     openBytes,
+    openBoard,
     save,
     write,
     written: () => [...written],
@@ -243,14 +312,28 @@ export async function nodeSession(io: CliIO): Promise<Session> {
   const core = await loadCore(io.wasmDir);
   const formats = loadFormats(io.wasmDir);
   const notices: string[] = [];
+  const codec = createPageCodec(formats);
   const containerIO = createContainerIO({
     core,
-    codec: createPageCodec(formats),
+    codec,
     say: async (m) => {
       notices.push(m);
     },
     makeAssets: () => createAssetStore(),
   });
   const now = (): string => nowOf(io.env);
-  return createSession({ core, io: containerIO, notices, formats, now, fragments: cliFragments({ io: containerIO, core, now, notices }) });
+  let interrupted = false;
+  return createSession({
+    core,
+    io: containerIO,
+    codec,
+    notices,
+    formats,
+    now,
+    fragments: cliFragments({ io: containerIO, core, now, notices }),
+    board: nodeBoardPorts(formats, () => {
+      interrupted = true;
+    }),
+    interrupted: () => interrupted,
+  });
 }

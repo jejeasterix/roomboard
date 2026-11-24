@@ -299,3 +299,31 @@ describeWasm("new : jamais d'écrasement sans --replace", () => {
     expect(existsSync(a)).toBe(false);
   });
 });
+
+describe("main : D23, toute écriture de document vise un .roomboard (avant tout chargement)", () => {
+  const absent = () => memoryIO([], {}, new URL("file:///roomboard-absent/")); // un chargement donnerait le code 1
+  it("D23 — new, run --out, run <tableau> --save, apply --out, import sans --out : code 2 sans charger le module", async () => {
+    const dir = tmpDir();
+    for (const argv of [
+      ["new", join(dir, "z.iwb")],
+      ["run", "--new", "--out", join(dir, "x.txt")],
+      ["run", join(dir, "lecon.iwb"), "--save"],
+      ["apply", join(dir, "a.roomboard"), "{}", "--out", join(dir, "a.ubz")],
+      ["import", join(dir, "lecon.iwb"), join(dir, "i.png")],
+    ]) {
+      const io = absent();
+      expect(await main(argv, io), argv.join(" ")).toBe(2);
+      expect(io.errors()[0].error.code).toBe("usage");
+    }
+    expect(existsSync(join(dir, "z.iwb"))).toBe(false);
+  });
+});
+
+describeWasm("main : D23 dans run", () => {
+  it("D23 — op save vers un .iwb : ligne d'échec usage, code 2", async () => {
+    const dir = tmpDir();
+    const io = memoryIO([JSON.stringify({ op: "save", to: join(dir, "x.iwb") })]);
+    expect(await main(["run", "--new"], io)).toBe(2);
+    expect(io.json()[0]).toMatchObject({ op: 1, ok: false, error: { code: "usage" } });
+  });
+});
