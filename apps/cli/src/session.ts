@@ -16,7 +16,7 @@ import { createContainerIO, type ContainerIO, type ReadKind, type ReadResult } f
 import { createTabs, MAX_TABS, TOO_MANY_TABS, type TabEntry, type Tabs } from "../../web/src/app/tabs";
 import type { Change, CoreDocument, CoreFactory } from "../../web/src/core/api";
 import { createAssetStore, type AssetStore } from "../../web/src/core/asset-store";
-import { createPageCodec, type ContainerCodec, type SheetFormatsBinding } from "../../web/src/platform/container";
+import { createPageCodec, type ContainerCodec, type FormatsBinding, type SheetFormatsBinding } from "../../web/src/platform/container";
 import { APP_VERSION, messageOf } from "../../web/src/platform/controller";
 import type { Point } from "../../web/src/platform/files";
 import { nodeBoardPorts } from "./board-node";
@@ -130,18 +130,23 @@ export function createSession(deps: SessionDeps): Session {
   const readBoard = (name: string, blob: Blob, format: BoardSourceFormat) =>
     readBoardFile({ name, blob, format }, { core: deps.core, ports: deps.board, makeAssets: () => createAssetStore(), decode: nodeDecode, now: () => deps.now(), appVersion: APP_VERSION });
 
+  /** Lit un tableau ; échec : « Ouverture impossible (nom) : … » ; avis du lecteur poussés dans les notices. */
+  async function readBoardNoticed(name: string, blob: Blob, format: BoardSourceFormat): Promise<Awaited<ReturnType<typeof readBoard>>> {
+    let read: Awaited<ReturnType<typeof readBoard>>;
+    try {
+      read = await readBoard(name, blob, format);
+    } catch (e) {
+      throw new CliError("format", `Ouverture impossible (${name}) : ${messageOf(e)}`);
+    }
+    if (read.warnings.length > 0) deps.notices.push(boardWarningsMessage(name, read.warnings));
+    return read;
+  }
+
   async function readDoc(path: string, kind: ReadKind): Promise<Pick<ReadResult, "doc" | "assets">> {
     const bytes = await readBytes(path);
     const format = kind === "document" ? boardFormatOf(path) : null;
     if (format !== null) {
-      const name = basename(path);
-      let read: Awaited<ReturnType<typeof readBoard>>;
-      try {
-        read = await readBoard(name, new Blob([bytes as BlobPart]), format);
-      } catch (e) {
-        throw new CliError("format", `Ouverture impossible (${name}) : ${messageOf(e)}`);
-      }
-      if (read.warnings.length > 0) deps.notices.push(boardWarningsMessage(name, read.warnings));
+      const read = await readBoardNoticed(basename(path), new Blob([bytes as BlobPart]), format);
       return { doc: read.doc, assets: read.assets };
     }
     const before = deps.notices.length;
@@ -160,10 +165,15 @@ export function createSession(deps: SessionDeps): Session {
       deps.notices.push(`Ouverture impossible (${file.name}) : ${TOO_MANY_TABS}`);
       return false;
     }
+    let read: Awaited<ReturnType<typeof readBoard>>;
     try {
-      const read = await readBoard(file.name, file.blob, file.format);
+      read = await readBoardNoticed(file.name, file.blob, file.format);
+    } catch (e) {
+      deps.notices.push(messageOf(e)); // déjà « Ouverture impossible (nom) : … »
+      return false;
+    }
+    try {
       add({ doc: read.doc, assets: read.assets, file: null });
-      if (read.warnings.length > 0) deps.notices.push(boardWarningsMessage(file.name, read.warnings));
       return true;
     } catch (e) {
       deps.notices.push(`Ouverture impossible (${file.name}) : ${messageOf(e)}`);
@@ -313,8 +323,12 @@ export function createSession(deps: SessionDeps): Session {
   return session;
 }
 
+export interface TestableIO extends CliIO {
+  /** Test seulement : module des formats des tableaux, à la place du vrai (câblage de D29). */
+  readonly formats?: () => Promise<FormatsBinding>;
+}
 /** Session branchée sur les vrais modules : cœur, conteneur (module formats chargé au premier besoin), date du manifeste. */
-export async function nodeSession(io: CliIO): Promise<Session> {
+export async function nodeSession(io: TestableIO): Promise<Session> {
   nowOf(io.env); // ROOMBOARD_NOW mal formée : usage (code 2) avant tout chargement ni écriture
   const core = await loadCore(io.wasmDir);
   const formats = loadFormats(io.wasmDir);
@@ -338,7 +352,7 @@ export async function nodeSession(io: CliIO): Promise<Session> {
     formats,
     now,
     fragments: cliFragments({ io: containerIO, core, now, notices }),
-    board: nodeBoardPorts(formats, () => {
+    board: nodeBoardPorts(io.formats ?? formats, () => {
       interrupted = true;
     }),
     interrupted: () => interrupted,
