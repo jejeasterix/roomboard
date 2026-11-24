@@ -11,6 +11,7 @@ import {
   probeSize,
   sniffImage,
   TAB_CLOSED_MESSAGE,
+  TOO_MANY_PIXELS,
   visibleOf,
   type DecodePorts,
 } from "./image-import";
@@ -79,10 +80,11 @@ describe("kindOfMime", () => {
   });
 });
 
-describe("probeSize (R15 : en-tête PNG et JPEG seulement)", () => {
+describe("probeSize (R15, cli-lot4 D63 : en-tête de tous les formats)", () => {
   it("PNG : IHDR", async () => expect(await probeSize(new Blob([pngHead(640, 480)]), "png")).toEqual({ w: 640, h: 480 }));
   it("JPEG : premier SOFn après APP0", async () => expect(await probeSize(new Blob([jpeg(640, 480)]), "jpeg")).toEqual({ w: 640, h: 480 }));
-  it("autres formats : null (contrôlés après décodage)", async () => expect(await probeSize(new Blob([bytes("GIF89a")]), "gif")).toBeNull());
+  it("GIF tronqué : null (taille illisible)", async () => expect(await probeSize(new Blob([bytes("GIF89a")]), "gif")).toBeNull());
+  it("GIF : écran logique (D63)", async () => expect(await probeSize(new Blob([bytes("GIF89a", [0x40, 0x01, 0xc8, 0x00, 0, 0, 0])]), "gif")).toEqual({ w: 320, h: 200 }));
   it("JPEG : SOS avant tout SOFn → null", () => expect(jpegSize(bytes([0xff, 0xd8, 0xff, 0xda, 0, 2], new Array<number>(10).fill(0)))).toBeNull());
 });
 
@@ -240,5 +242,25 @@ describe("image et média départagés (C14, M11, R5)", () => {
     // Chaque image de sa table reste à l'image ; le cas R5 aussi.
     for (const [kind, head, name] of IMAGE_CASES) expect(sniffMedia(head, name), kind).toBeNull();
     expect([sniffImage(MIAF_HEIC, "a.heic"), sniffMedia(MIAF_HEIC, "a.heic")]).toEqual(["heic", null]);
+  });
+});
+
+describe("D66 (cli-lot4) — refus avant décodage pour les formats lus dans l'en-tête", () => {
+  it("GIF 20 000 × 20 000 : refusé avant décodage, même message TOO_MANY_PIXELS", async () => {
+    const head = bytes("GIF89a", [0x20, 0x4e, 0x20, 0x4e, 0, 0, 0]);
+    const decode = vi.fn(async () => ({ bitmap: { close() {} } as unknown as ImageBitmap, w: 1, h: 1 }));
+    const notify = vi.fn(async () => {});
+    const target = {
+      assets: { put: vi.fn(async () => "sha") },
+      page: () => "p",
+      camera: () => IDENTITY,
+      stageRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+      run: vi.fn(() => null),
+    };
+    const out = await imageHandler({ decode }).run({ name: "g.gif" } as never, { blob: new Blob([head]), head, at: null, inserted: 0, target, notify } as never);
+    expect(out).toBe("failed");
+    expect(decode).not.toHaveBeenCalled();
+    expect(target.assets.put).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledWith(`g.gif : ${TOO_MANY_PIXELS}`);
   });
 });
