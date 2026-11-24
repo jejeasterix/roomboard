@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { MAX_POINTS, MAX_SPANS, type BoardObject } from "./board-io";
-import { BOARD_MAX_OBJECTS, BOARD_OBJECTS_MESSAGE, boardFirstPagesMessage } from "./board-files";
+import { MAX_POINTS, MAX_SPANS, type BoardObject } from "./board-list";
+import { BOARD_MAX_OBJECTS, BOARD_OBJECTS_MESSAGE, boardFirstPagesMessage } from "../app/board-files";
 import { OLF_BROKEN_MESSAGE, olfColor, olfMatrix, readOlf } from "./olf-read";
 
 /** Fichiers fabriqués ici (G8) : forme relevée sur les exemples myViewBoard, `{ olf: { pageset: [{ page }] } }`. */

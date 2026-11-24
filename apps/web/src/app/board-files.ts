@@ -5,6 +5,7 @@
 import { PDF_MAX_PAGES } from "../core/api";
 import { BOARD_OBJECTS_MESSAGE, normalBoardPath } from "../platform/board-reader";
 import { BAMBOO_STRUCTURE_EXTENSIONS } from "../platform/bamboo";
+import { SKIPPED_LABEL } from "../platform/board-list";
 import { ROOMBOARD_EXTENSION } from "../platform/files";
 import type { BoardFormat, BoardListPage, BoardObject, BoardSourceFormat } from "./board-io";
 
@@ -13,7 +14,7 @@ export const IWB_NO_CONTENT_MESSAGE = "fichier endommagé : aucun content.xml da
 export const UBZ_NO_PAGE_MESSAGE = "fichier endommagé : aucune page pageNNN.svg dans ce .ubz";
 /** D16 : borne par fichier (`.ubz` : toutes pages ensemble) ; même texte que `BoardError::TooBig` du module `formats`. */
 export { BOARD_OBJECTS_MESSAGE };
-export const BOARD_MAX_OBJECTS = 100_000;
+export { BOARD_MAX_OBJECTS, SKIPPED_LABEL } from "../platform/board-list";
 export const UBZ_NOT_ZIP_MESSAGE = "fichier endommagé : un .ubz est une archive ZIP";
 
 export interface BoardSources {
@@ -126,7 +127,6 @@ const countObjects = (objects: readonly BoardObject[]): number => objects.reduce
 export const boardObjectCount = (pages: readonly BoardListPage[]): number => pages.reduce((n, p) => n + countObjects(p.objects), 0);
 
 /** Libellés (singulier, pluriel) des avertissements que la page et le lecteur Rust écrivent à l'identique. */
-export const SKIPPED_LABEL = ["objet illisible ignoré", "objets illisibles ignorés"] as const;
 export const MISSING_LABEL = ["image absente de l'archive", "images absentes de l'archive"] as const;
 const KNOWN_LABELS: readonly (readonly [string, string])[] = [SKIPPED_LABEL, MISSING_LABEL];
 const WARNING_LINE = /^(?:page (\d+) : )?(\d+) (.+)$/;

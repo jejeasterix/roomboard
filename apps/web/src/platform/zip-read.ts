@@ -5,19 +5,17 @@
  * C13 lot 2 : `content.json` d'un `.olf` lu dans le même Worker (`createOlfReader`), rendu en flux BoardList.
  * C13 lot 3 : conteneur Bamboo d'un `.flipchart` (`mode: "bamboo"`), chemins `<page>.fpg/<nom>`.
  */
+import type { ZipFile } from "./archive-path";
 import { BOARD_FAILED_MESSAGE, checkBoardParts, type BoardPart } from "./board-reader";
-import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE } from "../app/olf-read";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE } from "./olf-read";
 import { runOnce, type WorkerLike } from "./one-shot-worker";
 
 export interface ZipEntry {
   readonly path: string;
   readonly blob: Blob;
 }
-/** Fichier à écrire dans un ZIP (C4) : chemin et octets ; déclaré ici, sous `rbpack.ts` qui le réexporte. */
-export interface ZipFile {
-  readonly path: string;
-  readonly bytes: Uint8Array;
-}
+/** Fichier à écrire dans un ZIP (C4) : `archive-path.ts` (OF13, D7), réexporté ici pour `rbpack.ts` et ses importeurs. */
+export type { ZipFile } from "./archive-path";
 export const ZIP_WORKER_TIMEOUT_MS = 60_000;
 export const ZIP_FAILED_MESSAGE = "lecture du ZIP interrompue";
 export const ZIP_WRITE_FAILED_MESSAGE = "écriture du ZIP interrompue";

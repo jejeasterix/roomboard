@@ -27,8 +27,8 @@ import { safeArchivePath } from "./archive-path";
 import { BAMBOO_LIMITS, BAMBOO_STRUCTURE_EXTENSIONS, readBamboo } from "./bamboo";
 import { sniffImage } from "./image-import";
 import { isPackEntry } from "./rbpack";
-import { encodeBoardList } from "../app/board-io";
-import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "../app/olf-read";
+import { encodeBoardList } from "./board-list";
+import { OLF_MAX_JSON_BYTES, OLF_TOO_BIG_MESSAGE, readOlf } from "./olf-read";
 import type { WorkerReply } from "./one-shot-worker";
 import type { OlfPart, ZipFile } from "./zip-read";
 
