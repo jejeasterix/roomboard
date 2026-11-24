@@ -10,7 +10,8 @@ export const CLI_VERSION = "0.1.0";
 export const SCHEMA = "roomboard-cli/1";
 
 export type ErrorCode = "usage" | "io" | "format" | "command" | "unsupported";
-/** 1 refus (cœur, fichier illisible, import partiel), 2 usage, 3 format d'un lot non livré (D9). */
+/** 1 refus (cœur, fichier illisible, import partiel), 2 usage, 3 variante que la CLI ne lit pas : en-tête illisible,
+ *  convertisseur Office absent, format laissé de côté (D9 ; cli-lot4 D73, D80 : plus aucun lot non livré). */
 export const EXIT: Readonly<Record<ErrorCode, 1 | 2 | 3>> = Object.freeze({ usage: 2, io: 1, format: 1, command: 1, unsupported: 3 });
 
 export class CliError extends Error {
