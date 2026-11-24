@@ -224,12 +224,17 @@ Chargés par import dynamique au premier PDF (`apps/web/src/platform/pdf-load.ts
 et n'entre pas dans `dist`.
 
 Ressources de `pdfjs-dist` copiées dans `dist/pdfjs/` avec leurs textes de licence : polices Liberation Sans
-(`standard_fonts/LICENSE_LIBERATION`, SIL Open Font License 1.1), polices Foxit (`standard_fonts/LICENSE_FOXIT`,
+(`standard_fonts/LICENSE_LIBERATION`, licence Red Hat de Liberation 1.07.4 : GNU General Public License v2 avec
+exception de police), polices Foxit (`standard_fonts/LICENSE_FOXIT`,
 licence de type BSD), tables de caractères Adobe (`cmaps/LICENSE`, BSD-3-Clause), modules `wasm/` : OpenJPEG
 (`LICENSE_OPENJPEG`, BSD-2-Clause), JBIG2 de PDFium (`LICENSE_JBIG2`, BSD-3-Clause), qcms (`LICENSE_QCMS`, MIT), et
 leurs enveloppes Mozilla (`LICENSE_PDFJS_*`, Apache-2.0). Le module QuickJS (script des formulaires PDF) n'est pas
 copié. Textes : MIT (https://opensource.org/licenses/MIT), Apache-2.0 (https://www.apache.org/licenses/LICENSE-2.0),
-OFL-1.1 (https://openfontlicense.org).
+GPL-2.0 avec exception de police (texte complet dans `standard_fonts/LICENSE_LIBERATION`).
+
+La CLI (`apps/cli`) ne copie pas ces polices : elle les lit à l'exécution dans le paquet `pdfjs-dist` installé et les
+embarque dans les PDF annotés qu'elle écrit, sous l'exception de police (cadrage cli-lot3, D48). Remplacer Liberation
+par une police sous OFL dans la page et la CLI reste à décider.
 
 ## Paquets npm de l'application (C15, objets 3D)
 
@@ -307,12 +312,13 @@ jamais dans le module principal.
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg |
 
 Police de test `crates/roomboard-formats/tests/fixtures/LiberationSans-Regular.ttf` : copie de
-`pdfjs-dist/standard_fonts/` (Liberation Sans, SIL Open Font License 1.1), texte joint à côté
+`pdfjs-dist/standard_fonts/` (Liberation Sans, licence Red Hat 1.07.4 : GNU General Public License v2 avec exception
+de police), texte joint à côté
 (`tests/fixtures/LICENSE_LIBERATION`). Textes : MIT (https://opensource.org/licenses/MIT), Apache-2.0
 (https://www.apache.org/licenses/LICENSE-2.0), BSD-2-Clause (https://opensource.org/licenses/BSD-2-Clause),
 BSD-3-Clause (https://opensource.org/licenses/BSD-3-Clause), Zlib (https://opensource.org/licenses/Zlib),
-Unicode-3.0 (https://www.unicode.org/license.txt), BSL-1.0 (https://www.boost.org/LICENSE_1_0.txt), OFL-1.1
-(https://openfontlicense.org).
+Unicode-3.0 (https://www.unicode.org/license.txt), BSL-1.0 (https://www.boost.org/LICENSE_1_0.txt), GPL-2.0 avec
+exception de police (`tests/fixtures/LICENSE_LIBERATION`).
 
 ## Coque Tauri (C14, protocole d'assets)
 
