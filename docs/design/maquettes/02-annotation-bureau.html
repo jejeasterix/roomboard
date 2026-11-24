@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<title>RoomBoard — maquette 02 : annotation du bureau</title>
+<!-- Maquette statique RoomBoard (cadrage design, docs/plans/design-cadrage.md). Autonome : CSS et icônes en ligne.
+     Icônes : Lucide (ISC, lucide.dev, lucide-icons/lucide@7981a0798a) ; i-annotate, i-eraser-part, i-line dessinées pour RoomBoard.
+     Logo : roomflow-app-icon.svg de roomflow2 (RoomFlow2.App/Assets/Logos), tel quel. Rendu de référence : 1920 x 1080, devicePixelRatio 2, Chromium --disable-lcd-text.
+     Police : Inter par local() ; sans Inter installée, repli sur Segoe UI ou la police du système (les PNG du dépôt sont rendus avec Inter). -->
+<style>
+/* Jetons de la charte RoomFlow : source de chaque valeur dans docs/design/charte.md.
+   rf2 = roomflow2@ddaba7ca RoomFlow2.App/Themes ; web = roomflow2-web@07cc047c src/index.css */
+:root {
+  --rf-violet-600: #6044EB; /* rf2 Tokens.Base.xaml:12 RF.Base.Violet600Color = RF.Accent.Brush */
+  --rf-violet-700: #4F35C4; /* rf2 Tokens.Base.xaml:13 = RF.Accent.HoverBrush */
+  --rf-violet-400: #8B6FEF; /* rf2 Tokens.Base.xaml:14 = RF.Nav.AccentBrush (accent sur fond sombre) */
+  --rf-violet-100: #EDE8FD; /* rf2 Tokens.Base.xaml:15 = RF.Accent.SubtleBrush */
+  --rf-navy-900: #0D1B2A;   /* rf2 Tokens.Base.xaml:18 */
+  --rf-navy-700: #1E3355;   /* rf2 Tokens.Base.xaml:20 */
+  --rf-navy-500: #182946;   /* rf2 Tokens.Base.xaml:22 = RF.Text.HeadingBrush, RF.Studio.TextBrush */
+  --rf-gray-50: #F5F5F8;    /* rf2 Tokens.Base.xaml:26 = RF.App.BackgroundBrush, RF.Studio.CanvasBrush */
+  --rf-gray-100: #FAFAFE;   /* rf2 Tokens.Base.xaml:27 */
+  --rf-gray-300: #E0E0E8;   /* rf2 Tokens.Base.xaml:28 = RF.Border.Brush */
+  --rf-gray-500: #888888;   /* rf2 Tokens.Base.xaml:29 = RF.Text.SecondaryBrush (icône désactivée seulement) */
+  --rf-gray-800: #333333;   /* rf2 Tokens.Base.xaml:30 = RF.Text.PrimaryBrush */
+  --rf-text-muted-aa: #6B7280; /* web index.css:34 --color-text-muted-aa (texte secondaire lisible) */
+  --rf-white: #FFFFFF;      /* rf2 Tokens.Base.xaml:31 */
+  --rf-danger: #E74C3C;     /* rf2 Tokens.Base.xaml:44 = RF.Status.DangerBrush */
+  --rf-success: #27AE60;    /* rf2 Tokens.Base.xaml:36 = RF.Status.SuccessBrush */
+  --rf-shadow-card: 0 2px 8px rgba(24, 41, 70, 0.08);   /* web index.css:63 = RF.Shadow.Card */
+  --rf-shadow-hover: 0 6px 16px rgba(24, 41, 70, 0.12); /* web index.css:64 = RF.Shadow.Hover */
+  --rf-shadow-modal: 0 13px 27px rgba(24, 41, 70, 0.15); /* web index.css:65 = RF.Shadow.Modal */
+  --rf-radius-sm: 4px; --rf-radius-md: 6px; --rf-radius-lg: 8px; --rf-radius-xl: 12px; /* rf2 Tokens.Semantic.xaml:99-102 */
+  --rf-space-xs: 4px; --rf-space-sm: 8px; --rf-space-md: 16px; --rf-space-lg: 24px; --rf-space-xl: 32px; /* rf2 Tokens.Semantic.xaml:91-95 */
+  --rf-font: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; /* rf2 Tokens.Semantic.xaml:77 */
+  /* Contenu de la page (pas la charte) : préréglages du profil fourni, apps/web/src/toolbar-profiles.ts:62-64 et toolbar.ts:159 */
+  --ink-black: #000000; --ink-red: #dc2626; --ink-blue: #1d4ed8; --fill-blue: #bfdbfe;
+  /* RoomBoard : cible tactile et icône (décisions du cadrage, D-DS3 et D-DS4) */
+  --rb-btn: 48px; --rb-icon: 24px;
+}
+@font-face { font-family: "Inter"; font-weight: 400; src: local("Inter"), local("Inter Regular"), local("Inter-Regular"); }
+@font-face { font-family: "Inter"; font-weight: 500; src: local("Inter Medium"), local("Inter-Medium"); }
+@font-face { font-family: "Inter"; font-weight: 600; src: local("Inter SemiBold"), local("Inter-SemiBold"); }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; }
+body { font-family: var(--rf-font); color: var(--rf-gray-800); font-size: 16px; -webkit-font-smoothing: antialiased; }
+.ic { width: var(--rb-icon); height: var(--rb-icon); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+.island { position: absolute; display: flex; align-items: center; gap: var(--rf-space-xs); padding: var(--rf-space-xs);
+  background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); }
+.island.v { flex-direction: column; }
+.btn { width: var(--rb-btn); height: var(--rb-btn); display: grid; place-items: center; border-radius: var(--rf-radius-lg); color: var(--rf-navy-500); position: relative; }
+.btn.hover { background: var(--rf-gray-50); }
+.btn.on { background: var(--rf-violet-100); color: var(--rf-violet-700); }
+.btn.off { color: var(--rf-gray-500); }
+.btn.primary { background: var(--rf-violet-600); color: var(--rf-white); }
+.btn .key { position: absolute; right: 4px; bottom: 2px; font-size: 10px; line-height: 1; color: var(--rf-text-muted-aa); font-weight: 500; }
+.btn.on .key { color: var(--rf-violet-700); }
+.sep { width: 1px; height: 24px; background: var(--rf-gray-300); margin: 0 var(--rf-space-xs); flex: none; }
+.island.v .sep { width: 24px; height: 1px; margin: var(--rf-space-xs) 0; }
+.grip { width: 24px; height: var(--rb-btn); display: grid; place-items: center; color: var(--rf-gray-500); }
+.grip .ic { width: 24px; }
+.swatch { width: 24px; height: 24px; border-radius: 50%; display: block; }
+.btn.on .swatch, .swatch.on { box-shadow: 0 0 0 2px var(--rf-white), 0 0 0 4px var(--rf-violet-600); }
+.btn.sw.on { background: transparent; }
+.width { width: 24px; border-radius: 99px; background: var(--rf-navy-500); display: block; }
+.tip { position: absolute; padding: 6px 10px; background: var(--rf-navy-500); color: var(--rf-white); font-size: 14px; font-weight: 500;
+  line-height: 20px; border-radius: var(--rf-radius-md); white-space: nowrap; box-shadow: var(--rf-shadow-card); transform: translateX(-50%); }
+.tip.light { background: var(--rf-white); color: var(--rf-navy-500); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-card); }
+.tip kbd { font: inherit; color: var(--rf-gray-300); margin-left: 8px; }
+.txt { font-size: 15px; font-weight: 500; color: var(--rf-navy-500); font-variant-numeric: tabular-nums; padding: 0 var(--rf-space-sm); }
+
+/* Bureau neutre : dégradé des bleus nuit de la charte, aucune capture d'un vrai bureau. */
+body { background: linear-gradient(160deg, var(--rf-navy-700) 0%, var(--rf-navy-900) 100%); }
+.win { position: absolute; left: 330px; top: 190px; width: 1260px; height: 740px; background: var(--rf-white); border-radius: var(--rf-radius-lg); box-shadow: var(--rf-shadow-modal); overflow: hidden; }
+.win .bar { height: 40px; background: var(--rf-gray-50); border-bottom: 1px solid var(--rf-gray-300); }
+.blk { position: absolute; background: var(--rf-gray-300); border-radius: var(--rf-radius-sm); }
+.blk.l { background: var(--rf-gray-50); }
+.frame { position: absolute; inset: 0; box-shadow: inset 0 0 0 3px var(--rf-violet-600); pointer-events: none; }
+.seg { display: flex; padding: 0; gap: 0; background: var(--rf-gray-50); border-radius: var(--rf-radius-lg); }
+.split { display: flex; gap: 2px; }
+.split .btn.more { width: 44px; }
+.drop { width: 96px; height: var(--rb-btn); border: 1.5px dashed var(--rf-gray-500); border-radius: var(--rf-radius-lg); display: grid; place-items: center; color: var(--rf-navy-500); }
+.task { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; background: var(--rf-navy-900); opacity: 0.6; }
+.toast { position: absolute; display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); font-size: 16px; color: var(--rf-gray-800); }
+.toast .ok { width: 32px; height: 32px; border-radius: 50%; background: var(--rf-success); color: var(--rf-white); display: grid; place-items: center; }
+
+.toast b { font-weight: 600; color: var(--rf-violet-700); }
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-select" viewBox="-0.25 -0.25 24 24"><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" /></symbol>
+<symbol id="i-hand" viewBox="-0.25 -0.25 24 24"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" />
+<path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
+<path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
+<path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></symbol>
+<symbol id="i-pen" viewBox="-0.25 -0.25 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+<path d="m15 5 4 4" /></symbol>
+<symbol id="i-eraser" viewBox="-0.25 -0.25 24 24"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21" />
+<path d="m5.082 11.09 8.828 8.828" /></symbol>
+<symbol id="i-rect" viewBox="-0.25 -0.25 24 24"><rect width="18" height="18" x="3" y="3" rx="2" /></symbol>
+<symbol id="i-ellipse" viewBox="-0.25 -0.25 24 24"><circle cx="12" cy="12" r="10" /></symbol>
+<symbol id="i-arrow" viewBox="-0.25 -0.25 24 24"><path d="M7 7h10v10" />
+<path d="M7 17 17 7" /></symbol>
+<symbol id="i-text" viewBox="-0.25 -0.25 24 24"><path d="M12 4v16" />
+<path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" />
+<path d="M9 20h6" /></symbol>
+<symbol id="i-table" viewBox="-0.25 -0.25 24 24"><path d="M12 3v18" />
+<rect width="18" height="18" x="3" y="3" rx="2" />
+<path d="M3 9h18" />
+<path d="M3 15h18" /></symbol>
+<symbol id="i-fill" viewBox="-0.25 -0.25 24 24"><path d="M11 7 6 2" />
+<path d="M18.992 12H2.041" />
+<path d="M21.145 18.38A3.34 3.34 0 0 1 20 16.5a3.3 3.3 0 0 1-1.145 1.88c-.575.46-.855 1.02-.855 1.595A2 2 0 0 0 20 22a2 2 0 0 0 2-2.025c0-.58-.285-1.13-.855-1.595" />
+<path d="m8.5 4.5 2.148-2.148a1.205 1.205 0 0 1 1.704 0l7.296 7.296a1.205 1.205 0 0 1 0 1.704l-7.592 7.592a3.615 3.615 0 0 1-5.112 0l-3.888-3.888a3.615 3.615 0 0 1 0-5.112L5.67 7.33" /></symbol>
+<symbol id="i-undo" viewBox="-0.25 -0.25 24 24"><path d="M9 14 4 9l5-5" />
+<path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" /></symbol>
+<symbol id="i-redo" viewBox="-0.25 -0.25 24 24"><path d="m15 14 5-5-5-5" />
+<path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" /></symbol>
+<symbol id="i-file-new" viewBox="-0.25 -0.25 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+<path d="M14 2v5a1 1 0 0 0 1 1h5" />
+<path d="M9 15h6" />
+<path d="M12 18v-6" /></symbol>
+<symbol id="i-file-open" viewBox="-0.25 -0.25 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></symbol>
+<symbol id="i-file-import" viewBox="-0.25 -0.25 24 24"><path d="M4 11V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1" />
+<path d="M14 2v5a1 1 0 0 0 1 1h5" />
+<path d="M2 15h10" />
+<path d="m9 18 3-3-3-3" /></symbol>
+<symbol id="i-save" viewBox="-0.25 -0.25 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+<path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
+<path d="M7 3v4a1 1 0 0 0 1 1h7" /></symbol>
+<symbol id="i-fit" viewBox="-0.25 -0.25 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2" />
+<path d="M17 3h2a2 2 0 0 1 2 2v2" />
+<path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+<path d="M7 21H5a2 2 0 0 1-2-2v-2" /></symbol>
+<symbol id="i-grid" viewBox="-0.25 -0.25 24 24"><rect width="18" height="18" x="3" y="3" rx="2" />
+<path d="M3 9h18" />
+<path d="M3 15h18" />
+<path d="M9 3v18" />
+<path d="M15 3v18" /></symbol>
+<symbol id="i-library" viewBox="-0.25 -0.25 24 24"><rect width="8" height="18" x="3" y="3" rx="1" />
+<path d="M7 3v18" />
+<path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z" /></symbol>
+<symbol id="i-profile" viewBox="-0.25 -0.25 24 24"><path d="M10 15H6a4 4 0 0 0-4 4v2" />
+<path d="m14.305 16.53.923-.382" />
+<path d="m15.228 13.852-.923-.383" />
+<path d="m16.852 12.228-.383-.923" />
+<path d="m16.852 17.772-.383.924" />
+<path d="m19.148 12.228.383-.923" />
+<path d="m19.53 18.696-.382-.924" />
+<path d="m20.772 13.852.924-.383" />
+<path d="m20.772 16.148.924.383" />
+<circle cx="18" cy="15" r="3" />
+<circle cx="9" cy="7" r="4" /></symbol>
+<symbol id="i-settings" viewBox="-0.25 -0.25 24 24"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+<circle cx="12" cy="12" r="3" /></symbol>
+<symbol id="i-pointer" viewBox="-0.25 -0.25 24 24"><path d="M14 4.1 12 6" />
+<path d="m5.1 8-2.9-.8" />
+<path d="m6 12-1.9 2" />
+<path d="M7.2 2.2 8 5.1" />
+<path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z" /></symbol>
+<symbol id="i-screen" viewBox="-0.25 -0.25 24 24"><path d="M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3" />
+<path d="M8 21h8" />
+<path d="M12 17v4" />
+<path d="m17 8 5-5" />
+<path d="M17 3h5v5" /></symbol>
+<symbol id="i-freeze" viewBox="-0.25 -0.25 24 24"><path d="m10 20-1.25-2.5L6 18" />
+<path d="M10 4 8.75 6.5 6 6" />
+<path d="m14 20 1.25-2.5L18 18" />
+<path d="m14 4 1.25 2.5L18 6" />
+<path d="m17 21-3-6h-4" />
+<path d="m17 3-3 6 1.5 3" />
+<path d="M2 12h6.5L10 9" />
+<path d="m20 10-1.5 2 1.5 2" />
+<path d="M22 12h-6.5L14 15" />
+<path d="m4 10 1.5 2L4 14" />
+<path d="m7 21 3-6-1.5-3" />
+<path d="m7 3 3 6h4" /></symbol>
+<symbol id="i-board" viewBox="-0.25 -0.25 24 24"><path d="M2 3h20" />
+<path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" />
+<path d="m7 21 5-5 5 5" /></symbol>
+<symbol id="i-close" viewBox="-0.25 -0.25 24 24"><path d="M18 6 6 18" />
+<path d="m6 6 12 12" /></symbol>
+<symbol id="i-collapse" viewBox="-0.25 -0.25 24 24"><path d="m18 15-6-6-6 6" /></symbol>
+<symbol id="i-grip" viewBox="-0.25 -0.25 24 24"><circle cx="9" cy="12" r="1" />
+<circle cx="9" cy="5" r="1" />
+<circle cx="9" cy="19" r="1" />
+<circle cx="15" cy="12" r="1" />
+<circle cx="15" cy="5" r="1" />
+<circle cx="15" cy="19" r="1" /></symbol>
+<symbol id="i-grip-h" viewBox="-0.25 -0.25 24 24"><circle cx="12" cy="9" r="1" />
+<circle cx="19" cy="9" r="1" />
+<circle cx="5" cy="9" r="1" />
+<circle cx="12" cy="15" r="1" />
+<circle cx="19" cy="15" r="1" />
+<circle cx="5" cy="15" r="1" /></symbol>
+<symbol id="i-prev" viewBox="-0.25 -0.25 24 24"><path d="m15 18-6-6 6-6" /></symbol>
+<symbol id="i-next" viewBox="-0.25 -0.25 24 24"><path d="m9 18 6-6-6-6" /></symbol>
+<symbol id="i-down" viewBox="-0.25 -0.25 24 24"><path d="m6 9 6 6 6-6" /></symbol>
+<symbol id="i-plus" viewBox="-0.25 -0.25 24 24"><path d="M5 12h14" />
+<path d="M12 5v14" /></symbol>
+<symbol id="i-minus" viewBox="-0.25 -0.25 24 24"><path d="M5 12h14" /></symbol>
+<symbol id="i-trash" viewBox="-0.25 -0.25 24 24"><path d="M10 11v6" />
+<path d="M14 11v6" />
+<path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+<path d="M3 6h18" />
+<path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></symbol>
+<symbol id="i-menu" viewBox="-0.25 -0.25 24 24"><path d="M4 5h16" />
+<path d="M4 12h16" />
+<path d="M4 19h16" /></symbol>
+<symbol id="i-dock-left" viewBox="-0.25 -0.25 24 24"><rect width="18" height="18" x="3" y="3" rx="2" />
+<path d="M9 3v18" /></symbol>
+<symbol id="i-dock-right" viewBox="-0.25 -0.25 24 24"><rect width="18" height="18" x="3" y="3" rx="2" />
+<path d="M15 3v18" /></symbol>
+<symbol id="i-dock-top" viewBox="-0.25 -0.25 24 24"><rect width="18" height="18" x="3" y="3" rx="2" />
+<path d="M3 9h18" /></symbol>
+<symbol id="i-dock-bottom" viewBox="-0.25 -0.25 24 24"><rect width="18" height="18" x="3" y="3" rx="2" />
+<path d="M3 15h18" /></symbol>
+<symbol id="i-dock-float" viewBox="-0.25 -0.25 24 24"><rect x="2" y="4" width="20" height="16" rx="2" />
+<path d="M10 4v4" />
+<path d="M2 8h20" />
+<path d="M6 4v4" /></symbol>
+<symbol id="i-export" viewBox="-0.25 -0.25 24 24"><path d="M12 15V3" />
+<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+<path d="m7 10 5 5 5-5" /></symbol>
+<symbol id="i-import" viewBox="-0.25 -0.25 24 24"><path d="M12 3v12" />
+<path d="m17 8-5-5-5 5" />
+<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /></symbol>
+<symbol id="i-reset" viewBox="-0.25 -0.25 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+<path d="M3 3v5h5" /></symbol>
+<symbol id="i-check" viewBox="-0.25 -0.25 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
+<symbol id="i-hidden" viewBox="-0.25 -0.25 24 24"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+<path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+<path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+<path d="m2 2 20 20" /></symbol>
+<symbol id="i-pages" viewBox="-0.25 -0.25 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" />
+<path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" />
+<path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" /></symbol>
+<symbol id="i-drop" viewBox="-0.25 -0.25 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+<path d="M14 2v5a1 1 0 0 0 1 1h5" />
+<path d="M12 18v-6" />
+<path d="m9 15 3 3 3-3" /></symbol>
+<symbol id="i-pdf" viewBox="-0.25 -0.25 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+<path d="M14 2v5a1 1 0 0 0 1 1h5" />
+<path d="M12 18v-6" />
+<path d="m9 15 3 3 3-3" /></symbol>
+<symbol id="i-monitor" viewBox="-0.25 -0.25 24 24"><rect width="20" height="14" x="2" y="3" rx="2" />
+<line x1="8" x2="16" y1="21" y2="21" />
+<line x1="12" x2="12" y1="17" y2="21" /></symbol>
+<symbol id="i-sliders" viewBox="-0.25 -0.25 24 24"><path d="M10 5H3" />
+<path d="M12 19H3" />
+<path d="M14 3v4" />
+<path d="M16 17v4" />
+<path d="M21 12h-9" />
+<path d="M21 19h-5" />
+<path d="M21 5h-7" />
+<path d="M8 10v4" />
+<path d="M8 12H3" /></symbol>
+<symbol id="i-more" viewBox="-0.25 -0.25 24 24"><circle cx="12" cy="12" r="1" />
+<circle cx="19" cy="12" r="1" />
+<circle cx="5" cy="12" r="1" /></symbol>
+<symbol id="i-pin" viewBox="-0.25 -0.25 24 24"><path d="M12 17v5" />
+<path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></symbol>
+<symbol id="i-annotate" viewBox="-0.25 -0.25 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M6 12c1.5-2.5 3-2.5 4 0s2.5 2.5 4 0 2.5-2.5 4 0"/></symbol>
+<symbol id="i-eraser-part" viewBox="-0.25 -0.25 24 24"><path d="M8 21a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21H8"/><path d="m5.082 11.09 8.828 8.828"/><path d="M16 21h1"/><path d="M20 21h1"/></symbol>
+<symbol id="i-line" viewBox="-0.25 -0.25 24 24"><path d="M5 19 19 5"/></symbol>
+</defs></svg>
+
+<div class="win" aria-label="Fenêtre d'une autre application (schéma)"><div class="bar"></div><div class="blk" style="left:48px;top:88px;width:420px;height:28px"></div><div class="blk l" style="left:48px;top:140px;width:760px;height:16px"></div><div class="blk l" style="left:48px;top:170px;width:700px;height:16px"></div><div class="blk" style="left:420px;top:220px;width:360px;height:220px"></div><div class="blk l" style="left:48px;top:220px;width:340px;height:16px"></div><div class="blk l" style="left:48px;top:250px;width:320px;height:16px"></div><div class="blk l" style="left:48px;top:280px;width:340px;height:16px"></div><div class="blk l" style="left:48px;top:310px;width:300px;height:16px"></div><div class="blk l" style="left:840px;top:88px;width:372px;height:352px"></div><div class="blk l" style="left:48px;top:500px;width:560px;height:16px"></div><div class="blk l" style="left:48px;top:530px;width:520px;height:16px"></div><div class="blk l" style="left:48px;top:600px;width:1164px;height:96px"></div></div>
+<div class="task" aria-label="Barre des tâches (schéma)"></div>
+
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" style="position:absolute;inset:0" aria-label="Encre d'annotation">
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="6">
+    <path d="M760 392 C 700 330, 980 300, 1090 340 C 1180 372, 1130 470, 960 476 C 820 480, 720 450, 744 400" stroke="var(--ink-red)"/>
+    <path d="M1180 520 C 1230 470, 1260 430, 1270 400" stroke="var(--ink-red)"/>
+    <path d="M1246 410 L1271 398 L1278 426" stroke="var(--ink-red)"/>
+    <path d="M430 720 C 600 712, 760 716, 900 724" stroke="var(--ink-blue)"/>
+  </g>
+</svg>
+<div class="frame" aria-hidden="true"></div>
+<div class="island" style="left:392px;top:16px" role="toolbar" aria-label="Annotation du bureau"><div class="grip" title="Déplacer la barre"><svg class="ic"><use href="#i-grip"/></svg></div><div class="seg"><div class="btn on" role="button" aria-label="Dessin" title="Dessin"><svg class="ic"><use href="#i-pen"/></svg></div><div class="btn " role="button" aria-label="Souris : clic au bureau" title="Souris : clic au bureau"><svg class="ic"><use href="#i-pointer"/></svg></div></div><span class="sep"></span><div class="btn " role="button" aria-label="Gomme" title="Gomme"><svg class="ic"><use href="#i-eraser"/></svg></div><div class="btn " role="button" aria-label="Flèche" title="Flèche"><svg class="ic"><use href="#i-arrow"/></svg></div><div class="btn " role="button" aria-label="Rectangle" title="Rectangle"><svg class="ic"><use href="#i-rect"/></svg></div><div class="btn " role="button" aria-label="Texte" title="Texte"><svg class="ic"><use href="#i-text"/></svg></div><span class="sep"></span><div class="btn sw " role="button" aria-label="Noir" title="Noir"><span class="swatch" style="background:var(--ink-black)"></span></div><div class="btn sw on" role="button" aria-label="Rouge" title="Rouge"><span class="swatch" style="background:var(--ink-red)"></span></div><div class="btn sw " role="button" aria-label="Bleu" title="Bleu"><span class="swatch" style="background:var(--ink-blue)"></span></div><span class="sep"></span><div class="btn " role="button" aria-label="Annuler" title="Annuler"><svg class="ic"><use href="#i-undo"/></svg></div><div class="btn " role="button" aria-label="Figer le bureau" title="Figer le bureau"><svg class="ic"><use href="#i-freeze"/></svg></div><div class="btn off" role="button" aria-label="Écran suivant" title="Écran suivant"><svg class="ic"><use href="#i-screen"/></svg></div><span class="sep"></span><div class="drop" title="Déposer des fichiers ici"><svg class="ic"><use href="#i-drop"/></svg></div><div class="split"><div class="btn primary" role="button" aria-label="Envoyer au tableau" title="Envoyer au tableau"><svg class="ic"><use href="#i-board"/></svg></div><div class="btn primary more" role="button" aria-label="Envoyer dans un nouvel onglet…" title="Envoyer dans un nouvel onglet…"><svg class="ic"><use href="#i-down"/></svg></div></div><span class="sep"></span><div class="btn " role="button" aria-label="Quitter l'annotation" title="Quitter l'annotation"><svg class="ic"><use href="#i-close"/></svg></div></div>
+<div class="tip light" style="left:1220px;top:80px">Envoyer au tableau</div>
+<div class="toast" style="right:24px;bottom:72px"><span class="ok"><svg class="ic"><use href="#i-check"/></svg></span>Envoyé au tableau : <b>page 3</b></div>
+
+</body></html>
