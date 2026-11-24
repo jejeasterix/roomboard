@@ -909,21 +909,34 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     use std::io::{Cursor, Write};
+    #[cfg(target_os = "linux")]
     use std::time::SystemTime;
+    #[cfg(unix)]
     use zip::write::SimpleFileOptions;
+    #[cfg(unix)]
     use zip::{CompressionMethod, ZipWriter};
 
+    #[cfg(unix)]
     use crate::{read_granted, ReadError};
 
+    #[cfg(unix)]
     const XML: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
+    #[cfg(unix)]
     const CT: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
+    #[cfg(unix)]
     const PR: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
+    #[cfg(unix)]
     const R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    #[cfg(unix)]
     const A: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+    #[cfg(unix)]
     const P: &str = "http://schemas.openxmlformats.org/presentationml/2006/main";
+    #[cfg(unix)]
     const DEFAULTS: &str = r#"<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>"#;
 
+    #[cfg(unix)]
     fn zip_of(parts: &[(&str, String)]) -> Vec<u8> {
         let mut w = ZipWriter::new(Cursor::new(Vec::new()));
         let o = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -934,6 +947,7 @@ mod tests {
         w.finish().expect("zip").into_inner()
     }
 
+    #[cfg(unix)]
     fn types(overrides: &[(&str, &str)]) -> String {
         let o: String = overrides
             .iter()
@@ -942,6 +956,7 @@ mod tests {
         format!(r#"{XML}<Types xmlns="{CT}">{DEFAULTS}{o}</Types>"#)
     }
 
+    #[cfg(unix)]
     fn rels(items: &[(&str, &str, &str)]) -> String {
         let r: String = items
             .iter()
@@ -953,6 +968,7 @@ mod tests {
     }
 
     /// `.docx` d'un paragraphe (O27).
+    #[cfg(unix)]
     fn docx() -> Vec<u8> {
         zip_of(&[
             ("[Content_Types].xml", types(&[("/word/document.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml")])),
@@ -962,6 +978,7 @@ mod tests {
     }
 
     /// `.xlsx` d'une feuille (O27, patron `roomboard-formats/src/sheet.rs:332`).
+    #[cfg(unix)]
     fn xlsx() -> Vec<u8> {
         const S: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
         zip_of(&[
@@ -977,6 +994,7 @@ mod tests {
     }
 
     /// Thème minimal exigé par PowerPoint et LibreOffice Impress.
+    #[cfg(unix)]
     fn theme() -> String {
         let scheme = r#"<a:clrScheme name="C"><a:dk1><a:srgbClr val="000000"/></a:dk1><a:lt1><a:srgbClr val="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="1F497D"/></a:dk2><a:lt2><a:srgbClr val="EEECE1"/></a:lt2><a:accent1><a:srgbClr val="4F81BD"/></a:accent1><a:accent2><a:srgbClr val="C0504D"/></a:accent2><a:accent3><a:srgbClr val="9BBB59"/></a:accent3><a:accent4><a:srgbClr val="8064A2"/></a:accent4><a:accent5><a:srgbClr val="4BACC6"/></a:accent5><a:accent6><a:srgbClr val="F79646"/></a:accent6><a:hlink><a:srgbClr val="0000FF"/></a:hlink><a:folHlink><a:srgbClr val="800080"/></a:folHlink></a:clrScheme>"#;
         let fonts = r#"<a:fontScheme name="F"><a:majorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Arial"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>"#;
@@ -989,6 +1007,7 @@ mod tests {
     }
 
     /// `.pptx` de 2 diapositives (O27 ; accepté par LibreOffice 26.2, pré-essai PC10 du plan).
+    #[cfg(unix)]
     fn pptx() -> Vec<u8> {
         let ns = format!(r#"xmlns:a="{A}" xmlns:r="{R}" xmlns:p="{P}""#);
         let tree = |shapes: &str| {
@@ -1079,6 +1098,7 @@ mod tests {
     }
 
     /// Fixture commitée, relue par l'essai navigateur (O27) ; régénérée par `ROOMBOARD_REGENERER_FIXTURES=1`.
+    #[cfg(unix)]
     fn fixture(name: &str, make: fn() -> Vec<u8>) -> Vec<u8> {
         let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
@@ -1094,6 +1114,7 @@ mod tests {
     }
 
     /// O26 : LibreOffice exigé ; absent, le test échoue, sauf `ROOMBOARD_SANS_SOFFICE=1` (saut dit sur stderr).
+    #[cfg(unix)]
     fn soffice() -> Option<Converter> {
         match find_converter(&Search::from_env()) {
             Some(c) => Some(c),
@@ -1118,6 +1139,7 @@ mod tests {
         Converter::LibreOffice(executable(&dir.join("faux-soffice"), &script))
     }
 
+    #[cfg(unix)]
     fn granted(dir: &Path, name: &str, bytes: &[u8]) -> (GrantedPaths, PathBuf) {
         let p = dir.join(name);
         fs::write(&p, bytes).unwrap();
@@ -1126,6 +1148,7 @@ mod tests {
         (g, p)
     }
 
+    #[cfg(unix)]
     fn left_in(work: &Path) -> usize {
         fs::read_dir(work.join(CONVERSIONS_DIR))
             .map(|r| r.count())
@@ -1133,6 +1156,7 @@ mod tests {
     }
 
     /// Pages d'un PDF : objets `/Type/Page` ou `/Type /Page` (jamais `/Pages`).
+    #[cfg(unix)]
     fn pdf_pages(b: &[u8]) -> usize {
         [&b"/Type/Page"[..], &b"/Type /Page"[..]]
             .iter()
