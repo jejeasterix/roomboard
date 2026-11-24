@@ -36,7 +36,7 @@ import { insertTableGrid } from "../platform/table-insert";
 import type { TypedFiles } from "../platform/typed-files";
 import type { BoardSession } from "./board-session";
 import { createContainerIO, missingOf, typed } from "./container-io";
-import { createFragmentOps, SELECTION_NAME, type InsertOutcome } from "./fragments";
+import { createFragmentOps, SELECTION_NAME, tabSessionView, type InsertOutcome } from "./fragments";
 import { IDENTITY_MATRIX } from "../core/shapes";
 import { capturePage, type PageBackdrop } from "./desktop-page";
 import type { CapturedResource } from "./library";
@@ -345,7 +345,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
   // Vignette (D29) : une relecture en échec n'est qu'une vignette en moins, dite à la console, jamais par une boîte.
   const thumbIo = createContainerIO({ core, codec: deps.codec, say: async (m) => console.warn(`RoomBoard : vignette non rendue (${m})`), makeAssets });
   const clipboard = deps.clipboard ?? createClipboard(null);
-  const fragments = createFragmentOps({ io, core, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t) });
+  const fragments = createFragmentOps<TabSession>({ io, core, now: deps.now, appVersion: APP_VERSION, say, alive: (t) => !released.has(t), view: tabSessionView });
   /** Nom dit dans les messages d'un collage (aucun fichier). */
   const PASTE_NAME = "presse-papiers";
 
