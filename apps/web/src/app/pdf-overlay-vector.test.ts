@@ -223,4 +223,43 @@ describe("vectorPainter (cli-lot3, D37)", () => {
     expect(lists).toHaveLength(1);
     expect(lists[0]!.drawn[0]).toBeGreaterThan(0);
   });
+  it("vectorPainter — trait d'encre : contour tracé par RecordingPath, jamais Path2D (piégé : le peintre de l'écran lèverait)", async () => {
+    // pdf.js (legacy) pose un Path2D de remplacement dans Node : piégé ici, indépendamment de l'ordre des tests.
+    vi.stubGlobal(
+      "Path2D",
+      class {
+        constructor() {
+          throw new Error("Path2D appelé");
+        }
+      },
+    );
+    try {
+      await paintStroke();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
+
+/** Un trait d'encre peint par `vectorPainter` : son contour passe par `makePath` (`Canvas2DRenderer.pathOf`). */
+async function paintStroke(): Promise<void> {
+  const doc = fakeCore.blank();
+  const page = doc.pageIds()[0]!;
+  doc.apply({ type: "CommitStroke", page, points: new Float32Array([100, 700, 0.5, 200, 700, 0.5, 300, 760, 0.5]), style: { color: "#000000", width: 4 } });
+  const lists: RecordedList[] = [];
+  const out = await createVectorOverlay({
+    doc,
+    assets: { get: () => undefined },
+    alive: () => true,
+    measure: new Real() as unknown as CanvasRenderingContext2D,
+    painter: vectorPainter(doc),
+    fonts: async () => [new Uint8Array([9])],
+    toPng: async () => new Uint8Array(0),
+    write: async (l) => {
+      lists.push(l);
+      return new Uint8Array([7]);
+    },
+  }).pages([req(page)]);
+  expect(out).toEqual([{ kind: "pdf", bytes: new Uint8Array([7]), index: 0 }]);
+  expect(lists[0]!.drawn[0]).toBeGreaterThan(0);
+}
