@@ -36,10 +36,15 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule(".rb-bar button")).toMatch(/border: none;.*border-radius: var\(--rf-radius-lg\);.*background: transparent;.*color: var\(--rf-navy-500\);/);
     expect(CSS).toMatch(/:hover \{ background: var\(--rf-gray-50\); \}/);
     const on = "background: var(--rf-violet-100); border-color: var(--rf-violet-600); color: var(--rf-violet-700);";
-    expect(rule('.rb-bar button[aria-pressed="true"]')).toContain(on);
-    expect(rule('.rb-bar button[aria-current="page"]')).toContain(on);
+    const flat = "background: var(--rf-violet-100); color: var(--rf-violet-700);";
+    expect(rule('.rb-bar button[aria-pressed="true"]')).toContain(flat);
+    expect(rule('.rb-bar button[aria-pressed="true"]')).not.toContain("border-color");
+    expect(rule('.rb-bar button[aria-current="page"]')).toContain(flat);
+    expect(rule('.rb-bar button[aria-current="page"]')).not.toContain("border-color");
     expect(rule('.rb-media-bar-inner button[aria-pressed="true"]')).toContain(on);
-    expect(rule(".rb-bar button:disabled")).toContain("color: var(--rf-gray-500);");
+    // #888888 jamais pour du texte (charte.md:28) : gris AA sur les boutons à texte, gris 500 sur les boutons à icône
+    expect(rule(".rb-bar button:disabled")).toContain("color: var(--rf-text-muted-aa);");
+    expect(rule(".rb-bar button.rb-ib:disabled")).toContain("color: var(--rf-gray-500);");
     expect(rule(".rb-bar button:focus-visible")).toContain("outline: 2px solid var(--rf-violet-600);");
     expect(rule('.rb-tab[aria-selected="true"]')).toContain("border-color: var(--rf-violet-600);");
   });

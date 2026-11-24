@@ -20,6 +20,16 @@ const one = (icon: string | null = "rect", label = "Rectangle", onPress = vi.fn(
   return { ...r, btn: r.container.querySelector("button")!, onPress };
 };
 
+describe("icône inconnue", () => {
+  it("nom absent d'ICONS : libellé en texte visible, pas de svg ni de rb-sr", () => {
+    const { btn } = one("inconnue", "Truc");
+    expect(btn.textContent).toBe("Truc");
+    expect(btn.querySelector("svg")).toBeNull();
+    expect(btn.querySelector(".rb-sr")).toBeNull();
+    expect(btn.classList.contains("rb-ib")).toBe(false);
+  });
+});
+
 describe("Icon (L1-1)", () => {
   it("svg calé, trait 1,5, caché aux lecteurs d'écran, un enfant SVG par entrée d'ICONS", () => {
     const { container } = render(() => <Icon name="table" />);

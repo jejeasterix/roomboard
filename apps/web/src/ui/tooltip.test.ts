@@ -57,6 +57,13 @@ describe("createTip (design-l1, L1-4, H1)", () => {
     t.focus();
     expect(t.shown()).toBe(true);
   });
+  it("clic sans focus (WebKit) : le focus clavier suivant montre l'infobulle", () => {
+    const t = createTip();
+    t.down("mouse");
+    t.up();
+    t.focus();
+    expect(t.shown()).toBe(true);
+  });
   it("appui de souris : cache l'infobulle du survol", () => {
     const t = createTip();
     t.enter();
