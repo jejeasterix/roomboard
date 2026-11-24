@@ -1136,9 +1136,15 @@ describe("exportPainterOptions (C14, R7, M34)", () => {
     expect(exportPainterOptions({} as ImageSource, { makePath })).toMatchObject({ forExport: true, makePath });
   });
   it("mineur C14 : main.ts câble chaque peintre d'export (PNG, PDF vectoriel, vignettes) sur exportPainterOptions", () => {
+    // cli-lot3 : le peintre du PDF vectoriel vit dans `vectorPainter` (pdf-overlay-vector.ts), que main.ts appelle.
     const main = readFileSync(join(__dirname, "../../main.ts"), "utf8");
-    const painters = [...main.matchAll(/new Canvas2DRenderer\(ctx, null, doc, ([A-Za-z]+)\(/g)].map((m) => m[1]);
-    expect(main.match(/new Canvas2DRenderer\(/g)?.length).toBe(painters.length);
+    const vector = readFileSync(join(__dirname, "../../app/pdf-overlay-vector.ts"), "utf8");
+    expect(main).toContain("painter: vectorPainter(doc)");
+    const painters = [main, vector].flatMap((src) => {
+      const found = [...src.matchAll(/new Canvas2DRenderer\(ctx, null, doc, ([A-Za-z]+)\(/g)].map((m) => m[1]);
+      expect(src.match(/new Canvas2DRenderer\(/g)?.length).toBe(found.length);
+      return found;
+    });
     expect(painters).toEqual(["exportPainterOptions", "exportPainterOptions", "exportPainterOptions"]);
   });
 });
