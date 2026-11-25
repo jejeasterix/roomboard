@@ -508,7 +508,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Icônes Lucide (ISC), design L1, L3 et L4
+## Icônes Lucide (ISC), design L1, L2, L3 et L4
 
 Tracés repris de Lucide (https://github.com/lucide-icons/lucide), commit `7981a0798a`, sans paquet npm : ils sont
 recopiés dans `apps/web/src/ui/icons.ts`.
@@ -528,6 +528,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   `dock-top` (Lucide `panel-top`), `dock-bottom` (Lucide `panel-bottom`), `dock-left` (Lucide `panel-left`),
   `dock-right` (Lucide `panel-right`), `dock-float` (Lucide `app-window`), `import` (Lucide `upload`),
   `down` (Lucide `chevron-down`).
+- Reprises de la maquette `docs/design/maquettes/01-tableau.html` (design L2, tracés Lucide au même commit), noms
+  RoomBoard : `menu` (Lucide `menu`), `collapse` (Lucide `chevron-up`).
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :
