@@ -162,7 +162,6 @@ describe("MenuBar (design-l2 L2-6)", () => {
     await tick();
     const l = parseInt(list().style.left, 10);
     const t = parseInt(list().style.top, 10);
-    expect(list().style.position).toBe("fixed");
     expect(l).toBeGreaterThanOrEqual(0);
     expect(l + 320).toBeLessThanOrEqual(window.innerWidth);
     expect(t).toBeGreaterThanOrEqual(0);

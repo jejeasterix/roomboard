@@ -88,7 +88,8 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     }
   });
   it("les 35 icônes des maquettes sont recopiées à l'identique de 01-tableau.html", () => {
-    for (const name of FROM_MOCKUP) expect(ICONS[name], name).toEqual(symbol(name));
+    // T12 : eraser-part a une base redessinée (netteté à 100 %) ; son corps reste celui de la maquette.
+    for (const name of FROM_MOCKUP) expect(ICONS[name], name).toEqual(name === "eraser-part" ? [...symbol(name).slice(0, 2), ["path", { d: "M17 21h4" }]] : symbol(name));
   });
   it("row-remove et col-remove : les rectangles de between-*-start, coordonnées entières", () => {
     expect(ICONS["row-remove"]).toEqual([ICONS["between-horizontal-start"]![0], ["path", { d: "M2 12h4" }], ICONS["between-horizontal-start"]![2]]);
