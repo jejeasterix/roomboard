@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GestureSink } from "./gesture";
-import { PREDICT_MAX_PX, predictLinear, withLinearPrediction } from "./predict";
+import { PREDICT_MAX_PX, PREDICT_NATIVE_MAX_PX, PREDICT_NATIVE_MAX_TURN_DEG, guardNative, predictLinear, withPrediction } from "./predict";
 import type { InputSample } from "./sampler";
 
 const s = (x: number, y: number, t: number, pressure = 0.5): InputSample => ({ x, y, pressure, tiltX: 0, tiltY: 0, t });
@@ -57,10 +57,10 @@ describe("predictLinear (échelon 2)", () => {
   });
 });
 
-describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
+describe("withPrediction (échelon 2 derrière le réglage)", () => {
   it("allumée : remplace les prédits natifs par l'extrapolation", () => {
     const { sink, calls } = spy();
-    const g = withLinearPrediction(sink, () => true);
+    const g = withPrediction(sink, () => "linear");
     g.begin(1, "pen", [s(0, 0, 0)]);
     g.extend(1, [s(10, 0, 10)], [s(99, 99, 11)]);
     expect(xs(calls[0]?.predicted ?? [])).toEqual([
@@ -69,25 +69,25 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
     ]);
   });
 
-  it("éteinte : prédits natifs transmis tels quels", () => {
+  it("native : prédits natifs dans l'axe du trait transmis tels quels", () => {
     const { sink, calls } = spy();
-    const native = [s(99, 99, 11)];
-    const g = withLinearPrediction(sink, () => false);
-    g.begin(1, "pen", [s(0, 0, 0)]);
+    const native = [s(14, 0, 11), s(18, 1, 12)];
+    const g = withPrediction(sink, () => "native");
+    g.begin(1, "pen", [s(0, 0, 0)], "pen");
     g.extend(1, [s(10, 0, 10)], native);
-    expect(calls[0]?.predicted).toBe(native);
+    expect(calls[0]?.predicted).toEqual(native);
   });
 
   it("réglage lu à chaque image : bascule à chaud", () => {
     const { sink, calls } = spy();
-    let on = false;
-    const native = [s(99, 99, 11)];
-    const g = withLinearPrediction(sink, () => on);
-    g.begin(1, "pen", [s(0, 0, 0)]);
+    let source: "native" | "linear" = "native";
+    const native = [s(14, 0, 11)];
+    const g = withPrediction(sink, () => source);
+    g.begin(1, "pen", [s(0, 0, 0)], "pen");
     g.extend(1, [s(10, 0, 10)], native);
-    on = true;
+    source = "linear";
     g.extend(1, [s(20, 0, 20)], native);
-    expect(calls[0]?.predicted).toBe(native);
+    expect(calls[0]?.predicted).toEqual(native);
     expect(xs(calls[1]?.predicted ?? [])).toEqual([
       [28, 0, 28],
       [36, 0, 36],
@@ -96,7 +96,7 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
 
   it("image sans échantillon nouveau : aucune queue", () => {
     const { sink, calls } = spy();
-    const g = withLinearPrediction(sink, () => true);
+    const g = withPrediction(sink, () => "linear");
     g.begin(1, "pen", [s(0, 0, 0)]);
     g.extend(1, [s(10, 0, 10)], []);
     g.extend(1, [], []);
@@ -105,7 +105,7 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
 
   it("close : historique oublié, un nouveau geste ne reprend pas l'ancien", () => {
     const { sink, calls } = spy();
-    const g = withLinearPrediction(sink, () => true);
+    const g = withPrediction(sink, () => "linear");
     g.begin(1, "pen", [s(0, 0, 0)]);
     g.extend(1, [s(10, 0, 10)], []);
     g.close(1, "end");
@@ -119,7 +119,7 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
 
   it("close seul (sans nouveau begin) : l'historique est vide, le geste suivant n'a rien à extrapoler", () => {
     const { sink, calls } = spy();
-    const g = withLinearPrediction(sink, () => true);
+    const g = withPrediction(sink, () => "linear");
     g.begin(1, "pen", [s(0, 0, 0)]);
     g.extend(1, [s(10, 0, 10)], []);
     g.close(1, "end");
@@ -130,7 +130,7 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
   it("échantillon non fini (x, y ou t NaN) : ignoré, la prédiction repart du dernier échantillon sain", () => {
     for (const bad of [s(Number.NaN, 0, 20), s(30, Number.NaN, 20), s(30, 0, Number.NaN), s(Number.POSITIVE_INFINITY, 0, 20)]) {
       const { sink, calls } = spy();
-      const g = withLinearPrediction(sink, () => true);
+      const g = withPrediction(sink, () => "linear");
       g.begin(1, "pen", [s(0, 0, 0)]);
       g.extend(1, [s(10, 0, 10)], []);
       g.extend(1, [bad], []);
@@ -143,7 +143,7 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
 
   it("historique plafonné à 8 échantillons : la vitesse ne remonte pas au-delà", () => {
     const { sink, calls } = spy();
-    const g = withLinearPrediction(sink, () => true);
+    const g = withPrediction(sink, () => "linear");
     const all = Array.from({ length: 12 }, (_, i) => s(i * i * 0.1, 0, i));
     g.begin(1, "pen", [all[0] as InputSample]);
     g.extend(1, all.slice(1), []);
@@ -154,12 +154,109 @@ describe("withLinearPrediction (échelon 2 derrière le réglage)", () => {
 
   it("begin et close transmis tels quels (outil, raison) ; échantillons transmis sans copie", () => {
     const { sink, calls, log } = spy();
-    const g = withLinearPrediction(sink, () => true);
+    const g = withPrediction(sink, () => "linear");
     g.begin(2, "eraser", [s(0, 0, 0)]);
     const more = [s(1, 0, 1)];
     g.extend(2, more, []);
     g.close(2, "cancel");
     expect(log).toEqual(["begin 2 eraser 1", "close 2 cancel"]);
     expect(calls[0]?.samples).toBe(more);
+  });
+});
+
+describe("OF73 : la pointe ne gigote plus", () => {
+  it("souris : aucun point prédit, ni natif ni TS", () => {
+    for (const source of ["native", "linear"] as const) {
+      const { sink, calls } = spy();
+      const g = withPrediction(sink, () => source);
+      g.begin(1, "pen", [s(0, 0, 0)], "mouse");
+      g.extend(1, [s(10, 0, 10)], [s(14, 0, 11)]);
+      g.extend(1, [s(20, 0, 20)], [s(24, 0, 21)]);
+      expect(calls.map((c) => c.predicted)).toEqual([[], []]);
+    }
+  });
+
+  it("éteinte (none) : les prédits natifs sont coupés aussi", () => {
+    const { sink, calls } = spy();
+    const g = withPrediction(sink, () => "none");
+    g.begin(1, "pen", [s(0, 0, 0)], "pen");
+    g.extend(1, [s(10, 0, 10)], [s(14, 0, 11)]);
+    expect(calls[0]?.predicted).toEqual([]);
+  });
+
+  it("stylet : un prédit à contre-sens est écarté, la suite aussi", () => {
+    const { sink, calls } = spy();
+    const g = withPrediction(sink, () => "native");
+    g.begin(1, "pen", [s(0, 0, 0)], "pen");
+    g.extend(1, [s(10, 0, 10)], [s(5, 0, 11), s(14, 0, 12)]);
+    expect(calls[0]?.predicted).toEqual([]);
+  });
+
+  it("stylet : la pointe garde les prédits jusqu'au premier qui tourne trop", () => {
+    const h = [s(0, 0, 0), s(10, 0, 10)];
+    // 59° depuis le dernier point réel : au-delà de la borne.
+    expect(guardNative(h, [s(14, 0, 11), s(16, 10, 12)])).toEqual([s(14, 0, 11)]);
+    // Juste sous la borne : gardé.
+    const a = ((PREDICT_NATIVE_MAX_TURN_DEG - 1) * Math.PI) / 180;
+    const ok = s(10 + 10 * Math.cos(a), 10 * Math.sin(a), 11);
+    expect(guardNative(h, [ok])).toEqual([ok]);
+  });
+
+  it("stylet : longueur bornée, le dernier gardé est ramené sur la borne", () => {
+    const out = guardNative([s(0, 0, 0), s(10, 0, 10)], [s(20, 0, 11), s(80, 0, 12), s(90, 0, 13)]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual(s(20, 0, 11));
+    expect(out[1]?.x).toBeCloseTo(10 + PREDICT_NATIVE_MAX_PX);
+    expect(out[1]?.y).toBeCloseTo(0);
+    expect(out[1]?.t).toBe(12);
+  });
+
+  it("stylet : un prédit qui revient en arrière ou zigzague après un premier prédit est écarté", () => {
+    const h = [s(0, 0, 0), s(10, 0, 10)];
+    expect(guardNative(h, [s(20, 0, 11), s(12, 1, 12)])).toEqual([s(20, 0, 11)]);
+    const up = s(10 + 10 * Math.cos(0.5), 10 * Math.sin(0.5), 11);
+    expect(guardNative(h, [up, s(up.x + 10 * Math.cos(-0.5), up.y + 10 * Math.sin(-0.5), 12)])).toEqual([up]);
+  });
+
+  it("stylet : un prédit sur le dernier point gardé clôt la liste", () => {
+    expect(guardNative([s(0, 0, 0), s(10, 0, 10)], [s(14, 0, 11), s(14, 0, 12), s(18, 0, 13)])).toEqual([s(14, 0, 11)]);
+  });
+
+  it("stylet : sans direction réelle (un seul point, immobile), aucun prédit", () => {
+    expect(guardNative([s(0, 0, 0)], [s(4, 0, 1)])).toEqual([]);
+    expect(guardNative([s(0, 0, 0), s(0, 0, 10)], [s(4, 0, 11)])).toEqual([]);
+    expect(guardNative([], [s(4, 0, 11)])).toEqual([]);
+  });
+
+  it("stylet : prédit non fini écarté avec la suite", () => {
+    expect(guardNative([s(0, 0, 0), s(10, 0, 10)], [s(Number.NaN, 0, 11), s(14, 0, 12)])).toEqual([]);
+  });
+
+  it("type de pointeur transmis au sink ; un même pointerId passe de la souris au stylet", () => {
+    const types: (string | undefined)[] = [];
+    const calls: (readonly InputSample[])[] = [];
+    const sink: GestureSink = {
+      begin: (_id, _tool, _samples, pointerType) => types.push(pointerType),
+      extend: (_id, _samples, predicted) => calls.push(predicted),
+      close: () => {},
+    };
+    const g = withPrediction(sink, () => "native");
+    g.begin(1, "pen", [s(0, 0, 0)], "mouse");
+    g.extend(1, [s(10, 0, 10)], [s(14, 0, 11)]);
+    g.close(1, "end");
+    g.begin(1, "pen", [s(0, 0, 20)], "pen");
+    g.extend(1, [s(10, 0, 30)], [s(14, 0, 31)]);
+    g.begin(1, "pen", [s(0, 0, 40)], "mouse");
+    g.extend(1, [s(10, 0, 50)], [s(14, 0, 51)]);
+    expect(types).toEqual(["mouse", "pen", "mouse"]);
+    expect(calls).toEqual([[], [s(14, 0, 31)], []]);
+  });
+
+  it("doigt : même garde que le stylet", () => {
+    const { sink, calls } = spy();
+    const g = withPrediction(sink, () => "native");
+    g.begin(1, "pen", [s(0, 0, 0)], "touch");
+    g.extend(1, [s(10, 0, 10)], [s(14, 0, 11), s(10, 8, 12)]);
+    expect(calls[0]?.predicted).toEqual([s(14, 0, 11)]);
   });
 });

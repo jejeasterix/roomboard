@@ -5,13 +5,18 @@
  * jamais la frontière page ↔ Rust natif). Défauts : un échelon que rien de mesuré ne demande est éteint (S1, OC56, OC66).
  */
 
+import type { PredictionSource } from "./input/predict";
+
 export type PredictionSetting = "auto" | "on" | "off";
 export type Switch = "on" | "off";
 export type PalmSetting = "strict" | "lenient";
 export type FingerSetting = "pan" | "draw";
 
 export interface EngineSettings {
-  /** Échelon 2 : prédiction linéaire en TS ; auto = allumée seulement si `getPredictedEvents` manque (WebKit). */
+  /**
+   * Échelon 2 : points prédits. auto = prédits natifs bornés, ou prédiction TS si `getPredictedEvents` manque (WebKit) ;
+   * on = prédiction TS ; off = aucun point prédit, natifs compris (OF73). La souris n'en a jamais.
+   */
   readonly prediction: PredictionSetting;
   /** Échelon 3 : traînée déléguée `navigator.ink`. */
   readonly inkTrail: Switch;
@@ -150,6 +155,12 @@ export function resolvePrediction(setting: PredictionSetting, nativePredicted: b
   return !nativePredicted;
 }
 
+/** Source effective des points prédits (OF73) : `off` coupe aussi les prédits natifs. */
+export function predictionSource(setting: PredictionSetting, nativePredicted: boolean): PredictionSource {
+  if (setting === "off") return "none";
+  return resolvePrediction(setting, nativePredicted) ? "linear" : "native";
+}
+
 /** Valeur suivante d'un réglage (bouton de la barre). */
 export function cycleSetting(s: EngineSettings, key: SettingKey): EngineSettings {
   switch (key) {
@@ -197,10 +208,11 @@ export function settingLabel(key: SettingKey, s: EngineSettings, e: EffectiveEch
       return s.finger === "pan" ? "Doigt : vue" : "Doigt : trace";
     case "palm":
       return s.palm === "strict" ? "Paume : stricte" : "Paume : souple";
-    case "prediction": {
-      const state = e.prediction ? "allumée" : "éteinte";
-      return s.prediction === "auto" ? `É2 prédiction : auto (${state})` : `É2 prédiction : ${state}`;
-    }
+    case "prediction":
+      // e.prediction : prédiction TS effective ; en auto sans elle, ce sont les prédits natifs bornés (OF73).
+      if (s.prediction === "off") return "É2 prédiction : aucune (native comprise)";
+      if (s.prediction === "on") return "É2 prédiction : TS";
+      return `É2 prédiction : auto (${e.prediction ? "TS" : "native, bornée"})`;
     case "inkTrail":
       return `É3 traînée : ${INK_LABELS[e.inkTrail]}`;
     case "webgl":

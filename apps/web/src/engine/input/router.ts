@@ -79,7 +79,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       }
       track.role = "draw";
       track.tool = g.eraserButton ? "eraser" : tool;
-      deps.gestures.begin(g.pointerId, track.tool, g.samples);
+      deps.gestures.begin(g.pointerId, track.tool, g.samples, g.pointerType);
       return;
     }
     if (pinchPair()) return; // troisième doigt : ignoré
@@ -103,7 +103,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     }
     track.role = "draw";
     track.tool = tool;
-    deps.gestures.begin(g.pointerId, tool, g.samples);
+    deps.gestures.begin(g.pointerId, tool, g.samples, g.pointerType);
   };
 
   const onMove = (g: GestureEvent): void => {
