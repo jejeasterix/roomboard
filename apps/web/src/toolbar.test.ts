@@ -1,15 +1,21 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
+  ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ROLE, annotationBarOf, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
   resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
-import { builtinProfile, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
+import { builtinProfile } from "./toolbar-profiles";
 import { layoutFor } from "./ui/layout";
 import profilesSource from "./toolbar-profiles.ts?raw";
 import toolbarSource from "./toolbar.ts?raw";
 
 const ALL: RuntimeCapabilities = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
 const NONE: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
+
+/** design-l4 (L4-22) : `DEFAULT_PROFILE_JSON` d'origin/main @ 136cbbb, tel quel : aucune barre `annotation`, éléments
+ *  d'annotation dans `outils`. Point de départ des copies anciennes. */
+const BEFORE_L4: Record<string, unknown> = JSON.parse(readFileSync(join(__dirname, "fixtures", "profils", "defaut-avant-l4.rbprofile"), "utf8"));
 
 function base(): Record<string, unknown> {
   return {
@@ -367,7 +373,7 @@ describe("itemsForMode (C11a, P7, P19)", () => {
   const NEW = ["desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"];
   /** Copie de `defaut` faite avant C11a : aucun élément C11a. */
   const oldDefault = () => {
-    const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+    const json = structuredClone(BEFORE_L4) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
     for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !NEW.includes(i.id));
     const r = parseProfile({ ...json, id: "ma-copie", label: "Ma copie" });
     if ("errors" in r) throw new Error(r.errors.join("; "));
@@ -379,7 +385,7 @@ describe("itemsForMode (C11a, P7, P19)", () => {
     expect(items.some((it) => it.action === "desktop-annotation")).toBe(true);
   });
   it("annotation : zone visible ; sortie et bascule déjà là, pas de doublon", () => {
-    const items = itemsForMode(builtinProfile("defaut")!.toolbars[0]!, caps, "desktop-annotation");
+    const items = itemsForMode(annotationBarOf(builtinProfile("defaut")!)!, caps, "desktop-annotation");
     expect(items.some((it) => it.id === "depot-annotation")).toBe(true);
     expect(items.filter((it) => it.action === "desktop-annotation")).toHaveLength(1);
     expect(items.filter((it) => it.action === "annotation-pointer")).toHaveLength(1);
@@ -424,11 +430,11 @@ describe("C11b : figer et envoyer (P5, P29)", () => {
     const board = itemsForMode(bar, caps, "board");
     for (const a of C11B) expect(board.some((it) => it.action === a)).toBe(false);
     expect(board.some((it) => it.action === "desktop-annotation")).toBe(true);
-    const ann = itemsForMode(bar, caps, "desktop-annotation");
+    const ann = itemsForMode(annotationBarOf(builtinProfile("defaut")!)!, caps, "desktop-annotation");
     for (const a of C11B) expect(ann.filter((it) => it.action === a)).toHaveLength(1);
   });
   it("profil d'avant C11b : en annotation, « Envoyer au tableau » ajoutée au rendu, profil inchangé (HC11b-14)", () => {
-    const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+    const json = structuredClone(BEFORE_L4) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
     for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !C11B.includes(i.id));
     const r = parseProfile({ ...json, id: "avant-c11b", label: "Avant C11b" });
     if ("errors" in r) throw new Error(r.errors.join("; "));
@@ -440,5 +446,52 @@ describe("C11b : figer et envoyer (P5, P29)", () => {
     expect(ann.some((it) => it.action === "annotation-freeze")).toBe(false);
     expect(itemsForMode(bar, caps, "board").some((it) => it.action === "annotation-send")).toBe(false);
     expect(JSON.stringify(bar)).toBe(before);
+  });
+});
+
+describe("annotationBarOf (design-l4, L4-1, L4-2)", () => {
+  const bar = (id: string, role: string, dock: string) => ({
+    id,
+    role,
+    dock,
+    groups: [{ id: `g-${id}`, items: [{ id: `pen-${id}`, kind: "tool", tool: "pen", label: "Stylo" }] }],
+  });
+  const withBars = (...bars: unknown[]): Profile => {
+    const r = parseProfile({ format: "roomboard-profile", schema: 1, id: "essai", label: "Essai", toolbars: bars });
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    return r.profile;
+  };
+  it("annotationBarOf (design-l4) : ANNOTATION_ROLE vaut « annotation », accepté par parseProfile sans avertissement", () => {
+    expect(ANNOTATION_ROLE).toBe("annotation");
+    const r = parseProfile({ ...base(), toolbars: [bar("outils", "tools", "top"), bar("annotation", "annotation", "top")] });
+    expect("errors" in r ? r.errors : r.warnings.filter((w) => !w.includes("menu Profil"))).toEqual([]);
+  });
+  it("annotationBarOf (design-l4) : la première barre de rôle annotation, même placée après outils et pages", () => {
+    const p = withBars(bar("outils", "tools", "top"), bar("pages", "pages", "bottom"), bar("a1", "annotation", "left"), bar("a2", "annotation", "top"));
+    expect(annotationBarOf(p)?.id).toBe("a1");
+    expect(annotationBarOf(p)?.dock).toBe("left");
+    const first = withBars(bar("a0", "annotation", "right"), bar("outils", "tools", "top"));
+    expect(annotationBarOf(first)?.id).toBe("a0");
+  });
+  it("annotationBarOf (design-l4) : sans barre annotation, la première barre tools (profil figé d'avant L4)", () => {
+    const r = parseProfile(BEFORE_L4);
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    expect(r.warnings).toEqual([]);
+    expect(r.profile.toolbars.some((b) => b.role === ANNOTATION_ROLE)).toBe(false);
+    expect(annotationBarOf(r.profile)).toBe(r.profile.toolbars[0]);
+    expect(annotationBarOf(r.profile)?.id).toBe("outils");
+  });
+  it("annotationBarOf (design-l4) : barre flottante posée en haut, le profil n'est pas réécrit", () => {
+    const p = withBars(bar("outils", "tools", "top"), bar("a", "annotation", "floating"));
+    const before = JSON.stringify(p);
+    expect(annotationBarOf(p)).toMatchObject({ id: "a", role: "annotation", dock: "top" });
+    expect(JSON.stringify(p)).toBe(before);
+    expect(annotationBarOf(withBars(bar("f", "tools", "floating")))).toMatchObject({ id: "f", dock: "top" });
+  });
+  it("annotationBarOf (design-l4) : ni annotation ni tools → null", () => {
+    // `parseProfile` ajoute une barre `tools` à un profil qui n'en a pas : le cas null se pose sur un `Profile` bâti à la main.
+    const pagesOnly = { ...withBars(bar("outils", "tools", "top")), toolbars: [withBars(bar("pages", "pages", "bottom")).toolbars[0]!] } as Profile;
+    expect(pagesOnly.toolbars.some((b) => b.role === "tools" || b.role === ANNOTATION_ROLE)).toBe(false);
+    expect(annotationBarOf(pagesOnly)).toBeNull();
   });
 });

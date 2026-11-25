@@ -664,6 +664,20 @@ export function isAnnotationZone(it: ToolItem): boolean {
   return it.kind === "dropzone" && it.requires.includes("desktopAnnotation");
 }
 
+/** design-l4 (L4-1, Q9) : rôle de la barre propre à l'annotation ; `parseProfile` accepte tout rôle, le schéma ne change pas. */
+export const ANNOTATION_ROLE = "annotation";
+
+/**
+ * design-l4 (L4-2) : barre montrée et mesurée en annotation, une seule règle pour `App.tsx` (rendu) et `main.ts`
+ * (épaisseur de la bande) : la première barre de rôle `annotation`, sinon la première `tools` (profil d'avant L4, comme
+ * C11a P20) ; une barre flottante y est posée en haut (copie : le profil n'est pas réécrit). Null : aucune des deux.
+ */
+export function annotationBarOf(p: Profile): Toolbar | null {
+  const bar = p.toolbars.find((b) => b.role === ANNOTATION_ROLE) ?? p.toolbars.find((b) => b.role === "tools");
+  if (bar === undefined) return null;
+  return bar.dock === "floating" ? { ...bar, dock: "top" } : bar;
+}
+
 /**
  * Éléments selon le mode (C11a, P7, P19 ; C11b, P29) : tableau = `visibleItems` sans zone d'annotation ni actions propres à l'annotation ; annotation = `visibleItems`,
  * plus « Annotation du bureau » (sortie) et « Souris » en fin s'ils manquent (masqués ou absents d'un profil d'avant
