@@ -196,6 +196,7 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(".rb-item .rb-sheet-ghost")).toContain("inline-size: 112px;");
     expect(rule(".rb-preset-width > span")).toContain("inline-size: 80px;");
     expect(rule(".rb-saved")).not.toContain("row-reverse");
+    expect(rule(".rb-sheet-row > .rb-sheet-ghost")).toContain("inline-size: 128px;"); // Importer, Exporter : largeur fixe, icônes sur la grille de pixels
     for (const sel of [".rb-sheet-ghost", ".rb-sheet-solid", ".rb-sheet-outline", ".rb-sheet-add"]) expect(rule(sel), sel).not.toMatch(/padding: 0 [^;]*\d+\.\d/);
   });
   it("design-l3 L3-2 : panneau des profils ouvert : barre flottante en haut à gauche de la scène, dans la place libre, sur plusieurs rangées", () => {

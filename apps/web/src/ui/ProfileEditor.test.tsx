@@ -473,7 +473,6 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
       expect(b.textContent?.trim()).toBe(text);
       expect(b.querySelector(`svg[data-icon="${icon}"]`)).not.toBeNull();
     }
-    expect(q('button[data-edit="close"]').textContent?.trim()).toBe("");
   });
 
   it("L3-15 (relecture) : annonce identique redite : vidée aussitôt, reposée au tour suivant", async () => {

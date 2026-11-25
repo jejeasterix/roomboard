@@ -537,9 +537,19 @@ export function App(props: AppProps): JSX.Element {
                   // (id inconnu, choix refusé) : rien ne le prendra. Dans les deux cas il retombe ici.
                   profileFocus = false;
                 }}
-                importFile={() => void actions.importFile()}
+                importFile={() => {
+                  // Import réussi : le profil importé remonte l'éditeur (pendant la promesse) ; sinon rien ne prend le drapeau.
+                  profileFocus = true;
+                  void actions.importFile().finally(() => {
+                    profileFocus = false;
+                  });
+                }}
                 exportProfile={(draft) => void actions.exportProfile(draft)}
-                resetCurrent={() => actions.resetCurrent()}
+                resetCurrent={() => {
+                  profileFocus = true;
+                  actions.resetCurrent();
+                  profileFocus = false;
+                }}
                 confirm={(m) => props.shell.confirm(m)}
               />
             </div>

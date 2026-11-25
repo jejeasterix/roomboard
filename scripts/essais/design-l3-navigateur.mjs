@@ -313,7 +313,9 @@ async function s2(browser, base) {
   const el = await box(page, grip("ellipse"));
   await page.mouse.move(el.x + el.width / 2, el.y + el.height / 2);
   await page.mouse.down();
-  for (let i = 1; i <= 5; i++) await page.mouse.move(el.x + el.width / 2, el.y + el.height / 2 - 8 * i);
+  for (let i = 1; i <= 16; i++) await page.mouse.move(el.x + el.width / 2, el.y + el.height / 2 - 8 * i);
+  const shiftedMid = await page.$$eval('[data-edit-bar="outils"] li[data-edit-item]', (ls) => ls.filter((l) => l.style.transform !== "").length);
+  check(shiftedMid >= 2, `S2 Échap pendant un geste : avant Échap, la ligne tirée et au moins une autre sont décalées (${shiftedMid})`);
   await page.keyboard.press("Escape");
   await page.mouse.up();
   await frames(page);

@@ -14,9 +14,11 @@ export interface PointerGesture {
   finish(u: PointerEvent | null, dragged: boolean): void;
 }
 
-export function startPointerGesture(e: PointerEvent, g: PointerGesture): void {
+/** Rend la fonction d'abandon : retire les écouteurs et rend la capture sans rappeler `finish` (démontage de l'appelant
+ *  pendant le geste) ; sans effet une fois le geste fini. */
+export function startPointerGesture(e: PointerEvent, g: PointerGesture): () => void {
   const source = e.currentTarget as HTMLElement | null;
-  if (source === null || e.button > 0) return;
+  if (source === null || e.button > 0) return () => undefined;
   const doc = source.ownerDocument;
   const x0 = e.clientX;
   const y0 = e.clientY;
@@ -24,15 +26,18 @@ export function startPointerGesture(e: PointerEvent, g: PointerGesture): void {
   let done = false;
   source.setPointerCapture?.(e.pointerId);
 
-  const end = (u: PointerEvent | null): void => {
-    if (done) return;
-    done = true;
+  const release = (): void => {
     source.removeEventListener("pointermove", move);
     source.removeEventListener("pointerup", up);
     source.removeEventListener("pointercancel", cancel);
     source.removeEventListener("lostpointercapture", cancel);
     doc.removeEventListener("keydown", key, true);
     source.releasePointerCapture?.(e.pointerId);
+  };
+  const end = (u: PointerEvent | null): void => {
+    if (done) return;
+    done = true;
+    release();
     g.finish(u, dragged);
   };
   function move(m: PointerEvent): void {
@@ -64,4 +69,9 @@ export function startPointerGesture(e: PointerEvent, g: PointerGesture): void {
   source.addEventListener("pointercancel", cancel);
   source.addEventListener("lostpointercapture", cancel);
   doc.addEventListener("keydown", key, true);
+  return () => {
+    if (done) return;
+    done = true;
+    release();
+  };
 }

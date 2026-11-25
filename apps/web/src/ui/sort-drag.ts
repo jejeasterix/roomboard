@@ -31,10 +31,11 @@ export function slotOf(mids: readonly number[], y: number): number {
   return n;
 }
 
-export function startSortDrag(e: PointerEvent, opts: SortDragOptions): void {
+/** Rend la fonction d'abandon (démontage pendant le geste) : lignes remises, image annulée, aucun rappel. */
+export function startSortDrag(e: PointerEvent, opts: SortDragOptions): () => void {
   const rows = opts.rows();
   const dragged = rows[opts.from];
-  if (dragged === undefined) return;
+  if (dragged === undefined) return () => undefined;
   const sc = opts.scroller;
   const win = sc.ownerDocument.defaultView;
   const top0 = sc.scrollTop;
@@ -63,8 +64,10 @@ export function startSortDrag(e: PointerEvent, opts: SortDragOptions): void {
   };
   const edgeSpeed = (): number => {
     const b = sc.getBoundingClientRect();
-    if (lastY < b.top + SORT_EDGE_PX) return -Math.ceil(((b.top + SORT_EDGE_PX - lastY) / SORT_EDGE_PX) * SCROLL_STEP_PX);
-    if (lastY > b.bottom - SORT_EDGE_PX) return Math.ceil(((lastY - (b.bottom - SORT_EDGE_PX)) / SORT_EDGE_PX) * SCROLL_STEP_PX);
+    // Au bord même le pas est maximal ; plus loin (pointeur hors du corps), il ne grandit pas.
+    const depth = (d: number): number => Math.ceil(Math.min(1, d / SORT_EDGE_PX) * SCROLL_STEP_PX);
+    if (lastY < b.top + SORT_EDGE_PX) return -depth(b.top + SORT_EDGE_PX - lastY);
+    if (lastY > b.bottom - SORT_EDGE_PX) return depth(lastY - (b.bottom - SORT_EDGE_PX));
     return 0;
   };
   const tick = (): void => {
@@ -73,7 +76,8 @@ export function startSortDrag(e: PointerEvent, opts: SortDragOptions): void {
     if (v === 0) return;
     const before = sc.scrollTop;
     sc.scrollTop = before + v;
-    if (sc.scrollTop !== before) paint();
+    if (sc.scrollTop === before) return; // au bout du défilement : plus d'image tant que le pointeur ne bouge pas
+    paint();
     frame = win?.requestAnimationFrame(tick) ?? 0;
   };
   const reset = (): void => {
@@ -82,7 +86,8 @@ export function startSortDrag(e: PointerEvent, opts: SortDragOptions): void {
     dragged.removeAttribute("data-dragging");
     for (const r of rows) r.style.transform = "";
   };
-  startPointerGesture(e, {
+  let over = false;
+  const abort = startPointerGesture(e, {
     move: (m) => {
       lastY = m.clientY;
       dragged.setAttribute("data-dragging", "");
@@ -90,6 +95,7 @@ export function startSortDrag(e: PointerEvent, opts: SortDragOptions): void {
       if (frame === 0 && edgeSpeed() !== 0) frame = win?.requestAnimationFrame(tick) ?? 0;
     },
     finish: (u, moved) => {
+      over = true;
       reset();
       if (u === null) return opts.cancel();
       if (!moved) return opts.tap();
@@ -99,4 +105,10 @@ export function startSortDrag(e: PointerEvent, opts: SortDragOptions): void {
       opts.drop(to);
     },
   });
+  return () => {
+    if (over) return;
+    over = true;
+    abort();
+    reset();
+  };
 }

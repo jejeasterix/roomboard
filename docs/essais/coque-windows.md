@@ -81,7 +81,7 @@ Seulement si C1 est fusionné. Aucun build de plus que celui du § 2.
 
 | # | geste | attendu |
 |---|---|---|
-| C1-1 | Profil → Modifier… : barre d'outils « À gauche », taille « Grands » ; « Enregistrer comme nouveau » sous le nom `CM1` | la barre passe à gauche en grands boutons  **dès le choix, avant tout enregistrement** (aperçu en direct, panneau à droite); le menu Profil montre « CM1 » coché |
+| C1-1 | Profil → Modifier… : barre d'outils « À gauche », taille « Grands » ; « Enregistrer comme nouveau » sous le nom `CM1` | la barre passe à gauche en grands boutons **dès le choix, avant tout enregistrement** (aperçu en direct, panneau à droite) ; le menu Profil montre « CM1 » coché |
 | C1-2 | Profil → Exporter… | boîte native « Enregistrer » filtrée sur « Profil RoomBoard » (`rbprofile`), nom proposé `cm1.rbprofile` ; le fichier est écrit à l'endroit choisi |
 | C1-3 | Profil → Tout remettre à zéro, confirmer | question native ; puis « Par défaut », barre en haut, « CM1 » absent du menu |
 | C1-4 | Profil → Importer… et choisir `cm1.rbprofile` | boîte native « Ouvrir » filtrée sur `rbprofile` ; « CM1 » revient, actif, barre à gauche en grand |

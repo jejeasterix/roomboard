@@ -35,10 +35,12 @@ export function RadioChoices<T extends string>(props: RadioChoicesProps<T>): JSX
     if (!Object.hasOwn(STEP, e.key)) return;
     e.preventDefault();
     const n = props.options.length;
-    const next = props.options[(index + STEP[e.key]! + n) % n];
+    const rank = (index + STEP[e.key]! + n) % n;
+    const next = props.options[rank];
     if (next === undefined) return;
     props.choose(next.value);
-    queueMicrotask(() => group?.querySelector<HTMLElement>(`[data-choice="${next.value}"]`)?.focus());
+    // Par rang : une valeur n'entre jamais dans un sélecteur CSS.
+    queueMicrotask(() => group?.querySelectorAll<HTMLElement>('[role="radio"]')[rank]?.focus());
   };
   return (
     <div ref={group} class="rb-radios" role="radiogroup" aria-label={props.label} data-edit={props.name} data-look={props.look}>
