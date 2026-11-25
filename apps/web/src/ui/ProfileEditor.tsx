@@ -20,11 +20,11 @@ import {
   type JSX,
 } from "solid-js";
 import {
-  abandonQuestion,
   addItem,
   addPreset,
   canHide,
   catalog,
+  leaveDraft,
   moveItem,
   moveItemTo,
   presetFields,
@@ -387,7 +387,12 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
   const hint = createUniqueId();
   let root: HTMLElement | undefined;
   let profileSelect: HTMLSelectElement | undefined;
-  onCleanup(() => props.endPreview());
+  /** Abandon du tri au pointeur en cours : l'éditeur démonté ne laisse ni écouteur sur `document` ni capture. */
+  let abortSort: (() => void) | undefined;
+  onCleanup(() => {
+    abortSort?.();
+    props.endPreview();
+  });
   onMount(() => {
     if (props.focusProfile === true) queueMicrotask(() => profileSelect?.focus());
   });
@@ -404,12 +409,7 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
   const unchanged = (): boolean => sameProfile(draft(), props.profile);
   const named = (): boolean => draft().label.trim() !== "";
   /** L3-32 : brouillon égal au profil enregistré : `then` tout de suite ; sinon après un Oui. */
-  const leave = (then: () => void): void => {
-    if (unchanged()) return then();
-    void props.confirm(abandonQuestion(props.profile.label)).then((ok) => {
-      if (ok) then();
-    });
-  };
+  const leave = (then: () => void): void => leaveDraft(draft(), props.profile, props.confirm, then);
   const tag = (): string => (props.canRemove() ? "Personnel" : props.canResetCurrent() ? "Fourni, modifié" : "Fourni");
   const canRevert = (): boolean => props.canResetCurrent() || !unchanged();
   /** L3-19 : copie ou profil de l'utilisateur : remise de l'enregistré (l'éditeur remonte) ; sinon, le brouillon revient. */
@@ -418,12 +418,24 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
     setDraft(props.profile);
     props.endPreview();
   };
+  let saidTurn = 0;
   const announce = (bar: string, itemId: string): void => {
     const b = draft().toolbars.find((x) => x.id === bar);
     if (b === undefined) return;
     const items = b.groups.flatMap((g) => g.items);
     const i = items.findIndex((it) => it.id === itemId);
-    if (i !== -1) setSaid(`${itemName(items[i]!)} : rang ${i + 1} sur ${items.length}`);
+    if (i === -1) return;
+    const text = `${itemName(items[i]!)} : rang ${i + 1} sur ${items.length}`;
+    const turn = ++saidTurn;
+    if (said() !== text) {
+      setSaid(text);
+      return;
+    }
+    // Même texte : une région `aria-live` ne redit rien ; vidée, puis reposée au tour suivant (sauf annonce plus récente).
+    setSaid("");
+    setTimeout(() => {
+      if (turn === saidTurn) setSaid(text);
+    });
   };
   /** Vrai entre la fin d'un vrai glisser (ou d'un geste annulé) et le `click` qui le suit, ignoré (L3-15 a). Le `click`
    *  part dans la même tâche que le lâcher ; sans `click` (Échap puis lâcher hors de la poignée), le drapeau retombe au
@@ -452,7 +464,7 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
       const list = grip?.closest("ul") ?? null;
       const scroller = grip?.closest<HTMLElement>("[data-sheet-body]") ?? null;
       if (list === null || scroller === null) return;
-      startSortDrag(e, {
+      abortSort = startSortDrag(e, {
         rows: () => Array.from(list.children) as HTMLElement[],
         scroller,
         from,
@@ -516,8 +528,14 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
               </span>
               <Icon name="down" />
             </label>
-            <IconButton icon="import" label="Importer un profil (.rbprofile)" attrs={{ "data-edit": "import" }} onPress={() => leave(() => props.importFile())} />
-            <IconButton icon="export" label="Exporter ce profil (.rbprofile)" attrs={{ "data-edit": "export" }} disabled={!named()} onPress={() => props.exportProfile(draft())} />
+            <button type="button" class="rb-sheet-ghost" data-edit="import" aria-label="Importer un profil (.rbprofile)" onClick={() => leave(() => props.importFile())}>
+              <Icon name="import" />
+              <span>Importer</span>
+            </button>
+            <button type="button" class="rb-sheet-ghost" data-edit="export" aria-label="Exporter ce profil (.rbprofile)" disabled={!named()} onClick={() => props.exportProfile(draft())}>
+              <Icon name="export" />
+              <span>Exporter</span>
+            </button>
           </div>
           <label class="rb-field">
             <span>Nom du profil</span>

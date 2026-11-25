@@ -20,7 +20,7 @@ export interface ProfileMenuProps {
 }
 
 /** design-l3 (L3-22) : icône de chaque commande (table, jamais un branchement sur le nom). */
-const COMMAND_ICONS: Readonly<Record<string, string>> = Object.freeze({
+const COMMAND_ICONS = Object.freeze({
   edit: "profile",
   import: "import",
   export: "export",
@@ -29,10 +29,10 @@ const COMMAND_ICONS: Readonly<Record<string, string>> = Object.freeze({
   "reset-all": "reset",
 });
 
-function Command(props: { name: string; label: string; run: () => void; disabled?: boolean }): JSX.Element {
+function Command(props: { name: keyof typeof COMMAND_ICONS; label: string; run: () => void; disabled?: boolean }): JSX.Element {
   return (
     <button type="button" role="menuitem" data-profile-cmd={props.name} disabled={props.disabled ?? false} onClick={() => props.run()}>
-      <Icon name={Object.hasOwn(COMMAND_ICONS, props.name) ? COMMAND_ICONS[props.name]! : "profile"} />
+      <Icon name={COMMAND_ICONS[props.name]} />
       <span>{props.label}</span>
     </button>
   );

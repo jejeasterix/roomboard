@@ -226,6 +226,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-sheet-ghost { display: inline-flex; align-items: center; gap: var(--rf-space-sm); min-block-size: 48px; padding: 0 var(--rf-space-md); border: 0; border-radius: var(--rf-radius-lg); background: transparent; font-size: 15px; font-weight: 500; color: var(--rf-navy-500); cursor: pointer; }
 .rb-sheet section > .rb-sheet-ghost, .rb-presets > .rb-sheet-add { align-self: flex-start; }
 .rb-item .rb-sheet-ghost { box-sizing: border-box; inline-size: 112px; justify-content: center; padding: 0; }
+.rb-sheet-row > .rb-sheet-ghost { box-sizing: border-box; flex: none; inline-size: 128px; padding: 0 var(--rf-space-md); }
 .rb-sheet-ghost:not(:disabled):hover { background: var(--rf-gray-50); }
 .rb-sheet-ghost:disabled { color: var(--rf-text-muted-aa); cursor: default; }
 .rb-sheet-solid { box-sizing: border-box; inline-size: 160px; min-block-size: 48px; padding: 0 var(--rf-space-md); border: 0; border-radius: var(--rf-radius-lg); background: var(--rf-violet-600); font-size: 15px; font-weight: 600; color: var(--rf-white); cursor: pointer; }
@@ -233,7 +234,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-sheet-solid:disabled { background: var(--rf-gray-50); color: var(--rf-text-muted-aa); cursor: default; }
 .rb-sheet-outline { flex: none; align-self: flex-end; box-sizing: border-box; inline-size: 264px; min-block-size: 48px; padding: 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); font-size: 15px; font-weight: 500; color: var(--rf-navy-500); white-space: nowrap; cursor: pointer; }
 .rb-sheet-outline:disabled { color: var(--rf-text-muted-aa); cursor: default; }
-.rb-saved { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: var(--rf-space-sm); font-size: 14px; color: var(--rf-text-muted-aa); }
+.rb-saved { display: inline-flex; align-items: center; gap: var(--rf-space-sm); font-size: 14px; color: var(--rf-text-muted-aa); }
 .rb-saved .rb-icon { color: var(--rf-success); }
 /* design-l3 (L3-23, L3-7, L3-10, L3-8) : choix exclusifs (RadioChoices) en cartes, vignettes et segments. */
 .rb-radios[data-look="card"] { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

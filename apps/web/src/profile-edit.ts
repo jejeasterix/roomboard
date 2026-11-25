@@ -252,5 +252,14 @@ export function sameProfile(a: Profile, b: Profile): boolean {
   return JSON.stringify(serializeProfile(a)) === JSON.stringify(serializeProfile(b));
 }
 
+/** design-l3 (L3-32) : quitter un brouillon : `go` tout de suite s'il égale le profil enregistré, sinon après un Oui à
+ *  `confirm(abandonQuestion)`. Règle partagée par l'éditeur et l'application. */
+export function leaveDraft(draft: Profile, saved: Profile, confirm: (message: string) => Promise<boolean>, go: () => void): void {
+  if (sameProfile(draft, saved)) return go();
+  void confirm(abandonQuestion(saved.label)).then((ok) => {
+    if (ok) go();
+  });
+}
+
 /** design-l3 (L3-32) : question posée avant d'abandonner un brouillon différent du profil enregistré. */
 export const abandonQuestion = (label: string): string => `Abandonner les changements du profil « ${label} » ?`;

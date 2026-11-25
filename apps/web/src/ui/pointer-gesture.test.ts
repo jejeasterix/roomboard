@@ -147,4 +147,50 @@ describe("pointer-gesture (design-l3, DA-L3-1)", () => {
       expect(readFileSync(join(__dirname, f), "utf8")).not.toMatch(/setPointerCapture|addEventListener|"Escape"/);
     }
   });
+  it("DA-L3-1 : accept reçoit des écarts absolus, quel que soit le sens du mouvement", () => {
+    const s = source();
+    const accept = vi.fn(() => true);
+    start(s, { accept }, "touch");
+    s.dispatchEvent(ev("pointermove", 10 - 40, 10 + 12, "touch"));
+    expect(accept).toHaveBeenLastCalledWith(40, 12, "touch");
+    s.dispatchEvent(ev("pointerup", 0, 0, "touch"));
+    const t = source();
+    const accept2 = vi.fn(() => true);
+    start(t, { accept: accept2 }, "touch");
+    t.dispatchEvent(ev("pointermove", 10 + 12, 10 - 40, "touch"));
+    expect(accept2).toHaveBeenLastCalledWith(12, 40, "touch");
+  });
+  it("DA-L3-1 : au doigt, resource-drag accepte (-40, 12) et refuse (12, -40)", () => {
+    const run = (x: number, y: number): boolean => {
+      const c = source();
+      const down = ev("pointerdown", 10, 10, "touch");
+      Object.defineProperty(down, "currentTarget", { value: c });
+      startResourceDrag(down, vi.fn(), { label: "Moitié", hits: () => [] });
+      c.dispatchEvent(ev("pointermove", x, y, "touch"));
+      const started = document.querySelector(".rb-drag-ghost") !== null;
+      c.dispatchEvent(ev("pointerup", x, y, "touch"));
+      return started;
+    };
+    expect(run(10 - 40, 10 + 12)).toBe(true);
+    expect(run(10 + 12, 10 - 40)).toBe(false);
+  });
+  it("DA-L3-1 : la fonction d'abandon retire les écouteurs, rend la capture, n'appelle plus finish", () => {
+    const s = source();
+    const g = { move: vi.fn(), finish: vi.fn() };
+    const down = ev("pointerdown", 10, 10);
+    Object.defineProperty(down, "currentTarget", { value: s });
+    const abort = startPointerGesture(down, g);
+    expect(abort).toBeTypeOf("function");
+    s.dispatchEvent(ev("pointermove", 30, 10));
+    expect(g.move).toHaveBeenCalledTimes(1);
+    abort!();
+    expect(s.releasePointerCapture).toHaveBeenCalledWith(1);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    s.dispatchEvent(ev("pointermove", 50, 10));
+    s.dispatchEvent(ev("pointerup", 50, 10));
+    expect(g.move).toHaveBeenCalledTimes(1);
+    expect(g.finish).not.toHaveBeenCalled();
+    abort!();
+    expect(s.releasePointerCapture).toHaveBeenCalledTimes(1);
+  });
 });

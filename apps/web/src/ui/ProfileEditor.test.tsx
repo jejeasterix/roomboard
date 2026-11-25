@@ -466,6 +466,44 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     expect(q('[data-edit-item="hand"] button[data-edit="up"]').getAttribute("aria-label")).toBe("Monter Main");
   });
 
+  it("D-DS1 : Importer et Exporter portent l'icône et le texte visible", () => {
+    const { q } = setup();
+    for (const [name, text, icon] of [["import", "Importer", "import"], ["export", "Exporter", "export"]] as const) {
+      const b = q<HTMLButtonElement>(`button[data-edit="${name}"]`);
+      expect(b.textContent?.trim()).toBe(text);
+      expect(b.querySelector(`svg[data-icon="${icon}"]`)).not.toBeNull();
+    }
+  });
+
+  it("L3-15 (relecture) : annonce identique redite : vidée aussitôt, reposée au tour suivant", async () => {
+    const { q, container } = setup();
+    const first = rowIds(container)[0]!;
+    const g = q<HTMLButtonElement>(grip(first));
+    fireEvent.keyDown(g, { key: "ArrowUp" });
+    const said = q('[data-edit="announce"]').textContent!;
+    expect(said).not.toBe("");
+    fireEvent.keyDown(q(grip(first)), { key: "ArrowUp" });
+    expect(q('[data-edit="announce"]').textContent).toBe("");
+    await tick();
+    expect(q('[data-edit="announce"]').textContent).toBe(said);
+  });
+
+  it("L3-13 (relecture) : éditeur démonté pendant un tri : le lâcher qui suit n'écrit rien", () => {
+    const { q, container, preview, unmount } = setup();
+    const restore = layoutRows();
+    try {
+      const y0 = 100 + rowIds(container).indexOf("text") * 48 + 24;
+      const g = q<HTMLButtonElement>(grip("text"));
+      g.dispatchEvent(pointer("pointerdown", y0));
+      for (let y = y0 - 8; y >= 110; y -= 8) g.dispatchEvent(pointer("pointermove", y));
+      unmount();
+      g.dispatchEvent(pointer("pointerup", 110));
+      expect(preview).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
   it("L3-15 : poignée au clavier : Flèche haut = un cran, focus gardé, annonce « Main : rang 3 sur N », aide liée", async () => {
     const { q, container } = setup();
     q<HTMLButtonElement>(grip("hand")).focus();
