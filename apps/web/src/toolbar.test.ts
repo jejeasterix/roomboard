@@ -121,9 +121,12 @@ describe("profil de barre (T83, usage § 8)", () => {
     expect(errs(json)).toContain(`toolbars[0].id : « ${name} » est réservé à la grille (${RESERVED_BAR_IDS.join(", ")})`);
   });
 
-  it("RESERVED_BAR_IDS égale les noms de cases fixes de layoutFor", () => {
-    const names = new Set(layoutFor([]).areas.replace(/"/g, "").split(/\s+/));
-    expect([...RESERVED_BAR_IDS].sort()).toEqual([...names].sort());
+  it("RESERVED_BAR_IDS couvre les noms de cases fixes de layoutFor ; tabs reste réservé (design-l2 L2-14)", () => {
+    const names = [...new Set(layoutFor([]).areas.replace(/"/g, "").split(/\s+/))];
+    expect(names).toEqual(["stage"]); // L2-14 : la grille ne garde que les bandes
+    for (const n of names) expect(RESERVED_BAR_IDS, n).toContain(n);
+    // îlot des onglets (design-l2 L2-14) : plus une case de la grille, mais l'id reste refusé (format .rbprofile inchangé)
+    expect(RESERVED_BAR_IDS).toContain("tabs");
   });
 
   it("dock, kind et buttonSize invalides : erreurs", () => {
