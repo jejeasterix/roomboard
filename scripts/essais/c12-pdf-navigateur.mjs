@@ -9,7 +9,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, stageBox, stageMouse } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
 import { pdfPages, readLibs, readPdf } from "./fabriques/pdf.mjs";
 
 const LABEL = "C12 PDF";
@@ -89,7 +89,7 @@ async function scenario(page, url, { captures, tmp, requests }) {
   check(true, "S1 : page 2 annotée d'un trait");
 
   // Export, relu en Node.
-  const exported = await download(() => page.click(item("export-pdf")), "export.pdf");
+  const exported = await download(() => clickItem(page, "export-pdf"), "export.pdf");
   const names = await page.evaluate(() => window.__downloadNames);
   const proposed = (names.at(-1) ?? "").normalize("NFC");
   check(proposed === "essai-3-pages annoté.pdf", `S1 : « Exporter en PDF… » propose « ${proposed} »`);

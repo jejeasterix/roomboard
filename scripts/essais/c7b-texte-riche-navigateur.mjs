@@ -214,12 +214,12 @@ async function scenario(page, url, { captures, tmp, cdp }) {
   check(await page.isEnabled('button[data-format="bold"]'), "S1 : la rangée Format est active dans la cellule");
   const boxCell = await stageBox(page);
   check(sameBox(boxTable, boxCell) && boxCell.height >= 640, `la boîte de #stage est immobile à l'ouverture de la cellule (${Math.round(boxCell.width)} × ${Math.round(boxCell.height)} px, ≥ 640)`);
-  const bars = await page.$$eval("[data-toolbar]", (els) => els.filter((e) => e.getBoundingClientRect().height > 0).map((e) => e.getAttribute("data-toolbar")));
+  const bars = await page.$$eval("[data-toolbar]", (els) => els.filter((e) => e.getBoundingClientRect().height > 0 && e.getAttribute("data-dock") !== "floating").map((e) => e.getAttribute("data-toolbar")));
   for (const id of bars) {
     const { apart } = await noOverlap(page, `[data-toolbar="${id}"]`);
-    check(apart, `la barre « ${id} » ne recouvre pas #stage, cellule ouverte`);
+    check(apart, `la barre en bande « ${id} » ne recouvre pas #stage, cellule ouverte`);
   }
-  check(bars.length > 0, `barres visibles mesurées : ${bars.join(", ")}`);
+  check(bars.length > 0 || (await page.locator(".rb-island").count()) > 0, `barres en bande mesurées : ${bars.join(", ") || "aucune, profil en îlots (design-l2)"}`);
   await page.keyboard.type("aa");
   await key("ArrowLeft");
   await key("Control+b");

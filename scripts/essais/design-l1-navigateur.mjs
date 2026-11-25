@@ -168,7 +168,7 @@ async function sizes(page) {
   await page.waitForSelector("[data-profiles]", { timeout: 15000 });
   await page.click('[data-profile="defaut"]');
   await frames(page);
-  check((await page.locator(`${OUTILS}[data-dock="top"]`).count()) === 1, "retour au profil par défaut");
+  check((await page.locator(`${OUTILS}[data-dock="floating"]`).count()) === 1, "retour au profil par défaut");
 }
 
 /** (5) Appui long au doigt (S2), contexte tactile, séance CDP : infobulle, clic au relâcher, aucun menu contextuel. */

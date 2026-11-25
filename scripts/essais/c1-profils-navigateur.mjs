@@ -124,7 +124,7 @@ async function scenario(page, url, { captures, tmp }) {
   await chooseProfile("simple");
   check((await count(`${OUTILS}[data-dock="left"]`)) === 1, "profil simple choisi : barre d'outils à gauche");
   await chooseProfile("defaut");
-  check((await count(`${OUTILS}[data-dock="top"]`)) === 1, "retour au profil par défaut : barre en haut");
+  check((await count(`${OUTILS}[data-dock="floating"]`)) === 1, "retour au profil par défaut : barre en îlot");
   check((await presets()) === 3, "stylo actif : trois préréglages dans la barre (button[data-preset])");
 
   // 2. S1 : l'éditeur, sur un brouillon.
@@ -184,7 +184,7 @@ async function scenario(page, url, { captures, tmp }) {
   const d5 = dialogs.length;
   await command("reset-all");
   await waitDialog("confirm", d5);
-  await waitFor(`${OUTILS}[data-dock="top"]`);
+  await waitFor(`${OUTILS}[data-dock="floating"]`);
   check((await activeProfile()) === "defaut", "tout remis à zéro : defaut actif, barre en haut");
   await menu();
   check((await count('[data-profile="cm1"]')) === 0, "tout remis à zéro : cm1 absent du menu");
@@ -240,7 +240,7 @@ async function scenario(page, url, { captures, tmp }) {
   await ready();
   check((await activeProfile()) === "annotation", "annotation active après rechargement");
   check(
-    (await count(`${OUTILS}[data-dock="top"]`)) === 1 && ((await page.textContent("#etat")) ?? "") === "",
+    (await count(`${OUTILS}[data-dock="floating"]`)) === 1 && ((await page.textContent("#etat")) ?? "") === "",
     "annotation au navigateur : tableau ordinaire, #etat vide",
   );
   check(dialogs.length === d10, "annotation au navigateur : aucune boîte");

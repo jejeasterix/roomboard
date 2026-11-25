@@ -100,6 +100,38 @@ export function inkIn(page, box, opts = {}) {
 export const VIEWPORT = { width: 1280, height: 900 };
 /** Bouton d'un élément de barre (CL5b-11). */
 export const item = (id) => `button[data-item="${id}"]`;
+/** design-l2 (L2-26) : ouvre le menu qui contient l'élément `id` s'il est dans une liste de menu fermée ; sinon rien. */
+export async function openMenuOf(page, id) {
+  const sel = item(id);
+  const list = page.locator(`[data-menu-list]:has(${sel})`);
+  if ((await list.count()) === 0 || (await list.first().isVisible())) return;
+  await page.click(`[data-toolbar]:has(${sel}) [data-menu-toggle]`);
+  await list.first().waitFor({ state: "visible", timeout: 15000 });
+}
+/** design-l2 (L2-26) : clic sur l'élément `id`, menu ouvert d'abord s'il le faut (fichier, export, Grille, Réglages). */
+export async function clickItem(page, id) {
+  await openMenuOf(page, id);
+  await page.click(item(id));
+}
+/** design-l2 : rectangles des îlots visibles (`.rb-island`), px de page, avec leur `data-island`. */
+export function islandBoxes(page) {
+  return page.$$eval(".rb-island", (els) =>
+    els
+      .map((e) => {
+        const r = e.getBoundingClientRect();
+        return { id: e.getAttribute("data-island"), x: r.x, y: r.y, width: r.width, height: r.height };
+      })
+      .filter((b) => b.width > 0 && b.height > 0),
+  );
+}
+/** design-l2 : paires d'îlots qui se chevauchent (tolérance 0,5 px), « a/b ». */
+export function clashes(boxes) {
+  const out = [];
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) if (!apart(boxes[i], boxes[j])) out.push(`${boxes[i].id}/${boxes[j].id}`);
+  }
+  return out;
+}
 /** Rectangle de #stage (px de page) ; Echec si absent ou plus bas que `minHeight`. */
 export async function stageBox(page, minHeight = 640) {
   const b = await page.locator("#stage").boundingBox();
