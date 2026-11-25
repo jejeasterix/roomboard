@@ -266,6 +266,7 @@ function fakeAnnotationUi(start = false, activateOnEnter = true) {
     exit: vi.fn(async () => set({ active: false })),
     close: vi.fn(async () => true),
     toggle: vi.fn(async () => undefined),
+    pointer: vi.fn(async () => undefined),
     nextScreen: vi.fn(async () => undefined),
     freeze: vi.fn(async () => undefined),
     send: vi.fn(async () => undefined),

@@ -40,6 +40,18 @@ export function viewMatrix(cam: Camera, viewWidth: number): Matrix {
   return [s * cam.zoom, 0, 0, s * cam.zoom, s * cam.tx, s * cam.ty];
 }
 
+/** design-l4 (L4-12) : cadre violet de la fenêtre `annotate`, élément du DOM (jamais un élément du document : il
+ *  n'entre ni dans l'encre ni dans la capture, L4-15) ; rend la fonction qui le montre ou le cache (`html[data-cadre]`). */
+export function mountAnnotationFrame(doc: Document): (on: boolean) => void {
+  const el = doc.createElement("div");
+  el.className = "rb-annot-frame";
+  el.setAttribute("aria-hidden", "true");
+  doc.body.append(el);
+  return (on) => {
+    doc.documentElement.dataset["cadre"] = on ? "1" : "0";
+  };
+}
+
 /** Vue de barre publiée : les champs de `ToolbarView` que l'état du moteur porte, sans la sélection ni le tableau. */
 export function viewOf(s: EngineState): ToolbarView {
   return {
@@ -72,6 +84,8 @@ export interface AnnotationPageDeps {
   cursor(): Promise<readonly [number, number] | null>;
   /** `annotation_ignore`. */
   ignore(on: boolean): Promise<void>;
+  /** design-l4 (L4-12, L4-13) : cadre violet montré (vrai) ou caché, appliqué à chaque document reçu ; absent : rien. */
+  frame?(on: boolean): void;
   readonly every?: (ms: number, cb: () => void) => () => void;
 }
 
@@ -189,6 +203,7 @@ export function createAnnotationPage(d: AnnotationPageDeps): AnnotationPage {
       console.warn("RoomBoard : document d'annotation illisible (base64)");
       return;
     }
+    d.frame?.(p?.frame !== false);
     const gen = ++loadGen;
     busy = true;
     try {

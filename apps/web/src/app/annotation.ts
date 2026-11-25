@@ -54,7 +54,7 @@ export interface AnnotationDeps<T> {
   /** Rang (1 = première) de la page montrée de l'onglet actif. */
   pageNumber(): number;
   say: Notify;
-  /** Côté et épaisseur (px CSS) de la première barre `tools`, mesurés dans la page. */
+  /** Côté et épaisseur (px CSS) de la barre montrée en annotation (`annotationBarOf`), mesurés dans la page. */
   bar(): { readonly dock: Dock; readonly thickness: number };
   profile(): Profile;
   readonly screens?: number;
@@ -73,6 +73,11 @@ export interface AnnotationDeps<T> {
   originKind?(id: string | null): "board" | "annotation" | null;
   /** C11b (P18) : `annotation_support.transparent` ; absent : vrai. */
   readonly transparent?: boolean;
+  /** design-l4 (L4-13) : cadre violet de l'appareil, lu à chaque entrée et à chaque rechargement ; absent : la charge
+   *  ne porte pas le champ (`annotate` affiche le cadre). */
+  frame?(): boolean;
+  /** design-l4 (L4-16) : envoi réussi, page `page` (1 = première) ; absent : l'avis reste `say(sentToBoardMessage)`. */
+  sent?(page: number): void;
 }
 
 /** Réponse ou null après `ms` (minuteur toujours retiré). */
@@ -142,6 +147,14 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     // C11b (P15) : en figé, la fenêtre opaque ne laisse jamais passer le clic ; Sélection y sélectionne des objets.
     if (st.active && !(st.frozen === true && mode === "mouse")) await d.windows.pointer(mode);
   };
+  /** L4-13 : champ `frame` de la charge, seulement si l'appareil le donne. */
+  const frameOf = (): { readonly frame?: boolean } => (d.frame === undefined ? {} : { frame: d.frame() });
+  /** L4-9 : la souris passe par Sélection, le dessin revient au dernier outil de dessin (P8) ; sans effet si `mode` est
+   *  déjà le mode présent (double clic sur un segment). Appelée dans la file. */
+  const pointTo = (mode: PointerMode): void => {
+    if (!st.active || st.pointer === mode) return;
+    ctl.command({ kind: "setTool", tool: mode === "mouse" ? "select" : lastDraw });
+  };
 
   async function doEnter(): Promise<void> {
     if (st.active) return;
@@ -176,7 +189,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         frozen = true;
       }
       const document = await d.encodeTab(tab);
-      const screen = await d.windows.enter({ ...place, document, profile: d.profile(), opaque: frozen });
+      const screen = await d.windows.enter({ ...place, document, profile: d.profile(), opaque: frozen, ...frameOf() });
       set({ screen, frozen });
       sendSession(lastDraw);
       await d.windows.pointer("draw");
@@ -241,11 +254,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
       });
       return true;
     },
-    toggle: () =>
-      serial(async () => {
-        if (!st.active) return;
-        ctl.command({ kind: "setTool", tool: st.pointer === "draw" ? "select" : lastDraw });
-      }),
+    toggle: () => serial(async () => pointTo(st.pointer === "draw" ? "mouse" : "draw")),
+    pointer: (mode) => serial(async () => pointTo(mode)),
     nextScreen: () =>
       serial(async () => {
         if (!st.active || st.screens <= 1) return;
@@ -293,7 +303,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
           }
           const tab = await d.annotationTab();
           if (tab === null) return;
-          await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive });
+          await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive, ...frameOf() });
           set({ frozen: !toLive });
           sendSession(st.pointer === "mouse" ? "select" : lastDraw);
           await d.windows.pointer(toLive ? st.pointer : "draw");
@@ -340,7 +350,9 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         const r = d.sendCapture === undefined ? null : await d.sendCapture(request);
         if (r === null) return; // rien inséré : l'avis est déjà dit (rien à envoyer, 12 onglets)
         if (failure !== null) await d.say(captureFailedMessage(failure));
-        await d.say(sentToBoardMessage(r.page), "info");
+        // design-l4 (L4-16) : bandeau non modal si l'application le donne ; sinon la boîte d'information (C11b P12).
+        if (d.sent !== undefined) d.sent(r.page);
+        else await d.say(sentToBoardMessage(r.page), "info");
       }),
     onTool(tool) {
       if (tool !== "select") lastDraw = tool;
@@ -381,7 +393,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
 
 /**
  * Hôte de barre en annotation (P21) : outils, préréglages, pot, format et actions de `remoteActions` partent vers
- * `annotate` ; les actions de la fenêtre principale (`ANNOTATION_MAIN_ACTIONS`), le dépôt et le mode restent locaux ;
+ * `annotate` ; les actions de la fenêtre principale (`ANNOTATION_MAIN_ACTIONS`), le dépôt, le mode et la commande
+ * Dessin / Souris restent locaux ;
  * le reste (grisé dans la barre) est ignoré.
  */
 export function createRemoteToolbarHost(send: (m: AnnotationCommand) => void, local: ToolbarHost, remoteActions: ReadonlySet<string>): ToolbarHost {
@@ -396,6 +409,7 @@ export function createRemoteToolbarHost(send: (m: AnnotationCommand) => void, lo
     textFormat: (action) => send({ kind: "textFormat", action }),
     dropFiles: (files, at) => local.dropFiles(files, at),
     setMode: (mode) => local.setMode(mode),
+    pointer: (mode) => local.pointer?.(mode),
     tableFill: () => undefined,
     selection: () => undefined,
     imagePanel: () => undefined,

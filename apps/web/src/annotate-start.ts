@@ -3,7 +3,7 @@
  * page d'annotation branchée sur les événements de la coque. Ni fichier ni boîte : le document arrive en base64 et
  * repart en base64 (DA1) ; aucun point d'encre ne sort de la page (GC1).
  */
-import { createAnnotationPage } from "./app/annotation-page";
+import { createAnnotationPage, mountAnnotationFrame } from "./app/annotation-page";
 import { createBoardSession, type SessionShared } from "./app/board-session";
 import { createContainerIO } from "./app/container-io";
 import type { CoreFactory } from "./core/api";
@@ -27,6 +27,8 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
   const stages = document.createElement("main");
   stages.className = "rb-stages";
   root.append(stages);
+  // design-l4 (L4-12) : cadre violet de 3 px, élément du DOM de cette fenêtre ; montré ou caché par chaque document reçu.
+  const frame = mountAnnotationFrame(document);
   const parsed = parseSettings(window.location.search);
   const measureCtx = document.createElement("canvas").getContext("2d");
   const measure = measureOrFallback(measureCtx);
@@ -58,6 +60,7 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
     makeSession: (doc, assets, opaque) => createBoardSession(doc, { ...shared, transparent: !opaque }, assets),
     cursor: () => ipc.invoke<[number, number] | null>("annotation_cursor"),
     ignore: (on) => ipc.invoke<void>("annotation_ignore", { ignore: on }),
+    frame,
   });
   window.addEventListener("keydown", (e) => {
     if (page.key(keyOf(e))) e.preventDefault();

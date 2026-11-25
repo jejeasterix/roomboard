@@ -77,6 +77,9 @@ html[data-fenetre="annotation"],
 html[data-fenetre="annotation"] body,
 html[data-fenetre="annotation"] #app { background: transparent; margin: 0; height: 100%; overflow: hidden; }
 html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; background: transparent; }
+/* design-l4 (L4-12, Q4) : cadre violet de la fenêtre annotate, 3 px au bord intérieur ; ne prend aucun clic ; montré par html[data-cadre="1"]. */
+.rb-annot-frame { display: none; position: fixed; inset: 0; z-index: 5; box-shadow: inset 0 0 0 3px var(--rf-violet-600); pointer-events: none; }
+html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-slot { min-width: 0; min-height: 0; overflow: auto; }
 .rb-head { display: flex; align-items: center; gap: 8px; }
 #etat { margin: 0 8px; color: #b91c1c; }

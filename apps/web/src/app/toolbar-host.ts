@@ -2,7 +2,7 @@ import type { FormatAction } from "../engine/rich-edit";
 import type { Engine } from "../engine/engine";
 import type { DroppedFile, Point } from "../platform/files";
 import type { FileCommand } from "../platform/controller";
-import type { AnnotationControl, SendTarget } from "../platform/annotation-port";
+import type { AnnotationControl, PointerMode, SendTarget } from "../platform/annotation-port";
 import { messageOf } from "../platform/controller";
 import { fillChoices, isKnownTool, presetsOf, TOOL_TABLE, type Profile, type StartMode } from "../toolbar";
 
@@ -26,12 +26,15 @@ export interface ToolbarHost {
   selection(a: SelectionAction): void;
   /** C5 (I25) : bouton « Image » de la rangée Sélection : ouvre ou ferme le panneau de retouche. */
   imagePanel(): void;
+  /** design-l4 (L4-9) : segment de la commande Dessin / Souris ; absent (hôte partiel) : le segment rejoue l'action. */
+  pointer?(mode: PointerMode): void;
 }
 export interface HostTargets {
   /** C11a (P6, P8, P15, P22) : contrôleur d'annotation ; absent (web sans faux hôte, tests) : sans effet (PC9). */
   annotation?: Pick<AnnotationControl, "state" | "enter" | "exit" | "toggle" | "nextScreen"> & {
     freeze?(): Promise<void>;
     send?(to: SendTarget): Promise<void>;
+    pointer?(mode: PointerMode): Promise<void>;
   };
   engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat">;
   runFile(cmd: FileCommand): void;
@@ -125,6 +128,7 @@ export function createLocalToolbarHost(t: HostTargets, profile: () => Profile): 
     textFormat: (a) => t.engine().textFormat(a),
     selection: (a) => t.selection(a),
     imagePanel: () => t.toggle("image"),
+    pointer: (mode) => settle(t.annotation?.pointer?.(mode)),
     setMode(mode) {
       // U14, P22 : « Annotation du bureau » entre en annotation ; sans contrôleur, rien (repli silencieux sur le tableau).
       if (mode === "desktop-annotation") settle(t.annotation?.enter());

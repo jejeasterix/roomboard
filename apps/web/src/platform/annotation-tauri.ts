@@ -8,6 +8,7 @@ import {
   ANNOTATE_LABEL,
   ANNOTATION_EVENTS,
   captureFailureOf,
+  frameField,
   isViewport,
   READY_TIMEOUT_MS,
   type AnnotationSupport,
@@ -82,7 +83,7 @@ export function createTauriAnnotationWindows(ipc: AnnotationIpc, readyTimeoutMs:
       const screen = await ipc.invoke<number>("annotation_enter", placeArgs(o));
       await waitReady();
       await ipc.emitTo(ANNOTATE_LABEL, ANNOTATION_EVENTS.profile, o.profile);
-      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document), opaque: o.opaque === true });
+      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document), opaque: o.opaque === true, ...frameField(o) });
       return screen;
     },
     async place(o) {
@@ -92,7 +93,7 @@ export function createTauriAnnotationWindows(ipc: AnnotationIpc, readyTimeoutMs:
     async load(o) {
       await subscribed;
       await waitReady();
-      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document), opaque: o.opaque });
+      await ipc.emitTo<DocumentPayload>(ANNOTATE_LABEL, ANNOTATION_EVENTS.document, { base64: toBase64(o.document), opaque: o.opaque, ...frameField(o) });
     },
     async capture(o) {
       await subscribed;
