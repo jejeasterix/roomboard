@@ -451,7 +451,7 @@ describe("App (T95)", () => {
     expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
     expect(tabs[0]!.getAttribute("aria-selected")).toBe("false");
     second.setDirty(true);
-    expect(container.querySelectorAll("[data-tab]")[1]!.textContent).toContain("•");
+    expect(container.querySelectorAll("[data-tab]")[1]!.querySelector(".rb-tab-dirty")).not.toBeNull();
   });
 
   it("l'erreur du moteur s'affiche dans #etat", () => {
