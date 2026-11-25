@@ -465,14 +465,15 @@ export function appendToLastGroup(bar: Toolbar, item: ToolItem, groupId: string)
 }
 
 /**
- * Jamais enfermé hors du menu Profil (C1, P33) : dans les barres `tools`, un élément Profil masqué est montré
- * (avertissement) ; sans élément Profil sans capacité exigée, un élément est ajouté en fin de la première barre `tools`,
+ * Jamais enfermé hors du menu Profil (C1, P33) : dans toute barre de rôle autre qu'`annotation` (design-l2, L2-20 : la
+ * barre `panneaux` porte Profil), un élément Profil masqué est montré (avertissement) ; sans élément Profil sans
+ * capacité exigée, un élément est ajouté en fin de la première barre `tools`,
  * ou dans une barre `outils` ajoutée en haut s'il n'y en a aucune.
  */
 function ensureProfilesAccess(bars: readonly Toolbar[], ctx: Ctx): readonly Toolbar[] {
   let reachable = false;
   const shown = bars.map((b): Toolbar => {
-    if (b.role !== "tools") return b;
+    if (b.role === ANNOTATION_ROLE) return b;
     return {
       ...b,
       groups: b.groups.map((g) => ({
@@ -666,6 +667,10 @@ export function isAnnotationZone(it: ToolItem): boolean {
 
 /** design-l4 (L4-1, Q9) : rôle de la barre propre à l'annotation ; `parseProfile` accepte tout rôle, le schéma ne change pas. */
 export const ANNOTATION_ROLE = "annotation";
+/** design-l2 (L2-3, DA-L2-1) : rôles des îlots du tableau ; `parseProfile` accepte tout rôle, le schéma ne change pas. */
+export const MENU_ROLE = "menu";
+export const HISTORY_ROLE = "history";
+export const PANELS_ROLE = "panels";
 
 /**
  * design-l4 (L4-2) : barre montrée et mesurée en annotation, une seule règle pour `App.tsx` (rendu) et `main.ts`

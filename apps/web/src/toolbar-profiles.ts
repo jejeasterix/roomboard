@@ -1,4 +1,4 @@
-import { parseProfile, type Profile } from "./toolbar";
+import { HISTORY_ROLE, MENU_ROLE, PANELS_ROLE, parseProfile, type Profile } from "./toolbar";
 
 /**
  * Profils livrés (CL5b-9, C1 P9), figés ; une copie utilisateur de même `id` les remplace dans le magasin (U11, P5),
@@ -21,11 +21,11 @@ const tool = (id: string, label: string) => ({ id, kind: "tool", tool: id, label
 const action = (id: string, label: string) => ({ id, kind: "action", action: id, label });
 const sep = (id: string) => ({ id, kind: "separator", label: "" });
 
-/** `withEditOriginal` : « Modifier dans l'application d'origine » (C16, O19), absent du profil simple. */
-const pagesBar = (withEditOriginal = false) => ({
+/** design-l2 (L2-4, H1) : barre des pages en îlot ; `full` : actions d'insertion et d'export (profil simple, sans menu). */
+const pagesBar = (full: boolean) => ({
   id: "pages",
   role: "pages",
-  dock: "bottom",
+  dock: "floating",
   groups: [
     {
       id: "pages",
@@ -34,14 +34,55 @@ const pagesBar = (withEditOriginal = false) => ({
         action("page-next", "Page suivante"),
         action("page-add", "Ajouter une page"),
         action("page-remove", "Retirer la page"),
-        action("page-insert-file", "Insérer des pages…"),
-        ...(withEditOriginal ? [{ ...action("edit-original", "Modifier dans l'application d'origine"), requires: ["officeConverter"] }] : []),
-        action("export-pdf", "Exporter en PDF…"),
-        action("export-iwb", "Enregistrer une copie au format .iwb…"),
-        action("export-ubz", "Enregistrer une copie au format .ubz…"),
+        ...(full
+          ? [
+              action("page-insert-file", "Insérer des pages…"),
+              action("export-pdf", "Exporter en PDF…"),
+              action("export-iwb", "Enregistrer une copie au format .iwb…"),
+              action("export-ubz", "Enregistrer une copie au format .ubz…"),
+            ]
+          : []),
       ],
     },
   ],
+});
+
+/** design-l2 (L2-4) : îlot du menu (fichier, export, vue) ; « Modifier dans l'application d'origine » exige la capacité (C16, O19). */
+const menuBar = () => ({
+  id: "menu",
+  role: MENU_ROLE,
+  dock: "floating",
+  groups: [
+    { id: "fichier", items: [action("file-new", "Nouveau"), action("file-open", "Ouvrir"), action("file-import", "Importer"), action("file-save", "Enregistrer"), action("file-save-as", "Enregistrer sous")] },
+    {
+      id: "export",
+      items: [
+        sep("sep-5"),
+        action("page-insert-file", "Insérer des pages…"),
+        action("export-pdf", "Exporter en PDF…"),
+        action("export-iwb", "Enregistrer une copie au format .iwb…"),
+        action("export-ubz", "Enregistrer une copie au format .ubz…"),
+        { ...action("edit-original", "Modifier dans l'application d'origine"), requires: ["officeConverter"] },
+      ],
+    },
+    { id: "vue", items: [sep("sep-6"), action("grid", "Grille"), action("settings", "Réglages")] },
+  ],
+});
+
+/** design-l2 (L2-4) : îlot « Annuler et vue », en bas à gauche. */
+const historyBar = () => ({
+  id: "historique",
+  role: HISTORY_ROLE,
+  dock: "floating",
+  groups: [{ id: "historique", items: [action("undo", "Annuler"), action("redo", "Rétablir"), action("fit-page", "Ajuster la page")] }],
+});
+
+/** design-l2 (L2-4) : îlot « Bibliothèque et profil », en haut à droite ; porte l'accès au menu Profil (L2-20). */
+const panelsBar = () => ({
+  id: "panneaux",
+  role: PANELS_ROLE,
+  dock: "floating",
+  groups: [{ id: "panneaux", items: [action("library", "Bibliothèque"), action("profiles", "Profil")] }],
 });
 
 /** C11a (P6, P19) : éléments qui exigent la capacité (masqués sur le web, l'iPad et Android). */
@@ -98,21 +139,24 @@ const presets = () => ({
   ],
 });
 
-/** Barres du profil par défaut : une seule source pour `defaut` et `annotation` (P9). */
+/** Barres du profil par défaut : une seule source pour `defaut` et `annotation` (P9) ; design-l2 (L2-2) : toutes les
+ *  barres du tableau en îlots, la barre d'annotation reste une bande (L4-1, dernière de `toolbars`). */
 const defaultToolbars = () => [
   {
     id: "outils",
     role: "tools",
-    dock: "top",
+    dock: "floating",
     groups: [
-      { id: "dessin", items: [tool("pen", "Stylo"), tool("eraser", "Gomme"), action("eraser-mode", "Gomme : partielle"), tool("hand", "Main")] },
-      { id: "edition", items: [sep("sep-1"), tool("select", "Sélection"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
-      { id: "historique", items: [sep("sep-2"), action("undo", "Annuler"), action("redo", "Rétablir")] },
-      { id: "fichier", items: [sep("sep-3"), action("file-new", "Nouveau"), action("file-open", "Ouvrir"), action("file-import", "Importer"), action("file-save", "Enregistrer"), action("file-save-as", "Enregistrer sous")] },
-      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("library", "Bibliothèque"), action("profiles", "Profil"), action("settings", "Réglages"), annotationEntry()] },
+      { id: "navigation", items: [tool("select", "Sélection"), tool("hand", "Main")] },
+      { id: "dessin", items: [sep("sep-1"), tool("pen", "Stylo"), tool("eraser", "Gomme"), action("eraser-mode", "Gomme : partielle")] },
+      { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
+      { id: "bureau", items: [sep("sep-3"), annotationEntry()] },
     ],
   },
-  pagesBar(true),
+  menuBar(),
+  historyBar(),
+  panelsBar(),
+  pagesBar(false),
   defaultAnnotationBar(),
 ];
 
@@ -144,7 +188,7 @@ export const SIMPLE_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze
         { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), annotationEntry()] },
       ],
     },
-    pagesBar(),
+    pagesBar(true),
     simpleAnnotationBar(),
   ],
   presets: presets(),

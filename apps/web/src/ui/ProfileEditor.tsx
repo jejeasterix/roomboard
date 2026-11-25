@@ -48,6 +48,9 @@ import {
   annotationBarOf,
   BUTTON_SIZES,
   DOCKS,
+  HISTORY_ROLE,
+  MENU_ROLE,
+  PANELS_ROLE,
   isKnownItem,
   presetsOf,
   START_MODES,
@@ -112,7 +115,14 @@ const START_CHOICES: Readonly<Record<StartMode, { readonly label: string; readon
 };
 const START_OPTIONS: readonly RadioOption<StartMode>[] = START_MODES.map((m) => ({ value: m, ...START_CHOICES[m] }));
 const SIZE_OPTIONS: readonly RadioOption<ButtonSize>[] = BUTTON_SIZES.map((s) => ({ value: s, label: `${SIZE_LABELS[s]} · ${BUTTON_PX[s]}` }));
-const ROLE_LABELS: Readonly<Record<string, string>> = { tools: "Barre d'outils", pages: "Barre des pages", [ANNOTATION_ROLE]: "Barre d'annotation" };
+const ROLE_LABELS: Readonly<Record<string, string>> = {
+  tools: "Barre d'outils",
+  pages: "Barre des pages",
+  [ANNOTATION_ROLE]: "Barre d'annotation",
+  [MENU_ROLE]: "Menu",
+  [HISTORY_ROLE]: "Annuler et vue",
+  [PANELS_ROLE]: "Bibliothèque et profil",
+};
 const UNKNOWN = "inconnu (version plus récente)";
 /** L3-12 : lignes dont libellé et icône viennent d'ailleurs que de l'élément (renvois, aucune copie). */
 const ROW_SUMMARY: Partial<Record<ActionId, { readonly label: string; readonly icon: string }>> = { "annotation-pointer": POINTER_SUMMARY };
