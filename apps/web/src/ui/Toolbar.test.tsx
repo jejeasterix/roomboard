@@ -487,20 +487,23 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
   });
   it("design-l4 (L4-11) : zone de dépôt à icône drop, libellé en rb-sr, sans title ; infobulle au survol", () => {
     vi.useFakeTimers();
-    const zone: ToolItem = { id: "depot-annotation", kind: "dropzone", label: "Déposer ici", requires: [], rest: {} };
-    const { container } = setup(mkBar([zone]));
-    const el = container.querySelector<HTMLElement>('[data-item="depot-annotation"]')!;
-    expect(el.classList.contains("rb-drop")).toBe(true);
-    expect(el.querySelector("svg.rb-icon")?.getAttribute("data-icon")).toBe("drop");
-    expect(el.querySelector(".rb-sr")?.textContent).toBe("Déposer ici");
-    expect(el.textContent).toBe("Déposer ici");
-    expect(el.hasAttribute("title")).toBe(false);
-    fireEvent.pointerEnter(el, { pointerType: "mouse" });
-    vi.advanceTimersByTime(TIP_HOVER_MS);
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Déposer ici");
-    fireEvent.pointerLeave(el, { pointerType: "mouse" });
-    expect(document.querySelector('[role="tooltip"]')).toBeNull();
-    vi.useRealTimers();
+    try {
+      const zone: ToolItem = { id: "depot-annotation", kind: "dropzone", label: "Déposer ici", requires: [], rest: {} };
+      const { container } = setup(mkBar([zone]));
+      const el = container.querySelector<HTMLElement>('[data-item="depot-annotation"]')!;
+      expect(el.classList.contains("rb-drop")).toBe(true);
+      expect(el.querySelector("svg.rb-icon")?.getAttribute("data-icon")).toBe("drop");
+      expect(el.querySelector(".rb-sr")?.textContent).toBe("Déposer ici");
+      expect(el.textContent).toBe("Déposer ici");
+      expect(el.hasAttribute("title")).toBe(false);
+      fireEvent.pointerEnter(el, { pointerType: "mouse" });
+      vi.advanceTimersByTime(TIP_HOVER_MS);
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Déposer ici");
+      fireEvent.pointerLeave(el, { pointerType: "mouse" });
+      expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("design-l4 (L4-4) : rangées contextuelles sur une barre de rôle annotation comme sur tools ; aucune sur un autre rôle", () => {
     const ann = setup({ ...mkBar([tool("pen")]), role: "annotation" }, NO_CAPS, "m", PEN);

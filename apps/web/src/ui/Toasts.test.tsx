@@ -54,4 +54,10 @@ describe("bandeau (Toasts, design-l4, L4-16)", () => {
       expect(container.querySelector<HTMLElement>(".rb-toast")!.style.inlineSize).toBe(attendu);
     }
   });
+  it("bandeau (Toasts) : conteneur caché (largeur mesurée 0), aucune largeur posée", () => {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(rect(0));
+    const { container } = render(() => <Toasts />);
+    showToast({ text: "Envoyé au tableau :", strong: "page 2" });
+    expect(container.querySelector<HTMLElement>(".rb-toast")!.style.inlineSize).toBe("");
+  });
 });

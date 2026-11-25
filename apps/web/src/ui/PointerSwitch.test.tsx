@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ToolbarHost } from "../app/toolbar-host";
 import type { ToolItem } from "../toolbar";
 import type { ToolbarView } from "./item-state";
+import { ACTION_STATE } from "./item-state";
 import { PointerSwitch } from "./PointerSwitch";
 
 afterEach(cleanup);
@@ -63,5 +64,18 @@ describe("PointerSwitch (design-l4, L4-8)", () => {
   it("PointerSwitch (design-l4) : hors annotation, les deux segments sont grisés", () => {
     const { seg } = setup(VIEW);
     expect([seg("draw").disabled, seg("mouse").disabled]).toEqual([true, true]);
+  });
+  it("PointerSwitch (design-l4) : le conteneur est un groupe nommé « Pointeur »", () => {
+    const { container } = setup(on("draw"));
+    const g = container.querySelector(".rb-seg")!;
+    expect([g.getAttribute("role"), g.getAttribute("aria-label")]).toEqual(["group", "Pointeur"]);
+  });
+  it("PointerSwitch (design-l4) : en souris, « Souris » enfoncé ; libellé et icône identiques à ceux d'ACTION_STATE en mode dessin", () => {
+    const { seg, icon } = setup(on("mouse"));
+    expect(seg("mouse").getAttribute("aria-pressed")).toBe("true");
+    expect(seg("mouse").textContent).toBe("Souris");
+    expect(icon("mouse")).toBe("pointer");
+    const vrai = ACTION_STATE["annotation-pointer"]!(on("draw"));
+    expect([seg("mouse").textContent, icon("mouse")]).toEqual([vrai.label, vrai.icon]);
   });
 });

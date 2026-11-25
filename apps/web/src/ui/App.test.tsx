@@ -613,6 +613,21 @@ describe("App — profils (C1)", () => {
     expect(exit?.textContent).toBe("Quitter l'annotation");
     expect(exit?.getAttribute("aria-pressed")).toBe("true");
   });
+  it("design-l4 (fin de lot) : contrôleur distant sans pointer : le segment inactif rejoue l'action sur l'hôte distant", async () => {
+    const a = fakeAnnotationUi();
+    const ui: AnnotationUi = {
+      ...a.ui,
+      remote: (local) => {
+        const { pointer: _sans, ...reste } = a.ui.remote(local);
+        return { ...reste, runAction: (id) => void a.remoteCalls.push(`runAction ${id}`) };
+      },
+    };
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: ui });
+    await a.control.enter();
+    a.view({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, annotation: { active: true, pointer: "draw", screens: 1 } });
+    click(container.querySelector('[data-segment="mouse"]'));
+    expect(a.remoteCalls).toEqual(["runAction annotation-pointer"]);
+  });
   it("design-l4 T6 : S2 : barre d'annotation montrée en annotation ; au tableau, jamais de barre annotation (L4-2, L4-3)", async () => {
     const a = fakeAnnotationUi();
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });

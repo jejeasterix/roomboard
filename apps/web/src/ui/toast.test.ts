@@ -21,9 +21,12 @@ describe("bandeau (toast.ts, design-l4, L4-16)", () => {
     vi.useFakeTimers();
     showToast({ text: "a" });
     vi.advanceTimersByTime(3000);
-    showToast({ text: "b" }, 1000);
+    showToast({ text: "b" }, 2000);
     expect(currentToast()).toEqual({ text: "b" });
-    vi.advanceTimersByTime(999);
+    // t = 4500 : le minuteur de « a » (4000) aurait déjà effacé « b » s'il n'était pas arrêté
+    vi.advanceTimersByTime(1500);
+    expect(currentToast()).toEqual({ text: "b" });
+    vi.advanceTimersByTime(499);
     expect(currentToast()).toEqual({ text: "b" });
     vi.advanceTimersByTime(1);
     expect(currentToast()).toBeNull();

@@ -107,4 +107,19 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(sel)).toMatch(/background: var\(--rf-gray-300\);/);
     expect(rule(".rb-seg")).toContain("background: var(--rf-gray-50);");
   });
+  it("design-l4 (fin de lot) : pastille de préréglage sans bordure grise hors charte, liseré navy en ombre interne, même taille extérieure", () => {
+    const sw = rule(".rb-swatch");
+    expect(sw).not.toContain("#52525b");
+    expect(sw).toContain("border: none;");
+    expect(sw).toMatch(/box-shadow: inset 0 0 0 1px color-mix\(in srgb, var\(--rf-navy-500\) \d+%, transparent\);/);
+    // content-box sans bordure : +2 px compensent l'ancienne bordure de 1 px de chaque côté (taille extérieure inchangée)
+    expect(sw).toContain("inline-size: calc(var(--rb-btn) / 3 + 2px);");
+    expect(sw).toContain("block-size: calc(var(--rb-btn) / 3 + 2px);");
+    expect(sw).not.toContain("box-sizing: border-box");
+  });
+  it("design-l4 (fin de lot) : zone de dépôt à bordure pointillée de 1 px entière (1.5px était rendu à 1 px)", () => {
+    const drop = rule(".rb-drop");
+    expect(drop).toContain("border: 1px dashed var(--rf-gray-500);");
+    expect(drop).not.toContain("1.5px");
+  });
 });
