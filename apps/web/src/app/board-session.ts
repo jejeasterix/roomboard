@@ -12,7 +12,7 @@ import { displaySize } from "../core/image-params";
 import type { Camera } from "../engine/camera";
 import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
 import { createMiddlePan } from "../engine/input/middle-pan";
-import { withLinearPrediction } from "../engine/input/predict";
+import { type PredictionSource, withPrediction } from "../engine/input/predict";
 import { createRouter, SECOND_FINGER_MS, type RouterOptions } from "../engine/input/router";
 import { createSampler, type Sampler, type SamplerOptions } from "../engine/input/sampler";
 import type { Support } from "../engine/input/stats";
@@ -27,6 +27,7 @@ import type { ModelOrbit } from "../engine/tools/model-orbit";
 import { trailStyleFor } from "../engine/render/trail-style";
 import {
   echelonsTag,
+  predictionSource,
   resolvePrediction,
   type EffectiveEchelons,
   type ParsedSettings,
@@ -358,12 +359,14 @@ async function buildBoardSession(
     },
     secondFingerMs: SECOND_FINGER_MS,
   };
-  // Échelon 2 : prédiction TS, lue à chaque image (auto : seulement sans prédits natifs).
+  // Échelon 2 : `prediction` dit si la prédiction TS est effective (tag et libellé ; auto : seulement sans prédits
+  // natifs). OF73 : `source` (TS, natifs bornés, aucun) est lue à chaque image ; `off` coupe les natifs, la souris n'en a jamais.
   const prediction = (): boolean => resolvePrediction(settings.get().prediction, support.predicted);
+  const source = (): PredictionSource => predictionSource(settings.get().prediction, support.predicted);
   const router = createRouter(routerOptions, {
     currentTool: () => engine.tool(),
     panHeld: () => engine.panHeld(),
-    gestures: withLinearPrediction(engine.sink, prediction),
+    gestures: withPrediction(engine.sink, source),
     view: engine.view,
   });
   undo.push(() => sampler.dispose());

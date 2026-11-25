@@ -6,6 +6,7 @@ import {
   echelonsTag,
   needsReload,
   parseSettings,
+  predictionSource,
   resolvePrediction,
   SETTING_KEYS,
   settingLabel,
@@ -108,6 +109,14 @@ describe("réglages du moteur (lot 3b)", () => {
     expect(resolvePrediction("off", false)).toBe(false);
   });
 
+  it("predictionSource : off coupe tout, natifs compris ; auto prend les natifs s'il y en a, sinon TS", () => {
+    expect(predictionSource("off", true)).toBe("none");
+    expect(predictionSource("off", false)).toBe("none");
+    expect(predictionSource("on", true)).toBe("linear");
+    expect(predictionSource("auto", true)).toBe("native");
+    expect(predictionSource("auto", false)).toBe("linear");
+  });
+
   it("cycleSetting : auto → on → off → auto ; les autres basculent", () => {
     const a = cycleSetting(DEFAULT_SETTINGS, "prediction");
     const b = cycleSetting(a, "prediction");
@@ -128,8 +137,10 @@ describe("réglages du moteur (lot 3b)", () => {
     expect(echelonsTag(OFF)).toBe("2:off,3:off,4:off");
     expect(echelonsTag({ prediction: true, inkTrail: "absent", webgl: "repli" })).toBe("2:on,3:absent,4:repli");
     const s = DEFAULT_SETTINGS;
-    expect(settingLabel("prediction", s, OFF)).toBe("É2 prédiction : auto (éteinte)");
-    expect(settingLabel("prediction", { ...s, prediction: "on" }, { ...OFF, prediction: true })).toBe("É2 prédiction : allumée");
+    expect(settingLabel("prediction", s, OFF)).toBe("É2 prédiction : auto (native, bornée)");
+    expect(settingLabel("prediction", s, { ...OFF, prediction: true })).toBe("É2 prédiction : auto (TS)");
+    expect(settingLabel("prediction", { ...s, prediction: "on" }, { ...OFF, prediction: true })).toBe("É2 prédiction : TS");
+    expect(settingLabel("prediction", { ...s, prediction: "off" }, OFF)).toBe("É2 prédiction : aucune (native comprise)");
     expect(settingLabel("inkTrail", s, OFF)).toBe("É3 traînée : éteinte");
     expect(settingLabel("inkTrail", s, { ...OFF, inkTrail: "absent" })).toBe("É3 traînée : sans effet (navigator.ink absent)");
     expect(settingLabel("webgl", s, OFF)).toBe("É4 WebGL2 : éteint");

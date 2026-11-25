@@ -12,7 +12,8 @@ export type DrawTool = "pen" | "eraser" | "select" | ShapeKind | "text" | "table
 export type CloseReason = "end" | "cancel" | "abort";
 
 export interface GestureSink {
-  begin(pointerId: number, tool: DrawTool, samples: readonly InputSample[]): void;
+  /** `pointerType` : celui du PointerEvent (`mouse`, `pen`, `touch`), donné par le routeur ; lu par la prédiction (OF73). */
+  begin(pointerId: number, tool: DrawTool, samples: readonly InputSample[], pointerType?: string): void;
   extend(pointerId: number, samples: readonly InputSample[], predicted: readonly InputSample[]): void;
   close(pointerId: number, how: CloseReason): void;
 }

@@ -51,6 +51,23 @@ function setupTool(tool: () => ToolChoice, held: () => boolean = () => false, op
 }
 
 describe("createRouter (D18)", () => {
+  it("OF73 : begin reçoit le type de pointeur (souris, stylet, doigt)", () => {
+    const types: (string | undefined)[] = [];
+    const gestures: GestureSink = {
+      begin: (_id, _t, _samples, pointerType) => types.push(pointerType),
+      extend: () => {},
+      close: () => {},
+    };
+    const view: ViewSink = { panBy: () => {}, zoomAt: () => {} };
+    const router = createRouter(DEFAULT_ROUTER_OPTIONS, { currentTool: () => "pen", gestures, view });
+    router.handle(ev("start", 1, "mouse", [s(0, 0, 0)]));
+    router.handle(ev("end", 1, "mouse", []));
+    router.handle(ev("start", 2, "touch", [s(0, 0, 10)]));
+    router.handle(ev("end", 2, "touch", []));
+    router.handle(ev("start", 3, "pen", [s(0, 0, 20)]));
+    expect(types).toEqual(["mouse", "touch", "pen"]);
+  });
+
   it("stylet : trace avec l'outil courant", () => {
     const { router, log } = setup();
     router.handle(ev("start", 1, "pen", [s(0, 0, 0)]));
