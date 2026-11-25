@@ -61,6 +61,34 @@ export function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Eleme
   );
 }
 
+type Tip = ReturnType<typeof createTip>;
+
+/** Gestionnaires de pointeur de l'infobulle (survol à la souris, appui long au toucher), communs à tout élément à infobulle. */
+export function tipPointerHandlers(tip: Tip) {
+  return {
+    onPointerEnter: (e: PointerEvent): void => {
+      if (e.pointerType === "mouse") tip.enter();
+    },
+    onPointerLeave: (e: PointerEvent): void => {
+      if (e.pointerType === "mouse") tip.leave();
+    },
+    onPointerDown: (e: PointerEvent): void => tip.down(e.pointerType),
+    onPointerUp: (): void => tip.up(),
+    onPointerCancel: (): void => tip.up(),
+  };
+}
+
+/** Bulle montrée dans `body` tant que l'infobulle est affichée ; `anchor` est lu à l'affichage (l'élément existe alors). */
+export function TipBubble(props: { tip: Tip; label: string; anchor: () => HTMLElement }): JSX.Element {
+  return (
+    <Show when={props.tip.shown()}>
+      <Portal>
+        <Bubble label={props.label} anchor={props.anchor()} />
+      </Portal>
+    </Show>
+  );
+}
+
 export interface IconButtonProps {
   readonly icon: string | null;
   readonly label: string;
@@ -91,15 +119,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         aria-pressed={props.pressed ?? undefined}
         disabled={props.disabled === true}
         onClick={() => props.onPress()}
-        onPointerEnter={(e) => {
-          if (e.pointerType === "mouse") tip.enter();
-        }}
-        onPointerLeave={(e) => {
-          if (e.pointerType === "mouse") tip.leave();
-        }}
-        onPointerDown={(e) => tip.down(e.pointerType)}
-        onPointerUp={() => tip.up()}
-        onPointerCancel={() => tip.up()}
+        {...tipPointerHandlers(tip)}
         onFocus={(e) => {
           if (focusVisible(e.currentTarget)) tip.focus();
         }}
@@ -112,11 +132,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
           <span class="rb-sr">{props.label}</span>
         </Show>
       </button>
-      <Show when={tip.shown()}>
-        <Portal>
-          <Bubble label={props.label} anchor={button!} />
-        </Portal>
-      </Show>
+      <TipBubble tip={tip} label={props.label} anchor={() => button!} />
     </>
   );
 }

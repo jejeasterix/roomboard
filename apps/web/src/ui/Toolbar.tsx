@@ -1,5 +1,4 @@
 import { For, Show, createMemo, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
-import { Portal } from "solid-js/web";
 import { listenWebDrop } from "../platform/drop-web";
 import type { ToolbarHost } from "../app/toolbar-host";
 import {
@@ -24,7 +23,7 @@ import {
 import { DEFAULT_FILL_TOLERANCE } from "../engine/engine";
 import { FormatRow } from "./FormatRow";
 import { SelectionRow } from "./SelectionRow";
-import { Bubble, Icon, IconButton } from "./IconButton";
+import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { iconFor } from "./icons";
 import { itemState, type ToolbarView } from "./item-state";
 import { PointerSwitch } from "./PointerSwitch";
@@ -85,24 +84,12 @@ function Drop(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
         class="rb-drop"
         data-item={props.item.id}
         ref={el}
-        onPointerEnter={(e) => {
-          if (e.pointerType === "mouse") tip.enter();
-        }}
-        onPointerLeave={(e) => {
-          if (e.pointerType === "mouse") tip.leave();
-        }}
-        onPointerDown={(e) => tip.down(e.pointerType)}
-        onPointerUp={() => tip.up()}
-        onPointerCancel={() => tip.up()}
+        {...tipPointerHandlers(tip)}
       >
         <Icon name={DROP_ICON} />
         <span class="rb-sr">{props.item.label}</span>
       </div>
-      <Show when={tip.shown()}>
-        <Portal>
-          <Bubble label={props.item.label} anchor={el!} />
-        </Portal>
-      </Show>
+      <TipBubble tip={tip} label={props.item.label} anchor={() => el!} />
     </>
   );
 }

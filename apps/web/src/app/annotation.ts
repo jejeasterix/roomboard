@@ -26,6 +26,7 @@ import {
   type AnnotationWindows,
   type CapturedImage,
   type CaptureFailure,
+  frameField,
   type PointerMode,
   type Returned,
   type SendRequest,
@@ -148,7 +149,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
     if (st.active && !(st.frozen === true && mode === "mouse")) await d.windows.pointer(mode);
   };
   /** L4-13 : champ `frame` de la charge, seulement si l'appareil le donne. */
-  const frameOf = (): { readonly frame?: boolean } => (d.frame === undefined ? {} : { frame: d.frame() });
+  const frameOf = (): { readonly frame?: boolean } => frameField({ frame: d.frame?.() });
   /** L4-9 : la souris passe par Sélection, le dessin revient au dernier outil de dessin (P8) ; sans effet si `mode` est
    *  déjà le mode présent (double clic sur un segment). Appelée dans la file. */
   const pointTo = (mode: PointerMode): void => {
