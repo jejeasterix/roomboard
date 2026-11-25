@@ -3,7 +3,7 @@ import { NO_ISLAND, type DeviceSettings } from "../device-settings";
 import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, sheetLane, tabsWidth,
+  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, tabsWidth,
   type Anchor, type Box, type Corners, type Lane, type Point,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
@@ -50,6 +50,21 @@ export function observeBox(el: Element, set: (b: Box) => void, round: (n: number
     cancelAnimationFrame(frame);
     ro.disconnect();
   };
+}
+
+/** Netteté (T9) : porte un texte de largeur fractionnaire (titre d'onglet, `#pages`) au pixel entier supérieur par une
+ *  marge de fin (`pixelPad`), relue à chaque changement de sa taille (`observeBox`, largeur brute) : les icônes qui le
+ *  suivent restent sur la grille de pixels. La marge ne change pas la boîte observée : aucune boucle. Rend l'arrêt. */
+export function padToPixel(el: HTMLElement): () => void {
+  return observeBox(
+    el,
+    (b) => {
+      const pad = pixelPad(b.w);
+      if (pad > 0) el.style.setProperty("margin-inline-end", `${pad}px`);
+      else el.style.removeProperty("margin-inline-end");
+    },
+    (n) => n,
+  );
 }
 
 interface ChromeProps {

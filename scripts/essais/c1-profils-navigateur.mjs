@@ -133,7 +133,11 @@ async function scenario(page, url, { captures, tmp }) {
   await page.click(`${BAR} [data-edit="dock"] [data-choice="left"]`);
   await page.click('[data-edit="button-size"] [data-choice="l"]');
   await page.click('[data-edit-item="eraser"] button[data-edit="shown"]');
-  check(await page.isDisabled('[data-edit-item="profiles"] button[data-edit="shown"]'), "éditeur : l'œil de Profil est grisé");
+  // design-l2 (L2-4, L2-20) : Profil vit dans la barre `panneaux` ; l'éditeur ne montre que la barre choisie.
+  await page.click('[data-edit="bar"] [data-choice="panneaux"]');
+  check(await page.isDisabled('[data-edit-bar="panneaux"] [data-edit-item="profiles"] button[data-edit="shown"]'), "éditeur : l'œil de Profil est grisé");
+  await page.click('[data-edit="bar"] [data-choice="outils"]');
+  await waitFor(BAR);
   await page.click('button[data-edit="preset-add"]');
   await page.click('button[data-edit="preset-add"]');
   check((await count("[data-edit-preset]")) === 5, "éditeur : cinq préréglages du stylo dans le brouillon");
