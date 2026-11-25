@@ -1,5 +1,6 @@
 import { createMemo, For, Show, type Accessor, type JSX } from "solid-js";
 import { UNTITLED } from "../platform/files";
+import { Icon } from "./IconButton";
 
 export interface TabView {
   readonly id: string;
@@ -50,12 +51,11 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
             aria-selected={props.active() === t.id}
             onClick={() => props.activate(t.id)}
           >
-            <span>{t.kind === "annotation" ? annotationTabLabel(t.title) : t.title}</span>
+            {/* design-l2 (L2-17) : point « modifié » avant le titre ; aucun texte, aria-hidden. */}
             <Show when={t.dirty}>
-              <span class="rb-tab-dirty" aria-hidden="true">
-                •
-              </span>
+              <span class="rb-tab-dirty" aria-hidden="true" />
             </Show>
+            <span class="rb-tab-title">{t.kind === "annotation" ? annotationTabLabel(t.title) : t.title}</span>
             <button
               type="button"
               class="rb-tab-close"
@@ -66,14 +66,14 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
                 props.close(t.id);
               }}
             >
-              ×
+              <Icon name="close" />
             </button>
           </div>
           );
         }}
       </For>
       <button type="button" class="rb-tab-new" data-tab-new aria-label="Nouvel onglet" onClick={() => props.newTab()}>
-        +
+        <Icon name="plus" />
       </button>
     </div>
   );
