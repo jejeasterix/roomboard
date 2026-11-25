@@ -144,3 +144,18 @@ describe("TabsBar (design-l2 L2-17)", () => {
     expect(tab(container, "a").firstElementChild?.classList.contains("rb-tab-title")).toBe(true);
   });
 });
+
+describe("TabsBar : netteté (T9)", () => {
+  it("le titre d'onglet est porté au pixel entier supérieur : Fermer et Nouvel onglet restent sur la grille", () => {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: this.classList.contains("rb-tab-title") ? 159.4375 : 0, height: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    try {
+      const { container } = setup();
+      const title = tab(container, "a").querySelector<HTMLElement>(".rb-tab-title")!;
+      expect(title.style.getPropertyValue("margin-inline-end")).toBe("0.5625px");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

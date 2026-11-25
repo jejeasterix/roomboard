@@ -88,6 +88,17 @@ export function placeIsland(anchor: Anchor, size: Box, area: Box, at: Point | nu
   return { x: Math.round(p.x), y: Math.round(p.y) };
 }
 
+/** Bruit flottant toléré sous le pixel entier (le navigateur pose les largeurs au 1/64 px). */
+const PIXEL_EPS = 1e-3;
+
+/** Netteté (T9) : marge de fin qui porte un texte de largeur `w` au pixel entier supérieur, pour que les icônes qui le
+ *  suivent (Fermer après un titre d'onglet, Suivante après `#pages`) restent sur la grille de pixels à 1x et 2x.
+ *  Toujours vers le haut : jamais de marge négative, le texte n'est pas rogné ; 0 si `w` est entier ou invalide. */
+export function pixelPad(w: number): number {
+  if (!Number.isFinite(w) || w <= 0) return 0;
+  return Math.max(0, Math.ceil(w - PIXEL_EPS) - w);
+}
+
 /** L2-10 : flèches de 16 px, 64 avec Maj ; toute autre touche (Début compris, que l'appelant traite) : null. */
 export function nudge(at: Point, key: string, big: boolean): Point | null {
   if (!Object.hasOwn(KEY_STEP, key)) return null;

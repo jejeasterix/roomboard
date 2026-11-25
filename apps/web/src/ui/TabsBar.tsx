@@ -1,6 +1,7 @@
-import { createMemo, For, Show, type Accessor, type JSX } from "solid-js";
+import { createMemo, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import { UNTITLED } from "../platform/files";
 import { Icon } from "./IconButton";
+import { padToPixel } from "./Island";
 
 export interface TabView {
   readonly id: string;
@@ -55,7 +56,7 @@ export function TabsBar(props: TabsBarProps): JSX.Element {
             <Show when={t.dirty}>
               <span class="rb-tab-dirty" aria-hidden="true" />
             </Show>
-            <span class="rb-tab-title">{t.kind === "annotation" ? annotationTabLabel(t.title) : t.title}</span>
+            <span class="rb-tab-title" ref={(el) => onCleanup(padToPixel(el))}>{t.kind === "annotation" ? annotationTabLabel(t.title) : t.title}</span>
             <button
               type="button"
               class="rb-tab-close"

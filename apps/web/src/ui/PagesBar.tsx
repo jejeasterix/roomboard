@@ -1,7 +1,8 @@
-import { For, Show, createMemo, type Accessor, type JSX } from "solid-js";
+import { For, Show, createMemo, onCleanup, type Accessor, type JSX } from "solid-js";
 import type { ButtonSize, Toolbar, ToolItem } from "../toolbar";
 import { IconButton } from "./IconButton";
 import { iconFor } from "./icons";
+import { padToPixel } from "./Island";
 import { itemState, type ToolbarView } from "./item-state";
 
 export interface PagesView {
@@ -39,7 +40,7 @@ export function PagesBar(props: PagesBarProps): JSX.Element {
   const numbers = (): number[] => Array.from({ length: Math.max(0, props.view().pageCount) }, (_, i) => i + 1);
   const after = createMemo(() => counterAfter(props.items()));
   const counter = (): JSX.Element => (
-    <span id="pages" class="rb-pages-count">{pagesLabel(props.view())}</span>
+    <span id="pages" class="rb-pages-count" ref={(el) => onCleanup(padToPixel(el))}>{pagesLabel(props.view())}</span>
   );
   return (
     <nav

@@ -175,3 +175,18 @@ describe("PagesBar (design-l2 L2-18)", () => {
     expect(btn(container, "[data-item=page-prev]").disabled).toBe(true);
   });
 });
+
+describe("PagesBar : netteté (T9)", () => {
+  it("#pages est porté au pixel entier supérieur : Suivante, Ajouter et Retirer restent sur la grille", () => {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: this.id === "pages" ? 54.546875 : 48, height: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    try {
+      const { container } = setup({ pageIndex: 0, pageCount: 1 });
+      const counter = container.querySelector<HTMLElement>("span#pages")!;
+      expect(counter.style.getPropertyValue("margin-inline-end")).toBe("0.453125px");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
