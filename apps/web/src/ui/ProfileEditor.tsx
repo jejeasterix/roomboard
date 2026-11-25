@@ -20,11 +20,11 @@ import {
   type JSX,
 } from "solid-js";
 import {
-  abandonQuestion,
   addItem,
   addPreset,
   canHide,
   catalog,
+  leaveDraft,
   moveItem,
   moveItemTo,
   presetFields,
@@ -409,12 +409,7 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
   const unchanged = (): boolean => sameProfile(draft(), props.profile);
   const named = (): boolean => draft().label.trim() !== "";
   /** L3-32 : brouillon égal au profil enregistré : `then` tout de suite ; sinon après un Oui. */
-  const leave = (then: () => void): void => {
-    if (unchanged()) return then();
-    void props.confirm(abandonQuestion(props.profile.label)).then((ok) => {
-      if (ok) then();
-    });
-  };
+  const leave = (then: () => void): void => leaveDraft(draft(), props.profile, props.confirm, then);
   const tag = (): string => (props.canRemove() ? "Personnel" : props.canResetCurrent() ? "Fourni, modifié" : "Fourni");
   const canRevert = (): boolean => props.canResetCurrent() || !unchanged();
   /** L3-19 : copie ou profil de l'utilisateur : remise de l'enregistré (l'éditeur remonte) ; sinon, le brouillon revient. */

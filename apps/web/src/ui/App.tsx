@@ -18,7 +18,7 @@ import type { EngineState } from "../engine/engine";
 import type { SettingsStore } from "../engine/settings";
 import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
-import { abandonQuestion, originOf, sameProfile } from "../profile-edit";
+import { leaveDraft, originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
 import { ANNOTATION_ROLE, annotationBarOf, resolveStartMode, visibleItems, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
@@ -96,13 +96,11 @@ export function App(props: AppProps): JSX.Element {
     return f;
   };
   /** design-l3 (L3-32) : quitter l'éditeur pour un autre panneau ; brouillon différent du profil enregistré : après un Oui.
-   *  Même règle et même question que l'éditeur (`sameProfile`, `abandonQuestion`) ; sans question, dans le même tour. */
+   *  Même règle et même question que l'éditeur (`leaveDraft`) ; sans question, dans le même tour. */
   const leaveEditor = (go: () => void): void => {
     const draft = previewProfile();
-    if (panel() !== "editor" || draft === null || sameProfile(draft, props.active.profile())) return go();
-    void props.shell.confirm(abandonQuestion(props.active.profile().label)).then((ok) => {
-      if (ok) go();
-    });
+    if (panel() !== "editor" || draft === null) return go();
+    leaveDraft(draft, props.active.profile(), (m) => props.shell.confirm(m), go);
   };
 
   /** Saisie de texte en cours dans la scène : le blur la fait valider par l'outil (CL4-3) et cache la zone. */
