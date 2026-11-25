@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ROLE, annotationBarOf, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
+  ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ROLE, HISTORY_ROLE, MENU_ROLE, PANELS_ROLE, annotationBarOf, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
   resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
 } from "./toolbar";
 import { builtinProfile } from "./toolbar-profiles";
@@ -121,9 +121,12 @@ describe("profil de barre (T83, usage § 8)", () => {
     expect(errs(json)).toContain(`toolbars[0].id : « ${name} » est réservé à la grille (${RESERVED_BAR_IDS.join(", ")})`);
   });
 
-  it("RESERVED_BAR_IDS égale les noms de cases fixes de layoutFor", () => {
-    const names = new Set(layoutFor([]).areas.replace(/"/g, "").split(/\s+/));
-    expect([...RESERVED_BAR_IDS].sort()).toEqual([...names].sort());
+  it("RESERVED_BAR_IDS couvre les noms de cases fixes de layoutFor ; tabs reste réservé (design-l2 L2-14)", () => {
+    const names = [...new Set(layoutFor([]).areas.replace(/"/g, "").split(/\s+/))];
+    expect(names).toEqual(["stage"]); // L2-14 : la grille ne garde que les bandes
+    for (const n of names) expect(RESERVED_BAR_IDS, n).toContain(n);
+    // îlot des onglets (design-l2 L2-14) : plus une case de la grille, mais l'id reste refusé (format .rbprofile inchangé)
+    expect(RESERVED_BAR_IDS).toContain("tabs");
   });
 
   it("dock, kind et buttonSize invalides : erreurs", () => {
@@ -493,5 +496,53 @@ describe("annotationBarOf (design-l4, L4-1, L4-2)", () => {
     const pagesOnly = { ...withBars(bar("outils", "tools", "top")), toolbars: [withBars(bar("pages", "pages", "bottom")).toolbars[0]!] } as Profile;
     expect(pagesOnly.toolbars.some((b) => b.role === "tools" || b.role === ANNOTATION_ROLE)).toBe(false);
     expect(annotationBarOf(pagesOnly)).toBeNull();
+  });
+});
+
+describe("design-l2 : rôles des îlots et accès Profil (L2-3, L2-20)", () => {
+  const outils = { id: "outils", role: "tools", dock: "floating", groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }] }] };
+  const panels = (hidden = false) => ({
+    id: "panneaux",
+    role: PANELS_ROLE,
+    dock: "floating",
+    groups: [{ id: "p", items: [{ id: "profiles", kind: "action", action: "profiles", label: "Profil", ...(hidden ? { hidden: true } : {}) }] }],
+  });
+  const profileOf = (...toolbars: unknown[]) => ({ format: "roomboard-profile", schema: 1, id: "x", label: "X", toolbars });
+
+  it("design-l2 L2-3 : MENU_ROLE, HISTORY_ROLE, PANELS_ROLE valent menu, history, panels ; acceptés sans avertissement", () => {
+    expect([MENU_ROLE, HISTORY_ROLE, PANELS_ROLE]).toEqual(["menu", "history", "panels"]);
+    const menu = { id: "menu", role: MENU_ROLE, dock: "floating", groups: [{ id: "f", items: [{ id: "grid", kind: "action", action: "grid", label: "Grille" }] }] };
+    const history = { id: "historique", role: HISTORY_ROLE, dock: "floating", groups: [{ id: "h", items: [{ id: "undo", kind: "action", action: "undo", label: "Annuler" }] }] };
+    const { profile, warnings } = ok(profileOf(outils, menu, history, panels()));
+    expect(warnings).toEqual([]);
+    expect(profile.toolbars.map((b) => b.role)).toEqual(["tools", "menu", "history", "panels"]);
+  });
+
+  it("design-l2 L2-20 : Profil dans la barre panels : atteint, aucun second Profil ajouté à outils, aucun avertissement", () => {
+    const { profile, warnings } = ok(profileOf(outils, panels()));
+    expect(warnings).toEqual([]);
+    const all = profile.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)));
+    expect(all.filter((id) => id.startsWith("profiles"))).toEqual(["profiles"]);
+  });
+
+  it("design-l2 L2-20 : Profil masqué dans panels : montré, avertissement", () => {
+    const { profile, warnings } = ok(profileOf(outils, panels(true)));
+    expect(warnings).toContain("profiles : l'accès au menu Profil ne se masque pas, élément montré");
+    expect(profile.toolbars[1]!.groups[0]!.items[0]!.hidden).toBeUndefined();
+  });
+
+  it("design-l2 L2-20 : Profil seulement dans une barre annotation : non atteint au tableau, ajouté en fin d'outils", () => {
+    const ann = { id: "a", role: ANNOTATION_ROLE, dock: "top", groups: [{ id: "a", items: [{ id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] };
+    const { profile, warnings } = ok(profileOf(outils, ann));
+    expect(warnings).toContain("accès au menu Profil ajouté");
+    expect(profile.toolbars[0]!.groups.flatMap((g) => g.items).at(-1)).toMatchObject({ id: "profiles-2", action: "profiles" });
+  });
+
+  it("design-l2 (H11, H18 de L4) : rôle inconnu flottant gardé tel quel, relu sans perte", () => {
+    const odd = { id: "z", role: "zoom", dock: "floating", groups: [{ id: "z", items: [{ id: "fit-page", kind: "action", action: "fit-page", label: "Ajuster la page" }] }] };
+    const { profile, warnings } = ok(profileOf(outils, panels(), odd));
+    expect(warnings).toEqual([]);
+    expect(profile.toolbars[2]).toMatchObject({ id: "z", role: "zoom", dock: "floating" });
+    expect(ok(serializeProfile(profile)).profile).toEqual(profile);
   });
 });

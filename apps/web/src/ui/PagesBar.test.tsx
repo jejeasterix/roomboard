@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ButtonSize, Toolbar, ToolItem } from "../toolbar";
-import { PagesBar, pagesLabel, type PagesView } from "./PagesBar";
+import { counterAfter, PagesBar, pagesLabel, type PagesView } from "./PagesBar";
 
 afterEach(cleanup);
 
@@ -140,23 +140,53 @@ describe("PagesBar (T91)", () => {
     expect(css).toMatch(/\.rb-pages-list\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/);
   });
 
-  it("C13 (D17) : libellé visible court pour .iwb et .ubz, libellé complet en title et aria-label ; la liste garde une largeur utile", () => {
+  it("design-l2 L2-18 : boutons à icône ; textContent et aria-label = libellé complet ; plus de libellé court", () => {
     const full = { iwb: "Enregistrer une copie au format .iwb…", ubz: "Enregistrer une copie au format .ubz…" };
-    const items = [
-      { ...item("export-iwb"), label: full.iwb },
-      { ...item("export-ubz"), label: full.ubz },
-      { ...item("export-pdf"), label: "Exporter en PDF" },
-    ];
+    const items = [{ ...item("export-iwb"), label: full.iwb }, { ...item("export-ubz"), label: full.ubz }, { ...item("export-pdf"), label: "Exporter en PDF…" }];
     const { container } = setup({ pageIndex: 0, pageCount: 3 }, items);
     const iwb = btn(container, "[data-item=export-iwb]");
-    expect(iwb.textContent).toBe("Copie .iwb…");
-    expect(iwb.getAttribute("title")).toBe(full.iwb);
+    expect(iwb.textContent).toBe(full.iwb);
     expect(iwb.getAttribute("aria-label")).toBe(full.iwb);
-    expect(btn(container, "[data-item=export-ubz]").textContent).toBe("Copie .ubz…");
-    expect(btn(container, "[data-item=export-pdf]").textContent).toBe("Exporter en PDF");
+    expect(iwb.classList.contains("rb-ib")).toBe(true);
+    expect(iwb.querySelector("svg")?.getAttribute("data-icon")).toBe("export");
+    expect(btn(container, "[data-item=export-pdf]").querySelector("svg")?.getAttribute("data-icon")).toBe("pdf");
     const css = readFileSync(join(__dirname, "rb.css"), "utf8");
     expect(css).toMatch(/\.rb-pages-list\s*\{[^}]*min-width:\s*calc\(3 \* var\(--rb-btn\)/);
-    expect(css).toMatch(/:is\(\[data-item="export-iwb"\],\s*\[data-item="export-ubz"\]\)/);
-    expect(css).not.toMatch(/data-item\^="export-"/);
+    expect(readFileSync(join(__dirname, "PagesBar.tsx"), "utf8")).not.toMatch(/SHORT|Copie \.iwb/);
+  });
+});
+
+describe("PagesBar (design-l2 L2-18)", () => {
+  const kids = (c: HTMLElement): string[] => [...c.querySelector("nav")!.children].map((e) => e.getAttribute("data-item") || e.id || e.className);
+  it("design-l2 L2-18 : compteur #pages entre Précédente et Suivante quand elles se suivent", () => {
+    const { container } = setup({ pageIndex: 1, pageCount: 4 });
+    expect(kids(container)).toEqual(["page-prev", "pages", "page-next", "page-add", "page-remove", "rb-pages-list"]);
+    expect(container.querySelectorAll("#pages")).toHaveLength(1);
+  });
+  it("design-l2 L2-18 : Précédente et Suivante séparées ou absentes : compteur en fin de barre", () => {
+    const { container } = setup({ pageIndex: 0, pageCount: 2 }, ["page-next", "page-prev", "page-add"].map(item));
+    expect(kids(container).at(-1)).toBe("pages");
+    expect(counterAfter(["page-add"].map(item))).toBeNull();
+    expect(counterAfter(ORDER)).toBe("page-prev");
+  });
+  it("design-l2 L2-18 : chaque bouton porte l'icône de la table ; grisé selon itemState", () => {
+    const { container } = setup({ pageIndex: 0, pageCount: 1 });
+    expect(["page-prev", "page-next", "page-add", "page-remove"].map((id) => btn(container, `[data-item=${id}]`).querySelector("svg")?.getAttribute("data-icon"))).toEqual(["prev", "next", "plus", "trash"]);
+    expect(btn(container, "[data-item=page-prev]").disabled).toBe(true);
+  });
+});
+
+describe("PagesBar : netteté (T9)", () => {
+  it("#pages est porté au pixel entier supérieur : Suivante, Ajouter et Retirer restent sur la grille", () => {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: this.id === "pages" ? 54.546875 : 48, height: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    try {
+      const { container } = setup({ pageIndex: 0, pageCount: 1 });
+      const counter = container.querySelector<HTMLElement>("span#pages")!;
+      expect(counter.style.getPropertyValue("margin-inline-end")).toBe("0.453125px");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -17,6 +17,7 @@ afterEach(cleanup);
 const NO_CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
 const VIEW: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 };
 const outils = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "outils")!;
+const historique = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "historique")!;
 
 const mkBar = (items: ToolItem[], dock: Bar["dock"] = "top"): Bar => ({
   id: "b", role: "tools", dock, collapsed: false, groups: [{ id: "g", items, rest: {} }], rest: {},
@@ -78,14 +79,14 @@ describe("Toolbar", () => {
     expect(host.setTool).toHaveBeenCalledWith("pen");
   });
   it("clic sur Annuler → host.runAction(undo)", () => {
-    const { container, host } = setup();
+    const { container, host } = setup(historique);
     const btn = container.querySelector<HTMLButtonElement>('button[data-item="undo"]')!;
     expect(btn.disabled).toBe(false);
     fireEvent.click(btn);
     expect(host.runAction).toHaveBeenCalledWith("undo");
   });
   it("bouton désactivé : redo sans étape", () => {
-    const { container } = setup();
+    const { container } = setup(historique);
     expect(container.querySelector<HTMLButtonElement>('button[data-item="redo"]')!.disabled).toBe(true);
   });
   it("l'état publié change : aria-pressed suit, sans recréer les boutons", () => {
@@ -100,7 +101,7 @@ describe("Toolbar", () => {
     expect(eraser.getAttribute("aria-pressed")).toBe("true");
   });
   it("action sans état pressé : pas d'aria-pressed", () => {
-    const { container } = setup();
+    const { container } = setup(historique);
     expect(container.querySelector('button[data-item="undo"]')!.hasAttribute("aria-pressed")).toBe(false);
   });
   it("data-size suit le jeton", () => {
@@ -114,7 +115,7 @@ describe("Toolbar", () => {
     const { container } = setup();
     const el = container.querySelector(".rb-bar")!;
     expect(el.getAttribute("data-toolbar")).toBe("outils");
-    expect(el.getAttribute("data-dock")).toBe("top");
+    expect(el.getAttribute("data-dock")).toBe("floating");
     expect(el.getAttribute("role")).toBe("toolbar");
   });
   it("séparateur rendu role=separator", () => {
@@ -199,7 +200,7 @@ describe("Toolbar — rangée des préréglages (C1, P18, S4)", () => {
     expect(presetIds(bar)).toEqual(["noir", "rouge", "bleu"]);
     expect(bar.querySelectorAll("button[data-item]").length).toBe(plain);
     expect(bar.querySelector("button[data-preset][data-item]")).toBeNull();
-    const kids = [...bar.children];
+    const kids = [...bar.querySelector(":scope > [data-island-context]")!.children];
     expect(kids.indexOf(bar.querySelector("[data-presets-sep]")!)).toBe(kids.length - 4);
     expect(bar.querySelector('[data-preset="rouge"]')!.hasAttribute("aria-pressed")).toBe(false);
     expect(bar.querySelector('[data-preset="rouge"]')!.textContent).toContain("Rouge");
@@ -377,8 +378,8 @@ describe("Toolbar — rangée du pot (C6a)", () => {
 
 describe("Toolbar : Modifier dans l'application d'origine (C16, S3)", () => {
   it("bouton absent sans la capacité (web), présent avec elle, et clic relayé à l'hôte", () => {
-    const pages = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.role === "pages")!;
-    const { container, setC, host } = setup(pages);
+    const menu = BUILTIN_PROFILES[0]!.toolbars.find((b) => b.id === "menu")!;
+    const { container, setC, host } = setup(menu);
     expect(container.querySelector('[data-item="edit-original"]')).toBeNull();
     setC({ ...NO_CAPS, officeConverter: true });
     const btn = container.querySelector('[data-item="edit-original"]')!;
@@ -421,7 +422,7 @@ describe("Toolbar — icônes (design-l1, S3, S4)", () => {
     expect(n).toBeGreaterThan(20);
   });
   it("S3 : « Annuler » a le nom accessible « Annuler », svg caché aux lecteurs d'écran", () => {
-    const { container } = setup();
+    const { container } = setup(historique);
     const undo = container.querySelector('button[data-item="undo"]')!;
     expect(undo.getAttribute("aria-label")).toBe("Annuler");
     expect(undo.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
@@ -513,5 +514,33 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
     cleanup();
     const other = setup({ ...mkBar([tool("pen")]), role: "autre" }, NO_CAPS, "m", PEN);
     expect(other.container.querySelectorAll("button[data-preset]")).toHaveLength(0);
+  });
+});
+
+describe("Toolbar — design-l2 (L2-8, L2-13)", () => {
+  const host = (): ToolbarHost => ({ setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), fillTolerance: vi.fn(), textFormat: vi.fn(), selection: vi.fn(), imagePanel: vi.fn() });
+  it("design-l2 L2-13 : barre flottante de rôle tools : rangées contextuelles dans [data-island-context], enfant de [data-toolbar]", () => {
+    const { container } = setup({ ...outils, dock: "floating" }, NO_CAPS, "m", PEN);
+    const ctx = container.querySelector('[data-toolbar="outils"] > [data-island-context]');
+    expect(ctx).not.toBeNull();
+    expect(ctx!.classList.contains("rb-context")).toBe(true);
+    expect(ctx!.querySelectorAll("button[data-preset]")).toHaveLength(3);
+    expect(ctx!.firstElementChild?.hasAttribute("data-presets-sep")).toBe(true);
+    expect(container.querySelectorAll('[data-toolbar="outils"] button[data-preset]')).toHaveLength(3);
+  });
+  it("design-l2 L2-13 : barre en bande : rangée inchangée dans la barre, aucun [data-island-context]", () => {
+    const { container } = setup({ ...outils, dock: "top" }, NO_CAPS, "m", PEN);
+    expect(container.querySelector("[data-island-context]")).toBeNull();
+    expect(container.querySelectorAll('[data-toolbar="outils"] > button[data-preset]')).toHaveLength(3);
+  });
+  it("design-l2 L2-8 : collapsed vrai : data-collapsed=\"1\" sur [data-toolbar] ; faux : aucun attribut", () => {
+    const [c, setC] = createSignal(false);
+    const { container } = render(() => (
+      <Toolbar bar={{ ...outils, dock: "floating" }} caps={() => NO_CAPS} view={() => VIEW} size={() => "m"} host={host()} collapsed={c} />
+    ));
+    const bar = container.querySelector('[data-toolbar="outils"]')!;
+    expect(bar.hasAttribute("data-collapsed")).toBe(false);
+    setC(true);
+    expect(bar.getAttribute("data-collapsed")).toBe("1");
   });
 });

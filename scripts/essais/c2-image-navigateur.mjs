@@ -9,15 +9,15 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, sha256, solidPng, stageMouse, zipEntries } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, ROOT, serve, sha256, solidPng, stageMouse, TAB, VIEWPORT, zipEntries } from "./commun.mjs";
 
 const LABEL = "C2 image";
 const LATER = "format pris en charge dans une prochaine version";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const W = 200;
 const H = 150;
-/** Point de dépôt de `dropFile` (commun.mjs:143) : 50 px à droite et en dessous du coin de #stage. */
-const DROP = [50, 50];
+/** Point de dépôt passé à `dropFile` : hors des îlots (menu, onglets, outils en haut ; historique, pages en bas). */
+const DROP = [300, 250];
 
 async function scenario(page, url, { captures, tmp }) {
   const errors = [];
@@ -95,7 +95,7 @@ async function scenario(page, url, { captures, tmp }) {
   check((await inkIn(page, dropBox)) === 0, "avant le dépôt : aucun pixel sombre au point de dépôt");
 
   // S1 : dépôt, Ctrl+Z, Ctrl+Y.
-  await dropFile(page, "#stage", "sombre.png", png, "image/png");
+  await dropFile(page, "#stage", "sombre.png", png, "image/png", DROP);
   await waitElements(1);
   check(await inkSoon(dropBox), 'S1 : #stage[data-elements="1"], l\'image déposée apparaît au point de dépôt');
   check((await attr("data-tool")) === "pen", "S1 : outil inchangé après l'insertion (R17)");
@@ -200,7 +200,7 @@ async function scenario(page, url, { captures, tmp }) {
   await writeFile(p1, solidPng(80, 60, [200, 30, 30]));
   await writeFile(p2, solidPng(80, 60, [30, 30, 200]));
   const chooser5 = page.waitForEvent("filechooser");
-  await page.click(item("file-import"));
+  await clickItem(page, "file-import");
   const fc = await chooser5;
   check(fc.isMultiple(), "S5 : « Importer » ouvre une boîte à plusieurs fichiers");
   await fc.setFiles([p1, p2]);

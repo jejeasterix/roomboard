@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, VIEWPORT, coqueCsp, frames, gitSha, item, loadPlaywright, serve, stageMouse } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, stageMouse, VIEWPORT } from "./commun.mjs";
 
 const LABEL = "C4 bibliothèque";
 const FIXED = new Date("2026-11-21T08:00:00.000Z");
@@ -70,7 +70,7 @@ async function scenario(page, url, { captures, tmp }) {
   };
   const thumbDecoded = (sel) => page.$eval(`${sel} img.rb-thumb`, (img) => img.complete && img.naturalWidth > 0).catch(() => false);
   const gridKind = async () => {
-    await page.click(item("grid"));
+    await clickItem(page, "grid");
     await page.waitForSelector(gridField("kind"));
     const v = await page.inputValue(gridField("kind"));
     await page.click(gridField("cancel"));
@@ -142,7 +142,7 @@ async function scenario(page, url, { captures, tmp }) {
 
   // S2 : grille Seyès sur une page, enregistrée en ressource, déposée sur une page sans grille.
   await page.click(item("page-add"));
-  await page.click(item("grid"));
+  await clickItem(page, "grid");
   await page.waitForSelector(gridField("kind"));
   await page.selectOption(gridField("kind"), "seyes");
   await page.click(gridField("apply"));

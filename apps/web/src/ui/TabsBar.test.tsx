@@ -52,9 +52,9 @@ describe("TabsBar (T91)", () => {
   it("onglet modifié marqué", () => {
     const { container } = setup();
     expect(tab(container, "b").getAttribute("data-dirty")).toBe("1");
-    expect(tab(container, "b").textContent).toContain("•");
+    expect(tab(container, "b").querySelector(".rb-tab-dirty")).not.toBeNull();
     expect(tab(container, "a").hasAttribute("data-dirty")).toBe(false);
-    expect(tab(container, "a").textContent).not.toContain("•");
+    expect(tab(container, "a").querySelector(".rb-tab-dirty")).toBeNull();
   });
 
   it("le titre est affiché", () => {
@@ -121,5 +121,41 @@ describe("TabsBar (T91)", () => {
     expect(tab(container, "b").hasAttribute("data-dirty")).toBe(false);
     setT([TABS[0]!]);
     expect(container.querySelectorAll("[role=tab]").length).toBe(1);
+  });
+});
+
+describe("TabsBar (design-l2 L2-17)", () => {
+  it("design-l2 L2-17 : Fermer = icône close (nom « Fermer <titre> »), Nouvel onglet = icône plus ; aucun caractère « × » ni « + »", () => {
+    const { container } = setup();
+    const close = container.querySelector('[data-tab-close="a"]')!;
+    expect(close.querySelector("svg")?.getAttribute("data-icon")).toBe("close");
+    expect(close.getAttribute("aria-label")).toBe("Fermer Plan");
+    expect(close.textContent).toBe("");
+    const add = container.querySelector("[data-tab-new]")!;
+    expect(add.querySelector("svg")?.getAttribute("data-icon")).toBe("plus");
+    expect(add.getAttribute("aria-label")).toBe("Nouvel onglet");
+    expect(add.textContent).toBe("");
+  });
+  it("design-l2 L2-17 : point « modifié » avant le titre, titre dans .rb-tab-title", () => {
+    const { container } = setup();
+    const b = tab(container, "b");
+    expect(b.firstElementChild?.classList.contains("rb-tab-dirty")).toBe(true);
+    expect(b.querySelector(".rb-tab-title")?.textContent).toBe("Notes");
+    expect(tab(container, "a").firstElementChild?.classList.contains("rb-tab-title")).toBe(true);
+  });
+});
+
+describe("TabsBar : netteté (T9)", () => {
+  it("le titre d'onglet est porté au pixel entier supérieur : Fermer et Nouvel onglet restent sur la grille", () => {
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: this.classList.contains("rb-tab-title") ? 159.4375 : 0, height: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    try {
+      const { container } = setup();
+      const title = tab(container, "a").querySelector<HTMLElement>(".rb-tab-title")!;
+      expect(title.style.getPropertyValue("margin-inline-end")).toBe("0.5625px");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

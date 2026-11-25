@@ -188,7 +188,8 @@ async function scenario(page, url, { captures, tmp }) {
   // S4 : classeur déposé au centre ; valeurs ; deux casse.xlsx ; enregistrer ; Ctrl+Z.
   const els4 = Number(await attr("data-elements"));
   const b4 = await stageBox(page);
-  const mid = [b4.width / 2, b4.height / 2];
+  // Le tableau (64 lignes) déborde de la scène : on le descend pour que sa première ligne reste sous les îlots du haut (outils + options de l'outil Tableau).
+  const mid = [b4.width / 2, b4.height / 2 + 100];
   await dropFile(page, "#stage", "valeurs.xlsx", readFileSync(XLSX), "", mid);
   await waitAttr("data-elements", String(els4 + 1));
   await waitDialog(TRUNCATED);

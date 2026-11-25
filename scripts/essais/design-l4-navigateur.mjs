@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, frames, gitSha, item, loadPlaywright, serve } from "./commun.mjs";
+import { clickItem, DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, TAB, VIEWPORT } from "./commun.mjs";
 import { edgeRow, fringes, hex, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "design L4";
@@ -77,6 +77,8 @@ async function waitStage(page, name, source) {
 }
 const text = async (page, sel) => ((await page.textContent(sel)) ?? "").trim();
 /** Barres visibles (`data-toolbar`), dans l'ordre du document. */
+/** Barres du profil par défaut (design-l2) : toutes en îlots, dans l'ordre du DOM, aucune barre d'annotation. */
+const DEFAULT_BARS = '["menu","panneaux","historique","outils","pages"]';
 const shownBars = (page) =>
   page.$$eval("[data-toolbar]", (els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.getAttribute("data-toolbar")));
 async function enter(page) {
@@ -145,7 +147,7 @@ async function s1(browser, base) {
   const w = watch(page);
   await page.goto(`${base}/?fichiers=repli&annotation=faux`);
   await ready(page);
-  check(JSON.stringify(await shownBars(page)) === '["outils","pages"]', "S1 tableau : barres outils et pages, aucune barre d'annotation");
+  check(JSON.stringify(await shownBars(page)) === DEFAULT_BARS, "S1 tableau : barres outils et pages, aucune barre d'annotation");
   await enter(page);
   const bars = await shownBars(page);
   check(JSON.stringify(bars) === '["annotation"]' && (await page.locator('[data-role="annotation"]').count()) === 1, `S1 : seule la barre d'annotation est montrée (${bars})`);
@@ -164,8 +166,8 @@ async function s1(browser, base) {
   await leave(page);
   const after = await shownBars(page);
   check(
-    JSON.stringify(after) === '["outils","pages"]' && (await page.locator("button[data-segment]").count()) === 0 && (await page.locator(item("annotation-pointer")).count()) === 0,
-    `S1 : à la sortie, la barre d'outils revient, sans barre d'annotation ni « Souris » (${after})`,
+    JSON.stringify(after) === DEFAULT_BARS && (await page.locator("button[data-segment]").count()) === 0 && (await page.locator(item("annotation-pointer")).count()) === 0,
+    `S1 : à la sortie, les barres du tableau reviennent, sans barre d'annotation ni « Souris » (${after})`,
   );
   noErrors(w, "S1");
   await ctx.close();
@@ -178,12 +180,12 @@ async function s3(browser, base) {
   const w = watch(page);
   await page.goto(`${base}/?fichiers=repli`);
   await ready(page);
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   await page.waitForSelector("#reglages", { timeout: 15000 });
   check((await page.locator(FRAME).count()) === 0, "S3 web sans faux hôte : aucun bouton du cadre");
   await page.goto(`${base}/?fichiers=repli&annotation=faux`);
   await ready(page);
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   await page.waitForSelector(FRAME, { timeout: 15000 });
   check((await text(page, FRAME)) === "Cadre de l'annotation : affiché", "S3 : « Cadre de l'annotation : affiché »");
   await page.click(FRAME);
@@ -193,7 +195,7 @@ async function s3(browser, base) {
   await leave(page);
   await page.reload();
   await ready(page);
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   await page.waitForSelector(FRAME, { timeout: 15000 });
   check((await text(page, FRAME)) === "Cadre de l'annotation : masqué", "S3 : après rechargement, toujours masqué (gardé sur l'appareil)");
   await page.click(FRAME);

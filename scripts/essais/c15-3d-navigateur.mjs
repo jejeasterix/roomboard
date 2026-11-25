@@ -12,7 +12,7 @@ import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, dropFiles, frames, gitSha, item, loadPlaywright, rgbPng, serve, stageBox, stageMouse, zipEntries } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, dropFiles, frames, gitSha, islandBoxes, item, loadPlaywright, rgbPng, serve, stageBox, stageMouse, zipEntries } from "./commun.mjs";
 
 const LABEL = "C15 3D";
 const FIXED = new Date("2026-11-21T08:00:00.000Z");
@@ -209,9 +209,14 @@ async function scenario(page, url, { captures, tmp, noWebgl, file }) {
     check(!requests.some((u) => LAZY.test(u)), "S4 : rouvert et dessiné sans charger three");
     await page.click(item("select"));
     // Les six objets se recouvrent : on cherche, sur une grille, un point où le clic prend le GLB (format « glb »).
+    // Les îlots flottent sur la scène : les points de la grille qu'ils couvrent sont sautés.
+    const isl = await islandBoxes(page);
+    const bs = await stageBox(page);
+    const free = (x, y) => !isl.some((b) => bs.x + x >= b.x && bs.x + x <= b.x + b.width && bs.y + y >= b.y && bs.y + y <= b.y + b.height);
     let found = false;
     for (let y = 40; y < box.height - 40 && !found; y += 40) {
       for (let x = 40; x < box.width - 40 && !found; x += 40) {
+        if (!free(x, y)) continue;
         await mouse.click(x, y);
         await fr();
         found = (await tag()).startsWith("glb;");
