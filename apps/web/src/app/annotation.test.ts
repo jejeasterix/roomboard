@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakeAnnotationWindows, type FakeAnnotationOptions } from "../platform/annotation-fake";
-import { addedToPageMessage, INK_LOST_MESSAGE, type AnnotationCommand, type CapturedImage, type CaptureOutcome, type SendRequest, type SendResult } from "../platform/annotation-port";
+import { addedToPageMessage, captureFailedMessage, INK_LOST_MESSAGE, sentToBoardMessage, type AnnotationCommand, type CapturedImage, type CaptureOutcome, type SendRequest, type SendResult } from "../platform/annotation-port";
 import type { DroppedFile } from "../platform/files";
 import type { ImportReport } from "../platform/import";
 import { ANNOTATION_REMOTE_ACTIONS, type StartMode } from "../toolbar";
@@ -27,6 +27,8 @@ function setup(
     startMode?: StartMode;
     originKind?: "board" | "annotation" | null;
     sent?: SendResult | null;
+    frame?: () => boolean;
+    onSent?: (page: number) => void;
   } = {},
 ) {
   const windows = createFakeAnnotationWindows(o);
@@ -70,6 +72,8 @@ function setup(
     startMode: () => o.startMode ?? "board",
     originKind: (id: string | null) => (o.originKind === undefined ? (id === null ? null : "board") : o.originKind),
     ...(o.transparent === undefined ? {} : { transparent: o.transparent }),
+    ...(o.frame === undefined ? {} : { frame: o.frame }),
+    ...(o.onSent === undefined ? {} : { sent: o.onSent }),
   };
   const ctl = createAnnotationController(deps);
   return { ctl, windows, deps, log, setActive: (id: string) => { active = id; } };
@@ -267,6 +271,14 @@ describe("hôte de barre distant (P21)", () => {
       { kind: "runAction", id: "undo" },
     ]);
     expect(l.calls).toEqual([`runAction ["desktop-annotation"]`, `dropFiles [[${JSON.stringify(png)}],null]`]);
+  });
+  it("design-l4 (L4-9) : pointer reste dans la fenêtre principale (hôte local), rien n'est envoyé à annotate", () => {
+    const sent: AnnotationCommand[] = [];
+    const pointer = vi.fn();
+    const h = createRemoteToolbarHost((m) => sent.push(m), { ...local(), pointer }, ANNOTATION_REMOTE_ACTIONS);
+    h.pointer?.("mouse");
+    expect(pointer).toHaveBeenCalledWith("mouse");
+    expect(sent).toEqual([]);
   });
 });
 
@@ -635,5 +647,69 @@ describe("contrôleur d'annotation (C11b : figer, envoyer)", () => {
     await ctl.freeze();
     expect(log.slice(-2)).toEqual(["backdrop null 1", "say capture du bureau impossible (échec de la capture) : page à fond blanc"]);
     expect(ctl.state().frozen).toBe(true);
+  });
+});
+
+describe("contrôleur d'annotation (design-l4 : bascule, cadre, avis)", () => {
+  const tools = (sent: readonly AnnotationCommand[]): string[] => sent.flatMap((m) => (m.kind === "setTool" ? [m.tool] : []));
+  it("L4-9 : pointer(mode) en file ; un mode déjà présent est sans effet ; double clic sur « Dessin » : reste en dessin", async () => {
+    const { ctl, windows } = setup();
+    await ctl.enter();
+    ctl.command({ kind: "setTool", tool: "rect" });
+    await Promise.all([ctl.pointer("mouse"), ctl.pointer("mouse")]);
+    expect(ctl.state().pointer).toBe("mouse");
+    expect(tools(windows.sent)).toEqual(["pen", "rect", "select"]);
+    await Promise.all([ctl.pointer("draw"), ctl.pointer("draw")]);
+    expect(ctl.state().pointer).toBe("draw");
+    expect(tools(windows.sent)).toEqual(["pen", "rect", "select", "rect"]);
+  });
+  it("L4-9 : hors annotation, pointer ne fait rien", async () => {
+    const { ctl, windows } = setup();
+    await ctl.pointer("mouse");
+    expect(windows.sent).toEqual([]);
+    expect(ctl.state().pointer).toBe("draw");
+  });
+  it("L4-13 : frame lu à l'entrée puis au rechargement de « Figer » ; publié par le faux hôte", async () => {
+    let on = false;
+    const ds: Record<string, string | undefined> = {};
+    const { ctl, windows } = setup({ dataset: ds, frame: () => on });
+    await ctl.enter();
+    expect([windows.frame(), ds["annotationCadre"]]).toEqual([false, "0"]);
+    on = true;
+    await ctl.freeze();
+    expect(windows.log).toContain("load opaque");
+    expect([windows.frame(), ds["annotationCadre"]]).toEqual([true, "1"]);
+  });
+  it("L4-13 : sans dépendance frame, la charge n'a pas le champ : cadre affiché", async () => {
+    const { ctl, windows } = setup();
+    await ctl.enter();
+    expect(windows.frame()).toBe(true);
+  });
+  it("L4-13 : sans dépendance frame, enter et load du contrôleur ne portent pas le champ (patron opaque, jamais « ?? true »)", async () => {
+    const { ctl, windows } = setup();
+    const enter = vi.spyOn(windows, "enter");
+    const load = vi.spyOn(windows, "load");
+    await ctl.enter();
+    await ctl.freeze();
+    expect(enter).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(enter.mock.calls[0]![0]).not.toHaveProperty("frame");
+    expect(load.mock.calls[0]![0]).not.toHaveProperty("frame");
+  });
+  it("L4-16 : avec sent, l'envoi réussi appelle sent(page) et ne dit plus l'avis d'envoi ; l'avis d'échec de capture reste dit", async () => {
+    const pages: number[] = [];
+    const { ctl, deps, log } = setup({ capture: { ok: false, reason: "denied" }, onSent: (p) => void pages.push(p) });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(pages).toEqual([2]);
+    expect(log.at(-1)).toBe(`say ${captureFailedMessage("denied")}`);
+    expect(vi.mocked(deps.say).mock.calls.map((c) => c[0])).not.toContain(sentToBoardMessage(2));
+  });
+  it("L4-16 : rien envoyé (sendCapture null) : sent n'est pas appelé", async () => {
+    const pages: number[] = [];
+    const { ctl } = setup({ sent: null, onSent: (p) => void pages.push(p) });
+    await ctl.enter();
+    await ctl.send("origin");
+    expect(pages).toEqual([]);
   });
 });

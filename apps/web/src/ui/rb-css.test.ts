@@ -60,3 +60,10 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(CSS).not.toMatch(/\.rb-bar[^{}]*\.rb-(sr|tip)\b/);
   });
 });
+
+describe("rb.css (design-l4, L4-12)", () => {
+  it("L4-12 : cadre de l'annotation 3 px violet 600, fixe sur toute la fenêtre, inerte, montré par html[data-cadre=\"1\"]", () => {
+    expect(rule(".rb-annot-frame")).toMatch(/display: none;.*position: fixed;.*inset: 0;.*box-shadow: inset 0 0 0 3px var\(--rf-violet-600\);.*pointer-events: none;/);
+    expect(rule('html[data-cadre="1"] .rb-annot-frame')).toContain("display: block;");
+  });
+});

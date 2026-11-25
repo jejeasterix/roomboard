@@ -196,6 +196,16 @@ describe("ToolbarHost local", () => {
     host.runAction("file-import");
     expect(t.runFile).toHaveBeenCalledWith("import");
   });
+  it("design-l4 (L4-9) : pointer(mode) → annotation.pointer(mode) ; sans contrôleur ou sans pointer : rien", () => {
+    const s = setupWithAnnotation(true);
+    const pointer = vi.fn(async () => undefined);
+    const host = createLocalToolbarHost({ ...s.t, annotation: { ...s.t.annotation!, pointer } } as HostTargets, () => BUILTIN_PROFILES[0]!);
+    host.pointer?.("mouse");
+    expect(pointer).toHaveBeenCalledWith("mouse");
+    expect(s.t.annotation!.toggle).not.toHaveBeenCalled();
+    expect(() => s.host.pointer?.("draw")).not.toThrow();
+    expect(() => setup().host.pointer?.("draw")).not.toThrow();
+  });
 });
 
 describe("actions du tableau (C10b)", () => {
