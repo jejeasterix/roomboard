@@ -10,7 +10,7 @@ import { startAnnotateWindow } from "./annotate-start";
 import { createFakeAnnotationWindows, type FakeAnnotationOptions } from "./platform/annotation-fake";
 import type { AnnotationControl, AnnotationSupport, AnnotationWindows, CapturedImage, CaptureOutcome } from "./platform/annotation-port";
 import { createTauriAnnotationWindows } from "./platform/annotation-tauri";
-import { ANNOTATION_REMOTE_ACTIONS, resolveStartMode, type Dock } from "./toolbar";
+import { ANNOTATION_REMOTE_ACTIONS, annotationBarOf, resolveStartMode, type Dock } from "./toolbar";
 import { createContainerIO } from "./app/container-io";
 import { createAssetStore } from "./core/asset-store";
 import { createBoardSession, type SessionShared } from "./app/board-session";
@@ -446,11 +446,12 @@ async function start(): Promise<void> {
     });
   });
 
-  // C11a : côté et épaisseur de la première barre `tools`, mesurés dans la page (px CSS).
+  // C11a, design-l4 (L4-2) : côté et épaisseur de la barre montrée en annotation (`annotationBarOf`, la même que le rendu
+  // d'`App.tsx`), mesurés dans la page (px CSS) ; sans elle, `querySelector` rendait null et la bande prenait 64 px.
   const measureBar = (): { readonly dock: Dock; readonly thickness: number } => {
-    const bar = active.profile().toolbars.find((b) => b.role === "tools");
-    const dock: Dock = bar === undefined || bar.dock === "floating" ? "top" : bar.dock;
-    const el = bar === undefined ? null : document.querySelector(`[data-toolbar="${CSS.escape(bar.id)}"]`);
+    const bar = annotationBarOf(active.profile());
+    const dock: Dock = bar === null ? "top" : bar.dock;
+    const el = bar === null ? null : document.querySelector(`[data-toolbar="${CSS.escape(bar.id)}"]`);
     const r = el?.getBoundingClientRect();
     const thickness = r === undefined ? 64 : Math.ceil(dock === "top" || dock === "bottom" ? r.height : r.width);
     return { dock, thickness };
