@@ -1,8 +1,10 @@
 import { For, Show, createMemo, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
+import { Portal } from "solid-js/web";
 import { listenWebDrop } from "../platform/drop-web";
 import type { ToolbarHost } from "../app/toolbar-host";
 import {
   ACTION_TABLE,
+  ANNOTATION_ROLE,
   FILL_NONE_LABEL,
   fillChoices,
   presetsOf,
@@ -10,6 +12,7 @@ import {
   TABLE_FILLS,
   TOOL_TABLE,
   itemsForMode,
+  type ActionId,
   type StartMode,
   type ButtonSize,
   type Preset,
@@ -21,9 +24,11 @@ import {
 import { DEFAULT_FILL_TOLERANCE } from "../engine/engine";
 import { FormatRow } from "./FormatRow";
 import { SelectionRow } from "./SelectionRow";
-import { IconButton } from "./IconButton";
+import { Bubble, Icon, IconButton } from "./IconButton";
 import { iconFor } from "./icons";
 import { itemState, type ToolbarView } from "./item-state";
+import { PointerSwitch } from "./PointerSwitch";
+import { createTip } from "./tooltip";
 
 /** Libellé du curseur du pot (C6b, B10). */
 const FILL_TOLERANCE_LABEL = "Tolérance";
@@ -37,7 +42,8 @@ export interface ToolbarProps {
   readonly view: Accessor<ToolbarView>;
   readonly size: Accessor<ButtonSize>;
   readonly host: ToolbarHost;
-  /** Préréglages du profil : une barre de rôle `tools` montre ceux de l'outil actif en fin de barre (C1, P18). */
+  /** Préréglages du profil : une barre de rôle `tools` ou `annotation` montre ceux de l'outil actif en fin de barre
+   *  (C1, P18 ; design-l4, L4-4). */
   readonly presets?: Accessor<PresetTable>;
   /** C11a (P7, P19) : mode de la fenêtre ; absent : tableau. */
   readonly mode?: Accessor<StartMode>;
@@ -45,28 +51,67 @@ export interface ToolbarProps {
 
 interface Ctx { readonly view: Accessor<ToolbarView>; readonly host: ToolbarHost }
 
+/** design-l4 (L4-10) : actions rendues en boutons pleins (fond violet, icône blanche), accolées quand elles se suivent. */
+const PRIMARY_ACTIONS: ReadonlySet<ActionId> = new Set(["annotation-send", "annotation-send-new"]);
+/** design-l4 (L4-11) : icône de la zone de dépôt (Lucide file-down). */
+const DROP_ICON = "drop";
+
 function Button(props: { item: ToolItem; ctx: Ctx; onPress: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.ctx.view()));
+  const primary = props.item.kind === "action" && PRIMARY_ACTIONS.has(props.item.action ?? "");
   return (
     <IconButton
       icon={iconFor(props.item, st().icon)}
       label={st().label}
       pressed={st().pressed}
       disabled={st().disabled}
-      attrs={{ "data-item": props.item.id }}
+      attrs={primary ? { "data-item": props.item.id, class: "rb-primary" } : { "data-item": props.item.id }}
       onPress={() => props.onPress()}
     />
   );
 }
 
+/** Zone de dépôt (design-l4, L4-11) : icône, libellé en `rb-sr` (le `textContent` reste le libellé), infobulle de L1. */
 function Drop(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
   let el: HTMLDivElement | undefined;
+  const tip = createTip();
   onMount(() => {
     const off = listenWebDrop(el ?? null, (files, at) => props.ctx.host.dropFiles(files, at), { stopPropagation: true });
     onCleanup(off);
   });
-  return <div class="rb-drop" data-item={props.item.id} ref={el}>{props.item.label}</div>;
+  return (
+    <>
+      <div
+        class="rb-drop"
+        data-item={props.item.id}
+        ref={el}
+        onPointerEnter={(e) => {
+          if (e.pointerType === "mouse") tip.enter();
+        }}
+        onPointerLeave={(e) => {
+          if (e.pointerType === "mouse") tip.leave();
+        }}
+        onPointerDown={(e) => tip.down(e.pointerType)}
+        onPointerUp={() => tip.up()}
+        onPointerCancel={() => tip.up()}
+      >
+        <Icon name={DROP_ICON} />
+        <span class="rb-sr">{props.item.label}</span>
+      </div>
+      <Show when={tip.shown()}>
+        <Portal>
+          <Bubble label={props.item.label} anchor={el!} />
+        </Portal>
+      </Show>
+    </>
+  );
 }
+
+/** design-l4 (L4-8) : rendu propre à une action (table indexée par l'action, jamais un test sur l'identifiant) ;
+ *  absente : bouton. */
+const ACTION_RENDER: Readonly<Record<ActionId, (item: ToolItem, ctx: Ctx) => JSX.Element>> = {
+  "annotation-pointer": (item, ctx) => <PointerSwitch item={item} view={ctx.view} host={ctx.host} />,
+};
 
 /** Rendu par sorte d'élément (table, jamais un branchement sur l'identifiant). */
 const RENDER: Readonly<Record<ToolItem["kind"], (item: ToolItem, ctx: Ctx) => JSX.Element>> = {
@@ -80,7 +125,10 @@ const RENDER: Readonly<Record<ToolItem["kind"], (item: ToolItem, ctx: Ctx) => JS
       />
     );
   },
-  action: (item, ctx) => <Button item={item} ctx={ctx} onPress={() => ctx.host.runAction(item.action ?? "")} />,
+  action: (item, ctx) => {
+    const own = item.action !== undefined && Object.hasOwn(ACTION_RENDER, item.action) ? ACTION_RENDER[item.action] : undefined;
+    return own !== undefined ? own(item, ctx) : <Button item={item} ctx={ctx} onPress={() => ctx.host.runAction(item.action ?? "")} />;
+  },
   dropzone: (item, ctx) => <Drop item={item} ctx={ctx} />,
   separator: () => <span class="rb-sep" role="separator" />,
 };
@@ -179,6 +227,9 @@ function TableActionRow(props: { view: Accessor<ToolbarView>; host: ToolbarHost 
   );
 }
 
+/** C1 (P18), design-l4 (L4-4) : rôles qui portent les rangées contextuelles (préréglages, tableau, sélection, format). */
+const CONTEXT_ROLES: ReadonlySet<string> = new Set(["tools", ANNOTATION_ROLE]);
+
 export function Toolbar(props: ToolbarProps): JSX.Element {
   const items = createMemo(() => itemsForMode(props.bar, props.caps(), props.mode?.() ?? "board"));
   const ctx: Ctx = { view: props.view, host: props.host };
@@ -193,7 +244,7 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       aria-label={props.bar.id}
     >
       <For each={items()}>{(item) => RENDER[item.kind](item, ctx)}</For>
-      <Show when={props.bar.role === "tools"}>
+      <Show when={CONTEXT_ROLES.has(props.bar.role)}>
         <Show when={props.presets !== undefined}>
           <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
         </Show>

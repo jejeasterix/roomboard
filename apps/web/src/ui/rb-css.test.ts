@@ -67,3 +67,21 @@ describe("rb.css (design-l4, L4-12)", () => {
     expect(rule('html[data-cadre="1"] .rb-annot-frame')).toContain("display: block;");
   });
 });
+
+describe("rb.css (design-l4, L4-7 bis, L4-8, L4-10, L4-11)", () => {
+  it("design-l4 : commande segmentée, fond gris 50 et rayon lg ; empilée en colonne dans une barre verticale", () => {
+    expect(rule(".rb-seg")).toMatch(/display: inline-flex;.*flex: none;.*background: var\(--rf-gray-50\);.*border-radius: var\(--rf-radius-lg\);/);
+    expect(rule('.rb-bar[data-dock="left"] .rb-seg, .rb-bar[data-dock="right"] .rb-seg')).toContain("flex-direction: column;");
+  });
+  it("design-l4 : boutons pleins violet 600 et blanc ; grisés gris 50 et gris 500 ; accolés à 2 px, en ligne et en colonne", () => {
+    expect(rule(".rb-bar button.rb-primary")).toMatch(/background: var\(--rf-violet-600\);.*color: var\(--rf-white\);/);
+    expect(rule(".rb-bar button.rb-primary:not(:disabled):hover")).toContain("background: var(--rf-violet-700);");
+    expect(rule(".rb-bar button.rb-primary:disabled")).toMatch(/background: var\(--rf-gray-50\);.*color: var\(--rf-gray-500\);/);
+    expect(rule('.rb-bar:is([data-dock="top"], [data-dock="bottom"]) button.rb-primary + button.rb-primary')).toContain("margin-inline-start: -2px;");
+    expect(rule('.rb-bar:is([data-dock="left"], [data-dock="right"]) button.rb-primary + button.rb-primary')).toContain("margin-block-start: -2px;");
+  });
+  it("design-l4 : zone de dépôt 96 px × --rb-btn, pointillé 1,5 px gris 500, rayon lg ; couchée dans une barre verticale", () => {
+    expect(rule(".rb-drop")).toMatch(/display: grid;.*place-items: center;.*box-sizing: border-box;.*inline-size: 96px;.*block-size: var\(--rb-btn\);.*border: 1\.5px dashed var\(--rf-gray-500\);.*border-radius: var\(--rf-radius-lg\);/);
+    expect(rule('.rb-bar[data-dock="left"] .rb-drop, .rb-bar[data-dock="right"] .rb-drop')).toMatch(/inline-size: var\(--rb-btn\);.*block-size: 96px;/);
+  });
+});
