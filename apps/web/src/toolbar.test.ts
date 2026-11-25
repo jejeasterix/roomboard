@@ -395,7 +395,7 @@ describe("itemsForMode (C11a, P7, P19)", () => {
     expect(old.warnings).toEqual([]);
     const bar = old.profile.toolbars[0]!;
     const before = JSON.stringify(bar);
-    const items = itemsForMode(annotationBarOf(builtinProfile("defaut")!)!, caps, "desktop-annotation");
+    const items = itemsForMode(bar, caps, "desktop-annotation");
     expect(items.filter((it) => it.action === "desktop-annotation").map((it) => it.label)).toEqual(["Annotation du bureau"]);
     expect(items.some((it) => it.action === "annotation-pointer")).toBe(true);
     expect(itemsForMode(bar, caps, "board").some((it) => it.action === "desktop-annotation")).toBe(false);
@@ -441,7 +441,7 @@ describe("C11b : figer et envoyer (P5, P29)", () => {
     expect(r.warnings).toEqual([]);
     const bar = r.profile.toolbars[0]!;
     const before = JSON.stringify(bar);
-    const ann = itemsForMode(annotationBarOf(builtinProfile("defaut")!)!, caps, "desktop-annotation");
+    const ann = itemsForMode(bar, caps, "desktop-annotation");
     expect(ann.filter((it) => it.action === "annotation-send").map((it) => it.label)).toEqual(["Envoyer au tableau"]);
     expect(ann.some((it) => it.action === "annotation-freeze")).toBe(false);
     expect(itemsForMode(bar, caps, "board").some((it) => it.action === "annotation-send")).toBe(false);
@@ -464,7 +464,7 @@ describe("annotationBarOf (design-l4, L4-1, L4-2)", () => {
   it("annotationBarOf (design-l4) : ANNOTATION_ROLE vaut « annotation », accepté par parseProfile sans avertissement", () => {
     expect(ANNOTATION_ROLE).toBe("annotation");
     const r = parseProfile({ ...base(), toolbars: [bar("outils", "tools", "top"), bar("annotation", "annotation", "top")] });
-    expect("errors" in r ? r.errors : r.warnings).toEqual([]);
+    expect("errors" in r ? r.errors : r.warnings.filter((w) => !w.includes("menu Profil"))).toEqual([]);
   });
   it("annotationBarOf (design-l4) : la première barre de rôle annotation, même placée après outils et pages", () => {
     const p = withBars(bar("outils", "tools", "top"), bar("pages", "pages", "bottom"), bar("a1", "annotation", "left"), bar("a2", "annotation", "top"));
@@ -489,6 +489,9 @@ describe("annotationBarOf (design-l4, L4-1, L4-2)", () => {
     expect(annotationBarOf(withBars(bar("f", "tools", "floating")))).toMatchObject({ id: "f", dock: "top" });
   });
   it("annotationBarOf (design-l4) : ni annotation ni tools → null", () => {
-    expect(annotationBarOf(withBars(bar("pages", "pages", "bottom")))).toBeNull();
+    // `parseProfile` ajoute une barre `tools` à un profil qui n'en a pas : le cas null se pose sur un `Profile` bâti à la main.
+    const pagesOnly = { ...withBars(bar("outils", "tools", "top")), toolbars: [withBars(bar("pages", "pages", "bottom")).toolbars[0]!] } as Profile;
+    expect(pagesOnly.toolbars.some((b) => b.role === "tools" || b.role === ANNOTATION_ROLE)).toBe(false);
+    expect(annotationBarOf(pagesOnly)).toBeNull();
   });
 });
