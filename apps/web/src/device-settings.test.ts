@@ -132,3 +132,10 @@ describe("device-settings : îlots (design-l2 L2-7, DA-L2-3)", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("design-l2 T11 : clé d'îlot", () => {
+  it("design-l2 T11 (discrimine) : chaque partie de la clé est encodée (encodeURIComponent)", () => {
+    expect(islandKey("mon profil", "outils/a")).toBe("roomboard.ilot.mon%20profil.outils%2Fa");
+    expect(islandKey("defaut", "outils")).toBe("roomboard.ilot.defaut.outils");
+  });
+});

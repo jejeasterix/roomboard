@@ -245,6 +245,11 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
   });
 
   it("design-l2 L2-12 (discrimine) : calque : îlots centrés placés par left / top en px entiers, jamais par la grille", () => {
+    // T11 : case de 0 × 0 (jsdom), rien n'est placé ; on lui donne la case de 1280 × 900.
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      return this.classList.contains("rb-islands") ? ({ x: 0, y: 0, left: 0, top: 0, width: 1280, height: 900, right: 1280, bottom: 900, toJSON: () => ({}) } as DOMRect) : real.call(this);
+    });
     const { container } = layer(ALL);
     for (const id of ["outils", "pages"]) {
       const el = container.querySelector<HTMLElement>(`[data-island="${id}"]`)!;
@@ -273,5 +278,94 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     const w = head.style.getPropertyValue("max-inline-size");
     expect(w).toMatch(/^\d+px$/);
     expect(Number.parseInt(w, 10)).toBeGreaterThanOrEqual(144);
+  });
+});
+
+describe("design-l2 T11 : correctifs de fin", () => {
+  const rect = (width: number, height: number): DOMRect =>
+    ({ x: 0, y: 0, left: 0, top: 0, width, height, right: width, bottom: height, toJSON: () => ({}) }) as DOMRect;
+  /** Boîtes du calque à 1280 × 900 : menu 56, panneaux 108, rangée 56 ; outils et #etat aux largeurs données. */
+  function boxes(tools: number, etat: number): void {
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      if (this.classList.contains("rb-islands")) return rect(1280, 900);
+      if (this.classList.contains("rb-corner-menu")) return rect(56, 56);
+      if (this.id === "etat") return rect(etat, 44);
+      const corner = this.getAttribute("data-corner");
+      if (corner === "top-end") return rect(108, 56);
+      if (corner === "top-start") return rect(400, 56);
+      if (this.getAttribute("data-island") === "outils") return rect(tools, 56);
+      return real.call(this);
+    });
+  }
+  const BARS = [bar("menu", "menu"), bar("outils", "tools"), bar("panneaux", "panels")];
+
+  it("design-l2 T11 (discrimine) : #etat non vide : sa largeur compte dans la rangée du haut, l'îlot d'outils ne le recouvre pas", () => {
+    boxes(560, 100);
+    const r = render(() => (
+      <IslandLayer bars={() => BARS} render={(b) => <div data-toolbar={b.id} />} head={<div data-tabs />} status={<p id="etat" role="status">Erreur du moteur</p>} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} />
+    ));
+    const tools = r.container.querySelector<HTMLElement>('[data-island="outils"]')!;
+    const head = r.container.querySelector<HTMLElement>('[data-island="onglets"]')!;
+    const startX = 16 + 56 + 8;
+    const tabs = Number.parseInt(head.style.getPropertyValue("max-inline-size"), 10);
+    const etatRight = startX + tabs + 8 + 100;
+    expect(tools.style.top).toBe("16px");
+    expect(etatRight).toBeLessThanOrEqual(Number.parseInt(tools.style.left, 10) - 8);
+    const etat = r.container.querySelector<HTMLElement>("#etat")!;
+    expect(etat.getAttribute("role")).toBe("status");
+    expect(etat.style.display).not.toBe("none");
+  });
+
+  it("design-l2 T11 (discrimine) : #etat trop large pour la rangée : l'îlot d'outils passe sous la rangée du haut", () => {
+    boxes(560, 400);
+    const r = render(() => (
+      <IslandLayer bars={() => BARS} render={(b) => <div data-toolbar={b.id} />} head={<div data-tabs />} status={<p id="etat" role="status">Erreur du moteur, longue</p>} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} />
+    ));
+    expect(r.container.querySelector<HTMLElement>('[data-island="outils"]')!.style.top).toBe(`${16 + 56 + 8}px`);
+  });
+
+  it("design-l2 T11 (discrimine) : autre profil, mêmes barres : l'îlot relit l'appareil du nouveau profil et y écrit", () => {
+    boxes(300, 0);
+    const saved: Record<string, IslandState> = { defaut: { at: { x: 40, y: 200 }, collapsed: null } };
+    const s = { island: vi.fn((p: string) => saved[p] ?? { at: null, collapsed: null }), setIsland: vi.fn(() => true) } satisfies IslandStore;
+    const [pid, setPid] = createSignal("defaut");
+    const bars = [bar("outils", "tools")];
+    const r = render(() => (
+      <IslandLayer bars={() => bars} render={(b) => <div data-toolbar={b.id} />} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={pid} store={s} size={() => "m"} sheetOpen={() => false} />
+    ));
+    const tools = (): HTMLElement => r.container.querySelector<HTMLElement>('[data-island="outils"]')!;
+    expect(pos(tools())).toEqual(["40px", "200px"]);
+    setPid("copie");
+    expect(tools().style.top).toBe("16px");
+    fireEvent.keyDown(tools().querySelector("[data-island-grip]")!, { key: "ArrowDown" });
+    expect(s.setIsland).toHaveBeenLastCalledWith("copie", "outils", expect.anything());
+  });
+
+  it("design-l2 T11 (discrimine) : panneau ouvert : le double appui sur la poignée ne recentre ni n'écrit", () => {
+    const { grip, s, island } = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null }, sheet: { x: 16, y: 80, maxWidth: 600 } });
+    fireEvent.dblClick(grip());
+    expect(s.setIsland).not.toHaveBeenCalled();
+    expect(pos(island())).toEqual(["16px", "80px"]);
+  });
+
+  it("design-l2 T11 (discrimine) : case 0 × 0 : rien de placé, le clavier n'écrit rien ; placé dès que la case a une taille", () => {
+    const { island, grip, s, setArea } = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null } });
+    setArea({ w: 0, h: 0 });
+    expect(island().style.left).toBe("");
+    fireEvent.keyDown(grip(), { key: "ArrowRight" });
+    expect(s.setIsland).not.toHaveBeenCalled();
+    setArea(MID);
+    expect(pos(island())).toEqual(["40px", "200px"]);
+  });
+
+  it("design-l2 T11 (discrimine) : remesure demandée après un repli, image annulée au démontage", () => {
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation(() => 4242);
+    const caf = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => undefined);
+    const { collapse, unmount } = setup();
+    fireEvent.click(collapse());
+    expect(raf).toHaveBeenCalled();
+    unmount();
+    expect(caf).toHaveBeenCalledWith(4242);
   });
 });

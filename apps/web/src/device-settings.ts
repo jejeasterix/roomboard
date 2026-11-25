@@ -11,7 +11,9 @@ const FRAME_HIDDEN = "non";
 /** design-l2 (L2-7, DA-L2-3) : position et repli d'un îlot, par profil et par barre, sur le poste ; jamais dans le
  *  profil (format `.rbprofile` inchangé). Valeur : JSON `{ "x", "y", "collapsed" }`, champs facultatifs. */
 export const ISLAND_KEY_PREFIX = "roomboard.ilot.";
-export const islandKey = (profileId: string, barId: string): string => `${ISLAND_KEY_PREFIX}${profileId}.${barId}`;
+/** Chaque partie encodée (`encodeURIComponent`) : un identifiant avec espace ou barre oblique reste une seule partie. */
+export const islandKey = (profileId: string, barId: string): string =>
+  `${ISLAND_KEY_PREFIX}${encodeURIComponent(profileId)}.${encodeURIComponent(barId)}`;
 
 /** `at` null : aucune position (îlot dans sa voie) ; `collapsed` null : état de départ du profil. */
 export interface IslandState {

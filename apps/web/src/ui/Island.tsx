@@ -149,6 +149,8 @@ export function Island(props: IslandProps): JSX.Element {
   const pos = createMemo((): (Lane & { readonly wrap: boolean }) | null => {
     if (!positioned) return null;
     const area = props.area();
+    /** T11 : case pas encore mesurée (ou cachée) : rien de placé, aucun geste. */
+    if (area.w === 0 || area.h === 0) return null;
     const s = size();
     const c = props.corners();
     const lane = props.movable ? props.sheet() : null;
@@ -210,7 +212,18 @@ export function Island(props: IslandProps): JSX.Element {
       props.onPlaced?.(null);
     });
   });
-  createEffect(on(() => [props.watch?.(), collapsed()], () => requestAnimationFrame(measure), { defer: true }));
+  let remeasure = 0;
+  createEffect(
+    on(
+      () => [props.watch?.(), collapsed()],
+      () => {
+        cancelAnimationFrame(remeasure);
+        remeasure = requestAnimationFrame(measure);
+      },
+      { defer: true },
+    ),
+  );
+  onCleanup(() => cancelAnimationFrame(remeasure));
   createEffect(() => {
     const p = pos();
     if (p === null) return;
@@ -273,7 +286,7 @@ export function Island(props: IslandProps): JSX.Element {
       style={pos() === null ? undefined : { left: `${pos()!.x}px`, top: `${pos()!.y}px`, "max-inline-size": `${pos()!.maxWidth}px` }}
     >
       <Show when={props.movable}>
-        <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => commit(null)} />
+        <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => props.sheet() === null && commit(null)} />
       </Show>
       {props.children(collapsed)}
       <Show when={props.movable}>
@@ -322,6 +335,9 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   const [menuBox, setMenuBox] = createSignal<Box>(ZERO, { equals: sameBox });
   const [endBox, setEndBox] = createSignal<Box>(ZERO, { equals: sameBox });
   const [bottomBox, setBottomBox] = createSignal<Box>(ZERO, { equals: sameBox });
+  /** T11 : `#etat` suit les onglets ; non vide, sa largeur compte dans la rangée du haut (vide : 0, rb.css). */
+  const [statusBox, setStatusBox] = createSignal<Box>(ZERO, { equals: sameBox });
+  const statusW = (): number => statusBox().w;
   const [tools, setTools] = createSignal<Placed | null>(null);
   const byAnchor = (anchor: Anchor) => createMemo(() => props.bars().filter((b) => anchorOf(b.role) === anchor));
   const starts = byAnchor("top-start");
@@ -330,12 +346,16 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   const centered = createMemo(() => props.bars().filter((b) => isCentered(anchorOf(b.role))));
   /** Abscisse de l'îlot des onglets : après les îlots du menu et leur écart. */
   const startX = (): number => EDGE + menuBox().w + (menuBox().w > 0 ? GAP : 0);
-  const topCorners = createMemo((): Corners => ({ start: startX() - EDGE + TABS_MIN, end: endBox().w, band: Math.max(startBox().h, endBox().h) }));
+  const topCorners = createMemo((): Corners => ({
+    start: startX() - EDGE + TABS_MIN + (statusW() > 0 ? GAP + statusW() : 0),
+    end: endBox().w,
+    band: Math.max(startBox().h, endBox().h),
+  }));
   const bottomCorners = createMemo((): Corners => ({ start: bottomBox().w, end: 0, band: bottomBox().h }));
   const sheet = createMemo((): Lane | null => (props.sheetOpen() ? sheetLane(area(), sheetWidth(), topCorners().band, BUTTON_PX[props.size()]) : null));
   const tabsMax = createMemo(() => {
     const t = tools();
-    return tabsWidth(area(), startX(), endBox().w, t === null || t.moved ? null : { x: t.x, y: t.y });
+    return tabsWidth(area(), startX(), endBox().w, t === null || t.moved ? null : { x: t.x, y: t.y }, statusW());
   });
   onMount(() => {
     const offs = [
@@ -345,11 +365,21 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
       observeBox(topEnd!, setEndBox),
       observeBox(bottomStart!, setBottomBox),
     ];
+    const status = topStart!.querySelector('[role="status"]');
+    if (status !== null) offs.push(observeBox(status, setStatusBox));
     onCleanup(() => {
       for (const off of offs) off();
     });
   });
-  const island = (bar: Bar): JSX.Element => {
+  /** T11 : les îlots sont recréés à chaque changement de profil (mêmes objets `bar` après « Enregistrer comme
+   *  nouveau ») : position et repli relus sur l'appareil du nouveau profil, écrits sous sa clé. */
+  const profile = createMemo(() => [props.profileId()] as const);
+  const islands = (list: Accessor<readonly Bar[]>): JSX.Element => (
+    <Show keyed when={profile()}>
+      {([id]) => <For each={list()}>{(bar) => island(bar, id)}</For>}
+    </Show>
+  );
+  const island = (bar: Bar, profileId: string): JSX.Element => {
     const anchor = anchorOf(bar.role);
     const movable = bar.role === MOVABLE_ROLE;
     return (
@@ -357,7 +387,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         bar={bar}
         anchor={anchor}
         movable={movable}
-        profileId={props.profileId()}
+        profileId={profileId}
         {...(props.store !== undefined ? { store: props.store } : {})}
         area={area}
         corners={anchor.startsWith("top") ? topCorners : bottomCorners}
@@ -373,7 +403,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     <div ref={layer} class="rb-islands">
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
-          <For each={starts()}>{island}</For>
+          {islands(starts)}
         </div>
         <div class="rb-island rb-head" data-island="onglets" style={{ "max-inline-size": `${tabsMax()}px` }}>
           {props.head}
@@ -381,12 +411,12 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         {props.status}
       </div>
       <div ref={topEnd} class="rb-corner" data-corner="top-end">
-        <For each={ends()}>{island}</For>
+        {islands(ends)}
       </div>
       <div ref={bottomStart} class="rb-corner" data-corner="bottom-start">
-        <For each={bottoms()}>{island}</For>
+        {islands(bottoms)}
       </div>
-      <For each={centered()}>{island}</For>
+      {islands(centered)}
     </div>
   );
 }
