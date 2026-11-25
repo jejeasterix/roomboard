@@ -221,6 +221,23 @@ async function s1(browser, base) {
     check(frac.length === 0, `S1 ${vp.width} : positions entières${frac.length ? ` (fractionnaires : ${frac.join(", ")})` : ""}`);
     const clash = clashes(boxes);
     check(clash.length === 0, `S1 ${vp.width} : aucun îlot n'en recouvre un autre${clash.length ? ` (${clash.join(", ")})` : ""}`);
+    // T11 : un message dans #etat (région role=status) : visible, à l'écart de chaque îlot, au premier plan en son centre.
+    await page.evaluate(() => {
+      document.getElementById("etat").textContent = "Erreur du moteur : essai T11, message d'état assez long";
+    });
+    await frames(page);
+    await frames(page);
+    const etat = await box(page, "#etat");
+    const over = [];
+    for (const id of ISLANDS) if (!apart(etat, await box(page, ISLAND(id)))) over.push(id);
+    const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest("#etat") !== null, { x: etat.x + etat.width / 2, y: etat.y + etat.height / 2 });
+    console.log(`#etat ${vp.width} × ${vp.height} : ${etat.x},${etat.y} ${etat.width}×${etat.height} ; outils ${JSON.stringify(await box(page, TOOLS))}`);
+    check((await page.getAttribute("#etat", "role")) === "status" && (await page.locator("#etat").isVisible()), `S1 ${vp.width} : #etat role=status, visible avec un message`);
+    check(over.length === 0 && top, `S1 ${vp.width} : #etat non recouvert par un îlot${over.length ? ` (${over.join(", ")})` : ""}${top ? "" : " (autre élément au premier plan)"}`);
+    await page.evaluate(() => {
+      document.getElementById("etat").textContent = "";
+    });
+    await frames(page);
     const cx = Math.round(st.width / 2);
     const cy = Math.round(st.height / 2);
     await page.mouse.move(cx - 100, cy);
