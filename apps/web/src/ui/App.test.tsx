@@ -21,6 +21,9 @@ import { setDock } from "../profile-edit";
 import { createActiveProfile } from "./active-profile";
 import { App, showStartError, type AnnotationUi, type AppProps } from "./App";
 import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
+import { createDeviceSettings } from "../device-settings";
+import { sentToBoardToast } from "../platform/annotation-port";
+import { clearToast, showToast } from "./toast";
 import type { ToolbarView } from "./item-state";
 import { parseProfile, type Profile } from "../toolbar";
 import { layoutFor } from "./layout";
@@ -218,7 +221,7 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi; device?: AppProps["device"] } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
   const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
@@ -248,6 +251,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
         navigate={navigate}
         {...(opts.library ? { library: opts.library } : {})}
         {...(opts.annotation ? { annotation: opts.annotation } : {})}
+        {...(opts.device ? { device: opts.device } : {})}
       />
     ),
     container,
@@ -1023,5 +1027,31 @@ describe("App : barre 3D (C15)", () => {
     expect(container.querySelector('[data-model3d="message"]')?.textContent).toBe("3D indisponible sur ce poste : l'objet garde son image");
     expect(container.querySelector<HTMLButtonElement>('[data-model3d="orbit"]')!.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>('[data-model3d="reset"]')!.disabled).toBe(true);
+  });
+});
+
+describe("App — design-l4 : bandeau et réglage du cadre (L4-14, L4-16)", () => {
+  afterEach(() => clearToast());
+  it("S4 : bandeau dans la case de la scène ; L4-16 : effacé à l'entrée en annotation", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    showToast(sentToBoardToast(2));
+    expect(container.querySelector(".rb-toasts")?.parentElement).toBe(container.querySelector(".rb-layout"));
+    expect(container.querySelector(".rb-toast")?.textContent).toBe("Envoyé au tableau : page 2");
+    await a.control.enter();
+    expect(container.querySelector(".rb-toast")).toBeNull();
+  });
+  it("S3 : Réglages, bouton du cadre avec la capacité d'annotation ; absent sans elle (H10)", () => {
+    const device = createDeviceSettings(null);
+    const on = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, device });
+    click(on.container.querySelector('button[data-item="settings"]'));
+    const btn = () => on.container.querySelector('button[data-reglage="cadre"]');
+    expect(btn()?.textContent).toBe("Cadre de l'annotation : affiché");
+    click(btn());
+    expect(device.frame()).toBe(false);
+    expect(btn()?.textContent).toBe("Cadre de l'annotation : masqué");
+    const off = renderApp({ device: createDeviceSettings(null) });
+    click(off.container.querySelector('button[data-item="settings"]'));
+    expect(off.container.querySelector('button[data-reglage="cadre"]')).toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type 
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import type { ImageData } from "../core/api";
+import type { DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
 import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
@@ -39,6 +40,8 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
 import type { ToolbarView } from "./item-state";
 import { Toolbar } from "./Toolbar";
+import { Toasts } from "./Toasts";
+import { clearToast } from "./toast";
 import "./rb.css";
 
 /** C11a (P21) : annotation de bureau ; absente (web, tests anciens) : tableau seul. */
@@ -67,6 +70,9 @@ export interface AppProps {
   navigate(search: string): void;
   /** C4 : bibliothèque ; absente (tests anciens) : le bouton n'ouvre rien. */
   readonly library?: { readonly library: ResourceLibrary; readonly shared: SharedFolder; readonly packs: TypedFiles };
+  /** design-l4 (L4-14) : réglages de l'appareil ; donnés au panneau Réglages seulement avec la capacité d'annotation
+   *  (H10) ; absents (tests anciens) : aucun bouton du cadre. */
+  readonly device?: DeviceSettings;
 }
 
 type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
@@ -304,7 +310,17 @@ export function App(props: AppProps): JSX.Element {
     pointer: (m) => pick().pointer?.(m),
   };
   // Panneau fermé à l'entrée ; profil renvoyé à `annotate` s'il change pendant l'annotation (RF5).
-  createEffect(on(annotating, (a) => { if (a) setPanel(null); }, { defer: true }));
+  createEffect(
+    on(
+      annotating,
+      (a) => {
+        if (!a) return;
+        setPanel(null);
+        clearToast();
+      },
+      { defer: true },
+    ),
+  );
   createEffect(on(() => props.active.profile(), (p) => { if (annotating()) ann?.control.sendProfile(p); }, { defer: true }));
 
   // Mode de démarrage (U14, C1 P10) : une seule fois, au montage ; changer de profil ensuite ne le rejoue pas (P11).
@@ -394,6 +410,7 @@ export function App(props: AppProps): JSX.Element {
       </div>
       <For each={shownDocked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
       {props.stages}
+      <Toasts />
       <Show when={shownFloating().length > 0}>
         <div class="rb-floating">
           <For each={shownFloating()}>{(bar) => barOf(bar)}</For>
@@ -424,6 +441,7 @@ export function App(props: AppProps): JSX.Element {
             navigate={(search) => props.navigate(search)}
             anyDirty={() => ws.anyDirty()}
             confirm={(m) => props.shell.confirm(m)}
+            {...(props.device !== undefined && props.active.capabilities().desktopAnnotation ? { device: props.device } : {})}
           />
         </div>
       </Show>

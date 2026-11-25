@@ -85,3 +85,26 @@ describe("rb.css (design-l4, L4-7 bis, L4-8, L4-10, L4-11)", () => {
     expect(rule('.rb-bar[data-dock="left"] .rb-drop, .rb-bar[data-dock="right"] .rb-drop')).toMatch(/inline-size: var\(--rb-btn\);.*block-size: 96px;/);
   });
 });
+
+describe("rb.css (design-l4, L4-16)", () => {
+  it("L4-16 : bandeau dans la case de la scène, en bas à droite, 24 px des bords, inerte ; carte blanche, pastille 32 px succès", () => {
+    expect(rule(".rb-toasts")).toMatch(/grid-area: stage;.*align-self: end;.*justify-self: end;.*margin: 24px;.*z-index: 4;.*pointer-events: none;/);
+    expect(rule(".rb-toast")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*padding: 12px 16px;.*background: var\(--rf-white\);.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);.*font-size: 16px;.*color: var\(--rf-gray-800\);/);
+    expect(rule(".rb-toast-ok")).toMatch(/inline-size: 32px;.*block-size: 32px;.*border-radius: 50%;.*background: var\(--rf-success\);.*color: var\(--rf-white\);/);
+    expect(rule(".rb-toast b")).toMatch(/font-weight: 600;.*color: var\(--rf-violet-700\);/);
+  });
+  it("L4-16 : bandeau caché en annotation (fenêtre principale réduite à la barre)", () => {
+    expect(CSS).toMatch(/\.rb-layout\[data-mode="annotation"\] > \.rb-toasts \{ display: none; \}/);
+  });
+  it("relecture : le bandeau mesure sa largeur de bordure (box-sizing: border-box)", () => {
+    expect(rule(".rb-toast")).toMatch(/box-sizing: border-box;/);
+  });
+  it("relecture : focus des boutons pleins en navy 500, décalé de 2 px (visible sur le violet, sépare les boutons accolés)", () => {
+    expect(rule(".rb-bar button.rb-primary:focus-visible")).toMatch(/outline-color: var\(--rf-navy-500\);.*outline-offset: 2px;/);
+  });
+  it("relecture : survol du segment inactif distinct du fond de la commande (gris 300, pas gris 50)", () => {
+    const sel = '.rb-bar .rb-seg button:not(:disabled, [aria-pressed="true"], [aria-current="page"]):hover';
+    expect(rule(sel)).toMatch(/background: var\(--rf-gray-300\);/);
+    expect(rule(".rb-seg")).toContain("background: var(--rf-gray-50);");
+  });
+});

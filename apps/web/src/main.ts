@@ -50,6 +50,9 @@ import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
 import { createActiveProfile } from "./ui/active-profile";
 import { mountApp, showStartError } from "./ui/App";
+import { createDeviceSettings } from "./device-settings";
+import { showToast } from "./ui/toast";
+import { sentToBoardToast } from "./platform/annotation-port";
 import init, * as wasm from "./wasm/roomboard_wasm";
 import { withConversionMark, type OriginalChange } from "./platform/office-import";
 
@@ -248,6 +251,8 @@ async function start(): Promise<void> {
     ...(fakeAnnotation ? { forceAnnotation: true } : {}),
   };
   const settingsKv = browserKeyValue(window);
+  // design-l4 (L4-14) : réglages de l'appareil, sur le même stockage que les profils (`roomboard.<zone>.<réglage>`).
+  const device = createDeviceSettings(settingsKv);
   const store = createProfileStore(settingsKv, BUILTIN_PROFILES);
   // Avertissements de l'amorce (profil stocké écarté, stockage illisible) : rien d'autre ne les lit.
   for (const w of store.warnings()) console.warn(w);
@@ -479,6 +484,9 @@ async function start(): Promise<void> {
           startMode: () => resolveStartMode(active.profile(), active.capabilities()).mode,
           originKind: (id) => (id === null ? null : (workspace.tabs.list().find((t) => t.id === id)?.kind ?? null)),
           transparent: support?.transparent ?? true,
+          // design-l4 (L4-13, L4-16) : cadre de l'appareil envoyé à `annotate` ; avis d'envoi en bandeau, plus une boîte.
+          frame: () => device.frame(),
+          sent: (page) => showToast(sentToBoardToast(page)),
         });
   annotation = ctl;
   if (windows !== null && support !== null) {
@@ -498,6 +506,7 @@ async function start(): Promise<void> {
     profileFiles,
     stages,
     library: { library, shared: sharedFolder, packs: packFiles },
+    device,
     ...(ctl === null || windows === null
       ? {}
       : { annotation: { control: ctl, remote: (local) => createRemoteToolbarHost((m) => ctl.command(m), local, ANNOTATION_REMOTE_ACTIONS), onView: (cb) => windows.onView(cb) } }),
