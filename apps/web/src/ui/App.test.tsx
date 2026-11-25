@@ -559,7 +559,8 @@ describe("App — profils (C1)", () => {
     (el as HTMLSelectElement).value = value;
     el!.dispatchEvent(new Event("change", { bubbles: true }));
   };
-  const DOCK = '[data-edit-bar="outils"] select[data-edit="dock"]';
+  /** design-l3 (L3-10) : vignette d'emplacement de la barre d'outils dans le panneau. */
+  const dockTile = (d: string): string => `[data-edit-bar="outils"] [data-edit="dock"] [data-choice="${d}"]`;
 
   it("S5 : profil annotation au navigateur : tableau ordinaire, aucun message (console ni #etat)", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -577,10 +578,9 @@ describe("App — profils (C1)", () => {
     const a = fakeAnnotationUi();
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
     openEditor(container);
-    expect(container.querySelector('[data-edit-bar="annotation"] legend')?.textContent).toBe("Barre d'annotation");
-    const box = container.querySelector<HTMLInputElement>('[data-edit-item="ann-text"] input[data-edit="shown"]')!;
-    box.checked = false;
-    box.dispatchEvent(new Event("change", { bubbles: true }));
+    click(container.querySelector('[data-edit="bar"] [data-choice="annotation"]'));
+    expect(container.querySelector('[data-edit-bar="annotation"] h4')?.textContent).toBe("Barre d'annotation");
+    click(container.querySelector('[data-edit-item="ann-text"] button[data-edit="shown"]'));
     click(container.querySelector('button[data-edit="save"]'));
     expect(container.querySelector('[data-toolbar="outils"] [data-item="text"]')).not.toBeNull();
     await a.control.enter();
@@ -725,19 +725,34 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector("[data-profiles]")).toBeNull();
   });
 
-  it("éditeur : la barre ne bouge pas avant Enregistrer ; Enregistrer applique (barre à gauche, grands boutons)", () => {
+  it("design-l3 L3-3 : la barre suit le brouillon en direct ; Enregistrer garde (barre à gauche, grands boutons)", () => {
     const { container, store } = renderApp();
     openEditor(container);
-    change(container.querySelector(DOCK), "left");
-    change(container.querySelector('select[data-edit="button-size"]'), "l");
+    click(container.querySelector(dockTile("left")));
+    click(container.querySelector('[data-edit="button-size"] [data-choice="l"]'));
     const bar = () => container.querySelector<HTMLElement>('[data-toolbar="outils"]')!;
-    expect(bar().dataset["dock"]).toBe("top");
+    expect(bar().dataset["dock"]).toBe("left");
+    expect(bar().dataset["size"]).toBe("l");
+    expect(store.hasOverride("defaut")).toBe(false);
     click(container.querySelector('button[data-edit="save"]'));
     expect(container.querySelector("[data-profile-editor]")).toBeNull();
     expect(bar().dataset["dock"]).toBe("left");
     expect(bar().dataset["size"]).toBe("l");
     expect(store.hasOverride("defaut")).toBe(true);
     expect(container.querySelector<HTMLElement>(".rb-layout")!.style.gridTemplateColumns).toBe("auto minmax(0, 1fr)");
+  });
+
+  it("design-l3 L3-3 : Fermer, Oui : la barre d'avant revient, rien n'est écrit", async () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    click(container.querySelector(dockTile("left")));
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("left");
+    vi.mocked(shell.confirm).mockClear();
+    click(container.querySelector('button[data-edit="close"]'));
+    expect(shell.confirm).toHaveBeenCalledWith("Abandonner les changements du profil « Par défaut » ?");
+    await vi.waitFor(() => expect(container.querySelector("[data-profile-editor]")).toBeNull());
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    expect(store.hasOverride("defaut")).toBe(false);
   });
 
   it("Enregistrer, écriture refusée : l'éditeur reste ouvert, un message est notifié", () => {
@@ -753,7 +768,7 @@ describe("App — profils (C1)", () => {
     };
     const { container } = renderApp({ kv });
     openEditor(container);
-    change(container.querySelector(DOCK), "left");
+    click(container.querySelector(dockTile("left")));
     vi.mocked(shell.notify).mockClear();
     refuse = true;
     click(container.querySelector('button[data-edit="save"]'));
@@ -764,7 +779,7 @@ describe("App — profils (C1)", () => {
   it("Enregistrer comme nouveau : cm1 actif, dans le menu", () => {
     const { container, store } = renderApp();
     openEditor(container);
-    change(container.querySelector(DOCK), "left");
+    click(container.querySelector(dockTile("left")));
     const name = container.querySelector<HTMLInputElement>('input[data-edit="new-name"]')!;
     name.value = "CM1";
     name.dispatchEvent(new InputEvent("input", { bubbles: true }));
@@ -775,15 +790,15 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector('[data-profile="cm1"]')?.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("changer de panneau abandonne le brouillon", () => {
+  it("changer de panneau abandonne le brouillon", async () => {
     const { container } = renderApp();
     openEditor(container);
-    change(container.querySelector(DOCK), "left");
+    click(container.querySelector(dockTile("left")));
     click(container.querySelector('button[data-item="settings"]'));
-    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    await vi.waitFor(() => expect(container.querySelector("[data-profile-editor]")).toBeNull());
     click(container.querySelector('button[data-item="settings"]'));
     openEditor(container);
-    expect(container.querySelector<HTMLSelectElement>(DOCK)!.value).toBe("top");
+    expect(container.querySelector(dockTile("top"))?.getAttribute("aria-checked")).toBe("true");
     expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
   });
 
@@ -837,6 +852,219 @@ describe("App — profils (C1)", () => {
     const [name, text] = files.save.mock.calls[0]!;
     expect(name).toBe("par-defaut.rbprofile");
     expect(JSON.parse(text).id).toBe("defaut");
+  });
+
+  it("design-l3 L3-1 : l'éditeur est un aside.rb-sheet « Profils » dans .rb-popover[data-panel=\"profils\"]", () => {
+    const { container } = renderApp();
+    openEditor(container);
+    const sheet = container.querySelector('.rb-popover[data-panel="profils"] > aside.rb-sheet[data-profile-editor]');
+    expect(sheet?.getAttribute("role")).toBe("dialog");
+    expect(sheet?.getAttribute("aria-label")).toBe("Profils");
+  });
+
+  it("design-l3 H15 : un préréglage ajouté au brouillon marche dans la barre montrée", () => {
+    const { container, tab } = renderApp();
+    openEditor(container);
+    click(container.querySelector('button[data-edit="preset-add"]'));
+    expect([...container.querySelectorAll('[data-toolbar="outils"] button[data-preset]')].map((b) => b.getAttribute("data-preset"))).toEqual(["noir", "rouge", "bleu", "couleur"]);
+    click(container.querySelector('[data-toolbar="outils"] button[data-preset="couleur"]'));
+    expect(tab.engine["setPenStyle"]).toHaveBeenCalledWith({ color: "#000000", width: 4 });
+  });
+
+  it("design-l3 L3-4 : choisir « Simple » dans le sélecteur du panneau : éditeur remonté sur Simple, focus sur le sélecteur", async () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    change(container.querySelector('select[data-edit="profile"]'), "simple");
+    expect(store.activeId()).toBe("simple");
+    expect(container.querySelector<HTMLInputElement>('input[data-edit="label"]')?.value).toBe("Simple (grands boutons)");
+    await new Promise((r) => setTimeout(r, 0));
+    const select = container.querySelector<HTMLSelectElement>('select[data-edit="profile"]');
+    expect(document.activeElement).toBe(select);
+    expect(select?.value).toBe("simple");
+  });
+
+  it("design-l3 L3-21 : Exporter du panneau écrit le brouillon ; Exporter… du menu, le profil enregistré", async () => {
+    const files = fakeFiles();
+    const { container } = renderApp({ files });
+    openEditor(container);
+    click(container.querySelector(dockTile("left")));
+    click(container.querySelector('button[data-edit="export"]'));
+    await vi.waitFor(() => expect(files.save).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(files.save.mock.calls[0]![1]).toolbars[0].dock).toBe("left");
+    click(container.querySelector('button[data-edit="close"]'));
+    await vi.waitFor(() => expect(container.querySelector("[data-profile-editor]")).toBeNull());
+    openMenu(container);
+    click(container.querySelector('[data-profile-cmd="export"]'));
+    await vi.waitFor(() => expect(files.save).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(files.save.mock.calls[1]![1]).toolbars[0].dock).toBe("top");
+  });
+
+  it("design-l3 L3-21 : Importer du panneau : le profil importé devient actif, l'éditeur remonte dessus", async () => {
+    const text = JSON.stringify({
+      format: "roomboard-profile", schema: 1, id: "importe", label: "Importé", interface: { buttonSize: "l" },
+      toolbars: [{ id: "outils", role: "tools", dock: "left", groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] }],
+    });
+    const files = fakeFiles([{ name: "importe.rbprofile", text }]);
+    const { container, store } = renderApp({ files });
+    openEditor(container);
+    click(container.querySelector('button[data-edit="import"]'));
+    await vi.waitFor(() => expect(store.activeId()).toBe("importe"));
+    expect(container.querySelector("[data-profile-editor]")).not.toBeNull();
+    expect(container.querySelector<HTMLSelectElement>('select[data-edit="profile"]')?.value).toBe("importe");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("left");
+  });
+
+  it("design-l3 L3-19 : Revenir à l'origine sur une copie de defaut : copie retirée, éditeur remonté, taille m", () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    click(container.querySelector('[data-edit="button-size"] [data-choice="s"]'));
+    click(container.querySelector('button[data-edit="save"]'));
+    expect(store.hasOverride("defaut")).toBe(true);
+    openEditor(container);
+    expect(container.querySelector('[data-edit="profile-tag"]')?.textContent).toBe("Fourni, modifié");
+    click(container.querySelector('button[data-edit="revert"]'));
+    expect(store.hasOverride("defaut")).toBe(false);
+    expect(container.querySelector('[data-edit="profile-tag"]')?.textContent).toBe("Fourni");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-size")).toBe("m");
+  });
+
+  it("design-l3 L3-19 (relecture) : après Revenir à l'origine, le focus revient sur le sélecteur de profil", async () => {
+    const { container } = renderApp();
+    openEditor(container);
+    click(container.querySelector('[data-edit="button-size"] [data-choice="s"]'));
+    click(container.querySelector('button[data-edit="save"]'));
+    openEditor(container);
+    click(container.querySelector('button[data-edit="revert"]'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
+  it("design-l3 L3-21 (relecture) : après un import depuis le panneau, le focus revient sur le sélecteur de profil", async () => {
+    const text = JSON.stringify({
+      format: "roomboard-profile", schema: 1, id: "importe", label: "Importé", interface: { buttonSize: "l" },
+      toolbars: [{ id: "outils", role: "tools", dock: "left", groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] }],
+    });
+    const { container, store } = renderApp({ files: fakeFiles([{ name: "importe.rbprofile", text }]) });
+    openEditor(container);
+    click(container.querySelector('button[data-edit="import"]'));
+    await vi.waitFor(() => expect(store.activeId()).toBe("importe"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
+  it("design-l3 L3-4 (relecture) : choix refusé dans le sélecteur du panneau (id inconnu) : l'éditeur rouvert ensuite ne prend pas le focus", async () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    const editor = container.querySelector("[data-profile-editor]");
+    vi.mocked(shell.notify).mockClear();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    change(container.querySelector('select[data-edit="profile"]'), "inconnu");
+    warn.mockRestore();
+    expect(String(vi.mocked(shell.notify).mock.calls[0]?.[0])).toMatch(/^Le choix du profil ne sera pas gardé/);
+    expect(store.activeId()).toBe("defaut");
+    expect(container.querySelector("[data-profile-editor]")).toBe(editor); // profil inchangé : aucun remontage
+    click(container.querySelector('button[data-edit="close"]'));
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    openEditor(container);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
+  it("design-l3 L3-4 (relecture) : après un choix réussi dans le panneau, l'éditeur rouvert ensuite ne prend pas le focus", async () => {
+    const { container, store } = renderApp();
+    openEditor(container);
+    change(container.querySelector('select[data-edit="profile"]'), "simple");
+    expect(store.activeId()).toBe("simple");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(container.querySelector('select[data-edit="profile"]'));
+    click(container.querySelector('button[data-edit="close"]'));
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    openEditor(container);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).not.toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
+  it("design-l3 L3-32 : brouillon modifié, Réglages : question ; Non : panneau gardé, barre à gauche ; Oui : Réglages, barre en haut", async () => {
+    const { container } = renderApp();
+    openEditor(container);
+    click(container.querySelector(dockTile("left")));
+    vi.mocked(shell.confirm).mockClear();
+    vi.mocked(shell.confirm).mockResolvedValueOnce(false);
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(shell.confirm).toHaveBeenCalledWith("Abandonner les changements du profil « Par défaut » ?");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.querySelector("[data-profile-editor]")).not.toBeNull();
+    expect(container.querySelector("#reglages")).toBeNull();
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("left");
+    click(container.querySelector('button[data-item="settings"]'));
+    await vi.waitFor(() => expect(container.querySelector("#reglages")).not.toBeNull());
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+  });
+
+  it("design-l3 L3-32 : brouillon égal, Réglages : aucune question, Réglages ouverts dans le même tour", () => {
+    const { container } = renderApp();
+    openEditor(container);
+    vi.mocked(shell.confirm).mockClear();
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(shell.confirm).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(container.querySelector("#reglages")).not.toBeNull();
+  });
+
+  it("design-l3 L3-32 : brouillon modifié, entrée en annotation : panneau fermé sans question ; à la sortie, la barre enregistrée", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    openEditor(container);
+    click(container.querySelector(dockTile("left")));
+    vi.mocked(shell.confirm).mockClear();
+    await a.control.enter();
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(shell.confirm).not.toHaveBeenCalled();
+    await a.control.exit();
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+  });
+
+  it("design-l3 L3-2 : panneau ouvert : .rb-layout[data-panneau=\"profils\"] ; fermé : absent", () => {
+    const { container } = renderApp();
+    const layout = container.querySelector<HTMLElement>(".rb-layout")!;
+    expect(layout.hasAttribute("data-panneau")).toBe(false);
+    openEditor(container);
+    expect(layout.getAttribute("data-panneau")).toBe("profils");
+    click(container.querySelector('button[data-edit="close"]'));
+    expect(layout.hasAttribute("data-panneau")).toBe(false);
+  });
+
+  it("design-l3 L3-2 : barre d'outils à droite, panneau ouvert : la barre garde sa case, le panneau est dans la scène", () => {
+    const { container, store, active } = renderApp();
+    store.save(setDock(BUILTIN_PROFILES[0]!, "outils", "right"));
+    active.refresh();
+    openEditor(container);
+    const layout = container.querySelector<HTMLElement>(".rb-layout")!;
+    expect(layout.style.gridTemplateColumns).toBe("minmax(0, 1fr) auto");
+    const bar = container.querySelector('[data-toolbar="outils"]')!;
+    const popover = container.querySelector('.rb-popover[data-panel="profils"]')!;
+    expect(popover.parentElement).toBe(layout);
+    expect(popover.contains(bar)).toBe(false);
+    const slot = bar.closest<HTMLElement>(".rb-slot")!;
+    expect(slot.style.gridArea || slot.style.getPropertyValue("grid-area")).toBe("outils");
+  });
+
+  it("design-l3 L3-22 : menu Profil en îlot : icône et texte par ligne, profil actif marqué check, textes inchangés", () => {
+    const { container } = renderApp();
+    openMenu(container);
+    expect(container.querySelector("[data-profiles]")!.parentElement!.getAttribute("data-panel")).toBe("menu-profils");
+    const rows = [...container.querySelectorAll("[data-profile-cmd]")].map((b) => [b.getAttribute("data-profile-cmd"), b.querySelector("svg")?.getAttribute("data-icon"), b.textContent]);
+    expect(rows).toEqual([
+      ["edit", "profile", "Modifier…"],
+      ["import", "import", "Importer…"],
+      ["export", "export", "Exporter…"],
+      ["reset", "reset", "Remettre à zéro ce profil"],
+      ["reset-all", "reset", "Tout remettre à zéro"],
+    ]);
+    expect(container.querySelector('[data-profile="defaut"] svg')?.getAttribute("data-icon")).toBe("check");
+    expect(container.querySelector('[data-profile="simple"] svg')).toBeNull();
+    expect(container.querySelector('[data-profile="defaut"]')?.textContent).toBe("Par défaut");
   });
 });
 

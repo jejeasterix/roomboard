@@ -15,6 +15,12 @@ export const POINTER_SEGMENTS: readonly Segment[] = Object.freeze([
   { mode: "draw", label: "Dessin", icon: "pen-line" },
   { mode: "mouse", label: "Souris", icon: "pointer" },
 ]);
+/** design-l3 (L3-12) : libellé et icône de la ligne « Dessin / Souris » de l'éditeur, dérivés des segments (aucune
+ *  copie : le constat `PointerSwitch.tsx:14` n'est pas aggravé). */
+export const POINTER_SUMMARY: { readonly label: string; readonly icon: string } = Object.freeze({
+  label: POINTER_SEGMENTS.map((s) => s.label).join(" / "),
+  icon: POINTER_SEGMENTS[0]!.icon,
+});
 
 export interface PointerSwitchProps {
   readonly item: ToolItem;

@@ -102,6 +102,10 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 #pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
 #echelons-notes { margin-left: 8px; color: #b45309; }
 .rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
+/* design-l3 (L3-2, H10, H23) : panneau des profils ouvert, la barre flottante passe en haut à gauche de la scène, dans la
+   place que le panneau laisse, et ses barres passent sur plusieurs rangées. */
+.rb-layout[data-panneau="profils"] > .rb-floating { justify-self: start; max-inline-size: calc(100% - min(600px, 100%)); }
+.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar { flex-wrap: wrap; }
 /* design-l4 (L4-16) : bandeau « Envoyé au tableau », dans la case de la scène, en bas à droite ; ne prend aucun clic. */
 .rb-toasts { grid-area: stage; align-self: end; justify-self: end; margin: 24px; z-index: 4; pointer-events: none; }
 .rb-toast { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); font-size: 16px; color: var(--rf-gray-800); white-space: nowrap; box-sizing: border-box; }
@@ -169,8 +173,16 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-table-picker form button { min-block-size: var(--rb-btn-m); padding: 0 var(--rb-pad); }
 
 /* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
+/* design-l3 (L3-22) : menu Profil en îlot, lignes de 48 px icône + texte (D-DS1), profil actif en violet 700. */
+.rb-popover[data-panel="menu-profils"] { margin: var(--rf-space-sm); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
 [data-profiles] { display: grid; gap: 4px; padding: 4px; }
-[data-profiles] button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); text-align: start; }
+[data-profiles] button { display: flex; align-items: center; gap: 12px; min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 16px; text-align: start; cursor: pointer; }
+[data-profiles] button:not(:disabled):hover { background: var(--rf-gray-50); }
+[data-profiles] button[aria-checked="true"] { color: var(--rf-violet-700); font-weight: 600; }
+[data-profiles] button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+[data-profiles] button:disabled .rb-icon { color: var(--rf-gray-500); }
+[data-profiles] button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-menu-blank { flex: none; inline-size: var(--rb-icon); }
 .rb-menu-sep { border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 .rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
 .rb-editor section { display: grid; gap: var(--rb-gap); }
@@ -182,6 +194,105 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-editor button, .rb-editor select, .rb-editor input:not([type="checkbox"]) { min-height: var(--rb-btn-m); }
 .rb-editor input[type="checkbox"] { inline-size: calc(var(--rb-btn-m) / 2); block-size: calc(var(--rb-btn-m) / 2); }
 .rb-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }
+/* design-l3 (L3-1, L3-24, D-DS10) : panneau des profils, calé à droite dans la case de la scène, toute sa hauteur, sans
+   voile ; filet gris 300 et ombre modale de la charte (« panneau des profils »). Classes neuves sous .rb-sheet ;
+   .rb-editor ci-dessus reste celle des panneaux Grille et Image. Netteté (exigence de Jérôme) : colonne de 512 px centrée
+   entre deux gouttières égales (bords à 44 px du panneau, quelle que soit la barre de défilement jusqu'à 20 px), interlignes
+   entiers, en-tête et pied de 80 px de contenu, largeurs fixes des commandes calées à droite : aucun bord ni icône sur une
+   fraction de pixel (cases de 96, cartes de 250, segments de 504 / n). */
+.rb-popover[data-panel="profils"] { justify-self: end; align-self: stretch; inline-size: min(600px, 100%); overflow: hidden; border: 0; box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+.rb-sheet { display: flex; flex-direction: column; block-size: 100%; background: var(--rf-white); color: var(--rf-gray-800); font-size: 16px; line-height: 24px; }
+.rb-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; block-size: 80px; padding: 0 28px 0 44px; border-block-end: 1px solid var(--rf-gray-300); }
+.rb-sheet-head h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--rf-navy-500); }
+.rb-sheet-body { flex: 1 1 auto; min-block-size: 0; overflow-y: auto; scrollbar-gutter: stable both-edges; display: grid; grid-template-columns: min(512px, 100%); justify-content: center; align-content: start; row-gap: var(--rf-space-lg); padding: 20px var(--rf-space-lg); }
+.rb-sheet-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--rf-space-md); block-size: 80px; padding: 0 44px; border-block-start: 1px solid var(--rf-gray-300); }
+.rb-sheet-foot-end { display: flex; align-items: center; gap: var(--rf-space-md); }
+.rb-sheet section { display: flex; flex-direction: column; }
+.rb-sheet h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: var(--rf-navy-500); }
+.rb-sheet h4 { margin: 0; font-size: 16px; font-weight: 600; color: var(--rf-navy-500); }
+.rb-sheet-row { display: flex; align-items: center; gap: var(--rf-space-sm); }
+.rb-sheet button { font: inherit; }
+.rb-sheet button:focus-visible, .rb-sheet select:focus-visible, .rb-sheet input:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 2px; }
+.rb-sheet button.rb-ib { display: inline-grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-sheet button.rb-ib:not(:disabled):hover { background: var(--rf-gray-50); }
+.rb-sheet button.rb-ib:disabled { color: var(--rf-gray-500); cursor: default; }
+.rb-select { flex: 1 1 auto; min-inline-size: 0; display: flex; align-items: center; gap: 12px; block-size: 56px; box-sizing: border-box; padding: 0 var(--rf-space-sm) 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); color: var(--rf-navy-500); }
+.rb-select select { flex: 1 1 auto; min-inline-size: 0; block-size: 100%; border: 0; background: transparent; font: inherit; font-size: 16px; font-weight: 500; color: inherit; appearance: none; cursor: pointer; }
+.rb-tag { font-size: 14px; font-weight: 500; color: var(--rf-text-muted-aa); white-space: nowrap; }
+.rb-field { display: flex; flex-direction: column; gap: var(--rf-space-xs); margin-block-start: var(--rf-space-md); font-size: 14px; font-weight: 500; color: var(--rf-gray-800); }
+.rb-field-grow { flex: 1 1 auto; margin-block-start: 0; }
+.rb-field input { block-size: 48px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); font: inherit; font-size: 16px; font-weight: 400; color: var(--rf-navy-500); }
+.rb-note { margin: var(--rf-space-sm) 0 0; font-size: 14px; line-height: 20px; color: var(--rf-text-muted-aa); }
+.rb-sheet-ghost { display: inline-flex; align-items: center; gap: var(--rf-space-sm); min-block-size: 48px; padding: 0 var(--rf-space-md); border: 0; border-radius: var(--rf-radius-lg); background: transparent; font-size: 15px; font-weight: 500; color: var(--rf-navy-500); cursor: pointer; }
+.rb-sheet section > .rb-sheet-ghost, .rb-presets > .rb-sheet-add { align-self: flex-start; }
+.rb-item .rb-sheet-ghost { box-sizing: border-box; inline-size: 112px; justify-content: center; padding: 0; }
+.rb-sheet-row > .rb-sheet-ghost { box-sizing: border-box; flex: none; inline-size: 128px; padding: 0 var(--rf-space-md); }
+.rb-sheet-ghost:not(:disabled):hover { background: var(--rf-gray-50); }
+.rb-sheet-ghost:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+.rb-sheet-solid { box-sizing: border-box; inline-size: 160px; min-block-size: 48px; padding: 0 var(--rf-space-md); border: 0; border-radius: var(--rf-radius-lg); background: var(--rf-violet-600); font-size: 15px; font-weight: 600; color: var(--rf-white); cursor: pointer; }
+.rb-sheet-solid:not(:disabled):hover { background: var(--rf-violet-700); }
+.rb-sheet-solid:disabled { background: var(--rf-gray-50); color: var(--rf-text-muted-aa); cursor: default; }
+.rb-sheet-outline { flex: none; align-self: flex-end; box-sizing: border-box; inline-size: 264px; min-block-size: 48px; padding: 0 var(--rf-space-md); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); font-size: 15px; font-weight: 500; color: var(--rf-navy-500); white-space: nowrap; cursor: pointer; }
+.rb-sheet-outline:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+.rb-saved { display: inline-flex; align-items: center; gap: var(--rf-space-sm); font-size: 14px; color: var(--rf-text-muted-aa); }
+.rb-saved .rb-icon { color: var(--rf-success); }
+/* design-l3 (L3-23, L3-7, L3-10, L3-8) : choix exclusifs (RadioChoices) en cartes, vignettes et segments. */
+.rb-radios[data-look="card"] { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rb-radios[data-look="tile"] { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: var(--rf-space-sm); margin-block: 12px var(--rf-space-md); }
+.rb-radios[data-look="segment"] { display: flex; gap: 0; padding: var(--rf-space-xs); background: var(--rf-gray-50); border-radius: var(--rf-radius-lg); }
+.rb-radio { box-sizing: border-box; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); background: var(--rf-white); color: var(--rf-navy-500); cursor: pointer; }
+.rb-radios[data-look="card"] .rb-radio { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--rf-space-sm); min-block-size: 104px; padding: var(--rf-space-md); text-align: start; }
+.rb-radios[data-look="card"] .rb-radio-label { font-size: 16px; font-weight: 600; }
+.rb-radio-detail { font-size: 14px; line-height: 20px; color: var(--rf-text-muted-aa); }
+.rb-radios[data-look="card"] .rb-radio[aria-checked="true"] { border-color: var(--rf-violet-600); box-shadow: inset 0 0 0 1px var(--rf-violet-600); background: var(--rf-violet-100); }
+.rb-radios[data-look="card"] .rb-radio[aria-checked="true"] .rb-radio-label, .rb-radios[data-look="card"] .rb-radio[aria-checked="true"] > .rb-icon { color: var(--rf-violet-700); }
+.rb-radio-chk { position: absolute; inset-inline-end: 12px; inset-block-start: 12px; display: grid; place-items: center; inline-size: 32px; block-size: 32px; border-radius: 50%; background: var(--rf-violet-600); color: var(--rf-white); }
+.rb-radios[data-look="tile"] .rb-radio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-block-size: 80px; padding: var(--rf-space-xs); font-size: 14px; line-height: 20px; color: var(--rf-gray-800); }
+.rb-radios[data-look="tile"] .rb-radio > .rb-icon { color: var(--rf-navy-500); }
+.rb-radios[data-look="tile"] .rb-radio[aria-checked="true"] { border-color: var(--rf-violet-600); box-shadow: inset 0 0 0 1px var(--rf-violet-600); background: var(--rf-violet-100); color: var(--rf-violet-700); font-weight: 600; }
+.rb-radios[data-look="tile"] .rb-radio[aria-checked="true"] > .rb-icon { color: var(--rf-violet-700); }
+.rb-radios[data-look="tile"] .rb-radio-detail { font-size: 14px; text-align: center; }
+.rb-radios[data-look="segment"] .rb-radio { flex: 1 1 0; min-block-size: 48px; border: 0; border-radius: var(--rf-radius-md); background: transparent; font-size: 15px; font-weight: 500; color: var(--rf-gray-800); }
+.rb-radios[data-look="segment"] .rb-radio[aria-checked="true"] { background: var(--rf-white); color: var(--rf-violet-700); font-weight: 600; box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-card); }
+/* design-l3 (L3-11, L3-13, L3-15, L3-16) : liste des éléments d'une barre, poignée tactile, liste « Ajouter ». */
+.rb-sheet-bar { display: flex; flex-direction: column; margin-block-start: var(--rf-space-md); }
+.rb-sheet-h2row { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--rf-space-xs); }
+.rb-sheet-add { display: inline-flex; align-items: center; gap: 12px; min-block-size: 48px; padding: 0 12px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; font-size: 16px; font-weight: 500; color: var(--rf-violet-700); cursor: pointer; }
+.rb-sheet-h2row .rb-sheet-add { box-sizing: border-box; inline-size: 136px; }
+.rb-sheet-add:not(:disabled):hover { background: var(--rf-gray-50); }
+.rb-sheet-add:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+.rb-add-list { list-style: none; margin: 0 0 var(--rf-space-sm); padding: var(--rf-space-xs); display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--rf-space-xs); border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); }
+.rb-add-list button { display: flex; align-items: center; gap: 12px; inline-size: 100%; min-block-size: 48px; padding: 0 12px; border: 0; border-radius: var(--rf-radius-md); background: transparent; font-size: 16px; color: var(--rf-gray-800); text-align: start; cursor: pointer; }
+.rb-add-list button:hover { background: var(--rf-gray-50); }
+.rb-add-list .rb-icon { color: var(--rf-navy-500); }
+.rb-items { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); }
+.rb-items[data-sorting] { user-select: none; -webkit-user-select: none; }
+.rb-item { position: relative; display: flex; align-items: center; gap: 12px; min-block-size: 48px; box-sizing: border-box; padding-inline-end: var(--rf-space-xs); border-block-end: 1px solid var(--rf-gray-300); background: var(--rf-white); font-size: 16px; color: var(--rf-gray-800); }
+.rb-item:last-child { border-block-end: 0; }
+.rb-item > .rb-icon { color: var(--rf-navy-500); }
+.rb-item-noicon { flex: none; inline-size: var(--rb-icon); }
+.rb-item-label { flex: 1 1 auto; min-inline-size: 0; }
+.rb-item[data-separator] .rb-item-label { font-size: 14px; color: var(--rf-text-muted-aa); }
+.rb-item[data-hidden] { background: var(--rf-gray-100); color: var(--rf-text-muted-aa); }
+.rb-item[data-hidden] > .rb-icon, .rb-item[data-hidden] button.rb-ib { color: var(--rf-gray-500); }
+.rb-item[data-unknown] { color: var(--rf-text-muted-aa); font-style: italic; }
+.rb-item[data-dragging] { z-index: 1; background: var(--rf-white); box-shadow: var(--rf-shadow-hover); }
+.rb-items[data-sorting] .rb-item:not([data-dragging]) { transition: transform 120ms ease; }
+.rb-grip { display: grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; padding: 0; border: 0; background: transparent; color: var(--rf-navy-500); cursor: grab; touch-action: none; margin-inline-end: -16px; }
+.rb-item[data-hidden] .rb-grip { color: var(--rf-gray-500); }
+/* design-l3 (L3-18) : préréglages ; pastille ronde de 32 px dans une cible de 48 px. */
+.rb-presets { display: flex; flex-direction: column; gap: var(--rf-space-sm); margin-block-end: var(--rf-space-sm); }
+.rb-presets ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--rf-space-sm); }
+.rb-preset-row { display: flex; align-items: center; gap: 12px; }
+.rb-preset-row input[type="color"] { flex: none; inline-size: 48px; block-size: 48px; padding: var(--rf-space-sm); border: 0; background: transparent; cursor: pointer; }
+.rb-preset-row input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.rb-preset-row input[type="color"]::-webkit-color-swatch { border: 1px solid var(--rf-gray-300); border-radius: 50%; }
+.rb-preset-name { flex: 1 1 auto; min-inline-size: 0; display: flex; }
+.rb-preset-row input[type="text"], .rb-preset-row input[type="number"] { block-size: 48px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--rf-gray-300); border-radius: var(--rf-radius-lg); font: inherit; font-size: 16px; color: var(--rf-navy-500); }
+.rb-preset-name input { flex: 1 1 auto; min-inline-size: 0; }
+.rb-preset-width { display: flex; align-items: center; gap: var(--rf-space-sm); font-size: 14px; color: var(--rf-gray-800); }
+.rb-preset-row input[type="number"] { inline-size: 80px; }
+.rb-preset-width > span { flex: none; inline-size: 80px; }
 /* Barre verticale (left/right) : prend la hauteur de sa case et passe en plusieurs colonnes quand elle en manque ;
    chaque colonne a la largeur de son bouton le plus large (align-items: stretch). */
 .rb-slot > .rb-bar[data-dock="left"], .rb-slot > .rb-bar[data-dock="right"] { height: 100%; box-sizing: border-box; align-items: stretch; align-content: flex-start; }

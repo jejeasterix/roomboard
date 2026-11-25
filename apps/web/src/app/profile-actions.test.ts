@@ -235,6 +235,23 @@ describe("gestes de profil (C1)", () => {
     expect(await actions.exportActive()).toBe(false);
     expect(shell.notify).toHaveBeenCalledWith("Profil non exporté (par-defaut.rbprofile) : disque plein");
   });
+
+  it("design-l3 L3-21 : exportProfile écrit le profil donné (brouillon) ; exportActive, le profil enregistré", async () => {
+    const { actions, saved, store } = setup();
+    expect(await actions.exportProfile(setDock(DEFAUT, "outils", "left"))).toBe(true);
+    expect(saved[0]!.name).toBe("par-defaut.rbprofile");
+    expect(JSON.parse(saved[0]!.text).toolbars[0].dock).toBe("left");
+    expect(store.hasOverride("defaut")).toBe(false);
+    expect(await actions.exportActive()).toBe(true);
+    expect(JSON.parse(saved[1]!.text).toolbars[0].dock).toBe("top");
+  });
+
+  it("design-l3 L3-21 : exportProfile qui lève : message, faux", async () => {
+    const { actions, files, shell } = setup();
+    vi.mocked(files.save).mockRejectedValueOnce(new Error("disque plein"));
+    expect(await actions.exportProfile(setDock(DEFAUT, "outils", "left"))).toBe(false);
+    expect(shell.notify).toHaveBeenCalledWith("Profil non exporté (par-defaut.rbprofile) : disque plein");
+  });
 });
 
 describe("gestes de profil : échecs (T11)", () => {

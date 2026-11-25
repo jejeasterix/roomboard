@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  addItem, addPreset, canHide, catalog, moveItem, originOf, presetFields, PRESET_TOOLS, removePreset, resetAllPresets,
-  resetToolbars, resetToOrigin, setButtonSize, setDock, setHidden, setLabel, setStartMode, updatePreset,
+  abandonQuestion, addItem, addPreset, canHide, catalog, moveItem, moveItemTo, originOf, presetFields, PRESET_TOOLS, removePreset,
+  resetAllPresets, resetToolbars, resetToOrigin, sameProfile, setButtonSize, setDock, setHidden, setLabel, setStartMode, updatePreset,
 } from "./profile-edit";
 import { parseProfile, serializeProfile, TABLE_ACTIONS, visibleItems, type Profile, type RuntimeCapabilities } from "./toolbar";
 import { BUILTIN_PROFILES, builtinProfile, DEFAULT_PROFILE_JSON } from "./toolbar-profiles";
+
+/** design-l4 (L4-22) : `DEFAULT_PROFILE_JSON` d'avant L4, tel quel (aucune barre `annotation`). */
+const BEFORE_L4: Record<string, unknown> = JSON.parse(readFileSync(join(__dirname, "fixtures", "profils", "defaut-avant-l4.rbprofile"), "utf8"));
 
 const ALL: RuntimeCapabilities = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
 const DEFAUT = builtinProfile("defaut")!;
@@ -81,7 +86,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   });
 
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz", "annotation-pointer", "annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz"]);
     const simple = catalog(SIMPLE, "outils");
     expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");
@@ -220,5 +225,98 @@ describe("préréglages du pot (C6a, D17)", () => {
     let pen = DEFAUT;
     for (const x of pens(DEFAUT)) pen = removePreset(pen, "pen", x);
     expect(pen.presets.pen).toEqual([]);
+  });
+});
+
+describe("profile-edit : design-l3 (L3-14, L3-17, L3-20, L3-32)", () => {
+  /** Profil d'une barre `b` : groupe g1 = [laser (outil inconnu, clé inconnue)], groupe g2 = [pen, profiles]. */
+  function twoGroups(): Profile {
+    const r = parseProfile({
+      format: "roomboard-profile", schema: 1, id: "x", label: "X",
+      toolbars: [{ id: "b", role: "tools", dock: "top", groups: [
+        { id: "g1", items: [{ id: "laser", kind: "tool", tool: "laser", label: "Laser", raccourci: "L" }] },
+        { id: "g2", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "profiles", kind: "action", action: "profiles", label: "Profil" }] },
+      ] }],
+    });
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    return r.profile;
+  }
+
+  it("design-l3 L3-14 : moveItemTo rang 0 : tête du premier groupe, rien de perdu", () => {
+    const p = moveItemTo(DEFAUT, "outils", "text", 0);
+    expect(groupsOf(p)[0]).toEqual(["text", "pen", "eraser", "eraser-mode", "hand"]);
+    expect(groupsOf(p)[1]).not.toContain("text");
+    expect(ids(p)).toHaveLength(ids(DEFAUT).length);
+  });
+
+  it("design-l3 L3-14 : moveItemTo : l'élément rejoint le groupe de celui qui le précède (frontière de groupe)", () => {
+    expect(groupsOf(moveItemTo(DEFAUT, "outils", "pen", 3))[0]).toEqual(["eraser", "eraser-mode", "hand", "pen"]);
+    const p = moveItemTo(DEFAUT, "outils", "pen", 4);
+    expect(groupsOf(p)[0]).toEqual(["eraser", "eraser-mode", "hand"]);
+    expect(groupsOf(p)[1]!.slice(0, 3)).toEqual(["sep-1", "pen", "select"]);
+  });
+
+  it("design-l3 L3-14 : moveItemTo hors bornes : rang ramené à [0, n] ; rang non fini, barre ou élément absents : rien ne change", () => {
+    expect(ids(moveItemTo(DEFAUT, "outils", "pen", 999)).at(-1)).toBe("pen");
+    expect(ids(moveItemTo(DEFAUT, "outils", "text", -5))[0]).toBe("text");
+    expect(moveItemTo(DEFAUT, "outils", "pen", Number.NaN)).toEqual(DEFAUT);
+    expect(moveItemTo(DEFAUT, "outils", "absent", 0)).toEqual(DEFAUT);
+    expect(moveItemTo(DEFAUT, "absente", "pen", 0)).toEqual(DEFAUT);
+  });
+
+  it("design-l3 L3-14 : moveItemTo garde un groupe vidé et réécrit un élément inconnu tel quel (P16)", () => {
+    const before = twoGroups();
+    const p = moveItemTo(before, "b", "laser", 2);
+    expect(groupsOf(p, "b")).toEqual([[], ["pen", "profiles", "laser"]]);
+    expect(item(p, "laser")).toEqual(item(before, "laser"));
+    expect(groupsOf(moveItemTo(p, "b", "laser", 0), "b")).toEqual([["laser"], ["pen", "profiles"]]);
+  });
+
+  it("design-l3 L3-17 : barre d'annotation : outils absents et actions qui agissent en annotation, rien d'autre", () => {
+    const entries = catalog(DEFAUT, "annotation");
+    expect(entries.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["hand", "select", "ellipse", "line", "table", "fill"]);
+    expect(entries.filter((e) => e.kind === "action").map((e) => e.ref)).toEqual(["redo"]);
+  });
+
+  it("design-l3 L3-17 : barre pages : ni outils ni actions propres à l'annotation ; l'entrée « Annotation du bureau » reste", () => {
+    const refs = catalog(DEFAUT, "pages").map((e) => e.ref);
+    for (const a of ["annotation-pointer", "annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new"]) expect(refs).not.toContain(a);
+    expect(refs).toContain("desktop-annotation");
+    expect(catalog(DEFAUT, "pages").every((e) => e.kind === "action")).toBe(true);
+  });
+
+  it("design-l3 L3-17 : rôle inconnu : catalogue du tableau, outils compris, sans actions propres à l'annotation", () => {
+    const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { id: string; role: string }[] };
+    json.toolbars.push({ id: "minuteur", role: "minuteur", dock: "bottom", groups: [{ id: "m", items: [{ id: "m-undo", kind: "action", action: "undo", label: "Annuler" }] }] } as never);
+    const r = parseProfile({ ...json, id: "inconnu", label: "Inconnu" });
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    const refs = catalog(r.profile, "minuteur").map((e) => e.ref);
+    expect(refs).toContain("rect");
+    expect(refs).toContain("redo");
+    for (const a of ["annotation-pointer", "annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new"]) expect(refs).not.toContain(a);
+  });
+
+  it("design-l3 L3-17 : profil d'avant L4 : sa barre tools, montrée en annotation, propose encore Écran suivant, Figer, Envoyer, nouvel onglet", () => {
+    const GONE = ["annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new"];
+    const json = structuredClone(BEFORE_L4) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+    for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !GONE.includes(i.id));
+    const r = parseProfile({ ...json, id: "ancienne", label: "Ancienne" });
+    if ("errors" in r) throw new Error(r.errors.join("; "));
+    const refs = catalog(r.profile, "outils").map((e) => e.ref);
+    for (const a of GONE) expect(refs).toContain(a);
+  });
+
+  it("design-l3 L3-20 : sameProfile compare les profils écrits ; nom, emplacement, masquage et clés inconnues comptent", () => {
+    expect(sameProfile(DEFAUT, DEFAUT)).toBe(true);
+    expect(sameProfile(DEFAUT, setDock(DEFAUT, "outils", "top"))).toBe(true);
+    expect(sameProfile(DEFAUT, setDock(DEFAUT, "outils", "left"))).toBe(false);
+    expect(sameProfile(DEFAUT, setLabel(DEFAUT, "Autre"))).toBe(false);
+    expect(sameProfile(DEFAUT, setHidden(setHidden(DEFAUT, "eraser", true), "eraser", false))).toBe(true);
+    expect(sameProfile(withUnknownKeys(), withUnknownKeys())).toBe(true);
+    expect(sameProfile(DEFAUT, withUnknownKeys())).toBe(false);
+  });
+
+  it("design-l3 L3-32 : question d'abandon, texte exact", () => {
+    expect(abandonQuestion("Par défaut")).toBe("Abandonner les changements du profil « Par défaut » ?");
   });
 });
