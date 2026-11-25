@@ -167,7 +167,7 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(".rb-item[data-hidden]")).toMatch(/background: var\(--rf-gray-100\);.*color: var\(--rf-text-muted-aa\);/);
   });
   it("design-l3 netteté (exigence de Jérôme) : panneau en pixels entiers ; aucune translation ni longueur fractionnaire ou relative", () => {
-    const own = (CSS.replace(/\/\*.*?\*\//g, "").match(/[^{}]+\{[^}]*\}/g) ?? []).filter((r) => /rb-sheet|rb-radio|rb-item|rb-grip|rb-select|rb-tag|rb-note|rb-field|rb-add-list|rb-preset|rb-saved|data-panel="profils"/.test(r.split("{")[0]!));
+    const own = (CSS.replace(/\/\*.*?\*\//g, "").match(/[^{}]+\{[^}]*\}/g) ?? []).filter((r) => /rb-sheet|rb-radio|rb-item|rb-grip|rb-select|rb-tag|rb-note|rb-field|rb-add-list|rb-preset-|rb-presets|rb-saved|data-panel="profils"/.test(r.split("{")[0]!));
     expect(own.length).toBeGreaterThan(20);
     for (const r of own) expect(r, r).not.toMatch(/translate|\d\.\d+px|\d(r?em|vw|vh)\b|calc\(|line-height: normal/);
     // Interlignes entiers : une ligne de texte « normal » (dépend de la police) décalerait tout ce qui la suit d'une fraction.
