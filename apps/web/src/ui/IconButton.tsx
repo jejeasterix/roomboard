@@ -1,7 +1,7 @@
 import { For, Show, children, createEffect, createSignal, type JSX } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import { ICONS, ICON_VIEWBOX } from "./icons";
-import { createTip, placeTip } from "./tooltip";
+import { createTip, placeTip, type Tip } from "./tooltip";
 
 /** Attributs d'accessibilité du svg (L1-4) : jamais annoncé, jamais focusable. */
 const SVG_A11Y = { "aria-hidden": "true", focusable: "false" } as const;
@@ -60,8 +60,6 @@ export function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Eleme
     </div>
   );
 }
-
-type Tip = ReturnType<typeof createTip>;
 
 /** Gestionnaires de pointeur de l'infobulle (survol à la souris, appui long au toucher), communs à tout élément à infobulle. */
 export function tipPointerHandlers(tip: Tip) {

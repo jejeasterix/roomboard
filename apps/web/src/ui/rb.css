@@ -149,7 +149,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 
 /* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
 .rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
-.rb-swatch { display: inline-block; inline-size: calc(var(--rb-btn) / 3 + 2px); block-size: calc(var(--rb-btn) / 3 + 2px); border-radius: 50%; border: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rf-navy-500) 14%, transparent); }
+.rb-swatch { display: inline-block; inline-size: calc(var(--rb-btn) / 3); block-size: calc(var(--rb-btn) / 3); border-radius: 50%; border: 1px solid color-mix(in srgb, var(--rf-navy-500) 40%, transparent); }
 
 /* Tableau (C10a) : pastilles carrées de la rangée du tableau ; grille de choix posée au point cliqué (app/table-picker.ts). */
 /* Curseur de tolérance du pot (C6b, B10, B22) : resserré ; le libellé se cache sur une fenêtre étroite (title gardé). */

@@ -234,6 +234,14 @@ async function s4(browser, base) {
   check(parti, "S4 : le bandeau part seul");
   await enter(page);
   const d1 = w.dialogs.length;
+  // Instant d'apparition du bandeau, noté par la page elle-même (le minuteur de 4 s court depuis cet instant).
+  await page.evaluate((sel) => {
+    window.__toastApparu = null;
+    const o = new MutationObserver(() => {
+      if (document.querySelector(sel) !== null) { window.__toastApparu = performance.now(); o.disconnect(); }
+    });
+    o.observe(document.body, { childList: true, subtree: true });
+  }, TOAST);
   await page.click(item("annotation-send-new"));
   await waitMode(page, "board");
   await page.locator(TOAST).waitFor({ state: "visible", timeout: 15000 });
@@ -255,7 +263,8 @@ async function s4(browser, base) {
   await enter(page);
   const retire = await page.evaluate(() => window.__toastRetire ?? null);
   const entree = await page.evaluate(() => window.__toastEntree ?? null);
-  check(avant && retire !== null && retire >= entree && (await page.locator(TOAST).count()) === 0, "S4 : bandeau présent avant l'entrée, retiré par l'entrée en annotation");
+  const apparu = await page.evaluate(() => window.__toastApparu ?? null);
+  check(avant && retire !== null && retire >= entree && apparu !== null && retire - apparu < 4000 && (await page.locator(TOAST).count()) === 0, "S4 : bandeau présent avant l'entrée, retiré par l'entrée en annotation");
   await leave(page);
   noErrors(w, "S4");
   await ctx.close();
@@ -331,6 +340,10 @@ async function s6(browser, base) {
     const boxes = await annButtons(page);
     const out = boxes.filter((b) => b.x < 0 || b.y < 0 || b.x + b.w > viewport.width || b.y + b.h > viewport.height);
     check(boxes.length >= 10 && out.length === 0, `S6 ${size} : ${boxes.length} boutons, chacun entier dans la fenêtre${out.length ? ` (coupés : ${out.map((b) => b.id).join(", ")})` : ""}`);
+    if (viewport === VIEWPORT) {
+      const xs900 = [...new Set(boxes.map((b) => Math.round(b.x)))];
+      check(xs900.length === 2 && bande === "left:140", `S6 ${size} : deux colonnes (x ${xs900.join(", ")}), bande ${bande} (attendu left:140)`);
+    }
     if (viewport === TALL) {
       const xs = [...new Set(boxes.map((b) => Math.round(b.x)))];
       check(xs.length === 1, `S6 ${size} : une seule colonne (x ${xs.join(", ")})`);

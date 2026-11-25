@@ -87,6 +87,7 @@ modules Wasm, coque Tauri, CLI, autres dépôts : non touchés (L4-21).
 | `ui/Toolbar.test.tsx` (ajouts) ; `PointerSwitch`, `toast`, `device-settings`, `SettingsPanel` (tests neufs ou ajouts) | oui | segment pressé, `data-item` sur l'inactif, boutons pleins, zone à icône, réglage gardé | — |
 | `app/annotation.test.ts`, `annotation-page.test.ts`, `annotation-fake.test.ts`, `annotation-tauri.test.ts`, `toolbar-host.test.ts` (ajouts) | oui | `pointer(mode)` idempotent, `frame` à `enter` et `load`, `sent` | V |
 | `profile-edit.test.ts:78`, `:84` ; `icons.test.ts:23-27` ; `annotation-port.test.ts` ; `ui/App.test.tsx:360`, `:368` | oui (forme) | ids et icônes des éléments déplacés ; `frameField` ; barres du profil | V |
+| `app/annotation-frame.test.ts` (neuf) | oui | `frameField` et cadre de l'annotation (cadre à `enter` et `load`) | V |
 | `ui/rb-css.test.ts` (ajouts) | oui | `.rb-annot-frame` (3 px, `pointer-events: none`), `.rb-toast`, aucune `position` dans une règle `.rb-bar` | V |
 | `scripts/essais/c11a-annotation-navigateur.mjs:83`, `:100`, `:109`, `:112`, `:121` | oui (forme) | `ann-desktop-annotation`, `[data-segment="mouse"]`, `ann-pen` (L4-19) | V |
 | `scripts/essais/c11b-capture-navigateur.mjs:126-127`, `:175-176`, `:229`, `:236-237`, `:252`, `:271`, `:295-296` | oui (forme) | bandeau au lieu de la boîte ; sélecteurs en annotation (L4-19) | V |
@@ -247,6 +248,7 @@ Jouables sur la VM : Vitest (`pnpm -r test`) et Playwright Chromium par `scripts
 - Neuf : cadre de 3 px, net, visible tout autour de la zone d'annotation (à 100 %, 150 %, 200 %) ; réglage « masqué » :
   aucun cadre à l'entrée suivante ; infobulle d'un bouton dans la bande : visible ou rognée (H14) ; après « Envoyer au
   tableau », le bandeau en bas à droite, aucune boîte système.
+- Figer le bureau : le fond figé ne montre pas le cadre violet (pas de double liseré) ; C11a-9 de `c11a-coque.md`.
 - C11b-1 (ligne ajoutée) : dans l'image envoyée au tableau, aucun liseré violet sur les bords (cadre absent de la
   capture).
 
