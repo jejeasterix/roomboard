@@ -130,16 +130,17 @@ async function scenario(page, url, { captures, tmp }) {
   // 2. S1 : l'éditeur, sur un brouillon.
   await command("edit");
   await waitFor("[data-profile-editor]");
-  await page.selectOption(`${BAR} select[data-edit="dock"]`, "left");
-  await page.selectOption('select[data-edit="button-size"]', "l");
-  await page.uncheck('[data-edit-item="eraser"] input[data-edit="shown"]');
-  check(await page.isDisabled('[data-edit-item="profiles"] input[data-edit="shown"]'), "éditeur : la case « montrer » de Profil est grisée");
+  await page.click(`${BAR} [data-edit="dock"] [data-choice="left"]`);
+  await page.click('[data-edit="button-size"] [data-choice="l"]');
+  await page.click('[data-edit-item="eraser"] button[data-edit="shown"]');
+  check(await page.isDisabled('[data-edit-item="profiles"] button[data-edit="shown"]'), "éditeur : l'œil de Profil est grisé");
   await page.click('button[data-edit="preset-add"]');
   await page.click('button[data-edit="preset-add"]');
   check((await count("[data-edit-preset]")) === 5, "éditeur : cinq préréglages du stylo dans le brouillon");
+  await waitFor(`${OUTILS}[data-dock="left"][data-size="l"]`);
   check(
-    (await count(`${OUTILS}[data-dock="top"][data-size="m"]`)) === 1 && (await count(item("eraser"))) === 1,
-    "rien d'enregistré : la barre est toujours en haut, en taille m, avec la gomme",
+    (await count(`${OUTILS}[data-dock="left"][data-size="l"]`)) === 1 && (await count(item("eraser"))) === 0,
+    "aperçu : la barre est à gauche, en l, sans gomme, avant tout enregistrement",
   );
   await page.locator("[data-profile-editor]").evaluate((e) => {
     e.scrollTop = 0;
