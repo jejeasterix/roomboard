@@ -15,7 +15,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DIST, Echec, ROOT, VIEWPORT, frames, gitSha, item, loadPlaywright, noOverlap, serve } from "./commun.mjs";
+import { clickItem, DIST, Echec, frames, gitSha, item, loadPlaywright, noOverlap, ROOT, serve, VIEWPORT } from "./commun.mjs";
 import { edgeRow, fringes, hex, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "design L3";
@@ -246,7 +246,7 @@ async function s1(browser, base, tmp) {
   await waitFor(p2, `${OUTILS}[data-dock="right"][data-size="l"]`);
   check((await p2.locator(item("eraser")).count()) === 0 && (await p2.inputValue('select[data-edit="profile"]')) === "cm1" && (await p2.locator(EDITOR).count()) === 1, "S1 : autre appareil, Importer du panneau : barre à droite, en grand, sans gomme, éditeur sur cm1");
   await p2.click('button[data-edit="revert"]');
-  await waitFor(p2, `${OUTILS}[data-dock="top"][data-size="m"]`);
+  await waitFor(p2, `${OUTILS}[data-dock="floating"][data-size="m"]`);
   check((await p2.locator(item("eraser")).count()) === 1 && (await p2.inputValue('input[data-edit="label"]')) === "CM1", "S1 : « Revenir à l'origine » : barre en haut, m, gomme revenue, nom « CM1 » gardé");
   noErrors(w2, "S1 autre appareil");
   await other.close();
@@ -292,7 +292,7 @@ async function s2(browser, base) {
     await frames(page);
   };
   await toList();
-  const pen = await box(page, row("pen"));
+  const pen = await box(page, row("select"));
   await mouseDrag(page, "text", pen.y + 4);
   await frames(page);
   const during = (await barOrder(page))[0];
@@ -300,7 +300,7 @@ async function s2(browser, base) {
   await page.mouse.up();
   await frames(page);
   const after = (await barOrder(page))[0];
-  check(during === "pen" && moving.startsWith("translateY(-") && after === "text", `S2 souris : pendant le geste la barre ne change pas (${during}), la ligne suit (${moving}) ; au lâcher le premier bouton est ${after}`);
+  check(during === "select" && moving.startsWith("translateY(-") && after === "text", `S2 souris : pendant le geste la barre ne change pas (${during}), la ligne suit (${moving}) ; au lâcher le premier bouton est ${after}`);
   check((await page.locator('button[data-edit="up"]').count()) === 0, "S2 souris : le clic qui suit le glisser ne dévoile rien");
   await toList();
   const head = await box(page, row("text"));
@@ -364,16 +364,16 @@ async function s3(browser, base) {
   check(q1.message === QUESTION && (await page.locator(EDITOR).count()) === 1 && (await page.locator(`${OUTILS}[data-dock="left"]`).count()) === 1, `S3 Fermer : « ${q1.message} » ; Annuler : panneau ouvert, barre toujours à gauche`);
   w.answer = "accept";
   await closeEditor(page);
-  check((await page.locator(`${OUTILS}[data-dock="top"]`).count()) === 1, "S3 Fermer, Oui : barre en haut");
+  check((await page.locator(`${OUTILS}[data-dock="floating"]`).count()) === 1, "S3 Fermer, Oui : barre en îlot");
   await openEditor(page);
   await page.click(tile("left"));
   await waitFor(page, `${OUTILS}[data-dock="left"]`);
   const d1 = w.dialogs.length;
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   const q2 = await waitDialog(w, d1);
   await waitFor(page, "#reglages");
-  check(q2.message === QUESTION && (await page.locator(EDITOR).count()) === 0 && (await page.locator(`${OUTILS}[data-dock="top"]`).count()) === 1, "S3 Réglages : même question ; Oui : Réglages ouverts, barre en haut");
-  await page.click(item("settings"));
+  check(q2.message === QUESTION && (await page.locator(EDITOR).count()) === 0 && (await page.locator(`${OUTILS}[data-dock="floating"]`).count()) === 1, "S3 Réglages : même question ; Oui : Réglages ouverts, barre en îlot");
+  await clickItem(page, "settings");
   await waitFor(page, "#reglages", "detached");
   await openEditor(page);
   await page.click(tile("left"));
@@ -409,7 +409,7 @@ async function s3(browser, base) {
   check(w2.dialogs.length === d4 && (await p2.locator(EDITOR).count()) === 0 && bande === `top:${h}`, `S3 annotation : panneau fermé sans question, la bande mesure la barre enregistrée (${bande}, attendu top:${h})`);
   await p2.click(item("ann-desktop-annotation"));
   await waitFor(p2, '.rb-layout[data-mode="board"]');
-  check((await p2.locator(`${OUTILS}[data-dock="top"]`).count()) === 1, "S3 sortie de l'annotation : barre d'outils en haut, brouillon abandonné");
+  check((await p2.locator(`${OUTILS}[data-dock="floating"]`).count()) === 1, "S3 sortie de l'annotation : barre d'outils en îlot, brouillon abandonné");
   noErrors(w2, "S3 annotation");
   await ann.close();
 }
@@ -533,13 +533,13 @@ async function s6(browser, base) {
   await page.locator(BODY).evaluate((b) => { b.scrollTop = 0; });
   await page.click(tile("floating"));
   await waitFor(page, `${OUTILS}[data-dock="floating"]`);
-  const fl = await box(page, ".rb-floating");
+  const fl = await box(page, '.rb-island[data-island="outils"]');
   const stages = await box(page, ".rb-stages");
   const buttons = await buttonsOf(page, OUTILS);
   const rows = new Set(buttons.map((b) => Math.round(b.y))).size;
   const p2 = await box(page, PANEL);
   const bad = buttons.filter((b) => !inside(b, SMALL) || !apart(b, p2));
-  check(Math.abs(fl.x - stages.x) <= 1 && Math.abs(fl.y - stages.y) <= 1, `S6 : barre flottante en haut à gauche de la scène (${fl.x}, ${fl.y})`);
+  check(fl.x >= stages.x + 16 - 1 && fl.y > stages.y + 16 && fl.x + fl.width <= p2.x + 0.5, `S6 : îlot d'outils dans la place libre à gauche du panneau, sous la rangée du haut (${fl.x}, ${fl.y})`);
   check(rows >= 2 && buttons.length > 0 && bad.length === 0, `S6 : ${buttons.length} boutons sur ${rows} rangées, chacun entier dans la fenêtre et hors du panneau${bad.length ? ` (fautifs : ${bad.map((b) => b.id).join(", ")})` : ""}`);
   await closeEditor(page);
   noErrors(w, "S6");
@@ -554,7 +554,19 @@ async function s6(browser, base) {
   const pn = await box(p3, PANEL);
   const st = await box(p3, ".rb-stages");
   check(Math.abs(pn.width - st.width) <= 1 && Math.abs(pn.x - st.x) <= 1, `S6 560 px : le panneau couvre toute la scène (${pn.width} / ${st.width} px)`);
-  check((await noOverlap(p3, OUTILS, PANEL)).apart && (await noOverlap(p3, '[data-toolbar="pages"]', PANEL)).apart, "S6 560 px : barres ancrées visibles, hors du panneau");
+  const over = await p3.evaluate((panelSel) => {
+    const panel = document.querySelector(panelSel).getBoundingClientRect();
+    const bad = [];
+    for (const el of document.querySelectorAll(".rb-island")) {
+      const r = el.getBoundingClientRect();
+      const x0 = Math.max(r.left, panel.left), x1 = Math.min(r.right, panel.right), y0 = Math.max(r.top, panel.top), y1 = Math.min(r.bottom, panel.bottom);
+      if (r.width === 0 || x1 - x0 < 1 || y1 - y0 < 1) continue;
+      const top = document.elementFromPoint((x0 + x1) / 2, (y0 + y1) / 2);
+      if (top !== null && el.contains(top)) bad.push(el.getAttribute("data-island"));
+    }
+    return bad;
+  }, PANEL);
+  check(over.length === 0, `S6 560 px : aucun îlot ne recouvre le panneau (L2-16)${over.length ? ` (fautifs : ${over.join(", ")})` : ""}`);
   await closeEditor(p3);
   noErrors(w3, "S6 étroit");
   await narrow.close();

@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 import { deflateSync, inflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, inkIn, item, loadPlaywright, serve, solidPng, stageBox, stageMouse } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
 import { bambooContainer, makeFlipchart } from "./fabriques/flipchart.mjs";
 import { flipPages, iwbRaw3, iwbZip, nbSvg, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 
@@ -213,7 +213,9 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await page.goto(url);
   await page.waitForSelector("#stage");
   await fr();
-  check((await page.isVisible(item("export-iwb"))) && (await page.isVisible(item("export-ubz"))), "D17 : « Enregistrer une copie au format .iwb… » et « … .ubz… » dans la barre des pages");
+  await openMenuOf(page, "export-iwb");
+  check((await page.isVisible(item("export-iwb"))) && (await page.isVisible(item("export-ubz"))), "D17 : « Enregistrer une copie au format .iwb… » et « … .ubz… » dans le menu (design-l2, L2-4)");
+  await page.keyboard.press("Escape");
   const box0 = await stageBox(page, 640);
   check(box0.height >= 640, `S4 : scène de ${Math.round(box0.width)} × ${Math.round(box0.height)} px (hauteur ≥ 640) avec les deux actions`);
   const list = await page.evaluate(() => {
@@ -257,10 +259,10 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
 
   // S4 : copies .iwb puis .ubz de cet onglet ; chaque copie rouverte puis réécrite à l'identique.
   const k304 = dialogs.length;
-  const iwbCopy = await download(() => page.click(item("export-iwb")), "copie.iwb");
+  const iwbCopy = await download(() => clickItem(page, "export-iwb"), "copie.iwb");
   await waitDialog("Copie enregistrée au format .iwb", k304);
   const k306 = dialogs.length;
-  const ubzCopy = await download(() => page.click(item("export-ubz")), "copie.ubz");
+  const ubzCopy = await download(() => clickItem(page, "export-ubz"), "copie.ubz");
   await waitDialog("Copie enregistrée au format .ubz", k306);
   const a = unzipSync(await readFile(iwbCopy));
   check(Object.keys(a)[0] === "content.xml" && Object.keys(a).some((k) => /^images\/[0-9a-f]{64}\.png$/.test(k)), "S4 : copie .iwb : content.xml d'abord, puis images/<empreinte>.png");

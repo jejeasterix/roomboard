@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, dropFile, frames, gitSha, inkIn, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse } from "./commun.mjs";
 
 const LABEL = "S5b";
 const LATER = "format pris en charge dans une prochaine version";
@@ -90,21 +90,21 @@ async function scenario(page, url, { captures, tmp }) {
     return file;
   };
 
-  // 1. Page prête, profil par défaut, la barre ne recouvre pas la scène.
+  // 1. Page prête, profil par défaut (design-l2, L2-25, contrôle inversé par L2) : la scène occupe toute la fenêtre ; les
+  //    îlots flottent au-dessus d'elle, entiers dans la fenêtre et sans chevauchement.
   await page.goto(url);
   await ready();
   check((await attr("data-tool")) === "pen", '#stage[data-tool="pen"] : outil Stylo au départ');
   check((await attr("data-page")) === "1/1", '#stage[data-page="1/1"]');
-  check((await page.locator('[data-toolbar="outils"][data-dock="top"]').count()) === 1, 'profil par défaut : [data-toolbar="outils"][data-dock="top"]');
-  check((await page.locator('[data-toolbar="pages"][data-dock="bottom"]').count()) === 1, 'profil par défaut : [data-toolbar="pages"][data-dock="bottom"]');
-  const outils = await noOverlap(page, '[data-toolbar="outils"]');
-  const pagesBar = await noOverlap(page, '[data-toolbar="pages"]');
-  check(outils.apart, `la barre d'outils ne recouvre pas la scène (barre y=${outils.bar.y}..${outils.bar.y + outils.bar.height}, scène y=${outils.stage.y})`);
-  check(pagesBar.apart, `la barre des pages ne recouvre pas la scène (barre y=${pagesBar.bar.y}, scène bas=${pagesBar.stage.y + pagesBar.stage.height})`);
-  const bad = await overlapping(page, "button[data-item]");
-  check(bad.length === 0, `aucun bouton ne recouvre la scène (${await page.locator("button[data-item]").count()} boutons contrôlés${bad.length ? ` ; fautifs : ${bad.join(", ")}` : ""})`);
-  check(outils.stage.y >= outils.bar.y + outils.bar.height - 0.5, "la scène commence sous la barre d'outils");
+  check((await page.locator('[data-toolbar="outils"][data-dock="floating"]').count()) === 1, 'profil par défaut : [data-toolbar="outils"][data-dock="floating"]');
+  check((await page.locator('[data-toolbar="pages"][data-dock="floating"]').count()) === 1, 'profil par défaut : [data-toolbar="pages"][data-dock="floating"]');
   const box = await stageBox(page);
+  check(box.x === 0 && box.y === 0 && box.width === VIEWPORT.width && box.height === VIEWPORT.height, `la scène occupe toute la fenêtre (x ${box.x}, y ${box.y}, ${box.width} × ${box.height})`);
+  const isl = await islandBoxes(page);
+  const outside = isl.filter((b) => b.x < -0.5 || b.y < -0.5 || b.x + b.width > VIEWPORT.width + 0.5 || b.y + b.height > VIEWPORT.height + 0.5).map((b) => b.id);
+  check(isl.length >= 6 && outside.length === 0, `îlots entiers dans la fenêtre (${isl.map((b) => b.id).join(", ")}${outside.length ? ` ; dehors : ${outside.join(", ")}` : ""})`);
+  const clash = clashes(isl);
+  check(clash.length === 0, `aucun îlot n'en recouvre un autre${clash.length ? ` (${clash.join(", ")})` : ""}`);
   check(box.height >= 640, `la scène garde au moins 640 px de haut (${box.height} px)`);
   const css = await page.evaluate(() => {
     const g = (sel) => getComputedStyle(document.querySelector(sel));
@@ -122,7 +122,7 @@ async function scenario(page, url, { captures, tmp }) {
   check((await page.locator(item("rect")).count()) === 0, "profil simple : pas de bouton Rectangle");
   const simple = await noOverlap(page, '[data-toolbar="outils"]');
   check(simple.apart && simple.stage.x >= simple.bar.x + simple.bar.width - 0.5, `profil simple : la barre à gauche ne recouvre pas la scène (barre x=${simple.bar.x}..${simple.bar.x + simple.bar.width}, scène x=${simple.stage.x})`);
-  check((await overlapping(page, "button[data-item]")).length === 0, "profil simple : aucun bouton ne recouvre la scène");
+  check((await overlapping(page, '[data-toolbar="outils"] button[data-item]')).length === 0, "profil simple : aucun bouton de la bande ne recouvre la scène (îlot des pages au-dessus d'elle, L2-2)");
   await shot("simple");
   await page.reload();
   await ready();
@@ -130,7 +130,7 @@ async function scenario(page, url, { captures, tmp }) {
   check(JSON.stringify(await visibleTools()) === JSON.stringify(["pen", "eraser", "hand"]), "profil simple : exactement trois outils (pen, eraser, hand)");
   const three = await visibleTools();
   await chooseProfile("defaut");
-  check((await page.locator('[data-toolbar="outils"][data-dock="top"]').count()) === 1, "retour au profil par défaut : barre en haut");
+  check((await page.locator('[data-toolbar="outils"][data-dock="floating"]').count()) === 1, "retour au profil par défaut : barre en îlot");
   check(JSON.stringify(await visibleTools()) === JSON.stringify(TOOLS), `profil par défaut : les neuf outils sont présents (${three.length} sous le profil simple)`);
 
   // 3. Onglets : historiques séparés.

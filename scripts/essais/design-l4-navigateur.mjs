@@ -14,7 +14,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, frames, gitSha, item, loadPlaywright, serve } from "./commun.mjs";
+import { clickItem, DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, TAB, VIEWPORT } from "./commun.mjs";
 import { edgeRow, fringes, hex, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "design L4";
@@ -178,12 +178,12 @@ async function s3(browser, base) {
   const w = watch(page);
   await page.goto(`${base}/?fichiers=repli`);
   await ready(page);
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   await page.waitForSelector("#reglages", { timeout: 15000 });
   check((await page.locator(FRAME).count()) === 0, "S3 web sans faux hôte : aucun bouton du cadre");
   await page.goto(`${base}/?fichiers=repli&annotation=faux`);
   await ready(page);
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   await page.waitForSelector(FRAME, { timeout: 15000 });
   check((await text(page, FRAME)) === "Cadre de l'annotation : affiché", "S3 : « Cadre de l'annotation : affiché »");
   await page.click(FRAME);
@@ -193,7 +193,7 @@ async function s3(browser, base) {
   await leave(page);
   await page.reload();
   await ready(page);
-  await page.click(item("settings"));
+  await clickItem(page, "settings");
   await page.waitForSelector(FRAME, { timeout: 15000 });
   check((await text(page, FRAME)) === "Cadre de l'annotation : masqué", "S3 : après rechargement, toujours masqué (gardé sur l'appareil)");
   await page.click(FRAME);
