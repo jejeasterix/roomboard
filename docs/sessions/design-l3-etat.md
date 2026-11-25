@@ -67,3 +67,85 @@ Scénarios : S1 usage S1 (barre à droite, grands boutons, en direct) · S2 tri 
 
 ## Portes
 ouvertes : — · passées : —
+
+## Notes du coffre à poser
+
+### 1. Journal
+
+Chemin : `00_Journal/2026-11-25-roomboard-design-l3-clos.md`
+
+```markdown
+---
+id: 2026-11-25-roomboard-design-l3-clos
+type: journal
+summary: "RoomBoard design L3 clos (OF61, PR #56) : l'éditeur de profils devient un panneau latéral de 600 px à droite, sans voile, avec aperçu en direct de la barre ; deux cartes de démarrage, cinq vignettes d'emplacement, taille S/M/L segmentée, liste d'outils triable au pointeur avec œil, Importer / Exporter à côté du profil ; netteté § 10 tenue (0 pixel intermédiaire, 0 frange)."
+created: 2026-11-25
+project: "[[roomboard]]"
+tags: [projet/roomboard, journal, design]
+evidence: "PR jejeasterix/roomboard#56 ; docs/plans/design-l3-cadrage.md ; docs/sessions/design-l3-etat.md ; docs/essais/design-l3-comparaison.md"
+---
+
+# RoomBoard — design L3 clos (2026-11-25)
+
+- Lot L3 du cadrage design (§ 9 ; D-DS10, avec D-DS1, D-DS3, D-DS8), sur les jetons et icônes de L1 et la commande segmentée de L4 ([[2026-11-24-roomboard-design-l4-clos]]).
+- Livré : panneau `.rb-sheet` dans la case de la scène ; aperçu en direct (`shown` dans `App`, rien n'est écrit avant Enregistrer) ; confirmation d'abandon d'un brouillon modifié ; tri au pointeur `ui/sort-drag.ts` sur le squelette `ui/pointer-gesture.ts` extrait de `resource-drag.ts` ; choix exclusifs `ui/RadioChoices.tsx` ; catalogue « Ajouter » selon `annotationBarOf` ; dix icônes Lucide. Format `.rbprofile` inchangé.
+- Décisions : [[NNNN-roomboard-editeur-profils-apercu-direct]], [[NNNN-roomboard-tri-au-pointeur-squelette-commun]].
+- Preuve : `verifier.sh --e2e` OK ; essai `design-l3-navigateur.mjs` (S1 de l'usage, tri souris, doigt, clavier) ; 27 écarts à la maquette 03 justifiés ; Wasm inchangés (1 375 581 o, 2 794 511 o) ; web 3370 → 3477 tests.
+- Reste : focus perdu après « Revenir à l'origine » sur un profil fourni sans copie ; cible de poignée réelle 44 px ; police Inter non embarquée (Q6) ; gestes C1-1 et C1-7 à rejouer en coque.
+```
+
+### 2. Décision
+
+Chemin : `02_Decisions/NNNN-roomboard-editeur-profils-apercu-direct.md` (le canal pose `NNNN`)
+
+```markdown
+---
+id: NNNN-roomboard-editeur-profils-apercu-direct
+type: decision
+summary: "RoomBoard : l'éditeur de profils montre le brouillon en direct sur la barre réelle (signal previewProfile de App, shown = aperçu sinon profil enregistré) mais n'écrit rien avant Enregistrer ; un brouillon qui diffère de l'enregistré demande confirmation avant Fermer, changer de profil, importer ou ouvrir un autre panneau ; l'entrée en annotation abandonne sans question ; pas d'enregistrement automatique ; prise par l'agent (OF61)."
+created: 2026-11-25
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/design, profils]
+evidence: "docs/plans/design-l3-cadrage.md (L3-3, L3-32, DA-L3-3, H1, H2) ; apps/web/src/ui/App.tsx ; apps/web/src/profile-edit.ts (leaveDraft, sameProfile) (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — aperçu en direct de l'éditeur de profils (prise par l'agent)
+
+- Contexte : D-DS10 (go de Jérôme du 2026-11-24 sur les maquettes : « la barre change derrière lui, en direct ») contre C1 P20 (« rien ne bouge avant Enregistrer », décision d'orchestrateur).
+- Choix : D-DS10 l'emporte ; le brouillon reste un brouillon ; `main.ts`, le magasin et l'annotation lisent toujours le profil enregistré.
+- Garde : `leaveDraft` (une seule règle pour `App` et l'éditeur) pose `shell.confirm` seulement si `sameProfile` est faux.
+- Écart à la maquette : bouton « Enregistrer » gardé, « Enregistré sur cet appareil » seulement sans changement.
+- Repli : ne plus appeler `preview` rend le comportement C1.
+```
+
+### 3. Décision
+
+Chemin : `02_Decisions/NNNN-roomboard-tri-au-pointeur-squelette-commun.md` (le canal pose `NNNN`)
+
+```markdown
+---
+id: NNNN-roomboard-tri-au-pointeur-squelette-commun
+type: decision
+summary: "RoomBoard : tout glisser au pointeur part du squelette ui/pointer-gesture.ts (capture, seuil 4 px, Échap, pointercancel, capture perdue, fonction d'abandon) ; le tri d'une liste (ui/sort-drag.ts) et le glisser de carte (resource-drag.ts) le rappellent sans copie ; un toucher sans glisser dévoile Monter / Descendre (WCAG 2.2 § 2.5.7) ; jamais le glisser HTML5 (U12) ; prise par l'agent (OF61)."
+created: 2026-11-25
+status: actif
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision/architecture, pointeur]
+evidence: "docs/plans/design-l3-cadrage.md (DA-L3-1, L3-13 à L3-15) ; apps/web/src/ui/pointer-gesture.ts ; apps/web/src/ui/sort-drag.ts (dépôt jejeasterix/roomboard)"
+---
+
+# RoomBoard — tri au pointeur sur un squelette commun (prise par l'agent)
+
+- Contexte : U12 interdit le glisser HTML5 (coupé sous Windows en coque, U24) ; `resource-drag.ts` visait la scène et portait seul le squelette du geste.
+- Choix : squelette extrait dans `startPointerGesture` (rend une fonction d'abandon, appelée au démontage) ; `startSortDrag` calcule le rang (`slotOf`), décale les lignes, défile le corps à 48 px des bords (pas de 12 px au plus), applique un seul `moveItemTo` au lâcher.
+- Accessibilité : flèches au clavier sur la poignée, rang annoncé en `aria-live`, Monter / Descendre au toucher de la poignée.
+- Preuve : les 9 tests de `resource-drag` inchangés et verts ; tri à la souris, au doigt (CDP) et au clavier dans l'essai `design-l3`.
+- Repli : retirer la poignée au pointeur laisse le clic et le clavier.
+```
+
+### 4. Fiche projet
+
+Segment à ajouter à la ligne 21 de `01_Projets/roomboard.md` :
+
+` ; design L3 clos (OF61, PR 56) : éditeur de profils en panneau latéral de 600 px, aperçu en direct, tri au pointeur, Importer / Exporter à côté du profil — voir [[2026-11-25-roomboard-design-l3-clos]]`
