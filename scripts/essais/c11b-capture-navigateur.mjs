@@ -63,6 +63,13 @@ async function waitDialog(dialogs, from) {
   }
   return dialogs[from];
 }
+
+/** design-l4 (L4-16) : l'avis d'envoi est lu dans le bandeau, plus dans une boîte. */
+async function waitToast(page) {
+  const t = page.locator(".rb-toast");
+  await t.waitFor({ state: "visible", timeout: 15000 });
+  return ((await t.textContent()) ?? "").trim();
+}
 const text = async (page, sel) => ((await page.textContent(sel)) ?? "").trim();
 const stageAttr = (page, name) => page.getAttribute("#stage", name);
 /** Attend que l'attribut `name` de #stage vérifie l'expression régulière `source`. */
@@ -124,8 +131,8 @@ async function s1(page, base, tmp, captures) {
   const d0 = w.dialogs.length;
   await page.click(item("annotation-send"));
   await waitMode(page, "board");
-  const avis = await waitDialog(w.dialogs, d0);
-  check(avis.message === "envoyé au tableau : page 2", `S1 : avis « ${avis.message} »`);
+  const avis = await waitToast(page);
+  check(avis === "Envoyé au tableau : page 2" && w.dialogs.length === d0, `S1 : bandeau « ${avis} », aucune boîte`);
   check((await body(page, "annotationCaptures")) === "1", "S1 : une capture demandée au faux hôte");
   check((await shownTab(page).getAttribute("data-tab")) === origin, "S1 : onglet d'origine montré");
   await waitStage(page, "data-page", "^2/3$");
@@ -179,8 +186,8 @@ async function s2(browser, base) {
     await waitMode(page, "board");
     const a = await waitDialog(w.dialogs, d0);
     check(a.message === message, `S2 ${label} : avis « ${a.message} »`);
-    const b = await waitDialog(w.dialogs, d0 + 1);
-    check(b.message === "envoyé au tableau : page 2", `S2 ${label} : puis « ${b.message} »`);
+    const b = await waitToast(page);
+    check(b === "Envoyé au tableau : page 2" && w.dialogs.length === d0 + 1, `S2 ${label} : puis le bandeau « ${b} »`);
     await waitStage(page, "data-page", "^2/2$");
     check(await centerIs(page, WHITE), `S2 ${label} : page à fond blanc`);
     check(Number(await stageAttr(page, "data-elements")) === 1, `S2 ${label} : le trait est inséré`);
@@ -226,14 +233,14 @@ async function s3(browser, base) {
     (await page.getAttribute(item("annotation-freeze"), "aria-pressed")) === "true" && (await text(page, item("annotation-freeze"))) === "Bureau vivant",
     "S3 : « Figer le bureau » → fenêtre opaque (annotationOpaque=1), bouton enfoncé « Bureau vivant »",
   );
-  await page.click(item("select"));
+  await page.click('button[data-segment="mouse"]');
   await page.waitForTimeout(300);
-  check((await body(page, "pointeur")) === "draw", "S3 : Sélection en figé : data-pointeur reste draw (pas de clic à travers)");
+  check((await body(page, "pointeur")) === "draw", "S3 : Souris en figé : data-pointeur reste draw (pas de clic à travers)");
   let d0 = w.dialogs.length;
   await page.click(item("annotation-send-new"));
   await waitMode(page, "board");
-  let avis = await waitDialog(w.dialogs, d0);
-  check(avis.message === "envoyé au tableau : page 1", `S3 : avis « ${avis.message} »`);
+  let avis = await waitToast(page);
+  check(avis === "Envoyé au tableau : page 1" && w.dialogs.length === d0, `S3 : bandeau « ${avis} », aucune boîte`);
   await waitTabs(page, tabs0 + 2);
   check(((await shownTab(page).textContent()) ?? "").includes("Capture du bureau"), "S3 : nouvel onglet « Capture du bureau » montré");
   await waitStage(page, "data-page", "^1/1$");
@@ -249,7 +256,7 @@ async function s3(browser, base) {
   await page.click(item("annotation-freeze"));
   await waitBody(page, "annotationOpaque", "0");
   check((await text(page, item("annotation-freeze"))) === "Figer le bureau", "S3 : « Bureau vivant » → transparent (annotationOpaque=0), bouton « Figer le bureau »");
-  await page.click(item("desktop-annotation"));
+  await page.click(item("ann-desktop-annotation"));
   await waitMode(page, "board");
   const fige = await stageBox(page);
   check(fige.height >= 640, `S3 figé : scène ${fige.height} px ≥ 640 après la sortie`);
@@ -268,7 +275,7 @@ async function s3(browser, base) {
   await page.click(item("annotation-freeze"));
   await waitBody(page, "annotationCaptures", "2");
   check((await body(page, "annotationOpaque")) === "1", "S3 « Recapturer le bureau » : nouvelle capture, toujours figé");
-  await page.click(item("desktop-annotation"));
+  await page.click(item("ann-desktop-annotation"));
   await waitMode(page, "board");
   const opaque = await stageBox(page);
   check(opaque.height >= 640, `S3 sans transparence : scène ${opaque.height} px ≥ 640 après la sortie`);
@@ -292,8 +299,8 @@ async function s3(browser, base) {
   d0 = w.dialogs.length;
   await page.click(item("annotation-send"));
   await waitMode(page, "board");
-  avis = await waitDialog(w.dialogs, d0);
-  check(avis.message === "envoyé au tableau : page 1", `S3 « Annotation au démarrage » : avis « ${avis.message} »`);
+  avis = await waitToast(page);
+  check(avis === "Envoyé au tableau : page 1" && w.dialogs.length === d0, `S3 « Annotation au démarrage » : bandeau « ${avis} »`);
   await waitTabs(page, tabs1 + 1);
   check(((await shownTab(page).textContent()) ?? "").includes("Capture du bureau"), "S3 « Annotation au démarrage » : « Envoyer au tableau » ouvre un nouvel onglet");
   check((await stageBox(page)).height >= 640, "S3 « Annotation au démarrage » : scène ≥ 640 px");

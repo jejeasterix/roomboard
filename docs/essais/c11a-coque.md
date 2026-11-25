@@ -51,5 +51,19 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 - [ ] AppImage (Linux) : « Relancer en mode compatibilité » relance bien l'AppImage (`$APPIMAGE`), pas un chemin `/tmp/.mount_*`.
 - [ ] Alt+F4 sur `annotate` est toujours empêché (la page principale cache la fenêtre) : si `annotate` est cachée ou la principale ne répond pas, la fermeture ne se fait pas ; noter si un cas réel se présente.
 
+## C11a-9 — Design L4 : barre d'annotation, commande segmentée, cadre (Windows 10, Windows 11, macOS 14, Linux X11)
+- [ ] C11a-1 : la bande est la barre d'annotation (Dessin / Souris, Stylo, Gomme… « Quitter l'annotation »), pas la barre d'outils, à sa juste épaisseur, du côté de son emplacement ; profil « Simple (grands boutons) » : bande à gauche, grands boutons, rien de coupé.
+- [ ] C11a-3 : la commande segmentée montre l'état présent (« Dessin » ou « Souris » enfoncé) ; « Souris » laisse cliquer le bureau, « Dessin » rend l'encre ; un double clic sur un segment ne revient pas en arrière ; le cadre ne bloque aucun clic à travers.
+- [ ] C11a-4 : sortir par « Quitter l'annotation » de la barre d'annotation, par Échap, par Alt+F4 (Cmd+W sur macOS).
+- [ ] C11a-5 : déposer une image sur la zone à icône (pointillés) : même comportement qu'avant (« ajouté à la page N »).
+- [ ] C11a-6 : « Écran suivant » : le cadre suit l'écran de l'annotation.
+- [ ] C11a-8 : fenêtre maximisée, entrer puis sortir : elle redevient maximisée.
+- [ ] Cadre violet de 3 px, net, visible tout autour de la zone d'annotation, à 100 %, 150 % et 200 % (noter un bord adouci à 150 %, H15) ; la bande de la barre n'est pas bordée (H4).
+- [ ] Réglages › « Cadre de l'annotation : masqué » : aucun cadre à l'entrée suivante ; relancer RoomBoard : toujours masqué ; « affiché » : le cadre revient.
+- [ ] Infobulle d'un bouton de la bande (survol) : visible ou rognée ? Le noter (H14).
+- [ ] Après « Envoyer au tableau » : le bandeau « Envoyé au tableau : page N » en bas à droite de la scène, aucune boîte système ; il part seul après 4 s.
+- [ ] C11b-1 de `c11b-coque.md` (ligne design L4) : aucun liseré violet dans l'image envoyée.
+- Note : sur un écran de 900 px de haut, la bande du profil « Simple » en annotation passe à deux colonnes (H12 / D3 du plan) ; le noter, ce n'est pas un défaut.
+
 ## Point de durcissement connu
 La capacité `annotate` ne donne que `core:event:default` (listen, unlisten, emit, emit_to). Mais `build.rs` ne déclare pas de manifeste de commandes (`AppManifest`) : les commandes de l'application (`annotation_*`, `read_granted_file`, etc.) ne sont donc pas filtrées par capacité et la page `annotate`, qui invoque les commandes `annotation_*`, pourrait aussi appeler les autres. À durcir plus tard avec un manifeste de commandes.

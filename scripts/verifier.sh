@@ -141,6 +141,8 @@ if [ "$E2E" = 1 ]; then
   echo "C11b capture : OK"
   node scripts/essais/design-l1-navigateur.mjs
   echo "design L1 : OK"
+  node scripts/essais/design-l4-navigateur.mjs
+  echo "design L4 : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"
