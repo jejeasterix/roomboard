@@ -18,7 +18,7 @@ import type { EngineState } from "../engine/engine";
 import type { SettingsStore } from "../engine/settings";
 import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
-import { originOf } from "../profile-edit";
+import { abandonQuestion, originOf, sameProfile } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
 import { ANNOTATION_ROLE, annotationBarOf, resolveStartMode, visibleItems, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
@@ -94,6 +94,15 @@ export function App(props: AppProps): JSX.Element {
     const f = profileFocus;
     profileFocus = false;
     return f;
+  };
+  /** design-l3 (L3-32) : quitter l'éditeur pour un autre panneau ; brouillon différent du profil enregistré : après un Oui.
+   *  Même règle et même question que l'éditeur (`sameProfile`, `abandonQuestion`) ; sans question, dans le même tour. */
+  const leaveEditor = (go: () => void): void => {
+    const draft = previewProfile();
+    if (panel() !== "editor" || draft === null || sameProfile(draft, props.active.profile())) return go();
+    void props.shell.confirm(abandonQuestion(props.active.profile().label)).then((ok) => {
+      if (ok) go();
+    });
   };
 
   /** Saisie de texte en cours dans la scène : le blur la fait valider par l'outil (CL4-3) et cache la zone. */
@@ -300,7 +309,7 @@ export function App(props: AppProps): JSX.Element {
       exportBoard: (format) => void ws.exportBoard(format),
       editOriginal: () => void ws.editOriginal(),
       selection: (a) => ws.selection(a),
-      toggle: (p) => setPanel((cur) => (cur === p ? null : p)),
+      toggle: (p) => leaveEditor(() => setPanel((cur) => (cur === p ? null : p))),
       ...(ann === undefined ? {} : { annotation: ann.control }),
     },
     shownProfile,
@@ -410,6 +419,7 @@ export function App(props: AppProps): JSX.Element {
     <div
       class="rb-layout"
       data-mode={annotating() ? "annotation" : "board"}
+      data-panneau={panel() === "editor" ? "profils" : undefined}
       style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows }}
     >
       <div class="rb-slot rb-head" style={{ "grid-area": "tabs" }}>
@@ -463,7 +473,7 @@ export function App(props: AppProps): JSX.Element {
         </div>
       </Show>
       <Show when={panel() === "profiles"}>
-        <div class="rb-popover">
+        <div class="rb-popover" data-panel="menu-profils">
           <ProfileMenu
             profiles={props.active.profiles}
             activeId={() => profile().id}
