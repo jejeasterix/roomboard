@@ -32,7 +32,8 @@ Lignes de l'essai (journal `T9-captures.log`, sur le build de `feat/design-l3` @
 | entête | Importer / Exporter avec texte, 128 px | D-DS1 | la maquette les montrait en icône seule ; texte + icône : cible lisible, ≥ 48 px de haut | texte visible, icônes identiques |
 | entête | × Fermer en icône seule avec infobulle | glyphe universel, maquette | pas de texte : glyphe connu, nom accessible par `aria-label` et infobulle | conforme à l'attendu |
 | cartes | police du système au lieu d'Inter | H18 | Inter non embarquée (Q6) | glyphes Noto Sans plus larges : « RoomBoard s'ouvre sur le tableau. » passe sur 2 lignes (une seule dans la maquette) |
-| cartes | note « Sans annotation possible… » collée au titre « Taille des boutons » | — | non justifié : à corriger (espacement à reprendre) | sur la capture du panneau, la note touche presque le titre ; la maquette laisse un blanc |
+| cartes | note « Sans annotation possible… » presque collée au titre « Taille des boutons » | — | corrigé (T11) : « Taille des boutons » dans sa propre section `size`, blanc de section rétabli | voir `design-l3-apres-panneau.png` |
+| tout | police : Noto Sans du système au lieu d'Inter (500 rendu en 400, 600 en 700) | H18 | hors lot ; Q6 à trancher par Jérôme | écart à revoir |
 | vignettes | section « Taille des boutons » à part, au-dessus des barres | H14 | taille globale au profil | maquette : emplacements d'abord, tailles dessous ; ici l'ordre est inverse |
 | vignettes | commande « Barre d'outils / des pages / d'annotation » au-dessus des vignettes | H5 | une barre à la fois | absent de la maquette : ajouté |
 | vignettes | segments à largeur fractionnaire au-delà de 4 barres (5 barres : 100,8 px) | — | non prouvés nets, à revoir | non mesuré : 3 segments (Petits / Moyens / Grands) seuls mesurés nets |

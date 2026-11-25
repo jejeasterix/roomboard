@@ -202,7 +202,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
    fraction de pixel (cases de 96, cartes de 250, segments de 504 / n). */
 .rb-popover[data-panel="profils"] { justify-self: end; align-self: stretch; inline-size: min(600px, 100%); overflow: hidden; border: 0; box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
 .rb-sheet { display: flex; flex-direction: column; block-size: 100%; background: var(--rf-white); color: var(--rf-gray-800); font-size: 16px; line-height: 24px; }
-.rb-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; block-size: 80px; padding: 0 var(--rf-space-md) 0 44px; border-block-end: 1px solid var(--rf-gray-300); }
+.rb-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; block-size: 80px; padding: 0 28px 0 44px; border-block-end: 1px solid var(--rf-gray-300); }
 .rb-sheet-head h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--rf-navy-500); }
 .rb-sheet-body { flex: 1 1 auto; min-block-size: 0; overflow-y: auto; scrollbar-gutter: stable both-edges; display: grid; grid-template-columns: min(512px, 100%); justify-content: center; align-content: start; row-gap: var(--rf-space-lg); padding: 20px var(--rf-space-lg); }
 .rb-sheet-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--rf-space-md); block-size: 80px; padding: 0 44px; border-block-start: 1px solid var(--rf-gray-300); }
@@ -278,7 +278,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-item[data-unknown] { color: var(--rf-text-muted-aa); font-style: italic; }
 .rb-item[data-dragging] { z-index: 1; background: var(--rf-white); box-shadow: var(--rf-shadow-hover); }
 .rb-items[data-sorting] .rb-item:not([data-dragging]) { transition: transform 120ms ease; }
-.rb-grip { display: grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; padding: 0; border: 0; background: transparent; color: var(--rf-gray-500); cursor: grab; touch-action: none; }
+.rb-grip { display: grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; padding: 0; border: 0; background: transparent; color: var(--rf-navy-500); cursor: grab; touch-action: none; margin-inline-end: -16px; }
+.rb-item[data-hidden] .rb-grip { color: var(--rf-gray-500); }
 /* design-l3 (L3-18) : préréglages ; pastille ronde de 32 px dans une cible de 48 px. */
 .rb-presets { display: flex; flex-direction: column; gap: var(--rf-space-sm); margin-block-end: var(--rf-space-sm); }
 .rb-presets ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--rf-space-sm); }
