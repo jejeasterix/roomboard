@@ -75,13 +75,13 @@ describe("profile-edit (C1, DAC1-1)", () => {
     const up = moveItem(DEFAUT, "outils", "sep-1", -1);
     expect(groupsOf(up)[0]).toEqual(["pen", "eraser", "eraser-mode", "hand", "sep-1"]);
     expect(moveItem(DEFAUT, "outils", "pen", -1)).toEqual(DEFAUT);
-    expect(moveItem(DEFAUT, "outils", "depot-annotation", 1)).toEqual(DEFAUT);
+    expect(moveItem(DEFAUT, "outils", "desktop-annotation", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "outils", "absent", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "pages", "eraser", 1)).toEqual(DEFAUT);
   });
 
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz", "annotation-pointer", "annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new"]);
     const simple = catalog(SIMPLE, "outils");
     expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");

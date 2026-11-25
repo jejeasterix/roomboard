@@ -45,9 +45,15 @@ describe("ProfileEditor (C1, P20)", () => {
   it("trois sections : Général, Barres (une par barre), Préréglages du stylo", () => {
     const { container } = setup();
     expect([...container.querySelectorAll("[data-edit-section]")].map((s) => s.getAttribute("data-edit-section"))).toEqual(["general", "bars", "presets"]);
-    expect([...container.querySelectorAll("[data-edit-bar]")].map((b) => b.getAttribute("data-edit-bar"))).toEqual(["outils", "pages"]);
+    expect([...container.querySelectorAll("[data-edit-bar]")].map((b) => b.getAttribute("data-edit-bar"))).toEqual(["outils", "pages", "annotation"]);
     expect(container.querySelectorAll("[data-edit-preset]")).toHaveLength(3);
     expect(container.querySelector("[data-profile-editor]")!.getAttribute("role")).toBe("dialog");
+  });
+
+  it("design-l4 T6 : L4-18 : la barre d'annotation est éditable, légende « Barre d'annotation »", () => {
+    const { q } = setup();
+    expect(q('[data-edit-bar="annotation"] legend').textContent).toBe("Barre d'annotation");
+    expect(q('[data-edit-bar="annotation"] select[data-edit="dock"]')).toBeTruthy();
   });
 
   it("S1 : brouillon, rien n'est rendu avant Enregistrer ; Enregistrer rend barre à gauche et grands boutons", () => {
@@ -78,7 +84,7 @@ describe("ProfileEditor (C1, P20)", () => {
   it("Monter / Descendre : à la frontière, l'élément entre dans le groupe voisin (P14)", () => {
     const { q, save } = setup();
     expect(q<HTMLButtonElement>('[data-edit-item="pen"] button[data-edit="up"]').disabled).toBe(true);
-    expect(q<HTMLButtonElement>('[data-edit-item="depot-annotation"] button[data-edit="down"]').disabled).toBe(true);
+    expect(q<HTMLButtonElement>('[data-edit-item="desktop-annotation"] button[data-edit="down"]').disabled).toBe(true);
     fireEvent.click(q('[data-edit-item="hand"] button[data-edit="down"]'));
     fireEvent.click(q('button[data-edit="save"]'));
     const groups = outils(last(save)).groups.map((g) => g.items.map((i) => i.id));

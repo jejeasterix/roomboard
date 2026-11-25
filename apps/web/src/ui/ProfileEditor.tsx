@@ -26,6 +26,7 @@ import {
   type PresetPatch,
 } from "../profile-edit";
 import {
+  ANNOTATION_ROLE,
   BUTTON_SIZES,
   DOCKS,
   isKnownItem,
@@ -58,7 +59,7 @@ type Refocus = (find: (root: HTMLElement) => HTMLElement | undefined) => void;
 const DOCK_LABELS: Readonly<Record<Dock, string>> = { top: "En haut", bottom: "En bas", left: "À gauche", right: "À droite", floating: "Flottante" };
 const SIZE_LABELS: Readonly<Record<ButtonSize, string>> = { s: "Petits", m: "Moyens", l: "Grands" };
 const START_LABELS: Readonly<Record<StartMode, string>> = { board: "Tableau", "desktop-annotation": "Annotation du bureau" };
-const ROLE_LABELS: Readonly<Record<string, string>> = { tools: "Barre d'outils", pages: "Barre des pages" };
+const ROLE_LABELS: Readonly<Record<string, string>> = { tools: "Barre d'outils", pages: "Barre des pages", [ANNOTATION_ROLE]: "Barre d'annotation" };
 const UNKNOWN = "inconnu (version plus récente)";
 /** Champ de préréglage → modification (table : couleur en texte, épaisseur en nombre). */
 const PATCH: Readonly<Record<PresetField["key"], (raw: string) => PresetPatch>> = {
