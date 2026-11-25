@@ -10,8 +10,9 @@ en une phrase. Les fiches C11a (`c11a-coque.md`) restent à jouer avant celle-ci
 - [ ] Ouvrir un tableau de 2 pages, montrer la page 1, « Annotation du bureau », écrire sur le bureau (un mot, un cercle autour d'une icône).
 - [ ] « Envoyer au tableau » : l'annotation se ferme ; le tableau montre la page 2 de 3, avec le bureau en fond, ajusté à la largeur de la page.
 - [ ] Dans l'image du fond : ni la barre RoomBoard, ni la fenêtre d'annotation, ni l'encre (nos fenêtres sont absentes de la capture).
+- [ ] Design L4 : le cadre violet est absent de l'image envoyée au tableau (aucun liseré violet sur les bords de l'image ; cadre affiché dans Réglages).
 - [ ] Le trait est par-dessus, au même endroit que sur le bureau (le cercle entoure la même icône) ; Sélection le sélectionne comme objet.
-- [ ] Avis « envoyé au tableau : page 2 » ; Ctrl+Z retire la page entière (fond et encre) en une fois ; Ctrl+Y la remet.
+- [ ] Bandeau « Envoyé au tableau : page 2 » en bas à droite de la scène, aucune boîte système (design L4) ; Ctrl+Z retire la page entière (fond et encre) en une fois ; Ctrl+Y la remet.
 - [ ] Clignotement de nos fenêtres pendant la capture (≈ 250 ms, HC11b-9) : noter s'il gêne.
 - [ ] Enregistrer, fermer, rouvrir : la page 2 a son fond et son trait.
 - [ ] Zoomer ou faire défiler dans l'annotation avant d'écrire, puis envoyer : l'encre reste sur le bureau capturé (P13, HC11b-13).

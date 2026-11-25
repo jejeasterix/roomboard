@@ -80,7 +80,7 @@ async function s1(page, base) {
   await page.goto(`${base}/?fichiers=repli&annotation=faux`);
   await page.waitForSelector(`${LAYOUT}[data-mode="annotation"]`, { timeout: 15000 });
   check((await body(page, "annotation")) === "1", "S1 : « Annotation au démarrage » + faux hôte : démarre en annotation");
-  await page.click(item("desktop-annotation"));
+  await page.click(item("ann-desktop-annotation"));
   await waitMode(page, "board");
   check(w.errors.length === 0, `S1 : aucune erreur dans la page${w.errors.length ? ` : ${w.errors.join(" | ")}` : ""}`);
 }
@@ -97,7 +97,7 @@ async function s2s3(page, base, captures) {
   await waitBody(page, "annotation", "1");
   check((await body(page, "pointeur")) === "draw", "S2 : annotate ouverte en mode dessin (data-pointeur=draw)");
   check(
-    (await page.getAttribute(item("desktop-annotation"), "aria-pressed")) === "true" && (await text(page, item("desktop-annotation"))) === "Quitter l'annotation",
+    (await page.getAttribute(item("ann-desktop-annotation"), "aria-pressed")) === "true" && (await text(page, item("ann-desktop-annotation"))) === "Quitter l'annotation",
     "S2 : bouton enfoncé « Quitter l'annotation »",
   );
   check(Number(await body(page, "annotationRecu")) > 0, `S2 : .roomboard reçu en base64 à l'entrée (${await body(page, "annotationRecu")} o)`);
@@ -106,10 +106,10 @@ async function s2s3(page, base, captures) {
     await page.screenshot({ path: "/tmp/c11a-annotation.png" });
     console.log("capture : /tmp/c11a-annotation.png");
   }
-  await page.click(item("select"));
+  await page.click('button[data-segment="mouse"]');
   await waitBody(page, "pointeur", "mouse");
-  check((await body(page, "pointeur")) === "mouse", "S2 : Sélection → data-pointeur=mouse");
-  await page.click(item("pen"));
+  check((await body(page, "pointeur")) === "mouse", "S2 : Souris → data-pointeur=mouse");
+  await page.click(item("ann-pen"));
   await waitBody(page, "pointeur", "draw");
   check((await body(page, "pointeur")) === "draw", "S2 : Stylo → data-pointeur=draw");
   await page.click(item("annotation-pointer"));
@@ -118,7 +118,7 @@ async function s2s3(page, base, captures) {
   await page.click(item("annotation-pointer"));
   await waitBody(page, "pointeur", "draw");
   check((await body(page, "pointeur")) === "draw" && (await text(page, item("annotation-pointer"))) === "Souris", "S2 : bouton « Dessin » → dessin (aller-retour)");
-  await page.click(item("desktop-annotation"));
+  await page.click(item("ann-desktop-annotation"));
   await waitMode(page, "board");
   await waitBody(page, "annotation", "0");
   check(Number(await body(page, "annotationRendu")) > 0, `S2 : .roomboard rendu en base64 à la sortie (${await body(page, "annotationRendu")} o)`);
