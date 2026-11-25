@@ -62,6 +62,7 @@ Cocher chaque ligne ; noter l'écart en une phrase.
 - [ ] Réglages › « Cadre de l'annotation : masqué » : aucun cadre à l'entrée suivante ; relancer RoomBoard : toujours masqué ; « affiché » : le cadre revient.
 - [ ] Infobulle d'un bouton de la bande (survol) : visible ou rognée ? Le noter (H14).
 - [ ] Après « Envoyer au tableau » : le bandeau « Envoyé au tableau : page N » en bas à droite de la scène, aucune boîte système ; il part seul après 4 s.
+- [ ] Figer le bureau : le fond figé ne montre pas le cadre violet (pas de double liseré).
 - [ ] C11b-1 de `c11b-coque.md` (ligne design L4) : aucun liseré violet dans l'image envoyée.
 - Note : sur un écran de 900 px de haut, la bande du profil « Simple » en annotation passe à deux colonnes (H12 / D3 du plan) ; le noter, ce n'est pas un défaut.
 

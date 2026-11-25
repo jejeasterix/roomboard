@@ -36,7 +36,7 @@ export function PointerSwitch(props: PointerSwitchProps): JSX.Element {
     else if (mode !== current()) props.host.runAction(props.item.action ?? "");
   };
   return (
-    <span class="rb-seg">
+    <span class="rb-seg" role="group" aria-label="Pointeur">
       <For each={POINTER_SEGMENTS}>
         {(seg) => {
           const on = (): boolean => current() === seg.mode;

@@ -80,8 +80,8 @@ describe("rb.css (design-l4, L4-7 bis, L4-8, L4-10, L4-11)", () => {
     expect(rule('.rb-bar:is([data-dock="top"], [data-dock="bottom"]) button.rb-primary + button.rb-primary')).toContain("margin-inline-start: -2px;");
     expect(rule('.rb-bar:is([data-dock="left"], [data-dock="right"]) button.rb-primary + button.rb-primary')).toContain("margin-block-start: -2px;");
   });
-  it("design-l4 : zone de dépôt 96 px × --rb-btn, pointillé 1,5 px gris 500, rayon lg ; couchée dans une barre verticale", () => {
-    expect(rule(".rb-drop")).toMatch(/display: grid;.*place-items: center;.*box-sizing: border-box;.*inline-size: 96px;.*block-size: var\(--rb-btn\);.*border: 1\.5px dashed var\(--rf-gray-500\);.*border-radius: var\(--rf-radius-lg\);/);
+  it("design-l4 : zone de dépôt 96 px × --rb-btn, pointillé 1 px gris 500, rayon lg ; couchée dans une barre verticale", () => {
+    expect(rule(".rb-drop")).toMatch(/display: grid;.*place-items: center;.*box-sizing: border-box;.*inline-size: 96px;.*block-size: var\(--rb-btn\);.*border: 1px dashed var\(--rf-gray-500\);.*border-radius: var\(--rf-radius-lg\);/);
     expect(rule('.rb-bar[data-dock="left"] .rb-drop, .rb-bar[data-dock="right"] .rb-drop')).toMatch(/inline-size: var\(--rb-btn\);.*block-size: 96px;/);
   });
 });

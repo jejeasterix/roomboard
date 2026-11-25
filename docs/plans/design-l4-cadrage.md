@@ -86,6 +86,7 @@ modules Wasm, coque Tauri, CLI, autres dépôts : non touchés (L4-21).
 | `ui/ProfileEditor.test.tsx:48`, `:81` | oui (forme) | barres `["outils", "pages", "annotation"]` ; dernier élément d'`outils` : `desktop-annotation` au lieu de `depot-annotation` | V |
 | `ui/Toolbar.test.tsx` (ajouts) ; `PointerSwitch`, `toast`, `device-settings`, `SettingsPanel` (tests neufs ou ajouts) | oui | segment pressé, `data-item` sur l'inactif, boutons pleins, zone à icône, réglage gardé | — |
 | `app/annotation.test.ts`, `annotation-page.test.ts`, `annotation-fake.test.ts`, `annotation-tauri.test.ts`, `toolbar-host.test.ts` (ajouts) | oui | `pointer(mode)` idempotent, `frame` à `enter` et `load`, `sent` | V |
+| `profile-edit.test.ts:78`, `:84` ; `icons.test.ts:23-27` ; `annotation-port.test.ts` ; `ui/App.test.tsx:360`, `:368` | oui (forme) | ids et icônes des éléments déplacés ; `frameField` ; barres du profil | V |
 | `ui/rb-css.test.ts` (ajouts) | oui | `.rb-annot-frame` (3 px, `pointer-events: none`), `.rb-toast`, aucune `position` dans une règle `.rb-bar` | V |
 | `scripts/essais/c11a-annotation-navigateur.mjs:83`, `:100`, `:109`, `:112`, `:121` | oui (forme) | `ann-desktop-annotation`, `[data-segment="mouse"]`, `ann-pen` (L4-19) | V |
 | `scripts/essais/c11b-capture-navigateur.mjs:126-127`, `:175-176`, `:229`, `:236-237`, `:252`, `:271`, `:295-296` | oui (forme) | bandeau au lieu de la boîte ; sélecteurs en annotation (L4-19) | V |
@@ -189,7 +190,8 @@ Niveau 1 (visibles des utilisateurs ou difficiles à défaire) :
 Niveau 2 :
 
 - H11 — Clé `roomboard.annotation.cadre`, valeur `"non"` seulement quand masqué.
-- H12 — Barre d'annotation de `simple` à gauche en L (≈ 760 px) : tient dans 1080 px et dans les 900 px des essais.
+- H12 — Barre d'annotation de `simple` à gauche en L (≈ 760 px) : tient dans 1080 px ; sur 900 px de haut, la bande passe à
+  deux colonnes (140 px, mesuré `left:140`), une colonne dès 1080 px.
 - H13 — Le bloc « Barre d'annotation » de l'éditeur reste visible au web (sans annotation) : il fait partie du profil
   exporté.
 - H14 — Infobulle de L1 en coque : dans la bande, elle n'a ni place dessous ni dessus ; à observer (geste C11a-9).
@@ -227,8 +229,8 @@ Jouables sur la VM : Vitest (`pnpm -r test`) et Playwright Chromium par `scripts
   `02-annotation-bureau.png`, écarts listés (§ 6 ter).
 - **S6 — Profil « Simple » en annotation (barre verticale).** Faux hôte, 1280 × 900, choisir « Simple (grands
   boutons) », entrer : `[data-toolbar="annotation"][data-dock="left"]` est la seule barre ; `annotationBande` vaut
-  `left:<largeur de la barre>` (lue par `getBoundingClientRect`, arrondie au-dessus) ; une seule colonne (tous les
-  boutons au même `x`) ; chaque bouton de la barre est entier dans la fenêtre (patron `allVisible` de
+  `left:<largeur de la barre>` (lue par `getBoundingClientRect`, arrondie au-dessus) ; sur 900 px de haut, deux colonnes
+  (140 px, mesuré `left:140`), une seule colonne (tous les boutons au même `x`) dès 1080 px ; chaque bouton de la barre est entier dans la fenêtre (patron `allVisible` de
   `c1-profils-navigateur.mjs:103`) ; « Souris » est sous « Dessin », collé ; « Envoyer dans un nouvel onglet » est
   2 px sous « Envoyer au tableau ».
 

@@ -230,8 +230,8 @@ async function s4(browser, base) {
   const right = sb.x + sb.width - (tb.x + tb.width);
   const bottom = sb.y + sb.height - (tb.y + tb.height);
   check(Math.abs(right - 24) <= 1 && Math.abs(bottom - 24) <= 1, `S4 : bandeau en bas à droite de la scène (${right} px à droite, ${bottom} px en bas ; 24 attendus)`);
-  await page.locator(TOAST).waitFor({ state: "detached", timeout: 7000 });
-  check(true, "S4 : le bandeau part seul");
+  const parti = await page.locator(TOAST).waitFor({ state: "detached", timeout: 7000 }).then(() => true, () => false);
+  check(parti, "S4 : le bandeau part seul");
   await enter(page);
   const d1 = w.dialogs.length;
   await page.click(item("annotation-send-new"));
@@ -240,8 +240,22 @@ async function s4(browser, base) {
   check((await text(page, TOAST)) === "Envoyé au tableau : page 1", "S4 : bouton accolé : bandeau « Envoyé au tableau : page 1 »");
   check(((await page.locator(`${TAB}[aria-selected="true"]`).textContent()) ?? "").includes("Capture du bureau"), "S4 : onglet « Capture du bureau » montré");
   check(w.dialogs.length === d1, "S4 : aucune boîte (nouvel onglet)");
+  // Preuve indépendante du minuteur de 4 s : l'avis est là juste avant l'entrée (même évaluation que la pose de
+  // l'observateur), puis il disparaît du DOM après le geste d'entrée, jamais avant (marqueur posé par la page).
+  const avant = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (el === null) return false;
+    window.__toastRetire = null;
+    new MutationObserver(() => {
+      if (!el.isConnected && window.__toastRetire === null) window.__toastRetire = performance.now();
+    }).observe(document.body, { childList: true, subtree: true });
+    window.__toastEntree = performance.now();
+    return true;
+  }, TOAST);
   await enter(page);
-  check((await page.locator(TOAST).count()) === 0, "S4 : bandeau effacé à l'entrée en annotation");
+  const retire = await page.evaluate(() => window.__toastRetire ?? null);
+  const entree = await page.evaluate(() => window.__toastEntree ?? null);
+  check(avant && retire !== null && retire >= entree && (await page.locator(TOAST).count()) === 0, "S4 : bandeau présent avant l'entrée, retiré par l'entrée en annotation");
   await leave(page);
   noErrors(w, "S4");
   await ctx.close();
@@ -391,6 +405,10 @@ async function main() {
   const dist = resolve(arg("--dist") ?? DIST);
   const nom = arg("--nom") ?? "apres";
   const captures = process.argv.includes("--captures");
+  if (nom === "avant" && !captures) {
+    console.error(`${LABEL} : usage — --nom avant n'a de sens qu'avec --captures (captures « avant » seules)`);
+    return 2;
+  }
   if (!existsSync(join(dist, "index.html"))) {
     console.error(`${LABEL} : ÉCHEC — ${dist}/index.html absent : construire d'abord l'application (scripts/verifier.sh)`);
     return 1;

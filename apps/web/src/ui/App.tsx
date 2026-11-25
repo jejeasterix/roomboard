@@ -12,7 +12,7 @@ import type { ImageData } from "../core/api";
 import type { DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
-import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
+import type { AnnotationControl, AnnotationState, PointerMode } from "../platform/annotation-port";
 import type { TabSession, Workspace } from "../app/workspace";
 import type { EngineState } from "../engine/engine";
 import type { SettingsStore } from "../engine/settings";
@@ -307,7 +307,11 @@ export function App(props: AppProps): JSX.Element {
     textFormat: (a) => pick().textFormat(a),
     selection: (a) => pick().selection(a),
     imagePanel: () => pick().imagePanel(),
-    pointer: (m) => pick().pointer?.(m),
+    // Seulement si le contrôleur actif l'a : sinon le segment inactif rejoue l'action (repli de PointerSwitch).
+    get pointer() {
+      const p = pick().pointer;
+      return p === undefined ? undefined : (m: PointerMode) => p(m);
+    },
   };
   // Panneau fermé à l'entrée ; profil renvoyé à `annotate` s'il change pendant l'annotation (RF5).
   createEffect(
