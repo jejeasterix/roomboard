@@ -111,3 +111,12 @@ describe("island-place : panneau des profils et onglets (design-l2 L2-16, L2-30 
     expect(tabsWidth({ w: 300, h: 700 }, 80, 108, null)).toBe(144);
   });
 });
+
+describe("design-l2 T11 : #etat dans la rangée du haut", () => {
+  it("design-l2 T11 (discrimine) : tabsWidth retranche #etat non vide et son écart ; vide : inchangé", () => {
+    expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 100)).toBe(360 - 8 - 80 - 100 - 8);
+    expect(tabsWidth(MID, 80, 108, null, 100)).toBe(1280 - 16 - 108 - 8 - 80 - 100 - 8);
+    expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 0)).toBe(360 - 8 - 80);
+    expect(tabsWidth(MID, 80, 108, { x: 360, y: 16 }, 1000)).toBe(144);
+  });
+});
