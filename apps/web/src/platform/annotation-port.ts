@@ -9,6 +9,7 @@ import type { Matrix } from "../core/api";
 import type { FormatAction } from "../engine/rich-edit";
 import type { Dock, Profile, StartMode } from "../toolbar";
 import type { ToolbarView } from "../ui/item-state";
+import type { ToastMessage } from "../ui/toast";
 import type { DroppedFile, Point } from "./files";
 
 export const ANNOTATE_LABEL = "annotate";
@@ -44,8 +45,15 @@ export const addedToPageMessage = (n: number): string => `ajouté à la page ${n
 
 /** C11b (P11) : ni capture ni élément. */
 export const NOTHING_TO_SEND_MESSAGE = "rien à envoyer";
+/** C11b (P12), design-l4 (L4-16) : une seule source du texte de l'avis d'envoi, en boîte et en bandeau. */
+export const SENT_TO_BOARD = "envoyé au tableau";
 /** C11b (P12) : rang de la page insérée dans l'onglet cible. */
-export const sentToBoardMessage = (n: number): string => `envoyé au tableau : page ${n}`;
+export const sentToBoardMessage = (n: number): string => `${SENT_TO_BOARD} : page ${n}`;
+/** design-l4 (L4-16) : même texte dans le bandeau, majuscule en tête, « page N » en gras. */
+export const sentToBoardToast = (n: number): ToastMessage => ({
+  text: `${SENT_TO_BOARD.charAt(0).toUpperCase()}${SENT_TO_BOARD.slice(1)} :`,
+  strong: `page ${n}`,
+});
 /** C11b (P10, P27) : rejets de `annotation_capture`. */
 export type CaptureFailure = "denied" | "wayland" | "failed";
 export const CAPTURE_REASONS: Readonly<Record<CaptureFailure, string>> = Object.freeze({
