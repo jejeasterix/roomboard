@@ -21,10 +21,10 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule(".rb-table-picker-grid")).toContain("repeat(8, var(--rb-cell))");
     expect(rule(".rb-table-picker-grid button")).toMatch(/inline-size: var\(--rb-cell\); block-size: var\(--rb-cell\);/);
   });
-  it("accents hors charte retirés ; #a1a1aa ne reste que sur la bande et les onglets (L2)", () => {
+  it("accents hors charte retirés ; plus aucun reste de la bande des onglets (L2-17)", () => {
     for (const c of ["#1e3a8a", "#94a3b8", "#bfdbfe"]) expect(CSS.toLowerCase(), c).not.toContain(c);
     const keep = (CSS.match(/[^{}]+\{[^}]*#a1a1aa[^}]*\}/gi) ?? []).map((r) => r.replace(/\/\*.*?\*\//g, "").split("{")[0]!.trim());
-    expect(keep).toEqual([".rb-tabs", ".rb-tab"]);
+    expect(keep).toEqual([]);
   });
   it("barre : fond blanc, padding 4px, aucune bordure (aucun pixel de hauteur ajouté)", () => {
     const bar = rule(".rb-bar");
@@ -46,7 +46,7 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule(".rb-bar button:disabled")).toContain("color: var(--rf-text-muted-aa);");
     expect(rule(".rb-bar button.rb-ib:disabled")).toContain("color: var(--rf-gray-500);");
     expect(rule(".rb-bar button:focus-visible")).toContain("outline: 2px solid var(--rf-violet-600);");
-    expect(rule('.rb-tab[aria-selected="true"]')).toContain("border-color: var(--rf-violet-600);");
+    expect(rule('.rb-tab[aria-selected="true"]')).toContain("background: var(--rf-violet-100); color: var(--rf-violet-700);");
   });
   it("bouton à icône carré de --rb-btn, icône de --rb-icon", () => {
     expect(rule(".rb-bar button.rb-ib")).toMatch(/inline-size: var\(--rb-btn\);.*block-size: var\(--rb-btn\);.*padding: 0;.*flex: none;/);
@@ -122,7 +122,7 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(drop).not.toContain("1.5px");
   });
   it("design-l3 L3-1 : panneau des profils calé à droite dans la scène, toute sa hauteur, 600 px au plus, filet et ombre modale", () => {
-    expect(rule('.rb-popover[data-panel="profils"]')).toMatch(/justify-self: end;.*align-self: stretch;.*inline-size: min\(600px, 100%\);.*overflow: hidden;.*border: 0;.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule('.rb-popover[data-panel="profils"]')).toMatch(/justify-self: end;.*align-self: stretch;.*inline-size: min\(var\(--rb-sheet-w\), 100%\);.*overflow: hidden;.*border: 0;.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
     expect(rule(".rb-sheet")).toMatch(/display: flex;.*flex-direction: column;.*block-size: 100%;/);
     expect(rule(".rb-sheet-head")).toContain("block-size: 80px;");
     expect(rule(".rb-sheet-foot")).toContain("block-size: 80px;");
@@ -202,14 +202,90 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(".rb-sheet-row > .rb-sheet-ghost")).toContain("inline-size: 128px;"); // Importer, Exporter : largeur fixe, icônes sur la grille de pixels
     for (const sel of [".rb-sheet-ghost", ".rb-sheet-solid", ".rb-sheet-outline", ".rb-sheet-add"]) expect(rule(sel), sel).not.toMatch(/padding: 0 [^;]*\d+\.\d/);
   });
-  it("design-l3 L3-2 : panneau des profils ouvert : barre flottante en haut à gauche de la scène, dans la place libre, sur plusieurs rangées", () => {
-    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating')).toMatch(/justify-self: start;.*max-inline-size: calc\(100% - min\(600px, 100%\)\);/);
-    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar')).toContain("flex-wrap: wrap;");
-    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar')).not.toMatch(/position/);
+  it("design-l3 L3-2, design-l2 L2-16 : panneau des profils ouvert : la barre d'outils passe sur plusieurs rangées dans la place libre", () => {
+    expect(rule('.rb-island[data-wrap="1"] > .rb-bar')).toContain("flex-wrap: wrap;");
+    expect(rule('.rb-island[data-wrap="1"] > .rb-bar')).not.toMatch(/position/);
   });
   it("design-l3 L3-22 : menu Profil en îlot (rayon xl, filet gris 300, ombre modale) ; lignes de 48 px icône + texte", () => {
     expect(rule('.rb-popover[data-panel="menu-profils"]')).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
-    expect(rule("[data-profiles] button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
+    expect(rule(":is([data-profiles], [data-menu-list]) button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
     expect(rule('[data-profiles] button[aria-checked="true"]')).toMatch(/color: var\(--rf-violet-700\);.*font-weight: 600;/);
+  });
+});
+
+describe("rb.css (design-l2)", () => {
+  const own = (re: RegExp): string[] => (CSS.replace(/\/\*.*?\*\//g, "").match(/[^{}]+\{[^}]*\}/g) ?? []).filter((r) => re.test(r.split("{")[0]!));
+  it("design-l2 L2-14 : calque des îlots dans la case de la scène, au-dessus d'elle, inerte ; îlots actifs", () => {
+    expect(rule(".rb-islands")).toMatch(/grid-area: stage;.*position: relative;.*z-index: 2;.*pointer-events: none;/);
+    expect(rule(".rb-island")).toMatch(/position: absolute;.*pointer-events: auto;/);
+    expect(rule(".rb-corner")).toContain("pointer-events: none;");
+  });
+  it("design-l2 G5 : îlot et îlot contextuel blancs, rayon 12, filet gris 300, ombre de survol, largeur au contenu", () => {
+    const look = /inline-size: max-content;.*background: var\(--rf-white\);.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);/;
+    expect(rule(".rb-island")).toMatch(look);
+    expect(rule(".rb-context")).toMatch(look);
+    expect(rule(".rb-context")).toContain("position: absolute;");
+  });
+  it("design-l2 L2-30 (a) : poignée et Replier en flex à côté de la barre qui rétrécit, jamais rétrécis eux-mêmes", () => {
+    expect(rule(".rb-island")).toMatch(/display: flex;.*min-inline-size: 0;/);
+    expect(rule(".rb-island-chrome")).toContain("flex: none;");
+  });
+  it("design-l2 L2-12 : coins à 16 px entiers ; aucune translation, colonne 1fr ni demi-pixel dans les règles des îlots", () => {
+    expect(rule('.rb-corner[data-corner="top-start"]')).toContain("left: 16px; top: 16px;");
+    expect(rule('.rb-corner[data-corner="top-end"]')).toContain("right: 16px; top: 16px;");
+    expect(rule('.rb-corner[data-corner="bottom-start"]')).toContain("left: 16px; bottom: 16px;");
+    const rules = own(/rb-island|rb-corner|rb-context|data-menu-list/);
+    expect(rules.length).toBeGreaterThan(8);
+    for (const r of rules) expect(r, r).not.toMatch(/translate|1fr|\d\.\d+px|backdrop-filter|blur/);
+  });
+  it("design-l2 L2-30 (a), L2-16, L2-8 : barre qui défile dans l'îlot ; plusieurs rangées dans la place du panneau ; repliée : cachée", () => {
+    expect(rule(".rb-island > .rb-bar")).toMatch(/min-inline-size: 0;.*overflow-x: auto;/);
+    expect(rule('.rb-island[data-wrap="1"] > .rb-bar')).toContain("flex-wrap: wrap;");
+    expect(rule('.rb-island .rb-bar[data-collapsed="1"]')).toContain("display: none;");
+    expect(rule(".rb-island-chrome[data-island-grip]")).toContain("touch-action: none;");
+  });
+  it("design-l2 L2-13 : îlot contextuel vide caché ; séparateur de tête masqué", () => {
+    expect(rule(".rb-context:empty")).toContain("display: none;");
+    expect(rule(".rb-context > .rb-sep:first-child")).toContain("display: none;");
+  });
+  it("design-l2 L2-19 : en annotation, le calque des îlots est caché ; plus aucune règle .rb-floating", () => {
+    expect(rule('.rb-layout[data-mode="annotation"] > .rb-islands, .rb-layout[data-mode="annotation"] > .rb-stages, .rb-layout[data-mode="annotation"] > .rb-popover, .rb-layout[data-mode="annotation"] > .rb-toasts')).toContain("display: none;");
+    expect(CSS).not.toMatch(/rb-floating/);
+  });
+  it("design-l2 L2-5 : #etat vide sans fond, filet ni ombre, jamais display: none ; avec un message, en îlot", () => {
+    expect(rule("#etat")).not.toMatch(/background|box-shadow|display: none/);
+    expect(rule("#etat:not(:empty)")).toMatch(/background: var\(--rf-white\);.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);/);
+  });
+  it("design-l2 L2-6 : lignes du menu = lignes du menu Profil ; liste en îlot de 320 px sous le bouton ; fermée : cachée", () => {
+    expect(rule(":is([data-profiles], [data-menu-list]) button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
+    expect(rule("[data-menu-list]")).toMatch(/position: absolute;.*inline-size: 320px;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule("[data-menu-list][hidden]")).toContain("display: none;");
+    expect(rule('.rb-bar button[data-menu-toggle][aria-expanded="true"]')).toMatch(/background: var\(--rf-violet-100\);.*color: var\(--rf-violet-700\);/);
+  });
+  it("design-l2 L2-15 : panneaux passagers en îlot, sous la rangée du haut ; menu Profil à droite ; barres du média au-dessus des pages", () => {
+    expect(rule(".rb-popover")).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-hover\);.*margin: 88px 0 0 16px;/);
+    expect(rule('.rb-popover[data-panel="image"]')).toMatch(/justify-self: end;.*margin: 88px 16px 0 0;/);
+    expect(rule('.rb-popover[data-panel="menu-profils"]')).toMatch(/justify-self: end;.*margin: 88px 16px 0 0;/);
+    expect(rule(".rb-media-bar")).toContain("margin: 0 0 88px;");
+  });
+  it("design-l2 L2-16 : largeur du panneau des profils en --rb-sheet-w ; panneau et bibliothèque sur toute la hauteur", () => {
+    expect(CSS).toContain("--rb-sheet-w: 600px;");
+    expect(rule('.rb-popover[data-panel="profils"]')).toMatch(/inline-size: min\(var\(--rb-sheet-w\), 100%\);.*max-width: 100%;.*max-height: 100%;.*margin: 0;/);
+    expect(rule('.rb-popover[data-panel="library"]')).toMatch(/align-self: stretch;.*margin: 0;/);
+  });
+  it("design-l2 L2-18 : la règle des libellés courts .iwb / .ubz est retirée", () => {
+    expect(CSS).not.toMatch(/export-iwb/);
+  });
+  it("design-l2 L2-17 : onglets de 48 px ; montré en violet 100 / 700 ; point violet ; Fermer 44 px ; Nouvel onglet 48 px", () => {
+    expect(rule(".rb-tab")).toMatch(/block-size: 48px;.*border-radius: var\(--rf-radius-lg\);.*font-size: 15px;/);
+    expect(rule('.rb-tab[aria-selected="true"]')).toMatch(/background: var\(--rf-violet-100\);.*color: var\(--rf-violet-700\);/);
+    expect(rule(".rb-tab-dirty")).toMatch(/inline-size: 8px;.*block-size: 8px;.*border-radius: 50%;.*background: var\(--rf-violet-600\);/);
+    expect(rule(".rb-tab-close")).toMatch(/inline-size: 44px;.*block-size: 44px;/);
+    expect(rule(".rb-tab-new")).toMatch(/inline-size: 48px;.*block-size: 48px;/);
+  });
+  it("design-l2 L2-21 : plus de trois barres : segments de 168 px (504 / 3) sur des rangées de trois", () => {
+    expect(rule('.rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4))')).toContain("flex-wrap: wrap;");
+    expect(rule('.rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) > .rb-radio')).toContain("flex: 0 0 168px;");
+    expect(Number.isInteger((512 - 2 * 4) / 3)).toBe(true);
   });
 });

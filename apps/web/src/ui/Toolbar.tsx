@@ -46,6 +46,8 @@ export interface ToolbarProps {
   readonly presets?: Accessor<PresetTable>;
   /** C11a (P7, P19) : mode de la fenêtre ; absent : tableau. */
   readonly mode?: Accessor<StartMode>;
+  /** design-l2 (L2-8) : barre repliée dans son îlot (poignée et Déplier seuls) ; absent : dépliée. */
+  readonly collapsed?: Accessor<boolean>;
 }
 
 interface Ctx { readonly view: Accessor<ToolbarView>; readonly host: ToolbarHost }
@@ -220,6 +222,18 @@ const CONTEXT_ROLES: ReadonlySet<string> = new Set(["tools", ANNOTATION_ROLE]);
 export function Toolbar(props: ToolbarProps): JSX.Element {
   const items = createMemo(() => itemsForMode(props.bar, props.caps(), props.mode?.() ?? "board"));
   const ctx: Ctx = { view: props.view, host: props.host };
+  /** Rangées contextuelles (C1 P18, C10a, C3, C7b) ; design-l2 (L2-13) : en `floating`, dans un îlot séparé posé sous la
+   *  barre par Island.tsx, toujours à l'intérieur de [data-toolbar] ; en bande, inchangées dans la barre. */
+  const rows = (): JSX.Element => (
+    <>
+      <Show when={props.presets !== undefined}>
+        <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
+      </Show>
+      <TableActionRow view={props.view} host={props.host} />
+      <SelectionRow view={props.view} host={props.host} />
+      <FormatRow view={props.view} act={(a) => props.host.textFormat(a)} />
+    </>
+  );
   return (
     <div
       class="rb-bar"
@@ -227,17 +241,17 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
       data-role={props.bar.role}
       data-dock={props.bar.dock}
       data-size={props.size()}
+      data-collapsed={props.collapsed?.() === true ? "1" : undefined}
       role="toolbar"
       aria-label={props.bar.id}
     >
       <For each={items()}>{(item) => RENDER[item.kind](item, ctx)}</For>
       <Show when={CONTEXT_ROLES.has(props.bar.role)}>
-        <Show when={props.presets !== undefined}>
-          <PresetRow presets={() => props.presets?.() ?? {}} view={props.view} host={props.host} />
+        <Show when={props.bar.dock === "floating"} fallback={rows()}>
+          <div class="rb-context" data-island-context>
+            {rows()}
+          </div>
         </Show>
-        <TableActionRow view={props.view} host={props.host} />
-        <SelectionRow view={props.view} host={props.host} />
-        <FormatRow view={props.view} act={(a) => props.host.textFormat(a)} />
       </Show>
     </div>
   );

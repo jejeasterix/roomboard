@@ -200,7 +200,7 @@ describe("Toolbar — rangée des préréglages (C1, P18, S4)", () => {
     expect(presetIds(bar)).toEqual(["noir", "rouge", "bleu"]);
     expect(bar.querySelectorAll("button[data-item]").length).toBe(plain);
     expect(bar.querySelector("button[data-preset][data-item]")).toBeNull();
-    const kids = [...bar.children];
+    const kids = [...bar.querySelector(":scope > [data-island-context]")!.children];
     expect(kids.indexOf(bar.querySelector("[data-presets-sep]")!)).toBe(kids.length - 4);
     expect(bar.querySelector('[data-preset="rouge"]')!.hasAttribute("aria-pressed")).toBe(false);
     expect(bar.querySelector('[data-preset="rouge"]')!.textContent).toContain("Rouge");
@@ -514,5 +514,33 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
     cleanup();
     const other = setup({ ...mkBar([tool("pen")]), role: "autre" }, NO_CAPS, "m", PEN);
     expect(other.container.querySelectorAll("button[data-preset]")).toHaveLength(0);
+  });
+});
+
+describe("Toolbar — design-l2 (L2-8, L2-13)", () => {
+  const host = (): ToolbarHost => ({ setTool: vi.fn(), runAction: vi.fn(), dropFiles: vi.fn(), setMode: vi.fn(), tableFill: vi.fn(), fillColor: vi.fn(), fillTolerance: vi.fn(), textFormat: vi.fn(), selection: vi.fn(), imagePanel: vi.fn() });
+  it("design-l2 L2-13 : barre flottante de rôle tools : rangées contextuelles dans [data-island-context], enfant de [data-toolbar]", () => {
+    const { container } = setup({ ...outils, dock: "floating" }, NO_CAPS, "m", PEN);
+    const ctx = container.querySelector('[data-toolbar="outils"] > [data-island-context]');
+    expect(ctx).not.toBeNull();
+    expect(ctx!.classList.contains("rb-context")).toBe(true);
+    expect(ctx!.querySelectorAll("button[data-preset]")).toHaveLength(3);
+    expect(ctx!.firstElementChild?.hasAttribute("data-presets-sep")).toBe(true);
+    expect(container.querySelectorAll('[data-toolbar="outils"] button[data-preset]')).toHaveLength(3);
+  });
+  it("design-l2 L2-13 : barre en bande : rangée inchangée dans la barre, aucun [data-island-context]", () => {
+    const { container } = setup({ ...outils, dock: "top" }, NO_CAPS, "m", PEN);
+    expect(container.querySelector("[data-island-context]")).toBeNull();
+    expect(container.querySelectorAll('[data-toolbar="outils"] > button[data-preset]')).toHaveLength(3);
+  });
+  it("design-l2 L2-8 : collapsed vrai : data-collapsed=\"1\" sur [data-toolbar] ; faux : aucun attribut", () => {
+    const [c, setC] = createSignal(false);
+    const { container } = render(() => (
+      <Toolbar bar={{ ...outils, dock: "floating" }} caps={() => NO_CAPS} view={() => VIEW} size={() => "m"} host={host()} collapsed={c} />
+    ));
+    const bar = container.querySelector('[data-toolbar="outils"]')!;
+    expect(bar.hasAttribute("data-collapsed")).toBe(false);
+    setC(true);
+    expect(bar.getAttribute("data-collapsed")).toBe("1");
   });
 });
