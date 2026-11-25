@@ -121,7 +121,6 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-island > .rb-bar { flex: 0 1 auto; min-inline-size: 0; padding: 0; overflow-x: auto; flex-wrap: nowrap; }
 .rb-island[data-wrap="1"] > .rb-bar { flex-wrap: wrap; overflow-x: visible; }
 .rb-island .rb-bar[data-collapsed="1"] { display: none; }
-.rb-island > .rb-tabs { flex: 0 1 auto; min-inline-size: 0; }
 /* Poignée et Replier (L2-8, maquette 01 .grip) : hors profil ; la poignée prend le doigt sans faire défiler la page. */
 .rb-island-chrome { display: grid; place-items: center; flex: none; align-self: stretch; inline-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
 .rb-island-chrome[data-island-grip] { inline-size: 24px; color: var(--rf-gray-500); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -178,7 +177,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* Onglets (T101 ; design-l2 L2-17, maquette 01 .tab) : une rangée qui défile dans l'îlot des onglets ; onglets de
    48 px, montré en violet 100 / 700, point violet « modifié », Fermer 44 px, Nouvel onglet 48 px. */
 .rb-tabs { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-inline-size: 0; overflow-x: auto; }
-.rb-tab { display: inline-flex; align-items: center; gap: 8px; flex: none; block-size: 48px; box-sizing: border-box; padding: 0 4px 0 16px; border-radius: var(--rf-radius-lg); font-size: 15px; font-weight: 500; color: var(--rf-gray-800); white-space: nowrap; cursor: pointer; }
+.rb-island > .rb-tabs { flex: 0 1 auto; min-inline-size: 0; }
+.rb-tab { display: inline-flex; align-items: center; gap: 8px; flex: none; block-size: 48px; min-height: var(--rb-tab-h); box-sizing: border-box; padding: 0 4px 0 16px; border-radius: var(--rf-radius-lg); font-size: 15px; font-weight: 500; color: var(--rf-gray-800); white-space: nowrap; cursor: pointer; }
 .rb-tab[aria-selected="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); font-weight: 600; }
 .rb-tab-dirty { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--rf-violet-600); }
 .rb-tab-close { display: grid; place-items: center; flex: none; inline-size: 44px; block-size: 44px; padding: 0; border: 0; border-radius: var(--rf-radius-md); background: transparent; color: var(--rf-text-muted-aa); cursor: pointer; }
