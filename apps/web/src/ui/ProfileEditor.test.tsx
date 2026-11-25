@@ -101,7 +101,7 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     expect(container.querySelector('[data-edit-section="size"] h3')?.textContent).toBe("Taille des boutons");
     expect(container.querySelector('[data-edit-bar] h4')?.classList.contains("rb-sr")).toBe(true);
     expect([...container.querySelectorAll("[data-edit-bar]")].map((b) => b.getAttribute("data-edit-bar"))).toEqual(["outils"]);
-    expect([...container.querySelectorAll('[data-edit="bar"] [data-choice]')].map((b) => [b.getAttribute("data-choice"), b.textContent])).toEqual([["outils", "Barre d'outils"], ["pages", "Barre des pages"], ["annotation", "Barre d'annotation"]]);
+    expect([...container.querySelectorAll('[data-edit="bar"] [data-choice]')].map((b) => [b.getAttribute("data-choice"), b.textContent])).toEqual([["outils", "Barre d'outils"], ["menu", "Menu"], ["historique", "Annuler et vue"], ["panneaux", "Bibliothèque et profil"], ["pages", "Barre des pages"], ["annotation", "Barre d'annotation"]]);
     expect(container.querySelectorAll("[data-edit-preset]")).toHaveLength(3);
     const dialog = container.querySelector("[data-profile-editor]")!;
     expect([dialog.tagName, dialog.getAttribute("role"), dialog.getAttribute("aria-label")]).toEqual(["ASIDE", "dialog", "Profils"]);
@@ -130,7 +130,9 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
 
   it("S1 : masquer la gomme (œil) ; l'œil de Profil est grisé (P2, P33) ; ligne masquée data-hidden", () => {
     const { q, save } = setup();
+    fireEvent.click(q('[data-edit="bar"] [data-choice="panneaux"]'));
     expect(q<HTMLButtonElement>(shown("profiles")).disabled).toBe(true);
+    fireEvent.click(q('[data-edit="bar"] [data-choice="outils"]'));
     expect(q<HTMLButtonElement>(shown("eraser")).disabled).toBe(false);
     expect([q(shown("eraser")).getAttribute("aria-pressed"), q(shown("eraser")).getAttribute("aria-label")]).toEqual(["true", "Masquer Gomme"]);
     fireEvent.click(q(shown("eraser")));
@@ -146,22 +148,22 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
 
   it("Monter / Descendre : dévoilés par la poignée ; à la frontière, l'élément entre dans le groupe voisin (P14)", () => {
     const { q, save } = setup();
-    fireEvent.click(q(grip("pen")));
-    expect(q<HTMLButtonElement>('[data-edit-item="pen"] button[data-edit="up"]').disabled).toBe(true);
+    fireEvent.click(q(grip("select")));
+    expect(q<HTMLButtonElement>('[data-edit-item="select"] button[data-edit="up"]').disabled).toBe(true);
     fireEvent.click(q(grip("desktop-annotation")));
     expect(q<HTMLButtonElement>('[data-edit-item="desktop-annotation"] button[data-edit="down"]').disabled).toBe(true);
     fireEvent.click(q(grip("hand")));
     fireEvent.click(q('[data-edit-item="hand"] button[data-edit="down"]'));
     fireEvent.click(q('button[data-edit="save"]'));
     const groups = outils(last(save)).groups.map((g) => g.items.map((i) => i.id));
-    expect(groups[0]).toEqual(["pen", "eraser", "eraser-mode"]);
+    expect(groups[0]).toEqual(["select"]);
     expect(groups[1]![0]).toBe("hand");
   });
 
   it("Monter au clavier deux fois : le focus reste sur le bouton de la ligne déplacée (P14)", async () => {
     const { q, save } = setup();
-    fireEvent.click(q(grip("hand")));
-    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="hand"] button[data-edit="up"]');
+    fireEvent.click(q(grip("eraser-mode")));
+    const up = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-item="eraser-mode"] button[data-edit="up"]');
     up().focus();
     fireEvent.click(document.activeElement!); // Entrée ou Espace sur un bouton = clic
     await tick();
@@ -169,18 +171,18 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     fireEvent.click(document.activeElement!);
     await tick();
     expect(document.activeElement).toBe(up());
-    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("hand");
+    expect((document.activeElement as HTMLElement).closest("[data-edit-item]")!.getAttribute("data-edit-item")).toBe("eraser-mode");
     fireEvent.click(q('button[data-edit="save"]'));
-    expect(outils(last(save)).groups[0]!.items.map((i) => i.id)).toEqual(["pen", "hand", "eraser", "eraser-mode"]);
+    expect(outils(last(save)).groups[1]!.items.map((i) => i.id)).toEqual(["sep-1", "eraser-mode", "pen", "eraser"]);
   });
 
   it("Monter jusqu'en tête : le bouton grisé rend le focus à l'autre bouton de la ligne", async () => {
     const { q } = setup();
-    fireEvent.click(q(grip("eraser")));
-    q<HTMLButtonElement>('[data-edit-item="eraser"] button[data-edit="up"]').focus();
+    fireEvent.click(q(grip("hand")));
+    q<HTMLButtonElement>('[data-edit-item="hand"] button[data-edit="up"]').focus();
     fireEvent.click(document.activeElement!);
     await tick();
-    expect(document.activeElement).toBe(q('[data-edit-item="eraser"] button[data-edit="down"]'));
+    expect(document.activeElement).toBe(q('[data-edit-item="hand"] button[data-edit="down"]'));
   });
 
   it("Ajouter un élément absent (« + Ajouter ») : en fin de barre, id rendu unique (P15)", () => {
@@ -218,10 +220,10 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     fireEvent.click(q('button[data-edit="reset-presets"]'));
     expect(container.querySelectorAll("[data-edit-preset]")).toHaveLength(3);
     fireEvent.click(q('button[data-edit="reset-bars"]'));
-    expect(q(tile("top")).getAttribute("aria-checked")).toBe("true");
+    expect(q(tile("floating")).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(q('button[data-edit="save"]'));
     const p = last(save);
-    expect(outils(p).dock).toBe("top");
+    expect(outils(p).dock).toBe("floating");
     expect(p.interface.buttonSize).toBe("m");
     expect(itemOf(p, "eraser").hidden).toBeUndefined();
     expect([p.id, p.label]).toEqual(["cm1", "CM1"]);
@@ -270,7 +272,7 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     fireEvent.click(q('[data-edit-item="laser"] button[data-edit="down"]'));
     fireEvent.click(q('button[data-edit="save"]'));
     const p = last(save);
-    expect(outils(p).groups[0]!.items.map((i) => i.id)).toEqual(["pen", "eraser", "laser", "eraser-mode", "hand"]);
+    expect(outils(p).groups[0]!.items.map((i) => i.id)).toEqual(["select", "hand", "laser"]);
     expect(itemOf(p, "laser")).toEqual(itemOf(r.profile, "laser"));
   });
 
@@ -285,7 +287,7 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     await tick();
     expect(document.activeElement).toBe(q(grip("laser")));
     fireEvent.click(q('button[data-edit="save"]'));
-    expect(outils(last(save)).groups[0]!.items.map((i) => i.id)).toEqual(["pen", "eraser", "laser", "eraser-mode", "hand"]);
+    expect(outils(last(save)).groups[0]!.items.map((i) => i.id)).toEqual(["select", "hand", "laser"]);
     expect(itemOf(last(save), "laser")).toEqual(itemOf(r.profile, "laser"));
   });
 
@@ -506,13 +508,13 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     }
   });
 
-  it("L3-15 : poignée au clavier : Flèche haut = un cran, focus gardé, annonce « Main : rang 3 sur N », aide liée", async () => {
+  it("L3-15 : poignée au clavier : Flèche haut = un cran, focus gardé, annonce « Main : rang 1 sur N », aide liée", async () => {
     const { q, container } = setup();
     q<HTMLButtonElement>(grip("hand")).focus();
     fireEvent.keyDown(q(grip("hand")), { key: "ArrowUp" });
     await tick();
     expect(document.activeElement).toBe(q(grip("hand")));
-    expect(q('[data-edit="announce"]').textContent).toBe(`Main : rang 3 sur ${rowIds(container).length}`);
+    expect(q('[data-edit="announce"]').textContent).toBe(`Main : rang 1 sur ${rowIds(container).length}`);
     expect(q('[data-edit="announce"]').getAttribute("aria-live")).toBe("polite");
     expect(q(grip("hand")).getAttribute("aria-label")).toBe("Déplacer Main");
     expect(document.getElementById(q(grip("hand")).getAttribute("aria-describedby")!)?.textContent).toBe("Flèches haut et bas pour déplacer ; Entrée pour Monter et Descendre");
@@ -534,7 +536,7 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
       expect(revealedRows(container)).toEqual([]);
       expect(q('[data-edit="announce"]').textContent).toBe(`Texte : rang 1 sur ${rows.length}`);
       fireEvent.click(q('button[data-edit="save"]'));
-      expect(outils(last(save)).groups[0]!.items.map((i) => i.id)).toEqual(["text", "pen", "eraser", "eraser-mode", "hand"]);
+      expect(outils(last(save)).groups[0]!.items.map((i) => i.id)).toEqual(["text", "select", "hand"]);
     } finally {
       restore();
     }
@@ -546,7 +548,7 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     fireEvent.click(q(tile("left")));
     expect(q<HTMLButtonElement>('button[data-edit="revert"]').disabled).toBe(false);
     fireEvent.click(q('button[data-edit="revert"]'));
-    expect(q(tile("top")).getAttribute("aria-checked")).toBe("true");
+    expect(q(tile("floating")).getAttribute("aria-checked")).toBe("true");
     expect(endPreview).toHaveBeenCalledTimes(1);
     expect(resetCurrent).not.toHaveBeenCalled();
   });
@@ -565,7 +567,7 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     expect(q('[data-edit="saved"]').textContent).toBe("Enregistré sur cet appareil");
     fireEvent.click(q(tile("left")));
     expect(container.querySelector('[data-edit="saved"]')).toBeNull();
-    fireEvent.click(q(tile("top")));
+    fireEvent.click(q(tile("floating")));
     expect(q('[data-edit="saved"]')).toBeTruthy();
   });
 

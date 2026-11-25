@@ -243,7 +243,7 @@ describe("gestes de profil (C1)", () => {
     expect(JSON.parse(saved[0]!.text).toolbars[0].dock).toBe("left");
     expect(store.hasOverride("defaut")).toBe(false);
     expect(await actions.exportActive()).toBe(true);
-    expect(JSON.parse(saved[1]!.text).toolbars[0].dock).toBe("top");
+    expect(JSON.parse(saved[1]!.text).toolbars[0].dock).toBe("floating");
   });
 
   it("design-l3 L3-21 : exportProfile qui lève : message, faux", async () => {
@@ -308,7 +308,7 @@ describe("gestes de profil : échecs (T11)", () => {
     quota(kv);
     expect(actions.save(setDock(DEFAUT, "outils", "left"))).toBe(false);
     expect(String(shell.notify.mock.calls[0]![0])).toMatch(/^Profil non enregistré : .*QuotaExceededError/);
-    expect(active.profile().toolbars.find((b) => b.id === "outils")!.dock).toBe("top");
+    expect(active.profile().toolbars.find((b) => b.id === "outils")!.dock).toBe("floating");
     expect(actions.saveAsNew(DEFAUT, "Autre")).toBeNull();
     expect(shell.notify).toHaveBeenCalledTimes(2);
   });

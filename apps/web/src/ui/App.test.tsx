@@ -367,20 +367,23 @@ describe("App (T95)", () => {
     expect(container.querySelector("#echelons-notes")?.textContent).toContain("note de démarrage");
   });
 
-  it("la scène est dans sa case : aucune barre en position absolue", () => {
-    const { container } = renderApp();
+  it("la scène est dans sa case : aucune barre ancrée en position absolue", () => {
+    const { container, store, active } = renderApp();
+    const bandes = setDock(setDock(BUILTIN_PROFILES[0]!, "outils", "top"), "pages", "bottom");
+    store.save({ ...bandes, id: "bandes", label: "Bandes" });
+    active.choose("bandes");
     const layout = container.querySelector<HTMLElement>(".rb-layout");
     expect(layout, ".rb-layout").not.toBeNull();
-    const profile = BUILTIN_PROFILES.find((p) => p.id === "defaut")!;
-    const expected = layoutFor(profile.toolbars.filter((b) => b.role !== "annotation"));
+    const docked = bandes.toolbars.filter((b) => b.role !== "annotation" && b.dock !== "floating");
+    const expected = layoutFor(docked);
     const names = areaNames(expected.areas);
     expect(names.has("stage")).toBe(true);
     const stages = container.querySelector<HTMLElement>("main.rb-stages")!;
     expect(stages, "main.rb-stages").not.toBeNull();
     expect(stages.parentElement).toBe(layout);
     expect(getComputedStyle(stages).position).toBe("relative");
-    const bars = [...container.querySelectorAll<HTMLElement>("[data-toolbar]")];
-    expect(bars.map((b) => b.dataset["toolbar"])).toEqual(profile.toolbars.filter((b) => b.role !== "annotation").map((b) => b.id));
+    const bars = [...container.querySelectorAll<HTMLElement>("[data-toolbar]")].filter((b) => b.dataset["dock"] !== "floating");
+    expect(bars.map((b) => b.dataset["toolbar"])).toEqual(docked.map((b) => b.id));
     for (const bar of bars) {
       // La barre n'est pas dans la scène, et elle occupe sa propre case de la grille.
       expect(stages.contains(bar), bar.dataset["toolbar"]).toBe(false);
@@ -569,7 +572,7 @@ describe("App — profils (C1)", () => {
     expect(info).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
     expect(container.querySelector("#etat")?.textContent).toBe("");
-    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("floating");
     info.mockRestore();
     warn.mockRestore();
   });
@@ -631,11 +634,11 @@ describe("App — profils (C1)", () => {
   it("design-l4 T6 : S2 : barre d'annotation montrée en annotation ; au tableau, jamais de barre annotation (L4-2, L4-3)", async () => {
     const a = fakeAnnotationUi();
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
-    expect(barIds(container)).toEqual(["outils", "pages"]);
+    expect(barIds(container)).toEqual(["outils", "menu", "historique", "panneaux", "pages"]);
     await a.control.enter();
     expect(barIds(container)).toEqual(["annotation"]);
     await a.control.exit();
-    expect(barIds(container)).toEqual(["outils", "pages"]);
+    expect(barIds(container)).toEqual(["outils", "menu", "historique", "panneaux", "pages"]);
   });
   it("design-l4 T6 : S2 : première barre tools sinon : profil figé d'avant L4, sans barre annotation (L4-2, L4-22)", async () => {
     const a = fakeAnnotationUi();
@@ -655,7 +658,7 @@ describe("App — profils (C1)", () => {
     store.save({ ...setDock(BUILTIN_PROFILES[0]!, "annotation", "floating"), id: "flottante", label: "Flottante" });
     active.choose("flottante");
     expect(container.querySelector('[data-toolbar="annotation"]')).toBeNull();
-    expect(container.querySelector(".rb-floating")).toBeNull();
+    expect(container.querySelector('.rb-floating [data-toolbar="annotation"]')).toBeNull();
     await a.control.enter();
     expect(container.querySelector('[data-toolbar="annotation"]')?.getAttribute("data-dock")).toBe("top");
   });
@@ -751,7 +754,7 @@ describe("App — profils (C1)", () => {
     click(container.querySelector('button[data-edit="close"]'));
     expect(shell.confirm).toHaveBeenCalledWith("Abandonner les changements du profil « Par défaut » ?");
     await vi.waitFor(() => expect(container.querySelector("[data-profile-editor]")).toBeNull());
-    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("floating");
     expect(store.hasOverride("defaut")).toBe(false);
   });
 
@@ -798,8 +801,8 @@ describe("App — profils (C1)", () => {
     await vi.waitFor(() => expect(container.querySelector("[data-profile-editor]")).toBeNull());
     click(container.querySelector('button[data-item="settings"]'));
     openEditor(container);
-    expect(container.querySelector(dockTile("top"))?.getAttribute("aria-checked")).toBe("true");
-    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    expect(container.querySelector(dockTile("floating"))?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("floating");
   });
 
   it("rangée des préréglages : clic sur Rouge → setPenStyle puis setTool(pen) de l'onglet actif", () => {
@@ -896,7 +899,7 @@ describe("App — profils (C1)", () => {
     openMenu(container);
     click(container.querySelector('[data-profile-cmd="export"]'));
     await vi.waitFor(() => expect(files.save).toHaveBeenCalledTimes(2));
-    expect(JSON.parse(files.save.mock.calls[1]![1]).toolbars[0].dock).toBe("top");
+    expect(JSON.parse(files.save.mock.calls[1]![1]).toolbars[0].dock).toBe("floating");
   });
 
   it("design-l3 L3-21 : Importer du panneau : le profil importé devient actif, l'éditeur remonte dessus", async () => {
@@ -999,7 +1002,7 @@ describe("App — profils (C1)", () => {
     click(container.querySelector('button[data-item="settings"]'));
     await vi.waitFor(() => expect(container.querySelector("#reglages")).not.toBeNull());
     expect(container.querySelector("[data-profile-editor]")).toBeNull();
-    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("floating");
   });
 
   it("design-l3 L3-32 : brouillon égal, Réglages : aucune question, Réglages ouverts dans le même tour", () => {
@@ -1022,7 +1025,7 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector("[data-profile-editor]")).toBeNull();
     expect(shell.confirm).not.toHaveBeenCalled();
     await a.control.exit();
-    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("floating");
   });
 
   it("design-l3 L3-2 : panneau ouvert : .rb-layout[data-panneau=\"profils\"] ; fermé : absent", () => {

@@ -40,7 +40,7 @@ describe("profile-edit (C1, DAC1-1)", () => {
   it("S1 : barre d'outils à gauche, grands boutons ; clés inconnues gardées", () => {
     const p = setButtonSize(setDock(withUnknownKeys(), "outils", "left"), "l");
     expect(bar(p).dock).toBe("left");
-    expect(bar(p, "pages").dock).toBe("bottom");
+    expect(bar(p, "pages").dock).toBe("floating");
     expect(p.interface).toEqual({ buttonSize: "l", rest: { langue: "fr" } });
     expect(bar(p).rest).toEqual({ couleur: "bleu" });
     expect(p.rest).toEqual({ theme: "sombre" });
@@ -72,21 +72,21 @@ describe("profile-edit (C1, DAC1-1)", () => {
   });
 
   it("Monter / Descendre dans un groupe ; à la frontière, l'élément entre dans le groupe voisin (P14)", () => {
-    expect(groupsOf(DEFAUT)[0]).toEqual(["pen", "eraser", "eraser-mode", "hand"]);
-    expect(groupsOf(moveItem(DEFAUT, "outils", "eraser", -1))[0]).toEqual(["eraser", "pen", "eraser-mode", "hand"]);
+    expect(groupsOf(DEFAUT)[0]).toEqual(["select", "hand"]);
+    expect(groupsOf(moveItem(DEFAUT, "outils", "hand", -1))[0]).toEqual(["hand", "select"]);
     const down = moveItem(DEFAUT, "outils", "hand", 1);
-    expect(groupsOf(down)[0]).toEqual(["pen", "eraser", "eraser-mode"]);
+    expect(groupsOf(down)[0]).toEqual(["select"]);
     expect(groupsOf(down)[1]![0]).toBe("hand");
     const up = moveItem(DEFAUT, "outils", "sep-1", -1);
-    expect(groupsOf(up)[0]).toEqual(["pen", "eraser", "eraser-mode", "hand", "sep-1"]);
-    expect(moveItem(DEFAUT, "outils", "pen", -1)).toEqual(DEFAUT);
+    expect(groupsOf(up)[0]).toEqual(["select", "hand", "sep-1"]);
+    expect(moveItem(DEFAUT, "outils", "select", -1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "outils", "desktop-annotation", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "outils", "absent", 1)).toEqual(DEFAUT);
     expect(moveItem(DEFAUT, "pages", "eraser", 1)).toEqual(DEFAUT);
   });
 
   it("catalogue : barre tools = outils et actions absents ; barre pages = actions seules (P15)", () => {
-    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz"]);
+    expect(catalog(DEFAUT, "outils").map((e) => e.ref)).toEqual(["undo", "redo", "page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "edit-original", "export-pdf", "export-iwb", "export-ubz", "fit-page", "file-new", "file-open", "file-import", "file-save", "file-save-as", "settings", "profiles", "grid", "library"]);
     const simple = catalog(SIMPLE, "outils");
     expect(simple.filter((e) => e.kind === "tool").map((e) => e.ref)).toEqual(["select", "rect", "ellipse", "line", "arrow", "text", "table", "fill"]);
     const pages = catalog(DEFAUT, "pages");
@@ -244,16 +244,16 @@ describe("profile-edit : design-l3 (L3-14, L3-17, L3-20, L3-32)", () => {
 
   it("design-l3 L3-14 : moveItemTo rang 0 : tête du premier groupe, rien de perdu", () => {
     const p = moveItemTo(DEFAUT, "outils", "text", 0);
-    expect(groupsOf(p)[0]).toEqual(["text", "pen", "eraser", "eraser-mode", "hand"]);
-    expect(groupsOf(p)[1]).not.toContain("text");
+    expect(groupsOf(p)[0]).toEqual(["text", "select", "hand"]);
+    expect(groupsOf(p)[2]).not.toContain("text");
     expect(ids(p)).toHaveLength(ids(DEFAUT).length);
   });
 
   it("design-l3 L3-14 : moveItemTo : l'élément rejoint le groupe de celui qui le précède (frontière de groupe)", () => {
-    expect(groupsOf(moveItemTo(DEFAUT, "outils", "pen", 3))[0]).toEqual(["eraser", "eraser-mode", "hand", "pen"]);
-    const p = moveItemTo(DEFAUT, "outils", "pen", 4);
-    expect(groupsOf(p)[0]).toEqual(["eraser", "eraser-mode", "hand"]);
-    expect(groupsOf(p)[1]!.slice(0, 3)).toEqual(["sep-1", "pen", "select"]);
+    expect(groupsOf(moveItemTo(DEFAUT, "outils", "select", 1))[0]).toEqual(["hand", "select"]);
+    const p = moveItemTo(DEFAUT, "outils", "select", 2);
+    expect(groupsOf(p)[0]).toEqual(["hand"]);
+    expect(groupsOf(p)[1]!.slice(0, 3)).toEqual(["sep-1", "select", "pen"]);
   });
 
   it("design-l3 L3-14 : moveItemTo hors bornes : rang ramené à [0, n] ; rang non fini, barre ou élément absents : rien ne change", () => {
@@ -308,7 +308,7 @@ describe("profile-edit : design-l3 (L3-14, L3-17, L3-20, L3-32)", () => {
 
   it("design-l3 L3-20 : sameProfile compare les profils écrits ; nom, emplacement, masquage et clés inconnues comptent", () => {
     expect(sameProfile(DEFAUT, DEFAUT)).toBe(true);
-    expect(sameProfile(DEFAUT, setDock(DEFAUT, "outils", "top"))).toBe(true);
+    expect(sameProfile(DEFAUT, setDock(DEFAUT, "outils", "floating"))).toBe(true);
     expect(sameProfile(DEFAUT, setDock(DEFAUT, "outils", "left"))).toBe(false);
     expect(sameProfile(DEFAUT, setLabel(DEFAUT, "Autre"))).toBe(false);
     expect(sameProfile(DEFAUT, setHidden(setHidden(DEFAUT, "eraser", true), "eraser", false))).toBe(true);
