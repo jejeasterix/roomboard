@@ -249,11 +249,17 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await page.keyboard.press("Control+z");
   await fr();
   await page.click(item("text"));
+  // Le texte est en haut de la page, sous l'îlot des outils : on fait glisser la vue de 100 px (molette), puis on la remet.
+  await mouse.move(640, 450);
+  await mouse.wheel(0, -100);
+  await fr();
   await clickWorld(620, 60);
   await page.waitForSelector("#texte-edition", { state: "visible", timeout: 5000 });
   const content = await page.$eval("#texte-edition", (a) => ("value" in a ? a.value : a.textContent) ?? "");
   check(content.includes("Bonjour") && content.includes("le monde"), "S1 : le texte importé s'ouvre dans la zone de saisie (éditable)");
   await page.keyboard.press("Escape");
+  await mouse.wheel(0, 100);
+  await fr();
   await page.click(item("select"));
   await fr();
 
@@ -276,7 +282,7 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
     await clickWorld(120, 540);
     await waitAttr("data-selection", "2");
     check((await attr("data-units")) === "1", `S4 : ${name} rouvert : 8 objets, le groupe tient`);
-    const again = await download(() => page.click(item(`export-${fmt}`)), `again.${fmt}`);
+    const again = await download(() => clickItem(page, `export-${fmt}`), `again.${fmt}`);
     const key = fmt === "iwb" ? "content.xml" : "page001.svg";
     sameDrawing(Buffer.from(unzipSync(await readFile(file))[key]).toString("utf8"), Buffer.from(unzipSync(await readFile(again))[key]).toString("utf8"), name);
   }

@@ -35,8 +35,8 @@ const BLUE = [29, 78, 216];
 const GATE_MS = 50;
 const MIN_CELLS = 4_000_000;
 const WHEEL_ZOOM_SPEED = 0.002; // apps/web/src/engine/engine.ts:185
-/** S6 : points monde dans et hors du triangle (côtés x = −700, y = −700, x + y = 600). */
-const INSIDE = [100, 100];
+/** S6 : points monde dans et hors du triangle (côtés x = −700, y = −700, x + y = 600) ; INSIDE tombe à l'écran hors des îlots du haut (menu, onglets) au zoom 1. */
+const INSIDE = [250, 250];
 const OUTSIDE = [900, 400];
 
 /** S6 : triangle de traits à main levée de 2000 × 2000 en monde et 300 traits courts à l'intérieur, par le vrai module. */
@@ -229,7 +229,8 @@ async function scenario(page, url, { captures, tmp }) {
   for (let k = 0; k < 6; k++) {
     const c = await camera();
     if (Math.abs(c.zoom - 1) <= 0.002) break;
-    await mouse.move(Math.max(5, c.tx), Math.max(5, c.ty));
+    // Le coin de la scène est sous les îlots du menu et des onglets : le pointeur reste en zone libre.
+    await mouse.move(Math.max(100, c.tx), Math.max(100, c.ty));
     await page.keyboard.down("Control");
     await mouse.wheel(0, Math.log(c.zoom) / WHEEL_ZOOM_SPEED);
     await page.keyboard.up("Control");

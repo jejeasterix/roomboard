@@ -16,8 +16,8 @@ const LATER = "format pris en charge dans une prochaine version";
 const FIXED = new Date("2026-11-20T08:00:00.000Z");
 const W = 200;
 const H = 150;
-/** Point de dépôt de `dropFile` (commun.mjs:143) : 50 px à droite et en dessous du coin de #stage. */
-const DROP = [50, 50];
+/** Point de dépôt passé à `dropFile` : hors des îlots (menu, onglets, outils en haut ; historique, pages en bas). */
+const DROP = [300, 250];
 
 async function scenario(page, url, { captures, tmp }) {
   const errors = [];
@@ -95,7 +95,7 @@ async function scenario(page, url, { captures, tmp }) {
   check((await inkIn(page, dropBox)) === 0, "avant le dépôt : aucun pixel sombre au point de dépôt");
 
   // S1 : dépôt, Ctrl+Z, Ctrl+Y.
-  await dropFile(page, "#stage", "sombre.png", png, "image/png");
+  await dropFile(page, "#stage", "sombre.png", png, "image/png", DROP);
   await waitElements(1);
   check(await inkSoon(dropBox), 'S1 : #stage[data-elements="1"], l\'image déposée apparaît au point de dépôt');
   check((await attr("data-tool")) === "pen", "S1 : outil inchangé après l'insertion (R17)");
