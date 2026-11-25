@@ -97,7 +97,9 @@ const pointer = (type: string, y: number): PointerEvent => new PointerEvent(type
 describe("ProfileEditor (C1, P20 ; design-l3)", () => {
   it("L3-5 : sections profil, général, barres, préréglages, nouveau ; un bloc de barre à la fois ; dialogue « Profils »", () => {
     const { container } = setup();
-    expect([...container.querySelectorAll("[data-edit-section]")].map((s) => s.getAttribute("data-edit-section"))).toEqual(["profile", "general", "bars", "presets", "new"]);
+    expect([...container.querySelectorAll("[data-edit-section]")].map((s) => s.getAttribute("data-edit-section"))).toEqual(["profile", "general", "size", "bars", "presets", "new"]);
+    expect(container.querySelector('[data-edit-section="size"] h3')?.textContent).toBe("Taille des boutons");
+    expect(container.querySelector('[data-edit-bar] h4')?.classList.contains("rb-sr")).toBe(true);
     expect([...container.querySelectorAll("[data-edit-bar]")].map((b) => b.getAttribute("data-edit-bar"))).toEqual(["outils"]);
     expect([...container.querySelectorAll('[data-edit="bar"] [data-choice]')].map((b) => [b.getAttribute("data-choice"), b.textContent])).toEqual([["outils", "Barre d'outils"], ["pages", "Barre des pages"], ["annotation", "Barre d'annotation"]]);
     expect(container.querySelectorAll("[data-edit-preset]")).toHaveLength(3);

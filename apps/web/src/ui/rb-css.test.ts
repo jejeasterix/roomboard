@@ -137,6 +137,9 @@ describe("rb.css (design-l4, L4-16)", () => {
     }
   });
   it("design-l3 L3-24 : cibles de 48 px ou plus (poignée, boutons à icône, segments, vignettes de 80 px, cartes de 104 px)", () => {
+    expect(rule(".rb-grip")).toContain("color: var(--rf-navy-500);");
+    expect(rule(".rb-grip")).toContain("margin-inline-end: -16px;");
+    expect(rule(".rb-item[data-hidden] .rb-grip")).toContain("color: var(--rf-gray-500);");
     expect(rule(".rb-grip")).toMatch(/inline-size: 48px;.*block-size: 48px;.*touch-action: none;/);
     expect(rule(".rb-sheet button.rb-ib")).toMatch(/inline-size: 48px;.*block-size: 48px;/);
     expect(rule('.rb-radios[data-look="segment"] .rb-radio')).toContain("min-block-size: 48px;");
@@ -176,7 +179,7 @@ describe("rb.css (design-l4, L4-16)", () => {
     // Corps : 600 - 2 x 24 = 552 ; gouttière des deux côtés (barre b) : colonne de 512 centrée à (552 - 2b - 512) / 2 = 20 - b,
     // entier quelle que soit la barre de défilement ; bords de la colonne à 44 px du panneau, comme l'en-tête et le pied.
     expect(rule(".rb-sheet-body")).toMatch(/scrollbar-gutter: stable both-edges;.*display: grid;.*grid-template-columns: min\(512px, 100%\);.*justify-content: center;.*padding: 20px var\(--rf-space-lg\);/);
-    expect(rule(".rb-sheet-head")).toContain("padding: 0 var(--rf-space-md) 0 44px;");
+    expect(rule(".rb-sheet-head")).toContain("padding: 0 28px 0 44px;");
     expect(rule(".rb-sheet-foot")).toContain("padding: 0 44px;");
     // En-tête et pied : 80 px de contenu, bordure en plus (pas border-box) : un bouton de 48 px y tombe à 16 px.
     for (const sel of [".rb-sheet-head", ".rb-sheet-foot"]) expect(rule(sel), sel).not.toContain("border-box");

@@ -264,7 +264,7 @@ function BarBlock(props: {
   );
   return (
     <div class="rb-sheet-bar" data-edit-bar={props.bar.id}>
-      <h4>{props.label}</h4>
+      <h4 class="rb-sr">{props.label}</h4>
       <Show when={props.note}>
         <p class="rb-note" data-edit="annotation-note">
           {ANNOTATION_NOTE}
@@ -554,6 +554,8 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
           <h3>Au démarrage</h3>
           <RadioChoices name="start-mode" label="Au démarrage" look="card" options={START_OPTIONS} value={draft().behavior.startMode} choose={(m) => edit((p) => setStartMode(p, m))} />
           <p class="rb-note">{START_NOTE}</p>
+        </section>
+        <section data-edit-section="size">
           <h3>Taille des boutons</h3>
           <RadioChoices name="button-size" label="Taille des boutons" look="segment" options={SIZE_OPTIONS} value={draft().interface.buttonSize} choose={(s) => edit((p) => setButtonSize(p, s))} />
         </section>
