@@ -83,4 +83,15 @@ describe("RadioChoices (design-l3, L3-23, DA-L3-2)", () => {
     const { container } = render(() => <RadioChoices name="x" label="X" look="segment" options={DOCKS} value={"bottom" as unknown as Dock} choose={() => undefined} />);
     expect([...container.querySelectorAll('[role="radio"]')].map((b) => b.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
   });
+  it("L3-23 (relecture) : une valeur contenant un guillemet : la flèche déplace le focus sans lever", async () => {
+    const odd: readonly RadioOption<string>[] = [{ value: 'a"b', label: "A" }, { value: "c", label: "C" }];
+    const [value, setValue] = createSignal("c");
+    const { container } = render(() => <RadioChoices name="odd" label="Étrange" look="tile" options={odd} value={value()} choose={(v) => setValue(v)} />);
+    const radios = container.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    radios[1]!.focus();
+    fireEvent.keyDown(radios[1]!, { key: "ArrowRight" });
+    await tick();
+    expect(value()).toBe('a"b');
+    expect(document.activeElement).toBe(radios[0]);
+  });
 });

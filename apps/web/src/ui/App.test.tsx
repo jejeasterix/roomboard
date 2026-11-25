@@ -928,6 +928,30 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-size")).toBe("m");
   });
 
+  it("design-l3 L3-19 (relecture) : après Revenir à l'origine, le focus revient sur le sélecteur de profil", async () => {
+    const { container } = renderApp();
+    openEditor(container);
+    click(container.querySelector('[data-edit="button-size"] [data-choice="s"]'));
+    click(container.querySelector('button[data-edit="save"]'));
+    openEditor(container);
+    click(container.querySelector('button[data-edit="revert"]'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
+  it("design-l3 L3-21 (relecture) : après un import depuis le panneau, le focus revient sur le sélecteur de profil", async () => {
+    const text = JSON.stringify({
+      format: "roomboard-profile", schema: 1, id: "importe", label: "Importé", interface: { buttonSize: "l" },
+      toolbars: [{ id: "outils", role: "tools", dock: "left", groups: [{ id: "g", items: [{ id: "pen", kind: "tool", tool: "pen", label: "Stylo" }, { id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] }],
+    });
+    const { container, store } = renderApp({ files: fakeFiles([{ name: "importe.rbprofile", text }]) });
+    openEditor(container);
+    click(container.querySelector('button[data-edit="import"]'));
+    await vi.waitFor(() => expect(store.activeId()).toBe("importe"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
   it("design-l3 L3-4 (relecture) : choix refusé dans le sélecteur du panneau (id inconnu) : l'éditeur rouvert ensuite ne prend pas le focus", async () => {
     const { container, store } = renderApp();
     openEditor(container);

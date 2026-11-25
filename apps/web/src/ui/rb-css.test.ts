@@ -195,7 +195,7 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(".rb-sheet-h2row .rb-sheet-add")).toContain("inline-size: 136px;");
     expect(rule(".rb-item .rb-sheet-ghost")).toContain("inline-size: 112px;");
     expect(rule(".rb-preset-width > span")).toContain("inline-size: 80px;");
-    expect(rule(".rb-saved")).toContain("flex-direction: row-reverse;");
+    expect(rule(".rb-saved")).not.toContain("row-reverse");
     for (const sel of [".rb-sheet-ghost", ".rb-sheet-solid", ".rb-sheet-outline", ".rb-sheet-add"]) expect(rule(sel), sel).not.toMatch(/padding: 0 [^;]*\d+\.\d/);
   });
   it("design-l3 L3-2 : panneau des profils ouvert : barre flottante en haut à gauche de la scène, dans la place libre, sur plusieurs rangées", () => {

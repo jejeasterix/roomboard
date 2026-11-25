@@ -185,4 +185,84 @@ describe("sort-drag (design-l3, L3-13, L3-14)", () => {
     const src = readFileSync(join(__dirname, "sort-drag.ts"), "utf8");
     expect(src).not.toMatch(/draggable|dragstart|dragover|ondrop/);
   });
+  /** rAF pilotée à la main : les images ne partent que quand le test les déroule. */
+  function frames() {
+    const queue: FrameRequestCallback[] = [];
+    const win = document.defaultView!;
+    vi.spyOn(win, "requestAnimationFrame").mockImplementation((cb) => queue.push(cb));
+    vi.spyOn(win, "cancelAnimationFrame").mockImplementation(() => undefined);
+    return { queue, run: () => queue.shift()?.(0) };
+  }
+  it("L3-14 (relecture) : défilement : la ligne tirée et le rang au lâcher suivent le contenu défilé", () => {
+    const { rows, scroller } = list(5, { top: 0, bottom: 300 });
+    const f = frames();
+    const d = drag(rows, scroller, 3);
+    d.to(mid(3) + 20);
+    for (let i = 0; i < 5; i++) f.run();
+    const s = scroller.scrollTop;
+    expect(s).toBeGreaterThan(0);
+    expect(rows[3]!.style.transform).toBe(`translateY(${20 + s}px)`);
+    d.up(mid(3) + 20);
+    expect(d.opts.drop).toHaveBeenCalledWith(slotOf([124, 172, 220, 316], mid(3) + 20 + s));
+    expect(d.opts.drop).toHaveBeenCalledTimes(1);
+    expect(rows[3]!.style.transform).toBe("");
+    vi.restoreAllMocks();
+  });
+  it("L3-14 (relecture) : défilement déjà au bout : l'image ne se relance pas", () => {
+    const { rows, scroller } = list(5, { top: 0, bottom: 2000 });
+    const f = frames();
+    const d = drag(rows, scroller, 2);
+    d.to(10); // à moins de 48 px du haut, mais le corps est déjà en haut
+    expect(f.queue.length).toBe(1);
+    f.run();
+    expect(scroller.scrollTop).toBe(0);
+    expect(f.queue.length).toBe(0);
+    d.up(10);
+    vi.restoreAllMocks();
+  });
+  it("L3-14 (relecture) : pointeur loin hors de la liste : pas de défilement au-delà du pas maximal", () => {
+    const { rows, scroller } = list(5, { top: 0, bottom: 300 });
+    const f = frames();
+    const d = drag(rows, scroller, 3);
+    d.to(1500);
+    f.run();
+    expect(scroller.scrollTop).toBe(12);
+    d.up(1500);
+    vi.restoreAllMocks();
+  });
+  it("L3-13 (relecture) : liste d'un seul élément : le geste suit le pointeur, lâcher = cancel", () => {
+    const { rows, scroller } = list(1);
+    const d = drag(rows, scroller, 0);
+    d.to(mid(0) + 100);
+    expect(rows[0]!.style.transform).toBe("translateY(100px)");
+    d.up(mid(0) + 100);
+    expect(d.opts.cancel).toHaveBeenCalledTimes(1);
+    expect(d.opts.drop).not.toHaveBeenCalled();
+    expect(rows[0]!.style.transform).toBe("");
+  });
+  it("L3-13 (relecture) : première ligne tirée vers le haut : elle suit, aucune autre ne bouge, lâcher = cancel", () => {
+    const { rows, scroller } = list(4);
+    const d = drag(rows, scroller, 0);
+    d.to(mid(0) - 60);
+    expect(rows[0]!.style.transform).toBe("translateY(-60px)");
+    expect(rows.slice(1).map((r) => r.style.transform)).toEqual(["", "", ""]);
+    d.up(mid(0) - 60);
+    expect(d.opts.cancel).toHaveBeenCalledTimes(1);
+    expect(d.opts.drop).not.toHaveBeenCalled();
+  });
+  it("L3-13 (relecture) : la fonction d'abandon remet les lignes et ne rappelle rien", () => {
+    const { rows, scroller } = list(4);
+    const down = ev("pointerdown", mid(2));
+    const grip = rows[2]!.querySelector("button")!;
+    Object.defineProperty(down, "currentTarget", { value: grip });
+    const opts = { rows: () => rows, scroller, from: 2, moved: vi.fn(), drop: vi.fn(), tap: vi.fn(), cancel: vi.fn() } satisfies SortDragOptions;
+    const abort = startSortDrag(down, opts);
+    grip.dispatchEvent(ev("pointermove", mid(2) - 70));
+    expect(rows[2]!.style.transform).not.toBe("");
+    abort!();
+    expect(rows.map((r) => r.style.transform)).toEqual(["", "", "", ""]);
+    grip.dispatchEvent(ev("pointerup", mid(2) - 70));
+    expect(opts.drop).not.toHaveBeenCalled();
+    expect(opts.cancel).not.toHaveBeenCalled();
+  });
 });
