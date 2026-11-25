@@ -25,7 +25,7 @@ import { createDeviceSettings } from "../device-settings";
 import { sentToBoardToast } from "../platform/annotation-port";
 import { clearToast, showToast } from "./toast";
 import type { ToolbarView } from "./item-state";
-import { parseProfile, type Profile } from "../toolbar";
+import { parseProfile, type Profile, type Toolbar as Bar } from "../toolbar";
 import { layoutFor } from "./layout";
 
 // Lus sur le disque : sous vitest, un import `?raw` de CSS rend une chaîne vide.
@@ -1299,5 +1299,79 @@ describe("App — design-l4 : bandeau et réglage du cadre (L4-14, L4-16)", () =
     const off = renderApp({ device: createDeviceSettings(null) });
     click(off.container.querySelector('button[data-item="settings"]'));
     expect(off.container.querySelector('button[data-reglage="cadre"]')).toBeNull();
+  });
+});
+
+describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", () => {
+  const corner = (c: HTMLElement, k: string): Element => c.querySelector(`.rb-islands > .rb-corner[data-corner="${k}"]`)!;
+  it("design-l2 L2-14 : defaut sans bande : grille « stage » seule ; calque .rb-islands enfant de .rb-layout", () => {
+    const { container } = renderApp();
+    const layout = container.querySelector<HTMLElement>(".rb-layout")!;
+    expect(layout.style.gridTemplateAreas).toBe('"stage"');
+    expect(container.querySelector(".rb-islands")?.parentElement).toBe(layout);
+    expect(container.querySelector(".rb-floating")).toBeNull();
+    expect(container.querySelector(".rb-slot")).toBeNull();
+  });
+  it("design-l2 L2-5 : menu puis onglets et #etat en haut à gauche ; panneaux en haut à droite ; historique en bas à gauche ; outils et pages centrés", () => {
+    const { container } = renderApp();
+    expect(corner(container, "top-start").querySelector('.rb-corner-menu > .rb-island[data-island="menu"]')).not.toBeNull();
+    const head = corner(container, "top-start").querySelector('.rb-island.rb-head[data-island="onglets"]')!;
+    expect(head.querySelector("[data-tabs]")).not.toBeNull();
+    expect(head.nextElementSibling?.id).toBe("etat");
+    expect(corner(container, "top-end").querySelector('[data-island="panneaux"] button[data-item="profiles"]')).not.toBeNull();
+    expect(corner(container, "bottom-start").querySelector('[data-island="historique"] button[data-item="undo"]')).not.toBeNull();
+    for (const id of ["outils", "pages"]) expect(container.querySelector(`.rb-islands > .rb-island[data-island="${id}"]`), id).not.toBeNull();
+    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(1);
+  });
+  it("design-l2 L2-6 : rôle menu rendu par MenuBar ; liste fermée mais dans le DOM ; une ligne lance son action", () => {
+    const { container, workspace } = renderApp();
+    const toggle = container.querySelector('[data-toolbar="menu"] [data-menu-toggle]')!;
+    expect(toggle.getAttribute("aria-haspopup")).toBe("menu");
+    const list = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-list]')!;
+    expect(list.hidden).toBe(true);
+    expect([...list.querySelectorAll('button[role="menuitem"]')].map((b) => b.getAttribute("data-item"))).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "grid", "settings"]);
+    click(list.querySelector('button[data-item="export-pdf"]'));
+    expect(workspace.exportPdf).toHaveBeenCalledTimes(1);
+  });
+  it("design-l2 L2-13 : préréglages dans l'îlot contextuel, à l'intérieur de [data-toolbar=\"outils\"]", () => {
+    const { container } = renderApp();
+    expect(container.querySelectorAll('[data-toolbar="outils"] > [data-island-context] button[data-preset]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-toolbar="outils"] button[data-preset]')).toHaveLength(3);
+  });
+  it("design-l2 L2-8 : Replier : data-collapsed sur la barre, gardé sur l'appareil, jamais dans le profil", () => {
+    const device = createDeviceSettings(null);
+    const { container, store } = renderApp({ device });
+    click(container.querySelector('[data-island="outils"] [data-island-collapse]'));
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-collapsed")).toBe("1");
+    expect(device.island("defaut", "outils")).toEqual({ at: null, collapsed: true });
+    expect(store.get("defaut")?.toolbars.find((b) => b.id === "outils")?.collapsed).toBe(false);
+  });
+  it("design-l2 L2-5 : copie d'avant L2 (bandes, sans menu) : onglets et #etat en îlot au coin de la case de la scène, scène sous la bande", () => {
+    const { container, store, active } = renderApp();
+    store.save(beforeL4Copy("ancienne"));
+    active.choose("ancienne");
+    const layout = container.querySelector<HTMLElement>(".rb-layout")!;
+    expect(layout.style.gridTemplateAreas).toBe('"outils" "stage" "pages"');
+    expect(corner(container, "top-start").querySelector(".rb-corner-menu")?.children).toHaveLength(0);
+    expect(corner(container, "top-start").querySelector('.rb-head[data-island="onglets"] [data-tabs]')).not.toBeNull();
+    expect(container.querySelector("#etat")?.getAttribute("role")).toBe("status");
+    expect(container.querySelector('[data-toolbar="outils"]')?.closest(".rb-slot")).not.toBeNull();
+  });
+  it("design-l2 H11 : rôle inconnu flottant : en haut à droite, après panneaux", () => {
+    const { container, store, active } = renderApp();
+    const odd: Bar = {
+      id: "zoom", role: "zoom", dock: "floating", collapsed: false, rest: {},
+      groups: [{ id: "z", rest: {}, items: [{ id: "fit-2", kind: "action", action: "fit-page", label: "Ajuster", requires: [], rest: {} }] }],
+    };
+    store.save({ ...BUILTIN_PROFILES[0]!, id: "zoome", label: "Zoomé", toolbars: [...BUILTIN_PROFILES[0]!.toolbars, odd] });
+    active.choose("zoome");
+    expect([...corner(container, "top-end").children].map((e) => e.getAttribute("data-island"))).toEqual(["panneaux", "zoom"]);
+  });
+  it("design-l2 L2-19 : en annotation, aucun îlot de barre n'est rendu ; la bande d'annotation seule", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    await a.control.enter();
+    expect(container.querySelector('.rb-island[data-island="outils"]')).toBeNull();
+    expect(container.querySelector('.rb-slot [data-toolbar="annotation"]')).not.toBeNull();
   });
 });

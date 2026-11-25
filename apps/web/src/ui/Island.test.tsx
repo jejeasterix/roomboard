@@ -97,13 +97,11 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
     expect(q("[data-island-collapse]").parentElement).toBe(island());
   });
 
-  it("design-l2 L2-15 : habillage par jetons : fond --rf-white, rayon --rf-radius-xl, filet --rf-gray-300, ombre --rf-shadow-hover", () => {
+  it("design-l2 L2-15 : habillage par la règle .rb-island de rb.css (jetons), jamais en style en ligne : le style ne porte que la position", () => {
     const { island } = setup();
+    expect(island().classList.contains("rb-island")).toBe(true);
     const css = island().getAttribute("style") ?? "";
-    expect(css).toContain("var(--rf-white)");
-    expect(css).toContain("var(--rf-radius-xl)");
-    expect(css).toContain("var(--rf-gray-300)");
-    expect(css).toContain("var(--rf-shadow-hover)");
+    for (const t of ["--rf-white", "--rf-radius-xl", "--rf-gray-300", "--rf-shadow-hover", "background", "border-radius", "box-shadow"]) expect(css, t).not.toContain(t);
   });
 
   it("design-l2 L2-7 : position et repli lus sur l'appareil au montage", () => {
