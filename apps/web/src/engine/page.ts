@@ -4,8 +4,8 @@ import type { Camera } from "./camera";
 export const PAGE_WIDTH = 1920;
 export const PAGE_HEIGHT = 1080;
 export const PAGE_BACKGROUND = "#ffffff";
-/** Pourtour de la page (plan non borné autour du cadre). */
-export const SURROUND_COLOR = "#d4d4d8";
+/** Pourtour de la page (plan non borné autour du cadre) : « fond autour de la page » de la charte (--rf-gray-50). Jamais exporté. */
+export const SURROUND_COLOR = "#f5f5f8";
 
 export interface PageRect {
   readonly x0: number;
