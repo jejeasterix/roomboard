@@ -198,4 +198,14 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(".rb-saved")).toContain("flex-direction: row-reverse;");
     for (const sel of [".rb-sheet-ghost", ".rb-sheet-solid", ".rb-sheet-outline", ".rb-sheet-add"]) expect(rule(sel), sel).not.toMatch(/padding: 0 [^;]*\d+\.\d/);
   });
+  it("design-l3 L3-2 : panneau des profils ouvert : barre flottante en haut à gauche de la scène, dans la place libre, sur plusieurs rangées", () => {
+    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating')).toMatch(/justify-self: start;.*max-inline-size: calc\(100% - min\(600px, 100%\)\);/);
+    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar')).toContain("flex-wrap: wrap;");
+    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar')).not.toMatch(/position/);
+  });
+  it("design-l3 L3-22 : menu Profil en îlot (rayon xl, filet gris 300, ombre modale) ; lignes de 48 px icône + texte", () => {
+    expect(rule('.rb-popover[data-panel="menu-profils"]')).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule("[data-profiles] button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
+    expect(rule('[data-profiles] button[aria-checked="true"]')).toMatch(/color: var\(--rf-violet-700\);.*font-weight: 600;/);
+  });
 });
