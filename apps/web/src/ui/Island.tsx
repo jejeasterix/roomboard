@@ -258,6 +258,7 @@ export function Island(props: IslandProps): JSX.Element {
   const onGripKey = (e: KeyboardEvent): void => {
     if (props.sheet() !== null) return;
     if (e.key === "Home") {
+      if (pos() === null) return;
       e.preventDefault();
       e.stopPropagation();
       commit(null);
@@ -373,7 +374,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   });
   /** T11 : les îlots sont recréés à chaque changement de profil (mêmes objets `bar` après « Enregistrer comme
    *  nouveau ») : position et repli relus sur l'appareil du nouveau profil, écrits sous sa clé. */
-  const profile = createMemo(() => [props.profileId()] as const);
+  const profile = createMemo(() => [props.profileId()] as const, undefined, { equals: (a, b) => a[0] === b[0] });
   const islands = (list: Accessor<readonly Bar[]>): JSX.Element => (
     <Show keyed when={profile()}>
       {([id]) => <For each={list()}>{(bar) => island(bar, id)}</For>}

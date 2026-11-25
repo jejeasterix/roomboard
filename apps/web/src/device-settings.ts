@@ -12,8 +12,8 @@ const FRAME_HIDDEN = "non";
  *  profil (format `.rbprofile` inchangé). Valeur : JSON `{ "x", "y", "collapsed" }`, champs facultatifs. */
 export const ISLAND_KEY_PREFIX = "roomboard.ilot.";
 /** Chaque partie encodée (`encodeURIComponent`) : un identifiant avec espace ou barre oblique reste une seule partie. */
-export const islandKey = (profileId: string, barId: string): string =>
-  `${ISLAND_KEY_PREFIX}${encodeURIComponent(profileId)}.${encodeURIComponent(barId)}`;
+const part = (s: string): string => encodeURIComponent(s).replaceAll(".", "%2E");
+export const islandKey = (profileId: string, barId: string): string => `${ISLAND_KEY_PREFIX}${part(profileId)}.${part(barId)}`;
 
 /** `at` null : aucune position (îlot dans sa voie) ; `collapsed` null : état de départ du profil. */
 export interface IslandState {
