@@ -8,8 +8,10 @@ import {
   EXIT_TIMEOUT_MS,
   isViewport,
   NOTHING_TO_SEND_MESSAGE,
+  SENT_TO_BOARD,
   sendTarget,
   sentToBoardMessage,
+  sentToBoardToast,
 } from "./annotation-port";
 
 describe("contrat entre fenêtres (C11a, DA2)", () => {
@@ -62,5 +64,15 @@ describe("contrat C11b (P6, P10 à P13)", () => {
     ]) {
       expect(isViewport(bad)).toBe(false);
     }
+  });
+});
+
+describe("avis d'envoi (C11b P12, design-l4 L4-16)", () => {
+  it("avis d'envoi : une seule source ; boîte inchangée à l'octet ; bandeau « Envoyé au tableau : » + « page N »", () => {
+    expect(SENT_TO_BOARD).toBe("envoyé au tableau");
+    expect(sentToBoardMessage(2)).toBe("envoyé au tableau : page 2");
+    expect(sentToBoardToast(2)).toEqual({ text: "Envoyé au tableau :", strong: "page 2" });
+    const t = sentToBoardToast(12);
+    expect(`${t.text} ${t.strong}`.toLowerCase()).toBe(sentToBoardMessage(12));
   });
 });
