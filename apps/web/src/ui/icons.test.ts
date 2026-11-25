@@ -40,16 +40,18 @@ const PANEL_ICONS: Readonly<Record<string, string>> = {
   close: "x", grip: "grip-vertical", hidden: "eye-off", "dock-top": "panel-top", "dock-bottom": "panel-bottom",
   "dock-left": "panel-left", "dock-right": "panel-right", "dock-float": "app-window", import: "upload", down: "chevron-down",
 };
+/** design-l2 (L2-22) : icônes de la maquette 01 propres aux îlots, nom RoomBoard -> nom Lucide. */
+const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse: "chevron-up" };
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "eraser-part", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 const TAGS = ["path", "rect", "circle", "line", "polyline", "ellipse"];
 const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", tool: t, label: t, ...(icon !== undefined ? { icon } : {}), requires: [], rest: {} });
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 58 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau et le panneau des profils", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS)]);
+  it("ICONS : 60 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS)]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(58);
+    expect(Object.keys(ICONS)).toHaveLength(60);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -61,6 +63,10 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
   it("design-l3 : notice de licence : chaque icône du panneau nommée avec son nom Lucide", () => {
     expect(NOTICE).toContain("docs/design/maquettes/03-profils.html");
     for (const [name, lucide] of Object.entries(PANEL_ICONS)) expect(NOTICE, name).toContain(`\`${name}\` (Lucide \`${lucide}\`)`);
+  });
+  it("design-l2 L2-22 : menu et collapse recopiées à l'identique de 01-tableau.html (Lucide menu, chevron-up), nommées dans la notice", () => {
+    for (const name of Object.keys(ISLAND_ICONS)) expect(ICONS[name], name).toEqual(symbol(name));
+    for (const [name, lucide] of Object.entries(ISLAND_ICONS)) expect(NOTICE, name).toContain(`\`${name}\` (Lucide \`${lucide}\`)`);
   });
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");

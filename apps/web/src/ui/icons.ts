@@ -86,6 +86,10 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   // lucide-icons/lucide@7981a0798a), pastille du bandeau et zone de dépôt.
   "check": [["path", { d: "M20 6 9 17l-5-5" }]],
   "drop": [["path", { d: "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" }], ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5" }], ["path", { d: "M12 18v-6" }], ["path", { d: "m9 15 3 3 3-3" }]],
+  // design-l2 : maquette 01 (symboles i-menu et i-collapse de 01-tableau.html ; Lucide menu et chevron-up,
+  // lucide-icons/lucide@7981a0798a), bouton Menu et Replier de la barre d'outils ; Déplier reprend `down`.
+  "menu": [["path", { d: "M4 5h16" }], ["path", { d: "M4 12h16" }], ["path", { d: "M4 19h16" }]],
+  "collapse": [["path", { d: "m18 15-6-6-6 6" }]],
 });
 
 /** Outil → icône (§ 2 bis). */
