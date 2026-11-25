@@ -16,10 +16,14 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { createProfileStore, type KeyValue } from "../profile-store";
 import type { RuntimeCapabilities } from "../toolbar";
-import { BUILTIN_PROFILES, DEFAULT_PROFILE_JSON } from "../toolbar-profiles";
+import { BUILTIN_PROFILES } from "../toolbar-profiles";
+import { setDock } from "../profile-edit";
 import { createActiveProfile } from "./active-profile";
 import { App, showStartError, type AnnotationUi, type AppProps } from "./App";
 import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
+import { createDeviceSettings } from "../device-settings";
+import { sentToBoardToast } from "../platform/annotation-port";
+import { clearToast, showToast } from "./toast";
 import type { ToolbarView } from "./item-state";
 import { parseProfile, type Profile } from "../toolbar";
 import { layoutFor } from "./layout";
@@ -28,6 +32,15 @@ import { layoutFor } from "./layout";
 const CSS = readFileSync(join(__dirname, "rb.css"), "utf8");
 const INDEX_HTML = readFileSync(join(__dirname, "../../index.html"), "utf8");
 const CAPS: RuntimeCapabilities = { desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false };
+/** design-l4 (L4-22) : `DEFAULT_PROFILE_JSON` d'origin/main @ 136cbbb, tel quel (aucune barre `annotation`). */
+const BEFORE_L4: Record<string, unknown> = JSON.parse(readFileSync(join(__dirname, "..", "fixtures", "profils", "defaut-avant-l4.rbprofile"), "utf8"));
+/** Copie de `defaut` faite avant L4, id `id`. */
+function beforeL4Copy(id: string): Profile {
+  const r = parseProfile({ ...BEFORE_L4, id, label: `Copie ${id}` });
+  if ("errors" in r) throw new Error(r.errors.join("; "));
+  return r.profile;
+}
+const barIds = (c: HTMLElement): (string | null)[] => [...c.querySelectorAll("[data-toolbar]")].map((b) => b.getAttribute("data-toolbar"));
 
 function baseState(over: Partial<Record<string, unknown>> = {}): EngineState {
   return {
@@ -208,7 +221,7 @@ function fakeFiles(picks: ({ name: string; text: string } | null)[] = []) {
   } satisfies ProfileFiles;
 }
 
-function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi } = {}) {
+function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabilities; files?: ReturnType<typeof fakeFiles>; kv?: KeyValue; library?: AppProps["library"]; annotation?: AnnotationUi; device?: AppProps["device"] } = {}) {
   const tab = opts.tab ?? fakeTab("Sans titre.roomboard");
   const workspace = fakeWorkspace(tab);
   const store = createProfileStore(opts.kv ?? null, BUILTIN_PROFILES);
@@ -238,6 +251,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
         navigate={navigate}
         {...(opts.library ? { library: opts.library } : {})}
         {...(opts.annotation ? { annotation: opts.annotation } : {})}
+        {...(opts.device ? { device: opts.device } : {})}
       />
     ),
     container,
@@ -266,6 +280,7 @@ function fakeAnnotationUi(start = false, activateOnEnter = true) {
     exit: vi.fn(async () => set({ active: false })),
     close: vi.fn(async () => true),
     toggle: vi.fn(async () => undefined),
+    pointer: vi.fn(async () => undefined),
     nextScreen: vi.fn(async () => undefined),
     freeze: vi.fn(async () => undefined),
     send: vi.fn(async () => undefined),
@@ -296,7 +311,7 @@ function fakeAnnotationUi(start = false, activateOnEnter = true) {
 /** Copie de `defaut` faite avant C11a (aucun élément C11a), id « ma-copie ». */
 function oldCopy(): Profile {
   const NEW = ["desktop-annotation", "annotation-pointer", "annotation-screen", "depot-annotation"];
-  const json = structuredClone(DEFAULT_PROFILE_JSON) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
+  const json = structuredClone(BEFORE_L4) as { toolbars: { groups: { items: { id: string }[] }[] }[] };
   for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => !NEW.includes(i.id));
   const r = parseProfile({ ...json, id: "ma-copie", label: "Ma copie" });
   if ("errors" in r) throw new Error(r.errors.join("; "));
@@ -357,7 +372,7 @@ describe("App (T95)", () => {
     const layout = container.querySelector<HTMLElement>(".rb-layout");
     expect(layout, ".rb-layout").not.toBeNull();
     const profile = BUILTIN_PROFILES.find((p) => p.id === "defaut")!;
-    const expected = layoutFor(profile.toolbars);
+    const expected = layoutFor(profile.toolbars.filter((b) => b.role !== "annotation"));
     const names = areaNames(expected.areas);
     expect(names.has("stage")).toBe(true);
     const stages = container.querySelector<HTMLElement>("main.rb-stages")!;
@@ -365,7 +380,7 @@ describe("App (T95)", () => {
     expect(stages.parentElement).toBe(layout);
     expect(getComputedStyle(stages).position).toBe("relative");
     const bars = [...container.querySelectorAll<HTMLElement>("[data-toolbar]")];
-    expect(bars.map((b) => b.dataset["toolbar"])).toEqual(profile.toolbars.map((b) => b.id));
+    expect(bars.map((b) => b.dataset["toolbar"])).toEqual(profile.toolbars.filter((b) => b.role !== "annotation").map((b) => b.id));
     for (const bar of bars) {
       // La barre n'est pas dans la scène, et elle occupe sa propre case de la grille.
       expect(stages.contains(bar), bar.dataset["toolbar"]).toBe(false);
@@ -558,6 +573,20 @@ describe("App — profils (C1)", () => {
     warn.mockRestore();
   });
 
+  it("design-l4 T6 : S2 : éditeur, « Barre d'annotation » ; masquer ann-text la retire de la barre d'annotation, la barre d'outils garde Texte", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    openEditor(container);
+    expect(container.querySelector('[data-edit-bar="annotation"] legend')?.textContent).toBe("Barre d'annotation");
+    const box = container.querySelector<HTMLInputElement>('[data-edit-item="ann-text"] input[data-edit="shown"]')!;
+    box.checked = false;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+    click(container.querySelector('button[data-edit="save"]'));
+    expect(container.querySelector('[data-toolbar="outils"] [data-item="text"]')).not.toBeNull();
+    await a.control.enter();
+    expect(container.querySelector('[data-toolbar="annotation"] [data-item="ann-text"]')).toBeNull();
+    expect(container.querySelector('[data-toolbar="annotation"] [data-item="ann-rect"]')).not.toBeNull();
+  });
   it("C11a : profil annotation et capacité : enter une fois au montage, pas au changement de profil (P22)", () => {
     const a = fakeAnnotationUi(false, false);
     const { container } = renderApp({ profile: "annotation", caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
@@ -574,15 +603,75 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector(".rb-layout")?.getAttribute("data-mode")).toBe("board");
     await a.control.enter();
     expect(container.querySelector(".rb-layout")?.getAttribute("data-mode")).toBe("annotation");
-    expect(container.querySelector('[data-toolbar="outils"]')).not.toBeNull();
+    expect(container.querySelector('[data-toolbar="annotation"]')).not.toBeNull();
     expect(container.querySelector('[data-toolbar="pages"]')).toBeNull();
-    click(container.querySelector('[data-item="pen"]'));
+    click(container.querySelector('[data-item="ann-pen"]'));
     expect(a.remoteCalls).toEqual(["setTool pen"]);
-    a.view({ tool: "select", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
-    expect(container.querySelector('[data-item="select"]')?.getAttribute("aria-pressed")).toBe("true");
-    const exit = container.querySelector('[data-item="desktop-annotation"]');
+    a.view({ tool: "eraser", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 });
+    expect(container.querySelector('[data-item="ann-eraser"]')?.getAttribute("aria-pressed")).toBe("true");
+    const exit = container.querySelector('[data-item="ann-desktop-annotation"]');
     expect(exit?.textContent).toBe("Quitter l'annotation");
     expect(exit?.getAttribute("aria-pressed")).toBe("true");
+  });
+  it("design-l4 (fin de lot) : contrôleur distant sans pointer : le segment inactif rejoue l'action sur l'hôte distant", async () => {
+    const a = fakeAnnotationUi();
+    const ui: AnnotationUi = {
+      ...a.ui,
+      remote: (local) => {
+        const { pointer: _sans, ...reste } = a.ui.remote(local);
+        return { ...reste, runAction: (id) => void a.remoteCalls.push(`runAction ${id}`) };
+      },
+    };
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: ui });
+    await a.control.enter();
+    a.view({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1, annotation: { active: true, pointer: "draw", screens: 1 } });
+    click(container.querySelector('[data-segment="mouse"]'));
+    expect(a.remoteCalls).toEqual(["runAction annotation-pointer"]);
+  });
+  it("design-l4 T6 : S2 : barre d'annotation montrée en annotation ; au tableau, jamais de barre annotation (L4-2, L4-3)", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    expect(barIds(container)).toEqual(["outils", "pages"]);
+    await a.control.enter();
+    expect(barIds(container)).toEqual(["annotation"]);
+    await a.control.exit();
+    expect(barIds(container)).toEqual(["outils", "pages"]);
+  });
+  it("design-l4 T6 : S2 : première barre tools sinon : profil figé d'avant L4, sans barre annotation (L4-2, L4-22)", async () => {
+    const a = fakeAnnotationUi();
+    const { container, store, active } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    const copy = beforeL4Copy("copie-l4");
+    expect(copy.toolbars.some((b) => b.role === "annotation")).toBe(false);
+    store.save(copy);
+    active.choose("copie-l4");
+    expect(barIds(container)).toEqual(["outils", "pages"]);
+    await a.control.enter();
+    expect(barIds(container)).toEqual(["outils"]);
+    expect(container.querySelector('[data-toolbar="outils"] [data-item="depot-annotation"]')).not.toBeNull();
+  });
+  it("design-l4 T6 : L4-3 : barre d'annotation flottante, jamais montrée au tableau ; posée en haut en annotation", async () => {
+    const a = fakeAnnotationUi();
+    const { container, store, active } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    store.save({ ...setDock(BUILTIN_PROFILES[0]!, "annotation", "floating"), id: "flottante", label: "Flottante" });
+    active.choose("flottante");
+    expect(container.querySelector('[data-toolbar="annotation"]')).toBeNull();
+    expect(container.querySelector(".rb-floating")).toBeNull();
+    await a.control.enter();
+    expect(container.querySelector('[data-toolbar="annotation"]')?.getAttribute("data-dock")).toBe("top");
+  });
+  it("design-l4 T6 : L4-4 : préréglages du stylo dans la barre d'annotation en annotation, dans outils au tableau", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    expect(container.querySelectorAll('[data-toolbar="outils"] button[data-preset]')).toHaveLength(3);
+    await a.control.enter();
+    expect(container.querySelectorAll('[data-toolbar="annotation"] button[data-preset]')).toHaveLength(3);
+  });
+  it("design-l4 T6 : L4-9 : segment « Souris » de la barre d'annotation → control.pointer(\"mouse\")", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    await a.control.enter();
+    click(container.querySelector('[data-toolbar="annotation"] button[data-segment="mouse"]'));
+    expect(a.control.pointer).toHaveBeenCalledWith("mouse");
   });
   it("C11b revue E : l'état figé et la cible d'envoi du contrôleur arrivent à la barre (« Bureau vivant », envoi en nouvel onglet grisé)", async () => {
     const a = fakeAnnotationUi();
@@ -601,7 +690,7 @@ describe("App — profils (C1)", () => {
     const a = fakeAnnotationUi();
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
     await a.control.enter();
-    const pressed = () => container.querySelector('[data-item="eraser-mode"]')?.getAttribute("aria-pressed");
+    const pressed = () => container.querySelector('[data-item="ann-eraser-mode"]')?.getAttribute("aria-pressed");
     const before = pressed();
     a.view({ tool: "select", eraserMode: "object", canUndo: true, canRedo: false, pageIndex: 0, pageCount: 1 });
     expect(pressed()).toBe("true");
@@ -953,5 +1042,31 @@ describe("App : barre 3D (C15)", () => {
     expect(container.querySelector('[data-model3d="message"]')?.textContent).toBe("3D indisponible sur ce poste : l'objet garde son image");
     expect(container.querySelector<HTMLButtonElement>('[data-model3d="orbit"]')!.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>('[data-model3d="reset"]')!.disabled).toBe(true);
+  });
+});
+
+describe("App — design-l4 : bandeau et réglage du cadre (L4-14, L4-16)", () => {
+  afterEach(() => clearToast());
+  it("S4 : bandeau dans la case de la scène ; L4-16 : effacé à l'entrée en annotation", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    showToast(sentToBoardToast(2));
+    expect(container.querySelector(".rb-toasts")?.parentElement).toBe(container.querySelector(".rb-layout"));
+    expect(container.querySelector(".rb-toast")?.textContent).toBe("Envoyé au tableau : page 2");
+    await a.control.enter();
+    expect(container.querySelector(".rb-toast")).toBeNull();
+  });
+  it("S3 : Réglages, bouton du cadre avec la capacité d'annotation ; absent sans elle (H10)", () => {
+    const device = createDeviceSettings(null);
+    const on = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, device });
+    click(on.container.querySelector('button[data-item="settings"]'));
+    const btn = () => on.container.querySelector('button[data-reglage="cadre"]');
+    expect(btn()?.textContent).toBe("Cadre de l'annotation : affiché");
+    click(btn());
+    expect(device.frame()).toBe(false);
+    expect(btn()?.textContent).toBe("Cadre de l'annotation : masqué");
+    const off = renderApp({ device: createDeviceSettings(null) });
+    click(off.container.querySelector('button[data-item="settings"]'));
+    expect(off.container.querySelector('button[data-reglage="cadre"]')).toBeNull();
   });
 });

@@ -70,6 +70,10 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   // Dessinées pour RoomBoard : rectangles de between-*-start, chevron remplacé par un tiret « moins ».
   "row-remove": [["rect", { width: "13", height: "7", x: "8", y: "3", rx: "1" }], ["path", { d: "M2 12h4" }], ["rect", { width: "13", height: "7", x: "8", y: "14", rx: "1" }]],
   "col-remove": [["rect", { width: "7", height: "13", x: "3", y: "8", rx: "1" }], ["path", { d: "M10 4h4" }], ["rect", { width: "7", height: "13", x: "14", y: "8", rx: "1" }]],
+  // design-l4 : maquette 02 (symboles i-check et i-drop de 02-annotation-bureau.html ; Lucide check et file-down,
+  // lucide-icons/lucide@7981a0798a), pastille du bandeau et zone de dépôt.
+  "check": [["path", { d: "M20 6 9 17l-5-5" }]],
+  "drop": [["path", { d: "M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" }], ["path", { d: "M14 2v5a1 1 0 0 0 1 1h5" }], ["path", { d: "M12 18v-6" }], ["path", { d: "m9 15 3 3 3-3" }]],
 });
 
 /** Outil → icône (§ 2 bis). */

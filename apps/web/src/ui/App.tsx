@@ -9,9 +9,10 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type 
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import type { ImageData } from "../core/api";
+import type { DeviceSettings } from "../device-settings";
 import { createProfileActions } from "../app/profile-actions";
 import { createLocalToolbarHost, type ToolbarHost } from "../app/toolbar-host";
-import type { AnnotationControl, AnnotationState } from "../platform/annotation-port";
+import type { AnnotationControl, AnnotationState, PointerMode } from "../platform/annotation-port";
 import type { TabSession, Workspace } from "../app/workspace";
 import type { EngineState } from "../engine/engine";
 import type { SettingsStore } from "../engine/settings";
@@ -19,7 +20,7 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
-import { resolveStartMode, visibleItems, type StartMode, type Toolbar as Bar } from "../toolbar";
+import { ANNOTATION_ROLE, annotationBarOf, resolveStartMode, visibleItems, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { layoutFor } from "./layout";
@@ -39,6 +40,8 @@ import { SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
 import type { ToolbarView } from "./item-state";
 import { Toolbar } from "./Toolbar";
+import { Toasts } from "./Toasts";
+import { clearToast } from "./toast";
 import "./rb.css";
 
 /** C11a (P21) : annotation de bureau ; absente (web, tests anciens) : tableau seul. */
@@ -67,6 +70,9 @@ export interface AppProps {
   navigate(search: string): void;
   /** C4 : bibliothèque ; absente (tests anciens) : le bouton n'ouvre rien. */
   readonly library?: { readonly library: ResourceLibrary; readonly shared: SharedFolder; readonly packs: TypedFiles };
+  /** design-l4 (L4-14) : réglages de l'appareil ; donnés au panneau Réglages seulement avec la capacité d'annotation
+   *  (H10) ; absents (tests anciens) : aucun bouton du cadre. */
+  readonly device?: DeviceSettings;
 }
 
 type Panel = "settings" | "profiles" | "editor" | "grid" | "image" | "library";
@@ -301,9 +307,24 @@ export function App(props: AppProps): JSX.Element {
     textFormat: (a) => pick().textFormat(a),
     selection: (a) => pick().selection(a),
     imagePanel: () => pick().imagePanel(),
+    // Seulement si le contrôleur actif l'a : sinon le segment inactif rejoue l'action (repli de PointerSwitch).
+    get pointer() {
+      const p = pick().pointer;
+      return p === undefined ? undefined : (m: PointerMode) => p(m);
+    },
   };
   // Panneau fermé à l'entrée ; profil renvoyé à `annotate` s'il change pendant l'annotation (RF5).
-  createEffect(on(annotating, (a) => { if (a) setPanel(null); }, { defer: true }));
+  createEffect(
+    on(
+      annotating,
+      (a) => {
+        if (!a) return;
+        setPanel(null);
+        clearToast();
+      },
+      { defer: true },
+    ),
+  );
   createEffect(on(() => props.active.profile(), (p) => { if (annotating()) ann?.control.sendProfile(p); }, { defer: true }));
 
   // Mode de démarrage (U14, C1 P10) : une seule fois, au montage ; changer de profil ensuite ne le rejoue pas (P11).
@@ -319,15 +340,14 @@ export function App(props: AppProps): JSX.Element {
 
   const profile = () => props.active.profile();
   const size = () => profile().interface.buttonSize;
-  const docked = createMemo(() => profile().toolbars.filter((b) => b.dock !== "floating"));
-  const floating = createMemo(() => profile().toolbars.filter((b) => b.dock === "floating"));
-  /** C11a (P20) : en annotation, seule la première barre `tools` (une barre flottante y est posée en haut). */
+  /** design-l4 (L4-3) : une barre de rôle `annotation` n'est jamais montrée au tableau, ni ancrée ni flottante. */
+  const boardBars = createMemo(() => profile().toolbars.filter((b) => b.role !== ANNOTATION_ROLE));
+  const docked = createMemo(() => boardBars().filter((b) => b.dock !== "floating"));
+  const floating = createMemo(() => boardBars().filter((b) => b.dock === "floating"));
   const firstToolsBar = createMemo(() => profile().toolbars.find((x) => x.role === "tools"));
-  const annotationBar = createMemo((): Bar | null => {
-    const b = firstToolsBar();
-    if (b === undefined) return null;
-    return b.dock === "floating" ? { ...b, dock: "top" } : b;
-  });
+  /** C11a (P20), design-l4 (L4-2) : en annotation, la seule barre montrée est `annotationBarOf` (barre d'annotation, sinon
+   *  première barre `tools`, flottante posée en haut) : la même que `main.ts` mesure pour la bande de la coque. */
+  const annotationBar = createMemo((): Bar | null => annotationBarOf(profile()));
   const shownDocked = createMemo((): readonly Bar[] => {
     if (!annotating()) return docked();
     const b = annotationBar();
@@ -349,8 +369,8 @@ export function App(props: AppProps): JSX.Element {
         };
   };
 
-  /** La rangée des préréglages n'est que dans la première barre de rôle `tools` (C1, P18). */
-  const presetsBarId = createMemo(() => firstToolsBar()?.id);
+  /** C1 (P18), design-l4 (L4-4) : préréglages dans la barre montrée en annotation, dans la première barre `tools` au tableau. */
+  const presetsBarId = createMemo(() => (annotating() ? annotationBar()?.id : firstToolsBar()?.id));
   const toolbarOf = (bar: Bar): JSX.Element => (
     <Toolbar bar={bar} caps={props.active.capabilities} view={view} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} mode={mode} />
   );
@@ -394,6 +414,7 @@ export function App(props: AppProps): JSX.Element {
       </div>
       <For each={shownDocked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
       {props.stages}
+      <Toasts />
       <Show when={shownFloating().length > 0}>
         <div class="rb-floating">
           <For each={shownFloating()}>{(bar) => barOf(bar)}</For>
@@ -424,6 +445,7 @@ export function App(props: AppProps): JSX.Element {
             navigate={(search) => props.navigate(search)}
             anyDirty={() => ws.anyDirty()}
             confirm={(m) => props.shell.confirm(m)}
+            {...(props.device !== undefined && props.active.capabilities().desktopAnnotation ? { device: props.device } : {})}
           />
         </div>
       </Show>

@@ -1,7 +1,7 @@
 import { For, Show, children, createEffect, createSignal, type JSX } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
 import { ICONS, ICON_VIEWBOX } from "./icons";
-import { createTip, placeTip } from "./tooltip";
+import { createTip, placeTip, type Tip } from "./tooltip";
 
 /** Attributs d'accessibilité du svg (L1-4) : jamais annoncé, jamais focusable. */
 const SVG_A11Y = { "aria-hidden": "true", focusable: "false" } as const;
@@ -38,8 +38,9 @@ export function Icon(props: { name: string }): JSX.Element {
   );
 }
 
-/** Infobulle posée en px entiers sous son bouton (L1-4) ; recalculée quand le libellé change. */
-function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Element {
+/** Infobulle posée en px entiers sous son bouton (L1-4) ; recalculée quand le libellé change ; exportée pour la zone de
+ *  dépôt (design-l4, L4-11). */
+export function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Element {
   let el: HTMLDivElement | undefined;
   const [at, setAt] = createSignal<{ left: number; top: number } | null>(null);
   createEffect(() => {
@@ -57,6 +58,32 @@ function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Element {
     >
       {props.label}
     </div>
+  );
+}
+
+/** Gestionnaires de pointeur de l'infobulle (survol à la souris, appui long au toucher), communs à tout élément à infobulle. */
+export function tipPointerHandlers(tip: Tip) {
+  return {
+    onPointerEnter: (e: PointerEvent): void => {
+      if (e.pointerType === "mouse") tip.enter();
+    },
+    onPointerLeave: (e: PointerEvent): void => {
+      if (e.pointerType === "mouse") tip.leave();
+    },
+    onPointerDown: (e: PointerEvent): void => tip.down(e.pointerType),
+    onPointerUp: (): void => tip.up(),
+    onPointerCancel: (): void => tip.up(),
+  };
+}
+
+/** Bulle montrée dans `body` tant que l'infobulle est affichée ; `anchor` est lu à l'affichage (l'élément existe alors). */
+export function TipBubble(props: { tip: Tip; label: string; anchor: () => HTMLElement }): JSX.Element {
+  return (
+    <Show when={props.tip.shown()}>
+      <Portal>
+        <Bubble label={props.label} anchor={props.anchor()} />
+      </Portal>
+    </Show>
   );
 }
 
@@ -90,15 +117,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         aria-pressed={props.pressed ?? undefined}
         disabled={props.disabled === true}
         onClick={() => props.onPress()}
-        onPointerEnter={(e) => {
-          if (e.pointerType === "mouse") tip.enter();
-        }}
-        onPointerLeave={(e) => {
-          if (e.pointerType === "mouse") tip.leave();
-        }}
-        onPointerDown={(e) => tip.down(e.pointerType)}
-        onPointerUp={() => tip.up()}
-        onPointerCancel={() => tip.up()}
+        {...tipPointerHandlers(tip)}
         onFocus={(e) => {
           if (focusVisible(e.currentTarget)) tip.focus();
         }}
@@ -111,11 +130,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
           <span class="rb-sr">{props.label}</span>
         </Show>
       </button>
-      <Show when={tip.shown()}>
-        <Portal>
-          <Bubble label={props.label} anchor={button!} />
-        </Portal>
-      </Show>
+      <TipBubble tip={tip} label={props.label} anchor={() => button!} />
     </>
   );
 }

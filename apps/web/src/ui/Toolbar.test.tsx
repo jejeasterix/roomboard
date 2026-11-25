@@ -5,10 +5,12 @@ import { join } from "node:path";
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ButtonSize, RuntimeCapabilities, StartMode, Toolbar as Bar, ToolItem } from "../toolbar";
+import { ACTION_TABLE } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ToolbarHost } from "../app/toolbar-host";
 import { Toolbar, type PresetTable } from "./Toolbar";
 import type { ToolbarView } from "./item-state";
+import { TIP_HOVER_MS } from "./tooltip";
 
 afterEach(cleanup);
 
@@ -455,5 +457,61 @@ describe("Toolbar — icônes (design-l1, S3, S4)", () => {
     setV({ ...VIEW, tool: "fill" });
     const none = container.querySelector("button[data-fill-none]")!;
     expect([none.hasAttribute("title"), none.getAttribute("aria-label")]).toEqual([false, "Aucune"]);
+  });
+});
+
+describe("Toolbar — barre d'annotation (design-l4)", () => {
+  const act = (id: string, a = id): ToolItem => ({ id, kind: "action", action: a, label: ACTION_TABLE[a]?.label ?? a, requires: [], rest: {} });
+  const iconOf = (root: ParentNode, sel: string): string | null => root.querySelector(`${sel} svg.rb-icon`)?.getAttribute("data-icon") ?? null;
+  it("design-l4 (L4-8) : annotation-pointer rendu par la commande segmentée (table ACTION_RENDER), data-item sur le segment inactif", () => {
+    const { container } = setup(mkBar([act("annotation-pointer")]), NO_CAPS, "m", undefined, "desktop-annotation");
+    expect(container.querySelectorAll(".rb-seg > button[data-segment]")).toHaveLength(2);
+    expect(container.querySelectorAll('[data-item="annotation-pointer"]')).toHaveLength(1);
+    expect(container.querySelector('[data-item="annotation-pointer"]')!.getAttribute("data-segment")).toBe("mouse");
+  });
+  it("design-l4 (L4-8, G9) : branché par l'action, jamais par l'identifiant : une action annotation-pointer d'id quelconque est segmentée", () => {
+    const { container } = setup(mkBar([act("mon-pointeur", "annotation-pointer")]));
+    const el = container.querySelector('[data-item="mon-pointeur"]')!;
+    expect([el.getAttribute("data-segment"), el.closest(".rb-seg") !== null]).toEqual(["mouse", true]);
+    const src = readFileSync(join(__dirname, "Toolbar.tsx"), "utf8");
+    expect(src).not.toMatch(/item\.(id|action)\s*[!=]==?\s*["'`]annotation-pointer/);
+  });
+  it("design-l4 (L4-10) : « Envoyer au tableau » et « … nouvel onglet » en boutons pleins voisins (board, plus) ; Annuler non", () => {
+    const { container } = setup(mkBar([act("undo"), act("annotation-send"), act("annotation-send-new")]), NO_CAPS, "m", undefined, "desktop-annotation");
+    const send = container.querySelector('button[data-item="annotation-send"]')!;
+    const sendNew = container.querySelector('button[data-item="annotation-send-new"]')!;
+    expect([send.classList.contains("rb-primary"), send.classList.contains("rb-ib"), sendNew.classList.contains("rb-primary")]).toEqual([true, true, true]);
+    expect(send.nextElementSibling).toBe(sendNew);
+    expect([iconOf(container, '[data-item="annotation-send"]'), iconOf(container, '[data-item="annotation-send-new"]')]).toEqual(["board", "plus"]);
+    expect(container.querySelector('button[data-item="undo"]')!.classList.contains("rb-primary")).toBe(false);
+  });
+  it("design-l4 (L4-11) : zone de dépôt à icône drop, libellé en rb-sr, sans title ; infobulle au survol", () => {
+    vi.useFakeTimers();
+    try {
+      const zone: ToolItem = { id: "depot-annotation", kind: "dropzone", label: "Déposer ici", requires: [], rest: {} };
+      const { container } = setup(mkBar([zone]));
+      const el = container.querySelector<HTMLElement>('[data-item="depot-annotation"]')!;
+      expect(el.classList.contains("rb-drop")).toBe(true);
+      expect(el.querySelector("svg.rb-icon")?.getAttribute("data-icon")).toBe("drop");
+      expect(el.querySelector(".rb-sr")?.textContent).toBe("Déposer ici");
+      expect(el.textContent).toBe("Déposer ici");
+      expect(el.hasAttribute("title")).toBe(false);
+      fireEvent.pointerEnter(el, { pointerType: "mouse" });
+      vi.advanceTimersByTime(TIP_HOVER_MS);
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Déposer ici");
+      fireEvent.pointerLeave(el, { pointerType: "mouse" });
+      expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("design-l4 (L4-4) : rangées contextuelles sur une barre de rôle annotation comme sur tools ; aucune sur un autre rôle", () => {
+    const ann = setup({ ...mkBar([tool("pen")]), role: "annotation" }, NO_CAPS, "m", PEN);
+    expect(ann.container.querySelectorAll("button[data-preset]")).toHaveLength(3);
+    ann.setV({ ...VIEW, tool: "select" });
+    expect(ann.container.querySelectorAll("[data-selection-action]")).toHaveLength(6);
+    cleanup();
+    const other = setup({ ...mkBar([tool("pen")]), role: "autre" }, NO_CAPS, "m", PEN);
+    expect(other.container.querySelectorAll("button[data-preset]")).toHaveLength(0);
   });
 });

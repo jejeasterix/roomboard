@@ -9,6 +9,7 @@ import type { Matrix } from "../core/api";
 import type { FormatAction } from "../engine/rich-edit";
 import type { Dock, Profile, StartMode } from "../toolbar";
 import type { ToolbarView } from "../ui/item-state";
+import type { ToastMessage } from "../ui/toast";
 import type { DroppedFile, Point } from "./files";
 
 export const ANNOTATE_LABEL = "annotate";
@@ -44,8 +45,15 @@ export const addedToPageMessage = (n: number): string => `ajouté à la page ${n
 
 /** C11b (P11) : ni capture ni élément. */
 export const NOTHING_TO_SEND_MESSAGE = "rien à envoyer";
+/** C11b (P12), design-l4 (L4-16) : une seule source du texte de l'avis d'envoi, en boîte et en bandeau. */
+export const SENT_TO_BOARD = "envoyé au tableau";
 /** C11b (P12) : rang de la page insérée dans l'onglet cible. */
-export const sentToBoardMessage = (n: number): string => `envoyé au tableau : page ${n}`;
+export const sentToBoardMessage = (n: number): string => `${SENT_TO_BOARD} : page ${n}`;
+/** design-l4 (L4-16) : même texte dans le bandeau, majuscule en tête, « page N » en gras. */
+export const sentToBoardToast = (n: number): ToastMessage => ({
+  text: `${SENT_TO_BOARD.charAt(0).toUpperCase()}${SENT_TO_BOARD.slice(1)} :`,
+  strong: `page ${n}`,
+});
 /** C11b (P10, P27) : rejets de `annotation_capture`. */
 export type CaptureFailure = "denied" | "wayland" | "failed";
 export const CAPTURE_REASONS: Readonly<Record<CaptureFailure, string>> = Object.freeze({
@@ -121,7 +129,12 @@ export interface DocumentPayload {
   readonly base64: string;
   /** C11b (P15) : fenêtre opaque (bureau figé) ; absent : faux (charge C11a). */
   readonly opaque?: boolean;
+  /** design-l4 (L4-13) : cadre violet de l'annotation ; absent : vrai (charge d'avant L4). */
+  readonly frame?: boolean;
 }
+/** design-l4 (L4-13) : champ `frame` d'une charge, écrit seulement s'il est donné (patron `opaque`) ; même code pour la
+ *  coque et le faux hôte. */
+export const frameField = (o: { readonly frame?: boolean }): { readonly frame?: boolean } => (o.frame === undefined ? {} : { frame: o.frame });
 export interface CollectPayload {
   readonly id: number;
 }
@@ -157,10 +170,11 @@ export interface Returned {
 export interface AnnotationWindows {
   support(): Promise<AnnotationSupport>;
   /** Crée ou montre `annotate`, place les deux fenêtres, attend `ready`, envoie le profil puis le document ; rend l'écran retenu.
-   *  C11b (P15) : `opaque` vrai : bureau figé (absent : transparent). */
-  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean }): Promise<number>;
+   *  C11b (P15) : `opaque` vrai : bureau figé (absent : transparent). design-l4 (L4-13) : `frame` faux : cadre masqué ;
+   *  absent : affiché. */
+  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean; readonly frame?: boolean }): Promise<number>;
   /** C11b (P14, P28) : renvoie le document seul (bascule figé / vivant), sans replacer les fenêtres. */
-  load(o: { readonly document: Uint8Array; readonly opaque: boolean }): Promise<void>;
+  load(o: { readonly document: Uint8Array; readonly opaque: boolean; readonly frame?: boolean }): Promise<void>;
   /** C11b (P22, P27) : capture de l'écran de l'annotation sans nos fenêtres ; refus en raison connue, jamais de rejet. */
   capture(o: AnnotationPlace): Promise<CaptureOutcome>;
   /** Replace les deux fenêtres (écran suivant) sans renvoyer le document ; rend l'écran retenu. */
@@ -202,6 +216,8 @@ export interface AnnotationControl {
   close(): Promise<boolean>;
   /** Bascule dessin / souris (P8). */
   toggle(): Promise<void>;
+  /** design-l4 (L4-9) : segment de la commande Dessin / Souris : en file, sans effet si `mode` est déjà le mode présent. */
+  pointer(mode: PointerMode): Promise<void>;
   nextScreen(): Promise<void>;
   /** C11b (P16, P18) : « Figer le bureau » / « Bureau vivant » / « Recapturer le bureau ». */
   freeze(): Promise<void>;

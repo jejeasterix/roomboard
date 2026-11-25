@@ -1,4 +1,5 @@
-import { createSignal, For, onCleanup, type Accessor, type JSX } from "solid-js";
+import { createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import type { DeviceSettings } from "../device-settings";
 import type { RendererDiagnostics } from "../engine/render/select";
 import {
   cycleSetting,
@@ -13,6 +14,9 @@ import {
 
 export const RELOAD_DIRTY_MESSAGE = "Recharger : les onglets non enregistrés seront perdus. Continuer ?";
 
+/** design-l4 (L4-14) : libellés du bouton du cadre de l'annotation. */
+export const FRAME_LABELS = Object.freeze({ on: "Cadre de l'annotation : affiché", off: "Cadre de l'annotation : masqué" });
+
 export interface SettingsPanelProps {
   readonly store: SettingsStore;
   readonly effective: Accessor<EffectiveEchelons>;
@@ -22,6 +26,9 @@ export interface SettingsPanelProps {
   navigate(search: string): void;
   anyDirty(): boolean;
   confirm(message: string): Promise<boolean>;
+  /** design-l4 (L4-14) : réglages de l'appareil ; donnés seulement avec la capacité d'annotation (H10) ; absents : aucun
+   *  bouton du cadre. */
+  readonly device?: DeviceSettings;
 }
 
 const WEBGL_WORDS = { on: "actif", off: "coupé", repli: "repli Canvas 2D" } as const;
@@ -29,6 +36,9 @@ const WEBGL_WORDS = { on: "actif", off: "coupé", repli: "repli Canvas 2D" } as 
 export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
   const [settings, setSettings] = createSignal(props.store.get());
   onCleanup(props.store.onChange(setSettings));
+  const device = props.device;
+  const [frame, setFrameShown] = createSignal(device?.frame() ?? true);
+  if (device !== undefined) onCleanup(device.onChange(() => setFrameShown(device.frame())));
 
   const click = async (key: SettingKey): Promise<void> => {
     const next = cycleSetting(props.store.get(), key);
@@ -62,6 +72,13 @@ export function SettingsPanel(props: SettingsPanelProps): JSX.Element {
           </button>
         )}
       </For>
+      <Show when={device}>
+        {(dev) => (
+          <button type="button" data-reglage="cadre" onClick={() => void dev().setFrame(!dev().frame())}>
+            {frame() ? FRAME_LABELS.on : FRAME_LABELS.off}
+          </button>
+        )}
+      </Show>
       <span id="echelons-notes">{props.notes.join(" · ")}</span>
       <p id="webgl-diagnostic">{diagnostic()}</p>
     </div>

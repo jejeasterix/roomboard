@@ -100,4 +100,17 @@ describe("faux hôte (C11b, P28, P30)", () => {
     expect(back).not.toBeNull();
     expect(back!.view).toBeUndefined();
   });
+  it("design-l4 (L4-13) : cadre de la charge publié (annotationCadre, absent : 1) ; bande publiée à l'entrée et au placement", async () => {
+    const ds: Record<string, string | undefined> = {};
+    const f = createFakeAnnotationWindows({ dataset: ds });
+    expect(f.frame()).toBeNull();
+    await f.enter({ ...place, document: new Uint8Array([1]), profile: BUILTIN_PROFILES[0]! });
+    expect([ds["annotationCadre"], f.frame(), ds["annotationBande"]]).toEqual(["1", true, "top:48"]);
+    await f.enter({ ...place, document: new Uint8Array([1]), profile: BUILTIN_PROFILES[0]!, frame: false });
+    expect([ds["annotationCadre"], f.frame()]).toEqual(["0", false]);
+    await f.load({ document: new Uint8Array([2]), opaque: true, frame: true });
+    expect([ds["annotationCadre"], f.frame()]).toEqual(["1", true]);
+    await f.place({ screen: null, dock: "left", thickness: 72 });
+    expect(ds["annotationBande"]).toBe("left:72");
+  });
 });

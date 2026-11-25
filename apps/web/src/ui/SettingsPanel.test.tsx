@@ -4,7 +4,8 @@ import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSettingsStore, DEFAULT_SETTINGS, SETTING_KEYS, type EffectiveEchelons } from "../engine/settings";
 import type { RendererDiagnostics } from "../engine/render/select";
-import { RELOAD_DIRTY_MESSAGE, SettingsPanel } from "./SettingsPanel";
+import { createDeviceSettings, type DeviceSettings } from "../device-settings";
+import { FRAME_LABELS, RELOAD_DIRTY_MESSAGE, SettingsPanel } from "./SettingsPanel";
 
 afterEach(cleanup);
 
@@ -12,7 +13,7 @@ const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 const EFF: EffectiveEchelons = { prediction: false, inkTrail: "off", webgl: "off" };
 const DIAG: RendererDiagnostics = { webgl: "on", lost: false, badColors: [] };
 
-function setup(over: { dirty?: boolean; answer?: boolean; diag?: RendererDiagnostics; notes?: string[] } = {}) {
+function setup(over: { dirty?: boolean; answer?: boolean; diag?: RendererDiagnostics; notes?: string[]; device?: DeviceSettings } = {}) {
   const store = createSettingsStore(DEFAULT_SETTINGS);
   const navigate = vi.fn();
   const confirm = vi.fn(async (_m: string) => over.answer ?? true);
@@ -27,6 +28,7 @@ function setup(over: { dirty?: boolean; answer?: boolean; diag?: RendererDiagnos
       navigate={navigate}
       anyDirty={() => over.dirty ?? false}
       confirm={confirm}
+      {...(over.device ? { device: over.device } : {})}
     />
   ));
   const btn = (k: string) => r.container.querySelector<HTMLButtonElement>(`button[data-reglage=${k}]`)!;
@@ -122,5 +124,30 @@ describe("SettingsPanel (T92)", () => {
   it("badColors affichées", () => {
     const { r } = setup({ diag: { webgl: "on", lost: false, badColors: ["#zzz", "rouge"] } });
     expect(r.container.querySelector("#webgl-diagnostic")?.textContent).toContain("couleurs refusées : #zzz, rouge");
+  });
+});
+
+describe("SettingsPanel : cadre de l'annotation (design-l4, L4-14, H10)", () => {
+  it("cadre de l'annotation : sans device, aucun bouton data-reglage=cadre", () => {
+    const { r } = setup();
+    expect(r.container.querySelector('button[data-reglage="cadre"]')).toBeNull();
+  });
+  it("cadre de l'annotation : « affiché » ; un clic → « masqué » et setFrame(false) ; un autre → « affiché »", () => {
+    const device = createDeviceSettings(null);
+    const { btn } = setup({ device });
+    expect(btn("cadre").textContent).toBe(FRAME_LABELS.on);
+    expect(FRAME_LABELS).toEqual({ on: "Cadre de l'annotation : affiché", off: "Cadre de l'annotation : masqué" });
+    fireEvent.click(btn("cadre"));
+    expect(device.frame()).toBe(false);
+    expect(btn("cadre").textContent).toBe(FRAME_LABELS.off);
+    fireEvent.click(btn("cadre"));
+    expect(device.frame()).toBe(true);
+    expect(btn("cadre").textContent).toBe(FRAME_LABELS.on);
+  });
+  it("cadre de l'annotation : un changement venu d'ailleurs (onChange) est suivi", () => {
+    const device = createDeviceSettings(null);
+    const { btn } = setup({ device });
+    device.setFrame(false);
+    expect(btn("cadre").textContent).toBe(FRAME_LABELS.off);
   });
 });

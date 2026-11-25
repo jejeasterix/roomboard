@@ -14,16 +14,30 @@ function symbol(name: string): IconNode {
     Object.fromEntries([...attrs!.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, k, v]) => [k!, v!])),
   ]);
 }
+const MAQUETTE_02 = readFileSync(join(__dirname, "..", "..", "..", "..", "docs", "design", "maquettes", "02-annotation-bureau.html"), "utf8");
+/** Symbole `i-<nom>` de la maquette 02 (design-l4), lu comme `IconNode`. */
+function symbol02(name: string): IconNode {
+  const m = MAQUETTE_02.match(new RegExp(`<symbol id="i-${name}" viewBox="-0\\.25 -0\\.25 24 24">([\\s\\S]*?)</symbol>`));
+  if (!m) throw new Error(`symbole absent : i-${name}`);
+  return [...m[1]!.matchAll(/<(path|rect|circle|line|polyline|ellipse)\s([^>]*?)\s*\/>/g)].map(([, tag, attrs]) => [
+    tag as IconNode[number][0],
+    Object.fromEntries([...attrs!.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, k, v]) => [k!, v!])),
+  ]);
+}
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "eraser-part", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
 const TAGS = ["path", "rect", "circle", "line", "polyline", "ellipse"];
 const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", tool: t, label: t, ...(icon !== undefined ? { icon } : {}), requires: [], rest: {} });
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 46 icônes, exactement celles qu'attribuent les tables et les états", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset"]);
+  it("ICONS : 48 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt et le bandeau", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop"]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(46);
+    expect(Object.keys(ICONS)).toHaveLength(48);
+  });
+  it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
+    expect(ICONS["check"]).toEqual(symbol02("check"));
+    expect(ICONS["drop"]).toEqual(symbol02("drop"));
   });
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");

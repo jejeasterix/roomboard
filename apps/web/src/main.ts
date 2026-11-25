@@ -10,7 +10,7 @@ import { startAnnotateWindow } from "./annotate-start";
 import { createFakeAnnotationWindows, type FakeAnnotationOptions } from "./platform/annotation-fake";
 import type { AnnotationControl, AnnotationSupport, AnnotationWindows, CapturedImage, CaptureOutcome } from "./platform/annotation-port";
 import { createTauriAnnotationWindows } from "./platform/annotation-tauri";
-import { ANNOTATION_REMOTE_ACTIONS, resolveStartMode, type Dock } from "./toolbar";
+import { ANNOTATION_REMOTE_ACTIONS, annotationBarOf, resolveStartMode, type Dock } from "./toolbar";
 import { createContainerIO } from "./app/container-io";
 import { createAssetStore } from "./core/asset-store";
 import { createBoardSession, type SessionShared } from "./app/board-session";
@@ -50,6 +50,9 @@ import { detectPlatform, runtimeCapabilities } from "./runtime-capabilities";
 import { BUILTIN_PROFILES } from "./toolbar-profiles";
 import { createActiveProfile } from "./ui/active-profile";
 import { mountApp, showStartError } from "./ui/App";
+import { createDeviceSettings } from "./device-settings";
+import { showToast } from "./ui/toast";
+import { sentToBoardToast } from "./platform/annotation-port";
 import init, * as wasm from "./wasm/roomboard_wasm";
 import { withConversionMark, type OriginalChange } from "./platform/office-import";
 
@@ -248,6 +251,8 @@ async function start(): Promise<void> {
     ...(fakeAnnotation ? { forceAnnotation: true } : {}),
   };
   const settingsKv = browserKeyValue(window);
+  // design-l4 (L4-14) : réglages de l'appareil, sur le même stockage que les profils (`roomboard.<zone>.<réglage>`).
+  const device = createDeviceSettings(settingsKv);
   const store = createProfileStore(settingsKv, BUILTIN_PROFILES);
   // Avertissements de l'amorce (profil stocké écarté, stockage illisible) : rien d'autre ne les lit.
   for (const w of store.warnings()) console.warn(w);
@@ -446,11 +451,12 @@ async function start(): Promise<void> {
     });
   });
 
-  // C11a : côté et épaisseur de la première barre `tools`, mesurés dans la page (px CSS).
+  // C11a, design-l4 (L4-2) : côté et épaisseur de la barre montrée en annotation (`annotationBarOf`, la même que le rendu
+  // d'`App.tsx`), mesurés dans la page (px CSS) ; sans elle, `querySelector` rendait null et la bande prenait 64 px.
   const measureBar = (): { readonly dock: Dock; readonly thickness: number } => {
-    const bar = active.profile().toolbars.find((b) => b.role === "tools");
-    const dock: Dock = bar === undefined || bar.dock === "floating" ? "top" : bar.dock;
-    const el = bar === undefined ? null : document.querySelector(`[data-toolbar="${CSS.escape(bar.id)}"]`);
+    const bar = annotationBarOf(active.profile());
+    const dock: Dock = bar === null ? "top" : bar.dock;
+    const el = bar === null ? null : document.querySelector(`[data-toolbar="${CSS.escape(bar.id)}"]`);
     const r = el?.getBoundingClientRect();
     const thickness = r === undefined ? 64 : Math.ceil(dock === "top" || dock === "bottom" ? r.height : r.width);
     return { dock, thickness };
@@ -478,6 +484,9 @@ async function start(): Promise<void> {
           startMode: () => resolveStartMode(active.profile(), active.capabilities()).mode,
           originKind: (id) => (id === null ? null : (workspace.tabs.list().find((t) => t.id === id)?.kind ?? null)),
           transparent: support?.transparent ?? true,
+          // design-l4 (L4-13, L4-16) : cadre de l'appareil envoyé à `annotate` ; avis d'envoi en bandeau, plus une boîte.
+          frame: () => device.frame(),
+          sent: (page) => showToast(sentToBoardToast(page)),
         });
   annotation = ctl;
   if (windows !== null && support !== null) {
@@ -497,6 +506,7 @@ async function start(): Promise<void> {
     profileFiles,
     stages,
     library: { library, shared: sharedFolder, packs: packFiles },
+    device,
     ...(ctl === null || windows === null
       ? {}
       : { annotation: { control: ctl, remote: (local) => createRemoteToolbarHost((m) => ctl.command(m), local, ANNOTATION_REMOTE_ACTIONS), onView: (cb) => windows.onView(cb) } }),

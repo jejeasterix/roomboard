@@ -46,16 +46,49 @@ const pagesBar = (withEditOriginal = false) => ({
 
 /** C11a (P6, P19) : éléments qui exigent la capacité (masqués sur le web, l'iPad et Android). */
 const needs = <T extends object>(item: T) => ({ ...item, requires: ["desktopAnnotation"] });
-const annotationItems = () => [
-  needs(action("desktop-annotation", "Annotation du bureau")),
-  needs(action("annotation-pointer", "Souris")),
-  needs(action("annotation-screen", "Écran suivant")),
-  // C11b (P29) : figer le bureau, envoyer au tableau, envoyer dans un nouvel onglet.
-  needs(action("annotation-freeze", "Figer le bureau")),
-  needs(action("annotation-send", "Envoyer au tableau")),
-  needs(action("annotation-send-new", "Envoyer dans un nouvel onglet")),
-];
+/** C11a (P6) : entrée « Annotation du bureau », gardée dans la barre d'outils (design-l4, L4-5). */
+const annotationEntry = () => needs(action("desktop-annotation", "Annotation du bureau"));
 const annotationZone = () => needs({ id: "depot-annotation", kind: "dropzone", label: "Déposer ici" });
+/** design-l4 (L4-5) : outil ou action présent aussi dans la barre d'outils : préfixe `ann-` (un id est unique dans tout
+ *  le profil, `toolbar.ts:322`). */
+const annTool = (t: string, label: string) => ({ id: `ann-${t}`, kind: "tool", tool: t, label });
+const annAction = (a: string, label: string) => ({ id: `ann-${a}`, kind: "action", action: a, label });
+const pointer = () => needs(action("annotation-pointer", "Souris"));
+// C11b (P29) : figer le bureau, envoyer au tableau, envoyer dans un nouvel onglet.
+const freeze = () => needs(action("annotation-freeze", "Figer le bureau"));
+const screen = () => needs(action("annotation-screen", "Écran suivant"));
+const send = () => needs(action("annotation-send", "Envoyer au tableau"));
+const sendNew = () => needs(action("annotation-send-new", "Envoyer dans un nouvel onglet"));
+const leave = () => needs(annAction("desktop-annotation", "Annotation du bureau"));
+
+/** design-l4 (L4-6, Q9) : barre d'annotation de `defaut` et `annotation`, en haut, dernière de `toolbars` (L4-1). */
+const defaultAnnotationBar = () => ({
+  id: "annotation",
+  role: "annotation",
+  dock: "top",
+  groups: [
+    { id: "mode", items: [pointer()] },
+    { id: "dessin", items: [sep("ann-sep-1"), annTool("pen", "Stylo"), annTool("eraser", "Gomme"), annAction("eraser-mode", "Gomme : partielle"), annTool("arrow", "Flèche"), annTool("rect", "Rectangle"), annTool("text", "Texte")] },
+    { id: "bureau", items: [sep("ann-sep-2"), annAction("undo", "Annuler"), freeze(), screen()] },
+    { id: "envoi", items: [sep("ann-sep-3"), annotationZone(), send(), sendNew()] },
+    { id: "sortie", items: [sep("ann-sep-4"), leave()] },
+  ],
+});
+
+/** design-l4 (L4-7) : barre d'annotation de `simple`, à gauche comme sa barre d'outils, sans zone. */
+const simpleAnnotationBar = () => ({
+  id: "annotation",
+  role: "annotation",
+  dock: "left",
+  groups: [
+    { id: "mode", items: [pointer()] },
+    { id: "dessin", items: [sep("ann-sep-1"), annTool("pen", "Stylo"), annTool("eraser", "Gomme")] },
+    { id: "historique", items: [sep("ann-sep-2"), annAction("undo", "Annuler")] },
+    { id: "bureau", items: [sep("ann-sep-3"), freeze(), screen()] },
+    { id: "envoi", items: [sep("ann-sep-4"), send(), sendNew()] },
+    { id: "sortie", items: [sep("ann-sep-5"), leave()] },
+  ],
+});
 
 const presets = () => ({
   pen: [
@@ -76,10 +109,11 @@ const defaultToolbars = () => [
       { id: "edition", items: [sep("sep-1"), tool("select", "Sélection"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
       { id: "historique", items: [sep("sep-2"), action("undo", "Annuler"), action("redo", "Rétablir")] },
       { id: "fichier", items: [sep("sep-3"), action("file-new", "Nouveau"), action("file-open", "Ouvrir"), action("file-import", "Importer"), action("file-save", "Enregistrer"), action("file-save-as", "Enregistrer sous")] },
-      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("library", "Bibliothèque"), action("profiles", "Profil"), action("settings", "Réglages"), ...annotationItems(), annotationZone()] },
+      { id: "vue", items: [sep("sep-4"), action("fit-page", "Ajuster la page"), action("grid", "Grille"), action("library", "Bibliothèque"), action("profiles", "Profil"), action("settings", "Réglages"), annotationEntry()] },
     ],
   },
   pagesBar(true),
+  defaultAnnotationBar(),
 ];
 
 export const DEFAULT_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze({
@@ -107,10 +141,11 @@ export const SIMPLE_PROFILE_JSON: Readonly<Record<string, unknown>> = deepFreeze
       groups: [
         { id: "dessin", items: [tool("pen", "Stylo"), tool("eraser", "Gomme"), tool("hand", "Main")] },
         { id: "historique", items: [sep("sep-1"), action("undo", "Annuler"), action("redo", "Rétablir")] },
-        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), ...annotationItems()] },
+        { id: "vue", items: [sep("sep-2"), action("fit-page", "Ajuster la page"), action("profiles", "Profil"), action("settings", "Réglages"), annotationEntry()] },
       ],
     },
     pagesBar(),
+    simpleAnnotationBar(),
   ],
   presets: presets(),
   behavior: { startMode: "board" },
