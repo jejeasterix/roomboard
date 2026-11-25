@@ -32,6 +32,8 @@ export interface ProfileActions {
   saveAsNew(draft: Profile, label: string): Profile | null;
   importFile(): Promise<ImportOutcome>;
   exportActive(): Promise<boolean>;
+  /** design-l3 (L3-21) : écrit le profil donné (le brouillon du panneau), sans rien enregistrer. */
+  exportProfile(p: Profile): Promise<boolean>;
   /** Faux pour un profil livré sans copie (rien à remettre à zéro). */
   canResetCurrent(): boolean;
   /** Copie d'un livré : retirée ; profil de l'utilisateur : ramené à son origine, id et nom gardés (P6). */
@@ -63,6 +65,18 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
     }
   };
   const notKept = (what: string): void => void d.shell.notify(`${what} ne sera pas gardé au prochain démarrage : le stockage est refusé.`);
+  const exportProfile = async (p: Profile): Promise<boolean> => {
+    let name = "";
+    try {
+      const f = profileToFile(p);
+      name = f.name;
+      return await d.files.save(f.name, f.text);
+    } catch (e) {
+      await d.shell.notify(`Profil non exporté${name === "" ? "" : ` (${name})`} : ${messageOf(e)}`);
+      return false;
+    }
+  };
+
   return {
     choose(id) {
       const kept = d.active.choose(id);
@@ -103,17 +117,8 @@ export function createProfileActions(d: ProfileActionsDeps): ProfileActions {
       }
       return "imported";
     },
-    async exportActive() {
-      let name = "";
-      try {
-        const f = profileToFile(d.active.profile());
-        name = f.name;
-        return await d.files.save(f.name, f.text);
-      } catch (e) {
-        await d.shell.notify(`Profil non exporté${name === "" ? "" : ` (${name})`} : ${messageOf(e)}`);
-        return false;
-      }
-    },
+    exportProfile,
+    exportActive: () => exportProfile(d.active.profile()),
     canResetCurrent() {
       const p = d.active.profile();
       return d.store.isBuiltin(p.id) ? d.store.hasOverride(p.id) : true;
