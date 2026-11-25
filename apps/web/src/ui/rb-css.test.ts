@@ -244,6 +244,11 @@ describe("rb.css (design-l2)", () => {
     expect(rule('.rb-island .rb-bar[data-collapsed="1"]')).toContain("display: none;");
     expect(rule(".rb-island-chrome[data-island-grip]")).toContain("touch-action: none;");
   });
+  it("design-l2 T12 : îlot des pages sans vide à droite ; compteur en bleu nuit, marges réduites", () => {
+    expect(rule(".rb-island .rb-pages-list")).toMatch(/min-width: 0;.*flex: 0 1 auto;/);
+    expect(rule(".rb-pages-count")).toMatch(/color: var\(--rf-navy-500\);/);
+    expect(rule(".rb-pages-count")).not.toMatch(/margin-inline: var\(--rb-gap\)/);
+  });
   it("design-l2 L2-13 : îlot contextuel vide caché ; séparateur de tête masqué", () => {
     expect(rule(".rb-context:empty")).toContain("display: none;");
     expect(rule(".rb-context > .rb-sep:first-child")).toContain("display: none;");
@@ -258,7 +263,8 @@ describe("rb.css (design-l2)", () => {
   });
   it("design-l2 L2-6 : lignes du menu = lignes du menu Profil ; liste en îlot de 320 px sous le bouton ; fermée : cachée", () => {
     expect(rule(":is([data-profiles], [data-menu-list]) button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
-    expect(rule("[data-menu-list]")).toMatch(/position: absolute;.*inline-size: 320px;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule("[data-menu-list]")).toMatch(/position: fixed;.*inline-size: max-content;.*min-inline-size: 320px;.*max-inline-size: calc\(100vw - 16px\);.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule("[data-menu-list] button")).toContain("white-space: nowrap;");
     expect(rule("[data-menu-list][hidden]")).toContain("display: none;");
     expect(rule('.rb-bar button[data-menu-toggle][aria-expanded="true"]')).toMatch(/background: var\(--rf-violet-100\);.*color: var\(--rf-violet-700\);/);
   });

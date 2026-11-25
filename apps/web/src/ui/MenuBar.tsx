@@ -4,7 +4,8 @@ import type { ButtonSize, Toolbar as Bar, ToolItem } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import { iconFor } from "./icons";
 import { itemState, type ToolbarView } from "./item-state";
-import { createTip } from "./tooltip";
+import { ENGINE_KEYS } from "../app/table-picker";
+import { TIP_GAP, createTip } from "./tooltip";
 
 /**
  * Rôle `menu` (design-l2, L2-6, D-DS1) : un bouton Menu ; la liste s'ouvre sous lui, lignes icône + libellé,
@@ -14,8 +15,6 @@ import { createTip } from "./tooltip";
  */
 export const MENU_LABEL = "Menu";
 
-/** Touches que le moteur prend sans Ctrl ni Méta (même liste que `app/table-picker.ts`) : gardées par le menu. */
-const ENGINE_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete", "Escape", " "]);
 /** Rang de la ligne suivante par touche (table, jamais un branchement sur la touche). */
 const STEP: Readonly<Record<string, (i: number, n: number) => number>> = {
   ArrowDown: (i, n) => (i + 1) % n,
@@ -23,6 +22,18 @@ const STEP: Readonly<Record<string, (i: number, n: number) => number>> = {
   Home: () => 0,
   End: (_i, n) => n - 1,
 };
+
+/** Place la liste en position fixe : sous le bouton (au-dessus s'il manque la place), entiers, bornée à la fenêtre. */
+export function placeMenu(
+  anchor: { left: number; right: number; top: number; bottom: number },
+  list: { width: number; height: number },
+  view: { width: number; height: number },
+): { left: number; top: number } {
+  const below = anchor.bottom + TIP_GAP;
+  const top = below + list.height <= view.height ? below : anchor.top - TIP_GAP - list.height;
+  const left = Math.min(Math.max(0, anchor.left), Math.max(0, view.width - list.width));
+  return { left: Math.round(left), top: Math.round(Math.max(0, top)) };
+}
 
 export interface MenuBarProps {
   readonly bar: Bar;
@@ -57,9 +68,19 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
     setOpen(false);
     if (refocus) toggle?.focus();
   };
+  const place = (): void => {
+    if (list === undefined || toggle === undefined) return;
+    const r = list.getBoundingClientRect();
+    const at = placeMenu(toggle.getBoundingClientRect(), { width: r.width, height: r.height }, { width: window.innerWidth, height: window.innerHeight });
+    list.style.left = `${at.left}px`;
+    list.style.top = `${at.top}px`;
+  };
   const show = (): void => {
     setOpen(true);
-    queueMicrotask(() => rows()[0]?.focus());
+    queueMicrotask(() => {
+      place();
+      rows()[0]?.focus();
+    });
   };
   // Fermé par un appui hors de lui ; écoute posée à l'ouverture, retirée à la fermeture et au démontage.
   const outside = (e: PointerEvent): void => {
@@ -89,7 +110,7 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
     all[STEP[e.key]!(Math.max(i, 0), all.length)]?.focus();
   };
   const choose = (run: () => void) => (): void => {
-    close(false);
+    close(root?.contains(document.activeElement) === true);
     run();
   };
   /** Rendu par sorte d'élément (table) ; zone de dépôt : rien. */
@@ -113,6 +134,10 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
       data-size={props.size()}
       role="toolbar"
       aria-label={MENU_LABEL}
+      onFocusOut={(e) => {
+        const to = e.relatedTarget as Node | null;
+        if (open() && to !== null && root !== undefined && !root.contains(to)) close(false);
+      }}
     >
       <button
         ref={toggle}

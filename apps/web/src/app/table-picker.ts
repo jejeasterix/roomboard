@@ -38,7 +38,7 @@ export const pickerAria = (cols: number, rows: number): string =>
 export const clampLines = (v: number): number => (Number.isFinite(v) ? Math.min(TABLE_MAX_LINES, Math.max(1, Math.round(v))) : 1);
 
 /** Touches que le moteur prend sans Ctrl ni Méta (`editAction`, `isPanKey`, engine/input/keys.ts) : gardées par la grille. */
-const ENGINE_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete", "Escape", " "]);
+export const ENGINE_KEYS: ReadonlySet<string> = new Set(["Backspace", "Delete", "Escape", " "]);
 const ARROWS: Readonly<Record<string, readonly [number, number]>> = {
   ArrowRight: [1, 0],
   ArrowLeft: [-1, 0],

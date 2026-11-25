@@ -48,10 +48,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 60 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
+  it("ICONS : 61 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils et les îlots", () => {
     const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS)]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(60);
+    expect(Object.keys(ICONS)).toHaveLength(61);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -88,7 +88,8 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     }
   });
   it("les 35 icônes des maquettes sont recopiées à l'identique de 01-tableau.html", () => {
-    for (const name of FROM_MOCKUP) expect(ICONS[name], name).toEqual(symbol(name));
+    // T12 : eraser-part a une base redessinée (netteté à 100 %) ; son corps reste celui de la maquette.
+    for (const name of FROM_MOCKUP) expect(ICONS[name], name).toEqual(name === "eraser-part" ? [...symbol(name).slice(0, 2), ["path", { d: "M17 21h4" }]] : symbol(name));
   });
   it("row-remove et col-remove : les rectangles de between-*-start, coordonnées entières", () => {
     expect(ICONS["row-remove"]).toEqual([ICONS["between-horizontal-start"]![0], ["path", { d: "M2 12h4" }], ICONS["between-horizontal-start"]![2]]);
@@ -110,5 +111,13 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(iconFor(tool("laser"))).toBeNull();
     expect(iconFor(action("inconnue"))).toBeNull();
     expect(iconFor({ id: "z", kind: "dropzone", label: "Déposer", requires: [], rest: {} })).toBeNull();
+  });
+
+  it("design-l2 T12 : « Insérer des pages… » a sa propre icône (Lucide file-plus), distincte d'Importer ; notice à jour ; base de eraser-part en tirets d'au moins 2 unités", () => {
+    expect(ACTION_ICONS["page-insert-file"]).toBe("file-plus");
+    expect(ACTION_ICONS["page-insert-file"]).not.toBe(ACTION_ICONS["file-import"]);
+    expect(NOTICE).toContain("`file-plus`");
+    const dashes = ICONS["eraser-part"]!.map(([, a]) => a["d"]!).filter((d) => /^M\d+ 21h(\d+)$/.test(d));
+    for (const d of dashes) expect(Number(/h(\d+)$/.exec(d)![1])).toBeGreaterThanOrEqual(2);
   });
 });

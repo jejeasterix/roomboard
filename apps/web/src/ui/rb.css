@@ -134,7 +134,8 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* design-l2 (L2-6, maquette 01 .menu) : bouton Menu violet quand la liste est ouverte ; liste en îlot de 320 px sous lui,
    lignes de 48 px icône + libellé (règles partagées avec le menu Profil plus bas). */
 .rb-bar button[data-menu-toggle][aria-expanded="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
-[data-menu-list] { position: absolute; left: 0; top: calc(100% + 8px); z-index: 3; display: grid; gap: 4px; inline-size: 320px; box-sizing: border-box; padding: 8px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+[data-menu-list] { position: fixed; left: 0; top: 0; z-index: 30; display: grid; gap: 4px; inline-size: max-content; min-inline-size: 320px; max-inline-size: calc(100vw - 16px); max-block-size: calc(100vh - 16px); overflow-y: auto; box-sizing: border-box; padding: 8px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+[data-menu-list] button { white-space: nowrap; }
 [data-menu-list][hidden] { display: none; }
 /* design-l4 (L4-16) : bandeau « Envoyé au tableau », dans la case de la scène, en bas à droite ; ne prend aucun clic. */
 .rb-toasts { grid-area: stage; align-self: end; justify-self: end; margin: 24px; z-index: 4; pointer-events: none; }
@@ -170,9 +171,10 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-stage[hidden] { display: none; }
 /* Barre des pages (T101) : même allure que la barre d'outils ; compteur lisible, chiffres de largeur fixe. */
 .rb-bar button[aria-current="page"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
-.rb-pages-count { margin-inline: var(--rb-gap); padding: 0 var(--rb-pad); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rb-pages-count { margin-inline: 0; padding: 0 var(--rb-pad); color: var(--rf-navy-500); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
 .rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
+.rb-island .rb-pages-list { min-width: 0; flex: 0 1 auto; }
 .rb-bar[data-dock="left"] .rb-pages-list, .rb-bar[data-dock="right"] .rb-pages-list { min-width: 0; flex-direction: column; overflow-x: visible; overflow-y: auto; }
 /* Onglets (T101 ; design-l2 L2-17, maquette 01 .tab) : une rangée qui défile dans l'îlot des onglets ; onglets de
    48 px, montré en violet 100 / 700, point violet « modifié », Fermer 44 px, Nouvel onglet 48 px. */
