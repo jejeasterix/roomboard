@@ -634,11 +634,11 @@ describe("App — profils (C1)", () => {
   it("design-l4 T6 : S2 : barre d'annotation montrée en annotation ; au tableau, jamais de barre annotation (L4-2, L4-3)", async () => {
     const a = fakeAnnotationUi();
     const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
-    expect(barIds(container)).toEqual(["outils", "menu", "historique", "panneaux", "pages"]);
+    expect(barIds(container)).toEqual(["menu", "panneaux", "historique", "outils", "pages"]);
     await a.control.enter();
     expect(barIds(container)).toEqual(["annotation"]);
     await a.control.exit();
-    expect(barIds(container)).toEqual(["outils", "menu", "historique", "panneaux", "pages"]);
+    expect(barIds(container)).toEqual(["menu", "panneaux", "historique", "outils", "pages"]);
   });
   it("design-l4 T6 : S2 : première barre tools sinon : profil figé d'avant L4, sans barre annotation (L4-2, L4-22)", async () => {
     const a = fakeAnnotationUi();
@@ -658,7 +658,7 @@ describe("App — profils (C1)", () => {
     store.save({ ...setDock(BUILTIN_PROFILES[0]!, "annotation", "floating"), id: "flottante", label: "Flottante" });
     active.choose("flottante");
     expect(container.querySelector('[data-toolbar="annotation"]')).toBeNull();
-    expect(container.querySelector('.rb-floating [data-toolbar="annotation"]')).toBeNull();
+    expect(container.querySelector('.rb-islands [data-toolbar="annotation"]')).toBeNull();
     await a.control.enter();
     expect(container.querySelector('[data-toolbar="annotation"]')?.getAttribute("data-dock")).toBe("top");
   });

@@ -15,6 +15,8 @@ import { createTip, placeTip } from "./tooltip";
  * clavier (L2-8 à L2-10), sa position et son repli vont sur l'appareil (L2-7), jamais dans le profil.
  * `IslandLayer` rend le calque dans la case de la scène : coins en flex à 16 px (L2-5), îlots centrés placés par
  * `laneOf` (L2-30), îlot des onglets et `#etat` en haut à gauche, voie imposée par le panneau des profils (L2-16).
+ * L'habillage (fond, rayon, filet, ombre) est porté par la règle `.rb-island` de rb.css ; le style en ligne ne porte que
+ * la position et la largeur maximale.
  */
 export type IslandStore = Pick<DeviceSettings, "island" | "setIsland">;
 /** Rectangle placé d'un îlot, px de la case ; `moved` : position enregistrée ou glisser en cours. */
@@ -25,17 +27,6 @@ export const COLLAPSE_LABEL = "Replier la barre";
 export const EXPAND_LABEL = "Déplier la barre";
 /** L2-8, H4 : seul ce rôle se déplace et se replie. */
 export const MOVABLE_ROLE = "tools";
-
-/** Épaisseur du filet d'îlot, px CSS. */
-const HAIRLINE = 1;
-/** Habillage d'îlot (L2-15), jetons de rb.css seulement : fond blanc, rayon 12 (`--rf-radius-xl`), filet `--rf-gray-300`
- *  en anneau d'ombre (il ne change pas la boîte : la géométrie reste au px entier), ombre de survol ; même habillage
- *  que `.rb-toast` et `.rb-popover` (rb.css:111, :177). */
-const SKIN = {
-  "background-color": "var(--rf-white)",
-  "border-radius": "var(--rf-radius-xl)",
-  "box-shadow": `0 0 0 ${HAIRLINE}px var(--rf-gray-300), var(--rf-shadow-hover)`,
-} as const;
 
 const ZERO: Box = Object.freeze({ w: 0, h: 0 });
 const sameBox = (a: Box, b: Box): boolean => a.w === b.w && a.h === b.h;
@@ -264,7 +255,7 @@ export function Island(props: IslandProps): JSX.Element {
       data-anchor={props.anchor}
       data-wrap={pos()?.wrap === true ? "1" : undefined}
       data-collapsed={collapsed() ? "1" : undefined}
-      style={pos() === null ? SKIN : { ...SKIN, left: `${pos()!.x}px`, top: `${pos()!.y}px`, "max-inline-size": `${pos()!.maxWidth}px` }}
+      style={pos() === null ? undefined : { left: `${pos()!.x}px`, top: `${pos()!.y}px`, "max-inline-size": `${pos()!.maxWidth}px` }}
     >
       <Show when={props.movable}>
         <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => commit(null)} />
@@ -369,7 +360,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         <div ref={menu} class="rb-corner-menu">
           <For each={starts()}>{island}</For>
         </div>
-        <div class="rb-island rb-head" data-island="onglets" style={{ ...SKIN, "max-inline-size": `${tabsMax()}px` }}>
+        <div class="rb-island rb-head" data-island="onglets" style={{ "max-inline-size": `${tabsMax()}px` }}>
           {props.head}
         </div>
         {props.status}

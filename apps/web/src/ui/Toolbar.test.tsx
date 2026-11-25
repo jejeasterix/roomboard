@@ -200,7 +200,7 @@ describe("Toolbar — rangée des préréglages (C1, P18, S4)", () => {
     expect(presetIds(bar)).toEqual(["noir", "rouge", "bleu"]);
     expect(bar.querySelectorAll("button[data-item]").length).toBe(plain);
     expect(bar.querySelector("button[data-preset][data-item]")).toBeNull();
-    const kids = [...bar.children];
+    const kids = [...bar.querySelector(":scope > [data-island-context]")!.children];
     expect(kids.indexOf(bar.querySelector("[data-presets-sep]")!)).toBe(kids.length - 4);
     expect(bar.querySelector('[data-preset="rouge"]')!.hasAttribute("aria-pressed")).toBe(false);
     expect(bar.querySelector('[data-preset="rouge"]')!.textContent).toContain("Rouge");

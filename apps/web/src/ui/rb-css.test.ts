@@ -21,10 +21,10 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule(".rb-table-picker-grid")).toContain("repeat(8, var(--rb-cell))");
     expect(rule(".rb-table-picker-grid button")).toMatch(/inline-size: var\(--rb-cell\); block-size: var\(--rb-cell\);/);
   });
-  it("accents hors charte retirés ; #a1a1aa ne reste que sur la bande et les onglets (L2)", () => {
+  it("accents hors charte retirés ; plus aucun reste de la bande des onglets (L2-17)", () => {
     for (const c of ["#1e3a8a", "#94a3b8", "#bfdbfe"]) expect(CSS.toLowerCase(), c).not.toContain(c);
     const keep = (CSS.match(/[^{}]+\{[^}]*#a1a1aa[^}]*\}/gi) ?? []).map((r) => r.replace(/\/\*.*?\*\//g, "").split("{")[0]!.trim());
-    expect(keep).toEqual([".rb-tabs", ".rb-tab"]);
+    expect(keep).toEqual([]);
   });
   it("barre : fond blanc, padding 4px, aucune bordure (aucun pixel de hauteur ajouté)", () => {
     const bar = rule(".rb-bar");
@@ -46,7 +46,7 @@ describe("rb.css (design-l1, L1-6)", () => {
     expect(rule(".rb-bar button:disabled")).toContain("color: var(--rf-text-muted-aa);");
     expect(rule(".rb-bar button.rb-ib:disabled")).toContain("color: var(--rf-gray-500);");
     expect(rule(".rb-bar button:focus-visible")).toContain("outline: 2px solid var(--rf-violet-600);");
-    expect(rule('.rb-tab[aria-selected="true"]')).toContain("border-color: var(--rf-violet-600);");
+    expect(rule('.rb-tab[aria-selected="true"]')).toContain("background: var(--rf-violet-100); color: var(--rf-violet-700);");
   });
   it("bouton à icône carré de --rb-btn, icône de --rb-icon", () => {
     expect(rule(".rb-bar button.rb-ib")).toMatch(/inline-size: var\(--rb-btn\);.*block-size: var\(--rb-btn\);.*padding: 0;.*flex: none;/);
@@ -122,7 +122,7 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(drop).not.toContain("1.5px");
   });
   it("design-l3 L3-1 : panneau des profils calé à droite dans la scène, toute sa hauteur, 600 px au plus, filet et ombre modale", () => {
-    expect(rule('.rb-popover[data-panel="profils"]')).toMatch(/justify-self: end;.*align-self: stretch;.*inline-size: min\(600px, 100%\);.*overflow: hidden;.*border: 0;.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule('.rb-popover[data-panel="profils"]')).toMatch(/justify-self: end;.*align-self: stretch;.*inline-size: min\(var\(--rb-sheet-w\), 100%\);.*overflow: hidden;.*border: 0;.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
     expect(rule(".rb-sheet")).toMatch(/display: flex;.*flex-direction: column;.*block-size: 100%;/);
     expect(rule(".rb-sheet-head")).toContain("block-size: 80px;");
     expect(rule(".rb-sheet-foot")).toContain("block-size: 80px;");
@@ -202,14 +202,13 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(rule(".rb-sheet-row > .rb-sheet-ghost")).toContain("inline-size: 128px;"); // Importer, Exporter : largeur fixe, icônes sur la grille de pixels
     for (const sel of [".rb-sheet-ghost", ".rb-sheet-solid", ".rb-sheet-outline", ".rb-sheet-add"]) expect(rule(sel), sel).not.toMatch(/padding: 0 [^;]*\d+\.\d/);
   });
-  it("design-l3 L3-2 : panneau des profils ouvert : barre flottante en haut à gauche de la scène, dans la place libre, sur plusieurs rangées", () => {
-    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating')).toMatch(/justify-self: start;.*max-inline-size: calc\(100% - min\(600px, 100%\)\);/);
-    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar')).toContain("flex-wrap: wrap;");
-    expect(rule('.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar')).not.toMatch(/position/);
+  it("design-l3 L3-2, design-l2 L2-16 : panneau des profils ouvert : la barre d'outils passe sur plusieurs rangées dans la place libre", () => {
+    expect(rule('.rb-island[data-wrap="1"] > .rb-bar')).toContain("flex-wrap: wrap;");
+    expect(rule('.rb-island[data-wrap="1"] > .rb-bar')).not.toMatch(/position/);
   });
   it("design-l3 L3-22 : menu Profil en îlot (rayon xl, filet gris 300, ombre modale) ; lignes de 48 px icône + texte", () => {
     expect(rule('.rb-popover[data-panel="menu-profils"]')).toMatch(/border: 0;.*border-radius: var\(--rf-radius-xl\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
-    expect(rule("[data-profiles] button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
+    expect(rule(":is([data-profiles], [data-menu-list]) button")).toMatch(/display: flex;.*align-items: center;.*gap: 12px;.*min-height: var\(--rb-btn-m\);.*font-size: 16px;/);
     expect(rule('[data-profiles] button[aria-checked="true"]')).toMatch(/color: var\(--rf-violet-700\);.*font-weight: 600;/);
   });
 });

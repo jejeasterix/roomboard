@@ -1,11 +1,10 @@
 /**
- * Application SolidJS (lot 5b, T95) : onglets, barres du profil actif placées selon leur `dock`, scène dans la case
- * centrale, barre des pages, panneau des réglages, panneau de la grille (C9 éditeur), menu des profils, ligne d'état `#etat`. Remplace la barre DOM du
- * lot 3-4, dont les barres en `position: absolute` recouvraient le haut de la scène : ici la grille
- * (`layoutFor`) réserve la case de chaque barre et la scène (`main.rb-stages`, conteneur des sessions) n'occupe que la
- * sienne ; seule une barre `floating` et les menus passagers (réglages, profils) se superposent (CL5b-10).
+ * Application SolidJS (lot 5b, T95 ; design-l2) : barres du profil actif placées selon leur `dock` — une barre ancrée a
+ * sa case dans la grille (`layoutFor`), une barre `floating` est un îlot du calque `IslandLayer`, posé sur la case de la
+ * scène avec l'îlot des onglets et `#etat` (L2-5, L2-14) ; la scène (`main.rb-stages`) n'occupe que sa case. Panneaux
+ * passagers (réglages, grille, image, bibliothèque, profils) au-dessus des îlots.
  */
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { specOf, type BoardSession } from "../app/board-session";
 import type { ImageData } from "../core/api";
@@ -20,11 +19,13 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { leaveDraft, originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
-import { ANNOTATION_ROLE, annotationBarOf, resolveStartMode, visibleItems, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
+import { ANNOTATION_ROLE, MENU_ROLE, annotationBarOf, itemsForMode, resolveStartMode, visibleItems, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
+import { IslandLayer } from "./Island";
 import { layoutFor } from "./layout";
 import { MediaBar, type MediaControls } from "./MediaBar";
+import { MenuBar } from "./MenuBar";
 import { Model3dBar, type Model3dControls } from "./Model3dBar";
 import { NO_WEBGL_MESSAGE } from "../platform/model3d-import";
 import { MODEL3D_FAILED_MESSAGE } from "../platform/model-sessions";
@@ -391,10 +392,19 @@ export function App(props: AppProps): JSX.Element {
 
   /** C1 (P18), design-l4 (L4-4) : préréglages dans la barre montrée en annotation, dans la première barre `tools` au tableau. */
   const presetsBarId = createMemo(() => (annotating() ? annotationBar()?.id : firstToolsBar()?.id));
-  const toolbarOf = (bar: Bar): JSX.Element => (
-    <Toolbar bar={bar} caps={props.active.capabilities} view={view} size={size} host={host} presets={bar.id === presetsBarId() ? () => profile().presets : undefined} mode={mode} />
+  const toolbarOf = (bar: Bar, collapsed?: Accessor<boolean>): JSX.Element => (
+    <Toolbar
+      bar={bar}
+      caps={props.active.capabilities}
+      view={view}
+      size={size}
+      host={host}
+      presets={bar.id === presetsBarId() ? () => profile().presets : undefined}
+      mode={mode}
+      {...(collapsed !== undefined ? { collapsed } : {})}
+    />
   );
-  /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. */
+  /** Rendu d'une barre selon son rôle (table) ; tout autre rôle est une barre d'outils. design-l2 (L2-6) : `menu`. */
   const BY_ROLE: Readonly<Record<string, (bar: Bar) => JSX.Element>> = {
     pages: (bar) => (
       <PagesBar
@@ -410,8 +420,12 @@ export function App(props: AppProps): JSX.Element {
         }}
       />
     ),
+    [MENU_ROLE]: (bar) => <MenuBar bar={bar} items={() => itemsForMode(bar, props.active.capabilities(), mode())} view={view} size={size} host={host} />,
   };
-  const barOf = (bar: Bar): JSX.Element => (Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]! : toolbarOf)(bar);
+  const barOf = (bar: Bar, collapsed?: Accessor<boolean>): JSX.Element =>
+    Object.hasOwn(BY_ROLE, bar.role) ? BY_ROLE[bar.role]!(bar) : toolbarOf(bar, collapsed);
+  /** design-l2 : ce qui change la largeur d'un îlot centré (pages) ou sa rangée contextuelle (outil) : remesure. */
+  const islandWatch = createMemo(() => `${state().pageCount}|${state().tool}`);
 
   return (
     <div
@@ -420,27 +434,31 @@ export function App(props: AppProps): JSX.Element {
       data-panneau={panel() === "editor" ? "profils" : undefined}
       style={{ "grid-template-areas": grid().areas, "grid-template-columns": grid().columns, "grid-template-rows": grid().rows }}
     >
-      <div class="rb-slot rb-head" style={{ "grid-area": "tabs" }}>
-        <TabsBar
-          tabs={tabs}
-          active={activeId}
-          activate={(id) => {
-            leaveEditing(); // avant : la zone de l'onglet quitté ne reste ni visible ni ouverte à la frappe
-            ws.tabs.activate(id);
-          }}
-          close={(id) => void ws.close(id)}
-          newTab={() => void ws.newBlank()}
-        />
-        <p id="etat" role="status">{state().error ?? ""}</p>
-      </div>
       <For each={shownDocked()}>{(bar) => <div class="rb-slot" style={{ "grid-area": bar.id }}>{barOf(bar)}</div>}</For>
       {props.stages}
+      <IslandLayer
+        bars={shownFloating}
+        render={(bar, collapsed) => barOf(bar, collapsed)}
+        head={
+          <TabsBar
+            tabs={tabs}
+            active={activeId}
+            activate={(id) => {
+              leaveEditing(); // avant : la zone de l'onglet quitté ne reste ni visible ni ouverte à la frappe
+              ws.tabs.activate(id);
+            }}
+            close={(id) => void ws.close(id)}
+            newTab={() => void ws.newBlank()}
+          />
+        }
+        status={<p id="etat" role="status">{state().error ?? ""}</p>}
+        profileId={() => profile().id}
+        {...(props.device !== undefined ? { store: props.device } : {})}
+        size={size}
+        sheetOpen={() => panel() === "editor"}
+        watch={islandWatch}
+      />
       <Toasts />
-      <Show when={shownFloating().length > 0}>
-        <div class="rb-floating">
-          <For each={shownFloating()}>{(bar) => barOf(bar)}</For>
-        </div>
-      </Show>
       <Show when={selectedMedia()}>
         {(m) => (
           <div class="rb-popover rb-media-bar">

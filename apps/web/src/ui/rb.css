@@ -33,6 +33,8 @@
   --rb-tab-h: 36px;
   --rb-gap: 8px;
   --rb-pad: 12px;
+  /* design-l2 (L2-16) : largeur du panneau des profils ; lue aussi par Island.tsx (place laissée aux îlots). */
+  --rb-sheet-w: 600px;
 }
 .rb-bar { display: flex; align-items: center; gap: 4px; padding: 4px; background: var(--rf-white); --rb-btn: var(--rb-btn-m); }
 .rb-bar[data-size="s"] { --rb-btn: var(--rb-btn-s); }
@@ -45,9 +47,6 @@
    4e rangée (scène 610 px en 1280 × 900) ; 8 px de chaque côté la ramène à 3 (658 px). Hauteur et largeur minimales
    inchangées ; `:where` garde la spécificité de la règle ci-dessus, les boutons contextuels resserrés plus bas l'emportent. */
 .rb-bar:where([data-dock="top"], [data-dock="bottom"]) button { padding: 0 var(--rb-gap); }
-/* Barre des pages (C13, D17) : « Copie .iwb… » et « Copie .ubz… » (libellé complet en title et aria-label) gardent la barre
-   sur une rangée en 1280 × 900 sans écraser la liste des numéros (largeur minimale de 3 boutons). */
-.rb-bar[data-dock="bottom"] button:is([data-item="export-iwb"], [data-item="export-ubz"]) { font-size: 12px; padding: 0 4px; }
 .rb-bar button[aria-pressed="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
 .rb-bar button:not(:disabled, [aria-pressed="true"], [aria-current="page"]):hover { background: var(--rf-gray-50); }
 .rb-bar button:disabled { color: var(--rf-text-muted-aa); }
@@ -82,10 +81,10 @@
 /* Mise en page (T95, CL5b-10) : la grille vient de `layoutFor` ; chaque barre ancrée a sa case, la scène la sienne. Seuls
    une barre `floating` et les menus passagers (réglages, profils) se superposent à la scène, dans sa case. */
 .rb-layout { display: grid; height: 100vh; overflow: hidden; }
-/* C11a (P20), design-l4 (L4-2, L4-16) : en annotation, la fenêtre principale n'est que la barre montrée en annotation. */
-.rb-layout[data-mode="annotation"] > .rb-head,
+/* C11a (P20), design-l4 (L4-2, L4-16), design-l2 (L2-19) : en annotation, la fenêtre principale n'est que la barre
+   montrée en annotation ; le calque des îlots (onglets, #etat compris) est caché. */
+.rb-layout[data-mode="annotation"] > .rb-islands,
 .rb-layout[data-mode="annotation"] > .rb-stages,
-.rb-layout[data-mode="annotation"] > .rb-floating,
 .rb-layout[data-mode="annotation"] > .rb-popover,
 .rb-layout[data-mode="annotation"] > .rb-toasts { display: none; }
 /* C11a (P14) : page de la fenêtre `annotate`, transparente sur le bureau, scène sur toute la fenêtre. */
@@ -97,25 +96,59 @@ html[data-fenetre="annotation"] .rb-stages { position: fixed; inset: 0; backgrou
 .rb-annot-frame { display: none; position: fixed; inset: 0; z-index: 5; box-shadow: inset 0 0 0 3px var(--rf-violet-600); pointer-events: none; }
 html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-slot { min-width: 0; min-height: 0; overflow: auto; }
-.rb-head { display: flex; align-items: center; gap: 8px; }
-#etat { margin: 0 8px; color: #b91c1c; }
+/* design-l2 (L2-5) : #etat dans le groupe haut-gauche du calque ; vide : ni fond, ni filet, ni ombre (jamais
+   display: none, la région reste annoncée) ; un message : îlot. */
+#etat { margin: 0; color: #b91c1c; pointer-events: auto; }
+#etat:not(:empty) { padding: 12px 16px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); }
 #pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
 #echelons-notes { margin-left: 8px; color: #b45309; }
-.rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
-/* design-l3 (L3-2, H10, H23) : panneau des profils ouvert, la barre flottante passe en haut à gauche de la scène, dans la
-   place que le panneau laisse, et ses barres passent sur plusieurs rangées. */
-.rb-layout[data-panneau="profils"] > .rb-floating { justify-self: start; max-inline-size: calc(100% - min(600px, 100%)); }
-.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar { flex-wrap: wrap; }
+/* design-l2 (L2-14, L2-30, L2-12, D-DS2) : calque des îlots dans la case de la scène, au-dessus d'elle (z 2, sous les
+   panneaux passagers en z 3) ; il ne prend aucun clic, ses îlots si. Coins posés à 16 px entiers ; îlots centrés placés
+   en px entiers par Island.tsx (left, top, max-inline-size) ; aucune translation, aucune colonne fractionnaire, aucun
+   flou. L'habillage d'îlot (fond blanc, rayon 12, filet gris 300 en anneau d'ombre, ombre de survol) n'est qu'ici. */
+.rb-islands { grid-area: stage; position: relative; z-index: 2; min-inline-size: 0; min-block-size: 0; pointer-events: none; }
+.rb-corner { position: absolute; display: flex; align-items: flex-start; gap: 8px; max-inline-size: calc(100% - 32px); pointer-events: none; }
+.rb-corner[data-corner="top-start"] { left: 16px; top: 16px; }
+.rb-corner[data-corner="top-end"] { right: 16px; top: 16px; }
+.rb-corner[data-corner="bottom-start"] { left: 16px; bottom: 16px; }
+.rb-corner-menu { display: flex; gap: 8px; }
+.rb-corner-menu:empty { display: none; }
+.rb-island { position: absolute; display: flex; align-items: center; gap: 4px; box-sizing: border-box; inline-size: max-content; min-inline-size: 0; padding: 4px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); pointer-events: auto; }
+.rb-corner .rb-island { position: relative; max-inline-size: 100%; }
+/* L2-30 (a) : la barre défile dans l'îlot (flex, min-inline-size: 0), poignée et Replier, ses frères, hors de la partie
+   qui défile (flex: none) ; L2-16 : dans la place du panneau des profils, plusieurs rangées (L3-2) ; L2-8 : repliée, la
+   barre est cachée. */
+.rb-island > .rb-bar { flex: 0 1 auto; min-inline-size: 0; padding: 0; overflow-x: auto; flex-wrap: nowrap; }
+.rb-island[data-wrap="1"] > .rb-bar { flex-wrap: wrap; overflow-x: visible; }
+.rb-island .rb-bar[data-collapsed="1"] { display: none; }
+.rb-island > .rb-tabs { flex: 0 1 auto; min-inline-size: 0; }
+/* Poignée et Replier (L2-8, maquette 01 .grip) : hors profil ; la poignée prend le doigt sans faire défiler la page. */
+.rb-island-chrome { display: grid; place-items: center; flex: none; align-self: stretch; inline-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-island-chrome[data-island-grip] { inline-size: 24px; color: var(--rf-gray-500); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.rb-island-chrome:hover { background: var(--rf-gray-50); }
+.rb-island-chrome:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+/* L2-13 : rangée contextuelle en îlot séparé sous la barre (posé par Island.tsx), dans [data-toolbar] ; vide : cachée ;
+   séparateur de tête masqué. */
+.rb-context { position: absolute; display: flex; align-items: center; gap: 4px; box-sizing: border-box; inline-size: max-content; padding: 4px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); }
+.rb-context:empty { display: none; }
+.rb-context > .rb-sep:first-child { display: none; }
+/* design-l2 (L2-6, maquette 01 .menu) : bouton Menu violet quand la liste est ouverte ; liste en îlot de 320 px sous lui,
+   lignes de 48 px icône + libellé (règles partagées avec le menu Profil plus bas). */
+.rb-bar button[data-menu-toggle][aria-expanded="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); }
+[data-menu-list] { position: absolute; left: 0; top: calc(100% + 8px); z-index: 3; display: grid; gap: 4px; inline-size: 320px; box-sizing: border-box; padding: 8px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+[data-menu-list][hidden] { display: none; }
 /* design-l4 (L4-16) : bandeau « Envoyé au tableau », dans la case de la scène, en bas à droite ; ne prend aucun clic. */
 .rb-toasts { grid-area: stage; align-self: end; justify-self: end; margin: 24px; z-index: 4; pointer-events: none; }
 .rb-toast { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); font-size: 16px; color: var(--rf-gray-800); white-space: nowrap; box-sizing: border-box; }
 .rb-toast-ok { display: grid; place-items: center; flex: none; inline-size: 32px; block-size: 32px; border-radius: 50%; background: var(--rf-success); color: var(--rf-white); }
 .rb-toast b { font-weight: 600; color: var(--rf-violet-700); }
-.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: 100%; max-height: 100%; overflow: auto; background: #ffffff; border: 1px solid var(--rf-gray-300); }
+/* design-l2 (L2-15, D-DS2) : panneaux passagers en îlot (rayon 12, filet, ombre) ; Réglages et Grille sous la rangée
+   du haut (88 px), à gauche ; Image à droite (C5, I26, inchangé). */
+.rb-popover { grid-area: stage; align-self: start; justify-self: start; z-index: 3; max-width: calc(100% - 32px); max-height: calc(100% - 104px); overflow: auto; background: var(--rf-white); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); margin: 88px 0 0 16px; }
 /* Panneau de l'image (C5, I26) : calé à droite, l'image déposée au centre ou à gauche reste visible. */
-.rb-popover[data-panel="image"] { justify-self: end; }
-/* Panneau de la bibliothèque (C4, D15) : recouvre la scène, calé à droite comme celui de l'image ; aucune colonne de la grille. */
-.rb-popover[data-panel="library"] { justify-self: end; align-self: stretch; width: min(360px, 40vw); }
+.rb-popover[data-panel="image"] { justify-self: end; margin: 88px 16px 0 0; }
+/* Panneau de la bibliothèque (C4, D15) : recouvre la scène sur toute sa hauteur, calé à droite. */
+.rb-popover[data-panel="library"] { justify-self: end; align-self: stretch; width: min(360px, 40vw); max-width: 100%; max-height: 100%; margin: 0; border-radius: 0; }
 .rb-library { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .rb-library-head { display: flex; justify-content: space-between; align-items: center; }
 .rb-library-actions, .rb-library-folders { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -142,14 +175,17 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* Liste des numéros (CL5b-8) : une seule rangée qui défile ; les actions et le compteur restent visibles. */
 .rb-pages-list { display: flex; flex: 1 1 auto; flex-wrap: nowrap; min-width: calc(3 * var(--rb-btn) + 2 * var(--rb-gap)); gap: var(--rb-gap); overflow-x: auto; }
 .rb-bar[data-dock="left"] .rb-pages-list, .rb-bar[data-dock="right"] .rb-pages-list { min-width: 0; flex-direction: column; overflow-x: visible; overflow-y: auto; }
-/* Onglets (T101) : une seule rangée, sans retour à la ligne ; défile à l'horizontale si elle déborde. */
-.rb-tabs { display: flex; flex-wrap: nowrap; align-items: stretch; gap: 4px; padding: 4px 4px 0; overflow-x: auto; background: #e4e4e7; border-bottom: 1px solid #a1a1aa; }
-.rb-tab { display: inline-flex; align-items: center; gap: var(--rb-gap); flex: 0 1 auto; min-height: var(--rb-tab-h); padding: 0 var(--rb-gap); white-space: nowrap; cursor: pointer; background: #f4f4f5; border: 1px solid #a1a1aa; border-bottom: none; border-radius: 6px 6px 0 0; }
-.rb-tab[aria-selected="true"] { background: #ffffff; border-color: var(--rf-violet-600); font-weight: 600; }
-.rb-tab-dirty { color: #b45309; }
-.rb-tab-close, .rb-tab-new { min-height: var(--rb-tab-h); min-width: var(--rb-tab-h); padding: 0; }
-.rb-tab-close { min-height: 0; border: none; background: transparent; cursor: pointer; }
-.rb-tab-new { align-self: center; flex: 0 0 auto; }
+/* Onglets (T101 ; design-l2 L2-17, maquette 01 .tab) : une rangée qui défile dans l'îlot des onglets ; onglets de
+   48 px, montré en violet 100 / 700, point violet « modifié », Fermer 44 px, Nouvel onglet 48 px. */
+.rb-tabs { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; min-inline-size: 0; overflow-x: auto; }
+.rb-tab { display: inline-flex; align-items: center; gap: 8px; flex: none; block-size: 48px; box-sizing: border-box; padding: 0 4px 0 16px; border-radius: var(--rf-radius-lg); font-size: 15px; font-weight: 500; color: var(--rf-gray-800); white-space: nowrap; cursor: pointer; }
+.rb-tab[aria-selected="true"] { background: var(--rf-violet-100); color: var(--rf-violet-700); font-weight: 600; }
+.rb-tab-dirty { flex: none; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--rf-violet-600); }
+.rb-tab-close { display: grid; place-items: center; flex: none; inline-size: 44px; block-size: 44px; padding: 0; border: 0; border-radius: var(--rf-radius-md); background: transparent; color: var(--rf-text-muted-aa); cursor: pointer; }
+.rb-tab[aria-selected="true"] .rb-tab-close { color: var(--rf-violet-700); }
+.rb-tab-new { display: grid; place-items: center; flex: none; inline-size: 48px; block-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
+.rb-tab-close:hover, .rb-tab-new:hover { background: var(--rf-gray-50); }
+.rb-tab:focus-visible, .rb-tab-close:focus-visible, .rb-tab-new:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 
 /* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
 .rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
@@ -174,14 +210,14 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 
 /* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
 /* design-l3 (L3-22) : menu Profil en îlot, lignes de 48 px icône + texte (D-DS1), profil actif en violet 700. */
-.rb-popover[data-panel="menu-profils"] { margin: var(--rf-space-sm); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+.rb-popover[data-panel="menu-profils"] { justify-self: end; margin: 88px 16px 0 0; border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
 [data-profiles] { display: grid; gap: 4px; padding: 4px; }
-[data-profiles] button { display: flex; align-items: center; gap: 12px; min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 16px; text-align: start; cursor: pointer; }
-[data-profiles] button:not(:disabled):hover { background: var(--rf-gray-50); }
+:is([data-profiles], [data-menu-list]) button { display: flex; align-items: center; gap: 12px; min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 16px; text-align: start; cursor: pointer; }
+:is([data-profiles], [data-menu-list]) button:not(:disabled):hover { background: var(--rf-gray-50); }
 [data-profiles] button[aria-checked="true"] { color: var(--rf-violet-700); font-weight: 600; }
-[data-profiles] button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
-[data-profiles] button:disabled .rb-icon { color: var(--rf-gray-500); }
-[data-profiles] button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+:is([data-profiles], [data-menu-list]) button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+:is([data-profiles], [data-menu-list]) button:disabled .rb-icon { color: var(--rf-gray-500); }
+:is([data-profiles], [data-menu-list]) button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 .rb-menu-blank { flex: none; inline-size: var(--rb-icon); }
 .rb-menu-sep { border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 .rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
@@ -200,7 +236,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
    entre deux gouttières égales (bords à 44 px du panneau, quelle que soit la barre de défilement jusqu'à 20 px), interlignes
    entiers, en-tête et pied de 80 px de contenu, largeurs fixes des commandes calées à droite : aucun bord ni icône sur une
    fraction de pixel (cases de 96, cartes de 250, segments de 504 / n). */
-.rb-popover[data-panel="profils"] { justify-self: end; align-self: stretch; inline-size: min(600px, 100%); overflow: hidden; border: 0; box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
+.rb-popover[data-panel="profils"] { justify-self: end; align-self: stretch; inline-size: min(var(--rb-sheet-w), 100%); max-width: 100%; max-height: 100%; margin: 0; overflow: hidden; border: 0; border-radius: 0; box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
 .rb-sheet { display: flex; flex-direction: column; block-size: 100%; background: var(--rf-white); color: var(--rf-gray-800); font-size: 16px; line-height: 24px; }
 .rb-sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; block-size: 80px; padding: 0 28px 0 44px; border-block-end: 1px solid var(--rf-gray-300); }
 .rb-sheet-head h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--rf-navy-500); }
@@ -254,6 +290,9 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-radios[data-look="tile"] .rb-radio-detail { font-size: 14px; text-align: center; }
 .rb-radios[data-look="segment"] .rb-radio { flex: 1 1 0; min-block-size: 48px; border: 0; border-radius: var(--rf-radius-md); background: transparent; font-size: 15px; font-weight: 500; color: var(--rf-gray-800); }
 .rb-radios[data-look="segment"] .rb-radio[aria-checked="true"] { background: var(--rf-white); color: var(--rf-violet-700); font-weight: 600; box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-card); }
+/* design-l2 (L2-21, H9) : plus de trois barres (six pour defaut), segments de 168 px (504 / 3) sur des rangées de trois. */
+.rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) { flex-wrap: wrap; }
+.rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) > .rb-radio { flex: 0 0 168px; }
 /* design-l3 (L3-11, L3-13, L3-15, L3-16) : liste des éléments d'une barre, poignée tactile, liste « Ajouter ». */
 .rb-sheet-bar { display: flex; flex-direction: column; margin-block-start: var(--rf-space-md); }
 .rb-sheet-h2row { display: flex; align-items: center; justify-content: space-between; margin-block-end: var(--rf-space-xs); }
@@ -308,8 +347,9 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-bar [data-table-action], .rb-bar [data-table-fill], .rb-bar .rb-format { padding: 0 calc(var(--rb-pad) / 2); }
 .rb-bar [data-table-fill], .rb-bar .rb-format.rb-preset { gap: calc(var(--rb-gap) / 2); }
 
-/* Barre flottante du média (C14, M22) : posée en bas de la scène (case « stage »), jamais une rangée ; la scène garde ses 640 px. */
-.rb-media-bar { align-self: end; justify-self: center; margin-block-end: var(--rb-gap); z-index: 3; max-width: 100%; background: #ffffff; border: 1px solid var(--rf-gray-300); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+/* Barre flottante du média (C14, M22) : posée en bas de la scène (case « stage »), jamais une rangée ; la scène garde ses 640 px.
+   design-l2 (L2-15) : 88 px au-dessus du bas, au-dessus de l'îlot des pages. */
+.rb-media-bar { align-self: end; justify-self: center; margin: 0 0 88px; z-index: 3; max-width: 100%; background: #ffffff; border: 1px solid var(--rf-gray-300); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 .rb-media-bar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); padding: var(--rb-pad); }
 .rb-media-bar-inner button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); }
 .rb-media-bar-inner button[aria-pressed="true"] { background: var(--rf-violet-100); border-color: var(--rf-violet-600); color: var(--rf-violet-700); }
