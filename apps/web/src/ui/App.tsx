@@ -20,7 +20,7 @@ import type { ShellPort } from "../platform/files";
 import type { ProfileFiles } from "../platform/profile-files";
 import { originOf } from "../profile-edit";
 import type { ProfileStore } from "../profile-store";
-import { ANNOTATION_ROLE, annotationBarOf, resolveStartMode, visibleItems, type StartMode, type Toolbar as Bar } from "../toolbar";
+import { ANNOTATION_ROLE, annotationBarOf, resolveStartMode, visibleItems, type Profile, type StartMode, type Toolbar as Bar } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ActiveProfile } from "./active-profile";
 import { layoutFor } from "./layout";
@@ -83,6 +83,18 @@ export function App(props: AppProps): JSX.Element {
   const [tick, bump] = createSignal(undefined, { equals: false });
   const [state, setState] = createSignal<EngineState>(ws.active().board.engine.state());
   const [panel, setPanel] = createSignal<Panel | null>(null);
+  /** design-l3 (L3-3, DA-L3-3) : brouillon de l'éditeur montré par la page ; null : le profil enregistré. Rien n'est écrit :
+   *  `main.ts`, le magasin et l'annotation lisent toujours le profil actif. */
+  const [previewProfile, setPreviewProfile] = createSignal<Profile | null>(null);
+  /** Profil montré (barres, taille, préréglages, hôte local) : le brouillon pendant l'édition, sinon le profil actif. */
+  const shownProfile = (): Profile => previewProfile() ?? props.active.profile();
+  /** L3-4 : vrai entre un choix fait dans le sélecteur du panneau et le montage suivant de l'éditeur (focus au sélecteur). */
+  let profileFocus = false;
+  const takeProfileFocus = (): boolean => {
+    const f = profileFocus;
+    profileFocus = false;
+    return f;
+  };
 
   /** Saisie de texte en cours dans la scène : le blur la fait valider par l'outil (CL4-3) et cache la zone. */
   const leaveEditing = (): void => {
@@ -291,7 +303,7 @@ export function App(props: AppProps): JSX.Element {
       toggle: (p) => setPanel((cur) => (cur === p ? null : p)),
       ...(ann === undefined ? {} : { annotation: ann.control }),
     },
-    () => props.active.profile(),
+    shownProfile,
   );
   const remote = ann === undefined ? local : ann.remote(local);
   /** P21 : en annotation, la barre parle à `annotate` ; sinon au moteur local. */
@@ -338,7 +350,8 @@ export function App(props: AppProps): JSX.Element {
     warn: (m) => console.warn(m),
   });
 
-  const profile = () => props.active.profile();
+  /** design-l3 (L3-3) : la page dessine le profil montré ; le mode de démarrage et l'envoi à `annotate` gardent le profil actif. */
+  const profile = shownProfile;
   const size = () => profile().interface.buttonSize;
   /** design-l4 (L4-3) : une barre de rôle `annotation` n'est jamais montrée au tableau, ni ancrée ni flottante. */
   const boardBars = createMemo(() => profile().toolbars.filter((b) => b.role !== ANNOTATION_ROLE));
@@ -484,20 +497,44 @@ export function App(props: AppProps): JSX.Element {
           />
         </div>
       </Show>
-      <Show when={panel() === "editor"}>
-        <div class="rb-popover">
-          <ProfileEditor
-            profile={profile()}
-            origin={originOf(profile(), BUILTIN_PROFILES)}
-            save={(draft) => {
-              if (actions.save(draft)) setPanel(null);
-            }}
-            saveAsNew={(draft, label) => {
-              if (actions.saveAsNew(draft, label) !== null) setPanel(null);
-            }}
-            close={() => setPanel(null)}
-          />
-        </div>
+      {/* design-l3 (L3-1, L3-4) : panneau latéral, remonté sur un brouillon neuf à chaque profil actif neuf (choix,
+          import, remise à l'origine). */}
+      <Show when={panel() === "editor" ? props.active.profile() : null} keyed>
+        {(saved) => {
+          const focus = takeProfileFocus();
+          return (
+            <div class="rb-popover" data-panel="profils">
+              <ProfileEditor
+                profile={saved}
+                origin={originOf(saved, BUILTIN_PROFILES)}
+                profiles={props.active.profiles}
+                canRemove={() => actions.canRemove()}
+                canResetCurrent={() => actions.canResetCurrent()}
+                focusProfile={focus}
+                preview={(draft) => setPreviewProfile(draft)}
+                endPreview={() => setPreviewProfile(null)}
+                save={(draft) => {
+                  if (actions.save(draft)) setPanel(null);
+                }}
+                saveAsNew={(draft, label) => {
+                  if (actions.saveAsNew(draft, label) !== null) setPanel(null);
+                }}
+                close={() => setPanel(null)}
+                choose={(id) => {
+                  profileFocus = true;
+                  actions.choose(id);
+                  // Profil changé : l'éditeur remonté (synchrone, dans choose) a déjà pris le drapeau ; profil inchangé
+                  // (id inconnu, choix refusé) : rien ne le prendra. Dans les deux cas il retombe ici.
+                  profileFocus = false;
+                }}
+                importFile={() => void actions.importFile()}
+                exportProfile={(draft) => void actions.exportProfile(draft)}
+                resetCurrent={() => actions.resetCurrent()}
+                confirm={(m) => props.shell.confirm(m)}
+              />
+            </div>
+          );
+        }}
       </Show>
       <Show when={panel() === "grid"}>
         <div class="rb-popover">{gridPanelFor(ws.active().board)}</div>
