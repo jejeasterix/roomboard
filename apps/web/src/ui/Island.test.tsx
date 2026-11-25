@@ -342,6 +342,28 @@ describe("design-l2 T11 : correctifs de fin", () => {
     expect(s.setIsland).toHaveBeenLastCalledWith("copie", "outils", expect.anything());
   });
 
+  it("design-l2 T14 : retouche du profil au même id : l'îlot garde son nœud DOM ; autre id : recréé", () => {
+    boxes(300, 0);
+    const [pid, setPid] = createSignal("defaut", { equals: false });
+    const bars = [bar("outils", "tools")];
+    const r = render(() => (
+      <IslandLayer bars={() => bars} render={(b) => <div data-toolbar={b.id} />} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={pid} store={store()} size={() => "m"} sheetOpen={() => false} />
+    ));
+    const tools = (): HTMLElement => r.container.querySelector<HTMLElement>('[data-island="outils"]')!;
+    const first = tools();
+    setPid("defaut");
+    expect(tools()).toBe(first);
+    setPid("copie");
+    expect(tools()).not.toBe(first);
+  });
+
+  it("design-l2 T14 : case 0 × 0 : Début n'écrit rien non plus", () => {
+    const { grip, s, setArea } = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null } });
+    setArea({ w: 0, h: 0 });
+    fireEvent.keyDown(grip(), { key: "Home" });
+    expect(s.setIsland).not.toHaveBeenCalled();
+  });
+
   it("design-l2 T11 (discrimine) : panneau ouvert : le double appui sur la poignée ne recentre ni n'écrit", () => {
     const { grip, s, island } = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null }, sheet: { x: 16, y: 80, maxWidth: 600 } });
     fireEvent.dblClick(grip());

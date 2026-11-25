@@ -69,6 +69,8 @@ describe("device-settings : îlots (design-l2 L2-7, DA-L2-3)", () => {
   };
   it("design-l2 L2-7 : clé roomboard.ilot.<profil>.<barre> ; rien d'enregistré : NO_ISLAND", () => {
     expect(islandKey("defaut", "outils")).toBe("roomboard.ilot.defaut.outils");
+    expect(islandKey("a.b", "c")).not.toBe(islandKey("a", "b.c"));
+    expect(islandKey("a.b", "c")).toBe("roomboard.ilot.a%2Eb.c");
     expect(createDeviceSettings(memoryKv().kv).island("defaut", "outils")).toEqual({ at: null, collapsed: null });
     expect(NO_ISLAND).toEqual({ at: null, collapsed: null });
   });
