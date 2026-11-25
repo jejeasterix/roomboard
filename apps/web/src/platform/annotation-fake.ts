@@ -7,6 +7,7 @@
 import type { ToolbarView } from "../ui/item-state";
 import { TOOL_TABLE, type Profile } from "../toolbar";
 import {
+  frameField,
   isViewport,
   type AnnotationCommand,
   type AnnotationPlace,
@@ -50,6 +51,8 @@ export interface FakeAnnotationWindows extends AnnotationWindows {
   opaque(): boolean | null;
   /** C11b : nombre de captures demandées. */
   captures(): number;
+  /** design-l4 (L4-13) : cadre du dernier `enter` ou `load` (absent de la charge : vrai) ; null avant. */
+  frame(): boolean | null;
 }
 
 /** C11b (P30) : capture par défaut du faux hôte (tests) : 8 octets d'en-tête PNG, 320 × 180 annoncés. */
@@ -71,6 +74,7 @@ export function createFakeAnnotationWindows(o: FakeAnnotationOptions = {}): Fake
   let entries = 0;
   let lastOpaque: boolean | null = null;
   let captures = 0;
+  let lastFrame: boolean | null = null;
   let view: ToolbarView = { tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 1 };
   const clamp = (s: number | null): number => (s === null || s < 0 || s >= screens ? 0 : s);
   const publish = (v: ToolbarView): void => {
@@ -90,9 +94,10 @@ export function createFakeAnnotationWindows(o: FakeAnnotationOptions = {}): Fake
       log.push(`enter ${screen}`);
       jsonChannel<Profile>(p.profile);
       profiles += 1;
-      const payload = jsonChannel<DocumentPayload>({ base64: toBase64(p.document), opaque: p.opaque === true });
+      const payload = jsonChannel<DocumentPayload>({ base64: toBase64(p.document), opaque: p.opaque === true, ...frameField(p) });
       received = fromBase64(payload.base64);
       lastOpaque = payload.opaque === true;
+      lastFrame = payload.frame !== false;
       entries += 1;
       Object.assign(ds, {
         annotation: "1",
@@ -100,15 +105,18 @@ export function createFakeAnnotationWindows(o: FakeAnnotationOptions = {}): Fake
         annotationRecu: String(received?.length ?? 0),
         annotationEntrees: String(entries),
         annotationOpaque: lastOpaque ? "1" : "0",
+        annotationCadre: lastFrame ? "1" : "0",
+        annotationBande: `${p.dock}:${p.thickness}`,
       });
       return screen;
     },
     async load(p) {
       log.push(`load ${p.opaque ? "opaque" : "transparent"}`);
-      const payload = jsonChannel<DocumentPayload>({ base64: toBase64(p.document), opaque: p.opaque });
+      const payload = jsonChannel<DocumentPayload>({ base64: toBase64(p.document), opaque: p.opaque, ...frameField(p) });
       received = fromBase64(payload.base64);
       lastOpaque = payload.opaque === true;
-      Object.assign(ds, { annotationRecu: String(received?.length ?? 0), annotationOpaque: lastOpaque ? "1" : "0" });
+      lastFrame = payload.frame !== false;
+      Object.assign(ds, { annotationRecu: String(received?.length ?? 0), annotationOpaque: lastOpaque ? "1" : "0", annotationCadre: lastFrame ? "1" : "0" });
     },
     async capture() {
       log.push("capture");
@@ -120,6 +128,7 @@ export function createFakeAnnotationWindows(o: FakeAnnotationOptions = {}): Fake
     async place(p: AnnotationPlace) {
       const screen = clamp(p.screen);
       log.push(`place ${screen}`);
+      ds["annotationBande"] = `${p.dock}:${p.thickness}`;
       return screen;
     },
     collect() {
@@ -183,6 +192,7 @@ export function createFakeAnnotationWindows(o: FakeAnnotationOptions = {}): Fake
     emitView: publish,
     opaque: () => lastOpaque,
     captures: () => captures,
+    frame: () => lastFrame,
   };
   return w;
 }

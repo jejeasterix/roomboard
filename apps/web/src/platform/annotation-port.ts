@@ -121,7 +121,12 @@ export interface DocumentPayload {
   readonly base64: string;
   /** C11b (P15) : fenêtre opaque (bureau figé) ; absent : faux (charge C11a). */
   readonly opaque?: boolean;
+  /** design-l4 (L4-13) : cadre violet de l'annotation ; absent : vrai (charge d'avant L4). */
+  readonly frame?: boolean;
 }
+/** design-l4 (L4-13) : champ `frame` d'une charge, écrit seulement s'il est donné (patron `opaque`) ; même code pour la
+ *  coque et le faux hôte. */
+export const frameField = (o: { readonly frame?: boolean }): { readonly frame?: boolean } => (o.frame === undefined ? {} : { frame: o.frame });
 export interface CollectPayload {
   readonly id: number;
 }
@@ -157,10 +162,11 @@ export interface Returned {
 export interface AnnotationWindows {
   support(): Promise<AnnotationSupport>;
   /** Crée ou montre `annotate`, place les deux fenêtres, attend `ready`, envoie le profil puis le document ; rend l'écran retenu.
-   *  C11b (P15) : `opaque` vrai : bureau figé (absent : transparent). */
-  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean }): Promise<number>;
+   *  C11b (P15) : `opaque` vrai : bureau figé (absent : transparent). design-l4 (L4-13) : `frame` faux : cadre masqué ;
+   *  absent : affiché. */
+  enter(o: AnnotationPlace & { readonly document: Uint8Array; readonly profile: Profile; readonly opaque?: boolean; readonly frame?: boolean }): Promise<number>;
   /** C11b (P14, P28) : renvoie le document seul (bascule figé / vivant), sans replacer les fenêtres. */
-  load(o: { readonly document: Uint8Array; readonly opaque: boolean }): Promise<void>;
+  load(o: { readonly document: Uint8Array; readonly opaque: boolean; readonly frame?: boolean }): Promise<void>;
   /** C11b (P22, P27) : capture de l'écran de l'annotation sans nos fenêtres ; refus en raison connue, jamais de rejet. */
   capture(o: AnnotationPlace): Promise<CaptureOutcome>;
   /** Replace les deux fenêtres (écran suivant) sans renvoyer le document ; rend l'écran retenu. */
@@ -202,6 +208,8 @@ export interface AnnotationControl {
   close(): Promise<boolean>;
   /** Bascule dessin / souris (P8). */
   toggle(): Promise<void>;
+  /** design-l4 (L4-9) : segment de la commande Dessin / Souris : en file, sans effet si `mode` est déjà le mode présent. */
+  pointer(mode: PointerMode): Promise<void>;
   nextScreen(): Promise<void>;
   /** C11b (P16, P18) : « Figer le bureau » / « Bureau vivant » / « Recapturer le bureau ». */
   freeze(): Promise<void>;

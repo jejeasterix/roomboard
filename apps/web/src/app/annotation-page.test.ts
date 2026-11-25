@@ -43,6 +43,7 @@ function fakeBoard(doc: CoreDocument) {
 }
 
 function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth?: number } = {}) {
+  const frames: boolean[] = [];
   const opaques: boolean[] = [];
   const c = channel();
   const boards: ReturnType<typeof fakeBoard>[] = [];
@@ -77,6 +78,7 @@ function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth
       calls.push("ignore");
       ignores.push(on);
     },
+    frame: (on) => void frames.push(on),
     every: (_ms, cb) => {
       tick = cb;
       return () => {
@@ -85,7 +87,7 @@ function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth
       };
     },
   });
-  return { page, c, boards, ignores, opaques, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
+  return { page, c, boards, ignores, opaques, frames, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
 }
 const blank = () => toBase64(fakeCore.blank().save("2026-11-23T00:00:00Z", "0.1.0"));
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -345,5 +347,20 @@ describe("page annotate (C11b, P13, P15, P16)", () => {
       event: ANNOTATION_EVENTS.returned,
       payload: { id: 9, view: { page: 0, matrix: [2, 0, 0, 2, 0, 0] } },
     });
+  });
+  it("design-l4 (L4-13) : chaque document applique son cadre ; absent : affiché ; illisible : rien", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { page, c, frames } = setup();
+    await page.start();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), frame: false });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: "@@@" });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), frame: true });
+    await flush();
+    expect(frames).toEqual([true, false, true]);
+    warn.mockRestore();
   });
 });
