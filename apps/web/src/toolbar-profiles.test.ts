@@ -7,7 +7,7 @@ import {
   DEFAULT_PROFILE_JSON,
   SIMPLE_PROFILE_JSON,
 } from "./toolbar-profiles";
-import { annotationBarOf, ANNOTATION_MAIN_ACTIONS, itemsForMode, parseProfile, visibleItems } from "./toolbar";
+import { annotationBarOf, ANNOTATION_MAIN_ACTIONS, HISTORY_ROLE, itemsForMode, MENU_ROLE, PANELS_ROLE, parseProfile, visibleItems } from "./toolbar";
 
 const ALL = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
 const ids = (id: string): string[] =>
@@ -40,10 +40,10 @@ describe("profils livrés (T83, CL5b-9)", () => {
     }
   });
 
-  it("Grille (E7, HE5) : dans le groupe vue de defaut et d'annotation, avant Profil ; absente de simple", () => {
+  it("design-l2 L2-4 : Grille et Réglages dans le groupe vue du menu de defaut et d'annotation ; absente de simple", () => {
     for (const id of ["defaut", "annotation"]) {
-      const vue = builtinProfile(id)!.toolbars[0]!.groups.find((g) => g.id === "vue")!;
-      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings", "desktop-annotation"]);
+      const vue = builtinProfile(id)!.toolbars.find((b) => b.id === "menu")!.groups.find((g) => g.id === "vue")!;
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["grid", "settings"]);
     }
     expect(ids("simple")).not.toContain("grid");
   });
@@ -53,10 +53,10 @@ describe("profils livrés (T83, CL5b-9)", () => {
     expect(ids("simple")).not.toContain("library");
   });
 
-  it("toolbars en liste : la barre des pages est une entrée (role pages), chacune avec son dock", () => {
+  it("toolbars en liste : chacune avec son dock (design-l2 L2-2)", () => {
     const d = builtinProfile("defaut")!;
-    expect(d.toolbars.map((b) => [b.id, b.role, b.dock])).toEqual([["outils", "tools", "top"], ["pages", "pages", "bottom"], ["annotation", "annotation", "top"]]);
-    expect(builtinProfile("simple")!.toolbars.map((b) => b.dock)).toEqual(["left", "bottom", "left"]);
+    expect(d.toolbars.map((b) => [b.id, b.role, b.dock])).toEqual([["outils", "tools", "floating"], ["menu", "menu", "floating"], ["historique", "history", "floating"], ["panneaux", "panels", "floating"], ["pages", "pages", "floating"], ["annotation", "annotation", "top"]]);
+    expect(builtinProfile("simple")!.toolbars.map((b) => b.dock)).toEqual(["left", "floating", "left"]);
     expect(builtinProfile("simple")!.interface.buttonSize).toBe("l");
   });
 
@@ -71,8 +71,8 @@ describe("profils livrés (T83, CL5b-9)", () => {
     expect(builtinProfile("inconnu")).toBeNull();
   });
 
-  it("defaut : « Importer » après « Ouvrir » dans le groupe fichier ; simple ne l'a pas (R18)", () => {
-    const fichier = builtinProfile("defaut")!.toolbars[0]!.groups.find((g) => g.id === "fichier")!;
+  it("defaut : « Importer » après « Ouvrir » dans le groupe fichier du menu ; simple ne l'a pas (R18)", () => {
+    const fichier = builtinProfile("defaut")!.toolbars.find((b) => b.id === "menu")!.groups.find((g) => g.id === "fichier")!;
     const fichierIds = fichier.items.map((i) => i.id);
     expect(fichierIds.indexOf("file-import")).toBe(fichierIds.indexOf("file-open") + 1);
     expect(fichier.items.find((i) => i.id === "file-import")?.label).toBe("Importer");
@@ -82,7 +82,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
   it("un profil enregistré sans « Importer » ne le reçoit pas", () => {
     const json = structuredClone(DEFAULT_PROFILE_JSON) as { id: string; toolbars: { groups: { id: string; items: { id: string }[] }[] }[] };
     json.id = "perso";
-    for (const g of json.toolbars[0]!.groups) g.items = g.items.filter((i) => i.id !== "file-import");
+    for (const b of json.toolbars) for (const g of b.groups) g.items = g.items.filter((i) => i.id !== "file-import");
     const r = parseProfile(json);
     if ("errors" in r) throw new Error(r.errors.join(" ; "));
     expect(r.profile.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)))).not.toContain("file-import");
@@ -99,21 +99,26 @@ describe("outil Tableau dans les profils (C10a, T6)", () => {
   });
 });
 
-describe("barre : Exporter en PDF (C12, PF19) et copies au format (C13, D17)", () => {
-  it("barre des pages, en bas : « Exporter en PDF… », puis les deux copies, en dernier dans defaut, simple et annotation ; rien dans la barre du haut", () => {
-    for (const id of ["defaut", "simple", "annotation"]) {
+describe("barre : Exporter en PDF (C12, PF19) et copies au format (C13, D17) — design-l2 L2-4", () => {
+  const tail = [
+    expect.objectContaining({ id: "export-pdf", kind: "action", action: "export-pdf", label: "Exporter en PDF…" }),
+    expect.objectContaining({ id: "export-iwb", kind: "action", action: "export-iwb", label: "Enregistrer une copie au format .iwb…" }),
+    expect.objectContaining({ id: "export-ubz", kind: "action", action: "export-ubz", label: "Enregistrer une copie au format .ubz…" }),
+  ];
+  it("defaut et annotation : dans le groupe export du menu, après « Insérer des pages… » ; nulle part ailleurs", () => {
+    for (const id of ["defaut", "annotation"]) {
       const bars = builtinProfile(id)!.toolbars;
-      const pages = bars.find((b) => b.role === "pages")!;
-      expect(pages.dock, id).toBe("bottom");
-      const items = pages.groups.flatMap((g) => g.items);
-      expect(items.slice(-3), id).toEqual([
-        expect.objectContaining({ id: "export-pdf", kind: "action", action: "export-pdf", label: "Exporter en PDF…" }),
-        expect.objectContaining({ id: "export-iwb", kind: "action", action: "export-iwb", label: "Enregistrer une copie au format .iwb…" }),
-        expect.objectContaining({ id: "export-ubz", kind: "action", action: "export-ubz", label: "Enregistrer une copie au format .ubz…" }),
-      ]);
-      const others = bars.filter((b) => b.role !== "pages").flatMap((b) => b.groups.flatMap((g) => g.items));
-      expect(others.some((i) => ["export-pdf", "export-iwb", "export-ubz"].includes(i.id)), id).toBe(false);
+      const exp = bars.find((b) => b.id === "menu")!.groups.find((g) => g.id === "export")!.items;
+      expect(exp.map((i) => i.id), id).toEqual(["sep-5", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "edit-original"]);
+      expect(exp.slice(2, 5), id).toEqual(tail);
+      const others = bars.filter((b) => b.id !== "menu").flatMap((b) => b.groups.flatMap((g) => g.items));
+      expect(others.some((i) => ["page-insert-file", "export-pdf", "export-iwb", "export-ubz"].includes(i.id)), id).toBe(false);
     }
+  });
+  it("simple : en fin de la barre des pages, flottante", () => {
+    const pages = builtinProfile("simple")!.toolbars.find((b) => b.role === "pages")!;
+    expect(pages.dock).toBe("floating");
+    expect(pages.groups.flatMap((g) => g.items).slice(-3)).toEqual(tail);
   });
 });
 
@@ -130,16 +135,16 @@ describe("outil Pot dans les profils (C6a)", () => {
   });
 });
 
-describe("barre : Modifier dans l'application d'origine (C16, O19)", () => {
-  it("defaut et annotation : « edit-original » juste avant « Exporter en PDF… », requires officeConverter ; simple : absent", () => {
+describe("barre : Modifier dans l'application d'origine (C16, O19) — design-l2 L2-4", () => {
+  it("defaut et annotation : « edit-original » en fin du groupe export du menu, après la copie .ubz, requires officeConverter ; simple : absent", () => {
     for (const id of ["defaut", "annotation"]) {
-      const items = builtinProfile(id)!.toolbars.find((b) => b.role === "pages")!.groups.flatMap((g) => g.items);
+      const items = builtinProfile(id)!.toolbars.find((b) => b.id === "menu")!.groups.flatMap((g) => g.items);
       const i = items.findIndex((x) => x.id === "edit-original");
       expect(i, id).toBeGreaterThanOrEqual(0);
       expect(items[i], id).toMatchObject({ kind: "action", action: "edit-original", label: "Modifier dans l'application d'origine", requires: ["officeConverter"] });
-      expect(items[i + 1]!.id, id).toBe("export-pdf");
+      expect(items[i - 1]!.id, id).toBe("export-ubz");
     }
-    const simple = builtinProfile("simple")!.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((x) => x.id)));
+    const simple = builtinProfile("simple")!.toolbars.flatMap((b) => b.groups.flatMap((x) => x.items.map((i) => i.id)));
     expect(simple).not.toContain("edit-original");
   });
 });
@@ -184,7 +189,7 @@ describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => 
   it("design-l4 T6 : L4-6 : defaut et annotation, barre « annotation » en haut, dernière de toolbars, éléments dans l'ordre", () => {
     for (const id of ["defaut", "annotation"]) {
       const p = builtinProfile(id)!;
-      expect(p.toolbars.map((b) => b.id), id).toEqual(["outils", "pages", "annotation"]);
+      expect(p.toolbars.map((b) => b.id), id).toEqual(["outils", "menu", "historique", "panneaux", "pages", "annotation"]);
       expect([bar(id, "annotation").role, bar(id, "annotation").dock]).toEqual(["annotation", "top"]);
       expect(flat(bar(id, "annotation")), id).toEqual([
         "annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-eraser-mode", "ann-arrow", "ann-rect", "ann-text",
@@ -196,7 +201,7 @@ describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => 
   });
   it("design-l4 T6 : L4-7 : simple, barre « annotation » à gauche, sans zone", () => {
     const p = builtinProfile("simple")!;
-    expect(p.toolbars.map((b) => [b.id, b.dock])).toEqual([["outils", "left"], ["pages", "bottom"], ["annotation", "left"]]);
+    expect(p.toolbars.map((b) => [b.id, b.dock])).toEqual([["outils", "left"], ["pages", "floating"], ["annotation", "left"]]);
     expect(flat(bar("simple", "annotation"))).toEqual([
       "annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-sep-2", "ann-undo", "ann-sep-3", "annotation-freeze",
       "annotation-screen", "ann-sep-4", "annotation-send", "annotation-send-new", "ann-sep-5", "ann-desktop-annotation",
@@ -217,6 +222,37 @@ describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => 
         const needs = it.kind === "dropzone" || (it.kind === "action" && ANNOTATION_MAIN_ACTIONS.has(it.action ?? ""));
         expect(it.requires, `${id} : ${it.id}`).toEqual(needs ? ["desktopAnnotation"] : []);
       }
+    }
+  });
+});
+
+describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
+  const flat = (id: string, barId: string) => builtinProfile(id)!.toolbars.find((b) => b.id === barId)!.groups.flatMap((g) => g.items.map((i) => i.id));
+  it("design-l2 L2-4 : outils de defaut et annotation : Sélection, Main | Stylo, Gomme, Gomme : partielle | formes, Texte, Tableau, Pot | Annotation du bureau", () => {
+    for (const id of ["defaut", "annotation"]) {
+      expect(flat(id, "outils"), id).toEqual(["select", "hand", "sep-1", "pen", "eraser", "eraser-mode", "sep-2", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "sep-3", "desktop-annotation"]);
+      expect(visibleItems(builtinProfile(id)!.toolbars[0]!, ALL)[0]!.id, id).toBe("select");
+    }
+  });
+  it("design-l2 L2-4 : menu, historique, panneaux et pages de defaut", () => {
+    expect(flat("defaut", "menu")).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "sep-5", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "edit-original", "sep-6", "grid", "settings"]);
+    expect(flat("defaut", "historique")).toEqual(["undo", "redo", "fit-page"]);
+    expect(flat("defaut", "panneaux")).toEqual(["library", "profiles"]);
+    expect(flat("defaut", "pages")).toEqual(["page-prev", "page-next", "page-add", "page-remove"]);
+  });
+  it("design-l2 L2-4, H1 : simple : outils et pages inchangés, pages en îlot", () => {
+    expect(flat("simple", "outils")).toEqual(["pen", "eraser", "hand", "sep-1", "undo", "redo", "sep-2", "fit-page", "profiles", "settings", "desktop-annotation"]);
+    expect(flat("simple", "pages")).toEqual(["page-prev", "page-next", "page-add", "page-remove", "page-insert-file", "export-pdf", "export-iwb", "export-ubz"]);
+  });
+  it("design-l2 L2-3 : rôles tools, menu, history, panels, pages, annotation ; ids uniques dans le profil", () => {
+    const d = builtinProfile("defaut")!;
+    expect(d.toolbars.map((b) => b.role)).toEqual(["tools", MENU_ROLE, HISTORY_ROLE, PANELS_ROLE, "pages", "annotation"]);
+    const all = d.toolbars.flatMap((b) => b.groups.flatMap((g) => g.items.map((i) => i.id)));
+    expect(new Set(all).size).toBe(all.length);
+  });
+  it("design-l2 L2-2 : aucune bande horizontale au tableau dans un profil fourni", () => {
+    for (const p of BUILTIN_PROFILES) {
+      expect(p.toolbars.filter((b) => b.role !== "annotation" && (b.dock === "top" || b.dock === "bottom")).map((b) => b.id), p.id).toEqual([]);
     }
   });
 });
