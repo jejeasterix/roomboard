@@ -245,6 +245,11 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
   });
 
   it("design-l2 L2-12 (discrimine) : calque : îlots centrés placés par left / top en px entiers, jamais par la grille", () => {
+    // T11 : case de 0 × 0 (jsdom), rien n'est placé ; on lui donne la case de 1280 × 900.
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      return this.classList.contains("rb-islands") ? ({ x: 0, y: 0, left: 0, top: 0, width: 1280, height: 900, right: 1280, bottom: 900, toJSON: () => ({}) } as DOMRect) : real.call(this);
+    });
     const { container } = layer(ALL);
     for (const id of ["outils", "pages"]) {
       const el = container.querySelector<HTMLElement>(`[data-island="${id}"]`)!;
@@ -334,7 +339,7 @@ describe("design-l2 T11 : correctifs de fin", () => {
     setPid("copie");
     expect(tools().style.top).toBe("16px");
     fireEvent.keyDown(tools().querySelector("[data-island-grip]")!, { key: "ArrowDown" });
-    expect(s.setIsland.mock.calls.at(-1)?.[0]).toBe("copie");
+    expect(s.setIsland).toHaveBeenLastCalledWith("copie", "outils", expect.anything());
   });
 
   it("design-l2 T11 (discrimine) : panneau ouvert : le double appui sur la poignée ne recentre ni n'écrit", () => {

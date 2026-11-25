@@ -11,7 +11,8 @@ export type Anchor = "top-start" | "top-center" | "top-end" | "bottom-start" | "
 export interface Point { readonly x: number; readonly y: number }
 export interface Box { readonly w: number; readonly h: number }
 /** Rangée de l'ancre : largeur occupée à gauche (`start`) et à droite (`end`) par les groupes de coins, hauteur de la
- *  rangée des coins (`band`, 0 sans coin). En haut, `start` compte l'îlot des onglets à sa largeur minimale. */
+ *  rangée des coins (`band`, 0 sans coin). En haut, `start` compte l'îlot des onglets à sa largeur minimale, puis
+ *  `#etat` non vide et son écart (T11). */
 export interface Corners { readonly start: number; readonly end: number; readonly band: number }
 export interface Lane { readonly x: number; readonly y: number; readonly maxWidth: number }
 
@@ -116,8 +117,9 @@ export function sheetLane(area: Box, sheet: number, band: number, btn: number): 
 }
 
 /** L2-30 (c) : largeur de l'îlot des onglets posé à `startX` : jusqu'à l'îlot d'outils s'il est sur la rangée du haut
- *  (non déplacé : `tools` non nul), sinon jusqu'au groupe haut-droite (`end`) ; au moins 144 px. */
-export function tabsWidth(area: Box, startX: number, end: number, tools: Point | null): number {
+ *  (non déplacé : `tools` non nul), sinon jusqu'au groupe haut-droite (`end`), moins `#etat` non vide (`status`, sa
+ *  largeur) et son écart, qui suivent les onglets (T11) ; au moins 144 px. */
+export function tabsWidth(area: Box, startX: number, end: number, tools: Point | null, status = 0): number {
   const right = tools !== null && tools.y === EDGE && tools.x > startX ? tools.x - GAP : area.w - EDGE - end - (end > 0 ? GAP : 0);
-  return Math.max(TABS_MIN, Math.floor(right - startX));
+  return Math.max(TABS_MIN, Math.floor(right - startX - (status > 0 ? status + GAP : 0)));
 }
