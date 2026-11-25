@@ -121,4 +121,81 @@ describe("rb.css (design-l4, L4-16)", () => {
     expect(drop).toContain("border: 1px dashed var(--rf-gray-500);");
     expect(drop).not.toContain("1.5px");
   });
+  it("design-l3 L3-1 : panneau des profils calé à droite dans la scène, toute sa hauteur, 600 px au plus, filet et ombre modale", () => {
+    expect(rule('.rb-popover[data-panel="profils"]')).toMatch(/justify-self: end;.*align-self: stretch;.*inline-size: min\(600px, 100%\);.*overflow: hidden;.*border: 0;.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-modal\);/);
+    expect(rule(".rb-sheet")).toMatch(/display: flex;.*flex-direction: column;.*block-size: 100%;/);
+    expect(rule(".rb-sheet-head")).toContain("block-size: 80px;");
+    expect(rule(".rb-sheet-foot")).toContain("block-size: 80px;");
+    expect(rule(".rb-sheet-body")).toMatch(/overflow-y: auto;/);
+  });
+  it("design-l3 L3-24 : règles du panneau aux jetons de la charte, tailles de texte 20 / 16 / 15 / 14", () => {
+    const own = (CSS.replace(/\/\*.*?\*\//g, "").match(/[^{}]+\{[^}]*\}/g) ?? []).filter((r) => /rb-sheet|rb-radio|rb-item|rb-grip|rb-select|rb-tag|rb-note|rb-field|rb-add-list|rb-preset-row|rb-presets|rb-saved/.test(r.split("{")[0]!));
+    expect(own.length).toBeGreaterThan(20);
+    for (const r of own) {
+      expect(r, r).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+      for (const [, px] of r.matchAll(/font-size: (\d+)px/g)) expect(["14", "15", "16", "20"], r).toContain(px);
+    }
+  });
+  it("design-l3 L3-24 : cibles de 48 px ou plus (poignée, boutons à icône, segments, vignettes de 80 px, cartes de 104 px)", () => {
+    expect(rule(".rb-grip")).toMatch(/inline-size: 48px;.*block-size: 48px;.*touch-action: none;/);
+    expect(rule(".rb-sheet button.rb-ib")).toMatch(/inline-size: 48px;.*block-size: 48px;/);
+    expect(rule('.rb-radios[data-look="segment"] .rb-radio')).toContain("min-block-size: 48px;");
+    expect(rule('.rb-radios[data-look="tile"] .rb-radio')).toContain("min-block-size: 80px;");
+    expect(rule('.rb-radios[data-look="card"] .rb-radio')).toContain("min-block-size: 104px;");
+    expect(rule(".rb-item")).toContain("min-block-size: 48px;");
+    expect(rule('.rb-radios[data-look="tile"]')).toContain("grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));");
+  });
+  it("design-l3 L3-24 : .rb-editor inchangée (Grille, Image l'emploient)", () => {
+    const keep: readonly [string, string][] = [
+      [".rb-editor", ".rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }"],
+      [".rb-editor section", ".rb-editor section { display: grid; gap: var(--rb-gap); }"],
+      [".rb-editor h3", ".rb-editor h3 { margin: 0; font-size: 1rem; }"],
+      [".rb-editor fieldset", ".rb-editor fieldset { display: grid; gap: var(--rb-gap); border: 1px solid #d4d4d8; }"],
+      [".rb-editor ul", ".rb-editor ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }"],
+      [".rb-editor li", ".rb-editor li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }"],
+      [".rb-editor li[data-unknown]", ".rb-editor li[data-unknown] { color: #71717a; font-style: italic; }"],
+      ['.rb-editor input[type="checkbox"]', '.rb-editor input[type="checkbox"] { inline-size: calc(var(--rb-btn-m) / 2); block-size: calc(var(--rb-btn-m) / 2); }'],
+      [".rb-editor-actions", ".rb-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rb-gap); }"],
+    ];
+    for (const [sel, text] of keep) expect(rule(sel).trim(), sel).toBe(text);
+  });
+  it("design-l3 L3-7, L3-10, L3-8 : carte et vignette choisies en violet 100 / 600 / 700 ; segment choisi blanc, ombre de carte", () => {
+    expect(rule('.rb-radios[data-look="card"] .rb-radio[aria-checked="true"]')).toMatch(/border-color: var\(--rf-violet-600\);.*box-shadow: inset 0 0 0 1px var\(--rf-violet-600\);.*background: var\(--rf-violet-100\);/);
+    expect(rule(".rb-radio-chk")).toMatch(/inline-size: 32px;.*block-size: 32px;.*border-radius: 50%;.*background: var\(--rf-violet-600\);.*color: var\(--rf-white\);/);
+    expect(rule('.rb-radios[data-look="tile"] .rb-radio[aria-checked="true"]')).toMatch(/background: var\(--rf-violet-100\);.*color: var\(--rf-violet-700\);.*font-weight: 600;/);
+    expect(rule('.rb-radios[data-look="segment"] .rb-radio[aria-checked="true"]')).toMatch(/background: var\(--rf-white\);.*color: var\(--rf-violet-700\);.*box-shadow: 0 0 0 1px var\(--rf-gray-300\), var\(--rf-shadow-card\);/);
+    expect(rule(".rb-item[data-hidden]")).toMatch(/background: var\(--rf-gray-100\);.*color: var\(--rf-text-muted-aa\);/);
+  });
+  it("design-l3 netteté (exigence de Jérôme) : panneau en pixels entiers ; aucune translation ni longueur fractionnaire ou relative", () => {
+    const own = (CSS.replace(/\/\*.*?\*\//g, "").match(/[^{}]+\{[^}]*\}/g) ?? []).filter((r) => /rb-sheet|rb-radio|rb-item|rb-grip|rb-select|rb-tag|rb-note|rb-field|rb-add-list|rb-preset|rb-saved|data-panel="profils"/.test(r.split("{")[0]!));
+    expect(own.length).toBeGreaterThan(20);
+    for (const r of own) expect(r, r).not.toMatch(/translate|\d\.\d+px|\d(r?em|vw|vh)\b|calc\(|line-height: normal/);
+    // Interlignes entiers : une ligne de texte « normal » (dépend de la police) décalerait tout ce qui la suit d'une fraction.
+    expect(rule(".rb-sheet")).toContain("line-height: 24px;");
+    expect(rule('.rb-radios[data-look="tile"] .rb-radio')).toContain("line-height: 20px;");
+    // Corps : 600 - 2 x 24 = 552 ; gouttière des deux côtés (barre b) : colonne de 512 centrée à (552 - 2b - 512) / 2 = 20 - b,
+    // entier quelle que soit la barre de défilement ; bords de la colonne à 44 px du panneau, comme l'en-tête et le pied.
+    expect(rule(".rb-sheet-body")).toMatch(/scrollbar-gutter: stable both-edges;.*display: grid;.*grid-template-columns: min\(512px, 100%\);.*justify-content: center;.*padding: 20px var\(--rf-space-lg\);/);
+    expect(rule(".rb-sheet-head")).toContain("padding: 0 var(--rf-space-md) 0 44px;");
+    expect(rule(".rb-sheet-foot")).toContain("padding: 0 44px;");
+    // En-tête et pied : 80 px de contenu, bordure en plus (pas border-box) : un bouton de 48 px y tombe à 16 px.
+    for (const sel of [".rb-sheet-head", ".rb-sheet-foot"]) expect(rule(sel), sel).not.toContain("border-box");
+    // Divisions de la colonne de 512 : vignettes (auto-fit 88, écart 8 : 5 x 96), cartes (écart 12 : 2 x 250),
+    // segments (marge 4, écart 0 : 504 / 2, 3, 4) ; liste « Ajouter » (bord 1, marge 4, écart 4 : 2 x 249).
+    expect(rule('.rb-radios[data-look="tile"]')).toContain("gap: var(--rf-space-sm);");
+    expect(rule('.rb-radios[data-look="card"]')).toMatch(/grid-template-columns: 1fr 1fr;.*gap: 12px;/);
+    expect(rule('.rb-radios[data-look="segment"]')).toMatch(/gap: 0;.*padding: var\(--rf-space-xs\);/);
+    const COL = 512;
+    const tiles = Math.floor((COL + 8) / (88 + 8));
+    for (const w of [(COL - (tiles - 1) * 8) / tiles, (COL - 12) / 2, ...[2, 3, 4].map((n) => (COL - 2 * 4) / n), (COL - 2 - 8 - 4) / 2]) expect(Number.isInteger(w), String(w)).toBe(true);
+    expect(((COL - (tiles - 1) * 8) / tiles - 24) % 2).toBe(0); // icône de 24 centrée dans la vignette : décalage entier
+    // Commandes calées à droite d'une ligne : largeur fixe, sinon la largeur du texte décale leur icône ou leur bord.
+    expect(rule(".rb-sheet-solid")).toContain("inline-size: 160px;");
+    expect(rule(".rb-sheet-outline")).toContain("inline-size: 264px;");
+    expect(rule(".rb-sheet-h2row .rb-sheet-add")).toContain("inline-size: 136px;");
+    expect(rule(".rb-item .rb-sheet-ghost")).toContain("inline-size: 112px;");
+    expect(rule(".rb-preset-width > span")).toContain("inline-size: 80px;");
+    expect(rule(".rb-saved")).toContain("flex-direction: row-reverse;");
+    for (const sel of [".rb-sheet-ghost", ".rb-sheet-solid", ".rb-sheet-outline", ".rb-sheet-add"]) expect(rule(sel), sel).not.toMatch(/padding: 0 [^;]*\d+\.\d/);
+  });
 });
