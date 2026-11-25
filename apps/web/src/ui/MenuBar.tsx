@@ -75,7 +75,10 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
     list.style.left = `${at.left}px`;
     list.style.top = `${at.top}px`;
   };
+  /** Dernier geste dans la liste : à la souris, le focus n'est pas rendu au bouton Menu (son infobulle resterait). */
+  let byPointer = false;
   const show = (): void => {
+    byPointer = false;
     setOpen(true);
     queueMicrotask(() => {
       place();
@@ -90,12 +93,18 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
     on(open, (o) => {
       if (!o) return;
       const doc = root?.ownerDocument ?? document;
+      const win = doc.defaultView ?? window;
       doc.addEventListener("pointerdown", outside, true);
-      onCleanup(() => doc.removeEventListener("pointerdown", outside, true));
+      win.addEventListener("resize", place);
+      onCleanup(() => {
+        doc.removeEventListener("pointerdown", outside, true);
+        win.removeEventListener("resize", place);
+      });
     }),
   );
   const onKey = (e: KeyboardEvent): void => {
     // Comme la grille du tableau : les touches du moteur restent au menu ; Ctrl ou Méta remontent.
+    byPointer = false;
     if (!e.ctrlKey && !e.metaKey && ENGINE_KEYS.has(e.key)) e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
@@ -110,7 +119,7 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
     all[STEP[e.key]!(Math.max(i, 0), all.length)]?.focus();
   };
   const choose = (run: () => void) => (): void => {
-    close(root?.contains(document.activeElement) === true);
+    close(!byPointer && root?.contains(document.activeElement) === true);
     run();
   };
   /** Rendu par sorte d'élément (table) ; zone de dépôt : rien. */
@@ -160,7 +169,7 @@ export function MenuBar(props: MenuBarProps): JSX.Element {
         <span class="rb-sr">{MENU_LABEL}</span>
       </button>
       <TipBubble tip={tip} label={MENU_LABEL} anchor={() => toggle!} />
-      <div ref={list} role="menu" aria-label={MENU_LABEL} data-menu-list hidden={!open()} onKeyDown={onKey}>
+      <div ref={list} role="menu" aria-label={MENU_LABEL} data-menu-list hidden={!open()} onKeyDown={onKey} onPointerDown={() => (byPointer = true)}>
         <For each={props.items()}>{(it) => RENDER[it.kind](it)}</For>
       </div>
     </div>

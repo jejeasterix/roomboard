@@ -168,6 +168,38 @@ describe("MenuBar (design-l2 L2-6)", () => {
     expect(t + 300).toBeLessThanOrEqual(window.innerHeight);
   });
 
+  it("design-l2 T14 : un choix à la souris ne rend pas le focus au bouton Menu (pas d'infobulle) ; au clavier, si", async () => {
+    const { toggle, row } = setup();
+    fireEvent.click(toggle());
+    await tick();
+    fireEvent.pointerDown(row("grid"), { pointerType: "mouse" });
+    row("grid").focus();
+    fireEvent.click(row("grid"), { detail: 1 });
+    await tick();
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).not.toBe(toggle());
+  });
+
+  it("design-l2 T14 : la liste ouverte est replacée quand la fenêtre change de taille ; plus après fermeture", async () => {
+    const { toggle, list } = setup("bottom");
+    const anchor = { left: 900, right: 948, top: 650, bottom: 698, width: 48, height: 48, x: 900, y: 650, toJSON: () => ({}) };
+    vi.spyOn(toggle(), "getBoundingClientRect").mockImplementation(() => anchor);
+    vi.spyOn(list(), "getBoundingClientRect").mockReturnValue({ left: 0, right: 320, top: 0, bottom: 300, width: 320, height: 300, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent.click(toggle());
+    await tick();
+    const before = list().style.left;
+    const w = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { value: 700, configurable: true });
+    fireEvent(window, new Event("resize"));
+    expect(list().style.left).toBe("380px");
+    expect(list().style.left).not.toBe(before);
+    fireEvent.click(toggle());
+    list().style.left = "1px";
+    fireEvent(window, new Event("resize"));
+    expect(list().style.left).toBe("1px");
+    Object.defineProperty(window, "innerWidth", { value: w, configurable: true });
+  });
+
   it("design-l2 T12 : le focus qui sort du menu le ferme ; un choix au clavier rend le focus au bouton Menu", async () => {
     const { toggle, list, row } = setup();
     fireEvent.click(toggle());
