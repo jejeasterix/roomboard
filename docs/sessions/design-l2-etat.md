@@ -1,10 +1,10 @@
 # État — design-l2
 
-Statut : en cours
+Statut : clos
 Gabarit : chantier (8 tâches)
 Objectif : Remplacer la grille à bandes de RoomBoard par des îlots blancs flottants au-dessus de la scène (barre d'outils au centre, déplaçable et repliable ; onglets, menu, pages, annuler et zoom, bibliothèque et profil), pour que la scène occupe toute la hauteur de la fenêtre, comme la maquette 01.
 Avancement : 14/14 tâches terminées (8 du plan, 2 correctifs d'essais, 4 correctifs de fin)
-Étage : 4 — depuis 2026-11-25 20:00
+Étage : 4 — clos le 2026-11-25 20:55 (PR #57 fusionnée, main f051b8d)
 Lot : —
 Tâche : —
 Questions à Jérôme : —
@@ -69,3 +69,80 @@ ouvertes : — · passées : —
 - faible : Ctrl+O sous charge après Ctrl+S (C3 rouge une fois, non reproduit 5/5 ; course `busy` supposée, déjà présente avant L2).
 - faible : restes d'OF61 non pris (focus après « Revenir à l'origine », poignée de tri 44 px) : hors du chemin de L2.
 - faible : revue immédiate de T5 (concepteur-critique) remplacée par la double relecture de fin ; relecture du plan sautée pour le temps.
+
+## Rapport
+- verifier.sh --e2e sur d76aa0a : OK — cargo 1356 (8 ignorés) · web 3606 (réf. 3477) · cli 263 · e2e OK (dont design L2).
+- Wasm : principal 1 375 581 o · formats 2 794 511 o (inchangés).
+- #stage : 1280 × 900 et 1920 × 1080 à y 0 (avant : y 150, 694 px).
+- Netteté § 10 : Rectangle 0 pixel intermédiaire, 0 frange ; onglet 0 frange ; contre-épreuve 4.
+
+## Notes du coffre à poser
+### 1. `00_Journal/2026-11-25-roomboard-design-l2-clos.md`
+```markdown
+---
+id: 2026-11-25-roomboard-design-l2-clos
+type: journal
+summary: "RoomBoard design L2 clos (OF68, PR #57) : la grille à bandes devient des îlots blancs flottants au-dessus de la scène, qui couvre toute la fenêtre ; barre d'outils en îlot centré, déplaçable et repliable ; actions de fichier au menu ; netteté § 10 tenue."
+created: 2026-11-25
+project: "[[roomboard]]"
+tags: [projet/roomboard, journal, design]
+evidence: "PR jejeasterix/roomboard#57 ; docs/plans/design-l2-cadrage.md ; docs/sessions/design-l2-etat.md ; docs/essais/design-l2-comparaison.md"
+---
+
+# RoomBoard — design L2 clos (2026-11-25)
+
+- Lot L2 du cadrage design (§ 9 ; D-DS2, avec D-DS1, D-DS3, D-DS6, D-DS7), sur L1, L4 et L3 ([[2026-11-25-roomboard-design-l3-clos]]).
+- Livré : calque `IslandLayer` (`ui/Island.tsx`) dans la case de la scène ; placement pur `ui/island-place.ts` (réutilise `placeWithin` de `app/table-picker.ts`) ; îlot d'outils centré, déplaçable sur le squelette `ui/pointer-gesture.ts`, repliable, clavier ; `ui/MenuBar.tsx` (liste en `position: fixed`) ; rôles `menu`, `history`, `panels` ; profils fournis en `floating`, bande toujours possible par `dock` ; petits écrans bornés ; fond de scène `#F5F5F8`. Format `.rbprofile` inchangé.
+- Décisions : [[NNNN-roomboard-ilots-barres-du-profil-par-role]], [[NNNN-roomboard-position-ilot-sur-appareil]].
+- Preuve : `verifier.sh --e2e` OK ; `#stage` = fenêtre (1280 × 900, 1920 × 1080) contre 694 px de haut avant ; essai `design-l2-navigateur.mjs` (S1 à S6) ; écarts à la maquette 01 justifiés ; Wasm inchangés ; web 3477 → 3606 tests.
+- Pièges : gestes d'essais en px de scène tombés sous les îlots ; icônes après un texte de largeur fractionnaire (`padToPixel`) ; `createMemo` qui rend un tableau neuf relance `Show keyed`.
+- Reste : page sous les îlots du haut (`fitPage`) ; Ctrl+O après Ctrl+S sous charge (non reproduit) ; gestes de l'îlot au doigt et au stylet à rejouer en coque.
+```
+
+### 2. `02_Decisions/NNNN-roomboard-ilots-barres-du-profil-par-role.md`
+```markdown
+---
+id: NNNN-roomboard-ilots-barres-du-profil-par-role
+type: decision
+summary: "RoomBoard : chaque îlot flottant est une barre du profil, reconnue par son rôle (tools, pages, menu, history, panels) ; `dock: floating` donne un îlot, les quatre autres valeurs une bande ; le placement vit dans un module pur."
+created: 2026-11-25
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision, design]
+evidence: "docs/plans/design-l2-cadrage.md (DA-L2-1, DA-L2-2) ; PR jejeasterix/roomboard#57"
+---
+
+# Îlots = barres du profil, par rôle
+
+Prise par l'agent (OF68, chantier design-l2), le cadrage en preuve.
+
+- Chaque îlot est une barre du profil ; trois rôles ajoutés : `menu`, `history`, `panels`. `dock: "floating"` (déjà au modèle) donne un îlot ; `top`, `bottom`, `left`, `right` gardent une bande.
+- Le placement est un module pur (`ui/island-place.ts`), qui réutilise `placeWithin`. Les positions sont arrondies au pixel entier.
+- Pourquoi : format `.rbprofile` inchangé ; l'éditeur de profils (L3) règle les îlots comme les barres.
+```
+
+### 3. `02_Decisions/NNNN-roomboard-position-ilot-sur-appareil.md`
+```markdown
+---
+id: NNNN-roomboard-position-ilot-sur-appareil
+type: decision
+summary: "RoomBoard : la position et l'état replié d'un îlot déplacé sont des réglages de l'appareil (`roomboard.ilot.<profil>.<barre>`), pas des champs du profil ; contredit U12 et design-cadrage § 3, à revoir avec Jérôme."
+created: 2026-11-25
+project: "[[roomboard]]"
+tags: [projet/roomboard, decision, design]
+evidence: "docs/plans/design-l2-cadrage.md (L2-7, DA-L2-3, H10) ; PR jejeasterix/roomboard#57"
+---
+
+# Position de l'îlot sur l'appareil
+
+Prise par l'agent (OF68, chantier design-l2), le cadrage en preuve. Hypothèse H10 de niveau 1, à revoir.
+
+- La position et le repli vont dans `device-settings.ts`, clé `roomboard.ilot.<profil>.<barre>` (parties encodées). Le champ `collapsed` du profil ne sert que d'état de départ.
+- Contredit U12 (`usage-cadrage.md:65`) et `design-cadrage.md:79`, qui mettent la position dans le profil.
+- Pourquoi : format `.rbprofile` inchangé ; un profil fourni n'est jamais copié en silence ; la position dépend de l'écran du poste.
+- Repli : si Jérôme veut la position dans le profil, ajouter un champ lu sans perte (migration testée).
+```
+
+### 4. Segment à ajouter à la ligne 21 de `01_Projets/roomboard.md`
+```markdown
+ ; design L2 (îlots flottants au-dessus de la scène, barre d'outils centrée déplaçable et repliable, actions de fichier au menu, scène pleine fenêtre) clos (PR #57, `main` f051b8d) — voir [[2026-11-25-roomboard-design-l2-clos]], [[NNNN-roomboard-ilots-barres-du-profil-par-role]] et [[NNNN-roomboard-position-ilot-sur-appareil]]
+```
