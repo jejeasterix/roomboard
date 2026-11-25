@@ -508,7 +508,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Icônes Lucide (ISC), design L1
+## Icônes Lucide (ISC), design L1 et L4
 
 Tracés repris de Lucide (https://github.com/lucide-icons/lucide), commit `7981a0798a`, sans paquet npm : ils sont
 recopiés dans `apps/web/src/ui/icons.ts`.
@@ -521,6 +521,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   `between-vertical-start`, `columns-3`, `table-cells-merge`, `table-cells-split`, `droplet`, `droplet-off`.
 - Dessinées pour RoomBoard dans le même style (grille de 24, trait 1,5) : `annotate`, `eraser-part`, `line`,
   `row-remove`, `col-remove`.
+- Reprises de la maquette `docs/design/maquettes/02-annotation-bureau.html` (design L4, tracés Lucide au même commit),
+  noms RoomBoard : `check` (Lucide `check`), `drop` (Lucide `file-down`).
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :

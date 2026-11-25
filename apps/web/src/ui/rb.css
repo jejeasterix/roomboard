@@ -58,12 +58,23 @@
 .rb-bar button.rb-ib { display: inline-grid; place-items: center; inline-size: var(--rb-btn); block-size: var(--rb-btn); padding: 0; flex: none; }
 .rb-bar button.rb-ib .rb-swatch { inline-size: var(--rb-icon); block-size: var(--rb-icon); }
 .rb-icon { display: block; flex: none; inline-size: var(--rb-icon); block-size: var(--rb-icon); }
+/* design-l4 (L4-8, L4-7 bis) : commande segmentée Dessin / Souris, deux boutons accolés sur un fond commun ; empilée dans une barre verticale. */
+.rb-seg { display: inline-flex; flex: none; background: var(--rf-gray-50); border-radius: var(--rf-radius-lg); }
+.rb-bar[data-dock="left"] .rb-seg, .rb-bar[data-dock="right"] .rb-seg { flex-direction: column; }
+/* design-l4 (L4-10) : boutons pleins ; grisés comme une icône désactivée ; accolés quand ils se suivent (2 px au lieu de 4). */
+.rb-bar button.rb-primary { background: var(--rf-violet-600); color: var(--rf-white); }
+.rb-bar button.rb-primary:not(:disabled):hover { background: var(--rf-violet-700); }
+.rb-bar button.rb-primary:disabled { background: var(--rf-gray-50); color: var(--rf-gray-500); }
+.rb-bar:is([data-dock="top"], [data-dock="bottom"]) button.rb-primary + button.rb-primary { margin-inline-start: -2px; }
+.rb-bar:is([data-dock="left"], [data-dock="right"]) button.rb-primary + button.rb-primary { margin-block-start: -2px; }
 /* Libellé lu par les lecteurs d'écran et par textContent, masqué à l'œil ; règle de premier niveau (App.test.tsx:389). */
 .rb-sr { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Infobulle (L1-4) : rendue dans body, jamais dans la barre ; left/top en px entiers posés par IconButton, aucun transform. */
 .rb-tip { position: fixed; z-index: 10; pointer-events: none; padding: 6px 10px; background: var(--rf-navy-500); color: var(--rf-white); font-size: 14px; font-weight: 500; line-height: 20px; border-radius: var(--rf-radius-md); white-space: nowrap; box-shadow: var(--rf-shadow-card); }
 .rb-sep { align-self: center; block-size: var(--rb-icon); border-inline-start: 1px solid var(--rf-gray-300); margin: 0 4px; }
-.rb-drop { display: flex; align-items: center; padding: 0 8px; border: 1px dashed var(--rf-gray-300); min-height: var(--rb-btn); }
+/* design-l4 (L4-11) : zone de dépôt à icône (file-down), libellé en rb-sr ; 96 px × --rb-btn, couchée dans une barre verticale. */
+.rb-drop { display: grid; place-items: center; flex: none; box-sizing: border-box; inline-size: 96px; block-size: var(--rb-btn); border: 1.5px dashed var(--rf-gray-500); border-radius: var(--rf-radius-lg); color: var(--rf-navy-500); }
+.rb-bar[data-dock="left"] .rb-drop, .rb-bar[data-dock="right"] .rb-drop { inline-size: var(--rb-btn); block-size: 96px; }
 /* Mise en page (T95, CL5b-10) : la grille vient de `layoutFor` ; chaque barre ancrée a sa case, la scène la sienne. Seuls
    une barre `floating` et les menus passagers (réglages, profils) se superposent à la scène, dans sa case. */
 .rb-layout { display: grid; height: 100vh; overflow: hidden; }

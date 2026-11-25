@@ -38,8 +38,9 @@ export function Icon(props: { name: string }): JSX.Element {
   );
 }
 
-/** Infobulle posée en px entiers sous son bouton (L1-4) ; recalculée quand le libellé change. */
-function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Element {
+/** Infobulle posée en px entiers sous son bouton (L1-4) ; recalculée quand le libellé change ; exportée pour la zone de
+ *  dépôt (design-l4, L4-11). */
+export function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Element {
   let el: HTMLDivElement | undefined;
   const [at, setAt] = createSignal<{ left: number; top: number } | null>(null);
   createEffect(() => {
