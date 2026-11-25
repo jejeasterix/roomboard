@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Toolbar as Bar, ToolItem } from "../toolbar";
 import type { ToolbarView } from "./item-state";
-import { MENU_LABEL, MenuBar } from "./MenuBar";
+import { MENU_LABEL, MenuBar, placeMenu } from "./MenuBar";
 
 afterEach(cleanup);
 
@@ -143,5 +143,48 @@ describe("MenuBar (design-l2 L2-6)", () => {
     expect(container.querySelector('[data-toolbar="menu"]')?.getAttribute("data-dock")).toBe("top");
     expect(toggle()).not.toBeNull();
     expect(list().querySelectorAll('button[role="menuitem"]')).toHaveLength(4);
+  });
+
+  it("design-l2 T12 : placeMenu : sous le bouton, au pixel entier, borné à la fenêtre (bande basse ou à droite : au-dessus, calée)", () => {
+    const view = { width: 1000, height: 700 };
+    const list = { width: 320, height: 300 };
+    expect(placeMenu({ left: 16.4, right: 64, top: 16, bottom: 64 }, list, view)).toEqual({ left: 16, top: 72 });
+    expect(placeMenu({ left: 900, right: 948, top: 16, bottom: 64 }, list, view)).toEqual({ left: 680, top: 72 });
+    expect(placeMenu({ left: 16, right: 64, top: 640, bottom: 688 }, list, view)).toEqual({ left: 16, top: 332 });
+    expect(placeMenu({ left: 16, right: 64, top: 10, bottom: 30 }, { width: 320, height: 900 }, view)).toEqual({ left: 16, top: 0 });
+  });
+
+  it("design-l2 T12 : en bande, la liste ouverte est en position fixe, dans la fenêtre", async () => {
+    const { toggle, list } = setup("bottom");
+    vi.spyOn(toggle(), "getBoundingClientRect").mockReturnValue({ left: 900, right: 948, top: 650, bottom: 698, width: 48, height: 48, x: 900, y: 650, toJSON: () => ({}) });
+    vi.spyOn(list(), "getBoundingClientRect").mockReturnValue({ left: 0, right: 320, top: 0, bottom: 300, width: 320, height: 300, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent.click(toggle());
+    await tick();
+    const l = parseInt(list().style.left, 10);
+    const t = parseInt(list().style.top, 10);
+    expect(list().style.position).toBe("fixed");
+    expect(l).toBeGreaterThanOrEqual(0);
+    expect(l + 320).toBeLessThanOrEqual(window.innerWidth);
+    expect(t).toBeGreaterThanOrEqual(0);
+    expect(t + 300).toBeLessThanOrEqual(window.innerHeight);
+  });
+
+  it("design-l2 T12 : le focus qui sort du menu le ferme ; un choix au clavier rend le focus au bouton Menu", async () => {
+    const { toggle, list, row } = setup();
+    fireEvent.click(toggle());
+    await tick();
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    row("grid").focus();
+    fireEvent.click(row("grid"));
+    await tick();
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle());
+    fireEvent.click(toggle());
+    await tick();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    fireEvent.focusOut(list().querySelector("button")!, { relatedTarget: outside });
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    outside.remove();
   });
 });
