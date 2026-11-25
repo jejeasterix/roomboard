@@ -244,8 +244,8 @@ describe("rb.css (design-l2)", () => {
     expect(rule('.rb-island .rb-bar[data-collapsed="1"]')).toContain("display: none;");
     expect(rule(".rb-island-chrome[data-island-grip]")).toContain("touch-action: none;");
   });
-  it("design-l2 T12 : îlot des pages sans vide à droite ; compteur en bleu nuit, marges réduites", () => {
-    expect(rule(".rb-island .rb-pages-list")).toMatch(/min-width: min\(calc\(3 \* var\(--rb-btn\) \+ 2 \* var\(--rb-gap\)\), max-content\);.*flex: 0 1 auto;/);
+  it("design-l2 T12 : îlot des pages : place de trois numéros gardée (CL5b-8, essai c13 S4) ; compteur en bleu nuit, marges réduites", () => {
+    expect(rule(".rb-island .rb-pages-list")).toMatch(/min-width: calc\(3 \* var\(--rb-btn\) \+ 2 \* var\(--rb-gap\)\);.*flex: 0 1 auto;/);
     expect(rule(".rb-pages-count")).toMatch(/color: var\(--rf-navy-500\);/);
     expect(rule(".rb-pages-count")).not.toMatch(/margin-inline: var\(--rb-gap\)/);
   });
