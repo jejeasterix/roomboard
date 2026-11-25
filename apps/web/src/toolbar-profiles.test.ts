@@ -7,7 +7,7 @@ import {
   DEFAULT_PROFILE_JSON,
   SIMPLE_PROFILE_JSON,
 } from "./toolbar-profiles";
-import { parseProfile, visibleItems } from "./toolbar";
+import { annotationBarOf, ANNOTATION_MAIN_ACTIONS, itemsForMode, parseProfile, visibleItems } from "./toolbar";
 
 const ALL = { desktopAnnotation: true, multiWindow: true, dropPaths: true, officeConverter: true };
 const ids = (id: string): string[] =>
@@ -43,7 +43,7 @@ describe("profils livrés (T83, CL5b-9)", () => {
   it("Grille (E7, HE5) : dans le groupe vue de defaut et d'annotation, avant Profil ; absente de simple", () => {
     for (const id of ["defaut", "annotation"]) {
       const vue = builtinProfile(id)!.toolbars[0]!.groups.find((g) => g.id === "vue")!;
-      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings", "desktop-annotation", "annotation-pointer", "annotation-screen", "annotation-freeze", "annotation-send", "annotation-send-new", "depot-annotation"]);
+      expect(vue.items.slice(1).map((i) => i.id), id).toEqual(["fit-page", "grid", "library", "profiles", "settings", "desktop-annotation"]);
     }
     expect(ids("simple")).not.toContain("grid");
   });
@@ -55,8 +55,8 @@ describe("profils livrés (T83, CL5b-9)", () => {
 
   it("toolbars en liste : la barre des pages est une entrée (role pages), chacune avec son dock", () => {
     const d = builtinProfile("defaut")!;
-    expect(d.toolbars.map((b) => [b.id, b.role, b.dock])).toEqual([["outils", "tools", "top"], ["pages", "pages", "bottom"]]);
-    expect(builtinProfile("simple")!.toolbars.map((b) => b.dock)).toEqual(["left", "bottom"]);
+    expect(d.toolbars.map((b) => [b.id, b.role, b.dock])).toEqual([["outils", "tools", "top"], ["pages", "pages", "bottom"], ["annotation", "annotation", "top"]]);
+    expect(builtinProfile("simple")!.toolbars.map((b) => b.dock)).toEqual(["left", "bottom", "left"]);
     expect(builtinProfile("simple")!.interface.buttonSize).toBe("l");
   });
 
@@ -173,6 +173,49 @@ describe("C11b : profils livrés (P29)", () => {
         const it = items.find((x) => x.kind === "action" && x.action === a);
         expect(it, `${id} : ${a}`).toBeDefined();
         expect(it!.requires).toEqual(["desktopAnnotation"]);
+      }
+    }
+  });
+});
+
+describe("design-l4 : barres d'annotation livrées (L4-1, L4-5 à L4-7)", () => {
+  const flat = (b: { readonly groups: readonly { readonly items: readonly { readonly id: string }[] }[] }): string[] => b.groups.flatMap((g) => g.items.map((i) => i.id));
+  const bar = (id: string, barId: string) => builtinProfile(id)!.toolbars.find((b) => b.id === barId)!;
+  it("design-l4 T6 : L4-6 : defaut et annotation, barre « annotation » en haut, dernière de toolbars, éléments dans l'ordre", () => {
+    for (const id of ["defaut", "annotation"]) {
+      const p = builtinProfile(id)!;
+      expect(p.toolbars.map((b) => b.id), id).toEqual(["outils", "pages", "annotation"]);
+      expect([bar(id, "annotation").role, bar(id, "annotation").dock]).toEqual(["annotation", "top"]);
+      expect(flat(bar(id, "annotation")), id).toEqual([
+        "annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-eraser-mode", "ann-arrow", "ann-rect", "ann-text",
+        "ann-sep-2", "ann-undo", "annotation-freeze", "annotation-screen", "ann-sep-3", "depot-annotation", "annotation-send",
+        "annotation-send-new", "ann-sep-4", "ann-desktop-annotation",
+      ]);
+      expect(annotationBarOf(p)?.id, id).toBe("annotation");
+    }
+  });
+  it("design-l4 T6 : L4-7 : simple, barre « annotation » à gauche, sans zone", () => {
+    const p = builtinProfile("simple")!;
+    expect(p.toolbars.map((b) => [b.id, b.dock])).toEqual([["outils", "left"], ["pages", "bottom"], ["annotation", "left"]]);
+    expect(flat(bar("simple", "annotation"))).toEqual([
+      "annotation-pointer", "ann-sep-1", "ann-pen", "ann-eraser", "ann-sep-2", "ann-undo", "ann-sep-3", "annotation-freeze",
+      "annotation-screen", "ann-sep-4", "annotation-send", "annotation-send-new", "ann-sep-5", "ann-desktop-annotation",
+    ]);
+  });
+  it("design-l4 T6 : L4-5, H7 : la barre d'outils garde « Annotation du bureau » seule ; au tableau, ni « Souris » ni « Écran suivant »", () => {
+    for (const id of ["defaut", "simple", "annotation"]) {
+      const outils = bar(id, "outils");
+      expect(flat(outils).filter((x) => x.includes("annotation")), id).toEqual(["desktop-annotation"]);
+      const board = itemsForMode(outils, ALL, "board").map((i) => i.id);
+      expect(board, id).toContain("desktop-annotation");
+      expect(board.filter((x) => ["annotation-pointer", "annotation-screen"].includes(x)), id).toEqual([]);
+    }
+  });
+  it("design-l4 T6 : L4-6 : actions d'annotation et zone exigent desktopAnnotation ; outils et actions ann- de dessin, aucune capacité", () => {
+    for (const id of ["defaut", "simple"]) {
+      for (const it of bar(id, "annotation").groups.flatMap((g) => g.items)) {
+        const needs = it.kind === "dropzone" || (it.kind === "action" && ANNOTATION_MAIN_ACTIONS.has(it.action ?? ""));
+        expect(it.requires, `${id} : ${it.id}`).toEqual(needs ? ["desktopAnnotation"] : []);
       }
     }
   });
