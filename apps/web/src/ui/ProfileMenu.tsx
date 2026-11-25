@@ -1,5 +1,6 @@
 import { For, Show, type Accessor, type JSX } from "solid-js";
 import type { Profile } from "../toolbar";
+import { Icon } from "./IconButton";
 
 /** Menu Profil (CL5b-9, C1 P22) : les profils, puis les commandes. Aucun geste ici : les props les portent. */
 export interface ProfileMenuProps {
@@ -18,10 +19,21 @@ export interface ProfileMenuProps {
   resetAll(): void;
 }
 
+/** design-l3 (L3-22) : icône de chaque commande (table, jamais un branchement sur le nom). */
+const COMMAND_ICONS: Readonly<Record<string, string>> = Object.freeze({
+  edit: "profile",
+  import: "import",
+  export: "export",
+  reset: "reset",
+  remove: "trash",
+  "reset-all": "reset",
+});
+
 function Command(props: { name: string; label: string; run: () => void; disabled?: boolean }): JSX.Element {
   return (
     <button type="button" role="menuitem" data-profile-cmd={props.name} disabled={props.disabled ?? false} onClick={() => props.run()}>
-      {props.label}
+      <Icon name={Object.hasOwn(COMMAND_ICONS, props.name) ? COMMAND_ICONS[props.name]! : "profile"} />
+      <span>{props.label}</span>
     </button>
   );
 }
@@ -38,7 +50,10 @@ export function ProfileMenu(props: ProfileMenuProps): JSX.Element {
             aria-checked={props.activeId() === p.id}
             onClick={() => props.choose(p.id)}
           >
-            {p.label}
+            <Show when={props.activeId() === p.id} fallback={<span class="rb-menu-blank" aria-hidden="true" />}>
+              <Icon name="check" />
+            </Show>
+            <span>{p.label}</span>
           </button>
         )}
       </For>

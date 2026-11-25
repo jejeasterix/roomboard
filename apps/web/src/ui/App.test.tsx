@@ -790,12 +790,12 @@ describe("App — profils (C1)", () => {
     expect(container.querySelector('[data-profile="cm1"]')?.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("changer de panneau abandonne le brouillon", () => {
+  it("changer de panneau abandonne le brouillon", async () => {
     const { container } = renderApp();
     openEditor(container);
     click(container.querySelector(dockTile("left")));
     click(container.querySelector('button[data-item="settings"]'));
-    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    await vi.waitFor(() => expect(container.querySelector("[data-profile-editor]")).toBeNull());
     click(container.querySelector('button[data-item="settings"]'));
     openEditor(container);
     expect(container.querySelector(dockTile("top"))?.getAttribute("aria-checked")).toBe("true");
@@ -958,6 +958,89 @@ describe("App — profils (C1)", () => {
     openEditor(container);
     await new Promise((r) => setTimeout(r, 0));
     expect(document.activeElement).not.toBe(container.querySelector('select[data-edit="profile"]'));
+  });
+
+  it("design-l3 L3-32 : brouillon modifié, Réglages : question ; Non : panneau gardé, barre à gauche ; Oui : Réglages, barre en haut", async () => {
+    const { container } = renderApp();
+    openEditor(container);
+    click(container.querySelector(dockTile("left")));
+    vi.mocked(shell.confirm).mockClear();
+    vi.mocked(shell.confirm).mockResolvedValueOnce(false);
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(shell.confirm).toHaveBeenCalledWith("Abandonner les changements du profil « Par défaut » ?");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(container.querySelector("[data-profile-editor]")).not.toBeNull();
+    expect(container.querySelector("#reglages")).toBeNull();
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("left");
+    click(container.querySelector('button[data-item="settings"]'));
+    await vi.waitFor(() => expect(container.querySelector("#reglages")).not.toBeNull());
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+  });
+
+  it("design-l3 L3-32 : brouillon égal, Réglages : aucune question, Réglages ouverts dans le même tour", () => {
+    const { container } = renderApp();
+    openEditor(container);
+    vi.mocked(shell.confirm).mockClear();
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(shell.confirm).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(container.querySelector("#reglages")).not.toBeNull();
+  });
+
+  it("design-l3 L3-32 : brouillon modifié, entrée en annotation : panneau fermé sans question ; à la sortie, la barre enregistrée", async () => {
+    const a = fakeAnnotationUi();
+    const { container } = renderApp({ caps: { ...CAPS, desktopAnnotation: true }, annotation: a.ui });
+    openEditor(container);
+    click(container.querySelector(dockTile("left")));
+    vi.mocked(shell.confirm).mockClear();
+    await a.control.enter();
+    expect(container.querySelector("[data-profile-editor]")).toBeNull();
+    expect(shell.confirm).not.toHaveBeenCalled();
+    await a.control.exit();
+    expect(container.querySelector('[data-toolbar="outils"]')?.getAttribute("data-dock")).toBe("top");
+  });
+
+  it("design-l3 L3-2 : panneau ouvert : .rb-layout[data-panneau=\"profils\"] ; fermé : absent", () => {
+    const { container } = renderApp();
+    const layout = container.querySelector<HTMLElement>(".rb-layout")!;
+    expect(layout.hasAttribute("data-panneau")).toBe(false);
+    openEditor(container);
+    expect(layout.getAttribute("data-panneau")).toBe("profils");
+    click(container.querySelector('button[data-edit="close"]'));
+    expect(layout.hasAttribute("data-panneau")).toBe(false);
+  });
+
+  it("design-l3 L3-2 : barre d'outils à droite, panneau ouvert : la barre garde sa case, le panneau est dans la scène", () => {
+    const { container, store, active } = renderApp();
+    store.save(setDock(BUILTIN_PROFILES[0]!, "outils", "right"));
+    active.refresh();
+    openEditor(container);
+    const layout = container.querySelector<HTMLElement>(".rb-layout")!;
+    expect(layout.style.gridTemplateColumns).toBe("minmax(0, 1fr) auto");
+    const bar = container.querySelector('[data-toolbar="outils"]')!;
+    const popover = container.querySelector('.rb-popover[data-panel="profils"]')!;
+    expect(popover.parentElement).toBe(layout);
+    expect(popover.contains(bar)).toBe(false);
+    const slot = bar.closest<HTMLElement>(".rb-slot")!;
+    expect(slot.style.gridArea || slot.style.getPropertyValue("grid-area")).toBe("outils");
+  });
+
+  it("design-l3 L3-22 : menu Profil en îlot : icône et texte par ligne, profil actif marqué check, textes inchangés", () => {
+    const { container } = renderApp();
+    openMenu(container);
+    expect(container.querySelector("[data-profiles]")!.parentElement!.getAttribute("data-panel")).toBe("menu-profils");
+    const rows = [...container.querySelectorAll("[data-profile-cmd]")].map((b) => [b.getAttribute("data-profile-cmd"), b.querySelector("svg")?.getAttribute("data-icon"), b.textContent]);
+    expect(rows).toEqual([
+      ["edit", "profile", "Modifier…"],
+      ["import", "import", "Importer…"],
+      ["export", "export", "Exporter…"],
+      ["reset", "reset", "Remettre à zéro ce profil"],
+      ["reset-all", "reset", "Tout remettre à zéro"],
+    ]);
+    expect(container.querySelector('[data-profile="defaut"] svg')?.getAttribute("data-icon")).toBe("check");
+    expect(container.querySelector('[data-profile="simple"] svg')).toBeNull();
+    expect(container.querySelector('[data-profile="defaut"]')?.textContent).toBe("Par défaut");
   });
 });
 

@@ -102,6 +102,10 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 #pages { margin-left: 8px; font-variant-numeric: tabular-nums; }
 #echelons-notes { margin-left: 8px; color: #b45309; }
 .rb-floating { grid-area: stage; align-self: start; justify-self: end; z-index: 2; }
+/* design-l3 (L3-2, H10, H23) : panneau des profils ouvert, la barre flottante passe en haut à gauche de la scène, dans la
+   place que le panneau laisse, et ses barres passent sur plusieurs rangées. */
+.rb-layout[data-panneau="profils"] > .rb-floating { justify-self: start; max-inline-size: calc(100% - min(600px, 100%)); }
+.rb-layout[data-panneau="profils"] > .rb-floating .rb-bar { flex-wrap: wrap; }
 /* design-l4 (L4-16) : bandeau « Envoyé au tableau », dans la case de la scène, en bas à droite ; ne prend aucun clic. */
 .rb-toasts { grid-area: stage; align-self: end; justify-self: end; margin: 24px; z-index: 4; pointer-events: none; }
 .rb-toast { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--rf-white); border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-hover); font-size: 16px; color: var(--rf-gray-800); white-space: nowrap; box-sizing: border-box; }
@@ -169,8 +173,16 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-table-picker form button { min-block-size: var(--rb-btn-m); padding: 0 var(--rb-pad); }
 
 /* Menu des profils et éditeur (C1, P20, P22) : cibles d'au moins --rb-btn-m, libellés en clair, éléments inconnus grisés. */
+/* design-l3 (L3-22) : menu Profil en îlot, lignes de 48 px icône + texte (D-DS1), profil actif en violet 700. */
+.rb-popover[data-panel="menu-profils"] { margin: var(--rf-space-sm); border: 0; border-radius: var(--rf-radius-xl); box-shadow: 0 0 0 1px var(--rf-gray-300), var(--rf-shadow-modal); }
 [data-profiles] { display: grid; gap: 4px; padding: 4px; }
-[data-profiles] button { min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); text-align: start; }
+[data-profiles] button { display: flex; align-items: center; gap: 12px; min-height: var(--rb-btn-m); padding: 0 var(--rb-pad); border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); font: inherit; font-size: 16px; text-align: start; cursor: pointer; }
+[data-profiles] button:not(:disabled):hover { background: var(--rf-gray-50); }
+[data-profiles] button[aria-checked="true"] { color: var(--rf-violet-700); font-weight: 600; }
+[data-profiles] button:disabled { color: var(--rf-text-muted-aa); cursor: default; }
+[data-profiles] button:disabled .rb-icon { color: var(--rf-gray-500); }
+[data-profiles] button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+.rb-menu-blank { flex: none; inline-size: var(--rb-icon); }
 .rb-menu-sep { border-block-start: 1px solid var(--rf-gray-300); margin: 4px 0; }
 .rb-editor { display: grid; gap: var(--rb-gap); padding: var(--rb-pad); }
 .rb-editor section { display: grid; gap: var(--rb-gap); }
