@@ -29,7 +29,7 @@ const ev = (type: string, x: number, y: number, pointerType = "mouse", button = 
   Object.defineProperty(e, "pointerType", { value: pointerType });
   return e;
 };
-function start(s: HTMLElement, over: Partial<PointerGesture> = {}, pointerType = "mouse", button = 0) {
+function start(s: HTMLElement, over: Pick<PointerGesture, "accept"> = {}, pointerType = "mouse", button = 0) {
   const g = { move: vi.fn<(m: PointerEvent) => void>(), finish: vi.fn<(u: PointerEvent | null, dragged: boolean) => void>(), ...over };
   const down = ev("pointerdown", 10, 10, pointerType, button);
   Object.defineProperty(down, "currentTarget", { value: s });
