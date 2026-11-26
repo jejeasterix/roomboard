@@ -17,7 +17,7 @@ Branche `fix/restes-design`, depuis `origin/main` d97bd81. Début 2026-11-26 08:
 
 - Reste 3 : le code était juste, seul le test changeait ; le rouge se prouve par mutation du code (retrait de `removeEventListener("keydown")`), restaurée ensuite. Le premier essai du test durci a montré une fuite : les gestes laissés ouverts par les tests précédents gardaient leur écouteur d'Échap ; `afterEach` les abandonne via l'espion existant.
 
-- Reste 4 : le moteur reçoit `fitTop()` (sinon 16 px, comme avant), la session le calcule depuis les `.rb-island` du haut (`topBelowIslands`). Sous chaque îlot du haut, une rangée contextuelle de même hauteur est réservée (8 + 56 px), présente ou non : la première version mesurait la vraie rangée, et le cadrage changeait avec l'outil actif (S5b rouge, page 3 du texte). Valeur : 72 + 8 + 56 + 12 = 148 (maquette ≈ 152). Largeur de page (95 % de la vue, maquette ≈ 73 %) gardée : hors du reste.
+- Reste 4 : le moteur reçoit `fitTop()` (sinon 16 px, comme avant), la session le calcule depuis les `.rb-island` du haut (`topBelowIslands`). Sous chaque îlot du haut, une rangée contextuelle de même hauteur est réservée (8 + 56 px), présente ou non : la première version mesurait la vraie rangée, et le cadrage changeait avec l'outil actif (S5b rouge, page 3 du texte). Relecture adverse : une barre repliée sur plusieurs rangées doublait la réserve ; la réserve prend désormais une seule rangée (hauteur du plus bas des îlots du haut) et l'écart `GAP` de `ui/island-place.ts`. Valeur : 72 + 8 + 56 + 12 = 148 (maquette ≈ 152). Largeur de page (95 % de la vue, maquette ≈ 73 %) gardée : hors du reste.
 
 
 ## Constat du reste 5 (Ctrl+O juste après Ctrl+S, C3)
@@ -28,4 +28,4 @@ Aucun journal de l'échec d'origine (étape exacte inconnue). Essais faits :
 Hypothèse restante, non prouvée : l'échec venait d'une étape suivante. Après la réouverture, l'essai clique en (170, 160) après une seule attente d'images (`fr()`), sans attendre que le nouvel onglet soit prêt ; sous forte charge, le clic peut précéder le premier rendu. À confirmer par un journal si l'échec revient.
 
 ## Prochaine tâche
-verifier.sh --e2e, puis PR.
+verifier.sh --e2e sur la tête, puis PR et fusion locale.
