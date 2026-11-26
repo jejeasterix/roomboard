@@ -9,7 +9,8 @@
 import { SNAPSHOT_MIME, type CoreDocument, type MediaData, type MediaElement, type Model3dElement } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
-import type { Camera } from "../engine/camera";
+import { topBelowIslands, type Camera } from "../engine/camera";
+import { GAP } from "../ui/island-place";
 import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
 import { createMiddlePan } from "../engine/input/middle-pan";
 import { type PredictionSource, withPrediction } from "../engine/input/predict";
@@ -313,6 +314,13 @@ async function buildBoardSession(
   const engine = createEngine({
     doc,
     renderer: choice.renderer,
+    // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
+    fitTop: () =>
+      topBelowIslands(
+        stage.getBoundingClientRect(),
+        [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => e.getBoundingClientRect()),
+        GAP,
+      ),
     images,
     frames: {
       requestFrame: (cb) => requestAnimationFrame(cb),

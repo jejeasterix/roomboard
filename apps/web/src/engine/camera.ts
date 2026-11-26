@@ -47,6 +47,31 @@ export function fitPage(
   return { zoom, tx: (viewW - pageW * zoom) / 2, ty: (viewH - pageH * zoom) / 2 };
 }
 
+/** Bords haut et bas d'une boîte d'écran (px CSS). */
+export interface VBox {
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/** OF83 : haut de page, en px de scène, sous les îlots du haut (maquette 01 : y 152). Sous le plus bas d'entre eux, une
+ *  rangée contextuelle est réservée, présente ou non (le cadrage ne change pas avec l'outil actif) : `contextGap` px
+ *  (l'écart de `placeTip`, `ui/island-place.ts`), puis une rangée de la hauteur du plus bas des îlots du haut (un îlot sur
+ *  une rangée ; une barre repliée sur plusieurs rangées ne double pas la réserve). Puis `gap` px ; 16 sans îlot.
+ *  Îlot du haut : commence dans le premier quart de la scène et tient en moins d'un tiers de sa hauteur (une barre
+ *  verticale posée sur un côté n'en est pas un). Une boîte de hauteur nulle est ignorée. */
+export function topBelowIslands(stage: VBox, islands: readonly VBox[], contextGap = 8, gap = 12, min = 16): number {
+  const h = stage.bottom - stage.top;
+  let low = -Infinity;
+  let row = Infinity;
+  for (const b of islands) {
+    const height = b.bottom - b.top;
+    if (!(height > 0) || b.top - stage.top >= h / 4 || height >= h / 3) continue;
+    low = Math.max(low, b.bottom - stage.top);
+    row = Math.min(row, height);
+  }
+  return low === -Infinity ? min : Math.max(min, Math.ceil(low + contextGap + row + gap));
+}
+
 /** « Ajuster la page » (D5 amendée, CL5b-7) : largeur de page × margin, centrée ; haut de page à `top` px. */
 export function fitWidth(viewW: number, viewH: number, pageW: number = PAGE_WIDTH, margin = 0.95, top = 16): Camera {
   if (!(viewW > 0) || !(viewH > 0)) return IDENTITY;

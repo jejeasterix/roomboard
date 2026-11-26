@@ -422,11 +422,13 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
   const leave = (then: () => void): void => leaveDraft(draft(), props.profile, props.confirm, then);
   const tag = (): string => (props.canRemove() ? "Personnel" : props.canResetCurrent() ? "Fourni, modifié" : "Fourni");
   const canRevert = (): boolean => props.canResetCurrent() || !unchanged();
-  /** L3-19 : copie ou profil de l'utilisateur : remise de l'enregistré (l'éditeur remonte) ; sinon, le brouillon revient. */
+  /** L3-19 : copie ou profil de l'utilisateur : remise de l'enregistré (l'éditeur remonte) ; sinon, le brouillon revient.
+   *  Le bouton se grise alors sous le focus : le focus passe sur « Enregistrer », voisin et visible (OF83). */
   const revert = (): void => {
     if (props.canResetCurrent()) return props.resetCurrent();
     setDraft(props.profile);
     props.endPreview();
+    refocus((r) => r.querySelector<HTMLElement>('button[data-edit="save"]') ?? undefined);
   };
   let saidTurn = 0;
   const announce = (bar: string, itemId: string): void => {

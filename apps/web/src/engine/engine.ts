@@ -90,6 +90,8 @@ export interface EngineDeps {
   readonly penStyle?: StrokeStyle;
   /** C5 (I29) : couleur d'origine d'un pixel source, pour la pipette ; absent : la pipette ne rend rien. */
   readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
+  /** OF83 : haut de la page ajustée, en px de scène, lu à chaque ajustement (sous les îlots du haut) ; absent : 16. */
+  readonly fitTop?: () => number;
 }
 
 export interface OrbitOptions {
@@ -243,6 +245,7 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
+  const fit = (w: number, h: number): Camera => fitWidth(w, h, undefined, undefined, deps.fitTop?.() ?? 16);
   const cameraListeners = new Set<(c: Camera) => void>();
   const setCamera = (c: Camera): void => {
     camera = c;
@@ -370,7 +373,7 @@ export function createEngine(deps: EngineDeps): Engine {
     if (saved) {
       setCamera(saved);
     } else if (viewW > 0 && viewH > 0) {
-      setCamera(fitWidth(viewW, viewH));
+      setCamera(fit(viewW, viewH));
       fitted.add(id);
     } else {
       setCamera(IDENTITY);
@@ -756,7 +759,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     fitPage() {
       if (viewW > 0 && viewH > 0) {
-        setCamera(fitWidth(viewW, viewH));
+        setCamera(fit(viewW, viewH));
         fitted.add(pageId);
       }
       requestScene();
@@ -856,7 +859,7 @@ export function createEngine(deps: EngineDeps): Engine {
       viewW = width;
       viewH = height;
       if (!fitted.has(pageId) && width > 0 && height > 0) {
-        setCamera(fitWidth(width, height));
+        setCamera(fit(width, height));
         fitted.add(pageId);
       }
       requestScene();
