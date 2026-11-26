@@ -553,6 +553,18 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     expect(resetCurrent).not.toHaveBeenCalled();
   });
 
+  it("OF83 : livré sans copie, brouillon modifié : après « Revenir à l'origine » grisé, le focus va sur « Enregistrer », pas sur body", async () => {
+    const { q } = setup();
+    fireEvent.click(q(tile("left")));
+    const revert = q<HTMLButtonElement>('button[data-edit="revert"]');
+    revert.focus();
+    expect(document.activeElement).toBe(revert);
+    fireEvent.click(revert);
+    await tick();
+    expect(revert.disabled).toBe(true);
+    expect(document.activeElement).toBe(q('button[data-edit="save"]'));
+  });
+
   it("L3-19 : copie d'un livré ou profil de l'utilisateur : resetCurrent, sans question (H3)", () => {
     const { q, resetCurrent, confirm } = setup(DEFAUT, DEFAUT, { canResetCurrent: true });
     expect(q<HTMLButtonElement>('button[data-edit="revert"]').disabled).toBe(false);
