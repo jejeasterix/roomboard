@@ -221,6 +221,18 @@ async function s1(browser, base) {
     check(frac.length === 0, `S1 ${vp.width} : positions entières${frac.length ? ` (fractionnaires : ${frac.join(", ")})` : ""}`);
     const clash = clashes(boxes);
     check(clash.length === 0, `S1 ${vp.width} : aucun îlot n'en recouvre un autre${clash.length ? ` (${clash.join(", ")})` : ""}`);
+    // OF83 : la page ajustée commence sous les îlots du haut (maquette 01 : y 152), à l'ouverture et après « Ajuster la page ».
+    const low = Math.max(...Object.values(boxes).filter((b) => b.y < vp.height / 4 && b.height < vp.height / 3).map((b) => b.y + b.height));
+    const pageTop = async () => Number((await page.getAttribute("#stage", "data-camera")).split(",")[2]);
+    const open = await pageTop();
+    check(open >= low + 12 - 0.5, `S1 ${vp.width} : à l'ouverture, haut de page à y ${open}, sous les îlots du haut (bas à y ${low})`);
+    await page.mouse.move(vp.width / 2, vp.height / 2);
+    await page.mouse.wheel(0, -300);
+    await frames(page);
+    await page.click(item("fit-page"));
+    await frames(page);
+    const fitted = await pageTop();
+    check(fitted === open, `S1 ${vp.width} : après un défilement puis « Ajuster la page », haut de page revenu à y ${fitted}`);
     // T11 : un message dans #etat (région role=status) : visible, à l'écart de chaque îlot, au premier plan en son centre.
     await page.evaluate(() => {
       document.getElementById("etat").textContent = "Erreur du moteur : essai T11, message d'état assez long";

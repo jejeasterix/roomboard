@@ -4,7 +4,7 @@ import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
@@ -113,7 +113,7 @@ function fakeTool(name: "pen" | "eraser", log: string[], ctx: ToolContext): Fake
   };
 }
 
-function setup() {
+function setup(extra: Pick<EngineDeps, "fitTop"> = {}) {
   const doc = fakeCore.blank();
   const frames = new Frames();
   const renderer = new FakeRenderer();
@@ -131,7 +131,7 @@ function setup() {
       return t;
     },
   };
-  const engine = createEngine({ doc, renderer, frames, tools });
+  const engine = createEngine({ doc, renderer, frames, tools, ...extra });
   const tool = (n: string): FakeTool => {
     const t = made.get(n);
     if (!t) throw new Error(`outil absent : ${n}`);
@@ -662,6 +662,19 @@ describe("createEngine", () => {
     engine.view.zoomAt(10, 10, 2);
     engine.fitPage();
     expect(engine.camera()).toEqual(fitWidth(1000, 400));
+  });
+
+  it("OF83 : fitTop pose le haut de la page sous les îlots, à l'ouverture, sur une page neuve et après « ajuster »", () => {
+    let top = 152;
+    const { engine } = setup({ fitTop: () => top });
+    engine.resize(1920, 1080, 1);
+    expect(engine.camera()).toEqual(fitWidth(1920, 1080, undefined, undefined, 152));
+    engine.addPage();
+    expect(engine.camera().ty).toBe(152);
+    top = 170;
+    engine.view.zoomAt(10, 10, 2);
+    engine.fitPage();
+    expect(engine.camera()).toEqual(fitWidth(1920, 1080, undefined, undefined, 170));
   });
 
   it("onCamera : pan, zoom, page, ajustement", () => {

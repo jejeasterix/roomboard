@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitPage, fitWidth, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
+import { fitPage, fitWidth, topBelowIslands, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
 
 describe("camera (D17)", () => {
   const cam: Camera = { zoom: 2, tx: 10, ty: -20 };
@@ -63,5 +63,26 @@ describe("camera (D17)", () => {
 
   it("fitWidth : vue vide → identité", () => {
     expect(fitWidth(0, 300)).toEqual({ zoom: 1, tx: 0, ty: 0 });
+  });
+  describe("topBelowIslands (OF83)", () => {
+    const stage = { top: 0, bottom: 1080 };
+    it("sans îlot : 16 px, comme avant", () => {
+      expect(topBelowIslands(stage, [])).toBe(16);
+    });
+    it("îlots du haut de 56 px (maquette 01) : rangée contextuelle réservée dessous (8 + 56), puis 12 px : y 148", () => {
+      expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 16, bottom: 72 }])).toBe(148);
+    });
+    it("grande barre (îlot de 72 px) : sa rangée réservée est aussi de 72 px", () => {
+      expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 16, bottom: 88 }])).toBe(180);
+    });
+    it("ignore les îlots du bas et une barre verticale posée sur un côté", () => {
+      expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 1008, bottom: 1064 }, { top: 16, bottom: 900 }])).toBe(148);
+    });
+    it("îlot vide ou caché (hauteur nulle) : ignoré", () => {
+      expect(topBelowIslands(stage, [{ top: 0, bottom: 0 }])).toBe(16);
+    });
+    it("mesure depuis le haut de la scène", () => {
+      expect(topBelowIslands({ top: 40, bottom: 1120 }, [{ top: 56, bottom: 112 }])).toBe(148);
+    });
   });
 });
