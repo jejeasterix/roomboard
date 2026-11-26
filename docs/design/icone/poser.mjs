@@ -21,7 +21,8 @@ const PNG = {
   "Square107x107Logo.png": 107, "Square142x142Logo.png": 142, "Square150x150Logo.png": 150,
   "Square284x284Logo.png": 284, "Square310x310Logo.png": 310, "StoreLogo.png": 50,
 };
-const ICO = [16, 24, 32, 48, 64, 256];
+// 20 et 40 px : icônes de Windows à l'échelle 125 % (petite et grande).
+const ICO = [16, 20, 24, 32, 40, 48, 64, 256];
 // Types du .icns : ceux de l'icône posée par `tauri icon` (ic07 à ic14), avec icp4 et icp5 (PNG) pour 16 et 32 px.
 const ICNS = [["icp4", 16], ["icp5", 32], ["ic11", 32], ["ic12", 64], ["ic07", 128], ["ic13", 256], ["ic08", 256],
   ["ic09", 512], ["ic14", 512], ["ic10", 1024]];

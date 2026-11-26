@@ -1,8 +1,8 @@
 // Générateur de l'icône RoomBoard « B · Tableau plein » (OF81, posée en OF85, design L5).
 // Tracés de la famille RoomFlow (roomflow-app-icon.svg : hexagone « hex-main » et flèche), recalés sur la grille de pixels.
 // Usage : node gen.mjs <dossier>  → roomboard-icon.svg (256 px, se met à l'échelle) et roomboard-icon-<S>.svg par taille.
-// Chaque taille a son SVG calé : 16 px dessiné à la main, 24 à 32 px tramé en pixels pleins sans flèche,
-// 44 px et plus dessin complet, bords verticaux recalés au pixel entier.
+// Chaque taille a son SVG calé : 16 et 20 px dessinés à la main, 24 à 32 px tramés en pixels pleins, sans flèche ;
+// 40 px et plus dessin complet, bords verticaux recalés au pixel entier.
 import { writeFileSync } from "node:fs";
 const NAVY = "#182946", VIOLET = "#6044EB", WHITE = "#FFFFFF";
 // Cadre de la tuile, repris de roomflow-app-icon.svg (viewBox et rayon).
@@ -94,6 +94,21 @@ ${board.map(r=>rect(r, prop.board)).join("")}</g>
 </svg>
 `;
 }
+// --- Variante simplifiée à 20 px (échelle Windows 125 %) : même dessin que 16 px, hexagone de 12 × 14 px,
+// sommet de 4 px, flancs en marches 2:1, bande de 1 px, tableau 6 × 4 centré, sans flèche.
+export function mk20(prop) {
+  const ring = [[8,3],[9,3],[10,3],[11,3],[6,4],[7,4],[12,4],[13,4],[4,5],[5,5],[14,5],[15,5]];
+  for (let y = 6; y <= 13; y++) ring.push([4, y], [15, y]);
+  for (const [x, y] of ring.slice(0, 12)) ring.push([x, 19 - y]);
+  const rect = ([x,y,w=1,h=1], c) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20">
+<!-- RoomBoard, icône ${prop.name} (20 px, variante simplifiée) : hexagone de la famille redessiné en pixels pleins, sans flèche. -->
+<rect width="20" height="20" rx="${+(VB.rx * 20 / VB.w).toFixed(3)}" fill="${prop.tile}"/>
+<g shape-rendering="crispEdges">${ring.map(p=>rect(p, prop.ink)).join("")}
+${rect([7,8,6,4], prop.board)}</g>
+</svg>
+`;
+}
 // --- Variantes simplifiées de 24 à 32 px, tramées en pixels pleins (test au centre de chaque pixel).
 function hexPoly(cx, cy, w, h) { // hexagone à pointe en haut, flancs de pente 1/2 (marches de 2 px pour 1)
   return [[cx, cy - h], [cx + w, cy - h + w / 2], [cx + w, cy + h - w / 2], [cx, cy + h], [cx - w, cy + h - w / 2], [cx - w, cy - h + w / 2]];
@@ -128,12 +143,13 @@ ${rect([bx, by, bw, bh], prop.board)}</g>
 // SVG calé pour une taille donnée.
 export function svgPour(S) {
   if (S <= 16) return mk16(B);
+  if (S === 20) return mk20(B);
   if (GABARITS[S]) return mkPix(S, B);
-  if (S < 44) throw new Error(`taille ${S} px : aucun gabarit tramé`);
+  if (S < 40) throw new Error(`taille ${S} px : aucun gabarit tramé`);
   return mk(S, B);
 }
 // Toutes les tailles posées dans apps/desktop/src-tauri/icons (PNG, entrées du .ico et du .icns).
-export const TAILLES = [16, 24, 30, 32, 44, 48, 50, 64, 71, 89, 107, 128, 142, 150, 256, 284, 310, 512, 1024];
+export const TAILLES = [16, 20, 24, 30, 32, 40, 44, 48, 50, 64, 71, 89, 107, 128, 142, 150, 256, 284, 310, 512, 1024];
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   const OUT = process.argv[2];
   if (!OUT) { console.error("usage : node gen.mjs <dossier>"); process.exit(2); }
