@@ -1,6 +1,6 @@
 # État — design-l5
 
-Statut : en cours
+Statut : clos (PR #60)
 Gabarit : lot borné (OF85), sans chaîne `nouvelle-feature`
 Objectif : poser l'icône « B · Tableau plein » (choix de Jérôme du 2026-11-26 : « B, tableau plein ») dans
 `apps/desktop/src-tauri/icons/`, à la place du carré uni `#1E5AA0`.
@@ -32,6 +32,10 @@ Branche : `feat/design-l5-icone`, depuis `origin/main` à `8f040b9`.
 - `gen.mjs` garde les options inutilisées de la maquette (A, C) : la preuve d'identité avec OF81 en dépend.
 - Favicon web : aucun fichier existant, rien posé.
 
+- `verifier.sh --e2e` : OK sur `b8f52f6` (« verifier.sh : e2e OK », « verifier.sh : OK »).
+- Wasm : 1 375 581 et 2 794 511 octets, avant et après.
+- Relecture adverse : rien de bloquant ; trois mineurs corrigés dans `b8f52f6`.
+
 ## Reste
 
-- `verifier.sh --e2e`, PR, relecture adverse, fusion locale.
+- Affichage réel du `.icns` (Mac) et du `.ico` à 125 % (PC) au prochain bundle ; reconstruction de la coque Windows sur signal de Jérôme.
