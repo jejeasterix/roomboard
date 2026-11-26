@@ -14,6 +14,9 @@ vi.mock("./pointer-gesture", async (importOriginal) => {
 });
 
 afterEach(() => {
+  // OF83 : chaque geste resté ouvert est abandonné ; sinon son écouteur d'Échap sur `document` fuit dans les tests suivants.
+  for (const r of vi.mocked(startPointerGesture).mock.results) if (r.type === "return") r.value();
+  vi.mocked(startPointerGesture).mockClear();
   document.body.innerHTML = "";
 });
 
@@ -185,7 +188,10 @@ describe("pointer-gesture (design-l3, DA-L3-1)", () => {
     expect(g.move).toHaveBeenCalledTimes(1);
     abort!();
     expect(s.releasePointerCapture).toHaveBeenCalledWith(1);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    // OF83 : l'écouteur d'Échap est retiré : l'Échap qui suit l'abandon garde son action par défaut.
+    const esc = new KeyboardEvent("keydown", { key: "Escape", cancelable: true });
+    document.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(false);
     s.dispatchEvent(ev("pointermove", 50, 10));
     s.dispatchEvent(ev("pointerup", 50, 10));
     expect(g.move).toHaveBeenCalledTimes(1);
