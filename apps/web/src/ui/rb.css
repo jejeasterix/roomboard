@@ -310,7 +310,7 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-items[data-sorting] { user-select: none; -webkit-user-select: none; }
 .rb-item { position: relative; display: flex; align-items: center; gap: 12px; min-block-size: 48px; box-sizing: border-box; padding-inline-end: var(--rf-space-xs); border-block-end: 1px solid var(--rf-gray-300); background: var(--rf-white); font-size: 16px; color: var(--rf-gray-800); }
 .rb-item:last-child { border-block-end: 0; }
-.rb-item > .rb-icon { color: var(--rf-navy-500); }
+.rb-item > .rb-icon { color: var(--rf-navy-500); pointer-events: none; }
 .rb-item-noicon { flex: none; inline-size: var(--rb-icon); }
 .rb-item-label { flex: 1 1 auto; min-inline-size: 0; }
 .rb-item[data-separator] .rb-item-label { font-size: 14px; color: var(--rf-text-muted-aa); }

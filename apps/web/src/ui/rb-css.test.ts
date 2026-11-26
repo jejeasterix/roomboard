@@ -139,6 +139,9 @@ describe("rb.css (design-l4, L4-16)", () => {
   it("design-l3 L3-24 : cibles de 48 px ou plus (poignée, boutons à icône, segments, vignettes de 80 px, cartes de 104 px)", () => {
     expect(rule(".rb-grip")).toContain("color: var(--rf-navy-500);");
     expect(rule(".rb-grip")).toContain("margin-inline-end: -16px;");
+    // OF83 : l'icône de ligne, décorative, recouvre 4 px de la poignée (et son tracé 1 px de plus) : transparente au pointeur,
+    // elle laisse les 48 px à la poignée (mesurés au navigateur par design-l3-navigateur.mjs, S2).
+    expect(rule(".rb-item > .rb-icon")).toContain("pointer-events: none;");
     expect(rule(".rb-item[data-hidden] .rb-grip")).toContain("color: var(--rf-gray-500);");
     expect(rule(".rb-grip")).toMatch(/inline-size: 48px;.*block-size: 48px;.*touch-action: none;/);
     expect(rule(".rb-sheet button.rb-ib")).toMatch(/inline-size: 48px;.*block-size: 48px;/);

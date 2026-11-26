@@ -292,6 +292,20 @@ async function s2(browser, base) {
     await frames(page);
   };
   await toList();
+  // OF83 : cible utile de la poignée mesurée au pointeur, colonne par colonne : 48 px, rien de la ligne ne la recouvre.
+  const useful = await page.$$eval('[data-edit-bar="outils"] button[data-edit="grip"]', (gs) =>
+    gs.flatMap((g) => {
+      const r = g.getBoundingClientRect();
+      // Seulement les poignées entières à l'écran et hors de la tête et du pied du panneau (elementFromPoint ne voit que le visible).
+      const body = g.closest(".rb-sheet-body")?.getBoundingClientRect();
+      if (body === undefined || r.top < body.top || r.bottom > body.bottom) return [];
+      const y = r.top + r.height / 2;
+      let n = 0;
+      for (let x = Math.floor(r.left); x < Math.ceil(r.right); x++) if (document.elementFromPoint(x + 0.5, y)?.closest('[data-edit="grip"]') === g) n++;
+      return [`${g.closest("[data-edit-item]")?.getAttribute("data-edit-item")}:${n}`];
+    }),
+  );
+  check(useful.length > 2 && useful.every((s) => s.endsWith(":48")), `S2 poignée : 48 px utiles au pointeur sur chaque ligne (${useful.join(" ")})`);
   const pen = await box(page, row("select"));
   await mouseDrag(page, "text", pen.y + 4);
   await frames(page);
