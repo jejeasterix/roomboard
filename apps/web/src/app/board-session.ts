@@ -10,6 +10,7 @@ import { SNAPSHOT_MIME, type CoreDocument, type MediaData, type MediaElement, ty
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
+import { GAP } from "../ui/island-place";
 import { createEngine, DEFAULT_PEN_STYLE, type Engine, type EngineState } from "../engine/engine";
 import { createMiddlePan } from "../engine/input/middle-pan";
 import { type PredictionSource, withPrediction } from "../engine/input/predict";
@@ -318,6 +319,7 @@ async function buildBoardSession(
       topBelowIslands(
         stage.getBoundingClientRect(),
         [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => e.getBoundingClientRect()),
+        GAP,
       ),
     images,
     frames: {

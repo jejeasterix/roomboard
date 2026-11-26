@@ -225,10 +225,13 @@ async function s1(browser, base) {
     const low = Math.max(...Object.values(boxes).filter((b) => b.y < vp.height / 4 && b.height < vp.height / 3).map((b) => b.y + b.height));
     const pageTop = async () => Number((await page.getAttribute("#stage", "data-camera")).split(",")[2]);
     const open = await pageTop();
-    check(open >= low + 12 - 0.5, `S1 ${vp.width} : à l'ouverture, haut de page à y ${open}, sous les îlots du haut (bas à y ${low})`);
+    // Rangée de préréglages du stylo présente : le haut réservé tombe 12 px sous elle, ni plus ni moins.
+    check(open === low + 12, `S1 ${vp.width} : à l'ouverture, haut de page à y ${open}, 12 px sous les îlots du haut (bas à y ${low})`);
     await page.mouse.move(vp.width / 2, vp.height / 2);
     await page.mouse.wheel(0, -300);
     await frames(page);
+    const moved = await pageTop();
+    check(moved !== open, `S1 ${vp.width} : la molette déplace la vue (haut de page à y ${moved})`);
     await page.click(item("fit-page"));
     await frames(page);
     const fitted = await pageTop();

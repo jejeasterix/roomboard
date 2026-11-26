@@ -72,8 +72,11 @@ describe("camera (D17)", () => {
     it("îlots du haut de 56 px (maquette 01) : rangée contextuelle réservée dessous (8 + 56), puis 12 px : y 148", () => {
       expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 16, bottom: 72 }])).toBe(148);
     });
-    it("grande barre (îlot de 72 px) : sa rangée réservée est aussi de 72 px", () => {
-      expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 16, bottom: 88 }])).toBe(180);
+    it("barre sur deux rangées (104 px) : une seule rangée réservée, de la hauteur de l'îlot le plus bas d'une rangée", () => {
+      expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 16, bottom: 120 }])).toBe(196);
+    });
+    it("écart de la rangée contextuelle donné par l'appelant", () => {
+      expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }], 10)).toBe(150);
     });
     it("ignore les îlots du bas et une barre verticale posée sur un côté", () => {
       expect(topBelowIslands(stage, [{ top: 16, bottom: 72 }, { top: 1008, bottom: 1064 }, { top: 16, bottom: 900 }])).toBe(148);

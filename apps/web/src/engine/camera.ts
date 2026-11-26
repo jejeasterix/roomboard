@@ -53,22 +53,23 @@ export interface VBox {
   readonly bottom: number;
 }
 
-/** Écart entre un îlot et sa rangée contextuelle (`rb.css`, `.rb-context`, posée 8 px sous la barre). */
-export const CONTEXT_GAP_PX = 8;
-
-/** OF83 : haut de page, en px de scène, sous les îlots du haut (maquette 01 : y 152). Sous chaque îlot du haut, une
- *  rangée contextuelle de même hauteur est réservée, présente ou non : le cadrage ne change pas avec l'outil actif.
- *  Puis `gap` px ; 16 sans îlot. Îlot du haut : commence dans le premier quart de la scène et tient en moins d'un tiers
- *  de sa hauteur (une barre verticale posée sur un côté n'en est pas un). Une boîte de hauteur nulle est ignorée. */
-export function topBelowIslands(stage: VBox, islands: readonly VBox[], gap = 12, min = 16): number {
+/** OF83 : haut de page, en px de scène, sous les îlots du haut (maquette 01 : y 152). Sous le plus bas d'entre eux, une
+ *  rangée contextuelle est réservée, présente ou non (le cadrage ne change pas avec l'outil actif) : `contextGap` px
+ *  (l'écart de `placeTip`, `ui/island-place.ts`), puis une rangée de la hauteur du plus bas des îlots du haut (un îlot sur
+ *  une rangée ; une barre repliée sur plusieurs rangées ne double pas la réserve). Puis `gap` px ; 16 sans îlot.
+ *  Îlot du haut : commence dans le premier quart de la scène et tient en moins d'un tiers de sa hauteur (une barre
+ *  verticale posée sur un côté n'en est pas un). Une boîte de hauteur nulle est ignorée. */
+export function topBelowIslands(stage: VBox, islands: readonly VBox[], contextGap = 8, gap = 12, min = 16): number {
   const h = stage.bottom - stage.top;
   let low = -Infinity;
+  let row = Infinity;
   for (const b of islands) {
     const height = b.bottom - b.top;
     if (!(height > 0) || b.top - stage.top >= h / 4 || height >= h / 3) continue;
-    low = Math.max(low, b.bottom - stage.top + CONTEXT_GAP_PX + height);
+    low = Math.max(low, b.bottom - stage.top);
+    row = Math.min(row, height);
   }
-  return Math.max(min, Math.ceil(low + gap));
+  return low === -Infinity ? min : Math.max(min, Math.ceil(low + contextGap + row + gap));
 }
 
 /** « Ajuster la page » (D5 amendée, CL5b-7) : largeur de page × margin, centrée ; haut de page à `top` px. */
