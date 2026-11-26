@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+<!-- RoomBoard, icône B (48 px). Hexagone et flèche : roomflow-app-icon.svg, recalés sur la grille de pixels. -->
+<defs><mask id="m48" maskUnits="userSpaceOnUse" x="0" y="0" width="48" height="48"><rect width="48" height="48" fill="#fff"/><line x1="-33.855" y1="57.436" x2="90.337" y2="-15.45" stroke="#000" stroke-width="4.076"/></mask></defs>
+<rect width="48" height="48" rx="10.56" fill="#182946"/>
+<path fill="#6044EB" d="M10,28.485L10,16.324L23.5,8.648L33.799,14.485L30.81,16.241L23.5,12.098L13,18.049L13,26.698ZM37,19.54L37,31.676L23.5,39.352L13.223,33.527L16.212,31.772L23.5,35.902L34,29.951L34,21.327Z"/>
+<g mask="url(#m48)"><rect x="16" y="19" width="15" height="10" rx="1" fill="#FFFFFF"/></g>
+<path fill="#6044EB" d="M8.061,34.04L7.023,32.242L37.673,14.229L36.718,12.56L40.76,13.646L39.675,17.696L38.711,16.027Z"/>
+</svg>
