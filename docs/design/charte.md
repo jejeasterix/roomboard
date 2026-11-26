@@ -87,10 +87,10 @@ demandé de reprendre.
 
 | Logo | Où | État |
 |---|---|---|
-| Icône de la coque RoomBoard | `apps/desktop/src-tauri/icons/` (`icon.png` 512 px, `.ico`, `.icns`, tailles Windows) | carré uni `#1E5AA0`, sans dessin, hors charte : icône provisoire posée avec le socle (`c2d7d0d`) |
+| Icône de la coque RoomBoard | `apps/desktop/src-tauri/icons/` (`icon.png` 512 px, `.ico`, `.icns`, tailles Windows) ; sources `docs/design/icone/` | « B · Tableau plein » (Q1, choix de Jérôme du 2026-11-26, design L5) : tuile `#182946`, hexagone et flèche `#6044EB` de l'icône RoomFlow, page blanche `#FFFFFF` ; sans flèche à 16 à 32 px ; chaque taille rendue depuis son SVG calé |
 | Icône de l'application RoomFlow | rf2 `RoomFlow2.App/Assets/Logos/roomflow-app-icon.svg` | hexagone et flèche `#6044EB` sur pastille `#182946`, rayon 22 % ; repris tel quel dans le menu de la maquette 01 |
 | Hexagone RoomFlow | rf2 `Assets/Logos/roomflow-hex.svg` | marque seule, deux tracés |
 | Logos des produits | rf2 `Assets/Logos/roomflow-{docs,library,manager,studio,tools}-{icon,dark}.svg` ; web `public/logos/roomflow-*-{dark,light}.svg` | une famille : même hexagone, un motif par produit |
 
-Aucun logo n'est créé. La retouche proposée (une icône RoomBoard dans la famille des produits RoomFlow) est la question Q1
-du cadrage.
+Aucun dessin de marque n'est créé : l'icône RoomBoard reprend l'hexagone et la flèche de la famille RoomFlow (Q1 du
+cadrage), avec un tableau blanc au centre. Méthode et contrôle de netteté : `docs/design/icone/LISEZMOI.md`.

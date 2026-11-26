@@ -580,3 +580,10 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Icône de l'application (design L5)
+
+Les fichiers d'icône de `apps/desktop/src-tauri/icons/` et leurs sources `docs/design/icone/` (SVG et tracés de
+`gen.mjs`) reprennent l'hexagone et la flèche de l'icône RoomFlow (`roomflow-app-icon.svg`), marque de l'auteur
+(jejeasterix). Ils sont la marque de l'auteur et restent hors de la licence PolyForm Shield 1.0.0 du code : leur
+présence dans ce dépôt n'accorde aucun droit sur la marque. Aucune dépendance n'est ajoutée.
