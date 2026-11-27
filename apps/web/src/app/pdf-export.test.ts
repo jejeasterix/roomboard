@@ -35,7 +35,15 @@ async function sourcePdf(o: { pages?: number; rotate?: number; rotates?: readonl
   }
   return d.save();
 }
-interface FakePage { readonly backdrop?: Partial<ExportBackdrop> | null; readonly elements?: number; readonly bounds?: Bounds; readonly grid?: boolean }
+interface FakePage {
+  readonly backdrop?: Partial<ExportBackdrop> | null;
+  readonly elements?: number;
+  readonly bounds?: Bounds;
+  readonly grid?: boolean;
+  /** DA4 : champs du cadre (`PageView` du cœur) ; absents : 1920 × 1080, Page. */
+  readonly mode?: string;
+  readonly height?: number;
+}
 function source(pages: readonly FakePage[]): ExportSource {
   const at = (id: string): FakePage | undefined => pages[Number(id.slice(1).split("e")[0])];
   return {
@@ -46,7 +54,7 @@ function source(pages: readonly FakePage[]): ExportSource {
       const p = at(id);
       if (p === undefined) return null;
       const backdrop = p.backdrop === undefined || p.backdrop === null ? null : { asset: A, kind: "pdf-page", page: 0, rect: rectOf(612, 792), ...p.backdrop };
-      return { backdrop, grid: p.grid === true ? { visible: true } : null };
+      return { backdrop, grid: p.grid === true ? { visible: true } : null, width: 1920, height: p.height ?? 1080, mode: p.mode ?? "page" };
     },
   };
 }
@@ -214,7 +222,8 @@ describe("export PDF annoté (PF20, PF21)", () => {
 
   it("page au-delà du PDF d'origine (page 7 d'un PDF de 3) : page neuve, aucune erreur (PC7, Review Focus 5)", async () => {
     const r = await done(exportPdf(source([{ backdrop: { page: 7 } }]), store({ [A]: await sourcePdf() }), deps()));
-    expect(await sizes(r.bytes)).toEqual([[842, 473.625]]);
+    // DA4 : page neuve au cadre de `pageFrame`, étendu au bas du fond (612 × 792 à 1920 de large), comme à l'écran.
+    expect(await sizes(r.bytes)).toEqual([[842, Math.round(((792 * 842) / 612) * 1000) / 1000]]);
     expect(r.annotated).toBe(false);
   });
 
@@ -372,5 +381,43 @@ describe("placement de la superposition (/Rotate, CropBox)", () => {
     expect(seen.map((q) => [q.box.w, q.box.h])).toEqual(rotates.map(view));
     expect(await imageDraws(r.bytes)).toEqual(rotates.map((q) => [covering(1, ...view(q))]));
     expect(await texts(r.bytes)).toEqual(["RoomBoard page 1", "RoomBoard page 2", "RoomBoard page 3", "RoomBoard page 4"]);
+  });
+});
+
+describe("rectangle d'une page neuve et cadre de page (DA4, T9)", () => {
+  const image = (rect: Bounds): Partial<ExportBackdrop> => ({ kind: "image", page: null, rect });
+
+  it("infini : rectangle du contenu ; vide : 1920 × 1080", async () => {
+    const seen: OverlayRequest[] = [];
+    const content = { x0: -400, y0: -100, x1: 600, y1: 400 };
+    const doc = source([
+      { mode: "infinite", elements: 1, bounds: content },
+      { mode: "infinite" },
+      { mode: "infinite", elements: 1, bounds: content, backdrop: image({ x0: 0, y0: 0, x1: 1000, y1: 800 }) },
+    ]);
+    const r = await done(exportPdf(doc, store({}), deps({ overlay: pngProducer(seen) })));
+    expect(seen.map((q) => [q.pageId, q.rect])).toEqual([
+      ["p0", content],
+      ["p2", { x0: -400, y0: -100, x1: 1000, y1: 800 }],
+    ]);
+    expect(await sizes(r.bytes)).toEqual([
+      [842, (500 * 842) / 1000],
+      [842, 473.625],
+      [842, Math.round(((900 * 842) / 1400) * 1000) / 1000],
+    ]);
+    expect(seen[0]?.box).toEqual({ w: 842, h: (500 * 842) / 1000 });
+  });
+
+  it("page : règle actuelle, à partir de pageFrame (cadre étendu vers le bas par le fond, puis jusqu'au contenu)", async () => {
+    const seen: OverlayRequest[] = [];
+    const doc = source([
+      { elements: 1, bounds: { x0: 0, y0: 0, x1: 300, y1: 1200 }, backdrop: image({ x0: 0, y0: 0, x1: 1920, y1: 1500 }) },
+      { mode: "page", elements: 1, bounds: { x0: 0, y0: 0, x1: 300, y1: 2000 } },
+    ]);
+    await done(exportPdf(doc, store({}), deps({ overlay: pngProducer(seen) })));
+    expect(seen.map((q) => q.rect)).toEqual([
+      { x0: 0, y0: 0, x1: 1920, y1: 1500 },
+      { x0: 0, y0: 0, x1: 1920, y1: 2000 },
+    ]);
   });
 });

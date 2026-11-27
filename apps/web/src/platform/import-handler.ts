@@ -5,6 +5,7 @@
  * `StageRect`.
  */
 import type { Change, Command } from "../core/api";
+import type { PageRect } from "../engine/page";
 import type { AssetStore } from "../core/asset-store";
 import type { Camera } from "../engine/camera";
 import type { Measure } from "../engine/text-layout";
@@ -24,6 +25,8 @@ export interface ImageTarget {
   page(): string;
   camera(): Camera;
   stageRect(): StageRect;
+  /** DA4 : cadre de la page cible (`pageFrame`), null en Infini ; absent : la page par défaut, 1920 × 1080. */
+  frame?(): PageRect | null;
   /** Mesure du texte de la session (C10b, F21) : hauteurs exigées d'un tableau importé ou collé. */
   measure(): Measure;
   /** Style de texte du moteur (couleur du stylo, taille par défaut) d'un tableau importé ou collé (F21). */
