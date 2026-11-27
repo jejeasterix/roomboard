@@ -647,6 +647,8 @@ mod tests {
             tolerance: 10.0,
             soft: 0.0,
             contiguous,
+            x: None,
+            y: None,
         }
     }
 
@@ -717,6 +719,8 @@ mod tests {
                     tolerance: 10,
                     soft: 0,
                     contiguous: true,
+                    x: None,
+                    y: None,
                 }),
             })
         );
@@ -786,6 +790,93 @@ mod tests {
         put(&d, &id, "flipY", In::from("illisible"));
         set(&mut d, &id, ImageParamsInput::default(), IDENTITY).expect("rétablir");
         assert_eq!(present(&d, &id), Vec::<&str>::new());
+    }
+
+    /// Clés brutes de la carte `transparent` de l'élément, triées.
+    fn transparent_keys(d: &Document, id: &str) -> Vec<String> {
+        let txn = d.read();
+        let e = d.find_element(&txn, id).expect("élément").element;
+        let Some(yrs::Out::YMap(m)) = e.get(&txn, "transparent") else {
+            return Vec::new();
+        };
+        let mut keys: Vec<String> = m.keys(&txn).map(str::to_string).collect();
+        keys.sort();
+        keys
+    }
+
+    fn seeded_map(x: Option<f64>, y: Option<f64>) -> In {
+        let mut fields = vec![
+            ("color", In::from("#ffffff")),
+            ("tolerance", In::Any(Any::from(10.0))),
+            ("soft", In::Any(Any::from(0.0))),
+            ("contiguous", In::Any(Any::Bool(true))),
+        ];
+        fields.extend(x.map(|v| ("x", In::Any(Any::from(v)))));
+        fields.extend(y.map(|v| ("y", In::Any(Any::from(v)))));
+        In::Map(MapPrelim::from_iter(fields))
+    }
+
+    /// Patron écarté (T10) : `cur.transparent == next.transparent` ne doit pas cacher un départ gardé mais illisible
+    /// (hors de l'image, ou un seul des deux). Lu absent (I4, U3) ; le même état voulu sans départ le retire en une
+    /// transaction, puis plus aucune (D38) : jamais réécrit à chaque appel.
+    #[test]
+    fn unreadable_seed_removed_once_then_no_step() {
+        for (x, y) in [
+            (Some(100.0), Some(0.0)),
+            (Some(0.0), Some(80.0)),
+            (Some(3.5), Some(2.0)),
+            (Some(3.0), None),
+            (None, Some(2.0)),
+        ] {
+            let mut d = Document::blank();
+            let (_, id) = add(&mut d, 100.0, 80.0, IDENTITY);
+            put(&d, &id, "transparent", seeded_map(x, y));
+            assert_eq!(
+                params_of(&d, &id).transparent,
+                None,
+                "départ illisible {x:?} {y:?} : couleur lue absente"
+            );
+            let want = ImageParamsInput {
+                transparent: Some(white_input(true)),
+                ..ImageParamsInput::default()
+            };
+            let w = writes(&d);
+            assert_eq!(
+                set(&mut d, &id, want.clone(), IDENTITY).expect("sans départ").ids,
+                vec![id.clone()],
+                "{x:?} {y:?}"
+            );
+            assert_eq!(w.since(), 1, "une transaction ({x:?} {y:?})");
+            assert_eq!(
+                transparent_keys(&d, &id),
+                ["color", "contiguous", "soft", "tolerance"],
+                "départ illisible retiré ({x:?} {y:?})"
+            );
+            assert_eq!(
+                set(&mut d, &id, want, IDENTITY).expect("même état").ids,
+                Vec::<String>::new()
+            );
+            assert_eq!(w.since(), 1, "plus rien à retirer : aucune transaction ({x:?} {y:?})");
+        }
+    }
+
+    /// Départ lisible gardé, puis retiré par le même état sans départ : une transaction, `x` et `y` partis.
+    #[test]
+    fn readable_seed_removed_by_state_without_seed() {
+        let mut d = Document::blank();
+        let (_, id) = add(&mut d, 100.0, 80.0, IDENTITY);
+        put(&d, &id, "transparent", seeded_map(Some(99.0), Some(79.0)));
+        let t = params_of(&d, &id).transparent.expect("lue");
+        assert_eq!((t.x, t.y), (Some(99), Some(79)));
+        let want = ImageParamsInput {
+            transparent: Some(white_input(true)),
+            ..ImageParamsInput::default()
+        };
+        set(&mut d, &id, want, IDENTITY).expect("sans départ");
+        assert_eq!(
+            transparent_keys(&d, &id),
+            ["color", "contiguous", "soft", "tolerance"]
+        );
     }
 
     #[test]

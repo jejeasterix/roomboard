@@ -7,6 +7,7 @@ use roomboard_core::commands::{Command, CommandError, EraseMode};
 use roomboard_core::document::Document;
 use roomboard_core::element::{apply_transform, Look, StrokeStyle};
 use roomboard_core::format::load;
+use roomboard_core::fill::FillTarget;
 use roomboard_core::rich_text::{SpanAttrs, SpanInput};
 use roomboard_core::shape::ShapeKind;
 use roomboard_core::style::StylePatch;
@@ -1434,4 +1435,99 @@ fn old_stroke_has_no_variability_key() {
     );
     let k = add_stroke(&mut d, constant());
     assert_eq!(raw_field(&d, &k, "variability").as_deref(), Some("constant"));
+}
+
+// --- OG23 (T10) : `dragCopy` (seul `true` lu et écrit, booléen ; absent = déplacer, le neutre). ---
+
+fn drag_copy(v: bool) -> StylePatch {
+    StylePatch {
+        drag_copy: Some(v),
+        ..Default::default()
+    }
+}
+
+/// Valeur `Any` brute d'un champ de l'élément.
+fn raw_any(d: &Document, id: &str, key: &str) -> Option<Any> {
+    let (raw, pages) = raw_doc(d);
+    let txn = raw.transact();
+    match find_raw(&txn, &pages, id)?.get(&txn, key) {
+        Some(Out::Any(a)) => Some(a),
+        _ => None,
+    }
+}
+
+#[test]
+fn set_style_drag_copy_one_step() {
+    let mut d = blank();
+    let r = add_rect(&mut d, Look::default());
+    let s = add_stroke(&mut d, Look::default());
+    let t = set_text(&mut d, None, "Bonjour", Look::default())[0].clone();
+    let page = first_page(&d);
+    let z = d
+        .apply(Command::Fill {
+            page,
+            target: FillTarget::Zone {
+                x: 50.0,
+                y: 25.0,
+                tol: 1.0,
+            },
+            color: Some("#ff0000".into()),
+        })
+        .expect("zone")
+        .ids[0]
+        .clone();
+    let mut d = with_raw_image(&d, "img-1", vec![]);
+    let i = "img-1".to_string();
+    let all = [&r, &s, &t, &i];
+    let c = set_style(&mut d, &[&r, &s, &t, &i, &z], drag_copy(true)).expect("pose");
+    assert_eq!(c.ids, vec![r.clone(), s.clone(), t.clone(), i.clone()], "zone ignorée sans erreur");
+    for id in all {
+        assert_eq!(look_of(&d, id).drag_copy, Some(true));
+        assert_eq!(raw_any(&d, id, "dragCopy"), Some(Any::Bool(true)));
+    }
+    assert!(!raw_keys(&d, &z).contains(&"dragCopy".to_string()));
+    assert!(d.undo());
+    for id in all {
+        assert_eq!(look_of(&d, id).drag_copy, None, "une seule étape");
+    }
+    set_style(&mut d, &[&r, &s], drag_copy(true)).expect("pose");
+    let v = d.version();
+    let same = set_style(&mut d, &[&r], drag_copy(true)).expect("même valeur");
+    assert_eq!(same.ids, Vec::<String>::new());
+    assert_eq!(d.version(), v, "même valeur : aucune étape");
+    let off = set_style(&mut d, &[&r], drag_copy(false)).expect("retrait");
+    assert_eq!(off.ids, vec![r.clone()]);
+    assert_eq!(look_of(&d, &r).drag_copy, None);
+    assert!(!raw_keys(&d, &r).contains(&"dragCopy".to_string()));
+    assert_eq!(look_of(&d, &s).drag_copy, Some(true));
+    let v = d.version();
+    set_style(&mut d, &[&r], drag_copy(false)).expect("retrait de l'absent");
+    assert_eq!(d.version(), v, "retirer l'absent : aucune étape");
+}
+
+/// Une valeur non booléenne ou `false` gardée dans le fichier est lue neutre.
+#[test]
+fn drag_copy_unreadable_is_neutral() {
+    let d = blank();
+    let mut d = d;
+    let r = add_rect(&mut d, Look::default());
+    for v in [In::Any(Any::Bool(false)), In::from("true"), In::Any(Any::from(1.0))] {
+        let e = with_raw_field(&d, &r, "dragCopy", v);
+        assert_eq!(look_of(&e, &r).drag_copy, None);
+        assert_eq!(e.element(&r).expect("vue").look, None);
+    }
+}
+
+#[test]
+fn drag_copy_kept_by_extract() {
+    let mut d = blank();
+    let page = first_page(&d);
+    let id = add_rect(&mut d, Look::default());
+    set_style(&mut d, &[&id], drag_copy(true)).expect("pose");
+    let frag = d.extract(&page, std::slice::from_ref(&id)).expect("extraction");
+    let ins = d
+        .insert_fragment(&frag, &page, 10.0, 10.0)
+        .expect("insertion");
+    assert_eq!(look_of(&d, &ins.ids[0]).drag_copy, Some(true));
+    assert_eq!(raw_any(&d, &ins.ids[0], "dragCopy"), Some(Any::Bool(true)));
 }

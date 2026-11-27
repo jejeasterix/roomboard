@@ -260,6 +260,61 @@ mod tests {
         }
     }
 
+    /// OG23 (T10) : départ touché dans l'intérieur enfermé (10, 10) : seul l'intérieur s'efface ; au fond (0, 0) : seul
+    /// le fond. Le mode contigu ou global est ignoré avec un départ ; un départ sur l'anneau rouge ne change rien.
+    #[test]
+    fn seed_clears_only_the_touched_region() {
+        for contiguous in [true, false] {
+            let t = white(10, 0, contiguous);
+            let mut v = ring();
+            transparent_color_from(&mut v, 20, 20, &t, Some((10, 10))).expect("intérieur");
+            assert_eq!(px(&v, 20, 10, 10)[3], 0, "intérieur effacé ({contiguous})");
+            assert_eq!(px(&v, 20, 7, 12)[3], 0, "intérieur effacé ({contiguous})");
+            assert_eq!(px(&v, 20, 0, 0), WHITE, "fond intact ({contiguous})");
+            assert_eq!(px(&v, 20, 19, 19), WHITE, "fond intact ({contiguous})");
+            assert_eq!(px(&v, 20, 5, 5), RED, "anneau intact ({contiguous})");
+            let mut v = ring();
+            transparent_color_from(&mut v, 20, 20, &t, Some((0, 0))).expect("fond");
+            assert_eq!(px(&v, 20, 0, 0)[3], 0, "fond effacé ({contiguous})");
+            assert_eq!(px(&v, 20, 19, 19)[3], 0, "fond effacé ({contiguous})");
+            assert_eq!(px(&v, 20, 10, 10), WHITE, "intérieur intact ({contiguous})");
+            assert_eq!(px(&v, 20, 5, 5), RED, "anneau intact ({contiguous})");
+            let mut v = ring();
+            transparent_color_from(&mut v, 20, 20, &t, Some((5, 5))).expect("anneau");
+            assert_eq!(v, ring(), "départ sur une autre couleur : rien ne change");
+        }
+    }
+
+    /// OG23 (T10) : sans départ, mêmes octets que `transparent_color`, en contigu et en global.
+    #[test]
+    fn seed_none_matches_transparent_color() {
+        let gray = img(20, 20, |x, y| {
+            if x < 3 {
+                [230, 230, 230, 255]
+            } else {
+                ring()[4 * (y * 20 + x) as usize..4 * (y * 20 + x) as usize + 4]
+                    .try_into()
+                    .expect("pixel")
+            }
+        });
+        for contiguous in [true, false] {
+            for (tolerance, soft) in [(10, 0), (0, 20), (5, 15)] {
+                let t = white(tolerance, soft, contiguous);
+                for base in [ring(), gray.clone()] {
+                    let mut a = base.clone();
+                    transparent_color(&mut a, 20, 20, &t).expect("a");
+                    let mut b = base;
+                    transparent_color_from(&mut b, 20, 20, &t, None).expect("b");
+                    assert_eq!(a, b, "{contiguous} {tolerance} {soft}");
+                }
+            }
+        }
+        assert_eq!(
+            transparent_color_from(&mut [0u8; 3], 1, 1, &white(10, 0, true), Some((0, 0))),
+            Err(PixelError::BadSize)
+        );
+    }
+
     #[test]
     fn global_tolerance_10_clears_background_and_enclosed_white() {
         let mut v = ring();
