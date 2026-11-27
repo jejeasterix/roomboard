@@ -924,6 +924,64 @@ mod tests {
         assert_eq!(out_string(e.get(&txn, "elbowed")).as_deref(), Some("oui"));
     }
 
+    /// C1 constat 2 : liaison écrite vers un objet d'une autre page (fichier, pair distant) : lue libre par la vue, jamais
+    /// suivie. Sous le patron fautif (`find_element` sur toutes les pages), la vue montre `start` et le déplacement de la
+    /// cible réécrit la flèche.
+    #[test]
+    fn binding_to_other_page_reads_free_and_never_follows() {
+        let mut d = Document::blank();
+        let p1 = d.page_ids()[0].clone();
+        let p2 = d
+            .apply(Command::AddPage {
+                after: None,
+                mode: None,
+            })
+            .expect("page")
+            .pages[0]
+            .clone();
+        let add = |d: &mut Document, page: &str, shape: ShapeKind, c: [f64; 4]| {
+            d.apply(Command::AddShape {
+                page: page.to_string(),
+                shape,
+                x0: c[0],
+                y0: c[1],
+                x1: c[2],
+                y1: c[3],
+                style: StrokeStyle {
+                    color: "#000000".into(),
+                    width: 4.0,
+                },
+                fill: None,
+                look: Look::default(),
+                line: LineInit::default(),
+            })
+            .expect("ajout")
+            .ids[0]
+            .clone()
+        };
+        let r = add(&mut d, &p2, ShapeKind::Rect, [0.0, 0.0, 100.0, 50.0]);
+        let f = add(&mut d, &p1, ShapeKind::Arrow, [200.0, 25.0, 400.0, 25.0]);
+        {
+            let txn = d.read();
+            let e = d.find_element(&txn, &f).expect("élément").element;
+            drop(txn);
+            let mut w = d.transact_local();
+            e.insert(&mut w, "startBound", In::from(r.as_str()));
+            e.insert(&mut w, "startFixed", nums_in(&[1.0, 0.5]));
+        }
+        let before = serde_json::to_value(d.element(&f).expect("vue")).expect("json");
+        assert!(before["shape"].get("start").is_none(), "lue libre : {before}");
+        let ch = d
+            .apply(Command::Transform {
+                ids: vec![r.clone()],
+                matrix: [1.0, 0.0, 0.0, 1.0, 0.0, 100.0],
+            })
+            .expect("déplacer");
+        assert_eq!(ch.ids, vec![r.clone()], "flèche non suivie");
+        let after = serde_json::to_value(d.element(&f).expect("vue")).expect("json");
+        assert_eq!(after, before);
+    }
+
     /// Review Focus 1, n° 14 (accès brut à la carte yrs) : `AddShape` avec `LineInit::default()` n'écrit aucune clé neuve.
     #[test]
     fn default_line_writes_no_new_keys() {

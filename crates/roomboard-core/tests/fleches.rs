@@ -694,3 +694,137 @@ fn set_style_elbowed_reroutes() {
     assert!(d.undo());
     assert_eq!(view(&d, &f), before, "une étape");
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// C1 (double relecture du lot 1).
+
+/// C1 constat 1 : une flèche coudée créée par `AddShape` est routée dans la même étape. Glisser (200, 200)→(300, 300),
+/// deux bouts libres : route en Z par x = 250. Sous le patron fautif (aucune route à la création), la flèche reste une
+/// diagonale de deux points.
+#[test]
+fn add_shape_elbowed_is_routed_at_creation() {
+    let mut d = Document::blank();
+    let p = page(&d);
+    let ch = d
+        .apply(Command::AddShape {
+            page: p.clone(),
+            shape: ShapeKind::Arrow,
+            x0: 200.0,
+            y0: 200.0,
+            x1: 300.0,
+            y1: 300.0,
+            style: pen(),
+            fill: None,
+            look: Look {
+                elbowed: Some(true),
+                ..Look::default()
+            },
+            line: LineInit::default(),
+        })
+        .expect("coudée");
+    let f = ch.ids[0].clone();
+    let w = world(&d, &f);
+    let want = [(200.0, 200.0), (250.0, 200.0), (250.0, 300.0), (300.0, 300.0)];
+    assert_eq!(w.len(), want.len(), "route en Z : {w:?}");
+    assert!(w.iter().zip(want).all(|(a, b)| near(*a, b)), "{w:?}");
+    assert!(d.undo());
+    assert!(d.element_ids(&p).is_empty(), "une étape");
+}
+
+/// C1 constat 2 : une liaison vers un objet d'une autre page est refusée (`BadShape`), par `AddShape` comme par
+/// `SetLinePoints`. Sous le patron fautif (`find_element` parcourt toutes les pages), les deux commandes passent.
+#[test]
+fn binding_to_other_page_is_refused() {
+    let mut d = Document::blank();
+    let p1 = page(&d);
+    let p2 = d
+        .apply(Command::AddPage {
+            after: None,
+            mode: None,
+        })
+        .expect("page")
+        .pages[0]
+        .clone();
+    let r = d
+        .apply(Command::AddShape {
+            page: p2.clone(),
+            shape: ShapeKind::Rect,
+            x0: 0.0,
+            y0: 0.0,
+            x1: 100.0,
+            y1: 50.0,
+            style: pen(),
+            fill: None,
+            look: Look::default(),
+            line: LineInit::default(),
+        })
+        .expect("rectangle de la page 2")
+        .ids[0]
+        .clone();
+    let line = LineInit {
+        points: vec![],
+        start: bind(&r, 1.0, 0.5),
+        end: None,
+    };
+    assert_eq!(
+        shape(&mut d, ShapeKind::Arrow, [200.0, 25.0, 400.0, 25.0], line),
+        Err(CommandError::BadShape),
+        "AddShape vers la page 2"
+    );
+    let f = shape(
+        &mut d,
+        ShapeKind::Arrow,
+        [200.0, 25.0, 400.0, 25.0],
+        LineInit::default(),
+    )
+    .expect("flèche libre");
+    let before = view(&d, &f);
+    assert_eq!(
+        d.apply(Command::SetLinePoints {
+            id: f.clone(),
+            points: vec![200.0, 25.0, 400.0, 25.0],
+            start: None,
+            end: bind(&r, 0.0, 0.5),
+        }),
+        Err(CommandError::BadShape),
+        "SetLinePoints vers la page 2"
+    );
+    assert_eq!(view(&d, &f), before, "rien d'écrit");
+    // Même page : acceptée (le refus ne vient que de la page).
+    let a = rect(&mut d, 0.0, 0.0);
+    d.apply(Command::SetLinePoints {
+        id: f.clone(),
+        points: vec![200.0, 25.0, 400.0, 25.0],
+        start: bind(&a, 1.0, 0.5),
+        end: None,
+    })
+    .expect("même page");
+    assert_eq!(view(&d, &f)["shape"]["start"]["id"], a.as_str());
+    assert_eq!(d.element_ids(&p2), vec![r]);
+    let _ = p1;
+}
+
+/// C1 constat 4 : `AddLinked` sur une source tournée de 90° : la flèche sort par le côté lié (local droit, monde bas),
+/// donc verticalement. Sous le patron fautif (normale prise en coordonnées monde, `(1, 0)`), le premier segment est
+/// horizontal : route en Z par x = 50.
+#[test]
+fn add_linked_on_rotated_source_leaves_through_bound_side() {
+    use roomboard_core::linear::LinkDir;
+    let mut d = Document::blank();
+    let a = rect(&mut d, 0.0, 0.0);
+    d.apply(Command::Transform {
+        ids: vec![a.clone()],
+        matrix: [0.0, 1.0, -1.0, 0.0, 0.0, 0.0],
+    })
+    .expect("tourner");
+    let ch = d
+        .apply(Command::AddLinked {
+            id: a.clone(),
+            dir: LinkDir::Right,
+        })
+        .expect("relié");
+    let w = world(&d, &ch.ids[1]);
+    assert!(near(w[0], (-25.0, 107.0)), "départ au bas monde : {w:?}");
+    assert!(near(w[1], (-25.0, 147.0)), "sortie verticale de 40 : {w:?}");
+    assert!(orthogonal(&w), "{w:?}");
+}
