@@ -313,13 +313,7 @@ impl Document {
 
     /// T5 : retire les éléments `ids` placés sous le tableau `table` de `page` et les réinsère juste au-dessus de lui,
     /// dans l'ordre de la pile (`reinsert_kept`, même transaction : une étape).
-    fn lift_above(
-        &self,
-        txn: &mut TransactionMut,
-        page: &str,
-        table: &str,
-        ids: &HashSet<String>,
-    ) {
+    fn lift_above(&self, txn: &mut TransactionMut, page: &str, table: &str, ids: &HashSet<String>) {
         let Some(elements) = self.page_elements(&*txn, page) else {
             return;
         };
@@ -1039,11 +1033,7 @@ mod tests {
         place11(&mut d, &t, &o);
         d.apply(Command::DuplicatePage { page: p.clone() })
             .expect("dup");
-        let p2 = d
-            .page_ids()
-            .into_iter()
-            .find(|x| *x != p)
-            .expect("page 2");
+        let p2 = d.page_ids().into_iter().find(|x| *x != p).expect("page 2");
         let ids = d.element_ids(&p2);
         let t2 = ids
             .iter()
@@ -1083,11 +1073,7 @@ mod tests {
         assert_eq!(d.element_ids(&p), vec![o.clone(), t.clone()]);
         d.apply(Command::DuplicatePage { page: p.clone() })
             .expect("dup");
-        let p2 = d
-            .page_ids()
-            .into_iter()
-            .find(|x| *x != p)
-            .expect("page 2");
+        let p2 = d.page_ids().into_iter().find(|x| *x != p).expect("page 2");
         let ids = d.element_ids(&p2);
         let t2 = ids
             .iter()
@@ -1127,7 +1113,8 @@ mod tests {
         let v = view(&d, &t);
         let (c0, r0) = (v.cols[0].id.clone(), v.rows[0].id.clone());
         let ver = d.version();
-        let cases: [(Vec<(String, f64)>, Vec<(String, f64)>); 3] = [
+        type Lines = Vec<(String, f64)>;
+        let cases: [(Lines, Lines); 3] = [
             (vec![(c0.clone(), 400.0), (c0.clone(), 240.0)], vec![]),
             (vec![(c0.clone(), 1e39), (c0.clone(), 240.0)], vec![]),
             (vec![], vec![(r0.clone(), 100.0), (r0.clone(), 64.0)]),
