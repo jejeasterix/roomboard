@@ -1,0 +1,214 @@
+// @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { cleanup, fireEvent, render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PageLayout } from "../core/api";
+import type { ToolbarHost } from "../app/toolbar-host";
+import type { Toolbar, ToolItem } from "../toolbar";
+import type { ToolbarView } from "./item-state";
+import { SideBar, type PagesPort } from "./SideBar";
+
+const item = (action: string): ToolItem => ({ id: action, kind: "action", action, label: action, requires: [], rest: {} });
+const bar: Toolbar = {
+  id: "pages",
+  role: "pages",
+  dock: "floating",
+  collapsed: false,
+  groups: [{ id: "pages", items: ["page-prev", "page-number", "page-next", "page-add", "page-duplicate", "page-remove"].map(item), rest: {} }],
+  rest: {},
+};
+const IDS = ["a", "b", "c"];
+const ROW = 100;
+const view = (over: Partial<ToolbarView> = {}): ToolbarView => ({ tool: "pen", eraserMode: "partial", canUndo: false, canRedo: false, pageIndex: 0, pageCount: 3, ...over });
+
+function setup(o: { collapsed?: boolean; fixed?: boolean; layout?: PageLayout; thumb?: "s" | "m" | "l" } = {}) {
+  const [shown, setShown] = createSignal("a");
+  const [layout, setLayout] = createSignal<PageLayout>(o.layout ?? "landscape");
+  const [fixed] = createSignal(o.fixed ?? false);
+  const pages = {
+    ids: () => IDS,
+    shown,
+    layout,
+    fixedByBackdrop: fixed,
+    show: vi.fn((id: string) => setShown(id)),
+    move: vi.fn(),
+    duplicate: vi.fn(),
+    remove: vi.fn(),
+    addAfter: vi.fn(),
+    setLayout: vi.fn((m: PageLayout) => setLayout(m)),
+    thumb: vi.fn(async () => "blob:vignette"),
+  } satisfies PagesPort;
+  const host = { runAction: vi.fn() } as unknown as ToolbarHost;
+  const store = { sidebar: vi.fn(() => ({ tab: "pages" as const, thumb: o.thumb ?? ("m" as const) })), setSidebar: vi.fn() };
+  const r = render(() => <SideBar bar={bar} collapsed={() => o.collapsed ?? false} view={() => view()} host={host} pages={pages} store={store} />);
+  const thumbs = (): HTMLButtonElement[] => [...r.container.querySelectorAll<HTMLButtonElement>(".rb-pages-list [data-page]")];
+  // happy-dom ne calcule aucune mise en page : rectangles posés à la main (ligne i : [i × 100, i × 100 + 100[).
+  thumbs().forEach((b, i) => {
+    b.getBoundingClientRect = () => new DOMRect(0, i * ROW, 160, ROW);
+    b.setPointerCapture = vi.fn();
+    b.releasePointerCapture = vi.fn();
+  });
+  const list = r.container.querySelector<HTMLElement>(".rb-pages-list")!;
+  Object.defineProperty(list, "scrollTop", { get: () => 0, set: () => undefined });
+  list.getBoundingClientRect = () => new DOMRect(0, 0, 160, 3 * ROW);
+  return { ...r, pages, host, store, thumbs };
+}
+const ptr = (type: string, y: number, pointerType = "mouse"): PointerEvent => {
+  const e = new PointerEvent(type, { clientX: 20, clientY: y, pointerId: 1, bubbles: true });
+  Object.defineProperty(e, "pointerType", { value: pointerType });
+  return e;
+};
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  document.body.innerHTML = "";
+});
+
+describe("SideBar (T10)", () => {
+  it("repliée : onglet Pages visible, page-add dans le DOM mais caché ; aucun onglet Calques", () => {
+    const { container } = setup({ collapsed: true });
+    const tab = container.querySelector('[role="tablist"] [role="tab"][data-tab="pages"]')!;
+    expect(tab.textContent).toContain("Pages");
+    expect(tab.querySelector('[data-icon="panel-left"]')).not.toBeNull();
+    expect(tab.closest("[hidden]")).toBeNull();
+    const add = container.querySelector('[data-item="page-add"]')!;
+    expect(add.closest("[hidden]")).not.toBeNull();
+    expect(container.querySelector(".rb-pages-list")!.closest("[hidden]")).not.toBeNull();
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+    expect(container.querySelector('[data-tab="calques"]')).toBeNull();
+    expect(container.querySelector('[data-toolbar="pages"]')).not.toBeNull();
+    // la rangée d'actions n'a ni Précédente, ni numéro, ni Suivante (elles sont dans la barre d'outils)
+    for (const id of ["page-prev", "page-number", "page-next"]) expect(container.querySelector(`[data-item="${id}"]`), id).toBeNull();
+  });
+
+  it("dépliée : une action lance l'hôte ; miniatures data-page 1..N, data-page-id, aria-current sur la montrée ; toucher appelle show", () => {
+    const { container, host, pages, thumbs } = setup();
+    expect(container.querySelector('[data-item="page-add"]')!.closest("[hidden]")).toBeNull();
+    fireEvent.click(container.querySelector('[data-item="page-duplicate"]')!);
+    expect(host.runAction).toHaveBeenCalledWith("page-duplicate");
+    expect(thumbs().map((b) => b.getAttribute("data-page"))).toEqual(["1", "2", "3"]);
+    expect(thumbs().map((b) => b.getAttribute("data-page-id"))).toEqual(IDS);
+    expect(thumbs()[0]!.getAttribute("aria-current")).toBe("page");
+    expect(thumbs()[1]!.hasAttribute("aria-current")).toBe(false);
+    thumbs()[1]!.dispatchEvent(ptr("pointerdown", 150));
+    thumbs()[1]!.dispatchEvent(ptr("pointerup", 150));
+    expect(pages.show).toHaveBeenCalledWith("b");
+    expect(thumbs()[1]!.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(thumbs()[2]!); // clavier (Entrée, Espace) : détail 0
+    expect(pages.show).toHaveBeenLastCalledWith("c");
+  });
+
+  it("glisser la miniature 3 au-dessus de la 1 : move(3e id, 0), aux événements de pointeur, aucun dragstart", () => {
+    const { thumbs, pages, container } = setup();
+    const third = thumbs()[2]!;
+    expect(third.hasAttribute("draggable")).toBe(false);
+    expect(container.querySelector("[draggable]")).toBeNull();
+    third.dispatchEvent(ptr("pointerdown", 250));
+    third.dispatchEvent(ptr("pointermove", 20));
+    third.dispatchEvent(ptr("pointerup", 20));
+    expect(pages.move).toHaveBeenCalledWith("c", 0);
+    expect(pages.show).not.toHaveBeenCalled();
+  });
+
+  it("appui long 500 ms : menu Insérer une page après / Dupliquer / Retirer / Monter / Descendre", () => {
+    const { thumbs, pages, container } = setup();
+    thumbs()[1]!.dispatchEvent(ptr("pointerdown", 150, "touch"));
+    vi.advanceTimersByTime(499);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    vi.advanceTimersByTime(1);
+    const menu = container.querySelector('[role="menu"]')!;
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.getAttribute("data-menu"))).toEqual(["add-after", "duplicate", "remove", "up", "down"]);
+    expect([...menu.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent)).toEqual(["Insérer une page après", "Dupliquer", "Retirer", "Monter", "Descendre"]);
+    thumbs()[1]!.dispatchEvent(ptr("pointerup", 150, "touch"));
+    expect(pages.show).not.toHaveBeenCalled(); // l'appui long n'est pas un toucher
+    fireEvent.click(menu.querySelector('[data-menu="duplicate"]')!);
+    expect(pages.duplicate).toHaveBeenCalledWith("b");
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("appui long relâché avant 500 ms ou déplacé : pas de menu ; Monter et Descendre déplacent d'un rang", () => {
+    const { thumbs, pages, container } = setup();
+    thumbs()[1]!.dispatchEvent(ptr("pointerdown", 150, "touch"));
+    vi.advanceTimersByTime(300);
+    thumbs()[1]!.dispatchEvent(ptr("pointerup", 150, "touch"));
+    vi.advanceTimersByTime(500);
+    expect(container.querySelector('[role="menu"]')).toBeNull();
+    fireEvent.contextMenu(thumbs()[1]!);
+    fireEvent.click(container.querySelector('[data-menu="up"]')!);
+    expect(pages.move).toHaveBeenCalledWith("b", 0);
+    fireEvent.contextMenu(thumbs()[1]!);
+    fireEvent.click(container.querySelector('[data-menu="down"]')!);
+    expect(pages.move).toHaveBeenLastCalledWith("b", 2);
+  });
+
+  it("clavier : Ctrl+↓ move +1, Suppr remove et propagation arrêtée, ↑↓ focus voisine, Échap rend le focus", () => {
+    const stage = document.createElement("div");
+    stage.className = "rb-stage";
+    stage.tabIndex = -1;
+    document.body.append(stage);
+    const { thumbs, pages } = setup();
+    document.body.append(...[]);
+    const [a, b] = thumbs();
+    a!.focus();
+    const seen = vi.fn();
+    document.addEventListener("keydown", seen);
+    fireEvent.keyDown(a!, { key: "ArrowDown", ctrlKey: true });
+    expect(pages.move).toHaveBeenCalledWith("a", 1);
+    fireEvent.keyDown(a!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(b);
+    const del = new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true });
+    b!.dispatchEvent(del);
+    expect(pages.remove).toHaveBeenCalledWith("b");
+    expect(del.defaultPrevented).toBe(true);
+    expect(seen.mock.calls.some((c) => (c[0] as KeyboardEvent).key === "Delete")).toBe(false);
+    fireEvent.keyDown(b!, { key: "Escape" });
+    expect(thumbs().includes(document.activeElement as HTMLButtonElement)).toBe(false);
+    document.removeEventListener("keydown", seen);
+  });
+
+  it("segments Mode : portrait appelle setLayout ; PDF fixé : infobulle « cadre fixé par le fond PDF »", () => {
+    const a = setup();
+    const modes = a.container.querySelector('[data-edit="page-mode"]')!;
+    expect([...modes.querySelectorAll("[data-choice]")].map((x) => x.getAttribute("data-choice"))).toEqual(["landscape", "portrait", "infinite"]);
+    expect(modes.querySelector('[data-icon="rectangle-vertical"]')).not.toBeNull();
+    fireEvent.click(modes.querySelector('[data-choice="portrait"]')!);
+    expect(a.pages.setLayout).toHaveBeenCalledWith("portrait");
+    expect(a.container.querySelector("[data-side-mode]")!.hasAttribute("title")).toBe(false);
+    cleanup();
+    const b = setup({ fixed: true });
+    expect(b.container.querySelector("[data-side-mode]")!.getAttribute("title")).toBe("Cadre fixé par le fond PDF");
+  });
+
+  it("taille Grandes : miniatures 220 px (tampon × devicePixelRatio) et setSidebar appelé", async () => {
+    const dpr = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    const { container, pages, store } = setup();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pages.thumb).toHaveBeenCalledWith("a", 320); // moyennes : 160 px CSS
+    pages.thumb.mockClear();
+    fireEvent.click(container.querySelector('[data-edit="page-thumb"] [data-choice="l"]')!);
+    expect(store.setSidebar).toHaveBeenCalledWith({ tab: "pages", thumb: "l" });
+    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.getAttribute("data-thumb")).toBe("l");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pages.thumb).toHaveBeenCalledWith("a", 440);
+    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb")).toBe("220px");
+    expect(container.querySelector('[data-page="1"] img')?.getAttribute("src")).toBe("blob:vignette");
+    Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
+  });
+
+  it("cibles ≥ 44 px : miniatures, onglet, segments, menu de page lus dans rb.css", () => {
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = (sel: string): string => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
+    expect(rule(".rb-side .rb-page-thumb")).toMatch(/min-block-size: var\(--rb-btn-s\)/);
+    expect(rule(".rb-side .rb-tab")).toMatch(/min-block-size: var\(--rb-btn-s\)/);
+    expect(rule(".rb-side-menu button")).toMatch(/min-block-size: var\(--rb-btn-s\)/);
+    expect(css).toMatch(/--rb-btn-s: 44px/);
+    expect(css).not.toMatch(/\.rb-side[^{]*\{[^}]*\b48px/);
+  });
+});
