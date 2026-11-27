@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ACTION_REQUIRES, ACTION_TABLE, ANNOTATION_MAIN_ACTIONS, ANNOTATION_ROLE, HISTORY_ROLE, MENU_ROLE, PANELS_ROLE, annotationBarOf, ANNOTATION_ONLY_ACTIONS, CAPABILITY_KEYS, itemsForMode, isAnnotationZone, isKnownItem, parseProfile, PROFILE_MINOR, RESERVED_BAR_IDS, resetItemOptions, resetPresets,
-  resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities,
+  resolveStartMode, serializeProfile, FILL_COLORS, FILL_NONE_LABEL, fillChoices, TABLE_ACTIONS, TABLE_FILLS, TOOL_TABLE, uniqueId, visibleItems, withCurrentMinor, type Profile, type RuntimeCapabilities, type Toolbar,
   BAR_ANCHORS, sideActions, withPageNav,
 } from "./toolbar";
 import { builtinProfile } from "./toolbar-profiles";
@@ -43,6 +43,13 @@ const ok = (json: unknown): { profile: Profile; warnings: string[] } => {
 const errs = (json: unknown): string[] => {
   const r = parseProfile(json);
   return "errors" in r ? r.errors : [];
+};
+/** personnalisation-1a (T2) : barre sans le groupe que la reprise `withPageNav` ajoute en fin de la première barre `tools`
+ *  d'un profil sans navigation (sélecteur seul : le fond des essais d'avant ne change pas). */
+const noNav = (b: Toolbar): Toolbar => {
+  const last = b.groups.at(-1);
+  const nav = last !== undefined && last.items.map((i) => i.action).join() === "page-prev,page-number,page-next";
+  return nav ? { ...b, groups: b.groups.slice(0, -1) } : b;
 };
 
 describe("profil de barre (T83, usage § 8)", () => {
@@ -94,7 +101,7 @@ describe("profil de barre (T83, usage § 8)", () => {
     const { profile, warnings } = ok(json);
     expect(warnings).toContain("outil inconnu masqué : laser");
     expect(profile.toolbars[0]!.groups[0]!.items.map((i) => i.id)).toContain("laser");
-    expect(visibleItems(profile.toolbars[0]!, ALL).map((i) => i.id)).toEqual(["pen", "undo"]);
+    expect(visibleItems(noNav(profile.toolbars[0]!), ALL).map((i) => i.id)).toEqual(["pen", "undo"]);
     expect(JSON.stringify(serializeProfile(profile))).toContain('"tool":"laser"');
   });
 
@@ -146,8 +153,8 @@ describe("profil de barre (T83, usage § 8)", () => {
     ((json.toolbars as any[])[0].groups[0].items as unknown[]).push({ id: "drop", kind: "dropzone", label: "Déposer", requires: ["dropPaths"] });
     json.behavior = { startMode: "desktop-annotation" };
     const { profile } = ok(json);
-    expect(visibleItems(profile.toolbars[0]!, NONE).map((i) => i.id)).toEqual(["pen", "undo"]);
-    expect(visibleItems(profile.toolbars[0]!, ALL).map((i) => i.id)).toEqual(["pen", "undo", "drop"]);
+    expect(visibleItems(noNav(profile.toolbars[0]!), NONE).map((i) => i.id)).toEqual(["pen", "undo"]);
+    expect(visibleItems(noNav(profile.toolbars[0]!), ALL).map((i) => i.id)).toEqual(["pen", "undo", "drop"]);
     expect(resolveStartMode(profile, NONE)).toEqual({ mode: "board", fellBack: true });
     expect(resolveStartMode(profile, ALL)).toEqual({ mode: "desktop-annotation", fellBack: false }); // C1 : la capacité décide (P10)
   });
@@ -159,7 +166,7 @@ describe("profil de barre (T83, usage § 8)", () => {
       { id: "b", items: [{ id: "s1", kind: "separator", label: "" }, { id: "laser", kind: "tool", tool: "laser", label: "L" }, { id: "s2", kind: "separator", label: "" }] },
       { id: "c", items: [{ id: "undo", kind: "action", action: "undo", label: "Annuler" }, { id: "s3", kind: "separator", label: "" }] },
     ];
-    expect(visibleItems(ok(json).profile.toolbars[0]!, ALL).map((i) => i.id)).toEqual(["pen", "s1", "undo"]);
+    expect(visibleItems(noNav(ok(json).profile.toolbars[0]!), ALL).map((i) => i.id)).toEqual(["pen", "s1", "undo"]);
   });
 
   it("préréglages séparés des options ; deux remises à zéro", () => {
@@ -208,16 +215,16 @@ describe("C1 : modèle du profil (P2-P4, P10, P33)", () => {
   it("accès profiles ajouté : en fin de la première barre tools, avertissement, relu sans alerte", () => {
     const { profile, warnings } = ok(bare());
     expect(warnings).toContain("accès au menu Profil ajouté");
-    const items = profile.toolbars[0]!.groups.flatMap((g) => g.items);
+    const items = noNav(profile.toolbars[0]!).groups.flatMap((g) => g.items);
     expect(items.at(-1)).toMatchObject({ id: "profiles", kind: "action", action: "profiles", label: "Profil" });
-    expect(visibleItems(profile.toolbars[0]!, NONE).map((i) => i.id)).toEqual(["pen", "undo", "profiles"]);
+    expect(visibleItems(noNav(profile.toolbars[0]!), NONE).map((i) => i.id)).toEqual(["pen", "undo", "profiles"]);
     expect(ok(serializeProfile(profile)).warnings).toEqual([]);
   });
 
   it("accès profiles ajouté : id profiles pris par un autre élément → profiles-2", () => {
     const j = bare();
     j.toolbars[0].groups[0].items.push({ id: "profiles", kind: "tool", tool: "pen", label: "Stylo bis" });
-    const items = ok(j).profile.toolbars[0]!.groups.flatMap((g) => g.items);
+    const items = noNav(ok(j).profile.toolbars[0]!).groups.flatMap((g) => g.items);
     expect(items.at(-1)).toMatchObject({ id: "profiles-2", action: "profiles" });
   });
 
@@ -252,7 +259,7 @@ describe("C1 : modèle du profil (P2-P4, P10, P33)", () => {
     expect(items.map((i) => i.id)).toEqual(["pen", "undo"]);
     expect(items[0]).toMatchObject({ id: "pen", hidden: true, options: { epaisseur: 9 } });
     expect(items[1]!.hidden).toBeUndefined();
-    expect(visibleItems(profile.toolbars[0]!, ALL).map((i) => i.id)).toEqual(["undo"]);
+    expect(visibleItems(noNav(profile.toolbars[0]!), ALL).map((i) => i.id)).toEqual(["undo"]);
     const out = serializeProfile(profile) as Record<string, any>;
     expect(out.toolbars[0].groups[0].items[0].hidden).toBe(true);
     expect("hidden" in out.toolbars[0].groups[0].items[1]).toBe(false);
@@ -536,7 +543,7 @@ describe("design-l2 : rôles des îlots et accès Profil (L2-3, L2-20)", () => {
     const ann = { id: "a", role: ANNOTATION_ROLE, dock: "top", groups: [{ id: "a", items: [{ id: "profiles", kind: "action", action: "profiles", label: "Profil" }] }] };
     const { profile, warnings } = ok(profileOf(outils, ann));
     expect(warnings).toContain("accès au menu Profil ajouté");
-    expect(profile.toolbars[0]!.groups.flatMap((g) => g.items).at(-1)).toMatchObject({ id: "profiles-2", action: "profiles" });
+    expect(noNav(profile.toolbars[0]!).groups.flatMap((g) => g.items).at(-1)).toMatchObject({ id: "profiles-2", action: "profiles" });
   });
 
   it("design-l2 (H11, H18 de L4) : rôle inconnu flottant gardé tel quel, relu sans perte", () => {
