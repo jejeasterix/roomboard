@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Command, StrokeBuilderApi, StrokeStyle } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
+import type { ItemStyle } from "../item-style";
 import type { Camera } from "../camera";
 import type { InputSample } from "../input/sampler";
 import { createPenTool } from "./pen";
@@ -13,11 +14,12 @@ function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   const runs: Command[] = [];
-  const builders = { created: 0, pushes: 0, freed: 0, aheads: [] as number[][] };
+  const builders = { created: 0, pushes: 0, freed: 0, aheads: [] as number[][], constants: [] as Array<boolean | undefined> };
   const original = doc.newStrokeBuilder.bind(doc);
-  doc.newStrokeBuilder = (st: StrokeStyle): StrokeBuilderApi => {
+  doc.newStrokeBuilder = (st: StrokeStyle, constant?: boolean): StrokeBuilderApi => {
     builders.created++;
-    const b = original(st);
+    builders.constants.push(constant);
+    const b = original(st, constant);
     return {
       push: (p, ahead) => {
         builders.pushes++;
@@ -31,7 +33,7 @@ function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
       },
     };
   };
-  let style = PEN;
+  let style: StrokeStyle & Partial<Pick<ItemStyle, "opacity" | "variability">> = PEN;
   const ctx: ToolContext = {
     doc,
     page: () => page,
@@ -42,7 +44,7 @@ function setup(cam: Camera = { zoom: 1, tx: 0, ty: 0 }, refuse = false) {
     },
   };
   const tool = createPenTool(ctx, () => style);
-  return { doc, page, runs, builders, tool, setStyle: (st: StrokeStyle) => { style = st; } };
+  return { doc, page, runs, builders, tool, setStyle: (st: StrokeStyle & Partial<Pick<ItemStyle, "variability">>) => { style = st; } };
 }
 
 function commitOf(runs: Command[]): Extract<Command, { type: "CommitStroke" }> {
@@ -209,5 +211,24 @@ describe("outil Stylo : transparence (OG11 T9b)", () => {
       tool.close(1, "end");
       expect(commitOf(runs).look).toEqual(look);
     }
+  });
+
+  it("Constante : CommitStroke porte variability et le builder est constant", () => {
+    const { runs, builders, tool, setStyle } = setup();
+    setStyle({ ...PEN, variability: "constant" });
+    tool.begin(1, [s(10, 10)]);
+    tool.extend(1, [s(20, 10)], []);
+    tool.close(1, "end");
+    expect(builders.constants).toEqual([true]);
+    expect(commitOf(runs).look?.variability).toBe("constant");
+  });
+
+  it("Variable : builder non constant, aucun variability écrit", () => {
+    const { runs, builders, tool } = setup();
+    tool.begin(1, [s(10, 10)]);
+    tool.extend(1, [s(20, 10)], []);
+    tool.close(1, "end");
+    expect(builders.constants).toEqual([false]);
+    expect(commitOf(runs).look?.variability).toBeUndefined();
   });
 });

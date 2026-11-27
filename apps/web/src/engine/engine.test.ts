@@ -2026,6 +2026,85 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(colorOf(b)).toBe("#000000");
   });
 
+  it("arrange align-left : une étape", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const ids = [addRect(), addRect(), addRect()];
+    sel().setSelection(ids);
+    const before = ids.map((id) => doc.bounds([id]));
+    expect(engine.arrange("align-left")).toBe(true);
+    const xs = ids.map((id) => doc.bounds([id])?.x0);
+    expect(new Set(xs).size).toBe(1);
+    engine.undo();
+    expect(ids.map((id) => doc.bounds([id]))).toEqual(before);
+  });
+
+  it("arrange sans sélection : faux", () => {
+    const { engine } = styleSetup();
+    expect(engine.arrange("align-left")).toBe(false);
+  });
+
+  it("arrange : groupe en bloc", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    const b = addRect();
+    const c = addRect();
+    sel().setSelection([a, b]);
+    engine.group();
+    sel().setSelection([a, c]);
+    const before = [a, b, c].map((id) => doc.bounds([id])!);
+    expect(engine.arrange("align-right")).toBe(true);
+    const after = [a, b, c].map((id) => doc.bounds([id])!);
+    expect(after[0]!.x0 - before[0]!.x0).toBe(after[1]!.x0 - before[1]!.x0);
+    expect(after[0]!.x0).not.toBe(before[0]!.x0);
+  });
+
+  it("flèche : une Transform, une étape", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const x0 = doc.bounds([a])!.x0;
+    const y0 = doc.bounds([a])!.y0;
+    expect(engine.key(key("ArrowRight"))).toBe(true);
+    expect(doc.bounds([a])!.x0).toBe(x0 + 1);
+    engine.view.zoomAt(0, 0, 2);
+    expect(engine.key(key("ArrowDown", { shiftKey: true }))).toBe(true);
+    expect(doc.bounds([a])!.y0).toBe(y0 + 5);
+    engine.undo();
+    engine.undo();
+    expect(doc.bounds([a])!.x0).toBe(x0);
+    expect(doc.bounds([a])!.y0).toBe(y0);
+  });
+
+  it("flèche sans sélection : la touche passe", () => {
+    const { engine } = styleSetup();
+    expect(engine.key(key("ArrowLeft"))).toBe(false);
+    expect(engine.key(key("H", { shiftKey: true, code: "KeyH" }))).toBe(false);
+  });
+
+  it("Maj+H retourne", () => {
+    const { engine, doc, page, addRect, sel } = styleSetup();
+    const r = addRect();
+    const f = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 300, y0: 100, x1: 400, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    sel().setSelection([r, f]);
+    expect(engine.key(key("H", { shiftKey: true, code: "KeyH" }))).toBe(true);
+    // Miroir horizontal autour du centre de la sélection : la flèche (à droite) passe à gauche du rectangle.
+    expect(doc.bounds([f])!.x1).toBeLessThan(doc.bounds([r])!.x0);
+  });
+
+  it("style courant : transparent jamais gardé", () => {
+    const seen: string[] = [];
+    const { engine, addRect, sel, colorOf } = styleSetup();
+    engine.onItemStyle((s) => seen.push(s.color));
+    const a = addRect();
+    const b = addRect();
+    sel().setSelection([a, b]);
+    engine.setItemStyle({ color: "transparent" });
+    expect(colorOf(a)).toBe("transparent");
+    expect(colorOf(b)).toBe("transparent");
+    expect(engine.itemStyle().color).toBe("#000000");
+    expect(seen).not.toContain("transparent");
+  });
+
   it("setItemStyle sans sélection : style courant seul, rien d'écrit", () => {
     const { engine, doc } = styleSetup();
     const v = doc.version();
