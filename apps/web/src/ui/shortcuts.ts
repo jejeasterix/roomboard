@@ -23,6 +23,19 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("forward", "Disposition", "Avancer", "Ctrl+↑"),
   s("backward", "Disposition", "Reculer", "Ctrl+↓"),
   s("back", "Disposition", "Arrière-plan", "Ctrl+Maj+↓"),
+  s("flip-h", "Transformer", "Retourner horizontalement", "Maj+H"),
+  s("flip-v", "Transformer", "Retourner verticalement", "Maj+V"),
+  s("rotate-cw", "Transformer", "Tourner de 90° à droite", "Maj+R"),
+  s("rotate-ccw", "Transformer", "Tourner de 90° à gauche", "Alt+Maj+R"),
+  s("align-left", "Aligner", "Aligner à gauche", "Alt+Maj+←"),
+  s("align-right", "Aligner", "Aligner à droite", "Alt+Maj+→"),
+  s("align-top", "Aligner", "Aligner en haut", "Alt+Maj+↑"),
+  s("align-bottom", "Aligner", "Aligner en bas", "Alt+Maj+↓"),
+  s("align-center", "Aligner", "Centrer horizontalement", "Alt+Maj+H"),
+  s("align-middle", "Aligner", "Centrer verticalement", "Alt+Maj+V"),
+  s("distribute-h", "Aligner", "Répartir horizontalement", "Alt+H"),
+  s("distribute-v", "Aligner", "Répartir verticalement", "Alt+V"),
+  s("nudge", "Aligner", "Déplacer la sélection (Maj : 5 px)", "←"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
   s("help", "Vue", "Aide", "?"),
   // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
@@ -42,7 +55,7 @@ export function shortcutText(id: string, mac: boolean): string | null {
   return mac ? MAC.reduce((t, [a, b]) => t.split(a).join(b), hit.keys) : hit.keys;
 }
 /** Noms `aria-keyshortcuts` (WAI-ARIA) des parties d'un raccourci de la table. */
-const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown" };
+const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight" };
 /** OG19 : valeur `aria-keyshortcuts` d'un raccourci (Ctrl → Control, ou Meta sous macOS) ; null pour un geste
  *  (« Espace + glisser »), une liste (« Ctrl+B, I, U ») ou un id absent de la table. */
 export function ariaShortcut(id: string, mac: boolean): string | null {
