@@ -265,6 +265,7 @@ const EXPORT_LABELS: ReadonlyArray<readonly [string, string, string]> = [
   ["params", "réglage d'image non exporté (image d'origine écrite)", "réglages d'image non exportés (images d'origine écrites)"],
   ["arrow", "flèche écrite en ligne (.ubz)", "flèches écrites en lignes (.ubz)"],
   ["bent", "flèche à plusieurs points écrite sans pointe", "flèches à plusieurs points écrites sans pointe"],
+  ["closedFill", "losange ou forme libre rempli exporté sans fond", "losanges ou formes libres remplis exportés sans fond"],
   ["outside", "objet hors du cadre (coordonnées négatives ou au-delà de 1 920)", "objets hors du cadre (coordonnées négatives ou au-delà de 1 920)"],
 ];
 const EXT_OF_MIME: Readonly<Record<string, string>> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/bmp": "bmp", "image/svg+xml": "svg" };
@@ -290,7 +291,11 @@ function objectOf(
     }
     case "shape": {
       const g = lineGeomOf(el.shape, el.look);
-      const flatStroke = (pts: ReadonlyArray<readonly [number, number]>): BoardObject => ({ kind: "stroke", m, color: el.style.color, width: el.style.width, points: pts.flatMap(([x, y]) => [x, y, 0.5]) });
+      const flatStroke = (pts: ReadonlyArray<readonly [number, number]>): BoardObject => {
+        // C4a : la polyligne n'a pas de fond ; un intérieur rempli est perdu, et l'avis le dit.
+        if (el.shape.fill !== null) add("closedFill");
+        return { kind: "stroke", m, color: el.style.color, width: el.style.width, points: pts.flatMap(([x, y]) => [x, y, 0.5]) };
+      };
       // OG12 lot 2a : le losange et la ligne fermée s'écrivent en polyligne fermée (dernier point = premier).
       if (el.shape.shape === "diamond") {
         const { w, h } = el.shape;
