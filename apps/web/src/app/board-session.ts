@@ -354,11 +354,12 @@ async function buildBoardSession(
     renderer: choice.renderer,
     ...(shared.openLink === undefined ? {} : { openLink: shared.openLink }),
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
-    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
+    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien. OG27 : un popover
+    // (lien, sans `data-island`) non plus : il suit la sélection, la page ne doit pas sauter à son ouverture.
     fitTop: () =>
       topBelowIslands(
         stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
+        [...stage.ownerDocument.querySelectorAll(".rb-island[data-island]:not([data-options])")].map((e) => {
           const r = e.getBoundingClientRect();
           return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
         }),
@@ -478,13 +479,14 @@ async function buildBoardSession(
   resizes.observe(stage);
   fit();
   // OG27 : un îlot du haut bouge (glissé, replié, compacté) → le haut de la page ajustée change ; vue encore ajustée
-  // réajustée, ascenseur recalé tout de suite (sans attendre le prochain défilement).
-  undo.push(
-    watchIslands(stage.ownerDocument.body, () => {
-      engine.topChanged();
-      scrollbar.update();
-    }),
-  );
+  // décalée, ascenseur recalé tout de suite (sans attendre le prochain défilement). Session cachée ou fermée : rien.
+  const islandsMoved = (): void => {
+    if (!active) return;
+    engine.topChanged();
+    scrollbar.update();
+  };
+  const stopIslands = watchIslands(stage.ownerDocument.body, islandsMoved);
+  undo.push(stopIslands);
   const stopDpr = watchDpr(window, fit);
   undo.push(stopDpr);
 
@@ -836,6 +838,7 @@ async function buildBoardSession(
       stage.hidden = false;
       active = true;
       fit();
+      islandsMoved();
     },
     deactivate() {
       active = false;
@@ -850,6 +853,7 @@ async function buildBoardSession(
     dispose() {
       if (disposed) return;
       disposed = true;
+      stopIslands();
       resizes.disconnect();
       stopDpr();
       offSettings();

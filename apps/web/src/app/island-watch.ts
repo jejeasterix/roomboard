@@ -4,7 +4,8 @@
  * l'ajustement et l'ascenseur se recalent sans attendre le prochain défilement. Seuls comptent les attributs d'un îlot
  * ou d'un groupe de coin, et l'arrivée ou le départ d'un îlot ; l'intérieur d'un îlot (boutons) ne réveille rien.
  */
-const ISLAND = ".rb-island, .rb-corner";
+/** Îlots de barre (`data-island`) et groupes de coin ; un popover (lien) n'en est pas un. */
+const ISLAND = ".rb-island[data-island], .rb-corner";
 
 const isIsland = (n: Node): boolean => n instanceof Element && (n.matches(ISLAND) || n.querySelector(ISLAND) !== null);
 

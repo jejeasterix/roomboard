@@ -7,6 +7,7 @@ function setup() {
   document.body.append(root);
   const island = document.createElement("div");
   island.className = "rb-island";
+  island.dataset["island"] = "outils";
   const button = document.createElement("button");
   island.append(button);
   root.append(island);
@@ -40,6 +41,7 @@ describe("watchIslands (OG27)", () => {
     const { root, island, onChange, flush } = setup();
     const other = document.createElement("div");
     other.className = "rb-island";
+    other.dataset["island"] = "pages";
     root.append(other);
     await flush();
     island.remove();
@@ -47,13 +49,18 @@ describe("watchIslands (OG27)", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
-  it("intérieur d'un îlot ou élément hors îlot : rien", async () => {
+  it("intérieur d'un îlot, élément hors îlot ou popover : rien", async () => {
     const { root, button, onChange, flush } = setup();
     button.setAttribute("aria-pressed", "true");
     button.append(document.createElement("span"));
     const plain = document.createElement("div");
     root.append(plain);
     plain.style.top = "4px";
+    // Popover de lien : habillé en îlot, sans `data-island` ; il suit la sélection, la page ne saute pas.
+    const pop = document.createElement("div");
+    pop.className = "rb-island rb-link-pop";
+    root.append(pop);
+    pop.style.top = "120px";
     await flush();
     expect(onChange).not.toHaveBeenCalled();
   });

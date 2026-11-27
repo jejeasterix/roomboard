@@ -1502,6 +1502,23 @@ describe("moteur — pot (C6a)", () => {
       engine.showPage(p1);
       expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
     });
+    it("vue ajustée : seul le haut se décale ; zoom gardé après un redimensionnement (HL3-6)", () => {
+      const { engine, setTop } = moving();
+      engine.resize(1400, 800, 1);
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual({ ...before, ty: before.ty - 60 });
+    });
+    it("Infini : rien (l'ajustement suit le contenu, aucun ascenseur)", () => {
+      const { engine, setTop } = moving();
+      engine.setPageMode("infinite");
+      engine.fitPage();
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
     it("haut inchangé : rien", () => {
       const { engine } = moving();
       const before = engine.camera();

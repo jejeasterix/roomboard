@@ -255,8 +255,9 @@ export interface Engine {
   scrollPageBy(dy: number): boolean;
   /** OG24 : place la page portrait à `at` (0 = haut, 1 = bas, borné) ; faux si rien ne bouge. */
   scrollPageTo(at: number): boolean;
-  /** OG27 : le haut sous les îlots (`fitTop`) a pu changer (un îlot du haut a bougé). Vue encore à son ajustement :
-   *  réajustée sous le nouveau haut ; pages quittées encore ajustées : aussi. Vrai si la vue montrée a bougé. */
+  /** OG27 : le haut sous les îlots (`fitTop`) a pu changer (un îlot du haut a bougé). Vue d'une page Page encore à son
+   *  ajustement : décalée du seul écart du haut (zoom gardé) ; pages quittées encore ajustées : aussi. Infini : rien.
+   *  Vrai si la vue montrée a bougé. */
   topChanged(): boolean;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
@@ -421,11 +422,21 @@ export function createEngine(deps: EngineDeps): Engine {
   const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
-  /** OG27 : dernière caméra d'ajustement de chaque page ; une vue qui y est encore se recale quand le haut des îlots bouge. */
-  const fits = new Map<string, Camera>();
+  /** OG27 : dernier ajustement de chaque page (caméra et haut sous les îlots) ; une vue qui y est encore suit le haut. */
+  const fits = new Map<string, { readonly camera: Camera; readonly top: number }>();
   const setFit = (id: string, c: Camera): void => {
-    fits.set(id, c);
+    fits.set(id, { camera: c, top: fitTop() });
     fitted.add(id);
+  };
+  /** OG27 : vue `c` de la page `id` décalée du seul écart du haut (`top`), si elle est encore à son ajustement d'une page
+   *  Page ; null sinon (vue déplacée par la main, Infini, page disparue, haut inchangé). Ni zoom ni contenu relus. */
+  const followTop = (id: string, c: Camera, top: number): Camera | null => {
+    const f = fits.get(id);
+    const view = doc.page(id);
+    if (f === undefined || view === null || pageLayoutOf(view) === "infinite" || f.top === top || !sameCamera(c, f.camera)) return null;
+    const next = { ...c, ty: c.ty + top - f.top };
+    fits.set(id, { camera: next, top });
+    return next;
   };
   /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue.
    *  OG27 : le portrait est la forme affichée (cadre plus haut que large), fond PDF A4 d'une page Paysage compris. */
@@ -1258,21 +1269,15 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     topChanged() {
       if (!(viewW > 0 && viewH > 0)) return false;
+      const top = fitTop();
       // Pages quittées encore ajustées : leur caméra gardée suit (elles se montreront sous le nouveau haut).
       for (const [id, saved] of cameras) {
-        const f = fits.get(id);
-        if (id !== pageId && f !== undefined && sameCamera(saved, f)) {
-          const next = fit(viewW, viewH, id);
-          cameras.set(id, next);
-          fits.set(id, next);
-        }
+        const next = id === pageId ? null : followTop(id, saved, top);
+        if (next !== null) cameras.set(id, next);
       }
-      const f = fits.get(pageId);
-      if (f === undefined || !sameCamera(camera, f)) return false;
-      const next = fit(viewW, viewH);
-      if (sameCamera(next, camera)) return false;
+      const next = followTop(pageId, camera, top);
+      if (next === null) return false;
       setCamera(next);
-      fits.set(pageId, next);
       requestScene();
       return true;
     },
