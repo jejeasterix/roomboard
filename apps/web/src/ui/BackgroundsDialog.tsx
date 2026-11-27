@@ -73,7 +73,7 @@ function Thumb(props: { readonly card: BackgroundCard; thumbOf(card: BackgroundC
   }
   return (
     <span class="rb-bg-thumb" style={{ "background-color": c.item.color }}>
-      <Show when={src()}>{(s) => <img src={s()} alt="" loading="lazy" decoding="async" draggable={false} />}</Show>
+      <Show when={src()}>{(s) => <img src={s()} alt="" loading="lazy" decoding="async" />}</Show>
     </span>
   );
 }
