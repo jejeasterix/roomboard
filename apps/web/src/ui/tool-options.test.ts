@@ -19,8 +19,13 @@ describe("tool-options", () => {
   it("sectionsFor select vide : rien", () => {
     expect(sectionsFor("select", [], false)).toEqual([]);
   });
-  it("sectionsFor select + image : transparence, disposition et actions", () => {
-    expect(sectionsFor("select", [img], false)).toEqual(["opacity", "layers", "transform", "actions"]);
+  it("sectionsFor select + image : transparence, image, disposition et actions", () => {
+    expect(sectionsFor("select", [img], false)).toEqual(["opacity", "image", "layers", "transform", "actions"]);
+  });
+  it("image seule : section Image ouverte par défaut ; deux images ou un mélange : pas de section Image", () => {
+    expect(sectionOpen("image", {})).toBe(true);
+    expect(sectionsFor("select", [img, { ...img, id: "j" } as ElementView], false)).not.toContain("image");
+    expect(sectionsFor("select", [img, rect("a", "#000000")], false)).not.toContain("image");
   });
   it("formValue commune", () => {
     expect(formValue([rect("a", "#000000"), rect("b", "#000000")], (e) => (e.kind === "shape" ? e.style.color : undefined), "#111111")).toBe("#000000");
