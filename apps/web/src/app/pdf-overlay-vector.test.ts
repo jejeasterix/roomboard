@@ -1,8 +1,9 @@
 import { PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib";
 import { describe, expect, it, vi } from "vitest";
-import type { AssetInfo } from "../core/api";
+import type { AssetInfo, TableData } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { OP, RecordingContext2D, SEG, type RecordedList } from "../engine/render/record-ctx";
+import { paintTableGrid } from "../engine/render/table-paint";
 import { hasPdfWriter, type FormatsBinding } from "../platform/container";
 import type { WorkerLike } from "../platform/one-shot-worker";
 import { createVectorOverlay, fallbackOverlay, PDF_WRITE_FAILED_MESSAGE, vectorPainter, workerPdfWriter, type PdfWriter } from "./pdf-overlay-vector";
@@ -358,5 +359,64 @@ describe("vectorPainter (OG11, T8)", () => {
       },
     }).pages([req(page)]);
     expect(strokesOf(lists[0]!)).toEqual([{ alpha: 1, dash: [], cubics: 0 }]);
+  });
+});
+
+/** PNG réduit à sa signature et à son IHDR : `probeSize` y lit la taille, sans décodage. */
+function pngHeader(w: number, h: number): Uint8Array {
+  const b = new Uint8Array(33);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const v = new DataView(b.buffer);
+  v.setUint32(16, w);
+  v.setUint32(20, h);
+  return b;
+}
+
+/** Position de la suite `seq` dans les opérations enregistrées, -1 si absente. */
+function indexOfSeq(ops: ArrayLike<number>, seq: readonly number[]): number {
+  for (let i = 0; i + seq.length <= ops.length; i++) if (seq.every((x, k) => ops[i + k] === x)) return i;
+  return -1;
+}
+
+describe("superposition vectorielle : image de fond de case (personnalisation-3, T9, C1)", () => {
+  const table: TableData = {
+    color: "#000000", size: 36, cols: [{ id: "c0", width: 240 }], rows: [{ id: "r0", height: 64 }],
+    cells: [{ row: "r0", col: "c0", text: "", fill: null, shade: null, spans: [], bg: IMG }], merges: [],
+  };
+  /** Vrais jetons, vrai enregistreur, vrai peintre de tableau : seul l'écrivain est faux. */
+  const run = async (bytes: Uint8Array) => {
+    const lists: RecordedList[] = [];
+    const written: (readonly Uint8Array[])[] = [];
+    await createVectorOverlay({
+      doc: { elementIds: (p) => [`${p}-t`], citedAssets: () => [info(IMG, "image/png")] },
+      assets: { get: (id) => (id === IMG ? new Blob([bytes]) : undefined) },
+      alive: () => true,
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: (_ctx, images) => ({ paintContent: (ctx) => paintTableGrid(ctx, table, images) }),
+      fonts: async () => [new Uint8Array([9])],
+      toPng: async () => new Uint8Array(0),
+      write: async (l, _fonts, images) => {
+        lists.push(l);
+        written.push(images);
+        return new Uint8Array([7]);
+      },
+    }).pages([req("p")]);
+    return { list: lists[0]!, images: written[0]! };
+  };
+
+  it("C1 : fond PNG 20 x 10 dans une case 240 x 64 — « couvrir » comme à l'écran : 240 x 120 décalé de -28, octets passés à l'écrivain", async () => {
+    const png = pngHeader(20, 10);
+    const { list, images } = await run(png);
+    expect(list.images).toHaveLength(1);
+    expect(images).toEqual([png]);
+    // index de l'image, x, y, largeur, hauteur de l'opération image (la taille vient de l'en-tête, pas du jeton).
+    expect(indexOfSeq(list.ops, [0, 0, -28, 240, 120])).toBeGreaterThan(-1);
+    expect(list.ops.indexOf(OP.clip)).toBeGreaterThan(-1);
+  });
+
+  it("C1 : en-tête illisible — le fond remplit la case (240 x 64) plutôt que de disparaître", async () => {
+    const { list } = await run(new Uint8Array([1, 2, 3]));
+    expect(list.images).toHaveLength(1);
+    expect(indexOfSeq(list.ops, [0, 0, 0, 240, 64])).toBeGreaterThan(-1);
   });
 });
