@@ -47,9 +47,12 @@ export const START_ARROWHEAD_DEFAULT: Arrowhead = "none";
 export const END_ARROWHEAD_DEFAULT: Arrowhead = "arrow";
 export const TEXT_ALIGNS: readonly string[] = ["center", "right"];
 export const LINK_MAX_CHARS = 2048;
-/** `valid_link` du cœur : trois schémas, casse exacte, 2 048 caractères au plus, comptés en points de code (`chars()`). */
+/** Interdits de `valid_link` : blancs Unicode de Rust (`White_Space`, sans U+FEFF que `\s` de JS ajoute), `"`, `<`, `>`, `\`, catégorie Cc. */
+const LINK_FORBIDDEN = /[\u0009-\u000d\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"<>\\\p{Cc}]/u;
+/** `valid_link` du cœur : trois schémas, casse exacte, 2 048 caractères au plus (points de code), sans blanc, `"`, `<`,
+ *  `>`, `\` ni caractère de contrôle (`char::is_whitespace` et `is_control` de Rust). */
 export function validLink(s: string): boolean {
-  return ["http://", "https://", "mailto:"].some((p) => s.startsWith(p)) && [...s].length <= LINK_MAX_CHARS;
+  return ["http://", "https://", "mailto:"].some((p) => s.startsWith(p)) && [...s].length <= LINK_MAX_CHARS && !LINK_FORBIDDEN.test(s);
 }
 /** Graine neuve d'un geste : entier 32 bits non signé. */
 export function newSeed(): number {

@@ -62,7 +62,7 @@ fn roughness_arg(v: Option<f64>) -> Result<Option<u8>, CommandError> {
 
 /// Aspect d'une création (OG11) : bornes des nombres vérifiées (tracé entier 0..=2, graine entière 0..=u32::MAX,
 /// opacité finie 0..=100 arrondie), hors bornes `BadStyle` ; le reste est assaini par le cœur (`Look::sanitized`).
-/// `lot2` (T12) : `fillStyle`, `startArrowhead`, `endArrowhead`, `textAlign`, `link`, dans cet ordre ; un défaut de
+/// `named` (T12) : `fillStyle`, `startArrowhead`, `endArrowhead`, `textAlign`, `link`, dans cet ordre ; un défaut de
 /// pointe ou un lien hors des trois schémas n'écrit rien (`Look::sanitized`).
 fn look_of(
     stroke_style: Option<String>,
@@ -70,9 +70,9 @@ fn look_of(
     seed: Option<f64>,
     roundness: Option<String>,
     opacity: Option<f64>,
-    lot2: [Option<String>; 5],
+    named: [Option<String>; 5],
 ) -> Result<Look, CommandError> {
-    let [fill_style, start_arrowhead, end_arrowhead, text_align, link] = lot2;
+    let [fill_style, start_arrowhead, end_arrowhead, text_align, link] = named;
     let opacity = match opacity {
         None => None,
         Some(o) if o.is_finite() && (0.0..=100.0).contains(&o) => Some(o.round() as u8),
@@ -1340,9 +1340,9 @@ impl Document {
         text_align: Option<String>,
         link: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let lot2 = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
         let look =
-            look_of(stroke_style, roughness, seed, roundness, opacity, lot2).map_err(cmd_err)?;
+            look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         to_js(
             &self
                 .commit_stroke_inner(page, points, color, width, look)
@@ -1391,9 +1391,9 @@ impl Document {
         text_align: Option<String>,
         link: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let lot2 = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
         let look =
-            look_of(stroke_style, roughness, seed, roundness, opacity, lot2).map_err(cmd_err)?;
+            look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         to_js(
             &self
                 .add_shape_inner(page, shape, [x0, y0, x1, y1], color, width, fill, look)
@@ -1472,9 +1472,9 @@ impl Document {
         text_align: Option<String>,
         link: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let lot2 = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
         let look =
-            look_of(stroke_style, roughness, seed, roundness, opacity, lot2).map_err(cmd_err)?;
+            look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let spans = spans_arg(spans).map_err(cmd_err)?;
         to_js(
             &self
@@ -4090,14 +4090,14 @@ mod tests {
     #[test]
     fn look_of_carries_lot2_fields() {
         let s = |v: &str| Some(v.to_string());
-        let lot2 = [
+        let named = [
             s("hachure"),
             s("triangle"),
             s("none"),
             s("right"),
             s("https://example.org"),
         ];
-        let l = look_of(None, None, None, None, None, lot2).expect("aspect");
+        let l = look_of(None, None, None, None, None, named).expect("aspect");
         let want = Look {
             fill_style: s("hachure"),
             start_arrowhead: s("triangle"),
@@ -4107,8 +4107,8 @@ mod tests {
             ..Look::default()
         };
         assert_eq!(l.sanitized(), want);
-        let lot2 = [None, s("none"), s("arrow"), None, s("javascript:alert(1)")];
-        let l = look_of(None, None, None, None, None, lot2).expect("aspect");
+        let named = [None, s("none"), s("arrow"), None, s("javascript:alert(1)")];
+        let l = look_of(None, None, None, None, None, named).expect("aspect");
         assert!(l.is_neutral());
     }
 

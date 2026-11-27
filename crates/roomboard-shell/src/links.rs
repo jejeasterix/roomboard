@@ -7,9 +7,14 @@ use std::fmt;
 pub const LINK_MAX_CHARS: usize = 2048;
 const SCHEMES: [&str; 3] = ["http://", "https://", "mailto:"];
 
-/// Lien admis : `http://`, `https://` ou `mailto:`, casse exacte, sans espace devant, 2 048 caractères au plus.
+/// Lien admis : `http://`, `https://` ou `mailto:`, casse exacte, 2 048 caractères au plus, sans blanc, sans `"`, `<`,
+/// `>`, `\` ni caractère de contrôle (même règle que le cœur).
 pub fn valid_link(s: &str) -> bool {
-    SCHEMES.iter().any(|p| s.starts_with(p)) && s.chars().count() <= LINK_MAX_CHARS
+    SCHEMES.iter().any(|p| s.starts_with(p))
+        && s.chars().count() <= LINK_MAX_CHARS
+        && !s
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '<' | '>' | '\\'))
 }
 
 #[derive(Debug, PartialEq, Eq)]

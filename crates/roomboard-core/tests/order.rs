@@ -61,7 +61,10 @@ fn restack_keeps_ids_and_fields() {
         .clone();
     let b = add(&mut d);
     let view = format!("{:?}", d.element(&a));
-    assert!(view.contains("hachure") && view.contains("https://example.org"), "{view}");
+    assert!(
+        view.contains("hachure") && view.contains("https://example.org"),
+        "{view}"
+    );
     d.apply(Command::Restack {
         ids: vec![a.clone()],
         to: 1,

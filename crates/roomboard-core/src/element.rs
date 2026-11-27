@@ -409,13 +409,17 @@ pub const TEXT_ALIGNS: [&str; 2] = ["center", "right"];
 /// Longueur maximale d'un lien, en caractères (même compte que le faux cœur : points de code).
 pub const LINK_MAX_CHARS: usize = 2048;
 
-/// Lien admis (H5) : `http://`, `https://` ou `mailto:`, casse exacte, sans espace devant, 2 048 caractères au plus.
+/// Lien admis (H5) : `http://`, `https://` ou `mailto:`, casse exacte, 2 048 caractères au plus, sans blanc, sans
+/// `"`, `<`, `>`, `\` ni caractère de contrôle (la chaîne arrive brute à l'ouverture système).
 /// Tout autre schéma (`javascript:`, `data:`, `ftp:`…) est refusé à l'écriture et lu neutre.
 pub fn valid_link(s: &str) -> bool {
     ["http://", "https://", "mailto:"]
         .iter()
         .any(|p| s.starts_with(p))
         && s.chars().count() <= LINK_MAX_CHARS
+        && !s
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '<' | '>' | '\\'))
 }
 
 /// Pointe de domaine différente du neutre `default`, sinon `None`.

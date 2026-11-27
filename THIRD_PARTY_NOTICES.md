@@ -310,7 +310,7 @@ MIT en tête de chaque fichier :
   `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`) ;
 - `apps/web/src/ui/ColorPicker.tsx`, `apps/web/src/ui/open-color.ts` (T16) : sélecteur de couleur
   (`packages/excalidraw/components/ColorPicker/`) et palette (`packages/common/src/colors.ts`) ; les teintes viennent
-  d'open-color (https://github.com/yeun/open-color, MIT, Copyright (c) 2016 heeyeun) et `bronze` de Radix Colors (MIT).
+  d'open-color (https://github.com/yeun/open-color, MIT, Copyright (c) 2016 heeyeun) et `bronze` de Radix Colors (https://github.com/radix-ui/colors, MIT, Copyright (c) 2021-2022 Modulz, Copyright (c) 2022-Present WorkOS).
 
 Texte : MIT (https://opensource.org/licenses/MIT), identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
 
@@ -606,6 +606,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   noms Lucide : `layers` (onglet Calques), `bring-to-front` (Premier plan), `send-to-back` (Arrière-plan).
 - Lues dans Lucide au même commit par `gh api` (personnalisation 1b), noms Lucide : `wallpaper` (bouton « Fonds »),
   `search` et `image-plus` (fenêtre des fonds).
+- Aide du menu (OG11) : `circle-help`. Au commit `7981a0798a`, Lucide ne porte plus ce nom : il s'appelle `circle-question-mark` et son tracé
+  diffère (`M9 9.5a3 2.5 0 016 0c0 2-2 2-3 3.5`) de celui d'`apps/web/src/ui/icons.ts` (`M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3`) : à réaligner sur le commit.
 - Panneau d'options lot 2 (OG11), lus au même commit, noms Lucide : `chevron-up`, `chevron-down` (Avancer, Reculer ; Premier plan et Arrière-plan
   reprennent `bring-to-front` et `send-to-back` d'OG4), `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
   `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
