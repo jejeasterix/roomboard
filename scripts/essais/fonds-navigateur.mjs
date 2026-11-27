@@ -138,8 +138,8 @@ async function s1(page, captures) {
 
 async function s2(page, captures) {
   await newTab(page);
-  await page.tap(item("page-add"));
-  await page.tap(item("page-add"));
+  await clickItem(page, "page-add");
+  await clickItem(page, "page-add");
   await settle(page);
   await openDialog(page);
   await page.fill(SEARCH, "ocean");
@@ -229,7 +229,7 @@ async function s3(page, captures) {
 }
 
 async function s4(page, tmp) {
-  await page.tap(item("page-add"));
+  await clickItem(page, "page-add");
   await settle(page);
   await openDialog(page);
   await page.tap(SECTION("mine"));
@@ -268,7 +268,7 @@ async function s4(page, tmp) {
 
 async function s5(page) {
   await newTab(page);
-  await page.tap(item("page-add"));
+  await clickItem(page, "page-add");
   await settle(page);
   await page.tap(item("page-prev"));
   await page.tap(item("rect"));
