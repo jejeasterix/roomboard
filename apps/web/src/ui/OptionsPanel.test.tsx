@@ -16,15 +16,20 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean }
+interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const engine = {
     setItemStyle: vi.fn((p: Partial<ItemStyle>) => { calls.push(p); }),
     duplicateSelection: vi.fn(() => true),
     deleteSelection: vi.fn(() => true),
+    run: vi.fn(() => null),
+    bringToFront: vi.fn(() => true),
+    sendToBack: vi.fn(() => true),
+    bringForward: vi.fn(() => true),
+    sendBackward: vi.fn(() => true),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: DEFAULT_ITEM_STYLE } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -127,6 +132,64 @@ describe("OptionsPanel (OG11, T10)", () => {
     expect(container.querySelector('[data-option="roundness"] [data-choice="sharp"]')!.textContent).toContain("Droits");
     fireEvent.click(t);
     expect(container.querySelector("[data-options-toggle]")!.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+const filledRect = (id: string): ElementView =>
+  ({ id, kind: "shape", style: { color: "#000000", width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: "#facc15" } }) as unknown as ElementView;
+const arrowEl = (id: string): ElementView =>
+  ({ id, kind: "shape", style: { color: "#000000", width: 4 }, shape: { shape: "arrow", w: 10, h: 10, fill: null } }) as unknown as ElementView;
+const textEl = (id: string, content = "abc", font?: string): ElementView =>
+  ({ id, kind: "text", style: { color: "#000000", width: 4 }, text: { content, size: 36, boxWidth: 100, boxHeight: 40, spans: [{ text: content, attrs: font ? { font } : {} }] } }) as unknown as ElementView;
+
+describe("OptionsPanel lot 2 (T15)", () => {
+  it("en saisie Police grisée, Taille et Trait aussi ; Alignement actif", () => {
+    const { container, calls } = mount({ tool: "text", selection: [], editing: true });
+    for (const name of ["font", "fontSize"]) {
+      const bs = container.querySelectorAll<HTMLButtonElement>(`[data-option="${name}"] button`);
+      expect(bs.length).toBeGreaterThan(0);
+      for (const b of bs) expect(b.disabled, name).toBe(true);
+    }
+    for (const b of container.querySelectorAll<HTMLButtonElement>('[data-option="strokeColor"] button')) expect(b.disabled).toBe(true);
+    const align = container.querySelector<HTMLButtonElement>('[data-option="textAlign"] [data-choice="center"]')!;
+    expect(align.disabled).toBe(false);
+    fireEvent.click(align);
+    expect(calls).toContainEqual({ textAlign: "center" });
+  });
+  it("hors saisie : Police et Taille écrivent un FormatText sur tout le texte", () => {
+    const { container, engine } = mount({ tool: "select", selection: [textEl("t", "abcde")] });
+    fireEvent.click(container.querySelector('[data-option="font"] [data-choice="Georgia"]')!);
+    fireEvent.click(container.querySelector('[data-option="fontSize"] [data-choice="48"]')!);
+    fireEvent.click(container.querySelector('[data-option="font"] [data-choice="default"]')!);
+    expect(engine.run).toHaveBeenNthCalledWith(1, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } });
+    expect(engine.run).toHaveBeenNthCalledWith(2, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { size: 48 } });
+    expect(engine.run).toHaveBeenNthCalledWith(3, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: null } });
+  });
+  it("fillStyle : absent sans fond, trois choix avec un fond", () => {
+    expect(mount({ tool: "rect", selection: [] }).container.querySelector('[data-option="fillStyle"]')).toBeNull();
+    const { container, calls } = mount({ tool: "select", selection: [filledRect("r")] });
+    const choices = [...container.querySelectorAll('[data-option="fillStyle"] [data-choice]')].map((b) => b.getAttribute("data-choice"));
+    expect(choices).toEqual(["solid", "hachure", "cross-hatch"]);
+    fireEvent.click(container.querySelector('[data-option="fillStyle"] [data-choice="hachure"]')!);
+    expect(calls).toContainEqual({ fillStyle: "hachure" });
+  });
+  it("Pointes : début et fin, quatre choix chacune", () => {
+    const { container, calls } = mount({ tool: "select", selection: [arrowEl("a")] });
+    const end = container.querySelectorAll('[data-option="arrowheads"] [data-edit="endArrowhead"] [data-choice]');
+    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
+    expect(container.querySelector('[data-edit="endArrowhead"] [data-choice="arrow"]')!.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector('[data-edit="startArrowhead"] [data-choice="none"]')!.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(container.querySelector('[data-edit="endArrowhead"] [data-choice="triangle"]')!);
+    fireEvent.click(container.querySelector('[data-edit="startArrowhead"] [data-choice="arrow"]')!);
+    expect(calls).toEqual([{ endArrowhead: "triangle" }, { startArrowhead: "arrow" }]);
+  });
+  it("Disposition : quatre boutons, un appel du moteur chacun", () => {
+    const { container, engine } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
+    for (const v of ["front", "forward", "backward", "back"]) fireEvent.click(container.querySelector(`[data-option="layers"] [data-option-value="${v}"]`)!);
+    expect(engine.bringToFront).toHaveBeenCalledTimes(1);
+    expect(engine.bringForward).toHaveBeenCalledTimes(1);
+    expect(engine.sendBackward).toHaveBeenCalledTimes(1);
+    expect(engine.sendToBack).toHaveBeenCalledTimes(1);
   });
 });
 

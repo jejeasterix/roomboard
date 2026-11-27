@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ElementView } from "../core/api";
-import { appliesTo, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks } from "./tool-options";
+import { appliesTo, backgroundPicks, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, TEXT_SIZES } from "./tool-options";
 
 const rect = (id: string, color: string, look?: ElementView["look"]): ElementView =>
   ({ id, kind: "shape", transform: [1, 0, 0, 1, 0, 0], style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null }, ...(look ? { look } : {}) }) as ElementView;
@@ -70,5 +70,42 @@ describe("tool-options", () => {
     expect(showsPanel("rect", 0, false)).toBe(true);
     expect(showsPanel("select", 1, false)).toBe(true);
     expect(showsPanel("rect", 0, true)).toBe(false);
+  });
+});
+
+describe("tool-options lot 2 (T15)", () => {
+  const filled = { ...rect("f", "#000000"), shape: { shape: "rect", w: 10, h: 10, fill: "#facc15" } } as unknown as ElementView;
+  it("texte : police, taille et alignement", () => {
+    const k = sectionsFor("text", [], true);
+    expect(k).toEqual(expect.arrayContaining(["font", "fontSize", "textAlign"]));
+    expect(k.indexOf("font")).toBeLessThan(k.indexOf("opacity"));
+  });
+  it("disabledIn : Police, Taille et Trait grisés en saisie", () => {
+    for (const key of ["font", "fontSize", "strokeColor"] as const) {
+      expect(disabledIn(key, true)).toBe(true);
+      expect(disabledIn(key, false)).toBe(false);
+    }
+    expect(disabledIn("textAlign", true)).toBe(false);
+    expect(disabledIn("opacity", true)).toBe(false);
+  });
+  it("fillStyle masqué si fond transparent, visible avec un fond", () => {
+    expect(sectionsFor("rect", [rect("a", "#000000")], false)).not.toContain("fillStyle");
+    const k = sectionsFor("rect", [filled], false);
+    expect(k).toContain("fillStyle");
+    expect(k.indexOf("fillStyle")).toBe(k.indexOf("background") + 1);
+    expect(sectionsFor("rect", [], false, "#facc15")).toContain("fillStyle");
+    expect(sectionsFor("rect", [], false, null)).not.toContain("fillStyle");
+  });
+  it("flèche : pointes avant la transparence ; Disposition seulement avec une sélection", () => {
+    const arrow = { ...rect("w", "#000000"), shape: { shape: "arrow", w: 10, h: 10, fill: null } } as unknown as ElementView;
+    const k = sectionsFor("arrow", [arrow], false);
+    expect(k.indexOf("arrowheads")).toBeLessThan(k.indexOf("opacity"));
+    expect(k.indexOf("layers")).toBe(k.indexOf("opacity") + 1);
+    expect(k.at(-1)).toBe("actions");
+    expect(sectionsFor("arrow", [], false)).not.toContain("layers");
+    expect(sectionsFor("rect", [rect("a", "#000000")], false)).not.toContain("arrowheads");
+  });
+  it("TEXT_SIZES", () => {
+    expect(TEXT_SIZES).toEqual([24, 36, 48, 72]);
   });
 });

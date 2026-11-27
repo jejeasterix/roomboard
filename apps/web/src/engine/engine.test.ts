@@ -1959,6 +1959,61 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(engine.state().elementCount).toBe(1);
   });
 
+  describe("Disposition (T15)", () => {
+    const three = () => {
+      const s = styleSetup();
+      const [a, b, c] = [s.addRect(), s.addRect(), s.addRect()] as [string, string, string];
+      const order = (): string[] => s.doc.elementIds(s.engine.state().page);
+      return { ...s, a, b, c, order };
+    };
+    it("bringToFront une étape, ordre lu", () => {
+      const { engine, doc, a, b, c, order, sel } = three();
+      sel().setSelection([a]);
+      const v = doc.version();
+      expect(engine.bringToFront()).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+      expect(doc.version()).toBe(v + 1);
+      engine.undo();
+      expect(order()).toEqual([a, b, c]);
+    });
+    it("sendToBack, bringForward, sendBackward : un rang à la fois", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([c]);
+      expect(engine.sendToBack()).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+      expect(engine.bringForward()).toBe(true);
+      expect(order()).toEqual([a, c, b]);
+      expect(engine.sendBackward()).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+    });
+    it("déjà au bout ou sans sélection : faux, aucune étape", () => {
+      const { engine, doc, a, c, sel } = three();
+      sel().setSelection([c]);
+      let v = doc.version();
+      expect(engine.bringToFront()).toBe(false);
+      expect(engine.bringForward()).toBe(false);
+      sel().setSelection([a]);
+      expect(engine.sendBackward()).toBe(false);
+      sel().setSelection([]);
+      expect(engine.sendToBack()).toBe(false);
+      expect(doc.version()).toBe(v);
+    });
+    it("bloc de deux objets : l'ordre relatif est gardé", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([a, b]);
+      expect(engine.bringForward()).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+    });
+    it("Ctrl+Maj+↑ premier plan, Ctrl+↓ recule", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([a]);
+      expect(engine.key(key("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+      expect(engine.key(key("ArrowDown", { ctrlKey: true }))).toBe(true);
+      expect(order()).toEqual([b, a, c]);
+    });
+  });
+
   it("duplicateSelection sans sélection : faux, rien d'écrit", () => {
     const { engine, doc } = styleSetup();
     const v = doc.version();
