@@ -1,17 +1,17 @@
 # État — personnalisation-2
 
-Statut : arrêté (borne horaire) — lot 1 clos et fusionné (PR #63, main 23b23c1) + correctif T30 ; lot 2 sur feat/personnalisation-2b, non fusionné
+Statut : en cours (OG14) — lot 2 repris sur feat/personnalisation-2b
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
-Avancement : lot 1 clos (T1–T11 + correctifs T2b, T4b, T8b, T9b, T20–T27) ; lot 2 : T12–T17 + T28 fusionnés dans feat/personnalisation-2b, T18 (lien) non fait, T19 en cours
-Étage : 4 — depuis 2026-11-27 14:15
+Avancement : lot 1 clos ; lot 2 : T12–T17 + T28 faits, T13r (fusion origin/main + Restack unique d'OG4) terminée, T18 en cours, T19 à faire
+Étage : 3 (lot 2, V11) — depuis 2026-11-27 14:49
 Lot : —
-Tâche : —
+Tâche : T18 — Lien (H5) — depuis 15:14
 Questions à Jérôme : —
-Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2   Base : origin/main @ 45484db
+Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2b   Base : origin/main @ f61d2c4
 Branche principale locale au lancement : 45484db
 Cadrage : docs/plans/personnalisation-2-cadrage.md   Plan(s) : docs/plans/personnalisation-2-PLAN.md
-Arrêt ferme : 2026-11-27 15:21 (bilan et poussée à 15:11)
+Arrêt ferme : 2026-11-27 21:19 (OG14 ; bilan et poussée à 21:09)
 
 ## Référence
 Rapide : voir complète
@@ -27,7 +27,8 @@ PR #63 fusionnée par merge --no-ff local, main 23b23c1. verifier.sh --e2e sur 0
 Correctif T30 (panneau sous la rangée de contexte d'OG4) : branche fix/options-panel-context-row, voir sa PR.
 Restes : captures apres-mixte et apres-replie d'avant OG4 (le mode --captures échoue sur la vue mixte) ; 22 commits poussés portent Co-Authored-By Sonnet.
 
-## Lot 2 — reprise
+## Lot 2 — reprise (OG14)
+T13r : fusion origin/main 42af8b2, rouge 309b56d, Restack d'OG4 seule 0bbfc74, suites d0d0541 — rejoué sur d0d0541 : cargo 952 (+6 ignorés ; 959 déclarés contre 948 dans main), web 4112 (197), cli 284 (30), CLI : OK ; Wasm principal 1 440 034 o, formats 2 794 527 o (sortie wasm-bindgen). BadOrder et order.rs retirés, rang non entier refusé par le pont d'OG4. Hors périmètre : rang de MovePage non contrôlé dans wasm-core.ts.
 Branche poussée : feat/personnalisation-2b (c98c9b2), base lot 1 avant l'intégration d'OG4/OG5. Contient T12 (champs fillStyle, pointes, textAlign, link), T13 (Restack minimal), T14 (rendu hachures, pointes, alignement, polices), T15 (panneau : Remplissage, Texte, Pointes, Disposition, raccourcis Ctrl+(Maj+)↑/↓), T16 (sélecteur de couleur, S et G), T17 (Aide « ? », Effacer la page, Ctrl+Maj+E export PDF), T28 (outils de création lisent le style lot 2). Preuves rejouées par tâche ; aucune suite complète, aucune relecture de lot.
 Prochaine tâche exacte : 1) `git merge origin/main` dans feat/personnalisation-2b ; **retirer le `Restack` de T13 (order.rs, BadOrder, pont, faux cœur, CLI) et brancher Disposition (T15) sur le `Restack { ids, to }` d'OG4 et ses raccourcis d'ordre** (OG4 a déjà des raccourcis d'ordre et la rangée Sélection Premier plan/Arrière-plan : garder un seul jeu, celui d'OG4, et l'afficher dans le panneau) ; 2) T18 lien (non commencé) ; 3) T19 essai navigateur S6–S8 + captures ; 4) double relecture du lot ; 5) verifier.sh --e2e ; 6) PR et fusion.
 
