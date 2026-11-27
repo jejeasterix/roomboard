@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Command, ShapeKind } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { InputSample } from "../input/sampler";
-import { DEFAULT_ITEM_STYLE } from "../item-style";
+import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../item-style";
 import { constrainEnd, createShapeTool } from "./shape";
 import type { ToolContext } from "./tool";
 
@@ -218,8 +218,8 @@ describe("outil Formes : arrondi (OG11 T9b)", () => {
 });
 
 describe("outil Formes : style courant du lot 2 (T28)", () => {
-  const cur = { ...DEFAULT_ITEM_STYLE, ...PEN, background: "#ffff00", fillStyle: "hachure" as const, startArrowhead: "triangle" as const, endArrowhead: "none" as const };
-  const drawn = (kind: ShapeKind, style: typeof cur): Extract<Command, { type: "AddShape" }> => {
+  const cur: ItemStyle = { ...DEFAULT_ITEM_STYLE, ...PEN, background: "#ffff00", fillStyle: "hachure", startArrowhead: "triangle", endArrowhead: "none" };
+  const drawn = (kind: ShapeKind, style: ItemStyle): Extract<Command, { type: "AddShape" }> => {
     const { ctx, runs } = setup();
     const tool = createShapeTool(ctx, kind, () => style);
     tool.begin(1, [at(10, 10)]);

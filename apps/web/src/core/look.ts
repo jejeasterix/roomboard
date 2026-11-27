@@ -101,7 +101,10 @@ export const endArrowheadOf = (l: Look | undefined): Arrowhead => l?.endArrowhea
 export const textAlignOf = (l: Look | undefined): TextAlign => l?.textAlign ?? "left";
 
 /** undefined si neutre. */
-export function lookFrom(s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number }, seed: number | null): Look | undefined {
+export function lookFrom(
+  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign },
+  seed: number | null,
+): Look | undefined {
   const out: { -readonly [K in keyof Look]: Look[K] } = {};
   if (s.strokeStyle !== "solid") out.strokeStyle = s.strokeStyle;
   if (s.roughness !== 0) {
@@ -110,6 +113,11 @@ export function lookFrom(s: { strokeStyle: StrokeKind; roughness: Roughness; rou
   }
   if (s.roundness === "round") out.roundness = "round";
   if (s.opacity < 100) out.opacity = Math.max(0, Math.round(s.opacity));
+  // Lot 2 : valeur neutre (plein, pointes par défaut, gauche) = rien écrit.
+  if (s.fillStyle !== undefined && s.fillStyle !== "solid") out.fillStyle = s.fillStyle;
+  if (s.startArrowhead !== undefined && s.startArrowhead !== START_ARROWHEAD_DEFAULT) out.startArrowhead = s.startArrowhead;
+  if (s.endArrowhead !== undefined && s.endArrowhead !== END_ARROWHEAD_DEFAULT) out.endArrowhead = s.endArrowhead;
+  if (s.textAlign !== undefined && s.textAlign !== "left") out.textAlign = s.textAlign;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 
