@@ -857,10 +857,7 @@ impl Document {
                 }
             }
             return Wall::new(
-                vec![world_outline(
-                    &t,
-                    &shape_polygon(s.kind, s.w, s.h, s.style.width),
-                )],
+                vec![world_outline(&t, &shape_polygon(&s.geom(), s.style.width))],
                 false,
             );
         }
@@ -1449,6 +1446,7 @@ mod tests {
             style: pen(),
             fill: fill.map(str::to_string),
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         };
         d.apply(shape(100.0, 100.0, 500.0, 500.0, None))
             .expect("rectangle vide");

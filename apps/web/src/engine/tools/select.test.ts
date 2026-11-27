@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Command } from "../../core/api";
 import { fakeCore } from "../../core/fake-core";
 import type { CloseReason } from "../input/gesture";
@@ -427,4 +427,151 @@ describe("outil Sélection : groupes (Z2)", () => {
     gesture(tool, [[1050, 1050], [360, 96]]);
     expect(runs.at(-1)?.type).toBe("Transform");
   });
+});
+
+const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[50, 0], [100, 25], [50, 50], [0, 25]] as const };
+const HIT_B = { id: "B", fixed: [0, 0.5] as const, onOutline: true, anchors: [[450, 0], [500, 25], [450, 50], [400, 25]] as const };
+const atT = (x: number, y: number, t: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t });
+
+function setupLines(pointer: "touch" | "mouse" = "touch") {
+  const doc = fakeCore.blank();
+  const page = doc.pageIds()[0] ?? "";
+  const runs: Command[] = [];
+  const edits: string[] = [];
+  let copie = "";
+  vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? HIT_A : x > 350 ? HIT_B : null));
+  const ctx: ToolContext = {
+    doc,
+    page: () => page,
+    camera: () => ({ zoom: 1, tx: 0, ty: 0 }),
+    run: (cmd) => {
+      runs.push(cmd);
+      if (cmd.type === "AddLinked") {
+        // Un segment d'abord, puis la copie : l'aide lit le document, pas l'ordre des ids.
+        const fleche = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 0, y0: 0, x1: 10, y1: 0, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+        copie = doc.apply({ type: "AddShape", page, shape: "rect", x0: 200, y0: 0, x1: 300, y1: 50, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+        return { pages: [], ids: [fleche, copie], removed: [], full: false, version: 1 };
+      }
+      try {
+        return doc.apply(cmd);
+      } catch {
+        return null;
+      }
+    },
+    ctrl: () => false,
+    bindingEnabled: () => true,
+    pointerType: () => pointer,
+    editPoints: (id) => { edits.push(id); },
+  };
+  const tool = createSelectTool(ctx);
+  const add = (shape: "line" | "arrow" | "rect", x0: number, y0: number, x1: number, y1: number): string =>
+    doc.apply({ type: "AddShape", page, shape, x0, y0, x1, y1, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+  return { doc, tool, runs, edits, add, copie: () => copie };
+}
+
+describe("OG12 : poignées d'extrémité, « + » et double toucher (T8)", () => {
+  it("ligne seule sélectionnée : sans cadre à 8 poignées, deux bouts et un milieu", () => {
+    const { tool, add } = setupLines();
+    tool.setSelection([add("line", 0, 0, 200, 0)]);
+    const o = tool.live().overlay;
+    expect(o?.frame).toBeNull();
+    expect(o?.handles).toBe(false);
+    expect(o?.points?.filter((p) => p.kind === "point")).toHaveLength(2);
+    expect(o?.points?.filter((p) => p.kind === "mid")).toHaveLength(1);
+  });
+
+  it("tirer un bout : une SetLinePoints au relâché, liée sous le doigt", () => {
+    const { tool, runs, add } = setupLines();
+    tool.setSelection([add("line", 0, 0, 200, 0)]);
+    tool.begin(1, [atT(200, 0, 0)]);
+    tool.extend(1, [atT(402, 25, 10)], []);
+    expect(runs.filter((r) => r.type === "SetLinePoints")).toEqual([]);
+    expect(tool.live().overlay?.bind?.id).toBe("B");
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "SetLinePoints", id: expect.any(String), points: [0, 0, 402, 25], start: null, end: { id: "B", fx: 0, fy: 0.5 } }]);
+  });
+
+  it("tirer le milieu : insère un point", () => {
+    const { tool, runs, add } = setupLines();
+    tool.setSelection([add("line", 0, 0, 200, 0)]);
+    tool.begin(1, [atT(100, 0, 0)]);
+    tool.extend(1, [atT(100, 80, 10)], []);
+    tool.close(1, "end");
+    expect(runs).toMatchObject([{ type: "SetLinePoints", points: [0, 0, 100, 80, 200, 0] }]);
+  });
+
+  it("flèche liée : un toucher de moins de 10 px ne la déplace pas", () => {
+    const { doc, tool, runs, add } = setupLines();
+    const id = add("arrow", 0, 0, 200, 0);
+    const real = doc.element.bind(doc);
+    vi.spyOn(doc, "element").mockImplementation((i) => {
+      const v = real(i);
+      return v?.kind === "shape" ? { ...v, shape: { ...v.shape, start: { id: "A", fx: 1, fy: 0.5 } } } : v;
+    });
+    tool.setSelection([id]);
+    tool.begin(1, [atT(60, 0, 0)]);
+    tool.extend(1, [atT(68, 0, 10)], []);
+    tool.close(1, "end");
+    expect(runs).toEqual([]);
+    tool.begin(2, [atT(60, 0, 1000)]);
+    tool.extend(2, [atT(72, 0, 1010)], []);
+    tool.close(2, "end");
+    expect(runs).toMatchObject([{ type: "Transform", ids: [id] }]);
+  });
+
+  it("poignée « + » : AddLinked, la copie devient la sélection", () => {
+    const { tool, runs, add, copie: getCopie } = setupLines();
+    const a = add("rect", 0, 0, 100, 50);
+    tool.setSelection([a]);
+    expect(tool.live().overlay?.links).toHaveLength(4);
+    tool.begin(1, [atT(140, 25, 0)]);
+    tool.close(1, "end");
+    expect(runs).toEqual([{ type: "AddLinked", id: a, dir: "right" }]);
+    expect(tool.selection()).toEqual([getCopie()]);
+  });
+
+  it("deux objets sélectionnés : pas de « + »", () => {
+    const { tool, add } = setupLines();
+    tool.setSelection([add("rect", 0, 0, 100, 50), add("rect", 300, 0, 400, 50)]);
+    expect(tool.live().overlay?.links ?? []).toEqual([]);
+  });
+
+  it("double toucher sur une ligne : editPoints ; coudée : jamais", () => {
+    const { doc, tool, edits, add } = setupLines();
+    const id = add("line", 0, 0, 200, 0);
+    tool.setSelection([id]);
+    tool.begin(1, [atT(60, 0, 0)]);
+    tool.close(1, "end");
+    tool.begin(2, [atT(70, 0, 200)]);
+    tool.close(2, "end");
+    expect(edits).toEqual([id]);
+    const real = doc.element.bind(doc);
+    vi.spyOn(doc, "element").mockImplementation((i) => {
+      const v = real(i);
+      return v ? { ...v, look: { elbowed: true } } : v;
+    });
+    tool.begin(3, [atT(60, 0, 2000)]);
+    tool.close(3, "end");
+    tool.begin(4, [atT(70, 0, 2200)]);
+    tool.close(4, "end");
+    expect(edits).toEqual([id]);
+  });
+});
+
+describe("OG12 C2 : double toucher sur une poignée de la ligne sélectionnée", () => {
+  for (const pointer of ["touch", "mouse"] as const) {
+    for (const [nom, x] of [["milieu", 100], ["près d'un bout", 196]] as const) {
+      it(`${pointer} : double appui sur la poignée du ${nom} : editPoints`, () => {
+        const { tool, edits, runs, add } = setupLines(pointer);
+        const id = add("line", 0, 0, 200, 0);
+        tool.setSelection([id]);
+        tool.begin(1, [atT(x, 0, 0)]);
+        tool.close(1, "end");
+        tool.begin(2, [atT(x, 0, 100)]);
+        tool.close(2, "end");
+        expect(edits).toEqual([id]);
+        expect(runs).toEqual([]);
+      });
+    }
+  }
 });

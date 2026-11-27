@@ -10,11 +10,13 @@ use yrs::{Array, Map, MapRef, Out, ReadTxn};
 use crate::commands::{read_shape, read_stroke, read_text, similarity_scale, world_to_local_path};
 use crate::document::Document;
 use crate::element::{
-    apply_transform, out_string, out_transform, read_image, read_unknown, unknown_view, Transform,
+    apply_transform, invert, out_string, out_transform, read_image, read_unknown, unknown_view,
+    Transform,
 };
 use crate::fill_element::{read_fill, FILL_KIND};
 use crate::ink::hit::{dist_to_edges, hit_outline, path_hits_outline, point_in_polygon};
 use crate::ink::points::InkPoint;
+use crate::linear::{bind_box, BindBox, ANCHOR_RATIOS};
 use crate::media::{read_media, MEDIA_KIND};
 use crate::model3d::{read_model3d, MODEL3D_KIND};
 use crate::shape::{box_polygon, shape_polygon};
@@ -247,7 +249,7 @@ impl Document {
         Some(Geom {
             id,
             transform,
-            outline: shape_polygon(s.kind, s.w, s.h, s.style.width).into(),
+            outline: shape_polygon(&s.geom(), s.style.width).into(),
             rings: Vec::new(),
         })
     }
@@ -358,6 +360,118 @@ impl Document {
             }
         }
         acc
+    }
+}
+
+/// Cible d'accroche (OG12, n° 17, 18) : objet accrochable, rapport de sa boîte, sur le contour ou dedans, et ses quatre
+/// ancres monde (milieux des côtés, sans écart).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BindHit {
+    pub id: String,
+    pub fixed: [f64; 2],
+    pub on_outline: bool,
+    pub anchors: [[f64; 2]; 4],
+}
+
+/// Point du contour le plus proche de `q` (local), sa distance locale, et `q` dedans.
+fn nearest_outline(b: &BindBox, q: (f64, f64)) -> ((f64, f64), f64, bool) {
+    if b.ellipse {
+        let (cx, cy) = (b.w / 2.0, b.h / 2.0);
+        let r = (((q.0 - cx) / cx).powi(2) + ((q.1 - cy) / cy).powi(2)).sqrt();
+        let p = if r < 1e-12 {
+            (cx, 0.0)
+        } else {
+            (cx + (q.0 - cx) / r, cy + (q.1 - cy) / r)
+        };
+        return (p, (q.0 - p.0).hypot(q.1 - p.1), r <= 1.0);
+    }
+    let inside = (0.0..=b.w).contains(&q.0) && (0.0..=b.h).contains(&q.1);
+    let p = if inside {
+        let d = [q.1, b.w - q.0, b.h - q.1, q.0];
+        match (0..4).min_by(|i, j| d[*i].total_cmp(&d[*j])).unwrap_or(0) {
+            0 => (q.0, 0.0),
+            1 => (b.w, q.1),
+            2 => (q.0, b.h),
+            _ => (0.0, q.1),
+        }
+    } else {
+        (q.0.clamp(0.0, b.w), q.1.clamp(0.0, b.h))
+    };
+    (p, (q.0 - p.0).hypot(q.1 - p.1), inside)
+}
+
+impl Document {
+    /// Requête voisine de `hit_test` (OG12, n° 17) : mêmes lecteurs de boîte, par `bind_box` (objets accrochables seuls) ;
+    /// le plus petit objet qui contient le point passe devant le plus proche du contour (à `tol` monde près) s'il est plus
+    /// petit que lui ; près du contour, le rapport est projeté sur le contour.
+    pub fn bind_target(&self, page: &str, x: f64, y: f64, tol: f32) -> Option<BindHit> {
+        struct Cand {
+            area: f64,
+            dist: f64,
+            contains: bool,
+            near: bool,
+            hit: BindHit,
+        }
+        let txn = self.read();
+        let elements = self.page_elements(&txn, page)?;
+        let mut cands: Vec<Cand> = Vec::new();
+        for o in elements.iter(&txn) {
+            let Out::YMap(e) = o else { continue };
+            let Some(b) = bind_box(&txn, &e) else {
+                continue;
+            };
+            let Some(inv) = invert(&b.t) else { continue };
+            let q = apply_transform(&inv, x, y);
+            let scale = (b.t[0] * b.t[3] - b.t[1] * b.t[2]).abs().sqrt().max(1e-12);
+            let (p, d_local, contains) = nearest_outline(&b, q);
+            let near = d_local * scale <= f64::from(tol);
+            if !near && !contains {
+                continue;
+            }
+            let fixed = if near {
+                [p.0 / b.w, p.1 / b.h]
+            } else {
+                [q.0 / b.w, q.1 / b.h]
+            };
+            let anchors = ANCHOR_RATIOS.map(|r| {
+                let (ax, ay) = apply_transform(&b.t, r[0] * b.w, r[1] * b.h);
+                [ax, ay]
+            });
+            cands.push(Cand {
+                area: b.w * b.h * scale * scale,
+                dist: d_local * scale,
+                contains,
+                near,
+                hit: BindHit {
+                    id: b.id.clone(),
+                    fixed,
+                    on_outline: near,
+                    anchors,
+                },
+            });
+        }
+        let inside = cands
+            .iter()
+            .filter(|c| c.contains)
+            .min_by(|a, b| a.area.total_cmp(&b.area));
+        let nearest = cands
+            .iter()
+            .filter(|c| c.near)
+            .min_by(|a, b| a.dist.total_cmp(&b.dist));
+        let pick = match (inside, nearest) {
+            (Some(i), Some(n)) => {
+                if i.area < n.area || i.hit.id == n.hit.id {
+                    i
+                } else {
+                    n
+                }
+            }
+            (Some(i), None) => i,
+            (None, Some(n)) => n,
+            (None, None) => return None,
+        };
+        Some(pick.hit.clone())
     }
 }
 
@@ -706,6 +820,7 @@ mod tests {
             style: pen(),
             fill: None,
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         })
         .expect("rect")
         .ids[0]
@@ -737,6 +852,7 @@ mod tests {
                 style: pen(),
                 fill: None,
                 look: Look::default(),
+                line: crate::linear::LineInit::default(),
             })
             .expect("forme")
             .ids[0]

@@ -231,6 +231,22 @@ pub struct ShapeView {
     pub w: f64,
     pub h: f64,
     pub fill: Option<String>,
+    /// OG12 (DA-1) : points intérieurs locaux à plat ; absent = segment du socle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points: Option<Vec<f64>>,
+    /// OG12 (DA-2) : liaisons lisibles vers un objet présent ; absentes sinon (lecture tolérante, n° 9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<BindingView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<BindingView>,
+}
+
+/// Liaison d'une extrémité dans la vue : id de l'objet et rapport de sa boîte.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct BindingView {
+    pub id: String,
+    pub fx: f64,
+    pub fy: f64,
 }
 
 /// Texte d'un élément (D14) ; le contenu vient du `Y.Text` de l'élément.
@@ -423,6 +439,9 @@ pub struct Look {
     /// Lien `http://`, `https://` ou `mailto:` de 2 048 caractères au plus (`valid_link`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    /// OG12 (n° 2) : flèche coudée ; `true` seul s'écrit, jamais `false` (neutre).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elbowed: Option<bool>,
 }
 
 /// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
@@ -432,7 +451,15 @@ pub const STROKE_STYLES: [&str; 2] = ["dashed", "dotted"];
 pub const FILL_STYLES: [&str; 2] = ["hachure", "cross-hatch"];
 
 /// Pointes lisibles, aux deux bouts ; le neutre est `none` au début et `arrow` à la fin (jamais écrit).
-pub const ARROWHEADS: [&str; 4] = ["none", "arrow", "triangle", "triangle_outline"];
+pub const ARROWHEADS: [&str; 7] = [
+    "none",
+    "arrow",
+    "triangle",
+    "triangle_outline",
+    "bar",
+    "circle",
+    "circle_outline",
+];
 pub const START_ARROWHEAD_DEFAULT: &str = "none";
 pub const END_ARROWHEAD_DEFAULT: &str = "arrow";
 
@@ -462,7 +489,7 @@ fn arrowhead(v: &Option<String>, default: &str) -> Option<String> {
 }
 
 /// Clés `Y.Map` des dix champs d'aspect.
-pub(crate) const LOOK_KEYS: [&str; 10] = [
+pub(crate) const LOOK_KEYS: [&str; 11] = [
     "strokeStyle",
     "roughness",
     "seed",
@@ -473,6 +500,7 @@ pub(crate) const LOOK_KEYS: [&str; 10] = [
     "endArrowhead",
     "textAlign",
     "link",
+    "elbowed",
 ];
 
 impl Look {
@@ -503,6 +531,7 @@ impl Look {
                 .clone()
                 .filter(|s| TEXT_ALIGNS.contains(&s.as_str())),
             link: self.link.clone().filter(|s| valid_link(s)),
+            elbowed: self.elbowed.filter(|b| *b),
         }
     }
 }
@@ -538,6 +567,9 @@ pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
             v.push((key, In::from(s.as_str())));
         }
     }
+    if l.elbowed == Some(true) {
+        v.push(("elbowed", In::Any(Any::Bool(true))));
+    }
     v
 }
 
@@ -559,6 +591,10 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         end_arrowhead: out_string(e.get(txn, "endArrowhead")),
         text_align: out_string(e.get(txn, "textAlign")),
         link: out_string(e.get(txn, "link")),
+        elbowed: match e.get(txn, "elbowed") {
+            Some(Out::Any(Any::Bool(b))) => Some(b),
+            _ => None,
+        },
     }
     .sanitized()
 }

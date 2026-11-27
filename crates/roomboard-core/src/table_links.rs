@@ -31,6 +31,8 @@ pub struct LineSize {
 pub(crate) struct Offsets {
     pub cols: HashMap<String, f64>,
     pub rows: HashMap<String, f64>,
+    /// Largeur et hauteur totales : un tableau dont la boîte change fait suivre ses lignes liées (OG12, C1, C3).
+    pub size: (f64, f64),
 }
 
 fn run(lines: &[Line]) -> HashMap<String, f64> {
@@ -47,6 +49,10 @@ pub(crate) fn offsets(raw: &RawTable) -> Offsets {
     Offsets {
         cols: run(&raw.cols),
         rows: run(&raw.rows),
+        size: (
+            raw.cols.iter().map(|l| l.size).sum(),
+            raw.rows.iter().map(|l| l.size).sum(),
+        ),
     }
 }
 
@@ -215,7 +221,11 @@ impl Document {
 
     /// Suivi (D5) dans la transaction ouverte : chaque objet lié au tableau `table_id`, hors `skip`, est translaté du
     /// déplacement du coin de sa case, lu par ids (partie linéaire de la matrice du tableau) ; sa ligne ou sa colonne a
-    /// disparu : lien retiré, objet laissé en place (H22). Rend les ids touchés, dans l'ordre de la pile.
+    /// disparu : lien retiré, objet laissé en place (H22). Puis, dans la même transaction (une étape), les lignes liées
+    /// (OG12, `linear::follow`) au tableau si sa boîte a changé et aux objets translatés, relus à leur place neuve : une
+    /// flèche liée à un objet logé dont la case a bougé suit. Jamais avant la translation (la flèche viserait l'ancienne
+    /// place), jamais l'objet seulement délié (resté en place : une ligne déliée garderait ses liaisons). Rend les ids
+    /// touchés, dans l'ordre de la pile.
     pub(crate) fn follow_in(
         &self,
         txn: &mut TransactionMut,
@@ -225,13 +235,33 @@ impl Document {
         before: &Offsets,
         skip: &HashSet<String>,
     ) -> Vec<String> {
+        let (touched, mut moved, size) = self.move_linked(txn, page, table, table_id, before, skip);
+        if size != before.size {
+            moved.insert(0, table_id.to_string());
+        }
+        if !moved.is_empty() {
+            crate::linear::follow(self, txn, &moved, None);
+        }
+        touched
+    }
+
+    /// Translation des objets liés de `follow_in` : (ids touchés, ids translatés, taille du tableau après).
+    fn move_linked(
+        &self,
+        txn: &mut TransactionMut,
+        page: &str,
+        table: &MapRef,
+        table_id: &str,
+        before: &Offsets,
+        skip: &HashSet<String>,
+    ) -> (Vec<String>, Vec<String>, (f64, f64)) {
         let Some(after_raw) = read_raw(&*txn, table) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new(), before.size);
         };
         let after = offsets(&after_raw);
         let [a, b, c, d, _, _] = after_raw.transform;
         let Some(elements) = self.page_elements(&*txn, page) else {
-            return Vec::new();
+            return (Vec::new(), Vec::new(), after.size);
         };
         let linked: Vec<(MapRef, String, [String; 3], Option<Transform>)> = elements
             .iter(&*txn)
@@ -248,6 +278,7 @@ impl Document {
             })
             .collect();
         let mut touched = Vec::new();
+        let mut moved = Vec::new();
         for (m, id, link, t) in linked {
             // Lien déjà sans case avant la commande (D1) : laissé tel quel.
             let (Some(c0), Some(r0)) = (before.cols.get(&link[2]), before.rows.get(&link[1]))
@@ -264,6 +295,7 @@ impl Document {
                     t[4] += a * dx + c * dy;
                     t[5] += b * dx + d * dy;
                     m.insert(txn, "transform", transform_to_any(&t));
+                    moved.push(id.clone());
                     touched.push(id);
                 }
                 _ => {
@@ -272,7 +304,7 @@ impl Document {
                 }
             }
         }
-        touched
+        (touched, moved, after.size)
     }
 
     /// Changement d'une commande de tableau : le tableau, puis les objets suivis (ordre de la pile).
@@ -594,6 +626,12 @@ impl Document {
             if let Some(l) = cell {
                 self.lift_above(&mut txn, &page, &l[0], &skip);
             }
+            // OG12 (n° 7, 8), comme `cmd_transform` : objets placés déplacés par `m`, leurs lignes liées suivent (rupture
+            // pour une ligne placée), après l'écriture des matrices, même étape. Sans déplacement : aucun suivi.
+            if *m != IDENTITY {
+                let placed: Vec<String> = found.iter().map(|(id, _)| id.clone()).collect();
+                touched.extend(crate::linear::follow(self, &mut txn, &placed, Some(m)));
+            }
         }
         touched.sort();
         touched.dedup();
@@ -635,6 +673,7 @@ mod tests {
             },
             fill: None,
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         })
         .expect("forme")
         .ids[0]

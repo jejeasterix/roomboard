@@ -391,6 +391,17 @@ impl Document {
             Some("shape") => {
                 let transform = out_transform(e.get(&txn, "transform"))?;
                 let s = read_shape(&txn, e)?;
+                let bound = |b: Option<crate::linear::BindInput>| {
+                    // C1 : cible cherchée sur la page de la ligne ; d'une autre page, la liaison est lue libre.
+                    b.filter(|b| self.bound_target(&txn, &found.page_id, &b.id).is_some())
+                        .map(|b| crate::element::BindingView {
+                            id: b.id,
+                            fx: b.fx,
+                            fy: b.fy,
+                        })
+                };
+                let points = (!s.points.is_empty()).then(|| s.points.clone());
+                let (start, end) = (bound(s.start.clone()), bound(s.end.clone()));
                 Some(ElementView {
                     style: Some(s.style),
                     shape: Some(ShapeView {
@@ -398,6 +409,9 @@ impl Document {
                         w: s.w,
                         h: s.h,
                         fill: s.fill,
+                        points,
+                        start,
+                        end,
                     }),
                     look: look_view(&txn, e),
                     ..ElementView::bare(id, "shape", transform)
@@ -1466,7 +1480,7 @@ mod tests {
                     style: pen.clone(),
                     fill: None,
                     look: Look::default(),
-                },
+                 line: crate::linear::LineInit::default(), },
                 "text" => Command::SetText {
                     page: p.clone(),
                     id: None,

@@ -541,6 +541,7 @@ mod tests {
             },
             fill: None,
             look: Look::default(),
+            line: crate::linear::LineInit::default(),
         })
         .expect("forme");
         d
