@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTauriShell, openLink, type TauriIpc } from "../platform/host-tauri";
 import { createWebShell, type WebShellWindow } from "../platform/shell-web";
-import { LinkPopover, LINK_NOT_SAVED, LINK_TOO_LONG } from "./LinkPopover";
+import { checkLink, LinkPopover, LINK_BAD_CHARS, LINK_NOT_SAVED, LINK_REFUSED, LINK_TOO_LONG } from "./LinkPopover";
 import { LINK_OPEN_FAILED } from "../platform/files";
 
 afterEach(cleanup);
@@ -174,15 +174,20 @@ describe("ShellPort.openLink (T18, déc. 38)", () => {
     await openLink({ invoke, listen: () => Promise.resolve(() => undefined) } as unknown as TauriIpc, "https://example.org");
     expect(invoke.mock.calls).toEqual([["open_link", { url: "https://example.org" }]]);
   });
-  it("navigateur : fenêtre bloquée (open rend null) : l'utilisateur en est averti", () => {
+  it("navigateur : window.open rend null avec noopener (norme HTML) : ouverture réussie, aucune alerte", () => {
     const alert = vi.fn();
     const shell = createWebShell({ confirm: () => true, alert, addEventListener: () => undefined, removeEventListener: () => undefined, document: { title: "" }, open: () => null });
     shell.openLink?.("https://example.org");
-    expect(alert).toHaveBeenCalledWith(LINK_OPEN_FAILED);
-    const ok = createWebShell({ confirm: () => true, alert, addEventListener: () => undefined, removeEventListener: () => undefined, document: { title: "" }, open: () => ({}) });
-    alert.mockClear();
-    ok.openLink?.("https://example.org");
     expect(alert).not.toHaveBeenCalled();
+  });
+  it("navigateur : window.open lève une exception : l'utilisateur en est averti", () => {
+    const alert = vi.fn();
+    const shell = createWebShell({
+      confirm: () => true, alert, addEventListener: () => undefined, removeEventListener: () => undefined, document: { title: "" },
+      open: () => { throw new Error("blocked"); },
+    });
+    shell.openLink?.("https://example.org");
+    expect(alert).toHaveBeenCalledWith(LINK_OPEN_FAILED);
   });
   it("coque : la commande échoue : l'utilisateur en est averti, par le message de la coque", async () => {
     const message = vi.fn(() => Promise.resolve());
@@ -198,5 +203,17 @@ describe("ShellPort.openLink (T18, déc. 38)", () => {
     shell.openLink?.("file:///etc/passwd");
     shell.openLink?.("https://example.org");
     expect(openUrl.mock.calls).toEqual([["https://example.org"]]);
+  });
+});
+
+describe("checkLink : caractères interdits (T41)", () => {
+  it("espace, guillemet, chevrons, antislash : message dédié, non celui du schéma", () => {
+    for (const bad of ["https://exemple.org/a b", 'https://exemple.org/"x', "https://exemple.org/<x", "https://exemple.org/>x", "https://exemple.org/a\\b"]) {
+      expect(checkLink(bad)).toEqual({ ok: false, message: LINK_BAD_CHARS });
+    }
+    expect(LINK_BAD_CHARS).toContain("%20");
+  });
+  it("mauvais schéma : le message du schéma", () => {
+    expect(checkLink("ftp://exemple.org")).toEqual({ ok: false, message: LINK_REFUSED });
   });
 });

@@ -1497,6 +1497,29 @@ describe("Aide : focus rendu et Échap (T39)", () => {
     expect(helpOpen(container)).toBe(false);
     expect(seen).not.toHaveBeenCalled();
   });
+  it("Échap avec le menu ☰ ouvert par-dessus l'Aide : le menu se ferme, l'Aide reste ; un second Échap ferme l'Aide (T41)", () => {
+    const { container } = renderApp();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    expect(helpOpen(container)).toBe(true);
+    const toggle = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-toggle]')!;
+    click(toggle);
+    const list = container.querySelector<HTMLElement>("[data-menu-list]")!;
+    expect(list.hidden).toBe(false);
+    const row = list.querySelector<HTMLElement>("button")!;
+    row.focus();
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(list.hidden).toBe(true);
+    expect(helpOpen(container)).toBe(true);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(helpOpen(container)).toBe(false);
+  });
+  it("Échap dans le panneau d'Aide le ferme (T41)", () => {
+    const { container } = renderApp();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    const panel = container.querySelector<HTMLElement>('[data-panel="aide"]')!;
+    panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(helpOpen(container)).toBe(false);
+  });
   it("Échap sans Aide ouverte : la page le reçoit (désélection)", () => {
     renderApp();
     const seen = vi.fn();
