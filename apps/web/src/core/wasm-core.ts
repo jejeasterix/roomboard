@@ -542,12 +542,24 @@ class WasmCoreDocument implements CoreDocument {
   elementIds(page: string): string[] { return this.d.element_ids(page); }
   elementIdsOfKind(page: string, kind: string): readonly string[] { return this.d.element_ids_of_kind(page, kind); }
 
-  /** Bouchon OG12, remplacé par T10. */
-  bindTarget(): BindHit | null { return null; }
+  bindTarget(page: string, x: number, y: number, tol: number): BindHit | null {
+    const v: unknown = this.d.bind_target(page, x, y, tol);
+    if (v === null || v === undefined) return null;
+    if (!isRecord(v) || typeof v["id"] !== "string" || typeof v["onOutline"] !== "boolean") throw new Error(ELEMENT);
+    const f = v["fixed"];
+    const a = v["anchors"];
+    if (!Array.isArray(f) || f.length !== 2 || !Array.isArray(a) || a.length !== 4) throw new Error(ELEMENT);
+    return { id: v["id"], fixed: [Number(f[0]), Number(f[1])], onOutline: v["onOutline"], anchors: a.map((p: unknown) => (Array.isArray(p) ? [Number(p[0]), Number(p[1])] as const : [0, 0] as const)) };
+  }
 
   apply(cmd: Command): Change {
     switch (cmd.type) {
-      case "SetLinePoints": case "AddLinked": throw new Error(`commande non prise en charge : ${cmd.type}`);
+      case "SetLinePoints":
+        return toChange(this.d.set_line_points(cmd.id, new Float64Array(cmd.points),
+          cmd.start?.id, cmd.start ? new Float64Array([cmd.start.fx, cmd.start.fy]) : undefined,
+          cmd.end?.id, cmd.end ? new Float64Array([cmd.end.fx, cmd.end.fy]) : undefined));
+      case "AddLinked":
+        return toChange(this.d.add_linked(cmd.id, cmd.dir));
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
@@ -567,7 +579,10 @@ class WasmCoreDocument implements CoreDocument {
         const l = cmd.look;
         return toChange(
           this.d.add_shape(cmd.page, cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1, cmd.style.color, cmd.style.width, cmd.fill ?? undefined,
-            ...lookArgs(l)),
+            ...lookArgs(l),
+            l?.elbowed, cmd.points && cmd.points.length > 0 ? new Float64Array(cmd.points) : undefined,
+            cmd.start?.id, cmd.start ? new Float64Array([cmd.start.fx, cmd.start.fy]) : undefined,
+            cmd.end?.id, cmd.end ? new Float64Array([cmd.end.fx, cmd.end.fy]) : undefined),
         );
       }
       case "SetText": {
@@ -588,6 +603,7 @@ class WasmCoreDocument implements CoreDocument {
           // T12 : paires `*_set`, valeur du lot 2.
           "fillStyle" in p, p.fillStyle ?? undefined, "startArrowhead" in p, p.startArrowhead ?? undefined,
           "endArrowhead" in p, p.endArrowhead ?? undefined, "textAlign" in p, p.textAlign ?? undefined, "link" in p, p.link ?? undefined,
+          "elbowed" in p, p.elbowed ?? undefined,
         ));
       }
       case "Transform":
