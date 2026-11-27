@@ -1005,7 +1005,7 @@ describe("gomme automatique à la surface de contact (OG25)", () => {
   });
 
   it("OG25 : outil Sélection, contact qui grandit : aucune gomme, begin de la sélection une seule fois ; réglage coupé, Main, espace tenu, Texte, Tableau, retouche ou orbite : aucune bascule (effet de bord 9, déc. 14, 23, 25, 33)", () => {
-    const cases: Parameters<typeof palmSetup>[0][] = [
+    const cases: NonNullable<Parameters<typeof palmSetup>[0]>[] = [
       { tool: "select" },
       { on: () => false },
       { tool: "hand" },
