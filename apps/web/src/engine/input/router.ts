@@ -150,12 +150,15 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
    * `begin` (déc. 33), ni avec la main ou l'espace (déc. 14), ni pendant une retouche ou une orbite (déc. 23).
    */
   const tryPalm = (triggerId: number, trigger: Track, now: number): boolean => {
-    if (opts.autoEraser !== true || palm !== null || trigger.pointerType !== "touch") return false;
+    if (opts.autoEraser !== true || palm !== null || trigger.pointerType !== "touch" || now - trigger.startT > DETECT_MS) return false;
     const group: [number, Track][] = [[triggerId, trigger]];
+    const near = boxOf(trigger);
     for (const [id, t] of tracks) {
       if (id === triggerId || t.pointerType !== "touch") continue;
-      if (t.role === "draw" || t.role === "pan" || t.role === "pinch") group.push([id, t]);
-      else if (t.role === "ignored" && now - t.startT <= DETECT_MS) group.push([id, t]);
+      // Un contact à plus de CLUSTER_PX du déclencheur garde son geste (revue T10) : il n'entre pas dans la gomme.
+      const member =
+        t.role === "draw" || t.role === "pan" || t.role === "pinch" || (t.role === "ignored" && now - t.startT <= DETECT_MS);
+      if (member && joinsCluster([near], boxOf(t))) group.push([id, t]);
     }
     if (group.some(([, t]) => now - t.startT > DETECT_MS)) return false;
     let first = trigger;
@@ -264,6 +267,9 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     }
     if (
       palm === null &&
+      t.pointerType === "touch" &&
+      opts.autoEraser === true &&
+      s.t - t.startT <= DETECT_MS &&
       (t.role === "draw" || t.role === "pan" || t.role === "pinch" || t.role === "ignored") &&
       isLargeContact({ width: t.w, height: t.h })
     ) {

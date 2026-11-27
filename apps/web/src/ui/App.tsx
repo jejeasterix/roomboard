@@ -429,6 +429,7 @@ export function App(props: AppProps): JSX.Element {
       const action = annotating() ? null : appShortcut(key);
       if (action === "palm-eraser") {
         e.preventDefault();
+        if (e.repeat) return;
         const on = !optionSettings.palmEraser();
         optionSettings.setPalmEraser(on);
         showToast({ text: on ? PALM_ERASER_LABELS.on : PALM_ERASER_LABELS.off });
