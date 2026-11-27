@@ -23,25 +23,31 @@ pub(crate) fn set_or_remove(
     key: &str,
     v: Option<In>,
 ) -> bool {
-    let current = map.get(txn, key);
-    match (current, v) {
-        (None, None) => false,
-        (Some(_), None) => {
+    if !differs(txn, map, key, v.as_ref()) {
+        return false;
+    }
+    match v {
+        None => {
             map.remove(txn, key);
-            true
         }
-        (cur, Some(next)) => {
-            if cur.as_ref().is_some_and(|c| same_value(c, &next)) {
-                return false;
-            }
+        Some(next) => {
             map.insert(txn, key, next);
-            true
         }
+    }
+    true
+}
+
+/// Vrai si écrire `v` sous `key` changerait l'élément (règle de `set_or_remove`).
+pub(crate) fn differs<T: ReadTxn>(txn: &T, e: &MapRef, key: &str, v: Option<&In>) -> bool {
+    match (e.get(txn, key), v) {
+        (None, None) => false,
+        (Some(_), None) | (None, Some(_)) => true,
+        (Some(cur), Some(next)) => !same_value(&cur, next),
     }
 }
 
 /// Même scalaire : `Any` comparé par yrs (un `Number::Int` relu d'un fichier égale le `Number::Float` du même nombre).
-pub(crate) fn same_value(cur: &Out, next: &In) -> bool {
+fn same_value(cur: &Out, next: &In) -> bool {
     matches!((cur, next), (Out::Any(a), In::Any(b)) if a == b)
 }
 

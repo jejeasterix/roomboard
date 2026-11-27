@@ -1,12 +1,12 @@
 //! OG11 (déc. 25, DA-1, DA-5) : `SetStyle` — un patch de style appliqué aux éléments qui admettent chaque champ, en une
 //! seule étape d'annulation. Les écritures effectives sont calculées d'abord dans une transaction de lecture : aucune
 //! transaction d'écriture ni étape quand rien ne change (D38). Un neutre retire le champ, jamais il ne s'écrit (G12).
-use yrs::{Any, In, Map, MapRef, ReadTxn};
+use yrs::{Any, In, Map, MapRef};
 
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
-use crate::element::{out_string, read_look, STROKE_STYLES};
-use crate::fill::{same_value, set_or_remove};
+use crate::element::{finite_positive, out_string, read_look, STROKE_STYLES};
+use crate::fill::{differs, set_or_remove};
 use crate::rich_text::valid_color;
 
 /// Patch de style : `None` laisse le champ ; `Some(None)` le retire (neutre). `roughness: Some(0)` retire `roughness` et
@@ -29,7 +29,7 @@ impl StylePatch {
         if self.color.as_deref().is_some_and(|c| !valid_color(c)) {
             return bad;
         }
-        if self.width.is_some_and(|w| !(w.is_finite() && w > 0.0)) {
+        if self.width.is_some_and(|w| !finite_positive(f64::from(w))) {
             return bad;
         }
         if matches!(&self.fill, Some(Some(c)) if !valid_color(c)) {
@@ -57,10 +57,6 @@ fn num(x: f64) -> In {
     In::Any(Any::from(x))
 }
 
-fn text(s: &str) -> In {
-    In::from(s)
-}
-
 /// Graine neuve (`apply`) : FNV-1a des octets d'un `uuid_v4` de yrs.
 pub(crate) fn random_seed() -> u32 {
     let u = yrs::uuid_v4();
@@ -81,8 +77,9 @@ fn writes_for(
     let is_shape = kind == "shape";
     let mut w = Vec::new();
     if let Some(c) = &p.color {
+        // H17 : la couleur de l'élément seule ; les couleurs posées sur une partie du texte restent.
         if matches!(kind, "stroke" | "shape" | "text") {
-            w.push(("color", Some(text(c))));
+            w.push(("color", Some(In::from(c.as_str()))));
         }
     }
     if let Some(x) = p.width {
@@ -92,12 +89,12 @@ fn writes_for(
     }
     if let Some(f) = &p.fill {
         if is_shape && matches!(shape, Some("rect" | "ellipse")) {
-            w.push(("fill", f.as_deref().map(text)));
+            w.push(("fill", f.as_deref().map(In::from)));
         }
     }
     if let Some(s) = &p.stroke_style {
         if is_shape {
-            w.push(("strokeStyle", s.as_deref().map(text)));
+            w.push(("strokeStyle", s.as_deref().map(In::from)));
         }
     }
     if let Some(r) = p.roughness {
@@ -115,7 +112,7 @@ fn writes_for(
     }
     if let Some(s) = &p.roundness {
         if is_shape && shape == Some("rect") {
-            w.push(("roundness", s.as_deref().map(text)));
+            w.push(("roundness", s.as_deref().map(In::from)));
         }
     }
     if let Some(o) = opacity {
@@ -126,19 +123,10 @@ fn writes_for(
     w
 }
 
-/// Vrai si écrire `v` sous `key` changerait l'élément (même règle que `set_or_remove`).
-fn differs<T: ReadTxn>(txn: &T, e: &MapRef, key: &str, v: Option<&In>) -> bool {
-    match (e.get(txn, key), v) {
-        (None, None) => false,
-        (Some(_), None) | (None, Some(_)) => true,
-        (Some(cur), Some(next)) => !same_value(&cur, next),
-    }
-}
-
 impl Document {
     /// `SetStyle` (T2) : validation, puis plan des écritures effectives (lecture), puis une seule `transact_local`.
-    /// La graine est tirée par `new_seed` seulement quand le tracé passe à 1 ou 2 depuis un autre niveau (ou sans
-    /// graine lisible) : au même niveau, la graine reste (`actionProperties.tsx:783` d'Excalidraw).
+    /// La graine est tirée par `new_seed` seulement quand le tracé passe à 1 ou 2 depuis un autre niveau : au même
+    /// niveau, aucune graine neuve (`actionProperties.tsx:783` d'Excalidraw).
     pub(crate) fn cmd_set_style(
         &mut self,
         ids: &[String],
@@ -161,11 +149,7 @@ impl Document {
                 let seed = match patch.roughness {
                     Some(r @ 1..=2) if kind == "shape" => {
                         let l = read_look(&txn, &e);
-                        if l.roughness == Some(r) && l.seed.is_some() {
-                            None
-                        } else {
-                            Some(new_seed())
-                        }
+                        (l.roughness != Some(r)).then(&mut new_seed)
                     }
                     _ => None,
                 };

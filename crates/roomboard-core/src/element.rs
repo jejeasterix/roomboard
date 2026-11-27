@@ -346,9 +346,13 @@ pub struct Look {
 /// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
 pub const STROKE_STYLES: [&str; 2] = ["dashed", "dotted"];
 
+/// Clés `Y.Map` des cinq champs d'aspect.
+pub(crate) const LOOK_KEYS: [&str; 5] =
+    ["strokeStyle", "roughness", "seed", "roundness", "opacity"];
+
 impl Look {
     pub fn is_neutral(&self) -> bool {
-        *self == Look::default()
+        self.sanitized() == Look::default()
     }
 
     /// Valeurs du domaine seulement : une valeur hors domaine devient `None` (lue neutre, gardée dans le `Y.Map`).

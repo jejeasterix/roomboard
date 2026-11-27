@@ -10,8 +10,8 @@ use crate::asset::{is_asset_id, AssetRef};
 use crate::document::{insert_page, Document, FoundElement};
 use crate::element::{
     apply_transform, compose, finite_positive, fits_f32, group_to_any, invert, look_fields,
-    out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_look,
-    read_style, style_fields, transform_to_any, Look, StrokeStyle, Transform, FIT_WIDTH, IDENTITY,
+    out_bytes, out_f64, out_string, out_transform, read_backdrop, read_group, read_style,
+    style_fields, transform_to_any, Look, StrokeStyle, Transform, FIT_WIDTH, IDENTITY, LOOK_KEYS,
 };
 use crate::grid::{self, GridInput};
 use crate::ink::erase::erase;
@@ -593,8 +593,8 @@ struct Cut {
     style: StrokeStyle,
     pieces: Vec<Vec<InkPoint>>,
     group: Option<Any>,
-    /// OG11 : aspect du trait coupé, réécrit sur chaque morceau (neutre : aucune clé).
-    look: Look,
+    /// OG11 (G12) : clés d'aspect du trait coupé, valeurs brutes recopiées telles quelles sur chaque morceau.
+    look: Vec<(&'static str, Any)>,
 }
 
 /// Les chaînes données, triées et sans doublon.
@@ -1335,7 +1335,13 @@ impl Document {
                             Some(Out::Any(a)) => Some(a),
                             _ => None,
                         },
-                        look: read_look(&txn, &e),
+                        look: LOOK_KEYS
+                            .iter()
+                            .filter_map(|k| match e.get(&txn, k) {
+                                Some(Out::Any(a)) => Some((*k, a)),
+                                _ => None,
+                            })
+                            .collect(),
                     });
                 }
             }
@@ -1356,7 +1362,10 @@ impl Document {
                 for (k, piece) in cut.pieces.iter().enumerate() {
                     let id = yrs::uuid_v4().to_string();
                     let mut prelim =
-                        stroke_prelim(&id, &cut.transform, &cut.style, piece, &cut.look);
+                        stroke_prelim(&id, &cut.transform, &cut.style, piece, &Look::default());
+                    for (k, v) in &cut.look {
+                        prelim.insert((*k).into(), In::Any(v.clone()));
+                    }
                     // Z1 : un morceau reste dans le groupe du trait coupé (valeur recopiée telle quelle).
                     if let Some(g) = &cut.group {
                         prelim.insert("group".into(), In::Any(g.clone()));
