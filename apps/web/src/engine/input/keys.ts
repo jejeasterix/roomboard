@@ -79,9 +79,11 @@ export function orderKey(e: KeyLike): OrderKey | null {
 export type ScrollKey = "up" | "down" | "screen-up" | "screen-down" | "top" | "bottom";
 
 /** OG24 (ascenseur du portrait) : ↑ ↓ d'un cran, Maj+↑ ↓ d'un écran (PageUp/PageDown changent de page, DA9), Début et Fin ;
- *  sans Ctrl, Cmd ni Alt (Ctrl+↑ ↓ : ordre des objets), hors champ, hors IME. */
+ *  sans Ctrl, Cmd ni Alt (Ctrl+↑ ↓ : ordre des objets), hors IME, hors champ et hors contrôle de formulaire (une réglette
+ *  ou une liste focalisée garde ses flèches, Début et Fin). */
 export function scrollKey(e: KeyLike): ScrollKey | null {
   if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (EDITABLE.has(e.target?.tagName?.toUpperCase() ?? "")) return null;
   if (e.key === "ArrowUp") return e.shiftKey ? "screen-up" : "up";
   if (e.key === "ArrowDown") return e.shiftKey ? "screen-down" : "down";
   if (e.shiftKey) return null;

@@ -150,25 +150,23 @@ async function scenario(browser, base, viewport) {
   const e1 = await pageEdges(page);
   check(Math.abs(e1.bottom - (e1.st.y + e1.st.height - BOTTOM)) < 1.5, `doigt au-delà du rail : bas de page à ${BOTTOM} px du bas, pas plus loin`);
   check((await page.getAttribute(BAR, "aria-valuenow")) === "100", "aria-valuenow = 100 en bas de page");
-  // Toucher le rail en haut : le curseur y vient.
-  await touch(cdp, "touchStart", [[tx, b.y + 4]]);
-  await touch(cdp, "touchEnd", []);
-  await settle(page);
-  check(Math.abs((await pageEdges(page)).top - e0.top) < 1.5, "toucher le haut du rail : retour en haut de page");
-  // Stylet.
+  // Le rail hors du curseur laisse passer les pointeurs : on dessine jusqu'au bord de la page.
   const t1 = await box(page, THUMB);
-  await penDrag(page, cdp, centerOf(t1), [tx, centerOf(t1)[1] + free / 4]);
+  const railHit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest("[data-scrollbar]") !== null, [tx, t1.y - 40]);
+  check(!railHit, "rail hors du curseur : le pointeur passe à la scène");
+  // Stylet : un quart du rail vers le haut.
+  await penDrag(page, cdp, centerOf(t1), [tx, centerOf(t1)[1] - free / 4]);
   const v2 = Number(await page.getAttribute(BAR, "aria-valuenow"));
-  check(Math.abs(v2 - 25) <= 2 && (await attr(page, "data-elements")) === "0", `stylet sur le curseur, quart du rail : page à ${v2} %, aucun trait`);
-  // Souris.
+  check(Math.abs(v2 - 75) <= 2 && (await attr(page, "data-elements")) === "0", `stylet sur le curseur, quart du rail : page à ${v2} %, aucun trait`);
+  // Souris : tout en haut.
   await page.click(item("select"));
   const t2 = await box(page, THUMB);
   await page.mouse.move(...centerOf(t2));
   await page.mouse.down();
-  for (let i = 1; i <= 8; i++) await page.mouse.move(tx, centerOf(t2)[1] - (free / 4) * (i / 8));
+  for (let i = 1; i <= 8; i++) await page.mouse.move(tx, centerOf(t2)[1] - b.height * (i / 8));
   await page.mouse.up();
   await settle(page);
-  check(Math.abs((await pageEdges(page)).top - e0.top) < 2, "souris : curseur remonté d'un quart, haut de page");
+  check(Math.abs((await pageEdges(page)).top - e0.top) < 1.5, "souris : curseur remonté au-delà du rail, haut de page, pas plus loin");
   // Molette : bornée en haut, descend sinon.
   await page.mouse.move(e0.st.x + e0.st.width / 2, e0.st.y + e0.st.height / 2);
   await page.mouse.wheel(0, -400);

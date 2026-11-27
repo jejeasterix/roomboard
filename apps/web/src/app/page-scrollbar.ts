@@ -1,12 +1,12 @@
 /**
  * Ascenseur vertical d'une page portrait (OG24, Jérôme : « En mode portrait la page doit remplir l'écran et un ascenseur
- * permet de monter / descendre »). Posé dans la scène, à droite, du haut de la page ajustée (`top()`) à `SCROLL_BOTTOM`
- * px du bas : il ne couvre que la hauteur de la page. Caché en paysage, en infini, et quand la page tient dans la vue.
+ * permet de monter / descendre »). Posé dans la scène, à droite, du haut de la page ajustée à `SCROLL_BOTTOM` px du bas :
+ * il ne couvre que la hauteur de la page. Caché en paysage, en infini, et quand la page tient dans la vue.
  *
- * Glisser aux événements de pointeur (U12, U24 ; jamais le glisser HTML5), même chose au doigt, au stylet et à la souris :
- * toucher le curseur le saisit là où il est touché ; toucher le rail y amène le milieu du curseur, puis le glisser suit.
- * Les événements de pointeur s'arrêtent à l'ascenseur : le routeur de la scène ne les voit pas (aucun trait).
- * Cible au toucher : 44 px de large (rail et curseur d'au moins 44 px de haut), dessin fin (CSS `.rb-scrollbar`).
+ * Seul le curseur se saisit (le rail laisse passer les pointeurs vers la scène : on dessine jusqu'au bord de la page),
+ * aux événements de pointeur (U12, U24 ; jamais le glisser HTML5), au doigt, au stylet et au bouton gauche de la souris ;
+ * saisi là où il est touché, sans saut. Rejet de paume (D18) : un toucher posé pendant qu'un stylet touche la scène passe
+ * à la scène, qui l'écarte. Les pointeurs saisis s'arrêtent à l'ascenseur (aucun trait). Cible : 44 × 44 px au moins.
  */
 import type { Engine, PageScroll } from "../engine/engine";
 import { SCROLL_BOTTOM } from "../engine/engine";
@@ -25,7 +25,7 @@ export interface PageScrollbar {
 /** Hauteur du curseur, px, pour un rail de `track` px et une part visible `visible` (0-1). */
 export const thumbHeight = (track: number, visible: number): number => Math.min(track, Math.max(THUMB_MIN, track * visible));
 
-export function createPageScrollbar(stage: HTMLElement, engine: ScrollbarEngine, top: () => number): PageScrollbar {
+export function createPageScrollbar(stage: HTMLElement, engine: ScrollbarEngine): PageScrollbar {
   const doc = stage.ownerDocument;
   const bar = doc.createElement("div");
   bar.className = "rb-scrollbar";
@@ -41,60 +41,60 @@ export function createPageScrollbar(stage: HTMLElement, engine: ScrollbarEngine,
   bar.append(thumb);
   stage.append(bar);
 
-  let last: PageScroll | null = null;
+  // Rail et curseur en px de scène, tenus ici : aucune lecture de mise en page.
+  let geom: { readonly s: PageScroll; readonly thumb: number } | null = null;
   const update = (): void => {
     const s = engine.pageScroll();
-    last = s;
     bar.hidden = s === null;
-    if (s === null) return;
-    bar.style.top = `${top()}px`;
+    geom = s === null ? null : { s, thumb: thumbHeight(s.span, s.visible) };
+    if (geom === null) return;
+    bar.style.top = `${geom.s.top}px`;
     bar.style.bottom = `${SCROLL_BOTTOM}px`;
-    const track = bar.clientHeight;
-    const h = thumbHeight(track, s.visible);
-    thumb.style.height = `${h}px`;
-    thumb.style.transform = `translateY(${(track - h) * s.at}px)`;
-    bar.setAttribute("aria-valuenow", String(Math.round(s.at * 100)));
+    thumb.style.height = `${geom.thumb}px`;
+    thumb.style.transform = `translateY(${(geom.s.span - geom.thumb) * geom.s.at}px)`;
+    bar.setAttribute("aria-valuenow", String(Math.round(geom.s.at * 100)));
     if (stage.id !== "") bar.setAttribute("aria-controls", stage.id);
   };
 
-  // Saisie : `grab` = écart, px, entre le pointeur et le haut du curseur ; un seul pointeur à la fois.
-  let drag: { readonly id: number; readonly grab: number } | null = null;
-  const atFor = (clientY: number, grab: number): number => {
-    const r = bar.getBoundingClientRect();
-    const h = thumbHeight(r.height, last?.visible ?? 1);
-    return r.height > h ? (clientY - r.top - grab) / (r.height - h) : 0;
+  // Stylets en contact avec la scène (rejet de paume) : vus en capture, avant que la scène ne les capture.
+  const pens = new Set<number>();
+  const penDown = (e: PointerEvent): void => {
+    if (e.pointerType === "pen") pens.add(e.pointerId);
   };
+  const penUp = (e: PointerEvent): void => {
+    pens.delete(e.pointerId);
+  };
+  stage.addEventListener("pointerdown", penDown, true);
+  for (const type of ["pointerup", "pointercancel"]) stage.addEventListener(type, penUp as EventListener, true);
+
+  // Saisie : `from` = ordonnée du pointeur et `at` de la page au toucher ; un seul pointeur à la fois.
+  let drag: { readonly id: number; readonly y: number; readonly at: number } | null = null;
   const stop = (e: Event): void => e.stopPropagation();
-  bar.addEventListener("pointerdown", (e) => {
+  thumb.addEventListener("pointerdown", (e) => {
+    if (geom === null || drag !== null || e.button !== 0 || (e.pointerType === "touch" && pens.size > 0)) return;
     e.stopPropagation();
     e.preventDefault();
-    if (drag !== null || last === null) return;
-    const t = thumb.getBoundingClientRect();
-    const onThumb = e.clientY >= t.top && e.clientY <= t.bottom;
-    const grab = onThumb ? e.clientY - t.top : t.height / 2;
-    drag = { id: e.pointerId, grab };
-    bar.setPointerCapture?.(e.pointerId);
+    drag = { id: e.pointerId, y: e.clientY, at: geom.s.at };
+    thumb.setPointerCapture?.(e.pointerId);
     bar.dataset["drag"] = "1";
-    if (!onThumb) engine.scrollPageTo(atFor(e.clientY, grab));
   });
-  bar.addEventListener("pointermove", (e) => {
+  thumb.addEventListener("pointermove", (e) => {
+    if (drag === null || e.pointerId !== drag.id || geom === null) return;
     e.stopPropagation();
-    if (drag === null || e.pointerId !== drag.id) return;
-    engine.scrollPageTo(atFor(e.clientY, drag.grab));
+    const free = geom.s.span - geom.thumb;
+    if (free > 0) engine.scrollPageTo(drag.at + (e.clientY - drag.y) / free);
   });
   const end = (e: PointerEvent): void => {
-    e.stopPropagation();
     if (drag === null || e.pointerId !== drag.id) return;
+    e.stopPropagation();
     drag = null;
     delete bar.dataset["drag"];
-    if (bar.hasPointerCapture?.(e.pointerId)) bar.releasePointerCapture(e.pointerId);
+    if (thumb.hasPointerCapture?.(e.pointerId)) thumb.releasePointerCapture(e.pointerId);
   };
-  bar.addEventListener("pointerup", end);
-  bar.addEventListener("pointercancel", end);
-  bar.addEventListener("lostpointercapture", end);
-  for (const type of ["pointerover", "pointerout", "pointerenter", "pointerleave"]) bar.addEventListener(type, stop);
-  // Appui long : ni menu du navigateur, ni menu de la scène.
-  bar.addEventListener("contextmenu", (e) => {
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) thumb.addEventListener(type, end as EventListener);
+  for (const type of ["pointerover", "pointerout", "pointerenter", "pointerleave"]) thumb.addEventListener(type, stop);
+  // Appui long sur le curseur : ni menu du navigateur, ni menu de la scène.
+  thumb.addEventListener("contextmenu", (e) => {
     e.stopPropagation();
     e.preventDefault();
   });

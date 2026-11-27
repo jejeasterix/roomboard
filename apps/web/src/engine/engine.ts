@@ -146,10 +146,11 @@ export function pageShortcut(
 export const SCROLL_BOTTOM = 16;
 
 /** Ascenseur de la page portrait montrée (OG24) : `at` 0 = haut de page, 1 = bas ; `visible` = part de la page à
- *  l'écran (0-1) ; `span` = hauteur d'écran, px, entre le haut de page ajustée et la marge du bas. */
+ *  l'écran (0-1) ; `top` = haut de page ajustée, px de scène ; `span` = hauteur d'écran, px, de `top` à la marge du bas. */
 export interface PageScroll {
   readonly at: number;
   readonly visible: number;
+  readonly top: number;
   readonly span: number;
 }
 
@@ -1044,7 +1045,7 @@ export function createEngine(deps: EngineDeps): Engine {
       if (s === null) return null;
       const { min, max } = s.bounds;
       const span = viewH - s.top - SCROLL_BOTTOM;
-      return { at: Math.min(1, Math.max(0, (max - camera.ty) / (max - min))), visible: Math.min(1, span / s.height), span };
+      return { at: Math.min(1, Math.max(0, (max - camera.ty) / (max - min))), visible: Math.min(1, span / s.height), top: s.top, span };
     },
     scrollPageBy(dy) {
       const s = scrollState();

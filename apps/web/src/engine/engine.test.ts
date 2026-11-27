@@ -545,6 +545,8 @@ describe("createEngine", () => {
       const { engine } = portrait();
       const s = engine.pageScroll()!;
       expect(s.at).toBe(0);
+      expect(s.top).toBe(100);
+      expect(s.span).toBe(800 - 100 - 16);
       expect(s.visible).toBeGreaterThan(0.2);
       expect(s.visible).toBeLessThan(0.5);
     });
@@ -599,6 +601,11 @@ describe("createEngine", () => {
       expect(scrollShortcut(k("Home"), engine)).toBe(true);
       expect(engine.pageScroll()!.at).toBe(0);
       expect(scrollShortcut(k("ArrowDown", { target: { tagName: "TEXTAREA" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "INPUT", type: "range" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("End", { target: { tagName: "SELECT" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { altKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { metaKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { isComposing: true }), engine)).toBe(false);
       expect(scrollShortcut(k("ArrowDown", { ctrlKey: true }), engine)).toBe(false);
       expect(scrollShortcut(k("PageDown"), engine)).toBe(false);
       expect(engine.pageScroll()!.at).toBe(0);

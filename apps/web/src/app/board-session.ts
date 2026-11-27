@@ -464,7 +464,7 @@ async function buildBoardSession(
   // Taille CSS de la case (le rendu Canvas 2D la retient, page infinie) et devicePixelRatio suivis : l'encre reste sous
   // la pointe. Jamais la taille de la fenêtre.
   // OG24 : l'ascenseur d'une page portrait suit la caméra, la page montrée, son mode et la taille de la vue.
-  const scrollbar = createPageScrollbar(stage, engine, fitTop);
+  const scrollbar = createPageScrollbar(stage, engine);
   undo.push(() => scrollbar.element.remove());
   const fit = (): void => {
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
