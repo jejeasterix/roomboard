@@ -149,7 +149,7 @@ impl Document {
                 let seed = match patch.roughness {
                     Some(r @ 1..=2) if kind == "shape" => {
                         let l = read_look(&txn, &e);
-                        (l.roughness != Some(r)).then(|| new_seed())
+                        (l.roughness != Some(r)).then(&mut new_seed)
                     }
                     _ => None,
                 };
