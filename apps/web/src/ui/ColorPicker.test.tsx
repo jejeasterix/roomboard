@@ -185,3 +185,16 @@ describe("ColorPicker : pipette (OG23, T8)", () => {
     expect(pick).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ColorPicker : case Transparente et pipette (OG23, T20)", () => {
+  it("Transparente : libellé accessible, infobulle, damier ; avec la pipette sur la ligne .rb-color-tools", () => {
+    const m = render(() => <ColorPicker value={null} transparent pick={async () => null} choose={() => {}} close={() => {}} anchor={document.body} />);
+    const t = m.container.querySelector("[data-color-transparent]")!;
+    expect(t.getAttribute("aria-label")).toBe("Transparent");
+    expect(t.getAttribute("title")).toBe("Transparent");
+    const row = m.container.querySelector(".rb-color-tools")!;
+    expect(row.contains(t)).toBe(true);
+    expect(row.contains(m.container.querySelector("[data-color-pipette]"))).toBe(true);
+    m.unmount();
+  });
+});
