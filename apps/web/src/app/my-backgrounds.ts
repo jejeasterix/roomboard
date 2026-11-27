@@ -8,7 +8,8 @@
  */
 import type { GridInput } from "../core/api";
 import type { BackgroundSource } from "../backgrounds/source";
-import { HEAD_BYTES, IMAGE_MIME, MAX_PIXELS, probeSize, sniffImage, TOO_MANY_PIXELS } from "../platform/image-import";
+import { HEAD_BYTES, IMAGE_MIME, probeSize, sniffImage, TOO_MANY_PIXELS } from "../platform/image-import";
+import { imageSource } from "../backgrounds/image-source";
 import type { LibraryFiles } from "../platform/library-files";
 import { fileNameOf } from "./library";
 
@@ -158,8 +159,9 @@ export function createMyBackgrounds(files: LibraryFiles, deps: MyBackgroundsDeps
     async addImage(blob, name) {
       const probed = await deps.probe(blob, name);
       if (probed === null) throw new Error(NOT_AN_IMAGE_MESSAGE);
-      if (probed.w * probed.h > MAX_PIXELS) throw new Error(TOO_MANY_PIXELS);
-      return store({ color: "#ffffff", grid: null, image: { blob, name, mime: probed.mime, w: probed.w, h: probed.h } }, name, "image");
+      const src = imageSource(blob, name, probed);
+      if (src === null) throw new Error(TOO_MANY_PIXELS);
+      return store(src, name, "image");
     },
     addSource: (src, name, origin) => store(src, name, origin),
     async read(entry) {
