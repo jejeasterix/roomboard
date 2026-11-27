@@ -68,6 +68,8 @@ export interface EngineState {
   /** T18 (H5, déc. 38) : élément dont l'éditeur de lien est ouvert (Ctrl+K ou bouton Lien, un seul élément) ; null
    *  sinon. Facultatif comme fillColor (PC5) : le moteur le publie toujours. */
   readonly linkEditing?: string | null;
+  /** OG23 (T8) : la pipette de scène est armée (le prochain toucher de la scène lit une couleur). Facultatif comme fillColor (PC5). */
+  readonly picking?: boolean;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -245,6 +247,11 @@ export interface Engine {
   arrange(how: ArrangeHow): boolean;
   /** OG23 : déplace la sélection de (dx, dy) unités de scène ; faux sans sélection. */
   nudge(dx: number, dy: number): boolean;
+  /** OG23 (T8) : arme la pipette ; le prochain toucher de la scène ne va à aucun outil, lit la couleur affichée (`#rrggbb`)
+   *  et résout ; null si transparent, annulé (Échap, `cancelPick`) ou remplacé par un second appel. */
+  pickColor(): Promise<string | null>;
+  /** OG23 (T8) : désarme la pipette (résout null) ; sans effet si elle n'est pas armée. */
+  cancelPick(): void;
   /** T18 (déc. 38) : ouvre l'éditeur de lien sur l'unique élément sélectionné (`linkEditing`) ; faux sinon. */
   editLink(): boolean;
   /** T18 : pose (un SetStyle { link }, une étape) ou retire (null) le lien de l'unique élément sélectionné, puis ferme
@@ -390,6 +397,8 @@ export function createEngine(deps: EngineDeps): Engine {
   let error: string | null = null;
   /** T18 : élément dont l'éditeur de lien est ouvert ; retombe à null dès qu'il n'est plus l'unique sélection. */
   let linkEditing: string | null = null;
+  /** OG23 (T8) : résolveur de la pipette armée ; null sinon. */
+  let pickDone: ((c: string | null) => void) | null = null;
   let sceneDirty = true;
   let lastHidden: ReadonlySet<string> = new Set<string>();
   /** Aperçu de grille posé sur le rendu (DAE1). */
@@ -504,6 +513,7 @@ export function createEngine(deps: EngineDeps): Engine {
       fillTolerance,
       itemStyle: item,
       linkEditing: linkTarget(),
+      picking: pickDone !== null,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -514,6 +524,15 @@ export function createEngine(deps: EngineDeps): Engine {
   function linkTarget(): string | null {
     const sel = selectTool.selection();
     return linkEditing !== null && sel.length === 1 && sel[0] === linkEditing ? linkEditing : null;
+  }
+
+  /** OG23 (T8) : résout la pipette armée (couleur lue ou null) et publie l'état. */
+  function settlePick(c: string | null): void {
+    const done = pickDone;
+    if (done === null) return;
+    pickDone = null;
+    done(c);
+    emit();
   }
 
   function emit(): void {
@@ -891,6 +910,13 @@ export function createEngine(deps: EngineDeps): Engine {
   const sink: GestureSink = {
     begin(pointerId, t, samples, pointerType) {
       lastDeleted = null;
+      // OG23 (T8) : pipette armée, un toucher unique lit la couleur et ne va à aucun outil (ni sélection, ni orbite).
+      if (pickDone !== null) {
+        const s = samples[0];
+        owner.set(pointerId, inertTool());
+        settlePick(s === undefined ? null : (renderer.colorAt?.(s.x, s.y) ?? null));
+        return;
+      }
       // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
       if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
         const url = badgeLinkAt(samples[0], pointerType);
@@ -1058,6 +1084,10 @@ export function createEngine(deps: EngineDeps): Engine {
     undo: () => history("undo"),
     redo: () => history("redo"),
     key(e) {
+      if (pickDone !== null && e.key === "Escape") {
+        settlePick(null);
+        return true;
+      }
       if (e.key === "Shift") {
         shiftHeld = true;
         return false;
@@ -1292,6 +1322,16 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     setItemStyle(p) {
       setItem(p, true);
+    },
+    pickColor() {
+      settlePick(null);
+      return new Promise<string | null>((resolve) => {
+        pickDone = resolve;
+        emit();
+      });
+    },
+    cancelPick() {
+      settlePick(null);
     },
     editLink() {
       const sel = selectTool.selection();

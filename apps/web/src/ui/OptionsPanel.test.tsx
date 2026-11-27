@@ -31,6 +31,7 @@ function mount(o: Opts) {
     reorder: vi.fn(() => true),
     arrange: vi.fn(() => true),
     pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
+    cancelPick: vi.fn(),
   };
   const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
