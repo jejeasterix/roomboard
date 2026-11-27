@@ -44,6 +44,23 @@ export function hitHandle(b: Bounds, x: number, y: number, reach: number, skip?:
   return best;
 }
 
+/** Poignée « Déplacer » (OG23, T11) : au-dessus du milieu du bord haut, hors des huit poignées de taille. */
+export const MOVE_HANDLE_GAP_PX = 28;
+const MOVE_REACH_TOUCH_PX = 22;
+const MOVE_REACH_MOUSE_PX = 12;
+
+/** Centre monde de la poignée « Déplacer » : milieu du bord haut, 28 px écran au-dessus. */
+export function moveHandlePoint(b: Bounds, zoom: number): [number, number] {
+  return [(b.x0 + b.x1) / 2, b.y0 - MOVE_HANDLE_GAP_PX / zoom];
+}
+
+/** Appui (x, y monde) sur la poignée « Déplacer » : 22 px au doigt et au stylet, 12 px à la souris. */
+export function hitMoveHandle(b: Bounds, x: number, y: number, zoom: number, pointerType?: string): boolean {
+  const [hx, hy] = moveHandlePoint(b, zoom);
+  const reach = (pointerType === "mouse" ? MOVE_REACH_MOUSE_PX : MOVE_REACH_TOUCH_PX) / zoom;
+  return Math.max(Math.abs(hx - x), Math.abs(hy - y)) <= reach;
+}
+
 export { isIdentity, translateMatrix };
 
 function clampScale(s: number): number {

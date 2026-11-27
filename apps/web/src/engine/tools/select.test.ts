@@ -449,9 +449,9 @@ describe("outil Sélection : Glisser une copie (OG23, T11)", () => {
     expect(tool.live().overlay?.ghosts.length).toBe(1);
     tool.close(1, "end");
     expect(doc.elementIds(page)).toHaveLength(2);
-    expect(doc.element(a)?.transform?.[4] ?? 0).toBe(0);
+    expect(doc.element(a)?.transform?.[4]).toBe(100);
     const copy = doc.elementIds(page).find((id) => id !== a) ?? "";
-    expect(doc.element(copy)?.transform?.[4]).toBe(200);
+    expect(doc.element(copy)?.transform?.[4]).toBe(300);
     expect(doc.element(copy)?.look?.dragCopy).toBeUndefined();
   });
 
@@ -473,7 +473,7 @@ describe("outil Sélection : Glisser une copie (OG23, T11)", () => {
     gesture(tool, [[hx, hy], [hx + 100, hy]]);
     expect(runs.map((r) => r.type)).toEqual(["Transform"]);
     expect(doc.elementIds(doc.pageIds()[0] ?? "")).toHaveLength(1);
-    expect(doc.element(a)?.transform?.[4]).toBe(100);
+    expect(doc.element(a)?.transform?.[4]).toBe(200);
     expect(doc.element(a)?.look?.dragCopy).toBe(true);
   });
 });

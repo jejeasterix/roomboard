@@ -26,8 +26,8 @@ describe("copyBadgeBox (OG23, T11)", () => {
   it("copyBadgeBox au pixel : rond de 18 px, coin bas-droit à 6 px du coin haut gauche, multiples de 0,5 à dpr 2", () => {
     const b = copyBadgeBox({ x0: 10.3, y0: 20.1, x1: 50, y1: 60 }, { zoom: 1.37, tx: 3.3, ty: 1.1 }, 2);
     expect(b.size).toBe(18);
-    expect((b.x * 2) % 1).toBe(0);
-    expect((b.y * 2) % 1).toBe(0);
+    expect(Math.abs((b.x * 2) % 1)).toBe(0);
+    expect(Math.abs((b.y * 2) % 1)).toBe(0);
     const plain = copyBadgeBox({ x0: 100, y0: 100, x1: 150, y1: 150 }, { zoom: 1, tx: 0, ty: 0 });
     expect(plain).toEqual({ x: 100 - 6 - 18, y: 100 - 6 - 18, size: 18 });
   });
