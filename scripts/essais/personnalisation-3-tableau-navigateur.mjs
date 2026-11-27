@@ -226,6 +226,51 @@ async function scenario(page, url, { captures }) {
   await page.keyboard.press("Escape");
   await fr();
 
+  // S3 : un trait au stylo écrit dans la case (1, 0) du premier tableau lui appartient : « + Ligne » le fait descendre de 64,
+  // et déplacer le tableau le déplace du même pas.
+  await page.click(item("pen"));
+  await fr();
+  // L'îlot d'options du stylo (80..364 px) recouvre la case (1, 0) : on le replie, comme le ferait la main (sinon le doigt trace sur le panneau).
+  await page.click("[data-options-toggle]");
+  await fr();
+  const s3_strokeA = screen(c, origin[0] + 60, origin[1] + ROW + 26);
+  const s3_strokeB = screen(c, origin[0] + 200, origin[1] + ROW + 36);
+  await touchDrag(s3_strokeA, s3_strokeB);
+  await fr();
+  await page.click(item("select"));
+  await fr();
+  const s3_strokeMid = (dy) => screen(c, origin[0] + 130, origin[1] + ROW + 31 + dy);
+  await selectAt(s3_strokeMid(0));
+  const s3_sel0 = await attr("data-selection");
+  const [, s3_sy0] = await boundsOf();
+  check(s3_sel0 === "1", `S3 : le trait est sélectionné (data-selection=${s3_sel0}, y0 ${s3_sy0})`);
+  await page.keyboard.press("Escape");
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...cellPt(0, 0));
+  await page.$eval('button[data-table-action="table-row-insert"]', (b) => b.click());
+  await fr();
+  await page.click(item("select"));
+  await fr();
+  await selectAt(s3_strokeMid(ROW));
+  const [, s3_sy1] = await boundsOf();
+  check(near(s3_sy1, s3_sy0 + ROW), `S3 : le mot descend de 64 (y0 ${s3_sy0} puis ${s3_sy1})`);
+  await page.keyboard.press("Escape");
+  await fr();
+  await selectAt(tableEdge);
+  const [, s3_ty0] = await boundsOf();
+  const s3_moved = [tableEdge[0], tableEdge[1] + 80];
+  await touchDrag(tableEdge, s3_moved);
+  const [, s3_ty1] = await boundsOf();
+  await page.keyboard.press("Escape");
+  await fr();
+  await selectAt([s3_strokeMid(ROW)[0], s3_strokeMid(ROW)[1] + 80]);
+  const [, s3_sy2] = await boundsOf();
+  check(near(s3_sy2 - s3_sy1, s3_ty1 - s3_ty0) && s3_ty1 - s3_ty0 > 1, `S3 : le tableau déplacé emporte le trait (tableau ${s3_ty1 - s3_ty0}, trait ${s3_sy2 - s3_sy1})`);
+  await capture("trace-dans-case");
+  await page.keyboard.press("Escape");
+  await fr();
+
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
 
