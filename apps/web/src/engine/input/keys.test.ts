@@ -251,4 +251,30 @@ describe("arrangeKey (OG23, déc. 24)", () => {
     expect(nudgeKey(k("ArrowLeft", { target: { tagName: "TEXTAREA" } }))).toBeNull();
     expect(nudgeKey(k("a"))).toBeNull();
   });
+  it("nudgeKey : les flèches d'un contrôle de l'interface ne déplacent rien (OG23, T17)", () => {
+    const role = (r: string) => ({ tagName: "DIV", getAttribute: (n: string) => (n === "role" ? r : null) });
+    for (const target of [
+      { tagName: "BUTTON" },
+      { tagName: "INPUT", type: "range" },
+      { tagName: "INPUT", type: "checkbox" },
+      { tagName: "SELECT" },
+      role("radio"),
+      role("gridcell"),
+      role("tab"),
+      role("menuitem"),
+      role("slider"),
+      role("option"),
+      { tagName: "DIV", isContentEditable: true },
+    ]) {
+      expect(nudgeKey(k("ArrowLeft", { target }))).toBeNull();
+    }
+  });
+  it("nudgeKey : une flèche déjà traitée (defaultPrevented) ne déplace rien", () => {
+    expect(nudgeKey(k("ArrowLeft", { defaultPrevented: true }))).toBeNull();
+  });
+  it("nudgeKey : focus sur la scène, le body ou rien : la flèche déplace", () => {
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "CANVAS" } }))).toEqual({ dx: -1, dy: 0 });
+    expect(nudgeKey(k("ArrowLeft", { target: { tagName: "BODY" } }))).toEqual({ dx: -1, dy: 0 });
+    expect(nudgeKey(k("ArrowLeft", { target: null }))).toEqual({ dx: -1, dy: 0 });
+  });
 });

@@ -11,4 +11,10 @@ describe("keyOf", () => {
     expect(k.shiftKey).toBe(true);
     expect(k.key).toBe("Ḣ");
   });
+  it("transmet defaultPrevented : une touche déjà prise par un contrôle ne déplace pas la sélection (T17)", () => {
+    const e = new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true });
+    expect(keyOf(e).defaultPrevented).toBe(false);
+    e.preventDefault();
+    expect(keyOf(e).defaultPrevented).toBe(true);
+  });
 });

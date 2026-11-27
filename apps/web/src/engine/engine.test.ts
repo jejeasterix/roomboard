@@ -2082,6 +2082,21 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(doc.bounds([a])!.y0).toBe(y0);
   });
 
+  it("flèche avec le focus sur un contrôle de l'interface : la sélection ne bouge pas, la touche passe (T17)", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const x0 = doc.bounds([a])!.x0;
+    for (const target of [{ tagName: "BUTTON" }, { tagName: "INPUT", type: "range" }, { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "radio" : null) }, { tagName: "DIV", getAttribute: (n: string) => (n === "role" ? "gridcell" : null) }]) {
+      expect(engine.key(key("ArrowRight", { target }))).toBe(false);
+    }
+    expect(engine.key(key("ArrowRight", { defaultPrevented: true }))).toBe(false);
+    expect(doc.bounds([a])!.x0).toBe(x0);
+    // Focus sur la scène : la flèche déplace.
+    expect(engine.key(key("ArrowRight", { target: { tagName: "CANVAS" } }))).toBe(true);
+    expect(doc.bounds([a])!.x0).toBe(x0 + 1);
+  });
+
   it("flèche sans sélection : la touche passe", () => {
     const { engine } = styleSetup();
     expect(engine.key(key("ArrowLeft"))).toBe(false);

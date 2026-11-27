@@ -34,6 +34,10 @@ class FakeScene implements Pick<Renderer, "drawScene" | "invalidate" | "resize" 
   setImagePreview(p: ImagePreview | null): void {
     this.log.push(`image ${p === null ? "null" : p.id}`);
   }
+  colorAt(x: number, y: number): string | null {
+    this.log.push(`colorAt ${x},${y}`);
+    return "#336699";
+  }
 }
 
 function make() {
@@ -54,6 +58,19 @@ const U = new Float32Array([0, 0, 30, 0, 30, 30, 20, 30, 20, 10, 10, 10, 10, 30,
 const stroke = (outline: Float32Array): LiveLayer => ({
   strokes: [{ outline, color: "#ff0000" }],
   erasers: [],
+});
+
+describe("WebGL2LiveRenderer : pipette (OG23, T17)", () => {
+  it("colorAt relaie la lecture de pixel de la scène Canvas 2D", () => {
+    const { r, scene } = make();
+    expect(r.colorAt(3, 4)).toBe("#336699");
+    expect(scene.log).toContain("colorAt 3,4");
+  });
+  it("colorAt : scène sans lecture de pixel, null", () => {
+    const gl = new FakeGL();
+    const bare = { drawScene() {}, invalidate() {}, resize() {}, setGridPreview() {}, setImagePreview() {} };
+    expect(new WebGL2LiveRenderer(bare, asGL(gl)).colorAt(1, 1)).toBeNull();
+  });
 });
 
 describe("géométrie WebGL2 (échelon 4)", () => {
