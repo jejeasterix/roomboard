@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Essai personnalisation-2-retours (OG23, lot A, S1 à S4 ; S7 : tailles de cible, infobulles, netteté) au navigateur
+// Essai personnalisation-2-retours (OG23, lot A : S1 à S4 ; lot B : S5, S6 ; S7 : tailles de cible, infobulles, netteté) au navigateur
 // (docs/plans/personnalisation-2-retours-cadrage.md § 6). Chaque scénario est joué au doigt (événements tactiles du
 // protocole, pointerType « touch », taps de page.touchscreen) puis au clavier (Tab, Entrée, Espace, Échap, raccourcis ; le
 // tracé reste tactile, il n'a pas d'équivalent clavier ; le stylet est simulé par des événements souris du protocole
@@ -7,17 +7,18 @@
 // (CLI), les attributs de `#stage` et les pixels de `#scene`. Netteté du § 10 de docs/plans/design-cadrage.md à 2x.
 // Chromium de Playwright, --disable-lcd-text, --force-color-profile=srgb. Code de sortie : 0 réussi, 1 échec, 2 outil absent.
 // Joué par scripts/verifier.sh --e2e, jamais avec --captures. Un délai dépassé est rejoué une fois avant d'être jugé.
-// Usage : node scripts/essais/personnalisation-2-retours-navigateur.mjs [--lot A|B] [--only s1..s4|nettete] [--captures]
+// Usage : node scripts/essais/personnalisation-2-retours-navigateur.mjs [--lot A|B] [--only s1..s6|nettete] [--captures]
 //   [--dist <dossier> --nom avant]
 //   --captures : docs/design/captures/personnalisation-2-retours/<nom>-{panneau,selecteur,stylo,alignes}.png (2x) ;
 //   --dist : sert un autre build ; --nom avant : captures seules (le build d'avant n'a ni accordéon ni Aligner), mesures sautées.
-// Lot B (S5, S6) : pas encore joué ici (tâche T14).
+//   --captures sans --lot : lots A et B ; --prises copie,image,selecteur… : seulement ces prises (les autres fichiers ne sont pas réécrits).
+//   Lot B : docs/design/captures/personnalisation-2-retours/<nom>-{copie,image}.png.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
-import { DIST, Echec, frames, gitSha, item, loadPlaywright, ROOT, serve, stageBox, VIEWPORT } from "./commun.mjs";
+import { DIST, Echec, dropFile, frames, gitSha, inkIn, item, loadPlaywright, ROOT, rgbPng, serve, sha256, stageBox, stageMouse, TAB, VIEWPORT, zipEntries } from "./commun.mjs";
 import { fringes, pixelsOf } from "./nettete.mjs";
 
 const LABEL = "personnalisation-2-retours";
@@ -273,12 +274,9 @@ async function s1(browser, base, mode) {
     check(await isOpen(page, "roundness"), "S1.3 : Entrée ouvre « Angles »");
     await page.keyboard.press("Space");
     await frames(page);
-    // Écart au plan (S1.3) : main.ts:444-446 prend Espace même sur un bouton (choix assumé, fiche ENI) : la touche n'active
-    // pas l'en-tête. Consigné au rapport ; Entrée referme.
+    // Corrigé en T17 : Espace sur un en-tête le referme (comme Entrée), il n'est plus pris par la touche d'espace de la scène.
     lire("S1.espace.referme", String(!(await isOpen(page, "roundness"))));
-    if (await isOpen(page, "roundness")) await page.keyboard.press("Enter");
-    await frames(page);
-    check(!(await isOpen(page, "roundness")), "S1.3 : « Angles » se referme au clavier");
+    check(!(await isOpen(page, "roundness")), "S1.3 : Espace referme « Angles »");
     await page.evaluate(() => document.activeElement?.blur?.());
     await page.keyboard.press("s");
     await page.locator("[data-color-picker]").first().waitFor({ state: "visible", timeout: 15000 });
@@ -331,9 +329,9 @@ async function s2(browser, base, mode, tmp) {
   check(await tr.isVisible(), "S2.1 : le sélecteur montre une case Transparent");
   const bg = await tr.locator(".rb-pick-dot").evaluate((el) => getComputedStyle(el).backgroundImage);
   lire("S2.damier", bg.slice(0, 60));
-  // Défaut vu (hors périmètre) : apps/web/src/ui/rb.css:461 lit `var(--rf-gray-200)`, jamais défini (rb.css:11-15 : 50, 100,
-  // 300, 500, 800) : la déclaration tombe, le damier n'est pas peint. Consigné au rapport ; l'essai ne le juge pas.
+  // Corrigé en T19 : le damier est peint (jeton --rf-gray-300 défini).
   lire("S2.damier.peint", String(/conic-gradient/.test(bg)));
+  check(/conic-gradient/.test(bg), "S2.1 : le damier de la case Transparent est peint (repeating-conic-gradient)");
   await press(page, mode, "[data-color-picker] [data-color-transparent]");
   await closePicker(page);
   let s = await saved(page, tmp, `s2a-${mode}.roomboard`);
@@ -421,8 +419,11 @@ async function s2pipette(browser, base, mode, tmp) {
   await page.evaluate(() => document.activeElement?.blur?.());
   await page.keyboard.press("g");
   await page.locator("[data-color-picker]").first().waitFor({ state: "visible", timeout: 15000 });
+  const boundsG = await attr(page, "data-bounds");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowDown");
+  await frames(page);
+  check((await attr(page, "data-bounds")) === boundsG, "S2.4 : les flèches dans la grille du sélecteur ne déplacent pas la sélection (T17)");
   await page.keyboard.press("Enter");
   await frames(page);
   s = await saved(page, tmp, `k-grille-${mode}.roomboard`);
@@ -851,9 +852,456 @@ async function nettete(browser, base) {
   console.log("nettete OK");
 }
 
+// ------------------------------------------------------------------------------------------------------ lot B (T14)
+
+const camera = async (page) => {
+  const [zoom, tx, ty] = ((await attr(page, "data-camera")) ?? "").split(",").map(Number);
+  return { zoom, tx, ty };
+};
+const toScreen = async (page, [wx, wy]) => {
+  const c = await camera(page);
+  return [wx * c.zoom + c.tx, wy * c.zoom + c.ty];
+};
+/** Contact tenu : touchStart, déplacements, `mid` joué contact encore posé, puis touchEnd. */
+async function touchHold(page, cdp, from, to, mid, steps = 10) {
+  const box = await stageBox(page);
+  const at = ([x, y]) => ({ x: Math.round(box.x + x), y: Math.round(box.y + y) });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [at(from)] });
+  for (let i = 1; i <= steps; i++) {
+    const p = at([from[0] + ((to[0] - from[0]) * i) / steps, from[1] + ((to[1] - from[1]) * i) / steps]);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [p] });
+  }
+  await frames(page);
+  if (mid) await mid();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await page.waitForTimeout(400);
+  await frames(page);
+}
+/** Ouvre un fichier enregistré dans un nouvel onglet (Ctrl+O, sélecteur de fichier). */
+async function openFileTab(page, file) {
+  const before = await page.locator(TAB).count();
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Control+o");
+  await (await chooser).setFiles(file);
+  await page.waitForFunction((n) => document.querySelectorAll('[role="tab"][data-tab]').length === n, before + 1, { timeout: 15000 });
+  await frames(page);
+}
+const DC = opt("actions", "drag-copy");
+const rectsOf = (els) => els.filter((e) => kindOf(e, "rect"));
+const ptrue = (page, sel) => page.locator(sel).first().getAttribute("aria-pressed");
+/** Pixels non blancs dans la zone du badge « copie » (18 px, coin bas-droit à 6 px du coin haut gauche de la boîte). */
+async function badgeInk(page) {
+  const b = await selBounds(page);
+  const [l, t] = await toScreen(page, [b[0], b[1]]);
+  return inkIn(page, [l - 24, t - 24, l - 6, t - 6], { max: 700 });
+}
+
+/** S5 : dupliquer et glisser une copie. Les glissements restent tactiles (pas d'équivalent clavier). */
+async function s5(browser, base, mode, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const mouse = stageMouse(page);
+  await useTool(page, mode, "rect");
+  await touchDrag(page, cdp, [380, 230], [560, 380]);
+  await waitAttr(page, "data-elements", "1");
+  await useTool(page, mode, "select");
+  await marquee(page, [340, 190], [620, 430]);
+  await waitAttr(page, "data-selection", "1");
+  // 1. Actions : Dupliquer, Supprimer, la bascule ; Dupliquer donne 2 objets ; Ctrl+Z.
+  await openSection(page, mode, "actions");
+  for (const v of ["duplicate", "delete", "drag-copy"]) check((await page.locator(opt("actions", v)).count()) === 1, `S5.1 : Actions montre « ${v} »`);
+  await press(page, mode, opt("actions", "duplicate"));
+  await waitAttr(page, "data-elements", "2");
+  await page.keyboard.press("Control+z");
+  await waitAttr(page, "data-elements", "1");
+  await page.keyboard.press("Escape");
+  await frames(page);
+  await marquee(page, [340, 190], [620, 430]);
+  await waitAttr(page, "data-selection", "1");
+  // 2. La bascule : dragCopy vrai, badge visible au coin haut gauche.
+  const inkBefore = await badgeInk(page);
+  check((await ptrue(page, DC)) === "false", "S5.2 : la bascule est éteinte au départ (aria-pressed false)");
+  await press(page, mode, DC);
+  check((await ptrue(page, DC)) === "true", "S5.2 : la bascule est enfoncée");
+  let s = await saved(page, tmp, `s5a-${mode}.roomboard`);
+  check(rectsOf(s.elements)[0]?.look?.dragCopy === true, "S5.2 : le rectangle porte dragCopy: true");
+  const inkAfter = await badgeInk(page);
+  lire("S5.badge", `${inkBefore} -> ${inkAfter} pixels non blancs`);
+  check(inkBefore === 0 && inkAfter > 10, `S5.2 : le badge est visible au coin haut gauche (${inkBefore} -> ${inkAfter})`);
+  // 3. Sélection : glisser l'original de 200 px, trois fois ; l'original reste en place.
+  await useTool(page, mode, "select");
+  const orig0 = rectsOf(s.elements)[0];
+  const origX = orig0.transform?.[4] ?? 0;
+  const origY = orig0.transform?.[5] ?? 0;
+  const zoom = (await camera(page)).zoom;
+  const inkAt = (cx, cy) => inkIn(page, [cx - 5, cy - 5, cx + 5, cy + 5]);
+  const G = [425, 230]; // le bord haut, loin des poignées de taille (la poignée prime dans sa portée)
+  let n = 1;
+  const dragOrig = async (to, midCheck) => {
+    await touchHold(page, cdp, G, to, midCheck ? async () => check((await inkAt(...G)) > 3, "S5.3 : pendant le geste, l'original reste peint") : null);
+    n += 1;
+    await waitAttr(page, "data-elements", String(n));
+  };
+  await dragOrig([625, 230], true);
+  s = await saved(page, tmp, `s5b-${mode}.roomboard`);
+  lire("S5.elements", String(s.elements.length));
+  const rs = rectsOf(s.elements);
+  const original = rs.find((e) => e.look?.dragCopy === true);
+  const copy = rs.find((e) => e.look?.dragCopy !== true);
+  check(rs.length === 2 && original && copy, "S5.3 : au relâché, 2 objets");
+  check(original.id === orig0.id && JSON.stringify(original.transform) === JSON.stringify(orig0.transform), "S5.3 : l'original est resté à sa place");
+  const dx = (copy.transform?.[4] ?? 0) - origX;
+  lire("S5.copie.decalage", `${dx * zoom} px`);
+  check(Math.abs(dx * zoom - 200) < 1, `S5.3 : la copie est décalée de 200 px (${dx * zoom})`);
+  lire("S5.copie.dragCopy", copy.look?.dragCopy === undefined ? "absent" : String(copy.look.dragCopy));
+  check(copy.look?.dragCopy === undefined, "S5.3 : la copie n'a pas dragCopy (copies sans fin)");
+  const b1 = await selBounds(page);
+  check((await attr(page, "data-selection")) === "1" && Math.abs((await toScreen(page, [b1[0], b1[1]]))[0] - 580) < 2, "S5.3 : la copie est sélectionnée");
+  await dragOrig([425, 430]); // 2e glissé : le même original, 200 px plus bas
+  await dragOrig([675, 430]); // 3e glissé : 250 à droite, 200 plus bas
+  s = await saved(page, tmp, `s5c-${mode}.roomboard`);
+  check(rectsOf(s.elements).filter((e) => e.look?.dragCopy === true).length === 1 && rectsOf(s.elements).length === 4, "S5.3 : trois glissés, 4 objets, un seul dragCopy (l'original)");
+  const o1 = rectsOf(s.elements).find((e) => e.look?.dragCopy === true);
+  check(JSON.stringify(o1.transform) === JSON.stringify(orig0.transform), "S5.3 : l'original n'a pas bougé après trois copies");
+  for (const want of ["3", "2"]) {
+    await page.keyboard.press("Control+z");
+    await waitAttr(page, "data-elements", want);
+  }
+  lire("S5.annulations", "1 par copie : 4 -> 3 -> 2");
+  for (const want of ["3", "4"]) {
+    await page.keyboard.press("Control+y");
+    await waitAttr(page, "data-elements", want);
+  }
+  // 4. Poignée « Déplacer » : l'original bouge, aucune copie, dragCopy reste, une étape.
+  await page.keyboard.press("Escape");
+  await frames(page);
+  await tapStage(page, ...G);
+  await waitAttr(page, "data-selection", "1");
+  const hb = await selBounds(page);
+  const [hl, ht] = await toScreen(page, [(hb[0] + hb[2]) / 2, hb[1]]);
+  const v0 = Number(await attr(page, "data-version"));
+  await touchDrag(page, cdp, [hl, ht - 28], [hl, ht - 28 - 80]);
+  await waitAttr(page, "data-version", String(v0 + 1));
+  s = await saved(page, tmp, `s5d-${mode}.roomboard`);
+  const moved = rectsOf(s.elements).find((e) => e.id === orig0.id);
+  lire("S5.deplacer", `${s.elements.length} objets, dy ${(((moved.transform?.[5] ?? 0) - origY) * zoom).toFixed(1)} px`);
+  check(s.elements.length === 4 && moved.look?.dragCopy === true && Math.abs(((moved.transform?.[5] ?? 0) - origY) * zoom + 80) < 1, "S5.4 : la poignée Déplacer déplace l'original de 80 px vers le haut, aucune copie, dragCopy reste, une étape");
+  // L'original et la copie : bascule mixte ; la toucher : les deux portent dragCopy.
+  await page.keyboard.press("Escape");
+  await frames(page);
+  await marquee(page, [370, 145], [800, 400]);
+  await waitAttr(page, "data-selection", "2");
+  await openSection(page, mode, "actions");
+  lire("S5.bascule", String(await ptrue(page, DC)));
+  check((await ptrue(page, DC)) === "mixed", 'S5.4 : original et copie : la bascule est aria-pressed="mixed"');
+  await press(page, mode, DC);
+  s = await saved(page, tmp, `s5e-${mode}.roomboard`);
+  check(rectsOf(s.elements).filter((e) => e.look?.dragCopy === true).length === 2, "S5.4 : la bascule mixte pose dragCopy sur les deux");
+  // 6. Clavier : Ctrl+D, flèche sans copie, Tab jusqu'à la bascule, Entrée.
+  if (mode === "clavier") {
+    await page.keyboard.press("Escape");
+    await frames(page);
+    await tapStage(page, 425, 300);
+    await waitAttr(page, "data-selection", "1");
+    await page.keyboard.press("Control+d");
+    await waitAttr(page, "data-elements", "5");
+    await page.keyboard.press("Control+z");
+    await waitAttr(page, "data-elements", "4");
+    check(true, "S5.6 : Ctrl+D duplique (5), Ctrl+Z revient (4)");
+    await page.keyboard.press("Escape");
+    await frames(page);
+    await tapStage(page, 425, 300);
+    await waitAttr(page, "data-selection", "1");
+    const k0 = await selBounds(page);
+    await page.keyboard.press("ArrowLeft");
+    await frames(page);
+    const k1 = await selBounds(page);
+    check((await attr(page, "data-elements")) === "4" && Math.abs(k0[0] - k1[0] - 1) < 0.01, `S5.6 : sur un original dragCopy, ← le déplace de 1 px, sans copie (${k0[0] - k1[0]})`);
+    await page.keyboard.press("Control+z");
+    await frames(page);
+    await page.evaluate(() => document.activeElement?.blur?.());
+    let reached = false;
+    for (let i = 0; i < 160 && !reached; i++) {
+      await page.keyboard.press("Tab");
+      reached = await page.evaluate(() => document.activeElement?.getAttribute("data-option-value") === "drag-copy");
+    }
+    check(reached, "S5.6 : Tab atteint la bascule « Glisser une copie »");
+    check((await ptrue(page, DC)) === "true", "S5.6 : sur l'original, la bascule est enfoncée");
+    await page.keyboard.press("Enter");
+    await frames(page);
+    check((await ptrue(page, DC)) === "false", "S5.6 : Entrée retire dragCopy");
+    await page.keyboard.press("Enter");
+    await frames(page);
+    check((await ptrue(page, DC)) === "true", "S5.6 : Entrée le repose");
+  }
+  // 5. Enregistrer, rouvrir ; CLI : état, SetStyle dragCopy false ; PDF sans badge.
+  s = await saved(page, tmp, `s5f-${mode}.roomboard`);
+  const ids = rectsOf(s.elements).filter((e) => e.look?.dragCopy === true).map((e) => e.id);
+  check(ids.length >= 1, `S5.5 : dragCopy relu dans le fichier enregistré (${ids.length} objets)`);
+  await openFileTab(page, s.file);
+  await waitAttr(page, "data-elements", "4");
+  await page.keyboard.press("Escape");
+  await frames(page);
+  await useTool(page, mode, "select");
+  await marquee(page, [370, 145], [800, 400]);
+  await waitAttr(page, "data-selection", "2");
+  await openSection(page, mode, "actions");
+  check(["true", "mixed"].includes(await ptrue(page, DC)), `S5.5 : rouvert, la bascule relit dragCopy (${await ptrue(page, DC)})`);
+  const lignes = (...o) => `${o.map((x) => JSON.stringify(x)).join("\n")}\n`;
+  const pdf1 = join(tmp, `s5-${mode}-1.pdf`);
+  check(cli(["export", s.file, pdf1]).status === 0, "S5.5 : export PDF (avec dragCopy)");
+  const sansFile = join(tmp, `s5-${mode}-sans.roomboard`);
+  copyFileSync(s.file, sansFile);
+  const run = cli(["run", sansFile, "--save", "--ops", "-"], lignes(...ids.map((id) => ({ type: "SetStyle", ids: [id], patch: { dragCopy: false } }))));
+  check(run.status === 0, `S5.5 : SetStyle { dragCopy: false } par la CLI (code ${run.status} ${run.stderr})`);
+  check(!readState(sansFile).some((e) => e.look?.dragCopy !== undefined), "S5.5 : roomboard state : dragCopy retiré");
+  const pdf2 = join(tmp, `s5-${mode}-2.pdf`);
+  cli(["export", sansFile, pdf2]);
+  check(fluxPdf(pdf1) === fluxPdf(pdf2), "S5.5 : export PDF : aucun badge (le flux est le même sans dragCopy)");
+  check(errors.length === 0, `S5 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  void mouse;
+  await ctx.close();
+  console.log(mode === "doigt" ? "S5 OK" : "S5 OK (clavier)");
+}
+
+/** S5, décision 29 : « tout objet » : un tableau porte la bascule et se glisse en copie. */
+async function s5tableau(browser, base, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  await useTool(page, "doigt", "table");
+  await tapStage(page, 420, 260);
+  await page.waitForSelector(".rb-table-picker:not([hidden])", { timeout: 15000 });
+  await page.locator('button[aria-label="3 colonnes, 2 lignes"]').click();
+  await frames(page);
+  await waitAttr(page, "data-elements", "1");
+  await useTool(page, "doigt", "select");
+  await marquee(page, [340, 200], [900, 520]);
+  await waitAttr(page, "data-selection", "1");
+  await openSection(page, "doigt", "actions");
+  check(!(await page.locator(DC).first().isDisabled()), "S5 tableau : la bascule est active sur un tableau");
+  await press(page, "doigt", DC);
+  let s = await saved(page, tmp, "s5t-a.roomboard");
+  lire("S5.tableau.bascule", String(await ptrue(page, DC)));
+  lire("S5.tableau.look", JSON.stringify(s.elements[0]?.look ?? null));
+  check(s.elements[0]?.look?.dragCopy === true, "S5 tableau : le tableau porte dragCopy: true");
+  const b = await selBounds(page);
+  const [l, t] = await toScreen(page, [b[0], b[1]]);
+  const [r, bo] = await toScreen(page, [b[2], b[3]]);
+  const from = [l + 2, (t + bo) / 2];
+  await touchDrag(page, cdp, from, [from[0] + 200, from[1]]);
+  await waitAttr(page, "data-elements", "2");
+  s = await saved(page, tmp, "s5t-b.roomboard");
+  lire("S5.tableau", `${s.elements.length} objets, dragCopy ${s.elements.map((e) => e.look?.dragCopy ?? "absent").join("/")}`);
+  check(s.elements.length === 2 && s.elements.filter((e) => e.look?.dragCopy === true).length === 1, "S5 tableau : glissé, 2 tableaux, l'original reste dragCopy, la copie non");
+  void r;
+  check(errors.length === 0, `S5 tableau : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  await ctx.close();
+  console.log("S5 tableau OK");
+}
+
+// Image de l'essai (dessinée par code) : 200 x 150, fond blanc dégradé vers 225 à droite (la tolérance a de l'effet), disque
+// rouge de rayon 60 qui contient un anneau blanc fermé (rayons 20 à 30).
+const IW = 200;
+const IH = 150;
+const RED = [220, 38, 38];
+const WHITE = [255, 255, 255];
+const BLUE = [29, 78, 216];
+const imagePng = () =>
+  rgbPng(IW, IH, (x, y) => {
+    const d = Math.hypot(x + 0.5 - 100, y + 0.5 - 75);
+    if (d > 60) {
+      const v = 255 - Math.floor((x * 30) / IW);
+      return [v, v, v];
+    }
+    return d >= 20 && d <= 30 ? WHITE : RED;
+  });
+
+/** S6 : image (rognage par le panneau, baguette depuis le point touché, retournement puis rognage). */
+async function s6(browser, base, mode, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const mouse = stageMouse(page);
+  const png = imagePng();
+  // Fond de la page bleu (pot), pour que la transparence se voie.
+  await page.click(item("fill"));
+  await page.click('button[data-preset="bleu"]');
+  await mouse.click(1100, 560);
+  await frames(page);
+  await dropFile(page, "#stage", "image.png", png, "image/png", [600, 380]);
+  await waitAttr(page, "data-elements", "1");
+  await useTool(page, mode, "select");
+  await mouse.click(600, 380);
+  await waitAttr(page, "data-image", "200x150");
+  // 1. La section Image est ouverte : Rogner, Effacer le fond, Retouches….
+  check(await isOpen(page, "image"), "S6.1 : la section Image est ouverte");
+  for (const v of ["panel-crop", "panel-background", "panel-retouch"]) check((await page.locator(`[data-image-action="${v}"]`).count()) === 1, `S6.1 : « ${v} » présent`);
+  const box = async () => {
+    const [x0, y0, x1, y1] = ((await attr(page, "data-bounds")) ?? "").split(",").map(Number);
+    const [bw] = ((await attr(page, "data-image")) ?? "").split("x").map(Number);
+    return { x0, y0, x1, y1, s: (x1 - x0) / bw };
+  };
+  const disp = async ([dx, dy]) => {
+    const b = await box();
+    return toScreen(page, [b.x0 + dx * b.s, b.y0 + dy * b.s]);
+  };
+  const near = async (d, rgb, tol = 30, r = 3) => {
+    const [x, y] = await disp(d);
+    return inkIn(page, [x - r, y - r, x + r, y + r], { rgb, tol });
+  };
+  const until = async (probe, msg) => {
+    const end = Date.now() + 15000;
+    for (;;) {
+      if (await probe()) return check(true, msg);
+      if (Date.now() > end) throw new Echec(`délai : ${msg}`);
+      await frames(page);
+    }
+  };
+  const act = (id) => press(page, mode, `[data-image-action="${id}"]`);
+  const dragEdge = async (side, dxSrc) => {
+    const b = await box();
+    const [sx, sy] = await toScreen(page, side === "e" ? [b.x1, (b.y0 + b.y1) / 2] : [b.x0, (b.y0 + b.y1) / 2]);
+    await touchDrag(page, cdp, [sx, sy], [sx + dxSrc * b.s * (await camera(page)).zoom, sy]);
+  };
+  /** Largeur affichée attendue à ±2 px source près (le geste du doigt arrondit au pixel de l'écran), hauteur 150. */
+  const waitWidth = async (w) => {
+    await page.waitForFunction((w) => { const m = /^(\d+)x150$/.exec(document.querySelector("#stage")?.getAttribute("data-image") ?? ""); return m !== null && Math.abs(Number(m[1]) - w) <= 2; }, w, { timeout: 15000 }).catch(async () => {
+      throw new Echec(`#stage data-image attendu « ${w}x150 » à 2 px près, lu « ${await attr(page, "data-image")} »`);
+    });
+    return Number((await attr(page, "data-image")).split("x")[0]);
+  };
+  const imgOf = (st) => st.find((e) => e.kind === "image");
+  // 2. Rogner par le panneau : poignée droite, Valider : crop écrit, une étape ; annulable ; l'original reste dans le fichier.
+  const sha = sha256(png);
+  const vA = Number(await attr(page, "data-version"));
+  await press(page, mode, '[data-image-action="panel-crop"]');
+  await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
+  await dragEdge("e", -40);
+  await act("crop-apply");
+  const w1 = await waitWidth(160);
+  lire("S6.largeur", `${w1}x150`);
+  check(Number(await attr(page, "data-version")) === vA + 1, "S6.2 : Valider le rognage : une étape");
+  let s = await saved(page, tmp, `s6a-${mode}.roomboard`);
+  lire("S6.crop", JSON.stringify(imgOf(s.elements)?.image?.crop ?? null));
+  check(imgOf(s.elements)?.image?.crop != null, "S6.2 : crop écrit dans le fichier");
+  const entries = zipEntries(readFileSync(s.file));
+  check([...entries.keys()].some((k) => k.includes(sha)), "S6.2 : non destructif : l'image d'origine (200 x 150) reste dans le fichier");
+  await page.keyboard.press("Control+z");
+  await waitAttr(page, "data-image", "200x150");
+  check(true, "S6.2 : Ctrl+Z annule le rognage (200x150)");
+  await act("close");
+  // 3. Effacer le fond : « Depuis le point touché », pipette armée ; fond, puis anneau ; la pipette reste armée.
+  await press(page, mode, '[data-image-action="panel-background"]');
+  await page.locator("#image-retouche").waitFor({ state: "visible", timeout: 15000 });
+  check((await page.$eval('[data-image-input="mode"]', (el) => el.value)) === "seed", "S6.3 : le panneau s'ouvre en mode « Depuis le point touché »");
+  await page.waitForFunction(() => document.querySelector('[data-image-action="pick"]')?.getAttribute("aria-pressed") === "true", null, { timeout: 15000 });
+  check(true, "S6.3 : la pipette est armée");
+  const tapDisp = async (d) => {
+    const [x, y] = await disp(d);
+    const bx = await stageBox(page);
+    await tapAt(page, bx.x + x, bx.y + y);
+  };
+  const CORNER = [12, 12];
+  const RING = [125, 75];
+  const DISC = [100, 125];
+  const vB = Number(await attr(page, "data-version"));
+  await tapDisp(CORNER);
+  await until(async () => (await near(CORNER, BLUE)) > 20, "S6.3 : toucher le fond : l'aperçu efface le fond (bleu de la page)");
+  check((await near(RING, WHITE, 6)) > 20, "S6.3 : l'anneau blanc intérieur reste opaque");
+  lire("S6.anneau.alpha", (await near(RING, WHITE, 6)) > 20 && (await near(RING, BLUE)) === 0 ? 255 : "?");
+  check((await near(DISC, RED)) > 20, "S6.3 : le disque rouge reste");
+  await page.waitForTimeout(500); // la pipette se réarme après chaque toucher
+  await tapDisp(RING);
+  await until(async () => (await near(RING, BLUE)) > 20, "S6.3 : toucher l'anneau : l'anneau devient transparent");
+  await until(async () => (await near(CORNER, WHITE, 8)) > 20, "S6.3 : seul l'anneau : le fond est revenu");
+  check((await ptrue(page, '[data-image-action="pick"]')) === "true", "S6.3 : la pipette reste armée");
+  await page.waitForTimeout(500);
+  await tapDisp(CORNER); // retour au fond comme départ
+  await until(async () => (await near(CORNER, BLUE)) > 20, "S6.3 : nouveau départ sur le fond");
+  const imgBox = async () => {
+    const b = await box();
+    const [x0, y0] = await toScreen(page, [b.x0, b.y0]);
+    const [x1, y1] = await toScreen(page, [b.x1, b.y1]);
+    return [x0, y0, x1, y1];
+  };
+  const setRange = async (name, v) => {
+    await page.$eval(`[data-image-input="${name}"]`, (el, value) => {
+      el.value = String(value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }, v);
+    await frames(page);
+    await page.waitForTimeout(250);
+    await frames(page);
+  };
+  await setRange("tolerance", 0);
+  const c0 = await inkIn(page, await imgBox(), { rgb: BLUE, tol: 30 });
+  await setRange("tolerance", 40);
+  const c40 = await inkIn(page, await imgBox(), { rgb: BLUE, tol: 30 });
+  lire("S6.tolerance", `0 -> ${c0} px, 40 -> ${c40} px`);
+  check(c40 > c0, `S6.3 : tolérance 0 puis 40 : la zone grandit (${c0} -> ${c40})`);
+  await act("apply");
+  await waitAttr(page, "data-version", String(vB + 1));
+  s = await saved(page, tmp, `s6b-${mode}.roomboard`);
+  const tr = imgOf(s.elements)?.image?.transparent;
+  lire("S6.transparent.x", String(tr?.x));
+  lire("S6.transparent.y", String(tr?.y));
+  check(tr != null && typeof tr.x === "number" && typeof tr.y === "number" && Math.abs(tr.x - 12) <= 3 && Math.abs(tr.y - 12) <= 3, `S6.3 : transparent porte x, y en pixels source (${tr?.x}, ${tr?.y})`);
+  await page.keyboard.press("Control+z");
+  await until(async () => (await near(CORNER, WHITE, 8)) > 20, "S6.3 : Ctrl+Z : le fond est revenu (une étape)");
+  // 4. Retourner horizontalement puis rogner : le cadre de rognage suit l'image retournée.
+  const pxAt = async (d) => {
+    const [x, y] = await disp(d);
+    return page.$eval("#scene", (c, [x, y]) => {
+      const sx = c.width / c.clientWidth;
+      return Array.from(c.getContext("2d").getImageData(Math.round(x * sx), Math.round(y * sx), 1, 1).data);
+    }, [x, y]);
+  };
+  const left0 = (await pxAt([4, 4]))[0];
+  await act("flip-h");
+  await until(async () => (await pxAt([4, 4]))[0] < left0 - 10, "S6.4 : Retourner ↔ : le dégradé du fond est inversé");
+  const x0Flip = (await box()).x0;
+  await act("crop");
+  await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
+  await dragEdge("e", -40);
+  await act("crop-apply");
+  const w2 = await waitWidth(160);
+  check(Math.abs((await box()).x0 - x0Flip) < 0.5, "S6.4 : le bord gauche affiché n'a pas bougé : le rognage a pris le bord droit affiché");
+  s = await saved(page, tmp, `s6c-${mode}.roomboard`);
+  lire("S6.crop.retourne", JSON.stringify(imgOf(s.elements)?.image?.crop ?? null));
+  check((await pxAt([4, 4]))[0] < left0 - 10, "S6.4 : après rognage, l'image reste retournée");
+  // 5. Clavier : Tab jusqu'à Rogner, Entrée ouvre ; Échap annule ; Entrée valide.
+  if (mode === "clavier") {
+    await act("close");
+    await page.evaluate(() => document.activeElement?.blur?.());
+    let reached = false;
+    for (let i = 0; i < 160 && !reached; i++) {
+      await page.keyboard.press("Tab");
+      reached = await page.evaluate(() => document.activeElement?.getAttribute("data-image-action") === "panel-crop");
+    }
+    check(reached, "S6.5 : Tab atteint « Rogner »");
+    await page.keyboard.press("Enter");
+    await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
+    await frames(page);
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press("Escape");
+    await frames(page);
+    check((await page.locator('[data-image-action="crop-apply"]').count()) === 0 && (await attr(page, "data-image")) === `${w2}x150`, `S6.5 : Échap annule la séance (${w2}x150 inchangé)`);
+    await page.keyboard.press("Escape");
+    await frames(page);
+    if ((await page.locator("#image-retouche").count()) > 0) await act("close");
+    await press(page, mode, '[data-image-action="panel-crop"]');
+    await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
+    await dragEdge("e", -20);
+    await page.evaluate(() => document.activeElement?.blur?.());
+    await page.keyboard.press("Enter");
+    const w3 = await waitWidth(w2 - 20);
+    check(w3 < w2, `S6.5 : Entrée valide le rognage (${w2} -> ${w3})`);
+  }
+  check(errors.length === 0, `S6 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  await ctx.close();
+  console.log(mode === "doigt" ? "S6 OK" : "S6 OK (clavier)");
+}
+
 // ---------------------------------------------------------------------------------------------------------- captures
 
-async function captures(browser, base, nom) {
+
+async function captures(browser, base, nom, wanted) {
   mkdirSync(OUT, { recursive: true });
   const avant = nom === "avant";
   const { ctx, page, cdp, errors } = await newPage(browser, base, { scale: 2 });
@@ -868,6 +1316,7 @@ async function captures(browser, base, nom) {
     return { x: x0, y: y0, width: Math.min(w ?? 760, VIEWPORT.width - x0), height: Math.min(h ?? 560, VIEWPORT.height - y0) };
   };
   const shoot = async (name, clip) => {
+    if (wanted !== null && !wanted.includes(name)) return;
     await page.mouse.move(1, 1);
     await frames(page);
     await page.screenshot({ path: join(OUT, `${nom}-${name}.png`), clip, animations: "disabled", caret: "hide" });
@@ -903,6 +1352,75 @@ async function captures(browser, base, nom) {
   if (errors.length) console.log(`captures : erreurs de page : ${errors.join(" | ")}`);
   await ctx.close();
   console.log(`captures : ${OUT}/${nom}-{panneau,selecteur,stylo,alignes}.png`);
+}
+
+/** Captures du lot B (2x) : `<nom>-copie.png` (geste de copie en cours) et `<nom>-image.png` (image rognée, fond effacé). */
+async function capturesB(browser, base, nom, wanted) {
+  mkdirSync(OUT, { recursive: true });
+  const avant = nom === "avant";
+  const want = (n) => wanted === null || wanted.includes(n);
+  const shoot = async (page, name, clip) => {
+    await page.mouse.move(1, 1);
+    await frames(page);
+    await page.screenshot({ path: join(OUT, `${nom}-${name}.png`), clip, animations: "disabled", caret: "hide" });
+    console.log(`capture : ${OUT}/${nom}-${name}.png`);
+  };
+  const clipAround = async (page, w, h) => {
+    const b = await page.locator(OPT).first().boundingBox();
+    const x0 = Math.max(0, (b?.x ?? 0) - 12);
+    const y0 = Math.max(0, (b?.y ?? 0) - 12);
+    return { x: x0, y: y0, width: Math.min(w, VIEWPORT.width - x0), height: Math.min(h, VIEWPORT.height - y0) };
+  };
+  if (want("copie")) {
+    const { ctx, page, cdp } = await newPage(browser, base, { scale: 2 });
+    await useTool(page, "doigt", "rect");
+    await touchDrag(page, cdp, [380, 230], [560, 380]);
+    await useTool(page, "doigt", "select");
+    await marquee(page, [340, 190], [620, 430]);
+    if (!avant) {
+      await openSection(page, "doigt", "actions");
+      await press(page, "doigt", DC);
+    }
+    await frames(page);
+    await touchHold(page, cdp, [425, 230], [625, 230], async () => shoot(page, "copie", await clipAround(page, 1000, 560)));
+    await ctx.close();
+  }
+  if (want("image")) {
+    const { ctx, page, cdp } = await newPage(browser, base, { scale: 2 });
+    const mouse = stageMouse(page);
+    await page.click(item("fill"));
+    await page.click('button[data-preset="bleu"]');
+    await mouse.click(1100, 560);
+    await dropFile(page, "#stage", "image.png", imagePng(), "image/png", [600, 380]);
+    await waitAttr(page, "data-elements", "1");
+    await useTool(page, "doigt", "select");
+    await mouse.click(600, 380);
+    await waitAttr(page, "data-image", "200x150");
+    if (!avant) {
+      const box = async () => {
+        const [x0, y0, x1, y1] = ((await attr(page, "data-bounds")) ?? "").split(",").map(Number);
+        return { x0, y0, x1, y1, s: (x1 - x0) / IW };
+      };
+      await press(page, "doigt", '[data-image-action="panel-crop"]');
+      await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
+      let b = await box();
+      let [sx, sy] = await toScreen(page, [b.x1, (b.y0 + b.y1) / 2]);
+      await touchDrag(page, cdp, [sx, sy], [sx - 40 * b.s * (await camera(page)).zoom, sy]);
+      await press(page, "doigt", '[data-image-action="crop-apply"]');
+      await waitAttr(page, "data-image", "160x150");
+      await press(page, "doigt", '[data-image-action="close"]');
+      await press(page, "doigt", '[data-image-action="panel-background"]');
+      await page.locator("#image-retouche").waitFor({ state: "visible", timeout: 15000 });
+      b = await box();
+      [sx, sy] = await toScreen(page, [b.x0 + 12 * b.s, b.y0 + 12 * b.s]);
+      const bx = await stageBox(page);
+      await tapAt(page, bx.x + sx, bx.y + sy);
+      await page.waitForTimeout(400);
+      await frames(page);
+    }
+    await shoot(page, "image", await clipAround(page, 1000, 700));
+    await ctx.close();
+  }
 }
 
 async function main() {
@@ -944,8 +1462,11 @@ async function main() {
       return 2;
     }
     const lotA = lotArg === undefined || lotArg === "A";
+    const lotB = lotArg === undefined || lotArg === "B";
+    const prises = arg("--prises")?.split(",") ?? null;
     if (wantCaptures) {
-      if (lotA) await captures(browser, base, nom);
+      if (lotA) await captures(browser, base, nom, prises);
+      if (lotB) await capturesB(browser, base, nom, prises);
       return 0;
     }
     // --only s3 : un seul scénario (mise au point) ; sans option, tout est joué.
@@ -964,8 +1485,14 @@ async function main() {
         await once("s4 suite", () => s4suite(browser, base, mode, tmp));
       }
     }
+    for (const mode of ["doigt", "clavier"]) {
+      if (lotB && on("s5")) await once("s5", () => s5(browser, base, mode, tmp));
+      if (lotB && on("s6")) await once("s6", () => s6(browser, base, mode, tmp));
+    }
     if (lotA && on("s7")) await once("s7", () => s7cibles(browser, base));
     if (lotA && on("nettete")) await once("nettete", () => nettete(browser, base));
+    // Décision 29 (tout objet) : en dernier, pour que les autres scénarios s'impriment même si le tableau échoue (défaut de produit).
+    if (lotB && on("s5")) await once("s5 tableau", () => s5tableau(browser, base, tmp));
     console.log(`${LABEL} : OK`);
     return 0;
   } catch (e) {
