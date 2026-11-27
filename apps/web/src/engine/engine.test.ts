@@ -770,6 +770,51 @@ describe("createEngine", () => {
     expect(doc.version()).toBe(v);
   });
 
+  describe("flèches du clavier et lettres des outils", () => {
+
+  const bounds = (e: { state(): { selectionBounds: unknown } }) => e.state().selectionBounds as { x0: number; y0: number };
+    it("la flèche déplace la sélection de 1 px, Maj de 5 px, une étape d'annulation par appui", () => {
+      const { engine, rect, sel } = editSetup();
+      const a = rect(100, 100, 200, 200);
+      sel().setSelection([a]);
+      const x0 = bounds(engine).x0;
+      const y0 = bounds(engine).y0;
+      expect(engine.key(key("ArrowRight"))).toBe(true);
+      expect(bounds(engine).x0).toBe(x0 + 1);
+      expect(engine.key(key("ArrowDown", { shiftKey: true }))).toBe(true);
+      expect(bounds(engine).y0).toBe(y0 + 5);
+      engine.undo();
+      expect(bounds(engine).y0).toBe(y0);
+      expect(bounds(engine).x0).toBe(x0 + 1);
+      engine.undo();
+      expect(bounds(engine).x0).toBe(x0);
+    });
+    it("sans sélection, dans un champ ou avec Ctrl : la touche passe", () => {
+      const { engine, doc, rect, sel } = editSetup();
+      expect(engine.key(key("ArrowLeft"))).toBe(false);
+      const a = rect(100, 100, 200, 200);
+      sel().setSelection([a]);
+      const v = doc.version();
+      expect(engine.key(key("ArrowLeft", { target: { tagName: "TEXTAREA" } }))).toBe(false);
+      expect(engine.key(key("ArrowLeft", { ctrlKey: true }))).toBe(false);
+      expect(doc.version()).toBe(v);
+    });
+
+    it("une lettre libre change l'outil ; S et G ne le changent pas ; un champ garde la lettre", () => {
+      const { engine } = editSetup();
+      expect(engine.key(key("r"))).toBe(true);
+      expect(engine.state().tool).toBe("rect");
+      expect(engine.key(key("h"))).toBe(true);
+      expect(engine.state().tool).toBe("hand");
+      expect(engine.key(key("4"))).toBe(true);
+      expect(engine.state().tool).toBe("ellipse");
+      expect(engine.key(key("s"))).toBe(false);
+      expect(engine.state().tool).toBe("ellipse");
+      expect(engine.key(key("r", { target: { tagName: "INPUT", type: "text" } }))).toBe(false);
+      expect(engine.state().tool).toBe("ellipse");
+    });
+
+  });
   it("changer d'outil ou de page fait quitter l'outil (leave) et vide la sélection", () => {
     const { engine, rect, sel, leaves } = editSetup();
     const a = rect(100, 100, 200, 200);

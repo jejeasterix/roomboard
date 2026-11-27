@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrowMoveKey, toolKey, editAction, isCtrlKey, isPanKey, lineEditKey, linkedKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -14,6 +14,8 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
   "palm-eraser": ["app", "palm-eraser"],
+  nudge: ["nudge", "1"], "nudge-big": ["nudge", "5"],
+  ...Object.fromEntries(["select", "rect", "diamond", "ellipse", "arrow", "line", "pen", "text", "eraser", "hand"].flatMap((t) => [[`tool-${t}`, ["tool", t]], ...(t === "hand" ? [] : [[`tool-${t}-num`, ["tool", t]]])])),
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "Entrée": "Enter" };
 const press = (keys: string): KeyLike => {
@@ -41,6 +43,8 @@ describe("shortcuts", () => {
       else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
       else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
       else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
+      else if (by === "tool") expect(toolKey(e), s.id).toBe(value);
+      else if (by === "nudge") expect(arrowMoveKey({ ...press("→"), key: "ArrowRight", shiftKey: s.keys.startsWith("Maj") })?.dx, s.id).toBe(Number(value));
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.
@@ -103,5 +107,27 @@ describe("OG12 : raccourcis des lignes", () => {
     expect(ariaShortcut("line-edit", false)).toBe("Control+Enter");
     expect(ariaShortcut("line-edit", true)).toBe("Meta+Enter");
     expect(ariaShortcut("linked-node", false)).toBeNull();
+  });
+});
+
+describe("lettres des outils", () => {
+  it("chaque lettre d'outil figure dans SHORTCUTS avec son nom ARIA", () => {
+    for (const [id, key] of [["tool-select", "V"], ["tool-rect", "R"], ["tool-diamond", "D"], ["tool-ellipse", "O"], ["tool-arrow", "A"], ["tool-line", "L"], ["tool-pen", "P"], ["tool-text", "T"], ["tool-eraser", "E"], ["tool-hand", "H"]] as const) {
+      expect(shortcutText(id, false)).toBe(key);
+      expect(ariaShortcut(id, false)).toBe(key);
+    }
+    expect(shortcutText("tool-rect-num", false)).toBe("2");
+    expect(ariaShortcut("tool-eraser-num", false)).toBe("0");
+  });
+  it("les touches de la table sont uniques parmi les touches seules", () => {
+    const single = SHORTCUTS.filter((x) => x.group === "Outils" && x.id.startsWith("tool-")).map((x) => x.keys);
+    expect(new Set(single).size).toBe(single.length);
+  });
+});
+
+describe("flèches du clavier", () => {
+  it("l'Aide liste le déplacement de la sélection", () => {
+    expect(shortcutText("nudge", false)).toBe("↑ ↓ ← →");
+    expect(shortcutText("nudge-big", false)).toBe("Maj+↑ ↓ ← →");
   });
 });
