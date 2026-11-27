@@ -74,6 +74,8 @@
 .rb-sr { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Infobulle (L1-4) : rendue dans body, jamais dans la barre ; left/top en px entiers posés par IconButton, aucun transform. */
 .rb-tip { position: fixed; z-index: 10; pointer-events: none; padding: 6px 10px; background: var(--rf-navy-500); color: var(--rf-white); font-size: 14px; font-weight: 500; line-height: 20px; border-radius: var(--rf-radius-md); white-space: nowrap; box-shadow: var(--rf-shadow-card); }
+/* OG19 (H1-11) : raccourci du bouton après le libellé, en pseudo-élément : le texte de la bulle reste le libellé. */
+.rb-tip[data-keys]::after { content: attr(data-keys); margin-inline-start: 12px; color: var(--rf-gray-300); font-weight: 400; }
 .rb-sep { align-self: center; block-size: var(--rb-icon); border-inline-start: 1px solid var(--rf-gray-300); margin: 0 4px; }
 /* design-l4 (L4-11) : zone de dépôt à icône (file-down), libellé en rb-sr ; 96 px × --rb-btn, couchée dans une barre verticale. */
 .rb-drop { display: grid; place-items: center; flex: none; box-sizing: border-box; inline-size: 96px; block-size: var(--rb-btn); border: 1px dashed var(--rf-gray-500); border-radius: var(--rf-radius-lg); color: var(--rf-navy-500); }

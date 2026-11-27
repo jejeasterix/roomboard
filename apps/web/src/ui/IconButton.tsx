@@ -40,11 +40,12 @@ export function Icon(props: { name: string }): JSX.Element {
 
 /** Infobulle posée en px entiers sous son bouton (L1-4) ; recalculée quand le libellé change ; exportée pour la zone de
  *  dépôt (design-l4, L4-11). */
-export function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Element {
+export function Bubble(props: { label: string; anchor: HTMLElement; keys?: string | null }): JSX.Element {
   let el: HTMLDivElement | undefined;
   const [at, setAt] = createSignal<{ left: number; top: number } | null>(null);
   createEffect(() => {
     void props.label;
+    void props.keys;
     if (el === undefined) return;
     const size = el.getBoundingClientRect();
     setAt(placeTip(props.anchor.getBoundingClientRect(), { width: size.width, height: size.height }, { width: window.innerWidth, height: window.innerHeight }));
@@ -54,6 +55,7 @@ export function Bubble(props: { label: string; anchor: HTMLElement }): JSX.Eleme
       ref={el}
       class="rb-tip"
       role="tooltip"
+      data-keys={props.keys ?? undefined}
       style={at() === null ? { visibility: "hidden" } : { left: `${at()!.left}px`, top: `${at()!.top}px` }}
     >
       {props.label}
@@ -76,12 +78,14 @@ export function tipPointerHandlers(tip: Tip) {
   };
 }
 
-/** Bulle montrée dans `body` tant que l'infobulle est affichée ; `anchor` est lu à l'affichage (l'élément existe alors). */
-export function TipBubble(props: { tip: Tip; label: string; anchor: () => HTMLElement }): JSX.Element {
+/** Bulle montrée dans `body` tant que l'infobulle est affichée ; `anchor` est lu à l'affichage (l'élément existe alors).
+ *  OG19 : `keys`, raccourci du bouton, posé en `data-keys` et montré après le libellé par la feuille de style (`::after`) :
+ *  le texte de la bulle reste le libellé seul. */
+export function TipBubble(props: { tip: Tip; label: string; anchor: () => HTMLElement; keys?: string | null }): JSX.Element {
   return (
     <Show when={props.tip.shown()}>
       <Portal>
-        <Bubble label={props.label} anchor={props.anchor()} />
+        <Bubble label={props.label} anchor={props.anchor()} keys={props.keys} />
       </Portal>
     </Show>
   );
@@ -93,6 +97,8 @@ export interface IconButtonProps {
   readonly pressed?: boolean | null;
   readonly disabled?: boolean;
   readonly attrs?: Readonly<Record<string, string>>;
+  /** OG19 : raccourci montré dans l'infobulle (`text`) et annoncé par `aria-keyshortcuts` (`aria`). */
+  readonly shortcut?: { readonly text: string; readonly aria: string | null } | null;
   readonly children?: JSX.Element;
   readonly onPress: () => void;
 }
@@ -115,6 +121,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         class={cls()}
         aria-label={props.label}
         aria-pressed={props.pressed ?? undefined}
+        aria-keyshortcuts={props.shortcut?.aria ?? undefined}
         disabled={props.disabled === true}
         onClick={() => props.onPress()}
         {...tipPointerHandlers(tip)}
@@ -130,7 +137,7 @@ export function IconButton(props: IconButtonProps): JSX.Element {
           <span class="rb-sr">{props.label}</span>
         </Show>
       </button>
-      <TipBubble tip={tip} label={props.label} anchor={() => button!} />
+      <TipBubble tip={tip} label={props.label} anchor={() => button!} keys={props.shortcut?.text} />
     </>
   );
 }
