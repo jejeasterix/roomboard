@@ -3,7 +3,7 @@ import { NO_ISLAND, type DeviceSettings } from "../device-settings";
 import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
-  BUTTON_PX, EDGE, GAP, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, tabsWidth,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, tabsWidth,
   type Anchor, type Box, type Corners, type Lane, type Point,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
@@ -25,8 +25,7 @@ export interface Placed { readonly x: number; readonly y: number; readonly w: nu
 export const GRIP_LABEL = "Déplacer la barre (flèches ; Maj : grand pas ; Début : recentrer)";
 export const COLLAPSE_LABEL = "Replier la barre";
 export const EXPAND_LABEL = "Déplier la barre";
-/** L2-8, H4 : seul ce rôle se déplace et se replie. */
-export const MOVABLE_ROLE = "tools";
+const isSide = (anchor: Anchor): boolean => anchor === "side-start" || anchor === "side-end";
 
 const ZERO: Box = Object.freeze({ w: 0, h: 0 });
 const sameBox = (a: Box, b: Box): boolean => a.w === b.w && a.h === b.h;
@@ -119,7 +118,7 @@ function ChromeButton(props: ChromeProps): JSX.Element {
 export interface IslandProps {
   readonly bar: Bar;
   readonly anchor: Anchor;
-  /** L2-8 : barre `floating` de rôle `tools` : poignée, Replier, clavier, appareil. */
+  /** L2-8 : barre `floating` de rôle `tools` ou `pages` (`MOVABLE_ROLES`) : poignée, Replier, clavier, appareil. */
   readonly movable: boolean;
   readonly profileId: string;
   readonly store?: IslandStore;
@@ -141,7 +140,9 @@ export function Island(props: IslandProps): JSX.Element {
   const [drag, setDrag] = createSignal<Point | null>(null);
   const [size, setSize] = createSignal<Box>(ZERO, { equals: sameBox });
   const collapsed = (): boolean => props.movable && (own() ?? props.bar.collapsed);
-  const positioned = props.movable || isCentered(props.anchor);
+  const positioned = props.movable || isCentered(props.anchor) || isSide(props.anchor);
+  /** Le panneau des profils ne repousse que l'îlot d'outils (L2-16) ; les autres îlots mobiles restent où ils sont. */
+  const sheetLane_ = (): Lane | null => (props.bar.role === "tools" ? props.sheet() : null);
   let el: HTMLDivElement | undefined;
   let stopDrag: (() => void) | null = null;
 
@@ -153,13 +154,18 @@ export function Island(props: IslandProps): JSX.Element {
     if (area.w === 0 || area.h === 0) return null;
     const s = size();
     const c = props.corners();
-    const lane = props.movable ? props.sheet() : null;
+    const lane = props.movable ? sheetLane_() : null;
     if (lane !== null) return { ...lane, wrap: true };
     const full = Math.max(0, area.w - 2 * EDGE);
+    /** Voie latérale : l'îlot déplacé garde une hauteur bornée à la case sous lui. */
+    const tall = (p: Point): { readonly maxHeight?: number } => (isSide(props.anchor) ? { maxHeight: Math.max(0, area.h - EDGE - p.y) } : {});
     const d = drag();
-    if (d !== null) return { ...d, maxWidth: full, wrap: false };
+    if (d !== null) return { ...d, ...tall(d), maxWidth: full, wrap: false };
     const a = at();
-    if (a !== null) return { ...placeIsland(props.anchor, s, area, a, c), maxWidth: full, wrap: false };
+    if (a !== null) {
+      const p = placeIsland(props.anchor, s, area, a, c);
+      return { ...p, ...tall(p), maxWidth: full, wrap: false };
+    }
     return { ...laneOf(props.anchor, s, area, c), wrap: false };
   });
 
@@ -241,7 +247,7 @@ export function Island(props: IslandProps): JSX.Element {
   /** L2-9 : glisser la poignée ; écrit au lâcher seulement ; Échap, `pointercancel` : retour au départ. */
   const startDrag = (e: PointerEvent): void => {
     const p0 = pos();
-    if (p0 === null || props.sheet() !== null) return;
+    if (p0 === null || sheetLane_() !== null) return;
     const x0 = e.clientX;
     const y0 = e.clientY;
     stopDrag = startPointerGesture(e, {
@@ -256,7 +262,7 @@ export function Island(props: IslandProps): JSX.Element {
   };
   /** L2-10 : flèches 16 px, Maj 64 px, Début recentre ; la touche traitée ne va pas au moteur. */
   const onGripKey = (e: KeyboardEvent): void => {
-    if (props.sheet() !== null) return;
+    if (sheetLane_() !== null) return;
     if (e.key === "Home") {
       if (pos() === null) return;
       e.preventDefault();
@@ -281,13 +287,22 @@ export function Island(props: IslandProps): JSX.Element {
       ref={el}
       class="rb-island"
       data-island={props.bar.id}
-      data-anchor={props.anchor}
+      data-anchor={anchorOf(props.bar)}
       data-wrap={pos()?.wrap === true ? "1" : undefined}
       data-collapsed={collapsed() ? "1" : undefined}
-      style={pos() === null ? undefined : { left: `${pos()!.x}px`, top: `${pos()!.y}px`, "max-inline-size": `${pos()!.maxWidth}px` }}
+      style={
+        pos() === null
+          ? undefined
+          : {
+              left: `${pos()!.x}px`,
+              top: `${pos()!.y}px`,
+              "max-inline-size": `${pos()!.maxWidth}px`,
+              ...(pos()!.maxHeight !== undefined ? { "max-block-size": `${pos()!.maxHeight}px` } : {}),
+            }
+      }
     >
       <Show when={props.movable}>
-        <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => props.sheet() === null && commit(null)} />
+        <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => sheetLane_() === null && commit(null)} />
       </Show>
       {props.children(collapsed)}
       <Show when={props.movable}>
@@ -340,11 +355,15 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   const [statusBox, setStatusBox] = createSignal<Box>(ZERO, { equals: sameBox });
   const statusW = (): number => statusBox().w;
   const [tools, setTools] = createSignal<Placed | null>(null);
-  const byAnchor = (anchor: Anchor) => createMemo(() => props.bars().filter((b) => anchorOf(b.role) === anchor));
+  /** Îlot posé par `left` / `top` dans le calque : centré, latéral ou mobile ; les autres vont dans leur groupe de coin. */
+  const free = (b: Bar): boolean => isCentered(anchorOf(b)) || isSide(anchorOf(b)) || MOVABLE_ROLES.has(b.role);
+  const byAnchor = (anchor: Anchor) => createMemo(() => props.bars().filter((b) => !free(b) && anchorOf(b) === anchor));
   const starts = byAnchor("top-start");
   const ends = byAnchor("top-end");
   const bottoms = byAnchor("bottom-start");
-  const centered = createMemo(() => props.bars().filter((b) => isCentered(anchorOf(b.role))));
+  /** `design-l4:81` : les îlots latéraux viennent après les centrés dans le DOM, quel que soit l'ordre du profil. */
+  const centered = createMemo(() => props.bars().filter((b) => free(b) && !isSide(anchorOf(b))));
+  const sides = createMemo(() => props.bars().filter((b) => isSide(anchorOf(b))));
   /** Abscisse de l'îlot des onglets : après les îlots du menu et leur écart. */
   const startX = (): number => EDGE + menuBox().w + (menuBox().w > 0 ? GAP : 0);
   const topCorners = createMemo((): Corners => ({
@@ -353,6 +372,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     band: Math.max(startBox().h, endBox().h),
   }));
   const bottomCorners = createMemo((): Corners => ({ start: bottomBox().w, end: 0, band: bottomBox().h }));
+  const sideCorners = createMemo((): Corners => ({ start: 0, end: 0, band: topCorners().band, foot: bottomBox().h }));
   const sheet = createMemo((): Lane | null => (props.sheetOpen() ? sheetLane(area(), sheetWidth(), topCorners().band, BUTTON_PX[props.size()]) : null));
   const tabsMax = createMemo(() => {
     const t = tools();
@@ -381,8 +401,8 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
     </Show>
   );
   const island = (bar: Bar, profileId: string): JSX.Element => {
-    const anchor = anchorOf(bar.role);
-    const movable = bar.role === MOVABLE_ROLE;
+    const anchor = anchorOf(bar);
+    const movable = MOVABLE_ROLES.has(bar.role);
     return (
       <Island
         bar={bar}
@@ -391,10 +411,10 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         profileId={profileId}
         {...(props.store !== undefined ? { store: props.store } : {})}
         area={area}
-        corners={anchor.startsWith("top") ? topCorners : bottomCorners}
+        corners={isSide(anchor) ? sideCorners : anchor.startsWith("top") ? topCorners : bottomCorners}
         sheet={sheet}
         {...(props.watch !== undefined ? { watch: props.watch } : {})}
-        {...(movable ? { onPlaced: (p: Placed | null) => setTools(p) } : {})}
+        {...(bar.role === "tools" ? { onPlaced: (p: Placed | null) => setTools(p) } : {})}
       >
         {(c) => props.render(bar, c)}
       </Island>
@@ -418,6 +438,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         {islands(bottoms)}
       </div>
       {islands(centered)}
+      {islands(sides)}
     </div>
   );
 }
