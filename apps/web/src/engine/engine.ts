@@ -11,7 +11,8 @@ import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCame
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, pageKey, type KeyLike } from "./input/keys";
+import { stepTarget, wholeUnits } from "../app/layer-list";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, orderKey, pageKey, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -102,7 +103,7 @@ export interface EngineDeps {
 /**
  * Raccourcis de page (DA9) pris avant le moteur : hors champ de saisie et hors IME (`pageKey`). Une touche tenue
  * (`repeat`) ne crée jamais de page ni de copie (H7). Vrai si l'action a eu lieu (la page appelle preventDefault).
- * `sidebar-layers` ne fait rien au lot 1.
+ * `sidebar-pages` et `sidebar-layers` ouvrent l'onglet Pages ou Calques de la barre latérale (lot 2 pour le second).
  */
 export function pageShortcut(
   e: KeyLike & { readonly repeat?: boolean },
@@ -127,7 +128,9 @@ export function pageShortcut(
       toggleSidebar("pages");
       return true;
     case "sidebar-layers":
-      return false;
+      if (toggleSidebar === undefined) return false;
+      toggleSidebar("calques");
+      return true;
   }
 }
 
@@ -145,6 +148,16 @@ export interface Engine {
   setTool(t: ToolChoice): void;
   setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
+  /** Lot 2 (calques) : outil Sélection, sélection = `ids` de la page montrée (les inconnus sont ignorés) ; [] la vide. */
+  select(ids: readonly string[]): void;
+  /** Lot 2 : bloc `ids` au rang `to` de la pile (0 = arrière-plan) ; une étape ; faux si refusé ou sans effet. */
+  restack(ids: readonly string[], to: number): boolean;
+  /** Lot 2 : la sélection (groupes entiers) au premier plan ; faux sans sélection ou déjà en haut. */
+  bringToFront(): boolean;
+  /** Lot 2 : la sélection (groupes entiers) à l'arrière-plan ; faux sans sélection ou déjà en bas. */
+  sendToBack(): boolean;
+  /** Lot 2 : la sélection d'un rang vers le premier plan (`up`) ou l'arrière-plan (`down`) ; faux si impossible. */
+  reorder(dir: "up" | "down"): boolean;
   /** C3 (Z1) : groupe la sélection (≥ 2 unités) ; une étape ; sélection gardée ; faux si rien n'est fait. */
   group(): boolean;
   /** C3 (Z1) : retire le groupe extérieur de la sélection ; faux sans groupe. */
@@ -376,6 +389,28 @@ export function createEngine(deps: EngineDeps): Engine {
     const sel = [...selectTool.selection()];
     if (!selectionUnits(sel, selectedViews()).grouped) return false;
     return run({ type: "Ungroup", ids: sel }) !== null;
+  }
+
+  /** Lot 2 : `Restack` ; vrai seulement si l'ordre a changé (même ordre : aucune étape, version inchangée). */
+  function restack(ids: readonly string[], to: number): boolean {
+    const version = doc.version();
+    const change = run({ type: "Restack", ids: [...ids], to });
+    return change !== null && doc.version() !== version;
+  }
+  /** Sélection étendue aux groupes entiers, dans l'ordre de la pile. */
+  const selectedBlock = (): string[] => wholeUnits(doc, pageId, selectTool.selection());
+  function reorder(dir: "up" | "down"): boolean {
+    const sel = selectTool.selection();
+    const to = sel.length === 0 ? null : stepTarget(doc, pageId, sel, dir);
+    return to !== null && restack(selectedBlock(), to);
+  }
+  function bringToFront(): boolean {
+    const ids = selectedBlock();
+    return ids.length > 0 && restack(ids, doc.elementIds(pageId).length - ids.length);
+  }
+  function sendToBack(): boolean {
+    const ids = selectedBlock();
+    return ids.length > 0 && restack(ids, 0);
   }
 
   function state(): EngineState {
@@ -694,6 +729,17 @@ export function createEngine(deps: EngineDeps): Engine {
     run,
     group,
     ungroup,
+    restack,
+    bringToFront,
+    sendToBack,
+    reorder,
+    select(ids) {
+      engine.setTool("select");
+      const present = new Set(doc.elementIds(pageId));
+      selectTool.setSelection(ids.filter((id) => present.has(id)));
+      requestScene();
+      emit();
+    },
     deleteElements(ids) {
       const list = [...ids];
       run({ type: "Delete", ids: list });
@@ -729,6 +775,15 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       if (isPanKey(e)) {
         spaceHeld = true;
+        return true;
+      }
+      const order = orderKey(e);
+      if (order !== null) {
+        // Lot 2 : Ctrl+↑ ↓ un rang, Ctrl+Maj+↑ ↓ extrémités ; pris seulement avec une sélection (sinon la touche passe).
+        if (selectTool.selection().length === 0) return false;
+        if (order === "front") bringToFront();
+        else if (order === "back") sendToBack();
+        else reorder(order);
         return true;
       }
       const edit = editAction(e);

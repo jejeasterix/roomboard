@@ -8,7 +8,8 @@ import type { PageLayout } from "../core/api";
 import type { ToolbarHost } from "../app/toolbar-host";
 import type { Toolbar, ToolItem } from "../toolbar";
 import type { ToolbarView } from "./item-state";
-import { SideBar, type PagesPort } from "./SideBar";
+import type { LayerRow } from "../app/layer-list";
+import { SideBar, type LayersPort, type PagesPort } from "./SideBar";
 
 const item = (action: string): ToolItem => ({ id: action, kind: "action", action, label: action, requires: [], rest: {} });
 const bar: Toolbar = {
@@ -209,5 +210,126 @@ describe("SideBar (T10)", () => {
     expect(rule(".rb-side-menu button")).toMatch(/min-block-size: var\(--rb-btn-s\)/);
     expect(css).toMatch(/--rb-btn-s: 44px/);
     expect(css).not.toMatch(/\.rb-side[^{]*\{[^}]*\b48px/);
+  });
+});
+
+describe("SideBar — onglet Calques (T14)", () => {
+  const ROWS: readonly LayerRow[] = [
+    { key: "c", ids: ["c"], label: "Texte : Bonjour", kind: "text", fixed: false },
+    { key: "group:g", ids: ["a", "b"], label: "Groupe (2)", kind: "group", fixed: false },
+    { key: "grid", ids: [], label: "Grille", kind: "grid", fixed: true },
+    { key: "backdrop", ids: [], label: "Fond de la page", kind: "backdrop", fixed: true },
+  ];
+  function withLayers(o: { selected?: readonly string[]; collapsed?: boolean } = {}) {
+    const base = setup({ collapsed: o.collapsed ?? false });
+    cleanup();
+    const [selected, setSelected] = createSignal<readonly string[]>(o.selected ?? []);
+    const rows = vi.fn(() => ROWS);
+    const layers = { rows, selected, select: vi.fn((ids: readonly string[]) => setSelected(ids)), drop: vi.fn() } satisfies LayersPort;
+    const host = { runAction: vi.fn() } as unknown as ToolbarHost;
+    const store = { sidebar: vi.fn(() => ({ tab: "pages" as const, thumb: "m" as const })), setSidebar: vi.fn() };
+    const r = render(() => <SideBar bar={bar} collapsed={() => o.collapsed ?? false} view={() => view()} host={host} pages={base.pages} layers={layers} store={store} />);
+    const lines = (): HTMLElement[] => [...r.container.querySelectorAll<HTMLElement>(".rb-layers-list [data-layer]")];
+    const movable = (): HTMLElement[] => lines().filter((l) => !l.hasAttribute("data-fixed"));
+    const list = r.container.querySelector<HTMLElement>(".rb-layers-list")!;
+    Object.defineProperty(list, "scrollTop", { get: () => 0, set: () => undefined });
+    list.getBoundingClientRect = () => new DOMRect(0, 0, 160, 4 * ROW);
+    const tab = (): HTMLElement => r.container.querySelector<HTMLElement>('[data-tab="calques"]')!;
+    /** Montre l'onglet, puis pose les rectangles que happy-dom ne calcule pas (ligne i : [i × 100, i × 100 + 100[). */
+    const open = (): void => {
+      fireEvent.click(tab());
+      movable().forEach((b, i) => {
+        b.getBoundingClientRect = () => new DOMRect(0, i * ROW, 160, ROW);
+        b.setPointerCapture = vi.fn();
+        b.releasePointerCapture = vi.fn();
+      });
+    };
+    return { ...r, layers, store, lines, movable, tab, rows, open };
+  }
+
+  it("onglet Calques : icône layers, Pages d'abord ; toucher l'onglet montre la liste, cache les miniatures, retient l'onglet", () => {
+    const { container, tab, store } = withLayers();
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+    expect(tab().textContent).toContain("Calques");
+    expect(tab().querySelector('[data-icon="layers"]')).not.toBeNull();
+    expect(tab().getAttribute("aria-selected")).toBe("false");
+    expect(container.querySelector('[data-tab="pages"]')!.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector(".rb-layers-list")!.closest("[hidden]")).not.toBeNull();
+    fireEvent.click(tab());
+    expect(tab().getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector('[data-tab="pages"]')!.getAttribute("aria-selected")).toBe("false");
+    expect(container.querySelector(".rb-layers-list")!.closest("[hidden]")).toBeNull();
+    expect(container.querySelector(".rb-pages-list")!.closest("[hidden]")).not.toBeNull();
+    expect(store.setSidebar).toHaveBeenLastCalledWith({ tab: "calques", thumb: "m" });
+    expect(container.querySelector('[data-item="page-add"]')!.closest("[hidden]")).not.toBeNull();
+  });
+
+  it("lignes : premier plan en haut, un groupe = une ligne, lignes fixes marquées ; calculées seulement onglet montré", () => {
+    const { container, tab, lines, rows } = withLayers();
+    expect(rows).not.toHaveBeenCalled();
+    fireEvent.click(tab());
+    expect(lines().map((l) => l.textContent)).toEqual(["Texte : Bonjour", "Groupe (2)", "Grille", "Fond de la page"]);
+    expect(lines().map((l) => l.hasAttribute("data-fixed"))).toEqual([false, false, true, true]);
+    expect(container.querySelector(".rb-layers-list")!.hasAttribute("draggable")).toBe(false);
+    expect(container.querySelector("[draggable]")).toBeNull();
+  });
+
+  it("toucher une ligne sélectionne ses ids ; Ctrl+toucher ajoute, puis retire ; une ligne fixe ne fait rien", () => {
+    const { open, movable, lines, layers } = withLayers();
+    open();
+    const [text, group] = movable();
+    text!.dispatchEvent(ptr("pointerdown", 50));
+    text!.dispatchEvent(ptr("pointerup", 50));
+    expect(layers.select).toHaveBeenLastCalledWith(["c"]);
+    const ctrl = (el: HTMLElement): void => {
+      const d = ptr("pointerdown", 150);
+      Object.defineProperty(d, "ctrlKey", { value: true });
+      el.dispatchEvent(d);
+      el.dispatchEvent(ptr("pointerup", 150));
+    };
+    ctrl(group!);
+    expect(layers.select).toHaveBeenLastCalledWith(["c", "a", "b"]);
+    ctrl(group!);
+    expect(layers.select).toHaveBeenLastCalledWith(["c"]);
+    expect(text!.getAttribute("aria-pressed")).toBe("true");
+    const n = vi.mocked(layers.select).mock.calls.length;
+    fireEvent.click(lines()[2]!);
+    expect(layers.select).toHaveBeenCalledTimes(n);
+  });
+
+  it("clavier : Entrée ou Espace (clic de détail 0) sélectionne ; ↑ ↓ déplacent le focus ; Ctrl+↑ ↓ ne sont pas pris (vont au moteur)", () => {
+    const { tab, movable, layers } = withLayers();
+    fireEvent.click(tab());
+    const [text, group] = movable();
+    text!.focus();
+    fireEvent.click(text!);
+    expect(layers.select).toHaveBeenLastCalledWith(["c"]);
+    fireEvent.keyDown(text!, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(group);
+    const seen = vi.fn();
+    window.addEventListener("keydown", seen);
+    fireEvent.keyDown(group!, { key: "ArrowUp", ctrlKey: true });
+    expect(seen).toHaveBeenCalledTimes(1);
+    window.removeEventListener("keydown", seen);
+  });
+
+  it("glisser la ligne du groupe au-dessus du texte : drop(clé, 0), aux événements de pointeur, sans toucher", () => {
+    const { open, movable, layers } = withLayers();
+    open();
+    const group = movable()[1]!;
+    group.dispatchEvent(ptr("pointerdown", 150));
+    group.dispatchEvent(ptr("pointermove", 20));
+    group.dispatchEvent(ptr("pointerup", 20));
+    expect(layers.drop).toHaveBeenCalledWith("group:g", 0);
+    expect(layers.select).not.toHaveBeenCalled();
+  });
+
+  it("la sélection de la scène surligne ses lignes (aria-pressed) ; cibles ≥ 44 px lues dans rb.css", () => {
+    const { tab, movable } = withLayers({ selected: ["a", "b"] });
+    fireEvent.click(tab());
+    expect(movable().map((l) => l.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = (sel: string): string => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
+    expect(rule(".rb-side .rb-layer")).toMatch(/min-block-size: var\(--rb-btn-s\)/);
   });
 });

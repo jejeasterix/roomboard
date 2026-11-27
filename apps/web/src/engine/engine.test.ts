@@ -560,7 +560,9 @@ describe("createEngine", () => {
     expect(doc.pageIds()).toHaveLength(3);
     expect(pageShortcut(keyEv("P", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
     expect(toggle).toHaveBeenCalledWith("pages");
-    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(false);
+    // Lot 2 : Ctrl+Maj+L, sans effet au lot 1, ouvre l'onglet Calques (cadrage, décision 22).
+    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(toggle).toHaveBeenLastCalledWith("calques");
   });
 
   it("dans un champ de saisie, PageDown et Ctrl+M ne font rien de la page", () => {
@@ -1902,5 +1904,93 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(closed).toHaveBeenCalledTimes(1);
     engine.dispose();
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("moteur — ordre des objets (lot 2)", () => {
+  function stack() {
+    const doc = fakeCore.blank();
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", [], ctx),
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => createSelectTool(ctx),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    const page = engine.state().page;
+    const rect = (x: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0: x, y0: 100, x1: x + 50, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
+    const ctrl = (key: string, shiftKey = false): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey, altKey: false, isComposing: false, target: null });
+    return { doc, engine, page, rect, ctrl };
+  }
+  it("select(ids) : outil Sélection, sélection posée, état émis ; select([]) la vide", () => {
+    const { engine, rect } = stack();
+    const a = rect(0);
+    engine.setTool("pen");
+    engine.select([a]);
+    expect(engine.tool()).toBe("select");
+    expect(engine.state().selection).toEqual([a]);
+    engine.select([]);
+    expect(engine.state().selection).toEqual([]);
+  });
+  it("bringToFront() : une étape, un seul Annuler rend l'ordre ; déjà au premier plan : faux", () => {
+    const { engine, doc, page, rect } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    const c = rect(200);
+    engine.select([a]);
+    expect(engine.bringToFront()).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, c, a]);
+    const v = doc.version();
+    expect(engine.bringToFront()).toBe(false);
+    expect(doc.version()).toBe(v);
+    engine.undo();
+    expect(doc.elementIds(page)).toEqual([a, b, c]);
+  });
+  it("sendToBack() : la sélection descend au rang 0, ordre relatif gardé ; sans sélection : faux", () => {
+    const { engine, doc, page, rect } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    const c = rect(200);
+    expect(engine.sendToBack()).toBe(false);
+    engine.select([b, c]);
+    expect(engine.sendToBack()).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, c, a]);
+    expect(engine.sendToBack()).toBe(false); // déjà à l'arrière-plan : aucune étape
+    engine.undo();
+    expect(doc.elementIds(page)).toEqual([a, b, c]);
+  });
+  it("restack(ids, to) : relayé au cœur ; refus (rang hors bornes) : faux, erreur dans l'état", () => {
+    const { engine, doc, page, rect } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    expect(engine.restack([a], 1)).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, a]);
+    expect(engine.restack([a], 5)).toBe(false);
+    expect(engine.state().error).not.toBeNull();
+  });
+  it("Ctrl+↑ / Ctrl+↓ : un rang ; Ctrl+Maj+↑ / ↓ : extrémités ; touche prise seulement avec une sélection", () => {
+    const { engine, doc, page, rect, ctrl } = stack();
+    const a = rect(0);
+    const b = rect(100);
+    const c = rect(200);
+    expect(engine.key(ctrl("ArrowUp"))).toBe(false);
+    engine.select([a]);
+    expect(engine.key(ctrl("ArrowUp"))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, a, c]);
+    expect(engine.key(ctrl("ArrowUp", true))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, c, a]);
+    expect(engine.key(ctrl("ArrowDown"))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([b, a, c]);
+    expect(engine.key(ctrl("ArrowDown", true))).toBe(true);
+    expect(doc.elementIds(page)).toEqual([a, b, c]);
+  });
+  it("Ctrl+Maj+L : ouvre l'onglet Calques (pageShortcut), Ctrl+Maj+P : Pages", () => {
+    const seen: string[] = [];
+    const eng = { prevPage: () => false, nextPage: () => false, nextOrAdd: () => false, addPage: () => false, duplicatePage: () => false };
+    const ev = (key: string): KeyLike => ({ key, ctrlKey: true, metaKey: false, shiftKey: true, altKey: false, isComposing: false, target: null });
+    expect(pageShortcut(ev("L"), eng, (t) => seen.push(t))).toBe(true);
+    expect(pageShortcut(ev("P"), eng, (t) => seen.push(t))).toBe(true);
+    expect(seen).toEqual(["calques", "pages"]);
+    expect(pageShortcut(ev("L"), eng)).toBe(false);
   });
 });

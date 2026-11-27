@@ -2,6 +2,7 @@
 import { For, Show, type Accessor, type JSX } from "solid-js";
 import type { SelectionAction, ToolbarHost } from "../app/toolbar-host";
 import { TOOL_TABLE } from "../toolbar";
+import { Icon } from "./IconButton";
 import type { ToolbarView } from "./item-state";
 
 export const SELECTION_ACTIONS: readonly { readonly id: SelectionAction; readonly label: string }[] = Object.freeze([
@@ -10,6 +11,12 @@ export const SELECTION_ACTIONS: readonly { readonly id: SelectionAction; readonl
   { id: "copy", label: "Copier" },
   { id: "paste", label: "Coller" },
   { id: "export", label: "Exporter" },
+]);
+
+/** Ordre des objets (lot 2, décision 27) : actions hors catalogue, jouées par `host.runAction` ; grisées sans sélection. */
+export const LAYER_ACTIONS: readonly { readonly id: string; readonly label: string; readonly icon: string }[] = Object.freeze([
+  { id: "layer-front", label: "Premier plan", icon: "bring-to-front" },
+  { id: "layer-back", label: "Arrière-plan", icon: "send-to-back" },
 ]);
 
 /** Table de prédicats (la garde de src/ui interdit `switch`) : vrai = bouton grisé. */
@@ -32,6 +39,14 @@ export function SelectionRow(props: { view: Accessor<ToolbarView>; host: Toolbar
       <For each={SELECTION_ACTIONS}>
         {(a) => (
           <button type="button" data-selection-action={a.id} disabled={selectionDisabled(a.id, props.view())} onClick={() => props.host.selection(a.id)}>
+            {a.label}
+          </button>
+        )}
+      </For>
+      <For each={LAYER_ACTIONS}>
+        {(a) => (
+          <button type="button" data-selection-action={a.id} disabled={(props.view().selection?.length ?? 0) === 0} onClick={() => props.host.runAction(a.id)}>
+            <Icon name={a.icon} />
             {a.label}
           </button>
         )}
