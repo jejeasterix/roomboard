@@ -24,6 +24,7 @@ function mount(o: Opts) {
     duplicateSelection: vi.fn(() => true),
     deleteSelection: vi.fn(() => true),
     run: vi.fn(() => null),
+    runAll: vi.fn(() => null),
     bringToFront: vi.fn(() => true),
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
@@ -164,6 +165,17 @@ describe("OptionsPanel lot 2 (T15)", () => {
     expect(engine.run).toHaveBeenNthCalledWith(1, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } });
     expect(engine.run).toHaveBeenNthCalledWith(2, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { size: 48 } });
     expect(engine.run).toHaveBeenNthCalledWith(3, { type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: null } });
+  });
+  it("T37 : Police sur trois textes : un seul runAll (une étape d'annulation), aucun run", () => {
+    const { container, engine } = mount({ tool: "select", selection: [textEl("a", "ab"), textEl("b", "cde"), textEl("c", "f")] });
+    fireEvent.click(container.querySelector('[data-option="font"] [data-choice="Georgia"]')!);
+    expect(engine.run).not.toHaveBeenCalled();
+    expect(engine.runAll).toHaveBeenCalledTimes(1);
+    expect(engine.runAll).toHaveBeenCalledWith([
+      { type: "FormatText", id: "a", start: 0, len: 2, attrs: { font: "Georgia" } },
+      { type: "FormatText", id: "b", start: 0, len: 3, attrs: { font: "Georgia" } },
+      { type: "FormatText", id: "c", start: 0, len: 1, attrs: { font: "Georgia" } },
+    ]);
   });
   it("fillStyle : absent sans fond, trois choix avec un fond", () => {
     expect(mount({ tool: "rect", selection: [] }).container.querySelector('[data-option="fillStyle"]')).toBeNull();

@@ -2481,8 +2481,12 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
     const add = (x: number, content: string): string =>
       doc.apply({ type: "SetText", page, id: null, x, y: 10, content, color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 }).ids[0] ?? "";
     const ids = [add(0, "un"), add(300, "deux"), add(600, "trois")];
+    const lenOf = (id: string): number => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.content.length : 0;
+    };
     const fmt = (attrs: { font?: string | null; size?: number }) =>
-      ids.map((id) => ({ type: "FormatText" as const, id, start: 0, len: doc.element(id)?.kind === "text" ? doc.element(id)!.text.content.length : 0, attrs }));
+      ids.map((id) => ({ type: "FormatText" as const, id, start: 0, len: lenOf(id), attrs }));
     const fontOf = (id: string): string | undefined => {
       const el = doc.element(id);
       return el?.kind === "text" ? el.text.spans[0]?.attrs.font : undefined;

@@ -271,22 +271,24 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
 }
 
 /** Pointe (OG11, lot 2) : trace le chemin de la pointe dont la pointe est `(tipX, tipY)`, fût venant de `(fromX, fromY)`
- *  (ailes de `arrowWings`) ; `triangle` est rempli (de `color` s'il est donné). Le trait reste à l'appelant. `none` : rien. */
+ *  (ailes de `arrowWings`) ; `triangle` est rempli (de `color` s'il est donné). Le trait reste à l'appelant. `none` ou
+ *  pointe dégénérée : rien n'est tracé, faux. */
 export function arrowhead(
   ctx: CanvasRenderingContext2D, kind: Arrowhead, tipX: number, tipY: number, fromX: number, fromY: number, width: number, color?: string,
-): void {
+): boolean {
   const head = kind === "none" ? null : headWings(tipX, tipY, fromX, fromY, width);
-  if (!head) return;
+  if (!head) return false;
   ctx.beginPath();
   ctx.moveTo(head[0], head[1]);
   ctx.lineTo(tipX, tipY);
   ctx.lineTo(head[2], head[3]);
-  if (kind === "arrow") return;
+  if (kind === "arrow") return true;
   ctx.closePath();
   if (kind === "triangle") {
     if (color !== undefined) ctx.fillStyle = color;
     ctx.fill();
   }
+  return true;
 }
 
 /** Forme dans son repère local (OG11) : tracé roughjs si `roughness` > 0 (graine `look.seed`, sinon `seed`) ; sinon le
@@ -300,8 +302,8 @@ export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: S
   const dash = dashOf(strokeKindOf(look), style.width);
   const startKind = startArrowheadOf(look);
   const endKind = endArrowheadOf(look);
-  if (s.shape === "arrow" && (startKind !== "none" || endKind !== "arrow")) {
-    // Pointes personnalisées : le fût seul (tirets compris), puis chaque pointe à part, pleine (ou pointillés resserrés).
+  if (s.shape === "arrow" && (startKind !== "none" || endKind !== "arrow" || dash.length > 0)) {
+    // Pointes personnalisées ou trait en tirets : le fût seul (tirets compris), puis chaque pointe à part, pleine (ou pointillés resserrés).
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(s.w, s.h);
@@ -309,23 +311,8 @@ export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: S
     const wd = wingDashOf(strokeKindOf(look), style.width);
     for (const [k, tx, ty, fx, fy] of [[endKind, s.w, s.h, 0, 0], [startKind, 0, 0, s.w, s.h]] as const) {
       if (k === "none") continue;
-      arrowhead(ctx, k, tx, ty, fx, fy, style.width, style.color);
-      strokeWith(ctx, style, wd);
+      if (arrowhead(ctx, k, tx, ty, fx, fy, style.width, style.color)) strokeWith(ctx, style, wd);
     }
-    return;
-  }
-  const head = s.shape === "arrow" && dash.length > 0 ? arrowWings(s.w, s.h, style.width) : null;
-  if (head) {
-    // Trait en tirets : le fût porte les tirets, la pointe est tracée à part, pleine (ou pointillés resserrés).
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(s.w, s.h);
-    strokeWith(ctx, style, dash);
-    ctx.beginPath();
-    ctx.moveTo(head[0], head[1]);
-    ctx.lineTo(s.w, s.h);
-    ctx.lineTo(head[2], head[3]);
-    strokeWith(ctx, style, wingDashOf(strokeKindOf(look), style.width));
     return;
   }
   traceShape(ctx, s, style.width, roundnessOf(look) === "round");

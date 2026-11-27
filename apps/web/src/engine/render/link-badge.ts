@@ -3,17 +3,9 @@
  * Carré de 16 px CSS hors de la boîte, en haut à droite, arrondi au pixel de l'appareil ; zone de toucher de 44 px
  * (24 px à la souris). Icône : Lucide `link` (ISC, voir THIRD_PARTY_NOTICES.md), tracé vectoriel, jamais une image.
  */
-export interface BoxLike {
-  readonly x0: number;
-  readonly y0: number;
-  readonly x1: number;
-  readonly y1: number;
-}
-export interface CameraLike {
-  readonly zoom: number;
-  readonly tx: number;
-  readonly ty: number;
-}
+import type { Bounds } from "../../core/api";
+import { worldToScreen, type Camera } from "../camera";
+
 /** Badge en px CSS de la zone de dessin. */
 export interface LinkBadge {
   readonly x: number;
@@ -32,10 +24,9 @@ export const LINK_ICON_PATHS: readonly string[] = [
 ];
 
 /** Badge de la boîte `b` (monde) : hors de la boîte, coin bas-gauche à 6 px du coin haut-droit, au pixel de l'appareil. */
-export function linkBadgeBox(b: BoxLike, camera: CameraLike, dpr = 1): LinkBadge {
+export function linkBadgeBox(b: Bounds, camera: Camera, dpr = 1): LinkBadge {
   const snap = (v: number): number => Math.round(v * dpr) / dpr;
-  const right = b.x1 * camera.zoom + camera.tx;
-  const top = b.y0 * camera.zoom + camera.ty;
+  const [right, top] = worldToScreen(camera, b.x1, b.y0);
   return { x: snap(right + LINK_BADGE_GAP_PX), y: snap(top - LINK_BADGE_GAP_PX - LINK_BADGE_PX), size: LINK_BADGE_PX };
 }
 
