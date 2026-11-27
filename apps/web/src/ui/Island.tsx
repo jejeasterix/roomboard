@@ -4,7 +4,7 @@ import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
   BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
-  beyondObstacles, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
+  beyondObstacles, withContextRow, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
 import { createTip, placeTip } from "./tooltip";
@@ -20,7 +20,7 @@ import { createTip, placeTip } from "./tooltip";
  */
 export type IslandStore = Pick<DeviceSettings, "island" | "setIsland">;
 /** Rectangle placé d'un îlot, px de la case ; `moved` : position enregistrée ou glisser en cours. */
-export interface Placed { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly moved: boolean }
+export interface Placed { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly moved: boolean; readonly ctx?: Rect | null }
 
 export const GRIP_LABEL = "Déplacer la barre (flèches ; Maj : grand pas ; Début : recentrer)";
 export const COLLAPSE_LABEL = "Replier la barre";
@@ -182,10 +182,15 @@ export function Island(props: IslandProps): JSX.Element {
   };
   /** L2-13 : îlot contextuel centré sous la barre, borné à la case, px entiers (`placeTip`) ; coordonnées relatives à
    *  l'îlot, son bloc conteneur. */
+  const [ctxRect, setCtxRect] = createSignal<Rect | null>(null, { equals: (a, b) => a === b || (a !== null && b !== null && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h) });
   const placeContext = (): void => {
     const p = pos();
     const ctx = el?.querySelector<HTMLElement>("[data-island-context]");
-    if (el === undefined || ctx === null || ctx === undefined || p === null) return;
+    if (el === undefined || p === null) return;
+    if (ctx === null || ctx === undefined) {
+      setCtxRect(null);
+      return;
+    }
     const me = el.getBoundingClientRect();
     const r = ctx.getBoundingClientRect();
     const area = props.area();
@@ -199,6 +204,9 @@ export function Island(props: IslandProps): JSX.Element {
     }
     ctx.style.left = `${beyondObstacles(t.left - p.x, { top, height: r.height }, obstacles, GAP)}px`;
     ctx.style.top = `${top}px`;
+    // Rectangle de la rangée dans le repère de la case, pour que le panneau d'options passe dessous.
+    const l = beyondObstacles(t.left - p.x, { top, height: r.height }, obstacles, GAP);
+    setCtxRect({ x: Math.round(p.x + l), y: Math.round(p.y + top), w: Math.ceil(r.width), h: Math.ceil(r.height) });
   };
 
   onMount(() => {
@@ -250,7 +258,7 @@ export function Island(props: IslandProps): JSX.Element {
     const p = pos();
     if (p === null) return;
     queueMicrotask(placeContext);
-    props.onPlaced?.({ x: p.x, y: p.y, w: Math.min(size().w, p.maxWidth), h: size().h, moved: at() !== null || drag() !== null });
+    props.onPlaced?.({ x: p.x, y: p.y, w: Math.min(size().w, p.maxWidth), h: size().h, moved: at() !== null || drag() !== null, ...(ctxRect() !== null ? { ctx: ctxRect() } : {}) });
   });
 
   const write = (): void => {
@@ -391,7 +399,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   /** Îlot d'outils posé et non déplacé : le panneau d'options passe dessous s'il le surplombe (comme la voie latérale). */
   const toolsAbove = createMemo((): readonly Rect[] => {
     const t = tools();
-    return t === null || t.moved ? [] : [{ x: t.x, y: t.y, w: t.w, h: t.h }];
+    return t === null || t.moved ? [] : withContextRow({ x: t.x, y: t.y, w: t.w, h: t.h }, t.ctx ?? null);
   });
   const placeSide = (id: string, p: Placed | null): void => {
     setSidePlaced((m) => {

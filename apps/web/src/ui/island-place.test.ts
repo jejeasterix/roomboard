@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
   optionsWidth, topRowBottom, type Anchor, type Corners,
 } from "./island-place";
 
@@ -202,6 +202,17 @@ describe("island-place : panneau d'options (OG11, T10)", () => {
     const hit = p.x < tools.x + tools.w && tools.x < p.x + w && p.y < tools.y + tools.h;
     expect(hit).toBe(false);
     expect(placeOptions(MID, null, tops, [{ x: 400, y: 16, w: 300, h: 56 }], w)).toEqual({ x: 16, y: tops + GAP });
+  });
+  it("rangée de contexte descendue sous l'îlot d'outils : haut du panneau >= bas de la rangée + GAP, même si seule la rangée croise ses abscisses", () => {
+    const tops = topRowBottom(BUTTON_PX.m);
+    const w = optionsWidth(BUTTON_PX.m);
+    const tools = { x: 500, y: 16, w: 600, h: 56 }; // à droite du panneau (x 16 à 16 + w)
+    const ctx = { x: 100, y: 80, w: 560, h: 56 }; // la rangée, décalée à gauche, croise le panneau
+    const p = placeOptions(MID, null, tops, withContextRow(tools, ctx), w);
+    expect(p.y).toBeGreaterThanOrEqual(ctx.y + ctx.h + GAP);
+    expect(placeOptions(MID, null, tops, withContextRow(tools, null), w).y).toBe(tops + GAP);
+    // rangée hors des abscisses du panneau : inchangé
+    expect(placeOptions(MID, null, tops, withContextRow(tools, { x: 600, y: 80, w: 300, h: 56 }), w).y).toBe(tops + GAP);
   });
   it("sous la rangée du haut : haut du panneau >= bas de l'îlot ☰ + GAP, en S, M, L", () => {
     for (const size of ["s", "m", "l"] as const) {
