@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, isPanKey, keyAction, type KeyLike } from "./keys";
+import { editAction, isPanKey, keyAction, objectKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -98,5 +98,16 @@ describe("keyAction : groupes (Z13)", () => {
   it("Ctrl+G dans un champ : rien", () => {
     expect(keyAction(k("g", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
     expect(keyAction(k("g", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("objectKey (OG11)", () => {
+  it("objectKey : Ctrl+D duplique, pas en champ, pas avec Maj", () => {
+    const k = (over: Partial<KeyLike>): KeyLike => ({ key: "d", ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...over });
+    expect(objectKey(k({}))).toBe("duplicate");
+    expect(objectKey(k({ ctrlKey: false, metaKey: true }))).toBe("duplicate");
+    expect(objectKey(k({ shiftKey: true }))).toBeNull();
+    expect(objectKey(k({ target: { tagName: "INPUT" } }))).toBeNull();
+    expect(objectKey(k({ isComposing: true }))).toBeNull();
   });
 });

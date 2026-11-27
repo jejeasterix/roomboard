@@ -218,4 +218,20 @@ describe("MenuBar (design-l2 L2-6)", () => {
     expect(toggle().getAttribute("aria-expanded")).toBe("false");
     outside.remove();
   });
+
+  it("raccourci affiché à droite de la ligne", () => {
+    const { row } = setup();
+    expect(row("file-new").querySelector("[data-shortcut]")?.textContent).toBe("Ctrl+N");
+    expect(row("grid").querySelector("[data-shortcut]")).toBeNull();
+  });
+
+  it("Tab ferme sans reprendre le focus", async () => {
+    const { toggle, list } = setup();
+    fireEvent.click(toggle());
+    await tick();
+    key("Tab");
+    expect(list().hidden).toBe(true);
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).not.toBe(toggle());
+  });
 });

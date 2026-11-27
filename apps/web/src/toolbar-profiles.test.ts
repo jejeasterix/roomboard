@@ -255,4 +255,11 @@ describe("design-l2 : profils fournis en îlots (L2-2 à L2-4)", () => {
       expect(p.toolbars.filter((b) => b.role !== "annotation" && (b.dock === "top" || b.dock === "bottom")).map((b) => b.id), p.id).toEqual([]);
     }
   });
+
+  it("menu livré : Profil en dernier", () => {
+    const menu = builtinProfile("defaut")!.toolbars.find((b) => b.role === MENU_ROLE)!;
+    const vue = menu.groups.find((g) => g.id === "vue")!;
+    expect(vue.items.map((i) => i.id)).toEqual(["sep-6", "grid", "settings", "menu-profiles"]);
+    expect(vue.items.at(-1)!.action).toBe("profiles");
+  });
 });
