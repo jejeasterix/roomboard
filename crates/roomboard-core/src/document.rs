@@ -16,10 +16,10 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 #[cfg(test)]
 use crate::element::ImageView;
 use crate::element::{
-    backdrop_view, finite_positive, look_view, out_f64, out_string, out_transform, read_backdrop,
-    read_group, read_image, read_style, read_unknown, unknown_view, ElementView, FillView,
-    PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH,
-    INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
+    backdrop_view, drag_copy_view, finite_positive, look_view, out_f64, out_string, out_transform,
+    read_backdrop, read_group, read_image, read_style, read_unknown, unknown_view, ElementView,
+    FillView, PageLayout, PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND,
+    FIT_WIDTH, INFINITE_MODE, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -427,6 +427,7 @@ impl Document {
             Some(crate::table::TABLE_KIND) => Some(match crate::table::read(&txn, e) {
                 Some((transform, table)) => ElementView {
                     table: Some(table),
+                    look: drag_copy_view(&txn, e),
                     ..ElementView::bare(id, "table", transform)
                 },
                 // T2 : tableau mal formé → cadre inconnu, jamais `None`.
@@ -441,6 +442,7 @@ impl Document {
             Some(crate::media::MEDIA_KIND) => Some(match crate::media::read_media(&txn, e) {
                 Some((transform, media)) => ElementView {
                     media: Some(media),
+                    look: drag_copy_view(&txn, e),
                     ..ElementView::bare(id, "media", transform)
                 },
                 // M7 : média mal formé → cadre inconnu, jamais `None` (repli du tableau, pas de l'image).
@@ -456,6 +458,7 @@ impl Document {
                 Some(match crate::model3d::read_model3d(&txn, e) {
                     Some((transform, model3d)) => ElementView {
                         model3d: Some(model3d),
+                        look: drag_copy_view(&txn, e),
                         ..ElementView::bare(id, "model3d", transform)
                     },
                     // X8 : objet 3D mal formé → cadre inconnu, jamais `None` (repli du média, pas de l'image).

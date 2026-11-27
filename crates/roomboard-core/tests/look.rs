@@ -1695,7 +1695,13 @@ fn drag_copy_is_in_the_view_of_table_media_and_model3d() {
     for id in ids {
         let look = d.element(id).expect("vue").look.expect("look présent");
         assert_eq!(look.drag_copy, Some(true));
-        assert_eq!(look, Look { drag_copy: Some(true), ..Look::default() });
+        assert_eq!(
+            look,
+            Look {
+                drag_copy: Some(true),
+                ..Look::default()
+            }
+        );
     }
     assert!(d.undo());
     for id in ids {
