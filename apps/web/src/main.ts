@@ -516,6 +516,8 @@ async function start(): Promise<void> {
           transparent: support?.transparent ?? true,
           // design-l4 (L4-13, L4-16) : cadre de l'appareil envoyé à `annotate` ; avis d'envoi en bandeau, plus une boîte.
           frame: () => device.frame(),
+          // OG25 (déc. 30) : gomme automatique à la paume de l'appareil, envoyée à `annotate` avec le document.
+          palmEraser: () => device.palmEraser(),
           sent: (page) => showToast(sentToBoardToast(page)),
         });
   annotation = ctl;
