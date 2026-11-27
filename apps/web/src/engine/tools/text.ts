@@ -89,7 +89,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
     if (!s) return;
     const content = host.value();
     const typed = host.spans();
-    const font = style().font;
+    const font = s.font;
     const spans = s.id === null && font !== undefined ? typed.map((x) => (x.attrs.font === undefined ? { ...x, attrs: { ...x.attrs, font } } : x)) : typed;
     const hadHidden = live.hidden.size > 0;
     session = null;

@@ -1128,6 +1128,27 @@ describe("Canvas2DRenderer — média (C14)", () => {
   });
 });
 
+describe("Canvas2DRenderer — badge de lien (T37)", () => {
+  const linked: ElementView = {
+    id: "l", kind: "shape", transform: [1, 0, 0, 1, 10, 20], style: { color: "#1e40af", width: 4 }, look: { link: "https://exemple.fr" },
+    shape: { shape: "rect", w: 200, h: 100, fill: null },
+  };
+  const paint = (forExport: boolean): string[] => {
+    const scene = new FakeCtx();
+    const src: SceneSource = { element: (id) => (id === "l" ? linked : null), outline: () => null, bounds: () => ({ x0: 10, y0: 20, x1: 210, y1: 120 }) };
+    const r = new Canvas2DRenderer(asCtx(scene), null, src, { forExport });
+    r.resize(400, 300, 1);
+    r.drawScene({ id: "p", elementIds: ["l"] }, IDENTITY, new Set());
+    return scene.log;
+  };
+  it("à l'écran : le badge est peint (pastille blanche)", () => {
+    expect(paint(false)).toContain("fill #ffffff");
+  });
+  it("à l'export (miniatures, PDF) : aucun badge", () => {
+    expect(paint(true)).not.toContain("fill #ffffff");
+  });
+});
+
 describe("exportPainterOptions (C14, R7, M34)", () => {
   it("rendu d'export : forExport, jamais de lecteurs de média ni de nom (poster, pas de badge)", () => {
     const images = {} as ImageSource;

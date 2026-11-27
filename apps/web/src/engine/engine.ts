@@ -5,7 +5,7 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, PageLayout, PageMode, ShapeKind, StrokeStyle } from "../core/api";
+import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
@@ -26,7 +26,6 @@ import type { TableAction, TableCellState } from "./table-geom";
 import { createModelOrbit, type ModelOrbit, type ModelOrbitSession } from "./tools/model-orbit";
 import { SELECT_TOL_PX } from "./tools/select";
 import { inLinkBadge, linkBadgeBox } from "./render/link-badge";
-import { validLink } from "../core/look";
 import type { ModelCamera } from "./render/model-frames";
 import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
@@ -164,6 +163,9 @@ export interface Engine {
   setTool(t: ToolChoice): void;
   setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
+  /** T37 : plusieurs commandes d'un même changement, une seule étape d'annulation (un annuler les défait toutes, un
+   *  rétablir les refait) ; une seule émission. Liste vide : null. Une commande refusée arrête la suite (erreur de l'état). */
+  runAll(cmds: readonly Command[]): Change | null;
   /** Lot 2 (calques) : outil Sélection, sélection = `ids` de la page montrée (les inconnus sont ignorés) ; [] la vide. */
   select(ids: readonly string[]): void;
   /** Lot 2 : bloc `ids` au rang `to` de la pile (0 = arrière-plan) ; une étape ; faux si refusé ou sans effet. */
@@ -254,7 +256,7 @@ export interface Engine {
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
   tableFill(fill: string | null): void;
-  /** Style de texte des outils Texte et Tableau, et de la cible d'import (F21). */
+  /** Style de texte de l'outil Tableau et de la cible d'import (F21) ; l'outil Texte a `textToolStyle`. */
   textStyle(): TextStyle;
   /** Bouton de la rangée Format (C7b, DAR4) : relayé à l'outil actif (Texte ou Tableau) ; autre outil : sans effet. */
   textFormat(a: FormatAction): void;
@@ -557,14 +559,17 @@ export function createEngine(deps: EngineDeps): Engine {
   function commit(write: () => Change, showAppeared: boolean): Change | null {
     lastDeleted = null;
     const before = doc.pageIds();
+    const v0 = doc.version();
     let change: Change;
     try {
       change = write();
     } catch (e) {
+      trackSteps(v0);
       error = e instanceof Error ? e.message : String(e);
       emit();
       return null;
     }
+    trackSteps(v0);
     renderer.invalidate(change);
     imageEdit?.changed(doc.version());
     error = null;
@@ -580,12 +585,84 @@ export function createEngine(deps: EngineDeps): Engine {
     return commit(() => doc.apply(cmd), false);
   }
 
+  /** Lots d'étapes (T37) : le cœur compte une étape par commande ; un lot en compte `width` et s'annule d'un geste.
+   *  Pile des écritures passées par `commit` : `end` = version du document qu'elles laissent (tout état a sa version,
+   *  annuler et rétablir en changent aussi). Une écriture hors `commit` rompt la correspondance : les piles sont jetées
+   *  et l'annulation retombe sur une étape simple. */
+  interface Lot { at: number; width: number }
+  const undoLots: Lot[] = [];
+  const redoLots: Lot[] = [];
+  let lotWidth = 1;
+
+  function trackSteps(v0: number): void {
+    const width = lotWidth;
+    lotWidth = 1;
+    const v = doc.version();
+    if (v === v0) return;
+    undoLots.push({ at: v, width });
+    redoLots.length = 0;
+  }
+
+  function mergeChange(a: Change, b: Change): Change {
+    return {
+      pages: [...new Set([...a.pages, ...b.pages])],
+      ids: [...new Set([...a.ids, ...b.ids])],
+      removed: [...new Set([...a.removed, ...b.removed])],
+      full: a.full || b.full,
+      version: b.version,
+    };
+  }
+
+  function runAll(cmds: readonly Command[]): Change | null {
+    if (cmds.length === 0) return null;
+    return commit(() => {
+      let total: Change | null = null;
+      let width = 0;
+      try {
+        for (const cmd of cmds) {
+          const before = doc.version();
+          const change = doc.apply(cmd);
+          if (doc.version() !== before) width++;
+          total = total === null ? change : mergeChange(total, change);
+        }
+      } finally {
+        lotWidth = Math.max(1, width);
+      }
+      return total ?? NO_CHANGE;
+    }, false);
+  }
+
+  /** Étapes à défaire ou refaire d'un geste : la largeur du lot au sommet, 1 si la pile ne correspond plus au document. */
+  function lotWidthFor(which: "undo" | "redo"): number {
+    const mine = which === "undo" ? undoLots : redoLots;
+    const top = mine[mine.length - 1];
+    if (top !== undefined && top.at === doc.version()) return top.width;
+    undoLots.length = 0;
+    redoLots.length = 0;
+    return 1;
+  }
+
+  /** Après un annuler ou rétablir de `width` étapes : le lot passe sur l'autre pile, l'état d'arrivée est celui du sommet suivant. */
+  function moveLot(which: "undo" | "redo", width: number, moved: boolean): void {
+    const from = which === "undo" ? undoLots : redoLots;
+    const to = which === "undo" ? redoLots : undoLots;
+    if (!moved || from.length === 0) return;
+    from.pop();
+    const v = doc.version();
+    to.push({ at: v, width });
+    const next = from[from.length - 1];
+    if (next !== undefined) next.at = v;
+  }
+
   function history(which: "undo" | "redo"): void {
     const before = doc.pageIds();
     const restore = which === "undo" ? lastDeleted : null;
     lastDeleted = null;
     const version = doc.version();
-    const change = which === "undo" ? doc.undo() : doc.redo();
+    const width = lotWidthFor(which);
+    let change = which === "undo" ? doc.undo() : doc.redo();
+    for (let i = 1; i < width; i++) change = mergeChange(change, which === "undo" ? doc.undo() : doc.redo());
+    moveLot(which, width, doc.version() !== version);
     renderer.invalidate(change);
     // Rien à annuler ou à rétablir : aucune écriture, le brouillon de la retouche reste (I31).
     if (doc.version() !== version) imageEdit?.changed(doc.version());
@@ -612,7 +689,7 @@ export function createEngine(deps: EngineDeps): Engine {
     stateChanged: () => emit(),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
-  /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
+  /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
   const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
   /** T32 : style de l'outil Texte seul : taille et police choisies dans le panneau ; l'outil Tableau et l'import gardent `textStyle`. */
   const textToolStyle = (): TextStyle => ({ ...textStyle(), size: item.fontSize, ...(item.font !== "default" ? { font: item.font } : {}) });
@@ -736,7 +813,7 @@ export function createEngine(deps: EngineDeps): Engine {
       const id = ids[i];
       if (id === undefined || lastHidden.has(id)) continue;
       const link = doc.element(id)?.look?.link;
-      if (link === undefined || !validLink(link)) continue;
+      if (link === undefined) continue;
       const b = doc.bounds([id]);
       if (b !== null && inLinkBadge(linkBadgeBox(b, camera), s.x, s.y, pointerType)) return link;
     }
@@ -882,6 +959,7 @@ export function createEngine(deps: EngineDeps): Engine {
       emit();
     },
     run,
+    runAll,
     group,
     ungroup,
     deleteSelection() {
@@ -968,7 +1046,7 @@ export function createEngine(deps: EngineDeps): Engine {
           imageEdit.cancelMode();
           return true;
         }
-        if (edit === "delete" || objectKey(e) === "duplicate") return true;
+        if (edit === "delete" || objectKey(e) === "duplicate" || objectKey(e) === "link") return true;
         if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;

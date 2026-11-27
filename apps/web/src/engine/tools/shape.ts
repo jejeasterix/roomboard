@@ -103,7 +103,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       // Graine tirée au début du geste et gardée dans le brouillon, jamais au relâché (déc. 12).
       const seed = st.roughness > 0 ? newSeed() : null;
       const fill = kind === "rect" || kind === "ellipse" ? st.background : null;
-      const linear = kind === "line" || kind === "arrow";
+      const linear = kind === "arrow";
       const look = lookFrom(
         {
           ...st,

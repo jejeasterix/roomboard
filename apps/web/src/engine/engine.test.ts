@@ -1705,6 +1705,12 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(engine.key(key("Enter"))).toBe(true);
     expect(image().image.crop).toEqual([0, 0, 160, 120]);
   });
+  it("T37 Ctrl+K pendant le rognage : avalé, l'éditeur de lien ne s'ouvre pas", () => {
+    const { engine, id, ctrl } = c5();
+    engine.editImage(id)!.startCrop();
+    expect(engine.key(ctrl("k"))).toBe(true);
+    expect(engine.state().linkEditing).toBeNull();
+  });
   it("C5 annuler après Tourner avec brouillon : aperçu sans brouillon, matrice du document (I31)", () => {
     const { engine, renderer, id } = c5();
     const edit = engine.editImage(id)!;
@@ -2465,5 +2471,65 @@ describe("moteur — style courant du texte et alignement en saisie (T31)", () =
     engine.setItemStyle({ textAlign: "right" });
     expect(applied).toEqual([]);
     expect(engine.itemStyle().textAlign).toBe("right");
+  });
+});
+
+describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () => {
+  function texts() {
+    const { doc, engine } = setup();
+    const page = engine.state().page;
+    const add = (x: number, content: string): string =>
+      doc.apply({ type: "SetText", page, id: null, x, y: 10, content, color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 }).ids[0] ?? "";
+    const ids = [add(0, "un"), add(300, "deux"), add(600, "trois")];
+    const lenOf = (id: string): number => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.content.length : 0;
+    };
+    const fmt = (attrs: { font?: string | null; size?: number }) =>
+      ids.map((id) => ({ type: "FormatText" as const, id, start: 0, len: lenOf(id), attrs }));
+    const fontOf = (id: string): string | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.spans[0]?.attrs.font : undefined;
+    };
+    const sizeOf = (id: string): number | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.spans[0]?.attrs.size : undefined;
+    };
+    return { doc, engine, ids, fmt, fontOf, sizeOf };
+  }
+  it("runAll Police : un seul annuler les rétablit tous, un seul rétablir les refait", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    expect(engine.runAll(fmt({ font: "Georgia" }))).not.toBeNull();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+    engine.redo();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+  });
+  it("runAll Taille : un seul annuler les rétablit tous", () => {
+    const { engine, ids, fmt, sizeOf } = texts();
+    engine.runAll(fmt({ size: 48 }));
+    for (const id of ids) expect(sizeOf(id)).toBe(48);
+    engine.undo();
+    for (const id of ids) expect(sizeOf(id)).not.toBe(48);
+  });
+  it("runAll n'efface pas l'étape d'avant : un second annuler défait l'écriture précédente", () => {
+    const { doc, engine, ids, fmt, fontOf } = texts();
+    engine.runAll(fmt({ font: "Georgia" }));
+    engine.runAll(fmt({ font: "Courier New" }));
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+    expect(doc.canUndo()).toBe(true);
+  });
+  it("runAll d'une seule commande ou d'une liste vide : comme run, sans erreur", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    expect(engine.runAll([])).toBeNull();
+    engine.runAll(fmt({ font: "Georgia" }).slice(0, 1));
+    engine.undo();
+    expect(fontOf(ids[0] ?? "")).toBeUndefined();
   });
 });
