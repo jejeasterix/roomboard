@@ -196,6 +196,7 @@ impl Document {
         let mut plan: Vec<(MapRef, &'static str, Option<In>)> = Vec::new();
         let mut pages: Vec<String> = Vec::new();
         let mut touched: Vec<String> = Vec::new();
+        let mut reroute: Vec<MapRef> = Vec::new();
         {
             let txn = self.read();
             for id in ids {
@@ -230,6 +231,9 @@ impl Document {
                     plan.push((e.clone(), "points", None));
                     any = true;
                 }
+                if switched && patch.elbowed == Some(Some(true)) {
+                    reroute.push(e.clone());
+                }
                 if any && !touched.contains(id) {
                     touched.push(id.clone());
                     if !pages.contains(&found.page_id) {
@@ -245,6 +249,10 @@ impl Document {
             let mut txn = self.transact_local();
             for (map, key, v) in plan {
                 set_or_remove(&map, &mut txn, key, v);
+            }
+            // OG12 (n° 12 c) : passer à coudée reroute dans la même étape.
+            for e in &reroute {
+                crate::linear::reroute(self, &mut txn, e);
             }
         }
         Ok(self.done(Change {
