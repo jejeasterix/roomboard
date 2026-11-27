@@ -86,6 +86,28 @@ describe("faux cœur OG12 : lignes et liaisons", () => {
     const w = d.element(alone[0]!);
     expect(w?.kind === "shape" && (w.shape.start ?? w.shape.end)).toBeFalsy();
   });
+  // La table ancien → neuf est tirée avant toute recopie : une flèche placée avant ses cibles dans le lot est renvoyée
+  // vers leurs copies (une table remplie au fil de la recopie la laisserait libre).
+  it("copie : flèche avant ses cibles dans le lot, liée aux copies", () => {
+    const d = fakeCore.blank();
+    const [a, z, f] = linked(d);
+    const p = d.pageIds()[0]!;
+    d.apply({ type: "Restack", ids: [f], to: 0 });
+    expect(d.elementIds(p)).toEqual([f, a, z]);
+    const all = d.insertFragment(d.extract(p, [a, z, f]), p, 10, 10).ids;
+    expect(ends(d, all[0]!)).toEqual([all[1], all[2]]);
+  });
+  it("sauvegarde puis relecture : points, liaisons et coudée gardés", () => {
+    const d = fakeCore.blank();
+    const [a, z, f] = linked(d);
+    d.apply({ type: "SetLinePoints", id: f, points: [107, 25, 250, -60, 393, 25], start: b(a, 1, 0.5), end: b(z, 0, 0.5) });
+    const [, g] = d.apply({ type: "AddLinked", id: a, dir: "down" }).ids;
+    const back = fakeCore.load(d.save("2026-11-27T00:00:00Z", "test"));
+    expect(back.element(f)).toEqual(d.element(f));
+    expect(back.element(g!)).toEqual(d.element(g!));
+    const v = back.element(g!);
+    expect(v?.kind === "shape" && v.look?.elbowed && v.shape.start?.id === a).toBe(true);
+  });
   it("duplication de page : liaisons renvoyées vers les copies de la page", () => {
     const d = fakeCore.blank();
     linked(d);
