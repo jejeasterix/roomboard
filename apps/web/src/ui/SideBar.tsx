@@ -337,12 +337,12 @@ export function SideBar(props: SideBarProps): JSX.Element {
       aria-label="Pages"
     >
       <div role="tablist" class="rb-side-tabs" aria-label="Barre latérale" onKeyDown={onTabKey}>
-        <div class="rb-tab" role="tab" tabIndex={0} data-tab="pages" aria-selected={tab() === "pages" ? "true" : "false"} onClick={() => openTab("pages")} onKeyDown={(e) => onTabActivate(e, "pages")}>
+        <div class="rb-tab" role="tab" tabIndex={0} data-side-tab="pages" aria-selected={tab() === "pages" ? "true" : "false"} onClick={() => openTab("pages")} onKeyDown={(e) => onTabActivate(e, "pages")}>
           <Icon name="panel-left" />
           <span class="rb-tab-title">Pages</span>
         </div>
         <Show when={layers !== undefined}>
-          <div class="rb-tab" role="tab" tabIndex={0} data-tab="calques" aria-selected={tab() === "calques" ? "true" : "false"} onClick={() => openTab("calques")} onKeyDown={(e) => onTabActivate(e, "calques")}>
+          <div class="rb-tab" role="tab" tabIndex={0} data-side-tab="calques" aria-selected={tab() === "calques" ? "true" : "false"} onClick={() => openTab("calques")} onKeyDown={(e) => onTabActivate(e, "calques")}>
             <Icon name="layers" />
             <span class="rb-tab-title">Calques</span>
           </div>

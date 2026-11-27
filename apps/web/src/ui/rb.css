@@ -226,6 +226,15 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 /* Onglet de la barre latérale (T10), après les règles d'onglet qu'il reprend. */
 .rb-side .rb-tab { block-size: auto; min-block-size: var(--rb-btn-s); padding: 0 var(--rb-pad); }
 .rb-side .rb-tab:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
+/* Îlot latéral (T16) : en colonne, comme un volet : poignée en tête (24 px de haut), barre, Replier en pied, sur toute la
+   largeur. Replié : bande d'un bouton de large (--rb-btn de la barre, px entiers), onglets en icônes empilés puis Déplier,
+   comme le volet replié des miniatures de PowerPoint ; le titre de l'onglet reste lu (masqué comme .rb-sr). */
+.rb-island[data-anchor^="side-"] { flex-direction: column; align-items: stretch; }
+.rb-island[data-anchor^="side-"] > .rb-island-chrome { inline-size: auto; block-size: var(--rb-btn-s); }
+.rb-island[data-anchor^="side-"] > .rb-island-chrome[data-island-grip] { block-size: 24px; }
+.rb-island[data-anchor^="side-"][data-collapsed="1"] .rb-side-tabs { flex-direction: column; }
+.rb-island[data-anchor^="side-"][data-collapsed="1"] .rb-side .rb-tab { inline-size: var(--rb-btn); block-size: var(--rb-btn); min-block-size: 0; justify-content: center; gap: 0; padding: 0; }
+.rb-island[data-anchor^="side-"][data-collapsed="1"] .rb-side .rb-tab-title { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Rangée des préréglages (C1, P18) : en fin de barre d'outils, pour l'outil actif ; pastille + libellé, sans état enfoncé. */
 .rb-preset { display: inline-flex; align-items: center; gap: var(--rb-gap); }
