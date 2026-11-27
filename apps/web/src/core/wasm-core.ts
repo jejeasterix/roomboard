@@ -178,7 +178,7 @@ const lookArgs = (l: Look | undefined): LookArgs => [l?.strokeStyle, num(l?.roug
 
 /** Rang en `u32` côté pont (wasm-bindgen tronquerait sans erreur : 0,5 → 0, 2³² + 1 → 1) : non entier ou hors u32
  *  refusé ici, avec le message de `BadIndex`, comme le faux cœur (`MovePage`, `Restack`). */
-const pageRank = (to: number): number => {
+const checkedRank = (to: number): number => {
   if (!Number.isInteger(to) || to < 0 || to > 0xffffffff) throw new Error("rang de page hors bornes");
   return to;
 };
@@ -536,10 +536,10 @@ class WasmCoreDocument implements CoreDocument {
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
-      case "MovePage": return toChange(this.d.move_page(cmd.page, pageRank(cmd.to)));
+      case "MovePage": return toChange(this.d.move_page(cmd.page, checkedRank(cmd.to)));
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
       case "Restack":
-        return toChange(this.d.restack([...cmd.ids], pageRank(cmd.to)));
+        return toChange(this.d.restack([...cmd.ids], checkedRank(cmd.to)));
       case "CommitStroke": {
         const l = cmd.look;
         return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width, ...lookArgs(l)));

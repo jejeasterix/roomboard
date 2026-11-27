@@ -2533,13 +2533,16 @@ describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () =
     for (const id of ids) expect(fontOf(id)).toBeUndefined();
   });
   it("un annuler de trop (pile vide) ne jette pas la pile de rétablir : un rétablir refait tout le lot", () => {
-    const { engine, ids, fmt, fontOf } = texts();
-    const first = engine.runAll(fmt({ font: "Georgia" }));
-    expect(first).not.toBeNull();
+    const { doc, engine } = setup();
+    const page = engine.state().page;
+    const add = (x: number) => ({ type: "SetText" as const, page, id: null, x, y: 10, content: "t", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.runAll([add(0), add(300), add(600)]);
+    expect(doc.elementIds(page).length).toBe(3);
     engine.undo();
-    for (let i = 0; i < 6; i++) engine.undo();
+    expect(doc.elementIds(page).length).toBe(0);
+    engine.undo();
     engine.redo();
-    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    expect(doc.elementIds(page).length).toBe(3);
   });
   it("une écriture hors commit puis une écriture par commit : les piles sont jetées, l'annuler retombe sur une étape", () => {
     const { doc, engine, ids, fmt, fontOf } = texts();
