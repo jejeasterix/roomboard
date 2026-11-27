@@ -8,6 +8,7 @@ import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, scrollShortcut, WHEEL
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
+import { linkBadgeBox } from "./render/link-badge";
 import type { InputSample } from "./input/sampler";
 import { DEFAULT_CAMERA, type ModelCamera } from "./render/model-frames";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
@@ -19,7 +20,7 @@ import type { TableCellState } from "./table-geom";
 import { createTableTool, type TablePicker } from "./tools/table";
 import { plainSpans } from "../core/rich-text";
 import type { FormatState } from "./rich-edit";
-import type { TextEditorHost, TextEditSession, TextTool } from "./tools/text";
+import type { TextEditorHost, TextEditSession, TextStyle, TextTool } from "./tools/text";
 import { NO_LIVE, type GestureTool, type TableTool, type ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
@@ -1786,6 +1787,12 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(engine.key(key("Enter"))).toBe(true);
     expect(image().image.crop).toEqual([0, 0, 160, 120]);
   });
+  it("T37 Ctrl+K pendant le rognage : avalé, l'éditeur de lien ne s'ouvre pas", () => {
+    const { engine, id, ctrl } = c5();
+    engine.editImage(id)!.startCrop();
+    expect(engine.key(ctrl("k"))).toBe(true);
+    expect(engine.state().linkEditing).toBeNull();
+  });
   it("C5 annuler après Tourner avec brouillon : aperçu sans brouillon, matrice du document (I31)", () => {
     const { engine, renderer, id } = c5();
     const edit = engine.editImage(id)!;
@@ -2028,7 +2035,7 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
 });
 
 describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
-  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle">> = {}) {
+  function styleSetup(deps: Partial<Pick<EngineDeps, "itemStyle" | "penStyle" | "openLink">> = {}) {
     const doc = fakeCore.blank();
     const frames = new Frames();
     const renderer = new FakeRenderer();
@@ -2182,6 +2189,68 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(engine.state().elementCount).toBe(1);
   });
 
+  describe("Disposition (T15)", () => {
+    const three = () => {
+      const s = styleSetup();
+      const [a, b, c] = [s.addRect(), s.addRect(), s.addRect()] as [string, string, string];
+      const order = (): string[] => s.doc.elementIds(s.engine.state().page);
+      return { ...s, a, b, c, order };
+    };
+    it("bringToFront une étape, ordre lu", () => {
+      const { engine, doc, a, b, c, order, sel } = three();
+      sel().setSelection([a]);
+      const v = doc.version();
+      expect(engine.bringToFront()).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+      expect(doc.version()).toBe(v + 1);
+      engine.undo();
+      expect(order()).toEqual([a, b, c]);
+    });
+    it("sendToBack, reorder up, reorder down : un rang à la fois", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([c]);
+      expect(engine.sendToBack()).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+      expect(engine.reorder("up")).toBe(true);
+      expect(order()).toEqual([a, c, b]);
+      expect(engine.reorder("down")).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+    });
+    it("déjà au bout ou sans sélection : faux, aucune étape", () => {
+      const { engine, doc, a, c, sel } = three();
+      sel().setSelection([c]);
+      let v = doc.version();
+      expect(engine.bringToFront()).toBe(false);
+      expect(engine.reorder("up")).toBe(false);
+      sel().setSelection([a]);
+      expect(engine.reorder("down")).toBe(false);
+      sel().setSelection([]);
+      expect(engine.sendToBack()).toBe(false);
+      expect(doc.version()).toBe(v);
+    });
+    it("bloc de deux objets : l'ordre relatif est gardé", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([a, b]);
+      expect(engine.reorder("up")).toBe(true);
+      expect(order()).toEqual([c, a, b]);
+    });
+    it("Avancer saute un groupe voisin entier, sans le couper (stepTarget d'OG4)", () => {
+      const { engine, doc, a, b, c, order, sel } = three();
+      doc.apply({ type: "Group", ids: [b, c] });
+      sel().setSelection([a]);
+      expect(engine.reorder("up")).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+    });
+    it("Ctrl+Maj+↑ premier plan, Ctrl+↓ recule", () => {
+      const { engine, a, b, c, order, sel } = three();
+      sel().setSelection([a]);
+      expect(engine.key(key("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe(true);
+      expect(order()).toEqual([b, c, a]);
+      expect(engine.key(key("ArrowDown", { ctrlKey: true }))).toBe(true);
+      expect(order()).toEqual([b, a, c]);
+    });
+  });
+
   it("duplicateSelection sans sélection : faux, rien d'écrit", () => {
     const { engine, doc } = styleSetup();
     const v = doc.version();
@@ -2194,6 +2263,90 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     sel().setSelection([addRect()]);
     expect(engine.key(key("d", { ctrlKey: true }))).toBe(true);
     expect(engine.state().elementCount).toBe(2);
+  });
+
+  it("T18 Ctrl+K avec un seul élément : ouvre l'éditeur de lien (linkEditing), rien d'écrit", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const v = doc.version();
+    expect(engine.state().linkEditing).toBeNull();
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(true);
+    expect(engine.state().linkEditing).toBe(a);
+    expect(doc.version()).toBe(v);
+  });
+
+  it("T18 Ctrl+K avec deux éléments ou aucun : rien, la touche passe", () => {
+    const { engine, addRect, sel } = styleSetup();
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(false);
+    sel().setSelection([addRect(), addRect()]);
+    expect(engine.key(key("k", { ctrlKey: true }))).toBe(false);
+    expect(engine.state().linkEditing).toBeNull();
+  });
+
+  it("T18 setLink : un SetStyle { link }, une étape, n'entre pas dans le style courant", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.key(key("k", { ctrlKey: true }));
+    const v = doc.version();
+    expect(engine.setLink("https://example.org")).toBe(true);
+    expect(lookOf(a)?.["link"]).toBe("https://example.org");
+    expect(doc.version()).toBe(v + 1);
+    expect(engine.state().linkEditing).toBeNull();
+    expect("link" in engine.itemStyle()).toBe(false);
+    engine.undo();
+    expect(lookOf(a)?.["link"]).toBeUndefined();
+  });
+
+  it("T18 setLink(null) retire le lien ; javascript: refusé par le cœur, rien d'écrit", () => {
+    const { engine, doc, addRect, sel, lookOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.setLink("mailto:a@example.org");
+    const v = doc.version();
+    expect(engine.setLink("javascript:alert(1)")).toBe(false);
+    expect(doc.version()).toBe(v);
+    expect(lookOf(a)?.["link"]).toBe("mailto:a@example.org");
+    expect(engine.setLink(null)).toBe(true);
+    expect(lookOf(a)?.["link"]).toBeUndefined();
+  });
+
+  it("T18 toucher du badge avec l'outil Sélection : ouvre le lien une fois ; glisser ou autre outil : rien", () => {
+    const openLink = vi.fn();
+    const { engine, doc, addRect, sel } = styleSetup({ openLink });
+    const a = addRect();
+    sel().setSelection([a]);
+    expect(engine.setLink("https://example.org")).toBe(true);
+    expect(openLink).not.toHaveBeenCalled();
+    sel().setSelection([]);
+    const badge = linkBadgeBox(doc.bounds([a])!, engine.camera());
+    const at = (dx = 0, dy = 0) => [{ x: badge.x + 8 + dx, y: badge.y + 8 + dy, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 }];
+    engine.setTool("pen");
+    engine.sink.begin(1, "pen", at(), "touch");
+    engine.sink.close(1, "end");
+    expect(openLink).not.toHaveBeenCalled();
+    engine.setTool("select");
+    engine.sink.begin(2, "select", at(), "touch");
+    engine.sink.extend(2, at(30, 30), []);
+    engine.sink.close(2, "end");
+    engine.sink.begin(3, "select", at(), "touch");
+    engine.sink.close(3, "cancel");
+    expect(openLink).not.toHaveBeenCalled();
+    // Dans la zone de 44 px, hors du dessin de 16 px.
+    engine.sink.begin(4, "select", at(18, -18), "touch");
+    engine.sink.close(4, "end");
+    expect(openLink.mock.calls).toEqual([["https://example.org"]]);
+  });
+
+  it("T18 Échap ferme l'éditeur de lien sans vider la sélection", () => {
+    const { engine, addRect, sel } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    engine.key(key("k", { ctrlKey: true }));
+    engine.closeLink();
+    expect(engine.state().linkEditing).toBeNull();
+    expect(engine.state().selection).toEqual([a]);
   });
 
   it("setItemStyle : style courant déjà égal, la sélection est quand même écrite", () => {
@@ -2353,5 +2506,155 @@ describe("moteur — ordre des objets (lot 2)", () => {
     expect(pageShortcut(ev("P"), eng, (t) => seen.push(t))).toBe(true);
     expect(seen).toEqual(["calques", "pages"]);
     expect(pageShortcut(ev("L"), eng)).toBe(false);
+  });
+});
+
+describe("moteur — style courant du texte et alignement en saisie (T31)", () => {
+  function build(editingId: string | null) {
+    const doc = fakeCore.blank();
+    const applied: unknown[] = [];
+    const real = doc.apply.bind(doc);
+    doc.apply = ((c: never) => { applied.push(c); return real(c); }) as typeof doc.apply;
+    const log: string[] = [];
+    const styles: { text?: () => TextStyle; table?: () => TextStyle } = {};
+    const base = fakeTextTool({ stateChanged: () => undefined } as ToolContext, log).tool;
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => fakeTool("eraser", log, ctx),
+      table: (ctx, style) => { styles.table = style; return fakeTableTool(ctx, log).tool; },
+      text: (_ctx, style) => ({ ...(styles.text = style, base), editing: () => (editingId === null ? null : ({ id: editingId, page: "p", matrix: [1, 0, 0, 1, 0, 0], boxWidth: 600, color: "#000000", size: 36, initial: "x", spans: plainSpans("x") } as TextEditSession)) }),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    return { engine, applied, styles };
+  }
+  it("police et taille choisies sans texte : style courant, aucune commande, textStyle les porte", () => {
+    const { engine, applied, styles } = build(null);
+    engine.setTool("text");
+    engine.setItemStyle({ font: "Georgia", fontSize: 48 });
+    expect(applied).toEqual([]);
+    expect(engine.itemStyle()).toMatchObject({ font: "Georgia", fontSize: 48 });
+    expect(styles.text?.()).toMatchObject({ size: 48, font: "Georgia" });
+  });
+  it("T32 : l'outil Tableau et l'import gardent la taille par défaut et aucune police", () => {
+    const { engine, styles } = build(null);
+    engine.setItemStyle({ font: "Georgia", fontSize: 48, textAlign: "center" });
+    expect(styles.table?.()).toEqual({ color: "#000000", size: DEFAULT_TEXT_SIZE, textAlign: "center" });
+    expect(engine.textStyle()).toEqual({ color: "#000000", size: DEFAULT_TEXT_SIZE, textAlign: "center" });
+  });
+  it("texte rouvert en saisie : Droite écrit un SetStyle sur ce texte", () => {
+    const { engine, applied } = build("t1");
+    engine.setTool("text");
+    engine.setItemStyle({ textAlign: "right" });
+    expect(applied).toContainEqual({ type: "SetStyle", ids: ["t1"], patch: { textAlign: "right" } });
+  });
+  it("texte neuf en saisie : Droite ne change que le style courant", () => {
+    const { engine, applied } = build(null);
+    engine.setTool("text");
+    engine.setItemStyle({ textAlign: "right" });
+    expect(applied).toEqual([]);
+    expect(engine.itemStyle().textAlign).toBe("right");
+  });
+});
+
+describe("moteur — plusieurs commandes en une étape d'annulation (T37)", () => {
+  function texts() {
+    const { doc, engine, renderer } = setup();
+    const page = engine.state().page;
+    const add = (x: number, content: string): string =>
+      doc.apply({ type: "SetText", page, id: null, x, y: 10, content, color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 }).ids[0] ?? "";
+    const ids = [add(0, "un"), add(300, "deux"), add(600, "trois")];
+    const lenOf = (id: string): number => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.content.length : 0;
+    };
+    const fmt = (attrs: { font?: string | null; size?: number }) =>
+      ids.map((id) => ({ type: "FormatText" as const, id, start: 0, len: lenOf(id), attrs }));
+    const fontOf = (id: string): string | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.spans[0]?.attrs.font : undefined;
+    };
+    const sizeOf = (id: string): number | undefined => {
+      const el = doc.element(id);
+      return el?.kind === "text" ? el.text.spans[0]?.attrs.size : undefined;
+    };
+    return { doc, engine, renderer, ids, fmt, fontOf, sizeOf };
+  }
+  it("runAll Police : un seul annuler les rétablit tous, un seul rétablir les refait", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    expect(engine.runAll(fmt({ font: "Georgia" }))).not.toBeNull();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+    engine.redo();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+  });
+  it("runAll Taille : un seul annuler les rétablit tous", () => {
+    const { engine, ids, fmt, sizeOf } = texts();
+    engine.runAll(fmt({ size: 48 }));
+    for (const id of ids) expect(sizeOf(id)).toBe(48);
+    engine.undo();
+    for (const id of ids) expect(sizeOf(id)).not.toBe(48);
+  });
+  it("runAll n'efface pas l'étape d'avant : un second annuler défait l'écriture précédente", () => {
+    const { doc, engine, ids, fmt, fontOf } = texts();
+    engine.runAll(fmt({ font: "Georgia" }));
+    engine.runAll(fmt({ font: "Courier New" }));
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+    expect(doc.canUndo()).toBe(true);
+  });
+  it("rétablir sans rien à rétablir ne jette pas la pile : un annuler défait encore tout le lot", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    engine.runAll(fmt({ font: "Georgia" }));
+    engine.redo();
+    engine.undo();
+    for (const id of ids) expect(fontOf(id)).toBeUndefined();
+  });
+  it("un annuler de trop (pile vide) ne jette pas la pile de rétablir : un rétablir refait tout le lot", () => {
+    const { doc, engine } = setup();
+    const page = engine.state().page;
+    const add = (x: number) => ({ type: "SetText" as const, page, id: null, x, y: 10, content: "t", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.runAll([add(0), add(300), add(600)]);
+    expect(doc.elementIds(page).length).toBe(3);
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(0);
+    engine.undo();
+    engine.redo();
+    expect(doc.elementIds(page).length).toBe(3);
+  });
+  it("une écriture hors commit puis une écriture par commit : les piles sont jetées, l'annuler retombe sur une étape", () => {
+    const { doc, engine, ids, fmt, fontOf } = texts();
+    const page = engine.state().page;
+    engine.runAll(fmt({ font: "Georgia" }));
+    doc.apply({ type: "SetText", page, id: null, x: 0, y: 400, content: "hors", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    engine.run({ type: "SetText", page, id: null, x: 0, y: 500, content: "via", color: "#000000", size: 36, boxWidth: 200, boxHeight: 50 });
+    const count = doc.elementIds(page).length;
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(count - 1);
+    engine.undo();
+    expect(doc.elementIds(page).length).toBe(count - 2);
+    for (const id of ids) expect(fontOf(id)).toBe("Georgia");
+  });
+  it("runAll refusé au milieu : écritures gardées, scène invalidée, un annuler défait la première", () => {
+    const { engine, renderer, ids, fmt, fontOf } = texts();
+    const cmds = [...fmt({ font: "Georgia" }).slice(0, 1), { type: "FormatText" as const, id: "absent", start: 0, len: 1, attrs: { font: "Georgia" } }];
+    const seen = renderer.changes.length;
+    expect(engine.runAll(cmds)).toBeNull();
+    expect(engine.state().error).not.toBeNull();
+    expect(fontOf(ids[0] ?? "")).toBe("Georgia");
+    expect(renderer.changes.length).toBeGreaterThan(seen);
+    engine.undo();
+    expect(fontOf(ids[0] ?? "")).toBeUndefined();
+  });
+  it("runAll d'une seule commande ou d'une liste vide : comme run, sans erreur", () => {
+    const { engine, ids, fmt, fontOf } = texts();
+    expect(engine.runAll([])).toBeNull();
+    engine.runAll(fmt({ font: "Georgia" }).slice(0, 1));
+    engine.undo();
+    expect(fontOf(ids[0] ?? "")).toBeUndefined();
   });
 });

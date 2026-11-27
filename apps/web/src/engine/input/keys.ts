@@ -46,7 +46,15 @@ export function keyAction(e: KeyLike): KeyAction | null {
 export type ObjectKey = "duplicate" | "link" | "stroke-picker" | "fill-picker" | "help";
 export function objectKey(e: KeyLike): ObjectKey | null {
   if (e.isComposing || e.altKey || inEditable(e.target)) return null;
+  // T16 : S ouvre le sélecteur du Trait, G celui de l'Arrière-plan ; lettre seule, sans Ctrl, Cmd ni Maj.
+  if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+    const k = e.key.toLowerCase();
+    if (k === "s") return "stroke-picker";
+    if (k === "g") return "fill-picker";
+  }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "d") return "duplicate";
+  // T18 (déc. 38, 39) : Ctrl+K (Cmd+K sous macOS) ouvre l'éditeur de lien ; Ctrl+Maj+K reste au navigateur.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "k") return "link";
   return null;
 }
 

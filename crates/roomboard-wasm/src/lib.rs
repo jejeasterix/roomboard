@@ -62,13 +62,17 @@ fn roughness_arg(v: Option<f64>) -> Result<Option<u8>, CommandError> {
 
 /// Aspect d'une création (OG11) : bornes des nombres vérifiées (tracé entier 0..=2, graine entière 0..=u32::MAX,
 /// opacité finie 0..=100 arrondie), hors bornes `BadStyle` ; le reste est assaini par le cœur (`Look::sanitized`).
+/// `named` (T12) : `fillStyle`, `startArrowhead`, `endArrowhead`, `textAlign`, `link`, dans cet ordre ; un défaut de
+/// pointe ou un lien hors des trois schémas n'écrit rien (`Look::sanitized`).
 fn look_of(
     stroke_style: Option<String>,
     roughness: Option<f64>,
     seed: Option<f64>,
     roundness: Option<String>,
     opacity: Option<f64>,
+    named: [Option<String>; 5],
 ) -> Result<Look, CommandError> {
+    let [fill_style, start_arrowhead, end_arrowhead, text_align, link] = named;
     let opacity = match opacity {
         None => None,
         Some(o) if o.is_finite() && (0.0..=100.0).contains(&o) => Some(o.round() as u8),
@@ -80,6 +84,11 @@ fn look_of(
         seed: small_int(seed, f64::from(u32::MAX))?.map(|x| x as u32),
         roundness,
         opacity,
+        fill_style,
+        start_arrowhead,
+        end_arrowhead,
+        text_align,
+        link,
     })
 }
 
@@ -1312,7 +1321,7 @@ impl Document {
         to_js(&self.restack_inner(ids, to).map_err(cmd_err)?)
     }
 
-    /// OG11 : les cinq derniers arguments sont l'aspect (`look_of`), contrôlé avant tout le reste.
+    /// OG11 : les dix derniers arguments sont l'aspect (`look_of`), contrôlé avant tout le reste.
     #[allow(clippy::too_many_arguments)]
     pub fn commit_stroke(
         &mut self,
@@ -1325,8 +1334,15 @@ impl Document {
         seed: Option<f64>,
         roundness: Option<String>,
         opacity: Option<f64>,
+        fill_style: Option<String>,
+        start_arrowhead: Option<String>,
+        end_arrowhead: Option<String>,
+        text_align: Option<String>,
+        link: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
+        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let look =
+            look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         to_js(
             &self
                 .commit_stroke_inner(page, points, color, width, look)
@@ -1369,8 +1385,15 @@ impl Document {
         seed: Option<f64>,
         roundness: Option<String>,
         opacity: Option<f64>,
+        fill_style: Option<String>,
+        start_arrowhead: Option<String>,
+        end_arrowhead: Option<String>,
+        text_align: Option<String>,
+        link: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
+        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let look =
+            look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         to_js(
             &self
                 .add_shape_inner(page, shape, [x0, y0, x1, y1], color, width, fill, look)
@@ -1395,6 +1418,16 @@ impl Document {
         roundness_set: bool,
         roundness: Option<String>,
         opacity: Option<f64>,
+        fill_style_set: bool,
+        fill_style: Option<String>,
+        start_arrowhead_set: bool,
+        start_arrowhead: Option<String>,
+        end_arrowhead_set: bool,
+        end_arrowhead: Option<String>,
+        text_align_set: bool,
+        text_align: Option<String>,
+        link_set: bool,
+        link: Option<String>,
     ) -> Result<JsValue, JsError> {
         let patch = StylePatch {
             color,
@@ -1404,6 +1437,11 @@ impl Document {
             roughness: roughness_arg(roughness).map_err(cmd_err)?,
             roundness: roundness_set.then_some(roundness),
             opacity,
+            fill_style: fill_style_set.then_some(fill_style),
+            start_arrowhead: start_arrowhead_set.then_some(start_arrowhead),
+            end_arrowhead: end_arrowhead_set.then_some(end_arrowhead),
+            text_align: text_align_set.then_some(text_align),
+            link: link_set.then_some(link),
         };
         to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
     }
@@ -1428,8 +1466,15 @@ impl Document {
         seed: Option<f64>,
         roundness: Option<String>,
         opacity: Option<f64>,
+        fill_style: Option<String>,
+        start_arrowhead: Option<String>,
+        end_arrowhead: Option<String>,
+        text_align: Option<String>,
+        link: Option<String>,
     ) -> Result<JsValue, JsError> {
-        let look = look_of(stroke_style, roughness, seed, roundness, opacity).map_err(cmd_err)?;
+        let named = [fill_style, start_arrowhead, end_arrowhead, text_align, link];
+        let look =
+            look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
         let spans = spans_arg(spans).map_err(cmd_err)?;
         to_js(
             &self
@@ -3996,7 +4041,10 @@ mod tests {
     fn look_bounds_checked_before_conversion() {
         let bad = |r: Result<Look, CommandError>| matches!(r, Err(CommandError::BadStyle));
         for r in [257.0, 1.5, -1.0, 3.0, f64::NAN, f64::INFINITY] {
-            assert!(bad(look_of(None, Some(r), None, None, None)), "tracé {r}");
+            assert!(
+                bad(look_of(None, Some(r), None, None, None, Default::default())),
+                "tracé {r}"
+            );
             assert!(
                 matches!(roughness_arg(Some(r)), Err(CommandError::BadStyle)),
                 "tracé {r}"
@@ -4004,12 +4052,22 @@ mod tests {
         }
         for seed in [4_294_967_296.0, 4_294_967_301.0, -1.0, 1.5, f64::NAN] {
             assert!(
-                bad(look_of(None, Some(1.0), Some(seed), None, None)),
+                bad(look_of(
+                    None,
+                    Some(1.0),
+                    Some(seed),
+                    None,
+                    None,
+                    Default::default()
+                )),
                 "graine {seed}"
             );
         }
         for o in [300.0, 296.0, 100.5, -1.0, f64::NAN, f64::NEG_INFINITY] {
-            assert!(bad(look_of(None, None, None, None, Some(o))), "opacité {o}");
+            assert!(
+                bad(look_of(None, None, None, None, Some(o), Default::default())),
+                "opacité {o}"
+            );
         }
         let l = look_of(
             Some("dashed".into()),
@@ -4017,6 +4075,7 @@ mod tests {
             Some(4_294_967_295.0),
             Some("round".into()),
             Some(44.6),
+            Default::default(),
         )
         .expect("dans les bornes");
         assert_eq!(l.roughness, Some(2));
@@ -4024,6 +4083,33 @@ mod tests {
         assert_eq!(l.opacity, Some(45));
         assert_eq!(roughness_arg(Some(0.0)).ok(), Some(Some(0)));
         assert_eq!(roughness_arg(None).ok(), Some(None));
+    }
+
+    /// OG11 (T12) : les cinq champs du lot 2 traversent `look_of` dans l'ordre ; un défaut de pointe et un lien
+    /// `javascript:` n'y survivent pas (rien d'écrit à la création).
+    #[test]
+    fn look_of_carries_lot2_fields() {
+        let s = |v: &str| Some(v.to_string());
+        let named = [
+            s("hachure"),
+            s("triangle"),
+            s("none"),
+            s("right"),
+            s("https://example.org"),
+        ];
+        let l = look_of(None, None, None, None, None, named).expect("aspect");
+        let want = Look {
+            fill_style: s("hachure"),
+            start_arrowhead: s("triangle"),
+            end_arrowhead: s("none"),
+            text_align: s("right"),
+            link: s("https://example.org"),
+            ..Look::default()
+        };
+        assert_eq!(l.sanitized(), want);
+        let named = [None, s("none"), s("arrow"), None, s("javascript:alert(1)")];
+        let l = look_of(None, None, None, None, None, named).expect("aspect");
+        assert!(l.is_neutral());
     }
 
     #[test]

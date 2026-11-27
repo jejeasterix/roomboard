@@ -109,6 +109,7 @@ import {
 import { pageFrame, type PageRect } from "../engine/page";
 import { isAssetId } from "./asset-store";
 import { newSeed, STROKE_STYLES, toLook, type Look, type LookPatch } from "./look";
+import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, TEXT_ALIGNS, validLink as validLookLink } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
@@ -248,6 +249,13 @@ function validStyle(p: LookPatch): number | undefined {
   if ("strokeStyle" in p && !absent(p.strokeStyle) && !(typeof p.strokeStyle === "string" && STROKE_STYLES.includes(p.strokeStyle))) badStyle();
   smallInt(p.roughness, 2);
   if ("roundness" in p && !absent(p.roundness) && p.roundness !== "round") badStyle();
+  // T12 : domaines du lot 2 (`outside`, `valid_link`).
+  const outside = (k: "fillStyle" | "startArrowhead" | "endArrowhead" | "textAlign", allowed: readonly string[]): boolean => {
+    const v: unknown = p[k];
+    return k in p && !absent(v) && !(typeof v === "string" && allowed.includes(v));
+  };
+  if (outside("fillStyle", FILL_STYLES) || outside("startArrowhead", ARROWHEADS) || outside("endArrowhead", ARROWHEADS) || outside("textAlign", TEXT_ALIGNS)) badStyle();
+  if ("link" in p && !absent(p.link) && !(typeof p.link === "string" && validLookLink(p.link))) badStyle();
   return opacityArg(p.opacity);
 }
 
@@ -302,6 +310,15 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
   }
   if ("roundness" in p && shape?.shape === "rect") put("roundness", p.roundness ?? undefined);
   if (opacity !== undefined) put("opacity", opacity < 100 ? opacity : undefined);
+  // T12 (`writes_for`) : une pointe égale à son défaut retire le champ, jamais elle ne s'écrit.
+  if ("fillStyle" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) put("fillStyle", p.fillStyle ?? undefined);
+  if (shape?.shape === "arrow") {
+    const head = <D extends string>(v: D | null | undefined, d: string): D | undefined => (absent(v) || v === d ? undefined : v);
+    if ("startArrowhead" in p) put("startArrowhead", head(p.startArrowhead, START_ARROWHEAD_DEFAULT));
+    if ("endArrowhead" in p) put("endArrowhead", head(p.endArrowhead, END_ARROWHEAD_DEFAULT));
+  }
+  if ("textAlign" in p && kind === "text") put("textAlign", p.textAlign ?? undefined);
+  if ("link" in p) put("link", p.link ?? undefined);
   if (!changed) return null;
   const { look: _old, ...rest } = e;
   return { ...rest, style, ...(shape ? { shape } : {}), ...(Object.keys(look).length > 0 ? { look } : {}) };

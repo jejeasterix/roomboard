@@ -271,7 +271,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
     container.remove();
     style.remove();
   });
-  return { container, workspace, tab, store, active, settings, navigate, files };
+  return { container, workspace, tab, store, active, settings, navigate, files, stages };
 }
 
 /** `activateOnEnter` faux : `enter` ne change pas l'état (la barre reste celle du tableau, menu Profil utilisable). */
@@ -1396,7 +1396,7 @@ describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", (
     expect(toggle.getAttribute("aria-haspopup")).toBe("menu");
     const list = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-list]')!;
     expect(list.hidden).toBe(true);
-    expect([...list.querySelectorAll('button[role="menuitem"]')].map((b) => b.getAttribute("data-item"))).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "grid", "settings", "menu-profiles"]);
+    expect([...list.querySelectorAll('button[role="menuitem"]')].map((b) => b.getAttribute("data-item"))).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "help", "page-clear", "grid", "settings", "menu-profiles"]);
     click(list.querySelector('button[data-item="export-pdf"]'));
     expect(workspace.exportPdf).toHaveBeenCalledTimes(1);
   });
@@ -1440,5 +1440,92 @@ describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", (
     await a.control.enter();
     expect(container.querySelector('.rb-island[data-island="outils"]')).toBeNull();
     expect(container.querySelector('.rb-slot [data-toolbar="annotation"]')).not.toBeNull();
+  });
+});
+
+describe("App — panneau d'options sous un panneau passager (T34)", () => {
+  it("Grille ouverte : le panneau d'options est retiré ; fermée : il revient", () => {
+    const { container } = renderApp();
+    const GRID = 'button[data-item="grid"]';
+    expect(container.querySelector("[data-options]")).not.toBeNull();
+    click(container.querySelector(GRID));
+    expect(container.querySelector("#grille")).not.toBeNull();
+    expect(container.querySelector("[data-options]")).toBeNull();
+    click(container.querySelector(GRID));
+    expect(container.querySelector("[data-options]")).not.toBeNull();
+  });
+  it("Réglages ouverts : le panneau d'options est retiré", () => {
+    const { container } = renderApp();
+    click(container.querySelector('button[data-item="settings"]'));
+    expect(container.querySelector(".rb-popover")).not.toBeNull();
+    expect(container.querySelector("[data-options]")).toBeNull();
+  });
+});
+
+describe("Aide : focus rendu et Échap (T39)", () => {
+  const helpOpen = (c: HTMLElement): boolean => c.querySelector('[data-panel="aide"]') !== null;
+  it("ouverte par le menu ☰ au clavier : à la fermeture, le focus revient au bouton du menu", () => {
+    const { container } = renderApp();
+    const toggle = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-toggle]')!;
+    toggle.focus();
+    click(toggle);
+    click(container.querySelector('[data-menu-list] button[data-item="help"]'));
+    expect(helpOpen(container)).toBe(true);
+    click(container.querySelector("button[data-help-close]"));
+    expect(helpOpen(container)).toBe(false);
+    expect(document.activeElement).toBe(toggle);
+  });
+  it("ouverte par « ? » sans focus : à la fermeture, le focus va à la scène, non au corps de la page", () => {
+    const { container, stages } = renderApp();
+    (document.activeElement as HTMLElement | null)?.blur();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    expect(helpOpen(container)).toBe(true);
+    click(container.querySelector("button[data-help-close]"));
+    expect(helpOpen(container)).toBe(false);
+    expect(document.activeElement).toBe(stages);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+  it("Échap ferme l'Aide même si le focus n'est pas dans le panneau, sans atteindre le reste de la page", () => {
+    const { container } = renderApp();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    expect(helpOpen(container)).toBe(true);
+    (document.activeElement as HTMLElement | null)?.blur();
+    const seen = vi.fn();
+    window.addEventListener("keydown", seen);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    window.removeEventListener("keydown", seen);
+    expect(helpOpen(container)).toBe(false);
+    expect(seen).not.toHaveBeenCalled();
+  });
+  it("Échap avec le menu ☰ ouvert par-dessus l'Aide : le menu se ferme, l'Aide reste ; un second Échap ferme l'Aide (T41)", () => {
+    const { container } = renderApp();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    expect(helpOpen(container)).toBe(true);
+    const toggle = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-toggle]')!;
+    click(toggle);
+    const list = container.querySelector<HTMLElement>("[data-menu-list]")!;
+    expect(list.hidden).toBe(false);
+    const row = list.querySelector<HTMLElement>("button")!;
+    row.focus();
+    row.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(list.hidden).toBe(true);
+    expect(helpOpen(container)).toBe(true);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(helpOpen(container)).toBe(false);
+  });
+  it("Échap dans le panneau d'Aide le ferme (T41)", () => {
+    const { container } = renderApp();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    const panel = container.querySelector<HTMLElement>('[data-panel="aide"]')!;
+    panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    expect(helpOpen(container)).toBe(false);
+  });
+  it("Échap sans Aide ouverte : la page le reçoit (désélection)", () => {
+    renderApp();
+    const seen = vi.fn();
+    window.addEventListener("keydown", seen);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    window.removeEventListener("keydown", seen);
+    expect(seen).toHaveBeenCalledTimes(1);
   });
 });

@@ -36,10 +36,14 @@ export interface HostTargets {
     send?(to: SendTarget): Promise<void>;
     pointer?(mode: PointerMode): Promise<void>;
   };
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack" | "deleteElements">;
+  /** « Effacer la page » : identifiants des objets de la page montrée. */
+  pageElementIds(): readonly string[];
+  /** Question oui / non (shell) ; absent : refus. */
+  confirm(message: string): Promise<boolean>;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
-  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library" | "backgrounds"): void;
+  toggle(panel: "settings" | "profiles" | "grid" | "image" | "library" | "backgrounds" | "help"): void;
   /** T8 : barre latérale (onglet Pages ou Calques) ; branché par T10, absent : sans effet. */
   toggleSidebar?(tab: "pages" | "calques"): void;
   /** C3 (Z12). */
@@ -60,6 +64,8 @@ function settle(p: Promise<void> | undefined): void {
     console.warn(`RoomBoard : annotation non réalisée (${messageOf(e)})`);
   });
 }
+
+export const PAGE_CLEAR_MESSAGE = "Effacer tout le contenu de la page ? Ctrl+Z le rétablit.";
 
 const file = (cmd: FileCommand) => (t: HostTargets): void => t.runFile(cmd);
 
@@ -97,6 +103,17 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "file-save": file("save"),
   "file-save-as": file("saveAs"),
   settings: (t) => t.toggle("settings"),
+  help: (t) => t.toggle("help"),
+  "page-clear": (t) => {
+    const ids = [...t.pageElementIds()];
+    if (ids.length === 0) return;
+    t.confirm(PAGE_CLEAR_MESSAGE).then(
+      (yes) => {
+        if (yes) t.engine().deleteElements(ids);
+      },
+      (e: unknown) => console.warn(`RoomBoard : effacement de la page abandonné (${messageOf(e)})`),
+    );
+  },
   profiles: (t) => t.toggle("profiles"),
   grid: (t) => t.toggle("grid"),
   library: (t) => t.toggle("library"),

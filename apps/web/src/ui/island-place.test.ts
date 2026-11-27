@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
   BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, compactOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
-  optionsWidth, topRowBottom, type Anchor, type Corners,
+  optionsWidth, placeLinkAvoiding, topRowBottom, type Anchor, type Corners,
 } from "./island-place";
 
 const MID = { w: 1280, h: 900 };
@@ -305,5 +305,21 @@ describe("beyondObstacles (T22 : la rangée contextuelle ne passe pas sous une b
   it("plusieurs obstacles : le plus à droite gagne, seulement ceux qui recouvrent", () => {
     const other = { x: 400, y: 100, w: 50, h: 300 };
     expect(beyondObstacles(0, { top: 144, height: 56 }, [side, other], GAP)).toBe(450 + GAP);
+  });
+});
+
+describe("placeLinkAvoiding (T33)", () => {
+  const box = { x: 100, y: 200, w: 360, h: 112 };
+  it("sans obstacle : inchangé", () => {
+    expect(placeLinkAvoiding(box, [{ x: 600, y: 0, w: 100, h: 100 }], 1000)).toBe(100);
+  });
+  it("recouvre le panneau : décalé à 8 px à sa droite", () => {
+    expect(placeLinkAvoiding(box, [{ x: 16, y: 112, w: 232, h: 600 }], 1000)).toBe(256);
+  });
+  it("décalé puis borné à la zone", () => {
+    expect(placeLinkAvoiding(box, [{ x: 16, y: 112, w: 800, h: 600 }], 700)).toBe(700);
+  });
+  it("deux obstacles côte à côte : à droite du dernier", () => {
+    expect(placeLinkAvoiding(box, [{ x: 16, y: 112, w: 232, h: 600 }, { x: 264, y: 150, w: 100, h: 300 }], 1000)).toBe(372);
   });
 });

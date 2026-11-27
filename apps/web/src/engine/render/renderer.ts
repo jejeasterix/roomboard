@@ -62,7 +62,7 @@ export const EMPTY_LIVE: LiveLayer = { strokes: [], erasers: [] };
 
 /** Ce que le rendu lit du document : vue d'un élément, contour local, lignes de la grille et, pour l'aperçu de l'éditeur,
  *  lignes d'une grille non enregistrée (C9). */
-export type SceneSource = Pick<CoreDocument, "element" | "outline"> & Partial<Pick<CoreDocument, "gridLines" | "gridLinesOf" | "fillRings">>;
+export type SceneSource = Pick<CoreDocument, "element" | "outline"> & Partial<Pick<CoreDocument, "gridLines" | "gridLinesOf" | "fillRings" | "bounds">>;
 
 /** Aperçu de la grille (C9 éditeur, DAE1) : `grid` remplace celle du document sur `page` ; null = aucune grille. */
 export interface GridPreview {

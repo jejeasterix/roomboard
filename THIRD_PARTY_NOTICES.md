@@ -307,7 +307,10 @@ MIT en tête de chaque fichier :
   `packages/element/src/shape.ts`), rectangle arrondi en chemin (`shape.ts`), rayon adaptatif des angles
   (`packages/element/src/utils.ts`) ;
 - `apps/web/src/ui/tool-options.ts` (T6) : valeur commune ou mixte d'un réglage sur la sélection, adaptée de
-  `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`).
+  `getFormValue` (`packages/excalidraw/actions/actionProperties.tsx`) ;
+- `apps/web/src/ui/ColorPicker.tsx`, `apps/web/src/ui/open-color.ts` (T16) : sélecteur de couleur
+  (`packages/excalidraw/components/ColorPicker/`) et palette (`packages/common/src/colors.ts`) ; les teintes viennent
+  d'open-color (https://github.com/yeun/open-color, MIT, Copyright (c) 2016 heeyeun) et `bronze` de Radix Colors (https://github.com/radix-ui/colors, MIT, Copyright (c) 2021-2022 Modulz, Copyright (c) 2022-Present WorkOS).
 
 Texte : MIT (https://opensource.org/licenses/MIT), identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
 
@@ -587,6 +590,10 @@ recopiés dans `apps/web/src/ui/icons.ts`.
 - Lue dans Lucide au même commit (design L2, correctif T12) : `file-plus` (Lucide `file-plus`), pour « Insérer des pages… ».
 - Reprises de la maquette `docs/design/maquettes/02-annotation-bureau.html` (design L4, tracés Lucide au même commit),
   noms RoomBoard : `check` (Lucide `check`), `drop` (Lucide `file-down`).
+- Lue dans Lucide (personnalisation 2, T18) : `link` (Lucide `link`), pour le bouton Lien, l'éditeur de lien et le
+  badge des éléments liés (mêmes tracés dans `apps/web/src/engine/render/link-badge.ts`).
+- Lue dans Lucide au même commit (personnalisation 2, T39) : `external-link` (Lucide `external-link`), pour « Ouvrir le lien »
+  de l'éditeur de lien.
 - Reprises de la maquette `docs/design/maquettes/03-profils.html` (design L3, tracés Lucide au même commit), noms
   RoomBoard : `close` (Lucide `x`), `grip` (Lucide `grip-vertical`), `hidden` (Lucide `eye-off`),
   `dock-top` (Lucide `panel-top`), `dock-bottom` (Lucide `panel-bottom`), `dock-left` (Lucide `panel-left`),
@@ -601,6 +608,10 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   noms Lucide : `layers` (onglet Calques), `bring-to-front` (Premier plan), `send-to-back` (Arrière-plan).
 - Lues dans Lucide au même commit par `gh api` (personnalisation 1b), noms Lucide : `wallpaper` (bouton « Fonds »),
   `search` et `image-plus` (fenêtre des fonds).
+- Aide du menu (OG11) : `circle-help` (nom RoomBoard), tracé lu au commit `7981a0798a` dans Lucide `circle-question-mark`, recopié tel quel.
+- Panneau d'options lot 2 (OG11), lus au même commit, noms Lucide : `chevron-up`, `chevron-down` (Avancer, Reculer ; Premier plan et Arrière-plan
+  reprennent `bring-to-front` et `send-to-back` d'OG4), `align-left`, `align-center`, `align-right`. Dessinées pour RoomBoard (grille de 24, trait 1,5) :
+  `fill-solid`, `fill-hachure`, `fill-cross`, `head-none`, `head-arrow`, `head-triangle`, `head-triangle-outline`.
 
 Licence de Lucide (ISC), qui contient la licence MIT de Feather (Cole Bemis) pour les icônes qui en dérivent,
 recopiée de `LICENSE` au commit `7981a0798a` :

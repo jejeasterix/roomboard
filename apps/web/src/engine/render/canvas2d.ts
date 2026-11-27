@@ -5,7 +5,7 @@
  * grille gardées par `GridLinesCache` (C9 éditeur, E3).
  */
 import { PDF_PAGE_KIND } from "../../core/api";
-import { opacityOf, roughnessOf, roundnessOf, strokeKindOf, type Look } from "../../core/look";
+import { endArrowheadOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, type Arrowhead, type Look, type TextAlign } from "../../core/look";
 import type { BackdropView, Bounds, Change, ElementView, GridLines, ImageElement, Matrix, MediaData, Model3dData, ShapeData, StrokeStyle, TableData, TextData } from "../../core/api";
 import { cropOf, displaySize, isPlainGeometry, orientMatrix, screenScale } from "../../core/image-params";
 import { arrowWings, normalizeShape } from "../../core/shapes";
@@ -19,9 +19,10 @@ import type { ModelFrames } from "./model-frames";
 import { GridLinesCache } from "./grid-cache";
 import { MIN_DOT_PX, MIN_GRID_PX, paintGrid } from "./grid-paint";
 import { EMPTY_OVERLAY, type EditOverlay } from "./overlay";
+import { linkBadgeBox, paintLinkBadge } from "./link-badge";
 import type { BackdropPainter, BackdropState, EraserPreview, GridPreview, ImagePreview, LiveLayer, LiveStrokeView, PageView, Renderer, SceneSource } from "./renderer";
 import { setLiveOpacity } from "./renderer";
-import { cornerRadius, dashOf, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
+import { cornerRadius, dashOf, hatched, headWings, seedOf, sketchShape, strokeWith, wingDashOf, type SketchMemo, type SketchPlan } from "./sketch";
 import { cellTextBoxes, paintTableGrid, type CellTextBox } from "./table-paint";
 
 export interface PathSink {
@@ -269,27 +270,49 @@ export function traceShape(ctx: CanvasRenderingContext2D, s: ShapeData, width: n
   }
 }
 
+/** Pointe (OG11, lot 2) : trace le chemin de la pointe dont la pointe est `(tipX, tipY)`, fût venant de `(fromX, fromY)`
+ *  (ailes de `arrowWings`) ; `triangle` est rempli (de `color` s'il est donné). Le trait reste à l'appelant. `none` ou
+ *  pointe dégénérée : rien n'est tracé, faux. */
+export function arrowhead(
+  ctx: CanvasRenderingContext2D, kind: Arrowhead, tipX: number, tipY: number, fromX: number, fromY: number, width: number, color?: string,
+): boolean {
+  const head = kind === "none" ? null : headWings(tipX, tipY, fromX, fromY, width);
+  if (!head) return false;
+  ctx.beginPath();
+  ctx.moveTo(head[0], head[1]);
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(head[2], head[3]);
+  if (kind === "arrow") return true;
+  ctx.closePath();
+  if (kind === "triangle") {
+    if (color !== undefined) ctx.fillStyle = color;
+    ctx.fill();
+  }
+  return true;
+}
+
 /** Forme dans son repère local (OG11) : tracé roughjs si `roughness` > 0 (graine `look.seed`, sinon `seed`) ; sinon le
  *  tracé net, tirets et angles seulement s'ils sont demandés — aspect absent ou neutre : les appels d'avant OG11, à
  *  l'identique (`ARCHITECTE_RECT_MAIN`). L'opacité est posée par l'appelant, dans le save/restore de l'élément. */
 export function paintShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: StrokeStyle, look?: Look, seed?: number, memo?: SketchMemo): void {
-  if (roughnessOf(look) > 0) {
+  if (roughnessOf(look) > 0 || hatched(s, look)) {
     sketchShape(ctx, s, style, look ?? {}, look?.seed ?? seed ?? 0, memo);
     return;
   }
   const dash = dashOf(strokeKindOf(look), style.width);
-  const head = s.shape === "arrow" && dash.length > 0 ? arrowWings(s.w, s.h, style.width) : null;
-  if (head) {
-    // Trait en tirets : le fût porte les tirets, la pointe est tracée à part, pleine (ou pointillés resserrés).
+  const startKind = startArrowheadOf(look);
+  const endKind = endArrowheadOf(look);
+  if (s.shape === "arrow" && (startKind !== "none" || endKind !== "arrow" || dash.length > 0)) {
+    // Pointes personnalisées ou trait en tirets : le fût seul (tirets compris), puis chaque pointe à part, pleine (ou pointillés resserrés).
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.lineTo(s.w, s.h);
     strokeWith(ctx, style, dash);
-    ctx.beginPath();
-    ctx.moveTo(head[0], head[1]);
-    ctx.lineTo(s.w, s.h);
-    ctx.lineTo(head[2], head[3]);
-    strokeWith(ctx, style, wingDashOf(strokeKindOf(look), style.width));
+    const wd = wingDashOf(strokeKindOf(look), style.width);
+    for (const [k, tx, ty, fx, fy] of [[endKind, s.w, s.h, 0, 0], [startKind, 0, 0, s.w, s.h]] as const) {
+      if (k === "none") continue;
+      if (arrowhead(ctx, k, tx, ty, fx, fy, style.width, style.color)) strokeWith(ctx, style, wd);
+    }
     return;
   }
   traceShape(ctx, s, style.width, roundnessOf(look) === "round");
@@ -314,9 +337,13 @@ export const UNDERLINE_OFFSET = 0.92;
  * Texte (D14, CL4-4, C7, C10a ; élément `text` et cellules de tableau) : mêmes lignes que la hauteur de boîte mesurée par l'outil (`layoutRich`) ; un fillText par
  * segment ; une ligne d'une seule taille est dessinée comme au socle (même police, `y` = haut de la ligne).
  */
-function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], color: string): void {
+export function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], color: string, boxWidth = 0, align: TextAlign = "left"): void {
   ctx.textBaseline = "top";
   for (const line of lines) {
+    // Alignement (OG11, lot 2) : décalage de la ligne entière dans la boîte (droite : `boxWidth - largeur`, centre : moitié).
+    const last = line.segments[line.segments.length - 1];
+    const rest = align === "left" || last === undefined ? 0 : boxWidth - (last.x + last.width);
+    const dx = align === "right" ? rest : align === "center" ? rest / 2 : 0;
     // Le socle émettait fillText("") pour une ligne vide : conservé (compatibilité S3).
     if (line.segments.length === 0) {
       ctx.font = textFont(line.size);
@@ -331,8 +358,8 @@ function paintText(ctx: CanvasRenderingContext2D, lines: readonly RichLine[], co
       // 20 lettres), et `st.color ?? color` laisserait alors celle d'avant (fond de page, segment précédent).
       ctx.fillStyle = color;
       if (st.color !== null) ctx.fillStyle = st.color;
-      ctx.fillText(s.text, s.x, y);
-      if (st.underline) ctx.fillRect(s.x, y + st.size * UNDERLINE_OFFSET, s.width, st.size / 16);
+      ctx.fillText(s.text, s.x + dx, y);
+      if (st.underline) ctx.fillRect(s.x + dx, y + st.size * UNDERLINE_OFFSET, s.width, st.size / 16);
     }
   }
 }
@@ -442,15 +469,32 @@ export class Canvas2DRenderer implements Renderer {
     this.onBackdrop?.(state);
     const grid = this.gridOf(page.id, camera);
     if (grid && !grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
+    const linked: string[] = [];
     for (const id of page.elementIds) {
       if (hidden.has(id)) continue;
       const el = this.source.element(id);
-      if (el) this.paintElement(ctx, this.withImagePreview(el), null);
+      if (!el) continue;
+      this.paintElement(ctx, this.withImagePreview(el), null);
+      if (el.look?.link !== undefined) linked.push(id);
     }
     this.paintOverlayContent(ctx, overlay);
     if (grid && grid.above) paintGrid(ctx, grid, camera, this.sx, this.sy, this.dpr);
     this.paintOverlayChrome(ctx, overlay, camera.zoom);
+    this.paintLinkBadges(ctx, linked, camera);
     this.images?.endScene?.();
+  }
+
+  /** T18 (déc. 38) : badge des éléments liés, en px CSS au pixel de l'appareil, au-dessus du chrome ; jamais à l'export. */
+  private paintLinkBadges(ctx: CanvasRenderingContext2D, ids: readonly string[], camera: Camera): void {
+    const bounds = this.source.bounds;
+    if (this.forExport || ids.length === 0 || bounds === undefined) return;
+    ctx.save();
+    ctx.setTransform(this.sx, 0, 0, this.sy, 0, 0);
+    for (const id of ids) {
+      const b = bounds.call(this.source, [id]);
+      if (b !== null) paintLinkBadge(ctx, linkBadgeBox(b, camera, this.dpr), SELECTION_COLOR);
+    }
+    ctx.restore();
   }
 
   /** Lignes visibles de la grille de la page (G9), servies par le cache (E3) ; null sans source, sans grille ou hors cadre.
@@ -530,7 +574,7 @@ export class Canvas2DRenderer implements Renderer {
     } else if (el.kind === "shape") {
       paintShape(ctx, el.shape, el.style, el.look, el.look === undefined ? undefined : (el.look.seed ?? seedOf(el.id)), { id: el.id, cache: this.sketches });
     } else if (el.kind === "text") {
-      paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color);
+      paintText(ctx, this.linesOf(ctx, el.id, el.text), el.style.color, el.text.boxWidth, textAlignOf(el.look));
     } else if (el.kind === "image") {
       this.paintImage(ctx, el);
     } else if (el.kind === "media") {

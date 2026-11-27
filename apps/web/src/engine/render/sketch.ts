@@ -4,12 +4,13 @@
 // Adapté d'Excalidraw (packages/element/src/shape.ts, utils.ts), MIT, © 2020 Excalidraw : options roughjs
 // (`generateRoughOptions`, shape.ts:172-246), tirets sans multi-trait, rectangle arrondi en chemin (shape.ts), rayon
 // adaptatif des angles (utils.ts, `getCornerRadius`), rugosité réduite des petites formes (`adjustRoughness`,
-// shape.ts:176-198) et pointe de flèche pleine sous un trait en tirets (`getArrowheadLineOptions`, shape.ts:330-345).
+// shape.ts:176-198), pointe de flèche pleine sous un trait en tirets (`getArrowheadLineOptions`, shape.ts:330-345),
+// hachures et hachures croisées (`hachureGap = 4 × w`, `fillWeight = w / 2`, shape.ts:221-225) et pointes (`getArrowheadShapes`).
 import rough from "roughjs/bin/rough";
 import type { Op, OpSet, Options } from "roughjs/bin/core";
 import type { ShapeData, StrokeStyle } from "../../core/api";
 import { arrowWings } from "../../core/shapes";
-import { roughnessOf, roundnessOf, strokeKindOf, type Look, type StrokeKind } from "../../core/look";
+import { endArrowheadOf, fillStyleOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, type Arrowhead, type Look, type StrokeKind } from "../../core/look";
 
 const gen = rough.generator();
 
@@ -99,10 +100,21 @@ export function wingDashOf(kind: StrokeKind, w: number): number[] {
   return kind === "dotted" ? [dash[0] ?? 0, (dash[1] ?? 1) - 1] : [];
 }
 
+/** Ailes d'une pointe de pointe `(tipX, tipY)` pour un fût qui arrive de `(fromX, fromY)` : `arrowWings` décalé du départ. */
+export function headWings(tipX: number, tipY: number, fromX: number, fromY: number, width: number): [number, number, number, number] | null {
+  const w = arrowWings(tipX - fromX, tipY - fromY, width);
+  return w ? [w[0] + fromX, w[1] + fromY, w[2] + fromX, w[3] + fromY] : null;
+}
+
+/** Un fond non transparent avec hachures passe par roughjs même sans rugosité (Architecte). */
+export function hatched(s: ShapeData, look: Look | undefined): boolean {
+  return s.fill !== null && (s.shape === "rect" || s.shape === "ellipse") && fillStyleOf(look) !== "solid";
+}
+
 function keyOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number): string {
   const round = roundnessOf(look) === "round";
   const roughness = adjustRoughness(s.shape, s.w, s.h, round, roughnessOf(look));
-  return JSON.stringify([s.shape, s.w, s.h, s.fill, style.color, style.width, strokeKindOf(look), roughness, round, seed]);
+  return JSON.stringify([s.shape, s.w, s.h, s.fill, style.color, style.width, strokeKindOf(look), roughness, round, seed, fillStyleOf(look), startArrowheadOf(look), endArrowheadOf(look)]);
 }
 
 function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key: string): SketchPlan {
@@ -111,6 +123,7 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
   const dash = dashOf(kind, w);
   const round = roundnessOf(look) === "round";
   const roughness = adjustRoughness(s.shape, s.w, s.h, round, roughnessOf(look));
+  const fillKind = fillStyleOf(look);
   const closed = s.shape === "rect" || s.shape === "ellipse";
   const opts: Options = {
     roughness,
@@ -121,7 +134,9 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
     // Excalidraw : sans multi-trait pour les tirets, qui se recouvriraient.
     disableMultiStroke: kind !== "solid",
     preserveVertices: true,
-    ...(closed && s.fill !== null ? { fill: s.fill, fillStyle: "solid" } : {}),
+    ...(closed && s.fill !== null
+      ? { fill: s.fill, fillStyle: fillKind === "solid" ? "solid" : fillKind, hachureGap: 4 * w, fillWeight: w / 2 }
+      : {}),
   };
   const parts: SketchPart[] = [];
   const add = (sets: OpSet[], d: readonly number[]): void => {
@@ -133,12 +148,23 @@ function planOf(s: ShapeData, style: StrokeStyle, look: Look, seed: number, key:
     add(gen.ellipse(s.w / 2, s.h / 2, s.w, s.h, opts).sets, dash);
   } else {
     add(gen.line(0, 0, s.w, s.h, opts).sets, dash);
-    const head = s.shape === "arrow" ? arrowWings(s.w, s.h, w) : null;
-    if (head) {
+    if (s.shape === "arrow") {
       const wd = wingDashOf(kind, w);
       const wing: Options = { ...opts, strokeLineDash: wd, roughness: Math.min(1, roughness) };
-      add(gen.line(head[0], head[1], s.w, s.h, wing).sets, wd);
-      add(gen.line(s.w, s.h, head[2], head[3], wing).sets, wd);
+      const addHead = (k: Arrowhead, tx: number, ty: number, fx: number, fy: number): void => {
+        const head = k === "none" ? null : headWings(tx, ty, fx, fy, w);
+        if (!head) return;
+        if (k === "arrow") {
+          add(gen.line(head[0], head[1], tx, ty, wing).sets, wd);
+          add(gen.line(tx, ty, head[2], head[3], wing).sets, wd);
+        } else {
+          const poly: [number, number][] = [[head[0], head[1]], [tx, ty], [head[2], head[3]]];
+          const fillOpts: Options = k === "triangle" ? { ...wing, fill: style.color, fillStyle: "solid" } : wing;
+          add(gen.polygon(poly, fillOpts).sets, wd);
+        }
+      };
+      addHead(endArrowheadOf(look), s.w, s.h, 0, 0);
+      addHead(startArrowheadOf(look), 0, 0, s.w, s.h);
     }
   }
   return { key, parts };
@@ -156,8 +182,11 @@ export function sketchShape(ctx: CanvasRenderingContext2D, s: ShapeData, style: 
   for (const { set, dash } of plan.parts) {
     if (set.type === "fillPath") {
       replay(ctx, set.ops);
-      ctx.fillStyle = s.fill ?? style.color;
+      ctx.fillStyle = s.shape === "arrow" ? style.color : (s.fill ?? style.color);
       ctx.fill();
+    } else if (set.type === "fillSketch") {
+      replay(ctx, set.ops);
+      strokeWith(ctx, { color: s.fill ?? style.color, width: style.width / 2 }, []);
     } else if (set.type === "path") {
       replay(ctx, set.ops);
       strokeWith(ctx, style, dash);

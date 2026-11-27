@@ -177,6 +177,16 @@ export function optionsWidth(btn: number): number {
   return inner + 2 * 4 + 2 * 12;
 }
 
+/** T33 : abscisse de l'éditeur de lien `box` (px de la zone) : décalée à 8 px à droite de chaque obstacle (panneau
+ *  d'options, îlots) qu'il recouvrirait, bornée à `maxX` et à 8 px du bord gauche ; entière. */
+export function placeLinkAvoiding(box: Rect, obstacles: readonly Rect[], maxX: number): number {
+  let x = box.x;
+  for (const o of [...obstacles].sort((a, b) => a.x - b.x)) {
+    if (x < o.x + o.w && o.x < x + box.w && box.y < o.y + o.h && o.y < box.y + box.h) x = o.x + o.w + GAP;
+  }
+  return Math.round(Math.max(8, Math.min(x, maxX)));
+}
+
 /** OG11 : bas de la rangée du haut (îlots posés à `EDGE`, hauts de `btn` + 8) pour la taille de bouton `btn` du profil. */
 export function topRowBottom(btn: number): number {
   return EDGE + btn + 8;

@@ -5,12 +5,16 @@ use yrs::{Any, In, Map, MapRef};
 
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
-use crate::element::{finite_positive, out_string, read_look, STROKE_STYLES};
+use crate::element::{
+    finite_positive, out_string, read_look, valid_link, ARROWHEADS, END_ARROWHEAD_DEFAULT,
+    FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS,
+};
 use crate::fill::{differs, set_or_remove};
 use crate::rich_text::valid_color;
 
 /// Patch de style : `None` laisse le champ ; `Some(None)` le retire (neutre). `roughness: Some(0)` retire `roughness` et
-/// `seed` ; `opacity` dans [0, 100], arrondie, `Some(100.0)` retire `opacity`.
+/// `seed` ; `opacity` dans [0, 100], arrondie, `Some(100.0)` retire `opacity`. Lot 2 (T12) : une pointe égale à son
+/// neutre (`none` au début, `arrow` à la fin) retire le champ, jamais elle ne s'écrit ; `link` n'admet que `valid_link`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StylePatch {
     pub color: Option<String>,
@@ -20,6 +24,16 @@ pub struct StylePatch {
     pub roughness: Option<u8>,
     pub roundness: Option<Option<String>>,
     pub opacity: Option<f64>,
+    pub fill_style: Option<Option<String>>,
+    pub start_arrowhead: Option<Option<String>>,
+    pub end_arrowhead: Option<Option<String>>,
+    pub text_align: Option<Option<String>>,
+    pub link: Option<Option<String>>,
+}
+
+/// `Some(Some(s))` hors de `allowed`.
+fn outside(v: &Option<Option<String>>, allowed: &[&str]) -> bool {
+    matches!(v, Some(Some(s)) if !allowed.contains(&s.as_str()))
 }
 
 impl StylePatch {
@@ -44,12 +58,25 @@ impl StylePatch {
         if matches!(&self.roundness, Some(Some(s)) if s != "round") {
             return bad;
         }
+        if outside(&self.fill_style, &FILL_STYLES)
+            || outside(&self.start_arrowhead, &ARROWHEADS)
+            || outside(&self.end_arrowhead, &ARROWHEADS)
+            || outside(&self.text_align, &TEXT_ALIGNS)
+            || matches!(&self.link, Some(Some(l)) if !valid_link(l))
+        {
+            return bad;
+        }
         match self.opacity {
             None => Ok(None),
             Some(o) if o.is_finite() && (0.0..=100.0).contains(&o) => Ok(Some(o.round() as u8)),
             Some(_) => bad,
         }
     }
+}
+
+/// Écriture d'une pointe : son neutre `default` retire le champ (DA-5).
+fn head(v: &Option<String>, default: &str) -> Option<In> {
+    v.as_deref().filter(|s| *s != default).map(In::from)
 }
 
 /// Nombre écrit comme `style_fields` et `look_fields` (`Any` d'un `f64`).
@@ -118,6 +145,30 @@ fn writes_for(
     if let Some(o) = opacity {
         if matches!(kind, "stroke" | "shape" | "text" | "image") {
             w.push(("opacity", (o < 100).then(|| num(f64::from(o)))));
+        }
+    }
+    if let Some(f) = &p.fill_style {
+        if is_shape && matches!(shape, Some("rect" | "ellipse")) {
+            w.push(("fillStyle", f.as_deref().map(In::from)));
+        }
+    }
+    if is_shape && shape == Some("arrow") {
+        if let Some(h) = &p.start_arrowhead {
+            w.push(("startArrowhead", head(h, START_ARROWHEAD_DEFAULT)));
+        }
+        if let Some(h) = &p.end_arrowhead {
+            w.push(("endArrowhead", head(h, END_ARROWHEAD_DEFAULT)));
+        }
+    }
+    if let Some(a) = &p.text_align {
+        if kind == "text" {
+            w.push(("textAlign", a.as_deref().map(In::from)));
+        }
+    }
+    if let Some(l) = &p.link {
+        // Tout élément dont l'aspect est lu (`look_view`) ; jamais le remplissage de zone (`fill`).
+        if matches!(kind, "stroke" | "shape" | "text" | "image") {
+            w.push(("link", l.as_deref().map(In::from)));
         }
     }
     w
