@@ -331,7 +331,7 @@ export function App(props: AppProps): JSX.Element {
     const island = props.stages.ownerDocument.querySelector<HTMLElement>('[data-island="pages"]');
     if (island === null) return;
     const wasFolded = island.dataset["collapsed"] === "1";
-    const tabEl = island.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
+    const tabEl = island.querySelector<HTMLElement>(`[data-side-tab="${tab}"]`);
     const onOther = !wasFolded && tabEl?.getAttribute("aria-selected") === "false";
     if (tabEl === null && tab === "calques") return;
     if (onOther) {
