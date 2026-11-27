@@ -1,7 +1,7 @@
 // Contrat du vrai module Wasm (D33) : chargé en Node par `initSync` sur les octets, joué contre `api.ts` (T8).
 // Sous `verifier.sh` (ROOMBOARD_WASM_REQUIRED=1), un `.wasm` absent fait échouer le contrat au lieu de le sauter.
 import { describe, expect, it } from "vitest";
-import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
+import type { AssetRef, CellIds, Change, Command, CoreDocument, CoreFactory, GridInput, GridLevel, ImageElement, ImageParams, Look, LookPatch, Matrix, ShapeKind, TableData, TextAttrs, TextAttrsPatch, TextSpan } from "./api";
 import { BAD_GROUP_MESSAGE, BAD_IMAGE_PARAMS_MESSAGE, BAD_MEDIA_MESSAGE, MIXED_SOURCE_MESSAGE, NOT_A_DOCUMENT_MESSAGE, NOT_A_FRAGMENT_MESSAGE, PACK_MESSAGE, unknownKindMessage } from "./api";
 import { BAD_MODEL3D_MESSAGE, DEFAULT_MODEL3D_PITCH, DEFAULT_MODEL3D_YAW, MAX_MODEL3D_FILES, MAX_MODEL3D_PATH, MODEL3D_PITCH_LIMIT } from "./api";
 import { IDENTITY as CAMERA_IDENTITY } from "../engine/camera";
@@ -3879,6 +3879,195 @@ describe("contrat elementIdsOfKind : tableau et fill mal formés, élément sans
       expect(ids, kind).toHaveLength(1);
       expect(ids, kind).toEqual(d.elementIds(p).filter((id) => d.element(id)?.kind === kind));
     }
+    d.free();
+  });
+});
+
+// OG11 (T4) : `SetStyle` et `look` des créations, joués sur les deux cœurs. Référence : `style.rs` (`validate`,
+// `writes_for`, `differs`, `plan.is_empty()`) ; le pont vérifie les bornes des nombres (f64), jamais de troncature.
+describe.each(factories)("contrat OG11 : $name", ({ f }) => {
+  const black = { color: "#000000", width: 4 };
+  const rect = (d: CoreDocument, p: string, look?: Look): string =>
+    d.apply({ type: "AddShape", page: p, shape: "rect", x0: 0, y0: 0, x1: 100, y1: 50, style: black, fill: null, ...(look ? { look } : {}) }).ids[0] ?? "";
+  const line = (d: CoreDocument, p: string): string =>
+    d.apply({ type: "AddShape", page: p, shape: "line", x0: 0, y0: 0, x1: 100, y1: 50, style: black, fill: null }).ids[0] ?? "";
+  const picture = (d: CoreDocument, p: string): string =>
+    d.apply({ type: "AddImage", page: p, asset: png, w: 640, h: 480, matrix: I }).ids[0] ?? "";
+  const box = (d: CoreDocument, p: string, look?: Look): string =>
+    d.apply({ type: "SetText", page: p, id: null, x: 10, y: 10, content: "abc", color: "#000000", size: 16, boxWidth: 100, boxHeight: 30, ...(look ? { look } : {}) }).ids[0] ?? "";
+  const restyle = (d: CoreDocument, ids: readonly string[], patch: LookPatch): Change => d.apply({ type: "SetStyle", ids, patch });
+
+  it("SetStyle : une étape, sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = rect(d, p);
+    const c = restyle(d, [id], { strokeStyle: "dashed", opacity: 44.6, roughness: 1 });
+    expect(c.ids).toEqual([id]);
+    expect(c.pages).toEqual([p]);
+    const el = d.element(id);
+    expect(el?.look?.strokeStyle).toBe("dashed");
+    expect(el?.look?.opacity).toBe(45);
+    expect(el?.look?.roughness).toBe(1);
+    const seed = el?.look?.seed;
+    expect(Number.isInteger(seed) && (seed ?? -1) >= 0 && (seed ?? -1) <= 0xffffffff).toBe(true);
+    unchanged(d, () => expect(restyle(d, [id], { strokeStyle: "dashed" }).ids).toEqual([]));
+    d.undo();
+    expect(d.element(id)?.look).toBeUndefined();
+    expect(messageOf(() => restyle(d, [id], { opacity: 150 }))).toBe("style invalide");
+    expect(messageOf(() => rect(d, p, { opacity: 300 }))).toBe("style invalide");
+    d.free();
+  });
+
+  it("SetStyle : même valeur, champ inapplicable ou liste vide, aucune étape (D38)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p);
+    const l = line(d, p);
+    const im = picture(d, p);
+    const t = box(d, p);
+    const s = commit(d, p, 300);
+    restyle(d, [r], { strokeStyle: "dotted", roughness: 2, roundness: "round", opacity: 30, color: "#ff0000", width: 6, fill: "#00ff00" });
+    const look = d.element(r)?.look;
+    unchanged(d, () => expect(restyle(d, [r], { strokeStyle: "dotted", roughness: 2, roundness: "round", opacity: 30.2, color: "#ff0000", width: 6, fill: "#00ff00" }).ids).toEqual([]));
+    expect(d.element(r)?.look).toEqual(look);
+    unchanged(d, () => expect(restyle(d, [im], { roundness: "round", roughness: 1, strokeStyle: "dashed", fill: "#00ff00", color: "#ff0000", width: 9 }).ids).toEqual([]));
+    unchanged(d, () => expect(restyle(d, [l], { roundness: "round", fill: "#00ff00" }).ids).toEqual([]));
+    unchanged(d, () => expect(restyle(d, [t], { width: 9, roughness: 1, strokeStyle: "dashed" }).ids).toEqual([]));
+    unchanged(d, () => expect(restyle(d, [s], { roundness: "round", roughness: 1, strokeStyle: "dashed", fill: "#00ff00" }).ids).toEqual([]));
+    unchanged(d, () => expect(restyle(d, [], { opacity: 10 }).ids).toEqual([]));
+    unchanged(d, () => expect(restyle(d, [r, im], {}).ids).toEqual([]));
+    const v = d.version();
+    const c = restyle(d, [r, im, l], { roundness: null });
+    expect(c.ids).toEqual([r]);
+    expect(d.version()).toBe(v + 1);
+    unchanged(d, () => expect(restyle(d, [r, im, l], { roundness: null }).ids).toEqual([]));
+    d.free();
+  });
+
+  it("SetStyle et créations : bornes vérifiées dans le pont, aucune troncature, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p);
+    const bad = <T>(v: unknown): T => v as T;
+    for (const patch of [
+      { roughness: bad<1>(257) }, { roughness: bad<1>(1.5) }, { roughness: bad<1>(-1) }, { roughness: bad<1>(3) },
+      { opacity: 300 }, { opacity: 356 }, { opacity: -1 }, { opacity: Number.NaN }, { opacity: Number.POSITIVE_INFINITY },
+      { opacity: bad<number>("45") }, { roughness: bad<1>("1") }, { strokeStyle: bad<"dashed">("wavy") },
+      { roundness: bad<"round">("sharp") }, { color: "rouge" }, { fill: "rouge" }, { width: 0 }, { width: -2 },
+    ] as LookPatch[]) {
+      unchanged(d, () => expect(messageOf(() => restyle(d, [r], patch)), JSON.stringify(patch)).toBe("style invalide"));
+    }
+    // Validation avant toute lecture : un id inconnu passe après le patch.
+    expect(messageOf(() => restyle(d, ["absent"], { opacity: 150 }))).toBe("style invalide");
+    expect(messageOf(() => restyle(d, ["absent"], { opacity: 10 }))).toBe("élément inconnu : absent");
+    for (const look of [
+      { opacity: 300 }, { opacity: 296 }, { opacity: -1 }, { opacity: Number.NaN }, { roughness: bad<1>(257) },
+      { roughness: bad<1>(1.5) }, { roughness: 1, seed: 2 ** 32 }, { roughness: 1, seed: 2 ** 32 + 5 }, { roughness: 1, seed: -1 },
+      { roughness: 1, seed: 1.5 },
+    ] as Look[]) {
+      unchanged(d, () => expect(messageOf(() => rect(d, p, look)), JSON.stringify(look)).toBe("style invalide"));
+      unchanged(d, () => expect(messageOf(() => d.apply({ type: "CommitStroke", page: p, points: hline(400), style, look })), JSON.stringify(look)).toBe("style invalide"));
+      unchanged(d, () => expect(messageOf(() => box(d, p, look)), JSON.stringify(look)).toBe("style invalide"));
+    }
+    d.free();
+  });
+
+  it("SetStyle : opacité 0..100 arrondie, 100 retire ; tracé 0 retire tracé et graine, même niveau garde la graine", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p);
+    restyle(d, [r], { opacity: 95 });
+    expect(d.element(r)?.look).toEqual({ opacity: 95 });
+    restyle(d, [r], { opacity: 0 });
+    expect(d.element(r)?.look).toEqual({ opacity: 0 });
+    restyle(d, [r], { opacity: 44.4 });
+    expect(d.element(r)?.look).toEqual({ opacity: 44 });
+    restyle(d, [r], { opacity: 99.5 });
+    expect(d.element(r)?.look).toBeUndefined();
+    restyle(d, [r], { roughness: 2 });
+    const seed = d.element(r)?.look?.seed;
+    expect(typeof seed).toBe("number");
+    unchanged(d, () => expect(restyle(d, [r], { roughness: 2 }).ids).toEqual([]));
+    expect(d.element(r)?.look?.seed).toBe(seed);
+    restyle(d, [r], { roughness: 0 });
+    expect(d.element(r)?.look).toBeUndefined();
+    d.undo();
+    expect(d.element(r)?.look).toEqual({ roughness: 2, seed });
+    d.free();
+  });
+
+  it("SetStyle : couleur, largeur et fond selon le genre", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = rect(d, p);
+    const l = line(d, p);
+    const t = box(d, p);
+    const s = commit(d, p, 300);
+    const c = restyle(d, [r, l, t, s], { color: "#ff0000", width: 7, fill: "#00ff00" });
+    expect([...c.ids].sort()).toEqual([r, l, t, s].sort());
+    const view = (id: string) => d.element(id);
+    for (const id of [r, l, s]) {
+      const e = view(id);
+      expect(e?.kind === "shape" || e?.kind === "stroke" ? e.style : null).toEqual({ color: "#ff0000", width: 7 });
+    }
+    const te = view(t);
+    expect(te?.kind === "text" ? te.style.color : null).toBe("#ff0000");
+    const re = view(r);
+    expect(re?.kind === "shape" ? re.shape.fill : undefined).toBe("#00ff00");
+    const le = view(l);
+    expect(le?.kind === "shape" ? le.shape.fill : undefined).toBeNull();
+    restyle(d, [r], { fill: null });
+    const re2 = view(r);
+    expect(re2?.kind === "shape" ? re2.shape.fill : undefined).toBeNull();
+    d.free();
+  });
+
+  it("image : look lu (opacité)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = picture(d, p);
+    expect(d.element(id)?.look).toBeUndefined();
+    restyle(d, [id], { opacity: 40 });
+    expect(d.element(id)?.look).toEqual({ opacity: 40 });
+    d.free();
+  });
+
+  it("créations avec look : écrit dans la même étape, ignoré sur un texte existant", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = rect(d, p, { roundness: "round", opacity: 50 });
+    expect(d.element(id)?.look).toEqual({ roundness: "round", opacity: 50 });
+    const rough = rect(d, p, { roughness: 2, seed: 4242, strokeStyle: "dotted" });
+    expect(d.element(rough)?.look).toEqual({ roughness: 2, seed: 4242, strokeStyle: "dotted" });
+    const s = d.apply({ type: "CommitStroke", page: p, points: hline(300), style, look: { opacity: 40 } }).ids[0] ?? "";
+    expect(d.element(s)?.look).toEqual({ opacity: 40 });
+    const t = box(d, p, { opacity: 60 });
+    expect(d.element(t)?.look).toEqual({ opacity: 60 });
+    unchanged(d, () =>
+      d.apply({ type: "SetText", page: p, id: t, x: 10, y: 10, content: "abc", color: "#000000", size: 16, boxWidth: 100, boxHeight: 30, look: { opacity: 10 } }),
+    );
+    expect(d.element(t)?.look).toEqual({ opacity: 60 });
+    expect(d.element(rect(d, p, {}))?.look).toBeUndefined();
+    d.undo();
+    d.undo();
+    d.undo();
+    d.undo();
+    d.undo();
+    expect(d.element(id)).toBeNull();
+    d.free();
+  });
+});
+
+describe.skipIf(loaded === null)("contrat OG11 : vrai module seulement", () => {
+  // Écart documenté de `fake-core.ts` : la fausse liaison ne coupe pas à la gomme partielle (aucun morceau).
+  it("gomme partielle : look recopié sur les morceaux", () => {
+    const d = need().core.blank();
+    const page = first(d);
+    const pts = new Float32Array(Array.from({ length: 21 }, (_, i) => [i * 10, 100, 0.5]).flat());
+    d.apply({ type: "CommitStroke", page, points: pts, style: { color: "#000000", width: 4 }, look: { opacity: 40 } });
+    const c = d.apply({ type: "Erase", page, path: new Float32Array([100, 80, 100, 120]), radius: 6, mode: "partial" });
+    expect(c.ids.length).toBeGreaterThanOrEqual(2);
+    for (const id of c.ids) expect(d.element(id)?.look).toEqual({ opacity: 40 });
     d.free();
   });
 });
