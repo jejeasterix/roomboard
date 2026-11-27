@@ -124,4 +124,39 @@ describe("createEraserTool (D12, D38)", () => {
     tool.close(1, "end");
     expect(doc.version()).toBe(v);
   });
+
+  it("OG25 resize : le rayon ne fait que grandir (px / zoom), une seule Erase au rayon le plus grand", () => {
+    const { runs, tool } = setup("partial", { zoom: 2, tx: 0, ty: 0 });
+    tool.begin(1, [s(300, 80)]);
+    tool.resize?.(1, 70);
+    tool.resize?.(1, 40);
+    tool.extend(1, [s(300, 120)], []);
+    expect(tool.live().erasers[0]?.radius).toBe(35);
+    tool.close(1, "end");
+    expect(runs).toHaveLength(1);
+    expect(eraseOf(runs).radius).toBe(35);
+  });
+
+  it("OG25 resize : plus petit que le rayon de départ, invalide ou geste inconnu : sans effet", () => {
+    const { runs, tool } = setup();
+    tool.begin(1, [s(300, 80)]);
+    tool.resize?.(1, 5);
+    tool.resize?.(1, Number.NaN);
+    tool.resize?.(1, -3);
+    tool.resize?.(9, 100);
+    tool.extend(1, [s(300, 120)], []);
+    tool.close(1, "end");
+    expect(eraseOf(runs).radius).toBe(ERASER_RADIUS_PX);
+  });
+
+  it("OG25 resize, gomme d'objet : la sonde repart du début quand le rayon grandit", () => {
+    const { tool, target } = setup("object");
+    tool.begin(1, [s(300, 140)]);
+    tool.extend(1, [s(310, 140)], []);
+    tool.frame();
+    expect(tool.live().hidden.has(target)).toBe(false);
+    tool.resize?.(1, 60);
+    tool.frame();
+    expect(tool.live().hidden.has(target)).toBe(true);
+  });
 });
