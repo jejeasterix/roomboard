@@ -4,17 +4,29 @@ import type { ElementView } from "../core/api";
 import type { ToolChoice } from "../engine/input/gesture"; // gesture.ts:27
 import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
-export type OptionKey = "strokeColor" | "background" | "strokeWidth" | "strokeStyle" | "roughness" | "roundness" | "opacity" | "actions";
-export const OPTION_ORDER: readonly OptionKey[] = ["strokeColor", "background", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity", "actions"];
+export type OptionKey =
+  | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "strokeStyle" | "roughness" | "roundness"
+  | "font" | "fontSize" | "textAlign" | "arrowheads" | "opacity" | "layers" | "actions";
+export const OPTION_ORDER: readonly OptionKey[] = [
+  "strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness",
+  "font", "fontSize", "textAlign", "arrowheads", "opacity", "layers", "actions",
+];
+/** Lot 2 : tailles et polices proposées (Excalidraw : S, M, L, XL ; ici les tailles du texte de la barre). */
+export const TEXT_SIZES: readonly number[] = [24, 36, 48, 72];
+export const FONTS = [
+  { value: "default", label: "Normale", font: null },
+  { value: "Georgia", label: "Georgia", font: "Georgia" },
+  { value: "Courier New", label: "Courier New", font: "Courier New" },
+] as const;
 
 const FORM: readonly OptionKey[] = ["strokeColor", "strokeWidth", "strokeStyle", "roughness", "opacity"];
 const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
   pen: ["strokeColor", "strokeWidth", "opacity"],
-  rect: ["strokeColor", "background", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity"],
-  ellipse: ["strokeColor", "background", "strokeWidth", "strokeStyle", "roughness", "opacity"],
+  rect: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity"],
+  ellipse: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
   line: FORM,
-  arrow: FORM,
-  text: ["strokeColor", "opacity"],
+  arrow: [...FORM.slice(0, 4), "arrowheads", "opacity"],
+  text: ["strokeColor", "font", "fontSize", "textAlign", "opacity"],
 };
 const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>> = {
   stroke: () => BY_TOOL["pen"]!,
@@ -30,14 +42,18 @@ function byElement(e: ElementView): readonly OptionKey[] {
 export function appliesTo(key: OptionKey, e: ElementView): boolean {
   return byElement(e).includes(key);
 }
-export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean): readonly OptionKey[] {
+/** `background` : fond du style courant, lu quand aucune cible n'est choisie (le remplissage n'a de sens qu'avec un fond). */
+export function sectionsFor(tool: ToolChoice, targets: readonly ElementView[], _editing: boolean, background: string | null = null): readonly OptionKey[] {
   const on = new Set<OptionKey>(BY_TOOL[tool] ?? []);
   for (const t of targets) for (const k of byElement(t)) on.add(k);
-  if (targets.length > 0) on.add("actions");
+  if (targets.length > 0) { on.add("layers"); on.add("actions"); }
+  const filled = targets.length > 0 ? targets.some((t) => t.kind === "shape" && t.shape.fill != null) : background !== null;
+  if (!filled) on.delete("fillStyle");
   return OPTION_ORDER.filter((k) => on.has(k));
 }
-export function disabledIn(_key: OptionKey, _editing: boolean): boolean {
-  return false;
+/** En saisie de texte, la rangée Format gouverne la police, la taille et la couleur : le panneau les grise. */
+export function disabledIn(key: OptionKey, editing: boolean): boolean {
+  return editing && (key === "font" || key === "fontSize" || key === "strokeColor");
 }
 export function formValue<T>(targets: readonly ElementView[], read: (e: ElementView) => T | undefined, current: T): T | null {
   let seen = false;

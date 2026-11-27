@@ -36,5 +36,7 @@ x11-dl = "2.21.0"
 
 [dev-dependencies]
 serde_json = "1"
+# T35 : parité de `links::valid_link` avec la règle du cœur (`element::valid_link`), en test seulement.
+roomboard-core = { path = "../roomboard-core" }
 # C16 (O27) : fichiers d'essai .docx, .pptx, .xlsx fabriqués par les tests (mêmes features que roomboard-core).
 zip = { version = "9.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

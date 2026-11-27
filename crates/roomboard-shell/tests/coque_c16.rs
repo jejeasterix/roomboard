@@ -211,3 +211,49 @@ fn undeclared_roots_rejects_use_of_an_undeclared_crate() {
     let bad = "use tauri::Manager;\nuse open::that_detached;\nfn main() {}\n";
     assert_eq!(undeclared_roots(bad, toml), vec!["open".to_string()]);
 }
+
+/// T35 (correctif de T18, H5) : lien d'élément par une commande mince `open_link` ; schéma contrôlé et ouverture dans
+/// `roomboard_shell::links` (crate `open`), jamais par tauri-plugin-opener ; la page l'appelle par `invoke`.
+#[test]
+fn open_link_is_a_thin_command_checked_in_rust() {
+    let handler = MAIN_RS
+        .split("generate_handler![")
+        .nth(1)
+        .and_then(|s| s.split(']').next())
+        .expect("generate_handler!");
+    assert!(
+        handler.split(',').any(|x| x.trim() == "open_link"),
+        "open_link absente de generate_handler!"
+    );
+    let body = MAIN_RS
+        .split("fn open_link(")
+        .nth(1)
+        .and_then(|s| s.split("\n}\n").next())
+        .expect("fonction open_link absente");
+    assert!(
+        body.contains("links::open_link("),
+        "open_link ne passe pas par links::open_link"
+    );
+    for forbidden in [
+        "starts_with",
+        "http",
+        "mailto",
+        "that_detached",
+        "Command::new",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "{forbidden} dans open_link de main.rs (la règle vit dans roomboard-shell)"
+        );
+    }
+    assert!(!MAIN_RS.contains("tauri_plugin_opener"));
+    let host = include_str!("../../../apps/web/src/platform/host-tauri.ts");
+    assert!(
+        !host.contains("plugin:opener"),
+        "plugin:opener dans host-tauri.ts"
+    );
+    assert!(
+        host.contains("invoke<void>(\"open_link\", { url })"),
+        "open_link non appelée par host-tauri.ts"
+    );
+}

@@ -1,4 +1,5 @@
 // OG11 (DA-6) : une seule table des raccourcis — le menu ☰ les affiche, l'Aide (lot 2) les liste.
+import { inEditable, type KeyLike } from "../engine/input/keys";
 export interface Shortcut { readonly id: string; readonly group: string; readonly label: string; readonly keys: string }
 const s = (id: string, group: string, label: string, keys: string): Shortcut => Object.freeze({ id, group, label, keys });
 export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
@@ -6,6 +7,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("file-open", "Fichier", "Ouvrir", "Ctrl+O"),
   s("file-save", "Fichier", "Enregistrer", "Ctrl+S"),
   s("file-save-as", "Fichier", "Enregistrer sous", "Ctrl+Maj+S"),
+  s("export-pdf", "Fichier", "Exporter en PDF…", "Ctrl+Maj+E"),
   s("undo", "Édition", "Annuler", "Ctrl+Z"),
   s("redo", "Édition", "Rétablir", "Ctrl+Y"),
   s("copy", "Édition", "Copier", "Ctrl+C"),
@@ -16,10 +18,19 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("duplicate", "Édition", "Dupliquer", "Ctrl+D"),
   s("delete", "Édition", "Supprimer", "Suppr"),
   s("escape", "Édition", "Désélectionner", "Échap"),
+  s("link", "Édition", "Lien", "Ctrl+K"),
+  s("front", "Disposition", "Premier plan", "Ctrl+Maj+↑"),
+  s("forward", "Disposition", "Avancer", "Ctrl+↑"),
+  s("backward", "Disposition", "Reculer", "Ctrl+↓"),
+  s("back", "Disposition", "Arrière-plan", "Ctrl+Maj+↓"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
-  s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
+  s("help", "Vue", "Aide", "?"),
   // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
+  // Une ligne se range dans le bloc de son groupe : l'Aide affiche les groupes dans l'ordre de la table.
   s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
+  s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
+  s("stroke-picker", "Options", "Couleur du trait", "S"),
+  s("fill-picker", "Options", "Couleur de l'arrière-plan", "G"),
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),
@@ -33,7 +44,7 @@ export function shortcutText(id: string, mac: boolean): string | null {
   return mac ? MAC.reduce((t, [a, b]) => t.split(a).join(b), hit.keys) : hit.keys;
 }
 /** Noms `aria-keyshortcuts` (WAI-ARIA) des parties d'un raccourci de la table. */
-const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown" };
+const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown" };
 /** OG19 : valeur `aria-keyshortcuts` d'un raccourci (Ctrl → Control, ou Meta sous macOS) ; null pour un geste
  *  (« Espace + glisser »), une liste (« Ctrl+B, I, U ») ou un id absent de la table. */
 export function ariaShortcut(id: string, mac: boolean): string | null {
@@ -45,6 +56,11 @@ export function ariaShortcut(id: string, mac: boolean): string | null {
     .join("+");
 }
 export const isMac = (): boolean => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** « ? » : ouvre l'Aide ; hors champ de saisie, sans Ctrl, Méta ni Alt (Maj admis : « ? » le demande), hors composition. */
+export function isHelpKey(e: Omit<KeyLike, "target"> & { readonly target: unknown }): boolean {
+  return e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && !inEditable(e.target as KeyLike["target"]);
+}
 
 /** OG19 : raccourci d'un bouton de barre, lu dans la table par l'id de son action ; null sans raccourci. */
 export function buttonShortcut(action: string | undefined): { readonly text: string; readonly aria: string | null } | null {

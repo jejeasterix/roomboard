@@ -5,26 +5,27 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, PageLayout, PageMode, ShapeKind, StrokeStyle } from "../core/api";
+import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, scrollKey, type KeyLike } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
-import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type PageRect } from "./page";
+import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type FrameLayout, type FrameSource, type PageRect } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
 import { createModelOrbit, type ModelOrbit, type ModelOrbitSession } from "./tools/model-orbit";
 import { SELECT_TOL_PX } from "./tools/select";
+import { inLinkBadge, linkBadgeBox } from "./render/link-badge";
 import type { ModelCamera } from "./render/model-frames";
 import { NO_LIVE, type GestureTool, type LeaveReason, type LivePart, type SelectionTool, type TableTool, type ToolContext } from "./tools/tool";
 
@@ -63,6 +64,9 @@ export interface EngineState {
   /** OG11 (déc. 23) : style courant des créations et du panneau d'options. Facultatif comme fillColor (PC5) : le moteur
    *  le publie toujours. */
   readonly itemStyle?: ItemStyle;
+  /** T18 (H5, déc. 38) : élément dont l'éditeur de lien est ouvert (Ctrl+K ou bouton Lien, un seul élément) ; null
+   *  sinon. Facultatif comme fillColor (PC5) : le moteur le publie toujours. */
+  readonly linkEditing?: string | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -106,6 +110,9 @@ export interface EngineDeps {
   readonly fitTop?: () => number;
   /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
   readonly pageMode?: () => PageLayout;
+  /** T18 (déc. 38) : ouverture d'un lien (`ShellPort.openLink`), appelée seulement au relâché d'un toucher du badge avec
+   *  l'outil Sélection ; absent : rien ne s'ouvre. */
+  readonly openLink?: (url: string) => void;
 }
 
 /**
@@ -142,6 +149,39 @@ export function pageShortcut(
   }
 }
 
+/** OG24 : marge sous le bas d'une page portrait défilée jusqu'en bas, en px de scène (le haut garde `fitTop`). */
+export const SCROLL_BOTTOM = 16;
+
+/** Ascenseur de la page portrait montrée (OG24) : `at` 0 = haut de page, 1 = bas ; `visible` = part de la page à
+ *  l'écran (0-1) ; `top` = haut de page ajustée, px de scène ; `span` = hauteur d'écran, px, de `top` à la marge du bas. */
+export interface PageScroll {
+  readonly at: number;
+  readonly visible: number;
+  readonly top: number;
+  readonly span: number;
+}
+
+/**
+ * Touches de l'ascenseur (OG24), prises seulement si la vue bouge : ↑ ↓ d'un huitième de `span`, Maj+↑ ↓ de 90 % de
+ * `span`, Début et Fin aux bords. Hors portrait (ou page qui tient dans la vue) : rien, la touche passe.
+ */
+export function scrollShortcut(e: KeyLike, engine: Pick<Engine, "pageScroll" | "scrollPageBy" | "scrollPageTo">): boolean {
+  const k = scrollKey(e);
+  const s = k === null ? null : engine.pageScroll();
+  if (s === null) return false;
+  switch (k) {
+    case "top":
+      return engine.scrollPageTo(0);
+    case "bottom":
+      return engine.scrollPageTo(1);
+    case "up":
+    case "down":
+      return engine.scrollPageBy((k === "up" ? -1 : 1) * (s.span / 8));
+    default:
+      return engine.scrollPageBy((k === "screen-up" ? -1 : 1) * s.span * 0.9);
+  }
+}
+
 export interface OrbitOptions {
   readonly view: ModelCamera;
   onView(v: ModelCamera): void;
@@ -156,6 +196,9 @@ export interface Engine {
   setTool(t: ToolChoice): void;
   setEraserMode(m: EraseMode): void;
   run(cmd: Command): Change | null;
+  /** T37 : plusieurs commandes d'un même changement, une seule étape d'annulation (un annuler les défait toutes, un
+   *  rétablir les refait) ; une seule émission. Liste vide : null. Une commande refusée arrête la suite (erreur de l'état). */
+  runAll(cmds: readonly Command[]): Change | null;
   /** Lot 2 (calques) : outil Sélection, sélection = `ids` de la page montrée (les inconnus sont ignorés) ; [] la vide. */
   select(ids: readonly string[]): void;
   /** Lot 2 : bloc `ids` au rang `to` de la pile (0 = arrière-plan) ; une étape ; faux si refusé ou sans effet. */
@@ -206,6 +249,12 @@ export interface Engine {
   nextPage(): boolean;
   /** « Ajuster la page » (D5 amendée) : largeur cadrée, haut de page en haut de la vue. */
   fitPage(): void;
+  /** OG24 : ascenseur de la page portrait montrée ; null en paysage, en infini, ou si la page tient dans la vue. */
+  pageScroll(): PageScroll | null;
+  /** OG24 : fait défiler la page portrait de `dy` px d'écran (positif : vers le bas de la page), borné à la page ; faux si rien ne bouge. */
+  scrollPageBy(dy: number): boolean;
+  /** OG24 : place la page portrait à `at` (0 = haut, 1 = bas, borné) ; faux si rien ne bouge. */
+  scrollPageTo(at: number): boolean;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
   /** Aperçu d'une grille non enregistrée sur la page montrée (C9 éditeur, DAE1) : rien n'est écrit ; null = aucune grille. */
@@ -233,6 +282,13 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** T18 (déc. 38) : ouvre l'éditeur de lien sur l'unique élément sélectionné (`linkEditing`) ; faux sinon. */
+  editLink(): boolean;
+  /** T18 : pose (un SetStyle { link }, une étape) ou retire (null) le lien de l'unique élément sélectionné, puis ferme
+   *  l'éditeur ; faux sans élément unique ou si le cœur refuse (schéma hors http, https, mailto ; 2 048 caractères). */
+  setLink(url: string | null): boolean;
+  /** T18 : ferme l'éditeur de lien sans écrire. */
+  closeLink(): void;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -242,7 +298,7 @@ export interface Engine {
   tableAction(a: TableAction): void;
   /** Pastille de remplissage (T12) : sur la cellule active ; null retire le remplissage. */
   tableFill(fill: string | null): void;
-  /** Style de texte des outils Texte et Tableau, et de la cible d'import (F21). */
+  /** Style de texte de l'outil Tableau et de la cible d'import (F21) ; l'outil Texte a `textToolStyle`. */
   textStyle(): TextStyle;
   /** Bouton de la rangée Format (C7b, DAR4) : relayé à l'outil actif (Texte ou Tableau) ; autre outil : sans effet. */
   textFormat(a: FormatAction): void;
@@ -328,14 +384,16 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
+  // décision 10 : page plus haute que large (portrait choisi) = portrait. Le cadre d'un fond PDF A4 ne le décide pas.
+  const fitLayout = (view: FrameSource): FrameLayout => (pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape");
   /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fitTop = (): number => deps.fitTop?.() ?? 16;
   const fit = (w: number, h: number): Camera => {
     const view = doc.page(pageId);
-    const top = deps.fitTop?.() ?? 16;
+    const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
-    // décision 10 : Infini = contenu ∪ fond ; page plus haute que large (portrait choisi) = cadre entier ; sinon largeur.
-    // Le cadre d'un fond PDF A4 dépasse la hauteur de page : il ne décide pas de l'ajustement.
-    const layout = pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape";
+    // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
+    const layout = fitLayout(view);
     return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
   };
   const contentRect = (backdrop: Bounds | null): PageRect | null => {
@@ -362,6 +420,22 @@ export function createEngine(deps: EngineDeps): Engine {
   const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
+  /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue. */
+  const scrollState = (): { readonly bounds: ScrollBounds; readonly top: number; readonly height: number } | null => {
+    const view = doc.page(pageId);
+    const frame = view === null || fitLayout(view) !== "portrait" ? null : pageFrame(view);
+    if (frame === null || !(viewH > 0)) return null;
+    const top = fitTop();
+    const bounds = scrollBounds(camera, frame, viewH, top, SCROLL_BOTTOM);
+    return bounds === null ? null : { bounds, top, height: (frame.y1 - frame.y0) * camera.zoom };
+  };
+  /** Caméra défilée à `ty` (bornée) ; vrai si elle a bougé. */
+  const scrollCamera = (next: Camera): boolean => {
+    if (next.ty === camera.ty && next.tx === camera.tx) return false;
+    setCamera(next);
+    requestScene();
+    return true;
+  };
   let tool: ToolChoice = "pen";
   let spaceHeld = false;
   let shiftHeld = false;
@@ -369,6 +443,8 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
+  /** T18 : élément dont l'éditeur de lien est ouvert ; retombe à null dès qu'il n'est plus l'unique sélection. */
+  let linkEditing: string | null = null;
   let sceneDirty = true;
   let lastHidden: ReadonlySet<string> = new Set<string>();
   /** Aperçu de grille posé sur le rendu (DAE1). */
@@ -467,13 +543,21 @@ export function createEngine(deps: EngineDeps): Engine {
       fillColor,
       fillTolerance,
       itemStyle: item,
+      linkEditing: linkTarget(),
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
     };
   }
 
+  /** T18 : élément de l'éditeur de lien, s'il est encore l'unique sélection. */
+  function linkTarget(): string | null {
+    const sel = selectTool.selection();
+    return linkEditing !== null && sel.length === 1 && sel[0] === linkEditing ? linkEditing : null;
+  }
+
   function emit(): void {
+    linkEditing = linkTarget();
     const s = state();
     for (const cb of stateListeners) cb(s);
   }
@@ -535,14 +619,26 @@ export function createEngine(deps: EngineDeps): Engine {
   function commit(write: () => Change, showAppeared: boolean): Change | null {
     lastDeleted = null;
     const before = doc.pageIds();
+    const v0 = doc.version();
     let change: Change;
     try {
       change = write();
     } catch (e) {
+      trackSteps(v0);
+      // Un lot refusé au milieu garde ses écritures déjà faites : la scène est rafraîchie comme après une écriture réussie.
+      if (doc.version() !== v0) {
+        renderer.invalidate({ ...NO_CHANGE, full: true, version: doc.version() });
+        imageEdit?.changed(doc.version());
+        followPages(before, showAppeared);
+        selectTool.prune();
+        tableTool.prune();
+        requestScene();
+      }
       error = e instanceof Error ? e.message : String(e);
       emit();
       return null;
     }
+    trackSteps(v0);
     renderer.invalidate(change);
     imageEdit?.changed(doc.version());
     error = null;
@@ -558,12 +654,88 @@ export function createEngine(deps: EngineDeps): Engine {
     return commit(() => doc.apply(cmd), false);
   }
 
+  /** Lots d'étapes (T37) : le cœur compte une étape par commande ; un lot en compte `width` et s'annule d'un geste.
+   *  Pile des écritures passées par `commit` : `end` = version du document qu'elles laissent (tout état a sa version,
+   *  annuler et rétablir en changent aussi). Une écriture hors `commit` rompt la correspondance : les piles sont jetées
+   *  et l'annulation retombe sur une étape simple. */
+  interface Lot { at: number; width: number }
+  const undoLots: Lot[] = [];
+  const redoLots: Lot[] = [];
+  let lotWidth = 1;
+
+  function trackSteps(v0: number): void {
+    const width = lotWidth;
+    lotWidth = 1;
+    const v = doc.version();
+    if (v === v0) return;
+    // Continuité : le sommet doit finir à `v0`, sinon une écriture hors `commit` s'est glissée entre les deux.
+    const top = undoLots[undoLots.length - 1];
+    if (top !== undefined && top.at !== v0) undoLots.length = 0;
+    undoLots.push({ at: v, width });
+    redoLots.length = 0;
+  }
+
+  function mergeChange(a: Change, b: Change): Change {
+    return {
+      pages: [...new Set([...a.pages, ...b.pages])],
+      ids: [...new Set([...a.ids, ...b.ids])],
+      removed: [...new Set([...a.removed, ...b.removed])],
+      full: a.full || b.full,
+      version: b.version,
+    };
+  }
+
+  function runAll(cmds: readonly Command[]): Change | null {
+    if (cmds.length === 0) return null;
+    return commit(() => {
+      let total: Change | null = null;
+      let width = 0;
+      try {
+        for (const cmd of cmds) {
+          const before = doc.version();
+          const change = doc.apply(cmd);
+          if (doc.version() !== before) width++;
+          total = total === null ? change : mergeChange(total, change);
+        }
+      } finally {
+        lotWidth = Math.max(1, width);
+      }
+      return total ?? NO_CHANGE;
+    }, false);
+  }
+
+  /** Étapes à défaire ou refaire d'un geste : la largeur du lot au sommet, 1 si la pile ne correspond plus au document. */
+  function lotWidthFor(which: "undo" | "redo"): number {
+    const mine = which === "undo" ? undoLots : redoLots;
+    const top = mine[mine.length - 1];
+    if (top === undefined) return 1;
+    if (top.at === doc.version()) return top.width;
+    undoLots.length = 0;
+    redoLots.length = 0;
+    return 1;
+  }
+
+  /** Après un annuler ou rétablir de `width` étapes : le lot passe sur l'autre pile, l'état d'arrivée est celui du sommet suivant. */
+  function moveLot(which: "undo" | "redo", width: number, moved: boolean): void {
+    const from = which === "undo" ? undoLots : redoLots;
+    const to = which === "undo" ? redoLots : undoLots;
+    if (!moved || from.length === 0) return;
+    from.pop();
+    const v = doc.version();
+    to.push({ at: v, width });
+    const next = from[from.length - 1];
+    if (next !== undefined) next.at = v;
+  }
+
   function history(which: "undo" | "redo"): void {
     const before = doc.pageIds();
     const restore = which === "undo" ? lastDeleted : null;
     lastDeleted = null;
     const version = doc.version();
-    const change = which === "undo" ? doc.undo() : doc.redo();
+    const width = lotWidthFor(which);
+    let change = which === "undo" ? doc.undo() : doc.redo();
+    for (let i = 1; i < width; i++) change = mergeChange(change, which === "undo" ? doc.undo() : doc.redo());
+    moveLot(which, width, doc.version() !== version);
     renderer.invalidate(change);
     // Rien à annuler ou à rétablir : aucune écriture, le brouillon de la retouche reste (I31).
     if (doc.version() !== version) imageEdit?.changed(doc.version());
@@ -590,10 +762,12 @@ export function createEngine(deps: EngineDeps): Engine {
     stateChanged: () => emit(),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
-  /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
-  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}) });
+  /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
+  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
+  /** T32 : style de l'outil Texte seul : taille et police choisies dans le panneau ; l'outil Tableau et l'import gardent `textStyle`. */
+  const textToolStyle = (): TextStyle => ({ ...textStyle(), size: item.fontSize, ...(item.font !== "default" ? { font: item.font } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
-  const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
+  const textTool: TextTool = deps.tools.text?.(ctx, textToolStyle) ?? inertText();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => item),
@@ -704,9 +878,67 @@ export function createEngine(deps: EngineDeps): Engine {
     };
   };
 
+  /** T18 (déc. 38) : lien dont le badge est sous le point (px CSS), élément du dessus d'abord ; null : aucun. */
+  const badgeLinkAt = (s: InputSample | undefined, pointerType?: string): string | null => {
+    if (s === undefined) return null;
+    const ids = doc.elementIds(pageId);
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i];
+      if (id === undefined || lastHidden.has(id)) continue;
+      const link = doc.element(id)?.look?.link;
+      if (link === undefined) continue;
+      const b = doc.bounds([id]);
+      if (b !== null && inLinkBadge(linkBadgeBox(b, camera), s.x, s.y, pointerType)) return link;
+    }
+    return null;
+  };
+
+  /**
+   * T18 : appui sur un badge (patron de `missedOrbit`). Relâché sous le seuil : le lien s'ouvre, seul geste qui ouvre
+   * une URL ; au-delà du seuil, l'outil Sélection reçoit tous les points (glisser l'élément ou une poignée reste
+   * possible) ; abandon ou fin anormale : rien.
+   */
+  const linkTap = (g: GestureTool, pointerId: number, first: readonly InputSample[], url: string): GestureTool => {
+    const held: InputSample[] = [];
+    const origin = first[0];
+    let started = false;
+    const start = (predicted: readonly InputSample[]): void => {
+      started = true;
+      emitIfSelectionChanged(() => {
+        g.begin(pointerId, first);
+        if (held.length > 0) g.extend(pointerId, held, predicted);
+      });
+      loop.start();
+    };
+    const far = (s: InputSample): boolean => origin !== undefined && Math.hypot(s.x - origin.x, s.y - origin.y) > ORBIT_MISS_SLOP_PX;
+    return {
+      begin() {},
+      extend(id, samples, predicted) {
+        if (started) return g.extend(id, samples, predicted);
+        held.push(...samples);
+        if (samples.some(far)) start(predicted);
+      },
+      frame() {},
+      close(id, how) {
+        if (started) return g.close(id, how);
+        if (how === "end") deps.openLink?.(url);
+      },
+      live: () => NO_LIVE,
+      active: () => started && g.active(),
+    };
+  };
+
   const sink: GestureSink = {
-    begin(pointerId, t, samples) {
+    begin(pointerId, t, samples, pointerType) {
       lastDeleted = null;
+      // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
+      if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
+        const url = badgeLinkAt(samples[0], pointerType);
+        if (url !== null) {
+          owner.set(pointerId, linkTap(tools[t], pointerId, samples, url));
+          return;
+        }
+      }
       // C15 (S2) : un appui qui ne touche pas l'objet de l'orbite (zone vide ou autre élément, hit-test de la sélection)
       // ferme l'orbite et va à l'outil courant (`missedOrbit`) ; pendant un glissé de l'orbite, un second appui lui
       // reste (ignoré).
@@ -745,6 +977,10 @@ export function createEngine(deps: EngineDeps): Engine {
       ...(p.roughness !== undefined ? { roughness: p.roughness } : {}),
       ...(p.roundness !== undefined ? { roundness: p.roundness === "round" ? "round" : null } : {}),
       ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+      ...(p.fillStyle !== undefined ? { fillStyle: p.fillStyle === "solid" ? null : p.fillStyle } : {}),
+      ...(p.startArrowhead !== undefined ? { startArrowhead: p.startArrowhead } : {}),
+      ...(p.endArrowhead !== undefined ? { endArrowhead: p.endArrowhead } : {}),
+      ...(p.textAlign !== undefined ? { textAlign: p.textAlign === "left" ? null : p.textAlign } : {}),
     };
   }
 
@@ -757,10 +993,15 @@ export function createEngine(deps: EngineDeps): Engine {
     item = next;
     if (changed) for (const cb of [...itemListeners]) cb(item);
     const sel = selectTool.selection();
-    if (writeSelection && sel.length > 0) {
+    // T31 : un texte rouvert en saisie est la cible quand rien n'est sélectionné (le panneau agit sur lui, comme Excalidraw).
+    const editedId = tool === "text" ? textTool.editing()?.id ?? null : null;
+    const ids = sel.length > 0 ? [...sel] : editedId !== null ? [editedId] : [];
+    if (writeSelection && ids.length > 0) {
       const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
-      if (Object.keys(accepted).length > 0) {
-        run({ type: "SetStyle", ids: [...sel], patch: patchOf(accepted) });
+      const patch = patchOf(accepted);
+      // `font` et `fontSize` ne sont que le style du prochain texte : aucune commande.
+      if (Object.keys(patch).length > 0) {
+        run({ type: "SetStyle", ids, patch });
         return;
       }
     }
@@ -795,6 +1036,7 @@ export function createEngine(deps: EngineDeps): Engine {
       emit();
     },
     run,
+    runAll,
     group,
     ungroup,
     deleteSelection() {
@@ -881,7 +1123,7 @@ export function createEngine(deps: EngineDeps): Engine {
           imageEdit.cancelMode();
           return true;
         }
-        if (edit === "delete" || objectKey(e) === "duplicate") return true;
+        if (edit === "delete" || objectKey(e) === "duplicate" || objectKey(e) === "link") return true;
         if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;
@@ -901,6 +1143,8 @@ export function createEngine(deps: EngineDeps): Engine {
         engine.duplicateSelection();
         return true;
       }
+      // T18 (déc. 38, 39) : Ctrl+K ouvre l'éditeur de lien sur un seul élément ; aucun ou plusieurs : la touche passe.
+      if (objectKey(e) === "link") return engine.editLink();
       if (edit !== null) {
         // T7 : avec l'outil Tableau, Suppr ou Retour arrière (saisie fermée) vide la cellule active ; sinon la sélection.
         if (edit === "delete" && tool === "table" && tableTool.clearCell()) return true;
@@ -992,6 +1236,23 @@ export function createEngine(deps: EngineDeps): Engine {
       const prev = i > 0 ? ids[i - 1] : undefined;
       return prev !== undefined && engine.showPage(prev);
     },
+    pageScroll() {
+      const s = scrollState();
+      if (s === null) return null;
+      const { min, max } = s.bounds;
+      const span = viewH - s.top - SCROLL_BOTTOM;
+      return { at: Math.min(1, Math.max(0, (max - camera.ty) / (max - min))), visible: Math.min(1, span / s.height), top: s.top, span };
+    },
+    scrollPageBy(dy) {
+      const s = scrollState();
+      return s !== null && scrollCamera(scrollTo(camera, camera.ty - dy, s.bounds));
+    },
+    scrollPageTo(at) {
+      const s = scrollState();
+      if (s === null || !Number.isFinite(at)) return false;
+      const { min, max } = s.bounds;
+      return scrollCamera({ ...camera, ty: max - Math.min(1, Math.max(0, at)) * (max - min) });
+    },
     fitPage() {
       if (viewW > 0 && viewH > 0) {
         setCamera(fit(viewW, viewH));
@@ -1071,6 +1332,29 @@ export function createEngine(deps: EngineDeps): Engine {
     setItemStyle(p) {
       setItem(p, true);
     },
+    editLink() {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0] : undefined;
+      if (id === undefined) return false;
+      linkEditing = id;
+      emit();
+      return true;
+    },
+    setLink(url) {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0] : undefined;
+      if (id === undefined) return false;
+      // Lien inchangé (vide sur un élément sans lien) : aucune étape vide dans l'historique.
+      if ((doc.element(id)?.look?.link ?? null) !== url && run({ type: "SetStyle", ids: [id], patch: { link: url } }) === null) return false;
+      linkEditing = null;
+      emit();
+      return true;
+    },
+    closeLink() {
+      if (linkEditing === null) return;
+      linkEditing = null;
+      emit();
+    },
     itemStyle: () => item,
     adoptItemStyle(s) {
       const changed = (Object.keys(s) as (keyof ItemStyle)[]).some((k) => s[k] !== item[k]);
@@ -1101,8 +1385,14 @@ export function createEngine(deps: EngineDeps): Engine {
       };
     },
     wheel(e) {
-      if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
-      else view.panBy(-e.deltaX, -e.deltaY);
+      if (e.ctrlKey) {
+        view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
+        return;
+      }
+      // OG24 : en portrait, la molette défile la page, bornée comme l'ascenseur ; le glisser à deux doigts reste libre.
+      const s = scrollState();
+      if (s === null) view.panBy(-e.deltaX, -e.deltaY);
+      else scrollCamera(scrollTo(panCamera(camera, -e.deltaX, 0), camera.ty - e.deltaY, s.bounds));
     },
     resize(width, height, dpr) {
       renderer.resize(width, height, dpr);

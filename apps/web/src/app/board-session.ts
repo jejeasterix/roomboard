@@ -11,6 +11,7 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
+import { createPageScrollbar } from "./page-scrollbar";
 import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
 import { createMiddlePan } from "../engine/input/middle-pan";
@@ -95,6 +96,8 @@ export interface SessionShared {
   /** OG25 (déc. 25, 30) : gomme automatique à la paume (réglage de l'appareil, ou reçu par la fenêtre d'annotation), lue
    *  à chaque pose de contact ; absent : active. */
   readonly palmEraser?: () => boolean;
+  /** T18 (déc. 38) : ouverture d'un lien (`ShellPort.openLink`) ; absent : aucun lien ouvert. */
+  readonly openLink?: (url: string) => void;
 }
 
 /** OG11 : un seul style courant pour tous les onglets (source : l'appareil). `read` n'est appelé que tant que rien n'est connu. */
@@ -352,6 +355,7 @@ async function buildBoardSession(
     doc,
     ...(shared.pageMode === undefined ? {} : { pageMode: shared.pageMode }),
     renderer: choice.renderer,
+    ...(shared.openLink === undefined ? {} : { openLink: shared.openLink }),
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
     // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
     fitTop: () =>
@@ -473,8 +477,12 @@ async function buildBoardSession(
 
   // Taille CSS de la case (le rendu Canvas 2D la retient, page infinie) et devicePixelRatio suivis : l'encre reste sous
   // la pointe. Jamais la taille de la fenêtre.
+  // OG24 : l'ascenseur d'une page portrait suit la caméra, la page montrée, son mode et la taille de la vue.
+  const scrollbar = createPageScrollbar(stage, engine, () => sampler.penInContact());
+  undo.push(() => scrollbar.element.remove());
   const fit = (): void => {
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
+    scrollbar.update();
   };
   const resizes = new ResizeObserver(() => fit());
   undo.push(() => resizes.disconnect());
@@ -750,7 +758,14 @@ async function buildBoardSession(
     stage.dataset["zoneMs"] = tags.zoneMs;
     stage.dataset["zoneCells"] = tags.zoneCells;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
+    // OG24 : page montrée ou disposition changée (Ctrl+Z d'un mode) ; la caméra, elle, passe par onCamera.
+    const shown = `${s.page}|${s.pageLayout}`;
+    if (shown !== scrollShown) {
+      scrollShown = shown;
+      scrollbar.update();
+    }
   };
+  let scrollShown = "";
   mark(engine.state());
   const offState = engine.onState(mark);
   remark = () => mark(engine.state());
@@ -762,6 +777,7 @@ async function buildBoardSession(
   // La zone de texte suit le zoom (T90) ; la caméra est publiée pour les essais (S5b).
   const onCamera = (c: Camera): void => {
     editor.follow(c);
+    scrollbar.update();
     stage.dataset["camera"] = cameraTag(c);
   };
   stage.dataset["camera"] = cameraTag(engine.camera());

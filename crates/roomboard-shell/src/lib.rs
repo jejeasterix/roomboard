@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 pub mod annotation;
 pub mod capture;
+pub mod links;
 pub mod office;
 pub mod originals;
 

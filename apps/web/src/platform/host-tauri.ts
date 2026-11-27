@@ -14,9 +14,11 @@ import {
   type OpenedFile,
   type Point,
   type SaveTarget,
+  LINK_OPEN_FAILED,
   type ShellPort,
 } from "./files";
 import { OfficeConvertError, type OriginalChange } from "./office-import";
+import { validLink } from "../core/look";
 
 export interface DialogFilter {
   readonly name: string;
@@ -114,6 +116,9 @@ export async function launchFiles(ipc: TauriIpc): Promise<DroppedFile[]> {
   return filesOf(ipc, await ipc.invoke<string[]>("launch_files"));
 }
 export const onQuitRequested = (ipc: TauriIpc, cb: () => void): Promise<() => void> => ipc.listen(QUIT_EVENT, () => cb());
+/** T35 : lien d'élément ouvert par la coque ; schéma contrôlé dans `roomboard_shell::links`, ouverture par la crate `open`. */
+export const openLink = (ipc: TauriIpc, url: string): Promise<void> => ipc.invoke<void>("open_link", { url });
+
 /** C14 : accorde le fichier média choisi, rend son empreinte SHA-256 ; la coque ajoute le chemin à la portée du protocole d'assets. */
 export const linkMedia = (ipc: TauriIpc, path: string): Promise<string> => ipc.invoke<string>("link_media", { path });
 /** C14 : revérifie un média lié à l'ouverture (taille) et le ré-accorde ; false : introuvable. */
@@ -243,8 +248,20 @@ export function createTauriHost(
 /** `window.confirm` de la page, lu au dernier moment (absent hors navigateur). */
 const pageConfirm = (message: string): boolean => globalThis.confirm(message);
 
-export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmPage: (message: string) => boolean = pageConfirm): ShellPort {
+/** `openUrl` (T18, T35) : commande `open_link` de la coque (`openLink`), schéma recontrôlé en Rust (`roomboard_shell::links`). */
+export function createTauriShell(
+  dialog: TauriDialog,
+  win: TauriWindow,
+  confirmPage: (message: string) => boolean = pageConfirm,
+  openUrl?: (url: string) => Promise<unknown>,
+): ShellPort {
   return {
+    openLink(url) {
+      if (validLink(url)) {
+        // T39 : l'échec de la commande est signalé par le message de la coque, jamais avalé.
+        void openUrl?.(url).catch(() => dialog.message(LINK_OPEN_FAILED, { title: APP_TITLE, kind: "error" }).catch(() => undefined));
+      }
+    },
     confirm: (message) => dialog.ask(message, { title: APP_TITLE, kind: "warning" }),
     notify: (message, kind = "error") => dialog.message(message, { title: APP_TITLE, kind }),
     guardClose(isDirty, message, divert) {

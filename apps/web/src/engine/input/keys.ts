@@ -46,7 +46,15 @@ export function keyAction(e: KeyLike): KeyAction | null {
 export type ObjectKey = "duplicate" | "link" | "stroke-picker" | "fill-picker" | "help";
 export function objectKey(e: KeyLike): ObjectKey | null {
   if (e.isComposing || e.altKey || inEditable(e.target)) return null;
+  // T16 : S ouvre le sélecteur du Trait, G celui de l'Arrière-plan ; lettre seule, sans Ctrl, Cmd ni Maj.
+  if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+    const k = e.key.toLowerCase();
+    if (k === "s") return "stroke-picker";
+    if (k === "g") return "fill-picker";
+  }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "d") return "duplicate";
+  // T18 (déc. 38, 39) : Ctrl+K (Cmd+K sous macOS) ouvre l'éditeur de lien ; Ctrl+Maj+K reste au navigateur.
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "k") return "link";
   return null;
 }
 
@@ -73,6 +81,22 @@ export function orderKey(e: KeyLike): OrderKey | null {
   if (e.isComposing || e.altKey || inEditable(e.target) || !(e.ctrlKey || e.metaKey)) return null;
   if (e.key === "ArrowUp") return e.shiftKey ? "front" : "up";
   if (e.key === "ArrowDown") return e.shiftKey ? "back" : "down";
+  return null;
+}
+
+export type ScrollKey = "up" | "down" | "screen-up" | "screen-down" | "top" | "bottom";
+
+/** OG24 (ascenseur du portrait) : ↑ ↓ d'un cran, Maj+↑ ↓ d'un écran (PageUp/PageDown changent de page, DA9), Début et Fin ;
+ *  sans Ctrl, Cmd ni Alt (Ctrl+↑ ↓ : ordre des objets), hors IME, hors champ et hors contrôle de formulaire (une réglette
+ *  ou une liste focalisée garde ses flèches, Début et Fin). */
+export function scrollKey(e: KeyLike): ScrollKey | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (EDITABLE.has(e.target?.tagName?.toUpperCase() ?? "")) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "screen-up" : "up";
+  if (e.key === "ArrowDown") return e.shiftKey ? "screen-down" : "down";
+  if (e.shiftKey) return null;
+  if (e.key === "Home") return "top";
+  if (e.key === "End") return "bottom";
   return null;
 }
 

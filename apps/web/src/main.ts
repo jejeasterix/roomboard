@@ -17,7 +17,7 @@ import { createMyBackgrounds, probeImage } from "./app/my-backgrounds";
 import { fetchPackFiles, sourceThumbnail } from "./app/backgrounds-apply";
 import type { ThumbDeps } from "./app/thumbnail";
 import { createBoardSession, createSharedItemStyle, type SessionShared } from "./app/board-session";
-import { pageShortcut } from "./engine/engine";
+import { pageShortcut, scrollShortcut } from "./engine/engine";
 import { browserExportCanvas, createPngOverlay, overlayScale } from "./app/pdf-overlay";
 import type { RasterPage } from "./app/pdf-export";
 import { createVectorOverlay, fallbackOverlay, PDF_FONT_FILES, vectorPainter, workerPdfWriter } from "./app/pdf-overlay-vector";
@@ -229,6 +229,8 @@ async function start(): Promise<void> {
     container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
     pageMode: () => active.profile().behavior.pageMode,
+    // T18 (déc. 38) : lien d'un élément, ouvert par la coque (onglet `noopener` en web, commande `open_link` de roomboard-shell dans la coque).
+    openLink: (url) => prepared.shell.openLink?.(url),
     // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
     ...createSharedItemStyle(() => device.itemStyle(), (s) => void device.setItemStyle(s)),
     // OG25 (déc. 25) : gomme automatique à la paume, réglage de l'appareil lu à chaque pose (`device`, plus bas).
@@ -449,6 +451,8 @@ async function start(): Promise<void> {
     let taken = workspace.active().board.engine.key(keyOf(e));
     // Raccourcis de page (DA9, H7) avant ceux de fichier ; la barre latérale est branchée par `sidebar.toggle` (T10).
     if (pageShortcut({ ...keyOf(e), repeat: e.repeat }, workspace.active().board.engine, sidebar.toggle)) taken = true;
+    // OG24 : ↑ ↓, Maj+↑ ↓, Début, Fin font défiler une page portrait ; une flèche déjà prise par un composant (segments, menu) passe.
+    if (!taken && !e.defaultPrevented && scrollShortcut(keyOf(e), workspace.active().board.engine)) taken = true;
     if (!e.isComposing && workspace.key(e)) taken = true;
     if (taken) e.preventDefault();
   });

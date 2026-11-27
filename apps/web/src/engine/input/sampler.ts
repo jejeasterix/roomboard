@@ -79,6 +79,8 @@ export interface PointerSurface {
 
 export interface Sampler {
   onGesture(cb: (g: GestureEvent) => void): () => void;
+  /** Un stylet touche la surface (rejet de paume, D18) ; lu aussi par l'ascenseur du portrait (OG24). */
+  penInContact(): boolean;
   stats(): SamplerStats;
   dispose(): void;
 }
@@ -268,6 +270,7 @@ export function createSampler(target: PointerSurface, opts: SamplerOptions): Sam
   for (const [type, listener] of bindings) target.addEventListener(type, listener);
 
   return {
+    penInContact,
     onGesture(cb) {
       listeners.add(cb);
       return () => {

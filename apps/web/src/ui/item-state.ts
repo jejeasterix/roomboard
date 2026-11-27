@@ -23,6 +23,8 @@ export interface ToolbarView {
   readonly canRedo: boolean;
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** Objets de la page montrée ; absent : inconnu (« Effacer la page » reste actif). */
+  readonly elementCount?: number;
   /** T8 : mode lu et disposition de la page montrée ; absents : page paysage. */
   readonly pageMode?: "page" | "infinite";
   readonly pageLayout?: "landscape" | "portrait" | "infinite";
@@ -91,6 +93,7 @@ export const ACTION_STATE: Readonly<Record<string, (v: ToolbarView) => Partial<I
   "page-duplicate": () => ({ disabled: false }),
   "page-number": (v) => ({ pressed: v.sidebarOpen === true }),
   "page-remove": (v) => ({ disabled: v.pageCount <= 1 }),
+  "page-clear": (v) => ({ disabled: v.elementCount === 0 }),
   "table-row-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.rows >= TABLE_MAX_LINES }),
   "table-col-insert": (v) => ({ disabled: !v.tableCell || v.tableCell.cols >= TABLE_MAX_LINES }),
   // Toutes les lignes (resp. colonnes) couvertes : `removeLines` ne ferait rien.

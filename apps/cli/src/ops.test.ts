@@ -43,6 +43,15 @@ describe("lecture d'une opération (D6)", () => {
     expect(ALL_COMMANDS).toBe(true);
     expect(new Set(COMMAND_TYPES).size).toBe(36);
   });
+  it("COMMAND_TYPES : chaque type une seule fois, la Restack d'OG4 comprise", () => {
+    expect(COMMAND_TYPES).toHaveLength(new Set(COMMAND_TYPES).size);
+    expect(COMMAND_TYPES.filter((t) => t === "Restack")).toEqual(["Restack"]);
+  });
+  it("Restack accepté (OG11, DA-2)", () => {
+    expect(COMMAND_TYPES).toContain("Restack");
+    const op = parseOp({ type: "Restack", ids: ["a"], to: 0 }, ctx());
+    expect(op.kind === "command" && op.cmd).toEqual({ type: "Restack", ids: ["a"], to: 0 });
+  });
   it("SetStyle accepté", () => {
     expect(COMMAND_TYPES).toContain("SetStyle");
   });
