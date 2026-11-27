@@ -345,7 +345,7 @@ async function scenario(page, url, { captures }) {
   await fr();
 
   // S6 (D13) : tableau 3 × 3 neuf sous les autres ; case (1, 1) active ; poignée droite tirée au doigt de 100 px.
-  const DY6 = 840;
+  const DY6 = 660;
   const cell6 = (row, col) => screen(c, origin[0] + COL * col + COL / 2, origin[1] + DY6 + ROW * row + ROW / 2);
   await page.click(item("table"));
   await fr();

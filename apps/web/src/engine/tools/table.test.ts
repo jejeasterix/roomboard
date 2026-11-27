@@ -986,4 +986,56 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
     const { s } = ready();
     expect(s.tool.live().overlay?.grips).toEqual([{ x: 580, y: 296, kind: "col" }, { x: 460, y: 328, kind: "row" }]);
   });
+  it("TB1 : le minimum est lu une fois à l'armement, aucun parcours du document par mouvement", () => {
+    const { s } = ready();
+    for (let i = 0; i < 15; i++) s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 900 + i, y0: 900, x1: 920 + i, y1: 920, style: { color: "#000000", width: 4 }, fill: null });
+    const spy = vi.spyOn(s.doc, "element");
+    s.tool.begin(3, [at(580, 296)]);
+    const n0 = spy.mock.calls.length;
+    for (let i = 1; i <= 3; i++) s.tool.extend(3, [at(580 + 10 * i, 296)], []);
+    expect(spy.mock.calls.length - n0).toBeLessThanOrEqual(12);
+    s.tool.close(3, "cancel");
+    spy.mockRestore();
+  });
+  it("TB1 : appui immobile sur un bord intérieur : la saisie de la cellule s'ouvre, aucune taille écrite", () => {
+    const { s } = ready();
+    const opened = s.host.opened.length;
+    const n = s.runs.length;
+    s.tool.begin(3, [at(100 + 240 + 3, 232)]);
+    s.tool.close(3, "end");
+    expect(s.host.opened.length).toBe(opened + 1);
+    expect(s.runs.length).toBe(n);
+    expect(s.tool.cellState()).toMatchObject({ row: 0, col: 1 });
+  });
+  it("TB1 : un bord de case de moins de 24 px n'a pas de poignée", () => {
+    const s = setup();
+    const id = s.doc.apply({ type: "AddTable", page: s.page, x: 100, y: 200, cols: 3, rows: 3, colWidth: 240, rowHeight: 20, color: "#000000", size: 36 }).ids[0] ?? "";
+    expect(s.table(id).rows[0]?.height).toBe(20);
+    s.click(150, 210);
+    s.tool.requestCommit();
+    expect(s.tool.live().overlay?.grips?.map((g) => g.kind)).toEqual(["row"]);
+  });
+  const narrowCols = () => {
+    const s = setup();
+    const id = s.doc.apply({ type: "AddTable", page: s.page, x: 100, y: 200, cols: 3, rows: 3, colWidth: 40, rowHeight: 64, color: "#000000", size: 36 }).ids[0] ?? "";
+    s.click(110, 210);
+    s.tool.requestCommit();
+    return { s, id };
+  };
+  it("TB1 : la cible de la poignée est bornée au quart de la colonne : à 8 px, elle se prend", () => {
+    const { s, id } = narrowCols();
+    s.tool.begin(4, [at(148, 232)]);
+    s.tool.extend(4, [at(178, 232)], []);
+    s.tool.close(4, "end");
+    expect(s.last()?.type).toBe("SetTableLineSizes");
+    expect(s.table(id).cols[0]?.width).toBe(70);
+  });
+  it("TB1 : la cible de la poignée est bornée au quart de la colonne : à 15 px, elle ne se prend pas", () => {
+    const { s } = narrowCols();
+    const n = s.runs.length;
+    s.tool.begin(3, [at(155, 232)]);
+    s.tool.extend(3, [at(185, 232)], []);
+    s.tool.close(3, "end");
+    expect(s.runs.slice(n).some((c) => c.type === "SetTableLineSizes")).toBe(false);
+  });
 });

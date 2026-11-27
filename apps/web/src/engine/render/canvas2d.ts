@@ -703,6 +703,19 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       ctx.restore();
     }
+    if (o.frame) {
+      ctx.save();
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = px;
+      ctx.setLineDash([6 * px, 4 * px]);
+      box(o.frame);
+      ctx.stroke();
+      if (o.handles) {
+        ctx.setLineDash([]);
+        paintHandles(ctx, o.frame, px);
+      }
+      ctx.restore();
+    }
     if (o.grips && o.grips.length > 0) {
       // personnalisation-3 (D13) : disque blanc de 16 px écran cerclé d'accent (la cible tactile, 44 px, est dans l'outil).
       ctx.save();
@@ -715,19 +728,6 @@ export class Canvas2DRenderer implements Renderer {
         ctx.arc(g.x, g.y, 8 * px, 0, 2 * Math.PI);
         ctx.fill();
         ctx.stroke();
-      }
-      ctx.restore();
-    }
-    if (o.frame) {
-      ctx.save();
-      ctx.strokeStyle = SELECTION_COLOR;
-      ctx.lineWidth = px;
-      ctx.setLineDash([6 * px, 4 * px]);
-      box(o.frame);
-      ctx.stroke();
-      if (o.handles) {
-        ctx.setLineDash([]);
-        paintHandles(ctx, o.frame, px);
       }
       ctx.restore();
     }

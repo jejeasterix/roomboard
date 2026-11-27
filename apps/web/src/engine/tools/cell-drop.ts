@@ -9,7 +9,7 @@
 import type { Bounds, CellLink, Command, ElementView, LineSize, Matrix, TableElement } from "../../core/api";
 import { applyMatrix, invertMatrix } from "../../core/shapes";
 import type { GroupedView } from "../groups";
-import { cellContent, cellInnerBox, cellRect, linkedBoxes, linkedIn, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
+import { cellContent, cellInnerBox, cellRect, linkedBoxes, mergeAt, requiredSizes, tableHitIn, TABLE_COL_WIDTH, TABLE_PADDING, TABLE_ROW_HEIGHT, type LinkedBox, type TableHit } from "../table-geom";
 import type { Measure } from "../text-layout";
 import { transformBounds, translateMatrix } from "./handles";
 import type { ToolContext } from "./tool";

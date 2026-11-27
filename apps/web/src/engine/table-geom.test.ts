@@ -271,7 +271,7 @@ describe("TB1 bordures", () => {
   it("TB1 linkedBoxes : boîte locale des objets liés au tableau, `skip` exclu", () => {
     const doc = {
       elementIds: () => ["t", "o", "p"],
-      element: (id: string) => (id === "o" ? { cell: ["t", "r1", "b"] } : id === "p" ? { cell: ["x", "r0", "a"] } : {}) as never,
+      element: (id: string) => (id === "o" ? { id, cell: ["t", "r1", "b"] } : id === "p" ? { id, cell: ["x", "r0", "a"] } : { id }) as never,
       bounds: (ids: readonly string[]) => (ids[0] === "o" ? { x0: 1010, y0: 2010, x1: 1110, y1: 2060 } : null),
     };
     expect(linkedBoxes(doc, "pg", { id: "t", transform: [1, 0, 0, 1, 1000, 2000] })).toEqual([{ row: "r1", col: "b", w: 100, h: 50 }]);

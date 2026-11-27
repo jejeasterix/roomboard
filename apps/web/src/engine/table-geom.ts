@@ -367,6 +367,8 @@ export function tableEdgeAt(
     const [lx, ly] = applyMatrix(inv, x, y);
     const edge = edgeAt(el.table, lx, ly, tolPx / (zoom * scaleOf(el.transform)));
     if (edge !== null) return { id: el.id, transform: el.transform, table: el.table, edge };
+    // Un tableau plus haut qui contient le point le couvre : les bordures de ceux du dessous ne se prennent pas à travers.
+    if (lx >= 0 && ly >= 0 && lx <= sum(el.table.cols.map((c) => c.width)) && ly <= sum(el.table.rows.map((r) => r.height))) return null;
   }
   return null;
 }
@@ -393,12 +395,10 @@ export function linkedBoxes(
 ): LinkedBox[] {
   const inv = invertMatrix(table.transform);
   if (inv === null) return [];
-  return doc.elementIds(page).flatMap((id) => {
-    if (skip.includes(id)) return [];
-    const cell = doc.element(id)?.cell;
-    if (cell === undefined || cell[0] !== table.id) return [];
-    const b = doc.bounds([id]);
-    if (b === null) return [];
+  return linkedIn(doc, page, table.id, skip).flatMap((v) => {
+    const cell = v.cell;
+    const b = doc.bounds([v.id]);
+    if (cell === undefined || b === null) return [];
     const pts = [applyMatrix(inv, b.x0, b.y0), applyMatrix(inv, b.x1, b.y0), applyMatrix(inv, b.x0, b.y1), applyMatrix(inv, b.x1, b.y1)];
     const xs = pts.map((p) => p[0]);
     const ys = pts.map((p) => p[1]);

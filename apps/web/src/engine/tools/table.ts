@@ -106,6 +106,8 @@ interface Resize {
   readonly start: number;
   readonly size0: number;
   size: number;
+  /** Taille exigée (texte, objets logés), lue une fois à l'armement : le glisser ne relit pas le document. */
+  min: number;
   /** Poignée ou bord hors tableau : tiré dès l'appui. Bord intérieur : tant que le doigt reste sous `HOLD_SLOP`, l'appui
    *  garde son sens de cellule (activer, ouvrir la saisie au relâché) ; au-delà, c'est une bordure tirée. */
   armed: boolean;
@@ -250,7 +252,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         const [x, y] = applyMatrix(at.transform, g.x, g.y);
         return { x, y, kind: g.kind };
       });
-      const rz = resize;
+      const rz = resize?.armed === true ? resize : null;
       const el = rz === null ? null : ctx.doc.element(rz.id);
       const frame =
         rz !== null && el?.kind === "table"
@@ -461,7 +463,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         const line = grab.edge.axis === "col" ? grab.table.cols[grab.edge.index]?.width : grab.table.rows[grab.edge.index]?.height;
         if (start !== null && line !== undefined) {
           const armed = grab.grip || tableAt(ctx.doc, ctx.page(), x, y) === null;
-          resize = { pointerId, id: grab.id, edge: grab.edge, start, size0: line, size: line, armed, sx: s.x, sy: s.y };
+          resize = { pointerId, id: grab.id, edge: grab.edge, start, size0: line, size: line, min: armed ? minSize(grab.id, grab.transform, grab.table, grab.edge) : 0, armed, sx: s.x, sy: s.y };
           if (armed) {
             refresh();
             return;
@@ -493,8 +495,12 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         const s1 = samples[samples.length - 1];
         if (s1 && Math.hypot(s1.x - rz.sx, s1.y - rz.sy) > HOLD_SLOP) {
           rz.armed = true;
+          const el0 = ctx.doc.element(rz.id);
+          if (el0?.kind === "table") rz.min = minSize(rz.id, el0.transform, el0.table, rz.edge);
           stopHold(press);
+          if (press?.moved === true) setCorner(null);
           press = null;
+          menu?.close();
         }
       }
       if (rz !== null && rz.pointerId === pointerId && rz.armed) {
@@ -503,7 +509,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
         if (!s0 || el?.kind !== "table") return;
         const cur = localAlong(el.transform, rz.edge.axis, s0.x, s0.y);
         if (cur === null) return;
-        rz.size = Math.max(rz.size0 + cur - rz.start, minSize(rz.id, el.transform, el.table, rz.edge));
+        rz.size = Math.max(rz.size0 + cur - rz.start, rz.min);
         refresh();
         return;
       }
