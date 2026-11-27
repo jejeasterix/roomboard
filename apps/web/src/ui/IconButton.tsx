@@ -92,6 +92,8 @@ export interface IconButtonProps {
   readonly label: string;
   readonly pressed?: boolean | null;
   readonly disabled?: boolean;
+  /** Un appui ne prend pas le focus (pointerdown et mousedown annulés) : la zone de saisie du texte le garde (T32). */
+  readonly keepFocus?: boolean;
   readonly attrs?: Readonly<Record<string, string>>;
   readonly children?: JSX.Element;
   readonly onPress: () => void;
@@ -118,6 +120,13 @@ export function IconButton(props: IconButtonProps): JSX.Element {
         disabled={props.disabled === true}
         onClick={() => props.onPress()}
         {...tipPointerHandlers(tip)}
+        onPointerDown={(e) => {
+          if (props.keepFocus === true) e.preventDefault();
+          tip.down(e.pointerType);
+        }}
+        onMouseDown={(e) => {
+          if (props.keepFocus === true) e.preventDefault();
+        }}
         onFocus={(e) => {
           if (focusVisible(e.currentTarget)) tip.focus();
         }}

@@ -40,6 +40,8 @@ export interface TextEditSession {
   readonly spans: readonly TextSpan[];
   /** Fond opaque de la zone (cellule de tableau, C10a HC10-10) ; absent : transparent. */
   readonly background?: string;
+  /** T32 : police du style courant d'une boîte neuve, pour que la zone la montre pendant la frappe ; absente : la normale. */
+  readonly font?: string;
 }
 
 /** Zone de saisie de la page (DOM, T56 ; riche en C7b, R18) : le moteur n'en connaît que ceci. */
@@ -124,7 +126,7 @@ export function createTextTool(ctx: ToolContext, host: TextEditorHost, style: ()
       live = { ...NO_LIVE, hidden: new Set([el.id]) };
     } else {
       const st = style();
-      session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans("") };
+      session = { page, id: null, matrix: [1, 0, 0, 1, x, y], boxWidth: DEFAULT_TEXT_BOX_WIDTH, color: st.color, size: st.size, initial: "", spans: plainSpans(""), ...(st.font !== undefined ? { font: st.font } : {}) };
       live = NO_LIVE;
     }
     gate.reset();

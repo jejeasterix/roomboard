@@ -613,9 +613,11 @@ export function createEngine(deps: EngineDeps): Engine {
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte des outils Texte et Tableau : couleur du stylo, taille par défaut. */
-  const textStyle = (): TextStyle => ({ color: item.color, size: item.fontSize > 0 ? item.fontSize : DEFAULT_TEXT_SIZE, ...(item.font !== "default" ? { font: item.font } : {}), ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
+  const textStyle = (): TextStyle => ({ color: item.color, size: DEFAULT_TEXT_SIZE, ...(item.opacity < 100 ? { opacity: item.opacity } : {}), ...(item.textAlign !== "left" ? { textAlign: item.textAlign } : {}) });
+  /** T32 : style de l'outil Texte seul : taille et police choisies dans le panneau ; l'outil Tableau et l'import gardent `textStyle`. */
+  const textToolStyle = (): TextStyle => ({ ...textStyle(), size: item.fontSize, ...(item.font !== "default" ? { font: item.font } : {}) });
   const tableTool: TableTool = deps.tools.table?.(ctx, textStyle) ?? inertTable();
-  const textTool: TextTool = deps.tools.text?.(ctx, textStyle) ?? inertText();
+  const textTool: TextTool = deps.tools.text?.(ctx, textToolStyle) ?? inertText();
   const shapeTool = (k: ShapeKind): GestureTool => deps.tools.shape?.(ctx, k, () => item) ?? inertTool();
   const tools: Record<DrawTool, GestureTool> = {
     pen: deps.tools.pen(ctx, () => item),

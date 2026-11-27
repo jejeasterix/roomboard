@@ -230,7 +230,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     setPopH(pop?.offsetHeight ?? 0);
   });
   const winH = (): number => (typeof window === "undefined" ? 0 : window.innerHeight);
-  const popTop = (y: number): number => (winH() > 0 && popH() > 0 ? Math.max(8, Math.min(y, winH() - popH() - 8)) : y);
+  const popTop = (y: number): number => (winH() > 0 && popH() > 0 ? Math.max(8, Math.min(Math.round(y), Math.round(winH() - popH() - 8))) : Math.round(y));
   const onObjectKey = (e: KeyboardEvent): void => {
     const hit = objectKey(e as unknown as KeyLike);
     if (hit !== "stroke-picker" && hit !== "fill-picker") return;
@@ -328,7 +328,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       <div class="rb-pick-row">
         <For each={LAYERS}>
           {(l) => (
-            <IconButton icon={l.icon} label={l.label} attrs={{ "data-option-value": l.value, class: "rb-opt-btn" }} onPress={() => void l.act(props.engine())} />
+            <IconButton keepFocus icon={l.icon} label={l.label} attrs={{ "data-option-value": l.value, class: "rb-opt-btn" }} onPress={() => void l.act(props.engine())} />
           )}
         </For>
       </div>
@@ -366,10 +366,10 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     actions: () => (
       <div class="rb-pick-row">
         <Show when={props.state().selection.length === 1}>
-          <IconButton icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
+          <IconButton keepFocus icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
         </Show>
-        <IconButton icon="copy-plus" label="Dupliquer" attrs={{ "data-option-value": "duplicate", class: "rb-opt-btn" }} onPress={() => void props.engine().duplicateSelection()} />
-        <IconButton icon="trash-2" label="Supprimer" attrs={{ "data-option-value": "delete", class: "rb-opt-btn" }} onPress={() => void props.engine().deleteSelection()} />
+        <IconButton keepFocus icon="copy-plus" label="Dupliquer" attrs={{ "data-option-value": "duplicate", class: "rb-opt-btn" }} onPress={() => void props.engine().duplicateSelection()} />
+        <IconButton keepFocus icon="trash-2" label="Supprimer" attrs={{ "data-option-value": "delete", class: "rb-opt-btn" }} onPress={() => void props.engine().deleteSelection()} />
       </div>
     ),
   };
