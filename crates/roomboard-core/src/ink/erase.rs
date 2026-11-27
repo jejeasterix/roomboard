@@ -54,11 +54,9 @@ pub fn erase(
 ) -> Option<Vec<Vec<InkPoint>>> {
     let covered =
         |p: &InkPoint| dist_to_path(path, p.x, p.y) <= radius + outline_radius(width, p.pressure);
-    // Pas sous la plus petite portée (pression 0) : aucun point couvert n'est sauté.
-    let pts = densify(
-        points,
-        ((radius + outline_radius(width, 0.0)) / 2.0).max(0.25),
-    );
+    // Pas d'avant OG20 ((rayon + largeur / 2) / 2) : mêmes points écrits ; il reste sous la plus petite portée
+    // (rayon + largeur / 4, pression 0).
+    let pts = densify(points, ((radius + width / 2.0) / 2.0).max(0.25));
     if !pts.iter().any(covered) {
         return None;
     }
@@ -205,5 +203,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// OG20 : pression qui varie le long du trait (la coupe interpole la pression) ; le trou visible garde le diamètre
+    /// de la gomme, chaque calotte prenant le rayon de la pression au point coupé.
+    #[test]
+    fn visible_hole_with_varying_pressure() {
+        let (radius, width) = (5.0, 24.0);
+        let pts: Vec<InkPoint> = (0..=200)
+            .map(|i| InkPoint {
+                x: i as f32 * 0.5,
+                y: 0.0,
+                pressure: i as f32 / 200.0,
+            })
+            .collect();
+        let pieces = erase(&pts, width, &[50.0, -40.0, 50.0, 40.0], radius).expect("touché");
+        assert_eq!(pieces.len(), 2);
+        let style = InkStyle { width };
+        let xs = |piece: &[InkPoint]| -> Vec<f32> {
+            outline(piece, &style)
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|c| c[0])
+                .collect()
+        };
+        let left = xs(&pieces[0]).into_iter().fold(f32::MIN, f32::max);
+        let right = xs(&pieces[1]).into_iter().fold(f32::MAX, f32::min);
+        assert!(
+            (right - left - 2.0 * radius).abs() < 0.05 * 2.0 * radius,
+            "trou {}",
+            right - left
+        );
+    }
+
+    /// Pression invalide (négative, NaN) : lue 0,5 comme freedraw, le trait reste coupé.
+    #[test]
+    fn invalid_pressure_reads_as_half() {
+        for pressure in [-1.0f32, f32::NAN] {
+            assert_eq!(outline_radius(24.0, pressure), 12.0);
+        }
+        let pts: Vec<InkPoint> = line(100)
+            .into_iter()
+            .map(|p| InkPoint {
+                pressure: -1.0,
+                ..p
+            })
+            .collect();
+        assert_eq!(
+            erase(&pts, 24.0, &[50.0, -40.0, 50.0, 40.0], 5.0).map(|p| p.len()),
+            Some(2)
+        );
     }
 }

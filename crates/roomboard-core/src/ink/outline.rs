@@ -33,9 +33,11 @@ fn options(style: &InkStyle, last: bool) -> StrokeOptions {
 
 /// Rayon du contour en un point de pression `pressure` : la formule de freedraw (`get_stroke_radius`, sans easing),
 /// avec `THINNING`, soit `width × (0,25 + 0,5 × pression)` ; `width / 2` à pression 0,5. La gomme partielle coupe
-/// avec ce rayon (OG20).
+/// avec ce rayon (OG20). Comme freedraw : pression négative ou NaN lue 0,5 (`get_stroke_points.rs`), rayon d'au moins
+/// 0,01 (`get_stroke_outline_points.rs`).
 pub fn outline_radius(width: f32, pressure: f32) -> f32 {
-    get_stroke_radius(f64::from(width), THINNING, f64::from(pressure), None) as f32
+    let pressure = if pressure >= 0.0 { pressure } else { 0.5 };
+    (get_stroke_radius(f64::from(width), THINNING, f64::from(pressure), None) as f32).max(0.01)
 }
 
 /// Contour d'un trait terminé : polygone fermé, x, y alternés, dans le repère des points.

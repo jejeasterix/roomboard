@@ -141,6 +141,13 @@ try {
     },
     [STROKES, X0 + 40, X1 - 40, X0 + 100],
   );
+  // La pression arrive au cœur : sinon les quatre traits auraient la même épaisseur et le trou vaudrait la gomme
+  // même sans le correctif.
+  const thick = Object.fromEntries(STROKES.map((s, i) => [s.label, rows[i].thickness]));
+  check(
+    thick["stylet, pression 1"] > thick["souris"] && thick["souris"] > thick["stylet, pression 0,2"],
+    `épaisseurs : stylet 1 (${thick["stylet, pression 1"]}) > souris (${thick["souris"]}) > stylet 0,2 (${thick["stylet, pression 0,2"]})`,
+  );
   STROKES.forEach((s, i) => {
     const { hole, thickness } = rows[i];
     check(
