@@ -8,7 +8,8 @@
  */
 import type { GridInput } from "../core/api";
 import type { BackgroundSource } from "../backgrounds/source";
-import { HEAD_BYTES, IMAGE_MIME, MAX_PIXELS, probeSize, sniffImage, TOO_MANY_PIXELS } from "../platform/image-import";
+import { HEAD_BYTES, IMAGE_MIME, probeSize, sniffImage, TOO_MANY_PIXELS } from "../platform/image-import";
+import { imageSource } from "../backgrounds/image-source";
 import type { LibraryFiles } from "../platform/library-files";
 import { fileNameOf } from "./library";
 
@@ -96,6 +97,8 @@ function parse(file: string, text: string): MyBackground | null {
     const r = image as Record<string, unknown>;
     const { file: f, mime, w, h } = r;
     if (typeof f !== "string" || typeof mime !== "string" || typeof w !== "number" || typeof h !== "number") return null;
+    // Le fichier image appartient à ce compagnon : `<base>.<ext>`, sans dossier, ni compagnon ni miniature (T13).
+    if (!f.startsWith(`${baseOf(file)}.`) || f.includes("/") || f.endsWith(JSON_EXT) || f.endsWith(THUMB_EXT)) return null;
     im = { file: f, mime, w, h };
   }
   return { file, name, created, origin: origin as BackgroundOrigin, color, grid: (grid ?? null) as GridInput | null, image: im };
@@ -119,12 +122,23 @@ export function createMyBackgrounds(files: LibraryFiles, deps: MyBackgroundsDeps
     const base = await freeBase(name);
     const image: MyBackgroundImage | null =
       src.image === null ? null : { file: `${base}.${EXT[src.image.mime] ?? "img"}`, mime: src.image.mime, w: src.image.w, h: src.image.h };
-    if (src.image !== null && image !== null) await files.write(image.file, src.image.blob);
-    const thumb = await deps.thumbnail(src);
-    if (thumb !== null) await files.write(`${base}${THUMB_EXT}`, thumb);
+    const written: string[] = [];
+    const put = async (path: string, blob: Blob): Promise<void> => {
+      await files.write(path, blob);
+      written.push(path);
+    };
     const entry: MyBackground = { file: `${base}${JSON_EXT}`, name, created: deps.now(), origin, color: src.color, grid: src.grid, image };
     const json = { format: BACKGROUND_FORMAT, schema: BACKGROUND_SCHEMA, name, created: entry.created, origin, color: entry.color, grid: entry.grid, image };
-    await files.write(entry.file, new Blob([JSON.stringify(json, null, 2)], { type: "application/json" }));
+    try {
+      if (src.image !== null && image !== null) await put(image.file, src.image.blob);
+      const thumb = await deps.thumbnail(src);
+      if (thumb !== null) await put(`${base}${THUMB_EXT}`, thumb);
+      // Le compagnon en dernier : sans lui l'entrée n'existe pas ; un échec avant laisse la racine propre (T13).
+      await put(entry.file, new Blob([JSON.stringify(json, null, 2)], { type: "application/json" }));
+    } catch (e) {
+      for (const p of written) await files.remove(p).catch(() => undefined);
+      throw e;
+    }
     changed();
     return entry;
   }
@@ -145,8 +159,9 @@ export function createMyBackgrounds(files: LibraryFiles, deps: MyBackgroundsDeps
     async addImage(blob, name) {
       const probed = await deps.probe(blob, name);
       if (probed === null) throw new Error(NOT_AN_IMAGE_MESSAGE);
-      if (probed.w * probed.h > MAX_PIXELS) throw new Error(TOO_MANY_PIXELS);
-      return store({ color: "#ffffff", grid: null, image: { blob, name, mime: probed.mime, w: probed.w, h: probed.h } }, name, "image");
+      const src = imageSource(blob, name, probed);
+      if (src === null) throw new Error(TOO_MANY_PIXELS);
+      return store(src, name, "image");
     },
     addSource: (src, name, origin) => store(src, name, origin),
     async read(entry) {
@@ -166,6 +181,7 @@ export function createMyBackgrounds(files: LibraryFiles, deps: MyBackgroundsDeps
     },
     async remove(entry) {
       for (const p of [entry.file, `${baseOf(entry.file)}${THUMB_EXT}`, ...(entry.image === null ? [] : [entry.image.file])]) {
+        if (p === "") continue; // `remove("")` viderait toute la racine
         try {
           await files.remove(p);
         } catch {

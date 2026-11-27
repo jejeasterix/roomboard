@@ -28,7 +28,7 @@ export interface BackgroundsDialogProps {
   apply(card: BackgroundCard, all: boolean): void;
   importImage(): void;
   addPage(): void;
-  remove(entry: MyBackground): void;
+  remove(entry: MyBackground): void | Promise<void>;
   close(): void;
 }
 
@@ -36,6 +36,9 @@ export interface BackgroundsDialogProps {
 const MOVE_SLOP = 10;
 /** Largeur minimale d'une carte (Q25), pour les flèches haut et bas. */
 const CARD_MIN = 192;
+/** Écart entre cartes (`--rf-space-md`, 16 px), pour le repli du compte de colonnes. */
+const CARD_GAP = 16;
+const FOCUSABLE = 'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), [tabindex="0"]';
 
 export const mineKey = (e: MyBackground): string => `mine:${e.file}`;
 export const cardsOf = (pack: readonly PackBackground[], mine: readonly MyBackground[]): readonly BackgroundCard[] => [
@@ -86,12 +89,16 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
   const [query, setQuery] = createSignal("");
   const [all, setAll] = createSignal(false);
   const [focus, setFocus] = createSignal(0);
+  let dialog: HTMLDivElement | undefined;
   let applied = false;
   let down: { readonly x: number; readonly y: number } | null = null;
   let moved = false;
 
   const searching = (): boolean => query().trim() !== "";
-  const cards = createMemo(() => cardsOf(props.pack, props.mine));
+  // Deux mémos : un changement de « Mes fonds » ne recrée pas les cartes du pack (même référence, donc même DOM).
+  const packCards = createMemo(() => cardsOf(props.pack, []));
+  const mineCards = createMemo(() => cardsOf([], props.mine));
+  const cards = createMemo(() => [...mineCards(), ...packCards()]);
   const byKey = createMemo(() => new Map(cards().map((c) => [c.key, c] as const)));
   const shown = createMemo((): readonly BackgroundCard[] => {
     if (searching()) return props.search.search(query()).flatMap((k) => byKey().get(k) ?? []);
@@ -110,14 +117,40 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
     applied = true;
     props.apply(c, everyPage);
   };
+  const tabStops = (): HTMLElement[] => [...(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
   const onKey = (e: KeyboardEvent): void => {
     if (!e.ctrlKey && !e.metaKey && ENGINE_KEYS.has(e.key)) e.stopPropagation();
     if (e.key === "Escape") {
       e.preventDefault();
       props.close();
+    } else if (e.key === "Tab") {
+      // Piège de focus : le cycle reste dans la fenêtre (modale), jamais vers la barre derrière.
+      const stops = tabStops();
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      if (first === undefined || last === undefined) return;
+      const at = document.activeElement;
+      if (e.shiftKey && (at === first || at === dialog)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && at === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   };
-  const columns = (): number => Math.max(1, Math.floor((grid?.clientWidth ?? 0) / CARD_MIN));
+  /** Un clic dans la fenêtre hors d'un contrôle garde le focus dans la fenêtre (sinon il part sur le body). */
+  const onDialogDown = (e: PointerEvent): void => {
+    const t = e.target;
+    if (t instanceof Element && t.closest("button, input, a, [tabindex='0']") === null) dialog?.focus();
+  };
+  /** Colonnes de la grille : pistes déclarées par la feuille de style ; repli : largeur et écart (happy-dom, sans mise en page). */
+  const columns = (): number => {
+    const tracks = grid === undefined ? "" : getComputedStyle(grid).gridTemplateColumns;
+    const n = tracks.split(/\s+/).filter((t) => /^[\d.]+px$/.test(t)).length;
+    if (n > 0) return n;
+    return Math.max(1, Math.floor(((grid?.clientWidth ?? 0) + CARD_GAP) / (CARD_MIN + CARD_GAP)));
+  };
   const moveFocus = (to: number): void => {
     const n = shown().length;
     if (n === 0) return;
@@ -144,12 +177,30 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
       moveFocus(shown().length - 1);
     }
   };
+  /** Après un retrait, le bouton focalisé n'existe plus : le focus passe à la carte voisine, sinon à la recherche. */
+  const removeCard = async (entry: MyBackground, index: number): Promise<void> => {
+    const from = document.activeElement;
+    await props.remove(entry);
+    queueMicrotask(() => {
+      if (from instanceof Element && from.isConnected) return; // retrait refusé : le focus n'a pas bougé
+      const buttons = grid?.querySelectorAll<HTMLElement>("button[data-fond]") ?? [];
+      const next = buttons[Math.min(index, buttons.length - 1)];
+      if (next !== undefined) {
+        setFocus(Math.min(index, buttons.length - 1));
+        next.focus();
+      } else searchField?.focus();
+    });
+  };
   const onDown = (e: PointerEvent): void => {
     down = { x: e.clientX, y: e.clientY };
     moved = false;
   };
   const onMove = (e: PointerEvent): void => {
     if (down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) > MOVE_SLOP) moved = true;
+  };
+  const onCancel = (): void => {
+    down = null;
+    moved = false;
   };
   const onClick = (c: BackgroundCard): void => {
     const scrolled = moved;
@@ -160,7 +211,7 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
 
   return (
     <div class="rb-bg-veil" onPointerDown={(e) => { if (e.target === e.currentTarget) props.close(); }}>
-      <div class="rb-bg-dialog" role="dialog" aria-modal="true" aria-labelledby="rb-bg-title" data-panel="backgrounds" onKeyDown={onKey}>
+      <div ref={dialog} class="rb-bg-dialog" role="dialog" aria-modal="true" aria-labelledby="rb-bg-title" data-panel="backgrounds" tabIndex={-1} onKeyDown={onKey} onPointerDown={onDialogDown}>
         <header class="rb-bg-head">
           <h2 id="rb-bg-title">Fonds</h2>
           <label class="rb-bg-search">
@@ -203,14 +254,14 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
             <Show when={searching()}>
               <h3 class="rb-bg-results">Résultats</h3>
             </Show>
-            <Show when={props.notice}>{(m) => <p class="rb-bg-notice" data-fonds="notice" role="status">{m()}</p>}</Show>
+            <p class="rb-bg-notice" data-fonds="notice" role="status">{props.notice}</p>
             <Show when={searching() && shown().length === 0}>
               <p class="rb-bg-empty" data-fonds="empty">
                 Aucun fond ne correspond
                 <Show when={props.search.suggest(query())}>{(s) => <> — essayez « {s()} »</>}</Show>
               </p>
             </Show>
-            <div ref={grid} class="rb-bg-grid" onPointerDown={onDown} onPointerMove={onMove} onPointerCancel={() => (moved = true)}>
+            <div ref={grid} class="rb-bg-grid" onPointerDown={onDown} onPointerMove={onMove} onPointerCancel={onCancel}>
               <For each={shown()}>
                 {(c, i) => (
                   <div class="rb-bg-card">
@@ -221,7 +272,7 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
                     </button>
                     <Show when={c.kind === "mine" ? c.item : null}>
                       {(e) => (
-                        <button type="button" class="rb-bg-remove" data-fonds-remove={e().file} aria-label={`Retirer ${e().name}`} onClick={() => props.remove(e())}>
+                        <button type="button" class="rb-bg-remove" data-fonds-remove={e().file} aria-label={`Retirer ${e().name}`} tabIndex={i() === focus() ? 0 : -1} onClick={() => void removeCard(e(), i())}>
                           <Icon name="close" />
                         </button>
                       )}

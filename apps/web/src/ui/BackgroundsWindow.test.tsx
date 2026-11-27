@@ -39,10 +39,10 @@ const thumbs: ThumbDeps = {
   decode: async () => ({ width: 1, height: 1, close() {} }) as never,
 };
 
-function setup(doc: CoreDocument = fakeCore.blank()) {
+function setup(doc: CoreDocument = fakeCore.blank(), over: { loadPack?: BackgroundsUi["loadPack"]; thumbs?: ThumbDeps } = {}) {
   const files = createMemoryLibraryFiles("backgrounds");
   const mine = createMyBackgrounds(files, { now: () => "2026-11-27T10:00:00.000Z", probe: probeImage, thumbnail: async () => null });
-  const ui: BackgroundsUi = { mine, thumbs, core: fakeCore, makeAssets: () => createAssetStore(), files: { read: async (f) => { throw new Error(`fond introuvable : ${f}`); } }, now: () => new Date(2026, 10, 27, 10, 0), loadPack: async () => PACK };
+  const ui: BackgroundsUi = { mine, thumbs: over.thumbs ?? thumbs, core: fakeCore, makeAssets: () => createAssetStore(), files: { read: async (f) => { throw new Error(`fond introuvable : ${f}`); } }, now: () => new Date(2026, 10, 27, 10, 0), loadPack: over.loadPack ?? (async () => PACK) };
   const engine = {
     run: (c: Command) => {
       try {
@@ -63,7 +63,7 @@ function setup(doc: CoreDocument = fakeCore.blank()) {
   };
   const close = vi.fn();
   const r = render(() => <BackgroundsWindow ui={ui} host={host} close={close} />);
-  return { ...r, doc, mine, host, close, diverters };
+  return { ...r, doc, mine, host, close, diverters, ui };
 }
 
 describe("personnalisation-1b : enveloppe de la fenêtre des fonds (Q22, Q26, Q35, Q36)", () => {
@@ -140,5 +140,52 @@ describe("personnalisation-1b : enveloppe de la fenêtre des fonds (Q22, Q26, Q3
     fireEvent.click(await found('button[data-fonds-remove="blanc.json"]'));
     await vi.waitFor(async () => expect(await mine.list()).toEqual([]));
     expect(host.ask).toHaveBeenCalledWith("Retirer « Blanc » de Mes fonds ?");
+  });
+
+  it("T13 : un échec n'est pas effacé par un succès qui suit ; une seule relecture après un import", async () => {
+    const { diverters, mine } = setup();
+    await vi.waitFor(() => expect(typeof diverters[0]).toBe("function"));
+    const list = vi.spyOn(mine, "list");
+    await diverters[0]!([dropped("notes.txt", new TextEncoder().encode("bonjour")), dropped("tableau.png", png(64, 36))]);
+    expect((await mine.list()).map((e) => e.name)).toEqual(["tableau"]);
+    expect(document.querySelector('[data-fonds="notice"]')?.textContent).toBe("seules les images deviennent des fonds");
+    expect(list).toHaveBeenCalledTimes(2); // une relecture de l'import + celle de ce test
+  });
+
+  it("T13 : une tête illisible donne un avis, les autres fichiers passent", async () => {
+    const { diverters, mine } = setup();
+    await vi.waitFor(() => expect(typeof diverters[0]).toBe("function"));
+    const bad: DroppedFile = { ...dropped("cassé.png", png(1, 1)), head: async () => { throw new Error("lecture impossible"); } };
+    await diverters[0]!([bad, dropped("ok.png", png(64, 36))]);
+    expect((await mine.list()).map((e) => e.name)).toEqual(["ok"]);
+    expect(document.querySelector('[data-fonds="notice"]')?.textContent).toBe("lecture impossible");
+  });
+
+  it("T13 : retrait en échec et « Cette page » en échec : un avis, aucune exception", async () => {
+    const t = { ...thumbs, canvas: () => { throw new Error("rendu impossible"); } } as ThumbDeps;
+    const { mine, host } = setup(fakeCore.blank(), { thumbs: t });
+    await mine.addSource({ color: "#ffffff", grid: null, image: null }, "Blanc", "grid");
+    fireEvent.click(await found('[data-edit="fonds-section"] [data-choice="mine"]'));
+    fireEvent.click(document.querySelector<HTMLElement>('button[data-fonds="page"]')!);
+    await vi.waitFor(() => expect(document.querySelector('[data-fonds="notice"]')?.textContent).toBe("rendu impossible"));
+    vi.spyOn(mine, "remove").mockRejectedValueOnce(new Error("retrait impossible"));
+    fireEvent.click(await found('button[data-fonds-remove="blanc.json"]'));
+    await vi.waitFor(() => expect(document.querySelector('[data-fonds="notice"]')?.textContent).toBe("retrait impossible"));
+    expect(host.ask).toHaveBeenCalledTimes(1);
+  });
+
+  it("T13 : la dérivation des dépôts n'est posée qu'une fois le pack chargé", async () => {
+    let release: (p: readonly PackBackground[]) => void = () => undefined;
+    const { diverters } = setup(fakeCore.blank(), { loadPack: () => new Promise((ok) => (release = ok)) });
+    await new Promise((ok) => setTimeout(ok, 10));
+    expect(diverters).toEqual([]);
+    release(PACK);
+    await vi.waitFor(() => expect(typeof diverters[0]).toBe("function"));
+  });
+
+  it("T13 : échec du chargement du pack : avis donné à l'utilisateur et fenêtre fermée, plutôt qu'une fenêtre invisible", async () => {
+    const { host, close } = setup(fakeCore.blank(), { loadPack: async () => { throw new Error("import impossible"); } });
+    await vi.waitFor(() => expect(host.say).toHaveBeenCalledWith("import impossible"));
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

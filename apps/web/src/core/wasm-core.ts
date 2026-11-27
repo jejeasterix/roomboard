@@ -581,8 +581,9 @@ class WasmCoreDocument implements CoreDocument {
         return toChange(this.d.set_grid(cmd.page, ...gridArgs(g)));
       }
       case "ApplyBackground": {
-        const b = cmd.backdrop;
-        const g = cmd.grid;
+        // Clé absente (ligne brute) lue comme null, comme dans le faux cœur : « pas de fond », « pas de grille ».
+        const b = cmd.backdrop ?? null;
+        const g = cmd.grid ?? null;
         const [visible, snap, above, kinds, colors, lines, nums] = gridArgs(g ?? NO_GRID);
         return toChange(
           this.d.apply_background(

@@ -45,3 +45,4 @@
 .rb-bg-hint { font-size: 13px; color: var(--rf-text-muted-aa); }
 .rb-bg-dialog button:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: 0; }
 .rb-bg-close:hover, .rb-bg-actions button:hover, .rb-bg-switch:hover, .rb-radios[data-look="rail"] .rb-radio:not([aria-checked="true"]):hover { background: var(--rf-gray-50); }
+.rb-bg-notice:empty { display: none; }

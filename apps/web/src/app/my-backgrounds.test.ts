@@ -124,6 +124,44 @@ describe("personnalisation-1b : Mes fonds (Q18, Q19, Q22, DA4)", () => {
     expect(await mine.thumbnail(e)).toBeNull();
   });
 
+  it("T13 : image.file hors de la base du compagnon (vide, copie, autre entrée, compagnon, miniature) : entrée rejetée", async () => {
+    const { files, mine } = setup();
+    const doc = (file: string): Blob => new Blob([JSON.stringify({ format: "roomboard-background", schema: 1, name: file, created: "2026-11-27T09:00:00.000Z", origin: "image", color: "#ffffff", grid: null, image: { file, mime: "image/png", w: 1, h: 1 } })]);
+    await files.write("vide.json", doc(""));
+    await files.write("plage - Copie.json", doc("plage.jpg"));
+    await files.write("a.json", doc("autre.json"));
+    await files.write("b.json", doc("b.thumb.png"));
+    await files.write("c.json", doc("c.json"));
+    await files.write("d.json", doc("d.dossier/x.png"));
+    await files.write("bon.json", doc("bon.png"));
+    expect((await mine.list()).map((e) => e.file)).toEqual(["bon.json"]);
+  });
+
+  it("T13 : remove ne passe jamais un chemin vide à files.remove (la racine reste intacte)", async () => {
+    const { files, mine } = setup();
+    await files.write("autre.png", new Blob([new Uint8Array([1])]));
+    await mine.remove({ file: "x.json", name: "x", created: "", origin: "image", color: "#ffffff", grid: null, image: { file: "", mime: "image/png", w: 1, h: 1 } });
+    expect(await paths(files)).toEqual(["autre.png"]);
+  });
+
+  it("T13 : le compagnon s'écrit en dernier ; miniature ou compagnon en échec : l'image écrite est retirée", async () => {
+    const a = setup();
+    a.thumbnail.mockRejectedValueOnce(new Error("miniature"));
+    await expect(a.mine.addImage(new Blob([new Uint8Array([4, 5])]), "Fond")).rejects.toThrow("miniature");
+    expect(await paths(a.files)).toEqual([]);
+    const b = setup();
+    const write = b.files.write.bind(b.files);
+    const order: string[] = [];
+    b.files.write = async (p, blob) => {
+      order.push(p);
+      if (p.endsWith(".json")) throw new Error("compagnon");
+      return write(p, blob);
+    };
+    await expect(b.mine.addImage(new Blob([new Uint8Array([4, 5])]), "Fond")).rejects.toThrow("compagnon");
+    expect(order).toEqual(["fond.png", "fond.thumb.png", "fond.json"]);
+    expect(await paths(b.files)).toEqual([]);
+  });
+
   it("clés inconnues du compagnon : gardées (aucune réécriture à la lecture)", async () => {
     const { files, mine } = setup();
     const text = JSON.stringify({ format: "roomboard-background", schema: 1, name: "Futur", created: "2026-11-27T09:00:00.000Z", origin: "grid", color: "#ffffff", grid: DOTS, image: null, motsCles: ["plus tard"] });
