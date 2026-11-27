@@ -1329,7 +1329,7 @@ describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", (
     expect(toggle.getAttribute("aria-haspopup")).toBe("menu");
     const list = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-list]')!;
     expect(list.hidden).toBe(true);
-    expect([...list.querySelectorAll('button[role="menuitem"]')].map((b) => b.getAttribute("data-item"))).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "grid", "settings"]);
+    expect([...list.querySelectorAll('button[role="menuitem"]')].map((b) => b.getAttribute("data-item"))).toEqual(["file-new", "file-open", "file-import", "file-save", "file-save-as", "page-insert-file", "export-pdf", "export-iwb", "export-ubz", "grid", "settings", "menu-profiles"]);
     click(list.querySelector('button[data-item="export-pdf"]'));
     expect(workspace.exportPdf).toHaveBeenCalledTimes(1);
   });
