@@ -954,7 +954,8 @@ class FakeDocument implements CoreDocument {
       const i = p ? p.elements.findIndex((e) => e.id === id) : -1;
       const old = p?.elements[i];
       if (p && old) p.elements[i] = { ...old, table: next };
-      // C1 : taille changée (`cmd_insert_table_line`, `cmd_set_table_sizes`) : les lignes liées suivent, même étape.
+      // C1, C3 : taille changée (`cmd_insert_table_line`, `cmd_set_table_sizes`, `cmd_remove_table_line`, `cmd_set_table_cell`
+      // qui agrandit une ligne) : les lignes liées suivent, même étape.
       if (follow) this.follow(s, new Set([id]), null);
       return { pages: [pageId], ids: [id], removed: [] };
     });
@@ -1655,7 +1656,7 @@ class FakeDocument implements CoreDocument {
           cells.set(key, { ...(cell ?? EMPTY_CELL), text: cmd.content, spans: want ?? editSpans(spans, cmd.content) });
         }
         const rows = grow === null ? t.rows : t.rows.map((l, i) => (i === z1 ? { ...l, height: grow } : l));
-        return this.writeTable(found, cmd.id, { ...t, rows, cells });
+        return this.writeTable(found, cmd.id, { ...t, rows, cells }, grow !== null); // C3 : ligne agrandie, liaisons suivies
       }
       case "InsertTableLine": {
         const { found, t } = this.tableOf(cmd.id);
@@ -1714,6 +1715,7 @@ class FakeDocument implements CoreDocument {
           found,
           cmd.id,
           cmd.axis === "row" ? { ...t, rows: t.rows.filter((l) => !gone.has(l.id)), cells } : { ...t, cols: t.cols.filter((l) => !gone.has(l.id)), cells },
+          true, // C3 : tableau réduit, liaisons suivies
         );
       }
       case "SetTableSizes": {
