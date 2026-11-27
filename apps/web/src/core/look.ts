@@ -58,3 +58,7 @@ export function lookFrom(s: { strokeStyle: StrokeKind; roughness: Roughness; rou
   if (s.opacity < 100) out.opacity = Math.max(0, Math.round(s.opacity));
   return Object.keys(out).length === 0 ? undefined : out;
 }
+
+/** Aspect réduit à l'opacité (stylo, texte neuf) ; undefined si 100. */
+export const opacityLook = (opacity: number): Look | undefined =>
+  lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity }, null);

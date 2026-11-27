@@ -1591,6 +1591,15 @@ describe("moteur — C5 (retouche d'image)", () => {
     expect(engine.key(key("Enter", { target: { tagName: "INPUT" } }))).toBe(false);
     expect(edit.mode()).toBe("crop");
   });
+  it("C5 Ctrl+D pendant le rognage : pris sans effet, rien n'est dupliqué", () => {
+    const { engine, doc, page, id } = c5();
+    const edit = engine.editImage(id)!;
+    edit.startCrop();
+    const n = doc.elementIds(page).length;
+    expect(engine.key(key("d", { ctrlKey: true }))).toBe(true);
+    expect(doc.elementIds(page)).toHaveLength(n);
+    expect(edit.mode()).toBe("crop");
+  });
   it("C5 Échap sort du rognage sans écrire", () => {
     const { engine, doc, id } = c5();
     const edit = engine.editImage(id)!;
@@ -1962,6 +1971,47 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     sel().setSelection([addRect()]);
     expect(engine.key(key("d", { ctrlKey: true }))).toBe(true);
     expect(engine.state().elementCount).toBe(2);
+  });
+
+  it("setItemStyle : style courant déjà égal, la sélection est quand même écrite", () => {
+    const blue = "#1d4ed8";
+    const { engine, addRect, sel, colorOf } = styleSetup({ itemStyle: { ...DEFAULT_ITEM_STYLE, color: blue } });
+    const a = addRect();
+    sel().setSelection([a]);
+    expect(colorOf(a)).toBe("#000000");
+    engine.setItemStyle({ color: blue });
+    expect(colorOf(a)).toBe(blue);
+  });
+
+  it("setItemStyle : champ invalide avec sélection : aucune commande", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    sel().setSelection([addRect()]);
+    const v = doc.version();
+    engine.setItemStyle({ opacity: 150 });
+    expect(doc.version()).toBe(v);
+    expect(engine.itemStyle().opacity).toBe(DEFAULT_ITEM_STYLE.opacity);
+  });
+
+  it("adoptItemStyle : style adopté tel quel, sélection intacte, rien d'écrit, pas d'écho à onItemStyle", () => {
+    const { engine, doc, addRect, sel, colorOf } = styleSetup();
+    const a = addRect();
+    sel().setSelection([a]);
+    const seen: ItemStyle[] = [];
+    engine.onItemStyle((st) => seen.push(st));
+    const v = doc.version();
+    engine.adoptItemStyle({ ...DEFAULT_ITEM_STYLE, color: "#1d4ed8", opacity: 40 });
+    expect(engine.itemStyle()).toMatchObject({ color: "#1d4ed8", opacity: 40 });
+    expect(engine.state().selection).toEqual([a]);
+    expect(colorOf(a)).toBe("#000000");
+    expect(doc.version()).toBe(v);
+    expect(seen).toEqual([]);
+  });
+
+  it("Ctrl+D sans sélection : touche laissée à la page (faux)", () => {
+    const { engine, doc } = styleSetup();
+    const v = doc.version();
+    expect(engine.key(key("d", { ctrlKey: true }))).toBe(false);
+    expect(doc.version()).toBe(v);
   });
 
   it("deleteSelection : une étape, faux sans sélection, Annuler resélectionne", () => {

@@ -43,7 +43,7 @@ class FakeHost implements TextEditorHost {
   }
 }
 
-function setup(measure: Measure = narrow, zoom = 1) {
+function setup(measure: Measure = narrow, zoom = 1, opacity?: number) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   let shown = page;
@@ -66,7 +66,7 @@ function setup(measure: Measure = narrow, zoom = 1) {
     },
   };
   const host = new FakeHost();
-  const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36 }), measure);
+  const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, ...(opacity === undefined ? {} : { opacity }) }), measure);
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
     tool.close(1, "end");
@@ -336,5 +336,15 @@ describe("outil Texte — C7b (segments, barre)", () => {
     tool.requestCommit();
     expect(changes()).toBeGreaterThanOrEqual(c0 + 3);
     expect(tool.formatState()).toBeNull();
+  });
+});
+
+describe("outil Texte : transparence (OG11 T9b)", () => {
+  it("boîte neuve : SetText porte look.opacity du style courant", () => {
+    const { host, tool, runs, click } = setup(narrow, 1, 40);
+    click(100, 200);
+    host.text = "Bonjour";
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ type: "SetText", look: { opacity: 40 } });
   });
 });

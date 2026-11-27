@@ -164,6 +164,8 @@ export interface Engine {
   /** OG11 : écrit la sélection (un SetStyle, une étape ; champs invalides ignorés) et fusionne le style courant. */
   setItemStyle(patch: Partial<ItemStyle>): void;
   itemStyle(): ItemStyle;
+  /** OG11 : adopte tel quel le style courant venu de l'appareil (autre onglet) : ni sélection écrite, ni écho à `onItemStyle`. */
+  adoptItemStyle(s: ItemStyle): void;
   /** Chaque changement du style courant (pour le garder sur l'appareil) ; rend le désabonnement. */
   onItemStyle(cb: (s: ItemStyle) => void): () => void;
   /** Supprime la sélection comme Suppr ; faux sans sélection. */
@@ -743,7 +745,7 @@ export function createEngine(deps: EngineDeps): Engine {
           imageEdit.cancelMode();
           return true;
         }
-        if (edit === "delete") return true;
+        if (edit === "delete" || objectKey(e) === "duplicate") return true;
         if (enterAction(e)) {
           if (imageEdit.mode() === "crop") imageEdit.finishCrop(true);
           return true;
@@ -911,6 +913,11 @@ export function createEngine(deps: EngineDeps): Engine {
       setItem(p, true);
     },
     itemStyle: () => item,
+    adoptItemStyle(s) {
+      const changed = (Object.keys(s) as (keyof ItemStyle)[]).some((k) => s[k] !== item[k]);
+      item = s;
+      if (changed) emit();
+    },
     onItemStyle(cb) {
       itemListeners.add(cb);
       return () => {
