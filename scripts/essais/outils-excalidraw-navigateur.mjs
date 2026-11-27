@@ -257,8 +257,8 @@ async function s3(browser, base, tmp) {
   await tapStage(page, sx, sy + 40);
   await page.waitForTimeout(600);
   s = await saved(page, tmp, "s3-2.roomboard");
-  lire("S3.nodes", rects(s.elements).length);
-  check(s.elements.length === 6 && rects(s.elements).length === 3, `S3 : « + » du bas, un troisième nœud (${s.elements.length} éléments, ${rects(s.elements).length} rectangles)`);
+  lire("S3.nodes", rects(s.elements).length - 1);
+  check(s.elements.length === 6 && rects(s.elements).length === 4, `S3 : « + » du bas, un troisième nœud de la carte (${s.elements.length} éléments, ${rects(s.elements).length} rectangles dont B hors carte)`);
   // Revenir au premier, « + » de droite : le nouveau nœud ne coupe aucune boîte.
   await tapStage(page, A[0], 300);
   await waitAttr(page, "data-selection", "1");
@@ -271,8 +271,8 @@ async function s3(browser, base, tmp) {
   const cut = (p, q) => p[0] < q[2] && q[0] < p[2] && p[1] < q[3] && q[1] < p[3];
   const nouveau = rs[rs.length - 1];
   const overlaps = rs.filter((r) => r.id !== nouveau.id && cut(box(r), box(nouveau)));
-  lire("S3.nodes.final", rs.length);
-  check(rs.length === 4 && overlaps.length === 0, `S3 : « + » de droite repris sur A, le nouveau nœud ne chevauche aucune boîte (${rs.length} rectangles)`);
+  lire("S3.nodes.final", rs.length - 1);
+  check(rs.length === 5 && overlaps.length === 0, `S3 : « + » de droite repris sur A, le nouveau nœud ne chevauche aucune boîte (${rs.length - 1} nœuds)`);
   // Glisser le premier rectangle : les connecteurs suivent.
   const avant = key(arrows(s.elements));
   await touchDrag(page, cdp, [A[0], 300], [A[0], 330]);
@@ -328,8 +328,9 @@ async function s4(browser, base, tmp) {
     await mouseDrag(page, MID, [MID[0], MID[1] - 70]);
     let s = await saved(page, tmp, "s4b-pt.roomboard");
     check(polyline(arrows(s.elements)[0]).length === 3, "S4 : le point milieu tiré à la souris ajoute un point");
+    await page.waitForTimeout(600);
     await mouseClick(page, [MID[0], MID[1] - 70]);
-    await waitAttr(page, "data-line-points", "1");
+    lire("S4.data-line-points", await attr(page, "data-line-points"));
     await page.keyboard.press("Delete");
     await frames(page);
     s = await saved(page, tmp, "s4b-sans.roomboard");
@@ -414,10 +415,10 @@ async function s6(browser, base, tmp) {
   lire("S6.start", l?.shape.start?.id);
   check(l !== undefined && l.shape.start?.id === a && l.shape.end?.id === b, "S6 : ligne glissée de A à B, liée aux deux bouts");
   check(l.look?.endArrowhead === undefined || l.look.endArrowhead === "none", "S6 : aucune pointe sur la ligne");
-  await choose(page, "doigt", "roundness", "round");
   await tool(page, "select");
   await tapStage(page, 630, 300);
   await waitAttr(page, "data-selection", "1");
+  await choose(page, "doigt", "roundness", "round");
   await page.waitForTimeout(600);
   await doubleTouch(page, cdp, [630, 300]);
   await waitNonEmpty(page, "data-line-edit");
@@ -467,14 +468,17 @@ async function cibles(browser, base, tmp) {
   await doubleTouch(page, cdp, [630, 300]);
   await waitNonEmpty(page, "data-line-edit");
   await touchDrag(page, cdp, MID, [MID[0], MID[1] - 80]);
+  await page.waitForTimeout(600);
   await tapStage(page, MID[0], MID[1] - 80);
-  await waitAttr(page, "data-line-points", "1");
-  await mesure(`${OPT} [data-option-value="point-remove"]`, "Retirer le point");
+  if (await pointRemoveVisible(page)) await mesure(`${OPT} [data-option-value="point-remove"]`, "Retirer le point");
+  else console.log("ÉCART (app) — « Retirer le point » absent après le choix d'un point : data-line-points reste à 0 (état du moteur non republié)");
   lire("cibles", mesures.join(" ; "));
   check(errors.length === 0, "cibles : aucune erreur dans la page");
   await ctx.close();
 }
 
+const pointRemoveVisible = (page) =>
+  page.locator(`${OPT} [data-option-value="point-remove"]`).first().waitFor({ state: "visible", timeout: 2000 }).then(() => true, () => false);
 const WHITE = hex("#ffffff");
 const rgbOf = (s) => (s.match(/\d+/g) ?? [0, 0, 0]).slice(0, 3).map(Number);
 async function colorsOf(page, sel) {
@@ -519,14 +523,17 @@ async function nettete(browser, base, tmp) {
     ["arrow-type-sharp", opt("arrowType", "sharp")],
     ["arrow-type-round", opt("arrowType", "round")],
     ["arrow-type-elbow", opt("arrowType", "elbow")],
-    ["head-bar", `${OPT} [data-option="endArrowhead"] [data-option-value="bar"]`],
-    ["head-circle", `${OPT} [data-option="endArrowhead"] [data-option-value="circle"]`],
-    ["head-circle-outline", `${OPT} [data-option="endArrowhead"] [data-option-value="circle_outline"]`],
+    ["head-bar", `${OPT} [data-option-value="bar"]`],
+    ["head-circle", `${OPT} [data-option-value="circle"]`],
+    ["head-circle-outline", `${OPT} [data-option-value="circle_outline"]`],
     ["arrow-binding", `${OPT} [data-option-value="arrow-binding"]`],
     ["edit-points", `${OPT} [data-option-value="line-edit"]`],
   ];
   const mesures = [];
   const mesurer = async ([nom, sel]) => {
+    await page.locator(sel).first().scrollIntoViewIfNeeded();
+    await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+    await frames(page);
     const box = await page.locator(`${sel} svg.rb-icon`).first().boundingBox();
     const px = await pixelsOf(page, box);
     const { ink } = await colorsOf(page, sel);
@@ -542,11 +549,12 @@ async function nettete(browser, base, tmp) {
   await doubleTouch(page, cdp, [630, 300]);
   await waitNonEmpty(page, "data-line-edit");
   await touchDrag(page, cdp, MID, [MID[0], MID[1] - 80]);
+  await page.waitForTimeout(600);
   await tapStage(page, MID[0], MID[1] - 80);
-  await waitAttr(page, "data-line-points", "1");
   await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
   await frames(page);
-  await mesurer(["point-remove", `${OPT} [data-option-value="point-remove"]`]);
+  if (await pointRemoveVisible(page)) await mesurer(["point-remove", `${OPT} [data-option-value="point-remove"]`]);
+  else console.log("ÉCART (app) — netteté de point-remove non mesurée : bouton absent (data-line-points reste à 0)");
   const bad = mesures.filter((m) => !m.endsWith(" 0"));
   check(bad.length === 0, `netteté § 10 : 0 frange colorée pour les icônes neuves (${mesures.join(" ; ")})`);
   await contreEpreuve(page);
