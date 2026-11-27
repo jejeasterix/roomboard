@@ -214,7 +214,7 @@ describe("SideBar (T10)", () => {
     expect(rule(".rb-page-img")).toMatch(/inline-size: 100%;/);
     expect(rule(".rb-page-img")).toMatch(/contain: inline-size/); // l'image (tampon au dpr) ne dicte pas la largeur du panneau
     expect(rule(".rb-pages-list")).toMatch(/min-inline-size: calc\(var\(--rb-thumb\) \+ 40px\)/);
-    expect(rule(".rb-page-img img")).toMatch(/inline-size: 100%; block-size: auto/);
+    expect(rule(".rb-page-img img")).toMatch(/inline-size: 100%; block-size: 100%/); // la boîte 16:9 fixe la hauteur (T20), l'image y est contenue
   });
 
   it("miniatures : toutes les pages demandent la même largeur de tampon, tirée de la largeur mesurée de la liste", async () => {
