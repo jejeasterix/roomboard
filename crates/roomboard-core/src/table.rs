@@ -818,6 +818,8 @@ impl Document {
             }
             if let Some(h) = grow {
                 last.map.insert(&mut txn, "height", In::Any(Any::from(h)));
+                // C3 : tableau agrandi, ses lignes liées suivent dans la même étape (comme `cmd_insert_table_line`).
+                crate::linear::follow(self, &mut txn, &[id.to_string()], None);
             }
         }
         Ok(self.table_done(page, id))
@@ -931,6 +933,8 @@ impl Document {
                     }
                 }
             }
+            // C3 : tableau réduit, ses lignes liées suivent dans la même étape (comme `cmd_insert_table_line`).
+            crate::linear::follow(self, &mut txn, &[id.to_string()], None);
         }
         Ok(self.table_done(page, id))
     }
