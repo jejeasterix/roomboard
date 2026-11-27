@@ -683,40 +683,56 @@ impl Document {
         None
     }
 
-    /// Grille et largeur d'une page ; `None` si la page est inconnue ou sans grille lisible.
-    fn page_grid(&self, page: &str) -> Option<(GridView, f64)> {
+    /// Cadre qui borne la grille et l'accroche (T7, décision 9) : `None` si la page est inconnue ; `Some(None)` en
+    /// Infini (sans borne) ; en Page, `(0, 0) → (width, max(height, backdrop.rect.y1))`, la règle de `pageFrame`
+    /// (`engine/page.ts`) et du faux cœur.
+    fn page_clip(&self, page: &str) -> Option<Option<Bounds>> {
+        let v = self.page(page)?;
+        if v.mode == INFINITE_MODE {
+            return Some(None);
+        }
+        let bottom = v
+            .backdrop
+            .as_ref()
+            .and_then(|b| b.rect)
+            .map_or(0.0, |r| r.y1)
+            .max(v.height);
+        Some(Some(Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: v.width,
+            y1: bottom,
+        }))
+    }
+
+    /// Grille et cadre d'une page (`page_clip`) ; `None` si la page est inconnue ou sans grille lisible.
+    fn page_grid(&self, page: &str) -> Option<(GridView, Option<Bounds>)> {
+        let clip = self.page_clip(page)?;
         let txn = self.doc.transact();
         let (_, m) = self.find_page(&txn, page)?;
-        let width = out_f64(m.get(&txn, "width"))?;
-        Some((grid::read(&txn, &m)?, width))
+        Some((grid::read(&txn, &m)?, clip))
     }
 
     /// Point aimanté de la page (G6) ; `None` sans grille, magnétisme coupé ou aucun niveau qui accroche.
     pub fn snap_point(&self, page: &str, x: f64, y: f64) -> Option<(f64, f64)> {
-        let (g, width) = self.page_grid(page)?;
-        grid::snap_point(&g, width, (x, y))
+        let (g, clip) = self.page_grid(page)?;
+        grid::snap_point(&g, clip, (x, y))
     }
 
     /// Déplacement aimanté (G7), toujours calculé depuis le déplacement brut ; brut sans grille ou sans boîte.
     pub fn snap_delta(&self, page: &str, ids: &[String], dx: f64, dy: f64) -> (f64, f64) {
-        let Some((g, width)) = self.page_grid(page) else {
+        let Some((g, clip)) = self.page_grid(page) else {
             return (dx, dy);
         };
         let Some(b) = self.snap_box(ids) else {
             return (dx, dy);
         };
-        grid::snap_delta(&g, width, b, (dx, dy))
-    }
-
-    /// Largeur d'une page ; `None` si la page est inconnue ou sans largeur lisible.
-    fn page_width(&self, page: &str) -> Option<f64> {
-        let txn = self.doc.transact();
-        let (_, m) = self.find_page(&txn, page)?;
-        out_f64(m.get(&txn, "width"))
+        grid::snap_delta(&g, clip, b, (dx, dy))
     }
 
     /// Lignes visibles d'une grille non enregistrée sur la page (C9 éditeur, DAE1) : même `grid::lines` que la grille
-    /// enregistrée (DAG1), sur la largeur de la page ; rien n'est écrit. `None` : page inconnue ou grille invisible.
+    /// enregistrée (DAG1), bornée au même cadre (`page_clip`, T7) ; rien n'est écrit. `None` : page inconnue ou grille
+    /// invisible.
     pub fn grid_lines_of(
         &self,
         page: &str,
@@ -725,8 +741,8 @@ impl Document {
         min_step: f64,
         min_dot_step: f64,
     ) -> Option<GridLines> {
-        let width = self.page_width(page)?;
-        grid::lines(grid, width, rect, min_step, min_dot_step)
+        let clip = self.page_clip(page)?;
+        grid::lines(grid, clip, rect, min_step, min_dot_step)
     }
 
     /// Lignes visibles de la grille de la page (G9) ; `None` sans grille ou grille invisible.
