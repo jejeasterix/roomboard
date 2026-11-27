@@ -226,7 +226,7 @@ export function createImageCache(
     const job = {
       key,
       bitmap: () => copy(raw),
-      ...(i.transparent !== undefined ? { transparent: i.transparent } : {}),
+      ...(i.transparent !== undefined ? { transparent: i.transparent, size: [i.w, i.h] as const } : {}),
       ...(i.brightness ? { brightness: i.brightness } : {}),
       ...(i.contrast ? { contrast: i.contrast } : {}),
     };

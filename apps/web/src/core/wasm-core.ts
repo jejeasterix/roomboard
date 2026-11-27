@@ -469,7 +469,8 @@ function wellTyped(p: ImageParams): boolean {
     num(r["brightness"]) &&
     num(r["contrast"]) &&
     (t === undefined ||
-      (isRecord(t) && typeof t["color"] === "string" && typeof t["tolerance"] === "number" && typeof t["soft"] === "number" && typeof t["contiguous"] === "boolean"))
+      (isRecord(t) && typeof t["color"] === "string" && typeof t["tolerance"] === "number" && typeof t["soft"] === "number" && typeof t["contiguous"] === "boolean" &&
+        num(t["x"]) && num(t["y"])))
   );
 }
 
@@ -490,7 +491,14 @@ export function imageParamsArgs(p: ImageParams): [Float64Array, boolean, boolean
     p.brightness ?? 0,
     p.contrast ?? 0,
     t?.color,
-    new Float64Array(t === undefined ? [] : [t.tolerance, t.soft, t.contiguous ? 1 : 0]),
+    // OG23 (T10) : départ en 4e et 5e nombres ; un seul des deux part en NaN, que le cœur refuse (les deux ou aucun).
+    new Float64Array(
+      t === undefined
+        ? []
+        : t.x === undefined && t.y === undefined
+          ? [t.tolerance, t.soft, t.contiguous ? 1 : 0]
+          : [t.tolerance, t.soft, t.contiguous ? 1 : 0, t.x ?? Number.NaN, t.y ?? Number.NaN],
+    ),
   ];
 }
 
@@ -520,7 +528,9 @@ export function toImageParams(i: Record<string, unknown>): ImageParams {
     if (!isRecord(t)) throw new Error(ELEMENT);
     const { color, tolerance, soft, contiguous } = t;
     if (typeof color !== "string" || typeof tolerance !== "number" || typeof soft !== "number" || typeof contiguous !== "boolean") throw new Error(ELEMENT);
-    out["transparent"] = { color, tolerance, soft, contiguous };
+    const { x, y } = t;
+    if ((x !== undefined && typeof x !== "number") || (y !== undefined && typeof y !== "number")) throw new Error(ELEMENT);
+    out["transparent"] = { color, tolerance, soft, contiguous, ...(x !== undefined ? { x } : {}), ...(y !== undefined ? { y } : {}) };
   }
   return out as ImageParams;
 }
@@ -570,14 +580,20 @@ class WasmCoreDocument implements CoreDocument {
       case "SetStyle": {
         // OG11 : `"x" in p` dit si le champ est touché ; null ou absent dans un champ touché le retire (Option::None).
         const p = cmd.patch;
+        // OG23 (T10) : `dragCopy` non booléen part en tracé 3, que le pont refuse par « style invalide » avant toute
+        // lecture, comme `validStyle` du faux cœur.
+        const drag: unknown = p.dragCopy;
+        const badDrag = drag !== undefined && typeof drag !== "boolean";
         return toChange(this.d.set_style(
           [...cmd.ids], p.color ?? undefined, num(p.width), "fill" in p, p.fill ?? undefined, "strokeStyle" in p, p.strokeStyle ?? undefined,
-          num(p.roughness), "roundness" in p, p.roundness ?? undefined, num(p.opacity),
+          badDrag ? 3 : num(p.roughness), "roundness" in p, p.roundness ?? undefined, num(p.opacity),
           // T12 : paires `*_set`, valeur du lot 2.
           "fillStyle" in p, p.fillStyle ?? undefined, "startArrowhead" in p, p.startArrowhead ?? undefined,
           "endArrowhead" in p, p.endArrowhead ?? undefined, "textAlign" in p, p.textAlign ?? undefined, "link" in p, p.link ?? undefined,
           // OG23 : paire `variability_set`, valeur.
           "variability" in p, p.variability ?? undefined,
+          // OG23 (T10) : `true` pose, `false` retire, absent laisse.
+          typeof drag === "boolean" ? drag : undefined,
         ));
       }
       case "Transform":

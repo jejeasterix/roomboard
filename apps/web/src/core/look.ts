@@ -23,6 +23,8 @@ export interface Look {
   readonly link?: string;
   /** OG23 : pression constante d'un trait ; absent = variable, le neutre (jamais écrit). */
   readonly variability?: "constant";
+  /** OG23 (T10) : glisser pose une copie, l'original reste ; absent = déplacer, le neutre (seul `true` est écrit). */
+  readonly dragCopy?: true;
 }
 export interface LookPatch {
   readonly color?: string;
@@ -41,6 +43,8 @@ export interface LookPatch {
   readonly link?: string | null;
   /** OG23 : écrit sur les traits seuls ; null retire (pression variable). */
   readonly variability?: "constant" | null;
+  /** OG23 (T10) : `true` pose « Glisser une copie », `false` le retire ; traits, formes, textes, images. */
+  readonly dragCopy?: boolean;
 }
 /** Traits non pleins (le plein est le neutre : absent de `Look`). */
 export const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
@@ -99,6 +103,7 @@ export function toLook(v: unknown): Look | undefined {
   const link = v["link"];
   if (typeof link === "string" && validLink(link)) out.link = link;
   if (v["variability"] === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
+  if (v["dragCopy"] === true) out.dragCopy = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 export const strokeKindOf = (l: Look | undefined): StrokeKind => l?.strokeStyle ?? "solid";
@@ -111,6 +116,8 @@ export const startArrowheadOf = (l: Look | undefined): Arrowhead => l?.startArro
 export const endArrowheadOf = (l: Look | undefined): Arrowhead => l?.endArrowhead ?? END_ARROWHEAD_DEFAULT;
 export const textAlignOf = (l: Look | undefined): TextAlign => l?.textAlign ?? "left";
 export const variabilityOf = (l: Look | undefined): Variability => l?.variability ?? "variable";
+/** OG23 (T10) : glisser l'objet pose une copie. */
+export const dragCopyOf = (l: Look | undefined): boolean => l?.dragCopy === true;
 
 /** undefined si neutre. */
 export function lookFrom(

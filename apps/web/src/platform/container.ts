@@ -109,6 +109,8 @@ export function pdfJobReply(mod: FormatsBinding, job: PdfJob): WorkerReply {
 export interface PixelFormatsBinding extends FormatsBinding {
   image_transparent(px: Uint8Array, w: number, h: number, r: number, g: number, b: number, tolerance: number, soft: number, contiguous: boolean): void;
   image_adjust(px: Uint8Array, brightness: number, contrast: number): void;
+  /** OG23 (T10) : baguette depuis le point (`x`, `y`) du bitmap ; absente d'un module d'avant T10 (`image_transparent`). */
+  image_transparent_seed?(px: Uint8Array, w: number, h: number, r: number, g: number, b: number, tolerance: number, soft: number, x: number, y: number): void;
   /** C6b (B17) : `clear` efface la zone (`r`, `g`, `b` ignorés) ; rend le nombre de pixels changés. */
   image_flood_fill(px: Uint8Array, w: number, h: number, x: number, y: number, tolerance: number, r: number, g: number, b: number, clear: boolean): number;
 }
