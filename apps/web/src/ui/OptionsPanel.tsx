@@ -7,7 +7,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
 import type { Command, ElementView, TextAttrsPatch } from "../core/api";
 import {
-  endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf,
+  endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, variabilityOf,
   type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
 import type { DeviceSettings } from "../device-settings";
@@ -18,12 +18,14 @@ import { observeBox } from "./Island";
 import { objectKey, type KeyLike } from "../engine/input/keys";
 import { ColorPicker } from "./ColorPicker";
 import { LinkPopover } from "./LinkPopover";
+import { buttonShortcut } from "./shortcuts";
+import type { ArrangeHow } from "../core/arrange";
 import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeLinkAvoiding, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
-  FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
+  DISTRIBUTE_MIN_UNITS, FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionOpen, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -96,6 +98,31 @@ const HEADS: readonly RadioOption<Arrowhead>[] = [
   { value: "triangle", label: "Triangle", icon: "head-triangle" },
   { value: "triangle_outline", label: "Triangle creux", icon: "head-triangle-outline" },
 ];
+const PRESSURE: readonly RadioOption<"constant" | "variable">[] = [
+  { value: "constant", label: "Constante", icon: "pressure-constant" },
+  { value: "variable", label: "Variable", icon: "pressure-variable" },
+];
+/** Infobulles des deux segments Pression (posées en `aria-description` : les segments de RadioChoices n'ont pas de bulle). */
+const PRESSURE_TIPS: Readonly<Record<string, string>> = { constant: "Épaisseur constante", variable: "Épaisseur selon la pression du stylet" };
+interface ArrangeButton { readonly value: ArrangeHow; readonly label: string; readonly icon: string }
+const ALIGN_H: readonly ArrangeButton[] = [
+  { value: "align-left", label: "Aligner à gauche", icon: "align-start-vertical" },
+  { value: "align-center", label: "Centrer horizontalement", icon: "align-center-vertical" },
+  { value: "align-right", label: "Aligner à droite", icon: "align-end-vertical" },
+  { value: "distribute-h", label: "Répartir horizontalement", icon: "align-horizontal-space-around" },
+];
+const ALIGN_V: readonly ArrangeButton[] = [
+  { value: "align-top", label: "Aligner en haut", icon: "align-start-horizontal" },
+  { value: "align-middle", label: "Centrer verticalement", icon: "align-center-horizontal" },
+  { value: "align-bottom", label: "Aligner en bas", icon: "align-end-horizontal" },
+  { value: "distribute-v", label: "Répartir verticalement", icon: "align-vertical-space-around" },
+];
+const TRANSFORMS: readonly ArrangeButton[] = [
+  { value: "flip-h", label: "Retourner horizontalement", icon: "flip-horizontal" },
+  { value: "flip-v", label: "Retourner verticalement", icon: "flip-vertical" },
+  { value: "rotate-ccw", label: "Tourner de 90° à gauche", icon: "rotate-ccw-square" },
+  { value: "rotate-cw", label: "Tourner de 90° à droite", icon: "rotate-cw-square" },
+];
 const FONT_OPTIONS: readonly RadioOption<string>[] = FONTS.map((f) => ({ value: f.value, label: f.label }));
 const SIZE_OPTIONS: readonly RadioOption<string>[] = TEXT_SIZES.map((n) => ({ value: String(n), label: String(n) }));
 const LAYERS = [
@@ -110,7 +137,7 @@ const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) =>
 }));
 /** Sections à segments : valeur (chaîne) et mot du résumé gris de l'en-tête. */
 const SUMMARY: Readonly<Partial<Record<OptionKey, readonly RadioOption<string>[]>>> = {
-  strokeWidth: WIDTH_OPTIONS, strokeStyle: STROKES, roughness: ROUGH, roundness: CORNERS, fillStyle: FILLS,
+  strokeWidth: WIDTH_OPTIONS, pressure: PRESSURE, strokeStyle: STROKES, roughness: ROUGH, roundness: CORNERS, fillStyle: FILLS,
   font: FONT_OPTIONS, fontSize: SIZE_OPTIONS, textAlign: ALIGNS,
 };
 
@@ -129,7 +156,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
-      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background)
+      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background, props.state().selectionUnits ?? 0)
       : []);
   const saved = (): boolean => props.settings.island(props.profileId(), "options").collapsed === true;
   // Signal local (les réglages d'appareil ne notifient pas), relu du réglage à chaque profil.
@@ -160,6 +187,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeColor: (e) => ("style" in e ? e.style.color : undefined),
     background: (e) => (e.kind === "shape" ? e.shape.fill ?? null : undefined),
     strokeWidth: (e) => ("style" in e ? e.style.width : undefined),
+    pressure: (e) => variabilityOf(e.look),
     strokeStyle: (e) => strokeKindOf(e.look),
     roughness: (e) => roughnessOf(e.look),
     roundness: (e) => roundnessOf(e.look),
@@ -175,6 +203,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeColor: (s) => s.color,
     background: (s) => s.background,
     strokeWidth: (s) => s.width,
+    pressure: (s) => s.variability,
     strokeStyle: (s) => s.strokeStyle,
     roughness: (s) => s.roughness,
     roundness: (s) => s.roundness,
@@ -338,6 +367,14 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     const v = value("opacity");
     return typeof v === "number" ? v : null;
   };
+  /** Une rangée de boutons `Engine.arrange` : cible 44 px (`rb-opt-btn`), raccourci dans l'infobulle et `aria-keyshortcuts` ; Répartir demande 3 unités. */
+  const arrangeRow = (row: readonly ArrangeButton[]): JSX.Element => (
+    <For each={row.filter((b) => !b.value.startsWith("distribute") || (props.state().selectionUnits ?? 0) >= DISTRIBUTE_MIN_UNITS)}>
+      {(b) => (
+        <IconButton keepFocus icon={b.icon} label={b.label} shortcut={buttonShortcut(b.value)} attrs={{ "data-option-value": b.value, class: "rb-opt-btn" }} onPress={() => void props.engine().arrange(b.value)} />
+      )}
+    </For>
+  );
   const bodies: Readonly<Record<OptionKey, () => JSX.Element>> = {
     strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
     background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
@@ -405,10 +442,22 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         <output>{opacityValue() !== null ? `${opacityValue()} %` : "Mixte"}</output>
       </label>
     ),
-    // Corps provisoires : T7 les remplace.
-    pressure: () => <div class="rb-pick-row" />,
-    align: () => <div class="rb-pick-row" />,
-    transform: () => <div class="rb-pick-row" />,
+    pressure: () => (
+      <div
+        ref={(el) => queueMicrotask(() => {
+          for (const b of el.querySelectorAll<HTMLElement>("[data-option-value]")) b.setAttribute("aria-description", PRESSURE_TIPS[b.getAttribute("data-option-value") ?? ""] ?? "");
+        })}
+      >
+        <RadioChoices keepFocus name="pressure" label={LABEL.pressure} look="segment" options={PRESSURE} valueAttr="data-option-value"
+          value={(value("pressure") as "constant" | "variable" | null) ?? null} choose={(v) => write({ variability: v })} />
+      </div>
+    ),
+    align: () => (
+      <>
+        <For each={[ALIGN_H, ALIGN_V]}>{(row) => <div class="rb-pick-row">{arrangeRow(row)}</div>}</For>
+      </>
+    ),
+    transform: () => <div class="rb-pick-row">{arrangeRow(TRANSFORMS)}</div>,
     actions: () => (
       <div class="rb-pick-row">
         <Show when={props.state().selection.length === 1}>

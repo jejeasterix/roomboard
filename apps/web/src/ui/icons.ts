@@ -151,6 +151,24 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "head-arrow": [["path", { d: "M4 12h16" }], ["path", { d: "m14 6 6 6-6 6" }]],
   "head-triangle": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }], ["path", { d: "M16 10.5v3l2-1.5z" }]],
   "head-triangle-outline": [["path", { d: "M4 12h10" }], ["path", { d: "M14 7v10l6-5z" }]],
+  // OG23 (T7) : Lucide @7981a0798a, ISC, tracés recopiés tels quels (align-start-vertical, align-center-vertical, align-end-vertical,
+  // align-start-horizontal, align-center-horizontal, align-end-horizontal, align-horizontal-space-around, align-vertical-space-around,
+  // rotate-ccw-square, rotate-cw-square, square-axis-dashed-vertical -> flip-horizontal, square-axis-dashed-horizontal -> flip-vertical).
+  "align-start-vertical": [["rect", { width: "9", height: "6", x: "6", y: "14", rx: "2" }], ["rect", { width: "16", height: "6", x: "6", y: "4", rx: "2" }], ["path", { d: "M2 2v20" }]],
+  "align-center-vertical": [["path", { d: "M12 2v20" }], ["path", { d: "M8 10H4a2 2 0 0 1-2-2V6c0-1.1.9-2 2-2h4" }], ["path", { d: "M16 10h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4" }], ["path", { d: "M8 20H7a2 2 0 0 1-2-2v-2c0-1.1.9-2 2-2h1" }], ["path", { d: "M16 14h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1" }]],
+  "align-end-vertical": [["rect", { width: "16", height: "6", x: "2", y: "4", rx: "2" }], ["rect", { width: "9", height: "6", x: "9", y: "14", rx: "2" }], ["path", { d: "M22 22V2" }]],
+  "align-start-horizontal": [["rect", { width: "6", height: "16", x: "4", y: "6", rx: "2" }], ["rect", { width: "6", height: "9", x: "14", y: "6", rx: "2" }], ["path", { d: "M22 2H2" }]],
+  "align-center-horizontal": [["path", { d: "M2 12h20" }], ["path", { d: "M10 16v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4" }], ["path", { d: "M10 8V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v4" }], ["path", { d: "M20 16v1a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-1" }], ["path", { d: "M14 8V7c0-1.1.9-2 2-2h2a2 2 0 0 1 2 2v1" }]],
+  "align-end-horizontal": [["rect", { width: "6", height: "16", x: "4", y: "2", rx: "2" }], ["rect", { width: "6", height: "9", x: "14", y: "9", rx: "2" }], ["path", { d: "M22 22H2" }]],
+  "align-horizontal-space-around": [["rect", { width: "6", height: "10", x: "9", y: "7", rx: "2" }], ["path", { d: "M4 22V2" }], ["path", { d: "M20 22V2" }]],
+  "align-vertical-space-around": [["rect", { width: "10", height: "6", x: "7", y: "9", rx: "2" }], ["path", { d: "M22 20H2" }], ["path", { d: "M22 4H2" }]],
+  "rotate-ccw-square": [["path", { d: "M20 9V7a2 2 0 0 0-2-2h-6" }], ["path", { d: "m15 2-3 3 3 3" }], ["path", { d: "M20 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" }]],
+  "rotate-cw-square": [["path", { d: "M12 5H6a2 2 0 0 0-2 2v3" }], ["path", { d: "m9 8 3-3-3-3" }], ["path", { d: "M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" }]],
+  "flip-horizontal": [["path", { d: "M12 14v2" }], ["path", { d: "M12 20v2" }], ["path", { d: "M12 2v2" }], ["path", { d: "M12 8v2" }], ["path", { d: "M16 3h3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-3" }], ["path", { d: "M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3" }]],
+  "flip-vertical": [["path", { d: "M10 12H8" }], ["path", { d: "M16 12h-2" }], ["path", { d: "M21 16v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3" }], ["path", { d: "M21 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3" }], ["path", { d: "M22 12h-2" }], ["path", { d: "M4 12H2" }]],
+  // Dessinées pour RoomBoard (même grille) : pression constante (trait d'épaisseur fixe) et variable (trait qui s'amincit et s'épaissit).
+  "pressure-constant": [["path", { d: "M4 12h16", "stroke-width": "3" }]],
+  "pressure-variable": [["path", { d: "M4 12c4-3 12-3 16 0c-4 3-12 3-16 0z" }]],
 });
 
 /** Outil → icône (§ 2 bis). */
