@@ -16,7 +16,7 @@ use crate::element::{
 use crate::fill_element::{read_fill, FILL_KIND};
 use crate::ink::hit::{dist_to_edges, hit_outline, path_hits_outline, point_in_polygon};
 use crate::ink::points::InkPoint;
-use crate::linear::{bind_box, BindBox, ANCHOR_RATIOS};
+use crate::linear::{bind_box, BindBox, Outline, ANCHOR_RATIOS};
 use crate::media::{read_media, MEDIA_KIND};
 use crate::model3d::{read_model3d, MODEL3D_KIND};
 use crate::shape::{box_polygon, shape_polygon};
@@ -376,7 +376,25 @@ pub struct BindHit {
 
 /// Point du contour le plus proche de `q` (local), sa distance locale, et `q` dedans.
 fn nearest_outline(b: &BindBox, q: (f64, f64)) -> ((f64, f64), f64, bool) {
-    if b.ellipse {
+    // OG12 lot 2a (n° 33) : losange, point le plus proche sur ses quatre arêtes.
+    if b.outline == Outline::Diamond {
+        let (cx, cy) = (b.w / 2.0, b.h / 2.0);
+        let v = [(cx, 0.0), (b.w, cy), (cx, b.h), (0.0, cy)];
+        let mut best = (v[0], f64::INFINITY);
+        for i in 0..4 {
+            let (a, c) = (v[i], v[(i + 1) % 4]);
+            let (ex, ey) = (c.0 - a.0, c.1 - a.1);
+            let t = (((q.0 - a.0) * ex + (q.1 - a.1) * ey) / (ex * ex + ey * ey)).clamp(0.0, 1.0);
+            let p = (a.0 + t * ex, a.1 + t * ey);
+            let dist = (q.0 - p.0).hypot(q.1 - p.1);
+            if dist < best.1 {
+                best = (p, dist);
+            }
+        }
+        let inside = (q.0 - cx).abs() / cx + (q.1 - cy).abs() / cy <= 1.0;
+        return (best.0, best.1, inside);
+    }
+    if b.outline == Outline::Ellipse {
         let (cx, cy) = (b.w / 2.0, b.h / 2.0);
         let r = (((q.0 - cx) / cx).powi(2) + ((q.1 - cy) / cy).powi(2)).sqrt();
         let p = if r < 1e-12 {

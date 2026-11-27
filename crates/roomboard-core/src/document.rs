@@ -401,6 +401,7 @@ impl Document {
                         h: s.h,
                         fill: s.fill,
                         points,
+                        polygon: s.polygon.then_some(true),
                         start,
                         end,
                     }),

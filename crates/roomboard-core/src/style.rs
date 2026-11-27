@@ -6,8 +6,8 @@ use yrs::{Any, In, Map, MapRef};
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, out_string, read_look, valid_link, ARROWHEADS, END_ARROWHEAD_DEFAULT,
-    FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS,
+    finite_positive, out_string, read_look, read_polygon, valid_link, ARROWHEADS,
+    END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS,
 };
 use crate::fill::{differs, set_or_remove};
 use crate::rich_text::valid_color;
@@ -99,11 +99,15 @@ pub(crate) fn random_seed() -> u32 {
 fn writes_for(
     kind: &str,
     shape: Option<&str>,
+    polygon: bool,
     p: &StylePatch,
     opacity: Option<u8>,
     seed: Option<u32>,
 ) -> Vec<(&'static str, Option<In>)> {
     let is_shape = kind == "shape";
+    // OG12 lot 2a : fond admis sur une forme pleine et sur une ligne fermée ; `roundness` inapplicable à la ligne
+    // fermée (H5) comme au losange.
+    let filled = is_shape && (matches!(shape, Some("rect" | "ellipse" | "diamond")) || polygon);
     let mut w = Vec::new();
     if let Some(c) = &p.color {
         // H17 : la couleur de l'élément seule ; les couleurs posées sur une partie du texte restent.
@@ -117,7 +121,7 @@ fn writes_for(
         }
     }
     if let Some(f) = &p.fill {
-        if is_shape && matches!(shape, Some("rect" | "ellipse")) {
+        if filled {
             w.push(("fill", f.as_deref().map(In::from)));
         }
     }
@@ -140,7 +144,7 @@ fn writes_for(
         }
     }
     if let Some(s) = &p.roundness {
-        if is_shape && matches!(shape, Some("rect" | "line" | "arrow")) {
+        if is_shape && !polygon && matches!(shape, Some("rect" | "line" | "arrow")) {
             w.push(("roundness", s.as_deref().map(In::from)));
         }
     }
@@ -150,7 +154,7 @@ fn writes_for(
         }
     }
     if let Some(f) = &p.fill_style {
-        if is_shape && matches!(shape, Some("rect" | "ellipse")) {
+        if filled {
             w.push(("fillStyle", f.as_deref().map(In::from)));
         }
     }
@@ -182,6 +186,12 @@ fn writes_for(
     w
 }
 
+/// H5 (OG12 lot 2a) : retire la clé d'aspect `roundness`, comme `cmd_set_style` pour un neutre (`Some(None)`), dans la
+/// transaction de l'appelant.
+pub(crate) fn clear_roundness(e: &MapRef, txn: &mut yrs::TransactionMut) {
+    set_or_remove(e, txn, "roundness", None);
+}
+
 impl Document {
     /// `SetStyle` (T2) : validation, puis plan des écritures effectives (lecture), puis une seule `transact_local`.
     /// La graine est tirée par `new_seed` seulement quand le tracé passe à 1 ou 2 depuis un autre niveau : au même
@@ -208,6 +218,7 @@ impl Document {
                 let e = found.element;
                 let kind = out_string(e.get(&txn, "kind")).unwrap_or_default();
                 let shape = out_string(e.get(&txn, "shape"));
+                let polygon = shape.as_deref() == Some("line") && read_polygon(&txn, &e);
                 let seed = match patch.roughness {
                     Some(r @ 1..=2) if kind == "shape" => {
                         let l = read_look(&txn, &e);
@@ -216,7 +227,7 @@ impl Document {
                     _ => None,
                 };
                 let mut any = false;
-                for (key, v) in writes_for(&kind, shape.as_deref(), patch, opacity, seed) {
+                for (key, v) in writes_for(&kind, shape.as_deref(), polygon, patch, opacity, seed) {
                     if differs(&txn, &e, key, v.as_ref()) {
                         plan.push((e.clone(), key, v));
                         any = true;

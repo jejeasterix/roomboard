@@ -172,6 +172,14 @@ pub(crate) fn read_binding<T: ReadTxn>(txn: &T, e: &MapRef, end: End) -> Option<
     })
 }
 
+/// Contour d'accroche (OG12 lot 2a, n° 33) : boîte, ellipse inscrite ou losange inscrit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outline {
+    Box,
+    Ellipse,
+    Diamond,
+}
+
 /// Boîte d'accroche d'un objet (n° 6) : `t` place la boîte locale (0, 0)-(w, h) ; `gap` en unités monde (H7).
 #[derive(Debug, Clone, PartialEq)]
 pub struct BindBox {
@@ -179,7 +187,7 @@ pub struct BindBox {
     pub t: Transform,
     pub w: f64,
     pub h: f64,
-    pub ellipse: bool,
+    pub outline: Outline,
     pub gap: f64,
 }
 
@@ -193,7 +201,7 @@ pub fn bind_gap(width: f64) -> f64 {
 pub(crate) fn bind_box<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<BindBox> {
     let id = out_string(e.get(txn, "id"))?;
     let kind = out_string(e.get(txn, "kind"))?;
-    let (t, w, h, ellipse, width) = match kind.as_str() {
+    let (t, w, h, outline, width) = match kind.as_str() {
         "shape" => {
             let s = read_shape(txn, e)?;
             if s.kind.is_segment() {
@@ -204,7 +212,11 @@ pub(crate) fn bind_box<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<BindBox> {
                 t,
                 s.w,
                 s.h,
-                s.kind == ShapeKind::Ellipse,
+                match s.kind {
+                    ShapeKind::Ellipse => Outline::Ellipse,
+                    ShapeKind::Diamond => Outline::Diamond,
+                    _ => Outline::Box,
+                },
                 f64::from(s.style.width),
             )
         }
@@ -214,26 +226,26 @@ pub(crate) fn bind_box<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<BindBox> {
                 out_transform(e.get(txn, "transform"))?,
                 tf.box_width,
                 tf.box_height,
-                false,
+                Outline::Box,
                 0.0,
             )
         }
         "image" => {
             let (t, i) = read_image(txn, e)?;
             let (bw, bh) = i.display_size();
-            (t, bw, bh, false, 0.0)
+            (t, bw, bh, Outline::Box, 0.0)
         }
         k if k == TABLE_KIND => {
             let tb = table::read_raw(txn, e)?;
-            (tb.transform, tb.width(), tb.height(), false, 0.0)
+            (tb.transform, tb.width(), tb.height(), Outline::Box, 0.0)
         }
         k if k == MEDIA_KIND => {
             let (t, m) = read_media(txn, e)?;
-            (t, m.w, m.h, false, 0.0)
+            (t, m.w, m.h, Outline::Box, 0.0)
         }
         k if k == MODEL3D_KIND => {
             let (t, m) = read_model3d(txn, e)?;
-            (t, m.w, m.h, false, 0.0)
+            (t, m.w, m.h, Outline::Box, 0.0)
         }
         _ => return None,
     };
@@ -242,7 +254,7 @@ pub(crate) fn bind_box<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<BindBox> {
         t,
         w,
         h,
-        ellipse,
+        outline,
         gap: bind_gap(width),
     })
 }
@@ -250,14 +262,22 @@ pub(crate) fn bind_box<T: ReadTxn>(txn: &T, e: &MapRef) -> Option<BindBox> {
 /// Point local `q` sur le contour ou dehors : au plus 0,5 unité locale à l'intérieur (n° 4 : le mode se déduit du point).
 pub fn on_outline(b: &BindBox, q: (f64, f64)) -> bool {
     const IN: f64 = 0.5;
-    if b.ellipse {
-        let (rx, ry) = (b.w / 2.0 - IN, b.h / 2.0 - IN);
-        if rx <= 0.0 || ry <= 0.0 {
-            return true;
+    match b.outline {
+        Outline::Ellipse => {
+            let (rx, ry) = (b.w / 2.0 - IN, b.h / 2.0 - IN);
+            if rx <= 0.0 || ry <= 0.0 {
+                return true;
+            }
+            ((q.0 - b.w / 2.0) / rx).powi(2) + ((q.1 - b.h / 2.0) / ry).powi(2) >= 1.0
         }
-        ((q.0 - b.w / 2.0) / rx).powi(2) + ((q.1 - b.h / 2.0) / ry).powi(2) >= 1.0
-    } else {
-        q.0 <= IN || q.1 <= IN || q.0 >= b.w - IN || q.1 >= b.h - IN
+        Outline::Diamond => {
+            let (cx, cy) = (b.w / 2.0 - IN, b.h / 2.0 - IN);
+            if cx <= 0.0 || cy <= 0.0 {
+                return true;
+            }
+            (q.0 - b.w / 2.0).abs() / cx + (q.1 - b.h / 2.0).abs() / cy >= 1.0
+        }
+        Outline::Box => q.0 <= IN || q.1 <= IN || q.0 >= b.w - IN || q.1 >= b.h - IN,
     }
 }
 
@@ -270,10 +290,10 @@ pub fn anchor(b: &BindBox, fixed: [f64; 2]) -> (f64, f64) {
     if !on_outline(b, q) || dx.hypot(dy) < 1e-9 {
         return apply_transform(&b.t, q.0, q.1);
     }
-    let s = if b.ellipse {
-        1.0 / ((dx / cx).powi(2) + (dy / cy).powi(2)).sqrt()
-    } else {
-        1.0 / (dx.abs() / cx).max(dy.abs() / cy)
+    let s = match b.outline {
+        Outline::Ellipse => 1.0 / ((dx / cx).powi(2) + (dy / cy).powi(2)).sqrt(),
+        Outline::Diamond => 1.0 / (dx.abs() / cx + dy.abs() / cy),
+        Outline::Box => 1.0 / (dx.abs() / cx).max(dy.abs() / cy),
     };
     let edge = apply_transform(&b.t, cx + s * dx, cy + s * dy);
     let center = apply_transform(&b.t, cx, cy);
@@ -323,7 +343,8 @@ pub(crate) fn line_writes(
 
 impl Document {
     /// Cible d'une liaison, cherchée sur la page `page` de la ligne seulement (C1) : `find_element` parcourt toutes les
-    /// pages, et une cible d'une autre page n'est ni accrochable, ni suivie, ni lue (vue : liaison libre).
+    /// pages, et une cible d'une autre page n'est ni accrochable, ni suivie, ni lue (vue : liaison libre) ; une cible
+    /// sans `bind_box` non plus.
     pub(crate) fn bound_target<T: ReadTxn>(&self, txn: &T, page: &str, id: &str) -> Option<MapRef> {
         self.page_elements(txn, page)?
             .iter(txn)
@@ -331,6 +352,8 @@ impl Document {
                 Out::YMap(e) if out_string(e.get(txn, "id")).as_deref() == Some(id) => Some(e),
                 _ => None,
             })
+            // OG12 lot 2a (n° 9, 34) : une cible devenue non accrochable (forme convertie en ligne fermée) se lit libre.
+            .filter(|e| bind_box(txn, e).is_some())
     }
 
     /// Liaison demandée (n° 12 b) : rapport fini, cible connue sur la page `page` de la ligne et accrochable ; rapport
@@ -685,7 +708,12 @@ impl Document {
                 .find_element(&txn, id)
                 .ok_or_else(|| CommandError::UnknownElement(id.to_string()))?;
             let s = read_shape(&txn, &found.element)
-                .filter(|s| matches!(s.kind, ShapeKind::Rect | ShapeKind::Ellipse))
+                .filter(|s| {
+                    matches!(
+                        s.kind,
+                        ShapeKind::Rect | ShapeKind::Ellipse | ShapeKind::Diamond
+                    )
+                })
                 .ok_or(CommandError::BadShape)?;
             let src = bind_box(&txn, &found.element).ok_or(CommandError::BadShape)?;
             let into = self
@@ -883,13 +911,13 @@ mod tests {
             t: [1.0, 0.0, 0.0, 1.0, 10.0, 20.0],
             w: 100.0,
             h: 50.0,
-            ellipse: false,
+            outline: Outline::Box,
             gap: 7.0,
         };
         assert_eq!(anchor(&b, [1.0, 0.5]), (117.0, 45.0));
         assert_eq!(anchor(&b, [0.3, 0.4]), (40.0, 40.0), "dedans : sans écart");
         let e = BindBox {
-            ellipse: true,
+            outline: Outline::Ellipse,
             ..b.clone()
         };
         let (x, y) = anchor(&e, [0.5, 0.0]);
