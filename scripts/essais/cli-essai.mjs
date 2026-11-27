@@ -553,6 +553,21 @@ try {
     const temoin = fluxDe("#000000", "opaque");
     verifie("personnalisation-2-retours : PDF d'un trait transparent, un remplissage, aucun tracé (témoin opaque : un tracé)", clair.ok && temoin.ok && /(^|\s)f\*?\s/.test(clair.tout) && !trace(clair.tout) && trace(temoin.tout), `${clair.brut} ${clair.tout.slice(0, 400)}`);
     console.log("personnalisation-2-retours : Arrange");
+    // T10 (D15) : SetStyle dragCopy posé relu puis retiré absent ; départ de la baguette relu ; hors de l'image : code 1.
+    const dc = cli(["run", f, "--ops", "-"], lignes({ type: "SetStyle", ids: [a], patch: { dragCopy: true } }, { op: "state" }, { type: "SetStyle", ids: [a], patch: { dragCopy: false } }, { op: "state" }));
+    verifie("personnalisation-2-retours : SetStyle dragCopy posé relu, puis retiré absent", dc.code === 0 && el(dc.lignes[1].state, a)?.look?.dragCopy === true && el(dc.lignes[3].state, a)?.look?.dragCopy === undefined, dc.brut);
+    const pngB = join(dir, "baguette.png");
+    writeFileSync(pngB, solidPng(8, 8, [255, 255, 255]));
+    const gi = join(dir, "baguette.roomboard");
+    const imp = cli(["run", "--new", "--out", gi, "--ops", "-"], lignes({ op: "import", files: [pngB], page: "$page:0", at: [100, 100] }, { op: "state" }));
+    const im = (imp.lignes[1]?.state?.pages ?? []).flatMap((p) => p.elements).find((e) => e.kind === "image");
+    const seed = (x) => ({ type: "SetImageParams", id: im?.id ?? "", params: { transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x, y: 0 } }, matrix: im?.transform ?? [1, 0, 0, 1, 0, 0] });
+    const bag = cli(["run", gi, "--ops", "-"], lignes(seed(0), { op: "state" }));
+    const tr = el(bag.lignes[1]?.state ?? { pages: [] }, im?.id)?.image?.transparent;
+    verifie("personnalisation-2-retours : SetImageParams transparent x y relu", imp.code === 0 && bag.code === 0 && tr?.x === 0 && tr?.y === 0, `${imp.brut} ${bag.brut}`);
+    const hors = cli(["run", gi, "--ops", "-"], lignes(seed(9999)));
+    verifie("personnalisation-2-retours : départ hors de l'image refusé (code 1)", hors.code === 1, hors.brut);
+    console.log("personnalisation-2-retours : dragCopy");
   }
 
   // personnalisation-1a (T7, D15) : SetPageMode, AddPage mode, MovePage, DuplicatePage ; refus code 1.
