@@ -110,3 +110,22 @@ describe("ColorPicker (OG11, T16)", () => {
     expect(m.cells()[19]!.getAttribute("aria-selected")).toBe("true");
   });
 });
+
+describe("ColorPicker transparent (OG23, T5)", () => {
+  it("Transparent dans le sélecteur", () => {
+    const choose = vi.fn();
+    const m = render(() => <ColorPicker value={null} transparent choose={choose} close={() => {}} anchor={document.body} />);
+    const t = m.container.querySelector("[data-color-transparent]")!;
+    expect(t).not.toBeNull();
+    fireEvent.click(t);
+    expect(choose).toHaveBeenCalledWith(null);
+    m.unmount();
+    const off = render(() => <ColorPicker value={null} choose={() => {}} close={() => {}} anchor={document.body} />);
+    expect(off.container.querySelector("[data-color-transparent]")).toBeNull();
+  });
+  it("75 cellules de grille avec la case Transparent", () => {
+    const m = render(() => <ColorPicker value={null} transparent choose={() => {}} close={() => {}} anchor={document.body} />);
+    expect(m.container.querySelectorAll("[role=gridcell]")).toHaveLength(75);
+    expect(m.container.querySelectorAll(".rb-color-cell")).toHaveLength(75);
+  });
+});

@@ -434,13 +434,21 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
    le repli (absolu, en haut à droite) partage la rangée du premier titre. */
 .rb-options { position: absolute; z-index: 0; flex-direction: column; align-items: stretch; gap: var(--rf-space-xs); box-sizing: border-box; max-block-size: calc(100% - 100px); overflow-y: auto; padding: 12px; }
 .rb-options:not([data-collapsed]) > [data-options-toggle] { position: absolute; inset-block-start: 12px; inset-inline-end: 12px; }
-.rb-options-sec:first-of-type h3 { display: flex; align-items: center; min-block-size: var(--rb-btn-size); padding-inline-end: var(--rb-btn-size); }
+.rb-options-sec:first-of-type .rb-opt-head { padding-inline-end: var(--rb-btn-size); }
 .rb-options[data-collapsed] { padding: 4px; inline-size: auto; }
 .rb-options .rb-opt-btn, .rb-link-pop .rb-opt-btn { display: inline-grid; place-items: center; flex: none; inline-size: var(--rb-btn-size); block-size: var(--rb-btn-size); padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
 .rb-options .rb-opt-btn:hover, .rb-options .rb-pick:hover, .rb-link-pop .rb-opt-btn:hover { background: var(--rf-gray-50); }
 .rb-options button:focus-visible, .rb-options input:focus-visible { outline: 2px solid var(--rf-violet-600); outline-offset: -2px; }
 .rb-options-sec { display: grid; gap: 4px; min-inline-size: 0; }
-.rb-options-sec h3 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--rf-text-muted-aa); }
+.rb-opt-head { display: flex; align-items: center; gap: 6px; inline-size: 100%; min-block-size: var(--rb-btn-size); padding: 0 4px; border: 0; border-radius: var(--rf-radius-lg); background: transparent; font: inherit; font-size: 14px; line-height: 20px; text-align: start; cursor: pointer; }
+.rb-opt-head:hover { background: var(--rf-gray-50); }
+.rb-opt-title { font-weight: 500; color: var(--rf-gray-800); }
+.rb-opt-sum { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--rf-text-muted-aa); }
+.rb-opt-head > .rb-icon { flex: none; margin-inline-start: auto; color: var(--rf-navy-500); transition: transform 120ms; }
+.rb-opt-head[aria-expanded="true"] > .rb-icon { transform: rotate(180deg); }
+.rb-opt-body[hidden] { display: none; }
+.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 14px; }
+.rb-options .rb-radios[data-edit="strokeWidth"] .rb-radio-label { position: static; inline-size: auto; block-size: auto; clip-path: none; white-space: nowrap; font-size: 14px; line-height: 20px; }
 .rb-pick-row { display: flex; flex-wrap: wrap; gap: 4px; }
 /* Lot 2 (T15) : quatre choix tiennent sur une rangée du panneau ; la pointe de début est l'icône de fin retournée ; grisé en saisie. */
 .rb-options .rb-radios[data-look="segment"]:has(> .rb-radio:nth-child(4)) { flex-wrap: nowrap; }
@@ -450,7 +458,9 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-options .rb-radio:disabled, .rb-options .rb-pick:disabled { cursor: not-allowed; }
 .rb-pick { display: grid; place-items: center; flex: none; inline-size: var(--rb-btn-size); block-size: var(--rb-btn-size); padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; cursor: pointer; }
 .rb-pick-dot { display: block; inline-size: 24px; block-size: 24px; box-sizing: border-box; border-radius: var(--rf-radius-md); border: 1px solid var(--rf-gray-300); }
-.rb-pick[data-transparent] .rb-pick-dot { background: linear-gradient(to top left, transparent calc(50% - 0.75px), var(--rf-gray-500) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)); }
+.rb-pick[data-transparent] .rb-pick-dot, .rb-color-transparent .rb-pick-dot { background: repeating-conic-gradient(var(--rf-gray-200) 0 25%, #ffffff 0 50%) 0 0 / 8px 8px; }
+.rb-color-transparent { display: grid; place-items: center; flex: none; inline-size: var(--rb-btn-size, 44px); block-size: var(--rb-btn-size, 44px); margin-block-end: 4px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; cursor: pointer; }
+.rb-color-transparent:hover { background: var(--rf-gray-50); }
 .rb-pick[aria-pressed="true"] { background: var(--rf-violet-100); box-shadow: inset 0 0 0 1px var(--rf-violet-600); }
 .rb-options .rb-radios[data-look="segment"] { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
 .rb-options .rb-radios[data-look="segment"] .rb-radio { min-block-size: var(--rb-btn-size); min-inline-size: var(--rb-btn-size); padding: 0; display: grid; place-items: center; }

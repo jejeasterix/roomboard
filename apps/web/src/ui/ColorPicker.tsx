@@ -4,13 +4,16 @@
  * flèches dans la grille, Entrée choisit, Échap ferme et rend le focus au bouton d'origine, saisie hexadécimale validée.
  * Visuel RoomBoard (îlot, jetons `--rf-*`, cases = taille du profil). Pas de pipette ni de lettres q-w-e (H8).
  */
-import { For, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { tryParseColor } from "../engine/render/webgl2";
 import { OPEN_COLOR } from "./open-color";
 
 export interface ColorPickerProps {
   readonly value: string | null;
-  choose(c: string): void;
+  /** `null` : la case Transparent (seulement si `transparent`). */
+  choose(c: string | null): void;
+  /** Montre la case Transparent au-dessus de la grille. */
+  readonly transparent?: boolean;
   close(): void;
   /** Bouton qui a ouvert le sélecteur : il reprend le focus à la fermeture. */
   readonly anchor: HTMLElement;
@@ -79,6 +82,11 @@ export function ColorPicker(props: ColorPickerProps): JSX.Element {
   };
   return (
     <div ref={root} class="rb-color-picker" data-color-picker role="dialog" aria-label="Autres couleurs" onKeyDown={onKey}>
+      <Show when={props.transparent === true}>
+        <button type="button" class="rb-color-transparent" data-transparent data-color-transparent aria-label="Transparent" onClick={() => props.choose(null)}>
+          <span class="rb-pick-dot" />
+        </button>
+      </Show>
       <div class="rb-color-grid" role="grid" aria-label="Palette">
         <For each={OPEN_COLOR}>
           {(row, r) => (
