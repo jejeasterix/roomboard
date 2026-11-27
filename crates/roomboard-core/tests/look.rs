@@ -305,6 +305,7 @@ fn erase_partial_keeps_look() {
         seed: Some(4_000_000_000),
         roundness: None,
         opacity: Some(40),
+        ..Look::default()
     };
     add_stroke(&mut d, look.clone());
     let c = d
@@ -475,6 +476,7 @@ fn set_style_noop_no_step() {
         roughness: Some(1),
         roundness: Some(Some("round".into())),
         opacity: Some(50.0),
+        ..Default::default()
     };
     let c = set_style(&mut d, &[&a], same).expect("style");
     assert!(c.ids.is_empty());
@@ -779,6 +781,7 @@ fn out_of_domain_look_at_creation_writes_no_key() {
         seed: Some(5),
         roundness: Some("sharp".into()),
         opacity: Some(150),
+        ..Look::default()
     };
     let mut d = blank();
     let r = add_rect(&mut d, bad.clone());
@@ -1144,10 +1147,7 @@ fn link_on_every_look_kind() {
     .expect("lien");
     assert_eq!(c.ids, vec![r.clone(), s.clone(), t.clone(), i.clone()]);
     for id in [&r, &s, &t, &i] {
-        assert_eq!(
-            look_of(&d, id).link.as_deref(),
-            Some("https://example.org")
-        );
+        assert_eq!(look_of(&d, id).link.as_deref(), Some("https://example.org"));
     }
 }
 
