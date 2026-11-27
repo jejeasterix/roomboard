@@ -33,10 +33,13 @@ import {
   resetAllPresets,
   resetToolbars,
   sameProfile,
+  setAnchor,
   setButtonSize,
+  setCollapsed,
   setDock,
   setHidden,
   setLabel,
+  setPageMode,
   setStartMode,
   updatePreset,
   type CatalogEntry,
@@ -46,6 +49,7 @@ import {
 import {
   ANNOTATION_ROLE,
   annotationBarOf,
+  BAR_ANCHORS,
   BUTTON_SIZES,
   DOCKS,
   HISTORY_ROLE,
@@ -56,9 +60,11 @@ import {
   START_MODES,
   TOOL_TABLE,
   type ActionId,
+  type BarAnchor,
   type ButtonSize,
   type Dock,
   type ItemKind,
+  type PageLayout,
   type Preset,
   type Profile,
   type StartMode,
@@ -66,6 +72,7 @@ import {
   type ToolItem,
 } from "../toolbar";
 import { Icon, IconButton } from "./IconButton";
+import { anchorOf } from "./island-place";
 import { iconFor } from "./icons";
 import { POINTER_SUMMARY } from "./PointerSwitch";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
@@ -117,12 +124,37 @@ const START_OPTIONS: readonly RadioOption<StartMode>[] = START_MODES.map((m) => 
 const SIZE_OPTIONS: readonly RadioOption<ButtonSize>[] = BUTTON_SIZES.map((s) => ({ value: s, label: `${SIZE_LABELS[s]} · ${BUTTON_PX[s]}` }));
 const ROLE_LABELS: Readonly<Record<string, string>> = {
   tools: "Barre d'outils",
-  pages: "Barre des pages",
+  pages: "Barre latérale",
   [ANNOTATION_ROLE]: "Barre d'annotation",
   [MENU_ROLE]: "Menu",
   [HISTORY_ROLE]: "Annuler et vue",
   [PANELS_ROLE]: "Bibliothèque et profil",
 };
+/** personnalisation-1a (décisions 20, 21) : ancre d'une barre flottante, au profil (l'appareil garde le geste à la main, H5). */
+const ANCHOR_LABELS: Readonly<Record<BarAnchor, string>> = {
+  "top-start": "Haut gauche",
+  "top-center": "Haut centre",
+  "top-end": "Haut droite",
+  "bottom-start": "Bas gauche",
+  "bottom-center": "Bas centre",
+  "side-start": "À gauche",
+  "side-end": "À droite",
+};
+/** Valeur du segment « Flottante » de la barre latérale : l'ancre du rôle, aucun champ `anchor` dans le profil. */
+const ROLE_ANCHOR = "default";
+type AnchorChoice = BarAnchor | typeof ROLE_ANCHOR;
+const ANCHOR_OPTIONS: readonly RadioOption<AnchorChoice>[] = BAR_ANCHORS.map((a) => ({ value: a, label: ANCHOR_LABELS[a] }));
+/** H10 : la barre latérale ne se pose pas en haut ni en bas : Flottante (défaut du rôle), À gauche, À droite. */
+const SIDE_ANCHOR_OPTIONS: readonly RadioOption<AnchorChoice>[] = [
+  { value: ROLE_ANCHOR, label: "Flottante" },
+  { value: "side-start", label: ANCHOR_LABELS["side-start"] },
+  { value: "side-end", label: ANCHOR_LABELS["side-end"] },
+];
+const PAGE_MODE_OPTIONS: readonly RadioOption<PageLayout>[] = [
+  { value: "landscape", label: "Paysage" },
+  { value: "portrait", label: "Portrait" },
+  { value: "infinite", label: "Infini" },
+];
 const UNKNOWN = "inconnu (version plus récente)";
 /** L3-12 : lignes dont libellé et icône viennent d'ailleurs que de l'élément (renvois, aucune copie). */
 const ROW_SUMMARY: Partial<Record<ActionId, { readonly label: string; readonly icon: string }>> = { "annotation-pointer": POINTER_SUMMARY };
@@ -272,6 +304,12 @@ function BarBlock(props: {
   const docks = createMemo((): readonly RadioOption<Dock>[] =>
     DOCKS.map((d) => ({ value: d, label: DOCK_LABELS[d], icon: DOCK_ICONS[d], ...(detail() && Object.hasOwn(ANNOTATION_DOCK_DETAIL, d) ? { detail: ANNOTATION_DOCK_DETAIL[d]! } : {}) })),
   );
+  const anchors = (): readonly RadioOption<AnchorChoice>[] => (props.bar.role === "pages" ? SIDE_ANCHOR_OPTIONS : ANCHOR_OPTIONS);
+  const anchorValue = (): AnchorChoice => {
+    const a = props.bar.anchor;
+    if (props.bar.role === "pages") return a === "side-start" || a === "side-end" ? a : ROLE_ANCHOR;
+    return anchorOf(props.bar);
+  };
   return (
     <div class="rb-sheet-bar" data-edit-bar={props.bar.id}>
       <h4 class="rb-sr">{props.label}</h4>
@@ -281,6 +319,20 @@ function BarBlock(props: {
         </p>
       </Show>
       <RadioChoices name="dock" label={`Emplacement : ${props.label}`} look="tile" options={docks()} value={props.bar.dock} choose={(d) => props.edit((p) => setDock(p, props.bar.id, d))} />
+      <Show when={props.bar.dock === "floating" && props.bar.role !== ANNOTATION_ROLE}>
+        <RadioChoices
+          name="anchor"
+          label={`Position : ${props.label}`}
+          look="segment"
+          options={anchors()}
+          value={anchorValue()}
+          choose={(a) => props.edit((p) => setAnchor(p, props.bar.id, a === ROLE_ANCHOR ? null : a))}
+        />
+        <label class="rb-check" style={{ display: "flex", "align-items": "center", gap: "8px", "min-block-size": "44px" }}>
+          <input type="checkbox" data-edit="collapsed" checked={props.bar.collapsed} onChange={(e) => props.edit((p) => setCollapsed(p, props.bar.id, e.currentTarget.checked))} />
+          <span>Repliée au démarrage</span>
+        </label>
+      </Show>
       <div
         class="rb-add-wrap"
         onKeyDown={(e) => {
@@ -566,6 +618,8 @@ export function ProfileEditor(props: ProfileEditorProps): JSX.Element {
           <h3>Au démarrage</h3>
           <RadioChoices name="start-mode" label="Au démarrage" look="card" options={START_OPTIONS} value={draft().behavior.startMode} choose={(m) => edit((p) => setStartMode(p, m))} />
           <p class="rb-note">{START_NOTE}</p>
+        <h4>Page neuve</h4>
+        <RadioChoices name="page-mode" label="Page neuve" look="segment" options={PAGE_MODE_OPTIONS} value={draft().behavior.pageMode} choose={(m) => edit((p) => setPageMode(p, m))} />
         </section>
         <section data-edit-section="size">
           <h3>Taille des boutons</h3>
