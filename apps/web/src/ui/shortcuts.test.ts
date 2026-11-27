@@ -10,6 +10,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   duplicate: ["object", "duplicate"], delete: ["edit", "delete"], escape: ["edit", "escape"],
   front: ["order", "front"], forward: ["order", "forward"], backward: ["order", "backward"], back: ["order", "back"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
+  "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"],
 };
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
