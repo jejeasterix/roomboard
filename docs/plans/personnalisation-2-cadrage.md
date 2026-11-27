@@ -82,7 +82,7 @@ recherche texte et de la lecture (V).
 | `src/element.rs:23-27` `StrokeStyle`, `:305-320` `style_fields`/`read_style` | oui | `Look` (champs de la décision 24), lecture et écriture scalaires, `ElementView.look` | V |
 | `src/element.rs:132-170` `ElementView` | oui | champ `look: Option<LookView>` (omis s'il est neutre) | V |
 | `src/document.rs:355-390` vues `shape`, `text` | oui | lisent `look` | V |
-| `src/commands.rs:30-160` `Command` | oui | `SetStyle` et `look` dans `AddShape`, `CommitStroke`, `SetText`, `CommandError::BadStyle` (lot 1) ; `Restack` minimal et `BadOrder` (lot 2, DA-2) | V |
+| `src/commands.rs:30-160` `Command` | oui | `SetStyle` et `look` dans `AddShape`, `CommitStroke`, `SetText`, `CommandError::BadStyle` (lot 1) ; `Restack` d'OG4 réutilisée, sans `BadOrder` (lot 2, DA-2, bloc final) | V |
 | `src/commands.rs:1286-1296,1318` gomme partielle (`Cut.group`) | oui | recopie aussi `look` sur les morceaux | V |
 | `src/fill.rs:63-135` `cmd_fill` | oui | l'écriture « poser ou retirer » devient l'aide `set_or_remove`, partagée avec `SetStyle` | V |
 | `src/commands.rs:893-894` écriture du style | oui | écrit aussi `look` | V |
@@ -433,6 +433,8 @@ Jérôme n'était pas joignable pendant le tour ; chaque choix est réversible.
 - Grille du sélecteur 15 × 5 : open-color d'Excalidraw complété d'une rangée neutre, d'indigo et de lime, sans couleur en double. Raison : cinq nuances par teinte, une seule case enfoncée.
 - Champ hexadécimal : il ne valide qu'à Entrée ; perdre le focus remet la couleur courante, sans rien choisir ni fermer (comme `ColorInput.tsx` d'Excalidraw).
 - Police ou Taille sur plusieurs textes : une seule étape d'annulation (`Engine.runAll`, regroupement côté moteur ; le cœur compte une étape par commande, et `version()` monte aussi à l'annulation, `document.rs:906`).
-- Lien : bouton « Ouvrir le lien » dans l'éditeur quand un lien existe, pour ouvrir au clavier (Ctrl+K, Tab, Entrée).
+- Lien : bouton « Ouvrir le lien » dans l'éditeur quand un lien existe, pour ouvrir au clavier (Ctrl+K, Tab, Tab, Entrée) ; au doigt, bouton Lien du panneau puis « Ouvrir le lien ».
 - Lien : caractères refusés en plus du schéma (blancs, guillemet, `<`, `>`, `\`, contrôles) dans le cœur, l'interface et la coque. Raison : la chaîne part telle quelle à `ShellExecuteExW`.
 - Outil Formes : une ligne ne reçoit plus les pointes du style courant (décision 17, « Flèche seulement »).
+- Lien en web : aucune alerte déduite du `null` de `window.open` (la norme le rend toujours avec `noopener`) ; seule une exception est un échec.
+- Échap ferme d'abord la couche du dessus (menu, sélecteur, éditeur de lien), puis l'Aide.
