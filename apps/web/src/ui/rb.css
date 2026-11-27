@@ -369,9 +369,9 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 
 /* OG11 (T10) : panneau d'options de l'outil, îlot à gauche sous la rangée du haut ; cibles = --rb-btn-size posé par le
    panneau (44, 48 ou 64 px), traits fins de 1,5 comme les icônes voisines. */
-/* T22 : z 1, sous le calque des îlots (z 2) qui porte les menus et les panneaux flottants ; compact : écart de 4 entre sections,
+/* T22 : z 0 et premier du calque, sous tous les îlots, menus et panneaux flottants ; compact : écart de 4 entre sections,
    le repli (absolu, en haut à droite) partage la rangée du premier titre. */
-.rb-options { position: absolute; z-index: 1; flex-direction: column; align-items: stretch; gap: var(--rf-space-xs); box-sizing: border-box; max-block-size: calc(100% - 100px); overflow-y: auto; padding: 12px; }
+.rb-options { position: absolute; z-index: 0; flex-direction: column; align-items: stretch; gap: var(--rf-space-xs); box-sizing: border-box; max-block-size: calc(100% - 100px); overflow-y: auto; padding: 12px; }
 .rb-options:not([data-collapsed]) > [data-options-toggle] { position: absolute; inset-block-start: 12px; inset-inline-end: 12px; }
 .rb-options-sec:first-of-type h3 { display: flex; align-items: center; min-block-size: var(--rb-btn-size); padding-inline-end: var(--rb-btn-size); }
 .rb-options[data-collapsed] { padding: 4px; inline-size: auto; }

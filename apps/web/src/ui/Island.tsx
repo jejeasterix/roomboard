@@ -404,6 +404,7 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   };
   return (
     <div ref={layer} class="rb-islands">
+      {props.extra}
       <div ref={topStart} class="rb-corner" data-corner="top-start">
         <div ref={menu} class="rb-corner-menu">
           {islands(starts)}
@@ -420,7 +421,6 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         {islands(bottoms)}
       </div>
       {islands(centered)}
-      {props.extra}
     </div>
   );
 }
