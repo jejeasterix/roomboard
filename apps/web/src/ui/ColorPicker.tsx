@@ -9,6 +9,7 @@ import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { tryParseColor } from "../engine/render/webgl2";
 import { IconButton } from "./IconButton";
 import { OPEN_COLOR } from "./open-color";
+import { buttonShortcut } from "./shortcuts";
 
 export interface ColorPickerProps {
   readonly value: string | null;
@@ -109,7 +110,7 @@ export function ColorPicker(props: ColorPickerProps): JSX.Element {
         </button>
       </Show>
       <Show when={props.pick !== undefined}>
-        <IconButton keepFocus icon="pipette" label="Pipette (I)" attrs={{ "data-color-pipette": "", class: "rb-color-pipette" }} onPress={arm} />
+        <IconButton keepFocus icon="pipette" label="Pipette" shortcut={buttonShortcut("pipette")} attrs={{ "data-color-pipette": "", class: "rb-color-pipette" }} onPress={arm} />
       </Show>
       <div class="rb-color-grid" role="grid" aria-label="Palette">
         <For each={OPEN_COLOR}>

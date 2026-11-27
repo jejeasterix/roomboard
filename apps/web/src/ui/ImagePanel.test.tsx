@@ -165,7 +165,7 @@ function armable() {
 describe("panneau de retouche : pipette du mode point touché (OG23, T18)", () => {
   it("point touché : la pipette reste armée, chaque toucher pose le nouveau départ", async () => {
     const a = armable();
-    const { act, edit, q } = setup(undefined, a.edit as unknown as ImageEdit);
+    const { act, edit, q } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
     fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
     act("pick");
     await a.tap("#111111", 1, 2);
@@ -176,7 +176,7 @@ describe("panneau de retouche : pipette du mode point touché (OG23, T18)", () =
   });
   it("hors point touché : un toucher désarme la pipette", async () => {
     const a = armable();
-    const { act, q } = setup(undefined, a.edit as unknown as ImageEdit);
+    const { act, q } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
     fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "contiguous" } });
     act("pick");
     await a.tap("#111111", 1, 2);
@@ -185,7 +185,7 @@ describe("panneau de retouche : pipette du mode point touché (OG23, T18)", () =
   it("Valider, Annuler les réglages et changement de mode désarment la pipette", async () => {
     for (const end of ["apply", "cancel", "mode"]) {
       const a = armable();
-      const { act, q, unmount } = setup(undefined, a.edit as unknown as ImageEdit);
+      const { act, q, unmount } = setup(undefined, a.edit as unknown as ReturnType<typeof fakeEdit>);
       fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
       act("pick");
       await a.tap("#111111", 1, 2);
