@@ -1,5 +1,5 @@
 /** Calque d'édition (lot 4, CL4-1) : aperçus des outils d'édition, peints sur la scène après les éléments. */
-import type { Bounds, Matrix, ShapeKind, StrokeStyle } from "../../core/api";
+import type { Bounds, Look, Matrix, ShapeKind, StrokeStyle } from "../../core/api";
 
 /** Élément masqué de la scène et redessiné avec une matrice provisoire posée avant la sienne (D38). */
 export interface GhostView {
@@ -16,6 +16,9 @@ export interface ShapePreview {
   readonly y1: number;
   readonly style: StrokeStyle;
   readonly fill: string | null;
+  /** OG11 : aspect de la forme en cours (absent = neutre) et graine du geste (même tracé roughjs une fois posée). */
+  readonly look?: Look;
+  readonly seed?: number;
 }
 
 export interface EditOverlay {
