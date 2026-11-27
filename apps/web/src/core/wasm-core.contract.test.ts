@@ -4691,3 +4691,20 @@ describe.each(factories)("contrat OG23 lot B : $name", ({ f }) => {
     d.free();
   });
 });
+
+// OG23 (T22) : la vue d'un tableau, d'un média et d'un objet 3D porte `look.dragCopy` (décision 29). La fausse liaison
+// ne le sert pas (`fake-core.ts` : `element()` omet `look` hors trait, forme, texte, image) : vrai module seulement.
+describe.skipIf(loaded === null)("contrat OG23 T22 : vrai module, dragCopy dans la vue", () => {
+  it("tableau, média, objet 3D : SetStyle dragCopy lu par `element().look`, annuler le retire", () => {
+    const d = need().core.blank();
+    const p = first(d);
+    const ids = [addTable(d, p), c14Add(d, p), c15Add(d, p)];
+    expect(ids.every((id) => id !== "")).toBe(true);
+    for (const id of ids) expect((d.element(id) as { look?: unknown } | null)?.look).toBeUndefined();
+    d.apply({ type: "SetStyle", ids, patch: { dragCopy: true } });
+    for (const id of ids) expect((d.element(id) as { look?: unknown } | null)?.look, id).toEqual({ dragCopy: true });
+    d.undo();
+    for (const id of ids) expect((d.element(id) as { look?: unknown } | null)?.look).toBeUndefined();
+    d.free();
+  });
+});
