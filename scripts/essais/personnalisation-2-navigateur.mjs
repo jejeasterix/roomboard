@@ -51,13 +51,17 @@ async function newPage(browser, base, { scale = 1, query = URL_QS, fold = false,
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  page.on("dialog", (d) => d.accept());
+  const dialogs = [];
+  page.on("dialog", (d) => {
+    dialogs.push(d.message());
+    void d.accept();
+  });
   if (fold) await foldOptions(page);
   const cdp = await ctx.newCDPSession(page);
   await page.goto(`${base}${query}`);
   await page.waitForSelector('#stage[data-ready="1"]', { timeout: 30000 });
   await frames(page);
-  return { ctx, page, cdp, errors };
+  return { ctx, page, cdp, errors, dialogs };
 }
 const attr = (page, name) => page.getAttribute("#stage", name);
 async function waitAttr(page, name, v) {
@@ -155,6 +159,21 @@ async function fingerprint(page, [x0, y0, x1, y1]) {
   const b = await stageBox(page);
   const png = await page.screenshot({ clip: { x: b.x + x0, y: b.y + y0, width: x1 - x0, height: y1 - y0 }, animations: "disabled", caret: "hide" });
   return createHash("sha256").update(png).digest("hex").slice(0, 12);
+}
+/** Pixel RGBA (px CSS de la scène) : capture de 1 × 1, décodée dans la page. */
+async function pixelAt(page, x, y) {
+  const b = await stageBox(page);
+  const png = await page.screenshot({ clip: { x: b.x + x, y: b.y + y, width: 1, height: 1 }, animations: "disabled", caret: "hide" });
+  return page.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const bmp = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const c = document.createElement("canvas");
+    c.width = 1;
+    c.height = 1;
+    const g = c.getContext("2d");
+    g.drawImage(bmp, 0, 0);
+    return [...g.getImageData(0, 0, 1, 1).data];
+  }, png.toString("base64"));
 }
 /** Enregistre (Ctrl+S, repli : un téléchargement) et lit l'état par `roomboard state` : éléments à plat. */
 async function saved(page, tmp, name) {
@@ -779,7 +798,7 @@ const otherIslands = (page, self) =>
 
 /** S8 : sélecteur de couleur, pointes de flèche, Aide, Effacer la page, Lien. */
 async function s8(browser, base, mode, tmp) {
-  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const { ctx, page, cdp, errors, dialogs } = await newPage(browser, base);
   const popup = (id) => page.locator(id).first();
   // 1. Sélecteur : S l'ouvre ; flèches, Entrée ; Échap rend le focus à la pastille.
   await useTool(page, mode, "rect");
@@ -795,7 +814,6 @@ async function s8(browser, base, mode, tmp) {
     const cell = page.locator("[data-color-picker] [role=gridcell]").nth(7);
     chosen = await cell.getAttribute("aria-label");
     const cb = await cell.boundingBox();
-    lire("S8.1 case 7 et fenêtre du sélecteur", `${JSON.stringify(cb)} ${JSON.stringify(await page.evaluate(() => { const r = document.querySelector(".rb-color-pop").getBoundingClientRect(); const e = document.elementFromPoint(280, 134); return [r.top, r.bottom, innerHeight, e?.tagName, e?.className, e?.closest("[class*=island]")?.className]; }))}`);
     await tapAt(page, cb.x + cb.width / 2, cb.y + cb.height / 2);
     await popup("[data-color-picker]").waitFor({ state: "hidden", timeout: 15000 });
   } else {
@@ -854,12 +872,14 @@ async function s8(browser, base, mode, tmp) {
   }
   // 4. Effacer la page : confirmation (acceptée par l'essai), page vide, Ctrl+Z rend les objets.
   const n0 = Number(await attr(page, "data-elements"));
+  const dialogs0 = dialogs.length;
   if (mode === "doigt") await clickItem(page, "page-clear");
   else {
     await openMenuOf(page, "page-clear");
     await press(page, mode, item("page-clear"));
   }
   await waitAttr(page, "data-elements", "0");
+  check(dialogs.length - dialogs0 === 1, `S8.4 : Effacer demande exactement une confirmation (${dialogs.length - dialogs0})`);
   lire("page vide après Effacer=0 objet ; après Ctrl+Z=n", `0 objet ; n=${n0}`);
   await page.keyboard.press("Escape");
   await page.mouse.click(1100, 700);
@@ -874,8 +894,15 @@ async function s8(browser, base, mode, tmp) {
   await useTool(page, mode, "select");
   await marquee(page, [780, 250], [1060, 480]);
   await waitAttr(page, "data-selection", "1");
-  const badgeBox = [1000, 270, 1040, 300]; // coin haut-droit du rectangle : le badge est posé hors de la boîte
-  const before = await fingerprint(page, badgeBox);
+  // Badge : géométrie recalculée comme `linkBadgeBox` (hors de la boîte, 6 px au-dessus et à droite du coin haut-droit),
+  // lue sur `#stage[data-bounds]` et `[data-camera]` ; on lit un pixel du trait du bord haut de la pastille (milieu).
+  const badgeAt = async () => {
+    const [, y0, x1] = (await attr(page, "data-bounds")).split(",").map(Number);
+    const [zoom, tx, ty] = (await attr(page, "data-camera")).split(",").map(Number);
+    return { x: Math.round(x1 * zoom + tx + 6), y: Math.round(y0 * zoom + ty - 6 - 16) };
+  };
+  const badge0 = await badgeAt();
+  const px0 = await pixelAt(page, badge0.x + 8, badge0.y);
   await page.keyboard.press("Control+k");
   await popup("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
   const input = "[data-link-popover] input";
@@ -893,13 +920,14 @@ async function s8(browser, base, mode, tmp) {
   const linked = s.elements.find((e) => e.look?.link);
   lire("lien posé", linked?.look?.link);
   check(linked?.look?.link === "https://example.org", "S8.5 : https://example.org est posé (look.link)");
-  const after = await fingerprint(page, badgeBox);
-  lire("badge : empreinte avant/après", `${before}/${after}`);
-  check(before !== after, "S8.5 : un badge apparaît au coin de l'élément");
+  const badge1 = await badgeAt();
+  const px1 = await pixelAt(page, badge1.x + 8, badge1.y);
+  lire("badge : pixel du bord avant/après (rgb)", `${px0.join(",")} / ${px1.join(",")} en (${badge1.x + 8}, ${badge1.y})`);
+  check(px1[3] > 0 && px1[0] + px1[1] + px1[2] < 600 && px0.join(",") !== px1.join(","), "S8.5 : le bord du badge, à la position calculée au coin haut-droit de l'élément, a la couleur du trait (plus le fond)");
   // Toucher du badge (outil Sélection) : ouvre le lien par window.open(url, "_blank", "noopener"), stub dans la page.
   await page.evaluate(() => {
     window.__ouverts = [];
-    window.open = (...a) => { window.__ouverts.push(a); return null; };
+    window.open = (...a) => { window.__ouverts.push(a); return {}; };
   });
   await useTool(page, mode, "select");
   await tapStage(page, 1020, 285);
@@ -907,6 +935,19 @@ async function s8(browser, base, mode, tmp) {
   const ouverts = await page.evaluate(() => window.__ouverts);
   lire("window.open après toucher du badge", JSON.stringify(ouverts));
   check(ouverts.length === 1 && ouverts[0][0] === "https://example.org" && ouverts[0][1] === "_blank" && ouverts[0][2] === "noopener", "S8.5 : toucher le badge ouvre le lien par window.open(url, \"_blank\", \"noopener\")");
+  // Ouverture au clavier : Ctrl+K rouvre l'éditeur, Tab (Valider), Tab (Ouvrir le lien), Entrée.
+  await page.evaluate(() => { window.__ouverts = []; });
+  await page.keyboard.press("Control+k");
+  await popup("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  check(await page.evaluate(() => document.activeElement?.hasAttribute("data-link-open") ?? false), "S8.5 : Ctrl+K puis Tab, Tab : le focus est sur « Ouvrir le lien »");
+  await page.keyboard.press("Enter");
+  await frames(page);
+  const ouvertsClavier = await page.evaluate(() => window.__ouverts);
+  lire("window.open après Ctrl+K, Tab, Tab, Entrée", JSON.stringify(ouvertsClavier));
+  check(ouvertsClavier.length === 1 && ouvertsClavier[0][0] === "https://example.org" && ouvertsClavier[0][1] === "_blank" && ouvertsClavier[0][2] === "noopener", "S8.5 : Entrée sur « Ouvrir le lien » appelle window.open(url, \"_blank\", \"noopener\")");
+  await page.keyboard.press("Escape");
   const js = s.elements.filter((e) => /^javascript:/i.test(e.look?.link ?? ""));
   check(js.length === 0, "S8.5 : aucun lien javascript: n'est enregistré");
   check(errors.length === 0, `S8 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
@@ -1114,6 +1155,11 @@ async function main() {
   const dist = resolve(arg("--dist") ?? DIST);
   const nom = arg("--nom") ?? "apres";
   const wantCaptures = process.argv.includes("--captures");
+  const lotArg = arg("--lot");
+  if (process.argv.includes("--lot") && lotArg !== "1" && lotArg !== "2") {
+    console.error(`${LABEL} : usage — --lot attend 1 ou 2 (reçu : ${lotArg ?? "rien"})`);
+    return 2;
+  }
   if (nom === "avant" && !wantCaptures) {
     console.error(`${LABEL} : usage — --nom avant n'a de sens qu'avec --captures`);
     return 2;

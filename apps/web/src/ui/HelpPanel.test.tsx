@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HelpPanel } from "./HelpPanel";
@@ -32,5 +34,14 @@ describe("HelpPanel", () => {
     const { container } = render(() => <HelpPanel close={close} />);
     fireEvent.click(container.querySelector("button[data-help-close]")!);
     expect(close).toHaveBeenCalled();
+  });
+  it("bouton Fermer : la règle de rb.css lui donne au moins 44 px, par --rb-btn-s qui vaut 44 px", () => {
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = /\.rb-help-close\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toMatch(/min-width:\s*var\(--rb-btn-s\)/);
+    expect(rule).toMatch(/min-height:\s*var\(--rb-btn-s\)/);
+    expect(/--rb-btn-s:\s*(\d+)px/.exec(css)?.[1]).toBe("44");
+    const { container } = render(() => <HelpPanel close={() => undefined} />);
+    expect(container.querySelector("button[data-help-close]")!.classList.contains("rb-help-close")).toBe(true);
   });
 });

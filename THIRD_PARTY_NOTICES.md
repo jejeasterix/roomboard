@@ -592,6 +592,8 @@ recopiés dans `apps/web/src/ui/icons.ts`.
   noms RoomBoard : `check` (Lucide `check`), `drop` (Lucide `file-down`).
 - Lue dans Lucide (personnalisation 2, T18) : `link` (Lucide `link`), pour le bouton Lien, l'éditeur de lien et le
   badge des éléments liés (mêmes tracés dans `apps/web/src/engine/render/link-badge.ts`).
+- Lue dans Lucide au même commit (personnalisation 2, T39) : `external-link` (Lucide `external-link`), pour « Ouvrir le lien »
+  de l'éditeur de lien.
 - Reprises de la maquette `docs/design/maquettes/03-profils.html` (design L3, tracés Lucide au même commit), noms
   RoomBoard : `close` (Lucide `x`), `grip` (Lucide `grip-vertical`), `hidden` (Lucide `eye-off`),
   `dock-top` (Lucide `panel-top`), `dock-bottom` (Lucide `panel-bottom`), `dock-left` (Lucide `panel-left`),

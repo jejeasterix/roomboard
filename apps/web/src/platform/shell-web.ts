@@ -3,7 +3,7 @@
  * affiche son propre texte), titre de la page.
  */
 import { validLink } from "../core/look";
-import type { ShellPort } from "./files";
+import { LINK_OPEN_FAILED, type ShellPort } from "./files";
 
 export interface BeforeUnloadEventLike {
   preventDefault(): void;
@@ -40,7 +40,9 @@ export function createWebShell(w: WebShellWindow): ShellPort {
     },
     // T18 (déc. 38) : jamais `window.open(url)` nu : schéma contrôlé, onglet neuf sans `opener`.
     openLink(url) {
-      if (validLink(url)) w.open?.(url, "_blank", "noopener");
+      if (!validLink(url) || w.open === undefined) return;
+      // T39 : une fenêtre bloquée (`open` rend null) ne reste pas silencieuse.
+      if (w.open(url, "_blank", "noopener") === null) w.alert(LINK_OPEN_FAILED);
     },
   };
 }

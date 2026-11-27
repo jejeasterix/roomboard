@@ -271,7 +271,7 @@ function renderApp(opts: { tab?: FakeTab; profile?: string; caps?: RuntimeCapabi
     container.remove();
     style.remove();
   });
-  return { container, workspace, tab, store, active, settings, navigate, files };
+  return { container, workspace, tab, store, active, settings, navigate, files, stages };
 }
 
 /** `activateOnEnter` faux : `enter` ne change pas l'état (la barre reste celle du tableau, menu Profil utilisable). */
@@ -1459,5 +1459,50 @@ describe("App — panneau d'options sous un panneau passager (T34)", () => {
     click(container.querySelector('button[data-item="settings"]'));
     expect(container.querySelector(".rb-popover")).not.toBeNull();
     expect(container.querySelector("[data-options]")).toBeNull();
+  });
+});
+
+describe("Aide : focus rendu et Échap (T39)", () => {
+  const helpOpen = (c: HTMLElement): boolean => c.querySelector('[data-panel="aide"]') !== null;
+  it("ouverte par le menu ☰ au clavier : à la fermeture, le focus revient au bouton du menu", () => {
+    const { container } = renderApp();
+    const toggle = container.querySelector<HTMLElement>('[data-toolbar="menu"] [data-menu-toggle]')!;
+    toggle.focus();
+    click(toggle);
+    click(container.querySelector('[data-menu-list] button[data-item="help"]'));
+    expect(helpOpen(container)).toBe(true);
+    click(container.querySelector("button[data-help-close]"));
+    expect(helpOpen(container)).toBe(false);
+    expect(document.activeElement).toBe(toggle);
+  });
+  it("ouverte par « ? » sans focus : à la fermeture, le focus va à la scène, non au corps de la page", () => {
+    const { container, stages } = renderApp();
+    (document.activeElement as HTMLElement | null)?.blur();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    expect(helpOpen(container)).toBe(true);
+    click(container.querySelector("button[data-help-close]"));
+    expect(helpOpen(container)).toBe(false);
+    expect(document.activeElement).toBe(stages);
+    expect(document.activeElement).not.toBe(document.body);
+  });
+  it("Échap ferme l'Aide même si le focus n'est pas dans le panneau, sans atteindre le reste de la page", () => {
+    const { container } = renderApp();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "?", bubbles: true }));
+    expect(helpOpen(container)).toBe(true);
+    (document.activeElement as HTMLElement | null)?.blur();
+    const seen = vi.fn();
+    window.addEventListener("keydown", seen);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    window.removeEventListener("keydown", seen);
+    expect(helpOpen(container)).toBe(false);
+    expect(seen).not.toHaveBeenCalled();
+  });
+  it("Échap sans Aide ouverte : la page le reçoit (désélection)", () => {
+    renderApp();
+    const seen = vi.fn();
+    window.addEventListener("keydown", seen);
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    window.removeEventListener("keydown", seen);
+    expect(seen).toHaveBeenCalledTimes(1);
   });
 });
