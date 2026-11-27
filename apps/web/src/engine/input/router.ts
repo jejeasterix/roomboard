@@ -25,6 +25,8 @@ export interface RouterDeps {
   panHeld?(): boolean;
   readonly gestures: GestureSink;
   readonly view: ViewSink;
+  /** OG12 (n° 29, DA-6) : doigt tardif tenu pendant un geste au doigt = Maj ; absent : ignoré comme avant. */
+  modifier?(held: boolean): void;
 }
 
 export interface Router {
@@ -44,6 +46,7 @@ interface Track {
   tool: DrawTool;
   readonly pointerType: string;
   readonly startT: number;
+  late?: boolean;
   x: number;
   y: number;
 }
@@ -62,6 +65,14 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const a = p[0];
     const b = p[1];
     return a && b ? [a[1], b[1]] : null;
+  };
+
+  /** OG12 (n° 29) : seul un geste au doigt dont l'outil n'est ni le stylo ni la gomme donne ce sens au doigt tardif ;
+   *  le doigt garde le rôle `ignored`. */
+  const lateFinger = (drawing: Track, track: Track): void => {
+    if (drawing.tool === "pen" || drawing.tool === "eraser" || deps.modifier === undefined) return;
+    track.late = true;
+    deps.modifier(true);
   };
 
   const onStart = (g: GestureEvent): void => {
@@ -96,7 +107,10 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       track.role = "pinch";
       return;
     }
-    if (drawing) return; // second doigt tardif : ignoré, le trait continue
+    if (drawing) {
+      lateFinger(drawing[1], track); // OG12 : doigt tardif = Maj pendant un geste au doigt, jamais le stylo ni la gomme
+      return;
+    }
     if (tool === "hand" || held || (seenPen && opts.fingerPansAfterPen)) {
       track.role = "pan";
       return;
@@ -138,9 +152,16 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const t = tracks.get(g.pointerId);
     if (!t) return;
     tracks.delete(g.pointerId);
+    if (t.late) deps.modifier?.(false);
     if (t.role === "draw") {
       const how: CloseReason = g.palm === true ? "abort" : g.kind === "cancel" ? "cancel" : "end";
       deps.gestures.close(g.pointerId, how);
+      for (const [, o] of tracks) {
+        if (o.late) {
+          o.late = false;
+          deps.modifier?.(false);
+        }
+      }
     } else if (t.role === "pinch") {
       for (const [, other] of touches("pinch")) other.role = "ignored";
     }
