@@ -53,7 +53,12 @@ pub fn outline_radius(width: f32, pressure: f32) -> f32 {
 /// `outline_radius` d'un trait à pression constante ou non (OG23) : constante, `width / 2` quelle que soit la pression.
 pub fn outline_radius_with(width: f32, pressure: f32, constant: bool) -> f32 {
     let pressure = if pressure >= 0.0 { pressure } else { 0.5 };
-    (get_stroke_radius(f64::from(width), thinning(constant), f64::from(pressure), None) as f32)
+    (get_stroke_radius(
+        f64::from(width),
+        thinning(constant),
+        f64::from(pressure),
+        None,
+    ) as f32)
         .max(0.01)
 }
 
@@ -189,7 +194,13 @@ mod tests {
 
     #[test]
     fn outline_is_a_polygon_of_xy_pairs() {
-        let o = outline(&line(30, 0.5), &InkStyle { width: 8.0, constant: false });
+        let o = outline(
+            &line(30, 0.5),
+            &InkStyle {
+                width: 8.0,
+                constant: false,
+            },
+        );
         assert!(
             o.len() >= 6 && o.len().is_multiple_of(2),
             "longueur {}",
@@ -200,7 +211,14 @@ mod tests {
 
     #[test]
     fn empty_points_give_empty_outline() {
-        assert!(outline(&[], &InkStyle { width: 8.0, constant: false }).is_empty());
+        assert!(outline(
+            &[],
+            &InkStyle {
+                width: 8.0,
+                constant: false
+            }
+        )
+        .is_empty());
     }
 
     /// OG20 : rayon de freedraw, pression invalide (négative, NaN) lue 0,5.
@@ -215,27 +233,60 @@ mod tests {
 
     #[test]
     fn single_point_gives_a_dot() {
-        let o = outline(&line(1, 0.5), &InkStyle { width: 8.0, constant: false });
+        let o = outline(
+            &line(1, 0.5),
+            &InkStyle {
+                width: 8.0,
+                constant: false,
+            },
+        );
         assert!(o.len() >= 6);
     }
 
     #[test]
     fn wider_style_gives_wider_outline() {
-        let thin = height(&outline(&line(30, 0.5), &InkStyle { width: 4.0, constant: false }));
-        let thick = height(&outline(&line(30, 0.5), &InkStyle { width: 16.0, constant: false }));
+        let thin = height(&outline(
+            &line(30, 0.5),
+            &InkStyle {
+                width: 4.0,
+                constant: false,
+            },
+        ));
+        let thick = height(&outline(
+            &line(30, 0.5),
+            &InkStyle {
+                width: 16.0,
+                constant: false,
+            },
+        ));
         assert!(thick > thin * 2.0, "{thin} {thick}");
     }
 
     #[test]
     fn higher_pressure_gives_wider_outline() {
-        let light = height(&outline(&line(30, 0.1), &InkStyle { width: 8.0, constant: false }));
-        let heavy = height(&outline(&line(30, 1.0), &InkStyle { width: 8.0, constant: false }));
+        let light = height(&outline(
+            &line(30, 0.1),
+            &InkStyle {
+                width: 8.0,
+                constant: false,
+            },
+        ));
+        let heavy = height(&outline(
+            &line(30, 1.0),
+            &InkStyle {
+                width: 8.0,
+                constant: false,
+            },
+        ));
         assert!(heavy > light, "{light} {heavy}");
     }
 
     #[test]
     fn outline_is_deterministic() {
-        let s = InkStyle { width: 8.0, constant: false };
+        let s = InkStyle {
+            width: 8.0,
+            constant: false,
+        };
         assert_eq!(outline(&line(50, 0.5), &s), outline(&line(50, 0.5), &s));
     }
 
@@ -243,7 +294,10 @@ mod tests {
     /// freedraw, le trait lent (pas de 1) gonfle vers 11 et le rapide (pas de 20) maigrit vers 4.
     #[test]
     fn speed_does_not_change_width() {
-        let s = InkStyle { width: 8.0, constant: false };
+        let s = InkStyle {
+            width: 8.0,
+            constant: false,
+        };
         let spaced = |step: f32| -> Vec<InkPoint> {
             (0..200)
                 .map(|i| InkPoint {
@@ -280,7 +334,13 @@ mod tests {
                 pressure: Some(f64::from(p.pressure)),
             })
             .collect();
-        let opts = options(&InkStyle { width: 10.0, constant: false }, true);
+        let opts = options(
+            &InkStyle {
+                width: 10.0,
+                constant: false,
+            },
+            true,
+        );
         let stroke = get_stroke_points(&input, &opts);
         let mut poly = get_stroke_outline_points(&stroke, &opts);
         let raw = poly.clone();
@@ -295,7 +355,10 @@ mod tests {
     /// la tourne vers l'intérieur du trait : encoche en demi-disque de rayon r au début de chaque trait.
     #[test]
     fn start_cap_bulges_backward() {
-        let s = InkStyle { width: 8.0, constant: false };
+        let s = InkStyle {
+            width: 8.0,
+            constant: false,
+        };
         for pressure in [0.15f32, 0.5, 1.0] {
             // Rayon de freedraw : taille × (0,25 + 0,5 × pression) pour thinning 0,5.
             let r = 8.0 * (0.25 + 0.5 * pressure);

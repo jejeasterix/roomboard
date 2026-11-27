@@ -338,6 +338,17 @@ pub fn image_transparent_inner(
     pixels::transparent_color(px, w, h, t).map_err(|e| e.to_string())
 }
 
+/// OG23 (T10) : baguette depuis le point touché `seed` (pixels de `px`) ; seule la zone jointe à ce point s'efface.
+pub fn image_transparent_seed_inner(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    t: &Transparent,
+    seed: (u32, u32),
+) -> Result<(), String> {
+    pixels::transparent_color_from(px, w, h, t, Some(seed)).map_err(|e| e.to_string())
+}
+
 pub fn image_adjust_inner(px: &mut [u8], brightness: i8, contrast: i8) {
     pixels::adjust(px, brightness, contrast);
 }
@@ -374,6 +385,30 @@ pub fn image_transparent(
         contiguous,
     };
     image_transparent_inner(px, w, h, &t).map_err(|m| JsError::new(&m))
+}
+
+/// OG23 (T10) : sans état, comme `image_transparent`, depuis le point (`x`, `y`) du bitmap ; le mode contigu est ignoré.
+#[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
+pub fn image_transparent_seed(
+    px: &mut [u8],
+    w: u32,
+    h: u32,
+    r: u8,
+    g: u8,
+    b: u8,
+    tolerance: u8,
+    soft: u8,
+    x: u32,
+    y: u32,
+) -> Result<(), JsError> {
+    let t = Transparent {
+        rgb: [r, g, b],
+        tolerance,
+        soft,
+        contiguous: false,
+    };
+    image_transparent_seed_inner(px, w, h, &t, (x, y)).map_err(|m| JsError::new(&m))
 }
 
 #[wasm_bindgen]
@@ -621,6 +656,21 @@ mod tests {
             panic!("refus attendu");
         };
         assert!(e.starts_with("classeur illisible"), "{e}");
+    }
+
+    /// OG23 (T10) : 3 × 1 blanc, rouge, blanc ; départ (2, 0) : seul le pixel de droite s'efface.
+    #[test]
+    fn image_transparent_seed_inner_clears_from_the_point() {
+        let t = roomboard_formats::pixels::Transparent {
+            rgb: [255, 255, 255],
+            tolerance: 10,
+            soft: 0,
+            contiguous: false,
+        };
+        let mut px = vec![255, 255, 255, 255, 220, 38, 38, 255, 255, 255, 255, 255];
+        image_transparent_seed_inner(&mut px, 3, 1, &t, (2, 0)).expect("calcul");
+        assert_eq!((px[3], px[7], px[11]), (255, 255, 0));
+        assert!(image_transparent_seed_inner(&mut px, 2, 1, &t, (0, 0)).is_err());
     }
 
     #[test]

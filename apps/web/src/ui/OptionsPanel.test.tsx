@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
+interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const picks: ((c: string | null) => void)[] = [];
@@ -30,6 +30,7 @@ function mount(o: Opts) {
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
     arrange: vi.fn(() => true),
+    setDragCopy: vi.fn(() => true),
     pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
     cancelPick: vi.fn(),
   };
@@ -47,6 +48,7 @@ function mount(o: Opts) {
       annotating={() => o.annotating ?? false}
       hidden={() => o.hidden ?? false}
       sideStart={() => null}
+      {...(o.openImage ? { openImage: o.openImage } : {})}
     />
   ));
   return { ...r, calls, engine, settings, picks };
@@ -592,5 +594,50 @@ describe("OptionsPanel : pipette (OG23, T8)", () => {
     picks[1]!(null);
     await flush();
     expect(calls).toHaveLength(n);
+  });
+});
+
+describe("OptionsPanel (OG23, T13) : section Image et Glisser une copie", () => {
+  const image = { id: "i", kind: "image", transform: [1, 0, 0, 1, 0, 0], image: {} } as unknown as ElementView;
+  const withCopy = (e: ElementView, on: boolean): ElementView => ({ ...e, ...(on ? { look: { dragCopy: true } } : {}) }) as ElementView;
+  const toggle = (c: HTMLElement): HTMLElement => c.querySelector('[data-option-value="drag-copy"]')!;
+  it("image seule : section Image ouverte", () => {
+    const { container } = mount({ tool: "select", selection: [image] });
+    const sec = container.querySelector('[data-option="image"]')!;
+    expect(sec).not.toBeNull();
+    expect(sec.hasAttribute("data-open")).toBe(true);
+    expect([...sec.querySelectorAll("[data-image-action]")].map((b) => b.getAttribute("data-image-action"))).toEqual(["panel-crop", "panel-background", "panel-retouch"]);
+  });
+  it('Rogner appelle openImage("crop")', () => {
+    const openImage = vi.fn();
+    const { container } = mount({ tool: "select", selection: [image], openImage });
+    fireEvent.click(container.querySelector('[data-image-action="panel-crop"]')!);
+    fireEvent.click(container.querySelector('[data-image-action="panel-background"]')!);
+    fireEvent.click(container.querySelector('[data-image-action="panel-retouch"]')!);
+    expect(openImage.mock.calls).toEqual([["crop"], ["background"], [null]]);
+  });
+  it("bascule mixte", () => {
+    const { container, engine } = mount({ tool: "select", selection: [withCopy(rectEl("a", "#000000"), true), rectEl("b", "#000000")] });
+    const t = toggle(container);
+    expect(t.getAttribute("aria-pressed")).toBe("mixed");
+    expect(t.hasAttribute("data-mixed")).toBe(true);
+    fireEvent.click(t);
+    expect(engine.setDragCopy).toHaveBeenCalledWith(true);
+  });
+  it("bascule : pose puis retire", () => {
+    const off = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
+    expect(toggle(off.container).getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle(off.container));
+    expect(off.engine.setDragCopy).toHaveBeenLastCalledWith(true);
+    cleanup();
+    const on = mount({ tool: "select", selection: [withCopy(rectEl("a", "#000000"), true), withCopy(rectEl("b", "#000000"), true)] });
+    expect(toggle(on.container).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(toggle(on.container));
+    expect(on.engine.setDragCopy).toHaveBeenLastCalledWith(false);
+  });
+  it("bascule grisée quand aucune cible ne l'admet", () => {
+    const table = { id: "t", kind: "table", transform: [1, 0, 0, 1, 0, 0] } as unknown as ElementView;
+    const { container } = mount({ tool: "select", selection: [table] });
+    expect(toggle(container).hasAttribute("disabled")).toBe(true);
   });
 });

@@ -30,6 +30,8 @@ export interface EditOverlay {
   readonly handles: boolean;
   /** Rectangle de sélection en cours (monde), ou null. */
   readonly band: Bounds | null;
+  /** OG23 (T11) : poignée « Déplacer » au-dessus du cadre (sélection contenant un objet `dragCopy`). */
+  readonly move?: boolean;
 }
 
 export const EMPTY_OVERLAY: EditOverlay = { ghosts: [], shapes: [], frame: null, handles: false, band: null };
@@ -44,6 +46,7 @@ export function mergeOverlays(parts: readonly (EditOverlay | undefined)[]): Edit
     frame: present.find((p) => p.frame !== null)?.frame ?? null,
     handles: present.some((p) => p.handles),
     band: present.find((p) => p.band !== null)?.band ?? null,
+    move: present.some((p) => p.move === true),
   };
 }
 

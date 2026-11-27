@@ -4,6 +4,7 @@ import { fakeCore } from "../../core/fake-core";
 import type { CloseReason } from "../input/gesture";
 import type { InputSample } from "../input/sampler";
 import { createSelectTool } from "./select";
+import { moveHandlePoint } from "./handles";
 import type { SelectionTool, ToolContext } from "./tool";
 
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
@@ -28,6 +29,17 @@ function setup(zoom = 1) {
     },
     shift: () => shift,
     alt: () => alt,
+    duplicate: (ids, dx, dy, strip) => {
+      const fragment = doc.extract(page, ids);
+      try {
+        if (strip) fragment.apply({ type: "SetStyle", ids: fragment.elementIds(fragment.pageIds()[0] ?? ""), patch: { dragCopy: false } });
+        const change = doc.insertFragment(fragment, page, dx, dy);
+        runs.push({ type: "SetStyle", ids: change.ids, patch: {} });
+        return change.ids.length > 0;
+      } finally {
+        fragment.free();
+      }
+    },
   };
   const tool = createSelectTool(ctx);
   const rect = (x0: number, y0: number, x1: number, y1: number): string =>
@@ -417,5 +429,51 @@ describe("outil Sélection : groupes (Z2)", () => {
     expect(tool.selection()).toEqual([]);
     gesture(tool, [[90, 90], [610, 210]]);
     expect(tool.selection()).toEqual([a, b, c]);
+  });
+});
+
+describe("outil Sélection : Glisser une copie (OG23, T11)", () => {
+  const copyRect = () => {
+    const t = setup();
+    const a = t.rect(100, 100, 200, 200);
+    t.doc.apply({ type: "SetStyle", ids: [a], patch: { dragCopy: true } });
+    return { ...t, a };
+  };
+
+  it("dragCopy : l'original reste, une copie", () => {
+    const { doc, tool, a } = copyRect();
+    const page = doc.pageIds()[0] ?? "";
+    tool.begin(1, [at(150, 150)]);
+    tool.extend(1, [at(350, 150)], []);
+    expect(tool.live().hidden.size).toBe(0);
+    expect(tool.live().overlay?.ghosts.length).toBe(1);
+    tool.close(1, "end");
+    expect(doc.elementIds(page)).toHaveLength(2);
+    expect(doc.element(a)?.transform?.[4]).toBe(100);
+    const copy = doc.elementIds(page).find((id) => id !== a) ?? "";
+    expect(doc.element(copy)?.transform?.[4]).toBe(300);
+    expect(doc.element(copy)?.look?.dragCopy).toBeUndefined();
+  });
+
+  it("dragCopy : un clic ne copie rien", () => {
+    const { doc, tool, runs } = copyRect();
+    gesture(tool, [[150, 150], [151, 150]]);
+    expect(runs).toEqual([]);
+    expect(doc.elementIds(doc.pageIds()[0] ?? "")).toHaveLength(1);
+  });
+
+  it("poignée Déplacer : l'original bouge", () => {
+    const { doc, tool, runs, a } = copyRect();
+    gesture(tool, [[150, 150]]);
+    expect(tool.selection()).toEqual([a]);
+    const frame = doc.bounds([a]);
+    expect(frame).not.toBeNull();
+    const [hx, hy] = moveHandlePoint(frame!, 1);
+    runs.length = 0;
+    gesture(tool, [[hx, hy], [hx + 100, hy]]);
+    expect(runs.map((r) => r.type)).toEqual(["Transform"]);
+    expect(doc.elementIds(doc.pageIds()[0] ?? "")).toHaveLength(1);
+    expect(doc.element(a)?.transform?.[4]).toBe(200);
+    expect(doc.element(a)?.look?.dragCopy).toBe(true);
   });
 });

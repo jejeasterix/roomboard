@@ -1016,7 +1016,13 @@ mod tests {
         assert_eq!(d.outline_cache_misses(), m + 2, "autre largeur : recalcul");
         assert_eq!(
             bits(&o12),
-            bits(&ink_outline(&pts, &InkStyle { width: 12.0, constant: false }))
+            bits(&ink_outline(
+                &pts,
+                &InkStyle {
+                    width: 12.0,
+                    constant: false
+                }
+            ))
         );
         let short = &pts[..pts.len() - 5];
         let o_short = d.cached_outline(&a, &thick, short, false);
@@ -1027,7 +1033,13 @@ mod tests {
         );
         assert_eq!(
             bits(&o_short),
-            bits(&ink_outline(short, &InkStyle { width: 12.0, constant: false }))
+            bits(&ink_outline(
+                short,
+                &InkStyle {
+                    width: 12.0,
+                    constant: false
+                }
+            ))
         );
         assert_eq!(d.outline_cache_len(), 1, "une entrée par id");
     }

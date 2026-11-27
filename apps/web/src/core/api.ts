@@ -234,7 +234,9 @@ export interface TextData {
 }
 
 /** C5 (U29, I5) : couleur rendue transparente ; `color` en `#rrggbb` minuscules ; `tolerance`, `soft` entiers de 0 à 100. */
-export interface TransparentColor { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean }
+/** OG23 (T10) : `x`, `y` = départ de la baguette en pixels source, les deux ou aucun, dans l'image ; avec un départ, seule
+ *  la zone jointe au point touché s'efface (`contiguous` ignoré). */
+export interface TransparentColor { readonly color: string; readonly tolerance: number; readonly soft: number; readonly contiguous: boolean; readonly x?: number; readonly y?: number }
 /** C5 (U29, I2, I4) : réglages non destructifs, champ absent = neutre. `crop` = [x, y, w, h] en pixels source ;
  *  `quarterTurns` 0 à 3, sens horaire ; `brightness`, `contrast` entiers de −100 à 100. */
 export interface ImageParams {

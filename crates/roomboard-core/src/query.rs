@@ -10,7 +10,8 @@ use yrs::{Array, Map, MapRef, Out, ReadTxn};
 use crate::commands::{read_shape, read_stroke, read_text, similarity_scale, world_to_local_path};
 use crate::document::Document;
 use crate::element::{
-    apply_transform, constant_ink, out_string, out_transform, read_image, read_unknown, unknown_view, Transform,
+    apply_transform, constant_ink, out_string, out_transform, read_image, read_unknown,
+    unknown_view, Transform,
 };
 use crate::fill_element::{read_fill, FILL_KIND};
 use crate::ink::hit::{dist_to_edges, hit_outline, path_hits_outline, point_in_polygon};
@@ -578,7 +579,13 @@ mod tests {
             "rendu, collision et boîte lisent le même cache"
         );
         let pts = d.stroke_points(&a).expect("points");
-        let exact = ink_outline(&pts, &InkStyle { width: 4.0, constant: false });
+        let exact = ink_outline(
+            &pts,
+            &InkStyle {
+                width: 4.0,
+                constant: false,
+            },
+        );
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<u32>>();
         assert_eq!(
             bits(&o),

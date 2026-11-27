@@ -76,3 +76,68 @@ export function paintLinkBadge(ctx: CanvasRenderingContext2D, b: LinkBadge, colo
   }
   ctx.restore();
 }
+
+export const COPY_BADGE_PX = 18;
+/** Lucide `copy` (ISC) : le dos et le carré de devant (viewBox 24 × 24). */
+export const COPY_ICON_PATHS: readonly string[] = [
+  "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2",
+  "M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z",
+];
+/** Lucide `move` (ISC) : poignée « Déplacer » (viewBox 24 × 24). */
+export const MOVE_ICON_PATHS: readonly string[] = ["M12 2v20", "m15 19-3 3-3-3", "m19 9 3 3-3 3", "M2 12h20", "m5 9-3 3 3 3", "m9 5 3-3 3 3"];
+
+/** Badge « copie » de la boîte `b` (monde) : rond de 18 px, coin bas-droit à 6 px du coin haut gauche, au pixel de l'appareil. */
+export function copyBadgeBox(b: Bounds, camera: Camera, dpr = 1): LinkBadge {
+  const snap = (v: number): number => Math.round(v * dpr) / dpr;
+  const [left, top] = worldToScreen(camera, b.x0, b.y0);
+  return { x: snap(left - LINK_BADGE_GAP_PX - COPY_BADGE_PX), y: snap(top - LINK_BADGE_GAP_PX - COPY_BADGE_PX), size: COPY_BADGE_PX };
+}
+
+/** Chemins `d` mis en Path2D ; null hors navigateur. */
+export const pathsOf = (ds: readonly string[]): Path2D[] | null => (typeof Path2D === "function" ? ds.map((d) => new Path2D(d)) : null);
+
+/** Rond blanc à bord de 1 px (demi-pixel) et icône de 12 px au trait de 1 px, centrés dans `b`. `ctx` en px CSS. */
+export function paintRoundIcon(ctx: CanvasRenderingContext2D, b: LinkBadge, paths: readonly Path2D[] | null, color: string): void {
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+  // Rond tracé par quatre arcTo (comme `paintLinkBadge`), rayon = moitié du côté.
+  const r = (b.size - 1) / 2;
+  const x = b.x + 0.5;
+  const y = b.y + 0.5;
+  const w = b.size - 1;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + w, r);
+  ctx.arcTo(x + w, y + w, x, y + w, r);
+  ctx.arcTo(x, y + w, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  if (paths !== null) {
+    ctx.translate(b.x + (b.size - 12) / 2, b.y + (b.size - 12) / 2);
+    ctx.scale(0.5, 0.5);
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const p of paths) ctx.stroke(p);
+  }
+  ctx.restore();
+}
+
+let copyIcon: Path2D[] | null = null;
+export function paintCopyBadge(ctx: CanvasRenderingContext2D, b: LinkBadge, color: string): void {
+  if (copyIcon === null) copyIcon = pathsOf(COPY_ICON_PATHS);
+  paintRoundIcon(ctx, b, copyIcon, color);
+}
+
+let moveIcon: Path2D[] | null = null;
+/** Poignée « Déplacer » (rond de 24 px CSS) centrée sur (cx, cy) px CSS. */
+export function paintMoveHandle(ctx: CanvasRenderingContext2D, cx: number, cy: number, color: string): void {
+  if (moveIcon === null) moveIcon = pathsOf(MOVE_ICON_PATHS);
+  paintRoundIcon(ctx, { x: cx - 12, y: cy - 12, size: 24 }, moveIcon, color);
+}

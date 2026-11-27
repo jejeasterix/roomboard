@@ -14,6 +14,7 @@ function fakeEdit(pick: string | null = "#ffffff") {
     id: "i",
     preview: vi.fn(),
     pick: vi.fn(async () => pick),
+    pickPoint: vi.fn(async () => (pick === null ? null : { color: pick, x: 3, y: 4 })),
     startCrop: vi.fn(() => (mode = "crop")),
     finishCrop: vi.fn(() => ((mode = "idle"), true)),
     geometry: vi.fn((_p: ImageParams) => true),
@@ -25,12 +26,12 @@ function fakeEdit(pick: string | null = "#ffffff") {
   } satisfies ImageEdit;
   return edit;
 }
-function setup(initial: ImageData = { asset: A, w: 200, h: 150 }, edit = fakeEdit()) {
+function setup(initial: ImageData = { asset: A, w: 200, h: 150 }, edit = fakeEdit(), start?: "crop" | "background") {
   const [image, setImage] = createSignal<ImageData | null>(initial);
   const [version, setVersion] = createSignal(0);
   const [tick, setTick] = createSignal(0);
   const close = vi.fn();
-  const r = render(() => <ImagePanel image={image} version={version} tick={tick} edit={edit} close={close} />);
+  const r = render(() => <ImagePanel image={image} version={version} tick={tick} edit={edit} close={close} start={start} />);
   const q = (sel: string) => r.container.querySelector<HTMLElement>(sel)!;
   const act = (id: string) => fireEvent.click(q(`[data-image-action="${id}"]`));
   const input = (id: string, v: string) => {
@@ -110,7 +111,27 @@ describe("panneau de retouche (I25-I27, I31)", () => {
     unmount();
     expect(edit.close).toHaveBeenCalledTimes(1);
     const d = draftOf({ asset: A, w: 1, h: 1, contrast: -5, transparent: { color: "#000000", tolerance: 3, soft: 4, contiguous: false } });
-    expect(d).toEqual({ brightness: 0, contrast: -5, color: "#000000", tolerance: 3, soft: 4, contiguous: false });
+    expect(d).toEqual({ brightness: 0, contrast: -5, color: "#000000", tolerance: 3, soft: 4, contiguous: false, seed: null });
     expect(pixelParams({ ...d, color: null })).toEqual({ contrast: -5 });
+  });
+  it("mode Depuis le point touché : la pipette pose couleur et départ, Valider écrit x et y", async () => {
+    const { act, edit, q } = setup();
+    fireEvent.change(q('[data-image-input="mode"]'), { target: { value: "seed" } });
+    act("pick");
+    await vi.waitFor(() => expect(edit.pickPoint).toHaveBeenCalled());
+    await vi.waitFor(() => expect(edit.preview).toHaveBeenLastCalledWith({ transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x: 3, y: 4 } }));
+    act("apply");
+    expect(edit.commit).toHaveBeenCalledWith({ transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x: 3, y: 4 } });
+    expect(Array.from(q('[data-image-input="mode"]').querySelectorAll("option")).map((o) => (o as HTMLOptionElement).value)).toEqual(["seed", "contiguous", "global"]);
+  });
+  it("start crop ouvre le rognage", () => {
+    const { edit } = setup(undefined, fakeEdit(), "crop");
+    expect(edit.startCrop).toHaveBeenCalledTimes(1);
+  });
+  it("start background arme la pipette", async () => {
+    const { edit, q } = setup(undefined, fakeEdit(), "background");
+    expect((q('[data-image-input="mode"]') as HTMLSelectElement).value).toBe("seed");
+    await vi.waitFor(() => expect(edit.pickPoint).toHaveBeenCalledTimes(1));
+    expect(edit.startCrop).not.toHaveBeenCalled();
   });
 });

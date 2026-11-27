@@ -57,6 +57,14 @@ describe("lecture d'une opération (D6)", () => {
   it("SetStyle accepté", () => {
     expect(COMMAND_TYPES).toContain("SetStyle");
   });
+  it("SetStyle dragCopy admis (OG23, T10, D15) : le patch passe tel quel au cœur", () => {
+    for (const dragCopy of [true, false]) {
+      const op = parseOp({ type: "SetStyle", ids: ["a"], patch: { dragCopy } }, ctx());
+      expect(op.kind === "command" ? op.cmd : null).toEqual({ type: "SetStyle", ids: ["a"], patch: { dragCopy } });
+    }
+    const img = parseOp({ type: "SetImageParams", id: "a", params: { transparent: { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true, x: 0, y: 0 } }, matrix: [1, 0, 0, 1, 0, 0] }, ctx());
+    expect(img.kind === "command" ? img.cmd : null).toMatchObject({ params: { transparent: { x: 0, y: 0 } } });
+  });
   it("Restack lu (T13, D15) : références d'éléments résolues, rang gardé", () => {
     const op = parseOp({ type: "Restack", ids: ["$1.2", "$1"], to: 0 }, ctx());
     expect(op.kind === "command" ? op.cmd : null).toEqual({ type: "Restack", ids: ["e2", "e1"], to: 0 });

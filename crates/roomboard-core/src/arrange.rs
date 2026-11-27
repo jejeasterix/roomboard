@@ -153,10 +153,7 @@ pub(crate) fn plan(units: &[Unit], how: ArrangeHow) -> Vec<(String, Transform)> 
             let mv = |d: f64| if h { (d, 0.0) } else { (0.0, d) };
             if step < 0.0 {
                 // Excalidraw : écart négatif, répartition par les centres ; les boîtes des deux extrêmes ne bougent pas.
-                let Some(i0) = order
-                    .iter()
-                    .position(|&i| start(&boxes[i]) == start(&sel))
-                else {
+                let Some(i0) = order.iter().position(|&i| start(&boxes[i]) == start(&sel)) else {
                     return Vec::new();
                 };
                 let Some(i1) = order.iter().position(|&i| end(&boxes[i]) == end(&sel)) else {

@@ -6,8 +6,8 @@ use yrs::{Any, In, Map, MapRef};
 use crate::commands::{Change, CommandError};
 use crate::document::Document;
 use crate::element::{
-    finite_positive, out_string, read_look, valid_link, ARROWHEADS, VARIABILITY_CONSTANT, END_ARROWHEAD_DEFAULT,
-    FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS,
+    finite_positive, out_string, read_look, valid_link, ARROWHEADS, END_ARROWHEAD_DEFAULT,
+    FILL_STYLES, START_ARROWHEAD_DEFAULT, STROKE_STYLES, TEXT_ALIGNS, VARIABILITY_CONSTANT,
 };
 use crate::fill::{differs, set_or_remove};
 use crate::rich_text::valid_color;
@@ -31,6 +31,9 @@ pub struct StylePatch {
     pub link: Option<Option<String>>,
     /// OG23 : `Some(Some("constant"))` pose la pression constante, `Some(None)` la retire ; traits seuls.
     pub variability: Option<Option<String>>,
+    /// OG23 (T10) : `Some(true)` pose « Glisser une copie », `Some(false)` le retire ; traits, formes, textes, images
+    /// (genres dont l'aspect est lu) ; tableaux, médias, objets 3D et zones ignorés sans erreur.
+    pub drag_copy: Option<bool>,
 }
 
 /// `Some(Some(s))` hors de `allowed`.
@@ -177,6 +180,11 @@ fn writes_for(
     if let Some(v) = &p.variability {
         if kind == "stroke" {
             w.push(("variability", v.as_deref().map(In::from)));
+        }
+    }
+    if let Some(b) = p.drag_copy {
+        if matches!(kind, "stroke" | "shape" | "text" | "image") {
+            w.push(("dragCopy", b.then_some(In::Any(Any::Bool(true)))));
         }
     }
     w

@@ -4,7 +4,7 @@
  * ensemble par « Valider » (une étape). Une écriture géométrique de la séance garde le brouillon ; toute autre écriture
  * (Valider, Rétablir, annuler, rétablir, ailleurs) le reprend du document. Démonté : la séance est fermée.
  */
-import { createEffect, createMemo, createSignal, on, onCleanup, Show, type Accessor, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
 import type { ImageData, ImageParams } from "../core/api";
 import { clean, flipShown, paramsOf, turnShown } from "../core/image-params";
 import type { ImageEdit } from "../engine/tools/image-edit";
@@ -22,6 +22,8 @@ export interface PixelDraft {
   readonly tolerance: number;
   readonly soft: number;
   readonly contiguous: boolean;
+  /** Pixel source de départ (mode « Depuis le point touché ») ; null : départ par les bords ou global. */
+  readonly seed: { readonly x: number; readonly y: number } | null;
 }
 
 export function draftOf(i: ImageData | null): PixelDraft {
@@ -33,6 +35,7 @@ export function draftOf(i: ImageData | null): PixelDraft {
     tolerance: t?.tolerance ?? DEFAULT_TOLERANCE,
     soft: t?.soft ?? DEFAULT_SOFT,
     contiguous: t?.contiguous ?? true,
+    seed: t?.x !== undefined && t.y !== undefined ? { x: t.x, y: t.y } : null,
   };
 }
 
@@ -40,7 +43,7 @@ export function pixelParams(d: PixelDraft): ImageParams {
   return clean({
     brightness: d.brightness,
     contrast: d.contrast,
-    ...(d.color === null ? {} : { transparent: { color: d.color, tolerance: d.tolerance, soft: d.soft, contiguous: d.contiguous } }),
+    ...(d.color === null ? {} : { transparent: { color: d.color, tolerance: d.tolerance, soft: d.soft, contiguous: d.contiguous, ...(d.seed === null ? {} : { x: d.seed.x, y: d.seed.y }) } }),
   });
 }
 
@@ -53,6 +56,8 @@ export interface ImagePanelProps {
   readonly tick: Accessor<unknown>;
   readonly edit: ImageEdit;
   close(): void;
+  /** Joué une fois au montage : `crop` ouvre le rognage, `background` arme la pipette en mode « Depuis le point touché ». */
+  readonly start?: "crop" | "background";
 }
 
 export function ImagePanel(props: ImagePanelProps): JSX.Element {
@@ -61,7 +66,18 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
     props.tick();
     return props.edit.mode();
   });
+  const [seedMode, setSeedMode] = createSignal(draft().seed !== null);
   onCleanup(() => props.edit.close());
+  /** Pipette : en mode « point touché », couleur et départ ; sinon couleur seule (le départ est retiré). */
+  const pipette = (): void =>
+    void props.edit.pickPoint().then((r) => r !== null && setPixels({ ...draft(), color: r.color, seed: seedMode() ? { x: r.x, y: r.y } : null }));
+  onMount(() => {
+    if (props.start === "crop") props.edit.startCrop();
+    else if (props.start === "background") {
+      setSeedMode(true);
+      pipette();
+    }
+  });
   createEffect(
     on(
       props.version,
@@ -114,7 +130,7 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
             type="button"
             data-image-action="pick"
             aria-pressed={mode() === "pick"}
-            onClick={() => void props.edit.pick().then((c) => c !== null && setPixels({ ...draft(), color: c }))}
+            onClick={pipette}
           >
             Pipette
           </button>
@@ -132,10 +148,15 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
           Mode{" "}
           <select
             data-image-input="mode"
-            ref={(el) => syncValue(el, () => (draft().contiguous ? "contiguous" : "global"))}
-            onChange={(e) => setPixels({ ...draft(), contiguous: e.currentTarget.value === "contiguous" })}
+            ref={(el) => syncValue(el, () => (seedMode() ? "seed" : draft().contiguous ? "contiguous" : "global"))}
+            onChange={(e) => {
+              const v = e.currentTarget.value;
+              setSeedMode(v === "seed");
+              setPixels({ ...draft(), contiguous: v !== "global", seed: v === "seed" ? draft().seed : null });
+            }}
           >
-            <option value="contiguous">Contigu</option>
+            <option value="seed">Depuis le point touché</option>
+            <option value="contiguous">Depuis les bords</option>
             <option value="global">Global</option>
           </select>
         </label>
