@@ -823,6 +823,17 @@ describe("OG12 × OG25 : doigt tardif (Maj) ou membre de la paume", () => {
     expect(mods()).toEqual(["mod true", "mod false"]);
   });
 
+  it("paume posée loin du trait (A-2) : le trait garde son geste et son Maj", () => {
+    const { router, log, mods } = shared("rect");
+    router.handle(touch("start", 1, 100, 100, 0, 20));
+    router.handle(touch("start", 2, 150, 100, SECOND_FINGER_MS + 10, 20));
+    router.handle(touch("start", 3, 1000, 100, 200, 140));
+    expect([router.roleOf(1), router.roleOf(3)]).toEqual(["edit", "erase"]);
+    expect(log).toEqual(["begin 1 rect", "mod true", "begin -1 eraser"]);
+    router.handle(touch("end", 1, 0, 0, 0));
+    expect(mods()).toEqual(["mod true", "mod false"]);
+  });
+
   it("doigt tardif posé large dans la fenêtre du trait : paume, jamais Maj", () => {
     const { router, log, mods } = shared("rect");
     router.handle(touch("start", 1, 100, 100, 0, 20));

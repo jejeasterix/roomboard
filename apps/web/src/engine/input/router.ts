@@ -119,6 +119,16 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     track.late = true;
     if (lateCount++ === 0) deps.modifier(true);
   };
+  /** OG12 : le geste au doigt finit (fermé, ou avorté par la paume d'OG25) : ses doigts tardifs ne valent plus Maj ;
+   *  `which` : seulement ceux-là (doigts tardifs entrés dans la gomme). */
+  const releaseLate = (which: (t: Track) => boolean = () => true): void => {
+    for (const [, o] of tracks) {
+      if (o.late && which(o)) {
+        o.late = false;
+        if (--lateCount === 0) deps.modifier?.(false);
+      }
+    }
+  };
 
   const memberBoxes = (): ContactBox[] => {
     const out: ContactBox[] = [];
@@ -190,6 +200,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     if (!group.some(([, t]) => isLargeContact({ width: t.w, height: t.h })) && !isTightCluster(boxes)) return false;
     if (deps.gesturesToTools?.() === false) return false;
     const id = nextPalmId--;
+    const aborted = group.some(([, t]) => t.role === "draw");
     for (const [pid, t] of group) {
       if (t.role === "draw") deps.gestures.close(pid, "abort");
       else if (t.role === "pan" && (t.panX !== 0 || t.panY !== 0)) deps.view.panBy(-t.panX, -t.panY);
@@ -197,6 +208,9 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       t.panX = 0;
       t.panY = 0;
     }
+    // OG12 × OG25 (A-1, A-2) : la paume gagne sur le doigt tardif, Maj retombe avant la gomme ; un trait hors du groupe
+    // garde son geste et son Maj, sauf le doigt tardif entré dans la gomme.
+    releaseLate(aborted ? undefined : (o) => o.role === "palm");
     // Hors du groupe, défilement et pincement s'arrêtent jusqu'au lever : la vue ne bouge plus (règle 5, revue T11).
     for (const [, t] of touches("pan")) t.role = "spent";
     for (const [, t] of touches("pinch")) t.role = "spent";
@@ -352,12 +366,7 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     if (t.role === "draw") {
       const how: CloseReason = g.palm === true ? "abort" : g.kind === "cancel" ? "cancel" : "end";
       deps.gestures.close(g.pointerId, how);
-      for (const [, o] of tracks) {
-        if (o.late) {
-          o.late = false;
-          if (--lateCount === 0) deps.modifier?.(false);
-        }
-      }
+      releaseLate();
     } else if (t.role === "pinch") {
       for (const [, other] of touches("pinch")) other.role = "ignored";
     }
