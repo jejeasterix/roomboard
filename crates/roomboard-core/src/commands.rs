@@ -1765,6 +1765,267 @@ pub(crate) mod tests {
         assert!(!d.can_undo());
     }
 
+    /// Valeur brute du champ `mode` d'une page (absent : `None`).
+    fn raw_mode(d: &Document, page: &str) -> Option<String> {
+        let txn = d.read();
+        let (_, m) = d.find_page(&txn, page)?;
+        out_string(m.get(&txn, "mode"))
+    }
+
+    fn set_mode(d: &mut Document, page: &str, mode: PageLayout) -> Change {
+        d.apply(Command::SetPageMode {
+            page: page.into(),
+            mode,
+        })
+        .expect("mode")
+    }
+
+    #[test]
+    fn page_mode_absent_reads_as_page() {
+        let d = Document::blank();
+        let p = first(&d);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", 1080.0));
+        assert_eq!(raw_mode(&d, &p), None, "absent = Page : jamais écrit");
+    }
+
+    #[test]
+    fn page_mode_unknown_value_reads_as_page_and_is_kept() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        {
+            let mut txn = d.transact_untracked();
+            let (_, m) = d.find_page(&txn, &p).expect("page");
+            m.insert(&mut txn, "mode", "frame");
+        }
+        assert_eq!(d.page(&p).expect("page").mode, "page");
+        set_mode(&mut d, &p, PageLayout::Portrait);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", PORTRAIT_HEIGHT));
+        assert!((PORTRAIT_HEIGHT - 3413.333).abs() < 0.001);
+        assert_eq!(raw_mode(&d, &p).as_deref(), Some("frame"), "valeur inconnue gardée (U3)");
+    }
+
+    #[test]
+    fn page_mode_set_portrait_then_undo_is_one_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let ch = set_mode(&mut d, &p, PageLayout::Portrait);
+        assert_eq!(n.since(), 1, "une commande = une transaction");
+        assert_eq!(ch.pages, vec![p.clone()]);
+        assert_eq!(d.page(&p).expect("page").height, PORTRAIT_HEIGHT);
+        assert!(d.undo());
+        assert_eq!(d.page(&p).expect("page").height, 1080.0);
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn page_mode_infinite_keeps_height() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        set_mode(&mut d, &p, PageLayout::Portrait);
+        set_mode(&mut d, &p, PageLayout::Infinite);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
+        set_mode(&mut d, &p, PageLayout::Landscape);
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", 1080.0));
+        assert_eq!(raw_mode(&d, &p), None, "retour en Page : champ retiré, jamais \"page\"");
+        assert!(d.undo());
+        let v = d.page(&p).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
+    }
+
+    #[test]
+    fn page_mode_same_value_has_no_step() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let n = writes(&d);
+        let v0 = d.version();
+        let ch = set_mode(&mut d, &p, PageLayout::Landscape);
+        assert_eq!((n.since(), d.version(), ch.version), (0, v0, v0));
+        assert!(ch.pages.is_empty());
+        assert!(!d.can_undo(), "D38 : aucune étape vide");
+        set_mode(&mut d, &p, PageLayout::Infinite);
+        let n = writes(&d);
+        let v1 = d.version();
+        set_mode(&mut d, &p, PageLayout::Infinite);
+        assert_eq!((n.since(), d.version()), (0, v1));
+        assert!(d.undo());
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn page_mode_add_page_with_mode() {
+        let mut d = Document::blank();
+        let p0 = first(&d);
+        let inf = d
+            .apply(Command::AddPage {
+                after: None,
+                mode: Some(PageLayout::Infinite),
+            })
+            .expect("ajout")
+            .pages[0]
+            .clone();
+        let v = d.page(&inf).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", 1080.0));
+        let por = d
+            .apply(Command::AddPage {
+                after: Some(p0.clone()),
+                mode: Some(PageLayout::Portrait),
+            })
+            .expect("ajout")
+            .pages[0]
+            .clone();
+        assert_eq!(d.page_ids(), vec![p0.clone(), por.clone(), inf.clone()]);
+        let v = d.page(&por).expect("page");
+        assert_eq!((v.mode.as_str(), v.height), ("page", PORTRAIT_HEIGHT));
+        let plain = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        assert_eq!(d.page(&plain).expect("page").height, 1080.0);
+        assert_eq!(raw_mode(&d, &plain), None);
+        assert!(d.undo() && d.undo());
+        assert_eq!(d.page_ids(), vec![p0.clone(), inf]);
+        assert!(d.undo());
+        assert_eq!(d.page_ids(), vec![p0]);
+    }
+
+    #[test]
+    fn page_mode_blank_with_is_not_undoable() {
+        let mut d = Document::blank_with(Some(PageLayout::Portrait));
+        assert!(!d.can_undo());
+        assert!(!d.undo());
+        assert_eq!(d.page_count(), 1);
+        assert_eq!(d.page(&first(&d)).expect("page").height, PORTRAIT_HEIGHT);
+        let mut i = Document::blank_with(Some(PageLayout::Infinite));
+        assert!(!i.undo());
+        assert_eq!(i.page(&first(&i)).expect("page").mode, "infinite");
+        let b = Document::blank_with(None);
+        assert_eq!(raw_mode(&b, &first(&b)), None);
+    }
+
+    #[test]
+    fn page_mode_reload_keeps_bytes() {
+        let mut d = Document::blank_with(Some(PageLayout::Infinite));
+        let p = first(&d);
+        commit(&mut d, &p, hline(100.0));
+        let bytes = d.encode_v1();
+        let r = Document::from_update_v1(&bytes).expect("relecture");
+        assert_eq!(r.encode_v1(), bytes);
+        assert_eq!(r.page(&p).expect("page").mode, "infinite");
+    }
+
+    /// Discrimine le patron écarté (recopie par `copy_elements`, ids neufs) : la page et ses éléments gardent leurs
+    /// ids (DA2), et l'ordre se rétablit en une annulation.
+    #[test]
+    fn move_page_keeps_ids_and_is_one_step() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        let b = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let c = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let s1 = commit(&mut d, &c, hline(100.0));
+        let s2 = commit(&mut d, &c, hline(200.0));
+        set_mode(&mut d, &c, PageLayout::Infinite);
+        let before = d.page(&c);
+        let n = writes(&d);
+        let ch = d
+            .apply(Command::MovePage {
+                page: c.clone(),
+                to: 0,
+            })
+            .expect("déplacement");
+        assert_eq!(n.since(), 1, "un déplacement = une transaction");
+        assert_eq!(d.page_ids(), vec![c.clone(), a.clone(), b.clone()]);
+        assert_eq!(d.element_ids(&c), vec![s1.clone(), s2.clone()]);
+        assert_eq!(d.page(&c), before, "tous les champs de page gardés");
+        assert_eq!(ch.pages, vec![c.clone()]);
+        assert!(ch.ids.is_empty() && ch.removed.is_empty());
+        assert!(d.undo());
+        assert_eq!(d.page_ids(), vec![a.clone(), b.clone(), c.clone()]);
+        assert_eq!(d.element_ids(&c), vec![s1, s2]);
+        d.apply(Command::MovePage {
+            page: a.clone(),
+            to: 2,
+        })
+        .expect("vers la fin");
+        assert_eq!(d.page_ids(), vec![b, c, a]);
+    }
+
+    #[test]
+    fn move_page_same_rank_has_no_step() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        d.apply(Command::add_page(None)).expect("ajout");
+        let n = writes(&d);
+        let v = d.version();
+        let ch = d
+            .apply(Command::MovePage { page: a, to: 0 })
+            .expect("même rang");
+        assert_eq!((n.since(), d.version(), ch.version), (0, v, v));
+        assert!(ch.pages.is_empty());
+    }
+
+    #[test]
+    fn move_page_out_of_range_is_bad_index() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        d.apply(Command::add_page(None)).expect("ajout");
+        let n = writes(&d);
+        assert_eq!(
+            d.apply(Command::MovePage {
+                page: a.clone(),
+                to: 2
+            }),
+            Err(CommandError::BadIndex)
+        );
+        assert_eq!(n.since(), 0);
+        assert_eq!(CommandError::BadIndex.to_string(), "rang de page hors bornes");
+        assert_eq!(d.page_ids()[0], a);
+    }
+
+    #[test]
+    fn move_page_unknown_is_refused() {
+        let mut d = Document::blank();
+        let n = writes(&d);
+        assert_eq!(
+            d.apply(Command::MovePage {
+                page: "nope".into(),
+                to: 0
+            }),
+            Err(CommandError::UnknownPage("nope".into()))
+        );
+        assert_eq!(n.since(), 0);
+    }
+
+    /// Discrimine le patron écarté : avec des ids neufs, l'ancien id n'aurait plus de contour ; avec les ids gardés
+    /// mais rendus dans `removed`, le contour serait oublié puis recalculé.
+    #[test]
+    fn move_page_keeps_contour_cache() {
+        let mut d = Document::blank();
+        let a = first(&d);
+        let c = d.apply(Command::add_page(None)).expect("ajout").pages[0].clone();
+        let s = commit(&mut d, &c, hline(100.0));
+        let before = d.outline(&s);
+        assert!(before.is_some());
+        let (m, len) = (d.outline_cache_misses(), d.outline_cache_len());
+        assert!(len >= 1, "contour en cache avant le déplacement");
+        d.apply(Command::MovePage {
+            page: c.clone(),
+            to: 0,
+        })
+        .expect("déplacement");
+        assert_eq!(d.page_ids(), vec![c, a]);
+        assert_eq!(d.outline(&s), before);
+        assert_eq!(
+            (d.outline_cache_misses(), d.outline_cache_len()),
+            (m, len),
+            "contour servi du cache, jamais recalculé"
+        );
+        assert!(d.undo());
+        assert_eq!(d.outline(&s), before);
+        assert_eq!(d.outline_cache_misses(), m);
+    }
+
     #[test]
     fn erase_through_middle_splits_in_two() {
         let mut d = Document::blank();

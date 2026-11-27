@@ -287,7 +287,7 @@ mod tests {
     use crate::asset::AssetRef;
     use crate::commands::{Command, CommandError};
     use crate::document::Document;
-    use crate::element::StrokeStyle;
+    use crate::element::{PageLayout, StrokeStyle, PORTRAIT_HEIGHT};
     use crate::grid::{GridLevelView, GridView};
     use crate::shape::ShapeKind;
 
@@ -787,6 +787,106 @@ mod tests {
             d.insert_pages(&src, "absente").err(),
             Some(CommandError::UnknownPage("absente".into()))
         );
+    }
+
+    /// Valeur brute d'un champ de page.
+    fn raw_page_field(d: &Document, page: &str, key: &str) -> Option<String> {
+        let txn = d.read();
+        let (_, m) = d.find_page(&txn, page)?;
+        crate::element::out_string(m.get(&txn, key))
+    }
+
+    #[test]
+    fn duplicate_page_new_ids_after_source() {
+        let mut d = Document::blank();
+        let p0 = first(&d);
+        let p1 = d.apply(Command::add_page(Some(p0.clone()))).unwrap().pages[0].clone();
+        let src_ids = vec![stroke(&mut d, &p0, 100.0), stroke(&mut d, &p0, 300.0)];
+        let grid = GridView {
+            visible: true,
+            snap: false,
+            above: false,
+            levels: vec![GridLevelView {
+                kind: "squares".into(),
+                spacing_x: 40.0,
+                spacing_y: 40.0,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                color: "#cccccc".into(),
+                line: "solid".into(),
+                line_width: 1.0,
+                snap: false,
+                visible: true,
+            }],
+        };
+        d.apply(Command::SetGrid {
+            page: p0.clone(),
+            grid: Some(grid.clone()),
+        })
+        .unwrap();
+        for mode in [PageLayout::Portrait, PageLayout::Infinite] {
+            d.apply(Command::SetPageMode {
+                page: p0.clone(),
+                mode,
+            })
+            .unwrap();
+        }
+        let n = crate::commands::tests::writes(&d);
+        let ch = d
+            .apply(Command::DuplicatePage { page: p0.clone() })
+            .expect("duplication");
+        assert_eq!(n.since(), 1, "une duplication = une transaction");
+        let pages = d.page_ids();
+        assert_eq!(pages.len(), 3);
+        let copy = pages[1].clone();
+        assert_eq!((pages[0].as_str(), pages[2].as_str()), (p0.as_str(), p1.as_str()));
+        assert_ne!(copy, p0);
+        assert_eq!(ch.pages, vec![copy.clone()]);
+        let copy_ids = d.element_ids(&copy);
+        assert_eq!(copy_ids.len(), 2);
+        assert!(copy_ids.iter().all(|id| !src_ids.contains(id)), "ids d'éléments neufs");
+        assert_eq!(ch.ids, copy_ids);
+        assert_eq!(d.element_ids(&p0), src_ids, "source intacte");
+        assert_eq!(d.outline(&copy_ids[0]), d.outline(&src_ids[0]));
+        let v = d.page(&copy).unwrap();
+        assert_eq!(v.grid, Some(grid));
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
+        assert!(d.undo());
+        assert_eq!(d.page_ids(), vec![p0, p1]);
+    }
+
+    #[test]
+    fn duplicate_page_unknown_is_refused() {
+        let mut d = Document::blank();
+        let n = crate::commands::tests::writes(&d);
+        assert_eq!(
+            d.apply(Command::DuplicatePage {
+                page: "absente".into()
+            })
+            .err(),
+            Some(CommandError::UnknownPage("absente".into()))
+        );
+        assert_eq!((n.since(), d.page_count()), (0, 1));
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn duplicate_page_keeps_unknown_fields() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        {
+            let mut txn = d.transact_untracked();
+            let (_, m) = d.find_page(&txn, &p).unwrap();
+            m.insert(&mut txn, "zzz", "garde");
+        }
+        let copy = d
+            .apply(Command::DuplicatePage { page: p.clone() })
+            .expect("duplication")
+            .pages[0]
+            .clone();
+        assert_eq!(raw_page_field(&d, &copy, "zzz").as_deref(), Some("garde"));
+        assert_eq!(raw_page_field(&d, &copy, "background").as_deref(), Some("#ffffff"));
+        assert_ne!(raw_page_field(&d, &copy, "id"), Some(p));
     }
 
     #[test]
