@@ -161,13 +161,14 @@ export function createSelectTool(ctx: ToolContext): SelectionTool {
       const frame = selection.length > 0 ? ctx.doc.bounds(selection) : null;
       // Poignée cherchée avant hitTest, Maj tenue ou non : Maj sur une poignée = proportions (D15, CL4-11).
       // OG23 (T11) : la poignée « Déplacer » déplace l'original d'un objet `dragCopy`, comme avant la propriété.
-      if (frame && hasDragCopy(selection) && hitMoveHandle(frame, x, y, zoom, pointerTypeOf(s))) {
-        startDrag(pointerId, "move", x, y);
-        return;
-      }
+      // T18 : la poignée de taille prime dans sa portée ; la zone « Déplacer » du doigt (22 px) la recouvre sinon.
       const h = frame ? grabbedHandle(frame, x, y, zoom) : null;
       if (frame && h) {
         startDrag(pointerId, "resize", x, y, { handle: h, base: frame });
+        return;
+      }
+      if (frame && hasDragCopy(selection) && hitMoveHandle(frame, x, y, zoom, pointerTypeOf(s))) {
+        startDrag(pointerId, "move", x, y);
         return;
       }
       const hit = ctx.doc.hitTest(ctx.page(), x, y, SELECT_TOL_PX / zoom);

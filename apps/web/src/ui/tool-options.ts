@@ -117,7 +117,7 @@ export function showsPanel(tool: ToolChoice, selection: number, annotating: bool
   if (annotating) return false;
   return DRAW.has(tool) || selection > 0;
 }
-/** OG23 : genres qui admettent « Glisser une copie » (traits, formes, textes, images : ceux dont l'aspect est lu). */
+/** OG23 : « Glisser une copie » pour chaque objet (décision 29) : tous les genres, sauf un genre inconnu du cœur. */
 export function admitsDragCopy(e: ElementView): boolean {
-  return e.kind === "stroke" || e.kind === "shape" || e.kind === "text" || e.kind === "image";
+  return e.kind !== "unknown";
 }

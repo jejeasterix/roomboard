@@ -14,6 +14,8 @@ import { syncValue } from "./ProfileEditor";
 export const DEFAULT_TOLERANCE = 10;
 export const DEFAULT_SOFT = 0;
 
+export type SeedMode = "seed" | "contiguous" | "global";
+
 export interface PixelDraft {
   readonly brightness: number;
   readonly contrast: number;
@@ -22,20 +24,25 @@ export interface PixelDraft {
   readonly tolerance: number;
   readonly soft: number;
   readonly contiguous: boolean;
+  /** Mode de départ affiché : « Depuis le point touché », « Depuis les bords » ou « Global » (dérivé du document). */
+  readonly mode: SeedMode;
   /** Pixel source de départ (mode « Depuis le point touché ») ; null : départ par les bords ou global. */
   readonly seed: { readonly x: number; readonly y: number } | null;
 }
 
 export function draftOf(i: ImageData | null): PixelDraft {
   const t = i?.transparent;
+  const seed = t?.x !== undefined && t.y !== undefined ? { x: t.x, y: t.y } : null;
+  const contiguous = t?.contiguous ?? true;
   return {
     brightness: i?.brightness ?? 0,
     contrast: i?.contrast ?? 0,
     color: t?.color ?? null,
     tolerance: t?.tolerance ?? DEFAULT_TOLERANCE,
     soft: t?.soft ?? DEFAULT_SOFT,
-    contiguous: t?.contiguous ?? true,
-    seed: t?.x !== undefined && t.y !== undefined ? { x: t.x, y: t.y } : null,
+    contiguous,
+    seed,
+    mode: seed !== null ? "seed" : contiguous ? "contiguous" : "global",
   };
 }
 
@@ -66,15 +73,31 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
     props.tick();
     return props.edit.mode();
   });
-  const [seedMode, setSeedMode] = createSignal(draft().seed !== null);
-  onCleanup(() => props.edit.close());
-  /** Pipette : en mode « point touché », couleur et départ ; sinon couleur seule (le départ est retiré). */
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+    props.edit.close();
+  });
+  /**
+   * Pipette : en mode « point touché », couleur et départ, et elle reste armée (chaque toucher pose le nouveau départ,
+   * H8) jusqu'à Valider, Annuler ou un changement de mode ; sinon couleur seule (le départ est retiré), un toucher.
+   */
   const pipette = (): void =>
-    void props.edit.pickPoint().then((r) => r !== null && setPixels({ ...draft(), color: r.color, seed: seedMode() ? { x: r.x, y: r.y } : null }));
+    void props.edit.pickPoint().then((r) => {
+      if (r === null || disposed) return;
+      const d = draft();
+      const seeded = d.mode === "seed";
+      setPixels({ ...d, color: r.color, seed: seeded ? { x: r.x, y: r.y } : null });
+      if (seeded) pipette();
+    });
+  /** Désarme la pipette si elle l'est (pickPoint sur une pipette armée la désarme). */
+  const disarm = (): void => {
+    if (props.edit.mode() === "pick") void props.edit.pickPoint();
+  };
   onMount(() => {
     if (props.start === "crop") props.edit.startCrop();
     else if (props.start === "background") {
-      setSeedMode(true);
+      setDraft({ ...draft(), mode: "seed" });
       pipette();
     }
   });
@@ -148,11 +171,11 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
           Mode{" "}
           <select
             data-image-input="mode"
-            ref={(el) => syncValue(el, () => (seedMode() ? "seed" : draft().contiguous ? "contiguous" : "global"))}
+            ref={(el) => syncValue(el, () => draft().mode)}
             onChange={(e) => {
-              const v = e.currentTarget.value;
-              setSeedMode(v === "seed");
-              setPixels({ ...draft(), contiguous: v !== "global", seed: v === "seed" ? draft().seed : null });
+              const v = e.currentTarget.value as SeedMode;
+              disarm();
+              setPixels({ ...draft(), mode: v, contiguous: v !== "global", seed: v === "seed" ? draft().seed : null });
             }}
           >
             <option value="seed">Depuis le point touché</option>
@@ -162,11 +185,15 @@ export function ImagePanel(props: ImagePanelProps): JSX.Element {
         </label>
       </fieldset>
       <div class="rb-editor-actions">
-        <button type="button" data-image-action="apply" onClick={() => props.edit.commit(pixelParams(draft()))}>Valider</button>
+        <button type="button" data-image-action="apply" onClick={() => {
+          disarm();
+          props.edit.commit(pixelParams(draft()));
+        }}>Valider</button>
         <button
           type="button"
           data-image-action="cancel"
           onClick={() => {
+            disarm();
             setDraft(draftOf(props.image()));
             props.edit.preview(null);
           }}
