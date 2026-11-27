@@ -11,8 +11,9 @@ import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCame
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
+import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { arrangeKey, nudgeKey, editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import type { LookPatch } from "../core/look";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
@@ -240,6 +241,10 @@ export interface Engine {
   deleteSelection(): boolean;
   /** OG11 (Ctrl+D) : copie de la sélection décalée de +10/+10, sélectionnée ; une étape ; faux sans sélection. */
   duplicateSelection(): boolean;
+  /** OG23 : Aligner, Répartir, Retourner, Tourner la sélection (groupes entiers) ; vrai si le document a changé. */
+  arrange(how: ArrangeHow): boolean;
+  /** OG23 : déplace la sélection de (dx, dy) unités de scène ; faux sans sélection. */
+  nudge(dx: number, dy: number): boolean;
   /** T18 (déc. 38) : ouvre l'éditeur de lien sur l'unique élément sélectionné (`linkEditing`) ; faux sinon. */
   editLink(): boolean;
   /** T18 : pose (un SetStyle { link }, une étape) ou retire (null) le lien de l'unique élément sélectionné, puis ferme
@@ -446,6 +451,21 @@ export function createEngine(deps: EngineDeps): Engine {
     const sel = selectTool.selection();
     const to = sel.length === 0 ? null : stepTarget(doc, pageId, sel, dir);
     return to !== null && restack(selectedBlock(), to);
+  }
+  /** OG23 : aligne, répartit, retourne ou tourne la sélection (groupes entiers), une étape. */
+  function arrange(how: ArrangeHow): boolean {
+    const ids = selectedBlock();
+    if (ids.length === 0) return false;
+    const version = doc.version();
+    run({ type: "Arrange", ids, how });
+    return doc.version() !== version;
+  }
+  /** OG23 : déplace la sélection de (dx, dy) unités de scène, quel que soit le zoom ; une `Transform`, une étape. */
+  function nudge(dx: number, dy: number): boolean {
+    if (selectTool.selection().length === 0) return false;
+    const version = doc.version();
+    run({ type: "Transform", ids: selectedBlock(), matrix: [1, 0, 0, 1, dx, dy] });
+    return doc.version() !== version;
   }
   function bringToFront(): boolean {
     const ids = selectedBlock();
@@ -917,13 +937,17 @@ export function createEngine(deps: EngineDeps): Engine {
       ...(p.startArrowhead !== undefined ? { startArrowhead: p.startArrowhead } : {}),
       ...(p.endArrowhead !== undefined ? { endArrowhead: p.endArrowhead } : {}),
       ...(p.textAlign !== undefined ? { textAlign: p.textAlign === "left" ? null : p.textAlign } : {}),
+      ...(p.variability !== undefined ? { variability: p.variability === "constant" ? "constant" : null } : {}),
     };
   }
 
   /** Fusion du style courant (`mergeItemStyle`, jamais un remplacement) ; `writeSelection` : un SetStyle sur la
    *  sélection, des seuls champs acceptés, une étape. */
   function setItem(p: Partial<ItemStyle>, writeSelection: boolean): void {
-    const next = mergeItemStyle(item, p);
+    // OG23 (déc. 11) : « transparent » n'est jamais gardé au style courant ; il part seulement dans le SetStyle de la sélection.
+    const transparent = p.color === "transparent";
+    const kept: Partial<ItemStyle> = transparent ? Object.fromEntries(Object.entries(p).filter(([k]) => k !== "color")) : p;
+    const next = mergeItemStyle(item, kept);
     const keys = Object.keys(next) as (keyof ItemStyle)[];
     const changed = keys.some((k) => next[k] !== item[k]);
     item = next;
@@ -933,7 +957,10 @@ export function createEngine(deps: EngineDeps): Engine {
     const editedId = tool === "text" ? textTool.editing()?.id ?? null : null;
     const ids = sel.length > 0 ? [...sel] : editedId !== null ? [editedId] : [];
     if (writeSelection && ids.length > 0) {
-      const accepted = Object.fromEntries(keys.filter((k) => k in p && p[k] === next[k]).map((k) => [k, p[k]])) as Partial<ItemStyle>;
+      const accepted = {
+        ...(Object.fromEntries(keys.filter((k) => k in kept && kept[k] === next[k]).map((k) => [k, kept[k]])) as Partial<ItemStyle>),
+        ...(transparent ? { color: "transparent" } : {}),
+      };
       const patch = patchOf(accepted);
       // `font` et `fontSize` ne sont que le style du prochain texte : aucune commande.
       if (Object.keys(patch).length > 0) {
@@ -994,6 +1021,8 @@ export function createEngine(deps: EngineDeps): Engine {
       }
     },
     restack,
+    arrange,
+    nudge,
     bringToFront,
     sendToBack,
     reorder,
@@ -1052,6 +1081,20 @@ export function createEngine(deps: EngineDeps): Engine {
       }
       const edit = editAction(e);
       const action = keyAction(e);
+      const imageBusy = imageEdit !== null && imageEdit.mode() !== "idle";
+      if (!imageBusy && textTool.editing() === null && selectTool.selection().length > 0) {
+        // OG23 (déc. 24) : Alt+Maj+lettres et Maj+H, V, R ; flèches ; pris seulement avec une sélection (sinon la touche passe).
+        const how = arrangeKey(e);
+        if (how !== null) {
+          arrange(how);
+          return true;
+        }
+        const step = nudgeKey(e);
+        if (step !== null) {
+          nudge(step.dx, step.dy);
+          return true;
+        }
+      }
       if (imageEdit !== null && imageEdit.mode() !== "idle") {
         // C5 (I28) : pendant le rognage ou la pipette, Échap sort du mode, Suppr est pris sans effet, Entrée valide le
         // rognage, Ctrl+Z / Ctrl+Y sortent du mode sans écrire puis annulent ou rétablissent.

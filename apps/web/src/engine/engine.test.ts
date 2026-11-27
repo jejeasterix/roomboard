@@ -2066,7 +2066,7 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     const y0 = doc.bounds([a])!.y0;
     expect(engine.key(key("ArrowRight"))).toBe(true);
     expect(doc.bounds([a])!.x0).toBe(x0 + 1);
-    engine.setCamera({ zoom: 2, tx: 0, ty: 0 });
+    engine.view.zoomAt(0, 0, 2);
     expect(engine.key(key("ArrowDown", { shiftKey: true }))).toBe(true);
     expect(doc.bounds([a])!.y0).toBe(y0 + 5);
     engine.undo();
@@ -2087,8 +2087,8 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     const f = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 300, y0: 100, x1: 400, y1: 150, style: PEN, fill: null }).ids[0] ?? "";
     sel().setSelection([r, f]);
     expect(engine.key(key("H", { shiftKey: true, code: "KeyH" }))).toBe(true);
-    const m = (doc.element(f) as { matrix?: number[] } | null)?.matrix;
-    expect(m?.[0]).toBe(-1);
+    // Miroir horizontal autour du centre de la sélection : la flèche (à droite) passe à gauche du rectangle.
+    expect(doc.bounds([f])!.x1).toBeLessThan(doc.bounds([r])!.x0);
   });
 
   it("style courant : transparent jamais gardé", () => {
