@@ -393,6 +393,10 @@ pub struct Look {
     /// OG23 : `constant` (épaisseur constante, la pression n'amincit pas) ; la pression variable est le neutre.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub variability: Option<String>,
+    /// OG23 (T10) : `true` = glisser l'objet en pose une copie (l'original reste) ; seul `true` est lu et écrit
+    /// (booléen), déplacer est le neutre.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drag_copy: Option<bool>,
 }
 
 /// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
@@ -434,8 +438,8 @@ fn arrowhead(v: &Option<String>, default: &str) -> Option<String> {
         .filter(|s| ARROWHEADS.contains(&s.as_str()) && s != default)
 }
 
-/// Clés `Y.Map` des onze champs d'aspect.
-pub(crate) const LOOK_KEYS: [&str; 11] = [
+/// Clés `Y.Map` des douze champs d'aspect.
+pub(crate) const LOOK_KEYS: [&str; 12] = [
     "strokeStyle",
     "roughness",
     "seed",
@@ -447,6 +451,7 @@ pub(crate) const LOOK_KEYS: [&str; 11] = [
     "textAlign",
     "link",
     "variability",
+    "dragCopy",
 ];
 
 impl Look {
@@ -478,6 +483,7 @@ impl Look {
                 .filter(|s| TEXT_ALIGNS.contains(&s.as_str())),
             link: self.link.clone().filter(|s| valid_link(s)),
             variability: self.variability.clone().filter(|s| s == VARIABILITY_CONSTANT),
+            drag_copy: self.drag_copy.filter(|b| *b),
         }
     }
 }
@@ -514,6 +520,9 @@ pub(crate) fn look_fields(l: &Look) -> Vec<(&'static str, In)> {
             v.push((key, In::from(s.as_str())));
         }
     }
+    if l.drag_copy == Some(true) {
+        v.push(("dragCopy", In::Any(Any::Bool(true))));
+    }
     v
 }
 
@@ -536,6 +545,7 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         text_align: out_string(e.get(txn, "textAlign")),
         link: out_string(e.get(txn, "link")),
         variability: out_string(e.get(txn, "variability")),
+        drag_copy: matches!(e.get(txn, "dragCopy"), Some(Out::Any(Any::Bool(true)))).then_some(true),
     }
     .sanitized()
 }

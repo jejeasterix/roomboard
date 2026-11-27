@@ -4623,3 +4623,51 @@ describe.each(factories)("contrat Arrange : $name", ({ f }) => {
     d.free();
   });
 });
+
+// OG23 (T10) : « Glisser une copie » (`dragCopy`) et départ de la baguette (`transparent.x`, `y`), joués sur les deux cœurs.
+describe.each(factories)("contrat OG23 lot B : $name", ({ f }) => {
+  const lookOf = (d: CoreDocument, id: string): unknown => (d.element(id) as { look?: unknown } | null)?.look;
+  it("SetStyle dragCopy : true pose (une étape), false retire, même valeur sans étape, non booléen refusé", () => {
+    const d = f.blank();
+    const p = first(d);
+    const s = commit(d, p, 100);
+    const img = d.apply({ type: "AddImage", page: p, asset: png, w: 64, h: 48, matrix: I }).ids[0] ?? "";
+    const c = d.apply({ type: "SetStyle", ids: [s, img], patch: { dragCopy: true } });
+    expect(c.ids).toEqual([s, img]);
+    expect(lookOf(d, s)).toEqual({ dragCopy: true });
+    expect(lookOf(d, img)).toEqual({ dragCopy: true });
+    unchanged(d, () => d.apply({ type: "SetStyle", ids: [s], patch: { dragCopy: true } }));
+    d.undo();
+    expect(lookOf(d, s)).toBeUndefined();
+    expect(lookOf(d, img)).toBeUndefined();
+    d.apply({ type: "SetStyle", ids: [s], patch: { dragCopy: true } });
+    expect(d.apply({ type: "SetStyle", ids: [s], patch: { dragCopy: false } }).ids).toEqual([s]);
+    expect(lookOf(d, s)).toBeUndefined();
+    unchanged(d, () => d.apply({ type: "SetStyle", ids: [s], patch: { dragCopy: false } }));
+    for (const bad of ["true", 1, null]) {
+      const patch = { dragCopy: bad } as unknown as LookPatch;
+      unchanged(d, () => expect(messageOf(() => d.apply({ type: "SetStyle", ids: [s], patch })), String(bad)).toBe("style invalide"));
+    }
+    d.free();
+  });
+
+  it("SetImageParams transparent x y : départ relu, hors image ou seul refusé du même message", () => {
+    const d = f.blank();
+    const p = first(d);
+    const id = d.apply({ type: "AddImage", page: p, asset: png, w: 640, h: 480, matrix: I }).ids[0] ?? "";
+    const white = { color: "#ffffff", tolerance: 10, soft: 0, contiguous: true };
+    d.apply({ type: "SetImageParams", id, params: { transparent: { ...white, x: 639, y: 479 } }, matrix: I });
+    expect(imageOf(d, id)?.transparent).toEqual({ ...white, x: 639, y: 479 });
+    unchanged(d, () => d.apply({ type: "SetImageParams", id, params: { transparent: { y: 479, x: 639, ...white } }, matrix: I }));
+    const bad = [{ x: 640, y: 0 }, { x: 0, y: 480 }, { x: -1, y: 0 }, { x: 1.5, y: 0 }, { x: 3 }, { y: 3 }];
+    unchanged(d, () => {
+      for (const seed of bad) {
+        const params = { transparent: { ...white, ...seed } } as ImageParams;
+        expect(messageOf(() => d.apply({ type: "SetImageParams", id, params, matrix: I })), JSON.stringify(seed)).toBe(BAD_IMAGE_PARAMS_MESSAGE);
+      }
+    });
+    expect(d.apply({ type: "SetImageParams", id, params: { transparent: white }, matrix: I }).ids).toEqual([id]);
+    expect(imageOf(d, id)?.transparent).toEqual(white);
+    d.free();
+  });
+});

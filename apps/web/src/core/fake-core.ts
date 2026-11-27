@@ -259,6 +259,9 @@ function validStyle(p: LookPatch): number | undefined {
   if ("link" in p && !absent(p.link) && !(typeof p.link === "string" && validLookLink(p.link))) badStyle();
   // OG23 (`outside(&self.variability, …)`) : seule `constant` s'écrit.
   if ("variability" in p && !absent(p.variability) && p.variability !== VARIABILITY_CONSTANT) badStyle();
+  // OG23 (T10) : `dragCopy` booléen seulement (`Option<bool>` du pont).
+  const drag: unknown = p.dragCopy;
+  if (drag !== undefined && typeof drag !== "boolean") badStyle();
   return opacityArg(p.opacity);
 }
 
@@ -324,6 +327,8 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
   if ("link" in p) put("link", p.link ?? undefined);
   // OG23 (`writes_for`) : la pression ne s'écrit que sur un trait.
   if ("variability" in p && kind === "stroke") put("variability", p.variability ?? undefined);
+  // OG23 (T10, `writes_for`) : tout genre dont l'aspect est lu ; seul `true` s'écrit.
+  if (p.dragCopy !== undefined) put("dragCopy", p.dragCopy ? true : undefined);
   if (!changed) return null;
   const { look: _old, ...rest } = e;
   return { ...rest, style, ...(shape ? { shape } : {}), ...(Object.keys(look).length > 0 ? { look } : {}) };

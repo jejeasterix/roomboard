@@ -26,7 +26,9 @@ export const FILL_MODULE_OLD_MESSAGE = "module des pixels sans pot sur image";
 
 /** Réglages calculés par le Worker (sous-ensemble d'`ImageParams`). */
 export type PixelParams = Pick<ImageParams, "transparent" | "brightness" | "contrast">;
-export interface PixelJob extends PixelParams {
+/** OG23 (T10) : taille source (w, h) de l'élément ; le départ de la baguette est mis à l'échelle du bitmap. */
+export type PixelSize = { readonly size?: readonly [number, number] };
+export interface PixelJob extends PixelParams, PixelSize {
   /** `pixelKey` de l'image (I19). */
   readonly key: string;
   /** Copie transférable du bitmap d'affichage ; appelée seulement quand le calcul part. */
@@ -167,7 +169,7 @@ export function createPixelRunner(spawn: () => WorkerLike, opts: { readonly idle
         queue.set(slot, {
           prepare: async () => {
             const bitmap = await job.bitmap();
-            return { msg: { bitmap, transparent: job.transparent, brightness: job.brightness, contrast: job.contrast }, transfer: [bitmap] };
+            return { msg: { bitmap, transparent: job.transparent, brightness: job.brightness, contrast: job.contrast, size: job.size }, transfer: [bitmap] };
           },
           accept: (d) => (d["bitmap"] === undefined || d["bitmap"] === null ? undefined : d["bitmap"]),
           resolve: (v) => resolve(v as ImageBitmap | null),
@@ -219,11 +221,25 @@ export function rgbOf(c: string): [number, number, number] {
 
 /** Calcul d'un travail sur les octets RGBA (I10) : couleur transparente décidée sur les couleurs d'origine, puis
  *  luminosité et contraste (alpha gardé). Appelé par le Worker ; testé avec un faux module. */
-export function applyPixels(mod: Pick<PixelFormatsBinding, "image_transparent" | "image_adjust">, px: Uint8Array, w: number, h: number, p: PixelParams): void {
+export function applyPixels(
+  mod: Pick<PixelFormatsBinding, "image_transparent" | "image_adjust" | "image_transparent_seed">,
+  px: Uint8Array,
+  w: number,
+  h: number,
+  p: PixelParams & PixelSize,
+): void {
   const t = p.transparent;
   if (t !== undefined) {
     const [r, g, b] = rgbOf(t.color);
-    mod.image_transparent(px, w, h, r, g, b, t.tolerance, t.soft, t.contiguous);
+    if (t.x !== undefined && t.y !== undefined && mod.image_transparent_seed !== undefined) {
+      // OG23 (T10) : départ en pixels source, mis à l'échelle du bitmap (un SVG peut être décodé plus petit).
+      const [sw, sh] = p.size ?? [w, h];
+      const x = Math.min(w - 1, Math.floor((t.x * w) / sw));
+      const y = Math.min(h - 1, Math.floor((t.y * h) / sh));
+      mod.image_transparent_seed(px, w, h, r, g, b, t.tolerance, t.soft, x, y);
+    } else {
+      mod.image_transparent(px, w, h, r, g, b, t.tolerance, t.soft, t.contiguous);
+    }
   }
   const brightness = p.brightness ?? 0;
   const contrast = p.contrast ?? 0;

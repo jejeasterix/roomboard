@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
-import { variabilityOf, VARIABILITY_CONSTANT } from "./look";
+import { dragCopyOf, variabilityOf, VARIABILITY_CONSTANT } from "./look";
 import { ARROWHEADS, endArrowheadOf, FILL_STYLES, fillStyleOf, LINK_MAX_CHARS, startArrowheadOf, TEXT_ALIGNS, textAlignOf, validLink } from "./look";
 
 describe("look", () => {
@@ -85,5 +85,15 @@ describe("variability (OG23)", () => {
     expect(lookFrom({ ...base, variability: "constant" }, null)).toEqual({ variability: "constant" });
     expect(lookFrom({ ...base, variability: "variable" }, null)).toBeUndefined();
     expect(lookFrom(base, null)).toBeUndefined();
+  });
+});
+
+describe("dragCopy (OG23, T10)", () => {
+  it("dragCopy : toLook lit true seul, dragCopyOf", () => {
+    expect(toLook({ dragCopy: true })).toEqual({ dragCopy: true });
+    expect(toLook({ dragCopy: false })).toBeUndefined();
+    expect(toLook({ dragCopy: "true", link: "https://a.b" })).toEqual({ link: "https://a.b" });
+    expect(dragCopyOf(undefined)).toBe(false);
+    expect(dragCopyOf({ dragCopy: true })).toBe(true);
   });
 });

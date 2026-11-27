@@ -92,6 +92,7 @@ fn look_of(
         text_align,
         link,
         variability,
+        drag_copy: None,
     })
 }
 
@@ -213,8 +214,8 @@ fn asset_ref(id: &str, name: &str, mime: &str, size: f64) -> AssetRef {
 }
 
 /// Réglages d'image reçus de JS (C5, I6) : `crop` vide ou `[x, y, w, h]` ; `color` absente avec `transparent` vide, ou
-/// présente avec `[tolérance, plume, contigu (0 ou 1)]` ; toute autre forme : `BadImageParams`. Les valeurs sont
-/// contrôlées par le cœur.
+/// présente avec `[tolérance, plume, contigu (0 ou 1)]`, ou `[tolérance, plume, contigu, x, y]` avec le départ de la
+/// baguette (OG23, T10, pixels source) ; toute autre forme : `BadImageParams`. Les valeurs sont contrôlées par le cœur.
 #[allow(clippy::too_many_arguments)]
 fn image_params_input(
     crop: &[f64],
@@ -233,12 +234,21 @@ fn image_params_input(
     };
     let transparent = match (color, transparent) {
         (None, []) => None,
-        (Some(color), [tolerance, soft, contiguous]) => Some(TransparentInput {
-            color,
-            tolerance: *tolerance,
-            soft: *soft,
-            contiguous: *contiguous != 0.0,
-        }),
+        (Some(color), [tolerance, soft, contiguous, seed @ ..]) => {
+            let (x, y) = match seed {
+                [] => (None, None),
+                [x, y] => (Some(*x), Some(*y)),
+                _ => return Err(CommandError::BadImageParams),
+            };
+            Some(TransparentInput {
+                color,
+                tolerance: *tolerance,
+                soft: *soft,
+                contiguous: *contiguous != 0.0,
+                x,
+                y,
+            })
+        }
         _ => return Err(CommandError::BadImageParams),
     };
     Ok(ImageParamsInput {
@@ -1455,6 +1465,7 @@ impl Document {
         link: Option<String>,
         variability_set: bool,
         variability: Option<String>,
+        drag_copy: Option<bool>,
     ) -> Result<JsValue, JsError> {
         let patch = StylePatch {
             color,
@@ -1470,6 +1481,7 @@ impl Document {
             text_align: text_align_set.then_some(text_align),
             link: link_set.then_some(link),
             variability: variability_set.then_some(variability),
+            drag_copy,
         };
         to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
     }
@@ -3075,6 +3087,44 @@ mod tests {
             linked_files(&[], &[], &[], &[], &[1.0]),
             Err(CommandError::BadModel3d)
         );
+    }
+
+    // OG23 (T10) : départ de la baguette en 4e et 5e nombres ; toute autre longueur refusée.
+    #[test]
+    fn image_params_input_reads_seed() {
+        let input = |t: &[f64]| {
+            image_params_input(&[], false, false, 0.0, 0.0, 0.0, Some("#ffffff".into()), t)
+                .map(|p| p.transparent.map(|t| (t.contiguous, t.x, t.y)))
+        };
+        assert_eq!(input(&[10.0, 0.0, 1.0]), Ok(Some((true, None, None))));
+        assert_eq!(
+            input(&[10.0, 0.0, 0.0, 4.0, 7.0]),
+            Ok(Some((false, Some(4.0), Some(7.0))))
+        );
+        for bad in [&[10.0, 0.0, 1.0, 4.0][..], &[10.0, 0.0, 1.0, 4.0, 7.0, 1.0], &[10.0, 0.0]] {
+            assert_eq!(input(bad), Err(CommandError::BadImageParams), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn set_style_drag_copy_through_the_bridge() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_image_inner(&p, png(), [64.0, 48.0], &[1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+            .expect("image")
+            .ids[0]
+            .clone();
+        let patch = |b: bool| StylePatch {
+            drag_copy: Some(b),
+            ..StylePatch::default()
+        };
+        let c = d.set_style_inner(vec![id.clone()], patch(true)).expect("pose");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let look = |d: &Document| d.core.element(&id).and_then(|e| e.look).and_then(|l| l.drag_copy);
+        assert_eq!(look(&d), Some(true));
+        d.set_style_inner(vec![id.clone()], patch(false)).expect("retrait");
+        assert_eq!(look(&d), None);
     }
 
     // C5 (I6) : réglages d'image par leur `_inner`.

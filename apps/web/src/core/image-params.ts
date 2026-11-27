@@ -123,7 +123,7 @@ const canon = (p: ImageParams): string => {
     p.quarterTurns ?? 0,
     p.brightness ?? 0,
     p.contrast ?? 0,
-    t === undefined ? null : [t.color, t.tolerance, t.soft, t.contiguous],
+    t === undefined ? null : [t.color, t.tolerance, t.soft, t.contiguous, t.x ?? null, t.y ?? null],
   ]);
 };
 /** Même état (neutres compris) : comparaison du faux cœur (D38). */
@@ -189,11 +189,14 @@ export function cropFromDisplay(i: ImageData, b: Bounds): Crop {
   return [x, y, w, h];
 }
 
-function transparentOf(t: unknown): TransparentColor | null {
+/** `transparent_of` du cœur ; départ (OG23, T10) : les deux ou aucun, entiers, `0 ≤ x < w`, `0 ≤ y < h`. */
+function transparentOf(t: unknown, w: number, h: number): TransparentColor | null {
   if (typeof t !== "object" || t === null) return null;
-  const { color, tolerance, soft, contiguous } = t as Record<string, unknown>;
+  const { color, tolerance, soft, contiguous, x, y } = t as Record<string, unknown>;
   if (typeof color !== "string" || !HEX6.test(color) || !intIn(tolerance, 0, 100) || !intIn(soft, 0, 100) || typeof contiguous !== "boolean") return null;
-  return { color, tolerance, soft, contiguous };
+  if (x === undefined && y === undefined) return { color, tolerance, soft, contiguous };
+  if (!intIn(x, 0, w - 1) || !intIn(y, 0, h - 1)) return null;
+  return { color, tolerance, soft, contiguous, x, y };
 }
 
 /** Rognage du domaine (I5) ; "full" = l'image entière (neutre). */
@@ -221,7 +224,7 @@ export function normalizeParams(p: ImageParams, w: number, h: number): ImagePara
   if (!intIn(q, 0, 3) || !intIn(b, -100, 100) || !intIn(ct, -100, 100)) return null;
   let transparent: TransparentColor | undefined;
   if (raw["transparent"] !== undefined) {
-    const t = transparentOf(raw["transparent"]);
+    const t = transparentOf(raw["transparent"], w, h);
     if (t === null) return null;
     transparent = t;
   }
@@ -245,7 +248,7 @@ export function readParams(raw: Readonly<Record<string, unknown>>, w: number, h:
 /** Clé des pixels d'une image (I19) : asset et réglages calculés par le Worker, rien de la géométrie. */
 export function pixelKey(i: ImageData): string {
   const t = i.transparent;
-  return JSON.stringify([i.asset, t === undefined ? null : [t.color, t.tolerance, t.soft, t.contiguous], i.brightness ?? 0, i.contrast ?? 0]);
+  return JSON.stringify([i.asset, t === undefined ? null : [t.color, t.tolerance, t.soft, t.contiguous, t.x ?? null, t.y ?? null], i.brightness ?? 0, i.contrast ?? 0]);
 }
 
 /** Échelle écran d'une image : zoom de la caméra par l'échelle de sa matrice (racine du déterminant). */

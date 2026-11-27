@@ -10,9 +10,9 @@
 import { hasPixels, type PixelFormatsBinding } from "./container";
 import { loadFormatsModule } from "./container-load";
 import { decodeImage, DISPLAY_MAX, ImageTooLargeError, type DecodePorts, type ImageKind } from "./image-decode";
-import { applyFill, applyPixels, FILL_UNREADABLE_MESSAGE, pixelErrorMessage, type PixelFillSpec, type PixelParams } from "./pixel-runner";
+import { applyFill, applyPixels, FILL_UNREADABLE_MESSAGE, pixelErrorMessage, type PixelFillSpec, type PixelParams, type PixelSize } from "./pixel-runner";
 
-type AdjustMessage = PixelParams & { readonly id: number; readonly type?: undefined; readonly bitmap: ImageBitmap };
+type AdjustMessage = PixelParams & PixelSize & { readonly id: number; readonly type?: undefined; readonly bitmap: ImageBitmap };
 type FillMessage = PixelParams & PixelFillSpec & { readonly id: number; readonly type: "fill"; readonly blob?: Blob; readonly kind?: ImageKind; readonly bitmap?: ImageBitmap };
 
 /** Ports du Worker : `createImageBitmap` du Worker ; pas de DOM, donc pas de SVG (la page envoie le bitmap du cache). */

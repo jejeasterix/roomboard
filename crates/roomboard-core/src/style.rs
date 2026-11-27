@@ -31,6 +31,9 @@ pub struct StylePatch {
     pub link: Option<Option<String>>,
     /// OG23 : `Some(Some("constant"))` pose la pression constante, `Some(None)` la retire ; traits seuls.
     pub variability: Option<Option<String>>,
+    /// OG23 (T10) : `Some(true)` pose « Glisser une copie », `Some(false)` le retire ; traits, formes, textes, images
+    /// (genres dont l'aspect est lu) ; tableaux, médias, objets 3D et zones ignorés sans erreur.
+    pub drag_copy: Option<bool>,
 }
 
 /// `Some(Some(s))` hors de `allowed`.
@@ -177,6 +180,11 @@ fn writes_for(
     if let Some(v) = &p.variability {
         if kind == "stroke" {
             w.push(("variability", v.as_deref().map(In::from)));
+        }
+    }
+    if let Some(b) = p.drag_copy {
+        if matches!(kind, "stroke" | "shape" | "text" | "image") {
+            w.push(("dragCopy", b.then_some(In::Any(Any::Bool(true)))));
         }
     }
     w
