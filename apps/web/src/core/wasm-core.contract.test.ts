@@ -4098,6 +4098,94 @@ describe.each(factories)("contrat OG11 : $name", ({ f }) => {
   });
 });
 
+// OG11 (T12) : champs du lot 2 (`fillStyle`, pointes, `textAlign`, `link`), joués sur les deux cœurs. Référence :
+// `element.rs` (`valid_link`, `Look::sanitized`), `style.rs` (`validate`, `writes_for`) ; un défaut n'est jamais écrit.
+describe.each(factories)("contrat OG11 lot 2 : $name", ({ f }) => {
+  const black = { color: "#000000", width: 4 };
+  const shape = (d: CoreDocument, p: string, kind: ShapeKind, look?: Look): string =>
+    d.apply({ type: "AddShape", page: p, shape: kind, x0: 0, y0: 0, x1: 100, y1: 50, style: black, fill: null, ...(look ? { look } : {}) }).ids[0] ?? "";
+  const box = (d: CoreDocument, p: string, look?: Look): string =>
+    d.apply({ type: "SetText", page: p, id: null, x: 10, y: 10, content: "abc", color: "#000000", size: 16, boxWidth: 100, boxHeight: 30, ...(look ? { look } : {}) }).ids[0] ?? "";
+  const restyle = (d: CoreDocument, ids: readonly string[], patch: LookPatch): Change => d.apply({ type: "SetStyle", ids, patch });
+  const odd = <T>(v: unknown): T => v as T;
+
+  it("Lien : javascript refusé, sur les deux cœurs", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shape(d, p, "rect");
+    const v = d.version();
+    for (const bad of ["javascript:alert(1)", "JavaScript:alert(1)", " https://example.org", "ftp://x", "data:text/html,x", "https:x", "", `https://${"h".repeat(2041)}`]) {
+      expect(messageOf(() => restyle(d, [r], { link: bad })), bad.slice(0, 30)).toBe("style invalide");
+    }
+    expect(d.version()).toBe(v);
+    expect(d.element(r)?.look).toBeUndefined();
+    for (const good of ["http://example.org", "mailto:a@example.org", `https://${"é".repeat(2040)}`, "https://example.org"]) {
+      restyle(d, [r], { link: good });
+      expect(d.element(r)?.look?.link).toBe(good);
+    }
+    expect(d.element(shape(d, p, "rect", odd<Look>({ link: "javascript:alert(1)" })))?.look).toBeUndefined();
+    restyle(d, [r], { link: null });
+    expect(d.element(r)?.look).toBeUndefined();
+  });
+
+  it("pointes : le défaut (début none, fin arrow) n'est jamais écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = shape(d, p, "arrow", { startArrowhead: "none", endArrowhead: "arrow" });
+    expect(d.element(a)?.look).toBeUndefined();
+    const v = d.version();
+    expect(restyle(d, [a], { startArrowhead: "none", endArrowhead: "arrow" }).ids).toEqual([]);
+    expect(d.version()).toBe(v);
+    expect(restyle(d, [a], { startArrowhead: "triangle", endArrowhead: "none" }).ids).toEqual([a]);
+    expect(d.element(a)?.look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
+    expect(restyle(d, [a], { startArrowhead: "none", endArrowhead: "arrow" }).ids).toEqual([a]);
+    expect(d.element(a)?.look).toBeUndefined();
+  });
+
+  it("applicabilité : fillStyle rect et ellipse, pointes flèche, textAlign texte, lien partout", () => {
+    const d = f.blank();
+    const p = first(d);
+    const ids = [shape(d, p, "rect"), shape(d, p, "ellipse"), shape(d, p, "arrow"), shape(d, p, "line"), box(d, p), commit(d, p, 300)];
+    const [r, e, a, , t] = ids;
+    expect(restyle(d, ids, { fillStyle: "hachure" }).ids).toEqual([r, e]);
+    expect(restyle(d, ids, { endArrowhead: "triangle_outline" }).ids).toEqual([a]);
+    expect(restyle(d, ids, { textAlign: "right" }).ids).toEqual([t]);
+    expect(restyle(d, ids, { link: "https://example.org" }).ids).toEqual(ids);
+    expect(d.element(r ?? "")?.look).toEqual({ fillStyle: "hachure", link: "https://example.org" });
+    expect(d.element(a ?? "")?.look).toEqual({ endArrowhead: "triangle_outline", link: "https://example.org" });
+    expect(d.element(t ?? "")?.look).toEqual({ textAlign: "right", link: "https://example.org" });
+    expect(restyle(d, ids, { fillStyle: null }).ids).toEqual([r, e]);
+    expect(d.element(e ?? "")?.look).toEqual({ link: "https://example.org" });
+  });
+
+  it("lot 2 hors domaine : style invalide, rien d'écrit", () => {
+    const d = f.blank();
+    const p = first(d);
+    const a = shape(d, p, "arrow");
+    const v = d.version();
+    for (const patch of [
+      { fillStyle: odd<"hachure">("solid") }, { fillStyle: odd<"hachure">("zigzag") }, { startArrowhead: odd<"arrow">("circle") },
+      { endArrowhead: odd<"arrow">("Arrow") }, { textAlign: odd<"center">("left") }, { textAlign: odd<"center">("justify") },
+      { startArrowhead: "triangle", link: "javascript:alert(1)" },
+    ] as LookPatch[]) {
+      expect(messageOf(() => restyle(d, [a], patch)), JSON.stringify(patch)).toBe("style invalide");
+    }
+    expect(d.version()).toBe(v);
+    expect(d.element(a)?.look).toBeUndefined();
+  });
+
+  it("créations : champs du lot 2 écrits, défauts et hors domaine omis", () => {
+    const d = f.blank();
+    const p = first(d);
+    const heads: Look = { startArrowhead: "triangle", endArrowhead: "none", link: "mailto:a@example.org" };
+    expect(d.element(shape(d, p, "arrow", heads))?.look).toEqual(heads);
+    expect(d.element(shape(d, p, "rect", { fillStyle: "cross-hatch" }))?.look).toEqual({ fillStyle: "cross-hatch" });
+    expect(d.element(box(d, p, { textAlign: "center" }))?.look).toEqual({ textAlign: "center" });
+    const neutral = odd<Look>({ fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", link: "ftp://x" });
+    expect(d.element(shape(d, p, "rect", neutral))?.look).toBeUndefined();
+  });
+});
+
 describe.skipIf(loaded === null)("contrat OG11 : vrai module seulement", () => {
   // Écart documenté de `fake-core.ts` : la fausse liaison ne coupe pas à la gomme partielle (aucun morceau).
   it("gomme partielle : look recopié sur les morceaux", () => {
