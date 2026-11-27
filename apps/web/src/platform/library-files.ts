@@ -7,7 +7,7 @@
 import type { TauriDirFs, TauriFs } from "./host-tauri";
 import { finished, lazyDb, result } from "./idb";
 
-export type LibraryRoot = "mine" | "shared";
+export type LibraryRoot = "mine" | "shared" | "backgrounds";
 export interface LibraryPath {
   readonly path: string;
   readonly dir: boolean;
