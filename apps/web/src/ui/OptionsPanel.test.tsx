@@ -370,4 +370,20 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
     fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
     expect(aside.hasAttribute("data-picker")).toBe(true);
   });
+  it("T32 : Disposition et Actions gardent aussi le focus de la saisie", () => {
+    const { container } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
+    for (const v of ["front", "duplicate", "delete", "link"]) {
+      const b = container.querySelector(`[data-option-value="${v}"]`)!;
+      expect(fireEvent.pointerDown(b), v).toBe(false);
+    }
+  });
+  it("T32 : sélecteur posé en pixels entiers même avec une ancre fractionnaire", () => {
+    const { container } = mount({ tool: "rect", selection: [] });
+    const btn = container.querySelector<HTMLButtonElement>('[data-more-colors="strokeColor"]')!;
+    btn.getBoundingClientRect = () => ({ top: 100.6, bottom: 144.6, left: 10.3, right: 54.3, width: 44, height: 44, x: 10.3, y: 100.6, toJSON: () => ({}) });
+    fireEvent.click(btn);
+    const pop = container.querySelector<HTMLElement>(".rb-color-pop")!;
+    expect(pop.style.left).toMatch(/^\d+px$/);
+    expect(pop.style.top).toMatch(/^\d+px$/);
+  });
 });

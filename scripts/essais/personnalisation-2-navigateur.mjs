@@ -938,8 +938,12 @@ async function nettete2(browser, base) {
     return { x: r.x, y: r.y, w: r.width, h: r.height };
   }));
   const offGrid = cellsBox.filter((b) => !Number.isInteger(b.x * 2) || !Number.isInteger(b.y * 2));
-  if (offGrid.length > 0 && !process.argv.includes("--strict-calage")) console.log(`ÉCART (app) — calage (grille du sélecteur) : ${offGrid.length} cases sur ${cellsBox.length} hors de la grille de pixels à 2x`);
-  else check(cellsBox.length === 75 && offGrid.length === 0, `calage (grille du sélecteur) : ${cellsBox.length} cases sur la grille de pixels`);
+  check(cellsBox.length === 75 && offGrid.length === 0, `calage (grille du sélecteur) : ${cellsBox.length} cases sur la grille de pixels à 2x${offGrid.length ? `, hors grille : ${JSON.stringify(offGrid.slice(0, 4))}` : ""}`);
+  const popBox = await page.evaluate(() => {
+    const r = document.querySelector(".rb-color-pop").getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+  check([popBox.x, popBox.y, popBox.w, popBox.h].every((v) => Number.isInteger(v * 2)), `calage (bord du sélecteur) : ${JSON.stringify(popBox)} sur la grille de pixels à 2x`);
   const pop = await page.evaluate(() => {
     const r = document.querySelector(".rb-color-pop").getBoundingClientRect();
     return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: innerHeight };

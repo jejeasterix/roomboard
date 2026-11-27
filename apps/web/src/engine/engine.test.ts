@@ -20,7 +20,7 @@ import type { TableCellState } from "./table-geom";
 import { createTableTool, type TablePicker } from "./tools/table";
 import { plainSpans } from "../core/rich-text";
 import type { FormatState } from "./rich-edit";
-import type { TextEditorHost, TextEditSession, TextTool } from "./tools/text";
+import type { TextEditorHost, TextEditSession, TextStyle, TextTool } from "./tools/text";
 import { NO_LIVE, type GestureTool, type TableTool, type ToolContext } from "./tools/tool";
 
 class Frames implements FrameLoopDeps {
@@ -2428,22 +2428,30 @@ describe("moteur — style courant du texte et alignement en saisie (T31)", () =
     const real = doc.apply.bind(doc);
     doc.apply = ((c: never) => { applied.push(c); return real(c); }) as typeof doc.apply;
     const log: string[] = [];
+    const styles: { text?: () => TextStyle; table?: () => TextStyle } = {};
     const base = fakeTextTool({ stateChanged: () => undefined } as ToolContext, log).tool;
     const tools: ToolFactories = {
       pen: (ctx) => fakeTool("pen", log, ctx),
       eraser: (ctx) => fakeTool("eraser", log, ctx),
-      text: () => ({ ...base, editing: () => (editingId === null ? null : ({ id: editingId, page: "p", matrix: [1, 0, 0, 1, 0, 0], boxWidth: 600, color: "#000000", size: 36, initial: "x", spans: plainSpans("x") } as TextEditSession)) }),
+      table: (ctx, style) => { styles.table = style; return fakeTableTool(ctx, log).tool; },
+      text: (_ctx, style) => ({ ...(styles.text = style, base), editing: () => (editingId === null ? null : ({ id: editingId, page: "p", matrix: [1, 0, 0, 1, 0, 0], boxWidth: 600, color: "#000000", size: 36, initial: "x", spans: plainSpans("x") } as TextEditSession)) }),
     };
     const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
-    return { engine, applied };
+    return { engine, applied, styles };
   }
   it("police et taille choisies sans texte : style courant, aucune commande, textStyle les porte", () => {
-    const { engine, applied } = build(null);
+    const { engine, applied, styles } = build(null);
     engine.setTool("text");
     engine.setItemStyle({ font: "Georgia", fontSize: 48 });
     expect(applied).toEqual([]);
     expect(engine.itemStyle()).toMatchObject({ font: "Georgia", fontSize: 48 });
-    expect(engine.textStyle()).toMatchObject({ size: 48, font: "Georgia" });
+    expect(styles.text?.()).toMatchObject({ size: 48, font: "Georgia" });
+  });
+  it("T32 : l'outil Tableau et l'import gardent la taille par défaut et aucune police", () => {
+    const { engine, styles } = build(null);
+    engine.setItemStyle({ font: "Georgia", fontSize: 48, textAlign: "center" });
+    expect(styles.table?.()).toEqual({ color: "#000000", size: DEFAULT_TEXT_SIZE, textAlign: "center" });
+    expect(engine.textStyle()).toEqual({ color: "#000000", size: DEFAULT_TEXT_SIZE, textAlign: "center" });
   });
   it("texte rouvert en saisie : Droite écrit un SetStyle sur ce texte", () => {
     const { engine, applied } = build("t1");

@@ -404,7 +404,7 @@ describe("outil Texte : police et taille du style courant (T31)", () => {
     const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 48, font: "Georgia" }), narrow);
     tool.begin(1, [at(100, 200)]);
     tool.close(1, "end");
-    expect(tool.editing()).toMatchObject({ size: 48 });
+    expect(tool.editing()).toMatchObject({ size: 48, font: "Georgia" });
     host.text = "Bonjour";
     tool.requestCommit();
     expect(runs[0]).toMatchObject({ type: "SetText", size: 48, spans: [{ text: "Bonjour", attrs: { font: "Georgia" } }] });

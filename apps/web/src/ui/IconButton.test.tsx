@@ -192,3 +192,14 @@ describe("Espace sur un bouton de barre", () => {
     window.removeEventListener("keydown", on);
   });
 });
+
+describe("keepFocus (T32)", () => {
+  it("sans keepFocus : l'appui garde son comportement ; avec : pointerdown et mousedown annulés", () => {
+    const a = render(() => <IconButton icon="rect" label="A" onPress={() => undefined} />);
+    expect(fireEvent.pointerDown(a.container.querySelector("button")!)).toBe(true);
+    const b = render(() => <IconButton icon="rect" label="B" keepFocus onPress={() => undefined} />);
+    const btn = b.container.querySelector("button")!;
+    expect(fireEvent.pointerDown(btn)).toBe(false);
+    expect(fireEvent.mouseDown(btn)).toBe(false);
+  });
+});
