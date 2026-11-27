@@ -48,8 +48,8 @@ Les fichiers touchés de deux tâches d'une même vague ne se recoupent jamais.
 Une seule compilation Rust lourde à la fois par vague (T1 en V1, T4 en V2, T10 en V3) : la VM tient.
 
 **Ordre de sortie si le temps manque** (cadrage § 7, sans rien retirer du périmètre) : (1) route coudée et type Coudée
-(T4 : `elbow_route`, `reroute` ; T7 : choix Coudée masqué ; `AddLinked` pose alors une flèche droite liée) ; (2) poignées
-« + » au doigt (T8 : `links`), Alt+Maj+flèche restant ; (3) les trois pointes neuves (T1, T6, T7). Chaque retrait s'écrit
+(T4 : `elbow_route`, `reroute` ; T7 : choix Coudée masqué ; `AddLinked` pose alors une flèche droite liée) ; (2) le glisser depuis une poignée « + » (cadrage § 7, mot pour
+mot) : le toucher d'un « + » qui crée l'objet relié (S3, T8 : `links`) reste toujours, comme Alt+Maj+flèche ; (3) les trois pointes neuves (T1, T6, T7). Chaque retrait s'écrit
 au rapport final et dans la fiche.
 
 ## Carte des fichiers
@@ -84,6 +84,10 @@ au rapport final et dans la fiche.
 
 Hors carte, voulu : `apps/web/src/ui/rb.css` (supposé touché au cadrage) n'est pas touché : poignées de points, surlignage
 et poignées « + » sont peints sur le canevas (T6), pas dans le DOM.
+
+Hors carte, voulu : `crates/roomboard-formats/tests/board_roundtrip.rs` (« oui, ajouts » au cadrage) n'est pas touché :
+une ligne ou une flèche à plusieurs points s'exporte par le `BoardObject` `stroke` existant (polyligne, `write.rs:287-304`,
+T6), le crate `roomboard-formats` reste intact et ce test reste vert sans ajout.
 
 ## Global Constraints
 
@@ -840,6 +844,34 @@ mod tests {
         let e = d.find_element(&txn, &id).expect("élément").element;
         assert_eq!(nums(e.get(&txn, "points")), Some(vec![1.0]), "gardé tel quel");
         assert_eq!(out_string(e.get(&txn, "elbowed")).as_deref(), Some("oui"));
+    }
+
+    /// Review Focus 1, n° 14 (accès brut à la carte yrs) : `AddShape` avec `LineInit::default()` n'écrit aucune clé neuve.
+    #[test]
+    fn default_line_writes_no_new_keys() {
+        let mut d = Document::blank();
+        let page = d.page_ids()[0].clone();
+        let id = d
+            .apply(Command::AddShape {
+                page,
+                shape: ShapeKind::Arrow,
+                x0: 0.0,
+                y0: 0.0,
+                x1: 100.0,
+                y1: 40.0,
+                style: StrokeStyle { color: "#000000".into(), width: 4.0 },
+                fill: None,
+                look: Look::default(),
+                line: LineInit::default(),
+            })
+            .expect("flèche")
+            .ids[0]
+            .clone();
+        let txn = d.read();
+        let e = d.find_element(&txn, &id).expect("élément").element;
+        for key in ["points", "startBound", "startFixed", "endBound", "endFixed", "elbowed"] {
+            assert!(e.get(&txn, key).is_none(), "clé {key} écrite pour une flèche du socle");
+        }
     }
 }
 ```
@@ -1891,6 +1923,10 @@ Chemins de référence : `crates/roomboard-core/src/copy.rs:61-90` (`copy_elemen
     de la page (hors source), elle glisse sur le côté (`Right`/`Left` : vers le bas, `Up`/`Down` : vers la droite) de
     (taille + 100), 64 fois au plus ; flèche coudée (`elbowed: true`, couleur et épaisseur de la source, pointe de fin
     neutre `arrow`) liée au milieu du côté de la source qui regarde la direction et au milieu du côté opposé de la copie.
+  - **Écart au cadrage n° 27** (« avec la pointe de fin du style courant ») : la flèche d'`AddLinked` porte la pointe
+    neutre `arrow`. Raison : la commande est `AddLinked { id, dir }` (DA-4) et ne porte aucun style ; le cœur ne connaît
+    pas le style courant de la page. Le défaut du style courant (`DEFAULT_ITEM_STYLE.endArrowhead`) vaut aussi `arrow`.
+    Le rapport de T4 cite cet écart ; T12 l'écrit dans la fiche.
 
 **Test et commandes bornées** :
 ```bash
@@ -4083,7 +4119,9 @@ export async function doubleTouch(page, cdp, [x, y]) {
   Autres outils : les lignes de l'annexe A, état « lot 2 », ou leur état actuel quand il est déjà copié (Maj au
   redimensionnement, Ctrl+D, Espace, pincement), avec l'essai existant qui le prouve quand il y en a un. Un paragraphe
   « Nom de l'action » : « Modifier les points » et sa raison (DA-7, recopiée). Les écarts du lot 1 (ordre de sortie
-  appliqué ou non) y sont écrits.
+  appliqué ou non) y sont écrits, dont, dans le tableau de la flèche, la ligne : « objet relié en un geste
+  (`flowchart.ts:createBindingArrow`) · adapté : pointe de fin neutre `arrow`, pas celle du style courant, car
+  `AddLinked { id, dir }` ne porte aucun style (DA-4) · `tests/fleches.rs::add_linked_places_copy_and_elbow_arrow_in_one_step` ».
 
 - [ ] **5. `THIRD_PARTY_NOTICES.md`** : lignes de GC6.
 
