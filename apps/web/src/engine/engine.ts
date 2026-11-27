@@ -5,18 +5,18 @@
  * Lot 3b (D17) : outil main, barre d'espace tenue (lue par le routeur), caméra par page ; historique des images borné.
  */
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
-import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, ShapeKind, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, CoreDocument, EraseMode, GridView, PageLayout, PageMode, ShapeKind, StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitWidth, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
-import { editAction, enterAction, isPanKey, keyAction, type KeyLike } from "./input/keys";
+import { editAction, enterAction, inEditable, isPanKey, keyAction, pageKey, type KeyLike } from "./input/keys";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
-import { PAGE_BACKGROUND } from "./page";
+import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type PageRect } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
@@ -34,6 +34,9 @@ export interface EngineState {
   /** Rang de la page montrée (0 = première) et nombre de pages (D16 : compteur « 3 / 7 »). */
   readonly pageIndex: number;
   readonly pageCount: number;
+  /** Mode lu de la page montrée (`"page"` ou `"infinite"`) et disposition (paysage, portrait, infini) ; T8. */
+  readonly pageMode: PageMode;
+  readonly pageLayout: PageLayout;
   /** Éléments sélectionnés (outil Sélection, T55) et leur boîte monde ; vides tant que la sélection n'est pas branchée. */
   readonly selection: readonly string[];
   readonly selectionBounds: Bounds | null;
@@ -92,6 +95,40 @@ export interface EngineDeps {
   readonly images?: { colorAt(asset: string, x: number, y: number): string | null; dropPreview?(id: string): void };
   /** OF83 : haut de la page ajustée, en px de scène, lu à chaque ajustement (sous les îlots du haut) ; absent : 16. */
   readonly fitTop?: () => number;
+  /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
+  readonly pageMode?: () => PageLayout;
+}
+
+/**
+ * Raccourcis de page (DA9) pris avant le moteur : hors champ de saisie et hors IME (`pageKey`). Une touche tenue
+ * (`repeat`) ne crée jamais de page ni de copie (H7). Vrai si l'action a eu lieu (la page appelle preventDefault).
+ * `sidebar-layers` ne fait rien au lot 1.
+ */
+export function pageShortcut(
+  e: KeyLike & { readonly repeat?: boolean },
+  engine: Pick<Engine, "prevPage" | "nextPage" | "nextOrAdd" | "addPage" | "duplicatePage">,
+  toggleSidebar?: (tab: "pages" | "calques") => void,
+): boolean {
+  if (inEditable(e.target)) return false;
+  const k = pageKey(e);
+  if (k === null) return false;
+  const held = e.repeat === true;
+  switch (k) {
+    case "prev":
+      return engine.prevPage();
+    case "next":
+      return held ? engine.nextPage() : engine.nextOrAdd();
+    case "add":
+      return !held && engine.addPage();
+    case "duplicate":
+      return !held && engine.duplicatePage();
+    case "sidebar-pages":
+      if (toggleSidebar === undefined) return false;
+      toggleSidebar("pages");
+      return true;
+    case "sidebar-layers":
+      return false;
+  }
 }
 
 export interface OrbitOptions {
@@ -131,7 +168,15 @@ export interface Engine {
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
   /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
-  addPage(): boolean;
+  addPage(after?: string): boolean;
+  /** Page suivante ; sur la dernière, ajoute une page au mode du profil (décision 7) ; faux si rien n'est fait. */
+  nextOrAdd(): boolean;
+  /** Déplace `page` au rang `to` ; la page montrée reste montrée. */
+  movePage(page: string, to: number): boolean;
+  /** Duplique `page` (défaut : la page montrée) et montre la copie (H20). */
+  duplicatePage(page?: string): boolean;
+  /** Change la disposition de la page montrée. */
+  setPageMode(mode: PageLayout): boolean;
   /** Retire la page montrée, montre la précédente (CL4-9) ; dernière page : refus du cœur dans l'état (D37). */
   removePage(): boolean;
   nextPage(): boolean;
@@ -245,7 +290,25 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
-  const fit = (w: number, h: number): Camera => fitWidth(w, h, undefined, undefined, deps.fitTop?.() ?? 16);
+  /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fit = (w: number, h: number): Camera => {
+    const view = doc.page(pageId);
+    const top = deps.fitTop?.() ?? 16;
+    if (view === null) return fitFor("landscape", w, h, null, null, top);
+    const layout = pageLayoutOf(view);
+    return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
+  };
+  const contentRect = (backdrop: Bounds | null): PageRect | null => {
+    const b = doc.bounds(doc.elementIds(pageId));
+    const rects = [b, backdrop].filter((r): r is Bounds => r !== null);
+    if (rects.length === 0) return null;
+    return {
+      x0: Math.min(...rects.map((r) => r.x0)),
+      y0: Math.min(...rects.map((r) => r.y0)),
+      x1: Math.max(...rects.map((r) => r.x1)),
+      y1: Math.max(...rects.map((r) => r.y1)),
+    };
+  };
   const cameraListeners = new Set<(c: Camera) => void>();
   const setCamera = (c: Camera): void => {
     camera = c;
@@ -318,6 +381,7 @@ export function createEngine(deps: EngineDeps): Engine {
   function state(): EngineState {
     const ids = doc.pageIds();
     const sel = selectTool.selection();
+    const pageView = doc.page(pageId);
     const units = sel.length === 0 ? { units: 0, grouped: false } : selectionUnits(sel, selectedViews());
     return {
       tool,
@@ -327,6 +391,8 @@ export function createEngine(deps: EngineDeps): Engine {
       page: pageId,
       pageIndex: ids.indexOf(pageId),
       pageCount: ids.length,
+      pageMode: pageView?.mode ?? "page",
+      pageLayout: pageView === null ? "landscape" : pageLayoutOf(pageView),
       selection: [...selectTool.selection()],
       selectionBounds: selectTool.selection().length > 0 ? doc.bounds(selectTool.selection()) : null,
       selectionUnits: units.units,
@@ -737,10 +803,24 @@ export function createEngine(deps: EngineDeps): Engine {
       emit();
       return true;
     },
-    addPage() {
-      const id = run({ type: "AddPage", after: pageId })?.pages[0];
+    addPage(after = pageId) {
+      const id = run({ type: "AddPage", after, mode: deps.pageMode?.() ?? "landscape" })?.pages[0];
       if (id === undefined) return false;
       return engine.showPage(id);
+    },
+    nextOrAdd() {
+      return engine.nextPage() || (doc.pageIds().at(-1) === pageId && engine.addPage());
+    },
+    movePage(page, to) {
+      return run({ type: "MovePage", page, to }) !== null;
+    },
+    duplicatePage(page = pageId) {
+      const id = run({ type: "DuplicatePage", page })?.pages[0];
+      if (id === undefined) return false;
+      return engine.showPage(id);
+    },
+    setPageMode(mode) {
+      return run({ type: "SetPageMode", page: pageId, mode }) !== null;
     },
     removePage() {
       leaveAll("page"); // texte ouvert validé sur la page encore présente, sélection vidée

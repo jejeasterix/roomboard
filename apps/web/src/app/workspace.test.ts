@@ -233,6 +233,7 @@ const k = (key: string, m: Partial<{ ctrlKey: boolean; metaKey: boolean; shiftKe
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 interface SetupOptions {
+  readonly pageMode?: WorkspaceDeps["pageMode"];
   readonly kind?: HostKind;
   readonly first?: StartedDocument;
   readonly onDrop?: FileHost["onDrop"];
@@ -297,6 +298,7 @@ async function setupWorkspace(o: SetupOptions = {}): Promise<Workspace> {
     first: o.first ?? { doc: (o.core ?? fakeCore).blank(), opened: null, error: null },
     makeSession: async (doc, _assets) => fakeSession(doc).board,
     makeAssets: () => (o.realHash === true ? createAssetStore() : createAssetStore(fakeHasher)),
+    ...(o.pageMode ? { pageMode: o.pageMode } : {}),
     ...(o.decode ? { decode: o.decode } : {}),
     ...(o.readSheet ? { readSheet: o.readSheet } : {}),
     ...(o.clipboard ? { clipboard: o.clipboard } : {}),
@@ -371,6 +373,18 @@ describe("espace de travail : ouvrir et nouveau (CL5b-3, Q1)", () => {
     expect(ws.active()).not.toBe(first);
     expect(strokes(ws.active())).toBe(0);
     expect([first.files.isDirty(), strokes(first), shell.confirm.mock.calls.length]).toEqual([true, 1, 0]);
+  });
+
+  it("onglet neuf au mode du profil ; onglet d'annotation sans mode", async () => {
+    const blank = vi.fn((mode?: string) => fakeCore.blank(mode as never));
+    const core = { ...fakeCore, blank } as unknown as typeof fakeCore;
+    const ws = await setupWorkspace({ core, pageMode: () => "portrait" });
+    blank.mockClear();
+    await ws.newBlank();
+    expect(blank).toHaveBeenLastCalledWith("portrait");
+    blank.mockClear();
+    await ws.annotationTab();
+    expect(blank).toHaveBeenLastCalledWith();
   });
 
   it("fichier illisible : message, aucun onglet ajouté", async () => {

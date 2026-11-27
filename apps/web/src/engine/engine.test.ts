@@ -4,7 +4,7 @@ import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
 import type { InputSample } from "./input/sampler";
@@ -113,7 +113,7 @@ function fakeTool(name: "pen" | "eraser", log: string[], ctx: ToolContext): Fake
   };
 }
 
-function setup(extra: Pick<EngineDeps, "fitTop"> = {}) {
+function setup(extra: Pick<EngineDeps, "fitTop" | "pageMode"> = {}) {
   const doc = fakeCore.blank();
   const frames = new Frames();
   const renderer = new FakeRenderer();
@@ -478,6 +478,98 @@ describe("createEngine", () => {
     expect(engine.prevPage()).toBe(false);
     expect(engine.nextPage()).toBe(true);
     expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, selection: [], selectionBounds: null });
+  });
+
+  it("nextOrAdd sur la dernière page ajoute une page au mode du profil, Ctrl+Z la retire", () => {
+    const { doc, engine } = setup({ pageMode: () => "portrait" });
+    expect(engine.nextOrAdd()).toBe(true);
+    expect(doc.pageIds()).toHaveLength(2);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2, pageLayout: "portrait", pageMode: "page" });
+    engine.undo();
+    expect(doc.pageIds()).toHaveLength(1);
+  });
+
+  it("nextOrAdd ailleurs : page suivante", () => {
+    const { doc, engine } = setup();
+    engine.addPage();
+    engine.prevPage();
+    expect(engine.nextOrAdd()).toBe(true);
+    expect(engine.state()).toMatchObject({ pageIndex: 1, pageCount: 2 });
+    expect(doc.pageIds()).toHaveLength(2);
+  });
+
+  it("movePage garde la page montrée", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    engine.addPage();
+    engine.addPage();
+    engine.showPage(p1);
+    expect(engine.movePage(p1, 2)).toBe(true);
+    expect(doc.pageIds()[2]).toBe(p1);
+    expect(engine.state()).toMatchObject({ page: p1, pageIndex: 2 });
+  });
+
+  it("duplicatePage montre la copie", () => {
+    const { doc, engine } = setup();
+    const p1 = engine.state().page;
+    expect(engine.duplicatePage()).toBe(true);
+    const ids = doc.pageIds();
+    expect(ids).toHaveLength(2);
+    expect(engine.state().page).toBe(ids[1]);
+    expect(engine.state().page).not.toBe(p1);
+  });
+
+  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+    const { engine } = setup();
+    engine.resize(1000, 800, 1);
+    expect(engine.state().pageLayout).toBe("landscape");
+    expect(engine.setPageMode("portrait")).toBe(true);
+    expect(engine.state().pageLayout).toBe("portrait");
+    engine.fitPage();
+    const cam = engine.camera();
+    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+  });
+
+  it("pageMode / pageLayout dans l'état", () => {
+    const { engine } = setup();
+    expect(engine.state()).toMatchObject({ pageMode: "page", pageLayout: "landscape" });
+    engine.setPageMode("infinite");
+    expect(engine.state()).toMatchObject({ pageMode: "infinite", pageLayout: "infinite" });
+  });
+
+  const keyEv = (key: string, o: Partial<KeyLike> & { repeat?: boolean } = {}) =>
+    ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+
+  it("PageDown tenu sur la dernière page : une seule page", () => {
+    const { doc, engine } = setup();
+    expect(pageShortcut(keyEv("PageDown"), engine)).toBe(true);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(false);
+    expect(doc.pageIds()).toHaveLength(2);
+    expect(pageShortcut(keyEv("PageUp"), engine)).toBe(true);
+    expect(pageShortcut(keyEv("PageDown", { repeat: true }), engine)).toBe(true);
+    expect(doc.pageIds()).toHaveLength(2);
+  });
+
+  it("Ctrl+M ajoute, Ctrl+Maj+D duplique, Ctrl+Maj+P ouvre la barre latérale", () => {
+    const { doc, engine } = setup();
+    const toggle = vi.fn();
+    expect(pageShortcut(keyEv("m", { ctrlKey: true }), engine, toggle)).toBe(true);
+    expect(pageShortcut(keyEv("D", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(doc.pageIds()).toHaveLength(3);
+    expect(pageShortcut(keyEv("P", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(toggle).toHaveBeenCalledWith("pages");
+    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(false);
+  });
+
+  it("dans un champ de saisie, PageDown et Ctrl+M ne font rien de la page", () => {
+    const { doc, engine } = setup();
+    const input = { tagName: "INPUT" };
+    expect(pageShortcut(keyEv("PageDown", { target: input }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("m", { ctrlKey: true, target: input }), engine)).toBe(false);
+    expect(pageShortcut(keyEv("PageDown", { isComposing: true }), engine)).toBe(false);
+    expect(doc.pageIds()).toHaveLength(1);
   });
 
   function editSetup() {
