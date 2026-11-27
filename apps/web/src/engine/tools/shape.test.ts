@@ -9,11 +9,18 @@ import type { ToolContext } from "./tool";
 const at = (x: number, y: number): InputSample => ({ x, y, pressure: 0.5, tiltX: 0, tiltY: 0, t: 0 });
 const PEN = { color: "#1e40af", width: 4 };
 
+const HIT_A = { id: "A", fixed: [1, 0.3] as const, onOutline: true, anchors: [[50, 0], [100, 25], [50, 50], [0, 25]] as const };
+const HIT_B = { id: "B", fixed: [0, 0.5] as const, onOutline: true, anchors: [[450, 0], [500, 25], [450, 50], [400, 25]] as const };
+
 function setup(zoom = 1) {
   const doc = fakeCore.blank();
   const page = doc.pageIds()[0] ?? "";
   let shift = false;
   let alt = false;
+  let ctrl = false;
+  let binding = true;
+  let pointer = "mouse";
+  const bindTarget = vi.spyOn(doc, "bindTarget").mockImplementation((_p, x) => (x < 150 ? HIT_A : x > 350 ? HIT_B : null));
   const runs: Command[] = [];
   const ctx: ToolContext = {
     doc,
@@ -25,8 +32,15 @@ function setup(zoom = 1) {
     },
     shift: () => shift,
     alt: () => alt,
+    ctrl: () => ctrl,
+    bindingEnabled: () => binding,
+    pointerType: () => pointer,
   };
-  return { doc, page, ctx, runs, setShift: (v: boolean) => { shift = v; }, setAlt: (v: boolean) => { alt = v; } };
+  return {
+    doc, page, ctx, runs, bindTarget,
+    setShift: (v: boolean) => { shift = v; }, setAlt: (v: boolean) => { alt = v; },
+    setCtrl: (v: boolean) => { ctrl = v; }, setBinding: (v: boolean) => { binding = v; }, setPointer: (v: string) => { pointer = v; },
+  };
 }
 
 describe("outil Formes (D13, D38)", () => {
@@ -211,9 +225,11 @@ describe("outil Formes : arrondi (OG11 T9b)", () => {
     if (c?.type !== "AddShape") throw new Error("AddShape attendue");
     return c;
   };
-  it("roundness : seul le rectangle porte l'arrondi", () => {
+  // OG12 (T8) : la ligne porte aussi l'arrondi (« Angles de la ligne ») ; la flèche seulement via son type.
+  it("roundness : le rectangle et la ligne portent l'arrondi", () => {
     expect(drawn("rect").look).toEqual({ roundness: "round" });
-    for (const k of ["ellipse", "line", "arrow"] as const) expect(drawn(k).look).toBeUndefined();
+    expect(drawn("line").look).toEqual({ roundness: "round" });
+    for (const k of ["ellipse", "arrow"] as const) expect(drawn(k).look).toBeUndefined();
   });
 });
 
@@ -240,5 +256,59 @@ describe("outil Formes : style courant du lot 2 (T28)", () => {
     expect(drawn("arrow", cur).look).toEqual({ startArrowhead: "triangle", endArrowhead: "none" });
     expect(drawn("arrow", { ...cur, startArrowhead: "none", endArrowhead: "arrow" }).look).toBeUndefined();
     expect(drawn("rect", cur).look).not.toHaveProperty("startArrowhead");
+  });
+});
+
+describe("OG12 : liaison à la création (n° 17 à 19)", () => {
+  const drag = (t: ReturnType<typeof createShapeTool>, from: [number, number], to: [number, number]): void => {
+    t.begin(1, [at(...from)]);
+    t.extend(1, [at(...to)], []);
+    t.close(1, "end");
+  };
+  it("liaison à la création : départ sur A (ancre droite calée), fin sur B", () => {
+    const { ctx, runs } = setup();
+    const t = createShapeTool(ctx, "arrow", () => PEN);
+    drag(t, [102, 20], [402, 25]);
+    expect(runs[0]).toMatchObject({ type: "AddShape", shape: "arrow", start: { id: "A", fx: 1, fy: 0.5 }, end: { id: "B", fx: 0, fy: 0.5 } });
+  });
+  it("Ctrl tenu inverse la liaison ; réglage coupé : libre ; coupé + Ctrl : liée", () => {
+    const k = setup();
+    k.setCtrl(true);
+    drag(createShapeTool(k.ctx, "arrow", () => PEN), [102, 20], [402, 25]);
+    expect(k.runs[0]).not.toHaveProperty("start");
+    expect(k.runs[0]).not.toHaveProperty("end");
+    k.setCtrl(false);
+    k.setBinding(false);
+    drag(createShapeTool(k.ctx, "arrow", () => PEN), [102, 20], [402, 25]);
+    expect(k.runs[1]).not.toHaveProperty("end");
+    k.setCtrl(true);
+    drag(createShapeTool(k.ctx, "arrow", () => PEN), [102, 20], [402, 25]);
+    expect(k.runs[2]).toMatchObject({ end: { id: "B" } });
+  });
+  it("au doigt : tolérance 30 px écran", () => {
+    const k = setup(2);
+    k.setPointer("touch");
+    drag(createShapeTool(k.ctx, "arrow", () => PEN), [102, 20], [402, 25]);
+    expect(k.bindTarget).toHaveBeenCalledWith(k.page, expect.any(Number), expect.any(Number), 15);
+  });
+  it("pendant le glisser : la cible est surlignée avec ses 4 ancres", () => {
+    const k = setup();
+    const t = createShapeTool(k.ctx, "arrow", () => PEN);
+    t.begin(1, [at(200, 200)]);
+    t.extend(1, [at(402, 25)], []);
+    expect(t.live().overlay?.bind).toEqual({ id: "B", anchors: HIT_B.anchors });
+  });
+  it("ligne : liée aux deux bouts, Angles du style courant ; flèche coudée : elbowed", () => {
+    const k = setup();
+    drag(createShapeTool(k.ctx, "line", () => ({ ...DEFAULT_ITEM_STYLE, roundness: "round" })), [102, 20], [402, 25]);
+    expect(k.runs[0]).toMatchObject({ shape: "line", start: { id: "A" }, end: { id: "B" }, look: { roundness: "round" } });
+    drag(createShapeTool(k.ctx, "arrow", () => ({ ...DEFAULT_ITEM_STYLE, arrowType: "elbow" })), [200, 200], [300, 300]);
+    expect(k.runs[1]).toMatchObject({ shape: "arrow", look: { elbowed: true } });
+  });
+  it("survol sans geste : hover montre la cible", () => {
+    const k = setup();
+    const t = createShapeTool(k.ctx, "arrow", () => PEN);
+    t.hover?.(410, 25);
+    expect(t.live().overlay?.bind?.id).toBe("B");
   });
 });

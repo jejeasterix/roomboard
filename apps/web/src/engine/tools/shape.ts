@@ -11,6 +11,7 @@ import { newSeed } from "../render/sketch";
 import { screenToWorld } from "../camera";
 import type { CloseReason } from "../input/gesture";
 import { EMPTY_OVERLAY, type ShapePreview } from "../render/overlay";
+import { bindEnd, type EndBind } from "./line-points";
 import type { GestureTool, LivePart, ToolContext } from "./tool";
 
 export const MIN_SHAPE_PX = 4;
@@ -47,6 +48,10 @@ interface Draft {
   /** Départ aimanté, retenu pour tout le geste ; recalculé seulement quand l'état d'Alt change (`startAlt`). */
   start: readonly [number, number];
   startAlt: boolean;
+  /** OG12 : doigt ; liaison du départ (figée) et de l'extrémité courante. */
+  readonly touch: boolean;
+  readonly startBind: EndBind | null;
+  end: EndBind | null;
 }
 
 const NONE: ReadonlySet<string> = new Set<string>();
@@ -54,6 +59,10 @@ const NONE: ReadonlySet<string> = new Set<string>();
 /** OG11 : le style courant (`ItemStyle`) ; un style de stylo seul (couleur, épaisseur) vaut le reste neutre. */
 export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => StrokeStyle & Partial<ItemStyle>): GestureTool {
   const drafts = new Map<number, Draft>();
+  const linear = kind === "line" || kind === "arrow";
+  /** n° 19 : le réglage « Liaison des flèches », inversé par Ctrl tenu. */
+  const binding = (): boolean => (ctx.bindingEnabled?.() ?? true) !== (ctx.ctrl?.() === true);
+  let hovered: EndBind | null = null;
   /** Point aimanté de la page (C9, G8) ; brut si Alt est tenue ou si rien n'accroche. */
   const snap = (page: string, x: number, y: number): readonly [number, number] =>
     ctx.alt?.() === true ? [x, y] : (ctx.doc.snapPoint(page, x, y) ?? [x, y]);
@@ -103,19 +112,25 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       // Graine tirée au début du geste et gardée dans le brouillon, jamais au relâché (déc. 12).
       const seed = st.roughness > 0 ? newSeed() : null;
       const fill = kind === "rect" || kind === "ellipse" ? st.background : null;
-      const linear = kind === "arrow";
+      const touch = ctx.pointerType?.() === "touch";
+      const arrow = kind === "arrow";
       const look = lookFrom(
         {
           ...st,
-          roundness: kind === "rect" ? st.roundness : "sharp",
+          roundness: kind === "rect" || kind === "line" ? st.roundness : arrow && st.arrowType === "round" ? "round" : "sharp",
+          elbowed: arrow && st.arrowType === "elbow",
           fillStyle: fill === null ? "solid" : st.fillStyle,
-          startArrowhead: linear ? st.startArrowhead : DEFAULT_ITEM_STYLE.startArrowhead,
-          endArrowhead: linear ? st.endArrowhead : DEFAULT_ITEM_STYLE.endArrowhead,
+          startArrowhead: arrow ? st.startArrowhead : DEFAULT_ITEM_STYLE.startArrowhead,
+          endArrowhead: arrow ? st.endArrowhead : DEFAULT_ITEM_STYLE.endArrowhead,
           textAlign: "left",
         },
         seed,
       );
-      drafts.set(pointerId, { page, style: { color: st.color, width: st.width }, fill, look, seed, x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt });
+      drafts.set(pointerId, { page, style: { color: st.color, width: st.width }, fill, look, seed, x0: x, y0: y, x1: x, y1: y, zoom: cam.zoom, start: snap(page, x, y), startAlt,
+        touch,
+        startBind: linear ? bindEnd(ctx.doc, page, x, y, cam.zoom, touch, binding()) : null,
+        end: null,
+      });
     },
     extend(pointerId, samples) {
       const d = drafts.get(pointerId);
@@ -124,6 +139,7 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       const [x, y] = screenToWorld(ctx.camera(), s.x, s.y);
       d.x1 = x;
       d.y1 = y;
+      if (linear) d.end = bindEnd(ctx.doc, d.page, x, y, d.zoom, d.touch, binding(), d.startBind?.bind?.id);
     },
     frame() {
       // aperçu calculé dans live()
@@ -136,10 +152,19 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
       const c = drawn(d);
       if (c === null) return;
       const [x0, y0, x1, y1] = c;
-      ctx.run({ type: "AddShape", page: d.page, shape: kind, x0, y0, x1, y1, style: d.style, fill: d.fill, ...(d.look ? { look: d.look } : {}) });
+      const end = linear ? bindEnd(ctx.doc, d.page, d.x1, d.y1, d.zoom, d.touch, binding(), d.startBind?.bind?.id) : null;
+      ctx.run({
+        type: "AddShape", page: d.page, shape: kind, x0, y0, x1, y1, style: d.style, fill: d.fill,
+        ...(d.look ? { look: d.look } : {}),
+        ...(d.startBind?.bind ? { start: d.startBind.bind } : {}),
+        ...(end?.bind ? { end: end.bind } : {}),
+      });
     },
     live(): LivePart {
-      if (drafts.size === 0) return { strokes: [], erasers: [], hidden: NONE };
+      if (drafts.size === 0) {
+        if (hovered?.hint) return { strokes: [], erasers: [], hidden: NONE, overlay: { ...EMPTY_OVERLAY, bind: hovered.hint } };
+        return { strokes: [], erasers: [], hidden: NONE };
+      }
       const shapes: ShapePreview[] = [];
       for (const d of drafts.values()) {
         const c = drawn(d);
@@ -158,10 +183,20 @@ export function createShapeTool(ctx: ToolContext, kind: ShapeKind, style: () => 
         });
       }
       if (shapes.length === 0) return { strokes: [], erasers: [], hidden: NONE };
-      return { strokes: [], erasers: [], hidden: NONE, overlay: { ...EMPTY_OVERLAY, shapes } };
+      return {
+        strokes: [], erasers: [], hidden: NONE,
+        overlay: { ...EMPTY_OVERLAY, shapes, bind: [...drafts.values()].find((x) => x.end?.hint)?.end?.hint ?? null },
+      };
     },
     active: () => drafts.size > 0,
+    hover(sx, sy) {
+      if (!linear) return;
+      const [x, y] = screenToWorld(ctx.camera(), sx, sy);
+      hovered = bindEnd(ctx.doc, ctx.page(), x, y, ctx.camera().zoom, false, binding());
+      ctx.requestFrame?.();
+    },
     leave() {
+      hovered = null;
       drafts.clear();
     },
   };
