@@ -1,9 +1,9 @@
 # État — personnalisation-2-outils
 
-Statut : clos
+Statut : arrêté (borne de temps du tour) — lot 1 fusionné (PR #71) ; lot 2a prêt sur sa branche, PR #76 en brouillon, non fusionné
 Gabarit : lots (lot 1 : 12 tâches ; lot 2 : 10 tâches, hors du temps)
 Objectif : Chaque outil commun avec Excalidraw (sélection, main, formes, flèche, ligne, crayon, texte, image, gomme) se comporte comme dans Excalidraw, au doigt d'abord puis au clavier, avec des connecteurs liés aux objets façon carte mentale et une fiche de vérification par outil.
-Avancement : 2/2 lots clos (lot 1 PR #71 ; lot 2a, PR suivante) ; lot 2b au périmètre, non commencé
+Avancement : 1/3 lots clos (lot 1) ; lot 2a vérifié puis intégré à origin/main e2ac4680, à revérifier ; lot 2b non commencé
 Étage : 4 — depuis 2026-11-27 23:05
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2-outils   Branche : feat/personnalisation-2-outils   Base : origin/main @ cddbde49
@@ -65,7 +65,12 @@ Double relecture (9d8ac349) : 0 bloquant ; 5 major corrigés (C4a, C4b) ; décis
 
 Lot 2a : correctif barre (losange hors de la barre par défaut, 078bdcf0, f97bbae0) et essai (6347b69d, d4bd6591). verifier.sh --e2e OK sur d4bd6591 : cargo 1618, web 4535, cli 284, Wasm 1 523 873 o, formats 2 794 527 o.
 
-## Prochaine tâche (lot 2b)
+## Prochaine tâche exacte
+1. Dans un worktree de `feat/personnalisation-2-outils-lot2` (tête e635bbe5 = d4bd6591 vérifié + fusion d'origin/main e2ac4680, OG23 et OG26) : `git fetch` ; si main a bougé, fusionner origin/main ; puis `scripts/verifier.sh --e2e` (verifier.sh OK sur d4bd6591 avant la fusion ; après la fusion, seules la suite web 4803/4803, formes, fleches, tsc et fmt ont tourné).
+2. Corriger l'écart né de la fusion : le pas aux flèches d'OG23 (`nudgeKey`) déplace aussi pendant « Modifier les points » (le lot 2a l'excluait) ; test puis exclusion.
+3. OK → PR #76 `gh pr ready`, fusion locale `git merge --no-ff` dans un worktree détaché d'origin/main, `git push origin HEAD:main`, sans --force.
+
+## Lot 2b
 Écrire `docs/plans/personnalisation-2-outils-LOT2B-PLAN.md` depuis la section « Lot 2b (hors de ce plan) » du plan du lot 2a : losange dans la barre par défaut (menu « formes »), rotation, texte dans une forme (double toucher), îlot Modificateurs, Alt-glisser, segments fixes des coudées, étiquettes sur flèche, navigation Alt+flèche, pointes losange et cardinalité, lettres dans les infobulles, message BAD_FILL.
 
 ## Terminé quand
