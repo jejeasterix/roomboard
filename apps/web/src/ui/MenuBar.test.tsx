@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Toolbar as Bar, ToolItem } from "../toolbar";
 import type { ToolbarView } from "./item-state";
 import { MENU_LABEL, MenuBar, placeMenu } from "./MenuBar";
+import { ariaShortcut } from "./shortcuts";
 
 afterEach(cleanup);
 
@@ -229,6 +230,21 @@ describe("MenuBar (design-l2 L2-6)", () => {
     const { row } = setup();
     expect(row("file-new").getAttribute("aria-keyshortcuts")).toBe("Control+N");
     expect(row("grid").hasAttribute("aria-keyshortcuts")).toBe(false);
+  });
+
+  it("OG27 : même annonce que la barre (ariaShortcut) ; sous macOS, ⌘N affiché et Meta+N annoncé", () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    try {
+      const { row } = setup();
+      expect(row("file-new").querySelector("[data-shortcut]")?.textContent).toBe("⌘N");
+      expect(row("file-new").getAttribute("aria-keyshortcuts")).toBe("Meta+N");
+      for (const id of ["file-new", "undo"]) {
+        const r = document.querySelector<HTMLElement>(`[role="menuitem"][data-item="${id}"]`);
+        if (r !== null) expect(r.getAttribute("aria-keyshortcuts")).toBe(ariaShortcut(id, true));
+      }
+    } finally {
+      platform.mockRestore();
+    }
   });
 
   it("Tab ferme sans reprendre le focus", async () => {

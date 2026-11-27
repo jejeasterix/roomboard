@@ -4,7 +4,7 @@ export type Roughness = 0 | 1 | 2;
 export type Roundness = "sharp" | "round";
 /** Lot 2 (T12) : remplissage ; le plein est le neutre. */
 export type FillKind = "solid" | "hachure" | "cross-hatch";
-export type Arrowhead = "none" | "arrow" | "triangle" | "triangle_outline";
+export type Arrowhead = "none" | "arrow" | "triangle" | "triangle_outline" | "bar" | "circle" | "circle_outline";
 export type TextAlign = "left" | "center" | "right";
 /** Vue du cœur (champs absents = neutres), noms d'Excalidraw. */
 export interface Look {
@@ -25,6 +25,8 @@ export interface Look {
   readonly variability?: "constant";
   /** OG23 (T10) : glisser pose une copie, l'original reste ; absent = déplacer, le neutre (seul `true` est écrit). */
   readonly dragCopy?: true;
+  /** OG12 (n° 2) : flèche coudée ; `true` seul, jamais `false`. */
+  readonly elbowed?: true;
 }
 export interface LookPatch {
   readonly color?: string;
@@ -45,12 +47,13 @@ export interface LookPatch {
   readonly variability?: "constant" | null;
   /** OG23 (T10) : `true` pose « Glisser une copie », `false` le retire ; traits, formes, textes, images. */
   readonly dragCopy?: boolean;
+  readonly elbowed?: boolean | null;
 }
 /** Traits non pleins (le plein est le neutre : absent de `Look`). */
 export const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
 /** Copie d'`element.rs` (T12) : remplissages non pleins, pointes, alignements non gauches. */
 export const FILL_STYLES: readonly string[] = ["hachure", "cross-hatch"];
-export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "triangle_outline"];
+export const ARROWHEADS: readonly string[] = ["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"];
 export const START_ARROWHEAD_DEFAULT: Arrowhead = "none";
 export const END_ARROWHEAD_DEFAULT: Arrowhead = "arrow";
 export const TEXT_ALIGNS: readonly string[] = ["center", "right"];
@@ -104,6 +107,7 @@ export function toLook(v: unknown): Look | undefined {
   if (typeof link === "string" && validLink(link)) out.link = link;
   if (v["variability"] === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
   if (v["dragCopy"] === true) out.dragCopy = true;
+  if (v["elbowed"] === true) out.elbowed = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 export const strokeKindOf = (l: Look | undefined): StrokeKind => l?.strokeStyle ?? "solid";
@@ -114,6 +118,8 @@ export const opacityOf = (l: Look | undefined): number => l?.opacity ?? 100;
 export const fillStyleOf = (l: Look | undefined): FillKind => l?.fillStyle ?? "solid";
 export const startArrowheadOf = (l: Look | undefined): Arrowhead => l?.startArrowhead ?? START_ARROWHEAD_DEFAULT;
 export const endArrowheadOf = (l: Look | undefined): Arrowhead => l?.endArrowhead ?? END_ARROWHEAD_DEFAULT;
+/** OG12 : flèche coudée ? */
+export const elbowedOf = (l: Look | undefined): boolean => l?.elbowed === true;
 export const textAlignOf = (l: Look | undefined): TextAlign => l?.textAlign ?? "left";
 export const variabilityOf = (l: Look | undefined): Variability => l?.variability ?? "variable";
 /** OG23 (T10) : glisser l'objet pose une copie. */
@@ -121,7 +127,7 @@ export const dragCopyOf = (l: Look | undefined): boolean => l?.dragCopy === true
 
 /** undefined si neutre. */
 export function lookFrom(
-  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign; variability?: Variability },
+  s: { strokeStyle: StrokeKind; roughness: Roughness; roundness: Roundness; opacity: number; fillStyle?: FillKind; startArrowhead?: Arrowhead; endArrowhead?: Arrowhead; textAlign?: TextAlign; variability?: Variability; elbowed?: boolean },
   seed: number | null,
 ): Look | undefined {
   const out: { -readonly [K in keyof Look]: Look[K] } = {};
@@ -138,6 +144,7 @@ export function lookFrom(
   if (s.endArrowhead !== undefined && s.endArrowhead !== END_ARROWHEAD_DEFAULT) out.endArrowhead = s.endArrowhead;
   if (s.textAlign !== undefined && s.textAlign !== "left") out.textAlign = s.textAlign;
   if (s.variability === VARIABILITY_CONSTANT) out.variability = VARIABILITY_CONSTANT;
+  if (s.elbowed === true) out.elbowed = true;
   return Object.keys(out).length === 0 ? undefined : out;
 }
 

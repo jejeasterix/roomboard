@@ -4,6 +4,7 @@ use roomboard_core::arrange::ArrangeHow;
 use roomboard_core::commands::{Change, Command, CommandError};
 use roomboard_core::document::Document;
 use roomboard_core::element::{Look, StrokeStyle, Transform};
+use roomboard_core::linear::LineInit;
 use roomboard_core::query::Bounds;
 use roomboard_core::shape::ShapeKind;
 use yrs::updates::decoder::Decode;
@@ -37,6 +38,7 @@ fn add_rect_on(d: &mut Document, page: &str, x0: f64, y0: f64, x1: f64, y1: f64)
         style: pen(),
         fill: None,
         look: Look::default(),
+        line: LineInit::default(),
     })
     .expect("forme")
     .ids[0]

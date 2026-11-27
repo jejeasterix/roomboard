@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitFor, fitFrame, fitPage, fitWidth, topBelowIslands, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
+import { fitFor, fitFrame, fitPage, fitWidth, scrollBounds, scrollTo, topBelowIslands, IDENTITY, MAX_ZOOM, MIN_ZOOM, panBy, screenToWorld, worldToScreen, zoomAt, type Camera } from "./camera";
 
 describe("camera (D17)", () => {
   const cam: Camera = { zoom: 2, tx: 10, ty: -20 };
@@ -92,12 +92,9 @@ describe("camera (D17)", () => {
 
 describe("fitFor (décision 10)", () => {
   const frame = { x0: 0, y0: 0, x1: 1920, y1: 3413.33 };
-  it("fitFor portrait : cadre entier visible sous top", () => {
-    const c = fitFor("portrait", 1000, 800, frame, null, 100);
-    expect(c.ty).toBeGreaterThanOrEqual(100);
-    expect(c.ty + frame.y1 * c.zoom).toBeLessThanOrEqual(800 + 1e-6);
-    expect(c.tx).toBeGreaterThanOrEqual(0);
-    expect(c).toEqual(fitFrame(1000, 800, frame, 100));
+  it("fitFor portrait : largeur de page, haut de page sous top (OG24, H4 renversée)", () => {
+    expect(fitFor("portrait", 1000, 800, frame, null, 100)).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+    expect(fitFor("portrait", 1000, 800, frame, null, 100)).not.toEqual(fitFrame(1000, 800, frame, 100));
   });
   it("fitFor landscape = fitWidth", () => {
     const f = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
@@ -123,5 +120,27 @@ describe("topBelowIslands : îlots latéraux", () => {
   it("un îlot latéral replié (48 px, en haut du côté) est ignoré", () => {
     expect(topBelowIslands(stage, [top, { top: 0, bottom: 48, side: true }])).toBe(base);
     expect(topBelowIslands(stage, [{ top: 0, bottom: 48, side: true }])).toBe(16);
+  });
+});
+
+describe("scrollBounds, scrollTo (OG24 : ascenseur du portrait)", () => {
+  const frame = { x0: 0, y0: 0, x1: 1920, y1: 3413.33 };
+  const fitted = fitWidth(1000, 800, 1920, 0.95, 100);
+  it("haut de page sous top au plus haut, bas de page à `bottom` px du bas au plus bas", () => {
+    const b = scrollBounds(fitted, frame, 800, 100, 16)!;
+    expect(b.max).toBeCloseTo(100, 6);
+    expect(b.min + frame.y1 * fitted.zoom).toBeCloseTo(800 - 16, 6);
+  });
+  it("page qui tient dans la vue : aucun défilement", () => {
+    expect(scrollBounds(fitPage(1000, 800, 1920, 3413.33), frame, 800, 16, 16)).toBeNull();
+  });
+  it("scrollTo borne ty à la page ; une vue déjà hors bornes n'y saute pas", () => {
+    const b = scrollBounds(fitted, frame, 800, 100, 16)!;
+    expect(scrollTo(fitted, 1e6, b).ty).toBeCloseTo(b.max, 6);
+    expect(scrollTo(fitted, -1e6, b).ty).toBeCloseTo(b.min, 6);
+    expect(scrollTo(fitted, -1e6, b)).toMatchObject({ zoom: fitted.zoom, tx: fitted.tx });
+    const outside = { ...fitted, ty: b.max + 50 };
+    expect(scrollTo(outside, b.max + 80, b).ty).toBe(b.max + 50);
+    expect(scrollTo(outside, b.max + 20, b).ty).toBe(b.max + 20);
   });
 });

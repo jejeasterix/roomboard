@@ -16,6 +16,8 @@ export interface GestureSink {
   begin(pointerId: number, tool: DrawTool, samples: readonly InputSample[], pointerType?: string): void;
   extend(pointerId: number, samples: readonly InputSample[], predicted: readonly InputSample[]): void;
   close(pointerId: number, how: CloseReason): void;
+  /** OG25 (A2) : rayon de la gomme du geste, px d'écran, le plus grand vu ; absent : sans effet. */
+  resize?(pointerId: number, radiusPx: number): void;
 }
 
 export interface ViewSink {

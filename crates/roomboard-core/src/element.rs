@@ -227,6 +227,22 @@ pub struct ShapeView {
     pub w: f64,
     pub h: f64,
     pub fill: Option<String>,
+    /// OG12 (DA-1) : points intérieurs locaux à plat ; absent = segment du socle.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub points: Option<Vec<f64>>,
+    /// OG12 (DA-2) : liaisons lisibles vers un objet présent ; absentes sinon (lecture tolérante, n° 9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<BindingView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end: Option<BindingView>,
+}
+
+/// Liaison d'une extrémité dans la vue : id de l'objet et rapport de sa boîte.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct BindingView {
+    pub id: String,
+    pub fx: f64,
+    pub fy: f64,
 }
 
 /// Texte d'un élément (D14) ; le contenu vient du `Y.Text` de l'élément.
@@ -398,6 +414,9 @@ pub struct Look {
     /// (booléen), déplacer est le neutre.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drag_copy: Option<bool>,
+    /// OG12 (n° 2) : flèche coudée ; `true` seul s'écrit, jamais `false` (neutre).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elbowed: Option<bool>,
 }
 
 /// Styles de trait lisibles ; le trait plein est le neutre (champ absent).
@@ -407,7 +426,15 @@ pub const STROKE_STYLES: [&str; 2] = ["dashed", "dotted"];
 pub const FILL_STYLES: [&str; 2] = ["hachure", "cross-hatch"];
 
 /// Pointes lisibles, aux deux bouts ; le neutre est `none` au début et `arrow` à la fin (jamais écrit).
-pub const ARROWHEADS: [&str; 4] = ["none", "arrow", "triangle", "triangle_outline"];
+pub const ARROWHEADS: [&str; 7] = [
+    "none",
+    "arrow",
+    "triangle",
+    "triangle_outline",
+    "bar",
+    "circle",
+    "circle_outline",
+];
 pub const START_ARROWHEAD_DEFAULT: &str = "none";
 pub const END_ARROWHEAD_DEFAULT: &str = "arrow";
 
@@ -439,8 +466,8 @@ fn arrowhead(v: &Option<String>, default: &str) -> Option<String> {
         .filter(|s| ARROWHEADS.contains(&s.as_str()) && s != default)
 }
 
-/// Clés `Y.Map` des douze champs d'aspect.
-pub(crate) const LOOK_KEYS: [&str; 12] = [
+/// Clés `Y.Map` des treize champs d'aspect.
+pub(crate) const LOOK_KEYS: [&str; 13] = [
     "strokeStyle",
     "roughness",
     "seed",
@@ -453,6 +480,7 @@ pub(crate) const LOOK_KEYS: [&str; 12] = [
     "link",
     "variability",
     "dragCopy",
+    "elbowed",
 ];
 
 impl Look {
@@ -488,6 +516,7 @@ impl Look {
                 .clone()
                 .filter(|s| s == VARIABILITY_CONSTANT),
             drag_copy: self.drag_copy.filter(|b| *b),
+            elbowed: self.elbowed.filter(|b| *b),
         }
     }
 }
@@ -531,6 +560,9 @@ pub(crate) fn look_fields(l: &Look, stroke: bool) -> Vec<(&'static str, In)> {
     if l.drag_copy == Some(true) {
         v.push(("dragCopy", In::Any(Any::Bool(true))));
     }
+    if l.elbowed == Some(true) {
+        v.push(("elbowed", In::Any(Any::Bool(true))));
+    }
     v
 }
 
@@ -555,6 +587,10 @@ pub(crate) fn read_look<T: ReadTxn>(txn: &T, e: &MapRef) -> Look {
         variability: out_string(e.get(txn, "variability")),
         drag_copy: matches!(e.get(txn, "dragCopy"), Some(Out::Any(Any::Bool(true))))
             .then_some(true),
+        elbowed: match e.get(txn, "elbowed") {
+            Some(Out::Any(Any::Bool(b))) => Some(b),
+            _ => None,
+        },
     }
     .sanitized()
 }

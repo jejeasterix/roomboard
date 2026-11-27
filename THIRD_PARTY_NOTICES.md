@@ -318,6 +318,33 @@ MIT en tête de chaque fichier :
 
 Texte : MIT (https://opensource.org/licenses/MIT), identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
 
+## Code adapté d'Excalidraw (OG12, flèche et ligne, MIT)
+
+Comportement copié ou adapté d'Excalidraw (https://github.com/excalidraw/excalidraw, MIT, Copyright (c) 2020 Excalidraw),
+référence `f4e5226`, mention MIT en tête de chaque fichier concerné :
+
+- courbe d'une flèche ou d'une ligne à points intérieurs, `curveCatmullRomCubicApproxPoints` (`packages/math/src/curve.ts`,
+  `packages/element/src/utils.ts`) : `crates/roomboard-core/src/linear.rs`, `apps/web/src/core/shapes.ts` ;
+- écart de liaison `getBindingGap`, liaisons et recherche de la cible (`packages/element/src/binding.ts`), suivi, rupture et
+  copie des liaisons (`updateBoundElements`, `dragElements.ts`, `fixDuplicatedBindingsAfterDuplication`) :
+  `crates/roomboard-core/src/{linear.rs,copy.rs,element.rs,style.rs}`, `apps/web/src/core/{fake-core.ts,look.ts}`,
+  `apps/web/src/engine/item-style.ts` ;
+- éditeur de points `linearElementEditor.ts` (points, milieux, `deletePoints`, double toucher, Maj à 15°) :
+  `apps/web/src/engine/tools/line-edit.ts`, `apps/web/src/engine/tools/line-points.ts`,
+  `apps/web/src/engine/input/double-tap.ts` ;
+- route simple `getSimpleRoute` de `elbowArrow.ts` (flèche coudée, sans l'algorithme A*) : `crates/roomboard-core/src/linear.rs`,
+  `apps/web/src/core/fake-core.ts` ;
+- objet relié `flowchart.ts` (`createBindingArrow`) : commande `AddLinked` de `crates/roomboard-core/src/linear.rs`,
+  poignées et raccourcis `apps/web/src/engine/input/keys.ts`, `apps/web/src/engine/engine.ts`, `apps/web/src/ui/OptionsPanel.tsx`.
+
+Texte : MIT, identique à celui de roughjs ci-dessus, titulaire « Excalidraw ».
+
+## Icônes Lucide (ISC), OG12
+
+Tracés repris de Lucide (https://github.com/lucide-icons/lucide), recopiés dans `apps/web/src/ui/icons.ts` : `spline`
+(« Modifier les points », icône `edit-points`) et `circle-minus` (« Retirer le point », icône `point-remove`). Licence ISC,
+texte identique à celui de la section Lucide ci-dessus.
+
 ## Crate `roomboard-formats` (C12, PDF vectoriel par krilla)
 
 Crates apportés par `krilla` 0.8 (features `simple-text` et `raster-images` seules, sans les features par défaut) et

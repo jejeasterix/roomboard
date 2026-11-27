@@ -51,6 +51,20 @@ export function isPanKey(e: KeyLike): boolean {
   return e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && !inEditable(e.target);
 }
 
+export type LinkDir = "up" | "down" | "left" | "right";
+/** OG12 (n° 21) : Ctrl+Entrée (Cmd+Entrée sous macOS) entre dans « Modifier les points » ; hors champ, hors IME. */
+export function lineEditKey(e: KeyLike): boolean {
+  return e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.isComposing && !inEditable(e.target);
+}
+const LINK_KEYS: Readonly<Record<string, LinkDir>> = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+/** OG12 (n° 28, H2) : Alt+Maj+flèche crée un objet relié ; Ctrl+flèche reste au rangement (OG14). */
+export function linkedKey(e: KeyLike): LinkDir | null {
+  if (e.isComposing || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || inEditable(e.target)) return null;
+  return Object.hasOwn(LINK_KEYS, e.key) ? LINK_KEYS[e.key]! : null;
+}
+/** OG12 (n° 19) : touche Ctrl ou Cmd seule (tenue pendant un glisser). */
+export const isCtrlKey = (e: { readonly key: string }): boolean => e.key === "Control" || e.key === "Meta";
+
 export function keyAction(e: KeyLike): KeyAction | null {
   // Composition IME : la touche appartient à l'IME (D14). Alt Gr = Ctrl+Alt sous Windows : un caractère, pas un raccourci.
   if (e.isComposing || e.altKey) return null;
@@ -105,6 +119,22 @@ export function orderKey(e: KeyLike): OrderKey | null {
   return null;
 }
 
+export type ScrollKey = "up" | "down" | "screen-up" | "screen-down" | "top" | "bottom";
+
+/** OG24 (ascenseur du portrait) : ↑ ↓ d'un cran, Maj+↑ ↓ d'un écran (PageUp/PageDown changent de page, DA9), Début et Fin ;
+ *  sans Ctrl, Cmd ni Alt (Ctrl+↑ ↓ : ordre des objets), hors IME, hors champ et hors contrôle de formulaire (une réglette
+ *  ou une liste focalisée garde ses flèches, Début et Fin). */
+export function scrollKey(e: KeyLike): ScrollKey | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (EDITABLE.has(e.target?.tagName?.toUpperCase() ?? "")) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "screen-up" : "up";
+  if (e.key === "ArrowDown") return e.shiftKey ? "screen-down" : "down";
+  if (e.shiftKey) return null;
+  if (e.key === "Home") return "top";
+  if (e.key === "End") return "bottom";
+  return null;
+}
+
 export type PageKey = "prev" | "next" | "add" | "duplicate" | "sidebar-pages" | "sidebar-layers";
 
 /** Raccourcis de page (DA9) : PageUp/PageDown, Ctrl+M (Ctrl aussi sous macOS), Ctrl/Cmd+Maj+D/P/L ; hors champ, hors IME, Alt Gr refusé. */
@@ -126,14 +156,16 @@ export function pageKey(e: KeyLike): PageKey | null {
   return null;
 }
 
-export type AppShortcut = "backgrounds";
+export type AppShortcut = "backgrounds" | "palm-eraser";
 
 /** personnalisation-1b (Q28) : raccourcis de l'application, écoutés par `App.tsx` (jamais par le moteur) : Ctrl+Maj+F
- *  (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds ; hors champ de saisie, hors composition, jamais avec Alt. */
+ *  (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds ; OG25 : Ctrl+Maj+H (Cmd+Maj+H) coupe ou rallume la gomme
+ *  automatique à la paume ; hors champ de saisie, hors composition, jamais avec Alt. */
 export function appShortcut(e: KeyLike): AppShortcut | null {
   if (e.isComposing || e.altKey || !e.shiftKey || !(e.ctrlKey || e.metaKey)) return null;
   if (inEditable(e.target)) return null;
-  return e.key.toLowerCase() === "f" ? "backgrounds" : null;
+  const key = e.key.toLowerCase();
+  return key === "f" ? "backgrounds" : key === "h" ? "palm-eraser" : null;
 }
 
 /** OG23 (déc. 24) : avec Alt, la lettre est lue par `code` (Option+H donne « ˙ » sous macOS), sinon par `key` ; H, V, R

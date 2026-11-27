@@ -617,6 +617,27 @@ try {
   const avantC = empreinte(pc);
   const mele = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "Restack", ids: [pile1[0], autre], to: 0 }));
   verifie("1a calques : Restack de deux pages mêlées : code 1, fichier inchangé", mele.code === 1 && empreinte(pc) === avantC, mele.brut);
+  // OG12 (S5) : deux rectangles, une flèche liée, Transform suivi puis undo en une étape, SetLinePoints refusé, AddLinked.
+  {
+    const f = join(dir, "fleches.roomboard");
+    const rect = (x) => ({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: 0, x1: x + 100, y1: 50, style: { color: "#000000", width: 4 }, fill: null });
+    const fleche = { type: "AddShape", page: "$page:0", shape: "arrow", x0: 100, y0: 25, x1: 400, y1: 25, style: { color: "#000000", width: 4 }, fill: null, start: { id: "$1", fx: 1, fy: 0.5 }, end: { id: "$2", fx: 0, fy: 0.5 } };
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], lignesOps(rect(0), rect(400), fleche, { op: "state" }));
+    const el = (st, k) => st?.pages?.[0]?.elements?.[k];
+    const etat0 = neuf.lignes[3]?.state;
+    verifie("OG12 : flèche liée aux deux rectangles", neuf.code === 0 && el(etat0, 2)?.shape?.start?.id === el(etat0, 0)?.id && el(etat0, 2)?.shape?.end?.id === el(etat0, 1)?.id, neuf.brut);
+    const id2 = el(etat0, 1).id;
+    const s = cli(["run", f, "--save", "--ops", "-"], lignesOps({ type: "Transform", ids: [id2], matrix: [1, 0, 0, 1, 0, 200] }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const fin = (st) => { const a = el(st, 2); return [a.transform[4] + a.shape.w, a.transform[5] + a.shape.h]; };
+    verifie("OG12 : Transform du second rectangle : l'extrémité suit (393, 225)", s.code === 0 && JSON.stringify(fin(s.lignes[1].state)) === "[393,225]", s.brut);
+    verifie("OG12 : undo, une étape : extrémité revenue (393, 25)", JSON.stringify(fin(s.lignes[3].state)) === "[393,25]", s.brut);
+    const un = cli(["run", f, "--ops", "-"], lignesOps({ type: "SetLinePoints", id: el(etat0, 2).id, points: [0, 0], start: null, end: null }));
+    verifie("OG12 : SetLinePoints avec un seul point : code 1, points invalides", un.code === 1 && un.brut.includes("points invalides"), un.brut);
+    const lie = cli(["run", f, "--save", "--ops", "-"], lignesOps({ type: "AddLinked", id: el(etat0, 0).id, dir: "right" }, { op: "state" }, { op: "undo" }, { op: "state" }));
+    const n = (st) => st?.pages?.[0]?.elements?.length;
+    verifie("OG12 : AddLinked à droite : deux éléments de plus, une étape", lie.code === 0 && lie.lignes[0].change.ids.length === 2 && n(lie.lignes[1].state) === 5 && n(lie.lignes[3].state) === 3, lie.brut);
+    console.log("OG12 : flèches liées, suivi, AddLinked");
+  }
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);

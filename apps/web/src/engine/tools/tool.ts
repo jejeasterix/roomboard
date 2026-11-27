@@ -24,6 +24,14 @@ export interface ToolContext {
   duplicate?(ids: readonly string[], dx: number, dy: number, strip: boolean): boolean;
   /** L'outil a changé ce que publie l'état (cellule active du tableau) sans écrire ; absent = sans effet. */
   stateChanged?(): void;
+  /** OG12 : Ctrl/Cmd tenu (inverse la liaison, n° 19) ; absent = jamais tenu. */
+  ctrl?(): boolean;
+  /** OG12 : réglage Liaison des flèches, vrai par défaut. */
+  bindingEnabled?(): boolean;
+  /** OG12 : type du pointeur du geste en cours (`touch`, `mouse`, `pen`). */
+  pointerType?(): string;
+  /** OG12 : entre dans Modifier les points pour la ligne ou la flèche `id` (n° 21). */
+  editPoints?(id: string): void;
 }
 
 /** Aperçu d'un outil : couche vive, éléments masqués de la scène, calque d'édition (CL4-1). */
@@ -43,8 +51,12 @@ export interface GestureTool {
   close(pointerId: number, how: CloseReason): void;
   live(): LivePart;
   active(): boolean;
+  /** OG25 (A2) : agrandit le rayon du geste `pointerId` (px d'écran) ; jamais ne le réduit ; absent : sans effet. */
+  resize?(pointerId: number, radiusPx: number): void;
   /** Outil quitté ou page changée : valide ou abandonne ce qui reste ouvert (texte : valide ; sélection : vide). */
   leave?(reason: LeaveReason): void;
+  /** OG12 : survol souris ou stylet sans bouton, px de la scène ; absent : sans effet. */
+  hover?(x: number, y: number): void;
 }
 
 /** Outil Sélection (D15) : la sélection survit aux gestes ; le moteur la lit (Suppr, état) et la vide. */

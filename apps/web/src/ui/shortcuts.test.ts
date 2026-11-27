@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, arrangeKey, editAction, isPanKey, keyAction, nudgeKey, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, editAction, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, nudgeKey, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -16,8 +16,10 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "align-center": ["arrange", "align-center"], "align-middle": ["arrange", "align-middle"], "distribute-h": ["arrange", "distribute-h"], "distribute-v": ["arrange", "distribute-v"],
   nudge: ["nudge", "-1,0"], pipette: ["picker", "i"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
+  "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
+  "palm-eraser": ["app", "palm-eraser"],
 };
-const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight" };
+const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
   const k = parts.at(-1)!;
@@ -43,6 +45,9 @@ describe("shortcuts", () => {
       else if (by === "nudge") { const n = nudgeKey(e); expect(`${n?.dx},${n?.dy}`, s.id).toBe(value); }
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
+      else if (by === "lineEdit") expect(lineEditKey(e), s.id).toBe(true);
+      else if (by === "linked") expect(linkedKey({ ...press("→"), key: "ArrowRight", altKey: true, shiftKey: true }), s.id).toBe(value);
+      else if (by === "ctrlHeld") expect(isCtrlKey({ key: "Control" }), s.id).toBe(true);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
       else if (by === "picker") {
         // Pipette (sélecteur ouvert) : « I » sans modificateur, lue par e.key ; aucun autre reconnaisseur ne la prend.
@@ -80,6 +85,11 @@ describe("shortcuts", () => {
     expect(ariaShortcut("bold", false)).toBeNull();
     expect(ariaShortcut("inconnu", false)).toBeNull();
   });
+  it("OG25 : palm-eraser dans la table — Ctrl+Maj+H, ⌘⇧H, Control+Shift+H", () => {
+    expect(shortcutText("palm-eraser", false)).toBe("Ctrl+Maj+H");
+    expect(shortcutText("palm-eraser", true)).toBe("⌘⇧H");
+    expect(ariaShortcut("palm-eraser", false)).toBe("Control+Shift+H");
+  });
   it("fusion lot 2 + OG19 (discrimine) : ariaShortcut nomme les flèches de Disposition et garde « ? » de l'Aide", () => {
     expect(ariaShortcut("front", false)).toBe("Control+Shift+ArrowUp");
     expect(ariaShortcut("backward", true)).toBe("Meta+ArrowDown");
@@ -95,5 +105,16 @@ describe("shortcuts", () => {
   it("ids uniques", () => {
     expect(new Set(SHORTCUTS.map((s) => s.id)).size).toBe(SHORTCUTS.length);
     expect(SHORTCUTS.map((s) => s.id).sort()).toEqual(Object.keys(EXPECT).sort());
+  });
+});
+
+describe("OG12 : raccourcis des lignes", () => {
+  it("line-edit, linked-node et no-binding existent", () => {
+    for (const id of ["line-edit", "linked-node", "no-binding"]) expect(SHORTCUTS.some((x) => x.id === id), id).toBe(true);
+  });
+  it("ariaShortcut : line-edit Control+Enter / Meta+Enter ; linked-node (liste de touches) : null", () => {
+    expect(ariaShortcut("line-edit", false)).toBe("Control+Enter");
+    expect(ariaShortcut("line-edit", true)).toBe("Meta+Enter");
+    expect(ariaShortcut("linked-node", false)).toBeNull();
   });
 });

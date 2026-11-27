@@ -45,6 +45,7 @@ function fakeBoard(doc: CoreDocument) {
 
 function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth?: number } = {}) {
   const frames: boolean[] = [];
+  const palms: boolean[] = [];
   const opaques: boolean[] = [];
   const c = channel();
   const boards: ReturnType<typeof fakeBoard>[] = [];
@@ -80,6 +81,7 @@ function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth
       ignores.push(on);
     },
     frame: (on) => void frames.push(on),
+    palmEraser: (on) => void palms.push(on),
     every: (_ms, cb) => {
       tick = cb;
       return () => {
@@ -88,7 +90,7 @@ function setup(o: { hit?: boolean; gate?: boolean; slowRead?: boolean; viewWidth
       };
     },
   });
-  return { page, c, boards, ignores, opaques, frames, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
+  return { page, c, boards, ignores, opaques, frames, palms, gates, reads, calls, tick: async () => { tick?.(); await new Promise((r) => setTimeout(r, 0)); }, stops: () => stops, polling: () => tick !== null };
 }
 const blank = () => toBase64(fakeCore.blank().save("2026-11-23T00:00:00Z", "0.1.0"));
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -362,6 +364,21 @@ describe("page annotate (C11b, P13, P15, P16)", () => {
     c.send(ANNOTATION_EVENTS.document, { base64: blank(), frame: true });
     await flush();
     expect(frames).toEqual([true, false, true]);
+    warn.mockRestore();
+  });
+  it("OG25 (déc. 30) : chaque document applique son réglage de gomme à la paume ; absent : active ; illisible : rien", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { page, c, palms } = setup();
+    await page.start();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank() });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), palmEraser: false });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: "@@@" });
+    await flush();
+    c.send(ANNOTATION_EVENTS.document, { base64: blank(), palmEraser: true });
+    await flush();
+    expect(palms).toEqual([true, false, true]);
     warn.mockRestore();
   });
 });

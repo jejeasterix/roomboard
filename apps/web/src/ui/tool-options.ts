@@ -6,10 +6,12 @@ import { presetsOf, TABLE_FILLS, type Profile } from "../toolbar";
 
 export type OptionKey =
   | "strokeColor" | "background" | "fillStyle" | "strokeWidth" | "pressure" | "strokeStyle" | "roughness" | "roundness"
-  | "font" | "fontSize" | "textAlign" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions";
+  | "font" | "fontSize" | "textAlign" | "arrowType" | "arrowheads" | "opacity" | "image" | "layers" | "align" | "transform" | "actions";
 export const OPTION_ORDER: readonly OptionKey[] = [
   "strokeColor", "background", "fillStyle", "strokeWidth", "pressure", "strokeStyle", "roughness", "roundness",
-  "font", "fontSize", "textAlign", "arrowheads", /* editPoints (OG12) */ "opacity", "image",
+  // OG12 : la place réservée `editPoints` est devenue sa vraie section, « Type de flèche » (`arrowType`), à l'ordre
+  // décidé par OG12 (avant les pointes, comme Excalidraw) ; « Modifier les points » est un bouton d'`actions`.
+  "font", "fontSize", "textAlign", "arrowType", "arrowheads", "opacity", "image",
   "layers", "align", "transform", "actions",
 ];
 /** OG23 : sections ouvertes au premier affichage (`image` : la section de l'image seule). */
@@ -35,8 +37,8 @@ const BY_TOOL: Readonly<Partial<Record<string, readonly OptionKey[]>>> = {
   pen: ["strokeColor", "strokeWidth", "pressure", "opacity"],
   rect: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "roundness", "opacity"],
   ellipse: ["strokeColor", "background", "fillStyle", "strokeWidth", "strokeStyle", "roughness", "opacity"],
-  line: FORM,
-  arrow: [...FORM.slice(0, 4), "arrowheads", "opacity"],
+  line: [...FORM.slice(0, 4), "roundness", "opacity"],
+  arrow: [...FORM.slice(0, 4), "arrowType", "arrowheads", "opacity"],
   text: ["strokeColor", "font", "fontSize", "textAlign", "opacity"],
 };
 const BY_KIND: Readonly<Record<string, (e: ElementView) => readonly OptionKey[]>> = {

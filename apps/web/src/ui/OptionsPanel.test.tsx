@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
+interface Opts { openImage?: (s: "crop" | "background" | null) => void; units?: number; tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const picks: ((c: string | null) => void)[] = [];
@@ -33,8 +33,10 @@ function mount(o: Opts) {
     setDragCopy: vi.fn(() => true),
     pickColor: vi.fn(() => new Promise<string | null>((r) => { picks.push(r); })),
     cancelPick: vi.fn(),
+    editLinePoints: vi.fn(() => true),
+    removeLinePoints: vi.fn(() => true),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, selectionUnits: o.units ?? o.selection.length, textFormat: o.editing ? {} : null, lineEditing: o.lineEditing ?? null, linePointsSelected: o.linePoints ?? 0 } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -191,15 +193,33 @@ describe("OptionsPanel lot 2 (T15)", () => {
     fireEvent.click(container.querySelector('[data-option="fillStyle"] [data-choice="hachure"]')!);
     expect(calls).toContainEqual({ fillStyle: "hachure" });
   });
-  it("Pointes : début et fin, quatre choix chacune", () => {
+  it("Pointes : début et fin, sept choix chacune", () => {
     const { container, calls } = mount({ tool: "select", selection: [arrowEl("a")] });
     const end = container.querySelectorAll('[data-option="arrowheads"] [data-edit="endArrowhead"] [data-choice]');
-    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
+    expect([...end].map((b) => b.getAttribute("data-choice"))).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"]);
     expect(container.querySelector('[data-edit="endArrowhead"] [data-choice="arrow"]')!.getAttribute("aria-checked")).toBe("true");
     expect(container.querySelector('[data-edit="startArrowhead"] [data-choice="none"]')!.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(container.querySelector('[data-edit="endArrowhead"] [data-choice="triangle"]')!);
     fireEvent.click(container.querySelector('[data-edit="startArrowhead"] [data-choice="arrow"]')!);
     expect(calls).toEqual([{ endArrowhead: "triangle" }, { startArrowhead: "arrow" }]);
+  });
+  it("Type de flèche : trois choix, écrit arrowType ; coudée enfoncée", () => {
+    const { container, calls } = mount({ tool: "arrow", selection: [] });
+    const ch = [...container.querySelectorAll('[data-option="arrowType"] [data-option-value]')].map((b) => b.getAttribute("data-option-value"));
+    expect(ch).toEqual(["sharp", "round", "elbow"]);
+    fireEvent.click(container.querySelector('[data-option="arrowType"] [data-option-value="round"]')!);
+    expect(calls).toContainEqual({ arrowType: "round" });
+    const elbow = { ...arrowEl("e"), look: { elbowed: true } } as unknown as ElementView;
+    const m = mount({ tool: "select", selection: [elbow] });
+    expect(m.container.querySelector('[data-option="arrowType"] [data-option-value="elbow"]')!.getAttribute("aria-checked")).toBe("true");
+  });
+  it("Liaison des flèches : interrupteur, écrit arrowBinding", () => {
+    const { container, calls } = mount({ tool: "arrow", selection: [] });
+    const sw = container.querySelector('[data-option="arrowheads"] [data-option-value="arrow-binding"]')!;
+    expect(sw.getAttribute("role")).toBe("switch");
+    expect(sw.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(sw);
+    expect(calls).toContainEqual({ arrowBinding: false });
   });
   it("Disposition : quatre boutons, les fonctions d'ordre d'OG4 (Restack), un appel chacun", () => {
     const { container, engine } = mount({ tool: "select", selection: [rectEl("a", "#000000")] });
@@ -730,5 +750,40 @@ describe("OptionsPanel (OG23, T13) : section Image et Glisser une copie", () => 
     const unknown = { id: "t", kind: "unknown", transform: [1, 0, 0, 1, 0, 0] } as unknown as ElementView;
     const { container } = mount({ tool: "select", selection: [unknown] });
     expect(toggle(container).hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
+  function lineEl(id: string, shape: "line" | "arrow", elbowed = false): ElementView {
+    return { id, kind: "shape", style: { color: "#000000", width: 4 }, shape: { shape, w: 100, h: 0, fill: null }, ...(elbowed ? { look: { elbowed: true } } : {}) } as unknown as ElementView;
+  }
+  const editBtn = '[data-option-value="line-edit"]';
+  const removeBtn = '[data-option-value="point-remove"]';
+  it("Modifier les points : visible pour une ligne seule (cible 44 px), appelle editLinePoints", () => {
+    const { container, engine } = mount({ tool: "select", selection: [lineEl("l", "line")] });
+    const b = container.querySelector(editBtn);
+    expect(b).not.toBeNull();
+    expect(b!.classList.contains("rb-opt-btn")).toBe(true);
+    fireEvent.click(b!);
+    expect(engine.editLinePoints).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(removeBtn)).toBeNull();
+  });
+  it("Modifier les points : absent pour une flèche coudée, pour deux lignes, pour un rectangle et en édition", () => {
+    expect(mount({ tool: "select", selection: [lineEl("a", "arrow", true)] }).container.querySelector(editBtn)).toBeNull();
+    cleanup();
+    expect(mount({ tool: "select", selection: [lineEl("a", "line"), lineEl("b", "line")] }).container.querySelector(editBtn)).toBeNull();
+    cleanup();
+    expect(mount({ tool: "select", selection: [rectEl("r", "#000000")] }).container.querySelector(editBtn)).toBeNull();
+    cleanup();
+    expect(mount({ tool: "select", selection: [lineEl("a", "arrow")], lineEditing: "a" }).container.querySelector(editBtn)).toBeNull();
+  });
+  it("Retirer le point : visible en édition avec un point choisi, appelle removeLinePoints ; absent sans point choisi", () => {
+    expect(mount({ tool: "select", selection: [lineEl("a", "line")], lineEditing: "a", linePoints: 0 }).container.querySelector(removeBtn)).toBeNull();
+    cleanup();
+    const { container, engine } = mount({ tool: "select", selection: [lineEl("a", "line")], lineEditing: "a", linePoints: 1 });
+    const b = container.querySelector(removeBtn);
+    expect(b).not.toBeNull();
+    fireEvent.click(b!);
+    expect(engine.removeLinePoints).toHaveBeenCalledTimes(1);
   });
 });

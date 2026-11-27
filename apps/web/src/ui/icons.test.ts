@@ -43,6 +43,8 @@ const PANEL_ICONS: Readonly<Record<string, string>> = {
 /** design-l2 (L2-22) : icônes de la maquette 01 propres aux îlots, nom RoomBoard -> nom Lucide. */
 const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse: "chevron-up" };
 /** OG11 (T10) : panneau d'options, Lucide (copy-plus, link (T18), trash-2, sliders-horizontal, chevron-*) et icônes dessinées. */
+/** OG12 (T3) : types de flèche, pointes neuves, « Modifier les points », liaison. */
+const OG12_ICONS = ["arrow-type-sharp", "arrow-type-round", "arrow-type-elbow", "head-bar", "head-circle", "head-circle-outline", "edit-points", "point-remove", "arrow-binding"];
 const OPTION_ICONS = ["copy-plus", "link", "external-link", "trash-2", "sliders-horizontal", "chevron-left", "stroke-solid", "stroke-dashed", "stroke-dotted", "sloppiness-0", "sloppiness-1", "sloppiness-2", "corner-sharp", "corner-round",
   "chevron-up", "chevron-down", "align-left", "align-center", "align-right", "fill-solid", "fill-hachure", "fill-cross", "head-none", "head-arrow", "head-triangle", "head-triangle-outline", "palette", "width-thin", "width-medium", "width-thick",
   "pressure-constant", "pressure-variable", "align-start-vertical", "align-center-vertical", "align-end-vertical", "align-start-horizontal", "align-center-horizontal", "align-end-horizontal", "align-horizontal-space-around", "align-vertical-space-around", "flip-horizontal", "flip-vertical", "rotate-ccw-square", "rotate-cw-square", "pipette", "crop"];
@@ -73,10 +75,10 @@ const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", too
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 122 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18)", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS]);
+  it("ICONS : 131 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a, la fenêtre des fonds et le panneau d'options (OG11, lien T18), OG12 (9 icônes de lignes)", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS, ...OPTION_ICONS, ...OG12_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(122);
+    expect(Object.keys(ICONS)).toHaveLength(131);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -178,5 +180,19 @@ describe("icônes de pression (OG23, T20)", () => {
     expect(attrs.d).toMatch(/Z$/i);
     expect(ICONS["pressure-variable"]).toHaveLength(1);
     expect(ICONS["pressure-constant"]![0]![1].fill).toBeUndefined();
+  });
+});
+
+describe("OG12 : icônes des lignes", () => {
+  it("les neuf icônes sont dans ICONS, traits fins sur la grille 24 (aucune coordonnée de cercle hors de la grille)", () => {
+    for (const name of OG12_ICONS) {
+      expect(Object.hasOwn(ICONS, name), name).toBe(true);
+      for (const [tag, attrs] of ICONS[name]!) {
+        if (tag === "circle") {
+          const cx = Number(attrs["cx"]); const cy = Number(attrs["cy"]); const r = Number(attrs["r"]);
+          expect(cx - r >= 0 && cx + r <= 24 && cy - r >= 0 && cy + r <= 24, name).toBe(true);
+        }
+      }
+    }
   });
 });

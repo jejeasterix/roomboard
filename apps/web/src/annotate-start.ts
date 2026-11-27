@@ -32,6 +32,8 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
   const parsed = parseSettings(window.location.search);
   const measureCtx = document.createElement("canvas").getContext("2d");
   const measure = measureOrFallback(measureCtx);
+  // OG25 (déc. 30) : gomme automatique à la paume, reçue avec chaque document ; lue à chaque pose par la session.
+  let palmEraser = true;
   const shared: SessionShared = {
     container: stages,
     settings: createSettingsStore(parsed.settings),
@@ -40,6 +42,7 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
     measure,
     coreVersion: core.version(),
     transparent: true,
+    palmEraser: () => palmEraser,
   };
   const io = createContainerIO({
     core,
@@ -61,6 +64,9 @@ export async function startAnnotateWindow(core: CoreFactory, ipc: TauriIpc, keyO
     cursor: () => ipc.invoke<[number, number] | null>("annotation_cursor"),
     ignore: (on) => ipc.invoke<void>("annotation_ignore", { ignore: on }),
     frame,
+    palmEraser: (on) => {
+      palmEraser = on;
+    },
   });
   window.addEventListener("keydown", (e) => {
     if (page.key(keyOf(e))) e.preventDefault();

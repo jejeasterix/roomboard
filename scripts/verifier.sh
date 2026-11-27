@@ -147,10 +147,14 @@ if [ "$E2E" = 1 ]; then
   echo "personnalisation-2 : OK"
   node scripts/essais/personnalisation-2-retours-navigateur.mjs
   echo "personnalisation-2-retours : OK"
+  node scripts/essais/outils-excalidraw-navigateur.mjs
+  echo "outils-excalidraw : OK"
   node scripts/essais/design-l3-navigateur.mjs
   echo "design L3 : OK"
   node scripts/essais/personnalisation-1a-navigateur.mjs
   echo "personnalisation 1a : OK"
+  node scripts/essais/portrait-pleine-largeur-navigateur.mjs
+  echo "portrait pleine largeur : OK"
   node scripts/essais/design-l2-navigateur.mjs
   echo "design L2 : OK"
   node scripts/essais/fonds-navigateur.mjs
@@ -158,6 +162,9 @@ if [ "$E2E" = 1 ]; then
   node scripts/essais/restes-personnalisation-1-navigateur.mjs
   echo "restes personnalisation 1 : OK"
   node scripts/essais/gomme-trait-epais-navigateur.mjs
+  node scripts/essais/gomme-paume-navigateur.mjs
+  node scripts/essais/restes-og19-og14-og24-navigateur.mjs
+  echo "restes OG19 OG14 OG24 : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"

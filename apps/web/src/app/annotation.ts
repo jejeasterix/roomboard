@@ -27,6 +27,7 @@ import {
   type CapturedImage,
   type CaptureFailure,
   frameField,
+  palmEraserField,
   type PointerMode,
   type Returned,
   type SendRequest,
@@ -77,6 +78,9 @@ export interface AnnotationDeps<T> {
   /** design-l4 (L4-13) : cadre violet de l'appareil, lu à chaque entrée et à chaque rechargement ; absent : la charge
    *  ne porte pas le champ (`annotate` affiche le cadre). */
   frame?(): boolean;
+  /** OG25 (déc. 30) : gomme automatique à la paume de l'appareil, lue à chaque entrée et à chaque rechargement ; absent :
+   *  la charge ne porte pas le champ (`annotate` la garde active). */
+  palmEraser?(): boolean;
   /** design-l4 (L4-16) : envoi réussi, page `page` (1 = première) ; absent : l'avis reste `say(sentToBoardMessage)`. */
   sent?(page: number): void;
 }
@@ -150,6 +154,8 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
   };
   /** L4-13 : champ `frame` de la charge, seulement si l'appareil le donne. */
   const frameOf = (): { readonly frame?: boolean } => frameField({ frame: d.frame?.() });
+  /** OG25 : champ `palmEraser` de la charge, seulement si l'appareil le donne. */
+  const palmOf = (): { readonly palmEraser?: boolean } => palmEraserField({ palmEraser: d.palmEraser?.() });
   /** L4-9 : la souris passe par Sélection, le dessin revient au dernier outil de dessin (P8) ; sans effet si `mode` est
    *  déjà le mode présent (double clic sur un segment). Appelée dans la file. */
   const pointTo = (mode: PointerMode): void => {
@@ -190,7 +196,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
         frozen = true;
       }
       const document = await d.encodeTab(tab);
-      const screen = await d.windows.enter({ ...place, document, profile: d.profile(), opaque: frozen, ...frameOf() });
+      const screen = await d.windows.enter({ ...place, document, profile: d.profile(), opaque: frozen, ...frameOf(), ...palmOf() });
       set({ screen, frozen });
       sendSession(lastDraw);
       await d.windows.pointer("draw");
@@ -304,7 +310,7 @@ export function createAnnotationController<T>(d: AnnotationDeps<T>): AnnotationC
           }
           const tab = await d.annotationTab();
           if (tab === null) return;
-          await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive, ...frameOf() });
+          await d.windows.load({ document: await d.encodeTab(tab), opaque: !toLive, ...frameOf(), ...palmOf() });
           set({ frozen: !toLive });
           sendSession(st.pointer === "mouse" ? "select" : lastDraw);
           await d.windows.pointer(toLive ? st.pointer : "draw");

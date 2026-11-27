@@ -19,6 +19,12 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("delete", "Édition", "Supprimer", "Suppr"),
   s("escape", "Édition", "Désélectionner", "Échap"),
   s("link", "Édition", "Lien", "Ctrl+K"),
+  s("line-edit", "Édition", "Modifier les points", "Ctrl+Entrée"),
+  // Fusion OG12 × OG23 : Alt+Maj+flèche sert aussi « Aligner » (align-*, plus bas). Le geste contextuel prime dans son
+  // contexte (engine.ts, `key`) : un rectangle ou une ellipse seul, ou une séance « Modifier les points », va à OG12 ;
+  // hors de ces contextes (au moins deux unités), Aligner.
+  s("linked-node", "Édition", "Objet relié", "Alt+Maj+↑ ↓ ← →"),
+  s("no-binding", "Édition", "Flèche sans liaison", "Ctrl tenu"),
   s("front", "Disposition", "Premier plan", "Ctrl+Maj+↑"),
   s("forward", "Disposition", "Avancer", "Ctrl+↑"),
   s("backward", "Disposition", "Reculer", "Ctrl+↓"),
@@ -48,6 +54,8 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),
+  // OG25 (déc. 27) : coupe ou rallume la gomme automatique à la paume (réglage de l'appareil), avec un avis.
+  s("palm-eraser", "Outils", "Gomme automatique à la paume", "Ctrl+Maj+H"),
 ]);
 const MAC: ReadonlyArray<readonly [string, string]> = [["Ctrl+", "⌘"], ["Maj+", "⇧"], ["Alt+", "⌥"]];
 export function shortcutText(id: string, mac: boolean): string | null {
@@ -56,12 +64,12 @@ export function shortcutText(id: string, mac: boolean): string | null {
   return mac ? MAC.reduce((t, [a, b]) => t.split(a).join(b), hit.keys) : hit.keys;
 }
 /** Noms `aria-keyshortcuts` (WAI-ARIA) des parties d'un raccourci de la table. */
-const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight" };
+const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight", "Entrée": "Enter" };
 /** OG19 : valeur `aria-keyshortcuts` d'un raccourci (Ctrl → Control, ou Meta sous macOS) ; null pour un geste
  *  (« Espace + glisser »), une liste (« Ctrl+B, I, U ») ou un id absent de la table. */
 export function ariaShortcut(id: string, mac: boolean): string | null {
   const keys = SHORTCUTS.find((x) => x.id === id)?.keys;
-  if (keys === undefined || keys.includes(",") || keys.includes(" + ")) return null;
+  if (keys === undefined || keys.includes(",") || keys.includes(" + ") || /[↑↓←→] [↑↓←→]/.test(keys)) return null;
   return keys
     .split("+")
     .map((k) => (k === "Ctrl" ? (mac ? "Meta" : "Control") : Object.hasOwn(ARIA, k) ? ARIA[k]! : k))

@@ -7,15 +7,18 @@
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
 import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import type { ArrangeHow } from "../core/arrange";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { arrangeKey, nudgeKey, editAction, enterAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./input/keys";
+import { arrangeKey, nudgeKey, editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
-import type { LookPatch } from "../core/look";
+import { elbowedOf, type LookPatch } from "../core/look";
+import { isSegment } from "../core/shapes";
+import { createLineEditor, type LineEditor } from "./tools/line-edit";
+import { linkedCopy } from "./tools/line-points";
 import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
@@ -70,6 +73,13 @@ export interface EngineState {
   readonly linkEditing?: string | null;
   /** OG23 (T8) : la pipette de scène est armée (le prochain toucher de la scène lit une couleur). Facultatif comme fillColor (PC5). */
   readonly picking?: boolean;
+  /** OG12 T11 (n° 20 à 23) : ligne ou flèche en « Modifier les points » ; null hors édition. Facultatif comme
+   *  linkEditing : le moteur le publie toujours. */
+  readonly lineEditing?: string | null;
+  /** OG12 T11 : nombre de points choisis dans l'éditeur ; 0 hors édition. */
+  readonly linePointsSelected?: number;
+  /** OG12 T11 (n° 16) : objet surligné comme cible d'une liaison par le calque d'édition ; null sinon. */
+  readonly bindHint?: string | null;
   readonly elementCount: number;
   readonly version: number;
   /** Dernier refus du cœur (message lisible), effacé à la commande réussie suivante. */
@@ -152,6 +162,42 @@ export function pageShortcut(
   }
 }
 
+/** OG24 : marge sous le bas d'une page portrait défilée jusqu'en bas, en px de scène (le haut garde `fitTop`). */
+export const SCROLL_BOTTOM = 16;
+
+/** Ascenseur de la page portrait montrée (OG24) : `at` 0 = haut de page, 1 = bas ; `visible` = part de la page à
+ *  l'écran (0-1) ; `top` = haut de page ajustée, px de scène ; `span` = hauteur d'écran, px, de `top` à la marge du bas. */
+export interface PageScroll {
+  readonly at: number;
+  readonly visible: number;
+  readonly top: number;
+  readonly span: number;
+}
+
+/** Deux caméras identiques au px près (OG27 : une vue restée à son ajustement). */
+const sameCamera = (a: Camera, b: Camera): boolean => a.zoom === b.zoom && a.tx === b.tx && a.ty === b.ty;
+
+/**
+ * Touches de l'ascenseur (OG24), prises seulement si la vue bouge : ↑ ↓ d'un huitième de `span`, Maj+↑ ↓ de 90 % de
+ * `span`, Début et Fin aux bords. Hors portrait (ou page qui tient dans la vue) : rien, la touche passe.
+ */
+export function scrollShortcut(e: KeyLike, engine: Pick<Engine, "pageScroll" | "scrollPageBy" | "scrollPageTo">): boolean {
+  const k = scrollKey(e);
+  const s = k === null ? null : engine.pageScroll();
+  if (s === null) return false;
+  switch (k) {
+    case "top":
+      return engine.scrollPageTo(0);
+    case "bottom":
+      return engine.scrollPageTo(1);
+    case "up":
+    case "down":
+      return engine.scrollPageBy((k === "up" ? -1 : 1) * (s.span / 8));
+    default:
+      return engine.scrollPageBy((k === "screen-up" ? -1 : 1) * s.span * 0.9);
+  }
+}
+
 export interface OrbitOptions {
   readonly view: ModelCamera;
   onView(v: ModelCamera): void;
@@ -199,6 +245,9 @@ export interface Engine {
   releaseKeys(): void;
   /** Barre d'espace tenue (D17) : le routeur la lit au début d'un geste. */
   panHeld(): boolean;
+  /** OG25 (déc. 23) : faux quand une retouche d'image (rognage, pipette) ou une orbite prend les gestes ; le routeur le
+   *  lit avant de basculer en gomme automatique. */
+  gesturesToTools(): boolean;
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
   /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
@@ -216,6 +265,16 @@ export interface Engine {
   nextPage(): boolean;
   /** « Ajuster la page » (D5 amendée) : largeur cadrée, haut de page en haut de la vue. */
   fitPage(): void;
+  /** OG24 : ascenseur de la page portrait montrée ; null en paysage, en infini, ou si la page tient dans la vue. */
+  pageScroll(): PageScroll | null;
+  /** OG24 : fait défiler la page portrait de `dy` px d'écran (positif : vers le bas de la page), borné à la page ; faux si rien ne bouge. */
+  scrollPageBy(dy: number): boolean;
+  /** OG24 : place la page portrait à `at` (0 = haut, 1 = bas, borné) ; faux si rien ne bouge. */
+  scrollPageTo(at: number): boolean;
+  /** OG27 : le haut sous les îlots (`fitTop`) a pu changer (un îlot du haut a bougé). Vue d'une page Page encore à son
+   *  ajustement : décalée du seul écart du haut (zoom gardé) ; pages quittées encore ajustées : aussi. Infini : rien.
+   *  Vrai si la vue montrée a bougé. */
+  topChanged(): boolean;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
   /** Aperçu d'une grille non enregistrée sur la page montrée (C9 éditeur, DAE1) : rien n'est écrit ; null = aucune grille. */
@@ -265,6 +324,20 @@ export interface Engine {
   setLink(url: string | null): boolean;
   /** T18 : ferme l'éditeur de lien sans écrire. */
   closeLink(): void;
+  /** OG12 T11 (n° 21) : « Modifier les points » sur la ligne ou flèche non coudée seule sélectionnée ; l'outil reste
+   *  Sélection et la sélection est gardée. Faux sinon. */
+  editLinePoints(): boolean;
+  /** OG12 T11 : retire les points choisis de l'éditeur (une SetLinePoints) ; faux hors édition ou sans point choisi. */
+  removeLinePoints(): boolean;
+  /** OG12 T11 : sort de « Modifier les points » sans changer d'outil ni de sélection. */
+  exitLineEdit(): void;
+  /** OG12 T11 (n° 27, 28) : objet relié (AddLinked) depuis le rectangle ou l'ellipse seul sélectionné ; la copie devient
+   *  la sélection. Faux sinon ou si le cœur refuse. */
+  addLinked(dir: LinkDir): boolean;
+  /** OG12 T11 (n° 29) : doigt tardif tenu pendant un geste, lu comme Maj par les outils (routeur, `RouterDeps.modifier`). */
+  setTouchModifier(held: boolean): void;
+  /** OG12 T11 : survol souris ou stylet sans bouton, px de la scène (surlignage de l'outil Ligne ou Flèche). */
+  hover(x: number, y: number): void;
   /** Couleur du pot (C6a, D16), propre au pot : ni le stylo ni les formes ne changent ; null = « Aucune » ; une couleur
    *  invalide est ignorée. */
   setFillColor(color: string | null): void;
@@ -361,13 +434,13 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
   /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fitTop = (): number => deps.fitTop?.() ?? 16;
   const fit = (w: number, h: number): Camera => {
     const view = doc.page(pageId);
-    const top = deps.fitTop?.() ?? 16;
+    const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
-    // décision 10 : Infini = contenu ∪ fond ; page plus haute que large (portrait choisi) = cadre entier ; sinon largeur.
-    // Le cadre d'un fond PDF A4 dépasse la hauteur de page : il ne décide pas de l'ajustement.
-    const layout = pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape";
+    // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
+    const layout = pageLayoutOf(view);
     return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
   };
   const contentRect = (backdrop: Bounds | null): PageRect | null => {
@@ -390,14 +463,53 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastDeleted: string[] | null = null;
   /** Caméra de chaque page quittée (D17 : par page, dans l'interface, jamais dans le document). */
   const cameras = new Map<string, Camera>();
-  /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
-  const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
+  /** OG27 : dernier ajustement de chaque page (caméra et haut sous les îlots) ; une vue qui y est encore suit le haut. */
+  /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
+  const fits = new Map<string, { readonly camera: Camera; readonly top: number }>();
+  const setFit = (id: string, c: Camera): void => {
+    fits.set(id, { camera: c, top: fitTop() });
+  };
+  /** OG27 : vue `c` de la page `id` décalée du seul écart du haut (`top`), si elle est encore à son ajustement d'une page
+   *  Page ; null sinon (vue déplacée par la main, Infini, page disparue, haut inchangé). Ni zoom ni contenu relus. */
+  const followTop = (id: string, c: Camera, top: number): Camera | null => {
+    const f = fits.get(id);
+    const view = doc.page(id);
+    if (f === undefined || view === null || pageLayoutOf(view) === "infinite" || f.top === top || !sameCamera(c, f.camera)) return null;
+    const next = { ...c, ty: c.ty + top - f.top };
+    fits.set(id, { camera: next, top });
+    return next;
+  };
+  /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue.
+   *  OG27 : le portrait est la forme affichée (cadre plus haut que large), fond PDF A4 d'une page Paysage compris. */
+  const scrollState = (): { readonly bounds: ScrollBounds; readonly top: number; readonly height: number } | null => {
+    const view = doc.page(pageId);
+    const frame = view === null || pageLayoutOf(view) !== "portrait" ? null : pageFrame(view);
+    if (frame === null || !(viewH > 0)) return null;
+    const top = fitTop();
+    const bounds = scrollBounds(camera, frame, viewH, top, SCROLL_BOTTOM);
+    return bounds === null ? null : { bounds, top, height: (frame.y1 - frame.y0) * camera.zoom };
+  };
+  /** Caméra défilée à `ty` (bornée) ; vrai si elle a bougé. */
+  const scrollCamera = (next: Camera): boolean => {
+    if (next.ty === camera.ty && next.tx === camera.tx) return false;
+    setCamera(next);
+    requestScene();
+    return true;
+  };
   let tool: ToolChoice = "pen";
   let spaceHeld = false;
   let shiftHeld = false;
   let altHeld = false;
+  /** OG12 T11 : Ctrl ou Cmd tenu (n° 19), doigt tardif tenu (n° 29, vaut Maj), type du pointeur du dernier appui. */
+  let ctrlHeld = false;
+  let touchShift = false;
+  let lastPointer = "mouse";
+  /** OG12 T11 : séance « Modifier les points » (comme l'orbite C15 : un état du moteur, pas un outil de la barre). */
+  let lineEditor: LineEditor | null = null;
+  /** OG12 T11 : cible surlignée du dernier calque peint (`overlay.bind`). */
+  let bindHint: string | null = null;
   let lastOverlay = overlayKey(EMPTY_OVERLAY);
   let eraserMode: EraseMode = "partial";
   let error: string | null = null;
@@ -520,6 +632,9 @@ export function createEngine(deps: EngineDeps): Engine {
       itemStyle: item,
       linkEditing: linkTarget(),
       picking: pickDone !== null,
+      lineEditing: lineEditor?.id ?? null,
+      linePointsSelected: lineEditor?.selectedPoints().length ?? 0,
+      bindHint,
       elementCount: doc.elementIds(pageId).length,
       version: doc.version(),
       error,
@@ -541,8 +656,43 @@ export function createEngine(deps: EngineDeps): Engine {
     emit();
   }
 
+  /** OG12 T11 : l'éditeur de points tombe dès que sa ligne n'est plus l'unique sélection (supprimée, annulée, page
+   *  changée, autre sélection) ; vrai s'il est tombé. Sans émission (appelé par `emit`). */
+  function dropLineEditor(): boolean {
+    if (lineEditor === null) return false;
+    const sel = selectTool.selection();
+    if (sel.length === 1 && sel[0] === lineEditor.id && doc.element(lineEditor.id) !== null) return false;
+    lineEditor.leave?.("tool");
+    lineEditor = null;
+    requestScene();
+    return true;
+  }
+
+  /** OG12 (n° 21) : entre dans « Modifier les points » pour `id` (ligne ou flèche non coudée), sélection = `id`. */
+  function enterLineEdit(id: string): boolean {
+    const v = doc.element(id);
+    if (v?.kind !== "shape" || !isSegment(v.shape.shape) || elbowedOf(v.look)) return false;
+    if (!doc.elementIds(pageId).includes(id)) return false;
+    if (tool !== "select") engine.setTool("select");
+    lineEditor?.leave?.("tool");
+    lineEditor = createLineEditor(ctx, id, exitLineEdit);
+    selectTool.setSelection([id]);
+    requestScene();
+    emit();
+    return true;
+  }
+
+  function exitLineEdit(): void {
+    if (lineEditor === null) return;
+    lineEditor.leave?.("tool");
+    lineEditor = null;
+    requestScene();
+    emit();
+  }
+
   function emit(): void {
     linkEditing = linkTarget();
+    dropLineEditor();
     const s = state();
     for (const cb of stateListeners) cb(s);
   }
@@ -561,6 +711,8 @@ export function createEngine(deps: EngineDeps): Engine {
   function switchTo(id: string): void {
     closeAll("abort");
     leaveAll("page");
+    lineEditor?.leave?.("page");
+    lineEditor = null;
     stopPreview();
     imageEdit?.close();
     orbit?.close();
@@ -572,7 +724,7 @@ export function createEngine(deps: EngineDeps): Engine {
       setCamera(saved);
     } else if (viewW > 0 && viewH > 0) {
       setCamera(fit(viewW, viewH));
-      fitted.add(id);
+      setFit(id, camera);
     } else {
       setCamera(IDENTITY);
     }
@@ -741,11 +893,15 @@ export function createEngine(deps: EngineDeps): Engine {
     page: () => pageId,
     camera: () => camera,
     run,
-    shift: () => shiftHeld,
+    shift: () => shiftHeld || touchShift,
     alt: () => altHeld,
     requestFrame: requestScene,
     stateChanged: () => emit(),
     duplicate: (ids, dx, dy, strip) => engine.duplicate(ids, dx, dy, strip),
+    ctrl: () => ctrlHeld,
+    bindingEnabled: () => item.arrowBinding,
+    pointerType: () => lastPointer,
+    editPoints: (id) => void enterLineEdit(id),
   };
   const selectTool: SelectionTool = deps.tools.select?.(ctx) ?? inertSelection();
   /** Style de texte de l'outil Tableau et de l'import : couleur du stylo, taille par défaut ; l'outil Texte a `textToolStyle`. */
@@ -773,15 +929,26 @@ export function createEngine(deps: EngineDeps): Engine {
     for (const t of toolList) t.leave?.(reason);
   }
 
+  /** OG12 T11 : outils peints ; en « Modifier les points », l'éditeur remplace le calque de l'outil Sélection. */
+  function liveTools(): readonly GestureTool[] {
+    return lineEditor === null ? toolList : [...toolList.filter((t) => t !== selectTool), lineEditor];
+  }
+
   function frame(now: number): void {
-    for (const t of toolList) t.frame();
-    const parts: LivePart[] = toolList.map((t) => t.live());
+    const painted = liveTools();
+    for (const t of painted) t.frame();
+    const parts: LivePart[] = painted.map((t) => t.live());
     const hidden = new Set<string>();
     for (const p of parts) for (const id of p.hidden) hidden.add(id);
     const merged = mergeOverlays(parts.map((p) => p.overlay));
     // C5 (I28) : pendant le rognage, le cadre de la sélection cède la place au cadre de rognage.
     const overlay = imageEdit?.mode() === "crop" ? { ...merged, frame: null, handles: false } : merged;
     const key = overlayKey(overlay);
+    const hint = overlay.bind?.id ?? null;
+    if (hint !== bindHint) {
+      bindHint = hint;
+      emit();
+    }
     if (sceneDirty || !sameSet(hidden, lastHidden) || key !== lastOverlay) {
       // Un seul `doc.page` par scène (PF29) : fond de couleur (C6a) et fond de page (C12).
       const view = doc.page(pageId);
@@ -807,16 +974,18 @@ export function createEngine(deps: EngineDeps): Engine {
       camera,
     );
     for (const cb of drawnListeners) cb(now);
-    if (!toolList.some((t) => t.active()) && imageEdit?.gesture.active() !== true && orbit?.gesture.active() !== true) loop.stop();
+    if (!toolList.some((t) => t.active()) && lineEditor?.active() !== true && imageEdit?.gesture.active() !== true && orbit?.gesture.active() !== true) loop.stop();
   }
 
   const loop = createFrameLoop(deps.frames, frame, ENGINE_FRAME_HISTORY);
 
-  /** Exécute un geste ; `emit()` si la sélection a changé. */
-  const emitIfSelectionChanged = (run: () => void): void => {
+  /** Exécute un geste ; `emit()` si la sélection a changé, ou toujours pour l'éditeur de points (OG12 C3 : ses points
+   *  choisis changent sans toucher la sélection, et le relâché d'un glisser émet avant de choisir le point tiré). */
+  const emitIfSelectionChanged = (run: () => void, g?: GestureTool): void => {
     const before = selectTool.selection().join("\n");
+    const editor = g !== undefined && g === lineEditor;
     run();
-    if (selectTool.selection().join("\n") !== before) emit();
+    if (editor || selectTool.selection().join("\n") !== before) emit();
   };
 
   /** Le point d'appui touche-t-il l'élément `id` (le plus haut sous le point, tolérance de la sélection) ? */
@@ -924,6 +1093,7 @@ export function createEngine(deps: EngineDeps): Engine {
         settlePick(s === undefined ? null : (renderer.colorAt?.(s.x, s.y) ?? null));
         return;
       }
+      lastPointer = pointerType ?? "mouse";
       // T18 (déc. 38) : toucher du badge d'un lien avec l'outil Sélection, hors rognage, pipette et orbite.
       if (t === "select" && orbit === null && (imageEdit === null || imageEdit.mode() === "idle")) {
         const url = badgeLinkAt(samples[0], pointerType);
@@ -939,9 +1109,17 @@ export function createEngine(deps: EngineDeps): Engine {
         owner.set(pointerId, missedOrbit(tools[t], pointerId, samples));
         return;
       }
-      const g = imageEdit !== null && imageEdit.mode() !== "idle" ? imageEdit.gesture : orbit !== null ? orbit.gesture : tools[t];
+      // OG12 T11 : « Modifier les points » reçoit les gestes de l'outil Sélection, après le rognage et l'orbite.
+      const g =
+        imageEdit !== null && imageEdit.mode() !== "idle"
+          ? imageEdit.gesture
+          : orbit !== null
+            ? orbit.gesture
+            : lineEditor !== null && t === "select"
+              ? lineEditor
+              : tools[t];
       owner.set(pointerId, g);
-      emitIfSelectionChanged(() => g.begin(pointerId, samples));
+      emitIfSelectionChanged(() => g.begin(pointerId, samples), g);
       loop.start();
     },
     extend(pointerId, samples, predicted) {
@@ -951,8 +1129,12 @@ export function createEngine(deps: EngineDeps): Engine {
       const g = owner.get(pointerId);
       if (!g) return;
       owner.delete(pointerId);
-      emitIfSelectionChanged(() => g.close(pointerId, how));
+      emitIfSelectionChanged(() => g.close(pointerId, how), g);
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
+    },
+    resize(pointerId, radiusPx) {
+      owner.get(pointerId)?.resize?.(pointerId, radiusPx);
+      loop.start(); // l'aperçu suit le rayon
     },
   };
 
@@ -994,10 +1176,24 @@ export function createEngine(deps: EngineDeps): Engine {
         ...(Object.fromEntries(keys.filter((k) => k in kept && kept[k] === next[k]).map((k) => [k, kept[k]])) as Partial<ItemStyle>),
         ...(transparent ? { color: "transparent" } : {}),
       };
-      const patch = patchOf(accepted);
+      // OG12 : `arrowBinding` est un réglage de l'appareil (aucune commande) ; `arrowType` ne touche que les flèches.
+      const { arrowType, arrowBinding: _device, ...rest } = accepted;
+      const cmds: Command[] = [];
+      const patch = patchOf(rest);
       // `font` et `fontSize` ne sont que le style du prochain texte : aucune commande.
-      if (Object.keys(patch).length > 0) {
-        run({ type: "SetStyle", ids, patch });
+      if (Object.keys(patch).length > 0) cmds.push({ type: "SetStyle", ids, patch });
+      if (arrowType !== undefined) {
+        const arrows = ids.filter((id) => {
+          const v = doc.element(id);
+          return v?.kind === "shape" && v.shape.shape === "arrow";
+        });
+        if (arrows.length > 0) {
+          cmds.push({ type: "SetStyle", ids: arrows, patch: { roundness: arrowType === "round" ? "round" : null, elbowed: arrowType === "elbow" ? true : null } });
+        }
+      }
+      if (cmds.length > 0) {
+        if (cmds.length === 1) run(cmds[0]!);
+        else runAll(cmds);
         return;
       }
     }
@@ -1020,6 +1216,7 @@ export function createEngine(deps: EngineDeps): Engine {
     view,
     tool: () => tool,
     setTool(t) {
+      if (t !== "select") exitLineEdit();
       if (t !== tool) {
         leaveAll("tool");
         tool = t;
@@ -1106,6 +1303,10 @@ export function createEngine(deps: EngineDeps): Engine {
         settlePick(null);
         return true;
       }
+      if (isCtrlKey(e)) {
+        ctrlHeld = true;
+        return false;
+      }
       if (e.key === "Shift") {
         shiftHeld = true;
         return false;
@@ -1131,8 +1332,14 @@ export function createEngine(deps: EngineDeps): Engine {
       const action = keyAction(e);
       const imageBusy = imageEdit !== null && imageEdit.mode() !== "idle";
       if (!imageBusy && textTool.editing() === null && selectTool.selection().length > 0) {
+        // Fusion OG12 × OG23 : Alt+Maj+flèche est à la fois l'objet relié d'OG12 (`linkedKey`) et Aligner d'OG23
+        // (`arrangeKey`). Le geste contextuel d'OG12 prime dans son contexte : pendant une séance « Modifier les points »
+        // (la touche va plus bas à l'éditeur, jamais à Aligner) et sur un seul rectangle ou une seule ellipse (le
+        // contexte d'`addLinked`). Hors de ces contextes, Aligner (qui demande au moins deux unités).
+        const linked = linkedKey(e);
+        if (linked !== null && lineEditor === null && engine.addLinked(linked)) return true;
         // OG23 (déc. 24) : Alt+Maj+lettres et Maj+H, V, R ; flèches ; pris seulement avec une sélection (sinon la touche passe).
-        const how = arrangeKey(e);
+        const how = linked !== null && lineEditor !== null ? null : arrangeKey(e);
         if (how !== null) {
           arrange(how);
           return true;
@@ -1165,6 +1372,21 @@ export function createEngine(deps: EngineDeps): Engine {
         orbit.close();
         return true;
       }
+      // OG12 T11 (n° 21 à 23, 28) : Ctrl+Entrée, puis Suppr et Échap de l'éditeur de points, Alt+Maj+flèche.
+      if (lineEditKey(e)) {
+        const sel = selectTool.selection();
+        return sel.length === 1 && enterLineEdit(sel[0]!);
+      }
+      if (lineEditor !== null && edit === "delete") {
+        lineEditor.removeSelected();
+        return true;
+      }
+      if (lineEditor !== null && edit === "escape") {
+        exitLineEdit();
+        return true;
+      }
+      const dir = linkedKey(e);
+      if (dir !== null) return engine.addLinked(dir);
       // OG11 (DA-6, déc. 39) : Ctrl+D duplique ; toujours pris (preventDefault), comme Excalidraw : pas de favori du navigateur.
       if (objectKey(e) === "duplicate") {
         engine.duplicateSelection();
@@ -1198,6 +1420,10 @@ export function createEngine(deps: EngineDeps): Engine {
       return true;
     },
     keyUp(e) {
+      if (isCtrlKey(e)) {
+        ctrlHeld = false;
+        return false;
+      }
       if (e.key === "Shift") {
         shiftHeld = false;
         return false;
@@ -1214,8 +1440,11 @@ export function createEngine(deps: EngineDeps): Engine {
       spaceHeld = false;
       shiftHeld = false;
       altHeld = false;
+      ctrlHeld = false;
+      touchShift = false;
     },
     panHeld: () => spaceHeld,
+    gesturesToTools: () => !(imageEdit !== null && imageEdit.mode() !== "idle") && orbit === null,
     showPage(id) {
       if (id === pageId) return true;
       if (!doc.pageIds().includes(id)) return false;
@@ -1262,10 +1491,42 @@ export function createEngine(deps: EngineDeps): Engine {
       const prev = i > 0 ? ids[i - 1] : undefined;
       return prev !== undefined && engine.showPage(prev);
     },
+    pageScroll() {
+      const s = scrollState();
+      if (s === null) return null;
+      const { min, max } = s.bounds;
+      const span = viewH - s.top - SCROLL_BOTTOM;
+      return { at: Math.min(1, Math.max(0, (max - camera.ty) / (max - min))), visible: Math.min(1, span / s.height), top: s.top, span };
+    },
+    scrollPageBy(dy) {
+      const s = scrollState();
+      return s !== null && scrollCamera(scrollTo(camera, camera.ty - dy, s.bounds));
+    },
+    scrollPageTo(at) {
+      const s = scrollState();
+      if (s === null || !Number.isFinite(at)) return false;
+      const { min, max } = s.bounds;
+      return scrollCamera({ ...camera, ty: max - Math.min(1, Math.max(0, at)) * (max - min) });
+    },
+    topChanged() {
+      if (!(viewW > 0 && viewH > 0)) return false;
+      const top = fitTop();
+      // Pages quittées encore ajustées : leur caméra gardée suit (elles se montreront sous le nouveau haut).
+      for (const [id, saved] of cameras) {
+        if (id === pageId) continue;
+        const next = followTop(id, saved, top);
+        if (next !== null) cameras.set(id, next);
+      }
+      const next = followTop(pageId, camera, top);
+      if (next === null) return false;
+      setCamera(next);
+      requestScene();
+      return true;
+    },
     fitPage() {
       if (viewW > 0 && viewH > 0) {
         setCamera(fit(viewW, viewH));
-        fitted.add(pageId);
+        setFit(pageId, camera);
       }
       requestScene();
     },
@@ -1374,6 +1635,37 @@ export function createEngine(deps: EngineDeps): Engine {
       linkEditing = null;
       emit();
     },
+    editLinePoints() {
+      const sel = selectTool.selection();
+      return sel.length === 1 && enterLineEdit(sel[0]!);
+    },
+    removeLinePoints() {
+      return lineEditor?.removeSelected() ?? false;
+    },
+    exitLineEdit,
+    addLinked(dir) {
+      const sel = selectTool.selection();
+      const id = sel.length === 1 ? sel[0]! : null;
+      const v = id === null ? null : doc.element(id);
+      if (id === null || v?.kind !== "shape" || (v.shape.shape !== "rect" && v.shape.shape !== "ellipse")) return false;
+      const change = run({ type: "AddLinked", id, dir });
+      if (change === null) return false;
+      const copy = linkedCopy(doc, change.ids, id);
+      if (copy !== null) selectTool.setSelection([copy]);
+      requestScene();
+      emit();
+      return true;
+    },
+    setTouchModifier(held) {
+      touchShift = held;
+    },
+    hover(x, y) {
+      if (tool === "hand") return;
+      const t = tools[tool];
+      if (t.hover === undefined) return;
+      t.hover(x, y);
+      loop.start();
+    },
     itemStyle: () => item,
     adoptItemStyle(s) {
       const changed = (Object.keys(s) as (keyof ItemStyle)[]).some((k) => s[k] !== item[k]);
@@ -1404,16 +1696,22 @@ export function createEngine(deps: EngineDeps): Engine {
       };
     },
     wheel(e) {
-      if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
-      else view.panBy(-e.deltaX, -e.deltaY);
+      if (e.ctrlKey) {
+        view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
+        return;
+      }
+      // OG24 : en portrait, la molette défile la page, bornée comme l'ascenseur ; le glisser à deux doigts reste libre.
+      const s = scrollState();
+      if (s === null) view.panBy(-e.deltaX, -e.deltaY);
+      else scrollCamera(scrollTo(panCamera(camera, -e.deltaX, 0), camera.ty - e.deltaY, s.bounds));
     },
     resize(width, height, dpr) {
       renderer.resize(width, height, dpr);
       viewW = width;
       viewH = height;
-      if (!fitted.has(pageId) && width > 0 && height > 0) {
+      if (!fits.has(pageId) && width > 0 && height > 0) {
         setCamera(fit(width, height));
-        fitted.add(pageId);
+        setFit(pageId, camera);
       }
       requestScene();
     },
@@ -1433,6 +1731,7 @@ export function createEngine(deps: EngineDeps): Engine {
     },
     frameDurations: () => loop.durations(),
     dispose() {
+      lineEditor = null;
       imageEdit?.close();
       orbit?.close();
       closeAll("abort");

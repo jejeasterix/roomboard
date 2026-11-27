@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
+import { elbowedOf, newSeed, STROKE_STYLES, lookFrom, opacityOf, roughnessOf, strokeKindOf, toLook, opacityLook } from "./look";
 import { dragCopyOf, variabilityOf, VARIABILITY_CONSTANT } from "./look";
 import { ARROWHEADS, endArrowheadOf, FILL_STYLES, fillStyleOf, LINK_MAX_CHARS, startArrowheadOf, TEXT_ALIGNS, textAlignOf, validLink } from "./look";
 
@@ -48,7 +48,7 @@ describe("look — lot 2 (T12)", () => {
       fillStyle: "hachure", startArrowhead: "triangle", endArrowhead: "none", textAlign: "right", link: "https://example.org",
     });
     expect(toLook({ fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left", link: "javascript:alert(1)" })).toBeUndefined();
-    expect(toLook({ fillStyle: 3, startArrowhead: "circle", endArrowhead: null, textAlign: "justify", link: 42 })).toBeUndefined();
+    expect(toLook({ fillStyle: 3, startArrowhead: "diamond", endArrowhead: null, textAlign: "justify", link: 42 })).toBeUndefined();
   });
   it("validLink : refuse blancs, guillemet, chevrons, antislash et caractères de contrôle ; accepte %20", () => {
     for (const ko of ['mailto:a@b" /a "C:\\x"', "https://example.org/a b", "https://example.org/a\tb", "https://example.org/a\nb", 'https://example.org/a"b', "https://example.org/<b>", "https://example.org/a\\b", "https://example.org/a\u007fb", "https://example.org/a\u0000b"]) {
@@ -68,7 +68,7 @@ describe("look — lot 2 (T12)", () => {
   });
   it("domaines du lot 2", () => {
     expect(FILL_STYLES).toEqual(["hachure", "cross-hatch"]);
-    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline"]);
+    expect(ARROWHEADS).toEqual(["none", "arrow", "triangle", "triangle_outline", "bar", "circle", "circle_outline"]);
     expect(TEXT_ALIGNS).toEqual(["center", "right"]);
   });
 });
@@ -95,5 +95,17 @@ describe("dragCopy (OG23, T10)", () => {
     expect(toLook({ dragCopy: "true", link: "https://a.b" })).toEqual({ link: "https://a.b" });
     expect(dragCopyOf(undefined)).toBe(false);
     expect(dragCopyOf({ dragCopy: true })).toBe(true);
+  });
+});
+
+describe("look OG12", () => {
+  it("elbowed et pointes neuves", () => {
+    expect(toLook({ elbowed: true })).toEqual({ elbowed: true });
+    expect(toLook({ elbowed: "oui" })).toBeUndefined();
+    expect(toLook({ endArrowhead: "circle_outline" })?.endArrowhead).toBe("circle_outline");
+    expect(ARROWHEADS).toHaveLength(7);
+    expect(lookFrom({ strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100, elbowed: true }, null)).toEqual({ elbowed: true });
+    expect(elbowedOf({ elbowed: true })).toBe(true);
+    expect(elbowedOf(undefined)).toBe(false);
   });
 });

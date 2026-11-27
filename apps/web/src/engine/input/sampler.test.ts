@@ -462,3 +462,33 @@ describe("souris : seul le bouton gauche trace (T27)", () => {
     expect(out.map((g) => g.kind)).toEqual(["start", "move", "end"]);
   });
 });
+
+describe("géométrie du contact (OG25, déc. 2, 3)", () => {
+  it("OG25 : contact posé sur start et move quand width et height portent une géométrie (celle de l'événement envoyé)", () => {
+    const surface = new FakeSurface();
+    const out = record(createSampler(surface, ALL));
+    surface.fire("pointerdown", { pointerId: 4, pointerType: "touch", width: 30, height: 28 });
+    surface.fire("pointermove", {
+      pointerId: 4,
+      pointerType: "touch",
+      width: 140,
+      height: 120,
+      getCoalescedEvents: () => [{ ...pt(1, 1, 1), width: 5, height: 5 }],
+    });
+    surface.fire("pointerup", { pointerId: 4, pointerType: "touch", width: 140, height: 120 });
+    expect(out[0]?.contact).toEqual({ width: 30, height: 28 });
+    expect(out[1]?.contact).toEqual({ width: 140, height: 120 });
+    expect(out[2] && "contact" in out[2]).toBe(false);
+  });
+
+  it("OG25 : sans géométrie (1 × 1, 0 × 0, absente, NaN) : aucune clé contact", () => {
+    for (const geo of [{ width: 1, height: 1 }, { width: 0, height: 0 }, {}, { width: Number.NaN, height: Number.NaN }]) {
+      const surface = new FakeSurface();
+      const out = record(createSampler(surface, ALL));
+      surface.fire("pointerdown", { pointerId: 4, pointerType: "touch", ...geo });
+      surface.fire("pointermove", { pointerId: 4, pointerType: "touch", ...geo });
+      expect(out).toHaveLength(2);
+      expect(out.every((g) => !("contact" in g))).toBe(true);
+    }
+  });
+});

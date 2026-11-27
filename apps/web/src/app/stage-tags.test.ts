@@ -37,8 +37,8 @@ describe("stageTags (repris des tests de l'ancienne barre DOM)", () => {
       selection: ["a", "b"],
       selectionBounds: { x0: 98.04, y0: -2.26, x1: 202, y1: 202.36 },
     };
-    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", pageMode: "landscape", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
-    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", pageMode: "landscape", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "" });
+    expect(stageTags(s)).toEqual({ page: "2/3", selection: "2", bounds: "98,-2.3,202,202.4", tool: "select", pageMode: "landscape", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "", lineEdit: "", bind: "", linePoints: "0" });
+    expect(stageTags({ ...base, pageIndex: 0, pageCount: 1 })).toEqual({ page: "1/1", selection: "0", bounds: "", tool: "pen", pageMode: "landscape", table: "", tableMerges: "0", tableShades: "0", units: "0", grouped: "0", pixels: "", image: "", pot: "", zones: "", zoneMs: "", zoneCells: "", lineEdit: "", bind: "", linePoints: "0" });
     expect(pagesLabel(s)).toBe("2 / 3");
   });
 
@@ -93,5 +93,13 @@ describe("data-page-mode", () => {
   it("data-page-mode suit la page montrée", () => {
     expect(stageTags({ ...base, pageLayout: "portrait" }).pageMode).toBe("portrait");
     expect(stageTags({ ...base, pageMode: "infinite", pageLayout: "infinite" }).pageMode).toBe("infinite");
+  });
+});
+
+describe("stageTags (OG12 T11)", () => {
+  it("lineEdit, bind, linePoints : id en édition, id surligné, nombre de points choisis ; vides par défaut", () => {
+    expect(stageTags(base)).toMatchObject({ lineEdit: "", bind: "", linePoints: "0" });
+    expect(stageTags({ ...base, lineEditing: null, bindHint: null, linePointsSelected: 0 })).toMatchObject({ lineEdit: "", bind: "", linePoints: "0" });
+    expect(stageTags({ ...base, lineEditing: "l1", bindHint: "r2", linePointsSelected: 2 })).toMatchObject({ lineEdit: "l1", bind: "r2", linePoints: "2" });
   });
 });

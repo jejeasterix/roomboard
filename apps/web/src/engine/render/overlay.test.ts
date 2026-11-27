@@ -29,4 +29,15 @@ describe("calque d'édition", () => {
     expect(isEmptyOverlay(EMPTY_OVERLAY)).toBe(true);
     expect(isEmptyOverlay({ ...EMPTY_OVERLAY, band: { x0: 0, y0: 0, x1: 1, y1: 1 } })).toBe(false);
   });
+  it("OG12 : mergeOverlays concatène points et links, garde le premier bind ; clé du vide inchangée", () => {
+    expect(overlayKey(EMPTY_OVERLAY)).toBe('{"ghosts":[],"shapes":[],"frame":null,"handles":false,"band":null}');
+    const a = { ...EMPTY_OVERLAY, points: [{ x: 1, y: 1, kind: "point" as const, selected: false }], bind: { id: "a", anchors: [] }, links: [{ dir: "up" as const, x: 0, y: 0 }] };
+    const b = { ...EMPTY_OVERLAY, points: [{ x: 2, y: 2, kind: "mid" as const, selected: true }], bind: { id: "b", anchors: [] }, links: [{ dir: "down" as const, x: 1, y: 1 }] };
+    const m = mergeOverlays([a, b]);
+    expect(m.points).toHaveLength(2);
+    expect(m.links).toHaveLength(2);
+    expect(m.bind?.id).toBe("a");
+    expect(isEmptyOverlay(a)).toBe(false);
+    expect(isEmptyOverlay(EMPTY_OVERLAY)).toBe(true);
+  });
 });

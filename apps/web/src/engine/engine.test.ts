@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Change, ElementView, StrokeStyle } from "../core/api";
+import type { Bounds, Change, Command, ElementView, StrokeStyle } from "../core/api";
 import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, scrollShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -14,8 +14,10 @@ import { DEFAULT_CAMERA, type ModelCamera } from "./render/model-frames";
 import { EMPTY_OVERLAY, type EditOverlay } from "./render/overlay";
 import type { GridPreview, ImagePreview, LiveLayer, PageView, Renderer } from "./render/renderer";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
+import { stageTags } from "../app/stage-tags";
 import { createSelectTool } from "./tools/select";
 import { createShapeTool } from "./tools/shape";
+import { worldPoints } from "./tools/line-points";
 import type { TableCellState } from "./table-geom";
 import { createTableTool, type TablePicker } from "./tools/table";
 import { plainSpans } from "../core/rich-text";
@@ -204,6 +206,19 @@ describe("createEngine", () => {
     engine.sink.extend(1, [sample], []);
     expect(log).toEqual(["eraser.begin 1", "eraser.extend 1"]);
     expect(frames.pending()).toBe(1);
+  });
+
+  it("OG25 : sink.resize va à l'outil du geste ; geste inconnu : rien", () => {
+    const log: string[] = [];
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => ({ ...fakeTool("eraser", log, ctx), resize: (id: number, r: number) => void log.push(`eraser.resize ${id} ${r}`) }),
+    };
+    const engine = createEngine({ doc: fakeCore.blank(), renderer: new FakeRenderer(), frames: new Frames(), tools });
+    engine.sink.begin(-1, "eraser", [sample]);
+    engine.sink.resize?.(-1, 70);
+    engine.sink.resize?.(5, 70);
+    expect(log).toEqual(["eraser.begin -1", "eraser.resize -1 70"]);
   });
 
   it("une image : frame des outils, scène si sale, couche vive, onLiveDrawn", () => {
@@ -528,7 +543,7 @@ describe("createEngine", () => {
     expect(engine.state().page).not.toBe(p1);
   });
 
-  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+  it("setPageMode portrait : fitPage en largeur, haut de page en haut (OG24)", () => {
     const { engine } = setup();
     engine.resize(1000, 800, 1);
     expect(engine.state().pageLayout).toBe("landscape");
@@ -536,8 +551,90 @@ describe("createEngine", () => {
     expect(engine.state().pageLayout).toBe("portrait");
     engine.fitPage();
     const cam = engine.camera();
-    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
-    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+    // OG24 (H4 renversée par Jérôme) : la page remplit la largeur ; son bas sort de la vue, l'ascenseur y mène
+    expect(cam).toEqual(fitWidth(1000, 800, 1920, 0.95, 16));
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeGreaterThan(800);
+  });
+
+  describe("ascenseur du portrait (OG24)", () => {
+    const portrait = () => {
+      const s = setup({ fitTop: () => 100 });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      return s;
+    };
+    const pageBottom = (c: Camera): number => c.ty + ((1920 * 16) / 9) * c.zoom;
+    it("ajustée : haut de page, une part de la page visible", () => {
+      const { engine } = portrait();
+      const s = engine.pageScroll()!;
+      expect(s.at).toBe(0);
+      expect(s.top).toBe(100);
+      expect(s.span).toBe(800 - 100 - 16);
+      expect(s.visible).toBeGreaterThan(0.2);
+      expect(s.visible).toBeLessThan(0.5);
+    });
+    it("paysage et infini : aucun ascenseur", () => {
+      const { engine } = setup();
+      engine.resize(1000, 800, 1);
+      expect(engine.pageScroll()).toBeNull();
+      expect(engine.scrollPageBy(100)).toBe(false);
+      engine.setPageMode("infinite");
+      expect(engine.pageScroll()).toBeNull();
+    });
+    it("scrollPageTo(1) : bas de page à 16 px du bas ; scrollPageTo(0) : haut de page sous les îlots", () => {
+      const { engine } = portrait();
+      expect(engine.scrollPageTo(1)).toBe(true);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      engine.scrollPageTo(0);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+    });
+    it("scrollPageBy borné à la page ; zoom et décalage horizontal gardés", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.scrollPageBy(1e6);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera()).toMatchObject({ zoom: before.zoom, tx: before.tx });
+      engine.scrollPageBy(-1e6);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+      expect(engine.scrollPageBy(-10)).toBe(false);
+    });
+    it("molette en portrait : défilement vertical borné, horizontal libre ; Ctrl+molette zoome", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.wheel({ x: 0, y: 0, deltaX: 0, deltaY: -500, ctrlKey: false });
+      expect(engine.camera()).toEqual(before);
+      engine.wheel({ x: 0, y: 0, deltaX: 30, deltaY: 1e6, ctrlKey: false });
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera().tx).toBeCloseTo(before.tx - 30, 6);
+      engine.wheel({ x: 500, y: 400, deltaX: 0, deltaY: -100, ctrlKey: true });
+      expect(engine.camera().zoom).toBeGreaterThan(before.zoom);
+    });
+    it("scrollShortcut : flèches, Maj+flèches, Début, Fin ; rien hors portrait ni dans un champ", () => {
+      const { engine } = portrait();
+      const k = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+      expect(scrollShortcut(k("ArrowUp"), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(true);
+      const line = 100 - engine.camera().ty;
+      expect(line).toBeGreaterThan(40);
+      expect(scrollShortcut(k("ArrowDown", { shiftKey: true }), engine)).toBe(true);
+      expect(100 - engine.camera().ty).toBeGreaterThan(line * 4);
+      expect(scrollShortcut(k("End"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      expect(scrollShortcut(k("Home"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBe(0);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "TEXTAREA" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "INPUT", type: "range" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("End", { target: { tagName: "SELECT" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { altKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { metaKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { isComposing: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { ctrlKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("PageDown"), engine)).toBe(false);
+      expect(engine.pageScroll()!.at).toBe(0);
+      engine.setPageMode("landscape");
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(false);
+    });
   });
 
   it("pageMode / pageLayout dans l'état", () => {
@@ -1360,7 +1457,7 @@ describe("moteur — pot (C6a)", () => {
     expect(fit).toHaveBeenCalledTimes(1);
   });
 
-  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : cadre entier (décision 10, T18)", () => {
+  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : largeur aussi (décision 10, T18 ; OG24)", () => {
     const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
     const mk = (doc: typeof pdf) => createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
     const view = pdf.page(pdf.pageIds()[0]!)!;
@@ -1374,6 +1471,82 @@ describe("moteur — pot (C6a)", () => {
     engine.setPageMode("portrait");
     const portrait = fitFor("portrait", 1000, 800, { x0: 0, y0: 0, x1: 1920, y1: (1920 * 16) / 9 }, null, 16);
     expect(engine.camera().zoom).toBeCloseTo(portrait.zoom, 6);
+  });
+
+  it("page paysage au fond PDF A4 : affichée portrait, elle a l'ascenseur ; bas du fond à 16 px du bas (OG27, P2 de la PR 68)", () => {
+    const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
+    const e = createEngine({ doc: pdf, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) }, fitTop: () => 100 });
+    e.resize(1000, 800, 1);
+    expect(e.state().pageLayout).toBe("portrait");
+    expect(e.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+    const s = e.pageScroll()!;
+    expect(s).not.toBeNull();
+    expect(s.at).toBe(0);
+    expect(e.scrollPageTo(1)).toBe(true);
+    const view = pdf.page(pdf.pageIds()[0]!)!;
+    const cam = e.camera();
+    expect(cam.ty + view.backdrop!.rect!.y1 * cam.zoom).toBeCloseTo(800 - 16, 6);
+  });
+
+  describe("îlot du haut déplacé : ajustement et ascenseur recalés (OG27)", () => {
+    const moving = () => {
+      let top = 100;
+      const s = setup({ fitTop: () => top });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      s.engine.fitPage();
+      return { ...s, setTop: (t: number) => (top = t) };
+    };
+    it("vue encore ajustée : réajustée sous le nouveau haut, l'ascenseur suit", () => {
+      const { engine, setTop } = moving();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+      expect(engine.pageScroll()).toMatchObject({ at: 0, top: 40, span: 800 - 40 - 16 });
+    });
+    it("vue défilée : caméra gardée, l'ascenseur relit ses bornes", () => {
+      const { engine, setTop } = moving();
+      engine.scrollPageBy(200);
+      const before = engine.camera();
+      const at = engine.pageScroll()!.at;
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toEqual(before);
+      expect(engine.pageScroll()!.top).toBe(40);
+      expect(engine.pageScroll()!.at).not.toBe(at);
+    });
+    it("page quittée encore ajustée : réajustée à son retour", () => {
+      const { engine, setTop } = moving();
+      const p1 = engine.state().page;
+      engine.addPage();
+      setTop(40);
+      engine.topChanged();
+      engine.showPage(p1);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+    });
+    it("vue ajustée : seul le haut se décale ; zoom gardé après un redimensionnement (HL3-6)", () => {
+      const { engine, setTop } = moving();
+      engine.resize(1400, 800, 1);
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual({ ...before, ty: before.ty - 60 });
+    });
+    it("Infini : rien (l'ajustement suit le contenu, aucun ascenseur)", () => {
+      const { engine, setTop } = moving();
+      engine.setPageMode("infinite");
+      engine.fitPage();
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
+    it("haut inchangé : rien", () => {
+      const { engine } = moving();
+      const before = engine.camera();
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
   });
 
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
@@ -1825,6 +1998,17 @@ describe("moteur — C5 (retouche d'image)", () => {
     engine.report("retouches de l'image non affichées : x");
     expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
   });
+
+  it("OG25 gesturesToTools : vrai retouche au repos, faux pendant le rognage, vrai après", () => {
+    const { engine, id } = c5();
+    expect(engine.gesturesToTools()).toBe(true);
+    const edit = engine.editImage(id)!;
+    expect(engine.gesturesToTools()).toBe(true);
+    edit.startCrop();
+    expect(engine.gesturesToTools()).toBe(false);
+    edit.finishCrop(false);
+    expect(engine.gesturesToTools()).toBe(true);
+  });
 });
 
 describe("moteur : séance d'orbite (C15, X23)", () => {
@@ -1956,6 +2140,15 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(closed).toHaveBeenCalledTimes(1);
     engine.dispose();
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+
+  it("OG25 gesturesToTools : faux tant qu'une orbite est ouverte", () => {
+    const { engine, open } = c15();
+    expect(engine.gesturesToTools()).toBe(true);
+    const o = open();
+    expect(engine.gesturesToTools()).toBe(false);
+    o?.close();
+    expect(engine.gesturesToTools()).toBe(true);
   });
 });
 
@@ -2125,6 +2318,29 @@ describe("moteur — style courant, Dupliquer, Supprimer (OG11 T9)", () => {
     expect(colorOf(b)).toBe("transparent");
     expect(engine.itemStyle().color).toBe("#000000");
     expect(seen).not.toContain("transparent");
+  });
+
+  it("arrowType sur une sélection mixte : SetStyle des seules flèches", () => {
+    const { engine, doc, addRect, sel } = styleSetup();
+    const r = addRect();
+    const page = engine.state().page;
+    const a = doc.apply({ type: "AddShape", page, shape: "arrow", x0: 10, y0: 10, x1: 90, y1: 60, style: PEN, fill: null }).ids[0] ?? "";
+    sel().setSelection([r, a]);
+    // Le faux cœur n'écrit `roundness`/`elbowed` sur une flèche qu'avec T5 : on lit les commandes envoyées.
+    const sent: Command[] = [];
+    const apply = doc.apply.bind(doc);
+    vi.spyOn(doc, "apply").mockImplementation((c) => { sent.push(c); return apply(c); });
+    engine.setItemStyle({ arrowType: "round" });
+    expect(sent).toEqual([{ type: "SetStyle", ids: [a], patch: { roundness: "round", elbowed: null } }]);
+    sent.length = 0;
+    engine.setItemStyle({ arrowType: "elbow" });
+    expect(sent).toEqual([{ type: "SetStyle", ids: [a], patch: { roundness: null, elbowed: true } }]);
+    sent.length = 0;
+    const v = doc.version();
+    engine.setItemStyle({ arrowBinding: false });
+    expect(sent).toEqual([]);
+    expect(doc.version()).toBe(v);
+    expect(engine.itemStyle().arrowBinding).toBe(false);
   });
 
   it("setItemStyle sans sélection : style courant seul, rien d'écrit", () => {
@@ -2755,5 +2971,324 @@ describe("OG23 T8 : pipette de scène", () => {
     renderer.color = null;
     engine.sink.begin(3, "pen", [sample]);
     expect(await b).toBeNull();
+  });
+});
+
+describe("moteur — OG12 T11 : Modifier les points, objet relié, Ctrl, doigt tardif, survol", () => {
+  function og12() {
+    const doc = fakeCore.blank();
+    const frames = new Frames();
+    const renderer = new FakeRenderer();
+    let select: ReturnType<typeof createSelectTool> | null = null;
+    let seen: ToolContext | null = null;
+    const tools: ToolFactories = {
+      pen: (ctx) => {
+        seen = ctx;
+        return fakeTool("pen", [], ctx);
+      },
+      eraser: (ctx) => fakeTool("eraser", [], ctx),
+      select: (ctx) => {
+        select = createSelectTool(ctx);
+        return select;
+      },
+      shape: (ctx, kind, style) => createShapeTool(ctx, kind, style),
+    };
+    const engine = createEngine({ doc, renderer, frames, tools });
+    const page = engine.state().page;
+    const rect = (x0: number, y0: number, x1: number, y1: number): string =>
+      doc.apply({ type: "AddShape", page, shape: "rect", x0, y0, x1, y1, style: PEN, fill: null }).ids[0] ?? "";
+    /** Ligne (ou flèche) de trois points : (100, 100), (150, 50), (200, 100). */
+    const line = (shape: "line" | "arrow" = "line"): string => {
+      const id = doc.apply({ type: "AddShape", page, shape, x0: 100, y0: 100, x1: 200, y1: 100, style: PEN, fill: null }).ids[0] ?? "";
+      doc.apply({ type: "SetLinePoints", id, points: [100, 100, 150, 50, 200, 100], start: null, end: null });
+      return id;
+    };
+    const ctx = (): ToolContext => {
+      if (seen === null) throw new Error("contexte absent");
+      return seen;
+    };
+    const sel = () => {
+      if (!select) throw new Error("outil Sélection absent");
+      return select;
+    };
+    const pointsOf = (id: string): [number, number][] => {
+      const v = doc.element(id);
+      return v?.kind === "shape" ? worldPoints(v) : [];
+    };
+    const tap = (pointerId: number, x: number, y: number, t = 0): void => {
+      engine.sink.begin(pointerId, "select", [{ ...sample, x, y, t }]);
+      engine.sink.close(pointerId, "end");
+    };
+    return { doc, frames, renderer, engine, page, rect, line, ctx, sel, pointsOf, tap };
+  }
+
+  it("Ctrl+Entrée : Modifier les points sur la flèche seule sélectionnée ; l'outil reste Sélection, la sélection est gardée", () => {
+    const { engine, line } = og12();
+    const id = line("arrow");
+    engine.select([id]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(true);
+    expect(engine.state()).toMatchObject({ lineEditing: id, tool: "select", selection: [id], linePointsSelected: 0 });
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(engine.state()).toMatchObject({ lineEditing: null, tool: "select", selection: [id] });
+  });
+
+  it("Ctrl+Entrée : flèche coudée, rien ; sans sélection unique, la touche passe", () => {
+    const { engine, doc, line, rect } = og12();
+    const id = line("arrow");
+    doc.apply({ type: "SetStyle", ids: [id], patch: { elbowed: true } });
+    engine.select([id]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
+    expect(engine.state().lineEditing).toBeNull();
+    engine.select([rect(300, 300, 400, 400)]);
+    expect(engine.key(key("Enter", { ctrlKey: true }))).toBe(false);
+    expect(engine.editLinePoints()).toBe(false);
+    expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("lineEdit : en édition, un appui sur une poignée va à l'éditeur, Suppr retire le point choisi, Échap sort", () => {
+    const { engine, doc, line, pointsOf, tap } = og12();
+    const id = line();
+    engine.select([id]);
+    expect(engine.editLinePoints()).toBe(true);
+    // Glisser du point intérieur : l'éditeur le déplace seul (l'outil Sélection déplacerait toute la ligne).
+    const v0 = doc.version();
+    engine.sink.begin(1, "select", [{ ...sample, x: 150, y: 50 }]);
+    engine.sink.extend(1, [{ ...sample, x: 150, y: 80 }], []);
+    engine.sink.close(1, "end");
+    expect(doc.version()).toBe(v0 + 1);
+    expect(pointsOf(id)).toEqual([[100, 100], [150, 80], [200, 100]]);
+    expect(engine.state()).toMatchObject({ lineEditing: id, linePointsSelected: 1 });
+    // Suppr retire le point choisi (une SetLinePoints), la ligne reste : ce n'est pas la suppression de la sélection.
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(doc.element(id)).not.toBeNull();
+    expect(pointsOf(id)).toEqual([[100, 100], [200, 100]]);
+    expect(doc.version()).toBe(v0 + 2);
+    expect(engine.state()).toMatchObject({ lineEditing: id, linePointsSelected: 0, selection: [id] });
+    tap(2, 100, 100); // toucher d'un bout : point choisi
+    expect(engine.state().linePointsSelected).toBe(1);
+    expect(engine.key(key("Escape"))).toBe(true);
+    expect(engine.state()).toMatchObject({ lineEditing: null, selection: [id], tool: "select" });
+    expect(doc.element(id)).not.toBeNull();
+    // Bouton « Retirer le point » : sur une ligne de deux points, la ligne part et l'édition se ferme.
+    engine.editLinePoints();
+    tap(3, 100, 100);
+    expect(engine.removeLinePoints()).toBe(true);
+    expect(doc.element(id)).toBeNull();
+    expect(engine.state()).toMatchObject({ lineEditing: null, selection: [] });
+    expect(engine.removeLinePoints()).toBe(false);
+  });
+
+  it("C3 : chaque geste de l'éditeur republie l'état — toucher un point publie linePoints = 1 et montre « Retirer le point »", () => {
+    // `engine.state()` est recalculé à la demande : seul l'état publié (`onState`) est ce que lisent `#stage` et le panneau.
+    const { engine, doc, page, pointsOf, tap } = og12();
+    const id = doc.apply({ type: "AddShape", page, shape: "line", x0: 100, y0: 100, x1: 250, y1: 50, style: PEN, fill: null }).ids[0] ?? "";
+    doc.apply({ type: "SetLinePoints", id, points: [100, 100, 150, 50, 200, 100, 250, 50], start: null, end: null });
+    let last = engine.state();
+    engine.onState((s) => (last = s));
+    const removeShown = (): boolean => last.lineEditing !== null && last.lineEditing !== undefined && (last.linePointsSelected ?? 0) > 0; // condition du bouton `point-remove` (OptionsPanel)
+    engine.select([id]);
+    expect(engine.editLinePoints()).toBe(true);
+    expect(stageTags(last).linePoints).toBe("0");
+    expect(removeShown()).toBe(false);
+    // Toucher (sans mouvement) d'un point : aucun changement du document ni de la sélection, l'état est republié.
+    tap(1, 200, 100);
+    expect(stageTags(last)).toMatchObject({ lineEdit: id, linePoints: "1" });
+    expect(removeShown()).toBe(true);
+    // Suppr retire ce point, une étape ; l'état publié revient à 0.
+    const v0 = doc.version();
+    expect(engine.key(key("Delete"))).toBe(true);
+    expect(doc.version()).toBe(v0 + 1);
+    expect(pointsOf(id)).toEqual([[100, 100], [150, 50], [250, 50]]);
+    expect(stageTags(last).linePoints).toBe("0");
+    expect(removeShown()).toBe(false);
+    // Tirer un point : le point tiré reste choisi dans l'état publié.
+    engine.sink.begin(2, "select", [{ ...sample, x: 150, y: 50 }]);
+    engine.sink.extend(2, [{ ...sample, x: 150, y: 80 }], []);
+    engine.sink.close(2, "end");
+    expect(doc.version()).toBe(v0 + 2);
+    expect(stageTags(last).linePoints).toBe("1");
+    expect(removeShown()).toBe(true);
+    // Le bouton retire ce point, une étape.
+    expect(engine.removeLinePoints()).toBe(true);
+    expect(doc.version()).toBe(v0 + 3);
+    expect(pointsOf(id)).toEqual([[100, 100], [250, 50]]);
+    expect(stageTags(last)).toMatchObject({ lineEdit: id, linePoints: "0" });
+    // Toucher d'un bout : choisi et publié.
+    tap(3, 100, 100);
+    expect(stageTags(last).linePoints).toBe("1");
+  });
+
+  it("en édition : le calque montre les poignées de l'éditeur, sans le cadre de l'outil Sélection", () => {
+    const { engine, frames, renderer, line } = og12();
+    const id = line();
+    engine.select([id]);
+    engine.view.panBy(0, 0);
+    frames.tick();
+    const before = renderer.overlays.at(-1)?.points?.length ?? 0;
+    engine.editLinePoints();
+    engine.view.panBy(0, 0);
+    frames.tick();
+    const during = renderer.overlays.at(-1)?.points ?? [];
+    // Trois points et leurs deux milieux (éditeur) ; jamais les poignées de Sélection en double.
+    expect(during.length).toBeGreaterThan(0);
+    expect(new Set(during.map((p) => JSON.stringify(p))).size).toBe(during.length);
+    expect(before).toBeGreaterThan(0);
+  });
+
+  it("toucher hors de l'objet en édition : sortie ; changer d'outil : sortie ; double toucher d'une ligne : entrée", () => {
+    const { engine, line, tap } = og12();
+    const id = line();
+    engine.select([id]);
+    engine.editLinePoints();
+    tap(1, 500, 500);
+    expect(engine.state().lineEditing).toBeNull();
+    engine.select([id]);
+    engine.editLinePoints();
+    engine.setTool("pen");
+    expect(engine.state().lineEditing).toBeNull();
+    engine.select([id]);
+    tap(2, 125, 75, 0); // sur le segment (100, 100)-(150, 50)
+    tap(3, 125, 75, 120);
+    expect(engine.state()).toMatchObject({ lineEditing: id, tool: "select", selection: [id] });
+    engine.exitLineEdit();
+    expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("en édition : la ligne supprimée sort de l'édition ; annuler la rend sans rouvrir l'édition", () => {
+    const { engine, doc, line } = og12();
+    const id = line();
+    engine.select([id]);
+    engine.editLinePoints();
+    engine.deleteElements([id]);
+    expect(engine.state().lineEditing).toBeNull();
+    engine.undo();
+    expect(doc.element(id)).not.toBeNull();
+    expect(engine.state().lineEditing).toBeNull();
+  });
+
+  it("Alt+Maj+→ sur un rectangle seul : AddLinked, la copie devient la sélection ; sur deux objets, la touche passe", () => {
+    const { engine, doc, page, rect } = og12();
+    const a = rect(100, 100, 200, 200);
+    engine.select([a]);
+    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(true);
+    const ids = doc.elementIds(page);
+    expect(ids).toHaveLength(3);
+    const sel = engine.state().selection;
+    expect(sel).toHaveLength(1);
+    const copy = doc.element(sel[0] ?? "");
+    expect(sel[0]).not.toBe(a);
+    expect(copy).toMatchObject({ kind: "shape", shape: { shape: "rect" } });
+    expect(doc.bounds([sel[0] ?? ""])!.x0).toBeGreaterThan(200);
+    const b = rect(100, 400, 200, 500);
+    engine.select([a, b]);
+    // Fusion OG12 × OG23 : sur deux objets, la touche n'est plus libre, elle va à Aligner à droite (OG23) ; aucun AddLinked.
+    expect(engine.key(key("ArrowRight", { altKey: true, shiftKey: true }))).toBe(true);
+    expect(engine.addLinked("down")).toBe(false);
+    expect(doc.elementIds(page)).toHaveLength(4);
+  });
+
+  it("Alt+Maj+flèche (fusion OG12 × OG23) : séance « Modifier les points » et rectangle seul à OG12, sinon Aligner", () => {
+    const { engine, doc, page, rect, line } = og12();
+    const sent: Command[] = [];
+    const apply = doc.apply.bind(doc);
+    vi.spyOn(doc, "apply").mockImplementation((c) => { sent.push(c); return apply(c); });
+    const altShift = (k: string) => key(k, { altKey: true, shiftKey: true });
+    // Pendant une séance d'édition de points : le geste d'OG12 prime, jamais d'Arrange ; la séance reste ouverte.
+    const l = line();
+    engine.select([l]);
+    expect(engine.editLinePoints()).toBe(true);
+    engine.key(altShift("ArrowLeft"));
+    expect(sent.map((c) => c.type)).not.toContain("Arrange");
+    expect(engine.state().lineEditing).toBe(l);
+    engine.exitLineEdit();
+    // Un seul rectangle : l'objet relié d'OG12, pas d'Arrange.
+    const a = rect(100, 100, 200, 200);
+    engine.select([a]);
+    sent.length = 0;
+    expect(engine.key(altShift("ArrowDown"))).toBe(true);
+    expect(sent.map((c) => c.type)).toEqual(["AddLinked"]);
+    // Hors de ces contextes (deux objets) : Aligner d'OG23.
+    const b = rect(300, 400, 350, 450);
+    engine.select([a, b]);
+    sent.length = 0;
+    expect(engine.key(altShift("ArrowLeft"))).toBe(true);
+    expect(sent).toEqual([{ type: "Arrange", ids: [a, b], how: "align-left" }]);
+    expect(doc.bounds([b])!.x0).toBe(doc.bounds([a])!.x0);
+    expect(doc.elementIds(page)).toHaveLength(5);
+  });
+
+  it("Ctrl tenu : ctx.ctrl() vrai jusqu'au keyUp et à la perte du focus ; la touche n'est pas prise", () => {
+    const { engine, ctx } = og12();
+    const ctrl = (): boolean => ctx().ctrl?.() === true;
+    expect(ctrl()).toBe(false);
+    expect(engine.key(key("Control", { ctrlKey: true }))).toBe(false);
+    expect(ctrl()).toBe(true);
+    expect(engine.keyUp(key("Control"))).toBe(false);
+    expect(ctrl()).toBe(false);
+    engine.key(key("Meta", { metaKey: true }));
+    expect(ctrl()).toBe(true);
+    engine.releaseKeys();
+    expect(ctrl()).toBe(false);
+  });
+
+  it("contexte des outils : Liaison des flèches lue du style courant, type du pointeur du geste en cours", () => {
+    const { engine, ctx } = og12();
+    expect(ctx().bindingEnabled?.()).toBe(true);
+    engine.setItemStyle({ arrowBinding: false });
+    expect(ctx().bindingEnabled?.()).toBe(false);
+    engine.sink.begin(1, "pen", [sample], "touch");
+    expect(ctx().pointerType?.()).toBe("touch");
+    engine.sink.close(1, "end");
+    engine.sink.begin(2, "pen", [sample], "pen");
+    expect(ctx().pointerType?.()).toBe("pen");
+    engine.sink.close(2, "end");
+  });
+
+  it("doigt tardif : setTouchModifier(true) vaut Maj pour l'outil (un redimensionnement au doigt garde les proportions)", () => {
+    const resized = (held: boolean): Bounds => {
+      const { engine, doc, rect } = og12();
+      const a = rect(100, 100, 200, 200);
+      engine.select([a]);
+      engine.setTouchModifier(held);
+      const b0 = doc.bounds([a])!;
+      engine.sink.begin(1, "select", [{ ...sample, x: b0.x1, y: b0.y1 }], "touch");
+      engine.sink.extend(1, [{ ...sample, x: b0.x1 + 100, y: b0.y1 + 20 }], []);
+      engine.sink.close(1, "end");
+      return doc.bounds([a])!;
+    };
+    const free = resized(false);
+    const kept = resized(true);
+    expect(Math.abs(free.x1 - free.x0 - (free.y1 - free.y0))).toBeGreaterThan(20);
+    expect(kept.x1 - kept.x0).toBeCloseTo(kept.y1 - kept.y0, 0);
+  });
+
+  it("bindHint publié quand le calque surligne une cible (outil Flèche, survol d'un rectangle)", () => {
+    const { engine, frames, rect } = og12();
+    const a = rect(100, 100, 200, 200);
+    engine.setTool("arrow");
+    expect(engine.state().bindHint).toBeNull();
+    const states: (string | null | undefined)[] = [];
+    engine.onState((s) => states.push(s.bindHint));
+    engine.hover(196, 150);
+    frames.tick();
+    expect(engine.state().bindHint).toBe(a);
+    expect(states).toContain(a);
+    engine.hover(600, 500);
+    frames.tick();
+    expect(engine.state().bindHint).toBeNull();
+  });
+
+  it("survol : la boucle ne démarre que si l'outil a un hover (OG12 C2)", () => {
+    const { engine, frames } = og12();
+    engine.setTool("select");
+    frames.tick();
+    const spy = vi.spyOn(frames, "requestFrame");
+    engine.hover(10, 10);
+    expect(spy).not.toHaveBeenCalled();
+    engine.setTool("arrow");
+    frames.tick();
+    spy.mockClear();
+    engine.hover(10, 10);
+    expect(spy).toHaveBeenCalled();
   });
 });

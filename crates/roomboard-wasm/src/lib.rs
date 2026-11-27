@@ -18,6 +18,7 @@ use roomboard_core::image::{ImageParamsInput, TransparentInput};
 use roomboard_core::ink::builder::StrokeBuilder as CoreBuilder;
 use roomboard_core::ink::outline::InkStyle;
 use roomboard_core::ink::points::to_flat;
+use roomboard_core::linear::{BindInput, LineInit, LinkDir};
 use roomboard_core::media::{LinkedAsset, MediaType};
 use roomboard_core::model3d::Model3dFormat;
 use roomboard_core::query::Bounds;
@@ -40,6 +41,23 @@ fn to_js<T: serde::Serialize>(v: &T) -> Result<JsValue, JsError> {
 /// Message de l'Error JS : le `Display` du cœur (celui que `fake-core.ts` reproduit).
 fn js_message<E: Display>(e: &E) -> String {
     e.to_string()
+}
+
+/// OG12 : liaison d'un bout reçue en deux paramètres positionnels. `(None, None)` : libre ; `(Some(id), Some([fx, fy]))` :
+/// liée ; tout autre cas : `BadShape`.
+fn binding_arg(
+    id: Option<String>,
+    fixed: Option<Vec<f64>>,
+) -> Result<Option<BindInput>, CommandError> {
+    match (id, fixed) {
+        (None, None) => Ok(None),
+        (Some(id), Some(f)) if f.len() == 2 => Ok(Some(BindInput {
+            id,
+            fx: f[0],
+            fy: f[1],
+        })),
+        _ => Err(CommandError::BadShape),
+    }
 }
 
 fn cmd_err(e: CommandError) -> JsError {
@@ -93,6 +111,7 @@ fn look_of(
         link,
         variability,
         drag_copy: None,
+        elbowed: None,
     })
 }
 
@@ -1418,6 +1437,12 @@ impl Document {
         text_align: Option<String>,
         link: Option<String>,
         variability: Option<String>,
+        elbowed: Option<bool>,
+        points: Option<Vec<f64>>,
+        start_id: Option<String>,
+        start_fixed: Option<Vec<f64>>,
+        end_id: Option<String>,
+        end_fixed: Option<Vec<f64>>,
     ) -> Result<JsValue, JsError> {
         let named = [
             fill_style,
@@ -1427,13 +1452,57 @@ impl Document {
             link,
             variability,
         ];
-        let look =
+        let mut look =
             look_of(stroke_style, roughness, seed, roundness, opacity, named).map_err(cmd_err)?;
+        look.elbowed = elbowed;
+        let line = LineInit {
+            points: points.unwrap_or_default(),
+            start: binding_arg(start_id, start_fixed).map_err(cmd_err)?,
+            end: binding_arg(end_id, end_fixed).map_err(cmd_err)?,
+        };
         to_js(
             &self
-                .add_shape_inner(page, shape, [x0, y0, x1, y1], color, width, fill, look)
+                .add_shape_inner(
+                    page,
+                    shape,
+                    [x0, y0, x1, y1],
+                    color,
+                    width,
+                    fill,
+                    look,
+                    line,
+                )
                 .map_err(cmd_err)?,
         )
+    }
+
+    /// OG12 (n° 12 b) : tous les points en monde (≥ 2) et les liaisons ; une étape.
+    pub fn set_line_points(
+        &mut self,
+        id: &str,
+        points: Vec<f64>,
+        start_id: Option<String>,
+        start_fixed: Option<Vec<f64>>,
+        end_id: Option<String>,
+        end_fixed: Option<Vec<f64>>,
+    ) -> Result<JsValue, JsError> {
+        let start = binding_arg(start_id, start_fixed).map_err(cmd_err)?;
+        let end = binding_arg(end_id, end_fixed).map_err(cmd_err)?;
+        to_js(
+            &self
+                .set_line_points_inner(id, points, start, end)
+                .map_err(cmd_err)?,
+        )
+    }
+
+    /// OG12 (n° 27) : copie et flèche coudée liée ; direction inconnue : `BadShape`.
+    pub fn add_linked(&mut self, id: &str, dir: &str) -> Result<JsValue, JsError> {
+        to_js(&self.add_linked_inner(id, dir).map_err(cmd_err)?)
+    }
+
+    /// OG12 (n° 17) : cible de liaison la plus proche ; `null` sans cible.
+    pub fn bind_target(&self, page: &str, x: f64, y: f64, tol: f32) -> Result<JsValue, JsError> {
+        to_js(&self.core.bind_target(page, x, y, tol))
     }
 
     /// OG11 (déc. 25) : `SetStyle`. Un champ `*_set` à faux laisse le champ ; à vrai avec `None`, le retire. Le tracé
@@ -1466,6 +1535,8 @@ impl Document {
         variability_set: bool,
         variability: Option<String>,
         drag_copy: Option<bool>,
+        elbowed_set: bool,
+        elbowed: Option<bool>,
     ) -> Result<JsValue, JsError> {
         let patch = StylePatch {
             color,
@@ -1482,6 +1553,7 @@ impl Document {
             link: link_set.then_some(link),
             variability: variability_set.then_some(variability),
             drag_copy,
+            elbowed: elbowed_set.then_some(elbowed),
         };
         to_js(&self.set_style_inner(ids, patch).map_err(cmd_err)?)
     }
@@ -2379,6 +2451,7 @@ impl Document {
         width: f32,
         fill: Option<String>,
         look: Look,
+        line: LineInit,
     ) -> Result<Change, CommandError> {
         let shape = ShapeKind::parse(shape).ok_or(CommandError::BadShape)?;
         let [x0, y0, x1, y1] = corners;
@@ -2395,6 +2468,30 @@ impl Document {
             },
             fill,
             look,
+            line,
+        })
+    }
+
+    pub fn set_line_points_inner(
+        &mut self,
+        id: &str,
+        points: Vec<f64>,
+        start: Option<BindInput>,
+        end: Option<BindInput>,
+    ) -> Result<Change, CommandError> {
+        self.run(Command::SetLinePoints {
+            id: id.to_string(),
+            points,
+            start,
+            end,
+        })
+    }
+
+    pub fn add_linked_inner(&mut self, id: &str, dir: &str) -> Result<Change, CommandError> {
+        let dir = LinkDir::parse(dir).ok_or(CommandError::BadShape)?;
+        self.run(Command::AddLinked {
+            id: id.to_string(),
+            dir,
         })
     }
 
@@ -2567,6 +2664,7 @@ mod tests {
             4.0,
             None,
             Look::default(),
+            LineInit::default(),
         )
         .expect("forme")
         .ids[0]
@@ -2813,6 +2911,7 @@ mod tests {
                 4.0,
                 None,
                 Look::default(),
+                LineInit::default(),
             )
             .expect("forme");
         let e = d.core.element(&c.ids[0]).expect("élément");
@@ -2820,6 +2919,107 @@ mod tests {
         assert_eq!(
             e.shape.map(|s| (s.shape, s.w, s.h, s.fill)),
             Some(("ellipse".to_string(), 20.0, 5.0, None))
+        );
+    }
+
+    #[test]
+    fn set_line_points_inner_rewrites_points() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_shape_inner(
+                &p,
+                "line",
+                [0.0, 0.0, 50.0, 40.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("ligne")
+            .ids[0]
+            .clone();
+        let c = d
+            .set_line_points_inner(&id, vec![10.0, 10.0, 110.0, 90.0, 210.0, 10.0], None, None)
+            .expect("points");
+        assert_eq!(c.ids, vec![id.clone()]);
+        let e = d.core.element(&id).expect("élément");
+        let pts = e.shape.and_then(|s| s.points).expect("points lus");
+        assert_eq!(pts, vec![100.0, 80.0]);
+    }
+
+    #[test]
+    fn set_line_points_inner_one_point_is_bad_points() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_shape_inner(
+                &p,
+                "line",
+                [0.0, 0.0, 50.0, 40.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("ligne")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            d.set_line_points_inner(&id, vec![0.0, 0.0], None, None),
+            Err(CommandError::BadPoints)
+        );
+    }
+
+    #[test]
+    fn add_linked_inner_unknown_dir_is_bad_shape() {
+        let mut d = Document::blank();
+        let p = d.page_ids()[0].clone();
+        let id = d
+            .add_shape_inner(
+                &p,
+                "rect",
+                [0.0, 0.0, 100.0, 50.0],
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("rect")
+            .ids[0]
+            .clone();
+        assert_eq!(
+            d.add_linked_inner(&id, "diagonale"),
+            Err(CommandError::BadShape)
+        );
+        assert_eq!(d.add_linked_inner(&id, "right").expect("lié").ids.len(), 2);
+    }
+
+    #[test]
+    fn binding_arg_needs_id_and_two_numbers() {
+        assert_eq!(binding_arg(None, None), Ok(None));
+        assert_eq!(
+            binding_arg(Some("a".into()), Some(vec![0.5, 1.0])),
+            Ok(Some(BindInput {
+                id: "a".into(),
+                fx: 0.5,
+                fy: 1.0
+            }))
+        );
+        assert_eq!(
+            binding_arg(Some("a".into()), Some(vec![0.5])),
+            Err(CommandError::BadShape)
+        );
+        assert_eq!(
+            binding_arg(Some("a".into()), None),
+            Err(CommandError::BadShape)
+        );
+        assert_eq!(
+            binding_arg(None, Some(vec![0.5, 1.0])),
+            Err(CommandError::BadShape)
         );
     }
 
@@ -2835,7 +3035,8 @@ mod tests {
                 "#000000",
                 4.0,
                 None,
-                Look::default()
+                Look::default(),
+                LineInit::default()
             ),
             Err(CommandError::BadShape)
         );
@@ -3690,9 +3891,18 @@ mod tests {
         d.set_grid_inner(&p, Some(g)).expect("grille");
         assert_eq!(d.snap_point(&p, 118.0, 97.0), Some(vec![120.0, 80.0]));
         let mut rect = |c: [f64; 4]| {
-            d.add_shape_inner(&p, "rect", c, "#000000", 4.0, None, Look::default())
-                .expect("forme")
-                .ids[0]
+            d.add_shape_inner(
+                &p,
+                "rect",
+                c,
+                "#000000",
+                4.0,
+                None,
+                Look::default(),
+                LineInit::default(),
+            )
+            .expect("forme")
+            .ids[0]
                 .clone()
         };
         let a = rect([13.0, 17.0, 113.0, 77.0]);
@@ -4122,6 +4332,7 @@ mod tests {
                 4.0,
                 None,
                 Look::default(),
+                LineInit::default(),
             )
             .expect("forme")
             .ids[0]
@@ -4247,6 +4458,7 @@ mod tests {
                 4.0,
                 None,
                 Look::default(),
+                LineInit::default(),
             )
             .expect("forme")
             .ids[0]
@@ -4315,6 +4527,7 @@ mod tests {
                 4.0,
                 None,
                 Look::default(),
+                LineInit::default(),
             )
             .expect("forme")
             .ids[0]

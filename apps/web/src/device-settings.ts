@@ -9,6 +9,10 @@ import type { KeyValue } from "./profile-store";
 export const FRAME_KEY = "roomboard.annotation.cadre";
 const FRAME_HIDDEN = "non";
 
+/** OG25 (déc. 25) : gomme automatique à la paume ; « non » quand elle est coupée ; absente (ou toute autre valeur) : active. */
+export const PALM_ERASER_KEY = "roomboard.gomme.paume";
+const PALM_ERASER_OFF = "non";
+
 /** OG11 (déc. 23) : style courant commun aux outils (`ItemStyle`), JSON ; illisible : style par défaut (null). */
 export const ITEM_STYLE_KEY = "roomboard.style-courant";
 
@@ -104,6 +108,10 @@ export interface DeviceSettings {
   frame(): boolean;
   /** Vrai si le choix est gardé sur l'appareil ; faux : mémoire seule (aucun stockage, ou stockage qui refuse). */
   setFrame(on: boolean): boolean;
+  /** OG25 (déc. 25) : gomme automatique à la paume active. */
+  palmEraser(): boolean;
+  /** Vrai si le choix est gardé sur l'appareil ; faux : mémoire seule. Prévient `onChange` (comme `setFrame`). */
+  setPalmEraser(on: boolean): boolean;
   /** design-l2 (L2-7) : position et repli de l'îlot `barId` du profil `profileId` ; illisible : NO_ISLAND. */
   island(profileId: string, barId: string): IslandState;
   /** Vrai si gardé sur l'appareil ; faux : mémoire seule. Ne déclenche pas `onChange`. */
@@ -123,16 +131,30 @@ export interface DeviceSettings {
   onChange(cb: () => void): () => void;
 }
 
-function readFrame(kv: KeyValue | null): boolean {
+/** Réglage d'appareil booléen : vrai par défaut, la valeur « coupée » écrite sous `key` quand il est faux. */
+function readFlag(kv: KeyValue | null, key: string, off: string): boolean {
   try {
-    return kv?.getItem(FRAME_KEY) !== FRAME_HIDDEN;
+    return kv?.getItem(key) !== off;
   } catch {
     return true;
   }
 }
 
+/** Garde `on` sous `key` (clé retirée si vrai, `off` écrit sinon) ; faux quand le stockage refuse. */
+function keepFlag(kv: KeyValue | null, key: string, off: string, on: boolean): boolean {
+  if (kv === null) return false;
+  try {
+    if (on) kv.removeItem(key);
+    else kv.setItem(key, off);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
-  let frame = readFrame(kv);
+  let frame = readFlag(kv, FRAME_KEY, FRAME_HIDDEN);
+  let palmEraser = readFlag(kv, PALM_ERASER_KEY, PALM_ERASER_OFF);
   const listeners = new Set<() => void>();
   const islands = new Map<string, IslandState>();
   /** Style courant écrit dans cette séance (gardé même si le stockage refuse) ; undefined : lire le stockage. */
@@ -143,16 +165,14 @@ export function createDeviceSettings(kv: KeyValue | null): DeviceSettings {
     frame: () => frame,
     setFrame(on) {
       frame = on;
-      let kept = false;
-      if (kv !== null) {
-        try {
-          if (on) kv.removeItem(FRAME_KEY);
-          else kv.setItem(FRAME_KEY, FRAME_HIDDEN);
-          kept = true;
-        } catch {
-          kept = false;
-        }
-      }
+      const kept = keepFlag(kv, FRAME_KEY, FRAME_HIDDEN, on);
+      for (const cb of [...listeners]) cb();
+      return kept;
+    },
+    palmEraser: () => palmEraser,
+    setPalmEraser(on) {
+      palmEraser = on;
+      const kept = keepFlag(kv, PALM_ERASER_KEY, PALM_ERASER_OFF, on);
       for (const cb of [...listeners]) cb();
       return kept;
     },

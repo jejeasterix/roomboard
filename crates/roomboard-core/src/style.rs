@@ -37,6 +37,8 @@ pub struct StylePatch {
     /// OG23 (T10) : `Some(true)` pose « Glisser une copie », `Some(false)` le retire ; traits, formes, textes, images
     /// (genres dont l'aspect est lu) ; tableaux, médias, objets 3D et zones ignorés sans erreur.
     pub drag_copy: Option<bool>,
+    /// OG12 (n° 12 c) : `Some(Some(true))` écrit `elbowed`, `Some(None)` et `Some(Some(false))` le retirent ; flèche seulement.
+    pub elbowed: Option<Option<bool>>,
 }
 
 /// `Some(Some(s))` hors de `allowed`.
@@ -147,7 +149,7 @@ fn writes_for(
         }
     }
     if let Some(s) = &p.roundness {
-        if is_shape && shape == Some("rect") {
+        if is_shape && matches!(shape, Some("rect" | "line" | "arrow")) {
             w.push(("roundness", s.as_deref().map(In::from)));
         }
     }
@@ -162,6 +164,12 @@ fn writes_for(
         }
     }
     if is_shape && shape == Some("arrow") {
+        if let Some(e) = p.elbowed {
+            w.push((
+                "elbowed",
+                (e == Some(true)).then(|| In::Any(Any::Bool(true))),
+            ));
+        }
         if let Some(h) = &p.start_arrowhead {
             w.push(("startArrowhead", head(h, START_ARROWHEAD_DEFAULT)));
         }
@@ -212,6 +220,9 @@ impl Document {
         let mut plan: Vec<(MapRef, &'static str, Option<In>)> = Vec::new();
         let mut pages: Vec<String> = Vec::new();
         let mut touched: Vec<String> = Vec::new();
+        let mut reroute: Vec<(String, MapRef)> = Vec::new();
+        // C1 : cibles possibles touchées (ni ligne ni flèche : elles rompraient leurs propres liaisons dans `follow`).
+        let mut targets: Vec<String> = Vec::new();
         {
             let txn = self.read();
             for id in ids {
@@ -235,6 +246,28 @@ impl Document {
                         any = true;
                     }
                 }
+                // OG12 (n° 12 c) : changer de type coudé vide les points intérieurs dans la même étape (quitter : les
+                // deux extrémités restent ; entrer : T4 reroute).
+                let switched = patch.elbowed.is_some_and(|want| {
+                    kind == "shape"
+                        && shape.as_deref() == Some("arrow")
+                        && (read_look(&txn, &e).elbowed == Some(true)) != (want == Some(true))
+                });
+                if switched && differs(&txn, &e, "points", None) {
+                    plan.push((e.clone(), "points", None));
+                    any = true;
+                }
+                if switched && patch.elbowed == Some(Some(true)) {
+                    reroute.push((found.page_id.clone(), e.clone()));
+                }
+                let segment = kind == "shape"
+                    && shape
+                        .as_deref()
+                        .and_then(crate::shape::ShapeKind::parse)
+                        .is_some_and(|k| k.is_segment());
+                if any && !segment && !targets.contains(id) {
+                    targets.push(id.clone());
+                }
                 if any && !touched.contains(id) {
                     touched.push(id.clone());
                     if !pages.contains(&found.page_id) {
@@ -250,6 +283,14 @@ impl Document {
             let mut txn = self.transact_local();
             for (map, key, v) in plan {
                 set_or_remove(&map, &mut txn, key, v);
+            }
+            // OG12 (n° 12 c) : passer à coudée reroute dans la même étape.
+            for (page, e) in &reroute {
+                crate::linear::reroute(self, &mut txn, page, e);
+            }
+            // C1 : épaisseur (écart) ou boîte d'une cible changée : ses lignes liées suivent dans la même étape.
+            if !targets.is_empty() {
+                crate::linear::follow(self, &mut txn, &targets, None);
             }
         }
         Ok(self.done(Change {

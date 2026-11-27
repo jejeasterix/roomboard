@@ -173,6 +173,17 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   // Dessinées pour RoomBoard (même grille) : pression constante (trait d'épaisseur fixe) et variable (trait qui s'amincit et s'épaissit).
   "pressure-constant": [["path", { d: "M4 12h16", "stroke-width": "3" }]],
   "pressure-variable": [["path", { d: "M4 12 19 9.5A2.5 2.5 0 0 1 19 14.5Z", fill: "currentColor", "stroke-width": "1" }]],
+  // OG12 : types de flèche (dessinées pour OG12, d'après les icônes d'Excalidraw), pointes neuves (dessinées pour OG12),
+  // Lucide spline (ISC) pour « Modifier les points », Lucide circle-minus (ISC) pour « Retirer le point », liaison (dessinée pour OG12).
+  "arrow-type-sharp": [["path", { d: "M5 19 19 5" }], ["path", { d: "M10 5h9v9" }]],
+  "arrow-type-round": [["path", { d: "M5 19C7 11 11 7 19 5" }], ["path", { d: "m13.5 3.5 5.5 1.5-2 5.5" }]],
+  "arrow-type-elbow": [["path", { d: "M5 19v-8h14" }], ["path", { d: "m15 7 4 4-4 4" }]],
+  "head-bar": [["path", { d: "M4 12h16" }], ["path", { d: "M20 6v12" }]],
+  "head-circle": [["path", { d: "M4 12h11" }], ["circle", { cx: "17.5", cy: "12", r: "2.5" }], ["circle", { cx: "17.5", cy: "12", r: "1" }]],
+  "head-circle-outline": [["path", { d: "M4 12h11" }], ["circle", { cx: "17.5", cy: "12", r: "2.5" }]],
+  "edit-points": [["circle", { cx: "19", cy: "5", r: "2" }], ["circle", { cx: "5", cy: "19", r: "2" }], ["path", { d: "M5 17A12 12 0 0 1 17 5" }]],
+  "point-remove": [["circle", { cx: "12", cy: "12", r: "10" }], ["path", { d: "M8 12h8" }]],
+  "arrow-binding": [["path", { d: "M3 12h9" }], ["rect", { x: "14", y: "6", width: "7", height: "12", rx: "1" }], ["circle", { cx: "12.5", cy: "12", r: "1.5" }]],
 });
 
 /** Outil → icône (§ 2 bis). */

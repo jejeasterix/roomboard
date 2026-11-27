@@ -8,11 +8,12 @@ import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMou
 import type { Command, ElementView, TextAttrsPatch } from "../core/api";
 import {
   dragCopyOf, endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf, variabilityOf,
-  type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
+  elbowedOf, type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
 } from "../core/look";
+import { isSegment } from "../core/shapes";
 import type { DeviceSettings } from "../device-settings";
 import type { Engine, EngineState } from "../engine/engine";
-import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
+import { DEFAULT_ITEM_STYLE, type ArrowType, type ItemStyle } from "../engine/item-style";
 import type { ButtonSize, Profile } from "../toolbar";
 import { observeBox } from "./Island";
 import { objectKey, type KeyLike } from "../engine/input/keys";
@@ -63,6 +64,7 @@ const LABEL: Readonly<Record<OptionKey, string>> = {
   font: "Police",
   fontSize: "Taille",
   textAlign: "Alignement du texte",
+  arrowType: "Type de flèche",
   arrowheads: "Pointes",
   opacity: "Transparence",
   image: "Image",
@@ -100,6 +102,14 @@ const HEADS: readonly RadioOption<Arrowhead>[] = [
   { value: "arrow", label: "Flèche", icon: "head-arrow" },
   { value: "triangle", label: "Triangle", icon: "head-triangle" },
   { value: "triangle_outline", label: "Triangle creux", icon: "head-triangle-outline" },
+  { value: "bar", label: "Barre", icon: "head-bar" },
+  { value: "circle", label: "Rond", icon: "head-circle" },
+  { value: "circle_outline", label: "Rond creux", icon: "head-circle-outline" },
+];
+const ARROW_TYPES: readonly RadioOption<ArrowType>[] = [
+  { value: "sharp", label: "Droite", icon: "arrow-type-sharp" },
+  { value: "round", label: "Courbe", icon: "arrow-type-round" },
+  { value: "elbow", label: "Coudée", icon: "arrow-type-elbow" },
 ];
 const PRESSURE: readonly RadioOption<"constant" | "variable">[] = [
   { value: "constant", label: "Constante", icon: "pressure-constant", tip: "Épaisseur constante" },
@@ -160,6 +170,11 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     props.state().selection.map((id) => props.element(id)).filter((e): e is ElementView => e !== null));
   /** Saisie de texte ouverte (outil Texte ou Tableau) : la rangée Format gouverne police, taille et couleur. */
   const editing = (): boolean => props.state().textFormat != null;
+  /** OG12 T11 : une ligne ou une flèche non coudée seule (cible de « Modifier les points »). */
+  const lineTarget = (): boolean => {
+    const t = targets();
+    return t.length === 1 && t[0]!.kind === "shape" && isSegment(t[0]!.shape.shape) && !elbowedOf(t[0]!.look);
+  };
   const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     props.hidden?.() !== true && showsPanel(props.state().tool, props.state().selection.length, props.annotating())
@@ -212,6 +227,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeStyle: (e) => strokeKindOf(e.look),
     roughness: (e) => roughnessOf(e.look),
     roundness: (e) => roundnessOf(e.look),
+    arrowType: (e) => (e.kind === "shape" && e.shape.shape === "arrow" ? (elbowedOf(e.look) ? "elbow" : roundnessOf(e.look) === "round" ? "round" : "sharp") : undefined),
     opacity: (e) => opacityOf(e.look),
     fillStyle: (e) => fillStyleOf(e.look),
     textAlign: (e) => textAlignOf(e.look),
@@ -228,6 +244,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     strokeStyle: (s) => s.strokeStyle,
     roughness: (s) => s.roughness,
     roundness: (s) => s.roundness,
+    arrowType: (s) => s.arrowType,
     opacity: (s) => s.opacity,
     fillStyle: (s) => s.fillStyle,
     textAlign: (s) => s.textAlign,
@@ -474,12 +491,19 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       <RadioChoices keepFocus name="textAlign" label={LABEL.textAlign} look="segment" options={ALIGNS} valueAttr="data-option-value"
         value={(value("textAlign") as TextAlign | null) ?? null} choose={(a) => write({ textAlign: a })} />
     ),
+    arrowType: () => (
+      <RadioChoices keepFocus name="arrowType" label={LABEL.arrowType} look="segment" options={ARROW_TYPES} valueAttr="data-option-value"
+        value={(value("arrowType") as ArrowType | null) ?? null} choose={(t) => write({ arrowType: t })} />
+    ),
     arrowheads: () => (
       <>
         <RadioChoices keepFocus name="startArrowhead" label="Pointe de début" look="segment" options={HEADS} valueAttr="data-option-value"
           value={(value("startArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ startArrowhead: h })} />
         <RadioChoices keepFocus name="endArrowhead" label="Pointe de fin" look="segment" options={HEADS} valueAttr="data-option-value"
           value={(value("endArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ endArrowhead: h })} />
+        <IconButton keepFocus icon="arrow-binding" label="Liaison des flèches"
+          attrs={{ "data-option-value": "arrow-binding", class: "rb-opt-btn", role: "switch", "aria-checked": String(cur().arrowBinding) }}
+          onPress={() => write({ arrowBinding: !cur().arrowBinding })} />
       </>
     ),
     layers: () => (
@@ -548,6 +572,12 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         {dragCopyToggle()}
         <Show when={props.state().selection.length === 1}>
           <IconButton keepFocus icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
+        </Show>
+        <Show when={lineTarget() && !props.state().lineEditing}>
+          <IconButton keepFocus icon="edit-points" label="Modifier les points (Ctrl+Entrée)" attrs={{ "data-option-value": "line-edit", class: "rb-opt-btn" }} onPress={() => void props.engine().editLinePoints()} />
+        </Show>
+        <Show when={props.state().lineEditing && (props.state().linePointsSelected ?? 0) > 0}>
+          <IconButton keepFocus icon="point-remove" label="Retirer le point (Suppr)" attrs={{ "data-option-value": "point-remove", class: "rb-opt-btn" }} onPress={() => void props.engine().removeLinePoints()} />
         </Show>
         <IconButton keepFocus icon="copy-plus" label="Dupliquer" attrs={{ "data-option-value": "duplicate", class: "rb-opt-btn" }} onPress={() => void props.engine().duplicateSelection()} />
         <IconButton keepFocus icon="trash-2" label="Supprimer" attrs={{ "data-option-value": "delete", class: "rb-opt-btn" }} onPress={() => void props.engine().deleteSelection()} />

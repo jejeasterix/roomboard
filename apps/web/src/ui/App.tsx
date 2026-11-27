@@ -46,12 +46,12 @@ import { ImagePanel } from "./ImagePanel";
 import { LibraryPanel, type SharedFolder } from "./LibraryPanel";
 import type { ResourceLibrary } from "../app/library";
 import type { TypedFiles } from "../platform/typed-files";
-import { SettingsPanel } from "./SettingsPanel";
+import { PALM_ERASER_LABELS, SettingsPanel } from "./SettingsPanel";
 import { TabsBar, type TabView } from "./TabsBar";
 import type { ToolbarView } from "./item-state";
 import { Toolbar } from "./Toolbar";
 import { Toasts } from "./Toasts";
-import { clearToast } from "./toast";
+import { clearToast, showToast } from "./toast";
 import "./rb.css";
 
 /** C11a (P21) : annotation de bureau ; absente (web, tests anciens) : tableau seul. */
@@ -482,11 +482,21 @@ export function App(props: AppProps): JSX.Element {
   );
   createEffect(on(() => props.active.profile(), (p) => { if (annotating()) ann?.control.sendProfile(p); }, { defer: true }));
   // personnalisation-1b (Q28) : Ctrl+Maj+F (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds, hors champ de
-  // saisie et hors annotation ; écouté ici, jamais par le moteur.
+  // saisie et hors annotation ; OG25 (déc. 27) : Ctrl+Maj+H coupe ou rallume la gomme automatique à la paume, avec un
+  // avis. Écoutés ici, jamais par le moteur.
   onMount(() => {
     const onShortcut = (e: KeyboardEvent): void => {
       const key = { key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: e.isComposing, target: e.target instanceof HTMLElement ? e.target : null };
-      if (props.backgrounds === undefined || annotating() || appShortcut(key) !== "backgrounds") return;
+      const action = annotating() ? null : appShortcut(key);
+      if (action === "palm-eraser") {
+        e.preventDefault();
+        if (e.repeat) return;
+        const on = !optionSettings.palmEraser();
+        optionSettings.setPalmEraser(on);
+        showToast({ text: on ? PALM_ERASER_LABELS.on : PALM_ERASER_LABELS.off });
+        return;
+      }
+      if (props.backgrounds === undefined || action !== "backgrounds") return;
       e.preventDefault();
       leaveEditor(() => setPanel((cur) => (cur === "backgrounds" ? null : "backgrounds")));
     };
@@ -704,6 +714,7 @@ export function App(props: AppProps): JSX.Element {
             anyDirty={() => ws.anyDirty()}
             confirm={(m) => props.shell.confirm(m)}
             {...(props.device !== undefined && props.active.capabilities().desktopAnnotation ? { device: props.device } : {})}
+            palmEraser={optionSettings}
           />
         </div>
       </Show>
