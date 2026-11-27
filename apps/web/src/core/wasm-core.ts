@@ -218,7 +218,7 @@ export function toElementView(v: unknown): ElementView | null {
       const start = bindingOf(s["start"]);
       const end = bindingOf(s["end"]);
       return { ...base, kind, style, shape: { shape, w, h, fill: typeof fill === "string" ? fill : null,
-        ...(Array.isArray(points) && points.length > 0 ? { points: points as number[] } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}) } };
+        ...(Array.isArray(points) && points.length > 0 ? { points: points as number[] } : {}), ...(s["polygon"] === true ? { polygon: true as const } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}) } };
     }
     case "text": {
       const style = toStyle(v["style"]);
@@ -560,9 +560,8 @@ class WasmCoreDocument implements CoreDocument {
           cmd.end?.id, cmd.end ? new Float64Array([cmd.end.fx, cmd.end.fy]) : undefined));
       case "AddLinked":
         return toChange(this.d.add_linked(cmd.id, cmd.dir));
-      // OG12 lot 2a : le module Wasm n'expose pas encore `shape_to_polygon` (pas de chemin générique) ; L6 le branche.
       case "ShapeToPolygon":
-        throw new Error("ShapeToPolygon : pont Wasm non branché (OG12 lot 2a, L6)");
+        return toChange(this.d.shape_to_polygon(cmd.id));
       case "AddPage": return toChange(this.d.add_page_after(cmd.after, cmd.mode));
       case "RemovePage": return toChange(this.d.remove_page(cmd.page));
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));

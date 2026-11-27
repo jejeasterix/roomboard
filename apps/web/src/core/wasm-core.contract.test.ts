@@ -4781,6 +4781,86 @@ describe.each(factories)("contrat OG12 : $name", ({ f: fab }) => {
   });
 });
 
+// OG12 lot 2a (L6) : losange, ShapeToPolygon, garde de la ligne fermée ; joués sur les deux fabriques.
+describe.each(factories)("contrat OG12 lot 2a : $name", ({ f: fab }) => {
+  const PEN = { color: "#000000", width: 4 };
+  const make = (): CoreDocument => fab.blank();
+  const shapeAt = (d: CoreDocument, shape: "rect" | "diamond" | "ellipse", fill: string | null = null): string =>
+    d.apply({ type: "AddShape", page: d.pageIds()[0]!, shape, x0: 0, y0: 0, x1: 100, y1: 60, style: PEN, fill }).ids[0]!;
+
+  it("losange, ShapeToPolygon en une étape, garde de la ligne fermée", () => {
+    const d = make();
+    const page = d.pageIds()[0]!;
+    const dm = d.apply({ type: "AddShape", page, shape: "diamond", x0: 0, y0: 0, x1: 100, y1: 60, style: PEN, fill: "#ff0000" }).ids[0]!;
+    expect(d.hitTest(page, 50, 30, 0)).toBe(dm);
+    expect(d.hitTest(page, 5, 5, 0)).toBeNull();
+    d.apply({ type: "ShapeToPolygon", id: dm });
+    const v = d.element(dm) as ShapeElement;
+    expect([v.shape.shape, v.shape.polygon, v.shape.fill]).toEqual(["line", true, "#ff0000"]);
+    expect(Array.from(v.transform.slice(4))).toEqual([50, 0]);
+    expect(v.shape.points).toEqual([50, 30, 0, 60]);
+    expect([v.shape.w, v.shape.h]).toEqual([-50, 30]);
+    expect(() => d.apply({ type: "SetLinePoints", id: dm, points: [0, 0, 1, 1], start: null, end: null })).toThrow();
+    d.undo();
+    expect((d.element(dm) as ShapeElement).shape.shape).toBe("diamond");
+  });
+  it("ShapeToPolygon : rectangle (4 sommets) et ellipse (16), une étape annulable", () => {
+    const d = make();
+    const r = shapeAt(d, "rect");
+    const e = shapeAt(d, "ellipse");
+    d.apply({ type: "ShapeToPolygon", id: r });
+    d.apply({ type: "ShapeToPolygon", id: e });
+    const n = (id: string): number => {
+      const v = d.element(id) as ShapeElement;
+      return linePath(v.shape.w, v.shape.h, v.shape.points ?? []).length;
+    };
+    expect(n(r)).toBe(4);
+    expect(n(e)).toBe(16);
+    d.undo();
+    expect((d.element(e) as ShapeElement).shape.shape).toBe("ellipse");
+    d.undo();
+    expect((d.element(r) as ShapeElement).shape.shape).toBe("rect");
+  });
+  it("roundness refusé sur losange et ligne fermée, aucune étape", () => {
+    const d = make();
+    const dm = shapeAt(d, "diamond");
+    const r = shapeAt(d, "rect");
+    d.apply({ type: "ShapeToPolygon", id: r });
+    for (const id of [dm, r]) {
+      const avant = d.element(id);
+      let refus = false;
+      try {
+        d.apply({ type: "SetStyle", ids: [id], patch: { roundness: 1 } });
+      } catch {
+        refus = true;
+      }
+      expect(refus || JSON.stringify(d.element(id)) === JSON.stringify(avant)).toBe(true);
+      expect(d.element(id)).toEqual(avant);
+    }
+  });
+  it("flèche liée à un losange suit le losange ; liaison lue pareil après conversion en ligne fermée", () => {
+    const d = make();
+    const page = d.pageIds()[0]!;
+    const dm = shapeAt(d, "diamond");
+    const ar = d.apply({ type: "AddShape", page, shape: "arrow", x0: 200, y0: 30, x1: 100, y1: 30, style: PEN, fill: null, start: null, end: { id: dm, fx: 1, fy: 0.5 } }).ids[0]!;
+    const fin = (): number => {
+      const v = d.element(ar) as ShapeElement;
+      return v.transform[4]! + v.shape.w;
+    };
+    const x0 = fin();
+    expect(x0).toBeGreaterThan(100);
+    d.apply({ type: "Transform", ids: [dm], matrix: [1, 0, 0, 1, 40, 0] });
+    expect(fin()).toBe(x0 + 40);
+    expect((d.element(ar) as ShapeElement).shape.end?.id).toBe(dm);
+    d.apply({ type: "ShapeToPolygon", id: dm });
+    d.apply({ type: "Transform", ids: [dm], matrix: [1, 0, 0, 1, 10, 0] });
+    const e = (d.element(ar) as ShapeElement).shape.end;
+    // Lue pareil dans les deux cœurs : une ligne fermée n'est plus une cible, la liaison est rompue et la pointe ne suit plus.
+    expect(e).toBeUndefined();
+    expect(fin()).toBe(x0 + 40);
+  });
+});
+
 describe.skipIf(loaded === null)("contrat OG12 : vrai module seulement", () => {
   const PEN = { color: "#000000", width: 4 };
   const rectAt = (d: CoreDocument, x: number): string =>
