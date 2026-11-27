@@ -141,7 +141,9 @@ const presets = () => ({
 });
 
 /** Barres du profil par défaut : une seule source pour `defaut` et `annotation` (P9) ; design-l2 (L2-2) : toutes les
- *  barres du tableau en îlots, la barre d'annotation reste une bande (L4-1, dernière de `toolbars`). */
+ *  barres du tableau en îlots, la barre d'annotation reste une bande (L4-1, dernière de `toolbars`). OG12 lot 2a (L4) : le
+ *  Losange n'est pas dans la barre d'outils, qui sinon quitte la rangée du haut à 1280 px (OG19) ; D, 3 et l'éditeur de
+ *  profil le donnent. */
 const defaultToolbars = () => [
   {
     id: "outils",
@@ -150,7 +152,7 @@ const defaultToolbars = () => [
     groups: [
       { id: "navigation", items: [tool("select", "Sélection"), tool("hand", "Main")] },
       { id: "dessin", items: [sep("sep-1"), tool("pen", "Stylo"), tool("eraser", "Gomme"), action("eraser-mode", "Gomme : partielle")] },
-      { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("diamond", "Losange"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
+      { id: "edition", items: [sep("sep-2"), tool("rect", "Rectangle"), tool("ellipse", "Ellipse"), tool("line", "Ligne"), tool("arrow", "Flèche"), tool("text", "Texte"), tool("table", "Tableau"), tool("fill", "Pot")] },
       { id: "page", items: [sep("sep-fonds"), action("backgrounds", "Fonds")] },
       { id: "bureau", items: [sep("sep-3"), annotationEntry()] },
       { id: "pages", items: [action("page-prev", "Page précédente"), action("page-number", "Numéro de page"), action("page-next", "Page suivante")] },
