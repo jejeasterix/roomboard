@@ -117,7 +117,9 @@ export function SideBar(props: SideBarProps): JSX.Element {
     const r = el.getBoundingClientRect();
     setMenu({ id, x: Math.round(r.right + 8), y: Math.round(r.top) });
   };
-  const closeMenu = (): void => setMenu(null);
+  const closeMenu = (): void => {
+    setMenu(null);
+  };
   createEffect(() => {
     if (menu() === null) return;
     const doc = root?.ownerDocument;
@@ -175,40 +177,28 @@ export function SideBar(props: SideBarProps): JSX.Element {
     const i = index(id);
     const last = pages.ids().length - 1;
     const el = e.currentTarget as HTMLElement;
-    switch (e.key) {
-      case "ArrowUp":
-      case "ArrowDown": {
-        stop(e);
-        const step = e.key === "ArrowUp" ? -1 : 1;
-        if (e.ctrlKey || e.metaKey) return moveTo(id, i + step);
-        rows()[i + step]?.focus();
-        return;
-      }
-      case "Home":
-      case "End":
-        if (!(e.ctrlKey || e.metaKey)) return;
-        stop(e);
-        return moveTo(id, e.key === "Home" ? 0 : last);
-      case "Delete":
-      case "Backspace":
-        stop(e);
-        pages.remove(id);
-        return;
-      case "ContextMenu":
-        stop(e);
-        return openMenu(id, el);
-      case "F10":
-        if (!e.shiftKey) return;
-        stop(e);
-        return openMenu(id, el);
-      case "Escape": {
-        stop(e);
-        if (menu() !== null) return closeMenu();
-        const scene = el.ownerDocument.querySelector<HTMLElement>(".rb-stage[tabindex], main.rb-stages [tabindex]");
-        if (scene !== null) scene.focus({ preventScroll: true });
-        else el.blur();
-        return;
-      }
+    const key = e.key;
+    const mod = e.ctrlKey || e.metaKey;
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      stop(e);
+      const step = key === "ArrowUp" ? -1 : 1;
+      if (mod) moveTo(id, i + step);
+      else rows()[i + step]?.focus();
+    } else if ((key === "Home" || key === "End") && mod) {
+      stop(e);
+      moveTo(id, key === "Home" ? 0 : last);
+    } else if (key === "Delete" || key === "Backspace") {
+      stop(e);
+      pages.remove(id);
+    } else if (key === "ContextMenu" || (key === "F10" && e.shiftKey)) {
+      stop(e);
+      openMenu(id, el);
+    } else if (key === "Escape") {
+      stop(e);
+      if (menu() !== null) return closeMenu();
+      const scene = el.ownerDocument.querySelector<HTMLElement>(".rb-stage[tabindex], main.rb-stages [tabindex]");
+      if (scene !== null) scene.focus({ preventScroll: true });
+      else el.blur();
     }
   };
 

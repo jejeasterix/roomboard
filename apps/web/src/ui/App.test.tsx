@@ -442,16 +442,16 @@ describe("App (T95)", () => {
 
   it("onglets : la barre des onglets suit le workspace (ajout, actif, modifié)", () => {
     const { container, workspace } = renderApp();
-    expect(container.querySelectorAll("[data-tab]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-tabs] [data-tab]")).toHaveLength(1);
     const second = fakeTab("B.roomboard");
     workspace.tabs.add("board", second.session, true);
-    const tabs = [...container.querySelectorAll<HTMLElement>("[data-tab]")];
+    const tabs = [...container.querySelectorAll<HTMLElement>("[data-tabs] [data-tab]")];
     expect(tabs).toHaveLength(2);
     expect(tabs[1]!.textContent).toContain("B.roomboard");
     expect(tabs[1]!.getAttribute("aria-selected")).toBe("true");
     expect(tabs[0]!.getAttribute("aria-selected")).toBe("false");
     second.setDirty(true);
-    expect(container.querySelectorAll("[data-tab]")[1]!.querySelector(".rb-tab-dirty")).not.toBeNull();
+    expect(container.querySelectorAll("[data-tabs] [data-tab]")[1]!.querySelector(".rb-tab-dirty")).not.toBeNull();
   });
 
   it("l'erreur du moteur s'affiche dans #etat", () => {
@@ -1321,7 +1321,7 @@ describe("App — design-l2 : îlots (L2-5, L2-6, L2-8, L2-13, L2-14, L2-19)", (
     expect(corner(container, "top-end").querySelector('[data-island="panneaux"] button[data-item="profiles"]')).not.toBeNull();
     expect(corner(container, "bottom-start").querySelector('[data-island="historique"] button[data-item="undo"]')).not.toBeNull();
     for (const id of ["outils", "pages"]) expect(container.querySelector(`.rb-islands > .rb-island[data-island="${id}"]`), id).not.toBeNull();
-    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(2); // outils et pages (barre latérale)
   });
   it("design-l2 L2-6 : rôle menu rendu par MenuBar ; liste fermée mais dans le DOM ; une ligne lance son action", () => {
     const { container, workspace } = renderApp();

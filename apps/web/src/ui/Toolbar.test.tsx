@@ -8,7 +8,7 @@ import type { ButtonSize, RuntimeCapabilities, StartMode, Toolbar as Bar, ToolIt
 import { ACTION_TABLE } from "../toolbar";
 import { BUILTIN_PROFILES } from "../toolbar-profiles";
 import type { ToolbarHost } from "../app/toolbar-host";
-import { PagesBar } from "./PagesBar";
+import { SideBar, type PagesPort } from "./SideBar";
 import { Toolbar, type PresetTable } from "./Toolbar";
 import type { ToolbarView } from "./item-state";
 import { TIP_HOVER_MS } from "./tooltip";
@@ -572,9 +572,10 @@ describe("Toolbar — compteur de pages (personnalisation-1a, T6)", () => {
     fireEvent.click(b);
     expect(host.runAction).toHaveBeenCalledWith("page-number");
   });
-  it("PagesBar sans Précédente ni Suivante : aucun second #pages", () => {
+  it("barre latérale (successeur de PagesBar) : aucun second #pages, le compteur reste celui de la barre d'outils", () => {
+    const pages: PagesPort = { ids: () => ["a", "b"], shown: () => "a", layout: () => "landscape", fixedByBackdrop: () => false, show() {}, move() {}, duplicate() {}, remove() {}, addAfter() {}, setLayout() {}, thumb: async () => null };
     const { container } = render(() => (
-      <PagesBar bar={{ id: "pages", role: "pages", dock: "bottom", collapsed: false, groups: [], rest: {} }} items={() => [nav.groups[0]!.items[1]!]} view={() => ({ pageIndex: 0, pageCount: 2 })} size={() => "m"} runAction={() => {}} goTo={() => {}} />
+      <SideBar bar={{ id: "pages", role: "pages", dock: "floating", collapsed: false, groups: [{ id: "g", items: [nav.groups[0]!.items[1]!], rest: {} }], rest: {} }} collapsed={() => false} view={() => ({ ...VIEW, pageIndex: 0, pageCount: 2 })} host={{ runAction() {} } as never} pages={pages} />
     ));
     expect(container.querySelector("#pages")).toBeNull();
   });
