@@ -311,4 +311,12 @@ describe("board-io : losange et ligne fermée (OG12 lot 2a)", () => {
     expect(first(r).points).toEqual([0, 0, 0.5, 100, 0, 0.5, 100, 60, 0.5, 0, 0, 0.5]);
     expect(r.warnings).toEqual([]);
   });
+  it("losange ou ligne fermée remplis : polyligne sans fond, et un avis (C4a)", async () => {
+    const d = await withShape("diamond", { fill: "#facc15" });
+    expect(first(d).kind).toBe("stroke");
+    expect(d.warnings).toEqual(["1 losange ou forme libre rempli exporté sans fond"]);
+    const l = await withShape("line", { w: 100, h: 60, points: [100, 0], polygon: true, fill: "#facc15" });
+    expect(first(l).kind).toBe("stroke");
+    expect(l.warnings).toEqual(["1 losange ou forme libre rempli exporté sans fond"]);
+  });
 });
