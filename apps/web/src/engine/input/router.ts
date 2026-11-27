@@ -54,7 +54,10 @@ export interface Router {
   roleOf(pointerId: number): "ink" | "erase" | "edit" | "view" | null;
 }
 
-/** OG25 : "palm" : membre du groupe gomme ; "spent" : contact d'une gomme fermée, inerte jusqu'à son lever (déc. 15). */
+/**
+ * OG25 : "palm" : membre du groupe gomme ; "spent" : inerte jusqu'à son lever, contact d'une gomme fermée (déc. 15) ou
+ * défilement et pincement hors du groupe à la bascule (règle 5).
+ */
 type Role = "draw" | "pan" | "pinch" | "ignored" | "palm" | "spent";
 
 interface Track {
@@ -143,11 +146,14 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
   };
 
   /**
-   * OG25 : essaie la bascule déclenchée par `trigger` (contact posé ou élargi) à l'instant `now`. Le groupe : le
-   * déclencheur et les contacts tactiles qui tracent, déplacent ou pincent, plus ceux que le routeur a ignorés encore
-   * dans leur fenêtre (second doigt tardif, troisième doigt : déc. 9, règle 2) ; un ignoré au-delà le reste (déc. 12).
-   * Rien ne bascule si l'un d'eux a dépassé sa fenêtre (geste établi, déc. 13, 32), ni hors des outils sans effet au
-   * `begin` (déc. 33), ni avec la main ou l'espace (déc. 14), ni pendant une retouche ou une orbite (déc. 23).
+   * OG25 : essaie la bascule déclenchée par `trigger` (contact posé ou élargi) à l'instant `now`. Rien ne bascule si un
+   * contact tactile, où qu'il soit, tient un geste établi (trait, défilement ou pincement au-delà de sa fenêtre : déc. 13,
+   * 32), ni hors des outils sans effet au `begin` (déc. 33), ni avec la main ou l'espace (déc. 14), ni pendant une
+   * retouche ou une orbite (déc. 23). Le groupe : le déclencheur, les contacts tactiles encore dans leur fenêtre à
+   * CLUSTER_PX au plus de lui (trait, défilement, pincement, ou ignoré : second doigt tardif, troisième doigt, déc. 9,
+   * règle 2), et le partenaire de pincement de tout membre, où qu'il soit (une paire entre en entier). Hors du groupe,
+   * à la bascule : un trait garde son geste (deux personnes au tableau) ; un défilement ou un pincement devient inerte
+   * jusqu'à son lever, la vue ne bouge plus (règle 5) ; un ignoré le reste (déc. 12).
    */
   const tryPalm = (triggerId: number, trigger: Track, now: number): boolean => {
     if (opts.autoEraser !== true || palm !== null || trigger.pointerType !== "touch" || now - trigger.startT > DETECT_MS) return false;
@@ -160,6 +166,10 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       if (live && now - t.startT > DETECT_MS) return false;
       // Un contact à plus de CLUSTER_PX du déclencheur garde son geste (revue T10) : il n'entre pas dans la gomme.
       if ((live || (t.role === "ignored" && now - t.startT <= DETECT_MS)) && joinsCluster([near], boxOf(t))) group.push([id, t]);
+    }
+    // Une paire de pincement entre en entier (revue T11) : le partenaire d'un membre le suit, où qu'il soit.
+    if (group.some(([, t]) => t.role === "pinch")) {
+      for (const p of touches("pinch")) if (!group.some(([id]) => id === p[0])) group.push(p);
     }
     let first = trigger;
     for (const [, t] of group) if (t.startT < first.startT) first = t;
@@ -175,6 +185,9 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       t.panX = 0;
       t.panY = 0;
     }
+    // Hors du groupe, défilement et pincement s'arrêtent jusqu'au lever : la vue ne bouge plus (règle 5, revue T11).
+    for (const [, t] of touches("pan")) t.role = "spent";
+    for (const [, t] of touches("pinch")) t.role = "spent";
     const c = eraserCircle(boxes);
     palm = { id, members: new Set(group.map(([pid]) => pid)), radius: c.radius };
     deps.gestures.begin(id, "eraser", [sampleAt(c.x, c.y, now)], "touch");
