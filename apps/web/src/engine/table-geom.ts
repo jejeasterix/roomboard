@@ -7,7 +7,7 @@
  * (`layoutRich`, B1) ; sur une ancre de plusieurs lignes, la dernière ligne porte le reste (F7). Tailles par défaut en
  * unités de page (T4) ; la largeur de page se lit sur la page, jamais ici.
  */
-import type { Bounds, CoreDocument, Matrix, TableData, TextSpan } from "../core/api";
+import type { Bounds, CoreDocument, Matrix, TableData, TableElement, TextSpan } from "../core/api";
 import { plainSpans } from "../core/rich-text";
 import { applyMatrix, invertMatrix } from "../core/shapes";
 import { layoutRich, richBoxHeight, type Measure } from "./text-layout";
@@ -164,21 +164,27 @@ export function cellContent(
   return { text: c?.text ?? "", spans: c?.spans ?? plainSpans(c?.text ?? ""), fill: c?.fill ?? null, shade: c?.shade ?? null };
 }
 
-/** Le tableau le plus haut sous (x, y) monde, du dessus vers le dessous (I2) ; matrice non inversible : sauté. */
-export function tableAt(doc: Pick<CoreDocument, "elementIds" | "element">, page: string, x: number, y: number): TableHit | null {
-  const ids = doc.elementIds(page);
-  for (let i = ids.length - 1; i >= 0; i--) {
-    const id = ids[i];
-    if (id === undefined) continue;
-    const el = doc.element(id);
-    if (el?.kind !== "table") continue;
+/** Le tableau le plus haut de `tables` (ordre de la pile) sous (x, y) monde (I2) ; matrice non inversible : sauté. */
+export function tableHitIn(tables: readonly TableElement[], x: number, y: number): TableHit | null {
+  for (let i = tables.length - 1; i >= 0; i--) {
+    const el = tables[i];
+    if (el === undefined) continue;
     const inv = invertMatrix(el.transform);
     if (inv === null) continue;
     const [lx, ly] = applyMatrix(inv, x, y);
     const cell = cellAt(el.table, lx, ly);
-    if (cell !== null) return { id, transform: el.transform, table: el.table, cell };
+    if (cell !== null) return { id: el.id, transform: el.transform, table: el.table, cell };
   }
   return null;
+}
+
+/** Le tableau le plus haut sous (x, y) monde ; lit les seuls tableaux (`elementIdsOfKind`, D28), dans l'ordre de la pile. */
+export function tableAt(doc: Pick<CoreDocument, "elementIdsOfKind" | "element">, page: string, x: number, y: number): TableHit | null {
+  const tables = doc.elementIdsOfKind(page, "table").flatMap((id) => {
+    const el = doc.element(id);
+    return el?.kind === "table" ? [el] : [];
+  });
+  return tableHitIn(tables, x, y);
 }
 
 /** Cellule voisine (T8, PC4, F16, PC14). Tab / Maj+Tab : ancres et cellules simples dans l'ordre de lecture ; Tab en
@@ -257,4 +263,28 @@ export function rowHeightsFor(t: TableData, colWidths: readonly number[], measur
     heights[z.r1] = Math.max(heights[z.r1] ?? 0, need - above);
   }
   return heights;
+}
+
+/** Boîte locale (repère du tableau) d'un objet logé dans la case `row`, `col` (D34). */
+export interface LinkedBox { readonly row: string; readonly col: string; readonly w: number; readonly h: number }
+
+/** Taille exigée (D34) : ligne = max(texte, objet le plus haut + 2 × marge, TABLE_ROW_HEIGHT) ; colonne = max(objet le
+ *  plus large + 2 × marge, 2 × marge + 24). Objet d'une zone : la dernière ligne et la dernière colonne portent l'écart. */
+export function requiredSizes(t: TableData, linked: readonly LinkedBox[], colWidths: readonly number[], measure: Measure): { rows: number[]; cols: number[] } {
+  const rows = rowHeightsFor(t, colWidths, measure).map((h) => Math.max(h, TABLE_ROW_HEIGHT));
+  const cols = t.cols.map(() => 2 * TABLE_PADDING + 24);
+  const width = (c: number): number => colWidths[c] ?? t.cols[c]?.width ?? 0;
+  const height = (r: number): number => rows[r] ?? t.rows[r]?.height ?? 0;
+  for (const o of linked) {
+    const cell = cellOf(t, o);
+    if (cell === null) continue;
+    const z = mergeAt(t, cell) ?? single(cell);
+    let otherW = 0;
+    for (let c = z.c0; c < z.c1; c++) otherW += width(c);
+    let otherH = 0;
+    for (let r = z.r0; r < z.r1; r++) otherH += height(r);
+    cols[z.c1] = Math.max(cols[z.c1] ?? 0, o.w + 2 * TABLE_PADDING - otherW);
+    rows[z.r1] = Math.max(rows[z.r1] ?? 0, o.h + 2 * TABLE_PADDING - otherH);
+  }
+  return { rows, cols };
 }

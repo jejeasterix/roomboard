@@ -649,6 +649,16 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       ctx.restore();
     }
+    if (o.target) {
+      // personnalisation-3 (D32) : case visée, cadre plein de 2 px écran, couleur d'accent.
+      ctx.save();
+      ctx.strokeStyle = SELECTION_COLOR;
+      ctx.lineWidth = 2 * px;
+      ctx.setLineDash([]);
+      box(o.target);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (o.frame) {
       ctx.save();
       ctx.strokeStyle = SELECTION_COLOR;

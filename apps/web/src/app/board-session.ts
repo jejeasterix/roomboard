@@ -45,6 +45,7 @@ import { browserPlayerPorts, createMediaPlayers, mediaTag, type MediaPlaySpec, t
 import { createEraserTool } from "../engine/tools/eraser";
 import { createFillTool } from "../engine/tools/fill";
 import { createPenTool } from "../engine/tools/pen";
+import { createCellDrop } from "../engine/tools/cell-drop";
 import { createSelectTool } from "../engine/tools/select";
 import { createShapeTool } from "../engine/tools/shape";
 import { createTableTool } from "../engine/tools/table";
@@ -368,7 +369,7 @@ async function buildBoardSession(
     tools: {
       pen: createPenTool,
       eraser: createEraserTool,
-      select: createSelectTool,
+      select: (ctx) => createSelectTool(ctx, createCellDrop(ctx, measure)),
       shape: createShapeTool,
       text: (ctx, style) => {
         textTool = createTextTool(ctx, editor, style, measure);
