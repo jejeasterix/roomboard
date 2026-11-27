@@ -344,6 +344,47 @@ async function scenario(page, url, { captures }) {
   await page.keyboard.press("Escape");
   await fr();
 
+  // S6 (D13) : tableau 3 × 3 neuf sous les autres ; case (1, 1) active ; poignée droite tirée au doigt de 100 px.
+  const DY6 = 840;
+  const cell6 = (row, col) => screen(c, origin[0] + COL * col + COL / 2, origin[1] + DY6 + ROW * row + ROW / 2);
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...screen(c, origin[0], origin[1] + DY6));
+  await page.waitForSelector(".rb-table-picker:not([hidden])", { timeout: 5000 });
+  await page.click('button[aria-label="3 colonnes, 3 lignes"]');
+  await page.keyboard.press("Escape");
+  await fr();
+  await mouse.click(...cell6(1, 1));
+  await page.keyboard.press("Escape");
+  await fr();
+  const grip = screen(c, origin[0] + 2 * COL, origin[1] + DY6 + ROW * 1.5);
+  await touchDrag(grip, [grip[0] + 100 * c.zoom, grip[1]]);
+  await capture("bordure-tiree");
+  await page.click(item("select"));
+  await fr();
+  await selectAt(screen(c, origin[0], origin[1] + DY6 + ROW / 2));
+  const [ax0, , ax1] = await boundsOf();
+  check(near(ax1 - ax0, 820), `S6 : la colonne s'élargit de 100 (tableau ${ax1 - ax0} de large, attendu 820)`);
+  await page.keyboard.press("Control+z");
+  await fr();
+  await selectAt(screen(c, origin[0], origin[1] + DY6 + ROW / 2));
+  const [bx0, , bx1] = await boundsOf();
+  check(near(bx1 - bx0, 720), `S6 : Ctrl+Z rend 720 en une étape (lu ${bx1 - bx0})`);
+  await page.keyboard.press("Escape");
+  await page.click(item("table"));
+  await fr();
+  await mouse.click(...cell6(1, 1));
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Alt+Shift+ArrowRight");
+  await fr();
+  await page.click(item("select"));
+  await fr();
+  await selectAt(screen(c, origin[0], origin[1] + DY6 + ROW / 2));
+  const [k6x0, , k6x1] = await boundsOf();
+  check(near(k6x1 - k6x0, 728), `S6 : Alt+Maj+→ élargit de 8 (lu ${k6x1 - k6x0})`);
+  await page.keyboard.press("Escape");
+  await fr();
+
   check(errors.length === 0, `aucune erreur dans la page${errors.length > 0 ? ` : ${errors.join(" | ")}` : ""}`);
 }
 

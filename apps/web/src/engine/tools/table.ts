@@ -45,6 +45,7 @@ import {
   type Cell,
   type CellRef,
   type EdgeHit,
+  type Grip,
   type Range,
 } from "../table-geom";
 import type { Measure } from "../text-layout";
@@ -115,6 +116,8 @@ interface Resize {
 /** Appui long (G8) : durée et mouvement toléré en px écran. */
 const HOLD_MS = 500;
 const HOLD_SLOP = 8;
+/** Bord de case sous lequel la poignée n'est ni dessinée ni prise (px écran). */
+const GRIP_MIN_PX = 24;
 
 export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker: TablePicker, style: () => TextStyle, measure: Measure, menu?: CellMenu, cellDrop?: Pick<CellDrop, "place">): TableTool {
   let active: CellRef | null = null;
@@ -202,14 +205,31 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     ctx.run({ type: "SetTableLineSizes", id, cols: [[col.id, v]], rows });
   };
 
+  /** Poignées de la case active, sauf celles d'un bord plus court que `GRIP_MIN_PX` à l'écran (tableau dense : la cible
+   *  de 44 px recouvrirait les cases voisines ; la bordure reste prise à ± 6 px). */
+  const gripsOf = (at: Located): Grip[] => {
+    const r = cellRect(at.table, at.cell);
+    const zoom = ctx.camera().zoom;
+    return cellGrips(at.table, at.cell).filter((g) => (g.kind === "col" ? r.y1 - r.y0 : r.x1 - r.x0) * zoom >= GRIP_MIN_PX);
+  };
+
   /** Bordure sous le point écran : poignée de la case active (44 px, au doigt), sinon un bord à ± 6 px (D13). */
   const grabAt = (sx: number, sy: number, x: number, y: number): { id: string; transform: Matrix; table: TableData; edge: EdgeHit; grip: boolean } | null => {
     const at = locate(active);
     if (at !== null) {
-      for (const g of cellGrips(at.table, at.cell)) {
+      for (const g of gripsOf(at)) {
         const [wx, wy] = applyMatrix(at.transform, g.x, g.y);
         const [gx, gy] = worldToScreen(ctx.camera(), wx, wy);
-        if (Math.abs(gx - sx) <= GRIP_PX / 2 && Math.abs(gy - sy) <= GRIP_PX / 2) {
+        // La cible de 44 px ne dépasse pas le quart de la case de chaque côté du bord : au petit zoom ou dans un tableau
+        // dense elle ne recouvre ni le centre de la case ni celui de sa voisine (appui long, saisie).
+        const size = (i: number): number => (g.kind === "col" ? at.table.cols[i]?.width : at.table.rows[i]?.height) ?? Infinity;
+        const room = 0.25 * Math.min(size(g.index), size(g.index + 1)) * ctx.camera().zoom;
+        const inward = Math.min(GRIP_PX / 2, room);
+        const dx = g.kind === "col" ? gx - sx : Math.abs(gx - sx);
+        const dy = g.kind === "row" ? gy - sy : Math.abs(gy - sy);
+        const okX = g.kind === "col" ? dx >= -inward && dx <= inward : dx <= GRIP_PX / 2;
+        const okY = g.kind === "row" ? dy >= -inward && dy <= inward : dy <= GRIP_PX / 2;
+        if (okX && okY) {
           return { id: at.ref.id, transform: at.transform, table: at.table, edge: { axis: g.kind, index: g.index }, grip: true };
         }
       }
@@ -226,7 +246,7 @@ export function createTableTool(ctx: ToolContext, editor: TextEditorHost, picker
     if (at === null) {
       live = NO_LIVE;
     } else {
-      const grips = cellGrips(at.table, at.cell).map((g) => {
+      const grips = gripsOf(at).map((g) => {
         const [x, y] = applyMatrix(at.transform, g.x, g.y);
         return { x, y, kind: g.kind };
       });
