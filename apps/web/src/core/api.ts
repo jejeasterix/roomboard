@@ -19,7 +19,7 @@
 // C5 : SetImageParams (état voulu complet des réglages et nouvelle matrice, une étape, D38) ; ImageData porte les réglages
 // (neutres absents, I4) ; la boîte locale d'une image est sa boîte affichée (image-params.ts, displaySize).
 
-import type { Look } from "./look";
+import type { Look, LookPatch } from "./look";
 export type { Look, LookPatch } from "./look";
 
 export type Matrix = readonly [number, number, number, number, number, number];
@@ -54,7 +54,8 @@ export type FillTarget =
 export type Command =
   | { readonly type: "AddPage"; readonly after: string | null }
   | { readonly type: "RemovePage"; readonly page: string }
-  | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle }
+  /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
+  | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
   | { readonly type: "Delete"; readonly ids: readonly string[] }
   | {
@@ -67,6 +68,8 @@ export type Command =
       readonly y1: number;
       readonly style: StrokeStyle;
       readonly fill: string | null;
+      /** OG11 : aspect écrit dans la même étape (omis s'il est neutre). */
+      readonly look?: Look;
     }
   | {
       readonly type: "SetText";
@@ -82,6 +85,8 @@ export type Command =
       readonly boxHeight: number;
       /** C7b (R7) : état voulu des segments (concaténation = content) ; absent : différence seule (C7). */
       readonly spans?: readonly TextSpan[];
+      /** OG11 : aspect d'une boîte neuve (`id` null) ; ignoré sur un texte existant (son style passe par SetStyle). */
+      readonly look?: Look;
     }
   | { readonly type: "Transform"; readonly ids: readonly string[]; readonly matrix: Matrix }
   | { readonly type: "AddImage"; readonly page: string; readonly asset: AssetRef; readonly w: number; readonly h: number; readonly matrix: Matrix }
@@ -178,6 +183,10 @@ export type Command =
     }
   /** C6a (D12) : color null = « Aucune » (intérieur retiré, fond #ffffff, contour inchangé) ; même valeur : aucune étape. */
   | { readonly type: "Fill"; readonly page: string; readonly target: FillTarget; readonly color: string | null }
+  /** OG11 (déc. 25, DA-1) : patch de style sur les éléments qui admettent chaque champ, une étape ; même valeur ou champ
+   *  inapplicable : aucune étape (D38) ; hors domaine (opacité hors 0..100, tracé hors 0..2…) : « style invalide », rien
+   *  d'écrit. `null` retire le champ ; opacité arrondie, 100 la retire ; tracé 0 retire tracé et graine. */
+  | { readonly type: "SetStyle"; readonly ids: readonly string[]; readonly patch: LookPatch }
   /** C5 (I6) : état voulu complet des réglages (neutres retirés par le cœur) et nouvelle matrice (placeAfter, I9) ;
    *  même état et même matrice : aucune étape ; hors domaine : BAD_IMAGE_PARAMS_MESSAGE. C6b (B11) : `restore` : avec un
    *  `sourceAsset`, l'asset d'origine revient dans la même étape. */

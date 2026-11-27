@@ -102,6 +102,7 @@ import {
   unknownKindMessage,
 } from "./api";
 import { isAssetId } from "./asset-store";
+import type { Look, LookPatch } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
@@ -154,6 +155,8 @@ interface FakeElement {
   readonly malformed?: Readonly<Record<string, unknown>>;
   /** C3 (Z1) : chemin de groupes, extérieur d'abord ; absent sans groupe (le brut d'un mal formé garde le sien). */
   readonly group?: readonly string[];
+  /** OG11 : aspect écrit (assaini, jamais neutre) ; lu sur les traits, formes, textes et images, comme le cœur. */
+  readonly look?: Look;
 }
 type RawRecord = Readonly<Record<string, unknown>>;
 /** Cellule de la fausse liaison ; absente du Map = vide ; `spans` = segments du texte (C7b) ; `span` = [dernière ligne,
@@ -192,7 +195,112 @@ const MESSAGES = {
   badFill: "remplissage invalide (couleur valide, contour d'une forme ou d'un trait, intérieur d'un rectangle ou d'une ellipse attendus)",
   badGroup: BAD_GROUP_MESSAGE,
   badImageParams: BAD_IMAGE_PARAMS_MESSAGE,
+  badStyle: "style invalide",
 } as const;
+
+// OG11 : copie de `style.rs` (`StylePatch::validate`, `writes_for`, `differs`), du pont (`small_int`, `look_of`) et de
+// `Look::sanitized` (`element.rs`) ; aucune règle propre à la fausse liaison.
+type MutableLook = { -readonly [K in keyof Look]: Look[K] };
+const STROKE_STYLES: readonly string[] = ["dashed", "dotted"];
+const absent = (v: unknown): v is null | undefined => v === undefined || v === null;
+const badStyle = (): never => {
+  throw new Error(MESSAGES.badStyle);
+};
+/** `small_int` du pont : entier de 0..=max ; absent : undefined ; sinon « style invalide » (jamais tronqué). */
+const smallInt = (v: unknown, max: number): number | undefined =>
+  absent(v) ? undefined : typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : badStyle();
+/** Opacité finie de 0..=100, arrondie (`f64::round`, identique à Math.round sur un positif). */
+const opacityArg = (v: unknown): number | undefined =>
+  absent(v) ? undefined : typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100 ? Math.round(v) || 0 : badStyle();
+/** Graine neuve (`random_seed` du cœur) : entier de 0..=u32::MAX. */
+const newSeed = (): number => (Math.random() * 2 ** 32) >>> 0;
+
+/** Aspect d'une création : bornes du pont (`look_of`), puis `Look::sanitized` ; undefined s'il est neutre. */
+function creationLook(l: Look | undefined): Look | undefined {
+  if (absent(l)) return undefined;
+  const o = opacityArg(l.opacity);
+  const r = smallInt(l.roughness, 2);
+  const seed = smallInt(l.seed, 0xffffffff);
+  const out: MutableLook = {};
+  if (typeof l.strokeStyle === "string" && STROKE_STYLES.includes(l.strokeStyle)) out.strokeStyle = l.strokeStyle;
+  if (r === 1 || r === 2) {
+    out.roughness = r;
+    if (seed !== undefined) out.seed = seed;
+  }
+  if (l.roundness === "round") out.roundness = "round";
+  if (o !== undefined && o < 100) out.opacity = o;
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
+/** `StylePatch::validate` (et `roughness_arg` du pont) : tout le patch avant la moindre lecture ; rend l'opacité arrondie. */
+function validStyle(p: LookPatch): number | undefined {
+  if (!absent(p.color) && !(typeof p.color === "string" && validColor(p.color))) badStyle();
+  if (!absent(p.width)) {
+    const w = typeof p.width === "number" ? Math.fround(p.width) : Number.NaN; // le pont reçoit un f32
+    if (!(Number.isFinite(w) && w > 0)) badStyle();
+  }
+  if ("fill" in p && !absent(p.fill) && !(typeof p.fill === "string" && validColor(p.fill))) badStyle();
+  if ("strokeStyle" in p && !absent(p.strokeStyle) && !(typeof p.strokeStyle === "string" && STROKE_STYLES.includes(p.strokeStyle))) badStyle();
+  smallInt(p.roughness, 2);
+  if ("roundness" in p && !absent(p.roundness) && p.roundness !== "round") badStyle();
+  return opacityArg(p.opacity);
+}
+
+type StyleKind = "stroke" | "shape" | "text" | "image";
+const styleKind = (e: FakeElement): StyleKind | null =>
+  e.malformed || e.unknown ? null : e.image ? "image" : e.shape ? "shape" : e.text ? "text" : e.local !== undefined ? "stroke" : null;
+
+/** `writes_for` + `differs` : l'élément restylé, ou null si aucune écriture effective (champ inapplicable ou même valeur). */
+function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): FakeElement | null {
+  const kind = styleKind(e);
+  if (kind === null) return null;
+  let changed = false;
+  let style = e.style;
+  let shape = e.shape;
+  const look: MutableLook = { ...e.look };
+  const put = <K extends keyof Look>(k: K, v: Look[K] | undefined): void => {
+    if (look[k] === v) return;
+    if (v === undefined) delete look[k];
+    else look[k] = v;
+    changed = true;
+  };
+  if (!absent(p.color) && kind !== "image" && style.color !== p.color) {
+    style = { ...style, color: p.color };
+    changed = true;
+  }
+  if (!absent(p.width) && (kind === "stroke" || kind === "shape")) {
+    const w = Math.fround(p.width);
+    if (style.width !== w) {
+      style = { ...style, width: w };
+      changed = true;
+    }
+  }
+  if ("fill" in p && shape && (shape.shape === "rect" || shape.shape === "ellipse")) {
+    const f = p.fill ?? null;
+    if (shape.fill !== f) {
+      shape = { ...shape, fill: f };
+      changed = true;
+    }
+  }
+  if ("strokeStyle" in p && kind === "shape") put("strokeStyle", p.strokeStyle ?? undefined);
+  const r = p.roughness ?? undefined;
+  if (r !== undefined && kind === "shape") {
+    if (r === 0) {
+      put("roughness", undefined);
+      put("seed", undefined);
+    } else {
+      // Même niveau avec une graine lisible : la graine reste ; sinon graine neuve (`actionProperties.tsx:783`).
+      const keep = e.look?.roughness === r && e.look.seed !== undefined;
+      put("roughness", r);
+      if (!keep) put("seed", newSeed());
+    }
+  }
+  if ("roundness" in p && shape?.shape === "rect") put("roundness", p.roundness ?? undefined);
+  if (opacity !== undefined) put("opacity", opacity < 100 ? opacity : undefined);
+  if (!changed) return null;
+  const { look: _old, ...rest } = e;
+  return { ...rest, style, ...(shape ? { shape } : {}), ...(Object.keys(look).length > 0 ? { look } : {}) };
+}
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
@@ -728,6 +836,7 @@ class FakeDocument implements CoreDocument {
         });
       }
       case "CommitStroke": {
+        const look = creationLook(cmd.look); // OG11 : contrôlé d'abord, comme le pont
         if (cmd.points.length < 3 || cmd.points.length % 3 !== 0 || !cmd.points.every((v) => Number.isFinite(v))) {
           throw new Error("points invalides");
         }
@@ -736,7 +845,7 @@ class FakeDocument implements CoreDocument {
         return this.step((s) => {
           const id = newId();
           const { x0, y0, local } = toLocal(cmd.points);
-          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style });
+          s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(x0, y0), local, style: cmd.style, ...(look ? { look } : {}) });
           return { pages: [cmd.page], ids: [id], removed: [] };
         });
       }
@@ -764,6 +873,7 @@ class FakeDocument implements CoreDocument {
         });
       }
       case "AddShape": {
+        const look = creationLook(cmd.look); // OG11 : contrôlé d'abord, comme le pont
         if (![cmd.x0, cmd.y0, cmd.x1, cmd.y1].every((v) => Number.isFinite(v))) throw new Error(MESSAGES.badShape);
         // Comme le cœur (constat 3 de T60) : la géométrie tirée des coins doit rester finie en f32.
         const g = normalizeShape(cmd.shape, cmd.x0, cmd.y0, cmd.x1, cmd.y1);
@@ -777,11 +887,14 @@ class FakeDocument implements CoreDocument {
             transform: translate(g.tx, g.ty),
             style: cmd.style,
             shape: { shape: cmd.shape, w: g.w, h: g.h, fill: cmd.fill },
+            ...(look ? { look } : {}),
           });
           return { pages: [cmd.page], ids: [id], removed: [] };
         });
       }
       case "SetText": {
+        // OG11 : `look` contrôlé d'abord (le pont), écrit sur une boîte neuve seulement.
+        const look = creationLook(cmd.look);
         // C7b (R7, PC2) : segments contrôlés en premier, comme le cœur ; état voulu normalisé (forme de read_spans).
         if (cmd.spans !== undefined && !validSpans(cmd.content, cmd.spans)) throw new Error(MESSAGES.badFormat);
         const want = cmd.spans === undefined ? null : normalSpans(cmd.spans);
@@ -796,7 +909,7 @@ class FakeDocument implements CoreDocument {
           if (cmd.content === "") return this.unchanged();
           return this.step((s) => {
             const id = newId();
-            s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(cmd.x, cmd.y), style, text });
+            s.pages.find((p) => p.id === cmd.page)?.elements.push({ id, transform: translate(cmd.x, cmd.y), style, text, ...(look ? { look } : {}) });
             return { pages: [cmd.page], ids: [id], removed: [] };
           });
         }
@@ -1243,6 +1356,26 @@ class FakeDocument implements CoreDocument {
           return { color: cmd.color, size: cmd.size, cols, rows, cells };
         });
       }
+      case "SetStyle": {
+        // OG11 : `cmd_set_style` (`style.rs`) : patch validé, puis plan des écritures effectives ; plan vide : aucune
+        // étape (D38). Pas le chemin de Fill : une étape n'est poussée que si un champ change vraiment.
+        const opacity = validStyle(cmd.patch);
+        const plan = new Map<string, FakeElement>();
+        const pages: string[] = [];
+        for (const id of cmd.ids) {
+          const found = this.find(id);
+          if (!found) throw new Error(`élément inconnu : ${id}`);
+          const next = restyled(found.element, cmd.patch, opacity);
+          if (next === null) continue;
+          plan.set(id, next);
+          if (!pages.includes(found.page.id)) pages.push(found.page.id);
+        }
+        if (plan.size === 0) return this.unchanged();
+        return this.step((s) => {
+          for (const p of s.pages) p.elements.splice(0, p.elements.length, ...p.elements.map((e) => plan.get(e.id) ?? e));
+          return { pages, ids: [...plan.keys()], removed: [] };
+        });
+      }
       case "Fill": {
         // Ordre du cœur (`fill.rs`, PC2) : couleur, page, élément de cette page (PC3), cible ; même valeur : aucune étape.
         if (cmd.color !== null && !validColor(cmd.color)) throw new Error(MESSAGES.badFill);
@@ -1358,13 +1491,14 @@ class FakeDocument implements CoreDocument {
     const e = this.find(id)?.element;
     if (!e || e.malformed) return null;
     const base = { id, transform: e.transform, ...withGroup(e.group) };
+    const looked = e.look ? { look: e.look } : {};
     if (e.unknown) return { ...base, kind: "unknown", unknown: { sourceKind: e.unknown.sourceKind, ...e.unknown.box } };
-    if (e.image) return { ...base, kind: "image", image: e.image };
+    if (e.image) return { ...base, ...looked, kind: "image", image: e.image };
     if (e.media) return { ...base, kind: "media", media: e.media };
     if (e.model3d) return { ...base, kind: "model3d", model3d: e.model3d };
     if (e.fill) return { ...base, kind: "fill", fill: { color: e.fill.color, w: e.fill.w, h: e.fill.h } };
     if (e.table) return { ...base, kind: "table", table: tableView(e.table) };
-    const styled = { ...base, style: e.style };
+    const styled = { ...base, ...looked, style: e.style };
     if (e.shape) return { ...styled, kind: "shape", shape: e.shape };
     if (e.text) return { ...styled, kind: "text", text: e.text };
     return { ...styled, kind: "stroke" };
