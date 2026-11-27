@@ -1246,6 +1246,7 @@ async function s6(browser, base, mode, tmp) {
   await page.keyboard.press("Control+z");
   await until(async () => (await near(CORNER, WHITE, 8)) > 20, "S6.3 : Ctrl+Z : le fond est revenu (une étape)");
   // 4. Retourner horizontalement puis rogner : le cadre de rognage suit l'image retournée.
+  // Échantillons à y = 40 : sur la rangée du haut (y = 4) les poignées de la sélection (coins, milieu du bord) peignent du blanc sur #scene.
   const pxAt = async (d) => {
     const [x, y] = await disp(d);
     return page.$eval("#scene", (c, [x, y]) => {
@@ -1253,12 +1254,12 @@ async function s6(browser, base, mode, tmp) {
       return Array.from(c.getContext("2d").getImageData(Math.round(x * sx), Math.round(y * sx), 1, 1).data);
     }, [x, y]);
   };
-  const left0 = (await pxAt([4, 4]))[0];
-  lire("S6.avant.droite", (await pxAt([195, 4])).join(","));
+  const left0 = (await pxAt([6, 40]))[0];
+  lire("S6.avant.droite", (await pxAt([194, 40])).join(","));
   await act("flip-h");
   await page.waitForTimeout(800);
-  lire("S6.degrade", `gauche ${left0} -> ${(await pxAt([4, 4])).join(",")} ; droite ${(await pxAt([195, 4])).join(",")} ; version ${await attr(page, "data-version")}`);
-  await until(async () => (await pxAt([4, 4]))[0] < left0 - 10, "S6.4 : Retourner ↔ : le dégradé du fond est inversé");
+  lire("S6.degrade", `gauche ${left0} -> ${(await pxAt([6, 40])).join(",")} ; droite ${(await pxAt([194, 40])).join(",")} ; version ${await attr(page, "data-version")}`);
+  await until(async () => (await pxAt([6, 40]))[0] < left0 - 10, "S6.4 : Retourner ↔ : le dégradé du fond est inversé");
   const x0Flip = (await box()).x0;
   await act("crop");
   await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
@@ -1268,7 +1269,7 @@ async function s6(browser, base, mode, tmp) {
   check(Math.abs((await box()).x0 - x0Flip) < 0.5, "S6.4 : le bord gauche affiché n'a pas bougé : le rognage a pris le bord droit affiché");
   s = await saved(page, tmp, `s6c-${mode}.roomboard`);
   lire("S6.crop.retourne", JSON.stringify(imgOf(s.elements)?.image?.crop ?? null));
-  check((await pxAt([4, 4]))[0] < left0 - 10, "S6.4 : après rognage, l'image reste retournée");
+  check((await pxAt([6, 40]))[0] < left0 - 10, "S6.4 : après rognage, l'image reste retournée");
   // 5. Clavier : Tab jusqu'à Rogner, Entrée ouvre ; Échap annule ; Entrée valide.
   if (mode === "clavier") {
     await act("close");
@@ -1286,8 +1287,6 @@ async function s6(browser, base, mode, tmp) {
     await page.keyboard.press("Escape");
     await frames(page);
     check((await page.locator('[data-image-action="crop-apply"]').count()) === 0 && (await attr(page, "data-image")) === `${w2}x150`, `S6.5 : Échap annule la séance (${w2}x150 inchangé)`);
-    await page.keyboard.press("Escape");
-    await frames(page);
     if ((await page.locator("#image-retouche").count()) > 0) await act("close");
     await press(page, mode, '[data-image-action="panel-crop"]');
     await page.locator('[data-image-action="crop-apply"]').waitFor({ state: "visible", timeout: 15000 });
