@@ -7,7 +7,7 @@ function setup(over: { eraserMode?: "partial" | "object" } = {}, profile: Profil
   const engine = {
     setTool: vi.fn(), setEraserMode: vi.fn(), setPenStyle: vi.fn(), setFillColor: vi.fn(), setFillTolerance: vi.fn(), undo: vi.fn(), redo: vi.fn(),
     addPage: vi.fn(() => true), nextOrAdd: vi.fn(() => true), duplicatePage: vi.fn(() => true), removePage: vi.fn(() => true), nextPage: vi.fn(() => true), prevPage: vi.fn(() => true),
-    fitPage: vi.fn(), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
+    fitPage: vi.fn(), bringToFront: vi.fn(() => true), sendToBack: vi.fn(() => true), tableAction: vi.fn(), tableFill: vi.fn(), textFormat: vi.fn(), state: vi.fn(() => ({ eraserMode: over.eraserMode ?? "partial" })),
   };
   const t = { engine: () => engine, runFile: vi.fn(), importFiles: vi.fn(), toggle: vi.fn(), toggleSidebar: vi.fn(), insertPages: vi.fn(), exportPdf: vi.fn(), selection: vi.fn() } as unknown as HostTargets;
   const host = createLocalToolbarHost(t, () => profile);
@@ -60,6 +60,14 @@ describe("ToolbarHost local", () => {
   });
   it("chaque action d'ACTION_TABLE a son entrée dans ACTIONS", () => {
     for (const id of Object.keys(ACTION_TABLE)) expect(Object.hasOwn(ACTIONS, id), id).toBe(true);
+  });
+  it("layer-front, layer-back (rangée Sélection, hors catalogue) → moteur ; absentes d'ACTION_TABLE", () => {
+    const { host, engine } = setup();
+    host.runAction("layer-front");
+    host.runAction("layer-back");
+    expect(engine.bringToFront).toHaveBeenCalledTimes(1);
+    expect(engine.sendToBack).toHaveBeenCalledTimes(1);
+    expect(Object.hasOwn(ACTION_TABLE, "layer-front")).toBe(false);
   });
   it("file-save → runFile(save)", () => {
     const { host, t } = setup();

@@ -36,7 +36,7 @@ export interface HostTargets {
     send?(to: SendTarget): Promise<void>;
     pointer?(mode: PointerMode): Promise<void>;
   };
-  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat">;
+  engine(): Pick<Engine, "setTool" | "setEraserMode" | "state" | "undo" | "redo" | "addPage" | "nextOrAdd" | "duplicatePage" | "removePage" | "nextPage" | "prevPage" | "fitPage" | "setPenStyle" | "setFillColor" | "setFillTolerance" | "tableAction" | "tableFill" | "textFormat" | "bringToFront" | "sendToBack">;
   runFile(cmd: FileCommand): void;
   importFiles(files: readonly DroppedFile[], at?: Point | null): void;
   toggle(panel: "settings" | "profiles" | "grid" | "image" | "library"): void;
@@ -80,6 +80,9 @@ export const ACTIONS: Readonly<Record<string, (t: HostTargets) => void>> = {
   "page-add": (t) => void t.engine().addPage(),
   "page-remove": (t) => void t.engine().removePage(),
   "page-insert-file": (t) => t.insertPages(),
+  // Lot 2 : boutons de la rangée Sélection, hors catalogue des profils (décision 27).
+  "layer-front": (t) => void t.engine().bringToFront(),
+  "layer-back": (t) => void t.engine().sendToBack(),
   "page-number": (t) => t.toggleSidebar?.("pages"),
   "page-duplicate": (t) => void t.engine().duplicatePage(),
   "edit-original": (t) => t.editOriginal?.(),
