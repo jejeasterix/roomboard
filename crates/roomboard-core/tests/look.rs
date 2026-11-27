@@ -213,6 +213,29 @@ fn with_raw_image(d: &Document, id: &'static str, extra: Vec<(&'static str, In)>
     })
 }
 
+/// Élément brut minimal d'un genre donné (`fill` = zone du pot, `table`, `media`, `model3d`) posé sur la première page :
+/// la fonctionnalité `zone` n'est active que dans `roomboard-wasm`, et ces genres ont leurs propres commandes.
+fn with_raw_kind(d: &Document, id: &'static str, kind: &'static str) -> Document {
+    edit_raw(d, |txn, pages| {
+        let Some(Out::YMap(page)) = pages.get(txn, 0) else {
+            panic!("page")
+        };
+        let Some(Out::YArray(els)) = page.get(txn, "elements") else {
+            panic!("éléments")
+        };
+        let transform: Vec<Any> = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .map(Any::from)
+            .collect();
+        let fields: Vec<(&'static str, In)> = vec![
+            ("id", In::from(id)),
+            ("kind", In::from(kind)),
+            ("transform", In::Any(Any::Array(transform.into()))),
+        ];
+        els.push_back(txn, MapPrelim::from_iter(fields));
+    })
+}
+
 fn socle() -> Document {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/socle-v1.roomboard");
     load(&std::fs::read(path).expect("fixture du socle")).expect("ouverture")
@@ -1468,20 +1491,8 @@ fn set_style_drag_copy_one_step() {
     let r = add_rect(&mut d, Look::default());
     let s = add_stroke(&mut d, Look::default());
     let t = set_text(&mut d, None, "Bonjour", Look::default())[0].clone();
-    let page = first_page(&d);
-    let z = d
-        .apply(Command::Fill {
-            page,
-            target: FillTarget::Zone {
-                x: 50.0,
-                y: 25.0,
-                tol: 1.0,
-            },
-            color: Some("#ff0000".into()),
-        })
-        .expect("zone")
-        .ids[0]
-        .clone();
+    let d = with_raw_kind(&d, "zone-brute", "fill");
+    let z = "zone-brute".to_string();
     let mut d = with_raw_image(&d, "img-1", vec![]);
     let i = "img-1".to_string();
     let all = [&r, &s, &t, &i];
@@ -1546,4 +1557,40 @@ fn drag_copy_kept_by_extract() {
         .expect("insertion");
     assert_eq!(look_of(&d, &ins.ids[0]).drag_copy, Some(true));
     assert_eq!(raw_any(&d, &ins.ids[0], "dragCopy"), Some(Any::Bool(true)));
+}
+
+/// Décision 29 : « glisser une copie » vaut pour tout objet (tableau, média, objet 3D compris), jamais pour une zone.
+#[test]
+fn set_style_drag_copy_every_object_kind() {
+    let d = blank();
+    let d = with_raw_kind(&d, "tab-1", "table");
+    let d = with_raw_kind(&d, "med-1", "media");
+    let mut d = with_raw_kind(&d, "m3d-1", "model3d");
+    let ids: Vec<String> = ["tab-1", "med-1", "m3d-1"].map(String::from).to_vec();
+    let refs: Vec<&String> = ids.iter().collect();
+    let c = set_style(&mut d, &refs, drag_copy(true)).expect("pose");
+    assert_eq!(c.ids, ids);
+    for id in &ids {
+        assert_eq!(raw_any(&d, id, "dragCopy"), Some(Any::Bool(true)), "{id}");
+    }
+    assert!(d.undo());
+    for id in &ids {
+        assert_eq!(raw_any(&d, id, "dragCopy"), None, "{id}");
+    }
+}
+
+/// `variability` n'est écrit qu'avec un trait : jamais sur une forme ni un texte (comme `StylePatch`).
+#[test]
+fn look_variability_written_only_for_stroke() {
+    let l = Look {
+        variability: Some("constant".into()),
+        ..Default::default()
+    };
+    let mut d = blank();
+    let r = add_rect(&mut d, l.clone());
+    let t = set_text(&mut d, None, "Bonjour", l.clone())[0].clone();
+    let s = add_stroke(&mut d, l);
+    assert!(!raw_keys(&d, &r).contains(&"variability".to_string()));
+    assert!(!raw_keys(&d, &t).contains(&"variability".to_string()));
+    assert_eq!(raw_field(&d, &s, "variability").as_deref(), Some("constant"));
 }
