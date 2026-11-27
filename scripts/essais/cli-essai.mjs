@@ -527,6 +527,33 @@ try {
   const avantC = empreinte(pc);
   const mele = cli(["run", pc, "--save", "--ops", "-"], lignesOps({ type: "Restack", ids: [pile1[0], autre], to: 0 }));
   verifie("1a calques : Restack de deux pages mêlées : code 1, fichier inchangé", mele.code === 1 && empreinte(pc) === avantC, mele.brut);
+  // personnalisation-3 (S16, D25) : loger une forme dans une case, insérer une ligne en tête, enregistrer, relire.
+  const pl = join(dir, "cases-3.roomboard");
+  verifie("S16 : new cases-3.roomboard", cli(["new", pl]).code === 0);
+  const pose = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "AddTable", page: "$page:0", x: 0, y: 0, cols: 3, rows: 3, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 },
+    { type: "AddShape", page: "$page:0", shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#1e40af", width: 4 }, fill: null },
+    { op: "state" },
+  ));
+  const els = pose.lignes[2]?.state?.pages?.[0]?.elements ?? [];
+  const tab = els.find((e) => e.kind === "table");
+  const forme = els.find((e) => e.kind === "shape");
+  verifie("S16 : un tableau et une forme", pose.code === 0 && tab !== undefined && forme !== undefined, pose.brut);
+  const lien = [tab.id, tab.table.rows[1].id, tab.table.cols[1].id];
+  const loge = cli(["run", pl, "--save", "--ops", "-"], lignesOps(
+    { type: "PlaceInCell", ids: [forme.id], matrix: [1, 0, 0, 1, 0, 0], cell: lien, sizes: [] },
+    { op: "state" },
+    { type: "InsertTableLine", id: tab.id, axis: "row", at: 0 },
+    { op: "state" },
+    { op: "undo" },
+    { op: "state" },
+    { op: "redo" },
+  ));
+  const yDe = (i) => (loge.lignes[i]?.state?.pages?.[0]?.elements ?? []).find((e) => e.id === forme.id)?.transform?.[5];
+  verifie("S16 : PlaceInCell, puis InsertTableLine à la ligne 0 : la forme descend de 64", loge.code === 0 && yDe(3) === yDe(1) + 64, loge.brut);
+  verifie("S16 : undo, une étape : la forme remonte", yDe(5) === yDe(1), loge.brut);
+  const reluS16 = etat(pl).pages[0].elements.find((e) => e.id === forme.id);
+  egal("S16 : réouverture : cell présent", reluS16?.cell, lien);
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
