@@ -3886,3 +3886,82 @@ describe("contrat elementIdsOfKind : tableau et fill mal formés, élément sans
     d.free();
   });
 });
+
+describe.each(factories)("contrat T18 : SetPageMode, MovePage, DuplicatePage, Restack : $name", ({ f }) => {
+  const twoPages = () => {
+    const d = f.blank();
+    const p1 = first(d);
+    const p2 = d.apply({ type: "AddPage", after: p1 }).pages[0] ?? "";
+    return { d, p1, p2 };
+  };
+  const oneStep = (d: CoreDocument, run: () => unknown): void => {
+    const v = d.version();
+    run();
+    expect(d.canUndo()).toBe(true);
+    expect(d.version()).toBeGreaterThan(v);
+    d.undo();
+    expect(d.version()).toBeGreaterThanOrEqual(v);
+  };
+  it("SetPageMode : une étape d'annulation qui rend le mode ; même mode : aucune étape", () => {
+    const { d, p1 } = twoPages();
+    const before = d.page(p1)?.height;
+    oneStep(d, () => d.apply({ type: "SetPageMode", page: p1, mode: "portrait" }));
+    expect(d.page(p1)?.height).toBe(before);
+    unchanged(d, () => d.apply({ type: "SetPageMode", page: p1, mode: "landscape" }));
+  });
+  it("SetPageMode : page inconnue refusée, rien n'est écrit", () => {
+    const { d } = twoPages();
+    unchanged(d, () => expect(() => d.apply({ type: "SetPageMode", page: "nulle", mode: "portrait" })).toThrow(/page inconnue : nulle/));
+  });
+  it("MovePage : une étape ; rang inchangé : aucune étape ; rang hors bornes et page inconnue refusés ; ids gardés", () => {
+    const { d, p1, p2 } = twoPages();
+    oneStep(d, () => d.apply({ type: "MovePage", page: p1, to: 1 }));
+    expect(d.pageIds()).toEqual([p1, p2]);
+    d.apply({ type: "MovePage", page: p1, to: 1 });
+    expect(d.pageIds()).toEqual([p2, p1]);
+    unchanged(d, () => d.apply({ type: "MovePage", page: p1, to: 1 }));
+    unchanged(d, () => expect(() => d.apply({ type: "MovePage", page: p1, to: 2 })).toThrow());
+    unchanged(d, () => expect(() => d.apply({ type: "MovePage", page: "nulle", to: 0 })).toThrow(/page inconnue : nulle/));
+  });
+  it("DuplicatePage : une étape, copie juste après, annulable ; page inconnue refusée", () => {
+    const { d, p1, p2 } = twoPages();
+    const v = d.version();
+    const copy = d.apply({ type: "DuplicatePage", page: p1 }).pages[0] ?? "";
+    expect(d.pageIds()).toEqual([p1, copy, p2]);
+    expect(copy).not.toBe(p1);
+    expect(d.canUndo()).toBe(true);
+    d.undo();
+    expect(d.pageIds()).toEqual([p1, p2]);
+    expect(d.version()).toBeGreaterThanOrEqual(v);
+    unchanged(d, () => expect(() => d.apply({ type: "DuplicatePage", page: "nulle" })).toThrow(/page inconnue : nulle/));
+  });
+  it("Restack : une étape, ids gardés ; rang inchangé : aucune étape ; rang hors bornes, id inconnu, pages mêlées refusés", () => {
+    const { d, p1, p2 } = twoPages();
+    const a = commit(d, p1, 10);
+    const b = commit(d, p1, 20);
+    const c = commit(d, p2, 30);
+    const order = () => d.elementIds(p1);
+    expect(order()).toEqual([a, b]);
+    oneStep(d, () => d.apply({ type: "Restack", ids: [a], to: 1 }));
+    expect(order()).toEqual([a, b]);
+    d.apply({ type: "Restack", ids: [a], to: 1 });
+    expect(order()).toEqual([b, a]);
+    unchanged(d, () => d.apply({ type: "Restack", ids: [a], to: 1 }));
+    unchanged(d, () => expect(() => d.apply({ type: "Restack", ids: [a], to: 9 })).toThrow());
+    unchanged(d, () => expect(() => d.apply({ type: "Restack", ids: ["nulle"], to: 0 })).toThrow());
+    unchanged(d, () => expect(() => d.apply({ type: "Restack", ids: [a, c], to: 0 })).toThrow());
+    expect(order()).toEqual([b, a]);
+  });
+  it("messages de refus identiques entre les deux cœurs", () => {
+    const { d, p1 } = twoPages();
+    const a = commit(d, p1, 10);
+    const c = commit(d, d.pageIds()[1] ?? "", 30);
+    expect([
+      messageOf(() => d.apply({ type: "MovePage", page: p1, to: 2 })),
+      messageOf(() => d.apply({ type: "Restack", ids: [a], to: 9 })),
+      messageOf(() => d.apply({ type: "Restack", ids: ["nulle"], to: 0 })),
+      messageOf(() => d.apply({ type: "Restack", ids: [a, c], to: 0 })),
+      messageOf(() => d.apply({ type: "SetPageMode", page: p1, mode: "a4" as never })),
+    ]).toEqual(["rang de page hors bornes", "rang de page hors bornes", "élément inconnu : nulle", "objets de pages différentes", "mode de page inconnu : a4"]);
+  });
+});
