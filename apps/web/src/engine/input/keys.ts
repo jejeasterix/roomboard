@@ -50,6 +50,16 @@ export function enterAction(e: KeyLike): boolean {
   return e.target?.tagName?.toUpperCase() !== "BUTTON";
 }
 
+export type OrderKey = "up" | "down" | "front" | "back";
+
+/** Ordre des objets (lot 2) : Ctrl/Cmd+↑ ↓ d'un rang, Ctrl/Cmd+Maj+↑ ↓ premier plan et arrière-plan ; hors champ, hors IME, Alt Gr refusé. */
+export function orderKey(e: KeyLike): OrderKey | null {
+  if (e.isComposing || e.altKey || inEditable(e.target) || !(e.ctrlKey || e.metaKey)) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "front" : "up";
+  if (e.key === "ArrowDown") return e.shiftKey ? "back" : "down";
+  return null;
+}
+
 export type PageKey = "prev" | "next" | "add" | "duplicate" | "sidebar-pages" | "sidebar-layers";
 
 /** Raccourcis de page (DA9) : PageUp/PageDown, Ctrl+M (Ctrl aussi sous macOS), Ctrl/Cmd+Maj+D/P/L ; hors champ, hors IME, Alt Gr refusé. */

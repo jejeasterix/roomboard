@@ -560,7 +560,9 @@ describe("createEngine", () => {
     expect(doc.pageIds()).toHaveLength(3);
     expect(pageShortcut(keyEv("P", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
     expect(toggle).toHaveBeenCalledWith("pages");
-    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(false);
+    // Lot 2 : Ctrl+Maj+L, sans effet au lot 1, ouvre l'onglet Calques (cadrage, décision 22).
+    expect(pageShortcut(keyEv("L", { ctrlKey: true, shiftKey: true }), engine, toggle)).toBe(true);
+    expect(toggle).toHaveBeenLastCalledWith("calques");
   });
 
   it("dans un champ de saisie, PageDown et Ctrl+M ne font rien de la page", () => {
