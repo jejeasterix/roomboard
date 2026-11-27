@@ -76,6 +76,10 @@ export function parseOp(line: unknown, ctx: RefContext): Op {
       }
       cmd[key] = new Float32Array(a as number[]);
     }
+    if (type === "MovePage" || type === "Restack") {
+      const to = cmd["to"];
+      if (typeof to !== "number" || !Number.isInteger(to) || to < 0) throw new CliError("usage", "to : entier ≥ 0 attendu");
+    }
     return { kind: "command", cmd: cmd as unknown as Command };
   }
   const op = v["op"];

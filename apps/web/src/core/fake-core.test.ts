@@ -438,6 +438,15 @@ describe("grille de la fausse liaison (C9, G4)", () => {
     expect(saveJson(d).pages[0]?.["grid"]).toEqual({ levels });
   });
 
+  it("gridLinesOf : rectangle de vue non fini → aucune ligne, même recoupé au cadre (T18, comme grid::lines)", () => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    const g = { visible: true, snap: false, above: false, levels: [{ ...squares(40, 0), lineWidth: 3 }] };
+    for (const r of [{ x0: 0, y0: 0, x1: Infinity, y1: 100 }, { x0: 0, y0: Number.NaN, x1: 100, y1: 100 }, { x0: -Infinity, y0: 0, x1: 100, y1: 100 }]) {
+      expect(d.gridLinesOf(p, g, r, 4, 8)?.levels).toEqual([]);
+    }
+  });
+
   it("gridLinesOf (DAE1) : carreaux du brouillon, rien d'écrit ; page inconnue → null", () => {
     const d = fakeCore.blank();
     const p = firstPage(d);

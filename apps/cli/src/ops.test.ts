@@ -60,6 +60,18 @@ describe("lecture d'une opération (D6)", () => {
   });
 });
 
+describe("rang `to` de MovePage et Restack (T18)", () => {
+  it("entier ≥ 0 exigé : -1, 1,5, chaîne (+to de la liaison), absent, NaN → usage", () => {
+    for (const t of ["MovePage", "Restack"]) {
+      const base = t === "MovePage" ? { type: t, page: "$page:0" } : { type: t, ids: ["$1"] };
+      for (const to of [-1, 1.5, "1", null, undefined, Number.NaN]) {
+        expect(codeOf(() => parseOp({ ...base, to }, ctx())), `${t} to=${String(to)}`).toBe("usage");
+      }
+      expect(codeOf(() => parseOp({ ...base, to: 0 }, ctx()))).not.toBe("usage");
+    }
+  });
+});
+
 describe("échappement des références (D6)", () => {
   it("$$ donne un $ littéral dans toute chaîne, jamais résolu", () => {
     const to = (text: string): unknown => {

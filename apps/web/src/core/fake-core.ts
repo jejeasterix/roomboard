@@ -2259,6 +2259,7 @@ function gridIndices(o: number, step: number, lo: number, hi: number): readonly 
 function squaresLines(g: GridView, clip: PageRect | null, r: Bounds, minStep: number): GridLines | null {
   if (!g.visible) return null;
   const levels: LevelLines[] = [];
+  if (![r.x0, r.y0, r.x1, r.y1].every((v) => Number.isFinite(v))) return { above: g.above, levels }; // vue non finie : rien, avant la recoupe
   const c = clip === null ? r : { x0: Math.max(r.x0, clip.x0), y0: Math.max(r.y0, clip.y0), x1: Math.min(r.x1, clip.x1), y1: Math.min(r.y1, clip.y1) };
   const finite = [c.x0, c.y0, c.x1, c.y1].every((v) => Number.isFinite(v));
   if (finite && c.x0 <= c.x1 && c.y0 <= c.y1) {
