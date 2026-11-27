@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, isPanKey, keyAction, type KeyLike } from "./keys";
+import { appShortcut, editAction, isPanKey, keyAction, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -98,5 +98,23 @@ describe("keyAction : groupes (Z13)", () => {
   it("Ctrl+G dans un champ : rien", () => {
     expect(keyAction(k("g", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
     expect(keyAction(k("g", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("appShortcut (personnalisation-1b, Q28)", () => {
+  it("Ctrl+Maj+F et Cmd+Maj+F → backgrounds, touche rendue en majuscule ou non", () => {
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true }))).toBe("backgrounds");
+    expect(appShortcut(k("f", { metaKey: true, shiftKey: true }))).toBe("backgrounds");
+  });
+  it("sans Maj, avec Alt, en composition, dans un champ, autre touche, sans Ctrl ni Cmd : null", () => {
+    expect(appShortcut(k("f", { ctrlKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, isComposing: true }))).toBeNull();
+    expect(appShortcut(k("F", { ctrlKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(appShortcut(k("G", { ctrlKey: true, shiftKey: true }))).toBeNull();
+    expect(appShortcut(k("F", { shiftKey: true }))).toBeNull();
+  });
+  it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
+    expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 });
