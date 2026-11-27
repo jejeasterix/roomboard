@@ -162,6 +162,15 @@ export function topRowBottom(btn: number): number {
   return EDGE + btn + 8;
 }
 
+/** Rangée de contexte (`ctx`, rectangle posé dans la case) descendue sous l'îlot d'outils `tools` : les deux comptent
+ *  comme un seul obstacle, de la haute de l'îlot d'outils au bas de la rangée, pour que `placeOptions` passe dessous
+ *  même quand seule la rangée croise les abscisses du panneau. Sans rangée (ou vide) : l'îlot seul. */
+export function withContextRow(tools: Rect, ctx: Rect | null): readonly Rect[] {
+  if (ctx === null || ctx.w <= 0 || ctx.h <= 0) return [tools];
+  const bottom = Math.max(tools.y + tools.h, ctx.y + ctx.h);
+  return [tools, { x: ctx.x, y: tools.y, w: ctx.w, h: bottom - tools.y }];
+}
+
 /** OG11 : coin haut-gauche du panneau d'options, sous la rangée du haut (`tops` = son bas, `topRowBottom`), à droite de
  *  l'îlot latéral de début quand il existe (`sideStart` : rectangle posé de la barre latérale d'OG4, dépliée ou repliée ;
  *  `x` absent : 0, bord gauche de la zone), jamais par-dessus ; sans îlot : contre le bord. `above` : îlots qui le

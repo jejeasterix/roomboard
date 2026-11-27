@@ -433,7 +433,7 @@ async function s3(browser, base) {
   check((await page.getAttribute('[data-side-tab="pages"]', "aria-selected")) === "true", "toucher #pages : barre ouverte sur l'onglet Pages");
   // Haut de page ajusté sous les îlots du haut, barre ouverte et repliée.
   const tops = async () => {
-    const boxes = await page.$$eval('.rb-island, [data-toolbar="outils"] [data-island-context]', (els) => els.map((e) => ({ id: e.getAttribute("data-island") ?? "contexte", ...e.getBoundingClientRect().toJSON() })));
+    const boxes = await page.$$eval('.rb-island:not([data-options]), [data-toolbar="outils"] [data-island-context]', (els) => els.map((e) => ({ id: e.getAttribute("data-island") ?? "contexte", ...e.getBoundingClientRect().toJSON() })));
     const vp = MID;
     return Math.max(...boxes.filter((b) => b.id !== "pages" && b.width > 0 && b.y < vp.height / 4 && b.height < vp.height / 3).map((b) => b.y + b.height));
   };
