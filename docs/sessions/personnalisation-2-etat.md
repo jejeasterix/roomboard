@@ -1,14 +1,14 @@
 # État — personnalisation-2
 
-Statut : clôture (OG14) — lot 2 terminé sur feat/personnalisation-2b, PR puis fusion locale
+Statut : livré — PR #67 fusionnée par merge --no-ff local (main cddbde4), poussée ; fichier mis à jour par OG27
 Gabarit : chantier (18 tâches : lot 1 = 10, lot 2 = 8 ; lot 1 fusionnable seul)
 Objectif : RoomBoard reçoit un panneau d'options par outil et un menu général ☰ copiés du comportement d'Excalidraw, remplis de nos commandes, tactile d'abord et clavier ensuite.
 Avancement : 2/2 lots clos (lot 1 : PR #63, #64 ; lot 2 : T12–T19, T28, T13r, T31–T41)
-Étage : 4 — depuis 2026-11-27 18:10
+Étage : 4 — clos le 2026-11-27 (fusion cddbde4)
 Lot : —
 Tâche : —
 Questions à Jérôme : —
-Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-2   Branche : feat/personnalisation-2b   Base : origin/main @ f61d2c4
+Worktree : — (retiré à la clôture)   Branche : feat/personnalisation-2b   Base : origin/main @ f61d2c4
 Branche principale locale au lancement : 45484db
 Cadrage : docs/plans/personnalisation-2-cadrage.md   Plan(s) : docs/plans/personnalisation-2-PLAN.md
 Arrêt ferme : 2026-11-27 21:19 (OG14 ; bilan et poussée à 21:09)
@@ -74,5 +74,9 @@ ouvertes : — · passées : aucune (merge sans go, profil « Porte avant merge 
 - Wasm ignoré par git : posé par l'orchestrateur dans chaque worktree de tâche (copie de apps/web/src/wasm*).
 - Prémisses démenties : menu ☰ existe déjà (MenuBar) ; WebGL2 ne peint que la couche vive ; aucune commande d'ordre dans main.
 
+## Livraison
+- PR #67 (`feat/personnalisation-2b`) fusionnée dans `main` par `git merge --no-ff` local : cddbde4, poussée sans `--force`. Preuve : `verifier.sh --e2e` OK sur la tête c5f22192 (voir la PR) ; cargo 1523, web 4218, CLI 284 ; Wasm principal 1 440 761 o, formats 2 794 527 o.
+- Restes connus, repris ailleurs : `ariaKeys` du menu et `ariaShortcut` de la barre fusionnés par OG27 ; tests Disposition en double dans `engine.test.ts` (laissés, voir « Fin du lot 2 »).
+
 ## Notes du coffre à poser
-(à la clôture)
+Dans la description de la PR #67 (posées par le canal).

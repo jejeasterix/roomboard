@@ -227,7 +227,7 @@ describe("SideBar (T10)", () => {
     expect(rule(".rb-page-img")).toMatch(/inline-size: 100%;/);
     expect(rule(".rb-page-img")).toMatch(/contain: inline-size/); // l'image (tampon au dpr) ne dicte pas la largeur du panneau
     expect(rule(".rb-pages-list")).toMatch(/min-inline-size: calc\(var\(--rb-thumb\) \+ 40px\)/);
-    expect(rule(".rb-page-img img")).toMatch(/inline-size: 100%; block-size: 100%/); // la boîte 16:9 fixe la hauteur (T20), l'image y est contenue
+    expect(rule(".rb-page-img img")).toMatch(/block-size: 100%; inline-size: auto/); // la boîte 16:9 fixe la hauteur (T20) ; la largeur suit la page (OG27)
   });
 
   it("miniatures : toutes les pages demandent la même largeur de tampon, tirée de la largeur mesurée de la liste", async () => {
@@ -247,6 +247,12 @@ describe("SideBar (T10)", () => {
     expect(rule(".rb-page-img")).toMatch(/aspect-ratio: 16 \/ 9/); // même hauteur pour toute page, portrait comme paysage
     expect(rule(".rb-page-img img")).toMatch(/object-fit: contain/);
     expect(rule(".rb-page-img img")).toMatch(/block-size: 100%/);
+    // OG27 : la page porte son blanc et son filet ; la boîte, grise, ne les porte plus : une page portrait se voit portrait.
+    expect(rule(".rb-page-img img")).toMatch(/inline-size: auto; max-inline-size: 100%/);
+    expect(rule(".rb-page-img img")).toMatch(/background: var\(--rf-white\)/);
+    expect(rule(".rb-page-img img")).toMatch(/box-shadow: 0 0 0 1px var\(--rf-gray-300\)/);
+    expect(rule(".rb-page-img")).toMatch(/background: var\(--rf-gray-50\)/);
+    expect(rule(".rb-page-img")).not.toMatch(/box-shadow/);
     const dpr = window.devicePixelRatio;
     Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
     const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(340);

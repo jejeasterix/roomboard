@@ -11,6 +11,7 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
+import { BAR_ISLAND, watchIslands } from "./island-watch";
 import { createPageScrollbar } from "./page-scrollbar";
 import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
@@ -357,11 +358,11 @@ async function buildBoardSession(
     renderer: choice.renderer,
     ...(shared.openLink === undefined ? {} : { openLink: shared.openLink }),
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
-    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
+    // T22, OG27 : seuls les îlots de barre réservent le haut ; ni le panneau d'options ni un popover (lien).
     fitTop: () =>
       topBelowIslands(
         stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
+        [...stage.ownerDocument.querySelectorAll(BAR_ISLAND)].map((e) => {
           const r = e.getBoundingClientRect();
           return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
         }),
@@ -488,6 +489,14 @@ async function buildBoardSession(
   undo.push(() => resizes.disconnect());
   resizes.observe(stage);
   fit();
+  // OG27 : un îlot du haut bouge (glissé, replié, compacté) → le haut de la page ajustée change ; vue encore ajustée
+  // décalée, ascenseur recalé tout de suite (sans attendre le prochain défilement). Session cachée ou fermée : rien.
+  const islandsMoved = (): void => {
+    if (!engine.topChanged()) scrollbar.update();
+  };
+  // Observé seulement quand la session est montrée ; `activate` rattrape le haut changé pendant qu'elle était cachée.
+  let stopIslands: () => void = () => undefined;
+  undo.push(() => stopIslands());
   const stopDpr = watchDpr(window, fit);
   undo.push(stopDpr);
 
@@ -839,9 +848,13 @@ async function buildBoardSession(
       stage.hidden = false;
       active = true;
       fit();
+      islandsMoved();
+      stopIslands();
+      stopIslands = watchIslands(stage.ownerDocument.body, islandsMoved);
     },
     deactivate() {
       active = false;
+      stopIslands();
       closeOrbit();
       players.pauseAll();
       stage.hidden = true;
@@ -853,6 +866,7 @@ async function buildBoardSession(
     dispose() {
       if (disposed) return;
       disposed = true;
+      stopIslands();
       resizes.disconnect();
       stopDpr();
       offSettings();
