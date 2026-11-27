@@ -17,9 +17,9 @@ use crate::commands::{read_shape, read_text, valid_asset, CommandError};
 use crate::element::ImageView;
 use crate::element::{
     backdrop_view, finite_positive, out_f64, out_string, out_transform, read_backdrop, read_group,
-    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageView, ShapeView,
-    StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND,
-    SCHEMA,
+    read_image, read_style, read_unknown, unknown_view, ElementView, FillView, PageLayout,
+    PageView, ShapeView, StrokeStyle, TextView, DEFAULT_BACKGROUND, FIT_WIDTH, INFINITE_MODE,
+    PAGE_HEIGHT, PAGE_WIDTH, PDF_PAGE_KIND, PORTRAIT_HEIGHT, SCHEMA,
 };
 use crate::grid::{self, GridLines, GridView};
 use crate::history::History;
@@ -76,16 +76,31 @@ fn roots(doc: &Doc) -> (MapRef, ArrayRef, MapRef) {
     )
 }
 
-pub(crate) fn insert_page(pages: &ArrayRef, txn: &mut TransactionMut, index: u32) -> String {
+/// Page neuve à `index` : Portrait porte `PORTRAIT_HEIGHT`, Infini `mode = "infinite"` ; `None` et Paysage
+/// n'écrivent jamais `mode` (absent = Page).
+pub(crate) fn insert_page(
+    pages: &ArrayRef,
+    txn: &mut TransactionMut,
+    index: u32,
+    layout: Option<PageLayout>,
+) -> String {
     let id = yrs::uuid_v4();
-    let page = MapPrelim::from([
+    let height = if layout == Some(PageLayout::Portrait) {
+        PORTRAIT_HEIGHT
+    } else {
+        PAGE_HEIGHT
+    };
+    let mut fields = vec![
         ("id", In::from(id.clone())),
         ("width", In::from(PAGE_WIDTH)),
-        ("height", In::from(PAGE_HEIGHT)),
+        ("height", In::from(height)),
         ("background", In::from(DEFAULT_BACKGROUND)),
         ("elements", In::Array(ArrayPrelim::from(Vec::<In>::new()))),
-    ]);
-    pages.insert(txn, index, page);
+    ];
+    if layout == Some(PageLayout::Infinite) {
+        fields.push(("mode", In::from(INFINITE_MODE)));
+    }
+    pages.insert(txn, index, fields.into_iter().collect::<MapPrelim>());
     id.to_string()
 }
 
@@ -139,10 +154,15 @@ impl Document {
 
     /// Document de démarrage : une page, créée sans origine avant `History` (D37).
     pub fn blank() -> Self {
+        Self::blank_with(None)
+    }
+
+    /// Document de démarrage dont la page a la disposition `layout` ; rien ne s'annule (D37).
+    pub fn blank_with(layout: Option<PageLayout>) -> Self {
         let (doc, meta, pages, assets) = Self::bare();
         {
             let mut txn = doc.transact_mut();
-            insert_page(&pages, &mut txn, 0);
+            insert_page(&pages, &mut txn, 0, layout);
         }
         Self::assemble(doc, meta, pages, assets)
     }
@@ -173,7 +193,7 @@ impl Document {
             let mut txn = doc.transact_mut();
             for (i, &(w, h)) in sizes.iter().enumerate() {
                 let index = i as u32;
-                insert_page(&pages, &mut txn, index);
+                insert_page(&pages, &mut txn, index, None);
                 if let Some(Out::YMap(page)) = pages.get(&txn, index) {
                     let mut fields = vec![
                         ("asset", In::from(asset.id.as_str())),
@@ -211,7 +231,7 @@ impl Document {
         let index = index.min(self.page_count());
         let id = {
             let mut txn = self.doc.transact_mut_with(LOCAL);
-            insert_page(&self.pages, &mut txn, index)
+            insert_page(&self.pages, &mut txn, index, None)
         };
         self.bump();
         id
@@ -245,6 +265,11 @@ impl Document {
             background: out_string(m.get(&txn, "background"))?,
             backdrop: read_backdrop(&txn, &m).and_then(|r| backdrop_view(r, width)),
             grid: grid::read(&txn, &m),
+            // Valeur inconnue : lue Page, jamais une page illisible (U3).
+            mode: match out_string(m.get(&txn, "mode")).as_deref() {
+                Some(INFINITE_MODE) => INFINITE_MODE.into(),
+                _ => "page".into(),
+            },
         })
     }
 
@@ -658,40 +683,56 @@ impl Document {
         None
     }
 
-    /// Grille et largeur d'une page ; `None` si la page est inconnue ou sans grille lisible.
-    fn page_grid(&self, page: &str) -> Option<(GridView, f64)> {
+    /// Cadre qui borne la grille et l'accroche (T7, décision 9) : `None` si la page est inconnue ; `Some(None)` en
+    /// Infini (sans borne) ; en Page, `(0, 0) → (width, max(height, backdrop.rect.y1))`, la règle de `pageFrame`
+    /// (`engine/page.ts`) et du faux cœur.
+    fn page_clip(&self, page: &str) -> Option<Option<Bounds>> {
+        let v = self.page(page)?;
+        if v.mode == INFINITE_MODE {
+            return Some(None);
+        }
+        let bottom = v
+            .backdrop
+            .as_ref()
+            .and_then(|b| b.rect)
+            .map_or(0.0, |r| r.y1)
+            .max(v.height);
+        Some(Some(Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: v.width,
+            y1: bottom,
+        }))
+    }
+
+    /// Grille et cadre d'une page (`page_clip`) ; `None` si la page est inconnue ou sans grille lisible.
+    fn page_grid(&self, page: &str) -> Option<(GridView, Option<Bounds>)> {
+        let clip = self.page_clip(page)?;
         let txn = self.doc.transact();
         let (_, m) = self.find_page(&txn, page)?;
-        let width = out_f64(m.get(&txn, "width"))?;
-        Some((grid::read(&txn, &m)?, width))
+        Some((grid::read(&txn, &m)?, clip))
     }
 
     /// Point aimanté de la page (G6) ; `None` sans grille, magnétisme coupé ou aucun niveau qui accroche.
     pub fn snap_point(&self, page: &str, x: f64, y: f64) -> Option<(f64, f64)> {
-        let (g, width) = self.page_grid(page)?;
-        grid::snap_point(&g, width, (x, y))
+        let (g, clip) = self.page_grid(page)?;
+        grid::snap_point(&g, clip, (x, y))
     }
 
     /// Déplacement aimanté (G7), toujours calculé depuis le déplacement brut ; brut sans grille ou sans boîte.
     pub fn snap_delta(&self, page: &str, ids: &[String], dx: f64, dy: f64) -> (f64, f64) {
-        let Some((g, width)) = self.page_grid(page) else {
+        let Some((g, clip)) = self.page_grid(page) else {
             return (dx, dy);
         };
         let Some(b) = self.snap_box(ids) else {
             return (dx, dy);
         };
-        grid::snap_delta(&g, width, b, (dx, dy))
-    }
-
-    /// Largeur d'une page ; `None` si la page est inconnue ou sans largeur lisible.
-    fn page_width(&self, page: &str) -> Option<f64> {
-        let txn = self.doc.transact();
-        let (_, m) = self.find_page(&txn, page)?;
-        out_f64(m.get(&txn, "width"))
+        grid::snap_delta(&g, clip, b, (dx, dy))
     }
 
     /// Lignes visibles d'une grille non enregistrée sur la page (C9 éditeur, DAE1) : même `grid::lines` que la grille
-    /// enregistrée (DAG1), sur la largeur de la page ; rien n'est écrit. `None` : page inconnue ou grille invisible.
+    /// enregistrée (DAG1), bornée au même cadre (`page_clip`, T7) ; rien n'est écrit. `None` : page inconnue ou grille
+    /// invisible.
     pub fn grid_lines_of(
         &self,
         page: &str,
@@ -700,8 +741,8 @@ impl Document {
         min_step: f64,
         min_dot_step: f64,
     ) -> Option<GridLines> {
-        let width = self.page_width(page)?;
-        grid::lines(grid, width, rect, min_step, min_dot_step)
+        let clip = self.page_clip(page)?;
+        grid::lines(grid, clip, rect, min_step, min_dot_step)
     }
 
     /// Lignes visibles de la grille de la page (G9) ; `None` sans grille ou grille invisible.
@@ -1749,5 +1790,163 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![ABC]
         );
+    }
+
+    /// Grille d'un seul niveau de carreaux de pas `s`, visible et aimantée (tests `grid_clip_*`, T7).
+    fn squares_grid(s: f64) -> GridView {
+        GridView {
+            visible: true,
+            snap: true,
+            above: false,
+            levels: vec![crate::grid::GridLevelView {
+                kind: "squares".into(),
+                spacing_x: s,
+                spacing_y: s,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                color: "#000000".into(),
+                line: "solid".into(),
+                line_width: 1.0,
+                snap: true,
+                visible: true,
+            }],
+        }
+    }
+
+    /// Abscisses des verticales, ordonnées des horizontales, et boîte de tous les segments.
+    fn grid_xy(l: &GridLines) -> (Vec<f64>, Vec<f64>, Bounds) {
+        let (mut v, mut h) = (Vec::new(), Vec::new());
+        let mut b = Bounds {
+            x0: f64::INFINITY,
+            y0: f64::INFINITY,
+            x1: f64::NEG_INFINITY,
+            y1: f64::NEG_INFINITY,
+        };
+        for lv in &l.levels {
+            for s in lv.segments.as_chunks::<4>().0 {
+                if s[0] == s[2] {
+                    v.push(s[0]);
+                } else if s[1] == s[3] {
+                    h.push(s[1]);
+                }
+                b.x0 = b.x0.min(s[0]).min(s[2]);
+                b.y0 = b.y0.min(s[1]).min(s[3]);
+                b.x1 = b.x1.max(s[0]).max(s[2]);
+                b.y1 = b.y1.max(s[1]).max(s[3]);
+            }
+        }
+        (v, h, b)
+    }
+
+    /// Document à une page paysage neuve (1920 × 1080, sans fond) ; rend son id.
+    fn landscape_doc() -> (Document, String) {
+        let mut d = Document::new();
+        d.apply(crate::commands::Command::AddPage {
+            after: None,
+            mode: None,
+        })
+        .expect("page");
+        let p = d.page_ids()[0].clone();
+        (d, p)
+    }
+
+    fn infinite_page(d: &mut Document, p: &str) {
+        d.apply(crate::commands::Command::SetPageMode {
+            page: p.into(),
+            mode: PageLayout::Infinite,
+        })
+        .expect("mode infini");
+    }
+
+    /// T7, décision 9 : en Page, les lignes s'arrêtent au cadre `(0, 0) → (1920, 1080)` d'une page paysage, même
+    /// demandées loin dessous (aucune ligne y > 1080) ; le patron « largeur seule » les prolongeait sans fin.
+    #[test]
+    fn grid_clip_page_lines_stop_at_frame() {
+        let (d, p) = landscape_doc();
+        let g = squares_grid(40.0);
+        let r = Bounds {
+            x0: -500.0,
+            y0: -500.0,
+            x1: 2500.0,
+            y1: 3000.0,
+        };
+        let (v, h, b) = grid_xy(&d.grid_lines_of(&p, &g, r, 0.0, 0.0).expect("visible"));
+        assert_eq!((v.first(), v.last()), (Some(&0.0), Some(&1920.0)));
+        assert_eq!((h.first(), h.last()), (Some(&0.0), Some(&1080.0)));
+        assert_eq!((b.x0, b.y0, b.x1, b.y1), (0.0, 0.0, 1920.0, 1080.0));
+        let far = Bounds {
+            x0: -13.3,
+            y0: 1_000_007.0,
+            x1: 786.7,
+            y1: 1_000_607.0,
+        };
+        assert_eq!(
+            d.grid_lines_of(&p, &g, far, 0.0, 0.0)
+                .map(|l| l.levels.len()),
+            Some(0),
+            "rien sous le cadre"
+        );
+    }
+
+    /// T7, H17 : en Infini, aucune borne : lignes aux x < 0 et y < 0, et loin sous 1080.
+    #[test]
+    fn grid_clip_infinite_lines_at_negative_coords() {
+        let (mut d, p) = landscape_doc();
+        infinite_page(&mut d, &p);
+        let g = squares_grid(100.0);
+        let r = Bounds {
+            x0: -500.0,
+            y0: -500.0,
+            x1: 500.0,
+            y1: 500.0,
+        };
+        let (v, h, b) = grid_xy(&d.grid_lines_of(&p, &g, r, 0.0, 0.0).expect("visible"));
+        assert_eq!((v.first(), v.last()), (Some(&-500.0), Some(&500.0)));
+        assert_eq!((h.first(), h.last()), (Some(&-500.0), Some(&500.0)));
+        assert_eq!((b.x0, b.y0, b.x1, b.y1), (-500.0, -500.0, 500.0, 500.0));
+        let far = Bounds {
+            x0: 0.0,
+            y0: 1_000_000.0,
+            x1: 100.0,
+            y1: 1_000_100.0,
+        };
+        let (_, h, _) = grid_xy(&d.grid_lines_of(&p, &g, far, 0.0, 0.0).expect("visible"));
+        assert_eq!(h, vec![1_000_000.0, 1_000_100.0]);
+    }
+
+    /// T7, H17 : en Infini, l'accroche n'a pas de borne : (-500, -500) reste en place ; en Page elle reste au cadre.
+    #[test]
+    fn grid_clip_infinite_snap_at_negative_point() {
+        let (mut d, p) = landscape_doc();
+        d.apply(crate::commands::Command::SetGrid {
+            page: p.clone(),
+            grid: Some(squares_grid(100.0)),
+        })
+        .expect("grille");
+        assert_eq!(d.snap_point(&p, -510.0, 5_010.0), Some((0.0, 1000.0)));
+        infinite_page(&mut d, &p);
+        assert_eq!(d.snap_point(&p, -510.0, -490.0), Some((-500.0, -500.0)));
+        assert_eq!(d.snap_point(&p, -510.0, 5_010.0), Some((-500.0, 5_000.0)));
+    }
+
+    /// T7 : un fond PDF qui descend jusqu'à 2715 allonge le cadre : `max(height, backdrop.rect.y1)`, la règle de
+    /// `pageFrame` ; lignes jusqu'à 2715, aucune au-delà.
+    #[test]
+    fn grid_clip_pdf_backdrop_extends_frame() {
+        let d =
+            Document::from_pdf_pages(&pdf_asset(), &[(1920.0, 2715.0)], None).expect("document");
+        let p = d.page_ids()[0].clone();
+        let r = Bounds {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 1920.0,
+            y1: 5000.0,
+        };
+        let (_, h, b) = grid_xy(
+            &d.grid_lines_of(&p, &squares_grid(15.0), r, 0.0, 0.0)
+                .expect("visible"),
+        );
+        assert_eq!(h.last(), Some(&2715.0));
+        assert_eq!(b.y1, 2715.0);
     }
 }

@@ -31,6 +31,10 @@
 // (`shade`), plages de RemoveTableLine et SetTableFill, report des zones (F6), hauteur d'une ancre haute (F7),
 // ImportTable (F18) : mêmes refus dans le même ordre que `table.rs`, une étape par commande, aucune étape vide.
 // C6a : Fill (contour, intérieur, fond) au modèle de `fill.rs` (même ordre de refus, mêmes messages) ; edgeHit, miroir d'`edge_hit` ; fond de page gardé dans le JSON.
+// Personnalisation 1a : mode de page (`AddPage.mode`, `SetPageMode`, `blank(mode)`), `MovePage`, `DuplicatePage` au modèle
+// de `commands.rs` (mêmes refus, aucune étape sans effet) ; `mode` brut gardé (valeur inconnue lue Page, U3) et `height`
+// lue ; accroche et lignes de grille bornées au cadre de `pageFrame` en Page, sans borne en Infini (règle de T7).
+// Lot 2 : `Restack` au modèle de `cmd_restack` (mêmes refus dans le même ordre, ids gardés, même ordre : aucune étape).
 import type {
   ContainerKind,
   AssetInfo,
@@ -94,6 +98,7 @@ import {
   MIXED_SOURCE_MESSAGE,
   wrongKindMessage,
   PAGE_HEIGHT,
+  type PageLayout,
   PDF_MAX_PAGES,
   PDF_PAGE_KIND,
   PAGE_WIDTH,
@@ -101,6 +106,7 @@ import {
   UNKNOWN_BOX,
   unknownKindMessage,
 } from "./api";
+import { pageFrame, type PageRect } from "../engine/page";
 import { isAssetId } from "./asset-store";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
@@ -174,8 +180,17 @@ interface FakeTable {
   /** Clé `<rowId>:<colId>`. */
   readonly cells: ReadonlyMap<string, FakeCell>;
 }
-/** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. */
-interface FakePage { readonly id: string; readonly elements: FakeElement[]; backdrop: RawRecord | null; grid: unknown; background: string }
+/** `grid` : valeur brute lue ou écrite (G13), null sans grille ; vue par `gridView`. `mode` : valeur brute (null absent,
+ *  inconnue gardée, U3) ; `height` : hauteur lue (PAGE_HEIGHT si illisible). */
+interface FakePage {
+  readonly id: string;
+  readonly elements: FakeElement[];
+  backdrop: RawRecord | null;
+  grid: unknown;
+  background: string;
+  mode: unknown;
+  height: number;
+}
 /** `assets` : valeurs brutes (K3) ; lues avec défauts champ par champ (K4). */
 interface State { readonly pages: FakePage[]; readonly assets: Map<string, unknown> }
 
@@ -194,6 +209,25 @@ const MESSAGES = {
   badImageParams: BAD_IMAGE_PARAMS_MESSAGE,
 } as const;
 
+/** Miroir de `element.rs` : hauteur Portrait (largeur gardée, 9:16) et seule valeur de `mode` écrite. */
+const PORTRAIT_HEIGHT = (1920 * 16) / 9;
+const INFINITE_MODE = "infinite";
+const PAGE_LAYOUTS: readonly string[] = ["landscape", "portrait", "infinite"];
+/** Disposition lue d'une valeur venue de JS (`PageLayout::parse` du pont) ; illisible : Error au message du pont. */
+function readLayout(v: unknown): PageLayout {
+  if (typeof v === "string" && PAGE_LAYOUTS.includes(v)) return v as PageLayout;
+  throw new Error(`mode de page inconnu : ${String(v)}`);
+}
+/** Page vierge, comme `insert_page` du cœur : Portrait écrit sa hauteur, Infini écrit `mode`. */
+const newPage = (layout: PageLayout | undefined): FakePage => ({
+  id: newId(),
+  elements: [],
+  backdrop: null,
+  grid: null,
+  background: DEFAULT_BACKGROUND,
+  mode: layout === "infinite" ? INFINITE_MODE : null,
+  height: layout === "portrait" ? PORTRAIT_HEIGHT : PAGE_HEIGHT,
+});
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 const NO_STYLE: StrokeStyle = { color: "", width: 0 };
 /** Kinds lus par la fausse liaison : même liste que `KNOWN_KINDS` du cœur (`element.rs`). */
@@ -203,7 +237,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** Même règle que le cœur (`BadAsset`) : empreinte conforme, type non vide, taille entière ≥ 0. */
 const validAsset = (a: AssetRef): boolean => isAssetId(a.id) && a.mime !== "" && Number.isInteger(a.size) && a.size >= 0;
 const clone = (s: State): State => ({
-  pages: s.pages.map((p) => ({ id: p.id, elements: [...p.elements], backdrop: p.backdrop, grid: p.grid, background: p.background })),
+  pages: s.pages.map((p) => ({ ...p, elements: [...p.elements] })),
   assets: new Map(s.assets),
 });
 /** Chemin lisible : tableau non vide de chaînes ; sinon retiré (PC6). */
@@ -711,12 +745,14 @@ class FakeDocument implements CoreDocument {
     switch (cmd.type) {
       case "AddPage": {
         const after = cmd.after;
+        // Le pont lit `mode` avant de lancer la commande : son refus passe avant celui de la page.
+        const layout = cmd.mode === undefined ? undefined : readLayout(cmd.mode);
         if (after !== null) this.pageOf(after);
         return this.step((s) => {
-          const id = newId();
+          const page = newPage(layout);
           const at = after === null ? s.pages.length : s.pages.findIndex((p) => p.id === after) + 1;
-          s.pages.splice(at, 0, { id, elements: [], backdrop: null, grid: null, background: DEFAULT_BACKGROUND });
-          return { pages: [id], ids: [], removed: [] };
+          s.pages.splice(at, 0, page);
+          return { pages: [page.id], ids: [], removed: [] };
         });
       }
       case "RemovePage": {
@@ -725,6 +761,74 @@ class FakeDocument implements CoreDocument {
         return this.step((s) => {
           s.pages.splice(s.pages.findIndex((p) => p.id === cmd.page), 1);
           return { pages: [cmd.page], ids: [], removed };
+        });
+      }
+      case "SetPageMode": {
+        // `cmd_set_page_mode` : Paysage et Portrait retirent `mode` s'il vaut "infinite" (inconnu gardé) et écrivent la
+        // hauteur ; Infini écrit `mode` et garde la hauteur. Même disposition : aucune étape (D38).
+        const layout = readLayout(cmd.mode);
+        const cur = this.pageOf(cmd.page);
+        const infinite = cur.mode === INFINITE_MODE;
+        const targetH = layout === "portrait" ? PORTRAIT_HEIGHT : PAGE_HEIGHT;
+        if (layout === "infinite" ? infinite : !infinite && cur.height === targetH) return this.unchanged();
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === cmd.page);
+          if (p && layout === "infinite") p.mode = INFINITE_MODE;
+          else if (p) {
+            if (infinite) p.mode = null;
+            p.height = targetH;
+          }
+          return { pages: [cmd.page], ids: [], removed: [] };
+        });
+      }
+      case "MovePage": {
+        // `cmd_move_page` : page inconnue, puis rang final hors bornes ; même rang : aucune étape ; ids gardés (DA2).
+        const from = this.state.pages.indexOf(this.pageOf(cmd.page));
+        const to = cmd.to;
+        if (!Number.isInteger(to) || to < 0 || to >= this.state.pages.length) throw new Error("rang de page hors bornes");
+        if (to === from) return this.unchanged();
+        return this.step((s) => {
+          const [moved] = s.pages.splice(from, 1);
+          if (moved) s.pages.splice(to, 0, moved);
+          return { pages: [cmd.page], ids: [], removed: [] };
+        });
+      }
+      case "DuplicatePage": {
+        // `cmd_duplicate_page` = `extract_page` + `insert_pages` : copie juste après, ids neufs, champs gardés.
+        const src = this.pageOf(cmd.page);
+        const groups = new Map<string, string>();
+        const copy: FakePage = { ...src, id: newId(), elements: src.elements.map((e) => copyElement(e, groups, 0, 0)) };
+        return this.step((s) => {
+          s.pages.splice(s.pages.findIndex((p) => p.id === cmd.page) + 1, 0, copy);
+          return { pages: [copy.id], ids: copy.elements.map((e) => e.id), removed: [] };
+        });
+      }
+      case "Restack": {
+        // `cmd_restack` : ids dédoublonnés ; premier inconnu (ordre donné), pages mêlées, bloc vide ou hors de la pile ;
+        // même ordre : aucune étape ; éléments déplacés tels quels (DA2) ; `Change.ids` = bloc, du bas vers le haut.
+        const found: Found[] = [];
+        for (const id of new Set(cmd.ids)) {
+          const f = this.find(id);
+          if (!f) throw new Error(`élément inconnu : ${id}`);
+          found.push(f);
+        }
+        const page = found[0]?.page;
+        if (!page) throw new Error("rang de page hors bornes");
+        if (found.some((f) => f.page !== page)) throw new Error("objets de pages différentes");
+        found.sort((x, y) => x.index - y.index);
+        const to = cmd.to;
+        if (!Number.isInteger(to) || to < 0 || to + found.length > page.elements.length) throw new Error("rang de page hors bornes");
+        if (found.every((f, k) => f.index === to + k)) return this.unchanged();
+        const ids = found.map((f) => f.element.id);
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page.id);
+          if (p) {
+            const set = new Set(ids);
+            const moved = p.elements.filter((e) => set.has(e.id));
+            const rest = p.elements.filter((e) => !set.has(e.id));
+            p.elements.splice(0, p.elements.length, ...rest.slice(0, to), ...moved, ...rest.slice(to));
+          }
+          return { pages: [page.id], ids, removed: [] };
         });
       }
       case "CommitStroke": {
@@ -1409,7 +1513,15 @@ class FakeDocument implements CoreDocument {
   page(id: string): PageView | null {
     const p = this.state.pages.find((q) => q.id === id);
     if (!p) return null;
-    return { id, width: PAGE_WIDTH, height: PAGE_HEIGHT, background: p.background, backdrop: backdropView(p.backdrop, PAGE_WIDTH), grid: gridView(p.grid) };
+    return {
+      id,
+      width: PAGE_WIDTH,
+      height: p.height,
+      background: p.background,
+      backdrop: backdropView(p.backdrop, PAGE_WIDTH),
+      grid: gridView(p.grid),
+      mode: p.mode === INFINITE_MODE ? "infinite" : "page",
+    };
   }
   citedAssets(): AssetInfo[] {
     const acc = new Set<string>();
@@ -1546,7 +1658,15 @@ class FakeDocument implements CoreDocument {
       now,
       appVersion,
       assets: Object.fromEntries(this.state.assets),
-      pages: this.state.pages.map((p) => ({ id: p.id, background: p.background, backdrop: p.backdrop, elements: p.elements.map(savedElement), ...(p.grid !== null ? { grid: p.grid } : {}) })),
+      pages: this.state.pages.map((p) => ({
+        id: p.id,
+        background: p.background,
+        backdrop: p.backdrop,
+        elements: p.elements.map(savedElement),
+        ...(p.grid !== null ? { grid: p.grid } : {}),
+        ...(p.mode !== null ? { mode: p.mode } : {}),
+        ...(p.height !== PAGE_HEIGHT ? { height: p.height } : {}),
+      })),
     };
   }
   save(now: string, appVersion: string): Uint8Array {
@@ -1577,7 +1697,7 @@ class FakeDocument implements CoreDocument {
     const wanted = new Set(ids);
     const groups = new Map<string, string>();
     const elements = p.elements.filter((e) => wanted.has(e.id)).map((e) => copyElement(e, groups, 0, 0));
-    const out = new FakeDocument({ pages: [{ id: newId(), elements, backdrop: null, grid: null, background: DEFAULT_BACKGROUND }], assets: new Map() });
+    const out = new FakeDocument({ pages: [{ ...newPage(undefined), elements }], assets: new Map() });
     adoptMeta(out.state.assets, this.state.assets, out.citedAssets().map((a) => a.id));
     return out;
   }
@@ -1604,11 +1724,9 @@ class FakeDocument implements CoreDocument {
     if (src.state.pages.length === 0) return this.unchanged();
     const groups = new Map<string, string>();
     const pages: FakePage[] = src.state.pages.map((p) => ({
+      ...p,
       id: newId(),
       elements: p.elements.map((e) => copyElement(e, groups, 0, 0)),
-      backdrop: p.backdrop,
-      grid: p.grid,
-      background: p.background,
     }));
     const cited = src.citedAssets().map((a) => a.id);
     return this.step((s) => {
@@ -1632,12 +1750,13 @@ class FakeDocument implements CoreDocument {
   free(): void { /* rien à libérer */ }
   snapPoint(page: string, x: number, y: number): readonly [number, number] | null {
     const g = this.gridOfPage(page);
-    return g === null ? null : snapSquares(g, PAGE_WIDTH, x, y);
+    return g === null ? null : snapSquares(g, this.clipOf(page), x, y);
   }
   snapDelta(page: string, ids: readonly string[], dx: number, dy: number): readonly [number, number] {
     const g = this.gridOfPage(page);
     const b = this.snapBox(ids);
     if (g === null || b === null) return [dx, dy];
+    const clip = this.clipOf(page);
     const cx = (b.x0 + b.x1) / 2;
     const cy = (b.y0 + b.y1) / 2;
     let best: [number, number] | null = null;
@@ -1645,7 +1764,7 @@ class FakeDocument implements CoreDocument {
     for (const [x, y] of [[b.x0, b.y0], [b.x1, b.y0], [b.x0, b.y1], [b.x1, b.y1], [cx, cy]] as const) {
       const c0 = x + dx;
       const c1 = y + dy;
-      const q = snapSquares(g, PAGE_WIDTH, c0, c1);
+      const q = snapSquares(g, clip, c0, c1);
       if (q === null) continue;
       const d = dist2(q[0], q[1], c0, c1);
       if (best === null || d < bestD) {
@@ -1659,12 +1778,17 @@ class FakeDocument implements CoreDocument {
   gridLines(page: string, rect: Bounds, minStep: number, minDotStep: number): GridLines | null {
     void minDotStep; // points : vrai module seulement (DAG3)
     const g = this.gridOfPage(page);
-    return g === null ? null : squaresLines(g, PAGE_WIDTH, rect, minStep);
+    return g === null ? null : squaresLines(g, this.clipOf(page), rect, minStep);
   }
   gridLinesOf(page: string, grid: GridView, rect: Bounds, minStep: number, minDotStep: number): GridLines | null {
     void minDotStep; // points : vrai module seulement (DAG3)
     if (!this.state.pages.some((q) => q.id === page)) return null;
-    return squaresLines(grid, PAGE_WIDTH, rect, minStep);
+    return squaresLines(grid, this.clipOf(page), rect, minStep);
+  }
+  /** Borne de la grille (`page_clip` du cœur, T7) : cadre de `pageFrame` en Page, null (sans borne) en Infini. */
+  private clipOf(page: string): PageRect | null {
+    const v = this.page(page);
+    return v === null ? null : pageFrame(v);
   }
   private gridOfPage(page: string): GridView | null {
     const p = this.state.pages.find((q) => q.id === page);
@@ -1729,7 +1853,7 @@ interface SavedElement {
   /** C3 : lu par `readGroup` ; illisible : retiré (PC6). */
   group?: unknown;
 }
-interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown; background?: unknown }
+interface SavedPage { id: string; elements: SavedElement[]; backdrop?: unknown; grid?: unknown; background?: unknown; mode?: unknown; height?: unknown }
 
 function savedElement(e: FakeElement): SavedElement {
   const group = withGroup(e.group);
@@ -1964,13 +2088,16 @@ function loadFake(bytes: Uint8Array, expected: ContainerKind = "document"): Core
     // Brute, quelle qu'elle soit (G13) : réécrite telle quelle ; `gridView` décide de la vue.
     grid: p.grid ?? null,
     background: typeof p.background === "string" && validColor(p.background) ? p.background : DEFAULT_BACKGROUND,
+    // Brut (U3) : une valeur inconnue est lue Page et réécrite telle quelle.
+    mode: p.mode ?? null,
+    height: finitePositive(p.height) ? p.height : PAGE_HEIGHT,
   }));
   const assets = new Map(isRecord(raw["assets"]) ? Object.entries(raw["assets"]) : []);
   return new FakeDocument({ pages, assets });
 }
 
 export const fakeCore: CoreFactory = {
-  blank: () => new FakeDocument({ pages: [{ id: newId(), elements: [], backdrop: null, grid: null, background: DEFAULT_BACKGROUND }], assets: new Map() }),
+  blank: (mode?: PageLayout) => new FakeDocument({ pages: [newPage(mode === undefined ? undefined : readLayout(mode))], assets: new Map() }),
   // C12 (D37) : état construit d'emblée, comme `blank` ; jamais par SetBackdrop (une étape par page), que le cœur n'emploie pas.
   // C16 (O17) : `original` cité par chaque fond, contrôlé comme l'asset, métadonnée écrite.
   fromPdfPages: (asset: AssetRef, sizes: readonly PdfPageSize[], original?: AssetRef) => {
@@ -1987,6 +2114,8 @@ export const fakeCore: CoreFactory = {
       backdrop: { asset: asset.id, kind: PDF_PAGE_KIND, page: i, w: s.w, h: s.h, fit: "width", ...(original === undefined ? {} : { original: original.id }) },
       grid: null,
       background: DEFAULT_BACKGROUND,
+      mode: null,
+      height: PAGE_HEIGHT,
     }));
     return new FakeDocument({ pages, assets });
   },
@@ -2124,23 +2253,24 @@ const gridRecord = (g: GridInput): RawRecord => ({
   })),
 });
 
-/** `snap_axis` du cœur : ligne la plus proche, bornée à la première `≥ 0` et, si `hi` est donné, à la dernière `≤ hi`. */
-function snapAxis(v: number, o: number, step: number, hi: number | null): number | null {
-  const first = Math.ceil(-o / step - GRID_EPS);
+/** `snap_axis` du cœur : ligne la plus proche, bornée à la première `≥ lo` et à la dernière `≤ hi` quand ils sont
+ *  donnés (cadre de la page) ; sans borne en Infini. */
+function snapAxis(v: number, o: number, step: number, lo: number | null, hi: number | null): number | null {
+  const first = lo === null ? Number.NEGATIVE_INFINITY : Math.ceil((lo - o) / step - GRID_EPS);
   const last = hi === null ? Number.POSITIVE_INFINITY : Math.floor((hi - o) / step + GRID_EPS);
   if (Number.isNaN(first) || Number.isNaN(last) || first > last) return null;
   return o + Math.min(Math.max(roundHalfAway((v - o) / step), first), last) * step;
 }
 
 /** Accroche des seuls carreaux (DAG3), même règle que `grid::snap_point`. */
-function snapSquares(g: GridView, width: number, x: number, y: number): readonly [number, number] | null {
+function snapSquares(g: GridView, clip: PageRect | null, x: number, y: number): readonly [number, number] | null {
   if (!g.snap) return null;
   let best: readonly [number, number] | null = null;
   let bestD = Number.POSITIVE_INFINITY;
   for (const l of g.levels) {
     if (!l.snap || l.kind !== "squares") continue;
-    const qx = snapAxis(x, l.originX, l.spacingX, width);
-    const qy = snapAxis(y, l.originY, l.spacingY, null);
+    const qx = snapAxis(x, l.originX, l.spacingX, clip?.x0 ?? null, clip?.x1 ?? null);
+    const qy = snapAxis(y, l.originY, l.spacingY, clip?.y0 ?? null, clip?.y1 ?? null);
     if (qx === null || qy === null) continue;
     const d = dist2(qx, qy, x, y);
     if (best === null || d < bestD) {
@@ -2161,12 +2291,14 @@ function gridIndices(o: number, step: number, lo: number, hi: number): readonly 
   return [first, last];
 }
 
-/** Lignes des seuls carreaux (DAG3), mêmes segments que `grid::lines`. */
-function squaresLines(g: GridView, width: number, r: Bounds, minStep: number): GridLines | null {
+/** Lignes des seuls carreaux (DAG3), mêmes segments que `grid::lines` : `r` recoupé au cadre `clip` s'il existe,
+ *  tel quel sinon (Infini). */
+function squaresLines(g: GridView, clip: PageRect | null, r: Bounds, minStep: number): GridLines | null {
   if (!g.visible) return null;
   const levels: LevelLines[] = [];
-  const finite = [r.x0, r.y0, r.x1, r.y1, width].every((v) => Number.isFinite(v));
-  const c = { x0: Math.max(r.x0, 0), y0: Math.max(r.y0, 0), x1: Math.min(r.x1, width), y1: r.y1 };
+  if (![r.x0, r.y0, r.x1, r.y1].every((v) => Number.isFinite(v))) return { above: g.above, levels }; // vue non finie : rien, avant la recoupe
+  const c = clip === null ? r : { x0: Math.max(r.x0, clip.x0), y0: Math.max(r.y0, clip.y0), x1: Math.min(r.x1, clip.x1), y1: Math.min(r.y1, clip.y1) };
+  const finite = [c.x0, c.y0, c.x1, c.y1].every((v) => Number.isFinite(v));
   if (finite && c.x0 <= c.x1 && c.y0 <= c.y1) {
     for (const l of g.levels) {
       if (!l.visible || l.kind !== "squares") continue;

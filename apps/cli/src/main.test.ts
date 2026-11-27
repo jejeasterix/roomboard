@@ -14,7 +14,7 @@ describe("main : commandes sans module (D9)", () => {
     expect(await main(["formats"], io)).toBe(0);
     const [out] = io.json();
     expect(out.formats).toHaveLength(Object.keys(FORMAT_LOTS).length);
-    expect(out.formats).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: [] });
+    expect(out.formats).toContainEqual({ ext: ".roomboard", read: true, write: true, readLot: 1, writeLot: 1, notes: ["mode de page `mode` facultatif (`infinite`), hauteur portrait 3413,33 ; ordre des objets = ordre d'`elements` (`Restack`)"] });
     expect(out.formats).toContainEqual(expect.objectContaining({ ext: ".pdf", read: true, write: true, readLot: 3, writeLot: 3 }));
     expect(io.stderr).toEqual([]);
   });

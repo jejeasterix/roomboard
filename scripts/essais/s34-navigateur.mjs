@@ -10,7 +10,7 @@
 // synthétique), le tactile, la rotation, l'export, le multi-fenêtre.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { DIST, ROOT, VIEWPORT, Echec, frames, gitSha, inkIn, item, loadPlaywright, serve, stageMouse } from "./commun.mjs";
+import { DIST, ROOT, VIEWPORT, Echec, frames, gitSha, inkIn, item, loadPlaywright, openSideOf, serve, stageMouse } from "./commun.mjs";
 
 const LABEL = "S3/S4 lot 4";
 const NON_COUVERT = [
@@ -41,7 +41,9 @@ async function scenario(page, url, captures) {
   const edit = (action) => page.$(item(action));
   const mouse = stageMouse(page); // gestes en px de la scène (origine = coin de #stage)
   const click = async (action) => {
+    const opened = await openSideOf(page, item(action)); // barre latérale des pages repliée : la déplier d'abord
     await (await edit(action)).click();
+    if (opened) await page.click('[data-island="pages"] [data-island-collapse]'); // puis la replier : elle recouvrirait la scène
     await frames(page);
   };
   const pageTag = () => attr("data-page");
@@ -319,6 +321,7 @@ async function scenario(page, url, captures) {
   await click("page-remove");
   await click("page-remove");
   check((await pageTag()) === "1/1", "deux retraits : une seule page");
+  await openSideOf(page, item("page-remove"));
   check(await (await edit("page-remove")).isDisabled(), "la dernière page ne se retire pas");
   await shot("pages"); // une page, « 1 / 1 », « Retirer la page » grisé
 

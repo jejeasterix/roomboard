@@ -109,10 +109,32 @@ export async function openMenuOf(page, id) {
   await page.click(`[data-toolbar]:has(${sel}) [data-menu-toggle]`);
   await list.first().waitFor({ state: "visible", timeout: 15000 });
 }
-/** design-l2 (L2-26) : clic sur l'élément `id`, menu ouvert d'abord s'il le faut (fichier, export, Grille, Réglages). */
+/** Barre latérale des pages : si l'îlot `pages` est replié et contient `sel`, le déplie (Déplier) et attend ; rend vrai
+ *  s'il l'a dépliée, faux sinon (barre du bas, ou déjà dépliée). Écrit pour marcher avant et après la barre latérale. */
+export async function openSideOf(page, sel) {
+  const island = page.locator(`[data-island="pages"][data-collapsed="1"]:has(${sel})`);
+  if ((await island.count()) === 0) return false;
+  await island.first().locator("[data-island-collapse]").click();
+  await page.waitForFunction(() => document.querySelector('[data-island="pages"]')?.getAttribute("data-collapsed") === null, null, { timeout: 15000 });
+  return true;
+}
+/** design-l2 (L2-26) : clic sur l'élément `id`, menu ouvert d'abord s'il le faut (fichier, export, Grille, Réglages),
+ *  barre latérale des pages dépliée d'abord si l'élément y est (page-add, page-remove...), puis repliée si c'est elle
+ *  qui l'a dépliée (T16, comme `pageTo`) : la scène reste libre aux coordonnées de dessin des essais. */
 export async function clickItem(page, id) {
   await openMenuOf(page, id);
+  const opened = await openSideOf(page, item(id));
   await page.click(item(id));
+  if (opened) await page.click('[data-island="pages"] [data-island-collapse]');
+}
+/** Va à la page `n` (1 à N) par sa miniature `.rb-pages-list [data-page="n"]` ; déplie la barre latérale si besoin, puis
+ *  la replie si c'est elle qui l'a dépliée. */
+export async function pageTo(page, n) {
+  const sel = `.rb-pages-list [data-page="${n}"]`;
+  const opened = await openSideOf(page, ".rb-pages-list");
+  await page.click(sel);
+  await page.waitForFunction((v) => document.querySelector("#stage")?.getAttribute("data-page")?.startsWith(`${v}/`), n, { timeout: 15000 });
+  if (opened) await page.click('[data-island="pages"] [data-island-collapse]');
 }
 /** design-l2 : rectangles des îlots visibles (`.rb-island`), px de page, avec leur `data-island`. */
 export function islandBoxes(page) {

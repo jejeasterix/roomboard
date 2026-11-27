@@ -6,7 +6,7 @@
  * une fois par l'amorce et vont à la session active : la session ne pose que ses écouteurs de scène. `dispose` rend le
  * contexte WebGL2 (`choice.release()`) : `engine.dispose()` n'arrête que la boucle.
  */
-import { SNAPSHOT_MIME, type CoreDocument, type MediaData, type MediaElement, type Model3dElement } from "../core/api";
+import { SNAPSHOT_MIME, type CoreDocument, type PageLayout, type MediaData, type MediaElement, type Model3dElement } from "../core/api";
 import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
@@ -82,6 +82,8 @@ export interface SessionShared {
   readonly modelView?: ModelViewLoader;
   /** C11a (P14) : fenêtre `annotate` : rendu Canvas 2D transparent, jamais WebGL2 ; absent : rendu ordinaire. */
   readonly transparent?: boolean;
+  /** Disposition d'une page neuve (profil actif, `behavior.pageMode`) ; absent : paysage. */
+  readonly pageMode?: () => PageLayout;
 }
 
 /** Réglages de lecture d'un média du document. */
@@ -314,12 +316,16 @@ async function buildBoardSession(
   undo.push(() => choice.release());
   const engine = createEngine({
     doc,
+    ...(shared.pageMode === undefined ? {} : { pageMode: shared.pageMode }),
     renderer: choice.renderer,
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
     fitTop: () =>
       topBelowIslands(
         stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => e.getBoundingClientRect()),
+        [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => {
+          const r = e.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
+        }),
         GAP,
       ),
     images,
@@ -670,6 +676,7 @@ async function buildBoardSession(
     const zone = zoneMarks.tags(s.page, s.version);
     const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage), pot: fillQueue.state(), zones: zone.zones, zoneMs: zone.zoneMs, zoneCells: zone.zoneCells });
     stage.dataset["page"] = tags.page;
+    stage.dataset["pageMode"] = tags.pageMode;
     // personnalisation-1b : aspect de la page montrée (couleur|grille|fond), lu par l'essai des fonds.
     stage.dataset["look"] = lookTag(doc.page(s.page));
     stage.dataset["selection"] = tags.selection;

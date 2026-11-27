@@ -90,6 +90,25 @@ pub(crate) fn copy_elements<T: ReadTxn>(
     out
 }
 
+/// Retire les entrées `moves` (index courants) puis réinsère leurs recopies, dans l'ordre donné, au rang final `to`
+/// du tableau résultant. Même transaction : une étape. Les prélims gardent tous les champs, `id` compris (DA2) :
+/// contrairement à `copy_elements`, rien n'est renuméroté.
+pub(crate) fn reinsert_kept(
+    arr: &ArrayRef,
+    txn: &mut TransactionMut,
+    moves: Vec<(u32, MapPrelim)>,
+    to: u32,
+) {
+    let mut idx: Vec<u32> = moves.iter().map(|(i, _)| *i).collect();
+    idx.sort_unstable_by(|a, b| b.cmp(a));
+    for i in idx {
+        arr.remove(txn, i);
+    }
+    for (k, (_, p)) in moves.into_iter().enumerate() {
+        arr.insert(txn, to + k as u32, p);
+    }
+}
+
 /// Ids d'asset cités par `elements` (parcours générique de K4).
 fn cited_by<T: ReadTxn>(txn: &T, elements: &[MapRef]) -> Vec<String> {
     let mut acc = BTreeSet::new();
@@ -170,7 +189,7 @@ impl Document {
         {
             let mut t = doc.transact_mut();
             meta.insert(&mut t, "schema", f64::from(SCHEMA));
-            insert_page(&pages, &mut t, 0);
+            insert_page(&pages, &mut t, 0, None);
             let Some(Out::YMap(pm)) = pages.get(&t, 0) else {
                 return Err(CommandError::BadFormat);
             };
@@ -178,6 +197,45 @@ impl Document {
                 return Err(CommandError::BadFormat);
             };
             copy_elements(&src, &picked, &mut t, &els, &mut IdMap::new(), 0.0, 0.0);
+            copy_asset_meta(&src, self.assets_ref(), &cited, &mut t, &assets);
+        }
+        decode(&doc)
+    }
+
+    /// Document neuf d'une page qui recopie `page` entière (C3) : tous ses champs (fond, grille, mode, champs inconnus)
+    /// par `as_prelim` sauf `elements`, recopiés par `copy_elements` ; métadonnées des assets cités recopiées ; aucune
+    /// étape d'annulation (écrit sur un `Doc` brut, puis décodé).
+    pub fn extract_page(&self, page: &str) -> Result<Document, CommandError> {
+        let src = self.read();
+        let (_, sp) = self
+            .find_page(&src, page)
+            .ok_or_else(|| CommandError::UnknownPage(page.to_string()))?;
+        let from = elements_of(&src, &sp);
+        let cited = cited_by(&src, &from);
+        let doc = Doc::new();
+        let meta = doc.get_or_insert_map("meta");
+        let pages = doc.get_or_insert_array("pages");
+        let assets = doc.get_or_insert_map("assets");
+        {
+            let mut t = doc.transact_mut();
+            meta.insert(&mut t, "schema", f64::from(SCHEMA));
+            let mut prelim: MapPrelim = sp
+                .iter(&src)
+                .filter(|(key, _)| *key != "elements")
+                .map(|(key, v)| (key, v.as_prelim(&src)))
+                .collect();
+            prelim.insert(
+                "elements".into(),
+                In::Array(ArrayPrelim::from(Vec::<In>::new())),
+            );
+            pages.insert(&mut t, 0, prelim);
+            let Some(Out::YMap(pm)) = pages.get(&t, 0) else {
+                return Err(CommandError::BadFormat);
+            };
+            let Some(Out::YArray(els)) = pm.get(&t, "elements") else {
+                return Err(CommandError::BadFormat);
+            };
+            copy_elements(&src, &from, &mut t, &els, &mut IdMap::new(), 0.0, 0.0);
             copy_asset_meta(&src, self.assets_ref(), &cited, &mut t, &assets);
         }
         decode(&doc)
@@ -287,7 +345,7 @@ mod tests {
     use crate::asset::AssetRef;
     use crate::commands::{Command, CommandError};
     use crate::document::Document;
-    use crate::element::StrokeStyle;
+    use crate::element::{PageLayout, StrokeStyle, PORTRAIT_HEIGHT};
     use crate::grid::{GridLevelView, GridView};
     use crate::shape::ShapeKind;
 
@@ -501,7 +559,7 @@ mod tests {
         let mut d = Document::blank();
         let p = first(&d);
         let i1 = image(&mut d, &p, A1, "a.png");
-        d.apply(Command::AddPage { after: None }).expect("page");
+        d.apply(Command::add_page(None)).expect("page");
         let p2 = d.page_ids()[1].clone();
         image(&mut d, &p2, A2, "b.png");
         let _ = i1;
@@ -721,9 +779,7 @@ mod tests {
         let mut src = Document::blank();
         let s0 = first(&src);
         let s1 = src
-            .apply(Command::AddPage {
-                after: Some(s0.clone()),
-            })
+            .apply(Command::add_page(Some(s0.clone())))
             .unwrap()
             .pages[0]
             .clone();
@@ -753,13 +809,7 @@ mod tests {
         .unwrap();
         let mut d = Document::blank();
         let t0 = first(&d);
-        let t1 = d
-            .apply(Command::AddPage {
-                after: Some(t0.clone()),
-            })
-            .unwrap()
-            .pages[0]
-            .clone();
+        let t1 = d.apply(Command::add_page(Some(t0.clone()))).unwrap().pages[0].clone();
         let ch = d.insert_pages(&src, &t0).expect("insert");
         let pages = d.page_ids();
         assert_eq!(pages.len(), 4);
@@ -787,6 +837,115 @@ mod tests {
             d.insert_pages(&src, "absente").err(),
             Some(CommandError::UnknownPage("absente".into()))
         );
+    }
+
+    /// Valeur brute d'un champ de page.
+    fn raw_page_field(d: &Document, page: &str, key: &str) -> Option<String> {
+        let txn = d.read();
+        let (_, m) = d.find_page(&txn, page)?;
+        crate::element::out_string(m.get(&txn, key))
+    }
+
+    #[test]
+    fn duplicate_page_new_ids_after_source() {
+        let mut d = Document::blank();
+        let p0 = first(&d);
+        let p1 = d.apply(Command::add_page(Some(p0.clone()))).unwrap().pages[0].clone();
+        let src_ids = vec![stroke(&mut d, &p0, 100.0), stroke(&mut d, &p0, 300.0)];
+        let grid = GridView {
+            visible: true,
+            snap: false,
+            above: false,
+            levels: vec![GridLevelView {
+                kind: "squares".into(),
+                spacing_x: 40.0,
+                spacing_y: 40.0,
+                origin_x: 0.0,
+                origin_y: 0.0,
+                color: "#cccccc".into(),
+                line: "solid".into(),
+                line_width: 1.0,
+                snap: false,
+                visible: true,
+            }],
+        };
+        d.apply(Command::SetGrid {
+            page: p0.clone(),
+            grid: Some(grid.clone()),
+        })
+        .unwrap();
+        for mode in [PageLayout::Portrait, PageLayout::Infinite] {
+            d.apply(Command::SetPageMode {
+                page: p0.clone(),
+                mode,
+            })
+            .unwrap();
+        }
+        let n = crate::commands::tests::writes(&d);
+        let ch = d
+            .apply(Command::DuplicatePage { page: p0.clone() })
+            .expect("duplication");
+        assert_eq!(n.since(), 1, "une duplication = une transaction");
+        let pages = d.page_ids();
+        assert_eq!(pages.len(), 3);
+        let copy = pages[1].clone();
+        assert_eq!(
+            (pages[0].as_str(), pages[2].as_str()),
+            (p0.as_str(), p1.as_str())
+        );
+        assert_ne!(copy, p0);
+        assert_eq!(ch.pages, vec![copy.clone()]);
+        let copy_ids = d.element_ids(&copy);
+        assert_eq!(copy_ids.len(), 2);
+        assert!(
+            copy_ids.iter().all(|id| !src_ids.contains(id)),
+            "ids d'éléments neufs"
+        );
+        assert_eq!(ch.ids, copy_ids);
+        assert_eq!(d.element_ids(&p0), src_ids, "source intacte");
+        assert_eq!(d.outline(&copy_ids[0]), d.outline(&src_ids[0]));
+        let v = d.page(&copy).unwrap();
+        assert_eq!(v.grid, Some(grid));
+        assert_eq!((v.mode.as_str(), v.height), ("infinite", PORTRAIT_HEIGHT));
+        assert!(d.undo());
+        assert_eq!(d.page_ids(), vec![p0, p1]);
+    }
+
+    #[test]
+    fn duplicate_page_unknown_is_refused() {
+        let mut d = Document::blank();
+        let n = crate::commands::tests::writes(&d);
+        assert_eq!(
+            d.apply(Command::DuplicatePage {
+                page: "absente".into()
+            })
+            .err(),
+            Some(CommandError::UnknownPage("absente".into()))
+        );
+        assert_eq!((n.since(), d.page_count()), (0, 1));
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn duplicate_page_keeps_unknown_fields() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        {
+            let mut txn = d.transact_untracked();
+            let (_, m) = d.find_page(&txn, &p).unwrap();
+            m.insert(&mut txn, "zzz", "garde");
+        }
+        let copy = d
+            .apply(Command::DuplicatePage { page: p.clone() })
+            .expect("duplication")
+            .pages[0]
+            .clone();
+        assert_eq!(raw_page_field(&d, &copy, "zzz").as_deref(), Some("garde"));
+        assert_eq!(
+            raw_page_field(&d, &copy, "background").as_deref(),
+            Some("#ffffff")
+        );
+        assert_ne!(raw_page_field(&d, &copy, "id"), Some(p));
     }
 
     #[test]

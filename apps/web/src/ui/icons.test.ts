@@ -44,15 +44,35 @@ const PANEL_ICONS: Readonly<Record<string, string>> = {
 const ISLAND_ICONS: Readonly<Record<string, string>> = { menu: "menu", collapse: "chevron-up" };
 const DIALOG_ICONS = ["search", "image-plus"];
 const FROM_MOCKUP = ["pen", "eraser", "hand", "select", "rect", "ellipse", "line", "arrow", "text", "table", "fill", "eraser-part", "undo", "redo", "prev", "next", "plus", "trash", "file-import", "pdf", "export", "fit", "file-new", "file-open", "save", "settings", "profile", "grid", "library", "annotate", "pointer", "screen", "freeze", "board", "reset"];
+/** personnalisation-1a (T6, GC4) : icônes Lucide du lot 1, recopiées telles quelles (trait 2 d'origine, rendu à 1,5 par la feuille de style). */
+const LOT1: Readonly<Record<string, IconNode>> = {
+  copy: [["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2" }], ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" }]],
+  "rectangle-horizontal": [["rect", { width: "20", height: "12", x: "2", y: "6", rx: "2" }]],
+  "rectangle-vertical": [["rect", { width: "12", height: "20", x: "6", y: "2", rx: "2" }]],
+  infinity: [["path", { d: "M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8" }]],
+  "rows-2": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M3 12h18" }]],
+  "rows-3": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M21 9H3" }], ["path", { d: "M21 15H3" }]],
+  "rows-4": [["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }], ["path", { d: "M21 7.5H3" }], ["path", { d: "M21 12H3" }], ["path", { d: "M21 16.5H3" }]],
+};
+/** personnalisation-1a (T14, GC4) : icônes Lucide du lot 2 (calques), lues au commit 7981a0798a par `gh api`, recopiées telles quelles. */
+const LOT2: Readonly<Record<string, IconNode>> = {
+  layers: [
+    ["path", { d: "M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z" }],
+    ["path", { d: "M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12" }],
+    ["path", { d: "M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17" }],
+  ],
+  "bring-to-front": [["rect", { x: "8", y: "8", width: "8", height: "8", rx: "2" }], ["path", { d: "M4 10a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2" }], ["path", { d: "M14 20a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2" }]],
+  "send-to-back": [["rect", { x: "14", y: "14", width: "8", height: "8", rx: "2" }], ["rect", { x: "2", y: "2", width: "8", height: "8", rx: "2" }], ["path", { d: "M7 14v1a2 2 0 0 0 2 2h1" }], ["path", { d: "M14 7h1a2 2 0 0 1 2 2v1" }]],
+};
 const TAGS = ["path", "rect", "circle", "line", "polyline", "ellipse"];
 const tool = (t: string, icon?: string): ToolItem => ({ id: t, kind: "tool", tool: t, label: t, ...(icon !== undefined ? { icon } : {}), requires: [], rest: {} });
 const action = (a: string): ToolItem => ({ id: a, kind: "action", action: a, label: a, requires: [], rest: {} });
 
 describe("icons (design-l1, L1-1 à L1-3)", () => {
-  it("ICONS : 64 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots et la fenêtre des fonds", () => {
-    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...DIALOG_ICONS]);
+  it("ICONS : 74 icônes, exactement celles qu'attribuent les tables, les états, la zone de dépôt, le bandeau, le panneau des profils, les îlots, les lots 1 et 2 de personnalisation-1a et la fenêtre des fonds", () => {
+    const used = new Set([...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS), "pen-line", "reset", "check", "drop", ...Object.keys(PANEL_ICONS), ...Object.keys(ISLAND_ICONS), ...Object.keys(LOT1), ...Object.keys(LOT2), ...DIALOG_ICONS]);
     expect(Object.keys(ICONS).sort()).toEqual([...used].sort());
-    expect(Object.keys(ICONS)).toHaveLength(64);
+    expect(Object.keys(ICONS)).toHaveLength(74);
   });
   it("design-l4 : check et drop recopiés à l'identique de 02-annotation-bureau.html (Lucide check, file-down)", () => {
     expect(ICONS["check"]).toEqual(symbol02("check"));
@@ -72,12 +92,12 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
   it("calage : viewBox -0.25 -0.25 24 24", () => {
     expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");
   });
-  it("chaque outil et chaque action connus ont une icône de la table (11 + 38)", () => {
+  it("chaque outil et chaque action connus ont une icône de la table (11 + 40)", () => {
     expect(Object.keys(TOOL_ICONS).sort()).toEqual(Object.keys(TOOL_TABLE).sort());
     expect(Object.keys(ACTION_ICONS).sort()).toEqual(Object.keys(ACTION_TABLE).sort());
     for (const name of [...Object.values(TOOL_ICONS), ...Object.values(ACTION_ICONS)]) expect(Object.hasOwn(ICONS, name), name).toBe(true);
     expect(Object.keys(TOOL_ICONS)).toHaveLength(11);
-    expect(Object.keys(ACTION_ICONS)).toHaveLength(38);
+    expect(Object.keys(ACTION_ICONS)).toHaveLength(40);
   });
   it("balises admises, attributs en chaînes non vides", () => {
     for (const [name, node] of Object.entries(ICONS)) {
@@ -126,5 +146,22 @@ describe("icons (design-l1, L1-1 à L1-3)", () => {
     expect(NOTICE).toContain("`file-plus`");
     const dashes = ICONS["eraser-part"]!.map(([, a]) => a["d"]!).filter((d) => /^M\d+ 21h(\d+)$/.test(d));
     for (const d of dashes) expect(Number(/h(\d+)$/.exec(d)![1])).toBeGreaterThanOrEqual(2);
+  });
+
+  it("personnalisation-1a T6 : icônes neuves présentes, tracés Lucide à l'identique, viewBox -0.25 -0.25 24 24, notice à jour", () => {
+    expect(ICON_VIEWBOX).toBe("-0.25 -0.25 24 24");
+    for (const [name, node] of Object.entries(LOT1)) {
+      expect(ICONS[name], name).toEqual(node);
+      expect(NOTICE, name).toContain(`\`${name}\``);
+    }
+    expect(ACTION_ICONS["page-duplicate"]).toBe("copy");
+    expect(ACTION_ICONS["page-number"]).toBe("dock-left");
+    expect(ICONS["panel-left"]).toBeUndefined();
+  });
+  it("personnalisation-1a T14 : layers, bring-to-front, send-to-back à l'identique de Lucide, nommées dans la notice", () => {
+    for (const [name, node] of Object.entries(LOT2)) {
+      expect(ICONS[name], name).toEqual(node);
+      expect(NOTICE, name).toContain(`\`${name}\``);
+    }
   });
 });

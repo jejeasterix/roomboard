@@ -13,9 +13,10 @@ function setup(v: ToolbarView) {
   const [view, setView] = createSignal(v);
   const selection = vi.fn();
   const imagePanel = vi.fn();
-  const host = { selection, imagePanel } as unknown as ToolbarHost;
+  const runAction = vi.fn();
+  const host = { selection, imagePanel, runAction } as unknown as ToolbarHost;
   const { container } = render(() => <SelectionRow view={view} host={host} />);
-  return { container, setView, selection, imagePanel };
+  return { container, setView, selection, imagePanel, runAction };
 }
 
 describe("rangée Sélection (Z13)", () => {
@@ -24,7 +25,7 @@ describe("rangée Sélection (Z13)", () => {
     expect(container.querySelectorAll("[data-selection-action]")).toHaveLength(0);
     setView({ ...base });
     const ids = [...container.querySelectorAll("[data-selection-action]")].map((b) => [b.getAttribute("data-selection-action"), b.textContent]);
-    expect(ids).toEqual([["group", "Grouper"], ["ungroup", "Dégrouper"], ["copy", "Copier"], ["paste", "Coller"], ["export", "Exporter"], ["image", "Image"]]);
+    expect(ids).toEqual([["group", "Grouper"], ["ungroup", "Dégrouper"], ["copy", "Copier"], ["paste", "Coller"], ["export", "Exporter"], ["layer-front", "Premier plan"], ["layer-back", "Arrière-plan"], ["image", "Image"]]);
     expect(SELECTION_ACTIONS.map((a) => a.id)).toEqual(["group", "ungroup", "copy", "paste", "export"]);
   });
   it("Image : grisé hors d'une seule image ; clic : host.imagePanel()", () => {
@@ -57,5 +58,16 @@ describe("rangée Sélection (Z13)", () => {
     const { container, selection } = setup({ ...base, selection: ["a", "b"], selectionUnits: 2, canPaste: true });
     for (const id of ["group", "copy", "paste", "export"]) fireEvent.click(btn(container, id)!);
     expect(selection.mock.calls.map((c) => c[0])).toEqual(["group", "copy", "paste", "export"]);
+  });
+  it("Premier plan / Arrière-plan : grisés sans sélection, icônes Lucide, clic : host.runAction(layer-front | layer-back)", () => {
+    const { container, setView, runAction, selection } = setup({ ...base });
+    expect([btn(container, "layer-front")!.disabled, btn(container, "layer-back")!.disabled]).toEqual([true, true]);
+    setView({ ...base, selection: ["a"], selectionUnits: 1 });
+    expect(btn(container, "layer-front")!.querySelector('[data-icon="bring-to-front"]')).not.toBeNull();
+    expect(btn(container, "layer-back")!.querySelector('[data-icon="send-to-back"]')).not.toBeNull();
+    fireEvent.click(btn(container, "layer-front")!);
+    fireEvent.click(btn(container, "layer-back")!);
+    expect(runAction.mock.calls.map((c) => c[0])).toEqual(["layer-front", "layer-back"]);
+    expect(selection).not.toHaveBeenCalled();
   });
 });

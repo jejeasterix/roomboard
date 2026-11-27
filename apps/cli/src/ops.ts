@@ -9,7 +9,8 @@ import type { Command } from "../../web/src/core/api";
 import { CliError } from "./contract";
 
 export const COMMAND_TYPES = [
-  "AddPage", "RemovePage", "CommitStroke", "Erase", "Delete", "AddShape", "SetText", "Transform", "AddImage", "AddMedia",
+  "AddPage", "RemovePage", "SetPageMode", "MovePage", "DuplicatePage", "Restack",
+  "CommitStroke", "Erase", "Delete", "AddShape", "SetText", "Transform", "AddImage", "AddMedia",
   "SetMedia", "AddModel3d", "SetModel3dView", "SetBackdrop", "FormatText", "SetGrid", "ApplyBackground", "AddTable", "SetTableCell",
   "InsertTableLine", "RemoveTableLine", "SetTableSizes", "SetTableFill", "MergeTableCells", "SplitTableCell",
   "SetTableShade", "ImportTable", "Fill", "SetImageParams", "Group", "Ungroup",
@@ -74,6 +75,10 @@ export function parseOp(line: unknown, ctx: RefContext): Op {
         throw new CliError("usage", `${key} : tableau de nombres attendu`);
       }
       cmd[key] = new Float32Array(a as number[]);
+    }
+    if (type === "MovePage" || type === "Restack") {
+      const to = cmd["to"];
+      if (typeof to !== "number" || !Number.isInteger(to) || to < 0) throw new CliError("usage", "to : entier ≥ 0 attendu");
     }
     return { kind: "command", cmd: cmd as unknown as Command };
   }

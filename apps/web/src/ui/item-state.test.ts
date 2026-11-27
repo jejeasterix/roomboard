@@ -38,9 +38,16 @@ describe("itemState", () => {
     expect(itemState(action("page-prev"), view({ pageIndex: 0 })).disabled).toBe(true);
     expect(itemState(action("page-prev"), view()).disabled).toBe(false);
   });
-  it("page-next désactivé sur la dernière page", () => {
-    expect(itemState(action("page-next"), view({ pageIndex: 2 })).disabled).toBe(true);
-    expect(itemState(action("page-next"), view()).disabled).toBe(false);
+  it("page-next sur la dernière page : actif, libellé Nouvelle page", () => {
+    expect(itemState(action("page-next", "Page suivante"), view({ pageIndex: 2 }))).toMatchObject({ disabled: false, label: "Nouvelle page" });
+    expect(itemState(action("page-next", "Page suivante"), view())).toMatchObject({ disabled: false, label: "Page suivante" });
+  });
+  it("page-duplicate actif", () => {
+    expect(itemState(action("page-duplicate"), view({ pageCount: 1, pageIndex: 0 })).disabled).toBe(false);
+  });
+  it("page-number : pressé quand la barre latérale est ouverte, faux par défaut", () => {
+    expect(itemState(action("page-number"), view()).pressed).toBe(false);
+    expect(itemState(action("page-number"), view({ sidebarOpen: true })).pressed).toBe(true);
   });
   it("page-remove désactivé avec une seule page", () => {
     expect(itemState(action("page-remove"), view({ pageCount: 1, pageIndex: 0 })).disabled).toBe(true);

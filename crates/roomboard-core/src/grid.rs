@@ -210,10 +210,11 @@ fn dist2(a: (f64, f64), b: (f64, f64)) -> f64 {
     dx * dx + dy * dy
 }
 
-/// Ligne la plus proche sur un axe (`snapAxis` d'ActCraft) : indice borné à la première ligne `≥ 0` et, si `hi` est
-/// donné, à la dernière `≤ hi` (borne nouvelle, HG10). `None` si la page n'a aucune ligne sur cet axe.
-fn snap_axis(v: f64, origin: f64, step: f64, hi: Option<f64>) -> Option<f64> {
-    let first = (-origin / step - EPS).ceil();
+/// Ligne la plus proche sur un axe (`snapAxis` d'ActCraft) : indice borné à la première ligne `≥ lo` et à la dernière
+/// `≤ hi` quand ils sont donnés (cadre de la page, T7) ; sans borne en Infini. `None` si le cadre n'a aucune ligne sur
+/// cet axe.
+fn snap_axis(v: f64, origin: f64, step: f64, lo: Option<f64>, hi: Option<f64>) -> Option<f64> {
+    let first = lo.map_or(f64::NEG_INFINITY, |l| ((l - origin) / step - EPS).ceil());
     let last = hi.map_or(f64::INFINITY, |h| ((h - origin) / step + EPS).floor());
     if first.is_nan() || last.is_nan() || first > last {
         return None;
@@ -221,16 +222,24 @@ fn snap_axis(v: f64, origin: f64, step: f64, hi: Option<f64>) -> Option<f64> {
     Some(origin + ((v - origin) / step).round().clamp(first, last) * step)
 }
 
-/// Ligne de portée la plus proche (`music`, G3) : 5 lignes à `sy`, une portée tous les `10·sy`, lignes `y ≥ 0` seules.
-fn snap_staff(y: f64, oy: f64, sy: f64) -> Option<f64> {
+/// Ligne de portée la plus proche (`music`, G3) : 5 lignes à `sy`, une portée tous les `10·sy`, lignes dans
+/// `[lo, hi]` seules quand ils sont donnés (cadre de la page, T7), toutes en Infini.
+fn snap_staff(y: f64, oy: f64, sy: f64, lo: Option<f64>, hi: Option<f64>) -> Option<f64> {
     let period = 10.0 * sy;
-    let first = ((-oy - 4.0 * sy) / period - EPS).ceil();
-    let k0 = ((y - oy - 2.0 * sy) / period).round().max(first);
+    let first = lo.map_or(f64::NEG_INFINITY, |l| {
+        ((l - oy - 4.0 * sy) / period - EPS).ceil()
+    });
+    let last = hi.map_or(f64::INFINITY, |h| ((h - oy) / period + EPS).floor());
+    if first.is_nan() || last.is_nan() || first > last {
+        return None;
+    }
+    let (lo, hi) = (lo.unwrap_or(f64::NEG_INFINITY), hi.unwrap_or(f64::INFINITY));
+    let k0 = ((y - oy - 2.0 * sy) / period).round().clamp(first, last);
     let mut best: Option<f64> = None;
     for k in [k0 - 1.0, k0, k0 + 1.0] {
         for l in 0..STAFF_LINES {
             let c = oy + k * period + f64::from(l) * sy;
-            if c < -EPS * sy {
+            if c < lo - EPS * sy || c > hi + EPS * sy {
                 continue;
             }
             if best.is_none_or(|b| (c - y).abs() < (b - y).abs()) {
@@ -243,15 +252,15 @@ fn snap_staff(y: f64, oy: f64, sy: f64) -> Option<f64> {
 
 /// Sommet du réseau isométrique le plus proche (G3, G6), côté `s = spacingX` : base `b1 = (s·√3/2, s/2)`, `b2 = (0, s)`,
 /// déjà réduite (`nearestLatticePoint` d'ActCraft). Colonnes `x = ox + u·s·√3/2` : la plus proche et ses deux voisines,
-/// bornées à `0 ≤ x ≤ width` ; dans chaque colonne (pas vertical `s`), le sommet le plus proche borné à `y ≥ 0`. Les
-/// colonnes `u ± 2` ont le même décalage vertical que `u` et sont plus loin : ces trois colonnes suffisent, et aucun
-/// voisin hors page n'est jamais rendu.
-fn snap_lattice(l: &GridLevelView, width: f64, (x, y): (f64, f64)) -> Option<(f64, f64)> {
+/// bornées à `clip.x0 ≤ x ≤ clip.x1` ; dans chaque colonne (pas vertical `s`), le sommet le plus proche borné à
+/// `clip.y0 ≤ y ≤ clip.y1` (T7) ; sans borne en Infini (`clip` absent). Les colonnes `u ± 2` ont le même décalage
+/// vertical que `u` et sont plus loin : ces trois colonnes suffisent, et aucun sommet hors cadre n'est jamais rendu.
+fn snap_lattice(l: &GridLevelView, clip: Option<Bounds>, (x, y): (f64, f64)) -> Option<(f64, f64)> {
     let s = l.spacing_x;
     let h = s * 3f64.sqrt() / 2.0;
     let (ox, oy) = (l.origin_x, l.origin_y);
-    let umin = (-ox / h - EPS).ceil();
-    let umax = ((width - ox) / h + EPS).floor();
+    let umin = clip.map_or(f64::NEG_INFINITY, |k| ((k.x0 - ox) / h - EPS).ceil());
+    let umax = clip.map_or(f64::INFINITY, |k| ((k.x1 - ox) / h + EPS).floor());
     if umin.is_nan() || umax.is_nan() || umin > umax {
         return None;
     }
@@ -262,8 +271,12 @@ fn snap_lattice(l: &GridLevelView, width: f64, (x, y): (f64, f64)) -> Option<(f6
             continue;
         }
         let base = oy + u * s / 2.0;
-        let vmin = (-base / s - EPS).ceil();
-        let v = ((y - base) / s).round().max(vmin);
+        let vmin = clip.map_or(f64::NEG_INFINITY, |k| ((k.y0 - base) / s - EPS).ceil());
+        let vmax = clip.map_or(f64::INFINITY, |k| ((k.y1 - base) / s + EPS).floor());
+        if vmin.is_nan() || vmax.is_nan() || vmin > vmax {
+            continue;
+        }
+        let v = ((y - base) / s).round().clamp(vmin, vmax);
         let q = (ox + u * h, base + v * s);
         let d = dist2(q, (x, y));
         if best.is_none_or(|(_, bd)| d < bd) {
@@ -273,21 +286,21 @@ fn snap_lattice(l: &GridLevelView, width: f64, (x, y): (f64, f64)) -> Option<(f6
     best.map(|(q, _)| q)
 }
 
-/// Point aimanté d'un niveau (G3) ; `None` pour un `kind` inconnu ou une page sans ligne.
-fn snap_level(l: &GridLevelView, width: f64, (x, y): (f64, f64)) -> Option<(f64, f64)> {
+/// Point aimanté d'un niveau (G3) ; `None` pour un `kind` inconnu ou un cadre sans ligne. Accroche bornée au cadre
+/// `clip` s'il existe (Page), sans borne sinon (Infini, T7).
+fn snap_level(l: &GridLevelView, clip: Option<Bounds>, (x, y): (f64, f64)) -> Option<(f64, f64)> {
     let (sx, sy, ox, oy) = (l.spacing_x, l.spacing_y, l.origin_x, l.origin_y);
+    let (x0, x1) = (clip.map(|k| k.x0), clip.map(|k| k.x1));
+    let (y0, y1) = (clip.map(|k| k.y0), clip.map(|k| k.y1));
     match l.kind.as_str() {
-        "squares" | "dots" => Some((
-            snap_axis(x, ox, sx, Some(width))?,
-            snap_axis(y, oy, sy, None)?,
-        )),
-        "lines" => Some((x, snap_axis(y, oy, sy, None)?)),
+        "squares" | "dots" => Some((snap_axis(x, ox, sx, x0, x1)?, snap_axis(y, oy, sy, y0, y1)?)),
+        "lines" => Some((x, snap_axis(y, oy, sy, y0, y1)?)),
         "seyes" => Some((
-            snap_axis(x, ox, sx, Some(width))?,
-            snap_axis(y, oy, sy / 4.0, None)?,
+            snap_axis(x, ox, sx, x0, x1)?,
+            snap_axis(y, oy, sy / 4.0, y0, y1)?,
         )),
-        "music" => Some((x, snap_staff(y, oy, sy)?)),
-        "isometric" => snap_lattice(l, width, (x, y)),
+        "music" => Some((x, snap_staff(y, oy, sy, y0, y1)?)),
+        "isometric" => snap_lattice(l, clip, (x, y)),
         _ => None,
     }
 }
@@ -296,13 +309,13 @@ fn snap_level(l: &GridLevelView, width: f64, (x, y): (f64, f64)) -> Option<(f64,
 /// d'un type connu n'accroche ; sinon le candidat le plus proche (distance euclidienne, sans seuil), le premier niveau
 /// gagnant à égalité. Une grille ou un niveau invisible accroche quand même (HG3). Un candidat non fini (pas si grand
 /// que `10·sy` déborde) est ignoré : à distance `NaN`, il ne serait jamais battu.
-pub fn snap_point(g: &GridView, width: f64, p: (f64, f64)) -> Option<(f64, f64)> {
+pub fn snap_point(g: &GridView, clip: Option<Bounds>, p: (f64, f64)) -> Option<(f64, f64)> {
     if !g.snap {
         return None;
     }
     let mut best: Option<((f64, f64), f64)> = None;
     for l in g.levels.iter().filter(|l| l.snap && is_known_kind(&l.kind)) {
-        let Some(q) = snap_level(l, width, p).filter(|q| q.0.is_finite() && q.1.is_finite()) else {
+        let Some(q) = snap_level(l, clip, p).filter(|q| q.0.is_finite() && q.1.is_finite()) else {
             continue;
         };
         let d = dist2(q, p);
@@ -317,7 +330,12 @@ pub fn snap_point(g: &GridView, width: f64, p: (f64, f64)) -> Option<(f64, f64)>
 /// point aimanté `q` est le plus proche (le premier à égalité) et le déplacement rendu est `q − candidat d'origine`,
 /// chaque composante sous `DELTA_EPS` ramenée à 0 : exactement nul quand l'élément revient à sa place, même si ses
 /// coins portent un résidu d'arrondi ; brut sans accroche.
-pub fn snap_delta(g: &GridView, width: f64, b: Bounds, (dx, dy): (f64, f64)) -> (f64, f64) {
+pub fn snap_delta(
+    g: &GridView,
+    clip: Option<Bounds>,
+    b: Bounds,
+    (dx, dy): (f64, f64),
+) -> (f64, f64) {
     let (cx, cy) = ((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
     let mut best: Option<((f64, f64), f64)> = None;
     for (x, y) in [
@@ -328,7 +346,7 @@ pub fn snap_delta(g: &GridView, width: f64, b: Bounds, (dx, dy): (f64, f64)) -> 
         (cx, cy),
     ] {
         let c = (x + dx, y + dy);
-        let Some(q) = snap_point(g, width, c) else {
+        let Some(q) = snap_point(g, clip, c) else {
             continue;
         };
         let d = dist2(q, c);
@@ -532,13 +550,14 @@ fn level_lines(
     }
 }
 
-/// Lignes visibles (G9), en unités de page, limitées à `rect ∩ page` (`0 ≤ x ≤ width`, `y ≥ 0`). `None` si la grille est
+/// Lignes visibles (G9), en unités de page, limitées à `rect ∩ clip` quand le cadre `clip` existe (Page :
+/// `(0, 0) → (width, max(height, fond))`, `Document::page_clip`), à `rect` seul sinon (Infini, T7). `None` si la grille est
 /// invisible. Niveau invisible ou d'un `kind` inconnu sauté ; famille sautée si son pas est `< min_step·lineWidth` ;
 /// points sautés si un pas est `< min_dot_step·lineWidth` (CR2) ou si leur nombre dépasse `MAX_GRID_DOTS`. Le nombre de lignes dépend de `rect`,
 /// jamais de la distance au haut de page.
 pub fn lines(
     g: &GridView,
-    width: f64,
+    clip: Option<Bounds>,
     rect: Bounds,
     min_step: f64,
     min_dot_step: f64,
@@ -547,14 +566,18 @@ pub fn lines(
         return None;
     }
     let mut levels = Vec::new();
-    let finite = [rect.x0, rect.y0, rect.x1, rect.y1, width]
-        .iter()
-        .all(|v| v.is_finite());
-    let c = Bounds {
-        x0: rect.x0.max(0.0),
-        y0: rect.y0.max(0.0),
-        x1: rect.x1.min(width),
-        y1: rect.y1,
+    let finite = [rect.x0, rect.y0, rect.x1, rect.y1]
+        .into_iter()
+        .chain(clip.into_iter().flat_map(|k| [k.x0, k.y0, k.x1, k.y1]))
+        .all(f64::is_finite);
+    let c = match clip {
+        Some(k) => Bounds {
+            x0: rect.x0.max(k.x0),
+            y0: rect.y0.max(k.y0),
+            x1: rect.x1.min(k.x1),
+            y1: rect.y1.min(k.y1),
+        },
+        None => rect,
     };
     if finite && c.x0 <= c.x1 && c.y0 <= c.y1 {
         for l in g
@@ -577,6 +600,15 @@ mod tests {
     use yrs::{Doc, Transact};
 
     const W: f64 = 1920.0;
+    /// Hauteur d'une page paysage.
+    const H: f64 = 1080.0;
+    /// Cadre d'une page paysage (`Document::page_clip` en Page, T7).
+    const PAGE: Option<Bounds> = Some(Bounds {
+        x0: 0.0,
+        y0: 0.0,
+        x1: W,
+        y1: H,
+    });
 
     fn level(kind: &str, sx: f64, sy: f64) -> GridLevelView {
         GridLevelView {
@@ -767,9 +799,13 @@ mod tests {
     fn grid_squares_and_dots_snap_to_the_nearest_crossing() {
         for kind in ["squares", "dots"] {
             let g = grid(vec![level(kind, 40.0, 40.0)]);
-            assert_eq!(snap_point(&g, W, (13.0, 17.0)), Some((0.0, 0.0)), "{kind}");
             assert_eq!(
-                snap_point(&g, W, (118.0, 97.0)),
+                snap_point(&g, PAGE, (13.0, 17.0)),
+                Some((0.0, 0.0)),
+                "{kind}"
+            );
+            assert_eq!(
+                snap_point(&g, PAGE, (118.0, 97.0)),
                 Some((120.0, 80.0)),
                 "{kind}"
             );
@@ -780,19 +816,26 @@ mod tests {
     #[test]
     fn snap_point_stays_on_page_lines() {
         let g = grid(vec![level("squares", 40.0, 40.0)]);
-        assert_eq!(snap_point(&g, W, (-70.0, -90.0)), Some((0.0, 0.0)));
-        assert_eq!(snap_point(&g, W, (1950.0, 10.0)), Some((1920.0, 0.0)));
+        assert_eq!(snap_point(&g, PAGE, (-70.0, -90.0)), Some((0.0, 0.0)));
+        assert_eq!(snap_point(&g, PAGE, (1950.0, 10.0)), Some((1920.0, 0.0)));
         let shifted = grid(vec![GridLevelView {
             origin_x: 13.0,
             origin_y: -27.0,
             ..level("squares", 40.0, 40.0)
         }]);
         assert_eq!(
-            snap_point(&shifted, W, (1950.0, -5.0)),
+            snap_point(&shifted, PAGE, (1950.0, -5.0)),
             Some((1893.0, 13.0))
         );
         assert_eq!(
-            snap_point(&shifted, 5.0, (3.0, 3.0)),
+            snap_point(
+                &shifted,
+                Some(Bounds {
+                    x1: 5.0,
+                    ..PAGE.unwrap()
+                }),
+                (3.0, 3.0)
+            ),
             None,
             "aucune verticale dans une page de 5 de large"
         );
@@ -803,16 +846,22 @@ mod tests {
     fn grid_lines_music_and_seyes_snap_on_their_lines() {
         let lines_kind = grid(vec![level("lines", 40.0, 40.0)]);
         assert_eq!(
-            snap_point(&lines_kind, W, (1950.0, 10.0)),
+            snap_point(&lines_kind, PAGE, (1950.0, 10.0)),
             Some((1950.0, 0.0)),
             "x libre"
         );
         let music = grid(vec![level("music", 7.0, 12.0)]);
-        assert_eq!(snap_point(&music, W, (500.0, 70.0)), Some((500.0, 48.0)));
-        assert_eq!(snap_point(&music, W, (500.0, 100.0)), Some((500.0, 120.0)));
-        assert_eq!(snap_point(&music, W, (500.0, -300.0)), Some((500.0, 0.0)));
+        assert_eq!(snap_point(&music, PAGE, (500.0, 70.0)), Some((500.0, 48.0)));
+        assert_eq!(
+            snap_point(&music, PAGE, (500.0, 100.0)),
+            Some((500.0, 120.0))
+        );
+        assert_eq!(
+            snap_point(&music, PAGE, (500.0, -300.0)),
+            Some((500.0, 0.0))
+        );
         let seyes = grid(vec![level("seyes", 30.24, 30.24)]);
-        let q = snap_point(&seyes, W, (40.0, 9.0)).expect("seyes");
+        let q = snap_point(&seyes, PAGE, (40.0, 9.0)).expect("seyes");
         assert!(close(q, (30.24, 7.56)), "{q:?}");
     }
 
@@ -822,18 +871,18 @@ mod tests {
         let iso = grid(vec![level("isometric", 40.0, 99.0)]);
         let h = 40.0 * 3f64.sqrt() / 2.0;
         assert!(close(
-            snap_point(&iso, W, (36.0, 25.0)).expect("iso"),
+            snap_point(&iso, PAGE, (36.0, 25.0)).expect("iso"),
             (h, 20.0)
         ));
         assert!(close(
-            snap_point(&iso, W, (-50.0, -50.0)).expect("iso"),
+            snap_point(&iso, PAGE, (-50.0, -50.0)).expect("iso"),
             (0.0, 0.0)
         ));
-        let far = snap_point(&iso, W, (5000.0, 10.0)).expect("iso");
+        let far = snap_point(&iso, PAGE, (5000.0, 10.0)).expect("iso");
         assert!(far.0 <= W && far.0 > W - h, "{far:?}");
         let d = |a: (f64, f64), p: (f64, f64)| (a.0 - p.0).powi(2) + (a.1 - p.1).powi(2);
         for p in [(17.0, 3.0), (51.3, 77.7), (100.0, 1000.0), (1900.0, 33.0)] {
-            let q = snap_point(&iso, W, p).expect("iso");
+            let q = snap_point(&iso, PAGE, p).expect("iso");
             for m in 0..=55 {
                 for n in -30..=60 {
                     let v = (f64::from(m) * h, f64::from(m) * 20.0 + f64::from(n) * 40.0);
@@ -853,7 +902,7 @@ mod tests {
     fn grid_snap_rules_off_unknown_invisible_and_nearest_level() {
         let mut off = grid(vec![level("squares", 40.0, 40.0)]);
         off.snap = false;
-        assert_eq!(snap_point(&off, W, (13.0, 17.0)), None);
+        assert_eq!(snap_point(&off, PAGE, (13.0, 17.0)), None);
         let ignored = grid(vec![
             level("hexagon", 40.0, 40.0),
             GridLevelView {
@@ -861,13 +910,13 @@ mod tests {
                 ..level("squares", 40.0, 40.0)
             },
         ]);
-        assert_eq!(snap_point(&ignored, W, (13.0, 17.0)), None);
+        assert_eq!(snap_point(&ignored, PAGE, (13.0, 17.0)), None);
         let mut hidden = grid(vec![GridLevelView {
             visible: false,
             ..level("squares", 40.0, 40.0)
         }]);
         hidden.visible = false;
-        assert_eq!(snap_point(&hidden, W, (13.0, 17.0)), Some((0.0, 0.0)));
+        assert_eq!(snap_point(&hidden, PAGE, (13.0, 17.0)), Some((0.0, 0.0)));
         let two = grid(vec![
             level("squares", 40.0, 40.0),
             GridLevelView {
@@ -876,7 +925,7 @@ mod tests {
                 ..level("squares", 40.0, 40.0)
             },
         ]);
-        assert_eq!(snap_point(&two, W, (13.0, 17.0)), Some((15.0, 15.0)));
+        assert_eq!(snap_point(&two, PAGE, (13.0, 17.0)), Some((15.0, 15.0)));
     }
 
     /// G7, S3 côté cœur : coin ou centre déplacé le plus proche de son point aimanté ; brut sans magnétisme.
@@ -890,7 +939,7 @@ mod tests {
             y1: 77.0,
         };
         assert_eq!(
-            snap_delta(&g, W, b, (52.0, 31.0)),
+            snap_delta(&g, PAGE, b, (52.0, 31.0)),
             (57.0, 33.0),
             "centre (115, 78) → (120, 80)"
         );
@@ -901,12 +950,12 @@ mod tests {
             y1: 60.0,
         };
         assert_eq!(
-            snap_delta(&g, W, corner, (2.0, 3.0)),
+            snap_delta(&g, PAGE, corner, (2.0, 3.0)),
             (0.0, 0.0),
             "coin (2, 3) → (0, 0)"
         );
         let off = GridView { snap: false, ..g };
-        assert_eq!(snap_delta(&off, W, b, (52.0, 31.0)), (52.0, 31.0));
+        assert_eq!(snap_delta(&off, PAGE, b, (52.0, 31.0)), (52.0, 31.0));
     }
 
     /// Abscisses des verticales et ordonnées des horizontales d'un groupe.
@@ -935,8 +984,9 @@ mod tests {
         }
     }
 
+    /// Montage S5 loin sous le haut de page : seule une page Infini a des lignes si bas (T7, décision 9).
     fn at(g: &GridView, z: f64) -> GridLines {
-        lines(g, W, view_rect(z), 4.0 / z, 8.0 / z).expect("grille visible")
+        lines(g, None, view_rect(z), 4.0 / z, 8.0 / z).expect("grille visible")
     }
 
     fn colored(kind: &str, s: f64, color: &str) -> GridLevelView {
@@ -1041,7 +1091,7 @@ mod tests {
             y1: 1080.0,
         };
         let g = grid(vec![level("dots", 1.0, 1.0)]);
-        assert!(lines(&g, W, page, 0.0, 0.0)
+        assert!(lines(&g, PAGE, page, 0.0, 0.0)
             .expect("visible")
             .levels
             .is_empty());
@@ -1052,13 +1102,13 @@ mod tests {
             y1: 99.0,
         };
         assert_eq!(
-            lines(&g, W, small, 0.0, 0.0).expect("visible").levels[0]
+            lines(&g, PAGE, small, 0.0, 0.0).expect("visible").levels[0]
                 .dots
                 .len(),
             2 * 100 * 100
         );
         let thin = grid(vec![level("squares", 0.001, 0.001)]);
-        assert!(lines(&thin, W, page, 0.0, 0.0)
+        assert!(lines(&thin, PAGE, page, 0.0, 0.0)
             .expect("visible")
             .levels
             .is_empty());
@@ -1076,7 +1126,7 @@ mod tests {
         };
         let mut hidden = grid(vec![level("squares", 40.0, 40.0)]);
         hidden.visible = false;
-        assert_eq!(lines(&hidden, W, page, 4.0, 8.0), None);
+        assert_eq!(lines(&hidden, PAGE, page, 4.0, 8.0), None);
         let skipped = grid(vec![
             level("hexagon", 40.0, 40.0),
             GridLevelView {
@@ -1084,7 +1134,7 @@ mod tests {
                 ..level("squares", 40.0, 40.0)
             },
         ]);
-        assert!(lines(&skipped, W, page, 4.0, 8.0)
+        assert!(lines(&skipped, PAGE, page, 4.0, 8.0)
             .expect("visible")
             .levels
             .is_empty());
@@ -1108,7 +1158,7 @@ mod tests {
             },
         ] {
             assert!(
-                lines(&g, W, r, 4.0, 8.0)
+                lines(&g, PAGE, r, 4.0, 8.0)
                     .expect("visible")
                     .levels
                     .is_empty(),
@@ -1121,7 +1171,7 @@ mod tests {
             x1: 3000.0,
             y1: 50.0,
         };
-        let l = lines(&g, W, wide, 4.0, 8.0).expect("visible");
+        let l = lines(&g, PAGE, wide, 4.0, 8.0).expect("visible");
         for s in l.levels[0].segments.as_chunks::<4>().0 {
             assert!(
                 (0.0..=W).contains(&s[0]) && (0.0..=W).contains(&s[2]),
@@ -1134,7 +1184,7 @@ mod tests {
         }
         let mut up = grid(vec![level("squares", 40.0, 40.0)]);
         up.above = true;
-        assert!(lines(&up, W, page, 4.0, 8.0).expect("visible").above);
+        assert!(lines(&up, PAGE, page, 4.0, 8.0).expect("visible").above);
     }
 
     /// G3 : obliques à ±30° par les sommets, verticales au pas s·√3/2 ; portées de 5 lignes ; `lines` sans verticale.
@@ -1147,8 +1197,14 @@ mod tests {
             x1: 200.0,
             y1: 200.0,
         };
-        let iso =
-            lines(&grid(vec![level("isometric", 40.0, 40.0)]), W, r, 1.0, 1.0).expect("visible");
+        let iso = lines(
+            &grid(vec![level("isometric", 40.0, 40.0)]),
+            PAGE,
+            r,
+            1.0,
+            1.0,
+        )
+        .expect("visible");
         let s = &iso.levels[0].segments;
         assert_eq!(segs(&iso.levels[0]).0.len(), 6);
         assert!(s.iter().all(|c| (-1e-9..=200.0 + 1e-9).contains(c)));
@@ -1163,7 +1219,7 @@ mod tests {
         };
         assert!(on(h, 20.0, 1.0) && on(h, 20.0, -1.0) && on(2.0 * h, 40.0, 1.0));
         let tiny =
-            lines(&grid(vec![level("isometric", 4.0, 4.0)]), W, r, 4.0, 4.0).expect("visible");
+            lines(&grid(vec![level("isometric", 4.0, 4.0)]), PAGE, r, 4.0, 4.0).expect("visible");
         assert!(tiny.levels.is_empty(), "côté 4 : s·√3/2 ≈ 3,46 < 4");
         let staves = Bounds {
             x0: 0.0,
@@ -1171,14 +1227,26 @@ mod tests {
             x1: W,
             y1: 239.0,
         };
-        let music =
-            lines(&grid(vec![level("music", 7.0, 12.0)]), W, staves, 4.0, 8.0).expect("visible");
+        let music = lines(
+            &grid(vec![level("music", 7.0, 12.0)]),
+            PAGE,
+            staves,
+            4.0,
+            8.0,
+        )
+        .expect("visible");
         assert_eq!(
             segs(&music.levels[0]).1,
             vec![0.0, 12.0, 24.0, 36.0, 48.0, 120.0, 132.0, 144.0, 156.0, 168.0]
         );
-        let only_h =
-            lines(&grid(vec![level("lines", 40.0, 40.0)]), W, staves, 4.0, 8.0).expect("visible");
+        let only_h = lines(
+            &grid(vec![level("lines", 40.0, 40.0)]),
+            PAGE,
+            staves,
+            4.0,
+            8.0,
+        )
+        .expect("visible");
         assert!(segs(&only_h.levels[0]).0.is_empty());
     }
 
@@ -1193,7 +1261,7 @@ mod tests {
             x1: 170.0,
             y1: 110.0,
         };
-        assert_eq!(snap_delta(&g, W, b, (1.3, 0.7)), (0.0, 0.0));
+        assert_eq!(snap_delta(&g, PAGE, b, (1.3, 0.7)), (0.0, 0.0));
     }
 
     /// G4, relecture T2 : toute grille relue est acceptée telle quelle par `SetGrid` ; niveau sans `kind` ou à `kind`
@@ -1259,13 +1327,13 @@ mod tests {
             x1: W,
             y1,
         };
-        // 20 001 portées ≤ 65 536, mais ~100 000 lignes : niveau sauté entier.
-        assert!(lines(&music, W, to(2000.0), 0.0, 0.0)
+        // 20 001 portées ≤ 65 536, mais ~100 000 lignes : niveau sauté entier (vue seule, page Infini : T7).
+        assert!(lines(&music, None, to(2000.0), 0.0, 0.0)
             .expect("visible")
             .levels
             .is_empty());
         // 10 001 portées ≤ 65 536 / 5 : dessinées, sous le plafond des lignes.
-        let l = lines(&music, W, to(1000.0), 0.0, 0.0).expect("visible");
+        let l = lines(&music, None, to(1000.0), 0.0, 0.0).expect("visible");
         let n = l.levels[0].segments.len() / 4;
         assert!(n > 0 && n <= MAX_GRID_DOTS, "{n} lignes");
     }
@@ -1284,10 +1352,10 @@ mod tests {
         };
         for i in 0..4000_u32 {
             let (tx, ty) = (3.0 + f64::from(i % 50) * 7.31, 5.0 + f64::from(i) * 0.377);
-            let (dx, dy) = snap_delta(&g, W, at(tx, ty), (0.0, 0.0));
+            let (dx, dy) = snap_delta(&g, PAGE, at(tx, ty), (0.0, 0.0));
             let (x, y) = (tx + dx, ty + dy);
             assert_eq!(
-                snap_delta(&g, W, at(x, y), (0.6, -0.4)),
+                snap_delta(&g, PAGE, at(x, y), (0.6, -0.4)),
                 (0.0, 0.0),
                 "départ ({tx}, {ty})"
             );
@@ -1303,7 +1371,7 @@ mod tests {
             level("squares", 40.0, 40.0),
         ]);
         assert_eq!(validate(&g), Ok(()));
-        assert_eq!(snap_point(&g, W, (13.0, 17.0)), Some((0.0, 0.0)));
+        assert_eq!(snap_point(&g, PAGE, (13.0, 17.0)), Some((0.0, 0.0)));
     }
 
     /// G9, relecture finale : une ligne de portée posée sur le bord de la vue compte comme dedans (`EPS·sy`, comme
@@ -1317,7 +1385,7 @@ mod tests {
             x1: W,
             y1: 0.3,
         };
-        let l = lines(&g, W, c, 0.0, 0.0).expect("visible");
+        let l = lines(&g, PAGE, c, 0.0, 0.0).expect("visible");
         assert_eq!(l.levels[0].segments.len() / 4, 4);
     }
 
@@ -1396,7 +1464,7 @@ mod tests {
             x1: 400.0,
             y1: 400.0,
         };
-        let l = lines(&g, W, r, 1.0, 8.0).expect("visible");
+        let l = lines(&g, PAGE, r, 1.0, 8.0).expect("visible");
         assert_eq!(
             l.levels
                 .iter()
@@ -1423,7 +1491,7 @@ mod tests {
                 line_width: w,
                 ..level(kind, 40.0, 40.0)
             }]);
-            lines(&g, W, r, 4.0 / z, 8.0 / z)
+            lines(&g, PAGE, r, 4.0 / z, 8.0 / z)
                 .expect("visible")
                 .levels
                 .len()
@@ -1432,5 +1500,34 @@ mod tests {
         assert_eq!(groups("squares", 4.0, 0.1), 0);
         assert_eq!(groups("dots", 1.0, 0.2), 1);
         assert_eq!(groups("dots", 2.0, 0.2), 0);
+    }
+
+    /// T7 : portées et réseau isométrique s'accrochent dans le cadre en Page (rien sous 1080), sans borne en Infini
+    /// (aux y < 0 comme loin dessous).
+    #[test]
+    fn grid_clip_staff_and_lattice_snap_follow_the_frame() {
+        let music = grid(vec![level("music", 7.0, 12.0)]);
+        assert_eq!(
+            snap_point(&music, PAGE, (500.0, 5000.0)),
+            Some((500.0, 1080.0))
+        );
+        assert_eq!(
+            snap_point(&music, None, (500.0, 5000.0)),
+            Some((500.0, 4968.0))
+        );
+        assert_eq!(
+            snap_point(&music, None, (500.0, -300.0)),
+            Some((500.0, -312.0))
+        );
+        let iso = grid(vec![level("isometric", 40.0, 40.0)]);
+        let q = snap_point(&iso, PAGE, (100.0, 5000.0)).expect("iso");
+        assert!(q.1 <= H && q.1 > H - 40.0, "{q:?}");
+        let q = snap_point(&iso, None, (-500.0, -500.0)).expect("iso");
+        assert!(
+            q.0 < 0.0 && q.1 < 0.0 && dist2(q, (-500.0, -500.0)) < 40.0 * 40.0,
+            "{q:?}"
+        );
+        let q = snap_point(&iso, None, (100.0, 5000.0)).expect("iso");
+        assert!(dist2(q, (100.0, 5000.0)) < 40.0 * 40.0, "{q:?}");
     }
 }

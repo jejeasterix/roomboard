@@ -51,7 +51,8 @@ const HELP = ["help", "--help", "-h"];
 const USAGE_HELP = "help | --help | -h";
 const REFS =
   "opérations : une ligne JSON par commande du cœur ({\"type\":…}) ou de la CLI ({\"op\":…}) ; références (chaîne entière) : " +
-  "$n, $n.k, $page:i, $tab:i ; $$ donne un $ littéral" +
+  "$n, $n.k, $page:i, $tab:i ; $$ donne un $ littéral ; après DuplicatePage d'une page non vide, $n désigne les éléments " +
+  "copiés ; la copie se lit par $page:i (rang d'origine + 1)" +
   " ; fond : {\"op\":\"background\",\"id\":… | \"file\":…, \"page\":… | \"pages\":\"all\"}";
 const ENV =
   "ROOMBOARD_NOW=<millisecondes depuis 1970> : date du manifeste (essais reproductibles), sinon l'heure du système ; " +

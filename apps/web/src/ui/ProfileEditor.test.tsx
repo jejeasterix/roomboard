@@ -101,11 +101,49 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     expect(container.querySelector('[data-edit-section="size"] h3')?.textContent).toBe("Taille des boutons");
     expect(container.querySelector('[data-edit-bar] h4')?.classList.contains("rb-sr")).toBe(true);
     expect([...container.querySelectorAll("[data-edit-bar]")].map((b) => b.getAttribute("data-edit-bar"))).toEqual(["outils"]);
-    expect([...container.querySelectorAll('[data-edit="bar"] [data-choice]')].map((b) => [b.getAttribute("data-choice"), b.textContent])).toEqual([["outils", "Barre d'outils"], ["menu", "Menu"], ["historique", "Annuler et vue"], ["panneaux", "Bibliothèque et profil"], ["pages", "Barre des pages"], ["annotation", "Barre d'annotation"]]);
+    expect([...container.querySelectorAll('[data-edit="bar"] [data-choice]')].map((b) => [b.getAttribute("data-choice"), b.textContent])).toEqual([["outils", "Barre d'outils"], ["menu", "Menu"], ["historique", "Annuler et vue"], ["panneaux", "Bibliothèque et profil"], ["pages", "Barre latérale"], ["annotation", "Barre d'annotation"]]);
     expect(container.querySelectorAll("[data-edit-preset]")).toHaveLength(3);
     const dialog = container.querySelector("[data-profile-editor]")!;
     expect([dialog.tagName, dialog.getAttribute("role"), dialog.getAttribute("aria-label")]).toEqual(["ASIDE", "dialog", "Profils"]);
     expect(container.querySelector(".rb-sheet-head h2")?.textContent).toBe("Profils");
+  });
+
+  it("personnalisation-1a : Barre latérale : À droite et Repliée au démarrage décochée → profil anchor side-end, collapsed false", () => {
+    const { q, save } = setup();
+    fireEvent.click(q('[data-edit="bar"] [data-choice="pages"]'));
+    const box = q<HTMLInputElement>('[data-edit-bar="pages"] input[data-edit="collapsed"]');
+    expect(box.checked).toBe(true);
+    expect(q('[data-edit-bar="pages"]').textContent).toContain("Repliée au démarrage");
+    expect(q('[data-edit-bar="pages"] [data-edit="anchor"]').getAttribute("aria-label")).toBe("Position : Barre latérale");
+    expect([...document.querySelectorAll('[data-edit="anchor"] [data-choice]')].map((b) => b.textContent)).toEqual(["Flottante", "À gauche", "À droite"]);
+    fireEvent.click(q('[data-edit="anchor"] [data-choice="side-end"]'));
+    fireEvent.click(q('[data-edit-bar="pages"] input[data-edit="collapsed"]'));
+    fireEvent.click(q('button[data-edit="save"]'));
+    const pages = last(save).toolbars.find((b) => b.id === "pages")!;
+    expect([pages.anchor, pages.collapsed]).toEqual(["side-end", false]);
+  });
+
+  it("personnalisation-1a : Position d'une barre mobile : quatre ancres (centrées et latérales) ; Flottante (défaut du rôle) retire l'ancre d'une barre latérale", () => {
+    const { q, save, container } = setup();
+    expect([...container.querySelectorAll('[data-edit-bar="outils"] [data-edit="anchor"] [data-choice]')].map((b) => b.textContent)).toEqual([
+      "Haut centre", "Bas centre", "À gauche", "À droite",
+    ]);
+    fireEvent.click(q('[data-edit-bar="outils"] [data-edit="anchor"] [data-choice="bottom-center"]'));
+    fireEvent.click(q('[data-edit="bar"] [data-choice="pages"]'));
+    fireEvent.click(q('[data-edit="anchor"] [data-choice="side-end"]'));
+    fireEvent.click(q('[data-edit="anchor"] [data-choice="default"]'));
+    fireEvent.click(q('button[data-edit="save"]'));
+    const bars = last(save).toolbars;
+    expect(bars.find((b) => b.id === "outils")!.anchor).toBe("bottom-center");
+    expect(bars.find((b) => b.id === "pages")!.anchor).toBeUndefined();
+  });
+
+  it("personnalisation-1a : Page neuve : Infini → behavior.pageMode infinite", () => {
+    const { q, save } = setup();
+    expect([...document.querySelectorAll('[data-edit="page-mode"] [data-choice]')].map((b) => b.textContent)).toEqual(["Paysage", "Portrait", "Infini"]);
+    fireEvent.click(q('[data-edit="page-mode"] [data-choice="infinite"]'));
+    fireEvent.click(q('button[data-edit="save"]'));
+    expect(last(save).behavior.pageMode).toBe("infinite");
   });
 
   it("design-l4 T6 : L4-18 : la barre d'annotation est éditable, titre « Barre d'annotation »", () => {
@@ -150,8 +188,9 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
     const { q, save } = setup();
     fireEvent.click(q(grip("select")));
     expect(q<HTMLButtonElement>('[data-edit-item="select"] button[data-edit="up"]').disabled).toBe(true);
-    fireEvent.click(q(grip("desktop-annotation")));
-    expect(q<HTMLButtonElement>('[data-edit-item="desktop-annotation"] button[data-edit="down"]').disabled).toBe(true);
+    // personnalisation-1a : le dernier élément de la barre d'outils est « Page suivante » (le groupe pages suit « bureau »)
+    fireEvent.click(q(grip("page-next")));
+    expect(q<HTMLButtonElement>('[data-edit-item="page-next"] button[data-edit="down"]').disabled).toBe(true);
     fireEvent.click(q(grip("hand")));
     fireEvent.click(q('[data-edit-item="hand"] button[data-edit="down"]'));
     fireEvent.click(q('button[data-edit="save"]'));
@@ -188,10 +227,10 @@ describe("ProfileEditor (C1, P20 ; design-l3)", () => {
   it("Ajouter un élément absent (« + Ajouter ») : en fin de barre, id rendu unique (P15)", () => {
     const { q, save, container } = setup();
     fireEvent.click(q('[data-edit-bar="outils"] button[data-edit="add"]'));
-    fireEvent.click(q('[data-add-choice="action:page-next"]'));
+    fireEvent.click(q('[data-add-choice="action:page-add"]'));
     expect(container.querySelector("[data-add-choice]")).toBeNull();
     fireEvent.click(q('button[data-edit="save"]'));
-    expect(outils(last(save)).groups.flatMap((g) => g.items.map((i) => i.id)).at(-1)).toBe("page-next-2");
+    expect(outils(last(save)).groups.flatMap((g) => g.items.map((i) => i.id)).at(-1)).toBe("page-add-2");
   });
 
   it("S1 : stylo, ajouter deux couleurs, couleur et épaisseur, retirer (P17)", () => {
@@ -307,12 +346,12 @@ describe("ProfileEditor : liste « Ajouter » et focus des préréglages (T11 ; 
     const { q, container } = setup();
     const add = (): HTMLButtonElement => q<HTMLButtonElement>('[data-edit-bar="outils"] button[data-edit="add"]');
     fireEvent.click(add());
-    expect(container.querySelector('[data-add-choice="action:page-next"]')).not.toBeNull();
-    fireEvent.click(q('[data-add-choice="action:page-next"]'));
+    expect(container.querySelector('[data-add-choice="action:page-add"]')).not.toBeNull();
+    fireEvent.click(q('[data-add-choice="action:page-add"]'));
     expect(container.querySelector("[data-add-choice]")).toBeNull();
     fireEvent.click(add());
-    expect(container.querySelector('[data-add-choice="action:page-next"]')).toBeNull();
-    expect(container.querySelector('[data-add-choice="action:page-prev"]')).not.toBeNull();
+    expect(container.querySelector('[data-add-choice="action:page-add"]')).toBeNull();
+    expect(container.querySelector('[data-add-choice="action:page-remove"]')).not.toBeNull();
   });
 
   it("modifier un préréglage garde le focus sur son champ", () => {
@@ -335,9 +374,9 @@ describe("ProfileEditor : liste « Ajouter » et focus des préréglages (T11 ; 
     expect([add.textContent, add.getAttribute("aria-expanded")]).toEqual(["Ajouter", "false"]);
     fireEvent.click(add);
     expect(add.getAttribute("aria-expanded")).toBe("true");
-    expect(q('[data-add-choice="action:page-next"] svg').getAttribute("data-icon")).toBe("next");
-    expect(q('[data-add-choice="action:page-next"]').textContent).toBe("Page suivante");
-    fireEvent.keyDown(q('[data-add-choice="action:page-next"]'), { key: "Escape" });
+    expect(q('[data-add-choice="action:page-add"] svg').getAttribute("data-icon")).toBe("plus");
+    expect(q('[data-add-choice="action:page-add"]').textContent).toBe("Ajouter une page");
+    fireEvent.keyDown(q('[data-add-choice="action:page-add"]'), { key: "Escape" });
     expect(container.querySelector("[data-add-choice]")).toBeNull();
     expect(document.activeElement).toBe(q('[data-edit-bar="outils"] button[data-edit="add"]'));
   });
@@ -655,5 +694,18 @@ describe("ProfileEditor : panneau latéral (design-l3)", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("ProfileEditor — correctifs de relecture (T19)", () => {
+  it("« Repliée au démarrage » : affichée pour les rôles mobiles (outils, pages), absente pour les autres barres flottantes", () => {
+    const { q, container } = setup();
+    expect(container.querySelector('[data-edit-bar="outils"] input[data-edit="collapsed"]')).not.toBeNull();
+    fireEvent.click(q('[data-edit="bar"] [data-choice="pages"]'));
+    expect(container.querySelector('[data-edit-bar="pages"] input[data-edit="collapsed"]')).not.toBeNull();
+    fireEvent.click(q('[data-edit="bar"] [data-choice="menu"]'));
+    fireEvent.click(q('[data-edit-bar="menu"] [data-edit="dock"] [data-choice="floating"], [data-edit="dock"] [data-choice="floating"]'));
+    expect(container.querySelector('[data-edit-bar="menu"] [data-edit="anchor"]')).not.toBeNull();
+    expect(container.querySelector('[data-edit-bar="menu"] input[data-edit="collapsed"]')).toBeNull();
   });
 });

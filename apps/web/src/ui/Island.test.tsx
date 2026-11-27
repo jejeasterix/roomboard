@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IslandState } from "../device-settings";
 import type { Toolbar as Bar } from "../toolbar";
 import { COLLAPSE_LABEL, EXPAND_LABEL, GRIP_LABEL, Island, IslandLayer, type IslandStore } from "./Island";
-import type { Box, Corners, Lane } from "./island-place";
+import type { Anchor, Box, Corners, Lane } from "./island-place";
 
 afterEach(() => {
   cleanup();
@@ -18,13 +18,13 @@ const TOP: Corners = { start: 208, end: 108, band: 56 };
 const store = (saved: IslandState = { at: null, collapsed: null }) =>
   ({ island: vi.fn(() => saved), setIsland: vi.fn(() => true) }) satisfies IslandStore;
 
-function setup(o: { b?: Bar; saved?: IslandState; sheet?: Lane | null; noStore?: boolean } = {}) {
+function setup(o: { b?: Bar; saved?: IslandState; sheet?: Lane | null; noStore?: boolean; anchor?: Anchor } = {}) {
   const s = store(o.saved);
   const [area, setArea] = createSignal<Box>(MID);
   const onPlaced = vi.fn();
   const b = o.b ?? bar("outils", "tools");
   const r = render(() => (
-    <Island bar={b} anchor="top-center" movable profileId="defaut" {...(o.noStore ? {} : { store: s })} area={area} corners={() => TOP} sheet={() => o.sheet ?? null} onPlaced={onPlaced}>
+    <Island bar={b} anchor={o.anchor ?? "top-center"} movable profileId="defaut" {...(o.noStore ? {} : { store: s })} area={area} corners={() => TOP} sheet={() => o.sheet ?? null} onPlaced={onPlaced}>
       {(c) => <div data-toolbar={b.id} data-probe={c() ? "1" : "0"} />}
     </Island>
   ));
@@ -143,6 +143,28 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
     expect(s.setIsland).toHaveBeenLastCalledWith("defaut", "outils", { at: null, collapsed: null });
   });
 
+  it("personnalisation-1a : la barre pages a une poignée et un repli, ancrée côté gauche", () => {
+    const { island, grip, collapse, q } = setup({ b: bar("pages", "pages"), anchor: "side-start" });
+    const kids = [...island().children];
+    expect(kids[0]!.hasAttribute("data-island-grip")).toBe(true);
+    expect(kids.at(-1)!.hasAttribute("data-island-collapse")).toBe(true);
+    expect(grip().getAttribute("aria-label")).toBe(GRIP_LABEL);
+    expect(collapse().getAttribute("aria-label")).toBe(COLLAPSE_LABEL);
+    expect([island().getAttribute("data-island"), island().getAttribute("data-anchor")]).toEqual(["pages", "side-start"]);
+    expect(pos(island())).toEqual(["16px", "80px"]);
+    fireEvent.click(collapse());
+    expect(q("[data-probe]").getAttribute("data-probe")).toBe("1");
+  });
+
+  it("personnalisation-1a : Début ramène à l'ancre du profil (bar.anchor side-end), pas à celle du rôle", () => {
+    const b: Bar = { ...bar("pages", "pages"), anchor: "side-end" };
+    const { island, grip, s } = setup({ b, anchor: "side-end", saved: { at: { x: 40, y: 200 }, collapsed: null } });
+    expect(island().getAttribute("data-anchor")).toBe("side-end");
+    fireEvent.keyDown(grip(), { key: "Home" });
+    expect(pos(island())).toEqual(["1264px", "80px"]);
+    expect(s.setIsland).toHaveBeenLastCalledWith("defaut", "pages", { at: null, collapsed: null });
+  });
+
   it("design-l2 L2-10 : une autre touche ne déplace rien et n'écrit rien", () => {
     const { island, grip, s } = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null } });
     fireEvent.keyDown(grip(), { key: "a" });
@@ -222,10 +244,10 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
 });
 
 describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
-  function layer(bars: readonly Bar[]) {
+  function layer(bars: readonly Bar[], onTopFree?: (y: number) => void) {
     const rendered = vi.fn((b: Bar, c: Accessor<boolean>) => <div data-toolbar={b.id} data-c={c() ? "1" : "0"} />);
     const r = render(() => (
-      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} />
+      <IslandLayer bars={() => bars} render={rendered} head={<div data-tabs />} status={<p id="etat" role="status" />} profileId={() => "defaut"} size={() => "m"} sheetOpen={() => false} {...(onTopFree !== undefined ? { onTopFree } : {})} />
     ));
     const ids = (sel: string): (string | null)[] => [...r.container.querySelectorAll(sel)].map((e) => e.getAttribute("data-island"));
     return { ...r, rendered, ids };
@@ -244,6 +266,17 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     expect(rendered).toHaveBeenCalledTimes(6);
   });
 
+  it("personnalisation-1a : ordre DOM : l'îlot latéral vient après les centrés, quel que soit l'ordre du profil", () => {
+    const { ids } = layer([bar("pages", "pages"), bar("outils", "tools")]);
+    expect(ids(".rb-islands > .rb-island")).toEqual(["outils", "pages"]);
+  });
+
+  it("personnalisation-1a : bar.anchor du profil prime : outils en side-end, pages mobile : l'ancre de coin se replie en haut-centre (T19)", () => {
+    const { container } = layer([{ ...bar("outils", "tools"), anchor: "side-end" }, { ...bar("pages", "pages"), anchor: "top-end" }]);
+    expect(container.querySelector('[data-island="outils"]')!.getAttribute("data-anchor")).toBe("side-end");
+    expect(container.querySelector('.rb-islands > [data-island="pages"]')!.getAttribute("data-anchor")).toBe("top-center");
+  });
+
   it("design-l2 L2-12 (discrimine) : calque : îlots centrés placés par left / top en px entiers, jamais par la grille", () => {
     // T11 : case de 0 × 0 (jsdom), rien n'est placé ; on lui donne la case de 1280 × 900.
     const real = Element.prototype.getBoundingClientRect;
@@ -258,11 +291,44 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     }
   });
 
-  it("design-l2 L2-8 : seule la barre de rôle tools porte poignée et Replier", () => {
+  it("T16 (discrimine) : calque 1280 × 900 : la barre latérale passe sous l'outil descendu qui la surplombe, jamais sur lui", async () => {
+    // Rangée du haut de `defaut` : menu 56, coins de 56 de haut, panneaux 108 ; outils de 940 px : place symétrique 816, il
+    // descend sur la voie suivante (x 170, y 80). Pages dépliée : 260 px (x 16–276), repliée : bande de 52 px (x 16–68).
+    const box = (w: number, h: number): DOMRect => ({ x: 0, y: 0, left: 0, top: 0, width: w, height: h, right: w, bottom: h, toJSON: () => ({}) }) as DOMRect;
+    const real = Element.prototype.getBoundingClientRect;
+    const at = (folded: boolean) => (el: Element): DOMRect => {
+      if (el.classList.contains("rb-islands")) return box(1280, 900);
+      if (el.classList.contains("rb-corner-menu")) return box(56, 56);
+      if (el.matches('.rb-corner[data-corner="top-start"]')) return box(56 + 8 + 144, 56);
+      if (el.matches('.rb-corner[data-corner="top-end"]')) return box(108, 56);
+      if (el.matches('.rb-island[data-island="outils"]')) return box(940, 56);
+      if (el.matches('.rb-island[data-island="pages"]')) return folded ? box(52, 160) : box(260, 600);
+      return real.call(el);
+    };
+    for (const folded of [false, true]) {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        return at(folded)(this);
+      });
+      const onTopFree = vi.fn();
+      const { container, unmount } = layer([bar("menu", "menu"), bar("outils", "tools"), bar("panneaux", "panels"), bar("pages", "pages", folded)], onTopFree);
+      await Promise.resolve();
+      // T16 (design-l4) : les panneaux passagers se posent 16 px sous l'outil descendu (bas à 136), pas à 88 sur lui
+      expect(onTopFree).toHaveBeenLastCalledWith(136 + 16);
+      const tools = container.querySelector<HTMLElement>('[data-island="outils"]')!;
+      const pages = container.querySelector<HTMLElement>('[data-island="pages"]')!;
+      expect(pos(tools)).toEqual(["170px", "80px"]);
+      expect(pos(pages), folded ? "repliée" : "dépliée").toEqual(folded ? ["16px", "80px"] : ["16px", "144px"]);
+      unmount();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("design-l2 L2-8 (personnalisation-1a) : seules les barres de rôle tools et pages portent poignée et Replier", () => {
     const { container } = layer(ALL);
-    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(2);
     expect(container.querySelector('[data-island="outils"] [data-island-grip]')).not.toBeNull();
-    expect(container.querySelectorAll("[data-island-collapse]")).toHaveLength(1);
+    expect(container.querySelector('[data-island="pages"] [data-island-grip]')).not.toBeNull();
+    expect(container.querySelectorAll("[data-island-collapse]")).toHaveLength(2);
   });
 
   it("design-l2 L2-5 : sans barre de menu (profil à bandes) : .rb-corner-menu vide, onglets au coin, #etat présent", () => {

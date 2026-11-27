@@ -159,7 +159,7 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
   });
 
   it("toPageView et toAssetInfo : null pour rien, erreur pour une forme fausse", () => {
-    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff" };
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", mode: "page" };
     expect(toPageView(undefined)).toBeNull();
     expect(toPageView({ ...page, backdrop: undefined })).toEqual({ ...page, backdrop: null, grid: null });
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: undefined, h: 5, fit: "contain", rect: undefined };
@@ -729,7 +729,7 @@ describe.each(c2Factories)("contrat C2 : $name", ({ f }) => {
     const d = f.blank();
     const p = first(d);
     const before = d.page(p);
-    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null });
+    expect(before).toEqual({ id: p, width: 1920, height: 1080, background: "#ffffff", backdrop: null, grid: null, mode: "page" });
     const fond = { asset: png, w: 1000, h: 500, fit: "width" };
     expect(d.apply({ type: "SetBackdrop", page: p, backdrop: fond }).pages).toEqual([p]);
     const rect = { x0: 0, y0: 0, x1: 1920, y1: 960 };
@@ -1179,7 +1179,7 @@ const c9Factories = factories; // T6 : vrai module branché, contrat C9 commun a
 
 describe("contrôle de forme C9 (grille)", () => {
   it("toPageView : grille contrôlée, undefined → null, forme fausse → erreur", () => {
-    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined };
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined, mode: "page" };
     const g = { visible: true, snap: false, above: true, levels: [gridLevel("hexagon", 40)] };
     expect(toPageView({ ...page, grid: g })?.grid).toEqual(g);
     expect(toPageView({ ...page, grid: undefined })?.grid).toBeNull();
@@ -1190,7 +1190,7 @@ describe("contrôle de forme C9 (grille)", () => {
   });
 
   it("toPageView : grille ou niveau qui n'est pas un objet, tête sans visible → erreur", () => {
-    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined };
+    const page = { id: "p1", width: 1920, height: 1080, background: "#ffffff", backdrop: undefined, mode: "page" };
     const g = { visible: true, snap: false, above: true, levels: [gridLevel("squares", 40)] };
     expect(() => toPageView({ ...page, grid: "x" })).toThrow("PageView invalide");
     expect(() => toPageView({ ...page, grid: { ...g, levels: ["x"] } })).toThrow("PageView invalide");
@@ -1305,7 +1305,10 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     const p = first(d);
     expect(d.gridLines(p, { x0: 0, y0: 0, x1: 100, y1: 100 }, 4, 8)).toBeNull();
     setGrid(d, p, gridOf([gridLevel("squares", 40, "#cccccc")], false, true));
-    const r = { x0: -13.3, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
+    // T7 : loin sous le haut, seule une page Infini a des lignes (grille bornée au cadre en Page) ; x0 = 0, sans borne
+    // à gauche en Infini, garde les mêmes segments.
+    d.apply({ type: "SetPageMode", page: p, mode: "infinite" });
+    const r = { x0: 0, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
     const l = d.gridLines(p, r, 4, 8);
     expect(l?.above).toBe(true);
     expect(l?.levels.length).toBe(1);
@@ -1428,7 +1431,8 @@ describe.each(c9Factories)("contrat C9 : $name", ({ f }) => {
     const d = f.blank();
     const p = first(d);
     const g = gridOf([{ ...gridLevel("squares", 40, "#94a3b8"), lineWidth: 3 }]);
-    const r = { x0: -13.3, y0: 1_000_007, x1: 786.7, y1: 1_000_607 };
+    // T7 : vue dans le cadre de la page paysage (grille bornée au cadre en Page).
+    const r = { x0: -13.3, y0: 7, x1: 786.7, y1: 607 };
     const v = d.version();
     const preview = d.gridLinesOf(p, g, r, 4, 8);
     expect(d.version()).toBe(v);
@@ -2809,7 +2813,7 @@ describe.each(factories)("contrat C12 : $name", ({ f }) => {
 
 describe("contrôle de forme C12 (fond pdf-page)", () => {
   it("toPageView : page absente → null, entier gardé, chaîne → erreur", () => {
-    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined, mode: "page" };
     const b = { asset: "a".repeat(64), kind: "pdf-page", w: 612, h: 792, fit: "width", rect: undefined };
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.page).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, page: 2 } })?.backdrop?.page).toBe(2);
@@ -2855,14 +2859,14 @@ describe.each(factories)("contrat C16 : $name", ({ f }) => {
 
 describe("contrôle de forme C16 (original du fond)", () => {
   it("toPageView : original absent → null, chaîne gardée, nombre → erreur", () => {
-    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined, mode: "page" };
     const b = { asset: "a".repeat(64), kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", rect: undefined };
     expect(toPageView({ ...page, backdrop: b })?.backdrop?.original).toBeNull();
     expect(toPageView({ ...page, backdrop: { ...b, original: "b".repeat(64) } })?.backdrop?.original).toBe("b".repeat(64));
     expect(() => toPageView({ ...page, backdrop: { ...b, original: 3 } })).toThrow("PageView invalide");
   });
   it("toPageView : original non conforme (chemin, majuscules) → null, le fond reste lisible (parité avec le cœur)", () => {
-    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined };
+    const page = { id: "p", width: 1920, height: 1080, background: "#ffffff", grid: undefined, mode: "page" };
     const b = { asset: "a".repeat(64), kind: "pdf-page", page: 0, w: 612, h: 792, fit: "width", rect: undefined };
     for (const bad of ["../x", "B".repeat(64), ""]) {
       expect(toPageView({ ...page, backdrop: { ...b, original: bad } })?.backdrop?.original, bad).toBeNull();
@@ -3994,5 +3998,84 @@ describe.each(factories)("contrat personnalisation-1b : $name", ({ f }) => {
       expect(messageOf(() => d.apply({ ...ok, pages: ["nulle-part"] } as Command))).toBe("page inconnue : nulle-part");
     });
     d.free();
+  });
+});
+
+describe.each(factories)("contrat T18 : SetPageMode, MovePage, DuplicatePage, Restack : $name", ({ f }) => {
+  const twoPages = () => {
+    const d = f.blank();
+    const p1 = first(d);
+    const p2 = d.apply({ type: "AddPage", after: p1 }).pages[0] ?? "";
+    return { d, p1, p2 };
+  };
+  const oneStep = (d: CoreDocument, run: () => unknown): void => {
+    const v = d.version();
+    run();
+    expect(d.canUndo()).toBe(true);
+    expect(d.version()).toBeGreaterThan(v);
+    d.undo();
+    expect(d.version()).toBeGreaterThanOrEqual(v);
+  };
+  it("SetPageMode : une étape d'annulation qui rend le mode ; même mode : aucune étape", () => {
+    const { d, p1 } = twoPages();
+    const before = d.page(p1)?.height;
+    oneStep(d, () => d.apply({ type: "SetPageMode", page: p1, mode: "portrait" }));
+    expect(d.page(p1)?.height).toBe(before);
+    unchanged(d, () => d.apply({ type: "SetPageMode", page: p1, mode: "landscape" }));
+  });
+  it("SetPageMode : page inconnue refusée, rien n'est écrit", () => {
+    const { d } = twoPages();
+    unchanged(d, () => expect(() => d.apply({ type: "SetPageMode", page: "nulle", mode: "portrait" })).toThrow(/page inconnue : nulle/));
+  });
+  it("MovePage : une étape ; rang inchangé : aucune étape ; rang hors bornes et page inconnue refusés ; ids gardés", () => {
+    const { d, p1, p2 } = twoPages();
+    oneStep(d, () => d.apply({ type: "MovePage", page: p1, to: 1 }));
+    expect(d.pageIds()).toEqual([p1, p2]);
+    d.apply({ type: "MovePage", page: p1, to: 1 });
+    expect(d.pageIds()).toEqual([p2, p1]);
+    unchanged(d, () => d.apply({ type: "MovePage", page: p1, to: 1 }));
+    unchanged(d, () => expect(() => d.apply({ type: "MovePage", page: p1, to: 2 })).toThrow());
+    unchanged(d, () => expect(() => d.apply({ type: "MovePage", page: "nulle", to: 0 })).toThrow(/page inconnue : nulle/));
+  });
+  it("DuplicatePage : une étape, copie juste après, annulable ; page inconnue refusée", () => {
+    const { d, p1, p2 } = twoPages();
+    const v = d.version();
+    const copy = d.apply({ type: "DuplicatePage", page: p1 }).pages[0] ?? "";
+    expect(d.pageIds()).toEqual([p1, copy, p2]);
+    expect(copy).not.toBe(p1);
+    expect(d.canUndo()).toBe(true);
+    d.undo();
+    expect(d.pageIds()).toEqual([p1, p2]);
+    expect(d.version()).toBeGreaterThanOrEqual(v);
+    unchanged(d, () => expect(() => d.apply({ type: "DuplicatePage", page: "nulle" })).toThrow(/page inconnue : nulle/));
+  });
+  it("Restack : une étape, ids gardés ; rang inchangé : aucune étape ; rang hors bornes, id inconnu, pages mêlées refusés", () => {
+    const { d, p1, p2 } = twoPages();
+    const a = commit(d, p1, 10);
+    const b = commit(d, p1, 20);
+    const c = commit(d, p2, 30);
+    const order = () => d.elementIds(p1);
+    expect(order()).toEqual([a, b]);
+    oneStep(d, () => d.apply({ type: "Restack", ids: [a], to: 1 }));
+    expect(order()).toEqual([a, b]);
+    d.apply({ type: "Restack", ids: [a], to: 1 });
+    expect(order()).toEqual([b, a]);
+    unchanged(d, () => d.apply({ type: "Restack", ids: [a], to: 1 }));
+    unchanged(d, () => expect(() => d.apply({ type: "Restack", ids: [a], to: 9 })).toThrow());
+    unchanged(d, () => expect(() => d.apply({ type: "Restack", ids: ["nulle"], to: 0 })).toThrow());
+    unchanged(d, () => expect(() => d.apply({ type: "Restack", ids: [a, c], to: 0 })).toThrow());
+    expect(order()).toEqual([b, a]);
+  });
+  it("messages de refus identiques entre les deux cœurs", () => {
+    const { d, p1 } = twoPages();
+    const a = commit(d, p1, 10);
+    const c = commit(d, d.pageIds()[1] ?? "", 30);
+    expect([
+      messageOf(() => d.apply({ type: "MovePage", page: p1, to: 2 })),
+      messageOf(() => d.apply({ type: "Restack", ids: [a], to: 9 })),
+      messageOf(() => d.apply({ type: "Restack", ids: ["nulle"], to: 0 })),
+      messageOf(() => d.apply({ type: "Restack", ids: [a, c], to: 0 })),
+      messageOf(() => d.apply({ type: "SetPageMode", page: p1, mode: "a4" as never })),
+    ]).toEqual(["rang de page hors bornes", "rang de page hors bornes", "élément inconnu : nulle", "objets de pages différentes", "mode de page inconnu : a4"]);
   });
 });
