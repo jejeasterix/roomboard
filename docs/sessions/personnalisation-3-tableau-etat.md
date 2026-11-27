@@ -3,14 +3,14 @@
 Statut : en cours
 Gabarit : lots (provisoire : 15 points en 3 lots A, B, C)
 Objectif : L'outil Tableau accueille des objets dans ses cases (la case s'adapte), se règle finement (bordures, alignement, en-tête) et sert en classe (case cachée, tri, tableau de tri, collage Excel/Word).
-Avancement : 0/3 lots clos · lot A 6/11 tâches
+Avancement : 0/3 lots clos · lot A 10/11 tâches
 Étage : 3 (vague séquentielle, worktree partagé) — depuis 2026-11-27 19:25
-Lot : A « objets dans les cases » — 6/11 tâches terminées — depuis 2026-11-27 19:25
+Lot : A « objets dans les cases » — 10/11 tâches terminées — depuis 2026-11-27 19:25
 Tâche : —
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-3-tableau   Branche : feat/personnalisation-3-tableau   Base : origin/main @ 53a14b6e
 Branche principale locale au lancement : 59b75db0
-Cadrage : docs/plans/personnalisation-3-tableau-cadrage.md (745275c1)   Plan(s) : docs/plans/personnalisation-3-tableau-PLAN.md (lot A)
+Cadrage : docs/plans/personnalisation-3-tableau-cadrage.md (745275c1)   Plan(s) : docs/plans/personnalisation-3-tableau-PLAN.md (lot A) · …-PLAN-lotB.md (aff954e3, 6 tâches TB1–TB6, non relu)
 Mode du cadrage : autonome (brief OG26 : aucune question ne parvient à Jérôme pendant le tour)
 Arrêt ferme : 2026-11-28 00:50 (lancement 18:20 + 6 h 30) ; pousser à 00:40
 
@@ -32,7 +32,11 @@ contre-relecture cadrage 1/2 · relecture plan 1/3 (aucun bloquant ; 8 correctio
 | T2b | terminée | 1/3 | 809f2e68 | ops.test 12 passés ; cli-essai S16 ×5 + CLI : OK |
 | T3 | terminée | 1/3 | a0b510b4 | cell-drop 9 (S1, D28) + table-geom/select/table : 117 passés ; select.ts +13/−4 |
 | T4 | terminée | 1/3 | 977f478a | essai navigateur 7 ok, « personnalisation-3 tableau : OK » ; captures photo-case-avant/agrandie |
-| T5–T9 | à faire | | | |
+| T5 | terminée | 1/3 | 9aeea3c3 | core 569 passés 0 échec ; 4 tests nommés + repeated_line ; contrat p-3 28 ; module 1 478 554 o |
+| T6 | terminée | 1/3 | 63fb9aa7 | D11/cellKey/Alt+Entrée : 49 passés ; essai S4 colonne revient à 240 |
+| T7 | terminée | 1/3 (+1 relance limite de tours) | 87c0514e | set_table_options 1 ; vitest 72 ; essai S2 au doigt 64×48 ; module 1 482 684 o |
+| T8 | terminée | 2/3 (essai 1 : S3 rouge, îlot d'options sur la case dans l'essai) | 9173659c | commit_stroke_with 2 ; pen D10 3 ; web 4105 (197 fichiers) ; module 1 483 963 o ; défaut trouvé : trait perdu si le cœur refuse cell → repli a14fb697 |
+| T9 | en cours | 1/3 (+1 relance limite de tours) | | |
 
 
 ## Terminé quand
@@ -42,6 +46,8 @@ lots A, B, C fusionnés dans main (ou A puis B, reste écrit) · verifier.sh --e
 S1 loger une photo — réussi au doigt (CDP) · capture docs/design/captures/personnalisation-3-tableau/photo-case-agrandie.png : photo dans la case (1,1), colonne 416, ligne 316, tableau 896×444 ; traits 1 px nets ; le panneau « Transparence » masque le coin haut gauche (à refaire).
 S4 sortir l'objet — réussi (image libre).
 S16 CLI — réussi (cli-essai S16 ×5).
+S2 rétrécir — réussi au doigt (menu de case, 44 px) · objet-ajuste.png, menu-case.png : îlot blanc, bouton « Rétrécir » net.
+S3 tracé dans une case — réussi (le mot descend de 64) · trace-dans-case.png.
 
 ## Hypothèses à revoir
 Cadrage : 33+ décisions, 5 d'architecture (DA1 objet de la page lié par `cell = [tableId,rowId,colId]`), ~24 hypothèses dont ~14 de niveau 1 (voir cadrage). 16 modules à réutiliser.
@@ -54,5 +60,7 @@ Scénarios : S1 loger une image · S2 rétrécir · S3 tracé suit sa case · S4
 ouvertes : — · passées : —
 
 ## Pièges trouvés
+- Essais navigateur : l'îlot d'options d'un outil (80..364 px) recouvre la case (1, 0) au premier tracé ; l'essai le replie. Pour un utilisateur réel, même recouvrement possible (hors périmètre, à signaler).
+- Une suite lancée en fond par un sous-agent meurt à la fin de son tour : la rejouer soi-même.
 - Prémisses démenties : OG23 n'a pas livré d'accordéon (panneau absent pour l'outil Tableau) ; tableAt relit tous les éléments (O(N²)) ; runAll n'existe pas (une commande du cœur par geste).
 - Ouvriers voisins : OG14 (personnalisation-2b), OG23 (outil de sélection), OG24 (portrait), OG25 (gomme) : intégrer origin/main avant fusion.
