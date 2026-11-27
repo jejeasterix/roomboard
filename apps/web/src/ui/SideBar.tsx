@@ -65,8 +65,12 @@ export interface SideBarProps {
   readonly size?: Accessor<ButtonSize>;
 }
 
-/** Largeur CSS des miniatures par taille (petites, moyennes, grandes). */
-export const THUMB_CSS: Readonly<Record<SidebarState["thumb"], number>> = { s: 120, m: 160, l: 220 };
+/** Part de la largeur utile de la ligne (après le numéro) prise par la miniature, par taille (petites, moyennes, grandes). */
+export const THUMB_SHARE: Readonly<Record<SidebarState["thumb"], number>> = { s: 0.5, m: 0.75, l: 1 };
+/** Largeur utile supposée quand elle n'est pas mesurable (pas de mise en page), en px CSS. */
+const LINE_FALLBACK = 220;
+/** Ce que la ligne prend en plus de la miniature : marges de la liste (2 × 2), de la ligne (2 × 4), numéro (24) et écart (4). */
+const LINE_CHROME = 40;
 
 export const FIXED_BY_BACKDROP = "Cadre fixé par le fond PDF";
 
@@ -81,19 +85,6 @@ const SIZES = [
   { value: "l", label: "Grandes", icon: "rows-4" },
 ] as const;
 
-/** Icône d'une ligne de calque, par sorte (table). */
-const LAYER_ICONS: Readonly<Record<string, string>> = {
-  stroke: "pen",
-  shape: "rect",
-  text: "text",
-  table: "table",
-  fill: "fill",
-  image: "library",
-  group: "layers",
-  grid: "grid",
-  backdrop: "rectangle-horizontal",
-};
-
 interface MenuAt {
   readonly id: string;
   readonly x: number;
@@ -101,13 +92,14 @@ interface MenuAt {
 }
 
 /** Miniature d'une page : demandée à la largeur du tampon, l'ancienne image gardée jusqu'à l'arrivée de la neuve. */
-function Thumb(props: { id: string; width: Accessor<number>; live: Accessor<boolean>; pages: PagesPort; version: Accessor<unknown> }): JSX.Element {
+function Thumb(props: { id: string; width: Accessor<number>; live: Accessor<boolean>; pages: PagesPort; version: Accessor<unknown>; layout: Accessor<unknown> }): JSX.Element {
   const [url, setUrl] = createSignal<string | null>(null);
   createEffect(() => {
     if (!props.live()) return;
     const id = props.id;
     const width = props.width();
     props.version();
+    props.layout(); // le mode de la page change son cadre : la miniature se redessine
     let on = true;
     onCleanup(() => (on = false));
     void props.pages.thumb(id, width).then((u) => {
@@ -137,7 +129,9 @@ export function SideBar(props: SideBarProps): JSX.Element {
   const actions = () => sideActions(props.bar).filter((it) => it.hidden !== true && it.kind === "action");
   const rows = (): HTMLElement[] => [...(list?.querySelectorAll<HTMLElement>("[data-page-id]") ?? [])];
   const pixelRatio = (): number => root?.ownerDocument.defaultView?.devicePixelRatio || 1;
-  const bufferWidth = (): number => Math.round(THUMB_CSS[thumbSize()] * pixelRatio());
+  const [lineWidth, setLineWidth] = createSignal(LINE_FALLBACK);
+  /** Largeur CSS de la miniature : sa part de la largeur utile de la ligne, mesurée sur la liste. */
+  const bufferWidth = (): number => Math.max(1, Math.round(lineWidth() * THUMB_SHARE[thumbSize()] * pixelRatio()));
   const index = (id: string): number => pages.ids().indexOf(id);
   /** Après un déplacement (le nœud est repris par le DOM) : le focus revient à la miniature. */
   const refocus = (id: string): void => {
@@ -367,7 +361,20 @@ export function SideBar(props: SideBarProps): JSX.Element {
           <span class="rb-side-label">Mode</span>
           <RadioChoices<PageLayout> name="page-mode" label="Mode de la page" look="segment" options={MODES} value={pages.layout()} choose={(m) => pages.setLayout(m)} />
         </div>
-        <div ref={list} class="rb-pages-list" data-thumb={thumbSize()} style={{ "--rb-thumb": `${THUMB_CSS[thumbSize()]}px` }}>
+        <div
+          ref={(el) => {
+            list = el;
+            const w = (): number => el.clientWidth - LINE_CHROME;
+            if (w() > 0) setLineWidth(w());
+            if (typeof ResizeObserver === "undefined") return;
+            const ro = new ResizeObserver(() => w() > 0 && setLineWidth(w()));
+            ro.observe(el);
+            onCleanup(() => ro.disconnect());
+          }}
+          class="rb-pages-list"
+          data-thumb={thumbSize()}
+          style={{ "--rb-thumb-share": `${THUMB_SHARE[thumbSize()]}` }}
+        >
           <For each={pages.ids()}>
             {(id, n) => (
               <button
@@ -388,7 +395,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
               >
                 <span class="rb-page-num">{n() + 1}</span>
                 <span class="rb-page-img">
-                  <Thumb id={id} width={bufferWidth} live={() => !props.collapsed() && tab() === "pages"} pages={pages} version={() => (props.view() as { version?: number }).version} />
+                  <Thumb id={id} width={bufferWidth} live={() => !props.collapsed() && tab() === "pages"} pages={pages} version={() => (props.view() as { version?: number }).version} layout={pages.layout} />
                 </span>
               </button>
             )}
@@ -408,7 +415,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
                     when={!row.fixed}
                     fallback={
                       <div class="rb-layer" data-layer={row.key} data-fixed="1" data-kind={row.kind}>
-                        <Icon name={LAYER_ICONS[row.kind] ?? "rect"} />
+                        <Icon name={row.icon} />
                         <span class="rb-layer-name">{row.label}</span>
                       </div>
                     }
@@ -423,7 +430,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
                       onClick={(e) => e.detail === 0 && pickLayer(row, e.ctrlKey || e.metaKey || e.shiftKey)}
                       onKeyDown={onLayerKey}
                     >
-                      <Icon name={LAYER_ICONS[row.kind] ?? "rect"} />
+                      <Icon name={row.icon} />
                       <span class="rb-layer-name">{row.label}</span>
                     </button>
                   </Show>

@@ -187,21 +187,49 @@ describe("SideBar (T10)", () => {
     expect(b.container.querySelector("[data-side-mode]")!.getAttribute("title")).toBe("Cadre fixé par le fond PDF");
   });
 
-  it("taille Grandes : miniatures 220 px (tampon × devicePixelRatio) et setSidebar appelé", async () => {
+  it("taille Grandes : miniatures pleine largeur utile (tampon × devicePixelRatio) et setSidebar appelé", async () => {
     const dpr = window.devicePixelRatio;
     Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
     const { container, pages, store } = setup();
     await vi.advanceTimersByTimeAsync(0);
-    expect(pages.thumb).toHaveBeenCalledWith("a", 320); // moyennes : 160 px CSS
+    expect(pages.thumb).toHaveBeenCalledWith("a", 330); // moyennes : 75 % de la largeur utile (220 px sans mesure)
     pages.thumb.mockClear();
     fireEvent.click(container.querySelector('[data-edit="page-thumb"] [data-choice="l"]')!);
     expect(store.setSidebar).toHaveBeenCalledWith({ tab: "pages", thumb: "l" });
     expect(container.querySelector<HTMLElement>(".rb-pages-list")!.getAttribute("data-thumb")).toBe("l");
     await vi.advanceTimersByTimeAsync(0);
     expect(pages.thumb).toHaveBeenCalledWith("a", 440);
-    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb")).toBe("220px");
+    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb-share")).toBe("1");
     expect(container.querySelector('[data-page="1"] img')?.getAttribute("src")).toBe("blob:vignette");
     Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
+  });
+
+  it("miniatures : la colonne de l'image prend toute la place de la ligne, l'image sa part de cette largeur", () => {
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = (sel: string): string => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
+    expect(rule(".rb-side .rb-page-thumb")).toMatch(/grid-template-columns: 24px minmax\(0, 1fr\)/);
+    expect(rule(".rb-page-img")).toMatch(/inline-size: calc\(100% \* var\(--rb-thumb-share\)\)/);
+    expect(rule(".rb-page-img img")).toMatch(/inline-size: 100%; block-size: auto/);
+  });
+
+  it("miniatures : toutes les pages demandent la même largeur de tampon, tirée de la largeur mesurée de la liste", async () => {
+    const dpr = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(340);
+    const { pages } = setup({ thumb: "l" });
+    await vi.advanceTimersByTimeAsync(0);
+    spy.mockRestore();
+    expect(pages.thumb.mock.calls.map((c) => (c as unknown as [string, number])[1])).toEqual([600, 600, 600]); // (340 − 40) × 100 % × 2
+    Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
+  });
+
+  it("miniatures : un changement de mode de la page redessine ses miniatures", async () => {
+    const { pages } = setup();
+    await vi.advanceTimersByTimeAsync(0);
+    pages.thumb.mockClear();
+    pages.setLayout("portrait");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(pages.thumb).toHaveBeenCalled();
   });
 
   it("cibles ≥ 44 px : miniatures, onglet, segments, menu de page lus dans rb.css", () => {
@@ -217,10 +245,10 @@ describe("SideBar (T10)", () => {
 
 describe("SideBar — onglet Calques (T14)", () => {
   const ROWS: readonly LayerRow[] = [
-    { key: "c", ids: ["c"], label: "Texte : Bonjour", kind: "text", fixed: false },
-    { key: "group:g", ids: ["a", "b"], label: "Groupe (2)", kind: "group", fixed: false },
-    { key: "grid", ids: [], label: "Grille", kind: "grid", fixed: true },
-    { key: "backdrop", ids: [], label: "Fond de la page", kind: "backdrop", fixed: true },
+    { key: "c", ids: ["c"], label: "Texte : Bonjour", kind: "text", fixed: false, icon: "text" },
+    { key: "group:g", ids: ["a", "b"], label: "Groupe (2)", kind: "group", fixed: false, icon: "layers" },
+    { key: "grid", ids: [], label: "Grille", kind: "grid", fixed: true, icon: "grid" },
+    { key: "backdrop", ids: [], label: "Fond de la page", kind: "backdrop", fixed: true, icon: "rectangle-horizontal" },
   ];
   function withLayers(o: { selected?: readonly string[]; collapsed?: boolean } = {}) {
     const base = setup({ collapsed: o.collapsed ?? false });

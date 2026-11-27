@@ -6,6 +6,7 @@
  */
 import type { CoreDocument, ElementView } from "../core/api";
 import { outerGroup } from "../engine/groups";
+import { TOOL_ICONS } from "../ui/icons";
 
 export interface LayerRow {
   /** Clé stable : id de l'objet, `group:<id du groupe>`, `grid` ou `backdrop`. */
@@ -16,6 +17,8 @@ export interface LayerRow {
   /** Sorte de l'objet (`shape`, `text`…), ou `group`, `grid`, `backdrop`. */
   readonly kind: string;
   readonly fixed: boolean;
+  /** Clé d'`ICONS` : l'icône de l'outil qui pose l'objet (`TOOL_ICONS`), `layers` pour un groupe. */
+  readonly icon: string;
 }
 
 type Reader = Pick<CoreDocument, "elementIds" | "element" | "page">;
@@ -44,12 +47,21 @@ function labelOf(el: ElementView): string {
   return KIND_LABELS[el.kind] ?? "Objet";
 }
 
+/** Icône d'une sorte : celle de son outil (forme : rect, ellipse, ligne ou flèche), sinon `rect`. */
+function iconOf(el: ElementView): string {
+  if (el.kind === "shape") return TOOL_ICONS[el.shape.shape] ?? "rect";
+  if (el.kind === "stroke") return TOOL_ICONS["pen"]!;
+  if (el.kind === "text" || el.kind === "table" || el.kind === "fill") return TOOL_ICONS[el.kind]!;
+  return el.kind === "image" ? "library" : "rect";
+}
+
 interface Unit {
   readonly key: string;
   readonly ids: string[];
   /** Rangs dans la pile (du bas, à partir de 0), croissants. */
   readonly at: number[];
   readonly kind: string;
+  readonly icon: string;
   label: string;
 }
 
@@ -64,7 +76,7 @@ function units(doc: Reader, page: string): { readonly list: Unit[]; readonly sta
     const key = g === null ? id : `group:${g}`;
     let u = byKey.get(key);
     if (u === undefined) {
-      u = { key, ids: [], at: [], kind: g === null ? el.kind : "group", label: g === null ? labelOf(el) : "" };
+      u = { key, ids: [], at: [], kind: g === null ? el.kind : "group", icon: g === null ? iconOf(el) : "layers", label: g === null ? labelOf(el) : "" };
       byKey.set(key, u);
     }
     u.ids.push(id);
@@ -77,10 +89,10 @@ function units(doc: Reader, page: string): { readonly list: Unit[]; readonly sta
 }
 
 export function layerRows(doc: Reader, page: string): readonly LayerRow[] {
-  const mobile: LayerRow[] = units(doc, page).list.map((u) => ({ key: u.key, ids: u.ids, label: u.label, kind: u.kind, fixed: false }));
+  const mobile: LayerRow[] = units(doc, page).list.map((u) => ({ key: u.key, ids: u.ids, label: u.label, kind: u.kind, fixed: false, icon: u.icon }));
   const grid = doc.page(page)?.grid ?? null;
-  const gridRow: LayerRow[] = grid !== null && grid.visible ? [{ key: "grid", ids: [], label: GRID_LABEL, kind: "grid", fixed: true }] : [];
-  const backdrop: LayerRow = { key: "backdrop", ids: [], label: BACKDROP_LABEL, kind: "backdrop", fixed: true };
+  const gridRow: LayerRow[] = grid !== null && grid.visible ? [{ key: "grid", ids: [], label: GRID_LABEL, kind: "grid", fixed: true, icon: "grid" }] : [];
+  const backdrop: LayerRow = { key: "backdrop", ids: [], label: BACKDROP_LABEL, kind: "backdrop", fixed: true, icon: "rectangle-horizontal" };
   const above = grid?.above === true;
   return above ? [...gridRow, ...mobile, backdrop] : [...mobile, ...gridRow, backdrop];
 }

@@ -500,6 +500,14 @@ export function App(props: AppProps): JSX.Element {
       { defer: true },
     ),
   );
+  /** Le mode de la page (Paysage, Portrait, Infini) change son cadre : sa miniature gardée est refaite, même sans version neuve. */
+  createEffect(
+    on(
+      () => state().pageLayout,
+      () => thumbsFor(ws.active()).invalidate([state().page]),
+      { defer: true },
+    ),
+  );
   const BY_ROLE: Readonly<Record<string, (bar: Bar, collapsed?: Accessor<boolean>) => JSX.Element>> = {
     pages: (bar, collapsed) => {
       createEffect(() => setSidebarOpen(collapsed === undefined || !collapsed()));
