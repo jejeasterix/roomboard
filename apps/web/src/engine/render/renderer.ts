@@ -92,6 +92,9 @@ export interface Renderer {
   resize(width: number, height: number, dpr: number): void;
   /** Oublie les chemins en cache des éléments touchés (`full` : tous). */
   invalidate(change: Change): void;
+  /** OG23 (pipette de scène) : couleur `#rrggbb` (minuscules) affichée au point (x, y) en px CSS de la scène ; null si
+   *  transparent ou hors du tampon. Facultative : un rendu sans lecture de pixel (WebGL2) n'en a pas. */
+  colorAt?(x: number, y: number): string | null;
   /** Aperçu de grille (DAE1) : rien n'est écrit ; `null` rend la grille du document. */
   setGridPreview(p: GridPreview | null): void;
   /** Aperçu d'une image (C5, DAI4) : rien n'est écrit ; `null` rend l'image du document. */

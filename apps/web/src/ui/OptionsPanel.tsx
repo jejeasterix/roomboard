@@ -345,6 +345,32 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   /** Trait transparent : seulement pour des rectangles et des ellipses (déc. 11). */
   const strokeTransparentAllowed = (): boolean =>
     targets().length > 0 && targets().every((t) => t.kind === "shape" && (t.shape.shape === "rect" || t.shape.shape === "ellipse"));
+  /** OG23 (T8) : pipette de scène. Clé et cibles sont figées à l'armement : `chooseFull` lit `picker()` au choix, or la
+   *  lecture arrive après un toucher, quand sélecteur et sélection peuvent avoir changé. Résout null : l'écriture est faite ici. */
+  let armed: { key: ColorKey; ids: readonly string[]; anchor: HTMLElement } | null = null;
+  const pickFromScene = async (): Promise<string | null> => {
+    const p = picker();
+    if (p === null) return null;
+    const mine = { key: p.key, ids: props.state().selection, anchor: p.anchor };
+    armed = mine;
+    const c = await props.engine().pickColor();
+    if (armed !== mine) return null; // désarmée entre-temps (sélecteur fermé)
+    armed = null;
+    if (c === null) return null;
+    // La sélection a changé pendant l'armement : rien n'est écrit sur d'autres cibles.
+    if (props.state().selection.length !== mine.ids.length || props.state().selection.some((id, i) => id !== mine.ids[i])) return null;
+    write(mine.key === "strokeColor" ? { color: c } : { background: c });
+    setPicker(null);
+    mine.anchor.focus();
+    return null;
+  };
+  // Sélecteur fermé (Autres couleurs, repli du panneau…) pendant l'armement : la pipette est désarmée.
+  createEffect(() => {
+    if (picker() === null && armed !== null) {
+      armed = null;
+      props.engine().cancelPick?.();
+    }
+  });
   const chooseFull = (c: string | null): void => {
     const p = picker();
     if (p === null) return;
@@ -560,6 +586,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
                 transparent={p.key === "background" || strokeTransparentAllowed()}
                 value={typeof value(p.key) === "string" && value(p.key) !== "transparent" ? (value(p.key) as string) : null}
                 choose={chooseFull}
+                pick={pickFromScene}
                 close={() => setPicker(null)}
                 anchor={p.anchor}
               />

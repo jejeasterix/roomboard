@@ -44,6 +44,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
   s("stroke-picker", "Options", "Couleur du trait", "S"),
   s("fill-picker", "Options", "Couleur de l'arrière-plan", "G"),
+  s("pipette", "Options", "Pipette (sélecteur ouvert)", "I"),
   s("page-prev", "Pages", "Page précédente", "Pg préc"),
   s("page-next", "Pages", "Page suivante", "Pg suiv"),
   s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),

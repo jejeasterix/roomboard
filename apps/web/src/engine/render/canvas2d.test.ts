@@ -1718,3 +1718,25 @@ describe("Canvas2DRenderer — cadre de page (DA4, T9)", () => {
     expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
   });
 });
+
+describe("Canvas2DRenderer.colorAt (OG23, T8)", () => {
+  it("colorAt : #rrggbb, null hors tampon", () => {
+    const scene = new FakeCtx();
+    const asked: number[][] = [];
+    let px = [255, 128, 0, 255];
+    (scene as unknown as { getImageData: unknown }).getImageData = (x: number, y: number, w: number, h: number) => {
+      asked.push([x, y, w, h]);
+      return { data: new Uint8ClampedArray(px) };
+    };
+    const r = new Canvas2DRenderer(asCtx(scene), null, { element: () => null, outline: () => null });
+    r.resize(100, 50, 2);
+    expect(r.colorAt(10.4, 5)).toBe("#ff8000");
+    expect(asked[0]).toEqual([21, 10, 1, 1]);
+    expect(r.colorAt(-1, 5)).toBeNull();
+    expect(r.colorAt(100, 5)).toBeNull();
+    expect(r.colorAt(5, 50)).toBeNull();
+    expect(asked).toHaveLength(1);
+    px = [10, 20, 30, 0];
+    expect(r.colorAt(5, 5)).toBeNull();
+  });
+});

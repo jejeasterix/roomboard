@@ -132,6 +132,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "sloppiness-0": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }]],
   "sloppiness-1": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }]],
   "sloppiness-2": [["path", { d: "M5 19V7a2 2 0 0 1 2-2h12" }], ["path", { d: "M7.5 18.5V9a1.5 1.5 0 0 1 1.5-1.5h10" }], ["path", { d: "M10 18V11.5a1 1 0 0 1 1-1h8" }]],
+  // Lucide @7981a0798a, ISC : pipette (OG23, T8).
+  "pipette": [["path", { d: "m12 9-8.414 8.414A2 2 0 0 0 3 18.828v1.344a2 2 0 0 1-.586 1.414A2 2 0 0 1 3.828 21h1.344a2 2 0 0 0 1.414-.586L15 12" }], ["path", { d: "m18 9 .4.4a1 1 0 1 1-3 3l-3.8-3.8a1 1 0 1 1 3-3l.4.4 3.4-3.4a1 1 0 1 1 3 3z" }], ["path", { d: "m2 22 .414-.414" }]],
   // Lucide @7981a0798a, ISC : palette.
   "palette": [["path", { d: "M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z" }], ["circle", { cx: "13.5", cy: "6.5", r: ".5" }], ["circle", { cx: "17.5", cy: "10.5", r: ".5" }], ["circle", { cx: "6.5", cy: "12.5", r: ".5" }], ["circle", { cx: "8.5", cy: "7.5", r: ".5" }]],
   "corner-sharp": [["path", { d: "M6 18V6h12" }]],

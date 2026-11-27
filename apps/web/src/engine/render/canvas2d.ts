@@ -440,6 +440,16 @@ export class Canvas2DRenderer implements Renderer {
     this.gridCache.clear();
   }
 
+  colorAt(x: number, y: number): string | null {
+    const px = Math.round(x * this.sx);
+    const py = Math.round(y * this.sy);
+    const { width, height } = this.scene.canvas;
+    if (!(px >= 0 && py >= 0 && px < width && py < height)) return null;
+    const d = this.scene.getImageData(px, py, 1, 1).data;
+    if ((d[3] ?? 0) === 0) return null;
+    return `#${[d[0], d[1], d[2]].map((v) => (v ?? 0).toString(16).padStart(2, "0")).join("")}`;
+  }
+
   drawScene(page: PageView, camera: Camera, hidden: ReadonlySet<string>, overlay: EditOverlay = EMPTY_OVERLAY): void {
     const ctx = this.scene;
     this.images?.beginScene?.(); // `data-pixels` ne compte que les images de cette scène (I33)

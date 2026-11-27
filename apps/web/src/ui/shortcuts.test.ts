@@ -14,7 +14,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "flip-h": ["arrange", "flip-h"], "flip-v": ["arrange", "flip-v"], "rotate-cw": ["arrange", "rotate-cw"], "rotate-ccw": ["arrange", "rotate-ccw"],
   "align-left": ["arrange", "align-left"], "align-right": ["arrange", "align-right"], "align-top": ["arrange", "align-top"], "align-bottom": ["arrange", "align-bottom"],
   "align-center": ["arrange", "align-center"], "align-middle": ["arrange", "align-middle"], "distribute-h": ["arrange", "distribute-h"], "distribute-v": ["arrange", "distribute-v"],
-  nudge: ["nudge", "-1,0"],
+  nudge: ["nudge", "-1,0"], pipette: ["picker", "i"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight" };
@@ -44,7 +44,12 @@ describe("shortcuts", () => {
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
-      else {
+      else if (by === "picker") {
+        // Pipette (sélecteur ouvert) : « I » sans modificateur, lue par e.key ; aucun autre reconnaisseur ne la prend.
+        expect(e.key, s.id).toBe(value);
+        expect(e.ctrlKey || e.altKey || e.metaKey, s.id).toBe(false);
+        expect(keyAction(e) ?? objectKey(e) ?? fileCommandOf(e) ?? editAction(e) ?? arrangeKey(e), s.id).toBeNull();
+      } else {
         // Copier, couper, coller (événements natifs) et Ctrl+B (rich-edit) : aucun reconnaisseur ne les vole.
         expect(e.key, s.id).toBe(value);
         expect(e.ctrlKey, s.id).toBe(true);

@@ -2,10 +2,12 @@
  * Sélecteur de couleur complet (OG11, T16) : popover open-color (15 teintes × 5 nuances) et champ hexadécimal.
  * Comportement copié d'Excalidraw (packages/excalidraw/components/ColorPicker/, Copyright (c) 2020 Excalidraw, licence MIT) :
  * flèches dans la grille, Entrée choisit, Échap ferme et rend le focus au bouton d'origine, saisie hexadécimale validée.
- * Visuel RoomBoard (îlot, jetons `--rf-*`, cases = taille du profil). Pas de pipette ni de lettres q-w-e (H8).
+ * Visuel RoomBoard (îlot, jetons `--rf-*`, cases = taille du profil). Pas de lettres q-w-e (H8).
+ * OG23 (T8) : pipette de scène (`pick`) ; armée, le toucher extérieur ne ferme pas (il va lire la scène).
  */
 import { For, Show, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { tryParseColor } from "../engine/render/webgl2";
+import { IconButton } from "./IconButton";
 import { OPEN_COLOR } from "./open-color";
 
 export interface ColorPickerProps {
@@ -15,6 +17,8 @@ export interface ColorPickerProps {
   /** Montre la case Transparent au-dessus de la grille. */
   readonly transparent?: boolean;
   close(): void;
+  /** OG23 (T8) : arme la pipette de scène ; résout la couleur lue (`#rrggbb`) ou null (annulée, transparent). Absent : pas de bouton. */
+  readonly pick?: () => Promise<string | null>;
   /** Bouton qui a ouvert le sélecteur : il reprend le focus à la fermeture. */
   readonly anchor: HTMLElement;
 }
@@ -34,6 +38,16 @@ export function parseHex(text: string): string | null {
 export function ColorPicker(props: ColorPickerProps): JSX.Element {
   let root: HTMLDivElement | undefined;
   const [invalid, setInvalid] = createSignal(false);
+  // Pipette armée : le toucher extérieur ne ferme pas, Échap est laissé au moteur (qui désarme).
+  let armed = false;
+  const arm = (): void => {
+    if (armed || props.pick === undefined) return;
+    armed = true;
+    void props.pick().then((c) => {
+      armed = false;
+      if (c !== null) props.choose(c);
+    });
+  };
   const current = (): string | null => props.value?.toLowerCase() ?? null;
   const cells = (): HTMLElement[] => [...(root?.querySelectorAll<HTMLElement>("[role=gridcell]") ?? [])];
   const shut = (): void => {
@@ -49,13 +63,20 @@ export function ColorPicker(props: ColorPickerProps): JSX.Element {
     // Un geste hors du sélecteur et hors du bouton d'origine le ferme (le bouton d'origine bascule lui-même).
     const away = (e: PointerEvent): void => {
       const t = e.target as Node | null;
+      if (armed) return;
       if (t !== null && !root?.contains(t) && !props.anchor.contains(t)) props.close();
     };
     document.addEventListener("pointerdown", away, true);
     onCleanup(() => document.removeEventListener("pointerdown", away, true));
   });
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
+    const tag = (e.target as HTMLElement | null)?.tagName;
+    if (e.key.toLowerCase() === "i" && !e.ctrlKey && !e.altKey && !e.metaKey && tag !== "INPUT" && props.pick !== undefined) {
+      e.preventDefault();
+      arm();
+      return;
+    }
+    if (e.key === "Escape" && !armed) {
       // Le moteur écoute Échap sur la fenêtre (désélection) : le sélecteur le garde.
       e.stopPropagation();
       e.preventDefault();
@@ -86,6 +107,9 @@ export function ColorPicker(props: ColorPickerProps): JSX.Element {
         <button type="button" class="rb-color-transparent" data-transparent data-color-transparent aria-label="Transparent" onClick={() => props.choose(null)}>
           <span class="rb-pick-dot" />
         </button>
+      </Show>
+      <Show when={props.pick !== undefined}>
+        <IconButton keepFocus icon="pipette" label="Pipette (I)" attrs={{ "data-color-pipette": "", class: "rb-color-pipette" }} onPress={arm} />
       </Show>
       <div class="rb-color-grid" role="grid" aria-label="Palette">
         <For each={OPEN_COLOR}>
