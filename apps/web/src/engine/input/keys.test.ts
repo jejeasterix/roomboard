@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
+import { appShortcut, cellKey, editAction, inEditable, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -182,5 +182,18 @@ describe("appShortcut (personnalisation-1b, Q28)", () => {
   });
   it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
     expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
+  });
+});
+
+describe("cellKey (H12)", () => {
+  it("cellKey : Alt+Entrée, Alt+Maj+Entrée, Alt+F, Alt+I ; Ctrl ou champ : null", () => {
+    const c = (o: Partial<KeyLike>): KeyLike => ({ key: "", code: "", ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(cellKey(c({ key: "Enter", code: "Enter" }))).toBe("place");
+    expect(cellKey(c({ key: "Enter", code: "Enter", shiftKey: true }))).toBe("unplace");
+    expect(cellKey(c({ key: "ƒ", code: "KeyF" }))).toBe("fit");
+    expect(cellKey(c({ key: "i", code: "KeyI" }))).toBe("cell-image");
+    expect(cellKey(c({ key: "Enter", code: "Enter", ctrlKey: true }))).toBeNull();
+    expect(cellKey(c({ key: "Enter", code: "Enter", target: { tagName: "TEXTAREA" } }))).toBeNull();
+    expect(cellKey(c({ key: "Enter", code: "Enter", altKey: false }))).toBeNull();
   });
 });

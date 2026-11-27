@@ -99,6 +99,60 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
     expect(s.doc.bounds([s.image])?.x0).toBe(1248);
   });
 
+  it("D11 : sortir ramène la colonne à 240 et la ligne à 64 (une seule PlaceInCell)", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    s.move([448, 222], [1448, 222]);
+    const cmd = s.runs.at(-1);
+    expect(cmd?.type === "PlaceInCell" && cmd.sizes.length).toBe(2);
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 240, 240]);
+    expect(s.t().rows.map((r) => r.height)).toEqual([64, 64, 64]);
+  });
+
+  it("D11 : une colonne élargie à la main ne bouge pas", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    const col = s.t().cols[1]?.id ?? "";
+    s.doc.apply({ type: "SetTableLineSizes", id: s.table, cols: [[col, 500]], rows: [] });
+    s.move([448, 222], [1600, 222]);
+    expect(s.t().cols[1]?.width).toBe(500);
+  });
+
+  it("D11 : vers une autre case : la quittée revient, la visée grandit, une étape", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    s.move([448, 222], [120, 400]);
+    expect(s.t().cols.map((c) => c.width)).toEqual([416, 240, 240]);
+    expect(s.t().rows.map((r) => r.height)).toEqual([64, 64, 316]);
+    expect(s.doc.bounds([s.image])).toEqual({ x0: 8, y0: 136, x1: 408, y1: 436 });
+    s.doc.undo();
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 416, 240]);
+  });
+
+  it("D11 : aucune taille citée deux fois dans une PlaceInCell", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    s.move([448, 222], [120, 400]);
+    s.move([1200, 1150], [1300, 1150]);
+    s.move([1300, 1150], [120, 400]);
+    for (const c of s.runs) {
+      if (c.type !== "PlaceInCell") continue;
+      const keys = c.sizes.map((z) => `${z[1]}:${z[2]}`);
+      expect(new Set(keys).size, JSON.stringify(c.sizes)).toBe(keys.length);
+    }
+  });
+
+  it("Alt+Entrée : place loge la sélection dans la case sous son centre ; Alt+Maj+Entrée la sort", () => {
+    const s = setup();
+    s.doc.apply({ type: "Transform", ids: [s.image], matrix: [1, 0, 0, 1, -800, -1100] }); // centre en (400, 50) : case (0, 1)
+    expect(s.drop.place([s.image], false)?.type).toBe("PlaceInCell");
+    s.tool.setSelection([s.image]);
+    expect(s.tool.placeInCell?.(false)).toBe(true);
+    expect(s.doc.element(s.image)?.cell?.[2]).toBe(s.t().cols[1]?.id);
+    expect(s.tool.placeInCell?.(true)).toBe(true);
+    expect(s.doc.element(s.image)?.cell).toBeUndefined();
+  });
+
   it("expand (D6) : un tableau sélectionné prend ses objets liés", () => {
     const s = setup();
     s.move([1200, 1150], [360, 96]);
