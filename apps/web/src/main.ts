@@ -229,6 +229,8 @@ async function start(): Promise<void> {
     container: stages, settings, parsed, support: detectSupport(), measure, coreVersion: core.version(), pdf, pixels: spawnPixelWorker, modelView,
     ...(ports === null ? {} : { mediaUrl: ports.assetUrl }),
     pageMode: () => active.profile().behavior.pageMode,
+    // T18 (déc. 38) : lien d'un élément, ouvert par la coque (onglet sans opener, ou tauri-plugin-opener).
+    openLink: (url) => prepared.shell.openLink?.(url),
     // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
     ...createSharedItemStyle(() => device.itemStyle(), (s) => void device.setItemStyle(s)),
   };

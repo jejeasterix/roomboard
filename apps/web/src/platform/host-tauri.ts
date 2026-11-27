@@ -17,6 +17,7 @@ import {
   type ShellPort,
 } from "./files";
 import { OfficeConvertError, type OriginalChange } from "./office-import";
+import { validLink } from "../core/look";
 
 export interface DialogFilter {
   readonly name: string;
@@ -243,8 +244,17 @@ export function createTauriHost(
 /** `window.confirm` de la page, lu au dernier moment (absent hors navigateur). */
 const pageConfirm = (message: string): boolean => globalThis.confirm(message);
 
-export function createTauriShell(dialog: TauriDialog, win: TauriWindow, confirmPage: (message: string) => boolean = pageConfirm): ShellPort {
+/** `openUrl` (T18) : commande `open_url` de tauri-plugin-opener, portée http, https, mailto (capabilities/default.json). */
+export function createTauriShell(
+  dialog: TauriDialog,
+  win: TauriWindow,
+  confirmPage: (message: string) => boolean = pageConfirm,
+  openUrl?: (url: string) => Promise<unknown>,
+): ShellPort {
   return {
+    openLink(url) {
+      if (validLink(url)) void openUrl?.(url).catch(() => undefined);
+    },
     confirm: (message) => dialog.ask(message, { title: APP_TITLE, kind: "warning" }),
     notify: (message, kind = "error") => dialog.message(message, { title: APP_TITLE, kind }),
     guardClose(isDirty, message, divert) {

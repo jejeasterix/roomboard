@@ -91,6 +91,8 @@ export interface SessionShared {
   readonly onItemStyle?: (s: ItemStyle) => void;
   /** OG11 : changements du style courant venus d'un autre onglet ; chaque session les applique à son moteur sans écrire la sélection. */
   readonly subscribeItemStyle?: (cb: (s: ItemStyle) => void) => () => void;
+  /** T18 (déc. 38) : ouverture d'un lien (`ShellPort.openLink`) ; absent : aucun lien ouvert. */
+  readonly openLink?: (url: string) => void;
 }
 
 /** OG11 : un seul style courant pour tous les onglets (source : l'appareil). `read` n'est appelé que tant que rien n'est connu. */
@@ -348,6 +350,7 @@ async function buildBoardSession(
     doc,
     ...(shared.pageMode === undefined ? {} : { pageMode: shared.pageMode }),
     renderer: choice.renderer,
+    ...(shared.openLink === undefined ? {} : { openLink: shared.openLink }),
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
     // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
     fitTop: () =>

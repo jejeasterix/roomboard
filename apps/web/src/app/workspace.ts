@@ -309,6 +309,7 @@ export async function createWorkspace(deps: WorkspaceDeps): Promise<Workspace> {
     confirm: (m) => shell.confirm(m),
     notify: (...a) => shell.notify(...a),
     guardClose: () => () => undefined,
+    openLink: (url) => shell.openLink?.(url),
     setTitle(title) {
       slot.title = title;
       if (slot.tab !== null && tabs.active()?.session === slot.tab) shell.setTitle(title);

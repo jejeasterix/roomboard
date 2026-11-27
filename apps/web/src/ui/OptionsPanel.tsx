@@ -17,6 +17,7 @@ import type { ButtonSize, Profile } from "../toolbar";
 import { observeBox } from "./Island";
 import { objectKey, type KeyLike } from "../engine/input/keys";
 import { ColorPicker } from "./ColorPicker";
+import { LinkPopover } from "./LinkPopover";
 import { Icon, IconButton, TipBubble, tipPointerHandlers } from "./IconButton";
 import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box, type Rect } from "./island-place";
@@ -98,6 +99,10 @@ const LAYERS = [
   { value: "back", label: "Arrière-plan", icon: "send-to-back", act: (e: Engine) => e.sendToBack() },
 ] as const;
 const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({ value: w.value, label: w.label }));
+
+/** T18 : taille de l'éditeur de lien (largeur bornée à la zone ; hauteur avec la ligne d'erreur). */
+const LINK_POP_W = 360;
+const LINK_POP_H = 112;
 
 /** Une saisie de texte ouverte garde son focus : le bouton ne le prend jamais (comme FormatRow). */
 const keep = (e: Event): void => e.preventDefault();
@@ -351,6 +356,9 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     ),
     actions: () => (
       <div class="rb-pick-row">
+        <Show when={props.state().selection.length === 1}>
+          <IconButton icon="link" label="Lien (Ctrl+K)" attrs={{ "data-option-value": "link", class: "rb-opt-btn" }} onPress={() => void props.engine().editLink()} />
+        </Show>
         <IconButton icon="copy-plus" label="Dupliquer" attrs={{ "data-option-value": "duplicate", class: "rb-opt-btn" }} onPress={() => void props.engine().duplicateSelection()} />
         <IconButton icon="trash-2" label="Supprimer" attrs={{ "data-option-value": "delete", class: "rb-opt-btn" }} onPress={() => void props.engine().deleteSelection()} />
       </div>
@@ -363,8 +371,27 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     }
   };
   const body = (k: OptionKey): JSX.Element => bodies[k]();
+  /** T18 (déc. 38) : éditeur de lien sous l'élément (au-dessus faute de place), bord droit sur celui de la boîte. */
+  const linkPos = (): JSX.CSSProperties => {
+    const a = area();
+    const w = a.w > 0 ? Math.min(LINK_POP_W, a.w - 16) : LINK_POP_W;
+    const b = props.state().selectionBounds;
+    const c = props.engine().camera();
+    const minTop = topRowBottom(btn());
+    let x = 8;
+    let y = minTop;
+    if (b !== null) {
+      const bottom = b.y1 * c.zoom + c.ty;
+      x = b.x1 * c.zoom + c.tx - w;
+      y = a.h > 0 && bottom + 12 + LINK_POP_H > a.h ? b.y0 * c.zoom + c.ty - 12 - LINK_POP_H : bottom + 12;
+    }
+    const maxX = a.w > 0 ? a.w - w - 8 : Number.MAX_SAFE_INTEGER;
+    const maxY = a.h > 0 ? a.h - LINK_POP_H - 8 : Number.MAX_SAFE_INTEGER;
+    return { left: `${Math.round(Math.max(8, Math.min(x, maxX)))}px`, top: `${Math.round(Math.max(minTop, Math.min(y, maxY)))}px`, width: `${Math.round(w)}px` };
+  };
 
   return (
+    <>
     <Show when={keys().length > 0}>
       <aside
         ref={root}
@@ -404,5 +431,16 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         </Show>
       </aside>
     </Show>
+    <Show when={props.state().linkEditing ?? null} keyed>
+      {(id) => (
+        <LinkPopover
+          value={props.element(id)?.look?.link ?? null}
+          submit={(url) => void props.engine().setLink(url)}
+          close={() => props.engine().closeLink()}
+          style={linkPos()}
+        />
+      )}
+    </Show>
+    </>
   );
 }

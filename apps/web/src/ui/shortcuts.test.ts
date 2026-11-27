@@ -10,7 +10,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   duplicate: ["object", "duplicate"], delete: ["edit", "delete"], escape: ["edit", "escape"],
   front: ["order", "front"], forward: ["order", "up"], backward: ["order", "down"], back: ["order", "back"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
-  "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"],
+  "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"], link: ["object", "link"],
 };
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
@@ -57,5 +57,6 @@ describe("shortcuts", () => {
   });
   it("ids uniques", () => {
     expect(new Set(SHORTCUTS.map((s) => s.id)).size).toBe(SHORTCUTS.length);
+    expect(SHORTCUTS.map((s) => s.id).sort()).toEqual(Object.keys(EXPECT).sort());
   });
 });

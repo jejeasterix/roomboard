@@ -11,6 +11,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2.8.4"
 tauri-plugin-fs = "2.7.1"
+# T18 (H5) : liens d'éléments (http, https, mailto) ouverts par le système ; Apache-2.0 OR MIT.
+tauri-plugin-opener = "2.7.3"
 # generate_context! embarque la configuration des plugins (plugins.fs) en serde_json::Value.
 serde_json = "1"
 # Logique de la coque testable sans Tauri (lot 5b, CL5b-14) : fichiers accordés, lecture bornée, lancement.
