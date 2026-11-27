@@ -468,9 +468,20 @@ describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
     cleanup();
     expect(mount({ tool: "select", selection: [lineEl("a", "line"), lineEl("b", "line")] }).container.querySelector(editBtn)).toBeNull();
     cleanup();
-    expect(mount({ tool: "select", selection: [rectEl("r", "#000000")] }).container.querySelector(editBtn)).toBeNull();
-    cleanup();
     expect(mount({ tool: "select", selection: [lineEl("a", "arrow")], lineEditing: "a" }).container.querySelector(editBtn)).toBeNull();
+  });
+  it("Modifier les points sur une forme : bouton visible pour rectangle, losange, ellipse, dans la section points ; pas pour un texte", () => {
+    const shapeEl = (shape: string): ElementView =>
+      ({ id: "s", kind: "shape", style: { color: "#000000", width: 4 }, shape: { shape, w: 100, h: 60, fill: null } }) as unknown as ElementView;
+    for (const k of ["rect", "diamond", "ellipse"]) {
+      const { container } = mount({ tool: "select", selection: [shapeEl(k)] });
+      const b = container.querySelector(`[data-section="points"] ${editBtn}`);
+      expect(b, k).not.toBeNull();
+      expect(b!.classList.contains("rb-opt-btn")).toBe(true);
+      cleanup();
+    }
+    const txt = { id: "t", kind: "text", style: { color: "#000000", width: 4 }, text: { content: "a", size: 36, boxWidth: 100, boxHeight: 40, spans: [{ text: "a", attrs: {} }] } } as unknown as ElementView;
+    expect(mount({ tool: "select", selection: [txt] }).container.querySelector(editBtn)).toBeNull();
   });
   it("Retirer le point : visible en édition avec un point choisi, appelle removeLinePoints ; absent sans point choisi", () => {
     expect(mount({ tool: "select", selection: [lineEl("a", "line")], lineEditing: "a", linePoints: 0 }).container.querySelector(removeBtn)).toBeNull();
