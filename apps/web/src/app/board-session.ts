@@ -50,6 +50,7 @@ import { createTableTool } from "../engine/tools/table";
 import { createTextTool, type TextTool } from "../engine/tools/text";
 import type { TableTool } from "../engine/tools/tool";
 import type { AppBenchDeps } from "./banc";
+import { lookTag } from "./backgrounds-apply";
 import { createFillQueue } from "./image-fill";
 import { createZoneMarks } from "./zone-marks";
 import { stageTags } from "./stage-tags";
@@ -669,6 +670,8 @@ async function buildBoardSession(
     const zone = zoneMarks.tags(s.page, s.version);
     const tags = stageTags(s, { pixels: images.pixelState(), image: imageSize(s.selectionImage), pot: fillQueue.state(), zones: zone.zones, zoneMs: zone.zoneMs, zoneCells: zone.zoneCells });
     stage.dataset["page"] = tags.page;
+    // personnalisation-1b : aspect de la page montrée (couleur|grille|fond), lu par l'essai des fonds.
+    stage.dataset["look"] = lookTag(doc.page(s.page));
     stage.dataset["selection"] = tags.selection;
     stage.dataset["bounds"] = tags.bounds;
     stage.dataset["tool"] = tags.tool;

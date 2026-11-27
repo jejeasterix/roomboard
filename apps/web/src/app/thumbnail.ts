@@ -48,3 +48,38 @@ export async function renderThumbnail(doc: CoreDocument, assets: AssetStore, kin
     images.dispose();
   }
 }
+
+/** personnalisation-1b (Q20) : échelle de « Cette page » : 1920 × 1080 → 3840 × 2160, net sur un écran à 200 %. */
+export const PAGE_IMAGE_SCALE = 2;
+
+/**
+ * Page entière en PNG (personnalisation-1b, Q20, Q29) : cadre (0, 0, largeur × hauteur de la page) à l'échelle
+ * `scale` ; couleur de la page, fond `image` sur son rect, puis grille et objets par le peintre d'export
+ * (`paintContent`, même code de dessin que l'écran). Un fond `pdf-page` n'est pas repris. Null : page inconnue.
+ */
+export async function renderPageImage(doc: CoreDocument, assets: AssetStore, pageId: string, scale: number, deps: ThumbDeps): Promise<Blob | null> {
+  const page = doc.page(pageId);
+  if (page === null) return null;
+  const w = Math.max(1, Math.round(page.width * scale));
+  const h = Math.max(1, Math.round(page.height * scale));
+  const images = await loadImageSource(doc, assets, deps.decode);
+  const canvas = deps.canvas(w, h);
+  try {
+    const ctx = canvas.ctx;
+    // Blanc d'abord : une couleur que la toile refuse laisse le blanc, pas le noir d'une toile neuve.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = page.background;
+    ctx.fillRect(0, 0, w, h);
+    const b = page.backdrop;
+    if (b !== null && b.kind === "image" && b.rect !== null) {
+      const bmp = images.bitmap(b.asset);
+      if (bmp !== null) ctx.drawImage(bmp, b.rect.x0 * scale, b.rect.y0 * scale, (b.rect.x1 - b.rect.x0) * scale, (b.rect.y1 - b.rect.y0) * scale);
+    }
+    const view = { id: pageId, elementIds: doc.elementIds(pageId) } satisfies PageView;
+    deps.painter(ctx, doc, images).paintContent(ctx, view, { x0: 0, y0: 0, x1: page.width, y1: page.height }, scale);
+    return new Blob([(await canvas.png()) as BlobPart], { type: "image/png" });
+  } finally {
+    canvas.release();
+    images.dispose();
+  }
+}
