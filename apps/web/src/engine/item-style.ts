@@ -1,5 +1,5 @@
 // OG11 (déc. 23) : style courant commun à tous les outils (currentItem* d'Excalidraw), gardé sur l'appareil.
-import { STROKE_STYLES, type Roughness, type Roundness, type StrokeKind } from "../core/look";
+import { ARROWHEADS, FILL_STYLES, STROKE_STYLES, type Arrowhead, type FillKind, type Roughness, type Roundness, type StrokeKind, type TextAlign } from "../core/look";
 import { validColor } from "../core/rich-text";
 
 export interface ItemStyle {
@@ -10,9 +10,15 @@ export interface ItemStyle {
   readonly roughness: Roughness;
   readonly roundness: Roundness;
   readonly opacity: number;
+  /** Lot 2 (T15) : remplissage, pointes de flèche, alignement du texte ; le neutre est le défaut. */
+  readonly fillStyle: FillKind;
+  readonly startArrowhead: Arrowhead;
+  readonly endArrowhead: Arrowhead;
+  readonly textAlign: TextAlign;
 }
 export const DEFAULT_ITEM_STYLE: ItemStyle = Object.freeze({
   color: "#000000", width: 4, background: null, strokeStyle: "solid", roughness: 0, roundness: "sharp", opacity: 100,
+  fillStyle: "solid", startArrowhead: "none", endArrowhead: "arrow", textAlign: "left",
 });
 const KINDS: readonly string[] = ["solid", ...STROKE_STYLES];
 const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
@@ -23,6 +29,10 @@ const ok: { readonly [K in keyof ItemStyle]: (v: unknown) => boolean } = {
   roughness: (v) => v === 0 || v === 1 || v === 2,
   roundness: (v) => v === "sharp" || v === "round",
   opacity: (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100,
+  fillStyle: (v) => v === "solid" || (typeof v === "string" && FILL_STYLES.includes(v)),
+  startArrowhead: (v) => typeof v === "string" && ARROWHEADS.includes(v),
+  endArrowhead: (v) => typeof v === "string" && ARROWHEADS.includes(v),
+  textAlign: (v) => v === "left" || v === "center" || v === "right",
 };
 const KEYS = Object.keys(ok) as (keyof ItemStyle)[];
 

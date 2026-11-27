@@ -5,8 +5,11 @@
  * Comportement copié d'Excalidraw (packages/excalidraw/components/Actions.tsx), Copyright (c) 2020 Excalidraw, licence MIT.
  */
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount, type Accessor, type JSX } from "solid-js";
-import type { ElementView } from "../core/api";
-import { opacityOf, roughnessOf, roundnessOf, strokeKindOf, type StrokeKind } from "../core/look";
+import type { ElementView, TextAttrsPatch } from "../core/api";
+import {
+  endArrowheadOf, fillStyleOf, opacityOf, roughnessOf, roundnessOf, startArrowheadOf, strokeKindOf, textAlignOf,
+  type Arrowhead, type FillKind, type StrokeKind, type TextAlign,
+} from "../core/look";
 import type { DeviceSettings } from "../device-settings";
 import type { Engine, EngineState } from "../engine/engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "../engine/item-style";
@@ -17,7 +20,7 @@ import { createTip } from "./tooltip";
 import { BUTTON_PX, optionsWidth, placeOptions, topRowBottom, type Box } from "./island-place";
 import { RadioChoices, type RadioOption } from "./RadioChoices";
 import {
-  WIDTHS, appliesTo, backgroundPicks, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
+  FONTS, TEXT_SIZES, WIDTHS, appliesTo, backgroundPicks, disabledIn, formValue, sectionsFor, showsPanel, strokePicks, type OptionKey, type Pick,
 } from "./tool-options";
 
 export interface OptionsPanelProps {
@@ -37,11 +40,17 @@ export interface OptionsPanelProps {
 const LABEL: Readonly<Record<OptionKey, string>> = {
   strokeColor: "Trait",
   background: "Arrière-plan",
+  fillStyle: "Remplissage",
   strokeWidth: "Largeur du contour",
   strokeStyle: "Style du trait",
   roughness: "Style de tracé",
   roundness: "Angles",
+  font: "Police",
+  fontSize: "Taille",
+  textAlign: "Alignement du texte",
+  arrowheads: "Pointes",
   opacity: "Transparence",
+  layers: "Disposition",
   actions: "Actions",
 };
 const STROKES: readonly RadioOption<StrokeKind>[] = [
@@ -58,6 +67,30 @@ const CORNERS: readonly RadioOption<"sharp" | "round">[] = [
   { value: "sharp", label: "Droits", icon: "corner-sharp" },
   { value: "round", label: "Angles arrondis", icon: "corner-round" },
 ];
+const FILLS: readonly RadioOption<FillKind>[] = [
+  { value: "solid", label: "Plein", icon: "fill-solid" },
+  { value: "hachure", label: "Hachures", icon: "fill-hachure" },
+  { value: "cross-hatch", label: "Croisillons", icon: "fill-cross" },
+];
+const ALIGNS: readonly RadioOption<TextAlign>[] = [
+  { value: "left", label: "À gauche", icon: "align-left" },
+  { value: "center", label: "Centré", icon: "align-center" },
+  { value: "right", label: "À droite", icon: "align-right" },
+];
+const HEADS: readonly RadioOption<Arrowhead>[] = [
+  { value: "none", label: "Aucune", icon: "head-none" },
+  { value: "arrow", label: "Flèche", icon: "head-arrow" },
+  { value: "triangle", label: "Triangle", icon: "head-triangle" },
+  { value: "triangle_outline", label: "Triangle creux", icon: "head-triangle-outline" },
+];
+const FONT_OPTIONS: readonly RadioOption<string>[] = FONTS.map((f) => ({ value: f.value, label: f.label }));
+const SIZE_OPTIONS: readonly RadioOption<string>[] = TEXT_SIZES.map((n) => ({ value: String(n), label: String(n) }));
+const LAYERS = [
+  { value: "front", label: "Premier plan", icon: "arrow-up-to-line", act: (e: Engine) => e.bringToFront() },
+  { value: "forward", label: "Avancer", icon: "chevron-up", act: (e: Engine) => e.bringForward() },
+  { value: "backward", label: "Reculer", icon: "chevron-down", act: (e: Engine) => e.sendBackward() },
+  { value: "back", label: "Arrière-plan", icon: "arrow-down-to-line", act: (e: Engine) => e.sendToBack() },
+] as const;
 const WIDTH_OPTIONS: readonly RadioOption<"2" | "4" | "8">[] = WIDTHS.map((w) => ({ value: w.value, label: w.label }));
 
 /** Une saisie de texte ouverte garde son focus : le bouton ne le prend jamais (comme FormatRow). */
@@ -66,9 +99,12 @@ const keep = (e: Event): void => e.preventDefault();
 export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const targets = createMemo(() =>
     props.state().selection.map((id) => props.element(id)).filter((e): e is ElementView => e !== null));
+  /** Saisie de texte ouverte (outil Texte ou Tableau) : la rangée Format gouverne police, taille et couleur. */
+  const editing = (): boolean => props.state().textFormat != null;
+  const off = (k: OptionKey): boolean => disabledIn(k, editing());
   const keys = createMemo((): readonly OptionKey[] =>
     showsPanel(props.state().tool, props.state().selection.length, props.annotating())
-      ? sectionsFor(props.state().tool, targets(), false)
+      ? sectionsFor(props.state().tool, targets(), editing(), (props.state().itemStyle ?? DEFAULT_ITEM_STYLE).background)
       : []);
   const saved = (): boolean => props.settings.island(props.profileId(), "options").collapsed === true;
   // Signal local (les réglages d'appareil ne notifient pas), relu du réglage à chaque profil.
@@ -83,6 +119,8 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const write = (patch: Partial<ItemStyle>): void => props.engine().setItemStyle(patch);
   const btn = (): number => BUTTON_PX[props.size()];
 
+  /** Valeur commune des segments, ou un marqueur de mélange (jamais égal à une valeur d'option). */
+  const common = <T,>(vs: readonly T[]): T | "mixed" => (vs.length > 0 && vs.every((v) => v === vs[0]) ? vs[0]! : ("mixed" as const));
   const readers: Readonly<Record<string, (e: ElementView) => unknown>> = {
     strokeColor: (e) => ("style" in e ? e.style.color : undefined),
     background: (e) => (e.kind === "shape" ? e.shape.fill ?? null : undefined),
@@ -91,6 +129,12 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     roughness: (e) => roughnessOf(e.look),
     roundness: (e) => roundnessOf(e.look),
     opacity: (e) => opacityOf(e.look),
+    fillStyle: (e) => fillStyleOf(e.look),
+    textAlign: (e) => textAlignOf(e.look),
+    startArrowhead: (e) => startArrowheadOf(e.look),
+    endArrowhead: (e) => endArrowheadOf(e.look),
+    font: (e) => (e.kind === "text" ? common(e.text.spans.map((x) => x.attrs.font ?? "default")) : undefined),
+    fontSize: (e) => (e.kind === "text" ? common(e.text.spans.map((x) => x.attrs.size ?? e.text.size)) : undefined),
   };
   const fallbacks: Readonly<Record<string, (s: ItemStyle) => unknown>> = {
     strokeColor: (s) => s.color,
@@ -100,14 +144,20 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
     roughness: (s) => s.roughness,
     roundness: (s) => s.roundness,
     opacity: (s) => s.opacity,
+    fillStyle: (s) => s.fillStyle,
+    textAlign: (s) => s.textAlign,
+    startArrowhead: (s) => s.startArrowhead,
+    endArrowhead: (s) => s.endArrowhead,
+    font: () => "default",
+    fontSize: () => 36,
   };
-  const fallback = (k: OptionKey): unknown => fallbacks[k]?.(cur());
+  const fallback = (k: string): unknown => fallbacks[k]?.(cur());
   /** Valeur commune des cibles, ou null quand elles diffèrent ; sans cible, le style courant. */
-  const value = (k: OptionKey): unknown => {
+  const value = (k: string, section: OptionKey = k as OptionKey): unknown => {
     const read = readers[k];
     if (read === undefined) return undefined;
     // Une cible à qui l'option ne s'applique pas (trait de stylo sans tirets, ligne sans fond) ne compte pas.
-    const own = (e: ElementView): unknown => (appliesTo(k, e) ? read(e) : undefined);
+    const own = (e: ElementView): unknown => (appliesTo(section, e) ? read(e) : undefined);
     // Un `null` légitime (fond transparent) se lit comme `"transparent"` pour rester distinct de « mixte ».
     const tr = (v: unknown): unknown => (v === null ? "transparent" : v);
     return formValue(targets(), (e) => tr(own(e)) as never, tr(fallback(k)) as never);
@@ -136,6 +186,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
           data-transparent={pick.color === null ? "" : undefined}
           data-option-value={id}
           aria-label={pick.label}
+          disabled={off(k)}
           aria-pressed={value(k) === id}
           {...tipPointerHandlers(tip)}
           onPointerDown={(e) => { keep(e); tip.down(e.pointerType); }}
@@ -170,6 +221,40 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
   const bodies: Readonly<Record<OptionKey, () => JSX.Element>> = {
     strokeColor: () => colors("strokeColor", strokeChoices, (c) => ({ color: c ?? "#000000" })),
     background: () => colors("background", backgroundPicks, (c) => ({ background: c })),
+    fillStyle: () => (
+      <RadioChoices name="fillStyle" label={LABEL.fillStyle} look="segment" options={FILLS} valueAttr="data-option-value"
+        value={(value("fillStyle") as FillKind | null) ?? null} choose={(f) => write({ fillStyle: f })} />
+    ),
+    font: () => (
+      <RadioChoices name="font" label={LABEL.font} look="segment" options={FONT_OPTIONS} valueAttr="data-option-value" disabled={off("font")}
+        value={(value("font") as string | null) ?? null}
+        choose={(f) => formatAll({ font: FONTS.find((x) => x.value === f)?.font ?? null })} />
+    ),
+    fontSize: () => (
+      <RadioChoices name="fontSize" label={LABEL.fontSize} look="segment" options={SIZE_OPTIONS} valueAttr="data-option-value" disabled={off("fontSize")}
+        value={typeof value("fontSize") === "number" ? String(value("fontSize")) : null} choose={(n) => formatAll({ size: Number(n) })} />
+    ),
+    textAlign: () => (
+      <RadioChoices name="textAlign" label={LABEL.textAlign} look="segment" options={ALIGNS} valueAttr="data-option-value"
+        value={(value("textAlign") as TextAlign | null) ?? null} choose={(a) => write({ textAlign: a })} />
+    ),
+    arrowheads: () => (
+      <>
+        <RadioChoices name="startArrowhead" label="Pointe de début" look="segment" options={HEADS} valueAttr="data-option-value"
+          value={(value("startArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ startArrowhead: h })} />
+        <RadioChoices name="endArrowhead" label="Pointe de fin" look="segment" options={HEADS} valueAttr="data-option-value"
+          value={(value("endArrowhead", "arrowheads") as Arrowhead | null) ?? null} choose={(h) => write({ endArrowhead: h })} />
+      </>
+    ),
+    layers: () => (
+      <div class="rb-pick-row">
+        <For each={LAYERS}>
+          {(l) => (
+            <IconButton icon={l.icon} label={l.label} attrs={{ "data-option-value": l.value, class: "rb-opt-btn" }} onPress={() => void l.act(props.engine())} />
+          )}
+        </For>
+      </div>
+    ),
     strokeWidth: () => (
       <RadioChoices name="strokeWidth" label={LABEL.strokeWidth} look="segment" options={WIDTH_OPTIONS} valueAttr="data-option-value"
         value={widthValue()} choose={(w) => write({ width: Number(w) })} />
@@ -207,6 +292,12 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
       </div>
     ),
   };
+  /** Police et taille : un FormatText sur tout le contenu de chaque texte choisi (hors saisie). */
+  const formatAll = (attrs: TextAttrsPatch): void => {
+    for (const t of targets()) {
+      if (t.kind === "text") props.engine().run({ type: "FormatText", id: t.id, start: 0, len: t.text.content.length, attrs });
+    }
+  };
   const body = (k: OptionKey): JSX.Element => bodies[k]();
 
   return (
@@ -228,7 +319,7 @@ export function OptionsPanel(props: OptionsPanelProps): JSX.Element {
         <Show when={!collapsed()}>
           <For each={keys()}>
             {(k) => (
-              <section class="rb-options-sec" data-option={k} data-mixed={mixed(k) ? "" : undefined}>
+              <section class="rb-options-sec" data-option={k} data-mixed={mixed(k) ? "" : undefined} data-disabled={off(k) ? "" : undefined}>
                 <h3>{LABEL[k]}</h3>
                 {body(k)}
               </section>

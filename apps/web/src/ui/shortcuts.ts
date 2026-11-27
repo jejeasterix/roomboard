@@ -16,6 +16,10 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("duplicate", "Édition", "Dupliquer", "Ctrl+D"),
   s("delete", "Édition", "Supprimer", "Suppr"),
   s("escape", "Édition", "Désélectionner", "Échap"),
+  s("front", "Disposition", "Premier plan", "Ctrl+Maj+↑"),
+  s("forward", "Disposition", "Avancer", "Ctrl+↑"),
+  s("backward", "Disposition", "Reculer", "Ctrl+↓"),
+  s("back", "Disposition", "Arrière-plan", "Ctrl+Maj+↓"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
 ]);

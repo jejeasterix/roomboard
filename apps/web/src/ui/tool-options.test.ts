@@ -19,8 +19,8 @@ describe("tool-options", () => {
   it("sectionsFor select vide : rien", () => {
     expect(sectionsFor("select", [], false)).toEqual([]);
   });
-  it("sectionsFor select + image : transparence et actions", () => {
-    expect(sectionsFor("select", [img], false)).toEqual(["opacity", "actions"]);
+  it("sectionsFor select + image : transparence, disposition et actions", () => {
+    expect(sectionsFor("select", [img], false)).toEqual(["opacity", "layers", "actions"]);
   });
   it("formValue commune", () => {
     expect(formValue([rect("a", "#000000"), rect("b", "#000000")], (e) => (e.kind === "shape" ? e.style.color : undefined), "#111111")).toBe("#000000");
