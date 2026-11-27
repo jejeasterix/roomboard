@@ -291,6 +291,35 @@ describe("IslandLayer (design-l2 L2-5, L2-14)", () => {
     }
   });
 
+  it("T16 (discrimine) : calque 1280 × 900 : la barre latérale passe sous l'outil descendu qui la surplombe, jamais sur lui", async () => {
+    // Rangée du haut de `defaut` : menu 56, coins de 56 de haut, panneaux 108 ; outils de 940 px : place symétrique 816, il
+    // descend sur la voie suivante (x 170, y 80). Pages dépliée : 260 px (x 16–276), repliée : bande de 52 px (x 16–68).
+    const box = (w: number, h: number): DOMRect => ({ x: 0, y: 0, left: 0, top: 0, width: w, height: h, right: w, bottom: h, toJSON: () => ({}) }) as DOMRect;
+    const real = Element.prototype.getBoundingClientRect;
+    const at = (folded: boolean) => (el: Element): DOMRect => {
+      if (el.classList.contains("rb-islands")) return box(1280, 900);
+      if (el.classList.contains("rb-corner-menu")) return box(56, 56);
+      if (el.matches('.rb-corner[data-corner="top-start"]')) return box(56 + 8 + 144, 56);
+      if (el.matches('.rb-corner[data-corner="top-end"]')) return box(108, 56);
+      if (el.matches('.rb-island[data-island="outils"]')) return box(940, 56);
+      if (el.matches('.rb-island[data-island="pages"]')) return folded ? box(52, 160) : box(260, 600);
+      return real.call(el);
+    };
+    for (const folded of [false, true]) {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        return at(folded)(this);
+      });
+      const { container, unmount } = layer([bar("menu", "menu"), bar("outils", "tools"), bar("panneaux", "panels"), bar("pages", "pages", folded)]);
+      await Promise.resolve();
+      const tools = container.querySelector<HTMLElement>('[data-island="outils"]')!;
+      const pages = container.querySelector<HTMLElement>('[data-island="pages"]')!;
+      expect(pos(tools)).toEqual(["170px", "80px"]);
+      expect(pos(pages), folded ? "repliée" : "dépliée").toEqual(folded ? ["16px", "80px"] : ["16px", "144px"]);
+      unmount();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("design-l2 L2-8 (personnalisation-1a) : seules les barres de rôle tools et pages portent poignée et Replier", () => {
     const { container } = layer(ALL);
     expect(container.querySelectorAll("[data-island-grip]")).toHaveLength(2);
