@@ -95,7 +95,10 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
   let moved = false;
 
   const searching = (): boolean => query().trim() !== "";
-  const cards = createMemo(() => cardsOf(props.pack, props.mine));
+  // Deux mémos : un changement de « Mes fonds » ne recrée pas les cartes du pack (même référence, donc même DOM).
+  const packCards = createMemo(() => cardsOf(props.pack, []));
+  const mineCards = createMemo(() => cardsOf([], props.mine));
+  const cards = createMemo(() => [...mineCards(), ...packCards()]);
   const byKey = createMemo(() => new Map(cards().map((c) => [c.key, c] as const)));
   const shown = createMemo((): readonly BackgroundCard[] => {
     if (searching()) return props.search.search(query()).flatMap((k) => byKey().get(k) ?? []);

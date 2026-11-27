@@ -328,4 +328,20 @@ describe("T13 : clavier, focus et lecture d'écran de la fenêtre des fonds", ()
     const tabs = [...r.container.querySelectorAll<HTMLElement>("[data-fonds-remove]")].map((b) => b.getAttribute("tabindex"));
     expect(tabs).toEqual(["0", "-1"]);
   });
+
+  it("T13 : un changement de Mes fonds ne recrée pas les cartes du pack (miniatures non redemandées)", async () => {
+    const [mine, setMine] = createSignal<readonly MyBackground[]>([]);
+    const asked: string[] = [];
+    const r = render(() => (
+      <BackgroundsDialog pack={PACK} mine={mine()} search={createBackgroundSearch(searchDocsOf(PACK, mine()))} notice={null}
+        thumbOf={async (c) => { asked.push(c.key); return null; }} apply={vi.fn()} importImage={vi.fn()} addPage={vi.fn()} remove={vi.fn()} close={vi.fn()} />
+    ));
+    await flush();
+    fireEvent.click(r.container.querySelector('[data-edit="fonds-section"] [data-choice="lessons"]')!);
+    await flush();
+    expect(asked.filter((k) => k === "venn")).toHaveLength(1);
+    setMine(mineN(1));
+    await flush();
+    expect(asked.filter((k) => k === "venn")).toHaveLength(1);
+  });
 });
