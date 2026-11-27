@@ -239,3 +239,32 @@ describe.skipIf(wasmCore === null)("cache contre calcul direct sur le vrai modul
     }
   });
 });
+
+describe("bornes du cadre (DA4, T9)", () => {
+  const FRAME = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+  const spy = () => vi.fn((_p: string, _r: Bounds, _s: number, _d: number): GridLines | null => ({ above: false, levels: [] }));
+
+  it("infini : grille aux coordonnées négatives (aucune borne, x0 et y0 < 0)", () => {
+    const compute = spy();
+    const cache = new GridLinesCache(compute);
+    const v: Bounds = { x0: -800, y0: -600, x1: -400, y1: -300 };
+    cache.get("p", v, 1, null);
+    const r = compute.mock.calls[0]?.[1];
+    expect(r?.x0).toBeLessThan(-800);
+    expect(r?.y0).toBeLessThan(-600);
+    expect(cacheRect(v, 1, null)).toEqual(r);
+  });
+
+  it("page : bornée au cadre (marge gardée en haut, coupée au bas du cadre)", () => {
+    const compute = spy();
+    const cache = new GridLinesCache(compute);
+    const v: Bounds = { x0: 0, y0: 500, x1: 400, y1: 1080 };
+    cache.get("p", v, 1, FRAME);
+    const r = compute.mock.calls[0]?.[1];
+    expect(r?.x0).toBe(0);
+    expect(r?.y0).toBeLessThan(500);
+    expect(r?.y1).toBe(1080);
+    expect(r?.x1).toBeGreaterThan(400);
+    expect(r?.x1).toBeLessThanOrEqual(1920);
+  });
+});

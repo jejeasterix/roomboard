@@ -347,3 +347,34 @@ describe("WebGL2 — fond de page (C6a)", () => {
     expect(gl.draws[1]?.rgba).toEqual(f32([1, 0, 0, 1]));
   });
 });
+
+/** Même cas que `canvas2d.test.ts` « cadre de page (T9) » : cadre 1920 × 1080 vu à z = 0,05 (96 × 54 px en (10, 20)). */
+describe("WebGL2 — cadre de page (DA4, T9)", () => {
+  const pageView = (mode?: string): PageView => ({ id: "p", elementIds: [], width: 1920, height: 1080, backdrop: null, ...(mode === undefined ? {} : { mode }) }) as PageView;
+  const far: Camera = { zoom: 0.05, tx: 10, ty: 20 };
+  const FRAME = { x0: 0, y0: 0, x1: 1920, y1: 1080 };
+  const partial: LiveLayer = { strokes: [], erasers: [{ path: new Float32Array([0, 0, 100, 0]), radius: 6, mode: "partial" }] };
+
+  it("infini : scissor de toute la vue", () => {
+    expect(pageScissor(far, 200, 100, 1, 1, null)).toEqual([0, 0, 200, 100]);
+    expect(pageScissor(far, 400, 200, 2, 2, null)).toEqual([0, 0, 400, 200]);
+    const { gl, r } = make();
+    r.drawScene(pageView("infinite"), far, new Set());
+    r.drawLive(partial, far);
+    // Aucun pourtour : la bande n'est peinte qu'au fond de page.
+    expect(gl.draws.map((d) => d.rgba)).toEqual([f32(parseColor(PAGE_BACKGROUND))]);
+  });
+
+  it("page : scissor du cadre", () => {
+    // x : 10 → 10 + 96 ; y : 20 → 20 + 54 (origine en bas : 100 − 74 = 26).
+    expect(pageScissor(far, 200, 100, 1, 1, FRAME)).toEqual([10, 26, 96, 54]);
+    const { gl, r } = make();
+    r.drawScene(pageView(), far, new Set());
+    r.drawLive(partial, far);
+    expect(gl.draws.map((d) => [d.scissor, d.rgba])).toEqual([
+      [false, f32(parseColor(SURROUND_COLOR))],
+      [true, f32(parseColor(PAGE_BACKGROUND))],
+    ]);
+    expect(gl.log).toContain("scissor 10,26,96,54");
+  });
+});

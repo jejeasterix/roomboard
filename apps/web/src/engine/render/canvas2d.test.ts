@@ -1288,3 +1288,38 @@ describe("C11a : rendu transparent (P14)", () => {
     expect(asked[2]).toEqual({ alpha: false });
   });
 });
+
+/** Même cas que `webgl2.test.ts` « cadre de page (T9) » : cadre 1920 × 1080 vu à z = 0,05 (96 × 54 px en (10, 20)). */
+describe("Canvas2DRenderer — cadre de page (DA4, T9)", () => {
+  const pageView = (mode?: string) => ({ id: "p", elementIds: [], width: 1920, height: 1080, backdrop: null, ...(mode === undefined ? {} : { mode }) });
+  const far: Camera = { zoom: 0.05, tx: 10, ty: 20 };
+  const partial = { strokes: [], erasers: [{ path: new Float32Array([0, 0, 100, 0]), radius: 6, mode: "partial" as const }] };
+
+  it("infini : aucun pourtour, fond sur toute la vue", () => {
+    const { r, scene, live } = make({});
+    r.resize(200, 100, 2);
+    r.drawScene(pageView("infinite"), far, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${PAGE_BACKGROUND}`]);
+    expect(scene.rects[0]).toEqual([0, 0, 400, 200]);
+    r.drawLive(partial, far);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`]);
+  });
+
+  it("infini : la couleur de fond de la page couvre toute la vue", () => {
+    const { r, scene } = make({});
+    r.resize(200, 100, 1);
+    r.drawScene({ ...pageView("infinite"), background: "#bfdbfe" }, far, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual(["fillRect #bfdbfe"]);
+    expect(scene.rects[0]).toEqual([0, 0, 200, 100]);
+  });
+
+  it("page : pourtour sous le cadre 1080", () => {
+    const { r, scene, live } = make({});
+    r.resize(200, 100, 1);
+    r.drawScene(pageView(), far, new Set());
+    expect(scene.log.filter((l) => l.startsWith("fillRect"))).toEqual([`fillRect ${SURROUND_COLOR}`, `fillRect ${PAGE_BACKGROUND}`]);
+    expect(scene.rects[1]).toEqual([0, 0, 1920, 1080]);
+    r.drawLive(partial, far);
+    expect(live.log.filter((l) => l.startsWith("stroke"))).toEqual([`stroke ${PAGE_BACKGROUND} 16`, `stroke ${SURROUND_COLOR} 16`]);
+  });
+});
