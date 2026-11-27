@@ -311,6 +311,7 @@ async function exportProfile(page, tmp, name) {
 async function s2(browser, base, tmp) {
   current = "S2";
   const { ctx, page, w, cdp } = await start(browser, base);
+  await openSide(page); // la barre est repliée à l'ouverture (S1) : sans elle, les miniatures sont masquées
   await clickItem(page, "page-add");
   await clickItem(page, "page-add");
   await waitAttr(page, "data-page", "3/3");
@@ -320,11 +321,12 @@ async function s2(browser, base, tmp) {
   await tap(page, cdp, `${LIST} [data-page="1"]`);
   await waitAttr(page, "data-page", "1/3");
   check((await shown(page)) === a, "toucher la miniature 1 la montre (aria-current)");
-  // Glisser la miniature 3 au-dessus de la 1.
-  const t3 = await thumb(page, 3);
+  // Glisser la miniature 2 au-dessus de la 1 (les miniatures occupent toute la largeur de la ligne : à 1280 × 900 la liste
+  // en montre deux et demie, la 3 est sous le pli ; le glisser reste le même geste).
+  const t3 = await thumb(page, 2);
   const t1 = await thumb(page, 1);
   await dragAt(page, cdp, centerOf(t3), [centerOf(t1)[0], t1.y + 6], { steps: 16 });
-  check(await orderIs(page, [c, a, b]), `glisser la miniature 3 au-dessus de la 1 : ordre 3, 1, 2 (${(await ids(page)).join(", ")})`);
+  check(await orderIs(page, [b, a, c]), `glisser la miniature 2 au-dessus de la 1 : ordre 2, 1, 3 (${(await ids(page)).join(", ")})`);
   await page.keyboard.press("Control+z");
   await settle(page);
   check(await orderIs(page, [a, b, c]), "Ctrl+Z : ordre 1, 2, 3");
@@ -336,7 +338,8 @@ async function s2(browser, base, tmp) {
   await waitAttr(page, "data-page", "3/4");
   const after = await ids(page);
   check(after.length === 4 && after[0] === a && after[1] === b && after[3] === c && after[2] !== b, `appui long, Dupliquer : 4 pages, copie montrée en 3 (${await attr(page, "data-page")})`);
-  // Retirer.
+  // Retirer (la miniature 3 est sous le pli de la liste : on la fait défiler dans la vue).
+  await page.locator(`${LIST} [data-page="3"]`).scrollIntoViewIfNeeded();
   await holdAt(page, cdp, ...centerOf(await thumb(page, 3)), 800);
   await menuRow(page, "remove");
   await tap(page, cdp, '[data-side-menu] [data-menu="remove"]');

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GridInput } from "../core/api";
 import { fakeCore } from "../core/fake-core";
+import { TOOL_ICONS } from "../ui/icons";
 import { dropTarget, layerRows, stepTarget } from "./layer-list";
 
 const STYLE = { color: "#000000", width: 4 };
@@ -30,6 +31,19 @@ describe("layerRows (calques, décision 17)", () => {
     expect(rows.map((r) => r.ids)).toEqual([[b], [a], []]);
     expect(rows.map((r) => r.label)).toEqual(["Ellipse", "Rectangle", "Fond de la page"]);
     expect(rows.map((r) => r.fixed)).toEqual([false, false, true]);
+  });
+  it("chaque sorte porte l'icône de son outil : Ellipse et Rectangle diffèrent, ligne, flèche, texte, groupe", () => {
+    const { doc, page, shape, text } = scene();
+    const add = (kind: "line" | "arrow", x: number): string =>
+      doc.apply({ type: "AddShape", page, shape: kind, x0: x, y0: 0, x1: x + 50, y1: 50, style: STYLE, fill: null }).ids[0]!;
+    shape("rect", 0);
+    shape("ellipse", 10);
+    add("line", 20);
+    add("arrow", 30);
+    text("Bonjour");
+    const icons = layerRows(doc, page).map((r) => r.icon);
+    expect(icons).toEqual([TOOL_ICONS.text, TOOL_ICONS.arrow, TOOL_ICONS.line, TOOL_ICONS.ellipse, TOOL_ICONS.rect, "rectangle-horizontal"]);
+    expect(new Set(icons).size).toBe(icons.length);
   });
   it("groupe = une ligne « Groupe (n) » portant tous ses membres", () => {
     const { doc, page, shape } = scene();

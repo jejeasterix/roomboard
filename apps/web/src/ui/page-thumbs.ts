@@ -4,10 +4,14 @@
  * `Change` (`Change.pages` et les pages de `Change.ids`) ; `dispose` révoque tout.
  */
 export interface PageThumbs {
-  get(pageId: string, width: number): Promise<string | null>;
+  /** `form` : ce qui change le cadre de la page (son mode) ; une valeur autre que la précédente refait la miniature. */
+  get(pageId: string, width: number, form?: string): Promise<string | null>;
   invalidate(pages: readonly string[]): void;
   dispose(): void;
 }
+
+/** Délai avant de révoquer une URL remplacée ou invalidée. */
+export const REVOKE_GRACE_MS = 2000;
 
 interface Kept {
   readonly version: number;
@@ -29,14 +33,21 @@ async function blobOf(img: ImageBitmap | Blob): Promise<Blob | null> {
 export function createPageThumbs(render: (pageId: string, width: number) => Promise<ImageBitmap | Blob | null>): PageThumbs {
   const versions = new Map<string, number>();
   const kept = new Map<string, Kept>();
+  const forms = new Map<string, string>();
   const pending = new Map<string, Promise<string | null>>();
   let queue: Promise<unknown> = Promise.resolve();
   let disposed = false;
   const versionOf = (page: string): number => versions.get(page) ?? 0;
+  /** URL remplacées, révoquées après `REVOKE_GRACE_MS` : une image encore en chargement ne doit pas perdre sa source (ERR_FILE_NOT_FOUND). */
+  const dying = new Map<string, ReturnType<typeof setTimeout>>();
   const forget = (page: string): void => {
     const k = kept.get(page);
-    if (k) URL.revokeObjectURL(k.url);
     kept.delete(page);
+    if (!k) return;
+    dying.set(k.url, setTimeout(() => {
+      dying.delete(k.url);
+      URL.revokeObjectURL(k.url);
+    }, REVOKE_GRACE_MS));
   };
 
   /** Tâche de la file : rend la version courante ; invalidée pendant le rendu, elle recommence (l'ancienne jamais servie). */
@@ -63,8 +74,13 @@ export function createPageThumbs(render: (pageId: string, width: number) => Prom
     }
   };
 
-  const get = (page: string, width: number): Promise<string | null> => {
+  const get = (page: string, width: number, form?: string): Promise<string | null> => {
     if (disposed) return Promise.resolve(null);
+    if (form !== undefined) {
+      const before = forms.get(page);
+      forms.set(page, form);
+      if (before !== undefined && before !== form) invalidate([page]);
+    }
     const version = versionOf(page);
     const k = kept.get(page);
     if (k && k.version === version && k.width === width) return Promise.resolve(k.url);
@@ -77,17 +93,24 @@ export function createPageThumbs(render: (pageId: string, width: number) => Prom
     return p;
   };
 
+  function invalidate(pages: readonly string[]): void {
+    for (const page of pages) {
+      versions.set(page, versionOf(page) + 1);
+      forget(page);
+    }
+  }
+
   return {
     get,
-    invalidate(pages) {
-      for (const page of pages) {
-        versions.set(page, versionOf(page) + 1);
-        forget(page);
-      }
-    },
+    invalidate,
     dispose() {
       disposed = true;
       for (const page of [...kept.keys()]) forget(page);
+      for (const [url, t] of dying) {
+        clearTimeout(t);
+        URL.revokeObjectURL(url);
+      }
+      dying.clear();
       pending.clear();
     },
   };
