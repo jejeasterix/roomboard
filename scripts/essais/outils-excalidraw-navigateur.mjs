@@ -465,9 +465,16 @@ const closedLines = (els) => lines(els).filter((e) => e.shape.polygon === true);
 /** Sommets d'une ligne : départ, points intérieurs, arrivée. */
 const vertices = (e) => 2 + (e.shape.points?.length ?? 0) / 2;
 const sel = async (page) => attr(page, "data-selection");
-/** Pose un losange au doigt de la boîte `[x0, y0, x1, y1]`. */
+/** Outil Losange par la touche D : il n'est pas dans la barre du profil par défaut (OG19 : la barre reste sur la rangée du
+ *  haut à 1280 px) ; l'éditeur de profil l'y ajoute, l'essai n'en a pas besoin. */
+async function diamondTool(page) {
+  await page.waitForTimeout(600);
+  await page.keyboard.press("d");
+  await waitAttr(page, "data-tool", "diamond");
+}
+/** Pose un losange au doigt de la boîte `[x0, y0, x1, y1]`, l'outil pris par la touche D. */
 async function diamond(page, cdp, [x0, y0, x1, y1]) {
-  await tool(page, "diamond");
+  await diamondTool(page);
   await touchDrag(page, cdp, [x0, y0], [x1, y1]);
 }
 /** Page neuve avec le rectangle A et le losange D posés au doigt. */
@@ -485,7 +492,7 @@ async function s7(browser, base, tmp) {
   const { ctx, page, cdp, errors, a, d } = await poseAD(browser, base, tmp, "s7-avant");
   let s = await saved(page, tmp, "s7-pose.roomboard");
   lire("S7.diamond", diamonds(s.elements).length);
-  check(diamonds(s.elements).length === 1, "S7 : Losange pris dans la barre, glissé au doigt : un losange (shape « diamond »)");
+  check(diamonds(s.elements).length === 1, "S7 : Losange pris par la touche D, glissé au doigt : un losange (shape « diamond »)");
   // Coin de la boîte, hors du losange : rien n'est sélectionné.
   await tool(page, "select");
   await tapStage(page, D[0] + 6, D[1] + 6);
@@ -518,7 +525,7 @@ async function s7(browser, base, tmp) {
   s = await saved(page, tmp, "s7-annule.roomboard");
   check(key(s.elements) === avant, "S7 : Ctrl+Z, une seule étape : le losange et la flèche reviennent");
   // Second doigt tardif pendant le tracé : w = h.
-  await tool(page, "diamond");
+  await diamondTool(page);
   await touchDragWithLateFinger(page, cdp, [450, 500], [590, 580], [700, 700]);
   s = await saved(page, tmp, "s7-carre.roomboard");
   const sq = diamonds(s.elements).find((e) => e.id !== d);
@@ -647,9 +654,26 @@ async function s9(browser, base, tmp) {
   }
 }
 
-/** Cibles de 44 px et netteté § 10 (2x) de l'icône Losange et du bouton « Modifier les points » sur une forme. */
+/** Le Losange n'est pas dans la barre du profil par défaut (OG19) : « + Ajouter » de l'éditeur de profil l'y met, comme
+ *  l'utilisateur (geste de design-l3-navigateur.mjs, S4). */
+async function addDiamondToBar(page) {
+  await page.click(item("profiles"));
+  await page.waitForSelector("[data-profiles]");
+  await page.click('[data-profile-cmd="edit"]');
+  await page.waitForSelector("[data-profile-editor]");
+  await page.click('[data-edit-bar="outils"] button[data-edit="add"]');
+  await page.click('[data-add-choice="tool:diamond"]');
+  await page.click('button[data-edit="save"]');
+  await page.waitForSelector("[data-profile-editor]", { state: "detached" });
+  await page.waitForSelector(`[data-toolbar="outils"] ${item("diamond")}`);
+  if (await page.isVisible("[data-profiles]")) await page.click(item("profiles")); // le panneau des profils couvre la scène
+  await page.waitForSelector("[data-profiles]", { state: "detached" });
+}
+
+/** Cibles de 44 px et netteté § 10 (2x) de l'icône Losange (ajoutée à la barre) et du bouton « Modifier les points ». */
 async function cibles2a(browser, base, tmp) {
   const { ctx, page, cdp, errors } = await poseAD(browser, base, tmp, "cibles2a", { scale: 2 });
+  await addDiamondToBar(page);
   await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
   await tool(page, "select");
   await tapStage(page, 860, 300);
