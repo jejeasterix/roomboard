@@ -3,9 +3,9 @@
 Statut : en cours
 Gabarit : chantier (provisoire)
 Objectif : Jérôme choisit pour chaque page un mode Page (cadre 16:9 comme PowerPoint) ou Infini, gère ses pages et les calques des objets dans une barre latérale repliable, et navigue de page en page depuis la barre d'outils principale.
-Avancement : 13/16 tâches terminées (T1-T11, T13-T15 ; T16 correctif en cours ; T12 intégration à faire)
+Avancement : 19/20 tâches terminées (T21 essais restants en cours)
 Étage : 3 (vague 6) — depuis 2026-11-27 10:15
-Tâche : T16 — barre latérale sans recouvrement, bande repliée, essais existants verts — depuis 10:15
+Tâche : T21 — essais e2e restants (îlot d'outils abaissé à 1280 px) — depuis 11:52
 Questions à Jérôme : —
 Worktree : /home/adminjd/projets/roomboard-wt/personnalisation-1a   Branche : feat/personnalisation-1a   Base : origin/main @ 45484db
 Branche principale locale au lancement : 45484db
@@ -39,8 +39,13 @@ Plan : docs/plans/personnalisation-1a-PLAN.md (table en tête, 14 tâches, 6 vag
 | T15 (correctif) | terminée | 200a0ab | web complet 3714/3714 ; fmt et clippy propres |
 | T14 | terminée | b537512 | vitest 383/385 (2 Toolbar.test → T16) |
 | T11 | fusionnée (aides d'essais) | d3fe937 | essais rouges : défaut de placement de l'app → T16 |
-| T16 (correctif) | en cours | — | — |
-| T12 | à faire | — | — |
+| T16 (correctif) | terminée | 0bfae96 | web 3741 ; 13/15 essais |
+| T12 | terminée | 29468b0 | essai personnalisation-1a OK (88 contrôles) ; captures |
+| T17 | terminée | b7e85cb | web 3746 ; c3, s5b, design-l1/l2, 1a OK |
+| T18 (relecture A) | terminée | 5d2ed2e | contrat T18 405 (vrai module) ; engine 133 |
+| T19 (relecture B) | terminée | 758ee1e | web 3767 ; essais 1a, l2, c13, s5b, l1 OK |
+| T20 (miniature portrait) | terminée | 07cd079 | vitest 208 |
+| T21 (essais restants) | en cours | — | verifier --e2e n°1 : rouge à c10a (îlot d'outils abaissé) |
 
 ## Terminé quand
 toutes les tâches terminées · double relecture sans bloquant · `scripts/verifier.sh --e2e` OK · scénarios réussis · captures 2x avant/après · PR fusionnée par `git merge --no-ff` et poussée
@@ -53,6 +58,15 @@ S1 Mode de page au doigt · S2 Barre latérale Pages au doigt · S3 Navigation d
 - Prémisse démentie : seule la barre d'outils se déplace et se replie ; aucune position par défaut dans le profil.
 - Prémisse démentie : la page actuelle est à hauteur libre (modèle ActivInspire), pas un cadre 16:9.
 - Chantier voisin `personnalisation-1b` (OG5) sur toolbar-profiles.ts, actions, icons.ts, App.tsx, rb.css, commands.rs, api.ts, fake-core.ts, ops.ts, cli-essai.mjs, THIRD_PARTY_NOTICES.md : relire avant le rebase.
+
+## Relectures
+Double relecture (A cœur/moteur, B interface/essais) : aucun bloquant ; importants corrigés par T18 et T19.
+Critique impeccable (dégradée, un seul contexte, lanceur sans droit d'exécution) : miniature portrait → T20.
+
+## Hypothèses à revoir (niveau 1)
+- À 1280 px de large, l'îlot d'outils (941 px avec Précédente / numéro / Suivante) passe sous la rangée du haut (règle L2-30) ; essais c3, c10a, c10b, c7b, c6a cliquent désormais sous les îlots.
+- Barre latérale repliée au départ (bande verticale à gauche) dans les trois profils fournis.
+- Portrait 1920 × 3413 (précédent PF4), pas 1080 × 1920.
 
 ## Hors périmètre
 - fonds de page et bibliothèque (OG5) · outil frame (plus tard)
