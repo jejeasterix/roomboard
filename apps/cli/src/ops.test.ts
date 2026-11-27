@@ -39,9 +39,14 @@ describe("lecture d'une opération (D6)", () => {
     expect(codeOf(() => parseOp({ type: "CommitStroke", page: "p", points: [1, "a"], style }, ctx()))).toBe("usage");
     expect(codeOf(() => parseOp({ type: "Erase", page: "p", path: "0,0", radius: 4, mode: "object" }, ctx()))).toBe("usage");
   });
-  it("COMMAND_TYPES couvre les 31 commandes de Command, sans doublon", () => {
+  it("COMMAND_TYPES couvre les 32 commandes de Command, sans doublon", () => {
     expect(ALL_COMMANDS).toBe(true);
-    expect(new Set(COMMAND_TYPES).size).toBe(31);
+    expect(new Set(COMMAND_TYPES).size).toBe(32);
+  });
+  it("Restack accepté (OG11, DA-2)", () => {
+    expect(COMMAND_TYPES).toContain("Restack");
+    const op = parseOp({ type: "Restack", ids: ["a"], to: 0 }, ctx());
+    expect(op.kind === "command" && op.cmd).toEqual({ type: "Restack", ids: ["a"], to: 0 });
   });
   it("SetStyle accepté", () => {
     expect(COMMAND_TYPES).toContain("SetStyle");

@@ -458,6 +458,22 @@ try {
     verifie("personnalisation-2 : opacity 150 refusée (code 1)", refus.code === 1, refus.brut);
     console.log("personnalisation-2 : SetStyle puis undo");
   }
+  // personnalisation-2 (OG11, DA-2) : Restack au premier plan puis undo, une étape ; rang hors bornes refusé.
+  {
+    const f = join(dir, "ordre.roomboard");
+    const rect = (x) => JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: 0, x1: x + 50, y1: 50, style: { color: "#000000", width: 4 }, fill: null });
+    const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], `${[rect(0), rect(100), rect(200)].join("\n")}\n`);
+    verifie("personnalisation-2 : trois rectangles posés", neuf.code === 0, neuf.brut);
+    const [a, b, c] = neuf.lignes.map((l) => l.change.ids[0]);
+    const s = cli(["run", f, "--save", "--ops", "-"], `${[{ type: "Restack", ids: [a], to: 2 }, { op: "state" }, { op: "undo" }, { op: "state" }].map((o) => JSON.stringify(o)).join("\n")}\n`);
+    const rang = (k, id) => JSON.stringify(s.lignes[k].state).indexOf(id);
+    const devant = rang(1, b) < rang(1, c) && rang(1, c) < rang(1, a);
+    const rendu = rang(3, a) < rang(3, b) && rang(3, b) < rang(3, c);
+    verifie("personnalisation-2 : Restack puis undo, une étape", s.code === 0 && s.lignes[0].change.ids[0] === a && devant && rendu, s.brut);
+    const refus = cli(["run", f, "--ops", "-"], `${JSON.stringify({ type: "Restack", ids: [a], to: 3 })}\n`);
+    verifie("personnalisation-2 : Restack hors bornes refusé (code 1)", refus.code === 1 && refus.brut.includes("ordre invalide"), refus.brut);
+    console.log("personnalisation-2 : Restack puis undo");
+  }
   console.log("CLI : OK");
 } catch (e) {
   console.log(`CLI : ÉCHEC — ${e instanceof Error ? e.message : String(e)}`);
