@@ -153,6 +153,8 @@ if [ "$E2E" = 1 ]; then
   echo "design L2 : OK"
   node scripts/essais/fonds-navigateur.mjs
   echo "personnalisation 1b fonds : OK"
+  node scripts/essais/restes-personnalisation-1-navigateur.mjs
+  echo "restes personnalisation 1 : OK"
   echo "verifier.sh : e2e OK"
 fi
 echo "verifier.sh : OK"

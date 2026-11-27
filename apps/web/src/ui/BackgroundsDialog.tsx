@@ -226,7 +226,7 @@ export function BackgroundsDialog(props: BackgroundsDialogProps): JSX.Element {
               label="Sections"
               look="rail"
               options={SECTIONS.map((s) => ({ value: s.id, label: s.label, icon: s.icon }))}
-              value={section()}
+              value={searching() ? null : section()}
               choose={(v) => {
                 setSection(v);
                 setTheme(ALL_THEMES);

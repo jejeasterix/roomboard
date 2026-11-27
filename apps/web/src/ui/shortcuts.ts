@@ -18,6 +18,11 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("escape", "Édition", "Désélectionner", "Échap"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
   s("bold", "Texte", "Gras, italique, souligné", "Ctrl+B, I, U"),
+  // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
+  s("backgrounds", "Vue", "Fonds", "Ctrl+Maj+F"),
+  s("page-prev", "Pages", "Page précédente", "Pg préc"),
+  s("page-next", "Pages", "Page suivante", "Pg suiv"),
+  s("page-number", "Pages", "Barre latérale, onglet Pages", "Ctrl+Maj+P"),
 ]);
 const MAC: ReadonlyArray<readonly [string, string]> = [["Ctrl+", "⌘"], ["Maj+", "⇧"], ["Alt+", "⌥"]];
 export function shortcutText(id: string, mac: boolean): string | null {
@@ -25,4 +30,24 @@ export function shortcutText(id: string, mac: boolean): string | null {
   if (hit === undefined) return null;
   return mac ? MAC.reduce((t, [a, b]) => t.split(a).join(b), hit.keys) : hit.keys;
 }
+/** Noms `aria-keyshortcuts` (WAI-ARIA) des parties d'un raccourci de la table. */
+const ARIA: Readonly<Record<string, string>> = { Maj: "Shift", Alt: "Alt", Suppr: "Delete", "Échap": "Escape", "Pg préc": "PageUp", "Pg suiv": "PageDown" };
+/** OG19 : valeur `aria-keyshortcuts` d'un raccourci (Ctrl → Control, ou Meta sous macOS) ; null pour un geste
+ *  (« Espace + glisser »), une liste (« Ctrl+B, I, U ») ou un id absent de la table. */
+export function ariaShortcut(id: string, mac: boolean): string | null {
+  const keys = SHORTCUTS.find((x) => x.id === id)?.keys;
+  if (keys === undefined || keys.includes(",") || keys.includes(" + ")) return null;
+  return keys
+    .split("+")
+    .map((k) => (k === "Ctrl" ? (mac ? "Meta" : "Control") : Object.hasOwn(ARIA, k) ? ARIA[k]! : k))
+    .join("+");
+}
 export const isMac = (): boolean => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** OG19 : raccourci d'un bouton de barre, lu dans la table par l'id de son action ; null sans raccourci. */
+export function buttonShortcut(action: string | undefined): { readonly text: string; readonly aria: string | null } | null {
+  if (action === undefined) return null;
+  const mac = isMac();
+  const text = shortcutText(action, mac);
+  return text === null ? null : { text, aria: ariaShortcut(action, mac) };
+}

@@ -490,6 +490,34 @@ describe("Toolbar — barre d'annotation (design-l4)", () => {
     expect([iconOf(container, '[data-item="annotation-send"]'), iconOf(container, '[data-item="annotation-send-new"]')]).toEqual(["board", "plus"]);
     expect(container.querySelector('button[data-item="undo"]')!.classList.contains("rb-primary")).toBe(false);
   });
+  it("OG19 (H1-11) : l'infobulle d'un bouton porte son raccourci (table unique), le libellé reste le texte", () => {
+    vi.useFakeTimers();
+    try {
+      const tipOf = (container: HTMLElement, sel: string): { text: string | null; keys: string | null } | null => {
+        const el = container.querySelector<HTMLElement>(sel)!;
+        fireEvent.pointerEnter(el, { pointerType: "mouse" });
+        vi.advanceTimersByTime(TIP_HOVER_MS);
+        const tip = document.querySelector('[role="tooltip"]');
+        const seen = tip === null ? null : { text: tip.textContent, keys: tip.getAttribute("data-keys") };
+        fireEvent.pointerLeave(el, { pointerType: "mouse" });
+        return seen;
+      };
+      const { container } = setup();
+      expect(tipOf(container, 'button[data-item="backgrounds"]')).toEqual({ text: "Fonds", keys: "Ctrl+Maj+F" });
+      expect(container.querySelector('button[data-item="backgrounds"]')!.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+F");
+      expect(tipOf(container, 'button[data-item="page-next"]')).toEqual({ text: "Nouvelle page", keys: "Pg suiv" });
+      expect(tipOf(container, '[data-item="page-number"]')).toEqual({ text: "Numéro de page", keys: "Ctrl+Maj+P" });
+      expect(container.querySelector('[data-item="page-number"]')!.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+P");
+      // Sans raccourci dans la table : ni attribut, ni texte en plus.
+      expect(tipOf(container, 'button[data-item="pen"]')).toEqual({ text: "Stylo", keys: null });
+      expect(container.querySelector('button[data-item="pen"]')!.hasAttribute("aria-keyshortcuts")).toBe(false);
+      cleanup();
+      const h = setup(historique);
+      expect(tipOf(h.container, 'button[data-item="undo"]')).toEqual({ text: "Annuler", keys: "Ctrl+Z" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("design-l4 (L4-11) : zone de dépôt à icône drop, libellé en rb-sr, sans title ; infobulle au survol", () => {
     vi.useFakeTimers();
     try {
