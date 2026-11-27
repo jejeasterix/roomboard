@@ -144,7 +144,12 @@ export function SideBar(props: SideBarProps): JSX.Element {
   // URL révoquée avant son chargement donnerait ERR_FILE_NOT_FOUND).
   onMount(measure);
   /** Largeur du tampon : la largeur réelle de la miniature (la place utile de la ligne, mesurée, au moins THUMB_CSS) × devicePixelRatio. */
-  const bufferWidth = (): number => Math.round(Math.max(lineWidth(), THUMB_CSS[thumbSize()]) * pixelRatio());
+  const bufferWidth = (): number => {
+    const box = Math.max(lineWidth(), THUMB_CSS[thumbSize()]);
+    // Boîte 16:9 ; une page portrait (9:16) y est contenue : sa largeur est la hauteur de la boîte × 9/16.
+    const shown = pages.layout() === "portrait" ? (box * 9 * 9) / (16 * 16) : box;
+    return Math.round(shown * pixelRatio());
+  };
   const index = (id: string): number => pages.ids().indexOf(id);
   /** Après un déplacement (le nœud est repris par le DOM) : le focus revient à la miniature. */
   const refocus = (id: string): void => {
