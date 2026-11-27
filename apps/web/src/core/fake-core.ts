@@ -671,6 +671,9 @@ function cellRectOf(t: FakeTable, row: string, col: string): Bounds | null {
 function resizedLines(t: FakeTable, list: readonly (readonly [TableAxis, string, number])[]): FakeTable | null {
   const lines = (a: TableAxis): { readonly id: string; readonly size: number }[] =>
     a === "row" ? t.rows.map((r) => ({ id: r.id, size: r.height })) : t.cols.map((c) => ({ id: c.id, size: c.width }));
+  // Comme `line_sizes_ok` du cœur, entrée unique des deux commandes : une ligne citée deux fois est refusée (le contrôle
+  // lirait la dernière taille, l'écriture la première différente).
+  if (new Set(list.map(([a, id]) => `${a}:${id}`)).size !== list.length) return null;
   const known = list.every(([a, id, size]) => positive(size) && lines(a).some((l) => l.id === id));
   const total = (a: TableAxis): number =>
     sum(lines(a).map((l) => [...list].reverse().find(([b, id]) => b === a && id === l.id)?.[2] ?? l.size));
@@ -1209,9 +1212,7 @@ class FakeDocument implements CoreDocument {
       case "SetTableLineSizes": {
         // personnalisation-3 (D4), comme `cmd_set_table_line_sizes` : tableau, tailles, mêmes tailles (aucune étape).
         const { found, t } = this.tableOf(cmd.id);
-        // Défaut T2a, comme `repeats_line` du cœur : une ligne ou une colonne citée deux fois est refusée.
-        const repeats = (ls: readonly (readonly [string, number])[]): boolean => new Set(ls.map(([l]) => l)).size !== ls.length;
-        if (repeats(cmd.cols) || repeats(cmd.rows)) throw new Error(MESSAGES.badTable);
+        // Défaut T2a : une ligne ou une colonne citée deux fois est refusée, par `resizedLines`.
         const next = resizedLines(t, [
           ...cmd.cols.map(([l, size]): readonly [TableAxis, string, number] => ["col", l, size]),
           ...cmd.rows.map(([l, size]): readonly [TableAxis, string, number] => ["row", l, size]),
@@ -1270,10 +1271,12 @@ class FakeDocument implements CoreDocument {
         // ids (D36), 3 aucun id (aucune étape), 4 plusieurs pages, 5 case visée (D35), 6 tableaux des tailles puis
         // tailles, 7 matrice composée, 8 rien ne change (aucune étape).
         if (!validMatrix(cmd.matrix)) throw new Error(MESSAGES.badMatrix);
-        const hits = [...new Set(cmd.ids)]
+        const all = [...new Set(cmd.ids)]
           .map((id) => this.find(id))
           .filter((x): x is Found => x !== undefined && x.element.malformed === undefined);
-        if (hits.some((x) => isTableKind(x.element))) throw new Error(MESSAGES.badTable);
+        if (all.some((x) => isTableKind(x.element))) throw new Error(MESSAGES.badTable);
+        // Comme `Transform` : un élément sans transform lisible est écarté, ni matrice ni lien écrits.
+        const hits = all.filter((x) => movable(x.element));
         const pageId = hits[0]?.page.id;
         if (pageId === undefined) return this.unchanged();
         if (hits.some((x) => x.page.id !== pageId)) throw new Error(MESSAGES.badTable);

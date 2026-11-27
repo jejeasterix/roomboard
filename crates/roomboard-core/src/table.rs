@@ -464,7 +464,7 @@ fn lines_ok(n: u32) -> bool {
     (1..=MAX_TABLE_LINES).contains(&n)
 }
 
-fn size_key(axis: TableAxis) -> &'static str {
+pub(crate) fn size_key(axis: TableAxis) -> &'static str {
     match axis {
         TableAxis::Row => "height",
         TableAxis::Col => "width",
@@ -583,7 +583,7 @@ fn span_moves(
 }
 
 impl RawTable {
-    fn axis(&self, axis: TableAxis) -> (&[Line], &ArrayRef) {
+    pub(crate) fn axis(&self, axis: TableAxis) -> (&[Line], &ArrayRef) {
         match axis {
             TableAxis::Row => (&self.rows, &self.rows_arr),
             TableAxis::Col => (&self.cols, &self.cols_arr),
@@ -625,7 +625,7 @@ impl Document {
         Ok((found.page_id, found.element, raw))
     }
 
-    fn table_done(&mut self, page: String, id: &str) -> Change {
+    pub(crate) fn table_done(&mut self, page: String, id: &str) -> Change {
         self.done(Change {
             pages: vec![page],
             ids: vec![id.to_string()],

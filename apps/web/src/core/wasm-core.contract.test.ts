@@ -2304,6 +2304,31 @@ describe.each(c10aFactories)("contrat personnalisation-3 : $name", ({ f }) => {
     expect(tableOf(d, s.t).rows.map((x) => x.height)).toEqual([64, 64, 64]);
     d.free();
   });
+
+  it("personnalisation-3 PlaceInCell : une ligne citée deux fois est refusée, rien d'écrit", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const [, r0, c0] = s.link(0, 0);
+    const place = (sizes: [string, "row" | "col", string, number][]): Change =>
+      d.apply({ type: "PlaceInCell", ids: [s.o], matrix: I, cell: s.link(0, 0), sizes });
+    unchanged(d, () => expect(messageOf(() => place([[s.t, "col", c0, 1e39], [s.t, "col", c0, 240]]))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => place([[s.t, "col", c0, 400], [s.t, "col", c0, 240]]))).toBe(TABLE_MESSAGE));
+    unchanged(d, () => expect(messageOf(() => place([[s.t, "row", r0, 100], [s.t, "row", r0, 64]]))).toBe(TABLE_MESSAGE));
+    expect(tableOf(d, s.t).cols.map((x) => x.width)).toEqual([240, 240, 240]);
+    d.free();
+  });
+
+  it("personnalisation-3 PlaceInCell : un lien de case incomplet (JSON de la CLI) est refusé, rien d'écrit", () => {
+    const d = f.blank();
+    const s = p3Placed(d);
+    const [t, r] = s.link(0, 0);
+    const partiel = [t, r] as unknown as CellLink;
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "PlaceInCell", ids: [s.o], matrix: I, cell: partiel, sizes: [] }))).toBe(TABLE_MESSAGE));
+    d.apply({ type: "PlaceInCell", ids: [s.o], matrix: I, cell: s.link(0, 0), sizes: [] });
+    unchanged(d, () => expect(messageOf(() => d.apply({ type: "PlaceInCell", ids: [s.o], matrix: I, cell: partiel, sizes: [] }))).toBe(TABLE_MESSAGE));
+    expect(d.element(s.o)?.cell).toEqual(s.link(0, 0));
+    d.free();
+  });
 });
 
 // C7b (R7, R16) : `spans` facultatif de SetText et SetTableCell. T12 branche le vrai module (`c7bFactories = factories`).

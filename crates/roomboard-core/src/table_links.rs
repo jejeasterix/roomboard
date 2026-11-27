@@ -51,14 +51,16 @@ pub(crate) fn offsets(raw: &RawTable) -> Offsets {
 }
 
 fn lines_of(raw: &RawTable, axis: TableAxis) -> (&[Line], &'static str) {
-    match axis {
-        TableAxis::Row => (&raw.rows, "height"),
-        TableAxis::Col => (&raw.cols, "width"),
-    }
+    (raw.axis(axis).0, crate::table::size_key(axis))
 }
 
-/// Tailles valides : chaque ligne existe, taille finie > 0, total de chaque axe borné en f32 (même garde que T15).
+/// Entrée unique du contrôle des tailles, pour `SetTableLineSizes` et `PlaceInCell` : aucune ligne citée deux fois
+/// (le contrôle lirait la dernière taille, l'écriture la première différente), chaque ligne existe, taille finie > 0,
+/// total de chaque axe borné en f32 (même garde que T15).
 pub(crate) fn line_sizes_ok(raw: &RawTable, sizes: &[(TableAxis, String, f64)]) -> bool {
+    if repeats_line(sizes) {
+        return false;
+    }
     let known = sizes
         .iter()
         .all(|(a, id, s)| finite_positive(*s) && lines_of(raw, *a).0.iter().any(|l| &l.id == id));
@@ -79,7 +81,7 @@ pub(crate) fn line_sizes_ok(raw: &RawTable, sizes: &[(TableAxis, String, f64)]) 
 }
 
 /// Vrai si une ligne ou une colonne est citée deux fois.
-pub(crate) fn repeats_line(sizes: &[(TableAxis, String, f64)]) -> bool {
+fn repeats_line(sizes: &[(TableAxis, String, f64)]) -> bool {
     let mut seen = HashSet::with_capacity(sizes.len());
     !sizes
         .iter()
@@ -297,9 +299,7 @@ impl Document {
             .map(|(l, s)| (TableAxis::Col, l.clone(), *s))
             .chain(rows.iter().map(|(l, s)| (TableAxis::Row, l.clone(), *s)))
             .collect();
-        // Défaut T2a : une ligne citée deux fois est refusée (le contrôle lirait la dernière taille, l'écriture la
-        // première différente).
-        if repeats_line(&sizes) || !line_sizes_ok(&raw, &sizes) {
+        if !line_sizes_ok(&raw, &sizes) {
             return Err(CommandError::BadTable);
         }
         if line_sizes_same(&raw, &sizes) {
@@ -353,7 +353,7 @@ impl Document {
                 None => {}
             }
         }
-        Ok(self.table_done_with(page, id, Vec::new()))
+        Ok(self.table_done(page, id))
     }
 
     /// `SetCellImage` (T9) : `Some(image)` : l'image logée dans cette case devient son fond `bg` (asset de l'image, image
@@ -382,7 +382,7 @@ impl Document {
                 let mut txn = self.transact_local();
                 cell.map.remove(&mut txn, "bg");
             }
-            return Ok(self.table_done_with(page, id, Vec::new()));
+            return Ok(self.table_done(page, id));
         };
         let (asset, elements, index) = {
             let txn = self.read();
@@ -503,6 +503,11 @@ impl Document {
             }) {
                 return Err(CommandError::BadTable);
             }
+            // Comme `Transform` : un objet au transform illisible est écarté (ni matrice, ni lien).
+            let found: Vec<_> = found
+                .into_iter()
+                .filter(|(_, f)| out_transform(f.element.get(&txn, "transform")).is_some())
+                .collect();
             let same = found
                 .iter()
                 .all(|(_, f)| read_cell_link(&txn, &f.element).as_ref() == cell);
@@ -544,8 +549,8 @@ impl Document {
             let txn = self.read();
             found
                 .iter()
-                .map(|(_, f)| {
-                    out_transform(f.element.get(&txn, "transform")).map_or(*m, |t| compose(m, &t))
+                .filter_map(|(_, f)| {
+                    out_transform(f.element.get(&txn, "transform")).map(|t| compose(m, &t))
                 })
                 .collect()
         };
@@ -1297,6 +1302,61 @@ mod tests {
         assert_eq!(view(&d, &t).rows[0].height, 64.0);
         assert_eq!(d.version(), ver);
     }
+    // Constat C2-1 : `PlaceInCell` contrôlait la dernière taille d'une ligne citée deux fois, l'écriture posait la
+    // première différente ; la liste est refusée comme pour `SetTableLineSizes`, rien d'écrit.
+    #[test]
+    fn place_in_cell_refuses_repeated_line() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 50.0);
+        let c0 = view(&d, &t).cols[0].id.clone();
+        let ver = d.version();
+        for (a, b) in [(400.0, 240.0), (1e39, 240.0)] {
+            let size = |size: f64| LineSize {
+                table: t.clone(),
+                axis: TableAxis::Col,
+                line: c0.clone(),
+                size,
+            };
+            assert_eq!(
+                d.apply(Command::PlaceInCell {
+                    ids: vec![o.clone()],
+                    matrix: IDENTITY,
+                    cell: Some(link(&d, &t, 0, 0)),
+                    sizes: vec![size(a), size(b)],
+                }),
+                Err(CommandError::BadTable)
+            );
+        }
+        assert_eq!(view(&d, &t).cols[0].width, 240.0);
+        assert_eq!(d.version(), ver);
+    }
+
+    // Constat C2-3 : un objet au transform illisible est écarté, comme par `Transform` ; ni matrice, ni lien écrits.
+    #[test]
+    fn place_in_cell_ignores_unreadable_transform() {
+        let mut d = Document::blank();
+        let p = first(&d);
+        let t = table3(&mut d, &p);
+        let o = rect(&mut d, &p, 10.0, 10.0, 50.0, 50.0);
+        {
+            let mut txn = d.transact_untracked();
+            let f = d.find_element(&txn, &o).expect("objet");
+            f.element.insert(&mut txn, "transform", "illisible");
+        }
+        let ver = d.version();
+        let r = d.apply(Command::PlaceInCell {
+            ids: vec![o.clone()],
+            matrix: [1.0, 0.0, 0.0, 1.0, 5.0, 5.0],
+            cell: Some(link(&d, &t, 0, 0)),
+            sizes: vec![],
+        });
+        assert!(r.is_ok());
+        assert_eq!(raw_link(&d, &o), None);
+        assert_eq!(d.version(), ver);
+    }
+
     #[test]
     fn commit_stroke_with_cell() {
         let mut d = Document::blank();
