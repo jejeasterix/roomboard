@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use yrs::{In, Map, MapRef};
 
-use crate::commands::{check_backdrop, same_backdrop, BackdropInput, Change, CommandError};
+use crate::commands::{check_backdrop, BackdropInput, BackdropWrite, Change, CommandError};
 use crate::document::Document;
 use crate::element::{out_string, read_backdrop, DEFAULT_BACKGROUND, PDF_PAGE_KIND};
 use crate::grid::{self, GridInput};
@@ -17,8 +17,8 @@ struct PagePlan {
     map: MapRef,
     color: bool,
     grid: bool,
-    /// `Some(same)` : fond à écrire (`same` : même fond, métadonnée d'asset seule) ; `None` : rien (page PDF ou inchangé).
-    backdrop: Option<bool>,
+    /// Fond à écrire (`Meta` : même fond, métadonnée d'asset seule) ; `None` : rien (page PDF ou inchangé).
+    backdrop: Option<BackdropWrite>,
 }
 
 impl Document {
@@ -66,13 +66,7 @@ impl Document {
                 let backdrop_plan = if pdf {
                     None
                 } else {
-                    let same = same_backdrop(backdrop, current.as_ref());
-                    // Même fond mais métadonnée d'asset absente : on l'écrit, comme `SetBackdrop`.
-                    let meta_missing = same
-                        && backdrop.is_some_and(|b| {
-                            self.assets_ref().get(&txn, b.asset.id.as_str()).is_none()
-                        });
-                    (!same || meta_missing).then_some(same)
+                    self.backdrop_plan(&txn, backdrop, current.as_ref())
                 };
                 if color_same && grid_same && backdrop_plan.is_none() {
                     continue;
@@ -98,8 +92,8 @@ impl Document {
                 if p.grid {
                     grid::write(&mut txn, &p.map, grid);
                 }
-                if let Some(same) = p.backdrop {
-                    self.write_backdrop(&mut txn, &p.map, backdrop, same);
+                if let Some(write) = p.backdrop {
+                    self.write_backdrop(&mut txn, &p.map, backdrop, write);
                 }
             }
         }
@@ -446,5 +440,40 @@ mod tests {
                 "fichier différent au rechargement {i}"
             );
         }
+    }
+
+    /// Même fond, métadonnée d'asset absente : `ApplyBackground` l'écrit en une étape annulable (comme `SetBackdrop`).
+    #[test]
+    fn apply_background_same_backdrop_writes_missing_asset_meta() {
+        let mut d = Document::blank();
+        let p = d.page_ids();
+        d.apply(look(&p, "#ffffff", image(), None)).expect("fond");
+        // Retire `assets/<id>` dans un Doc brut, puis recharge : fond sans métadonnée, historique neuf.
+        use yrs::updates::decoder::Decode;
+        use yrs::{Map, Transact, Update};
+        let raw = yrs::Doc::new();
+        raw.transact_mut()
+            .apply_update(Update::decode_v1(&d.encode_v1()).expect("décodage"))
+            .expect("mise à jour");
+        let assets = raw.get_or_insert_map("assets");
+        assets.remove(&mut raw.transact_mut(), ABC);
+        let bytes =
+            yrs::ReadTxn::encode_state_as_update_v1(&raw.transact(), &yrs::StateVector::default());
+        let mut d = Document::from_update_v1(&bytes).expect("rechargé");
+        let p = d.page_ids();
+        assert_eq!(
+            d.asset(ABC).map(|a| a.mime),
+            Some("application/octet-stream".into())
+        );
+        assert!(!d.can_undo());
+        d.apply(look(&p, "#ffffff", image(), None))
+            .expect("même fond");
+        assert_eq!(d.asset(ABC).map(|a| a.mime), Some(png().mime));
+        assert!(d.undo());
+        assert_eq!(
+            d.asset(ABC).map(|a| a.mime),
+            Some("application/octet-stream".into())
+        );
+        assert!(!d.can_undo(), "métadonnée seule : une seule étape");
     }
 }
