@@ -195,14 +195,14 @@ describe("SideBar (T10)", () => {
     Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
     const { container, pages, store } = setup();
     await vi.advanceTimersByTimeAsync(0);
-    expect(pages.thumb).toHaveBeenCalledWith("a", 440); // moyennes : 220 px CSS (largeur minimale, rien de mesuré)
+    expect(pages.thumb).toHaveBeenCalledWith("a", 352); // moyennes : 176 px CSS (T22) (largeur minimale, rien de mesuré)
     pages.thumb.mockClear();
     fireEvent.click(container.querySelector('[data-edit="page-thumb"] [data-choice="l"]')!);
     expect(store.setSidebar).toHaveBeenCalledWith({ tab: "pages", thumb: "l" });
     expect(container.querySelector<HTMLElement>(".rb-pages-list")!.getAttribute("data-thumb")).toBe("l");
     await vi.advanceTimersByTimeAsync(0);
-    expect(pages.thumb).toHaveBeenCalledWith("a", 560);
-    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb")).toBe("280px");
+    expect(pages.thumb).toHaveBeenCalledWith("a", 480);
+    expect(container.querySelector<HTMLElement>(".rb-pages-list")!.style.getPropertyValue("--rb-thumb")).toBe("240px");
     expect(container.querySelector('[data-page="1"] img')?.getAttribute("src")).toBe("blob:vignette");
     Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
   });
@@ -237,7 +237,7 @@ describe("SideBar (T10)", () => {
     const { pages } = setup({ thumb: "l" });
     await vi.advanceTimersByTimeAsync(0);
     spy.mockRestore();
-    expect(pages.thumb.mock.calls.map((c) => (c as unknown as [string, number])[1])).toEqual([600, 600, 600]); // (340 − 40) × 2; thumb l = 280 au minimum
+    expect(pages.thumb.mock.calls.map((c) => (c as unknown as [string, number])[1])).toEqual([600, 600, 600]); // (340 − 40) × 2; thumb l = 240 au minimum
     Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
   });
 
