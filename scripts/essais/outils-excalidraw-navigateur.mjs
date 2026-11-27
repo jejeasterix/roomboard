@@ -585,7 +585,7 @@ async function captures(browser, base, tmp, nom) {
     await ctx.close();
     return errors;
   }
-  const end = await touchDrag(page, cdp, [A[2], 300], [B[0] - 30, 300], { hold: true });
+  const end = await touchDrag(page, cdp, [A[2], 300], [B[0] + 20, 300], { hold: true });
   await shoot(page, "apres-fleche-liee", VUE);
   await end();
   await tool(page, "select");
@@ -608,7 +608,7 @@ async function captures(browser, base, tmp, nom) {
   await tool(c.page, "arrow");
   await touchDrag(c.page, c.cdp, [A[2], 300], [800, 470]);
   await tool(c.page, "select");
-  await tapStage(c.page, 690, 300);
+  await tapStage(c.page, 685, 385);
   await c.page.waitForTimeout(600);
   await choose(c.page, "doigt", "arrowType", "elbow");
   await c.page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
