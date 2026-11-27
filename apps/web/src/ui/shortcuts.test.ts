@@ -8,7 +8,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "file-new": ["file", "new"], "file-open": ["file", "open"], "file-save": ["file", "save"], "file-save-as": ["file", "saveAs"], "export-pdf": ["file", "exportPdf"], help: ["help", "?"],
   undo: ["key", "undo"], redo: ["key", "redo"], group: ["key", "group"], ungroup: ["key", "ungroup"],
   duplicate: ["object", "duplicate"], delete: ["edit", "delete"], escape: ["edit", "escape"],
-  front: ["order", "front"], forward: ["order", "forward"], backward: ["order", "backward"], back: ["order", "back"],
+  front: ["order", "front"], forward: ["order", "up"], backward: ["order", "down"], back: ["order", "back"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
   "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"],
 };

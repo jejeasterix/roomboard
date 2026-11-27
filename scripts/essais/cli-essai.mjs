@@ -488,7 +488,7 @@ try {
     const rect = (x) => JSON.stringify({ type: "AddShape", page: "$page:0", shape: "rect", x0: x, y0: 0, x1: x + 50, y1: 50, style: { color: "#000000", width: 4 }, fill: null });
     const neuf = cli(["run", "--new", "--out", f, "--ops", "-"], `${[rect(0), rect(100), rect(200)].join("\n")}\n`);
     verifie("personnalisation-2 : trois rectangles posés", neuf.code === 0, neuf.brut);
-    const [a, b, c] = neuf.lignes.map((l) => l.change.ids[0]);
+    const [a, b, c] = neuf.lignes.filter((l) => l.change).map((l) => l.change.ids[0]);
     const s = cli(["run", f, "--save", "--ops", "-"], `${[{ type: "Restack", ids: [a], to: 2 }, { op: "state" }, { op: "undo" }, { op: "state" }].map((o) => JSON.stringify(o)).join("\n")}\n`);
     const rang = (k, id) => JSON.stringify(s.lignes[k].state).indexOf(id);
     const devant = rang(1, b) < rang(1, c) && rang(1, c) < rang(1, a);
