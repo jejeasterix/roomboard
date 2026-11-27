@@ -74,14 +74,17 @@ function paintShade(ctx: CanvasRenderingContext2D, b: Bounds, color: string): vo
 }
 
 /** Image de fond (personnalisation-3, T9) : « couvrir », centrée, découpée au rectangle de la case ; image pas encore
- *  chargée (ou taille illisible) : rien, le cache la redemandera. */
+ *  chargée (ou taille nulle) : rien, le cache la redemandera. Taille absente (jeton du PDF vectoriel à l'en-tête
+ *  illisible, C1) : l'image remplit la case, plutôt qu'un fond absent. */
 function paintCellImage(ctx: CanvasRenderingContext2D, b: Bounds, asset: string, images: ImageSource): void {
-  const bmp = images.bitmap(asset) as (CanvasImageSource & { width?: number; height?: number }) | null;
-  const iw = bmp?.width ?? 0;
-  const ih = bmp?.height ?? 0;
-  if (bmp === null || !(iw > 0) || !(ih > 0)) return;
+  const bmp = images.bitmap(asset) as (CanvasImageSource & { width?: unknown; height?: unknown }) | null;
+  if (bmp === null) return;
   const w = b.x1 - b.x0;
   const h = b.y1 - b.y0;
+  const unsized = bmp.width === undefined && bmp.height === undefined;
+  const iw = unsized ? w : bmp.width;
+  const ih = unsized ? h : bmp.height;
+  if (typeof iw !== "number" || typeof ih !== "number" || !(iw > 0) || !(ih > 0)) return;
   const k = Math.max(w / iw, h / ih);
   ctx.save();
   ctx.beginPath();

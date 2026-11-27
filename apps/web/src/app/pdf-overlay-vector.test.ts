@@ -363,7 +363,7 @@ describe("vectorPainter (OG11, T8)", () => {
 });
 
 /** PNG réduit à sa signature et à son IHDR : `probeSize` y lit la taille, sans décodage. */
-function pngHeader(w: number, h: number): Uint8Array {
+function pngHeader(w: number, h: number): Uint8Array<ArrayBuffer> {
   const b = new Uint8Array(33);
   b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
   const v = new DataView(b.buffer);
@@ -384,7 +384,7 @@ describe("superposition vectorielle : image de fond de case (personnalisation-3,
     cells: [{ row: "r0", col: "c0", text: "", fill: null, shade: null, spans: [], bg: IMG }], merges: [],
   };
   /** Vrais jetons, vrai enregistreur, vrai peintre de tableau : seul l'écrivain est faux. */
-  const run = async (bytes: Uint8Array) => {
+  const run = async (bytes: Uint8Array<ArrayBuffer>) => {
     const lists: RecordedList[] = [];
     const written: (readonly Uint8Array[])[] = [];
     await createVectorOverlay({
@@ -412,6 +412,45 @@ describe("superposition vectorielle : image de fond de case (personnalisation-3,
     // index de l'image, x, y, largeur, hauteur de l'opération image (la taille vient de l'en-tête, pas du jeton).
     expect(indexOfSeq(list.ops, [0, 0, -28, 240, 120])).toBeGreaterThan(-1);
     expect(list.ops.indexOf(OP.clip)).toBeGreaterThan(-1);
+  });
+
+  it("C1 bout en bout : fakeCore et vectorPainter — fond posé par SetCellImage : une image couvrant la case, octets PNG à l'écrivain", async () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0]!;
+    const table = doc.apply({ type: "AddTable", page, x: 0, y: 0, cols: 1, rows: 1, colWidth: 240, rowHeight: 64, color: "#000000", size: 36 }).ids[0]!;
+    const image = doc.apply({ type: "AddImage", page, asset: info(IMG, "image/png"), w: 20, h: 10, matrix: [1, 0, 0, 1, 1000, 1000] }).ids[0]!;
+    const view = doc.element(table);
+    if (view?.kind !== "table") throw new Error("tableau");
+    const row = view.table.rows[0]!.id;
+    const col = view.table.cols[0]!.id;
+    doc.apply({ type: "PlaceInCell", ids: [image], matrix: [1, 0, 0, 1, 8, 8], cell: [table, row, col], sizes: [] });
+    doc.apply({ type: "SetCellImage", id: table, row, col, from: image });
+    const png = pngHeader(20, 10);
+    const lists: RecordedList[] = [];
+    const written: (readonly Uint8Array[])[] = [];
+    await createVectorOverlay({
+      doc,
+      assets: { get: (id) => (id === IMG ? new Blob([png], { type: "image/png" }) : undefined) },
+      alive: () => true,
+      measure: new Real() as unknown as CanvasRenderingContext2D,
+      painter: vectorPainter(doc),
+      fonts: async () => [new Uint8Array([9])],
+      toPng: async () => new Uint8Array(0),
+      write: async (l, _fonts, images) => {
+        lists.push(l);
+        written.push(images);
+        return new Uint8Array([7]);
+      },
+    }).pages([req(page)]);
+    const after = doc.element(table);
+    if (after?.kind !== "table") throw new Error("tableau");
+    expect(after.table.cells.find((c) => c.row === row && c.col === col)?.bg).toBe(IMG);
+    const w = after.table.cols[0]!.width;
+    const h = after.table.rows[0]!.height;
+    const k = Math.max(w / 20, h / 10);
+    expect(lists[0]!.images).toHaveLength(1);
+    expect(written[0]).toEqual([png]);
+    expect(indexOfSeq(lists[0]!.ops, [0, (w - 20 * k) / 2, (h - 10 * k) / 2, 20 * k, 10 * k])).toBeGreaterThan(-1);
   });
 
   it("C1 : en-tête illisible — le fond remplit la case (240 x 64) plutôt que de disparaître", async () => {
