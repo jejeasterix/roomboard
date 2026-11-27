@@ -11,6 +11,8 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
+import { BAR_ISLAND, watchIslands } from "./island-watch";
+import { createPageScrollbar } from "./page-scrollbar";
 import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
 import { createMiddlePan } from "../engine/input/middle-pan";
@@ -55,6 +57,7 @@ import { lookTag } from "./backgrounds-apply";
 import { createFillQueue } from "./image-fill";
 import { createZoneMarks } from "./zone-marks";
 import { stageTags } from "./stage-tags";
+import { createEraserRing } from "./eraser-ring";
 import { watchDpr } from "./mesure-outils";
 import { createTablePicker } from "./table-picker";
 import { createTextEditor, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
@@ -91,6 +94,9 @@ export interface SessionShared {
   readonly onItemStyle?: (s: ItemStyle) => void;
   /** OG11 : changements du style courant venus d'un autre onglet ; chaque session les applique à son moteur sans écrire la sélection. */
   readonly subscribeItemStyle?: (cb: (s: ItemStyle) => void) => () => void;
+  /** OG25 (déc. 25, 30) : gomme automatique à la paume (réglage de l'appareil, ou reçu par la fenêtre d'annotation), lue
+   *  à chaque pose de contact ; absent : active. */
+  readonly palmEraser?: () => boolean;
   /** T18 (déc. 38) : ouverture d'un lien (`ShellPort.openLink`) ; absent : aucun lien ouvert. */
   readonly openLink?: (url: string) => void;
 }
@@ -352,11 +358,11 @@ async function buildBoardSession(
     renderer: choice.renderer,
     ...(shared.openLink === undefined ? {} : { openLink: shared.openLink }),
     // OF83 : la page ajustée commence sous les îlots du haut (menu, onglets, barre, profil) et leur rangée contextuelle réservée.
-    // T22 : le panneau d'options (îlot à gauche, `data-options`) n'en est pas un : il ne réserve rien.
+    // T22, OG27 : seuls les îlots de barre réservent le haut ; ni le panneau d'options ni un popover (lien).
     fitTop: () =>
       topBelowIslands(
         stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island:not([data-options])")].map((e) => {
+        [...stage.ownerDocument.querySelectorAll(BAR_ISLAND)].map((e) => {
           const r = e.getBoundingClientRect();
           return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
         }),
@@ -411,14 +417,22 @@ async function buildBoardSession(
       return settings.get().finger === "pan";
     },
     secondFingerMs: SECOND_FINGER_MS,
+    get autoEraser() {
+      return shared.palmEraser?.() ?? true;
+    },
   };
   // Échelon 2 : `prediction` dit si la prédiction TS est effective (tag et libellé ; auto : seulement sans prédits
   // natifs). OF73 : `source` (TS, natifs bornés, aucun) est lue à chaque image ; `off` coupe les natifs, la souris n'en a jamais.
   const prediction = (): boolean => resolvePrediction(settings.get().prediction, support.predicted);
   const source = (): PredictionSource => predictionSource(settings.get().prediction, support.predicted);
+  // OG25 (déc. 24, A4) : anneau de la gomme automatique, dans la scène, piloté par le routeur.
+  const eraserRing = createEraserRing(stage);
+  undo.push(() => eraserRing.dispose());
   const router = createRouter(routerOptions, {
     currentTool: () => engine.tool(),
     panHeld: () => engine.panHeld(),
+    gesturesToTools: () => engine.gesturesToTools(),
+    ring: (c) => eraserRing.show(c),
     gestures: withPrediction(engine.sink, source),
     view: engine.view,
     // OG12 T11 (n° 29) : le doigt posé pendant un geste au doigt vaut Maj pour l'outil (15°, proportions).
@@ -474,13 +488,25 @@ async function buildBoardSession(
 
   // Taille CSS de la case (le rendu Canvas 2D la retient, page infinie) et devicePixelRatio suivis : l'encre reste sous
   // la pointe. Jamais la taille de la fenêtre.
+  // OG24 : l'ascenseur d'une page portrait suit la caméra, la page montrée, son mode et la taille de la vue.
+  const scrollbar = createPageScrollbar(stage, engine, () => sampler.penInContact());
+  undo.push(() => scrollbar.element.remove());
   const fit = (): void => {
     engine.resize(stage.clientWidth, stage.clientHeight, window.devicePixelRatio || 1);
+    scrollbar.update();
   };
   const resizes = new ResizeObserver(() => fit());
   undo.push(() => resizes.disconnect());
   resizes.observe(stage);
   fit();
+  // OG27 : un îlot du haut bouge (glissé, replié, compacté) → le haut de la page ajustée change ; vue encore ajustée
+  // décalée, ascenseur recalé tout de suite (sans attendre le prochain défilement). Session cachée ou fermée : rien.
+  const islandsMoved = (): void => {
+    if (!engine.topChanged()) scrollbar.update();
+  };
+  // Observé seulement quand la session est montrée ; `activate` rattrape le haut changé pendant qu'elle était cachée.
+  let stopIslands: () => void = () => undefined;
+  undo.push(() => stopIslands());
   const stopDpr = watchDpr(window, fit);
   undo.push(stopDpr);
 
@@ -755,7 +781,14 @@ async function buildBoardSession(
     stage.dataset["bind"] = tags.bind;
     stage.dataset["linePoints"] = tags.linePoints;
     stage.style.cursor = s.tool === "hand" ? "grab" : "";
+    // OG24 : page montrée ou disposition changée (Ctrl+Z d'un mode) ; la caméra, elle, passe par onCamera.
+    const shown = `${s.page}|${s.pageLayout}`;
+    if (shown !== scrollShown) {
+      scrollShown = shown;
+      scrollbar.update();
+    }
   };
+  let scrollShown = "";
   mark(engine.state());
   const offState = engine.onState(mark);
   remark = () => mark(engine.state());
@@ -767,6 +800,7 @@ async function buildBoardSession(
   // La zone de texte suit le zoom (T90) ; la caméra est publiée pour les essais (S5b).
   const onCamera = (c: Camera): void => {
     editor.follow(c);
+    scrollbar.update();
     stage.dataset["camera"] = cameraTag(c);
   };
   stage.dataset["camera"] = cameraTag(engine.camera());
@@ -828,9 +862,13 @@ async function buildBoardSession(
       stage.hidden = false;
       active = true;
       fit();
+      islandsMoved();
+      stopIslands();
+      stopIslands = watchIslands(stage.ownerDocument.body, islandsMoved);
     },
     deactivate() {
       active = false;
+      stopIslands();
       closeOrbit();
       players.pauseAll();
       stage.hidden = true;
@@ -842,6 +880,7 @@ async function buildBoardSession(
     dispose() {
       if (disposed) return;
       disposed = true;
+      stopIslands();
       resizes.disconnect();
       stopDpr();
       offSettings();
@@ -853,6 +892,7 @@ async function buildBoardSession(
       trail.dispose();
       middlePan.dispose();
       sampler.dispose();
+      eraserRing.dispose();
       engine.dispose();
       // Avant le lanceur : un calcul arrêté rend null, la file fermée n'écrit plus ni ne relit le document (RF4).
       fillQueue.dispose();

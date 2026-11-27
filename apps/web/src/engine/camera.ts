@@ -89,7 +89,8 @@ export function fitFrame(viewW: number, viewH: number, frame: PageRect, top: num
   return { zoom: c.zoom, tx: c.tx - frame.x0 * c.zoom, ty: c.ty + top - frame.y0 * c.zoom };
 }
 
-/** « Ajuster la page » selon l'orientation (décision 10) : paysage = largeur ; portrait = cadre entier ; infini = contenu entier, sinon 1920 × 1080 en largeur. */
+/** « Ajuster la page » selon l'orientation (décision 10) : paysage et portrait = largeur (OG24 : Jérôme renverse H4, le
+ *  portrait remplit l'écran et défile) ; infini = contenu entier, sinon 1920 × 1080 en largeur. */
 export function fitFor(
   layout: FrameLayout,
   viewW: number,
@@ -98,8 +99,25 @@ export function fitFor(
   content: PageRect | null,
   top: number,
 ): Camera {
-  if (layout === "landscape" && frame) return fitWidth(viewW, viewH, frame.x1 - frame.x0, 0.95, top);
-  if (layout === "portrait" && frame) return fitFrame(viewW, viewH, frame, top);
+  if (layout !== "infinite" && frame) return fitWidth(viewW, viewH, frame.x1 - frame.x0, 0.95, top);
   if (layout === "infinite" && content) return fitFrame(viewW, viewH, content, top);
   return fitWidth(viewW, viewH, PAGE_WIDTH, 0.95, top);
+}
+
+/** Bornes de `ty` (OG24, ascenseur du portrait) : au plus haut, le haut du cadre sous `top` px ; au plus bas, le bas du
+ *  cadre à `bottom` px du bas de la vue. Null si le cadre tient dans la vue : rien à faire défiler. */
+export interface ScrollBounds {
+  readonly min: number;
+  readonly max: number;
+}
+export function scrollBounds(c: Camera, frame: PageRect, viewH: number, top: number, bottom: number): ScrollBounds | null {
+  const max = top - frame.y0 * c.zoom;
+  const min = viewH - bottom - frame.y1 * c.zoom;
+  return min < max ? { min, max } : null;
+}
+
+/** `ty` borné à `b` ; une vue déjà hors bornes (glisser libre à deux doigts) n'y saute pas : elle ne fait que s'en rapprocher. */
+export function scrollTo(c: Camera, ty: number, b: ScrollBounds): Camera {
+  if (!Number.isFinite(ty)) return c;
+  return { zoom: c.zoom, tx: c.tx, ty: Math.min(Math.max(b.max, c.ty), Math.max(Math.min(b.min, c.ty), ty)) };
 }

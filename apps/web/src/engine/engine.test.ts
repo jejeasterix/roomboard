@@ -4,7 +4,7 @@ import { fakeCore } from "../core/fake-core";
 import { paramsOf, turnShown } from "../core/image-params";
 import type { FrameLoopDeps } from "../proto/frame-loop";
 import { fitFor, fitWidth, worldToScreen, type Camera } from "./camera";
-import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
+import { createEngine, ENGINE_FRAME_HISTORY, pageShortcut, scrollShortcut, WHEEL_ZOOM_SPEED, type EngineDeps, type ToolFactories } from "./engine";
 import { DEFAULT_ITEM_STYLE, type ItemStyle } from "./item-style";
 import type { CloseReason } from "./input/gesture";
 import type { KeyLike } from "./input/keys";
@@ -199,6 +199,19 @@ describe("createEngine", () => {
     engine.sink.extend(1, [sample], []);
     expect(log).toEqual(["eraser.begin 1", "eraser.extend 1"]);
     expect(frames.pending()).toBe(1);
+  });
+
+  it("OG25 : sink.resize va à l'outil du geste ; geste inconnu : rien", () => {
+    const log: string[] = [];
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => ({ ...fakeTool("eraser", log, ctx), resize: (id: number, r: number) => void log.push(`eraser.resize ${id} ${r}`) }),
+    };
+    const engine = createEngine({ doc: fakeCore.blank(), renderer: new FakeRenderer(), frames: new Frames(), tools });
+    engine.sink.begin(-1, "eraser", [sample]);
+    engine.sink.resize?.(-1, 70);
+    engine.sink.resize?.(5, 70);
+    expect(log).toEqual(["eraser.begin -1", "eraser.resize -1 70"]);
   });
 
   it("une image : frame des outils, scène si sale, couche vive, onLiveDrawn", () => {
@@ -523,7 +536,7 @@ describe("createEngine", () => {
     expect(engine.state().page).not.toBe(p1);
   });
 
-  it("setPageMode portrait : fitPage montre tout le cadre", () => {
+  it("setPageMode portrait : fitPage en largeur, haut de page en haut (OG24)", () => {
     const { engine } = setup();
     engine.resize(1000, 800, 1);
     expect(engine.state().pageLayout).toBe("landscape");
@@ -531,8 +544,90 @@ describe("createEngine", () => {
     expect(engine.state().pageLayout).toBe("portrait");
     engine.fitPage();
     const cam = engine.camera();
-    // cadre portrait entier visible : hauteur du cadre (1920 × 16 / 9) × zoom ≤ hauteur de la vue
-    expect(cam.zoom * ((1920 * 16) / 9)).toBeLessThanOrEqual(800 + 1e-6);
+    // OG24 (H4 renversée par Jérôme) : la page remplit la largeur ; son bas sort de la vue, l'ascenseur y mène
+    expect(cam).toEqual(fitWidth(1000, 800, 1920, 0.95, 16));
+    expect(cam.zoom * ((1920 * 16) / 9)).toBeGreaterThan(800);
+  });
+
+  describe("ascenseur du portrait (OG24)", () => {
+    const portrait = () => {
+      const s = setup({ fitTop: () => 100 });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      return s;
+    };
+    const pageBottom = (c: Camera): number => c.ty + ((1920 * 16) / 9) * c.zoom;
+    it("ajustée : haut de page, une part de la page visible", () => {
+      const { engine } = portrait();
+      const s = engine.pageScroll()!;
+      expect(s.at).toBe(0);
+      expect(s.top).toBe(100);
+      expect(s.span).toBe(800 - 100 - 16);
+      expect(s.visible).toBeGreaterThan(0.2);
+      expect(s.visible).toBeLessThan(0.5);
+    });
+    it("paysage et infini : aucun ascenseur", () => {
+      const { engine } = setup();
+      engine.resize(1000, 800, 1);
+      expect(engine.pageScroll()).toBeNull();
+      expect(engine.scrollPageBy(100)).toBe(false);
+      engine.setPageMode("infinite");
+      expect(engine.pageScroll()).toBeNull();
+    });
+    it("scrollPageTo(1) : bas de page à 16 px du bas ; scrollPageTo(0) : haut de page sous les îlots", () => {
+      const { engine } = portrait();
+      expect(engine.scrollPageTo(1)).toBe(true);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      engine.scrollPageTo(0);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+    });
+    it("scrollPageBy borné à la page ; zoom et décalage horizontal gardés", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.scrollPageBy(1e6);
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera()).toMatchObject({ zoom: before.zoom, tx: before.tx });
+      engine.scrollPageBy(-1e6);
+      expect(engine.camera().ty).toBeCloseTo(100, 6);
+      expect(engine.scrollPageBy(-10)).toBe(false);
+    });
+    it("molette en portrait : défilement vertical borné, horizontal libre ; Ctrl+molette zoome", () => {
+      const { engine } = portrait();
+      const before = engine.camera();
+      engine.wheel({ x: 0, y: 0, deltaX: 0, deltaY: -500, ctrlKey: false });
+      expect(engine.camera()).toEqual(before);
+      engine.wheel({ x: 0, y: 0, deltaX: 30, deltaY: 1e6, ctrlKey: false });
+      expect(pageBottom(engine.camera())).toBeCloseTo(800 - 16, 6);
+      expect(engine.camera().tx).toBeCloseTo(before.tx - 30, 6);
+      engine.wheel({ x: 500, y: 400, deltaX: 0, deltaY: -100, ctrlKey: true });
+      expect(engine.camera().zoom).toBeGreaterThan(before.zoom);
+    });
+    it("scrollShortcut : flèches, Maj+flèches, Début, Fin ; rien hors portrait ni dans un champ", () => {
+      const { engine } = portrait();
+      const k = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, target: null, ...o });
+      expect(scrollShortcut(k("ArrowUp"), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(true);
+      const line = 100 - engine.camera().ty;
+      expect(line).toBeGreaterThan(40);
+      expect(scrollShortcut(k("ArrowDown", { shiftKey: true }), engine)).toBe(true);
+      expect(100 - engine.camera().ty).toBeGreaterThan(line * 4);
+      expect(scrollShortcut(k("End"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBeCloseTo(1, 6);
+      expect(scrollShortcut(k("Home"), engine)).toBe(true);
+      expect(engine.pageScroll()!.at).toBe(0);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "TEXTAREA" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { target: { tagName: "INPUT", type: "range" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("End", { target: { tagName: "SELECT" } }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { altKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { metaKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { isComposing: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("ArrowDown", { ctrlKey: true }), engine)).toBe(false);
+      expect(scrollShortcut(k("PageDown"), engine)).toBe(false);
+      expect(engine.pageScroll()!.at).toBe(0);
+      engine.setPageMode("landscape");
+      expect(scrollShortcut(k("ArrowDown"), engine)).toBe(false);
+    });
   });
 
   it("pageMode / pageLayout dans l'état", () => {
@@ -1355,7 +1450,7 @@ describe("moteur — pot (C6a)", () => {
     expect(fit).toHaveBeenCalledTimes(1);
   });
 
-  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : cadre entier (décision 10, T18)", () => {
+  it("fitPage : page paysage au fond PDF A4 (cadre plus haut que large) cadrée par la largeur ; page portrait choisie : largeur aussi (décision 10, T18 ; OG24)", () => {
     const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
     const mk = (doc: typeof pdf) => createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) } });
     const view = pdf.page(pdf.pageIds()[0]!)!;
@@ -1369,6 +1464,82 @@ describe("moteur — pot (C6a)", () => {
     engine.setPageMode("portrait");
     const portrait = fitFor("portrait", 1000, 800, { x0: 0, y0: 0, x1: 1920, y1: (1920 * 16) / 9 }, null, 16);
     expect(engine.camera().zoom).toBeCloseTo(portrait.zoom, 6);
+  });
+
+  it("page paysage au fond PDF A4 : affichée portrait, elle a l'ascenseur ; bas du fond à 16 px du bas (OG27, P2 de la PR 68)", () => {
+    const pdf = fakeCore.fromPdfPages({ id: "ab".repeat(32), name: "a.pdf", mime: "application/pdf", size: 3 }, [{ w: 595, h: 842 }]);
+    const e = createEngine({ doc: pdf, renderer: new FakeRenderer(), frames: new Frames(), tools: { pen: (ctx) => fakeTool("pen", [], ctx), eraser: (ctx) => fakeTool("eraser", [], ctx) }, fitTop: () => 100 });
+    e.resize(1000, 800, 1);
+    expect(e.state().pageLayout).toBe("portrait");
+    expect(e.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 100));
+    const s = e.pageScroll()!;
+    expect(s).not.toBeNull();
+    expect(s.at).toBe(0);
+    expect(e.scrollPageTo(1)).toBe(true);
+    const view = pdf.page(pdf.pageIds()[0]!)!;
+    const cam = e.camera();
+    expect(cam.ty + view.backdrop!.rect!.y1 * cam.zoom).toBeCloseTo(800 - 16, 6);
+  });
+
+  describe("îlot du haut déplacé : ajustement et ascenseur recalés (OG27)", () => {
+    const moving = () => {
+      let top = 100;
+      const s = setup({ fitTop: () => top });
+      s.engine.resize(1000, 800, 1);
+      s.engine.setPageMode("portrait");
+      s.engine.fitPage();
+      return { ...s, setTop: (t: number) => (top = t) };
+    };
+    it("vue encore ajustée : réajustée sous le nouveau haut, l'ascenseur suit", () => {
+      const { engine, setTop } = moving();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+      expect(engine.pageScroll()).toMatchObject({ at: 0, top: 40, span: 800 - 40 - 16 });
+    });
+    it("vue défilée : caméra gardée, l'ascenseur relit ses bornes", () => {
+      const { engine, setTop } = moving();
+      engine.scrollPageBy(200);
+      const before = engine.camera();
+      const at = engine.pageScroll()!.at;
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toEqual(before);
+      expect(engine.pageScroll()!.top).toBe(40);
+      expect(engine.pageScroll()!.at).not.toBe(at);
+    });
+    it("page quittée encore ajustée : réajustée à son retour", () => {
+      const { engine, setTop } = moving();
+      const p1 = engine.state().page;
+      engine.addPage();
+      setTop(40);
+      engine.topChanged();
+      engine.showPage(p1);
+      expect(engine.camera()).toEqual(fitWidth(1000, 800, 1920, 0.95, 40));
+    });
+    it("vue ajustée : seul le haut se décale ; zoom gardé après un redimensionnement (HL3-6)", () => {
+      const { engine, setTop } = moving();
+      engine.resize(1400, 800, 1);
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(true);
+      expect(engine.camera()).toEqual({ ...before, ty: before.ty - 60 });
+    });
+    it("Infini : rien (l'ajustement suit le contenu, aucun ascenseur)", () => {
+      const { engine, setTop } = moving();
+      engine.setPageMode("infinite");
+      engine.fitPage();
+      const before = engine.camera();
+      setTop(40);
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
+    it("haut inchangé : rien", () => {
+      const { engine } = moving();
+      const before = engine.camera();
+      expect(engine.topChanged()).toBe(false);
+      expect(engine.camera()).toBe(before);
+    });
   });
 
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
@@ -1820,6 +1991,17 @@ describe("moteur — C5 (retouche d'image)", () => {
     engine.report("retouches de l'image non affichées : x");
     expect([engine.state().error, doc.version()]).toEqual(["retouches de l'image non affichées : x", v]);
   });
+
+  it("OG25 gesturesToTools : vrai retouche au repos, faux pendant le rognage, vrai après", () => {
+    const { engine, id } = c5();
+    expect(engine.gesturesToTools()).toBe(true);
+    const edit = engine.editImage(id)!;
+    expect(engine.gesturesToTools()).toBe(true);
+    edit.startCrop();
+    expect(engine.gesturesToTools()).toBe(false);
+    edit.finishCrop(false);
+    expect(engine.gesturesToTools()).toBe(true);
+  });
 });
 
 describe("moteur : séance d'orbite (C15, X23)", () => {
@@ -1951,6 +2133,15 @@ describe("moteur : séance d'orbite (C15, X23)", () => {
     expect(closed).toHaveBeenCalledTimes(1);
     engine.dispose();
     expect(closed).toHaveBeenCalledTimes(2);
+  });
+
+  it("OG25 gesturesToTools : faux tant qu'une orbite est ouverte", () => {
+    const { engine, open } = c15();
+    expect(engine.gesturesToTools()).toBe(true);
+    const o = open();
+    expect(engine.gesturesToTools()).toBe(false);
+    o?.close();
+    expect(engine.gesturesToTools()).toBe(true);
   });
 });
 

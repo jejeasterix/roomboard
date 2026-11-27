@@ -7,12 +7,12 @@
 import { createImageEdit, type ImageEdit, type ImageEditSession } from "./tools/image-edit";
 import { NO_CHANGE, type Bounds, type Change, type Command, type CoreDocument, type EraseMode, type GridView, type PageLayout, type PageMode, type ShapeKind, type StrokeStyle } from "../core/api";
 import { createFrameLoop, type FrameLoopDeps } from "../proto/frame-loop";
-import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, zoomAt as zoomCamera, type Camera } from "./camera";
+import { fitFor, IDENTITY, panBy as panCamera, screenToWorld, scrollBounds, scrollTo, zoomAt as zoomCamera, type Camera, type ScrollBounds } from "./camera";
 import type { CloseReason, DrawTool, GestureSink, ToolChoice, ViewSink } from "./input/gesture";
 import type { InputSample } from "./input/sampler";
 import { selectionUnits, viewsOf, type GroupedView } from "./groups";
 import { stepTarget, wholeUnits } from "../app/layer-list";
-import { editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, type KeyLike, type LinkDir } from "./input/keys";
+import { editAction, enterAction, inEditable, isCtrlKey, isPanKey, keyAction, lineEditKey, linkedKey, objectKey, orderKey, pageKey, scrollKey, type KeyLike, type LinkDir } from "./input/keys";
 import { DEFAULT_ITEM_STYLE, mergeItemStyle, type ItemStyle } from "./item-style";
 import { elbowedOf, type LookPatch } from "../core/look";
 import { isSegment } from "../core/shapes";
@@ -159,6 +159,42 @@ export function pageShortcut(
   }
 }
 
+/** OG24 : marge sous le bas d'une page portrait défilée jusqu'en bas, en px de scène (le haut garde `fitTop`). */
+export const SCROLL_BOTTOM = 16;
+
+/** Ascenseur de la page portrait montrée (OG24) : `at` 0 = haut de page, 1 = bas ; `visible` = part de la page à
+ *  l'écran (0-1) ; `top` = haut de page ajustée, px de scène ; `span` = hauteur d'écran, px, de `top` à la marge du bas. */
+export interface PageScroll {
+  readonly at: number;
+  readonly visible: number;
+  readonly top: number;
+  readonly span: number;
+}
+
+/** Deux caméras identiques au px près (OG27 : une vue restée à son ajustement). */
+const sameCamera = (a: Camera, b: Camera): boolean => a.zoom === b.zoom && a.tx === b.tx && a.ty === b.ty;
+
+/**
+ * Touches de l'ascenseur (OG24), prises seulement si la vue bouge : ↑ ↓ d'un huitième de `span`, Maj+↑ ↓ de 90 % de
+ * `span`, Début et Fin aux bords. Hors portrait (ou page qui tient dans la vue) : rien, la touche passe.
+ */
+export function scrollShortcut(e: KeyLike, engine: Pick<Engine, "pageScroll" | "scrollPageBy" | "scrollPageTo">): boolean {
+  const k = scrollKey(e);
+  const s = k === null ? null : engine.pageScroll();
+  if (s === null) return false;
+  switch (k) {
+    case "top":
+      return engine.scrollPageTo(0);
+    case "bottom":
+      return engine.scrollPageTo(1);
+    case "up":
+    case "down":
+      return engine.scrollPageBy((k === "up" ? -1 : 1) * (s.span / 8));
+    default:
+      return engine.scrollPageBy((k === "screen-up" ? -1 : 1) * s.span * 0.9);
+  }
+}
+
 export interface OrbitOptions {
   readonly view: ModelCamera;
   onView(v: ModelCamera): void;
@@ -206,6 +242,9 @@ export interface Engine {
   releaseKeys(): void;
   /** Barre d'espace tenue (D17) : le routeur la lit au début d'un geste. */
   panHeld(): boolean;
+  /** OG25 (déc. 23) : faux quand une retouche d'image (rognage, pipette) ou une orbite prend les gestes ; le routeur le
+   *  lit avant de basculer en gomme automatique. */
+  gesturesToTools(): boolean;
   /** Montre une page (caméra par page, D17) ; false si elle est inconnue. Les gestes en cours sont abandonnés. */
   showPage(id: string): boolean;
   /** Ajoute une page après la page montrée et la montre (D16, CL4-9) ; false si le cœur refuse. */
@@ -223,6 +262,16 @@ export interface Engine {
   nextPage(): boolean;
   /** « Ajuster la page » (D5 amendée) : largeur cadrée, haut de page en haut de la vue. */
   fitPage(): void;
+  /** OG24 : ascenseur de la page portrait montrée ; null en paysage, en infini, ou si la page tient dans la vue. */
+  pageScroll(): PageScroll | null;
+  /** OG24 : fait défiler la page portrait de `dy` px d'écran (positif : vers le bas de la page), borné à la page ; faux si rien ne bouge. */
+  scrollPageBy(dy: number): boolean;
+  /** OG24 : place la page portrait à `at` (0 = haut, 1 = bas, borné) ; faux si rien ne bouge. */
+  scrollPageTo(at: number): boolean;
+  /** OG27 : le haut sous les îlots (`fitTop`) a pu changer (un îlot du haut a bougé). Vue d'une page Page encore à son
+   *  ajustement : décalée du seul écart du haut (zoom gardé) ; pages quittées encore ajustées : aussi. Infini : rien.
+   *  Vrai si la vue montrée a bougé. */
+  topChanged(): boolean;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
   /** Aperçu d'une grille non enregistrée sur la page montrée (C9 éditeur, DAE1) : rien n'est écrit ; null = aucune grille. */
@@ -367,13 +416,13 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
   /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  const fitTop = (): number => deps.fitTop?.() ?? 16;
   const fit = (w: number, h: number): Camera => {
     const view = doc.page(pageId);
-    const top = deps.fitTop?.() ?? 16;
+    const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
-    // décision 10 : Infini = contenu ∪ fond ; page plus haute que large (portrait choisi) = cadre entier ; sinon largeur.
-    // Le cadre d'un fond PDF A4 dépasse la hauteur de page : il ne décide pas de l'ajustement.
-    const layout = pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape";
+    // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
+    const layout = pageLayoutOf(view);
     return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
   };
   const contentRect = (backdrop: Bounds | null): PageRect | null => {
@@ -396,10 +445,41 @@ export function createEngine(deps: EngineDeps): Engine {
   let lastDeleted: string[] | null = null;
   /** Caméra de chaque page quittée (D17 : par page, dans l'interface, jamais dans le document). */
   const cameras = new Map<string, Camera>();
-  /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
-  const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
+  /** OG27 : dernier ajustement de chaque page (caméra et haut sous les îlots) ; une vue qui y est encore suit le haut. */
+  /** Pages déjà ajustées à la vue : l'ajustement ne se fait qu'une fois par page (HL3-6, HL3b-7). */
+  const fits = new Map<string, { readonly camera: Camera; readonly top: number }>();
+  const setFit = (id: string, c: Camera): void => {
+    fits.set(id, { camera: c, top: fitTop() });
+  };
+  /** OG27 : vue `c` de la page `id` décalée du seul écart du haut (`top`), si elle est encore à son ajustement d'une page
+   *  Page ; null sinon (vue déplacée par la main, Infini, page disparue, haut inchangé). Ni zoom ni contenu relus. */
+  const followTop = (id: string, c: Camera, top: number): Camera | null => {
+    const f = fits.get(id);
+    const view = doc.page(id);
+    if (f === undefined || view === null || pageLayoutOf(view) === "infinite" || f.top === top || !sameCamera(c, f.camera)) return null;
+    const next = { ...c, ty: c.ty + top - f.top };
+    fits.set(id, { camera: next, top });
+    return next;
+  };
+  /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue.
+   *  OG27 : le portrait est la forme affichée (cadre plus haut que large), fond PDF A4 d'une page Paysage compris. */
+  const scrollState = (): { readonly bounds: ScrollBounds; readonly top: number; readonly height: number } | null => {
+    const view = doc.page(pageId);
+    const frame = view === null || pageLayoutOf(view) !== "portrait" ? null : pageFrame(view);
+    if (frame === null || !(viewH > 0)) return null;
+    const top = fitTop();
+    const bounds = scrollBounds(camera, frame, viewH, top, SCROLL_BOTTOM);
+    return bounds === null ? null : { bounds, top, height: (frame.y1 - frame.y0) * camera.zoom };
+  };
+  /** Caméra défilée à `ty` (bornée) ; vrai si elle a bougé. */
+  const scrollCamera = (next: Camera): boolean => {
+    if (next.ty === camera.ty && next.tx === camera.tx) return false;
+    setCamera(next);
+    requestScene();
+    return true;
+  };
   let tool: ToolChoice = "pen";
   let spaceHeld = false;
   let shiftHeld = false;
@@ -599,7 +679,7 @@ export function createEngine(deps: EngineDeps): Engine {
       setCamera(saved);
     } else if (viewW > 0 && viewH > 0) {
       setCamera(fit(viewW, viewH));
-      fitted.add(id);
+      setFit(id, camera);
     } else {
       setCamera(IDENTITY);
     }
@@ -999,6 +1079,10 @@ export function createEngine(deps: EngineDeps): Engine {
       emitIfSelectionChanged(() => g.close(pointerId, how), g);
       loop.start(); // une image de plus : couche vive effacée, aperçu retiré
     },
+    resize(pointerId, radiusPx) {
+      owner.get(pointerId)?.resize?.(pointerId, radiusPx);
+      loop.start(); // l'aperçu suit le rayon
+    },
   };
 
   /** Champs du style courant en commande SetStyle (noms du cœur ; neutre = champ retiré). */
@@ -1263,6 +1347,7 @@ export function createEngine(deps: EngineDeps): Engine {
       touchShift = false;
     },
     panHeld: () => spaceHeld,
+    gesturesToTools: () => !(imageEdit !== null && imageEdit.mode() !== "idle") && orbit === null,
     showPage(id) {
       if (id === pageId) return true;
       if (!doc.pageIds().includes(id)) return false;
@@ -1309,10 +1394,42 @@ export function createEngine(deps: EngineDeps): Engine {
       const prev = i > 0 ? ids[i - 1] : undefined;
       return prev !== undefined && engine.showPage(prev);
     },
+    pageScroll() {
+      const s = scrollState();
+      if (s === null) return null;
+      const { min, max } = s.bounds;
+      const span = viewH - s.top - SCROLL_BOTTOM;
+      return { at: Math.min(1, Math.max(0, (max - camera.ty) / (max - min))), visible: Math.min(1, span / s.height), top: s.top, span };
+    },
+    scrollPageBy(dy) {
+      const s = scrollState();
+      return s !== null && scrollCamera(scrollTo(camera, camera.ty - dy, s.bounds));
+    },
+    scrollPageTo(at) {
+      const s = scrollState();
+      if (s === null || !Number.isFinite(at)) return false;
+      const { min, max } = s.bounds;
+      return scrollCamera({ ...camera, ty: max - Math.min(1, Math.max(0, at)) * (max - min) });
+    },
+    topChanged() {
+      if (!(viewW > 0 && viewH > 0)) return false;
+      const top = fitTop();
+      // Pages quittées encore ajustées : leur caméra gardée suit (elles se montreront sous le nouveau haut).
+      for (const [id, saved] of cameras) {
+        if (id === pageId) continue;
+        const next = followTop(id, saved, top);
+        if (next !== null) cameras.set(id, next);
+      }
+      const next = followTop(pageId, camera, top);
+      if (next === null) return false;
+      setCamera(next);
+      requestScene();
+      return true;
+    },
     fitPage() {
       if (viewW > 0 && viewH > 0) {
         setCamera(fit(viewW, viewH));
-        fitted.add(pageId);
+        setFit(pageId, camera);
       }
       requestScene();
     },
@@ -1472,16 +1589,22 @@ export function createEngine(deps: EngineDeps): Engine {
       };
     },
     wheel(e) {
-      if (e.ctrlKey) view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
-      else view.panBy(-e.deltaX, -e.deltaY);
+      if (e.ctrlKey) {
+        view.zoomAt(e.x, e.y, Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED));
+        return;
+      }
+      // OG24 : en portrait, la molette défile la page, bornée comme l'ascenseur ; le glisser à deux doigts reste libre.
+      const s = scrollState();
+      if (s === null) view.panBy(-e.deltaX, -e.deltaY);
+      else scrollCamera(scrollTo(panCamera(camera, -e.deltaX, 0), camera.ty - e.deltaY, s.bounds));
     },
     resize(width, height, dpr) {
       renderer.resize(width, height, dpr);
       viewW = width;
       viewH = height;
-      if (!fitted.has(pageId) && width > 0 && height > 0) {
+      if (!fits.has(pageId) && width > 0 && height > 0) {
         setCamera(fit(width, height));
-        fitted.add(pageId);
+        setFit(pageId, camera);
       }
       requestScene();
     },

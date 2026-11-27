@@ -98,6 +98,22 @@ export function orderKey(e: KeyLike): OrderKey | null {
   return null;
 }
 
+export type ScrollKey = "up" | "down" | "screen-up" | "screen-down" | "top" | "bottom";
+
+/** OG24 (ascenseur du portrait) : ↑ ↓ d'un cran, Maj+↑ ↓ d'un écran (PageUp/PageDown changent de page, DA9), Début et Fin ;
+ *  sans Ctrl, Cmd ni Alt (Ctrl+↑ ↓ : ordre des objets), hors IME, hors champ et hors contrôle de formulaire (une réglette
+ *  ou une liste focalisée garde ses flèches, Début et Fin). */
+export function scrollKey(e: KeyLike): ScrollKey | null {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || inEditable(e.target)) return null;
+  if (EDITABLE.has(e.target?.tagName?.toUpperCase() ?? "")) return null;
+  if (e.key === "ArrowUp") return e.shiftKey ? "screen-up" : "up";
+  if (e.key === "ArrowDown") return e.shiftKey ? "screen-down" : "down";
+  if (e.shiftKey) return null;
+  if (e.key === "Home") return "top";
+  if (e.key === "End") return "bottom";
+  return null;
+}
+
 export type PageKey = "prev" | "next" | "add" | "duplicate" | "sidebar-pages" | "sidebar-layers";
 
 /** Raccourcis de page (DA9) : PageUp/PageDown, Ctrl+M (Ctrl aussi sous macOS), Ctrl/Cmd+Maj+D/P/L ; hors champ, hors IME, Alt Gr refusé. */
@@ -119,12 +135,14 @@ export function pageKey(e: KeyLike): PageKey | null {
   return null;
 }
 
-export type AppShortcut = "backgrounds";
+export type AppShortcut = "backgrounds" | "palm-eraser";
 
 /** personnalisation-1b (Q28) : raccourcis de l'application, écoutés par `App.tsx` (jamais par le moteur) : Ctrl+Maj+F
- *  (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds ; hors champ de saisie, hors composition, jamais avec Alt. */
+ *  (Cmd+Maj+F sous macOS) ouvre ou ferme la fenêtre des fonds ; OG25 : Ctrl+Maj+H (Cmd+Maj+H) coupe ou rallume la gomme
+ *  automatique à la paume ; hors champ de saisie, hors composition, jamais avec Alt. */
 export function appShortcut(e: KeyLike): AppShortcut | null {
   if (e.isComposing || e.altKey || !e.shiftKey || !(e.ctrlKey || e.metaKey)) return null;
   if (inEditable(e.target)) return null;
-  return e.key.toLowerCase() === "f" ? "backgrounds" : null;
+  const key = e.key.toLowerCase();
+  return key === "f" ? "backgrounds" : key === "h" ? "palm-eraser" : null;
 }

@@ -13,6 +13,7 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"], link: ["object", "link"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
   "line-edit": ["lineEdit", "Enter"], "linked-node": ["linked", "right"], "no-binding": ["ctrlHeld", "Control"],
+  "palm-eraser": ["app", "palm-eraser"],
 };
 const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "Entrée": "Enter" };
 const press = (keys: string): KeyLike => {
@@ -71,6 +72,11 @@ describe("shortcuts", () => {
     expect(ariaShortcut("pan", false)).toBeNull();
     expect(ariaShortcut("bold", false)).toBeNull();
     expect(ariaShortcut("inconnu", false)).toBeNull();
+  });
+  it("OG25 : palm-eraser dans la table — Ctrl+Maj+H, ⌘⇧H, Control+Shift+H", () => {
+    expect(shortcutText("palm-eraser", false)).toBe("Ctrl+Maj+H");
+    expect(shortcutText("palm-eraser", true)).toBe("⌘⇧H");
+    expect(ariaShortcut("palm-eraser", false)).toBe("Control+Shift+H");
   });
   it("fusion lot 2 + OG19 (discrimine) : ariaShortcut nomme les flèches de Disposition et garde « ? » de l'Aide", () => {
     expect(ariaShortcut("front", false)).toBe("Control+Shift+ArrowUp");

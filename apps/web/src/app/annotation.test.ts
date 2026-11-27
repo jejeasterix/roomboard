@@ -28,6 +28,7 @@ function setup(
     originKind?: "board" | "annotation" | null;
     sent?: SendResult | null;
     frame?: () => boolean;
+    palmEraser?: () => boolean;
     onSent?: (page: number) => void;
   } = {},
 ) {
@@ -73,6 +74,7 @@ function setup(
     originKind: (id: string | null) => (o.originKind === undefined ? (id === null ? null : "board") : o.originKind),
     ...(o.transparent === undefined ? {} : { transparent: o.transparent }),
     ...(o.frame === undefined ? {} : { frame: o.frame }),
+    ...(o.palmEraser === undefined ? {} : { palmEraser: o.palmEraser }),
     ...(o.onSent === undefined ? {} : { sent: o.onSent }),
   };
   const ctl = createAnnotationController(deps);
@@ -695,6 +697,26 @@ describe("contrôleur d'annotation (design-l4 : bascule, cadre, avis)", () => {
     expect(load).toHaveBeenCalledTimes(1);
     expect(enter.mock.calls[0]![0]).not.toHaveProperty("frame");
     expect(load.mock.calls[0]![0]).not.toHaveProperty("frame");
+  });
+  it("OG25 : palmEraser lu à l'entrée puis au rechargement de « Figer » ; relayé par le faux hôte", async () => {
+    let on = false;
+    const { ctl, windows } = setup({ palmEraser: () => on });
+    await ctl.enter();
+    expect(windows.palmEraser()).toBe(false);
+    on = true;
+    await ctl.freeze();
+    expect(windows.log).toContain("load opaque");
+    expect(windows.palmEraser()).toBe(true);
+  });
+  it("OG25 : sans dépendance palmEraser, enter et load ne portent pas le champ ; le faux hôte lit « active »", async () => {
+    const { ctl, windows } = setup();
+    const enter = vi.spyOn(windows, "enter");
+    const load = vi.spyOn(windows, "load");
+    await ctl.enter();
+    await ctl.freeze();
+    expect(enter.mock.calls[0]![0]).not.toHaveProperty("palmEraser");
+    expect(load.mock.calls[0]![0]).not.toHaveProperty("palmEraser");
+    expect(windows.palmEraser()).toBe(true);
   });
   it("L4-16 : avec sent, l'envoi réussi appelle sent(page) et ne dit plus l'avis d'envoi ; l'avis d'échec de capture reste dit", async () => {
     const pages: number[] = [];

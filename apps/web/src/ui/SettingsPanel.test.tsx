@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSettingsStore, DEFAULT_SETTINGS, SETTING_KEYS, type EffectiveEchelons } from "../engine/settings";
 import type { RendererDiagnostics } from "../engine/render/select";
 import { createDeviceSettings, type DeviceSettings } from "../device-settings";
-import { FRAME_LABELS, RELOAD_DIRTY_MESSAGE, SettingsPanel } from "./SettingsPanel";
+import { FRAME_LABELS, PALM_ERASER_LABELS, RELOAD_DIRTY_MESSAGE, SettingsPanel } from "./SettingsPanel";
 
 afterEach(cleanup);
 
@@ -13,7 +13,7 @@ const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 const EFF: EffectiveEchelons = { prediction: false, inkTrail: "off", webgl: "off" };
 const DIAG: RendererDiagnostics = { webgl: "on", lost: false, badColors: [] };
 
-function setup(over: { dirty?: boolean; answer?: boolean; diag?: RendererDiagnostics; notes?: string[]; device?: DeviceSettings } = {}) {
+function setup(over: { dirty?: boolean; answer?: boolean; diag?: RendererDiagnostics; notes?: string[]; device?: DeviceSettings; palmEraser?: DeviceSettings } = {}) {
   const store = createSettingsStore(DEFAULT_SETTINGS);
   const navigate = vi.fn();
   const confirm = vi.fn(async (_m: string) => over.answer ?? true);
@@ -29,6 +29,7 @@ function setup(over: { dirty?: boolean; answer?: boolean; diag?: RendererDiagnos
       anyDirty={() => over.dirty ?? false}
       confirm={confirm}
       {...(over.device ? { device: over.device } : {})}
+      {...(over.palmEraser ? { palmEraser: over.palmEraser } : {})}
     />
   ));
   const btn = (k: string) => r.container.querySelector<HTMLButtonElement>(`button[data-reglage=${k}]`)!;
@@ -149,5 +150,31 @@ describe("SettingsPanel : cadre de l'annotation (design-l4, L4-14, H10)", () => 
     const { btn } = setup({ device });
     device.setFrame(false);
     expect(btn("cadre").textContent).toBe(FRAME_LABELS.off);
+  });
+});
+
+describe("SettingsPanel : gomme automatique à la paume (OG25, déc. 26)", () => {
+  it("OG25 gomme-paume : sans palmEraser, aucun bouton", () => {
+    const { r } = setup();
+    expect(r.container.querySelector('button[data-reglage="gomme-paume"]')).toBeNull();
+  });
+  it("OG25 gomme-paume : « active » ; un clic → « coupée », réglage coupé ; un autre → « active » ; sans le bouton du cadre", () => {
+    const palmEraser = createDeviceSettings(null);
+    const { r, btn } = setup({ palmEraser });
+    expect(PALM_ERASER_LABELS).toEqual({ on: "Gomme automatique à la paume : active", off: "Gomme automatique à la paume : coupée" });
+    expect(btn("gomme-paume").textContent).toBe(PALM_ERASER_LABELS.on);
+    expect(r.container.querySelector('button[data-reglage="cadre"]')).toBeNull();
+    fireEvent.click(btn("gomme-paume"));
+    expect(palmEraser.palmEraser()).toBe(false);
+    expect(btn("gomme-paume").textContent).toBe(PALM_ERASER_LABELS.off);
+    fireEvent.click(btn("gomme-paume"));
+    expect(palmEraser.palmEraser()).toBe(true);
+    expect(btn("gomme-paume").textContent).toBe(PALM_ERASER_LABELS.on);
+  });
+  it("OG25 gomme-paume : un changement venu d'ailleurs (Ctrl+Maj+H) est suivi", () => {
+    const palmEraser = createDeviceSettings(null);
+    const { btn } = setup({ palmEraser });
+    palmEraser.setPalmEraser(false);
+    expect(btn("gomme-paume").textContent).toBe(PALM_ERASER_LABELS.off);
   });
 });

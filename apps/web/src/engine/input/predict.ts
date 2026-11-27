@@ -175,5 +175,8 @@ export function withPrediction(
       mice.delete(pointerId);
       sink.close(pointerId, how);
     },
+    resize(pointerId, radiusPx) {
+      sink.resize?.(pointerId, radiusPx);
+    },
   };
 }

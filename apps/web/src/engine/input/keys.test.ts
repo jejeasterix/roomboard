@@ -203,6 +203,14 @@ describe("appShortcut (personnalisation-1b, Q28)", () => {
   it("Ctrl+Maj+F n'est pas une touche du moteur (annuler, grouper)", () => {
     expect(keyAction(k("F", { ctrlKey: true, shiftKey: true }))).toBeNull();
   });
+  it("OG25 : Ctrl+Maj+H et Cmd+Maj+H → palm-eraser ; hors champ, hors composition, jamais avec Alt ni sans Maj", () => {
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true }))).toBe("palm-eraser");
+    expect(appShortcut(k("h", { metaKey: true, shiftKey: true }))).toBe("palm-eraser");
+    expect(appShortcut(k("h", { ctrlKey: true }))).toBeNull();
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, altKey: true }))).toBeNull();
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, isComposing: true }))).toBeNull();
+    expect(appShortcut(k("H", { ctrlKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+  });
 });
 
 describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {

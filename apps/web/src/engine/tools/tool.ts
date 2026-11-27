@@ -49,6 +49,8 @@ export interface GestureTool {
   close(pointerId: number, how: CloseReason): void;
   live(): LivePart;
   active(): boolean;
+  /** OG25 (A2) : agrandit le rayon du geste `pointerId` (px d'écran) ; jamais ne le réduit ; absent : sans effet. */
+  resize?(pointerId: number, radiusPx: number): void;
   /** Outil quitté ou page changée : valide ou abandonne ce qui reste ouvert (texte : valide ; sélection : vide). */
   leave?(reason: LeaveReason): void;
   /** OG12 : survol souris ou stylet sans bouton, px de la scène ; absent : sans effet. */
