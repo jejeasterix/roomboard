@@ -56,9 +56,20 @@ const BIG_STEP = 64;
 /** Ancre par défaut d'un rôle ; rôle inconnu : haut-droite. */
 const roleAnchor = (role: string): Anchor => (Object.hasOwn(ISLAND_ANCHORS, role) ? ISLAND_ANCHORS[role]! : "top-end");
 
-/** Ancre d'une barre flottante : celle du profil (`bar.anchor`), sinon celle de son rôle. */
+/** Ancre d'une barre flottante : celle du profil (`bar.anchor`), sinon celle de son rôle. Lecture tolérante : une barre
+ *  mobile (`MOVABLE_ROLES`) ne se pose pas dans un coin (elle recouvrirait le menu, les panneaux ou l'historique) ; une
+ *  ancre de coin lue dans un profil se replie vers l'ancre centrée de la même rangée, sans réécrire le profil. */
 export function anchorOf(bar: Toolbar): Anchor {
-  return bar.anchor ?? roleAnchor(bar.role);
+  const a = bar.anchor ?? roleAnchor(bar.role);
+  if (!MOVABLE_ROLES.has(bar.role)) return a;
+  if (a === "top-start" || a === "top-end") return "top-center";
+  return a === "bottom-start" ? "bottom-center" : a;
+}
+
+/** Corners de la voie latérale pour l'îlot de rôle `role` : `above` reçoit l'îlot d'outils posé (`tools`), sauf pour
+ *  l'îlot d'outils lui-même, qui ne se surplombe pas (sinon il se repousse sous lui-même, passe après passe). */
+export function sideCorners(base: Corners, role: string, tools: Rect | null): Corners {
+  return { ...base, above: role === "tools" || tools === null ? [] : [tools] };
 }
 
 export function isCentered(anchor: Anchor): boolean {

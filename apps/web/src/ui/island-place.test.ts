@@ -23,7 +23,8 @@ describe("island-place : ancres (design-l2 L2-5, H11)", () => {
   it("personnalisation-1a : pages → side-start par défaut ; bar.anchor side-end prime sur le rôle", () => {
     expect(anchorOf(barOf("pages"))).toBe("side-start");
     expect(anchorOf(barOf("pages", "side-end"))).toBe("side-end");
-    expect(anchorOf(barOf("tools", "bottom-start"))).toBe("bottom-start");
+    expect(anchorOf(barOf("history", "bottom-start"))).toBe("bottom-start");
+    expect(anchorOf(barOf("tools", "bottom-start"))).toBe("bottom-center"); // T19 : barre mobile, coin replié
   });
   it("isCentered : seulement top-center et bottom-center", () => {
     expect((["top-start", "top-center", "top-end", "bottom-start", "bottom-center", "side-start", "side-end"] as const).map(isCentered)).toEqual([false, true, false, false, true, false, false]);

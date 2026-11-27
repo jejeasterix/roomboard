@@ -3,7 +3,7 @@ import { NO_ISLAND, type DeviceSettings } from "../device-settings";
 import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, tabsWidth,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
   type Anchor, type Box, type Corners, type Lane, type Point,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
@@ -130,7 +130,7 @@ export interface IslandProps {
   /** Change quand le contenu de l'îlot peut changer de largeur (pages, outil) : remesure. */
   readonly watch?: Accessor<unknown>;
   onPlaced?(p: Placed | null): void;
-  readonly children: (collapsed: Accessor<boolean>) => JSX.Element;
+  readonly children: (collapsed: Accessor<boolean>, expand: () => void) => JSX.Element;
 }
 
 export function Island(props: IslandProps): JSX.Element {
@@ -281,6 +281,10 @@ export function Island(props: IslandProps): JSX.Element {
     setOwn(!collapsed());
     write();
   };
+  /** Déplie l'îlot replié (toucher un onglet de la barre repliée) ; sans effet s'il est déjà déplié. */
+  const expand = (): void => {
+    if (collapsed()) toggle();
+  };
 
   return (
     <div
@@ -304,7 +308,7 @@ export function Island(props: IslandProps): JSX.Element {
       <Show when={props.movable}>
         <ChromeButton icon="grip" label={GRIP_LABEL} mark="data-island-grip" onDown={startDrag} onKey={onGripKey} onDouble={() => sheetLane_() === null && commit(null)} />
       </Show>
-      {props.children(collapsed)}
+      {props.children(collapsed, expand)}
       <Show when={props.movable}>
         <ChromeButton
           icon={collapsed() ? "down" : "collapse"}
@@ -321,7 +325,7 @@ export function Island(props: IslandProps): JSX.Element {
 export interface IslandLayerProps {
   /** Barres `floating` montrées au tableau (aucune en annotation). */
   readonly bars: Accessor<readonly Bar[]>;
-  readonly render: (bar: Bar, collapsed: Accessor<boolean>) => JSX.Element;
+  readonly render: (bar: Bar, collapsed: Accessor<boolean>, expand: () => void) => JSX.Element;
   /** Contenu de l'îlot des onglets (TabsBar). */
   readonly head: JSX.Element;
   /** `<p id="etat" role="status">`, après les onglets. */
@@ -377,10 +381,12 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
   const bottomCorners = createMemo((): Corners => ({ start: bottomBox().w, end: 0, band: bottomBox().h }));
   /** T16 : la voie latérale passe aussi sous l'îlot d'outils qui la surplombe (descendu sur la voie suivante, ou dans la
    *  place du panneau des profils), jamais sous la seule rangée des coins. */
-  const sideCorners = createMemo((): Corners => {
-    const t = tools();
-    return { start: 0, end: 0, band: topCorners().band, foot: bottomBox().h, above: t === null ? [] : [{ x: t.x, y: t.y, w: t.w, h: t.h }] };
-  });
+  const sideBase = createMemo((): Corners => ({ start: 0, end: 0, band: topCorners().band, foot: bottomBox().h }));
+  const sideCornersOf = (role: string): Accessor<Corners> =>
+    createMemo(() => {
+      const t = tools();
+      return sideCorners(sideBase(), role, t === null ? null : { x: t.x, y: t.y, w: t.w, h: t.h });
+    });
   const sheet = createMemo((): Lane | null => (props.sheetOpen() ? sheetLane(area(), sheetWidth(), topCorners().band, BUTTON_PX[props.size()]) : null));
   const topFree = createMemo(() => {
     const t = tools();
@@ -425,12 +431,12 @@ export function IslandLayer(props: IslandLayerProps): JSX.Element {
         profileId={profileId}
         {...(props.store !== undefined ? { store: props.store } : {})}
         area={area}
-        corners={isSide(anchor) ? sideCorners : anchor.startsWith("top") ? topCorners : bottomCorners}
+        corners={isSide(anchor) ? sideCornersOf(bar.role) : anchor.startsWith("top") ? topCorners : bottomCorners}
         sheet={sheet}
         {...(props.watch !== undefined ? { watch: props.watch } : {})}
         {...(bar.role === "tools" ? { onPlaced: (p: Placed | null) => setTools(p) } : {})}
       >
-        {(c) => props.render(bar, c)}
+        {(c, expand) => props.render(bar, c, expand)}
       </Island>
     );
   };

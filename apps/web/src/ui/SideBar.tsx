@@ -14,7 +14,7 @@ import type { LayerRow } from "../app/layer-list";
 import type { ToolbarHost } from "../app/toolbar-host";
 import type { PageLayout } from "../core/api";
 import type { DeviceSettings, SidebarState } from "../device-settings";
-import { sideActions, type ButtonSize, type Toolbar } from "../toolbar";
+import { sideActions, visibleItems, type ButtonSize, type RuntimeCapabilities, type Toolbar } from "../toolbar";
 import { Icon, IconButton } from "./IconButton";
 import { iconFor } from "./icons";
 import { itemState, type ToolbarView } from "./item-state";
@@ -56,6 +56,10 @@ export interface SideBarProps {
   readonly bar: Toolbar;
   readonly collapsed: Accessor<boolean>;
   readonly view: Accessor<ToolbarView>;
+  /** Capacités du poste : la rangée d'actions suit `visibleItems` (actions inconnues ou `requires` non satisfaites cachées). */
+  readonly caps: Accessor<RuntimeCapabilities>;
+  /** Déplie la barre repliée (toucher un onglet) ; absent : sans effet. */
+  readonly expand?: () => void;
   readonly host: ToolbarHost;
   readonly pages: PagesPort;
   /** Onglet Calques (lot 2) ; absent : la barre n'a que l'onglet Pages. */
@@ -125,7 +129,10 @@ export function SideBar(props: SideBarProps): JSX.Element {
     stopLayer?.();
   });
 
-  const actions = () => sideActions(props.bar).filter((it) => it.hidden !== true && it.kind === "action");
+  const actions = () => {
+    const side = new Set(sideActions(props.bar));
+    return visibleItems(props.bar, props.caps()).filter((it) => it.kind === "action" && side.has(it));
+  };
   const rows = (): HTMLElement[] => [...(list?.querySelectorAll<HTMLElement>("[data-page-id]") ?? [])];
   const pixelRatio = (): number => root?.ownerDocument.defaultView?.devicePixelRatio || 1;
   const [lineWidth, setLineWidth] = createSignal(0);
@@ -246,6 +253,7 @@ export function SideBar(props: SideBarProps): JSX.Element {
   };
   const openTab = (t: SidebarState["tab"]): void => {
     if (t === "calques" && layers === undefined) return;
+    if (props.collapsed()) props.expand?.();
     closeMenu();
     setTab(t);
     props.store?.setSidebar({ tab: t, thumb: thumbSize() });
@@ -294,6 +302,16 @@ export function SideBar(props: SideBarProps): JSX.Element {
   };
   /** Lignes calculées seulement onglet montré et barre dépliée (H14). */
   const layerRows = (): readonly LayerRow[] => (showLayers() && !props.collapsed() ? layers!.rows() : []);
+  /** Échap depuis n'importe quel élément de la barre (onglet, segment, action) : le focus revient à la scène. Les
+   *  miniatures, lignes et le menu traitent leur Échap eux-mêmes et arrêtent la propagation. */
+  const onRootKey = (e: KeyboardEvent): void => {
+    if (e.key !== "Escape") return;
+    stop(e);
+    const el = e.target as HTMLElement;
+    const scene = el.ownerDocument.querySelector<HTMLElement>(".rb-stage[tabindex], main.rb-stages [tabindex]");
+    if (scene !== null) scene.focus({ preventScroll: true });
+    else el.blur();
+  };
   const onTabKey = (e: KeyboardEvent): void => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     e.preventDefault();
@@ -335,10 +353,11 @@ export function SideBar(props: SideBarProps): JSX.Element {
       data-size={props.size?.() ?? "m"}
       data-folded={props.collapsed() ? "1" : undefined}
       aria-label="Pages"
+      onKeyDown={onRootKey}
     >
       <div role="tablist" class="rb-side-tabs" aria-label="Barre latérale" onKeyDown={onTabKey}>
         <div class="rb-tab" role="tab" tabIndex={0} data-side-tab="pages" aria-selected={tab() === "pages" ? "true" : "false"} onClick={() => openTab("pages")} onKeyDown={(e) => onTabActivate(e, "pages")}>
-          <Icon name="panel-left" />
+          <Icon name="dock-left" />
           <span class="rb-tab-title">Pages</span>
         </div>
         <Show when={layers !== undefined}>

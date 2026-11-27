@@ -578,7 +578,7 @@ describe("Toolbar — compteur de pages (personnalisation-1a, T6)", () => {
   it("barre latérale (successeur de PagesBar) : aucun second #pages, le compteur reste celui de la barre d'outils", () => {
     const pages: PagesPort = { ids: () => ["a", "b"], shown: () => "a", layout: () => "landscape", fixedByBackdrop: () => false, show() {}, move() {}, duplicate() {}, remove() {}, addAfter() {}, setLayout() {}, thumb: async () => null };
     const { container } = render(() => (
-      <SideBar bar={{ id: "pages", role: "pages", dock: "floating", collapsed: false, groups: [{ id: "g", items: [nav.groups[0]!.items[1]!], rest: {} }], rest: {} }} collapsed={() => false} view={() => ({ ...VIEW, pageIndex: 0, pageCount: 2 })} host={{ runAction() {} } as never} pages={pages} />
+      <SideBar bar={{ id: "pages", role: "pages", dock: "floating", collapsed: false, groups: [{ id: "g", items: [nav.groups[0]!.items[1]!], rest: {} }], rest: {} }} collapsed={() => false} caps={() => ({ desktopAnnotation: false, multiWindow: false, dropPaths: false, officeConverter: false })} view={() => ({ ...VIEW, pageIndex: 0, pageCount: 2 })} host={{ runAction() {} } as never} pages={pages} />
     ));
     expect(container.querySelector("#pages")).toBeNull();
   });

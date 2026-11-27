@@ -262,14 +262,14 @@ describe("SideBar — correctifs de relecture (T19)", () => {
   });
 
   it("la rangée d'actions passe par visibleItems : action `requires` non satisfaite ou inconnue absente, satisfaite présente", () => {
-    const gated: ToolItem = { ...item("annotation"), requires: ["desktopAnnotation"] };
+    const gated: ToolItem = { ...item("desktop-annotation"), requires: ["desktopAnnotation"] };
     const b: Toolbar = { ...bar, groups: [{ id: "pages", items: [item("page-add"), gated, item("action-d-un-profil-plus-recent")], rest: {} }] };
     const without = setup({ bar: b });
     const ids = (c: HTMLElement): string[] => [...c.querySelectorAll<HTMLElement>(".rb-side-actions [data-item]")].map((e) => e.dataset["item"]!);
     expect(ids(without.container)).toEqual(["page-add"]);
     cleanup();
     const withCap = setup({ bar: b, caps: { ...CAPS, desktopAnnotation: true } });
-    expect(ids(withCap.container)).toEqual(["page-add", "annotation"]);
+    expect(ids(withCap.container)).toEqual(["page-add", "desktop-annotation"]);
   });
 
   it("Échap rend le focus à la scène depuis un onglet, un segment ou une action", () => {
