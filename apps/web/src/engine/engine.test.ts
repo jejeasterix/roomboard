@@ -1318,6 +1318,25 @@ describe("moteur — pot (C6a)", () => {
     expect(renderer.scenes.at(-1)?.page.background).toBe("#bfdbfe");
   });
 
+  it("drawScene reçoit largeur, hauteur et mode de la page montrée (T10 : plus de Page 1920 × 1080 par défaut)", () => {
+    const { doc, engine, frames, renderer } = setup();
+    const page = doc.page.bind(doc);
+    doc.page = (id) => {
+      const p = page(id);
+      return p === null ? null : { ...p, width: 1080, height: 1920, mode: "page" };
+    };
+    engine.redraw();
+    frames.tick();
+    expect(renderer.scenes.at(-1)?.page).toMatchObject({ width: 1080, height: 1920, mode: "page" });
+  });
+
+  it("setPageMode réajuste la caméra par fitPage (T10)", () => {
+    const { engine } = setup();
+    const fit = vi.spyOn(engine, "fitPage");
+    expect(engine.setPageMode("infinite")).toBe(true);
+    expect(fit).toHaveBeenCalledTimes(1);
+  });
+
   it("setFillColor : défaut rouge, couleur valide gardée, invalide ignorée, null = « Aucune » ; le stylo ne change pas (D16)", () => {
     const { engine } = setup();
     expect(engine.state().fillColor).toBe("#dc2626");

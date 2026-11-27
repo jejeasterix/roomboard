@@ -247,8 +247,13 @@ describe("rb.css (design-l2)", () => {
     expect(rule('.rb-island .rb-bar[data-collapsed="1"]')).toContain("display: none;");
     expect(rule(".rb-island-chrome[data-island-grip]")).toContain("touch-action: none;");
   });
-  it("design-l2 T12 : îlot des pages : place de trois numéros gardée (CL5b-8, essai c13 S4) ; compteur en bleu nuit, marges réduites", () => {
-    expect(rule(".rb-island .rb-pages-list")).toMatch(/min-width: calc\(3 \* var\(--rb-btn\) \+ 2 \* var\(--rb-gap\)\);.*flex: 0 1 auto;/);
+  it("personnalisation-1a T10 : barre latérale : liste verticale défilante ; compteur en bleu nuit, marges réduites ; aucun 48 px littéral", () => {
+    expect(rule(".rb-pages-list")).toMatch(/flex-direction: column;.*overflow-y: auto;/);
+    expect(rule(".rb-pages-list")).not.toMatch(/overflow-x: auto/);
+    expect(rule(".rb-side .rb-page-thumb")).toMatch(/touch-action: none;/);
+    expect(rule(".rb-side .rb-page-thumb[aria-current=\"page\"]")).toContain("var(--rf-violet-600)");
+    expect(own(/rb-side|rb-page-|rb-pages-list/).length).toBeGreaterThan(10);
+    for (const r of own(/rb-side|rb-page-|rb-pages-list/)) expect(r, r).not.toMatch(/\b48px|\d\.\d+px|translate|blur/);
     expect(rule(".rb-pages-count")).toMatch(/color: var\(--rf-navy-500\);/);
     expect(rule(".rb-pages-count")).not.toMatch(/margin-inline: var\(--rb-gap\)/);
   });

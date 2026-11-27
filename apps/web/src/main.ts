@@ -513,6 +513,7 @@ async function start(): Promise<void> {
     stages,
     library: { library, shared: sharedFolder, packs: packFiles },
     device,
+    sidebar,
     ...(ctl === null || windows === null
       ? {}
       : { annotation: { control: ctl, remote: (local) => createRemoteToolbarHost((m) => ctl.command(m), local, ANNOTATION_REMOTE_ACTIONS), onView: (cb) => windows.onView(cb) } }),

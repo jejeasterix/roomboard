@@ -563,7 +563,13 @@ export function createEngine(deps: EngineDeps): Engine {
       // Un seul `doc.page` par scène (PF29) : fond de couleur (C6a) et fond de page (C12).
       const view = doc.page(pageId);
       renderer.drawScene(
-        { id: pageId, elementIds: doc.elementIds(pageId), background: view?.background ?? PAGE_BACKGROUND, backdrop: view?.backdrop ?? null },
+        {
+          id: pageId,
+          elementIds: doc.elementIds(pageId),
+          background: view?.background ?? PAGE_BACKGROUND,
+          backdrop: view?.backdrop ?? null,
+          ...(view === null ? {} : { width: view.width, height: view.height, mode: view.mode }),
+        },
         camera,
         hidden,
         overlay,
@@ -820,7 +826,9 @@ export function createEngine(deps: EngineDeps): Engine {
       return engine.showPage(id);
     },
     setPageMode(mode) {
-      return run({ type: "SetPageMode", page: pageId, mode }) !== null;
+      if (run({ type: "SetPageMode", page: pageId, mode }) === null) return false;
+      engine.fitPage(); // comme PowerPoint : le changement de mode recadre la page
+      return true;
     },
     removePage() {
       leaveAll("page"); // texte ouvert validé sur la page encore présente, sélection vidée
