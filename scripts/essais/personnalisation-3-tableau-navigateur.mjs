@@ -375,13 +375,13 @@ async function scenario(page, url, { captures }) {
   await fr();
   await mouse.click(...cell6(1, 1));
   await page.keyboard.press("Escape");
-  await page.keyboard.press("Control+Alt+ArrowRight");
+  await page.keyboard.press("Alt+ArrowRight");
   await fr();
   await page.click(item("select"));
   await fr();
   await selectAt(screen(c, origin[0], origin[1] + DY6 + ROW / 2));
   const [k6x0, , k6x1] = await boundsOf();
-  check(near(k6x1 - k6x0, 728), `S6 : Ctrl+Alt+→ élargit de 8 (lu ${k6x1 - k6x0})`);
+  check(near(k6x1 - k6x0, 728), `S6 : Alt+→ élargit de 8 (lu ${k6x1 - k6x0})`);
   await page.keyboard.press("Escape");
   await fr();
 

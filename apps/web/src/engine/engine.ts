@@ -1255,7 +1255,7 @@ export function createEngine(deps: EngineDeps): Engine {
         tableTool.act("cell-image");
         return true;
       }
-      // personnalisation-3 (H12) : Ctrl+Alt+flèches en outil Tableau, case active ; sinon elles passent.
+      // personnalisation-3 (H12) : Alt+flèches en outil Tableau, case active ; sinon elles passent.
       const tk = tableKey(e);
       if (tk !== null && tool === "table" && tableTool.cell() !== null) {
         tableTool.act(tk);

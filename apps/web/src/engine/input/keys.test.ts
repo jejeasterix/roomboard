@@ -227,13 +227,15 @@ describe("cellKey (H12)", () => {
 });
 
 describe("tableKey (H12)", () => {
-  it("tableKey : Ctrl+Alt+flèches ; sans Ctrl, avec Maj, en saisie ou en composition : null", () => {
-    const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: true, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+  it("tableKey : Alt+flèches seules ; avec Ctrl, Maj, Cmd, sans Alt, en saisie ou en composition : null", () => {
+    const a = (key: string, o: Partial<KeyLike> = {}): KeyLike => ({ key, code: key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
     expect(tableKey(a("ArrowRight"))).toBe("col-wider");
     expect(tableKey(a("ArrowLeft"))).toBe("col-narrower");
     expect(tableKey(a("ArrowDown"))).toBe("row-taller");
     expect(tableKey(a("ArrowUp"))).toBe("row-shorter");
-    expect(tableKey(a("ArrowRight", { ctrlKey: false }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { ctrlKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { metaKey: true }))).toBeNull();
+    expect(tableKey(a("ArrowRight", { altKey: false }))).toBeNull();
     expect(tableKey(a("ArrowRight", { shiftKey: true }))).toBeNull();
     expect(tableKey(a("ArrowRight", { isComposing: true }))).toBeNull();
     expect(tableKey(a("ArrowRight", { target: { isContentEditable: true } }))).toBeNull();
