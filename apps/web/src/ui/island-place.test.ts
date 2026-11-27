@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Toolbar as Bar } from "../toolbar";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, compactOf, isCentered, laneOf, nudge, placeIsland, placeOptions, beyondObstacles, sheetLane, sideCorners, tabsWidth, withContextRow,
   optionsWidth, topRowBottom, type Anchor, type Corners,
 } from "./island-place";
 
@@ -42,6 +42,29 @@ describe("island-place : voies (design-l2 L2-30, L2-12)", () => {
   });
   it("design-l2 L2-30 (b) : 1024, la place symétrique (560) ne le contient pas : voie suivante, sous la rangée du haut", () => {
     expect(laneOf("top-center", TOOLS, { w: 1024, h: 768 }, TOP)).toEqual({ x: 127, y: 16 + 56 + 8, maxWidth: 992 });
+  });
+  it("OG19 (H0) : 1280, plus large que la place symétrique (816) mais pas que la place entre les coins (916) : rangée du haut, centré dans cette place", () => {
+    // place entre les coins : de 16 + 208 + 8 = 232 à 1280 - 16 - 108 - 8 = 1148
+    expect(laneOf("top-center", { w: 884, h: 56 }, MID, TOP)).toEqual({ x: 232 + 16, y: 16, maxWidth: 916 });
+    expect(laneOf("top-center", { w: 916, h: 56 }, MID, TOP)).toEqual({ x: 232, y: 16, maxWidth: 916 });
+    expect(laneOf("top-center", { w: 917, h: 56 }, MID, TOP)).toEqual({ x: Math.round((1280 - 917) / 2), y: 80, maxWidth: 1248 });
+  });
+  it("OG19 (H0) : îlot de 1006 px (outils, Fonds, navigation) à 1280 : voie suivante sans compaction", () => {
+    expect(laneOf("top-center", { w: 1006, h: 56 }, MID, TOP).y).toBe(80);
+  });
+  it("OG19 (H0) : compactOf : compacte seulement quand la largeur naturelle ne tient pas sur la rangée et que la compacte y tient", () => {
+    const n = { w: 1006, h: 56 };
+    const c = { w: 884, h: 56 };
+    expect(compactOf("top-center", n, c, MID, TOP)).toBe(true);
+    expect(compactOf("top-center", n, c, { w: 1920, h: 1080 }, TOP)).toBe(false);
+    expect(compactOf("top-center", n, c, { w: 1024, h: 768 }, TOP)).toBe(false);
+    // Rangée du bas, 1100 : entre l'historique et le bord, 1100 - 16 - 160 - 8 - 16 - 8 = 892.
+    expect(compactOf("bottom-center", n, c, { w: 1100, h: 800 }, BOTTOM)).toBe(true);
+    expect(compactOf("bottom-center", n, c, MID, BOTTOM)).toBe(false);
+    expect(compactOf("top-start", n, c, MID, TOP)).toBe(false);
+    expect(compactOf("side-start", n, c, MID, TOP)).toBe(false);
+    // Rien à gagner (îlot sans bouton compactable) : jamais compacté.
+    expect(compactOf("top-center", n, n, MID, TOP)).toBe(false);
   });
   it("design-l2 L2-30 (a) : 768, largeur maximale = voie - 2 × 16 = 736, collé à 16", () => {
     expect(laneOf("top-center", TOOLS, { w: 768, h: 700 }, TOP)).toEqual({ x: 16, y: 80, maxWidth: 736 });

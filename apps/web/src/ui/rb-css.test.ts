@@ -62,8 +62,8 @@ describe("rb.css (design-l1, L1-6)", () => {
 });
 
 describe("rb.css (OG19, H1-11)", () => {
-  it("raccourci de l'infobulle : `attr(data-keys)` après le libellé, gris 300, graisse normale, hors du texte de la bulle", () => {
-    expect(rule(".rb-tip[data-keys]::after")).toMatch(/content: attr\(data-keys\);.*margin-inline-start: 12px;.*color: var\(--rf-gray-300\);.*font-weight: 400;/);
+  it("raccourci de l'infobulle : `attr(data-keys)` après le libellé, blanc mêlé de navy, graisse normale, hors du texte de la bulle", () => {
+    expect(rule(".rb-tip[data-keys]::after")).toMatch(/content: attr\(data-keys\);.*margin-inline-start: 12px;.*color: color-mix\(in srgb, var\(--rf-white\) 72%, var\(--rf-navy-500\)\);.*font-weight: 400;/);
   });
 });
 

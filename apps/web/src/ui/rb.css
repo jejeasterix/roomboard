@@ -74,8 +74,9 @@
 .rb-sr { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* Infobulle (L1-4) : rendue dans body, jamais dans la barre ; left/top en px entiers posés par IconButton, aucun transform. */
 .rb-tip { position: fixed; z-index: 10; pointer-events: none; padding: 6px 10px; background: var(--rf-navy-500); color: var(--rf-white); font-size: 14px; font-weight: 500; line-height: 20px; border-radius: var(--rf-radius-md); white-space: nowrap; box-shadow: var(--rf-shadow-card); }
-/* OG19 (H1-11) : raccourci du bouton après le libellé, en pseudo-élément : le texte de la bulle reste le libellé. */
-.rb-tip[data-keys]::after { content: attr(data-keys); margin-inline-start: 12px; color: var(--rf-gray-300); font-weight: 400; }
+/* OG19 (H1-11) : raccourci du bouton après le libellé, en pseudo-élément : le texte de la bulle reste le libellé. Teinte
+   mêlée du blanc et du navy de la bulle : chaque pixel reste sur le segment fond → encre (0 frange, § 10). */
+.rb-tip[data-keys]::after { content: attr(data-keys); margin-inline-start: 12px; color: color-mix(in srgb, var(--rf-white) 72%, var(--rf-navy-500)); font-weight: 400; }
 .rb-sep { align-self: center; block-size: var(--rb-icon); border-inline-start: 1px solid var(--rf-gray-300); margin: 0 4px; }
 /* design-l4 (L4-11) : zone de dépôt à icône (file-down), libellé en rb-sr ; 96 px × --rb-btn, couchée dans une barre verticale. */
 .rb-drop { display: grid; place-items: center; flex: none; box-sizing: border-box; inline-size: 96px; block-size: var(--rb-btn); border: 1px dashed var(--rf-gray-500); border-radius: var(--rf-radius-lg); color: var(--rf-navy-500); }
@@ -124,6 +125,14 @@ html[data-cadre="1"] .rb-annot-frame { display: block; }
 .rb-island[data-wrap="1"] > .rb-bar { flex-wrap: wrap; overflow-x: visible; }
 .rb-island .rb-bar[data-collapsed="1"] { display: none; }
 /* Poignée et Replier (L2-8, maquette 01 .grip) : hors profil ; la poignée prend le doigt sans faire défiler la page. */
+/* OG19 (H0) : îlot centré compacté (data-compact, island-place.ts compactOf) quand sa largeur ne tient pas sur la rangée :
+   boutons à icône et Replier de 4 px plus étroits, jamais sous --rb-btn-s (44, cible tactile), hauteur gardée (la rangée
+   reste alignée) ; écarts de 2 px. Valeurs entières : l'icône de 24 reste au pixel entier. */
+.rb-island[data-compact="1"], .rb-island[data-compact="1"] > .rb-bar { gap: 2px; }
+.rb-island[data-compact="1"] > .rb-bar { --rb-btn-w: max(var(--rb-btn-s), calc(var(--rb-btn) - 4px)); }
+.rb-island[data-compact="1"] > .rb-bar > button.rb-ib { inline-size: var(--rb-btn-w); min-width: var(--rb-btn-w); }
+.rb-island[data-compact="1"] > .rb-bar > .rb-sep { margin: 0 2px; }
+.rb-island[data-compact="1"] > .rb-island-chrome:not([data-island-grip]) { inline-size: var(--rb-btn-s); }
 .rb-island-chrome { display: grid; place-items: center; flex: none; align-self: stretch; inline-size: 48px; padding: 0; border: 0; border-radius: var(--rf-radius-lg); background: transparent; color: var(--rf-navy-500); cursor: pointer; }
 .rb-island-chrome[data-island-grip] { inline-size: 24px; color: var(--rf-gray-500); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .rb-island-chrome:hover { background: var(--rf-gray-50); }

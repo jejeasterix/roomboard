@@ -42,12 +42,14 @@ const ptr = (type: string, x: number, y: number): PointerEvent => new PointerEve
 
 /** Largeur naturelle `w` d'un `.rb-island`, bridée par son `max-inline-size` comme le ferait un navigateur : un
  *  îlot mesuré sans lever `max-inline-size` ne rend jamais plus que la largeur qu'on lui laisse. */
-function natural(w: number): void {
+function natural(w: number, compact = w): void {
   const real = Element.prototype.getBoundingClientRect;
   vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
     if (!(this instanceof HTMLElement) || !this.classList.contains("rb-island")) return real.call(this);
     const m = this.style.getPropertyValue("max-inline-size");
-    const width = m === "" || m === "none" ? w : Math.min(w, Number.parseInt(m, 10));
+    // OG19 (H0) : `data-compact` posé, l'îlot rend sa largeur compacte.
+    const own = this.getAttribute("data-compact") === "1" ? compact : w;
+    const width = m === "" || m === "none" ? own : Math.min(own, Number.parseInt(m, 10));
     return { x: 0, y: 0, left: 0, top: 0, width, height: 48, right: width, bottom: 48, toJSON: () => ({}) } as DOMRect;
   });
 }
@@ -82,12 +84,29 @@ describe("Island (design-l2 L2-7 à L2-16)", () => {
     expect(island().getAttribute("style") ?? "").not.toMatch(/translate|%|\d\.\d/);
   });
 
-  it("design-l2 L2-30 (discrimine) : largeur lue max-inline-size levée : 900 > 816, l'îlot descend sous la rangée du haut", () => {
-    // Mesuré bridé à 816 (la place symétrique), il resterait sur la rangée du haut en (232, 16) et défilerait.
-    natural(900);
+  it("design-l2 L2-30 (discrimine) : largeur lue max-inline-size levée : 950 > 916, l'îlot descend sous la rangée du haut", () => {
+    // Mesuré bridé à 916 (la place entre les coins, OG19), il resterait sur la rangée du haut en (232, 16) et défilerait.
+    natural(950);
     const { island } = setup();
-    expect(pos(island())).toEqual(["190px", "80px"]);
+    expect(pos(island())).toEqual(["165px", "80px"]);
     expect(island().style.getPropertyValue("max-inline-size")).toBe("1248px");
+  });
+
+  it("OG19 (H0) : 1006 px naturels, 884 compacts à 1280 : compacté, sur la rangée du haut ; déplacé ou à 1920 : taille naturelle", () => {
+    natural(1006, 884);
+    const { island, setArea, onPlaced } = setup();
+    expect(island().getAttribute("data-compact")).toBe("1");
+    expect(pos(island())).toEqual([`${232 + 16}px`, "16px"]);
+    expect(onPlaced.mock.lastCall?.[0]).toMatchObject({ x: 248, y: 16, w: 884 });
+    setArea({ w: 1920, h: 1080 });
+    expect(island().hasAttribute("data-compact")).toBe(false);
+    expect(pos(island())).toEqual([`${(1920 - 1006) / 2}px`, "16px"]);
+    setArea({ w: 1024, h: 768 });
+    expect(island().hasAttribute("data-compact")).toBe(false);
+    expect(pos(island())[1]).toBe("80px");
+    cleanup();
+    const moved = setup({ saved: { at: { x: 40, y: 200 }, collapsed: null } });
+    expect(moved.island().hasAttribute("data-compact")).toBe(false);
   });
 
   it("design-l2 L2-30 (a) : poignée et Replier hors de la partie qui défile ([data-toolbar])", () => {

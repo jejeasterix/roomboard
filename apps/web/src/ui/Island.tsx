@@ -3,7 +3,7 @@ import { NO_ISLAND, type DeviceSettings } from "../device-settings";
 import type { ButtonSize, Toolbar as Bar } from "../toolbar";
 import { Icon, TipBubble, tipPointerHandlers } from "./IconButton";
 import {
-  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
+  BUTTON_PX, EDGE, GAP, MOVABLE_ROLES, SHEET_W, TABS_MIN, anchorOf, compactOf, isCentered, laneOf, nudge, pixelPad, placeIsland, sheetLane, sideCorners, tabsWidth,
   beyondObstacles, withContextRow, type Anchor, type Box, type Corners, type Lane, type Point, type Rect,
 } from "./island-place";
 import { startPointerGesture } from "./pointer-gesture";
@@ -138,13 +138,25 @@ export function Island(props: IslandProps): JSX.Element {
   const [at, setAt] = createSignal<Point | null>(saved.at);
   const [own, setOwn] = createSignal<boolean | null>(saved.collapsed);
   const [drag, setDrag] = createSignal<Point | null>(null);
-  const [size, setSize] = createSignal<Box>(ZERO, { equals: sameBox });
+  const [natural, setNatural] = createSignal<Box>(ZERO, { equals: sameBox });
+  /** OG19 (H0) : largeur de l'îlot compacté (`data-compact`), mesurée avec la naturelle ; îlot mobile centré seulement. */
+  const [compactSize, setCompactSize] = createSignal<Box>(ZERO, { equals: sameBox });
+  const compactable = props.movable && isCentered(props.anchor);
   const collapsed = (): boolean => props.movable && (own() ?? props.bar.collapsed);
   const positioned = props.movable || isCentered(props.anchor) || isSide(props.anchor);
   /** Le panneau des profils ne repousse que l'îlot d'outils (L2-16) ; les autres îlots mobiles restent où ils sont. */
   const sheetLane_ = (): Lane | null => (props.bar.role === "tools" ? props.sheet() : null);
   let el: HTMLDivElement | undefined;
   let stopDrag: (() => void) | null = null;
+
+  /** OG19 (H0) : compacté sur sa voie seulement (ni déplacé, ni glissé, ni poussé par le panneau des profils). */
+  const compact = createMemo((): boolean => {
+    if (!compactable || at() !== null || drag() !== null || sheetLane_() !== null) return false;
+    const area = props.area();
+    return area.w > 0 && compactOf(props.anchor, natural(), compactSize(), area, props.corners());
+  });
+  /** Taille de l'îlot tel qu'il est montré. */
+  const size = (): Box => (compact() ? compactSize() : natural());
 
   /** Position et largeur maximale, px entiers ; null : îlot de coin, posé par la règle CSS de son groupe. */
   const pos = createMemo((): (Lane & { readonly wrap: boolean }) | null => {
@@ -174,11 +186,23 @@ export function Island(props: IslandProps): JSX.Element {
   const measure = (): void => {
     if (el === undefined) return;
     const prev = el.style.getPropertyValue("max-inline-size");
+    const was = el.getAttribute("data-compact");
     el.style.setProperty("max-inline-size", "none");
-    const r = el.getBoundingClientRect();
+    const read = (on: boolean): Box => {
+      if (on) el!.setAttribute("data-compact", "1");
+      else el!.removeAttribute("data-compact");
+      const r = el!.getBoundingClientRect();
+      return { w: Math.ceil(r.width), h: Math.ceil(r.height) };
+    };
+    // OG19 (H0) : les deux largeurs, naturelle et compacte, lues dans la même tâche ; l'attribut est rendu tel quel.
+    const n = read(false);
+    const c = compactable ? read(true) : n;
+    if (was === null) el.removeAttribute("data-compact");
+    else el.setAttribute("data-compact", was);
     if (prev === "") el.style.removeProperty("max-inline-size");
     else el.style.setProperty("max-inline-size", prev);
-    setSize({ w: Math.ceil(r.width), h: Math.ceil(r.height) });
+    setNatural(n);
+    setCompactSize(c);
   };
   /** L2-13 : îlot contextuel centré sous la barre, borné à la case, px entiers (`placeTip`) ; coordonnées relatives à
    *  l'îlot, son bloc conteneur. */
@@ -317,6 +341,7 @@ export function Island(props: IslandProps): JSX.Element {
       data-island={props.bar.id}
       data-anchor={anchorOf(props.bar)}
       data-wrap={pos()?.wrap === true ? "1" : undefined}
+      data-compact={compact() ? "1" : undefined}
       data-collapsed={collapsed() ? "1" : undefined}
       style={
         pos() === null
