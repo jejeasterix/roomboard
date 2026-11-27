@@ -516,6 +516,7 @@ class WasmCoreDocument implements CoreDocument {
       case "SetPageMode": return toChange(this.d.set_page_mode(cmd.page, cmd.mode));
       case "MovePage": return toChange(this.d.move_page(cmd.page, cmd.to));
       case "DuplicatePage": return toChange(this.d.duplicate_page(cmd.page));
+      case "Restack": return toChange(this.d.restack([...cmd.ids], cmd.to));
       case "CommitStroke": return toChange(this.d.commit_stroke(cmd.page, cmd.points, cmd.style.color, cmd.style.width));
       case "Erase": return toChange(this.d.erase(cmd.page, cmd.path, cmd.radius, cmd.mode === "object"));
       case "Delete": return toChange(this.d.delete([...cmd.ids]));

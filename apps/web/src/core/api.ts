@@ -60,6 +60,8 @@ export type Command =
   | { readonly type: "SetPageMode"; readonly page: string; readonly mode: PageLayout }
   | { readonly type: "MovePage"; readonly page: string; readonly to: number }
   | { readonly type: "DuplicatePage"; readonly page: string }
+  /** Ordre des objets (décision 16) : bloc des `ids` (une même page), bas au rang `to` (0 = arrière-plan), ids gardés. */
+  | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number }
   | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
   | { readonly type: "Delete"; readonly ids: readonly string[] }

@@ -982,6 +982,61 @@ describe("fakeCore — personnalisation-1a (mode de page, MovePage, DuplicatePag
     expect(() => d.apply({ type: "DuplicatePage", page: "nulle-part" })).toThrow("page inconnue : nulle-part");
   });
 
+  /** Quatre traits sur la première page d'un document neuf, du bas vers le haut de la pile. */
+  const four = (): { d: CoreDocument; p: string; ids: [string, string, string, string] } => {
+    const d = fakeCore.blank();
+    const p = firstPage(d);
+    return { d, p, ids: [100, 200, 300, 400].map((y) => commit(d, p, y)) as [string, string, string, string] };
+  };
+
+  // Discrimine le patron écarté (recopie à ids neufs, groupe renuméroté, posée en haut) : ids, groupe et ordre relatif
+  // gardés, `to` = rang du bas du bloc.
+  it("Restack : bloc au premier plan, ids et groupe gardés, une étape", () => {
+    const { d, p, ids } = four();
+    const [a, b, c, e] = ids;
+    d.apply({ type: "Group", ids: [a, c] });
+    const views = [a, c].map((id) => d.element(id));
+    const ch = d.apply({ type: "Restack", ids: [c, a], to: 2 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+    expect([a, c].map((id) => d.element(id))).toEqual(views);
+    expect(ch.pages).toEqual([p]);
+    expect(ch.ids).toEqual([a, c]);
+    expect(ch.removed).toEqual([]);
+    d.undo();
+    expect(d.elementIds(p)).toEqual([a, b, c, e]);
+    d.redo();
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+  });
+
+  it("Restack : arrière-plan, bloc à trou ; même ordre : aucune étape", () => {
+    const { d, p, ids } = four();
+    const [a, b, c, e] = ids;
+    d.apply({ type: "Restack", ids: [e, b], to: 0 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+    d.apply({ type: "Restack", ids: [a], to: 1 });
+    expect(d.elementIds(p)).toEqual([b, a, e, c]);
+    const v = d.version();
+    expect(d.apply({ type: "Restack", ids: [a, e, e], to: 1 }).version).toBe(v);
+    expect(d.version()).toBe(v);
+    d.apply({ type: "Restack", ids: [b, e], to: 0 });
+    expect(d.elementIds(p)).toEqual([b, e, a, c]);
+  });
+
+  it("Restack : pages mêlées, hors bornes, vide ou inconnu refusés sans étape", () => {
+    const { d, p, ids } = four();
+    const [a, b] = ids;
+    const q = d.apply({ type: "AddPage", after: p }).pages[0] ?? "";
+    const x = commit(d, q, 100);
+    const v = d.version();
+    expect(() => d.apply({ type: "Restack", ids: [a, x], to: 0 })).toThrow("objets de pages différentes");
+    expect(() => d.apply({ type: "Restack", ids: [a, b], to: 3 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "Restack", ids: [a], to: -1 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "Restack", ids: [], to: 0 })).toThrow("rang de page hors bornes");
+    expect(() => d.apply({ type: "Restack", ids: [a, "absent"], to: 0 })).toThrow("élément inconnu : absent");
+    expect(d.version()).toBe(v);
+    expect(d.elementIds(p)).toEqual(ids);
+  });
+
   it("AddPage mode infinite (et portrait) ; sans mode : Paysage", () => {
     const d = fakeCore.blank();
     const p = firstPage(d);
