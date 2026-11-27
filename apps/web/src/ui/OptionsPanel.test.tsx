@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean }
+interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle; hidden?: boolean; lineEditing?: string | null; linePoints?: number }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const engine = {
@@ -28,8 +28,10 @@ function mount(o: Opts) {
     bringToFront: vi.fn(() => true),
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
+    editLinePoints: vi.fn(() => true),
+    removeLinePoints: vi.fn(() => true),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null, lineEditing: o.lineEditing ?? null, linePointsSelected: o.linePoints ?? 0 } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -443,5 +445,40 @@ describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () =>
       Object.defineProperty(window, "innerHeight", { configurable: true, value: inner });
       if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
     }
+  });
+});
+
+describe("OptionsPanel : Modifier les points (OG12 T11)", () => {
+  function lineEl(id: string, shape: "line" | "arrow", elbowed = false): ElementView {
+    return { id, kind: "shape", style: { color: "#000000", width: 4 }, shape: { shape, w: 100, h: 0, fill: null }, ...(elbowed ? { look: { elbowed: true } } : {}) } as unknown as ElementView;
+  }
+  const editBtn = '[data-option-value="line-edit"]';
+  const removeBtn = '[data-option-value="point-remove"]';
+  it("Modifier les points : visible pour une ligne seule (cible 44 px), appelle editLinePoints", () => {
+    const { container, engine } = mount({ tool: "select", selection: [lineEl("l", "line")] });
+    const b = container.querySelector(editBtn);
+    expect(b).not.toBeNull();
+    expect(b!.classList.contains("rb-opt-btn")).toBe(true);
+    fireEvent.click(b!);
+    expect(engine.editLinePoints).toHaveBeenCalledTimes(1);
+    expect(container.querySelector(removeBtn)).toBeNull();
+  });
+  it("Modifier les points : absent pour une flèche coudée, pour deux lignes, pour un rectangle et en édition", () => {
+    expect(mount({ tool: "select", selection: [lineEl("a", "arrow", true)] }).container.querySelector(editBtn)).toBeNull();
+    cleanup();
+    expect(mount({ tool: "select", selection: [lineEl("a", "line"), lineEl("b", "line")] }).container.querySelector(editBtn)).toBeNull();
+    cleanup();
+    expect(mount({ tool: "select", selection: [rectEl("r", "#000000")] }).container.querySelector(editBtn)).toBeNull();
+    cleanup();
+    expect(mount({ tool: "select", selection: [lineEl("a", "arrow")], lineEditing: "a" }).container.querySelector(editBtn)).toBeNull();
+  });
+  it("Retirer le point : visible en édition avec un point choisi, appelle removeLinePoints ; absent sans point choisi", () => {
+    expect(mount({ tool: "select", selection: [lineEl("a", "line")], lineEditing: "a", linePoints: 0 }).container.querySelector(removeBtn)).toBeNull();
+    cleanup();
+    const { container, engine } = mount({ tool: "select", selection: [lineEl("a", "line")], lineEditing: "a", linePoints: 1 });
+    const b = container.querySelector(removeBtn);
+    expect(b).not.toBeNull();
+    fireEvent.click(b!);
+    expect(engine.removeLinePoints).toHaveBeenCalledTimes(1);
   });
 });
