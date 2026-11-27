@@ -28,6 +28,7 @@ import { iconFor } from "./icons";
 import { itemState, pagesLabel, type ToolbarView } from "./item-state";
 import { padToPixel } from "./Island";
 import { PointerSwitch } from "./PointerSwitch";
+import { buttonShortcut } from "./shortcuts";
 import { createTip } from "./tooltip";
 
 /** Libellé du curseur du pot (C6b, B10). */
@@ -61,12 +62,14 @@ const DROP_ICON = "drop";
 function Button(props: { item: ToolItem; ctx: Ctx; onPress: () => void }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.ctx.view()));
   const primary = props.item.kind === "action" && PRIMARY_ACTIONS.has(props.item.action ?? "");
+  const keys = props.item.kind === "action" ? buttonShortcut(props.item.action) : null;
   return (
     <IconButton
       icon={iconFor(props.item, st().icon)}
       label={st().label}
       pressed={st().pressed}
       disabled={st().disabled}
+      shortcut={keys}
       attrs={primary ? { "data-item": props.item.id, class: "rb-primary" } : { "data-item": props.item.id }}
       onPress={() => props.onPress()}
     />
@@ -104,6 +107,7 @@ function PageCounter(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
   const st = createMemo(() => itemState(props.item, props.ctx.view()));
   const text = createMemo(() => pagesLabel(props.ctx.view()));
   const tip = createTip();
+  const keys = buttonShortcut(props.item.action);
   let button: HTMLButtonElement | undefined;
   return (
     <>
@@ -115,6 +119,7 @@ function PageCounter(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
         data-item={props.item.id}
         aria-label={text()}
         aria-pressed={st().pressed ?? undefined}
+        aria-keyshortcuts={keys?.aria ?? undefined}
         disabled={st().disabled}
         onClick={() => props.ctx.host.runAction(props.item.action ?? "")}
         {...tipPointerHandlers(tip)}
@@ -123,7 +128,7 @@ function PageCounter(props: { item: ToolItem; ctx: Ctx }): JSX.Element {
         <Icon name={iconFor(props.item, st().icon) ?? ""} />
         <span ref={(el) => onCleanup(padToPixel(el))}>{text()}</span>
       </button>
-      <TipBubble tip={tip} label={st().label} anchor={() => button!} />
+      <TipBubble tip={tip} label={st().label} anchor={() => button!} keys={keys?.text} />
     </>
   );
 }

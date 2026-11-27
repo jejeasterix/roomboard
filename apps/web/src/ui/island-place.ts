@@ -80,17 +80,21 @@ const isTop = (anchor: Anchor): boolean => anchor.startsWith("top");
 
 /**
  * Voie d'un îlot (L2-30). Centré : sur la rangée de ses coins si la place centrée et symétrique entre les groupes de
- * coins le contient entier (largeur maximale = cette place) ; sinon dans la voie suivante, sous la rangée du haut ou
+ * coins le contient entier (largeur maximale = cette place), puis (OG19) si la place entre les groupes le contient,
+ * centré dans celle-ci ; sinon dans la voie suivante, sous la rangée du haut ou
  * au-dessus de la rangée du bas, toute la largeur moins 2 × 16. Coin : sa position de coin, largeur moins 2 × 16.
  */
 export function laneOf(anchor: Anchor, size: Box, area: Box, corners: Corners): Lane {
   const full = Math.max(0, area.w - 2 * EDGE);
   const top = isTop(anchor);
   if (isCentered(anchor)) {
+    const y0 = Math.max(0, top ? EDGE : area.h - EDGE - size.h);
     const sym = area.w - 2 * (EDGE + Math.max(corners.start, corners.end) + GAP);
-    if (size.w <= sym) {
-      return { x: Math.round((area.w - size.w) / 2), y: Math.max(0, top ? EDGE : area.h - EDGE - size.h), maxWidth: sym };
-    }
+    if (size.w <= sym) return { x: Math.round((area.w - size.w) / 2), y: y0, maxWidth: sym };
+    // OG19 (H0) : trop large pour la place symétrique, il reste sur la rangée s'il tient entre les groupes de coins,
+    // centré dans cette place (décalé du centre de la fenêtre vers le groupe le plus étroit).
+    const free = between(area, corners);
+    if (size.w <= free.w) return { x: free.x + Math.round((free.w - size.w) / 2), y: y0, maxWidth: free.w };
     const w = Math.min(size.w, full);
     const y = top ? EDGE + corners.band + GAP : area.h - EDGE - corners.band - GAP - size.h;
     return { x: Math.round((area.w - w) / 2), y: Math.max(0, Math.round(y)), maxWidth: full };
@@ -104,6 +108,22 @@ export function laneOf(anchor: Anchor, size: Box, area: Box, corners: Corners): 
   }
   const x = anchor === "top-end" ? area.w - EDGE - w : EDGE;
   return { x: Math.round(x), y: Math.max(0, Math.round(top ? EDGE : area.h - EDGE - size.h)), maxWidth: full };
+}
+
+/** OG19 (H0) : place de la rangée entre les groupes de coins, écart compris de chaque côté. */
+function between(area: Box, corners: Corners): { readonly x: number; readonly w: number } {
+  const x = EDGE + corners.start + GAP;
+  return { x, w: area.w - EDGE - corners.end - GAP - x };
+}
+
+/** OG19 (H0) : un îlot centré se compacte (boutons d'un cran plus étroits, écarts de 2 px, `data-compact`) seulement si
+ *  sa largeur naturelle ne tient pas sur sa rangée et que sa largeur compacte y tient ; sinon il garde sa taille, sur la
+ *  rangée ou dans la voie suivante (L2-30). Coin, voie latérale : jamais. Un îlot déplacé suit la même règle. */
+export function compactOf(anchor: Anchor, natural: Box, compact: Box, area: Box, corners: Corners): boolean {
+  if (!isCentered(anchor) || compact.w >= natural.w) return false;
+  // La place entre les coins contient toujours la place symétrique : c'est la largeur de la rangée.
+  const row = between(area, corners).w;
+  return natural.w > row && compact.w <= row;
 }
 
 /** T16 : haut de la voie latérale (abscisses `x` à `x + w`), sous la rangée des coins (`y0`) puis sous chaque îlot de

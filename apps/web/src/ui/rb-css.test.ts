@@ -61,6 +61,12 @@ describe("rb.css (design-l1, L1-6)", () => {
   });
 });
 
+describe("rb.css (OG19, H1-11)", () => {
+  it("raccourci de l'infobulle : `attr(data-keys)` après le libellé, blanc mêlé de navy, graisse normale, hors du texte de la bulle", () => {
+    expect(rule(".rb-tip[data-keys]::after")).toMatch(/content: attr\(data-keys\);.*margin-inline-start: 12px;.*color: color-mix\(in srgb, var\(--rf-white\) 72%, var\(--rf-navy-500\)\);.*font-weight: 400;/);
+  });
+});
+
 describe("rb.css (design-l4, L4-12)", () => {
   it("L4-12 : cadre de l'annotation 3 px violet 600, fixe sur toute la fenêtre, inerte, montré par html[data-cadre=\"1\"]", () => {
     expect(rule(".rb-annot-frame")).toMatch(/display: none;.*position: fixed;.*inset: 0;.*box-shadow: inset 0 0 0 3px var\(--rf-violet-600\);.*pointer-events: none;/);

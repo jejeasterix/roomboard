@@ -65,6 +65,8 @@ export const ICONS: Readonly<Record<string, IconNode>> = Object.freeze({
   "send-to-back": [["rect", { x: "14", y: "14", width: "8", height: "8", rx: "2" }], ["rect", { x: "2", y: "2", width: "8", height: "8", rx: "2" }], ["path", { d: "M7 14v1a2 2 0 0 0 2 2h1" }], ["path", { d: "M14 7h1a2 2 0 0 1 2 2v1" }]],
   // personnalisation 1b : Lucide (ISC) au commit 7981a0798a, noms Lucide identiques.
   "wallpaper": [["path", { d: "M12 17v4" }], ["path", { d: "M8 21h8" }], ["path", { d: "m9 17 6.1-6.1a2 2 0 0 1 2.81.01L22 15" }], ["circle", { cx: "8", cy: "9", r: "2" }], ["rect", { x: "2", y: "3", width: "20", height: "14", rx: "2" }]],
+  // OG19 : section « Modèles de cours » (Lucide layout-template, même commit) ; « table » restait celle de l'outil Tableau.
+  "layout-template": [["rect", { width: "18", height: "7", x: "3", y: "3", rx: "1" }], ["rect", { width: "9", height: "7", x: "3", y: "14", rx: "1" }], ["rect", { width: "5", height: "7", x: "16", y: "14", rx: "1" }]],
   "search": [["path", { d: "m21 21-4.34-4.34" }], ["circle", { cx: "11", cy: "11", r: "8" }]],
   "image-plus": [["path", { d: "M16 5h6" }], ["path", { d: "M19 2v6" }], ["path", { d: "M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5" }], ["path", { d: "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" }], ["circle", { cx: "9", cy: "9", r: "2" }]],
   "import": [["path", { d: "M12 3v12" }], ["path", { d: "m17 8-5-5-5 5" }], ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }]],

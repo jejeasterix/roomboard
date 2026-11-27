@@ -159,6 +159,21 @@ describe("personnalisation-1b : fenêtre des fonds (Q25 à Q29)", () => {
     expect(cards()).toEqual(["blanc", "creme", "ardoise"]);
   });
 
+  it("OG19 : pendant une recherche, aucune section n'est surlignée ; champ vidé : la section revient", () => {
+    const { q, container } = setup();
+    const checked = (): string[] =>
+      [...container.querySelectorAll<HTMLElement>('[data-edit="fonds-section"] [role="radio"][aria-checked="true"]')].map((b) => b.dataset["choice"]!);
+    const input = q<HTMLInputElement>('input[data-fonds="search"]');
+    expect(checked()).toEqual(["colors"]);
+    typeIn(input, "ardoise");
+    expect(checked()).toEqual([]);
+    // Un seul arrêt de tabulation reste dans le rail (le premier bouton).
+    const stops = [...container.querySelectorAll<HTMLElement>('[data-edit="fonds-section"] [role="radio"]')].filter((b) => b.tabIndex === 0);
+    expect(stops.map((b) => b.dataset["choice"])).toEqual(["mine"]);
+    typeIn(input, "");
+    expect(checked()).toEqual(["colors"]);
+  });
+
   it("Mes fonds : trois actions, cartes avec × de 44 px, retirer et actions appellent leurs rappels", () => {
     const { q, cards, importImage, addPage, remove } = setup({ mine: MINE });
     fireEvent.click(q('[data-edit="fonds-section"] [data-choice="mine"]'));

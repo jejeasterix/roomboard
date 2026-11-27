@@ -1,7 +1,8 @@
 //! Contour à largeur variable (D7, DA7) : la seule géométrie de l'encre, pour le rendu ET la collision.
 //! `freedraw` (portage MIT de perfect-freehand) n'est appelé qu'ici.
 use freedraw::{
-    get_stroke_outline_points, get_stroke_points, InputPoint, StrokeOptions, StrokePoint,
+    get_stroke_outline_points, get_stroke_points, get_stroke_radius, InputPoint, StrokeOptions,
+    StrokePoint,
 };
 
 use super::points::InkPoint;
@@ -28,6 +29,15 @@ fn options(style: &InkStyle, last: bool) -> StrokeOptions {
         last: Some(last),
         ..Default::default()
     }
+}
+
+/// Rayon du contour en un point de pression `pressure` : la formule de freedraw (`get_stroke_radius`, sans easing),
+/// avec `THINNING`, soit `width × (0,25 + 0,5 × pression)` ; `width / 2` à pression 0,5. La gomme partielle coupe
+/// avec ce rayon (OG20). Comme freedraw : pression négative ou NaN lue 0,5 (`get_stroke_points.rs`), rayon d'au moins
+/// 0,01 (`get_stroke_outline_points.rs`).
+pub fn outline_radius(width: f32, pressure: f32) -> f32 {
+    let pressure = if pressure >= 0.0 { pressure } else { 0.5 };
+    (get_stroke_radius(f64::from(width), THINNING, f64::from(pressure), None) as f32).max(0.01)
 }
 
 /// Contour d'un trait terminé : polygone fermé, x, y alternés, dans le repère des points.
@@ -174,6 +184,16 @@ mod tests {
     #[test]
     fn empty_points_give_empty_outline() {
         assert!(outline(&[], &InkStyle { width: 8.0 }).is_empty());
+    }
+
+    /// OG20 : rayon de freedraw, pression invalide (négative, NaN) lue 0,5.
+    #[test]
+    fn outline_radius_follows_freedraw() {
+        assert_eq!(outline_radius(24.0, 1.0), 18.0);
+        assert_eq!(outline_radius(24.0, 0.5), 12.0);
+        for pressure in [-1.0f32, f32::NAN] {
+            assert_eq!(outline_radius(24.0, pressure), 12.0);
+        }
     }
 
     #[test]

@@ -55,7 +55,7 @@ export const SECTIONS: readonly Section[] = Object.freeze([
   {
     id: "lessons",
     label: "Modèles de cours",
-    icon: "table",
+    icon: "layout-template",
     themes: [t("organisation", "Organisation"), t("reflexion", "Réflexion"), t("mathematiques", "Mathématiques"), t("ecriture", "Écriture"), t("sport", "Sport")],
   },
   {
