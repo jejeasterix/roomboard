@@ -29,7 +29,8 @@ import { MenuBar } from "./MenuBar";
 import { Model3dBar, type Model3dControls } from "./Model3dBar";
 import { NO_WEBGL_MESSAGE } from "../platform/model3d-import";
 import { MODEL3D_FAILED_MESSAGE } from "../platform/model-sessions";
-import { SideBar, type PagesPort } from "./SideBar";
+import { dropTarget, layerRows } from "../app/layer-list";
+import { SideBar, type LayersPort, type PagesPort } from "./SideBar";
 import { createPageThumbs, type PageThumbs } from "./page-thumbs";
 import { ProfileEditor } from "./ProfileEditor";
 import { ProfileMenu } from "./ProfileMenu";
@@ -323,15 +324,23 @@ export function App(props: AppProps): JSX.Element {
   createEffect(on(annotating, (a) => { if (!a) setRemoteView(null); }));
   const mode = (): StartMode => (annotating() ? "desktop-annotation" : "board");
 
-  /** Ctrl+Maj+P, `page-number` : déplie la barre latérale (focus sur la miniature montrée) ou la replie au second appel.
-   *  Calques : lot 2. Barre absente du profil montré (ou ancrée, sans repli) : sans effet, faux. */
+  /** Ctrl+Maj+P, `page-number` (Pages) et Ctrl+Maj+L (Calques) : déplie la barre latérale sur l'onglet voulu, change
+   *  d'onglet si elle est dépliée sur l'autre, ou la replie si l'onglet est déjà montré. Barre absente du profil montré
+   *  (ou ancrée, sans repli) : sans effet. */
   const toggleSidebar = (tab: "pages" | "calques"): void => {
-    if (tab !== "pages") return;
     const island = props.stages.ownerDocument.querySelector<HTMLElement>('[data-island="pages"]');
     if (island === null) return;
     const wasFolded = island.dataset["collapsed"] === "1";
+    const tabEl = island.querySelector<HTMLElement>(`[data-tab="${tab}"]`);
+    const onOther = !wasFolded && tabEl?.getAttribute("aria-selected") === "false";
+    if (tabEl === null && tab === "calques") return;
+    if (onOther) {
+      tabEl?.click();
+      return;
+    }
+    if (wasFolded) tabEl?.click();
     island.querySelector<HTMLElement>("[data-island-collapse]")?.click();
-    if (wasFolded) island.querySelector<HTMLElement>('.rb-pages-list [aria-current="page"]')?.focus();
+    if (wasFolded) (tab === "pages" ? island.querySelector<HTMLElement>('.rb-pages-list [aria-current="page"]') : tabEl)?.focus();
   };
   if (props.sidebar !== undefined) props.sidebar.toggle = toggleSidebar;
 
@@ -468,6 +477,21 @@ export function App(props: AppProps): JSX.Element {
     setLayout: (m: PageLayout) => void ws.active().board.engine.setPageMode(m),
     thumb: async (id, width) => thumbsFor(ws.active()).get(id, width),
   };
+  /** Onglet Calques : lignes de la page montrée, sélection et glisser branchés sur le moteur. */
+  const layersPort: LayersPort = {
+    rows: () => {
+      tick();
+      state();
+      return layerRows(ws.active().board.doc, state().page);
+    },
+    selected: () => state().selection ?? [],
+    select: (ids) => ws.active().board.engine.select(ids),
+    drop: (key, slot) => {
+      const b = ws.active().board;
+      const t = dropTarget(b.doc, state().page, key, slot);
+      if (t !== null) b.engine.restack(t.ids, t.to);
+    },
+  };
   /** DA7 : une écriture sur la page montrée refait sa miniature (les autres restent gardées). */
   createEffect(
     on(
@@ -487,6 +511,7 @@ export function App(props: AppProps): JSX.Element {
           view={view}
           host={host}
           pages={pagesPort}
+          layers={layersPort}
           size={size}
           {...(props.device !== undefined ? { store: props.device } : {})}
         />
