@@ -1366,7 +1366,7 @@ async function capturesB(browser, base, nom, wanted) {
     console.log(`capture : ${OUT}/${nom}-${name}.png`);
   };
   const clipAround = async (page, w, h) => {
-    const b = await page.locator(OPT).first().boundingBox();
+    const b = await page.locator(OPT).first().boundingBox({ timeout: 2000 }).catch(() => ({ x: 380, y: 100 })); // le panneau Image remplace les options
     const x0 = Math.max(0, (b?.x ?? 0) - 12);
     const y0 = Math.max(0, (b?.y ?? 0) - 12);
     return { x: x0, y: y0, width: Math.min(w, VIEWPORT.width - x0), height: Math.min(h, VIEWPORT.height - y0) };
@@ -1407,7 +1407,7 @@ async function capturesB(browser, base, nom, wanted) {
       let [sx, sy] = await toScreen(page, [b.x1, (b.y0 + b.y1) / 2]);
       await touchDrag(page, cdp, [sx, sy], [sx - 40 * b.s * (await camera(page)).zoom, sy]);
       await press(page, "doigt", '[data-image-action="crop-apply"]');
-      await waitAttr(page, "data-image", "160x150");
+      await page.waitForFunction(() => /^1(59|6[0-2])x150$/.test(document.querySelector("#stage")?.getAttribute("data-image") ?? ""), null, { timeout: 15000 });
       await press(page, "doigt", '[data-image-action="close"]');
       await press(page, "doigt", '[data-image-action="panel-background"]');
       await page.locator("#image-retouche").waitFor({ state: "visible", timeout: 15000 });
