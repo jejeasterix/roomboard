@@ -27,7 +27,7 @@ export const MAX_SPANS = 10_000;
 const MAX_INDEX = 16_777_216;
 
 export type BoardObject =
-  | { readonly kind: "shape"; readonly shape: ShapeKind; readonly m: Matrix; readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number; readonly color: string; readonly width: number; readonly fill: string | null }
+  | { readonly kind: "shape"; readonly shape: BoardShape; readonly m: Matrix; readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number; readonly color: string; readonly width: number; readonly fill: string | null }
   | { readonly kind: "stroke"; readonly m: Matrix; readonly color: string; readonly width: number; readonly points: readonly number[] }
   | { readonly kind: "text"; readonly m: Matrix; readonly x: number; readonly y: number; readonly boxWidth: number; readonly boxHeight: number; readonly size: number; readonly color: string; readonly spans: readonly TextSpan[] }
   | { readonly kind: "image"; readonly m: Matrix; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly path: string }
@@ -265,8 +265,7 @@ export function encodeBoardList(pages: readonly BoardListPage[]): BoardListData 
   const obj = (o: BoardObject): void => {
     switch (o.kind) {
       case "shape":
-        // OG12 lot 2a : un losange arrive ici déjà converti en polyligne fermée (L3), jamais avec un code inventé.
-        if (o.shape === "diamond") throw new Error("losange hors du flux : polyligne fermée attendue (OG12 lot 2a)");
+        // OG12 lot 2a : un losange arrive ici déjà converti en polyligne fermée (L3) ; le type l'exclut (C4a).
         ops.push(BOARD_OP.shape, SHAPE_CODE[o.shape]);
         mat(o.m);
         ops.push(o.x0, o.y0, o.x1, o.y1);

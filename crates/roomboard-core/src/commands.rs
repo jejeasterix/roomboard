@@ -495,6 +495,11 @@ pub(crate) struct ShapeFields {
 }
 
 impl ShapeFields {
+    /// C4a : intérieur remplissable (pot, murs de zone) : toute forme sauf un segment, et la ligne fermée (n° 34).
+    pub fn fillable(&self) -> bool {
+        !self.kind.is_segment() || self.polygon
+    }
+
     pub fn geom(&self) -> ShapeGeom<'_> {
         ShapeGeom {
             kind: self.kind,
@@ -1341,6 +1346,8 @@ impl Document {
             let mut plan = linear::line_writes(&t, &world, None, None)?;
             plan.push(("shape", Some(In::Any(Any::from("line")))));
             plan.push(("polygon", Some(In::Any(Any::Bool(true)))));
+            // H5 : `roundness` retiré comme `cmd_set_style` pour un neutre, dans la même transaction.
+            plan.push(("roundness", None));
             (found.element, found.page_id, plan)
         };
         {
@@ -1348,8 +1355,6 @@ impl Document {
             for (k, v) in plan {
                 crate::fill::set_or_remove(&e, &mut txn, k, v);
             }
-            // H5 : `roundness` retiré par le chemin de `cmd_set_style` pour un neutre (même transaction).
-            crate::style::clear_roundness(&e, &mut txn);
         }
         Ok(self.done(Change {
             pages: vec![page],

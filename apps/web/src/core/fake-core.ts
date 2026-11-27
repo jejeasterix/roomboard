@@ -120,6 +120,10 @@ import { applyMatrix, boxPolygon, composeMatrix, isClosedShape, isIdentity, isSe
 import { ANCHOR_RATIOS, anchorPoint, BIND_RATIO_MAX, bindGap, invertMatrix, lineGeomOf, linePath, MAX_INNER_POINTS, type BindBox, type Outline } from "./shapes";
 import { displaySize, geometryOf, normalizeParams, paramsOf, readParams, sameParams } from "./image-params";
 
+/** C4a : intérieur remplissable (pot, `SetStyle.fill`), miroir de `ShapeFields::fillable` : toute forme sauf un segment,
+ *  et la ligne fermée. */
+const isFillableShape = (s: ShapeData): boolean => !isSegment(s.shape) || isClosedShape(s);
+
 /** Réglages d'une image (C5), tels que le cœur les range à plat sur l'élément. */
 const IMAGE_PARAM_KEYS = ["crop", "flipX", "flipY", "quarterTurns", "brightness", "contrast", "transparent"] as const;
 /** Miroir de `BAKED` (`image.rs`) : champs cuits dans le nouvel asset par un remplissage, retirés même bruts. */
@@ -296,7 +300,7 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
     }
   }
   // OG12 lot 2a : fond et motif aussi sur un losange et une ligne fermée (`style.rs`).
-  const fillable = shape !== undefined && (shape.shape === "rect" || shape.shape === "ellipse" || shape.shape === "diamond" || isClosedShape(shape));
+  const fillable = shape !== undefined && isFillableShape(shape);
   if ("fill" in p && shape && fillable) {
     const f = p.fill ?? null;
     if (shape.fill !== f) {
@@ -1994,8 +1998,8 @@ class FakeDocument implements CoreDocument {
         }
         const shape = e.shape;
         const inside = t.kind === "inside";
-        // `field_for` du cœur : contour = `color` d'un trait ou de toute forme ; intérieur = `fill` d'un rectangle ou d'une ellipse.
-        const key = !inside && (e.local !== undefined || shape) ? "color" : inside && shape && !isSegment(shape.shape) ? "fill" : null;
+        // `field_for` du cœur : contour = `color` d'un trait ou de toute forme ; intérieur = `fill` d'une forme remplissable (C4a).
+        const key = !inside && (e.local !== undefined || shape) ? "color" : inside && shape && isFillableShape(shape) ? "fill" : null;
         if (key === null) throw new Error(MESSAGES.badFill);
         const write = (next: (old: FakeElement) => FakeElement): Change =>
           this.step((s) => {
@@ -2142,13 +2146,13 @@ class FakeDocument implements CoreDocument {
     return null;
   }
   edgeHit(id: string, x: number, y: number, tol: number): boolean {
-    // Miroir d'`edge_hit` (`fill.rs`) : tracé `shapePolygon(kind, w, h, 0)` porté par la matrice, arêtes seules (jamais
+    // Miroir d'`edge_hit` (`fill.rs`) : tracé `shapePolygon(kind, w, h, 0, géométrie)` porté par la matrice, arêtes seules (jamais
     // l'intérieur, à l'inverse de `polygonHit`), bande = tol + demi-épaisseur × (facteur de similitude, sinon racine du
     // déterminant ; pas la plus petite valeur singulière de `strokeHalfWidth`).
     const e = this.find(id)?.element;
     const s = e?.shape;
-    if (!e || !s || isSegment(s.shape)) return false;
-    const local = shapePolygon(s.shape, s.w, s.h, 0);
+    if (!e || !s || !isFillableShape(s)) return false;
+    const local = shapePolygon(s.shape, s.w, s.h, 0, lineGeomOf(s));
     const world: number[] = [];
     for (let i = 0; i + 1 < local.length; i += 2) world.push(...applyMatrix(e.transform, local[i] ?? 0, local[i + 1] ?? 0));
     const n = world.length / 2;

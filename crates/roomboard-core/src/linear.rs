@@ -344,8 +344,13 @@ pub(crate) fn line_writes(
 impl Document {
     /// Cible d'une liaison, cherchée sur la page `page` de la ligne seulement (C1) : `find_element` parcourt toutes les
     /// pages, et une cible d'une autre page n'est ni accrochable, ni suivie, ni lue (vue : liaison libre) ; une cible
-    /// sans `bind_box` non plus.
-    pub(crate) fn bound_target<T: ReadTxn>(&self, txn: &T, page: &str, id: &str) -> Option<MapRef> {
+    /// sans `bind_box` non plus. Rend sa `bind_box`, calculée une seule fois (C4a).
+    pub(crate) fn bound_target<T: ReadTxn>(
+        &self,
+        txn: &T,
+        page: &str,
+        id: &str,
+    ) -> Option<BindBox> {
         self.page_elements(txn, page)?
             .iter(txn)
             .find_map(|o| match o {
@@ -353,7 +358,7 @@ impl Document {
                 _ => None,
             })
             // OG12 lot 2a (n° 9, 34) : une cible devenue non accrochable (forme convertie en ligne fermée) se lit libre.
-            .filter(|e| bind_box(txn, e).is_some())
+            .and_then(|e| bind_box(txn, &e))
     }
 
     /// Liaison demandée (n° 12 b) : rapport fini, cible connue sur la page `page` de la ligne et accrochable ; rapport
@@ -367,10 +372,9 @@ impl Document {
         if !b.fx.is_finite() || !b.fy.is_finite() {
             return Err(CommandError::BadShape);
         }
-        let found = self
+        let bx = self
             .bound_target(txn, page, &b.id)
             .ok_or(CommandError::BadShape)?;
-        let bx = bind_box(txn, &found).ok_or(CommandError::BadShape)?;
         let fixed = BindInput {
             id: b.id.clone(),
             fx: b.fx.clamp(-BIND_RATIO_MAX, BIND_RATIO_MAX),
@@ -488,11 +492,7 @@ fn elbow_end<T: ReadTxn>(
     b: Option<&BindInput>,
     p: (f64, f64),
 ) -> ElbowEnd {
-    let target = b.and_then(|b| {
-        doc.bound_target(txn, page, &b.id)
-            .and_then(|e| bind_box(txn, &e))
-            .map(|bx| (b, bx))
-    });
+    let target = b.and_then(|b| doc.bound_target(txn, page, &b.id).map(|bx| (b, bx)));
     match target {
         Some((b, bx)) => ElbowEnd {
             p: anchor(&bx, [b.fx, b.fy]),
