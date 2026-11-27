@@ -1,6 +1,114 @@
 //! Aspect complet d'une page (personnalisation-1b, Q1 à Q4, Q35, DA1) : couleur, grille et fond image de N pages en une
 //! transaction `"local"`, donc une seule étape d'annulation ; seules les pages qui changent sont écrites et rendues
 //! (D38). Une page à fond `pdf-page` garde son fond : elle ne reçoit que la couleur et la grille (Q35).
+use std::collections::BTreeSet;
+
+use yrs::{In, Map, MapRef};
+
+use crate::commands::{check_backdrop, same_backdrop, BackdropInput, Change, CommandError};
+use crate::document::Document;
+use crate::element::{out_string, read_backdrop, DEFAULT_BACKGROUND, PDF_PAGE_KIND};
+use crate::grid::{self, GridInput};
+use crate::rich_text::valid_color;
+
+/// Ce qu'une page reçoit ; une page sans rien à écrire n'a pas de plan.
+struct PagePlan {
+    id: String,
+    map: MapRef,
+    color: bool,
+    grid: bool,
+    /// `Some(same)` : fond à écrire (`same` : même fond, métadonnée d'asset seule) ; `None` : rien (page PDF ou inchangé).
+    backdrop: Option<bool>,
+}
+
+impl Document {
+    /// Refus, sans transaction, dans cet ordre : couleur (`BadFill`), fond (`BadAsset`, `BadImage`), grille (`BadGrid`),
+    /// pages (liste vide, doublon ou page absente : `UnknownPage`). Puis une transaction `"local"` pour toutes les pages
+    /// qui changent ; aucune si rien ne change (D38). Le genre du fond est lu page par page : une page `pdf-page` garde
+    /// son fond (Q35).
+    pub(crate) fn cmd_apply_background(
+        &mut self,
+        pages: &[String],
+        color: &str,
+        backdrop: Option<&BackdropInput>,
+        grid: Option<&GridInput>,
+    ) -> Result<Change, CommandError> {
+        if !valid_color(color) {
+            return Err(CommandError::BadFill);
+        }
+        if let Some(b) = backdrop {
+            check_backdrop(b)?;
+        }
+        if let Some(g) = grid {
+            grid::validate(g)?;
+        }
+        if pages.is_empty() {
+            return Err(CommandError::UnknownPage(String::new()));
+        }
+        let mut plans: Vec<PagePlan> = Vec::with_capacity(pages.len());
+        {
+            let txn = self.read();
+            let mut seen = BTreeSet::new();
+            for id in pages {
+                if !seen.insert(id.as_str()) {
+                    return Err(CommandError::UnknownPage(id.clone()));
+                }
+                let (_, map) = self
+                    .find_page(&txn, id)
+                    .ok_or_else(|| CommandError::UnknownPage(id.clone()))?;
+                let current_color = out_string(map.get(&txn, "background"));
+                let color_same = current_color.as_deref().unwrap_or(DEFAULT_BACKGROUND) == color;
+                let grid_same = grid::read(&txn, &map).as_ref() == grid;
+                let current = read_backdrop(&txn, &map);
+                let pdf = current
+                    .as_ref()
+                    .is_some_and(|r| r.kind.as_deref() == Some(PDF_PAGE_KIND));
+                let backdrop_plan = if pdf {
+                    None
+                } else {
+                    let same = same_backdrop(backdrop, current.as_ref());
+                    // Même fond mais métadonnée d'asset absente : on l'écrit, comme `SetBackdrop`.
+                    let meta_missing = same
+                        && backdrop.is_some_and(|b| {
+                            self.assets_ref().get(&txn, b.asset.id.as_str()).is_none()
+                        });
+                    (!same || meta_missing).then_some(same)
+                };
+                if color_same && grid_same && backdrop_plan.is_none() {
+                    continue;
+                }
+                plans.push(PagePlan {
+                    id: id.clone(),
+                    map,
+                    color: !color_same,
+                    grid: !grid_same,
+                    backdrop: backdrop_plan,
+                });
+            }
+        }
+        if plans.is_empty() {
+            return Ok(self.unchanged());
+        }
+        {
+            let mut txn = self.transact_local();
+            for p in &plans {
+                if p.color {
+                    p.map.insert(&mut txn, "background", In::from(color));
+                }
+                if p.grid {
+                    grid::write(&mut txn, &p.map, grid);
+                }
+                if let Some(same) = p.backdrop {
+                    self.write_backdrop(&mut txn, &p.map, backdrop, same);
+                }
+            }
+        }
+        Ok(self.done(Change {
+            pages: plans.into_iter().map(|p| p.id).collect(),
+            ..Default::default()
+        }))
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -60,7 +168,12 @@ mod tests {
         }
     }
 
-    fn look(pages: &[String], color: &str, b: Option<BackdropInput>, g: Option<GridInput>) -> Command {
+    fn look(
+        pages: &[String],
+        color: &str,
+        b: Option<BackdropInput>,
+        g: Option<GridInput>,
+    ) -> Command {
         Command::ApplyBackground {
             pages: pages.to_vec(),
             color: color.into(),
@@ -99,11 +212,19 @@ mod tests {
         for p in &pages {
             let v = d.page(p).expect("page");
             assert_eq!(
-                (v.background.as_str(), v.grid.is_none(), v.backdrop.is_none()),
+                (
+                    v.background.as_str(),
+                    v.grid.is_none(),
+                    v.backdrop.is_none()
+                ),
                 ("#ffffff", true, true)
             );
         }
-        assert_eq!(d.page_ids(), pages, "les pages ajoutées restent : leurs étapes sont à part");
+        assert_eq!(
+            d.page_ids(),
+            pages,
+            "les pages ajoutées restent : leurs étapes sont à part"
+        );
     }
 
     /// D38 : même aspect, aucune transaction ; seules les pages qui changent sont écrites et rendues.
@@ -111,19 +232,23 @@ mod tests {
     fn apply_background_same_value_is_no_step() {
         let (mut d, pages) = three();
         let first = vec![pages[0].clone()];
-        d.apply(look(&first, "#2f3e46", None, None)).expect("ardoise");
+        d.apply(look(&first, "#2f3e46", None, None))
+            .expect("ardoise");
         let w = writes(&d);
         let v = d.version();
         let c = d.apply(look(&first, "#2f3e46", None, None)).expect("même");
         assert_eq!((c.version, c.pages.len(), w.since()), (v, 0, 0));
-        let c = d.apply(look(&pages, "#2f3e46", None, None)).expect("toutes");
+        let c = d
+            .apply(look(&pages, "#2f3e46", None, None))
+            .expect("toutes");
         assert_eq!(c.pages, pages[1..].to_vec());
     }
 
     /// Q35 : page PDF : fond gardé, couleur et grille écrites, une étape ; annuler rend la page telle quelle.
     #[test]
     fn apply_background_keeps_pdf_page_backdrop() {
-        let mut d = Document::from_pdf_pages(&pdf(), &[(612.0, 792.0), (792.0, 612.0)], None).expect("pdf");
+        let mut d =
+            Document::from_pdf_pages(&pdf(), &[(612.0, 792.0), (792.0, 612.0)], None).expect("pdf");
         let pages = d.page_ids();
         let c = d
             .apply(look(&pages, "#fbf7ec", image(), Some(seyes())))
@@ -169,9 +294,16 @@ mod tests {
         assert_eq!(c.pages, pages);
         for p in &pages {
             let v = d.page(p).expect("page");
-            assert_eq!((v.background.as_str(), v.grid.clone()), ("#fbf7ec", Some(seyes())));
+            assert_eq!(
+                (v.background.as_str(), v.grid.clone()),
+                ("#fbf7ec", Some(seyes()))
+            );
             let b = v.backdrop.expect("fond");
-            let want = if *p == plain { (ABC, "image") } else { (PDF, "pdf-page") };
+            let want = if *p == plain {
+                (ABC, "image")
+            } else {
+                (PDF, "pdf-page")
+            };
             assert_eq!((b.asset.as_str(), b.kind.as_str()), want);
         }
         assert!(d.undo());
@@ -204,7 +336,10 @@ mod tests {
         });
         let mut bad_grid = seyes();
         bad_grid.levels[0].spacing_x = 0.0;
-        assert!(matches!(d.apply(look(&one, "", None, None)), Err(CommandError::BadFill)));
+        assert!(matches!(
+            d.apply(look(&one, "", None, None)),
+            Err(CommandError::BadFill)
+        ));
         assert!(matches!(
             d.apply(look(&one, "", bad_asset.clone(), None)),
             Err(CommandError::BadFill)
@@ -251,12 +386,19 @@ mod tests {
         assert_eq!(c.pages, one);
         let v = d.page(&one[0]).expect("page");
         assert_eq!(
-            (v.background.as_str(), v.grid.is_none(), v.backdrop.is_none()),
+            (
+                v.background.as_str(),
+                v.grid.is_none(),
+                v.backdrop.is_none()
+            ),
             ("#ffffff", true, true)
         );
         assert!(d.undo());
         let v = d.page(&one[0]).expect("page");
-        assert_eq!((v.background.as_str(), v.grid, v.backdrop.is_some()), ("#fbf7ec", Some(seyes()), true));
+        assert_eq!(
+            (v.background.as_str(), v.grid, v.backdrop.is_some()),
+            ("#fbf7ec", Some(seyes()), true)
+        );
     }
 
     #[test]
@@ -268,11 +410,16 @@ mod tests {
         assert!(d.redo());
         for p in &pages {
             let v = d.page(p).expect("page");
-            assert_eq!((v.background.as_str(), v.grid.clone()), ("#2f3e46", Some(seyes())));
+            assert_eq!(
+                (v.background.as_str(), v.grid.clone()),
+                ("#2f3e46", Some(seyes()))
+            );
         }
     }
 
-    /// S4, G4 : trente rechargements gardent les octets (fond, grille, couleur, métadonnée d'asset).
+    /// S4, G4 : trente rechargements gardent les octets et la vue (fond, grille, couleur, métadonnée d'asset). La couleur
+    /// remplace la valeur `background` déjà écrite : l'historique du document d'origine garde l'ancienne (comme
+    /// `Fill { Background }`), donc les octets se comparent au premier rechargement, et la vue à l'original.
     #[test]
     fn apply_background_reload_keeps_bytes() {
         use crate::format::{load, save, SaveMeta};
@@ -284,12 +431,20 @@ mod tests {
         let (mut d, pages) = three();
         d.apply(look(&pages, "#fbf7ec", image(), Some(seyes())))
             .expect("fond");
-        let ybin = d.encode_v1();
-        let file = save(&d, &meta).expect("save");
+        let reloaded = load(&save(&d, &meta).expect("save")).expect("load");
+        let file = save(&reloaded, &meta).expect("save du rechargé");
+        let ybin = reloaded.encode_v1();
         for i in 0..30 {
             let r = load(&file).expect("load");
+            for p in &pages {
+                assert_eq!(r.page(p), d.page(p), "vue au rechargement {i}");
+            }
+            assert_eq!(r.cited_assets(), d.cited_assets());
             assert!(r.encode_v1() == ybin, "ybin différent au rechargement {i}");
-            assert!(save(&r, &meta).expect("resave") == file, "fichier différent au rechargement {i}");
+            assert!(
+                save(&r, &meta).expect("resave") == file,
+                "fichier différent au rechargement {i}"
+            );
         }
     }
 }
