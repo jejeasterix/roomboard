@@ -155,12 +155,12 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     const near = boxOf(trigger);
     for (const [id, t] of tracks) {
       if (id === triggerId || t.pointerType !== "touch") continue;
+      const live = t.role === "draw" || t.role === "pan" || t.role === "pinch";
+      // Un geste établi, où qu'il soit, empêche la bascule (déc. 13, 32).
+      if (live && now - t.startT > DETECT_MS) return false;
       // Un contact à plus de CLUSTER_PX du déclencheur garde son geste (revue T10) : il n'entre pas dans la gomme.
-      const member =
-        t.role === "draw" || t.role === "pan" || t.role === "pinch" || (t.role === "ignored" && now - t.startT <= DETECT_MS);
-      if (member && joinsCluster([near], boxOf(t))) group.push([id, t]);
+      if ((live || (t.role === "ignored" && now - t.startT <= DETECT_MS)) && joinsCluster([near], boxOf(t))) group.push([id, t]);
     }
-    if (group.some(([, t]) => now - t.startT > DETECT_MS)) return false;
     let first = trigger;
     for (const [, t] of group) if (t.startT < first.startT) first = t;
     if (first.held || !SWITCHABLE.has(first.choice)) return false;
