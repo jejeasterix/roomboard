@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 import { deflateSync, inflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT , foldOptions } from "./commun.mjs";
 import { bambooContainer, makeFlipchart } from "./fabriques/flipchart.mjs";
 import { flipPages, iwbRaw3, iwbZip, nbSvg, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 
@@ -210,6 +210,7 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
     await waitAttr("data-elements", String(elements));
   };
 
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector("#stage");
   await fr();
@@ -335,6 +336,7 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   check(!dialogs.some((d) => d.startsWith("Ouverture impossible")), "S4 : socle-v1.roomboard (d'avant C13) s'ouvre comme avant");
 
   // ---- Lot 2 : .notebook et .olf générés ici (page rechargée : la barre garde 12 onglets au plus). ----
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector("#stage");
   await fr();
@@ -430,6 +432,7 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   console.log('ok — S3 : .olf renommé, .notebook sans page, .olf cassé/trop gros/trop profond, .flipchart tronqué refusé, hostile, fichier ancien, scène ≥ 640');
 
   // ---- Lot 3 : .flipchart générés par la fabrique de T12 (page rechargée : la barre garde 12 onglets au plus). ----
+  await foldOptions(page);
   await page.goto(url);
   await page.waitForSelector("#stage");
   await fr();
