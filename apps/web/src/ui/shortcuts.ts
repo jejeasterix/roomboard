@@ -26,11 +26,12 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   s("line-edit", "Édition", "Modifier les points", "Ctrl+Entrée"),
   s("linked-node", "Édition", "Objet relié", "Alt+Maj+↑ ↓ ← →"),
   s("no-binding", "Édition", "Flèche sans liaison", "Ctrl tenu"),
+  s("nudge", "Édition", "Déplacer la sélection de 1 px", "↑ ↓ ← →"),
+  s("nudge-big", "Édition", "Déplacer la sélection de 5 px", "Maj+↑ ↓ ← →"),
   s("front", "Disposition", "Premier plan", "Ctrl+Maj+↑"),
   s("forward", "Disposition", "Avancer", "Ctrl+↑"),
   s("backward", "Disposition", "Reculer", "Ctrl+↓"),
   s("back", "Disposition", "Arrière-plan", "Ctrl+Maj+↓"),
-  s("tool-hand", "Outils", "Main", "H"),
   s("pan", "Vue", "Déplacer la vue", "Espace + glisser"),
   s("help", "Vue", "Aide", "?"),
   // OG19 (H1-11) : actions de la barre d'outils ; l'id est celui de l'action, l'infobulle de son bouton le montre.
@@ -45,8 +46,7 @@ export const SHORTCUTS: readonly Shortcut[] = Object.freeze([
   // OG25 (déc. 27) : coupe ou rallume la gomme automatique à la paume (réglage de l'appareil), avec un avis.
   // Lot 2a (n° 35) : lettres et chiffres d'outil d'Excalidraw ; S et G (sélecteurs de couleur) restent pris, 9 sans outil.
   ...TOOL_ROWS.flatMap(([id, label, letter, digit]) => [s(`tool-${id}`, "Outils", label, letter), s(`tool-${id}-num`, "Outils", `${label} (chiffre)`, digit)]),
-  s("nudge", "Édition", "Déplacer la sélection de 1 px", "↑ ↓ ← →"),
-  s("nudge-big", "Édition", "Déplacer la sélection de 5 px", "Maj+↑ ↓ ← →"),
+  s("tool-hand", "Outils", "Main", "H"),
   s("palm-eraser", "Outils", "Gomme automatique à la paume", "Ctrl+Maj+H"),
 ]);
 const MAC: ReadonlyArray<readonly [string, string]> = [["Ctrl+", "⌘"], ["Maj+", "⇧"], ["Alt+", "⌥"]];
