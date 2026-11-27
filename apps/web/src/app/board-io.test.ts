@@ -284,3 +284,31 @@ describe("board-io : lignes à plusieurs points (OG12 T6)", () => {
     expect(r.warnings).toEqual([]);
   });
 });
+
+describe("board-io : losange et ligne fermée (OG12 lot 2a)", () => {
+  const withShape = (shape: "diamond" | "line", patch: Record<string, unknown>) => {
+    const draft = fakeCore.blank();
+    const pid = draft.pageIds()[0]!;
+    draft.apply({ type: "AddShape", page: pid, shape: "rect", x0: 0, y0: 0, x1: 100, y1: 60, style: { color: "#112233", width: 2 }, fill: null });
+    const doc = Object.create(draft) as typeof draft;
+    doc.element = (id: string) => {
+      const el = draft.element(id);
+      return el !== null && el.kind === "shape" ? { ...el, shape: { ...el.shape, shape, ...patch } } : el;
+    };
+    return boardListOf(doc, createAssetStore(fakeHasher), "iwb");
+  };
+  const first = (r: Awaited<ReturnType<typeof withShape>>) => decodeBoardList(r.list.ops, r.list.texts)[0]!.objects[0]! as Extract<BoardObject, { kind: "stroke" }>;
+
+  it("losange en polyligne fermée : 5 points, le dernier égal au premier", async () => {
+    const r = await withShape("diamond", {});
+    const o = first(r);
+    expect(o.kind).toBe("stroke");
+    expect(o.points).toEqual([50, 0, 0.5, 100, 30, 0.5, 50, 60, 0.5, 0, 30, 0.5, 50, 0, 0.5]);
+    expect(r.warnings).toEqual([]);
+  });
+  it("ligne fermée en polyligne fermée", async () => {
+    const r = await withShape("line", { w: 100, h: 60, points: [100, 0], polygon: true });
+    expect(first(r).points).toEqual([0, 0, 0.5, 100, 0, 0.5, 100, 60, 0.5, 0, 0, 0.5]);
+    expect(r.warnings).toEqual([]);
+  });
+});

@@ -178,3 +178,28 @@ describe("sketch lot 2 : hachures et pointes", () => {
     expect(ops(b)).not.toEqual(ops(a));
   });
 });
+
+describe("sketch : losange et ligne fermée (OG12 lot 2a)", () => {
+  it("losange : roughjs polygon à 4 sommets", () => {
+    const spy = vi.spyOn(RoughGenerator.prototype, "polygon");
+    try {
+      sketchShape(ctx(rec()), { shape: "diamond", w: 100, h: 60, fill: null }, pen, { roughness: 1 }, 3);
+      expect(spy.mock.calls[0]![0]).toEqual([[50, 0], [100, 30], [50, 60], [0, 30]]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("ligne fermée : polygon sur les sommets, clé de cache change avec polygon", () => {
+    const memo = new Map<string, SketchPlan>();
+    const spy = vi.spyOn(RoughGenerator.prototype, "polygon");
+    try {
+      const open = { shape: "line" as const, w: 0, h: 50, fill: null, points: [100, 0, 100, 50] };
+      sketchShape(ctx(rec()), open, pen, { roughness: 1 }, 3, { id: "x", cache: memo });
+      expect(spy).not.toHaveBeenCalled();
+      sketchShape(ctx(rec()), { ...open, polygon: true }, pen, { roughness: 1 }, 3, { id: "x", cache: memo });
+      expect(spy.mock.calls[0]![0]).toEqual([[0, 0], [100, 0], [100, 50], [0, 50]]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

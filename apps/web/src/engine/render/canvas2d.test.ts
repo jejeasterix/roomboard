@@ -1808,3 +1808,30 @@ describe("canvas2d : lignes à points, pointes neuves, calque d'édition (OG12 T
     expect(c.calls).toContain("stroke");
   });
 });
+
+describe("canvas2d : losange et ligne fermée (OG12 lot 2a)", () => {
+  const pen = { color: "#000000", width: 2 };
+  it("losange : quatre sommets, chemin fermé, fond", () => {
+    const f = new FakeCtx();
+    paintShape(asCtx(f), { shape: "diamond", w: 100, h: 60, fill: "#ff0000" }, pen);
+    expect(f.path).toEqual([["M", 50, 0], ["L", 100, 30], ["L", 50, 60], ["L", 0, 30]]);
+    expect(f.log).toContain("closePath");
+    expect(f.log.some((l) => l.startsWith("fill "))).toBe(true);
+  });
+  it("ligne fermée remplie : chemin fermé, fill avant stroke", () => {
+    const f = new FakeCtx();
+    paintShape(asCtx(f), { shape: "line", w: 0, h: 50, fill: "#ff0000", points: [100, 0, 100, 50], polygon: true }, pen);
+    expect(f.path).toEqual([["M", 0, 0], ["L", 100, 0], ["L", 100, 50], ["L", 0, 50]]);
+    const closeAt = f.log.indexOf("closePath");
+    expect(closeAt).toBeGreaterThan(-1);
+    const fillAt = f.log.findIndex((l) => l.startsWith("fill "));
+    expect(fillAt).toBeGreaterThan(closeAt);
+    expect(fillAt).toBeLessThan(f.log.lastIndexOf("stroke"));
+  });
+  it("ligne ouverte : ni fond ni fermeture", () => {
+    const f = new FakeCtx();
+    paintShape(asCtx(f), { shape: "line", w: 100, h: 0, fill: "#ff0000", points: [50, 40] }, pen);
+    expect(f.log).not.toContain("closePath");
+    expect(f.log.some((l) => l.startsWith("fill "))).toBe(false);
+  });
+});
