@@ -55,6 +55,7 @@ import { lookTag } from "./backgrounds-apply";
 import { createFillQueue } from "./image-fill";
 import { createZoneMarks } from "./zone-marks";
 import { stageTags } from "./stage-tags";
+import { createEraserRing } from "./eraser-ring";
 import { watchDpr } from "./mesure-outils";
 import { createTablePicker } from "./table-picker";
 import { createTextEditor, TEXT_EDITOR_ID, type TextEditorEvents } from "./text-editor";
@@ -91,6 +92,9 @@ export interface SessionShared {
   readonly onItemStyle?: (s: ItemStyle) => void;
   /** OG11 : changements du style courant venus d'un autre onglet ; chaque session les applique à son moteur sans écrire la sélection. */
   readonly subscribeItemStyle?: (cb: (s: ItemStyle) => void) => () => void;
+  /** OG25 (déc. 25, 30) : gomme automatique à la paume (réglage de l'appareil, ou reçu par la fenêtre d'annotation), lue
+   *  à chaque pose de contact ; absent : active. */
+  readonly palmEraser?: () => boolean;
 }
 
 /** OG11 : un seul style courant pour tous les onglets (source : l'appareil). `read` n'est appelé que tant que rien n'est connu. */
@@ -408,14 +412,22 @@ async function buildBoardSession(
       return settings.get().finger === "pan";
     },
     secondFingerMs: SECOND_FINGER_MS,
+    get autoEraser() {
+      return shared.palmEraser?.() ?? true;
+    },
   };
   // Échelon 2 : `prediction` dit si la prédiction TS est effective (tag et libellé ; auto : seulement sans prédits
   // natifs). OF73 : `source` (TS, natifs bornés, aucun) est lue à chaque image ; `off` coupe les natifs, la souris n'en a jamais.
   const prediction = (): boolean => resolvePrediction(settings.get().prediction, support.predicted);
   const source = (): PredictionSource => predictionSource(settings.get().prediction, support.predicted);
+  // OG25 (déc. 24, A4) : anneau de la gomme automatique, dans la scène, piloté par le routeur.
+  const eraserRing = createEraserRing(stage);
+  undo.push(() => eraserRing.dispose());
   const router = createRouter(routerOptions, {
     currentTool: () => engine.tool(),
     panHeld: () => engine.panHeld(),
+    gesturesToTools: () => engine.gesturesToTools(),
+    ring: (c) => eraserRing.show(c),
     gestures: withPrediction(engine.sink, source),
     view: engine.view,
   });
@@ -836,6 +848,7 @@ async function buildBoardSession(
       trail.dispose();
       middlePan.dispose();
       sampler.dispose();
+      eraserRing.dispose();
       engine.dispose();
       // Avant le lanceur : un calcul arrêté rend null, la file fermée n'écrit plus ni ne relit le document (RF4).
       fillQueue.dispose();

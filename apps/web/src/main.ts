@@ -231,6 +231,8 @@ async function start(): Promise<void> {
     pageMode: () => active.profile().behavior.pageMode,
     // OG11 (déc. 23) : style courant gardé sur l'appareil ; `device` (plus bas) n'est lu qu'à la création d'une session.
     ...createSharedItemStyle(() => device.itemStyle(), (s) => void device.setItemStyle(s)),
+    // OG25 (déc. 25) : gomme automatique à la paume, réglage de l'appareil lu à chaque pose (`device`, plus bas).
+    palmEraser: () => device.palmEraser(),
   };
 
   // C16 (O24) : capacité `officeConverter` lue de la coque avant le profil (convertisseur cherché une fois au lancement).
