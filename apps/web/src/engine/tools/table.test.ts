@@ -105,9 +105,10 @@ function setup() {
       changes++;
     },
   };
+  const notices: string[] = [];
   const menuOpens: { x: number; y: number; items: readonly CellMenuItem[] }[] = [];
   const menu: CellMenu = { open: (x, y, items) => void menuOpens.push({ x, y, items }), close: () => undefined };
-  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu, createCellDrop(ctx, narrow));
+  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu, createCellDrop(ctx, narrow), (text) => void notices.push(text));
   holder.tool = tool;
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
@@ -126,7 +127,7 @@ function setup() {
     return ids[ids.length - 1] ?? "";
   };
   const last = (): Command | undefined => runs[runs.length - 1];
-  return { menuOpens, doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
+  return { notices, menuOpens, doc, page, runs, host, picker, tool, click, create, table, last, type: (s: string) => (host.text = s), changes: () => changes, setShift: (v: boolean) => {
     shift = v;
   } };
 }
@@ -762,7 +763,7 @@ describe("appui long sur une case (menu de case, personnalisation-3 T7)", () => 
       s.tool.begin(1, [at(120, 220)]);
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
-      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit"]);
+      expect(s.menuOpens[0]?.items.map((i) => i.id)).toEqual(["fit", "header"]);
       const opened = s.host.opened.length;
       s.tool.close(1, "end");
       expect(s.host.opened.length).toBe(opened);
@@ -841,8 +842,8 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
       vi.advanceTimersByTime(500);
       expect(s.menuOpens).toHaveLength(1);
       const items = s.menuOpens[0]?.items ?? [];
-      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace"]);
-      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir"]);
+      expect(items.map((i) => i.id)).toEqual(["fit", "cell-image", "unplace", "header"]);
+      expect(items.map((i) => i.label)).toEqual(["Rétrécir", "Mettre en fond", "Sortir", "En-tête"]);
       s.tool.close(1, "end");
       items[2]?.run();
       expect(s.last()).toEqual({ type: "PlaceInCell", ids: [s.image], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
@@ -1053,4 +1054,53 @@ describe("outil Tableau — TB1 tirer une bordure (D13, S6)", () => {
   });
 
 
+});
+
+describe("outil Tableau — TB2 en-tête et D35", () => {
+  it("TB2 : header-toggle écrit header vrai puis faux, une étape chacun ; cellState.header suit", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    s.tool.act("header-toggle");
+    expect(s.last()).toEqual({ type: "SetTableOptions", id, header: true });
+    expect(s.tool.cellState()?.header).toBe(true);
+    s.tool.act("header-toggle");
+    expect(s.last()).toEqual({ type: "SetTableOptions", id, header: false });
+    expect(s.tool.cellState()?.header).toBe(false);
+  });
+  it("TB2 : le menu de case propose « En-tête »", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 3, 3);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      const item = s.menuOpens[0]?.items.find((i) => i.id === "header");
+      expect(item?.label).toBe("En-tête");
+      s.tool.close(1, "end");
+      item?.run();
+      expect(s.last()).toEqual({ type: "SetTableOptions", id, header: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("D35 : Ombrer refusé sur une case à objet : aucune commande, message ; case sans objet : ombrée", () => {
+    const s = setup();
+    const id = s.create(100, 200, 2, 2);
+    s.tool.requestCommit();
+    const o = s.doc.apply({ type: "AddShape", page: s.page, shape: "rect", x0: 1000, y0: 1000, x1: 1100, y1: 1050, style: { color: "#000000", width: 4 }, fill: null }).ids[0] ?? "";
+    const t = s.table(id);
+    s.doc.apply({ type: "PlaceInCell", ids: [o], matrix: [1, 0, 0, 1, 0, 0], cell: [id, t.rows[0]?.id ?? "", t.cols[0]?.id ?? ""], sizes: [] });
+    s.click(120, 220);
+    s.tool.requestCommit();
+    const n = s.runs.length;
+    s.tool.act("shade");
+    expect(s.runs.length).toBe(n);
+    expect(s.notices).toEqual(["Retirez d'abord les objets de la case."]);
+    s.click(100 + 240 + 120, 220);
+    s.tool.requestCommit();
+    s.tool.act("shade");
+    expect(s.last()?.type).toBe("SetTableShade");
+  });
 });

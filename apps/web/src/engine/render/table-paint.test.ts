@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { TableData } from "../../core/api";
 import { plainSpans } from "../../core/rich-text";
-import { TABLE_LINE_WIDTH, TABLE_PADDING, TABLE_SHADE_HATCH, TABLE_SHADE_HATCH_WIDTH } from "../table-geom";
+import { TABLE_HEADER_FILL, TABLE_LINE_WIDTH, TABLE_PADDING, TABLE_SHADE_HATCH, TABLE_SHADE_HATCH_WIDTH } from "../table-geom";
 import { asCtx, FakeCtx } from "./fake-ctx";
 import type { ImageSource } from "./image-cache";
 import { cellTextBoxes, paintTableGrid } from "./table-paint";
@@ -152,5 +152,36 @@ describe("S5 : image de fond de case (personnalisation-3, T9)", () => {
     const fake = new FakeCtx();
     paintTableGrid(asCtx(fake), one(undefined), source(10, 10));
     expect(fake.images).toEqual([]);
+  });
+});
+
+const HEAD = (header: boolean): TableData => ({
+  color: "#000000",
+  size: 36,
+  cols: [{ id: "a", width: 240 }, { id: "b", width: 240 }],
+  rows: [{ id: "r0", height: 64 }, { id: "r1", height: 64 }],
+  cells: [
+    { row: "r0", col: "a", text: "Nom", fill: null, shade: null, spans: plainSpans("Nom") },
+    { row: "r1", col: "a", text: "Léa", fill: null, shade: null, spans: plainSpans("Léa") },
+  ],
+  merges: [],
+  ...(header ? { header: true } : {}),
+});
+
+describe("S10 en-tête (D17)", () => {
+  it("S10 : ligne 0 peinte au fond d'en-tête avant les traits ; sans en-tête : aucun fond", () => {
+    const ctx = new FakeCtx();
+    paintTableGrid(asCtx(ctx), HEAD(true));
+    expect(ctx.rects[0]).toEqual([0, 0, 480, 64]);
+    expect(ctx.log).toContain(`fillRect ${TABLE_HEADER_FILL}`);
+    const none = new FakeCtx();
+    paintTableGrid(asCtx(none), HEAD(false));
+    expect(none.log).not.toContain(`fillRect ${TABLE_HEADER_FILL}`);
+  });
+  it("S10 : texte de la ligne 0 en gras quand header ; ligne 1 inchangée", () => {
+    const b = cellTextBoxes(HEAD(true));
+    expect(b.find((x) => x.row === "r0")?.spans).toEqual([{ text: "Nom", attrs: { bold: true } }]);
+    expect(b.find((x) => x.row === "r1")?.spans).toEqual(plainSpans("Léa"));
+    expect(cellTextBoxes(HEAD(false)).find((x) => x.row === "r0")?.spans).toEqual(plainSpans("Nom"));
   });
 });

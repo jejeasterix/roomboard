@@ -242,6 +242,15 @@ describe("tableKey (H12)", () => {
   });
 });
 
+describe("tableKey TB2", () => {
+  it("tableKey : Alt+E bascule l'en-tête, sans Maj ni Ctrl", () => {
+    const a = (o: Partial<KeyLike> = {}): KeyLike => ({ key: "e", code: "KeyE", ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null, ...o });
+    expect(tableKey(a())).toBe("header-toggle");
+    expect(tableKey(a({ shiftKey: true }))).toBeNull();
+    expect(tableKey(a({ ctrlKey: true }))).toBeNull();
+  });
+});
+
 describe("OG12 : lineEditKey, linkedKey, isCtrlKey", () => {
   it("lineEditKey : Ctrl ou Cmd+Entrée, rien d'autre", () => {
     expect(lineEditKey(k("Enter", { ctrlKey: true }))).toBe(true);
