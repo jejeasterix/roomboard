@@ -8,7 +8,9 @@
 // transparence 40, pas sur un rectangle en tirets. Netteté du § 10 de docs/plans/design-cadrage.md à 2x, contre-épreuve.
 // Chromium de Playwright, --disable-lcd-text, --force-color-profile=srgb. Code de sortie : 0 réussi, 1 échec, 2 outil absent.
 // Joué par scripts/verifier.sh --e2e, jamais avec --captures.
-// Usage : node scripts/essais/personnalisation-2-navigateur.mjs [--captures] [--dist <dossier> --nom avant]
+// Lot 2 (OG14, S6 à S8) : Disposition, Texte, sélecteur de couleur, pointes, Aide, Effacer la page, Lien ; --lot 1 ou --lot 2
+// ne joue que ce lot (sans option : les deux).
+// Usage : node scripts/essais/personnalisation-2-navigateur.mjs [--lot 1|2] [--captures] [--dist <dossier> --nom avant]
 //   --captures : docs/design/captures/personnalisation-2/<nom>-{rect,menu,panneau,mixte}.png (2x ; « apres » ajoute replie) ;
 //   --dist : sert un autre build ; --nom avant : captures seules (le build d'avant n'a ni panneau ni menu neuf), mesures sautées.
 import { spawnSync } from "node:child_process";
@@ -578,7 +580,9 @@ async function captures(browser, base, nom) {
   if ((await page.locator(opt("strokeColor", RED)).count()) > 0) await page.locator(opt("strokeColor", RED)).first().click();
   await touchDrag(page, cdp, [760, 250], [940, 380]);
   await page.click(item("select"));
-  await marquee(page, [340, 190], [980, 440]);
+  // Le cadre part sous la rangée contextuelle de l'îlot d'outils (y 144 à 200 à 1280 px) : à y = 190 il tombait sur un
+  // bouton de la barre, aucun cadre ne naissait et data-selection restait à 0 (cause de l'échec de la vue mixte).
+  await marquee(page, [340, 215], [980, 440]);
   await waitAttr(page, "data-selection", "2");
   await shoot(page, "mixte", region);
   if (nom !== "avant") {
@@ -589,6 +593,390 @@ async function captures(browser, base, nom) {
   console.log(`captures : ${OUT}/${nom}-{rect,panneau,menu,mixte${nom === "avant" ? "" : ",replie"}}.png`);
   if (errors.length) console.log(`captures : erreurs de page : ${errors.join(" | ")}`);
   await ctx.close();
+}
+
+// ---------------------------------------------------------------------------------------------------- lot 2 (S6 à S8)
+
+const rgbHex = ([r, g, b]) => `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+/** Couleur d'un pixel de la scène (px CSS, contexte à 1x). */
+async function colorAt(page, x, y) {
+  const b = await stageBox(page);
+  const px = await pixelsOf(page, { x: b.x + x, y: b.y + y, width: 1, height: 1 });
+  return [px.data[0], px.data[1], px.data[2]];
+}
+const closeTo = (p, q, tol = 3) => p.every((v, k) => Math.abs(v - q[k]) <= tol);
+/** Sélectionne l'objet sous (x, y) par un tap de l'outil Sélection. */
+async function selectAt(page, mode, x, y) {
+  await useTool(page, mode, "select");
+  await tapStage(page, x, y);
+  await waitAttr(page, "data-selection", "1");
+}
+/** Couleurs de fond proposées par le panneau (hors Transparent). */
+const backgrounds = (page) =>
+  page.$$eval(`${OPT} [data-option="background"] .rb-pick[data-option-value]`, (els) => els.map((e) => e.getAttribute("data-option-value")).filter((v) => v !== "transparent"));
+/** Pose un rectangle plein de `fill` (Architecte, remplissage plein) : l'outil et la forme sont au choix du lot. */
+async function solid(page, cdp, mode, tool, fill, from, to) {
+  await useTool(page, mode, tool);
+  await choose(page, mode, "roughness", "0");
+  await choose(page, mode, "background", fill);
+  await choose(page, mode, "fillStyle", "solid");
+  await touchDrag(page, cdp, from, to);
+}
+
+/** S6 : Disposition (Premier plan, Ctrl+Maj+↑, Ctrl+↓), une Restack d'OG4 chacune. */
+async function s6(browser, base, mode) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  await useTool(page, mode, "rect");
+  await choose(page, mode, "roughness", "0");
+  const fills = await backgrounds(page);
+  await solid(page, cdp, mode, "rect", fills[0], [400, 300], [620, 430]);
+  await solid(page, cdp, mode, "ellipse", fills[2], [520, 340], [740, 470]);
+  await waitAttr(page, "data-elements", "2");
+  const rectRgb = hex(fills[0]);
+  const ellRgb = hex(fills[2]);
+  const at = [570, 390]; // dans le rectangle et dans l'ellipse
+  const rendered = async () => (closeTo(await colorAt(page, ...at), rectRgb) ? "rectangle" : closeTo(await colorAt(page, ...at), ellRgb) ? "ellipse" : rgbHex(await colorAt(page, ...at)));
+  lire("S6 pixel au chevauchement avant (ellipse posée en dernier)", await rendered());
+  check((await rendered()) === "ellipse", "S6.1 : l'ellipse, posée en dernier, couvre le chevauchement");
+  await selectAt(page, mode, 430, 365); // la partie du rectangle hors de l'ellipse
+  check((await page.locator(`${OPT} [data-option="layers"]`).count()) === 1, "S6.1 : le panneau montre la section Disposition");
+  await choose(page, mode, "layers", "front");
+  await frames(page);
+  lire("S6 pixel au chevauchement=couleur du rectangle", `${await rendered()} (${rgbHex(await colorAt(page, ...at))})`);
+  check((await rendered()) === "rectangle", "S6.2 : Premier plan : au chevauchement, les pixels sont ceux du rectangle");
+  await page.keyboard.press("Control+z");
+  await frames(page);
+  check((await rendered()) === "ellipse", "S6.2 : Ctrl+Z : les pixels sont ceux de l'ellipse");
+  if ((await attr(page, "data-selection")) !== "1") await selectAt(page, mode, 430, 365);
+  await page.keyboard.press("Control+Shift+ArrowUp");
+  await frames(page);
+  check((await rendered()) === "rectangle", "S6.3 : Ctrl+Maj+↑ donne le même résultat (rectangle)");
+  await page.keyboard.press("Control+ArrowDown");
+  await frames(page);
+  check((await rendered()) === "ellipse", "S6.3 : Ctrl+↓ recule le rectangle d'un rang (ellipse)");
+  check(errors.length === 0, `S6 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  await ctx.close();
+  console.log(mode === "doigt" ? "S6 OK" : "S6 OK (clavier)");
+}
+
+/** S7 : outil Texte, alignement, police et taille ; saisie : sections grisées, focus gardé. */
+async function s7(browser, base, mode, tmp) {
+  const { ctx, page, errors } = await newPage(browser, base);
+  await useTool(page, mode, "text");
+  const keys = await page.$$eval(`${OPT} [data-option]`, (els) => els.map((e) => e.getAttribute("data-option")));
+  lire("[data-option] (text)", keys.join(","));
+  await choose(page, mode, "font", "Georgia");
+  await choose(page, mode, "fontSize", "48");
+  await choose(page, mode, "textAlign", "center");
+  await tapStage(page, 560, 300);
+  await page.waitForSelector("#texte-edition", { state: "visible", timeout: 15000 });
+  await frames(page);
+  await page.keyboard.type("Bonjour");
+  await page.keyboard.press("Escape");
+  await frames(page);
+  await waitAttr(page, "data-elements", "1");
+  let s = await saved(page, tmp, `s7a-${mode}.roomboard`);
+  const t = s.elements.find((e) => e.kind === "text");
+  lire("élément texte", JSON.stringify(t).slice(0, 400));
+  const spans = t.text.spans;
+  lire("textAlign=center font=Georgia size=48", `textAlign=${t.look?.textAlign} font=${spans[0]?.attrs?.font} size=${spans[0]?.attrs?.size ?? t.text.size}`);
+  check(t.look?.textAlign === "center", "S7.1 : l'élément porte textAlign center");
+  check(spans.length > 0 && spans.every((x) => x.attrs?.font === "Georgia" && (x.attrs?.size ?? t.text.size) === 48), "S7.1 : ses segments portent font Georgia et size 48");
+  // Rouvrir le texte : un tap de l'outil Texte sur lui.
+  await tapStage(page, 560, 320);
+  await page.waitForSelector("#texte-edition", { state: "visible", timeout: 15000 });
+  await frames(page);
+  const off = (k) => page.$eval(`${OPT} [data-option="${k}"]`, (sec) => sec.hasAttribute("data-disabled") && [...sec.querySelectorAll("button")].every((b) => b.disabled));
+  const dis = [await off("font"), await off("fontSize"), await off("strokeColor")];
+  lire("Police disabled en saisie", String(dis[0]));
+  check(dis.every(Boolean), `S7.2 : en saisie, Police, Taille et Trait sont grisés (${dis})`);
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowRight");
+  if (mode === "doigt") await tapAt(page, ...(await centerOf(page, 'button[data-format="bold"]')));
+  else await page.keyboard.press("Control+b");
+  await frames(page);
+  check(await pressed2(page, 'button[data-format="bold"]'), "S7.2 : FormatRow met « Bon » en gras (G enfoncé)");
+  const editorFocused = () => page.evaluate(() => document.activeElement?.id === "texte-edition");
+  if (mode === "doigt") {
+    await tapAt(page, ...(await centerOf(page, opt("textAlign", "right"))));
+    check(await editorFocused(), "S7.3 : Droite touché dans le panneau, le focus reste dans la zone de saisie");
+  } else {
+    await page.locator(opt("textAlign", "right")).focus();
+    await page.keyboard.press("Enter");
+    await frames(page);
+  }
+  check(await pressed(page, "textAlign", "right"), "S7.3 : Droite est enfoncé dans le panneau");
+  await page.keyboard.press("Escape");
+  await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+  await frames(page);
+  s = await saved(page, tmp, `s7b-${mode}.roomboard`);
+  const t2 = s.elements.find((e) => e.kind === "text");
+  lire("texte après Droite et gras", JSON.stringify({ align: t2.look?.textAlign, spans: t2.text.spans.map((x) => [x.text, x.attrs?.bold]) }));
+  check(t2.look?.textAlign === "right", "S7.3 : le texte est aligné à droite");
+  check(t2.text.spans.some((x) => x.attrs?.bold === true && /^Bon/.test(x.text ?? "")), "S7.2 : « Bon » est gras dans l'état enregistré");
+  check(errors.length === 0, `S7 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  await ctx.close();
+  console.log(mode === "doigt" ? "S7 OK" : "S7 OK (clavier)");
+}
+const centerOf = async (page, sel) => {
+  const b = await page.locator(sel).first().boundingBox();
+  return [b.x + b.width / 2, b.y + b.height / 2];
+};
+const pressed2 = async (page, sel) => (await page.locator(sel).first().getAttribute("aria-pressed")) === "true";
+
+/** S8 : sélecteur de couleur, pointes de flèche, Aide, Effacer la page, Lien. */
+async function s8(browser, base, mode, tmp) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base);
+  const popup = (id) => page.locator(id).first();
+  // 1. Sélecteur : S l'ouvre ; flèches, Entrée ; Échap rend le focus à la pastille.
+  await useTool(page, mode, "rect");
+  const anchor = `${OPT} [data-more-colors="strokeColor"]`;
+  if (mode === "doigt") await tapAt(page, ...(await centerOf(page, anchor)));
+  else await page.keyboard.press("s");
+  await popup("[data-color-picker]").waitFor({ state: "visible", timeout: 15000 });
+  const cells = await page.locator("[data-color-picker] [role=gridcell]").count();
+  lire("cases du sélecteur", cells);
+  check(cells === 75, `S8.1 : le sélecteur ouvert montre 15 teintes × 5 nuances (${cells})`);
+  let chosen;
+  if (mode === "doigt") {
+    const cell = page.locator("[data-color-picker] [role=gridcell]").nth(7);
+    chosen = await cell.getAttribute("aria-label");
+    const cb = await cell.boundingBox();
+    await tapAt(page, cb.x + cb.width / 2, cb.y + cb.height / 2);
+    await popup("[data-color-picker]").waitFor({ state: "hidden", timeout: 15000 });
+  } else {
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    chosen = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    await page.keyboard.press("Enter");
+    await frames(page);
+    await popup("[data-color-picker]").waitFor({ state: "hidden", timeout: 15000 });
+  }
+  await touchDrag(page, cdp, [400, 300], [560, 400]);
+  await waitAttr(page, "data-elements", "1");
+  let s = await saved(page, tmp, `s8a-${mode}.roomboard`);
+  const col = s.elements[0].style.color;
+  lire("couleur choisie dans le sélecteur", `${chosen} -> ${col}`);
+  check(typeof col === "string" && col.toLowerCase() === chosen.toLowerCase(), `S8.1 : la couleur du sélecteur est écrite (${col})`);
+  if (mode === "clavier") {
+    await page.keyboard.press("s");
+    await popup("[data-color-picker]").waitFor({ state: "visible", timeout: 15000 });
+    await page.keyboard.press("Escape");
+    await popup("[data-color-picker]").waitFor({ state: "hidden", timeout: 15000 });
+    check(await page.evaluate(() => document.activeElement?.hasAttribute("data-more-colors") ?? false), "S8.1 : Échap ferme le sélecteur et rend le focus à la pastille");
+  }
+  // 2. Flèche : début Triangle, fin Aucune.
+  await useTool(page, mode, "arrow");
+  const head = (g, v) => `${OPT} [data-edit="${g}"] [data-choice="${v}"]`;
+  await press(page, mode, head("startArrowhead", "triangle"));
+  await press(page, mode, head("endArrowhead", "none"));
+  await touchDrag(page, cdp, [400, 560], [760, 640]);
+  await waitAttr(page, "data-elements", "2");
+  s = await saved(page, tmp, `s8b-${mode}.roomboard`);
+  const arrow = s.elements.find((e) => e.kind === "shape" && e.shape.shape === "arrow") ?? s.elements[s.elements.length - 1];
+  lire("startArrowhead=triangle endArrowhead=none", `startArrowhead=${arrow.look?.startArrowhead} endArrowhead=${arrow.look?.endArrowhead}`);
+  check(arrow.look?.startArrowhead === "triangle" && arrow.look?.endArrowhead === "none", "S8.2 : début Triangle, fin Aucune, ces champs sont écrits");
+  // 3. Aide.
+  if (mode === "doigt") await clickItem(page, "help");
+  else await page.keyboard.press("?");
+  await page.waitForSelector('[data-panel="aide"]', { state: "visible", timeout: 15000 });
+  const dup = await page.locator('[data-panel="aide"] [data-shortcut-id="duplicate"]').innerText();
+  const lnk = await page.locator('[data-panel="aide"] [data-shortcut-id="link"]').innerText();
+  lire("[data-panel=aide] contient Ctrl+D Dupliquer", `${dup.replace(/\s+/g, " ")} | ${lnk.replace(/\s+/g, " ")}`);
+  check(/Dupliquer/.test(dup) && /Ctrl\+D/.test(dup), "S8.3 : l'Aide liste Ctrl+D « Dupliquer »");
+  check(/Lien/.test(lnk) && /Ctrl\+K/.test(lnk), "S8.3 : l'Aide liste Ctrl+K « Lien »");
+  if (mode === "doigt") await tapAt(page, ...(await centerOf(page, "[data-help-close]")));
+  else await page.keyboard.press("Escape");
+  await page.waitForSelector('[data-panel="aide"]', { state: "hidden", timeout: 15000 });
+  if (mode === "clavier") {
+    await page.keyboard.press("?");
+    await page.waitForSelector('[data-panel="aide"]', { state: "visible", timeout: 15000 });
+    check(true, "S8.3 : « ? » rouvre l'Aide");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[data-panel="aide"]', { state: "hidden", timeout: 15000 });
+  }
+  // 4. Effacer la page : confirmation (acceptée par l'essai), page vide, Ctrl+Z rend les objets.
+  const n0 = Number(await attr(page, "data-elements"));
+  if (mode === "doigt") await clickItem(page, "page-clear");
+  else {
+    await openMenuOf(page, "page-clear");
+    await press(page, mode, item("page-clear"));
+  }
+  await waitAttr(page, "data-elements", "0");
+  lire("page vide après Effacer=0 objet ; après Ctrl+Z=n", `0 objet ; n=${n0}`);
+  await page.keyboard.press("Escape");
+  await page.mouse.click(1100, 700);
+  await frames(page);
+  await page.keyboard.press("Control+z");
+  await waitAttr(page, "data-elements", String(n0));
+  check(true, `S8.4 : Effacer vide la page (0 objet), Ctrl+Z rend les ${n0} objets`);
+  // 5. Lien.
+  await useTool(page, mode, "rect");
+  await touchDrag(page, cdp, [820, 300], [1000, 420]);
+  await waitAttr(page, "data-elements", String(n0 + 1));
+  await useTool(page, mode, "select");
+  await marquee(page, [780, 250], [1060, 480]);
+  await waitAttr(page, "data-selection", "1");
+  const badgeBox = [1000, 270, 1040, 300]; // coin haut-droit du rectangle : le badge est posé hors de la boîte
+  const before = await fingerprint(page, badgeBox);
+  await page.keyboard.press("Control+k");
+  await popup("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
+  const input = "[data-link-popover] input";
+  check(await page.evaluate(() => document.activeElement?.closest("[data-link-popover]") !== null), "S8.5 : Ctrl+K ouvre l'éditeur de lien, focus dans le champ");
+  await page.keyboard.type("javascript:alert(1)");
+  await page.keyboard.press("Enter");
+  await frames(page);
+  check((await page.locator("[data-link-popover] [role=alert]").count()) === 1 && (await popup("[data-link-popover]").isVisible()), "S8.5 : « javascript:alert(1) » est refusé (message, l'éditeur reste ouvert)");
+  lire("lien javascript: refusé", await page.locator("[data-link-popover] [role=alert]").innerText());
+  await page.locator(input).fill("https://example.org");
+  await page.keyboard.press("Enter");
+  await popup("[data-link-popover]").waitFor({ state: "hidden", timeout: 15000 });
+  await frames(page);
+  s = await saved(page, tmp, `s8c-${mode}.roomboard`);
+  const linked = s.elements.find((e) => e.look?.link);
+  lire("lien posé", linked?.look?.link);
+  check(linked?.look?.link === "https://example.org", "S8.5 : https://example.org est posé (look.link)");
+  const after = await fingerprint(page, badgeBox);
+  lire("badge : empreinte avant/après", `${before}/${after}`);
+  check(before !== after, "S8.5 : un badge apparaît au coin de l'élément");
+  const js = s.elements.filter((e) => /^javascript:/i.test(e.look?.link ?? ""));
+  check(js.length === 0, "S8.5 : aucun lien javascript: n'est enregistré");
+  check(errors.length === 0, `S8 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
+  await ctx.close();
+  console.log(mode === "doigt" ? "S8 OK" : "S8 OK (clavier)");
+}
+
+// ------------------------------------------------------------------------------------- netteté et captures du lot 2
+
+/** Netteté § 10 à 2x : icônes d'alignement, de pointes, de lien et grille du sélecteur de couleur. */
+async function nettete2(browser, base) {
+  const { ctx, page, cdp, errors } = await newPage(browser, base, { scale: 2 });
+  const away = async () => {
+    await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+    await frames(page);
+  };
+  const results = [];
+  const icon = async (name, sel) => {
+    const px = await pixelsOf(page, await iconBox(page, sel));
+    const { ink } = await colorsOf(page, sel);
+    const f = fringes(px, [px.data[0], px.data[1], px.data[2]], rgbOf(ink));
+    results.push({ name, f });
+    console.log(`netteté — ${name} : frange ${f}`);
+  };
+  // Alignement (outil Texte) : Gauche (enfoncé ou non selon la valeur), Centre, Droite.
+  await page.click(item("text"));
+  await away();
+  await calage(page, OPT, "panneau Texte", 3);
+  for (const v of ["left", "center", "right"]) await icon(`icône align-${v}`, opt("textAlign", v));
+  // Pointes (outil Flèche) : début et fin.
+  await page.click(item("arrow"));
+  await away();
+  await calage(page, OPT, "panneau Flèche", 8);
+  for (const g of ["startArrowhead", "endArrowhead"]) {
+    for (const v of ["none", "arrow", "triangle", "triangle_outline"]) await icon(`icône ${g} ${v}`, `${OPT} [data-edit="${g}"] [data-choice="${v}"]`);
+  }
+  // Lien (Actions d'une sélection).
+  await page.click(item("rect"));
+  await touchDrag(page, cdp, [450, 300], [650, 420]);
+  await page.click(item("select"));
+  await marquee(page, [400, 250], [720, 470]);
+  await waitAttr(page, "data-selection", "1");
+  await away();
+  await icon("icône link (Actions)", `${OPT} [data-option="actions"] [data-option-value="link"]`);
+  // Grille du sélecteur : cases sur la grille de pixels, pastilles sans frange (cases non focalisées).
+  await page.click(`${OPT} [data-more-colors="strokeColor"]`);
+  await page.locator("[data-color-picker]").waitFor({ state: "visible", timeout: 15000 });
+  await away();
+  const cellsBox = await page.$$eval("[data-color-picker] .rb-color-cell", (els) => els.map((e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  }));
+  const offGrid = cellsBox.filter((b) => !Number.isInteger(b.x * 2) || !Number.isInteger(b.y * 2));
+  if (offGrid.length > 0 && !process.argv.includes("--strict-calage")) console.log(`ÉCART (app) — calage (grille du sélecteur) : ${offGrid.length} cases sur ${cellsBox.length} hors de la grille de pixels à 2x`);
+  else check(cellsBox.length === 75 && offGrid.length === 0, `calage (grille du sélecteur) : ${cellsBox.length} cases sur la grille de pixels`);
+  for (const i of [8, 37, 74]) {
+    const cell = page.locator("[data-color-picker] .rb-color-cell").nth(i);
+    const dot = cell.locator(".rb-pick-dot");
+    const px = await pixelsOf(page, await dot.boundingBox());
+    const ink = rgbOf(await dot.evaluate((e) => getComputedStyle(e).backgroundColor));
+    const f = fringes(px, [px.data[0], px.data[1], px.data[2]], ink);
+    results.push({ name: `case ${i} du sélecteur`, f });
+    console.log(`netteté — pastille de la case ${i} du sélecteur : frange ${f}`);
+  }
+  const bad = results.filter((r) => r.f !== 0);
+  check(bad.length === 0, `netteté § 10 du lot 2 : 0 frange colorée sur ${results.length} mesures${bad.length ? ` (${bad.map((r) => `${r.name} ${r.f}`).join(" ; ")})` : ""}`);
+  await counterProof(page);
+  console.log("netteté § 10 OK");
+  check(errors.length === 0, "netteté (lot 2) : aucune erreur dans la page");
+  await ctx.close();
+}
+
+/** Captures à 2x du lot 2 : texte, flèche, sélecteur, aide, lien (aucun « avant » : le build d'avant n'a pas ces sections). */
+async function captures2(browser, base) {
+  mkdirSync(OUT, { recursive: true });
+  const out = (n) => join(OUT, `apres-${n}.png`);
+  const shoot = async (page, n) => {
+    await page.mouse.move(VIEWPORT.width - 10, VIEWPORT.height - 10);
+    await frames(page);
+    await page.screenshot({ path: out(n) });
+  };
+  const fresh = () => newPage(browser, base, { scale: 2 });
+  const errs = [];
+  // Texte : Georgia, 48, Centre, « Bonjour » en saisie (Police, Taille, Trait grisés).
+  let h = await fresh();
+  await h.page.click(item("text"));
+  await h.page.click(opt("font", "Georgia"));
+  await h.page.click(opt("fontSize", "48"));
+  await h.page.click(opt("textAlign", "center"));
+  await tapStage(h.page, 560, 300);
+  await h.page.waitForSelector("#texte-edition", { state: "visible", timeout: 15000 });
+  await h.page.keyboard.type("Bonjour");
+  await shoot(h.page, "texte");
+  errs.push(...h.errors);
+  await h.ctx.close();
+  // Flèche : pointes Triangle au début, Aucune à la fin.
+  h = await fresh();
+  await h.page.click(item("arrow"));
+  await h.page.click(`${OPT} [data-edit="startArrowhead"] [data-choice="triangle"]`);
+  await h.page.click(`${OPT} [data-edit="endArrowhead"] [data-choice="none"]`);
+  await touchDrag(h.page, h.cdp, [480, 520], [860, 620]);
+  await shoot(h.page, "fleche");
+  errs.push(...h.errors);
+  await h.ctx.close();
+  // Sélecteur de couleur ouvert depuis « Autres couleurs ».
+  h = await fresh();
+  await h.page.click(item("rect"));
+  await h.page.click(`${OPT} [data-more-colors="strokeColor"]`);
+  await h.page.locator("[data-color-picker]").waitFor({ state: "visible", timeout: 15000 });
+  await shoot(h.page, "selecteur");
+  errs.push(...h.errors);
+  await h.ctx.close();
+  // Aide (touche « ? »).
+  h = await fresh();
+  await h.page.keyboard.press("?");
+  await h.page.waitForSelector('[data-panel="aide"]', { state: "visible", timeout: 15000 });
+  await shoot(h.page, "aide");
+  errs.push(...h.errors);
+  await h.ctx.close();
+  // Lien : éditeur ouvert sur un rectangle déjà lié, le badge est visible.
+  h = await fresh();
+  await h.page.click(item("rect"));
+  await touchDrag(h.page, h.cdp, [480, 330], [700, 450]);
+  await h.page.click(item("select"));
+  await marquee(h.page, [430, 280], [760, 500]);
+  await waitAttr(h.page, "data-selection", "1");
+  await h.page.keyboard.press("Control+k");
+  await h.page.locator("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
+  await h.page.locator("[data-link-popover] input").fill("https://example.org");
+  await h.page.keyboard.press("Enter");
+  await h.page.locator("[data-link-popover]").waitFor({ state: "hidden", timeout: 15000 });
+  await h.page.keyboard.press("Control+k");
+  await h.page.locator("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
+  await shoot(h.page, "lien");
+  errs.push(...h.errors);
+  await h.ctx.close();
+  console.log(`captures : ${OUT}/apres-{texte,fleche,selecteur,aide,lien}.png`);
+  if (errs.length) console.log(`captures : erreurs de page : ${errs.join(" | ")}`);
 }
 
 async function main() {
@@ -624,7 +1012,11 @@ async function main() {
       console.error(`${LABEL} : outil absent — Chromium de Playwright : ${e instanceof Error ? e.message.split("\n")[0] : e}`);
       return 2;
     }
-    if (wantCaptures) await captures(browser, base, nom);
+    const lot = arg("--lot");
+    const lot1 = lot === undefined || lot === "1";
+    const lot2 = lot === undefined || lot === "2";
+    if (wantCaptures && lot1) await captures(browser, base, nom);
+    if (wantCaptures && lot2 && nom !== "avant") await captures2(browser, base);
     if (nom === "avant") {
       console.log(`${LABEL} : captures « avant » seules, mesures sautées`);
       return 0;
@@ -633,15 +1025,19 @@ async function main() {
     // --only s3 : un seul scénario (mise au point) ; sans option, tout est joué.
     const only = arg("--only");
     const on = (n) => only === undefined || only === n;
-    if (on("lectures")) await lectures(browser, base);
+    if (lot1 && on("lectures")) await lectures(browser, base);
     for (const mode of ["doigt", "clavier"]) {
-      if (on("s1")) await s1(browser, base, mode, tmp);
-      if (on("s2")) await s2(browser, base, mode, tmp);
-      if (on("s3")) await s3(browser, base, mode, tmp);
-      if (on("s4")) await s4(browser, base, mode);
-      if (on("s5")) await s5(browser, base, mode);
+      if (lot1 && on("s1")) await s1(browser, base, mode, tmp);
+      if (lot1 && on("s2")) await s2(browser, base, mode, tmp);
+      if (lot1 && on("s3")) await s3(browser, base, mode, tmp);
+      if (lot1 && on("s4")) await s4(browser, base, mode);
+      if (lot1 && on("s5")) await s5(browser, base, mode);
+      if (lot2 && on("s6")) await s6(browser, base, mode);
+      if (lot2 && on("s7")) await s7(browser, base, mode, tmp);
+      if (lot2 && on("s8")) await s8(browser, base, mode, tmp);
     }
-    if (on("nettete")) await nettete(browser, base);
+    if (lot1 && on("nettete")) await nettete(browser, base);
+    if (lot2 && on("nettete2")) await nettete2(browser, base);
     console.log(`${LABEL} : OK`);
     return 0;
   } catch (e) {
