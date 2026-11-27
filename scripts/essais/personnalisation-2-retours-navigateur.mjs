@@ -694,20 +694,20 @@ async function s4(browser, base, mode, tmp) {
 async function s4suite(browser, base, mode, tmp) {
   const { ctx, page, cdp, errors } = await newPage(browser, base);
   // 4. Une flèche et un texte : la flèche pointe dans l'autre sens, le texte reste droit.
-  await useTool(page, mode, "arrow");
-  await touchDrag(page, cdp, [420, 450], [600, 450]);
   await useTool(page, mode, "text");
-  const sb = await stageBox(page);
-  await page.mouse.click(sb.x + 700, sb.y + 440);
+  await tapStage(page, 700, 440);
   await page.waitForSelector("#texte-edition", { state: "visible", timeout: 15000 });
+  await frames(page);
   await page.keyboard.type("Bon");
   await page.keyboard.press("Escape");
   await frames(page);
+  await useTool(page, mode, "arrow");
+  await touchDrag(page, cdp, [420, 450], [600, 450]);
   await waitAttr(page, "data-elements", "2");
   await useTool(page, mode, "select");
   await page.keyboard.press("Escape");
   await frames(page);
-  await marquee(page, [380, 380], [900, 520]);
+  await marquee(page, [380, 380], [1200, 560]);
   await waitAttr(page, "data-selection", "2");
   await openSection(page, mode, "transform");
   let s = await saved(page, tmp, `s4s-0-${mode}.roomboard`);
@@ -735,7 +735,9 @@ async function s4suite(browser, base, mode, tmp) {
   await touchDrag(p2.page, p2.cdp, [420, 300], [660, 360]);
   await waitAttr(p2.page, "data-elements", "1");
   await useTool(p2.page, mode, "select");
-  await marquee(p2.page, [380, 260], [700, 400]);
+  await p2.page.keyboard.press("Control+a");
+  await frames(p2.page);
+  lire("S4.rotation.etat", `tool=${await attr(p2.page, "data-tool")} elements=${await attr(p2.page, "data-elements")} selection=${await attr(p2.page, "data-selection")}`);
   await waitAttr(p2.page, "data-selection", "1");
   const b0 = await selBounds(p2.page);
   await openSection(p2.page, mode, "transform");
@@ -755,7 +757,7 @@ async function s4suite(browser, base, mode, tmp) {
   await touchDrag(g.page, g.cdp, [760, 400], [840, 470]);
   await waitAttr(g.page, "data-elements", "3");
   await useTool(g.page, mode, "select");
-  await marquee(g.page, [380, 220], [680, 360]);
+  await marquee(g.page, [340, 200], [700, 380]);
   await waitAttr(g.page, "data-selection", "2");
   await g.page.keyboard.press("Control+g");
   await waitAttr(g.page, "data-grouped", "1").catch(() => undefined);
