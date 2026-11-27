@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, inEditable, isPanKey, keyAction, pageKey, type KeyLike } from "./keys";
+import { editAction, inEditable, isPanKey, keyAction, orderKey, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -122,5 +122,23 @@ describe("pageKey (DA9)", () => {
     expect(pageKey(k("PageUp", { target: { tagName: "INPUT" } }))).toBeNull();
     expect(inEditable({ tagName: "TEXTAREA" })).toBe(true);
     expect(inEditable({ tagName: "BUTTON" })).toBe(false);
+  });
+});
+
+describe("orderKey (ordre des objets, lot 2)", () => {
+  it("orderKey : Ctrl+↑ / Ctrl+↓ un rang, Ctrl+Maj+↑ / Ctrl+Maj+↓ premier plan et arrière-plan (Cmd aussi)", () => {
+    expect(orderKey(k("ArrowUp", { ctrlKey: true }))).toBe("up");
+    expect(orderKey(k("ArrowDown", { metaKey: true }))).toBe("down");
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, shiftKey: true }))).toBe("front");
+    expect(orderKey(k("ArrowDown", { metaKey: true, shiftKey: true }))).toBe("back");
+  });
+  it("orderKey : flèche seule, Maj seul, Alt, composition IME, champ de saisie, autre touche : null", () => {
+    expect(orderKey(k("ArrowUp"))).toBeNull();
+    expect(orderKey(k("ArrowUp", { shiftKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, isComposing: true }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(orderKey(k("ArrowUp", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
+    expect(orderKey(k("ArrowLeft", { ctrlKey: true }))).toBeNull();
   });
 });
