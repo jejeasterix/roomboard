@@ -18,7 +18,7 @@ import { createRequire } from "node:module";
 import { deflateSync, inflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
+import { clickItem, coqueCsp, DIST, dropFile, Echec, frames, gitSha, inkIn, item, loadPlaywright, openMenuOf, openSideOf, pageTo, ROOT, serve, solidPng, stageBox, stageMouse, TAB, VIEWPORT } from "./commun.mjs";
 import { bambooContainer, makeFlipchart } from "./fabriques/flipchart.mjs";
 import { flipPages, iwbRaw3, iwbZip, nbSvg, notebookZip, olfZip, ubzZip } from "./fabriques/tableaux.mjs";
 
@@ -218,6 +218,7 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await page.keyboard.press("Escape");
   const box0 = await stageBox(page, 640);
   check(box0.height >= 640, `S4 : scène de ${Math.round(box0.width)} × ${Math.round(box0.height)} px (hauteur ≥ 640) avec les deux actions`);
+  await openSideOf(page, ".rb-pages-list"); // la liste se mesure barre latérale dépliée
   const list = await page.evaluate(() => {
     const l = document.querySelector(".rb-pages-list");
     const b = l?.querySelector("button");
@@ -311,12 +312,12 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   await drop("brut.iwb", enc(iwbRaw3()), 2, "1/3");
   check(true, 'S2 : .iwb SVG brut de 3 pages : data-page="1/3", 2 objets');
   for (const p of [2, 3]) {
-    await page.click(`.rb-pages-list [data-page="${p}"]`);
+    await pageTo(page, p);
     await waitAttr("data-page", `${p}/3`);
     await waitAttr("data-elements", "2");
     check(true, `S2 : page ${p}/3 du .iwb SVG brut : 2 objets`);
   }
-  await page.click('.rb-pages-list [data-page="1"]');
+  await pageTo(page, 1);
   await waitAttr("data-page", "1/3");
 
   // S5 : fichier hostile.
@@ -372,11 +373,11 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   check(nbText.includes("Leçon SMART"), `S1 (lot 2) : le texte « ${nbText} » s'ouvre dans la zone de saisie (éditable)`);
   await page.keyboard.press("Escape");
   await page.click(item("select"));
-  await page.click('.rb-pages-list [data-page="2"]');
+  await pageTo(page, 2);
   await waitAttr("data-page", "2/2");
   await waitAttr("data-elements", "1");
   check(true, 'S1 (lot 2) : page 2 = page0.svg (ordre du manifeste inverse des noms) : data-elements="1"');
-  await page.click('.rb-pages-list [data-page="1"]');
+  await pageTo(page, 1);
   await waitAttr("data-page", "1/2");
   await waitAttr("data-elements", "4");
   const nbSaved = await download(() => page.keyboard.press("Control+s"), "lecon.roomboard");
@@ -455,10 +456,10 @@ async function scenario(page, url, { tmp, lesson, captureNotebook }) {
   const orange = await orangeOf();
   check(orange > 50, `S4 (lot 3) : image PNG #FF8000 dessinée (${orange} pixels)`);
   const secondPage = async (when) => {
-    await page.click('.rb-pages-list [data-page="2"]');
+    await pageTo(page, 2);
     await waitAttr("data-page", "2/2");
     await waitAttr("data-elements", "1");
-    await page.click('.rb-pages-list [data-page="1"]');
+    await pageTo(page, 1);
     await waitAttr("data-page", "1/2");
     check(true, `S4 (lot 3) : page 2 ${when} : data-elements="1"`);
   };

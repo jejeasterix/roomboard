@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse } from "./commun.mjs";
+import { DIST, Echec, ROOT, TAB, VIEWPORT, clashes, dropFile, frames, gitSha, clickItem, inkIn, islandBoxes, item, loadPlaywright, noOverlap, overlapping, serve, stageBox, stageMouse } from "./commun.mjs";
 
 const LABEL = "S5b";
 const LATER = "format pris en charge dans une prochaine version";
@@ -217,10 +217,10 @@ async function scenario(page, url, { captures, tmp }) {
   const BOXES = [[640, 240, 660, 260], [296, 346, 304, 354], [596, 296, 720, 340]];
   await click("pen");
   await drag(TRAIT);
-  await click("page-add");
+  await clickItem(page, "page-add");
   await click("rect");
   await drag(RECT);
-  await click("page-add");
+  await clickItem(page, "page-add");
   await click("text");
   await mouse.click(600, 300);
   await fr();

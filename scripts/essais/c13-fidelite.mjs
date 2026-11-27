@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { byKind } from "./avis.mjs";
-import { DIST, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, loadPlaywright, serve } from "./commun.mjs";
+import { DIST, TAB, VIEWPORT, coqueCsp, dropFile, frames, gitSha, loadPlaywright, pageTo, serve } from "./commun.mjs";
 
 const LABEL = "C13 fidélité";
 
@@ -60,7 +60,7 @@ async function measure(context, port, file) {
     const per = [];
     for (let p = 1; p <= total; p++) {
       if (total > 1) {
-        await page.click(`.rb-pages-list [data-page="${p}"]`);
+        await pageTo(page, p);
         await page.waitForFunction((v) => document.querySelector("#stage")?.getAttribute("data-page") === v, `${p}/${total}`, { timeout: 10000 });
         await frames(page);
       }
