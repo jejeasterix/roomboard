@@ -54,7 +54,8 @@ export interface Router {
   roleOf(pointerId: number): "ink" | "erase" | "edit" | "view" | null;
 }
 
-type Role = "draw" | "pan" | "pinch" | "ignored" | "palm";
+/** OG25 : "palm" : membre du groupe gomme ; "spent" : contact d'une gomme fermée, inerte jusqu'à son lever (déc. 15). */
+type Role = "draw" | "pan" | "pinch" | "ignored" | "palm" | "spent";
 
 interface Track {
   role: Role;
@@ -128,14 +129,14 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
     deps.ring?.({ x: c.x, y: c.y, radius: palm.radius });
   };
 
-  /** OG25 : ferme la gomme ; les contacts encore posés n'agissent plus jusqu'à leur lever. */
+  /** OG25 : ferme la gomme ; les contacts encore posés n'agissent plus jusqu'à leur lever, ni ne rouvrent une gomme. */
   const closePalm = (how: CloseReason): void => {
     if (palm === null) return;
     const p = palm;
     palm = null;
     for (const id of p.members) {
       const t = tracks.get(id);
-      if (t) t.role = "ignored";
+      if (t) t.role = "spent";
     }
     deps.gestures.close(p.id, how);
     deps.ring?.(null);
@@ -143,15 +144,18 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
 
   /**
    * OG25 : essaie la bascule déclenchée par `trigger` (contact posé ou élargi) à l'instant `now`. Le groupe : le
-   * déclencheur et les contacts tactiles qui tracent, déplacent ou pincent (les ignorés le restent, déc. 12). Rien ne
-   * bascule si l'un d'eux a dépassé sa fenêtre (geste établi, déc. 13, 32), ni hors des outils sans effet au `begin`
-   * (déc. 33), ni avec la main ou l'espace (déc. 14), ni pendant une retouche ou une orbite (déc. 23).
+   * déclencheur et les contacts tactiles qui tracent, déplacent ou pincent, plus ceux que le routeur a ignorés encore
+   * dans leur fenêtre (second doigt tardif, troisième doigt : déc. 9, règle 2) ; un ignoré au-delà le reste (déc. 12).
+   * Rien ne bascule si l'un d'eux a dépassé sa fenêtre (geste établi, déc. 13, 32), ni hors des outils sans effet au
+   * `begin` (déc. 33), ni avec la main ou l'espace (déc. 14), ni pendant une retouche ou une orbite (déc. 23).
    */
   const tryPalm = (triggerId: number, trigger: Track, now: number): boolean => {
     if (opts.autoEraser !== true || palm !== null || trigger.pointerType !== "touch") return false;
     const group: [number, Track][] = [[triggerId, trigger]];
     for (const [id, t] of tracks) {
-      if (id !== triggerId && t.pointerType === "touch" && (t.role === "draw" || t.role === "pan" || t.role === "pinch")) group.push([id, t]);
+      if (id === triggerId || t.pointerType !== "touch") continue;
+      if (t.role === "draw" || t.role === "pan" || t.role === "pinch") group.push([id, t]);
+      else if (t.role === "ignored" && now - t.startT <= DETECT_MS) group.push([id, t]);
     }
     if (group.some(([, t]) => now - t.startT > DETECT_MS)) return false;
     let first = trigger;
@@ -258,7 +262,11 @@ export function createRouter(opts: RouterOptions, deps: RouterDeps): Router {
       follow(s.t);
       return;
     }
-    if (palm === null && (t.role === "draw" || t.role === "pan" || t.role === "pinch") && isLargeContact({ width: t.w, height: t.h })) {
+    if (
+      palm === null &&
+      (t.role === "draw" || t.role === "pan" || t.role === "pinch" || t.role === "ignored") &&
+      isLargeContact({ width: t.w, height: t.h })
+    ) {
       // OG25 : un contact qui s'élargit dans sa fenêtre bascule ; la gomme part de sa position nouvelle (H10).
       const px = t.x;
       const py = t.y;
