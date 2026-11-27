@@ -16,7 +16,7 @@ const presets = builtinProfile("defaut")!.presets;
 function rectEl(id: string, color: string): ElementView {
   return { id, kind: "shape", style: { color, width: 4 }, shape: { shape: "rect", w: 10, h: 10, fill: null } } as unknown as ElementView;
 }
-interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean }
+interface Opts { tool: string; selection: ElementView[]; size?: ButtonSize; annotating?: boolean; editing?: boolean; itemStyle?: ItemStyle }
 function mount(o: Opts) {
   const calls: Partial<ItemStyle>[] = [];
   const engine = {
@@ -28,7 +28,7 @@ function mount(o: Opts) {
     sendToBack: vi.fn(() => true),
     reorder: vi.fn(() => true),
   };
-  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null } as unknown as EngineState;
+  const state = { tool: o.tool, selection: o.selection.map((e) => e.id), itemStyle: o.itemStyle ?? DEFAULT_ITEM_STYLE, textFormat: o.editing ? {} : null } as unknown as EngineState;
   const settings = createDeviceSettings(null);
   const r = render(() => (
     <OptionsPanel
@@ -304,5 +304,63 @@ describe("OptionsPanel : sélecteur de couleur complet (T16)", () => {
     const { container } = mount({ tool: "select", selection: [] });
     fireEvent.keyDown(window, { key: "s" });
     expect(container.querySelector("[data-color-picker]")).toBeNull();
+  });
+});
+
+describe("OptionsPanel : avant la saisie, focus, sélecteur borné (T31)", () => {
+  it("outil Texte sans texte : Georgia et 48 deviennent le style courant et s'affichent enfoncés", () => {
+    const { container, calls } = mount({ tool: "text", selection: [], itemStyle: { ...DEFAULT_ITEM_STYLE, font: "Georgia", fontSize: 48 } });
+    fireEvent.click(container.querySelector('[data-option="font"] [data-choice="Courier New"]')!);
+    fireEvent.click(container.querySelector('[data-option="fontSize"] [data-choice="72"]')!);
+    expect(calls).toContainEqual({ font: "Courier New" });
+    expect(calls).toContainEqual({ fontSize: 72 });
+    expect(container.querySelector('[data-option="font"] [data-choice="Georgia"]')!.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector('[data-option="fontSize"] [data-choice="48"]')!.getAttribute("aria-checked")).toBe("true");
+  });
+  it("un texte choisi : le style courant suit aussi (Excalidraw), en plus du FormatText", () => {
+    const { container, calls, engine } = mount({ tool: "select", selection: [textEl("t", "abcde")] });
+    fireEvent.click(container.querySelector('[data-option="font"] [data-choice="Georgia"]')!);
+    expect(calls).toContainEqual({ font: "Georgia" });
+    expect(engine.run).toHaveBeenCalledWith({ type: "FormatText", id: "t", start: 0, len: 5, attrs: { font: "Georgia" } });
+  });
+  it("un appui sur un bouton du panneau ne prend pas le focus (pointerdown et mousedown annulés)", () => {
+    const { container } = mount({ tool: "text", selection: [], editing: true });
+    const right = container.querySelector('[data-option="textAlign"] [data-choice="right"]')!;
+    expect(fireEvent.pointerDown(right)).toBe(false);
+    expect(fireEvent.mouseDown(right)).toBe(false);
+  });
+  it("sélecteur de couleur : le bas reste dans la fenêtre, hauteur réelle mesurée", () => {
+    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return (this as HTMLElement).classList.contains("rb-color-pop") ? 800 : 0; } });
+    const inner = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
+    try {
+      const { container } = mount({ tool: "rect", selection: [] });
+      const btn = container.querySelector<HTMLButtonElement>('[data-more-colors="strokeColor"]')!;
+      btn.getBoundingClientRect = () => ({ top: 700, bottom: 744, left: 10, right: 54, width: 44, height: 44, x: 10, y: 700, toJSON: () => ({}) });
+      fireEvent.click(btn);
+      const pop = container.querySelector<HTMLElement>(".rb-color-pop")!;
+      expect(parseInt(pop.style.top, 10) + 800).toBeLessThanOrEqual(900 - 8);
+      expect(parseInt(pop.style.top, 10)).toBeGreaterThanOrEqual(8);
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: inner });
+      if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+    }
+  });
+  it("fenêtre plus basse que le sélecteur : haut à 8 px, défilement interne (hauteur max = fenêtre − 16)", () => {
+    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetHeight");
+    Object.defineProperty(HTMLElement.prototype, "offsetHeight", { configurable: true, get() { return (this as HTMLElement).classList.contains("rb-color-pop") ? 700 : 0; } });
+    const inner = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 500 });
+    try {
+      const { container } = mount({ tool: "rect", selection: [] });
+      fireEvent.click(container.querySelector('[data-more-colors="strokeColor"]')!);
+      const pop = container.querySelector<HTMLElement>(".rb-color-pop")!;
+      expect(pop.style.top).toBe("8px");
+      expect(pop.style.maxBlockSize).toBe("484px");
+    } finally {
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: inner });
+      if (h) Object.defineProperty(HTMLElement.prototype, "offsetHeight", h); else delete (HTMLElement.prototype as { offsetHeight?: number }).offsetHeight;
+    }
   });
 });

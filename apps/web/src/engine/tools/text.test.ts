@@ -393,3 +393,34 @@ describe("outil Texte : alignement (T28)", () => {
     expect(runs[0]).toMatchObject({ look: { textAlign: "right" } });
   });
 });
+
+describe("outil Texte : police et taille du style courant (T31)", () => {
+  it("texte neuf : la taille du style est celle de la boîte et la police est portée par chaque segment", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 48, font: "Georgia" }), narrow);
+    tool.begin(1, [at(100, 200)]);
+    tool.close(1, "end");
+    expect(tool.editing()).toMatchObject({ size: 48 });
+    host.text = "Bonjour";
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ type: "SetText", size: 48, spans: [{ text: "Bonjour", attrs: { font: "Georgia" } }] });
+  });
+  it("police du style absente : segments inchangés ; segment qui a déjà sa police : gardée", () => {
+    const doc = fakeCore.blank();
+    const page = doc.pageIds()[0] ?? "";
+    const runs: Command[] = [];
+    const ctx: ToolContext = { doc, page: () => page, camera: () => ({ zoom: 1, tx: 0, ty: 0 }), run: (c) => { runs.push(c); return doc.apply(c); } };
+    const host = new FakeHost();
+    const tool = createTextTool(ctx, host, () => ({ color: "#000000", size: 36, font: "Georgia" }), narrow);
+    tool.begin(1, [at(0, 0)]);
+    tool.close(1, "end");
+    host.text = "ab";
+    host.rich = [{ text: "ab", attrs: { font: "Courier New" } }];
+    tool.requestCommit();
+    expect(runs[0]).toMatchObject({ spans: [{ text: "ab", attrs: { font: "Courier New" } }] });
+  });
+});

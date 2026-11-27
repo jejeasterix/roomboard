@@ -2420,3 +2420,42 @@ describe("moteur — ordre des objets (lot 2)", () => {
     expect(pageShortcut(ev("L"), eng)).toBe(false);
   });
 });
+
+describe("moteur — style courant du texte et alignement en saisie (T31)", () => {
+  function build(editingId: string | null) {
+    const doc = fakeCore.blank();
+    const applied: unknown[] = [];
+    const real = doc.apply.bind(doc);
+    doc.apply = ((c: never) => { applied.push(c); return real(c); }) as typeof doc.apply;
+    const log: string[] = [];
+    const base = fakeTextTool({ stateChanged: () => undefined } as ToolContext, log).tool;
+    const tools: ToolFactories = {
+      pen: (ctx) => fakeTool("pen", log, ctx),
+      eraser: (ctx) => fakeTool("eraser", log, ctx),
+      text: () => ({ ...base, editing: () => (editingId === null ? null : ({ id: editingId, page: "p", matrix: [1, 0, 0, 1, 0, 0], boxWidth: 600, color: "#000000", size: 36, initial: "x", spans: plainSpans("x") } as TextEditSession)) }),
+    };
+    const engine = createEngine({ doc, renderer: new FakeRenderer(), frames: new Frames(), tools });
+    return { engine, applied };
+  }
+  it("police et taille choisies sans texte : style courant, aucune commande, textStyle les porte", () => {
+    const { engine, applied } = build(null);
+    engine.setTool("text");
+    engine.setItemStyle({ font: "Georgia", fontSize: 48 });
+    expect(applied).toEqual([]);
+    expect(engine.itemStyle()).toMatchObject({ font: "Georgia", fontSize: 48 });
+    expect(engine.textStyle()).toMatchObject({ size: 48, font: "Georgia" });
+  });
+  it("texte rouvert en saisie : Droite écrit un SetStyle sur ce texte", () => {
+    const { engine, applied } = build("t1");
+    engine.setTool("text");
+    engine.setItemStyle({ textAlign: "right" });
+    expect(applied).toContainEqual({ type: "SetStyle", ids: ["t1"], patch: { textAlign: "right" } });
+  });
+  it("texte neuf en saisie : Droite ne change que le style courant", () => {
+    const { engine, applied } = build(null);
+    engine.setTool("text");
+    engine.setItemStyle({ textAlign: "right" });
+    expect(applied).toEqual([]);
+    expect(engine.itemStyle().textAlign).toBe("right");
+  });
+});

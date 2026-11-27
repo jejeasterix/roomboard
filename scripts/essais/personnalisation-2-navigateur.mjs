@@ -679,17 +679,7 @@ async function s7(browser, base, mode, tmp) {
   await waitAttr(page, "data-elements", "1");
   let s = await saved(page, tmp, `s7a-${mode}.roomboard`);
   let t = s.elements.find((e) => e.kind === "text");
-  if (t.text.spans.some((x) => x.attrs?.font !== "Georgia") || preFont === false) {
-    // Défaut de l'app (rapporté, non corrigé) : Police et Taille choisies avec l'outil Texte, avant d'avoir un texte, ne
-    // sont ni gardées ni montrées (OptionsPanel : `formatAll` ne vise que la sélection). Le scénario les applique donc au
-    // texte posé, sélectionné.
-    console.log(`ÉCART (app) — S7.1 : Georgia et 48 choisis avant la saisie : enfoncés ${preFont}/${preSize}, segments ${JSON.stringify(t.text.spans.map((x) => x.attrs))}, taille ${t.text.size}`);
-    await selectAt(page, mode, 600, 320);
-    await choose(page, mode, "font", "Georgia");
-    await choose(page, mode, "fontSize", "48");
-    s = await saved(page, tmp, `s7a2-${mode}.roomboard`);
-    t = s.elements.find((e) => e.kind === "text");
-  }
+  check(preFont === true && preSize === true, `S7.1 : Georgia et 48, choisis avant la saisie, sont enfoncés (${preFont}/${preSize})`);
   lire("élément texte", JSON.stringify(t).slice(0, 400));
   const spans = t.text.spans;
   lire("textAlign=center font=Georgia size=48", `textAlign=${t.look?.textAlign} font=${spans[0]?.attrs?.font} size=${spans[0]?.attrs?.size ?? t.text.size}`);
@@ -722,9 +712,7 @@ async function s7(browser, base, mode, tmp) {
     const kept = await editorFocused();
     const who = await page.evaluate(() => `${document.activeElement?.tagName}#${document.activeElement?.id}[${document.activeElement?.getAttribute("data-choice")}] éditeur visible : ${!document.querySelector("#texte-edition")?.hidden}`);
     lire("S7.3 focus dans la zone après Droite", `${kept} (${who})`);
-    // Défaut de l'app (rapporté, non corrigé) : les boutons de RadioChoices ne retiennent pas le focus (aucun
-    // preventDefault au mousedown, contrairement à FormatRow et aux pastilles) ; le cadrage S7.3 le demande.
-    if (!kept) console.log("ÉCART (app) — S7.3 : toucher Droite dans le panneau fait perdre le focus à la zone de saisie");
+    check(kept, "S7.3 : toucher Droite dans le panneau garde le focus dans la zone de saisie");
   } else {
     await page.locator(opt("textAlign", "right")).focus();
     await page.keyboard.press("Enter");
@@ -739,11 +727,7 @@ async function s7(browser, base, mode, tmp) {
   s = await saved(page, tmp, `s7b-${mode}.roomboard`);
   const t2 = s.elements.find((e) => e.kind === "text");
   lire("texte après Droite et gras", JSON.stringify({ align: t2.look?.textAlign, spans: t2.text.spans.map((x) => [x.text, x.attrs?.bold]) }));
-  if (t2.look?.textAlign !== "right") {
-    // Défaut de l'app (rapporté, non corrigé) : un texte rouvert par l'outil Texte n'est pas sélectionné (data-selection 0) ;
-    // Droite ne change que le style courant, pas le texte en saisie.
-    console.log(`ÉCART (app) — S7.3 : texte rouvert en saisie, Droite ne l'aligne pas (textAlign ${t2.look?.textAlign})`);
-  }
+  check(t2.look?.textAlign === "right", `S7.3 : texte rouvert en saisie, Droite l'aligne (textAlign ${t2.look?.textAlign})`);
   check(t2.text.spans.some((x) => x.attrs?.bold === true && /^Bon/.test(x.text ?? "")), "S7.2 : « Bon » est gras dans l'état enregistré");
   // S7.3 sur un texte neuf : Droite touché pendant la saisie aligne le texte (le style courant sert au commit).
   await tapStage(page, 560, 520);
@@ -887,6 +871,17 @@ async function s8(browser, base, mode, tmp) {
   const after = await fingerprint(page, badgeBox);
   lire("badge : empreinte avant/après", `${before}/${after}`);
   check(before !== after, "S8.5 : un badge apparaît au coin de l'élément");
+  // Toucher du badge (outil Sélection) : ouvre le lien par window.open(url, "_blank", "noopener"), stub dans la page.
+  await page.evaluate(() => {
+    window.__ouverts = [];
+    window.open = (...a) => { window.__ouverts.push(a); return null; };
+  });
+  await useTool(page, mode, "select");
+  await tapStage(page, 1020, 285);
+  await frames(page);
+  const ouverts = await page.evaluate(() => window.__ouverts);
+  lire("window.open après toucher du badge", JSON.stringify(ouverts));
+  check(ouverts.length === 1 && ouverts[0][0] === "https://example.org" && ouverts[0][1] === "_blank" && ouverts[0][2] === "noopener", "S8.5 : toucher le badge ouvre le lien par window.open(url, \"_blank\", \"noopener\")");
   const js = s.elements.filter((e) => /^javascript:/i.test(e.look?.link ?? ""));
   check(js.length === 0, "S8.5 : aucun lien javascript: n'est enregistré");
   check(errors.length === 0, `S8 (${mode}) : aucune erreur dans la page${errors.length ? ` : ${errors.join(" | ")}` : ""}`);
@@ -946,11 +941,11 @@ async function nettete2(browser, base) {
   else check(cellsBox.length === 75 && offGrid.length === 0, `calage (grille du sélecteur) : ${cellsBox.length} cases sur la grille de pixels`);
   const pop = await page.evaluate(() => {
     const r = document.querySelector(".rb-color-pop").getBoundingClientRect();
-    return { bottom: Math.round(r.bottom), h: innerHeight };
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom), h: innerHeight };
   });
-  // Défaut de l'app (rapporté, non corrigé) : `openPicker` borne le haut à h − 440 alors que la grille mesure ~840 px ;
-  // le bas du sélecteur sort de la fenêtre et max-block-size (100vh − 16) ne le rattrape pas.
-  if (pop.bottom > pop.h) console.log(`ÉCART (app) — sélecteur de couleur : bas à y=${pop.bottom} pour une fenêtre de ${pop.h} px, les dernières rangées sont hors écran`);
+  check(pop.top >= 0 && pop.bottom <= pop.h, `sélecteur de couleur : entier dans la fenêtre (haut ${pop.top}, bas ${pop.bottom}, fenêtre ${pop.h} px)`);
+  const small = await page.$$eval("[data-color-picker] .rb-color-cell", (els) => els.filter((e) => e.getBoundingClientRect().height < 44 || e.getBoundingClientRect().width < 44).length);
+  check(small === 0, "sélecteur de couleur : cibles de 44 px au moins");
   for (const i of [8, 22, 37]) {
     const cell = page.locator("[data-color-picker] .rb-color-cell").nth(i);
     const dot = cell.locator(".rb-pick-dot");
