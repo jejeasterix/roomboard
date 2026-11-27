@@ -318,7 +318,10 @@ async function buildBoardSession(
     fitTop: () =>
       topBelowIslands(
         stage.getBoundingClientRect(),
-        [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => e.getBoundingClientRect()),
+        [...stage.ownerDocument.querySelectorAll(".rb-island")].map((e) => {
+          const r = e.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom, side: e.matches('[data-anchor^="side-"]') };
+        }),
         GAP,
       ),
     images,

@@ -14,7 +14,7 @@ export type KeyAction = "undo" | "redo" | "group" | "ungroup";
 const EDITABLE = new Set(["INPUT", "TEXTAREA", "SELECT"]);
 
 /** Cible d'édition (champ, zone éditable) : ses touches lui appartiennent. Un bouton n'en est pas une. */
-const inEditable = (t: KeyLike["target"]): boolean =>
+export const inEditable = (t: KeyLike["target"]): boolean =>
   t !== null && (t.isContentEditable === true || (t.tagName !== undefined && EDITABLE.has(t.tagName.toUpperCase())));
 
 /** Barre d'espace sans Ctrl, Cmd ni Alt, hors champ de saisie et hors composition IME (D17 : espace + glisser). */
@@ -48,4 +48,25 @@ export function editAction(e: KeyLike): EditAction | null {
 export function enterAction(e: KeyLike): boolean {
   if (e.key !== "Enter" || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || inEditable(e.target)) return false;
   return e.target?.tagName?.toUpperCase() !== "BUTTON";
+}
+
+export type PageKey = "prev" | "next" | "add" | "duplicate" | "sidebar-pages" | "sidebar-layers";
+
+/** Raccourcis de page (DA9) : PageUp/PageDown, Ctrl+M (Ctrl aussi sous macOS), Ctrl/Cmd+Maj+D/P/L ; hors champ, hors IME, Alt Gr refusé. */
+export function pageKey(e: KeyLike): PageKey | null {
+  if (e.isComposing || e.altKey || inEditable(e.target)) return null;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod && !e.shiftKey) {
+    if (e.key === "PageUp") return "prev";
+    if (e.key === "PageDown") return "next";
+    return null;
+  }
+  const key = e.key.toLowerCase();
+  if (e.ctrlKey && !e.metaKey && !e.shiftKey && key === "m") return "add";
+  if (mod && e.shiftKey) {
+    if (key === "d") return "duplicate";
+    if (key === "p") return "sidebar-pages";
+    if (key === "l") return "sidebar-layers";
+  }
+  return null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editAction, isPanKey, keyAction, type KeyLike } from "./keys";
+import { editAction, inEditable, isPanKey, keyAction, pageKey, type KeyLike } from "./keys";
 
 const k = (key: string, mods: Partial<Omit<KeyLike, "key">> = {}): KeyLike => ({
   key,
@@ -98,5 +98,29 @@ describe("keyAction : groupes (Z13)", () => {
   it("Ctrl+G dans un champ : rien", () => {
     expect(keyAction(k("g", { ctrlKey: true, target: { tagName: "INPUT" } }))).toBeNull();
     expect(keyAction(k("g", { ctrlKey: true, target: { isContentEditable: true } }))).toBeNull();
+  });
+});
+
+describe("pageKey (DA9)", () => {
+  it("pageKey : PageUp, PageDown, Ctrl+M (aussi Mac), Ctrl+Maj+D, Ctrl+Maj+P, Ctrl+Maj+L", () => {
+    expect(pageKey(k("PageUp"))).toBe("prev");
+    expect(pageKey(k("PageDown"))).toBe("next");
+    expect(pageKey(k("m", { ctrlKey: true }))).toBe("add");
+    expect(pageKey(k("D", { ctrlKey: true, shiftKey: true }))).toBe("duplicate");
+    expect(pageKey(k("d", { metaKey: true, shiftKey: true }))).toBe("duplicate");
+    expect(pageKey(k("P", { ctrlKey: true, shiftKey: true }))).toBe("sidebar-pages");
+    expect(pageKey(k("l", { metaKey: true, shiftKey: true }))).toBe("sidebar-layers");
+  });
+  it("pageKey : Alt Gr et composition IME : null ; Cmd+M : null", () => {
+    expect(pageKey(k("m", { ctrlKey: true, altKey: true }))).toBeNull();
+    expect(pageKey(k("PageUp", { isComposing: true }))).toBeNull();
+    expect(pageKey(k("m", { ctrlKey: true, isComposing: true }))).toBeNull();
+    expect(pageKey(k("m", { metaKey: true }))).toBeNull();
+    expect(pageKey(k("PageDown", { ctrlKey: true }))).toBeNull();
+  });
+  it("pageKey : champ de saisie : null ; inEditable exporté", () => {
+    expect(pageKey(k("PageUp", { target: { tagName: "INPUT" } }))).toBeNull();
+    expect(inEditable({ tagName: "TEXTAREA" })).toBe(true);
+    expect(inEditable({ tagName: "BUTTON" })).toBe(false);
   });
 });
