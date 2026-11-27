@@ -7,6 +7,7 @@ import type { InputSample } from "../input/sampler";
 import { cellHeight, TABLE_SHADE_COLOR } from "../table-geom";
 import type { Measure } from "../text-layout";
 import type { CellMenu, CellMenuItem } from "../../ui/cell-menu";
+import { createCellDrop } from "./cell-drop";
 import { createTableTool, type TablePicker } from "./table";
 import type { TextEditorHost, TextEditSession } from "./text";
 import type { TableTool, ToolContext } from "./tool";
@@ -106,7 +107,7 @@ function setup() {
   };
   const menuOpens: { x: number; y: number; items: readonly CellMenuItem[] }[] = [];
   const menu: CellMenu = { open: (x, y, items) => void menuOpens.push({ x, y, items }), close: () => undefined };
-  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu);
+  const tool = createTableTool(ctx, host, picker, () => ({ color: "#000000", size: 36 }), narrow, menu, createCellDrop(ctx, narrow));
   holder.tool = tool;
   const click = (x: number, y: number): void => {
     tool.begin(1, [at(x, y)]);
@@ -846,6 +847,49 @@ describe("image de fond de case (personnalisation-3 T9, S5)", () => {
       items[2]?.run();
       expect(s.last()).toEqual({ type: "PlaceInCell", ids: [s.image], matrix: [1, 0, 0, 1, 0, 0], cell: null, sizes: [] });
       expect(s.doc.element(s.image)?.cell).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("D11 : « Sortir » du menu réduit la case comme Alt+Maj+Entrée (colonne 240, ligne 64, une seule PlaceInCell)", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      const id = s.create(100, 200, 2, 2);
+      s.tool.requestCommit();
+      const t = s.table(id);
+      const col = t.cols[0]?.id ?? "";
+      const row = t.rows[0]?.id ?? "";
+      const image = s.doc.apply({ type: "AddImage", page: s.page, asset: ASSET, w: 400, h: 300, matrix: [1, 0, 0, 1, 0, 0] }).ids[0] ?? "";
+      s.doc.apply({ type: "PlaceInCell", ids: [image], matrix: [1, 0, 0, 1, 108, 208], cell: [id, row, col], sizes: [[id, "col", col, 416], [id, "row", row, 316]] });
+      expect(s.table(id).cols[0]?.width).toBe(416);
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      const items = s.menuOpens[0]?.items ?? [];
+      s.tool.close(1, "end");
+      items.find((i) => i.id === "unplace")?.run();
+      const cmd = s.last();
+      expect(cmd?.type === "PlaceInCell" && cmd.cell === null && cmd.sizes.length).toBe(2);
+      expect(s.table(id).cols[0]?.width).toBe(240);
+      expect(s.table(id).rows[0]?.height).toBe(64);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("menu ouvert (appui tenu) : le glisser n'étend plus la plage", () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup();
+      s.create(100, 200, 2, 2);
+      s.tool.requestCommit();
+      s.tool.begin(1, [at(120, 220)]);
+      vi.advanceTimersByTime(500);
+      expect(s.menuOpens).toHaveLength(1);
+      s.tool.extend(1, [at(400, 290)]);
+      expect(s.tool.cellState()?.range).toBeNull();
+      s.tool.close(1, "end");
     } finally {
       vi.useRealTimers();
     }

@@ -988,6 +988,17 @@ function setupTable() {
 describe("moteur — outil Tableau (C10a, contrat T4)", () => {
   const CELL: TableCellState = { id: "t", row: 0, col: 1, rows: 3, cols: 4 };
 
+  it("Alt+I sans cellule active : la touche passe ; avec une cellule : cell-image", () => {
+    const { engine, log, table } = setupTable();
+    engine.setTool("table");
+    const alt = (code: string) => ({ key: code.slice(3).toLowerCase(), code, ctrlKey: false, metaKey: false, shiftKey: false, altKey: true, isComposing: false, target: null });
+    expect(engine.key(alt("KeyI"))).toBe(false);
+    expect(log).not.toContain("act cell-image");
+    table.setCell(CELL);
+    expect(engine.key(alt("KeyI"))).toBe(true);
+    expect(log).toContain("act cell-image");
+  });
+
   it("tableCell : publié par l'outil ; stateChanged émet un état", () => {
     const { engine, table } = setupTable();
     const seen: (TableCellState | null)[] = [];

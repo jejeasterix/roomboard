@@ -118,6 +118,17 @@ describe("glisser vers une case (cell-drop, DA3)", () => {
     expect(s.t().rows.map((r) => r.height)).toEqual([64, 64, 64]);
   });
 
+  it("D11 : objet logé lâché sur une case refusée (ombrée) : PlaceInCell sans case, la case quittée est réduite", () => {
+    const s = setup();
+    s.move([1200, 1150], [360, 96]);
+    s.doc.apply({ type: "SetTableShade", id: s.table, from: { row: s.t().rows[0]?.id ?? "", col: s.t().cols[0]?.id ?? "" }, to: { row: s.t().rows[0]?.id ?? "", col: s.t().cols[0]?.id ?? "" }, shade: "#cccccc" });
+    s.move([448, 222], [120, 32]);
+    const cmd = s.runs.at(-1);
+    expect(cmd?.type === "PlaceInCell" && cmd.cell === null && cmd.sizes.length).toBe(2);
+    expect(s.doc.element(s.image)?.cell).toBeUndefined();
+    expect(s.t().cols.map((c) => c.width)).toEqual([240, 240, 240]);
+  });
+
   it("D11 : une colonne élargie à la main ne bouge pas", () => {
     const s = setup();
     s.move([1200, 1150], [360, 96]);
