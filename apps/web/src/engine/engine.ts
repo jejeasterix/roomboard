@@ -19,7 +19,7 @@ import { mergeOverlays, overlayKey, EMPTY_OVERLAY } from "./render/overlay";
 import type { FormatAction, FormatState } from "./rich-edit";
 import type { Renderer } from "./render/renderer";
 import { validColor } from "../core/rich-text";
-import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type FrameLayout, type FrameSource, type PageRect } from "./page";
+import { PAGE_BACKGROUND, pageFrame, pageLayoutOf, type PageRect } from "./page";
 import { DEFAULT_TEXT_SIZE } from "./text-layout";
 import type { TextStyle, TextTool } from "./tools/text";
 import type { TableAction, TableCellState } from "./table-geom";
@@ -165,6 +165,9 @@ export interface PageScroll {
  * Touches de l'ascenseur (OG24), prises seulement si la vue bouge : ↑ ↓ d'un huitième de `span`, Maj+↑ ↓ de 90 % de
  * `span`, Début et Fin aux bords. Hors portrait (ou page qui tient dans la vue) : rien, la touche passe.
  */
+/** Deux caméras identiques au px près (OG27 : une vue restée à son ajustement). */
+const sameCamera = (a: Camera, b: Camera): boolean => a.zoom === b.zoom && a.tx === b.tx && a.ty === b.ty;
+
 export function scrollShortcut(e: KeyLike, engine: Pick<Engine, "pageScroll" | "scrollPageBy" | "scrollPageTo">): boolean {
   const k = scrollKey(e);
   const s = k === null ? null : engine.pageScroll();
@@ -252,6 +255,9 @@ export interface Engine {
   scrollPageBy(dy: number): boolean;
   /** OG24 : place la page portrait à `at` (0 = haut, 1 = bas, borné) ; faux si rien ne bouge. */
   scrollPageTo(at: number): boolean;
+  /** OG27 : le haut sous les îlots (`fitTop`) a pu changer (un îlot du haut a bougé). Vue encore à son ajustement :
+   *  réajustée sous le nouveau haut ; pages quittées encore ajustées : aussi. Vrai si la vue montrée a bougé. */
+  topChanged(): boolean;
   /** Redessine la scène à la prochaine image (bitmap d'une image arrivé, R16). */
   redraw(): void;
   /** Aperçu d'une grille non enregistrée sur la page montrée (C9 éditeur, DAE1) : rien n'est écrit ; null = aucune grille. */
@@ -381,20 +387,18 @@ export function createEngine(deps: EngineDeps): Engine {
   let fillColor: string | null = DEFAULT_FILL_COLOR;
   let fillTolerance = DEFAULT_FILL_TOLERANCE;
   let camera: Camera = IDENTITY;
-  // décision 10 : page plus haute que large (portrait choisi) = portrait. Le cadre d'un fond PDF A4 ne le décide pas.
-  const fitLayout = (view: FrameSource): FrameLayout => (pageLayoutOf(view) === "infinite" ? "infinite" : view.height > view.width ? "portrait" : "landscape");
-  /** « Ajuster la page » : selon la disposition de la page montrée ; en Infini, contenu ∪ fond. */
+  /** « Ajuster la page » : selon la disposition de la page `id` (la page montrée par défaut) ; en Infini, contenu ∪ fond. */
   const fitTop = (): number => deps.fitTop?.() ?? 16;
-  const fit = (w: number, h: number): Camera => {
-    const view = doc.page(pageId);
+  const fit = (w: number, h: number, id: string = pageId): Camera => {
+    const view = doc.page(id);
     const top = fitTop();
     if (view === null) return fitFor("landscape", w, h, null, null, top);
     // décision 10 : Infini = contenu ∪ fond ; sinon largeur (OG24 : le portrait aussi, il défile).
-    const layout = fitLayout(view);
-    return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(view.backdrop?.rect ?? null) : null, top);
+    const layout = pageLayoutOf(view);
+    return fitFor(layout, w, h, pageFrame(view), layout === "infinite" ? contentRect(id, view.backdrop?.rect ?? null) : null, top);
   };
-  const contentRect = (backdrop: Bounds | null): PageRect | null => {
-    const b = doc.bounds(doc.elementIds(pageId));
+  const contentRect = (id: string, backdrop: Bounds | null): PageRect | null => {
+    const b = doc.bounds(doc.elementIds(id));
     const rects = [b, backdrop].filter((r): r is Bounds => r !== null);
     if (rects.length === 0) return null;
     return {
@@ -417,10 +421,17 @@ export function createEngine(deps: EngineDeps): Engine {
   const fitted = new Set<string>();
   let viewW = 0;
   let viewH = 0;
-  /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue. */
+  /** OG27 : dernière caméra d'ajustement de chaque page ; une vue qui y est encore se recale quand le haut des îlots bouge. */
+  const fits = new Map<string, Camera>();
+  const setFit = (id: string, c: Camera): void => {
+    fits.set(id, c);
+    fitted.add(id);
+  };
+  /** OG24 : bornes de l'ascenseur de la page montrée ; null hors portrait, ou si la page tient dans la vue.
+   *  OG27 : le portrait est la forme affichée (cadre plus haut que large), fond PDF A4 d'une page Paysage compris. */
   const scrollState = (): { readonly bounds: ScrollBounds; readonly top: number; readonly height: number } | null => {
     const view = doc.page(pageId);
-    const frame = view === null || fitLayout(view) !== "portrait" ? null : pageFrame(view);
+    const frame = view === null || pageLayoutOf(view) !== "portrait" ? null : pageFrame(view);
     if (frame === null || !(viewH > 0)) return null;
     const top = fitTop();
     const bounds = scrollBounds(camera, frame, viewH, top, SCROLL_BOTTOM);
@@ -584,7 +595,7 @@ export function createEngine(deps: EngineDeps): Engine {
       setCamera(saved);
     } else if (viewW > 0 && viewH > 0) {
       setCamera(fit(viewW, viewH));
-      fitted.add(id);
+      setFit(id, camera);
     } else {
       setCamera(IDENTITY);
     }
@@ -1245,10 +1256,30 @@ export function createEngine(deps: EngineDeps): Engine {
       const { min, max } = s.bounds;
       return scrollCamera({ ...camera, ty: max - Math.min(1, Math.max(0, at)) * (max - min) });
     },
+    topChanged() {
+      if (!(viewW > 0 && viewH > 0)) return false;
+      // Pages quittées encore ajustées : leur caméra gardée suit (elles se montreront sous le nouveau haut).
+      for (const [id, saved] of cameras) {
+        const f = fits.get(id);
+        if (id !== pageId && f !== undefined && sameCamera(saved, f)) {
+          const next = fit(viewW, viewH, id);
+          cameras.set(id, next);
+          fits.set(id, next);
+        }
+      }
+      const f = fits.get(pageId);
+      if (f === undefined || !sameCamera(camera, f)) return false;
+      const next = fit(viewW, viewH);
+      if (sameCamera(next, camera)) return false;
+      setCamera(next);
+      fits.set(pageId, next);
+      requestScene();
+      return true;
+    },
     fitPage() {
       if (viewW > 0 && viewH > 0) {
         setCamera(fit(viewW, viewH));
-        fitted.add(pageId);
+        setFit(pageId, camera);
       }
       requestScene();
     },
@@ -1392,7 +1423,7 @@ export function createEngine(deps: EngineDeps): Engine {
       viewH = height;
       if (!fitted.has(pageId) && width > 0 && height > 0) {
         setCamera(fit(width, height));
-        fitted.add(pageId);
+        setFit(pageId, camera);
       }
       requestScene();
     },

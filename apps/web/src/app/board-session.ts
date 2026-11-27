@@ -11,6 +11,7 @@ import { createAssetStore, type AssetStore } from "../core/asset-store";
 import { displaySize } from "../core/image-params";
 import { topBelowIslands, type Camera } from "../engine/camera";
 import { GAP } from "../ui/island-place";
+import { watchIslands } from "./island-watch";
 import { createPageScrollbar } from "./page-scrollbar";
 import { createEngine, type Engine, type EngineState } from "../engine/engine";
 import type { ItemStyle } from "../engine/item-style";
@@ -476,6 +477,14 @@ async function buildBoardSession(
   undo.push(() => resizes.disconnect());
   resizes.observe(stage);
   fit();
+  // OG27 : un îlot du haut bouge (glissé, replié, compacté) → le haut de la page ajustée change ; vue encore ajustée
+  // réajustée, ascenseur recalé tout de suite (sans attendre le prochain défilement).
+  undo.push(
+    watchIslands(stage.ownerDocument.body, () => {
+      engine.topChanged();
+      scrollbar.update();
+    }),
+  );
   const stopDpr = watchDpr(window, fit);
   undo.push(stopDpr);
 
