@@ -2281,6 +2281,20 @@ describe.each(c6aFactories)("contrat C6a : $name", ({ f }) => {
     d.free();
   });
 
+  it("ligne fermée (rectangle converti) : intérieur rempli comme une forme, trait gardé ; edgeHit sur son tracé (C4a)", () => {
+    const d = f.blank();
+    const p = first(d);
+    const r = shapeAt(d, p);
+    d.apply({ type: "ShapeToPolygon", id: r });
+    const c = d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: "#facc15" });
+    expect([c.pages, c.ids]).toEqual([[p], [r]]);
+    expect([shapeFill(d, r), strokeColor(d, r)]).toEqual(["#facc15", "#000000"]);
+    expect([d.edgeHit(r, 103, 150, 6), d.edgeHit(r, 200, 103, 6), d.edgeHit(r, 200, 150, 6)]).toEqual([true, true, false]);
+    d.apply({ type: "Fill", page: p, target: { kind: "inside", id: r }, color: null });
+    expect(shapeFill(d, r)).toBeNull();
+    d.free();
+  });
+
   it("Fill fond de page : écrit, « Aucune » = #ffffff, même valeur sans étape, annulé (S4, D10)", () => {
     const d = f.blank();
     const p = first(d);
