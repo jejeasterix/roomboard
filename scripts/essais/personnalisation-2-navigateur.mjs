@@ -694,11 +694,11 @@ async function s7Multi(browser, base, mode, tmp) {
     await page.keyboard.press("Escape");
     await frames(page);
   };
-  await write(300, 250, "Alpha");
-  await write(300, 420, "Beta");
+  await write(560, 300, "Alpha");
+  await write(560, 520, "Beta");
   await waitAttr(page, "data-elements", "2");
   await useTool(page, mode, "select");
-  await marquee(page, [200, 150], [700, 600]);
+  await marquee(page, [420, 200], [1000, 650]);
   await waitAttr(page, "data-selection", "2");
   const fonts = async (nom) => (await saved(page, tmp, nom)).elements.filter((e) => e.kind === "text").map((e) => e.text.spans.map((x) => x.attrs?.font ?? null).join("+"));
   const avant = await fonts(`s7m0-${mode}.roomboard`);
@@ -947,7 +947,12 @@ async function s8(browser, base, mode, tmp) {
   const badge0 = await badgeAt();
   const px0 = await pixelAt(page, badge0.x + 8, badge0.y);
   // Doigt : le bouton Lien du panneau, touché ; clavier : Ctrl+K.
-  if (mode === "doigt") await tapAt(page, ...(await centerOf(page, `${OPT} [data-option="actions"] [data-option-value="link"]`)));
+  if (mode === "doigt") {
+    // La rangée Actions est au bas du panneau (défilant) : on l'amène à l'écran avant le toucher.
+    const linkBtn = `${OPT} [data-option="actions"] [data-option-value="link"]`;
+    await page.locator(linkBtn).scrollIntoViewIfNeeded();
+    await tapAt(page, ...(await centerOf(page, linkBtn)));
+  }
   else await page.keyboard.press("Control+k");
   await popup("[data-link-popover]").waitFor({ state: "visible", timeout: 15000 });
   const input = "[data-link-popover] input";
