@@ -228,6 +228,29 @@ describe("SideBar (T10)", () => {
     Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
   });
 
+  it("miniatures : boîte de même gabarit (largeur × 9/16), image contenue et centrée ; portrait : tampon plus étroit que la boîte", async () => {
+    const css = readFileSync(join(__dirname, "rb.css"), "utf8");
+    const rule = (sel: string): string => css.split("\n").find((l) => l.startsWith(`${sel} {`)) ?? "";
+    expect(rule(".rb-page-img")).toMatch(/aspect-ratio: 16 \/ 9/); // même hauteur pour toute page, portrait comme paysage
+    expect(rule(".rb-page-img img")).toMatch(/object-fit: contain/);
+    expect(rule(".rb-page-img img")).toMatch(/block-size: 100%/);
+    const dpr = window.devicePixelRatio;
+    Object.defineProperty(window, "devicePixelRatio", { value: 2, configurable: true });
+    const spy = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(340);
+    const land = setup({ thumb: "l" });
+    await vi.advanceTimersByTimeAsync(0);
+    const boxLand = (land.pages.thumb.mock.calls[0] as unknown as [string, number])[1];
+    cleanup();
+    const port = setup({ thumb: "l", layout: "portrait" });
+    await vi.advanceTimersByTimeAsync(0);
+    spy.mockRestore();
+    const widthPort = (port.pages.thumb.mock.calls[0] as unknown as [string, number])[1];
+    expect(boxLand).toBe(600);
+    expect(widthPort).toBe(Math.round((300 * 81 / 256) * 2)); // hauteur de la boîte (300 × 9/16) × 9/16, × dpr
+    expect(widthPort).toBeLessThan(boxLand);
+    Object.defineProperty(window, "devicePixelRatio", { value: dpr, configurable: true });
+  });
+
   it("miniatures : un changement de mode de la page redessine ses miniatures", async () => {
     const { pages } = setup();
     await vi.advanceTimersByTimeAsync(0);
