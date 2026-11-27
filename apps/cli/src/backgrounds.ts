@@ -12,11 +12,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { backgroundCommand, missingPackFile, resolvePack, type PackFiles } from "../../web/src/app/backgrounds-apply";
 import { probeImage } from "../../web/src/app/my-backgrounds";
 import { loadPack, type PackBackground, type PackSectionId } from "../../web/src/backgrounds/catalog";
+import { imageSource } from "../../web/src/backgrounds/image-source";
 import { createBackgroundSearch } from "../../web/src/backgrounds/search";
 import type { BackgroundSource } from "../../web/src/backgrounds/source";
 import type { Command, CoreDocument } from "../../web/src/core/api";
 import type { AssetStore } from "../../web/src/core/asset-store";
-import { MAX_PIXELS, TOO_MANY_PIXELS } from "../../web/src/platform/image-import";
+import { TOO_MANY_PIXELS } from "../../web/src/platform/image-import";
 import { CliError } from "./contract";
 import { readBytes } from "./disk";
 import { optString } from "./ops";
@@ -86,8 +87,9 @@ async function fileSource(path: string): Promise<BackgroundSource> {
   const blob = new Blob([bytes as BlobPart]);
   const probed = await probeImage(blob, name);
   if (probed === null) throw new CliError("unsupported", `${path} : en-tête d'image illisible`);
-  if (probed.w * probed.h > MAX_PIXELS) throw new CliError("command", TOO_MANY_PIXELS);
-  return { color: "#ffffff", grid: null, image: { blob, name, mime: probed.mime, w: probed.w, h: probed.h } };
+  const source = imageSource(blob, name, probed);
+  if (source === null) throw new CliError("command", TOO_MANY_PIXELS);
+  return source;
 }
 
 async function sourceOf(id: string | undefined, file: string | undefined, files: PackFiles): Promise<BackgroundSource> {
