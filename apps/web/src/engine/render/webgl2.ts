@@ -19,10 +19,11 @@ const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 /**
  * `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb(r, g, b)` et `rgba(r, g, b, a)` (a en nombre ou en %) en composantes
- * 0..1 ; toute autre écriture : null.
+ * 0..1, et `transparent` (OG23, casse ignorée) en [0, 0, 0, 0] ; toute autre écriture, nom compris : null.
  */
 export function tryParseColor(css: string): Rgba | null {
   const s = css.trim();
+  if (s.toLowerCase() === "transparent") return [0, 0, 0, 0];
   const hexMatch = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(s);
   const hex = hexMatch?.[1];
   if (hex !== undefined) {

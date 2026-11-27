@@ -108,7 +108,8 @@ import {
 } from "./api";
 import { pageFrame, type PageRect } from "../engine/page";
 import { isAssetId } from "./asset-store";
-import { newSeed, STROKE_STYLES, toLook, type Look, type LookPatch } from "./look";
+import { newSeed, STROKE_STYLES, toLook, VARIABILITY_CONSTANT, type Look, type LookPatch } from "./look";
+import { arrangeUnknown, isArrangeHow, planArrange, type ArrangeUnit, type Reach } from "./arrange";
 import { ARROWHEADS, END_ARROWHEAD_DEFAULT, FILL_STYLES, START_ARROWHEAD_DEFAULT, TEXT_ALIGNS, validLink as validLookLink } from "./look";
 import { cleanPatch, editSpans, formatSpans, normalSpans, plainSpans, sameSpans, utf16Bounds, validColor, validPatch, validSpans } from "./rich-text";
 import { applyMatrix, boxPolygon, composeMatrix, isIdentity, isSegment, normalizeShape, shapePolygon, translateMatrix as translate } from "./shapes";
@@ -256,6 +257,8 @@ function validStyle(p: LookPatch): number | undefined {
   };
   if (outside("fillStyle", FILL_STYLES) || outside("startArrowhead", ARROWHEADS) || outside("endArrowhead", ARROWHEADS) || outside("textAlign", TEXT_ALIGNS)) badStyle();
   if ("link" in p && !absent(p.link) && !(typeof p.link === "string" && validLookLink(p.link))) badStyle();
+  // OG23 (`outside(&self.variability, …)`) : seule `constant` s'écrit.
+  if ("variability" in p && !absent(p.variability) && p.variability !== VARIABILITY_CONSTANT) badStyle();
   return opacityArg(p.opacity);
 }
 
@@ -319,6 +322,8 @@ function restyled(e: FakeElement, p: LookPatch, opacity: number | undefined): Fa
   }
   if ("textAlign" in p && kind === "text") put("textAlign", p.textAlign ?? undefined);
   if ("link" in p) put("link", p.link ?? undefined);
+  // OG23 (`writes_for`) : la pression ne s'écrit que sur un trait.
+  if ("variability" in p && kind === "stroke") put("variability", p.variability ?? undefined);
   if (!changed) return null;
   const { look: _old, ...rest } = e;
   return { ...rest, style, ...(shape ? { shape } : {}), ...(Object.keys(look).length > 0 ? { look } : {}) };
@@ -943,6 +948,65 @@ class FakeDocument implements CoreDocument {
             const rest = p.elements.filter((e) => !set.has(e.id));
             p.elements.splice(0, p.elements.length, ...rest.slice(0, to), ...moved, ...rest.slice(to));
           }
+          return { pages: [page.id], ids, removed: [] };
+        });
+      }
+      case "Arrange": {
+        // `cmd_arrange` (arrange.rs). Pas le patron de `Transform` (qui ignore les inconnus) : celui de `Restack`. `how`
+        // lu d'abord (le pont, `arrange_how`) ; ids dédoublonnés, premier inconnu refusé ; aucun id : aucune étape ;
+        // pages mêlées refusées ; groupe extérieur touché = tous ses membres de la page ; `fill`, inconnu, mal formé
+        // jamais bougés ; composée invalide : matrice invalide, rien d'écrit ; `Change.ids` = ids bougés, triés.
+        if (!isArrangeHow(cmd.how)) throw new Error(arrangeUnknown(String(cmd.how)));
+        const found: Found[] = [];
+        const seen = new Set<string>();
+        for (const id of cmd.ids) {
+          if (seen.has(id)) continue;
+          seen.add(id);
+          const f = this.find(id);
+          if (!f) throw new Error(`élément inconnu : ${id}`);
+          found.push(f);
+        }
+        const page = found[0]?.page;
+        if (!page) return this.unchanged();
+        if (found.some((f) => f.page !== page)) throw new Error("objets de pages différentes");
+        const outers = new Set(found.map((f) => f.element.group?.[0]).filter((g): g is string => g !== undefined));
+        const reachOf = (e: FakeElement): Reach | null =>
+          e.malformed || e.unknown || e.fill ? null
+          : e.local !== undefined || e.shape || e.image ? "matrix"
+          : e.text || e.table || e.media || e.model3d ? "place"
+          : null;
+        const units = new Map<string, { members: { id: string; reach: Reach; bounds: Bounds }[] }>();
+        const transforms = new Map<string, Matrix>();
+        for (const e of page.elements) {
+          const outer = e.group?.[0];
+          if (!seen.has(e.id) && !(outer !== undefined && outers.has(outer))) continue;
+          const reach = reachOf(e);
+          if (reach === null) continue;
+          const bounds = this.snapBox([e.id]);
+          if (bounds === null) continue;
+          transforms.set(e.id, e.transform);
+          const key = outer ?? e.id;
+          const u = units.get(key) ?? { members: [] };
+          u.members.push({ id: e.id, reach, bounds });
+          units.set(key, u);
+        }
+        const moves = planArrange([...units.values()] satisfies ArrangeUnit[], cmd.how);
+        if (moves.length === 0) return this.unchanged();
+        const composed = new Map<string, Matrix>();
+        for (const [id, m] of moves) {
+          const t = transforms.get(id);
+          if (t === undefined) continue;
+          const c = composeMatrix(m, t);
+          if (!validMatrix(c)) throw new Error(MESSAGES.badMatrix);
+          composed.set(id, c);
+        }
+        const ids = [...composed.keys()].sort();
+        return this.step((s) => {
+          const p = s.pages.find((q) => q.id === page.id);
+          if (p) p.elements.forEach((e, i) => {
+            const t = composed.get(e.id);
+            if (t) p.elements[i] = { ...e, transform: t };
+          });
           return { pages: [page.id], ids, removed: [] };
         });
       }
@@ -1876,9 +1940,10 @@ class FakeDocument implements CoreDocument {
       return { pages: pages.map((p) => p.id), ids: pages.flatMap((p) => p.elements.map((e) => e.id)), removed: [] };
     });
   }
-  newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi {
+  newStrokeBuilder(style: StrokeStyle, constant = false): StrokeBuilderApi {
     const pts: number[] = [];
     void style;
+    void constant; // la fausse liaison n'a pas d'épaisseur variable : contour polygonal dans les deux cas
     return {
       push: (p: Float32Array, ahead?: Float32Array) => {
         pts.push(...p);

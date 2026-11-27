@@ -21,6 +21,8 @@
 
 import type { Look, LookPatch } from "./look";
 export type { Look, LookPatch } from "./look";
+import type { ArrangeHow } from "./arrange";
+export type { ArrangeHow } from "./arrange";
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export interface StrokeStyle { readonly color: string; readonly width: number }
@@ -65,6 +67,9 @@ export type Command =
   | { readonly type: "DuplicatePage"; readonly page: string }
   /** Ordre des objets (décision 16) : bloc des `ids` (une même page), bas au rang `to` (0 = arrière-plan), ids gardés. */
   | { readonly type: "Restack"; readonly ids: readonly string[]; readonly to: number }
+  /** OG23 (DA-2) : aligner, répartir, retourner, tourner les `ids` (une même page) en une étape ; groupe extérieur
+   *  touché = tous ses membres ; ids vides : aucune étape ; `how` inconnu : `arrangeUnknown(how)`. */
+  | { readonly type: "Arrange"; readonly ids: readonly string[]; readonly how: ArrangeHow }
   /** OG11 : `look` écrit dans la même étape, assaini comme le cœur (`Look::sanitized`) ; nombres hors bornes : « style invalide ». */
   | { readonly type: "CommitStroke"; readonly page: string; readonly points: Float32Array; readonly style: StrokeStyle; readonly look?: Look }
   | { readonly type: "Erase"; readonly page: string; readonly path: Float32Array; readonly radius: number; readonly mode: EraseMode }
@@ -403,7 +408,8 @@ export interface CoreDocument {
   version(): number;
   save(now: string, appVersion: string): Uint8Array;
   saveParts(now: string, appVersion: string): readonly [Uint8Array, Uint8Array];
-  newStrokeBuilder(style: StrokeStyle): StrokeBuilderApi;
+  /** OG23 : `constant` (`variability: "constant"`) : encre vive à épaisseur constante, comme le contour final. */
+  newStrokeBuilder(style: StrokeStyle, constant?: boolean): StrokeBuilderApi;
   free(): void;
   /** Point aimanté de la page (G6) ; null sans grille, magnétisme coupé, aucun niveau qui accroche ou page inconnue. */
   snapPoint(page: string, x: number, y: number): readonly [number, number] | null;

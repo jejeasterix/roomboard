@@ -133,8 +133,8 @@ describe("contrôle de forme des valeurs venues de Wasm", () => {
     expect(calls).toEqual([
       // OG11 : les dix derniers arguments sont l'aspect (stroke_style, roughness, seed, roundness, opacity, puis au lot 2
       // fill_style, start_arrowhead, end_arrowhead, text_align, link), absents ici.
-      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
-      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
+      ["add_shape", "p1", "rect", 1, 2, 3, 4, "#1e40af", 4, "#ff0000", undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined], // OG23 : 11 arguments d'aspect
+      ["set_text", "p1", "e1", 5, 6, "Bonjour", "#000000", 36, 600, 45, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
       ["transform", ["e1", "e2"], new Float64Array([2, 0, 0, 2, 10, 20])],
     ]);
   });
@@ -2219,7 +2219,7 @@ describe("contrôle de forme C7b (cellules, appels de la liaison)", () => {
     const spansArgOf = (a: unknown[], i: number): unknown => (i < 2 ? a[9] : a.at(-1));
     expect(calls.map(spansArgOf)).toEqual([[{ text: "a", attrs: { bold: true } }], undefined, [{ text: "a", attrs: { bold: true } }]]);
     expect((calls[0]?.[9] as { attrs: unknown }[])[0]?.attrs).toStrictEqual({ bold: true });
-    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]); // aspect absent (lots 1 et 2)
+    expect(calls[0]?.slice(10)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined]); // aspect absent (lots 1 et 2, OG23)
   });
 });
 
@@ -4543,12 +4543,16 @@ describe.each(factories)("contrat Arrange : $name", ({ f }) => {
     const r = rect(d, p, 0, 0);
     const t = d.apply({ type: "SetText", page: p, id: null, x: 200, y: 0, content: "abc", color: "#000000", size: 20, boxWidth: 100, boxHeight: 30 }).ids[0]!;
     const [rb, tb] = [boxOf(d, r), boxOf(d, t)];
-    const u = { x0: Math.min(rb.x0, tb.x0), x1: Math.max(rb.x1, tb.x1) };
     d.apply({ type: "Arrange", ids: [t, r], how: "flip-h" });
     expect(viewOf(d, t).transform?.slice(0, 4)).toEqual([1, 0, 0, 1]);
     expect(viewOf(d, r).transform?.[0]).toBeCloseTo(-1, 6);
-    nearBox(boxOf(d, t), shifted(tb, u.x0 + u.x1 - tb.x1 - tb.x0));
-    nearBox(boxOf(d, r), shifted(rb, u.x0 + u.x1 - rb.x1 - rb.x0));
+    // Miroir autour d'un même axe : le milieu des centres avant et après est le même pour les deux ; boîtes gardées.
+    const [rb2, tb2] = [boxOf(d, r), boxOf(d, t)];
+    const axis = (a: Bounds, b: Bounds): number => (a.x0 + a.x1 + b.x0 + b.x1) / 4;
+    expect(Math.abs(axis(tb, tb2) - axis(rb, rb2))).toBeLessThan(1e-6);
+    expect(tb2.x1 < rb2.x0).toBe(true); // le texte est passé à gauche du rectangle
+    nearBox(tb2, shifted(tb, tb2.x0 - tb.x0));
+    nearBox(rb2, shifted(rb, rb2.x0 - rb.x0));
     d.free();
   });
 
