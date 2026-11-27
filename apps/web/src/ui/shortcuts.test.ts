@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appShortcut, editAction, isPanKey, keyAction, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
+import { appShortcut, arrangeKey, editAction, isPanKey, keyAction, nudgeKey, objectKey, orderKey, pageKey, type KeyLike } from "../engine/input/keys";
 import { fileCommandOf } from "../platform/controller";
 import { SHORTCUTS, ariaShortcut, isHelpKey, shortcutText } from "./shortcuts";
 
@@ -11,14 +11,19 @@ const EXPECT: Readonly<Record<string, readonly [string, string]>> = {
   front: ["order", "front"], forward: ["order", "up"], backward: ["order", "down"], back: ["order", "back"],
   copy: ["native", "c"], cut: ["native", "x"], paste: ["native", "v"], pan: ["pan", " "], bold: ["rich", "b"],
   "stroke-picker": ["object", "stroke-picker"], "fill-picker": ["object", "fill-picker"], link: ["object", "link"],
+  "flip-h": ["arrange", "flip-h"], "flip-v": ["arrange", "flip-v"], "rotate-cw": ["arrange", "rotate-cw"], "rotate-ccw": ["arrange", "rotate-ccw"],
+  "align-left": ["arrange", "align-left"], "align-right": ["arrange", "align-right"], "align-top": ["arrange", "align-top"], "align-bottom": ["arrange", "align-bottom"],
+  "align-center": ["arrange", "align-center"], "align-middle": ["arrange", "align-middle"], "distribute-h": ["arrange", "distribute-h"], "distribute-v": ["arrange", "distribute-v"],
+  nudge: ["nudge", "-1,0"],
   backgrounds: ["app", "backgrounds"], "page-prev": ["page", "prev"], "page-next": ["page", "next"], "page-number": ["page", "sidebar-pages"],
 };
-const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown" };
+const NAMED: Readonly<Record<string, string>> = { Suppr: "Delete", "Échap": "Escape", Espace: " ", "Pg préc": "PageUp", "Pg suiv": "PageDown", "↑": "ArrowUp", "↓": "ArrowDown", "←": "ArrowLeft", "→": "ArrowRight" };
 const press = (keys: string): KeyLike => {
   const parts = keys.split("+");
   const k = parts.at(-1)!;
   const key = Object.hasOwn(NAMED, k) ? NAMED[k]! : k.toLowerCase();
-  return { key, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: false, isComposing: false, target: null };
+  const code = k.length === 1 && /[a-z]/i.test(k) ? `Key${k.toUpperCase()}` : key;
+  return { key, code, ctrlKey: parts.includes("Ctrl"), metaKey: false, shiftKey: parts.includes("Maj"), altKey: parts.includes("Alt"), isComposing: false, target: null };
 };
 
 describe("shortcuts", () => {
@@ -34,6 +39,8 @@ describe("shortcuts", () => {
       else if (by === "order") expect(orderKey(e), s.id).toBe(value);
       else if (by === "edit") expect(editAction(e), s.id).toBe(value);
       else if (by === "help") expect(isHelpKey({ ...press("?"), key: "?" }), s.id).toBe(true);
+      else if (by === "arrange") expect(arrangeKey(e), s.id).toBe(value);
+      else if (by === "nudge") { const n = nudgeKey(e); expect(`${n?.dx},${n?.dy}`, s.id).toBe(value); }
       else if (by === "app") expect(appShortcut(e), s.id).toBe(value);
       else if (by === "page") expect(pageKey(e), s.id).toBe(value);
       else if (by === "pan") expect(isPanKey(press(s.keys.split(/, | \+ /)[0]!)), s.id).toBe(true);
@@ -74,6 +81,7 @@ describe("shortcuts", () => {
     expect(ariaShortcut("link", false)).toBe("Control+K");
     expect(ariaShortcut("help", false)).toBe("?");
     expect(ariaShortcut("stroke-picker", false)).toBe("S");
+    expect(ariaShortcut("align-left", false)).toBe("Alt+Shift+ArrowLeft");
   });
   it("fusion lot 2 + OG19 : aucune touche ne sert deux actions de la table", () => {
     const keys = SHORTCUTS.map((s) => s.keys);
